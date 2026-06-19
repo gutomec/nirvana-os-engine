@@ -1,0 +1,1651 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="__GLANCE_THEME__">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nirvana Glance</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://unpkg.com/alpinejs@3.13.7/dist/cdn.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7.8.5/dist/d3.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    window.mermaid = mermaid;
+    mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', flowchart: { curve: 'basis', padding: 12 } });
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
+  <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+  <script src="https://pixijs.download/v8.6.6/pixi.min.js"></script>
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/components.css">
+  <link rel="stylesheet" href="/glance.css">
+</head>
+<body class="font-inter antialiased">
+
+<div x-data="glance()" x-init="boot()" class="h-screen flex flex-col">
+
+  <!-- Awwwards-style hero (only when theme=awwwards, dismissed after 1.8s) -->
+  <template x-if="showHero">
+    <div id="hero" class="hero-overlay" x-transition.duration.500ms>
+      <canvas id="hero-canvas"></canvas>
+      <div class="hero-content">
+        <div class="hero-mark">⊚</div>
+        <h1 class="hero-title">NIRVANA<span class="hero-title-accent">·</span>GLANCE</h1>
+        <div class="hero-sub" x-text="`scope ${scope?.mode || '…'}  ·  ${squads.length} squads  ·  ${businesses.length} businesses`"></div>
+        <div class="hero-bar"><div class="hero-bar-fill"></div></div>
+      </div>
+    </div>
+  </template>
+
+  <!-- ─── Top nav ─── -->
+  <nav class="glance-nav glass">
+    <div class="flex items-center gap-3">
+      <span class="text-lg">⊚</span>
+      <div class="leading-tight">
+        <div class="text-[15px] font-semibold tracking-tight">Nirvana Glance</div>
+        <div class="text-[11px] text-zinc-500" x-text="`v1.0 · ${health.uptime || ''}`"></div>
+      </div>
+    </div>
+
+    <div class="flex-1 mx-6">
+      <div class="relative max-w-xl mx-auto glance-search">
+        <i data-lucide="search" class="glance-search-icon"></i>
+        <input
+          type="text"
+          x-model="searchQuery"
+          @input.debounce.250ms="runSearch()"
+          @keydown.escape="searchQuery=''; searchResults=[]"
+          placeholder="Search squads, businesses, mind-clones…"
+          class="glance-search-input">
+        <kbd class="glance-search-kbd">⌘K</kbd>
+      </div>
+      <!-- Search dropdown -->
+      <div x-show="searchResults.length > 0" x-transition class="dropdown glance-search-dropdown">
+        <template x-for="r in searchResults" :key="r.kind + r.slug">
+          <button @click="onSearchPick(r)" class="dropdown-item">
+            <span class="badge badge-info badge-sm" :class="`badge-kind-${r.kind}`" x-text="r.kind"></span>
+            <span class="text-body" x-text="r.slug"></span>
+            <span class="text-caption" x-text="r.source"></span>
+          </button>
+        </template>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <!-- Scope filter switch — All vs Project. Disabled when no projectRoot. -->
+      <div class="toolbar toolbar-sm"
+           :class="!canFilterByProject() ? 'is-disabled' : ''"
+           :title="!canFilterByProject() ? 'Run inside a folder with .nirvana/ (or `nrv init`) to enable project filter' : 'Filter what you see by current project'">
+        <button @click="setProjectFilter('all')"
+                :class="projectFilter === 'all' ? 'toolbar-btn active' : 'toolbar-btn'"
+                title="Show activity from your whole machine">
+          <i data-lucide="globe"></i><span>All</span>
+        </button>
+        <button @click="setProjectFilter('project')"
+                :class="projectFilter === 'project' ? 'toolbar-btn active' : 'toolbar-btn'"
+                :disabled="!canFilterByProject()"
+                title="Show only this project">
+          <i data-lucide="folder-open"></i><span>Project</span>
+        </button>
+      </div>
+      <div class="scope-pill" :class="`scope-${scope?.mode || 'global'}`">
+        <span class="scope-dot"></span>
+        <span x-text="scope?.mode || '…'"></span>
+        <span class="text-zinc-500 text-[11px] ml-1" x-show="scope?.projectRoot" x-text="scope?.projectRoot ? `· ${scope.projectRoot.split('/').slice(-2).join('/')}` : ''"></span>
+      </div>
+      <!-- Actions menu (only when --allow-actions) -->
+      <div x-cloak class="relative" x-data="{ open: false }" @click.outside="open = false" x-show="health.allow_actions">
+        <button @click="open = !open" title="Actions" class="icon-btn icon-btn-accent"><i data-lucide="zap"></i></button>
+        <div x-show="open" x-transition class="actions-menu">
+          <div class="actions-menu-section">System</div>
+          <button @click="runAction('audit-score', {}); open=false" class="actions-menu-item">Re-score all squads</button>
+          <button @click="runAction('audit-batch', {dry_run:true}); open=false" class="actions-menu-item">Audit batch (dry-run)</button>
+          <button @click="confirmAction('audit-batch', {dry_run:false}, 'Apply nirvana fixes to all red+yellow squads. Backups will be made.'); open=false" class="actions-menu-item warning">Audit batch (apply)</button>
+          <button @click="runAction('index-squads', {}); open=false" class="actions-menu-item">Re-index squads</button>
+          <button @click="runAction('index-businesses', {}); open=false" class="actions-menu-item">Re-index businesses</button>
+          <div class="actions-menu-section">Tests</div>
+          <button @click="runAction('run-smoke', {}); open=false" class="actions-menu-item">Run scope isolation smoke</button>
+          <button @click="runAction('run-test', {}); open=false" class="actions-menu-item">Run scope unit tests</button>
+        </div>
+      </div>
+      <button @click="toggleSetupMode()" :class="setupMode ? 'icon-btn icon-btn-active' : 'icon-btn'" x-cloak x-show="health.allow_actions" title="Setup mode — pick squads/businesses/mind-clones to copy to a project"><i data-lucide="package"></i></button>
+      <button @click="openSettings()" :class="settingsOpen ? 'icon-btn icon-btn-active' : 'icon-btn'" title="Settings — configure .env variables"><i data-lucide="settings"></i></button>
+      <button @click="consoleOpen = !consoleOpen" title="Console" class="icon-btn" :class="jobs.some(j => j.status==='running') ? 'icon-btn-pulse' : ''"><i data-lucide="terminal"></i></button>
+      <button @click="cycleTheme()" title="Toggle theme" class="icon-btn"><i data-lucide="palette"></i></button>
+      <button @click="refreshAll()" title="Refresh" class="icon-btn"><i data-lucide="rotate-cw"></i></button>
+    </div>
+  </nav>
+
+  <!-- ─── Main columns ─── -->
+  <div class="flex-1 flex min-h-0">
+
+    <!-- Floating handle to expand the left sidebar when collapsed -->
+    <button class="sidebar-handle sidebar-handle-left" x-show="!sidebarOpen" @click="toggleSidebar()" title="Expand sidebar (⌘\)">
+      <i data-lucide="chevron-right"></i>
+    </button>
+
+    <!-- Sidebar — always visible so kind-tabs (Squads/Businesses/…/Memory/Graph/Cost)
+         remain reachable. Filter/list/setup chrome inside is gated to per-asset kinds. -->
+    <aside class="sidebar" x-show="sidebarOpen">
+      <div class="sidebar-collapse-row">
+        <button class="sidebar-collapse-btn" @click="toggleSidebar()" title="Collapse sidebar (⌘\)">
+          <i data-lucide="chevron-left"></i>
+        </button>
+      </div>
+      <div class="kind-tabs">
+        <template x-for="k in kinds" :key="k.id">
+          <button
+            @click="kind = k.id; selected = null"
+            :class="kind === k.id ? 'kind-tab active' : 'kind-tab'"
+            :title="auditSummary(k.id) ? `${auditSummary(k.id).total} total · ${auditSummary(k.id).green}g/${auditSummary(k.id).yellow}y/${auditSummary(k.id).red}r · avg ${auditSummary(k.id).avg}` : ''">
+            <span x-text="k.label"></span>
+            <span class="kind-tab-meta">
+              <template x-if="auditSummary(k.id) && auditSummary(k.id).allGreen">
+                <span class="nirvana-pill">all green</span>
+              </template>
+              <template x-if="auditSummary(k.id) && !auditSummary(k.id).allGreen">
+                <span class="tier-strip">
+                  <span class="tier-dot tier-green"  x-show="auditSummary(k.id).green > 0"  x-text="auditSummary(k.id).green"></span>
+                  <span class="tier-dot tier-yellow" x-show="auditSummary(k.id).yellow > 0" x-text="auditSummary(k.id).yellow"></span>
+                  <span class="tier-dot tier-red"    x-show="auditSummary(k.id).red > 0"    x-text="auditSummary(k.id).red"></span>
+                </span>
+              </template>
+              <span class="kind-tab-count" x-text="counts[k.id] ?? ''"></span>
+            </span>
+          </button>
+        </template>
+      </div>
+
+      <div class="filter-row" x-show="['squads','businesses','projects','mind-clones'].includes(kind)">
+        <input
+          type="text"
+          x-model="filterQuery"
+          placeholder="filter…"
+          class="filter-input">
+        <select x-model="filterSource" class="filter-select">
+          <option value="">all</option>
+          <option value="project">project</option>
+          <option value="global">global</option>
+        </select>
+      </div>
+      <!-- Result count banner (visible whenever a filter is active OR list shrinks) -->
+      <div class="filter-count" x-show="['squads','businesses','projects','mind-clones'].includes(kind) && currentList.length > 0">
+        <span x-text="`${filteredList.length} of ${currentList.length} ${kind}`"></span>
+        <button
+          x-show="filteredList.length === 0 || filterQuery || filterSource"
+          @click="filterQuery=''; filterSource=''"
+          class="filter-reset">clear filters</button>
+      </div>
+
+      <!-- Setup mode toolbar — bulk select/clear when active -->
+      <div x-show="setupMode && ['squads','businesses','mind-clones'].includes(kind)" class="setup-toolbar">
+        <button @click="setupSelectAll(kind)" class="setup-mini-btn">Select all</button>
+        <button @click="setupClearAll()" class="setup-mini-btn">Clear</button>
+        <span class="setup-count" x-text="`${setupSelectionCount()} selected`"></span>
+      </div>
+
+      <!-- Mind-clones diagnostic warning (broken symlinks, unmounted volumes) -->
+      <div x-show="setupMode && kind === 'mind-clones' && mindClonesDiagnosticIssues().length > 0"
+           class="setup-diagnostic-warn">
+        <strong><i data-lucide="alert-triangle" class="icon-inline"></i> Mind-clones unavailable</strong>:
+        <span x-text="mindClonesDiagnosticSummary()"></span>
+        <template x-for="iss in mindClonesDiagnosticIssues().slice(0, 3)" :key="iss.path || iss.target">
+          <div style="margin-top:3px; font-family: ui-monospace, monospace; font-size: 10px; opacity: 0.85;">
+            <span x-text="iss.kind"></span> ·
+            <span x-text="iss.path || iss.target || ''"></span>
+          </div>
+        </template>
+      </div>
+
+      <div class="list-pane" x-show="['squads','businesses','projects','mind-clones'].includes(kind)">
+        <template x-for="item in filteredList" :key="item.id || item.slug">
+          <button
+            @click="setupMode ? toggleSetupSelection(kind, item.slug) : select(item)"
+            :class="(setupMode ? (isItemPicked(kind, item.slug) ? 'list-row picked' : 'list-row') : (isSelected(item) ? 'list-row active' : 'list-row'))">
+            <span x-show="setupMode" class="setup-checkbox" :class="isItemPicked(kind, item.slug) ? 'checked' : ''"></span>
+            <span x-show="!setupMode" class="source-dot" :class="`source-${item.source || 'project'}`"></span>
+            <div class="flex-1 min-w-0">
+              <div class="font-medium truncate text-[13px]" x-text="item.slug || item.id"></div>
+              <div class="text-[11px] text-zinc-500 truncate" x-text="itemSubtitle(item)"></div>
+            </div>
+            <span x-show="setupMode && isLocalCopy(kind, item.slug)" class="setup-already-pill" title="Already in this project">local</span>
+            <span x-show="kind === 'squads' && item.capabilities" class="caps-badge" x-text="`${item.capabilities?.length || 0}c`"></span>
+            <span x-show="scoreFor(item)" class="score-badge" :class="`tier-${scoreFor(item)?.tier}`" :title="`${scoreFor(item)?.tier} · ${scoreFor(item)?.score}/100`" x-text="scoreFor(item)?.score"></span>
+          </button>
+        </template>
+        <div x-show="filteredList.length === 0" class="empty-state">
+          <span x-text="`No ${kind} in current scope`"></span>
+          <button x-show="projectFilter === 'project' && canFilterByProject()"
+                  @click="setProjectFilter('all')"
+                  class="btn btn-ghost btn-xs filter-reset"
+                  title="Switch from Project to All">
+            switch to All
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Detail panel (only when kind is a per-asset view) -->
+    <main class="detail-pane" x-show="['squads','businesses','projects','mind-clones'].includes(kind)">
+      <template x-if="!selected">
+        <div class="empty-detail">
+          <div class="empty-glyph">⊚</div>
+          <div class="empty-msg">Select a <span x-text="kindLabel"></span> from the left</div>
+          <div class="empty-stats" x-text="`${squads.length} squads · ${businesses.length} businesses · ${projects.length} projects · ${mindClones.length} mind-clones`"></div>
+        </div>
+      </template>
+
+      <template x-if="selected && kind === 'squads'">
+        <div class="detail-card">
+          <header class="detail-header">
+            <button @click="goBack()" class="back-btn" title="Voltar para a lista (ESC)"><i data-lucide="arrow-left"></i></button>
+            <div class="flex-1">
+              <div class="text-label">Squad</div>
+              <h1 class="detail-title" x-text="detail?.slug || selected.slug"></h1>
+              <div class="detail-meta">
+                <span class="meta-pill" x-text="`v${detail?.meta?.version || '?'}`"></span>
+                <span class="meta-pill" x-text="`protocol ${detail?.meta?.protocol || '?'}`"></span>
+                <span class="meta-pill" :class="`source-${detail?.source}`" x-text="detail?.source || ''"></span>
+                <template x-for="d in detail?.meta?.domains || []"><span class="domain-pill" x-text="d"></span></template>
+              </div>
+            </div>
+            <!-- Per-squad actions (only when --allow-actions) -->
+            <div class="detail-actions" x-cloak x-show="health.allow_actions">
+              <button @click="runAction('activate-dry-run', { slug: detail.slug })" class="action-btn">Activate (dry-run)</button>
+              <button @click="runAction('audit-improve', { slug: detail.slug, dry_run: true })" class="action-btn">Audit (dry-run)</button>
+              <button @click="confirmAction('audit-improve', { slug: detail.slug, dry_run: false }, `Improve ${detail.slug} with backup + auto-rollback?`)" class="action-btn warning">Improve (apply)</button>
+            </div>
+          </header>
+          <nav class="tabs">
+            <template x-for="t in squadTabs"><button @click="tab = t" :class="tab === t ? 'tab active' : 'tab'" x-text="t"></button></template>
+          </nav>
+          <div class="tab-body">
+            <template x-if="tab === 'overview'">
+              <div>
+                <div class="kv"><span>Source</span><span x-text="detail?.source"></span></div>
+                <div class="kv"><span>Path</span><code x-text="detail?.dir"></code></div>
+                <div class="kv"><span>Manifest</span><code x-text="detail?.manifest_path"></code></div>
+                <div class="kv"><span>Hash</span><code class="text-xs truncate" x-text="detail?.meta?.manifest_hash || ''"></code></div>
+                <div class="kv"><span>Capabilities</span><span x-text="(detail?.meta?.capabilities || []).length"></span></div>
+                <div class="kv"><span>Domains</span><span x-text="(detail?.meta?.domains || []).join(', ') || '—'"></span></div>
+                <div class="counts-grid">
+                  <div class="count-card"><div class="count-num" x-text="(detail?.files?.agents || []).length"></div><div class="count-label">agents</div></div>
+                  <div class="count-card"><div class="count-num" x-text="(detail?.files?.tasks || []).length"></div><div class="count-label">tasks</div></div>
+                  <div class="count-card"><div class="count-num" x-text="(detail?.files?.workflows || []).length"></div><div class="count-label">workflows</div></div>
+                  <div class="count-card"><div class="count-num" x-text="(detail?.files?.checklists || []).length"></div><div class="count-label">checklists</div></div>
+                </div>
+                <template x-if="detail?.readme">
+                  <div class="readme-preview" x-html="renderMarkdownLite(detail.readme)"></div>
+                </template>
+              </div>
+            </template>
+            <template x-if="tab === 'manifest'">
+              <pre class="code-block" x-text="detail?.manifest_raw || '(no manifest)'"></pre>
+            </template>
+            <template x-if="tab === 'capabilities'">
+              <div>
+                <table class="cap-table">
+                  <thead><tr><th>capability id</th><th>domain</th><th>noun</th><th>verb</th></tr></thead>
+                  <tbody>
+                    <template x-for="c in (detail?.meta?.capabilities || []).map(parseCapability)"><tr>
+                      <td><code class="text-xs" x-text="c.id"></code></td>
+                      <td><span class="domain-pill" x-text="c.domain"></span></td>
+                      <td x-text="c.noun"></td>
+                      <td x-text="c.verb"></td>
+                    </tr></template>
+                  </tbody>
+                </table>
+                <div x-show="(detail?.meta?.capabilities || []).length === 0" class="empty-state empty-state-compact">No capabilities declared (likely v4 squad).</div>
+              </div>
+            </template>
+            <template x-if="tab === 'state'">
+              <div>
+                <template x-if="detail?.activation_state">
+                  <pre class="code-block" x-text="JSON.stringify(detail.activation_state, null, 2)"></pre>
+                </template>
+                <template x-if="!detail?.activation_state">
+                  <div class="empty-state empty-state-compact">Squad not activated yet.</div>
+                </template>
+              </div>
+            </template>
+            <template x-if="tab === 'files'">
+              <div class="files-grid">
+                <template x-for="(files, kind) in detail?.files || {}"><div class="files-col">
+                  <div class="files-col-title" x-text="kind"></div>
+                  <ul>
+                    <template x-for="f in files"><li x-text="f"></li></template>
+                  </ul>
+                </div></template>
+              </div>
+            </template>
+          </div>
+        </div>
+      </template>
+
+      <template x-if="selected && kind === 'businesses'">
+        <div class="detail-card">
+          <header class="detail-header">
+            <button @click="goBack()" class="back-btn" title="Voltar para a lista (ESC)"><i data-lucide="arrow-left"></i></button>
+            <div>
+              <div class="text-label">Business</div>
+              <h1 class="detail-title" x-text="detail?.slug || selected.slug"></h1>
+              <div class="detail-meta">
+                <span class="meta-pill" x-text="`v${detail?.meta?.version || '?'}`"></span>
+                <span class="meta-pill" :class="`source-${detail?.source}`" x-text="detail?.source || ''"></span>
+                <span class="meta-pill" x-text="`${(detail?.employees || []).length} employees`"></span>
+                <template x-for="d in detail?.meta?.domains || []"><span class="domain-pill" x-text="d"></span></template>
+              </div>
+            </div>
+          </header>
+          <nav class="tabs">
+            <template x-for="t in businessTabs"><button @click="tab = t" :class="tab === t ? 'tab active' : 'tab'" x-text="t"></button></template>
+          </nav>
+          <div class="tab-body">
+            <template x-if="tab === 'overview'">
+              <div>
+                <div class="kv"><span>Path</span><code x-text="detail?.dir"></code></div>
+                <div class="kv"><span>Type</span><span x-text="detail?.meta?.business_type || '—'"></span></div>
+                <div class="kv"><span>Employees</span><span x-text="(detail?.employees || []).length"></span></div>
+                <div class="employee-grid">
+                  <template x-for="e in detail?.employees || []">
+                    <div class="employee-card" x-text="e"></div>
+                  </template>
+                </div>
+              </div>
+            </template>
+            <template x-if="tab === 'manifest'">
+              <pre class="code-block" x-text="detail?.manifest_raw || '(no manifest)'"></pre>
+            </template>
+            <template x-if="tab === 'org-chart'">
+              <div>
+                <div class="toolbar-row">
+                  <div class="toolbar toolbar-sm">
+                    <button @click="orgView='tree'" :class="orgView==='tree' ? 'toolbar-btn active' : 'toolbar-btn'">▾ tree</button>
+                    <button @click="orgView='yaml'" :class="orgView==='yaml' ? 'toolbar-btn active' : 'toolbar-btn'">{} yaml</button>
+                  </div>
+                  <span class="text-caption">drag to pan · scroll to zoom · click to collapse</span>
+                </div>
+                <div x-show="orgView==='tree'" id="org-chart-canvas" class="org-canvas"></div>
+                <pre x-show="orgView==='yaml'" class="code-block" x-text="detail?.org_chart_raw || '(no org-chart.yaml)'"></pre>
+              </div>
+            </template>
+            <template x-if="tab === 'routing'">
+              <pre class="code-block" x-text="detail?.routing_raw || '(no routing.yaml)'"></pre>
+            </template>
+            <template x-if="tab === 'memory'">
+              <div>
+                <template x-if="detail?.memory_preview">
+                  <div class="readme-preview" x-html="renderMarkdownLite(detail.memory_preview)"></div>
+                </template>
+                <template x-if="!detail?.memory_preview">
+                  <div class="empty-state empty-state-compact">No permanent memory yet.</div>
+                </template>
+              </div>
+            </template>
+          </div>
+        </div>
+      </template>
+
+      <template x-if="selected && kind === 'projects'">
+        <div class="detail-card">
+          <header class="detail-header">
+            <button @click="goBack()" class="back-btn" title="Voltar para a lista (ESC)"><i data-lucide="arrow-left"></i></button>
+            <div>
+              <div class="text-label">Maestro project</div>
+              <h1 class="detail-title" x-text="detail?.id || selected.id"></h1>
+              <div class="detail-meta">
+                <span class="meta-pill" x-text="`${(detail?.waves || []).length} waves`"></span>
+                <span class="meta-pill" :class="detail?.dag ? 'meta-ok' : 'meta-pending'" x-text="detail?.dag ? 'has-dag' : 'no-dag'"></span>
+                <span class="meta-pill" :class="detail?.plan ? 'meta-ok' : 'meta-pending'" x-text="detail?.plan ? 'has-plan' : 'no-plan'"></span>
+              </div>
+            </div>
+          </header>
+          <nav class="tabs">
+            <button @click="tab='dag'" :class="tab === 'dag' ? 'tab active' : 'tab'">DAG</button>
+            <button @click="tab='brief'" :class="tab === 'brief' ? 'tab active' : 'tab'">Brief</button>
+            <button @click="tab='plan'" :class="tab === 'plan' ? 'tab active' : 'tab'">Plan</button>
+            <button @click="tab='waves'" :class="tab === 'waves' ? 'tab active' : 'tab'">Waves</button>
+          </nav>
+          <div class="tab-body">
+            <template x-if="tab === 'dag'">
+              <div>
+                <div id="dag-canvas" class="dag-canvas"></div>
+                <div class="text-xs text-zinc-500 mt-2">Auto-refresh every 5s. Pan/zoom with mouse.</div>
+              </div>
+            </template>
+            <template x-if="tab === 'brief'">
+              <div class="readme-preview" x-html="renderMarkdownLite(detail?.brief || '(no brief)')"></div>
+            </template>
+            <template x-if="tab === 'plan'">
+              <pre class="code-block" x-text="detail?.plan ? JSON.stringify(detail.plan, null, 2) : '(no plan)'"></pre>
+            </template>
+            <template x-if="tab === 'waves'">
+              <div>
+                <template x-for="w in detail?.waves || []">
+                  <div class="wave-row" x-text="w"></div>
+                </template>
+              </div>
+            </template>
+          </div>
+        </div>
+      </template>
+
+      <template x-if="selected && kind === 'mind-clones'">
+        <div class="detail-card">
+          <header class="detail-header">
+            <button @click="goBack()" class="back-btn" title="Voltar para a lista (ESC)"><i data-lucide="arrow-left"></i></button>
+            <div>
+              <div class="text-label">Mind-clone</div>
+              <h1 class="detail-title" x-text="selected.slug"></h1>
+              <div class="detail-meta">
+                <span class="meta-pill" :class="`source-${selected.source}`" x-text="selected.source"></span>
+                <span class="meta-pill" x-show="selected.category" x-text="selected.category"></span>
+                <span class="meta-pill" x-show="mindCloneDetail?.format === 'canonical'" x-text="'canonical'"></span>
+                <span class="meta-pill" x-show="mindCloneDetail?.file_count" x-text="`${mindCloneDetail?.file_count} files`"></span>
+                <span class="meta-pill" x-show="mindCloneDetail?.total_bytes" x-text="formatBytes(mindCloneDetail?.total_bytes || 0)"></span>
+              </div>
+            </div>
+          </header>
+
+          <div class="mind-clone-body" x-show="mindCloneDetail">
+            <!-- Sidebar: file tree grouped by category -->
+            <aside class="mind-clone-files">
+              <template x-for="group in mindCloneFileGroups()" :key="group.label">
+                <div class="mind-clone-file-group">
+                  <div class="text-label mind-clone-file-group-label" x-text="group.label"></div>
+                  <template x-for="f in group.files" :key="f.path">
+                    <button @click="selectMindCloneFile(f.path)"
+                            :class="mindCloneActiveFile === f.path ? 'mind-clone-file active' : 'mind-clone-file'">
+                      <i :data-lucide="f.language === 'yaml' ? 'file-code' : f.language === 'json' ? 'braces' : 'file-text'"
+                         class="mind-clone-file-icon"></i>
+                      <span class="mind-clone-file-name text-truncate" x-text="f.path.split('/').pop()"></span>
+                      <span class="text-caption mind-clone-file-bytes" x-text="formatBytes(f.bytes)"></span>
+                    </button>
+                  </template>
+                </div>
+              </template>
+            </aside>
+
+            <!-- Main: active file content -->
+            <section class="mind-clone-viewer">
+              <header class="mind-clone-viewer-head" x-show="mindCloneActiveFile">
+                <div class="mind-clone-viewer-path">
+                  <span class="text-mono-sm" x-text="mindCloneActiveFile"></span>
+                  <span class="badge badge-warn badge-xs" x-show="mindCloneActiveFileObj()?.truncated">truncated · preview</span>
+                </div>
+                <button @click="copyMindCloneFile()" class="btn btn-ghost btn-sm" title="Copy file content">
+                  <i data-lucide="copy"></i><span>Copy</span>
+                </button>
+              </header>
+              <pre class="code-block mind-clone-content" x-text="mindCloneActiveFileObj()?.content || '(empty)'"></pre>
+            </section>
+          </div>
+
+          <div class="tab-body" x-show="!mindCloneDetail">
+            <div class="empty-state empty-state-compact">(loading mind-clone…)</div>
+          </div>
+        </div>
+      </template>
+    </main>
+
+    <!-- ─── Agents pane (live agents working — SSE-driven swimlanes + workspace) ─── -->
+    <main class="detail-pane agents-pane" x-show="kind === 'agents'"
+          x-init="$watch('kind', (k) => { if (k === 'agents' && !agentsES) startAgentsStream(); }); if (kind === 'agents' && !agentsES) startAgentsStream();"
+          :class="agentsFullscreen ? 'agents-pane-fullscreen' : ''">
+      <header class="memory-header">
+        <h2 class="memory-title">Agents · live</h2>
+        <div class="memory-stats" x-show="visibleAgentsSummary">
+          <span class="memory-stat"><b x-text="visibleAgentsSummary?.total || 0"></b> total</span>
+          <span class="memory-stat" x-show="visibleAgentsSummary?.tool_in_flight"><b class="stat-token-warn"    x-text="visibleAgentsSummary?.tool_in_flight || 0"></b> in tool</span>
+          <span class="memory-stat" x-show="visibleAgentsSummary?.running"><b class="stat-token-success"        x-text="visibleAgentsSummary?.running || 0"></b> running</span>
+          <span class="memory-stat" x-show="visibleAgentsSummary?.idle"><b class="stat-token-neutral"           x-text="visibleAgentsSummary?.idle || 0"></b> idle</span>
+          <span class="memory-stat" x-show="visibleAgentsSummary?.waiting"><b class="stat-token-info"           x-text="visibleAgentsSummary?.waiting || 0"></b> waiting</span>
+          <span class="memory-stat" x-show="visibleAgentsSummary?.stale"><b class="stat-token-warn"             x-text="visibleAgentsSummary?.stale || 0"></b> stale</span>
+          <span class="memory-stat" x-show="visibleAgentsSummary?.completed"><b class="stat-token-success"      x-text="visibleAgentsSummary?.completed || 0"></b> done</span>
+          <span class="memory-stat" x-show="visibleAgentsSummary?.failed"><b class="stat-token-danger"          x-text="visibleAgentsSummary?.failed || 0"></b> failed</span>
+          <span class="memory-stat memory-stat-warn"
+                x-show="suspiciousDispatchCount() > 0"
+                @click="toggleSuspiciousDispatchFilter()"
+                :class="suspiciousFilterOn ? 'memory-stat-active' : ''"
+                :title="suspiciousFilterOn ? 'Click to clear filter' : 'Click to show only suspicious dispatches'"
+                style="cursor: pointer">
+            <b class="stat-token-danger" x-text="suspiciousDispatchCount()"></b> ⚠ suspicious dispatch
+          </span>
+        </div>
+        <div class="toolbar toolbar-sm">
+          <button @click="agentsViewMode = 'swimlane'" :class="agentsViewMode === 'swimlane' ? 'toolbar-btn active' : 'toolbar-btn'">
+            <i data-lucide="bar-chart-3"></i><span>Swimlane</span>
+          </button>
+          <button @click="agentsViewMode = 'workspace'" :class="agentsViewMode === 'workspace' ? 'toolbar-btn active' : 'toolbar-btn'">
+            <i data-lucide="layout-grid"></i><span>Workspace</span>
+          </button>
+        </div>
+        <button class="icon-btn" @click="toggleAgentsFullscreen()" :title="agentsFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen'">
+          <i :data-lucide="agentsFullscreen ? 'minimize-2' : 'maximize-2'"></i>
+        </button>
+      </header>
+
+      <!-- Swimlane view: per-agent card grid -->
+      <div class="agents-grid" x-show="agentsViewMode === 'swimlane'">
+        <template x-if="agents.length === 0">
+          <div class="runs-empty">
+            <i data-lucide="users" class="runs-empty-icon"></i>
+            <p>No active agents.</p>
+            <p class="runs-empty-hint">Cards appear here in real time when Claude Code, Gemini-CLI, or Codex emit audit events. Make sure the auto-emit hooks are wired in <code>~/.claude/settings.json</code> and <code>~/.gemini/settings.json</code>.</p>
+          </div>
+        </template>
+        <template x-for="agent in visibleAgents" :key="agent.trace_id">
+          <button class="card card-interactive agent-card"
+                  :class="`card-status-${agentStatusVariant(agent.status)}`"
+                  @click="selectAgent(agent)">
+            <div class="card-head">
+              <div class="card-head-left agent-card-headline">
+                <div class="agent-avatar" :class="`avatar-${agentStatusVariant(agent.status)}`">
+                  <i :data-lucide="agentHostIcon(agent.host)"></i>
+                </div>
+                <div class="agent-headline-text">
+                  <div class="card-title text-truncate">
+                    <span x-text="agent.label"></span>
+                    <span class="badge badge-neutral badge-xs" x-show="agent.is_backfill" title="From transcript backfill — not realtime hook">backfill</span>
+                  </div>
+                  <div class="card-subtitle text-truncate" x-text="agent.brief_excerpt || agent.fallback_summary"></div>
+                </div>
+              </div>
+              <div class="agent-status-block">
+                <span class="badge" :class="`badge-${agentStatusVariant(agent.status)}`">
+                  <span class="dot dot-xs" :class="agent.status === 'tool_in_flight' ? 'dot-pulse' : ''"></span>
+                  <span x-text="agentStatusLabel(agent.status)"></span>
+                </span>
+                <span class="text-caption agent-status-since"
+                      x-show="agent.status === 'waiting' || agent.status === 'stale' || agent.status === 'tool_in_flight'"
+                      x-text="formatAgentDuration(agent.status_since_ms)"></span>
+                <!-- Mind-clone injection chip -->
+                <span class="badge badge-xs"
+                      x-show="agent.declared_mind_clones && agent.declared_mind_clones.length"
+                      :class="agent.is_suspicious_dispatch ? 'badge-danger' : 'badge-success'"
+                      :title="mindCloneChipTitle(agent)"
+                      @click.stop="selectAgent(agent)">
+                  🧬 <span x-text="mindCloneChipText(agent)"></span>
+                </span>
+              </div>
+            </div>
+
+            <svg class="agent-swimlane" :data-agent-swimlane="agent.trace_id" height="36"
+                 x-init="$nextTick(() => { try { window.renderAgentSwimlane && window.renderAgentSwimlane($el, agent.recent_events || []); } catch {} })"></svg>
+
+            <div class="card-meta agent-metrics">
+              <span class="metric-row" x-show="agent.current_tool">
+                <i data-lucide="wrench"></i>
+                <span x-text="agent.current_tool"></span>
+              </span>
+              <span class="metric-row">
+                <i data-lucide="coins"></i>
+                <span x-text="formatTokens((agent.tokens_session?.input || 0) + (agent.tokens_session?.output || 0))"></span>
+                <span class="metric-row-unit">tok</span>
+              </span>
+              <span class="metric-row">
+                <i data-lucide="dollar-sign"></i>
+                <span x-text="formatUSD(agent.cost_session_usd || 0)"></span>
+              </span>
+              <span class="metric-row" x-show="agent.files_touched_count">
+                <i data-lucide="file-edit"></i>
+                <span x-text="agent.files_touched_count"></span>
+                <span class="metric-row-unit">files</span>
+              </span>
+              <span class="metric-row" x-show="agent.artifacts_created">
+                <i data-lucide="package-check"></i>
+                <span x-text="agent.artifacts_created"></span>
+                <span class="metric-row-unit">art</span>
+              </span>
+              <span class="badge badge-neutral badge-mono badge-xs" x-text="`#${agent.trace_id.slice(0, 8)}`"></span>
+            </div>
+          </button>
+        </template>
+      </div>
+
+      <!-- Workspace view: PixiJS animated canvas (Phase 3) -->
+      <div class="agents-workspace" x-show="agentsViewMode === 'workspace'">
+        <canvas id="agent-workspace-canvas"
+                x-init="$nextTick(() => { if (window.AgentWorkspace && !window.__agentWorkspace) { window.__agentWorkspace = new window.AgentWorkspace($el); window.__agentWorkspace.syncAgents(agents); } })"></canvas>
+        <div class="agents-workspace-empty" x-show="!window.AgentWorkspace">
+          <i data-lucide="zap-off" class="runs-empty-icon"></i>
+          <p>Workspace renderer not loaded.</p>
+          <p class="runs-empty-hint">PixiJS animator is part of Phase 3 — see <code>agent-workspace-renderer.js</code>.</p>
+        </div>
+      </div>
+
+      <!-- Detail modal (selected agent) — built on .modal organism -->
+      <div class="modal" x-show="selectedAgent" x-cloak @click.self="closeAgentDetail()" @keydown.escape.window="closeAgentDetail()">
+        <div class="modal-card modal-lg" x-show="selectedAgent" x-transition>
+          <template x-if="selectedAgent">
+            <div>
+              <header class="modal-head">
+                <div class="modal-head-title">
+                  <span class="badge" :class="`badge-${agentStatusVariant(selectedAgent.status)}`">
+                    <span class="dot dot-xs" :class="selectedAgent.status === 'tool_in_flight' ? 'dot-pulse' : ''"></span>
+                    <span x-text="agentStatusLabel(selectedAgent.status)"></span>
+                  </span>
+                  <span class="text-headline" x-text="selectedAgent.label"></span>
+                </div>
+                <div class="modal-head-meta">
+                  <span class="badge badge-neutral badge-mono badge-sm" x-text="`#${selectedAgent.trace_id.slice(0, 12)}`"></span>
+                  <button @click="closeAgentDetail()" class="icon-btn" title="Close (Esc)"><i data-lucide="x"></i></button>
+                </div>
+              </header>
+              <div class="modal-body">
+                <section class="modal-section" x-show="selectedAgent.brief_excerpt || selectedAgent.fallback_summary">
+                  <div class="text-label">Brief</div>
+                  <p class="text-body" x-text="selectedAgent.brief_excerpt || selectedAgent.fallback_summary"></p>
+                </section>
+
+                <section class="modal-section">
+                  <div class="text-label">Session</div>
+                  <dl class="kv-grid">
+                    <template x-if="selectedAgent.host"><dt>host</dt></template>
+                    <template x-if="selectedAgent.host"><dd x-text="selectedAgent.host"></dd></template>
+                    <template x-if="selectedAgent.cwd"><dt>cwd</dt></template>
+                    <template x-if="selectedAgent.cwd"><dd class="text-mono-sm" x-text="selectedAgent.cwd"></dd></template>
+                    <template x-if="selectedAgent.current_tool"><dt>tool</dt></template>
+                    <template x-if="selectedAgent.current_tool"><dd x-text="selectedAgent.current_tool"></dd></template>
+                    <dt>started</dt>
+                    <dd x-text="new Date(selectedAgent.started_at).toLocaleString()"></dd>
+                    <dt>events</dt>
+                    <dd x-text="selectedAgent.events_count"></dd>
+                    <dt>tokens</dt>
+                    <dd x-text="formatTokens((selectedAgent.tokens_session?.input || 0) + (selectedAgent.tokens_session?.output || 0))"></dd>
+                    <dt>cost</dt>
+                    <dd x-text="formatUSD(selectedAgent.cost_session_usd || 0)"></dd>
+                  </dl>
+                </section>
+
+                <!-- Mind-clone injection audit (Phase D) -->
+                <section class="modal-section" x-show="selectedAgent.declared_mind_clones?.length">
+                  <div class="modal-section-head">
+                    <div class="text-label">Mind-clone DNA</div>
+                    <span class="badge badge-xs"
+                          :class="selectedAgent.is_suspicious_dispatch ? 'badge-danger' : 'badge-success'"
+                          x-text="`${selectedAgent.injected_mind_clones?.length || 0}/${selectedAgent.declared_mind_clones?.length || 0} injected`"></span>
+                  </div>
+                  <div x-show="selectedAgent.is_suspicious_dispatch" class="run-suspicious-banner">
+                    <div class="run-suspicious-banner-head">
+                      <span class="badge badge-danger">⚠ dispatch issue</span>
+                      <strong>This trace's DNA injection is incomplete.</strong>
+                    </div>
+                    <p class="text-caption" x-show="selectedAgent.missing_mind_clones?.length">
+                      Declared but never emitted <code class="text-mono-sm">mind_clone_injected</code>:
+                      <strong x-text="(selectedAgent.missing_mind_clones || []).join(', ')"></strong>.
+                      The agent likely produced output without the canonical voice.
+                    </p>
+                    <p class="text-caption" x-show="selectedAgent.dispatch_audit?.verdict && selectedAgent.dispatch_audit.verdict !== 'pass'">
+                      Dispatch auditor verdict:
+                      <strong x-text="selectedAgent.dispatch_audit?.verdict"></strong>
+                      (<span x-text="selectedAgent.dispatch_audit?.findings_count || 0"></span> finding<span x-show="selectedAgent.dispatch_audit?.findings_count !== 1">s</span>)
+                    </p>
+                  </div>
+                  <ul class="mind-clone-injection-list">
+                    <template x-for="mc in (selectedAgent.injected_mind_clones || [])" :key="mc.slug">
+                      <li class="mind-clone-injection">
+                        <div class="mind-clone-injection-head">
+                          <span class="badge badge-success badge-xs">🧬 <span x-text="mc.slug"></span></span>
+                          <span class="text-caption" x-text="formatBytes(mc.bytes)"></span>
+                        </div>
+                        <code class="text-mono-sm mind-clone-injection-path" x-text="mc.path || '(unknown path)'"></code>
+                        <code class="text-caption mind-clone-injection-sha" x-show="mc.sha256" x-text="`sha256:${mc.sha256}`"></code>
+                      </li>
+                    </template>
+                    <template x-for="slug in (selectedAgent.missing_mind_clones || [])" :key="slug">
+                      <li class="mind-clone-injection mind-clone-injection-missing">
+                        <div class="mind-clone-injection-head">
+                          <span class="badge badge-danger badge-xs">⚠ <span x-text="slug"></span></span>
+                          <span class="text-caption">declared but not injected</span>
+                        </div>
+                      </li>
+                    </template>
+                  </ul>
+                </section>
+
+                <section class="modal-section">
+                  <div class="text-label">Recent events · <span x-text="(selectedAgent.recent_events || []).length"></span></div>
+                  <ol class="timeline">
+                    <template x-for="(ev, i) in (selectedAgent.recent_events || []).slice().reverse()" :key="i">
+                      <li class="timeline-event">
+                        <span class="dot dot-sm timeline-event-dot" :style="`--dot-color: ${agentStatusColor('running')}`"></span>
+                        <div class="timeline-event-body">
+                          <div class="timeline-event-head">
+                            <span class="timeline-event-name" x-text="ev.event"></span>
+                            <span class="timeline-event-time" x-text="ev.ts ? ev.ts.slice(11, 19) : ''"></span>
+                          </div>
+                          <div class="timeline-event-detail" x-show="ev.meta?.action || ev.meta?.file" x-text="`${ev.meta?.action || ''} ${ev.meta?.file || ''}`"></div>
+                          <div class="timeline-event-detail" x-show="ev.meta?.command" x-text="ev.meta.command"></div>
+                          <div class="timeline-event-detail" x-show="ev.meta?.tokens" x-text="`${ev.meta.tokens} tokens · ${ev.meta.model || ''}`"></div>
+                        </div>
+                      </li>
+                    </template>
+                  </ol>
+                </section>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </main>
+
+    <!-- ─── Runs pane (audit-derived runs grouped by trace_id — paperclip-style command center) ─── -->
+    <main class="detail-pane runs-pane" x-show="kind === 'runs'" x-init="fetchRuns(); startRunsAutoRefresh()">
+      <header class="memory-header">
+        <h2 class="memory-title">Runs · live</h2>
+        <div class="memory-stats">
+          <span class="memory-stat"><b x-text="visibleRuns.length"></b> total</span>
+          <span class="memory-stat"><b x-text="(visibleRuns.filter(r => r.status === 'running').length)"></b> running</span>
+          <span class="memory-stat"><b x-text="(visibleRuns.filter(r => r.status === 'delivered').length)"></b> delivered</span>
+          <span class="memory-stat"><b x-text="(visibleRuns.filter(r => r.status === 'gate_failed' || r.status === 'no_match').length)"></b> issues</span>
+          <span class="memory-stat memory-stat-warn" x-show="visibleRuns.filter(r => r.suspicious).length"><b x-text="(visibleRuns.filter(r => r.suspicious).length)"></b> ⚠ suspicious</span>
+        </div>
+        <button @click="fetchRuns()" class="icon-btn" title="Refresh"><i data-lucide="rotate-cw"></i></button>
+      </header>
+      <div class="runs-grid">
+        <!-- LEFT: list of runs -->
+        <aside class="runs-list" :class="selectedRun ? 'has-selection' : ''">
+          <template x-if="runs.length === 0">
+            <div class="runs-empty">
+              <i data-lucide="inbox" class="runs-empty-icon"></i>
+              <p>No runs in the last 7 days.</p>
+              <p class="runs-empty-hint">Runs appear here automatically as agents emit audit events. If you're sure something ran but nothing shows, check that the auto-emit hook is enabled in <code>~/.claude/settings.json</code> (PreToolUse / PostToolUse).</p>
+            </div>
+          </template>
+          <template x-for="run in visibleRuns" :key="run.trace_id">
+            <button class="card card-interactive"
+                    :class="[
+                      selectedRun?.trace_id === run.trace_id ? 'card-active' : '',
+                      run.suspicious ? 'card-status-warn' : '',
+                      `card-status-${runStatusVariant(run.status)}`
+                    ]"
+                    @click="selectRun(run)">
+              <div class="card-head">
+                <div class="card-head-left">
+                  <span class="badge" :class="`badge-${runStatusVariant(run.status)}`" x-text="run.status"></span>
+                  <span class="badge badge-warn badge-sm" x-show="run.suspicious" :title="`Suspicion score ${run.suspicion_score} — ${run.suspicion_evidence.join('; ')}`">⚠ suspicious</span>
+                </div>
+                <span class="text-caption" x-text="runRelTime(run.last_event_at)"></span>
+              </div>
+              <div class="card-title text-truncate" x-text="run.brief || '(no brief captured)'"></div>
+              <div class="card-meta">
+                <span class="badge badge-neutral badge-sm" x-show="run.business_slug" x-text="`biz: ${run.business_slug}`"></span>
+                <span class="badge badge-neutral badge-sm" x-show="run.squad_name" x-text="`squad: ${run.squad_name}`"></span>
+                <span class="badge badge-neutral badge-sm" x-show="run.project_id" x-text="`proj: ${run.project_id}`"></span>
+                <span class="badge badge-neutral badge-mono badge-sm" x-text="`#${run.trace_id.slice(0, 8)}`"></span>
+                <span class="badge badge-neutral badge-sm" x-text="`${run.event_count} events`"></span>
+                <span class="badge badge-neutral badge-sm" x-show="run.artifact_paths.length" x-text="`${run.artifact_paths.length} artifact${run.artifact_paths.length === 1 ? '' : 's'}`"></span>
+                <span class="badge badge-neutral badge-sm" x-show="run.hosts && run.hosts.length" x-text="run.hosts.join(' · ')"></span>
+              </div>
+            </button>
+          </template>
+        </aside>
+        <!-- RIGHT: selected run detail (timeline + artifacts) -->
+        <section class="run-detail" x-show="selectedRun" x-cloak>
+          <template x-if="selectedRun">
+            <div>
+              <header class="run-detail-head">
+                <div class="run-detail-head-top">
+                  <div class="run-detail-head-left">
+                    <span class="badge" :class="`badge-${runStatusVariant(selectedRun.status)}`" x-text="selectedRun.status"></span>
+                    <span class="badge badge-neutral badge-mono badge-sm" x-text="`#${selectedRun.trace_id.slice(0, 12)}`"></span>
+                  </div>
+                  <button @click="selectedRun = null" class="icon-btn" title="Close detail"><i data-lucide="x"></i></button>
+                </div>
+                <h3 class="text-headline run-detail-brief" x-text="selectedRun.brief || '(no brief captured)'"></h3>
+                <dl class="kv-grid">
+                  <template x-if="selectedRun.business_slug"><dt>business</dt></template>
+                  <template x-if="selectedRun.business_slug"><dd x-text="selectedRun.business_slug"></dd></template>
+                  <template x-if="selectedRun.squad_name"><dt>squad</dt></template>
+                  <template x-if="selectedRun.squad_name"><dd x-text="selectedRun.squad_name"></dd></template>
+                  <template x-if="selectedRun.project_id"><dt>project</dt></template>
+                  <template x-if="selectedRun.project_id"><dd class="text-mono-sm" x-text="selectedRun.project_id"></dd></template>
+                  <template x-if="selectedRun.cwd"><dt>cwd</dt></template>
+                  <template x-if="selectedRun.cwd"><dd class="text-mono-sm" x-text="selectedRun.cwd"></dd></template>
+                  <dt>started</dt>
+                  <dd x-text="new Date(selectedRun.started_at).toLocaleString()"></dd>
+                  <dt>last</dt>
+                  <dd x-text="runRelTime(selectedRun.last_event_at)"></dd>
+                </dl>
+              </header>
+              <div class="run-detail-body">
+                <section class="run-suspicious-banner" x-show="selectedRun.suspicious" x-cloak>
+                  <div class="run-suspicious-banner-head">
+                    <span class="badge badge-warn">⚠ suspicious</span>
+                    <strong>This run looks fabricated</strong>
+                    <span class="text-caption">score <span x-text="selectedRun.suspicion_score"></span></span>
+                  </div>
+                  <ul class="run-suspicious-evidence">
+                    <template x-for="ev in (selectedRun.suspicion_evidence || [])" :key="ev">
+                      <li x-text="ev"></li>
+                    </template>
+                  </ul>
+                  <p class="text-caption">
+                    The fabrication detector found patterns suggesting events were written without going through
+                    a real hook (events outside the canonical enum, artificial timestamps, or no host attribution).
+                    Don't trust the artifacts from this run without manual verification.
+                  </p>
+                </section>
+                <section>
+                  <div class="text-label">Timeline · <span x-text="selectedRun.events.length"></span> events</div>
+                  <ol class="timeline">
+                    <template x-for="(ev, i) in selectedRun.events" :key="i">
+                      <li class="timeline-event">
+                        <span class="dot dot-sm timeline-event-dot" :style="`--dot-color: ${runEventColor(ev.event)}`"></span>
+                        <div class="timeline-event-body">
+                          <div class="timeline-event-head">
+                            <span class="timeline-event-name" x-text="ev.event"></span>
+                            <span class="timeline-event-time" x-text="ev.ts ? ev.ts.slice(11, 19) : ''"></span>
+                          </div>
+                          <div class="timeline-event-detail" x-show="ev.event === 'brief_received' && ev.brief" x-text="ev.brief"></div>
+                          <div class="timeline-event-detail" x-show="ev.event === 'tool_invoked'" x-text="`${ev.action || ''} ${ev.file_path || ev.command || ''}`"></div>
+                          <div class="timeline-event-detail" x-show="ev.event === 'artifact_touched' || ev.event === 'delivered'" x-text="ev.artifact_path || ev.file_path"></div>
+                          <div class="timeline-event-detail" x-show="ev.event === 'cost_emission' && ev.usage" x-text="`tokens in=${ev.usage?.input_tokens || 0} out=${ev.usage?.output_tokens || 0} usd=${(ev.total_cost_usd || 0).toFixed(4)}`"></div>
+                          <div class="timeline-event-detail" x-show="ev.event === 'gate_failed' || ev.event === 'gate_passed'" x-text="`${ev.rubric || ''} ${ev.score != null ? 'score=' + ev.score : ''}`"></div>
+                          <div class="timeline-event-detail" x-show="ev.event === 'routing_decision'" x-text="`signal=${ev.signal || '?'} target=${ev.target || ev.target_id || '?'}`"></div>
+                        </div>
+                      </li>
+                    </template>
+                  </ol>
+                </section>
+                <template x-if="selectedRun.artifact_paths.length">
+                  <section>
+                    <div class="text-label">Artifacts · <span x-text="selectedRun.artifact_paths.length"></span></div>
+                    <ul class="run-artifacts">
+                      <template x-for="p in selectedRun.artifact_paths" :key="p">
+                        <li class="run-artifact text-mono-sm" x-text="p"></li>
+                      </template>
+                    </ul>
+                  </section>
+                </template>
+              </div>
+            </div>
+          </template>
+        </section>
+        <section class="run-detail run-detail-empty" x-show="!selectedRun" x-cloak>
+          <div class="empty-state">
+            <i data-lucide="mouse-pointer-click" class="empty-state-icon"></i>
+            <p>Click a run to see its full timeline.</p>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- ─── Memory pane (decisions + gates + audit) ─── -->
+    <main class="detail-pane memory-pane" x-show="kind === 'memory'">
+      <header class="memory-header">
+        <h2 class="memory-title">Memory · state.db</h2>
+        <div class="memory-stats" x-show="memoryStats?.available">
+          <span class="memory-stat"><b x-text="memoryStats?.decisions || 0"></b> decisions</span>
+          <span class="memory-stat"><b x-text="memoryStats?.gates || 0"></b> gates</span>
+          <span class="memory-stat"><b x-text="memoryStats?.events || 0"></b> events</span>
+          <span class="memory-stat memory-stat-muted" x-text="memoryStats?.db_path"></span>
+        </div>
+        <div class="memory-stats memory-stats-empty" x-show="memoryStats && !memoryStats.available">
+          <span>state.db not available — run a script that writes to it (decision-log, audit.emit, etc) first</span>
+        </div>
+      </header>
+      <nav class="tabs memory-tabs">
+        <button @click="memorySubTab = 'decisions'" :class="memorySubTab === 'decisions' ? 'tab active' : 'tab'">
+          <span>Decisions</span>
+          <span class="badge badge-neutral badge-xs" x-text="decisions.length"></span>
+        </button>
+        <button @click="memorySubTab = 'gates'" :class="memorySubTab === 'gates' ? 'tab active' : 'tab'">
+          <span>Gates</span>
+          <span class="badge badge-neutral badge-xs" x-text="gates.length"></span>
+        </button>
+        <button @click="memorySubTab = 'audit'" :class="memorySubTab === 'audit' ? 'tab active' : 'tab'">
+          <span>Audit</span>
+          <span class="badge badge-neutral badge-xs" x-text="auditEvents.length"></span>
+        </button>
+        <div class="flex-1"></div>
+        <input type="text" x-model="memoryFilters.project_id" placeholder="filter by project_id…" class="input input-sm memory-project-filter">
+        <button @click="refreshMemory()" class="icon-btn" title="Refresh"><i data-lucide="rotate-cw"></i></button>
+      </nav>
+
+      <!-- Decisions sub-tab -->
+      <section class="memory-body" x-show="memorySubTab === 'decisions'">
+        <div class="memory-actions" x-cloak x-show="health.allow_actions">
+          <button @click="memoryAddOpen = !memoryAddOpen" class="btn-primary">+ Add decision</button>
+        </div>
+        <div class="memory-add-modal" x-cloak x-show="memoryAddOpen" x-transition>
+          <div class="memory-add-grid">
+            <input type="text" x-model="memoryAddDraft.decision_id" placeholder="decision_id (e.g. D-42)" class="memory-input">
+            <input type="text" x-model="memoryAddDraft.source" placeholder="source (e.g. user, auditor)" class="memory-input">
+            <textarea x-model="memoryAddDraft.text" placeholder="decision text" class="memory-textarea" rows="2"></textarea>
+            <textarea x-model="memoryAddDraft.rationale" placeholder="rationale (optional)" class="memory-textarea" rows="2"></textarea>
+          </div>
+          <div class="memory-add-buttons">
+            <button @click="addDecision()" class="btn-primary">Save</button>
+            <button @click="memoryAddOpen = false" class="btn-secondary">Cancel</button>
+          </div>
+        </div>
+        <div class="memory-list">
+          <template x-for="d in decisions" :key="d.id">
+            <article class="card card-interactive" :class="{ 'card-expanded': memoryExpanded[`d:${d.id}`] }">
+              <header class="card-head" @click="toggleMemoryRow(`d:${d.id}`)">
+                <div class="card-head-left">
+                  <span class="badge badge-info badge-mono badge-sm" x-text="d.decision_id"></span>
+                  <span class="card-title text-truncate" x-text="d.text"></span>
+                </div>
+                <div class="card-head-right">
+                  <span x-show="d.source" class="badge badge-neutral badge-xs" x-text="d.source"></span>
+                  <span class="text-caption" x-text="d.recorded_at"></span>
+                </div>
+              </header>
+              <div class="card-body" x-show="memoryExpanded[`d:${d.id}`]" x-transition>
+                <dl class="kv-grid">
+                  <dt>project</dt><dd x-text="d.project_id || '—'"></dd>
+                  <template x-if="d.rationale"><dt>why</dt></template>
+                  <template x-if="d.rationale"><dd x-text="d.rationale"></dd></template>
+                  <template x-if="d.superseded_by"><dt>superseded_by</dt></template>
+                  <template x-if="d.superseded_by"><dd class="text-mono-sm" x-text="d.superseded_by"></dd></template>
+                </dl>
+              </div>
+            </article>
+          </template>
+          <div x-show="decisions.length === 0" class="empty-state">no decisions recorded</div>
+        </div>
+      </section>
+
+      <!-- Gates sub-tab -->
+      <section class="memory-body" x-show="memorySubTab === 'gates'">
+        <div class="memory-list">
+          <template x-for="g in gates" :key="g.id">
+            <article class="card card-interactive"
+                     :class="`card-status-${gateVariant(g.verdict)}`"
+                     @click="toggleMemoryRow(`g:${g.id}`)">
+              <header class="card-head">
+                <div class="card-head-left">
+                  <span class="badge" :class="`badge-${gateVariant(g.verdict)}`" x-text="g.verdict"></span>
+                  <span class="badge badge-neutral badge-sm" x-text="g.phase"></span>
+                  <span class="card-title text-truncate" x-text="g.task_id || '(no task)'"></span>
+                </div>
+                <div class="card-head-right">
+                  <span class="badge badge-neutral badge-mono badge-sm" x-show="g.score != null" x-text="`${g.score}/100`"></span>
+                  <span class="text-caption" x-text="g.ran_at"></span>
+                </div>
+              </header>
+              <div class="card-body" x-show="memoryExpanded[`g:${g.id}`]" x-transition>
+                <dl class="kv-grid">
+                  <dt>project</dt><dd class="text-mono-sm" x-text="g.project_id || '—'"></dd>
+                  <template x-if="g.host"><dt>host</dt></template>
+                  <template x-if="g.host"><dd x-text="g.host"></dd></template>
+                  <template x-if="g.failed_checks?.length"><dt>failed</dt></template>
+                  <template x-if="g.failed_checks?.length">
+                    <dd>
+                      <ul class="kv-list">
+                        <template x-for="f in (g.failed_checks || [])"><li x-text="typeof f === 'string' ? f : JSON.stringify(f)"></li></template>
+                      </ul>
+                    </dd>
+                  </template>
+                  <template x-if="g.deterministic_findings"><dt>deterministic</dt></template>
+                  <template x-if="g.deterministic_findings"><dd><pre class="code-block" x-text="JSON.stringify(g.deterministic_findings, null, 2)"></pre></dd></template>
+                </dl>
+              </div>
+            </article>
+          </template>
+          <div x-show="gates.length === 0" class="empty-state">no quality gates recorded</div>
+        </div>
+      </section>
+
+      <!-- Audit sub-tab -->
+      <section class="memory-body" x-show="memorySubTab === 'audit'">
+        <div class="memory-filter-row">
+          <input type="text" x-model="memoryFilters.event" @input.debounce.500ms="fetchAuditEvents()" placeholder="filter event type…" class="filter-input">
+        </div>
+        <div class="memory-list">
+          <template x-for="e in auditEvents" :key="e.id">
+            <article class="card card-interactive" :class="{ 'card-expanded': memoryExpanded[`a:${e.id}`] }">
+              <header class="card-head" @click="toggleMemoryRow(`a:${e.id}`)">
+                <div class="card-head-left">
+                  <span class="audit-event-icon" x-text="activityIcon(e.event)"></span>
+                  <span class="badge badge-info badge-mono badge-sm" x-text="e.event"></span>
+                  <span class="card-title text-truncate text-mono-sm" x-text="e.project_id || e.trace_id || ''"></span>
+                </div>
+                <span class="text-caption" x-text="e.ts"></span>
+              </header>
+              <div class="card-body" x-show="memoryExpanded[`a:${e.id}`]" x-transition>
+                <pre class="code-block" x-text="JSON.stringify(e.payload, null, 2)"></pre>
+              </div>
+            </article>
+          </template>
+          <div x-show="auditEvents.length === 0" class="empty-state">no audit events</div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ─── Graph pane (knowledge graph) ─── -->
+    <main class="detail-pane graph-pane" x-show="kind === 'graph'" :class="graphFullscreen ? 'graph-pane-fullscreen' : ''">
+      <header class="graph-header">
+        <h2 class="memory-title">Knowledge Graph</h2>
+        <div class="graph-stats" x-show="graph">
+          <span class="memory-stat"><b x-text="graph?.nodes?.length || 0"></b> nodes</span>
+          <span class="memory-stat"><b x-text="graph?.edges?.length || 0"></b> edges</span>
+          <template x-for="(count, type) in (graph?.totals?.by_type || {})">
+            <span class="memory-stat memory-stat-typed" :data-graph-type="type">
+              <span class="graph-type-dot" :style="`background: ${graphTypeColor(type)}`"></span>
+              <b x-text="count"></b>&nbsp;<span x-text="type"></span>
+            </span>
+          </template>
+        </div>
+        <div class="toolbar toolbar-sm graph-filter-chips">
+          <button @click="setGraphFilter('all')"           :class="graphFilter==='all' ? 'toolbar-btn active' : 'toolbar-btn'">All</button>
+          <button @click="setGraphFilter('capabilities')"  :class="graphFilter==='capabilities' ? 'toolbar-btn active' : 'toolbar-btn'">Capability</button>
+          <button @click="setGraphFilter('created')"       :class="graphFilter==='created' ? 'toolbar-btn active' : 'toolbar-btn'">Created</button>
+          <button @click="setGraphFilter('squads')"        :class="graphFilter==='squads' ? 'toolbar-btn active' : 'toolbar-btn'">Squads</button>
+          <button @click="setGraphFilter('businesses')"    :class="graphFilter==='businesses' ? 'toolbar-btn active' : 'toolbar-btn'">Businesses</button>
+          <button @click="setGraphFilter('mind-clones')"   :class="graphFilter==='mind-clones' ? 'toolbar-btn active' : 'toolbar-btn'">Mind-clones</button>
+          <button @click="setGraphFilter('red-yellow')"    :class="graphFilter==='red-yellow' ? 'toolbar-btn active' : 'toolbar-btn'">Red/Yellow</button>
+        </div>
+        <button @click="graphFitView()" class="icon-btn" title="Fit all to view">
+          <i data-lucide="scan"></i>
+        </button>
+        <button @click="toggleGraphLegend()" class="icon-btn" :title="graphLegendOpen ? 'Hide legend' : 'Show legend'">
+          <i :data-lucide="graphLegendOpen ? 'eye-off' : 'info'"></i>
+        </button>
+        <button @click="toggleGraphSettings()" class="icon-btn"
+                :class="graphSettingsOpen ? 'icon-btn-active' : ''" title="Physics & colors">
+          <i data-lucide="settings-2"></i>
+        </button>
+        <button @click="toggleGraphFullscreen()" class="icon-btn"
+                :title="graphFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen'">
+          <i :data-lucide="graphFullscreen ? 'minimize-2' : 'maximize-2'"></i>
+        </button>
+        <button @click="fetchGraph()" class="icon-btn" title="Refresh"><i data-lucide="rotate-cw"></i></button>
+      </header>
+
+      <!-- Settings popover (Obsidian-style: physics sliders + per-type colors) -->
+      <aside class="graph-settings" x-show="graphSettingsOpen" x-transition>
+        <header class="graph-settings-head">
+          <span class="text-label">Physics &amp; colors</span>
+          <button @click="resetGraphSettings()" class="btn btn-ghost btn-xs" title="Restore defaults">Reset</button>
+          <button @click="toggleGraphSettings()" class="icon-btn" title="Close"><i data-lucide="x"></i></button>
+        </header>
+        <section class="graph-settings-body">
+          <div class="text-caption">Physics</div>
+          <div class="graph-setting-row">
+            <label class="graph-setting-label">Link distance <span class="text-caption" x-text="graphPhysics.linkDistance"></span></label>
+            <input type="range" min="10" max="200" step="2" x-model.number="graphPhysics.linkDistance" @input="applyGraphPhysics()">
+          </div>
+          <div class="graph-setting-row">
+            <label class="graph-setting-label">Repulsion <span class="text-caption" x-text="graphPhysics.charge"></span></label>
+            <input type="range" min="-600" max="-20" step="5" x-model.number="graphPhysics.charge" @input="applyGraphPhysics()">
+          </div>
+          <div class="graph-setting-row">
+            <label class="graph-setting-label">Collision <span class="text-caption" x-text="graphPhysics.collide"></span></label>
+            <input type="range" min="0" max="40" step="1" x-model.number="graphPhysics.collide" @input="applyGraphPhysics()">
+          </div>
+          <div class="graph-setting-row">
+            <label class="graph-setting-label">Settle speed <span class="text-caption" x-text="graphPhysics.alphaDecay.toFixed(3)"></span></label>
+            <input type="range" min="0.005" max="0.1" step="0.005" x-model.number="graphPhysics.alphaDecay" @input="applyGraphPhysics()">
+          </div>
+          <div class="graph-setting-row">
+            <label class="graph-setting-label">Node size <span class="text-caption" x-text="graphPhysics.nodeScale.toFixed(2)"></span></label>
+            <input type="range" min="0.5" max="3" step="0.1" x-model.number="graphPhysics.nodeScale" @input="applyGraphPhysics()">
+          </div>
+          <div class="graph-setting-row">
+            <label class="graph-setting-label">Label opacity <span class="text-caption" x-text="graphPhysics.labelOpacity.toFixed(2)"></span></label>
+            <input type="range" min="0" max="1" step="0.05" x-model.number="graphPhysics.labelOpacity" @input="applyGraphPhysics()">
+          </div>
+
+          <div class="text-caption graph-settings-section-label">Colors per node type</div>
+          <template x-for="t in graphTypeKeys" :key="t">
+            <div class="graph-setting-color">
+              <input type="color" :value="graphColors[t]" @input="setGraphColor(t, $event.target.value)">
+              <span class="graph-setting-color-name" x-text="t"></span>
+            </div>
+          </template>
+        </section>
+      </aside>
+      <!-- Legend — node types (color) + edge relations (color + line style) -->
+      <aside class="graph-legend" x-show="graphLegendOpen" x-transition>
+        <section class="legend-section">
+          <h4 class="legend-title">Nodes</h4>
+          <ul class="legend-list">
+            <li class="legend-item"><span class="legend-dot legend-dot-business"></span> Business</li>
+            <li class="legend-item"><span class="legend-dot legend-dot-squad"></span> Squad</li>
+            <li class="legend-item"><span class="legend-dot legend-dot-capability"></span> Capability</li>
+            <li class="legend-item"><span class="legend-dot legend-dot-mind-clone"></span> Mind-clone</li>
+            <li class="legend-item"><span class="legend-dot legend-dot-project"></span> Project (run)</li>
+            <li class="legend-item"><span class="legend-dot legend-dot-brief"></span> Brief</li>
+            <li class="legend-item"><span class="legend-dot legend-dot-plan"></span> Plan</li>
+            <li class="legend-item"><span class="legend-dot legend-dot-dag"></span> DAG</li>
+            <li class="legend-item"><span class="legend-dot legend-dot-handoff"></span> Handoff</li>
+            <li class="legend-item"><span class="legend-dot legend-dot-audit"></span> Audit run</li>
+            <li class="legend-item"><span class="legend-dot legend-dot-output"></span> Output</li>
+            <li class="legend-item"><span class="legend-dot legend-dot-decision"></span> Decision</li>
+          </ul>
+        </section>
+        <section class="legend-section">
+          <h4 class="legend-title">Edges</h4>
+          <ul class="legend-list">
+            <li class="legend-item">
+              <svg width="36" height="10" class="legend-line"><line x1="0" y1="5" x2="36" y2="5" stroke="#3b82f6" stroke-dasharray="4,3" stroke-width="1.4"/></svg>
+              <span><b>exposes</b> — squad → capability</span>
+            </li>
+            <li class="legend-item">
+              <svg width="36" height="10" class="legend-line"><line x1="0" y1="5" x2="36" y2="5" stroke="#8b5cf6" stroke-width="2"/></svg>
+              <span><b>routes-via</b> — business → squad</span>
+            </li>
+            <li class="legend-item">
+              <svg width="36" height="10" class="legend-line"><line x1="0" y1="5" x2="36" y2="5" stroke="#10b981" stroke-dasharray="1,3" stroke-width="1.4"/></svg>
+              <span><b>uses-mc</b> — business → mind-clone</span>
+            </li>
+            <li class="legend-item">
+              <svg width="36" height="10" class="legend-line"><line x1="0" y1="5" x2="36" y2="5" stroke="#ef4444" stroke-width="1.6"/></svg>
+              <span><b>produced</b> — project → artifact</span>
+            </li>
+            <li class="legend-item">
+              <svg width="36" height="10" class="legend-line"><line x1="0" y1="5" x2="36" y2="5" stroke="#06b6d4" stroke-dasharray="3,3" stroke-width="1.4"/></svg>
+              <span><b>produced-by</b> — entity → artifact</span>
+            </li>
+            <li class="legend-item">
+              <svg width="36" height="10" class="legend-line"><line x1="0" y1="5" x2="36" y2="5" stroke="#f59e0b" stroke-dasharray="5,3" stroke-width="1.6"/></svg>
+              <span><b>led-to</b> — artifact chain (handoff → brief → plan)</span>
+            </li>
+            <li class="legend-item">
+              <svg width="36" height="10" class="legend-line"><line x1="0" y1="5" x2="36" y2="5" stroke="#ec4899" stroke-dasharray="2,2" stroke-width="1.2"/></svg>
+              <span><b>decided-in</b> — decision → project</span>
+            </li>
+          </ul>
+        </section>
+      </aside>
+      <!-- Temporal slider — scrub to see nodes appear in order of created_at -->
+      <div class="graph-temporal" x-show="graphTimeline?.range">
+        <div class="graph-temporal-controls">
+          <button @click="setGraphTime(graphTimeline.range[0])" class="icon-btn icon-btn-sm" title="Reset to start">⏮</button>
+          <button @click="toggleGraphPlay()" class="icon-btn icon-btn-sm" :title="graphPlaying ? 'Pause' : 'Play'"
+                  x-html="`<i data-lucide='${graphPlaying ? 'pause' : 'play'}'></i>`"></button>
+          <button @click="setGraphTime(graphTimeline.range[1])" class="icon-btn icon-btn-sm" title="Jump to now">⏭</button>
+        </div>
+        <input type="range" class="graph-time-slider"
+               :min="graphTimeline.minMs"
+               :max="graphTimeline.maxMs"
+               :value="graphTimeMs"
+               @input="onGraphTimeInput($event)"
+               step="60000">
+        <div class="graph-time-label">
+          <span x-text="graphTimeISO ? graphTimeISO.slice(0, 16).replace('T', ' ') : 'all'"></span>
+          <span class="graph-time-hint" x-text="`${graphFilteredCount} of ${graph?.nodes?.length || 0} visible`"></span>
+        </div>
+      </div>
+      <div class="graph-body">
+        <!-- Empty state when project filter narrows to nothing -->
+        <div class="empty-state empty-state-full graph-empty"
+             x-show="graph && (graph.nodes || []).length === 0 && projectFilter === 'project'"
+             x-cloak>
+          <i data-lucide="filter-x" class="empty-state-icon"></i>
+          <p>No graph data for this project yet.</p>
+          <p class="text-caption">Run a brief through the harness in this project, or switch the filter to <b>All</b> to see global capability/business/squad/mind-clone data.</p>
+          <button class="btn btn-solid btn-primary btn-sm" @click="setProjectFilter('all')">
+            <i data-lucide="globe"></i><span>Show All</span>
+          </button>
+        </div>
+        <div id="graph-canvas" class="graph-canvas"
+             x-show="!(graph && (graph.nodes || []).length === 0 && projectFilter === 'project')"></div>
+
+        <!-- Selected node detail (slides in from the right) -->
+        <aside class="graph-detail" x-show="graphSelectedNode" x-transition x-cloak>
+          <template x-if="graphSelectedNode">
+            <div>
+              <header class="graph-detail-head">
+                <div class="graph-detail-head-left">
+                  <span class="badge badge-xs"
+                        :style="`background:${graphTypeColor(graphSelectedNode.type)}22; color:${graphTypeColor(graphSelectedNode.type)}; border-color:${graphTypeColor(graphSelectedNode.type)}55`"
+                        x-text="graphSelectedNode.type"></span>
+                  <h3 class="text-headline" x-text="graphSelectedNode.label || graphSelectedNode.slug || graphSelectedNode.id"></h3>
+                </div>
+                <button @click="clearGraphSelection()" class="icon-btn" title="Close"><i data-lucide="x"></i></button>
+              </header>
+              <div class="graph-detail-body">
+                <dl class="kv-grid">
+                  <template x-if="graphSelectedNode.id"><dt>id</dt></template>
+                  <template x-if="graphSelectedNode.id"><dd class="text-mono-sm" x-text="graphSelectedNode.id"></dd></template>
+                  <template x-if="graphSelectedNode.tier"><dt>tier</dt></template>
+                  <template x-if="graphSelectedNode.tier"><dd>
+                    <span class="badge badge-xs" :class="`badge-${graphSelectedNode.tier === 'green' ? 'success' : graphSelectedNode.tier === 'yellow' ? 'warn' : 'danger'}`" x-text="graphSelectedNode.tier"></span>
+                  </dd></template>
+                  <template x-if="typeof graphSelectedNode.score === 'number'"><dt>score</dt></template>
+                  <template x-if="typeof graphSelectedNode.score === 'number'"><dd x-text="graphSelectedNode.score + '/100'"></dd></template>
+                  <template x-if="graphSelectedNode.created_at"><dt>created</dt></template>
+                  <template x-if="graphSelectedNode.created_at"><dd x-text="graphSelectedNode.created_at"></dd></template>
+                </dl>
+
+                <div class="text-label graph-detail-section-label" x-show="graphSelectedNeighbors.length">
+                  Connected · <span x-text="graphSelectedNeighbors.length"></span>
+                </div>
+                <ul class="graph-detail-neighbors">
+                  <template x-for="n in graphSelectedNeighbors" :key="n.id">
+                    <li class="graph-detail-neighbor" @click="selectGraphNode(n)">
+                      <span class="graph-detail-dot" :style="`background:${graphTypeColor(n.type)}`"></span>
+                      <span class="graph-detail-neighbor-name text-truncate" x-text="n.label || n.slug || n.id"></span>
+                      <span class="text-caption" x-text="n.type"></span>
+                    </li>
+                  </template>
+                </ul>
+
+                <div class="graph-detail-actions">
+                  <button class="btn btn-ghost btn-sm" @click="centerGraphNode(graphSelectedNode.id)">
+                    <i data-lucide="locate"></i><span>Center</span>
+                  </button>
+                  <button class="btn btn-solid btn-primary btn-sm"
+                          x-show="graphSelectedNode.type === 'squad' || graphSelectedNode.type === 'business' || graphSelectedNode.type === 'mind-clone'"
+                          @click="navigateToNode(graphSelectedNode)">
+                    <i data-lucide="external-link"></i><span>Open detail</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </template>
+        </aside>
+      </div>
+    </main>
+
+    <!-- ─── Cost pane (token + USD dashboard) ─── -->
+    <main class="detail-pane cost-pane" x-show="kind === 'cost'">
+      <header class="cost-header">
+        <h2 class="memory-title">Cost & Tokens</h2>
+        <div class="toolbar toolbar-sm">
+          <button @click="setCostPeriod('7d')"  :class="costPeriod==='7d' ? 'toolbar-btn active' : 'toolbar-btn'">7 days</button>
+          <button @click="setCostPeriod('30d')" :class="costPeriod==='30d' ? 'toolbar-btn active' : 'toolbar-btn'">30 days</button>
+          <button @click="setCostPeriod('all')" :class="costPeriod==='all' ? 'toolbar-btn active' : 'toolbar-btn'">All</button>
+        </div>
+        <button @click="fetchCost()" class="icon-btn" title="Refresh"><i data-lucide="rotate-cw"></i></button>
+      </header>
+      <!-- Empty state: no cost_emission events yet. Honesty over $0.00 fake metric. -->
+      <div x-show="cost && cost.period_events === 0" class="cost-empty-banner">
+        <div class="cost-empty-icon"><i data-lucide="zap"></i></div>
+        <div class="cost-empty-body">
+          <div class="cost-empty-title">No cost telemetry recorded yet</div>
+          <div class="cost-empty-hint">
+            The host-agent-driver auto-emits <code>cost_emission</code> on every LLM call (Claude Code reports usage; Codex/Gemini do not yet).
+            Run any agent invocation through <code>callHostAgent</code>/<code>callHostAgentAsync</code> and the dashboard will populate.
+          </div>
+          <div class="cost-empty-hint cost-empty-muted">
+            Showing real "$0.00" would imply cost is zero. It's just unmeasured. This banner clarifies that.
+          </div>
+        </div>
+      </div>
+
+      <div class="stat-grid" x-show="cost && cost.period_events > 0">
+        <div class="card stat-card">
+          <div class="text-label">Total tokens</div>
+          <div class="stat-value" x-text="(cost?.totals?.total_tokens || 0).toLocaleString()"></div>
+        </div>
+        <div class="card stat-card">
+          <div class="text-label">Estimated USD</div>
+          <div class="stat-value" x-text="`$${(cost?.totals?.usd || 0).toFixed(2)}`"></div>
+        </div>
+        <div class="card stat-card">
+          <div class="text-label">Cache hit ratio</div>
+          <div class="stat-value" x-text="`${((cost?.totals?.cache_hit_ratio || 0) * 100).toFixed(0)}%`"></div>
+        </div>
+        <div class="card stat-card">
+          <div class="text-label">Operations</div>
+          <div class="stat-value" x-text="(cost?.totals?.ops || 0).toLocaleString()"></div>
+        </div>
+      </div>
+      <div class="cost-charts" x-show="cost && cost.period_events > 0">
+        <canvas id="cost-tokens-chart" class="cost-chart" width="800" height="240"></canvas>
+        <canvas id="cost-usd-chart" class="cost-chart" width="800" height="160"></canvas>
+      </div>
+      <div class="cost-tables" x-show="cost && cost.period_events > 0">
+        <div class="cost-table-block">
+          <h3 class="cost-table-title">Top expensive squads</h3>
+          <table class="cost-table">
+            <thead><tr><th>squad</th><th>ops</th><th>tokens</th><th>USD</th></tr></thead>
+            <tbody>
+              <template x-for="r in (cost?.top_expensive_squads || [])" :key="r.slug">
+                <tr><td x-text="r.slug"></td><td x-text="r.ops"></td><td x-text="r.tokens.toLocaleString()"></td><td x-text="`$${r.usd.toFixed(3)}`"></td></tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div x-show="!cost" class="empty-state">loading cost data…</div>
+    </main>
+
+
+    <!-- Floating handle to expand the right pane when collapsed -->
+    <button class="sidebar-handle sidebar-handle-right" x-show="!rightPaneOpen" @click="toggleRightPane()" title="Expand right pane (⌘.)">
+      <i data-lucide="chevron-left"></i>
+    </button>
+
+    <!-- Right panel: scope + logs -->
+    <aside class="right-pane" x-show="rightPaneOpen">
+      <div class="sidebar-collapse-row sidebar-collapse-row-right">
+        <button class="sidebar-collapse-btn" @click="toggleRightPane()" title="Collapse right pane (⌘.)">
+          <i data-lucide="chevron-right"></i>
+        </button>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Scope</div>
+        <div class="panel-body">
+          <div class="scope-row"><span>mode</span><b x-text="scope?.mode"></b></div>
+          <div class="scope-row"><span>project</span><b class="text-xs truncate max-w-[180px]" x-text="scope?.projectRoot || '—'"></b></div>
+          <div class="scope-row"><span>squads dirs</span><b x-text="scope?.squadDirs?.length"></b></div>
+          <div class="scope-row"><span>state dir</span><b class="text-xs truncate max-w-[180px]" x-text="scope?.state?.squads?.split('/').slice(-3).join('/')"></b></div>
+          <div class="scope-row"><span>health</span><b class="text-emerald-500" x-show="health.ok"><i data-lucide="circle-dot" class="icon-inline"></i></b></div>
+        </div>
+      </div>
+
+      <div class="panel flex-1 flex flex-col min-h-0">
+        <div class="panel-title flex items-center">
+          <span>Logs</span>
+          <select x-model="logType" @change="restartLogStream()" class="ml-auto log-select">
+            <option value="harness">harness</option>
+            <option value="maestro">maestro</option>
+          </select>
+        </div>
+        <div class="panel-body log-list flex-1 overflow-y-auto">
+          <template x-for="(e, i) in logs.slice().reverse()" :key="i">
+            <div class="log-event">
+              <span class="log-time" x-text="(e.timestamp || e.ts || '').slice(11,19)"></span>
+              <span class="log-kind" :class="logKindClass(e)" x-text="logKindLabel(e)"></span>
+              <span class="log-msg" x-text="logSummary(e)"></span>
+            </div>
+          </template>
+          <div x-show="logs.length === 0" class="empty-state">No events yet today.</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ─── Activity feed (live SSE from audit_events) ─── -->
+    <aside class="activity-pane" :class="{ collapsed: !activityOpen }">
+      <header class="activity-header">
+        <span class="activity-title" x-show="activityOpen">Activity</span>
+        <span class="activity-counter" x-show="activityOpen && activityEvents.length > 0" x-text="`${activityEvents.length}`"></span>
+        <button @click="activityOpen = !activityOpen" class="icon-btn" :title="activityOpen ? 'Collapse activity' : 'Expand activity'">
+          <i :data-lucide="activityOpen ? 'chevron-right' : 'chevron-left'"></i>
+        </button>
+      </header>
+      <div class="activity-list" x-show="activityOpen">
+        <template x-for="(e, idx) in visibleActivityEvents" :key="(e.id || idx) + '-' + (e.ts || '')">
+          <div class="activity-card" :class="{ fresh: idx === 0 }" @click="navigateFromActivity(e)">
+            <span class="activity-icon" x-text="activityIcon(e.event)"></span>
+            <div class="activity-body">
+              <div class="activity-event" x-text="e.event"></div>
+              <div class="activity-meta">
+                <span class="activity-time" x-text="activityRelative(e.ts)"></span>
+                <span x-show="e.project_id" x-text="e.project_id"></span>
+              </div>
+            </div>
+          </div>
+        </template>
+        <div x-show="activityEvents.length === 0" class="activity-empty">no recent activity</div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Setup-mode bottom bar (visible only when setupMode is on) -->
+  <div class="setup-bar" x-cloak x-show="setupMode" x-transition.opacity>
+    <div class="setup-bar-info">
+      <div class="setup-bar-title">Setup mode · pick assets to copy into a project</div>
+      <div class="setup-bar-meta" x-show="setupStatus">
+        <span>target:</span>
+        <code x-text="setupStatus?.project_root || '—'"></code>
+        <span x-show="setupStatus?.has_nirvana" class="setup-bar-tag setup-bar-tag-ok">.nirvana ready</span>
+        <span x-show="setupStatus && !setupStatus?.has_nirvana" class="setup-bar-tag setup-bar-tag-warn">will init project</span>
+      </div>
+    </div>
+    <div class="setup-bar-counts">
+      <span><b x-text="Object.keys(setupSelected.squads || {}).length"></b> squads</span>
+      <span><b x-text="Object.keys(setupSelected.businesses || {}).length"></b> businesses</span>
+      <span><b x-text="Object.keys(setupSelected['mind-clones'] || {}).length"></b> mind-clones</span>
+    </div>
+    <div class="setup-bar-actions">
+      <button @click="setupClearAll()" class="btn-secondary" x-show="setupSelectionCount() > 0">Clear</button>
+      <button @click="applySetup()" class="btn-primary" :disabled="setupApplying || setupSelectionCount() === 0" x-text="setupApplying ? 'Copying…' : `Apply (${setupSelectionCount()})`"></button>
+      <button @click="toggleSetupMode()" class="btn-secondary">Exit</button>
+    </div>
+  </div>
+
+  <!-- ───────── Settings modal (env editor) ───────── -->
+  <div class="modal" x-cloak x-show="settingsOpen" x-transition.opacity @click.self="closeSettings()" @keydown.escape.window="closeSettings()">
+    <div class="modal-card modal-xl settings-modal-card" @click.stop>
+      <header class="modal-head">
+        <div class="modal-head-title">
+          <i data-lucide="settings"></i>
+          <span class="text-headline">Settings</span>
+          <span class="text-caption">Edit Nirvana environment configuration</span>
+        </div>
+        <div class="modal-head-meta">
+          <div class="toolbar toolbar-sm">
+            <button @click="settingsScopePicker = 'global'"
+                    :class="settingsScopePicker === 'global' ? 'toolbar-btn active' : 'toolbar-btn'">
+              <i data-lucide="globe"></i><span>Global</span>
+            </button>
+            <button @click="settingsScopePicker = 'project'"
+                    :class="settingsScopePicker === 'project' ? 'toolbar-btn active' : 'toolbar-btn'">
+              <i data-lucide="folder"></i><span>Project</span>
+            </button>
+          </div>
+          <button @click="closeSettings()" class="icon-btn" title="Close (Esc)"><i data-lucide="x"></i></button>
+        </div>
+      </header>
+
+      <div class="modal-body">
+        <!-- File path indicator -->
+        <div class="settings-filepath text-caption" x-show="settingsData">
+          <span x-show="settingsScopePicker === 'project'">
+            Editing: <code class="text-mono-sm" x-text="settingsData?.project_env_path"></code>
+            <span class="badge badge-warn badge-xs" x-show="!settingsData?.project_env_exists">will be created</span>
+          </span>
+          <span x-show="settingsScopePicker === 'global'">
+            Editing: <code class="text-mono-sm" x-text="settingsData?.global_env_path"></code>
+            <span class="badge badge-warn badge-xs" x-show="!settingsData?.global_env_exists">will be created</span>
+          </span>
+        </div>
+
+        <!-- Restart-required banner (only shown if live-reload failed) -->
+        <div x-show="settingsRestartRequired" class="run-suspicious-banner">
+          <div class="run-suspicious-banner-head">
+            <span class="badge badge-warn"><i data-lucide="alert-triangle"></i> Restart required</span>
+            <strong>Changes saved but live-reload didn't apply.</strong>
+          </div>
+          <button @click="restartGlance()" class="btn btn-solid btn-primary btn-sm">Restart Glance</button>
+        </div>
+
+        <!-- Action permission banner (read-only mode) -->
+        <div x-show="settingsData && !settingsData.allow_actions" class="run-suspicious-banner">
+          <div class="run-suspicious-banner-head">
+            <span class="badge badge-warn">Read-only mode</span>
+            <strong>Restart Glance with <code class="text-mono-sm">--allow-actions</code> to enable saves.</strong>
+          </div>
+        </div>
+
+        <!-- Group tabs -->
+        <nav class="tabs" x-show="settingsData">
+          <template x-for="g in settingsData?.groups || []" :key="g.id">
+            <button @click="settingsActiveGroup = g.id"
+                    :class="settingsActiveGroup === g.id ? 'tab active' : 'tab'"
+                    x-text="g.label"></button>
+          </template>
+        </nav>
+
+        <!-- Group description -->
+        <p class="text-caption" x-show="settingsActiveGroupObj()" x-text="settingsActiveGroupObj()?.description"></p>
+
+        <!-- Fields -->
+        <div class="settings-body" x-show="settingsData">
+          <template x-for="f in settingsActiveGroupObj()?.fields || []" :key="f.key">
+            <div class="settings-field">
+              <div class="settings-field-head">
+                <label class="settings-field-label" x-text="f.label"></label>
+                <span class="badge badge-neutral badge-xs" :class="f.source === 'project' ? 'badge-info' : ''" x-text="f.source"></span>
+                <code class="text-mono-sm settings-field-key" x-text="f.key"></code>
+              </div>
+              <div class="text-caption settings-field-desc" x-text="f.description"></div>
+
+              <!-- Enum -->
+              <select x-show="f.type === 'enum'"
+                      class="input input-md"
+                      :value="settingsDraft[f.key] !== undefined ? settingsDraft[f.key] : (settingsScopePicker === 'project' ? f.project_value : f.global_value)"
+                      @change="settingsDraft[f.key] = $event.target.value">
+                <template x-for="opt in f.options || []" :key="opt">
+                  <option :value="opt" x-text="opt"></option>
+                </template>
+              </select>
+
+              <!-- Boolean -->
+              <select x-show="f.type === 'boolean'"
+                      class="input input-md"
+                      :value="settingsDraft[f.key] !== undefined ? settingsDraft[f.key] : (settingsScopePicker === 'project' ? f.project_value : f.global_value) || '0'"
+                      @change="settingsDraft[f.key] = $event.target.value">
+                <option value="0">disabled</option>
+                <option value="1">enabled</option>
+              </select>
+
+              <!-- Secret -->
+              <div x-show="f.type === 'secret'" class="settings-secret-row">
+                <input type="password"
+                       class="input input-md"
+                       :placeholder="(settingsScopePicker === 'project' ? f.project_value : f.global_value) || '(empty — leave blank to keep current)'"
+                       :value="settingsDraft[f.key] || ''"
+                       @input="settingsDraft[f.key] = $event.target.value"
+                       autocomplete="off"
+                       spellcheck="false">
+                <button @click="if (confirm(`Delete ${f.key} from ${settingsScopePicker} .env?`)) { settingsDeletes[f.key] = true; settingsDraft[f.key] = '__DELETE__'; }"
+                        class="icon-btn"
+                        :title="`Delete ${f.key}`"
+                        x-show="(settingsScopePicker === 'project' ? f.has_project : f.has_global)"><i data-lucide="trash-2"></i></button>
+              </div>
+
+              <!-- String / path / csv -->
+              <input x-show="f.type === 'string' || f.type === 'path' || f.type === 'csv'"
+                     type="text"
+                     class="input input-md"
+                     :placeholder="f.default || ''"
+                     :value="settingsDraft[f.key] !== undefined ? settingsDraft[f.key] : (settingsScopePicker === 'project' ? f.project_value : f.global_value)"
+                     @input="settingsDraft[f.key] = $event.target.value"
+                     spellcheck="false">
+
+              <div class="settings-field-foot text-caption">
+                <span x-show="f.default">default: <code class="text-mono-sm" x-text="f.default"></code></span>
+                <span x-show="f.recommendedScope"
+                      x-text="`recommended: ${f.recommendedScope}`"></span>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Footer / save bar -->
+      <footer class="modal-foot" x-show="settingsData">
+        <span class="text-caption"
+              x-text="`${settingsPendingCount()} change${settingsPendingCount() === 1 ? '' : 's'} staged`"></span>
+        <div class="modal-foot-actions">
+          <button @click="settingsDraft = {}; settingsDeletes = {}" class="btn btn-ghost btn-md"
+                  :disabled="settingsPendingCount() === 0">Discard</button>
+          <button @click="saveSettings()"
+                  class="btn btn-solid btn-primary btn-md"
+                  :disabled="!settingsData?.allow_actions || settingsPendingCount() === 0 || settingsSaving">
+            <span x-show="!settingsSaving" x-text="`Save to ${settingsScopePicker}`"></span>
+            <span x-show="settingsSaving">saving…</span>
+          </button>
+        </div>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Bottom toast -->
+  <div class="toast" x-show="toast.visible" x-transition>
+    <span x-text="toast.message"></span>
+  </div>
+
+  <!-- Console drawer -->
+  <div class="console-drawer" :class="consoleOpen ? 'open' : ''" x-show="consoleOpen || jobs.some(j => j.status==='running')" x-transition>
+    <div class="console-header">
+      <div class="flex items-center gap-3">
+        <span class="font-semibold text-[13px]">Console</span>
+        <span class="text-[11px] text-zinc-500" x-text="`${jobs.length} jobs · ${jobs.filter(j => j.status==='running').length} running`"></span>
+      </div>
+      <div class="flex items-center gap-2">
+        <button @click="activeJobId = null" class="icon-btn-sm" x-show="activeJobId" title="Show all jobs"><i data-lucide="corner-up-right"></i></button>
+        <button @click="consoleOpen = false" class="icon-btn-sm" title="Close"><i data-lucide="x"></i></button>
+      </div>
+    </div>
+    <div class="console-body">
+      <!-- Job list (when no active job selected) -->
+      <div class="job-list" x-show="!activeJobId">
+        <template x-if="jobs.length === 0">
+          <div class="empty-state">No jobs yet. Trigger an action via the <i data-lucide="zap" class="icon-inline"></i> menu or per-squad buttons.</div>
+        </template>
+        <template x-for="j in jobs" :key="j.id">
+          <button @click="activeJobId = j.id; tailJob(j.id)" class="job-row">
+            <span class="job-status" :class="`status-${j.status}`" x-html="`<i data-lucide='${statusIcon(j.status)}'></i>`"></span>
+            <span class="job-action font-medium" x-text="j.action"></span>
+            <span class="text-[11px] text-zinc-500 truncate" x-text="j.args.slice(1).join(' ').slice(0, 60)"></span>
+            <span class="ml-auto text-[10px] text-zinc-500" x-text="formatJobTime(j)"></span>
+          </button>
+        </template>
+      </div>
+
+      <!-- Active job stream -->
+      <div class="job-active" x-show="activeJobId">
+        <div class="job-active-header">
+          <button @click="activeJobId = null" class="icon-btn-sm"><i data-lucide="arrow-left"></i></button>
+          <span class="font-medium" x-text="getJob(activeJobId)?.action"></span>
+          <span class="job-status" :class="`status-${getJob(activeJobId)?.status}`" x-html="`<i data-lucide='${statusIcon(getJob(activeJobId)?.status)}'></i>`"></span>
+          <span class="text-[11px] text-zinc-500" x-text="getJob(activeJobId) ? `pid=${getJob(activeJobId).pid || '—'} · exit=${getJob(activeJobId).exit_code ?? '—'}` : ''"></span>
+          <span class="ml-auto"></span>
+          <button @click="cancelJob(activeJobId)" x-show="getJob(activeJobId)?.status === 'running'" class="action-btn warning small">Cancel</button>
+        </div>
+        <pre class="job-output" x-ref="jobOutput" x-text="(jobOutputs[activeJobId] || []).join('\n')"></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/glance.js"></script>
+<script src="/dag-renderer.js"></script>
+<script src="/org-chart-renderer.js"></script>
+<script src="/graph-renderer.js"></script>
+<script src="/chart-renderer.js"></script>
+<script src="/awwwards-hero.js"></script>
+<script src="/agent-swimlane-renderer.js"></script>
+<script src="/agent-workspace-renderer.js"></script>
+<script>
+  // Lucide icons — render <i data-lucide="..."> as svg.
+  // Loop-safe: createIcons mutates DOM (swaps <i> → <svg>), which fires the
+  // observer; we guard with hasUnrendered() so re-render only happens when
+  // there are unrendered <i data-lucide> stubs left, never just because
+  // <svg> elements appeared.
+  (function initLucide() {
+    if (typeof window.lucide === 'undefined' || typeof window.lucide.createIcons !== 'function') {
+      return setTimeout(initLucide, 50);
+    }
+    const opts = { attrs: { 'stroke-width': '1.75', 'aria-hidden': 'true' } };
+    const hasUnrendered = () => document.querySelector('i[data-lucide]') !== null;
+    const renderAll = () => {
+      if (!hasUnrendered()) return;
+      try { window.lucide.createIcons(opts); } catch (_) {}
+    };
+    renderAll();
+    let scheduled = false;
+    const schedule = () => {
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(() => { scheduled = false; renderAll(); });
+    };
+    // Only watch new <i data-lucide> stubs being added (Alpine x-show / x-if /
+    // modal transitions). Do NOT watch attribute changes — that would loop on
+    // class/style mutations from createIcons itself.
+    new MutationObserver((muts) => {
+      for (const m of muts) {
+        for (const n of m.addedNodes) {
+          if (n.nodeType !== 1) continue;
+          if (n.tagName === 'I' && n.hasAttribute?.('data-lucide')) return schedule();
+          if (n.querySelector?.('i[data-lucide]')) return schedule();
+        }
+      }
+    }).observe(document.body, { childList: true, subtree: true });
+  })();
+</script>
+</body>
+</html>

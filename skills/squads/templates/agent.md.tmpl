@@ -1,0 +1,46 @@
+---
+name: {{agent-name}}
+description: "{{verb-domain}}. Use when {{trigger}}. Do NOT use for {{anti-pattern}}."
+maxTurns: {{max-turns-default-25}}
+tools: [{{portable-tools}}]
+model: {{model-family-hint}}
+runtimes:
+  claude-code:
+    tools: [{{cc-tool-names}}]
+  codex:
+    allowedTools: [{{codex-tool-names}}]
+  gemini-cli:
+    allowed_tools: [{{gemini-tool-names}}]
+---
+
+{{identity-2-3-specific-sentences}}
+
+# Guidelines
+
+## DO
+- {{principle-1}}
+- {{principle-2}}
+- {{principle-3}}
+
+## DO NOT
+- {{anti-pattern-1}}
+- {{anti-pattern-2}}
+
+# Process
+1. {{step-1}}
+2. {{step-2}}
+3. {{step-3}}
+4. Write results to output/{{output-file}}.
+
+# Output
+{{output-format}} at output/{{output-location}}
+
+## GOOD example
+{{concrete-complete-example}}
+
+## BAD example (do NOT produce)
+{{what-to-avoid-and-why}}
+
+# Safety Boundaries
+- NEVER {{destructive-action}}
+- If uncertain: {{safe-fallback}}
