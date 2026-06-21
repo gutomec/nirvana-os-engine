@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://squads.dev/schemas/handoff-schema.json",
+  "title": "Portable Handoff Artifact",
+  "description": "Structured data passed between agents at workflow step boundaries. Designed to be small, self-describing, and compaction-resilient.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "from_agent",
+    "to_agent",
+    "summary",
+    "next_action"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0.0",
+      "description": "Version of the handoff artifact schema"
+    },
+
+    "from_agent": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,63}$",
+      "description": "Name of the agent that produced this artifact"
+    },
+
+    "to_agent": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,63}$",
+      "description": "Name of the agent that should receive this artifact"
+    },
+
+    "workflow_step": {
+      "type": "string",
+      "description": "Workflow step id that produced this artifact"
+    },
+
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000,
+      "description": "Single-paragraph natural-language summary of what was done"
+    },
+
+    "key_decisions": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "string",
+        "maxLength": 300
+      },
+      "description": "At most 5 decisions made during the step"
+    },
+
+    "files_modified": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "string"
+      },
+      "description": "At most 10 files created or modified"
+    },
+
+    "files_read": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "string"
+      },
+      "description": "At most 20 files consulted (optional, useful for audit)"
+    },
+
+    "blockers": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "string",
+        "maxLength": 300
+      },
+      "description": "At most 3 blockers encountered"
+    },
+
+    "next_action": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "description": "What the receiving agent should do first"
+    },
+
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Paths to artifacts (reports, JSON outputs) produced by this step"
+    },
+
+    "schema_outputs": {
+      "type": "object",
+      "description": "Structured outputs matching declared task output schema (optional)",
+      "additionalProperties": true
+    },
+
+    "verdict": {
+      "type": "string",
+      "enum": ["approve", "reject", "blocked", "escalate"],
+      "description": "For review steps only: the review verdict"
+    },
+
+    "verdict_reason": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "Explanation of the verdict (required when verdict is reject, blocked, or escalate)"
+    },
+
+    "metrics": {
+      "type": "object",
+      "description": "Operational metrics captured during step execution (typically populated by harness)",
+      "additionalProperties": false,
+      "properties": {
+        "duration_ms": { "type": "integer", "minimum": 0 },
+        "tool_calls": { "type": "integer", "minimum": 0 },
+        "turns_used": { "type": "integer", "minimum": 0 },
+        "tokens_input": { "type": "integer", "minimum": 0 },
+        "tokens_output": { "type": "integer", "minimum": 0 }
+      }
+    }
+  },
+
+  "allOf": [
+    {
+      "description": "Verdict reason required when verdict is not approve",
+      "if": {
+        "properties": {
+          "verdict": { "enum": ["reject", "blocked", "escalate"] }
+        },
+        "required": ["verdict"]
+      },
+      "then": {
+        "required": ["verdict_reason"]
+      }
+    }
+  ]
+}

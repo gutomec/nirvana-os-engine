@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nirvana-protocol/v1/schemas/business.schema.json",
+  "title": "Business Manifest (business.yaml)",
+  "description": "Business Protocol v1 §6 manifest schema",
+  "type": "object",
+  "required": ["name", "version", "protocol", "description", "domains", "operation_mode", "runtime_requirements"],
+  "additionalProperties": false,
+  "properties": {
+    "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,63}$" },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+(-[a-z0-9.-]+)?$" },
+    "protocol": { "type": "string", "enum": ["1.0"] },
+    "description": { "type": "string", "minLength": 20, "maxLength": 500 },
+    "author": { "type": "string" },
+    "license": { "type": "string", "default": "MIT" },
+    "domains": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+      "minItems": 1,
+      "maxItems": 50
+    },
+    "employee_count": { "type": "integer", "minimum": 1, "maximum": 100 },
+    "authority_level": { "enum": ["tier-1", "tier-2", "tier-3"], "default": "tier-2" },
+    "capabilities": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){2,}$" },
+      "maxItems": 100
+    },
+    "produces": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 3, "maxLength": 80 },
+      "minItems": 1,
+      "maxItems": 30,
+      "description": "Concrete deliverable types this business produces (union of its squads' produces). Recommended kebab-case slugs (e.g. 'ebook-mobile-pdf', 'brand-identity-kit', 'campaign-assets-bundle'). Used by agentic discovery for semantic match."
+    },
+    "example_briefs": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 20, "maxLength": 500 },
+      "maxItems": 15,
+      "description": "Real briefs this business resolves end-to-end, in PT-BR and/or EN. Mix languages freely."
+    },
+    "keywords": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 2, "maxLength": 60 },
+      "maxItems": 40,
+      "description": "Semantic synonyms (PT/EN) the brief might use to refer to this business."
+    },
+    "squads_authorized": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]+$" }
+    },
+    "operation_mode": {
+      "enum": ["zero_human", "hybrid", "human_in_loop"],
+      "default": "zero_human"
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "base_dir": { "type": "string", "default": "default" }
+      }
+    },
+    "memory": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "permanent": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "files": { "type": "array", "items": { "type": "string" } },
+            "garbage_collection": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "max_facts": { "type": "integer", "minimum": 50, "maximum": 5000, "default": 500 },
+                "review_interval_days": { "type": "integer", "minimum": 1, "maximum": 365, "default": 60 },
+                "conflict_resolution": { "enum": ["replace", "append", "prompt"], "default": "replace" }
+              }
+            }
+          }
+        },
+        "project": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "isolation": { "enum": ["by_construction", "advisory"], "default": "by_construction" },
+            "layout": { "type": "object" }
+          }
+        }
+      }
+    },
+    "runtime_requirements": {
+      "type": "object",
+      "required": ["minimum"],
+      "additionalProperties": false,
+      "properties": {
+        "minimum": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["runtime"],
+            "properties": {
+              "runtime": { "enum": ["claude-code", "codex", "gemini-cli", "cursor", "antigravity", "openclaw", "opencode"] },
+              "version": { "type": "string" }
+            }
+          },
+          "minItems": 1
+        },
+        "compatible": { "type": "array" },
+        "incompatible": { "type": "array" }
+      }
+    },
+    "features_required": {
+      "type": "array",
+      "items": {
+        "enum": ["max_turns", "tool_whitelist", "subagent_spawning", "audit_trail", "scheduled_invocation",
+                "event_bus", "hooks", "sandboxing", "session_memory", "project_memory", "global_memory",
+                "handoff_artifacts", "fork_context", "teammate_primitive", "telemetry_otel"]
+      }
+    },
+    "features_optional": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "env_required": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" }
+    },
+    "legacy": {
+      "type": "object",
+      "description": "Free-form bag for paperclip migration metadata. Open by design (additionalProperties: true) so the migration adapter can preserve any non-mappable artifact under namespaced keys (e.g. legacy.paperclip_role, legacy.paperclip_metadata).",
+      "additionalProperties": true,
+      "properties": {
+        "paperclip_company_id": { "type": "string", "format": "uuid" },
+        "paperclip_instance": { "type": "string" },
+        "paperclip_data_dir": { "type": "string" },
+        "migration_date": { "type": "string", "format": "date-time" },
+        "migration_audit_log": { "type": "string" }
+      }
+    },
+    "ui": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "icon": { "type": "string" },
+        "category": { "type": "string" },
+        "client_facing_name": { "type": "string" },
+        "pitch": { "type": "string" },
+        "employees_metadata": { "type": "object" }
+      }
+    },
+    "experimental_domains": { "type": "boolean", "default": false }
+  }
+}

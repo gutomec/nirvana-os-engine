@@ -1,0 +1,48 @@
+name: example-agency
+version: 1.0.0
+protocol: '1.0'
+description: Agency business with one CEO, three directors (strategy, creative, ops),
+  and one antagonist that challenges proposals before they ship. Use as base for marketing
+  agencies, consulting firms, creative studios, anything that produces deliverables
+  for external clients.
+author: businesses-skill
+license: MIT
+domains:
+- strategy
+- business_operations
+employee_count: 5
+authority_level: tier-3
+operation_mode: zero_human
+runtime_requirements:
+  minimum:
+  - runtime: claude-code
+    version: '>=1.0.0'
+  compatible:
+  - runtime: codex
+    version: '>=0.20.0'
+  - runtime: gemini-cli
+    version: '>=0.4.0'
+  - runtime: antigravity-cli  # +antigravity-cli (sucessor; gemini-cli sunset 2026-06-18 consumer)
+    version: '>=0.4.0'
+features_required:
+- max_turns
+- tool_whitelist
+- subagent_spawning
+- handoff_artifacts
+- audit_trail
+memory:
+  permanent:
+    enabled: true
+    files:
+    - permanent.md
+    garbage_collection:
+      max_facts: 200
+      review_interval_days: 60
+      conflict_resolution: replace
+  project:
+    isolation: by_construction
+ui:
+  client_facing_name: Agency Business (Example)
+  category: general
+  pitch: Template agency — CEO + 3 diretores + antagonist. Bom para agências de marketing,
+    consultoria e estúdios criativos.

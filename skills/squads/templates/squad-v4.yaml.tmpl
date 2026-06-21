@@ -1,0 +1,86 @@
+name: {{SQUAD_NAME}}
+version: "1.0.0"
+protocol: "4.0"
+description: "{{DESCRIPTION}}"
+author: "{{AUTHOR}}"
+license: MIT
+slashPrefix: {{PREFIX}}
+tags: [{{TAG_1}}, {{TAG_2}}]
+
+runtime_requirements:
+  minimum:
+    - runtime: {{PRIMARY_RUNTIME}}
+      version: ">=2.0.0"
+  compatible:
+    - runtime: {{SECONDARY_RUNTIME}}
+      version: ">=1.0.0"
+  incompatible: []
+
+features_required:
+  - max_turns
+  - tool_whitelist
+  - handoff_artifacts
+
+features_optional:
+  - subagent_spawning
+  - project_memory
+
+components:
+  agents:
+    - agents/{{AGENT_1}}.md
+    - agents/{{AGENT_2}}.md
+  tasks:
+    - tasks/{{TASK_1}}.md
+    - tasks/{{TASK_2}}.md
+  workflows:
+    - workflows/{{WORKFLOW}}.yaml
+
+contracts:
+  {{TASK_1}} → {{TASK_2}}: schemas/{{TASK_1}}-output.json
+
+runtimes:
+  claude-code:
+    # Claude Code specific config
+  codex:
+    # Codex specific config
+  gemini-cli:
+    # Gemini CLI specific config
+
+ui:
+  icon: "{{ICON}}"
+  category: "{{CATEGORY}}"
+  agents_metadata:
+    {{AGENT_1}}:
+      icon: "{{AGENT_1_ICON}}"
+      archetype: {{AGENT_1_ARCHETYPE}}
+    {{AGENT_2}}:
+      icon: "{{AGENT_2_ICON}}"
+      archetype: {{AGENT_2_ARCHETYPE}}
+
+memory:
+  persistent:
+    enabled: true
+    scope: project
+    file: SQUAD_MEMORY.md
+    max_chars: 40000
+    garbage_collection:
+      max_learned_facts: 200
+      review_interval_days: 30
+      conflict_resolution: replace
+
+state:
+  enabled: true
+  storage: file
+  checkpoint_dir: ".squad-state"
+  resume: true
+
+harness:
+  doom_loop:
+    enabled: true
+    max_identical_outputs: 3
+    on_detect: abort
+  ralph_loop:
+    enabled: true
+    max_iterations: 5
+  self_verify:
+    default_enabled: true

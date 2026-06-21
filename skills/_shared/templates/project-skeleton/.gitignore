@@ -1,0 +1,30 @@
+# Nirvana project skeleton
+
+# Logs and registries (per-machine)
+.harness-logs/
+.maestro-logs/
+.projects-outputs/
+.squads-registry.json
+.businesses-registry.json
+
+# Symlinked agent skill dirs (recreated by `bun init-project.ts --link`)
+.claude/skills
+.continue/skills
+.windsurf/skills
+.goose/skills
+.kilocode/skills
+.roo/skills
+.openhands/skills
+.qwen/skills
+.aider-desk/skills
+
+# Don't ignore the canonical .agents/skills (it's the source of truth)
+!.agents/skills
+
+# Local secrets — use .env.local for these, never commit
+.env.local
+.env.*.local
+
+# OS noise
+.DS_Store
+Thumbs.db

@@ -1,0 +1,16 @@
+brief_intake:
+  default_employee: ceo
+auto_routes:
+- pattern: type:strategic_decision
+  route_to: advisor-strategy
+- pattern: type:operations_review
+  route_to: advisor-ops
+- pattern: type:marketing_plan
+  route_to: advisor-marketing
+- pattern: type:research_request
+  route_to: advisor-research
+- pattern: type:devils_advocate_review
+  route_to: antagonist
+mention_routing: []
+ticket_intake:
+  default_assignee: ceo
