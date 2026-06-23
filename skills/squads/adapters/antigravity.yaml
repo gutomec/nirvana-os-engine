@@ -1,0 +1,127 @@
+adapter:
+  runtime_id: antigravity
+  runtime_name: "Antigravity"
+  vendor: "Google"
+  adapter_version: 0.1.0
+  protocol_version: "4.0"
+  minimum_runtime_version: "0.1.0"
+  maintainer: "gutomec"
+  status: experimental
+
+features_supported:
+  - id: session_memory
+    mechanism: enforced
+  - id: file_write
+    mechanism: enforced
+  - id: shell_exec
+    mechanism: enforced
+  - id: sequential_execution
+    mechanism: enforced
+  - id: handoff_artifacts
+    mechanism: convention
+
+features_unsupported:
+  - id: subagent_spawning
+    fallback: "Sequential execution"
+    notes: "Subagent model is evolving in Antigravity; adapter will update when stable"
+  - id: tool_whitelist
+    fallback: "Tools granted permissively; squad body prose as advisory guardrail"
+    notes: "Enforcement level not yet stable"
+  - id: max_turns
+    fallback: "Squad author must be vigilant; no reliable runtime bound"
+    notes: "maxTurns enforcement not verified in current Antigravity versions"
+  - id: project_memory
+    fallback: "Manual file injection via system prompt"
+  - id: global_memory
+    fallback: "Not supported"
+  - id: hooks
+    fallback: "Validator agent as workflow step"
+  - id: fork_context
+    fallback: "Not supported"
+  - id: teammate_primitive
+    fallback: "Not applicable"
+
+concept_mapping:
+  maxTurns:
+    frontmatter_field: maxTurns
+    cli_flag: null
+    default: null
+    hard_cap: null
+    notes: "Enforcement not verified; declare for portability but do not rely on it"
+  tools:
+    frontmatter_field: tools
+    cli_flag: null
+    enforced_by: "advisory only (until Antigravity formalizes tool gating)"
+    semantic_map:
+      read: read
+      write: write
+      edit: edit
+      grep: grep
+      glob: glob
+      bash: bash
+      shell: bash
+      web_search: web_search
+      web_fetch: web_fetch
+  model:
+    resolution:
+      sonnet: "gemini-2.5-pro"
+      opus: "gemini-2.5-pro"
+  memory:
+    ephemeral:
+      scope: "single invocation"
+    session:
+      scope: "single session"
+      location: "in-memory"
+    project:
+      scope: "manual injection"
+    global:
+      scope: "not supported"
+  subagent_spawn:
+    primitive: "evolving"
+
+numeric_values:
+  context_window_tokens: null
+  max_output_tokens: null
+  default_max_turns: null
+
+validators:
+  - id: antigravity-experimental-advisory
+    description: "Antigravity adapter is experimental; production squads should target a stable runtime"
+    level: warning
+    applies_to: squad
+  - id: antigravity-tool-advisory
+    description: "Tool whitelist is advisory on Antigravity; rely on body-level safety prose"
+    level: warning
+    applies_to: agent
+
+invocation:
+  binary: "antigravity"
+  env_vars:
+    - name: GOOGLE_API_KEY
+      description: "Google API key"
+      required: false
+  examples:
+    - description: "Interactive session"
+      command: "antigravity"
+
+hooks:
+  supported: false
+  events: []
+  abort_semantics: none
+
+known_limitations:
+  - limitation: "Subagent model is evolving; no stable contract yet"
+    workaround: "Use sequential workflow execution; revisit adapter version when Antigravity formalizes subagent API"
+  - limitation: "Tool whitelist enforcement not verified"
+    workaround: "Rely on body-level safety prose; do not grant tools the squad does not need"
+  - limitation: "maxTurns enforcement not verified"
+    workaround: "Declare maxTurns for portability but do not depend on runtime enforcement"
+  - limitation: "No published compaction or context-window mechanics"
+    workaround: "Keep agent bodies small and handoffs disciplined"
+  - limitation: "Adapter version 0.1.0 is experimental"
+    workaround: "Prefer claude-code or gemini-cli adapters for production squads"
+
+version_history:
+  - version: "0.1.0"
+    date: "2026-04-04"
+    changes: "Initial experimental adapter. Many features marked unsupported pending runtime stabilization."
