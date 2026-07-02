@@ -1,0 +1,145 @@
+adapter:
+  runtime_id: codex
+  runtime_name: "Codex CLI"
+  vendor: "OpenAI"
+  adapter_version: 0.1.0
+  protocol_version: "4.0"
+  minimum_runtime_version: "0.5.0"
+  maintainer: "gutomec"
+  homepage: "https://github.com/openai/codex"
+  status: beta
+
+features_supported:
+  - id: max_turns
+    mechanism: enforced
+    notes: "Enforced via --max-turns CLI flag. Default varies by version; always declare explicitly."
+  - id: tool_whitelist
+    mechanism: enforced
+    notes: "Enforced via --allowedTools CLI flag"
+  - id: handoff_artifacts
+    mechanism: convention
+    notes: "No runtime primitive; squads emit structured output the harness reads"
+  - id: sequential_execution
+    mechanism: enforced
+  - id: session_memory
+    mechanism: enforced
+  - id: web_search
+    mechanism: enforced
+  - id: file_write
+    mechanism: enforced
+  - id: shell_exec
+    mechanism: enforced
+
+features_unsupported:
+  - id: subagent_spawning
+    fallback: "Harness executes workflow steps sequentially in topological order"
+    notes: "Codex CLI has no native subagent primitive. Parallelism is simulated by the harness spawning independent Codex processes."
+  - id: project_memory
+    fallback: "Use AGENTS.md convention or workspace-scoped system prompt injection"
+    notes: "Codex has no equivalent to a single canonical project memory file injected automatically"
+  - id: global_memory
+    fallback: "Use session-scope memory or external file injection"
+  - id: hooks
+    fallback: "Use validator agent as workflow step"
+  - id: fork_context
+    fallback: "Re-invoke with serialized parent context in prompt"
+  - id: teammate_primitive
+    fallback: "Not applicable"
+
+concept_mapping:
+  maxTurns:
+    frontmatter_field: maxTurns
+    cli_flag: "--max-turns"
+    default: null
+    hard_cap: null
+  tools:
+    frontmatter_field: allowedTools
+    cli_flag: "--allowedTools"
+    enforced_by: "CLI flag passed to Codex process"
+    semantic_map:
+      read: read
+      write: write
+      edit: edit
+      grep: grep
+      glob: glob
+      bash: bash
+      shell: bash
+      web_search: web
+      web_fetch: web
+  model:
+    resolution:
+      haiku: "gpt-4o-mini"
+      sonnet: "gpt-4o"
+      opus: "gpt-4-turbo"
+  memory:
+    ephemeral:
+      scope: "single invocation"
+    session:
+      scope: "single conversation"
+      location: "in-memory"
+    project:
+      scope: "per-project"
+      file: "AGENTS.md"
+      location: "repo root (convention)"
+    global:
+      scope: "not natively supported"
+  subagent_spawn:
+    primitive: "none (harness simulates via process spawn)"
+    max_concurrent: "harness-dependent"
+
+numeric_values:
+  context_window_tokens: 128000
+  max_output_tokens: 4096
+  effective_context_tokens: 124000
+  default_max_turns: null
+  memory_file_max_chars: null
+
+validators:
+  - id: codex-tools-lowercase
+    description: "Codex tool names are lowercase; ensure runtimes.codex.allowedTools uses lowercase names"
+    level: warning
+    applies_to: agent
+  - id: codex-max-turns-required
+    description: "maxTurns must be declared (Core P4)"
+    level: blocking
+    applies_to: agent
+  - id: codex-sequential-only
+    description: "Squads requiring subagent_spawning degrade to sequential; verify workflow is acceptable"
+    level: info
+    applies_to: squad
+
+invocation:
+  binary: "codex"
+  env_vars:
+    - name: OPENAI_API_KEY
+      description: "OpenAI API key"
+      required: true
+  examples:
+    - description: "Interactive session"
+      command: "codex"
+    - description: "Non-interactive with tool restrictions"
+      command: "codex --allowedTools read,grep,bash --max-turns 25 'review the diff'"
+    - description: "With sandbox"
+      command: "codex --sandbox --allowedTools read,edit 'apply the fix'"
+
+hooks:
+  supported: false
+  events: []
+  abort_semantics: none
+
+known_limitations:
+  - limitation: "No native subagent spawning; parallel workflow steps must run sequentially"
+    workaround: "Design squads that tolerate sequential execution; use lightweight agents to keep duration bounded"
+  - limitation: "No hook system; PreToolUse/PostToolUse behavior must be implemented as workflow validator steps"
+    workaround: "Add an explicit validator agent as a workflow step"
+  - limitation: "No standardized project memory file injection"
+    workaround: "Inject AGENTS.md content via system prompt manually or use --instructions flag"
+  - limitation: "Context window smaller than Claude (128K vs 200K)"
+    workaround: "Aggressive handoff artifact discipline; smaller agent bodies"
+  - limitation: "Sandbox mode restrictions vary by Codex version"
+    workaround: "Test sandbox in target version before production"
+
+version_history:
+  - version: "0.1.0"
+    date: "2026-04-04"
+    changes: "Initial adapter for Squad Protocol v4.0"

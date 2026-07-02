@@ -1,0 +1,130 @@
+adapter:
+  runtime_id: cursor
+  runtime_name: "Cursor Agent"
+  vendor: "Cursor"
+  adapter_version: 0.1.0
+  protocol_version: "4.0"
+  minimum_runtime_version: "0.40.0"
+  maintainer: "gutomec"
+  homepage: "https://cursor.sh"
+  status: beta
+
+features_supported:
+  - id: max_turns
+    mechanism: hybrid
+    notes: "Enforced at agent loop level; exact flag varies by version"
+  - id: tool_whitelist
+    mechanism: advisory
+    notes: "Partial enforcement; body-level guardrails recommended as second line"
+  - id: handoff_artifacts
+    mechanism: convention
+  - id: sequential_execution
+    mechanism: enforced
+  - id: session_memory
+    mechanism: enforced
+  - id: project_memory
+    mechanism: enforced
+    notes: ".cursorrules file, injected per-workspace"
+  - id: file_write
+    mechanism: enforced
+  - id: shell_exec
+    mechanism: enforced
+  - id: web_search
+    mechanism: enforced
+
+features_unsupported:
+  - id: subagent_spawning
+    fallback: "Sequential execution"
+    notes: "No native subagent primitive in Cursor Agent"
+  - id: global_memory
+    fallback: "Manual per-user configuration"
+  - id: hooks
+    fallback: "Validator agent as workflow step"
+  - id: fork_context
+    fallback: "Re-invoke with serialized parent context"
+  - id: teammate_primitive
+    fallback: "Not applicable"
+
+concept_mapping:
+  maxTurns:
+    frontmatter_field: maxTurns
+    cli_flag: null
+    default: null
+    hard_cap: null
+  tools:
+    frontmatter_field: tools
+    cli_flag: null
+    enforced_by: "Cursor agent loop (advisory)"
+    semantic_map:
+      read: read
+      write: edit
+      edit: edit
+      grep: grep
+      glob: glob
+      bash: terminal
+      shell: terminal
+      web_search: search
+      web_fetch: fetch
+  model:
+    resolution:
+      haiku: "claude-haiku-4-5"
+      sonnet: "claude-sonnet-4-6"
+      opus: "claude-opus-4-6"
+  memory:
+    ephemeral:
+      scope: "single invocation"
+    session:
+      scope: "chat session"
+      location: "in-memory"
+    project:
+      scope: "per-workspace"
+      file: ".cursorrules"
+      location: "workspace root"
+    global:
+      scope: "not native"
+  subagent_spawn:
+    primitive: "none"
+
+numeric_values:
+  context_window_tokens: 200000
+  max_output_tokens: 8000
+  default_max_turns: null
+
+validators:
+  - id: cursor-max-turns-required
+    description: "maxTurns must be declared (Core P4)"
+    level: blocking
+    applies_to: agent
+  - id: cursor-tool-advisory
+    description: "Tool whitelist is advisory; include body-level safety prose"
+    level: warning
+    applies_to: agent
+
+invocation:
+  binary: "cursor-agent"
+  env_vars: []
+  examples:
+    - description: "Interactive via Cursor IDE"
+      command: "cursor (open Cursor IDE with agent panel)"
+    - description: "CLI invocation"
+      command: "cursor-agent --workspace ./my-repo 'review the diff'"
+
+hooks:
+  supported: false
+  events: []
+  abort_semantics: none
+
+known_limitations:
+  - limitation: "Tool whitelist is advisory, not hard-enforced at API schema level"
+    workaround: "Use body-level safety prose as primary defense"
+  - limitation: "No native subagent primitive"
+    workaround: "Sequential execution"
+  - limitation: "No hook system"
+    workaround: "Validator agent as workflow step"
+  - limitation: "Tight coupling to Cursor IDE for best experience"
+    workaround: "CLI invocation works but lacks IDE integrations"
+
+version_history:
+  - version: "0.1.0"
+    date: "2026-04-04"
+    changes: "Initial adapter for Squad Protocol v4.0"
