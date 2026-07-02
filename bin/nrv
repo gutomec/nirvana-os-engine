@@ -1,0 +1,206 @@
+#!/usr/bin/env bash
+# nrv — master entry point for Nirvana harness commands.
+#
+# Sub-commands map directly to the canonical scripts under
+# ~/.claude/skills/harness/scripts/ and ~/.claude/skills/_shared/scripts/.
+#
+# Usage:
+#   nrv glance [--allow-actions]          → web cockpit (alias of `glance`)
+#   nrv route "<brief>"                   → route a brief through the harness
+#   nrv use-businesses "<brief>"          → route forcing business-first preference
+#   nrv use-squads "<brief>"              → route forcing squad-first preference
+#   nrv find "<query>"                    → dry-run capability discovery
+#   nrv validate                          → harness self-test
+#   nrv index                             → re-index squads + businesses
+#   nrv init <target_dir> [--copy]        → bootstrap a new Nirvana project
+#   nrv validate-mind-clones              → audit canonical mind-clone library
+#   nrv help                              → list all sub-commands
+
+set -euo pipefail
+
+# Neutral shared skills root: prefer ~/.nirvana/skills (shared across all
+# runtimes), fall back to legacy ~/.claude/skills. Override via NIRVANA_SKILLS_DIR.
+SKILLS="${NIRVANA_SKILLS_DIR:-$([ -d "$HOME/.nirvana/skills" ] && echo "$HOME/.nirvana/skills" || echo "$HOME/.claude/skills")}"
+
+if command -v bun >/dev/null 2>&1; then
+  BUN_BIN="bun"
+elif [ -x "$HOME/.bun/bin/bun" ]; then
+  BUN_BIN="$HOME/.bun/bin/bun"
+else
+  echo "nrv: bun not found" >&2
+  exit 1
+fi
+
+cmd="${1:-help}"
+shift || true
+
+case "$cmd" in
+  version|--version|-v|-V)
+    if [ -f "$SKILLS/VERSION" ]; then
+      v=$(cat "$SKILLS/VERSION")
+    elif [ -f "$SKILLS/../package.json" ]; then
+      v=$(grep -m1 '"version"' "$SKILLS/../package.json" | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')
+    else
+      v="unknown"
+    fi
+    edition="Nirvana-OS"
+    [ -f "$SKILLS/EDITION" ] && edition=$(cat "$SKILLS/EDITION")
+    printf 'nrv %s (%s)\n' "$v" "$edition" ;;
+  glance)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/glance.ts" "$@" ;;
+  route)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/route.ts" "$@" ;;
+  use-businesses|business|businesses)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/route.ts" "$@" --prefer business ;;
+  use-squads|squad|squads)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/route.ts" "$@" --prefer squad ;;
+  find)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/find.ts" "$@" ;;
+  validate)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/validate.ts" "$@" ;;
+  watch|tail)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/watch.ts" "$@" ;;
+  watch-fs|fswatch)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/watch-fs.ts" "$@" ;;
+  index)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/index.ts" "$@" ;;
+  pack-manifest|gen-pack-manifest)
+    exec "$BUN_BIN" "$SKILLS/_shared/scripts/gen-pack-manifest.ts" "$@" ;;
+  init|init-project)
+    exec "$BUN_BIN" "$SKILLS/_shared/scripts/init-project.ts" "$@" ;;
+  install)
+    # nrv install — overloaded: with --bootstrap routes to the system installer.
+    # Default routes to the asset installer (Tier 0/1: businesses, squads, mind-clones, packs).
+    if [[ "${1:-}" == "--bootstrap" || "${1:-}" == "--check" || "${1:-}" == "--starter" || "${1:-}" == "--no-starter" || "${1:-}" == "--dry" ]]; then
+      exec "$BUN_BIN" "$SKILLS/_shared/scripts/install.ts" "$@"
+    fi
+    exec "$BUN_BIN" "$SKILLS/_shared/scripts/install-asset.ts" "$@" ;;
+  setup)
+    exec "$BUN_BIN" "$SKILLS/_shared/scripts/install.ts" "$@" ;;
+  uninstall)
+    # nrv uninstall <name>     → remove an installed asset (squad/business/clone/pack)
+    # nrv uninstall --engine   → remove the engine (skills+CLI+links+hooks); keeps content
+    # nrv uninstall --hooks    → remove only the audit hooks
+    if [[ -n "${1:-}" && "${1:0:1}" != "-" ]]; then
+      # Pack pago (Trilha A: ~/.nirvana/packs/<slug>.json) tem precedência sobre
+      # o asset registry (Trilha B), e --kind=pack força.
+      if [ -f "$HOME/.nirvana/packs/${1}.json" ] || [[ " $* " == *" --kind=pack "* ]]; then
+        exec "$BUN_BIN" "$SKILLS/_shared/scripts/uninstall-pack.ts" "$@"
+      fi
+      exec "$BUN_BIN" "$SKILLS/_shared/scripts/uninstall-asset.ts" "$@"
+    fi
+    case "${1:-}" in
+      --engine)
+        shift; exec "$BUN_BIN" "$SKILLS/_shared/scripts/uninstall-engine.ts" "$@" ;;
+      --hooks)
+        shift; exec "$BUN_BIN" "$SKILLS/_shared/scripts/install.ts" --uninstall "$@" ;;
+      *)
+        echo "usage: nrv uninstall <name>      remove an installed asset"
+        echo "       nrv uninstall --engine    remove the engine (keeps ~/squads, ~/businesses)"
+        echo "       nrv uninstall --hooks      remove only the audit hooks"
+        exit 2 ;;
+    esac ;;
+  installed|list-installed)
+    exec "$BUN_BIN" "$SKILLS/_shared/scripts/list-installed.ts" "$@" ;;
+  validate-mind-clones|mc-validate)
+    exec "$BUN_BIN" "$SKILLS/_shared/scripts/validate-mind-clones.ts" "$@" ;;
+  validate-trace|trace-validate)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/validate-trace.ts" "$@" ;;
+  baseline)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/baseline.ts" "$@" ;;
+  improver)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/improver.ts" "$@" ;;
+  guard)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/guard.ts" "$@" ;;
+  fix-squad|doctor-squad)
+    exec "$BUN_BIN" "$SKILLS/squads/scripts/fix-squad.ts" "$@" ;;
+  memory|mem)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/memory.ts" "$@" ;;
+  gate)
+    # nrv gate <rubric> <args>… — currently only voice-fidelity is wired
+    case "${1:-}" in
+      voice-fidelity|voice|mind-clone-voice-fidelity)
+        shift; exec "$BUN_BIN" "$SKILLS/harness/scripts/gate-voice-fidelity.ts" "$@" ;;
+      *)
+        echo "usage: nrv gate <rubric> <args>"
+        echo "available rubrics: voice-fidelity"
+        exit 2 ;;
+    esac ;;
+  doctor|capability-doctor)
+    # nrv doctor [--system|--capability]
+    case "${1:-system}" in
+      --capability|capability) shift; exec "$BUN_BIN" "$SKILLS/_shared/scripts/capability-doctor.ts" "$@" ;;
+      --system|system|"") exec "$BUN_BIN" "$SKILLS/harness/scripts/doctor-system.ts" "$@" ;;
+      *) exec "$BUN_BIN" "$SKILLS/harness/scripts/doctor-system.ts" "$@" ;;
+    esac ;;
+  dispatch)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/dispatch.ts" "$@" ;;
+  run|autopilot)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/dispatch.ts" "$@" --exec ;;
+  auto)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/dispatch.ts" "$@" --exec --auto ;;
+  revise)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/revise.ts" "$@" ;;
+  clean|clean-project|purge)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/clean-project.ts" "$@" ;;
+  update|self-update|upgrade)
+    # nrv update            → atualiza o ENGINE (git pull / re-fetch do release)
+    # nrv update <slug>     → atualiza um PACK pago instalado (--check só compara)
+    if [[ -n "${1:-}" && "${1:0:1}" != "-" ]]; then
+      exec "$BUN_BIN" "$SKILLS/_shared/scripts/update-pack.ts" "$@"
+    fi
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/update.ts" "$@" ;;
+  install-content)
+    exec "$BUN_BIN" "$SKILLS/_shared/scripts/install-content.ts" "$@" ;;
+  pack)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/pack.ts" "$@" ;;
+  audit-view|audit)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/audit-view.ts" "$@" ;;
+  search)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/search.ts" "$@" ;;
+  export)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/export.ts" "$@" ;;
+  ask)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/ask.ts" "$@" ;;
+  launch)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/launch.ts" "$@" ;;
+  tui|cockpit-tui)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/tui.ts" "$@" ;;
+  validate-chain|chain-validate|chain)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/validate-chain.ts" "$@" ;;
+  resume|resume-project)
+    exec "$BUN_BIN" "$SKILLS/_shared/scripts/resume-project.ts" "$@" ;;
+  list-squads|squads-list)
+    exec "$BUN_BIN" "$SKILLS/squads/scripts/list-squads.ts" "$@" ;;
+  list-businesses|businesses-list)
+    exec "$BUN_BIN" "$SKILLS/businesses/scripts/list-businesses.ts" "$@" ;;
+  list-clones|clones-list|list-mind-clones|mind-clones)
+    exec "$BUN_BIN" "$SKILLS/_shared/scripts/list-clones.ts" "$@" ;;
+  inspect-clone|clone-inspect|inspect-mind-clone)
+    exec "$BUN_BIN" "$SKILLS/_shared/scripts/inspect-clone.ts" "$@" ;;
+  find-clone|clone-find|find-mind-clone)
+    exec "$BUN_BIN" "$SKILLS/_shared/scripts/find-clone.ts" "$@" ;;
+  validate-starter|starter-validate)
+    # Dev-only: validates a starter/content pack inside the source repo. This
+    # script is not shipped in installed copies, so guard the dev-repo path and
+    # fail with a clear message instead of a raw "module not found".
+    if [ -f "$HOME/nirvana-os/scripts/validate-starter.ts" ]; then
+      exec "$BUN_BIN" "$HOME/nirvana-os/scripts/validate-starter.ts" "$@"
+    fi
+    echo "nrv validate-starter: dev-only command (requires the source repo at ~/nirvana-os)." >&2
+    exit 2 ;;
+  license|verify-license|whoami)
+    exec "$BUN_BIN" "$SKILLS/_shared/scripts/license.ts" "$@" ;;
+  help|-h|--help|"")
+    if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ -f "$SKILLS/harness/assets/octo.ansi" ]; then
+      printf '\n'
+      cat "$SKILLS/harness/assets/octo.ansi"
+      printf '  \033[1;38;2;230;57;53mNirvana-OS\033[0m  \033[2m·  command a universe of companies\033[0m\n\n'
+    fi
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/help.ts"
+    ;;
+  *)
+    echo "nrv: unknown subcommand '$cmd'" >&2
+    echo "     run 'nrv help' to list available commands" >&2
+    exit 2 ;;
+esac

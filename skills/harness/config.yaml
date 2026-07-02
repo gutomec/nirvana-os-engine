@@ -1,0 +1,47 @@
+budget:
+  # 0 = unlimited (default). Nirvana stays out of the way — no pre-flight, no cap.
+  # Set a positive value to enforce a HARD cap; tighten on a per-business basis
+  # in business.yaml.run_budget_usd if needed.
+  default_max_cost_usd: 0
+  default_max_tokens: 0
+  default_max_handoffs: 0
+  default_max_duration_seconds: 0
+  on_budget_exceeded: warn                   # only fires when a cap > 0 is set
+  auto_invoke_budget_usd: 0
+baselines:
+  squad_capability_usd: 0.3
+  business_usd: 0.8
+  per_handoff_usd: 0.05
+routing:
+  # mode — how routing decisions are made, system-wide. Propagates: the maestro
+  # uses it at the top level, and business employees use it to find squads.
+  #   agentic (default) — an agent inspects the registries and reasons about the
+  #                       best target. Higher quality, costs tokens.
+  #   fast              — BM25/keyword matching over the registry indexes.
+  #                       Zero-token, deterministic, lower quality. Opt-in for
+  #                       cost-sensitive runs.
+  # Override per-run with env NIRVANA_ROUTING_MODE or the --mode flag.
+  mode: agentic
+  match_high_threshold: 0.8
+  match_high_lead: 0.15
+  match_ambiguous_threshold: 0.6
+  match_ambiguous_window: 0.15
+# Prose quality is governed by the writing contract in AGENTS.md / CLAUDE.md
+# / GEMINI.md (auto-loaded by every runtime). The contract is prevention-only:
+# the agent learns the rules before writing. No post-hoc correction loop, no
+# skill invocation. wiki-lint (below in the rubric set) is a cheap regex
+# pass/fail check, not a rewrite.
+# Phase 3 — quality gate with LLM judge + revision loop (nirvana-evolution)
+quality_gate:
+  judge_enabled: false        # opt-in; flip to true to activate. See docs/nirvana-evolution/decisions/0001-judge-integration-deferred.md.
+  max_revisions: 2            # hard cap; loop fails open after this.
+  escalate_after: 2           # alias of max_revisions; future-use placeholder.
+  rubric_fallback: prose_shortform   # used when produces[] has no matching rubric
+  default_judge_model: sonnet # haiku|sonnet|opus; per-rubric override via rubric frontmatter `target_model`
+audit:
+  retention_days: 90
+context_budget:
+  threshold_warning_pct: 0.70
+  threshold_critical_pct: 0.85
+  default_window_tokens: 200000  # sonnet default; opus 1M = override per call
+  chars_per_token: 4             # heuristic ratio for size-based estimation

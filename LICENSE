@@ -1,0 +1,181 @@
+Nirvana-OS Sustainable Use License (SUL) v1.0
+
+Effective date: 2026-05-20
+Copyright (c) 2026 Luiz Gustavo Vieira Rodrigues. All rights reserved.
+
+---
+
+EN — CANONICAL TEXT
+
+This Sustainable Use License (the "License") governs use of the software,
+documentation, mind-clone library, business templates, squad workflows, and
+related materials made available in the Nirvana-OS repository (the
+"Software").
+
+By using, modifying, or distributing the Software, you ("Licensee") agree to
+the terms below. If you do not agree, do not use the Software.
+
+1. GRANT
+
+Subject to the conditions below, you are granted a worldwide, royalty-free,
+non-exclusive, non-transferable license to:
+
+  (a) use the Software for internal business purposes within your
+      organization;
+  (b) modify the Software and create derivative works for internal use;
+  (c) distribute the Software and derivative works to third parties, subject
+      to Section 2.
+
+2. CONDITIONS
+
+You may not, without a separate written commercial license from the
+copyright holders:
+
+  (a) host, offer, or operate the Software (or a derivative work) as a
+      managed service, SaaS, PaaS, or hosted product made available to
+      third parties for a fee ("Hosting Restriction"); or
+  (b) remove, alter, obscure, or circumvent any license-key mechanism,
+      telemetry, authentication, billing, attribution notices, or copyright
+      notices included in the Software; or
+  (c) distribute the Software or derivative works under a license less
+      restrictive than this License.
+
+3. PERMITTED USE CLARIFICATIONS
+
+For avoidance of doubt, the following uses are permitted under this License
+without separate commercial agreement:
+
+  - internal use within your organization, including for revenue-generating
+    activities, as long as the Software itself is not the product sold;
+  - consulting work where you deploy the Software inside a client's
+    infrastructure for that client's internal use;
+  - forks and modifications used internally;
+  - non-commercial research, education, and personal projects;
+  - distribution to clients alongside professional services, provided
+    clients receive the Software under this same License.
+
+4. CONTRIBUTIONS
+
+The project accepts contributions only under the Contributor License Agreement
+(CLA) published in the repository (see CONTRIBUTING.md and CLA.md). By submitting
+a Contribution, you assign to the copyright holder all economic (patrimonial)
+rights in your Contribution, receive no compensation, ownership, or equity, and
+agree to the terms of the CLA. Contributions submitted without agreeing to the
+CLA may be declined.
+
+5. TRADEMARKS
+
+This License does not grant rights to use the names, logos, or trademarks
+"Nirvana-OS", "Nirvana Cloud", or any associated marks of the copyright
+holders, except as required for reasonable and customary attribution.
+Trademark guidelines are published separately in the project repository.
+
+6. DISCLAIMER OF WARRANTY
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
+
+7. LIMITATION OF LIABILITY
+
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR
+OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE
+USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+8. TERMINATION
+
+This License terminates automatically if you breach Section 2. Upon
+termination, you must cease all use of the Software and destroy all copies
+in your possession. Sections 6, 7, and 9 survive termination.
+
+9. GOVERNING LAW
+
+This License is governed by the laws of the Federative Republic of Brazil,
+State of São Paulo, without regard to conflicts of law principles. For
+disputes involving non-Brazilian licensees, parties may elect arbitration
+under CAM-CCBC rules.
+
+10. NOTE ON OPEN SOURCE
+
+This License is source-available but not an OSI-approved open-source
+license. The Software's source code is published openly; certain commercial
+uses (Section 2) require a separate commercial license. For OSI-approved
+alternatives or commercial licensing inquiries, contact the project
+maintainers.
+
+---
+
+PT-BR — VERSÃO INFORMATIVA (NÃO-VINCULANTE)
+
+Esta tradução é fornecida para conveniência. Em caso de divergência,
+prevalece o texto em inglês acima.
+
+Esta Licença de Uso Sustentável ("Licença") rege o uso do software,
+documentação, biblioteca de mind-clones, templates de business, workflows
+de squads e demais materiais disponibilizados no repositório Nirvana-OS
+("Software").
+
+Ao usar, modificar ou distribuir o Software, você ("Licenciado") concorda
+com os termos abaixo. Caso não concorde, não use o Software.
+
+1. CONCESSÃO
+
+Sujeito às condições abaixo, é concedida licença mundial, livre de
+royalties, não-exclusiva e intransferível para:
+
+  (a) usar o Software para fins comerciais internos da sua organização;
+  (b) modificar o Software e criar obras derivadas para uso interno;
+  (c) distribuir o Software e obras derivadas a terceiros, sujeito à
+      Seção 2.
+
+2. CONDIÇÕES
+
+Você não pode, sem licença comercial separada por escrito:
+
+  (a) hospedar, oferecer ou operar o Software como serviço gerenciado,
+      SaaS, PaaS ou produto hospedado disponibilizado a terceiros mediante
+      remuneração;
+  (b) remover, alterar, ocultar ou contornar mecanismos de licença,
+      telemetria, autenticação, cobrança, atribuições ou avisos de
+      copyright;
+  (c) distribuir o Software ou obras derivadas sob licença menos
+      restritiva que esta Licença.
+
+3. ESCLARECIMENTOS SOBRE USOS PERMITIDOS
+
+São permitidos sem acordo comercial adicional:
+
+  - uso interno na sua organização, inclusive em atividades geradoras de
+    receita, desde que o Software em si não seja o produto vendido;
+  - trabalho de consultoria com deploy do Software na infraestrutura do
+    cliente para uso interno daquele cliente;
+  - forks e modificações para uso interno;
+  - pesquisa não-comercial, educação e projetos pessoais;
+  - distribuição a clientes junto com serviços profissionais, desde que
+    clientes recebam o Software sob esta mesma Licença.
+
+4. CONTRIBUIÇÕES
+
+O projeto aceita contribuições apenas mediante o Contributor License Agreement
+(CLA) publicado no repositório (ver CONTRIBUTING.md e CLA.md). Ao enviar uma
+contribuição, você cede ao titular todos os direitos patrimoniais sobre a
+contribuição, não recebe remuneração, titularidade ou participação, e concorda
+com os termos do CLA. Contribuições sem aceite do CLA podem ser recusadas.
+
+5. MARCAS
+
+Esta Licença não concede direitos sobre as marcas "Nirvana-OS", "Nirvana
+Cloud" ou afins, exceto para atribuição razoável.
+
+6, 7, 8, 9 — Ver texto canônico em inglês acima.
+
+10. SOBRE CÓDIGO ABERTO
+
+Esta Licença é source-available, mas não é uma licença open-source
+aprovada pela OSI. O código-fonte é publicado abertamente; certos usos
+comerciais (Seção 2) requerem licença comercial separada.
+
+---
+
+SPDX identifier: LicenseRef-Nirvana-OS-SUL-1.0
