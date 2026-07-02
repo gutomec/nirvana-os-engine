@@ -1,0 +1,49 @@
+name: example-council
+version: 1.0.0
+protocol: '1.0'
+description: 'Council business: CEO + 4 specialized advisors (strategy, ops, marketing,
+  research) + 1 antagonist that challenges proposals before they ship. The CEO routes
+  briefs to the right advisor; advisors return handoffs to the CEO who synthesizes
+  the final output. Use as base for advisory boards, decision councils, mind-clone
+  collectives.'
+author: businesses-skill
+license: SUL-1.0
+domains:
+- strategy
+- business_operations
+employee_count: 6
+authority_level: tier-3
+operation_mode: zero_human
+runtime_requirements:
+  minimum:
+  - runtime: claude-code
+    version: '>=1.0.0'
+  compatible:
+  - runtime: codex
+    version: '>=0.20.0'
+  - runtime: gemini-cli
+    version: '>=0.4.0'
+  - runtime: antigravity-cli  # +antigravity-cli (sucessor; gemini-cli sunset 2026-06-18 consumer)
+    version: '>=0.4.0'
+features_required:
+- max_turns
+- tool_whitelist
+- subagent_spawning
+- handoff_artifacts
+- audit_trail
+memory:
+  permanent:
+    enabled: true
+    files:
+    - permanent.md
+    garbage_collection:
+      max_facts: 200
+      review_interval_days: 60
+      conflict_resolution: replace
+  project:
+    isolation: by_construction
+ui:
+  client_facing_name: Council Business (Example)
+  category: general
+  pitch: Template council — CEO + 5 advisors. Bom para boards consultivos e mind-clone
+    collectives.
