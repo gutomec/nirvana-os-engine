@@ -1,0 +1,9 @@
+brief_intake:
+  default_employee: ceo
+
+auto_routes: []
+
+mention_routing: []
+
+ticket_intake:
+  default_assignee: ceo
