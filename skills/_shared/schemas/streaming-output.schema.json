@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nirvana-protocol/v1/schemas/streaming-output.schema.json",
+  "title": "Streaming output chunk",
+  "description": "One chunk in a streaming-capable dispatch. Phase 7 da nirvana-evolution.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["chunk_id", "sequence", "content", "parent_trace_id", "emitted_at"],
+  "properties": {
+    "chunk_id": {
+      "type": "string",
+      "description": "UUID or stable id within the trace. Unique."
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "0-based monotonically increasing order within the trace."
+    },
+    "content": {
+      "type": "string",
+      "description": "The chunk body (markdown, text, base64 if binary)."
+    },
+    "content_format": {
+      "type": "string",
+      "enum": ["markdown", "text", "json", "html", "base64"],
+      "default": "markdown"
+    },
+    "parent_trace_id": {
+      "type": "string",
+      "description": "trace_id of the parent dispatch this chunk belongs to."
+    },
+    "emitted_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "is_final": {
+      "type": "boolean",
+      "default": false,
+      "description": "True when this is the last chunk; triggers full gate on aggregated output."
+    },
+    "partial_gate_result": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Optional subset-rubric verdict for this chunk alone."
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}
