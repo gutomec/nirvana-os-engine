@@ -1,0 +1,77 @@
+# ─────────────────────────────────────────────────────────────────────
+# Capability Block — snippet para colar dentro de capabilities[] em squad.yaml
+# Squad Protocol v5 §22. Schema: capability.schema.json.
+# ─────────────────────────────────────────────────────────────────────
+
+  - id: {{CAPABILITY_ID}}
+    # ^^^ dotted hierarchical, ≥3 segmentos. Ex: marketing.funnel.create,
+    # media.video.analyze, sales.pricing.optimize. Padrão snake_case
+    # por segmento. Pattern: ^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2,}$
+
+    description: >
+      {{CAPABILITY_DESCRIPTION}}
+    # ^^^ 20-500 chars. Diga o que entrega em termos concretos. Esta string
+    # alimenta o BM25 da discovery — escreva como se fosse buscar você mesmo.
+
+    domains: [{{DOMAIN_1}}, {{DOMAIN_2}}]
+    # ^^^ 1-5 domains de ~/.claude/skills/_shared/catalogs/CAPABILITY_CATALOG_V1.yaml.
+    # Ex: [marketing, sales], [media, video], [strategy, analytics].
+    # Domínios fora do catálogo exigem `experimental_domains: true` na squad.
+
+    inputs:
+      - name: {{INPUT_NAME}}
+        type: string                        # file|string|json|array|number|boolean|url
+        formats: [text, markdown]           # opcional, hint p/ runtime
+        required: true
+        description: "{{INPUT_DESCRIPTION}}"
+
+    outputs:
+      - name: {{OUTPUT_NAME}}
+        type: markdown                      # file|string|json|array|markdown|html|binary
+        format: structured
+        description: "{{OUTPUT_DESCRIPTION}}"
+        # schema: schemas/{{OUTPUT_NAME}}.json   # opcional, p/ outputs JSON
+
+    tools_required:
+      - read
+      - write
+      - web_search
+    # ^^^ semantic tool names (Squad v4 §10.7). Adapter traduz para nomes nativos.
+
+    invoke:
+      type: workflow                        # workflow | task | agent
+      ref: workflows/{{WORKFLOW_OR_TASK_REF}}
+      # Para type=task: adicione `agent: {{AGENT_NAME}}` se quiser fixar.
+      # Para type=agent: adicione `prompt_template: "..."` (opcional).
+      # inputs_mapping: opcional, mapeia capability inputs → invoke target inputs.
+
+    examples:
+      - "{{NL_INTENT_1}}"
+      - "{{NL_INTENT_2}}"
+      - "{{NL_INTENT_3}}"
+    # ^^^ ≥1 obrigatório. Frases naturais que devem casar com esta capability.
+    # Cubra variações: PT-BR, EN, formal, informal, sinônimos.
+
+    not_for:
+      - "{{ANTI_PATTERN_1}} (use {{ALTERNATIVE_CAPABILITY_ID}})"
+    # ^^^ opcional mas FORTEMENTE recomendado. Cite alternativa quando souber.
+
+    fidelity:
+      status: experimental                  # validated | experimental | drifted | retired
+      threshold: 0.85                       # 0-1, score mínimo p/ aceitar saída
+      # ground_truth_dir: evals/{{CAPABILITY_ID}}/    # opcional
+      # eval_results: evals/{{CAPABILITY_ID}}/results.json
+      # last_eval: 2026-05-01T00:00:00Z
+      # judge_model: claude-opus-4-7
+
+    score_boost: 1.0
+    # ^^^ 0.0-2.0. Multiplica score na discovery.
+    # Convenção: validated=1.0, experimental=0.85, drifted=0.5, retired=0.
+
+    model_hint: sonnet                      # haiku | sonnet | opus | inherit
+
+    estimated_cost_usd: 0.50
+    # ^^^ self-reported, opcional. Harness usa p/ budget pre-flight.
+
+    # humanize: true                        # opcional, default true em capability humana-facing.
+                                            # Defina false p/ outputs técnicos (json/binary).

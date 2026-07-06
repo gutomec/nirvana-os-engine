@@ -1,0 +1,38 @@
+chart:
+- employee: ceo
+  reports: []
+  direct_reports:
+  - advisor-strategy
+  - advisor-ops
+  - advisor-marketing
+  - advisor-research
+  - antagonist
+  is_antagonist: false
+- employee: advisor-strategy
+  reports:
+  - ceo
+  direct_reports: []
+  is_antagonist: false
+- employee: advisor-ops
+  reports:
+  - ceo
+  direct_reports: []
+  is_antagonist: false
+- employee: advisor-marketing
+  reports:
+  - ceo
+  direct_reports: []
+  is_antagonist: false
+- employee: advisor-research
+  reports:
+  - ceo
+  direct_reports: []
+  is_antagonist: false
+- employee: antagonist
+  reports:
+  - ceo
+  direct_reports: []
+  is_antagonist: true
+routing_rules:
+  default_skip_levels: false
+  cross_team_handoff_allowed: true
