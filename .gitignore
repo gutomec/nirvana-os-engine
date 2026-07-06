@@ -1,0 +1,60 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.vscode/
+.idea/
+
+# Dependencies (nunca no repo nem no zip — instaladas na máquina do usuário via `bun install`).
+# Sem barra: pega diretórios E symlinks chamados node_modules, em qualquer nível.
+node_modules
+bun.lockb
+package-lock.json
+yarn.lock
+.pnpm-store/
+
+# Generated registries (created at runtime by `nrv index`)
+.squads-registry.json
+.businesses-registry.json
+*.registry.json
+
+# Audit logs (created at runtime, never in repo)
+audit.jsonl
+audit.db
+*.audit.db
+.harness-logs/
+.nirvana/
+
+# Backups created by hooks/installer
+*.bak.*
+*.backup
+*.backup.*
+
+# User runtime data (must never enter the repo)
+/squads/
+/businesses/
+/mind-clones/
+
+# Build artifacts
+dist/
+build/
+out/
+*.log
+.cache/
+
+# Local secrets / env
+.env
+.env.local
+.env.*.local
+
+# Personal scratch
+scratch/
+tmp/
+.sanitization-work/
+
+# Internal docs (strategy, enforcement) — never public
+/_private/
+
+# Generated test reports (legacy router regression HTML)
+skills/harness/tests/reports/

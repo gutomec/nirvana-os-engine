@@ -1,0 +1,652 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nirvana-protocol/v1/schemas/core-schemas.json",
+  "title": "Core Schemas Bundle",
+  "description": "Bundled schemas for Squad v5 + Business v1 + Harness v1 protocols. Each definition is referenceable via $ref: '#/definitions/{name}'",
+
+  "definitions": {
+
+    "employee": {
+      "title": "Employee Frontmatter (employees/{name}.md)",
+      "description": "Business Protocol v1 §7 employee frontmatter (YAML inside Markdown)",
+      "type": "object",
+      "required": ["name", "role", "type", "description", "maxTurns", "reports_to", "self_score_contract"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,63}$" },
+        "role": { "type": "string", "minLength": 3 },
+        "type": { "enum": ["functional_specialist", "mind_clone"], "default": "functional_specialist" },
+        "description": { "type": "string", "minLength": 20 },
+        "maxTurns": { "type": "integer", "minimum": 1, "maximum": 200 },
+        "reports_to": {
+          "oneOf": [
+            { "type": "string", "pattern": "^[a-z][a-z0-9-]+$" },
+            { "type": "null" }
+          ]
+        },
+        "manages": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]+$" }
+        },
+        "tools": {
+          "type": "array",
+          "description": "Semantic tool names from Squad v5 §10.7 portable whitelist. Adapter translates to runtime-native names. Free-form string accepted (validators warn on unknown values).",
+          "items": { "type": "string" }
+        },
+        "model": { "enum": ["haiku", "sonnet", "opus", "inherit"] },
+        "budget_monthly_usd": { "type": "number", "minimum": 0 },
+        "heartbeat": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cadence": { "enum": ["hourly", "daily", "weekly", "manual"], "default": "manual" },
+            "max_cost_per_cycle_usd": { "type": "number", "minimum": 0 },
+            "enabled": { "type": "boolean", "default": false },
+            "on_unproductive_cycle": { "enum": ["continue", "pause_after_n"] },
+            "pause_after_n_unproductive": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "is_antagonist": { "type": "boolean", "default": false },
+        "is_brief_intake": { "type": "boolean", "default": false },
+        "antagonizes": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "squads_authorized": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]+$" }
+        },
+        "draws_from": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["source"],
+            "properties": {
+              "source": { "type": "string" },
+              "weight": { "type": "number", "minimum": 0, "maximum": 1 },
+              "use_for": { "type": "array", "items": { "type": "string" } }
+            }
+          },
+          "description": "Used when type=functional_specialist"
+        },
+        "dna_reference": {
+          "type": "string",
+          "description": "Used when type=mind_clone. Path to ~/businesses/_library/dna/..."
+        },
+        "disclosure_required": { "type": "boolean" },
+        "commercial_use_allowed": { "enum": ["never", "review", "allowed"] },
+        "self_score_contract": {
+          "type": "object",
+          "required": ["required_before_handoff", "criteria"],
+          "additionalProperties": false,
+          "properties": {
+            "required_before_handoff": { "type": "boolean", "default": true },
+            "criteria": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["id", "description", "threshold"],
+                "properties": {
+                  "id": { "type": "string", "pattern": "^[a-z_]+$" },
+                  "description": { "type": "string" },
+                  "threshold": { "type": "number", "minimum": 0, "maximum": 1 },
+                  "weight": { "type": "number", "minimum": 0, "default": 1.0 }
+                }
+              },
+              "minItems": 1
+            },
+            "on_below_threshold": { "enum": ["revise", "escalate", "annotate"], "default": "revise" },
+            "max_revise_iterations": { "type": "integer", "minimum": 0, "maximum": 5, "default": 2 }
+          }
+        },
+        "memory": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "permanent_path": { "type": "string" }
+          }
+        },
+        "mentions": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "receives": {
+              "type": "array",
+              "items": { "type": "string", "pattern": "^@[a-z][a-z0-9-]+$" }
+            },
+            "notification_priority": { "enum": ["high", "normal", "low"], "default": "normal" }
+          }
+        },
+        "escalation_triggers": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/escalation_trigger" }
+        }
+      }
+    },
+
+    "org_chart": {
+      "title": "Org Chart (org-chart.yaml)",
+      "description": "Business Protocol v1 §8 hierarchy + reporting + routing",
+      "type": "object",
+      "required": ["chart"],
+      "additionalProperties": false,
+      "properties": {
+        "chart": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["employee", "reports", "direct_reports"],
+            "additionalProperties": false,
+            "properties": {
+              "employee": { "type": "string", "pattern": "^[a-z][a-z0-9-]+$" },
+              "reports": {
+                "type": "array",
+                "items": { "type": "string" },
+                "maxItems": 1
+              },
+              "direct_reports": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "is_antagonist": { "type": "boolean", "default": false },
+              "antagonizes": { "type": "array", "items": { "type": "string" } }
+            }
+          },
+          "minItems": 1
+        },
+        "routing_rules": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "escalation_path": {
+              "type": "object",
+              "patternProperties": {
+                "^[a-z][a-z0-9-]+$": { "type": "string" }
+              }
+            },
+            "default_skip_levels": { "type": "boolean", "default": false },
+            "cross_team_handoff_allowed": { "type": "boolean", "default": true },
+            "antagonist_invocation": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "triggers": { "type": "array", "items": { "type": "string" } }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "routing": {
+      "title": "Routing rules (routing.yaml)",
+      "description": "Business Protocol v1 §13 brief routing rules + mention/ticket intake",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "brief_intake": {
+          "type": "object",
+          "required": ["default_employee"],
+          "properties": {
+            "default_employee": { "type": "string" },
+            "alternates": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["condition", "route_to"],
+                "properties": {
+                  "condition": { "type": "string" },
+                  "route_to": { "type": "string" },
+                  "bypass_auto_routes": { "type": "boolean", "default": false }
+                }
+              }
+            }
+          }
+        },
+        "auto_routes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["pattern", "route_to"],
+            "additionalProperties": false,
+            "properties": {
+              "pattern": { "type": "string" },
+              "route_to": { "type": "string" },
+              "confidence_threshold": { "type": "number", "default": 0.7 },
+              "requires_escalation_to": { "type": "string" }
+            }
+          }
+        },
+        "mention_routing": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["mention", "route_to"],
+            "properties": {
+              "mention": { "type": "string", "pattern": "^@[a-z][a-z0-9-]+$" },
+              "route_to": { "type": "string" }
+            }
+          }
+        },
+        "ticket_intake": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "default_assignee": { "type": "string" },
+            "by_type": {
+              "type": "object",
+              "patternProperties": {
+                "^[a-z_]+$": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "ticket": {
+      "title": "Ticket (Business Protocol v1 §10.2)",
+      "description": "Persistent work item handed off between employees",
+      "type": "object",
+      "required": ["ticket_id", "schemaVersion", "type", "from", "to", "project_id", "business", "subject", "body", "status", "created_at"],
+      "additionalProperties": false,
+      "properties": {
+        "ticket_id": { "type": "string", "pattern": "^TKT-\\d{4}-\\d{2}-\\d{2}-\\d+$" },
+        "schemaVersion": { "type": "string", "default": "1.0.0" },
+        "type": { "enum": ["request", "review", "approval", "bug", "escalation"] },
+        "priority": { "enum": ["low", "normal", "high", "urgent"], "default": "normal" },
+        "from": { "type": "string" },
+        "to": { "type": "string" },
+        "project_id": { "type": "string" },
+        "business": { "type": "string" },
+        "subject": { "type": "string", "minLength": 5 },
+        "body": { "type": "string" },
+        "expected_output": {
+          "type": "object",
+          "properties": {
+            "type": { "enum": ["approval", "revisions", "rejection", "deliverable", "decision"] },
+            "schema": { "type": "string" }
+          }
+        },
+        "due_date": { "type": "string", "format": "date-time" },
+        "self_score": { "$ref": "#/definitions/self_score" },
+        "linked_handoff": { "type": "string" },
+        "status": { "enum": ["open", "in_progress", "resolved", "rejected", "paused", "cancelled"] },
+        "created_at": { "type": "string", "format": "date-time" },
+        "resolved_at": { "type": ["string", "null"], "format": "date-time" },
+        "history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["event", "by", "at"],
+            "properties": {
+              "event": { "type": "string" },
+              "by": { "type": "string" },
+              "at": { "type": "string", "format": "date-time" }
+            }
+          }
+        }
+      }
+    },
+
+    "mention": {
+      "title": "Mention (Business Protocol v1 §10.1)",
+      "description": "Lightweight in-content handoff",
+      "type": "object",
+      "required": ["schemaVersion", "type", "from", "to", "mention_text"],
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": { "type": "string", "default": "1.0.0" },
+        "type": { "enum": ["mention"] },
+        "from": { "type": "string" },
+        "to": { "type": "string" },
+        "mention_text": { "type": "string" },
+        "context_path": { "type": "string" },
+        "self_score": { "$ref": "#/definitions/self_score" },
+        "expected_response": { "type": "string" },
+        "deadline": { "type": "string", "format": "date-time" }
+      }
+    },
+
+    "escalation_trigger": {
+      "title": "Escalation Trigger",
+      "description": "Business Protocol v1 §12.2 condition for human or upward escalation",
+      "type": "object",
+      "required": ["id", "condition", "severity"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]+$" },
+        "condition": { "type": "string" },
+        "threshold": { "type": ["number", "string"] },
+        "currency": { "type": "string", "enum": ["USD", "BRL", "EUR"] },
+        "severity": { "enum": ["low", "medium", "high"] },
+        "notify": { "type": "string", "description": "human | manager | ceo | antagonist | <employee_name> | legal-counsel" },
+        "action": { "enum": ["pause", "warn", "continue", "pause_until_resolved", "pause_employee", "abort"] },
+        "timeout_minutes": { "type": "integer", "minimum": 1 },
+        "escalate_to": { "type": "string" },
+        "detect": { "type": "string", "description": "Optional regex or pattern" }
+      }
+    },
+
+    "self_score": {
+      "title": "Self-Score (Business Protocol v1 §11)",
+      "description": "Producer's self-evaluation against declared criteria, attached to every handoff",
+      "type": "object",
+      "additionalProperties": true,
+      "patternProperties": {
+        "^[a-z_]+$": { "type": "number", "minimum": 0, "maximum": 1 }
+      },
+      "properties": {
+        "passes_threshold": { "type": "boolean" },
+        "iteration": { "type": "integer", "minimum": 0 },
+        "justifications": { "type": "object" }
+      }
+    },
+
+    "handoff_artifact": {
+      "title": "Handoff Artifact (Squad v4 §9 + Business v1 §10.6 extensions)",
+      "description": "Structured data passed between agents/employees on handoff",
+      "type": "object",
+      "required": ["schemaVersion", "from_agent", "to_agent", "summary", "next_action"],
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": { "type": "string", "default": "1.0.0" },
+        "from_agent": { "type": "string" },
+        "to_agent": { "type": "string" },
+        "summary": { "type": "string", "minLength": 10, "maxLength": 1000 },
+        "key_decisions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "maxItems": 5
+        },
+        "files_modified": {
+          "type": "array",
+          "items": { "type": "string" },
+          "maxItems": 10
+        },
+        "blockers": {
+          "type": "array",
+          "items": { "type": "string" },
+          "maxItems": 3
+        },
+        "next_action": { "type": "string" },
+        "artifacts": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "business_extensions": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": { "enum": ["mention", "ticket", "escalation", "delegation", "auto_route"] },
+            "mention_text": { "type": "string" },
+            "ticket_id": { "type": "string" },
+            "project_id": { "type": "string" },
+            "business_slug": { "type": "string" },
+            "self_score": { "$ref": "#/definitions/self_score" },
+            "expected_response": { "type": "string" },
+            "deadline": { "type": "string", "format": "date-time" },
+            "audit_trail_id": { "type": "string" }
+          }
+        }
+      }
+    },
+
+    "approval_chain": {
+      "title": "Approval Chain (Business Protocol v1 §14.3)",
+      "description": "Sequence of employees who must approve a deliverable",
+      "type": "object",
+      "required": ["chain"],
+      "additionalProperties": false,
+      "properties": {
+        "chain": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "producer": { "type": "string" },
+              "reviewer": { "type": "string" },
+              "approver": { "type": "string" },
+              "final_approver": { "type": "string" },
+              "human_checkpoint": { "type": "string", "enum": ["required", "optional", "skip"] }
+            }
+          },
+          "minItems": 1
+        },
+        "on_approval": { "enum": ["deliver_to_client", "merge_to_final", "publish", "notify"] },
+        "on_rejection_at_review": { "enum": ["send_back_to_producer", "escalate", "abort"] },
+        "on_rejection_at_approval": { "enum": ["send_back_to_producer", "escalate_to_human", "abort"] }
+      }
+    },
+
+    "registry_squads": {
+      "title": "Squads Registry (~/.squads-registry-v5.json)",
+      "description": "Pre-computed index of all known squads + capabilities for fast discovery",
+      "type": "object",
+      "required": ["schema_version", "generated_at", "host_protocol_version", "squads_root_dirs", "squads", "capabilities"],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": { "type": "string", "default": "1.0.0" },
+        "generated_at": { "type": "string", "format": "date-time" },
+        "host_protocol_version": { "type": "string", "enum": ["5.0", "4.0"] },
+        "squads_root_dirs": { "type": "array", "items": { "type": "string" } },
+        "squads": {
+          "type": "object",
+          "patternProperties": {
+            "^[a-z][a-z0-9-]+$": {
+              "type": "object",
+              "required": ["version", "protocol", "manifest_path", "manifest_hash", "domains"],
+              "properties": {
+                "version": { "type": "string" },
+                "protocol": { "type": "string" },
+                "manifest_path": { "type": "string" },
+                "manifest_hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+                "domains": { "type": "array", "items": { "type": "string" } },
+                "capabilities": { "type": "array", "items": { "type": "string" } }
+              }
+            }
+          }
+        },
+        "capabilities": {
+          "type": "object",
+          "patternProperties": {
+            "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){2,}$": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["squad", "description", "domains"],
+                "properties": {
+                  "squad": { "type": "string" },
+                  "description": { "type": "string" },
+                  "domains": { "type": "array", "items": { "type": "string" } },
+                  "examples": { "type": "array", "items": { "type": "string" } },
+                  "not_for": { "type": "array", "items": { "type": "string" } },
+                  "fidelity_status": { "enum": ["validated", "experimental", "drifted", "retired"] },
+                  "invoke": { "type": "object" },
+                  "score_boost": { "type": "number", "default": 1.0 }
+                }
+              }
+            }
+          }
+        },
+        "domains": {
+          "type": "object",
+          "patternProperties": {
+            "^[a-z][a-z0-9_]*$": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "bm25_index": { "type": "object", "description": "Serialized BM25 index (Lunr.js or FlexSearch)" }
+      }
+    },
+
+    "registry_businesses": {
+      "title": "Businesses Registry (~/.businesses-registry.json)",
+      "description": "Pre-computed index of all known businesses",
+      "type": "object",
+      "required": ["schema_version", "generated_at", "businesses"],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": { "type": "string", "default": "1.0.0" },
+        "generated_at": { "type": "string", "format": "date-time" },
+        "businesses_root_dirs": { "type": "array", "items": { "type": "string" } },
+        "businesses": {
+          "type": "object",
+          "patternProperties": {
+            "^[a-z][a-z0-9-]+$": {
+              "type": "object",
+              "required": ["version", "protocol", "manifest_path", "manifest_hash", "domains", "capabilities"],
+              "properties": {
+                "version": { "type": "string" },
+                "protocol": { "type": "string", "enum": ["1.0"] },
+                "manifest_path": { "type": "string" },
+                "manifest_hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+                "domains": { "type": "array", "items": { "type": "string" } },
+                "capabilities": { "type": "array", "items": { "type": "string" } },
+                "employee_count": { "type": "integer" },
+                "operation_mode": { "enum": ["zero_human", "hybrid", "human_in_loop"] },
+                "authority_level": { "enum": ["tier-1", "tier-2", "tier-3"] },
+                "legacy_paperclip_id": { "type": "string", "format": "uuid" }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "audit_event": {
+      "title": "Audit Event (audit.jsonl entries)",
+      "description": "Structured event for audit trail (Harness §10, Business §17.4)",
+      "type": "object",
+      "required": ["ts", "event"],
+      "additionalProperties": true,
+      "properties": {
+        "ts": { "type": "string", "format": "date-time" },
+        "event": {
+          "enum": [
+            "brief_received", "routing_decision", "invocation_start", "invocation_end",
+            "cost_emission", "handoff", "ticket_opened", "ticket_resolved",
+            "escalation_trigger_fired", "human_notification_required", "human_response_received",
+            "resume", "approval_checkpoint", "approval_granted", "approval_rejected",
+            "budget_violation", "memory_write", "isolation_violation", "validation_failed",
+            "humanization_applied", "humanization_skipped"
+          ]
+        },
+        "trace_id": { "type": "string" },
+        "project_id": { "type": "string" },
+        "business_slug": { "type": "string" },
+        "squad_name": { "type": "string" },
+        "agent_or_employee": { "type": "string" }
+      }
+    },
+
+    "harness_notification": {
+      "title": "Zero-Human Notification (Harness Protocol v1 §12.2)",
+      "description": "Payload delivered to user when escalation requires human input",
+      "type": "object",
+      "required": ["schema_version", "type", "trigger_id", "severity", "project_id", "context", "options"],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": { "type": "string", "default": "1.0.0" },
+        "type": { "const": "human_escalation_required" },
+        "trigger_id": { "type": "string" },
+        "severity": { "enum": ["low", "medium", "high"] },
+        "project_id": { "type": "string" },
+        "business_slug": { "type": "string" },
+        "context": {
+          "type": "object",
+          "required": ["summary"],
+          "properties": {
+            "summary": { "type": "string" },
+            "current_invocation": { "type": "string" },
+            "audit_log_excerpt": { "type": "string" }
+          }
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "description"],
+            "properties": {
+              "id": { "type": "string" },
+              "description": { "type": "string" }
+            }
+          },
+          "minItems": 1
+        },
+        "timeout_minutes": { "type": "integer", "minimum": 1 },
+        "default_on_timeout": { "type": "string" }
+      }
+    },
+
+    "harness_config": {
+      "title": "Harness Config (harness section of ~/.claude/settings.json)",
+      "description": "Harness Protocol v1 §5.1 configuration schema",
+      "type": "object",
+      "required": ["version"],
+      "additionalProperties": false,
+      "properties": {
+        "version": { "const": "1.0" },
+        "routing": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "match_high_threshold": { "type": "number", "default": 0.80 },
+            "match_high_lead": { "type": "number", "default": 0.15 },
+            "match_ambiguous_threshold": { "type": "number", "default": 0.60 },
+            "match_ambiguous_window": { "type": "number", "default": 0.15 },
+            "tier2_embedding": { "enum": ["disabled", "enabled"], "default": "disabled" },
+            "tier2_provider": { "type": "string" },
+            "tier2_threshold": { "type": "number" },
+            "auto_invoke_validated_capabilities": { "type": "boolean", "default": true },
+            "auto_invoke_budget_usd": { "type": "number", "default": 1.00 }
+          }
+        },
+        "budget": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "default_max_cost_usd": { "type": "number", "default": 2.00 },
+            "default_max_tokens": { "type": "integer", "default": 200000 },
+            "default_max_handoffs": { "type": "integer", "default": 20 },
+            "default_max_duration_seconds": { "type": "integer", "default": 600 },
+            "on_budget_exceeded": { "enum": ["abort", "warn", "escalate"], "default": "abort" }
+          }
+        },
+        "telemetry": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "provider": { "enum": ["otel", "jsonl", "none"], "default": "otel" },
+            "otlp_endpoint": { "type": "string" },
+            "fallback_jsonl_path": { "type": "string", "default": "~/.harness-logs/" },
+            "service_name": { "type": "string", "default": "harness" }
+          }
+        },
+        "memory": {
+          "type": "object",
+          "properties": {
+            "isolation_enforcement": { "enum": ["strict", "advisory"], "default": "strict" }
+          }
+        },
+        "audit": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "project_retention_days": { "type": "integer", "default": 365 },
+            "session_retention_days": { "type": "integer", "default": 90 },
+            "on_expiry": { "enum": ["archive", "delete", "rotate"], "default": "archive" }
+          }
+        },
+        "skills": {
+          "type": "object",
+          "properties": {
+            "squads_dir": { "type": "string", "default": "~/squads-v5" },
+            "squads_legacy_dir": { "type": "string", "default": "~/squads" },
+            "businesses_dir": { "type": "string", "default": "~/businesses" }
+          }
+        }
+      }
+    }
+  }
+}

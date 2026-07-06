@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nirvana-protocol/v1/schemas/pack.schema.json",
+  "title": "Nirvana Pack (pack.yaml)",
+  "description": "A pack is a bundle of businesses + squads + mind-clones installed together as a unit. See `nrv install <pack>`.",
+  "type": "object",
+  "required": ["name", "version", "description", "contents"],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,63}$",
+      "description": "Pack identifier (kebab-case)."
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(-[a-z0-9.-]+)?$",
+      "description": "Semver."
+    },
+    "description": {
+      "type": "string",
+      "minLength": 10,
+      "maxLength": 500
+    },
+    "author": { "type": "string" },
+    "license": { "type": "string", "default": "MIT" },
+    "homepage": { "type": "string" },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+      "maxItems": 20
+    },
+    "contents": {
+      "type": "object",
+      "description": "Lists of asset directories included in the pack.",
+      "additionalProperties": false,
+      "properties": {
+        "businesses": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/asset_ref" }
+        },
+        "squads": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/asset_ref" }
+        },
+        "mind-clones": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/asset_ref" }
+        }
+      }
+    },
+    "dependencies": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "required_mind_clones": {
+          "type": "array",
+          "items": { "type": "string", "description": "category/slug (e.g., leadership/steve-jobs)" }
+        },
+        "required_squads": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "required_businesses": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "min_nirvana_version": { "type": "string" }
+      }
+    }
+  },
+  "$defs": {
+    "asset_ref": {
+      "type": "object",
+      "required": ["path"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path relative to pack root, e.g. 'businesses/agency-hq'."
+        },
+        "rename_to": {
+          "type": "string",
+          "description": "Optional override of the installed slug (rare; default = directory basename)."
+        }
+      }
+    }
+  }
+}
