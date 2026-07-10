@@ -1,0 +1,182 @@
+{
+  "meta": {
+    "computed_at": "2026-05-12T16:34:43.674Z",
+    "window_days": 30,
+    "window_start": "2026-04-12T16:34:43.674Z",
+    "window_end": "2026-05-12T16:34:43.674Z",
+    "audit_logs_root": "~/.harness-logs",
+    "schema_version": "1.0.0",
+    "git_sha": "36253a975823bdd8fef634334e6105dc39cec631",
+    "notes": "trace_id fragmentation detected: 31 dispatched traces have zero cost_emission rows. Hook-emitted cost events likely use claude-code session_id as trace_id while harness uses its own. Cost-per-dispatch KPIs require unifying these in a later phase."
+  },
+  "kpis": {
+    "gate_pass_rate": {
+      "value": 0.9354838709677419,
+      "sample_size": 31,
+      "confidence": "high",
+      "raw": {
+        "passed": 29,
+        "failed": 2,
+        "gate_decided": 31
+      },
+      "unmeasurable_reason": null
+    },
+    "first_pass_pass_rate": {
+      "value": 0.8064516129032258,
+      "sample_size": 31,
+      "confidence": "high",
+      "raw": {
+        "first_pass_passed": 25,
+        "gate_decided": 31,
+        "traces_with_revision": 5
+      },
+      "unmeasurable_reason": null
+    },
+    "mean_dispatch_cost_usd": {
+      "value": null,
+      "sample_size": 0,
+      "confidence": "unmeasurable",
+      "raw": {
+        "p50": null,
+        "p95": null,
+        "total_usd": 0,
+        "dispatches_observed": 31
+      },
+      "unmeasurable_reason": "no traces with dispatch_business/dispatch_squad and non-zero cost"
+    },
+    "mean_dispatch_latency_seconds": {
+      "value": 2628.5,
+      "sample_size": 28,
+      "confidence": "medium",
+      "raw": {
+        "p50": 2628.5,
+        "p95": 14023
+      },
+      "unmeasurable_reason": null
+    },
+    "observability_recall": {
+      "value": null,
+      "sample_size": 0,
+      "confidence": "unmeasurable",
+      "raw": {},
+      "unmeasurable_reason": "phase 2 (trace viewer) not yet implemented; recall requires Fase 2 viewer"
+    },
+    "regression_smoke_pass_rate": {
+      "value": null,
+      "sample_size": 0,
+      "confidence": "unmeasurable",
+      "raw": {},
+      "unmeasurable_reason": "phase 1 (regression suite) not yet implemented"
+    },
+    "revision_loop_efficacy": {
+      "value": null,
+      "sample_size": 0,
+      "confidence": "unmeasurable",
+      "raw": {
+        "revision_events_in_window": 8
+      },
+      "unmeasurable_reason": "phase 3 (judge + revision-dispatch) not yet implemented; revision events present but loop semantics absent"
+    },
+    "memory_retrieval_precision_at_5": {
+      "value": null,
+      "sample_size": 0,
+      "confidence": "unmeasurable",
+      "raw": {},
+      "unmeasurable_reason": "phase 6 (semantic memory) not yet implemented"
+    },
+    "brief_amplification_uplift": {
+      "value": null,
+      "sample_size": 31,
+      "confidence": "unmeasurable",
+      "raw": {
+        "amplified_pass_rate": null,
+        "not_amplified_pass_rate": 0.9354838709677419,
+        "amplified_decided": 0,
+        "not_amplified_decided": 31
+      },
+      "unmeasurable_reason": "need at least 1 amplified and 1 non-amplified gate decision"
+    },
+    "self_improver_proposals_accepted": {
+      "value": null,
+      "sample_size": 0,
+      "confidence": "unmeasurable",
+      "raw": {},
+      "unmeasurable_reason": "phase 8 (meta-Nirvana) not yet implemented"
+    }
+  },
+  "event_counts": {
+    "agent_compiled": 12,
+    "agent_inherited": 8,
+    "agent_persona_created": 5,
+    "amazon_fetch_completed": 1,
+    "artifact_touched": 2781,
+    "bash_completed": 1601,
+    "blog_post_completed": 1,
+    "brandcraft_nirvana_standards_updated": 1,
+    "brief_amplified": 38,
+    "brief_received": 341,
+    "briefing_completed": 2,
+    "business_compiled": 1,
+    "chapter_indexes_completed": 1,
+    "checkpoint_human_approval_required": 1,
+    "compile_mind_clone": 4,
+    "context_budget_warning": 46,
+    "cost_emission": 35109,
+    "delivered": 40,
+    "dispatch_audit": 2,
+    "dispatch_blocked": 1,
+    "dispatch_business": 27,
+    "dispatch_skill": 1,
+    "dispatch_squad": 35,
+    "gate_check": 13,
+    "gate_evaluation": 1,
+    "gate_failed": 3,
+    "gate_passed": 54,
+    "humanization_applied": 2,
+    "humanize_completed": 1,
+    "invariants_added": 1,
+    "invocation_start": 3,
+    "self_audit_audit_completed": 2,
+    "local_execution_completed": 6,
+    "local_execution_started": 5,
+    "md_to_html_companions_rendered": 1,
+    "mind_clone_compiled": 24,
+    "mind_clone_injected": 44,
+    "mind_clone_synthesized": 3,
+    "mobile_pdf_compiled": 1,
+    "mobile_pdf_recompiled": 7,
+    "patches_applied": 1,
+    "pdf_compiled": 2,
+    "pdf_recompiled": 2,
+    "pdfs_dynamic_links": 1,
+    "pricing_consistency_audit": 1,
+    "pricing_recalibration_v3": 1,
+    "prompt_libraries_compiled": 1,
+    "protocol_correction": 2,
+    "research_completed": 2,
+    "resume": 1,
+    "revision": 8,
+    "routing_decision": 298,
+    "session_started": 3,
+    "smoke_test_passed": 1,
+    "squad_documentation_updated": 1,
+    "squad_render_completed": 1,
+    "squad_skeleton_compiled": 1,
+    "target_plan_committed": 35,
+    "tasks_compiled": 1,
+    "tool_invoked": 4422,
+    "validation_failed": 25,
+    "watch_started": 7,
+    "watch_stopped": 2,
+    "workflow_refs_patched": 1,
+    "workflows_compiled": 1
+  },
+  "trace_summary": {
+    "distinct_traces": 447,
+    "traces_with_dispatch": 31,
+    "traces_with_gate_decision": 31,
+    "orphan_event_lines": 725,
+    "dispatched_with_cost": 0,
+    "dispatched_without_cost": 31
+  }
+}
