@@ -1,0 +1,10 @@
+# Python dependencies — OPTIONAL. Normal use (install, index, validate, run) is
+# 100% Bun and needs NO Python. These are only for the opt-in extras:
+# `nrv export --pdf` / `--zip` and the v4 -> v5 migration.
+# If you use those:  pip install -r requirements.txt
+#
+# MUST be pydantic v2: validators.py uses StringConstraints, ConfigDict,
+# field_validator — all v2-only APIs. Distro packages (apt python3-pydantic)
+# often ship v1.10, which raises ImportError. Pin v2 explicitly.
+pydantic>=2.0
+pyyaml>=6.0

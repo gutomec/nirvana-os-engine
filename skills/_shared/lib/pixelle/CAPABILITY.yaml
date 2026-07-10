@@ -1,0 +1,34 @@
+# Canonical Pixelle-Video capability — injected into every video-capable squad.
+#
+# Squads that produce video MUST declare this capability in their squad.yaml#capabilities[].
+# The dispatch logic and shared resources live under CLAUDE_SKILLS_DIR/_shared/lib/pixelle/.
+
+id: media.pixelle_video.compose
+description: >
+  Compose a finished video (reel, podcast clip, course lesson, product demo, ads, real estate
+  tour) via Pixelle-Video. Handles script + image + voice synthesis + composition, with optional
+  voice cloning from user reference audio. TTS choices: F5-TTS-pt-br (PT-BR), Chatterbox
+  (multilingual), Index-TTS-2 (timing), Edge-TTS (free fallback), ElevenLabs (premium).
+domains: [media, video, marketing, content, social_media]
+invoke:
+  type: workflow
+  ref: workflows/pixelle-video-compose.yaml
+examples:
+  - "create an Instagram reel about value-based pricing using my cloned voice"
+  - "gere um vídeo curto pra TikTok sobre sustentabilidade com minha voz clonada"
+  - "produce a 90-second course lesson with the user voice as narrator"
+  - "build a real estate tour video for this listing with English narration"
+  - "create an ads creative for Facebook with the talent voice from this audio file"
+not_for:
+  - "live streaming (Pixelle is batch-only)"
+  - "videos > 5 minutes (use a dedicated long-form pipeline)"
+  - "real-time avatar lip-sync APIs (Pixelle is async/batch)"
+outputs:
+  - name: pixelle_video_artifact
+    type: json
+    description: >
+      Pixelle dispatch result with video_url, duration, file_size, used_voice, used_model,
+      frame_preset, scenes count.
+fidelity:
+  status: experimental
+score_boost: 1.2
