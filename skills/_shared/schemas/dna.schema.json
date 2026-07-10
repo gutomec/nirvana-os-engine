@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nirvana-protocol/v1/schemas/dna.schema.json",
+  "title": "Mind-Clone DNA (canonical v2026 format)",
+  "description": "Frontmatter schema for canonical mind-clone files in ~/businesses/_library/dna/. Body must contain the 10 canonical sections (see TEMPLATE.md). Body validation lives in validators.{ts,py}.",
+  "type": "object",
+  "required": ["name", "description", "model", "maxTurns", "tools"],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,63}$",
+      "description": "Kebab-case identifier matching the file name (without .md)"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 40,
+      "description": "Triggers + anti-patterns. Format: 'Use quando ... Invocar para: ... NÃO usar para: ...'"
+    },
+    "model": {
+      "enum": ["haiku", "sonnet", "opus", "inherit"],
+      "default": "sonnet"
+    },
+    "maxTurns": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 200,
+      "default": 40
+    },
+    "tools": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "description": "Semantic tool names (Read, Write, Grep, Glob, WebSearch, WebFetch, Bash, etc.). Adapter translates to runtime-native names."
+    },
+    "category": {
+      "type": "string",
+      "pattern": "^[0-9]{2}-[a-z][a-z0-9-]+$",
+      "description": "Optional explicit category override. If absent, inferred from parent directory name."
+    },
+    "fidelity": {
+      "type": "string",
+      "enum": ["high", "medium", "low"],
+      "description": "Fidelity self-declaration. 'high' implies grounded in published material; 'low' means inferred."
+    },
+    "updated": {
+      "type": "string",
+      "description": "Year of last knowledge cutoff (e.g. '2026')"
+    }
+  }
+}

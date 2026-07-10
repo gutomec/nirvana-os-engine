@@ -1,0 +1,225 @@
+/* ════════════════════════════════════════════════════════════════════
+   Nirvana Glance — Layer 0: Design Tokens
+   Single source of truth for surfaces, text, borders, accent, status,
+   spacing, typography, radius, shadows, motion, z-index.
+   Theme overrides are confined to this file.
+   ════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* === Surfaces === */
+  --surface-0: oklch(99% 0.005 240);   /* page bg */
+  --surface-1: oklch(100% 0 0);        /* card bg */
+  --surface-2: oklch(98% 0.005 240);   /* elevated card */
+  --surface-3: oklch(96% 0.008 240);   /* highest */
+  --surface-glass: color-mix(in oklab, white 80%, transparent);
+
+  /* === Text === */
+  --text-primary: oklch(20% 0.02 260);
+  --text-secondary: oklch(45% 0.02 260);
+  --text-tertiary: oklch(60% 0.015 260);
+  --text-disabled: oklch(75% 0.01 260);
+  --text-inverse: oklch(98% 0.005 240);
+
+  /* === Borders === */
+  --border-subtle: oklch(95% 0.005 260);
+  --border-default: oklch(92% 0.005 260);
+  --border-strong: oklch(86% 0.008 260);
+  --border-focus: var(--accent);
+
+  /* === Accent === */
+  --accent: oklch(58% 0.18 250);
+  --accent-hover: oklch(54% 0.18 250);
+  --accent-active: oklch(50% 0.18 250);
+  --accent-soft: oklch(95% 0.05 250);
+  --accent-fg: oklch(98% 0.005 240);
+
+  /* === Status palette === */
+  --status-success-bg: color-mix(in oklab, oklch(65% 0.16 145) 14%, transparent);
+  --status-success-fg: oklch(40% 0.16 145);
+  --status-success-border: color-mix(in oklab, oklch(65% 0.16 145) 35%, transparent);
+  --status-success-solid: oklch(60% 0.16 145);
+
+  --status-warn-bg: color-mix(in oklab, oklch(70% 0.18 80) 16%, transparent);
+  --status-warn-fg: oklch(38% 0.16 65);
+  --status-warn-border: color-mix(in oklab, oklch(70% 0.18 80) 38%, transparent);
+  --status-warn-solid: oklch(70% 0.18 80);
+
+  --status-danger-bg: color-mix(in oklab, oklch(60% 0.22 25) 14%, transparent);
+  --status-danger-fg: oklch(40% 0.22 25);
+  --status-danger-border: color-mix(in oklab, oklch(60% 0.22 25) 38%, transparent);
+  --status-danger-solid: oklch(60% 0.22 25);
+
+  --status-info-bg: color-mix(in oklab, oklch(60% 0.18 250) 14%, transparent);
+  --status-info-fg: oklch(40% 0.18 250);
+  --status-info-border: color-mix(in oklab, oklch(60% 0.18 250) 38%, transparent);
+  --status-info-solid: oklch(60% 0.18 250);
+
+  --status-neutral-bg: color-mix(in oklab, oklch(60% 0 0) 14%, transparent);
+  --status-neutral-fg: oklch(40% 0 0);
+  --status-neutral-border: color-mix(in oklab, oklch(60% 0 0) 35%, transparent);
+  --status-neutral-solid: oklch(60% 0 0);
+
+  /* === Spacing scale === */
+  --space-0: 0;       --space-1: 4px;     --space-2: 8px;     --space-3: 12px;
+  --space-4: 16px;    --space-5: 20px;    --space-6: 24px;    --space-7: 32px;
+  --space-8: 40px;    --space-9: 48px;    --space-10: 64px;
+
+  /* === Typography === */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', SFMono-Regular, Consolas, monospace;
+
+  --text-xs: 10px;     --text-sm: 11px;    --text-base: 12px;   --text-md: 13px;
+  --text-lg: 14px;     --text-xl: 16px;    --text-2xl: 18px;    --text-3xl: 20px;
+  --text-4xl: 24px;    --text-5xl: 32px;
+
+  --weight-regular: 400;   --weight-medium: 500;
+  --weight-semibold: 600;  --weight-bold: 700;
+
+  --leading-tight: 1.2;    --leading-snug: 1.35;    --leading-base: 1.5;
+  --tracking-tight: -0.01em;  --tracking-wide: 0.04em;  --tracking-caps: 0.08em;
+
+  /* === Radius === */
+  --radius-xs: 4px;     --radius-sm: 6px;     --radius-md: 8px;
+  --radius-lg: 12px;    --radius-xl: 16px;    --radius-pill: 999px;
+
+  /* === Shadows === */
+  --shadow-1: 0 1px 2px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.02);
+  --shadow-2: 0 4px 16px rgba(0,0,0,0.05), 0 0 0 1px rgba(0,0,0,0.03);
+  --shadow-3: 0 12px 32px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04);
+  --shadow-modal: 0 24px 60px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.04);
+  --shadow-popover: 0 8px 24px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.04);
+  --shadow-focus: 0 0 0 3px color-mix(in oklab, var(--accent) 35%, transparent);
+  --shadow-focus-danger: 0 0 0 3px color-mix(in oklab, var(--status-danger-solid) 35%, transparent);
+
+  /* === Motion === */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dur-fast: 120ms;  --dur-base: 200ms;  --dur-slow: 320ms;
+
+  /* === Z-index === */
+  --z-base: 0;     --z-sticky: 10;   --z-dropdown: 30;  --z-overlay: 60;
+  --z-modal: 80;   --z-toast: 90;    --z-hero: 100;
+}
+
+[data-theme="apple-dark"] {
+  --surface-0: oklch(15% 0.015 260);
+  --surface-1: oklch(19% 0.015 260);
+  --surface-2: oklch(22% 0.018 260);
+  --surface-3: oklch(26% 0.02 260);
+  --surface-glass: color-mix(in oklab, oklch(15% 0.015 260) 80%, transparent);
+
+  --text-primary: oklch(95% 0.005 260);
+  --text-secondary: oklch(72% 0.012 260);
+  --text-tertiary: oklch(55% 0.012 260);
+  --text-disabled: oklch(40% 0.01 260);
+  --text-inverse: oklch(15% 0.015 260);
+
+  --border-subtle: oklch(24% 0.01 260);
+  --border-default: oklch(28% 0.01 260);
+  --border-strong: oklch(38% 0.014 260);
+
+  --accent-soft: oklch(28% 0.08 250);
+
+  /* Status — brighter fg for dark surfaces */
+  --status-success-fg: oklch(78% 0.16 145);
+  --status-success-bg: color-mix(in oklab, oklch(60% 0.16 145) 18%, transparent);
+  --status-success-border: color-mix(in oklab, oklch(70% 0.16 145) 40%, transparent);
+
+  --status-warn-fg: oklch(80% 0.18 80);
+  --status-warn-bg: color-mix(in oklab, oklch(70% 0.18 80) 18%, transparent);
+  --status-warn-border: color-mix(in oklab, oklch(70% 0.18 80) 40%, transparent);
+
+  --status-danger-fg: oklch(75% 0.22 25);
+  --status-danger-bg: color-mix(in oklab, oklch(60% 0.22 25) 18%, transparent);
+  --status-danger-border: color-mix(in oklab, oklch(70% 0.22 25) 40%, transparent);
+
+  --status-info-fg: oklch(78% 0.18 250);
+  --status-info-bg: color-mix(in oklab, oklch(60% 0.18 250) 18%, transparent);
+  --status-info-border: color-mix(in oklab, oklch(70% 0.18 250) 40%, transparent);
+
+  --status-neutral-fg: oklch(72% 0.012 260);
+  --status-neutral-bg: color-mix(in oklab, oklch(60% 0 0) 18%, transparent);
+  --status-neutral-border: color-mix(in oklab, oklch(60% 0 0) 35%, transparent);
+
+  --shadow-1: 0 1px 2px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.04);
+  --shadow-2: 0 4px 16px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.04);
+  --shadow-3: 0 12px 32px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.04);
+  --shadow-modal: 0 24px 60px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.05);
+  --shadow-popover: 0 8px 24px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.05);
+}
+
+[data-theme="awwwards"] {
+  --surface-0: oklch(8% 0.005 260);
+  --surface-1: oklch(12% 0.008 260);
+  --surface-2: oklch(15% 0.01 260);
+  --surface-3: oklch(18% 0.012 260);
+  --surface-glass: color-mix(in oklab, oklch(8% 0.005 260) 70%, transparent);
+
+  --text-primary: oklch(96% 0 0);
+  --text-secondary: oklch(78% 0.012 260);
+  --text-tertiary: oklch(58% 0.012 260);
+  --text-disabled: oklch(38% 0.01 260);
+  --text-inverse: oklch(10% 0.005 260);
+
+  --border-subtle: oklch(18% 0.01 260);
+  --border-default: oklch(22% 0.01 260);
+  --border-strong: oklch(32% 0.012 260);
+
+  /* awwwards uses neon green as accent */
+  --accent: oklch(80% 0.18 130);
+  --accent-hover: oklch(76% 0.18 130);
+  --accent-active: oklch(72% 0.18 130);
+  --accent-soft: oklch(22% 0.08 130);
+  --accent-fg: oklch(10% 0.01 260);
+
+  /* Status fg/bg for very dark surface */
+  --status-success-fg: oklch(80% 0.16 145);
+  --status-success-bg: color-mix(in oklab, oklch(60% 0.16 145) 22%, transparent);
+  --status-success-border: color-mix(in oklab, oklch(70% 0.16 145) 45%, transparent);
+
+  --status-warn-fg: oklch(82% 0.18 80);
+  --status-warn-bg: color-mix(in oklab, oklch(70% 0.18 80) 22%, transparent);
+  --status-warn-border: color-mix(in oklab, oklch(70% 0.18 80) 45%, transparent);
+
+  --status-danger-fg: oklch(78% 0.22 25);
+  --status-danger-bg: color-mix(in oklab, oklch(60% 0.22 25) 22%, transparent);
+  --status-danger-border: color-mix(in oklab, oklch(70% 0.22 25) 45%, transparent);
+
+  --status-info-fg: oklch(80% 0.18 250);
+  --status-info-bg: color-mix(in oklab, oklch(60% 0.18 250) 22%, transparent);
+  --status-info-border: color-mix(in oklab, oklch(70% 0.18 250) 45%, transparent);
+
+  --status-neutral-fg: oklch(75% 0.012 260);
+  --status-neutral-bg: color-mix(in oklab, oklch(60% 0 0) 22%, transparent);
+  --status-neutral-border: color-mix(in oklab, oklch(60% 0 0) 38%, transparent);
+
+  --shadow-1: 0 1px 2px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.03);
+  --shadow-2: 0 4px 16px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.03);
+  --shadow-3: 0 12px 32px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,255,255,0.03);
+  --shadow-modal: 0 24px 60px rgba(0,0,0,0.75), 0 0 0 1px rgba(255,255,255,0.04);
+  --shadow-popover: 0 8px 24px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04);
+}
+
+/* Legacy aliases — keep so any rule that still uses --bg, --fg, etc.
+   continues to theme correctly. Delete once all references are migrated. */
+:root {
+  --bg: var(--surface-0);
+  --bg-elev: var(--surface-1);
+  --bg-elevated: var(--surface-1);
+  --bg-glass: var(--surface-glass);
+  --fg: var(--text-primary);
+  --text: var(--text-primary);
+  --fg-muted: var(--text-secondary);
+  --text-muted: var(--text-secondary);
+  --fg-subtle: var(--text-tertiary);
+  --border: var(--border-default);
+  --ok: var(--status-success-solid);
+  --warn: var(--status-warn-solid);
+  --fail: var(--status-danger-solid);
+  --pending: var(--status-neutral-solid);
+  --shadow-sm: var(--shadow-1);
+  --shadow-md: var(--shadow-2);
+  --shadow-lg: var(--shadow-3);
+  --radius: var(--radius-md);
+}

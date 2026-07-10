@@ -1,0 +1,142 @@
+adapter:
+  runtime_id: gemini-cli
+  runtime_name: "Gemini CLI"
+  vendor: "Google"
+  adapter_version: 0.1.0
+  protocol_version: "4.0"
+  minimum_runtime_version: "1.0.0"
+  maintainer: "gutomec"
+  homepage: "https://github.com/google-gemini/gemini-cli"
+  status: beta
+
+features_supported:
+  - id: max_turns
+    mechanism: enforced
+    notes: "Enforced via --max-turns or equivalent flag"
+  - id: tool_whitelist
+    mechanism: enforced
+    notes: "Enforced via --allowed-tools CLI flag"
+  - id: handoff_artifacts
+    mechanism: convention
+  - id: sequential_execution
+    mechanism: enforced
+  - id: session_memory
+    mechanism: enforced
+  - id: project_memory
+    mechanism: enforced
+    notes: "GEMINI.md convention, similar to CLAUDE.md"
+  - id: web_search
+    mechanism: enforced
+    notes: "Native Google Search grounding support"
+  - id: file_write
+    mechanism: enforced
+  - id: shell_exec
+    mechanism: enforced
+
+features_unsupported:
+  - id: subagent_spawning
+    fallback: "Harness runs steps sequentially or spawns independent gemini processes"
+    notes: "No native subagent primitive"
+  - id: global_memory
+    fallback: "Use per-user file injection manually"
+  - id: hooks
+    fallback: "Use validator agent as workflow step"
+  - id: fork_context
+    fallback: "Re-invoke with serialized parent context"
+  - id: teammate_primitive
+    fallback: "Not applicable"
+
+concept_mapping:
+  maxTurns:
+    frontmatter_field: maxTurns
+    cli_flag: "--max-turns"
+    default: null
+    hard_cap: null
+  tools:
+    frontmatter_field: allowed_tools
+    cli_flag: "--allowed-tools"
+    enforced_by: "CLI flag"
+    semantic_map:
+      read: read_file
+      write: write_file
+      edit: edit_file
+      grep: grep
+      glob: glob
+      bash: shell
+      shell: shell
+      web_search: google_search
+      web_fetch: fetch
+  model:
+    resolution:
+      haiku: "gemini-2.0-flash"
+      sonnet: "gemini-2.0-pro"
+      opus: "gemini-2.5-pro"
+  memory:
+    ephemeral:
+      scope: "single invocation"
+    session:
+      scope: "single conversation"
+      location: "in-memory"
+    project:
+      scope: "per-project"
+      file: "GEMINI.md"
+      location: "repo root"
+    global:
+      scope: "not natively supported"
+  subagent_spawn:
+    primitive: "none (harness-simulated)"
+    max_concurrent: "harness-dependent"
+
+numeric_values:
+  context_window_tokens: 1000000
+  max_output_tokens: 8192
+  effective_context_tokens: 992000
+  default_max_turns: null
+  memory_file_max_chars: null
+
+validators:
+  - id: gemini-max-turns-required
+    description: "maxTurns must be declared (Core P4)"
+    level: blocking
+    applies_to: agent
+  - id: gemini-large-window-advisory
+    description: "Gemini has 1M context; squads can use larger agent bodies if needed"
+    level: info
+    applies_to: squad
+
+invocation:
+  binary: "gemini"
+  env_vars:
+    - name: GEMINI_API_KEY
+      description: "Google AI API key"
+      required: true
+    - name: GOOGLE_API_KEY
+      description: "Alternative name for GEMINI_API_KEY"
+      required: false
+  examples:
+    - description: "Interactive session"
+      command: "gemini"
+    - description: "Non-interactive with tool restrictions"
+      command: "gemini --allowed-tools read_file,grep,shell --max-turns 25 'review the diff'"
+    - description: "With sandbox"
+      command: "gemini --sandbox 'apply the fix'"
+
+hooks:
+  supported: false
+  events: []
+  abort_semantics: none
+
+known_limitations:
+  - limitation: "No native subagent primitive; parallel steps run sequentially"
+    workaround: "Harness spawns independent gemini processes for parallel steps"
+  - limitation: "No hook system equivalent to PreToolUse/PostToolUse"
+    workaround: "Add validator agent as workflow step"
+  - limitation: "GEMINI.md injection convention less standardized than CLAUDE.md"
+    workaround: "Verify GEMINI.md is being loaded; pass via system prompt if needed"
+  - limitation: "Compaction semantics not publicly documented in detail"
+    workaround: "Design for the 1M window; compaction behavior less critical with large context"
+
+version_history:
+  - version: "0.1.0"
+    date: "2026-04-04"
+    changes: "Initial adapter for Squad Protocol v4.0"
