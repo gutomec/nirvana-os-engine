@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://squads.dev/schemas/task-schema.json",
+  "title": "Task Definition Schema v4",
+  "description": "JSON Schema for task frontmatter. v4 flat format (name + optional description) or legacy v2 nested format (task + responsavel). See SQUAD_PROTOCOL_V4.md §7.",
+  "oneOf": [
+    {
+      "title": "v4 Flat Frontmatter Format (preferred)",
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{1,63}$",
+          "description": "kebab-case task identifier. Tasks do NOT have owners in v4; workflows bind agents to tasks."
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 1024,
+          "description": "What this task accomplishes"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+"
+        },
+        "allowed-tools": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Optional task-scoped tool whitelist"
+        },
+        "context": {
+          "type": "string",
+          "enum": ["fork", "inline"]
+        },
+        "target_words": {
+          "type": "array",
+          "items": { "type": "number", "minimum": 0 },
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "Optional [min, max] word-count range for the deliverable produced by this task. Read by the deterministic volume-bounds gate. When absent, the gate is skipped for this task. See ~/.claude/skills/_shared/lib/volume-bounds.js."
+        },
+        "word_target": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Optional single-point word target. Used with `tolerance` (default ±20%) when no `target_words` range is given. Mutually exclusive with target_words."
+        },
+        "tolerance": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Tolerance fraction for word_target (e.g. 0.20 = ±20%). Ignored when target_words range is present."
+        },
+        "required_sections": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Optional list of header names the deliverable must contain. Read by structure-bounds gate; case- and accent-insensitive substring match. See ~/.claude/skills/_shared/lib/structure-bounds.js."
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "Legacy v2 Nested Format",
+      "type": "object",
+      "required": ["task"],
+      "description": "Legacy v2 format with owner coupling. Deprecated in v4.",
+      "properties": {
+        "task": {
+          "type": "object",
+          "required": ["name"],
+          "properties": {
+            "name": { "type": "string" },
+            "responsavel": { "type": "string" },
+            "owner": { "type": "string" },
+            "id": { "type": "string" },
+            "title": { "type": "string" },
+            "description": { "type": "string" },
+            "priority": { "type": "string", "enum": ["critical", "high", "medium", "low"] },
+            "version": { "type": "string" }
+          },
+          "additionalProperties": true
+        },
+        "inputs": { "type": "array" },
+        "outputs": { "type": "array" },
+        "executionModes": { "type": "object" },
+        "preConditions": { "type": "array" },
+        "steps": { "type": "array" },
+        "autoClaude": { "type": "object" },
+        "owner": { "type": "string" },
+        "owner_type": { "type": "string" },
+        "atomic_layer": { "type": "string" }
+      },
+      "additionalProperties": true
+    }
+  ]
+}

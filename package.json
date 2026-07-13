@@ -1,0 +1,48 @@
+{
+  "name": "nirvana-os",
+  "version": "0.1.56",
+  "private": true,
+  "description": "The Operating System for agentic work — runtime-agnostic, local-first agent control plane.",
+  "license": "SEE LICENSE IN LICENSE",
+  "author": "Luiz Gustavo Vieira Rodrigues (https://github.com/gutomec)",
+  "homepage": "https://squads.sh",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gutomec/nirvana-os-engine.git"
+  },
+  "bugs": {
+    "url": "https://github.com/gutomec/nirvana-os-engine/issues"
+  },
+  "keywords": [
+    "agent-os",
+    "agent-orchestration",
+    "ai-agents",
+    "control-plane",
+    "claude-code",
+    "gemini-cli",
+    "codex",
+    "antigravity",
+    "hermes",
+    "squads",
+    "businesses",
+    "mind-clones",
+    "skills",
+    "mcp",
+    "audit",
+    "observability"
+  ],
+  "engines": {
+    "bun": ">=1.0.0",
+    "python": ">=3.10"
+  },
+  "dependencies": {
+    "marked": "^18.0.5",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.0"
+  },
+  "scripts": {
+    "install:system": "bun scripts/install.ts",
+    "validate": "bun skills/_shared/scripts/validate-mind-clones.ts && bun skills/harness/scripts/validate.ts",
+    "glance": "bun skills/harness/scripts/glance.ts"
+  }
+}
