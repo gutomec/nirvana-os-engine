@@ -1,0 +1,243 @@
+adapter:
+  runtime_id: claude-code
+  runtime_name: "Claude Code"
+  vendor: "Anthropic"
+  adapter_version: 1.0.0
+  protocol_version: "4.0"
+  minimum_runtime_version: "2.0.0"
+  maintainer: "gutomec"
+  homepage: "https://code.claude.com"
+  status: stable
+
+features_supported:
+  - id: max_turns
+    mechanism: enforced
+    notes: "Harness enforces deterministically when declared. Without a declaration, the agent loop has no bound (see SRC-8)."
+  - id: tool_whitelist
+    mechanism: enforced
+    notes: "Tools not listed do not appear in the tool schema sent to the API. The model cannot invoke what is not in the schema (SRC-11)."
+  - id: handoff_artifacts
+    mechanism: convention
+    notes: "Content is free text inside content[].text. Squads must impose artifact shape via prompt discipline (SRC-3)."
+  - id: subagent_spawning
+    mechanism: enforced
+    notes: "Task tool spawns subagents. Each subagent receives a single user message as prompt (SRC-1-Q1)."
+    limits:
+      context_inheritance: "none by default; fork path inherits full history"
+  - id: sequential_execution
+    mechanism: enforced
+  - id: project_memory
+    mechanism: enforced
+    notes: "Project memory is injected as userContext before user messages (SRC-9)."
+    limits:
+      max_chars: 40000
+  - id: global_memory
+    mechanism: enforced
+  - id: session_memory
+    mechanism: enforced
+  - id: hooks
+    mechanism: enforced
+    notes: "PreToolUse prevents execution; PostToolUse runs after (no abort capability in post) (SRC-12)."
+  - id: web_search
+    mechanism: enforced
+  - id: file_write
+    mechanism: enforced
+  - id: shell_exec
+    mechanism: enforced
+  - id: fork_context
+    mechanism: enforced
+    notes: "Fork subagents inherit full conversation; maxTurns hardcoded at 200 (SRC-8)."
+  - id: teammate_primitive
+    mechanism: enforced
+    notes: "Experimental; uses SendMessageTool and Unix Domain Sockets."
+
+features_unsupported: []
+
+concept_mapping:
+  maxTurns:
+    frontmatter_field: maxTurns
+    cli_flag: null
+    default: null
+    hard_cap: 200
+  tools:
+    frontmatter_field: tools
+    cli_flag: null
+    enforced_by: "API schema (tools absent from schema cannot be invoked)"
+    semantic_map:
+      read: Read
+      write: Write
+      edit: Edit
+      grep: Grep
+      glob: Glob
+      bash: Bash
+      shell: Bash
+      web_search: WebSearch
+      web_fetch: WebFetch
+  model:
+    resolution:
+      haiku: "claude-haiku-4-5-20251001"
+      sonnet: "claude-sonnet-4-6"
+      opus: "claude-opus-4-6"
+  memory:
+    ephemeral:
+      scope: "single agent invocation"
+    session:
+      scope: "current conversation"
+      location: "in-memory"
+    project:
+      scope: "per-project"
+      file: "CLAUDE.md"
+      location: "repo root or parent directories"
+    global:
+      scope: "per-user on this machine"
+      file: "~/.claude/CLAUDE.md"
+  subagent_spawn:
+    primitive: "Task tool"
+    max_concurrent: 10
+    context_inheritance: "none (normal) or full (fork)"
+
+numeric_values:
+  context_window_tokens: 200000
+  max_output_tokens: 8000
+  effective_context_tokens: 192000
+  compaction_buffer_tokens: 13000
+  compaction_threshold_pct: 89.5
+  compaction_threshold_tokens: 179000
+  warning_threshold_tokens: 159000
+  blocking_threshold_tokens: 189000
+  default_max_turns: null
+  hard_cap_max_turns: 200
+  memory_file_max_chars: 40000
+
+validators:
+  - id: cc-frontmatter-flat
+    description: "Frontmatter must be flat YAML; nested 'agent:' / 'persona:' blocks indicate v2 legacy format and must be migrated or run via shim"
+    level: warning
+    applies_to: agent
+  - id: cc-description-length
+    description: "description field should be <= 1024 characters"
+    level: warning
+    limit: 1024
+    applies_to: agent
+  - id: cc-max-turns-required
+    description: "maxTurns is mandatory; runtime has no default (SRC-8)"
+    level: blocking
+    applies_to: agent
+
+invocation:
+  binary: "claude"
+  env_vars:
+    - name: ANTHROPIC_API_KEY
+      description: "API key for Anthropic models"
+      required: false
+    - name: CLAUDE_CODE_AUTO_COMPACT_WINDOW
+      description: "Override context_window_tokens before effective window calculation"
+      required: false
+    - name: CLAUDE_CODE_AGENT_LIST_IN_MESSAGES
+      description: "Deliver agent list via system-reminder attachment instead of embedding in system prompt"
+      required: false
+  examples:
+    - description: "Interactive session"
+      command: "claude"
+    - description: "Run a specific subagent"
+      command: "claude --agent reviewer"
+    - description: "Non-interactive with specific model"
+      command: "claude --model claude-sonnet-4-6 'review the latest PR'"
+
+hooks:
+  supported: true
+  events:
+    - PreToolUse
+    - PostToolUse
+    - SessionStart
+    - SessionEnd
+    - UserPromptSubmit
+    - Stop
+  abort_semantics: pre-only
+
+known_limitations:
+  - limitation: "maxTurns without declaration = infinite loop"
+    workaround: "Always declare maxTurns explicitly in agent frontmatter"
+    tracking: "SRC-8 (query.ts:1705)"
+  - limitation: "Subagents receive no context inheritance by default"
+    workaround: "Pass handoff artifact as JSON in the prompt text"
+    tracking: "SRC-1-Q1 (AgentTool.tsx:538-540)"
+  - limitation: "Section 6 of compaction template (All User Messages) can be nearly empty for subagents"
+    workaround: "Put critical context in <protocol-context> block inside initial prompt"
+    tracking: "SRC-3-Q3 (compact/prompt.ts:293-303)"
+  - limitation: "PostToolUse hooks cannot abort; they run after tool already executed"
+    workaround: "Use PreToolUse for gating or add validator agent as workflow step"
+    tracking: "SRC-12 (types/hooks.ts:101-107)"
+  - limitation: "Context inheritance is all-or-nothing (none for normal subagents, full for fork)"
+    workaround: "Serialize exactly what the child needs into the handoff artifact"
+    tracking: "SRC-1-Q4 (AgentTool schema)"
+  - limitation: "No harness-level doom-loop detection"
+    workaround: "maxTurns bound only; implement workflow-level reviewer if needed"
+    tracking: "SRC-7 (global codebase search)"
+
+source_references:
+  - id: SRC-1
+    claim: "Frontmatter is discarded from LLM context; description becomes whenToUse via formatAgentLine()"
+    source: "prompt.ts:43-45"
+    verified_at: "2026-03-15"
+  - id: SRC-2
+    claim: "Agent matching is plain-text; no embedding or ranking; two delivery modes via listViaAttachment"
+    source: "prompt.ts:59-64, 194-199"
+    verified_at: "2026-03-15"
+  - id: SRC-3
+    claim: "Handoff artifact has fixed schema; content[].text is free text"
+    source: "agentToolUtils.ts:227-260"
+    verified_at: "2026-03-15"
+  - id: SRC-4
+    claim: "CAPPED_DEFAULT_MAX_TOKENS=8000; effectiveContextWindow = contextWindow - min(maxOutput, 20K); AUTOCOMPACT_BUFFER_TOKENS=13000; threshold = effectiveContextWindow - 13K"
+    source: "autoCompact.ts:30,62-65,72-76; context.ts:24"
+    verified_at: "2026-03-15"
+  - id: SRC-5
+    claim: "Three compaction prompt variants, 9-section template, tools forbidden during compaction"
+    source: "compact/prompt.ts"
+    verified_at: "2026-03-15"
+  - id: SRC-7
+    claim: "No doom-loop detection in codebase; only MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES=3 for API failures"
+    source: "global codebase search"
+    verified_at: "2026-03-15"
+  - id: SRC-8
+    claim: "maxTurns without declaration = infinite loop (if (maxTurns && ...) in query.ts); fork subagents hardcoded 200"
+    source: "query.ts:1705; forkSubagent.ts:65"
+    verified_at: "2026-03-15"
+  - id: SRC-9
+    claim: "CLAUDE.md injected as userContext, not systemPrompt"
+    source: "claudemd.ts; runAgent.ts:394-395"
+    verified_at: "2026-03-15"
+  - id: SRC-9-Q2
+    claim: "MAX_MEMORY_CHARACTER_COUNT=40000; no automatic truncation of standard CLAUDE.md"
+    source: "claudemd.ts:92"
+    verified_at: "2026-03-15"
+  - id: SRC-10
+    claim: "Memory scopes: user→~/.claude/agent-memory/, project→.claude/agent-memory/, local→.claude/agent-memory-local/"
+    source: "settings documentation"
+    verified_at: "2026-03-15"
+  - id: SRC-11
+    claim: "Tool restriction is hard enforcement at API schema level"
+    source: "agentToolUtils.ts:157-160; runAgent.ts:502"
+    verified_at: "2026-03-15"
+  - id: SRC-12
+    claim: "PreToolUse prevents execution; PostToolUse runs after; no abort field in post hook response schema"
+    source: "toolExecution.ts:800,1483; types/hooks.ts:101-107"
+    verified_at: "2026-03-15"
+  - id: SRC-1-Q1
+    claim: "Subagent receives userMessage(prompt) only - single text element, zero implicit context"
+    source: "AgentTool.tsx:538-540"
+    verified_at: "2026-03-15"
+  - id: SRC-3-Q3
+    claim: "Compaction does not differentiate agent type; section 6 problematic for subagents"
+    source: "compact/prompt.ts:293-303"
+    verified_at: "2026-03-15"
+  - id: SRC-1-Q4
+    claim: "All-or-nothing context transfer; no selective inheritance API"
+    source: "AgentTool schema"
+    verified_at: "2026-03-15"
+
+version_history:
+  - version: "1.0.0"
+    date: "2026-04-04"
+    changes: "Initial adapter for Squad Protocol v4.0. Supersedes cc-squad-standard.md."
