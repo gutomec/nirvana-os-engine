@@ -1,0 +1,361 @@
+# Canonical Capability Catalog v1
+#
+# Source of truth for the controlled vocabulary used in Squad Protocol v5
+# (capabilities[].domains, capabilities[].id namespaces) and Business Protocol v1
+# (business.capabilities, business.domains).
+#
+# Squads/businesses MAY use entries marked experimental: true for testing,
+# but they receive a 0.7x score boost penalty in discovery and are excluded
+# from cross-business routing.
+#
+# Governance:
+# - Additions: PR against this file, reviewed by protocol authors
+# - Removals: deprecation cycle of one minor version
+# - Squads using removed entries are flagged at index time
+
+version: "1.0.0"
+protocol_compatibility:
+  squad: "5.0"
+  business: "1.0"
+  harness: "1.0"
+generated_at: "2026-05-02"
+status: stable
+
+# ─────────────────────────────────────────────────────────────────────
+# DOMAINS (59 canonical entries)
+# ─────────────────────────────────────────────────────────────────────
+# Used in: capabilities[].domains, business.domains
+# Format: lowercase, snake_case, single segment
+domains:
+
+  # Marketing & Sales (10)
+  - id: marketing
+    description: "General marketing operations: strategy, campaigns, channels"
+  - id: sales
+    description: "Sales operations: pipeline, outreach, closing"
+  - id: branding
+    description: "Brand identity, voice, positioning, equity"
+  - id: copy
+    description: "Copywriting: sales letters, headlines, scripts"
+  - id: growth
+    description: "Growth engineering: loops, experiments, retention"
+  - id: performance
+    description: "Performance marketing: paid acquisition, optimization"
+  - id: ads
+    description: "Advertising: creative, media buy, attribution"
+  - id: retention
+    description: "Customer retention: churn reduction, lifecycle"
+  - id: lifecycle
+    description: "Lifecycle marketing: onboarding, nurture, reactivation"
+  - id: crm
+    description: "Customer relationship management: segmentation, automation"
+
+  # Content & Media (10)
+  - id: content
+    description: "Content production: editorial, blog, long-form"
+  - id: media
+    description: "Multimedia: video, audio, image, asset management"
+  - id: video
+    description: "Video specifically: production, editing, distribution"
+  - id: audio
+    description: "Audio specifically: music, sound design, post-production"
+  - id: voice
+    description: "Voice specifically: voice synthesis, cloning, narration direction"
+  - id: tts
+    description: "Text-to-speech: TTS pipelines, prosody, audio rendering of text"
+  - id: image
+    description: "Image specifically: photography, illustration, design"
+  - id: social_media
+    description: "Social media operations: organic, community, content calendars"
+  - id: podcasting
+    description: "Podcast production and distribution"
+  - id: journalism
+    description: "Editorial journalism: research, reporting, interviewing"
+
+  # Engineering & Tech (11)
+  - id: software_engineering
+    description: "General software engineering"
+  - id: frontend
+    description: "Frontend engineering: web UI, components, state"
+  - id: backend
+    description: "Backend engineering: APIs, services, business logic"
+  - id: mobile
+    description: "Mobile engineering: iOS, Android, cross-platform"
+  - id: data_engineering
+    description: "Data engineering: pipelines, ETL, warehousing"
+  - id: devops
+    description: "DevOps: CI/CD, infrastructure, deployment"
+  - id: security
+    description: "Information security: audits, threat modeling, vulnerabilities"
+  - id: infrastructure
+    description: "Infrastructure: cloud, networking, storage"
+  - id: ai_engineering
+    description: "AI/ML engineering: model dev, evaluation, deployment"
+  - id: qa
+    description: "Quality assurance: testing, automation, regression"
+  - id: observability
+    description: "Observability: logging, metrics, tracing, monitoring"
+
+  # Business & Strategy (10)
+  - id: strategy
+    description: "Strategic planning: positioning, OKRs, market analysis"
+  - id: business_operations
+    description: "Operations: process, efficiency, BPM"
+  - id: finance
+    description: "Finance: modeling, fundraising, cap tables"
+  - id: accounting
+    description: "Accounting: bookkeeping, tax, audit"
+  - id: legal
+    description: "Legal operations: contracts, IP, litigation"
+  - id: compliance
+    description: "Regulatory compliance: GDPR, LGPD, HIPAA, SOC2"
+  - id: hr
+    description: "Human resources: people ops, performance, comp"
+  - id: recruiting
+    description: "Recruiting: sourcing, screening, hiring"
+  - id: consulting
+    description: "Consulting: advisory, frameworks, deliverables"
+  - id: analytics
+    description: "Analytics: BI, dashboards, statistical analysis"
+
+  # Vertical Domains (12)
+  - id: healthcare
+    description: "Healthcare vertical: clinical ops, patient care"
+  - id: education
+    description: "Education vertical: curriculum, edtech, training"
+  - id: real_estate
+    description: "Real estate: deals, due diligence, property mgmt"
+  - id: fintech
+    description: "Fintech: payments, banking, wealth"
+  - id: crypto
+    description: "Crypto: tokens, DeFi, on-chain analysis"
+  - id: gaming
+    description: "Gaming: game design, narrative, monetization"
+  - id: ecommerce
+    description: "Ecommerce: product, conversion, fulfillment"
+  - id: hospitality
+    description: "Hospitality: hotels, restaurants, experiences"
+  - id: energy
+    description: "Energy: trading, optimization, sustainability"
+  - id: agriculture
+    description: "Agriculture: agtech, supply chain, sustainability"
+  - id: government
+    description: "Government: civic tech, public sector, advocacy"
+  - id: foodtech
+    description: "Foodtech: cloud kitchens, delivery, R&D"
+
+  # Cross-cutting (6)
+  - id: research
+    description: "Research: market intel, competitor scan, validation"
+  - id: knowledge_management
+    description: "Knowledge: docs, wikis, semantic search"
+  - id: document_processing
+    description: "Document processing: extraction, classification, OCR"
+  - id: automation
+    description: "Workflow automation: scripting, no-code, integrations"
+  - id: integration
+    description: "System integration: APIs, ETL, middleware"
+  - id: multi_agent_orchestration
+    description: "Multi-agent orchestration: business-of-businesses, meta-routing, DAG plans, council patterns"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# CAPABILITY ID NAMESPACES (top-level segments)
+# ─────────────────────────────────────────────────────────────────────
+# Capability ids follow pattern: {namespace}.{segment}.{verb}
+# E.g.: marketing.campaign.full_funnel, media.video.analyze
+# Validators reject unknown namespaces unless squad has experimental_domains: true.
+namespaces:
+  - prefix: marketing
+    parent_domain: marketing
+    sample_capabilities: [marketing.campaign.full_funnel, marketing.campaign.launch, marketing.copy.persuasive]
+  - prefix: branding
+    parent_domain: branding
+    sample_capabilities: [branding.identity.create, branding.voice.define, branding.audit.competitive]
+  - prefix: sales
+    parent_domain: sales
+    sample_capabilities: [sales.funnel.design, sales.offer.craft, sales.objection.handle]
+  - prefix: growth
+    parent_domain: growth
+    sample_capabilities: [growth.experiment.design, growth.loop.identify, growth.retention.diagnose]
+  - prefix: content
+    parent_domain: content
+    sample_capabilities: [content.production.scale, content.editorial.calendar, content.distribution.plan]
+  - prefix: media
+    parent_domain: media
+    sample_capabilities: [media.video.analyze, media.video.educational, media.audio.transcribe, media.image.analyze]
+  - prefix: social
+    parent_domain: social_media
+    sample_capabilities: [social.competitor.benchmark, social.engagement.audit, social.content.create]
+  - prefix: ads
+    parent_domain: ads
+    sample_capabilities: [ads.creative.brief, ads.budget.optimize, ads.attribution.audit]
+  - prefix: business
+    parent_domain: business_operations
+    sample_capabilities: [business.strategy.positioning, business.org.design, business.process.automate]
+  - prefix: strategy
+    parent_domain: strategy
+    sample_capabilities: [strategy.market.analyze, strategy.okr.set, strategy.positioning.define]
+  - prefix: analytics
+    parent_domain: analytics
+    sample_capabilities: [analytics.dashboard.build, analytics.report.executive, analytics.cohort.analyze]
+  - prefix: finance
+    parent_domain: finance
+    sample_capabilities: [finance.model.unit_economics, finance.fundraise.deck, finance.budget.allocate]
+  - prefix: legal
+    parent_domain: legal
+    sample_capabilities: [legal.contract.review, legal.contract.draft, legal.ip.audit]
+  - prefix: compliance
+    parent_domain: compliance
+    sample_capabilities: [compliance.audit.gdpr, compliance.policy.draft, compliance.risk.assess]
+  - prefix: research
+    parent_domain: research
+    sample_capabilities: [research.market.intelligence, research.competitor.scan, research.user.interview]
+  - prefix: knowledge
+    parent_domain: knowledge_management
+    sample_capabilities: [knowledge.semantic.search, knowledge.wiki.organize, knowledge.docs.generate]
+  - prefix: software
+    parent_domain: software_engineering
+    sample_capabilities: [software.review.code, software.architecture.design, software.refactor.plan]
+  - prefix: frontend
+    parent_domain: frontend
+    sample_capabilities: [frontend.ui.design, frontend.component.build, frontend.accessibility.audit]
+  - prefix: backend
+    parent_domain: backend
+    sample_capabilities: [backend.api.design, backend.database.schema, backend.service.deploy]
+  - prefix: data
+    parent_domain: data_engineering
+    sample_capabilities: [data.pipeline.build, data.quality.validate, data.warehouse.model]
+  - prefix: devops
+    parent_domain: devops
+    sample_capabilities: [devops.deploy.automate, devops.monitor.setup, devops.incident.respond]
+  - prefix: security
+    parent_domain: security
+    sample_capabilities: [security.audit.application, security.threat.model, security.incident.respond]
+  - prefix: ai
+    parent_domain: ai_engineering
+    sample_capabilities: [ai.eval.design, ai.prompt.optimize, ai.model.deploy]
+  - prefix: qa
+    parent_domain: qa
+    sample_capabilities: [qa.test.plan, qa.regression.suite, qa.bug.triage]
+  - prefix: healthcare
+    parent_domain: healthcare
+    sample_capabilities: [healthcare.documentation.clinical, healthcare.code.icd10, healthcare.patient.summary]
+  - prefix: education
+    parent_domain: education
+    sample_capabilities: [education.curriculum.design, education.assessment.create, education.lesson.transcribe]
+  - prefix: real_estate
+    parent_domain: real_estate
+    sample_capabilities: [real_estate.deal.analyze, real_estate.property.value, real_estate.due_diligence.run]
+  - prefix: fintech
+    parent_domain: fintech
+    sample_capabilities: [fintech.product.compliance, fintech.kyc.process, fintech.fraud.detect]
+  - prefix: crypto
+    parent_domain: crypto
+    sample_capabilities: [crypto.contract.audit, crypto.tokenomics.design, crypto.research.onchain]
+  - prefix: gaming
+    parent_domain: gaming
+    sample_capabilities: [gaming.narrative.design, gaming.economy.balance, gaming.playtest.organize]
+  - prefix: ecommerce
+    parent_domain: ecommerce
+    sample_capabilities: [ecommerce.conversion.optimize, ecommerce.product.list, ecommerce.fulfillment.plan]
+  - prefix: hr
+    parent_domain: hr
+    sample_capabilities: [hr.recruit.screen, hr.performance.review, hr.comp.benchmark]
+
+
+# ─────────────────────────────────────────────────────────────────────
+# RESERVED PREFIXES (cannot be used by squads)
+# ─────────────────────────────────────────────────────────────────────
+# These prefixes are reserved for protocol-level use. Validators reject
+# capability ids using these prefixes.
+reserved_prefixes:
+  - _internal
+  - _meta
+  - _test
+  - core
+  - protocol
+
+
+# ─────────────────────────────────────────────────────────────────────
+# DEPRECATED (slated for removal)
+# ─────────────────────────────────────────────────────────────────────
+# Empty in v1.0.0. Future versions will list deprecations here with
+# replacement guidance and removal timeline.
+deprecated: []
+
+
+# ─────────────────────────────────────────────────────────────────────
+# VALIDATION RULES (enforced by validators)
+# ─────────────────────────────────────────────────────────────────────
+validation_rules:
+  capability_id_pattern: '^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2,}$'
+  # Three or more segments required: namespace.segment.verb
+  # Lowercase, alphanumeric + underscore, must start with letter
+
+  domain_pattern: '^[a-z][a-z0-9_]*$'
+
+  max_capabilities_per_squad: 50
+  max_capabilities_per_business: 100
+
+  reserved_prefix_check: enforced
+  unknown_namespace_check: enforced  # unless squad has experimental_domains: true
+  unknown_domain_check: enforced     # same
+
+
+# ─────────────────────────────────────────────────────────────────────
+# EXAMPLES (for protocol documentation)
+# ─────────────────────────────────────────────────────────────────────
+examples:
+
+  good_capability:
+    id: media.video.analyze
+    domains: [media, content]
+    description: "Analyze video file with multimodal LLM. Extracts transcript, on-screen text, key frames."
+    examples_intents:
+      - "transcrever vídeo do Instagram"
+      - "extrair textos da tela de um Reel"
+    not_for_intents:
+      - "análise de vídeo de aula educacional (use media.video.educational)"
+
+  bad_capability_examples:
+    - reason: "Generic verb-only id"
+      id: do_stuff
+      why_bad: "Missing namespace, missing domain segment"
+
+    - reason: "Reserved prefix"
+      id: _internal.cache.invalidate
+      why_bad: "Uses reserved prefix _internal"
+
+    - reason: "Unknown domain without experimental flag"
+      id: marketing.campaign.full_funnel
+      domains: [vibes]   # not in canonical
+      why_bad: "Domain 'vibes' not in catalog and squad missing experimental_domains: true"
+
+    - reason: "Single segment"
+      id: marketing
+      why_bad: "Needs namespace.segment.verb (3 segments minimum)"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# GOVERNANCE
+# ─────────────────────────────────────────────────────────────────────
+governance:
+  authoritative_file: ~/.claude/skills/_shared/catalogs/CAPABILITY_CATALOG_V1.yaml
+  proposal_process:
+    1: "Open file edit PR with addition"
+    2: "Justify why existing entries don't fit"
+    3: "Reviewed by protocol authors"
+    4: "Merged into next minor version"
+
+  removal_process:
+    1: "Mark as deprecated in catalog (next minor)"
+    2: "Squads using removed entries flagged at index time"
+    3: "After 1 minor version: remove entirely (next minor+1)"
+
+  experimental_track:
+    1: "Squad declares experimental_domains: true in squad.yaml"
+    2: "Capability ids using non-catalog domains accepted"
+    3: "Discovery score boost: 0.7x penalty"
+    4: "Excluded from cross-business routing"
+    5: "Promotion to canonical: open governance PR"

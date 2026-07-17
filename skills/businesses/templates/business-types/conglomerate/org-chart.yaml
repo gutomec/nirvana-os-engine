@@ -1,0 +1,26 @@
+chart:
+- employee: holding-ceo
+  reports: []
+  direct_reports:
+  - business-1-ceo
+  - business-2-ceo
+  - business-3-ceo
+  is_antagonist: false
+- employee: business-1-ceo
+  reports:
+  - holding-ceo
+  direct_reports: []
+  is_antagonist: false
+- employee: business-2-ceo
+  reports:
+  - holding-ceo
+  direct_reports: []
+  is_antagonist: false
+- employee: business-3-ceo
+  reports:
+  - holding-ceo
+  direct_reports: []
+  is_antagonist: false
+routing_rules:
+  default_skip_levels: false
+  cross_team_handoff_allowed: true
