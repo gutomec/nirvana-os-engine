@@ -1,0 +1,22 @@
+# Force LF on checkout for every file the engine PARSES at runtime.
+# Several frontmatter/YAML parsers anchor on `\n`; a Windows CRLF checkout
+# (Git's default) made `---\r\n` not match → rubrics/manifests silently failed
+# to load. Normalizing line endings at the source kills that whole class of bug.
+*.md    text eol=lf
+*.yaml  text eol=lf
+*.yml   text eol=lf
+*.json  text eol=lf
+*.ts    text eol=lf
+*.js    text eol=lf
+*.mjs   text eol=lf
+*.sh    text eol=lf
+
+# The Windows CLI launcher must stay CRLF so cmd.exe parses it.
+bin/*.cmd            text eol=crlf
+skills/**/*.cmd      text eol=crlf
+
+# Binary assets — never touch.
+*.png   binary
+*.jpg   binary
+*.zip   binary
+*.mp4   binary
