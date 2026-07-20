@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nirvana-protocol/v5/schemas/capability.schema.json",
+  "title": "Capability",
+  "description": "A single capability declaration in squad.yaml capabilities[] (Squad Protocol v5 §22)",
+  "type": "object",
+  "required": ["id", "description", "domains", "invoke"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){2,}$",
+      "description": "Dotted hierarchical id with min 3 segments. E.g. media.video.analyze"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 20,
+      "maxLength": 1500,
+      "description": "What this capability does in concrete terms. Indexed by discovery."
+    },
+    "domains": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+      "minItems": 1,
+      "maxItems": 5,
+      "description": "Canonical domains from CAPABILITY_CATALOG_V1.yaml unless squad has experimental_domains: true"
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "type"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "type": {
+            "enum": ["file", "string", "json", "array", "number", "boolean", "url"]
+          },
+          "formats": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "schema": { "type": "string", "description": "Path to JSON Schema for nested structure" },
+          "required": { "type": "boolean", "default": true },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "outputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "type"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "type": {
+            "enum": ["file", "string", "json", "array", "markdown", "html", "binary"]
+          },
+          "format": { "type": "string" },
+          "schema": { "type": "string" },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "tools_required": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Semantic tool names from Squad v4 §10.7 (read, write, edit, grep, glob, bash, web_search, web_fetch) or runtime-specific names"
+    },
+    "invoke": {
+      "type": "object",
+      "required": ["type", "ref"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "enum": ["workflow", "task", "agent"]
+        },
+        "ref": {
+          "type": "string",
+          "description": "Path within squad to workflow/task/agent file"
+        },
+        "agent": {
+          "type": "string",
+          "description": "Agent name when type=task"
+        },
+        "prompt_template": {
+          "type": "string",
+          "description": "Template when type=agent"
+        },
+        "inputs_mapping": {
+          "type": "object",
+          "description": "Map capability inputs to invoke target inputs"
+        }
+      }
+    },
+    "examples": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 5 },
+      "minItems": 1,
+      "description": "Natural-language intents that should resolve to this capability. Used by BM25 discovery."
+    },
+    "produces": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 3, "maxLength": 80 },
+      "minItems": 1,
+      "maxItems": 20,
+      "description": "Concrete deliverable types this capability outputs. Recommended kebab-case slugs (e.g. 'pdf-mobile-A6', 'instagram-carousel-1080x1350', 'logo-svg-vector', 'ebook-cover-300dpi'). Used by agentic discovery (Pass 1) for semantic match against user briefs."
+    },
+    "example_briefs": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 20, "maxLength": 1000 },
+      "maxItems": 10,
+      "description": "Real briefs this capability resolves, in PT-BR and/or EN. Mix languages freely. Used by agentic discovery for high-fidelity semantic match."
+    },
+    "keywords": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 2, "maxLength": 60 },
+      "maxItems": 30,
+      "description": "Semantic synonyms (PT/EN) the brief might use to refer to this capability. Used by agentic discovery to bridge vocabulary gaps."
+    },
+    "not_for": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 5 },
+      "description": "Anti-patterns. Each must mention alternative capability id when known."
+    },
+    "fidelity": {
+      "type": "object",
+      "required": ["status"],
+      "additionalProperties": false,
+      "properties": {
+        "ground_truth_dir": { "type": "string" },
+        "eval_results": { "type": "string" },
+        "status": {
+          "enum": ["validated", "experimental", "drifted", "retired"],
+          "default": "experimental"
+        },
+        "last_eval": { "type": "string", "format": "date-time" },
+        "judge_model": { "type": "string" },
+        "threshold": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.85 }
+      }
+    },
+    "score_boost": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 2,
+      "default": 1.0,
+      "description": "Discovery score multiplier. Adapter sets based on fidelity status."
+    },
+    "model_hint": {
+      "type": "string",
+      "enum": ["haiku", "sonnet", "opus", "inherit"],
+      "default": "sonnet"
+    },
+    "estimated_cost_usd": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Self-reported estimate per invocation. Used for budget pre-flight."
+    },
+    "parallel_safe": {
+      "type": "boolean",
+      "default": false,
+      "description": "Phase 5 (nirvana-evolution). Opt-in: when true, this capability may run concurrently with siblings in the same DAG layer. Default false → forced into its own serial layer. Authors declare true only when they audited writes_paths and handoff_to for race-freedom."
+    },
+    "writes_paths": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Optional declaration of memory/file paths this capability writes. Consumed by race-detector (Phase 5) to validate parallel_safe."
+    }
+  }
+}

@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Nirvana — Observability</title>
+<style>
+  :root{
+    --bg:#0d0e10; --fg:#e8e8eb; --muted:#888; --border:#22242a;
+    --accent:#7aa2ff; --good:#5fcf6f; --bad:#ff6b6b; --warn:#f7c142; --info:#5fbdcf;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:13px -apple-system,Segoe UI,Helvetica,sans-serif;background:var(--bg);color:var(--fg)}
+  header{padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:baseline;gap:24px;flex-wrap:wrap}
+  h1{font-size:16px;margin:0;font-weight:600}
+  nav a{color:var(--muted);text-decoration:none;margin-right:14px;padding:4px 8px;border-radius:4px;cursor:pointer}
+  nav a.active{background:#1a1d23;color:var(--fg)}
+  nav a:hover{color:var(--fg)}
+  main{padding:20px;max-width:1400px;margin:auto}
+  .controls{display:flex;gap:8px;margin-bottom:16px;align-items:center}
+  .controls input,.controls select{padding:6px 10px;background:#1a1d23;border:1px solid var(--border);color:var(--fg);border-radius:4px;font:inherit}
+  .controls button{padding:6px 12px;background:var(--accent);color:#000;border:0;border-radius:4px;cursor:pointer;font:inherit}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:16px}
+  .stat{background:#13151a;border:1px solid var(--border);border-radius:6px;padding:12px}
+  .stat .label{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:0.5px}
+  .stat .value{font-size:22px;font-weight:600;margin-top:4px}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{padding:6px 10px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}
+  th{color:var(--muted);font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:0.5px}
+  tr:hover{background:#13151a;cursor:pointer}
+  .status-passed{color:var(--good)}
+  .status-failed{color:var(--bad)}
+  .status-blocked{color:var(--warn)}
+  .status-in_progress{color:var(--info)}
+  .status-unknown{color:var(--muted)}
+  code{font-family:SF Mono,Menlo,Consolas,monospace;font-size:11px;background:#1a1d23;padding:1px 4px;border-radius:3px}
+  .empty{color:var(--muted);text-align:center;padding:40px}
+  .anomaly{background:#1a1d23;border-left:3px solid var(--warn);padding:12px;margin-bottom:8px;border-radius:0 4px 4px 0}
+  .anomaly.cost_outlier,.anomaly.trace_cost_spike{border-left-color:var(--bad)}
+  .anomaly.latency_outlier,.anomaly.trace_latency_spike{border-left-color:var(--warn)}
+  .anomaly.failure_rate_outlier{border-left-color:#c76bff}
+  .anomaly .kind{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px}
+  .anomaly .message{margin-top:4px}
+  .spans{margin-top:12px;font-family:SF Mono,Menlo,Consolas,monospace;font-size:11px}
+  .span{padding:4px 10px;border-left:2px solid var(--border);margin-left:8px}
+  pre{margin:0;white-space:pre-wrap;word-break:break-all;color:#aaa;font-size:10px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Nirvana · Observability</h1>
+  <nav>
+    <a id="tab-traces" class="active" onclick="show('traces')">Traces</a>
+    <a id="tab-anomalies" onclick="show('anomalies')">Anomalies</a>
+    <a id="tab-dashboards" onclick="show('dashboards')">Dashboards</a>
+  </nav>
+  <span style="margin-left:auto;color:var(--muted)">Fase 2 · nirvana-evolution</span>
+</header>
+
+<main>
+  <div class="controls">
+    <label>Window (days): <input id="days" type="number" min="1" max="365" value="30" style="width:80px"></label>
+    <label>Filter business: <input id="filter-business" placeholder="any" style="width:160px"></label>
+    <label>Status:
+      <select id="filter-status">
+        <option value="">any</option>
+        <option value="passed">passed</option>
+        <option value="failed">failed</option>
+        <option value="blocked">blocked</option>
+        <option value="in_progress">in_progress</option>
+        <option value="unknown">unknown</option>
+      </select>
+    </label>
+    <button onclick="refresh()">Refresh</button>
+  </div>
+
+  <section id="view-traces"></section>
+  <section id="view-anomalies" style="display:none"></section>
+  <section id="view-dashboards" style="display:none"></section>
+</main>
+
+<script>
+let currentTab = 'traces';
+
+function show(tab){
+  currentTab = tab;
+  document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
+  document.getElementById('tab-'+tab).classList.add('active');
+  document.querySelectorAll('main section').forEach(s => s.style.display='none');
+  document.getElementById('view-'+tab).style.display='block';
+  refresh();
+}
+
+async function fetchJSON(url){
+  const r = await fetch(url);
+  if(!r.ok) throw new Error(`${url} → ${r.status}`);
+  return r.json();
+}
+
+function fmtCost(v){ return v ? '$'+v.toFixed(4) : '—' }
+function fmtSec(ms){ return ms ? (ms/1000).toFixed(1)+'s' : '—' }
+function fmtPct(v){ return v===null||v===undefined ? '—' : (v*100).toFixed(0)+'%' }
+
+async function loadTraces(){
+  const days = document.getElementById('days').value || 30;
+  const business = document.getElementById('filter-business').value.trim();
+  const status = document.getElementById('filter-status').value;
+  const qs = new URLSearchParams({days});
+  if(business) qs.set('business', business);
+  if(status) qs.set('status', status);
+  const d = await fetchJSON('/api/observability/traces?'+qs);
+  const s = d.summary;
+  const html = `
+    <div class="stats">
+      <div class="stat"><div class="label">Traces</div><div class="value">${s.total_traces}</div></div>
+      <div class="stat"><div class="label">Businesses</div><div class="value">${s.unique_businesses}</div></div>
+      <div class="stat"><div class="label">Squads</div><div class="value">${s.unique_squads}</div></div>
+      <div class="stat"><div class="label">Total cost</div><div class="value">${fmtCost(s.total_cost_usd)}</div></div>
+      <div class="stat"><div class="label">Correlated</div><div class="value">${d.stats.correlated_pairs}</div></div>
+      <div class="stat"><div class="label">Orphan lines</div><div class="value">${d.stats.orphan_event_lines}</div></div>
+    </div>
+    <table>
+      <thead><tr><th>Trace</th><th>Status</th><th>Business</th><th>Squad</th><th>Root event</th><th>Duration</th><th>Cost</th><th>Events</th></tr></thead>
+      <tbody>
+        ${d.traces.map(t => `
+          <tr onclick="openTrace('${t.trace_id}')">
+            <td><code>${t.trace_id.slice(0,16)}…</code></td>
+            <td class="status-${t.status}">${t.status}</td>
+            <td>${t.business_slugs.join(', ') || '—'}</td>
+            <td>${t.squad_names.join(', ') || '—'}</td>
+            <td><code>${t.root_event}</code></td>
+            <td>${fmtSec(t.duration_ms)}</td>
+            <td>${fmtCost(t.cost_usd)}</td>
+            <td>${t.event_count}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+    ${d.traces.length === 0 ? '<div class="empty">No traces match.</div>' : ''}
+  `;
+  document.getElementById('view-traces').innerHTML = html;
+}
+
+async function openTrace(id){
+  const days = document.getElementById('days').value || 30;
+  const d = await fetchJSON('/api/observability/traces/'+encodeURIComponent(id)+'?days='+days);
+  const t = d.trace;
+  const html = `
+    <div style="margin-bottom:16px">
+      <a onclick="loadTraces()" style="color:var(--accent);cursor:pointer">← back to list</a>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="label">Status</div><div class="value status-${t.status}">${t.status}</div></div>
+      <div class="stat"><div class="label">Duration</div><div class="value">${fmtSec(t.duration_ms)}</div></div>
+      <div class="stat"><div class="label">Cost</div><div class="value">${fmtCost(t.cost_usd)}</div></div>
+      <div class="stat"><div class="label">Events</div><div class="value">${t.event_count}</div></div>
+    </div>
+    <div>Trace: <code>${t.trace_id}</code>${t.session_id?`  ·  session: <code>${t.session_id}</code>`:''}</div>
+    <div>Project: ${t.project_id||'—'}  ·  Businesses: ${t.business_slugs.join(',')||'—'}  ·  Squads: ${t.squad_names.join(',')||'—'}</div>
+    ${t.warnings.length>0?`<div style="color:var(--warn);margin-top:8px">Warnings: ${t.warnings.join(', ')}</div>`:''}
+    <h3 style="margin-top:20px">Spans (${t.spans.length})</h3>
+    <div class="spans">
+      ${t.spans.map((s,i)=>`<div class="span" style="margin-left:${(s.parent_index<0?0:8)+8}px">
+        <span style="color:var(--muted)">${(new Date(s.ts).toISOString().slice(11,23))}</span>
+        <strong>${s.event}</strong>
+        <pre>${JSON.stringify(s.payload, null, 0).slice(0,400)}</pre>
+      </div>`).join('')}
+    </div>
+  `;
+  document.getElementById('view-traces').innerHTML = html;
+}
+
+async function loadAnomalies(){
+  const days = document.getElementById('days').value || 30;
+  const d = await fetchJSON('/api/observability/anomalies?days='+days);
+  const html = `
+    <div class="stat" style="margin-bottom:16px"><div class="label">Anomalies detected</div><div class="value">${d.total}</div></div>
+    ${d.total===0?'<div class="empty">No anomalies in the current window.</div>':''}
+    ${d.anomalies.map(a=>`<div class="anomaly ${a.kind}">
+      <div class="kind">${a.kind} · ${a.entity_type}:${a.entity_id} · z=${a.z_score.toFixed(2)}</div>
+      <div class="message">${a.message}</div>
+    </div>`).join('')}
+  `;
+  document.getElementById('view-anomalies').innerHTML = html;
+}
+
+async function loadDashboards(){
+  const days = document.getElementById('days').value || 30;
+  const sum = await fetchJSON('/api/observability/dashboards/summary?days='+days);
+  const html = `
+    <div class="stat" style="margin-bottom:16px"><div class="label">Window</div><div class="value">${sum.window_days}d</div></div>
+    <h3>Top businesses</h3>
+    <table>
+      <thead><tr><th>Business</th><th>Traces</th><th></th></tr></thead>
+      <tbody>
+        ${sum.summary.top_businesses.map(b=>`
+          <tr onclick="openDashboard('${b.business}')">
+            <td>${b.business}</td><td>${b.count}</td><td style="color:var(--accent)">view dashboard →</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+    <div id="dash-detail" style="margin-top:24px"></div>
+  `;
+  document.getElementById('view-dashboards').innerHTML = html;
+}
+
+async function openDashboard(slug){
+  const days = document.getElementById('days').value || 30;
+  const d = await fetchJSON('/api/observability/dashboards/business/'+encodeURIComponent(slug)+'?days='+days);
+  if(d.sample_size===0){
+    document.getElementById('dash-detail').innerHTML = `<div class="empty">${d.message}</div>`; return;
+  }
+  document.getElementById('dash-detail').innerHTML = `
+    <h2>${d.business}</h2>
+    <div class="stats">
+      <div class="stat"><div class="label">Sample</div><div class="value">${d.sample_size}</div></div>
+      <div class="stat"><div class="label">Gate pass</div><div class="value">${fmtPct(d.gate_pass_rate)}</div></div>
+      <div class="stat"><div class="label">Cost p50</div><div class="value">${fmtCost(d.cost.p50_usd)}</div></div>
+      <div class="stat"><div class="label">Cost p95</div><div class="value">${fmtCost(d.cost.p95_usd)}</div></div>
+      <div class="stat"><div class="label">Latency p50</div><div class="value">${d.latency_seconds.p50?d.latency_seconds.p50.toFixed(1)+'s':'—'}</div></div>
+      <div class="stat"><div class="label">Latency p95</div><div class="value">${d.latency_seconds.p95?d.latency_seconds.p95.toFixed(1)+'s':'—'}</div></div>
+      <div class="stat"><div class="label">Total cost</div><div class="value">${fmtCost(d.cost.total_usd)}</div></div>
+      <div class="stat"><div class="label">Revisions</div><div class="value">${d.revisions.total}</div></div>
+    </div>
+    <h3>Top employees</h3>
+    <table>
+      <thead><tr><th>Employee</th><th>Events</th></tr></thead>
+      <tbody>${d.top_employees.map(e=>`<tr><td>${e.employee}</td><td>${e.count}</td></tr>`).join('')||'<tr><td colspan="2" class="empty">No employee data.</td></tr>'}</tbody>
+    </table>
+    <h3>Recent traces</h3>
+    <table>
+      <thead><tr><th>Trace</th><th>Status</th><th>Duration</th><th>Cost</th><th>Event</th></tr></thead>
+      <tbody>${d.recent_traces.map(t=>`
+        <tr onclick="show('traces');setTimeout(()=>openTrace('${t.trace_id}'),100)">
+          <td><code>${t.trace_id.slice(0,16)}…</code></td>
+          <td class="status-${t.status}">${t.status}</td>
+          <td>${t.duration_seconds.toFixed(1)}s</td>
+          <td>${fmtCost(t.cost_usd)}</td>
+          <td><code>${t.root_event}</code></td>
+        </tr>`).join('')}</tbody>
+    </table>
+  `;
+}
+
+function refresh(){
+  try{
+    if(currentTab==='traces') loadTraces();
+    else if(currentTab==='anomalies') loadAnomalies();
+    else if(currentTab==='dashboards') loadDashboards();
+  }catch(e){
+    console.error(e);
+    document.getElementById('view-'+currentTab).innerHTML = `<div class="empty" style="color:var(--bad)">Error: ${e.message}</div>`;
+  }
+}
+
+refresh();
+</script>
+</body>
+</html>

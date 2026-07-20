@@ -1,0 +1,139 @@
+# Changelog
+
+All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
+(`nirvana-os-engine`); each release ships the full engine tarball that
+`npx @nirvana-os/cli` and pack installs consume.
+
+## 0.1.61 — 2026-07-20
+
+### Novos runtimes first-class: Kimi Code CLI + Grok Build CLI
+- `kimi-cli` (Moonshot, binário `kimi`) e `grok-cli` (xAI, binário `grok`) agora são
+  runtimes de primeira classe, iguais a codex/gemini-cli/antigravity-cli: `runKimi`/
+  `runGrok` no host-agent-driver, presentes em VALID_RUNTIMES/EXEC_RUNTIMES,
+  RUNTIME_ALIASES (`USE_KIMI`/`USE_GROK`), detecção de host, menção no brief, glance,
+  `.env.example`, e adapters completos em `_shared/adapters/{kimi-cli,grok-cli}.md` +
+  `_shared/agents/agent-x.{kimi,grok}.md`. Model vem só do LLM_CASCADE
+  (`kimi-cli:k3` / `grok-cli:<model>`), NUNCA hardcoded (model-agnostic).
+  - Kimi: grátis via OAuth Kimi.com (K3/K2.7), `kimi -m <model> -p … --output-format stream-json`.
+  - Grok: coding agêntico + geração de mídia nativa, `grok -p … --output-format json --yolo --cwd`.
+  - Ressalva: as invocações ainda NÃO foram verificadas contra os binários `kimi`/`grok`
+    reais (fallback seguro se uma flag divergir).
+
+### Consolidação dos adapters em `_shared/adapters/` (v5, fonte única)
+- Aposentada a camada `squads/adapters/` v4.0 (duplicatas/órfãs): removidos codex,
+  gemini-cli, antigravity, cursor, claude-code. As tabelas de `squads/references/*`
+  agora apontam para `_shared/adapters/`. Nenhum código dependia da camada v4.
+- Antigravity: eliminado o adapter órfão (id `antigravity`/binário `antigravity`/modelo
+  fixo); fica só o canônico `antigravity-cli` (binário `agy`, sem model).
+- Cursor: removido (substituído pelo `grok-cli`).
+- Purgados TODOS os nomes de modelo velhos dos adapters — o engine usa o default do
+  runtime ou o escolhido pelo usuário, nunca um id fixo.
+
+## 0.1.60 — 2026-07-18
+
+### Fix: validator drift — v5 capability/business description caps
+- `capability-validator.js` (the v5 structural pre-check that `validate-squad.ts`
+  runs) hard-coded the capability `description` cap at 500, which had drifted from
+  the raised canonical limit (1500 in `_shared/validators/limits.ts`, the same
+  `LIMITS` the zod validators use). Valid v5 manifests with 500–1500-char
+  capability descriptions were wrongly rejected, aborting `brief-squad.ts` prep
+  (e.g. a squad's `whatsapp.system.provision` at 639 chars). It now reads the cap
+  from `limits.ts` (single source of truth) with a safe fallback to 1500 — never
+  500 again, so the fast pre-check can't drift from the authoritative validator.
+- Aligned the JSON schemas to `limits.ts`: capability `description` 500→1500 and
+  `example_briefs` items 500→1000; business `description` 500→2000 and
+  `example_briefs` items 500→1000.
+
+## 0.1.59 — 2026-07-17
+
+### Windows: CRLF-tolerant parsing
+- The frontmatter parsers were `\n`-anchored, so a Windows CRLF checkout made
+  `---\r\n` fail to match → rubrics (and 8 other parsers: mind-clone/squad/
+  business audit criteria, clone inspect/list/translate) silently loaded
+  nothing, and the quality gate selected no rubric on Windows. Fixed with a
+  `.gitattributes` (`eol=lf` for parsed files, `eol=crlf` for `.cmd` launchers)
+  plus CRLF-tolerant regexes as defense in depth. Caught by the new quality-gate
+  test on the Windows CI runner.
+
+## 0.1.58 — 2026-07-17
+
+### The engine never prescribes a model
+- The model used is ALWAYS the one configured in the user's own agent runtime
+  (Claude Code, Codex, Gemini, Antigravity, …). The engine only overrides it when
+  the user explicitly asks for a specific model.
+- Removed every default model from the engine: judge config (`default_judge_model:
+  inherit`), capability `model_hint` default, rubric `target_model` (now
+  telemetry-only `inherit`), adapter docs, and the pixelle client (now
+  `gemini-flash-latest`, the provider's non-versioned pointer — no more 404s from
+  retired model slugs).
+
+### Router: explicit mention wins; business-first stops hijacking
+- New Stage 0.5: naming a squad or business by slug ("use o squad code-review…")
+  deterministically short-circuits routing (`route_tier: explicit_mention`) —
+  before any scoring. Accent/hyphen-normalized, guarded against false positives.
+- Business-first preference is now a relative tiebreak against the best squad,
+  never an absolute floor; artifact-pattern routes (`business_route`) compete
+  inside the RRF fusion as a third ranked list instead of short-circuiting ahead
+  of content matching. Briefs that clearly match a squad no longer get hijacked
+  by unrelated business routes.
+
+### Repo & docs
+- `CHANGELOG.md` (this file), `AGENT-QUICKSTART.md` (one-page agent onboarding),
+  `SECURITY.md`, issue/PR templates, `examples/` end-to-end walkthrough.
+- README hero image + CI badge; version badge now rewritten from `package.json`
+  at publish time.
+- `AGENTS.md` is the single source for the agent contract; `CLAUDE.md`/`GEMINI.md`
+  are generated copies (drift fails the publish).
+- `skills/harness/SKILL.md` normalized to English throughout.
+- New tests: audit event emission (`audit-emit`) and quality-gate selection/fail-closed paths.
+
+## 0.1.57 — 2026-07-13
+
+- **Windows:** `nrv index` fixed (POSIX-only bun-path check made every indexer
+  spawn fail with ENOENT when Bun wasn't on PATH); shell-string quoting replaced
+  by argv-based `run()`; 11 `.cmd` wrappers fixed (`>nul` instead of
+  `/dev/null`); spawn errors now surface their cause.
+- **Install anywhere:** the npx installer auto-installs the latest Bun on Windows
+  (PowerShell) and continues in the same run; `nrv` is added to the user PATH via
+  registry + `WM_SETTINGCHANGE` broadcast so new terminals work without a
+  restart; post-install indexing now runs on Windows (`nrv.cmd`); hook commands
+  are quoted and use per-OS stderr suppression; `fileURLToPath` fixes repo-root
+  resolution on Windows.
+
+## 0.1.56 — 2026-07-13
+
+- Grok-aware ENGINE-MENU (Grok Imagine i2v across video squads' guidance).
+- `brief-squad.ts`: squad dispatch now scaffolds the project dir, HANDOFF and
+  brief AND emits `brief_received`/`dispatch_squad` automatically — the audit
+  trail exists on any runtime, no reliance on the agent obeying SKILL.md.
+
+## 0.1.55 — 2026-07-10
+
+- `nrv doctor` reports honestly: "last activity <date>" instead of a false
+  "no dispatches yet?"; detects outputs-without-audit (agent not emitting
+  events) and squad dispatches (not only businesses); OS-safe paths.
+
+## 0.1.54 — 2026-07-10
+
+- Security hardening: removed `js-yaml` (DoS advisory GHSA-h67p-54hq-rp68) —
+  the two remaining users migrated to `yaml` v2; `bun audit` clean.
+- Embedder locked with `allowLocalModels=false` (closes the local-model vector
+  of the ONNX CVEs; hub/cache behavior unchanged).
+
+## 0.1.53 — 2026-07-10
+
+- Hybrid retrieval: BM25 + optional local dense arm (transformers.js/ONNX,
+  multilingual MiniLM) fused with Reciprocal Rank Fusion; opt-in via
+  `nrv embeddings enable` — the core stays zero-hard-dep with graceful fallback.
+- Router calibration (E1–E7 external audit): capability `keywords`/
+  `example_briefs`/`produces` indexed with field weighting; org-noun vs verb
+  separation; best-business-only promotion; generic-object abstention in the
+  keyword stage; meta-intent pruning.
+- Retroactive learning loop: audit readers accept `business_slug`/`squad_name`
+  aliases (history recovered); `nrv audit emit` canonical writer CLI.
+- First router test suite (69 tests) + YAML/HTML validation rubrics.
+
+---
+
+Earlier releases (0.1.9 → 0.1.52) predate this changelog; see the GitHub
+release notes of each tag for their summaries.
