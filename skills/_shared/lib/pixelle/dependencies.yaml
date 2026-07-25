@@ -1,0 +1,89 @@
+# Canonical Pixelle-Video dependencies — copied into every video-capable
+# squad's dependencies.yaml by inject-pixelle-deps.js.
+#
+# Reference: (base de conhecimento interna)
+
+schema_version: "1.0"
+
+system:
+  - name: ffmpeg
+    check: "ffmpeg -version"
+    install:
+      darwin: "brew install ffmpeg"
+      linux: "sudo apt install -y ffmpeg"
+      win32: "choco install ffmpeg -y"
+
+  - name: git
+    check: "git --version"
+    install:
+      darwin: "brew install git"
+      linux: "sudo apt install -y git"
+      win32: "choco install git -y"
+
+  - name: uv
+    check: "uv --version"
+    install:
+      darwin: "curl -LsSf https://astral.sh/uv/install.sh | sh"
+      linux: "curl -LsSf https://astral.sh/uv/install.sh | sh"
+      win32: "powershell -c \"irm https://astral.sh/uv/install.ps1 | iex\""
+
+services:
+  - name: pixelle-video
+    repo: "https://github.com/AIDC-AI/Pixelle-Video.git"
+    install_dir: "~/pixelle-video"
+    install_cmd: "uv sync"
+    start_cmd: "cd ~/pixelle-video && uv run uvicorn pixelle_video.api:app --port 8000"
+    health_check: "curl -fsS http://localhost:8000/docs"
+
+  - name: comfyui
+    repo: "https://github.com/comfyanonymous/ComfyUI.git"
+    install_dir: "~/comfyui"
+    install_cmd: "pip install -r requirements.txt"
+    start_cmd: "cd ~/comfyui && python main.py"
+    health_check: "curl -fsS http://127.0.0.1:8188/system_stats"
+
+# Default ComfyUI nodes for digital-human / lip-sync workflows.
+# Squads that don't need lip-sync (e.g. notebooklm-automation slideshow) can
+# omit by overriding their own dependencies.yaml.
+custom_nodes:
+  - name: ComfyUI-WanVideoWrapper
+    repo: "https://github.com/kijai/ComfyUI-WanVideoWrapper.git"
+    install_to: "~/comfyui/custom_nodes"
+  - name: ComfyUI-MultiTalk
+    repo: "https://github.com/kijai/ComfyUI-MultiTalk.git"
+    install_to: "~/comfyui/custom_nodes"
+
+# Heavy model downloads — flagged for user confirmation.
+# User runs activation with --confirm-heavy to accept.
+models:
+  - name: chatterbox-multilingual
+    source: huggingface
+    repo: "ResembleAI/chatterbox-multilingual"
+    install_to: "~/comfyui/models/tts/chatterbox"
+    size_gb: 3
+  - name: f5-tts-pt-br
+    source: huggingface
+    repo: "ModelsLab/F5-tts-brazilian"
+    install_to: "~/comfyui/models/tts/f5-tts-pt-br"
+    size_gb: 1.2
+  - name: index-tts-2
+    source: huggingface
+    repo: "IndexTeam/IndexTTS-2"
+    install_to: "~/comfyui/models/tts/index-tts-2"
+    size_gb: 4
+
+env_vars:
+  - name: GEMINI_API_KEY
+    required: false
+    description: "Default LLM for Pixelle-Video script generation. If absent, falls back to Ollama (local) or other configured provider."
+  - name: RUNNINGHUB_API_KEY
+    required: false
+    description: "Optional — only if you want cloud GPU instead of local ComfyUI."
+  - name: ELEVENLABS_API_KEY
+    required: false
+    description: "Optional — only if you want to use ElevenLabs cloned voice via mode=fixed."
+
+post_install:
+  - "node ${CLAUDE_SKILLS_DIR}/_shared/lib/pixelle/client.js ping || echo 'pixelle not running yet — start it manually before producing videos'"
+  - "node ${CLAUDE_SKILLS_DIR}/_shared/lib/pixelle/client.js config"
+  - "bun ${CLAUDE_SKILLS_DIR}/squads/scripts/index-squads.ts --quiet"
