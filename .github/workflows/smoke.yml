@@ -1,0 +1,62 @@
+# Smoke test cross-OS do Nirvana-OS engine.
+#
+# Motivação: os 4 bugs de Windows de 2026-07 (mkdir EEXIST do Bun, GNU tar
+# tratando "C:" como host remoto, symlinks sem privilégio, erros mudos) só
+# apareceram na máquina de um cliente. Este workflow reproduz o ambiente real:
+# shell bash em TODOS os OS — no Windows isso é o Git Bash, onde o tar é o
+# GNU tar, exatamente como o Claude Code roda lá.
+#
+# Roda no monorepo privado (gutomec/nirvana-os) e no repo público do engine
+# (gutomec/nirvana-os-engine, staged pelo publish-engine.ts) — os steps que
+# dependem de arquivos ausentes num deles são guardados por [ -f ... ].
+name: smoke
+on:
+  push:
+    branches: [main, "feat/**"]
+  workflow_dispatch: {}
+
+jobs:
+  smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Instalar o engine da fonte (fresh HOME, não-interativo)
+        run: bun scripts/install.ts
+
+      - name: nrv index duas vezes (regressão mkdir EEXIST no Windows)
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          nrv index
+          nrv index
+
+      - name: unit — runtime-rules (parser + resolver + precedência)
+        run: |
+          if [ -d skills/harness/tests ]; then bun test skills/harness/tests; else echo "repo sem tests/ — coberto pelo monorepo"; fi
+
+      - name: nrv doctor (warnings ok; falha crítica reprova)
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          rc=0; nrv doctor || rc=$?
+          if [ "$rc" -ge 2 ]; then
+            echo "doctor reportou falha crítica (exit $rc)"; exit "$rc"
+          fi
+
+      - name: Tarball + bootstrap npx (regressão GNU tar "C:" como host remoto)
+        run: |
+          if [ ! -f scripts/build-engine-tarball.ts ] || [ ! -f packaging/cli/bin/cli.mjs ]; then
+            echo "repo sem packaging/ (engine público) — step coberto pelo monorepo"; exit 0
+          fi
+          bun scripts/build-engine-tarball.ts
+          NIRVANA_ENGINE_TARBALL="$PWD/dist/nirvana-os-engine.tar.gz" node packaging/cli/bin/cli.mjs

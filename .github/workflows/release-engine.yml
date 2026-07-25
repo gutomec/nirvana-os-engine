@@ -1,0 +1,32 @@
+name: Release engine asset
+
+# On every version tag (vX.Y.Z), build the engine tarball and attach it to the
+# GitHub release. @nirvana-os/cli downloads releases/latest/download/nirvana-os-engine.tar.gz,
+# so cutting a release is all it takes to ship a new engine — npm is never touched.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  release-engine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Build engine tarball (fails on content leak or watermark)
+        run: bun scripts/build-engine-tarball.ts
+
+      - name: Attach engine asset to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/nirvana-os-engine.tar.gz
+          fail_on_unmatched_files: true

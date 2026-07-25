@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# nrv-gemini — gemini-cli wrapper with automatic fs-watch defense-in-depth.
+#
+# Behavior:
+#   - Detects whether $PWD is a Nirvana project (looks for AGENTS.md, GEMINI.md,
+#     or .nirvana/ in cwd or parents). If not, passes through to plain gemini.
+#   - In Nirvana projects: launches `nrv watch-fs $PWD --label gemini-real` in
+#     background, then runs gemini, then kills the watcher on exit (any signal).
+#
+# Hooks G1+G2 already fire automatically via ~/.gemini/settings.json — this
+# wrapper adds the third layer (filesystem-evidence audit) for paranoid mode
+# without the user managing background PIDs by hand.
+#
+# Usage: identical to `gemini`. Same args. Just type `nrv-gemini` instead.
+
+set -euo pipefail
+
+# Neutral shared skills root: prefer ~/.nirvana/skills, fall back to legacy.
+SKILLS="${NIRVANA_SKILLS_DIR:-$([ -d "$HOME/.nirvana/skills" ] && echo "$HOME/.nirvana/skills" || echo "$HOME/.claude/skills")}"
+
+# Find a Nirvana marker walking up from cwd.
+find_nirvana_root() {
+  local d="$PWD"
+  while [ "$d" != "/" ]; do
+    if [ -f "$d/AGENTS.md" ] || [ -f "$d/GEMINI.md" ] || [ -d "$d/.nirvana" ]; then
+      echo "$d"
+      return 0
+    fi
+    d="$(dirname "$d")"
+  done
+  return 1
+}
+
+GEMINI_BIN="$(command -v gemini || true)"
+if [ -z "$GEMINI_BIN" ]; then
+  echo "nrv-gemini: gemini command not found in PATH" >&2
+  exit 127
+fi
+
+NIRVANA_ROOT="$(find_nirvana_root || true)"
+WATCH_PID=""
+
+cleanup() {
+  if [ -n "$WATCH_PID" ]; then
+    kill "$WATCH_PID" 2>/dev/null || true
+    wait "$WATCH_PID" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT INT TERM
+
+if [ -n "$NIRVANA_ROOT" ]; then
+  TRACE_ID="gemini-$(date +%Y%m%d-%H%M%S)-$$"
+  echo "nrv-gemini: Nirvana project detected at $NIRVANA_ROOT" >&2
+  echo "nrv-gemini: starting fs-watch daemon (trace=$TRACE_ID, label=gemini-real)" >&2
+  if command -v bun >/dev/null 2>&1; then
+    bun "$SKILLS/harness/scripts/watch-fs.ts" "$NIRVANA_ROOT" --trace "$TRACE_ID" --label gemini-real --quiet &
+    WATCH_PID=$!
+  fi
+fi
+
+# Hand control to gemini. Hooks G1+G2 fire inside it automatically.
+exec "$GEMINI_BIN" "$@"
