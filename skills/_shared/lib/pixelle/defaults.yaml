@@ -1,0 +1,53 @@
+# Pixelle-Video — defaults shared across all video-capable squads.
+# Override per-user in ~/.pixelle-video.yaml; override per-call via
+# client.generate(input, opts).
+
+api_base: "http://localhost:8000"
+
+# LLM defaults — Gemini is preferred since the user already has GEMINI_API_KEY in .env.
+# The engine never pins a model VERSION (it rots to 404 when the provider retires it).
+# `gemini-flash-latest` is the provider's own non-versioned pointer to its current model.
+# Override with GEMINI_MODEL (env) or llm_model (user config) to use a specific one.
+llm_provider: "gemini"
+llm_model: "gemini-flash-latest"
+llm_base_url: "https://generativelanguage.googleapis.com/v1beta/openai/"
+
+# ComfyUI
+comfy_url: "http://127.0.0.1:8188"
+# runninghub_key: <set in user config or .env>
+
+# TTS — voice cloning capable by default; falls back to edge-tts when no ref audio
+# Order of preference: chatterbox-multilingual > f5-tts-pt-br/en > index-tts-2 > edge-tts
+tts_workflow: "chatterbox-multilingual"
+tts_fallback: "edge-tts"
+
+# Reference audio: user-provided voice file lives here once captured
+voices_dir: "~/.pixelle-voices"
+ref_audio_default: null
+
+# Output presets
+bgm_volume: 0.3
+frame_preset: "instagram-reel"
+
+# Default n_scenes per platform-style preset
+n_scenes_defaults:
+  instagram-reel: 5
+  instagram-feed: 3
+  tiktok: 5
+  youtube-shorts: 6
+  youtube-landscape: 8
+  podcast-clip: 4
+  realestate-tour: 8
+  course-lesson: 10
+  product-demo: 5
+  ads-creative: 3
+
+# Style prefixes per intent (applied to image prompts via prompt_prefix)
+prompt_prefixes:
+  cinematic: "cinematic, shallow depth of field, hyper-realistic, 8k"
+  product: "product photography, studio lighting, sharp focus, white background, high detail"
+  lifestyle: "natural lifestyle photography, candid, warm tones, golden hour"
+  corporate: "clean corporate photography, professional, minimalist"
+  ugc: "smartphone photography, natural lighting, casual UGC look"
+  realestate: "architectural photography, wide angle, bright interior lighting, magazine quality"
+  documentary: "documentary photography style, neutral palette, journalistic"
