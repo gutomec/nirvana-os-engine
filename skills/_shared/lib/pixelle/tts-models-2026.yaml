@@ -1,0 +1,188 @@
+# TTS / voice-cloning model catalog — 2026 ranking
+#
+# Used by squads to pick the right voice clone backend based on language,
+# quality target, and licensing constraints. All models below are runnable
+# inside ComfyUI workflows that Pixelle dispatches via tts_workflow.
+#
+# Sources: research/PIXELLE_VIDEO.md §9; benchmarks 2026.
+
+models:
+  # ─────────────────────────────────────────────────────────────────────
+  # PT-BR FIRST — fine-tuned or strong native multilingual coverage
+  # ─────────────────────────────────────────────────────────────────────
+
+  - id: f5-tts-pt-br
+    family: f5-tts
+    huggingface: ModelsLab/F5-tts-brazilian
+    languages: [pt-BR]
+    license: MIT
+    ref_audio_seconds_min: 8
+    ref_audio_seconds_recommended: 30
+    quality_pt_br: 5     # 1-5
+    quality_en: 0
+    emotion_control: limited
+    duration_control: yes
+    use_cases: [pt-br narration, podcast clips, course lessons, ads pt-br]
+    notes: |
+      Trained on 330+ hours of Brazilian Portuguese. Best in class for PT-BR.
+      Use this when the speaker is Brazilian and you have ≥30s of clean ref audio.
+
+  - id: chatterbox-multilingual
+    family: chatterbox
+    huggingface: ResembleAI/chatterbox-multilingual
+    languages: [en, pt, es, fr, de, it, ja, ko, hi, zh, ar, ru, nl, pl, sv, tr, vi, id, th, cs, hu, ro, fi]
+    license: MIT
+    ref_audio_seconds_min: 5
+    ref_audio_seconds_recommended: 15
+    quality_pt_br: 4
+    quality_en: 5
+    emotion_control: yes (paralinguistic — laughter, coughing, sighs)
+    duration_control: limited
+    use_cases: [multilingual content, EN narration, mixed-language brands]
+    notes: |
+      Wins ElevenLabs in blind tests (63.75% preference). Best general-purpose
+      multilingual cloner. Default choice when language is unknown or mixed.
+
+  - id: index-tts-2
+    family: index-tts
+    huggingface: IndexTeam/IndexTTS-2
+    languages: [en, zh, pt, es, fr, de, ja, ko, ar, ru]
+    license: Apache-2.0-ish
+    ref_audio_seconds_min: 5
+    ref_audio_seconds_recommended: 10
+    quality_pt_br: 4
+    quality_en: 5
+    emotion_control: yes (full disentanglement: voice ≠ emotion)
+    duration_control: yes (precise — explicit token spec or auto)
+    use_cases: [video dubbing with strict timing, emotionally controlled narration]
+    notes: |
+      Best for video dubbing because of precise duration control — when the
+      narration must fit a fixed scene length. Pick this for product demos
+      with strict timing constraints.
+
+  - id: xtts-v2
+    family: coqui
+    huggingface: coqui/XTTS-v2
+    languages: [en, es, fr, de, it, pt, pl, tr, ru, nl, cs, ar, zh, ja, hu, ko, hi]
+    license: Coqui Public Model License (free for personal use)
+    ref_audio_seconds_min: 6
+    ref_audio_seconds_recommended: 10
+    quality_pt_br: 4
+    quality_en: 4
+    emotion_control: limited
+    duration_control: limited
+    use_cases: [quick PT/EN cloning, low-resource environments]
+    notes: |
+      Solid fallback. License restricts commercial use without permission.
+      Good when ref audio is very short (≥6s).
+
+  - id: fish-speech-1.5
+    family: fish-audio
+    huggingface: fishaudio/fish-speech-1.5
+    languages: [80+ languages including pt-BR, en]
+    license: free with attribution
+    ref_audio_seconds_min: 10
+    quality_pt_br: 4
+    quality_en: 4
+    emotion_control: yes
+    duration_control: yes
+    use_cases: [highly multilingual content, cross-lingual cloning]
+    notes: |
+      Fish Audio S2 can clone in one language and speak in another without
+      retraining — useful for global brands with one talent voice.
+
+  - id: openvoice-v2
+    family: openvoice
+    huggingface: myshell-ai/OpenVoiceV2
+    languages: [en, es, fr, zh, ja, ko, pt]
+    license: MIT
+    ref_audio_seconds_min: 5
+    quality_pt_br: 3
+    quality_en: 4
+    emotion_control: yes
+    duration_control: limited
+    use_cases: [low-latency live demos, fast prototyping]
+    notes: |
+      Designed for real-time / low-latency. Lower quality than top-3 but
+      fast. Good for previewing voice before committing.
+
+  - id: cosyvoice-2
+    family: cosyvoice
+    huggingface: FunAudioLLM/CosyVoice2-0.5B
+    languages: [zh, en, ja, ko, pt, es]
+    license: free
+    ref_audio_seconds_min: 10
+    quality_pt_br: 3
+    quality_en: 4
+    emotion_control: yes
+    duration_control: yes
+    use_cases: [multilingual narration]
+    notes: |
+      Alibaba-backed. Stable choice for general use, less PT-BR specialized.
+
+  # ─────────────────────────────────────────────────────────────────────
+  # No-clone / utility tier — when the user does NOT provide ref audio
+  # ─────────────────────────────────────────────────────────────────────
+
+  - id: edge-tts
+    family: microsoft-edge
+    languages: [pt-BR, en, es, fr, de, ja, zh, hi, ar, +100 voices]
+    license: free (Microsoft Edge SDK)
+    ref_audio_seconds_min: 0  # no cloning
+    quality_pt_br: 3.5
+    quality_en: 3.5
+    emotion_control: minimal
+    duration_control: no
+    use_cases: [fast default narration, when no voice clone is available]
+    notes: |
+      Bundled with Pixelle. Use as automatic fallback when ref_audio is null.
+      PT-BR voices: pt-BR-FranciscaNeural (female), pt-BR-AntonioNeural (male).
+      Free, unlimited, no API key.
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Premium / cloud tier — paid alternatives
+  # ─────────────────────────────────────────────────────────────────────
+
+  - id: elevenlabs-multilingual-v2
+    family: elevenlabs
+    api: https://api.elevenlabs.io/v1/text-to-speech/{voice_id}
+    languages: [29+ languages including pt-BR, en]
+    license: paid SaaS
+    ref_audio_seconds_min: 60  # for Instant Voice Clone
+    quality_pt_br: 5
+    quality_en: 5
+    emotion_control: yes
+    duration_control: limited
+    use_cases: [highest quality, when budget allows]
+    notes: |
+      Not bundled. Squad must generate audio externally and pass narration
+      MP3 as ref_audio (mode: fixed). Requires Creator plan ($22/mo) for API.
+      Plus eleven_multilingual_v2 model id for PT-BR.
+
+# ─────────────────────────────────────────────────────────────────────
+# Selection rules — squads call this to pick a model
+# ─────────────────────────────────────────────────────────────────────
+selection_rules:
+  - condition: "user_uploaded_ref_audio AND target_language == 'pt-BR' AND ref_audio_seconds >= 30"
+    pick: f5-tts-pt-br
+    why: "Highest PT-BR quality. Specialized model trained on 330+ h of Brazilian audio."
+
+  - condition: "user_uploaded_ref_audio AND ref_audio_seconds >= 5 AND target_language in ['en', 'es', 'fr', 'de', 'it', 'ja', 'ko', 'zh']"
+    pick: chatterbox-multilingual
+    why: "Best general-purpose cloner. Beats ElevenLabs in blind tests."
+
+  - condition: "user_uploaded_ref_audio AND timing_critical == true"
+    pick: index-tts-2
+    why: "Precise duration control for video dubbing — fits narration to fixed scene length."
+
+  - condition: "user_uploaded_ref_audio AND ref_audio_seconds < 10 AND target_language == 'pt-BR'"
+    pick: chatterbox-multilingual
+    why: "Lower minimum (5s) than F5-TTS (8s); F5-TTS quality drops with too-short audio."
+
+  - condition: "no_ref_audio"
+    pick: edge-tts
+    why: "Free fallback. PT-BR-FranciscaNeural / PT-BR-AntonioNeural sound natural."
+
+  - condition: "premium_budget AND brand_consistency_critical"
+    pick: elevenlabs-multilingual-v2
+    why: "Squad must use mode=fixed and dispatch ElevenLabs externally first."

@@ -1,0 +1,102 @@
+# Squad dependency manifest (sidecar to squad.yaml).
+# When user activates this squad, the activator walks each section in order,
+# checks if the item is already present, and installs only what's missing.
+#
+# Place at <squad>/dependencies.yaml. If the file is absent, the squad is
+# assumed self-contained (no external installs needed).
+#
+# CLI:
+#   bun ~/.claude/skills/squads/scripts/activate-squad.ts <slug>
+#   bun ~/.claude/skills/squads/scripts/activate-squad.ts <slug> --dry-run
+#   bun ~/.claude/skills/squads/scripts/activate-squad.ts <slug> --confirm-heavy
+#
+# Templates: copy this file and fill in only the sections that apply.
+
+schema_version: "1.0"
+
+# ─────────────────────────────────────────────────────────────
+# System tools (CLIs that must be on PATH)
+# ─────────────────────────────────────────────────────────────
+system:
+  - name: ffmpeg
+    check: "ffmpeg -version"
+    install:
+      darwin: "brew install ffmpeg"
+      linux: "sudo apt install -y ffmpeg"
+      win32: "choco install ffmpeg -y"
+
+  - name: git
+    check: "git --version"
+    install:
+      darwin: "brew install git"
+      linux: "sudo apt install -y git"
+
+# ─────────────────────────────────────────────────────────────
+# Python packages (in the squad's runtime, not a venv)
+# ─────────────────────────────────────────────────────────────
+python:
+  manager: pip      # uv | pip
+  packages:
+    - "openai>=2.0.0"
+    - "pydantic>=2.0.0"
+
+# ─────────────────────────────────────────────────────────────
+# Node packages (uncommon at squad level — usually skill-level)
+# ─────────────────────────────────────────────────────────────
+# node:
+#   manager: npm
+#   cwd: "${SQUADS_DIR}/<slug>"
+#   packages:
+#     - "yaml@^2"
+
+# ─────────────────────────────────────────────────────────────
+# External services (long-running daemons the squad calls)
+# Activator clones + installs but does NOT start them.
+# ─────────────────────────────────────────────────────────────
+services:
+  - name: pixelle-video
+    repo: "https://github.com/AIDC-AI/Pixelle-Video.git"
+    install_dir: "~/pixelle-video"
+    install_cmd: "uv sync"
+    start_cmd: "uv run uvicorn pixelle_video.api:app --port 8000"
+    health_check: "curl -fsS http://localhost:8000/docs"
+
+  - name: comfyui
+    repo: "https://github.com/comfyanonymous/ComfyUI.git"
+    install_dir: "~/comfyui"
+    install_cmd: "pip install -r requirements.txt"
+    start_cmd: "python main.py"
+    health_check: "curl -fsS http://127.0.0.1:8188/system_stats"
+
+# ─────────────────────────────────────────────────────────────
+# ComfyUI custom nodes (clones into ~/comfyui/custom_nodes/)
+# ─────────────────────────────────────────────────────────────
+custom_nodes:
+  - name: ComfyUI-WanVideoWrapper
+    repo: "https://github.com/kijai/ComfyUI-WanVideoWrapper.git"
+    install_to: "~/comfyui/custom_nodes"
+
+# ─────────────────────────────────────────────────────────────
+# Model downloads (require user confirmation if >1GB)
+# ─────────────────────────────────────────────────────────────
+models:
+  - name: WAN2.1-T2V-14B
+    source: huggingface
+    repo: "Wan-AI/Wan2.1-T2V-14B"
+    install_to: "~/comfyui/models/checkpoints"
+    size_gb: 28
+
+# ─────────────────────────────────────────────────────────────
+# Env vars (checked only — never written)
+# ─────────────────────────────────────────────────────────────
+env_vars:
+  - name: GEMINI_API_KEY
+    required: false
+    description: "Used by Pixelle-Video as default LLM. Optional — Ollama works as local fallback."
+
+# ─────────────────────────────────────────────────────────────
+# Post-install hooks (run after everything else)
+# ─────────────────────────────────────────────────────────────
+post_install:
+  - "node ${CLAUDE_SKILLS_DIR}/_shared/lib/pixelle/client.js ping || true"
+  - "bun ${CLAUDE_SKILLS_DIR}/squads/scripts/index-squads.ts --quiet"

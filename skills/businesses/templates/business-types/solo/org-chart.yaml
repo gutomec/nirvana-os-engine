@@ -1,0 +1,9 @@
+chart:
+  - employee: ceo
+    reports: []
+    direct_reports: []
+    is_antagonist: false
+
+routing_rules:
+  default_skip_levels: false
+  cross_team_handoff_allowed: true

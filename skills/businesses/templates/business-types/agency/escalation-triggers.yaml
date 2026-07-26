@@ -1,0 +1,19 @@
+triggers:
+  - id: budget_breach
+    condition: "monthly_cost_usd > budget_monthly_usd * 0.9"
+    severity: high
+    notify: human
+    action: pause_until_resolved
+
+  - id: scope_creep
+    condition: "brief_iterations > 3"
+    severity: medium
+    notify: ceo
+    action: warn
+
+  - id: legal_keyword
+    condition: "brief contains regex /(juridico|legal|contrato|nda|gdpr|lgpd|hipaa)/i"
+    severity: high
+    notify: human
+    action: pause_until_resolved
+    detect: "(?i)(juridico|legal|contrato|nda|gdpr|lgpd|hipaa)"
