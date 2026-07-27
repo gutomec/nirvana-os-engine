@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# nrv-hermes — Hermes Agent wrapper with project-scoped skills + fs-watch audit.
+#
+# Behavior:
+#   - Detects whether $PWD is a Nirvana project (looks for AGENTS.md, HERMES.md,
+#     or .nirvana/ in cwd or parents). If not, passes through to plain
+#     `hermes chat`.
+#   - In Nirvana projects:
+#       1. exports NIRVANA_PROJECT_SKILLS=<root>/.agents/skills (or .hermes/skills)
+#          so the `${NIRVANA_PROJECT_SKILLS}` entry that `nrv setup --with-hermes`
+#          added to ~/.hermes/config.yaml:skills.external_dirs resolves for THIS
+#          session only (Hermes skips it when the var is unset).
+#       2. launches `nrv watch-fs <root> --label hermes-real` in the background
+#          (filesystem-evidence audit, third layer beyond the pre/post_tool_call
+#          hooks), then kills it on exit.
+#
+# The bridge skill (global) is always available via external_dirs; this wrapper
+# adds the per-project skills + the paranoid fs-watch, mirroring nrv-gemini.
+#
+# Usage: identical to `hermes chat`. Same args. Just type `nrv-hermes` instead.
+
+set -euo pipefail
+
+# Neutral shared skills root: prefer ~/.nirvana/skills, fall back to legacy.
+SKILLS="${NIRVANA_SKILLS_DIR:-$([ -d "$HOME/.nirvana/skills" ] && echo "$HOME/.nirvana/skills" || echo "$HOME/.claude/skills")}"
+
+# Find a Nirvana marker walking up from cwd.
+find_nirvana_root() {
+  local d="$PWD"
+  while [ "$d" != "/" ]; do
+    if [ -f "$d/AGENTS.md" ] || [ -f "$d/HERMES.md" ] || [ -d "$d/.nirvana" ]; then
+      echo "$d"
+      return 0
+    fi
+    d="$(dirname "$d")"
+  done
+  return 1
+}
+
+HERMES_BIN="$(command -v hermes || true)"
+if [ -z "$HERMES_BIN" ]; then
+  echo "nrv-hermes: hermes command not found in PATH" >&2
+  exit 127
+fi
+
+NIRVANA_ROOT="$(find_nirvana_root || true)"
+WATCH_PID=""
+
+cleanup() {
+  if [ -n "$WATCH_PID" ]; then
+    kill "$WATCH_PID" 2>/dev/null || true
+    wait "$WATCH_PID" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT INT TERM
+
+if [ -n "$NIRVANA_ROOT" ]; then
+  # Per-session project skills: prefer .agents/skills, fall back to .hermes/skills.
+  for d in "$NIRVANA_ROOT/.agents/skills" "$NIRVANA_ROOT/.hermes/skills"; do
+    if [ -d "$d" ]; then
+      export NIRVANA_PROJECT_SKILLS="$d"
+      break
+    fi
+  done
+
+  TRACE_ID="hermes-$(date +%Y%m%d-%H%M%S)-$$"
+  echo "nrv-hermes: Nirvana project detected at $NIRVANA_ROOT" >&2
+  [ -n "${NIRVANA_PROJECT_SKILLS:-}" ] && echo "nrv-hermes: project skills → $NIRVANA_PROJECT_SKILLS" >&2
+  echo "nrv-hermes: starting fs-watch daemon (trace=$TRACE_ID, label=hermes-real)" >&2
+  if command -v bun >/dev/null 2>&1; then
+    bun "$SKILLS/harness/scripts/watch-fs.ts" "$NIRVANA_ROOT" --trace "$TRACE_ID" --label hermes-real --quiet &
+    WATCH_PID=$!
+  fi
+fi
+
+# Hand control to Hermes. The pre/post_tool_call hooks (if wired) fire inside it.
+exec "$HERMES_BIN" chat "$@"

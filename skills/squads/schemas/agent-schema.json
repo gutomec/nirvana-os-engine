@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://squads.dev/schemas/agent-schema.json",
+  "title": "Agent Definition Schema v4",
+  "description": "JSON Schema for agent frontmatter YAML. v4 flat format (name, description, maxTurns required) or legacy v2 nested format (agent, persona required). See SQUAD_PROTOCOL_V4.md §6.",
+  "oneOf": [
+    {
+      "title": "v4 Flat Frontmatter Format (preferred)",
+      "type": "object",
+      "required": ["name", "description", "maxTurns"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{1,63}$",
+          "description": "kebab-case agent identifier"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 2048,
+          "description": "Agent selection criterion. Recommended pattern: '[Verb] [domain]. Use when [trigger]. Do NOT use for [anti-pattern].'"
+        },
+        "maxTurns": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500,
+          "description": "MANDATORY: turn bound for agent loop (Core P4)"
+        },
+        "tools": {
+          "type": "array",
+          "description": "Portable semantic tool whitelist (read, write, edit, grep, glob, bash, web_search, web_fetch, etc.)",
+          "items": { "type": "string" }
+        },
+        "model": {
+          "type": "string",
+          "description": "Model family hint (adapter resolves to concrete identifier)"
+        },
+        "effort": {
+          "type": "string",
+          "enum": ["low", "medium", "high"],
+          "description": "Reasoning depth hint"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+"
+        },
+        "memory": {
+          "type": "string",
+          "enum": ["user", "project", "local", "session", "ephemeral", "global"],
+          "description": "Memory scope"
+        },
+        "isolation": {
+          "type": "string",
+          "enum": ["worktree", "branch", "none"]
+        },
+        "permissionMode": {
+          "type": "string",
+          "enum": ["default", "acceptEdits", "bypassPermissions", "plan"]
+        },
+        "runtimes": {
+          "type": "object",
+          "description": "Runtime-specific namespaced config. Each key is a runtime_id.",
+          "additionalProperties": {
+            "type": "object"
+          }
+        },
+        "mcpServers": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "hooks": {
+          "type": "array",
+          "items": { "type": "object" }
+        },
+        "skills": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "background": {
+          "type": "boolean"
+        },
+        "context": {
+          "type": "string",
+          "enum": ["fork", "inline"]
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "Legacy v2 Nested Format",
+      "type": "object",
+      "required": ["agent", "persona"],
+      "description": "Legacy v2 format. Accepted but deprecated; migrate to v4 flat format via 'squads migrate'.",
+      "properties": {
+        "agent": {
+          "type": "object",
+          "required": ["name", "id"],
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]*$"
+            },
+            "id": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]*$"
+            },
+            "title": { "type": "string" },
+            "icon": { "type": "string" },
+            "whenToUse": { "type": "string" },
+            "version": { "type": "string" }
+          },
+          "additionalProperties": true
+        },
+        "persona": {
+          "type": "object",
+          "required": ["role", "style"],
+          "properties": {
+            "role": { "type": "string" },
+            "style": { "type": "string" },
+            "identity": { "type": "string" },
+            "focus": { "type": "string" },
+            "core_principles": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          },
+          "additionalProperties": true
+        },
+        "commands": {
+          "type": "array",
+          "items": { "type": "object" }
+        },
+        "activation-instructions": { "type": "string" },
+        "persona_profile": { "type": "object" },
+        "core_principles": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "dependencies": { "type": "object" },
+        "develop-story": { "type": "object" },
+        "autoClaude": { "type": "object" },
+        "IDE-FILE-RESOLUTION": { "type": "object" },
+        "REQUEST-RESOLUTION": { "type": "object" },
+        "greeting_levels": { "type": "object" }
+      },
+      "additionalProperties": true
+    }
+  ]
+}

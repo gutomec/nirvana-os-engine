@@ -1,0 +1,93 @@
+# ─────────────────────────────────────────────────────────────────────
+# Squad Manifest — Squad Protocol v5.0 (capabilities-aware)
+# Substitua todos os {{PLACEHOLDERS}} antes de fazer commit.
+# Validador: python3 ~/.claude/skills/_shared/validators/validators.py test
+# Schema:    ~/.claude/skills/_shared/schemas/capability.schema.json
+# ─────────────────────────────────────────────────────────────────────
+
+name: {{SQUAD_NAME}}                      # kebab-case, ^[a-z][a-z0-9-]+$
+version: "1.0.0"                          # semver MAJOR.MINOR.PATCH
+protocol: "5.0"                           # 5.0 = capabilities-aware. Use 4.0 se for legacy.
+description: "{{DESCRIPTION}}"            # ≥20 caracteres, descreva o que a squad entrega
+author: "{{AUTHOR}}"
+license: SUL-1.0
+slashPrefix: {{PREFIX}}                   # 2-4 chars, ex: sfm, ig, mk
+tags: [{{TAG_1}}, {{TAG_2}}]              # busca livre
+
+# ─────────────────────────────────────────────────────────────────────
+# Capabilities (Squad v5 §22) — OBRIGATÓRIO em v5
+# Cada capability mapeia uma intenção do usuário (NL) para um workflow,
+# task ou agent dentro desta squad. Sem capabilities[], a squad fica
+# invisível à descoberta do harness.
+# ─────────────────────────────────────────────────────────────────────
+capabilities:
+  - id: {{CAPABILITY_ID}}                 # dotted, ≥3 segmentos. Ex: marketing.funnel.create
+    description: >
+      {{CAPABILITY_DESCRIPTION}}          # 20-500 chars. Concreto, indexado por BM25.
+    domains: [{{CAPABILITY_DOMAINS}}]     # 1-5 domains de CAPABILITY_CATALOG_V1.yaml
+    invoke:
+      type: workflow                      # workflow | task | agent
+      ref: workflows/{{WORKFLOW_REF}}.yaml
+    examples:
+      - "{{EXAMPLE_INTENT_1}}"            # frases NL que devem casar (≥1 obrigatório)
+      - "{{EXAMPLE_INTENT_2}}"
+      - "{{EXAMPLE_INTENT_3}}"
+    not_for:
+      - "{{ANTI_PATTERN_1}}"              # cite capability alternativa quando souber
+    outputs:
+      - name: {{OUTPUT_NAME}}             # snake_case
+        type: markdown                    # file|string|json|array|markdown|html|binary
+        description: "{{OUTPUT_DESCRIPTION}}"
+    fidelity:
+      status: experimental                # experimental | validated | drifted | retired
+      threshold: 0.85
+    score_boost: 1.0                      # 0.0-2.0; harness multiplica score de discovery
+    model_hint: sonnet                    # haiku | sonnet | opus | inherit
+    estimated_cost_usd: 0.50              # opcional, usado para budget pre-flight
+
+  # Adicione mais capabilities seguindo o snippet em
+  # ~/.claude/skills/squads/templates/capability-block.tmpl
+
+# ─────────────────────────────────────────────────────────────────────
+# Components (Squad v4 §5) — preservado em v5
+# ─────────────────────────────────────────────────────────────────────
+components:
+  agents:
+    - {{AGENT_1}}.md
+    - {{AGENT_2}}.md
+  tasks:
+    - {{TASK_1}}.md
+    - {{TASK_2}}.md
+  workflows:
+    - {{WORKFLOW_REF}}.yaml
+
+# ─────────────────────────────────────────────────────────────────────
+# Runtime Requirements (Squad v4 §6 + v5 App-D)
+# Sem deps externas. Adapters em ~/.claude/skills/_shared/adapters/.
+# ─────────────────────────────────────────────────────────────────────
+runtime_requirements:
+  minimum:
+    - { runtime: claude-code, version: ">=1.0.0" }
+  compatible:
+    - { runtime: codex, version: ">=0.20.0" }
+    - { runtime: gemini-cli, version: ">=0.4.0" }
+  incompatible: []
+
+features_required:
+  - max_turns
+  - tool_whitelist
+  - subagent_spawning
+  - handoff_artifacts
+
+features_optional:
+  - hooks
+  - audit_trail
+  - telemetry_otel
+
+# ─────────────────────────────────────────────────────────────────────
+# Output convention (Squad v4 §16bis)
+# `default` = .squads-outputs/{squad-name}/{timestamp}-{slug}/
+# Custom path: base_dir: ./my-output-folder
+# ─────────────────────────────────────────────────────────────────────
+output:
+  base_dir: default
