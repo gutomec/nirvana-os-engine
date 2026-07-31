@@ -234,9 +234,9 @@
   <!-- 2 -->
   <section class="step">
     <div class="step-head"><span class="step-num">2</span><h2>Ou instale um pacote pronto</h2></div>
-    <p>Se você prefere conteúdo curado em vez de criar do zero, instale um <strong>pacote</strong>. As <strong>empresas, squads e mind-clones</strong> prontos chegam em pacotes que você baixa no <strong>squads.sh</strong>. Compre ou resgate o pacote, baixe o zip pelo seu painel e descompacte-o <strong>inteiro</strong>. Rodar <code>setup.sh</code> instala o conteúdo por cima do engine. O exemplo abaixo é o <strong>Genesis Circle</strong>: 41 squads, 11 empresas e 160 mind-clones.</p>
+    <p>Se você prefere conteúdo curado em vez de criar do zero, instale um <strong>pacote</strong>. As <strong>empresas, squads e mind-clones</strong> prontos chegam em pacotes que você baixa no <strong>squads.sh</strong>. Compre ou resgate o pacote, baixe o zip pelo seu painel e descompacte-o <strong>inteiro</strong> numa pasta e rode <code>bun setup.ts</code> lá dentro — isso instala o conteúdo por cima do engine. O exemplo abaixo é o <strong>Genesis Circle</strong>: 42 squads, 11 empresas e 159 mind-clones.</p>
     <div class="term" data-term="pack"></div>
-    <div class="note"><span class="ico">i</span><span>Engine e pacote são <b>desacoplados</b>: o engine é grátis e público; o pacote é o conteúdo. Se o engine ainda não estiver instalado, o próprio <code>setup.sh</code> o baixa antes.</span></div>
+    <div class="note"><span class="ico">i</span><span>Engine e pacote são <b>desacoplados</b>: o engine é grátis e público; o pacote é o conteúdo. Se o engine ainda não estiver instalado, o próprio <code>setup.ts</code> o baixa antes. Ainda sem o Bun? <code>bash setup.sh</code> instala o Bun e chama o mesmo setup.</span></div>
   </section>
 
   <!-- 3 -->
@@ -439,15 +439,15 @@
     },
     pack: {
       title: "zsh — genesis-circle",
-      command: "unzip nirvana-os-genesis-circle-pack.zip && cd $_ && bash setup.sh",
+      command: "unzip -d genesis-circle nirvana-os-genesis-circle-pack.zip && cd genesis-circle && bun setup.ts",
       out: [
         "@bold;Nirvana-OS — pack 'genesis-circle'",
         "",
-        "@a;[1/3]@c; Engine já instalado (0.1.61).",
+        "@a;[1/3]@c; Engine já instalado (0.1.72).",
         "@a;[2/3]@c; Instalando o conteúdo do pack 'genesis-circle'...",
-        "@dim;      squads:      @g;41 new@dim; · 0 updated · 0 unchanged · 0 removed",
+        "@dim;      squads:      @g;42 new@dim; · 0 updated · 0 unchanged · 0 removed",
         "@dim;      businesses:  @g;11 new@dim; · 0 updated · 0 unchanged · 0 removed",
-        "@dim;      mind-clones: @g;160 new@dim; · 0 updated · 0 unchanged · 0 removed",
+        "@dim;      mind-clones: @g;159 new@dim; · 0 updated · 0 unchanged · 0 removed",
         "@a;[3/3]@c; Verificando a licença (soft)...",
         "",
         "@g; ✓ Pack 'genesis-circle' instalado."
