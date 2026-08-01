@@ -1,0 +1,268 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nirvana-protocol/v1/schemas/mind-clone.schema.json",
+  "title": "Mind-Clone Manifest (MANIFEST.yaml)",
+  "description": "Schema for mind-clone MANIFEST.yaml. Supports both FdG-produced and canonical-knowledge compiled clones via shared structure with optional extension fields.",
+  "type": "object",
+  "required": [
+    "manifest",
+    "artifacts",
+    "scores",
+    "validation_verdict",
+    "dna_layers"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "manifest": {
+      "type": "object",
+      "required": ["name", "display_name", "version"],
+      "additionalProperties": true,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{1,63}$",
+          "description": "kebab-case identifier"
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 80,
+          "description": "Human-readable name (e.g., 'Steve Jobs')"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "leadership",
+            "marketing",
+            "philosophy",
+            "creativity",
+            "business",
+            "startups",
+            "engineering",
+            "design",
+            "science",
+            "research"
+          ]
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 2, "maxLength": 60 },
+          "minItems": 3,
+          "maxItems": 30
+        },
+        "compiled_at": {
+          "type": "string",
+          "description": "ISO 8601 date or date-time"
+        },
+        "compiled_by": {
+          "type": "string"
+        },
+        "compilation_method": {
+          "type": "string",
+          "enum": [
+            "pipeline:fabrica-de-genios",
+            "canonical-knowledge",
+            "manual"
+          ],
+          "description": "How the clone was produced. Affects expected scores."
+        },
+        "source": {
+          "type": "string",
+          "description": "Distribution source label (e.g., 'nirvana-os-starter-pack')"
+        }
+      }
+    },
+    "artifacts": {
+      "oneOf": [
+        {
+          "type": "array",
+          "minItems": 4,
+          "items": {
+            "type": "object",
+            "required": ["path"],
+            "additionalProperties": true,
+            "properties": {
+              "path": { "type": "string" },
+              "status": {
+                "type": "string",
+                "enum": ["present", "missing", "pending"]
+              },
+              "size_bytes": { "type": "integer", "minimum": 1 },
+              "sha256": { "type": "string" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["required"],
+          "properties": {
+            "required": {
+              "type": "object",
+              "required": ["agent_md", "soul_md", "dna_config", "dna_schema"],
+              "additionalProperties": true,
+              "properties": {
+                "agent_md": { "type": "object", "required": ["path"] },
+                "soul_md": { "type": "object", "required": ["path"] },
+                "dna_config": { "type": "object", "required": ["path"] },
+                "dna_schema": { "type": "object", "required": ["path"] }
+              }
+            },
+            "optional": { "type": "object" }
+          }
+        }
+      ]
+    },
+    "source_material": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "primary": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        },
+        "secondary": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "sources_detailed": {
+      "type": "array",
+      "description": "Optional FdG-style per-source breakdown",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string" },
+          "type": {
+            "type": "string",
+            "enum": ["book", "playbook", "sop", "interview", "podcast", "essay", "tweet-thread", "documentary", "paper", "other"]
+          },
+          "pages_read": { "type": "integer", "minimum": 0 },
+          "contribution": { "type": "string" }
+        }
+      }
+    },
+    "scores": {
+      "type": "object",
+      "required": ["template_compliance", "source_coverage", "coherence", "completeness"],
+      "additionalProperties": true,
+      "properties": {
+        "template_compliance": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Binary 1.0 or 0.0 in practice"
+        },
+        "source_coverage": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Fraction of claims with FONTE tags. ≥0.8 for APPROVED FdG clones; ≥0.7 for canonical-knowledge"
+        },
+        "coherence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Vertical L1→L5 linking quality. ≥0.8 for APPROVED"
+        },
+        "completeness": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "All mandatory artifacts present and non-empty"
+        }
+      }
+    },
+    "validation_verdict": {
+      "type": "string",
+      "enum": [
+        "APPROVED",
+        "APPROVED_LIMITED_CORPUS",
+        "COMPILED_FROM_CANONICAL_KNOWLEDGE",
+        "NEEDS_REVISION",
+        "REJECTED"
+      ],
+      "description": "APPROVED = full deepening + cov ≥0.85. APPROVED_LIMITED_CORPUS = clone deepened but source corpus has documented limits (e.g., pre-internet figures, niche regional). COMPILED_FROM_CANONICAL_KNOWLEDGE = baseline conversion. NEEDS_REVISION = below relaxed mins. REJECTED = invalid or fabricated content."
+    },
+    "validated_at": { "type": "string" },
+    "validator": {
+      "type": "string",
+      "description": "Validator identifier (e.g., 'assayer', 'nirvana-starter-pack-compiler')"
+    },
+    "caveat": {
+      "type": "string",
+      "description": "Honest disclosure of compilation method limitations"
+    },
+    "commercial_use_caveat": {
+      "type": "string",
+      "description": "Right-of-publicity, fair-use, copyright considerations specific to this operator"
+    },
+    "dna_layers": {
+      "type": "object",
+      "required": [
+        "L1_philosophies",
+        "L2_mental_models",
+        "L3_heuristics",
+        "L4_frameworks",
+        "L5_methodologies"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "L1_philosophies": {
+          "type": "integer",
+          "minimum": 3,
+          "description": "Philosophies count. Min 3 for simplified-canonical baseline. Deepened clones reach 10-13."
+        },
+        "L2_mental_models": {
+          "type": "integer",
+          "minimum": 4,
+          "description": "Mental models count. Min 4 matches simplified-canonical baseline (4-row table is the original template). Deepened clones reach 9-11."
+        },
+        "L3_heuristics": {
+          "type": "integer",
+          "minimum": 5,
+          "description": "Heuristics count. Min 5 for baseline. Deepened clones reach 13-15."
+        },
+        "L4_frameworks": {
+          "type": "integer",
+          "minimum": 3,
+          "description": "Frameworks count. Min 3 for baseline. Deepened clones reach 7-10."
+        },
+        "L5_methodologies": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Methodologies count. Min 1 matches simplified-canonical baseline (single methodology block is the original template). Deepened clones reach 5-6."
+        }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "broken_references": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Optional FdG-style metadata block (description, primary_source, languages, tags)"
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Optional FdG-style quality block (alternative to scores; both can coexist for migration)"
+    },
+    "mind_clone": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Legacy FdG top-level wrapper. Kept for backward compatibility; prefer `manifest` for new clones."
+    }
+  }
+}

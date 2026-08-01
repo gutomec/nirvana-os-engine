@@ -1,0 +1,37 @@
+# Canonical video capability — injected into every video-capable squad.
+#
+# Consolidates the two competing ids (media.pixelle_video.compose / media.video.compose)
+# into ONE canonical media.video.compose. Squads that produce video declare this in
+# squad.yaml#capabilities[]. Fundamentals + engine selection (incl. Higgsfield) live under
+# CLAUDE_SKILLS_DIR/_shared/lib/video-fundamentals/. Execution stays in each squad's own
+# generation logic (Higgsfield execution is centralized in higgsfield-studio-nirvana).
+
+id: media.video.compose
+description: >
+  Compose a finished video (reel, ad/UGC, product demo, real-estate tour, course lesson,
+  podcast clip, hero/background loop) applying the shared video fundamentals: hero-image
+  consistency, clip chaining, audio policy (silent hero vs published-with-audio), and credit
+  discipline. Engine chosen per task (Higgsfield/Seedance, Veo 3.1, Fal/Kling, Runway, Luma).
+domains: [media, video, marketing, content, social_media]
+invoke:
+  type: task
+  ref: tasks/video-compose.md
+examples:
+  - "gere um reel para Instagram com áudio e legenda sobre precificação por valor"
+  - "create a silent hero background loop of the product for the website (no audio)"
+  - "produza um anúncio UGC vertical do produto usando a foto real como referência"
+  - "build a real estate tour video chaining clips into one continuous camera move"
+  - "gera um clipe de produto com personagem consistente (Soul ID) entre as tomadas"
+not_for:
+  - "live streaming (batch-only)"
+  - "cinematic scroll-scrub WEBSITES (use web.cinematic_site.build in cinematic-web-studio)"
+  - "real-time avatar lip-sync APIs (async/batch only)"
+outputs:
+  - name: video_artifact
+    type: json
+    description: >
+      Dispatch result with video_url(s), duration, file_size, engine_used, audio (on/off),
+      aspect_ratio, resolution, cost_estimate_usd.
+fidelity:
+  status: experimental
+score_boost: 1.2
