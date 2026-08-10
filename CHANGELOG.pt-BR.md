@@ -1,0 +1,957 @@
+# Changelog
+
+**Read this in your language:** [English](./CHANGELOG.md) · [Português](./CHANGELOG.pt-BR.md)
+
+Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
+releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
+do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
+
+## 0.3.1 — 2026-08-09
+
+### Uma sonda de runtime que respondia sobre o PATH errado
+
+O `runtimeAvailable()` decide se um CLI existe antes de a cascata tentá-lo, e
+disparava a sonda `which` sem passar `env`. No Bun isso significa o ambiente
+capturado no INÍCIO DO PROCESSO, não o `process.env` atual — enquanto a
+invocação real dispara com `env: {...process.env}`. Sonda e invocação podiam
+divergir: um runtime acrescentado ao PATH durante a corrida aparecia como
+indisponível sendo perfeitamente invocável, e a cascata pulava uma plataforma
+que funciona.
+
+Encontrado pelo próprio CI da release. A suíte de failover passava numa máquina
+que por acaso tem os binários `gemini` e `agy` instalados e falhava no Linux,
+que não tem nenhum dos dois — ou seja, os shims que ela acreditava exercitar
+nunca eram alcançados. As duas sondas (`runtimeAvailable` e `whichSync`) passam
+`env` explicitamente agora, e um teste de regressão exige que a sonda enxergue
+uma mutação de PATH, usando um nome de binário que dificilmente existe.
+
+## 0.3.0 — 2026-08-09
+
+### BREAKING: credencial quebrada não custa mais a corrida inteira
+
+Uma matriz ao vivo (o mesmo brief nas seis plataformas instaladas) pegou o
+Google encerrando o tier individual do `gemini-cli`: o CLI autentica e em
+seguida recusa, com `IneligibleTierError` apontando para o Antigravity. Cinco
+plataformas entregaram; a sexta morreu — e expôs três defeitos nossos atrás do
+problema externo.
+
+**O `IneligibleTierError` não casava com nenhum padrão do classificador.** O
+regex de autenticação exigia `authentication failed`, e o texto real diz
+`Error authenticating:`. O veredito virava `error` genérico, e erro genérico
+não rotaciona: a corrida acabou com um runtime saudável na entrada seguinte da
+cascata. Agora o encerramento de tier é reconhecido (e a dica aponta o `agy`,
+não "refaça o login" — de tier aposentado ninguém se re-autentica).
+
+**`auth_failed` passou a rotacionar.** Antes a política era parar e devolver o
+erro ao chamador, com o argumento de que credencial inválida é problema do
+usuário. O argumento continua válido para o diagnóstico, não para o trabalho:
+agora o runtime entra em cooldown curto (15 min) e a cascata segue para a
+próxima entrada, como já fazia com cota. O evento `runtime_auth_failed` continua
+no audit com a dica — seguir em frente não esconde a credencial quebrada. O
+cooldown é por runtime, não por entrada, porque outro modelo no mesmo CLI usa a
+mesma credencial e falharia igual.
+
+**O roteador escolhe o runtime por tentativa.** O `routeOnce` fechava sobre uma
+escolha única, então o "tenta de novo" da escada batia no mesmo CLI morto: o
+roteador falhava duas vezes e o brief caía em agent-x sem especialista — perda
+de qualidade de roteamento causada por uma indisponibilidade alheia. Agora, uma
+falha de transporte cujo motivo é o próprio runtime marca cooldown, e a
+tentativa seguinte roteia por uma plataforma viva.
+
+### `nrv install --dry` não instala mais de verdade
+
+O `--dry` era honrado só pela sincronia do starter pack e pela config do
+hermes. As outras quatro fases ignoravam a flag: um "preview" copiava a árvore
+de skills por cima da instalada, reinstalava as dependências, religava todos os
+runtimes, reescrevia os hooks e ainda anexava a sentinela de smoke no audit.
+Quem rodasse para inspecionar uma atualização antes de decidir já a tinha
+tomado. Agora as quatro fases têm guarda e imprimem o que fariam; o instalador
+de hooks roda no próprio modo `--check`. Verificado no sistema real: árvore,
+settings e audit intactos depois de um `--dry`.
+
+### O `nrv` avisa quando existe engine mais novo
+
+O `nrv update` sempre funcionou, mas nada nunca dizia que havia atualização.
+Quem nunca digitasse o comando ficava na versão instalada para sempre — inclusive
+atravessando correções que decidem se uma corrida entrega ou morre. O changelog
+chegava em quem foi procurar; no resto, não chegava.
+
+Uma linha no stderr, antes do comando, só quando existe release mais nova de
+verdade. A restrição que desenhou tudo: todo subcomando termina em `exec`, então
+não existe "depois do comando" para enganchar, e o aviso não pode custar latência
+ao CLI. Por isso ele lê um arquivo de cache de três linhas com builtins do shell,
+sem nenhum subprocesso, enquanto a atualização pela rede roda destacada e
+beneficia a invocação SEGUINTE. O timestamp mora dentro do arquivo em vez do
+mtime, que o `stat` lê diferente no macOS e no Linux e que rsync e restauração
+reescrevem. O modo de falha é o silêncio: sem rede, com rate limit, com cache
+corrompido, com diretório sem permissão — cada caso resulta em nenhuma mensagem,
+nunca num comando quebrado. Para desligar, `NIRVANA_NO_UPDATE_CHECK=1`; `CI` é
+respeitado automaticamente. O `nrv update-check --status` mostra o estado.
+
+### O primeiro `nrv index` de uma instalação nova não falha mais
+
+O engine é publicado sem conteúdo por design, então uma instalação nova tem zero
+empresas, squads e clones. O construtor do digest tratava "zero entradas" e "não
+consegui ler o registry" como a mesma condição e saía 1 com "run `nrv index`
+first" — conselho para o comando que o usuário acabara de rodar. O `nrv doctor`
+então reportava três falhas críticas numa máquina onde nada estava errado.
+
+Agora só registry ilegível é falha; vazio recebe um digest vazio válido e uma
+linha dizendo isso. Medido numa instalação nova a partir do tarball da release:
+o `nrv index` fecha 4/4 ok, e o doctor cai de 3 críticos para 2 avisos (nenhum
+runtime configurado, nada despachado ainda — os dois verdadeiros).
+
+### O gate de paridade da CLI para de inventar comandos
+
+O `check-cli-parity.ts` varria o `bin/nrv` inteiro atrás de linhas indentadas em
+2 espaços contendo `)`, então um comentário com parêntese ou um `case` dentro de
+uma função auxiliar contava como subcomando. Acrescentar o aviso de versão fez o
+build da release falhar com oito comandos que não existem. A varredura agora é
+ancorada no bloco de dispatch `case "$cmd" in … esac` da coluna zero, onde os
+comandos de fato moram, e o arquivo pode ganhar funções sem o gate alucinar.
+
+### O erro que aparece é a causa, não o primeiro aviso do CLI
+
+A falha registrada no ledger e mostrada ao usuário era
+`"YOLO mode is enabled. All tool calls will be automatically approved."` — um
+aviso benigno que o CLI imprime antes de tudo. A causa real ficava soterrada
+sob doze linhas de `Skill conflict detected` e um stack trace.
+
+Os onze pontos onde um adapter montava a mensagem de erro (nove runtimes mais
+os dois envelopes de baixo nível) cortavam os primeiros 500 bytes do stderr.
+Agora extraem a linha que carrega a causa, onde quer que ela esteja: o ruído
+conhecido é descartado, as linhas com sinal ganham da posição. Isso importa
+além da estética — nos envelopes de baixo nível o `error` é o único texto que o
+classificador enxerga, e ruído suficiente empurrava a causa para fora da janela.
+
+### `nrv doctor` aponta skills visíveis por dois caminhos
+
+Runtimes que leem tanto o diretório de convenção (`~/.agents/skills`) quanto o
+próprio (`~/.gemini/skills`, …) carregam o mesmo SKILL.md duas vezes e logam
+`Skill conflict detected` para cada skill. Nada quebra — os dois caminhos
+resolvem para o mesmo arquivo — mas o aviso parece problema de verdade. O
+doctor agora compara por realpath (um diretório alcançável por dois nomes não
+é dois diretórios), diz quais diretórios duplicam e lembra que
+`~/.agents/skills` não é criado por este engine.
+
+### `bun test` na raiz não acusa mais falha de pack
+
+`dist/` guarda packs construídos cujos templates de squad trazem os próprios
+testes, com as próprias dependências — instaladas no projeto do comprador, não
+aqui. Varrer esse diretório fazia um `bun test` nu reportar 55 falhas
+fantasmas. O `bunfig.toml` agora escopa a varredura no engine: 624 testes, 0
+falhas.
+
+### BREAKING: `nrv revise` entrega pelo pipeline, e os exit codes mudam
+
+O `revise.ts` tinha uma cópia própria do verify e do gate: piso de 200 bytes,
+gate só em `.md`/`.txt`/`.json`, e uma variável `allPass` que começava em `true`
+antes de um laço que podia rodar zero vezes. Uma revisão que produzia só
+`.html`, PDF ou imagem não era julgada por nada e ainda assim emitia
+`delivered` com `gate:"pass"` e saía 0. Um gate reprovado de verdade também
+emitia `delivered` (com `gate:"fail"`) antes de sair 1. Era o mesmo fail-open
+que a Fase 4 fechou no dispatch, vivo justamente na rota que a mensagem de
+entrega RETIDA indica ao usuário.
+
+Agora `nrv revise` chama o mesmo `runDelivery()` do dispatch e do supervisor:
+verify (com `verify-deliverable.ts` quando há manifesto), gate sobre TODOS os
+artefatos avaliáveis e decisão entregue | retido | indeterminado.
+
+| exit | significado |
+|------|-------------|
+| 0 | revisado e ENTREGUE — gate passou |
+| 1 | falhou — erro do runtime, ou nenhum entregável verificável |
+| 2 | entrega RETIDA — gate reprovou depois do orçamento de revisões |
+| 3 | INDETERMINADO — nenhum artefato que o gate saiba julgar |
+| 4 | argumentos inválidos (era 2, que virou o código da retenção) |
+
+O orçamento de revisão do `nrv revise` é o do config (`quality_gate.max_revisions`),
+porque essa iteração é do humano. Quando quem chama é o supervisor
+(`NRV_IN_SWEEP=1`), o orçamento cai a zero: a varredura roda sob launchd a cada
+120s sem ninguém olhando, e gastar LLM em laço de revisão ali é dinheiro sem
+dono. O veredito volta para o supervisor, que retém e escala.
+
+### O supervisor julga o que o redespacho produziu
+
+Depois de um redespacho bem-sucedido, o supervisor rodava verify e gate
+próprios e devolvia `delivered` com "gate indeterminate" sempre que o run tinha
+produzido só `.html`, PDF, imagem ou código. Entregue sem uma rubrica sequer ter
+rodado. O resultado do redespacho passa pelo `runDelivery()`, e o retomar lê o
+exit code do `nrv revise` em vez de procurar "gate FAIL" no texto da saída.
+
+Duas decisões que valem registro. O redespacho não recebe o teto de completude:
+o run terminou sob controle do supervisor, diferente do resgate de um run
+interrompido, e aplicar o teto deixaria a recuperação automática inútil, já que
+a maioria dos runs não tem manifesto. E roda com zero revisões, pela mesma regra
+de orçamento acima.
+
+### Erro do runtime não abandona mais o que já foi produzido
+
+Um run real (`proj-20260809T050140-content-creation`) entregou guia em md, html,
+PDF e imagens — e mesmo assim terminou como `failed`, com os artefatos
+esquecidos no disco: sem verify, sem gate, sem decisão de entrega. Causa: o
+runtime devolveu veredito de erro no fim do run (limite de uso), e o dispatch
+saía com exit 1 sem olhar para a pasta de saída.
+
+Agora um run não-ok procura artefatos com a MESMA descoberta do pipeline de
+entrega. Sem artefato, nada muda (`failed`, exit 1). Com artefato, o run entra
+no mesmo pipeline — verify → gate → orçamento de revisão → entregue | retido |
+indeterminado. O erro do runtime continua visível: evento
+`x_runtime_errored_with_artifacts` na auditoria, `last_error` preservado e
+`meta.runtime_errored` no ledger até a linha terminal, e aviso explícito no
+terminal. O contrato fail-closed não afrouxou: artefato de run errado que
+reprova no gate continua RETIDO (exit 2).
+
+A máquina de estados do ledger ganhou a aresta `failed → verifying` — o
+caminho de resgate, que não re-despacha porque o trabalho já existe.
+
+### `nrv dispatch` sem `--exec` sai 3, não 0
+
+`nrv dispatch --auto "<brief>"` sem `--exec` saía 0 sem ter despachado nada.
+Como 0 significa ENTREGUE, um `nrv dispatch … && publica` publicava um run que
+nunca executou. Scaffold não entrega nem julga nada: passa a sair 3
+(INDETERMINADO) nos três caminhos — business, squad-only e agent-x.
+
+| exit | significado (atualizado) |
+|------|--------------------------|
+| 0 | entregue — gate passou, ou `--force-deliver` |
+| 1 | run falhou — roteamento, execução ou verificação |
+| 2 | entrega RETIDA — gate reprovou depois das revisões |
+| 3 | INDETERMINADO — nada foi julgado: zero artefatos avaliáveis, **ou scaffold sem `--exec`** |
+| 4 | argumentos inválidos |
+
+## 0.2.0 — 2026-08-07
+
+Release grande: o motor deixa de depender de disciplina para cumprir o que
+promete. Três garantias novas — nunca travar, nunca entregar sem gate, nunca
+abandonar um brief — mais roteamento que funciona em qualquer idioma.
+
+### BREAKING: exit codes do `nrv dispatch` — a entrega agora é fail-closed
+
+Antes, um gate reprovado seguia adiante e o run terminava em exit 0 com evento
+`delivered`. Isso acabou. Quem tem script conferindo `exit 0` precisa adotar o
+contrato novo:
+
+| exit | significado |
+|------|-------------|
+| 0 | entregue — gate passou, ou `--force-deliver` explícito (audit `delivered` com `gate:"fail-forced"`) |
+| 1 | run falhou — roteamento, execução ou verificação |
+| 2 | entrega RETIDA — gate reprovou depois do orçamento de revisões (antes: exit 0 + `delivered`); audit `x_delivery_withheld` |
+| 3 | entrega INDETERMINADA — zero artefatos avaliáveis, nada foi julgado (antes: exit 0 + `delivered`) |
+| 4 | argumentos inválidos (era 2, que virou o código da retenção) |
+
+O gate também passou a cobrir todo tipo de artefato (`.html`, `.yaml`, código e
+imagens, não só `.md`/`.txt`/`.json`), o `verify-deliverable.ts` finalmente é
+chamado nos runs com manifesto, e o juiz LLM liga por `quality_gate.judge_enabled`
+(default segue `false`).
+
+### Nunca travar: run-ledger + supervisor
+
+Todo dispatch abre uma dívida num ledger SQLite com máquina de estados imposta
+em código: `dispatched → running → verifying → gated → delivered | withheld`.
+Um run só sai da dívida terminando; `abandoned` exige razão explícita.
+
+O que detecta travamento é atividade, não relógio. Um sidecar renova a lease
+apenas enquanto stdout, stderr ou os arquivos de saída realmente avançam, e
+desiste após 5 minutos de silêncio. O supervisor então varre: retoma pela sessão
+gravada, re-despacha por outro runtime, e escala com notificação quando esgota as
+tentativas. Rode `nrv supervisor install` uma vez e um LaunchAgent passa a varrer
+a cada 2 minutos; cada comando `nrv` também faz uma varredura preguiçosa de menos
+de 20ms. O teto de relógio virou o que sempre deveria ser: 24 horas de rede de
+segurança, para não matar um livro que legitimamente leva seis horas.
+
+### Nunca abandonar: a cascata Empresa → Squad → agent-x virou código
+
+`NO_MATCH` despacha o `agent-x` do runtime em vez de sair com erro — muda quem
+executa, nunca se executa. Rota de squad agora despacha e entrega de verdade
+(antes imprimia instruções e saía). Ambiguidade oferece escolha no terminal,
+escolhe o topo fora dele com evento de auditoria, ou falha com `--strict-route`.
+Falha de transporte do roteador tenta de novo, cai para o BM25 e só então para o
+agent-x.
+
+### Roteamento mundial
+
+O roteador agêntico é o padrão e ficou barato: lê um digest compacto de ~45k
+tokens (empresas, squads, capabilities, colisões e mind-clones) no lugar de
+megabytes de registry. O contrato de resposta separa transporte de semântica —
+`decision`, `ambiguous` ou `no_match` —, então falha de roteador nunca mais se
+confunde com "nada serve".
+
+No fallback determinístico: um tokenizador Unicode único (segmenta CJK, árabe e
+devanágari via ICU; conserta siglas como E-E-A-T; trata `e-book` e `ebook` como o
+mesmo termo), gates de cobertura que impedem injeção de mind-clone irrelevante, e
+uma ponte de aliases multilíngues que resgata brief em português contra corpus em
+inglês sem gastar token. O braço denso foi reavaliado com o modelo multilíngue
+real e permanece desligado por medição, disponível como sugestão em `no_match`.
+
+### Conteúdo encontrável por construção
+
+Criar empresa, squad ou mind-clone agora passa por um gate de auto-recuperação: a
+entidade só nasce quando os próprios `example_briefs` a recuperam em primeiro
+lugar. O `ROUTING_METADATA_CONTRACT.md` define o padrão (descrições em inglês
+canônico, grupos de sinônimos multilíngues, briefs em EN e PT com verbo no
+infinitivo e conjugado, `not_for` em tokens curtos), os indexadores passaram a
+emitir as descrições que antes nunca chegavam ao índice, e `nrv doctor` reporta a
+cobertura da sua biblioteca. Quem já tem conteúdo pode elevá-lo com
+`enrich-routing-metadata.ts`.
+
+### Runtimes e robustez
+
+Os dois drivers divergentes viraram um só, com nove adaptadores (claude-code,
+codex, gemini-cli, antigravity-cli, kimi-cli, grok-cli, pi, qwen-code, opencode).
+Prompt grande não estoura mais o limite de argumentos — cada CLI recebe pelo
+método que suporta (STDIN, `--prompt-file`, anexo), verificado com 300KB. Custo
+por run vem populado onde o CLI reporta, e explicitamente indisponível onde não
+reporta. Locks de arquivo eliminam perda de escrita em ondas paralelas.
+
+### Higiene do repositório
+
+Todo o código-fonte e as instruções agênticas em inglês, com gate de CI. As
+referências foram reescritas contra o código real e a tabela de eventos de
+auditoria passou a ser gerada da enum, para não fossilizar de novo. `bun run
+check:all` roda os quatro gates: inglês, pureza do engine, paridade de comandos e
+paridade de eventos.
+
+### Como migrar
+
+Confira os exit codes em qualquer automação que chame `nrv dispatch`. Se você
+precisa do comportamento antigo num caso específico, `--force-deliver` entrega
+mesmo com gate reprovado e deixa o registro honesto na auditoria. Rode `nrv index`
+depois de atualizar (o digest é reconstruído junto) e `nrv supervisor install` para
+ativar a varredura automática.
+
+## 0.1.72 — 2026-07-28
+
+### Runtime pi: um CLI, 15+ providers e modelos locais no cascade
+
+O Pi Coding Agent (pi.dev) entra como sétimo exec-runtime, verificado contra
+o binário real (`pi 0.82.1`). O `runPi` despacha via `pi -p --mode json` com
+sessão determinística (`--session-id`, mesmo padrão do gemini) e leva o
+`AUTONOMOUS_DIRECTIVE` por `--append-system-prompt` nativo. Quirk importante
+tratado no driver: o pi sai com exit 0 mesmo quando o provider falha, então
+`ok`/`error` saem do event stream (`stopReason`/`errorMessage`), e o
+quota-detector classifica o phrasing real de cota ("used all available
+credits" vira `quota_exhausted`). Custo somado de `message.usage.cost.total`.
+O `@provider` do LLM_CASCADE vira `--provider` de verdade, incluindo
+`@ollama`: caminho de sucesso verificado 100% local com qwen2.5-coder:7b,
+com resposta correta, resume real de sessão e custo $0. Completam o runtime:
+aliases USE_PI, detecção de host por PI_CODING_AGENT, `agent-x.pi`, adapter
+de 15 seções, symlink de skills em `~/.pi/agent/skills` no install, e os
+pacotes `pi-mcp-adapter` + `@pi9/subagent` registrados na matriz. Medição
+empírica registrada no adapter: modelo local de 7B não sustenta dispatch de
+business completo (prompt de 92k chars, zero tool calls em 2 tentativas); o
+trilho local é fim de cascade, não topo. Suíte: 141 pass, 0 fail.
+
+### Verify aceita entregável curto nomeado no brief
+
+O anti-stub de 200 bytes reprovava entregáveis legitimamente minúsculos:
+um `haicai.md` de 57 bytes, correto e dentro do contrato, falhou o verify
+num dispatch real via `--exec=codex`. Agora arquivo nomeado explicitamente
+no brief conta como entregável desde que não-vazio, nos três pontos que
+usavam o piso fixo (verify, lista do gate e repescagem pós-revisão).
+Regressão E2E via codex fechou verde: `verify_passed`, `gate_passed`,
+`delivered: pass`.
+
+## 0.1.71 — 2026-07-27
+
+### Roteador fast pós-censo: 94,1% → 99,8%, e NO_MATCH enfim alcançável
+
+Censo de verdade-terreno contra TODOS os 2.358 `example_briefs` do registro
+provou que o `applyAdjustments` derrubava 133 briefs válidos — todos erro,
+zero curadoria. Correções, cada uma medida antes e depois:
+
+- **Filtro de intent vira opt-in** (`NIRVANA_ROUTER_INTENT_FILTER=1` religa).
+  Verbos banais ("run", "rodar") excluíam capabilities por classe: 81 NO_MATCH
+  fabricados + 34 HIGH para rota alheia. Pós-ajustes: 94,1% → 99,8%.
+- **`score_boost` clampado em [1.0, 1.3]** — boost 0 era aceito como
+  multiplicador ×0 e auto-aniquilava a capability.
+- **NO_MATCH por cobertura**: vencedor que casa ≤1 de ≥3 tokens de conteúdo do
+  brief ORIGINAL (nunca o amplificado) → NO_MATCH; 2 de ≥4 com fração ≤0,5 →
+  AMBIGUOUS. Brief fora de domínio agora abstém com razão explícita; zero
+  falso-negativo nos 2.358 reais. Fecha a dívida "NO_MATCH inalcançável".
+- **Stage -1 sem sequestro**: gatilhos banais ("portfolio", "end-to-end")
+  removidos e fallback por substring morto — 56 briefs sequestrados com 0
+  acertos voltam ao pipeline normal.
+- **Promoção business-first vê `business_route` como rival** — fecha o
+  invariante top=1.0 quebrado.
+- **Business era invisível para o próprio brief**: `example_briefs`/`produces`/
+  `keywords` entram no texto indexado do doc de business. Destino certo dos
+  319 briefs declarados: 7,5% → 91,5%. E2E squads subiu junto (99,6%).
+
+### Criação nativa: o engine sem conteúdo cria tudo
+
+O engine instala sem businesses, squads ou clones — e agora cria os três de
+ponta a ponta, sem squad intermediário (o papel do `nirvana-squad-creator` foi
+absorvido):
+
+- `squads/references/02-creation.md`: Phase 0 (arqueologia de intenção +
+  pesquisa web obrigatória) e Phase 8 (otimização + gate de roteamento com
+  `example_briefs` como verdade-terreno).
+- `businesses/SKILL.md`: Round 0 e Round 5 equivalentes, com mind-clones
+  escolhidos por necessidade.
+- `_shared/MIND_CLONE_CREATION_PIPELINE.md` (novo): clone ponta a ponta com
+  gate de material (sem fonte = archetype, nunca nome real), DNA `^[FONTE]` e
+  bloco routing pelo contrato.
+- Harness: clones casados por NECESSIDADE via `nrv find-clone` (campo
+  `serves`), NO_MATCH despacha `agent-x` (o brief nunca para), e gate de
+  atualidade na Fase 2 (escolha de stack não especificada exige pesquisa web
+  com fonte e data).
+
+### Qualidade travada no CI
+
+- Eval de roteamento de clones entra na suíte com marcos d'água; em install
+  limpo ou pack parcial os marcos skipam (pureza: o engine não instala
+  conteúdo) e vale o invariante universal de auto-recuperação 100%.
+- `index-clones.ts` espelha o registry do escopo global automaticamente.
+- Suíte: 141 pass, 0 fail.
+
+## 0.1.70 — 2026-07-27
+
+### Clone ausente nunca mais derruba o dispatch — em sete camadas
+
+Regra do dono: **o dispatch jamais pode morrer porque um mind-clone não existe.**
+Um brief que cite um especialista fora da biblioteca matava a execução inteira,
+mesmo quando o agente sabia perfeitamente trabalhar como aquela pessoa.
+
+Mas degradar em silêncio é pior que falhar, então toda degradação é RUIDOSA em
+três canais: evento `mind_clone_missing_degraded`, bloco explícito dentro do
+prompt dizendo ao agente que ele NÃO carrega aquele DNA, e campo no retorno para
+quem chamou reportar ao usuário.
+
+O levantamento achou o defeito em sete lugares, não um:
+
+- **`injectMindClones`** lançava exceção. Agora degrada e devolve `degraded[]`.
+- **`validateTrace`**, a garantia anti-fabricação, tratava clone degradado como
+  fabricação. Passou a distinguir três estados: injetado, degradado com evento, e
+  sumido sem rastro. Só o terceiro reprova — a propriedade anti-fabricação segue
+  intacta, verificada com trace sintético.
+- **`team-orchestrator`** pulava em silêncio (`if (persona)`).
+- **`employee-prompt`** era o pior: clone SOLICITADO e inexistente fazia
+  `hadRequested` virar `false`, e o sistema caía calado para BUSCA e injetava
+  **outra pessoa**. O employee rodava achando que era a persona certa.
+- **`deterministicAudit` Regra 2** marcava clone ausente como `critical`, e
+  `critical > 0` produz `verdict: "block"`. O `throw` removido ressuscitava um
+  andar acima. Rebaixado para `warning`; squad e business ausentes seguem críticos.
+- **`buildVoiceFidelityPack`** omitia clone ausente sem registro, deixando o gate
+  de fidelidade indistinguível de "nenhum clone declarado". Ganhou `missing_clones`.
+- **Rubric do auditor LLM** (`dispatch-auditor.md`) ainda listava mind-clone sob
+  "Critical — verdict: block", o que reintroduziria o bloqueio pela camada
+  semântica. Movido para warning, com o caminho de criação documentado.
+
+### Rule 9 no SKILL.md: procure por necessidade, crie se faltar, degrade com honestidade
+
+- Seleção de clone em quatro passos, e nenhum termina em falha dura: nomeado no
+  brief vence tudo; não nomeado busca pela NECESSIDADE e não pelo nome; pedido e
+  inexistente oferece criar via `fabrica-de-genios`
+  (`knowledge_management.mind_clone_generation_pipeline.execute`); não criou, atua
+  por conhecimento próprio **dizendo que é isso**.
+- O ponto do passo 4 é a diferença entre degradar e mentir. Trabalhar sem o DNA é
+  aceitável; deixar o usuário achar que o DNA estava lá, não.
+
+## 0.1.69 — 2026-07-27
+
+### O caminho fragmentado descartava a espinha operacional da persona
+
+- `NIRVANA_DNA_INJECTION=fragments` nunca leu o `AGENT.md`. Ele lia SOUL + camadas
+  do schema + coherence map, e só. Isso não era "seleção por camada": era trocar a
+  definição operacional do agente pelo resumo derivado dela. O `AGENT.md` é **36%
+  de tudo que o full injeta** e é onde vivem os Princípios, os Frameworks nomeados,
+  os `Commands`, o `What You Refuse to Do` e as `Limitations`.
+- Consequência: quem tivesse ligado o modo fragmentado — disponível há tempo, atrás
+  de env var — rodava com personas sem limites declarados e sem recusas, e o sistema
+  não emitia sinal nenhum. Modo degradado silencioso, como o corte cego do 0.1.68.
+- Corrigido: o `AGENT.md` entra como primeira unidade do fragmento. Teste de
+  regressão fixa a invariante.
+
+### Como isso apareceu, e o que a medição mostrou
+
+- Teste cego de 5 pares (mesmo brief, persona inteira contra fragmento da fase,
+  juiz sem saber qual é qual, persona completa como referência): a persona inteira
+  venceu **4×1**. Um dos juízes decidiu explicitamente por `Limitations` — seção
+  que o fragmento não tinha como enxergar. Elo causal, não correlação.
+- Depois do conserto, com uma variável trocada: **3×2**, que com n=5 é
+  indistinguível de moeda. O déficit sumiu; a equivalência **não** ficou
+  demonstrada, e o teste não tem poder para decidir.
+- **O default segue `full`.** A economia real, medida com o `AGENT.md` restaurado,
+  é 21% — e cai para 12% se o L5 voltar à política de fase, o que a evidência dos
+  juízes sugere ser necessário em trabalho analítico. As camadas têm peso quase
+  igual (17% a 26%), então não há folga a extrair sem custo proporcional.
+- Registro honesto: os 55% que a versão anterior reportava somavam 34 pontos de
+  amputação a 21 de seleção real. A amputação estava sendo contabilizada como ganho.
+
+## 0.1.68 — 2026-07-26
+
+### Injeção de DNA por camada deixa de amputar o método
+
+- A seleção estrutural por camada (L1 Filosofias · L2 Modelos Mentais · L3 Heurísticas ·
+  L4 Frameworks · L5 Metodologias) já existia e é SEM PERDA por construção, mas estava
+  inutilizável: o `byteBudget` cortava com `lastIndexOf("\n", 9000)` sobre o texto já
+  colado. Como a ordem de montagem é SOUL → L1 → camadas da fase → coherence map, a
+  cauda amputada era sempre **a última camada pedida** — exatamente aquela que a
+  política de fase escolheu — enquanto o L1, que entra em toda fase, sobrevivia intacto.
+  Medido: **175 dos 548 clones** eram amputados assim, sem erro nenhum.
+- O orçamento agora descarta **unidade inteira** (só o coherence map, que é derivado) e,
+  se ainda estourar, entrega o fragmento COMPLETO. O teto virou consultivo: entregar
+  SOUL + as camadas da fase acima do orçamento continua sendo fração do full, enquanto
+  amputar destrói o método. Corte cego segue valendo só para os caminhos não fragmentados.
+- Teto de 9 KB → 16 KB, escolhido por medição: 9 KB deixava 65% dos fragmentos caberem
+  íntegros, 16 KB leva a 94%, e 24 KB acrescenta 2 pontos.
+- A fase real chega ao seletor (`injectMindClones({ phase })`); antes era `"execute"`
+  fixo, então um dispatch de planejamento recebia camadas de execução.
+- Resultado na biblioteca: **0 mutilados** (eram 175), 512 clones fragmentáveis, **56%
+  de economia média sem nenhuma perda**.
+
+### Parser de camadas reconhece cabeçalho em nível 3
+
+- Cinco clones traziam as cinco camadas completas, com fontes citadas, escritas como
+  `### Layer 1 — VISION`. O parser estrito os reprovava e eles caíam para full. Reescrever
+  a persona para caber no regex seria destruir material bom por causa da ferramenta.
+- Fallback que só entra quando o estrito falha, repartindo também em `###`. O caminho
+  canônico fica idêntico: repartir em `###` de saída quebraria o corpo das camadas dos
+  clones bem formados.
+
+### Correções na superfície de contrato do 0.1.67
+
+- **Churn perpétuo em mind-clone.** A superfície de clone varre o diretório inteiro e
+  media `CHANGES.json` e `CHANGELOG.md` — que o próprio gerador escreve. Cada execução
+  produzia mudança, que escrevia arquivo, que produzia mudança. 22 clones em laço.
+  Saídas do gerador agora estão fora da medição (`GENERATED_FILES`).
+- **Supressão por schema virava permanente.** `diffSurfaces` ignora diff entre schemas
+  diferentes de propósito, para uma melhoria do extrator não inundar compradores com
+  mudanças fantasma. Mas o `gen` retornava cedo quando não havia mudança, então a
+  superfície nunca era regravada com o schema novo: o mismatch persistia e TODA mudança
+  real futura daquele artefato seria engolida em silêncio. Agora schema diferente força
+  a regravação. `SURFACE_SCHEMA` → 2.
+- Entradas fantasma já gravadas ("dna-artifact removido: CHANGELOG.md") foram limpas de
+  22 clones — elas diriam ao agente do comprador que houve remoção com quebra.
+
+## 0.1.67 — 2026-07-26
+
+### Mudança de artefato deixa de ser narrada e passa a ser calculada
+
+- O sistema distribui squads, empresas e mind-clones que mudam o tempo todo, mas
+  quem recebe a atualização não tinha como saber **o que** mudou. O agente do
+  comprador seguia invocando uma capability renomeada, ou apontando para um alvo
+  que virou outro, sem nada falhar em voz alta: o trabalho só saía errado.
+- A saída óbvia — um `CHANGELOG.md` escrito à mão em cada artefato — já tinha
+  falhado neste sistema antes de ser tentada. O campo `version` existe em todos os
+  774 artefatos e está morto: 132 dos 178 squads parados em `5.0.0` (a versão do
+  *protocolo* vazando) e 48 das 49 empresas em `1.0.0`. Metadado que depende de
+  alguém lembrar apodrece; escrever prosa apodrece mais rápido que trocar um número.
+- Agora cada artefato carrega uma **superfície de contrato** (`.nirvana-surface.json`):
+  os identificadores aos quais um agente consumidor de fato se liga — id de
+  capability, alvo de `invoke`, nome de task/workflow/agent, slug de employee,
+  domains e produces — mais o hash do corpo de cada um. Duas superfícies são
+  comparáveis por máquina, então versão e changelog passam a ser **derivados**.
+- Severidade é consequência estrutural, não opinião: id removido ou renomeado e
+  alvo de invocação trocado são QUEBRA (major); id novo é aditivo (minor); só o
+  corpo ou a prosa de descoberta mudou é ajuste (patch). Renomeação é reconhecida
+  como tal (mesmo corpo, id diferente) em vez de virar "removido + adicionado",
+  que esconderia justamente a migração trivial.
+- A superfície mora **dentro** do artefato e viaja no pack. Isso dispensa registro
+  central: na atualização, o instalador compara a superfície instalada com a que
+  está chegando no único instante em que as duas coexistem em disco, antes de
+  sobrescrever, e reporta as quebras com a migração de cada uma.
+- `nrv changes pending <entidade> --project <dir>` responde a pergunta que importa
+  para quem consome: *o que mudou que ESTE projeto ainda não viu?* Devolve um
+  `brief_block` pronto para o orquestrador colar na instrução de dispatch (Rule 8),
+  porque changelog que o agente precisa lembrar de abrir é changelog que ele não lê.
+- Comportamento é o único tipo que nenhum diff estrutural enxerga (mesma interface,
+  resultado diferente). Fica como anotação manual opcional em `.nirvana-behavior.md`,
+  consumida e apagada no build — deliberadamente a exceção, não a regra.
+
+### Detalhes que decidem se isto funciona ou vira ruído
+
+- **Determinismo é requisito.** O arquivo gerado entra no `hashDir()` do instalador.
+  Com timestamp ou ordenação instável, todo rebuild marcaria todo artefato como
+  atualizado e o sinal morreria no ruído. Sem data de geração, chaves ordenadas em
+  qualquer profundidade, e o próprio arquivo excluído do que ele mede.
+- **Schema diferente reestabelece a base em silêncio.** Uma melhoria futura no
+  extrator muda hashes de artefatos que ninguém tocou; comparar entre schemas
+  inundaria todo comprador com mudanças fantasma. O engine não sabe o que mudou de
+  verdade, então não inventa.
+- **Os dois instaladores usam o mesmo helper.** `scripts/install.ts` e
+  `skills/_shared/scripts/install-content.ts` têm cada um a sua cópia de `syncKind`;
+  a primeira versão desta feature entrou só no primeiro, e o caminho que o comprador
+  usa para atualizar teria ficado sem aviso nenhum. A comparação vive em
+  `_shared/lib/contract-breaks.ts` para que os dois relatem a mesma coisa.
+- Linha de base gerada para 178 squads, 49 empresas e 547 clones em ~2s; segunda
+  execução não altera um byte. `build-all-packs.sh` regenera antes de montar os packs.
+
+## 0.1.66 — 2026-07-26
+
+### Ordem antes de forma: paralelismo vira conclusão, não default
+
+- A Phase 4 abria mandando "Dispatch to 1 or N in parallel" — paralelo como ponto
+  de partida, antes de qualquer análise de dependência. O raciocínio de ordem
+  estava vinte linhas abaixo, atrás de um "load it on demand", e o multi-target
+  ainda era mencionado dentro da seção **Optional subsystems** ("None is
+  mandatory"). Ou seja: o maestro era instruído a paralelizar primeiro e a pensar
+  na ordem só se resolvesse carregar a referência.
+- Agora a Phase 4 começa pela pergunta que decide tudo — *este alvo precisa do
+  entregável de outro para fazer o trabalho dele?* — e a resposta define a forma.
+  Precisa de upstream: roda depois, e a `DISPATCH-INSTRUCTION.md` nomeia a fase e
+  o caminho para ler. Não precisa de ninguém: roda concorrente, desde que a
+  instrução seja auto-suficiente — alvo que precisaria perguntar algo a um irmão
+  no meio do run nunca foi independente, estava sub-instruído.
+- Concorrência passa a ser a CONCLUSÃO da análise. Dois alvos que só parecem
+  independentes mas leem a saída um do outro são um run corrompido, e a falha
+  aparece tarde e com cara de problema de qualidade.
+
+### Multi-target sai de "opcional" e vira o caminho normal de 2+ alvos
+
+- `references/04-multi-target.md` deixa de ser subsistema opcional e passa a ser
+  protocolo exigido sempre que a Phase 4 aterrissa em mais de um alvo. A máquina já
+  existia e é boa — workspace compartilhado, `manifest.json` com `depends_on` /
+  `consumed_by` / `outputs_path` e `parallel_waves[]`, e um
+  `DISPATCH-INSTRUCTION.md` por alvo com escopo, caminhos upstream e quem consome a
+  saída. O que faltava era o ponto de entrada tratá-la como norma.
+- Escrever o DAG é o que torna a ordem auditável: onda que se aponta é decisão,
+  onda que ficou na cabeça do maestro é palpite que o usuário não pode conferir.
+
+## 0.1.65 — 2026-07-26
+
+### Reuso de sessão por entidade (o agente continua sendo o mesmo agente)
+
+- Cada dispatch abria sessão fria. A mesma empresa ou squad chamada duas vezes no
+  mesmo projeto reconstruía do zero o que já sabia — e um agente que recomeça frio
+  não é o mesmo agente, é um novo com o mesmo prompt. Contexto perdido é qualidade
+  perdida, e nenhum orçamento traz de volta o que o agente esqueceu.
+- `harness/lib/session-store.ts` guarda a sessão por **(projeto, runtime,
+  entidade)**. Os três importam: projeto porque a mesma empresa em outro projeto
+  deve começar fria (mesma isolação da memória — o que um projeto aprendeu costuma
+  ser errado para o próximo); runtime porque id do claude-code não significa nada
+  para o codex; entidade porque cada funcionário/squad tem a sua linha de
+  raciocínio. Vive em `<projeto>/sessions.json`, único lugar que o BP5 permite
+  escrever durante um brief.
+- Ligado nos dois pontos do `team-orchestrator` (passo de funcionário e squad
+  obrigatório) por um helper único, sem duplicar lógica. Emite `session_resumed` e
+  `session_resume_failed` na trilha de auditoria.
+
+### Fallback: o reuso só pode melhorar, nunca degradar
+
+- O driver passa `--resume <id>` e NÃO trata id inválido. Sessão expirada, apagada
+  pelo CLI ou vinda de outra máquina faria falhar um dispatch que hoje funciona.
+- Agora: se o run falhou E tínhamos passado um id, descarta o id e tenta UMA vez
+  fria. O pior caso do reuso passa a ser exatamente o comportamento de hoje.
+
+### Fix: session id vazava entre runtimes no cascade
+
+- Bug latente que esta mudança tornaria comum. O `cascade-runner` montava as opções
+  espalhando os args (`{...args, runtime: chosen}`) e, no handoff,
+  `{...currentOpts, runtime: chosen}` — o `sessionId` sobrevivia à troca de runtime.
+  O CLI novo recebia `--resume` com id de outro CLI.
+- Contradizia o comentário do próprio código no handoff ("Build a fresh prompt for
+  the new runtime — it doesn't see the old session"). Agora o id só passa quando o
+  runtime escolhido é o que o chamador pediu, e é limpo em qualquer handoff.
+
+### Cobertura
+
+- 10 testes novos em `session-store.test.ts`, focados no que pode dar errado:
+  isolamento entre runtimes, entre projetos e entre tipos de entidade; arquivo
+  corrompido, JSON de forma errada e runtime sem session id não derrubando o
+  dispatch; `dropSession` cirúrgico. Suíte total: 89 testes.
+
+### Não implementado, de propósito
+
+- Paralelismo no laço de squads obrigatórios. O mecanismo foi provado num spike
+  (1531ms contra 4195ms, `session_id` idêntico, payload de 200KB íntegro através de
+  múltiplos chunks, falha isolada), mas o ganho é wall-clock e a saída de cada squad
+  é idêntica em série ou em paralelo. Exigiria tornar assíncrono o `cascade-runner`,
+  que é o cérebro de failover — trocar o caminho mais crítico do sistema por
+  latência, num sistema cuja regra primordial é qualidade sem limite de gasto, é um
+  negócio ruim. A cadeia de funcionários segue sequencial por dependência real
+  (cada passo lê os `priorOutputs` do anterior).
+
+## 0.1.64 — 2026-07-25
+
+### Rule 7 do contrato de execução: escopo inteiro, e o que passar dele é declarado
+
+- Entrega impecável significa a tarefa INTEIRA, não a parte fácil: só reportar
+  conclusão quando estiver de fato pronto e, se algo travar de verdade, terminar
+  todo o resto e dizer o que ficou faltando e por quê. Ambiguidade se resolve
+  como um colega cuidadoso resolveria — decisão de rotina é do maestro, e só
+  volta ao usuário quando leituras diferentes levam a trabalhos materialmente
+  diferentes.
+- O que o escopo não pode fazer é se mover em silêncio. Nada de estreitar,
+  alargar ou transformar o pedido sem avisar; achar que o brief está errado vira
+  uma frase dita ao usuário, não uma troca calada. O que for além do pedido entra
+  na instrução de dispatch e no relatório final como adição explícita — trabalho
+  que o usuário não pediu não é bônus se ele não consegue distinguir do que pediu.
+
+### Contrato de escrita: comprimento acompanha substância
+
+- Seção `Structure` ganhou a regra de tamanho: cobrir o que o entregável precisa
+  e parar. Seção de enchimento, resumo redundante, contexto reafirmado e
+  boilerplate passam a ser tratados como DEFEITO, não como zelo — comprimento sem
+  substância soterra a parte que o leitor foi buscar. Documento longo justifica o
+  tamanho cobrindo mais, nunca dizendo a mesma coisa duas vezes.
+- Chega aos três arquivos de contrato do projeto (`AGENTS.md`, `CLAUDE.md`,
+  `GEMINI.md`) pelo `init-project`, então alcança também as entidades despachadas,
+  que rodam com cwd no projeto.
+
+### O que deliberadamente NÃO mudou
+
+- `effort` e `model` continuam sendo os do usuário. O Nirvana-OS não altera nem um
+  nem outro por conta própria: herda o que estiver no sistema e só muda se o
+  `.env` especificar ou se o usuário pedir. Nenhum nível de esforço foi embutido
+  em lugar nenhum.
+- Nenhum teto de spawn e nenhum budget obrigatório. Orçamento ilimitado e máxima
+  qualidade são regra primordial do sistema; o cap de multi-agente que a
+  documentação do modelo recomenda vale para workloads sensíveis a custo, que não
+  é o caso aqui. A arquitetura de fan-out fica como está.
+- Os três gates determinísticos (`quality-gate`, `verify-deliverable`,
+  `validate-chain`) ficam intactos: eles conferem verdade em disco, não são
+  auto-verificação dirigida por prompt.
+
+## 0.1.63 — 2026-07-25
+
+### Colisão de slug agora é avisada (não mais silenciosa)
+
+- Política inalterada: o pack é a fonte da verdade dos SEUS componentes, vence
+  sempre e não há backup — quem altera o que é nosso é responsável pelas
+  próprias mudanças. O que muda é só a VISIBILIDADE: se o usuário criou um
+  componente com o mesmo slug de um do pack, o sync o sobrescrevia em silêncio e
+  o trabalho dele sumia sem explicação (virava issue "sumiu do nada").
+- Detecção exata: existe em disco E não está no manifesto do pack
+  (`~/.nirvana-pack.json`) ⇒ é criação do usuário. Sem falso positivo na segunda
+  rodada, quando o pack já passou a ser dono do slug.
+- Reportado como `N overwritten` na contagem e em bloco próprio no fim, com o
+  caminho de saída (renomear o seu) e o que foi preservado (run-state:
+  `projects/`, `outputs/`, `memory/projects`). Aplicado nos DOIS caminhos de
+  sync — `scripts/install.ts` (starter) e `_shared/scripts/install-content.ts`
+  (o que o comprador roda via `setup.ts` do pack e `nrv update <slug>`).
+
+### Clones em layout legado aninhado voltam a ser indexados
+
+- Instalações de pack em ≤ 0.1.61 gravaram `dna/<categoria>/<slug>/` (issue #2,
+  corrigida na 0.1.62). Quem já tinha essa árvore continuava com `0 mind-clones
+  indexed` mesmo após atualizar, porque o scanner só via um nível.
+- `index-clones.ts` agora lê os dois layouts: leitor liberal, escritor estrito.
+  NADA é movido em disco — mexer nos dados do usuário durante um comando de
+  leitura seria pior que o bug. O writer já é flat desde a 0.1.62, então este é
+  um caminho de compatibilidade que decai sozinho conforme as instalações
+  antigas reinstalam.
+- Flat vence no empate de slug; para o clone aninhado a categoria vem do próprio
+  diretório-pai. O total legado é reportado ao fim do index, com a orientação de
+  que reinstalar o pack normaliza e nada precisa ser movido à mão.
+
+## 0.1.62 — 2026-07-25
+
+### Bibliotecas de conteúdo criadas vazias no install (`~/squads`, `~/businesses`, `~/businesses/_library/dna`)
+
+- O engine é core-only (não embarca conteúdo), mas os diretórios onde o usuário
+  cria as SUAS empresas/squads/mind-clones não existiam após a instalação: o
+  `scripts/install.ts` só os criava quando havia conteúdo do starter pack para
+  copiar (`if (available.length > 0) mkdirSync(dstRoot)`). Com `--no-starter`
+  (o caminho do `npx`), nenhum era criado — e o comportamento ainda era
+  inconsistente: `~/squads` acabava surgindo por acaso no primeiro `nrv index`
+  (via `squads/lib/registry.js`), enquanto `~/businesses` e a biblioteca de DNA
+  nunca apareciam. Resultado: instalação nova reportava `⚠ 3 warning(s). System
+  usable but degraded.` no `nrv doctor`.
+- Agora `ensureContentLibraries()` cria os três VAZIOS, antes do starter pack
+  (vale com e sem `--no-starter`). Espelha o que o escopo de projeto já fazia
+  (`init-project.ts` cria `.nirvana/{squads,businesses,mind-clones}`).
+- NÃO destrutivo e idempotente: `mkdir` recursivo é no-op em diretório
+  existente — conteúdo do usuário é preservado (reporta `kept` em vez de
+  `created`). Cross-OS: só `path.join` + `mkdirSync`, sem comando de shell, com
+  EEXIST tolerado (o Bun lança no Windows mesmo com `recursive: true`).
+  `nrv install --check` continua sem mutar nada.
+
+### Fix: pack install gravava mind-clones aninhados por categoria (issue #2) — 0 clones indexados
+
+- `installer.ts` instalava clone em `dna/<categoria>/<slug>/`, mas o layout
+  canônico é FLAT (`dna/<slug>/`) — o que `index-clones.ts` (varre um nível só)
+  e `install-content.ts` já seguiam. Todo pack com mind-clones instalado por
+  `nrv install --type=pack` resultava em `0 mind-clones indexed`.
+- Instala flat agora (pack e asset avulso) e grava a categoria como METADADO em
+  `.pack-categories.json` — arquivo que o indexer lê mas que NENHUM fluxo do
+  engine escrevia, então `pack_category` nunca saía de `null`.
+- Colisão de slug dentro do pack agora falha explícita (antes ficava mascarada
+  por categorias diferentes). Inferência de categoria endurecida: packs reais
+  são flat, então o nome do diretório pai gravaria `"mind-clones"` como
+  categoria. `index-clones.ts` passou a resolver o mapa por-root (o metadado
+  gravado em escopo de projeto era ignorado).
+
+### Fix: `nrv init --with-skills` quebrava com cópia de 312 MB e projeto pela metade (issue #3)
+
+- Eram três defeitos encadeados, não um: (1) o branch de symlink não criava
+  `<target>/.agents`, então `symlinkSync` falhava com ENOENT; (2) caía no
+  fallback de cópia; (3) `copyTree` usava `statSync` e seguia o symlink
+  `node_modules` de cada skill → centenas de MB e recursão infinita nos ciclos
+  de `node_modules/.bin/*` (ELOOP). Corrigir só o `copyTree` deixaria o gatilho
+  de pé, com todo `--with-skills` copiando em vez de linkar.
+- `copyTree` usa `lstatSync`, pula `node_modules` em QUALQUER profundidade (não
+  só no topo) e recria symlinks em vez de expandi-los; `.agents` passou a ser
+  criado no branch de symlink; e a falha de cópia virou fail-closed — antes era
+  `log.warn` e o comando saía 0 deixando um projeto quebrado.
+
+### Fix: `nrv index` falhava no Windows em escopo de projeto (issue #1, bug 2)
+
+- `businesses/lib/registry.ts` fazia `mkdirSync` cru; no Bun/Windows isso lança
+  EEXIST mesmo com `recursive: true` quando o diretório já existe — o caso de
+  `<projeto>/.nirvana`, que existe desde o `nrv init`. Passou a usar o helper
+  canônico `ensureDir`, que já tolera EEXIST. (Os outros 3 bugs da issue #1 já
+  estavam corrigidos desde a 0.1.25/0.1.26.)
+
+### grok-cli: flag documentada + custo real
+
+- Trocado `--yolo` por `--always-approve` (código e docs). `--yolo` funciona,
+  mas é alias OCULTO — não aparece no `--help` e pode sumir entre builds.
+- O driver gravava `costUsd: null` fixo alegando que a assinatura não reporta
+  gasto; o build real devolve `total_cost_usd` no JSON. Agora é parseado.
+- Invocação VERIFICADA contra o binário real (`grok 0.2.103`): flags aceitas,
+  JSON com `text`/`sessionId`/`total_cost_usd`. O `kimi-cli` segue NÃO
+  verificado (binário ausente na máquina de teste).
+
+## 0.1.61 — 2026-07-20
+
+### Novos runtimes first-class: Kimi Code CLI + Grok Build CLI
+
+- `kimi-cli` (Moonshot, binário `kimi`) e `grok-cli` (xAI, binário `grok`) agora são
+  runtimes de primeira classe, iguais a codex/gemini-cli/antigravity-cli: `runKimi`/
+  `runGrok` no host-agent-driver, presentes em VALID_RUNTIMES/EXEC_RUNTIMES,
+  RUNTIME_ALIASES (`USE_KIMI`/`USE_GROK`), detecção de host, menção no brief, glance,
+  `.env.example`, e adapters completos em `_shared/adapters/{kimi-cli,grok-cli}.md` +
+  `_shared/agents/agent-x.{kimi,grok}.md`. Model vem só do LLM_CASCADE
+  (`kimi-cli:k3` / `grok-cli:<model>`), NUNCA hardcoded (model-agnostic).
+  - Kimi: grátis via OAuth Kimi.com (K3/K2.7), `kimi -m <model> -p … --output-format stream-json`.
+  - Grok: coding agêntico + geração de mídia nativa, `grok -p … --output-format json --yolo --cwd`.
+  - Ressalva: as invocações ainda NÃO foram verificadas contra os binários `kimi`/`grok`
+    reais (fallback seguro se uma flag divergir).
+
+### Consolidação dos adapters em `_shared/adapters/` (v5, fonte única)
+
+- Aposentada a camada `squads/adapters/` v4.0 (duplicatas/órfãs): removidos codex,
+  gemini-cli, antigravity, cursor, claude-code. As tabelas de `squads/references/*`
+  agora apontam para `_shared/adapters/`. Nenhum código dependia da camada v4.
+- Antigravity: eliminado o adapter órfão (id `antigravity`/binário `antigravity`/modelo
+  fixo); fica só o canônico `antigravity-cli` (binário `agy`, sem model).
+- Cursor: removido (substituído pelo `grok-cli`).
+- Purgados TODOS os nomes de modelo velhos dos adapters — o engine usa o default do
+  runtime ou o escolhido pelo usuário, nunca um id fixo.
+
+## 0.1.60 — 2026-07-18
+
+### Fix: drift de validator — limites de description de capability/business na v5
+
+- O `capability-validator.js` (a pré-checagem estrutural v5 que o
+  `validate-squad.ts` roda) fixava o limite de `description` de capability em 500,
+  divergindo do limite canônico já elevado (1500 em `_shared/validators/limits.ts`,
+  o mesmo `LIMITS` que os validadores zod usam). Manifestos v5 válidos com
+  descrições de capability entre 500 e 1500 caracteres eram rejeitados por engano,
+  abortando o preparo do `brief-squad.ts` (por exemplo o `whatsapp.system.provision`
+  de um squad, com 639 caracteres). Agora o limite vem do `limits.ts` (fonte única)
+  com fallback seguro para 1500 — nunca mais 500, de modo que a pré-checagem rápida
+  não possa divergir do validador autoritativo.
+- Schemas JSON alinhados ao `limits.ts`: `description` de capability 500→1500 e
+  itens de `example_briefs` 500→1000; `description` de business 500→2000 e itens de
+  `example_briefs` 500→1000.
+
+## 0.1.59 — 2026-07-17
+
+### Windows: parsing tolerante a CRLF
+
+- Os parsers de frontmatter estavam ancorados em `\n`, então um checkout Windows
+  com CRLF fazia `---\r\n` não casar → as rubrics (e outros 8 parsers: critérios de
+  auditoria de mind-clone/squad/business, inspect/list/translate de clone)
+  carregavam nada em silêncio, e o quality gate não selecionava rubric nenhuma no
+  Windows. Corrigido com um `.gitattributes` (`eol=lf` para arquivos parseados,
+  `eol=crlf` para os launchers `.cmd`) mais regexes tolerantes a CRLF como defesa
+  em profundidade. Pego pelo novo teste de quality-gate no runner Windows do CI.
+
+## 0.1.58 — 2026-07-17
+
+### O engine nunca prescreve um modelo
+
+- O modelo usado é SEMPRE o configurado no runtime de agente do próprio usuário
+  (Claude Code, Codex, Gemini, Antigravity, …). O engine só sobrescreve quando o
+  usuário pede explicitamente um modelo específico.
+- Removido todo modelo default do engine: config do juiz (`default_judge_model:
+  inherit`), default de `model_hint` de capability, `target_model` de rubric (agora
+  `inherit`, só telemetria), docs dos adapters e o cliente pixelle (agora
+  `gemini-flash-latest`, o ponteiro não-versionado do provedor — sem mais 404 de
+  slug de modelo aposentado).
+
+### Roteador: menção explícita vence; business-first para de sequestrar
+
+- Novo Stage 0.5: nomear um squad ou business por slug ("use o squad code-review…")
+  curto-circuita o roteamento de forma determinística (`route_tier:
+  explicit_mention`) — antes de qualquer pontuação. Normalizado por acento e hífen,
+  com guarda contra falso positivo.
+- A preferência business-first agora é desempate relativo contra o melhor squad,
+  nunca um piso absoluto; rotas por padrão de artefato (`business_route`) competem
+  dentro da fusão RRF como uma terceira lista ranqueada, em vez de curto-circuitar
+  à frente do casamento por conteúdo. Briefs que casam claramente com um squad não
+  são mais sequestrados por rotas de business sem relação.
+
+### Repositório e documentação
+
+- `CHANGELOG.md` (este arquivo), `AGENT-QUICKSTART.md` (onboarding de agente em uma
+  página), `SECURITY.md`, templates de issue/PR e um passo a passo ponta a ponta em
+  `examples/`.
+- Imagem de destaque no README + badge de CI; o badge de versão passou a ser
+  reescrito a partir do `package.json` no momento da publicação.
+- `AGENTS.md` é a fonte única do contrato de agente; `CLAUDE.md`/`GEMINI.md` são
+  cópias geradas (divergência reprova a publicação).
+- `skills/harness/SKILL.md` normalizado para inglês do começo ao fim.
+- Testes novos: emissão de evento de auditoria (`audit-emit`) e os caminhos de
+  seleção e de fail-closed do quality gate.
+
+## 0.1.57 — 2026-07-13
+
+- **Windows:** `nrv index` corrigido (a checagem de caminho do bun, só POSIX, fazia
+  todo spawn de indexer falhar com ENOENT quando o Bun não estava no PATH);
+  quoting por string de shell substituído por `run()` baseado em argv; 11 wrappers
+  `.cmd` corrigidos (`>nul` no lugar de `/dev/null`); erros de spawn passaram a
+  mostrar a causa.
+- **Instalar em qualquer lugar:** o instalador npx instala o Bun mais recente
+  automaticamente no Windows (PowerShell) e continua na mesma execução; o `nrv` é
+  adicionado ao PATH do usuário via registro + broadcast `WM_SETTINGCHANGE`, então
+  terminais novos funcionam sem reiniciar; a indexação pós-instalação agora roda no
+  Windows (`nrv.cmd`); os comandos de hook são quotados e usam supressão de stderr
+  por sistema operacional; `fileURLToPath` corrige a resolução da raiz do repo no
+  Windows.
+
+## 0.1.56 — 2026-07-13
+
+- ENGINE-MENU ciente do Grok (orientação de Grok Imagine i2v nos squads de vídeo).
+- `brief-squad.ts`: o dispatch de squad agora monta o diretório do projeto, o
+  HANDOFF e o brief E emite `brief_received`/`dispatch_squad` automaticamente — a
+  trilha de auditoria existe em qualquer runtime, sem depender de o agente obedecer
+  ao SKILL.md.
+
+## 0.1.55 — 2026-07-10
+
+- `nrv doctor` reporta com honestidade: "last activity <data>" no lugar de um falso
+  "nenhum dispatch ainda?"; detecta saídas sem auditoria (agente não emitindo
+  eventos) e dispatches de squad (não só de business); caminhos seguros por sistema
+  operacional.
+
+## 0.1.54 — 2026-07-10
+
+- Endurecimento de segurança: removido o `js-yaml` (advisory de DoS
+  GHSA-h67p-54hq-rp68) — os dois usos restantes migraram para o `yaml` v2; `bun
+  audit` limpo.
+- Embedder travado com `allowLocalModels=false` (fecha o vetor de modelo local dos
+  CVEs do ONNX; o comportamento de hub/cache não muda).
+
+## 0.1.53 — 2026-07-10
+
+- Recuperação híbrida: BM25 + braço denso local opcional (transformers.js/ONNX,
+  MiniLM multilíngue) fundidos por Reciprocal Rank Fusion; opt-in via `nrv
+  embeddings enable` — o core segue sem dependência dura, com degradação suave.
+- Calibração do roteador (auditoria externa E1–E7): `keywords`/`example_briefs`/
+  `produces` de capability indexados com peso por campo; separação entre
+  substantivo de organização e verbo; promoção apenas do melhor business; abstenção
+  de objeto genérico no estágio de keyword; poda de meta-intenção.
+- Laço de aprendizado retroativo: os leitores de auditoria aceitam os aliases
+  `business_slug`/`squad_name` (histórico recuperado); `nrv audit emit` como CLI
+  canônica de escrita.
+- Primeira suíte de testes do roteador (69 testes) + rubrics de validação de YAML e
+  HTML.
+
+---
+
+Releases anteriores (0.1.9 → 0.1.52) são anteriores a este changelog; veja as notas
+de release de cada tag no GitHub.

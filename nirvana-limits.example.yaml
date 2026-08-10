@@ -1,0 +1,103 @@
+# ══════════════════════════════════════════════════════════════════════
+# Nirvana — Limites configuráveis (nível USUÁRIO)
+# ══════════════════════════════════════════════════════════════════════
+#
+# Este arquivo sobrescreve os limites DEFAULT de tamanho/contagem dos
+# validators do sistema Nirvana (business.yaml, squad.yaml, capability,
+# employee, handoff, harness budget).
+#
+# CASCATA DE PRECEDÊNCIA (maior vence):
+#   1. NIRVANA_LIMIT_<KEY> env var
+#   2. <projeto>/.nirvana-limits.yaml   (override por projeto)
+#   3. ESTE arquivo (~/.claude/nirvana-limits.yaml)
+#   4. DEFAULTS hard-coded (valores históricos)
+#
+# Formato: chave: valor — FLAT, sem aninhamento. Comentários com '#'.
+# Toda chave passa por SAFETY_BOUNDS (piso/teto) — valores absurdos são
+# clampados automaticamente com aviso no stderr.
+#
+# Debug: exporte NIRVANA_LIMITS_DEBUG=1 para ver limites efetivos + fonte.
+# Inspecionar: python3 ~/.claude/skills/_shared/validators/limits.py
+#
+# Doc completa: ~/.claude/skills/_shared/CONFIGURATION.md §Limites configuráveis
+# ══════════════════════════════════════════════════════════════════════
+
+
+# ── PAYLOAD SIZE — Bucket A (baixo risco) ─────────────────────────────
+# Aumentar campos de texto/listas de discovery. Não afeta segurança nem
+# custo. Recomendado para businesses/squads multi-dimensionais.
+
+# Descrição de business — era 500 (≈1 parágrafo). 2000 ≈ 4-5 parágrafos,
+# espaço para explicar uma empresa complexa SEM degradar o ranking BM25
+# (acima de ~5000 a descrição vira ruído no discovery — por isso o teto).
+business_description_max: 2000
+
+# Tipos de entregável que a empresa produz — conglomerates com 6+
+# dimensões facilmente passam de 30.
+business_produces_max: 60
+
+# Exemplos de brief que a empresa resolve — mais few-shot = melhor
+# discovery semântico.
+business_example_briefs_max: 30
+business_example_briefs_item_max: 1000
+
+# Sinônimos/keywords de discovery — empresas multi-dimensão precisam
+# de ~15 keywords por dimensão.
+business_keywords_max: 100
+
+# Capability — pipelines complexos (ex.: ISO 42001 com 16 fases)
+# merecem descrição mais rica.
+capability_description_max: 1500
+capability_produces_max: 40
+capability_example_briefs_max: 20
+capability_example_briefs_item_max: 1000
+capability_keywords_max: 60
+
+# Handoff entre agentes — preservar mais contexto cross-session.
+handoff_summary_max: 3000
+handoff_files_modified_max: 30
+
+# Employee description — historicamente SEM teto. Adicionar um teto
+# sanitário evita frontmatter gigante por engano.
+employee_description_max: 3000
+
+
+# ── EXECUTION CONTROL — Bucket B (MAX POWER v2) ───────────────────────
+# Pós NIRVANA-OS-CORRECTION-REPORT: o cap silencioso de maxTurns 50-100
+# matava pipelines complexos. Subido para 1000 (teto) e 400 (default
+# padronizado em todos os employees via normalize-employee-maxturns.ts).
+
+# maxTurns de employee — teto 1000. Default por employee = 400.
+employee_max_turns_max: 1000
+
+# maxTurns de mind-clone DNA — alinhado.
+dna_max_turns_max: 1000
+
+# Harness — context window 10M tokens (Opus 4.7 com 1M nativo cobre,
+# subagents podem encadear handoffs até atingir esse cap).
+harness_default_max_tokens: 10000000
+
+# Duração — pipelines longos (lançamentos 360°) demoram horas legítimas.
+harness_default_max_duration_seconds: 86400          # 24h
+
+# Custo — Nirvana fica fora do caminho. Limite em $1M.
+harness_default_max_cost_usd: 1000000
+
+# Handoffs — chains profundos para projetos multi-pillar.
+harness_default_max_handoffs: 1000
+
+
+# ── NÃO sobrescrito de propósito (Bucket C — features de design) ──────
+# Os limites abaixo NÃO são expostos como configuráveis porque o limite
+# é uma FEATURE, não um bug. Documentado aqui para transparência:
+#
+#   handoff.blockers (max 3)      — força priorização de bloqueios
+#   handoff.key_decisions (max 5) — força síntese de decisões
+#   orgchart.reports (max 1)      — accountability clara (1 gestor)
+#   business.domains (max 10)     — anti brand-dilution
+#   capability.domains (max 5)    — capability deve ser focada
+#   selfscore.criteria (min 1)    — accountability obrigatória
+#   selfscore.max_revise (max 5)  — anti loop de revisão infinito
+#
+# Se você REALMENTE precisa mudar um destes, edite o DEFAULTS em
+# limits.py diretamente — e documente o porquê.

@@ -1,0 +1,5 @@
+[test]
+# Scan only the engine. dist/ holds BUILT packs whose squad templates carry
+# their own tests with their own dependencies (installed in the buyer project,
+# not here) — scanning them made a bare `bun test` report 55 phantom failures.
+root = "skills"

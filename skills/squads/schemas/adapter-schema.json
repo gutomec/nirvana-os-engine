@@ -1,0 +1,340 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://squads.dev/schemas/adapter-schema.json",
+  "title": "Squad Runtime Adapter Manifest",
+  "description": "Schema for adapters/{runtime_id}.yaml manifests. Describes how a runtime implements Core protocol concepts.",
+  "type": "object",
+  "required": ["adapter", "features_supported", "concept_mapping", "invocation"],
+  "additionalProperties": false,
+  "properties": {
+    "adapter": {
+      "type": "object",
+      "required": [
+        "runtime_id",
+        "runtime_name",
+        "adapter_version",
+        "protocol_version",
+        "minimum_runtime_version"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "runtime_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{1,32}$",
+          "description": "Canonical runtime identifier (kebab-case)"
+        },
+        "runtime_name": {
+          "type": "string",
+          "description": "Human-readable runtime name"
+        },
+        "vendor": {
+          "type": "string",
+          "description": "Organization that produces the runtime"
+        },
+        "adapter_version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+",
+          "description": "Semver of this adapter"
+        },
+        "protocol_version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+(\\.\\d+)?$",
+          "description": "Squad Protocol version this adapter targets"
+        },
+        "minimum_runtime_version": {
+          "type": "string",
+          "description": "Minimum runtime version required"
+        },
+        "maintainer": {
+          "type": "string",
+          "description": "Name or handle of adapter maintainer"
+        },
+        "homepage": {
+          "type": "string",
+          "format": "uri"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["stable", "beta", "experimental", "deprecated"],
+          "default": "stable"
+        }
+      }
+    },
+
+    "features_supported": {
+      "type": "array",
+      "description": "Capabilities this adapter provides",
+      "items": {
+        "type": "object",
+        "required": ["id", "mechanism"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "max_turns",
+              "tool_whitelist",
+              "handoff_artifacts",
+              "subagent_spawning",
+              "sequential_execution",
+              "project_memory",
+              "global_memory",
+              "session_memory",
+              "hooks",
+              "sandboxing",
+              "web_search",
+              "file_write",
+              "shell_exec",
+              "fork_context",
+              "teammate_primitive"
+            ]
+          },
+          "mechanism": {
+            "type": "string",
+            "enum": ["enforced", "advisory", "hybrid", "convention"],
+            "description": "How the feature is enforced: enforced = runtime guarantees, advisory = prompt instruction, hybrid = mixed, convention = squad must implement"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "limits": {
+            "type": "object",
+            "description": "Numeric limits for this feature"
+          }
+        }
+      }
+    },
+
+    "features_unsupported": {
+      "type": "array",
+      "description": "Features the adapter explicitly does not support (graceful degradation applies)",
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "max_turns",
+              "tool_whitelist",
+              "handoff_artifacts",
+              "subagent_spawning",
+              "sequential_execution",
+              "project_memory",
+              "global_memory",
+              "session_memory",
+              "hooks",
+              "sandboxing",
+              "web_search",
+              "file_write",
+              "shell_exec",
+              "fork_context",
+              "teammate_primitive"
+            ]
+          },
+          "fallback": {
+            "type": "string",
+            "description": "Documented fallback behavior"
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      }
+    },
+
+    "concept_mapping": {
+      "type": "object",
+      "description": "How Core concepts map to runtime primitives",
+      "additionalProperties": true,
+      "properties": {
+        "maxTurns": {
+          "type": "object",
+          "properties": {
+            "frontmatter_field": { "type": "string" },
+            "cli_flag": { "type": ["string", "null"] },
+            "default": { "type": ["integer", "null"] },
+            "hard_cap": { "type": ["integer", "null"] }
+          }
+        },
+        "tools": {
+          "type": "object",
+          "properties": {
+            "frontmatter_field": { "type": "string" },
+            "cli_flag": { "type": ["string", "null"] },
+            "enforced_by": { "type": "string" },
+            "semantic_map": {
+              "type": "object",
+              "description": "Map of portable semantic tool name to runtime-local name",
+              "additionalProperties": { "type": ["string", "array"] }
+            }
+          }
+        },
+        "model": {
+          "type": "object",
+          "properties": {
+            "resolution": {
+              "type": "object",
+              "description": "Map of family hint to concrete model identifier",
+              "additionalProperties": { "type": "string" }
+            }
+          }
+        },
+        "memory": {
+          "type": "object",
+          "properties": {
+            "ephemeral": { "type": "object" },
+            "session": { "type": "object" },
+            "project": { "type": "object" },
+            "global": { "type": "object" }
+          }
+        },
+        "subagent_spawn": {
+          "type": "object",
+          "properties": {
+            "primitive": { "type": "string" },
+            "max_concurrent": { "type": "integer" }
+          }
+        }
+      }
+    },
+
+    "numeric_values": {
+      "type": "object",
+      "description": "Runtime-specific numeric values (compaction, windows, buffers). ALL numeric values live here.",
+      "additionalProperties": true,
+      "properties": {
+        "context_window_tokens": { "type": "integer", "minimum": 1000 },
+        "max_output_tokens": { "type": "integer", "minimum": 100 },
+        "effective_context_tokens": { "type": "integer" },
+        "compaction_buffer_tokens": { "type": "integer" },
+        "compaction_threshold_pct": { "type": "number" },
+        "compaction_threshold_tokens": { "type": "integer" },
+        "warning_threshold_tokens": { "type": "integer" },
+        "blocking_threshold_tokens": { "type": "integer" },
+        "default_max_turns": { "type": ["integer", "null"] },
+        "hard_cap_max_turns": { "type": "integer" },
+        "memory_file_max_chars": { "type": "integer" }
+      }
+    },
+
+    "validators": {
+      "type": "array",
+      "description": "Runtime-specific validation rules beyond Core",
+      "items": {
+        "type": "object",
+        "required": ["id", "description"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "description": { "type": "string" },
+          "level": {
+            "type": "string",
+            "enum": ["blocking", "warning", "info"],
+            "default": "blocking"
+          },
+          "limit": { "type": ["integer", "string"] },
+          "applies_to": {
+            "type": "string",
+            "enum": ["squad", "agent", "task", "workflow", "manifest"]
+          }
+        }
+      }
+    },
+
+    "invocation": {
+      "type": "object",
+      "required": ["examples"],
+      "additionalProperties": false,
+      "properties": {
+        "binary": {
+          "type": "string",
+          "description": "Default CLI binary name"
+        },
+        "env_vars": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string" },
+              "description": { "type": "string" },
+              "required": { "type": "boolean" }
+            }
+          }
+        },
+        "examples": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["description", "command"],
+            "properties": {
+              "description": { "type": "string" },
+              "command": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+
+    "hooks": {
+      "type": "object",
+      "description": "Hook events this adapter exposes",
+      "additionalProperties": false,
+      "properties": {
+        "supported": { "type": "boolean", "default": false },
+        "events": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "abort_semantics": {
+          "type": "string",
+          "enum": ["pre-only", "pre-and-post", "none"]
+        }
+      }
+    },
+
+    "known_limitations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["limitation"],
+        "properties": {
+          "limitation": { "type": "string" },
+          "workaround": { "type": "string" },
+          "tracking": { "type": "string" }
+        }
+      }
+    },
+
+    "source_references": {
+      "type": "array",
+      "description": "SRC-N citations verifying adapter claims against runtime implementation",
+      "items": {
+        "type": "object",
+        "required": ["id", "claim", "source"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^SRC-[A-Z0-9-]+$" },
+          "claim": { "type": "string" },
+          "source": { "type": "string", "description": "File path or URL into the runtime codebase" },
+          "verified_at": { "type": "string", "format": "date" }
+        }
+      }
+    },
+
+    "version_history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["version", "date", "changes"],
+        "properties": {
+          "version": { "type": "string" },
+          "date": { "type": "string", "format": "date" },
+          "changes": { "type": "string" }
+        }
+      }
+    }
+  }
+}
