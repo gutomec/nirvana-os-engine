@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nirvana-os/manifest.schema.json",
+  "title": "Multi-target dispatch manifest",
+  "description": "Live coordination state for a multi-business/squad/agent-x dispatch. Created by the orchestrator at .nirvana/outputs/<trace_id>/manifest.json and updated as each phase completes.",
+  "type": "object",
+  "required": ["trace_id", "brief_path", "phases", "parallel_waves"],
+  "additionalProperties": false,
+  "properties": {
+    "trace_id": {
+      "type": "string",
+      "description": "UUID identifying this dispatch."
+    },
+    "brief_path": {
+      "type": "string",
+      "description": "Relative path to brief-enriched.md from the project_dir root.",
+      "default": "brief-enriched.md"
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "phases": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Phase" }
+    },
+    "parallel_waves": {
+      "type": "array",
+      "description": "Ordered list of phase-id groups. All phases within a group may run in parallel. Each wave runs after the previous one completes.",
+      "items": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
+    },
+    "global_status": {
+      "type": "string",
+      "enum": ["planned", "in_progress", "completed", "failed", "aborted"],
+      "default": "planned"
+    }
+  },
+  "$defs": {
+    "Phase": {
+      "type": "object",
+      "required": ["id", "target", "status", "depends_on", "consumed_by", "outputs_path"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique within this manifest (e.g., 'phase-1-brand-foundation')."
+        },
+        "target": {
+          "type": "object",
+          "required": ["type", "slug"],
+          "properties": {
+            "type": { "enum": ["business", "squad", "agent-x"] },
+            "slug": { "type": "string" },
+            "runtime": {
+              "type": "string",
+              "description": "Required when type='agent-x' (claude-code, codex, antigravity-cli, gemini-cli)."
+            }
+          }
+        },
+        "status": {
+          "enum": ["planned", "dispatched", "in_progress", "completed", "failed", "skipped"]
+        },
+        "started_at": { "type": ["string", "null"], "format": "date-time" },
+        "finished_at": { "type": ["string", "null"], "format": "date-time" },
+        "outputs_path": {
+          "type": "string",
+          "description": "Relative path to the target's outputs directory (e.g., 'businesses/<slug>/outputs/')."
+        },
+        "outputs_summary_path": {
+          "type": "string",
+          "description": "Relative path to the 1-page exec summary the target writes at completion. Convention: '<outputs_path>/_SUMMARY.md'."
+        },
+        "dispatch_instruction_path": {
+          "type": "string",
+          "description": "Relative path to the DISPATCH-INSTRUCTION.md the orchestrator wrote for this phase."
+        },
+        "handoff_path": {
+          "type": "string",
+          "description": "Relative path to the phase-tracking HANDOFF.json."
+        },
+        "depends_on": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "phase-ids that must complete before this phase starts."
+        },
+        "consumed_by": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "phase-ids that will read this phase's outputs (informational, helps the phase shape its outputs)."
+        },
+        "writes_paths": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Glob patterns this phase will write to (used by race-detector when parallelizing siblings)."
+        },
+        "audit_events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "event": { "type": "string" },
+              "ts": { "type": "string", "format": "date-time" }
+            }
+          },
+          "description": "Recent audit events for this phase. Tail of the global audit log filtered by trace_id + phase_id."
+        }
+      }
+    }
+  }
+}

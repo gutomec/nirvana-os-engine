@@ -1,0 +1,12 @@
+brief_intake:
+  default_employee: holding-ceo
+auto_routes:
+- pattern: type:business_1
+  route_to: business-1-ceo
+- pattern: type:business_2
+  route_to: business-2-ceo
+- pattern: type:business_3
+  route_to: business-3-ceo
+mention_routing: []
+ticket_intake:
+  default_assignee: holding-ceo
