@@ -1,0 +1,62 @@
+{
+  "description": "Coverage-probe amplification-bridge cases (routing-360 Phase 3.3). Hand-written, committed. Each case pins a cross-language brief that the strength-gated amplifier used to leave in the BM25 dead zone: the winner's content-token coverage fell in the census abstention bands and the router abstained instead of dispatching. The bridge (router.js Stage 2.7) must resolve them: arm (b) re-scores candidate coverage through the cross-language alias groups in .keyword-aliases.json (zero LLM tokens); arm (c) falls back to the Stage -1.5 amplifier regardless of brief strength (live mode only, so not exercised here). Consumed by tests/bridge-cases.test.ts (runs in CI against the live registries; skips on a partial library, same policy as routing-eval.test.ts).",
+  "cases": [
+    {
+      "id": "bridge-pt-live-miss-ebook",
+      "brief": "criar um ebook sobre emagrecimento com copy persuasiva",
+      "language": "pt",
+      "requires_alias_file": true,
+      "accepted_top1": [
+        "polymath-press",
+        "ars-libri",
+        "ebook-maestro-nirvana"
+      ],
+      "note": "Destination is the contract; signal strength is not. As the library gained a second book business and enriched copy squads, three legitimate claimants landed within 0.13 of each other (polymath-press 1.000, copy squads ~0.94, ebook-maestro 0.873), so the router confirms instead of dispatching blind. Measured 2026-08-07; the win this case protects — the brief reaching the ebook fabric at all — still holds at rank #1.",
+      "expect_signal_in": [
+        "HIGH",
+        "AMBIGUOUS"
+      ]
+    },
+    {
+      "id": "bridge-pt-livro-digital",
+      "brief": "escreva um livro digital de receitas fitness com textos de venda",
+      "language": "pt",
+      "requires_alias_file": true,
+      "expect_top1": "ebook-maestro-nirvana",
+      "note": "PT vocabulary (livro digital, textos de venda) against the EN-declared squad: pre-bridge coverage 2/7 (confirm band); the alias groups lift it to 3/7 and ebook-maestro-nirvana leads the candidate list."
+    },
+    {
+      "id": "bridge-en-ebook-compound",
+      "brief": "write a persuasive weight-loss e-book with sales copy",
+      "language": "en",
+      "requires_alias_file": false,
+      "expect_signal": "HIGH",
+      "expect_top1": "ebook-maestro-nirvana",
+      "note": "Cross-language control fixed by the Phase 3.2 tokenizer alone: 'e-book' now emits ebook+book (hyphen-compound repair), so the squad that declares 'ebook' wins without the bridge engaging."
+    },
+    {
+      "id": "bridge-en-publish-kdp",
+      "brief": "publish my non-fiction manuscript as an ebook on KDP",
+      "language": "en",
+      "requires_alias_file": false,
+      "accepted_top1": [
+        "polymath-press",
+        "ars-libri",
+        "ebook-maestro-nirvana"
+      ],
+      "note": "Destination is the contract; signal strength is not. As the library gained a second book business and enriched copy squads, three legitimate claimants landed within 0.13 of each other (polymath-press 1.000, copy squads ~0.94, ebook-maestro 0.873), so the router confirms instead of dispatching blind. Measured 2026-08-07; the win this case protects — the brief reaching the ebook fabric at all — still holds at rank #1.",
+      "expect_signal_in": [
+        "HIGH",
+        "AMBIGUOUS"
+      ]
+    },
+    {
+      "id": "bridge-negative-guard",
+      "brief": "consertar a bomba hidráulica do trator",
+      "language": "pt",
+      "requires_alias_file": false,
+      "expect_signal_not": "HIGH",
+      "note": "Out-of-domain guard: the bridge must NOT rescue it — its tokens have no alias groups pointing at any winner's vocabulary, so alias re-coverage is not adopted and the abstention stands."
+    }
+  ]
+}

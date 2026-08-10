@@ -1,0 +1,370 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://squads.dev/schemas/squad-schema.json",
+  "title": "Squad Manifest Schema v4",
+  "description": "JSON Schema for squad.yaml. Supports v4.0 (native), v3.1 (auto-upgrade), and v2.0 (legacy shim). See SQUAD_PROTOCOL_V4.md §5.",
+  "type": "object",
+  "required": ["name", "version"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Unique squad identifier. kebab-case.",
+      "pattern": "^[a-z][a-z0-9-]{1,49}$"
+    },
+    "version": {
+      "type": "string",
+      "description": "Semver of the squad itself.",
+      "pattern": "^\\d+\\.\\d+\\.\\d+"
+    },
+    "protocol": {
+      "type": "string",
+      "description": "Squad Protocol version this squad targets. '4.0' for native v4 squads.",
+      "pattern": "^\\d+\\.\\d+(\\.\\d+)?$"
+    },
+    "short-title": {
+      "type": "string",
+      "description": "Short display title.",
+      "maxLength": 60
+    },
+    "description": {
+      "type": "string",
+      "description": "Squad purpose and capabilities."
+    },
+    "author": { "type": "string" },
+    "license": { "type": "string" },
+    "slashPrefix": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+
+    "runtime_requirements": {
+      "type": "object",
+      "description": "v4: runtime compatibility declaration",
+      "additionalProperties": false,
+      "properties": {
+        "minimum": {
+          "type": "array",
+          "description": "At least one must be satisfied by host (fail-closed)",
+          "items": {
+            "type": "object",
+            "required": ["runtime"],
+            "properties": {
+              "runtime": { "type": "string" },
+              "version": { "type": "string" }
+            }
+          }
+        },
+        "compatible": {
+          "type": "array",
+          "description": "Works with graceful degradation",
+          "items": {
+            "type": "object",
+            "required": ["runtime"],
+            "properties": {
+              "runtime": { "type": "string" },
+              "version": { "type": "string" }
+            }
+          }
+        },
+        "incompatible": {
+          "type": "array",
+          "description": "Explicit non-support",
+          "items": {
+            "type": "object",
+            "required": ["runtime"],
+            "properties": {
+              "runtime": { "type": "string" },
+              "version": { "type": "string" },
+              "reason": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+
+    "features_required": {
+      "type": "array",
+      "description": "v4: hard feature requirements",
+      "items": {
+        "type": "string",
+        "enum": [
+          "max_turns", "tool_whitelist", "handoff_artifacts", "subagent_spawning",
+          "sequential_execution", "project_memory", "global_memory", "session_memory",
+          "hooks", "sandboxing", "web_search", "file_write", "shell_exec",
+          "fork_context", "teammate_primitive"
+        ]
+      }
+    },
+
+    "features_optional": {
+      "type": "array",
+      "description": "v4: features used if available, degrades gracefully",
+      "items": {
+        "type": "string",
+        "enum": [
+          "max_turns", "tool_whitelist", "handoff_artifacts", "subagent_spawning",
+          "sequential_execution", "project_memory", "global_memory", "session_memory",
+          "hooks", "sandboxing", "web_search", "file_write", "shell_exec",
+          "fork_context", "teammate_primitive"
+        ]
+      }
+    },
+
+    "components": {
+      "type": "object",
+      "description": "Squad components. v4 accepts string arrays (paths); legacy v2 accepts object arrays.",
+      "properties": {
+        "agents": {
+          "oneOf": [
+            {
+              "type": "array",
+              "description": "v4 format: file paths as strings",
+              "items": { "type": "string" }
+            },
+            {
+              "type": "array",
+              "description": "Legacy format: objects with id/role/file",
+              "items": {
+                "type": "object",
+                "required": ["id", "file"],
+                "properties": {
+                  "id": { "type": "string" },
+                  "role": { "type": "string" },
+                  "file": { "type": "string" },
+                  "title": { "type": "string" },
+                  "icon": { "type": "string" }
+                }
+              }
+            }
+          ]
+        },
+        "tasks": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["id", "file"],
+                "properties": {
+                  "id": { "type": "string" },
+                  "name": { "type": "string" },
+                  "file": { "type": "string" },
+                  "agent": { "type": "string" }
+                }
+              }
+            }
+          ]
+        },
+        "workflows": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["id", "file"],
+                "properties": {
+                  "id": { "type": "string" },
+                  "name": { "type": "string" },
+                  "file": { "type": "string" }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "runtimes": {
+      "type": "object",
+      "description": "v4: runtime-specific namespaced configuration. Each key is a runtime_id.",
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+
+    "contracts": {
+      "type": "object",
+      "description": "v4: inter-task output schema contracts. Keys like 'task-a → task-b' map to schema paths.",
+      "additionalProperties": { "type": "string" }
+    },
+
+    "memory": {
+      "type": "object",
+      "description": "v4: memory scope and GC policy",
+      "additionalProperties": false,
+      "properties": {
+        "shared": {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string" },
+            "scope": { "type": "string" },
+            "path": { "type": "string" }
+          }
+        },
+        "persistent": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "type": { "type": "string" },
+            "scope": { "type": "string", "enum": ["project", "global"] },
+            "file": { "type": "string" },
+            "max_chars": { "type": "integer", "minimum": 1000 },
+            "garbage_collection": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "max_learned_facts": { "type": "integer", "minimum": 10 },
+                "review_interval_days": { "type": "integer", "minimum": 1 },
+                "conflict_resolution": { "type": "string", "enum": ["replace", "append", "prompt"] }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "capabilities": {
+      "type": "object",
+      "description": "v4: capability declaration (security)",
+      "additionalProperties": false,
+      "properties": {
+        "required": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "forbidden": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+
+    "execution": {
+      "type": "object",
+      "description": "v4: execution constraints",
+      "additionalProperties": true,
+      "properties": {
+        "sandbox": { "type": "boolean" },
+        "filesystem": { "type": "string" },
+        "network": { "type": "string" }
+      }
+    },
+
+    "env_required": {
+      "type": "array",
+      "description": "v4: environment variables required",
+      "items": { "type": "string" }
+    },
+
+    "ui": {
+      "type": "object",
+      "description": "v4: marketplace/UI metadata (never affects runtime)",
+      "additionalProperties": true,
+      "properties": {
+        "icon": { "type": "string" },
+        "category": { "type": "string" },
+        "agents_metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "icon": { "type": "string" },
+              "archetype": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+
+    "agents_metadata": {
+      "type": "object",
+      "description": "Legacy: top-level agents_metadata (auto-migrated to ui.agents_metadata in v4)",
+      "additionalProperties": true
+    },
+
+    "observability": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "tracing": { "type": "string" },
+        "log_level": { "type": "string" }
+      }
+    },
+
+    "runtime": {
+      "type": "object",
+      "description": "Legacy v2: runtime engine config (deprecated in v4, use runtime_requirements)",
+      "properties": {
+        "engine": {
+          "type": "string",
+          "enum": ["node", "python", "shell", "hybrid"]
+        },
+        "node": { "type": "string" },
+        "python": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "requires": {
+      "type": "object",
+      "description": "Legacy v2: external requirements",
+      "additionalProperties": true,
+      "properties": {
+        "tools": { "type": "array", "items": { "type": "string" } },
+        "mcps": { "type": "array", "items": { "type": "string" } },
+        "skills": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "scripts": {
+      "type": "object",
+      "description": "Legacy v2: lifecycle scripts (still supported)",
+      "additionalProperties": true
+    },
+    "config": {
+      "type": "object",
+      "description": "Legacy v2: squad-level config (harness-specific settings auto-migrate to adapters)",
+      "additionalProperties": true
+    },
+    "dependencies": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "mcps": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "integration": {
+      "type": "object",
+      "additionalProperties": true
+    },
+
+    "state": {
+      "type": "object",
+      "description": "State management config (v3+)",
+      "additionalProperties": true
+    },
+    "model_strategy": {
+      "type": "object",
+      "description": "Model routing hints (v3+, migrated to adapters in v4)",
+      "additionalProperties": true
+    },
+    "harness": {
+      "type": "object",
+      "description": "Legacy v3 harness config — v4 migrates these to adapter namespaces",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}
