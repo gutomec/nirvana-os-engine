@@ -6,7 +6,34 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
-## Não lançado
+## 0.3.4 — 2026-08-12
+
+### O engine agora é desenvolvido em aberto
+
+Este repositório deixou de ser um espelho de force-push e virou o lugar onde o
+engine é desenvolvido. A história é permanente a partir do `63e4f4c`: pull
+requests entram aqui, releases são taggeadas aqui, e o CI constrói o tarball da
+release a partir da árvore pública — os mesmos gates de vazamento e watermark,
+agora rodando onde todos podem ver. O `main` rejeita force-push para todos,
+admins inclusive.
+
+A maquinaria de contribuição chegou com a virada: CONTRIBUTING.md, SECURITY.md
+(prompt injection e forja da cadeia de auditoria explicitamente no escopo),
+CODEOWNERS, um bot de CLA, e a matriz de testes cross-OS rodando em pull
+requests de forks — sem secrets, por construção.
+
+### O CLA é uma licença, não uma cessão
+
+A Sustainable Use License sempre exigiu que contribuições viessem com um CLA; o
+acordo publicado transferia a titularidade de cada contribuição ao dono do
+projeto. Agora ele segue o modelo Apache ICLA: o contribuidor mantém a
+titularidade e concede licença perpétua, mundial, irrevogável, gratuita e
+sublicenciável, incluindo o direito explícito de relicenciar sob termos
+comerciais — a liberdade de que o projeto precisa, sem tomar o trabalho de
+ninguém. A licença de patente com defensive termination é nova; os direitos
+morais seguem inalienáveis pela lei brasileira. A troca aconteceu com o CLA
+ainda sem nenhuma assinatura, então nenhum contribuidor ficou sob os termos
+antigos.
 
 ### Backups de update não se acumulam mais
 

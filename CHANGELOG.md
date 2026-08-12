@@ -6,7 +6,32 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
-## Unreleased
+## 0.3.4 — 2026-08-12
+
+### The engine is now developed in the open
+
+This repository stopped being a force-pushed mirror and became the place where
+the engine is developed. History is permanent from `63e4f4c` on: pull requests
+merge here, releases are tagged here, and CI builds the release tarball from
+the public tree — the same leak and watermark gates, now running where everyone
+can see them. `main` rejects force-pushes for everyone, admins included.
+
+Contribution machinery arrived with the flip: CONTRIBUTING.md, SECURITY.md
+(prompt injection and audit-chain forgery explicitly in scope), CODEOWNERS, a
+CLA bot, and the cross-OS test matrix now running on pull requests from forks —
+without secrets, by construction.
+
+### The CLA is a license, not an assignment
+
+The Sustainable Use License always required contributions to come with a CLA;
+the published agreement transferred ownership of each contribution to the
+project owner. It now follows the Apache ICLA model instead: contributors keep
+ownership and grant a perpetual, worldwide, irrevocable, royalty-free,
+sublicensable license, including the explicit right to relicense under
+commercial terms — the freedom the project needs, without taking anyone's work.
+A patent grant with defensive termination is new; moral rights remain
+inalienable under Brazilian law. The switch happened while the CLA had zero
+signatures, so no contributor is left under the old terms.
 
 ### Update backups no longer pile up
 
