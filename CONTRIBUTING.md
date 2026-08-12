@@ -50,10 +50,10 @@ released version.
 3. `bun test` and `bun run check:all` must pass locally — CI runs the same
    suite on Ubuntu, macOS, and Windows.
 4. Open the PR. The CLA bot will ask you to sign the
-   [Contributor License Agreement](./CLA.md) once — read it first; it assigns
-   the economic rights in your contribution to the project owner (your moral
-   rights and authorship remain yours, and you keep a full license to your own
-   work).
+   [Contributor License Agreement](./CLA.md) once — read it first; you keep
+   ownership of your contribution and grant the project's Owner a broad
+   license to use and relicense it, including under commercial terms (your
+   moral rights and authorship remain yours).
 5. Changes that alter behavior users see get a line in `CHANGELOG.md` **and**
    `CHANGELOG.pt-BR.md` — a CI gate enforces parity.
 
