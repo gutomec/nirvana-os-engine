@@ -1,0 +1,32 @@
+chart:
+- employee: ceo
+  reports: []
+  direct_reports:
+  - director-strategy
+  - director-creative
+  - director-ops
+  - antagonist
+  is_antagonist: false
+- employee: director-strategy
+  reports:
+  - ceo
+  direct_reports: []
+  is_antagonist: false
+- employee: director-creative
+  reports:
+  - ceo
+  direct_reports: []
+  is_antagonist: false
+- employee: director-ops
+  reports:
+  - ceo
+  direct_reports: []
+  is_antagonist: false
+- employee: antagonist
+  reports:
+  - ceo
+  direct_reports: []
+  is_antagonist: true
+routing_rules:
+  default_skip_levels: false
+  cross_team_handoff_allowed: true

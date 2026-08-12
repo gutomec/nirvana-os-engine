@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nirvana-os/baselines/schema.json",
+  "title": "Nirvana Baseline Snapshot",
+  "description": "Snapshot of system KPIs over a defined window, used as reference point for measuring evolution. Produced by skills/harness/scripts/baseline.ts.",
+  "type": "object",
+  "required": ["meta", "kpis"],
+  "additionalProperties": false,
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["computed_at", "window_days", "window_start", "window_end", "audit_logs_root", "schema_version"],
+      "additionalProperties": false,
+      "properties": {
+        "computed_at": { "type": "string", "format": "date-time" },
+        "window_days": { "type": "integer", "minimum": 1 },
+        "window_start": { "type": "string", "format": "date-time" },
+        "window_end": { "type": "string", "format": "date-time" },
+        "audit_logs_root": { "type": "string" },
+        "schema_version": { "type": "string", "const": "1.0.0" },
+        "git_sha": { "type": ["string", "null"], "description": "HEAD of nirvana-os at compute time, when available" },
+        "notes": { "type": ["string", "null"] }
+      }
+    },
+    "kpis": {
+      "type": "object",
+      "description": "Each KPI follows the same shape. Values that cannot be measured in this window (insufficient signal) are marked unmeasurable=true.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["value", "sample_size", "confidence", "raw"],
+        "additionalProperties": false,
+        "properties": {
+          "value": { "type": ["number", "null"], "description": "Computed metric value. null when unmeasurable." },
+          "sample_size": { "type": "integer", "minimum": 0, "description": "How many records contributed to value." },
+          "confidence": { "type": "string", "enum": ["high", "medium", "low", "unmeasurable"], "description": "high: sample_size>=30 and signal coverage>=80%. medium: 10-29. low: <10. unmeasurable: no signal in this window." },
+          "raw": {
+            "type": "object",
+            "description": "Underlying counters or distribution. Shape depends on the KPI.",
+            "additionalProperties": true
+          },
+          "unmeasurable_reason": { "type": ["string", "null"], "description": "Set when confidence=unmeasurable, e.g. 'event invocation_start emitted only 3 times' or 'phase X not yet implemented'." }
+        }
+      }
+    },
+    "event_counts": {
+      "type": "object",
+      "description": "Total count of each audit event type seen in window. Useful for sanity-checking signal availability.",
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    },
+    "trace_summary": {
+      "type": "object",
+      "description": "Aggregate trace statistics.",
+      "required": ["distinct_traces", "traces_with_dispatch", "traces_with_gate_decision", "orphan_event_lines"],
+      "additionalProperties": true,
+      "properties": {
+        "distinct_traces": { "type": "integer", "minimum": 0 },
+        "traces_with_dispatch": { "type": "integer", "minimum": 0 },
+        "traces_with_gate_decision": { "type": "integer", "minimum": 0 },
+        "orphan_event_lines": { "type": "integer", "minimum": 0, "description": "Lines parsed without a trace_id." },
+        "dispatched_with_cost": { "type": "integer", "minimum": 0, "description": "Traces with dispatch event AND non-zero cost_emission in same trace_id." },
+        "dispatched_without_cost": { "type": "integer", "minimum": 0, "description": "Traces with dispatch event but no cost_emission. High values indicate trace_id fragmentation." }
+      }
+    }
+  }
+}
