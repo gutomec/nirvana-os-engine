@@ -50,6 +50,6 @@
     "check:audit-parity": "bun scripts/check-audit-parity.ts --strict",
     "check:command-parity": "bun scripts/check-skillmd-command-parity.ts --strict",
     "check:changelog": "bun scripts/check-changelog-parity.ts --strict",
-    "check:all": "bun scripts/check-skillmd-command-parity.ts --strict && bun scripts/check-audit-parity.ts --strict && bun scripts/check-english-source.ts --strict && bun scripts/check-changelog-parity.ts --strict && bun scripts/check-engine-purity.ts"
+    "check:all": "bun scripts/check-skillmd-command-parity.ts --strict && bun scripts/check-audit-parity.ts --strict && bun scripts/check-english-source.ts --strict && bun scripts/check-changelog-parity.ts --strict && bun scripts/check-engine-purity.ts && bun scripts/sync-agent-docs.ts --check"
   }
 }

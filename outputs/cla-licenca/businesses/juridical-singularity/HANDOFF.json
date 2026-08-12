@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "decisions": [],
+  "open_questions": [],
+  "project_id": "cla-licenca",
+  "business_slug": "juridical-singularity",
+  "run_id": "run-msphxy08-b0755e82",
+  "phase": "plan",
+  "brief_original": "Migrar o CLA do nirvana-os-engine de cessão de direitos para CLA de licença (modelo Apache ICLA adaptado ao direito brasileiro). Brief enriquecido: /Users/guto/nirvana-os/.nirvana/briefs/cla-licenca-enriched.md",
+  "last_task_completed": null,
+  "next_task_id": null,
+  "audit_log_path": "audit.jsonl",
+  "resumption_prompt_hint": "Project just received initial brief. Start at the brief_intake employee for juridical-singularity.",
+  "handoff_timestamp": "2026-08-12T02:55:07.121Z",
+  "dag_snapshot_path": "dag-state.json"
+}
