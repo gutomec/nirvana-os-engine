@@ -62,3 +62,5 @@ released version.
 - Bugs and feature requests: GitHub Issues.
 - Questions and ideas: GitHub Discussions.
 - Vulnerabilities: see [SECURITY.md](./SECURITY.md) — not the public tracker.
+- Conduct: all community spaces follow the
+  [code of conduct](./CODE_OF_CONDUCT.md).

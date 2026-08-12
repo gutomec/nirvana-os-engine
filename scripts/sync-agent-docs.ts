@@ -2,8 +2,9 @@
 /**
  * sync-agent-docs.ts — AGENTS.md is the single source of the agent contract.
  * CLAUDE.md and GEMINI.md are byte-identical copies each runtime reads by its
- * own convention. Edit AGENTS.md only, then run this. publish-engine.ts fails
- * closed on drift, so a forgotten sync can never ship divergent contracts.
+ * own convention. Edit AGENTS.md only, then run this. `check:all` (CI on every
+ * push and PR) fails closed on drift, so a forgotten sync can never ship
+ * divergent contracts.
  *
  * Usage: bun scripts/sync-agent-docs.ts [--check]
  */

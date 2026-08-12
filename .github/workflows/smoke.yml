@@ -6,9 +6,8 @@
 # shell bash em TODOS os OS — no Windows isso é o Git Bash, onde o tar é o
 # GNU tar, exatamente como o Claude Code roda lá.
 #
-# Roda no monorepo privado (gutomec/nirvana-os) e no repo público do engine
-# (gutomec/nirvana-os-engine, staged pelo publish-engine.ts) — os steps que
-# dependem de arquivos ausentes num deles são guardados por [ -f ... ].
+# Roda neste repo (public-primary desde 2026-08-12) — os guards [ -f ... ]
+# sobrevivem para checkouts parciais e para o tarball instalado.
 name: smoke
 on:
   push:
