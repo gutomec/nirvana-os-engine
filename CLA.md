@@ -1,139 +1,83 @@
 # Nirvana-OS Contributor License Agreement (CLA) v1.0
 
-Effective date: 2026-05-30
-Holder: Luiz Gustavo Vieira Rodrigues ("Holder")
-
-This Contributor License Agreement ("Agreement") applies to any contribution you
-("Contributor") submit to the Nirvana-OS project ("Project"). You must agree to
-this Agreement before your contribution can be accepted. See "How to accept" below.
+This is the Contributor License Agreement referenced by §4 (Contributions) of the
+Nirvana-OS Sustainable Use License (see `LICENSE`). Signing happens once, on your
+first pull request, through the CLA bot.
 
 ---
 
-## EN — CANONICAL TEXT
+## EN — Canonical text
 
-### 1. Definitions
+**1. Definitions.** "Project" means the Nirvana-OS engine repository and its
+official distributions. "Contribution" means any original work of authorship you
+intentionally submit to the Project (code, documentation, tests, translations,
+designs). "You" means the individual submitting the Contribution, or the entity
+on whose behalf it is submitted.
 
-"Contribution" means any original work of authorship — code, documentation,
-content, configuration, or other material — that you intentionally submit to the
-Project, in any form and through any channel (including pull requests, patches,
-issues, or messages).
+**2. Assignment of economic rights.** By submitting a Contribution, You assign to
+Luiz Gustavo Vieira Rodrigues (the "Owner") all economic (patrimonial) rights in
+the Contribution, worldwide, perpetually, to the maximum extent permitted by law.
+The Owner may use, modify, distribute, sublicense, and relicense the Contribution
+under any terms, including commercial ones. You receive no compensation,
+ownership, or equity.
 
-### 2. Assignment of economic rights
+**3. Moral rights.** Your moral rights — including attribution and the integrity
+of your authorship — are inalienable under Brazilian law (Lei 9.610/98, art. 27)
+and remain yours. The Project preserves your authorship in the git history.
 
-You irrevocably and definitively assign and transfer to the Holder, on a
-worldwide, perpetual, exclusive, and gratuitous basis, all economic (patrimonial)
-copyright and related economic rights in and to your Contribution, for all forms
-of use and exploitation now known or later developed, for the full term of
-protection, including the rights to use, reproduce, modify, combine, sublicense,
-relicense, distribute, sell, and commercially exploit the Contribution, with no
-obligation of accounting. This assignment is governed by arts. 49 to 51 of
-Brazilian Law No. 9.610/1998.
+**4. License back to You.** The Owner grants You a perpetual, worldwide,
+royalty-free, non-exclusive license to use, modify, and distribute your own
+Contribution for any purpose, as it was at the time of submission.
 
-### 3. No compensation, no ownership, no stake
+**5. Your representations.** You represent that: (a) the Contribution is your
+original work, or You have the right to submit it under this CLA; (b) it does not
+knowingly include third-party material under terms incompatible with this CLA —
+if it includes any third-party material, You identify it and its license in the
+pull request; (c) if You are employed and the work may belong to your employer,
+You have your employer's permission.
 
-You acknowledge and agree that:
+**6. No obligation.** The Project is under no obligation to accept, use, or
+retain any Contribution.
 
-  (a) the assignment is gratuitous: you will not receive, now or at any time, any
-      payment, royalty, fee, revenue share, equity, or other compensation for your
-      Contribution;
-  (b) you acquire no ownership of, or interest in, the Project, the Software, the
-      Holder's business, or any company or entity related to the Project;
-  (c) this Agreement creates no partnership, joint venture, employment, or agency
-      relationship between you and the Holder.
-
-### 4. Moral rights
-
-Brazilian law (Law No. 9.610/1998, art. 27) makes an author's moral rights
-inalienable and unwaivable. You retain those moral rights solely as guaranteed by
-law (essentially attribution and integrity). To the maximum extent permitted by
-law, you agree not to exercise moral rights in a way that prevents the Holder from
-using, modifying, combining, relicensing, or distributing the Contribution in the
-normal operation of the Project. The Holder may, at its discretion, credit you in
-the Project's contributor records; such credit grants no economic right or
-ownership.
-
-### 5. License back to you
-
-The Holder grants you a non-exclusive, royalty-free license to use your own
-Contribution for your personal and internal purposes. This grants you no right
-over the Project as a whole or over other contributions.
-
-### 6. Your representations
-
-You represent that:
-
-  (a) the Contribution is your original creation and you have the right to assign
-      it under this Agreement;
-  (b) the Contribution does not infringe any third party's rights;
-  (c) if your employer has rights to work you create, you have obtained permission
-      to make the Contribution, or your employer has waived such rights for the
-      Contribution.
-
-### 7. No warranty
-
-Except for the representations in Section 6, the Contribution is provided "as is",
-without warranty of any kind.
-
-### 8. Governing law
-
-This Agreement is governed by the laws of the Federative Republic of Brazil, State
-of São Paulo, consistent with the Nirvana-OS Sustainable Use License.
+**7. Signing and governing law.** You sign by posting the signature phrase the
+CLA bot requests on your first pull request. This agreement is governed by the
+laws of Brazil.
 
 ---
 
-## How to accept
+## PT-BR — Tradução informativa (o texto canônico é o inglês)
 
-Add a `Signed-off-by: Your Name <email>` line to each commit (`git commit -s`),
-which certifies that you have read and agree to this Agreement, OR state in your
-pull request: "I have read and agree to the Nirvana-OS CLA v1.0." Contributions
-submitted without this agreement may be declined.
+**1. Definições.** "Projeto" é o repositório do engine Nirvana-OS e suas
+distribuições oficiais. "Contribuição" é qualquer obra original de autoria que
+você submete intencionalmente ao Projeto (código, documentação, testes,
+traduções, design). "Você" é a pessoa que submete a Contribuição, ou a entidade
+em nome de quem ela é submetida.
 
----
+**2. Cessão dos direitos patrimoniais.** Ao submeter uma Contribuição, você cede
+a Luiz Gustavo Vieira Rodrigues (o "Titular") todos os direitos econômicos
+(patrimoniais) sobre a Contribuição, em todo o mundo, em caráter definitivo, na
+máxima extensão permitida em lei. O Titular pode usar, modificar, distribuir,
+sublicenciar e relicenciar a Contribuição sob quaisquer termos, inclusive
+comerciais. Você não recebe remuneração, propriedade ou participação.
 
-## PT-BR — VERSÃO INFORMATIVA (NÃO-VINCULANTE)
+**3. Direitos morais.** Seus direitos morais — incluindo a atribuição de autoria
+e a integridade da obra — são inalienáveis pela lei brasileira (Lei 9.610/98,
+art. 27) e permanecem seus. O Projeto preserva sua autoria no histórico do git.
 
-Esta tradução é fornecida por conveniência. Em caso de divergência, prevalece o
-texto em inglês acima.
+**4. Licença de volta para você.** O Titular concede a você licença perpétua,
+mundial, gratuita e não exclusiva para usar, modificar e distribuir a sua própria
+Contribuição, para qualquer fim, tal como ela era no momento da submissão.
 
-Este Contrato de Licença de Contribuidor ("Contrato") aplica-se a qualquer
-contribuição que você ("Contribuidor") envie ao projeto Nirvana-OS.
+**5. Suas declarações.** Você declara que: (a) a Contribuição é obra original
+sua, ou você tem o direito de submetê-la sob este CLA; (b) ela não inclui,
+conscientemente, material de terceiros sob termos incompatíveis com este CLA —
+se incluir material de terceiros, você o identifica junto com a licença dele no
+pull request; (c) se você é empregado e a obra puder pertencer ao empregador,
+você tem a permissão dele.
 
-**1. Cessão dos direitos patrimoniais.** Você cede e transfere ao Titular (Luiz
-Gustavo Vieira Rodrigues), de forma irrevogável, definitiva, mundial, perpétua,
-exclusiva e gratuita, todos os direitos patrimoniais de autor sobre a sua
-contribuição, para todas as modalidades de uso, pelo prazo integral de proteção,
-incluindo usar, reproduzir, modificar, combinar, sublicenciar, relicenciar,
-distribuir, vender e explorar comercialmente. Cessão regida pelos arts. 49 a 51
-da Lei 9.610/98.
+**6. Sem obrigação.** O Projeto não tem obrigação de aceitar, usar ou manter
+qualquer Contribuição.
 
-**2. Sem remuneração, sem titularidade, sem participação.** Você reconhece que:
-(a) a cessão é gratuita — você não receberá, nunca, qualquer pagamento, royalty,
-participação em receita, quota ou compensação; (b) você não adquire titularidade
-ou participação no projeto, no software, no negócio do Titular ou em qualquer
-empresa relacionada; (c) este Contrato não cria sociedade, vínculo empregatício
-ou mandato.
-
-**3. Direitos morais.** A lei brasileira (Lei 9.610/98, art. 27) torna os direitos
-morais do autor inalienáveis e irrenunciáveis. Você os mantém apenas conforme
-garantido por lei (essencialmente, atribuição e integridade). Na máxima extensão
-permitida, você concorda em não exercê-los de modo a impedir o uso, a modificação,
-o relicenciamento ou a distribuição normal da contribuição pelo Titular. O Titular
-pode creditá-lo nos registros de contribuidores; o crédito não gera direito
-patrimonial nem titularidade.
-
-**4. Licença de volta.** O Titular concede a você licença não-exclusiva e gratuita
-para usar a sua própria contribuição para fins pessoais e internos.
-
-**5. Declarações.** Você declara que a contribuição é original, que tem direito de
-cedê-la, que não viola direitos de terceiros e que, havendo direitos do empregador,
-obteve autorização.
-
-**6. Lei aplicável.** Brasil, Estado de São Paulo.
-
----
-
-SPDX identifier: LicenseRef-Nirvana-OS-CLA-1.0
-
-> Aviso: este CLA é um template e deve ser revisado por um advogado de propriedade
-> intelectual antes de ser usado em produção, em especial a cláusula de cessão
-> (Seção 2) e a de direitos morais (Seção 4).
+**7. Assinatura e lei aplicável.** A assinatura acontece publicando a frase que o
+bot de CLA solicita no seu primeiro pull request. Este acordo é regido pelas leis
+do Brasil.

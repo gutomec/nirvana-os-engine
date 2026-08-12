@@ -271,6 +271,38 @@ if (fs.existsSync(agentsSkillsDir)) {
   }
 }
 
+// Backup litter. Two shapes, two harms. A *.bak / *backup* entry INSIDE a
+// runtime skills dir gets scanned like a skill, so a stale pre-migration copy
+// loads next to the real one (seen live: squads.pre-nirvana.*.bak under
+// ~/.antigravity/skills). And skills-backup-* piling up beside ~/.nirvana/skills
+// are full copies of the tree nothing will ever read — `nrv update` keeps
+// exactly one (the latest) and prunes the rest, so more than one here means
+// that prune is not running.
+{
+  const litter: string[] = [];
+  for (const d of RUNTIME_SKILL_DIRS) {
+    try {
+      for (const entry of fs.readdirSync(d)) {
+        if (/\.bak$|\.old$|backup/i.test(entry)) litter.push(path.join(d, entry).replace(HOME, "~"));
+      }
+    } catch { /* dir absent — fine */ }
+  }
+  let staleBackups: string[] = [];
+  try {
+    staleBackups = fs.readdirSync(path.dirname(SKILLS))
+      .filter((e) => e.startsWith("skills-backup-")).sort();
+  } catch { /* parent unreadable — fine */ }
+  const extra = staleBackups.length > 1 ? staleBackups.slice(0, -1) : [];
+  if (litter.length || extra.length) {
+    const parts: string[] = [];
+    if (litter.length) parts.push(`${litter.length} stale entr${litter.length === 1 ? "y" : "ies"} inside skills dirs (${litter.join(", ")}) — loaded as if they were skills`);
+    if (extra.length) parts.push(`${extra.length} old skills-backup-* beside ~/.nirvana/skills — nrv update keeps only the latest`);
+    add("skills: backup litter", "WARN", parts.join("; ") + ". Safe to delete.");
+  } else {
+    add("skills: backup litter", "PASS", "no *.bak inside skills dirs, at most one skills-backup");
+  }
+}
+
 // SECTION 3: REGISTRIES — same path resolution as the indexer (scope-aware via
 // bun-helpers). The fixed path $HOME/.squads-registry.json was the LEGACY spot
 // from before the ~/.nirvana migration: the doctor said "missing" right after a

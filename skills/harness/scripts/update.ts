@@ -302,6 +302,22 @@ if (installer.status !== 0) {
   process.exit(1);
 }
 
+// Step 4.5: prune older backups — keep only the one THIS run just made.
+// Every update used to leave its backup behind forever: a machine that updated
+// eleven times carried eleven full copies of the skills tree (~50MB) that
+// nothing would ever read again. One backup is a rollback path; eleven are
+// litter. Pruning runs only AFTER the installer succeeded, so a failed update
+// never deletes the copies that could still save it.
+try {
+  const parent = path.dirname(skillsDir);
+  const keep = path.basename(backupDir);
+  for (const entry of fs.readdirSync(parent)) {
+    if (!entry.startsWith("skills-backup-") || entry === keep) continue;
+    fs.rmSync(path.join(parent, entry), { recursive: true, force: true });
+    console.log(c("dim", `  pruned old backup: ${entry}`));
+  }
+} catch { /* hygiene, never fatal */ }
+
 // Step 5: re-index registries
 console.log("");
 console.log(c("lime", "▶") + c("bold", " Re-indexing registries..."));

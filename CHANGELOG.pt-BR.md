@@ -6,6 +6,23 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Não lançado
+
+### Backups de update não se acumulam mais
+
+O `nrv update` fazia backup da árvore de skills a cada rodada e nunca apagava
+nada: uma máquina que atualizou onze vezes carregava onze cópias completas
+(~50MB) que nada jamais leria de novo. O update agora mantém exatamente um
+backup — o que acabou de fazer — e apaga os demais, só depois de o instalador
+ter concluído com sucesso, para que um update que falhe nunca perca a cópia que
+ainda poderia salvá-lo.
+
+O `nrv doctor` também ganhou um check de lixo: uma entrada `*.bak` dentro de um
+diretório de skills de runtime é carregada como se fosse uma skill (uma cópia
+pré-migração foi encontrada ao vivo, ao lado da verdadeira), e mais de um
+`skills-backup-*` significa que o prune não está rodando. Os dois casos agora
+viram aviso em vez de acumular em silêncio.
+
 ## 0.3.3 — 2026-08-10
 
 ### O trabalho despachado por um agente podia terminar em silêncio

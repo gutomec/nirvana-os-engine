@@ -13,6 +13,11 @@ name: smoke
 on:
   push:
     branches: [main, "feat/**"]
+  # PRs de fork: `pull_request` (nunca pull_request_target) — roda o código do
+  # contribuidor SEM secrets e sem token de escrita. É o que dá feedback de CI
+  # a quem contribui, e é seguro por construção.
+  pull_request:
+    branches: [main]
   workflow_dispatch: {}
 
 jobs:

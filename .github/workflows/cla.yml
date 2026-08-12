@@ -1,0 +1,38 @@
+# CLA gate — CLA Assistant Lite (contributor-assistant/github-action).
+#
+# Why the Lite action and not cla-assistant.io: no external app, no OAuth grant,
+# signatures live in this repository (branch cla-signatures) where they are
+# auditable like any other data. The SUL §4 requires a signed CLA before any
+# contribution is accepted; this is the enforcement.
+#
+# pull_request_target is REQUIRED by the action (it needs write access to
+# comment and to record signatures) and is safe here BY CONSTRUCTION: this
+# workflow never checks out or executes PR code — it only reads the PR event
+# and writes the signature file. Do not add an actions/checkout of the PR head.
+name: cla
+on:
+  issue_comment:
+    types: [created]
+  pull_request_target:
+    types: [opened, closed, synchronize]
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+  statuses: write
+
+jobs:
+  cla:
+    # Only on the public engine repo — the private monorepo takes no PRs.
+    if: github.repository == 'gutomec/nirvana-os-engine' && (github.event_name == 'pull_request_target' || contains(github.event.comment.body, 'I have read the CLA Document and I hereby sign the CLA') || contains(github.event.comment.body, 'recheck'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: contributor-assistant/github-action@v2.6.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          path-to-signatures: signatures/cla.json
+          path-to-document: https://github.com/gutomec/nirvana-os-engine/blob/main/CLA.md
+          branch: cla-signatures
+          allowlist: gutomec,dependabot[bot]
