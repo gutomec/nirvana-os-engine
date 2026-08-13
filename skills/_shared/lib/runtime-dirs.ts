@@ -29,6 +29,15 @@ export const RUNTIME_SKILL_DIRS = [
   join(homedir(), ".pi/agent/skills"),   // Pi Coding Agent (Agent Skills standard)
 ];
 
+/**
+ * The instruction files agent runtimes read from a project root. `nrv init`
+ * writes all three so every supported adapter finds one: AGENTS.md serves
+ * antigravity, codex, grok, kimi and pi; CLAUDE.md serves claude-code;
+ * GEMINI.md serves gemini-cli. Checking for any ONE of them is how you ask
+ * "was this project initialised?" without assuming a runtime.
+ */
+export const PROJECT_CONTRACT_FILES = ["AGENTS.md", "CLAUDE.md", "GEMINI.md"];
+
 /** The skill trees the engine ships, copies to ~/.nirvana/skills and links into every runtime dir. */
 export const SKILLS = ["harness", "businesses", "squads", "_shared", "nirvana-os"];
 

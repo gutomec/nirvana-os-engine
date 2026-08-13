@@ -26,7 +26,7 @@ import * as os from "node:os";
 import { execSync, spawnSync } from "node:child_process";
 import { paths as nrvPaths } from "../../_shared/lib/bun-helpers.ts";
 import { resolveScope } from "../../_shared/lib/scope.ts";
-import { RUNTIME_SKILL_DIRS } from "../../_shared/lib/runtime-dirs.ts";
+import { RUNTIME_SKILL_DIRS, PROJECT_CONTRACT_FILES } from "../../_shared/lib/runtime-dirs.ts";
 import { scanLibrary, authorsPacks, STRIP_HINT } from "../../_shared/lib/watermark-scan.ts";
 
 const ANSI = {
@@ -300,6 +300,29 @@ if (fs.existsSync(agentsSkillsDir)) {
     add("skills: backup litter", "WARN", parts.join("; ") + ". Safe to delete.");
   } else {
     add("skills: backup litter", "PASS", "no *.bak inside skills dirs, at most one skills-backup");
+  }
+}
+
+// Project contract. `nrv init` writes AGENTS.md + CLAUDE.md + GEMINI.md into a
+// project root; whichever one the runtime reads carries the invocation contract
+// "before touching the project, regardless of skill activation". A working
+// directory with none of them still orchestrates — the skill carries the
+// protocol, and since 2026-08-13 the dispatch instruction carries the build and
+// writing rules — but nothing tells the runtime to reach for the skill in the
+// first place. That is a real degradation and it should be visible, not
+// inferred. Checked only when the cwd looks like a working project, so running
+// the doctor from a home directory is not scolded.
+{
+  const cwd = process.cwd();
+  const looksLikeProject = [".git", "package.json", "outputs", ".nirvana"].some((m) => fs.existsSync(path.join(cwd, m)));
+  const found = PROJECT_CONTRACT_FILES.filter((f) => fs.existsSync(path.join(cwd, f)));
+  if (!looksLikeProject) {
+    add("project: contract", "PASS", "cwd is not a project — nothing to check");
+  } else if (found.length) {
+    add("project: contract", "PASS", `${found.join(", ")} present`);
+  } else {
+    add("project: contract", "WARN",
+      `no ${PROJECT_CONTRACT_FILES.join(" / ")} in ${cwd.replace(HOME, "~")} — the runtime has no instruction to invoke Nirvana, so a brief may be answered inline instead of dispatched. Fix: nrv init .`);
   }
 }
 
