@@ -6,6 +6,29 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Não lançado
+
+### Travar a sessão era o preço errado para receber os resultados
+
+Mais cedo hoje o protocolo passou a despachar de forma síncrona
+(`run_in_background: false`), porque um run real mostrou 13 dispatches devolvendo
+"Async agent launched successfully" e nenhum trabalho. Essa leitura estava meio
+certa: o recibo de fato não é o resultado, mas o resultado nunca esteve faltando.
+Ele chega na `<task-notification>` que o runtime entrega quando o alvo termina,
+com `<result>` e o relatório completo. Vinte e quatro delas chegaram naquele mesmo
+run e nenhuma foi aproveitada.
+
+Obrigar o dispatch síncrono devolvia o trabalho no resultado da ferramenta — ao
+custo de travar a sessão pela duração inteira. Uma stack de deploy de 45 minutos
+deixou o dono sem conseguir dizer uma palavra: uma pergunta digitada no meio ficou
+enfileirada, sem ser lida, atrás de um trabalho que não era sobre ela.
+
+Então o dispatch voltou a ser em background, que é o padrão e não trava. O que
+ficou foi a regra que sempre faltou: o recibo não é o resultado, o resultado vem
+da notificação, e uma notificação percebida e não tratada é a mesma falha que um
+recibo confundido com trabalho. Varrer o disco segue proibido, e dispatch segue
+sem timeout — alvo morto num prazo arbitrário é trabalho jogado fora.
+
 ## 0.3.7 — 2026-08-13
 
 ### Adotar o Nirvana num projeto que já existia não ligava nada

@@ -192,7 +192,7 @@ Activation is end-to-end: validate, install everything declared in `<squad>/depe
 **How it works.** When the user says "ative o squad X":
 
 1. Skill detects intent and reads `agents/squad-activator.md`.
-2. Spawns `Agent({subagent_type: "general-purpose", run_in_background: false, prompt: <persona> + <slug>})` — synchronous, because step 3 onwards reads what the persona reported back.
+2. Spawns `Agent({subagent_type: "general-purpose", prompt: <persona> + <slug>})`. Step 3 onwards reads what the persona reported — which arrives in the completion notification, not in the spawn result.
 3. Persona runs `bun scripts/activate-squad.ts status <slug>` first; if already active, asks reverify vs reactivate.
 4. Persona runs `bun scripts/activate-squad.ts activate <slug> --dry-run` to compute scope, then translates the JSON into a human summary listing CLIs, services to clone, custom nodes, model downloads (with sizes), env vars to check.
 5. Persona uses `AskUserQuestion` for any item >1 GB or sudo.
@@ -261,7 +261,7 @@ When creating a NEW squad, ALWAYS:
 7. Tasks have NO owner — workflows bind agent→task.
 8. Task acceptance criteria MUST be binary and verifiable.
 9. Include `<protocol-context>` block in prompts for long-running subagents.
-10. Spawn workflow agents **synchronously** (`run_in_background: false`). A workflow is a DAG of phases that consume each other's output; a background spawn hands back a launch receipt instead of the phase result, which leaves the next phase reading a file that may still be half-written. Phases with no dependency between them go in ONE message as several calls — that is what makes them concurrent — and phases that feed each other go one at a time, each dispatched with the previous result in hand.
+10. A workflow is a DAG of phases that consume each other's output, so a phase starts only once the phase it depends on has REPORTED — and a phase reports through the `<task-notification>` carrying its `<result>`, never through the spawn's tool result (that is a launch receipt). Dispatching the next phase on a receipt leaves it reading a file that may still be half-written. Phases with no dependency between them go in ONE message as several calls, which is what makes them concurrent; phases that feed each other go one at a time, each dispatched once the previous one's notification landed.
 10. Declare output schemas in `contracts:` for chained tasks.
 11. Capability with human-facing output: `humanize: true` (default). Technical capability (json/binary/file): `humanize: false`.
 12. Set memory GC policy if persistent memory is used.

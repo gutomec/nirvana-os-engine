@@ -6,6 +6,30 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### Blocking the session was the wrong price for getting results back
+
+Earlier today the protocol was changed to dispatch synchronously
+(`run_in_background: false`), because a real run showed 13 dispatches returning
+"Async agent launched successfully" and no work. That reading was half right: the
+receipt is indeed not the result, but the result was never missing. It arrives in
+the `<task-notification>` the runtime delivers when a target finishes, carrying
+`<result>` with the full report. Twenty-four of them had arrived in that same run
+and none had been acted on.
+
+Mandating synchronous dispatch did return the work in the tool result — by
+blocking the session for the entire run. A 45-minute deploy stack left the owner
+unable to say a word: a question typed meanwhile sat queued, unread, behind work
+it was not about.
+
+So dispatch is background again, which is the default and does not block. What
+changed for good is the rule that was always missing: the receipt is not the
+result, the result comes from the notification, and a notification noticed and
+not acted on is the same failure as a receipt mistaken for work. Filesystem
+polling stays banned, and a dispatch still gets no timeout — a target killed at
+an arbitrary deadline is work thrown away.
+
 ## 0.3.7 — 2026-08-13
 
 ### Adopting Nirvana in a project you already had did not wire it
