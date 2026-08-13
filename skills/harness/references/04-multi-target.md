@@ -85,6 +85,18 @@ is reduced to scanning the output directory to guess what finished. Measured on
 a real 13-target run: 13 dispatches, 13 launch receipts, zero results, and a
 9-hour wall clock spent largely on polling.
 
+## Gate each return, not the wave
+
+A wave returns its targets together only when they finish together, which they
+rarely do. Each result that lands is verified and gated immediately — on its own
+output, before the next dispatch — so a target that fails is re-dispatched while
+its siblings are still working, instead of after everyone is home.
+
+Waiting for the wave to complete before checking anything looks tidier and costs
+a full serial round on every failure. Measured on a real run: first return
+04:51:15, last return 05:05:27, both gated at 05:06 in one loop — fourteen
+minutes in which a rejected artifact would have gone unnoticed and unfixed.
+
 ## Wave boundaries are checkpoints
 
 A wave boundary is the only moment in the run where nothing is in flight: every

@@ -256,7 +256,13 @@ Memory is scoped, because a lesson is only as portable as the assumptions under 
 **Promotion is proposed, not taken.** When a lesson genuinely holds beyond this project — true for any project this business runs, carrying no client-specific or one-off assumption — list it in the final report as a **promotion candidate**, with the level you'd promote it to and the reason it generalizes. The human promotes it (`*business memory edit` for business level). You never promote it yourself: judging whether your own lesson generalizes is exactly the judgment a model is worst at, and a wrong promotion is paid for silently by every later project.
 
 ### Phase 6 — Quality gate
-**MANDATORY.** Before declaring done, run TWO checks in order:
+**MANDATORY, and it runs the moment a target returns — not at the end of the run.**
+
+The trigger is a target handing back its work, and the gate runs on *that* target's output before you dispatch anything else. Batching the checks until every target is home is the failure this timing exists to prevent: measured on a real run, one target returned at 04:51:15 and its siblings at 05:05:27, so the first target's output sat **fourteen minutes unverified** and both were finally gated in a single loop at 05:06. The wasted wall clock is the small part. The real cost is that a failure discovered late can no longer be fixed concurrently — a revision that could have run alongside its still-working siblings becomes another serial round.
+
+So: a business finishes, the gate runs on what it produced, and only then does the next dispatch go out. In a wave, gate each return as it lands; you do not wait for the slowest sibling to start checking the fastest.
+
+Run TWO checks in order:
 
 **1. Deliverable verification** — disk-truth:
 ```bash
