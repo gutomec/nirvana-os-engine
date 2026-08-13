@@ -6,6 +6,35 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Não lançado
+
+### O trabalho despachado nunca voltava
+
+Os exemplos de dispatch do protocolo nunca passavam `run_in_background: false`, e
+a ferramenta de subagente usa background por padrão. Então todo dispatch
+devolvia "Async agent launched successfully" — um recibo de lançamento — e o
+orquestrador, que o protocolo manda esperar o retorno, não tinha o que esperar.
+
+Medido num run real de 13 alvos: 13 dispatches, 13 recibos, zero resultados. O
+que o orquestrador fez no lugar foi vasculhar o diretório de saída com `find` e
+`ls` para adivinhar quais alvos tinham terminado, cutucá-los com mensagens de
+acompanhamento, rodar o quality gate nos arquivos que por acaso notou, e fechar
+runs do ledger com base numa listagem de diretório. Nove horas de relógio, boa
+parte delas em varredura.
+
+Tudo o que vem depois de um dispatch presumia um resultado que nunca chegava: uma
+empresa lê o handoff para escolher o próximo employee, uma fase de workflow
+consome a saída da fase anterior, e o gate deveria julgar o que o alvo relatou.
+Os três estavam lendo o chão.
+
+O dispatch agora é síncrono nos três pilares, o paralelismo passou a ser definido
+pelo que ele é de fato (uma mensagem com várias chamadas, que o runtime roda
+concorrentemente e devolve juntas), o background está nomeado como a exceção que
+custa o retorno, e varrer o disco para inferir conclusão está proibido nas
+palavras que a falha produziu. O `check:dispatch` reprova o build em qualquer
+exemplo de dispatch que dispare e esqueça — o gate achou mais três no adapter de
+runtime que esta entrada de changelog teria deixado passar.
+
 ## 0.3.4 — 2026-08-12
 
 ### O engine agora é desenvolvido em aberto

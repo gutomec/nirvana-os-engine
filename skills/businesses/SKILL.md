@@ -355,8 +355,8 @@ Employees that produce only technical artifacts (JSON, schemas, code) ignore the
 2. Run `validateBusinessIntegrity` (BP7 antagonist, exactly 1 brief_intake, no cycles, etc.).
 3. Resolve the `brief_intake` employee (typically the CEO).
 4. Create `${PROJECTS_OUTPUT_DIR}/<project-id>/businesses/<biz-slug>/` with `brief.md`, `audit.jsonl`, empty dirs.
-5. Spawn AgentTool with `subagent_type` = brief_intake employee. The prompt includes brief + culture + permanent memory (read-only) + isolation guard rules. This is **in-process** (the native Agent tool / runtime subagent), not a child `claude -p`; the `--exec` headless path (`runHeadless`) is reserved for the standalone dispatch script and sub-process-only runtimes (legacy gemini-cli, hermes).
-6. Wait for the handoff_artifact JSON via tool result.
+5. Spawn AgentTool with `subagent_type` = brief_intake employee, **`run_in_background: false`**. The prompt includes brief + culture + permanent memory (read-only) + isolation guard rules. This is **in-process** (the native Agent tool / runtime subagent), not a child `claude -p`; the `--exec` headless path (`runHeadless`) is reserved for the standalone dispatch script and sub-process-only runtimes (legacy gemini-cli, hermes).
+6. Wait for the handoff_artifact JSON via tool result. This is why step 5 is synchronous and not a matter of taste: a background spawn returns a launch receipt, so there is no handoff to read, no `self_score` to validate, and no `business_extensions.type` to decide step 7 on — the org chart stops being a chain and becomes a set of processes nobody is reading.
 7. If `business_extensions.type == "delegation"` or `"mention"`, spawn the next employee. Repeat until the CEO returns `next_action: deliver_to_user`.
 8. Emit `audit_event: invocation_end` with cost summary.
 9. Return the deliverable to the user.
