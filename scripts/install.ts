@@ -1003,15 +1003,41 @@ function checkOnly(): void {
   process.exit(allReady ? 0 : 1);
 }
 
+/**
+ * The last thing a new user reads, so it says the one thing that decides whether
+ * they experience Nirvana at all.
+ *
+ * `nrv init` writes the agent contract (AGENTS.md + CLAUDE.md + GEMINI.md, one
+ * per runtime family) into the project root. That contract is what tells the
+ * runtime to invoke the orchestrator. Without it the skill has to activate by
+ * description match alone, and when it does not, the brief is answered inline:
+ * no dispatch, no quality gate, no audit trail — a normal coding session
+ * wearing the system's name. Users who skip init do not see an error; they see
+ * a worse product and blame it.
+ *
+ * `nrv glance` is deliberately absent: the cockpit is not finished, and the
+ * first screen a new user sees should not be the weakest one.
+ */
 function summary(): void {
   console.log();
   console.log("Done.");
   console.log();
-  console.log("Next steps:");
-  console.log("  nrv install --check     # verify all hooks are wired");
-  console.log("  nrv validate            # smoke-test registries");
-  console.log("  nrv glance              # open the cockpit");
-  console.log("  nrv init ~/my-project   # bootstrap a new project");
+  console.log("\x1b[1mStart every project with nrv init — this is the important part.\x1b[0m");
+  console.log();
+  console.log("  nrv init ~/my-project     # creates the dir + the agent contract");
+  console.log("  cd ~/my-project           # then just talk to your AI CLI");
+  console.log();
+  console.log("  Already have a folder? Run it there:  cd ~/existing && nrv init .");
+  console.log();
+  console.log("Why it matters: nrv init writes the contract (AGENTS.md / CLAUDE.md /");
+  console.log("GEMINI.md) that tells your AI CLI to orchestrate through Nirvana-OS.");
+  console.log("WITHOUT it, a brief is answered inline by a single agent — no dispatch");
+  console.log("to your businesses and squads, no quality gate, no audit trail. It still");
+  console.log("works; it just is not Nirvana-OS. Check any project with: nrv doctor");
+  console.log();
+  console.log("Verify this install:");
+  console.log("  nrv install --check       # hooks wired");
+  console.log("  nrv validate              # registries smoke-test");
 }
 
 async function main(): Promise<void> {
