@@ -8,6 +8,29 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Adopting Nirvana in a project you already had did not wire it
+
+`nrv init` writes the contract as AGENTS.md + CLAUDE.md + GEMINI.md so every
+runtime family finds one. For a file that already existed it kept the user's
+rules and appended only the *writing* contract — which left the most common case
+of all without the *invocation* contract, the part that tells a runtime to
+orchestrate. AGENTS.md received it, and Claude Code does not read AGENTS.md. A
+user with a pre-existing CLAUDE.md ran init, saw "ok", and went on getting inline
+answers: no dispatch, no gate, no audit.
+
+Both blocks are now appended under their own markers, with the user's rules
+untouched above them and a second run changing nothing.
+
+### The orchestrator repairs the project instead of reporting it
+
+Nobody drives this system by typing `nrv`. People talk to Claude Code, Codex,
+agy or Hermes, and that CLI runs the commands. So an uninitialised project is not
+a user error to report — it is a one-line repair the orchestrator performs,
+because the orchestrator is the one holding the shell. Phase 0 is now a
+preflight: no contract file present, run `nrv init .`, say so in a line, carry
+on. It asks first only when the directory is somebody else's repository, where
+three new files would land in their diff.
+
 ### The install taught the wrong first step
 
 The engine installer ended with a flat list of four commands, `nrv init` last and

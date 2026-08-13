@@ -1,3 +1,4 @@
+<!-- nirvana-os:invocation-contract:v1 -->
 # Project guidelines (universal — Claude Code · Gemini-CLI · Codex · Cursor · Antigravity · any agent runtime)
 
 This file is the contract every agent must read **before doing anything**.
