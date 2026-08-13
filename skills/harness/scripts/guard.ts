@@ -9,9 +9,17 @@
 // persists it back. Exits 7 when it orders a stop — the prose is instructed to
 // stop and escalate to the human.
 //
+// The same reasoning covers the maestro's OWN context window. Phase 0 has it
+// declare an operating budget, and until now nothing ever read that number
+// back: the orchestrator of a 13-target run accumulated dispatch instructions,
+// tool results and reasoning until every message re-read a quarter-million
+// tokens of context. `nrv guard context` closes that loop the only way prose
+// can be closed — a deterministic step the prose is told to run.
+//
 // Usage:
-//   nrv guard tick --project <dir> --action <sig> [--progress <marker>]
-// Exit: 0 continue · 7 STOP (ceiling hit) · 2 invalid args
+//   nrv guard tick    --project <dir> --action <sig> [--progress <marker>]
+//   nrv guard context --project <dir> --used <tokens> [--window <tokens>]
+// Exit: 0 continue · 7 STOP (loop ceiling) · 8 ROLL (context budget) · 2 invalid args
 
 import { createRequire } from "node:module";
 const requireCjs = createRequire(import.meta.url);
@@ -27,9 +35,61 @@ function arg(name: string, fallback?: string): string | undefined {
 }
 
 const sub = process.argv[2];
-if (sub !== "tick") {
-  console.error("uso: nrv guard tick --project <dir> --action <sig> [--progress <marker>]");
+if (sub !== "tick" && sub !== "context") {
+  console.error("uso: nrv guard tick    --project <dir> --action <sig> [--progress <marker>]");
+  console.error("     nrv guard context --project <dir> --used <tokens> [--window <tokens>]");
   process.exit(2);
+}
+
+/** Fraction of the window at which the orchestrator must checkpoint and continue
+ *  in a fresh session. 0.7 leaves room to write the HANDOFF and hand over —
+ *  a rollover decided at 95% is a rollover that runs out of room mid-write. */
+const ROLL_AT = Number(process.env.NIRVANA_CONTEXT_ROLL_AT || 0.7);
+
+if (sub === "context") {
+  const projectDir = arg("--project") || process.cwd();
+  const used = Number(arg("--used") || NaN);
+  const window = Number(arg("--window") || process.env.NIRVANA_CONTEXT_WINDOW || 200_000);
+  if (!Number.isFinite(used) || used < 0 || !Number.isFinite(window) || window <= 0) {
+    console.error("uso: nrv guard context --project <dir> --used <tokens> [--window <tokens>]");
+    process.exit(2);
+  }
+  const ratio = used / window;
+  const budget = Math.floor(window * ROLL_AT);
+
+  // Persisted so a resumed session knows it already rolled, and so the decision
+  // is auditable after the fact instead of being a claim in a chat message.
+  try {
+    const prev = (() => { try { return readHandoff(projectDir)?.context_guard_state || {}; } catch { return {}; } })();
+    writeHandoff(projectDir, {
+      context_guard_state: {
+        window, budget, used, ratio: Number(ratio.toFixed(3)),
+        rollovers: (prev.rollovers || 0) + (ratio >= ROLL_AT ? 1 : 0),
+        checked_at: new Date().toISOString(),
+      },
+    });
+  } catch (e) {
+    console.error(`  ⚠ guard: não consegui persistir context_guard_state: ${(e as Error).message}`);
+  }
+
+  if (ratio >= ROLL_AT) {
+    try {
+      const audit = requireCjs("../lib/audit.js");
+      audit.emit("context_budget_warning", {
+        used_tokens: used, window_tokens: window, budget_tokens: budget,
+        ratio: Number(ratio.toFixed(3)), action: "rollover_required",
+      }, { cwd: projectDir });
+    } catch { /* audit down must never block the rollover advice */ }
+    console.error(
+      `🔄 CONTEXT GUARD: ${used.toLocaleString()} / ${window.toLocaleString()} tokens ` +
+      `(${(ratio * 100).toFixed(0)}%, teto ${budget.toLocaleString()}).\n` +
+      `   Escreva o HANDOFF e continue numa sessão nova — não siga acumulando.\n` +
+      `   Retomar com: nrv resume ${projectDir}`,
+    );
+    process.exit(8);
+  }
+  console.log(`context guard ok — ${used.toLocaleString()}/${window.toLocaleString()} (${(ratio * 100).toFixed(0)}%, rola em ${(ROLL_AT * 100).toFixed(0)}%)`);
+  process.exit(0);
 }
 
 const projectDir = arg("--project") || process.cwd();
