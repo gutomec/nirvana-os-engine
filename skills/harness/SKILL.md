@@ -136,6 +136,14 @@ operating_budget: <0.8 × N>   # 80% of window — leaves 20% for response, reas
 
 Apply the budget liberally — **prefer depth in discovery to token economy**. Cheap discovery picks the wrong target and costs 5–10× more in revisions. If you can't determine your window, default to 200000 and flag it.
 
+**The budget is a rule, not a note.** It used to be written down and never read again, which is how a 13-target run reached 275k tokens of context: every message re-read the whole accumulation, and the cost of the run grew with the square of its length, not with its output. So check it at the points where context actually jumps — after each dispatch wave, after a long tool result, before starting a new phase:
+
+```bash
+nrv guard context --project <projectRoot> --used <your current context tokens> --window <N>
+```
+
+Exit `0` continue · **exit `8` roll over now**: write the HANDOFF, tell the user where the run stands, and continue in a fresh session (`nrv resume <projectRoot>`). Rolling at 70% is deliberate — a rollover decided at 95% runs out of room while writing the handoff. This is the orchestrator's own version of the rollover Phase 5 already demands of dispatched entities; you are not exempt from it because you are the maestro.
+
 ### Phase 1 — Understand the brief
 Read the brief verbatim, save it (under `${HARNESS_LOGS_DIR}/$(date +%Y-%m-%d)/briefs/<trace_id>.txt`), emit `brief_received`. Then **think about the subject** like an experienced creative director: what the user actually wants to make, who it's for, why.
 
@@ -215,6 +223,8 @@ On claude-code, codex, and antigravity you dispatch through the runtime's **nati
 **Multi-target (2+ targets) — load `references/04-multi-target.md` and follow it.** This is the normal path for more than one target, not an optional extra: it is where the dependency analysis above becomes an artifact instead of a thought. It gives you the shared project workspace, the `manifest.json` DAG (`phases[]` with `depends_on` / `consumed_by` / `outputs_path`, and `parallel_waves[]` — the groups that may run together), and one `DISPATCH-INSTRUCTION.md` per target carrying its scope, its upstream paths, and who will consume its output.
 
 Writing the DAG down is what makes the order auditable. A wave you can point at is a decision; a wave you kept in your head is a guess the user can't check.
+
+**Checkpoint between waves.** A wave boundary is the one moment in a multi-target run where nothing is in flight: every target of the wave has returned and the next has not started. That is the cheapest possible place to shed context, and the only place where a rollover costs nothing in lost state — the `manifest.json` DAG and each `_SUMMARY.md` already hold everything the next session needs. Run `nrv guard context` there (Phase 0), and when it exits `8`, roll before dispatching the next wave rather than after.
 
 Audit events: `target_plan_committed`, `x_enriched_brief_written`, `dispatch_business`/`dispatch_squad`/`dispatch_agent_x`, `mind_clone_injected`, `human_notification_required` (only if truly blocked).
 
