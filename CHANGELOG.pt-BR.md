@@ -8,6 +8,27 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Um 5xx matava runs que o cabeçalho prometia retentar
+
+O `quota-detector` documenta desde sempre que um 5xx classifica como
+`transient` — recuperável, retenta o mesmo runtime. Nenhuma regra jamais
+implementou isso. Todo 5xx caía em `error`, que a cascata trata como fatal: emite
+`runtime_error` e desiste, enquanto `transient` dorme e retenta.
+
+Achado por um incidente real: um **529 Overloaded** da Anthropic matou um
+dispatch que teria funcionado segundos depois. O orquestrador agêntico se
+recuperou raciocinando sobre o erro em prosa — conferiu que nada tinha sido
+escrito, fechou o run como `failed` com o motivo, e redespachou do zero. O
+caminho scriptado não tinha com o que raciocinar.
+
+Agora 5xx classifica como transitório em todo runtime, e de forma conservadora:
+um "529" solto pode ser número de linha, então código de status só conta perto de
+contexto de status, enquanto a palavra "overloaded" é aceita sozinha porque
+nenhum provedor a usa para outra coisa. As tabelas por runtime mantêm a primeira
+palavra — um 503 que um provedor use para dizer "seu plano acabou" continua
+`quota_exhausted`, porque isso pede cooldown e handoff, não retentativa contra a
+mesma parede.
+
 ### Uma skill exclusiva do Hermes era oferecida a todo runtime
 
 Instalar o OpenClaw e rodar `openclaw skills list` mostrou o `nirvana-os-hermes`
