@@ -6,6 +6,21 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Não lançado
+
+### O gate esperava o irmão mais lento
+
+A Phase 6 começava com "antes de declarar pronto, rode DUAS checagens". Para um
+alvo só, isso lê bem; para uma onda, significa que nada é conferido até tudo
+voltar. Medido num run real: um alvo voltou às 04:51:15, o irmão às 05:05:27, e
+os dois foram julgados num laço só às 05:06 — a saída do primeiro ficou quatorze
+minutos sem conferência.
+
+O relógio é a parte pequena. Uma falha descoberta tarde não pode mais ser
+corrigida em paralelo: uma revisão que poderia ter rodado junto com os irmãos
+ainda trabalhando vira mais uma rodada em série. O gate agora está ancorado no
+alvo devolvendo o trabalho, por alvo, antes do próximo dispatch sair.
+
 ## 0.3.5 — 2026-08-13
 
 ### O trabalho despachado nunca voltava
