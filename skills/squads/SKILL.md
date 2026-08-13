@@ -4,6 +4,12 @@ description: "Squad lifecycle skill. Use when asked to create, validate, inspect
 compatibility: "Requires the Nirvana-OS engine: the `nrv` CLI and Bun on PATH. Install: npx @nirvana-os/cli. Runtime-agnostic — no dependency on any specific agent CLI. Squad activation may install large dependencies and needs an interactive consent primitive."
 tools: [Read, Write, Edit, Glob, Grep, Bash]
 maxTurns: 50
+metadata:
+  openclaw:
+    emoji: "🛠️"
+    requires:
+      # Todo script do Nirvana é Bun-nativo: sem bun a skill aparece e falha.
+      bins: ["bun"]
 ---
 
 # Squad Protocol Engine v5.0.0

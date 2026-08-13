@@ -8,6 +8,28 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### OpenClaw
+
+Nirvana now installs into `~/.agents/skills`, the personal skills root OpenClaw
+reads, and the three skills carry a `metadata.openclaw` gate requiring `bun` —
+without it the skill would appear on a machine that cannot run a single one of
+its scripts.
+
+Two facts about that runtime change how the system behaves there, and the
+adapter (`_shared/adapters/openclaw.md`) documents both. It has **no in-process
+subagent**: work is delegated with `bash background:true` to a child CLI, tracked
+with `process poll`, and the child announces its own completion. That is exactly
+what `nrv dispatch --exec` already does, so the scripted path is the dispatch
+there rather than a fallback. And it reads **no project instruction file** — no
+CLAUDE.md or AGENTS.md equivalent — so activation rests entirely on the skill's
+description, and the run-ledger supervisor is what covers a worker that dies
+before announcing anything.
+
+The skill's compatibility line used to claim that a runtime whose spawn is
+fire-and-forget "cannot run the cascade". That stopped being true when dispatch
+became notification-collected, and it was never true for a runtime that offers a
+pollable handle instead.
+
 ### Three things about notifications, learned by getting them wrong
 
 A live test dispatch notified with a garbled `<result>` and nothing on disk. Read
