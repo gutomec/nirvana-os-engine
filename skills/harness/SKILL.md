@@ -1,9 +1,15 @@
 ---
 name: harness
 description: "Nirvana-OS orchestrator: routes a brief across the user's own library of businesses, squads and mind-clones, dispatches the best combination, and gates the result before delivery. Use when the user asks for a concrete artifact (book, video, report, design, code, campaign, any deliverable) in a machine where Nirvana-OS is installed, or whenever they invoke the system by name: 'use o nirvana-os', 'via nirvana', 'pelo nirvana', 'orquestre via nirvana', 'manda o nirvana', 'use minhas empresas/squads', 'o que o nirvana pode fazer'. Agentic by default; a `fast` BM25 mode gives zero-token deterministic routing."
-compatibility: "Requires the Nirvana-OS engine: the `nrv` CLI and Bun on PATH, plus a content library under ~/businesses and ~/squads. Install: npx @nirvana-os/cli. Runtime-agnostic — no dependency on any specific agent CLI. Dispatch needs a subagent primitive that RETURNS its result; runtimes whose spawn is fire-and-forget cannot run the cascade."
+compatibility: "Requires the Nirvana-OS engine: the `nrv` CLI and Bun on PATH, plus a content library under ~/businesses and ~/squads. Install: npx @nirvana-os/cli. Runtime-agnostic — no dependency on any specific agent CLI. Dispatch needs a way to learn that a target finished: a completion notification (claude-code, codex, antigravity), a pollable process handle (openclaw), or the run-ledger supervisor when the runtime offers neither."
 tools: [Read, Write, Edit, Glob, Grep, Bash, Agent, TaskCreate, AskUserQuestion, WebSearch, WebFetch]
 maxTurns: 200
+metadata:
+  openclaw:
+    emoji: "🎼"
+    requires:
+      # Todo script do Nirvana é Bun-nativo: sem bun a skill aparece e falha.
+      bins: ["bun"]
 ---
 
 # Harness Protocol Engine v2.0 — Agentic Mode
@@ -267,6 +273,8 @@ Three things about notifications that cost a wrong conclusion to learn:
 **`<result>` is a report, not proof.** It can be garbled by the harness when the target's output happens to look like instructions, truncated, or simply optimistic. What proves delivery is Phase 6 reading the disk: `verify-deliverable` plus the gate on the artifact that is actually there. A `<result>` saying "done" with nothing on disk is a run that failed, whatever it claims — and the reverse happens too, so check before you believe either.
 
 **An honest failure is the system working.** A target that reports it was blocked — a sandbox policy, a missing credential, a hard dependency — has done its job by telling you. Record it, close the run `failed` with the reason, and surface it. Do not re-dispatch the same brief hoping for a different outcome; a blocker that is real stays real, and the retry burns budget to arrive at the same wall.
+
+**On OpenClaw there is no in-process subagent, so the scripted path IS the dispatch.** It has no `Agent(...)`: work is delegated with `bash background:true` to a child CLI, tracked with `process poll`, and the child announces its own completion. That is exactly what `nrv dispatch --exec` does, so use it — the prep step, the ledger, the gate and the audit are unchanged. Details and the exact command shapes: `../_shared/adapters/openclaw.md`. The same holds for any runtime whose only delegation primitive is a shell.
 
 On claude-code, codex, and antigravity you dispatch through the runtime's **native in-process subagent** (the claude `Agent` tool, codex `[agents]`, antigravity dynamic subagents) — **not** `nrv dispatch --exec`, **not** a child `claude -p`. The in-process path runs inside your session with no 20-min wall-clock kill, so long deliverables don't get truncated. Reserve `--exec` / `runHeadless` for standalone headless scripted runs and sub-process-only runtimes (legacy gemini-cli, hermes).
 

@@ -27,6 +27,15 @@ export const RUNTIME_SKILL_DIRS = [
   join(homedir(), ".gemini/skills"),
   join(homedir(), ".antigravity/skills"),
   join(homedir(), ".pi/agent/skills"),   // Pi Coding Agent (Agent Skills standard)
+  // OpenClaw reads ~/.agents/skills as its "personal agent skills" source. It
+  // is a real runtime dir, not a stray: linking the engine there is the only
+  // way an OpenClaw session ever sees the harness. Note that a SYMLINK of this
+  // whole directory to another runtime's tree is a different thing and a bad
+  // one — it makes every skill reachable twice and runtimes that honour both
+  // paths log "Skill conflict detected" (see doctor: duplicate exposure).
+  // Per-skill links into ~/.nirvana/skills, like every other entry here, do not
+  // have that problem.
+  join(homedir(), ".agents/skills"),     // OpenClaw (personal agent skills)
 ];
 
 /**
