@@ -31,6 +31,24 @@ preflight: no contract file present, run `nrv init .`, say so in a line, carry
 on. It asks first only when the directory is somebody else's repository, where
 three new files would land in their diff.
 
+### The heartbeat test flaked because it asserted the opposite of the design
+
+`driver — heartbeat sidecar` failed roughly one CI run in three, on macOS and
+Windows both, and blocked three pull requests in a row. It checked that the last
+heartbeat looked stale at the moment the test read it — but the sidecar renews
+the lease on ANY new output, and the child's final result JSON is new output.
+Whether the heartbeat looked stale depended on where a 250ms poll happened to
+land relative to that write.
+
+Renewing on the final write is correct behaviour, so the assertion was wrong,
+not the timing. An earlier attempt to fix it by exiting the fake child sooner
+only narrowed the window: the bytes are already in the capture file by then.
+
+The property it wanted — the sidecar stopped renewing during the stall — is
+proven outright by the `x_ledger_stall_observed` event, emitted once with the
+measured gap. Against 2.2s of silence and a 1.2s budget the sidecar gets about
+eight polls to notice it. Nothing left to race.
+
 ### The install taught the wrong first step
 
 The engine installer ended with a flat list of four commands, `nrv init` last and

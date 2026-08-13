@@ -32,11 +32,11 @@ writeFakeCli(FAKE_BIN, "claude", `
   console.error("tick 3");
   await Bun.sleep(2200);
   console.log(JSON.stringify({ type: "result", result: "done", session_id: "fake-session-123", total_cost_usd: 0.01 }));
-  // Exit in the same breath as the write. The final result IS activity, so any
-  // sidecar tick landing between the write and process teardown renews the lease
-  // and the "stopped renewing during the stall" assertion sees a fresh heartbeat.
-  // The bash original exited immediately after printf; Bun's teardown widened
-  // that window enough to make the race show up roughly one run in three.
+  // Exit immediately after the write, as the bash original did — it keeps the
+  // fake's shape tight. It is no longer load-bearing: the assertion that used to
+  // race against this teardown was measuring the wrong thing and is gone (see
+  // the stall check below). Renewing on the final write is correct behaviour, so
+  // no amount of exiting sooner would have fixed it.
   process.exit(0);
 `);
 const ORIGINAL_PATH = process.env.PATH;
@@ -100,13 +100,27 @@ describe("driver — heartbeat sidecar", () => {
     // Renewed at least once during the active phase (stderr ticks).
     expect(Date.parse(after.heartbeat_at!)).toBeGreaterThan(t0);
     expect(Date.parse(after.lease_expires_at!)).toBeGreaterThan(leaseBefore);
-    // Stopped renewing during the stall: the last heartbeat is old relative to
-    // run end (the quiet stretch was 2.2s with a 1.2s stall budget).
-    expect(Date.now() - Date.parse(after.heartbeat_at!)).toBeGreaterThanOrEqual(1200);
-    // The stall itself was observed and recorded.
+    // "Stopped renewing during the stall" is asserted through the audit event,
+    // not through the freshness of heartbeat_at at the moment the test looks.
+    //
+    // A previous version checked `Date.now() - heartbeat_at >= 1200` and flaked
+    // on CI roughly one run in three (macOS and Windows both). It was asserting
+    // something the design contradicts: the sidecar renews on ANY new output,
+    // and the child's final result JSON is new output. Whether the heartbeat
+    // looks stale depends on where the 250ms poll happens to land relative to
+    // that last write — and killing the child sooner does not help, because the
+    // bytes are already in the capture file by then. Renewing on the final write
+    // is correct behaviour, so the assertion was wrong, not the timing.
+    //
+    // The event proves the property outright: the sidecar emits it once
+    // (`stallRecorded` guard) with the measured gap, and 2.2s of silence against
+    // a 1.2s budget gives it ~8 polls to notice. Nothing to race.
     const stallEvents = readAuditEvents().filter(e => e.event === "x_ledger_stall_observed" && e.run_id === row.run_id);
     expect(stallEvents.length).toBeGreaterThanOrEqual(1);
     expect(Number(stallEvents[0].gap_ms)).toBeGreaterThanOrEqual(1200);
+    // And it recorded WHICH heartbeat went stale, so the link between the stall
+    // and the lease is still covered.
+    expect(typeof stallEvents[0].heartbeat_at).toBe("string");
 
     // No dangling sidecar (the managed equivalent of "all timers cleared"):
     // give the SIGTERM/sentinel a moment, then look for the run id in ps.
