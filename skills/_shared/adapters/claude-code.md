@@ -58,7 +58,7 @@
 | `is_brief_intake: true` | Skill activator | Skill que dispara primeiro quando harness recebe brief |
 | `is_antagonist: true` | Subagent invocado em loop de revisão | Spawn paralelo de subagent crítico |
 | Handoff artifact | Tool result | JSON estruturado retornado por subagent (validável contra `HandoffArtifactSchema`) |
-| Mention `@employee` | Convenção em prompt + memory | Adapter resolve `@x` para `Agent({ subagent_type: "x", run_in_background: false, ...})` |
+| Mention `@employee` | Convenção em prompt + memory | Adapter resolve `@x` para `Agent({ subagent_type: "x", ...})` |
 | Ticket | Arquivo persistido + memory ref | `<project>/.tickets/<TICKET_ID>.json` + entrada em memory |
 | Escalation trigger | Hook + harness notification | `PostToolUse` checa condição → emite `HarnessNotification` |
 | Permanent memory | `~/.claude/memory/*.md` + `~/.claude/CLAUDE.md` | Files referenciados via auto-load |
@@ -186,12 +186,13 @@ Agent({
   description: "Offer review",
   prompt: "Review this offer for clarity and pricing...",
   // optional:
-  isolation: "worktree", // git worktree para mudanças isoladas
-  run_in_background: false
+  isolation: "worktree" // git worktree para mudanças isoladas
 })
 ```
 
-O `Agent` tool é o **caminho PRIMÁRIO de dispatch**: roda in-process dentro da sessão do maestro, sem child `claude -p` e sem hard kill de 20 min de wall-clock — deliverables longos não são truncados. O caminho headless `claude -p` (`host-agent-driver.runClaudeCode`, flags `--output-format json` / `--allowedTools` / `--permission-mode` / `--add-dir` / `--max-budget-usd` / `--resume`) é o FALLBACK, usado só por scripts standalone sem contexto LLM próprio (o `dispatch.ts`).
+O `Agent` tool é o **caminho PRIMÁRIO de dispatch**: roda in-process dentro da sessão do maestro, sem child `claude -p` e sem hard kill de 20 min de wall-clock — deliverables longos não são truncados.
+
+O spawn devolve na hora um recibo (`"Async agent launched successfully"`) e a sessão segue livre. O trabalho chega depois, numa `<task-notification>` com `<result>` — é ali que está o relatório do subagente. Não passe `run_in_background: false`: bloqueia a sessão inteira pela duração do subagente (uma stack de deploy leva 45 min) e não traz nada que a notificação já não traga. O caminho headless `claude -p` (`host-agent-driver.runClaudeCode`, flags `--output-format json` / `--allowedTools` / `--permission-mode` / `--add-dir` / `--max-budget-usd` / `--resume`) é o FALLBACK, usado só por scripts standalone sem contexto LLM próprio (o `dispatch.ts`).
 
 **Para businesses (employees):** o adapter mapeia 1:1 — cada employee vira um subagent_type. CEO da business é o agent_type que tem `is_brief_intake: true`.
 
@@ -263,7 +264,7 @@ Harness routing:
   → AMBIGUOUS (precisa confirmar via AskUserQuestion ou abre business)
   → Skill({ skill: "nexus-council" })
   → Business CEO (is_brief_intake) recebe brief
-  → CEO delega via Agent({ subagent_type: "marketing-lead", run_in_background: false, ... })
+  → CEO delega via Agent({ subagent_type: "marketing-lead", ... })
   → marketing-lead emite handoff artifact com self_score
   → CEO consolida, retorna
 ```
@@ -284,7 +285,7 @@ Employee A produz handoff:
   }
 }
 
-Adapter detecta `@alex-hormozi` → Agent({ subagent_type: "alex-hormozi", run_in_background: false, prompt: "...marketing-lead pediu para revisar pricing..." })
+Adapter detecta `@alex-hormozi` → Agent({ subagent_type: "alex-hormozi", prompt: "...marketing-lead pediu para revisar pricing..." })
 ```
 
 ### Exemplo 4 — Harness escalation (zero-human bridge)

@@ -1,26 +1,30 @@
 #!/usr/bin/env bun
 /**
- * check-dispatch-contract.ts — every dispatch example in the agentic protocol
- * must spawn its subagent SYNCHRONOUSLY.
+ * check-dispatch-contract.ts — the protocol must teach how a dispatch comes home.
  *
- * Why this gate exists. The subagent tool defaults to background. A background
- * dispatch returns "Async agent launched successfully" — a launch receipt, not
- * the target's work. Every instruction downstream of a dispatch assumes a real
- * result: the harness waits for the return (Phase 5), a business reads the
- * handoff artifact to pick the next employee (businesses SKILL.md step 6), a
- * workflow phase consumes the previous phase's output. None of that survives a
- * launch receipt.
+ * A spawn returns "Async agent launched successfully" immediately: a launch
+ * receipt. The work arrives later, in a `<task-notification>` carrying
+ * `<result>` with the target's full report. Two things, two moments. Every
+ * failure this gate guards against is a confusion between them.
  *
- * The protocol shipped dispatch examples without the flag, and the model did
- * exactly what the examples showed. Measured on a real 13-target run: 13
- * dispatches, 13 launch receipts, zero results — and an orchestrator reduced to
- * scanning the filesystem to guess what had finished.
+ * What went wrong before, in order, because the second mistake was mine:
  *
- * Prose cannot enforce itself, so this gate reads the protocol the way the model
- * does and fails the build on any `Agent({...})` that would fire and forget.
+ *  1. The protocol never said the receipt was not the result. A real 13-target
+ *     run took 13 receipts as results, never waited for a notification, and
+ *     spent nine hours scanning `find`/`ls` to guess what had finished.
+ *  2. I then mandated `run_in_background: false` everywhere. That does return
+ *     the work in the tool result — by blocking the session for the entire run.
+ *     A 45-minute deploy stack left the owner unable to say a word: messages
+ *     queued unread behind work they were not about. Correct results, wrong
+ *     trade, and it discarded a mechanism that already worked.
+ *
+ * So the contract is: dispatch in the background, stay available, collect on
+ * the notification. This gate fails the build on either mistake — an example
+ * that forces blocking, or a protocol that stops explaining where the result
+ * actually comes from.
  *
  * Usage: bun scripts/check-dispatch-contract.ts
- * Exit: 0 clean · 1 a dispatch example is missing the flag
+ * Exit: 0 clean · 1 a rule is missing or an example blocks the session
  */
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -28,7 +32,6 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-/** The files the orchestrator actually reads when it decides how to dispatch. */
 const PROTOCOL_FILES = [
   "skills/harness/SKILL.md",
   "skills/harness/references/04-multi-target.md",
@@ -37,52 +40,54 @@ const PROTOCOL_FILES = [
   "skills/_shared/adapters/claude-code.md",
 ];
 
-/** Matches an `Agent({ ... })` spawn example, including multi-line ones. */
-const SPAWN = /Agent\(\{[\s\S]{0,600}?\}\)/g;
+/** Rules that must be stated where the orchestrator will read them. */
+const REQUIRED: { file: string; label: string; test: RegExp }[] = [
+  { file: "skills/harness/SKILL.md", label: "the receipt is not the result", test: /launch receipt/i },
+  { file: "skills/harness/SKILL.md", label: "the result arrives by notification", test: /task-notification/i },
+  { file: "skills/harness/SKILL.md", label: "never poll the filesystem", test: /[Nn]ever poll the filesystem/ },
+  { file: "skills/harness/SKILL.md", label: "no timeout on a dispatch", test: /never set a timeout on a dispatch/i },
+  { file: "skills/harness/SKILL.md", label: "do not block the session", test: /[Dd]o not block the session/ },
+  { file: "skills/businesses/SKILL.md", label: "the handoff arrives by notification", test: /task-notification/i },
+  { file: "skills/squads/SKILL.md", label: "a phase reports by notification", test: /task-notification/i },
+  { file: "skills/harness/references/04-multi-target.md", label: "a wave is one message", test: /A wave is one message/ },
+];
 
-/** The only accepted opt-out: the example deliberately sets the flag true,
- *  i.e. it IS the background exception. An earlier version of this gate
- *  exempted any example whose surrounding lines mentioned "background", which
- *  silently exempted every example under the paragraph explaining why
- *  background is wrong — the exemption swallowed exactly what it had to catch.
- *  Proximity is not intent; the flag is. */
-const DELIBERATE_BACKGROUND = /run_in_background:\s*true/;
-
-interface Finding { file: string; line: number; snippet: string }
-
-const findings: Finding[] = [];
+const findings: string[] = [];
 let examples = 0;
-const missingFiles: string[] = [];
 
+// 1. No example may force a blocking dispatch.
 for (const rel of PROTOCOL_FILES) {
   const abs = join(ROOT, rel);
-  if (!existsSync(abs)) { missingFiles.push(rel); continue; }
+  if (!existsSync(abs)) {
+    console.error(`  ✗ protocol file not found: ${rel}`);
+    console.error("    This gate reads a fixed list; a renamed file must be updated here, not dropped.");
+    process.exit(1);
+  }
   const text = readFileSync(abs, "utf8");
-  for (const m of text.matchAll(SPAWN)) {
+  for (const m of text.matchAll(/Agent\(\{[\s\S]{0,600}?\}\)/g)) {
     examples++;
-    const snippet = m[0];
-    if (snippet.includes("run_in_background: false") || DELIBERATE_BACKGROUND.test(snippet)) continue;
-    // Line number of the match, for a clickable error.
+    if (!/run_in_background:\s*false/.test(m[0])) continue;
     const line = text.slice(0, m.index).split("\n").length;
-    findings.push({ file: rel, line, snippet: snippet.replace(/\s+/g, " ").slice(0, 90) });
+    findings.push(`${rel}:${line} — forces run_in_background: false, which blocks the session for the whole run`);
   }
 }
 
-console.log("DISPATCH CONTRACT (subagent spawns are synchronous)");
-if (missingFiles.length) {
-  console.error(`  ✗ protocol file(s) not found: ${missingFiles.join(", ")}`);
-  console.error("    This gate reads a fixed list; a renamed file must be updated here, not dropped.");
-  process.exit(1);
+// 2. Every rule must still be stated.
+for (const r of REQUIRED) {
+  const text = readFileSync(join(ROOT, r.file), "utf8");
+  if (!r.test.test(text)) findings.push(`${r.file} — no longer states: ${r.label}`);
 }
-console.log(`  scanned ......... ${PROTOCOL_FILES.length} protocol files · ${examples} Agent({...}) example(s)`);
+
+console.log("DISPATCH CONTRACT (background dispatch, collected on notification)");
+console.log(`  scanned ......... ${PROTOCOL_FILES.length} protocol files · ${examples} Agent({...}) example(s) · ${REQUIRED.length} rules`);
 
 if (findings.length) {
-  console.error(`\n  ✗ ${findings.length} dispatch example(s) missing run_in_background: false\n`);
-  for (const f of findings) console.error(`    ${f.file}:${f.line}\n      ${f.snippet}`);
-  console.error("\n  A background dispatch returns a launch receipt, not the target's work.");
-  console.error("  Add `run_in_background: false` — or, if the example is teaching the");
-  console.error("  background exception, say so in the surrounding lines.\n");
+  console.error(`\n  ✗ ${findings.length} problem(s)\n`);
+  for (const f of findings) console.error(`    ${f}`);
+  console.error("\n  The contract: dispatch in the background, stay available for the user,");
+  console.error("  and collect the work from the <task-notification> that carries <result>.");
+  console.error("  Blocking returns the same work at the cost of the conversation.\n");
   process.exit(1);
 }
 
-console.log("  (clean — every dispatch example returns its result to the orchestrator)");
+console.log("  (clean — dispatches stay non-blocking and the protocol says where results come from)");
