@@ -58,6 +58,37 @@ function findRetryAfterSec(text: string): number | undefined {
   return undefined;
 }
 
+/**
+ * A 5xx from any provider means "the server could not, try again", never "your
+ * request was wrong". The header of this file has promised since day one that
+ * 5xx classifies as transient — and no rule ever implemented it, so every 5xx
+ * fell through to `error`, which the cascade treats as fatal: it emits
+ * runtime_error and gives up instead of retrying.
+ *
+ * Found by a real incident: an Anthropic 529 Overloaded killed a dispatch that
+ * would have succeeded seconds later. The orchestrator recovered by reasoning
+ * about it in prose; the scripted path had nothing to reason with.
+ *
+ * Conservative on purpose. A bare "529" in output could be a line number or a
+ * token count, so a status code only counts next to status-shaped context, and
+ * the word "overloaded" is accepted on its own because no provider uses it for
+ * anything else.
+ */
+function serverSideFailure(text: string): QuotaClass | undefined {
+  const overloaded = /\boverloaded\b/i.test(text);
+  const status5xx = /\b(?:status|http|code|error)\b[^0-9]{0,12}\b5(?:00|02|03|04|29)\b/i.test(text)
+    || /\b5(?:00|02|03|04|29)\b\s*(?:overloaded|internal server error|bad gateway|service unavailable|gateway timeout)/i.test(text);
+  if (!overloaded && !status5xx) return undefined;
+  return {
+    kind: "transient",
+    // Honour an explicit retry-after; otherwise let the caller pick its default.
+    // An overloaded server rarely says how long, and guessing long here would
+    // stall a run that a few seconds would have fixed.
+    retryAfterSec: findRetryAfterSec(text),
+    hint: overloaded ? "provider overloaded (5xx) — transient" : "provider server error (5xx) — transient",
+  };
+}
+
 function classifyClaudeCode(text: string): QuotaClass {
   const t = text.toLowerCase();
   // Subscription windows surface as text — not status codes. The live message
@@ -225,10 +256,21 @@ export function classify(runtime: Runtime, r: RunResultLike): QuotaClass {
   if (r.ok && r.exitCode === 0) return { kind: "ok" };
   const text = [r.stderr, r.error, r.result].filter(Boolean).join("\n");
   if (!text) return { kind: "error", hint: `runtime ${runtime} exit ${r.exitCode} with no output` };
-  if (runtime === "claude-code") return classifyClaudeCode(text);
-  if (runtime === "codex") return classifyCodex(text);
-  if (runtime === "gemini-cli") return classifyGemini(text);
-  if (runtime === "antigravity-cli") return classifyAntigravity(text);
-  if (runtime === "pi") return classifyPi(text);
+  if (runtime === "claude-code") return refineServerFailure(classifyClaudeCode(text), text);
+  if (runtime === "codex") return refineServerFailure(classifyCodex(text), text);
+  if (runtime === "gemini-cli") return refineServerFailure(classifyGemini(text), text);
+  if (runtime === "antigravity-cli") return refineServerFailure(classifyAntigravity(text), text);
+  if (runtime === "pi") return refineServerFailure(classifyPi(text), text);
   return { kind: "error", hint: `unknown runtime ${runtime}` };
+}
+
+/**
+ * The runtime tables get first say: a 503 that a provider uses to mean "your
+ * plan is spent" must stay quota_exhausted, because that needs a cooldown and a
+ * handoff, not a retry against the same wall. Only a verdict of `error` — the
+ * bucket that means "we do not recognise this" — is re-examined for a 5xx.
+ */
+function refineServerFailure(v: QuotaClass, text: string): QuotaClass {
+  if (v.kind !== "error") return v;
+  return serverSideFailure(text) ?? v;
 }

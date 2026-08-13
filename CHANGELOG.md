@@ -8,6 +8,26 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### A 5xx killed runs the header promised to retry
+
+`quota-detector` has documented since day one that a 5xx classifies as
+`transient` — recoverable, retry the same runtime. No rule ever implemented it.
+Every 5xx fell through to `error`, which the cascade treats as fatal: it emits
+`runtime_error` and gives up, where `transient` sleeps and retries.
+
+Found by a real incident: an Anthropic **529 Overloaded** killed a dispatch that
+would have succeeded seconds later. The agentic orchestrator recovered by
+reasoning about the error in prose — it checked nothing had been written, closed
+the run `failed` with the reason, and redispatched from scratch. The scripted
+path had nothing to reason with.
+
+5xx now classifies as transient across every runtime, and conservatively: a bare
+"529" could be a line number, so a status code counts only next to
+status-shaped context, while the word "overloaded" is accepted alone because no
+provider uses it for anything else. The runtime tables keep first say — a 503
+that a provider uses to mean "your plan is spent" stays `quota_exhausted`,
+because that needs a cooldown and a handoff, not a retry against the same wall.
+
 ### A Hermes-only skill was offered to every runtime
 
 Installing OpenClaw and running `openclaw skills list` showed `nirvana-os-hermes`
