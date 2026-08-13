@@ -6,7 +6,15 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
-## Não lançado
+## 0.3.8 — 2026-08-13
+
+### O cockpit ainda era anunciado pelo instalador de hooks
+
+O `nrv glance` saiu da tela final do instalador do engine, mas o instalador de
+hooks encerra a partir de outro arquivo e continuava apontando para ele. O
+cockpit está inacabado; uma instalação não deveria mandar um usuário novo para a
+superfície mais fraca. A guarda agora confere todo `console.log` dos dois
+instaladores, então menção em comentário segue permitida e menção impressa não.
 
 ### Um 5xx matava runs que o cabeçalho prometia retentar
 
