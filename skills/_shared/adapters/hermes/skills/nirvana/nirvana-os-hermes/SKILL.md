@@ -8,6 +8,14 @@ platforms: [macos, linux]
 metadata:
   hermes:
     tags: [nirvana, businesses, empresas, squads, mind-clones, harness, orchestration, orquestracao]
+  openclaw:
+    # This bridge asks, in its own description, to be ignored by every runtime
+    # but Hermes. OpenClaw scans six levels deep, found it under _shared/, and
+    # listed it as ready — offering a Hermes-only skill to someone who cannot
+    # use it. Prose cannot enforce that; this gate can: the skill appears only
+    # where the hermes binary exists.
+    requires:
+      bins: ["hermes"]
 prerequisites:
   commands: [nrv]
 ---

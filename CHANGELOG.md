@@ -8,6 +8,22 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### A Hermes-only skill was offered to every runtime
+
+Installing OpenClaw and running `openclaw skills list` showed `nirvana-os-hermes`
+as ready. It is not in the skills root: OpenClaw scans six levels deep and found
+it under `_shared/adapters/hermes/`, which the installer links into every
+runtime. Its own description asks other runtimes to ignore it — prose enforces
+nothing. It is now gated on the `hermes` binary, so it disappears where Hermes is
+absent.
+
+The gate cannot express "which runtime am I" — OpenClaw offers binary, config and
+OS gates only — so on a machine that has Hermes installed and OpenClaw running,
+both variants still appear and the description is what remains.
+
+The `nirvana-os` skill also shipped with no gate at all, visible on machines that
+cannot run a line of it. It requires `bun` now, like the other three.
+
 ### OpenClaw
 
 Nirvana now installs into `~/.agents/skills`, the personal skills root OpenClaw
