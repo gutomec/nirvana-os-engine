@@ -6,6 +6,35 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### Dispatched work never came back
+
+The protocol's dispatch examples never passed `run_in_background: false`, and the
+subagent tool defaults to background. So every dispatch returned "Async agent
+launched successfully" — a launch receipt — and the orchestrator, which the
+protocol tells to wait for the return, had nothing to wait for.
+
+Measured on a real 13-target run: 13 dispatches, 13 launch receipts, zero
+results. What the orchestrator did instead was scan the output directory with
+`find` and `ls` to guess which targets had finished, prod them with follow-up
+messages, run the quality gate on whatever files it happened to notice, and
+close ledger runs on the strength of a directory listing. Nine hours of wall
+clock, much of it polling.
+
+Everything downstream of a dispatch assumed a result that was never arriving: a
+business reads the handoff artifact to choose its next employee, a workflow
+phase consumes the previous phase's output, and the gate is supposed to judge
+what a target reported. All three were reading the floor instead.
+
+Dispatch is now synchronous across the three pillars, parallelism is defined as
+what it actually is (one message carrying several calls, which the runtime runs
+concurrently and returns together), background is named as the exception that
+costs you the return, and polling the filesystem for completion is forbidden in
+the words the failure produced. `check:dispatch` fails the build on any dispatch
+example that would fire and forget — the gate found three more in the runtime
+adapter that this changelog entry would otherwise have missed.
+
 ## 0.3.4 — 2026-08-12
 
 ### The engine is now developed in the open
