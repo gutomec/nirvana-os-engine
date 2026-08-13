@@ -6,6 +6,21 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### The gate waited for the slowest sibling
+
+Phase 6 opened with "Before declaring done, run TWO checks in order". For one
+target that reads fine; for a wave it means nothing gets checked until everything
+is home. Measured on a real run: one target returned at 04:51:15, its sibling at
+05:05:27, and both were gated in a single loop at 05:06 — the first target's
+output sat fourteen minutes unverified.
+
+The wall clock is the small part. A failure found late cannot be fixed
+concurrently: a revision that could have run alongside its still-working
+siblings becomes another serial round. The gate is now anchored to a target
+handing back its work, per target, before the next dispatch goes out.
+
 ## 0.3.5 — 2026-08-13
 
 ### Dispatched work never came back
