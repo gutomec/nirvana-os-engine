@@ -311,6 +311,7 @@ function main() {
     const agentsTemplate = path.join(SKILLS_ROOT, "_shared", "templates", "AGENTS.md");
     const writingContractSnippet = path.join(SKILLS_ROOT, "_shared", "templates", "writing-contract-snippet.md");
     const WRITING_CONTRACT_MARKER = "<!-- nirvana-os:writing-contract:v1 -->";
+    const INVOCATION_CONTRACT_MARKER = "<!-- nirvana-os:invocation-contract:v1 -->";
     if (fs.existsSync(agentsTemplate)) {
       for (const name of ["AGENTS.md", "CLAUDE.md", "GEMINI.md"]) {
         const dst = path.join(target, name);
@@ -319,7 +320,18 @@ function main() {
         if (!fs.existsSync(dst)) {
           copyFile(agentsTemplate, dst, false);
         } else {
+          // A pre-existing CLAUDE.md is the COMMON case, not the edge: people
+          // adopt Nirvana in projects they already have. Keeping the file and
+          // appending only the writing contract left exactly those users without
+          // the invocation contract — the part that tells the runtime to
+          // orchestrate at all. AGENTS.md got it, and Claude Code does not read
+          // AGENTS.md. The user ran init, saw "ok", and kept getting inline
+          // answers with no dispatch, no gate, no audit.
+          //
+          // So the invocation contract is appended too, under its own marker,
+          // with the user's rules untouched above it.
           log.warn(`exists, kept: ${dst}`);
+          appendWithMarker(agentsTemplate, dst, INVOCATION_CONTRACT_MARKER);
         }
         // Phase 2: append the writing contract (idempotent via marker).
         appendWithMarker(writingContractSnippet, dst, WRITING_CONTRACT_MARKER);
