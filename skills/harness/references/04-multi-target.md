@@ -73,17 +73,16 @@ Before parallelizing, the race-detector checks for write-write, handoff-collisio
 ## A wave is one message
 
 `parallel_waves[]` describes which targets may run together. Executing that is a
-single message carrying one `Agent(...)` call per target of the wave, each with
-`run_in_background: false`. The runtime runs them concurrently and returns every
-result together; the wave is finished when that message returns, and only then
-is there anything to gate.
+single message carrying one `Agent(...)` call per target of the wave. They run
+concurrently and each one notifies as it lands, carrying its `<result>`.
 
-Dispatching a wave as N separate messages is the failure this section exists to
-prevent. It looks like parallelism and behaves like fire-and-forget: each call
-comes back as a launch receipt, nothing reports completion, and the orchestrator
-is reduced to scanning the output directory to guess what finished. Measured on
-a real 13-target run: 13 dispatches, 13 launch receipts, zero results, and a
-9-hour wall clock spent largely on polling.
+Every call returns a launch receipt immediately — that is normal and it is not
+the work. The wave is finished when the last of its notifications has arrived,
+and each target is gated as its own notification lands (see below). What the
+orchestrator must never do is read the receipts as results and go scanning the
+output directory to guess what finished. Measured on a real 13-target run: 13
+dispatches, 13 receipts, not one notification acted on, and a 9-hour wall clock
+spent largely on polling.
 
 ## Gate each return, not the wave
 

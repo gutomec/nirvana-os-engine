@@ -1,17 +1,16 @@
-// dispatch-contract.test.ts — the protocol must dispatch subagents synchronously.
+// dispatch-contract.test.ts — a dispatch must come home without blocking anyone.
 //
-// The defect this pins, measured on a real 13-target run
-// (galinha-dos-ovos-de-ouro, 2026-08-12): every dispatch example in the protocol
-// omitted `run_in_background: false`, the subagent tool defaults to background,
-// and all 13 dispatches returned "Async agent launched successfully" — a launch
-// receipt, not work. Nothing ever reported completion, so the orchestrator spent
-// the run scanning the filesystem to guess what had finished, gating whatever
-// files it noticed, and closing ledger runs on a directory listing.
+// A spawn returns "Async agent launched successfully" — a launch receipt. The
+// work arrives later, in a `<task-notification>` carrying `<result>`. Two
+// things, two moments; every failure here is a confusion between them.
 //
-// Everything downstream of a dispatch assumes a real result: the harness waits
-// for the return (Phase 5), a business reads the handoff artifact to choose the
-// next employee (businesses step 6), a workflow phase consumes the previous
-// phase's output. A launch receipt satisfies none of them.
+// Both mistakes are pinned, because the second one was mine:
+//   1. A real 13-target run took the receipts as results, never waited for a
+//      notification, and spent nine hours scanning find/ls to guess.
+//   2. I then mandated `run_in_background: false` everywhere. That does return
+//      the work — by blocking the session for the entire run. A 45-minute
+//      deploy stack left the owner unable to say a word; their messages queued
+//      unread behind work they were not about.
 import { describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -29,59 +28,68 @@ const PROTOCOL = [
   "skills/_shared/adapters/claude-code.md",
 ];
 
-function read(rel: string): string {
-  return fs.readFileSync(path.join(ROOT, rel), "utf8");
-}
+const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
 
-function runGate(cwd = ROOT) {
-  return spawnSync(process.execPath, [GATE], { encoding: "utf8", cwd });
-}
-
-describe("the shipped protocol dispatches synchronously", () => {
-  test("every Agent({...}) example carries run_in_background: false", () => {
+describe("dispatches do not block the session", () => {
+  test("no example forces run_in_background: false", () => {
     const offenders: string[] = [];
     for (const rel of PROTOCOL) {
       const text = read(rel);
       for (const m of text.matchAll(/Agent\(\{[\s\S]{0,600}?\}\)/g)) {
-        if (/run_in_background:\s*(false|true)/.test(m[0])) continue;
-        offenders.push(`${rel}:${text.slice(0, m.index).split("\n").length}`);
+        if (/run_in_background:\s*false/.test(m[0])) {
+          offenders.push(`${rel}:${text.slice(0, m.index).split("\n").length}`);
+        }
       }
     }
     expect(offenders).toEqual([]);
   });
 
-  test("the three pillars each state the synchronous rule where their chain depends on it", () => {
-    // harness: the maestro's own dispatch table.
-    expect(read("skills/harness/SKILL.md")).toContain("Dispatch is SYNCHRONOUS");
-    // businesses: step 6 reads the handoff artifact returned by step 5.
-    expect(read("skills/businesses/SKILL.md")).toMatch(/run_in_background: false/);
-    // squads: workflow phases consume each other's output.
-    expect(read("skills/squads/SKILL.md")).toMatch(/run_in_background: false/);
+  test("the protocol says not to block, and why", () => {
+    const h = read("skills/harness/SKILL.md");
+    expect(h).toMatch(/[Dd]o not block the session/);
+    expect(h).toMatch(/queue|queued/i);        // what blocking costs the user
+  });
+});
+
+describe("the result is collected from the notification", () => {
+  test("the harness distinguishes receipt from result", () => {
+    const h = read("skills/harness/SKILL.md");
+    expect(h).toMatch(/launch receipt/i);
+    expect(h).toMatch(/task-notification/);
+    expect(h).toMatch(/<result>/);
   });
 
-  test("parallelism is defined as one message with several calls", () => {
-    const harness = read("skills/harness/SKILL.md");
-    const multi = read("skills/harness/references/04-multi-target.md");
-    expect(harness).toMatch(/one message with several calls|single message/i);
-    expect(multi).toMatch(/A wave is one message/);
+  test("each pillar says where its own return comes from", () => {
+    // businesses: the handoff artifact drives the employee chain.
+    expect(read("skills/businesses/SKILL.md")).toMatch(/task-notification/);
+    // squads: a phase consumes the previous phase's report.
+    expect(read("skills/squads/SKILL.md")).toMatch(/task-notification/);
   });
 
-  test("filesystem polling is named and forbidden, since that is what the gap produced", () => {
-    const harness = read("skills/harness/SKILL.md");
-    expect(harness).toMatch(/Never poll the filesystem/i);
-    expect(harness).toMatch(/find`, `ls` or `stat`|find\/ls/i);
+  test("acting on the notification is required, not optional", () => {
+    // A notification noticed and ignored leaves the run finished with nobody
+    // knowing — the same end state as mistaking the receipt for the result.
+    expect(read("skills/harness/SKILL.md")).toMatch(/notification you noticed and did not act on/i);
+  });
+});
+
+describe("the bans that survive from the first version", () => {
+  test("filesystem polling is still forbidden", () => {
+    expect(read("skills/harness/SKILL.md")).toMatch(/[Nn]ever poll the filesystem/);
+  });
+
+  test("a dispatch gets no timeout", () => {
+    // Killing a target at an arbitrary deadline throws away real work.
+    expect(read("skills/harness/SKILL.md")).toMatch(/never set a timeout on a dispatch/i);
+  });
+
+  test("a wave is still one message", () => {
+    expect(read("skills/harness/references/04-multi-target.md")).toMatch(/A wave is one message/);
   });
 });
 
 describe("check-dispatch-contract — the gate itself", () => {
-  test("passes on the shipped tree", () => {
-    const r = runGate();
-    expect(r.status).toBe(0);
-    expect(r.stdout).toContain("clean");
-  });
-
-  test("fails when a dispatch example loses the flag", () => {
-    // A copy of the tree, so the test never mutates the repo it is checking.
+  function sandbox(mutate: (dir: string) => void): number {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-dispatch-gate-"));
     try {
       fs.mkdirSync(path.join(tmp, "scripts"), { recursive: true });
@@ -90,64 +98,38 @@ describe("check-dispatch-contract — the gate itself", () => {
         fs.mkdirSync(path.join(tmp, path.dirname(rel)), { recursive: true });
         fs.copyFileSync(path.join(ROOT, rel), path.join(tmp, rel));
       }
-      const target = path.join(tmp, "skills/harness/SKILL.md");
-      fs.writeFileSync(target, fs.readFileSync(target, "utf8").replace("run_in_background: false, prompt: buildEmployeePrompt", "prompt: buildEmployeePrompt"));
-
-      const r = spawnSync(process.execPath, [path.join(tmp, "scripts", "check-dispatch-contract.ts")], { encoding: "utf8" });
-      expect(r.status).toBe(1);
-      expect(r.stderr).toContain("missing run_in_background: false");
-      expect(r.stderr).toContain("skills/harness/SKILL.md");
+      mutate(tmp);
+      return spawnSync(process.execPath, [path.join(tmp, "scripts", "check-dispatch-contract.ts")], { encoding: "utf8" }).status ?? -1;
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
+  }
+
+  test("passes on the shipped tree", () => {
+    const r = spawnSync(process.execPath, [GATE], { encoding: "utf8", cwd: ROOT });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("clean");
   });
 
-  test("a deliberate background example is allowed — the exception must stay writable", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-dispatch-gate-bg-"));
-    try {
-      fs.mkdirSync(path.join(tmp, "scripts"), { recursive: true });
-      fs.copyFileSync(GATE, path.join(tmp, "scripts", "check-dispatch-contract.ts"));
-      for (const rel of PROTOCOL) {
-        fs.mkdirSync(path.join(tmp, path.dirname(rel)), { recursive: true });
-        fs.copyFileSync(path.join(ROOT, rel), path.join(tmp, rel));
-      }
-      const target = path.join(tmp, "skills/harness/SKILL.md");
-      fs.appendFileSync(target, '\n\nLong unrelated work: `Agent({subagent_type: "general-purpose", run_in_background: true, prompt: "..."})`\n');
-      expect(spawnSync(process.execPath, [path.join(tmp, "scripts", "check-dispatch-contract.ts")], { encoding: "utf8" }).status).toBe(0);
-    } finally {
-      fs.rmSync(tmp, { recursive: true, force: true });
-    }
+  test("fails when an example goes back to blocking", () => {
+    expect(sandbox((dir) => {
+      const f = path.join(dir, "skills/harness/SKILL.md");
+      fs.appendFileSync(f, '\n\n`Agent({subagent_type: "general-purpose", run_in_background: false, prompt: "x"})`\n');
+    })).toBe(1);
   });
 
-  test("proximity to the word 'background' does not exempt anything", () => {
-    // The first version of this gate exempted any example whose neighbouring
-    // lines mentioned "background" — which exempted every example sitting under
-    // the paragraph that explains why background is wrong. The exemption
-    // swallowed precisely what it existed to catch.
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-dispatch-gate-prox-"));
-    try {
-      fs.mkdirSync(path.join(tmp, "scripts"), { recursive: true });
-      fs.copyFileSync(GATE, path.join(tmp, "scripts", "check-dispatch-contract.ts"));
-      for (const rel of PROTOCOL) {
-        fs.mkdirSync(path.join(tmp, path.dirname(rel)), { recursive: true });
-        fs.copyFileSync(path.join(ROOT, rel), path.join(tmp, rel));
-      }
-      const target = path.join(tmp, "skills/squads/SKILL.md");
-      fs.appendFileSync(target, '\n\nBackground dispatch and notifications are discussed above.\n\n`Agent({subagent_type: "general-purpose", prompt: "..."})`\n');
-      const r = spawnSync(process.execPath, [path.join(tmp, "scripts", "check-dispatch-contract.ts")], { encoding: "utf8" });
-      expect(r.status).toBe(1);
-      expect(r.stderr).toContain("skills/squads/SKILL.md");
-    } finally {
-      fs.rmSync(tmp, { recursive: true, force: true });
-    }
+  test("fails when a rule is dropped from the protocol", () => {
+    expect(sandbox((dir) => {
+      const f = path.join(dir, "skills/harness/SKILL.md");
+      fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace(/[Nn]ever poll the filesystem/g, "sometimes poll"));
+    })).toBe(1);
   });
 
-  test("a renamed protocol file fails loudly instead of silently checking nothing", () => {
+  test("fails loudly when a protocol file is renamed away", () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-dispatch-gate-missing-"));
     try {
       fs.mkdirSync(path.join(tmp, "scripts"), { recursive: true });
       fs.copyFileSync(GATE, path.join(tmp, "scripts", "check-dispatch-contract.ts"));
-      // Copy nothing else: every protocol file is "missing".
       const r = spawnSync(process.execPath, [path.join(tmp, "scripts", "check-dispatch-contract.ts")], { encoding: "utf8" });
       expect(r.status).toBe(1);
       expect(r.stderr).toContain("not found");
