@@ -79,6 +79,36 @@ describe("the dispatch path OpenClaw can actually run", () => {
   });
 });
 
+describe("only the skills a runtime can use are offered to it", () => {
+  // Found by installing OpenClaw and running `openclaw skills list`: it scans
+  // six levels deep, reached the Hermes bridge under _shared/, and listed it as
+  // ready — offering a Hermes-only skill to a runtime that cannot use it. The
+  // bridge's own description asks every other runtime to ignore it; prose does
+  // not enforce anything, a binary gate does.
+  const hermesBridge = "skills/_shared/adapters/hermes/skills/nirvana/nirvana-os-hermes/SKILL.md";
+
+  test("the Hermes bridge is gated on the hermes binary", () => {
+    const fm = frontmatter(hermesBridge);
+    expect(fm).toMatch(/openclaw:/);
+    expect(fm).toMatch(/bins:\s*\["hermes"\]/);
+  });
+
+  test("its description still says it out loud, as defence in depth", () => {
+    // The gate cannot express "which runtime am I" — OpenClaw offers binary,
+    // config and OS gates only. On a machine with hermes installed AND OpenClaw
+    // running, both variants appear, and the description is what remains.
+    expect(read(hermesBridge)).toMatch(/Hermes runtime ONLY/);
+  });
+
+  test("every Nirvana skill an OpenClaw user can see requires bun", () => {
+    // nirvana-os shipped without a gate and showed up on the list with no emoji
+    // — visible on a machine that cannot run one line of it.
+    for (const rel of [...SKILLS, "skills/nirvana-os/SKILL.md"]) {
+      expect(frontmatter(rel)).toMatch(/bins:\s*\["bun"\]/);
+    }
+  });
+});
+
 describe("the shared skills dir is treated with care", () => {
   test("the runtime-dirs comment warns against symlinking the whole directory", () => {
     // ~/.agents/skills is shared with other tooling. Symlinking the directory
