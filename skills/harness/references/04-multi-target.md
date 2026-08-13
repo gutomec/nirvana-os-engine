@@ -70,6 +70,21 @@ const result = await executePlan(plan, runFn, { concurrency: 2 });
 
 Before parallelizing, the race-detector checks for write-write, handoff-collision, and read-write conflicts; it recommends serial fallback if any risk exists. Capabilities opt in via `parallel_safe: true` + `writes_paths: [...]` in their schema. Keep concurrency modest (2-3) to avoid runtime rate limits.
 
+## A wave is one message
+
+`parallel_waves[]` describes which targets may run together. Executing that is a
+single message carrying one `Agent(...)` call per target of the wave, each with
+`run_in_background: false`. The runtime runs them concurrently and returns every
+result together; the wave is finished when that message returns, and only then
+is there anything to gate.
+
+Dispatching a wave as N separate messages is the failure this section exists to
+prevent. It looks like parallelism and behaves like fire-and-forget: each call
+comes back as a launch receipt, nothing reports completion, and the orchestrator
+is reduced to scanning the output directory to guess what finished. Measured on
+a real 13-target run: 13 dispatches, 13 launch receipts, zero results, and a
+9-hour wall clock spent largely on polling.
+
 ## Wave boundaries are checkpoints
 
 A wave boundary is the only moment in the run where nothing is in flight: every

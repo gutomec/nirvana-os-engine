@@ -58,7 +58,7 @@
 | `is_brief_intake: true` | Skill activator | Skill que dispara primeiro quando harness recebe brief |
 | `is_antagonist: true` | Subagent invocado em loop de revisão | Spawn paralelo de subagent crítico |
 | Handoff artifact | Tool result | JSON estruturado retornado por subagent (validável contra `HandoffArtifactSchema`) |
-| Mention `@employee` | Convenção em prompt + memory | Adapter resolve `@x` para `Agent({ subagent_type: "x", ...})` |
+| Mention `@employee` | Convenção em prompt + memory | Adapter resolve `@x` para `Agent({ subagent_type: "x", run_in_background: false, ...})` |
 | Ticket | Arquivo persistido + memory ref | `<project>/.tickets/<TICKET_ID>.json` + entrada em memory |
 | Escalation trigger | Hook + harness notification | `PostToolUse` checa condição → emite `HarnessNotification` |
 | Permanent memory | `~/.claude/memory/*.md` + `~/.claude/CLAUDE.md` | Files referenciados via auto-load |
@@ -263,7 +263,7 @@ Harness routing:
   → AMBIGUOUS (precisa confirmar via AskUserQuestion ou abre business)
   → Skill({ skill: "nexus-council" })
   → Business CEO (is_brief_intake) recebe brief
-  → CEO delega via Agent({ subagent_type: "marketing-lead", ... })
+  → CEO delega via Agent({ subagent_type: "marketing-lead", run_in_background: false, ... })
   → marketing-lead emite handoff artifact com self_score
   → CEO consolida, retorna
 ```
@@ -284,7 +284,7 @@ Employee A produz handoff:
   }
 }
 
-Adapter detecta `@alex-hormozi` → Agent({ subagent_type: "alex-hormozi", prompt: "...marketing-lead pediu para revisar pricing..." })
+Adapter detecta `@alex-hormozi` → Agent({ subagent_type: "alex-hormozi", run_in_background: false, prompt: "...marketing-lead pediu para revisar pricing..." })
 ```
 
 ### Exemplo 4 — Harness escalation (zero-human bridge)
