@@ -8,6 +8,21 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Build rules reached only Claude Code projects
+
+The four rules that keep an agent from over-building — think first, minimum that
+solves it, surgical changes, verifiable done — lived only in the project contract
+`nrv init` writes. Two independent ways to miss them: most projects never run
+`nrv init`, and the file a runtime reads differs across the eight adapters
+(`AGENTS.md` for antigravity/codex/grok/kimi/pi, `CLAUDE.md` for claude-code,
+`GEMINI.md` for gemini-cli). Anything depending on a project file is unreliable
+twice over.
+
+They now travel with what is always present: the dispatch instruction for the
+entity that builds, the skill itself for the orchestrator. A test walks every
+adapter and fails if one declares a contract file `nrv init` does not write, so
+no runtime can be silently left without a contract.
+
 ### Prose was judged by a rule it never received
 
 The writing contract lives in a project's `CLAUDE.md`/`AGENTS.md`, written there

@@ -340,6 +340,30 @@ Registries come from a project-local `.nirvana/` (inside a project tree) or the 
 
 ---
 
+## How you orchestrate (the same four rules, applied to dispatching)
+
+Section 9 of every `DISPATCH-INSTRUCTION.md` carries these for the entity that
+builds. They bind you too, aimed at the dispatch rather than the diff — and they
+are here, in the skill, rather than in a project file, because the file each
+runtime reads differs (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`) and most projects
+have none of them.
+
+- **Think before dispatching.** Name the target and why before you send it. An
+  ambiguous brief gets a briefing question, not a guess. Two cascades fit? State
+  both instead of picking silently.
+- **Minimum viable dispatch.** The smallest cascade that satisfies the brief. Do
+  not convene a business when one squad capability answers it, or pull five
+  mind-clones when the work needs one voice. Building org structure to feel
+  thorough is the over-orchestration this rule exists to prevent.
+- **Surgical scope.** Never mutate `~/squads`, `~/businesses` or the DNA library
+  as a side effect of a dispatch. You write to the trace output path, the briefs
+  dir and the logs. Spot a real defect in a squad you were only asked to invoke?
+  Report it; do not edit it mid-run.
+- **Gate-driven execution.** Your "tests pass" is the `gate_passed` event. State
+  the rubric for the artifact type up front, then dispatch → judge → revise →
+  re-judge. No `gate_passed`, no delivery; a "done" message without that chain is
+  fiction.
+
 ## Core principles (HP1–HP8)
 - **HP1** Stateless between briefs. All state on filesystem.
 - **HP2** Routing is explicit. The model emits `target_plan_committed` with reasoning.

@@ -99,3 +99,29 @@ bun ~/.nirvana/skills/harness/scripts/quality-gate.ts <your-artifact> --auto
 Exit 0 means it passes. Fix what it flags and re-run until it does, **before**
 writing `_SUMMARY.md` and handing back. Catching it here costs one re-read;
 catching it at the gate costs a full rewrite of a finished document.
+
+## 9. How to build (applies to code and to any constructed artifact)
+
+Carried here for the same reason as section 8: these rules live in the project's
+`AGENTS.md` / `CLAUDE.md` / `GEMINI.md`, which exist only when the project was
+created with `nrv init`. Most were not, and the file each runtime reads differs
+anyway — so the rules travel with the dispatch instead of with the directory.
+
+- **Think before building.** State assumptions; if two readings of the brief lead
+  to materially different work, say so rather than picking silently. If a simpler
+  approach exists, name it.
+- **Minimum that solves it.** No feature beyond the ask, no abstraction for
+  single-use code, no configurability nobody requested, no error handling for
+  impossible states. If it took 200 lines and 50 would do, rewrite it.
+- **Surgical changes.** Touch only what your part requires. Do not improve
+  adjacent code, comments or formatting; do not refactor what is not broken;
+  match the surrounding style even where you would do it differently. Remove
+  orphans YOUR change created — nothing else. Notice unrelated dead code? Say so
+  in `_SUMMARY.md`; do not delete it.
+- **Verifiable done.** Turn the acceptance criteria into a check you can run —
+  a test that fails before and passes after, a command whose exit code says yes.
+  "It looks right" is not a criterion.
+
+The test for every diff you produce: each changed line traces back to something
+in section 2. A reviewer who cannot make that trace will assume you went
+exploring, and they will be right.

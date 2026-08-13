@@ -8,6 +8,21 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### As regras de construção só chegavam a projetos Claude Code
+
+As quatro regras que impedem um agente de construir demais — pensar antes, o
+mínimo que resolve, mudanças cirúrgicas, pronto verificável — viviam só no
+contrato de projeto que o `nrv init` escreve. Dois jeitos independentes de
+perdê-las: a maioria dos projetos nunca roda `nrv init`, e o arquivo que cada
+runtime lê é diferente entre os oito adapters (`AGENTS.md` para
+antigravity/codex/grok/kimi/pi, `CLAUDE.md` para o claude-code, `GEMINI.md` para
+o gemini-cli). O que depende de arquivo de projeto é frágil duas vezes.
+
+Agora elas viajam no que sempre existe: a instrução de dispatch para quem
+constrói, a própria skill para o orquestrador. Um teste percorre todos os
+adapters e reprova se algum declarar um arquivo de contrato que o `nrv init` não
+escreve, para que nenhum runtime fique sem contrato em silêncio.
+
 ### A prosa era julgada por uma regra que nunca recebeu
 
 O contrato de escrita vive no `CLAUDE.md`/`AGENTS.md` do projeto, escrito lá pelo
