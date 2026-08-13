@@ -64,3 +64,38 @@ These phases will read your outputs. Produce them in the shape they expect.
 ## 7. Scope isolation (hard rule)
 
 You write **only** under your own target directory (`{target_dir}/`) and the shared coordination paths (`../../plan-change-requests/`, `~/.harness-logs/<date>/audit.jsonl`). You **never** write to other targets' `outputs/` directories.
+
+## 8. If your deliverable is prose, check it before you hand it back
+
+This section travels with the dispatch because it cannot be assumed to be
+anywhere else. The writing contract lives in the project's `CLAUDE.md` /
+`AGENTS.md`, which only exists when the project was created with `nrv init` —
+most are not. Without it you would be judged at the gate by a rule nobody gave
+you.
+
+The rules the gate actually applies to `.md` and `.txt`:
+
+- **Dashes.** Em-dash and en-dash: at most one per 200 words. Hyphens only for
+  compound words and ranges. Never a dash to glue two clauses, replace a comma,
+  hedge, or add emphasis.
+- **No filler openers.** "In summary", "In conclusion", "It's worth noting",
+  "Em resumo", "É importante notar".
+- **No vague attribution.** "Experts say", "Studies show", "Especialistas
+  afirmam". Name the source with a date or drop the claim.
+- **No negative parallelism.** "Not only X, but Y" / "Não é só X, é Y".
+- **No chat artifacts** ("Great question!", "I hope this helps", "Espero que
+  ajude") and no AI self-reference.
+- Sentence case in headings, no decorative emoji, varied sentence length.
+
+The dash budget is the one that gets missed, because it is quantitative and
+nobody counts while drafting. A 2.400-word report gets **12** — a real dispatch
+came back with 38 and had to be rewritten. So do not rely on judgement; run the
+check:
+
+```bash
+bun ~/.nirvana/skills/harness/scripts/quality-gate.ts <your-artifact> --auto
+```
+
+Exit 0 means it passes. Fix what it flags and re-run until it does, **before**
+writing `_SUMMARY.md` and handing back. Catching it here costs one re-read;
+catching it at the gate costs a full rewrite of a finished document.
