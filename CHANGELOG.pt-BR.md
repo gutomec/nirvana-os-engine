@@ -6,6 +6,26 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Não lançado
+
+### A instalação ensinava o primeiro passo errado
+
+O instalador do engine terminava com uma lista de quatro comandos, o `nrv init`
+por último e o `nrv glance` acima dele. O do pack era pior: "abra qualquer CLI de
+IA e simplesmente converse" — que é exatamente o caminho inline, ensinado ao
+comprador na primeira execução, no diretório em que ele estivesse parado.
+
+O `nrv init` escreve o contrato (AGENTS.md / CLAUDE.md / GEMINI.md, um por
+família de runtime) que manda a CLI orquestrar pelo Nirvana-OS. Sem ele, um brief
+é respondido inline por um agente só: sem dispatch para as empresas e squads que
+o usuário instalou, sem quality gate e sem auditoria. Nada dá erro — ele só
+recebe um produto pior, sem como saber por quê.
+
+Os dois instaladores agora começam pelo `nrv init`, mostram a forma para
+diretório novo e para pasta existente, e dizem a consequência nessas palavras. O
+`nrv glance` saiu dos dois: o cockpit está inacabado, e a primeira tela não
+deveria apontar para a superfície mais fraca.
+
 ## 0.3.6 — 2026-08-13
 
 ### Projeto sem inicializar degradava em silêncio
