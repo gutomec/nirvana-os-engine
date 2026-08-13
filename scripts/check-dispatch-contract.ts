@@ -50,6 +50,13 @@ const REQUIRED: { file: string; label: string; test: RegExp }[] = [
   { file: "skills/businesses/SKILL.md", label: "the handoff arrives by notification", test: /task-notification/i },
   { file: "skills/squads/SKILL.md", label: "a phase reports by notification", test: /task-notification/i },
   { file: "skills/harness/references/04-multi-target.md", label: "a wave is one message", test: /A wave is one message/ },
+  // Learned by getting it wrong in a live test: the first notification of a
+  // dispatch carried a garbled result and no file on disk; minutes later the
+  // same dispatch notified again, clean and complete. Reading the first as
+  // final would have condemned a delivery that was still arriving.
+  { file: "skills/harness/SKILL.md", label: "a notification may not be the last one", test: /not always the last one/i },
+  { file: "skills/harness/SKILL.md", label: "<result> is a report, not proof", test: /is a report, not proof/i },
+  { file: "skills/harness/SKILL.md", label: "an honest failure is not retried blindly", test: /honest failure is the system working/i },
 ];
 
 const findings: string[] = [];
