@@ -8,6 +8,29 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Adotar o Nirvana num projeto que já existia não ligava nada
+
+O `nrv init` escreve o contrato como AGENTS.md + CLAUDE.md + GEMINI.md para que
+toda família de runtime ache um. Para um arquivo que já existia, ele mantinha as
+regras do usuário e acrescentava só o contrato de *escrita* — o que deixava o
+caso mais comum de todos sem o contrato de *invocação*, a parte que manda o
+runtime orquestrar. O AGENTS.md recebia, e o Claude Code não lê AGENTS.md. Quem
+tinha um CLAUDE.md prévio rodava o init, via "ok", e seguia recebendo respostas
+inline: sem dispatch, sem gate, sem auditoria.
+
+Os dois blocos agora são acrescentados sob marcadores próprios, com as regras do
+usuário intactas acima e a segunda rodada não mudando nada.
+
+### O orquestrador conserta o projeto em vez de reportar
+
+Ninguém opera este sistema digitando `nrv`. As pessoas conversam com o Claude
+Code, Codex, agy ou Hermes, e é essa CLI que roda os comandos. Então projeto sem
+inicializar não é erro de usuário para reportar — é um conserto de uma linha que
+o orquestrador executa, porque é ele quem está com o shell na mão. A Phase 0
+virou preflight: sem arquivo de contrato, roda `nrv init .`, avisa numa linha,
+segue. Só pergunta antes quando o diretório é repositório de outra pessoa, onde
+três arquivos novos apareceriam no diff dela.
+
 ### A instalação ensinava o primeiro passo errado
 
 O instalador do engine terminava com uma lista de quatro comandos, o `nrv init`

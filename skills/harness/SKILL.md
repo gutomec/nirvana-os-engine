@@ -126,7 +126,39 @@ The point of rule 4 is the difference between degrading and lying. Working witho
 
 When a production brief arrives, run this loop. Each step has a deliverable and an audit event.
 
-### Phase 0 — Declare your operating window
+### Phase 0 — Preflight: make the project a Nirvana project
+
+Almost nobody drives this system by typing `nrv`. People talk to their AI CLI —
+Claude Code, Codex, agy, Hermes — and that CLI is what runs the commands. You are
+that CLI. So a project missing its contract is not a user error to report; it is
+a one-line repair you perform, because you are the one holding the shell.
+
+Before anything else, check whether this directory is a Nirvana project:
+
+```bash
+ls AGENTS.md CLAUDE.md GEMINI.md 2>/dev/null | head -1
+```
+
+Nothing came back? Run `nrv init .` and continue. It writes the contract
+(`AGENTS.md` + `CLAUDE.md` + `GEMINI.md`, one per runtime family) plus the
+`.nirvana/` scaffold. It never touches code, and it never overwrites: a contract
+file that already exists keeps the user's rules at the top and gets the Nirvana
+blocks appended under their own markers, so running it twice changes nothing.
+Say in one line that you did it and why — the user's `CLAUDE.md` did grow, and
+they should hear it from you rather than from a diff — then get on with the
+brief. Do not stop to ask permission for a repair this cheap.
+
+What it buys is not this run, which you are already orchestrating. It is the
+NEXT session in this directory, and the one after: without the contract, the
+runtime has nothing telling it to reach for this skill, and a brief gets answered
+inline by a single agent — no dispatch, no gate, no audit trail. That failure is
+silent, which is why it is worth one command now.
+
+The one case to ask first: the directory is somebody else's repository and
+writing three files at its root would show up in their diff. Then say so and let
+the user decide.
+
+### Phase 0.1 — Declare your operating window
 Before reading the brief, declare your context window and budget. Inspect via `/context` (Claude Code), `/memory` (Gemini-CLI), `/usage` (Codex), or read it from your system prompt. Write a header at the top of `${HARNESS_LOGS_DIR}/$(date +%Y-%m-%d)/briefs/<trace_id>.txt`:
 
 ```
@@ -230,7 +262,7 @@ On claude-code, codex, and antigravity you dispatch through the runtime's **nati
 
 Writing the DAG down is what makes the order auditable. A wave you can point at is a decision; a wave you kept in your head is a guess the user can't check.
 
-**Checkpoint between waves.** A wave boundary is the one moment in a multi-target run where nothing is in flight: every target of the wave has returned and the next has not started. That is the cheapest possible place to shed context, and the only place where a rollover costs nothing in lost state — the `manifest.json` DAG and each `_SUMMARY.md` already hold everything the next session needs. Run `nrv guard context` there (Phase 0), and when it exits `8`, roll before dispatching the next wave rather than after.
+**Checkpoint between waves.** A wave boundary is the one moment in a multi-target run where nothing is in flight: every target of the wave has returned and the next has not started. That is the cheapest possible place to shed context, and the only place where a rollover costs nothing in lost state — the `manifest.json` DAG and each `_SUMMARY.md` already hold everything the next session needs. Run `nrv guard context` there (Phase 0.1), and when it exits `8`, roll before dispatching the next wave rather than after.
 
 Audit events: `target_plan_committed`, `x_enriched_brief_written`, `dispatch_business`/`dispatch_squad`/`dispatch_agent_x`, `mind_clone_injected`, `human_notification_required` (only if truly blocked).
 
