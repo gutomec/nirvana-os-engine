@@ -69,3 +69,23 @@ const result = await executePlan(plan, runFn, { concurrency: 2 });
 ```
 
 Before parallelizing, the race-detector checks for write-write, handoff-collision, and read-write conflicts; it recommends serial fallback if any risk exists. Capabilities opt in via `parallel_safe: true` + `writes_paths: [...]` in their schema. Keep concurrency modest (2-3) to avoid runtime rate limits.
+
+## Wave boundaries are checkpoints
+
+A wave boundary is the only moment in the run where nothing is in flight: every
+target of the wave has returned, the next has not started, and the state the run
+depends on is already on disk (`manifest.json`, each phase's `_SUMMARY.md`).
+That makes it the one place where shedding the orchestrator's context costs
+nothing.
+
+Run the context guard there, before dispatching the next wave:
+
+```bash
+nrv guard context --project <projectRoot> --used <current context tokens> --window <N>
+```
+
+Exit `8` means roll: write the HANDOFF, report where the run stands, continue
+with `nrv resume <projectRoot>`. Skipping this is what turns a long multi-target
+run quadratic — the orchestrator of a 13-target run measured 275k tokens of
+context by the last wave, and every message in it re-read that whole
+accumulation.
