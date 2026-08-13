@@ -8,6 +8,28 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### OpenClaw
+
+O Nirvana passa a instalar em `~/.agents/skills`, a raiz de skills pessoais que o
+OpenClaw lê, e as três skills carregam um gate `metadata.openclaw` exigindo
+`bun` — sem ele, a skill apareceria numa máquina incapaz de rodar um único de
+seus scripts.
+
+Dois fatos daquele runtime mudam como o sistema se comporta lá, e o adapter
+(`_shared/adapters/openclaw.md`) documenta os dois. Ele **não tem subagente
+in-process**: o trabalho é delegado com `bash background:true` para um CLI filho,
+acompanhado por `process poll`, e o filho anuncia a própria conclusão. É
+exatamente o que o `nrv dispatch --exec` já faz, então ali o caminho scriptado é
+o dispatch, não um fallback. E ele **não lê arquivo de instrução de projeto** —
+não há equivalente a CLAUDE.md ou AGENTS.md — então a ativação depende
+inteiramente da descrição da skill, e quem cobre um worker que morre antes de
+anunciar é o supervisor do run-ledger.
+
+A linha de compatibilidade da skill afirmava que um runtime cujo spawn é
+fire-and-forget "não consegue rodar a cascata". Isso deixou de ser verdade quando
+o dispatch passou a ser coletado por notificação, e nunca foi verdade para um
+runtime que oferece um handle consultável no lugar.
+
 ### Três coisas sobre notificações, aprendidas errando
 
 Um dispatch de teste notificou com o `<result>` corrompido e nada no disco. Lido

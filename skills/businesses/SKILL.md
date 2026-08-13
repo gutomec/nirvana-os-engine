@@ -4,6 +4,12 @@ description: "Business lifecycle skill (DOMAIN-AGNOSTIC). Creates, lists, inspec
 compatibility: "Requires the Nirvana-OS engine: the `nrv` CLI and Bun on PATH. Install: npx @nirvana-os/cli. Runtime-agnostic — no dependency on any specific agent CLI. Creation flows need an interactive question primitive; without one, use the non-interactive list/inspect/validate paths."
 tools: [Read, Write, Edit, Glob, Grep, Bash, AgentTool, TaskCreate, AskUserQuestion]
 maxTurns: 100
+metadata:
+  openclaw:
+    emoji: "🏢"
+    requires:
+      # Todo script do Nirvana é Bun-nativo: sem bun a skill aparece e falha.
+      bins: ["bun"]
 ---
 
 # Business Protocol Engine v1.0
