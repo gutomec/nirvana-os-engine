@@ -8,6 +8,23 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Três coisas sobre notificações, aprendidas errando
+
+Um dispatch de teste notificou com o `<result>` corrompido e nada no disco. Lido
+como definitivo, aquilo é entrega falhada. Minutos depois o mesmo dispatch
+notificou de novo — relatório limpo, arquivo escrito. O trabalho estava chegando
+o tempo todo.
+
+Então o protocolo passou a dizer o que uma notificação significa. Ela dispara
+toda vez que o alvo para sem filho em background vivo, ou seja, **um dispatch
+pode notificar mais de uma vez**: um `<result>` truncado, corrompido ou que
+contradiz o disco se lê como *ainda não terminou*, nunca como falhou. **O
+`<result>` é relatório, não prova** — o harness pode neutralizar saída que se
+pareça com instruções, e um relatório pode ser só otimista; o que prova entrega é
+a Phase 6 lendo o disco. E **um bloqueio relatado honestamente é o sistema
+funcionando**: registre, feche o run como falho com o motivo, e não redespache o
+mesmo brief esperando outra parede.
+
 ### Travar a sessão era o preço errado para receber os resultados
 
 Mais cedo hoje o protocolo passou a despachar de forma síncrona

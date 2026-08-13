@@ -8,6 +8,22 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Three things about notifications, learned by getting them wrong
+
+A live test dispatch notified with a garbled `<result>` and nothing on disk. Read
+as final, that is a failed delivery. Minutes later the same dispatch notified
+again — clean report, file written. The work had been arriving the whole time.
+
+So the protocol now says what a notification means. It fires each time a target
+stops with no live background child, which means **one dispatch can notify more
+than once**: a `<result>` that looks truncated, garbled or contradicts the disk
+reads as *not finished yet*, never as failed. **`<result>` is a report, not
+proof** — the harness can neutralise output that looks like instructions, and a
+report can simply be optimistic; what proves delivery is Phase 6 reading the
+disk. And **an honestly reported blocker is the system working**: record it,
+close the run failed with the reason, and do not re-dispatch the same brief
+hoping for a different wall.
+
 ### Blocking the session was the wrong price for getting results back
 
 Earlier today the protocol was changed to dispatch synchronously

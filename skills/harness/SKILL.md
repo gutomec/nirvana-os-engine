@@ -260,6 +260,14 @@ Treating the receipt as the result is the bug this paragraph exists to prevent. 
 
 **When a notification arrives, that is the work coming home.** Read the `<result>`, gate it (Phase 6), close its ledger run (Phase 7), and tell the user. A notification you noticed and did not act on is the same failure as a receipt you mistook for a result — the run is finished and nobody knows.
 
+Three things about notifications that cost a wrong conclusion to learn:
+
+**A notification is not always the last one.** It fires each time the target stops with no live background child of its own, so one dispatch can notify more than once — the note in the notification says so. An early one can carry a partial or garbled `<result>` while the work is still in flight. Measured: a test dispatch notified with mangled output and no file on disk, then notified again minutes later with the clean report and the file written. Had the first been read as final, a delivery in progress would have been declared a failure. So when a `<result>` looks truncated, garbled or contradicts the disk, the honest reading is *not finished yet* — check again before you conclude anything.
+
+**`<result>` is a report, not proof.** It can be garbled by the harness when the target's output happens to look like instructions, truncated, or simply optimistic. What proves delivery is Phase 6 reading the disk: `verify-deliverable` plus the gate on the artifact that is actually there. A `<result>` saying "done" with nothing on disk is a run that failed, whatever it claims — and the reverse happens too, so check before you believe either.
+
+**An honest failure is the system working.** A target that reports it was blocked — a sandbox policy, a missing credential, a hard dependency — has done its job by telling you. Record it, close the run `failed` with the reason, and surface it. Do not re-dispatch the same brief hoping for a different outcome; a blocker that is real stays real, and the retry burns budget to arrive at the same wall.
+
 On claude-code, codex, and antigravity you dispatch through the runtime's **native in-process subagent** (the claude `Agent` tool, codex `[agents]`, antigravity dynamic subagents) — **not** `nrv dispatch --exec`, **not** a child `claude -p`. The in-process path runs inside your session with no 20-min wall-clock kill, so long deliverables don't get truncated. Reserve `--exec` / `runHeadless` for standalone headless scripted runs and sub-process-only runtimes (legacy gemini-cli, hermes).
 
 **Mind-clones (mandatory when declared).** If the dispatch involves a business with `assigned_mind_clones`, or you inject inline, call `injectMindClones({trace_id, slugs, ...})` from `lib/dispatch.ts` BEFORE spawning — it emits one `mind_clone_injected` event per DNA file. Without it, the subagent reads as generic Claude. `buildEmployeePrompt({...include_dna: true})` handles this for business dispatches.

@@ -73,6 +73,33 @@ describe("the result is collected from the notification", () => {
   });
 });
 
+describe("what a notification actually means", () => {
+  const h = () => read("skills/harness/SKILL.md");
+
+  test("one dispatch can notify more than once", () => {
+    // A live test dispatch notified with a garbled result and no file on disk,
+    // then notified again minutes later, clean and complete. Reading the first
+    // as final would have declared a delivery in flight a failure.
+    expect(h()).toMatch(/not always the last one/i);
+    expect(h()).toMatch(/notify more than once/i);
+  });
+
+  test("a garbled or contradicted result means 'not finished', not 'failed'", () => {
+    expect(h()).toMatch(/truncated, garbled or contradicts the disk/i);
+    expect(h()).toMatch(/not finished yet/i);
+  });
+
+  test("delivery is proven on disk, not by the report", () => {
+    expect(h()).toMatch(/is a report, not proof/i);
+    expect(h()).toMatch(/verify-deliverable/);
+  });
+
+  test("an honestly reported blocker is recorded, not retried blindly", () => {
+    expect(h()).toMatch(/honest failure is the system working/i);
+    expect(h()).toMatch(/Do not re-dispatch the same brief/i);
+  });
+});
+
 describe("the bans that survive from the first version", () => {
   test("filesystem polling is still forbidden", () => {
     expect(read("skills/harness/SKILL.md")).toMatch(/[Nn]ever poll the filesystem/);
