@@ -8,6 +8,21 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Prose was judged by a rule it never received
+
+The writing contract lives in a project's `CLAUDE.md`/`AGENTS.md`, written there
+by `nrv init` — which most projects never run. The quality gate judges every
+`.md` and `.txt` against it regardless, so a subagent could be failed on a rule
+nobody had given it. Seen live: a report came back with 38 em-dashes against a
+budget of 12 and had to be rewritten after the fact.
+
+The dash budget is the one that gets missed, because it is quantitative and
+nobody counts while drafting. So the contract now travels inside the dispatch
+instruction itself, together with the command that checks it — and the entity
+runs that check before handing work back, not after the gate rejects it.
+Catching it there costs a re-read; catching it at the gate costs rewriting a
+finished document.
+
 ### The gate waited for the slowest sibling
 
 Phase 6 opened with "Before declaring done, run TWO checks in order". For one

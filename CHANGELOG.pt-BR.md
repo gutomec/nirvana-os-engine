@@ -8,6 +8,20 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### A prosa era julgada por uma regra que nunca recebeu
+
+O contrato de escrita vive no `CLAUDE.md`/`AGENTS.md` do projeto, escrito lá pelo
+`nrv init` — que a maioria dos projetos nunca roda. O quality gate julga todo
+`.md` e `.txt` por ele mesmo assim, então um subagente podia ser reprovado por
+uma regra que ninguém lhe deu. Visto ao vivo: um relatório voltou com 38
+travessões contra um teto de 12 e teve que ser reescrito depois de pronto.
+
+O teto de travessões é o que mais escapa, porque é quantitativo e ninguém conta
+enquanto escreve. Então o contrato agora viaja dentro da própria instrução de
+dispatch, junto com o comando que o verifica — e a entidade roda essa checagem
+antes de devolver o trabalho, não depois do gate reprovar. Pegar ali custa uma
+releitura; pegar no gate custa reescrever um documento pronto.
+
 ### O gate esperava o irmão mais lento
 
 A Phase 6 começava com "antes de declarar pronto, rode DUAS checagens". Para um
