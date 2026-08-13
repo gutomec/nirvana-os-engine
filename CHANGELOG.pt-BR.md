@@ -8,6 +8,21 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Uma skill exclusiva do Hermes era oferecida a todo runtime
+
+Instalar o OpenClaw e rodar `openclaw skills list` mostrou o `nirvana-os-hermes`
+como pronto. Ele não está na raiz de skills: o OpenClaw varre seis níveis e o
+encontrou sob `_shared/adapters/hermes/`, que o instalador linka em todo runtime.
+A descrição dele pede que os outros runtimes o ignorem — prosa não impõe nada.
+Agora ele tem gate no binário `hermes`, então some onde o Hermes não existe.
+
+O gate não consegue expressar "qual runtime eu sou" — o OpenClaw só oferece gate
+por binário, config e SO — então numa máquina com Hermes instalado e OpenClaw
+rodando as duas variantes ainda aparecem, e o que resta é a descrição.
+
+A skill `nirvana-os` também vinha sem gate nenhum, visível em máquinas incapazes
+de rodar uma linha dela. Agora exige `bun`, como as outras três.
+
 ### OpenClaw
 
 O Nirvana passa a instalar em `~/.agents/skills`, a raiz de skills pessoais que o

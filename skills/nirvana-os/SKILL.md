@@ -6,6 +6,12 @@ tools: [Bash, Read, Skill]
 version: 1.0.0
 author: nirvana-os
 license: SUL-1.0
+metadata:
+  openclaw:
+    emoji: "🌀"
+    requires:
+      # Bun-native como o resto do engine.
+      bins: ["bun"]
 ---
 
 # Nirvana-OS
