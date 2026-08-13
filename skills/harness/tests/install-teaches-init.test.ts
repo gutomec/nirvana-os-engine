@@ -53,6 +53,15 @@ describe("the engine installer's last screen", () => {
     expect(summaryBlock()).not.toMatch(/nrv glance/);
   });
 
+  test("no installer prints nrv glance to the user", () => {
+    // Scoped to what the user SEES: the engine installer's summary and the
+    // hooks installer's closing line. A comment explaining the absence is fine.
+    const hooks = fs.readFileSync(path.join(ROOT, "skills/_shared/scripts/install.ts"), "utf8");
+    const printed = hooks.split("\n").filter((l) => l.includes("console.log") && l.includes("nrv glance"));
+    expect(printed).toEqual([]);
+    expect(summaryBlock()).not.toMatch(/console\.log\(.*nrv glance/);
+  });
+
   test("still tells the user how to verify the install", () => {
     const s = summaryBlock();
     expect(s).toMatch(/nrv install --check/);

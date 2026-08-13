@@ -541,7 +541,9 @@ inline, with no dispatch, no quality gate and no audit trail.
       console.log("Done. No agent runtime detected — the engine is installed anyway; install a runtime and re-run to wire its hooks.");
     } else {
       console.log(`Done. ${installedCount} agent(s) configured. New sessions will emit audit events automatically.`);
-      console.log(`Watch with: ${anyChange ? "(may need to restart your agent for hooks to load) " : ""}nrv watch  or  nrv glance --allow-actions`);
+      // No `nrv glance` here: the cockpit is unfinished, and an install should
+      // not send a new user to the weakest surface as their first stop.
+      console.log(`Watch with: ${anyChange ? "(may need to restart your agent for hooks to load) " : ""}nrv watch`);
     }
   } else {
     console.log("Done. Hooks removed. Other settings preserved.");
