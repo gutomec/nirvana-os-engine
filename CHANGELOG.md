@@ -8,6 +8,19 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### An uninitialised project degraded silently
+
+`nrv init` writes AGENTS.md + CLAUDE.md + GEMINI.md so every adapter finds one,
+and whichever the runtime reads carries the instruction to invoke Nirvana
+"regardless of skill activation". A project with none of them still orchestrates
+once the skill is active — the skill carries the protocol, and the dispatch
+instruction now carries the build and writing rules — but nothing tells the
+runtime to reach for the skill in the first place, so a brief can be answered
+inline with no dispatch, no gate and no audit trail.
+
+`nrv doctor` now names it, checking all three filenames rather than any one
+runtime's, and only when the working directory actually looks like a project.
+
 ### Build rules reached only Claude Code projects
 
 The four rules that keep an agent from over-building — think first, minimum that

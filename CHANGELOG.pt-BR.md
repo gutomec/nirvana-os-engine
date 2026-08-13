@@ -8,6 +8,20 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Projeto sem inicializar degradava em silêncio
+
+O `nrv init` escreve AGENTS.md + CLAUDE.md + GEMINI.md para que todo adapter ache
+um, e o que o runtime lê carrega a instrução de invocar o Nirvana
+"independentemente da ativação da skill". Um projeto sem nenhum deles ainda
+orquestra depois que a skill ativa — a skill carrega o protocolo, e a instrução
+de dispatch agora carrega as regras de construção e de escrita — mas nada manda o
+runtime buscar a skill, então um brief pode ser respondido inline, sem dispatch,
+sem gate e sem trilha de auditoria.
+
+O `nrv doctor` agora aponta isso, conferindo os três nomes de arquivo em vez do
+de um runtime só, e apenas quando o diretório de trabalho de fato parece um
+projeto.
+
 ### As regras de construção só chegavam a projetos Claude Code
 
 As quatro regras que impedem um agente de construir demais — pensar antes, o
