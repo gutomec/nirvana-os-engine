@@ -409,8 +409,10 @@ WHAT IT DOES
   4. Smoke-tests the audit pipe (writes a sentinel event)
 
 After install, every Write/Edit/Bash by Claude Code OR Gemini-CLI lands in
-~/.harness-logs/<today>/audit.jsonl automatically. Watch with 'nrv watch'
-or open the cockpit with 'nrv glance'.
+~/.harness-logs/<today>/audit.jsonl automatically. Watch with 'nrv watch'.
+
+Then create projects with 'nrv init <dir>' — without it a brief is answered
+inline, with no dispatch, no quality gate and no audit trail.
 `);
     process.exit(EXIT.OK);
   }
