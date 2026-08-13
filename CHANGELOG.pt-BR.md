@@ -31,6 +31,25 @@ virou preflight: sem arquivo de contrato, roda `nrv init .`, avisa numa linha,
 segue. Só pergunta antes quando o diretório é repositório de outra pessoa, onde
 três arquivos novos apareceriam no diff dela.
 
+### O teste de heartbeat falhava por afirmar o contrário do desenho
+
+O `driver — heartbeat sidecar` reprovava cerca de uma rodada de CI em três, no
+macOS e no Windows, e travou três pull requests seguidas. Ele conferia se o
+último heartbeat parecia velho no instante em que o teste olhava — mas o sidecar
+renova o lease a QUALQUER saída nova, e o JSON de resultado do filho é saída
+nova. Se o heartbeat parecia velho dependia de onde um poll de 250ms caía em
+relação a essa escrita.
+
+Renovar na escrita final é comportamento correto, então a asserção é que estava
+errada, não o tempo. Uma tentativa anterior de consertar fazendo o filho falso
+sair mais cedo só estreitou a janela: os bytes já estão no arquivo de captura
+nesse ponto.
+
+A propriedade que ela queria — o sidecar parou de renovar durante a parada — é
+provada direto pelo evento `x_ledger_stall_observed`, emitido uma vez com o gap
+medido. Contra 2,2s de silêncio e um teto de 1,2s, o sidecar tem cerca de oito
+polls para notar. Não sobra corrida.
+
 ### A instalação ensinava o primeiro passo errado
 
 O instalador do engine terminava com uma lista de quatro comandos, o `nrv init`
