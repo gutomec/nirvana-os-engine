@@ -17,6 +17,11 @@ const ROOT = path.resolve(import.meta.dir, "..", "..", "..");
 const INIT = path.join(ROOT, "skills/_shared/scripts/init-project.ts");
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-init-existing-"));
 
+/** A cold CI runner spawns Bun and does registry work per call: the five tests
+ *  take 684ms together locally and blew the 5s default on Windows. The budget
+ *  below is wall-clock reality, not slack for a hang. */
+const INIT_TIMEOUT_MS = 60_000;
+
 /** NIRVANA_SKILLS_DIR pinned to the repo: without it the script reads the
  *  INSTALLED templates, and the test would silently grade a different tree. */
 function runInit(dir: string) {
@@ -43,14 +48,14 @@ describe("a project that already has a contract file", () => {
     expect(claude).toContain("never delete this line");        // user content survives
     expect(claude).toMatch(/invoke the .?harness.? skill/i);   // and orchestration is wired
     expect(claude).toMatch(/Writing contract/);
-  });
+  }, INIT_TIMEOUT_MS);
 
   test("the user's rules stay at the top, above what we appended", () => {
     const dir = project("order", { "CLAUDE.md": "# My rules\nMY MARKER LINE\n" });
     runInit(dir);
     const c = fs.readFileSync(path.join(dir, "CLAUDE.md"), "utf8");
     expect(c.indexOf("MY MARKER LINE")).toBeLessThan(c.indexOf("Writing contract"));
-  });
+  }, INIT_TIMEOUT_MS);
 
   test("running it twice changes nothing — markers make it idempotent", () => {
     const dir = project("twice", { "CLAUDE.md": "# Mine\n" });
@@ -58,7 +63,7 @@ describe("a project that already has a contract file", () => {
     const first = fs.readFileSync(path.join(dir, "CLAUDE.md"), "utf8");
     runInit(dir);
     expect(fs.readFileSync(path.join(dir, "CLAUDE.md"), "utf8")).toBe(first);
-  });
+  }, INIT_TIMEOUT_MS);
 
   test("code and other files are never touched", () => {
     const dir = project("code", { "app.ts": "console.log('mine')\n", "README.md": "# mine\n" });
@@ -68,7 +73,7 @@ describe("a project that already has a contract file", () => {
     expect(fs.readFileSync(path.join(dir, "app.ts"), "utf8")).toBe("console.log('mine')\n");
     expect(fs.readFileSync(path.join(dir, "README.md"), "utf8")).toBe("# mine\n");
     expect(fs.readFileSync(path.join(dir, "src/lib.ts"), "utf8")).toBe("export const x = 1\n");
-  });
+  }, INIT_TIMEOUT_MS);
 
   test("every runtime family ends up with the invocation contract", () => {
     // A project with only CLAUDE.md must still serve codex (AGENTS.md) and
@@ -78,5 +83,5 @@ describe("a project that already has a contract file", () => {
     for (const f of ["AGENTS.md", "CLAUDE.md", "GEMINI.md"]) {
       expect(fs.readFileSync(path.join(dir, f), "utf8")).toMatch(/invoke the .?harness.? skill/i);
     }
-  });
+  }, INIT_TIMEOUT_MS);
 });
