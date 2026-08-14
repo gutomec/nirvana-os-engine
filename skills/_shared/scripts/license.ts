@@ -15,9 +15,9 @@
  *   nrv license activate [--label "<nome>"]  → binds this machine (online)
  */
 import { createPublicKey, createHash, verify as edVerify } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, readdirSync, statSync, realpathSync } from "node:fs";
 import { homedir, hostname, platform, arch } from "node:os";
-import { join } from "node:path";
+import { join, dirname, resolve } from "node:path";
 
 // Nirvana's PUBLIC key (Ed25519 pair; the PRIVATE one lives only on the production VPS).
 // Safe to embed: it only serves to VERIFY signatures, never to sign.
@@ -201,8 +201,93 @@ async function check(): Promise<number> {
   return 0; // soft by design — never hard-fails
 }
 
+/**
+ * Install a PROVENANCE.json into the license store.
+ *
+ * Until now the ONLY way to get a license in place was `bun setup.ts` — the
+ * whole pack installer — because that is where the copy lives. A buyer whose
+ * license never landed (setup run from a folder without the file, or run as a
+ * different user, or never run at all) had to re-run an installer to copy one
+ * small file. Windows buyer on 2026-08-14 hit exactly that.
+ *
+ * Given no path, it looks where a downloaded pack actually sits. Verification
+ * comes after the copy and never blocks it: a file that fails signature checking
+ * is still the file the buyer paid for, and telling them it is unsigned is more
+ * useful than refusing to move it.
+ */
+async function install(explicit?: string): Promise<number> {
+  const searched: string[] = [];
+  const candidates: string[] = [];
+  if (explicit) {
+    // A folder is as good as a file — buyers paste the pack directory.
+    candidates.push(explicit, join(explicit, "PROVENANCE.json"));
+  } else {
+    const home = homedir();
+    for (const dir of [process.cwd(), join(home, "Downloads"), join(home, "Desktop"), home]) {
+      candidates.push(join(dir, "PROVENANCE.json"));
+      // One level down: ~/Downloads/nirvana-os-<pack>/PROVENANCE.json
+      try {
+        for (const e of readdirSync(dir, { withFileTypes: true })) {
+          // Skip the store itself: it matches /nirvana/ and would make the
+          // command "find" what it is trying to install, then copy it onto
+          // itself and report success on a no-op.
+          if (!e.isDirectory() || join(dir, e.name) === LICENSE_DIR) continue;
+          if (/nirvana|pack/i.test(e.name)) candidates.push(join(dir, e.name, "PROVENANCE.json"));
+        }
+      } catch { /* unreadable dir — skip */ }
+    }
+  }
+
+  let src: string | null = null;
+  for (const c of candidates) {
+    searched.push(c);
+    try { if (existsSync(c) && statSync(c).isFile()) { src = c; break; } } catch { /* keep looking */ }
+  }
+
+  if (!src) {
+    console.log(`\n${YEL}Não encontrei um PROVENANCE.json.${RST}`);
+    console.log(`${DIM}Procurei em:${RST}`);
+    for (const c of searched.slice(0, 8)) console.log(`${DIM}  ${c}${RST}`);
+    if (searched.length > 8) console.log(`${DIM}  … e mais ${searched.length - 8}${RST}`);
+    console.log(`\n${DIM}Ele vem dentro do zip da compra, ao lado do setup.ts. Aponte direto:${RST}`);
+    console.log(`${DIM}  nrv license install <caminho-do-PROVENANCE.json>${RST}`);
+    console.log(`${DIM}  nrv license install <pasta-do-pack>${RST}\n`);
+    return 1;
+  }
+
+  // realpath, not resolve: on macOS /tmp is a symlink to /private/tmp, so two
+  // spellings of the same file compare unequal and the copy runs on itself.
+  const same = (() => {
+    try { return realpathSync(src) === realpathSync(STORE_PROV); } catch { return false; }
+  })();
+  if (same) {
+    console.log(`${DIM}Já instalado em ${STORE_PROV}.${RST}`);
+    return 0;
+  }
+
+  try {
+    mkdirSync(LICENSE_DIR, { recursive: true });
+    copyFileSync(src, STORE_PROV);
+    const notice = join(dirname(src), "LICENSE.txt");
+    if (existsSync(notice)) copyFileSync(notice, join(LICENSE_DIR, "LICENSE.txt"));
+  } catch (e: any) {
+    console.error(`\n${RED}Não consegui escrever em ${STORE_PROV}: ${e?.message ?? e}${RST}`);
+    console.error(`${DIM}Rode com o mesmo usuário que vai usar o sistema (um terminal elevado tem outro perfil).${RST}\n`);
+    return 1;
+  }
+
+  console.log(`${GRN}✓${RST} licença instalada: ${src} → ${STORE_PROV}`);
+  // Report what it is, without gatekeeping: an unsigned copy is still theirs.
+  printStatus(verifyProvenance());
+  console.log(`${DIM}Agora "nrv update <pack>" encontra a licença.${RST}`);
+  return 0;
+}
+
 const sub = process.argv[2] || "status";
-if (sub === "check") {
+if (sub === "install") {
+  const arg = process.argv[3];
+  process.exit(await install(arg && !arg.startsWith("-") ? arg : undefined));
+} else if (sub === "check") {
   process.exit(await check());
 } else if (sub === "activate") {
   const li = process.argv.indexOf("--label");
@@ -213,6 +298,6 @@ if (sub === "check") {
   printStatus(v);
   process.exit(v.status === "invalid" ? 3 : 0);
 } else {
-  console.log('uso: nrv license [status|verify|check|activate [--label "<nome>"]]');
+  console.log('uso: nrv license [status|verify|check|install [<caminho>]|activate [--label "<nome>"]]');
   process.exit(2);
 }
