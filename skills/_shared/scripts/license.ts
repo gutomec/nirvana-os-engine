@@ -255,10 +255,20 @@ async function install(explicit?: string): Promise<number> {
     return 1;
   }
 
-  // realpath, not resolve: on macOS /tmp is a symlink to /private/tmp, so two
-  // spellings of the same file compare unequal and the copy runs on itself.
+  // "Already installed" has two shapes, and only one of them is about paths.
+  //
+  //  - Same FILE: realpath, not resolve — on macOS /tmp is a symlink to
+  //    /private/tmp, so two spellings of one file compare unequal and the copy
+  //    would run on itself.
+  //  - Same CONTENT: the pack folder is still on disk after the first install,
+  //    so a second run finds the original again. Re-copying it is harmless, but
+  //    reporting "installed" for a no-op tells the buyer something happened
+  //    when nothing did.
   const same = (() => {
-    try { return realpathSync(src) === realpathSync(STORE_PROV); } catch { return false; }
+    try {
+      if (realpathSync(src) === realpathSync(STORE_PROV)) return true;
+      return existsSync(STORE_PROV) && readFileSync(src, "utf8") === readFileSync(STORE_PROV, "utf8");
+    } catch { return false; }
   })();
   if (same) {
     console.log(`${DIM}Já instalado em ${STORE_PROV}.${RST}`);

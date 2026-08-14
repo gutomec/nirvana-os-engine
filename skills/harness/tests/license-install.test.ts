@@ -63,15 +63,27 @@ describe("nrv license install", () => {
     expect(fs.existsSync(path.join(h, ".nirvana-license", "LICENSE.txt"))).toBe(true);
   }, 30_000);
 
-  test("running it twice is a no-op, not a self-copy", () => {
-    // The store directory matches the /nirvana/ scan pattern, so an earlier
-    // version found the file it had just installed and copied it onto itself,
-    // reporting success on a no-op.
+  test("running it twice reports a no-op instead of a phantom install", () => {
+    // The pack folder is still on disk after the first run, so the second finds
+    // the same original. Re-copying is harmless; saying "installed" when
+    // nothing changed is what misleads. Content decides, not the path — an
+    // earlier version compared paths with resolve() and this test passed on
+    // macOS only by the accident of readdir order.
     const h = home("twice"); pack(h);
-    run(h, ["install"]);
+    expect(run(h, ["install"]).status).toBe(0);
     const second = run(h, ["install"]);
     expect(second.status).toBe(0);
     expect(second.stdout).toMatch(/Já instalado/);
+    expect(JSON.parse(fs.readFileSync(store(h), "utf8")).license_key).toBe("TEST-KEY-1234");
+  }, 30_000);
+
+  test("pointing it at the store itself never self-copies", () => {
+    const h = home("selfcopy"); pack(h);
+    run(h, ["install"]);
+    const r = run(h, ["install", store(h)]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/Já instalado/);
+    expect(fs.readFileSync(store(h), "utf8")).toBe(PROVENANCE);
   }, 30_000);
 
   test("with nothing to find, it says where it looked", () => {
