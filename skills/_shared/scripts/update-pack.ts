@@ -10,7 +10,7 @@
  * download the stamped .zip → unzip → find the content folder → install-content.
  * Offline use is never blocked; this only runs when the buyer asks for an update.
  */
-import { existsSync, readFileSync, writeFileSync, mkdtempSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, writeFileSync, mkdtempSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { homedir, hostname, platform, arch, tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
@@ -187,6 +187,31 @@ async function main(): Promise<number> {
     join(SKILLS, "_shared", "scripts", "install-content.ts"),
     content, "--slug", slug, ...(version ? ["--version", version] : []),
   ], { stdio: "inherit" });
+
+  // Refresh the license from the artifact that was just downloaded.
+  //
+  // The zip is built per buyer and carries their PROVENANCE.json, so an update
+  // already holds everything needed to repair a license store that is missing,
+  // stale, or from an older purchase — and it used to walk past it. A buyer who
+  // could run this command at all (from the pack folder, say) still had to go
+  // find `nrv license install` on their own.
+  //
+  // Best-effort: the content is already installed and correct by this point.
+  const freshProv = [join(content, "PROVENANCE.json"), join(dirname(content), "PROVENANCE.json")]
+    .find((p) => existsSync(p));
+  if (freshProv) {
+    const licDir = join(HOME, ".nirvana-license");
+    try {
+      mkdirSync(licDir, { recursive: true });
+      copyFileSync(freshProv, join(licDir, "PROVENANCE.json"));
+      const notice = join(dirname(freshProv), "LICENSE.txt");
+      if (existsSync(notice)) copyFileSync(notice, join(licDir, "LICENSE.txt"));
+    } catch (e) {
+      console.log(`  ${YEL}could not refresh the license at ${licDir}: ${(e as Error).message}${RST}`);
+      console.log(`  ${DIM}The content updated fine. Run 'nrv license install' when the permission is sorted.${RST}`);
+    }
+  }
+
   rmSync(tmp, { recursive: true, force: true });
   if (ic.status !== 0) { console.log(`  ${RED}Overlay failed.${RST}\n`); return 1; }
   console.log(`\n${GRN}✓ Pack '${slug}' updated${version ? ` to ${version}` : ""}.${RST}\n`);

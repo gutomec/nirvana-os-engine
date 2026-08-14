@@ -192,6 +192,19 @@ function resolvePaths(opts = {}) {
     // harness/scripts/build-routing-digest.ts.
     ROUTING_DIGEST_PATH:      cfg('ROUTING_DIGEST_PATH')      || projectPath('.routing-digest.md')        || join(NIRVANA_HOME, '.nirvana', '.routing-digest.md'),
 
+    // Cross-language alias groups, emitted next to the digest by the same
+    // builder and read by router.js Stage 2.7 arm (b).
+    //
+    // It had no constant. The writer derived it from the digest's directory and
+    // the reader derived it from the squads registry's — the same directory in
+    // project scope, and two different ones in global, where the registry sits
+    // at ~/ and the digest at ~/.nirvana/. So on every global install, which is
+    // every buyer, the file was written where nothing looked for it and the
+    // cross-language bridge was dead code. A PT brief against an EN-declared
+    // squad never got its coverage lift, and the degradation is silent by
+    // design (absence is treated as normal).
+    KEYWORD_ALIASES_PATH:     cfg('KEYWORD_ALIASES_PATH')     || projectPath('.keyword-aliases.json')     || join(NIRVANA_HOME, '.nirvana', '.keyword-aliases.json'),
+
     SQUADS_STATE_DIR:         cfg('NIRVANA_STATE_DIR')        || projectPath('state/squads')              || join(NIRVANA_HOME, '.nirvana', 'squads-state'),
 
     // Scope-aware authoritative state DB. Race-prone surfaces (audit, gates,

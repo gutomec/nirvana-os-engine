@@ -76,7 +76,11 @@ export function resolveRoutingArtifactPaths(): RoutingArtifactPaths {
     squadsRegistry: nrvPaths.SQUADS_REGISTRY_PATH,
     mindClonesRegistry: path.join(cloneDir, ".mind-clones-registry.json"),
     digest,
-    aliases: path.join(path.dirname(digest), ".keyword-aliases.json"),
+    // The same constant the router reads. Deriving it from the digest's
+    // directory here and from the registry's there put the file, in global
+    // scope, somewhere nothing looked.
+    aliases: nrvPaths.KEYWORD_ALIASES_PATH
+      || path.join(path.dirname(digest), ".keyword-aliases.json"),
   };
 }
 
@@ -484,7 +488,14 @@ if (import.meta.main) {
     mindClonesRegistry: typeof flags.clones === "string" ? flags.clones : resolved.mindClonesRegistry,
   };
   const digestPath = typeof flags.out === "string" ? flags.out : resolved.digest;
-  const aliasesPath = typeof flags["aliases-out"] === "string" ? flags["aliases-out"] : path.join(path.dirname(digestPath), ".keyword-aliases.json");
+  // Explicit flags win, and `--out` carries the aliases with it: a caller that
+  // relocates the digest means to relocate the pair. Only the DEFAULT comes from
+  // the shared constant — that default is what diverged from the reader.
+  const aliasesPath = typeof flags["aliases-out"] === "string"
+    ? flags["aliases-out"]
+    : typeof flags.out === "string"
+      ? path.join(path.dirname(digestPath), ".keyword-aliases.json")
+      : resolved.aliases;
 
   const input = loadDigestInput(registryPaths);
   const readable = input.readable ?? { businesses: true, squads: true, mindClones: true };

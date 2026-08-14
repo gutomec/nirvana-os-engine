@@ -26,8 +26,18 @@ import * as path from "node:path";
 /** A line that is NOTHING BUT the tag. Prose mentioning such a string is not a tag. */
 export const WATERMARK_RE = /^(\/\/[A-Za-z0-9_-]{22}|\[\/\/\]: # \([A-Za-z0-9_-]{22}\)|#[A-Za-z0-9_-]{22})$/;
 
-const EXTS = new Set([".md", ".ts", ".js", ".yaml", ".yml"]);
-const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "outputs"]);
+// The six the watermarker writes. This set had five: `.markdown` was missing,
+// so a `.markdown` file could be stamped by the store, pulled back in by
+// `nrv update`, and stay invisible to the very check that exists to catch that.
+// Latent today — the library has no `.markdown` file — and one is all it takes
+// to reopen the hole that shipped in 0.1.12-0.1.14.
+const EXTS = new Set([".md", ".markdown", ".ts", ".js", ".yaml", ".yml"]);
+
+// `dist` used to be here. On a pack-authoring machine that is precisely where
+// packs are BUILT, so the scan structurally could not see the artifacts it is
+// meant to protect — `authorsPacks()` detects the authoring machine by the
+// existence of ~/nirvana-packs, and then skipped that machine's output.
+const SKIP_DIRS = new Set(["node_modules", ".git", "outputs"]);
 
 export interface ScanResult {
   /** Files whose last line is a watermark tag. */
