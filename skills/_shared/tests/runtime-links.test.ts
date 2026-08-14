@@ -71,6 +71,25 @@ function uninstall(home: string): { code: number; out: string } {
 function isLink(p: string): boolean {
   try { return fs.lstatSync(p).isSymbolicLink(); } catch { return false; }
 }
+
+/**
+ * How a runtime entry is materialised, per platform.
+ *
+ * install.ts:320 sets `preferCopy = IS_WINDOWS || FLAG_COPY_SKILLS || isCodex`,
+ * so Windows gets a COPY with the marker file — symlinks there need admin — and
+ * POSIX gets a symlink. Codex always gets a copy, on every platform.
+ *
+ * This suite asserted the POSIX shape unconditionally, which was invisible
+ * because CI only ran `bun test skills/harness/tests` and this file lives in
+ * _shared. Running the whole suite surfaced six red tests on Windows against a
+ * product that was behaving exactly as designed.
+ */
+const IS_WINDOWS = process.platform === "win32";
+
+/** Ours, however this platform materialises it. */
+function isOurs(p: string): boolean {
+  return IS_WINDOWS ? fs.existsSync(path.join(p, COPY_MARKER)) : isLink(p);
+}
 function exists(p: string): boolean {
   try { fs.lstatSync(p); return true; } catch { return false; }
 }
@@ -110,10 +129,10 @@ test("install links every installed runtime and backs up a colliding third-party
   expect(out).toContain(".pre-nirvana.bak");
 
   // pi is wired too — the list the uninstaller used to be missing.
-  expect(isLink(path.join(home, ".pi", "agent", "skills", "harness"))).toBe(true);
+  expect(isOurs(path.join(home, ".pi", "agent", "skills", "harness"))).toBe(true);
   for (const s of SKILLS) {
-    expect(isLink(path.join(home, ".claude", "skills", s))).toBe(true);
-    expect(isLink(path.join(home, ".gemini", "skills", s))).toBe(true);
+    expect(isOurs(path.join(home, ".claude", "skills", s))).toBe(true);
+    expect(isOurs(path.join(home, ".gemini", "skills", s))).toBe(true);
     // Codex always gets a COPY, marker included.
     const codex = path.join(home, ".codex", "skills", s);
     expect(isLink(codex)).toBe(false);
@@ -129,7 +148,7 @@ test("re-install is idempotent: no second backup, nothing deleted", () => {
 
   expect(fs.readFileSync(path.join(`${thirdParty}.pre-nirvana.bak`, "THIRD-PARTY.txt"), "utf8")).toContain("não é do Nirvana");
   expect(exists(`${thirdParty}.pre-nirvana.bak.2`)).toBe(false);
-  expect(isLink(thirdParty)).toBe(true);
+  expect(isOurs(thirdParty)).toBe(true);
   expect(fs.existsSync(path.join(home, ".codex", "skills", "harness", COPY_MARKER))).toBe(true);
 });
 
@@ -147,36 +166,41 @@ test("a NEW third-party dir over an existing backup is skipped, never deleted", 
 
   // Preserved in place, and the user was told.
   expect(fs.readFileSync(path.join(target, "SECOND.txt"), "utf8")).toBe("conteúdo do usuário");
-  expect(isLink(target)).toBe(false);
+  expect(isOurs(target)).toBe(false);
   expect(out).toContain("skipped this skill");
   // The original backup is untouched too.
   expect(fs.readFileSync(path.join(`${target}.pre-nirvana.bak`, "THIRD-PARTY.txt"), "utf8")).toContain("não é do Nirvana");
   // Every other skill still installed normally.
-  expect(isLink(path.join(home, ".claude", "skills", "squads"))).toBe(true);
+  expect(isOurs(path.join(home, ".claude", "skills", "squads"))).toBe(true);
 });
 
 test("uninstall removes our links AND our copies, cleans dangling links, keeps what is not ours", () => {
   const home = path.join(root, "home-lifecycle");
   const nirvanaSkills = path.join(home, ".nirvana", "skills");
 
-  // (d) a dangling link: the target is deleted while the link remains.
-  fs.rmSync(path.join(nirvanaSkills, "nirvana-os"), { recursive: true, force: true });
+  // (d) a dangling link: the target is deleted while the link remains. Only
+  // reachable where entries ARE links — on Windows the installer copies
+  // (install.ts:320), so removing the engine tree leaves a full directory, not a
+  // broken link. Same for the foreign symlink below: creating a directory
+  // symlink on Windows needs admin, which CI does not have.
   const dangling = path.join(home, ".gemini", "skills", "nirvana-os");
-  expect(isLink(dangling)).toBe(true);
-  expect(fs.existsSync(dangling)).toBe(false); // broken — existsSync() cannot see it
-
-  // A foreign symlink under one of our names: not ours, must survive.
   const foreignTarget = path.join(home, "elsewhere");
-  fs.mkdirSync(foreignTarget, { recursive: true });
   const foreignLink = path.join(home, ".antigravity", "skills", "businesses");
-  fs.rmSync(foreignLink, { force: true });
-  fs.symlinkSync(foreignTarget, foreignLink);
+  if (!IS_WINDOWS) {
+    fs.rmSync(path.join(nirvanaSkills, "nirvana-os"), { recursive: true, force: true });
+    expect(isLink(dangling)).toBe(true);
+    expect(fs.existsSync(dangling)).toBe(false); // broken — existsSync() cannot see it
+
+    fs.mkdirSync(foreignTarget, { recursive: true });
+    fs.rmSync(foreignLink, { force: true });
+    fs.symlinkSync(foreignTarget, foreignLink);
+  }
 
   const { code, out } = uninstall(home);
   expect(code).toBe(0);
 
   // (a) symlinks gone, (b) copies gone, (d) dangling link gone.
-  expect(exists(dangling)).toBe(false);
+  if (!IS_WINDOWS) expect(exists(dangling)).toBe(false);
   for (const s of SKILLS) {
     expect(exists(path.join(home, ".codex", "skills", s))).toBe(false);
     expect(exists(path.join(home, ".pi", "agent", "skills", s))).toBe(false);
@@ -190,8 +214,10 @@ test("uninstall removes our links AND our copies, cleans dangling links, keeps w
   expect(out).toContain("not ours");
 
   // The foreign symlink is not ours either.
-  expect(isLink(foreignLink)).toBe(true);
-  expect(fs.readlinkSync(foreignLink)).toBe(foreignTarget);
+  if (!IS_WINDOWS) {
+    expect(isLink(foreignLink)).toBe(true);
+    expect(fs.readlinkSync(foreignLink)).toBe(foreignTarget);
+  }
 
   // Engine tree gone.
   expect(fs.existsSync(nirvanaSkills)).toBe(false);
@@ -204,7 +230,7 @@ test("backups are restored when the entry removed WAS ours", () => {
   fs.writeFileSync(path.join(target, "MINE.txt"), "diretório do usuário");
 
   expect(install(home).code).toBe(0);
-  expect(isLink(target)).toBe(true);           // ours now, user's dir parked in .bak
+  expect(isOurs(target)).toBe(true);           // ours now, user's dir parked in .bak
 
   expect(uninstall(home).code).toBe(0);
   expect(isLink(target)).toBe(false);
@@ -242,7 +268,7 @@ test("no runtime is a prerequisite: a HOME without ~/.claude never gets one", ()
   // The canonical tree is still complete, and the installed runtime is wired.
   for (const s of SKILLS) {
     expect(fs.existsSync(path.join(home, ".nirvana", "skills", s, "SKILL.md"))).toBe(true);
-    expect(isLink(path.join(home, ".gemini", "skills", s))).toBe(true);
+    expect(isOurs(path.join(home, ".gemini", "skills", s))).toBe(true);
   }
   expect(out).toContain(path.join(home, ".gemini", "skills"));
 });

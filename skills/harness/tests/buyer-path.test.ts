@@ -151,7 +151,17 @@ describe("what the buyer has after running setup.ts", () => {
   test("the registries can actually see it", () => {
     // Content on disk that the router cannot find is the most expensive failure
     // mode there is, because everything LOOKS installed.
-    const reg = path.join(home, ".squads-registry.json");
+    //
+    // The path is asked of the engine's own resolver rather than guessed. The
+    // guess was `$HOME/.squads-registry.json`, which is right on POSIX and wrong
+    // on Windows — and a test that hardcodes where a file should be cannot catch
+    // the day it moves.
+    const r = spawnSync(process.execPath, ["-e",
+      'const p = await import(process.argv[1]); console.log(p.SQUADS_REGISTRY_PATH);',
+      path.join(home, ".nirvana", "skills", "_shared", "lib", "paths.js"),
+    ], { cwd: root, env, encoding: "utf8" });
+    const reg = (r.stdout || "").trim();
+    expect(reg.length).toBeGreaterThan(0);
     expect(fs.existsSync(reg)).toBe(true);
     expect(fs.readFileSync(reg, "utf8")).toContain("fixture-squad");
   });
