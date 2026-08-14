@@ -1,0 +1,25 @@
+{
+  "description": "Cross-language parity probes (Phase 9). Each entry is ONE intent written twice, in Portuguese and in English, in wording that does NOT appear in any manifest — these are paraphrases, held out of the index on purpose. The corpus's own example_briefs are indexed at ×2 weight, so routing them back measures nothing but the index; routing a paraphrase measures retrieval.\n\nThe contract is agreement, not correctness: both members of a pair must reach the SAME destination. Which destination is right is a corpus question and it moves; whether the answer depends on the language the user typed in is an engine question and it must not.\n\nMeasured 2026-08-14 against the live library (190 squads / 59 businesses), BM25 only, amplify off: 4 of 20 pairs agreed, and 2 of those agreed by both finding nothing. That is the number Phase 9 exists to move.",
+  "pairs": [
+    { "id": "ebook-recipes", "pt": "escreva um livro digital de receitas com textos de venda", "en": "write an ebook of recipes with sales copy" },
+    { "id": "paid-ads", "pt": "monte uma campanha de anúncios pagos para captar leads", "en": "set up a paid ads campaign to capture leads" },
+    { "id": "contract-review", "pt": "revise este contrato e aponte cláusulas de risco", "en": "review this contract and flag risky clauses" },
+    { "id": "brand-identity", "pt": "crie a identidade visual de uma marca nova", "en": "create the visual identity for a new brand" },
+    { "id": "landing-page", "pt": "faça uma página de vendas que converta bem", "en": "build a sales page that converts well" },
+    { "id": "video-short", "pt": "produza um vídeo curto para redes sociais", "en": "produce a short video for social media" },
+    { "id": "seo-audit", "pt": "audite o site e diga por que não aparece nas buscas", "en": "audit the site and say why it does not show up in search" },
+    { "id": "bookkeeping", "pt": "feche o mês contábil e mostre o que entrou e saiu", "en": "close the accounting month and show what came in and out" },
+    { "id": "restaurant-ops", "pt": "organize a operação de um restaurante pequeno", "en": "organize the operations of a small restaurant" },
+    { "id": "clinic-records", "pt": "cuide dos prontuários e do agendamento de uma clínica", "en": "handle the records and scheduling of a clinic" },
+    { "id": "hiring", "pt": "encontre e entreviste candidatos para uma vaga técnica", "en": "find and interview candidates for a technical role" },
+    { "id": "ecommerce", "pt": "cuide da loja online, do estoque ao pós-venda", "en": "run the online store, from stock to after-sales" },
+    { "id": "real-estate", "pt": "anuncie imóveis e cuide dos interessados", "en": "list properties and handle the interested buyers" },
+    { "id": "course", "pt": "estruture um curso online do zero até a primeira turma", "en": "structure an online course from zero to the first cohort" },
+    { "id": "security-audit", "pt": "procure falhas de segurança neste sistema", "en": "look for security flaws in this system" },
+    { "id": "data-pipeline", "pt": "construa um fluxo que colete e limpe esses dados", "en": "build a flow that collects and cleans this data" },
+    { "id": "podcast", "pt": "grave e edite um episódio com voz sintetizada", "en": "record and edit an episode with a synthesized voice" },
+    { "id": "market-research", "pt": "investigue o que os concorrentes andam fazendo", "en": "investigate what the competitors have been doing" },
+    { "id": "trading", "pt": "monte uma estratégia de negociação com gestão de risco", "en": "put together a trading strategy with risk management" },
+    { "id": "event-report", "pt": "faça o relatório do evento com retorno e aprendizados", "en": "write the event report with returns and lessons learned" }
+  ]
+}

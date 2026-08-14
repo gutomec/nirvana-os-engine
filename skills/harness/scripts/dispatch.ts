@@ -393,6 +393,22 @@ async function fastBm25Business(briefText: string): Promise<{ slug: string | nul
 // executors receive the enriched brief), business routes flow into the
 // existing brief-business scaffold path.
 let autoMandatorySquads: string[] = [];
+/**
+ * Corpus language mix, for the fast-mode notice. Best-effort and cached by the
+ * process: a warning must never cost the dispatch it is warning about.
+ */
+let _mixCache: { enPct: number; ptPct: number; minorityPct: number } | null | undefined;
+function corpusLanguageMix(): { enPct: number; ptPct: number; minorityPct: number } | null {
+  if (_mixCache !== undefined) return _mixCache;
+  try {
+    const { corpusMix } = require("../../_shared/lib/corpus-language.ts");
+    const registries = require("../lib/registry-loader.js").loadAll();
+    const m = corpusMix(registries);
+    _mixCache = m ? { enPct: m.enPct, ptPct: m.ptPct, minorityPct: m.minorityPct } : null;
+  } catch { _mixCache = null; }
+  return _mixCache;
+}
+
 let pendingCascade:
   | { kind: "squad-only"; squads: string[]; plan: DispatchPlan }
   | { kind: "agent-x"; reason: string; plan: DispatchPlan }
@@ -401,6 +417,23 @@ if (autoMode && routingMode === "fast") {
   // fast mode: BM25 business pick, zero-token. Honest fallback when BM25 can't
   // confidently choose a business (most businesses lack auto_routes yet).
   console.log(c("lime", "▶") + c("bold", " Auto-route — fast (BM25, zero-token)"));
+  // Say what the cheap path costs, when it costs it.
+  //
+  // BM25 matches tokens, so a brief and an entity written in different languages
+  // share none and never meet. The agentic default does not have this problem —
+  // it reads and reasons — but fast is lexical by definition, and on a corpus
+  // written in more than one language the user's language quietly decides the
+  // answer. Measured on 20 held-out paraphrase pairs: 25% of them reach the same
+  // destination in Portuguese and in English.
+  //
+  // Printed only when the corpus is actually mixed, so a single-language library
+  // never sees a warning that does not apply to it.
+  const mix = corpusLanguageMix();
+  if (mix && mix.minorityPct >= 15) {
+    console.log(c("yellow", "  ⚠") + c("dim", ` fast is lexical: this library is ${mix.enPct}% English / ${mix.ptPct}% Portuguese,`));
+    console.log(c("dim", `     so a brief written in one of them can miss entities declared in the other.`));
+    console.log(c("dim", `     --mode=agentic reads instead of matching, and does not care which language you use.`));
+  }
   const fast = await fastBm25Business(brief);
   if (!fast.slug) {
     console.error(c("red", `✗ --auto (fast): BM25 did not confidently pick a business (signal ${fast.signal || "n/a"}; most businesses still have no auto_routes). Name the business, or use --mode=agentic.`));
