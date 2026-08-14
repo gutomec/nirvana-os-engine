@@ -25,7 +25,7 @@
 import { parseArgs } from "../../_shared/lib/bun-helpers.ts";
 
 const { flags } = parseArgs(process.argv.slice(2), {
-  boolean: ["all", "json", "quiet"],
+  boolean: ["all", "json", "quiet", "parity", "safety"],
   string: ["n"],
 });
 const SAMPLE = flags.all ? Infinity : Number(flags.n ?? 400);
@@ -91,6 +91,112 @@ interface Tally { total: number; top1: number; anySignal: number; noMatch: numbe
 const blank = (): Tally => ({ total: 0, top1: 0, anySignal: 0, noMatch: 0 });
 
 const all = registryLoader.loadAll();
+
+/**
+ * --parity: the measurement that actually says something.
+ *
+ * Self-retrieval routes a brief that IS the index (example_briefs are indexed at
+ * ×2 weight), so it lands near 100% in any language and proves only that BM25
+ * works. The paired probes in baselines/golden-parity.json are paraphrases held
+ * out of every manifest: same intent, two languages, wording that appears
+ * nowhere in the corpus. The contract is agreement — both members must reach the
+ * same destination — because which destination is right is a corpus question,
+ * and whether the answer depends on the user's language is an engine question.
+ */
+/**
+ * --safety: parity and abstention in one view.
+ *
+ * Any change aimed at cross-language routing has two ways to look good and be
+ * wrong. It can raise parity by dispatching more confidently on briefs that
+ * should ask first, and it can protect the negatives by retrieving nothing at
+ * all. Reporting both together is what makes an improvement legible as one.
+ */
+if (flags.safety) {
+  const parityFile = new URL("../baselines/golden-parity.json", import.meta.url).pathname;
+  const negFile = new URL("../baselines/golden-negatives.json", import.meta.url).pathname;
+  const { pairs } = JSON.parse(await Bun.file(parityFile).text()) as { pairs: Array<{ id: string; pt: string; en: string }> };
+  const negRaw = JSON.parse(await Bun.file(negFile).text()) as Record<string, any>;
+  const negatives: string[] = (negRaw.cases ?? negRaw.negatives ?? []).map((n: any) => n.brief ?? n).filter((b: unknown) => typeof b === "string");
+
+  const landed = async (brief: string, floor: number): Promise<{ dest: string | null; signal: string }> => {
+    try {
+      const r = await router.route(brief, { registries: all, amplify: false });
+      const s3 = r.stage3 ?? {};
+      const alts = (s3.alternatives ?? []) as Array<Record<string, unknown>>;
+      const dest = s3.target ? resolveDestination(s3.target) : alts.length ? resolveDestination(alts[0]) : null;
+      return { dest, signal: String(s3.signal) };
+    } catch { return { dest: null, signal: "ERROR" }; }
+  };
+
+  console.log(`\n${BOLD}DENSE FLOOR SWEEP${RST}`);
+  console.log(`${DIM}  ${pairs.length} paraphrase pairs · ${negatives.length} out-of-domain negatives${RST}\n`);
+  console.log(`  ${"arm".padStart(6)} ${"parity".padStart(8)} ${"negatives that went HIGH".padStart(26)}`);
+  for (const floor of [1.01]) { // one row today: there is no arm to sweep
+    let agree = 0;
+    for (const p of pairs) {
+      const [a, b] = [await landed(p.pt, floor), await landed(p.en, floor)];
+      if (a.dest && a.dest === b.dest) agree++;
+    }
+    let broke = 0;
+    for (const n of negatives) if ((await landed(n, floor)).signal === "HIGH") broke++;
+    const pp = (100 * agree) / pairs.length;
+    const label = floor > 1 ? "  off" : floor.toFixed(2);
+    const c = broke > 0 ? RED : pp >= 50 ? GRN : YEL;
+    console.log(`  ${label.padStart(6)} ${c}${pp.toFixed(0).padStart(7)}%${RST} ${String(broke).padStart(25)}`);
+  }
+  console.log(`\n${DIM}  A change is only an improvement when parity rises and the negatives column does not.${RST}\n`);
+  process.exit(0);
+}
+
+if (flags.parity) {
+  const file = new URL("../baselines/golden-parity.json", import.meta.url).pathname;
+  const { pairs } = JSON.parse(await Bun.file(file).text()) as {
+    pairs: Array<{ id: string; pt: string; en: string }>;
+  };
+  const rows: Array<{ id: string; pt: string | null; en: string | null; agree: boolean; bothEmpty: boolean }> = [];
+  for (const p of pairs) {
+    // Where the brief LANDS, which is not the same as what it dispatches to.
+    // An AMBIGUOUS result has no `target` — it asks the user to confirm — but it
+    // has ranked candidates, and the first one is where the brief arrived. The
+    // first cut of this script read `target` alone and scored every ambiguity as
+    // "found nothing", which made a router that was working look like one that
+    // was not.
+    const dest = async (brief: string): Promise<string | null> => {
+      try {
+        const r = await router.route(brief, { registries: all, amplify: false });
+        const s3 = r.stage3 ?? {};
+        if (s3.target) return resolveDestination(s3.target);
+        const alts = (s3.alternatives ?? []) as Array<Record<string, unknown>>;
+        return alts.length ? resolveDestination(alts[0]) : null;
+      } catch { return null; }
+    };
+    const [ptDest, enDest] = [await dest(p.pt), await dest(p.en)];
+    rows.push({ id: p.id, pt: ptDest, en: enDest, agree: ptDest === enDest, bothEmpty: !ptDest && !enDest });
+  }
+  const agreed = rows.filter((r) => r.agree).length;
+  const hollow = rows.filter((r) => r.agree && r.bothEmpty).length;
+  const out = {
+    pairs: rows.length,
+    agreed,
+    agreed_with_a_destination: agreed - hollow,
+    agreed_by_both_finding_nothing: hollow,
+    parity_pct: Number(((100 * (agreed - hollow)) / rows.length).toFixed(1)),
+    rows,
+  };
+  if (asJson) { console.log(JSON.stringify(out, null, 2)); process.exit(0); }
+  console.log(`\n${BOLD}CROSS-LANGUAGE PARITY — same intent, two languages${RST}`);
+  console.log(`${DIM}  ${rows.length} paraphrase pairs, held out of the index.${RST}\n`);
+  for (const r of rows) {
+    const mark = r.bothEmpty ? `${YEL}—${RST}` : r.agree ? `${GRN}=${RST}` : `${RED}≠${RST}`;
+    console.log(`  ${mark} ${r.id.padEnd(18)} pt→${(r.pt ?? "nothing").padEnd(30)} en→${r.en ?? "nothing"}`);
+  }
+  const color = out.parity_pct >= 80 ? GRN : out.parity_pct >= 50 ? YEL : RED;
+  console.log(`\n  ${BOLD}parity: ${color}${out.parity_pct}%${RST}${BOLD} (${out.agreed_with_a_destination}/${rows.length} landed on the same place)${RST}`);
+  if (hollow) console.log(`${DIM}  ${hollow} more agreed by both finding nothing, which is agreement without value.${RST}`);
+  console.log();
+  process.exit(0);
+}
+
 const probes = sample(collectProbes(all), SAMPLE);
 if (probes.length === 0) {
   console.error(`${RED}No example_briefs in the live registries — nothing to measure.${RST}`);
