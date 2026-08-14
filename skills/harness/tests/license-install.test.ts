@@ -73,7 +73,7 @@ describe("nrv license install", () => {
     expect(run(h, ["install"]).status).toBe(0);
     const second = run(h, ["install"]);
     expect(second.status).toBe(0);
-    expect(second.stdout).toMatch(/Já instalado/);
+    expect(second.stdout).toMatch(/Already installed/);
     expect(JSON.parse(fs.readFileSync(store(h), "utf8")).license_key).toBe("TEST-KEY-1234");
   }, 30_000);
 
@@ -82,7 +82,7 @@ describe("nrv license install", () => {
     run(h, ["install"]);
     const r = run(h, ["install", store(h)]);
     expect(r.status).toBe(0);
-    expect(r.stdout).toMatch(/Já instalado/);
+    expect(r.stdout).toMatch(/Already installed/);
     expect(fs.readFileSync(store(h), "utf8")).toBe(PROVENANCE);
   }, 30_000);
 
@@ -91,8 +91,8 @@ describe("nrv license install", () => {
     const h = home("empty");
     const r = run(h, ["install"]);
     expect(r.status).toBe(1);
-    expect(r.stdout).toMatch(/Procurei em/);
-    expect(r.stdout).toMatch(/nrv license install <caminho/);
+    expect(r.stdout).toMatch(/Searched in/);
+    expect(r.stdout).toMatch(/nrv license install <path/);
   }, 30_000);
 
   test("an unsigned provenance is still installed", () => {
@@ -109,6 +109,6 @@ describe("the failure message points at the cheap fix", () => {
   test("update-pack offers `nrv license install` before reinstalling the pack", () => {
     const src = fs.readFileSync(path.resolve(import.meta.dir, "..", "..", "_shared", "scripts", "update-pack.ts"), "utf8");
     expect(src).toMatch(/nrv license install/);
-    expect(src).toMatch(/bem mais caro/);
+    expect(src).toMatch(/costs far more/);
   });
 });

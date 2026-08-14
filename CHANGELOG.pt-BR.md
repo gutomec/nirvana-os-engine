@@ -8,6 +8,27 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## 0.4.0 — 2026-08-14
 
+### O instalador do pack nunca instalou a licença
+
+Investigar o `nrv update genesis-circle` de um comprador levou a algo pior do que
+um comprador. O instalador que vai dentro de todo pack de conteúdo abria o
+`PROVENANCE.json` para ler a versão do pack e fechava. Nunca copiava o arquivo
+para `~/.nirvana-license/`, que é o único lugar onde o `nrv update` procura fora
+do diretório atual.
+
+A instalação terminava com "✓ Pack instalado" e nenhuma licença no disco. O
+update funcionava para quem por acaso rodasse de dentro da pasta descompactada, e
+falhava para todo o resto — dias depois, sem nada que ligasse a falha à
+instalação que a causou. Foi por isso que o relato veio do Windows: não há nada
+de Windows nisso, é só onde alguém finalmente rodou o comando de outra pasta.
+
+A cópia agora acontece, e avisa quando não consegue. Um erro de permissão imprime
+o caminho onde falhou, diz que o pack continua funcionando e que só o update
+autenticado não, e entrega o comando único que resolve. Uma cópia sem procedência
+também passa a dizer isso, em vez de seguir calada. Os testes garantem que o
+passo existe e que o `catch` dele nunca fica vazio, porque um `catch` vazio é
+exatamente o formato que esse bug tinha.
+
 ### Só dava para instalar a licença reinstalando o pack
 
 Um comprador no Windows rodou `nrv update genesis-circle` e recebeu "Sem

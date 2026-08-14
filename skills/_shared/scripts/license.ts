@@ -12,7 +12,7 @@
  *   nrv license            → shows the provenance + signature status
  *   nrv license verify     → same (exit 3 only if the signature is tampered)
  *   nrv license check      → status + online heartbeat (warning-only, never blocks)
- *   nrv license activate [--label "<nome>"]  → binds this machine (online)
+ *   nrv license activate [--label "<name>"]  → binds this machine (online)
  */
 import { createPublicKey, createHash, verify as edVerify } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, readdirSync, statSync, realpathSync } from "node:fs";
@@ -97,34 +97,34 @@ function machineId(): string {
 }
 
 function printStatus(v: VResult): void {
-  console.log(`\n${RED}Nirvana-OS — Licença${RST}`);
+  console.log(`\n${RED}Nirvana-OS — License${RST}`);
   if (v.status === "absent") {
-    console.log(`  ${DIM}Sem PROVENANCE.json — cópia sem procedência (uso liberado).${RST}`);
-    console.log(`  ${DIM}Tem o pacote Genesis Circle? Rode "bun setup.ts" de dentro da pasta descompactada.${RST}\n`);
+    console.log(`  ${DIM}No PROVENANCE.json — unprovenanced copy (use is not restricted).${RST}`);
+    console.log(`  ${DIM}Bought a pack? Run "bun setup.ts" from inside the unzipped folder.${RST}\n`);
     return;
   }
   const d = (v.data || {}) as Record<string, string>;
   const who = d.buyer_name || d.buyer_email || "—";
-  console.log(`  Licenciado para: ${who}${d.buyer_email ? ` <${d.buyer_email}>` : ""}`);
-  console.log(`  Chave:           ${d.license_key || "—"}`);
-  console.log(`  Cópia (id):      ${d.watermark_id || "—"}`);
-  console.log(`  Edição/versão:   ${d.edition || "—"} ${d.version || ""}`.trimEnd());
-  if (d.issued_at) console.log(`  Emitida em:      ${d.issued_at}`);
+  console.log(`  Licensed to:     ${who}${d.buyer_email ? ` <${d.buyer_email}>` : ""}`);
+  console.log(`  Key:             ${d.license_key || "—"}`);
+  console.log(`  Copy (id):       ${d.watermark_id || "—"}`);
+  console.log(`  Edition/version: ${d.edition || "—"} ${d.version || ""}`.trimEnd());
+  if (d.issued_at) console.log(`  Issued at:       ${d.issued_at}`);
   const sig =
     v.status === "valid" ? `${GRN}VÁLIDA${RST}` :
     v.status === "unsigned" ? `${YEL}não assinada${RST}` :
     `${YEL}INVÁLIDA (não confere com a chave oficial)${RST}`;
-  console.log(`  Assinatura:      ${sig}`);
+  console.log(`  Signature:       ${sig}`);
   if (existsSync(STORE_ACT)) {
     try {
       const a = JSON.parse(readFileSync(STORE_ACT, "utf8"));
       const mid = typeof a.machine_id === "string" ? a.machine_id.slice(0, 8) : "?";
-      console.log(`  Ativação:        ativada (máquina ${mid}…)`);
+      console.log(`  Activation:      active (machine ${mid}…)`);
     } catch {
-      console.log(`  Ativação:        não ativada  ${DIM}(nrv license activate)${RST}`);
+      console.log(`  Activation:      not activated  ${DIM}(nrv license activate)${RST}`);
     }
   } else {
-    console.log(`  Ativação:        não ativada  ${DIM}(nrv license activate — destrava updates/suporte; offline segue livre)${RST}`);
+    console.log(`  Activation:      not activated  ${DIM}(nrv license activate — unlocks updates/support; offline stays free)${RST}`);
   }
   console.log("");
 }
@@ -133,12 +133,12 @@ async function activate(label?: string): Promise<number> {
   const v = verifyProvenance();
   const key = (v.data?.license_key as string) || "";
   if (v.status === "absent" || !key) {
-    console.log(`\n${YEL}Sem PROVENANCE.json com chave de licença — nada a ativar.${RST}`);
-    console.log(`${DIM}Rode "bun setup.ts" de dentro da pasta do pacote Genesis Circle.${RST}\n`);
+    console.log(`\n${YEL}No PROVENANCE.json with a license key — nothing to activate.${RST}`);
+    console.log(`${DIM}Run "bun setup.ts" from inside the pack folder.${RST}\n`);
     return 1;
   }
   if (v.status === "invalid") {
-    console.log(`\n${YEL}Assinatura do PROVENANCE inválida — ativação abortada.${RST}\n`);
+    console.log(`\n${YEL}Invalid PROVENANCE signature — activation aborted.${RST}\n`);
     return 1;
   }
   const mid = machineId();
@@ -152,7 +152,7 @@ async function activate(label?: string): Promise<number> {
     const json: Record<string, unknown> = await res.json().catch(() => ({}));
     if (!res.ok) {
       const msg = (json.error as string) || `HTTP ${res.status}`;
-      console.log(`\n${YEL}Ativação não concluída: ${msg}.${RST} ${DIM}(uso offline segue liberado)${RST}\n`);
+      console.log(`\n${YEL}Activation did not complete: ${msg}.${RST} ${DIM}(offline use stays available)${RST}\n`);
       return 0; // soft: never hard-fails
     }
     mkdirSync(LICENSE_DIR, { recursive: true });
@@ -160,11 +160,11 @@ async function activate(label?: string): Promise<number> {
       STORE_ACT,
       JSON.stringify({ ...json, machine_id: mid, activated_at: new Date().toISOString() }, null, 2) + "\n",
     );
-    console.log(`\n${GRN}Máquina ativada.${RST} Licença ${key} vinculada (label: ${payload.machine_label}).`);
-    console.log(`${DIM}Token salvo em ${STORE_ACT}. Uso offline permanece liberado.${RST}\n`);
+    console.log(`\n${GRN}Machine activated.${RST} License ${key} bound (label: ${payload.machine_label}).`);
+    console.log(`${DIM}Token saved at ${STORE_ACT}. Offline use stays available.${RST}\n`);
     return 0;
   } catch (e) {
-    console.log(`\n${YEL}Sem conexão para ativar agora${RST} ${DIM}(${(e as Error).message}). Rode "nrv license activate" depois.${RST}\n`);
+    console.log(`\n${YEL}No connection to activate right now${RST} ${DIM}(${(e as Error).message}). Run "nrv license activate" later.${RST}\n`);
     return 0;
   }
 }
@@ -178,7 +178,7 @@ async function check(): Promise<number> {
   const key = (v.data?.license_key as string) || "";
   if (v.status === "absent" || !key) return 0; // free edition / no license — nothing to check
   if (v.status === "invalid") {
-    console.log(`  ${YEL}⚠ Assinatura inválida — esta cópia não corresponde a uma licença oficial.${RST}\n`);
+    console.log(`  ${YEL}⚠ Invalid signature — this copy does not match an official license.${RST}\n`);
   }
   try {
     const res = await fetch(VALIDATE_URL, {
@@ -188,12 +188,12 @@ async function check(): Promise<number> {
     });
     const json: Record<string, unknown> = await res.json().catch(() => ({}));
     if (json.ok === true) {
-      console.log(`  ${GRN}✓ Licença ativa no servidor.${RST}\n`);
+      console.log(`  ${GRN}✓ License active on the server.${RST}\n`);
     } else {
       const st = (json.status as string) || `HTTP ${res.status}`;
-      console.log(`  ${YEL}⚠ Esta licença não está ativa no servidor (${st}).${RST}`);
-      console.log(`  ${DIM}Se você comprou, contate o suporte: cópias não licenciadas não recebem updates nem suporte.${RST}`);
-      console.log(`  ${DIM}O uso offline NÃO é bloqueado.${RST}\n`);
+      console.log(`  ${YEL}⚠ This license is not active on the server (${st}).${RST}`);
+      console.log(`  ${DIM}If you bought it, contact support: unlicensed copies get no updates and no support.${RST}`);
+      console.log(`  ${DIM}Offline use is NOT blocked.${RST}\n`);
     }
   } catch {
     /* offline / network unavailable — silent, soft */
@@ -245,13 +245,13 @@ async function install(explicit?: string): Promise<number> {
   }
 
   if (!src) {
-    console.log(`\n${YEL}Não encontrei um PROVENANCE.json.${RST}`);
-    console.log(`${DIM}Procurei em:${RST}`);
+    console.log(`\n${YEL}No PROVENANCE.json found.${RST}`);
+    console.log(`${DIM}Searched in:${RST}`);
     for (const c of searched.slice(0, 8)) console.log(`${DIM}  ${c}${RST}`);
-    if (searched.length > 8) console.log(`${DIM}  … e mais ${searched.length - 8}${RST}`);
-    console.log(`\n${DIM}Ele vem dentro do zip da compra, ao lado do setup.ts. Aponte direto:${RST}`);
-    console.log(`${DIM}  nrv license install <caminho-do-PROVENANCE.json>${RST}`);
-    console.log(`${DIM}  nrv license install <pasta-do-pack>${RST}\n`);
+    if (searched.length > 8) console.log(`${DIM}  … and ${searched.length - 8} more${RST}`);
+    console.log(`\n${DIM}It ships inside the purchase zip, next to setup.ts. Point at it directly:${RST}`);
+    console.log(`${DIM}  nrv license install <path-to-PROVENANCE.json>${RST}`);
+    console.log(`${DIM}  nrv license install <pack-folder>${RST}\n`);
     return 1;
   }
 
@@ -271,7 +271,7 @@ async function install(explicit?: string): Promise<number> {
     } catch { return false; }
   })();
   if (same) {
-    console.log(`${DIM}Já instalado em ${STORE_PROV}.${RST}`);
+    console.log(`${DIM}Already installed at ${STORE_PROV}.${RST}`);
     return 0;
   }
 
@@ -281,15 +281,15 @@ async function install(explicit?: string): Promise<number> {
     const notice = join(dirname(src), "LICENSE.txt");
     if (existsSync(notice)) copyFileSync(notice, join(LICENSE_DIR, "LICENSE.txt"));
   } catch (e: any) {
-    console.error(`\n${RED}Não consegui escrever em ${STORE_PROV}: ${e?.message ?? e}${RST}`);
-    console.error(`${DIM}Rode com o mesmo usuário que vai usar o sistema (um terminal elevado tem outro perfil).${RST}\n`);
+    console.error(`\n${RED}Could not write to ${STORE_PROV}: ${e?.message ?? e}${RST}`);
+    console.error(`${DIM}Run as the same user who will use the system (an elevated terminal has a different profile).${RST}\n`);
     return 1;
   }
 
-  console.log(`${GRN}✓${RST} licença instalada: ${src} → ${STORE_PROV}`);
+  console.log(`${GRN}✓${RST} license installed: ${src} → ${STORE_PROV}`);
   // Report what it is, without gatekeeping: an unsigned copy is still theirs.
   printStatus(verifyProvenance());
-  console.log(`${DIM}Agora "nrv update <pack>" encontra a licença.${RST}`);
+  console.log(`${DIM}Now "nrv update <pack>" can find the license.${RST}`);
   return 0;
 }
 
@@ -308,6 +308,6 @@ if (sub === "install") {
   printStatus(v);
   process.exit(v.status === "invalid" ? 3 : 0);
 } else {
-  console.log('uso: nrv license [status|verify|check|install [<caminho>]|activate [--label "<nome>"]]');
+  console.log('usage: nrv license [status|verify|check|install [<path>]|activate [--label "<name>"]]');
   process.exit(2);
 }

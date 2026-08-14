@@ -8,6 +8,28 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## 0.4.0 — 2026-08-14
 
+### The pack installer never installed the license
+
+Chasing one buyer's `nrv update genesis-circle` failure led somewhere worse than
+one buyer. The installer that ships inside every content pack opened
+`PROVENANCE.json` to read the pack version and then closed it. It never copied
+the file to `~/.nirvana-license/`, which is the only place `nrv update` looks
+besides the current directory.
+
+So the install ended with "✓ Pack instalado" and no license on disk. The update
+worked for anyone who happened to run it from the unzipped folder, and failed
+for everyone who ran it from anywhere else — days later, with no way to connect
+the failure to the install that caused it. That is why the report arrived from
+Windows: nothing about it is Windows-specific, it is just where someone finally
+ran the command from another directory.
+
+The copy now happens, and it announces itself when it cannot. A permission error
+prints the path it failed on, says the pack still works and only authenticated
+updates do not, and hands over the one command that fixes it. A copy without
+provenance says that too, instead of passing quietly. Tests assert the step
+exists and that its `catch` is never empty, because an empty one is exactly the
+shape this bug had.
+
 ### A license could only be installed by reinstalling the pack
 
 A buyer on Windows ran `nrv update genesis-circle` and got "Sem PROVENANCE com
