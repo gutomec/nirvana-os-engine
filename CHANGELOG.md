@@ -6,6 +6,25 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### Run artifacts were committed into the engine
+
+`outputs/` was never gitignored, so nine files from a dispatch run reached the
+public repo in #4: a brief, a HANDOFF, a business's deliverables, a generated
+report. Nothing secret — no credentials, no paid content, no watermarks — but
+the trace of *using* the engine is not the engine, and it does not belong in a
+repository other people read to understand the product.
+
+`outputs/` is ignored now, the nine are untracked (still on disk, since they are
+the provenance of the published CLA), and `check-engine-purity` fails on any
+tracked file under `outputs/`, `.nirvana/` or `.harness-logs/`. It reads the git
+index rather than the disk, so a developer's local run is left alone and only a
+committed one fails.
+
+They remain in history: the content is not sensitive, and rewriting a public
+repo's history to erase noise costs more than the noise.
+
 ## 0.3.8 — 2026-08-13
 
 ### The cockpit was still advertised by the hooks installer

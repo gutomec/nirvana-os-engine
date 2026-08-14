@@ -87,6 +87,23 @@ if (!existsSync(REPO)) {
 }
 walk(REPO, "");
 
+// Run artifacts are not entity content, but they are the same mistake wearing
+// different clothes: the trace of USING the engine, committed into the engine.
+// Nine of them reached the public repo — a brief, a HANDOFF, a business's
+// outputs, a generated report — because `outputs/` was never gitignored and
+// this gate only looked for squad.yaml-shaped things. Checking the git index
+// rather than the disk, so a developer's local run is left alone and only a
+// tracked one fails.
+const trackedRunArtifacts = (() => {
+  try {
+    const out = Bun.spawnSync(["git", "ls-files", "outputs", ".nirvana", ".harness-logs"], { cwd: REPO }).stdout.toString().trim();
+    return out ? out.split("\n") : [];
+  } catch {
+    return [];   // no git (a tarball checkout) — nothing to judge
+  }
+})();
+for (const f of trackedRunArtifacts) offenses.push(`${f}  (dispatch run artifact — gitignore it)`);
+
 if (offenses.length > 0) {
   console.error(`ENGINE PURITY: FAIL — ${offenses.length} entity-content file(s) in the engine repo:`);
   for (const o of offenses.sort()) console.error(`  ${o}`);
