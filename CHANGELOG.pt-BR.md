@@ -6,6 +6,26 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Não lançado
+
+### Só dava para instalar a licença reinstalando o pack
+
+Um comprador no Windows rodou `nrv update genesis-circle` e recebeu "Sem
+PROVENANCE com license_key". A mensagem nomeou os dois caminhos consultados —
+essa parte funcionou — e então mandou rodar de novo o `bun setup.ts`, o
+instalador inteiro do pack, para copiar um arquivo pequeno. Era o único caminho:
+a cópia mora dentro do setup.ts e em nenhum outro lugar.
+
+O `nrv license install` é o comando que faltava. Sem argumento, ele procura onde
+um pack baixado de fato está: diretório atual, Downloads, Desktop, home, e um
+nível dentro de qualquer subpasta cujo nome mencione nirvana ou pack. Com
+argumento, aceita arquivo ou pasta, porque pasta é o que as pessoas colam. O
+`LICENSE.txt` vai junto quando está ao lado.
+
+A verificação roda depois da cópia e nunca a impede. Uma procedência que falha na
+assinatura ainda é o arquivo que o comprador pagou, e dizer que está sem
+assinatura é mais útil que recusar movê-la.
+
 ## 0.3.9 — 2026-08-14
 
 ### A guarda contra vazamento passou a seguir o engine em vez de lembrar dele
