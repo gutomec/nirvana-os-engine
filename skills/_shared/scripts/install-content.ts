@@ -42,8 +42,8 @@ for (let i = 0; i < argv.length; i++) {
   CONTENT = argv[i]; break;
 }
 
-if (!CONTENT || !existsSync(CONTENT)) { console.error(`install-content: contentDir inválido: ${CONTENT || "(vazio)"}`); process.exit(2); }
-if (!SLUG) { console.error("install-content: --slug <slug> é obrigatório"); process.exit(2); }
+if (!CONTENT || !existsSync(CONTENT)) { console.error(`install-content: invalid contentDir: ${CONTENT || "(empty)"}`); process.exit(2); }
+if (!SLUG) { console.error("install-content: --slug <slug> is required"); process.exit(2); }
 
 // ── Engine version gate (single enforcement point) ──────────────────────────
 // A pack declares the minimum engine it needs (pack.yaml: requires_engine). Both
@@ -77,9 +77,9 @@ function engineVersion(): string | null {
   const req = requiresEngine();
   const eng = engineVersion();
   if (req && eng && cmpVer(eng, req) < 0) {
-    console.error(`install-content: engine ${eng} é mais antigo que o exigido pelo pack '${SLUG}' (>=${req}).`);
-    console.error(`  Atualize o engine primeiro:  npx @nirvana-os/cli   (ou: nrv update)`);
-    console.error(`  Depois reinstale o pack:     nrv update ${SLUG}`);
+    console.error(`install-content: engine ${eng} is older than the pack '${SLUG}' requires (>=${req}).`);
+    console.error(`  Update the engine first:     npx @nirvana-os/cli   (or: nrv update)`);
+    console.error(`  Then reinstall the pack:     nrv update ${SLUG}`);
     process.exit(3);
   }
 }
@@ -245,14 +245,14 @@ if (!DRY) {
   // lived elsewhere. Now it falls back to the engine's own indexer, which is
   // where it always is: whoever gets here already has the engine, because this
   // script lives inside it.
-  console.log("  re-indexando registries...");
+  console.log("  re-indexing registries...");
   const nrvBin = join(HOME, ".local", "bin", "nrv");
   const indexer = join(import.meta.dir, "..", "..", "harness", "scripts", "index.ts");
   const reindex = existsSync(nrvBin)
     ? spawnSync(nrvBin, ["index"], { stdio: "inherit" })
     : spawnSync("bun", [indexer], { stdio: "inherit" });
   if (reindex.status !== 0) {
-    console.log(`  ⚠ Índices não construídos (exit ${reindex.status ?? "?"}). O conteúdo está instalado;`);
-    console.log(`    rode 'nrv index' — sem eles o roteamento não encontra o que acabou de ser instalado.`);
+    console.log(`  ⚠ Indexes not built (exit ${reindex.status ?? "?"}). The content is installed;`);
+    console.log(`    run 'nrv index' — without them routing cannot find what was just installed.`);
   }
 }

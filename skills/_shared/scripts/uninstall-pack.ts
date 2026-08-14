@@ -25,11 +25,11 @@ const args = process.argv.slice(2);
 const DRY = args.includes("--dry");
 const slug = args.find((a) => !a.startsWith("-")) || null;
 
-if (!slug) { console.error("uso: nrv uninstall <slug> --kind=pack [--dry]"); process.exit(2); }
+if (!slug) { console.error("usage: nrv uninstall <slug> --kind=pack [--dry]"); process.exit(2); }
 
 const manifestPath = join(PACKS_DIR, `${slug}.json`);
 if (!existsSync(manifestPath)) {
-  console.error(`uninstall-pack: pack '${slug}' não está instalado (sem ${manifestPath}).`);
+  console.error(`uninstall-pack: pack '${slug}' is not installed (no ${manifestPath}).`);
   process.exit(1);
 }
 
@@ -90,4 +90,4 @@ if (!DRY) {
   if (existsSync(nrv)) { console.log("  re-indexando registries..."); spawnSync(nrv, ["index"], { stdio: "inherit" }); }
 }
 
-console.log(`\n${DRY ? "Dry run — nada mudou." : `Pack '${slug}' removido`} (${removed} componente(s)${kept ? `, ${kept} com run-state preservado` : ""}).`);
+console.log(`\n${DRY ? "Dry run — nothing changed." : `Pack '${slug}' removed`} (${removed} component(s)${kept ? `, ${kept} with run-state preserved` : ""}).`);

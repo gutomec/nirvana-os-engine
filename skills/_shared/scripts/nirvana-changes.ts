@@ -31,7 +31,7 @@ const args = argv.slice(1).filter((a) => !a.startsWith("--"));
 const DRY = flags.has("--dry");
 
 function fail(msg: string): never {
-  console.error(`erro: ${msg}`);
+  console.error(`error: ${msg}`);
   process.exit(2);
 }
 
@@ -230,7 +230,7 @@ if (cmd === "pending" || cmd === "ack") {
   const surface = readSurface(resolved.dir);
   if (!surface) {
     // An artifact without a surface is not an error: it is a pack predating this feature.
-    console.log(JSON.stringify({ entity: resolved.label, pending: false, reason: "sem superfície" }));
+    console.log(JSON.stringify({ entity: resolved.label, pending: false, reason: "no surface" }));
     process.exit(0);
   }
 
@@ -281,18 +281,18 @@ if (cmd === "pending" || cmd === "ack") {
   process.exit(breaking.length ? 1 : 0);
 }
 
-console.log(`nirvana-changes — superfície de contrato dos artefatos
+console.log(`nirvana-changes — contract surface of the artifacts
 
-  gen <dir...> [--dry]      regenera superfície, deriva bump, escreve ${CHANGES_FILE} + ${CHANGELOG_FILE}
-  gen --all [--dry]         varre ~/squads, ~/businesses e a biblioteca de clones
-  diff <instalado> <novo>   compara dois diretórios do mesmo artefato (JSON; sai 1 se houver quebra)
-  show <dir>                imprime a superfície atual
-  pending <ent> [--project <dir>]  mudanças que ESTE projeto ainda não viu (sai 1 se houver quebra)
-  ack <ent> [--project <dir>]      marca a versão atual como vista por este projeto
+  gen <dir...> [--dry]      regenerate the surface, derive the bump, write ${CHANGES_FILE} + ${CHANGELOG_FILE}
+  gen --all [--dry]         scan ~/squads, ~/businesses and the clone library
+  diff <installed> <new>    compare two directories of the same artifact (JSON; exits 1 on a break)
+  show <dir>                print the current surface
+  pending <ent> [--project <dir>]  changes THIS project has not seen yet (exits 1 on a break)
+  ack <ent> [--project <dir>]      mark the current version as seen by this project
 
-Arquivos no artefato:
-  ${SURFACE_FILE}   superfície (gerado, determinístico)
-  ${CHANGES_FILE}            histórico tipado das mudanças (gerado)
-  ${CHANGELOG_FILE}          leitura humana (gerado — não editar)
-  ${BEHAVIOR_FILE}  anotação MANUAL de mudança de comportamento; consumida e apagada no gen`);
+Files in the artifact:
+  ${SURFACE_FILE}   surface (generated, deterministic)
+  ${CHANGES_FILE}            typed history of the changes (generated)
+  ${CHANGELOG_FILE}          human reading (generated — do not edit)
+  ${BEHAVIOR_FILE}  MANUAL note of a behavior change; consumed and deleted on gen`);
 process.exit(cmd ? 2 : 0);

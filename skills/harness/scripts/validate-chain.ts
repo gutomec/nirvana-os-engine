@@ -276,8 +276,8 @@ if (all) {
 
 const projectId = args.find(a => !a.startsWith("--"));
 if (!projectId) {
-  console.error("Uso: bun validate-chain.ts <project_id> [--strict] [--verify-disk] [--min-bytes=N] [--json]");
-  console.error("     bun validate-chain.ts --all [--strict] [--verify-disk] [--min-bytes=N] [--json]");
+  console.error("Usage: bun validate-chain.ts <project_id> [--strict] [--verify-disk] [--min-bytes=N] [--json]");
+  console.error("       bun validate-chain.ts --all [--strict] [--verify-disk] [--min-bytes=N] [--json]");
   process.exit(2);
 }
 

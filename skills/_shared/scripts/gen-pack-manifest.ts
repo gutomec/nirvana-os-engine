@@ -29,8 +29,8 @@ const sp =
   positional[0] ||
   (existsSync(join(process.cwd(), "starter-pack")) ? join(process.cwd(), "starter-pack") : "");
 if (!sp || !existsSync(sp)) {
-  console.error("uso: gen-pack-manifest.ts <starter-pack-dir> [--version <v>] [--out <file>]");
-  console.error("  starter-pack/ não encontrado");
+  console.error("usage: gen-pack-manifest.ts <starter-pack-dir> [--version <v>] [--out <file>]");
+  console.error("  starter-pack/ not found");
   process.exit(2);
 }
 

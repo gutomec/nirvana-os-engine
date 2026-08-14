@@ -12,6 +12,7 @@
 import { describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { corpusGate } from "../../_shared/lib/corpus-gate.ts";
 
 const router = require("../lib/router.js");
 const registryLoader = require("../lib/registry-loader.js");
@@ -27,7 +28,7 @@ const FULL_LIBRARY = !!(all.squads.source_path && all.businesses.source_path)
 const ALIAS_FILE_PRESENT = !!(all.squads.source_path
   && fs.existsSync(path.join(path.dirname(all.squads.source_path), ".keyword-aliases.json")));
 
-const d = FULL_LIBRARY ? describe : describe.skip;
+const d = corpusGate("bridge-cases", FULL_LIBRARY, { providers: providerCount, businesses: businessCount, alias_file: ALIAS_FILE_PRESENT });
 
 /** Destination a candidate resolves to (same collapse rule as stage3Decide). */
 function destinationOf(m: any): string | null {

@@ -148,7 +148,7 @@ test("a NEW third-party dir over an existing backup is skipped, never deleted", 
   // Preserved in place, and the user was told.
   expect(fs.readFileSync(path.join(target, "SECOND.txt"), "utf8")).toBe("conteúdo do usuário");
   expect(isLink(target)).toBe(false);
-  expect(out).toContain("pulei esta skill");
+  expect(out).toContain("skipped this skill");
   // The original backup is untouched too.
   expect(fs.readFileSync(path.join(`${target}.pre-nirvana.bak`, "THIRD-PARTY.txt"), "utf8")).toContain("não é do Nirvana");
   // Every other skill still installed normally.

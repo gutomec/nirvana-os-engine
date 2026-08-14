@@ -31,11 +31,11 @@ const dateStr = arg("--date", "");
 const offlineSnapshot = process.argv.includes("--offline-snapshot");
 
 if (!projectDir || !output) {
-  console.error('Uso: build-report-html.ts --project <dir> --output <file.html> [--title] [--client] [--date] [--offline-snapshot]');
+  console.error('Usage: build-report-html.ts --project <dir> --output <file.html> [--title] [--client] [--date] [--offline-snapshot]');
   process.exit(2);
 }
 if (!fs.existsSync(projectDir)) {
-  console.error(`Pasta do projeto não encontrada: ${projectDir}`);
+  console.error(`Project folder not found: ${projectDir}`);
   process.exit(2);
 }
 
@@ -77,7 +77,7 @@ const files = walk(projectDir).sort((a, b) => {
 });
 
 if (files.length === 0) {
-  console.error(`Nenhum markdown encontrado em ${projectDir}`);
+  console.error(`No markdown found in ${projectDir}`);
   process.exit(1);
 }
 

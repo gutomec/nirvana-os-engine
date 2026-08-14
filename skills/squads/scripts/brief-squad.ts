@@ -38,23 +38,23 @@ for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (a === "--project") { projectId = argv[++i]; continue; }
   if (a === "-h" || a === "--help") {
-    console.log('Uso: brief-squad <slug> "<brief>" [--project <id>]');
+    console.log('Usage: brief-squad <slug> "<brief>" [--project <id>]');
     process.exit(EXIT.OK);
   }
   if (!slug) slug = a;
   else if (!brief) brief = a;
-  else { console.error(`ERRO: argumento extra '${a}'`); process.exit(EXIT.INVALID_ARGS); }
+  else { console.error(`ERROR: extra argument '${a}'`); process.exit(EXIT.INVALID_ARGS); }
 }
 
 if (!slug || !brief) {
-  console.error('Uso: brief-squad <slug> "<brief>" [--project <id>]');
+  console.error('Usage: brief-squad <slug> "<brief>" [--project <id>]');
   process.exit(EXIT.INVALID_ARGS);
 }
 
 const hit = enumerate(scope, "squads").find(e => e.slug === slug && !e.overridden);
 const target = hit?.dir ?? path.join(paths.SQUADS_DIR, slug);
 if (!fs.existsSync(target) || !fs.statSync(target).isDirectory()) {
-  console.error(`ERRO: squad '${slug}' não encontrado (scope=${scope.mode})`);
+  console.error(`ERROR: squad '${slug}' not found (scope=${scope.mode})`);
   process.exit(EXIT.FAILURES);
 }
 
@@ -147,20 +147,20 @@ try {
   console.error(`[brief-squad] WARN: HANDOFF.json write failed: ${e.message}`);
 }
 
-console.log(`OK: brief registrado.
+console.log(`OK: brief registered.
 
   Project ID:    ${projectId}
   Squad:         ${slug}
   Project dir:   ${projectDir}
   Brief file:    ${briefFile}
   Audit log:     ${auditFile}
-  Run ID:        ${runId ?? "(não rastreado — ver aviso acima)"}
+  Run ID:        ${runId ?? "(not tracked — see the warning above)"}
 
-Próximo passo (executado pela skill via Agent tool):
-  Spawn um subagente sobre ${slug}/squad.yaml + workflow, com o brief acima e o
-  output_path em ${projectDir}. Esperar o entregável + outputs/_SUMMARY.md.
+Next step (run by the skill via the Agent tool):
+  Spawn a subagent over ${slug}/squad.yaml + workflow, with the brief above and
+  output_path in ${projectDir}. Wait for the deliverable + outputs/_SUMMARY.md.
 ${runId ? `
-OBRIGATÓRIO ao terminar (é o que avisa o dono que acabou):
-  nrv run-track close ${runId} --state delivered|withheld|failed [--error "<motivo>"]` : ""}`);
+REQUIRED when you finish (this is what tells the owner it is done):
+  nrv run-track close ${runId} --state delivered|withheld|failed [--error "<reason>"]` : ""}`);
 
 process.exit(EXIT.OK);

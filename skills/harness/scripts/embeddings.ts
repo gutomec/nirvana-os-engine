@@ -28,24 +28,24 @@ const PKG = "@huggingface/transformers";
 
 async function status() {
   const backend = requestedBackend() || "hash_tfidf (default)";
-  console.log(`backend pedido:  ${backend}`);
+  console.log(`requested backend: ${backend}`);
   let installed = false;
   try { require.resolve(PKG); installed = true; } catch { /* not installed */ }
-  console.log(`pacote neural:   ${installed ? PKG + " instalado" : "ausente (rode `nrv embeddings enable`)"}`);
+  console.log(`neural package:    ${installed ? PKG + " installed" : "missing (run `nrv embeddings enable`)"}`);
   if (requestedBackend() === "transformers" || requestedBackend() === "neural") {
-    process.stdout.write("modelo neural:   verificando…\r");
+    process.stdout.write("neural model:      checking…\r");
     const ok = await neuralEmbedderAvailable();
-    console.log(`modelo neural:   ${ok ? "carrega OK" : "indisponível → fallback hash_tfidf"}`);
+    console.log(`neural model:      ${ok ? "loads OK" : "unavailable → hash_tfidf fallback"}`);
   }
   const cfg = loadHarnessConfig();
   const effective = denseRoutingMode();
-  console.log(`routing.dense:   ${cfg.routing.dense} (config${cfg.config_path ? ": " + cfg.config_path : " ausente"})`);
+  console.log(`routing.dense:     ${cfg.routing.dense} (config${cfg.config_path ? ": " + cfg.config_path : " missing"})`);
   if (effective !== cfg.routing.dense) {
-    console.log(`efetivo:         ${effective} (override por env NIRVANA_ROUTER_DENSE)`);
+    console.log(`effective:         ${effective} (overridden by env NIRVANA_ROUTER_DENSE)`);
   }
   let cached = 0;
   try { cached = fs.readdirSync(CACHE_DIR).filter((f) => f.startsWith("dense-")).length; } catch { /* none */ }
-  console.log(`índice denso:    ${cached} arquivo(s) em cache`);
+  console.log(`dense index:       ${cached} file(s) cached`);
 }
 
 /**
@@ -87,9 +87,9 @@ export function enableSummary(neuralLoaded: boolean): { info: string[]; warn: st
 }
 
 async function enable() {
-  console.log(`Instalando ${PKG} (~150MB, uma vez) em ${NIRVANA_HOME}…`);
+  console.log(`Installing ${PKG} (~150MB, once) in ${NIRVANA_HOME}…`);
   const r = spawnSync("bun", ["add", PKG], { cwd: NIRVANA_HOME, stdio: "inherit" });
-  if (r.status !== 0) { console.error("falha ao instalar o pacote neural."); process.exit(1); }
+  if (r.status !== 0) { console.error("failed to install the neural package."); process.exit(1); }
   fs.writeFileSync(BACKEND_FILE, "transformers\n", "utf8");
   console.log("Backend recorded. Verifying it actually loads (model downloads on first use)…");
   // Verify the recorded backend truly resolves — resolveEmbedder() falls back
@@ -101,7 +101,7 @@ async function enable() {
   if (activate) {
     const written = setRoutingDense("fallback");
     if (!written) {
-      console.error("⚠ config.yaml não encontrado — routing.dense não persistido; use NIRVANA_ROUTER_DENSE=1 por run.");
+      console.error("⚠ config.yaml not found — routing.dense not persisted; use NIRVANA_ROUTER_DENSE=1 per run.");
     }
   }
   for (const line of info) console.log(line);
@@ -111,8 +111,8 @@ async function enable() {
 function disable() {
   try { fs.rmSync(BACKEND_FILE); } catch { /* já ausente */ }
   const written = setRoutingDense("off");
-  console.log(`Backend neural desativado — volta ao BM25 + hash_tfidf (zero-dep).`);
-  console.log(written ? `routing.dense: "off" gravado em ${written}` : "config.yaml ausente — nada a reverter.");
+  console.log(`Neural backend disabled — back to BM25 + hash_tfidf (zero-dep).`);
+  console.log(written ? `routing.dense: "off" written to ${written}` : "config.yaml missing — nothing to revert.");
 }
 
 function reindex() {
@@ -122,7 +122,7 @@ function reindex() {
       if (f.startsWith("dense-")) { fs.rmSync(path.join(CACHE_DIR, f)); n++; }
     }
   } catch { /* sem cache */ }
-  console.log(`Cache de índice denso limpo (${n} arquivo(s)). Recomputa no próximo find.`);
+  console.log(`Dense index cache cleared (${n} file(s)). Recomputed on the next find.`);
 }
 
 // CLI entry — guarded so tests can import enableSummary() without running it.
@@ -134,7 +134,7 @@ if (import.meta.main) {
     case "disable": case "off": disable(); break;
     case "reindex": case "reset": reindex(); break;
     default:
-      console.error("uso: nrv embeddings <status|enable|disable|reindex>");
+      console.error("usage: nrv embeddings <status|enable|disable|reindex>");
       process.exit(2);
   }
 }

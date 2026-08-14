@@ -52,7 +52,7 @@ const limit = parseInt(args.find(a => a.startsWith("--limit="))?.split("=")[1] |
 const jsonOut = args.includes("--json");
 
 if (!query) {
-  console.error("Uso: nrv search \"<query>\" [--kind=business|squad|mind-clone] [--limit=N]");
+  console.error("Usage: nrv search \"<query>\" [--kind=business|squad|mind-clone] [--limit=N]");
   console.error("");
   console.error("Exemplos:");
   console.error("  nrv search \"copy direct response\"");
@@ -179,7 +179,7 @@ for (const h of top) {
 }
 
 if (hits.length === 0) {
-  console.log(c("yellow", "  Nenhum match. Tente termos mais genéricos ou verifique:"));
+  console.log(c("yellow", "  No match. Try broader terms, or check:"));
   console.log("    " + c("yellow", "nrv index") + c("dim", "  # rebuild registries"));
   console.log("    " + c("yellow", "nrv doctor") + c("dim", "  # check library counts"));
 }

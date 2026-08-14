@@ -42,11 +42,11 @@ const dateStr = arg("--date", new Date().toLocaleDateString("pt-BR"));
 const brand = arg("--brand", "Relatório");
 
 if (!deliverablesDir || !outputPdf) {
-  console.error('Uso: build-report-pdf.ts --deliverables <dir> --output <pdf> [--summary <md>] [--order "a.md,b.md"] [--title] [--subtitle] [--client] [--brand]');
+  console.error('Usage: build-report-pdf.ts --deliverables <dir> --output <pdf> [--summary <md>] [--order "a.md,b.md"] [--title] [--subtitle] [--client] [--brand]');
   process.exit(2);
 }
 if (!fs.existsSync(deliverablesDir)) {
-  console.error(`Pasta de deliverables não encontrada: ${deliverablesDir}`);
+  console.error(`Deliverables folder not found: ${deliverablesDir}`);
   process.exit(2);
 }
 
@@ -248,5 +248,5 @@ if (!res.ok) {
   process.exit(1);
 }
 const kb = (fs.statSync(outputPdf).size / 1024).toFixed(1);
-console.log(`✓ PDF gerado via ${res.engine}: ${path.resolve(outputPdf)} (${kb} KB, ${sections.length} seções${summaryHtml ? " + resumo" : ""})`);
+console.log(`✓ PDF built via ${res.engine}: ${path.resolve(outputPdf)} (${kb} KB, ${sections.length} sections${summaryHtml ? " + summary" : ""})`);
 process.exit(0);

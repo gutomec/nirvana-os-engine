@@ -16,6 +16,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { findCloneForTask } from "../lib/clone-search.ts";
 import { loadCloneRegistry } from "../lib/clone-resolver.ts";
+import { corpusGate } from "../lib/corpus-gate.ts";
 
 // Order-independence: clone-fragments.test.ts points NIRVANA_SCOPE /
 // NIRVANA_PROJECT_ROOT at a tmp fixture AT MODULE SCOPE and never restores,
@@ -42,7 +43,7 @@ clearScopeOverride();
 const FULL_LIBRARY = Object.keys(loadCloneRegistry()).length >= 300;
 restoreScopeOverride();
 
-const d = FULL_LIBRARY ? describe : describe.skip;
+const d = corpusGate("clone-search-negative", FULL_LIBRARY, { clones: Object.keys(loadCloneRegistry()).length });
 
 beforeAll(clearScopeOverride);
 afterAll(restoreScopeOverride);

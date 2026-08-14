@@ -13,7 +13,7 @@ import { collectFindings, writeDoctorReport, applyAutofixes } from "../lib/squad
 
 const { positional, flags } = parseArgs();
 if (!positional[0] || flags.h || flags.help) {
-  console.error("uso: nrv fix-squad <slug|path> [--apply]");
+  console.error("usage: nrv fix-squad <slug|path> [--apply]");
   process.exit(positional[0] ? EXIT.OK : EXIT.INVALID_ARGS);
 }
 
@@ -24,7 +24,7 @@ if (!fs.existsSync(squadPath)) {
 }
 squadPath = path.resolve(squadPath);
 if (!fs.existsSync(squadPath) || !fs.statSync(squadPath).isDirectory()) {
-  console.error(`[FAIL] squad não encontrado: ${squadPath}`);
+  console.error(`[FAIL] squad not found: ${squadPath}`);
   process.exit(EXIT.FAILURES);
 }
 
@@ -37,24 +37,24 @@ const nErr = findings.filter((f) => f.severity === "error").length;
 const nWarn = findings.filter((f) => f.severity === "warn").length;
 
 console.log(`Squad:     ${slug}`);
-console.log(`Problemas: ${findings.length} (${nErr} erro, ${nWarn} aviso)`);
-console.log(`Relatório: ${report}`);
+console.log(`Issues:    ${findings.length} (${nErr} error, ${nWarn} warning)`);
+console.log(`Report:    ${report}`);
 
 if (!apply) {
-  if (findings.length) console.log(`\nAplicar auto-fixes seguros: nrv fix-squad ${slug} --apply`);
+  if (findings.length) console.log(`\nApply the safe auto-fixes: nrv fix-squad ${slug} --apply`);
   process.exit(EXIT.OK);
 }
 
 const { applied, manual } = applyAutofixes(squadPath);
 console.log("");
 if (applied.length) {
-  console.log("✓ Auto-fixes aplicados:");
+  console.log("✓ Auto-fixes applied:");
   applied.forEach((a) => console.log(`  - ${a}`));
 } else {
-  console.log("Nenhum auto-fix seguro aplicável (tudo é correção manual).");
+  console.log("No safe auto-fix applies (everything is a manual fix).");
 }
 if (manual.length) {
-  console.log("\n⚠ Correção manual (detalhada no relatório):");
+  console.log("\n⚠ Manual fixes (detailed in the report):");
   manual.forEach((m) => console.log(`  - ${m}`));
 }
 // Regenerates the report reflecting the post-fix state.

@@ -26,35 +26,35 @@ function arg(name: string, fallback?: string): string | undefined {
 
 const sub = process.argv[2];
 const handle = db.openDb(resolveScope().projectRoot || undefined);
-if (!handle.available) { console.error("state-db indisponível (sqlite ausente)"); process.exit(1); }
+if (!handle.available) { console.error("state-db unavailable (sqlite missing)"); process.exit(1); }
 
 if (sub === "add") {
   const business = process.argv[3];
   const statement = process.argv[4];
   if (!business || !statement || statement.startsWith("--")) {
-    console.error('uso: nrv memory add <business> "<statement>" [--source <s>] [--supersedes <id>]');
+    console.error('usage: nrv memory add <business> "<statement>" [--source <s>] [--supersedes <id>]');
     process.exit(2);
   }
   const id = db.recordMemory(handle, {
     business_slug: business, statement,
     source: arg("--source"), supersedes: arg("--supersedes"),
   });
-  console.log(`memória #${id} registrada para ${business}`);
+  console.log(`memory #${id} recorded for ${business}`);
 } else if (sub === "list") {
   const business = process.argv[3];
-  if (!business) { console.error("uso: nrv memory list <business> [--all]"); process.exit(2); }
+  if (!business) { console.error("usage: nrv memory list <business> [--all]"); process.exit(2); }
   const all = process.argv.includes("--all");
   const rows = all ? db.listMemoryHistory(handle, business) : db.activeMemories(handle, business);
-  if (!rows.length) { console.log(`(sem memória ${all ? "" : "ativa "}para ${business})`); }
+  if (!rows.length) { console.log(`(no ${all ? "" : "active "}memory for ${business})`); }
   for (const r of rows) {
     const sup = r.superseded_by ? ` [superseded→#${r.superseded_by}]` : "";
     console.log(`#${r.id}${sup} ${r.statement}${r.source ? ` (${r.source})` : ""}`);
   }
 } else if (sub === "supersede") {
   const id = process.argv[3];
-  if (!id) { console.error("uso: nrv memory supersede <id> --by <newId>"); process.exit(2); }
+  if (!id) { console.error("usage: nrv memory supersede <id> --by <newId>"); process.exit(2); }
   db.supersedeMemory(handle, id, arg("--by") || null);
-  console.log(`#${id} marcada como superseded${arg("--by") ? ` por #${arg("--by")}` : ""}`);
+  console.log(`#${id} marked as superseded${arg("--by") ? ` by #${arg("--by")}` : ""}`);
 } else if (sub === "gc") {
   // The GC existed and the docs promised it ("TTL eviction + dedup"), but nothing
   // could reach it: no caller, no subcommand, no instruction an agent could follow.
@@ -62,14 +62,14 @@ if (sub === "add") {
   // has a command to run, exactly like `add` and `list`.
   const business = process.argv[3];
   if (!business || business.startsWith("--")) {
-    console.error("uso: nrv memory gc <business> [--ttl-days N] [--sim-threshold F] [--on-conflict keep_newer|keep_both|audit_only]");
+    console.error("usage: nrv memory gc <business> [--ttl-days N] [--sim-threshold F] [--on-conflict keep_newer|keep_both|audit_only]");
     process.exit(2);
   }
   const { MemoryStore } = await import("../../_shared/lib/memory-store.ts");
   const { runGc } = await import("../../_shared/lib/memory-gc.ts");
   const root = path.join(paths.BUSINESSES_DIR, business, "memory");
   if (!fs.existsSync(root)) {
-    console.error(`sem memória para '${business}' (${root} não existe)`);
+    console.error(`no memory for '${business}' (${root} does not exist)`);
     process.exit(1);
   }
   const store = new MemoryStore({ root });
@@ -81,11 +81,11 @@ if (sub === "add") {
     ...(sim ? { sim_threshold: Number(sim) } : {}),
     ...(conflict ? { on_conflict: conflict } : {}),
   });
-  console.log(`memória de ${business}: ${report.entries_before} → ${report.entries_after} entradas`);
-  if (report.ttl_evicted.length) console.log(`  expiradas por TTL: ${report.ttl_evicted.length}`);
-  if (report.duplicates_merged.length) console.log(`  duplicatas unidas: ${report.duplicates_merged.length}`);
+  console.log(`memory for ${business}: ${report.entries_before} → ${report.entries_after} entries`);
+  if (report.ttl_evicted.length) console.log(`  expired by TTL: ${report.ttl_evicted.length}`);
+  if (report.duplicates_merged.length) console.log(`  duplicates merged: ${report.duplicates_merged.length}`);
 } else {
-  console.error("uso: nrv memory <add|list|supersede|gc> ...");
+  console.error("usage: nrv memory <add|list|supersede|gc> ...");
   process.exit(2);
 }
 process.exit(0);

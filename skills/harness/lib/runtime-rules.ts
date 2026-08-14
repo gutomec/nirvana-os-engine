@@ -129,7 +129,7 @@ export function loadRuntimeRules(projectRoot: string | null, env: NodeJS.Process
       const negate = m[1] === "NOT_USE";
       const runtime = RUNTIME_ALIASES[m[2]];
       if (!runtime) {
-        console.error(`[runtime-rules] runtime desconhecido em ${key}${sourceFile ? ` (${sourceFile})` : ""} — regra ignorada. Conhecidos: ${Object.keys(RUNTIME_ALIASES).join(", ")}`);
+        console.error(`[runtime-rules] unknown runtime in ${key}${sourceFile ? ` (${sourceFile})` : ""} — rule ignored. Known: ${Object.keys(RUNTIME_ALIASES).join(", ")}`);
         claimed.add(key);
         continue;
       }
@@ -172,7 +172,7 @@ export function detectRuntimeMention(brief: string): { runtime: RoutableRuntime;
     }
   }
   if (found.size !== 1) {
-    if (found.size > 1) console.error(`[runtime-rules] brief cita mais de um runtime (${[...found.keys()].join(", ")}) — menção ambígua, ignorando.`);
+    if (found.size > 1) console.error(`[runtime-rules] the brief names more than one runtime (${[...found.keys()].join(", ")}) — ambiguous mention, ignoring.`);
     return null;
   }
   const [runtime, mention] = [...found.entries()][0];
@@ -222,7 +222,7 @@ export function resolveRuntimeByRules(
   let top = ranked[0];
   // hermes is not an exec-target: in fast it degrades to the next in the ranking.
   if (!opts.allowHermes && top.rule.runtime === "hermes") {
-    console.error(`[runtime-rules] ${top.rule.envKey} venceu, mas hermes só atua no modo agentic (delegação) — usando o próximo do ranking.`);
+    console.error(`[runtime-rules] ${top.rule.envKey} won, but hermes only works in agentic mode (delegation) — using the next in the ranking.`);
     const next = ranked.find((r: { rule: RuntimeRule }) => r.rule.runtime !== "hermes");
     if (!next) return null;
     top = next;
@@ -258,7 +258,7 @@ export function decideRuntime(opts: {
     if (avail(mention.runtime as Runtime)) {
       return { runtime: mention.runtime as Runtime, source: "brief", mention: mention.mention };
     }
-    console.error(`[runtime-rules] brief pede ${mention.runtime} ("${mention.mention}"), mas ele não está nesta máquina — caindo nas regras/default.`);
+    console.error(`[runtime-rules] the brief asks for ${mention.runtime} ("${mention.mention}"), but it is not on this machine — falling back to the rules/default.`);
   }
   // Vetoes (NOT_USE_*) matching this brief: they block the runtime both in the
   // positive-rule choice and in the default. Veto beats positive rule.
@@ -270,7 +270,7 @@ export function decideRuntime(opts: {
   const blocked = (r: RoutableRuntime): boolean => {
     if (!vetoed.has(r)) return false;
     const v = vetoHits.find(x => x.rule.runtime === r)!;
-    console.error(`[runtime-rules] ${v.rule.envKey} veta ${r} para este brief ("${v.rule.rule}") — pulando.`);
+    console.error(`[runtime-rules] ${v.rule.envKey} vetoes ${r} for this brief ("${v.rule.rule}") — skipping.`);
     return true;
   };
 
@@ -283,7 +283,7 @@ export function decideRuntime(opts: {
       if (avail(c.rule.runtime as Runtime)) {
         return { runtime: c.rule.runtime as Runtime, source: "rule", rule: c.rule, method: "bm25", score: c.score, vetoes: vetoInfo };
       }
-      console.error(`[runtime-rules] ${c.rule.envKey} → ${c.rule.runtime} indisponível nesta máquina — tentando o próximo.`);
+      console.error(`[runtime-rules] ${c.rule.envKey} → ${c.rule.runtime} unavailable on this machine — trying the next one.`);
     }
   }
 
@@ -293,10 +293,10 @@ export function decideRuntime(opts: {
   if (vetoed.has(opts.defaultRuntime)) {
     const alt = EXEC_RUNTIMES.find(r => r !== opts.defaultRuntime && !vetoed.has(r) && avail(r));
     if (alt) {
-      console.error(`[runtime-rules] default ${opts.defaultRuntime} vetado para este brief — usando ${alt}.`);
+      console.error(`[runtime-rules] default ${opts.defaultRuntime} vetoed for this brief — using ${alt}.`);
       return { runtime: alt, source: "default", vetoes: vetoInfo };
     }
-    console.error(`[runtime-rules] todos os runtimes disponíveis estão vetados para este brief — ignorando vetos e seguindo no default (${opts.defaultRuntime}).`);
+    console.error(`[runtime-rules] every available runtime is vetoed for this brief — ignoring the vetoes and staying on the default (${opts.defaultRuntime}).`);
   }
   return { runtime: opts.defaultRuntime, source: "default", vetoes: vetoInfo };
 }

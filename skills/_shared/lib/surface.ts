@@ -246,7 +246,7 @@ export function readSurface(dir: string): Surface | null {
  */
 export function extractSurface(dir: string, kindHint?: ArtifactKind): Surface {
   const kind = kindHint ?? detectKind(dir);
-  if (!kind) throw new Error(`não é um artefato Nirvana reconhecível: ${dir}`);
+  if (!kind) throw new Error(`not a recognizable Nirvana artifact: ${dir}`);
   const slug = path.basename(dir);
 
   const { entries, prose } =

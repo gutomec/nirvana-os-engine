@@ -246,6 +246,37 @@ function instructionMdFiles(): string[] {
   return out;
 }
 
+// ── user-facing strings (.ts / .js) ─────────────────────────────────────────
+//
+// The strings a buyer reads, which this gate used to skip on purpose. It no
+// longer does: English is the project default, and the buyer who reported the
+// license bug got a Portuguese error. Comments and identifiers were already
+// covered; the output was the half nobody was watching.
+//
+// Only output calls are scanned — console.log/error/warn/info and
+// `throw new Error(...)`. Everything else quoted stays data: a slug, a path, a
+// regex, a YAML key, an example brief. Use the `i18n-user-facing` pragma on the
+// line or the one above it for the rare string that must stay Portuguese.
+const OUTPUT_CALL = /\b(?:console\.(?:log|error|warn|info)|throw new Error)\s*\(/;
+
+function extractUserFacingStrings(src: string): Segment[] {
+  const out: Segment[] = [];
+  const lines = src.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!OUTPUT_CALL.test(line)) continue;
+    // Quoted spans on this line, template literals included. Interpolations are
+    // dropped: `${slug}` is an identifier, not prose.
+    const spans = line.match(/(["'`])(?:\\.|(?!\1)[^\\])*\1/g) || [];
+    const text = spans
+      .map(s => s.slice(1, -1).replace(/\$\{[^}]*\}/g, " ").replace(/\\x1b\[[0-9;]*m/g, " "))
+      .join(" ")
+      .trim();
+    if (text) out.push({ line: i + 1, text });
+  }
+  return out;
+}
+
 // ── scan ────────────────────────────────────────────────────────────────────
 
 interface FileReport { rel: string; hits: Array<Segment & LineVerdict>; }
@@ -255,7 +286,9 @@ function scanFile(file: string, kind: "code" | "md"): FileReport | null {
   let src: string;
   try { src = readFileSync(file, "utf8"); } catch { return null; }
   if (src.includes(`${PRAGMA}: file`)) return null; // whole-file pragma
-  const segments = kind === "code" ? extractComments(src) : extractMarkdownProse(src);
+  const segments = kind === "code"
+    ? [...extractComments(src), ...extractUserFacingStrings(src)]
+    : extractMarkdownProse(src);
   const rawLines = src.split("\n");
   const hits: FileReport["hits"] = [];
   for (const seg of segments) {

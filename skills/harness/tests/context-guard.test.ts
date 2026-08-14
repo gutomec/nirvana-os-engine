@@ -149,7 +149,7 @@ describe("nrv guard context — refusing to guess", () => {
     for (const args of [["context", "--project", TMP], ["context", "--project", TMP, "--used", "abc"], ["context", "--project", TMP, "--used", "-5"]]) {
       const r = guard(args);
       expect(r.status).toBe(2);
-      expect(r.stderr).toContain("uso:");
+      expect(r.stderr).toContain("usage:");
     }
   });
 

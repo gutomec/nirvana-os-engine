@@ -48,6 +48,7 @@
     "check:dispatch": "bun scripts/check-dispatch-contract.ts",
     "check:purity": "bun scripts/check-engine-purity.ts",
     "check:english": "bun scripts/check-english-source.ts --strict",
+    "check:packs": "bun scripts/check-published-packs.ts --strict",
     "check:audit-parity": "bun scripts/check-audit-parity.ts --strict",
     "check:command-parity": "bun scripts/check-skillmd-command-parity.ts --strict",
     "check:changelog": "bun scripts/check-changelog-parity.ts --strict",

@@ -63,7 +63,7 @@ const maxBudget = arg("--max-budget");
 const timeoutMin = arg("--timeout");
 
 if (!projectId || !change) {
-  console.error('Uso: nrv revise <project_id> "<mudança>" [--zip] [--max-budget=<usd>] [--timeout=<min>] [--safe]');
+  console.error('Usage: nrv revise <project_id> "<change>" [--zip] [--max-budget=<usd>] [--timeout=<min>] [--safe]');
   process.exit(4);   // EXIT.INVALID_ARGS — 2 now means WITHHELD (see the table above)
 }
 
@@ -102,8 +102,8 @@ function findSessionFile(pid: string): string | null {
 
 const sessionFile = findSessionFile(projectId);
 if (!sessionFile) {
-  console.error(c("red", `✗ session.json não encontrado para '${projectId}'.`));
-  console.error("  Este projeto foi criado com 'nrv run' / 'nrv dispatch --exec'?");
+  console.error(c("red", `✗ session.json not found for '${projectId}'.`));
+  console.error("  Was this project created with 'nrv run' / 'nrv dispatch --exec'?");
   process.exit(1);
 }
 const session = JSON.parse(fs.readFileSync(sessionFile, "utf8"));
@@ -115,7 +115,7 @@ const projectRoot = session.project_root as string;
 const oroot = session.outputs_root as string;
 
 if (!sessionId) {
-  console.error(c("red", "✗ session.json sem session_id — não dá para retomar a conversa do runtime."));
+  console.error(c("red", "✗ session.json has no session_id — the runtime conversation cannot be resumed."));
   process.exit(1);
 }
 
@@ -124,7 +124,7 @@ console.log(c("lime", "▶") + c("bold", ` nrv revise — ${projectId} (${rt})`)
 console.log(c("dim", `  resume session: ${sessionId}`));
 
 if (!runtimeAvailable(rt)) {
-  console.error(c("red", `✗ runtime '${rt}' não está no PATH.`));
+  console.error(c("red", `✗ runtime '${rt}' is not on the PATH.`));
   process.exit(1);
 }
 
@@ -233,15 +233,15 @@ const deliveryArgs = {
 function printOutcome(result: DeliveryResult): void {
   console.log("");
   if (result.exitCode === 0) {
-    console.log(c("green", "✓ Revisão aplicada e entregue."));
+    console.log(c("green", "✓ Revision applied and delivered."));
   } else if (result.exitCode === 2) {
-    console.log(c("yellow", "⚠ Revisão aplicada, entrega RETIDA — o quality gate reprovou (exit 2)."));
-    console.log(c("dim", "  Os arquivos ficam no disco; nada foi marcado como entregue."));
+    console.log(c("yellow", "⚠ Revision applied, delivery WITHHELD — the quality gate failed (exit 2)."));
+    console.log(c("dim", "  The files stay on disk; nothing was marked as delivered."));
   } else if (result.exitCode === 3) {
-    console.log(c("yellow", "⚠ Entrega INDETERMINADA — nenhum artefato que o gate saiba julgar (exit 3)."));
-    console.log(c("dim", "  Nada foi julgado, então nada foi entregue."));
+    console.log(c("yellow", "⚠ Delivery INDETERMINATE — no artifact the gate knows how to judge (exit 3)."));
+    console.log(c("dim", "  Nothing was judged, so nothing was delivered."));
   } else {
-    console.log(c("red", "✗ Revisão sem entregável verificável."));
+    console.log(c("red", "✗ Revision with no verifiable deliverable."));
   }
   console.log(c("dim", `  Deliverables: ${oroot}`));
   if (result.zipPath) console.log(c("dim", `  Zip:          ${result.zipPath}`));
@@ -250,7 +250,7 @@ function printOutcome(result: DeliveryResult): void {
 
 if (!res.ok) {
   const runtimeError = `revision run: ${res.error || res.stderr || `exit ${res.exitCode}`}`;
-  console.error(c("red", `✗ revisão falhou (exit ${res.exitCode}): ${res.error || res.stderr || "unknown"}`));
+  console.error(c("red", `✗ revision failed (exit ${res.exitCode}): ${res.error || res.stderr || "unknown"}`));
   appendAudit({ event: "revision_failed", trace_id: projectId, project_id: projectId, business_slug: slug, exit_code: res.exitCode, error: res.error || res.stderr }, projectRoot);
   // A failed revision does NOT mean nothing changed on disk: the usual case is
   // a limit hit after the edits were written. Judge what exists instead of

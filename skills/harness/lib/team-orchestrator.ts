@@ -115,16 +115,16 @@ function pickChain(args: TeamRunArgs): ChainStep[] {
   });
   const txt = (res.result || "").trim();
   const m = txt.match(/\{[\s\S]*\}/);
-  if (!m) throw new Error(`director não retornou JSON: ${txt.slice(0, 200)}`);
+  if (!m) throw new Error(`director returned no JSON: ${txt.slice(0, 200)}`);
   let parsed: any;
-  try { parsed = JSON.parse(m[0]); } catch (e: any) { throw new Error(`director JSON inválido: ${e.message}`); }
+  try { parsed = JSON.parse(m[0]); } catch (e: any) { throw new Error(`invalid director JSON: ${e.message}`); }
   if (!Array.isArray(parsed.chain) || !parsed.chain.length) throw new Error("director retornou cadeia vazia");
 
   const known = new Set(employees.map(e => e.name));
   let chain: ChainStep[] = parsed.chain
     .filter((s: any) => s && typeof s.employee === "string" && known.has(s.employee))
     .map((s: any) => ({ employee: s.employee, task: String(s.task || "Execute sua especialidade aplicada ao brief.").trim() }));
-  if (!chain.length) throw new Error("director não escolheu nenhum employee válido");
+  if (!chain.length) throw new Error("director picked no valid employee");
   if (chain[chain.length - 1].employee !== args.intakeEmployee) {
     chain.push({ employee: args.intakeEmployee, task: `Síntese final: leia os outputs dos colegas em _team/* e consolide os ENTREGÁVEIS FINAIS sob ${args.outputsRoot}. Cite premissas em "## Premissas assumidas".` });
   }
