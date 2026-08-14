@@ -6,6 +6,39 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## 0.5.1 — 2026-08-14
+
+### Quatro defeitos que estavam vivos em toda instalação
+
+**A ponte entre idiomas era código morto para todo comprador.** O
+`.keyword-aliases.json` era escrito ao lado do digest de roteamento e lido ao
+lado do registry de squads. Esses são o mesmo diretório em escopo de projeto e
+dois diferentes em escopo global — registry em `~/`, digest em `~/.nirvana/` — e
+global é o que toda instalação usa. O arquivo caía onde nada olhava, e um brief
+em português contra um squad declarado em inglês nunca recebia o reforço de
+cobertura. A ausência é normal por construção, então degradava em silêncio desde
+que existe. Agora há uma constante só, `KEYWORD_ALIASES_PATH`, lida pelos dois
+lados.
+
+**O `nrv doctor` não sabia que licença existe.** Zero menções em 570 linhas. Na
+máquina que originou toda essa investigação ele imprimia "All systems nominal":
+conteúdo do pack instalado, nenhuma licença no disco, `nrv update` já quebrado.
+Agora ele reporta a licença e a assinatura dela, se cada componente que o
+manifesto do pack declara está de fato no disco, e se os grupos de alias estão
+onde o roteador lê — cada um com o comando que resolve.
+
+**O `nrv update` passava por cima da licença que acabara de baixar.** O zip
+per-buyer carrega o `PROVENANCE.json`, então um update já tem em mãos o que
+precisa para reparar um store de licença ausente ou vencido. Best-effort, depois
+do overlay: a essa altura o conteúdo já está correto, e uma falha de escrituração
+não deve desfazer isso.
+
+**O detector de contaminação conhecia cinco extensões; o marcador conhece seis.**
+Faltava `.markdown`, então um arquivo `.markdown` marcado podia voltar via
+`nrv update` invisível para a checagem que existe justamente para pegar isso. Ele
+também pulava `dist/` — numa máquina que autora packs, o único diretório onde
+packs são construídos.
+
 ## 0.5.0 — 2026-08-14
 
 ### Os registries nunca eram construídos no caminho do comprador

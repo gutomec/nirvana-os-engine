@@ -43,11 +43,23 @@ describe("file-lock — concurrent writers", () => {
       `const file = process.argv[2];`,
       `const n = parseInt(process.argv[3], 10);`,
       `for (let i = 0; i < n; i++) {`,
-      `  withLock(file, () => {`,
-      `    let v = 0;`,
-      `    try { v = JSON.parse(fs.readFileSync(file, "utf8")).count; } catch {}`,
-      `    fs.writeFileSync(file, JSON.stringify({ count: v + 1 }));`,
-      `  }, { pollMs: 2 });`,
+      `  try {`,
+      `    withLock(file, () => {`,
+      `      let v = 0;`,
+      `      try { v = JSON.parse(fs.readFileSync(file, "utf8")).count; } catch {}`,
+      `      fs.writeFileSync(file, JSON.stringify({ count: v + 1 }));`,
+      // A generous acquire timeout, because this test is about lost updates, not
+      // about the default. The 10s default lost the race on Windows runners,
+      // where mkdir/rmdir contention plus the OS file layer make each acquire
+      // far slower than on POSIX — 100 contended acquires would overrun it and
+      // the worker died with a bare exit code that said nothing.
+      `    }, { pollMs: 2, timeoutMs: 60_000 });`,
+      `  } catch (e) {`,
+      // Say what went wrong. A silent non-zero exit is the least debuggable
+      // shape a flake can take, and this one cost several CI rounds.
+      `    console.error("worker iteration " + i + " failed: " + (e && e.message ? e.message : e));`,
+      `    process.exit(1);`,
+      `  }`,
       `}`,
     ].join("\n"));
 
