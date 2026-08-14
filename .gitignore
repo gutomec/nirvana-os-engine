@@ -25,6 +25,10 @@ audit.db
 *.audit.db
 .harness-logs/
 .nirvana/
+# Dispatch run artifacts. A brief, a HANDOFF, whatever a business or squad
+# produced, the generated report — the trace of using the engine, never the
+# engine. Nine of these reached the public repo in #4 before anyone noticed.
+outputs/
 
 # Backups created by hooks/installer
 *.bak.*
