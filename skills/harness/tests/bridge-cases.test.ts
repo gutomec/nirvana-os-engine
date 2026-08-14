@@ -65,6 +65,16 @@ d("amplification bridge — golden bridge cases (live corpus, amplify OFF)", () 
       if (kase.expect_signal_not) expect(s3.signal).not.toBe(kase.expect_signal_not);
       if (kase.expect_top1) expect(top1).toBe(kase.expect_top1);
       if (Array.isArray(kase.accepted_top1)) expect(kase.accepted_top1).toContain(top1);
+      // What the bridge actually owns: it re-scores coverage through the alias
+      // groups, and never touches rank order (router.js:1815-1831). So assert
+      // the lift, not the winner — pinning rank-1 tests the corpus, and the
+      // corpus moves.
+      //
+      // `alias_adopted` IS the lift: it is set only when the alias-recomputed
+      // coverage clears the gate the direct coverage did not (router.js:1826).
+      // The two coverage numbers stay on the match objects and never reach
+      // stage3, so this flag is the whole observable signal.
+      if (kase.expect_alias_adopted) expect(r.stage_bridge?.alias_adopted).toBe(true);
     });
   }
 

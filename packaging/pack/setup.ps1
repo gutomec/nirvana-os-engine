@@ -28,3 +28,8 @@ if (-not $bun) {
 
 $env:Path = (Split-Path -Parent $bun) + ";" + $env:Path
 & $bun (Join-Path $here "setup.ts")
+# Propagate the installer's exit code. Without this the script always returned 0,
+# so a Windows buyer whose setup failed saw a shell that said everything was fine
+# — on the exact platform the last two license reports came from. setup.sh gets
+# this for free via `exec`; PowerShell needs it spelled out.
+exit $LASTEXITCODE

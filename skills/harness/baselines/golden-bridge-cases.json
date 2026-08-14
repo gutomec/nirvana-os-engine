@@ -22,8 +22,18 @@
       "brief": "escreva um livro digital de receitas fitness com textos de venda",
       "language": "pt",
       "requires_alias_file": true,
-      "expect_top1": "ebook-maestro-nirvana",
-      "note": "PT vocabulary (livro digital, textos de venda) against the EN-declared squad: pre-bridge coverage 2/7 (confirm band); the alias groups lift it to 3/7 and ebook-maestro-nirvana leads the candidate list."
+      "accepted_top1": [
+        "ebook-maestro-nirvana",
+        "nirvana-editora",
+        "ars-libri",
+        "polymath-press"
+      ],
+      "expect_signal_in": [
+        "HIGH",
+        "AMBIGUOUS"
+      ],
+      "expect_alias_adopted": true,
+      "note": "PT vocabulary (livro digital, textos de venda) against the EN-declared squad: pre-bridge coverage 2/7 (confirm band); the alias groups lift it to 3/7. What this case proves is the lift, which is what the bridge owns. It used to pin expect_top1 to ebook-maestro-nirvana, and that broke on 2026-08-14 when nirvana-editora edged ahead by 0.079 BM25 points (13.511 vs 13.432, a 0.58% gap between two legitimate publishing claimants). Arm (b) rewrites coverage and never re-sorts (router.js:1815-1831), so rank-1 identity was never something this case could test — it was a corpus property wearing a bridge test's name. Siblings bridge-pt-live-miss-ebook and bridge-en-publish-kdp were relaxed for the same reason on 2026-08-07; this one was missed."
     },
     {
       "id": "bridge-en-ebook-compound",
