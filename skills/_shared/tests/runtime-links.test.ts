@@ -157,7 +157,9 @@ test("a NEW third-party dir over an existing backup is skipped, never deleted", 
   const target = path.join(home, ".claude", "skills", "harness");
   // Our link goes away, the user drops a directory with the same name back in,
   // and the .pre-nirvana.bak from the first install is still there.
-  fs.rmSync(target, { force: true });
+  // `recursive` because on Windows our entry is a directory, not a link, and
+  // rmSync refuses a directory without it.
+  fs.rmSync(target, { recursive: true, force: true });
   fs.mkdirSync(target, { recursive: true });
   fs.writeFileSync(path.join(target, "SECOND.txt"), "conteúdo do usuário");
 
