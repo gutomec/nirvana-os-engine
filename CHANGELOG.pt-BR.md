@@ -8,6 +8,20 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### A guarda contra vazamento passou a seguir o engine em vez de lembrar dele
+
+Remover os artefatos de run commitados deixou um gate que citava três caminhos de
+memória — `outputs/`, `.nirvana/`, `.harness-logs/`. Uma lista dessas envelhece no
+dia em que alguém muda onde um run escreve, e o vazamento que ela deixaria passar
+é idêntico ao que ela pegou.
+
+O conjunto protegido agora é perguntado aos próprios resolvedores do engine
+(`outputsDir`, `harnessLogsDir`), com aqueles três como piso caso a resolução
+falhe. Mover um diretório de saída não o desprotege em silêncio: um teste deriva
+os mesmos caminhos e reprova até o `.gitignore` acompanhar. Outro confere que o
+`git add` simples é recusado sem `--force`, porque a guarda mais barata é a que
+impede o erro de ser cometido.
+
 ### Artefatos de run foram commitados dentro do engine
 
 O `outputs/` nunca esteve no gitignore, então nove arquivos de um run de dispatch
