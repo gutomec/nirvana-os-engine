@@ -564,6 +564,34 @@ try {
   add("routing: aliases", "WARN", `cannot read alias groups: ${(e as Error).message}`);
 }
 
+// Corpus language, because it decides how good `fast` mode can be.
+//
+// The agentic router (the default) reads the digest and reasons, so it routes a
+// brief in any language against an entity declared in any other. `fast` is BM25:
+// it matches tokens, and a brief and an entity in different languages share
+// none. Measured on 20 held-out paraphrase pairs, cross-language parity in fast
+// mode was 25%.
+//
+// So this is a progress bar, not an error. A mixed corpus is not broken — it is
+// partway to one language, and this says how far.
+try {
+  const { corpusMix } = await import("../../_shared/lib/corpus-language.ts");
+  const { createRequire } = await import("node:module");
+  const req = createRequire(import.meta.url);
+  const mix = corpusMix(req(path.join(SKILLS, "harness", "lib", "registry-loader.js")).loadAll());
+  if (!mix) add("corpus: language", "PASS", "no content library — nothing to weigh");
+  else if (mix.minorityPct < 10) {
+    add("corpus: language", "PASS", `${mix.enPct}% English / ${mix.ptPct}% Portuguese — fast mode is on solid ground`);
+  } else {
+    add("corpus: language", "WARN",
+      `${mix.enPct}% English / ${mix.ptPct}% Portuguese · ${mix.queue.length} entities still to translate. `
+      + `The agentic default is unaffected; 'fast' mode routes by token match, so a brief in one language `
+      + `can miss entities declared in the other.`);
+  }
+} catch (e) {
+  add("corpus: language", "WARN", `could not weigh the corpus: ${(e as Error).message}`);
+}
+
 // Per-buyer watermarks in a library that AUTHORS packs. Rationale and mechanics
 // live in _shared/lib/watermark-scan.ts, shared with the end of `nrv update` — the
 // command that introduces them.
