@@ -25,6 +25,7 @@ import { createRequire } from "node:module";
 // Resolves both from the repo and from an extracted release tarball: the
 // tarball ships scripts/install.ts next to the full skills/ tree.
 import { RUNTIME_SKILL_DIRS, SKILLS, COPY_MARKER } from "../skills/_shared/lib/runtime-dirs.ts";
+import { RUN_STATE_EXCLUDES } from "../skills/_shared/lib/run-state.ts";
 
 const requireCjs = createRequire(import.meta.url);
 const HOME = homedir();
@@ -520,11 +521,7 @@ async function promptYesNo(question: string, defaultYes = true): Promise<boolean
 
 const PACK_MANIFEST = join(HOME, ".nirvana-pack.json");
 
-const RUNSTATE_EXCLUDES: Record<string, string[]> = {
-  squads: ["projects", "outputs", ".squad-state", ".squads-outputs", ".wiki-brain-state", ".vercel", ".omc", "_internal"],
-  businesses: ["memory/projects", "memory/learned.md", ".squad-state", ".squads-outputs", ".vercel"],
-  "mind-clones": [],
-};
+const RUNSTATE_EXCLUDES = RUN_STATE_EXCLUDES;
 
 interface PackManifest {
   version?: string; updated_at?: string;

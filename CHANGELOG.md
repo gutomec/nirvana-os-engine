@@ -6,6 +6,88 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## 0.5.0 — 2026-08-14
+
+### The registries were never built on the buyer's path
+
+The engine installer's only `nrv index` call sat at the tail of
+`offerStarterPack()`, below its `--no-starter` early return — and `--no-starter`
+is exactly what both entry points pass, `npx @nirvana-os/cli` and the pack's
+`setup.ts`. So an engine-only install finished with no registry on disk at all,
+and routing was degraded from the first minute with nothing saying so. Pack
+buyers escaped by accident, because the content overlay indexes on its own.
+
+CI never caught it because the smoke job runs `nrv index` by hand before the
+doctor, and the doctor passes a registry that exists over an empty library.
+Indexing now lives in its own function, called from `main()`, and `--no-index`
+and `--dry` still suppress it.
+
+### A Windows buyer whose setup failed was told it worked
+
+`setup.ps1` invoked the installer and returned whatever PowerShell felt like —
+there was no `exit $LASTEXITCODE`. A failed install exited 0, on the exact
+platform both license reports came from. `setup.sh` gets this for free from
+`exec`; PowerShell needs it spelled out.
+
+### A paid pack was invisible to `nrv installed`
+
+The content overlay wrote `~/.nirvana/packs/<slug>.json`. `nrv installed`
+replays `~/.nirvana-installed.jsonl`. Two tracks that never spoke, so a
+successful paid install answered "No installations recorded" — which reads as
+"nothing is installed". `AssetKind` already had `"pack"`; only the writer was
+missing. Recording is best-effort, because the content is already correct by
+then, but it says so when it fails.
+
+### Run state was shipping inside the product
+
+Not an engine bug, but the engine is where the fix belongs. `.squad-state/`,
+`projects/` and `outputs/` are what a squad writes when it runs — the author's
+work, with the author's absolute paths inside. Three places in the engine knew
+that and each carried its own copy of the list; the pack builder had no copy, so
+it copied them into the artifact. `base/web-design.zip` on the shelf carried 14
+such entries. The list now lives in `skills/_shared/lib/run-state.ts` and every
+consumer reads it.
+
+### The output is English
+
+The buyer who reported the license bug got a Portuguese error. Around 200
+user-facing lines across 41 files are English now — the whole install, license
+and update path, plus `dispatch --help` and the rest of the `nrv` surface.
+Translating only the unambiguous ones would have left single commands half and
+half, so each touched file is coherent.
+
+`check-english-source` used to skip string literals by design. It reads them now,
+with an `i18n-user-facing` pragma for the two example briefs that are genuinely
+user-language data.
+
+### The buyer's path has a test that runs it
+
+`buyer-path.test.ts` installs the engine into a temporary HOME, builds a pack
+with the real builder, injects `PROVENANCE.json` the way the store does at
+download time, runs `bun setup.ts`, and then looks at the disk. Reverting the
+0.4.0 license fix makes it fail on three assertions. Before this, the only
+coverage of the pack installer was greps over its source, and CI had never
+executed it.
+
+CI also runs the whole suite now. It ran one directory, which left 15 files
+unrun — including the only behavioural test of the engine installer. Running
+them turned up six Windows failures against a product behaving exactly as
+designed: it copies there rather than linking, because a symlink needs admin.
+The tests assert each platform's real contract now.
+
+Five suites route briefs through the installed content library and skip when it
+is absent. Bun prints a skipped test without failing, so in a CI log they were
+indistinguishable from passing — and one carried a stale expectation for four
+days while every run was green. They announce the skip and the counts behind it.
+
+### `check:packs`
+
+Downloads every published pack base and compares its `setup.*` byte for byte
+against the engine's. Also checks watermark markers, per-buyer markers, engine
+leak and composition against what the storefront advertises. It stays out of
+`check:all` because it needs the network and a bucket credential. Its first run
+found fifteen packs on a two-day-old installer.
+
 ## 0.4.0 — 2026-08-14
 
 ### The pack installer never installed the license
