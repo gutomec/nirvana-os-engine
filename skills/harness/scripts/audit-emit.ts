@@ -58,7 +58,7 @@ for (let i = 1; i < argv.length; i++) {
 
   if (key === "json") {
     try { Object.assign(payload, JSON.parse(val)); }
-    catch (e) { console.error(`audit emit: --json inválido: ${(e as Error).message}`); process.exit(2); }
+    catch (e) { console.error(`audit emit: invalid --json: ${(e as Error).message}`); process.exit(2); }
     continue;
   }
   const ctxKey = CTX_KEYS[key];

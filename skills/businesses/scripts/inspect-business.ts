@@ -37,13 +37,13 @@ if (!match && process.env.BUSINESSES_DIR) {
   }
 }
 if (!match) {
-  console.error(`ERRO: business '${slug}' não encontrada (scope=${scope.mode})`);
+  console.error(`ERROR: business '${slug}' not found (scope=${scope.mode})`);
   process.exit(EXIT.FAILURES);
 }
 
 const businessYaml = path.join(match!.dir, "business.yaml");
 if (!fs.existsSync(businessYaml)) {
-  console.error(`ERRO: business.yaml não encontrado em ${match!.dir}`);
+  console.error(`ERROR: business.yaml not found at ${match!.dir}`);
   process.exit(EXIT.FAILURES);
 }
 

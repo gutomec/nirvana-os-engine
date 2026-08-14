@@ -216,8 +216,8 @@ async function main() {
   const args = process.argv.slice(2);
   const artifact = args.find(a => !a.startsWith("--"));
   if (!artifact || !fs.existsSync(artifact)) {
-    console.error("Uso: bun quality-gate.ts <artifact_path> [--rubrics list] [--auto] [--offline]");
-    console.error("     bun quality-gate.ts <artifact_path> --with-revisions [--produces=slug] [--max-revisions=N]");
+    console.error("Usage: bun quality-gate.ts <artifact_path> [--rubrics list] [--auto] [--offline]");
+    console.error("       bun quality-gate.ts <artifact_path> --with-revisions [--produces=slug] [--max-revisions=N]");
     if (artifact) console.error(`Artifact not found: ${artifact}`);
     process.exit(2);
   }

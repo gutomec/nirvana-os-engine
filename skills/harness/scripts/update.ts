@@ -100,7 +100,7 @@ function checkInstalledPacks(): void {
     const script = path.join(SKILLS_ROOT, "_shared", "scripts", "update-pack.ts");
     if (!fs.existsSync(script)) return;
     console.log("");
-    console.log(c("lime", "▶") + c("bold", ` Pack instalado ('${slug}') — checando update...`));
+    console.log(c("lime", "▶") + c("bold", ` Pack installed ('${slug}') — checking for an update...`));
     spawnSync(process.execPath, [script, slug, "--check"], { stdio: "inherit" });
   } catch { /* no PROVENANCE = no paid pack; stay silent */ }
 }
@@ -116,16 +116,16 @@ async function updateFromRelease(): Promise<never> {
   }
   let tarball = ENGINE_TARBALL;
   if (tarball) {
-    if (!fs.existsSync(tarball)) { console.error(c("red", `tarball não encontrado: ${tarball}`)); process.exit(1); }
-    console.log(c("dim", `  engine local: ${tarball}`));
+    if (!fs.existsSync(tarball)) { console.error(c("red", `tarball not found: ${tarball}`)); process.exit(1); }
+    console.log(c("dim", `  local engine: ${tarball}`));
   } else {
-    console.log(c("dim", `  baixando: ${ENGINE_URL}`));
+    console.log(c("dim", `  downloading: ${ENGINE_URL}`));
     let res: Response;
     try { res = await fetch(ENGINE_URL, { redirect: "follow" }); }
-    catch (e) { console.error(c("red", `falha de rede ao baixar o engine: ${(e as Error).message}`)); process.exit(1); }
+    catch (e) { console.error(c("red", `network failure downloading the engine: ${(e as Error).message}`)); process.exit(1); }
     if (!res.ok) {
-      console.error(c("red", `falha ao baixar o engine (HTTP ${res.status}).`));
-      if (res.status === 404) console.error(c("dim", `nenhum release público em ${ENGINE_REPO} (ou repo ainda privado).`));
+      console.error(c("red", `failed to download the engine (HTTP ${res.status}).`));
+      if (res.status === 404) console.error(c("dim", `no public release in ${ENGINE_REPO} (or the repo is still private).`));
       process.exit(1);
     }
     tarball = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "nrv-update-")), "engine.tar.gz");
@@ -141,7 +141,7 @@ async function updateFromRelease(): Promise<never> {
     return (r === "" ? "." : r.includes(":") ? p : r).split(path.sep).join("/");
   };
   const x = spawnSync("tar", ["-xzf", rel(tarball), "-C", rel(srcDir)], { stdio: "inherit", cwd: tarCwd });
-  if (x.status !== 0) { console.error(c("red", "falha ao extrair o engine (precisa do 'tar').")); process.exit(1); }
+  if (x.status !== 0) { console.error(c("red", "failed to extract the engine (needs 'tar').")); process.exit(1); }
   // Asset extracts flat (scripts/install.ts at root); a source archive wraps it
   // in a single top dir — handle both.
   let root = srcDir;
@@ -150,7 +150,7 @@ async function updateFromRelease(): Promise<never> {
     if (entries.length === 1 && fs.existsSync(path.join(srcDir, entries[0], "scripts", "install.ts"))) root = path.join(srcDir, entries[0]);
   }
   const installer = path.join(root, "scripts", "install.ts");
-  if (!fs.existsSync(installer)) { console.error(c("red", "asset do engine inválido: scripts/install.ts não encontrado.")); process.exit(1); }
+  if (!fs.existsSync(installer)) { console.error(c("red", "invalid engine asset: scripts/install.ts not found.")); process.exit(1); }
   console.log(c("lime", "▶") + c("bold", " Re-running installer (engine only)..."));
   const r = spawnSync(process.execPath, [installer, "--no-starter"], { stdio: "inherit" });
   if ((r.status ?? 1) === 0) checkInstalledPacks();
@@ -284,9 +284,9 @@ if (fs.existsSync(skillsDir)) {
 console.log("");
 console.log(c("lime", "▶") + c("bold", " Re-running installer..."));
 if (!fs.existsSync(INSTALL_SCRIPT)) {
-  console.error(c("red", `ERRO: install script não encontrado: ${INSTALL_SCRIPT}`));
+  console.error(c("red", `ERROR: install script not found: ${INSTALL_SCRIPT}`));
   console.error("");
-  console.error("Reinstale o engine a partir do repositório (bun scripts/install.ts) ou rode `nrv doctor` para diagnosticar a instalação.");
+  console.error("Reinstall the engine from the repository (bun scripts/install.ts) or run `nrv doctor` to diagnose the install.");
   process.exit(1);
 }
 

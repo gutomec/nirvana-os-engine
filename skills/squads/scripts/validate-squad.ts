@@ -119,10 +119,10 @@ if (protocol === "5.0") {
     if (docFindings.length) {
       const rp = writeDoctorReport(squadPath, docFindings, new Date().toISOString());
       console.log("");
-      console.log(`⚠ ${docFindings.length} problema(s) de fidelity/portabilidade — diagnóstico: ${rp}`);
-      console.log(`  Corrigir o que for seguro: nrv fix-squad ${path.basename(squadPath)} --apply`);
+      console.log(`⚠ ${docFindings.length} fidelity/portability issue(s) — diagnostic: ${rp}`);
+      console.log(`  Fix what is safe: nrv fix-squad ${path.basename(squadPath)} --apply`);
     }
-  } catch (e: any) { console.error(`  (squad-doctor não rodou: ${e.message})`); }
+  } catch (e: any) { console.error(`  (squad-doctor did not run: ${e.message})`); }
 
   if (REPORT) {
     console.log("");

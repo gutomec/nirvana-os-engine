@@ -177,7 +177,7 @@ if (import.meta.main) {
   const minBytes = parseInt(argFlag("--min-bytes", "200") || "200", 10);
 
   if (!projectId || !businessSlug) {
-    console.error("Uso: bun verify-deliverable.ts <project_id> <business_slug> [--outputs-root <dir>] [--min-bytes N]");
+    console.error("Usage: bun verify-deliverable.ts <project_id> <business_slug> [--outputs-root <dir>] [--min-bytes N]");
     process.exit(2);
   }
 

@@ -12,6 +12,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { runEval } from "../scripts/eval-clone-routing.ts";
+import { corpusGate } from "../lib/corpus-gate.ts";
 
 const r = runEval();
 
@@ -21,7 +22,7 @@ const r = runEval();
 // enriched on 2026-07-27); on a clean or partial-pack install they do not
 // apply and skipping is the correct behavior, not a gap.
 const FULL_LIBRARY = r.selfN >= 301;
-const d = FULL_LIBRARY ? describe : describe.skip;
+const d = corpusGate("clone-routing-eval", FULL_LIBRARY, { clones: r.selfN });
 
 describe("eval de roteamento de clones — invariante universal", () => {
   test("auto-recuperação: todo clone com bloco recupera o próprio one_liner (vale para QUALQUER biblioteca, inclusive vazia)", () => {

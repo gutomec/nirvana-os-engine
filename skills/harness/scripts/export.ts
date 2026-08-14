@@ -31,7 +31,7 @@ const includeAudit = args.includes("--include-audit");
 const deliverablesOnly = args.includes("--deliverables-only") || args.includes("--only-deliverables");
 
 if (!project) {
-  console.error("Uso: nrv export <project_id> [--format=zip|tgz] [--output=path] [--include-audit] [--deliverables-only]");
+  console.error("Usage: nrv export <project_id> [--format=zip|tgz] [--output=path] [--include-audit] [--deliverables-only]");
   process.exit(2);
 }
 
@@ -53,10 +53,10 @@ let source = candidates.find(p => fs.existsSync(p) && fs.statSync(p).isDirectory
 // some directory exists, accept the first existing one with a warning.
 if (!source) {
   source = candidates.find(p => fs.existsSync(p) && fs.statSync(p).isDirectory());
-  if (source) console.error(c("yellow", `  ⚠ '${source}' não tem marcador de projeto Nirvana (businesses/, brief.md, HANDOFF.json); empacotando assim mesmo.`));
+  if (source) console.error(c("yellow", `  ⚠ '${source}' has no Nirvana project marker (businesses/, brief.md, HANDOFF.json); packing it anyway.`));
 }
 if (!source) {
-  console.error(c("red", `Project '${project}' não encontrado. Procurei em:`));
+  console.error(c("red", `Project '${project}' not found. Looked in:`));
   candidates.forEach(p => console.error("  " + p));
   process.exit(1);
 }

@@ -82,11 +82,11 @@ if (import.meta.main) {
   const [, , slug, ...rest] = process.argv;
   const brief = rest.filter(a => !a.startsWith("--")).join(" ");
   if (!slug || !brief) {
-    console.error('Uso: bun brief-proxy.ts <business_slug> "<brief>" [--runtime=claude-code]');
+    console.error('Usage: bun brief-proxy.ts <business_slug> "<brief>" [--runtime=claude-code]');
     process.exit(2);
   }
   const rtArg = process.argv.find(a => a.startsWith("--runtime="))?.split("=")[1] as Runtime | undefined;
   const out = proxyEnrichBrief(brief, slug, rtArg || "claude-code");
-  if (!out.ok) { console.error("proxy falhou:", out.error); process.exit(1); }
+  if (!out.ok) { console.error("proxy failed:", out.error); process.exit(1); }
   console.log(out.enriched);
 }

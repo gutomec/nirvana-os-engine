@@ -18,6 +18,7 @@ import { describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { createRequire } from "node:module";
+import { corpusGate } from "../../_shared/lib/corpus-gate.ts";
 
 const require = createRequire(import.meta.url);
 const router = require("../lib/router.js");
@@ -52,7 +53,7 @@ if (FULL_LIBRARY) {
   }
 }
 
-const d = FULL_LIBRARY ? describe : describe.skip;
+const d = corpusGate("routing-multilingual-probes", FULL_LIBRARY, { providers: providerCount, businesses: businessCount });
 
 d("multilingual probes — Phase 3.4 decision pins (es/fr/it/de + zh/ja/ko)", () => {
   test("all probes routed", () => {

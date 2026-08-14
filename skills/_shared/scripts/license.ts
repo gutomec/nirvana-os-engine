@@ -111,9 +111,9 @@ function printStatus(v: VResult): void {
   console.log(`  Edition/version: ${d.edition || "—"} ${d.version || ""}`.trimEnd());
   if (d.issued_at) console.log(`  Issued at:       ${d.issued_at}`);
   const sig =
-    v.status === "valid" ? `${GRN}VÁLIDA${RST}` :
-    v.status === "unsigned" ? `${YEL}não assinada${RST}` :
-    `${YEL}INVÁLIDA (não confere com a chave oficial)${RST}`;
+    v.status === "valid" ? `${GRN}VALID${RST}` :
+    v.status === "unsigned" ? `${YEL}unsigned${RST}` :
+    `${YEL}INVALID (does not match the official key)${RST}`;
   console.log(`  Signature:       ${sig}`);
   if (existsSync(STORE_ACT)) {
     try {

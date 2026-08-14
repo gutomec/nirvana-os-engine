@@ -24,7 +24,7 @@ const candidates = [
 ];
 const target = candidates.find(p => fs.existsSync(p));
 if (!target) {
-  console.error(`ERRO: business não encontrada (tentou: ${candidates.join(", ")})`);
+  console.error(`ERROR: business not found (tried: ${candidates.join(", ")})`);
   process.exit(EXIT.INVALID_ARGS);
 }
 

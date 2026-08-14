@@ -189,12 +189,12 @@ const malformados: string[] = [];
 for (const [slug, c] of Object.entries(clones) as Array<[string, any]>) {
   for (const d of c.match?.domains || []) {
     if (typeof d !== "string") {
-      malformados.push(`${slug}: item de domains não é texto (${JSON.stringify(d).slice(0, 60)}) — use vírgula, não dois-pontos`);
+      malformados.push(`${slug}: a domains item is not text (${JSON.stringify(d).slice(0, 60)}) — use a comma, not a colon`);
     }
   }
 }
 if (malformados.length && !quiet) {
-  console.warn(`[index-clones] ${malformados.length} domínio(s) fora do corpus por má formação:`);
+  console.warn(`[index-clones] ${malformados.length} domain(s) left out of the corpus, malformed:`);
   for (const m of malformados.slice(0, 20)) console.warn(`  ! ${m}`);
 }
 
@@ -206,11 +206,11 @@ for (const [slug, c] of Object.entries(clones) as Array<[string, any]>) {
   const norm = (s: string) => String(s).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
   const recusados = new Set(refuses.map(norm));
   for (const d of domains) {
-    if (recusados.has(norm(d))) contradicoes.push(`${slug}: domínio "${d}" também está em refuses`);
+    if (recusados.has(norm(d))) contradicoes.push(`${slug}: domain "${d}" is also in refuses`);
   }
 }
 if (contradicoes.length && !quiet) {
-  console.warn(`[index-clones] ${contradicoes.length} domínio(s) contradizem a própria recusa:`);
+  console.warn(`[index-clones] ${contradicoes.length} domain(s) contradict their own refusal:`);
   for (const c of contradicoes.slice(0, 20)) console.warn(`  ! ${c}`);
 }
 
@@ -248,8 +248,8 @@ if (!quiet) {
   const enriched = Object.values(clones).filter((c: any) => c.match.one_liner).length;
   console.error(`[index-clones] ✓ ${out.count} mind-clones indexed (${scanned} scanned, ${enriched} enriched)`);
   if (legacyNested > 0) {
-    console.error(`[index-clones] ⚠ ${legacyNested} clone(s) em layout legado aninhado (dna/<categoria>/<slug>/) — indexados normalmente.`);
-    console.error(`[index-clones]   O layout canônico é flat (dna/<slug>/). Reinstalar o pack em 0.1.62+ normaliza; nada precisa ser movido à mão.`);
+    console.error(`[index-clones] ⚠ ${legacyNested} clone(s) in the legacy nested layout (dna/<category>/<slug>/) — indexed normally.`);
+    console.error(`[index-clones]   The canonical layout is flat (dna/<slug>/). Reinstalling the pack on 0.1.62+ normalizes it; nothing needs moving by hand.`);
   }
 }
 process.exit(EXIT.OK);

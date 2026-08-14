@@ -676,7 +676,7 @@ ${args.brief}
 if (import.meta.main) {
   const [, , slug, employee, projectDir, briefFile, outputsRoot] = process.argv;
   if (!slug || !employee || !projectDir || !briefFile) {
-    console.error("Uso: bun employee-prompt.ts <business_slug> <employee> <project_dir> <brief_file> [outputs_root]");
+    console.error("Usage: bun employee-prompt.ts <business_slug> <employee> <project_dir> <brief_file> [outputs_root]");
     process.exit(2);
   }
   if (!fs.existsSync(briefFile)) {

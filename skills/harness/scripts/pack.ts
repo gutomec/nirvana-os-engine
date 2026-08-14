@@ -48,7 +48,7 @@ function flag(name: string, fallback?: string): string | undefined {
 }
 
 if (!sub || !["create", "inspect", "publish"].includes(sub)) {
-  console.error("Uso: nrv pack <create|inspect|publish> ...");
+  console.error("Usage: nrv pack <create|inspect|publish> ...");
   console.error("");
   console.error("  create <source-dir> [--kind=business|squad|mind-clone] [--output=dir] [--sign]");
   console.error("  inspect <pack.tgz>");
@@ -82,20 +82,20 @@ function readManifest(dir: string, kind: string): { slug: string; version: strin
 if (sub === "create") {
   const sourceDir = positional[0];
   if (!sourceDir || !fs.existsSync(sourceDir) || !fs.statSync(sourceDir).isDirectory()) {
-    console.error(c("red", "ERRO: source-dir inválido"));
-    console.error("Uso: nrv pack create <source-dir> [--kind=...] [--output=...]");
+    console.error(c("red", "ERROR: invalid source-dir"));
+    console.error("Usage: nrv pack create <source-dir> [--kind=...] [--output=...]");
     process.exit(2);
   }
   const explicitKind = flag("--kind");
   const kind = (explicitKind as any) || detectKind(sourceDir);
   if (!kind) {
-    console.error(c("red", `ERRO: não consegui detectar kind em ${sourceDir}`));
+    console.error(c("red", `ERROR: could not detect kind in ${sourceDir}`));
     console.error("Esperava encontrar business.yaml, squad.yaml ou MANIFEST.yaml");
     process.exit(1);
   }
   const manifest = readManifest(sourceDir, kind);
   if (!manifest) {
-    console.error(c("red", "ERRO: manifest inválido ou ausente"));
+    console.error(c("red", "ERROR: invalid or missing manifest"));
     process.exit(1);
   }
 
@@ -201,7 +201,7 @@ if (sub === "create") {
 if (sub === "inspect") {
   const tgz = positional[0];
   if (!tgz || !fs.existsSync(tgz)) {
-    console.error(c("red", "ERRO: tarball não encontrado"));
+    console.error(c("red", "ERROR: tarball not found"));
     process.exit(2);
   }
   console.log("");
@@ -249,7 +249,7 @@ if (sub === "publish") {
   const tgz = positional[0];
   const to = flag("--to", "local") || "local";
   if (!tgz || !fs.existsSync(tgz)) {
-    console.error(c("red", "ERRO: tarball não encontrado"));
+    console.error(c("red", "ERROR: tarball not found"));
     process.exit(2);
   }
 
@@ -294,6 +294,6 @@ if (sub === "publish") {
     process.exit(0);
   }
 
-  console.error(c("red", `ERRO: --to=${to} desconhecido. Use local | github | npm`));
+  console.error(c("red", `ERROR: unknown --to=${to}. Use local | github | npm`));
   process.exit(2);
 }

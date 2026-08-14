@@ -30,27 +30,27 @@ for (let i = 0; i < argv.length; i++) {
   if (a === "--project") { projectId = argv[++i]; continue; }
   if (a === "--manifest") { manifestFile = argv[++i]; continue; }  // F11 fix
   if (a === "-h" || a === "--help") {
-    console.log('Uso: brief-business <slug> "<brief>" [--project <id>] [--manifest <file>]');
+    console.log('Usage: brief-business <slug> "<brief>" [--project <id>] [--manifest <file>]');
     console.log('');
-    console.log('  --manifest <file>   Path para arquivo .json ou .txt listando deliverables');
-    console.log('                      esperados (1 path por linha em .txt; array em .json).');
-    console.log('                      Permite que verify-deliverable.ts valide sem regex no brief.');
+    console.log('  --manifest <file>   Path to a .json or .txt file listing the expected');
+    console.log('                      deliverables (1 path per line in .txt; array in .json).');
+    console.log('                      Lets verify-deliverable.ts validate without a regex on the brief.');
     process.exit(EXIT.OK);
   }
   if (!slug) slug = a;
   else if (!brief) brief = a;
-  else { console.error(`ERRO: argumento extra '${a}'`); process.exit(EXIT.INVALID_ARGS); }
+  else { console.error(`ERROR: extra argument '${a}'`); process.exit(EXIT.INVALID_ARGS); }
 }
 
 if (!slug || !brief) {
-  console.error('Uso: brief-business <slug> "<brief>" [--project <id>] [--manifest <file>]');
+  console.error('Usage: brief-business <slug> "<brief>" [--project <id>] [--manifest <file>]');
   process.exit(EXIT.INVALID_ARGS);
 }
 
 const hit = enumerate(scope, "businesses").find(e => e.slug === slug && !e.overridden);
 const target = hit?.dir ?? path.join(paths.BUSINESSES_DIR, slug);
 if (!fs.existsSync(target) || !fs.statSync(target).isDirectory()) {
-  console.error(`ERRO: business '${slug}' não encontrada (scope=${scope.mode})`);
+  console.error(`ERROR: business '${slug}' not found (scope=${scope.mode})`);
   process.exit(EXIT.FAILURES);
 }
 
@@ -120,7 +120,7 @@ try {
 // regex-matching paths in the brief.md (which is unreliable for short briefs).
 if (manifestFile) {
   if (!fs.existsSync(manifestFile)) {
-    console.error(`ERRO: --manifest file não encontrado: ${manifestFile}`);
+    console.error(`ERROR: --manifest file not found: ${manifestFile}`);
     process.exit(EXIT.FAILURES);
   }
   let manifestPaths: string[] = [];
@@ -130,7 +130,7 @@ if (manifestFile) {
     if (Array.isArray(parsed)) manifestPaths = parsed;
     else if (parsed && Array.isArray(parsed.deliverables)) manifestPaths = parsed.deliverables;
     else {
-      console.error("ERRO: --manifest .json deve ser array de paths ou { deliverables: [...] }");
+      console.error("ERROR: --manifest .json must be an array of paths or { deliverables: [...] }");
       process.exit(EXIT.FAILURES);
     }
   } else {
@@ -138,13 +138,13 @@ if (manifestFile) {
     manifestPaths = raw.split("\n").map(l => l.trim()).filter(l => l && !l.startsWith("#"));
   }
   if (manifestPaths.length === 0) {
-    console.error("ERRO: --manifest está vazio");
+    console.error("ERROR: --manifest is empty");
     process.exit(EXIT.FAILURES);
   }
   // Validate paths are absolute (verify-deliverable expects absolute)
   const invalid = manifestPaths.filter(p => !p.startsWith("/"));
   if (invalid.length > 0) {
-    console.error(`ERRO: manifest contém paths não-absolutos: ${invalid.slice(0, 3).join(", ")}...`);
+    console.error(`ERROR: manifest contains non-absolute paths: ${invalid.slice(0, 3).join(", ")}...`);
     process.exit(EXIT.FAILURES);
   }
   // Persist as canonical deliverables.json in projectDir
@@ -207,12 +207,12 @@ const loaderTs = path.join(skillDir, "lib", "loader.ts");
 const r = exec(`${JSON.stringify(BUN_BIN)} ${JSON.stringify(loaderTs)} ${JSON.stringify(target)} --field intake_employee`, { silent: true });
 const intake = (r.stdout || "").trim();
 if (!intake) {
-  console.error(`ERRO: business '${slug}' não declara nenhum employee com is_brief_intake: true.`);
-  console.error(`Edite ${path.join(target, "employees")}/*.md e adicione 'is_brief_intake: true' a um deles.`);
+  console.error(`ERROR: business '${slug}' declares no employee with is_brief_intake: true.`);
+  console.error(`Edit ${path.join(target, "employees")}/*.md and add 'is_brief_intake: true' to one of them.`);
   process.exit(EXIT.FAILURES);
 }
 
-console.log(`OK: brief registrado.
+console.log(`OK: brief registered.
 
   Project ID:    ${projectId}
   Business:      ${slug}
@@ -220,13 +220,13 @@ console.log(`OK: brief registrado.
   Project dir:   ${projectDir}
   Brief file:    ${briefFile}
   Audit log:     ${auditFile}
-  Run ID:        ${runId ?? "(não rastreado — ver aviso acima)"}
+  Run ID:        ${runId ?? "(not tracked — see the warning above)"}
 
-Próximo passo (executado pela skill via Agent tool):
-  Spawn employee '${intake}' com o brief acima como context. Esperar handoff
-  artifact em ${projectDir}/handoffs/.
+Next step (run by the skill via the Agent tool):
+  Spawn employee '${intake}' with the brief above as context. Wait for the handoff
+  artifact in ${projectDir}/handoffs/.
 ${runId ? `
-OBRIGATÓRIO ao terminar (é o que avisa o dono que acabou):
-  nrv run-track close ${runId} --state delivered|withheld|failed [--error "<motivo>"]` : ""}`);
+REQUIRED when you finish (this is what tells the owner it is done):
+  nrv run-track close ${runId} --state delivered|withheld|failed [--error "<reason>"]` : ""}`);
 
 process.exit(EXIT.OK);

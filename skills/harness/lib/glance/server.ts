@@ -878,7 +878,7 @@ export async function startServer(opts: ServerOptions) {
           const deletes: string[] = Array.isArray(body.deletes) ? body.deletes : [];
           // Only valid USE_*/NOT_USE_* keys — never writes outside the pattern.
           const invalid = [...Object.keys(updates), ...deletes].filter(k => !RULE_KEY_RE.test(k));
-          if (invalid.length) return json({ error: `chaves de regra inválidas: ${invalid.join(", ")}` }, 400);
+          if (invalid.length) return json({ error: `invalid rule keys: ${invalid.join(", ")}` }, 400);
 
           const scope = getScope();
           const projectDir = scope.projectRoot || process.cwd();
@@ -1646,7 +1646,7 @@ const ACTIONS: Record<string, ActionDef> = {
       const resume = (b?.resume_session || "").toString();
       const runtime = (b?.runtime || "").toString();
       if (!msg.trim()) throw new Error("message vazia");
-      if (!/^[a-z0-9-]+$/.test(chatId)) throw new Error("chat_id inválido");
+      if (!/^[a-z0-9-]+$/.test(chatId)) throw new Error("invalid chat_id");
       const args = [`${SKILLS}/harness/scripts/chat-concierge.ts`, msg];
       if (resume && /^[A-Za-z0-9_-]+$/.test(resume)) args.push("--resume", resume);
       if (runtime && /^[a-z-]+$/.test(runtime)) args.push("--runtime", runtime);
@@ -1667,7 +1667,7 @@ const ACTIONS: Record<string, ActionDef> = {
       const cmd = (b?.command || "").toString();
       const chatId = (b?.chat_id || "").toString();
       if (!cmd.trim()) throw new Error("comando vazio");
-      if (!/^[a-z0-9-]+$/.test(chatId)) throw new Error("chat_id inválido");
+      if (!/^[a-z0-9-]+$/.test(chatId)) throw new Error("invalid chat_id");
       return ["-c", cmd];
     },
   },
@@ -1682,10 +1682,10 @@ const ACTIONS: Record<string, ActionDef> = {
       const chatId = (b?.chat_id || "").toString();
       const budget = (b?.max_budget || "0.50").toString();
       if (!msg.trim()) throw new Error("message vazia");
-      if (!/^[a-z0-9-]+$/.test(chatId)) throw new Error("chat_id inválido");
+      if (!/^[a-z0-9-]+$/.test(chatId)) throw new Error("invalid chat_id");
       // slug vazio → --auto (roteador agêntico escolhe a empresa)
       const args = [`${SKILLS}/harness/scripts/dispatch.ts`];
-      if (slug) { if (!/^[a-z0-9-]+$/.test(slug)) throw new Error("slug inválido"); args.push(slug, msg); }
+      if (slug) { if (!/^[a-z0-9-]+$/.test(slug)) throw new Error("invalid slug"); args.push(slug, msg); }
       else args.push("--auto", msg);
       args.push("--exec", `--project=${chatId}`, "--safe", `--max-budget=${budget}`);
       return args;
@@ -1699,7 +1699,7 @@ const ACTIONS: Record<string, ActionDef> = {
     argsBuilder: (b) => {
       const chatId = (b?.chat_id || "").toString();
       const msg = (b?.message || "").toString();
-      if (!/^[a-z0-9-]+$/.test(chatId)) throw new Error("chat_id inválido");
+      if (!/^[a-z0-9-]+$/.test(chatId)) throw new Error("invalid chat_id");
       if (!msg.trim()) throw new Error("message vazia");
       return [`${SKILLS}/harness/scripts/revise.ts`, chatId, msg, "--safe"];
     },
@@ -1711,7 +1711,7 @@ const ACTIONS: Record<string, ActionDef> = {
     traceId: (b) => (b?.chat_id || "").toString() || null,
     argsBuilder: (b) => {
       const chatId = (b?.chat_id || "").toString();
-      if (!/^[a-z0-9-]+$/.test(chatId)) throw new Error("chat_id inválido");
+      if (!/^[a-z0-9-]+$/.test(chatId)) throw new Error("invalid chat_id");
       return [`${SKILLS}/_shared/scripts/resume-project.ts`, chatId, "--dispatch"];
     },
   },

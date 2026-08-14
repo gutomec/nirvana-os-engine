@@ -49,7 +49,7 @@ function evalWhen(when: string | undefined, ctx: Record<string, unknown> = {}): 
   }
   m = s.match(/^([\w.]+)$/);
   if (m) return !!ctx[m[1]];
-  console.warn(`[contributions] predicado 'when' não reconhecido, tratando como ativo: ${when}`);
+  console.warn(`[contributions] unrecognized 'when' predicate, treating as active: ${when}`);
   return true;
 }
 
@@ -94,7 +94,7 @@ export function orderContributions(items: Contribution[]): Contribution[] {
     for (const j of next) { if (--indeg[j] === 0) queue.push(j); }
   }
   if (order.length !== n) {
-    console.warn("[contributions] ciclo em produces/consumes — usando ordem de declaração");
+    console.warn("[contributions] cycle in produces/consumes — using declaration order");
     return items.slice();
   }
   return order.map((i) => items[i]);
@@ -105,7 +105,7 @@ function fragmentText(c: Contribution): string {
   if (c.fragment?.path) {
     const abs = c._baseDir ? path.join(c._baseDir, c.fragment.path) : c.fragment.path;
     try { return fs.readFileSync(abs, "utf8"); }
-    catch { console.warn(`[contributions] fragment ilegível: ${abs}`); return ""; }
+    catch { console.warn(`[contributions] unreadable fragment: ${abs}`); return ""; }
   }
   return "";
 }

@@ -115,6 +115,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import { runEval, GOLDEN_PATH } from "../scripts/eval-routing.ts";
+import { corpusGate } from "../../_shared/lib/corpus-gate.ts";
 
 const registryLoader = require("../lib/registry-loader.js");
 
@@ -167,7 +168,7 @@ if (FULL_LIBRARY) {
   );
 }
 
-const d = FULL_LIBRARY ? describe : describe.skip;
+const d = corpusGate("routing-eval", FULL_LIBRARY, { providers: providerCount, businesses: businessCount, registries: HAVE_REGISTRIES });
 
 d("routing eval — full-library watermarks (measured 2026-08-05, post Phase 2.1 corpus)", () => {
   test("golden set has the full-library size (≥2000 cases)", () => {

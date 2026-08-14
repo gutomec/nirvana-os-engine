@@ -140,10 +140,10 @@ export function runEval(): EvalResult {
 if (import.meta.main) {
   const r = runEval();
   console.log(`avgDocLen ............ ${r.avgDocLen.toFixed(1)}`);
-  console.log(`auto-recuperação ..... ${r.selfOk}/${r.selfN}`);
-  console.log(`necessidade .......... ${r.needOk}/${r.needTotal}`);
-  console.log(`andaime (top-3 igual)  ${r.scaffoldOk}/${r.scaffoldTotal}`);
-  if (r.selfFail.length) console.log("\nfalhas de auto-recuperação:\n  " + r.selfFail.slice(0, 12).join("\n  "));
-  if (r.needFail.length) console.log("\nfalhas de necessidade:\n  " + r.needFail.join("\n  "));
-  if (r.scaffoldFail.length) console.log("\nandaime decidindo:\n  " + r.scaffoldFail.join("\n  "));
+  console.log(`self-retrieval ....... ${r.selfOk}/${r.selfN}`);
+  console.log(`need ................. ${r.needOk}/${r.needTotal}`);
+  console.log(`scaffold (top-3 same)  ${r.scaffoldOk}/${r.scaffoldTotal}`);
+  if (r.selfFail.length) console.log("\nself-retrieval failures:\n  " + r.selfFail.slice(0, 12).join("\n  "));
+  if (r.needFail.length) console.log("\nneed failures:\n  " + r.needFail.join("\n  "));
+  if (r.scaffoldFail.length) console.log("\nscaffold deciding:\n  " + r.scaffoldFail.join("\n  "));
 }

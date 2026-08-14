@@ -36,8 +36,8 @@ function arg(name: string, fallback?: string): string | undefined {
 
 const sub = process.argv[2];
 if (sub !== "tick" && sub !== "context") {
-  console.error("uso: nrv guard tick    --project <dir> --action <sig> [--progress <marker>]");
-  console.error("     nrv guard context --project <dir> --used <tokens> [--window <tokens>]");
+  console.error("usage: nrv guard tick    --project <dir> --action <sig> [--progress <marker>]");
+  console.error("       nrv guard context --project <dir> --used <tokens> [--window <tokens>]");
   process.exit(2);
 }
 
@@ -51,7 +51,7 @@ if (sub === "context") {
   const used = Number(arg("--used") || NaN);
   const window = Number(arg("--window") || process.env.NIRVANA_CONTEXT_WINDOW || 200_000);
   if (!Number.isFinite(used) || used < 0 || !Number.isFinite(window) || window <= 0) {
-    console.error("uso: nrv guard context --project <dir> --used <tokens> [--window <tokens>]");
+    console.error("usage: nrv guard context --project <dir> --used <tokens> [--window <tokens>]");
     process.exit(2);
   }
   const ratio = used / window;
@@ -69,7 +69,7 @@ if (sub === "context") {
       },
     });
   } catch (e) {
-    console.error(`  ⚠ guard: não consegui persistir context_guard_state: ${(e as Error).message}`);
+    console.error(`  ⚠ guard: could not persist context_guard_state: ${(e as Error).message}`);
   }
 
   if (ratio >= ROLL_AT) {
@@ -111,10 +111,10 @@ g.record(action, {}, progress);
 const verdict = g.check();
 
 try { writeHandoff(projectDir, { loop_guard_state: g.snapshot() }); }
-catch (e) { console.error(`  ⚠ guard: não consegui persistir loop_guard_state: ${(e as Error).message}`); }
+catch (e) { console.error(`  ⚠ guard: could not persist loop_guard_state: ${(e as Error).message}`); }
 
 if (verdict.stop) {
-  console.error(`🛑 LOOP GUARD: ${verdict.reason} (step ${g.snapshot().step_count}). Pare de iterar, escreva o HANDOFF e suba ao humano — não re-despache.`);
+  console.error(`🛑 LOOP GUARD: ${verdict.reason} (step ${g.snapshot().step_count}). Stop iterating, write the HANDOFF and escalate to the human — do not re-dispatch.`);
   process.exit(7);
 }
 console.log(`loop guard ok — step ${verdict.step_count}, action="${action}"`);

@@ -218,54 +218,55 @@ const dispatchAudit = createDispatchAudit();
 const emit = (event: string, payload: Record<string, any>) => dispatchAudit.emit(event, payload);
 
 if (!slug && !autoMode) {
-  console.error("Uso: nrv dispatch <business_slug> \"<brief>\" [opts]");
+  console.error("Usage: nrv dispatch <business_slug> \"<brief>\" [opts]");
   console.error("");
   console.error("  Opts:");
-  console.error("    --brief-file=<path>     Brief em arquivo (alternativa ao inline)");
-  console.error("    --manifest=<path>       deliverables.json (paths esperados)");
-  console.error("    --project=<id>          Project ID custom (default: auto)");
-  console.error("    --outputs-root=<dir>    Onde artefatos finais devem ser escritos");
+  console.error("    --brief-file=<path>     Brief in a file (alternative to inline)");
+  console.error("    --manifest=<path>       deliverables.json (expected paths)");
+  console.error("    --project=<id>          Custom project ID (default: auto)");
+  console.error("    --outputs-root=<dir>    Where final artifacts are written");
   console.error("    --runtime=<name>        claude-code|codex|antigravity-cli|gemini-cli|kimi-cli|grok-cli|pi (default: claude-code)");
   console.error("");
   console.error("  Exec (autopilot):");
-  console.error("    --auto                  sem nomear a empresa: o roteador escolhe a melhor para o brief");
-  console.error("    --exec[=runtime]        executa o agente headless (sem isso, só scaffolda)");
-  console.error("    --claude-code           atalho para --exec=claude-code");
-  console.error("    --auto-brief            enriquece brief magro e decide pelo humano");
-  console.error("    --zip                   empacota os entregáveis em ./<project>.zip");
-    console.error("    --pdf                   gera relatorio-final.pdf via report-publisher (se o business tiver)");
-    console.error("    --html                  gera relatorio-final.html com todos os markdowns do projeto (marked)");
-  console.error("    --team                  orquestração multi-employee real (diretor + cadeia, cada step audita)");
-  console.error("    --max-budget=<usd>      teto de custo do run (claude --max-budget-usd)");
-  console.error("    --timeout=<min>         teto de relógio do run (default 24h; travamento real é detectado por inatividade em ~5 min)");
-  console.error("    --safe                  opt-in modo restrito (tools limitadas + sandbox); default = full trust");
-  console.error("    --strict-route          rota ambígua FALHA em vez de auto-escolher o top candidato");
-  console.error("    --force-deliver         entrega mesmo com gate reprovado (delivered gate:\"fail-forced\")");
+  console.error("    --auto                  no business named: the router picks the best one for the brief");
+  console.error("    --exec[=runtime]        run the agent headless (without it, only scaffolds)");
+  console.error("    --claude-code           shortcut for --exec=claude-code");
+  console.error("    --auto-brief            enrich a thin brief and decide for the human");
+  console.error("    --zip                   pack the deliverables into ./<project>.zip");
+    console.error("    --pdf                   build relatorio-final.pdf via report-publisher (if the business has one)");
+    console.error("    --html                  build relatorio-final.html from every markdown in the project (marked)");
+  console.error("    --team                  real multi-employee orchestration (director + chain, each step audits)");
+  console.error("    --max-budget=<usd>      cost ceiling for the run (claude --max-budget-usd)");
+  console.error("    --timeout=<min>         wall-clock ceiling for the run (default 24h; a real hang is caught by ~5 min of inactivity)");
+  console.error("    --safe                  opt in to restricted mode (limited tools + sandbox); default = full trust");
+  console.error("    --strict-route          an ambiguous route FAILS instead of auto-picking the top candidate");
+  console.error("    --force-deliver         deliver even when the gate fails (delivered gate:\"fail-forced\")");
   console.error("");
   console.error("  Exit codes:");
-  console.error("    0  entregue (gate passou, ou --force-deliver)");
-  console.error("    1  run falhou (roteamento, execução ou verificação)");
-  console.error("    2  entrega RETIDA — gate reprovou depois das revisões");
-  console.error("    3  INDETERMINADO — nada foi julgado: zero artefatos avaliáveis,");
-  console.error("       ou scaffold sem --exec (nada despachado, nada entregue)");
-  console.error("    4  argumentos inválidos");
+  console.error("    0  delivered (gate passed, or --force-deliver)");
+  console.error("    1  run failed (routing, execution or verification)");
+  console.error("    2  delivery WITHHELD — gate failed after the revisions");
+  console.error("    3  INDETERMINATE — nothing was judged: zero gateable artifacts,");
+  console.error("       or scaffold without --exec (nothing dispatched, nothing delivered)");
+  console.error("    4  invalid arguments");
   console.error("");
-  console.error("Exemplo:");
-  console.error("  nrv dispatch brand-creative-studio \"Manifesto para produto X\"");
-  console.error("  nrv run minha-marca \"caso de acidente\" --auto-brief --zip");
+  console.error("Example:");
+  // Example slugs and briefs are user-library DATA, kept in the user's language.
+  console.error("  nrv dispatch brand-creative-studio \"Manifesto para produto X\"");  // i18n-user-facing
+  console.error("  nrv run minha-marca \"caso de acidente\" --auto-brief --zip");      // i18n-user-facing
   process.exit(4);
 }
 
 let brief = inlineBrief;
 if (!brief && briefFile) {
   if (!fs.existsSync(briefFile)) {
-    console.error(c("red", `ERRO: --brief-file não encontrado: ${briefFile}`));
+    console.error(c("red", `ERROR: --brief-file not found: ${briefFile}`));
     process.exit(4);
   }
   brief = fs.readFileSync(briefFile, "utf8");
 }
 if (!brief) {
-  console.error(c("red", "ERRO: forneça brief inline ou --brief-file"));
+  console.error(c("red", "ERROR: pass an inline brief or --brief-file"));
   process.exit(4);
 }
 
@@ -337,7 +338,7 @@ let runtimeDecision: RuntimeDecision = decideRuntime({
   available: runtimeAvailable,
 });
 if (runtimeDecision.source === "brief") {
-  console.log(c("lime", "▶") + c("bold", ` Runtime citado no brief: "${runtimeDecision.mention}"`) + c("dim", ` → ${runtimeDecision.runtime}`));
+  console.log(c("lime", "▶") + c("bold", ` Runtime named in the brief: "${runtimeDecision.mention}"`) + c("dim", ` → ${runtimeDecision.runtime}`));
   emit("routing_rule_applied", {
     project_id: projectId || null,
     rule_env_key: null, rule_text: runtimeDecision.mention ?? null,
@@ -345,7 +346,7 @@ if (runtimeDecision.source === "brief") {
     vetoes: runtimeDecision.vetoes ?? null,
   });
 } else if (runtimeDecision.source === "rule") {
-  console.log(c("lime", "▶") + c("bold", ` Regra de runtime: ${runtimeDecision.rule!.envKey}`) + c("dim", ` → ${runtimeDecision.runtime} (${runtimeDecision.method}, score ${runtimeDecision.score?.toFixed(2)})`));
+  console.log(c("lime", "▶") + c("bold", ` Runtime rule: ${runtimeDecision.rule!.envKey}`) + c("dim", ` → ${runtimeDecision.runtime} (${runtimeDecision.method}, score ${runtimeDecision.score?.toFixed(2)})`));
   emit("routing_rule_applied", {
     project_id: projectId || null,
     rule_env_key: runtimeDecision.rule!.envKey, rule_text: runtimeDecision.rule!.rule,
@@ -354,13 +355,13 @@ if (runtimeDecision.source === "brief") {
   });
 } else if (runtimeDecision.vetoes?.length) {
   // NOT_USE_* vetoes changed/limited the choice with no winning positive rule.
-  console.log(c("lime", "▶") + c("bold", ` Veto de runtime: ${runtimeDecision.vetoes.map(v => v.envKey).join(", ")}`) + c("dim", ` → seguindo em ${runtimeDecision.runtime}`));
+  console.log(c("lime", "▶") + c("bold", ` Runtime veto: ${runtimeDecision.vetoes.map(v => v.envKey).join(", ")}`) + c("dim", ` → continuing on ${runtimeDecision.runtime}`));
   emit("routing_rule_vetoed", {
     project_id: projectId || null,
     vetoes: runtimeDecision.vetoes, runtime: runtimeDecision.runtime, source: runtimeDecision.source,
   });
 } else if (runtimeRules.length && runtimeDecision.source === "default" && !explicitRuntime) {
-  console.log(c("dim", `  regras USE_* presentes, sem match para este brief — seguindo no default (${runtimeDecision.runtime})`));
+  console.log(c("dim", `  USE_* rules present, none matched this brief — staying on the default (${runtimeDecision.runtime})`));
 }
 // Block appended to the AUTONOMOUS_DIRECTIVE: the maestro honors the rules when
 // DELEGATING sub-tasks ("" when there are no rules = no-op).
@@ -402,7 +403,7 @@ if (autoMode && routingMode === "fast") {
   console.log(c("lime", "▶") + c("bold", " Auto-route — fast (BM25, zero-token)"));
   const fast = await fastBm25Business(brief);
   if (!fast.slug) {
-    console.error(c("red", `✗ --auto (fast): BM25 não escolheu uma empresa com confiança (sinal ${fast.signal || "n/a"}; a maioria dos businesses ainda não tem auto_routes). Nomeie a empresa, ou use --mode=agentic.`));
+    console.error(c("red", `✗ --auto (fast): BM25 did not confidently pick a business (signal ${fast.signal || "n/a"}; most businesses still have no auto_routes). Name the business, or use --mode=agentic.`));
     process.exit(1);
   }
   slug = fast.slug;
@@ -425,7 +426,7 @@ if (autoMode && routingMode === "fast") {
     if (isInCooldown(routerRoot, runtime)) {
       const alt = nextAfter(routerRoot, loadCascade(routerRoot), runtime)?.runtime;
       if (alt && alt !== runtime) {
-        console.error(c("yellow", `  ⚠ ${runtime} indisponível (${getCooldown(routerRoot, runtime)?.reason || "cooldown"}) — roteando via ${alt}`));
+        console.error(c("yellow", `  ⚠ ${runtime} unavailable (${getCooldown(routerRoot, runtime)?.reason || "cooldown"}) — routing via ${alt}`));
         runtime = alt;
       }
     }
@@ -458,7 +459,7 @@ if (autoMode && routingMode === "fast") {
   if (decision.runtime && !explicitRuntime && runtimeDecision.source !== "brief" && runtimeAvailable(decision.runtime)) {
     const matched = runtimeRules.find(r => r.runtime === decision.runtime);
     runtimeDecision = { runtime: decision.runtime, source: "rule", rule: matched, method: "agentic" };
-    console.log(c("lime", "  →") + c("bold", ` runtime pela regra do usuário: ${decision.runtime}`) + c("dim", " (agentic)"));
+    console.log(c("lime", "  →") + c("bold", ` runtime from the user rule: ${decision.runtime}`) + c("dim", " (agentic)"));
     emit("routing_rule_applied", {
       project_id: projectId || null,
       rule_env_key: matched?.envKey ?? null, rule_text: matched?.rule ?? null,
@@ -479,7 +480,7 @@ if (autoMode && routingMode === "fast") {
     warn: m => console.error(c("yellow", `  ⚠ ${m}`)),
   });
   if (!plan.ok) {
-    console.error(c("red", `✗ --auto: ${plan.error || "no dispatchable plan"}. Nomeie a empresa ou o squad.`));
+    console.error(c("red", `✗ --auto: ${plan.error || "no dispatchable plan"}. Name the business or the squad.`));
     process.exit(1);
   }
 
@@ -495,12 +496,12 @@ if (autoMode && routingMode === "fast") {
     emit("auto_route_selected", { project_id: projectId || null, business_slug: slug, method: "agentic", source: plan.source, mandatory_squads: autoMandatorySquads, optional_squads: plan.optionalSquads });
   } else if (step.kind === "squad") {
     const squads = plan.steps.filter(s => s.kind === "squad").map(s => s.slug!) as string[];
-    console.log(c("lime", "  →") + c("bold", ` rota squad-only: ${squads.join(", ")}`) + c("dim", ` (${plan.source})`));
+    console.log(c("lime", "  →") + c("bold", ` squad-only route: ${squads.join(", ")}`) + c("dim", ` (${plan.source})`));
     if (plan.rationale) console.log(c("dim", `  rationale: ${plan.rationale}`));
     emit("auto_route_selected", { project_id: projectId || null, business_slug: null, method: "agentic", source: plan.source, squad_only: true, mandatory_squads: squads, optional_squads: plan.optionalSquads });
     pendingCascade = { kind: "squad-only", squads, plan };
   } else {
-    console.log(c("yellow", "  →") + c("bold", " rota agent-x (generalista)") + c("dim", ` (${plan.source}: ${step.reason})`));
+    console.log(c("yellow", "  →") + c("bold", " agent-x route (generalist)") + c("dim", ` (${plan.source}: ${step.reason})`));
     emit("auto_route_selected", { project_id: projectId || null, business_slug: null, method: "agentic", source: plan.source, agent_x: true, reason: step.reason });
     pendingCascade = { kind: "agent-x", reason: step.reason, plan };
   }
@@ -518,10 +519,10 @@ if (wantAutoBrief) {
     });
     if (pr.ok && pr.enriched) {
       brief = pr.enriched;
-      console.log(c("dim", `  [auto-brief=proxy] briefing enriquecido por proxy (${pr.enriched.length} chars)`));
+      console.log(c("dim", `  [auto-brief=proxy] brief enriched by proxy (${pr.enriched.length} chars)`));
       emit("brief_proxy_enriched", { business_slug: slug, chars: pr.enriched.length });
     } else {
-      console.error(c("yellow", `  [auto-brief=proxy] falhou (${pr.error}); caindo para inferência determinística`));
+      console.error(c("yellow", `  [auto-brief=proxy] failed (${pr.error}); falling back to deterministic inference`));
       try {
         const decision = amplify(brief, { mode: "inferred" });
         if (decision.action === "infer") brief = decision.inferred_brief;
@@ -532,13 +533,13 @@ if (wantAutoBrief) {
       const decision = amplify(brief, { mode: "inferred" });
       if (decision.action === "infer") {
         brief = decision.inferred_brief;
-        console.log(c("dim", `  [auto-brief] ${decision.assumptions.length} premissa(s) inferida(s); brief enriquecido`));
+        console.log(c("dim", `  [auto-brief] ${decision.assumptions.length} assumption(s) inferred; brief enriched`));
         emit("brief_amplified", { business_slug: slug, mode: "inferred", assumptions: decision.assumptions.length, score: decision.score.total });
       } else if (decision.action === "skip") {
-        console.log(c("dim", `  [auto-brief] brief já rico (score ${decision.score.total}); sem inferência`));
+        console.log(c("dim", `  [auto-brief] brief already rich (score ${decision.score.total}); no inference`));
       }
     } catch (e: any) {
-      console.error(c("yellow", `  [auto-brief] amplifier falhou (${e?.message || e}); usando brief original`));
+      console.error(c("yellow", `  [auto-brief] amplifier failed (${e?.message || e}); using the original brief`));
     }
   }
 }
@@ -603,29 +604,29 @@ function deliverAfterError(opts: DeliverOpts, runtimeError: string, errorContext
 function printDeliverySummary(res: DeliveryResult, pid: string, oroot: string, zipPath: string | null, runtimeErrored = false): void {
   console.log("");
   if (runtimeErrored) {
-    console.log(c("yellow", "⚠ O runtime reportou erro no fim do run — os artefatos que já existiam foram verificados e julgados assim mesmo."));
+    console.log(c("yellow", "⚠ The runtime reported an error at the end of the run — the artifacts that already existed were verified and judged anyway."));
   }
   if (res.exitCode === 0) {
-    console.log(c("green", "✓ Autopilot completo."));
+    console.log(c("green", "✓ Autopilot complete."));
   } else if (res.exitCode === 2) {
-    console.log(c("yellow", "⚠ Entrega RETIDA — quality gate reprovou após as revisões (exit 2)."));
-    console.log(c("dim", "  Os artefatos ficam no disco; nada foi marcado como entregue."));
+    console.log(c("yellow", "⚠ Delivery WITHHELD — the quality gate failed after the revisions (exit 2)."));
+    console.log(c("dim", "  The artifacts stay on disk; nothing was marked as delivered."));
   } else if (res.exitCode === 3) {
-    console.log(c("yellow", "⚠ Entrega INDETERMINADA — nenhum artefato gateável foi produzido (exit 3)."));
+    console.log(c("yellow", "⚠ Delivery INDETERMINATE — no gateable artifact was produced (exit 3)."));
   } else {
-    console.log(c("red", "✗ Entrega falhou."));
+    console.log(c("red", "✗ Delivery failed."));
   }
   console.log(c("dim", `  Project ID:   ${pid}`));
   console.log(c("dim", `  Deliverables: ${oroot}`));
   if (zipPath) console.log(c("dim", `  Zip:          ${zipPath}`));
   console.log("");
-  console.log(c("cyan", "  Pedir alterações (mantém a sessão):"));
-  console.log("    " + c("yellow", `nrv revise ${pid} "<mudança>"`));
+  console.log(c("cyan", "  Ask for changes (keeps the session):"));
+  console.log("    " + c("yellow", `nrv revise ${pid} "<change>"`));
   if (res.exitCode === 2) {
-    console.log(c("cyan", "  Entregar mesmo assim (consciente):"));
-    console.log("    " + c("yellow", "re-rode com --force-deliver"));
+    console.log(c("cyan", "  Deliver anyway (eyes open):"));
+    console.log("    " + c("yellow", "re-run with --force-deliver"));
   }
-  console.log(c("cyan", "  Limpar todo o scaffold:"));
+  console.log(c("cyan", "  Clear the whole scaffold:"));
   console.log("    " + c("yellow", `nrv clean ${pid}`));
   console.log("");
 }
@@ -647,7 +648,7 @@ if (pendingCascade?.kind === "squad-only") {
   for (const sq of squads) {
     const r = spawnSync("bun", [briefSquadScript, sq, brief, "--project", pid], { encoding: "utf8" });
     if (r.status !== 0) {
-      console.error(c("red", `✗ brief-squad falhou para '${sq}':`));
+      console.error(c("red", `✗ brief-squad failed for '${sq}':`));
       console.error(r.stdout || r.stderr);
       process.exit(1);
     }
@@ -656,7 +657,7 @@ if (pendingCascade?.kind === "squad-only") {
     console.log(c("dim", `  ✓ ${sq} scaffolded`));
   }
   if (!projDir) {
-    console.error(c("red", "✗ não consegui parsear o Project dir do brief-squad"));
+    console.error(c("red", "✗ could not parse the Project dir from brief-squad"));
     process.exit(1);
   }
   const projectRoot = path.resolve(projDir, "..", "..");   // <outputs>/<pid>
@@ -664,17 +665,17 @@ if (pendingCascade?.kind === "squad-only") {
 
   if (!wantExec) {
     console.log("");
-    console.log(c("cyan", "  Scaffold pronto (sem --exec). Para executar:"));
+    console.log(c("cyan", "  Scaffold ready (no --exec). To run it:"));
     console.log("    " + c("yellow", `nrv dispatch --auto "${brief.slice(0, 60)}…" --exec`));
-    console.log("    " + c("yellow", `# ou manualmente: bun ${briefSquadScript} <squad> "<brief>"`));
+    console.log("    " + c("yellow", `# or manually: bun ${briefSquadScript} <squad> "<brief>"`));
     console.log("");
-    console.log(c("green", "✓ Scaffold pronto. Project ID: " + pid));
-    console.log(c("dim", "  (exit 3 — nada foi despachado nem julgado; entrega só com --exec)"));
+    console.log(c("green", "✓ Scaffold ready. Project ID: " + pid));
+    console.log(c("dim", "  (exit 3 — nothing dispatched, nothing judged; delivery only with --exec)"));
     process.exit(3);
   }
 
   if (!runtimeAvailable(rt)) {
-    console.error(c("red", `✗ runtime '${rt}' não está no PATH. Instale-o ou use --runtime=claude-code.`));
+    console.error(c("red", `✗ runtime '${rt}' is not on the PATH. Install it or use --runtime=claude-code.`));
     emit("agent_exec_failed", { trace_id: pid, project_id: pid, squad_slug: squads[0], runtime: rt, reason: "runtime not on PATH" });
     process.exit(1);
   }
@@ -709,7 +710,7 @@ if (pendingCascade?.kind === "squad-only") {
     if (!r.ok) {
       // Stop the chain, but do NOT abandon what is already on disk — the
       // delivery pipeline below decides (see deliverAfterRuntimeError).
-      console.error(c("red", `✗ squad '${sq}' falhou: ${r.error}`));
+      console.error(c("red", `✗ squad '${sq}' failed: ${r.error}`));
       emit("agent_exec_failed", { trace_id: pid, project_id: pid, squad_slug: sq, runtime: rt, error: r.error });
       squadError = `squad ${sq}: ${r.error}`;
       failedSquad = sq;
@@ -726,7 +727,7 @@ if (pendingCascade?.kind === "squad-only") {
   if (squadError) {
     const outcome = deliverAfterError(squadDeliverOpts, squadError, { squad_slug: failedSquad });
     if (!outcome.judged) {
-      console.error(c("red", `✗ nada foi produzido em ${oroot} — nada a julgar.`));
+      console.error(c("red", `✗ nothing was produced in ${oroot} — nothing to judge.`));
       process.exit(1);
     }
     printDeliverySummary(outcome.result!, pid, oroot, null, true);
@@ -757,18 +758,18 @@ if (pendingCascade?.kind === "agent-x") {
 
   if (!wantExec) {
     console.log("");
-    console.log(c("cyan", "  Scaffold agent-x pronto (sem --exec). Brief enriquecido em:"));
+    console.log(c("cyan", "  agent-x scaffold ready (no --exec). Enriched brief at:"));
     console.log("    " + c("yellow", briefPath));
-    console.log(c("cyan", "  Para executar:"));
+    console.log(c("cyan", "  To run it:"));
     console.log("    " + c("yellow", `nrv dispatch --auto "<brief>" --exec`));
     console.log("");
-    console.log(c("green", "✓ Scaffold pronto. Project ID: " + pid));
-    console.log(c("dim", "  (exit 3 — nada foi despachado nem julgado; entrega só com --exec)"));
+    console.log(c("green", "✓ Scaffold ready. Project ID: " + pid));
+    console.log(c("dim", "  (exit 3 — nothing dispatched, nothing judged; delivery only with --exec)"));
     process.exit(3);
   }
 
   if (!runtimeAvailable(rt)) {
-    console.error(c("red", `✗ runtime '${rt}' não está no PATH. Instale-o ou use --runtime=claude-code.`));
+    console.error(c("red", `✗ runtime '${rt}' is not on the PATH. Install it or use --runtime=claude-code.`));
     emit("agent_exec_failed", { trace_id: pid, project_id: pid, employee: "agent-x", runtime: rt, reason: "runtime not on PATH" });
     process.exit(1);
   }
@@ -803,11 +804,11 @@ if (pendingCascade?.kind === "agent-x") {
     projDir, projectRoot: base, sessionId: r.sessionId, withManifest: false,
   };
   if (!r.ok) {
-    console.error(c("red", `✗ agent-x falhou (exit ${r.exitCode}): ${r.error || r.stderr || "unknown"}`));
+    console.error(c("red", `✗ agent-x failed (exit ${r.exitCode}): ${r.error || r.stderr || "unknown"}`));
     emit("agent_exec_failed", { trace_id: pid, project_id: pid, employee: "agent-x", runtime: rt, exit_code: r.exitCode, error: r.error || r.stderr });
     const outcome = deliverAfterError(agentXDeliverOpts, r.error || r.stderr || `exit ${r.exitCode}`, { employee: "agent-x" });
     if (!outcome.judged) {
-      console.error(c("red", `✗ nada foi produzido em ${oroot} — nada a julgar.`));
+      console.error(c("red", `✗ nothing was produced in ${oroot} — nothing to judge.`));
       process.exit(1);
     }
     printDeliverySummary(outcome.result!, pid, oroot, null, true);
@@ -822,8 +823,8 @@ if (pendingCascade?.kind === "agent-x") {
 }
 
 if (!fs.existsSync(briefBiz)) {
-  console.error(c("red", `ERRO: brief-business.ts não encontrado em ${briefBiz}`));
-  console.error("Rode `nrv install --bootstrap` para reinstalar o Nirvana.");
+  console.error(c("red", `ERROR: brief-business.ts not found at ${briefBiz}`));
+  console.error("Run `nrv install --bootstrap` to reinstall Nirvana.");
   process.exit(1);
 }
 
@@ -846,7 +847,7 @@ const pid = stdout.match(/Project ID:\s+(\S+)/)?.[1];
 const intake = stdout.match(/Intake:\s+(\S+)/)?.[1];
 const projDir = stdout.match(/Project dir:\s+(\S+)/)?.[1];
 if (!pid || !intake || !projDir) {
-  console.error(c("red", "✗ Não consegui parsear output do brief-business"));
+  console.error(c("red", "✗ Could not parse brief-business output"));
   process.exit(1);
 }
 
@@ -936,7 +937,7 @@ if (wantExec) {
   console.log("");
   console.log(c("lime", "▶") + c("bold", ` Step 4/7 — exec ${wantTeam ? "team-chain" : "headless"} (${rt})`));
   if (!runtimeAvailable(rt)) {
-    console.error(c("red", `✗ runtime '${rt}' não está no PATH. Instale-o ou use --runtime=claude-code.`));
+    console.error(c("red", `✗ runtime '${rt}' is not on the PATH. Install it or use --runtime=claude-code.`));
     emit("agent_exec_failed", { trace_id: pid, project_id: pid, business_slug: slug, runtime: rt, reason: "runtime not on PATH" });
     if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "failed", { error: "runtime not on PATH" }));
     process.exit(1);
@@ -961,11 +962,11 @@ if (wantExec) {
       rulesDirective,
     });
     if (!tr.ok) {
-      console.error(c("red", `✗ team falhou: ${tr.error}`));
+      console.error(c("red", `✗ team failed: ${tr.error}`));
       emit("agent_exec_failed", { trace_id: pid, project_id: pid, business_slug: slug, runtime: rt, mode: "team", error: tr.error });
       runtimeError = `team failed: ${tr.error}`;
     } else {
-      console.log(c("green", `  ✓ time orquestrado: ${tr.chain.length} steps`));
+      console.log(c("green", `  ✓ team orchestrated: ${tr.chain.length} steps`));
       for (const s of tr.steps) {
         console.log(c("dim", `    · ${s.employee}: ${s.durationMs}ms${s.costUsd != null ? ` · $${s.costUsd.toFixed(4)}` : ""}`));
       }
@@ -993,7 +994,7 @@ if (wantExec) {
       ...(ledgerRunId ? { ledger: { runId: ledgerRunId, watchDir: oroot } } : {}),
     });
     if (!res.ok) {
-      console.error(c("red", `✗ exec falhou (exit ${res.exitCode}): ${res.error || res.stderr || "unknown"}`));
+      console.error(c("red", `✗ exec failed (exit ${res.exitCode}): ${res.error || res.stderr || "unknown"}`));
       emit("agent_exec_failed", { trace_id: pid, project_id: pid, business_slug: slug, runtime: rt, exit_code: res.exitCode, error: res.error || res.stderr });
       runtimeError = res.error || res.stderr || `exit ${res.exitCode}`;
     } else {
@@ -1058,9 +1059,9 @@ if (wantExec) {
       const pubEmployee = path.join(bizHome, "employees", "report-publisher.md");
       const hasPublisher = fs.existsSync(pubEmployee);
       if (!fs.existsSync(buildScript)) {
-        console.log(c("yellow", `  ⚠ --pdf: build-report-pdf.ts não encontrado; pulando PDF`));
+        console.log(c("yellow", `  ⚠ --pdf: build-report-pdf.ts not found; skipping PDF`));
       } else {
-        console.log(c("lime", "▶") + c("bold", ` Step 6.5 — relatório PDF (${hasPublisher ? "report-publisher" : "publisher genérico"})`));
+        console.log(c("lime", "▶") + c("bold", ` Step 6.5 — PDF report (${hasPublisher ? "report-publisher" : "generic publisher"})`));
         const relatorioDir = path.join(projDir, "relatorio");
         fs.mkdirSync(relatorioDir, { recursive: true });
         const summaryPath = path.join(relatorioDir, "resumo-executivo.md");
@@ -1084,7 +1085,7 @@ if (wantExec) {
         if (hasPublisher) {
           const ep = spawnSync("bun", [employeePrompt, slug, "report-publisher", projDir, pubBriefFile, relatorioDir], { encoding: "utf8" });
           if (ep.status === 0 && ep.stdout) pubPrompt = ep.stdout;
-          else console.error(c("yellow", `  ⚠ prompt do report-publisher falhou; usando publisher genérico`));
+          else console.error(c("yellow", `  ⚠ report-publisher prompt failed; using the generic publisher`));
         }
         {
           const pubRes = runHeadless({
@@ -1118,7 +1119,7 @@ if (wantExec) {
             console.log(c("green", `  ✓ PDF: ${pdfOut} (${(fs.statSync(pdfOut).size / 1024).toFixed(1)} KB)`));
             emit("report_pdf_generated", { trace_id: pid, project_id: pid, business_slug: slug, output: pdfOut });
           } else {
-            console.error(c("yellow", `  ⚠ build-report-pdf falhou: ${(pdf.stdout || "") + (pdf.stderr || "")}`));
+            console.error(c("yellow", `  ⚠ build-report-pdf failed: ${(pdf.stdout || "") + (pdf.stderr || "")}`));
           }
         }
       }
@@ -1128,14 +1129,14 @@ if (wantExec) {
     // Renders every project markdown into an Apple-style HTML. Lands in deliverables/
     // so the --zip bundle picks it up. --offline-snapshot produces a 100% offline copy.
     if (!skipHtml) {
-      console.log(c("lime", "▶") + c("bold", " Step 6.6 — relatório HTML"));
+      console.log(c("lime", "▶") + c("bold", " Step 6.6 — HTML report"));
       const htmlBuild = path.join(SKILLS, "harness/scripts/build-report-html.ts");
       const htmlOut = path.join(oroot, "relatorio-final.html");
       const htmlArgs = [htmlBuild, "--project", projDir, "--output", htmlOut, "--title", `Relatório — ${slug}`];
       if (process.argv.includes("--offline-snapshot")) htmlArgs.push("--offline-snapshot");
       const h = spawnSync("bun", htmlArgs, { encoding: "utf8", stdio: "inherit" });
       if (h.status === 0) emit("report_html_generated", { trace_id: pid, project_id: pid, business_slug: slug, output: htmlOut });
-      else console.error(c("yellow", `  ⚠ build-report-html falhou (rc=${h.status})`));
+      else console.error(c("yellow", `  ⚠ build-report-html failed (rc=${h.status})`));
     } else if (routingMode === "fast") {
       emit("report_skipped_fast", { trace_id: pid, project_id: pid, business_slug: slug });
     }
@@ -1152,7 +1153,7 @@ if (wantExec) {
         sessionData.zip_path = out;
         fs.writeFileSync(sessionFile, JSON.stringify(sessionData, null, 2));
       } else {
-        console.error(c("yellow", "  ⚠ export falhou (entregáveis estão na pasta do projeto)"));
+        console.error(c("yellow", "  ⚠ export failed (deliverables are in the project folder)"));
       }
     }
     zipPathOut = zipPath;
@@ -1173,7 +1174,7 @@ if (wantExec) {
   if (runtimeError) {
     const outcome = deliverAfterError(bizDeliverOpts, runtimeError, { employee: intake, mode: wantTeam ? "team" : "single" });
     if (!outcome.judged) {
-      console.error(c("red", `✗ nada foi produzido em ${oroot} — nada a julgar.`));
+      console.error(c("red", `✗ nothing was produced in ${oroot} — nothing to judge.`));
       process.exit(1);
     }
     delivery = outcome.result!;
@@ -1192,21 +1193,21 @@ if (wantExec) {
 console.log("");
 console.log(c("lime", "▶") + c("bold", " Step 4/4 — next steps"));
 console.log("");
-console.log(c("cyan", "  Copie o prompt completo e cole no seu runtime:"));
+console.log(c("cyan", "  Copy the whole prompt and paste it into your runtime:"));
 console.log("");
 console.log("    " + c("yellow", `cat ${outputPath} | pbcopy        # macOS`));
 console.log("    " + c("yellow", `cat ${outputPath} | xclip         # Linux`));
 console.log("    " + c("yellow", `type ${outputPath} | clip         # Windows`));
 console.log("");
-console.log(c("cyan", "  Ou abra o cockpit:"));
+console.log(c("cyan", "  Or open the cockpit:"));
 console.log("    " + c("yellow", `nrv glance --allow-actions`));
 console.log("");
-console.log(c("cyan", "  Para validar quando terminar:"));
+console.log(c("cyan", "  To validate when it is done:"));
 console.log("    " + c("yellow", `bun ~/.nirvana/skills/businesses/scripts/verify-deliverable.ts ${pid} ${slug}`));
 console.log("    " + c("yellow", `bun ~/.nirvana/skills/harness/scripts/validate-chain.ts ${pid} --strict`));
 console.log("");
-console.log(c("green", "✓ Scaffold pronto. Project ID: " + pid));
-console.log(c("dim", "  (exit 3 — nada foi despachado nem julgado; entrega só com --exec)"));
+console.log(c("green", "✓ Scaffold ready. Project ID: " + pid));
+console.log(c("dim", "  (exit 3 — nothing dispatched, nothing judged; delivery only with --exec)"));
 
 // Scaffold-only: nothing executed, nothing judged, nothing delivered → 3.
 process.exit(3);

@@ -42,8 +42,8 @@ const tailArg = args.find(a => a.startsWith("--tail="))?.split("=")[1];
 const tail = tailArg ? parseInt(tailArg) : null;
 
 if (!projectId && !all) {
-  console.error("Uso: nrv audit-view <project_id> [opts]");
-  console.error("     nrv audit-view --all");
+  console.error("Usage: nrv audit-view <project_id> [opts]");
+  console.error("       nrv audit-view --all");
   console.error("");
   console.error("  --since=1h|30m|2d   Filter by relative time");
   console.error("  --tail=N            Only last N events");

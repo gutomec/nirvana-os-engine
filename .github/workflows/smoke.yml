@@ -45,9 +45,13 @@ jobs:
           nrv index
           nrv index
 
-      - name: unit — runtime-rules (parser + resolver + precedência)
-        run: |
-          if [ -d skills/harness/tests ]; then bun test skills/harness/tests; else echo "repo sem tests/ — coberto pelo monorepo"; fi
+      # Every test, not one directory. This step used to run
+      # `bun test skills/harness/tests`, which left 15 files in
+      # skills/_shared/tests, skills/businesses/tests and skills/squads/tests
+      # unrun — including runtime-links.test.ts, the only behavioural test of
+      # scripts/install.ts. A test that CI never executes is a comment.
+      - name: unit — the whole suite
+        run: bun test skills
 
       - name: nrv doctor (warnings ok; falha crítica reprova)
         run: |

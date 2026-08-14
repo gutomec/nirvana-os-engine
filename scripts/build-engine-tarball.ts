@@ -122,7 +122,7 @@ console.log(`  version:      ${version}`);
 console.log(`  skills:       ${skillCount}/5`);
 console.log(`  content leak: ${leaks.length === 0 ? "none (correct)" : `${leaks.length} — ERROR`}`);
 console.log(`  watermark:    ${wms.length === 0 ? "clean (correct)" : `${wms.length} — ERROR`}`);
-console.log(`  .env gate:    ${envLeaks.length === 0 ? "clean (só o template do skeleton)" : `${envLeaks.length} — ERROR`}`);
+console.log(`  .env gate:    ${envLeaks.length === 0 ? "clean (only the skeleton template)" : `${envLeaks.length} — ERROR`}`);
 if (skillCount !== 5 || leaks.length > 0 || wms.length > 0 || envLeaks.length > 0) {
   for (const l of leaks) console.error(`  content: ${l}`);
   for (const w of wms) console.error(`  watermark: ${w}`);

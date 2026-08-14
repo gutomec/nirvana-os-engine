@@ -152,7 +152,7 @@ describe("nrv revise — the outcome goes through the delivery pipeline", () => 
     expect(events(c)).not.toContain("delivered");
     expect(events(c)).toContain("gate_failed");     // the .png WAS judged
     expect(events(c)).toContain("x_delivery_withheld");
-    expect(c.stdout).toContain("RETIDA");
+    expect(c.stdout).toContain("WITHHELD");
   }, 30_000);
 
   test("nothing the gate can judge → exit 3, INDETERMINATE, no delivered", () => {
@@ -161,7 +161,7 @@ describe("nrv revise — the outcome goes through the delivery pipeline", () => 
     expect(events(c)).toContain("x_gate_skipped_no_files");
     expect(events(c)).not.toContain("gate_passed");
     expect(events(c)).not.toContain("delivered");
-    expect(c.stdout).toContain("INDETERMINADA");
+    expect(c.stdout).toContain("INDETERMINATE");
   }, 30_000);
 
   test("a real gate FAIL withholds — it never emits delivered before exiting", () => {
@@ -204,7 +204,7 @@ describe("nrv revise — the outcome goes through the delivery pipeline", () => 
   test("bad args → 4 (EXIT.INVALID_ARGS), so 2 can mean WITHHELD", () => {
     const r = spawnSync(process.execPath, [REVISE], { encoding: "utf8" });
     expect(r.status).toBe(4);
-    expect(r.stderr).toContain("Uso: nrv revise");
+    expect(r.stderr).toContain("Usage: nrv revise");
   });
 
   test("a FAILED revision still judges what is on disk instead of abandoning it", () => {

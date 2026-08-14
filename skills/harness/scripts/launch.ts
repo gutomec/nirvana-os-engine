@@ -42,11 +42,11 @@ function c(color: keyof typeof ANSI, s: string): string {
 
 const projectName = process.argv[2];
 if (!projectName || projectName.startsWith("--")) {
-  console.error("Uso: nrv launch <project_name> [--pillars=a,b,c] [--config=launch.yaml]");
+  console.error("Usage: nrv launch <project_name> [--pillars=a,b,c] [--config=launch.yaml]");
   console.error("");
-  console.error("  Sem --pillars/--config: lista os defaults e pergunta antes de dispatchar.");
+  console.error("  Without --pillars/--config: lists the defaults and asks before dispatching.");
   console.error("");
-  console.error("Exemplos:");
+  console.error("Examples:");
   console.error("  nrv launch my-product");
   console.error("  nrv launch my-product --pillars=brand,marketing,gtm");
   console.error("  nrv launch my-product --config=./launch.yaml");
@@ -82,19 +82,19 @@ const DEFAULT_PILLARS: { pillar: string; business: string; suggested_artifacts: 
 let pillars = DEFAULT_PILLARS;
 if (configFile) {
   if (!fs.existsSync(configFile)) {
-    console.error(c("red", `Config file não existe: ${configFile}`));
+    console.error(c("red", `Config file does not exist: ${configFile}`));
     process.exit(1);
   }
   // Naive YAML parse via JSON for now
-  console.error(c("yellow", "WARN: --config YAML parser ainda não implementado; usando defaults"));
+  console.error(c("yellow", "WARN: --config YAML parser not implemented yet; using defaults"));
 }
 
 if (pillarsArg) {
   const selected = pillarsArg.split(",").map(s => s.trim());
   pillars = pillars.filter(p => selected.includes(p.pillar.replace(/^\d+-/, "")) || selected.includes(p.pillar));
   if (pillars.length === 0) {
-    console.error(c("red", `Nenhum pillar match: ${pillarsArg}`));
-    console.error("Pillars disponíveis: " + DEFAULT_PILLARS.map(p => p.pillar).join(", "));
+    console.error(c("red", `No pillar matched: ${pillarsArg}`));
+    console.error("Available pillars: " + DEFAULT_PILLARS.map(p => p.pillar).join(", "));
     process.exit(1);
   }
 }
@@ -142,16 +142,16 @@ for (const p of pillars) {
 console.log("");
 console.log(c("lime", "▶") + c("bold", " Run plan"));
 console.log("");
-console.log(c("dim", "  Para cada pillar, rode:"));
+console.log(c("dim", "  For each pillar, run:"));
 console.log("");
 for (const r of runPlan) {
   console.log(c("yellow", `  ${r.cmd}`));
 }
 console.log("");
-console.log(c("cyan", "  Ou em sequência:"));
+console.log(c("cyan", "  Or in sequence:"));
 console.log("    " + c("yellow", `nrv launch ${projectName} --pillars=... && nrv launch-run`));
 console.log("");
-console.log(c("green", `✓ Scaffold criado em ${outputsRoot}/`));
-console.log(c("dim", "  Cada pillar tem brief.md + deliverables.json prontos para dispatch."));
+console.log(c("green", `✓ Scaffold created in ${outputsRoot}/`));
+console.log(c("dim", "  Each pillar has brief.md + deliverables.json ready for dispatch."));
 
 process.exit(0);

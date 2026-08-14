@@ -30,7 +30,7 @@ const hard = process.argv.includes("--hard");
 const dryRun = process.argv.includes("--dry-run");
 
 if (!projectId) {
-  console.error("Uso: nrv clean <project_id> [--hard] [--dry-run]");
+  console.error("Usage: nrv clean <project_id> [--hard] [--dry-run]");
   process.exit(2);
 }
 
@@ -69,19 +69,19 @@ for (const d of projectDirs) {
 }
 
 if (projectDirs.length === 0 && zips.size === 0) {
-  console.error(c("yellow", `Nada encontrado para '${projectId}'. Procurei em:`));
+  console.error(c("yellow", `Nothing found for '${projectId}'. Looked in:`));
   candidates.forEach(p => console.error("  " + p));
   process.exit(1);
 }
 
 console.log("");
 console.log(c("lime", "▶") + c("bold", ` nrv clean — ${projectId}`));
-console.log(c("dim", `  modo: ${hard ? "HARD (apaga)" : "trash (reversível)"}${dryRun ? " · dry-run" : ""}`));
-[...projectDirs, ...zips].forEach(p => console.log(c("dim", `  alvo: ${p}`)));
+console.log(c("dim", `  mode: ${hard ? "HARD (deletes)" : "trash (reversible)"}${dryRun ? " · dry-run" : ""}`));
+[...projectDirs, ...zips].forEach(p => console.log(c("dim", `  target: ${p}`)));
 
 if (dryRun) {
   console.log("");
-  console.log(c("yellow", "  dry-run: nada removido."));
+  console.log(c("yellow", "  dry-run: nothing removed."));
   process.exit(0);
 }
 
@@ -128,7 +128,7 @@ function appendAudit(payload: Record<string, any>): void {
 appendAudit({ event: "project_purged", project_id: projectId, hard, removed: moved, trash: hard ? null : trashRoot });
 
 console.log("");
-console.log(c("green", `✓ Removido (${moved.length} alvo(s)).`));
-if (!hard) console.log(c("dim", `  Recuperável em: ${trashRoot}`));
+console.log(c("green", `✓ Removed (${moved.length} target(s)).`));
+if (!hard) console.log(c("dim", `  Recoverable at: ${trashRoot}`));
 console.log("");
 process.exit(0);

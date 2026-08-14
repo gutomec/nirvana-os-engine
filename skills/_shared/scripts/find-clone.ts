@@ -12,7 +12,7 @@ const { positional, flags } = parseArgs();
 const task = positional.join(" ").trim();
 
 if (!task || flags.h || flags.help) {
-  console.error('uso: nrv find-clone "<tarefa>" [--limit N] [--json]');
+  console.error('usage: nrv find-clone "<task>" [--limit N] [--json]');
   process.exit(task ? 0 : 2);
 }
 
@@ -25,12 +25,12 @@ if (flags.json) {
 }
 
 if (!hits.length) {
-  console.log("(nenhum clone relevante para esta tarefa — opere sem clone, persona padrão)");
+  console.log("(no clone is relevant to this task — operate without a clone, default persona)");
   process.exit(0);
 }
 
-console.log(`Clones mais úteis para: "${task}"`);
-console.log("(incorpore com a ordem: solicitado → este ranking → padrão. Use `nrv ask <slug>` para inspecionar.)\n");
+console.log(`Most useful clones for: "${task}"`);
+console.log("(embody in this order: requested → this ranking → default. Use `nrv ask <slug>` to inspect.)\n");
 for (const h of hits) {
   const cat = h.pack_category ? `  [${h.pack_category}]` : "";
   const ol = h.one_liner ? `\n        ${h.one_liner}` : "";
