@@ -6,6 +6,37 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## 0.5.1 — 2026-08-14
+
+### Four defects that were live in every install
+
+**The cross-language bridge was dead code for every buyer.** `.keyword-aliases.json`
+was written next to the routing digest and read next to the squads registry.
+Those are the same directory in project scope and two different ones in global —
+registry at `~/`, digest at `~/.nirvana/` — and global is what every install
+uses. So the file landed where nothing looked, and a Portuguese brief against an
+English-declared squad never got its coverage lift. Absence is normal by design,
+so it degraded in silence for as long as it existed. One constant now,
+`KEYWORD_ALIASES_PATH`, read by both sides.
+
+**`nrv doctor` did not know licenses exist.** Zero mentions in 570 lines. On the
+machine that started this whole investigation it printed "All systems nominal":
+pack content installed, no license on disk, `nrv update` already broken. It now
+reports the license and its signature, whether every component the pack manifest
+claims is actually on disk, and whether the alias groups are where the router
+reads them — each with the command that fixes it.
+
+**`nrv update` walked past the license it had just downloaded.** The per-buyer
+zip carries `PROVENANCE.json`, so an update already holds what it needs to repair
+a missing or stale license store. Best-effort, after the overlay: the content is
+correct by then, and a bookkeeping failure should not undo it.
+
+**The contamination detector knew five extensions; the watermarker knows six.**
+`.markdown` was missing, so a stamped `.markdown` file could ride back in through
+`nrv update` invisible to the check that exists to catch exactly that. It also
+skipped `dist/` — on a pack-authoring machine, the one directory where packs are
+built.
+
 ## 0.5.0 — 2026-08-14
 
 ### The registries were never built on the buyer's path
