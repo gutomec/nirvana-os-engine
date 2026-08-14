@@ -95,7 +95,7 @@ export const COMMANDS: Command[] = [
   { name: "find-clone", aliases: ["clone-find", "find-mind-clone"], target: "_shared/scripts/find-clone.ts", category: "libraries", args: '"<query>"', summary: "Find a mind-clone by query", visibility: "user" },
 
   // license
-  { name: "license", aliases: ["verify-license", "whoami"], target: "_shared/scripts/license.ts", category: "license", args: "[status|check|activate]", summary: "Show your copy's provenance; activate or heartbeat-check (offline-safe)", visibility: "user" },
+  { name: "license", aliases: ["verify-license", "whoami"], target: "_shared/scripts/license.ts", category: "license", args: "[status|check|install [<path>]|activate]", summary: "Show your copy's provenance, install a PROVENANCE.json, activate (offline-safe)", visibility: "user" },
 
   // advanced / dev
   { name: "setup", target: "_shared/scripts/install.ts", category: "dev", summary: "Re-wire audit hooks (= install --bootstrap)", visibility: "dev" },

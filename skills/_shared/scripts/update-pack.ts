@@ -103,8 +103,10 @@ async function main(): Promise<number> {
       console.log(`${DIM}Esse arquivo veio de uma cópia sem procedência. Use o zip que você recebeu na compra.${RST}\n`);
       return 1;
     }
-    console.log(`\n${DIM}Packs pagos vêm com PROVENANCE.json ao lado do setup.ts. Para instalar a licença:${RST}`);
-    console.log(`${DIM}  cd <pasta-do-pack> && bun setup.ts${RST}`);
+    console.log(`\n${DIM}Packs pagos vêm com PROVENANCE.json ao lado do setup.ts. Para instalar só a licença:${RST}`);
+    console.log(`${DIM}  nrv license install                      ${RST}${DIM}# procura em Downloads, Desktop e na pasta atual${RST}`);
+    console.log(`${DIM}  nrv license install <pasta-do-pack>      ${RST}${DIM}# ou aponte direto${RST}`);
+    console.log(`${DIM}Reinstalar o pack inteiro (bun setup.ts) também resolve, mas é bem mais caro.${RST}`);
     console.log(`${DIM}Se você já rodou o setup, confira que rodou com o MESMO usuário de agora`);
     console.log(`(um terminal "como administrador" tem outro perfil, e a licença fica no perfil de quem rodou).${RST}\n`);
     return 1;
