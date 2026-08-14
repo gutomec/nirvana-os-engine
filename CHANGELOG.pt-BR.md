@@ -6,6 +6,37 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## 0.5.2 — 2026-08-14
+
+### Idioma, medido onde ele de fato custa
+
+O roteador agêntico é o padrão e lê o digest de roteamento, então ele roteia um
+brief em qualquer idioma contra uma entidade declarada em qualquer outro. O modo
+`fast` é BM25: ele casa tokens, e um brief e uma entidade escritos em idiomas
+diferentes não compartilham nenhum. Medido em 20 pares de paráfrase mantidos fora
+do índice — uma intenção escrita duas vezes, com palavras que não aparecem em
+manifesto nenhum — a paridade entre idiomas no modo fast é de 25%.
+
+O `fast` agora imprime esse custo quando ele existe: a composição do corpus, o
+que isso significa para um casamento léxico, e que `--mode=agentic` não se importa
+com o idioma em que você escreve. Uma biblioteca de um idioma só nunca vê o aviso.
+
+O `nrv doctor` reporta a composição do corpus como progresso, não como erro, com
+a contagem de entidades que faltam traduzir. Um corpus misto não está quebrado;
+está no meio do caminho para um idioma só, e agora há um número para isso.
+
+O `measure-language-parity.ts` é o instrumento por trás dos dois. `--parity`
+roteia os pares de paráfrase; `--safety` mostra a paridade ao lado dos negativos
+que precisam continuar se abstendo, porque uma mudança pode subir um quebrando o
+outro.
+
+Um braço denso multilíngue foi construído, varrido em todos os pisos de cosseno e
+removido: a paridade nunca passou dos mesmos 25%. O embedding funciona isolado —
+um brief em português contra um documento em inglês dá cosseno 0,697 contra −0,05
+de um irrelevante — mas quatro squads reivindicam legitimamente trabalho com
+livros em idiomas diferentes, e nenhum recuperador faz dois idiomas concordarem
+sobre qual dos quatro escolher. Isso é trabalho de conteúdo, não de motor.
+
 ## 0.5.1 — 2026-08-14
 
 ### Quatro defeitos que estavam vivos em toda instalação

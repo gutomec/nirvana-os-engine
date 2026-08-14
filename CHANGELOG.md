@@ -6,6 +6,36 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## 0.5.2 — 2026-08-14
+
+### Language, measured where it actually costs
+
+The agentic router is the default and reads the routing digest, so it routes a
+brief in any language against an entity declared in any other. `fast` mode is
+BM25: it matches tokens, and a brief and an entity written in different languages
+share none. Measured on 20 held-out paraphrase pairs — one intent written twice,
+in wording that appears in no manifest — cross-language parity in fast mode is
+25%.
+
+`fast` now prints that tradeoff when it applies: the corpus mix, what it means
+for a lexical match, and that `--mode=agentic` does not care which language you
+type in. A single-language library never sees the notice.
+
+`nrv doctor` reports the corpus mix as progress rather than error, with the count
+of entities still to translate. A mixed corpus is not broken; it is partway to
+one language, and now there is a number for how far.
+
+`measure-language-parity.ts` is the harness behind both. `--parity` routes the
+paraphrase pairs; `--safety` shows parity beside the negatives that must keep
+abstaining, because a change can raise one by breaking the other.
+
+A dense multilingual arm was built, swept across every cosine floor and removed:
+parity never rose above the 25% it already had. The embedding works in isolation
+— a Portuguese brief against an English document scores 0.697 cosine against
+-0.05 for an unrelated one — but four squads legitimately claim book work in
+different languages, and no retriever makes two languages agree on which of four
+to pick. That is corpus work, not engine work.
+
 ## 0.5.1 — 2026-08-14
 
 ### Four defects that were live in every install
