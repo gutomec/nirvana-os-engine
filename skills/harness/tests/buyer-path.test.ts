@@ -185,12 +185,20 @@ describe("what the buyer has after running setup.ts", () => {
   });
 
   test("`nrv update --check` finds the license", () => {
-    // It may not reach the server (hermetic run); what must never happen again
-    // is the message that started all of this.
-    const r = bun([path.join(home, ".nirvana", "skills", "_shared", "scripts", "update-pack.ts"), SLUG, "--check"], root);
-    expect(r.out).not.toContain("No PROVENANCE");
-    expect(r.out).not.toContain("nothing to update");
-  });
+    // Offline by construction: the validate URL points at a closed port so the
+    // fetch fails immediately instead of hanging on a CI runner that cannot
+    // reach squads.sh. What this proves is that the command got PAST the license
+    // lookup — reaching the server is not the point, and never was.
+    const r = spawnSync(process.execPath, [
+      path.join(home, ".nirvana", "skills", "_shared", "scripts", "update-pack.ts"), SLUG, "--check",
+    ], { cwd: root, env: { ...env, NIRVANA_VALIDATE_URL: "http://127.0.0.1:9/validate" }, encoding: "utf8" });
+    const out = `${r.stdout ?? ""}${r.stderr ?? ""}`;
+    expect(out).not.toContain("No PROVENANCE");
+    expect(out).not.toContain("nothing to update");
+    // Reaching the network step at all means it got past the license lookup —
+    // without a license it exits before ever trying to connect.
+    expect(out).toContain("Offline use stays available");
+  }, 30_000);
 });
 
 describe("the pack shape the per-buyer injection depends on", () => {
