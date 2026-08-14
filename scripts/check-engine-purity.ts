@@ -23,8 +23,10 @@
  *
  * Usage: bun scripts/check-engine-purity.ts
  */
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, relative, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -91,12 +93,50 @@ walk(REPO, "");
 // different clothes: the trace of USING the engine, committed into the engine.
 // Nine of them reached the public repo — a brief, a HANDOFF, a business's
 // outputs, a generated report — because `outputs/` was never gitignored and
-// this gate only looked for squad.yaml-shaped things. Checking the git index
-// rather than the disk, so a developer's local run is left alone and only a
-// tracked one fails.
+// this gate only looked for squad.yaml-shaped things.
+//
+// The guarded paths are ASKED OF THE ENGINE, not remembered here. A hardcoded
+// list is a list that goes stale the day someone changes where a run writes,
+// and the leak it misses looks exactly like the one it caught. So the same
+// resolvers the runtime uses answer the question, with a static floor in case
+// resolution ever fails.
+function runArtifactRoots(): string[] {
+  const roots = new Set<string>(["outputs", ".nirvana", ".harness-logs"]);   // floor
+  try {
+    // The resolvers honour env overrides; neutralise them so we ask about the
+    // DEFAULT layout, which is the one a contributor's repo will have.
+    const saved = { out: process.env.NIRVANA_OUTPUTS_DIR, logs: process.env.HARNESS_LOGS_DIR };
+    delete process.env.NIRVANA_OUTPUTS_DIR;
+    delete process.env.HARNESS_LOGS_DIR;
+    try {
+      const scope = require(join(REPO, "skills/_shared/lib/scope.ts"));
+      const logs = require(join(REPO, "skills/_shared/lib/log-paths.ts"));
+      for (const abs of [
+        scope.outputsDir({ projectRoot: REPO }),
+        logs.harnessLogsDir({ projectRoot: REPO }),
+        logs.maestroLogsDir?.({ projectRoot: REPO }),
+      ]) {
+        if (typeof abs !== "string") continue;
+        const rel = relative(REPO, abs);
+        // Only paths INSIDE the repo matter; a run writing to $HOME is not our problem.
+        if (rel && !rel.startsWith("..") && !isAbsolute(rel)) roots.add(rel.split("/")[0]);
+      }
+    } finally {
+      if (saved.out !== undefined) process.env.NIRVANA_OUTPUTS_DIR = saved.out;
+      if (saved.logs !== undefined) process.env.HARNESS_LOGS_DIR = saved.logs;
+    }
+  } catch {
+    // Resolver moved or failed to load — the floor above still guards the
+    // three paths that leaked once, and the drift test will say so out loud.
+  }
+  return [...roots];
+}
+
+// Checking the git INDEX rather than the disk: a developer running a dispatch
+// inside their clone is normal and must stay silent; committing one is the fault.
 const trackedRunArtifacts = (() => {
   try {
-    const out = Bun.spawnSync(["git", "ls-files", "outputs", ".nirvana", ".harness-logs"], { cwd: REPO }).stdout.toString().trim();
+    const out = Bun.spawnSync(["git", "ls-files", ...runArtifactRoots()], { cwd: REPO }).stdout.toString().trim();
     return out ? out.split("\n") : [];
   } catch {
     return [];   // no git (a tarball checkout) — nothing to judge

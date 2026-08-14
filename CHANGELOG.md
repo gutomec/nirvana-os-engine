@@ -8,6 +8,20 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### The leak guard now follows the engine instead of remembering it
+
+Removing the committed run artifacts left a gate that named three paths from
+memory — `outputs/`, `.nirvana/`, `.harness-logs/`. A list like that goes stale
+the day someone changes where a run writes, and the leak it would miss looks
+exactly like the one it caught.
+
+The guarded set is now asked of the engine's own resolvers (`outputsDir`,
+`harnessLogsDir`), with those three as a floor if resolution ever fails. Moving
+an output directory cannot silently unguard it: a test derives the same paths
+and fails until `.gitignore` follows. Another checks that plain `git add` is
+refused without `--force`, because the cheapest guard is the one that stops the
+mistake being made at all.
+
 ### Run artifacts were committed into the engine
 
 `outputs/` was never gitignored, so nine files from a dispatch run reached the
