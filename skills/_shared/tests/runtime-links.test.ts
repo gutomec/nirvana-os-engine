@@ -259,8 +259,11 @@ test("install and uninstall share ONE runtime-dir list", async () => {
     expect(src).not.toMatch(/^const SKILLS\s*=/m);
     expect(src).not.toMatch(/^const COPY_MARKER\s*=/m);
   }
-  expect(mod.RUNTIME_SKILL_DIRS).toHaveLength(5);
+  expect(mod.RUNTIME_SKILL_DIRS).toHaveLength(6);
   expect(mod.RUNTIME_SKILL_DIRS.some((d: string) => d.includes(path.join(".pi", "agent")))).toBe(true);
+  // OpenClaw. Added with the adapter and missed here, which is how the count
+  // drifted: assert the dir, not just the length, so the next runtime says why.
+  expect(mod.RUNTIME_SKILL_DIRS.some((d: string) => d.includes(path.join(".agents", "skills")))).toBe(true);
   expect(mod.SKILLS).toEqual(SKILLS);
   expect(mod.COPY_MARKER).toBe(COPY_MARKER);
 });

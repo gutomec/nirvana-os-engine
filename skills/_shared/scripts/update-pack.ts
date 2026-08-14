@@ -94,21 +94,21 @@ async function main(): Promise<number> {
     // under a different user, which on Windows means an elevated prompt with a
     // different profile) all produced one identical, undebuggable line.
     const found = PROV && existsSync(PROV);
-    console.log(`\n${YEL}Sem PROVENANCE com license_key — nada a atualizar.${RST}`);
-    console.log(`${DIM}Procurei em:${RST}`);
+    console.log(`\n${YEL}No PROVENANCE with a license_key — nothing to update.${RST}`);
+    console.log(`${DIM}Searched in:${RST}`);
     console.log(`${DIM}  ${join(HOME, ".nirvana-license", "PROVENANCE.json")}${RST}`);
     console.log(`${DIM}  ${join(process.cwd(), "PROVENANCE.json")}${RST}`);
     if (found) {
-      console.log(`\n${YEL}Achei ${PROV}, mas sem o campo license_key.${RST}`);
-      console.log(`${DIM}Esse arquivo veio de uma cópia sem procedência. Use o zip que você recebeu na compra.${RST}\n`);
+      console.log(`\n${YEL}Found ${PROV}, but with no license_key field.${RST}`);
+      console.log(`${DIM}That file came from an unprovenanced copy. Use the zip you received with your purchase.${RST}\n`);
       return 1;
     }
-    console.log(`\n${DIM}Packs pagos vêm com PROVENANCE.json ao lado do setup.ts. Para instalar só a licença:${RST}`);
-    console.log(`${DIM}  nrv license install                      ${RST}${DIM}# procura em Downloads, Desktop e na pasta atual${RST}`);
-    console.log(`${DIM}  nrv license install <pasta-do-pack>      ${RST}${DIM}# ou aponte direto${RST}`);
-    console.log(`${DIM}Reinstalar o pack inteiro (bun setup.ts) também resolve, mas é bem mais caro.${RST}`);
-    console.log(`${DIM}Se você já rodou o setup, confira que rodou com o MESMO usuário de agora`);
-    console.log(`(um terminal "como administrador" tem outro perfil, e a licença fica no perfil de quem rodou).${RST}\n`);
+    console.log(`\n${DIM}Paid packs ship PROVENANCE.json next to setup.ts. To install just the license:${RST}`);
+    console.log(`${DIM}  nrv license install                      ${RST}${DIM}# searches Downloads, Desktop and the current folder${RST}`);
+    console.log(`${DIM}  nrv license install <pack-folder>      ${RST}${DIM}# or point at it directly${RST}`);
+    console.log(`${DIM}Reinstalling the whole pack (bun setup.ts) also works, but costs far more.${RST}`);
+    console.log(`${DIM}If you already ran the setup, check it ran as the SAME user you are now`);
+    console.log(`(a terminal run "as administrator" has a different profile, and the license lands in the profile that ran it).${RST}\n`);
     return 1;
   }
   const slug = slugArg || prov.edition || "genesis-circle";
@@ -127,18 +127,18 @@ async function main(): Promise<number> {
       const j: Record<string, unknown> = await res.json().catch(() => ({}));
       const remote = (j.version as string) || null;
       console.log(`\n${RED}Nirvana-OS — pack '${slug}'${RST}`);
-      console.log(`  instalada: ${installed ?? "?"}   servidor: ${remote ?? "?"}   licença: ${j.status ?? "?"}`);
-      if (remote && installed && remote !== installed) console.log(`  ${GRN}↑ update disponível — rode: nrv update ${slug}${RST}\n`);
-      else if (remote && installed) console.log(`  ${DIM}já está atualizado.${RST}\n`);
-      else console.log(`  ${DIM}(sem versão pra comparar — rode o update pra forçar).${RST}\n`);
+      console.log(`  installed: ${installed ?? "?"}   server: ${remote ?? "?"}   license: ${j.status ?? "?"}`);
+      if (remote && installed && remote !== installed) console.log(`  ${GRN}↑ update available — run: nrv update ${slug}${RST}\n`);
+      else if (remote && installed) console.log(`  ${DIM}already up to date.${RST}\n`);
+      else console.log(`  ${DIM}(no version to compare — run the update to force it).${RST}\n`);
     } catch (e) {
-      console.log(`\n${YEL}Sem conexão para checar (${(e as Error).message}). Uso offline segue liberado.${RST}\n`);
+      console.log(`\n${YEL}No connection to check (${(e as Error).message}). Offline use stays available.${RST}\n`);
     }
     return 0;
   }
 
   // update: requests the signed URL, downloads, extracts, overlays.
-  console.log(`\n${RED}Nirvana-OS — atualizando pack '${slug}'${RST}`);
+  console.log(`\n${RED}Nirvana-OS — updating pack '${slug}'${RST}`);
   let url: string, version: string | null;
   try {
     const res = await fetch(PACK_UPDATE_URL, {
@@ -147,15 +147,15 @@ async function main(): Promise<number> {
     });
     const j: Record<string, unknown> = await res.json().catch(() => ({}));
     if (!res.ok || !j.url) {
-      console.log(`  ${YEL}Não foi possível atualizar: ${(j.error as string) || `HTTP ${res.status}`}.${RST}`);
-      if (j.error === "license_inactive") console.log(`  ${DIM}Sua licença não está ativa (estorno/revogação?). Contate o suporte.${RST}`);
-      if (j.error === "seat_limit_reached") console.log(`  ${DIM}Limite de máquinas atingido (max_seats=${j.max_seats}).${RST}`);
-      console.log(`  ${DIM}O uso offline NÃO é bloqueado.${RST}\n`);
+      console.log(`  ${YEL}Could not update: ${(j.error as string) || `HTTP ${res.status}`}.${RST}`);
+      if (j.error === "license_inactive") console.log(`  ${DIM}Your license is not active (refund/revocation?). Contact support.${RST}`);
+      if (j.error === "seat_limit_reached") console.log(`  ${DIM}Machine limit reached (max_seats=${j.max_seats}).${RST}`);
+      console.log(`  ${DIM}Offline use is NOT blocked.${RST}\n`);
       return 0; // soft
     }
     url = j.url as string; version = (j.version as string) || null;
   } catch (e) {
-    console.log(`  ${YEL}Sem conexão para atualizar (${(e as Error).message}). Uso offline segue liberado.${RST}\n`);
+    console.log(`  ${YEL}No connection to update (${(e as Error).message}). Offline use stays available.${RST}\n`);
     return 0;
   }
 
@@ -163,33 +163,33 @@ async function main(): Promise<number> {
   const zipPath = join(tmp, "pack.zip");
   try {
     const dl = await fetch(url);
-    if (!dl.ok) { console.log(`  ${YEL}Falha ao baixar o pack (HTTP ${dl.status}).${RST}\n`); return 1; }
+    if (!dl.ok) { console.log(`  ${YEL}Failed to download the pack (HTTP ${dl.status}).${RST}\n`); return 1; }
     writeFileSync(zipPath, Buffer.from(await dl.arrayBuffer()));
   } catch (e) {
-    console.log(`  ${YEL}Falha de rede no download: ${(e as Error).message}.${RST}\n`); return 1;
+    console.log(`  ${YEL}Network failure during download: ${(e as Error).message}.${RST}\n`); return 1;
   }
 
   const xdir = join(tmp, "x");
   if (!extractZip(zipPath, xdir)) {
-    console.log(`  ${RED}Falha ao extrair o .zip (precisa de unzip, tar ou PowerShell).${RST}\n`);
+    console.log(`  ${RED}Failed to extract the .zip (needs unzip, tar or PowerShell).${RST}\n`);
     rmSync(tmp, { recursive: true, force: true });
     return 1;
   }
   const content = findContentRoot(xdir);
   if (!content) {
-    console.log(`  ${RED}Conteúdo (squads/businesses/mind-clones) não encontrado no pack baixado.${RST}\n`);
+    console.log(`  ${RED}Content (squads/businesses/mind-clones) not found in the downloaded pack.${RST}\n`);
     rmSync(tmp, { recursive: true, force: true });
     return 1;
   }
 
-  console.log(`  aplicando overlay (${version ?? "?"})...`);
+  console.log(`  applying overlay (${version ?? "?"})...`);
   const ic = spawnSync(process.execPath, [
     join(SKILLS, "_shared", "scripts", "install-content.ts"),
     content, "--slug", slug, ...(version ? ["--version", version] : []),
   ], { stdio: "inherit" });
   rmSync(tmp, { recursive: true, force: true });
-  if (ic.status !== 0) { console.log(`  ${RED}Overlay falhou.${RST}\n`); return 1; }
-  console.log(`\n${GRN}✓ Pack '${slug}' atualizado${version ? ` para ${version}` : ""}.${RST}\n`);
+  if (ic.status !== 0) { console.log(`  ${RED}Overlay failed.${RST}\n`); return 1; }
+  console.log(`\n${GRN}✓ Pack '${slug}' updated${version ? ` to ${version}` : ""}.${RST}\n`);
   return 0;
 }
 

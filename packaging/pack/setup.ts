@@ -13,7 +13,7 @@
  * The pack carries NO engine — only content. Re-running is safe (idempotent).
  */
 import { spawn } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -154,7 +154,7 @@ function removeWorkDir(dir: string): void {
     if (!existsSync(dir)) return;
     grantWrite(dir);
   }
-  console.log(`    ⚠ Não consegui remover o temporário: ${dir}`);
+  console.log(`    ⚠ Could not remove the temp dir: ${dir}`);
   console.log(`      Nada quebrou — apague quando puder.`);
 }
 
@@ -226,7 +226,7 @@ const runEngineInstaller = async (): Promise<boolean> => {
 };
 
 if (!enginePresent) {
-  console.log("[1/4] Engine não encontrado — instalando do GitHub...");
+  console.log("[1/4] Engine not found — installing from GitHub...");
   if (!(await runEngineInstaller()) || !existsSync(join(SKILLS, "harness"))) {
     console.error("    ✗ Não consegui instalar o engine do Nirvana-OS.");
     console.error("      Verifique a conexão com a internet e rode este setup de novo.");
@@ -235,13 +235,13 @@ if (!enginePresent) {
     process.exit(1);
   }
 } else if (skipUpdate) {
-  console.log(`[1/4] Engine ${installedVer ?? "presente"} — atualização pulada (NIRVANA_SKIP_ENGINE_UPDATE=1).`);
+  console.log(`[1/4] Engine ${installedVer ?? "present"} — update skipped (NIRVANA_SKIP_ENGINE_UPDATE=1).`);
 } else {
   console.log(`[1/4] Atualizando o engine${installedVer ? ` (atual: ${installedVer})` : ""}...`);
   const updated = await runEngineInstaller();
   const nowVer = installedEngineVersion();
   if (updated) {
-    console.log(`    ✓ Engine em ${nowVer ?? "versão desconhecida"}.`);
+    console.log(`    ✓ Engine at ${nowVer ?? "unknown version"}.`);
   } else if (stale || unknownVer) {
     // Não dá para seguir: o install-content abaixo tem o gate de versão e
     // abortaria de qualquer jeito. Falhar aqui, com o motivo certo, é melhor
@@ -251,12 +251,12 @@ if (!enginePresent) {
     process.exit(1);
   } else {
     // Engine já satisfaz o pack: a falha de rede não impede a instalação.
-    console.log(`    ⚠ Não consegui atualizar agora (rede?). Sigo com o engine ${installedVer ?? "atual"}, que já atende este pack.`);
+    console.log(`    ⚠ Could not update right now (network?). Carrying on with engine ${installedVer ?? "as installed"}, which already serves this pack.`);
   }
 }
 
 // 2. Overlay content — surface the REAL error if it fails (sem isso o cliente fica cego).
-console.log(`[2/4] Instalando o conteúdo do pack '${slug}' (empresas, squads e mind-clones)...`);
+console.log(`[2/4] Installing pack '${slug}' content (businesses, squads and mind-clones)...`);
 if (!existsSync(CONTENT)) {
   console.error(`    ✗ Pasta de conteúdo não encontrada: ${CONTENT}`);
   console.error(`      O zip deve ser descompactado INTEIRO (a pasta 'starter-pack/' fica ao lado deste setup.ts).`);
@@ -287,10 +287,10 @@ if (ic.status !== 0) {
 // degradado (chuta pelo nome em vez de casar por capability). O indexador
 // respeita o escopo: global no install do pack, project se rodado num projeto.
 // Best-effort — nunca bloqueia a instalação.
-console.log(`[3/4] Construindo os índices de roteamento...`);
+console.log(`[3/4] Building the routing indexes...`);
 const idx = await runNested("bun", [join(SKILLS, "harness", "scripts", "index.ts")]);
 if (idx.status !== 0) {
-  console.log(`    ⚠ Índice não construído (exit ${idx.status ?? "?"}). O conteúdo está instalado; rode 'nrv index' quando puder — o roteamento fica mais acertivo com ele.`);
+  console.log(`    ⚠ Index not built (exit ${idx.status ?? "?"}). The content is installed; run 'nrv index' when you can — routing gets sharper with it.`);
 }
 
 // Carimba a edição com o NOME DO PACK que o comprador instalou, para que
@@ -302,8 +302,34 @@ try {
   writeFileSync(join(SKILLS, "EDITION"), `Nirvana-OS ${pretty}\n`);
 } catch { /* best-effort */ }
 
-// 3. Soft license check.
-console.log("[4/4] Verificando a licença (soft)...");
+// 3. Instala a licença, DEPOIS verifica.
+//
+// Este passo faltava. O instalador lia o PROVENANCE.json só para descobrir a
+// versão do pack (linha ~51) e nunca o copiava para ~/.nirvana-license/ — que é
+// o único lugar onde `nrv update <slug>` sabe procurar, fora do diretório atual.
+// O comprador terminava o setup com "✓ Pack instalado", ia atualizar dias depois
+// de qualquer outra pasta, e ouvia que não tinha licença nenhuma.
+//
+// Falhar aqui não pode ser silencioso: o pack funciona sem a licença instalada,
+// o que quebra é só o update autenticado, e é agora que dá para dizer isso.
+console.log("[4/4] Installing and checking the license (soft)...");
+const provSrc = join(HERE, "PROVENANCE.json");
+if (existsSync(provSrc)) {
+  const licDir = join(HOME, ".nirvana-license");
+  try {
+    mkdirSync(licDir, { recursive: true });
+    copyFileSync(provSrc, join(licDir, "PROVENANCE.json"));
+    const licNotice = join(HERE, "LICENSE.txt");
+    if (existsSync(licNotice)) copyFileSync(licNotice, join(licDir, "LICENSE.txt"));
+  } catch (e) {
+    console.log(`    \x1b[31m✗ could not install the license at ${licDir}: ${(e as Error).message}\x1b[0m`);
+    console.log(`    \x1b[2mThe pack works. What will not work is 'nrv update ${slug}'.\x1b[0m`);
+    console.log(`    \x1b[2mOnce the permission is sorted, run: nrv license install "${HERE}"\x1b[0m`);
+  }
+} else {
+  // Cópia sem procedência roda igual; o que ela não tem é update autenticado.
+  console.log(`    \x1b[2m(no PROVENANCE.json in this folder — the pack runs, but 'nrv update ${slug}' will find no license)\x1b[0m`);
+}
 await okNested("bun", [join(SKILLS, "_shared", "scripts", "license.ts"), "check"]);
 
-console.log(`\n\x1b[1;32m✓ Pack '${slug}' instalado.\x1b[0m\n`);
+console.log(`\n\x1b[1;32m✓ Pack '${slug}' installed.\x1b[0m\n`);
