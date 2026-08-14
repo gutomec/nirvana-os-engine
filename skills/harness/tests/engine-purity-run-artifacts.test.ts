@@ -23,9 +23,31 @@ const GATE = path.join(ROOT, "scripts", "check-engine-purity.ts");
 const gitignore = () => fs.readFileSync(path.join(ROOT, ".gitignore"), "utf8");
 const runGate = () => spawnSync(process.execPath, [GATE], { encoding: "utf8", cwd: ROOT });
 
-/** First path segment of where the engine writes, relative to a project root. */
-function writeRoot(abs: string): string {
-  return path.relative(ROOT, abs).split(path.sep)[0];
+/** First path segment of where the engine writes, relative to a project root.
+ *  Returns null when the engine writes outside the repo — not our problem. */
+function writeRoot(abs: string): string | null {
+  const rel = path.relative(ROOT, abs);
+  if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return null;
+  return rel.split(path.sep)[0];
+}
+
+/** Ask the resolvers about the DEFAULT layout.
+ *
+ *  Both honour env overrides, and several test files in this suite set
+ *  HARNESS_LOGS_DIR at module scope — under `bun test` those share a process,
+ *  so the value leaks across files. Run this file alone and it passes; run the
+ *  suite and the resolver answers with somebody else's temp dir. That is
+ *  exactly how this test failed on CI while passing locally. */
+function defaultLayout<T>(fn: () => T): T {
+  const saved = { out: process.env.NIRVANA_OUTPUTS_DIR, logs: process.env.HARNESS_LOGS_DIR };
+  delete process.env.NIRVANA_OUTPUTS_DIR;
+  delete process.env.HARNESS_LOGS_DIR;
+  try {
+    return fn();
+  } finally {
+    if (saved.out !== undefined) process.env.NIRVANA_OUTPUTS_DIR = saved.out;
+    if (saved.logs !== undefined) process.env.HARNESS_LOGS_DIR = saved.logs;
+  }
 }
 
 describe("run artifacts cannot be committed", () => {
@@ -44,9 +66,11 @@ describe("run artifacts cannot be committed", () => {
     // Derived, not listed: if outputsDir() moves, this test follows it there and
     // fails until .gitignore follows too.
     const ig = gitignore();
-    for (const abs of [outputsDir({ projectRoot: ROOT } as any), harnessLogsDir({ projectRoot: ROOT })]) {
-      const root = writeRoot(abs);
-      expect(root).toBeTruthy();
+    const roots = defaultLayout(() =>
+      [outputsDir({ projectRoot: ROOT } as any), harnessLogsDir({ projectRoot: ROOT })].map(writeRoot),
+    ).filter((r): r is string => r !== null);
+    expect(roots.length).toBeGreaterThan(0);   // resolution must have produced something
+    for (const root of roots) {
       expect(ig).toMatch(new RegExp(`^${root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/?$`, "m"));
     }
   });
