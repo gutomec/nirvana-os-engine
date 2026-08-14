@@ -751,18 +751,34 @@ async function offerStarterPack(): Promise<void> {
     try { writeFileSync(PACK_MANIFEST, JSON.stringify(newManifest, null, 2) + "\n"); } catch { /* ignore */ }
   }
 
+}
+
+/**
+ * Build the registries. Runs on EVERY install, which is the whole point of it
+ * living out here.
+ *
+ * It used to be the tail of offerStarterPack(), below the `--no-starter` early
+ * return — and `--no-starter` is exactly what both entry points pass
+ * (packaging/cli/bin/cli.mjs and packaging/pack/setup.ts). So a plain
+ * `npx @nirvana-os/cli` finished with no registry on disk at all and routing
+ * degraded from the first minute, with nothing saying so. Pack buyers escaped
+ * only by accident, because install-content.ts indexes on its own.
+ *
+ * CI never caught it because the smoke job runs `nrv index` by hand before the
+ * doctor, and the doctor passes a registry that exists over an empty library.
+ */
+function buildRegistries(): void {
   // Windows CreateProcess only auto-appends .exe, never .cmd — spawning the
   // extensionless bash `nrv` there fails, so the post-install index silently
   // never ran (registries stayed empty until a manual `nrv index`). Target the
   // .cmd launcher on Windows.
   const nrvBin = join(LOCAL_BIN, IS_WINDOWS ? "nrv.cmd" : "nrv");
-  if (FLAG_DRY) { /* no index on dry-run */ }
-  else if (FLAG_NO_INDEX) console.log("      Indexing deferred (--no-index).");
-  else if (existsSync(nrvBin)) {
-    console.log("      Re-indexing registries...");
-    const r = spawnSync(nrvBin, ["index"], { stdio: "inherit", shell: IS_WINDOWS });
-    if (r.status !== 0) console.log("      ⚠ nrv index reported issues. Run manually to verify.");
-  }
+  if (FLAG_DRY) return; // no index on dry-run
+  if (FLAG_NO_INDEX) { console.log("      Indexing deferred (--no-index)."); return; }
+  if (!existsSync(nrvBin)) return;
+  console.log("      Re-indexing registries...");
+  const r = spawnSync(nrvBin, ["index"], { stdio: "inherit", shell: IS_WINDOWS });
+  if (r.status !== 0) console.log("      ⚠ nrv index reported issues. Run manually to verify.");
 }
 
 // ── Hermes Agent integration (opt-in) ─────────────────────────────────────
@@ -1057,6 +1073,9 @@ async function main(): Promise<void> {
   // to exist all the same, and with a pack they are already ready to receive.
   ensureContentLibraries();
   await offerStarterPack();
+  // After the starter pack (so seeded content is in the index) and outside it
+  // (so an engine-only install gets registries too — see buildRegistries).
+  buildRegistries();
   await offerHermesBridge();
   summary();
 }

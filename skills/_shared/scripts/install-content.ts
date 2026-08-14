@@ -124,8 +124,54 @@ function mirror(src: string, dst: string, ex: string[]): void {
 }
 
 import { contractBreaks, reportBreaks, type BreakingChange } from "../lib/contract-breaks.ts";
+import { InstallManifest } from "../lib/install-manifest.ts";
+import { randomUUID } from "node:crypto";
 
 interface Manifest { slug?: string; version?: string | null; updated_at?: string; squads?: Record<string, string>; businesses?: Record<string, string>; "mind-clones"?: Record<string, string>; }
+
+/**
+ * Record the install in ~/.nirvana-installed.jsonl, which is what `nrv installed`
+ * replays.
+ *
+ * This overlay wrote only ~/.nirvana/packs/<slug>.json, and list-installed.ts
+ * reads only the jsonl — two tracks that never spoke. A buyer finished a
+ * successful paid install and `nrv installed` answered "No installations
+ * recorded", which reads as "nothing was installed" and is the same shape as the
+ * license bug: written on one track, looked for on another.
+ *
+ * Best-effort on purpose: the content is already on disk and correct: failing
+ * the install over a bookkeeping line would trade a real problem for a
+ * cosmetic one. But it says so when it cannot, which is the part that was
+ * missing everywhere else.
+ */
+function recordInstall(m: Manifest): void {
+  try {
+    const items = ([["squad", m.squads], ["business", m.businesses], ["mind-clone", m["mind-clones"]]] as const)
+      .flatMap(([kind, hashes]) => Object.keys(hashes ?? {}).map((slug) => ({
+        kind, name: slug, slug,
+        path: join(kind === "squad" ? SQUADS_DIR : kind === "business" ? BUSINESSES_DIR : DNA_DIR, slug),
+      })));
+    new InstallManifest().append({
+      ts: new Date().toISOString(),
+      action: existsSync(manifestPath) && man.version ? "update" : "install",
+      install_id: randomUUID(),
+      kind: "pack",
+      name: SLUG,
+      version: m.version ?? "0.0.0",
+      // A pack has no single canonical directory — uninstall walks `items`.
+      source: `pack:${SLUG}`,
+      path: "",
+      checksum: createHash("sha256").update(JSON.stringify(items.map((i) => i.slug).sort())).digest("hex").slice(0, 16),
+      scope: "global",
+      items,
+      prev_version: man.version ?? undefined,
+    });
+  } catch (e) {
+    console.log(`  ⚠ could not record the install in ~/.nirvana-installed.jsonl: ${(e as Error).message}`);
+    console.log(`    The pack is installed and working; 'nrv installed' just will not list it.`);
+  }
+}
+
 const manifestPath = join(PACKS_DIR, `${SLUG}.json`);
 const man: Manifest = (() => { try { return JSON.parse(readFileSync(manifestPath, "utf8")); } catch { return {}; } })();
 
@@ -191,6 +237,7 @@ if (!DRY) {
   mkdirSync(PACKS_DIR, { recursive: true });
   const out: Manifest = { slug: SLUG, version: VERSION, updated_at: new Date().toISOString(), squads: sq.hashes, businesses: bz.hashes, "mind-clones": cl.hashes };
   writeFileSync(manifestPath, JSON.stringify(out, null, 2) + "\n");
+  recordInstall(out);
   // Reindex: without this the content stays on disk and the orchestrator cannot
   // see it — the most expensive failure possible, because everything LOOKS installed.
   //
