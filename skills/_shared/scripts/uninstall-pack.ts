@@ -14,6 +14,7 @@ import { existsSync, readFileSync, readdirSync, rmSync, unlinkSync } from "node:
 import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { RUN_STATE_EXCLUDES } from "../lib/run-state.ts";
 
 const HOME = homedir();
 const SQUADS_DIR = join(HOME, "squads");
@@ -38,7 +39,7 @@ const man: Manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
 
 // Preserved run-state dirs (1st segment of install-content's RUNSTATE_EXCLUDES).
 const KEEP: Record<string, Set<string>> = {
-  squads: new Set(["projects", "outputs", ".squad-state", ".squads-outputs", ".wiki-brain-state", ".vercel", ".omc", "_internal"]),
+  squads: new Set(RUN_STATE_EXCLUDES.squads),
   businesses: new Set(["memory", ".squad-state", ".squads-outputs", ".vercel"]),
   "mind-clones": new Set(),
 };

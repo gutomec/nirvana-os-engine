@@ -85,11 +85,7 @@ function engineVersion(): string | null {
 }
 
 const RSYNC = spawnSync("rsync", ["--version"], { stdio: "ignore" }).status === 0;
-const RUNSTATE_EXCLUDES: Record<string, string[]> = {
-  squads: ["projects", "outputs", ".squad-state", ".squads-outputs", ".wiki-brain-state", ".vercel", ".omc", "_internal"],
-  businesses: ["memory/projects", "memory/learned.md", ".squad-state", ".squads-outputs", ".vercel"],
-  "mind-clones": [],
-};
+const RUNSTATE_EXCLUDES = RUN_STATE_EXCLUDES;
 
 function listFilesRel(root: string): string[] {
   const out: string[] = [];
@@ -125,6 +121,7 @@ function mirror(src: string, dst: string, ex: string[]): void {
 
 import { contractBreaks, reportBreaks, type BreakingChange } from "../lib/contract-breaks.ts";
 import { InstallManifest } from "../lib/install-manifest.ts";
+import { RUN_STATE_EXCLUDES } from "../lib/run-state.ts";
 import { randomUUID } from "node:crypto";
 
 interface Manifest { slug?: string; version?: string | null; updated_at?: string; squads?: Record<string, string>; businesses?: Record<string, string>; "mind-clones"?: Record<string, string>; }

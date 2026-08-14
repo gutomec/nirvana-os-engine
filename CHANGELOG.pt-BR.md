@@ -6,6 +6,91 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## 0.5.0 — 2026-08-14
+
+### Os registries nunca eram construídos no caminho do comprador
+
+A única chamada de `nrv index` do instalador do engine ficava no fim do
+`offerStarterPack()`, abaixo do `return` que o `--no-starter` dispara — e
+`--no-starter` é exatamente o que os dois pontos de entrada passam, o
+`npx @nirvana-os/cli` e o `setup.ts` do pack. Uma instalação só-engine terminava
+sem registry nenhum no disco, e o roteamento ficava degradado desde o primeiro
+minuto, sem nada dizendo isso. Comprador de pack escapava por acidente, porque o
+overlay de conteúdo indexa por conta própria.
+
+O CI nunca pegou porque o job de smoke roda `nrv index` à mão antes do doctor, e
+o doctor aprova um registry que existe sobre uma biblioteca vazia. A indexação
+agora vive na própria função, chamada do `main()`, e o `--no-index` e o `--dry`
+continuam suprimindo.
+
+### Um comprador no Windows com setup falhando era informado de que deu certo
+
+O `setup.ps1` chamava o instalador e devolvia o que o PowerShell bem entendesse —
+não havia `exit $LASTEXITCODE`. Uma instalação falha saía com 0, na plataforma
+exata de onde vieram os dois relatos de licença. O `setup.sh` ganha isso de graça
+do `exec`; no PowerShell precisa estar escrito.
+
+### O pack pago era invisível para o `nrv installed`
+
+O overlay de conteúdo gravava `~/.nirvana/packs/<slug>.json`. O `nrv installed`
+relê o `~/.nirvana-installed.jsonl`. Duas trilhas que nunca se falaram, então uma
+instalação paga bem-sucedida respondia "No installations recorded" — o que se lê
+como "nada está instalado". O `AssetKind` já tinha `"pack"`; só faltava o
+escritor. O registro é best-effort, porque a essa altura o conteúdo já está
+correto, mas avisa quando não consegue.
+
+### Estado de execução estava sendo entregue dentro do produto
+
+Não é bug do engine, mas é no engine que a correção mora. `.squad-state/`,
+`projects/` e `outputs/` são o que um squad escreve quando roda — o trabalho do
+autor, com os caminhos absolutos dele dentro. Três lugares do engine sabiam
+disso, cada um com sua cópia da lista; o builder do pack não tinha cópia nenhuma,
+então copiava tudo para dentro do artefato. O `base/web-design.zip` na prateleira
+carregava 14 dessas entradas. A lista agora vive em
+`skills/_shared/lib/run-state.ts` e todos os consumidores leem dela.
+
+### A saída é em inglês
+
+O comprador que reportou o bug da licença recebeu um erro em português. Cerca de
+200 linhas voltadas ao usuário, em 41 arquivos, estão em inglês agora — todo o
+caminho de install, licença e update, mais o `dispatch --help` e o resto da
+superfície do `nrv`. Traduzir só as inequívocas deixaria comandos inteiros meio a
+meio, então cada arquivo tocado ficou coerente.
+
+O `check-english-source` pulava strings de propósito. Agora ele as lê, com um
+pragma `i18n-user-facing` para os dois briefs de exemplo que são genuinamente
+dados no idioma do usuário.
+
+### O caminho do comprador tem um teste que o executa
+
+O `buyer-path.test.ts` instala o engine num HOME temporário, constrói um pack com
+o builder real, injeta o `PROVENANCE.json` do jeito que a loja injeta no
+download, roda o `bun setup.ts` e então olha o disco. Reverter a correção de
+licença da 0.4.0 faz ele reprovar em três afirmações. Até aqui, a única cobertura
+do instalador do pack eram greps sobre o código-fonte, e o CI nunca o havia
+executado.
+
+O CI também passou a rodar a suíte inteira. Ele rodava um diretório, o que
+deixava 15 arquivos de fora — incluindo o único teste de comportamento do
+instalador do engine. Rodá-los revelou seis falhas no Windows contra um produto
+que se comportava exatamente como projetado: lá ele copia em vez de linkar,
+porque symlink exige admin. Os testes agora afirmam o contrato real de cada
+plataforma.
+
+Cinco suítes roteiam briefs pela biblioteca de conteúdo instalada e pulam quando
+ela não existe. O Bun imprime um teste pulado sem reprovar, então no log do CI
+eles eram indistinguíveis de aprovados — e um carregou uma expectativa vencida
+por quatro dias enquanto todo run saía verde. Agora anunciam o skip e os números
+que o decidiram.
+
+### `check:packs`
+
+Baixa cada base publicada e compara o `setup.*` dela byte a byte com o do engine.
+Também checa marcadores de watermark, marcadores per-buyer, vazamento de engine e
+a composição contra o que a vitrine anuncia. Fica fora do `check:all` porque
+precisa de rede e de uma credencial do bucket. Na primeira execução encontrou
+quinze packs com um instalador de dois dias atrás.
+
 ## 0.4.0 — 2026-08-14
 
 ### O instalador do pack nunca instalou a licença
