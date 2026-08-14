@@ -28,6 +28,7 @@ const os = require('os');
 const bm25 = require('./bm25');
 const registryLoader = require('./registry-loader');
 const budget = require('./budget');
+const nrvPaths = require('../../_shared/lib/paths.js');
 const contextBudget = require('./context-budget');
 
 // Lazy-loaded host-agent-driver (used only by Stage -2 amplifier when WEAK).
@@ -427,14 +428,23 @@ function buildAliasMap(groups) {
   return map.size > 0 ? map : null;
 }
 
-/** Load `.keyword-aliases.json` from the squads registry's directory.
+/** Load `.keyword-aliases.json` from the one path the writer also uses.
+ *
+ *  It used to derive the location from the squads registry's directory while
+ *  build-routing-digest derived it from the digest's. Those agree in project
+ *  scope and diverge in global — registry at ~/, digest at ~/.nirvana/ — so on
+ *  every buyer's install the file was written where this function never looked,
+ *  and arm (b) of the bridge silently did nothing. Both sides read
+ *  KEYWORD_ALIASES_PATH now; `resolvePaths()` re-resolves for the current cwd
+ *  rather than trusting values captured at require time.
+ *
  *  Tolerates absence and malformed content (returns null). Cached by
  *  path+mtime — route() may run thousands of times per eval. */
 function loadKeywordAliases(registries) {
   try {
     const src = registries && registries.squads && registries.squads.source_path;
     if (!src) return null;
-    const p = path.join(path.dirname(src), '.keyword-aliases.json');
+    const p = nrvPaths.resolvePaths().KEYWORD_ALIASES_PATH;
     const st = fs.statSync(p); // throws when absent → null below
     if (_aliasCache && _aliasCache.path === p && _aliasCache.mtimeMs === st.mtimeMs) {
       return _aliasCache.map;

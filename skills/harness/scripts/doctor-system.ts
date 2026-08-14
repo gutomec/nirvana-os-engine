@@ -477,6 +477,93 @@ if (fs.existsSync(dnaLib)) {
   add("library: mind-clones", "WARN", "no mind-clone library — run with --starter");
 }
 
+// SECTION 6.5: PAID INSTALL
+//
+// The doctor had nothing here. On a machine where a paid pack installed its
+// content but never installed its license, every check above passed and the
+// last line read "All systems nominal" — while `nrv update <slug>` was already
+// broken and would stay broken until the buyer wrote to support days later.
+// These are the things a buyer would notice were missing, if anything told them.
+const licStore = path.join(HOME, ".nirvana-license", "PROVENANCE.json");
+const packsDir = path.join(HOME, ".nirvana", "packs");
+const installedPacks = fs.existsSync(packsDir)
+  ? fs.readdirSync(packsDir).filter((f) => f.endsWith(".json"))
+  : [];
+
+if (installedPacks.length === 0) {
+  add("paid: pack", "PASS", "no paid pack installed (free engine)");
+} else {
+  const names = installedPacks.map((f) => f.replace(/\.json$/, ""));
+  add("paid: pack", "PASS", `${names.join(", ")}`);
+
+  if (!fs.existsSync(licStore)) {
+    add("paid: license", "FAIL",
+      `pack installed but no license at ${licStore.replace(HOME, "~")} — ` +
+      `"nrv update ${names[0]}" cannot work. Fix: nrv license install`);
+  } else {
+    try {
+      const prov = JSON.parse(fs.readFileSync(licStore, "utf8"));
+      if (!prov.license_key) {
+        add("paid: license", "FAIL", "PROVENANCE.json has no license_key — that copy has no provenance");
+      } else if (!prov.signature) {
+        add("paid: license", "WARN", `${prov.license_key} — unsigned (offline use is fine; support cannot verify it)`);
+      } else {
+        add("paid: license", "PASS", `${prov.license_key}${prov.edition ? ` (${prov.edition})` : ""}`);
+      }
+    } catch (e) {
+      add("paid: license", "FAIL", `cannot read ${licStore.replace(HOME, "~")}: ${(e as Error).message}`);
+    }
+  }
+
+  // The overlay is only real if the components it recorded are on disk. A
+  // manifest that lists content nobody can find is the expensive failure: the
+  // install LOOKS complete.
+  for (const f of installedPacks) {
+    const slug = f.replace(/\.json$/, "");
+    try {
+      const man = JSON.parse(fs.readFileSync(path.join(packsDir, f), "utf8"));
+      const kinds: Array<[string, string]> = [
+        ["squads", homeSquads], ["businesses", homeBiz], ["mind-clones", dnaLib],
+      ];
+      const missing: string[] = [];
+      let total = 0;
+      for (const [kind, dir] of kinds) {
+        for (const slugName of Object.keys(man[kind] ?? {})) {
+          total++;
+          if (!fs.existsSync(path.join(dir, slugName))) missing.push(`${kind}/${slugName}`);
+        }
+      }
+      if (total === 0) add(`paid: content ${slug}`, "WARN", "manifest records no components");
+      else if (missing.length) {
+        add(`paid: content ${slug}`, "FAIL",
+          `${missing.length} of ${total} missing from the library (${missing.slice(0, 3).join(", ")}${missing.length > 3 ? ", …" : ""}) — re-run: nrv update ${slug}`);
+      } else add(`paid: content ${slug}`, "PASS", `${total} components present`);
+    } catch (e) {
+      add(`paid: content ${slug}`, "FAIL", `unreadable manifest: ${(e as Error).message}`);
+    }
+  }
+}
+
+// The cross-language alias groups, at the path the router actually reads. Its
+// absence is a silent routing downgrade: a brief in one language against an
+// entity declared in another stops getting its coverage lift, and nothing says
+// so at dispatch time.
+try {
+  const aliasPath = (nrvPaths as Record<string, string>).KEYWORD_ALIASES_PATH;
+  if (!aliasPath) add("routing: aliases", "WARN", "this engine predates KEYWORD_ALIASES_PATH");
+  else if (!fs.existsSync(aliasPath)) {
+    add("routing: aliases", "WARN",
+      `${aliasPath.replace(HOME, "~")} missing — cross-language routing runs without alias lift. Fix: nrv index`);
+  } else {
+    const groups = JSON.parse(fs.readFileSync(aliasPath, "utf8"));
+    const n = Array.isArray(groups) ? groups.length : 0;
+    if (n === 0) add("routing: aliases", "WARN", "no alias groups — a corpus in one language emits none");
+    else add("routing: aliases", "PASS", `${n} cross-language group(s)`);
+  }
+} catch (e) {
+  add("routing: aliases", "WARN", `cannot read alias groups: ${(e as Error).message}`);
+}
+
 // Per-buyer watermarks in a library that AUTHORS packs. Rationale and mechanics
 // live in _shared/lib/watermark-scan.ts, shared with the end of `nrv update` — the
 // command that introduces them.
