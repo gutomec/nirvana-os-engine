@@ -241,6 +241,49 @@ A v5 squad with `capabilities:` MUST satisfy:
 
 Validators are runtime-neutral and live in `~/.nirvana/skills/squads/lib/validators/`.
 
+### 22.10 The index is per capability, not per squad
+
+`buildMatchDocs` emits **one document per capability**, plus one for the squad
+itself. A squad with 18 capabilities produces 19 documents, each with its own
+length normalization.
+
+The consequence is the one people get wrong: **declaring another capability does
+not dilute the ones already there.** They are separate documents and they do not
+compete for each other's length budget. What dilutes is padding a single
+description or stacking a fourth synonym of a concept already covered twice —
+that is redundancy inside one document, and it costs precision in that document
+alone.
+
+So there is no retrieval-quality argument for keeping a squad small. There is one
+for keeping each capability sharp.
+
+### 22.11 Never cut for cost
+
+Two different reasons can lead someone to remove content. Only one of them is
+legitimate, and the protocol distinguishes them because the wrong one has already
+done damage here: descriptions in this library were once truncated mid-word at
+500 characters, and the routing contract still carries the correction that
+"un-truncating is not enough — rewrite them as complete text".
+
+**Cutting for precision is legitimate.** A redundant keyword, a fourth synonym, a
+sentence that says nothing a router could match on. The test is measurable: run
+the self-retrieval gate before and after, and on the neighbours too. If removal
+does not improve retrieval, it was not precision — it was loss.
+
+**Cutting for cost is prohibited.** Removing capabilities, shortening
+descriptions, or dropping example briefs to reduce tokens degrades the product to
+save money on the path that was already the cheap one. The default router is
+agentic and reads for meaning: more accurate description is strictly better for
+it. `fast` is BM25, opt-in, and indexed per capability — so it does not pay for
+squad size either.
+
+If a corpus genuinely does not fit a context budget, the budget is an engineering
+problem: tier the digest, escalate on demand, split the file. The answer is never
+to make the library know less.
+
+A reviewer should reject any change whose justification is token cost, and ask
+for the retrieval measurement instead.
+
 ---
 
 ## §23 Global Registry and Indexing
@@ -919,8 +962,21 @@ Two squads cannot declare the same capability id. The registry rejects on indexi
 **3. Examples that overlap with not_for.**
 If `examples: ["analyze video"]` and `not_for: ["analyze video for education"]`, BM25 gets confused. Examples MUST be distinct from anti-patterns.
 
-**4. Capability id inflation.**
-Don't declare 50 capabilities per squad. Most squads should have 3-10. If you have more, the squad is doing too much; consider splitting.
+**4. A squad without a sayable boundary.**
+The test is not how many capabilities a squad declares — it is whether you can
+say what the squad is for in one sentence, and have every capability fit inside
+it. A squad of 40 coherent capabilities is healthy; a squad of 6 that do
+unrelated things is not.
+
+The sharp version: **if the capabilities of a squad need `not_for` against each
+other, they are two squads.** That is a boundary problem, and splitting fixes it.
+Count never was the diagnosis — it was a symptom that used to correlate.
+
+This entry used to read "most squads should have 3-10; if you have more, the
+squad is doing too much". The argument underneath was coherence, but written as
+a number it became a target, and a number that looks like a budget invites
+cutting for the wrong reason. See §22.11 for why cutting for cost is prohibited
+and why capability count costs nothing in retrieval.
 
 **5. Fidelity theater.**
 Don't declare `status: validated` without actual ground-truth + eval-results.json. Validator checks file existence. The harness will refuse capabilities whose claimed status doesn't match disk reality.

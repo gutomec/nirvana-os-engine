@@ -159,6 +159,43 @@ flows enforce at minimum:
   `nrv find-clone` — the invariant of `MIND_CLONE_CREATION_PIPELINE.md` phase 5,
   measured continuously by `_shared/scripts/eval-clone-routing.ts`.
 
+## 8bis. Never cut for cost
+
+Two reasons lead people to remove routing metadata, and only one is legitimate.
+
+**Precision.** A redundant keyword, a fourth synonym of a concept already covered
+twice, a sentence that states nothing a router could match on. This is real: BM25
+normalizes by length, so redundancy inside one document costs that document
+precision. The test is measurable — run the self-retrieval gate before and after,
+and on the neighbours. If retrieval does not improve, the removal was loss, not
+precision.
+
+**Cost.** Shortening descriptions, dropping example briefs or deleting
+capabilities to reduce tokens. **This is prohibited.** It degrades the product to
+save money on the path that is already the cheap one:
+
+- The default router is agentic. It reads for meaning, and a more accurate,
+  more complete description is strictly better for it. There is no budget being
+  spent that a shorter description would save.
+- `fast` is BM25 and **indexes one document per capability** (`buildMatchDocs`).
+  A squad with 18 capabilities produces 19 documents. Declaring another one does
+  not dilute the others — they never shared a length budget.
+
+So neither matcher charges for size. What both punish is redundancy inside a
+single field, which is a precision problem with a precision fix.
+
+This is not hypothetical damage. The 500-character limit named in §1 was applied
+across this library and truncated descriptions mid-word; the correction there —
+"un-truncating is not enough, rewrite as complete text" — exists because someone
+optimized the wrong quantity.
+
+If a corpus does not fit a context budget, the budget is an engineering problem:
+tier the digest, escalate on demand, split the file. The answer is never to make
+the library know less.
+
+**For reviewers:** reject any change whose justification is token cost, and ask
+for the before/after retrieval numbers instead.
+
 ## 9. The SELF-RETRIEVAL GATE (blocking)
 
 **A newly created or edited entity's own `example_briefs` must route back to
