@@ -36,6 +36,7 @@ const YAML = require('yaml');
 
 // v4 capability inferrer (no external deps).
 const v4Inferrer = require(path.join(__dirname, 'v4-capability-inferrer'));
+const bodyIndex = require('../../_shared/lib/body-index.js');
 
 // Centralized path resolver — single source of truth for all path defaults.
 const PATHS = require(path.join(__dirname, '..', '..', '_shared', 'lib', 'paths.js'));
@@ -266,6 +267,12 @@ function build(roots) {
         if (Array.isArray(cap.produces) && cap.produces.length > 0) capEntry.produces = cap.produces;
         if (Array.isArray(cap.example_briefs) && cap.example_briefs.length > 0) capEntry.example_briefs = cap.example_briefs;
         if (Array.isArray(cap.keywords) && cap.keywords.length > 0) capEntry.keywords = cap.keywords;
+        // The body this capability actually executes, resolved through
+        // invoke.ref and cleaned. Extracted here, once, because route() runs
+        // thousands of times per eval and must never touch the filesystem.
+        // Additive: a ref that does not resolve simply yields no body.
+        const bodyText = bodyIndex.bodyTextFor(entry.manifest_path, cap.invoke);
+        if (bodyText) capEntry.body_text = bodyText;
         if (!capabilities[cap.id]) capabilities[cap.id] = [];
         capabilities[cap.id].push(capEntry);
       }

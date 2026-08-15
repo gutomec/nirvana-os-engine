@@ -185,6 +185,39 @@ function buildMatchDocs(squadsRegistry, businessesRegistry) {
             examples: p.examples || [],
           },
         });
+
+        // Body document — recall, not precision.
+        //
+        // The metadata doc above is hand-curated and is what decides a match.
+        // This one carries the task/agent/workflow text the capability actually
+        // executes (extracted at index time by _shared/lib/body-index.js), so a
+        // capability whose declared vocabulary missed the user's words can still
+        // be FOUND. It is capped below the metadata doc at scoring time
+        // (BODY_DOC_MAX_NORMALIZED) so it can surface a candidate but never
+        // outrank one whose curated metadata genuinely matched.
+        //
+        // Weight ×1 deliberately: the body is prose for an executing agent, not
+        // a signal someone tuned. Measured before this existed: description-only
+        // routing trails body-aware routing by 37-44pp (arXiv:2603.22455).
+        if (typeof p.body_text === 'string' && p.body_text.length > 0) {
+          docs.push({
+            id: `squad_capability_body:${p.squad}:${capId}`,
+            text: p.body_text,
+            meta: {
+              type: 'squad_capability',
+              via_body: true,
+              capability_id: capId,
+              squad: p.squad,
+              description: p.description || '',
+              domains: p.domains || [],
+              not_for: p.not_for || [],
+              fidelity_status: p.fidelity_status || null,
+              score_boost: typeof p.score_boost === 'number' ? p.score_boost : 1.0,
+              invoke: p.invoke || null,
+              examples: p.examples || [],
+            },
+          });
+        }
       }
     }
   }
@@ -533,6 +566,39 @@ function applyAdjustments(results, intent, briefText) {
         }
       }
     }
+
+    // A body document needs more evidence to count than a curated one does.
+    //
+    // Metadata is chosen for retrieval: every token in it was put there by
+    // someone deciding this capability should answer that word. A body is prose
+    // written for an executing agent, and it contains whatever prose contains —
+    // greetings, example dialogue, connective tissue. A brief with one content
+    // token ("bom dia, tudo bem com você?") found a course squad's task doc that
+    // happened to open with a greeting, and turned an abstention into an
+    // ambiguity.
+    //
+    // So a body document only counts when the brief shares real vocabulary with
+    // it. Not a stoplist of the words that failed — that is overfitting, and the
+    // routing contract forbids it — but a floor on how much evidence uncurated
+    // text must show before it is allowed to compete at all.
+    if (meta.via_body) {
+      const cov = countMatchedContentTokens(lc, r.doc.text);
+      if ((cov && cov.matched != null ? cov.matched : 0) < BODY_DOC_MIN_OVERLAP) continue;
+    }
+
+    // A body document may surface a capability, never win over a curated one.
+    //
+    // The body is prose written for an executing agent: long, unweighted, and
+    // full of vocabulary nobody chose for retrieval. Letting it compete on equal
+    // terms would hand the ranking to whoever wrote the most words. Capping it
+    // keeps the division the whole design rests on — the body widens recall, the
+    // curated metadata keeps deciding precision.
+    //
+    // The cap is a ceiling on the normalized score, not a multiplier: a body
+    // match lands just below a perfect metadata match and above a weak one,
+    // which is exactly where a recall arm belongs.
+    if (meta.via_body) score = Math.min(score, BODY_DOC_MAX_NORMALIZED);
+
     adjusted.push({ ...r, score_adjusted: score });
   }
   // Re-rank by adjusted score
@@ -710,6 +776,23 @@ function stage3Decide(matches, opts) {
   const thr = Object.assign({}, DEFAULT_THRESHOLDS, (opts && opts.thresholds) || {});
   if (!matches || matches.length === 0) {
     return { signal: 'NO_MATCH', reason: 'no_candidates', thresholds: thr };
+  }
+
+  // Abstention is a decision, and decisions belong to curated metadata.
+  //
+  // A body document carries prose written for an executing agent, and prose
+  // contains prose: "bom dia, tudo bem com você?" shares four of its five tokens
+  // with an online-course task doc that opens with a greeting. No overlap floor
+  // separates that from a real match — the overlap is high, the tokens are
+  // empty — and a stoplist of the words that failed would be overfitting, which
+  // the routing contract forbids by name.
+  //
+  // So the body arm may add candidates, never remove an abstention. If every
+  // candidate reached the list through a body document, nothing curated
+  // recognised this brief, and the honest answer is still "I don't know". The
+  // body widens what can be found; it does not get to decide that something was.
+  if (matches.every((m) => m && m.meta && m.meta.via_body)) {
+    return { signal: 'NO_MATCH', reason: 'body_only_candidates', thresholds: thr };
   }
 
   // A `business_route` declares an activation regex. When that regex does NOT
@@ -897,6 +980,17 @@ function stage3Decide(matches, opts) {
 // enable` after verifying the neural backend loads) or env override
 // NIRVANA_ROUTER_DENSE=1; NIRVANA_ROUTER_DENSE=0 forces off. With the neural
 // backend absent, denseRank returns null and the slot is a clean no-op.
+
+/** Ceiling on a body document's normalized score. Below a strong metadata match
+ *  (1.0) and above a weak one, so the body arm surfaces candidates without
+ *  taking the decision away from curated metadata. Tunable via
+ *  NIRVANA_BODY_DOC_MAX for the eval sweep. */
+/** Minimum content-token overlap before an uncurated body document competes.
+ *  Two, because one is the regime where a greeting matches example dialogue.
+ *  Tunable via NIRVANA_BODY_DOC_MIN_OVERLAP for the sweep. */
+const BODY_DOC_MIN_OVERLAP = Number(process.env.NIRVANA_BODY_DOC_MIN_OVERLAP) || 2;
+
+const BODY_DOC_MAX_NORMALIZED = Number(process.env.NIRVANA_BODY_DOC_MAX) || 0.85;
 
 const DENSE_FALLBACK_MIN_COSINE = 0.55;
 
