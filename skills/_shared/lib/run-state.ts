@@ -16,9 +16,17 @@
  * One list, four consumers. A directory that is run state on install is run
  * state at build time too — there was never a reason for those to be different
  * lists, only an accident that they were.
+ *
+ * `SQUAD-DOCTOR-REPORT.md` is here for the same reason, though it is a file and
+ * looks authored: the doctor used to write it into the squad directory, so it
+ * travelled into the packs. Eighteen of them are sitting in built artifacts
+ * right now — a diagnostic about the seller's machine, in the buyer's product.
+ * It is also stamped with a fresh timestamp on every run, which made any two
+ * copies of a squad disagree forever. The doctor now writes under
+ * `.nirvana/state/squads/<slug>/`; this entry stops the old ones travelling.
  */
 export const RUN_STATE_EXCLUDES: Record<string, string[]> = {
-  squads: ["projects", "outputs", ".squad-state", ".squads-outputs", ".wiki-brain-state", ".vercel", ".omc", "_internal"],
+  squads: ["projects", "outputs", ".squad-state", ".squads-outputs", ".wiki-brain-state", ".vercel", ".omc", "_internal", "SQUAD-DOCTOR-REPORT.md"],
   businesses: ["memory/projects", "memory/learned.md", ".squad-state", ".squads-outputs", ".vercel"],
   "mind-clones": [],
 };

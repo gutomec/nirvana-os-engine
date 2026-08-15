@@ -31,22 +31,22 @@ export function checkFidelity(squadDir: string, manifest: any): Finding[] {
   const caps = Array.isArray(manifest?.capabilities) ? manifest.capabilities : [];
   const mk = (id: string, problem: string, fix: string): Finding => ({
     severity: "warn", code: "fidelity-unverified", where: id,
-    problem, why: "fidelity.status: validated sem prova é fidelidade fabricada — o harness rotearia confiando num número que ninguém mediu", fix,
+    problem, why: "fidelity.status: validated without proof is fabricated fidelity — the harness would route trusting a number nobody measured", fix,
     autofixable: true,
   });
   for (const cap of caps) {
     const fid = cap?.fidelity;
     if (!fid || fid.status !== "validated") continue;
-    const id = cap.id || "(capability sem id)";
+    const id = cap.id || "(capability with no id)";
     const threshold = typeof fid.threshold === "number" ? fid.threshold : 0.85;
     const rel = fid.eval_results;
     if (!rel) {
-      out.push(mk(id, "declara fidelity.status: validated mas não aponta eval_results", `gere um eval-results.json (casos + pass_rate) e aponte fidelity.eval_results para ele, ou rebaixe para 'experimental'. Auto-fix rebaixa para experimental.`));
+      out.push(mk(id, "declares fidelity.status: validated but points at no eval_results", `generate an eval-results.json (cases + pass_rate) and point fidelity.eval_results at it, or downgrade to 'experimental'. The auto-fix downgrades to experimental.`));
       continue;
     }
     const evalPath = path.isAbsolute(rel) ? rel : path.join(squadDir, rel);
     if (!fs.existsSync(evalPath)) {
-      out.push(mk(id, `fidelity.eval_results aponta para '${rel}', que não existe no disco`, `crie ${rel} com os casos de avaliação (pass_rate>=${threshold}), ou rebaixe para experimental.`));
+      out.push(mk(id, `fidelity.eval_results points at '${rel}', which is not on disk`, `create ${rel} with the evaluation cases (pass_rate>=${threshold}), or downgrade to experimental.`));
       continue;
     }
     try {
@@ -56,12 +56,12 @@ export function checkFidelity(squadDir: string, manifest: any): Finding[] {
         rate = data.cases.filter((c: any) => c.passed).length / data.cases.length;
       }
       if (rate === null) {
-        out.push(mk(id, `eval_results existe mas não tem 'pass_rate' nem 'cases[]' para recomputar`, `adicione pass_rate (0..1) ou cases:[{id,passed}] a ${rel}.`));
+        out.push(mk(id, `eval_results exists but carries neither 'pass_rate' nor 'cases[]' to recompute from`, `add pass_rate (0..1) or cases:[{id,passed}] to ${rel}.`));
       } else if (rate < threshold) {
-        out.push(mk(id, `pass_rate medido ${rate.toFixed(2)} < threshold ${threshold}`, `melhore o squad até pass_rate>=${threshold}, ou rebaixe para experimental.`));
+        out.push(mk(id, `measured pass_rate ${rate.toFixed(2)} < threshold ${threshold}`, `improve the squad until pass_rate>=${threshold}, or downgrade to experimental.`));
       }
     } catch (e: any) {
-      out.push(mk(id, `eval_results não é JSON válido: ${e.message}`, `conserte o JSON de ${rel}.`));
+      out.push(mk(id, `eval_results is not valid JSON: ${e.message}`, `fix the JSON in ${rel}.`));
     }
   }
   return out;
@@ -69,10 +69,10 @@ export function checkFidelity(squadDir: string, manifest: any): Finding[] {
 
 // ── item 5: non-portable leaks (Claude-specific terms) ────────────────────────
 const FORBIDDEN: { re: RegExp; label: string }[] = [
-  { re: /(^|[^\w/])CLAUDE\.md\b/, label: "referência a CLAUDE.md (instrução específica do Claude Code)" },
-  { re: /~\/\.claude\b/, label: "caminho ~/.claude (específico do Claude Code)" },
-  { re: /\$\{?CLAUDE_PLUGIN_ROOT\}?/, label: "variável CLAUDE_PLUGIN_ROOT" },
-  { re: /\bclaude-(opus|sonnet|haiku|fable)[\w.-]*/i, label: "id de modelo Claude pinado" },
+  { re: /(^|[^\w/])CLAUDE\.md\b/, label: "reference to CLAUDE.md (a Claude Code-specific instruction file)" },
+  { re: /~\/\.claude\b/, label: "the ~/.claude path (Claude Code-specific)" },
+  { re: /\$\{?CLAUDE_PLUGIN_ROOT\}?/, label: "the CLAUDE_PLUGIN_ROOT variable" },
+  { re: /\bclaude-(opus|sonnet|haiku|fable)[\w.-]*/i, label: "a pinned Claude model id" },
 ];
 export function checkPortability(squadDir: string): Finding[] {
   const out: Finding[] = [];
@@ -89,9 +89,9 @@ export function checkPortability(squadDir: string): Finding[] {
         const m = txt.match(re);
         if (m) out.push({
           severity: "warn", code: "portability-leak", where: `${sub}/${f}`,
-          problem: `vazamento não-portável: ${label} ("${m[0].trim()}")`,
-          why: "o squad é projetado para vários runtimes (Codex/Gemini/Cursor...); um termo Claude-specific quebra a conversão",
-          fix: `troque por um termo neutro ou use o semantic_map do adapter alvo; se for intencional, adicione '<!-- portability-ok -->' ao arquivo`,
+          problem: `non-portable leak: ${label} ("${m[0].trim()}")`,
+          why: "a squad is meant to run on several runtimes (Codex, Gemini, Cursor…); a Claude-specific term breaks the conversion",
+          fix: `replace it with a neutral term or use the target adapter's semantic_map; if it is deliberate, add '<!-- portability-ok -->' to the file`,
           autofixable: false,
         });
       }
@@ -110,38 +110,64 @@ export function collectFindings(squadDir: string): Finding[] {
   return [...checkFidelity(squadDir, manifest), ...checkPortability(squadDir)];
 }
 
+/**
+ * Where a squad's diagnostic goes — and it is not into the squad.
+ *
+ * This used to write `SQUAD-DOCTOR-REPORT.md` into `squadDir` itself, which put
+ * a machine-generated diagnostic inside the content tree. Two consequences, both
+ * seen in the wild: seven squads carried one into the packs, so buyers received
+ * a report about the seller's own machine; and because the file is stamped with
+ * a fresh timestamp on every run, any two copies of a squad validated at
+ * different moments differ forever — a slug that can never be reconciled.
+ *
+ * The squad directory is product. A diagnostic about the product belongs beside
+ * the other per-squad state.
+ */
+function reportPathFor(squadDir: string): string {
+  const slug = path.basename(squadDir);
+  const { SQUADS_STATE_DIR } = require("../../_shared/lib/paths.js").resolvePaths();
+  return path.join(SQUADS_STATE_DIR, slug, "SQUAD-DOCTOR-REPORT.md");
+}
+
 export function writeDoctorReport(squadDir: string, findings: Finding[], stampISO: string): string {
   const slug = path.basename(squadDir);
   const errors = findings.filter((f) => f.severity === "error");
   const warns = findings.filter((f) => f.severity === "warn");
   const autofix = findings.filter((f) => f.autofixable);
   const lines: string[] = [];
-  lines.push(`# Squad doctor — diagnóstico de \`${slug}\``);
+  lines.push(`# Squad doctor — \`${slug}\``);
   lines.push("");
-  lines.push(`Gerado: ${stampISO}`);
-  lines.push(`Problemas: ${findings.length} (${errors.length} erro(s), ${warns.length} aviso(s); ${autofix.length} auto-corrigível(eis))`);
+  lines.push(`Generated: ${stampISO}`);
+  lines.push(`Findings: ${findings.length} (${errors.length} error(s), ${warns.length} warning(s); ${autofix.length} auto-fixable)`);
   lines.push("");
   if (findings.length === 0) {
-    lines.push("Nenhum problema de fidelity/portabilidade encontrado. ✅");
+    lines.push("No fidelity or portability problems found.");
   } else {
-    lines.push("## Como corrigir");
+    lines.push("## How to fix");
     lines.push("");
-    lines.push(`- Auto-fix seguro (rebaixa fidelity não comprovada etc.): \`nrv fix-squad ${slug} --apply\``);
-    lines.push("- Itens não auto-corrigíveis têm a correção manual em cada bloco.");
+    lines.push(`- Safe auto-fix (downgrades unproven fidelity and similar): \`nrv fix-squad ${slug} --apply\``);
+    lines.push("- Anything not auto-fixable carries its manual fix in the block below.");
     lines.push("");
-    lines.push("## Problemas");
+    lines.push("## Findings");
     findings.forEach((f, i) => {
       lines.push("");
       lines.push(`### ${i + 1}. [${f.severity}] ${f.code} — \`${f.where}\``);
-      lines.push(`- **Problema:** ${f.problem}`);
-      lines.push(`- **Por quê importa:** ${f.why}`);
-      lines.push(`- **Como corrigir:** ${f.fix}`);
-      lines.push(`- **Auto-corrigível:** ${f.autofixable ? "sim (`nrv fix-squad --apply`)" : "não — correção manual"}`);
+      lines.push(`- **Problem:** ${f.problem}`);
+      lines.push(`- **Why it matters:** ${f.why}`);
+      lines.push(`- **How to fix:** ${f.fix}`);
+      lines.push(`- **Auto-fixable:** ${f.autofixable ? "yes (`nrv fix-squad --apply`)" : "no — manual fix"}`);
     });
   }
   lines.push("");
-  const out = path.join(squadDir, "SQUAD-DOCTOR-REPORT.md");
+  const out = reportPathFor(squadDir);
+  fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, lines.join("\n"), "utf8");
+
+  // A report left behind by the old location keeps shipping and keeps causing
+  // drift, so retire it the first time this squad is diagnosed again.
+  const legacy = path.join(squadDir, "SQUAD-DOCTOR-REPORT.md");
+  try { if (fs.existsSync(legacy)) fs.rmSync(legacy); } catch { /* read-only tree: the gate still catches it */ }
+
   return out;
 }
 
