@@ -264,6 +264,12 @@ case "$cmd" in
     fi
     echo "nrv validate-starter: dev-only command (requires the packs repo at ~/nirvana-packs, or set NIRVANA_PACKS_DIR)." >&2
     exit 2 ;;
+  studio)
+    # nrv studio — Nirvana Studio: infinite-canvas builder (ComfyUI-style) for
+    # companies, squads and mind-clones. Serves a self-hosted web UI plus a
+    # small HTTP API that plans, validates and builds a Studio graph into the
+    # engine's canonical business / squad / clone layouts.
+    exec "$BUN_BIN" "$SKILLS/studio/scripts/studio-server.ts" "$@" ;;
   license|verify-license|whoami)
     exec "$BUN_BIN" "$SKILLS/_shared/scripts/license.ts" "$@" ;;
   help|-h|--help|"")

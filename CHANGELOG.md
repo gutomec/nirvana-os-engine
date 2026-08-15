@@ -8,6 +8,20 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## 0.6.0 — 2026-08-15
 
+### Nirvana Studio: infinite canvas with validation and confirmed materialization
+
+`nrv studio` adds a local infinite-canvas surface to propose, review, validate,
+and materialize graphs of businesses, squads, mind-clones, employees, materials,
+and deliverables. Company and squad nodes use their existing lifecycle
+scaffolds; mind-clone nodes are retained as source-backed plans and fail closed
+until a non-interactive Genius Factory adapter is available. Studio persists graphs under `.nirvana/studio/graphs/` in the
+project scope (or `~/.nirvana/studio/graphs/` globally), uses typed nodes and
+edges, rejects cycles and disconnected nodes, streams materialization progress
+over SSE, and requires explicit confirmation before starting pipelines.
+
+The implementation includes Studio Protocol v1, an offline-first interface, and
+regression coverage for graph rules, dependencies, and protocol validation.
+
 ### Three things that failed silently, and the gates that now catch them
 
 A capability id can have several providers on purpose: nine squads can each

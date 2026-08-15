@@ -8,6 +8,22 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## 0.6.0 — 2026-08-15
 
+### Nirvana Studio: canvas infinito com validação e materialização confirmada
+
+`nrv studio` adiciona uma superfície local em canvas infinito para propor, revisar,
+validar e materializar grafos de empresas, squads, mind-clones, empregados,
+insumos e entregáveis. Nós de empresa e squad usam seus scaffolds de ciclo de
+vida existentes; nós de mind-clone permanecem como planos baseados em fontes e
+falham de modo seguro até haver um adaptador não interativo da Genius Factory.
+O Studio persiste grafos sob `.nirvana/studio/graphs/`
+no escopo de projeto (ou `~/.nirvana/studio/graphs/` no escopo global), usa nós e
+arestas tipados, rejeita ciclos e nós desconectados, transmite o progresso de
+materialização por SSE e exige confirmação explícita antes de iniciar pipelines.
+
+A implementação inclui o protocolo Studio v1, uma interface offline-first e
+cobertura de regressão para regras de grafo, dependências e validação de
+protocolos.
+
 ### Três coisas que falhavam em silêncio, e os portões que agora as pegam
 
 Um id de capability pode ter vários provedores de propósito: nove squads podem

@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nirvana Studio — Infinite Canvas Builder</title>
+<style>
+:root {
+  --bg: #1a1a1f;
+  --bg2: #222228;
+  --bg3: #2c2c34;
+  --fg: #e8e8ec;
+  --fg2: #a8a8b4;
+  --accent: #e63946;
+  --node-company: #457b9d;
+  --node-squad: #2a9d8f;
+  --node-clone: #e9c46a;
+  --node-employee: #8d99ae;
+  --node-brief: #e63946;
+  --node-material: #a98467;
+  --node-deliverable: #9b5de5;
+  --edge: #6b6b78;
+  --ok: #4cc38a;
+  --err: #f26d7d;
+  --panel: #25252c;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: "Segoe UI", Inter, system-ui, sans-serif; }
+#app { position: fixed; inset: 0; display: flex; flex-direction: column; }
+
+/* toolbar */
+#toolbar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--bg2); border-bottom: 1px solid #33333d; z-index: 10; }
+#toolbar .brand { font-weight: 700; font-size: 14px; color: var(--accent); letter-spacing: .5px; }
+#toolbar .brand span { color: var(--fg2); font-weight: 400; }
+.btn { background: var(--bg3); color: var(--fg); border: 1px solid #3a3a44; border-radius: 6px; padding: 7px 12px; font-size: 12.5px; cursor: pointer; transition: background .15s; }
+.btn:hover { background: #383842; }
+.btn.primary { background: var(--accent); border-color: var(--accent); }
+.btn.primary:hover { background: #c82f3c; }
+.spacer { flex: 1; }
+.zoom-label { color: var(--fg2); font-size: 12px; min-width: 56px; text-align: center; }
+
+/* canvas */
+#viewport { flex: 1; position: relative; overflow: hidden; cursor: grab; }
+#viewport.panning { cursor: grabbing; }
+#world { position: absolute; top: 0; left: 0; transform-origin: 0 0; width: 1px; height: 1px; }
+#edges-svg { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; }
+#edges-svg path { fill: none; stroke: var(--edge); stroke-width: 2; }
+#edges-svg path.selected { stroke: var(--accent); stroke-width: 3; }
+
+/* nodes */
+.node { position: absolute; width: 240px; background: var(--bg2); border: 2px solid var(--bg3); border-radius: 10px; cursor: move; user-select: none; box-shadow: 0 4px 14px rgba(0,0,0,.35); }
+.node .head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: 8px 8px 0 0; font-size: 12.5px; font-weight: 700; }
+.node .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.node .status-dot { margin-left: auto; width: 8px; height: 8px; border-radius: 50%; background: var(--fg2); }
+.node .status-dot.built { background: var(--ok); }
+.node .status-dot.building { background: var(--node-clone); animation: pulse 1s infinite; }
+.node .status-dot.failed { background: var(--err); }
+@keyframes pulse { 50% { opacity: .35; } }
+.node .body { padding: 8px 12px 12px; font-size: 11.5px; color: var(--fg2); line-height: 1.5; word-break: break-word; max-height: 110px; overflow: hidden; }
+.node .body .caps { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 5px; }
+.node .body .cap { background: var(--bg3); border-radius: 4px; padding: 1px 6px; font-size: 10px; }
+.port { position: absolute; width: 13px; height: 13px; border-radius: 50%; background: var(--bg); border: 2.5px solid var(--fg2); cursor: crosshair; z-index: 3; }
+.port:hover { border-color: var(--accent); transform: scale(1.25); }
+.port.in { left: -7px; top: 50%; margin-top: -7px; }
+.port.out { right: -7px; top: 50%; margin-top: -7px; }
+.node.selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(230,57,70,.25); }
+
+/* types */
+.node[data-type="brief"] .head { background: var(--node-brief); }
+.node[data-type="company"] .head { background: var(--node-company); }
+.node[data-type="squad"] .head { background: var(--node-squad); }
+.node[data-type="mind_clone"] .head { background: var(--node-clone); color: #222; }
+.node[data-type="employee"] .head { background: var(--node-employee); }
+.node[data-type="material"] .head { background: var(--node-material); }
+.node[data-type="deliverable"] .head { background: var(--node-deliverable); }
+
+/* minimap */
+#minimap { position: absolute; right: 14px; bottom: 14px; width: 180px; height: 120px; background: var(--bg2); border: 1px solid #3a3a44; border-radius: 8px; overflow: hidden; opacity: .9; }
+#minimap svg { width: 100%; height: 100%; }
+#minimap .vp { fill: rgba(230,57,70,.18); stroke: var(--accent); stroke-width: 1.5; }
+
+/* panels */
+.panel { position: absolute; top: 62px; left: 14px; width: 340px; background: var(--panel); border: 1px solid #3a3a44; border-radius: 10px; padding: 14px; z-index: 20; max-height: calc(100vh - 130px); overflow-y: auto; box-shadow: 0 10px 30px rgba(0,0,0,.4); }
+.panel.hidden { display: none; }
+.panel h3 { font-size: 13px; margin-bottom: 10px; color: var(--fg); display: flex; align-items: center; justify-content: space-between; }
+.panel h3 button { background: none; border: none; color: var(--fg2); font-size: 16px; cursor: pointer; line-height: 1; }
+textarea, input[type="text"] { width: 100%; background: var(--bg); color: var(--fg); border: 1px solid #3a3a44; border-radius: 6px; padding: 8px 10px; font-size: 12.5px; font-family: inherit; resize: vertical; }
+textarea { min-height: 96px; }
+.form-row { margin-bottom: 10px; }
+.form-row label { display: block; font-size: 11px; color: var(--fg2); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .5px; }
+.file-drop { border: 2px dashed #44444f; border-radius: 8px; padding: 16px; text-align: center; color: var(--fg2); font-size: 12px; cursor: pointer; }
+.file-drop.drag { border-color: var(--accent); color: var(--fg); }
+.file-list { margin-top: 8px; }
+.file-item { display: flex; justify-content: space-between; align-items: center; background: var(--bg); border-radius: 5px; padding: 4px 8px; font-size: 11.5px; margin-bottom: 4px; }
+.file-item button { background: none; border: none; color: var(--err); cursor: pointer; font-size: 13px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.legend .item { display: flex; align-items: center; gap: 5px; font-size: 10.5px; color: var(--fg2); background: var(--bg); border-radius: 12px; padding: 2px 8px; }
+.legend .dot { width: 8px; height: 8px; border-radius: 50%; }
+.check-list .check { display: flex; align-items: center; gap: 8px; font-size: 11.5px; padding: 4px 0; }
+.check-list .mark { width: 14px; height: 14px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; flex-shrink: 0; }
+.check-list .mark.ok { background: var(--ok); color: #123; }
+.check-list .mark.bad { background: var(--err); color: #fff; }
+.progress-bar { height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; margin: 10px 0; }
+.progress-bar div { height: 100%; background: var(--accent); width: 0%; transition: width .3s; }
+.toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--bg3); border: 1px solid #3a3a44; padding: 8px 16px; border-radius: 8px; font-size: 12px; z-index: 50; opacity: 0; transition: opacity .25s; pointer-events: none; }
+.toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="toolbar">
+    <div class="brand">NIRVANA<span> STUDIO</span></div>
+    <button class="btn" id="btn-add-brief">＋ Bloco de construção</button>
+    <button class="btn" id="btn-plan" title="Gerar grafo proposto a partir de uma instrução">⚡ Gerar</button>
+    <button class="btn" id="btn-validate">✓ Validar</button>
+    <button class="btn primary" id="btn-build">▶ Construir</button>
+    <div class="spacer"></div>
+    <button class="btn" id="btn-zoom-out">−</button>
+    <div class="zoom-label" id="zoom-label">100%</div>
+    <button class="btn" id="btn-zoom-in">＋</button>
+    <button class="btn" id="btn-save">💾 Salvar</button>
+  </div>
+
+  <div id="viewport">
+    <div id="world">
+      <svg id="edges-svg"></svg>
+    </div>
+    <div id="minimap"><svg id="minimap-svg"></svg></div>
+  </div>
+
+  <!-- Build block panel (entry node) -->
+  <div class="panel" id="panel-brief">
+    <h3>Bloco de construção <button onclick="toggle('panel-brief')">✕</button></h3>
+    <div class="form-row">
+      <label>O que deve ser construído</label>
+      <textarea id="brief-instruction" placeholder="Ex.: Crie uma empresa podcast-empire com squads de produção, edição e monetização, mind-clones de produtores de podcast renomados nos cargos-chave."></textarea>
+    </div>
+    <div class="form-row">
+      <label>Materiais (anexos)</label>
+      <div class="file-drop" id="file-drop">Arraste arquivos aqui ou clique para selecionar</div>
+      <input type="file" id="file-input" multiple hidden />
+      <div class="file-list" id="file-list"></div>
+    </div>
+    <button class="btn primary" style="width:100%" id="btn-send-brief">📩 Enviar ao Studio</button>
+  </div>
+
+  <!-- Validation panel -->
+  <div class="panel hidden" id="panel-validate" style="left:366px">
+    <h3>Validação de protocolo <button onclick="toggle('panel-validate')">✕</button></h3>
+    <div class="check-list" id="check-list"></div>
+  </div>
+
+  <!-- Build progress panel -->
+  <div class="panel hidden" id="panel-build">
+    <h3>Construção <button onclick="toggle('panel-build')">✕</button></h3>
+    <div class="progress-bar"><div id="build-progress"></div></div>
+    <div class="check-list" id="build-log"></div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script>
+// ── state ───────────────────────────────────────────────────────────────────
+const TYPE_COLORS = { brief:"#e63946", company:"#457b9d", squad:"#2a9d8f", mind_clone:"#e9c46a", employee:"#8d99ae", material:"#a98467", deliverable:"#9b5de5" };
+const TYPE_LABELS = { brief:"Bloco de construção", company:"Empresa", squad:"Squad", mind_clone:"Mind Clone", employee:"Empregado", material:"Material", deliverable:"Entregável" };
+
+let graph = { schema_version:"1.0.0", name:"studio-graph", nodes:[], edges:[] };
+let view = { x: 0, y: 0, zoom: 1 };
+let pendingAttachments = [];
+let dragging = null, panning = null, linking = null, selected = new Set();
+let nodeIdSeq = 0;
+
+const $ = (id) => document.getElementById(id);
+const viewport = $("viewport"), world = $("world"), edgesSvg = $("edges-svg"), minimapSvg = $("minimap-svg");
+
+function toast(msg, ms=2400){ const t=$("toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"), ms); }
+function toggle(id){ $(id).classList.toggle("hidden"); }
+function fmtBytes(n){ return n>1048576? (n/1048576).toFixed(1)+" MB" : n>1024? (n/1024).toFixed(1)+" KB" : n+" B"; }
+
+// ── rendering ───────────────────────────────────────────────────────────────
+function render(){
+  applyTransform();
+  renderNodes();
+  renderEdges();
+  renderMinimap();
+  $("zoom-label").textContent = Math.round(view.zoom*100)+"%";
+}
+
+function applyTransform(){
+  world.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.zoom})`;
+}
+
+function renderNodes(){
+  world.querySelectorAll(".node").forEach(n=>n.remove());
+  for (const node of graph.nodes){
+    const el = document.createElement("div");
+    el.className = "node" + (selected.has(node.id) ? " selected" : "");
+    el.dataset.id = node.id; el.dataset.type = node.type;
+    el.style.left = node.position.x+"px"; el.style.top = node.position.y+"px";
+    const p = node.payload || {};
+    const slug = p.slug || node.id;
+    const sub = p.instruction ? p.instruction.slice(0,120) : (p.description || p.source || p.role || p.title || "");
+    const caps = Array.isArray(p.capabilities) ? p.capabilities : [];
+    el.innerHTML = `
+      <div class="head"><span class="dot" style="background:${TYPE_COLORS[node.type]}"></span>${TYPE_LABELS[node.type]}
+        <span class="status-dot ${node.status||''}"></span></div>
+      <div class="body"><b>${slug}</b><br/>${sub.replace(/</g,"&lt;")}
+        ${caps.length? `<div class="caps">${caps.slice(0,4).map(c=>`<span class="cap">${c}</span>`).join("")}${caps.length>4?`<span class="cap">+${caps.length-4}</span>`:""}</div>`:""}
+      </div>
+      <div class="port in" data-node="${node.id}" data-dir="in"></div>
+      <div class="port out" data-node="${node.id}" data-dir="out"></div>`;
+    el.addEventListener("mousedown", (e)=>{
+      if (e.target.classList.contains("port")) return;
+      e.stopPropagation();
+      dragging = { node, ox: e.clientX/view.zoom - node.position.x, oy: e.clientY/view.zoom - node.position.y, moved:false };
+      selected.clear(); selected.add(node.id);
+      render();
+    });
+    el.addEventListener("dblclick", ()=>{
+      if (node.type === "brief"){ $("panel-brief").classList.remove("hidden"); $("brief-instruction").value = p.instruction || ""; }
+    });
+    world.appendChild(el);
+  }
+  document.querySelectorAll(".port").forEach(port=>{
+    port.addEventListener("mousedown",(e)=>{
+      e.stopPropagation();
+      linking = { source: port.dataset.node, dir: port.dataset.dir, target: null };
+    });
+  });
+}
+
+function renderEdges(){
+  edgesSvg.innerHTML = "";
+  const nodeEls = new Map();
+  world.querySelectorAll(".node").forEach(el=>nodeEls.set(el.dataset.id, el));
+  for (const edge of graph.edges){
+    const a = nodeEls.get(edge.source), b = nodeEls.get(edge.target);
+    if (!a || !b) continue;
+    const aw = 240, ah = a.offsetHeight || 96, bh = b.offsetHeight || 96;
+    const x1 = edge.source === linking?.source ? parseFloat(a.style.left)+aw+6 : parseFloat(a.style.left)+aw/2;
+    const y1 = parseFloat(a.style.top)+ah/2;
+    const x2 = parseFloat(b.style.left)+aw/2, y2 = parseFloat(b.style.top)+bh/2;
+    const dx = Math.abs(x2-x1)/2, cp = Math.max(40, dx);
+    const d = `M ${x1} ${y1} C ${x1+cp} ${y1}, ${x2-cp} ${y2}, ${x2} ${y2}`;
+    const path = document.createElementNS("http://www.w3.org/2000/svg","path");
+    path.setAttribute("d", d);
+    path.addEventListener("dblclick", ()=>{
+      graph.edges = graph.edges.filter(e=>e!==edge);
+      render(); saveGraph();
+    });
+    edgesSvg.appendChild(path);
+  }
+}
+
+function renderMinimap(){
+  minimapSvg.innerHTML = "";
+  if (!graph.nodes.length) return;
+  const xs = graph.nodes.map(n=>n.position.x), ys = graph.nodes.map(n=>n.position.y);
+  const minX=Math.min(...xs)-40, minY=Math.min(...ys)-40, maxX=Math.max(...xs)+300, maxY=Math.max(...ys)+200;
+  const w = maxX-minX || 1, h = maxY-minY || 1, scale = Math.min(178/w, 118/h);
+  for (const n of graph.nodes){
+    const r = document.createElementNS("http://www.w3.org/2000/svg","rect");
+    r.setAttribute("x",(n.position.x-minX)*scale); r.setAttribute("y",(n.position.y-minY)*scale);
+    r.setAttribute("width",240*scale); r.setAttribute("height",96*scale);
+    r.setAttribute("fill",TYPE_COLORS[n.type]); r.setAttribute("rx",3);
+    minimapSvg.appendChild(r);
+  }
+  const vp = document.createElementNS("http://www.w3.org/2000/svg","rect");
+  vp.setAttribute("class","vp");
+  const vx = (-view.x/view.zoom - minX), vy = (-view.y/view.zoom - minY);
+  const vw = viewport.clientWidth/view.zoom, vh = viewport.clientHeight/view.zoom;
+  vp.setAttribute("x", vx*scale); vp.setAttribute("y", vy*scale);
+  vp.setAttribute("width", vw*scale); vp.setAttribute("height", vh*scale);
+  minimapSvg.appendChild(vp);
+}
+
+// ── graph ops ───────────────────────────────────────────────────────────────
+const EDGE_RULES = { briefs:["company","squad","mind_clone"], owns:["employee"], embodies:["mind_clone"], covers:["company"], feeds:["mind_clone","company","squad"], staffs:["squad"], yields:["deliverable"], depends_on:null };
+
+function nodeAt(x,y){ return graph.nodes.find(n=> x>=n.position.x && x<=n.position.x+240 && y>=n.position.y && y<=n.position.y+(n.offsetHeight||96)); }
+
+function compatibleEdge(type, fromType, toType){
+  const allowed = EDGE_RULES[type];
+  return allowed !== null && allowed.includes(toType);
+}
+
+function dependencyPair(edge){
+  return ["depends_on","staffs","embodies"].includes(edge.type)
+    ? [edge.target, edge.source]
+    : [edge.source, edge.target];
+}
+
+function wouldCycle(candidate){
+  // A cycle is evaluated over the effective build dependency direction.
+  const adj = new Map();
+  for (const e of [...graph.edges, candidate]){
+    const [before, after] = dependencyPair(e);
+    if (!adj.has(before)) adj.set(before, []);
+    adj.get(before).push(after);
+  }
+  const [before, after] = dependencyPair(candidate);
+  const visited = new Set([after]), q=[after];
+  while(q.length){ const c=q.shift(); if(c===before) return true; for(const nxt of adj.get(c)||[]) if(!visited.has(nxt)){visited.add(nxt);q.push(nxt);} }
+  return false;
+}
+
+function addNodeOfType(type, x, y, payload={}){
+  const id = `${type}-${Date.now().toString(36)}-${(nodeIdSeq++).toString(36)}`;
+  const node = { id, type, position:{x,y}, status:"draft", payload };
+  graph.nodes.push(node);
+  render(); saveGraph();
+  return node;
+}
+
+async function saveGraph(){
+  try{
+    await fetch("/api/graph", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(graph) });
+  }catch(e){ console.warn("save failed", e); }
+}
+
+async function loadGraphFromServer(){
+  try{
+    const res = await fetch("/api/graph");
+    if (res.ok) { graph = await res.json(); render(); }
+  }catch(e){ console.warn("load failed", e); }
+}
+
+// ── viewport interaction ────────────────────────────────────────────────────
+viewport.addEventListener("mousedown",(e)=>{
+  if (e.target === viewport || e.target === world || e.target.id === "edges-svg"){
+    panning = { ox: e.clientX - view.x, oy: e.clientY - view.y };
+    viewport.classList.add("panning");
+    if (!e.shiftKey) { selected.clear(); render(); }
+  }
+});
+window.addEventListener("mousemove",(e)=>{
+  if (panning){ view.x = e.clientX - panning.ox; view.y = e.clientY - panning.oy; applyTransform(); renderMinimap(); }
+  if (dragging){
+    dragging.node.position.x = e.clientX/view.zoom - dragging.ox;
+    dragging.node.position.y = e.clientY/view.zoom - dragging.oy;
+    dragging.moved = true;
+    render();
+  }
+  if (linking){ render(); /* redraw edge preview */ }
+});
+window.addEventListener("mouseup",(e)=>{
+  if (panning){ panning=null; viewport.classList.remove("panning"); }
+  if (dragging){ if (dragging.moved) saveGraph(); dragging=null; }
+  if (linking){
+    const worldX = (e.clientX - view.x)/view.zoom, worldY = (e.clientY - view.y)/view.zoom;
+    const tgt = nodeAt(worldX, worldY);
+    const srcNode = graph.nodes.find(n=>n.id===linking.source);
+    if (tgt && tgt.id !== linking.source){
+      // Infer the first typed relationship that admits both endpoint types.
+      let type = null;
+      const candidates = srcNode.type==="brief"?["briefs"]: srcNode.type==="company"?["owns","embodies"]: srcNode.type==="employee"?["staffs","embodies"]: srcNode.type==="squad"?["covers","yields"]: srcNode.type==="material"?["feeds"]:[];
+      for (const t of candidates){ if (EDGE_RULES[t] && EDGE_RULES[t].includes(tgt.type)){ type = t; break; } }
+      if (!type) type = "depends_on";
+      if (!wouldCycle({ source: linking.source, target: tgt.id, type })){
+        graph.edges.push({ id:`edge-${Date.now().toString(36)}`, source:linking.source, target:tgt.id, type });
+        render(); saveGraph();
+      } else toast("⛔ Essa conexão criaria um ciclo");
+    }
+    linking=null;
+  }
+});
+viewport.addEventListener("wheel",(e)=>{
+  e.preventDefault();
+  const rect = viewport.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const factor = e.deltaY < 0 ? 1.12 : 1/1.12;
+  const nz = Math.min(4, Math.max(.1, view.zoom*factor));
+  view.x = mx - (mx - view.x)*(nz/view.zoom);
+  view.y = my - (my - view.y)*(nz/view.zoom);
+  view.zoom = nz;
+  render();
+},{ passive:false });
+
+$("btn-zoom-in").onclick = ()=>{ view.zoom=Math.min(4,view.zoom*1.25); render(); };
+$("btn-zoom-out").onclick = ()=>{ view.zoom=Math.max(.1,view.zoom/1.25); render(); };
+
+// ── build block ─────────────────────────────────────────────────────────────
+$("file-drop").onclick = ()=> $("file-input").click();
+$("file-drop").addEventListener("dragover",(e)=>{ e.preventDefault(); $("file-drop").classList.add("drag"); });
+$("file-drop").addEventListener("dragleave",()=>$("file-drop").classList.remove("drag"));
+$("file-drop").addEventListener("drop",(e)=>{ e.preventDefault(); $("file-drop").classList.remove("drag"); handleFiles(e.dataTransfer.files); });
+$("file-input").addEventListener("change",(e)=> handleFiles(e.target.files));
+
+async function handleFiles(files){
+  for (const f of files){
+    const fd = new FormData();
+    fd.append("file", f);
+    const res = await fetch("/api/attachments",{method:"POST",body:fd});
+    if (res.ok){
+      const { attachments } = await res.json();
+      for (const a of attachments) pendingAttachments.push(a);
+    }
+  }
+  renderFileList();
+}
+
+function renderFileList(){
+  $("file-list").innerHTML = pendingAttachments.map((a,i)=>
+    `<div class="file-item"><span>${a.name} (${fmtBytes(a.size_bytes)})</span><button onclick="pendingAttachments.splice(${i},1);renderFileList()">✕</button></div>`).join("");
+}
+
+$("btn-add-brief").onclick = ()=>{
+  $("panel-brief").classList.remove("hidden");
+  if (!graph.nodes.some(n=>n.type==="brief")){
+    addNodeOfType("brief", 100-view.x/view.zoom, 100-view.y/view.zoom, { instruction:"" });
+  }
+};
+
+async function sendBrief(){
+  const instruction = $("brief-instruction").value.trim();
+  if (instruction.length < 3){ toast("⚠ Descreva o que deve ser construído (mín. 3 caracteres)"); return; }
+  const brief = graph.nodes.find(n=>n.type==="brief");
+  if (brief){ brief.payload.instruction = instruction; brief.payload.attachments = pendingAttachments.map(a=>({name:a.name,path:a.path,size_bytes:a.size_bytes})); }
+  else addNodeOfType("brief", 100, 100, { instruction, attachments: pendingAttachments.map(a=>({name:a.name,path:a.path,size_bytes:a.size_bytes})) });
+  pendingAttachments = [];
+  renderFileList();
+  await saveGraph();
+  toast("✅ Bloco de construção registrado — clique em ⚡ Gerar para propor o grafo");
+}
+$("btn-send-brief").onclick = sendBrief;
+
+// ── planner (⚡ Gerar) ──────────────────────────────────────────────────────
+$("btn-plan").onclick = async ()=>{
+  const brief = graph.nodes.find(n=>n.type==="brief");
+  const instruction = brief?.payload?.instruction || $("brief-instruction").value.trim();
+  if (!instruction || instruction.length < 3){ toast("⚠ Preencha o bloco de construção primeiro"); return; }
+  toast("⏳ Planejando o grafo…", 1500);
+  try{
+    const res = await fetch("/api/plan",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ instruction, attachments: brief?.payload?.attachments || pendingAttachments })});
+    const data = await res.json();
+    if (!res.ok){ toast("❌ "+(data.error||"erro ao gerar")); return; }
+    graph.name = data.plan.name || graph.name;
+    render(); saveGraph();
+    toast(`✅ ${data.plan.nodes.length} blocos propostos — aprove ou ajuste no canvas`);
+  }catch(e){ toast("❌ erro de rede"); }
+};
+
+// ── validate ────────────────────────────────────────────────────────────────
+$("btn-validate").onclick = async ()=>{
+  const res = await fetch("/api/validate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(graph)});
+  const data = await res.json();
+  toggle("panel-validate");
+  $("check-list").innerHTML = data.protocol.map(c=>
+    `<div class="check"><span class="mark ${c.ok?'ok':'bad'}">${c.ok?'✓':'✗'}</span><span>${c.name}: ${c.message}</span></div>`).join("");
+  toast(data.ok ? "✅ Grafo válido — pronto para construir" : "⚠ Ajuste os pontos marcados");
+};
+
+// ── build ───────────────────────────────────────────────────────────────────
+$("btn-build").onclick = async ()=>{
+  if (!window.confirm("Confirmar a materialização? Esta ação executará as pipelines de ciclo de vida para os nós validados.")) return;
+  const res = await fetch("/api/build",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ graph, confirm: true })});
+  const data = await res.json();
+  if (!res.ok){ toast("❌ "+(data.checks? data.checks.filter(c=>!c.ok).map(c=>c.message).join("; ") : data.error)); return; }
+  toggle("panel-build");
+  $("build-log").innerHTML = "";
+  const evtSrc = new EventSource(`/api/build/${data.sessionId}`);
+  let total=0;
+  evtSrc.onmessage = (ev)=>{
+    const e = JSON.parse(ev.data);
+    if (e.kind==="start"){ total = e.total; }
+    if (e.kind==="node_start"){
+      $("build-log").innerHTML += `<div class="check"><span class="mark" style="background:var(--node-clone)">◌</span><span>Construindo ${e.type} ${e.slug||e.nodeId}…</span></div>`;
+    }
+    if (e.kind==="node_done"){
+      const n = graph.nodes.find(n=>n.id===e.nodeId); if (n) n.status="built";
+      $("build-log").innerHTML += `<div class="check"><span class="mark ok">✓</span><span>${e.type} ${e.nodeId} → ${e.artifact_path||"ok"}</span></div>`;
+    }
+    if (e.kind==="node_failed"){
+      const n = graph.nodes.find(n=>n.id===e.nodeId); if (n) n.status="failed";
+      $("build-log").innerHTML += `<div class="check"><span class="mark bad">✗</span><span>${e.nodeId}: ${e.error}</span></div>`;
+    }
+    if (e.kind==="done"){
+      evtSrc.close();
+      $("build-progress").style.width = "100%";
+      render();
+      toast(e.ok ? `✅ Construído! ${e.built} blocos materializados` : `⚠ ${e.built} ok, ${e.failed} falharam`);
+    }
+    const done = graph.nodes.filter(n=>n.status==="built"||n.status==="failed").length;
+    if (total) $("build-progress").style.width = Math.min(99, Math.round(done/total*100))+"%";
+  };
+};
+
+// ── save ────────────────────────────────────────────────────────────────────
+$("btn-save").onclick = async ()=>{ await saveGraph(); toast("💾 Grafo salvo"); };
+
+// ── init ────────────────────────────────────────────────────────────────────
+loadGraphFromServer().then(()=>{
+  if (!graph.nodes.some(n=>n.type==="brief")){
+    addNodeOfType("brief", 120, 120, { instruction:"" });
+    $("panel-brief").classList.remove("hidden");
+  }
+  render();
+});
+</script>
+</body>
+</html>

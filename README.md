@@ -385,6 +385,9 @@ The CLI exists so the system's own skills and hooks can drive the engine, and so
 | `nrv search "<topic>"` | Search capabilities across all three registries |
 | `nrv update <pack>` | Update an installed pack |
 | `nrv doctor` | Check the installation |
+| `nrv studio` | Infinite-canvas builder (ComfyUI-style) — design companies, squads and mind-clones visually |
+
+The Studio canvas is a visual layer on top of the same protocol everything else uses: describe what must be built in the entry block (documents, transcripts and URLs attach to it), let the planner propose the graph, validate it, and explicitly confirm before `Build` materializes each node through the existing lifecycle pipelines. State lives in `~/.nirvana/studio/graphs/` globally or `.nirvana/studio/graphs/` per project; registries and audit events are updated only by the lifecycle pipelines.
 
 Everything else is agent-run or advanced. `Skill("harness", …)` is the in-process entry your agent uses. `nrv dispatch`, `nrv run`, and `nrv auto` drive orchestration from the shell. `nrv ask <clone>` talks to a single mind-clone with its DNA injected; `nrv revise` applies a change to a project in the same runtime session; `nrv audit-view` walks a project's audit chain; `nrv export` packages a project's output (Python 3.10+ needed only for `--pdf` and `--zip`).
 
