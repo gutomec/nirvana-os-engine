@@ -38,6 +38,7 @@
  *   bun scripts/check-not-for-fires.ts --json
  *   bun scripts/check-not-for-fires.ts <slug>      # one entity, with the dead entries listed
  */
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { parseArgs } from "../skills/_shared/lib/bun-helpers.ts";
@@ -48,6 +49,10 @@ const registryLoader = require_(join(import.meta.dir, "..", "skills", "harness",
 
 const { flags, positional } = parseArgs(process.argv.slice(2));
 const only = positional[0];
+/** A capabilities map to read instead of the live registry. Without it the only
+ *  thing a test can assert is whatever library happens to be on the machine —
+ *  which on CI is none, so the interesting assertions could not run at all. */
+const fixture = typeof flags.registry === "string" ? flags.registry : null;
 
 const RED = "\x1b[31m", GRN = "\x1b[32m", YEL = "\x1b[33m", DIM = "\x1b[2m", BOLD = "\x1b[1m", RST = "\x1b[0m";
 
@@ -58,8 +63,9 @@ const SUBSTRING_MAX_CHARS = 25;
 const MIN_CONTENT_TOKENS = 2;
 const TOKEN_OVERLAP_MIN = 0.6;
 
-const registries = registryLoader.loadAll();
-const caps: Record<string, Array<Record<string, unknown>>> = registries?.squads?.capabilities ?? {};
+const caps: Record<string, Array<Record<string, unknown>>> = fixture
+  ? JSON.parse(readFileSync(fixture, "utf8"))
+  : (registryLoader.loadAll()?.squads?.capabilities ?? {});
 
 /** Every real example_brief in the library: the user-language corpus we have. */
 const briefSets: Array<Set<string>> = [];

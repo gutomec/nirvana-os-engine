@@ -19,9 +19,21 @@
  * threshold is worse than no gate.
  */
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+/** A capabilities map on disk, for the cases that must assert on real content
+ *  rather than on whatever library the machine happens to have. */
+const FIXTURES = mkdtempSync(join(tmpdir(), "notfor-"));
+let n = 0;
+function fixture(caps: Record<string, Array<Record<string, unknown>>>): string {
+  const f = join(FIXTURES, `r${n++}.json`);
+  writeFileSync(f, JSON.stringify(caps), "utf8");
+  return f;
+}
+process.on("exit", () => { try { rmSync(FIXTURES, { recursive: true, force: true }); } catch {} });
 
 const REPO = join(import.meta.dir, "..", "..", "..");
 const GATE = join(REPO, "scripts", "check-not-for-fires.ts");
@@ -88,9 +100,30 @@ describe("the gate runs and reports", () => {
   }, 60_000);
 
   test("a single entity can be inspected, and lists what is dead", () => {
-    const r = run(["brandcraft"]);
+    // Against a fixture, not the machine's library: CI has no `~/squads`, so
+    // this case used to assert on an entity that was not there and fail on all
+    // three platforms while passing on the author's laptop.
+    const r = run(["one-squad", "--registry", fixture({
+      "a.b.c": [{
+        squad: "one-squad",
+        not_for: [
+          "live streaming",                                                     // fires: substring
+          "auditar um artefato pronto e emitir laudo completo com correções",   // dead: too long
+        ],
+      }],
+    })]);
     expect(r.code).toBe(0);
-    expect(r.out).toContain("brandcraft");
-    expect(r.out).toMatch(/\d+\/\d+ dead/);
+    expect(r.out).toContain("one-squad");
+    expect(r.out).toMatch(/1\/2 dead/);
+    expect(r.out).toContain("auditar um artefato pronto");
+  }, 60_000);
+
+  test("the firing rule is length, and the report shows it", () => {
+    const r = run(["--json", "--registry", fixture({
+      "a.b.c": [{ squad: "s", not_for: ["seo audit", "x".repeat(40)] }],
+    })]);
+    const d = JSON.parse(r.out);
+    expect(d.entries).toBe(2);
+    expect(d.dead).toBe(1);
   }, 60_000);
 });
