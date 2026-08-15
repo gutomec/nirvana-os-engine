@@ -6,6 +6,68 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## 0.6.0 — 2026-08-15
+
+### Three things that failed silently, and the gates that now catch them
+
+A capability id can have several providers on purpose: nine squads can each
+define a design language, and the router is supposed to pick the one whose angle
+fits the brief. It picks by BM25 over each provider's own description, keywords
+and example_briefs. So when two providers carry byte-identical text, there is
+nothing left to pick with — both score the same and a confident `HIGH` is a coin
+toss.
+
+Two bulk injections had shipped exactly that. `media.video.compose` went into ten
+squads with the text copied verbatim and, in nine of them, with no keywords and
+no example_briefs at all: the two fields the index weights ×3 and ×2. Three
+`frontend.*` capabilities went into seven to nine squads the same way. Twenty of
+seventy provider instances were indistinguishable.
+
+Each provider now describes its own angle. A Veo cinemagraph is not a podcast
+cut is not a property tour; a data-dense dashboard is not a scroll-cinematic
+site. Measured on held-out briefs phrased the way a person actually types —
+wording that appears in no manifest — routing went from 3/7 to 6/7 landing on the
+right squad with high confidence, and the seventh returns `AMBIGUOUS` rather than
+guessing. Across the full library the regression eval holds at 98.2% top-1 over
+3,366 cases.
+
+`check-capability-clones.ts` keeps it that way, and it reports identical *text*,
+never the shared *id*. Sharing an id is the design; a gate that fired on all 22
+legitimate shared ids would be switched off within a week.
+
+### The doctor stopped writing its report into the product
+
+`SQUAD-DOCTOR-REPORT.md` was written into the squad directory, so 25 of them sat
+in the content libraries and 18 more inside built pack artifacts — a diagnostic
+about the seller's machine, delivered to the buyer, in the wrong language. Being
+stamped with a fresh timestamp on every run, it also made any two copies of a
+squad disagree forever. It now writes under `.nirvana/state/squads/<slug>/`.
+
+### Two packaging leaks, found by inspecting a rebuild rather than trusting a gate
+
+`.runs` was missing from the shared run-state list. One squad's `.runs` holds 64
+files and 36 MB of leftover renders, and it was travelling inside four packs. The
+name was in three private exclusion lists and absent from the one list four
+consumers read.
+
+And the pack builder excluded run state by the flattened name list, whose first
+segment for a business is `memory` — from `memory/projects`. It deleted the whole
+`memory/` directory, so every pack shipped its businesses without
+`memory/permanent.md`: the file the business protocol documents as the long-term
+knowledge every employee reads as authoritative context. Forty-six businesses,
+silently. `isRunStatePath` now takes a `kind` and matches an entry as a
+contiguous run of path segments.
+
+### A preflight for dispatch briefs
+
+`check-brief.ts` reads a brief and checks every path, script and slug in it
+before an agent spends an hour following one. Two briefs went out this week
+naming a script that lived on another branch and a squad directory under a name
+it never had; both agents improvised and reported success against the wrong
+target. It reads POSIX and Windows paths, stays quiet on anything marked
+`(new)`, and judges only hyphenated names — three of the thirteen single-word
+entities are `documentation`, `testing` and `monitoring`.
+
 ## 0.5.2 — 2026-08-14
 
 ### Language, measured where it actually costs

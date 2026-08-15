@@ -6,6 +6,69 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## 0.6.0 — 2026-08-15
+
+### Três coisas que falhavam em silêncio, e os portões que agora as pegam
+
+Um id de capability pode ter vários provedores de propósito: nove squads podem
+definir uma linguagem visual, e o roteador deve escolher aquele cujo ângulo cabe
+no brief. Ele escolhe por BM25 sobre a descrição, as keywords e os
+example_briefs de cada provedor. Então, quando dois provedores carregam texto
+byte a byte igual, não sobra nada com que escolher — os dois pontuam igual e um
+`HIGH` confiante é cara ou coroa.
+
+Duas injeções em massa tinham feito exatamente isso. `media.video.compose` entrou
+em dez squads com o texto copiado, e em nove deles sem keyword nenhuma e sem
+example_brief nenhum: justamente os dois campos que o índice pesa ×3 e ×2. Três
+capabilities `frontend.*` entraram em sete a nove squads do mesmo jeito. Vinte de
+setenta instâncias eram indistinguíveis.
+
+Cada provedor agora descreve o próprio ângulo. Um cinemagraph do Veo não é um
+corte de podcast nem um tour de imóvel; um dashboard denso de dados não é um site
+de scroll cinematográfico. Medido em briefs mantidos fora do índice, escritos do
+jeito que uma pessoa de fato digita — palavras que não aparecem em manifesto
+nenhum — o roteamento foi de 3/7 para 6/7 acertando o squad com confiança alta, e
+o sétimo devolve `AMBIGUOUS` em vez de chutar. Na biblioteca inteira, a avaliação
+de regressão se mantém em 98,2% de top-1 sobre 3.366 casos.
+
+O `check-capability-clones.ts` mantém isso, e ele reporta o *texto* idêntico,
+nunca o *id* compartilhado. Compartilhar id é o desenho; um portão que acusasse
+os 22 ids legitimamente compartilhados seria desligado na primeira semana.
+
+### O doctor parou de escrever o laudo dentro do produto
+
+O `SQUAD-DOCTOR-REPORT.md` era escrito dentro do diretório do squad, então 25
+deles estavam nas bibliotecas de conteúdo e outros 18 dentro de artefatos de pack
+já construídos — um diagnóstico sobre a máquina do vendedor, entregue ao
+comprador, no idioma errado. Como ele carrega um timestamp novo a cada execução,
+também fazia duas cópias do mesmo squad discordarem para sempre. Agora ele
+escreve em `.nirvana/state/squads/<slug>/`.
+
+### Dois vazamentos de empacotamento, achados inspecionando um build de verdade
+
+`.runs` não estava na lista compartilhada de estado de execução. O `.runs` de um
+squad guarda 64 arquivos e 36 MB de render antigo, e estava viajando dentro de
+quatro packs. O nome existia em três listas privadas de exclusão e faltava
+justamente na única que quatro consumidores leem.
+
+E o builder do pack excluía estado de execução pela lista achatada, cujo primeiro
+segmento para uma empresa é `memory` — vindo de `memory/projects`. Ele apagava a
+pasta `memory/` inteira, então todo pack entregava suas empresas sem o
+`memory/permanent.md`: o arquivo que o protocolo de empresas documenta como o
+conhecimento de longo prazo que todo employee lê como contexto autoritativo.
+Quarenta e seis empresas, em silêncio. O `isRunStatePath` agora recebe um `kind`
+e casa cada entrada como uma sequência contígua de segmentos de caminho.
+
+### Um preflight para briefs de despacho
+
+O `check-brief.ts` lê um brief e confere cada caminho, cada script e cada slug
+antes que um agente gaste uma hora seguindo aquilo. Dois briefs saíram nesta
+semana citando um script que morava em outro branch e um diretório de squad com
+um nome que ele nunca teve; os dois agentes improvisaram e reportaram sucesso
+contra o alvo errado. Ele lê caminhos POSIX e Windows, fica calado no que estiver
+marcado como `(new)`, e só julga nomes com hífen — três das treze entidades de
+uma palavra só são `documentation`, `testing` e `monitoring`.
+
 ## 0.5.2 — 2026-08-14
 
 ### Idioma, medido onde ele de fato custa
