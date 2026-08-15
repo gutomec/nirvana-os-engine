@@ -17,6 +17,13 @@
  * state at build time too — there was never a reason for those to be different
  * lists, only an accident that they were.
  *
+ * `.runs` was missing from this list until a rebuild was inspected file by file:
+ * `brandcraft/.runs/` holds 64 files and 36 MB of leftover Remotion renders from
+ * two runs on the author's machine, and it was shipping inside four packs. The
+ * name appeared in three private exclusion lists — the pack assembler's `find`,
+ * a manual rsync, the reconciler — and in the one list that four consumers read,
+ * it did not.
+ *
  * `SQUAD-DOCTOR-REPORT.md` is here for the same reason, though it is a file and
  * looks authored: the doctor used to write it into the squad directory, so it
  * travelled into the packs. Eighteen of them are sitting in built artifacts
@@ -26,7 +33,7 @@
  * `.nirvana/state/squads/<slug>/`; this entry stops the old ones travelling.
  */
 export const RUN_STATE_EXCLUDES: Record<string, string[]> = {
-  squads: ["projects", "outputs", ".squad-state", ".squads-outputs", ".wiki-brain-state", ".vercel", ".omc", "_internal", "SQUAD-DOCTOR-REPORT.md"],
+  squads: ["projects", "outputs", ".runs", ".squad-state", ".squads-outputs", ".wiki-brain-state", ".vercel", ".omc", "_internal", "SQUAD-DOCTOR-REPORT.md"],
   businesses: ["memory/projects", "memory/learned.md", ".squad-state", ".squads-outputs", ".vercel"],
   "mind-clones": [],
 };

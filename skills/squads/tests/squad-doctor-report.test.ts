@@ -11,20 +11,33 @@
  *
  * The squad directory is product. A diagnostic about the product is not.
  */
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { writeDoctorReport, type Finding } from "../lib/squad-doctor.ts";
 
-// The report now lands under the project's state directory, so without this the
-// suite would leave six fake squads in the real one. `resolvePaths()` reads the
-// environment on every call, so pointing the root elsewhere is enough.
+/**
+ * The report lands under the project's state directory, so this points the root
+ * at a throwaway one — otherwise the suite leaves six fake squads in the real
+ * `.nirvana/state/squads`.
+ *
+ * It is set in beforeAll and PUT BACK in afterAll, not assigned at module scope.
+ * `bun test` runs every file in one process, so a module-scope assignment leaks
+ * into every file loaded afterwards: doing it that way made `buyer-path` resolve
+ * its install records to a directory this suite had already deleted, and report
+ * "No installations recorded" on Linux and Windows while passing on macOS, where
+ * the file order happened to differ. `resolvePaths()` reads the environment on
+ * every call, so scoping it to the tests that need it costs nothing.
+ */
 const FAKE_ROOT = mkdtempSync(join(tmpdir(), "doctor-root-"));
-process.env.NIRVANA_PROJECT_ROOT = FAKE_ROOT;
-afterAll(() => rmSync(FAKE_ROOT, { recursive: true, force: true }));
-
-const { writeDoctorReport } = await import("../lib/squad-doctor.ts");
-type Finding = import("../lib/squad-doctor.ts").Finding;
+let previousRoot: string | undefined;
+beforeAll(() => { previousRoot = process.env.NIRVANA_PROJECT_ROOT; process.env.NIRVANA_PROJECT_ROOT = FAKE_ROOT; });
+afterAll(() => {
+  if (previousRoot === undefined) delete process.env.NIRVANA_PROJECT_ROOT;
+  else process.env.NIRVANA_PROJECT_ROOT = previousRoot;
+  rmSync(FAKE_ROOT, { recursive: true, force: true });
+});
 
 function squadDir(slug: string) {
   const root = mkdtempSync(join(tmpdir(), "doctor-"));
@@ -107,5 +120,15 @@ describe("the packaging path knows it is not content", () => {
     const rs = await import("../../_shared/lib/run-state.ts");
     expect(rs.isRunStatePath("SQUAD-DOCTOR-REPORT.md")).toBe(true);
     expect(rs.isRunStatePath("agents/whatever.md")).toBe(false);
+  });
+
+  test("`.runs` is run state too", async () => {
+    // Found by inspecting a rebuild file by file: `brandcraft/.runs` holds 64
+    // files and 36 MB of leftover Remotion renders, and it was shipping inside
+    // four packs. The name was in three private exclusion lists and missing
+    // from the one four consumers read.
+    const rs = await import("../../_shared/lib/run-state.ts");
+    expect(rs.isRunStatePath(".runs/mago-demo/out/frame-001.png")).toBe(true);
+    expect(rs.isRunStatePath("lib/design-intelligence/README.md")).toBe(false);
   });
 });
