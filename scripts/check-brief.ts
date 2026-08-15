@@ -84,14 +84,26 @@ const bad: Finding[] = [];
 const ok = { path: 0, script: 0, slug: 0 };
 let slugsChecked = 0;
 
-/** Absolute or ~-relative paths. Relative paths are ambiguous without a cwd and
- *  are left alone rather than guessed at. */
-for (const m of text.matchAll(/(?:^|[\s`"'(])((?:~|\/)[\w./~-]{6,})/g)) {
-  const raw = m[1].replace(/[.,;:)`"']+$/, "");
-  if (isPlanned(m.index ?? 0)) continue;
-  const p = expand(raw);
-  if (existsSync(p)) { ok.path++; continue; }
-  bad.push({ kind: "path", value: raw, note: "does not exist" });
+/**
+ * Absolute or ~-relative paths, in both shapes. Relative paths are ambiguous
+ * without a cwd and are left alone rather than guessed at.
+ *
+ * The Windows form is not optional politeness: the engine ships to Windows
+ * buyers, briefs get written there, and a checker that recognises only
+ * `/usr/...` reports "0 paths checked" on a brief full of `C:\...` — passing
+ * green while inspecting nothing, which is the one thing a preflight must never
+ * do.
+ */
+const POSIX_PATH = /(?:^|[\s`"'(])((?:~|\/)[\w./~-]{6,})/g;
+const WINDOWS_PATH = /(?:^|[\s`"'(])([A-Za-z]:[\\/](?:[\w.~-]+[\\/])*[\w.~-]+)/g;
+for (const re of [POSIX_PATH, WINDOWS_PATH]) {
+  for (const m of text.matchAll(re)) {
+    const raw = m[1].replace(/[.,;:)`"']+$/, "");
+    if (isPlanned(m.index ?? 0)) continue;
+    const p = expand(raw);
+    if (existsSync(p)) { ok.path++; continue; }
+    bad.push({ kind: "path", value: raw, note: "does not exist" });
+  }
 }
 
 /** `bun <script>` / `node <script>` — the script must be there. */

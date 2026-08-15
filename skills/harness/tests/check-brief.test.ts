@@ -86,6 +86,16 @@ describe("it stays quiet when the brief is right", () => {
     expect(r.out).toMatch(/checked 1 paths · 1 scripts · 1 slugs/);
   });
 
+  test("a Windows path is seen, on any platform", () => {
+    // The suite creates its fixtures under tmpdir, which on Windows is a
+    // `C:\...` path. A checker that only knows POSIX reported "0 paths checked"
+    // there and passed — inspecting nothing while looking green.
+    const r = run("Edit C:\\Users\\someone\\nirvana-packs\\squads\\ghost\\squad.yaml", ["--strict"]);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("does not exist");
+    expect(r.out).toMatch(/checked 1 paths/);
+  });
+
   test("a single-word name is not judged as a slug", () => {
     // 13 of the 255 entities are one word, and three of those words are
     // `documentation`, `testing` and `monitoring`. Judging bare words would
