@@ -6,6 +6,40 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## 0.6.2 — 2026-08-16
+
+### The prompt told the agent no useful clone existed, then listed one at 0.93
+
+A business grounds an employee in a mind-clone. When none is declared, search
+ranks the library and the agent chooses — that is the design, and it is the same
+agentic default the router uses. The prompt said the opposite in three places at
+once: the section header announced `DEFAULT — no useful clone`, the body told the
+employee to operate without one, and three lines below it listed the candidates
+under the heading **Other**.
+
+Rendered against the real library, a compliance business asked about an LGPD
+programme is shown `bruno-bioni` — Brazil's applied-LGPD reference — at 0.93,
+directly beneath the sentence saying no useful clone exists. An agent that
+believes that sentence never opens the list. Forty-three of sixty businesses
+declare no clone, so this was the wording most of them ran on.
+
+The system ranks; the agent decides. Working without a clone stays a legitimate
+outcome, but it is the one reached when none fits, not the one started from.
+
+### An employee bound to a clone that is not there says nothing about it
+
+The binding is a name in the employee's frontmatter, resolved against the clone
+library. Nothing checked that it resolves, and the failure is silent by
+construction: the employee runs without the persona it was written to carry and
+delivers plausible prose that reads like anyone.
+
+In a pack it reaches the buyer. Found while adding a business to the flagship —
+seventeen employees naming seventeen clones, five of them in the pack.
+`check-clone-bindings.ts` now reads both reference forms, runs against the live
+library or a pack's content directory, and gates both `check:all` and the pack
+build. Measured after: 171 bindings in the library, 116 in the flagship, all
+resolving.
+
 ## 0.6.1 — 2026-08-16
 
 ### The version a user reads was the one before
