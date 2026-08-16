@@ -643,7 +643,12 @@ describe("supervisor redispatch — the outcome goes through the delivery pipeli
     expect(ok.finalState).toBe("delivered");
     expect(ok.detail).toContain("1 judged");
     expect(getRun(hGood, good.row.run_id)!.state).toBe("delivered");
-  });
+    // Two ledgers and two full redispatches through the delivery pipeline. That
+    // is 630ms here and 5,736ms on a cold Windows runner, which overran the
+    // 5,000ms default and failed a release PR whose only change was three
+    // version strings. The work is genuine, so the budget moves rather than the
+    // test — same as the one at the top of this file.
+  }, 20_000);
 
   test("passing text artifacts → delivered", () => {
     const h = freshLedger();
