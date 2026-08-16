@@ -25,6 +25,11 @@ validation, planner-state persistence, traversal rejection, and fail-closed
 materialization adapters. Build outcomes now persist after each node and run the
 standard registries indexers before reporting success.
 
+The documented headless `build-graph.ts` path now provides the same guarantee:
+it persists every terminal node state, runs the businesses, squads, and clones
+indexers only after that durable write, and exits non-zero instead of claiming a
+successful build when any canonical registry indexer fails.
+
 ### Three things that failed silently, and the gates that now catch them
 
 A capability id can have several providers on purpose: nine squads can each

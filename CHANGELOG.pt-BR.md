@@ -27,6 +27,12 @@ rejeição de traversal e adaptadores de materialização que falham de forma
 segura. O resultado do build agora persiste após cada nó e roda os indexadores
 canônicos dos registries antes de informar sucesso.
 
+O caminho headless documentado em `build-graph.ts` agora oferece a mesma
+garantia: ele persiste cada estado terminal de nó, executa os indexadores de
+empresas, squads e clones somente após essa gravação durável e encerra com código
+não zero, sem alegar build bem-sucedido, se qualquer indexador canônico de
+registry falhar.
+
 ### Três coisas que falhavam em silêncio, e os portões que agora as pegam
 
 Um id de capability pode ter vários provedores de propósito: nove squads podem
