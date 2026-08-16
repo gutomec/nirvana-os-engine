@@ -454,10 +454,14 @@ function resolveClonesByPriority(args: BuildArgs, employeeContent: string, bizDi
   }
 
   // 4. decision trace
+  // The last branch used to read "no useful clone" — a verdict the system is not
+  // entitled to, and one it contradicts three lines later by listing a strong
+  // candidate. Nothing was auto-injected; whether a clone is useful here is the
+  // agent's call, made against the ranked list.
   const decision = hadRequested ? "REQUESTED by the user"
     : hadDefaults ? "ASSIGNED to the employee"
     : personas.length ? "found by SEARCH for the task"
-    : "DEFAULT — no useful clone, employee persona";
+    : "YOURS — none auto-injected, pick from the ranked candidates";
 
   return { personas, suggestions, decision, missingClones };
 }
@@ -576,7 +580,16 @@ export function buildEmployeePrompt(args: BuildArgs): string {
       if (block) contributionsBlock = `\n\n---\n\n${block}\n\n`;
     } catch { /* contributions are best-effort */ }
     if (inj.suggestions.length) {
-      cloneSuggestions = ["", "**Other candidates by search** (you may swap/add; inspect with `nrv ask <slug>` or `nrv find-clone \"<task>\"`):",
+      // The header has to follow what actually happened. When nothing was
+      // injected these are not "other" candidates — they are the only ones, and
+      // calling them "other" beside the line "no clone was injected" reads as
+      // "there is nothing here", which is how a well-ranked clone gets ignored:
+      // a compliance business asking about LGPD is shown `bruno-bioni` at 0.93
+      // and told, one line above, that no useful clone exists.
+      const header = inj.personas.length
+        ? "**Other candidates by search** (you may swap/add; inspect with `nrv ask <slug>` or `nrv find-clone \"<task>\"`):"
+        : "**Candidates for this task, ranked** (take one or more; inspect with `nrv ask <slug>` or `nrv find-clone \"<task>\"`):";
+      cloneSuggestions = ["", header,
         ...inj.suggestions.slice(0, 5).map(h => `- ${h.normalized.toFixed(2)} \`${h.slug}\`${h.one_liner ? " — " + h.one_liner : ""}`)].join("\n");
     }
   }
@@ -626,7 +639,7 @@ ${employeeContent}
 
 ## MIND-CLONES YOU EMBODY — decision: ${cloneDecision}
 
-> System order: clone **REQUESTED** by the user → else **SEARCH** for the most useful one for the task → else **default persona**. The clones below are already embodied IN FULL (AGENT + SOUL + DNA); deliver the work AS IF the clone had produced it, under your employee instructions.${dnaContent || "\n\n(no useful clone for this task — operate as the employee's default persona, without a clone)"}${cloneSuggestions}
+> System order: clone **REQUESTED** by the user → else **SEARCH** for the most useful one for the task → else **you choose**. The clones below are already embodied IN FULL (AGENT + SOUL + DNA); deliver the work AS IF the clone had produced it, under your employee instructions.${dnaContent || "\n\n**No clone was auto-injected — choosing is yours.** Read the candidates below and take one or more, whichever help you think this task through. Inspect any of them with `nrv ask <slug>`. Working without a clone is a legitimate answer, but it is the answer you reach when none of them fits, not the one you start from."}${cloneSuggestions}
 
 ---
 
