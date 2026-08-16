@@ -51,11 +51,12 @@
     "check:coverage": "bun skills/_shared/scripts/coverage-ratchet.ts --check --strict",
     "check:notfor": "bun scripts/check-not-for-fires.ts",
     "check:clones": "bun scripts/check-capability-clones.ts --strict",
+    "check:bindings": "bun scripts/check-clone-bindings.ts --strict",
     "check:packs": "bun scripts/check-published-packs.ts --strict",
     "check:audit-parity": "bun scripts/check-audit-parity.ts --strict",
     "check:command-parity": "bun scripts/check-skillmd-command-parity.ts --strict",
     "check:changelog": "bun scripts/check-changelog-parity.ts --strict",
     "check:version": "bun scripts/check-version-parity.ts --strict",
-    "check:all": "bun scripts/check-skillmd-command-parity.ts --strict && bun scripts/check-audit-parity.ts --strict && bun scripts/check-english-source.ts --strict && bun scripts/check-changelog-parity.ts --strict && bun scripts/check-version-parity.ts --strict && bun skills/_shared/scripts/coverage-ratchet.ts --check --strict && bun scripts/check-not-for-fires.ts && bun scripts/check-capability-clones.ts --strict && bun scripts/check-engine-purity.ts && bun scripts/sync-agent-docs.ts --check && bun scripts/check-dispatch-contract.ts"
+    "check:all": "bun scripts/check-skillmd-command-parity.ts --strict && bun scripts/check-audit-parity.ts --strict && bun scripts/check-english-source.ts --strict && bun scripts/check-changelog-parity.ts --strict && bun scripts/check-version-parity.ts --strict && bun skills/_shared/scripts/coverage-ratchet.ts --check --strict && bun scripts/check-not-for-fires.ts && bun scripts/check-capability-clones.ts --strict && bun scripts/check-clone-bindings.ts --strict && bun scripts/check-engine-purity.ts && bun scripts/sync-agent-docs.ts --check && bun scripts/check-dispatch-contract.ts"
   }
 }
