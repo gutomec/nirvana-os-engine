@@ -7,9 +7,8 @@
 // status updates are streamed back through the BuildSession events so the
 // canvas shows progress.
 //
-// The builder never edits registries directly: after a successful build, the
-// caller is expected to reindex (`nrv index` semantics), which is done by
-// studio-server via the lifecycle scripts' own index commands.
+// The builder never edits registries directly: a caller may run the canonical
+// registry indexers after lifecycle work has completed.
 
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -35,6 +34,13 @@ export interface BuildSession {
   graphName: string;
   events: BuildEvent[];
   startedAt: string;
+}
+
+export interface BuildOptions {
+  /** Persist state after each lifecycle result so restarts cannot lose it. */
+  onNodeStateChange?: (graph: StudioGraph, node: StudioNode) => void | Promise<void>;
+  /** Run canonical indexers after artifact state has been persisted. */
+  afterBuild?: (graph: StudioGraph, result: { built: number; failed: number }) => void | Promise<void>;
 }
 
 export const sessions = new Map<string, BuildSession>();
@@ -65,6 +71,7 @@ function runLifecycle(script: string, args: string[], cwd: string = HOME, env?: 
     child.stdout.on("data", (d) => { stdout += d.toString(); });
     child.stderr.on("data", (d) => { stderr += d.toString(); });
     child.on("close", (code) => resolve({ code: code ?? 1, stdout, stderr }));
+    child.on("error", (err) => resolve({ code: 1, stdout, stderr: `${stderr}${err.message}` }));
   });
 }
 
@@ -104,10 +111,23 @@ async function buildNode(node: StudioNode, cwd: string): Promise<string | undefi
       // squad creation through the engine's own scaffold (squad lifecycle).
       // init-squad.ts expects the TARGET DIRECTORY as positional and uses
       // SQUAD_NAME/SQUAD_DESCRIPTION environment variables for the template.
+      const payload2 = (node.payload ?? {}) as Record<string, unknown>;
+      const capabilities = Array.isArray(payload2.capabilities)
+        ? payload2.capabilities.filter((cap): cap is string => typeof cap === "string")
+        : [];
+      if (capabilities.length > 1) {
+        throw new Error(`squad "${slug}" requests ${capabilities.length} capabilities, but the canonical non-interactive scaffold supports exactly one`);
+      }
+      const domains = Array.isArray(payload2.domains)
+        ? payload2.domains.filter((domain): domain is string => typeof domain === "string")
+        : [];
       const env = {
         ...process.env,
         SQUAD_NAME: slug,
-        SQUAD_DESCRIPTION: String((node.payload as Record<string, unknown>)?.description ?? ""),
+        SQUAD_DESCRIPTION: String(payload2.description ?? ""),
+        ...(capabilities[0] ? { SQUAD_CAPABILITY_ID: capabilities[0] } : {}),
+        ...(typeof payload2.capability_description === "string" ? { SQUAD_CAPABILITY_DESCRIPTION: payload2.capability_description } : {}),
+        ...(domains.length ? { SQUAD_CAPABILITY_DOMAINS: domains.join(",") } : {}),
       };
       const res = await runLifecycle(join(skillsDir, "squads", "scripts", "init-squad.ts"), [join(squadsDir, slug)], cwd, env);
       if (res.code !== 0) throw new Error(res.stderr.slice(0, 500) || `init-squad exited ${res.code}`);
@@ -135,7 +155,7 @@ async function buildNode(node: StudioNode, cwd: string): Promise<string | undefi
   }
 }
 
-export async function buildGraph(sessionId: string, graph: StudioGraph): Promise<void> {
+export async function buildGraph(sessionId: string, graph: StudioGraph, opts: BuildOptions = {}): Promise<void> {
   const order = buildOrder(graph);
   const session: BuildSession = { id: sessionId, graphName: graph.name, events: [{ kind: "start", total: order.length }], startedAt: new Date().toISOString() };
   sessions.set(sessionId, session);
@@ -145,7 +165,7 @@ export async function buildGraph(sessionId: string, graph: StudioGraph): Promise
   for (const node of order) {
     // The entry brief and already-built/failed nodes are structural or
     // terminal states: they do not produce lifecycle artifacts.
-    if (node.type === "brief" || node.status === "built" || node.status === "failed") continue;
+    if (["brief", "material", "deliverable"].includes(node.type) || node.status === "built" || node.status === "failed") continue;
     session.events.push({ kind: "node_start", nodeId: node.id, type: node.type, slug: pickSlug(node) });
     try {
       let artifact: string | undefined;
@@ -166,14 +186,22 @@ export async function buildGraph(sessionId: string, graph: StudioGraph): Promise
       node.status = "built";
       node.built_at = new Date().toISOString();
       if (artifact) node.artifact_path = artifact;
+      await opts.onNodeStateChange?.(graph, node);
       session.events.push({ kind: "node_done", nodeId: node.id, artifact_path: artifact });
       built += 1;
     } catch (err) {
       node.status = "failed";
       node.error = err instanceof Error ? err.message : String(err);
+      await opts.onNodeStateChange?.(graph, node);
       session.events.push({ kind: "node_failed", nodeId: node.id, error: node.error });
       failed += 1;
     }
+  }
+  try {
+    await opts.afterBuild?.(graph, { built, failed });
+  } catch (err) {
+    failed += 1;
+    session.events.push({ kind: "node_failed", nodeId: "registry", error: err instanceof Error ? err.message : String(err) });
   }
   session.events.push({ kind: "done", ok: failed === 0, built, failed });
 }

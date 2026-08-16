@@ -435,9 +435,11 @@ $("btn-plan").onclick = async ()=>{
     const res = await fetch("/api/plan",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ instruction, attachments: brief?.payload?.attachments || pendingAttachments })});
     const data = await res.json();
     if (!res.ok){ toast("❌ "+(data.error||"erro ao gerar")); return; }
-    graph.name = data.plan.name || graph.name;
-    render(); saveGraph();
-    toast(`✅ ${data.plan.nodes.length} blocos propostos — aprove ou ajuste no canvas`);
+    graph = data.graph;
+    render();
+    const proposed = data.proposal?.nodes?.length ?? graph.nodes.length;
+    const skipped = data.skipped?.length ? ` (${data.skipped.length} relações inválidas/duplicadas ignoradas)` : "";
+    toast(`✅ ${proposed} blocos propostos — aprove ou ajuste no canvas${skipped}`);
   }catch(e){ toast("❌ erro de rede"); }
 };
 
@@ -468,18 +470,19 @@ $("btn-build").onclick = async ()=>{
       $("build-log").innerHTML += `<div class="check"><span class="mark" style="background:var(--node-clone)">◌</span><span>Construindo ${e.type} ${e.slug||e.nodeId}…</span></div>`;
     }
     if (e.kind==="node_done"){
-      const n = graph.nodes.find(n=>n.id===e.nodeId); if (n) n.status="built";
-      $("build-log").innerHTML += `<div class="check"><span class="mark ok">✓</span><span>${e.type} ${e.nodeId} → ${e.artifact_path||"ok"}</span></div>`;
+      const n = graph.nodes.find(n=>n.id===e.nodeId); if (n) { n.status="built"; n.artifact_path=e.artifact_path; n.built_at=new Date().toISOString(); }
+      $("build-log").innerHTML += `<div class="check"><span class="mark ok">✓</span><span>${e.nodeId} → ${e.artifact_path||"ok"}</span></div>`;
     }
     if (e.kind==="node_failed"){
-      const n = graph.nodes.find(n=>n.id===e.nodeId); if (n) n.status="failed";
+      const n = graph.nodes.find(n=>n.id===e.nodeId); if (n) { n.status="failed"; n.error=e.error; }
       $("build-log").innerHTML += `<div class="check"><span class="mark bad">✗</span><span>${e.nodeId}: ${e.error}</span></div>`;
     }
     if (e.kind==="done"){
       evtSrc.close();
       $("build-progress").style.width = "100%";
+      await loadGraphFromServer();
       render();
-      toast(e.ok ? `✅ Construído! ${e.built} blocos materializados` : `⚠ ${e.built} ok, ${e.failed} falharam`);
+      toast(e.ok ? `✅ Construído! ${e.built} blocos materializados e indexados` : `⚠ ${e.built} ok, ${e.failed} falharam`);
     }
     const done = graph.nodes.filter(n=>n.status==="built"||n.status==="failed").length;
     if (total) $("build-progress").style.width = Math.min(99, Math.round(done/total*100))+"%";

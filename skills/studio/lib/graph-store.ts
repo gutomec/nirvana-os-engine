@@ -12,6 +12,7 @@ import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const STUDIO_SCHEMA_VERSION = "1.0.0";
+export const GRAPH_NAME_RE = /^[a-z0-9][a-z0-9-]{0,59}$/;
 
 export type NodeType = "brief" | "company" | "squad" | "mind_clone" | "employee" | "material" | "deliverable";
 export type EdgeType = "briefs" | "owns" | "staffs" | "embodies" | "covers" | "feeds" | "depends_on" | "yields";
@@ -73,8 +74,14 @@ export function studioStoreDir(cwd: string = process.cwd()): string {
 
 export function graphPath(slug: string, cwd: string = process.cwd()): string {
   const dir = studioStoreDir(cwd);
+  if (!GRAPH_NAME_RE.test(slug)) {
+    throw new Error("graph name must be a lowercase slug (a-z, 0-9, hyphen; max 60 characters)");
+  }
   mkdirSync(dir, { recursive: true });
-  return join(dir, `${slug}.json`);
+  const file = resolve(dir, `${slug}.json`);
+  const root = `${resolve(dir)}${sep}`;
+  if (!file.startsWith(root)) throw new Error("graph path escapes the Studio store");
+  return file;
 }
 
 // ── CRUD ────────────────────────────────────────────────────────────────────
@@ -100,8 +107,8 @@ export function saveGraph(graph: StudioGraph, cwd: string = process.cwd()): stri
   return file;
 }
 
-export function loadGraph(nameOrPath: string, cwd: string = process.cwd()): StudioGraph | null {
-  const file = nameOrPath.endsWith(".json") ? nameOrPath : graphPath(nameOrPath, cwd);
+export function loadGraph(name: string, cwd: string = process.cwd()): StudioGraph | null {
+  const file = graphPath(name, cwd);
   if (!existsSync(file)) return null;
   const raw = readFileSync(file, "utf8");
   const parsed = JSON.parse(raw) as StudioGraph;
@@ -113,7 +120,9 @@ export function loadGraph(nameOrPath: string, cwd: string = process.cwd()): Stud
 export function listGraphs(cwd: string = process.cwd()): string[] {
   const dir = studioStoreDir(cwd);
   mkdirSync(dir, { recursive: true });
-  return readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, ""));
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".json") && GRAPH_NAME_RE.test(f.replace(/\.json$/, "")))
+    .map((f) => f.replace(/\.json$/, ""));
 }
 
 export function deleteGraph(name: string, cwd: string = process.cwd()): boolean {
@@ -138,8 +147,8 @@ export function validateGraphStructure(graph: unknown): ValidationError[] {
   if (g.schema_version !== STUDIO_SCHEMA_VERSION) {
     errors.push({ path: "/schema_version", message: `must be "${STUDIO_SCHEMA_VERSION}"` });
   }
-  if (typeof g.name !== "string" || g.name.length === 0) {
-    errors.push({ path: "/name", message: "name is required" });
+  if (typeof g.name !== "string" || !GRAPH_NAME_RE.test(g.name)) {
+    errors.push({ path: "/name", message: "name must be a lowercase slug (a-z, 0-9, hyphen; max 60 characters)" });
   }
   if (!Array.isArray(g.nodes)) errors.push({ path: "/nodes", message: "must be an array" });
   if (!Array.isArray(g.edges)) errors.push({ path: "/edges", message: "must be an array" });
@@ -171,6 +180,13 @@ export function validateGraphStructure(graph: unknown): ValidationError[] {
     const target = (g.nodes as StudioNode[]).find((n) => n.id === e.target);
     if (source && target && EDGE_TYPES.includes(e.type as EdgeType) && !isCompatibleEdge(e.type as EdgeType, source.type, target.type)) {
       errors.push({ path: `${p}/type`, message: `edge type "${e.type}" is not allowed from ${source.type} to ${target.type}` });
+    }
+  }
+  if (errors.length === 0) {
+    try {
+      buildOrder(g as StudioGraph);
+    } catch (err) {
+      errors.push({ path: "/edges", message: err instanceof Error ? err.message : "graph contains a dependency cycle" });
     }
   }
   return errors;

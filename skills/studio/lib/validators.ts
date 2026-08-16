@@ -56,7 +56,7 @@ export function validateGraphProtocol(graph: Partial<StudioGraph> | undefined): 
     message: "every company must own at least one employee (org chart cannot be empty)",
   });
   const employeesOk = employees.every((e) =>
-    inboundEdges(graph as StudioGraph, e.id).some((ed) => ed.type === "owns" && byId.get(ed.source)?.type === "company"));
+    inboundEdges(graph as StudioGraph, e.id).filter((ed) => ed.type === "owns" && byId.get(ed.source)?.type === "company").length === 1);
   checks.push({
     name: "employee-belongs-to-company",
     ok: employeesOk,
@@ -106,7 +106,31 @@ export function validateGraphProtocol(graph: Partial<StudioGraph> | undefined): 
     message: "every mind-clone node must declare its source (persona DNA is a permanent artifact)",
   });
 
-  // C7 — reachability: no orphan buildable node
+  // C7 — build adapters must be real. The current engine exposes canonical
+  // non-interactive creators for companies and skeleton squads only. It has no
+  // adapter that safely injects a Studio-made employee→squad/clone or
+  // company→clone relationship into the permanent registries, and no
+  // non-interactive Genius Factory entry point for source-backed clone DNA.
+  // Rejecting these at validation time is deliberate: a green canvas must not
+  // imply that an unrepresented relationship was materialized.
+  const unsupportedNodes = clones.map((c) => c.id);
+  const unsupportedEdges = graph.edges.filter((e) => ["staffs", "embodies", "covers"].includes(e.type)).map((e) => e.id);
+  const multiCapabilitySquads = squads.filter((s) => Array.isArray(s.payload?.capabilities) && s.payload.capabilities.length > 1).map((s) => s.id);
+  const unsupportedOk = unsupportedNodes.length === 0 && unsupportedEdges.length === 0 && multiCapabilitySquads.length === 0;
+  const unsupportedParts = [
+    unsupportedNodes.length ? `mind-clone nodes (${unsupportedNodes.join(", ")})` : "",
+    unsupportedEdges.length ? `relationship edges (${unsupportedEdges.join(", ")})` : "",
+    multiCapabilitySquads.length ? `multi-capability squads (${multiCapabilitySquads.join(", ")})` : "",
+  ].filter(Boolean);
+  checks.push({
+    name: "materialization-adapter",
+    ok: unsupportedOk,
+    message: unsupportedOk
+      ? "all requested entities and relationships have canonical non-interactive lifecycle adapters"
+      : `cannot materialize ${unsupportedParts.join("; ")} safely; keep them as a reviewed plan until the matching lifecycle adapter exists`,
+  });
+
+  // C8 — reachability: no orphan buildable node
   const reachable = reachableFromBriefs(graph as StudioGraph);
   const orphans = (graph as StudioGraph).nodes.filter((n) => n.type !== "deliverable" && !reachable.has(n.id));
   checks.push({

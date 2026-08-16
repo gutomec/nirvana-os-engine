@@ -19,13 +19,15 @@ nrv studio --new my-company
    mind-clones and employees, and how they connect.
 3. **Approve & edit.** Rewire edges, rename blocks, add employees, drop the
    proposal onto the infinite canvas (pan, zoom, minimap).
-4. **Build.** The engine materializes each block through the Business Protocol
-   v1 / Squad Protocol v5 / mind-clone creation pipelines. Nodes turn green as
-   their artifacts land in `~/businesses/`, `~/squads/`, `~/businesses/_library/dna/`.
+4. **Validate & build.** The engine materializes only entities and relationships
+   with a canonical non-interactive lifecycle adapter. Company nodes and
+   single-capability squad skeletons are supported; mind-clones and relationship
+   links that lack a lifecycle adapter remain reviewable plans and fail closed.
+   Successful lifecycle outputs are reindexed before the build reports success.
 
-Everything Studio emits is validated by the same protocols and validators the
-prose factories use — a visually built company is protocol-equivalent to a
-prose-built one, and `nrv list-*` sees it.
+Every successful Studio build is validated by the same protocols and indexers
+the prose factories use. Unsupported planning relationships are visible and
+reviewable, but never reported as materialized.
 
 ## Protocol
 

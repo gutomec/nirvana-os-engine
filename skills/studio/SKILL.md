@@ -1,7 +1,7 @@
 ---
 name: studio
 description: "Visual conglomerate builder (Studio Protocol v1): an infinite-canvas, ComfyUI-style environment for composing businesses, squads, mind-clones, employees and materials as interconnected blocks, then materializing them through the engine's existing lifecycle pipelines. Triggers: studio, canvas, visual builder, graph builder, 'construir no canvas', 'montar visualmente'. Read-only when listing graphs; creation flows need the `studio-server.ts` live."
-compatibility: "Requires the Nirvana-OS engine: the `nrv` CLI and Bun on PATH. Install: npx @nirvana-os/cli. The server binds to 127.0.0.1 by default (`nrv studio --host 0.0.0.0` overrides). The planner optionally uses NIRVANA_STUDIO_BASE_URL / NIRVANA_STUDIO_API_KEY for an OpenAI-compatible endpoint; without it, the local LLM helper is used."
+compatibility: "Requires the Nirvana-OS engine: the `nrv` CLI and Bun on PATH. Install: npx @nirvana-os/cli. The server binds only to a loopback host (127.0.0.1 by default; ::1 and localhost are also accepted). The planner optionally uses NIRVANA_STUDIO_BASE_URL / NIRVANA_STUDIO_API_KEY for an OpenAI-compatible endpoint; without it, the local LLM helper is used."
 tools: [Read, Write, Edit, Glob, Grep, Bash]
 maxTurns: 50
 metadata:
@@ -50,11 +50,11 @@ remains first-class. Studio is a projection of the same protocols.
 
 | Command | Implementation | Description |
 |---|---|---|
-| `nrv studio` | `bun skills/studio/scripts/studio-server.ts` | Serve the canvas UI (default `http://127.0.0.1:4222`) |
+| `nrv studio` | `bun skills/studio/scripts/studio-server.ts` | Serve the canvas UI (default `http://127.0.0.1:4225`) |
 | `nrv studio --port N` | same | custom port |
 | `nrv studio --new <name>` | same | create + open a fresh graph |
 | `nrv studio --open <name>` | same | open an existing graph |
-| headless build | `bun skills/studio/scripts/build-graph.ts <graph>` | plan + build a graph without the UI (CI / scripts) |
+| headless build | `bun skills/studio/scripts/build-graph.ts <graph> --approve` | build a previously reviewed graph (explicit approval required) |
 
 Graphs persist at `~/.nirvana/studio/graphs/<name>.json` (project-scoped under
 `<project>/.nirvana/studio/graphs/` when `NIRVANA_SCOPE=project`).
@@ -76,6 +76,11 @@ Graphs persist at `~/.nirvana/studio/graphs/<name>.json` (project-scoped under
 5. **Attachments are resolved, never trusted.** Uploaded materials land in
    `_library/dna/materials/` or the graph's own `assets/` folder with
    sanitized names; URLs are kept as strings until the pipeline fetches them.
+6. **Adapter truthfulness.** A graph is buildable only when every requested
+   permanent artifact and relationship has a canonical non-interactive lifecycle
+   adapter. Until Genius Factory and relationship adapters exist, mind-clones
+   plus `staffs`, `embodies`, and `covers` stay as validated planning nodes and
+   fail closed at the materialization gate.
 
 ## The build block (entry node)
 

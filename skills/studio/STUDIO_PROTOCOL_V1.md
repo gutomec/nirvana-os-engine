@@ -21,9 +21,9 @@ indistinguishable, on disk, from one built through the prose factory:
 |---|---|---|
 | `company` node | Business Protocol v1 (`init-business.ts` + wizard logic) | `validate-business.ts` |
 | `squad` node | Squad Protocol v5 creation pipeline | squad validators (`_shared`) |
-| `mind_clone` node | Planned for Genius Factory; a source-backed adapter is required before materialization | `validate-mind-clones` |
-| `employee` node (child of a company) | `business.yaml` employees + `org-chart.yaml` | Business Protocol BP1–BP12 |
-| `material` node (attachments) | `~/businesses/_library/dna` ingest / graph assets | corpus gate |
+| `mind_clone` node | Planning only until Genius Factory provides a source-backed non-interactive adapter | `validate-mind-clones` |
+| `employee` node (child of a company) | Verified only when produced by the selected Business Protocol template | Business Protocol BP1–BP12 |
+| `material` / `deliverable` node | Planning metadata retained in the graph; not an independently materialized artifact | graph validators |
 
 If Studio is absent, nothing changes. If the graph store is missing or corrupt,
 `nrv studio` rebuilds scaffolding and never loses data outside its own store.
@@ -68,28 +68,30 @@ Edges are typed contracts. An edge is invalid unless both endpoint types allow i
 
 | Edge | From → To | Effect at materialization |
 |---|---|---|
-| `briefs` | `brief → company|squad|mind_clone` | Feeds the creation pipeline with the instruction |
-| `owns` | `company → employee` | Employee joins the org chart |
-| `staffs` | `employee → squad` | Employee's dispatch routes to the squad |
-| `embodies` | `employee → mind_clone` | `assigned_mind_clones` in the manifest |
-| `embodies` | `company → mind_clone` | Culture-level clone (company manifest) |
-| `covers` | `squad → company` | Squad becomes an authorized capability of the business |
-| `feeds` | `material → mind_clone|company|squad` | Material attached to the creation input |
+| `briefs` | `brief → company|squad|mind_clone` | Supplies the reviewed instruction to supported lifecycle nodes |
+| `owns` | `company → employee` | Verifies a canonical employee file created by the selected business template |
+| `staffs` | `employee → squad` | Planning relation; fails closed until an employee-to-squad lifecycle adapter exists |
+| `embodies` | `employee → mind_clone` | Planning relation; fails closed until a canonical assignment adapter exists |
+| `embodies` | `company → mind_clone` | Planning relation; fails closed until a canonical assignment adapter exists |
+| `covers` | `squad → company` | Planning relation; fails closed until a business authorization adapter exists |
+| `feeds` | `material → mind_clone|company|squad` | Retained as reviewed build context |
 | `depends_on` | any → any | Build order; target is built before source |
-| `yields` | `company|squad → deliverable` | Declared output for the quality gate |
+| `yields` | `company|squad → deliverable` | Retained as a declared output for a downstream quality gate |
 
 ### 2.3 Graph rules
 
 1. A graph with zero `brief` nodes cannot be built (a brief is the entry).
-2. The build proceeds **topologically** over `depends_on` + implicit
-   (`briefs → node → descendants`). Cycles are rejected at edge-insertion time.
-3. A node is built only when all its inbound dependencies are `built`.
-4. Building a node means running the engine's existing lifecycle pipeline; the
-   node's `status` and a `built_at` + `artifact_path` are recorded.
-5. The graph store is never an alternate registry: on successful build, the
-   entity lands in `~/businesses/`, `~/squads/`, `~/businesses/_library/dna/`
-   and in the standard registries, so `nrv list-*` sees it. Studio adds a
-   `studio.graph` reference on the manifest so the origin is traceable.
+2. The build proceeds **topologically** over every effective creation dependency.
+   Both interactive and hand-authored graphs are rejected if they contain a
+   cycle before a build session is acknowledged.
+3. A materializable node is marked `built` only after its canonical lifecycle
+   script succeeds and its expected artifact exists. Briefs, materials and
+   deliverables are planning metadata and retain their draft status.
+4. A build persists node `status`, `built_at`, `artifact_path`, and errors after
+   every lifecycle result; restart-safe graph state is therefore authoritative.
+5. The graph store is never an alternate registry: after lifecycle output is
+   persisted, Studio runs the standard business, squad, and clone indexers. A
+   build reports success only if those indexers succeed.
 
 ## 3. The build block (entry node)
 
@@ -131,8 +133,10 @@ UI and exposes:
 | `/api/validate` | POST | Run the protocol validators over the current graph |
 | `/api/attachments` | POST | Multipart upload → resolved engine paths |
 
-The server binds to `127.0.0.1` by default (`--host` to override,
-`--port` to choose, default 4225). The UI reaches no network itself.
+The server binds to `127.0.0.1` by default (`--host` accepts loopback aliases
+only; `--port` chooses a port, default 4225). It has no CORS policy or remote
+bind because materialization is a local privileged operation. The UI reaches no
+network itself.
 
 ## 5. Invariants the Studio must never violate
 

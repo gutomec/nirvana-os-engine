@@ -20,9 +20,12 @@ no escopo de projeto (ou `~/.nirvana/studio/graphs/` no escopo global), usa nós
 arestas tipados, rejeita ciclos e nós desconectados, transmite o progresso de
 materialização por SSE e exige confirmação explícita antes de iniciar pipelines.
 
-A implementação inclui o protocolo Studio v1, uma interface offline-first e
-cobertura de regressão para regras de grafo, dependências e validação de
-protocolos.
+A implementação inclui o protocolo Studio v1, uma interface offline-first
+restrita ao loopback e cobertura de regressão para regras de grafo,
+dependências, validação de protocolos, persistência do estado do planejador,
+rejeição de traversal e adaptadores de materialização que falham de forma
+segura. O resultado do build agora persiste após cada nó e roda os indexadores
+canônicos dos registries antes de informar sucesso.
 
 ### Três coisas que falhavam em silêncio, e os portões que agora as pegam
 

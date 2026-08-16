@@ -4,7 +4,7 @@
 // Usage:
 //   nrv studio                 → http://127.0.0.1:4225
 //   nrv studio --port 8000     → custom port
-//   nrv studio --host 0.0.0.0  → bind elsewhere (CI / remote dev only)
+//   nrv studio --host ::1      → bind another loopback address
 //   nrv studio --no-open       → do not open a browser automatically
 //   nrv studio --new <name>    → create and open a fresh graph
 //   nrv studio --open <name>   → open an existing graph
@@ -18,7 +18,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { planGraph } from "../lib/planner.ts";
+import { planGraph, type PlannerOutput } from "../lib/planner.ts";
 import { buildGraph, sessions, type BuildEvent } from "../lib/builder.ts";
 import {
   addEdge,
@@ -51,6 +51,8 @@ interface Args {
   new?: string;
 }
 
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
+
 function parseArgs(argv: string[]): Args {
   const args: Args = { port: 4225, host: "127.0.0.1", noOpen: false };
   for (let i = 0; i < argv.length; i++) {
@@ -68,6 +70,9 @@ function parseArgs(argv: string[]): Args {
   if (!Number.isInteger(args.port) || args.port < 1 || args.port > 65535) {
     throw new Error("--port must be an integer between 1 and 65535");
   }
+  if (!LOOPBACK_HOSTS.has(args.host)) {
+    throw new Error("Studio only accepts loopback hosts (127.0.0.1, ::1, localhost); remote binding has no authentication and is intentionally disabled");
+  }
   return args;
 }
 
@@ -76,7 +81,7 @@ function parseArgs(argv: string[]): Args {
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+    headers: { "Content-Type": "application/json" },
   });
 }
 
@@ -104,6 +109,60 @@ async function readMultipart(req: Request): Promise<{ fields: Record<string, str
     }
   }
   return { fields, files };
+}
+
+/** Merge a planner proposal without allowing a later client save to erase it. */
+export function mergePlanIntoGraph(base: StudioGraph, plan: PlannerOutput): { graph: StudioGraph; skipped: string[] } {
+  const graph = structuredClone(base);
+  const skipped: string[] = [];
+  const existingBrief = graph.nodes.find((node) => node.type === "brief");
+  const rewrittenIds = new Map<string, string>();
+  for (const proposed of plan.nodes) {
+    if (proposed.type === "brief" && existingBrief) {
+      rewrittenIds.set(proposed.id, existingBrief.id);
+      continue;
+    }
+    if (graph.nodes.some((node) => node.id === proposed.id)) {
+      skipped.push(`node:${proposed.id}`);
+      continue;
+    }
+    try { addNode(graph, proposed as StudioNode); }
+    catch { skipped.push(`node:${proposed.id}`); }
+  }
+  const known = new Set(graph.nodes.map((node) => node.id));
+  for (const proposed of plan.edges) {
+    const edge = {
+      ...proposed,
+      source: rewrittenIds.get(proposed.source) ?? proposed.source,
+      target: rewrittenIds.get(proposed.target) ?? proposed.target,
+    };
+    if (!known.has(edge.source) || !known.has(edge.target)) {
+      skipped.push(`edge:${proposed.id}`);
+      continue;
+    }
+    try { addEdge(graph, edge); }
+    catch { skipped.push(`edge:${proposed.id}`); }
+  }
+  return { graph, skipped };
+}
+
+async function reindexStudioArtifacts(cwd: string): Promise<void> {
+  const skillsDir = process.env.NIRVANA_SKILLS_DIR ?? resolve(__dirname, "..", "..");
+  const scripts = [
+    join(skillsDir, "businesses", "scripts", "index-businesses.ts"),
+    join(skillsDir, "squads", "scripts", "index-squads.ts"),
+    join(skillsDir, "_shared", "scripts", "index-clones.ts"),
+  ];
+  for (const script of scripts) {
+    const proc = Bun.spawn({
+      cmd: ["bun", script, "--quiet"], cwd,
+      env: { ...process.env, NIRVANA_SKILLS_DIR: skillsDir },
+      stdout: "pipe", stderr: "pipe",
+    });
+    if (await proc.exited !== 0) {
+      throw new Error(`registry indexer failed: ${basename(script)}: ${(await new Response(proc.stderr).text()).slice(0, 300)}`);
+    }
+  }
 }
 
 // ── server ──────────────────────────────────────────────────────────────────
@@ -146,7 +205,7 @@ function studioApp(args: Args) {
     const path = url.pathname;
 
     if (req.method === "OPTIONS") {
-      return new Response(null, { headers: { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS", "Access-Control-Allow-Headers": "Content-Type" } });
+      return new Response(null, { status: 405, headers: { "Allow": "GET,POST,PUT,DELETE" } });
     }
 
     // ── static UI ──
@@ -214,22 +273,15 @@ function studioApp(args: Args) {
         const plan = await planGraph({
           instruction,
           attachments: Array.isArray(body.attachments) ? body.attachments as Array<{ name?: string; path?: string; url?: string; kind?: string }> : undefined,
+          existingGraph: currentRef.graph,
         });
-        // merge into the current graph so the user can approve on the canvas
-        const base = currentRef.graph;
-        for (const n of plan.nodes) addNode(base, n as StudioNode);
-        const nodeIdSet = new Set(base.nodes.map((n) => n.id));
-        let auto = 0;
-        for (const e of plan.edges) {
-          const edge = {
-            ...e,
-            id: typeof e.id === "string" && e.id.length >= 3 ? e.id : `e-${Date.now().toString(36)}-${(auto++).toString(36)}`,
-          };
-          if (!nodeIdSet.has(edge.source) || !nodeIdSet.has(edge.target)) continue;
-          try { addEdge(base, edge); } catch { /* incompatible/dupe proposals are skipped */ }
-        }
-        saveGraph(base, cwd);
-        return json({ ok: true, plan });
+        const merged = mergePlanIntoGraph(currentRef.graph, plan);
+        // The server returns the persisted graph as the authoritative canvas
+        // state. The UI must replace its local copy, never save its pre-plan
+        // graph back over this proposal.
+        saveGraph(merged.graph, cwd);
+        currentRef = { graph: merged.graph, isNew: false };
+        return json({ ok: true, graph: merged.graph, proposal: plan, skipped: merged.skipped });
       } catch (err) {
         return json({ ok: false, error: err instanceof Error ? err.message : String(err) }, 500);
       }
@@ -264,7 +316,15 @@ function studioApp(args: Args) {
       }
       const sessionId = `build-${Date.now().toString(36)}`;
       saveGraph(graph, cwd);
-      buildGraph(sessionId, graph).catch((err) => console.error("studio-server: build error:", err instanceof Error ? err.message : String(err)));
+      currentGraphName = graph.name;
+      currentRef = { graph, isNew: false };
+      buildGraph(sessionId, graph, {
+        onNodeStateChange: (updated) => { saveGraph(updated, cwd); },
+        afterBuild: async (updated) => {
+          saveGraph(updated, cwd);
+          await reindexStudioArtifacts(cwd);
+        },
+      }).catch((err) => console.error("studio-server: build error:", err instanceof Error ? err.message : String(err)));
       return json({ ok: true, sessionId, graph });
     }
 
@@ -293,7 +353,7 @@ function studioApp(args: Args) {
           }, 400);
         },
       });
-      return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Access-Control-Allow-Origin": "*" } });
+      return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
     }
 
     // ── attachment upload ──
@@ -332,13 +392,16 @@ function studioApp(args: Args) {
       return new Response("internal error", { status: 500 });
     },
   });
-  const browserHost = args.host === "0.0.0.0" ? "127.0.0.1" : args.host;
-  const url = `http://${browserHost}:${args.port}`;
+  const url = `http://${args.host}:${args.port}`;
   console.log(`Nirvana Studio · ${url}  (graph: ${currentGraphName ?? "none"})`);
   console.log(`store: ${studioStoreDir(cwd)}`);
   if (!args.noOpen) openBrowser(url);
   return server;
 }
 
-const args = parseArgs(process.argv.slice(2));
-studioApp(args);
+export { parseArgs, studioApp };
+
+if (import.meta.main) {
+  const args = parseArgs(process.argv.slice(2));
+  studioApp(args);
+}

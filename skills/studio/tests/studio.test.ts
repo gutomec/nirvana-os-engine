@@ -12,6 +12,7 @@ import {
   addNode,
   buildOrder,
   deleteGraph,
+  graphPath,
   inboundEdges,
   listGraphs,
   loadGraph,
@@ -25,6 +26,7 @@ import {
 } from "../lib/graph-store.ts";
 import { validateGraphProtocol } from "../lib/validators.ts";
 import { planExport, scaffoldBusinessYaml, scaffoldSquadYaml, scaffoldCloneManifest, scaffoldEmployeeMd } from "../lib/exporters.ts";
+import { mergePlanIntoGraph } from "../scripts/studio-server.ts";
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -199,6 +201,23 @@ describe("validateGraphStructure", () => {
     graph.edges.push(edge("e", "company", "clone", "staffs"));
     expect(validateGraphStructure(graph).some((e) => e.message.includes("not allowed"))).toBeTrue();
   });
+
+  test("rejects a dependency cycle hidden by a typed ownership edge", () => {
+    const graph = g();
+    graph.nodes.push(node("brief", "brief", { instruction: "build safely" }), node("company", "company"), node("employee", "employee"));
+    graph.edges.push(
+      edge("briefs-company", "brief", "company", "briefs"),
+      edge("company-employee", "company", "employee", "owns"),
+      edge("company-after-employee", "company", "employee", "depends_on"),
+    );
+    expect(validateGraphStructure(graph).some((e) => e.message.includes("cycle"))).toBeTrue();
+  });
+
+  test("rejects traversal-shaped graph names before any store path is computed", () => {
+    expect(() => graphPath("../../../.hermes/config")).toThrow(/graph name/);
+    expect(validateGraphStructure({ schema_version: "1.0.0", name: "../../outside", nodes: [], edges: [] })
+      .some((e) => e.path === "/name")).toBeTrue();
+  });
 });
 
 // ── protocol validation ─────────────────────────────────────────────────────
@@ -262,6 +281,15 @@ describe("validateGraphProtocol", () => {
     const { checks } = validateGraphProtocol(graph);
     expect(checks.find((c) => c.name === "capability-ids")?.ok).toBeFalse();
   });
+
+  test("fails closed when a graph needs unavailable relationship adapters", () => {
+    const graph = g();
+    graph.nodes.push(node("b", "brief", { instruction: "create a team" }), node("c", "company"), node("e", "employee", { slug: "ceo" }), node("s", "squad"));
+    graph.edges.push(edge("1", "b", "c", "briefs"), edge("2", "b", "s", "briefs"), edge("3", "c", "e", "owns"), edge("4", "e", "s", "staffs"));
+    const check = validateGraphProtocol(graph).checks.find((c) => c.name === "materialization-adapter");
+    expect(check?.ok).toBeFalse();
+    expect(check?.message).toContain("relationship edges");
+  });
 });
 
 // ── exporters ───────────────────────────────────────────────────────────────
@@ -305,6 +333,33 @@ describe("exporters", () => {
   });
 });
 
+// ── planner merge ───────────────────────────────────────────────────────────
+
+describe("planner merge", () => {
+  test("returns the persisted proposal without duplicating its brief", () => {
+    const graph = g("planned-company");
+    graph.nodes.push(node("brief-current", "brief", { instruction: "create a company" }));
+    const proposal = {
+      name: "ignored-renaming-attempt",
+      reasoning: "minimal company",
+      nodes: [
+        node("brief-proposed", "brief", { instruction: "create a company" }),
+        node("company-proposed", "company", { slug: "planned-company" }),
+        node("employee-proposed", "employee", { slug: "ceo" }),
+      ],
+      edges: [
+        edge("briefs-company", "brief-proposed", "company-proposed", "briefs"),
+        edge("owns-employee", "company-proposed", "employee-proposed", "owns"),
+      ],
+    };
+    const merged = mergePlanIntoGraph(graph, proposal);
+    expect(merged.graph.name).toBe("planned-company");
+    expect(merged.graph.nodes.map((n) => n.id)).toContain("company-proposed");
+    expect(merged.graph.nodes.filter((n) => n.type === "brief").length).toBe(1);
+    expect(merged.graph.edges.some((e) => e.source === "brief-current" && e.target === "company-proposed" && e.type === "briefs")).toBeTrue();
+  });
+});
+
 // ── persistence round-trip ──────────────────────────────────────────────────
 
 describe("persistence", () => {
@@ -316,11 +371,12 @@ describe("persistence", () => {
       const graph = g("round-trip");
       addNode(graph, node("b", "brief", { instruction: "round trip test" }));
       const file = saveGraph(graph, process.cwd());
-      const loaded = loadGraph(file);
+      expect(file).toContain("round-trip.json");
+      const loaded = loadGraph("round-trip", process.cwd());
       expect(loaded?.name).toBe("round-trip");
       expect(loaded?.nodes[0].payload.instruction).toBe("round trip test");
-      expect(deleteGraph("round-trip")).toBeTrue();
-      expect(loadGraph("round-trip")).toBeNull();
+      expect(deleteGraph("round-trip", process.cwd())).toBeTrue();
+      expect(loadGraph("round-trip", process.cwd())).toBeNull();
     } finally {
       process.env.HOME = prev;
       // cleanup

@@ -19,8 +19,11 @@ project scope (or `~/.nirvana/studio/graphs/` globally), uses typed nodes and
 edges, rejects cycles and disconnected nodes, streams materialization progress
 over SSE, and requires explicit confirmation before starting pipelines.
 
-The implementation includes Studio Protocol v1, an offline-first interface, and
-regression coverage for graph rules, dependencies, and protocol validation.
+The implementation includes Studio Protocol v1, an offline-first loopback-only
+interface, and regression coverage for graph rules, dependencies, protocol
+validation, planner-state persistence, traversal rejection, and fail-closed
+materialization adapters. Build outcomes now persist after each node and run the
+standard registries indexers before reporting success.
 
 ### Three things that failed silently, and the gates that now catch them
 
