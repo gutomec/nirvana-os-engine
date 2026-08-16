@@ -6,6 +6,39 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## 0.6.2 — 2026-08-16
+
+### O prompt dizia ao agente que não havia clone útil, e listava um a 0.93
+
+Uma empresa embasa o employee num mind-clone. Quando nenhum está declarado, a
+busca ranqueia a biblioteca e o agente escolhe — é o desenho, e é o mesmo padrão
+agêntico que o roteador usa. O prompt dizia o contrário em três lugares ao mesmo
+tempo: o cabeçalho anunciava `DEFAULT — no useful clone`, o corpo mandava operar
+sem clone, e três linhas abaixo listava os candidatos sob o título **Other**.
+
+Renderizado contra a biblioteca real, uma empresa de compliance perguntada sobre
+um programa de LGPD recebe `bruno-bioni` — a referência brasileira em LGPD
+aplicada — a 0.93, logo abaixo da frase dizendo que não existe clone útil. Um
+agente que acredita naquela frase nunca abre a lista. Quarenta e três de sessenta
+empresas não declaram clone, então era essa a redação que a maioria delas usava.
+
+O sistema ranqueia; o agente decide. Trabalhar sem clone segue sendo desfecho
+legítimo, mas é aquele a que se chega quando nenhum serve, não o de onde se parte.
+
+### Um employee ligado a um clone ausente não avisa nada
+
+A ligação é um nome no frontmatter do employee, resolvido contra a biblioteca de
+clones. Nada conferia se ele resolve, e a falha é silenciosa por construção: o
+employee roda sem a persona para a qual foi escrito e entrega prosa plausível que
+parece de qualquer um.
+
+Num pack, isso chega ao comprador. Descoberto ao adicionar uma empresa ao pack
+principal — dezessete employees nomeando dezessete clones, cinco deles no pack. O
+`check-clone-bindings.ts` agora lê as duas formas de referência, roda contra a
+biblioteca viva ou contra o conteúdo de um pack, e gateia tanto o `check:all`
+quanto o build. Medido depois: 171 ligações na biblioteca, 116 no principal,
+todas resolvendo.
+
 ## 0.6.1 — 2026-08-16
 
 ### A versão que o usuário lê era a anterior
