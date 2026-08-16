@@ -6,6 +6,20 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## 0.6.1 — 2026-08-16
+
+### The version a user reads was the one before
+
+`nrv --version` prefers `skills/VERSION`, a loose file copied verbatim into the
+installed skills directory; `package.json` is only its fallback. The 0.6.0
+release moved `package.json` and the changelog and left that file behind, so
+everyone who installed 0.6.0 was told they were running 0.5.2. Nothing failed and
+nothing warned — the number was simply wrong for every user, and it surfaced only
+because someone ran `nrv --version` on their own machine after shipping.
+
+`check-version-parity.ts` compares the three places the engine states its version
+and runs inside `check:all`, so a release cannot put them out of sync again.
+
 ## 0.6.0 — 2026-08-15
 
 ### Three things that failed silently, and the gates that now catch them
