@@ -19,7 +19,7 @@
  * threshold is worse than no gate.
  */
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -94,8 +94,9 @@ describe("the gate runs and reports", () => {
   }, 60_000);
 
   test("without --strict it reports rather than fails", () => {
-    // Report-only is deliberate while 104 entities are over budget: a gate that
-    // turns CI red with no path out teaches everyone to ignore it.
+    // Report-only without the flag is deliberate: the report is also how an
+    // author browses the debt. The enforcement lives in --strict, against the
+    // recorded ceiling.
     expect(run([]).code).toBe(0);
   }, 60_000);
 
@@ -125,5 +126,145 @@ describe("the gate runs and reports", () => {
     const d = JSON.parse(r.out);
     expect(d.entries).toBe(2);
     expect(d.dead).toBe(1);
+  }, 60_000);
+});
+
+/**
+ * The ceiling. These are the cases that make --strict worth wiring into
+ * `check:all` — the gate spent its first day there WITHOUT the flag, printing
+ * 46% dead in red and exiting 0, which is the defect it was written to catch.
+ *
+ * A gate goes back into `check:all` only with a test that plants the defect and
+ * demands exit 1. That is what the three cases below are.
+ */
+describe("the ceiling refuses growth, and refuses new content that arrives dead", () => {
+  const DEAD = "a long entry nobody will ever match against a real brief here";
+  const LIVE = "seo audit";
+
+  /** A fixture registry plus the ceiling file the gate reads beside it. */
+  function withCeiling(
+    caps: Record<string, Array<Record<string, unknown>>>,
+    entities: Record<string, number>,
+  ): string {
+    const f = fixture(caps);
+    writeFileSync(`${f}.baseline.json`, JSON.stringify({ recorded_at: "test", entities }), "utf8");
+    return f;
+  }
+
+  const run = (f: string) => {
+    const r = spawnSync(process.execPath, [GATE, "--registry", f, "--strict"], { cwd: REPO, encoding: "utf8" });
+    return { code: r.status ?? 1, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
+  };
+
+  test("an entity that grows past its ceiling fails", () => {
+    const r = run(withCeiling(
+      { "a.b.c": [{ squad: "s", not_for: [LIVE, DEAD], example_briefs: ["do an seo audit for me"] }] },
+      { s: 0 },
+    ));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("grew past their ceiling");
+    expect(r.out).toMatch(/s\s+0 → 1/);
+  }, 60_000);
+
+  test("an entity the ceiling has never seen enters at zero, or it does not enter", () => {
+    // The admission bar. Every other gate here compares against a previous
+    // state, so a first arrival has nothing to fail against — which is how
+    // tracking-360 joined the flagship with 79 of 79 fences dead, green.
+    const r = run(withCeiling(
+      {
+        "a.b.c": [{ squad: "known", not_for: [LIVE], example_briefs: ["do an seo audit for me"] }],
+        "d.e.f": [{ squad: "brand-new", not_for: [DEAD], example_briefs: ["something else entirely"] }],
+      },
+      { known: 0 },
+    ));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("new to the ceiling");
+    expect(r.out).toContain("brand-new");
+  }, 60_000);
+
+  test("a library at or below its ceiling passes", () => {
+    const r = run(withCeiling(
+      { "a.b.c": [{ squad: "known", not_for: [LIVE], example_briefs: ["do an seo audit for me"] }] },
+      { known: 0 },
+    ));
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("No entity is above its ceiling");
+  }, 60_000);
+
+  test("--pack keys by the manifest name, not the directory", () => {
+    // The registry keys by `name` (registry.js:165) and the two differ often
+    // enough to matter: `nirvana-rh-dp/` declares `nirvana-rh-departamento-pessoal`.
+    // Keying by directory made a squad that HAS a ceiling look like new content,
+    // and failed `commerce-backoffice` for it.
+    const pack = mkdtempSync(join(tmpdir(), "notfor-pack-"));
+    const squad = join(pack, "squads", "some-dir");
+    mkdirSync(squad, { recursive: true });
+    writeFileSync(join(squad, "squad.yaml"), [
+      'name: declared-name',
+      'capabilities:',
+      '  - id: a.b.c',
+      '    not_for:',
+      `      - "${DEAD}"`,
+      '    example_briefs:',
+      '      - "something else entirely"',
+      '',
+    ].join("\n"), "utf8");
+
+    const one = (slug: string) =>
+      spawnSync(process.execPath, [GATE, slug, "--pack", pack], { cwd: REPO, encoding: "utf8" });
+
+    expect(`${one("declared-name").stdout}`).toMatch(/declared-name: .*1\/1 dead/);
+    expect(`${one("some-dir").stdout}`).toContain("no not_for entries");
+    rmSync(pack, { recursive: true, force: true });
+  }, 60_000);
+
+  test("the ceiling is found from any working directory", () => {
+    // It describes the machine's global authoring library, so anchoring it to
+    // the current scope described nothing: recorded from ~/nirvana-os it landed
+    // in that repo's .nirvana/, and the pack build — which runs from
+    // ~/nirvana-packs — found no ceiling and failed every pack as new content.
+    const home = mkdtempSync(join(tmpdir(), "notfor-home-"));
+    mkdirSync(join(home, ".nirvana"), { recursive: true });
+    writeFileSync(
+      join(home, ".nirvana", ".not-for-baseline.json"),
+      JSON.stringify({ recorded_at: "test", entities: { "declared-name": 1 } }),
+      "utf8",
+    );
+
+    const pack = mkdtempSync(join(tmpdir(), "notfor-pack2-"));
+    const squad = join(pack, "squads", "d");
+    mkdirSync(squad, { recursive: true });
+    writeFileSync(join(squad, "squad.yaml"), [
+      "name: declared-name",
+      "capabilities:",
+      "  - id: a.b.c",
+      "    not_for:",
+      `      - "${DEAD}"`,
+      "    example_briefs:",
+      '      - "something else entirely"',
+      "",
+    ].join("\n"), "utf8");
+
+    const codes = [REPO, tmpdir()].map((cwd) =>
+      spawnSync(process.execPath, [GATE, "--pack", pack, "--strict"], {
+        cwd, encoding: "utf8", env: { ...process.env, NIRVANA_HOME: home },
+      }).status,
+    );
+    expect(codes[0]).toBe(0);          // 1 dead, ceiling is 1 — at the ceiling, passes
+    expect(codes[1]).toBe(codes[0]);   // and the answer does not move with cwd
+    rmSync(pack, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }, 60_000);
+
+  test("--record refuses to raise a ceiling without being told to", () => {
+    // Recording after a fix is routine. Recording a regression has to be said
+    // out loud, or `--record` becomes the way every debt quietly becomes the floor.
+    const f = withCeiling(
+      { "a.b.c": [{ squad: "s", not_for: [LIVE, DEAD], example_briefs: ["do an seo audit for me"] }] },
+      { s: 0 },
+    );
+    const r = spawnSync(process.execPath, [GATE, "--registry", f, "--record"], { cwd: REPO, encoding: "utf8" });
+    expect(r.status).toBe(1);
+    expect(`${r.stdout ?? ""}${r.stderr ?? ""}`).toContain("HIGHER ceiling");
   }, 60_000);
 });
