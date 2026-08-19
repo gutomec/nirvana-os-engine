@@ -68,3 +68,12 @@ skills/harness/tests/reports/
 # skills/harness/scripts/build-golden-set.ts; only the hand-written
 # golden-negatives.json is committed.
 skills/harness/baselines/golden-routing.json
+
+# The project-skeleton TEMPLATES are product files, not local state. The plain
+# `.env` / `.nirvana/` patterns above swallowed them silently: they existed on
+# the author's machine, never reached the repo, and every install shipped
+# without them — while the tarball carries an allowlist expecting exactly
+# these paths. (Field report, 2026-08-18.)
+!skills/_shared/templates/project-skeleton/.env
+!skills/_shared/templates/project-skeleton/.nirvana/
+!skills/_shared/templates/project-skeleton/.nirvana/README.md
