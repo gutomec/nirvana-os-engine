@@ -6,6 +6,42 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## 0.7.2 — 2026-08-19
+
+### O cargo fica de pé sozinho, e o sistema finalmente enxerga isso
+
+O modelo de clone por tarefa (0.7.0) tornou "nenhum clone" um desfecho
+legítimo de qualquer despacho — o que faz do corpo do employee o método
+inteiro do cargo. Até agora nada lia um byte dele: o loader analisa só o
+frontmatter, o audit conferia que o frontmatter existe, e o portão de vínculos
+lê dois campos. Um rótulo de cargo com 2 linhas pontuava igual a um manual de
+operação com 260 em todos os portões do sistema.
+
+A régua nova — seções mais conteúdo de decisão, nunca contagem de linhas — foi
+calibrada contra os 574 employees da biblioteca de autoria: 488 arquivos ricos
+passam com zero alarmes falsos, e dos 86 curtos só 28 são rasos de verdade; os
+outros 58 carregam método real em poucas linhas e passam. Três consumidores a
+aplicam: um portão-ratchet (assento que o registro nunca viu entra suficiente
+ou não entra; a dívida registrada só encolhe), o portão de admissão dos packs,
+e um critério novo no audit de empresas que nomeia os assentos rasos e aponta
+o reparo.
+
+### Os próprios templates do engine produziam assento raso por construção
+
+Os 16 scaffolds de employee declaravam `role: CEO` — o antagonist, os
+directors e os advisors carregavam o corpo do CEO solo copiado, então uma
+agência recém-inicializada era cinco cópias do mesmo assento. Cada template
+agora carrega o método do próprio cargo: o antagonista com critérios numerados
+de rejeição e regra de veredito explícito (o antigo "silêncio após crítica
+aprova" foi invertido — silêncio bloqueia), o CEO de conselho sintetizando
+dissenso em vez de tirar média, o CEO de holding que aloca e nunca executa,
+CEOs de unidade com contratos de interface. A frase do Business Protocol que
+autorizava corpo raso ("o corpo do employee é curto; o arquivo de DNA fornece
+o substrato") foi emendada: no modelo por tarefa o assento não pode assumir o
+clone, então corpo curto só é legítimo quando passa na régua — e a criação de
+empresas ganha o portão de script blocante para isso, ao lado do de roteamento
+que já existia.
+
 ## 0.7.1 — 2026-08-19
 
 ### Adotar o Nirvana pergunta antes de mudar um projeto existente
