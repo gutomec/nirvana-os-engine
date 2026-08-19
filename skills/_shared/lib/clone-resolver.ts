@@ -39,17 +39,22 @@ export type ClonePersona = {
   full_bytes?: number;
 };
 
-export function cloneRegistryPath(): string {
-  const scope = resolveScope();
+export function cloneRegistryPath(opts: { cwd?: string } = {}): string {
+  // Scope from the DISPATCH's project when given, not from process.cwd(): the
+  // business dir already resolves per project_dir (employee-prompt), and the
+  // clone registry resolving per cwd made the two halves of one dispatch read
+  // different scopes — a test run from the engine repo picked up the repo's
+  // own derived .nirvana registry and injected clones its fixture never wrote.
+  const scope = resolveScope(opts.cwd ? { cwd: opts.cwd } : {});
   const dir = scope.projectRoot
     ? path.join(scope.projectRoot, ".nirvana")
     : path.join(os.homedir(), ".nirvana");
   return path.join(dir, ".mind-clones-registry.json");
 }
 
-export function loadCloneRegistry(): Record<string, any> {
+export function loadCloneRegistry(opts: { cwd?: string } = {}): Record<string, any> {
   try {
-    const p = cloneRegistryPath();
+    const p = cloneRegistryPath(opts);
     if (fs.existsSync(p)) {
       return JSON.parse(fs.readFileSync(p, "utf8")).mind_clones || {};
     }
@@ -99,10 +104,10 @@ function readFileSafe(f: string | null | undefined, used: string[]): string {
 
 export function resolveClonePersona(
   slug: string,
-  opts: { depth?: CloneDepth; layers?: LayerKey[]; byteBudget?: number } = {},
+  opts: { depth?: CloneDepth; layers?: LayerKey[]; byteBudget?: number; cwd?: string } = {},
 ): ClonePersona | null {
   let depth = opts.depth || "full";
-  const entry = loadCloneRegistry()[slug];
+  const entry = loadCloneRegistry({ cwd: opts.cwd })[slug];
   let dir: string | null = entry?.dir || null;
   let files: Record<string, string | null> | null = entry?.persona_files || null;
   let resolved_by: "registry" | "fs-probe" = "registry";

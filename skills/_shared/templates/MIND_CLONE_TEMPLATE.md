@@ -126,10 +126,11 @@ Skeleton (fill from the MATERIAL, never copy another clone's content):
       - TODO domain in English    # including 3-4 symptom-phrased items in the
       - TODO domínio em português # owner's voice (rule 3d), no negations (rule 3a)
     serves: "TODO: when to choose this clone. Affirmation only, <=500 tokens."
-    not_for: "TODO: what it does not do, and who does (never indexed)"
+    not_for: "TODO: what it does not do, and WHO does — name the neighbor in prose (never indexed)"
     refuses:                      # short canonical terms it refuses (never indexed)
       - todo-refused-term
-    delegates_to: []              # only slugs that actually exist
+    # delegates_to is retired (2026-08-18) — do not write it; the neighbor named
+    # in not_for prose degrades into the live per-task search
 
 Self-retrieval gate (blocking — creation is NOT done until it passes):
   bun ~/.nirvana/skills/_shared/scripts/self-retrieval-gate.ts <clone-slug>

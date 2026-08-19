@@ -153,8 +153,11 @@ flows enforce at minimum:
 - `domains`: 20–30 items, each concept as **EN + PT pairs (separate items)**,
   including symptom-phrased items in the owner's voice (clone contract rule 3d).
 - `serves`: affirmation only, ≤~500 tokens (rule 3e — longer dilutes).
-- `not_for`, `refuses`, `delegates_to`: never indexed; write refusals there and
-  nowhere else (rule 3). `delegates_to` only to slugs that exist (rule 4).
+- `not_for`, `refuses`: never indexed; write refusals there and nowhere else
+  (rule 3). Name the better-fitting neighbor IN PROSE inside `not_for` —
+  `delegates_to` is retired (2026-08-18): a slug list froze one library's
+  adjacency and shipped unresolvable in every pack subset, while nothing
+  consumed it. Prose degrades into the live per-task search.
 - Self-retrieval: the `one_liner` must retrieve the clone top-1 via
   `nrv find-clone` — the invariant of `MIND_CLONE_CREATION_PIPELINE.md` phase 5,
   measured continuously by `_shared/scripts/eval-clone-routing.ts`.

@@ -124,7 +124,9 @@ describe("validateCloneBlock", () => {
     const r = validateCloneBlock(validBlock(), { knownSlugs: new Set(["neighbor-x"]) });
     expect(r.ok).toBe(true);
     expect(r.cleaned!.domains.length).toBe(24);
-    expect(r.cleaned!.delegates_to).toEqual(["neighbor-x"]);
+    // delegates_to is retired: the generator may still emit it, the cleaned
+    // block never carries it.
+    expect(r.cleaned!.delegates_to).toBeUndefined();
   });
 
   test("one_liner over 120 chars fails", () => {
@@ -183,19 +185,14 @@ describe("validateCloneBlock", () => {
     expect(r.errors.join("\n")).toContain("serves");
   });
 
-  test("unknown delegates_to slugs are filtered, not fatal", () => {
-    const b = { ...validBlock(), delegates_to: ["neighbor-x", "ghost-clone"] };
-    const r = validateCloneBlock(b, { knownSlugs: new Set(["neighbor-x"]) });
-    expect(r.ok).toBe(true);
-    expect(r.cleaned!.delegates_to).toEqual(["neighbor-x"]);
-    expect(r.errors.join("\n")).toContain("ghost-clone");
-  });
-
-  test("self slug never enters delegates_to", () => {
-    const b = { ...validBlock(), delegates_to: ["neighbor-x", "me-myself"] };
+  test("delegates_to from the generator is discarded entirely (retired 2026-08-18)", () => {
+    // The field used to be filtered against known slugs. Retired: a clone is
+    // knowledge, not an actor — it cannot delegate. Whatever the LLM emits,
+    // valid neighbors and ghosts alike, none of it reaches the cleaned block.
+    const b = { ...validBlock(), delegates_to: ["neighbor-x", "ghost-clone", "me-myself"] };
     const r = validateCloneBlock(b, { knownSlugs: new Set(["neighbor-x", "me-myself"]), selfSlug: "me-myself" });
     expect(r.ok).toBe(true);
-    expect(r.cleaned!.delegates_to).toEqual(["neighbor-x"]);
+    expect(r.cleaned!.delegates_to).toBeUndefined();
   });
 });
 
@@ -335,8 +332,11 @@ describe("pure helpers", () => {
 
 describe("clone MANIFEST merge is surgical", () => {
   test("insert: routing appended, every other key byte-preserved, diacritics intact", () => {
-    const block = validBlock();
-    const { text, mode } = upsertCloneRoutingBlock(CLONE_MANIFEST, block);
+    // Mirror the production path: the intent verify receives is the merged
+    // block, which never carries the retired delegates_to (mergeCloneRouting
+    // drops it) — the fixture still emits it, as a legacy generator would.
+    const { delegates_to: _retired, ...block } = validBlock();
+    const { text, mode } = upsertCloneRoutingBlock(CLONE_MANIFEST, block as any);
     expect(mode).toBe("insert");
     // the original text is a verbatim prefix — diff is pure insertion
     expect(text.startsWith(CLONE_MANIFEST)).toBe(true);
@@ -372,10 +372,10 @@ describe("clone MANIFEST merge is surgical", () => {
     expect(YAML.parse(text).routing.when_to_use.replace(/\s+/g, " ")).toBe("texto legado");
   });
 
-  test("empty delegates_to still emits an explicit empty list", () => {
-    const block = { ...validBlock(), delegates_to: [] };
+  test("the rendered block never carries delegates_to (retired)", () => {
+    const block = { ...validBlock(), delegates_to: ["neighbor-x"] };
     const { text } = upsertCloneRoutingBlock(CLONE_MANIFEST, block);
-    expect(YAML.parse(text).routing.delegates_to).toEqual([]);
+    expect(YAML.parse(text).routing.delegates_to).toBeUndefined();
   });
 
   test("verifyYamlSurgical catches a mutated untouched key", () => {

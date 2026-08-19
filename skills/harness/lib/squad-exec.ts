@@ -80,7 +80,12 @@ function appendAudit(payload: Record<string, any>, projectRoot?: string): void {
  *  Squads have no assigned_mind_clones, so the order is request-or-search. Every
  *  clone is resolved from the single library (full embodiment) — closing the gap
  *  where squad agents got zero DNA. (Moved verbatim from team-orchestrator.ts.) */
-export function squadCloneInjection(brief: string): { block: string; decision: string; missingClones: string[] } {
+// `cwd` anchors the clone registry to the DISPATCH's project scope — without it
+// the registry resolves from process.cwd(), and the two halves of one dispatch
+// can read different scopes (the exact leak fixed in employee-prompt on
+// 2026-08-18: a test run from the engine repo picked up the repo's derived
+// registry and injected clones its fixture never wrote).
+export function squadCloneInjection(brief: string, cwd?: string): { block: string; decision: string; missingClones: string[] } {
   const MAX = 2;
   const picked: Array<{ slug: string; reason: string }> = [];
   // 1. SOLICITADO — brief names a clone (slug or display name)
@@ -97,7 +102,7 @@ export function squadCloneInjection(brief: string): { block: string; decision: s
   // 2. BUSCA — only if nothing requested
   if (!picked.length) {
     let hits: any[] = [];
-    try { hits = findCloneForTask(brief, { limit: MAX }); } catch { hits = []; }
+    try { hits = findCloneForTask(brief, { limit: MAX, cwd }); } catch { hits = []; }
     for (const h of hits) {
       if (picked.length >= MAX) break;
       // Coverage gate (routing-360 Phase 3.3), not normalized>=0.5: normalized
@@ -118,8 +123,8 @@ export function squadCloneInjection(brief: string): { block: string; decision: s
   const missingClones: string[] = [];
   for (const p of picked) {
     const persona = dnaMode === "fragments"
-      ? resolveClonePersona(p.slug, { depth: "fragments", layers: fragLayers, byteBudget: 16000 })
-      : resolveClonePersona(p.slug, { depth: "full" });
+      ? resolveClonePersona(p.slug, { depth: "fragments", layers: fragLayers, byteBudget: 16000, cwd })
+      : resolveClonePersona(p.slug, { depth: "full", cwd });
     if (persona) parts.push(`--- MIND-CLONE: ${p.slug} — ${persona.display_name} (${p.reason}) ---\n\n${persona.content}`);
     else missingClones.push(p.slug);
   }
@@ -229,7 +234,7 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
     return { ok: false, squadSlug: args.squadSlug, sessionId: null, costUsd: null, durationMs: 0, outputsDir: outDir, error: "squad dir not found" };
   }
 
-  const cloneInj = squadCloneInjection(args.brief);
+  const cloneInj = squadCloneInjection(args.brief, args.projectDir);
   for (const slug of cloneInj.missingClones) {
     appendAudit({
       event: "mind_clone_missing_degraded", trace_id: args.projectId, project_id: args.projectId,
