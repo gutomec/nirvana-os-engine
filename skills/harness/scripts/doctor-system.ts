@@ -107,12 +107,19 @@ for (const rt of listRuntimes()) {
     add(`runtime: ${rt.name}`, "WARN", `'${rt.cli}' not found in PATH`);
   }
 }
+// Zero runtimes on a USER machine is critical — nothing can dispatch. On a
+// headless CI runner it is the expected state of the world: the smoke job
+// installs the engine on a bare image precisely to prove the install works
+// before any runtime exists. Same fact, different severity per context —
+// shipping this as unconditional FAIL turned every CI run red on all three
+// platforms within the hour.
+const headlessCI = process.env.CI === "true";
 add(
   "runtime: dispatch",
-  runtimesOnPath > 0 ? "PASS" : "FAIL",
+  runtimesOnPath > 0 ? "PASS" : headlessCI ? "WARN" : "FAIL",
   runtimesOnPath > 0
     ? `${runtimesOnPath}/${listRuntimes().length} agent runtime(s) on PATH`
-    : "no agent runtime on PATH — dispatch cannot run; install one (claude, codex, gemini, …)",
+    : `no agent runtime on PATH — dispatch cannot run; install one (claude, codex, gemini, …)${headlessCI ? " (CI environment: reported as warning)" : ""}`,
 );
 
 // SECTION 1a-bis: CLAUDE CODE AUTH — a persistent CLAUDE_CODE_OAUTH_TOKEN export

@@ -66,6 +66,9 @@ describe("the doctor consumes the roster instead of copying it", () => {
     // Each missing runtime is a WARN (dispatch falls through to the next);
     // the FAIL belongs to the summary line alone, when none is on PATH.
     expect(src).toMatch(/add\(`runtime: \$\{rt\.name\}`, "WARN"/);
-    expect(src).toContain('runtimesOnPath > 0 ? "PASS" : "FAIL"');
+    // FAIL on a user machine; WARN on a headless CI runner, where zero
+    // runtimes is the expected state (the smoke job installs the engine on a
+    // bare image to prove the install itself).
+    expect(src).toContain('runtimesOnPath > 0 ? "PASS" : headlessCI ? "WARN" : "FAIL"');
   });
 });
