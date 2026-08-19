@@ -85,3 +85,103 @@ describe("a project that already has a contract file", () => {
     }
   }, INIT_TIMEOUT_MS);
 });
+
+/**
+ * On-demand mode — adopting Nirvana must not silently change a configured
+ * project.
+ *
+ * Appending the invocation contract to a pre-existing AGENTS.md turns Nirvana
+ * into the default orchestrator for every agent in the repo. That is the right
+ * default for a fresh project and a significant silent change for an existing
+ * one — the owner asked for the choice: --orchestrators=always keeps the
+ * historical behavior, --orchestrators=on-demand leaves the project's rules
+ * alone and adds one short marked note ("act only when explicitly asked").
+ * Non-interactive without a flag stays "always", so CI does not change.
+ */
+function runInitWith(dir: string, ...args: string[]) {
+  return spawnSync(process.execPath, [INIT, ".", ...args], {
+    cwd: dir, encoding: "utf8",
+    env: { ...process.env, NIRVANA_SKILLS_DIR: path.join(ROOT, "skills") },
+  });
+}
+
+describe("on-demand mode leaves the project's behavior alone", () => {
+  test("existing files gain only the on-demand note — no invocation, no writing contract", () => {
+    const dir = project("od-existing", { "AGENTS.md": "# Mine\nMY LINE\n" });
+    runInitWith(dir, "--orchestrators=on-demand");
+    const agents = fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8");
+    expect(agents).toContain("MY LINE");
+    expect(agents).toContain("nirvana-os:on-demand-contract:v1");
+    expect(agents).toContain("ONLY when the user explicitly asks");
+    expect(agents).not.toContain("nirvana-os:invocation-contract:v1");
+    expect(agents).not.toContain("nirvana-os:writing-contract:v1");
+    expect(agents).not.toMatch(/invoke the .?harness.? skill for any concrete artifact/i);
+  }, INIT_TIMEOUT_MS);
+
+  test("files init creates in on-demand mode carry the note and nothing else", () => {
+    const dir = project("od-created", { "AGENTS.md": "# Mine\n" });
+    runInitWith(dir, "--orchestrators=on-demand");
+    const claude = fs.readFileSync(path.join(dir, "CLAUDE.md"), "utf8");
+    expect(claude).toContain("nirvana-os:on-demand-contract:v1");
+    expect(claude).not.toContain("nirvana-os:invocation-contract:v1");
+  }, INIT_TIMEOUT_MS);
+
+  test("on-demand is idempotent", () => {
+    const dir = project("od-twice", { "AGENTS.md": "# Mine\n" });
+    runInitWith(dir, "--orchestrators=on-demand");
+    const first = fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8");
+    runInitWith(dir, "--orchestrators=on-demand");
+    expect(fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8")).toBe(first);
+  }, INIT_TIMEOUT_MS);
+
+  test("an invalid mode is rejected, not guessed", () => {
+    const dir = project("od-bad");
+    const r = runInitWith(dir, "--orchestrators=sometimes");
+    expect(r.status).not.toBe(0);
+    expect(`${r.stderr}`).toContain('"always" or "on-demand"');
+  }, INIT_TIMEOUT_MS);
+
+  test("non-interactive without a flag keeps the historical default (always)", () => {
+    // The five cases in the block above run exactly this way — pinned here by
+    // name so the compat promise is explicit rather than incidental.
+    const dir = project("od-default", { "CLAUDE.md": "# Mine\n" });
+    runInit(dir);
+    expect(fs.readFileSync(path.join(dir, "CLAUDE.md"), "utf8")).toContain("nirvana-os:invocation-contract:v1");
+  }, INIT_TIMEOUT_MS);
+});
+
+describe("the promised .env exists even when the template does not", () => {
+  test("a skills tree without the template still yields a working .env, and --scope works on it", () => {
+    // One install shipped without project-skeleton/.env: init warned, finished
+    // "[ok] done", pointed the user at a file that did not exist — and --scope
+    // crashed on the read. The fallback keeps the promise the help makes.
+    const stripped = path.join(TMP, "stripped-skills");
+    fs.cpSync(path.join(ROOT, "skills", "_shared", "templates"), path.join(stripped, "_shared", "templates"), { recursive: true });
+    fs.cpSync(path.join(ROOT, "skills", "_shared", "lib"), path.join(stripped, "_shared", "lib"), { recursive: true });
+    fs.rmSync(path.join(stripped, "_shared", "templates", "project-skeleton", ".env"));
+
+    const dir = project("env-fallback");
+    const r = spawnSync(process.execPath, [INIT, ".", "--scope=project"], {
+      cwd: dir, encoding: "utf8",
+      env: { ...process.env, NIRVANA_SKILLS_DIR: stripped },
+    });
+    expect(r.status).toBe(0);
+    const env = fs.readFileSync(path.join(dir, ".env"), "utf8");
+    expect(env).toContain("NIRVANA_SCOPE=project");
+  }, INIT_TIMEOUT_MS);
+});
+
+describe("streams carry meaning — PowerShell paints stderr red", () => {
+  test("progress goes to stdout; only warnings and failures go to stderr", () => {
+    // Everything used to go to stderr, so a healthy init rendered as a wall of
+    // red on Windows, [ok] lines included.
+    const dir = project("streams", { "CLAUDE.md": "# Mine\n" });
+    const r = runInit(dir);
+    expect(`${r.stdout}`).toContain("[ok]");
+    expect(`${r.stderr}`).not.toContain("[ok]");
+    expect(`${r.stderr}`).not.toContain("[info]");
+    // and the two contract appends are distinguishable in the log
+    expect(`${r.stdout}`).toContain("appended invocation contract");
+    expect(`${r.stdout}`).toContain("appended writing contract");
+  }, INIT_TIMEOUT_MS);
+});

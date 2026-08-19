@@ -196,12 +196,20 @@ export const expandPath = (p: string) =>
 // ─────────────────────────────────────────────────────────────────────
 
 let _quiet = false;
+// Streams carry meaning: info/ok are progress and go to STDOUT; warn/fail are
+// problems and go to STDERR. Everything used to go to stderr, and PowerShell
+// paints stderr red — so a healthy `nrv init` rendered as a wall of red
+// "errors" on Windows, [ok] lines included. Color only when the stream is a
+// TTY and NO_COLOR is unset: yellow for warn, red for fail, so a warning never
+// reads as a failure even on terminals that tint stderr themselves.
+const paint = (stream: NodeJS.WriteStream, code: string, msg: string): string =>
+  stream.isTTY && !process.env.NO_COLOR ? `\x1b[${code}m${msg}\x1b[0m` : msg;
 export const log = {
   setQuiet(v: boolean) { _quiet = v; },
-  info(msg: string) { if (!_quiet) console.error(`[info] ${msg}`); },
-  ok(msg: string) { if (!_quiet) console.error(`[ok]   ${msg}`); },
-  warn(msg: string) { if (!_quiet) console.error(`[warn] ${msg}`); },
-  fail(msg: string) { console.error(`[fail] ${msg}`); },
+  info(msg: string) { if (!_quiet) console.log(`[info] ${msg}`); },
+  ok(msg: string) { if (!_quiet) console.log(paint(process.stdout, "32", `[ok]   ${msg}`)); },
+  warn(msg: string) { if (!_quiet) console.error(paint(process.stderr, "33", `[warn] ${msg}`)); },
+  fail(msg: string) { console.error(paint(process.stderr, "31", `[fail] ${msg}`)); },
 };
 
 // ─────────────────────────────────────────────────────────────────────

@@ -117,7 +117,7 @@ function copyFile(src: string, dst: string, overwrite = false) {
  * If `dst` doesn't exist, it's created from scratch with just the snippet.
  * Preserves the user's pre-existing content untouched (we never overwrite).
  */
-function appendWithMarker(src: string, dst: string, marker: string): boolean {
+function appendWithMarker(src: string, dst: string, marker: string, label = "snippet"): boolean {
   if (!fs.existsSync(src)) {
     log.warn(`snippet missing: ${src}`);
     return false;
@@ -126,16 +126,19 @@ function appendWithMarker(src: string, dst: string, marker: string): boolean {
   if (fs.existsSync(dst)) {
     const existing = fs.readFileSync(dst, "utf8");
     if (existing.includes(marker)) {
-      log.info(`marker present, no append: ${dst}`);
+      log.info(`${label} already present: ${dst}`);
       return false;
     }
     fs.appendFileSync(dst, snippet);
-    log.ok(`appended writing contract to ${dst}`);
+    // Two different contracts used to log the same "appended writing contract"
+    // line, so one run printed it twice and the reader could not tell WHAT
+    // changed in their file. The label says which contract landed.
+    log.ok(`appended ${label} to ${dst}`);
     return true;
   }
   ensureDir(path.dirname(dst));
   fs.writeFileSync(dst, snippet, "utf8");
-  log.ok(`created ${dst} (snippet only — no base template)`);
+  log.ok(`created ${dst} (${label} only — no base template)`);
   return true;
 }
 
@@ -201,6 +204,10 @@ USAGE
   bun init-project.ts <target_dir>                    create project at <target_dir>
   bun init-project.ts <target_dir> --scope=project    set NIRVANA_SCOPE=project in .env
   bun init-project.ts <target_dir> --scope=merge      set NIRVANA_SCOPE=merge in .env
+  bun init-project.ts <target_dir> --orchestrators=always     Nirvana is the default orchestrator
+  bun init-project.ts <target_dir> --orchestrators=on-demand  Nirvana acts only when explicitly asked
+                                   (no flag + existing AGENTS/CLAUDE/GEMINI.md + TTY → you are asked,
+                                    on-demand recommended; non-interactive keeps "always")
   bun init-project.ts <target_dir> --with-skills      symlink .agents/skills → ~/.nirvana/skills
   bun init-project.ts <target_dir> --copy             embed a snapshot of all skills (portable)
   bun init-project.ts <target_dir> --link             re-run skill linking (no-op without --with-skills)
@@ -256,7 +263,7 @@ EXAMPLES
 `);
 }
 
-function main() {
+async function main() {
   const { positional, flags } = parseArgs();
 
   if (flags.h || flags.help) {
@@ -283,6 +290,11 @@ function main() {
   const withSkills = !!flags["with-skills"] || useCopy;
   const scope = (flags["scope"] as string) || null;
   const force = !!flags.force;
+  let orchestrators = (flags["orchestrators"] as string) || null;
+  if (orchestrators && orchestrators !== "always" && orchestrators !== "on-demand") {
+    log.fail(`--orchestrators must be "always" or "on-demand" (got "${orchestrators}")`);
+    process.exit(EXIT.INVALID_ARGS);
+  }
 
   if (!fs.existsSync(TEMPLATE_DIR)) {
     log.fail(`Template not found: ${TEMPLATE_DIR}`);
@@ -293,7 +305,20 @@ function main() {
   ensureDir(target);
 
   if (!linkOnly) {
-    copyFile(path.join(TEMPLATE_DIR, ".env"), path.join(target, ".env"), force);
+    // The .env is a promised output — the final hint tells the user to edit it
+    // and --scope rewrites it. When the template is missing (one install
+    // shipped without it), the old flow warned, finished "[ok] done" and
+    // pointed the user at a file that did not exist; --scope crashed on the
+    // read. A generic fallback keeps the promise; the warn still names the
+    // missing template so the install can be repaired.
+    if (!copyFile(path.join(TEMPLATE_DIR, ".env"), path.join(target, ".env"), force)
+        && !fs.existsSync(path.join(target, ".env"))) {
+      fs.writeFileSync(path.join(target, ".env"),
+        "# Nirvana project config (generated fallback — template was missing).\n" +
+        "# Full reference: .env.example — scope: global | project | merge\n" +
+        "NIRVANA_SCOPE=global\n", "utf8");
+      log.ok(`wrote ${path.join(target, ".env")} (generated fallback)`);
+    }
     copyFile(path.join(TEMPLATE_DIR, ".env.example"), path.join(target, ".env.example"), true);
     copyFile(path.join(TEMPLATE_DIR, ".gitignore"), path.join(target, ".gitignore"), force);
     copyFile(path.join(TEMPLATE_DIR, "README.md"), path.join(target, "README.md"), force);
@@ -310,9 +335,54 @@ function main() {
     //      already present (idempotent). Pre-existing user rules are preserved.
     const agentsTemplate = path.join(SKILLS_ROOT, "_shared", "templates", "AGENTS.md");
     const writingContractSnippet = path.join(SKILLS_ROOT, "_shared", "templates", "writing-contract-snippet.md");
+    const onDemandSnippet = path.join(SKILLS_ROOT, "_shared", "templates", "on-demand-contract-snippet.md");
     const WRITING_CONTRACT_MARKER = "<!-- nirvana-os:writing-contract:v1 -->";
     const INVOCATION_CONTRACT_MARKER = "<!-- nirvana-os:invocation-contract:v1 -->";
-    if (fs.existsSync(agentsTemplate)) {
+    const ON_DEMAND_MARKER = "<!-- nirvana-os:on-demand-contract:v1 -->";
+
+    // How Nirvana behaves in THIS project is the owner's call, and it matters
+    // most exactly when the project already has instruction files: appending
+    // the invocation contract to a pre-existing AGENTS.md turns Nirvana into
+    // the default orchestrator for every agent in the repo — a significant,
+    // silent behavior change for a project that was already configured.
+    //
+    //   always    → Nirvana is the default orchestrator (the full contract)
+    //   on-demand → Nirvana acts only when explicitly asked ("use o Nirvana
+    //               para X"); instruction files gain one short marked note and
+    //               nothing else
+    //
+    // Interactive TTY with pre-existing instruction files and no flag: ask,
+    // recommending on-demand. Non-interactive without a flag keeps the
+    // historical default (always) so CI and scripts do not change behavior.
+    const preexisting = ["AGENTS.md", "CLAUDE.md", "GEMINI.md"].filter((n) => fs.existsSync(path.join(target, n)));
+    if (!orchestrators && preexisting.length && process.stdin.isTTY && process.stdout.isTTY) {
+      const readline = require("node:readline/promises");
+      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+      const answer = (await rl.question(
+        `\nThis project already has ${preexisting.join(", ")}.\n` +
+        `How should Nirvana's orchestrators behave here?\n` +
+        `  [1] on-demand (recommended for existing projects) — act only when explicitly asked\n` +
+        `  [2] always — Nirvana becomes the default orchestrator for every agent\n` +
+        `Choice [1/2, default 1]: `)).trim();
+      rl.close();
+      orchestrators = answer === "2" ? "always" : "on-demand";
+    }
+    if (!orchestrators) {
+      orchestrators = "always";
+      if (preexisting.length) {
+        log.info(`pre-existing instruction files found; using --orchestrators=always (the historical default). Pass --orchestrators=on-demand to keep Nirvana opt-in here.`);
+      }
+    }
+
+    if (orchestrators === "on-demand") {
+      // Structure and global skills stay available; instruction files gain ONE
+      // short marked note telling agents Nirvana exists and acts only on
+      // explicit request. No invocation contract, no writing contract — the
+      // project's configured behavior stays its own.
+      for (const name of ["AGENTS.md", "CLAUDE.md", "GEMINI.md"]) {
+        appendWithMarker(onDemandSnippet, path.join(target, name), ON_DEMAND_MARKER, "on-demand contract");
+      }
+    } else if (fs.existsSync(agentsTemplate)) {
       for (const name of ["AGENTS.md", "CLAUDE.md", "GEMINI.md"]) {
         const dst = path.join(target, name);
         // Phase 1: only copy the base if the file is absent (never overwrite
@@ -331,10 +401,10 @@ function main() {
           // So the invocation contract is appended too, under its own marker,
           // with the user's rules untouched above it.
           log.warn(`exists, kept: ${dst}`);
-          appendWithMarker(agentsTemplate, dst, INVOCATION_CONTRACT_MARKER);
+          appendWithMarker(agentsTemplate, dst, INVOCATION_CONTRACT_MARKER, "invocation contract");
         }
         // Phase 2: append the writing contract (idempotent via marker).
-        appendWithMarker(writingContractSnippet, dst, WRITING_CONTRACT_MARKER);
+        appendWithMarker(writingContractSnippet, dst, WRITING_CONTRACT_MARKER, "writing contract");
       }
     } else {
       log.warn(`AGENTS.md template missing: ${agentsTemplate} — skipping agent contract`);
@@ -342,6 +412,12 @@ function main() {
 
     if (scope && scope !== "global") {
       const envPath = path.join(target, ".env");
+      if (!fs.existsSync(envPath)) {
+        // Unreachable while the fallback above holds, but --scope crashing
+        // with a raw ENOENT stack was how the missing template surfaced.
+        log.fail(`cannot set scope: ${envPath} does not exist`);
+        process.exit(EXIT.FAILURES);
+      }
       let env = fs.readFileSync(envPath, "utf8");
       env = env.replace(/^NIRVANA_SCOPE=.*$/m, `NIRVANA_SCOPE=${scope}`);
       fs.writeFileSync(envPath, env);
@@ -494,4 +570,4 @@ function main() {
   process.exit(EXIT.OK);
 }
 
-main();
+await main();
