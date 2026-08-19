@@ -1641,6 +1641,19 @@ function dispatchToRunner(opts: RunHeadlessOpts): RunHeadlessResult {
   }
 }
 
+/** The runtime roster, from the single source of truth. `RUNTIMES` used to be
+ * reachable only through the __testables seam, so consumers that needed the
+ * list (nrv doctor) grew hardcoded copies — the doctor's had 3 of the 9, and
+ * grok/pi/agy/kimi/qwen/opencode never appeared in its report on any OS.
+ * Derive from here; a 10th adapter then shows up everywhere automatically. */
+export function listRuntimes(): { name: Runtime; cli: string }[] {
+  return RUNTIMES.map((r) => ({ name: r.name as Runtime, cli: r.cli }));
+}
+
+// Mirrors RUNTIMES above. Kept as a literal Record<Runtime, string> ON PURPOSE:
+// the exhaustive key type makes adding a Runtime member a compile error here,
+// which a derived Object.fromEntries would silently satisfy. The mirror is
+// drift-proofed by doctor-runtimes.test.ts instead.
 const RUNTIME_BINS: Record<Runtime, string> = {
   "claude-code": "claude",
   "codex": "codex",
