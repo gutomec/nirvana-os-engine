@@ -51,7 +51,7 @@ const ARTIFACTS_KEY = process.env.NIRVANA_ARTIFACTS_KEY || "";
 const PRODUCTS_FILE = process.env.NIRVANA_PRODUCTS_FILE
   || join(homedir(), "squads-sh-v2", "apps", "web", "lib", "nirvana", "product.ts");
 
-interface Product { slug: string; version: string; basePath: string; squads: number; businesses: number; clones: number; }
+interface Product { slug: string; version: string; basePath: string; squads: number; businesses: number; clones: number; storefrontPath: string | null; }
 
 /**
  * Parse the catalog out of product.ts. Reading the TypeScript rather than
@@ -74,6 +74,7 @@ function readProducts(): Product[] {
     if (!version || !basePath) continue;
     out.push({
       slug, version, basePath,
+      storefrontPath: body.match(/storefrontPath:\s*"([^"]+)"/)?.[1] ?? null,
       squads: comp ? Number(comp[1]) : -1,
       businesses: comp ? Number(comp[2]) : -1,
       clones: comp ? Number(comp[3]) : -1,
@@ -202,36 +203,78 @@ async function checkProduct(p: Product, expected: Record<string, string>): Promi
   }
 }
 
-const packDir = join(REPO, "packaging", "pack");
-const expected: Record<string, string> = {};
-for (const f of ["setup.ts", "setup.sh", "setup.ps1"]) {
-  const p = join(packDir, f);
-  if (!existsSync(p)) { console.error(`${RED}engine is missing packaging/pack/${f}${RST}`); process.exit(2); }
-  expected[f] = sha(readFileSync(p));
+/**
+ * 8. the LIVE page says what the catalog says.
+ *
+ * Item 7 compares the bucket against product.ts ON DISK — which approved a day
+ * where the deploy never landed: composition was corrected and deployed, the
+ * runner's ssh timed out before the build step, and the page kept advertising
+ * 42/11/159 in six languages while every check here stayed green. The only
+ * thing that caught it was fetching the page and reading it. So the gate does
+ * exactly that: for every product with its own storefront page, the served
+ * HTML must contain the catalog's version and its three composition counts.
+ *
+ * Pure so it can be tested by planting a stale page; the fetch wiring stays
+ * thin. Exported for the test.
+ */
+export function livePageFindings(p: Product, html: string): string[] {
+  const out: string[] = [];
+  if (!html.includes(p.version)) out.push(`live page does not mention v${p.version} — the deploy may not have landed`);
+  for (const [label, n] of [["squads", p.squads], ["businesses", p.businesses], ["mind-clones", p.clones]] as const) {
+    if (n >= 0 && !new RegExp(`(?<!\\d)${n}(?!\\d)`).test(html)) {
+      out.push(`live page never shows the count ${n} (${label}) the catalog declares`);
+    }
+  }
+  return out;
 }
 
-const products = readProducts().filter((p) => only.length === 0 || only.includes(p.slug));
-if (products.length === 0) { console.error(`${RED}no matching product${RST}`); process.exit(2); }
-
-console.log(`\nPUBLISHED PACKS — do the bases carry this engine's installer?`);
-console.log(`${DIM}  engine setup.ts: ${expected["setup.ts"].slice(0, 12)}  ·  ${products.length} product(s)${RST}\n`);
-
-const all: Finding[] = [];
-for (const p of products) {
-  process.stdout.write(`  ${p.slug.padEnd(26)} v${p.version.padEnd(9)} `);
-  const f = await checkProduct(p, expected);
-  all.push(...f);
-  console.log(f.length === 0 ? `${GRN}ok${RST}` : `${RED}${f.length} problem(s)${RST}`);
-  for (const x of f) console.log(`      ${YEL}${x.problem}${RST}`);
+const STOREFRONT_URL = process.env.NIRVANA_STOREFRONT_URL || "https://squads.sh";
+async function checkLivePage(p: Product): Promise<Finding[]> {
+  if (!p.storefrontPath) return [];
+  try {
+    const r = await fetch(`${STOREFRONT_URL}${p.storefrontPath}`, { redirect: "follow", signal: AbortSignal.timeout(30_000) });
+    if (!r.ok) return [{ slug: p.slug, problem: `live page ${p.storefrontPath}: HTTP ${r.status}` }];
+    return livePageFindings(p, await r.text()).map((problem) => ({ slug: p.slug, problem }));
+  } catch (e) {
+    return [{ slug: p.slug, problem: `live page unreachable: ${String(e).slice(0, 80)}` }];
+  }
 }
 
-console.log();
-if (all.length === 0) {
-  console.log(`${GRN}Every published base carries the current installer.${RST}\n`);
-  process.exit(0);
+// CLI entry — guarded so the pure helpers above stay importable by tests
+// without running sixteen network fetches at import time.
+if (import.meta.main) {
+  const packDir = join(REPO, "packaging", "pack");
+  const expected: Record<string, string> = {};
+  for (const f of ["setup.ts", "setup.sh", "setup.ps1"]) {
+    const p = join(packDir, f);
+    if (!existsSync(p)) { console.error(`${RED}engine is missing packaging/pack/${f}${RST}`); process.exit(2); }
+    expected[f] = sha(readFileSync(p));
+  }
+
+  const products = readProducts().filter((p) => only.length === 0 || only.includes(p.slug));
+  if (products.length === 0) { console.error(`${RED}no matching product${RST}`); process.exit(2); }
+
+  console.log(`\nPUBLISHED PACKS — do the bases carry this engine's installer?`);
+  console.log(`${DIM}  engine setup.ts: ${expected["setup.ts"].slice(0, 12)}  ·  ${products.length} product(s)${RST}\n`);
+
+  const all: Finding[] = [];
+  for (const p of products) {
+    process.stdout.write(`  ${p.slug.padEnd(26)} v${p.version.padEnd(9)} `);
+    const f = await checkProduct(p, expected);
+    f.push(...await checkLivePage(p));
+    all.push(...f);
+    console.log(f.length === 0 ? `${GRN}ok${RST}` : `${RED}${f.length} problem(s)${RST}`);
+    for (const x of f) console.log(`      ${YEL}${x.problem}${RST}`);
+  }
+
+  console.log();
+  if (all.length === 0) {
+    console.log(`${GRN}Every published base carries the current installer.${RST}\n`);
+    process.exit(0);
+  }
+  const stale = new Set(all.map((f) => f.slug));
+  console.log(`${RED}${all.length} problem(s) across ${stale.size} pack(s): ${[...stale].join(", ")}${RST}`);
+  console.log(`${DIM}Rebuild and republish those bases. A pack whose setup.ts predates the engine${RST}`);
+  console.log(`${DIM}is a pack whose buyers get whatever bug that installer had.${RST}\n`);
+  process.exit(strict ? 1 : 0);
 }
-const stale = new Set(all.map((f) => f.slug));
-console.log(`${RED}${all.length} problem(s) across ${stale.size} pack(s): ${[...stale].join(", ")}${RST}`);
-console.log(`${DIM}Rebuild and republish those bases. A pack whose setup.ts predates the engine${RST}`);
-console.log(`${DIM}is a pack whose buyers get whatever bug that installer had.${RST}\n`);
-process.exit(strict ? 1 : 0);
