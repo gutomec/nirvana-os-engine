@@ -6,6 +6,41 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## 0.7.2 — 2026-08-19
+
+### The seat stands alone, and the system can finally tell
+
+The per-task clone model (0.7.0) made "no clone" a legitimate outcome of every
+dispatch — which turns the employee body into the seat's whole method. Until
+now nothing read a byte of it: the loader parses frontmatter only, the audit
+checked that frontmatter exists, and the binding gate reads two fields. A
+2-line role label scored identically to a 260-line operating manual on every
+gate in the system.
+
+The new measure — sections plus decision content, never line count — was
+calibrated against all 574 employees in the authoring library: 488 rich files
+score sufficient with zero false alarms, and of the 86 short files only 28 are
+genuinely thin; the other 58 carry real method in few lines and pass. Three
+consumers enforce it: a ratchet gate (a seat the baseline never saw enters
+sufficient or not at all; recorded debt may only shrink), the pack admission
+gate, and a new advisory criterion in the business audit that names the thin
+seats and points at the repair.
+
+### The engine's own templates produced thin seats by construction
+
+All 16 employee scaffolds declared `role: CEO` — the antagonist, the directors
+and the advisors carried the solo-CEO body verbatim, so a freshly initialized
+agency was five copies of the same seat. Each template now carries its own
+role's method: the antagonist with numbered reject-criteria and an
+explicit-verdict rule (the old "silence after critique approves" is inverted —
+silence blocks), the council CEO synthesizing dissent instead of averaging it,
+the holding CEO who allocates and never executes, unit CEOs with interface
+contracts. The Business Protocol's sentence that authorized thin bodies ("the
+employee body is short; the DNA file provides the substrate") is amended: under
+the per-task model the seat cannot assume the clone, so a short body is
+legitimate only when it passes the measure — and business creation gains the
+blocking script gate for it, beside the routing gate it already had.
+
 ## 0.7.1 — 2026-08-19
 
 ### Adopting Nirvana asks before changing an existing project
