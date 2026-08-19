@@ -28,6 +28,7 @@ import { paths as nrvPaths } from "../../_shared/lib/bun-helpers.ts";
 import { resolveScope } from "../../_shared/lib/scope.ts";
 import { RUNTIME_SKILL_DIRS, PROJECT_CONTRACT_FILES } from "../../_shared/lib/runtime-dirs.ts";
 import { scanLibrary, authorsPacks, STRIP_HINT } from "../../_shared/lib/watermark-scan.ts";
+import { listRuntimes } from "../../_shared/lib/host-agent-driver.ts";
 
 const ANSI = {
   reset: "\x1b[0m", bold: "\x1b[1m", dim: "\x1b[2m",
@@ -72,9 +73,9 @@ const bins = [
   { name: "node", required: false },
   { name: "python3", required: false },
   { name: "git", required: true },
-  { name: "codex", required: false },
-  { name: "claude", required: false },
-  { name: "gemini", required: false },
+  // Agent runtimes are NOT listed here — they come from the driver's own
+  // roster below. This array used to carry 3 of the 9 (codex, claude, gemini),
+  // so the other six never appeared in the report even when installed.
 ];
 
 for (const b of bins) {
@@ -90,6 +91,36 @@ for (const b of bins) {
     add(`binary: ${b.name}`, b.required ? "FAIL" : "WARN", "not found in PATH");
   }
 }
+
+// SECTION 1a: AGENT RUNTIMES — one line per adapter the dispatch engine
+// supports, from the driver's roster (never a local copy). Each is individually
+// optional: dispatch falls through to the next one on PATH. What is NOT
+// optional is having at least one — with zero runtimes no dispatch can run,
+// which is a FAIL on the summary line, not nine quiet WARNs.
+let runtimesOnPath = 0;
+for (const rt of listRuntimes()) {
+  const p = which(rt.cli);
+  if (p) {
+    runtimesOnPath++;
+    add(`runtime: ${rt.name}`, "PASS", p);
+  } else {
+    add(`runtime: ${rt.name}`, "WARN", `'${rt.cli}' not found in PATH`);
+  }
+}
+// Zero runtimes on a USER machine is critical — nothing can dispatch. On a
+// headless CI runner it is the expected state of the world: the smoke job
+// installs the engine on a bare image precisely to prove the install works
+// before any runtime exists. Same fact, different severity per context —
+// shipping this as unconditional FAIL turned every CI run red on all three
+// platforms within the hour.
+const headlessCI = process.env.CI === "true";
+add(
+  "runtime: dispatch",
+  runtimesOnPath > 0 ? "PASS" : headlessCI ? "WARN" : "FAIL",
+  runtimesOnPath > 0
+    ? `${runtimesOnPath}/${listRuntimes().length} agent runtime(s) on PATH`
+    : `no agent runtime on PATH — dispatch cannot run; install one (claude, codex, gemini, …)${headlessCI ? " (CI environment: reported as warning)" : ""}`,
+);
 
 // SECTION 1a-bis: CLAUDE CODE AUTH — a persistent CLAUDE_CODE_OAUTH_TOKEN export
 // in a shell startup file (the pattern our own docs used to recommend) makes the
