@@ -6,6 +6,62 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## 0.7.1 — 2026-08-19
+
+### Adopting Nirvana asks before changing an existing project
+
+`nrv init` on a project that already had AGENTS.md appended the invocation
+contract to it and created CLAUDE.md and GEMINI.md carrying it — every agent
+in the repo silently switched to Nirvana as its default orchestrator. That is
+the right default for a fresh project and a significant silent change for a
+configured one (field report, 2026-08-18).
+
+The mode is now the owner's call: `--orchestrators=always` keeps the
+historical behavior; `--orchestrators=on-demand` adds one short marked note —
+Nirvana exists, acts only when explicitly asked — and touches nothing else.
+On a terminal, with pre-existing instruction files and no flag, init asks and
+recommends on-demand. Non-interactive runs without a flag keep "always", so
+CI and scripts change nothing.
+
+### The promised .env now exists, and its disappearance is explained
+
+Every install shipped without `project-skeleton/.env` while the engine tarball
+carries an allowlist expecting exactly that path. The cause was the repo's own
+.gitignore: its `.env` and `.nirvana/` patterns silently swallowed the
+templates — they existed on the author's machine and never reached the
+repository. Negation rules pin them as product files now; a generated fallback
+keeps the promise on installs that still lack the template; and
+`--scope=project|merge`, which crashed on the missing file with a raw ENOENT
+stack, fails with a named error instead. `project-skeleton/.nirvana/README.md`
+restored the same way.
+
+### The log stops crying wolf on Windows
+
+Every log level wrote to stderr, and PowerShell paints stderr red — a healthy
+`nrv init` rendered as a wall of red "errors", [ok] lines included. Progress
+(info/ok) now goes to stdout; warnings are stderr in yellow; failures are
+stderr in red. Fixed in the shared logger, so every command inherits it. The
+two contract appends also stopped sharing one message: the log now says
+whether the invocation contract or the writing contract landed.
+
+### The doctor reports every runtime the engine can dispatch to
+
+`nrv doctor` probed 3 of the 9 agent runtimes the dispatch driver supports,
+from a private hardcoded copy of the list — grok, pi, agy, kimi, qwen and
+opencode never appeared even when installed. The roster is now exported by the
+driver itself (`listRuntimes()`) and the doctor iterates it: one line per
+runtime, WARN when absent, plus a `runtime: dispatch` summary that is PASS
+with at least one runtime on PATH — and FAIL with zero on a user machine,
+where dispatch genuinely cannot run (a headless CI runner reports the same
+fact as a warning).
+
+### The published-pack gate reads the page buyers read
+
+`check-published-packs` compared the bucket against the catalog file on disk —
+and approved a day when the storefront deploy never landed, leaving the page
+advertising the previous composition in six languages. It now also fetches the
+live product page and requires it to carry the catalog's version and counts.
+
 ## 0.7.0 — 2026-08-18
 
 ### The clone is chosen for the task, not for the seat

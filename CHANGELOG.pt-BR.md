@@ -6,6 +6,64 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## 0.7.1 — 2026-08-19
+
+### Adotar o Nirvana pergunta antes de mudar um projeto existente
+
+`nrv init` num projeto que já tinha AGENTS.md anexava o contrato de invocação
+a ele e criava CLAUDE.md e GEMINI.md com o mesmo conteúdo — todo agente do
+repositório passava silenciosamente a tratar o Nirvana como orquestrador
+padrão. É o default certo para projeto novo e uma mudança silenciosa
+significativa para um projeto já configurado (relato de campo, 18/08/2026).
+
+O modo agora é escolha do dono: `--orchestrators=always` mantém o
+comportamento histórico; `--orchestrators=on-demand` adiciona uma única nota
+marcada — o Nirvana existe, age só quando pedido explicitamente — e não toca
+em mais nada. Num terminal, com arquivos de instrução preexistentes e sem
+flag, o init pergunta e recomenda on-demand. Execução não-interativa sem flag
+mantém "always": CI e scripts não mudam.
+
+### O .env prometido agora existe, e o sumiço dele foi explicado
+
+Toda instalação saía sem o `project-skeleton/.env`, enquanto o tarball do
+engine carrega uma allowlist esperando exatamente esse caminho. A causa era o
+.gitignore do próprio repositório: os padrões `.env` e `.nirvana/` engoliam os
+templates em silêncio — eles existiam na máquina do autor e nunca chegaram ao
+repositório. Regras de negação agora os fixam como arquivos de produto; um
+fallback gerado mantém a promessa em instalações que ainda não têm o template;
+e o `--scope=project|merge`, que quebrava no arquivo ausente com um stack de
+ENOENT cru, falha com erro nomeado. O `project-skeleton/.nirvana/README.md`
+foi restaurado do mesmo jeito.
+
+### O log para de gritar lobo no Windows
+
+Todos os níveis de log escreviam em stderr, e o PowerShell pinta stderr de
+vermelho — um `nrv init` saudável aparecia como uma parede de "erros"
+vermelhos, linhas [ok] incluídas. Progresso (info/ok) agora vai para stdout;
+avisos são stderr em amarelo; falhas são stderr em vermelho. Corrigido no
+logger compartilhado, então todo comando herda. Os dois anexos de contrato
+também pararam de dividir uma mensagem só: o log agora diz se quem entrou foi
+o contrato de invocação ou o de escrita.
+
+### O doctor reporta todos os runtimes que o engine despacha
+
+O `nrv doctor` sondava 3 dos 9 runtimes de agente que o driver de dispatch
+suporta, a partir de uma cópia privada da lista — grok, pi, agy, kimi, qwen e
+opencode nunca apareciam, mesmo instalados. A lista agora é exportada pelo
+próprio driver (`listRuntimes()`) e o doctor a percorre: uma linha por
+runtime, WARN quando ausente, mais um resumo `runtime: dispatch` que é PASS
+com pelo menos um runtime no PATH — e FAIL com zero numa máquina de usuário,
+onde o dispatch genuinamente não roda (um runner de CI sem interface reporta o
+mesmo fato como aviso).
+
+### O portão de packs publicados lê a página que o comprador lê
+
+O `check-published-packs` comparava o bucket com o arquivo de catálogo no
+disco — e aprovou um dia em que o deploy da loja nunca chegou, deixando a
+página anunciando a composição anterior em seis idiomas. Agora ele também
+busca a página viva do produto e exige que ela carregue a versão e as
+contagens do catálogo.
+
 ## 0.7.0 — 2026-08-18
 
 ### O clone é escolhido para a tarefa, não para o cargo
