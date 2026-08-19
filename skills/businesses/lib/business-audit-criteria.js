@@ -189,6 +189,32 @@ function c10_memory({ businessDir }) {
 }
 
 // ─── Criterion 11 — legacy migration tagged or N/A — 6 pts ──────────────
+// c12 — can every seat stand without a clone? The per-task clone model makes
+// "no clone" a legitimate outcome of any dispatch, so the employee body IS the
+// seat's method. Advisory here (the blocking gate is check-seat-sufficiency);
+// the fixable_diff points operators at the enricher.
+function c12_seat_sufficiency({ businessDir }) {
+  const max = 10;
+  const { sufficiencyOfFile } = require('../../_shared/lib/seat-sufficiency.js');
+  const empDir = path.join(businessDir, 'employees');
+  if (!exists(empDir)) return { score: 0, max, evidence: 'no employees/', fixable_diff: null };
+  const thin = [];
+  let total = 0;
+  for (const f of fs.readdirSync(empDir)) {
+    if (!f.endsWith('.md')) continue;
+    total++;
+    const r = sufficiencyOfFile(fs.readFileSync(path.join(empDir, f), 'utf8'));
+    if (r.verdict === 'thin') thin.push(f.replace(/\.md$/, ''));
+  }
+  if (total === 0) return { score: 0, max, evidence: 'no employee files', fixable_diff: null };
+  const ratio = (total - thin.length) / total;
+  return {
+    score: Math.round(ratio * max), max,
+    evidence: thin.length ? `${thin.length}/${total} thin: ${thin.join(', ')}` : `${total}/${total} seats sufficient`,
+    fixable_diff: thin.length ? { kind: 'enrich_employee_method', slugs: thin } : null,
+  };
+}
+
 function c11_legacy_tagged({ manifest }) {
   const max = 6;
   // Either explicitly declared as fresh business (no legacy block needed)
@@ -219,6 +245,7 @@ function scoreBusiness(businessDir) {
     ['readme', c9_readme],
     ['memory', c10_memory],
     ['legacy_tagged', c11_legacy_tagged],
+    ['seat_sufficiency', c12_seat_sufficiency],
   ];
 
   const breakdown = [];

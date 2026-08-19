@@ -62,7 +62,7 @@ const BASELINE = flags.baseline && typeof flags.baseline === "string"
   ? flags.baseline // tests point this at a fixture; never at the machine's
   : join((nrvPaths as Record<string, string>).NIRVANA_HOME ?? ".", ".nirvana", ".admission-baseline.json");
 
-type Gap = "no_verdict" | "no_source";
+type Gap = "no_verdict" | "no_source" | "thin_seat";
 function loadBaseline(): Record<string, Gap[]> | null {
   if (!existsSync(BASELINE)) return null;
   try { return JSON.parse(readFileSync(BASELINE, "utf8")).entities ?? {}; } catch { return null; }
@@ -99,6 +99,28 @@ if (existsSync(clonesRoot)) {
     if (!(doc.validation_verdict ?? man.validation_verdict)) gaps.push("no_verdict");
     if (!(doc.source_material ?? man.source_material)) gaps.push("no_source");
     if (gaps.length) debtNow[slug] = gaps;
+  }
+}
+
+// ── seats: every employee body must stand without a clone ──────────────────
+// Baselined, not hard: alientech-360 ships 9 thin seats in the flagship today,
+// and a hard bar with no immediate path out is the bar everyone learns to
+// skip. When enrichment zeroes the debt, the bar is absolute in practice.
+// Keyed by "business/employee.md" so two packs shipping the same business
+// share the debt entry (same rule as clone slugs).
+const { sufficiencyOfFile } = require_("../skills/_shared/lib/seat-sufficiency.js");
+const bizRoot = join(packDir, "businesses");
+if (existsSync(bizRoot)) {
+  for (const biz of readdirSync(bizRoot)) {
+    const empDir = join(bizRoot, biz, "employees");
+    if (!existsSync(empDir)) continue;
+    for (const f of readdirSync(empDir)) {
+      if (!f.endsWith(".md")) continue;
+      const key = `${biz}/${f}`;
+      scanned.add(key);
+      const r = sufficiencyOfFile(readFileSync(join(empDir, f), "utf8"));
+      if (r.verdict === "thin") (debtNow[key] ??= []).push("thin_seat");
+    }
   }
 }
 
@@ -150,7 +172,9 @@ for (const [slug, gaps] of Object.entries(debtNow)) {
   for (const g of gaps) {
     const known = baseline ? (baseline[slug] ?? []).includes(g) : false;
     if (!known) {
-      const label = g === "no_verdict" ? "no validation_verdict" : "no source_material";
+      const label = g === "no_verdict" ? "no validation_verdict"
+        : g === "no_source" ? "no source_material"
+        : "thin seat — no method to stand on without a clone (seat-sufficiency)";
       violations.push({
         entity: slug, kind: "debt",
         problem: baseline && slug in baseline

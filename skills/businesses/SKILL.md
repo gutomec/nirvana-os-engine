@@ -243,6 +243,12 @@ When intent = CREATE, follow this sequence without skipping steps.
 - Optimization pass: reread each employee as a hostile reviewer — a generic
   persona, a role without a clear deliverable, or knowledge Round 0 researched
   that the employee does not use are defects; fix them before declaring ready.
+- **Seat sufficiency (blocking script gate).** Under the per-task clone model
+  a dispatch may legitimately run with no clone, so every seat must stand on
+  its own method. Run and require exit 0:
+  `bun ~/.nirvana/skills/_shared/scripts/check-seat-sufficiency.ts <slug> --strict`
+  The measure is sections + decision lines (seat-sufficiency.js), calibrated
+  against the whole library — a dense-short seat passes, a role label does not.
 - **Routing metadata, contract-complete** — fill `business.yaml` (+
   `routing.yaml`) per `~/.nirvana/skills/_shared/ROUTING_METADATA_CONTRACT.md`.
   No field may be left empty or truncated:
@@ -328,8 +334,7 @@ Employees that produce only technical artifacts (JSON, schemas, code) ignore the
 ├── SKILL.md                                # this file
 ├── BUSINESS_PROTOCOL_V1.md                 # source of truth
 ├── templates/
-│   ├── business.yaml.tmpl                  # manifest tmpl with {{PLACEHOLDERS}}
-│   ├── employee.md.tmpl                    # employee frontmatter + body
+│   ├── business-types/<type>/employees/    # role-true employee scaffolds per type
 │   ├── org-chart.yaml.tmpl
 │   ├── routing.yaml.tmpl
 │   ├── escalation-triggers.yaml.tmpl
