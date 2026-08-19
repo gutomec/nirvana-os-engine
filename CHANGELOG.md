@@ -6,6 +6,57 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## 0.7.0 — 2026-08-18
+
+### The clone is chosen for the task, not for the seat
+
+A mind-clone is knowledge, not an actor. Two parts of the dispatch pretended
+otherwise, and both change here.
+
+The employee chain had a DESIGNADO step: `assigned_mind_clones` was injected
+with no fitness gate, before the task ranking ran. A film-director seat bound to
+one director got that director for every task, while the director the task
+actually needed appeared only as a suggestion below, with the injection budget
+already spent. The chain is now three steps — a clone the user names wins
+outright; otherwise the library is ranked against the task and only an
+above-gate hit is injected; otherwise the agent decides, and "none" is a
+legitimate answer that comes with a duty: the seat executes on its own method.
+Only 74 of 574 employees carried a static binding — the other 87% already lived
+in this world. The seat's curation survives as prose in its persona, where the
+agent reads it as context instead of having it forced past the ranking.
+
+The choice is now recorded. Every employee run emits one `x_clone_choice`
+audit event — the chosen slugs or an empty list, with a one-line reason — so
+the system learns which DNA actually wins which task instead of only logging
+what was injected.
+
+And the closing identity line stops lying: "channeling the mind-clones above"
+renders only when there are clones above. When nothing was channeled it now
+says so — the same defect class 0.6.2 fixed one section higher.
+
+### `delegates_to` is retired
+
+A clone cannot delegate. The field froze "who was the right neighbor" against
+one specific library, and broke in every subset: measured across the sixteen
+packs, 805 handoff pointers shipped pointing at clones the pack does not carry
+— 128 of 223 in the flagship — while no code path ever consumed the field. The
+referral now lives where the contract always put it: `not_for` prose ("what it
+does NOT do, and who does"). A name in prose degrades into the live per-task
+search, which answers against the library the user actually has. Contracts,
+the clone template, the creation pipeline and the enrichment generator stop
+writing the field; the 2,174 existing lists on disk are ignored, not deleted —
+no mass edit, no data loss.
+
+### One dispatch, one scope
+
+`findCloneForTask` and `resolveClonePersona` resolved the clone registry from
+the process working directory while the same dispatch resolved the business
+from the project directory — one dispatch reading two scopes. On a machine
+whose engine checkout carried a derived registry, an employee fixture was
+injected with clones it never wrote; on CI, with no library, the same tests
+passed. The dispatch's project now anchors the whole clone chain, in both
+dispatchers (employee-prompt and squad-exec).
+
 ## 0.6.2 — 2026-08-16
 
 ### The prompt told the agent no useful clone existed, then listed one at 0.93

@@ -6,6 +6,58 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## 0.7.0 — 2026-08-18
+
+### O clone é escolhido para a tarefa, não para o cargo
+
+Um mind-clone é conhecimento, não ator. Duas partes do despacho fingiam o
+contrário, e as duas mudam aqui.
+
+A cadeia do employee tinha um passo DESIGNADO: `assigned_mind_clones` era
+injetado sem nenhum teste de adequação, antes de o ranking da tarefa rodar. Um
+cargo de diretor de cinema amarrado a um diretor recebia esse diretor para toda
+tarefa, enquanto o diretor de que a tarefa precisava aparecia só como sugestão
+abaixo, com o orçamento de injeção já gasto. A cadeia agora tem três degraus —
+clone que o usuário nomeia vence de imediato; senão a biblioteca é ranqueada
+contra a tarefa e só entra quem passa do gate de cobertura; senão o agente
+decide, e "nenhum" é resposta legítima que vem com um dever: o cargo executa
+com o próprio método. Só 74 de 574 employees carregavam vínculo estático — os
+outros 87% já viviam nesse mundo. A curadoria do cargo sobrevive como prosa na
+persona, onde o agente a lê como contexto em vez de recebê-la por cima do
+ranking.
+
+A escolha agora fica registrada. Todo run de employee emite um evento
+`x_clone_choice` — os slugs escolhidos ou uma lista vazia, com uma linha de
+porquê — para o sistema aprender qual DNA de fato ganha qual tarefa, em vez de
+só registrar o que foi injetado.
+
+E a linha final de identidade para de mentir: "channeling the mind-clones
+above" só aparece quando há clones acima. Sem nada canalizado, o prompt agora
+diz isso — a mesma classe de defeito que o 0.6.2 corrigiu uma seção acima.
+
+### `delegates_to` foi aposentado
+
+Clone não delega. O campo congelava "quem era o vizinho certo" contra uma
+biblioteca específica e quebrava em todo subconjunto: medido nos dezesseis
+packs, 805 ponteiros de handoff embarcaram apontando para clones que o pack não
+carrega — 128 de 223 no flagship — enquanto nenhum caminho de código consumia o
+campo. A indicação vive onde o contrato sempre a colocou: na prosa do `not_for`
+("o que ele não faz, e quem faz"). Nome em prosa degrada para a busca viva por
+tarefa, que responde contra a biblioteca que o usuário de fato tem. Contratos,
+template de clone, pipeline de criação e o gerador de enriquecimento param de
+escrever o campo; as 2.174 listas existentes em disco são ignoradas, não
+apagadas — nenhuma edição em massa, nenhuma perda de dado.
+
+### Um despacho, um escopo
+
+`findCloneForTask` e `resolveClonePersona` resolviam o registry de clones pelo
+diretório de trabalho do processo, enquanto o mesmo despacho resolvia o
+business pelo diretório do projeto — um despacho lendo dois escopos. Numa
+máquina cujo checkout do engine carregava um registry derivado, um fixture de
+employee recebia clones que nunca escreveu; no CI, sem biblioteca, os mesmos
+testes passavam. O projeto do despacho agora ancora a cadeia de clones inteira,
+nos dois despachantes (employee-prompt e squad-exec).
+
 ## 0.6.2 — 2026-08-16
 
 ### O prompt dizia ao agente que não havia clone útil, e listava um a 0.93
