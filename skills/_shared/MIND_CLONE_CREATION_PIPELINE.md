@@ -72,12 +72,12 @@ the block routes at MRR 1.000 and without it at MRR 0.05
 to the letter — `one_liner` ≤120 chars; 20-30 `domains` as EN + PT pairs
 (separate items); rule 3d (symptom in the owner's voice, NO intent verb) and
 rule 3e (length — `serves` beyond ~500 tokens costs more than it earns).
-Always the new schema: `serves` / `not_for` / `refuses` / `delegates_to`.
+Always the new schema: `serves` / `not_for` / `refuses` (`delegates_to` is retired — name the neighbor in `not_for` prose).
 
 Com biblioteca não-vazia, leia os blocos dos vizinhos de território antes de
 escrever (regra 4 do contrato) e delegue nominalmente só para slug que
 existe. Biblioteca vazia (install limpo): não há vizinho a proteger —
-`delegates_to` fica vazio até existir destino.
+O vizinho melhor para o que o clone recusa é nomeado em prosa no `not_for` (`delegates_to` aposentado 2026-08-18).
 
 ## Fase 5 — Index + gates (todos bloqueantes)
 

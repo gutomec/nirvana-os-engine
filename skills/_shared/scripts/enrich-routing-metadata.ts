@@ -84,7 +84,8 @@ export interface CloneRoutingBlock {
   domains: string[];
   serves: string;
   not_for: string;
-  delegates_to: string[];
+  /** RETIRED (2026-08-18) — kept optional so legacy readers type-check; never written. */
+  delegates_to?: string[];
   refuses: string[];
   /** legacy key preserved on merge; never generated */
   when_to_use?: string;
@@ -216,25 +217,21 @@ export function validateCloneBlock(
     if (refusedSet.has(normTerm(d))) errors.push(`domains/refuses contradiction: "${d}"`);
   }
 
-  let delegates = Array.isArray(b.delegates_to)
-    ? b.delegates_to.filter((s): s is string => typeof s === "string").map((s) => s.trim()).filter(Boolean)
-    : [];
-  if (opts.knownSlugs) {
-    const dropped = delegates.filter((s) => !opts.knownSlugs!.has(s));
-    delegates = delegates.filter((s) => opts.knownSlugs!.has(s));
-    if (dropped.length) {
-      // Filtered, not fatal: handoff to a non-existent clone is a dead end (rule 4).
-      errors.push(`delegates_to: dropped unknown slugs (filtered, non-fatal): ${dropped.join(", ")}`);
-    }
-  }
-  if (opts.selfSlug) delegates = delegates.filter((s) => s !== opts.selfSlug);
+  // delegates_to: RETIRED (2026-08-18). A clone is knowledge, not an actor — it
+  // cannot delegate. The field froze "who was adjacent" against one library and
+  // broke in every pack subset (805 pointers shipped unresolvable), while no
+  // code path ever consumed it. The referral belongs in not_for prose (the
+  // contract's "what it does not do, and WHO does"), and the live search answers the same
+  // question against the library the user actually has. Existing lists on disk
+  // are ignored, not deleted; new blocks are written without the field —
+  // whatever the generator emitted is discarded here.
 
   const fatal = errors.filter((e) => !e.includes("non-fatal"));
   if (fatal.length) return { ok: false, errors };
   return {
     ok: true,
     errors,
-    cleaned: { one_liner: oneLiner, domains, serves, not_for: notFor, delegates_to: delegates, refuses },
+    cleaned: { one_liner: oneLiner, domains, serves, not_for: notFor, refuses },
   };
 }
 
@@ -366,12 +363,7 @@ export function emitCloneRoutingYaml(block: CloneRoutingBlock): string {
   }
   out.push("  not_for: >-");
   out.push(wrapFolded(block.not_for, "    "));
-  if (block.delegates_to.length) {
-    out.push("  delegates_to:");
-    for (const s of block.delegates_to) out.push(`    - ${yamlScalar(s)}`);
-  } else {
-    out.push("  delegates_to: []");
-  }
+  // delegates_to is retired — new blocks do not carry the field at all.
   out.push("  refuses:");
   for (const r of block.refuses) out.push(`    - ${yamlScalar(r)}`);
   return out.join("\n") + "\n";
@@ -427,7 +419,6 @@ export function mergeCloneRouting(existing: unknown, generated: CloneRoutingBloc
     domains: arrOr(e.domains, generated.domains),
     serves: strOr(e.serves, generated.serves),
     not_for: strOr(e.not_for, generated.not_for),
-    delegates_to: arrOr(e.delegates_to, generated.delegates_to),
     refuses: arrOr(e.refuses, generated.refuses),
   };
   if (typeof e.when_to_use === "string" && e.when_to_use.trim()) merged.when_to_use = e.when_to_use.trim();
@@ -731,7 +722,7 @@ THE CONTRACT (MIND_CLONE_ROUTING_CONTRACT.md, distilled — each rule exists bec
    "What You Refuse to Do", "NÃO use quando", "O que NUNCA diz") before writing. Refused territory goes in
    not_for / refuses ONLY.
 3. BM25 has no negation. one_liner, domains and serves are INDEXED and must carry ONLY affirmation.
-   not_for, delegates_to and refuses are NEVER indexed — write every refusal there, with any wording.
+   not_for and refuses are NEVER indexed — write every refusal there, with any wording.
 3a. Name a method by what it IS, never by what it avoids. Banned inside domains and serves:
    "em vez de", "sem", "não", "nunca", "never", "not", "without", "instead of".
 3b. Cover vocabulary variants as SEPARATE domain items: PT and EN forms, acronym and spelled-out form,
@@ -777,8 +768,7 @@ function buildClonePrompt(slug: string, dir: string, retryFeedback: string | nul
     '  "one_liner": string,      // PT-BR, HARD MAX 120 characters. Who the clone is + the choice it is THE answer for. Include the signature method or credential that makes it unique.',
     '  "domains": string[],      // 20-30 items. Each concept TWICE: one PT item and one EN item. Include 3-4 symptom items in the owner\'s voice. No slashes, no ": ", no negation words.',
     '  "serves": string,         // PT-BR paragraph: when to choose this clone. Affirmation only, <= 350 words, digits for numbers, framework names preserved.',
-    '  "not_for": string,        // PT-BR prose: what it does NOT do, and who does it instead (neighbors below).',
-    '  "delegates_to": string[], // subset of the NEIGHBORS slugs; empty array when none fits.',
+    '  "not_for": string,        // PT-BR prose: what it does NOT do, and who does it instead — name the neighbor IN PROSE (delegates_to is retired: a slug list breaks in every pack subset; a name in prose degrades into a live search).',
     '  "refuses": string[]       // 5-15 short canonical terms (2-4 words each) it refuses. These filter contradicting manifest tags.',
     "}",
     "",
@@ -793,7 +783,7 @@ function buildClonePrompt(slug: string, dir: string, retryFeedback: string | nul
     "=== dna-schema.md headings ===",
     dnaHeadings,
     "",
-    "=== NEIGHBORS (live search index — the ONLY valid delegates_to targets; keep their home territory theirs) ===",
+    "=== NEIGHBORS (live search index — keep their home territory theirs; name them in not_for prose when they are the better pick) ===",
     neighbors.length
       ? neighbors.map((n) => `- ${n.slug}${n.one_liner ? ` — ${n.one_liner.slice(0, 140)}` : ""}`).join("\n")
       : "(none found)",

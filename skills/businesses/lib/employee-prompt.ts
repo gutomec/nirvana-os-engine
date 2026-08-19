@@ -253,7 +253,7 @@ function mindCloneCatalogBlock(employeeContent: string): string {
   const lines: string[] = [
     "## AVAILABLE MIND-CLONES (choose agentically)",
     "",
-    `> ${clones.length} mind-clones in the library. The ones marked ★ are your \`assigned_mind_clones\` (DEFAULT candidates, already channeled above). You MAY consult and channel others from the catalog, or decide no extra DNA is needed for this task — the choice is yours, per the brief.`,
+    `> ${clones.length} mind-clones in the library. The ones marked ★ are named by your persona frontmatter — a hint from the business author, NOT a binding: nothing is injected for being ★. You MAY consult and channel any of them, others from the catalog, or decide no extra DNA is needed — the clone is chosen for the TASK, and the choice is yours.`,
     `> To inspect before using: \`nrv inspect-clone <slug>\` (or \`nrv ask <slug> "<question>"\`).`,
     "",
   ];
@@ -371,14 +371,24 @@ type CloneInjection = {
 
 /** Resolve which mind-clones to channel, in the canonical priority order:
  *   1. SOLICITADO  — clones the user explicitly asked for (arg + brief scan)
- *   2. DESIGNADO   — the employee's assigned_mind_clones / embedded dna/ list
- *   3. BUSCA       — if neither, search task→clone and inject matches above the gate
- *   4. PADRÃO      — none useful → operate as the employee persona, no clone
+ *   2. BUSCA       — search TASK→clone and inject matches above the gate
+ *   3. O AGENTE    — nothing injected → the agent picks from the ranking, or none
+ *
+ *  There is no DESIGNADO step any more. `assigned_mind_clones` used to inject
+ *  the seat's static binding with NO fitness gate, before the task ranking ran:
+ *  a film-director seat bound to one director got that director for every task,
+ *  while the director the TASK actually needed appeared only as a suggestion
+ *  below, with the injection budget already spent. A clone is chosen for what
+ *  is about to be done, not for who the seat is. The seat's curation is not
+ *  lost — the frontmatter and any "DNA Cognitivo" prose travel inside the
+ *  persona section, where the agent reads them as context and may honor them
+ *  via the ranking or `nrv ask`.
+ *
  *  Every clone is resolved from the SINGLE library via resolveClonePersona (full
  *  embodiment), so the embedded dna/ copies are no longer the source — the dir
  *  name is only a reference. Search suggestions are always returned for agentic
  *  override. */
-function resolveClonesByPriority(args: BuildArgs, employeeContent: string, bizDir: string): CloneInjection {
+function resolveClonesByPriority(args: BuildArgs): CloneInjection {
   // DNA injection: "full" (whole persona, default) or "fragments" (SOUL + the
   // layers relevant to the phase). Opt-in via NIRVANA_DNA_INJECTION=fragments —
   // the default keeps every run byte-identical to today's.
@@ -403,8 +413,8 @@ function resolveClonesByPriority(args: BuildArgs, employeeContent: string, bizDi
   const push = (slug: string, reason: string): boolean => {
     if (!slug || seen.has(slug) || personas.length >= MAX_INJECT) return false;
     const p = dnaMode === "fragments"
-      ? resolveClonePersona(slug, { depth: "fragments", layers, byteBudget: PER_CLONE_BUDGET })
-      : resolveClonePersona(slug, { depth: "full" });
+      ? resolveClonePersona(slug, { depth: "fragments", layers, byteBudget: PER_CLONE_BUDGET, cwd: args.project_dir })
+      : resolveClonePersona(slug, { depth: "full", cwd: args.project_dir });
     // Not resolved = a requested clone that does not exist in the library.
     // Record it instead of dropping it — the consumer turns this into a loud
     // warning. The MAX_INJECT ceiling and duplicates were filtered above, so
@@ -425,41 +435,23 @@ function resolveClonesByPriority(args: BuildArgs, employeeContent: string, bizDi
   for (const slug of requested) push(slug, "requested");
   const hadRequested = personas.length > 0;
 
-  // 2. ASSIGNED (assigned_mind_clones + embedded dna/ dir names, resolved from the library)
-  const defaults = new Set<string>();
-  for (const ref of assignedMindClones(employeeContent)) defaults.add(parseCloneRef(ref).slug);
-  const dnaDir = path.join(bizDir, "dna");
-  if (fs.existsSync(dnaDir)) {
-    try {
-      for (const f of fs.readdirSync(dnaDir, { withFileTypes: true })) {
-        if (f.isDirectory() || f.isSymbolicLink()) defaults.add(f.name.replace(/\.md$/, ""));
-      }
-    } catch { /* unreadable dna dir — skip */ }
-  }
-  let hadDefaults = false;
-  if (!hadRequested) {
-    for (const slug of defaults) push(slug, "assigned");
-    hadDefaults = personas.length > 0;
-  }
-
   // search runs always (for suggestions); injects only when nothing above won
   let suggestions: CloneHit[] = [];
-  try { suggestions = findCloneForTask(args.brief, { limit: 5 }); } catch { suggestions = []; }
+  try { suggestions = findCloneForTask(args.brief, { limit: 5, cwd: args.project_dir }); } catch { suggestions = []; }
 
-  // 3. SEARCH
-  if (!hadRequested && !hadDefaults) {
+  // 2. SEARCH — ranked against the TASK, injected only above the coverage gate.
+  if (!hadRequested) {
     for (const h of suggestions) {
       if (h.below_gate === false) push(h.slug, `search coverage ${h.coverage?.matched}/${h.coverage?.total}`);
     }
   }
 
-  // 4. decision trace
+  // 3. decision trace
   // The last branch used to read "no useful clone" — a verdict the system is not
   // entitled to, and one it contradicts three lines later by listing a strong
   // candidate. Nothing was auto-injected; whether a clone is useful here is the
   // agent's call, made against the ranked list.
   const decision = hadRequested ? "REQUESTED by the user"
-    : hadDefaults ? "ASSIGNED to the employee"
     : personas.length ? "found by SEARCH for the task"
     : "YOURS — none auto-injected, pick from the ranked candidates";
 
@@ -524,10 +516,12 @@ export function buildEmployeePrompt(args: BuildArgs): string {
   let dnaContent = "";
   let cloneDecision = "(DNA not requested)";
   let cloneSuggestions = "";
+  let clonesInjected = false;
   let contributionsBlock = "";
   if (args.include_dna !== false) {
-    const inj = resolveClonesByPriority(args, employeeContent, bizDir);
+    const inj = resolveClonesByPriority(args);
     cloneDecision = inj.decision;
+    clonesInjected = inj.personas.length > 0;
     for (const p of inj.personas) {
       dnaContent += `\n\n--- MIND-CLONE: ${p.slug} — ${p.display_name} (${p.reason}; ${p.bytes}b; ${path.relative(os.homedir(), p.path)}) ---\n\n${p.content}`;
       emitMindCloneInjected({
@@ -641,6 +635,14 @@ ${employeeContent}
 
 > System order: clone **REQUESTED** by the user → else **SEARCH** for the most useful one for the task → else **you choose**. The clones below are already embodied IN FULL (AGENT + SOUL + DNA); deliver the work AS IF the clone had produced it, under your employee instructions.${dnaContent || "\n\n**No clone was auto-injected — choosing is yours.** Read the candidates below and take one or more, whichever help you think this task through. Inspect any of them with `nrv ask <slug>`. Working without a clone is a legitimate answer, but it is the answer you reach when none of them fits, not the one you start from."}${cloneSuggestions}
 
+**Record your decision** — it is how the system learns which DNA actually wins which task. Whatever you end up channeling (the injected ones, a swap, additions, or none), emit ONE event before your first artifact write:
+
+\`\`\`bash
+nrv audit emit x_clone_choice --business=${args.business_slug} --trace=${args.trace_id || "<trace>"} --json='{"employee":"${args.employee}","chosen":["<slug>", "..."],"reason":"<one line: why these, or why none>"}'
+\`\`\`
+
+An empty \`chosen\` list with a reason is a full, legitimate answer.
+
 ---
 
 ${mindCloneCatalog ? mindCloneCatalog + "\n\n---\n\n" : ""}${squadsBlock}
@@ -679,7 +681,7 @@ ${args.brief}
 
 ## REMEMBER
 
-- You are not a generic Claude. You are ${args.employee} of ${args.business_slug}, channeling the mind-clones above.
+- You are not a generic Claude. You are ${args.employee} of ${args.business_slug}${clonesInjected ? ", channeling the mind-clones above" : " — no clone is channeled; your persona above is your full operating identity"}.
 - Honor the brief. Honor the protocol. Verify before declaring done.
 - If the brief asks for N artifacts, deliver N — not "summary saying you delivered N".
 `;

@@ -109,8 +109,8 @@ export const buildCloneDocForTest = cloneDoc;
 /** THE clone corpus builder — one BM25 doc per clone from the live registry.
  *  Shared by findCloneForTask and `nrv search` so both rank over the same
  *  text (same positive-only fields, same refuses-filtered tags). */
-export function buildCloneCorpus(): Array<ReturnType<typeof cloneDoc>> {
-  return Object.values(loadCloneRegistry()).map(cloneDoc);
+export function buildCloneCorpus(opts: { cwd?: string } = {}): Array<ReturnType<typeof cloneDoc>> {
+  return Object.values(loadCloneRegistry(opts)).map(cloneDoc);
 }
 
 function toHit(h: any, briefTokens: string[]): CloneHit {
@@ -141,9 +141,9 @@ function toHit(h: any, briefTokens: string[]): CloneHit {
  *  normalized score. Empty array when registry is empty or brief is blank. */
 export function findCloneForTask(
   brief: string,
-  opts: { limit?: number; minNormalized?: number } = {},
+  opts: { limit?: number; minNormalized?: number; cwd?: string } = {},
 ): CloneHit[] {
-  const reg = loadCloneRegistry();
+  const reg = loadCloneRegistry({ cwd: opts.cwd });
   const docs = Object.values(reg).map(cloneDoc);
   if (!docs.length || !brief) return [];
 

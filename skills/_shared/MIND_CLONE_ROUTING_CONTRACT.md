@@ -16,12 +16,19 @@ routing:
   serves: "..."         # parágrafo: quando escolher. Só afirmação.
 
   # ── NUNCA INDEXADO: lido pelo orquestrador DEPOIS de recuperar ──────
-  not_for: "..."        # o que ele não faz, e quem faz
-  delegates_to:         # slugs que existem de fato
-    - outro-clone
+  not_for: "..."        # o que ele não faz, e QUEM faz (nomeie o vizinho em prosa)
   refuses:              # termos curtos do que ele recusa
     - resposta direta
 ```
+
+> **`delegates_to` foi aposentado (2026-08-18).** Um clone é conhecimento, não
+> ator — ele não delega. O campo congelava "quem era o vizinho certo" contra uma
+> biblioteca específica e quebrava em todo subconjunto de pack (805 ponteiros
+> embarcados sem resolução), enquanto nenhum caminho de código o consumia. A
+> indicação vive em `not_for`, em prosa: um nome em prosa degrada para a busca
+> viva por necessidade, que responde contra a biblioteca que o usuário de fato
+> tem. Listas existentes em disco são ignoradas — não precisam ser removidas;
+> bloco novo não escreve o campo.
 
 `serves` substitui o antigo `when_to_use`. Blocos legados que ainda usam `when_to_use` continuam indexados por compatibilidade, mas bloco novo não deve escrevê-lo.
 
@@ -52,7 +59,7 @@ O índice pontua sobreposição de termo. "Não use para resposta direta" indexa
 - `brene-brown` veio em 1º numa consulta clínica porque a recusa dizia "diagnóstico", "tratamento", "saúde mental".
 - `nils-leonard-cco` veio em 3º na consulta que nega porque a recusa espelhava "custo por aquisição".
 
-`not_for`, `refuses` e `delegates_to` **não entram no corpus**. Escreva a recusa lá, com as palavras que quiser — ela não pode mais trair o bloco. `serves` recebe só afirmação.
+`not_for` e `refuses` **não entram no corpus**. Escreva a recusa lá, com as palavras que quiser — ela não pode mais trair o bloco. `serves` recebe só afirmação.
 
 ### 3a — a negação cabe num item de `domains` de três palavras
 
