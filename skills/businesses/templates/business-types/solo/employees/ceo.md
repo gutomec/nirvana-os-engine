@@ -39,6 +39,9 @@ self_score_contract:
       weight: 0.5
   on_below_threshold: revise
   max_revise_iterations: 2
+heartbeat:
+  cadence: weekly
+  enabled: false   # opt-in — a scaffold must not switch behavior on by itself
 mentions:
   notification_priority: normal
 ---

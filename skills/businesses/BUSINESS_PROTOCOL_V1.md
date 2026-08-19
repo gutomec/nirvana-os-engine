@@ -619,7 +619,14 @@ disclosure_template: |
 
 The harness MUST prepend the disclosure to any output emitted by a mind_clone employee when `disclosure_required: true`.
 
-The DNA reference loads the canonical mind-clone definition (frontmatter + body) and merges it into the employee's system prompt at runtime. The employee.md body is short (just business-specific scoping); the DNA file provides the cognitive substrate.
+The DNA reference loads the canonical mind-clone definition (frontmatter + body) and merges it into the employee's system prompt at runtime.
+
+Under the per-task clone model (0.7.0) the clone is chosen for the TASK, never
+guaranteed by the seat — so the employee body must stand on its own method
+regardless of `type`. A short body is legitimate only when it still passes the
+seat-sufficiency measure (sections + decision lines); "the DNA file provides
+the substrate" is no longer a licence for a body that is only scoping. The
+blocking check is `check-seat-sufficiency.ts` (SKILL.md, Round 5).
 
 ### 7.6 Employee lifecycle
 
