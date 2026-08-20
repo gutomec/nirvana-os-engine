@@ -63,7 +63,8 @@ Targets **never** modify other targets' outputs directly. Scope isolation is enf
 When Phase 4 produces multiple targets with no data dependency, run them concurrently:
 
 ```ts
-import { planDag, executePlan, fromOrgChart } from "~/.nirvana/skills/harness/lib/dag-planner.ts";
+import { planDag, fromOrgChart } from "~/.nirvana/skills/harness/lib/dag-planner.ts";
+import { executePlan } from "~/.nirvana/skills/harness/lib/parallel-dispatcher.ts";
 const plan = planDag(nodes);              // topological layers
 const result = await executePlan(plan, runFn, { concurrency: 2 });
 ```

@@ -6,6 +6,30 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### The engine learns what relates to what
+
+A typed dependency graph of the entities themselves — derived from PR #41's
+graph model by @marciobisognin, with credit — enters the engine as pure
+algebra (`skills/_shared/lib/dependency-graph.ts`): which edges are legal
+(a company owns employees, an employee embodies a mind-clone), which graphs
+are cycles, and what order things must exist in. The graph is always rebuilt
+from the prose declarations; nothing persisted ever becomes a second source
+of truth.
+
+Three consumers land with it. The installer now lays content down in
+dependency order (squads → mind-clones → businesses; the legacy order
+installed businesses first) and names every missing dependency —
+`dependency missing: mind-clone 'x' required by <business>/<employee>` —
+instead of degrading silently. `nrv graph closure --business <slug>` answers
+"what does executing this business need" exactly, with absent clones flagged
+(the resolution that found 5 of tracking-360's 17 clones by grep now returns
+17 of 17 by declaration). And a plan-graph compiler emits the standard
+multi-target manifest, so a drawn plan executes through the same dispatch
+loop, gates and audit chain as any other run — never through a second
+executor.
+
 ## 0.7.2 — 2026-08-19
 
 ### The seat stands alone, and the system can finally tell

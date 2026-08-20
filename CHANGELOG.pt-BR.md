@@ -6,6 +6,30 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Unreleased
+
+### O engine aprende o que se relaciona com o quê
+
+Um grafo de dependências tipado das próprias entidades — derivado do modelo
+de grafo do PR #41 de @marciobisognin, com crédito — entra no engine como
+álgebra pura (`skills/_shared/lib/dependency-graph.ts`): quais arestas são
+legais (uma empresa possui employees, um employee incorpora um mind-clone),
+quais grafos são ciclos, e em que ordem as coisas precisam existir. O grafo é
+sempre reconstruído das declarações em prosa; nada persistido vira segunda
+fonte de verdade.
+
+Três consumidores chegam com ele. O instalador agora deposita o conteúdo em
+ordem de dependência (squads → mind-clones → businesses; a ordem legada
+instalava businesses primeiro) e nomeia cada dependência ausente —
+`dependency missing: mind-clone 'x' required by <business>/<employee>` — em
+vez de degradar em silêncio. `nrv graph closure --business <slug>` responde
+exatamente "o que a execução desta business precisa", com clones ausentes
+sinalizados (a resolução que achava 5 dos 17 clones do tracking-360 por grep
+agora devolve 17 de 17 por declaração). E um compilador de grafo-de-plano
+emite o manifest multi-target padrão, então um plano desenhado executa pelo
+mesmo loop de dispatch, gates e cadeia de auditoria de qualquer outra
+execução — nunca por um segundo executor.
+
 ## 0.7.2 — 2026-08-19
 
 ### O cargo fica de pé sozinho, e o sistema finalmente enxerga isso
