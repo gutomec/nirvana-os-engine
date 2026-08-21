@@ -43,11 +43,6 @@ const SKILLS_DIR = process.env.NIRVANA_SKILLS_DIR
   || (fs.existsSync(path.join(os.homedir(), ".nirvana", "skills")) ? path.join(os.homedir(), ".nirvana", "skills") : path.join(os.homedir(), ".claude", "skills"));
 const HOOK_SCRIPT = path.join(SKILLS_DIR, "_shared", "scripts", "audit-emit-from-hook.ts");
 const SESSION_START_SCRIPT = path.join(SKILLS_DIR, "_shared", "scripts", "gemini-session-start.ts");
-// stderr suppression that's valid on the shell each runtime uses to run hooks:
-// cmd.exe wants `2>nul` and has no `|| true`; POSIX shells want the bash form.
-// Hook paths are ALWAYS quoted below so a space in the username (C:\Users\John Doe)
-// doesn't truncate argv.
-const HOOK_SUPPRESS = process.platform === "win32" ? "2>nul" : "2>/dev/null || true";
 
 interface HookSpec {
   matcher?: string;
@@ -70,7 +65,7 @@ const AGENTS_TO_INSTALL: AgentInstallSpec[] = [
         hooks: [{
           name: "nirvana-audit-pre",
           type: "command",
-          command: `bun "${HOOK_SCRIPT}" pre claude-code ${HOOK_SUPPRESS}`,
+          command: `bun "${HOOK_SCRIPT}" pre claude-code`,
           async: true,
           timeout: 5,
         }],
@@ -80,7 +75,7 @@ const AGENTS_TO_INSTALL: AgentInstallSpec[] = [
         hooks: [{
           name: "nirvana-audit-post",
           type: "command",
-          command: `bun "${HOOK_SCRIPT}" post claude-code ${HOOK_SUPPRESS}`,
+          command: `bun "${HOOK_SCRIPT}" post claude-code`,
           async: true,
           timeout: 5,
         }],
@@ -96,7 +91,7 @@ const AGENTS_TO_INSTALL: AgentInstallSpec[] = [
         hooks: [{
           name: "nirvana-audit-pre",
           type: "command",
-          command: `bun "${HOOK_SCRIPT}" pre gemini-cli ${HOOK_SUPPRESS}`,
+          command: `bun "${HOOK_SCRIPT}" pre gemini-cli`,
           timeout: 5000,
         }],
       }],
@@ -105,7 +100,7 @@ const AGENTS_TO_INSTALL: AgentInstallSpec[] = [
         hooks: [{
           name: "nirvana-audit-post",
           type: "command",
-          command: `bun "${HOOK_SCRIPT}" post gemini-cli ${HOOK_SUPPRESS}`,
+          command: `bun "${HOOK_SCRIPT}" post gemini-cli`,
           timeout: 5000,
         }],
       }],
@@ -113,7 +108,7 @@ const AGENTS_TO_INSTALL: AgentInstallSpec[] = [
         hooks: [{
           name: "nirvana-session-start",
           type: "command",
-          command: `bun "${SESSION_START_SCRIPT}" ${HOOK_SUPPRESS}`,
+          command: `bun "${SESSION_START_SCRIPT}"`,
           timeout: 5000,
         }],
       }],
@@ -131,7 +126,7 @@ const AGENTS_TO_INSTALL: AgentInstallSpec[] = [
         hooks: [{
           name: "nirvana-audit-pre",
           type: "command",
-          command: `bun "${HOOK_SCRIPT}" pre antigravity-cli ${HOOK_SUPPRESS}`,
+          command: `bun "${HOOK_SCRIPT}" pre antigravity-cli`,
           timeout: 5000,
         }],
       }],
@@ -140,7 +135,7 @@ const AGENTS_TO_INSTALL: AgentInstallSpec[] = [
         hooks: [{
           name: "nirvana-audit-post",
           type: "command",
-          command: `bun "${HOOK_SCRIPT}" post antigravity-cli ${HOOK_SUPPRESS}`,
+          command: `bun "${HOOK_SCRIPT}" post antigravity-cli`,
           timeout: 5000,
         }],
       }],
@@ -148,7 +143,7 @@ const AGENTS_TO_INSTALL: AgentInstallSpec[] = [
         hooks: [{
           name: "nirvana-session-start",
           type: "command",
-          command: `bun "${SESSION_START_SCRIPT}" ${HOOK_SUPPRESS}`,
+          command: `bun "${SESSION_START_SCRIPT}"`,
           timeout: 5000,
         }],
       }],

@@ -6,6 +6,17 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Não lançado
+
+### Comandos portáveis dos hooks de agentes no Windows
+
+Os hooks de auditoria do Claude Code, Gemini CLI e Antigravity não acrescentam
+mais redirecionamentos de dispositivo nulo específicos do shell. Alguns runners
+de hooks no Windows interpretavam `2>nul` como um caminho relativo comum e
+criavam um arquivo `nul` no projeto ativo, o que também interrompia o sincronismo
+do OneDrive. Os scripts dos hooks já são fail-safe e encerram com sucesso em
+caso de erro interno, portanto o redirecionamento era desnecessário.
+
 ## 0.7.3 — 2026-08-20
 
 ### O engine aprende o que se relaciona com o quê
