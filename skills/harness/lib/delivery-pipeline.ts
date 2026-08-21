@@ -184,6 +184,11 @@ export interface DeliveryArgs {
   /** Session to resume for auto-revisions. */
   sessionId?: string | null;
   maxRevisions?: number;
+  /** What to do when the gate still fails after the retry ceiling:
+   *  "accept" (default) delivers the last attempt WITH RESERVATIONS;
+   *  "withhold" keeps the strict fail-closed exit 2. Falls back to
+   *  NIRVANA_GATE_EXHAUSTED, then "accept". Tests inject via this arg. */
+  gateExhaustedPolicy?: "accept" | "withhold";
   maxBudgetUsd?: number;
   timeoutMs?: number;
   yolo?: boolean;
@@ -213,7 +218,7 @@ export interface DeliveryArgs {
   audit: (event: string, payload: Record<string, any>) => void;
   /** Post-gate hook, called ONLY when delivery will proceed (gate pass or
    * fail-forced). dispatch.ts hangs the PDF/HTML/zip steps here. */
-  afterGate?: (ctx: { gateOutcome: GateOutcome | "fail-forced"; produced: string[] }) => { zipPath?: string | null } | void;
+  afterGate?: (ctx: { gateOutcome: GateOutcome | "fail-forced" | "fail-accepted"; produced: string[] }) => { zipPath?: string | null } | void;
   /** Called whenever a revision run rotates the session id. */
   onSession?: (sessionId: string) => void;
   // ── test seams ──
@@ -227,7 +232,7 @@ export interface DeliveryArgs {
 export interface DeliveryResult {
   exitCode: DeliveryExitCode;
   delivered: boolean;
-  gateOutcome: GateOutcome | "fail-forced";
+  gateOutcome: GateOutcome | "fail-forced" | "fail-accepted";
   produced: string[];
   gatedFiles: string[];
   revisionsUsed: number;
@@ -254,7 +259,12 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
   const runHeadlessImpl = args.runHeadlessImpl ?? runHeadless;
   const verifyScript = args.verifyScript ?? path.join(SKILLS_DEFAULT, "businesses", "scripts", "verify-deliverable.ts");
   const gateScript = args.gateScript ?? path.join(SKILLS_DEFAULT, "harness", "scripts", "quality-gate.ts");
-  const maxRevisions = args.maxRevisions ?? 2;
+  // Retry ceiling (owner policy, 2026-08-21): a QA loop must terminate. The
+  // default is 15 attempts, configurable via NIRVANA_MAX_GATE_RETRIES (Bun
+  // auto-loads .env, so a project .env entry works). An explicit
+  // args.maxRevisions always wins — the unattended sweep passes 0 on purpose.
+  const envCap = Number.parseInt(process.env.NIRVANA_MAX_GATE_RETRIES ?? "", 10);
+  const maxRevisions = args.maxRevisions ?? (Number.isFinite(envCap) && envCap >= 0 ? envCap : 15);
   const led = args.ledger ?? null;
   const mark = (state: runLedger.RunState, extra?: runLedger.MarkStateExtra) => {
     if (led) ledgerTry(() => runLedger.markState(led.handle, led.runId, state, extra ?? {}), warn);
@@ -381,7 +391,7 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
   // there is exactly one door out of this pipeline that can say `delivered`.
   const ceilingReason = (): string | null =>
     args.completenessCeiling && !manifestVerified ? args.completenessCeiling.reason : null;
-  const withholdByCeiling = (reason: string, verdict: GateOutcome | "fail-forced"): DeliveryResult => {
+  const withholdByCeiling = (reason: string, verdict: GateOutcome | "fail-forced" | "fail-accepted"): DeliveryResult => {
     warn(`  entrega RETIDA pelo teto de completude — o gate (${verdict}) julga a QUALIDADE do que existe, não se o conjunto está completo, e nenhum manifesto verificado prova isso. Os artefatos seguem em ${args.outputsRoot}; quem decide é um humano.`);
     emit("x_delivery_withheld", {
       trace_id: args.pid, project_id: args.pid, business_slug: args.slug,
@@ -421,7 +431,47 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
     return { exitCode: 0, delivered: true, gateOutcome: "fail-forced", produced, gatedFiles, revisionsUsed: revUsed, sessionId, zipPath, verifySource, ceilingApplied: null };
   }
 
-  // Fail-closed default: withhold delivery. No `delivered` event, exit 2.
+  // Owner policy (2026-08-21): after the retry ceiling, the LAST attempt is
+  // accepted WITH RESERVATIONS by default — a QA loop must end in a delivery,
+  // not a stall. Loudly: _QA-RESERVATIONS.md lands next to the artifacts with
+  // exactly what the gate still flags (and the caveat that the QA judgment
+  // itself may be wrong — over-strict rubric, contract mismatch), the audit
+  // carries x_delivered_with_reservations, and the ledger meta records it.
+  // NIRVANA_GATE_EXHAUSTED=withhold restores strict fail-closed. The
+  // completeness ceiling still outranks: reservations override a QUALITY
+  // verdict, never a missing-deliverable one.
+  const exhaustedPolicy = (args.gateExhaustedPolicy ?? process.env.NIRVANA_GATE_EXHAUSTED ?? "accept").toLowerCase();
+  if (exhaustedPolicy !== "withhold") {
+    const cappedR = ceilingReason();
+    if (cappedR) return withholdByCeiling(cappedR, "fail-accepted");
+    const reservations = [
+      "# QA reservations — delivered after the gate retry ceiling",
+      "",
+      `The quality gate still failed after ${revUsed} revision attempt(s) (ceiling ${maxRevisions}; env NIRVANA_MAX_GATE_RETRIES).`,
+      "Per policy (NIRVANA_GATE_EXHAUSTED=accept, the default) the last attempt was accepted WITH RESERVATIONS instead of looping or withholding.",
+      "",
+      "What the gate still flags — judge these points yourself; the QA verdict can also be the wrong side (over-strict rubric, contract mismatch):",
+      "",
+      ...gate.fails.flatMap(fl => [`- ${path.basename(fl.file)}:`, ...fl.fixes.map(x => `  - ${x}`)]),
+      "",
+      `Iterate deliberately: nrv revise ${args.pid} "<fix instruction>" · strict mode: NIRVANA_GATE_EXHAUSTED=withhold`,
+      "",
+    ].join("\n");
+    try { fs.writeFileSync(path.join(args.outputsRoot, "_QA-RESERVATIONS.md"), reservations); }
+    catch { /* outputs dir unwritable — the warn below still tells the story */ }
+    warn(`  gate still FAIL after ${revUsed} revision(s) — ACCEPTED WITH RESERVATIONS (_QA-RESERVATIONS.md; NIRVANA_GATE_EXHAUSTED=withhold for strict mode)`);
+    emit("x_delivered_with_reservations", {
+      trace_id: args.pid, project_id: args.pid, business_slug: args.slug,
+      files: produced.length, gated_files: gatedFiles.length, revisions: revUsed, ceiling: maxRevisions,
+    });
+    const hookR = args.afterGate?.({ gateOutcome: "fail-accepted", produced });
+    const zipR = hookR && typeof hookR === "object" ? hookR.zipPath ?? null : null;
+    emit("delivered", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, files: produced.length, gate: "fail-accepted", zip: zipR });
+    mark("delivered", { metaPatch: { gate: "fail-accepted", files: produced.length, zip: zipR, reservations: true, revisions: revUsed } });
+    return { exitCode: 0, delivered: true, gateOutcome: "fail-accepted", produced, gatedFiles, revisionsUsed: revUsed, sessionId, zipPath: zipR, verifySource, ceilingApplied: null };
+  }
+
+  // Fail-closed on request: withhold delivery. No `delivered` event, exit 2.
   warn(`  gate still FAIL after ${revUsed} revision(s) — delivery WITHHELD (artifacts stay at ${args.outputsRoot}; use 'nrv revise ${args.pid} \"<fix>\"' or --force-deliver)`);
   emit("x_delivery_withheld", {
     trace_id: args.pid, project_id: args.pid, business_slug: args.slug,

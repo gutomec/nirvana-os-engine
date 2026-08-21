@@ -465,6 +465,11 @@ export function redispatchRun(h: LedgerHandle, row: RunRow, overrides: Redispatc
     // The runtime the cascade actually landed on, not the one the row asked for.
     runtime: (res.finalRuntime as DeliveryArgs["runtime"]) || (row.runtime as DeliveryArgs["runtime"]) || "claude-code",
     maxRevisions: 0,
+    // Unattended path stays strict: nobody is awake to read the reservations
+    // note, so the owner's accept-with-reservations default (delivery-pipeline)
+    // does not apply here — a failing gate is withheld and escalated, as the
+    // salvage doctrine documents.
+    gateExhaustedPolicy: "withhold",
     ...deliveryOverrides,
   };
   try {
@@ -569,6 +574,11 @@ export function salvageStalledRun(h: LedgerHandle, row: RunRow, overrides: Parti
   const args: DeliveryArgs = {
     ...base,
     maxRevisions: 0,
+    // Unattended path stays strict: nobody is awake to read the reservations
+    // note, so the owner's accept-with-reservations default (delivery-pipeline)
+    // does not apply here — a failing gate is withheld and escalated, as the
+    // salvage doctrine documents.
+    gateExhaustedPolicy: "withhold",
     config: { ...cfg, quality_gate: { ...cfg.quality_gate, judge_enabled: false } },
     completenessCeiling: { reason: SALVAGE_CEILING_REASON },
     runHeadlessImpl: (() => { throw new Error("supervisor salvage is read-only: no runtime spawn"); }) as any,

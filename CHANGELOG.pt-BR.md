@@ -6,6 +6,42 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Unreleased
+
+### Correções de instalação: as falhas silenciosas que compradores realmente sofrem
+
+Duas classes de "instalei e nada funciona, sem nenhum erro" foram fechadas.
+
+No Windows, o idioma `where bun >nul 2>nul` dos wrappers `.cmd` só é seguro
+dentro do cmd.exe; interpretado pelo PowerShell, pelo shell do Bun ou por
+caminhos adjacentes ao OneDrive, ele materializa um arquivo literal, quase
+indeletável, chamado `nul`. Os 17 wrappers e os dois geradores de launcher
+agora usam `where /q` (sem nenhum redirecionamento), um gate de fonte impede
+o idioma de voltar, e o `nrv doctor` detecta máquinas já mordidas e imprime o
+comando de remoção.
+
+A linkagem de runtimes agora sonda dois sinais — diretório home OU binário na
+PATH — em vez do diretório sozinho, que pulava em silêncio runtimes recém
+instalados via npm cujo diretório só nasce no primeiro uso (OpenClaw: binário
+presente, `~/.agents` ausente, link nunca criado). O instalador agora cria o
+diretório, reporta cada runtime como linkado ou pulado COM o motivo, e
+imprime os fatos de invocação do OpenClaw que o runtime não ensina (sem
+contrato de projeto; invocar com `/harness`). O `nrv doctor` ganha uma linha
+`skills link:` por runtime detectado.
+
+### O loop de QA agora termina em entrega
+
+Um agente que reprovava no gate de qualidade podia revisar, reprovar e
+revisar para sempre. O teto de tentativas agora é 15 por padrão
+(`NIRVANA_MAX_GATE_RETRIES`, configurável via `.env` do projeto), e ao
+atingi-lo a última tentativa é aceita COM RESSALVAS: um `_QA-RESERVATIONS.md`
+fica ao lado dos artefatos explicando exatamente o que o gate ainda aponta —
+e que o próprio julgamento do QA pode ser o lado errado — enquanto a
+auditoria registra `x_delivered_with_reservations`.
+`NIRVANA_GATE_EXHAUSTED=withhold` restaura a retenção estrita fail-closed. O
+teto de completude continua acima da aceitação, e o sweep não assistido do
+supervisor permanece estrito.
+
 ## 0.7.3 — 2026-08-20
 
 ### O engine aprende o que se relaciona com o quê

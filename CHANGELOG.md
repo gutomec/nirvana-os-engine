@@ -6,6 +6,40 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### Install fixes: the silent failures buyers actually hit
+
+Two "installed it and nothing works, with no error" classes are closed.
+
+On Windows, the `.cmd` wrappers' `where bun >nul 2>nul` idiom is only safe
+inside cmd.exe; interpreted by PowerShell, Bun's shell or OneDrive-adjacent
+paths it materializes a literal, near-undeletable file named `nul`. All 17
+wrappers and both launcher generators now use `where /q` (no redirection at
+all), a source gate keeps the idiom from returning, and `nrv doctor` detects
+already-bitten machines and prints the removal command.
+
+Runtime linking now probes two signals — home directory OR CLI binary on
+PATH — instead of the directory alone, which silently skipped freshly
+npm-installed runtimes whose directory only appears on first run (OpenClaw:
+binary present, `~/.agents` absent, link never created). The installer now
+creates the directory, reports every runtime as linked or skipped WITH the
+reason, and prints the OpenClaw invocation facts the runtime cannot teach
+(no project contract; invoke with `/harness`). `nrv doctor` gains a
+`skills link:` line per detected runtime.
+
+### The QA loop now terminates in a delivery
+
+An agent that failed the quality gate could revise, fail, and revise forever.
+The retry ceiling is now 15 attempts by default (`NIRVANA_MAX_GATE_RETRIES`,
+configurable via a project `.env`), and when it is reached the last attempt
+is accepted WITH RESERVATIONS: a `_QA-RESERVATIONS.md` lands next to the
+artifacts explaining exactly what the gate still flags — and that the QA
+judgment itself may be the wrong side — while the audit records
+`x_delivered_with_reservations`. `NIRVANA_GATE_EXHAUSTED=withhold` restores
+strict fail-closed withholding. The completeness ceiling still outranks the
+acceptance, and the unattended supervisor sweep stays strict.
+
 ## 0.7.3 — 2026-08-20
 
 ### The engine learns what relates to what

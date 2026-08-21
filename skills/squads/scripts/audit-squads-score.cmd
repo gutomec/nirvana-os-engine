@@ -1,11 +1,11 @@
 @echo off
 setlocal
-where bun >nul 2>nul
+where /q bun
 if %ERRORLEVEL%==0 (
     bun "%~dp0audit-squads-score.ts" %*
     exit /b %ERRORLEVEL%
 )
-where node >nul 2>nul
+where /q node
 if %ERRORLEVEL%==0 (
     node --experimental-strip-types "%~dp0audit-squads-score.ts" %*
     exit /b %ERRORLEVEL%

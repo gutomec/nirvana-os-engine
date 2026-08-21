@@ -16,17 +16,37 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 /**
- * Runtime skill directories, in install order. NO runtime is a prerequisite,
- * not even Claude Code: each is wired only when it is actually installed (its
- * home dir exists). The canonical tree at ~/.nirvana/skills is the one thing
- * always created, and every runtime consumes it from there.
+ * Runtime skill targets, in install order. NO runtime is a prerequisite, not
+ * even Claude Code. A runtime counts as installed when EITHER its home dir
+ * exists OR its CLI binary is on PATH — two signals, because the single
+ * dir-exists proxy silently skipped freshly npm-installed runtimes whose home
+ * dir is only created on first run (OpenClaw: binary present, ~/.agents
+ * absent, linking skipped with no error, and the buyer concluded the product
+ * was broken). With the binary present the installer now CREATES the dir; the
+ * old rule of never conjuring ~/.claude on a machine that never had Claude
+ * Code still holds, because a missing binary still skips — loudly.
+ *
+ * `note` is printed after linking: runtime-specific facts the user cannot
+ * discover from inside the runtime (OpenClaw reads no project contract).
  */
-export const RUNTIME_SKILL_DIRS = [
-  join(homedir(), ".claude/skills"),
-  join(homedir(), ".codex/skills"),
-  join(homedir(), ".gemini/skills"),
-  join(homedir(), ".antigravity/skills"),
-  join(homedir(), ".pi/agent/skills"),   // Pi Coding Agent (Agent Skills standard)
+export interface RuntimeTarget {
+  /** Adapter name as the docs and doctor call it. */
+  name: string;
+  /** CLI binary probed on PATH (second install signal). */
+  bin: string;
+  /** The skills directory the engine links/copies into. */
+  skillsDir: string;
+  /** Printed once after wiring — invocation facts the runtime can't teach. */
+  note?: string;
+}
+
+export const RUNTIME_TARGETS: RuntimeTarget[] = [
+  { name: "claude-code", bin: "claude", skillsDir: join(homedir(), ".claude/skills") },
+  { name: "codex", bin: "codex", skillsDir: join(homedir(), ".codex/skills") },
+  { name: "gemini-cli", bin: "gemini", skillsDir: join(homedir(), ".gemini/skills") },
+  { name: "antigravity-cli", bin: "agy", skillsDir: join(homedir(), ".antigravity/skills") },
+  // Pi Coding Agent (Agent Skills standard)
+  { name: "pi", bin: "pi", skillsDir: join(homedir(), ".pi/agent/skills") },
   // OpenClaw reads ~/.agents/skills as its "personal agent skills" source. It
   // is a real runtime dir, not a stray: linking the engine there is the only
   // way an OpenClaw session ever sees the harness. Note that a SYMLINK of this
@@ -35,8 +55,16 @@ export const RUNTIME_SKILL_DIRS = [
   // paths log "Skill conflict detected" (see doctor: duplicate exposure).
   // Per-skill links into ~/.nirvana/skills, like every other entry here, do not
   // have that problem.
-  join(homedir(), ".agents/skills"),     // OpenClaw (personal agent skills)
+  {
+    name: "openclaw",
+    bin: "openclaw",
+    skillsDir: join(homedir(), ".agents/skills"),
+    note: "OpenClaw reads no project contract (AGENTS.md/CLAUDE.md have no effect there); invoke skills explicitly: /harness <brief>. Dispatch is the scripted path (nrv dispatch --exec).",
+  },
 ];
+
+/** Back-compat view (uninstaller iterates plain dirs). */
+export const RUNTIME_SKILL_DIRS = RUNTIME_TARGETS.map((t) => t.skillsDir);
 
 /**
  * The instruction files agent runtimes read from a project root. `nrv init`

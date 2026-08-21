@@ -212,6 +212,12 @@ const deliveryArgs = {
   workingDir: process.cwd(),
   sessionId: (session.session_id as string | null) ?? sessionId,
   maxRevisions: inSweep ? 0 : config.quality_gate.max_revisions,
+  // nrv revise is the DELIBERATE iteration tool: one revision per invocation,
+  // a human (or the sweep, via NRV_IN_SWEEP) reading the verdict. Its 0/2/3
+  // exit contract stays strict — the accept-with-reservations default applies
+  // to the dispatch pipeline's autonomous loop, not to the tool the
+  // reservations note tells you to reach for.
+  gateExhaustedPolicy: "withhold",
   maxBudgetUsd: maxBudget ? parseFloat(maxBudget) : undefined,
   timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
   yolo,

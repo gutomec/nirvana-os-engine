@@ -26,7 +26,7 @@ import * as os from "node:os";
 import { execSync, spawnSync } from "node:child_process";
 import { paths as nrvPaths } from "../../_shared/lib/bun-helpers.ts";
 import { resolveScope } from "../../_shared/lib/scope.ts";
-import { RUNTIME_SKILL_DIRS, PROJECT_CONTRACT_FILES } from "../../_shared/lib/runtime-dirs.ts";
+import { RUNTIME_TARGETS, RUNTIME_SKILL_DIRS, PROJECT_CONTRACT_FILES } from "../../_shared/lib/runtime-dirs.ts";
 import { scanLibrary, authorsPacks, STRIP_HINT } from "../../_shared/lib/watermark-scan.ts";
 import { listRuntimes } from "../../_shared/lib/host-agent-driver.ts";
 
@@ -121,6 +121,40 @@ add(
     ? `${runtimesOnPath}/${listRuntimes().length} agent runtime(s) on PATH`
     : `no agent runtime on PATH — dispatch cannot run; install one (claude, codex, gemini, …)${headlessCI ? " (CI environment: reported as warning)" : ""}`,
 );
+
+// SECTION 1a-ter: RUNTIME SKILL LINKAGE — a runtime on PATH whose skills dir
+// lacks the engine link is the "installed everything, typed a brief, nothing
+// dispatched" failure (owner report, 2026-08-21: OpenClaw fresh from npm has
+// no ~/.agents until first run; the old dir-exists proxy skipped the link in
+// silence). The installer now creates the dir; this check catches installs
+// done before the fix, or dirs removed since.
+for (const t of RUNTIME_TARGETS) {
+  if (!which(t.bin)) continue; // runtime absent — nothing to link
+  const harnessLink = path.join(t.skillsDir, "harness");
+  if (fs.existsSync(harnessLink)) {
+    add(`skills link: ${t.name}`, "PASS", t.skillsDir);
+  } else {
+    add(`skills link: ${t.name}`, "WARN",
+      `'${t.bin}' on PATH but ${t.skillsDir} has no engine link — re-run: bun scripts/install.ts`);
+  }
+}
+
+// SECTION 1a-quater: nul GHOST FILES (Windows) — a `>nul` redirect interpreted
+// outside cmd.exe (PowerShell, Bun shell) materializes a literal file named
+// `nul`; OneDrive then persists it as an undeletable, syncing ghost. Detection
+// MUST be by directory listing: existsSync("nul") hits the DEVICE and answers
+// true in every directory. Wrappers are fixed (`where /q`, gated by
+// cmd-wrappers.test.ts); this finds machines already bitten.
+if (process.platform === "win32") {
+  for (const dir of [process.cwd(), os.homedir()]) {
+    try {
+      if (fs.readdirSync(dir).some((e) => e.toLowerCase() === "nul")) {
+        add("nul ghost file", "WARN",
+          `literal 'nul' file in ${dir} — remove with: del "\\\\?\\${dir}\\nul"`);
+      }
+    } catch { /* unreadable dir — skip */ }
+  }
+}
 
 // SECTION 1a-bis: CLAUDE CODE AUTH — a persistent CLAUDE_CODE_OAUTH_TOKEN export
 // in a shell startup file (the pattern our own docs used to recommend) makes the
