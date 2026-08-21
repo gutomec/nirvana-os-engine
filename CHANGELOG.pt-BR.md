@@ -6,6 +6,21 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Unreleased
+
+### A ativação de squad para de mentir duas vezes
+
+Verificado em campo numa VPS: o `activate-squad.ts` assumia que o JSON do
+activator tinha sido transmitido ao vivo, mas o helper de exec só transmite
+com NIRVANA_VERBOSE=1 — toda execução normal capturava o JSON e não imprimia
+nada, então quem chamava lia um stdout vazio. A saída capturada agora é
+reproduzida. E o contrato de exit code sempre prometeu "2 = confirmações
+necessárias (instalações pesadas / sudo)" sem que nada detectasse sudo: uma
+execução sem privilégio de um comando de instalação com sudo agora vira item
+confirmation_required (exit 2, consentido via --confirm-heavy), e execução
+como root remove o prefixo sudo (containers mínimos não têm o binário sudo).
+Dois testes fixam ambos.
+
 ## 0.7.5 — 2026-08-21
 
 ### O gate aprende que "todo" é português

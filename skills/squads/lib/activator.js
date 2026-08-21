@@ -147,7 +147,7 @@ function allChecksPass(norm) {
   return norm.checks.every(c => checkCmd(c).ok);
 }
 
-function installSystem(dep, dryRun) {
+function installSystem(dep, dryRun, confirmHeavy) {
   // Bare prereq string (e.g. "ffmpeg >= 6.0", "node >= 20"): we can only verify
   // presence — auto-installing a system tool needs a package-manager mapping we
   // don't have, so a miss is surfaced (non-blocking), not failed.
@@ -171,7 +171,29 @@ function installSystem(dep, dryRun) {
   if (dryRun) {
     return { name: dep.name, status: 'would_install', kind: 'system', cmd: installCmd };
   }
-  const installResult = runCmd(installCmd);
+  // The exit-code contract promises 2 for "heavy installs / sudo", but until
+  // now nothing ever detected sudo: a sudo-needing install either ran and
+  // failed noisily or was skipped as a warning, and the caller saw exit 0
+  // with a hard dependency still pending (VPS field report, 2026-08-21).
+  // Running AS root, the sudo prefix is dropped (minimal containers have no
+  // sudo binary, and root does not need it). Running unprivileged, a sudo
+  // command requires --confirm-heavy — the same consent gate as large
+  // downloads — otherwise it is a confirmation_required item (exit 2).
+  let effectiveCmd = installCmd;
+  const needsSudo = /(^|\s|&&|\|\||;)\s*sudo\s+/.test(installCmd);
+  const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+  if (needsSudo && isRoot) {
+    effectiveCmd = installCmd.replace(/(^|\s|&&|\|\||;)(\s*)sudo\s+/g, '$1$2');
+  } else if (needsSudo && !confirmHeavy) {
+    return {
+      name: dep.name,
+      status: 'confirmation_required',
+      kind: 'system',
+      cmd: installCmd,
+      reason: 'Install command needs sudo. Re-run with --confirm-heavy to accept (or install it yourself and re-activate).',
+    };
+  }
+  const installResult = runCmd(effectiveCmd);
   if (!installResult.ok) {
     return { name: dep.name, status: 'install_failed', kind: 'system', error: installResult.error };
   }
@@ -535,7 +557,7 @@ function activate(slug, opts = {}) {
 
   // System tools
   if (Array.isArray(deps.system)) {
-    log.steps.system = deps.system.map(d => installSystem(d, dryRun));
+    log.steps.system = deps.system.map(d => installSystem(d, dryRun, opts.confirmHeavyDownloads));
   }
 
   // Python deps
