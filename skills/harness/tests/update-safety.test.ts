@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 import {
   collectManagedUpdateRisks,
   createCustomizationSnapshot,
@@ -107,6 +107,23 @@ function findFiles(root: string, name: string): string[] {
   };
   walk(root);
   return found;
+}
+
+function validLockOwner(target: string, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    schema_version: "1.0",
+    pid: process.pid,
+    created_at: new Date().toISOString(),
+    token: "3fdbe2f5-21a4-48d0-830f-8cd8d67d0f5d",
+    owner_id: "fixture-pack/businesses/demo",
+    target: resolve(target),
+    ...overrides,
+  };
+}
+
+function writeLockDirectory(lockPath: string, owner: Record<string, unknown>): void {
+  mkdirSync(lockPath, { recursive: true });
+  writeFileSync(join(lockPath, "owner.json"), JSON.stringify(owner) + "\n");
 }
 
 afterEach(() => {
@@ -285,7 +302,7 @@ describe("managed update transaction safety", () => {
     const lockPath = join(root, "target", ".demo.nirvana-update.lock");
     let metadata: Record<string, unknown> = {};
     const result = safety.guardManagedMutation(observed, join(root, "snapshots"), () => {
-      metadata = JSON.parse(readFileSync(lockPath, "utf8"));
+      metadata = JSON.parse(readFileSync(join(lockPath, "owner.json"), "utf8"));
     });
     expect(result.ok).toBe(true);
     expect(metadata.pid).toBe(process.pid);
@@ -339,7 +356,7 @@ describe("managed update transaction safety", () => {
       targetPath: target, baseHash: hashManagedTree(target), incomingHash: null, excludes: [],
     });
     const lockPath = join(root, "target", ".demo.nirvana-update.lock");
-    writeFileSync(lockPath, JSON.stringify({ pid: process.pid, created_at: new Date().toISOString(), token: "active-owner-token" }));
+    writeLockDirectory(lockPath, validLockOwner(target));
     let mutated = false;
     const result = safety.guardManagedMutation(observed, join(root, "snapshots"), () => { mutated = true; });
     expect(result.ok).toBe(false);
@@ -378,10 +395,9 @@ describe("managed update transaction safety", () => {
       targetPath: target, baseHash: hashManagedTree(target), incomingHash: null, excludes: [],
     });
     const lockPath = join(root, "target", ".demo.nirvana-update.lock");
-    writeFileSync(lockPath, JSON.stringify({
+    writeLockDirectory(lockPath, validLockOwner(target, {
       pid: 2147483647,
       created_at: new Date(Date.now() - 10 * 60_000).toISOString(),
-      token: "old-orphan-token",
     }));
     let mutated = false;
     const result = safety.guardManagedMutation(observed, join(root, "snapshots"), () => { mutated = true; });
@@ -401,11 +417,75 @@ describe("managed update transaction safety", () => {
       targetPath: target, baseHash: hashManagedTree(target), incomingHash: null, excludes: [],
     });
     const lockPath = join(root, "target", ".demo.nirvana-update.lock");
-    safety.guardManagedMutation(observed, join(root, "snapshots"), () => {
-      writeFileSync(lockPath, JSON.stringify({ pid: process.pid, created_at: new Date().toISOString(), token: "replacement-owner" }));
+    const result = safety.guardManagedMutation(observed, join(root, "snapshots"), () => {
+      writeFileSync(join(lockPath, "owner.json"), JSON.stringify(validLockOwner(target, {
+        token: "b8cf5913-290f-4db7-a967-415da61f5b92",
+      })) + "\n");
     });
+    expect(result.ok).toBe(false);
     expect(existsSync(lockPath)).toBe(true);
-    expect(JSON.parse(readFileSync(lockPath, "utf8")).token).toBe("replacement-owner");
+    expect(JSON.parse(readFileSync(join(lockPath, "owner.json"), "utf8")).token)
+      .toBe("b8cf5913-290f-4db7-a967-415da61f5b92");
+  });
+
+  test("fails closed for missing, forged, wrong-target, and malformed owner markers", async () => {
+    const safety = await import("../../_shared/lib/update-safety.ts") as Record<string, any>;
+    const cases: Array<[string, (owner: Record<string, unknown>, root: string) => void]> = [
+      ["missing owner_id", (owner) => { delete owner.owner_id; }],
+      ["forged owner_id", (owner) => { owner.owner_id = "forged/owner/value"; }],
+      ["missing target", (owner) => { delete owner.target; }],
+      ["wrong target", (owner, root) => { owner.target = join(root, "another-target"); }],
+      ["malformed pid", (owner) => { owner.pid = "123"; }],
+      ["malformed timestamp", (owner) => { owner.created_at = "yesterday"; }],
+      ["malformed token", (owner) => { owner.token = "not-a-uuid"; }],
+    ];
+    for (const [label, alter] of cases) {
+      const { root } = fixtureRoot();
+      const target = join(root, "target", "demo");
+      mkdirSync(target, { recursive: true });
+      writeFileSync(join(target, "business.yaml"), "name: demo\n");
+      const observed = safety.observeManagedTarget({
+        ownership: "pack-managed", ownerId: "fixture-pack", kind: "businesses", slug: "demo",
+        targetPath: target, baseHash: hashManagedTree(target), incomingHash: null, excludes: [],
+      });
+      const lockPath = join(root, "target", ".demo.nirvana-update.lock");
+      const owner = validLockOwner(target, {
+        pid: 2147483647,
+        created_at: new Date(Date.now() - 10 * 60_000).toISOString(),
+      });
+      alter(owner, root);
+      writeLockDirectory(lockPath, owner);
+      const result = safety.guardManagedMutation(observed, join(root, "snapshots"), () => {});
+      expect(result.ok, label).toBe(false);
+      expect(result.lock_status, label).toBe("invalid");
+      expect(existsSync(lockPath), label).toBe(true);
+    }
+  });
+
+  test("checks the moved lock owner after a simulated replacement in the release window", async () => {
+    const { root } = fixtureRoot();
+    const target = join(root, "target", "demo");
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "business.yaml"), "name: demo\n");
+    const safety = await import("../../_shared/lib/update-safety.ts") as Record<string, any>;
+    const observed = safety.observeManagedTarget({
+      ownership: "pack-managed", ownerId: "fixture-pack", kind: "businesses", slug: "demo",
+      targetPath: target, baseHash: hashManagedTree(target), incomingHash: null, excludes: [],
+    });
+    let hookCalled = false;
+    const replacementToken = "b8cf5913-290f-4db7-a967-415da61f5b92";
+    const result = safety.guardManagedMutation(observed, join(root, "snapshots"), () => {}, {
+      beforeRelease: (lockPath: string) => {
+        hookCalled = true;
+        rmSync(lockPath, { recursive: true, force: true });
+        writeLockDirectory(lockPath, validLockOwner(target, { token: replacementToken }));
+      },
+    });
+    const lockPath = join(root, "target", ".demo.nirvana-update.lock");
+    expect(result.ok).toBe(false);
+    expect(hookCalled).toBe(true);
+    expect(existsSync(lockPath)).toBe(true);
+    expect(JSON.parse(readFileSync(join(lockPath, "owner.json"), "utf8")).token).toBe(replacementToken);
   });
 });
 

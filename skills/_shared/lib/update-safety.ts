@@ -1,16 +1,14 @@
 import {
-  closeSync,
   copyFileSync,
   lstatSync,
   mkdirSync,
-  openSync,
   readFileSync,
   readlinkSync,
   readdirSync,
   realpathSync,
+  renameSync,
   rmSync,
   rmdirSync,
-  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
@@ -365,6 +363,7 @@ export class ManagedMutationCommandError extends Error {
 }
 
 interface ManagedLockOwner {
+  schema_version: "1.0";
   pid: number;
   created_at: string;
   token: string;
@@ -373,14 +372,46 @@ interface ManagedLockOwner {
 }
 
 export const ORPHAN_LOCK_MIN_AGE_MS = 5 * 60_000;
+const LOCK_OWNER_FILE = "owner.json";
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const OWNER_ID_PATTERN = /^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/;
 
-function readLockOwner(lockPath: string): ManagedLockOwner | null {
+export interface ManagedMutationHooks {
+  /** Test/diagnostic seam for exercising replacement exactly before release. */
+  beforeRelease?: (lockPath: string) => void;
+}
+
+function canonicalTarget(path: string): string {
+  const absolute = resolve(path);
+  try { return realpathSync(absolute); }
+  catch {
+    try { return join(realpathSync(dirname(absolute)), basename(absolute)); }
+    catch { return absolute; }
+  }
+}
+
+function sameCanonicalPath(left: string, right: string): boolean {
+  const a = canonicalTarget(left);
+  const b = canonicalTarget(right);
+  return process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
+}
+
+function readLockOwner(lockPath: string, expectedOwnerId: string, expectedTarget: string): ManagedLockOwner | null {
   try {
-    const parsed = JSON.parse(readFileSync(lockPath, "utf8"));
+    const lockStat = lstatSync(lockPath);
+    if (!lockStat.isDirectory() || lockStat.isSymbolicLink()) return null;
+    const marker = join(lockPath, LOCK_OWNER_FILE);
+    const markerStat = lstatSync(marker);
+    if (!markerStat.isFile() || markerStat.isSymbolicLink()) return null;
+    const parsed = JSON.parse(readFileSync(marker, "utf8"));
     if (
-      !Number.isInteger(parsed?.pid) || parsed.pid <= 0 ||
-      typeof parsed?.created_at !== "string" || !Number.isFinite(Date.parse(parsed.created_at)) ||
-      typeof parsed?.token !== "string" || parsed.token.length < 8
+      parsed?.schema_version !== "1.0" ||
+      !Number.isSafeInteger(parsed?.pid) || parsed.pid <= 0 || parsed.pid > 2147483647 ||
+      typeof parsed?.created_at !== "string" || new Date(parsed.created_at).toISOString() !== parsed.created_at ||
+      Date.parse(parsed.created_at) > Date.now() + 60_000 ||
+      typeof parsed?.token !== "string" || !UUID_PATTERN.test(parsed.token) ||
+      typeof parsed?.owner_id !== "string" || !OWNER_ID_PATTERN.test(parsed.owner_id) || parsed.owner_id !== expectedOwnerId ||
+      typeof parsed?.target !== "string" || !sameCanonicalPath(parsed.target, expectedTarget)
     ) return null;
     return parsed as ManagedLockOwner;
   } catch { return null; }
@@ -391,37 +422,78 @@ function processIsActive(pid: number): boolean {
   catch (error) { return (error as NodeJS.ErrnoException).code !== "ESRCH"; }
 }
 
-function removeLockOwnedBy(lockPath: string, token: string): boolean {
-  const current = readLockOwner(lockPath);
-  if (!current || current.token !== token) return false;
-  try { unlinkSync(lockPath); return true; } catch { return false; }
+interface LockReleaseResult {
+  released: boolean;
+  tombstone?: string;
+}
+
+/**
+ * Atomically detach the shared lock name before deletion. If the object moved
+ * under that name no longer belongs to this token, restore it when possible
+ * and never delete it. Rename is atomic on the same filesystem on supported
+ * platforms; there is no claim of distributed locking across network mounts.
+ */
+function releaseLockDirectory(
+  lockPath: string,
+  expected: ManagedLockOwner,
+  hooks?: ManagedMutationHooks,
+): LockReleaseResult {
+  const before = readLockOwner(lockPath, expected.owner_id, expected.target);
+  if (!before || before.token !== expected.token) return { released: false };
+  hooks?.beforeRelease?.(lockPath);
+
+  const tombstone = `${lockPath}.release-${expected.token}-${randomUUID()}`;
+  try { renameSync(lockPath, tombstone); }
+  catch { return { released: false }; }
+
+  const moved = readLockOwner(tombstone, expected.owner_id, expected.target);
+  if (moved?.token === expected.token) {
+    rmSync(tombstone, { recursive: true, force: true });
+    return { released: true };
+  }
+
+  // A replacement was moved. Put it back under the shared name only if that
+  // name is still free. Otherwise preserve it at the unique tombstone path.
+  if (!existsWithoutFollowing(lockPath)) {
+    try { renameSync(tombstone, lockPath); } catch { return { released: false, tombstone }; }
+    return { released: false };
+  }
+  return { released: false, tombstone };
 }
 
 export function guardManagedMutation(
   observation: ManagedTargetObservation,
   snapshotRoot: string,
   mutate: () => void,
+  hooks?: ManagedMutationHooks,
 ): GuardedMutationResult {
   mkdirSync(dirname(observation.target_path), { recursive: true });
   const lockPath = join(dirname(observation.target_path), `.${basename(observation.target_path)}.nirvana-update.lock`);
   const token = randomUUID();
+  const expectedOwnerId = `${observation.owner_id}/${observation.kind}/${observation.slug}`;
   const owner: ManagedLockOwner = {
+    schema_version: "1.0",
     pid: process.pid,
     created_at: new Date().toISOString(),
     token,
-    owner_id: `${observation.owner_id}/${observation.kind}/${observation.slug}`,
-    target: observation.target_path,
+    owner_id: expectedOwnerId,
+    target: canonicalTarget(observation.target_path),
   };
-  let lock: number | undefined;
-  const acquire = (): number => {
-    const descriptor = openSync(lockPath, "wx");
-    writeFileSync(descriptor, JSON.stringify(owner) + "\n");
-    return descriptor;
+  let acquired = false;
+  const acquire = (): void => {
+    mkdirSync(lockPath);
+    try { writeFileSync(join(lockPath, LOCK_OWNER_FILE), JSON.stringify(owner) + "\n", { flag: "wx" }); }
+    catch (error) {
+      // An incomplete directory is fail-closed. It is intentionally preserved
+      // for explicit recovery instead of deleting a shared path after a partial write.
+      throw error;
+    }
+    acquired = true;
   };
-  try { lock = acquire(); }
+  try { acquire(); }
   catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    const existing = readLockOwner(lockPath);
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST" || !existsWithoutFollowing(lockPath)) throw error;
+    const existing = readLockOwner(lockPath, expectedOwnerId, owner.target);
     let lockStatus: GuardedMutationResult["lock_status"] = "invalid";
     let recovery = `Inspect ${lockPath}. It has no valid Nirvana owner metadata, so it was not removed automatically.`;
     if (existing) {
@@ -432,8 +504,8 @@ export function guardManagedMutation(
       } else if (age < ORPHAN_LOCK_MIN_AGE_MS) {
         lockStatus = "orphan-too-young";
         recovery = `PID ${existing.pid} is unavailable, but the lock is younger than ${ORPHAN_LOCK_MIN_AGE_MS / 60_000} minutes; retry later.`;
-      } else if (removeLockOwnedBy(lockPath, existing.token)) {
-        try { lock = acquire(); }
+      } else if (releaseLockDirectory(lockPath, existing).released) {
+        try { acquire(); }
         catch (acquireError) {
           if ((acquireError as NodeJS.ErrnoException).code !== "EEXIST") throw acquireError;
           lockStatus = "owner-changed";
@@ -444,7 +516,7 @@ export function guardManagedMutation(
         recovery = `The owner token of ${lockPath} changed during orphan recovery; the replacement lock was preserved.`;
       }
     }
-    if (lock === undefined) {
+    if (!acquired) {
       const current = inspectManagedTree(observation.target_path, observation.snapshot_excludes ?? []);
       const changed: ManagedTargetObservation = {
         ...observation,
@@ -463,6 +535,8 @@ export function guardManagedMutation(
       return { ok: false, risk, snapshot_dir: snapshotDir, lock_status: lockStatus, lock_path: lockPath, recovery };
     }
   }
+  let outcome: GuardedMutationResult;
+  let mutationError: unknown;
   try {
     const current = inspectManagedTree(observation.target_path, observation.snapshot_excludes ?? []);
     const targetExists = existsWithoutFollowing(observation.target_path);
@@ -477,14 +551,38 @@ export function guardManagedMutation(
       };
       const risk = riskFromObservation(changed, current.unsafe_links.length > 0 ? "unsafe-link" : "concurrent-change");
       const snapshotDir = createCustomizationSnapshot([risk], snapshotRoot);
-      return { ok: false, risk, snapshot_dir: snapshotDir };
+      outcome = { ok: false, risk, snapshot_dir: snapshotDir };
+    } else {
+      mutate();
+      outcome = { ok: true };
     }
-    mutate();
-    return { ok: true };
+  } catch (error) {
+    mutationError = error;
   } finally {
-    closeSync(lock);
-    removeLockOwnedBy(lockPath, token);
+    const released = releaseLockDirectory(lockPath, owner, hooks);
+    if (!released.released && mutationError === undefined) {
+      const current = inspectManagedTree(observation.target_path, observation.snapshot_excludes ?? []);
+      const changed: ManagedTargetObservation = {
+        ...observation,
+        target_exists: existsWithoutFollowing(observation.target_path),
+        installed_hash: current.hash,
+        managed_file_count: current.managed_file_count,
+        unsafe_links: current.unsafe_links,
+      };
+      const recovery = released.tombstone
+        ? `Lock ownership changed during release. The foreign lock is preserved at ${released.tombstone}.`
+        : `Lock ownership changed during release. The shared lock at ${lockPath} was preserved.`;
+      const risk: ManagedUpdateRisk = {
+        ...riskFromObservation(changed, "concurrent-change"),
+        lock_path: lockPath,
+        lock_status: "owner-changed",
+        recovery,
+      };
+      outcome = { ok: false, risk, lock_status: "owner-changed", lock_path: lockPath, recovery };
+    }
   }
+  if (mutationError !== undefined) throw mutationError;
+  return outcome!;
 }
 
 export function reportBlockedUpdate(risks: ManagedUpdateRisk[], snapshotDir?: string): void {
