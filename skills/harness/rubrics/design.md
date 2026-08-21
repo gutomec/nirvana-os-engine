@@ -75,6 +75,7 @@ description: |
    gigantes hardcoded.
 
 ## Output schema
-Padrão, incluindo `hard_gate_results[]` com `name`, `passed` e `rationale` para
-cada nome declarado no frontmatter. Falha em WCAG, contraste da composição
-final ou contenção do texto = severity:high obrigatório.
+Padrão, incluindo `hard_gate_results[]` com o conjunto exato de `name`,
+`passed` booleano e `rationale` textual não vazio para cada gate declarado no
+frontmatter. Falha em WCAG, contraste da composição final ou contenção do texto
+= severity:high obrigatório.

@@ -24,7 +24,7 @@ function driverReturning(output: Record<string, unknown>) {
   };
 }
 
-function answer(hardGateResults: Array<{ name: string; passed: boolean; rationale: string }>) {
+function answer(hardGateResults: Array<Record<string, unknown>>) {
   return {
     verdict: "pass",
     total_score: 96,
@@ -102,5 +102,90 @@ describe("judge — machine-enforced hard gates", () => {
     expect(out.verdict).toBe("fail");
     expect(out.schema_valid).toBe(false);
     expect(out.schema_errors).toContain("hard_gate_result_missing:rendered_text_containment");
+  });
+
+  const malformedCases: Array<{
+    label: string;
+    expectedError: string;
+    mutate: (results: Array<Record<string, unknown>>) => void;
+  }> = [
+    {
+      label: "missing rationale",
+      expectedError: "hard_gate_result_rationale_invalid:final_composite_contrast",
+      mutate: (results) => { delete results[0].rationale; },
+    },
+    {
+      label: "empty rationale",
+      expectedError: "hard_gate_result_rationale_invalid:final_composite_contrast",
+      mutate: (results) => { results[0].rationale = ""; },
+    },
+    {
+      label: "whitespace-only rationale",
+      expectedError: "hard_gate_result_rationale_invalid:final_composite_contrast",
+      mutate: (results) => { results[0].rationale = "   \t"; },
+    },
+    {
+      label: "non-string rationale",
+      expectedError: "hard_gate_result_rationale_invalid:final_composite_contrast",
+      mutate: (results) => { results[0].rationale = 42; },
+    },
+    {
+      label: "unknown gate name",
+      expectedError: "hard_gate_result_unknown:final_composite_contrst",
+      mutate: (results) => {
+        results.push({ name: "final_composite_contrst", passed: true, rationale: "typo must not be ignored" });
+      },
+    },
+    {
+      label: "padded gate name",
+      expectedError: "hard_gate_result_name_invalid:0",
+      mutate: (results) => { results[0].name = " final_composite_contrast "; },
+    },
+    {
+      label: "duplicate gate name",
+      expectedError: "hard_gate_result_duplicate:final_composite_contrast",
+      mutate: (results) => { results.push({ ...results[0] }); },
+    },
+  ];
+
+  for (const malformed of malformedCases) {
+    test(`${malformed.label} fails closed`, async () => {
+      const rubric = getRubric("design")!;
+      const results: Array<Record<string, unknown>> = declaredResults(rubric.hard_gates).map((gate) => ({ ...gate }));
+      malformed.mutate(results);
+
+      const out = await judge(
+        { rubric, artifact: "rendered design" },
+        {
+          __testDriver: driverReturning(answer(results)),
+          __testRuntimeRules: runtimeRules,
+        },
+      );
+
+      expect(out.verdict).toBe("fail");
+      expect(out.schema_valid).toBe(false);
+      expect(out.schema_errors).toContain(malformed.expectedError);
+    });
+  }
+
+  test("rubrics without hard gates keep the legacy response contract", async () => {
+    const rubric = getRubric("prose_shortform")!;
+    expect(rubric.hard_gates).toEqual([]);
+    const out = await judge(
+      { rubric, artifact: "plain prose" },
+      {
+        __testDriver: driverReturning({
+          verdict: "pass",
+          total_score: 90,
+          criteria_scores: [],
+          critique: [],
+        }),
+        __testRuntimeRules: runtimeRules,
+      },
+    );
+
+    expect(out.verdict).toBe("pass");
+    expect(out.schema_valid).toBe(true);
+    expect(out.hard_gate_results).toEqual([]);
   });
 });

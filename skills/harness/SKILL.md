@@ -339,10 +339,12 @@ bun ~/.nirvana/skills/harness/scripts/quality-gate.ts <artifact_path> --auto
 **Deeper domain judgment** (book, contract, code, image, video, research): add `--with-revisions --produces=<slug> [--max-revisions=N]` to route to the LLM judge with a domain `.md` rubric. Falls back to heuristics offline.
 
 Rubrics may declare machine-enforced `hard_gates` in frontmatter. The judge must
-return one boolean `hard_gate_results` entry per declared name. A missing or
-failed entry forces `verdict: fail` in the engine regardless of total score or
-the LLM's proposed verdict; `severity: high` is revision guidance, not the
-blocking mechanism.
+return the exact declared name set in `hard_gate_results`, each with a boolean
+`passed` and a non-empty string `rationale`. Unknown names, duplicates,
+malformed fields, missing entries and failed entries fail closed. A failed gate
+forces `verdict: fail` in the engine regardless of total score or the LLM's
+proposed verdict; `severity: high` is revision guidance, not the blocking
+mechanism.
 
 If `gate_failed`: read `fix_list` / judge `critique[]`, dispatch a revision agent, iterate. Manually echoing `gate_passed` is dishonest — `nrv validate-chain --verify-disk` flags a `gate_passed` with no on-disk artifact as a `PROTOCOL_VIOLATION`.
 

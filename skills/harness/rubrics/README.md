@@ -73,10 +73,11 @@ Quando um novo tipo de deliverable não casa com nenhuma das 8 existentes:
 ## Hard gates (falha individual = reprova)
 
 Hard gates executáveis são declarados em `hard_gates` no frontmatter. O judge
-exige um `hard_gate_results[]` com o nome exato e um booleano `passed` para cada
-item. Resultado ausente ou `passed: false` força `verdict: fail`, mesmo quando a
-LLM devolve nota acima do corte. O loader também reconhece os marcadores
-numerados `[HARD GATE]` das rubrics antigas para preservar compatibilidade.
+exige um `hard_gate_results[]` com o conjunto exato de nomes declarados, um
+booleano `passed` e um `rationale` textual não vazio para cada item. Nome
+desconhecido, duplicata, campo malformado, resultado ausente ou `passed: false`
+falha fechado. O loader também reconhece os marcadores numerados `[HARD GATE]`
+das rubrics antigas para preservar compatibilidade.
 
 Rubrics com hard gates:
 

@@ -74,7 +74,7 @@ description: |
    de cor para ser entendido.
 
 ## Output schema
-Padrão, incluindo `hard_gate_results[]` com `name`, `passed` e `rationale` para
-cada nome declarado no frontmatter. Critique[] cita coordenadas/regiões da
-imagem quando relevante. Falha de contraste final ou contenção do texto exige
-severity:high.
+Padrão, incluindo `hard_gate_results[]` com o conjunto exato de `name`,
+`passed` booleano e `rationale` textual não vazio para cada gate declarado no
+frontmatter. Critique[] cita coordenadas/regiões da imagem quando relevante.
+Falha de contraste final ou contenção do texto exige severity:high.

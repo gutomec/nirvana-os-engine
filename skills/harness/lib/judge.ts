@@ -133,8 +133,10 @@ function buildPersona(rubric: RubricMeta): string {
     ``,
     `The engine declares these non-negotiable hard gates:`,
     ...hardGates.map((name) => `- ${name}`),
-    `Return a hard_gate_results array with exactly one object per declared name:`,
+    `Return a hard_gate_results array with exactly one object per declared name and no other names:`,
     `{"name":"<exact name>","passed":true|false,"rationale":"<evidence>"}.`,
+    `rationale must be a non-empty string containing the evidence for that gate.`,
+    `Unknown names, duplicates and malformed entries invalidate the response.`,
     `A missing or false hard gate means verdict: "fail", regardless of total score.`,
   ] : [];
   return [
@@ -177,8 +179,15 @@ function evaluateHardGateResults(raw: unknown, rubric: RubricMeta): {
       continue;
     }
     const value = item as Record<string, unknown>;
-    const name = String(value.name ?? "");
-    if (!declared.includes(name)) continue;
+    if (typeof value.name !== "string" || value.name.trim().length === 0 || value.name !== value.name.trim()) {
+      errors.push(`hard_gate_result_name_invalid:${i}`);
+      continue;
+    }
+    const name = value.name;
+    if (!declared.includes(name)) {
+      errors.push(`hard_gate_result_unknown:${name}`);
+      continue;
+    }
     if (byName.has(name)) {
       errors.push(`hard_gate_result_duplicate:${name}`);
       continue;
@@ -187,10 +196,14 @@ function evaluateHardGateResults(raw: unknown, rubric: RubricMeta): {
       errors.push(`hard_gate_result_passed_not_boolean:${name}`);
       continue;
     }
+    if (typeof value.rationale !== "string" || value.rationale.trim().length === 0) {
+      errors.push(`hard_gate_result_rationale_invalid:${name}`);
+      continue;
+    }
     byName.set(name, {
       name,
       passed: value.passed,
-      rationale: String(value.rationale ?? ""),
+      rationale: value.rationale.trim(),
     });
   }
   for (const name of declared) {
