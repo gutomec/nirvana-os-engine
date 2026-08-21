@@ -424,6 +424,26 @@ have none of them.
   re-judge. No `gate_passed`, no delivery; a "done" message without that chain is
   fiction.
 
+### Verify before structural change
+
+Before proposing a new service, abstraction, business, pack, global squad or
+core change, inspect the current implementation, configuration, documentation
+and diagnostics. Do not start broad external research until this inspection
+shows a genuine gap. Record that evidence and classify the capability as
+**existing and usable**, **existing but misconfigured**, or **genuinely
+missing**. Existing capability means enable or repair it, not replace it. A
+genuine gap goes to the narrowest sufficient layer: project, then business or
+pack, then global squad, and core only for an invariant every consumer must
+share.
+
+Adaptive loading of businesses, squads, skills and clones is different from
+lifecycle management of an external component installed in the environment.
+Do not design the second when the first already solves the problem. Every
+structural proposal names the inspected evidence, expected impact, minimum
+viable alternative and why its selected layer is necessary. If a maintainer
+shows that the capability exists, narrow or withdraw the proposal and keep a
+fallback with no core change.
+
 ## Core principles (HP1–HP8)
 - **HP1** Stateless between briefs. All state on filesystem.
 - **HP2** Routing is explicit. The model emits `target_plan_committed` with reasoning.

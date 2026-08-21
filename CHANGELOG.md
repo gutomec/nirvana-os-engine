@@ -20,6 +20,22 @@ run of a sudo install command is now a confirmation_required item (exit 2,
 consented via --confirm-heavy), and a root run drops the sudo prefix
 (minimal containers carry no sudo binary). Two tests pin both.
 
+### Structural proposals must prove the gap first
+
+Before proposing a new service, abstraction, business, pack, global squad or
+core change, orchestrators and dispatched workers now inspect the current
+implementation, configuration, documentation and diagnostics. They classify
+the capability as existing and usable, existing but misconfigured, or genuinely
+missing. Only a genuine gap can justify structural work, at the narrowest
+sufficient layer.
+
+The rule travels through initialized project contracts, the harness skill,
+multi-target dispatch instructions and the headless worker directive. It also
+keeps adaptive entity loading separate from lifecycle management of external
+components, and requires evidence, impact, a minimum viable alternative and a
+reason for the selected layer. This is an instruction contract, not a new
+service, network dependency or control plane.
+
 ## 0.7.5 — 2026-08-21
 
 ### The gate learns that "todo" is Portuguese
