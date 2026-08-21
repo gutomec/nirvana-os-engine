@@ -6,6 +6,20 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Não lançado
+
+### Contribuições upstream exigem consentimento explícito
+
+O Nirvana agora oferece preparar um pull request upstream quando uma correção
+confirmada ou ideia de melhoria pertence ao engine/core compartilhado.
+Comportamentos exclusivos do projeto, configuração pessoal, conteúdo do usuário,
+packs pagos e hipóteses não verificadas ficam de fora. O protocolo exige
+consentimento antes do trabalho no GitHub, a apresentação do título e do corpo
+completos antes da publicação e uma segunda aprovação explícita antes de abrir
+um PR pronto para revisão. Ele também informa o estado da CLA após a publicação
+e só pede a frase exata de assinatura do repositório quando o colaborador ainda
+não a tiver satisfeito.
+
 ## 0.7.3 — 2026-08-20
 
 ### O engine aprende o que se relaciona com o quê
