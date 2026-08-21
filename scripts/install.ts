@@ -692,9 +692,12 @@ async function offerStarterPack(): Promise<void> {
     }
   }
 
+  // Dependency order (twin of install-content.ts — change BOTH or they
+  // diverge): clones before the businesses whose employees embody them.
+  // Print order below stays unchanged.
   const squads = syncKind("squads", join(STARTER_PACK, "squads"), SQUADS_DIR, avail.available_squads, manifest.squads ?? {}, FLAG_DRY);
-  const businesses = syncKind("businesses", join(STARTER_PACK, "businesses"), BUSINESSES_DIR, avail.available_businesses, manifest.businesses ?? {}, FLAG_DRY);
   const clones = syncKind("mind-clones", join(STARTER_PACK, "mind-clones"), DNA_DIR, avail.available_mind_clones, manifest["mind-clones"] ?? {}, FLAG_DRY);
+  const businesses = syncKind("businesses", join(STARTER_PACK, "businesses"), BUSINESSES_DIR, avail.available_businesses, manifest.businesses ?? {}, FLAG_DRY);
 
   console.log(FLAG_DRY ? "      DRY RUN — would apply:" : "      Applied:");
   const line = (label: string, r: SyncResult) =>

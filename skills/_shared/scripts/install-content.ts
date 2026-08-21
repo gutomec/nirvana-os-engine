@@ -20,6 +20,16 @@ import { homedir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
+import { buildEntityGraph, installKindOrder, readCloneBindings } from "../lib/entity-graph.ts";
+
+/** Best-effort audit emission (open x_ namespace); never blocks an install. */
+function auditEmit(event: string, payload: Record<string, unknown>): void {
+  try {
+    const req = createRequire(import.meta.url);
+    req(join(import.meta.dir, "..", "..", "harness", "lib", "audit.js")).emit(event, payload);
+  } catch { /* audit unavailable (partial install) — installing still wins */ }
+}
 
 const HOME = homedir();
 const SQUADS_DIR = join(HOME, "squads");
@@ -204,9 +214,53 @@ function syncKind(kind: string, srcRoot: string, dstRoot: string, available: str
 }
 
 const squadsSrc = join(CONTENT, "squads"), bizSrc = join(CONTENT, "businesses"), cloneSrc = join(CONTENT, "mind-clones");
-const sq = syncKind("squads", squadsSrc, SQUADS_DIR, availableIn(squadsSrc, "squad.yaml"), man.squads ?? {});
-const bz = syncKind("businesses", bizSrc, BUSINESSES_DIR, availableIn(bizSrc, "business.yaml"), man.businesses ?? {});
-const cl = syncKind("mind-clones", cloneSrc, DNA_DIR, availableIn(cloneSrc, "MANIFEST.yaml"), man["mind-clones"] ?? {});
+
+// Dependency-ordered install (typed entity graph): a business's employees
+// embody mind-clones, so clones must be on disk BEFORE the business that
+// needs them — the legacy literal order laid businesses down first and
+// degraded silently when a clone was absent. The graph decides the kind
+// order; a cycle (hand-crafted content) falls back to the legacy order with
+// a named warning, never a throw mid-install. Execution order changed;
+// PRINT order below is intentionally unchanged (buyer-visible output).
+const packGraph = buildEntityGraph({ businessesDir: bizSrc, clonesDir: cloneSrc, squadsDir: squadsSrc });
+const kindOrder = installKindOrder(packGraph);
+if (kindOrder.has_cycle) {
+  console.warn("  warning: pack entity graph has a dependency cycle; using legacy install order");
+}
+auditEmit("x_install_order_resolved", {
+  pack: SLUG,
+  kinds: kindOrder.order,
+  fallback_legacy: kindOrder.has_cycle,
+  nodes: packGraph.nodes.length,
+  edges: packGraph.edges.length,
+});
+
+const kindRuns: Record<string, () => SyncRes> = {
+  "squads": () => syncKind("squads", squadsSrc, SQUADS_DIR, availableIn(squadsSrc, "squad.yaml"), man.squads ?? {}),
+  "businesses": () => syncKind("businesses", bizSrc, BUSINESSES_DIR, availableIn(bizSrc, "business.yaml"), man.businesses ?? {}),
+  "mind-clones": () => syncKind("mind-clones", cloneSrc, DNA_DIR, availableIn(cloneSrc, "MANIFEST.yaml"), man["mind-clones"] ?? {}),
+};
+const runs: Record<string, SyncRes> = {};
+for (const kind of kindOrder.order) runs[kind] = kindRuns[kind]();
+const sq = runs["squads"], bz = runs["businesses"], cl = runs["mind-clones"];
+
+// A dependency the pack neither carries nor finds already installed is a
+// named failure, not a silent degradation. Warning-only in P0: the hard
+// gate lives in the pack build (check-clone-bindings --strict).
+{
+  const scan = readCloneBindings({ businessesDir: bizSrc, clonesDir: cloneSrc });
+  const reported = new Set<string>();
+  for (const bind of scan.bindings) {
+    if (bind.dangling) continue;
+    if (scan.availableClones.has(bind.clone)) continue;
+    if (existsSync(join(DNA_DIR, bind.clone))) continue;
+    const key = `${bind.clone}|${bind.business}/${bind.employee}`;
+    if (reported.has(key)) continue;
+    reported.add(key);
+    console.warn(`  dependency missing: mind-clone '${bind.clone}' required by ${bind.business}/${bind.employee}`);
+    auditEmit("x_dependency_missing", { pack: SLUG, clone: bind.clone, required_by: `${bind.business}/${bind.employee}` });
+  }
+}
 
 const line = (l: string, r: SyncRes) => console.log(`  ${l}: ${r.added.length} new · ${r.updated.length} updated · ${r.unchanged.length} unchanged · ${r.removed.length} removed${r.overwritten.length ? ` · ${r.overwritten.length} overwritten` : ""}`);
 console.log(`${DRY ? "[DRY] " : ""}install-content '${SLUG}' ← ${CONTENT}`);

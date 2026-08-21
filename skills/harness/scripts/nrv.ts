@@ -119,6 +119,7 @@ switch (cmd) {
   case "ask": runScript(join(H, "ask.ts"), rest);
   case "launch": runScript(join(H, "launch.ts"), rest);
   case "tui": case "cockpit-tui": runScript(join(H, "tui.ts"), rest);
+  case "graph": case "entity-graph": runScript(join(H, "graph.ts"), rest);
   case "validate-chain": case "chain-validate": case "chain": runScript(join(H, "validate-chain.ts"), rest);
   case "resume": case "resume-project": runScript(join(S, "resume-project.ts"), rest);
   case "list-squads": case "squads-list": runScript(join(SKILLS, "squads", "scripts", "list-squads.ts"), rest);

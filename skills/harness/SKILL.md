@@ -224,6 +224,8 @@ Pick a **shortlist of 5–10 candidates** across all three pillars with rough ra
 
 **Pass 2 — deep confirmation (~10–20k tokens).** Read the full content of each shortlisted candidate: businesses (`business.yaml` + `org-chart.yaml` + selected `employees/<name>.md`), squads (`squad.yaml` + selected `agents/` + `workflows/`), mind-clones (`agent/AGENT.md` + relevant `dna/`). The deep read confirms or rules out.
 
+**Closure check (optional, multi-entity dispatches).** Before dispatching a business, `nrv graph closure --business <slug> --json` returns the exact entity closure the execution needs — employees, the mind-clones they embody, squads — with missing dependencies named instead of silently absent. The graph is derived from the prose declarations on disk, never a second source of truth. Opt-in by construction: single-target dispatch never needs it and pays no graph cost.
+
 If the shortlist is empty after Pass 1, emit `signal=NO_MATCH`, say so to the user — and **dispatch `agent-x` with the enriched brief anyway** (Phase 4, cascade step 3). NO_MATCH changes *who* executes (the generalist, with the gap named in the report), never *whether* it executes: the brief must not stall. What NO_MATCH forbids is fabricating a fake match to dodge the fallback — not the work itself.
 
 ### Phase 4 — Dispatch cascade
