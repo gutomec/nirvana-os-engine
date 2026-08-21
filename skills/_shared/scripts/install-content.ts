@@ -8,7 +8,9 @@
  * (projects/, outputs/, memory/projects/, .squad-state, …) is preserved. Per-pack
  * ownership is tracked in ~/.nirvana/packs/<slug>.json, so a later update of the
  * SAME pack can drop files it removed without ever touching the user's own
- * squads/businesses/clones or another pack's components.
+ * squads/businesses/clones or another pack's components. Managed files are an
+ * immutable ownership boundary: direct edits and same-slug user components are
+ * snapshotted and block the update before the first write.
  *
  * Usage:
  *   bun install-content.ts <contentDir> --slug <slug> [--dry]
@@ -22,6 +24,11 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { buildEntityGraph, installKindOrder, readCloneBindings } from "../lib/entity-graph.ts";
+import {
+  collectManagedUpdateRisks,
+  createCustomizationSnapshot,
+  reportBlockedUpdate,
+} from "../lib/update-safety.ts";
 
 /** Best-effort audit emission (open x_ namespace); never blocks an install. */
 function auditEmit(event: string, payload: Record<string, unknown>): void {
@@ -134,7 +141,15 @@ import { InstallManifest } from "../lib/install-manifest.ts";
 import { RUN_STATE_EXCLUDES } from "../lib/run-state.ts";
 import { randomUUID } from "node:crypto";
 
-interface Manifest { slug?: string; version?: string | null; updated_at?: string; squads?: Record<string, string>; businesses?: Record<string, string>; "mind-clones"?: Record<string, string>; }
+interface Manifest {
+  slug?: string;
+  ownership?: "pack-managed";
+  version?: string | null;
+  updated_at?: string;
+  squads?: Record<string, string>;
+  businesses?: Record<string, string>;
+  "mind-clones"?: Record<string, string>;
+}
 
 /**
  * Record the install in ~/.nirvana-installed.jsonl, which is what `nrv installed`
@@ -194,11 +209,13 @@ function syncKind(kind: string, srcRoot: string, dstRoot: string, available: str
     const src = join(srcRoot, slug), dst = join(dstRoot, slug);
     const h = hashDir(src, ex); res.hashes[slug] = h;
     if (!existsSync(dst)) { res.added.push(slug); if (!DRY) mirror(src, dst, ex); }
-    // Collision: it exists on disk but the pack never owned it (outside the
-    // manifest) — a user creation with the same slug. The pack wins (it is the
-    // source of truth) and there is no backup; warning only makes the loss
-    // visible, it does not prevent it.
-    else if (!(slug in old)) { res.overwritten.push(slug); if (!DRY) mirror(src, dst, ex); }
+    // Identical content can be adopted without loss. A different user-owned
+    // component is blocked by the all-kinds preflight before write mode gets
+    // here; dry mode still reports what would conflict.
+    else if (!(slug in old)) {
+      if (hashDir(dst, ex) === h) res.unchanged.push(slug);
+      else { res.overwritten.push(slug); if (!DRY) mirror(src, dst, ex); }
+    }
     else {
       const prev = old[slug] ?? hashDir(dst, ex);
       if (prev !== h) {
@@ -214,6 +231,41 @@ function syncKind(kind: string, srcRoot: string, dstRoot: string, available: str
 }
 
 const squadsSrc = join(CONTENT, "squads"), bizSrc = join(CONTENT, "businesses"), cloneSrc = join(CONTENT, "mind-clones");
+const availableSquads = availableIn(squadsSrc, "squad.yaml");
+const availableBusinesses = availableIn(bizSrc, "business.yaml");
+const availableClones = availableIn(cloneSrc, "MANIFEST.yaml");
+
+// Preflight ALL kinds before the first mirror/remove. This avoids a partial
+// update where one component is already replaced when drift is discovered in
+// another. The manifest hash is the ownership boundary; run-state paths are
+// deliberately excluded because the pack never owns them.
+const updateRisks = [
+  ...collectManagedUpdateRisks({
+    ownership: "pack-managed", ownerId: SLUG, kind: "squads",
+    sourceRoot: squadsSrc, targetRoot: SQUADS_DIR, incomingSlugs: availableSquads,
+    installedHashes: man.squads ?? {}, excludes: RUNSTATE_EXCLUDES.squads ?? [],
+    baseVersion: man.version, incomingVersion: VERSION,
+  }),
+  ...collectManagedUpdateRisks({
+    ownership: "pack-managed", ownerId: SLUG, kind: "mind-clones",
+    sourceRoot: cloneSrc, targetRoot: DNA_DIR, incomingSlugs: availableClones,
+    installedHashes: man["mind-clones"] ?? {}, excludes: RUNSTATE_EXCLUDES["mind-clones"] ?? [],
+    baseVersion: man.version, incomingVersion: VERSION,
+  }),
+  ...collectManagedUpdateRisks({
+    ownership: "pack-managed", ownerId: SLUG, kind: "businesses",
+    sourceRoot: bizSrc, targetRoot: BUSINESSES_DIR, incomingSlugs: availableBusinesses,
+    installedHashes: man.businesses ?? {}, excludes: RUNSTATE_EXCLUDES.businesses ?? [],
+    baseVersion: man.version, incomingVersion: VERSION,
+  }),
+];
+if (updateRisks.length > 0) {
+  const snapshotDir = DRY
+    ? undefined
+    : createCustomizationSnapshot(updateRisks, join(HOME, ".nirvana", "customization-snapshots", `pack-${SLUG}`));
+  reportBlockedUpdate(updateRisks, snapshotDir);
+  if (!DRY) process.exit(1);
+}
 
 // Dependency-ordered install (typed entity graph): a business's employees
 // embody mind-clones, so clones must be on disk BEFORE the business that
@@ -236,9 +288,9 @@ auditEmit("x_install_order_resolved", {
 });
 
 const kindRuns: Record<string, () => SyncRes> = {
-  "squads": () => syncKind("squads", squadsSrc, SQUADS_DIR, availableIn(squadsSrc, "squad.yaml"), man.squads ?? {}),
-  "businesses": () => syncKind("businesses", bizSrc, BUSINESSES_DIR, availableIn(bizSrc, "business.yaml"), man.businesses ?? {}),
-  "mind-clones": () => syncKind("mind-clones", cloneSrc, DNA_DIR, availableIn(cloneSrc, "MANIFEST.yaml"), man["mind-clones"] ?? {}),
+  "squads": () => syncKind("squads", squadsSrc, SQUADS_DIR, availableSquads, man.squads ?? {}),
+  "businesses": () => syncKind("businesses", bizSrc, BUSINESSES_DIR, availableBusinesses, man.businesses ?? {}),
+  "mind-clones": () => syncKind("mind-clones", cloneSrc, DNA_DIR, availableClones, man["mind-clones"] ?? {}),
 };
 const runs: Record<string, SyncRes> = {};
 for (const kind of kindOrder.order) runs[kind] = kindRuns[kind]();
@@ -271,22 +323,22 @@ line("squads", sq); line("businesses", bz); line("mind-clones", cl);
 // the user's project stop working without anyone noticing.
 reportBreaks([sq, bz, cl].flatMap((r) => r.breaking), DRY, (m) => console.log(m));
 
-// Slug collisions in their own block: it is the only line that means loss of
-// the user's work, and it drowns in the counts unless highlighted.
+// Dry-run collision detail. Write mode exits during preflight, after making a
+// recoverable snapshot, so this block can never describe data already lost.
 const collisions = ([["squads", sq], ["businesses", bz], ["mind-clones", cl]] as const)
   .flatMap(([l, r]) => r.overwritten.map((s) => `${l}/${s}`));
 if (collisions.length > 0) {
   console.log();
-  console.log(`  ${DRY ? "WOULD OVERWRITE" : "OVERWRITTEN"}: ${collisions.length} component(s) you created share a slug with a pack component.`);
+  console.log(`  ${DRY ? "WOULD BLOCK" : "BLOCKED"}: ${collisions.length} user-owned component(s) share a slug with a pack component.`);
   for (const c of collisions) console.log(`    ! ${c}`);
-  console.log("    The pack is the source of truth for its own components, so it wins — and there is no backup.");
-  console.log("    To keep your version, give it a different slug (your own components are never touched).");
+  console.log("    Write mode creates a recoverable snapshot and stops before replacing anything.");
+  console.log("    Move the customization to an overlay, a different slug, or a fork, then rerun.");
   console.log("    Your run-state (projects/, outputs/, memory/projects) was preserved.");
 }
 
 if (!DRY) {
   mkdirSync(PACKS_DIR, { recursive: true });
-  const out: Manifest = { slug: SLUG, version: VERSION, updated_at: new Date().toISOString(), squads: sq.hashes, businesses: bz.hashes, "mind-clones": cl.hashes };
+  const out: Manifest = { slug: SLUG, ownership: "pack-managed", version: VERSION, updated_at: new Date().toISOString(), squads: sq.hashes, businesses: bz.hashes, "mind-clones": cl.hashes };
   writeFileSync(manifestPath, JSON.stringify(out, null, 2) + "\n");
   recordInstall(out);
   // Reindex: without this the content stays on disk and the orchestrator cannot

@@ -26,6 +26,13 @@ import { createRequire } from "node:module";
 // tarball ships scripts/install.ts next to the full skills/ tree.
 import { RUNTIME_TARGETS, SKILLS, COPY_MARKER } from "../skills/_shared/lib/runtime-dirs.ts";
 import { RUN_STATE_EXCLUDES } from "../skills/_shared/lib/run-state.ts";
+import {
+  collectManagedUpdateRisks,
+  createCustomizationSnapshot,
+  hashManagedTree,
+  reportBlockedUpdate,
+  type ManagedUpdateRisk,
+} from "../skills/_shared/lib/update-safety.ts";
 
 const requireCjs = createRequire(import.meta.url);
 const HOME = homedir();
@@ -48,6 +55,7 @@ const STARTER_PACK = join(PACKS_DIR, "starter-pack");
 const NIRVANA_DIR = join(HOME, ".nirvana");
 const NIRVANA_SKILLS = join(NIRVANA_DIR, "skills");
 const NIRVANA_DEPS = join(NIRVANA_DIR, "node_modules");
+const ENGINE_MANIFEST = join(NIRVANA_DIR, "engine-install.json");
 const BINARIES = ["nrv", "nrv-gemini", "nrv-hermes"];
 const IS_WINDOWS = process.platform === "win32";
 
@@ -82,6 +90,98 @@ function hasCmd(cmd: string): boolean {
 }
 
 let RSYNC_AVAILABLE = false;
+
+interface EngineInstallManifest {
+  schema_version?: string;
+  ownership?: "engine-managed";
+  version?: string | null;
+  updated_at?: string;
+  skills?: Record<string, string>;
+}
+
+function engineVersion(): string | null {
+  try { return JSON.parse(readFileSync(join(REPO_DIR, "package.json"), "utf8")).version ?? null; }
+  catch { return null; }
+}
+
+function loadEngineManifest(): EngineInstallManifest | null {
+  try { return JSON.parse(readFileSync(ENGINE_MANIFEST, "utf8")); }
+  catch { return null; }
+}
+
+/**
+ * Establish the ownership boundary before copySkills removes anything. Older
+ * installations have no baseline manifest, so their first update is allowed
+ * after a full compatibility snapshot; every later update can detect drift.
+ */
+function preflightEngineSkills(): void {
+  if (!existsSync(NIRVANA_SKILLS)) return;
+  const incoming = SKILLS.filter((skill) => existsSync(join(REPO_DIR, "skills", skill)));
+  const manifest = loadEngineManifest();
+  const snapshotRoot = join(NIRVANA_DIR, "customization-snapshots", "engine");
+
+  if (!manifest?.skills) {
+    if (FLAG_DRY) {
+      console.log("  DRY RUN — existing engine skills have no ownership baseline; an update would snapshot them before replacement.");
+      return;
+    }
+    const legacy: ManagedUpdateRisk[] = incoming
+      .filter((skill) => existsSync(join(NIRVANA_SKILLS, skill)))
+      .map((skill) => ({
+        ownership: "engine-managed",
+        reason: "legacy-baseline",
+        owner_id: "engine",
+        kind: "skills",
+        slug: skill,
+        target_path: join(NIRVANA_SKILLS, skill),
+        base_version: null,
+        incoming_version: engineVersion(),
+        base_hash: null,
+        installed_hash: hashManagedTree(join(NIRVANA_SKILLS, skill), ["node_modules"]),
+        incoming_hash: hashManagedTree(join(REPO_DIR, "skills", skill), ["node_modules"]),
+        snapshot_excludes: ["node_modules"],
+      }));
+    if (legacy.length > 0) {
+      const snapshot = createCustomizationSnapshot(legacy, snapshotRoot);
+      console.log(`  Existing engine install had no drift baseline; compatibility snapshot created at ${snapshot}`);
+    }
+    return;
+  }
+
+  const risks = collectManagedUpdateRisks({
+    ownership: "engine-managed",
+    ownerId: "engine",
+    kind: "skills",
+    sourceRoot: join(REPO_DIR, "skills"),
+    targetRoot: NIRVANA_SKILLS,
+    incomingSlugs: incoming,
+    installedHashes: manifest.skills,
+    excludes: ["node_modules"],
+    baseVersion: manifest.version,
+    incomingVersion: engineVersion(),
+  });
+  if (risks.length === 0) return;
+  const snapshot = FLAG_DRY ? undefined : createCustomizationSnapshot(risks, snapshotRoot);
+  reportBlockedUpdate(risks, snapshot);
+  if (!FLAG_DRY) process.exit(1);
+}
+
+function writeEngineManifest(): void {
+  if (FLAG_DRY) return;
+  const skills: Record<string, string> = {};
+  for (const skill of SKILLS) {
+    const installed = join(NIRVANA_SKILLS, skill);
+    if (existsSync(installed)) skills[skill] = hashManagedTree(installed, ["node_modules"]);
+  }
+  mkdirSync(NIRVANA_DIR, { recursive: true });
+  writeFileSync(ENGINE_MANIFEST, JSON.stringify({
+    schema_version: "1.0",
+    ownership: "engine-managed",
+    version: engineVersion(),
+    updated_at: new Date().toISOString(),
+    skills,
+  }, null, 2) + "\n");
+}
 
 // Nirvana-OS runs on Bun alone. rsync is preferred (fast incremental) but
 // optional — copySkills falls back to a pure-Node copy. python3 is only needed
@@ -543,13 +643,16 @@ async function promptYesNo(question: string, defaultYes = true): Promise<boolean
 // removal is scoped to PACK-OWNED components (tracked in the manifest), so the
 // squads/businesses/clones the USER created (via NSC/FdG/NBC) are never touched.
 // User run-state inside a component (projects/, outputs/, memory/projects/, …)
-// is preserved across the replace.
+// is preserved across the replace. Direct edits and same-slug user content are
+// snapshotted and block the update before the first write.
 
 const PACK_MANIFEST = join(HOME, ".nirvana-pack.json");
 
 const RUNSTATE_EXCLUDES = RUN_STATE_EXCLUDES;
 
 interface PackManifest {
+  ownership?: "pack-managed";
+  owner_id?: string;
   version?: string; updated_at?: string;
   squads?: Record<string, string>; businesses?: Record<string, string>; "mind-clones"?: Record<string, string>;
 }
@@ -646,13 +749,14 @@ function syncKind(kind: string, srcRoot: string, dstRoot: string, available: str
       res.added.push(slug);
       if (!dry) mirrorComponent(src, dst, excludes);
     } else if (!(slug in old)) {
-      // Slug collision: it exists on disk but the pack NEVER owned it (not in
-      // the manifest) — that is, it is a user creation with the same name as
-      // one of our components. The pack is the source of truth and wins, by
-      // policy; but overwriting silently makes their work vanish unexplained.
-      // Warning is neither backup nor merge: it only makes the loss visible and actionable.
-      res.overwritten.push(slug);
-      if (!dry) mirrorComponent(src, dst, excludes);
+      // Identical content can be adopted without loss. A different user-owned
+      // component is blocked by the all-kinds preflight before write mode gets
+      // here; dry mode still reports what would conflict.
+      if (hashDir(dst, excludes) === h) res.unchanged.push(slug);
+      else {
+        res.overwritten.push(slug);
+        if (!dry) mirrorComponent(src, dst, excludes);
+      }
     } else {
       const prev = old[slug] ?? hashDir(dst, excludes);
       if (prev !== h) {
@@ -706,6 +810,34 @@ async function offerStarterPack(): Promise<void> {
   const manifest = loadManifest();
   const firstRun = !existsSync(PACK_MANIFEST) && avail.squads_empty && avail.businesses_empty && avail.mind_clones_empty;
 
+  const starterRisks = [
+    ...collectManagedUpdateRisks({
+      ownership: "pack-managed", ownerId: "starter-pack", kind: "squads",
+      sourceRoot: join(STARTER_PACK, "squads"), targetRoot: SQUADS_DIR,
+      incomingSlugs: avail.available_squads, installedHashes: manifest.squads ?? {},
+      excludes: RUNSTATE_EXCLUDES.squads ?? [], baseVersion: manifest.version, incomingVersion: engineVersion(),
+    }),
+    ...collectManagedUpdateRisks({
+      ownership: "pack-managed", ownerId: "starter-pack", kind: "mind-clones",
+      sourceRoot: join(STARTER_PACK, "mind-clones"), targetRoot: DNA_DIR,
+      incomingSlugs: avail.available_mind_clones, installedHashes: manifest["mind-clones"] ?? {},
+      excludes: RUNSTATE_EXCLUDES["mind-clones"] ?? [], baseVersion: manifest.version, incomingVersion: engineVersion(),
+    }),
+    ...collectManagedUpdateRisks({
+      ownership: "pack-managed", ownerId: "starter-pack", kind: "businesses",
+      sourceRoot: join(STARTER_PACK, "businesses"), targetRoot: BUSINESSES_DIR,
+      incomingSlugs: avail.available_businesses, installedHashes: manifest.businesses ?? {},
+      excludes: RUNSTATE_EXCLUDES.businesses ?? [], baseVersion: manifest.version, incomingVersion: engineVersion(),
+    }),
+  ];
+  if (starterRisks.length > 0) {
+    const snapshot = FLAG_DRY
+      ? undefined
+      : createCustomizationSnapshot(starterRisks, join(NIRVANA_DIR, "customization-snapshots", "pack-starter-pack"));
+    reportBlockedUpdate(starterRisks, snapshot);
+    if (!FLAG_DRY) process.exit(1);
+  }
+
   console.log();
   console.log("[4/4] Starter pack — syncing (pack is source of truth: replace + add + remove; your run-state and your own creations are kept)");
 
@@ -734,7 +866,7 @@ async function offerStarterPack(): Promise<void> {
     for (const s of r.added) console.log(`        + ${lbl}/${s} (new)`);
     for (const s of r.updated) console.log(`        ~ ${lbl}/${s} (updated)`);
     for (const s of r.removed) console.log(`        - ${lbl}/${s} (removed — dropped from pack)`);
-    for (const s of r.overwritten) console.log(`        ! ${lbl}/${s} (OVERWRITTEN — was yours, same slug as a pack component)`);
+    for (const s of r.overwritten) console.log(`        ! ${lbl}/${s} (CONFLICT — user-owned content has the same slug)`);
   }
 
   // Contract breaks get their own block: a "~ atualizado" line does not tell
@@ -752,15 +884,15 @@ async function offerStarterPack(): Promise<void> {
     console.log("  Full detail in CHANGES.json inside each component.");
   }
 
-  // Collisions get their own block at the end: in a long "+/~" list the line
-  // that matters slips by, and this is the only one that means lost work.
+  // Dry-run collision detail. Write mode exits during preflight, after making
+  // a recoverable snapshot, so this block can never describe data already lost.
   const collisions = kinds.flatMap(([lbl, r]) => r.overwritten.map((s) => `${lbl}/${s}`));
   if (collisions.length > 0) {
     console.log();
-    console.log(`  ${FLAG_DRY ? "WOULD OVERWRITE" : "OVERWRITTEN"}: ${collisions.length} component(s) you created share a slug with a pack component.`);
+    console.log(`  ${FLAG_DRY ? "WOULD BLOCK" : "BLOCKED"}: ${collisions.length} user-owned component(s) share a slug with a pack component.`);
     for (const c of collisions) console.log(`    ! ${c}`);
-    console.log("    The pack is the source of truth for its own components, so it wins — and there is no backup.");
-    console.log("    To keep your version, give it a different slug (your own components are never touched).");
+    console.log("    Write mode creates a recoverable snapshot and stops before replacing anything.");
+    console.log("    Move the customization to an overlay, a different slug, or a fork, then rerun.");
     console.log("    Your run-state (projects/, outputs/, memory/projects) was preserved.");
   }
 
@@ -768,6 +900,8 @@ async function offerStarterPack(): Promise<void> {
     let pkgVersion = "unknown";
     try { pkgVersion = JSON.parse(readFileSync(join(REPO_DIR, "package.json"), "utf8")).version; } catch { /* ignore */ }
     const newManifest: PackManifest = {
+      ownership: "pack-managed",
+      owner_id: "starter-pack",
       version: pkgVersion,
       updated_at: new Date().toISOString(),
       squads: squads.hashes,
@@ -1090,7 +1224,9 @@ async function main(): Promise<void> {
 
   header();
   preflight();
+  preflightEngineSkills();
   copySkills();
+  writeEngineManifest();
   installDeps();
   copyBinaries();
   wireHooks();
