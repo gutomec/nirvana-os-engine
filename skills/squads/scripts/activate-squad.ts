@@ -88,8 +88,14 @@ if (match.source === "project" && scope.projectRoot) {
 const cmdLine = `${JSON.stringify(BUN_BIN)} ${JSON.stringify(LIB)} ${cmd} ${JSON.stringify(slug)} ${rest.map(a => JSON.stringify(a)).join(" ")}`;
 const result = exec(cmdLine, { silent: false, env });
 
-// activator.js prints JSON to stdout — we already streamed via inherit
-// (silent: false) so nothing else to do; just propagate exit code
+// activator.js prints its JSON result to stdout. exec() only streams live
+// (stdio inherit) under NIRVANA_VERBOSE=1; on every other run it CAPTURES the
+// child's output — and this wrapper used to assume "already streamed" and
+// print nothing, so the caller saw an empty stdout and no JSON at all (VPS
+// field report, 2026-08-21). Replay whatever was captured; under inherit the
+// captured strings are empty, so nothing duplicates.
+if (result.stdout) process.stdout.write(result.stdout);
+if (result.stderr) process.stderr.write(result.stderr);
 const rc = result.code ?? (result.ok ? EXIT.OK : EXIT.FAILURES);
 emitSummary(rc);
 process.exit(rc);
