@@ -14,8 +14,16 @@ export async function evaluate(args: { artifact: string; content: string; offlin
     score -= 0.5;
   }
 
-  // placeholder density
-  const placeholders = (content.match(/\b(TODO|TBD|PLACEHOLDER|XXX|FIXME|\[INSERT|\[FILL)\b/gi) || []).length;
+  // Placeholder density. Markers are UPPERCASE conventions and are matched
+  // case-SENSITIVELY on purpose: the old /i flag made the marker TODO match
+  // the Portuguese word "todo" ("todo o tráfego"), failing any dense PT-BR
+  // prose — a language the engine's deliverables ship in every day. A
+  // lowercase "todo" is prose; an uppercase "TODO" is a marker in any
+  // language. The bracketed forms stay case-insensitive: "[insert name]" is
+  // a placeholder at any casing and collides with no natural-language word.
+  const placeholders =
+    (content.match(/\b(TODO|TBD|PLACEHOLDER|XXX|FIXME)\b/g) || []).length +
+    (content.match(/\[(INSERT|FILL)/gi) || []).length;
   const wordCount = content.split(/\s+/).filter(Boolean).length;
   const phPerKWord = wordCount > 0 ? placeholders / (wordCount / 1000) : 0;
   if (phPerKWord > 5) {
@@ -23,10 +31,17 @@ export async function evaluate(args: { artifact: string; content: string; offlin
     score -= 0.3;
   }
 
-  // heading presence (for prose)
+  // Structure presence (for prose). Headings are ONE form of structure, not
+  // the only one: bold-line pseudo-headings ("**Identidade**") and list items
+  // are structure too (the seat-sufficiency measure learned this against 574
+  // real files), and some briefs explicitly forbid headings — a rubric that
+  // cannot see the brief must not punish obeying it. Only a long, genuinely
+  // structureless markdown wall is flagged.
   const hasHeadings = /^#{1,4}\s/m.test(content);
-  if (!hasHeadings && content.length > 500 && args.artifact.endsWith(".md")) {
-    fix_list.push("No markdown headings in a 500+ byte markdown file — add structure.");
+  const hasPseudoHeadings = /^\*\*[^*\n]{2,80}\*\*:?\s*$/m.test(content);
+  const hasLists = /^\s*(?:[-*•]|\d+[.)])\s+\S/m.test(content);
+  if (!hasHeadings && !hasPseudoHeadings && !hasLists && content.length > 500 && args.artifact.endsWith(".md")) {
+    fix_list.push("No structure (headings, bold pseudo-headings or lists) in a 500+ byte markdown file — add some, unless the brief forbids it.");
     score -= 0.2;
   }
 
