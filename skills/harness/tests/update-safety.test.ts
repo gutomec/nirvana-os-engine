@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import {
   existsSync,
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -11,7 +12,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import {
   collectManagedUpdateRisks,
   createCustomizationSnapshot,
@@ -71,7 +72,7 @@ function runPack(home: string, content: string, version: string): { code: number
   return { code: run.status ?? 1, out: `${run.stdout ?? ""}${run.stderr ?? ""}` };
 }
 
-function runEngine(home: string, options: { starter?: boolean; packsDir?: string; copySkills?: boolean } = {}): { code: number; out: string } {
+function runEngine(home: string, options: { starter?: boolean; packsDir?: string; copySkills?: boolean; pathPrefix?: string } = {}): { code: number; out: string } {
   const run = spawnSync(process.execPath, [
     INSTALL_ENGINE,
     options.starter ? "--starter" : "--no-starter",
@@ -88,6 +89,7 @@ function runEngine(home: string, options: { starter?: boolean; packsDir?: string
       LOCALAPPDATA: join(home, "AppData", "Local"),
       NIRVANA_SCOPE: "global",
       NIRVANA_PACKS_DIR: options.packsDir ?? join(home, "packs-not-installed"),
+      PATH: options.pathPrefix ? `${options.pathPrefix}${delimiter}${process.env.PATH ?? ""}` : process.env.PATH,
     },
   });
   return { code: run.status ?? 1, out: `${run.stdout ?? ""}${run.stderr ?? ""}` };
@@ -269,9 +271,165 @@ describe("managed update transaction safety", () => {
     expect(readFileSync(findFiles(guarded.snapshot_dir, "business.yaml")[0], "utf8"))
       .toContain("changed between phases");
   });
+
+  test("writes owner metadata while held and removes its own lock after a normal mutation", async () => {
+    const { root } = fixtureRoot();
+    const target = join(root, "target", "demo");
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "business.yaml"), "name: demo\n");
+    const safety = await import("../../_shared/lib/update-safety.ts") as Record<string, any>;
+    const observed = safety.observeManagedTarget({
+      ownership: "pack-managed", ownerId: "fixture-pack", kind: "businesses", slug: "demo",
+      targetPath: target, baseHash: hashManagedTree(target), incomingHash: null, excludes: [],
+    });
+    const lockPath = join(root, "target", ".demo.nirvana-update.lock");
+    let metadata: Record<string, unknown> = {};
+    const result = safety.guardManagedMutation(observed, join(root, "snapshots"), () => {
+      metadata = JSON.parse(readFileSync(lockPath, "utf8"));
+    });
+    expect(result.ok).toBe(true);
+    expect(metadata.pid).toBe(process.pid);
+    expect(metadata.created_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(metadata.token).toMatch(/^[a-f0-9-]{16,}$/i);
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  test("cleans its lock when a typed rsync command failure escapes the callback", async () => {
+    const { root } = fixtureRoot();
+    const target = join(root, "target", "demo");
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "business.yaml"), "name: demo\n");
+    const safety = await import("../../_shared/lib/update-safety.ts") as Record<string, any>;
+    const observed = safety.observeManagedTarget({
+      ownership: "pack-managed", ownerId: "fixture-pack", kind: "businesses", slug: "demo",
+      targetPath: target, baseHash: hashManagedTree(target), incomingHash: null, excludes: [],
+    });
+    const lockPath = join(root, "target", ".demo.nirvana-update.lock");
+    const failure = new safety.ManagedMutationCommandError("rsync", 23);
+    expect(() => safety.guardManagedMutation(observed, join(root, "snapshots"), () => { throw failure; }))
+      .toThrow("rsync failed with exit code 23");
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  test("cleans its lock when an unexpected callback exception escapes", async () => {
+    const { root } = fixtureRoot();
+    const target = join(root, "target", "demo");
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "business.yaml"), "name: demo\n");
+    const safety = await import("../../_shared/lib/update-safety.ts") as Record<string, any>;
+    const observed = safety.observeManagedTarget({
+      ownership: "pack-managed", ownerId: "fixture-pack", kind: "businesses", slug: "demo",
+      targetPath: target, baseHash: hashManagedTree(target), incomingHash: null, excludes: [],
+    });
+    const lockPath = join(root, "target", ".demo.nirvana-update.lock");
+    expect(() => safety.guardManagedMutation(observed, join(root, "snapshots"), () => {
+      throw new Error("unexpected callback failure");
+    })).toThrow("unexpected callback failure");
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  test("blocks on an active owner lock and never removes it", async () => {
+    const { root } = fixtureRoot();
+    const target = join(root, "target", "demo");
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "business.yaml"), "name: demo\n");
+    const safety = await import("../../_shared/lib/update-safety.ts") as Record<string, any>;
+    const observed = safety.observeManagedTarget({
+      ownership: "pack-managed", ownerId: "fixture-pack", kind: "businesses", slug: "demo",
+      targetPath: target, baseHash: hashManagedTree(target), incomingHash: null, excludes: [],
+    });
+    const lockPath = join(root, "target", ".demo.nirvana-update.lock");
+    writeFileSync(lockPath, JSON.stringify({ pid: process.pid, created_at: new Date().toISOString(), token: "active-owner-token" }));
+    let mutated = false;
+    const result = safety.guardManagedMutation(observed, join(root, "snapshots"), () => { mutated = true; });
+    expect(result.ok).toBe(false);
+    expect(result.lock_status).toBe("active");
+    expect(mutated).toBe(false);
+    expect(existsSync(lockPath)).toBe(true);
+  });
+
+  test("keeps an empty legacy lock and gives an explicit recovery path", async () => {
+    const { root } = fixtureRoot();
+    const target = join(root, "target", "demo");
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "business.yaml"), "name: demo\n");
+    const safety = await import("../../_shared/lib/update-safety.ts") as Record<string, any>;
+    const observed = safety.observeManagedTarget({
+      ownership: "pack-managed", ownerId: "fixture-pack", kind: "businesses", slug: "demo",
+      targetPath: target, baseHash: hashManagedTree(target), incomingHash: null, excludes: [],
+    });
+    const lockPath = join(root, "target", ".demo.nirvana-update.lock");
+    writeFileSync(lockPath, "");
+    const result = safety.guardManagedMutation(observed, join(root, "snapshots"), () => {});
+    expect(result.ok).toBe(false);
+    expect(result.lock_status).toBe("invalid");
+    expect(result.recovery).toContain("no valid Nirvana owner metadata");
+    expect(existsSync(lockPath)).toBe(true);
+  });
+
+  test("recovers a sufficiently old orphan lock before mutating", async () => {
+    const { root } = fixtureRoot();
+    const target = join(root, "target", "demo");
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "business.yaml"), "name: demo\n");
+    const safety = await import("../../_shared/lib/update-safety.ts") as Record<string, any>;
+    const observed = safety.observeManagedTarget({
+      ownership: "pack-managed", ownerId: "fixture-pack", kind: "businesses", slug: "demo",
+      targetPath: target, baseHash: hashManagedTree(target), incomingHash: null, excludes: [],
+    });
+    const lockPath = join(root, "target", ".demo.nirvana-update.lock");
+    writeFileSync(lockPath, JSON.stringify({
+      pid: 2147483647,
+      created_at: new Date(Date.now() - 10 * 60_000).toISOString(),
+      token: "old-orphan-token",
+    }));
+    let mutated = false;
+    const result = safety.guardManagedMutation(observed, join(root, "snapshots"), () => { mutated = true; });
+    expect(result.ok).toBe(true);
+    expect(mutated).toBe(true);
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  test("does not remove a lock whose ownership token changed while the callback ran", async () => {
+    const { root } = fixtureRoot();
+    const target = join(root, "target", "demo");
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "business.yaml"), "name: demo\n");
+    const safety = await import("../../_shared/lib/update-safety.ts") as Record<string, any>;
+    const observed = safety.observeManagedTarget({
+      ownership: "pack-managed", ownerId: "fixture-pack", kind: "businesses", slug: "demo",
+      targetPath: target, baseHash: hashManagedTree(target), incomingHash: null, excludes: [],
+    });
+    const lockPath = join(root, "target", ".demo.nirvana-update.lock");
+    safety.guardManagedMutation(observed, join(root, "snapshots"), () => {
+      writeFileSync(lockPath, JSON.stringify({ pid: process.pid, created_at: new Date().toISOString(), token: "replacement-owner" }));
+    });
+    expect(existsSync(lockPath)).toBe(true);
+    expect(JSON.parse(readFileSync(lockPath, "utf8")).token).toBe("replacement-owner");
+  });
 });
 
 describe("engine update safety", () => {
+  test("a real rsync failure exits only after removing the engine target lock", () => {
+    const { root, home } = fixtureRoot();
+    const bin = join(root, "bin");
+    mkdirSync(bin, { recursive: true });
+    const fakeRsync = join(bin, process.platform === "win32" ? "rsync.cmd" : "rsync");
+    writeFileSync(fakeRsync, process.platform === "win32"
+      ? "@echo off\r\nif \"%1\"==\"--version\" exit /b 0\r\nexit /b 23\r\n"
+      : "#!/bin/sh\n[ \"$1\" = \"--version\" ] && exit 0\nexit 23\n");
+    if (process.platform !== "win32") chmodSync(fakeRsync, 0o755);
+
+    const install = runEngine(home, { pathPrefix: bin });
+    expect(install.code).toBe(1);
+    expect(install.out).toContain("rsync failed with exit code 23");
+    const skillsRoot = join(home, ".nirvana", "skills");
+    const locks = existsSync(skillsRoot)
+      ? readdirSync(skillsRoot).filter((entry) => entry.endsWith(".nirvana-update.lock"))
+      : [];
+    expect(locks).toEqual([]);
+  }, 180_000);
+
   test("snapshots a legacy engine install before establishing its first ownership baseline", () => {
     const { home } = fixtureRoot();
     const legacySkill = join(home, ".nirvana", "skills", "harness");

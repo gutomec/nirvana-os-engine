@@ -35,6 +35,7 @@ import {
   observeManagedTarget,
   removeManagedTree,
   reportBlockedUpdate,
+  ManagedMutationCommandError,
   type ManagedTargetObservation,
   type ManagedUpdateRisk,
 } from "../skills/_shared/lib/update-safety.ts";
@@ -299,8 +300,7 @@ function copySkills(): void {
           { stdio: ["ignore", "inherit", "inherit"] },
         );
         if (r.status !== 0) {
-          console.error(`  ✗ rsync failed for ${skill}`);
-          process.exit(1);
+          throw new ManagedMutationCommandError("rsync", r.status);
         }
       } else {
         rmSync(dst, { recursive: true, force: true });
@@ -315,11 +315,18 @@ function copySkills(): void {
     };
     const observation = engineSkillObservations.get(skill);
     if (observation) {
-      const guarded = guardManagedMutation(
-        observation,
-        join(NIRVANA_DIR, "customization-snapshots", "engine"),
-        applyCopy,
-      );
+      let guarded: ReturnType<typeof guardManagedMutation>;
+      try {
+        guarded = guardManagedMutation(
+          observation,
+          join(NIRVANA_DIR, "customization-snapshots", "engine"),
+          applyCopy,
+        );
+      } catch (error) {
+        if (!(error instanceof ManagedMutationCommandError)) throw error;
+        console.error(`  ✗ ${error.message} for ${skill}`);
+        process.exit(1);
+      }
       if (!guarded.ok) {
         reportBlockedUpdate([guarded.risk!], guarded.snapshot_dir);
         process.exit(1);

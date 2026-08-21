@@ -13,7 +13,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 
 export type ManagedOwnership = "engine-managed" | "pack-managed" | "user-owned";
@@ -52,6 +52,9 @@ export interface ManagedUpdateRisk {
   incoming_hash?: string | null;
   snapshot_excludes?: string[];
   unsafe_links?: UnsafeManagedLink[];
+  lock_path?: string;
+  lock_status?: string;
+  recovery?: string;
 }
 
 export interface ManagedTargetObservation extends Omit<ManagedUpdateRisk, "reason"> {
@@ -349,6 +352,49 @@ export interface GuardedMutationResult {
   ok: boolean;
   risk?: ManagedUpdateRisk;
   snapshot_dir?: string;
+  lock_status?: "active" | "orphan-too-young" | "invalid" | "owner-changed";
+  lock_path?: string;
+  recovery?: string;
+}
+
+export class ManagedMutationCommandError extends Error {
+  constructor(public readonly command: string, public readonly exitCode: number | null) {
+    super(`${command} failed with exit code ${exitCode ?? "unknown"}`);
+    this.name = "ManagedMutationCommandError";
+  }
+}
+
+interface ManagedLockOwner {
+  pid: number;
+  created_at: string;
+  token: string;
+  owner_id: string;
+  target: string;
+}
+
+export const ORPHAN_LOCK_MIN_AGE_MS = 5 * 60_000;
+
+function readLockOwner(lockPath: string): ManagedLockOwner | null {
+  try {
+    const parsed = JSON.parse(readFileSync(lockPath, "utf8"));
+    if (
+      !Number.isInteger(parsed?.pid) || parsed.pid <= 0 ||
+      typeof parsed?.created_at !== "string" || !Number.isFinite(Date.parse(parsed.created_at)) ||
+      typeof parsed?.token !== "string" || parsed.token.length < 8
+    ) return null;
+    return parsed as ManagedLockOwner;
+  } catch { return null; }
+}
+
+function processIsActive(pid: number): boolean {
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return (error as NodeJS.ErrnoException).code !== "ESRCH"; }
+}
+
+function removeLockOwnedBy(lockPath: string, token: string): boolean {
+  const current = readLockOwner(lockPath);
+  if (!current || current.token !== token) return false;
+  try { unlinkSync(lockPath); return true; } catch { return false; }
 }
 
 export function guardManagedMutation(
@@ -358,22 +404,64 @@ export function guardManagedMutation(
 ): GuardedMutationResult {
   mkdirSync(dirname(observation.target_path), { recursive: true });
   const lockPath = join(dirname(observation.target_path), `.${basename(observation.target_path)}.nirvana-update.lock`);
-  let lock: number;
-  try {
-    lock = openSync(lockPath, "wx");
-  } catch (error) {
+  const token = randomUUID();
+  const owner: ManagedLockOwner = {
+    pid: process.pid,
+    created_at: new Date().toISOString(),
+    token,
+    owner_id: `${observation.owner_id}/${observation.kind}/${observation.slug}`,
+    target: observation.target_path,
+  };
+  let lock: number | undefined;
+  const acquire = (): number => {
+    const descriptor = openSync(lockPath, "wx");
+    writeFileSync(descriptor, JSON.stringify(owner) + "\n");
+    return descriptor;
+  };
+  try { lock = acquire(); }
+  catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    const current = inspectManagedTree(observation.target_path, observation.snapshot_excludes ?? []);
-    const changed: ManagedTargetObservation = {
-      ...observation,
-      target_exists: existsWithoutFollowing(observation.target_path),
-      installed_hash: current.hash,
-      managed_file_count: current.managed_file_count,
-      unsafe_links: current.unsafe_links,
-    };
-    const risk = riskFromObservation(changed, "concurrent-change");
-    const snapshotDir = createCustomizationSnapshot([risk], snapshotRoot);
-    return { ok: false, risk, snapshot_dir: snapshotDir };
+    const existing = readLockOwner(lockPath);
+    let lockStatus: GuardedMutationResult["lock_status"] = "invalid";
+    let recovery = `Inspect ${lockPath}. It has no valid Nirvana owner metadata, so it was not removed automatically.`;
+    if (existing) {
+      const age = Date.now() - Date.parse(existing.created_at);
+      if (processIsActive(existing.pid)) {
+        lockStatus = "active";
+        recovery = `Nirvana update PID ${existing.pid} still owns ${lockPath}; wait for it to finish.`;
+      } else if (age < ORPHAN_LOCK_MIN_AGE_MS) {
+        lockStatus = "orphan-too-young";
+        recovery = `PID ${existing.pid} is unavailable, but the lock is younger than ${ORPHAN_LOCK_MIN_AGE_MS / 60_000} minutes; retry later.`;
+      } else if (removeLockOwnedBy(lockPath, existing.token)) {
+        try { lock = acquire(); }
+        catch (acquireError) {
+          if ((acquireError as NodeJS.ErrnoException).code !== "EEXIST") throw acquireError;
+          lockStatus = "owner-changed";
+          recovery = `The owner of ${lockPath} changed during orphan recovery; the replacement lock was preserved.`;
+        }
+      } else {
+        lockStatus = "owner-changed";
+        recovery = `The owner token of ${lockPath} changed during orphan recovery; the replacement lock was preserved.`;
+      }
+    }
+    if (lock === undefined) {
+      const current = inspectManagedTree(observation.target_path, observation.snapshot_excludes ?? []);
+      const changed: ManagedTargetObservation = {
+        ...observation,
+        target_exists: existsWithoutFollowing(observation.target_path),
+        installed_hash: current.hash,
+        managed_file_count: current.managed_file_count,
+        unsafe_links: current.unsafe_links,
+      };
+      const risk: ManagedUpdateRisk = {
+        ...riskFromObservation(changed, "concurrent-change"),
+        lock_path: lockPath,
+        lock_status: lockStatus,
+        recovery,
+      };
+      const snapshotDir = createCustomizationSnapshot([risk], snapshotRoot);
+      return { ok: false, risk, snapshot_dir: snapshotDir, lock_status: lockStatus, lock_path: lockPath, recovery };
+    }
   }
   try {
     const current = inspectManagedTree(observation.target_path, observation.snapshot_excludes ?? []);
@@ -395,7 +483,7 @@ export function guardManagedMutation(
     return { ok: true };
   } finally {
     closeSync(lock);
-    try { unlinkSync(lockPath); } catch {}
+    removeLockOwnedBy(lockPath, token);
   }
 }
 
@@ -413,6 +501,7 @@ export function reportBlockedUpdate(risks: ManagedUpdateRisk[], snapshotDir?: st
             ? "target changed after preflight"
             : `${risk.ownership} drift`;
     console.error(`  ! ${risk.kind}/${risk.slug}: ${label}`);
+    if (risk.recovery) console.error(`    ${risk.recovery}`);
   }
   if (snapshotDir) console.error(`  Recoverable snapshot: ${snapshotDir}`);
   console.error("  Keep engine/pack-managed files immutable. Move changes to a user-owned overlay, a new slug, or a fork, then rerun the update.");
