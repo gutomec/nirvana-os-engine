@@ -6,6 +6,19 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### The gate learns that "todo" is Portuguese
+
+The correctness heuristic's placeholder regex carried /i, so the marker TODO
+matched the Portuguese word "todo" — any dense PT-BR prose scored as
+placeholder-ridden, and its structure check ignored bold pseudo-headings and
+lists while punishing briefs that forbid headings. Field report from a VPS
+run: gate_failed → audited x_correctness_override → gate_passed. Markers are
+now matched as the uppercase conventions they are (bracketed [INSERT/[FILL
+forms stay case-insensitive), pseudo-headings and lists count as structure,
+and six new tests pin the behavior with real PT-BR fixtures.
+
 ## 0.7.4 — 2026-08-21
 
 ### Install fixes: the silent failures buyers actually hit

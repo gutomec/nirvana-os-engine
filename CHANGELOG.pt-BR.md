@@ -6,6 +6,20 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Unreleased
+
+### O gate aprende que "todo" é português
+
+A regex de placeholder da heurística de correção carregava /i, então o
+marcador TODO casava com a palavra portuguesa "todo" — qualquer prosa PT-BR
+densa pontuava como cheia de placeholders, e o check de estrutura ignorava
+pseudo-headings em negrito e listas, punindo briefs que proíbem headings.
+Relato de campo de uma VPS: gate_failed → x_correctness_override auditado →
+gate_passed. Os marcadores agora são casados como as convenções maiúsculas
+que são (as formas com colchete [INSERT/[FILL seguem case-insensitive),
+pseudo-headings e listas contam como estrutura, e seis testes novos fixam o
+comportamento com fixtures PT-BR reais.
+
 ## 0.7.4 — 2026-08-21
 
 ### Correções de instalação: as falhas silenciosas que compradores realmente sofrem
