@@ -30,6 +30,9 @@ function sudoSquad(): string {
     "    install:",
     '      darwin: "sudo installer -pkg /tmp/fake.pkg -target /"',
     '      linux: "sudo apt-get install -y fake-tool-xyz"',
+    // win32 included so the exit-2 path is exercised on every CI OS — sudo
+    // detection is string-based and platform-agnostic on purpose.
+    '      win32: "sudo choco install -y fake-tool-xyz"',
     "",
   ].join("\n"));
   return dir;
