@@ -29,12 +29,24 @@ description: |
 
 ## Criteria
 
+### Hard gates on the final render
+
+- **Final-composite contrast.** Measure contrast from the rendered pixels at
+  the intended viewport and state, after overlays, gradients, opacity, images,
+  blend modes and effects. Source color tokens or CSS values alone do not prove
+  the result.
+- **Rendered text containment.** With the intended fonts loaded, every glyph
+  remains fully inside its visual container with safe padding. Clipping,
+  truncation, unintended overflow, overlap or lost legibility fails the gate.
+  Check every viewport, language and content state required by the brief.
+
 1. **brief_fidelity** (weight 20)  
    Layout entrega o solicitado. Seções pedidas presentes. CTA hierárquico.
 
 2. **wcag_2_2_AA** (weight 20) **[HARD GATE — falha individual reprova]**  
-   Contraste de cor ≥ 4.5:1 para texto. Foco visível. Tamanho mínimo de
-   toque 44×44. Labels para todos os inputs. Alt-text em imagens.
+   Contraste de cor ≥ 4.5:1 para texto, medido na composição renderizada final.
+   Foco visível. Tamanho mínimo de toque 44×44. Labels para todos os inputs.
+   Alt-text em imagens.
 
 3. **visual_hierarchy** (weight 15)  
    Eye traveling claro: hero → benefício → social proof → CTA. Sem
@@ -42,7 +54,7 @@ description: |
 
 4. **typography_system** (weight 10)  
    Escala consistente. Line-height legível (1.4-1.6 body). Pareamento
-   serif/sans respeitado.
+   serif/sans respeitado. Texto integralmente visível em seu contêiner.
 
 5. **color_palette_discipline** (weight 10)  
    Cores derivam de tokens, não hardcoded random. Estados (hover/active/
@@ -59,4 +71,5 @@ description: |
    gigantes hardcoded.
 
 ## Output schema
-Padrão. Falha em WCAG = severity:high obrigatório.
+Padrão. Falha em WCAG, contraste da composição final ou contenção do texto =
+severity:high obrigatório.

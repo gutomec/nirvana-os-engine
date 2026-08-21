@@ -14,7 +14,8 @@ applies_to_produces:
 description: |
   Avalia imagens descritivamente (assumindo que o judge pode ver a imagem
   via base64 ou recebe descrição estruturada do gerador). Foca em
-  brief-fidelity, qualidade composicional, ausência de artefatos.
+  brief-fidelity, qualidade composicional, ausência de artefatos e integridade
+  do render final.
 ---
 
 # Image Rubric
@@ -30,6 +31,17 @@ description: |
 ```
 
 ## Criteria
+
+### Hard gates on the final render
+
+- **Final-composite contrast.** Judge the pixels in the delivered composition,
+  at its intended display size, after overlays, gradients, opacity, images,
+  blend modes and effects. Source palette values and isolated layers are not
+  evidence of the final contrast.
+- **Rendered text containment.** Every glyph is fully visible inside its
+  intended container and safe zone. Clipping, truncation, unintended overflow,
+  overlap or lost legibility fails the gate. Check every export size, aspect
+  ratio, language and content variant required by the brief.
 
 1. **brief_fidelity** (weight 30)  
    A imagem corresponde ao que foi pedido (assunto, estilo, mood)?
@@ -50,10 +62,13 @@ description: |
    safe-zone respeitadas.
 
 6. **typography** (weight 5)  
-   Se há texto, é legível, kerning OK, hierarquia clara, sem widows/orphans.
+   Se há texto, é legível, kerning OK, hierarquia clara, sem widows/orphans e
+   integralmente contido no espaço visual reservado.
 
 7. **accessibility** (weight 5)  
-   Contraste suficiente. Texto não dependente de cor para ser entendido.
+   Contraste suficiente na composição renderizada final. Texto não dependente
+   de cor para ser entendido.
 
 ## Output schema
-Padrão. Critique[] cita coordenadas/regiões da imagem quando relevante.
+Padrão. Critique[] cita coordenadas/regiões da imagem quando relevante. Falha
+de contraste final ou contenção do texto exige severity:high.
