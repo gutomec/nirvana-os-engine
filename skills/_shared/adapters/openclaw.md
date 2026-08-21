@@ -22,6 +22,27 @@
 
 ---
 
+## 1.1 Fresh install — the ~/.agents trap (fixed in 0.7.4)
+
+A machine where OpenClaw was just installed via npm has the `openclaw` binary
+on PATH but NO `~/.agents` yet — the directory is created on first run. Engine
+installers before 0.7.4 gated linking on the directory existing, so the skills
+link was silently skipped: no error, no `~/.agents/skills`, and the buyer
+concluded the product was broken. Since 0.7.4 the installer probes the binary
+too and creates the directory itself; `nrv doctor` reports a `skills link:
+openclaw` line either way. On an older engine, the workaround order is:
+
+    npm i -g openclaw@latest
+    mkdir -p ~/.agents        # or `openclaw setup`, which creates it
+    bun scripts/install.ts    # now links
+
+Remember the two facts the runtime cannot teach (also printed by the
+installer): OpenClaw reads no project contract — invoke explicitly with
+`/harness <brief>` — and has no in-process subagent, so the scripted path
+(`nrv dispatch --exec`) is the real dispatch.
+
+---
+
 ## 2. A diferença que decide tudo
 
 Claude Code, Codex e Antigravity têm um primitivo de subagente que roda dentro

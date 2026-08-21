@@ -24,7 +24,7 @@ import { createRequire } from "node:module";
 // Shared with the uninstaller — see skills/_shared/lib/runtime-dirs.ts for why.
 // Resolves both from the repo and from an extracted release tarball: the
 // tarball ships scripts/install.ts next to the full skills/ tree.
-import { RUNTIME_SKILL_DIRS, SKILLS, COPY_MARKER } from "../skills/_shared/lib/runtime-dirs.ts";
+import { RUNTIME_TARGETS, SKILLS, COPY_MARKER } from "../skills/_shared/lib/runtime-dirs.ts";
 import { RUN_STATE_EXCLUDES } from "../skills/_shared/lib/run-state.ts";
 
 const requireCjs = createRequire(import.meta.url);
@@ -300,22 +300,42 @@ function ensureContentLibraries(): void {
   }
 }
 
+/** Second install signal: the runtime CLI on PATH. `where` on Windows,
+ *  `which` elsewhere. A binary present with no home dir is the freshly
+ *  npm-installed case (OpenClaw) that the dir-only proxy used to skip
+ *  silently — the buyer ran the installer and ~/.agents/skills never
+ *  appeared, with no error to explain why. */
+function binOnPath(bin: string): boolean {
+  const probe = IS_WINDOWS ? "where" : "which";
+  try { return spawnSync(probe, [bin], { stdio: "ignore", env: process.env }).status === 0; }
+  catch { return false; }
+}
+
 function linkRuntimes(): void {
   if (FLAG_DRY) {
-    const installed = RUNTIME_SKILL_DIRS.filter(d => existsSync(dirname(d)));
-    console.log(`[4/4] DRY RUN — would wire ${installed.length} installed runtime(s):`);
-    for (const d of installed) console.log(`        ${d}`);
+    const wired = RUNTIME_TARGETS.filter(t => existsSync(dirname(t.skillsDir)) || binOnPath(t.bin));
+    console.log(`[4/4] DRY RUN — would wire ${wired.length} runtime(s):`);
+    for (const t of wired) console.log(`        ${t.name} → ${t.skillsDir}`);
     return;
   }
   console.log("[4/4] Linking runtimes → shared skills tree ...");
   let linked = 0;
-  for (const rtDir of RUNTIME_SKILL_DIRS) {
+  for (const t of RUNTIME_TARGETS) {
+    const rtDir = t.skillsDir;
     // NO runtime is a prerequisite — not even Claude Code. A runtime is wired
-    // only when it is actually installed (its home dir exists); otherwise we
-    // would create ~/.claude on machines that never had Claude Code. The
-    // canonical tree at ~/.nirvana/skills is the one thing always created, and
-    // every runtime consumes it from there.
-    if (!existsSync(dirname(rtDir))) continue; // runtime not installed
+    // when its home dir exists OR its CLI binary is on PATH (two signals: the
+    // dir-only proxy skipped freshly installed runtimes whose dir is created
+    // on first run). A missing runtime is skipped LOUDLY — silence here is
+    // what turned a missing mkdir into "the product is broken".
+    const dirPresent = existsSync(dirname(rtDir));
+    const cliPresent = binOnPath(t.bin);
+    if (!dirPresent && !cliPresent) {
+      console.log(`  ◌ ${t.name}: skipped ('${t.bin}' not on PATH, ${dirname(rtDir)} absent)`);
+      continue;
+    }
+    if (!dirPresent && cliPresent) {
+      console.log(`  + ${t.name}: '${t.bin}' on PATH but ${dirname(rtDir)} missing — creating it`);
+    }
     // Copy when: Windows, --copy-skills, or Codex (parent basename === .codex).
     const isCodex = basename(dirname(rtDir)) === ".codex";
     const preferCopy = IS_WINDOWS || FLAG_COPY_SKILLS || isCodex;
@@ -340,7 +360,8 @@ function linkRuntimes(): void {
       } catch (e) { console.log(`  ! could not materialize ${linkPath}: ${(e as Error).message}`); mode = "fail"; }
     }
     linked++;
-    console.log(`  ✓ ${rtDir} (${mode})`);
+    console.log(`  ✓ ${t.name}: ${rtDir} (${mode})`);
+    if (t.note) console.log(`     note: ${t.note}`);
   }
   if (linked === 0) {
     console.log("  ◌ no skill-aware runtime installed yet — nothing linked.");
@@ -362,7 +383,12 @@ function windowsLauncher(binName: string): string {
     'for %%P in ("%ProgramFiles%\\Git\\bin\\bash.exe" "%ProgramFiles(x86)%\\Git\\bin\\bash.exe" "%LOCALAPPDATA%\\Programs\\Git\\bin\\bash.exe") do (',
     '  if not defined GB if exist "%%~P" set "GB=%%~P"',
     ")",
-    "if not defined GB for /f \"delims=\" %%G in ('where git 2^>nul') do (",
+    // `where /q` first, so the `for /f` capture never needs a stderr redirect
+    // to the nul device: that idiom, interpreted outside cmd.exe (PowerShell,
+    // Bun shell, OneDrive), materializes a literal file named `nul` — the same
+    // trap fixed across the .cmd wrappers.
+    'where /q git',
+    "if not defined GB if %ERRORLEVEL% EQU 0 for /f \"delims=\" %%G in ('where git') do (",
     '  if not defined GB if exist "%%~dpG..\\bin\\bash.exe" set "GB=%%~dpG..\\bin\\bash.exe"',
     ")",
     "if not defined GB (",
@@ -385,7 +411,7 @@ function windowsLauncherNrv(): string {
     'set "NRVTS=%USERPROFILE%\\.nirvana\\skills\\harness\\scripts\\nrv.ts"',
     'if not exist "%NRVTS%" set "NRVTS=%USERPROFILE%\\.claude\\skills\\harness\\scripts\\nrv.ts"',
     'set "BUN=bun"',
-    'where bun >nul 2>nul || set "BUN=%USERPROFILE%\\.bun\\bin\\bun.exe"',
+    'where /q bun || set "BUN=%USERPROFILE%\\.bun\\bin\\bun.exe"',
     'if not exist "%BUN%" if /I not "%BUN%"=="bun" (',
     "  echo nrv requires Bun. Install: https://bun.sh",
     "  exit /b 1",
