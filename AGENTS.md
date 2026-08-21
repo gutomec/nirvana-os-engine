@@ -250,6 +250,41 @@ audit chain), and a pointer to run `nrv init` per project ...
 
 Rules: replace an existing managed block, never append a second; edit only the content between the markers; never reformat or delete the user's own lines. The block is removable by the user or by `nrv uninstall`.
 
+<!-- nirvana:upstream-contribution:v1 -->
+## 11. Upstream contribution offers
+
+Offer an upstream contribution in either qualified situation: a confirmed
+defect or correction belongs to the shared Nirvana engine/core, or the user
+proposes an improvement idea that applies to the shared Nirvana engine/core.
+Do not offer one for project-only behavior, personal configuration, user
+content, paid packs, or unverified hypotheses.
+
+Follow this consent workflow:
+
+1. For a confirmed defect, finish and validate the local workaround before you
+   offer an upstream contribution.
+2. For an improvement idea, explain that accepting the offer means turning it
+   into a concrete change, implementing it, testing it, and preparing the
+   contribution.
+3. Obtain explicit initial consent before creating a fork or branch, pushing
+   code, or opening a PR or pull request.
+4. After initial consent, check for an equivalent open PR or pull request before
+   doing duplicate work.
+5. Prepare a focused change from the current upstream default branch, with
+   relevant tests, user-visible changelogs when applicable, and the repository's
+   pull request template.
+6. Before external publication, show the complete proposed PR title and body to
+   the user and wait for explicit final approval.
+7. Create the PR ready for review by default. Use a draft only when a concrete
+   blocker prevents review, and explain that blocker.
+8. Inspect the CLA check after publication. CLA signatures are normally
+   one-time per contributor. If it is already satisfied, report that without
+   asking again. If the CLA check requires a signature, give the user the PR
+   link and this exact phrase:
+   `I have read the CLA Document and I hereby sign the CLA`. Do not sign or
+   attest legal consent for the user.
+<!-- /nirvana:upstream-contribution:v1 -->
+
 
 
 

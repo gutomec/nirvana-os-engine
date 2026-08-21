@@ -6,6 +6,19 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### Upstream contributions require explicit consent
+
+Nirvana now offers to prepare an upstream pull request when a confirmed fix or
+improvement idea belongs to the shared engine/core. Project-only behavior,
+personal configuration, user content, paid packs, and unverified hypotheses are
+excluded. The protocol requires consent before GitHub work, a complete title
+and body preview before publication, and a second explicit approval before a
+review-ready PR is opened. It also reports the CLA check after publication and
+asks for the repository's exact signature phrase only when the contributor has
+not already satisfied it.
+
 ## 0.7.3 — 2026-08-20
 
 ### The engine learns what relates to what
