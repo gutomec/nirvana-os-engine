@@ -153,7 +153,7 @@ describe("runDelivery — outcomes", () => {
     const oroot = path.join(tmp, "out-fail");
     fs.mkdirSync(oroot);
     fs.writeFileSync(path.join(oroot, "nota.md"), FAILING_MD);
-    const { args, calls } = baseArgs(oroot); // maxRevisions: 0 — no revision runs
+    const { args, calls } = baseArgs(oroot, { gateExhaustedPolicy: "withhold" }); // maxRevisions: 0 — no revision runs; strict mode is the contract under test
     const res = runDelivery(args);
     expect(res.exitCode).toBe(2);
     expect(res.delivered).toBe(false);
@@ -231,7 +231,7 @@ describe("runDelivery — outcomes", () => {
     const orootFail = path.join(tmp, "out-hook-fail");
     fs.mkdirSync(orootFail);
     fs.writeFileSync(path.join(orootFail, "nota.md"), FAILING_MD);
-    const failCase = baseArgs(orootFail, { afterGate: () => { hookRuns++; return {}; } });
+    const failCase = baseArgs(orootFail, { gateExhaustedPolicy: "withhold", afterGate: () => { hookRuns++; return {}; } });
     const resFail = runDelivery(failCase.args);
     expect(resFail.exitCode).toBe(2);
     expect(hookRuns).toBe(1); // hook did NOT run for the withheld delivery
@@ -368,7 +368,7 @@ describe("runDelivery — completenessCeiling", () => {
     const oroot = path.join(tmp, "out-ceil-gatefail");
     fs.mkdirSync(oroot);
     fs.writeFileSync(path.join(oroot, "nota.md"), FAILING_MD);
-    const { args, calls } = baseArgs(oroot, { completenessCeiling: { reason: CEILING_REASON } });
+    const { args, calls } = baseArgs(oroot, { gateExhaustedPolicy: "withhold", completenessCeiling: { reason: CEILING_REASON } });
     const res = runDelivery(args);
     expect(res.exitCode).toBe(2);
     expect(res.gateOutcome).toBe("fail");
@@ -497,7 +497,7 @@ describe("deliverAfterRuntimeError — a not-ok run with artifacts is still judg
     const oroot = path.join(tmp, "out-err-fail");
     fs.mkdirSync(oroot);
     const led = openTestRun();
-    const { args, calls } = baseArgs(oroot, { ledger: led }); // maxRevisions: 0
+    const { args, calls } = baseArgs(oroot, { ledger: led, gateExhaustedPolicy: "withhold" }); // maxRevisions: 0
     const runner = () => {
       fs.writeFileSync(path.join(oroot, "nota.md"), FAILING_MD);
       return { ok: false, error: RUNTIME_ERROR };
@@ -563,7 +563,7 @@ describe("runDelivery — ledger terminal states (never-stall guarantee)", () =>
     fs.mkdirSync(oroot);
     fs.writeFileSync(path.join(oroot, "nota.md"), FAILING_MD);
     const led = openTestRun();
-    const { args } = baseArgs(oroot, { ledger: led });
+    const { args } = baseArgs(oroot, { ledger: led, gateExhaustedPolicy: "withhold" });
     const res = runDelivery(args);
     expect(res.exitCode).toBe(2);
     const row = runLedger.getRun(led.handle, led.runId)!;
@@ -582,5 +582,50 @@ describe("runDelivery — ledger terminal states (never-stall guarantee)", () =>
     const row = runLedger.getRun(led.handle, led.runId)!;
     expect(row.state).toBe("withheld");
     expect(row.meta.gate).toBe("indeterminate");
+  });
+});
+
+// ── gate retry ceiling → accepted with reservations (owner policy 2026-08-21) ─
+
+describe("runDelivery — gate exhausted: accepted with reservations", () => {
+  test("default policy delivers the last attempt, writes _QA-RESERVATIONS.md, emits the event", () => {
+    const oroot = path.join(tmp, "out-reservations");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "nota.md"), FAILING_MD);
+    const { args, calls } = baseArgs(oroot); // no policy arg, no env → default "accept"
+    const res = runDelivery(args);
+    expect(res.exitCode).toBe(0);
+    expect(res.delivered).toBe(true);
+    expect(res.gateOutcome).toBe("fail-accepted");
+    const note = fs.readFileSync(path.join(oroot, "_QA-RESERVATIONS.md"), "utf8");
+    expect(note).toContain("retry ceiling");
+    expect(note).toContain("nota.md");
+    const events = calls.map(x => x.event);
+    expect(events).toContain("x_delivered_with_reservations");
+    expect(events).toContain("delivered");
+    expect(events).not.toContain("x_delivery_withheld");
+    expect(calls.find(x => x.event === "delivered")!.payload.gate).toBe("fail-accepted");
+  });
+
+  test("the completeness ceiling outranks the acceptance (reservations never cover a missing deliverable)", () => {
+    const oroot = path.join(tmp, "out-reservations-ceiling");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "nota.md"), FAILING_MD);
+    const { args } = baseArgs(oroot, { completenessCeiling: { reason: CEILING_REASON } });
+    const res = runDelivery(args);
+    expect(res.delivered).toBe(false);
+    expect(res.exitCode).toBe(2);
+    expect(res.ceilingApplied).toBe(CEILING_REASON);
+  });
+
+  test("explicit withhold policy keeps the strict exit 2", () => {
+    const oroot = path.join(tmp, "out-reservations-strict");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "nota.md"), FAILING_MD);
+    const { args, calls } = baseArgs(oroot, { gateExhaustedPolicy: "withhold" });
+    const res = runDelivery(args);
+    expect(res.exitCode).toBe(2);
+    expect(res.delivered).toBe(false);
+    expect(calls.map(x => x.event)).toContain("x_delivery_withheld");
   });
 });
