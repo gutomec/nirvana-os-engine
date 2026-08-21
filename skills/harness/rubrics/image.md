@@ -2,9 +2,13 @@
 name: image
 display_name: "Image / Visual (foto, ilustração, banner, logo)"
 type: harness_rubric
-version: 1.0.0
+version: 1.1.0
 target_model: inherit
 pass_threshold: 70
+hard_gates:
+  - final_composite_contrast
+  - rendered_text_containment
+  - no_artifacts
 applies_to_produces:
   - image
   - illustration
@@ -34,11 +38,11 @@ description: |
 
 ### Hard gates on the final render
 
-- **Final-composite contrast.** Judge the pixels in the delivered composition,
+- **final_composite_contrast** **[HARD GATE]** Judge the pixels in the delivered composition,
   at its intended display size, after overlays, gradients, opacity, images,
   blend modes and effects. Source palette values and isolated layers are not
   evidence of the final contrast.
-- **Rendered text containment.** Every glyph is fully visible inside its
+- **rendered_text_containment** **[HARD GATE]** Every glyph is fully visible inside its
   intended container and safe zone. Clipping, truncation, unintended overflow,
   overlap or lost legibility fails the gate. Check every export size, aspect
   ratio, language and content variant required by the brief.
@@ -70,5 +74,7 @@ description: |
    de cor para ser entendido.
 
 ## Output schema
-Padrão. Critique[] cita coordenadas/regiões da imagem quando relevante. Falha
-de contraste final ou contenção do texto exige severity:high.
+Padrão, incluindo `hard_gate_results[]` com `name`, `passed` e `rationale` para
+cada nome declarado no frontmatter. Critique[] cita coordenadas/regiões da
+imagem quando relevante. Falha de contraste final ou contenção do texto exige
+severity:high.

@@ -338,6 +338,12 @@ bun ~/.nirvana/skills/harness/scripts/quality-gate.ts <artifact_path> --auto
 
 **Deeper domain judgment** (book, contract, code, image, video, research): add `--with-revisions --produces=<slug> [--max-revisions=N]` to route to the LLM judge with a domain `.md` rubric. Falls back to heuristics offline.
 
+Rubrics may declare machine-enforced `hard_gates` in frontmatter. The judge must
+return one boolean `hard_gate_results` entry per declared name. A missing or
+failed entry forces `verdict: fail` in the engine regardless of total score or
+the LLM's proposed verdict; `severity: high` is revision guidance, not the
+blocking mechanism.
+
 If `gate_failed`: read `fix_list` / judge `critique[]`, dispatch a revision agent, iterate. Manually echoing `gate_passed` is dishonest — `nrv validate-chain --verify-disk` flags a `gate_passed` with no on-disk artifact as a `PROTOCOL_VIOLATION`.
 
 **Retry ceiling — a QA loop must terminate in a delivery, not a stall.** After `NIRVANA_MAX_GATE_RETRIES` failed gate rounds (default 15; a project `.env` entry works — Bun auto-loads it), STOP revising: accept the LAST attempt and deliver it WITH RESERVATIONS — write `_QA-RESERVATIONS.md` next to the artifacts listing exactly what the gate still flags, state plainly that the QA judgment itself may be the wrong side (over-strict rubric, contract mismatch), and emit `x_delivered_with_reservations`. Set `NIRVANA_GATE_EXHAUSTED=withhold` to restore strict fail-closed withholding. Two boundaries never move: the completeness ceiling outranks acceptance (reservations cover a QUALITY verdict, never a missing deliverable), and the unattended supervisor sweep stays strict — nobody is awake to read the reservations.

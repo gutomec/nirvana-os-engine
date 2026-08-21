@@ -46,6 +46,8 @@ export const AUTONOMOUS_DIRECTIVE = [
   "   · squad `image2-virtuoso` (gpt-image-2 + Codex), via `nrv dispatch --auto \"use squad image2-virtuoso: <prompt>\" --exec` — premium refinement, fallback chain.",
   "   · MCP `fal-video` (veo3, kling, luma) or nano-banana-pro video — for video/animation.",
   "   Produce a responsive set (PNG/JPG/WebP at multiple resolutions) when the deliverable is web.",
+  "   FINAL-RENDER INVARIANTS: validate contrast on the final composited result, after overlays, gradients, opacity, images, blend modes and effects. Source colors or isolated layers are not proof.",
+  "   Render with the intended fonts and dimensions. Every glyph must remain fully inside its rendered container with safe padding: no clipping, truncation, unintended overflow, overlap or lost legibility.",
   "",
   "2) CODE AND LIBRARIES: ALWAYS pick the most current, robust, well-maintained option TODAY. Trusted CDN with a pinned version (jsDelivr, unpkg, cdnjs). SRI when viable. State-of-the-art examples:",
   "   · Maps → Leaflet + OpenStreetMap (open) or Mapbox GL (premium).",

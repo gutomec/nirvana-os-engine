@@ -2,9 +2,13 @@
 name: design
 display_name: "Design (UI, landing page, design system, mockup)"
 type: harness_rubric
-version: 1.0.0
+version: 1.1.0
 target_model: inherit
 pass_threshold: 75
+hard_gates:
+  - final_composite_contrast
+  - rendered_text_containment
+  - wcag_2_2_AA
 applies_to_produces:
   - landing-page
   - mockup
@@ -31,11 +35,11 @@ description: |
 
 ### Hard gates on the final render
 
-- **Final-composite contrast.** Measure contrast from the rendered pixels at
+- **final_composite_contrast** **[HARD GATE]** Measure contrast from the rendered pixels at
   the intended viewport and state, after overlays, gradients, opacity, images,
   blend modes and effects. Source color tokens or CSS values alone do not prove
   the result.
-- **Rendered text containment.** With the intended fonts loaded, every glyph
+- **rendered_text_containment** **[HARD GATE]** With the intended fonts loaded, every glyph
   remains fully inside its visual container with safe padding. Clipping,
   truncation, unintended overflow, overlap or lost legibility fails the gate.
   Check every viewport, language and content state required by the brief.
@@ -71,5 +75,6 @@ description: |
    gigantes hardcoded.
 
 ## Output schema
-Padrão. Falha em WCAG, contraste da composição final ou contenção do texto =
-severity:high obrigatório.
+Padrão, incluindo `hard_gate_results[]` com `name`, `passed` e `rationale` para
+cada nome declarado no frontmatter. Falha em WCAG, contraste da composição
+final ou contenção do texto = severity:high obrigatório.
