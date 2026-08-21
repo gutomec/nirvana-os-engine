@@ -17,6 +17,7 @@ import {
   resolveAgentXPromptPath,
   runAgentX,
 } from "../lib/dispatch-cascade.ts";
+import { CAPABILITY_VERIFICATION_DIRECTIVE } from "../../_shared/lib/capability-verification.ts";
 
 function mkDecision(partial: Partial<AgenticRouteDecision>): AgenticRouteDecision {
   return {
@@ -286,6 +287,11 @@ describe("runAgentX — the cascade bottom (injected runWithCascade seam)", () =
       expect(seen[0].prompt).toContain("Deliver the impossible artifact.");
       expect(seen[0].prompt).toContain(oroot);
       expect(seen[0].prompt).toContain("router no_match: nothing fits");
+      expect(seen[0].prompt).toContain(CAPABILITY_VERIFICATION_DIRECTIVE);
+      expect(seen[0].prompt).toMatch(/existing and usable/i);
+      expect(seen[0].prompt).toMatch(/existing but misconfigured/i);
+      expect(seen[0].prompt).toMatch(/genuinely missing/i);
+      expect(seen[0].prompt).toMatch(/narrowest sufficient layer/i);
       const dx = spy.calls.find(x => x.event === "dispatch_agent_x");
       expect(dx).toBeTruthy();
       expect(dx!.payload.trace_id).toBe("proj-test-ax");

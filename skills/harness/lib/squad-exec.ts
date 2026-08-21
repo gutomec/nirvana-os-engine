@@ -4,7 +4,7 @@
 // contexts through ONE code path:
 //   1. team mode ("team-mandatory") — a mandatory squad running as a sub-task
 //      of a business chain; its output feeds the synthesizer. This is the
-//      original team-orchestrator behavior, byte-compatible prompt included.
+//      original team-orchestrator framing, with shared runtime directives.
 //   2. squad-only mode ("squad-only") — the agentic router decided a squad
 //      delivers the object alone (primary_business: null). Before Phase 4
 //      dispatch.ts printed instructions and exited 0 WITHOUT dispatching;
@@ -24,6 +24,7 @@ import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { resolveClonePersona, loadCloneRegistry } from "../../_shared/lib/clone-resolver.ts";
 import { layersForPhase } from "../../_shared/lib/dna-layer-policy.ts";
 import { findCloneForTask } from "../../_shared/lib/clone-search.ts";
+import { withCapabilityVerificationDirective } from "../../_shared/lib/capability-verification.ts";
 
 const SQUADS = path.join(os.homedir(), "squads");
 
@@ -185,7 +186,7 @@ export function buildSquadPrompt(args: {
     ? "Termine quando o trabalho estiver pronto para o synthesizer integrar."
     : "Termine quando o trabalho estiver pronto para entrega ao usuário.";
 
-  return `${roleLine}
+  return withCapabilityVerificationDirective(`${roleLine}
 
 ## SUA IDENTIDADE (squad.yaml)
 \`\`\`yaml
@@ -211,7 +212,7 @@ Execute a SUA especialidade aplicada ao brief acima. Escreva arquivos sob \`${ou
 Se o brief mencionar você por nome (ex.: "use o squad ${squadSlug}"), priorize fazer EXATAMENTE o que o usuário pediu nesse parágrafo. O usuário manda.
 
 ## SAÍDA
-Arquivos no diretório acima. Não printe sumário — entregue arquivos. ${doneLine}`;
+Arquivos no diretório acima. Não printe sumário — entregue arquivos. ${doneLine}`);
 }
 
 /**

@@ -29,12 +29,15 @@ the capability as existing and usable, existing but misconfigured, or genuinely
 missing. Only a genuine gap can justify structural work, at the narrowest
 sufficient layer.
 
-The rule travels through initialized project contracts, the harness skill,
-multi-target dispatch instructions and the headless worker directive. It also
-keeps adaptive entity loading separate from lifecycle management of external
-components, and requires evidence, impact, a minimum viable alternative and a
-reason for the selected layer. This is an instruction contract, not a new
-service, network dependency or control plane.
+The rule travels through initialized project contracts, native single-target
+business, squad and agent-x prompts, the harness skill, multi-target dispatch
+instructions and the headless worker directive. Projects initialized with the
+previous invocation contract receive an independent, versioned and idempotent
+migration across AGENTS.md, CLAUDE.md and GEMINI.md without replacing user
+content. The rule also keeps adaptive entity loading separate from lifecycle
+management of external components, and requires evidence, impact, a minimum
+viable alternative and a reason for the selected layer. This is an instruction
+contract, not a new service, network dependency or control plane.
 
 ## 0.7.5 — 2026-08-21
 

@@ -229,6 +229,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - **Surgical scope** (9.3) — Never mutate `~/squads/`, `~/businesses/`, or `~/businesses/_library/dna/` as a side effect of a dispatch. Write only to the trace output path, `.nirvana/briefs/`, and the logs. Don't "improve" a squad or business you were only asked to invoke; spot a real defect, report it, don't edit it mid-run. (When the *dispatched* agent edits code or artifacts, 9.3 holds verbatim: every changed line traces to the brief.)
 - **Gate-driven execution** (9.4) — Your "tests pass" is the `gate_passed` event in `~/.harness-logs/.../audit.jsonl`. State the rubric for the artifact type up front (prose → wiki-lint + structure-bounds; code → tests + type-check; image → brief-fidelity), then dispatch → judge → revise → re-judge. No `gate_passed`, no delivery. A "done" message without a real dispatch + gate chain is fiction (see §6): iterate, don't fake.
 
+<!-- nirvana-os:capability-verification-contract:v1 -->
 ### 9.6 Verify before structural change
 
 Before proposing a new service, abstraction, business, pack, global squad, or

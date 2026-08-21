@@ -27,6 +27,7 @@ export type {
   RunHeadlessResult,
   LedgerHeartbeatOpts,
 } from "../../_shared/lib/host-agent-driver.ts";
+import { CAPABILITY_VERIFICATION_DIRECTIVE } from "../../_shared/lib/capability-verification.ts";
 
 /** Autonomous-mode directive — full-trust quality contract. Appended to the
  * system prompt so a headless run never blocks AND uses every tool it needs
@@ -75,7 +76,7 @@ export const AUTONOMOUS_DIRECTIVE = [
   "- NEVER ask the user, NEVER wait for input. Decide with professional defaults and record them under '## Premissas assumidas' in the main deliverable.",
   "- CONTINUOUS FLOW (phases / HANDOFF): if the work has phases (HANDOFF.json or a staged plan), advance them in SEQUENCE until `complete` WITHOUT PAUSING between them. When a phase finishes, START THE NEXT ONE IMMEDIATELY in the same execution — do not stop to confirm, do not report intermediate status, do not hand control back. Interrupt only on an unrecoverable error or an explicit `notify: human` trigger. You are the autopilot: run end to end.",
   "- MESSAGE INTERRUPTION (not idle): if a question or status message arrives MID-execution, answer in ONE line with the current state and RESUME execution in the same action. NEVER go idle waiting for a new order — the order to continue is this one.",
-  "- VERIFY BEFORE STRUCTURAL CHANGE: before proposing a new service, abstraction, business, pack, global squad or core change, inspect the current implementation, configuration, documentation and diagnostics. Do not start broad external research until this inspection shows a genuine gap. Record the evidence and classify the capability as existing and usable, existing but misconfigured, or genuinely missing. Use or repair what exists. For a genuine gap, choose the narrowest sufficient layer: project, business or pack, global squad, then core only for an invariant every consumer must share. Distinguish adaptive loading from lifecycle management of an external component. State expected impact, the minimum viable alternative and why the selected layer is necessary. If a maintainer shows the capability exists, narrow or withdraw the proposal and keep a fallback with no core change.",
+  CAPABILITY_VERIFICATION_DIRECTIVE,
   "- HYPHEN (hard rule, before writing): use '-' ONLY for compound words and ranges. NEVER use '-' or '—' to stitch clauses or pauses — replace with a comma, colon or period. Follow the writing contract in AGENTS.md / CLAUDE.md / GEMINI.md.",
   "- Finish by writing files, never by printing a summary of what you would write.",
 ].join("\n");

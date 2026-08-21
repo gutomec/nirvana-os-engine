@@ -2,7 +2,7 @@
 //
 // team-orchestrator.ts now delegates its mandatory-squad execution here; the
 // squad-only dispatch route uses the same code path. Pins: prompt content
-// (team-mandatory framing byte-compatible with the pre-extraction
+// (team-mandatory role and completion framing preserved from the pre-extraction
 // team-orchestrator prompt), audit chain, session reuse with the one-cold-
 // retry fallback, and the missing-squad failure. Zero-token via the
 // runWithCascade seam.
@@ -13,6 +13,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { runSquadHeadless, buildSquadPrompt } from "../lib/squad-exec.ts";
 import { sessionKey, putSession } from "../lib/session-store.ts";
+import { CAPABILITY_VERIFICATION_DIRECTIVE } from "../../_shared/lib/capability-verification.ts";
 
 let tmp: string;
 const savedLogsDir = process.env.HARNESS_LOGS_DIR;
@@ -52,7 +53,7 @@ function readAudit(): any[] {
 }
 
 describe("buildSquadPrompt — framing per mode", () => {
-  test("team-mandatory framing is byte-compatible with the pre-extraction prompt", () => {
+  test("team-mandatory framing keeps the pre-extraction role and completion contract", () => {
     const squadsRoot = path.join(tmp, "squads");
     const squadDir = scaffoldSquad(squadsRoot, "brandcraft");
     const p = buildSquadPrompt({
@@ -80,6 +81,22 @@ describe("buildSquadPrompt — framing per mode", () => {
     expect(p).toContain("de ponta a ponta");
     expect(p).toContain("ENTREGÁVEL FINAL");
     expect(p).not.toContain("synthesizer do business");
+  });
+
+  test("single-target squad prompt verifies existing capabilities before structural work", () => {
+    const squadsRoot = path.join(tmp, "squads");
+    const squadDir = scaffoldSquad(squadsRoot, "platform");
+    const p = buildSquadPrompt({
+      squadSlug: "platform", squadDir, brief: "propose a new global pack",
+      outDir: "/out/dir", mode: "squad-only",
+      cloneInjection: { block: "", decision: "PADRÃO" },
+    });
+    expect(p).toContain(CAPABILITY_VERIFICATION_DIRECTIVE);
+    expect(p).toMatch(/existing and usable/i);
+    expect(p).toMatch(/existing but misconfigured/i);
+    expect(p).toMatch(/genuinely missing/i);
+    expect(p).toMatch(/narrowest sufficient layer/i);
+    expect(p).toContain("propose a new global pack");
   });
 });
 

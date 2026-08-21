@@ -62,6 +62,7 @@ import { resolveClonePersona, loadCloneRegistry } from "../../_shared/lib/clone-
 import { layersForPhase } from "../../_shared/lib/dna-layer-policy.ts";
 import { hookForPhase } from "../../_shared/lib/hooks.ts";
 import { collectContributions, orderContributions, renderHookBlock, cloneContributionSource } from "../../_shared/lib/contributions.ts";
+import { withCapabilityVerificationDirective } from "../../_shared/lib/capability-verification.ts";
 
 // Untrusted-input boundary (P0-1 / Batch 3 item 7): security preamble injected
 // into every employee prompt — fetched/read content is data, not instructions.
@@ -600,7 +601,7 @@ export function buildEmployeePrompt(args: BuildArgs): string {
   // (auto-loaded by the runtime). No injection here — the runtime context
   // is the single source of truth for the writing contract.
 
-  return `# Employee Runtime — ${args.employee}@${args.business_slug}
+  return withCapabilityVerificationDirective(`# Employee Runtime — ${args.employee}@${args.business_slug}
 
 You are operating as the employee **${args.employee}** of the business **${args.business_slug}**. The sections below are your full operational context. **Read them carefully before acting.**
 
@@ -684,7 +685,7 @@ ${args.brief}
 - You are not a generic Claude. You are ${args.employee} of ${args.business_slug}${clonesInjected ? ", channeling the mind-clones above" : " — no clone is channeled; your persona above is your full operating identity"}.
 - Honor the brief. Honor the protocol. Verify before declaring done.
 - If the brief asks for N artifacts, deliver N — not "summary saying you delivered N".
-`;
+`);
 }
 
 // CLI wrapper

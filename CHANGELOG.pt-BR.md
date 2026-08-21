@@ -30,12 +30,15 @@ Eles classificam a capacidade como existente e utilizável, existente porém mal
 configurada, ou realmente ausente. Só uma lacuna real pode justificar trabalho
 estrutural, na camada suficiente mais estreita.
 
-A regra viaja pelos contratos de projeto inicializados, pela skill do harness,
-pelas instruções de dispatch multi-target e pela diretiva do worker headless.
-Ela também separa carregamento adaptativo de entidades da gestão do ciclo de
-vida de componentes externos e exige evidência, impacto, alternativa mínima e
-justificativa da camada escolhida. É um contrato de instrução, sem novo serviço,
-dependência de rede ou control plane.
+A regra viaja pelos contratos de projeto inicializados, pelos prompts nativos
+single-target de business, squad e agent-x, pela skill do harness, pelas
+instruções de dispatch multi-target e pela diretiva do worker headless. Projetos
+inicializados com o contrato de invocação anterior recebem uma migração própria,
+versionada e idempotente em AGENTS.md, CLAUDE.md e GEMINI.md, sem substituir o
+conteúdo do usuário. A regra também separa carregamento adaptativo de entidades
+da gestão do ciclo de vida de componentes externos e exige evidência, impacto,
+alternativa mínima e justificativa da camada escolhida. É um contrato de
+instrução, sem novo serviço, dependência de rede ou control plane.
 
 ## 0.7.5 — 2026-08-21
 
