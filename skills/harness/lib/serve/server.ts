@@ -70,7 +70,23 @@ export function startServer(opts: ServeOpts) {
       // needs a liveness probe that carries no secret and no session data.
       if (p === "/v1/health") {
         const runtimes = listRuntimes().map((r) => r.name);
-        return json({ ok: true, engine: ENGINE_VERSION, runtimes, queue: queue.stats, adopted_runs: adopted }, 200, h);
+        // Seat accounting, reported before it is enforced: today a pack
+        // licence counts MACHINES, so a fleet of API workers consumes one
+        // seat per host and hits the ceiling fast. Surfacing it here lets an
+        // operator see the cost of scaling, and gives the future licence
+        // classes (nominal · server · cloud) a field that already exists.
+        return json({
+          ok: true,
+          engine: ENGINE_VERSION,
+          runtimes,
+          queue: queue.stats,
+          adopted_runs: adopted,
+          licensing: {
+            model: "per-machine",
+            seats_consumed_by_this_host: 1,
+            note: "a worker fleet consumes one seat per host; server/cloud licence classes are planned",
+          },
+        }, 200, h);
       }
 
       const key = authenticate(req);
@@ -78,11 +94,14 @@ export function startServer(opts: ServeOpts) {
 
       // ── sessions ────────────────────────────────────────────────────────
       if (p === "/v1/sessions" && req.method === "POST") {
-        const s = createSession(key.id);
-        return json({ session_id: s.id, dir: s.dir, created_at: s.created_at }, 201, h);
+        let body: { library?: string } = {};
+        try { body = await req.json() as { library?: string }; } catch { /* body is optional */ }
+        const library = body.library === "isolated" ? "isolated" : "global";
+        const s = createSession(key.id, library);
+        return json({ session_id: s.id, dir: s.dir, library: s.library, created_at: s.created_at }, 201, h);
       }
       if (p === "/v1/sessions" && req.method === "GET") {
-        return json({ sessions: listSessions(key.id).map((s) => ({ session_id: s.id, created_at: s.created_at })) }, 200, h);
+        return json({ sessions: listSessions(key.id).map((s) => ({ session_id: s.id, library: s.library ?? "global", created_at: s.created_at })) }, 200, h);
       }
 
       const mSession = /^\/v1\/sessions\/([^/]+)$/.exec(p);

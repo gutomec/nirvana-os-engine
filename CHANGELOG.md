@@ -38,7 +38,15 @@ carries the gate verdict and promotes `_SUMMARY.md` and
 `_QA-RESERVATIONS.md` to fields, so a delivery accepted with reservations
 arrives honest. `/events` streams the project's audit log as SSE. A server
 restart no longer orphans work: each run persists beside its artifacts and
-rehydrates on lookup. Full guide: `references/06-api.md`.
+rehydrates on lookup.
+
+A session declares which library its briefs may route to: `global` (the
+default) sees the operator's own businesses, squads and clones — without it
+every brief falls to the generalist, which the first live run showed
+plainly — and `isolated` keeps the project-only scope a multi-tenant host
+needs. `/v1/health` also reports seat consumption, because a fleet of API
+workers consumes one licence seat per host today. Full guide:
+`references/06-api.md`.
 
 ## 0.7.7 — 2026-08-22
 
