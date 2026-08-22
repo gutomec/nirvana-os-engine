@@ -6,6 +6,18 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### Pack dependencies can declare external applications safely
+
+Squad `dependencies.yaml` sidecars may now declare provider-neutral
+`external_apps` for pack installation. Preflight is command-free, exposes a
+canonical SHA-256 plan, and requires consent bound to that exact digest before
+checks or installers run. Optional-only plans can install degraded without a
+decision; required applications remain fail-closed. Strict manifest, path,
+secret, URL, and argv validation protects the boundary, while results report
+external side effects separately from transactional pack asset rollback.
+
 ## 0.7.7 — 2026-08-22
 
 ### Headless sessions die with the turn — the protocol now says so

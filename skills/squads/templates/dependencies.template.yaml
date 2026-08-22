@@ -95,6 +95,44 @@ env_vars:
     description: "Used by Pixelle-Video as default LLM. Optional — Ollama works as local fallback."
 
 # ─────────────────────────────────────────────────────────────
+# External desktop applications (consumed by `nrv install <pack>`)
+# Pack install aggregates these declarations across bundled squads and
+# already-installed required squads. Preflight executes no declared commands
+# and returns a SHA-256 digest. Installation runs only when the user accepts
+# that exact digest. Without a decision, optional-only plans install the parent
+# pack degraded and run no external commands; required apps remain fail-closed.
+# Commands are executable + argv, never shell strings. Secret-bearing argv,
+# control characters, and non-HTTPS or credentialed URLs are rejected. Use
+# stable provider-neutral ids.
+# ─────────────────────────────────────────────────────────────
+external_apps:
+  - id: vendor.application
+    name: Application
+    description: "Desktop runtime used by this squad."
+    required: false
+    capability: automation.desktop
+    license: MIT
+    homepage: "https://example.com/application"
+    source: "https://github.com/vendor/application"
+    platforms: [win32, darwin]
+    permissions: [accessibility, screen-recording]
+    compatibility:
+      requirement: ">=1.4.0 <2.0.0"
+      check:
+        command: application
+        args: [status, --json]
+    presence_check:
+      command: application
+      args: [--version]
+    install:
+      win32:
+        command: winget
+        args: [install, --id, Vendor.Application, --exact]
+      darwin:
+        command: brew
+        args: [install, --cask, application]
+
+# ─────────────────────────────────────────────────────────────
 # Post-install hooks (run after everything else)
 # ─────────────────────────────────────────────────────────────
 post_install:

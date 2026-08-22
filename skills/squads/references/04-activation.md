@@ -12,7 +12,7 @@ Each squad declares external install needs in a sidecar file at `<squad>/depende
 
 Template: `~/.nirvana/skills/squads/templates/dependencies.template.yaml`. Reference implementation: `~/.nirvana/skills/squads/lib/activator.js`.
 
-### Eight categories
+### Nine categories
 
 | Category | Purpose | Example item |
 |---|---|---|
@@ -23,7 +23,10 @@ Template: `~/.nirvana/skills/squads/templates/dependencies.template.yaml`. Refer
 | `custom_nodes` | ComfyUI-specific custom node repos | `kijai/ComfyUI-WanVideoWrapper`, etc. |
 | `models` | HuggingFace / URL downloads | `Wan-AI/Wan2.1-T2V-14B`. Items with `size_gb > 1` require user consent |
 | `env_vars` | Existing env vars to verify (NEVER written) | `GEMINI_API_KEY`, `RUNNINGHUB_API_KEY` — surfaced as set / missing_required / missing_optional |
+| `external_apps` | Desktop applications required by a capability | Provider-neutral metadata, permissions, compatibility checks, and argv-based installers for pack installation |
 | `post_install` | Hooks run after everything else | re-index registry, ping a service, run a smoke test |
+
+`external_apps` is aggregated by `nrv install <pack>` from every bundled squad and every already-installed `required_squads` entry. Use `--dry-run --json` to inspect the immutable SHA-256 plan digest plus complete metadata and current-platform command argv; this mode executes no declared checks or installers. With no decision, an optional-only plan installs the parent pack degraded without external commands, while any required application exits with code 2 before pack asset copy. Accept exactly that plan with `--accept-external-apps=<digest>`, or refuse with `--decline-external-apps`. An optional refusal degrades the named capability while the parent pack installs; a required refusal blocks readiness. To enable a deferred application later, preflight the already-installed pack with `--force --dry-run`, then use `--force --accept-external-apps=<digest>`. Accepted execution checks every app before installing required apps ahead of optional ones and reports all external effects, which pack rollback cannot undo. Direct squad activation keeps its existing flow and categories unchanged.
 
 ### Synthesis fallback
 
