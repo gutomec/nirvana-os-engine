@@ -150,5 +150,14 @@ describe("SSE", () => {
     expect(seen).toContain("dispatch_squad");
     expect(seen).toContain("gate_passed");
     expect(seen).toContain("run.finished");
+    // the audit file may be shared with other runs/tests — the stream must
+    // carry only THIS run's events (CI caught another test's judge events
+    // leaking into the feed).
+    expect(seen).not.toContain("judge_invoked");
+    for (const line of seen.split("\n").filter((l) => l.startsWith("data: "))) {
+      const ev = JSON.parse(line.slice(6));
+      if (ev.event === "run.finished") continue;
+      expect(ev.trace_id ?? ev.project_id).toBe(r.trace_id);
+    }
   });
 });

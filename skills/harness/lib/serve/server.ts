@@ -194,7 +194,15 @@ function sseAuditStream(memo: ReturnType<typeof runsLib.get> & {}, extraHeaders:
             offset = st.size;
             for (const line of buf.toString("utf8").split("\n")) {
               if (!line.trim()) continue;
-              try { send(JSON.parse(line)); } catch { /* partial line */ }
+              try {
+                const ev = JSON.parse(line);
+                // ONLY this run's events. The audit file can be shared —
+                // HARNESS_LOGS_DIR may point elsewhere, and CI proved it:
+                // the stream carried another test's judge events. A client
+                // watching its own brief must never see someone else's run.
+                const belongs = ev.trace_id === memo.trace_id || ev.project_id === memo.trace_id;
+                if (belongs) send(ev);
+              } catch { /* partial line */ }
             }
           }
         } catch { /* log not created yet */ }
