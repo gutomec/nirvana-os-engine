@@ -6,7 +6,7 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
-## Unreleased
+## 0.7.8 — 2026-08-22
 
 ### O gate finalmente cobre PDF
 
@@ -20,8 +20,6 @@ verificado em PDFs com object streams comprimidos, em vez de reprovar pela
 regex ingênua que os lê como zero páginas. Verificada ao vivo contra o
 próprio entregável da execução de campo (2 páginas, 4 MB), com e sem
 ferramentas na PATH.
-
-## Unreleased
 
 ### `nrv serve` — o protocolo sobre HTTP
 

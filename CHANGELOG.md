@@ -6,7 +6,7 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
-## Unreleased
+## 0.7.8 — 2026-08-22
 
 ### The gate finally covers PDF
 
@@ -19,8 +19,6 @@ qpdf or pdfinfo when present — falling back to a declared-unverified pass on
 object-stream-compressed PDFs instead of failing on the naive regex that
 reads them as zero pages. Verified live against the field run's own 2-page,
 4 MB deliverable, with and without tools on PATH.
-
-## Unreleased
 
 ### `nrv serve` — the protocol over HTTP
 
