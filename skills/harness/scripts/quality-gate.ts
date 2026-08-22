@@ -55,6 +55,7 @@ export const GATEABLE_EXTS: ReadonlySet<string> = new Set([
   ".md", ".txt", ".json", ".yaml", ".yml",
   ".png", ".jpg", ".jpeg", ".webp",
   ".html", ".ts", ".js", ".py",
+  ".pdf",
 ]);
 
 export function rubricsForExt(ext: string): string[] {
@@ -74,6 +75,8 @@ export function rubricsForExt(ext: string): string[] {
       return ["brief-fidelity"];
     case ".html":
       return ["html-valid"];
+    case ".pdf":
+      return ["pdf-valid"];
     case ".ts":
     case ".js":
     case ".py":

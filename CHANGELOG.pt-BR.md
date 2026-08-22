@@ -6,6 +6,21 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Unreleased
+
+### O gate finalmente cobre PDF
+
+PDF é um dos formatos de entrega mais comuns e o gate automático nunca o
+via: `.pdf` não era gateável, então uma entrega só-PDF saía INDETERMINATE —
+a primeira execução de campo a notar precisou gatear à mão com qpdf e emitir
+`x_quality_gate_tooling_gap`. A nova rubrica `pdf-valid` fecha a metade
+estrutural: header, trailer `%%EOF`, piso de stub, e contagem de páginas via
+qpdf ou pdfinfo quando presentes — caindo para um passe declarado-como-não-
+verificado em PDFs com object streams comprimidos, em vez de reprovar pela
+regex ingênua que os lê como zero páginas. Verificada ao vivo contra o
+próprio entregável da execução de campo (2 páginas, 4 MB), com e sem
+ferramentas na PATH.
+
 ## 0.7.7 — 2026-08-22
 
 ### Sessões headless morrem com o turno — o protocolo agora diz isso
