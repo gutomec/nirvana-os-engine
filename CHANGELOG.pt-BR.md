@@ -21,6 +21,26 @@ regex ingênua que os lê como zero páginas. Verificada ao vivo contra o
 próprio entregável da execução de campo (2 páginas, 4 MB), com e sem
 ferramentas na PATH.
 
+## Unreleased
+
+### `nrv serve` — o protocolo sobre HTTP
+
+A API é a quarta projeção do protocolo (grafo, glance, CLI, HTTP) e um plano
+de controle por construção: uma sessão É um diretório de projeto, um brief
+vira um `nrv dispatch --auto --exec` filho, e toda resposta lê o que o
+engine já escreveu — run ledger, log de auditoria, árvore de outputs.
+Nenhum segundo executor, nunca.
+
+`nrv serve keygen` cria chaves cujo orçamento e cota diária são atributos DA
+CHAVE, jamais entrada do cliente; o servidor sobe em 127.0.0.1 salvo ordem
+contrária, recusa rodar como root, e devolve artefatos apenas de dentro do
+outputs root do run (traversal, codificado ou não, é recusado). O envelope
+carrega o veredito do gate e promove `_SUMMARY.md` e `_QA-RESERVATIONS.md` a
+campos, então uma entrega aceita com ressalvas chega honesta. `/events`
+transmite o log de auditoria do projeto por SSE. Reiniciar o servidor não
+orfana mais trabalho: cada run persiste ao lado dos artefatos e é
+reidratado na consulta. Guia completo: `references/06-api.md`.
+
 ## 0.7.7 — 2026-08-22
 
 ### Sessões headless morrem com o turno — o protocolo agora diz isso

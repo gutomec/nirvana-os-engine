@@ -20,6 +20,26 @@ object-stream-compressed PDFs instead of failing on the naive regex that
 reads them as zero pages. Verified live against the field run's own 2-page,
 4 MB deliverable, with and without tools on PATH.
 
+## Unreleased
+
+### `nrv serve` — the protocol over HTTP
+
+The API is the fourth projection of the protocol (graph, glance, CLI, HTTP)
+and a control plane by construction: a session IS a project directory, a
+brief becomes a child `nrv dispatch --auto --exec`, and every answer reads
+what the engine already wrote — run ledger, audit log, outputs tree. No
+second executor, ever.
+
+`nrv serve keygen` mints keys whose budget and daily quota are attributes of
+the KEY, never client input; the server binds 127.0.0.1 unless told
+otherwise, refuses to run as root, and hands artifacts back only from inside
+the run's outputs root (traversal, encoded or not, is refused). The envelope
+carries the gate verdict and promotes `_SUMMARY.md` and
+`_QA-RESERVATIONS.md` to fields, so a delivery accepted with reservations
+arrives honest. `/events` streams the project's audit log as SSE. A server
+restart no longer orphans work: each run persists beside its artifacts and
+rehydrates on lookup. Full guide: `references/06-api.md`.
+
 ## 0.7.7 — 2026-08-22
 
 ### Headless sessions die with the turn — the protocol now says so
