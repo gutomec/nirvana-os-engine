@@ -236,6 +236,8 @@ case "$cmd" in
     exec "$BUN_BIN" "$SKILLS/harness/scripts/launch.ts" "$@" ;;
   tui|cockpit-tui)
     exec "$BUN_BIN" "$SKILLS/harness/scripts/tui.ts" "$@" ;;
+  serve|api|server)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/serve.ts" "$@" ;;
   graph|entity-graph)
     exec "$BUN_BIN" "$SKILLS/harness/scripts/graph.ts" "$@" ;;
   validate-chain|chain-validate|chain)

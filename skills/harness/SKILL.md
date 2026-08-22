@@ -384,6 +384,30 @@ When the retries are exhausted the sweep marks the run `stalled` and escalates �
 
 ---
 
+## Serving the protocol over HTTP (`nrv serve`)
+
+The API is the fourth projection of this protocol — graph, glance, CLI, and
+HTTP — and it is a CONTROL PLANE, never a second executor: a session is a
+project directory, a brief becomes `nrv dispatch --auto --exec` in a child
+process, and every answer reads what the engine already wrote (run ledger,
+`audit.jsonl`, the outputs tree). It binds to 127.0.0.1 unless `--host` says
+otherwise, authenticates with keys whose budget and quota are attributes of
+the KEY (never client input), and refuses to run as root.
+
+```bash
+nrv serve keygen --budget-usd 5      # token shown once
+nrv serve --port 7777                # local by default; proxy TLS to expose
+```
+
+`POST /v1/sessions` → `POST /v1/sessions/{id}/briefs` (202, async — a real
+brief takes minutes) → `GET .../runs/{trace}` for the envelope, `/events`
+for the live audit stream, `/artifacts` to list and download. The envelope
+carries the gate verdict and promotes `_SUMMARY.md` and
+`_QA-RESERVATIONS.md` to fields, so a delivery accepted with reservations
+arrives honest rather than silently.
+
+---
+
 ## Optional subsystems
 
 Semantic memory, streaming chunk-gate, self-improvement (Meta-Nirvana), observability/Glance, the quick-command table, and the fast-mode diagnostic helpers + known BM25 issues all live in **`references/05-subsystems.md`**. None is mandatory — reach for them when the situation fits.
