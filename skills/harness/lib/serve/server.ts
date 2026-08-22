@@ -10,7 +10,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { randomBytes } from "node:crypto";
 import { authenticate, consumeRun, setWebhook, type ApiKeyRecord } from "./auth.ts";
-import { createSession, getSession, listSessions, expireSession } from "./sessions.ts";
+import { createSession, getSession, listSessions, expireSession, sessionsRoot } from "./sessions.ts";
 import * as runsLib from "./runs.ts";
 import { RunQueue } from "./queue.ts";
 import { listArtifacts, resolveArtifact, contentTypeFor } from "./artifacts.ts";
@@ -123,28 +123,28 @@ export function startServer(opts: ServeOpts) {
       // ── runs ────────────────────────────────────────────────────────────
       const mRun = /^\/v1\/sessions\/([^/]+)\/runs\/([^/]+)$/.exec(p);
       if (mRun && req.method === "GET") {
-        const memo = runsLib.get(mRun[2]);
+        const memo = runsLib.get(mRun[2], sessionsRoot());
         if (!memo || memo.session.id !== mRun[1] || memo.key_id !== key.id) return json({ error: "run_not_found" }, 404, h);
         return json(runsLib.envelope(memo), 200, h);
       }
 
       const mEvents = /^\/v1\/sessions\/([^/]+)\/runs\/([^/]+)\/events$/.exec(p);
       if (mEvents && req.method === "GET") {
-        const memo = runsLib.get(mEvents[2]);
+        const memo = runsLib.get(mEvents[2], sessionsRoot());
         if (!memo || memo.session.id !== mEvents[1] || memo.key_id !== key.id) return json({ error: "run_not_found" }, 404, h);
         return sseAuditStream(memo, h);
       }
 
       const mArts = /^\/v1\/sessions\/([^/]+)\/runs\/([^/]+)\/artifacts$/.exec(p);
       if (mArts && req.method === "GET") {
-        const memo = runsLib.get(mArts[2]);
+        const memo = runsLib.get(mArts[2], sessionsRoot());
         if (!memo || memo.session.id !== mArts[1] || memo.key_id !== key.id) return json({ error: "run_not_found" }, 404, h);
         return json({ artifacts: listArtifacts(memo.outputs_root) }, 200, h);
       }
 
       const mArt = /^\/v1\/sessions\/([^/]+)\/runs\/([^/]+)\/artifacts\/(.+)$/.exec(p);
       if (mArt && req.method === "GET") {
-        const memo = runsLib.get(mArt[2]);
+        const memo = runsLib.get(mArt[2], sessionsRoot());
         if (!memo || memo.session.id !== mArt[1] || memo.key_id !== key.id) return json({ error: "run_not_found" }, 404, h);
         const abs = resolveArtifact(memo.outputs_root, decodeURIComponent(mArt[3]));
         if (!abs) return json({ error: "artifact_not_found" }, 404, h);

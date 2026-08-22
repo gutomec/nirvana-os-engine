@@ -52,6 +52,47 @@ interface RunMemo {
 
 const runs = new Map<string, RunMemo>();
 
+/**
+ * A run's identity lives NEXT TO ITS ARTIFACTS (`.run.json` inside the
+ * outputs root), not only in this process's memory. Restarting the server
+ * must not orphan work whose files are already on disk — the E2E caught
+ * exactly that: the artifacts were delivered, the envelope answered
+ * "run_not_found" after a restart. Disk is the truth; the map is cache.
+ */
+function memoFile(outputsRoot: string): string {
+  return path.join(outputsRoot, ".run.json");
+}
+
+function persist(m: RunMemo): void {
+  try {
+    fs.mkdirSync(m.outputs_root, { recursive: true });
+    fs.writeFileSync(memoFile(m.outputs_root), JSON.stringify({
+      trace_id: m.trace_id, session: m.session, key_id: m.key_id, brief: m.brief,
+      outputs_root: m.outputs_root, created_at: m.created_at, finished_at: m.finished_at,
+      exit_code: m.exit_code, error: m.error, state: m.state,
+    }, null, 2));
+  } catch { /* a run whose outputs dir vanished is already lost; do not crash the server */ }
+}
+
+/** Rehydrates a run from disk when this process never saw it. */
+function rehydrate(traceId: string, sessionsRoot: string): RunMemo | null {
+  let sessions: string[];
+  try { sessions = fs.readdirSync(sessionsRoot); } catch { return null; }
+  for (const sid of sessions) {
+    const f = path.join(sessionsRoot, sid, ".nirvana", "outputs", traceId, ".run.json");
+    try {
+      const raw = JSON.parse(fs.readFileSync(f, "utf8")) as RunMemo;
+      // A run that was mid-flight when the server died is not "running" any
+      // more — no child of ours survives. Report it honestly.
+      const m: RunMemo = { ...raw, child_pid: null, state: raw.state === "running" || raw.state === "queued" ? "failed" : raw.state };
+      if (m.state === "failed" && !m.error) m.error = "server restarted while the run was in flight";
+      runs.set(traceId, m);
+      return m;
+    } catch { /* not this session */ }
+  }
+  return null;
+}
+
 export function newTraceId(): string {
   return "run_" + randomBytes(8).toString("hex");
 }
@@ -71,11 +112,14 @@ function dispatchCmd(): { bin: string; script: string } {
 export function register(memo: Omit<RunMemo, "state" | "finished_at" | "exit_code" | "error" | "child_pid">): RunMemo {
   const m: RunMemo = { ...memo, state: "queued", finished_at: null, exit_code: null, error: null, child_pid: null };
   runs.set(m.trace_id, m);
+  persist(m);
   return m;
 }
 
-export function get(traceId: string): RunMemo | null {
-  return runs.get(traceId) ?? null;
+export function get(traceId: string, sessionsRoot?: string): RunMemo | null {
+  const hit = runs.get(traceId);
+  if (hit) return hit;
+  return sessionsRoot ? rehydrate(traceId, sessionsRoot) : null;
 }
 
 export function all(): RunMemo[] {
@@ -104,6 +148,7 @@ export function start(memo: RunMemo, opts: { budgetUsd?: number } = {}): Promise
   ];
 
   memo.state = "running";
+  persist(memo);
   return new Promise((resolve) => {
     const child = spawn(bin, args, {
       cwd: memo.session.dir,
@@ -123,6 +168,7 @@ export function start(memo: RunMemo, opts: { budgetUsd?: number } = {}): Promise
       memo.state = "failed";
       memo.error = e.message;
       memo.finished_at = new Date().toISOString();
+      persist(memo);
       resolve(memo);
     });
     child.on("close", (code) => {
@@ -130,6 +176,7 @@ export function start(memo: RunMemo, opts: { budgetUsd?: number } = {}): Promise
       memo.finished_at = new Date().toISOString();
       memo.state = stateFromExit(memo.exit_code);
       if (memo.state === "failed" && stderr.trim()) memo.error = stderr.trim().slice(-500);
+      persist(memo);
       resolve(memo);
     });
   });

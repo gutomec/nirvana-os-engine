@@ -16,7 +16,7 @@ const TYPES: Record<string, string> = {
   ".csv": "text/csv", ".ts": "text/plain", ".js": "text/javascript",
 };
 
-const SKIP = new Set([".brief.md", "HANDOFF.json"]);
+const SKIP = new Set([".brief.md", ".run.json", "HANDOFF.json"]);
 
 export function listArtifacts(outputsRoot: string): { path: string; bytes: number; content_type: string }[] {
   const out: { path: string; bytes: number; content_type: string }[] = [];
