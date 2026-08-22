@@ -154,7 +154,9 @@ export function start(memo: RunMemo, opts: { budgetUsd?: number } = {}): Promise
       cwd: memo.session.dir,
       env: {
         ...process.env,
-        NIRVANA_SCOPE: "project",
+        // `merge` lets the project see the operator's global library on top
+        // of its own; `project` is the isolated tenant case.
+        NIRVANA_SCOPE: memo.session.library === "isolated" ? "project" : "merge",
         NIRVANA_PROJECT_ROOT: memo.session.dir,
         NIRVANA_TRACE_ID: memo.trace_id,
       },

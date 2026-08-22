@@ -42,6 +42,18 @@ curl -s $API/v1/sessions/$SID/runs/$TRACE/artifacts/relatorio.md \
   -H "Authorization: Bearer $TOKEN" -o relatorio.md
 ```
 
+## Which library a session can reach
+
+```bash
+curl -X POST $API/v1/sessions -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"library":"global"}'    # default
+```
+
+`global` lets the session route into your own businesses, squads and clones
+— the reason you bought the packs. `isolated` restricts it to the session's
+own project, which is what a multi-tenant host wants: one tenant must never
+route into another's library.
+
 ## The envelope
 
 ```json

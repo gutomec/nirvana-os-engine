@@ -78,6 +78,22 @@ Decisions, each traceable to engine doctrine:
    Recommended: a server/API license class with its own pricing — new
    revenue, not a counting bugfix.
 
+## 4.1 Licence classes (owner-approved direction, 2026-08-22)
+
+Seat accounting is designed NOW so the Cloud track is configuration rather
+than a schema migration with live customers:
+
+| Class | Counts | For |
+|---|---|---|
+| `nominal` (today) | machines, cap 3 | an individual buyer |
+| `server` | one licence per SERVER HOST, unlimited workers on it | a buyer self-hosting `nrv serve` |
+| `cloud` | no machine counting — usage (runs/month or tokens) | the hosted Nirvana Cloud |
+
+Cheap step available immediately: add `license_class` to the licence record
+(default `nominal`, unread for now) and report seat consumption from
+`/v1/health` (shipped). When the Cloud arrives, the field is already there
+and no live licence needs rewriting.
+
 ## 5. Product ladder this unlocks
 
 1. `nrv serve` in the engine — every buyer gains; packs stay the content moat.

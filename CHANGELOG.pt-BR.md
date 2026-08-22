@@ -39,7 +39,15 @@ carrega o veredito do gate e promove `_SUMMARY.md` e `_QA-RESERVATIONS.md` a
 campos, então uma entrega aceita com ressalvas chega honesta. `/events`
 transmite o log de auditoria do projeto por SSE. Reiniciar o servidor não
 orfana mais trabalho: cada run persiste ao lado dos artefatos e é
-reidratado na consulta. Guia completo: `references/06-api.md`.
+reidratado na consulta.
+
+Uma sessão declara para qual biblioteca seus briefs podem rotear: `global`
+(o padrão) enxerga as empresas, squads e clones do operador — sem isso todo
+brief cai no generalista, como a primeira execução ao vivo mostrou — e
+`isolated` mantém o escopo só-do-projeto que um host multi-tenant precisa.
+O `/v1/health` também reporta consumo de seats, porque hoje uma frota de
+workers de API consome um seat de licença por host. Guia completo:
+`references/06-api.md`.
 
 ## 0.7.7 — 2026-08-22
 

@@ -8,11 +8,27 @@ import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { serveDir } from "./auth.ts";
 
+/**
+ * Which library a session's briefs can route to.
+ *
+ * `global` (the default) lets the session see the operator's own
+ * businesses, squads and clones — the reason they bought the packs. Without
+ * it every brief falls to agent-x, which the first live E2E showed plainly:
+ * the router reported `businesses=0, squads=0, mind_clones=0` and took the
+ * generalist branch, correctly and uselessly.
+ *
+ * `isolated` keeps the project-only scope (HP7 to the letter) and is what a
+ * multi-tenant host wants: tenant A must never route into tenant B's
+ * library. Choosing at creation costs one field and saves a migration.
+ */
+export type SessionLibrary = "global" | "isolated";
+
 export interface SessionRecord {
   id: string;
   key_id: string;
   dir: string;
   created_at: string;
+  library: SessionLibrary;
   expired?: boolean;
 }
 
@@ -37,7 +53,7 @@ const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
     ? path.join(process.env.HOME || "", ".nirvana", "skills")
     : path.resolve(import.meta.dir, "..", "..", ".."));
 
-export function createSession(keyId: string): SessionRecord {
+export function createSession(keyId: string, library: SessionLibrary = "global"): SessionRecord {
   const id = "ses_" + randomBytes(8).toString("hex");
   const dir = path.join(sessionsRoot(), id);
   fs.mkdirSync(dir, { recursive: true });
@@ -50,7 +66,7 @@ export function createSession(keyId: string): SessionRecord {
       stdio: "ignore", timeout: 60_000, env: { ...process.env },
     });
   }
-  const rec: SessionRecord = { id, key_id: keyId, dir, created_at: new Date().toISOString() };
+  const rec: SessionRecord = { id, key_id: keyId, dir, created_at: new Date().toISOString(), library };
   const f = load();
   f.sessions.push(rec);
   save(f);

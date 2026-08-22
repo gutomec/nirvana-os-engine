@@ -152,6 +152,27 @@ describe("sessions and briefs", () => {
   });
 });
 
+describe("library scope", () => {
+  test("a session defaults to the operator's global library", async () => {
+    const r = await api("/v1/sessions", { method: "POST" });
+    const body = await r.json();
+    expect(body.library).toBe("global");
+  });
+
+  test("an isolated session is honoured and its runs scope to the project only", async () => {
+    const r = await api("/v1/sessions", { method: "POST", body: JSON.stringify({ library: "isolated" }) });
+    const { session_id, library } = await r.json();
+    expect(library).toBe("isolated");
+    const listed = await (await api("/v1/sessions")).json();
+    expect(listed.sessions.find((s: any) => s.session_id === session_id).library).toBe("isolated");
+  });
+
+  test("an unknown library value falls back to global rather than failing the call", async () => {
+    const r = await api("/v1/sessions", { method: "POST", body: JSON.stringify({ library: "whatever" }) });
+    expect((await r.json()).library).toBe("global");
+  });
+});
+
 describe("the exit contract maps to the envelope", () => {
   test("exit 2 → withheld with gate fail; exit 3 → indeterminate", async () => {
     const { session_id } = await (await api("/v1/sessions", { method: "POST" })).json();
