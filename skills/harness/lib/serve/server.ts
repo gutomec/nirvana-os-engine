@@ -200,16 +200,27 @@ function sseAuditStream(memo: ReturnType<typeof runsLib.get> & {}, extraHeaders:
         } catch { /* log not created yet */ }
       };
       pump();
+      // Poll fast: a short run can finish between two slow ticks, and the
+      // client would then get the terminal event without the audit lines
+      // that preceded it (CI caught exactly this — a fixture run finishing
+      // inside the first second). One final pump AFTER the run is terminal
+      // also matters: the child writes its last audit lines as it exits.
+      let sawTerminal = false;
       const timer = setInterval(() => {
         pump();
         const m = runsLib.get(memo.trace_id);
-        if (m && (m.state !== "queued" && m.state !== "running")) {
-          pump();
-          send({ event: "run.finished", state: m.state, exit_code: m.exit_code });
-          clearInterval(timer);
-          controller.close();
+        const terminal = m && m.state !== "queued" && m.state !== "running";
+        if (!terminal) return;
+        if (!sawTerminal) {
+          // one more cycle: give the exiting child's last writes time to land
+          sawTerminal = true;
+          return;
         }
-      }, 1000);
+        pump();
+        send({ event: "run.finished", state: m!.state, exit_code: m!.exit_code });
+        clearInterval(timer);
+        controller.close();
+      }, 150);
     },
   });
   return new Response(stream, {
