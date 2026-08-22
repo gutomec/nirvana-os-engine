@@ -177,21 +177,32 @@ export function startServer(opts: ServeOpts) {
  * revision there. Same shape glance uses (server.ts:656).
  */
 function sseAuditStream(memo: ReturnType<typeof runsLib.get> & {}, extraHeaders: Record<string, string>): Response {
-  const file = todayAuditFile({ projectRoot: memo.session.dir });
-  let offset = 0;
+  // Two candidate logs, because HARNESS_LOGS_DIR (when set) OUTRANKS the
+  // project root inside todayAuditFile: the dispatched child may write to
+  // the session's own log while this process resolves the global one. CI
+  // proved it — the feed went silent while the run wrote events. Watch
+  // both; the per-run trace filter keeps foreign events out either way.
+  const day = new Date().toISOString().slice(0, 10);
+  const candidates = [...new Set([
+    path.join(memo.session.dir, ".nirvana", "logs", "harness", day, "audit.jsonl"),
+    todayAuditFile({ projectRoot: memo.session.dir }),
+  ])];
+  const offsets = new Map<string, number>(candidates.map((f) => [f, 0]));
   const stream = new ReadableStream({
     start(controller) {
       const enc = new TextEncoder();
       const send = (obj: unknown) => controller.enqueue(enc.encode(`data: ${JSON.stringify(obj)}\n\n`));
       const pump = () => {
+        for (const file of candidates) {
         try {
           const st = fs.statSync(file);
+          const offset = offsets.get(file) ?? 0;
           if (st.size > offset) {
             const fd = fs.openSync(file, "r");
             const buf = Buffer.alloc(st.size - offset);
             fs.readSync(fd, buf, 0, buf.length, offset);
             fs.closeSync(fd);
-            offset = st.size;
+            offsets.set(file, st.size);
             for (const line of buf.toString("utf8").split("\n")) {
               if (!line.trim()) continue;
               try {
@@ -205,7 +216,8 @@ function sseAuditStream(memo: ReturnType<typeof runsLib.get> & {}, extraHeaders:
               } catch { /* partial line */ }
             }
           }
-        } catch { /* log not created yet */ }
+        } catch { /* this candidate has no log yet */ }
+        }
       };
       pump();
       // Poll fast: a short run can finish between two slow ticks, and the
