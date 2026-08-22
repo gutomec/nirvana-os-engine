@@ -6,6 +6,24 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### Where the intelligence comes from is not where the files are written
+
+The first `nrv serve` cut created every session with `NIRVANA_SCOPE=project`,
+conflating two decisions that must stay apart: a session's LIBRARY (which
+businesses, squads and clones a brief may route to) and its FILES (logs,
+outputs, run state). The library must never default to the project — a
+session that starts blind sends every brief to the generalist.
+
+A global session (the default) now initialises with `merge`: the operator's
+library resolves, project entries win on conflict, and artifacts still land
+inside the session. Isolated sessions keep the project-only source a
+multi-tenant host needs. Either way the server pins `HARNESS_LOGS_DIR` and
+`NIRVANA_PROJECT_ROOT` to the session, so pointing
+`NIRVANA_SERVE_SESSIONS_ROOT` at a mounted volume puts every caller's
+outputs, logs and run state on that volume.
+
 ## 0.7.8 — 2026-08-22
 
 ### The gate finally covers PDF

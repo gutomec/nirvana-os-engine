@@ -6,6 +6,25 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Unreleased
+
+### De onde vem a inteligência não é onde os arquivos nascem
+
+O primeiro corte do `nrv serve` criava toda sessão com
+`NIRVANA_SCOPE=project`, confundindo duas decisões que precisam ficar
+separadas: a BIBLIOTECA da sessão (para quais empresas, squads e clones um
+brief pode rotear) e os ARQUIVOS dela (logs, outputs, estado de run). A
+biblioteca jamais pode nascer com escopo de projeto — uma sessão que começa
+cega manda todo brief para o generalista.
+
+Uma sessão global (o padrão) agora inicializa com `merge`: a biblioteca do
+operador resolve, entradas do projeto vencem em conflito, e os artefatos
+continuam nascendo dentro da sessão. Sessões isoladas mantêm a fonte
+só-do-projeto que um host multi-tenant precisa. Em ambos os casos o servidor
+fixa `HARNESS_LOGS_DIR` e `NIRVANA_PROJECT_ROOT` na sessão, então apontar
+`NIRVANA_SERVE_SESSIONS_ROOT` para um volume montado coloca outputs, logs e
+estado de todos os chamadores nesse volume.
+
 ## 0.7.8 — 2026-08-22
 
 ### O gate finalmente cobre PDF
