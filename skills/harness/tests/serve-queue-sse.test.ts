@@ -76,7 +76,11 @@ beforeAll(async () => {
 
 afterAll(() => {
   try { server?.stop(); } catch { /* already down */ }
-  rmSync(root, { recursive: true, force: true });
+  // Windows holds the ledger's sqlite handle a beat longer than the test
+  // ends, and rm on a busy file throws EBUSY — failing a suite that already
+  // passed. The temp dir is the OS's to reclaim; cleanup is a courtesy, not
+  // an assertion.
+  try { rmSync(root, { recursive: true, force: true }); } catch { /* OS will reclaim tmp */ }
 });
 
 async function waitTerminal(sessionId: string, traceId: string, ms = 20000) {
