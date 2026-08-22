@@ -60,7 +60,10 @@ const STUB_PNG = Buffer.concat([
   Buffer.alloc(300, 7),
 ]);
 
-const NON_GATEABLE_PDF = "%PDF-1.7\n" + "conteúdo binário simulado ".repeat(20) + "\n%%EOF\n";
+// .pdf became gateable in the pdf-valid change (2026-08-22) — the
+// nothing-to-judge fixture must be an extension the gate really cannot
+// read, or this test would silently exercise the wrong path.
+const NON_GATEABLE_BLOB = "PK\u0003\u0004" + "conteúdo binário simulado ".repeat(20);
 
 let caseSeq = 0;
 
@@ -156,7 +159,7 @@ describe("nrv revise — the outcome goes through the delivery pipeline", () => 
   }, 30_000);
 
   test("nothing the gate can judge → exit 3, INDETERMINATE, no delivered", () => {
-    const c = runRevise({ "relatorio.pdf": NON_GATEABLE_PDF });
+    const c = runRevise({ "relatorio.zip": NON_GATEABLE_BLOB });
     expect(c.status).toBe(3);
     expect(events(c)).toContain("x_gate_skipped_no_files");
     expect(events(c)).not.toContain("gate_passed");
