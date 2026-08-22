@@ -167,6 +167,35 @@ describe("library scope", () => {
     expect(listed.sessions.find((s: any) => s.session_id === session_id).library).toBe("isolated");
   });
 
+  test("a global session writes NIRVANA_SCOPE=merge — the library is never project by default", async () => {
+    const r = await api("/v1/sessions", { method: "POST" });
+    const { session_id } = await r.json();
+    const env = readFileSync(join(root, "sessions", session_id, ".env"), "utf8");
+    // The source of intelligence resolves globally; a session that starts
+    // blind would route every brief to the generalist.
+    expect(env).toContain("NIRVANA_SCOPE=merge");
+    expect(env).not.toContain("NIRVANA_SCOPE=project");
+  });
+
+  test("an isolated session is the only one scoped to the project itself", async () => {
+    const r = await api("/v1/sessions", { method: "POST", body: JSON.stringify({ library: "isolated" }) });
+    const { session_id } = await r.json();
+    const env = readFileSync(join(root, "sessions", session_id, ".env"), "utf8");
+    expect(env).toContain("NIRVANA_SCOPE=project");
+  });
+
+  test("files are written inside the session regardless of where the library comes from", async () => {
+    process.env.FIXTURE_EXIT = "0";
+    const { session_id } = await (await api("/v1/sessions", { method: "POST" })).json();
+    const { trace_id } = await (await api(`/v1/sessions/${session_id}/briefs`, {
+      method: "POST", body: JSON.stringify({ brief: "onde os arquivos nascem" }),
+    })).json();
+    await waitTerminal(session_id, trace_id);
+    // outputs under the session, never in a shared root
+    const artifact = join(root, "sessions", session_id, ".nirvana", "outputs", trace_id, "deliverable.md");
+    expect(readFileSync(artifact, "utf8")).toContain("conteúdo real");
+  });
+
   test("an unknown library value falls back to global rather than failing the call", async () => {
     const r = await api("/v1/sessions", { method: "POST", body: JSON.stringify({ library: "whatever" }) });
     expect((await r.json()).library).toBe("global");

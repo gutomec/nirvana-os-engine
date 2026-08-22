@@ -154,10 +154,14 @@ export function start(memo: RunMemo, opts: { budgetUsd?: number } = {}): Promise
       cwd: memo.session.dir,
       env: {
         ...process.env,
-        // `merge` lets the project see the operator's global library on top
-        // of its own; `project` is the isolated tenant case.
+        // Where the intelligence is FOUND (merge: the operator's library,
+        // project entries winning on conflict). Where files are WRITTEN is
+        // decided separately, below: always inside this session.
         NIRVANA_SCOPE: memo.session.library === "isolated" ? "project" : "merge",
+        // Artifacts, logs and run state stay in this session — a mounted
+        // volume simply IS this directory on a server.
         NIRVANA_PROJECT_ROOT: memo.session.dir,
+        HARNESS_LOGS_DIR: path.join(memo.session.dir, ".nirvana", "logs", "harness"),
         NIRVANA_TRACE_ID: memo.trace_id,
       },
       stdio: ["ignore", "pipe", "pipe"],

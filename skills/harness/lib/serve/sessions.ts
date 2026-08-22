@@ -53,6 +53,30 @@ const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
     ? path.join(process.env.HOME || "", ".nirvana", "skills")
     : path.resolve(import.meta.dir, "..", "..", ".."));
 
+/**
+ * Two different things travel under the word "scope", and conflating them
+ * was a real defect in the first cut of this server:
+ *
+ *   WHERE THE INTELLIGENCE COMES FROM — businesses, squads, mind-clones.
+ *   This must default to the operator's library (`merge`), never to the
+ *   empty project. A session that starts blind routes every brief to the
+ *   generalist, which is the least of what the system can do.
+ *
+ *   WHERE THE FILES ARE WRITTEN — logs, outputs, run state, HANDOFF.
+ *   These always stay inside the session's own directory (or a mounted
+ *   volume pointing at it), because isolation of ARTIFACTS is what keeps
+ *   one caller's work out of another's.
+ *
+ * `merge` gives exactly that split: the library resolves globally, the
+ * project's own entries win on conflict, and everything written lands in
+ * the project. `isolated` (multi-tenant) is the only case that narrows the
+ * source to the project itself.
+ */
+const SCOPE_FOR_LIBRARY: Record<SessionLibrary, string> = {
+  global: "merge",
+  isolated: "project",
+};
+
 export function createSession(keyId: string, library: SessionLibrary = "global"): SessionRecord {
   const id = "ses_" + randomBytes(8).toString("hex");
   const dir = path.join(sessionsRoot(), id);
@@ -62,7 +86,7 @@ export function createSession(keyId: string, library: SessionLibrary = "global")
   // invokes the scripted cascade directly), but we record the warning.
   const init = path.join(SKILLS_ROOT, "_shared", "scripts", "init-project.ts");
   if (fs.existsSync(init)) {
-    spawnSync(process.env.NIRVANA_SERVE_BUN || "bun", [init, dir, "--scope=project"], {
+    spawnSync(process.env.NIRVANA_SERVE_BUN || "bun", [init, dir, `--scope=${SCOPE_FOR_LIBRARY[library]}`], {
       stdio: "ignore", timeout: 60_000, env: { ...process.env },
     });
   }

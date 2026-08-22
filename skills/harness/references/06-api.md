@@ -54,6 +54,32 @@ curl -X POST $API/v1/sessions -H "Authorization: Bearer $TOKEN" \
 own project, which is what a multi-tenant host wants: one tenant must never
 route into another's library.
 
+## Two scopes that must never be confused
+
+Where the INTELLIGENCE comes from and where the FILES are written are
+different decisions, and the API keeps them apart:
+
+| | Global session (default) | Isolated session |
+|---|---|---|
+| Businesses, squads, clones resolve from | the operator's library, project entries winning on conflict (`merge`) | the session's project only |
+| Logs, outputs, run state are written to | the session directory | the session directory |
+
+The library must never default to the project: a session that starts blind
+routes every brief to the generalist, which is the least the system can do.
+Artifact isolation is what keeps one caller's work out of another's, and it
+holds in both modes — the server pins `HARNESS_LOGS_DIR` and
+`NIRVANA_PROJECT_ROOT` to the session on every dispatch.
+
+**On a server, point sessions at a volume**: `nrv serve` writes sessions
+under `~/.nirvana/serve/sessions` unless `NIRVANA_SERVE_SESSIONS_ROOT` says
+otherwise. Mount a volume there and every session's outputs, logs and run
+state land on it — survives container replacement, and backing up one path
+backs up every caller's work.
+
+```bash
+NIRVANA_SERVE_SESSIONS_ROOT=/data/nirvana-sessions nrv serve --port 7777
+```
+
 ## The envelope
 
 ```json
