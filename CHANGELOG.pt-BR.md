@@ -6,6 +6,21 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Unreleased
+
+### Sessões headless morrem com o turno — o protocolo agora diz isso
+
+Verificado em campo numa VPS: um maestro headless (`claude -p`) lançou a fase
+1 como subagente em background, escreveu "vou aguardar a notificação",
+encerrou o turno — e o processo saiu, orfanando o filho. As imagens ficaram,
+a fase do PDF nunca começou. Sessão interativa nunca mostra isso, e é
+exatamente por isso que sobrevive até um cron ou systemd quebrar. A diretiva
+autônoma injetada em toda execução headless agora carrega a regra de vida da
+sessão (delegue sincronamente ou execute a fase você mesmo; encerrar o turno
+com trabalho em voo é abandono, não paciência), e o protocolo do harness
+delimita o contrato de dispatch em background às sessões interativas,
+roteando contextos headless para o caminho scriptado síncrono.
+
 ## 0.7.6 — 2026-08-21
 
 ### A ativação de squad para de mentir duas vezes
