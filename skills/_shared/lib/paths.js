@@ -50,20 +50,48 @@ const SCOPE_MARKERS = ['.env', '.nirvana', '.git', 'package.json', 'pyproject.to
 // happen to exist there. Otherwise the resolver treats the user's HOME as a
 // project, which collapses every scope-aware lookup. (Encountered when our own
 // state-db created ~/.nirvana/state.db while running outside any project.)
+// Mirror of scope.ts isInvalidProjectRoot — see the reasoning there. Kept in
+// sync deliberately: this is the CJS half that hooks and the audit driver
+// require() at runtime.
+function canonical(dir) {
+  const resolved = path.resolve(dir);
+  try {
+    return (fs.realpathSync.native ? fs.realpathSync.native(resolved) : fs.realpathSync(resolved));
+  } catch {
+    return resolved;
+  }
+}
+
+function sameDir(a, b) {
+  return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+}
+
+function isUnder(child, parent) {
+  const p = parent.endsWith(path.sep) ? parent : parent + path.sep;
+  return process.platform === 'win32'
+    ? child.toLowerCase().startsWith(p.toLowerCase())
+    : child.startsWith(p);
+}
+
 function isInvalidProjectRoot(dir) {
   if (!dir) return true;
   if (dir === '/' || dir === '') return true;
   try {
-    const resolved = path.resolve(dir);
-    if (resolved === path.resolve(process.env.HOME || os.homedir())) return true;
-    if (process.platform === 'win32' && process.env.SystemRoot) {
-      const systemRoot = path.resolve(process.env.SystemRoot);
-      if (resolved.toLowerCase() === systemRoot.toLowerCase() ||
-          resolved.toLowerCase().startsWith(systemRoot.toLowerCase() + path.sep)) return true;
+    const resolved = canonical(dir);
+    if (resolved === path.parse(resolved).root) return true;
+    if (sameDir(resolved, canonical(process.env.HOME || os.homedir()))) return true;
+    if (process.platform === 'win32') {
+      const systemDirs = [process.env.SystemRoot, process.env.ProgramFiles, process.env['ProgramFiles(x86)']]
+        .filter(Boolean)
+        .map(canonical);
+      for (const sd of systemDirs) {
+        if (sameDir(resolved, sd) || isUnder(resolved, sd)) return true;
+      }
     }
   } catch {}
   return false;
 }
+
 
 function findProjectRoot(start) {
   let cur = path.resolve(start);
