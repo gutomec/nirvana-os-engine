@@ -5,6 +5,10 @@ import { basename, dirname, join } from "node:path";
 export class ServicePermissionError extends Error {}
 
 export interface WindowsAce { sid: string; type: "allow" | "deny"; rights: string; }
+export interface PrivateFileIdentity { readonly dev: number; readonly ino: number; }
+export interface PrivateFreshFile { readonly descriptor: number; readonly identity: PrivateFileIdentity; }
+export type PrivateCleanupResult = "removed" | "absent" | "preserved";
+export type PrivateFreshFileTestHook = (fresh: PrivateFreshFile, path: string) => void;
 
 export function assertPrivateMode(path: string, expected: number): void {
   if (process.platform !== "win32" && (statSync(path).mode & 0o777) !== expected) throw new ServicePermissionError("POSIX_PRIVATE_MODE");
@@ -66,35 +70,52 @@ function restrictWindows(path: string, capturedLogonSid?: string): void {
 export function restrictDirectory(path: string): void { if (process.platform === "win32") restrictWindows(path); else { chmodSync(path, 0o700); assertPrivateMode(path, 0o700); } }
 export function restrictFile(path: string): void { if (process.platform === "win32") restrictWindows(path); else { chmodSync(path, 0o600); assertPrivateMode(path, 0o600); } }
 
-function assertFreshFileIdentity(path: string, descriptor: number): void {
-  const opened = fstatSync(descriptor), named = lstatSync(path);
-  if (opened.dev !== named.dev || opened.ino !== named.ino) throw new ServicePermissionError("FRESH_FILE_IDENTITY");
+function sameIdentity(left: PrivateFileIdentity, right: PrivateFileIdentity): boolean { return left.dev === right.dev && left.ino === right.ino; }
+function descriptorIdentity(descriptor: number): PrivateFileIdentity { const stat = fstatSync(descriptor); return Object.freeze({ dev: stat.dev, ino: stat.ino }); }
+function assertFreshFileIdentity(path: string, descriptor: number, identity: PrivateFileIdentity): void {
+  const named = lstatSync(path);
+  if (!sameIdentity(identity, descriptorIdentity(descriptor)) || !sameIdentity(identity, { dev: named.dev, ino: named.ino })) throw new ServicePermissionError("FRESH_FILE_IDENTITY");
 }
 
-function restrictFreshFile(path: string, descriptor: number): void {
-  assertFreshFileIdentity(path, descriptor);
+function restrictFreshFile(path: string, descriptor: number, identity: PrivateFileIdentity): void {
+  assertFreshFileIdentity(path, descriptor, identity);
   if (process.platform === "win32") {
     const candidates = [...new Set(inspectWindowsAces(path).filter(ace => ace.type === "allow" && ace.rights === "0x1200a9").map(ace => ace.sid))];
     if (candidates.length > 1) throw new ServicePermissionError("WINDOWS_FRESH_LOGON_AMBIGUOUS");
     restrictWindows(path, candidates[0]);
   } else { chmodSync(path, 0o600); assertPrivateMode(path, 0o600); }
-  assertFreshFileIdentity(path, descriptor);
+  assertFreshFileIdentity(path, descriptor, identity);
 }
 
-export function openPrivateFreshFile(path: string): number {
-  let descriptor: number | undefined;
+export function cleanupPrivateFreshFile(path: string, identity: PrivateFileIdentity): PrivateCleanupResult {
+  let named: ReturnType<typeof lstatSync>;
+  try { named = lstatSync(path); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return "absent"; throw error; }
+  if (!sameIdentity(identity, { dev: named.dev, ino: named.ino })) return "preserved";
+  try { rmSync(path); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return "absent"; throw error; }
+  return "removed";
+}
+
+function openPrivateFreshFileWithHook(path: string, hook?: PrivateFreshFileTestHook): PrivateFreshFile {
+  let fresh: PrivateFreshFile | undefined;
   try {
-    descriptor = openSync(path, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
-    restrictFreshFile(path, descriptor);
-    return descriptor;
+    const descriptor = openSync(path, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
+    fresh = Object.freeze({ descriptor, identity: descriptorIdentity(descriptor) });
+    hook?.(fresh, path);
+    restrictFreshFile(path, fresh.descriptor, fresh.identity);
+    return fresh;
   } catch (error) {
-    if (descriptor !== undefined) {
-      try { closeSync(descriptor); } catch {}
-      try { rmSync(path, { force: true }); } catch {}
+    if (fresh) {
+      try { closeSync(fresh.descriptor); } catch {}
+      try { cleanupPrivateFreshFile(path, fresh.identity); } catch {}
     }
     throw error;
   }
 }
+
+export function openPrivateFreshFile(path: string): PrivateFreshFile { return openPrivateFreshFileWithHook(path); }
+export function createPrivateFreshFileTestHarness(hook: PrivateFreshFileTestHook): Readonly<{ open(path: string): PrivateFreshFile }> { return Object.freeze({ open: path => openPrivateFreshFileWithHook(path, hook) }); }
 
 export function fsyncDirectory(path: string): void {
   let descriptor: number | undefined;

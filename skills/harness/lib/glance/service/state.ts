@@ -1,7 +1,7 @@
-import { closeSync, fsyncSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, fsyncSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { basename, dirname, join } from "node:path";
-import { restrictDirectory, openPrivateFreshFile, fsyncDirectory } from "./permissions.ts";
+import { cleanupPrivateFreshFile, fsyncDirectory, openPrivateFreshFile, restrictDirectory, ServicePermissionError, type PrivateCleanupResult, type PrivateFileIdentity, type PrivateFreshFile } from "./permissions.ts";
 import { parseStrictJson } from "./strict-json.ts";
 
 export class ServiceIoError extends Error { constructor(operation: string, cause?: unknown) { super(`SERVICE_IO:${operation}`, { cause }); } }
@@ -13,7 +13,7 @@ interface PrivateWriteRuntime {
   rename(from: string, to: string): void;
   fsyncDirectory(path: string): void;
   reread(path: string): Uint8Array;
-  remove(path: string): void;
+  cleanup(path: string, identity: PrivateFileIdentity): PrivateCleanupResult;
 }
 
 const nativePrivateWriteRuntime: Readonly<PrivateWriteRuntime> = Object.freeze({
@@ -22,22 +22,24 @@ const nativePrivateWriteRuntime: Readonly<PrivateWriteRuntime> = Object.freeze({
   rename: renameSync,
   fsyncDirectory,
   reread: readFileSync,
-  remove: path => rmSync(path, { force: true }),
+  cleanup: cleanupPrivateFreshFile,
 });
 
 export type PrivateWriteOperation = "file-fsync" | "close" | "rename" | "directory-fsync" | "reread" | "remove";
-export type PrivateWriteTestHook = (operation: PrivateWriteOperation, perform: () => void) => void;
+export type PrivateWriteTestHook = (operation: PrivateWriteOperation, perform: () => void, path?: string) => void;
 
 function writePrivateBytesWithRuntime(path: string, bytes: Uint8Array, io: PrivateWriteRuntime): void {
   const parent = dirname(path);
   const temporary = join(parent, `.${basename(path)}.${randomUUID()}.tmp`);
+  let fresh: PrivateFreshFile | undefined;
   let descriptor: number | undefined;
   let primary: unknown;
   let cleanup: unknown;
   try {
     mkdirSync(parent, { recursive: true, mode: 0o700 });
     restrictDirectory(parent);
-    descriptor = openPrivateFreshFile(temporary);
+    fresh = openPrivateFreshFile(temporary);
+    descriptor = fresh.descriptor;
     writeFileSync(descriptor, bytes);
     io.fsyncFile(descriptor);
     io.close(descriptor);
@@ -47,7 +49,7 @@ function writePrivateBytesWithRuntime(path: string, bytes: Uint8Array, io: Priva
     if (!Buffer.from(io.reread(path)).equals(Buffer.from(bytes))) throw new Error("REREAD_MISMATCH");
   } catch (cause) { primary = cause; }
   if (descriptor !== undefined) { try { io.close(descriptor); } catch (cause) { cleanup ??= cause; } }
-  try { io.remove(temporary); } catch (cause) { cleanup ??= cause; }
+  if (fresh) { try { if (io.cleanup(temporary, fresh.identity) === "preserved") cleanup ??= new ServicePermissionError("PRIVATE_CLEANUP_PRESERVED"); } catch (cause) { cleanup ??= cause; } }
   if (primary) { const error = new ServiceIoError("PRIVATE_WRITE", primary); Object.assign(error, { cleanup }); throw error; }
   if (cleanup) throw new ServiceIoError("PRIVATE_WRITE_CLEANUP", cleanup);
 }
@@ -58,10 +60,10 @@ export function createPrivateWriteTestHarness(hook: PrivateWriteTestHook = (_ope
   const runtime: Readonly<PrivateWriteRuntime> = Object.freeze({
     fsyncFile: descriptor => hook("file-fsync", () => nativePrivateWriteRuntime.fsyncFile(descriptor)),
     close: descriptor => hook("close", () => nativePrivateWriteRuntime.close(descriptor)),
-    rename: (from, to) => hook("rename", () => nativePrivateWriteRuntime.rename(from, to)),
+    rename: (from, to) => hook("rename", () => nativePrivateWriteRuntime.rename(from, to), from),
     fsyncDirectory: path => hook("directory-fsync", () => nativePrivateWriteRuntime.fsyncDirectory(path)),
     reread: path => { let bytes: Uint8Array | undefined; hook("reread", () => { bytes = nativePrivateWriteRuntime.reread(path); }); return bytes!; },
-    remove: path => hook("remove", () => nativePrivateWriteRuntime.remove(path)),
+    cleanup: (path, identity) => { let result: PrivateCleanupResult | undefined; hook("remove", () => { result = nativePrivateWriteRuntime.cleanup(path, identity); }, path); return result!; },
   });
   return Object.freeze({ write: (path, bytes) => writePrivateBytesWithRuntime(path, bytes, runtime) });
 }

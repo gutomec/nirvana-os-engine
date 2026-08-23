@@ -13,11 +13,11 @@ export function createPrivateStateFixture() {
       if (process.platform !== "win32" && (statSync(path).mode & 0o777) !== 0o600) throw new Error("PRIVATE_STATE_MODE");
     }
   };
-  const observePrivateWrite = (hook?: (operation: PrivateWriteOperation, perform: () => void) => void) => {
+  const observePrivateWrite = (hook?: (operation: PrivateWriteOperation, perform: () => void, path?: string) => void) => {
     const events: string[] = [];
-    const harness = createPrivateWriteTestHarness((operation, perform) => {
+    const harness = createPrivateWriteTestHarness((operation, perform, path) => {
       events.push(operation);
-      if (hook) hook(operation, perform); else perform();
+      if (hook) hook(operation, perform, path); else perform();
     });
     return { write: harness.write, events };
   };
