@@ -4,6 +4,7 @@ import {
   fstatSync,
   lstatSync,
   openSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   statSync,
@@ -29,6 +30,11 @@ const ALLOWED_MIME = new Set<InventoriedFileExpectation["mime"]>([
   "application/json; charset=utf-8",
   "text/html; charset=utf-8",
 ]);
+
+const MAX_BYTES_BY_MIME: Readonly<Record<InventoriedFileExpectation["mime"], number>> = {
+  "application/json; charset=utf-8": 5 * 1024 * 1024,
+  "text/html; charset=utf-8": 2 * 1024 * 1024,
+};
 
 const SAFE_ERRORS = new Set(["PATH_UNSAFE", "FILE_CHANGED", "FILE_INTEGRITY"]);
 
@@ -82,6 +88,7 @@ function inspectSegments(canonicalRoot: string, segments: readonly string[]): St
   const snapshot = [rootStats];
   let cursor = canonicalRoot;
   for (const [index, segment] of segments.entries()) {
+    if (!readdirSync(cursor).includes(segment)) fail("PATH_UNSAFE");
     cursor = resolve(cursor, segment);
     if (!inside(canonicalRoot, cursor)) fail("PATH_UNSAFE");
     const stats = lstatSync(cursor);
@@ -117,6 +124,7 @@ export function readStableInventoriedFile(
       !ALLOWED_MIME.has(expected.mime) ||
       !Number.isSafeInteger(expected.bytes) ||
       expected.bytes < 0 ||
+      expected.bytes > MAX_BYTES_BY_MIME[expected.mime] ||
       !/^[a-f0-9]{64}$/.test(expected.sha256)
     ) fail("FILE_INTEGRITY");
 
@@ -133,6 +141,7 @@ export function readStableInventoriedFile(
 
     const openedBefore = fstatSync(fd);
     if (!openedBefore.isFile()) fail("PATH_UNSAFE");
+    if (openedBefore.size !== expected.bytes) fail("FILE_CHANGED");
     const canonicalTarget = realpathSync.native(target);
     if (!inside(canonicalRoot, canonicalTarget)) fail("PATH_UNSAFE");
     const openedSnapshot = inspectSegments(canonicalRoot, segments);

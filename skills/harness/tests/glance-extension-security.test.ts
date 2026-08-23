@@ -123,6 +123,16 @@ test("EXT-FS-CASE-SIBLING", () => useFixture((fixture) => {
   expect(() => readStableInventoriedFile(fixture.root, alternate, fixture.expected)).toThrow("PATH_UNSAFE");
 }));
 
+const physicalCaseAliasTest = process.platform === "win32" ? test : test.skip;
+physicalCaseAliasTest("EXT-FS-PHYSICAL-CASE-ALIAS", () => useFixture((fixture) => {
+  const alternate = "NESTED/DATA.JSON";
+  expect(readFileSync(join(fixture.root, "NESTED", "DATA.JSON"))).toEqual(fixture.content);
+  expect(() => readStableInventoriedFile(fixture.root, alternate, {
+    ...fixture.expected,
+    path: alternate,
+  })).toThrow("PATH_UNSAFE");
+}));
+
 const permissionTest = FILESYSTEM_CAPABILITIES.deniedFileRead.available ? test : test.skip;
 permissionTest("EXT-FS-PERMISSION", () => useFixture((fixture) => {
   const target = join(fixture.root, "nested", "data.json");
@@ -140,6 +150,61 @@ test("EXT-FS-SIZE", () => useFixture((fixture) => {
     ...fixture.expected,
     bytes: fixture.expected.bytes + 1,
   })).toThrow("FILE_CHANGED");
+}));
+
+test("EXT-FS-DESCRIPTOR-SIZE-MISMATCH-STOPS-BEFORE-READ", () => useFixture((fixture) => {
+  const oversized = new Uint8Array(4 * 1024 * 1024);
+  oversized.fill(0x20);
+  writeFileSync(join(fixture.root, "nested", "data.json"), oversized);
+  let beforeRead = false;
+  let afterRead = false;
+
+  expect(() => readStableInventoriedFile(fixture.root, fixture.expected.path, {
+    ...fixture.expected,
+    bytes: 1,
+    sha256: sha256(oversized),
+  }, {
+    beforeRead() {
+      beforeRead = true;
+    },
+    afterRead() {
+      afterRead = true;
+    },
+  })).toThrow("FILE_CHANGED");
+  expect(beforeRead).toBe(false);
+  expect(afterRead).toBe(false);
+}));
+
+test("EXT-FS-JSON-HARD-LIMIT-STOPS-BEFORE-OPEN", () => useFixture((fixture) => {
+  const oversized = new Uint8Array((5 * 1024 * 1024) + 1);
+  writeFileSync(join(fixture.root, "nested", "data.json"), oversized);
+  let beforeOpen = false;
+
+  expect(() => readStableInventoriedFile(fixture.root, fixture.expected.path, {
+    ...fixture.expected,
+    bytes: oversized.byteLength,
+    sha256: sha256(oversized),
+  }, {
+    beforeOpen() {
+      beforeOpen = true;
+    },
+  })).toThrow("FILE_INTEGRITY");
+  expect(beforeOpen).toBe(false);
+}));
+
+test("EXT-FS-HTML-HARD-LIMIT-STOPS-BEFORE-OPEN", () => useFixture((fixture) => {
+  const path = "ui/index.html";
+  const oversized = new Uint8Array((2 * 1024 * 1024) + 1);
+  mkdirSync(join(fixture.root, "ui"));
+  writeFileSync(join(fixture.root, "ui", "index.html"), oversized);
+  let beforeOpen = false;
+
+  expect(() => readStableInventoriedFile(fixture.root, path, inventory(path, oversized, HTML_MIME), {
+    beforeOpen() {
+      beforeOpen = true;
+    },
+  })).toThrow("FILE_INTEGRITY");
+  expect(beforeOpen).toBe(false);
 }));
 
 test("EXT-FS-MIME", () => useFixture((fixture) => {
@@ -221,7 +286,9 @@ test("EXT-FS-SWAP-BETWEEN-PRECHECK-AND-OPEN", () => {
 export const FILESYSTEM_CASES = [
   "EXT-FS-TRAVERSAL", "EXT-FS-WINDOWS-ABS", "EXT-FS-POSIX-ABS", "EXT-FS-NUL", "EXT-FS-ADS",
   "EXT-FS-UNDECLARED", "EXT-FS-DIRECTORY", "EXT-FS-SYMLINK", "EXT-FS-LINK-SEGMENT-FILE",
-  "EXT-FS-LINK-SEGMENT-DIRECTORY", "EXT-FS-JUNCTION", "EXT-FS-CASE-SIBLING", "EXT-FS-PERMISSION",
-  "EXT-FS-SIZE", "EXT-FS-MIME", "EXT-FS-DIGEST", "EXT-FS-WRITE-RACE", "EXT-FS-RENAME-RACE",
+  "EXT-FS-LINK-SEGMENT-DIRECTORY", "EXT-FS-JUNCTION", "EXT-FS-CASE-SIBLING",
+  "EXT-FS-PHYSICAL-CASE-ALIAS", "EXT-FS-PERMISSION", "EXT-FS-SIZE",
+  "EXT-FS-DESCRIPTOR-SIZE-MISMATCH-STOPS-BEFORE-READ", "EXT-FS-JSON-HARD-LIMIT-STOPS-BEFORE-OPEN",
+  "EXT-FS-HTML-HARD-LIMIT-STOPS-BEFORE-OPEN", "EXT-FS-MIME", "EXT-FS-DIGEST", "EXT-FS-WRITE-RACE", "EXT-FS-RENAME-RACE",
   "EXT-FS-EXTERNAL-INACCESSIBLE",
 ] as const;
