@@ -6,6 +6,21 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Unreleased
+
+### Disputa de lock no Windows deixou de parecer falha
+
+O `withLock` tratava qualquer coisa que não fosse `EEXIST` como erro real. O
+Windows tem uma segunda resposta para "outro processo já tem isto": um
+diretório com exclusão pendente recusa o `mkdir` com `EPERM`, e um indexador
+ou antivírus segurando um handle transforma isso em `EACCES` ou `EBUSY`. Os
+três são a corrida comum de rm/mkdir entre dois contendores, e relançá-los
+matava uma escrita de spend-tracker ou de cooldown em vez de deixá-la esperar
+a vez. Agora eles fazem poll como o `EEXIST` — só no Windows, porque no POSIX
+esses códigos continuam significando o que dizem. Quando a espera realmente
+estoura, a mensagem informa o código que vinha recebendo em vez de acusar um
+dono vivo que pode não existir.
+
 ## 0.7.11 — 2026-08-23
 
 ### O engine mandava os runtimes vigiarem, nunca trabalharem
