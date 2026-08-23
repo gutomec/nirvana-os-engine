@@ -3,7 +3,17 @@ import type { ServiceConfigV1, ServiceInstanceV1, ServiceLockOwnerV1, ServiceSto
 export class ServiceSchemaError extends Error {}
 const digest = (value: unknown): value is `sha256:${string}` => typeof value === "string" && /^sha256:[a-f0-9]{64}$/.test(value);
 const uuid = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
-const timestamp = (value: unknown): value is string => typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) && !Number.isNaN(Date.parse(value));
+const timestamp = (value: unknown): value is string => {
+  if (typeof value !== "string") return false;
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-]\d{2}:\d{2})$/.exec(value);
+  if (!match) return false;
+  const [year, month, day, hour, minute, second] = match.slice(1, 7).map(Number);
+  const offset = match[7];
+  if (month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59) return false;
+  if (offset !== "Z" && (Number(offset.slice(1, 3)) > 23 || Number(offset.slice(4, 6)) > 59)) return false;
+  const calendar = new Date(Date.UTC(year, month - 1, day));
+  return calendar.getUTCFullYear() === year && calendar.getUTCMonth() === month - 1 && calendar.getUTCDate() === day;
+};
 const object = (value: unknown, keys: readonly string[]): Record<string, unknown> => { if (!value || typeof value !== "object" || Array.isArray(value)) throw new ServiceSchemaError("OBJECT_EXPECTED"); const actual = Object.keys(value); if (actual.length !== keys.length || actual.some(key => !keys.includes(key))) throw new ServiceSchemaError("CLOSED_OBJECT"); return value as Record<string, unknown>; };
 const optionalObject = (value: unknown, required: readonly string[], optional: readonly string[] = []): Record<string, unknown> => { if (!value || typeof value !== "object" || Array.isArray(value)) throw new ServiceSchemaError("OBJECT_EXPECTED"); const actual = Object.keys(value), allowed = [...required, ...optional]; if (actual.some(key => !allowed.includes(key)) || required.some(key => !(key in (value as object)))) throw new ServiceSchemaError("CLOSED_OBJECT"); return value as Record<string, unknown>; };
 const port = (value: unknown): value is number => typeof value === "number" && Number.isInteger(value) && value >= 1024 && value <= 65535;
