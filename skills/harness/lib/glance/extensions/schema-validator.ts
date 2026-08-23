@@ -1,3 +1,5 @@
+import { isRfc3339DateTime } from "./rfc3339.ts";
+
 export interface JsonSchema {
   $schema?: "https://json-schema.org/draft/2020-12/schema";
   $id?: string;
@@ -46,36 +48,6 @@ function equal(left: unknown, right: unknown): boolean {
       key === rightKeys[index] && equal(leftRecord[key], rightRecord[key]));
   }
   return false;
-}
-
-function isDateTime(value: string): boolean {
-  const match = /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?([Zz]|[+-](\d{2}):(\d{2}))$/.exec(value);
-  if (!match) return false;
-  const [, yearText, monthText, dayText, hourText, minuteText, secondText, zone, offsetHourText, offsetMinuteText] = match;
-  const year = Number(yearText);
-  const month = Number(monthText);
-  const day = Number(dayText);
-  const hour = Number(hourText);
-  const minute = Number(minuteText);
-  const second = Number(secondText);
-  const offsetHour = offsetHourText === undefined ? 0 : Number(offsetHourText);
-  const offsetMinute = offsetMinuteText === undefined ? 0 : Number(offsetMinuteText);
-  if (month < 1 || month > 12 || day < 1 || hour > 23 || minute > 59 || second > 60 || offsetHour > 23 || offsetMinute > 59) {
-    return false;
-  }
-  if (day > new Date(Date.UTC(year, month, 0)).getUTCDate()) return false;
-  if (second === 60) {
-    const offsetSign = zone.startsWith("+") ? 1 : zone.startsWith("-") ? -1 : 0;
-    const offsetMinutes = offsetSign * ((offsetHour * 60) + offsetMinute);
-    const instant = new Date(0);
-    instant.setUTCFullYear(year, month - 1, day);
-    instant.setUTCHours(hour, minute, 59, 0);
-    instant.setTime(instant.getTime() - (offsetMinutes * 60_000));
-    const isLeapBoundary = (instant.getUTCMonth() === 5 && instant.getUTCDate() === 30) ||
-      (instant.getUTCMonth() === 11 && instant.getUTCDate() === 31);
-    if (!isLeapBoundary || instant.getUTCHours() !== 23 || instant.getUTCMinutes() !== 59) return false;
-  }
-  return true;
 }
 
 export function validateSchema(
@@ -133,7 +105,7 @@ export function validateSchema(
     if (schema.maxLength !== undefined && length > schema.maxLength) throw new Error("MAX_LENGTH");
     if (schema.pattern && !new RegExp(schema.pattern).test(value)) throw new Error("PATTERN");
     if (schema.format === "uuid" && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) throw new Error("FORMAT:uuid");
-    if (schema.format === "date-time" && !isDateTime(value)) throw new Error("FORMAT:date-time");
+    if (schema.format === "date-time" && !isRfc3339DateTime(value)) throw new Error("FORMAT:date-time");
     if (schema.format === "uri") {
       try { if (!new URL(value).protocol) throw new Error(); } catch { throw new Error("FORMAT:uri"); }
     }

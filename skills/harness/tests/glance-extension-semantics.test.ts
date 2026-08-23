@@ -155,6 +155,36 @@ test("EXT-TIMESTAMP-ORDER", () => {
   expect(() => validateEnvelopeSemantics(value, context())).toThrow("EXT-TIMESTAMP-ORDER");
 });
 
+test("EXT-TIMESTAMP-LEAP-SECOND orders a valid generated leap second after its observation", () => {
+  const value = envelope();
+  value.freshness.observed_at = "2016-12-31T23:59:59Z";
+  value.generated_at = "2016-12-31T23:59:60Z";
+  value.freshness.max_age_seconds = 1;
+  value.freshness.state = "fresh";
+  resnapshot(value);
+  expect(validateEnvelopeSemantics(value, context({ now: new Date("2017-01-01T00:00:00Z") }))).toBe(true);
+});
+
+test("EXT-FRESHNESS-LEAP-SECOND recalculates freshness from a valid observed leap second", () => {
+  const value = envelope();
+  value.freshness.observed_at = "2016-12-31T23:59:60Z";
+  value.generated_at = "2017-01-01T00:00:00Z";
+  value.freshness.max_age_seconds = 0;
+  value.freshness.state = "fresh";
+  resnapshot(value);
+  expect(validateEnvelopeSemantics(value, context({ now: new Date("2017-01-01T00:00:00Z") }))).toBe(true);
+});
+
+test("EXT-TIMESTAMP-LEAP-OFFSET treats equivalent leap-second offsets as the same instant", () => {
+  const value = envelope();
+  value.freshness.observed_at = "2016-12-31T23:59:60Z";
+  value.generated_at = "2017-01-01T00:59:60+01:00";
+  value.freshness.max_age_seconds = 0;
+  value.freshness.state = "fresh";
+  resnapshot(value);
+  expect(validateEnvelopeSemantics(value, context({ now: new Date("2017-01-01T00:00:00Z") }))).toBe(true);
+});
+
 test("EXT-EVIDENCE-LIMIT", () => {
   const value = envelope();
   value.evidence_refs = Array.from({ length: 129 }, (_, id) => ({ id: `evidence-${id}`, kind: "file", ref: `${id}.txt`, digest: ZERO }));

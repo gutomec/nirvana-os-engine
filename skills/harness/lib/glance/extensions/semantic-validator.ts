@@ -10,6 +10,7 @@ import type {
   GlanceExtensionDatasetEnvelopeV1,
   GlanceExtensionManifestV1,
 } from "./types.ts";
+import { compareRfc3339Instants, parseRfc3339Instant } from "./rfc3339.ts";
 
 export type FreshnessState = "fresh" | "stale" | "expired" | "unknown";
 
@@ -122,9 +123,9 @@ export function calculateFreshness(
   now: Date,
   staleGraceSeconds = 0,
 ): FreshnessState {
-  const observed = Date.parse(observedAt);
+  const observed = parseRfc3339Instant(observedAt)?.epochMilliseconds;
   const current = now.getTime();
-  if (!Number.isFinite(observed) || !Number.isFinite(current) || observed > current) return "unknown";
+  if (observed === undefined || !Number.isFinite(current) || observed > current) return "unknown";
   const ageSeconds = (current - observed) / 1000;
   if (ageSeconds <= maxAgeSeconds) return "fresh";
   if (staleGraceSeconds > 0 && ageSeconds <= maxAgeSeconds + staleGraceSeconds) return "stale";
@@ -147,9 +148,9 @@ export function validateEnvelopeSemantics(
 
   if (!TIMEZONE.test(envelope.generated_at)) fail("EXT-TIMEZONE-GENERATED");
   if (!TIMEZONE.test(envelope.freshness.observed_at)) fail("EXT-TIMEZONE-OBSERVED");
-  const generated = Date.parse(envelope.generated_at);
-  const observed = Date.parse(envelope.freshness.observed_at);
-  if (!Number.isFinite(generated) || !Number.isFinite(observed) || generated < observed) fail("EXT-TIMESTAMP-ORDER");
+  const generated = parseRfc3339Instant(envelope.generated_at);
+  const observed = parseRfc3339Instant(envelope.freshness.observed_at);
+  if (!generated || !observed || compareRfc3339Instants(generated, observed) < 0) fail("EXT-TIMESTAMP-ORDER");
 
   const evidenceIds = envelope.evidence_refs.map((evidence) => evidence.id);
   if (envelope.evidence_refs.length > MAX_EVIDENCE_REFS || hasDuplicates(evidenceIds)) fail("EXT-EVIDENCE-LIMIT");
