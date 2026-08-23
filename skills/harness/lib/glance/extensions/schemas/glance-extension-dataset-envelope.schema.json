@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.nirvana-os.dev/glance/dataset-envelope/1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "extension_id", "dataset_id", "snapshot_id", "generated_at", "status", "scope", "subject", "source", "freshness", "payload_schema", "evidence_refs", "integrity", "payload"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "extension_id": { "$ref": "#/$defs/id" },
+    "dataset_id": { "$ref": "#/$defs/id" },
+    "snapshot_id": { "$ref": "#/$defs/digest" },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "status": { "enum": ["pass", "partial", "indeterminate", "fail"] },
+    "scope": { "oneOf": [{ "$ref": "#/$defs/globalScope" }, { "$ref": "#/$defs/projectScope" }] },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "digest"],
+      "properties": {
+        "type": { "$ref": "#/$defs/id" },
+        "id": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "digest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "label", "digest", "artifacts"],
+      "properties": {
+        "kind": { "enum": ["local_file", "local_command", "remote_api", "composite"] },
+        "label": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "digest": { "$ref": "#/$defs/digest" },
+        "artifacts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "digest"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,128}$" },
+              "digest": { "$ref": "#/$defs/digest" }
+            }
+          }
+        }
+      }
+    },
+    "freshness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observed_at", "max_age_seconds", "state"],
+      "properties": {
+        "observed_at": { "type": "string", "format": "date-time" },
+        "max_age_seconds": { "type": "integer", "minimum": 1, "maximum": 31536000 },
+        "state": { "enum": ["fresh", "stale", "expired", "unknown"] }
+      }
+    },
+    "payload_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "digest"],
+      "properties": {
+        "id": { "type": "string", "minLength": 3, "maxLength": 200 },
+        "version": { "$ref": "#/$defs/semver" },
+        "digest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "evidence_refs": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "ref"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,128}$" },
+          "kind": { "enum": ["file", "url", "audit_event", "digest"] },
+          "ref": { "type": "string", "minLength": 1, "maxLength": 500 },
+          "digest": { "$ref": "#/$defs/digest" }
+        }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "payload_digest"],
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "payload_digest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "payload": true
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{2,62}$" },
+    "semver": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$" },
+    "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "globalScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": { "kind": { "const": "global" } }
+    },
+    "projectScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "project_root_digest"],
+      "properties": {
+        "kind": { "const": "project" },
+        "project_root_digest": { "$ref": "#/$defs/digest" }
+      }
+    }
+  }
+}
