@@ -55,7 +55,13 @@ const SCOPE_MARKERS = [".env", ".nirvana", ".git", "package.json", "pyproject.to
 function isInvalidProjectRoot(dir: string): boolean {
   if (!dir || dir === "/" || dir === "") return true;
   try {
-    if (path.resolve(dir) === path.resolve(process.env.HOME || os.homedir())) return true;
+    const resolved = path.resolve(dir);
+    if (resolved === path.resolve(process.env.HOME || os.homedir())) return true;
+    if (process.platform === "win32" && process.env.SystemRoot) {
+      const systemRoot = path.resolve(process.env.SystemRoot);
+      if (resolved.toLowerCase() === systemRoot.toLowerCase() ||
+          resolved.toLowerCase().startsWith(systemRoot.toLowerCase() + path.sep)) return true;
+    }
   } catch {}
   return false;
 }
