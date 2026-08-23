@@ -12,6 +12,17 @@ import {
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  digestPayload,
+  digestSnapshot,
+  digestSource,
+} from "../../lib/glance/extensions/canonicalize.ts";
+import type {
+  GlanceExtensionDatasetEnvelopeV1,
+  GlanceExtensionManifestV1,
+  LoadedGlanceExtension,
+} from "../../lib/glance/extensions/types.ts";
+import type { ExtensionSchemas } from "../../lib/glance/extensions/loader.ts";
 
 export const JSON_MIME = "application/json; charset=utf-8" as const;
 export const HTML_MIME = "text/html; charset=utf-8" as const;
@@ -33,6 +44,103 @@ export interface FilesystemFixture {
 }
 
 const digest = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
+
+const SCHEMA_DIR = join(import.meta.dir, "../../lib/glance/extensions/schemas");
+const readSchema = (name: string) => JSON.parse(readFileSync(join(SCHEMA_DIR, name), "utf8"));
+
+export const SCHEMAS: ExtensionSchemas = {
+  manifest: readSchema("glance-extension-manifest.schema.json"),
+  envelope: readSchema("glance-extension-dataset-envelope.schema.json"),
+  catalog: readSchema("glance-extension-catalog.schema.json"),
+  publicError: readSchema("glance-extension-public-error.schema.json"),
+  message: readSchema("glance-extension-message.schema.json"),
+};
+
+export const ZERO_DIGEST = `sha256:${"0".repeat(64)}` as const;
+export const UI_BYTES = new TextEncoder().encode(
+  "<!doctype html>\n<meta charset=\"utf-8\">\n<title>Fixture extension</title>\n",
+);
+
+export function validManifest(id = "fixture-ext", order = 200): GlanceExtensionManifestV1 {
+  return {
+    schema_version: "1.0.0",
+    id,
+    version: "1.0.0",
+    display: {
+      title: `Fixture ${id}`,
+      description: `Fixture extension ${id}`,
+      icon: "activity",
+      order,
+    },
+    compatibility: { minimum: "1.0.0", maximum_tested: "1.0.0" },
+    ui: { entrypoint: "ui/index.html", sandbox: "allow-scripts", theme_contract: "glance.ui.tokens.v1" },
+    datasets: [{
+      id: "snapshot",
+      path: "data/snapshot.snapshot.json",
+      envelope_schema: "https://schemas.nirvana-os.dev/glance/dataset-envelope/1.0.0",
+      payload_schema: { id: "fixture.payload", version: "1.0.0", digest: ZERO_DIGEST },
+      max_bytes: 4096,
+      refresh: "on-request",
+    }],
+    files: [{
+      path: "ui/index.html",
+      mime: HTML_MIME,
+      bytes: UI_BYTES.byteLength,
+      sha256: digest(UI_BYTES),
+    }],
+    capabilities: ["read_snapshot"],
+    provenance: {
+      publisher_id: "spec-fixture",
+      build_id: "task4-fixture",
+      built_at: "2026-08-22T12:00:00Z",
+      source_ref: "offline-task4-fixture",
+    },
+    external_navigation: { mode: "host-mediated", allowed_hosts: ["github.com"] },
+  } as GlanceExtensionManifestV1;
+}
+
+export function validEnvelope(
+  extensionId = "fixture-ext",
+  scope: "global" | "project" = "global",
+  projectRootDigest?: `sha256:${string}`,
+): GlanceExtensionDatasetEnvelopeV1 {
+  const envelope = {
+    schema_version: "1.0.0",
+    extension_id: extensionId,
+    dataset_id: "snapshot",
+    generated_at: "2026-08-22T12:05:00Z",
+    status: "pass",
+    scope: scope === "project"
+      ? { kind: "project", project_root_digest: projectRootDigest }
+      : { kind: "global" },
+    subject: { type: "repository", id: "fixture", digest: ZERO_DIGEST },
+    source: {
+      kind: "local_file",
+      label: "offline fixture",
+      digest: ZERO_DIGEST,
+      artifacts: [{ id: "manifest", digest: ZERO_DIGEST }],
+    },
+    freshness: {
+      observed_at: "2026-08-22T12:00:00Z",
+      max_age_seconds: 31_536_000,
+      state: "fresh",
+    },
+    payload_schema: { id: "fixture.payload", version: "1.0.0", digest: ZERO_DIGEST },
+    evidence_refs: [{ id: "manifest", kind: "digest", ref: ZERO_DIGEST, digest: ZERO_DIGEST }],
+    integrity: { algorithm: "sha256", payload_digest: ZERO_DIGEST },
+    payload: { records: [] },
+  } as unknown as GlanceExtensionDatasetEnvelopeV1;
+  envelope.source.digest = digestSource(envelope.source);
+  envelope.integrity.payload_digest = digestPayload(envelope.payload);
+  envelope.snapshot_id = digestSnapshot(envelope as unknown as Record<string, unknown>);
+  return envelope;
+}
+
+export const validRecord: LoadedGlanceExtension = {
+  manifest: validManifest(),
+  manifest_digest: `sha256:${"a".repeat(64)}`,
+  absoluteRoot: "",
+};
 
 export function createFilesystemFixture(): FilesystemFixture {
   const sandbox = mkdtempSync(join(tmpdir(), "glance-extension-fs-"));

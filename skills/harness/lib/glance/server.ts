@@ -40,6 +40,7 @@ import { readEnvFile, writeEnvFile, setVar, deleteVar, getVar, toMap } from "../
 import { CONFIG_SCHEMA, getField, isEditableKey, maskSecret } from "./config-schema.ts";
 import { validateMindCloneFile, type ValidationResult } from "../../../_shared/lib/mindclone-validator.ts";
 import { handleObservabilityRoute } from "./views/observability-handler.ts";
+import { handleExtensionRoute, type ExtensionRouteContext } from "./extensions/routes.ts";
 
 const VIEWS_DIR = path.dirname(import.meta.path) + "/views";
 // Runtime state lives in the engine's own home, never in a runtime's dir.
@@ -60,6 +61,7 @@ interface ServerOptions {
   idleMin: number;
   allowActions: boolean;  // future use; default false
   theme: "apple" | "apple-dark" | "awwwards";
+  extensionRoutes?: ExtensionRouteContext;
 }
 
 // ─── Setup copy helper (used by /api/setup/copy-batch and /api/setup/copy-stream) ───
@@ -247,6 +249,13 @@ export async function startServer(opts: ServerOptions) {
       bumpActivity();
       const u = new URL(req.url);
       const p = u.pathname;
+
+      const extensionPath = p === "/api/extensions" || p.startsWith("/api/extensions/") ||
+        p === "/extensions" || p.startsWith("/extensions/");
+      if (opts.extensionRoutes && extensionPath) {
+        const extensionResponse = await handleExtensionRoute(req, opts.extensionRoutes);
+        if (extensionResponse) return extensionResponse;
+      }
 
       // ─── Project-scope filter (?project=<absolute_path>) ────────────────
       // Frontend sends this on Agents/Runs/Cost/Memory/Activity when the user
