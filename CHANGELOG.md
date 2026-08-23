@@ -6,6 +6,20 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### Contention on Windows stopped looking like a crash
+
+`withLock` treated anything but `EEXIST` as a real error. Windows has a
+second answer for "somebody else has this": a directory whose deletion is
+still pending rejects `mkdir` with `EPERM`, and an indexer or antivirus
+holding a handle turns it into `EACCES` or `EBUSY`. All three are the
+ordinary rm/mkdir race between two contenders, and rethrowing them made a
+spend-tracker or cooldown write die instead of waiting its turn. They now
+poll like `EEXIST` does — on Windows only, since on POSIX those codes still
+mean what they say. When the wait does time out, the message reports the code
+it kept receiving rather than blaming a live holder that may not exist.
+
 ## 0.7.11 — 2026-08-23
 
 ### The engine instructed the runtimes to watch, never to work
