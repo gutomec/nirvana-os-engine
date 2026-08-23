@@ -79,6 +79,47 @@ test("EXT-JCS-REJECTS-NON-JSON-VALUES", () => {
   expect(() => canonicalizeJson(Number.POSITIVE_INFINITY)).toThrow("NONFINITE");
   expect(() => canonicalizeJson(undefined)).toThrow("JCS_UNSUPPORTED_TYPE");
   expect(() => canonicalizeJson("\ud800")).toThrow("LONE_SURROGATE");
+  expect(() => canonicalizeJson([undefined])).toThrow("JCS_UNSUPPORTED_TYPE");
+  expect(() => canonicalizeJson({ nested: { value: 1n } })).toThrow("JCS_UNSUPPORTED_TYPE");
+  expect(() => canonicalizeJson({ nested: () => 1 })).toThrow("JCS_UNSUPPORTED_TYPE");
+  expect(() => canonicalizeJson({ nested: Symbol("value") })).toThrow("JCS_UNSUPPORTED_TYPE");
+  expect(() => canonicalizeJson({ nested: Number.NaN })).toThrow("NONFINITE");
+});
+
+test("EXT-JCS-REJECTS-SPARSE-AND-DECORATED-ARRAYS", () => {
+  expect(() => canonicalizeJson(new Array(1))).toThrow("JCS_UNSUPPORTED_TYPE");
+  expect(() => canonicalizeJson(new Array(2))).toThrow("JCS_UNSUPPORTED_TYPE");
+  const decorated = [1] as number[] & { extra?: number };
+  decorated.extra = 2;
+  expect(() => canonicalizeJson(decorated)).toThrow("JCS_UNSUPPORTED_TYPE");
+  const symbolDecorated = [1];
+  Object.defineProperty(symbolDecorated, Symbol("secret"), { value: 2 });
+  expect(() => canonicalizeJson(symbolDecorated)).toThrow("JCS_UNSUPPORTED_TYPE");
+});
+
+test("EXT-JCS-REJECTS-EXOTIC-OBJECTS-SYMBOLS-AND-CYCLES", () => {
+  class RecordLike { value = 1; }
+  for (const value of [new Date(0), new Map(), new Set(), new Uint8Array([1]), new RecordLike()]) {
+    expect(() => canonicalizeJson(value)).toThrow("JCS_UNSUPPORTED_TYPE");
+  }
+  const symbolOnly = { [Symbol("secret")]: 1 };
+  expect(() => canonicalizeJson(symbolOnly)).toThrow("JCS_UNSUPPORTED_TYPE");
+  const hidden = {};
+  Object.defineProperty(hidden, "secret", { value: 1 });
+  expect(() => canonicalizeJson(hidden)).toThrow("JCS_UNSUPPORTED_TYPE");
+  const accessor = { get value() { return 1; } };
+  expect(() => canonicalizeJson(accessor)).toThrow("JCS_UNSUPPORTED_TYPE");
+  const cyclic: Record<string, unknown> = {};
+  cyclic.self = cyclic;
+  expect(() => canonicalizeJson(cyclic)).toThrow("JCS_UNSUPPORTED_TYPE");
+  const shared = { value: 1 };
+  expect(() => canonicalizeJson([shared, shared])).toThrow("JCS_UNSUPPORTED_TYPE");
+});
+
+test("EXT-JCS-ACCEPTS-PLAIN-AND-NULL-PROTOTYPE-RECORDS", () => {
+  const nullRecord = Object.assign(Object.create(null) as Record<string, unknown>, { b: 1, a: 2 });
+  expect(canonicalizeJson({ b: 1, a: 2 })).toBe('{"a":2,"b":1}');
+  expect(canonicalizeJson(nullRecord)).toBe('{"a":2,"b":1}');
 });
 
 const PAYLOAD = {

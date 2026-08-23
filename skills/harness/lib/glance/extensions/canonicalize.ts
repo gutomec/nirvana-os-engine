@@ -14,7 +14,15 @@ function assertUnicodeScalarString(value: string): void {
   }
 }
 
-function canonicalize(value: unknown): string {
+const unsupported = (): never => { throw new TypeError("JCS_UNSUPPORTED_TYPE"); };
+
+function assertDataProperty(target: object, key: PropertyKey): PropertyDescriptor {
+  const descriptor = Object.getOwnPropertyDescriptor(target, key);
+  if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) unsupported();
+  return descriptor;
+}
+
+function canonicalize(value: unknown, seen: WeakSet<object>): string {
   if (value === null) return "null";
   if (typeof value === "boolean") return value ? "true" : "false";
   if (typeof value === "number") {
@@ -25,20 +33,40 @@ function canonicalize(value: unknown): string {
     assertUnicodeScalarString(value);
     return JSON.stringify(value);
   }
-  if (Array.isArray(value)) return `[${value.map(canonicalize).join(",")}]`;
+  if (Array.isArray(value)) {
+    if (Object.getPrototypeOf(value) !== Array.prototype || seen.has(value)) unsupported();
+    seen.add(value);
+    const keys = Reflect.ownKeys(value);
+    if (keys.some((key) => typeof key !== "string" || (key !== "length" && !/^(0|[1-9]\d*)$/.test(key)))) unsupported();
+    if (keys.length !== value.length + 1) unsupported();
+    const items: string[] = [];
+    for (let index = 0; index < value.length; index++) {
+      const key = String(index);
+      const descriptor = assertDataProperty(value, key);
+      items.push(canonicalize(descriptor.value, seen));
+    }
+    return `[${items.join(",")}]`;
+  }
   if (typeof value === "object") {
+    const prototype = Object.getPrototypeOf(value);
+    if ((prototype !== Object.prototype && prototype !== null) || seen.has(value)) unsupported();
+    seen.add(value);
     const record = value as Record<string, unknown>;
-    const keys = Object.keys(record).sort();
+    const ownKeys = Reflect.ownKeys(record);
+    if (ownKeys.some((key) => typeof key !== "string")) unsupported();
+    const keys = ownKeys as string[];
+    for (const key of keys) assertDataProperty(record, key);
+    keys.sort();
     return `{${keys.map((key) => {
       assertUnicodeScalarString(key);
-      return `${JSON.stringify(key)}:${canonicalize(record[key])}`;
+      return `${JSON.stringify(key)}:${canonicalize(record[key], seen)}`;
     }).join(",")}}`;
   }
-  throw new TypeError("JCS_UNSUPPORTED_TYPE");
+  unsupported();
 }
 
 export function canonicalizeJson(value: unknown): string {
-  return canonicalize(value);
+  return canonicalize(value, new WeakSet<object>());
 }
 
 export function digestRawBytes(bytes: Uint8Array): Digest {
