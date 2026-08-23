@@ -395,6 +395,7 @@ otherwise, authenticates with keys whose budget and quota are attributes of
 the KEY (never client input), and refuses to run as root.
 
 ```bash
+nrv activate --all --only-declared   # install what the squads' dependencies.yaml declare
 nrv serve keygen --budget-usd 5      # token shown once
 nrv serve --port 7777                # local by default; proxy TLS to expose
 ```
