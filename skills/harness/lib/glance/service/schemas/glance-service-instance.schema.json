@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.nirvana-os.dev/glance/service-instance/1.0.0",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "instance_id", "pid", "state", "started_at", "config_digest", "process_digest", "control_secret_ref", "control_secret_digest", "log_ref"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "instance_id": { "type": "string", "format": "uuid" },
+    "pid": { "type": "integer", "minimum": 1 },
+    "state": { "enum": ["starting", "running", "stopping", "error"] },
+    "started_at": { "type": "string", "format": "date-time" },
+    "config_digest": { "$ref": "#/$defs/digest" },
+    "process_digest": { "$ref": "#/$defs/digest" },
+    "control_secret_ref": { "type": "string", "pattern": "^secrets/[a-f0-9-]{36}\\.control$" },
+    "control_secret_digest": { "$ref": "#/$defs/digest" },
+    "log_ref": { "type": "string", "pattern": "^logs/[A-Za-z0-9._-]{1,128}\\.log$" },
+    "last_restart": {
+      "type": "object", "additionalProperties": false,
+      "required": ["attempted_at", "requested_config_digest", "effective_config_digest", "rollback_state"],
+      "properties": {
+        "attempted_at": { "type": "string", "format": "date-time" },
+        "requested_config_digest": { "$ref": "#/$defs/digest" },
+        "effective_config_digest": { "$ref": "#/$defs/digest" },
+        "rollback_state": { "enum": ["not_needed", "restored_previous", "restore_failed"] }
+      }
+    }
+  },
+  "$defs": { "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" } }
+}

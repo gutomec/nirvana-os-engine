@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.nirvana-os.dev/glance/service-stop-request/1.0.0",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "request_id", "instance_id", "action", "created_at", "expires_at", "nonce_ref", "nonce_digest", "auth_algorithm", "auth_tag"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "request_id": { "type": "string", "format": "uuid" },
+    "instance_id": { "type": "string", "format": "uuid" },
+    "action": { "const": "stop" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "expires_at": { "type": "string", "format": "date-time" },
+    "nonce_ref": { "type": "string", "pattern": "^control/nonces/[a-f0-9-]{36}\\.nonce$" },
+    "nonce_digest": { "$ref": "#/$defs/digest" },
+    "auth_algorithm": { "const": "hmac-sha256" },
+    "auth_tag": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  },
+  "$defs": { "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" } }
+}

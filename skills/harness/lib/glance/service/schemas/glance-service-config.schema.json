@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.nirvana-os.dev/glance/service-config/1.0.0",
+  "oneOf": [
+    {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "scope", "host", "port", "read_only", "lifetime", "no_open"],
+      "properties": {
+        "schema_version": { "const": "1.0.0" }, "scope": { "const": "global" },
+        "host": { "const": "127.0.0.1" }, "port": { "type": "integer", "minimum": 1024, "maximum": 65535 },
+        "read_only": { "const": true }, "lifetime": { "const": "persistent" }, "no_open": { "const": true }
+      }
+    },
+    {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "scope", "project_root", "project_root_digest", "host", "port", "read_only", "lifetime", "no_open"],
+      "properties": {
+        "schema_version": { "const": "1.0.0" }, "scope": { "const": "project" },
+        "project_root": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "project_root_digest": { "$ref": "#/$defs/digest" },
+        "host": { "const": "127.0.0.1" }, "port": { "type": "integer", "minimum": 1024, "maximum": 65535 },
+        "read_only": { "const": true }, "lifetime": { "const": "persistent" }, "no_open": { "const": true }
+      }
+    }
+  ],
+  "$defs": { "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" } }
+}
