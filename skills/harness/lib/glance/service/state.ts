@@ -1,7 +1,7 @@
-import { closeSync, constants, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, fsyncSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { basename, dirname, join } from "node:path";
-import { restrictDirectory, restrictFreshFile, fsyncDirectory } from "./permissions.ts";
+import { restrictDirectory, openPrivateFreshFile, fsyncDirectory } from "./permissions.ts";
 import { parseStrictJson } from "./strict-json.ts";
 
 export class ServiceIoError extends Error { constructor(operation: string, cause?: unknown) { super(`SERVICE_IO:${operation}`, { cause }); } }
@@ -37,8 +37,7 @@ function writePrivateBytesWithRuntime(path: string, bytes: Uint8Array, io: Priva
   try {
     mkdirSync(parent, { recursive: true, mode: 0o700 });
     restrictDirectory(parent);
-    descriptor = openSync(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
-    restrictFreshFile(temporary, descriptor);
+    descriptor = openPrivateFreshFile(temporary);
     writeFileSync(descriptor, bytes);
     io.fsyncFile(descriptor);
     io.close(descriptor);

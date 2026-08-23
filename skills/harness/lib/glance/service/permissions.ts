@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { chmodSync, closeSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, rmSync, statSync } from "node:fs";
+import { chmodSync, closeSync, constants, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
 export class ServicePermissionError extends Error {}
@@ -71,7 +71,7 @@ function assertFreshFileIdentity(path: string, descriptor: number): void {
   if (opened.dev !== named.dev || opened.ino !== named.ino) throw new ServicePermissionError("FRESH_FILE_IDENTITY");
 }
 
-export function restrictFreshFile(path: string, descriptor: number): void {
+function restrictFreshFile(path: string, descriptor: number): void {
   assertFreshFileIdentity(path, descriptor);
   if (process.platform === "win32") {
     const candidates = [...new Set(inspectWindowsAces(path).filter(ace => ace.type === "allow" && ace.rights === "0x1200a9").map(ace => ace.sid))];
@@ -79,6 +79,21 @@ export function restrictFreshFile(path: string, descriptor: number): void {
     restrictWindows(path, candidates[0]);
   } else { chmodSync(path, 0o600); assertPrivateMode(path, 0o600); }
   assertFreshFileIdentity(path, descriptor);
+}
+
+export function openPrivateFreshFile(path: string): number {
+  let descriptor: number | undefined;
+  try {
+    descriptor = openSync(path, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
+    restrictFreshFile(path, descriptor);
+    return descriptor;
+  } catch (error) {
+    if (descriptor !== undefined) {
+      try { closeSync(descriptor); } catch {}
+      try { rmSync(path, { force: true }); } catch {}
+    }
+    throw error;
+  }
 }
 
 export function fsyncDirectory(path: string): void {
