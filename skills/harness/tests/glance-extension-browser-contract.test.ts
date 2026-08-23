@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { executeRealBrowser } from "./helpers/glance-real-browser.ts";
+import { executeRealBrowser, glanceRealBrowserInternals } from "./helpers/glance-real-browser.ts";
 import {
   runBrowserContract,
   type BrowserProbe,
@@ -28,6 +28,62 @@ test("EXT-BROWSER-REJECTS-INVALID-LOCAL-BINARY fails before launch when the conf
     else delete process.env.GLANCE_TEST_BROWSER;
   }
 });
+
+test("EXT-BROWSER-CDP-DEADLINE times out commands and events once without retry", async () => {
+  const operationTimeoutMs = 25;
+  const packets: Array<{ id: number; method: string }> = [];
+  let fourthPacket!: () => void;
+  const fourthPacketReceived = new Promise<void>((resolve) => { fourthPacket = resolve; });
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch(request, server) {
+      if (server.upgrade(request)) return;
+      return new Response("WebSocket upgrade required", { status: 426 });
+    },
+    websocket: {
+      message(_socket, raw) {
+        const packet = JSON.parse(String(raw)) as { id: number; method: string };
+        packets.push(packet);
+        if (packets.length === 4) fourthPacket();
+      },
+    },
+  });
+  let connection: Awaited<ReturnType<typeof glanceRealBrowserInternals.CdpConnection.connect>> | undefined;
+  try {
+    connection = await glanceRealBrowserInternals.CdpConnection.connect(
+      `ws://127.0.0.1:${server.port}/cdp`,
+      operationTimeoutMs,
+    );
+    const startedAt = performance.now();
+    const results = await Promise.all([
+      connection.send("Input.dispatchMouseEvent").then(() => "resolved", (error: Error) => error.message),
+      connection.send("Input.dispatchKeyEvent").then(() => "resolved", (error: Error) => error.message),
+      connection.send("Target.createTarget").then(() => "resolved", (error: Error) => error.message),
+      connection.waitFor("Page.loadEventFired", "missing-session").then(() => "resolved", (error: Error) => error.message),
+    ]);
+    const elapsedMs = performance.now() - startedAt;
+
+    expect(results).toEqual([
+      "CDP_COMMAND_TIMEOUT:Input.dispatchMouseEvent",
+      "CDP_COMMAND_TIMEOUT:Input.dispatchKeyEvent",
+      "CDP_COMMAND_TIMEOUT:Target.createTarget",
+      "CDP_EVENT_TIMEOUT:Page.loadEventFired",
+    ]);
+    expect(elapsedMs).toBeGreaterThanOrEqual(15);
+    expect(elapsedMs).toBeLessThan(1_000);
+    await Promise.race([fourthPacketReceived, Bun.sleep(operationTimeoutMs * 2)]);
+    expect(packets.map(({ method }) => method).sort()).toEqual([
+      "Input.dispatchKeyEvent",
+      "Input.dispatchMouseEvent",
+      "Target.createTarget",
+    ]);
+    expect(new Set(packets.map(({ id }) => id)).size).toBe(3);
+  } finally {
+    await connection?.close();
+    await server.stop(true);
+  }
+}, 5_000);
 
 function validationProbe(
   version: Partial<Awaited<ReturnType<BrowserProbe["browserVersion"]>>> = {},

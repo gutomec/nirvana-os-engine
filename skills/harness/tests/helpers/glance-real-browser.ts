@@ -14,6 +14,8 @@ interface CdpMessage {
   sessionId?: string;
 }
 
+const DEFAULT_CDP_OPERATION_TIMEOUT_MS = 30_000;
+
 class CdpConnection {
   private nextId = 1;
   private pending = new Map<number, { resolve(value: any): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }>();
@@ -22,7 +24,10 @@ class CdpConnection {
   private readonly closedPromise: Promise<void>;
   private resolveClosed!: () => void;
 
-  private constructor(private socket: WebSocket) {
+  private constructor(
+    private socket: WebSocket,
+    private readonly operationTimeoutMs: number,
+  ) {
     this.closedPromise = new Promise((resolve) => { this.resolveClosed = resolve; });
     socket.addEventListener("message", (event) => this.receive(event.data));
     socket.addEventListener("close", () => {
@@ -37,14 +42,17 @@ class CdpConnection {
     });
   }
 
-  static async connect(url: string): Promise<CdpConnection> {
+  static async connect(
+    url: string,
+    operationTimeoutMs = DEFAULT_CDP_OPERATION_TIMEOUT_MS,
+  ): Promise<CdpConnection> {
     const socket = new WebSocket(url);
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error("CDP_CONNECT_TIMEOUT")), 10_000);
       socket.addEventListener("open", () => { clearTimeout(timer); resolve(); }, { once: true });
       socket.addEventListener("error", () => { clearTimeout(timer); reject(new Error("CDP_CONNECT_FAILED")); }, { once: true });
     });
-    return new CdpConnection(socket);
+    return new CdpConnection(socket, operationTimeoutMs);
   }
 
   private async receive(raw: unknown) {
@@ -71,7 +79,7 @@ class CdpConnection {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`CDP_COMMAND_TIMEOUT:${method}`));
-      }, 10_000);
+      }, this.operationTimeoutMs);
       this.pending.set(id, { resolve, reject, timer });
     });
   }
@@ -83,7 +91,7 @@ class CdpConnection {
     return () => listeners.delete(listener);
   }
 
-  waitFor(method: string, sessionId: string, timeout = 10_000): Promise<CdpMessage> {
+  waitFor(method: string, sessionId: string, timeout = this.operationTimeoutMs): Promise<CdpMessage> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { off(); reject(new Error(`CDP_EVENT_TIMEOUT:${method}`)); }, timeout);
       const off = this.on(method, (message) => {
@@ -103,6 +111,8 @@ class CdpConnection {
     await this.closedPromise;
   }
 }
+
+export const glanceRealBrowserInternals = { CdpConnection };
 
 async function devtoolsUrl(child: ReturnType<typeof Bun.spawn>): Promise<string> {
   const stream = child.stderr;
