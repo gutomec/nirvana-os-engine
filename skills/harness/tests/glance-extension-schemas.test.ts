@@ -15,8 +15,8 @@ const APPROVED_SPEC = process.env.GLANCE_APPROVED_SPEC;
 const APPROVED_SPEC_SHA256 = "d168be91f4df700336f811df3fee479e8b7bd276e5fe4ba22a6802c014480e74";
 const APPROVED_SPEC_BYTES = 119_512;
 const GOLDEN_SPEC = join(import.meta.dir, "fixtures", "glance-extension", "approved-schema-fences.md");
-const GOLDEN_SPEC_SHA256 = "207ec0060c449cc9dbd4e5689765f4d49d46e287f7e88c38f3ec1ea84ebc8033";
-const GOLDEN_SPEC_BYTES = 17_956;
+const GOLDEN_SPEC_SHA256 = "d1a137bd5b49b9ead138a0bd027503e4581af5f0983696ca82a7bdc2976c2f6b";
+const GOLDEN_SPEC_BYTES = 17_955;
 const SCHEMA_DIRECTORY = join(REPO, "skills", "harness", "lib", "glance", "extensions", "schemas");
 const EXPECTED = {
   "glance-extension-manifest.schema.json": "5ff61725bb126623bdddffe206b4782a25d02c07688f3d53af62edfc6a25b8e3",
