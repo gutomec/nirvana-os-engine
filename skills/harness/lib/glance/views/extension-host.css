@@ -1,0 +1,28 @@
+.glance-extension-host {
+  display: grid;
+  gap: var(--space-4, 16px);
+  color: var(--text-primary);
+}
+
+.glance-extension-frame {
+  width: 100%;
+  min-height: 420px;
+  border: 1px solid var(--border-default);
+  background: var(--surface-0);
+}
+
+.glance-extension-navigation {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+}
+
+.glance-extension-navigation[hidden] {
+  display: none;
+}
+
+.glance-extension-confirm:focus-visible,
+.glance-extension-cancel:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}

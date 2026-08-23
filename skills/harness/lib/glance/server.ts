@@ -1029,6 +1029,10 @@ export async function startServer(opts: ServerOptions) {
         "/awwwards-hero.js": "application/javascript",
         "/agent-swimlane-renderer.js": "application/javascript",
         "/agent-workspace-renderer.js": "application/javascript",
+        "/extension-message-schema-registry.js": "application/javascript",
+        "/extension-message-validator.js": "application/javascript",
+        "/extension-host.js": "application/javascript",
+        "/extension-host.css": "text/css",
       };
       if (STATIC_ASSETS[p]) {
         return new Response(readView(p.slice(1)), { headers: { "content-type": STATIC_ASSETS[p], "cache-control": "no-store" } });
