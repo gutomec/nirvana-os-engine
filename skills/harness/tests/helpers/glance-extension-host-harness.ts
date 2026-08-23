@@ -25,6 +25,7 @@ export interface ChannelHarness {
   state(): string;
   closedCounts(): { host: number; extension: number };
   listenerCounts(): { window: number; confirm: number; cancel: number };
+  pendingTimerCount(): number;
   inboundDeliveries(): number;
 }
 
@@ -50,7 +51,7 @@ class CountingEventTarget extends EventTarget {
   }
 }
 
-export function makeHostHarness(options: { theme?: string } = {}): ChannelHarness {
+export function makeHostHarness(options: { theme?: string; tokens?: Record<string, string> } = {}): ChannelHarness {
   let now = 0;
   let nextTimer = 1;
   const timers = new Map<number, { at: number; callback: () => void }>();
@@ -91,7 +92,7 @@ export function makeHostHarness(options: { theme?: string } = {}): ChannelHarnes
     extensionId: "fixture-ext",
     locale: "pt-BR",
     theme: options.theme ?? "apple",
-    tokens: {
+    tokens: options.tokens ?? {
       "surface-0": "#fff", "surface-1": "#f8f8f8", "surface-2": "#eee",
       "text-primary": "#111", "text-secondary": "#555", "border-default": "#ccc",
       "border-focus": "#06f", accent: "#06f", "success-fg": "#070",
@@ -153,6 +154,7 @@ export function makeHostHarness(options: { theme?: string } = {}): ChannelHarnes
     state: host.state,
     closedCounts: () => ({ host: hostClosed, extension: extensionClosed }),
     listenerCounts: () => ({ window: windowTarget.listenerCount(), confirm: confirmControl.listenerCount(), cancel: cancelControl.listenerCount() }),
+    pendingTimerCount: () => timers.size,
     inboundDeliveries: host.inboundDeliveries,
   };
 }

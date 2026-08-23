@@ -32,6 +32,7 @@ export async function runBrowserContract(probe: BrowserProbe) {
   if (versionFields.some((value) => typeof value !== "string" || value.trim() === "")) throw new Error("BROWSER_VERSION_INCOMPLETE");
   if (!version.cdpSessionId || version.cdpSessionId !== observed.cdpSessionId) throw new Error("BROWSER_CDP_SESSION_MISMATCH");
   if (!observed.frameId || !observed.targetFrameId || !observed.eventTrusted || observed.eventType !== "click" || observed.messageType !== "extension.open_external_url") throw new Error("IFRAME_REQUEST_NOT_OBSERVED");
+  if (observed.frameId !== observed.targetFrameId) throw new Error("IFRAME_FRAME_MISMATCH");
   const iframeTrustedOpened = await openedBy(probe, () => probe.confirmPointer());
   await probe.requestFromIframe(); await probe.cancelPointer();
   const cancelOpened = await openedBy(probe, () => probe.confirmPointer());

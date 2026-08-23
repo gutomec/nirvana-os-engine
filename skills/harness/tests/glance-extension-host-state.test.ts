@@ -64,6 +64,17 @@ test.each(REJECTIONS)("$id closes the production channel with one redacted rejec
   expect(h.listenerCounts()).toEqual({ window: 0, confirm: 0, cancel: 0 });
 });
 
+test("EXT-HOST-INVALID-INIT leaves no ready timer after terminal cleanup", async () => {
+  const h = makeHostHarness({ tokens: {} });
+  h.connect();
+  await h.flush();
+  expect(h.state()).toBe("rejected");
+  expect(h.events).toEqual([{ event: "extension_message_rejected", sequence: 0 }]);
+  expect(h.listenerCounts()).toEqual({ window: 0, confirm: 0, cancel: 0 });
+  expect(h.closedCounts()).toEqual({ host: 1, extension: 1 });
+  expect(h.pendingTimerCount()).toBe(0);
+});
+
 test("EXT-HOST-AFTER-CLOSE-IS-DISCARDED observes the real platform port after-close behavior", async () => {
   const h = makeHostHarness();
   h.connect(); h.send(ready(h));

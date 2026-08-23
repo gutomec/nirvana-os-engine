@@ -17,15 +17,22 @@ class CdpConnection {
   private nextId = 1;
   private pending = new Map<number, { resolve(value: any): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }>();
   private listeners = new Map<string, Set<(message: CdpMessage) => void>>();
+  private closed = false;
+  private readonly closedPromise: Promise<void>;
+  private resolveClosed!: () => void;
 
   private constructor(private socket: WebSocket) {
+    this.closedPromise = new Promise((resolve) => { this.resolveClosed = resolve; });
     socket.addEventListener("message", (event) => this.receive(event.data));
     socket.addEventListener("close", () => {
+      this.closed = true;
       for (const waiter of this.pending.values()) {
         clearTimeout(waiter.timer);
         waiter.reject(new Error("CDP_CLOSED"));
       }
       this.pending.clear();
+      this.listeners.clear();
+      this.resolveClosed();
     });
   }
 
@@ -87,7 +94,13 @@ class CdpConnection {
     });
   }
 
-  close() { this.socket.close(); }
+  isClosed() { return this.closed; }
+
+  async close() {
+    if (this.closed) return;
+    if (this.socket.readyState !== WebSocket.CLOSED) this.socket.close();
+    await this.closedPromise;
+  }
 }
 
 async function devtoolsUrl(child: ReturnType<typeof Bun.spawn>): Promise<string> {
@@ -141,7 +154,74 @@ function startFixtureServer() {
   return { server, requests, url: `http://127.0.0.1:${server.port}/host.html` };
 }
 
-export async function executeRealBrowser(): Promise<any> {
+async function browserProcessIds(profile: string): Promise<number[]> {
+  if (process.platform === "win32") {
+    const probe = Bun.spawn([
+      "pwsh", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
+      "$needle=$env:GLANCE_BROWSER_PROFILE; Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object { $_.CommandLine -and $_.CommandLine.IndexOf($needle,[StringComparison]::OrdinalIgnoreCase) -ge 0 } | ForEach-Object { $_.ProcessId }",
+    ], {
+      env: { ...process.env, GLANCE_BROWSER_PROFILE: profile },
+      stdin: "ignore", stdout: "pipe", stderr: "pipe", windowsHide: true,
+    });
+    const [exitCode, stdout, stderr] = await Promise.all([
+      probe.exited,
+      new Response(probe.stdout).text(),
+      new Response(probe.stderr).text(),
+    ]);
+    if (exitCode !== 0) throw new Error(`BROWSER_PROCESS_PROBE_FAILED:${stderr.trim()}`);
+    return stdout.split(/\r?\n/).map((value) => Number(value.trim())).filter((value) => Number.isSafeInteger(value) && value > 0);
+  }
+  const probe = Bun.spawn(["ps", "-axo", "pid=,command="], {
+    stdin: "ignore", stdout: "pipe", stderr: "pipe",
+  });
+  const [exitCode, stdout, stderr] = await Promise.all([
+    probe.exited,
+    new Response(probe.stdout).text(),
+    new Response(probe.stderr).text(),
+  ]);
+  if (exitCode !== 0) throw new Error(`BROWSER_PROCESS_PROBE_FAILED:${stderr.trim()}`);
+  return stdout.split(/\r?\n/).filter((line) => line.includes(profile)).map((line) => Number(/^\s*(\d+)/.exec(line)?.[1])).filter((value) => Number.isSafeInteger(value) && value > 0);
+}
+
+async function waitForBrowserProcessTreeExit(profile: string, timeout: number): Promise<number[]> {
+  const deadline = Date.now() + timeout;
+  let remaining: number[] = [];
+  do {
+    remaining = await browserProcessIds(profile);
+    if (remaining.length === 0) return remaining;
+    await Bun.sleep(25);
+  } while (Date.now() < deadline);
+  return remaining;
+}
+
+async function closeBrowserProcessTree(profile: string): Promise<number[]> {
+  let remaining = await waitForBrowserProcessTreeExit(profile, 2_000);
+  if (remaining.length === 0) return remaining;
+  for (const pid of remaining) {
+    try { process.kill(pid, "SIGTERM"); } catch {}
+  }
+  remaining = await waitForBrowserProcessTreeExit(profile, 5_000);
+  if (remaining.length === 0) return remaining;
+  for (const pid of remaining) {
+    try { process.kill(pid, "SIGKILL"); } catch {}
+  }
+  return waitForBrowserProcessTreeExit(profile, 5_000);
+}
+
+export interface BrowserCleanupObservation {
+  processIds: number[];
+  childExited: boolean;
+  connectionClosed: boolean;
+  profileRemoved: boolean;
+}
+
+export interface RealBrowserExecutionOptions {
+  onLaunch?(value: { pid: number; profile: string }): void;
+  afterConnect?(): void;
+  onCleanup?(value: BrowserCleanupObservation): void;
+}
+
+export async function executeRealBrowser(options: RealBrowserExecutionOptions = {}): Promise<any> {
   const browser = process.env.GLANCE_TEST_BROWSER;
   if (!browser) throw new Error("GLANCE_TEST_BROWSER_REQUIRED");
   if (!existsSync(browser)) throw new Error("GLANCE_TEST_BROWSER_NOT_FOUND");
@@ -166,9 +246,13 @@ export async function executeRealBrowser(): Promise<any> {
   ], { stdin: "ignore", stdout: "ignore", stderr: "pipe", windowsHide: true });
 
   let cdp: CdpConnection | undefined;
+  let result: any;
+  let browserProcessExited = false;
   try {
+    options.onLaunch?.({ pid: child.pid, profile });
     const wsUrl = await devtoolsUrl(child);
     cdp = await CdpConnection.connect(wsUrl);
+    options.afterConnect?.();
     const initialTargets = await cdp.send("Target.getTargets");
     const persistentTargets = new Set<string>(initialTargets.targetInfos.filter((item: any) => item.type === "page").map((item: any) => item.targetId));
     const created = await cdp.send("Target.createTarget", { url: "about:blank" });
@@ -204,9 +288,16 @@ export async function executeRealBrowser(): Promise<any> {
     await waitUntil("window.__hostMounted === true");
 
     let iframeSessionId: string | undefined;
-    let iframeFrameId: string | undefined;
+    let iframeTargetFrameId: string | undefined;
+    let iframeExecutionContextFrameId: string | undefined;
     const frameInfo = async () => {
-      if (iframeSessionId && iframeFrameId) return { frameId: iframeFrameId, sessionId: iframeSessionId };
+      if (iframeSessionId && iframeTargetFrameId && iframeExecutionContextFrameId) {
+        return {
+          targetFrameId: iframeTargetFrameId,
+          executionContextFrameId: iframeExecutionContextFrameId,
+          sessionId: iframeSessionId,
+        };
+      }
       const deadline = Date.now() + 10_000;
       let target: any;
       while (!target && Date.now() < deadline) {
@@ -218,12 +309,33 @@ export async function executeRealBrowser(): Promise<any> {
       const attachedIframe = await cdp!.send("Target.attachToTarget", { targetId: target.targetId, flatten: true });
       iframeSessionId = attachedIframe.sessionId;
       if (!iframeSessionId) throw new Error("IFRAME_CDP_SESSION_MISSING");
-      await cdp!.send("Runtime.enable", {}, iframeSessionId);
-      await cdp!.send("Page.enable", {}, iframeSessionId);
-      const tree = await cdp!.send("Page.getFrameTree", {}, iframeSessionId);
-      iframeFrameId = tree.frameTree.frame.id;
-      if (!iframeFrameId) throw new Error("IFRAME_FRAME_ID_MISSING");
-      return { frameId: iframeFrameId, sessionId: iframeSessionId };
+      let resolveExecutionContext!: (frameId: string) => void;
+      const executionContextFrame = new Promise<string>((resolve) => { resolveExecutionContext = resolve; });
+      const removeExecutionContextListener = cdp!.on("Runtime.executionContextCreated", (message) => {
+        if (message.sessionId !== iframeSessionId || iframeExecutionContextFrameId) return;
+        const auxData = message.params?.context?.auxData;
+        if (auxData?.isDefault !== true || typeof auxData.frameId !== "string" || !auxData.frameId) return;
+        iframeExecutionContextFrameId = auxData.frameId;
+        resolveExecutionContext(auxData.frameId);
+      });
+      try {
+        await cdp!.send("Runtime.enable", {}, iframeSessionId);
+        await cdp!.send("Page.enable", {}, iframeSessionId);
+        const tree = await cdp!.send("Page.getFrameTree", {}, iframeSessionId);
+        iframeTargetFrameId = tree.frameTree.frame.id;
+        if (!iframeTargetFrameId) throw new Error("IFRAME_TARGET_FRAME_ID_MISSING");
+        iframeExecutionContextFrameId = await Promise.race([
+          executionContextFrame,
+          Bun.sleep(10_000).then(() => { throw new Error("IFRAME_EXECUTION_CONTEXT_FRAME_ID_MISSING"); }),
+        ]);
+      } finally {
+        removeExecutionContextListener();
+      }
+      return {
+        targetFrameId: iframeTargetFrameId,
+        executionContextFrameId: iframeExecutionContextFrameId,
+        sessionId: iframeSessionId,
+      };
     };
     const iframe = await frameInfo();
     await waitUntil("document.querySelector('#request-open') !== null && document.querySelector('#payload').textContent.length > 0", iframe.sessionId);
@@ -254,8 +366,8 @@ export async function executeRealBrowser(): Promise<any> {
         return {
           eventTrusted: observed.trusted === "true",
           eventType: observed.type,
-          frameId: target.frameId,
-          targetFrameId: target.frameId,
+          frameId: target.executionContextFrameId,
+          targetFrameId: target.targetFrameId,
           messageType: observed.messageType,
           cdpSessionId: target.sessionId,
         };
@@ -312,20 +424,48 @@ export async function executeRealBrowser(): Promise<any> {
       },
     };
 
-    const result = await runBrowserContract(probe);
-    return result;
+    result = await runBrowserContract(probe);
   } finally {
-    try { await cdp?.send("Browser.close"); } catch {}
-    try { await Promise.race([child.exited, Bun.sleep(2_000)]); } catch {}
-    if (child.exitCode === null) child.kill("SIGTERM");
-    try { await child.exited; } catch {}
-    try { cdp?.close(); } catch {}
+    try {
+      await Promise.race([
+        cdp?.send("Browser.close") ?? Promise.resolve(),
+        Bun.sleep(2_000).then(() => { throw new Error("BROWSER_CLOSE_TIMEOUT"); }),
+      ]);
+    } catch {}
+    if (child.exitCode === null) {
+      const exited = await Promise.race([
+        child.exited.then(() => true),
+        Bun.sleep(2_000).then(() => false),
+      ]);
+      if (!exited && child.exitCode === null) child.kill("SIGTERM");
+    }
+    await child.exited;
+    browserProcessExited = true;
+    await cdp?.close();
     fixture.server.stop(true);
+    const remainingProcessIds = await closeBrowserProcessTree(profile);
     let cleanupError: unknown;
     for (let attempt = 0; attempt < 20; attempt++) {
       try { rmSync(profile, { recursive: true, force: true }); cleanupError = undefined; break; }
       catch (error) { cleanupError = error; await Bun.sleep(50); }
     }
+    const cleanupObservation = {
+      processIds: remainingProcessIds,
+      childExited: browserProcessExited,
+      connectionClosed: cdp?.isClosed() ?? true,
+      profileRemoved: !existsSync(profile),
+    };
+    options.onCleanup?.(cleanupObservation);
     if (cleanupError) throw cleanupError;
+    if (remainingProcessIds.length > 0) throw new Error(`BROWSER_PROCESS_TREE_CLEANUP_FAILED:${remainingProcessIds.join(",")}`);
+    if (!browserProcessExited) throw new Error("BROWSER_PROCESS_CLEANUP_FAILED");
+    if (cdp && !cdp.isClosed()) throw new Error("BROWSER_CONNECTION_CLEANUP_FAILED");
+    if (existsSync(profile)) throw new Error("BROWSER_PROFILE_CLEANUP_FAILED");
   }
+  return {
+    ...result,
+    browserProcessExited,
+    browserConnectionClosed: cdp?.isClosed() ?? true,
+    browserProfileRemoved: !existsSync(profile),
+  };
 }

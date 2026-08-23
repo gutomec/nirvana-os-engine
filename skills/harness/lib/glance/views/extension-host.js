@@ -201,13 +201,14 @@ export function mountExtensionHost(options) {
     channel.port1.onmessageerror = () => reject(-1);
     channel.port1.start?.();
     options.iframe.contentWindow.postMessage(CONNECT, "*", [channel.port2]);
-    sendPacket("host.init", {
+    const initSent = sendPacket("host.init", {
       extension_id: options.extensionId,
       api_version: "1.0.0",
       locale: options.locale,
       theme: options.theme,
       tokens: options.tokens,
     });
+    if (!initSent) return;
     readyTimer = setTimer(() => reject(-1), TIMEOUT_MS);
   }
 
