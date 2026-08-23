@@ -55,11 +55,26 @@ function buildFakeRepo(dir: string): void {
   fs.mkdirSync(path.join(dir, "node_modules"), { recursive: true });
 }
 
-function install(home: string, extraArgs: string[] = []): { code: number; out: string } {
+/**
+ * A PATH with the system utilities the installer shells out to (`which`/`where`,
+ * `sh`, `rsync`) and NO agent CLI. The installer's second install signal is the
+ * binary on PATH, so a test about a runtime being absent has to control PATH:
+ * inheriting the developer's made "no Claude Code here" true in CI (no `claude`
+ * on the runner) and false on any machine that actually has it installed.
+ */
+const BARE_PATH = process.platform === "win32"
+  ? path.join(process.env.SystemRoot || "C:\\Windows", "System32")
+  : "/usr/bin:/bin";
+
+function install(
+  home: string,
+  extraArgs: string[] = [],
+  envOverride: Record<string, string> = {},
+): { code: number; out: string } {
   const r = spawnSync(
     process.execPath,
     [path.join(fakeRepo, "scripts", "install.ts"), "--no-starter", "--no-index", "--no-hermes", ...extraArgs],
-    { env: { ...process.env, HOME: home, USERPROFILE: home, NIRVANA_PACKS_DIR: path.join(home, "no-packs") }, encoding: "utf8" },
+    { env: { ...process.env, HOME: home, USERPROFILE: home, NIRVANA_PACKS_DIR: path.join(home, "no-packs"), ...envOverride }, encoding: "utf8" },
   );
   return { code: r.status ?? 1, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
 }
@@ -265,7 +280,10 @@ test("copy-mode install is removed by uninstall (the Windows / Codex path)", () 
 test("no runtime is a prerequisite: a HOME without ~/.claude never gets one", () => {
   const home = freshHome("home-no-claude", [".gemini"]);
 
-  const { code, out } = install(home);
+  // No agent binary on PATH: the only install signal in this HOME is the
+  // ~/.gemini dir. Without pinning PATH the assertion below reads the
+  // developer's machine instead of the fixture.
+  const { code, out } = install(home, [], { PATH: BARE_PATH, Path: BARE_PATH });
   expect(code).toBe(0);
 
   expect(exists(path.join(home, ".claude"))).toBe(false);

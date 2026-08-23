@@ -40,6 +40,12 @@ stderr, auditada como `x_host_runtime_undetected`, e resolvida por
 `NIRVANA_DEFAULT_RUNTIME` ou pelo primeiro runtime realmente instalado —
 nunca por um nome chumbado.
 
+Um teste da mesma área lia a máquina do desenvolvedor: o caso "um HOME sem
+~/.claude nunca ganha um" herdava o PATH real, então passava no CI só porque
+não existe binário `claude` no runner, e contradizia a regra dos dois sinais
+em qualquer máquina onde o runtime está de fato instalado. Agora ele fixa o
+PATH nos utilitários do sistema e afirma sobre a fixture.
+
 ## 0.7.10 — 2026-08-23
 
 ### `nrv activate` — a porta que nunca teve maçaneta do lado de fora

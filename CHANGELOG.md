@@ -39,6 +39,12 @@ otherwise correct. Detection failure is now announced on stderr, audited as
 `x_host_runtime_undetected`, and resolved through `NIRVANA_DEFAULT_RUNTIME`
 or the first runtime actually installed — never a hardcoded name.
 
+One test in the same area was reading the developer's machine: the case for
+"a HOME without ~/.claude never gets one" inherited the real PATH, so it
+passed in CI only because no `claude` binary exists on the runner, and
+contradicted the documented two-signal rule anywhere the runtime is actually
+installed. It now pins PATH to the system utilities and asserts the fixture.
+
 ## 0.7.10 — 2026-08-23
 
 ### `nrv activate` — the door that was never on the outside

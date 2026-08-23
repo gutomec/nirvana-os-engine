@@ -69,7 +69,11 @@ describe("watermark gate", () => {
     const line = watermarkLine(library({ marked: 2, clean: 1, author: true }).env);
     expect(line).toContain("✗");
     expect(line).toContain("2 per-buyer marker");
-    expect(line).toContain("strip-base-watermarks");
+    // The hint must NOT hand a runnable command to whoever reads this line:
+    // on 2026-08-23 an agent read it in `nrv doctor` output and ran the strip
+    // against the live library, erasing 59 attribution tags.
+    expect(line).not.toContain("strip-base-watermarks");
+    expect(line).toContain("never ~/squads");
   });
 
   test("the same marker on a buyer machine is a WARN, not a failure", () => {
