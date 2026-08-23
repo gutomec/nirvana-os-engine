@@ -6,6 +6,40 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Unreleased
+
+### O engine mandava os runtimes vigiarem, nunca trabalharem
+
+Uma sessão do agy produziu duas falhas silenciosas, e as duas eram do
+engine, não do modelo.
+
+Ela respondeu um brief de produção inline. A skill estava linkada e os hooks
+instalados, mas tudo que o engine liga naquele runtime é vigilância: dois
+hooks de ferramenta emitindo auditoria, e um SessionStart que gravava
+`session_started` e saía. A frase que manda um agente carregar o harness
+mora dentro do `SKILL.md` — inalcançável para quem ainda não o carregou. O
+hook de SessionStart agora fala: injeta o contrato de invocação por
+`additionalContext`, em toda sessão de gemini e antigravity, sem escrever em
+nenhum arquivo do usuário.
+
+A mesma sessão leu a saída do `nrv doctor`, encontrou um imperativo com um
+comando real dentro, e rodou o strip de watermark contra a BIBLIOTECA VIVA —
+59 marcadores de atribuição por-comprador apagados de `~/squads` e
+`~/businesses`, que não se regeneram a partir dos arquivos. Texto de
+diagnóstico é lido por agentes, e um imperativo num diagnóstico é uma ordem:
+a dica agora descreve o reparo, nomeia a árvore de build como alvo correto e
+a biblioteca como a que nunca se toca, e o contrato injetado diz com todas as
+letras que comando destrutivo impresso por diagnóstico é descrição, não
+ordem. O script de strip no repo dos packs recusa a biblioteca viva sozinho.
+
+E host não identificado deixou de significar um fornecedor.
+`detectCurrentHost() ?? "claude-code"` levava em silêncio todo runtime que
+não exporta marcador de sessão para a cota de outro, desfazendo uma cadeia de
+precedência que estava correta. Falha de detecção agora é anunciada no
+stderr, auditada como `x_host_runtime_undetected`, e resolvida por
+`NIRVANA_DEFAULT_RUNTIME` ou pelo primeiro runtime realmente instalado —
+nunca por um nome chumbado.
+
 ## 0.7.10 — 2026-08-23
 
 ### `nrv activate` — a porta que nunca teve maçaneta do lado de fora
