@@ -56,6 +56,7 @@ export function extractGlanceServiceSchemas(specification: string, output: strin
       if (hash(io.read(path)) !== expected.find(item => item[1] === filename)?.[2]) throw new Error("STAGING_REREAD_MISMATCH");
     }
     io.rename(staging, output);
+    return 0;
   } catch { failure = true; }
   try { io.remove(staging); } catch { failure = true; }
   return failure ? 6 : 0;

@@ -18,7 +18,7 @@ export function assertWindowsAclPrivate(principals: readonly string[], currentUs
 export function assertWindowsAclSids(aces: readonly WindowsAce[], currentUserSid: string, logonSid: string | undefined): void {
   const allowed = new Set([currentUserSid, "S-1-5-18"]);
   if (logonSid) allowed.add(logonSid);
-  const validLogon = (ace: WindowsAce) => ace.rights === "0x1200a9" && /^S-1-5-5-\d+-\d+$/.test(ace.sid);
+  const validLogon = (ace: WindowsAce) => logonSid !== undefined && ace.sid === logonSid && ace.rights === "0x1200a9";
   const valid = (ace: WindowsAce) => ace.type === "allow" && (allowed.has(ace.sid) && ace.rights === "FA" || validLogon(ace));
   if (!aces.length || aces.some(ace => !valid(ace))) throw new ServicePermissionError("WINDOWS_ACL_NOT_PRIVATE");
 }
