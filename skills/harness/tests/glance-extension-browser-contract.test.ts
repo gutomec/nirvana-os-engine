@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { executeRealBrowser } from "./helpers/glance-real-browser.ts";
 import {
   runBrowserContract,
@@ -14,6 +16,54 @@ test("EXT-BROWSER-REQUIRES-LOCAL-BINARY fails instead of skipping when GLANCE_TE
   } finally {
     if (saved) process.env.GLANCE_TEST_BROWSER = saved;
   }
+});
+
+test("EXT-BROWSER-REJECTS-INVALID-LOCAL-BINARY fails before launch when the configured path is invalid", async () => {
+  const saved = process.env.GLANCE_TEST_BROWSER;
+  process.env.GLANCE_TEST_BROWSER = join(tmpdir(), `glance-browser-missing-${crypto.randomUUID()}`);
+  try {
+    await expect(executeRealBrowser()).rejects.toThrow("GLANCE_TEST_BROWSER_NOT_FOUND");
+  } finally {
+    if (saved) process.env.GLANCE_TEST_BROWSER = saved;
+    else delete process.env.GLANCE_TEST_BROWSER;
+  }
+});
+
+function validationProbe(
+  version: Partial<Awaited<ReturnType<BrowserProbe["browserVersion"]>>> = {},
+  request: Partial<Awaited<ReturnType<BrowserProbe["requestFromIframe"]>>> = {},
+): BrowserProbe {
+  const unexpected = async () => { throw new Error("UNEXPECTED_HOST_ACTION"); };
+  return {
+    browserVersion: async () => ({
+      product: "browser", revision: "revision", userAgent: "agent", jsVersion: "js",
+      protocolVersion: "protocol", cdpSessionId: "live-session", ...version,
+    }),
+    requestFromIframe: async () => ({
+      eventTrusted: true, eventType: "click", frameId: "target-frame", targetFrameId: "target-frame",
+      messageType: "extension.open_external_url", cdpSessionId: "live-session", ...request,
+    }),
+    confirmPointer: unexpected,
+    confirmKeyboard: unexpected,
+    cancelPointer: unexpected,
+    cancelEscape: unexpected,
+    confirmSynthetic: unexpected,
+    advanceMonotonic: unexpected,
+    setOpenMode: unexpected,
+    pageCount: unexpected,
+    closePopups: unexpected,
+    failureReported: unexpected,
+    openerWasNull: unexpected,
+    baseline: unexpected,
+  };
+}
+
+test("EXT-BROWSER-CDP-VERSION-REQUIRED rejects an empty in-session Browser.getVersion field", async () => {
+  await expect(runBrowserContract(validationProbe({ revision: "" }))).rejects.toThrow("BROWSER_VERSION_INCOMPLETE");
+});
+
+test("EXT-BROWSER-CDP-SESSION-BOUND rejects a Browser.getVersion session mismatch", async () => {
+  await expect(runBrowserContract(validationProbe({}, { cdpSessionId: "different-session" }))).rejects.toThrow("BROWSER_CDP_SESSION_MISMATCH");
 });
 
 test("EXT-BROWSER-FRAME-PROVENANCE rejects independently observed frame mismatch before host actions", async () => {

@@ -90,6 +90,9 @@ const ALLOWED_EVENTS = new Set([
   'session_started', 'tool_invoked', 'bash_completed', 'artifact_touched',
   'watch_started', 'watch_stopped',
   'ask_invoked',
+  // Glance Extension Protocol 1.0 — closed, redacted host observations.
+  'extension_channel_closed', 'extension_message_rejected',
+  'external_open_confirmed', 'external_open_expired', 'external_open_failed',
   'nirvana_updated', 'pack_created', 'project_exported', 'project_purged',
 ]);
 

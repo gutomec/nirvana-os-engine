@@ -21,6 +21,17 @@ esses códigos continuam significando o que dizem. Quando a espera realmente
 estoura, a mensagem informa o código que vinha recebendo em vez de acusar um
 dono vivo que pode não existir.
 
+### O Glance agora tem uma fronteira segura para extensões estáticas
+
+O Glance pode descobrir uma única raiz global ou de projeto, pertencente ao
+usuário, e exibir dashboards aceitos e somente leitura sem carregar código de
+plugin no engine. Manifestos e envelopes fechados, bytes inventariados e
+estáveis, iframe isolado com `allow-scripts`, MessageChannel vinculado à
+origem, navegação externa mediada pelo host, diagnósticos redigidos e um
+contrato obrigatório com navegador real mantêm a fronteira neutra e
+fail-closed. Updates e rollback do engine preservam as duas raízes. Guia do
+operador: `docs/glance-extensions.md`.
+
 ## 0.7.11 — 2026-08-23
 
 ### O engine mandava os runtimes vigiarem, nunca trabalharem
