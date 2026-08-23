@@ -6,6 +6,28 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Unreleased
+
+### `nrv activate` — a porta que nunca teve maçaneta do lado de fora
+
+Squads declaram o que precisam em `dependencies.yaml`: ffmpeg, epubcheck,
+bibliotecas Python, download de modelos. Instalar isso só era alcançável
+como caminho de script cru, invisível ao `nrv --help`, um squad por
+invocação. Pedido para "ativar todos os squads e instalar as dependências",
+um agente rodou o help, não achou nada, fez grep no filesystem para
+localizar o script, e começou a percorrer 107 squads na mão. Ele não estava
+perdido — procurava uma porta sem maçaneta do lado de fora.
+
+`nrv activate <slug>` é essa maçaneta, e `nrv activate --all` é o lote que o
+caso do tamanho da biblioteca sempre exigiu: um squad por vez, sem parar na
+primeira falha, com um resumo que separa pronto de precisa-confirmar de
+falhou e um exit code que agrega o contrato por squad. `--only-declared`
+pula squads que não precisam de ativação; `--dry-run` mostra o plano. E
+porque a ativação é advisória — nada bloqueia um dispatch, então uma
+ferramenta ausente mata a execução no meio, depois do dispatch já pago — o
+`nrv doctor` agora avisa quando uma ferramenta declarada não está na PATH,
+nomeando a ferramenta, quantos squads a querem e o comando que resolve.
+
 ## 0.7.9 — 2026-08-22
 
 ### De onde vem a inteligência não é onde os arquivos nascem

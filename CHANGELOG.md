@@ -6,6 +6,29 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### `nrv activate` — the door that was never on the outside
+
+Squads declare what they need in `dependencies.yaml`: ffmpeg, epubcheck,
+Python libraries, model downloads. Installing that was reachable only as a
+raw script path, invisible to `nrv --help`, one squad per invocation. Asked
+to "activate all squads and install the dependencies", an agent ran the
+help, found nothing, grepped the filesystem to locate the script, and then
+started walking 107 squads by hand. It was not lost — it was looking for a
+door with no handle on the outside.
+
+`nrv activate <slug>` is that handle, and `nrv activate --all` is the batch
+the library-sized case always needed: one squad at a time, never stopping on
+a failure, with a summary that separates ready from needs-confirmation from
+failed and an exit code aggregating the per-squad contract.
+`--only-declared` skips squads that need no activation at all; `--dry-run`
+shows the plan. And because activation is advisory — nothing blocks a
+dispatch, so a missing tool kills the run halfway through, after the
+dispatch is paid for — `nrv doctor` now warns when a declared tool is not on
+PATH, naming the tool, how many squads want it, and the command that fixes
+it.
+
 ## 0.7.9 — 2026-08-22
 
 ### Where the intelligence comes from is not where the files are written

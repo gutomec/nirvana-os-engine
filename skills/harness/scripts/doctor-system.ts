@@ -25,7 +25,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { execSync, spawnSync } from "node:child_process";
 import { paths as nrvPaths } from "../../_shared/lib/bun-helpers.ts";
-import { resolveScope } from "../../_shared/lib/scope.ts";
+import { resolveScope, enumerate } from "../../_shared/lib/scope.ts";
 import { RUNTIME_TARGETS, RUNTIME_SKILL_DIRS, PROJECT_CONTRACT_FILES } from "../../_shared/lib/runtime-dirs.ts";
 import { scanLibrary, authorsPacks, STRIP_HINT } from "../../_shared/lib/watermark-scan.ts";
 import { listRuntimes } from "../../_shared/lib/host-agent-driver.ts";
@@ -138,6 +138,47 @@ for (const t of RUNTIME_TARGETS) {
       `'${t.bin}' on PATH but ${t.skillsDir} has no engine link — re-run: bun scripts/install.ts`);
   }
 }
+
+// SECTION 1a-quinquies: SQUAD DEPENDENCIES — a squad that calls ffmpeg,
+// epubcheck or a Python library fails MID-RUN when the tool is absent: the
+// dispatch is spent, the gate withholds, and the error reads as a broken
+// squad rather than a missing package. Activation is advisory by design
+// (nothing blocks a dispatch), so the cheap warning belongs here, before
+// the expensive run. Checks the DECLARED check commands of squads that
+// have a dependencies.yaml, capped so doctor stays fast.
+try {
+  const scope = resolveScope();
+  const squadEntries = enumerate(scope, "squads").filter((e) => !e.overridden);
+  const withDeps = squadEntries.filter((e) => fs.existsSync(path.join(e.dir, "dependencies.yaml")));
+  if (withDeps.length) {
+    // Collect the distinct system-tool checks across the library: the same
+    // ffmpeg serves twenty squads, so probe each binary ONCE.
+    const toolToSquads = new Map<string, string[]>();
+    for (const e of withDeps) {
+      let raw = "";
+      try { raw = fs.readFileSync(path.join(e.dir, "dependencies.yaml"), "utf8"); } catch { continue; }
+      // Deliberately a light scan, not a YAML parse: `check: "<cmd>"` lines
+      // under system deps are the contract, and doctor must stay cheap.
+      for (const m of raw.matchAll(/^\s*check:\s*"([^"]+)"/gm)) {
+        const bin = m[1].trim().replace(/^command -v\s+/, "").split(/\s+/)[0];
+        if (!bin || bin.startsWith("$")) continue;
+        toolToSquads.set(bin, [...(toolToSquads.get(bin) ?? []), e.slug]);
+      }
+    }
+    const missing: { bin: string; squads: string[] }[] = [];
+    for (const [bin, slugs] of toolToSquads) {
+      if (!which(bin)) missing.push({ bin, squads: [...new Set(slugs)] });
+    }
+    if (missing.length === 0) {
+      add("squad deps", "PASS", `${withDeps.length} squad(s) declare dependencies; every declared tool is on PATH`);
+    } else {
+      const worst = missing.sort((a, b) => b.squads.length - a.squads.length).slice(0, 3);
+      const detail = worst.map((m) => `${m.bin} (${m.squads.length} squad${m.squads.length > 1 ? "s" : ""})`).join(", ");
+      add("squad deps", "WARN",
+        `${missing.length} declared tool(s) missing — ${detail}${missing.length > 3 ? ", …" : ""}; install with: nrv activate --all`);
+    }
+  }
+} catch { /* no library, or an unreadable one — not a doctor failure */ }
 
 // SECTION 1a-quater: nul GHOST FILES (Windows) — a `>nul` redirect interpreted
 // outside cmd.exe (PowerShell, Bun shell) materializes a literal file named
