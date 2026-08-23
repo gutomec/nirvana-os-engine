@@ -1,0 +1,183 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://squads.sh/schemas/studio-graph-1.0.json",
+  "title": "Nirvana Studio Graph",
+  "description": "Studio Protocol v1 graph document — the infinite-canvas representation of a conglomerate (companies, squads, mind-clones, employees, materials, deliverables).",
+  "type": "object",
+  "required": ["schema_version", "name", "nodes", "edges"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 120, "pattern": "^[a-z0-9][a-z0-9._-]{0,119}$" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "canvas": {
+      "type": "object",
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "zoom": { "type": "number", "minimum": 0.1, "maximum": 4 }
+      },
+      "additionalProperties": false
+    },
+    "nodes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/node" }
+    },
+    "edges": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/edge" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "node": {
+      "type": "object",
+      "required": ["id", "type", "position"],
+      "properties": {
+        "id": { "type": "string", "minLength": 3, "maxLength": 128 },
+        "type": { "enum": ["brief", "company", "squad", "mind_clone", "employee", "material", "deliverable"] },
+        "position": {
+          "type": "object",
+          "required": ["x", "y"],
+          "properties": {
+            "x": { "type": "number" },
+            "y": { "type": "number" }
+          },
+          "additionalProperties": false
+        },
+        "status": { "enum": ["draft", "queued", "building", "built", "failed"], "default": "draft" },
+        "payload": { "type": "object" },
+        "meta": { "type": "object" },
+        "built_at": { "type": "string", "format": "date-time" },
+        "artifact_path": { "type": "string" },
+        "error": { "type": "string" }
+      },
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "properties": { "type": { "const": "brief" }, "payload": { "$ref": "#/$defs/payload_brief" } }
+        },
+        {
+          "properties": { "type": { "const": "company" }, "payload": { "$ref": "#/$defs/payload_company" } }
+        },
+        {
+          "properties": { "type": { "const": "squad" }, "payload": { "$ref": "#/$defs/payload_squad" } }
+        },
+        {
+          "properties": { "type": { "const": "mind_clone" }, "payload": { "$ref": "#/$defs/payload_mind_clone" } }
+        },
+        {
+          "properties": { "type": { "const": "employee" }, "payload": { "$ref": "#/$defs/payload_employee" } }
+        },
+        {
+          "properties": { "type": { "const": "material" }, "payload": { "$ref": "#/$defs/payload_material" } }
+        },
+        {
+          "properties": { "type": { "const": "deliverable" }, "payload": { "$ref": "#/$defs/payload_deliverable" } }
+        }
+      ]
+    },
+    "edge": {
+      "type": "object",
+      "required": ["id", "source", "target", "type"],
+      "properties": {
+        "id": { "type": "string", "minLength": 3, "maxLength": 128 },
+        "source": { "type": "string" },
+        "target": { "type": "string" },
+        "type": { "enum": ["briefs", "owns", "staffs", "embodies", "covers", "feeds", "depends_on", "yields"] },
+        "meta": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+    "payload_brief": {
+      "type": "object",
+      "required": ["instruction"],
+      "properties": {
+        "instruction": { "type": "string", "minLength": 3, "maxLength": 20000 },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "path": { "type": "string" },
+              "url": { "type": "string", "format": "uri" },
+              "kind": { "enum": ["file", "url", "text"], "default": "file" },
+              "size_bytes": { "type": "integer", "minimum": 0 }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "payload_company": {
+      "type": "object",
+      "required": ["slug", "description"],
+      "properties": {
+        "slug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{2,60}$" },
+        "description": { "type": "string", "minLength": 3 },
+        "domains": { "type": "array", "items": { "type": "string" } },
+        "template": { "enum": ["solo", "council", "agency", "custom"], "default": "custom" },
+        "mind_clones": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "payload_squad": {
+      "type": "object",
+      "required": ["slug", "description"],
+      "properties": {
+        "slug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{2,60}$" },
+        "description": { "type": "string", "minLength": 3 },
+        "capabilities": { "type": "array", "items": { "type": "string" } },
+        "domains": { "type": "array", "items": { "type": "string" } },
+        "agents": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "payload_mind_clone": {
+      "type": "object",
+      "required": ["slug", "source"],
+      "properties": {
+        "slug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{2,60}$" },
+        "source": { "type": "string", "minLength": 3, "description": "The person/work/method this clone embodies" },
+        "one_liner": { "type": "string", "minLength": 3 },
+        "layers": { "type": "array", "items": { "enum": ["philosophies", "mental_models", "heuristics", "frameworks", "methodologies"] } }
+      },
+      "additionalProperties": false
+    },
+    "payload_employee": {
+      "type": "object",
+      "required": ["slug", "role", "title"],
+      "properties": {
+        "slug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{2,60}$" },
+        "role": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["functional_specialist", "mind_clone"], "default": "functional_specialist" },
+        "mind_clone": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "payload_material": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "name": { "type": "string" },
+        "path": { "type": "string" },
+        "url": { "type": "string", "format": "uri" },
+        "kind": { "enum": ["file", "url", "text"], "default": "file" }
+      },
+      "additionalProperties": false
+    },
+    "payload_deliverable": {
+      "type": "object",
+      "required": ["description"],
+      "properties": {
+        "description": { "type": "string", "minLength": 3 },
+        "outputs": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    }
+  }
+}

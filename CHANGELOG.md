@@ -432,6 +432,28 @@ and runs inside `check:all`, so a release cannot put them out of sync again.
 
 ## 0.6.0 — 2026-08-15
 
+### Nirvana Studio: infinite canvas with validation and confirmed materialization
+
+`nrv studio` adds a local infinite-canvas surface to propose, review, validate,
+and materialize graphs of businesses, squads, mind-clones, employees, materials,
+and deliverables. Company and squad nodes use their existing lifecycle
+scaffolds; mind-clone nodes are retained as source-backed plans and fail closed
+until a non-interactive Genius Factory adapter is available. Studio persists graphs under `.nirvana/studio/graphs/` in the
+project scope (or `~/.nirvana/studio/graphs/` globally), uses typed nodes and
+edges, rejects cycles and disconnected nodes, streams materialization progress
+over SSE, and requires explicit confirmation before starting pipelines.
+
+The implementation includes Studio Protocol v1, an offline-first loopback-only
+interface, and regression coverage for graph rules, dependencies, protocol
+validation, planner-state persistence, traversal rejection, and fail-closed
+materialization adapters. Build outcomes now persist after each node and run the
+standard registries indexers before reporting success.
+
+The documented headless `build-graph.ts` path now provides the same guarantee:
+it persists every terminal node state, runs the businesses, squads, and clones
+indexers only after that durable write, and exits non-zero instead of claiming a
+successful build when any canonical registry indexer fails.
+
 ### Three things that failed silently, and the gates that now catch them
 
 A capability id can have several providers on purpose: nine squads can each

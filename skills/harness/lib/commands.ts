@@ -119,6 +119,7 @@ export const COMMANDS: Command[] = [
   { name: "validate-trace", aliases: ["trace-validate"], target: "harness/scripts/validate-trace.ts", category: "dev", summary: "Validate a single audit trace", visibility: "dev" },
   { name: "validate-mind-clones", aliases: ["mc-validate"], target: "_shared/scripts/validate-mind-clones.ts", category: "dev", summary: "Audit mind-clone canonical files", visibility: "dev" },
   { name: "pack-manifest", aliases: ["gen-pack-manifest"], target: "_shared/scripts/gen-pack-manifest.ts", category: "dev", summary: "Generate a pack manifest", visibility: "dev" },
+  { name: "studio", target: "studio/scripts/studio-server.ts", category: "qol", args: "[--port <p>] [--no-open]", summary: "Nirvana Studio: infinite-canvas builder — describe a company/squad/mind-clone layout and it plans, validates and builds it", visibility: "user" },
   { name: "validate-starter", aliases: ["starter-validate"], custom: true, category: "dev", summary: "Dev-only: validate a starter/content pack (needs the packs repo)", visibility: "dev" },
 ];
 
