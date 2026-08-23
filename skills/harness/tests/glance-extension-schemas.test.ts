@@ -267,6 +267,8 @@ test("EXT-SCHEMA-FORMAT-DATETIME rejects invalid calendar values and missing tim
   expect(validateSchema(schema, "2024-02-29T12:00:00Z", registry)).toBe(true);
   expect(validateSchema(schema, "2024-02-29t12:00:00z", registry)).toBe(true);
   expect(validateSchema(schema, "2016-12-31T23:59:60Z", registry)).toBe(true);
+  expect(validateSchema(schema, "2017-01-01T00:59:60+01:00", registry)).toBe(true);
+  expect(() => validateSchema(schema, "2026-01-01T00:00:60Z", registry)).toThrow("FORMAT:date-time");
   expect(() => validateSchema(schema, "2026-02-30T12:00:00Z", registry)).toThrow("FORMAT:date-time");
   expect(() => validateSchema(schema, "2026-08-22T12:00:00", registry)).toThrow("FORMAT:date-time");
 });
