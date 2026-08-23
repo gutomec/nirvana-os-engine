@@ -1,13 +1,13 @@
 import { closeSync, constants, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { basename, dirname, join } from "node:path";
-import { restrictDirectory, restrictFile, fsyncDirectory } from "./permissions.ts";
+import { restrictDirectory, restrictFreshFile, fsyncDirectory } from "./permissions.ts";
 import { parseStrictJson } from "./strict-json.ts";
 
 export class ServiceIoError extends Error { constructor(operation: string, cause?: unknown) { super(`SERVICE_IO:${operation}`, { cause }); } }
 export class IncompatibleStateError extends Error {}
 export interface ServiceIo { read(path: string): Uint8Array; archive(path: string): void; }
-export interface PrivateWriteRuntime {
+interface PrivateWriteRuntime {
   fsyncFile(descriptor: number): void;
   close(descriptor: number): void;
   rename(from: string, to: string): void;
@@ -16,16 +16,19 @@ export interface PrivateWriteRuntime {
   remove(path: string): void;
 }
 
-export const privateWriteRuntime: PrivateWriteRuntime = {
+const nativePrivateWriteRuntime: Readonly<PrivateWriteRuntime> = Object.freeze({
   fsyncFile: fsyncSync,
   close: closeSync,
   rename: renameSync,
   fsyncDirectory,
   reread: readFileSync,
   remove: path => rmSync(path, { force: true }),
-};
+});
 
-export function writePrivateBytes(path: string, bytes: Uint8Array, io: PrivateWriteRuntime = privateWriteRuntime): void {
+export type PrivateWriteOperation = "file-fsync" | "close" | "rename" | "directory-fsync" | "reread" | "remove";
+export type PrivateWriteTestHook = (operation: PrivateWriteOperation, perform: () => void) => void;
+
+function writePrivateBytesWithRuntime(path: string, bytes: Uint8Array, io: PrivateWriteRuntime): void {
   const parent = dirname(path);
   const temporary = join(parent, `.${basename(path)}.${randomUUID()}.tmp`);
   let descriptor: number | undefined;
@@ -35,7 +38,7 @@ export function writePrivateBytes(path: string, bytes: Uint8Array, io: PrivateWr
     mkdirSync(parent, { recursive: true, mode: 0o700 });
     restrictDirectory(parent);
     descriptor = openSync(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
-    restrictFile(temporary);
+    restrictFreshFile(temporary, descriptor);
     writeFileSync(descriptor, bytes);
     io.fsyncFile(descriptor);
     io.close(descriptor);
@@ -48,6 +51,20 @@ export function writePrivateBytes(path: string, bytes: Uint8Array, io: PrivateWr
   try { io.remove(temporary); } catch (cause) { cleanup ??= cause; }
   if (primary) { const error = new ServiceIoError("PRIVATE_WRITE", primary); Object.assign(error, { cleanup }); throw error; }
   if (cleanup) throw new ServiceIoError("PRIVATE_WRITE_CLEANUP", cleanup);
+}
+
+export function writePrivateBytes(path: string, bytes: Uint8Array): void { writePrivateBytesWithRuntime(path, bytes, nativePrivateWriteRuntime); }
+
+export function createPrivateWriteTestHarness(hook: PrivateWriteTestHook = (_operation, perform) => perform()): Readonly<{ write(path: string, bytes: Uint8Array): void }> {
+  const runtime: Readonly<PrivateWriteRuntime> = Object.freeze({
+    fsyncFile: descriptor => hook("file-fsync", () => nativePrivateWriteRuntime.fsyncFile(descriptor)),
+    close: descriptor => hook("close", () => nativePrivateWriteRuntime.close(descriptor)),
+    rename: (from, to) => hook("rename", () => nativePrivateWriteRuntime.rename(from, to)),
+    fsyncDirectory: path => hook("directory-fsync", () => nativePrivateWriteRuntime.fsyncDirectory(path)),
+    reread: path => { let bytes: Uint8Array | undefined; hook("reread", () => { bytes = nativePrivateWriteRuntime.reread(path); }); return bytes!; },
+    remove: path => hook("remove", () => nativePrivateWriteRuntime.remove(path)),
+  });
+  return Object.freeze({ write: (path, bytes) => writePrivateBytesWithRuntime(path, bytes, runtime) });
 }
 
 export function writeDurableJson(path: string, value: unknown): void { writePrivateBytes(path, new TextEncoder().encode(`${JSON.stringify(value)}\n`)); }

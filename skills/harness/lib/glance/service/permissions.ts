@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { chmodSync, closeSync, fsyncSync, mkdirSync, openSync, readFileSync, rmSync, statSync } from "node:fs";
+import { chmodSync, closeSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
 export class ServicePermissionError extends Error {}
@@ -22,11 +22,11 @@ export function assertWindowsAclSids(aces: readonly WindowsAce[], currentUserSid
   if (!aces.length || aces.some(ace => !valid(ace))) throw new ServicePermissionError("WINDOWS_ACL_NOT_PRIVATE");
 }
 
-function sidFromWhoAmI(args: string[], required: boolean): string | undefined {
-  const result = Bun.spawnSync(["whoami", ...args], { stdout: "pipe", stderr: "pipe" });
+function currentUserSid(): string {
+  const result = Bun.spawnSync(["whoami", "/user", "/fo", "csv", "/nh"], { stdout: "pipe", stderr: "pipe" });
   if (result.exitCode !== 0) throw new ServicePermissionError("WINDOWS_IDENTITY_READ");
-  const sid = new TextDecoder().decode(result.stdout).match(/S-1-\d+(?:-\d+)+/g)?.find(value => required || value.startsWith("S-1-5-5-"));
-  if (required && !sid) throw new ServicePermissionError("WINDOWS_CURRENT_SID_MISSING");
+  const sid = new TextDecoder().decode(result.stdout).match(/S-1-\d+(?:-\d+)+/)?.[0];
+  if (!sid) throw new ServicePermissionError("WINDOWS_CURRENT_SID_MISSING");
   return sid;
 }
 
@@ -54,19 +54,32 @@ function inspectWindowsAces(path: string): WindowsAce[] {
   } finally { rmSync(staging, { recursive: true, force: true }); }
 }
 
-function restrictWindows(path: string): void {
+function restrictWindows(path: string, capturedLogonSid?: string): void {
   const currentUser = process.env.USERNAME;
   if (!currentUser) throw new ServicePermissionError("WINDOWS_CURRENT_USER_UNAVAILABLE");
-  const capturedLogonSid = basename(path).endsWith(".tmp") ? inspectWindowsAces(path).find(ace => ace.type === "allow" && ace.rights === "0x1200a9" && /^S-1-5-5-\d+-\d+$/.test(ace.sid))?.sid : undefined;
   const result = Bun.spawnSync(["icacls", path, "/inheritance:r", "/grant:r", `${currentUser}:(F)`], { stdout: "pipe", stderr: "pipe" });
   if (result.exitCode !== 0) throw new ServicePermissionError("WINDOWS_ACL_SET");
-  const currentUserSid = sidFromWhoAmI(["/user", "/fo", "csv", "/nh"], true)!;
-  const logonSid = capturedLogonSid ?? sidFromWhoAmI(["/groups", "/fo", "csv", "/nh"], false);
-  assertWindowsAclSids(inspectWindowsAces(path), currentUserSid, logonSid);
+  const userSid = currentUserSid();
+  assertWindowsAclSids(inspectWindowsAces(path), userSid, capturedLogonSid);
 }
 
 export function restrictDirectory(path: string): void { if (process.platform === "win32") restrictWindows(path); else { chmodSync(path, 0o700); assertPrivateMode(path, 0o700); } }
 export function restrictFile(path: string): void { if (process.platform === "win32") restrictWindows(path); else { chmodSync(path, 0o600); assertPrivateMode(path, 0o600); } }
+
+function assertFreshFileIdentity(path: string, descriptor: number): void {
+  const opened = fstatSync(descriptor), named = lstatSync(path);
+  if (opened.dev !== named.dev || opened.ino !== named.ino) throw new ServicePermissionError("FRESH_FILE_IDENTITY");
+}
+
+export function restrictFreshFile(path: string, descriptor: number): void {
+  assertFreshFileIdentity(path, descriptor);
+  if (process.platform === "win32") {
+    const candidates = [...new Set(inspectWindowsAces(path).filter(ace => ace.type === "allow" && ace.rights === "0x1200a9").map(ace => ace.sid))];
+    if (candidates.length > 1) throw new ServicePermissionError("WINDOWS_FRESH_LOGON_AMBIGUOUS");
+    restrictWindows(path, candidates[0]);
+  } else { chmodSync(path, 0o600); assertPrivateMode(path, 0o600); }
+  assertFreshFileIdentity(path, descriptor);
+}
 
 export function fsyncDirectory(path: string): void {
   let descriptor: number | undefined;

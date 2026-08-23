@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { privateWriteRuntime, type PrivateWriteRuntime } from "../../lib/glance/service/state.ts";
+import { createPrivateWriteTestHarness, type PrivateWriteOperation } from "../../lib/glance/service/state.ts";
 
 export function createPrivateStateFixture() {
   const root = mkdtempSync(join(tmpdir(), "glance-service-"));
@@ -13,17 +13,13 @@ export function createPrivateStateFixture() {
       if (process.platform !== "win32" && (statSync(path).mode & 0o777) !== 0o600) throw new Error("PRIVATE_STATE_MODE");
     }
   };
-  const observePrivateWrite = (overrides: Partial<PrivateWriteRuntime> = {}) => {
+  const observePrivateWrite = (hook?: (operation: PrivateWriteOperation, perform: () => void) => void) => {
     const events: string[] = [];
-    const io: PrivateWriteRuntime = {
-      fsyncFile: descriptor => { events.push("file-fsync"); return (overrides.fsyncFile ?? privateWriteRuntime.fsyncFile)(descriptor); },
-      close: descriptor => { events.push("close"); return (overrides.close ?? privateWriteRuntime.close)(descriptor); },
-      rename: (from, to) => { events.push("rename"); return (overrides.rename ?? privateWriteRuntime.rename)(from, to); },
-      fsyncDirectory: path => { events.push("directory-fsync"); return (overrides.fsyncDirectory ?? privateWriteRuntime.fsyncDirectory)(path); },
-      reread: path => { events.push("reread"); return (overrides.reread ?? privateWriteRuntime.reread)(path); },
-      remove: path => { events.push("remove"); return (overrides.remove ?? privateWriteRuntime.remove)(path); },
-    };
-    return { io, events };
+    const harness = createPrivateWriteTestHarness((operation, perform) => {
+      events.push(operation);
+      if (hook) hook(operation, perform); else perform();
+    });
+    return { write: harness.write, events };
   };
   const assertNoTemporaryResidue = () => {
     const visit = (directory: string) => readdirSync(directory, { withFileTypes: true }).forEach(entry => {
