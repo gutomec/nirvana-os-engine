@@ -1,5 +1,5 @@
-import { expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { afterAll, beforeAll, expect, test } from "bun:test";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { extractSchemas, sha256 } from "../../../scripts/extract-glance-spec-schemas.ts";
@@ -11,7 +11,10 @@ import {
 
 const REPO = join(import.meta.dir, "..", "..", "..");
 const SCRIPT = join(REPO, "scripts", "extract-glance-spec-schemas.ts");
-const APPROVED_SPEC = process.env.GLANCE_APPROVED_SPEC;
+const APPROVED_SPEC = process.env.GLANCE_APPROVED_SPEC ??
+  "C:\\Users\\aalme\\OneDrive\\Projetos\\Nirvana-Dev\\outputs\\proj-20260822T040451-software-forge\\businesses\\software-forge\\especificacao-glance-extension-api-servico-e-dashboard-governanca.md";
+const APPROVED_SPEC_SHA256 = "d168be91f4df700336f811df3fee479e8b7bd276e5fe4ba22a6802c014480e74";
+const APPROVED_SPEC_BYTES = 119_512;
 const SCHEMA_DIRECTORY = join(REPO, "skills", "harness", "lib", "glance", "extensions", "schemas");
 const EXPECTED = {
   "glance-extension-manifest.schema.json": "5ff61725bb126623bdddffe206b4782a25d02c07688f3d53af62edfc6a25b8e3",
@@ -22,15 +25,19 @@ const EXPECTED = {
 } as const;
 
 function sourceSpec(root: string): string {
-  if (APPROVED_SPEC) return APPROVED_SPEC;
   mkdirSync(root, { recursive: true });
-  const spec = join(root, "approved-spec.md");
-  const body = Object.keys(EXPECTED)
-    .map((name) => `### ${name}\n\n\`\`\`json\n${readFileSync(join(SCHEMA_DIRECTORY, name), "utf8")}\`\`\`\n`)
-    .join("\n");
-  writeFileSync(spec, body, "utf8");
-  return spec;
+  const copy = join(root, "approved-spec-copy.md");
+  copyFileSync(APPROVED_SPEC, copy);
+  return copy;
 }
+
+function assertApprovedSpecUnchanged(): void {
+  expect(statSync(APPROVED_SPEC).size).toBe(APPROVED_SPEC_BYTES);
+  expect(sha256(readFileSync(APPROVED_SPEC))).toBe(APPROVED_SPEC_SHA256);
+}
+
+beforeAll(assertApprovedSpecUnchanged);
+afterAll(assertApprovedSpecUnchanged);
 
 test("EXT-SCHEMA-EXTRACT-ARGS exits 2 without input arguments", () => {
   const result = Bun.spawnSync([process.execPath, SCRIPT], {
@@ -47,7 +54,7 @@ test("EXT-SCHEMA-FIVE-DOCUMENTS extracts the approved bytes and hashes", () => {
   const root = mkdtempSync(join(tmpdir(), "glance-schema-extract-"));
   const output = join(root, "schemas");
   try {
-    extractSchemas(sourceSpec(root), output);
+    extractSchemas(APPROVED_SPEC, output);
     for (const [name, digest] of Object.entries(EXPECTED)) {
       expect(sha256(readFileSync(join(output, name)))).toBe(digest);
     }
@@ -94,7 +101,8 @@ test("EXT-SCHEMA-MISSING-FENCE rejects an incomplete source without publishing",
   const output = join(root, "schemas");
   try {
     const text = readFileSync(source, "utf8");
-    const start = text.indexOf("### glance-extension-message.schema.json");
+    const start = text.lastIndexOf("### 41.5 `glance-extension-message.schema.json`");
+    expect(start).toBeGreaterThan(0);
     writeFileSync(source, text.slice(0, start), "utf8");
     expect(() => extractSchemas(source, output)).toThrow("SCHEMA_FENCE");
     expect(existsSync(output)).toBe(false);
