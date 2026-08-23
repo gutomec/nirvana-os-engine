@@ -11,10 +11,12 @@ import {
 
 const REPO = join(import.meta.dir, "..", "..", "..");
 const SCRIPT = join(REPO, "scripts", "extract-glance-spec-schemas.ts");
-const APPROVED_SPEC = process.env.GLANCE_APPROVED_SPEC ??
-  "C:\\Users\\aalme\\OneDrive\\Projetos\\Nirvana-Dev\\outputs\\proj-20260822T040451-software-forge\\businesses\\software-forge\\especificacao-glance-extension-api-servico-e-dashboard-governanca.md";
+const APPROVED_SPEC = process.env.GLANCE_APPROVED_SPEC;
 const APPROVED_SPEC_SHA256 = "d168be91f4df700336f811df3fee479e8b7bd276e5fe4ba22a6802c014480e74";
 const APPROVED_SPEC_BYTES = 119_512;
+const GOLDEN_SPEC = join(import.meta.dir, "fixtures", "glance-extension", "approved-schema-fences.md");
+const GOLDEN_SPEC_SHA256 = "207ec0060c449cc9dbd4e5689765f4d49d46e287f7e88c38f3ec1ea84ebc8033";
+const GOLDEN_SPEC_BYTES = 17_956;
 const SCHEMA_DIRECTORY = join(REPO, "skills", "harness", "lib", "glance", "extensions", "schemas");
 const EXPECTED = {
   "glance-extension-manifest.schema.json": "5ff61725bb126623bdddffe206b4782a25d02c07688f3d53af62edfc6a25b8e3",
@@ -27,17 +29,20 @@ const EXPECTED = {
 function sourceSpec(root: string): string {
   mkdirSync(root, { recursive: true });
   const copy = join(root, "approved-spec-copy.md");
-  copyFileSync(APPROVED_SPEC, copy);
+  copyFileSync(APPROVED_SPEC ?? GOLDEN_SPEC, copy);
   return copy;
 }
 
-function assertApprovedSpecUnchanged(): void {
+function assertSourcesUnchanged(): void {
+  expect(statSync(GOLDEN_SPEC).size).toBe(GOLDEN_SPEC_BYTES);
+  expect(sha256(readFileSync(GOLDEN_SPEC))).toBe(GOLDEN_SPEC_SHA256);
+  if (!APPROVED_SPEC) return;
   expect(statSync(APPROVED_SPEC).size).toBe(APPROVED_SPEC_BYTES);
   expect(sha256(readFileSync(APPROVED_SPEC))).toBe(APPROVED_SPEC_SHA256);
 }
 
-beforeAll(assertApprovedSpecUnchanged);
-afterAll(assertApprovedSpecUnchanged);
+beforeAll(assertSourcesUnchanged);
+afterAll(assertSourcesUnchanged);
 
 test("EXT-SCHEMA-EXTRACT-ARGS exits 2 without input arguments", () => {
   const result = Bun.spawnSync([process.execPath, SCRIPT], {
@@ -54,7 +59,7 @@ test("EXT-SCHEMA-FIVE-DOCUMENTS extracts the approved bytes and hashes", () => {
   const root = mkdtempSync(join(tmpdir(), "glance-schema-extract-"));
   const output = join(root, "schemas");
   try {
-    extractSchemas(APPROVED_SPEC, output);
+    extractSchemas(APPROVED_SPEC ?? GOLDEN_SPEC, output);
     for (const [name, digest] of Object.entries(EXPECTED)) {
       expect(sha256(readFileSync(join(output, name)))).toBe(digest);
     }
@@ -101,7 +106,8 @@ test("EXT-SCHEMA-MISSING-FENCE rejects an incomplete source without publishing",
   const output = join(root, "schemas");
   try {
     const text = readFileSync(source, "utf8");
-    const start = text.lastIndexOf("### 41.5 `glance-extension-message.schema.json`");
+    const marker = text.lastIndexOf("glance-extension-message.schema.json");
+    const start = text.lastIndexOf("###", marker);
     expect(start).toBeGreaterThan(0);
     writeFileSync(source, text.slice(0, start), "utf8");
     expect(() => extractSchemas(source, output)).toThrow("SCHEMA_FENCE");
@@ -184,8 +190,8 @@ test("EXT-SCHEMA-ALLOF selects and validates all eight normative message payload
 });
 
 test("EXT-SCHEMA-DRAFT-2020-12 rejects other dialects and unknown keywords in unused branches", () => {
-  expect(() => createSchemaRegistry([{ $id: "fixture", $schema: "https://example.test/draft" } as JsonSchema])).toThrow("UNSUPPORTED_DIALECT");
-  expect(() => createSchemaRegistry([{ $id: "fixture", $defs: { unused: { unsupported: true } as JsonSchema } }])).toThrow("UNSUPPORTED_KEYWORD");
+  expect(() => createSchemaRegistry([{ $id: "https://schemas.nirvana-os.dev/fixture-dialect", $schema: "https://example.test/draft" } as JsonSchema])).toThrow("UNSUPPORTED_DIALECT");
+  expect(() => createSchemaRegistry([{ $id: "https://schemas.nirvana-os.dev/fixture-keyword", $defs: { unused: { unsupported: true } as JsonSchema } }])).toThrow("UNSUPPORTED_KEYWORD");
 });
 
 test("EXT-SCHEMA-ONEOF-EXACTLY-ONE enforces zero, one and multiple matches", () => {
@@ -236,6 +242,57 @@ test("EXT-SCHEMA-REF-POLICY resolves local and registered refs but forbids netwo
   expect(validateSchema(document, "ok", registry)).toBe(true);
   expect(() => validateSchema({ $ref: "https://example.test/schema" }, {}, registry)).toThrow("REMOTE_REF_FORBIDDEN");
   expect(() => validateSchema({ $ref: "https://schemas.nirvana-os.dev/missing" }, {}, registry)).toThrow("UNKNOWN_REF");
+});
+
+test("EXT-SCHEMA-CODEPOINT-LENGTH counts Unicode scalar values", () => {
+  const registry = new Map<string, JsonSchema>();
+  expect(validateSchema({ type: "string", maxLength: 1 }, "😀", registry)).toBe(true);
+  expect(() => validateSchema({ type: "string", maxLength: 1 }, "😀x", registry)).toThrow("MAX_LENGTH");
+});
+
+test("EXT-SCHEMA-UNIQUE-SEMANTIC rejects objects that differ only by key order", () => {
+  const registry = new Map<string, JsonSchema>();
+  expect(() => validateSchema(
+    { type: "array", uniqueItems: true },
+    [{ a: 1, b: 2 }, { b: 2, a: 1 }],
+    registry,
+  )).toThrow("UNIQUE_ITEMS");
+  expect(() => validateSchema({ type: "array", uniqueItems: true }, [0, -0], registry)).toThrow("UNIQUE_ITEMS");
+  expect(validateSchema({ const: 0 }, -0, registry)).toBe(true);
+});
+
+test("EXT-SCHEMA-FORMAT-DATETIME rejects invalid calendar values and missing timezone", () => {
+  const registry = new Map<string, JsonSchema>();
+  const schema = { type: "string", format: "date-time" } as const;
+  expect(validateSchema(schema, "2024-02-29T12:00:00Z", registry)).toBe(true);
+  expect(validateSchema(schema, "2024-02-29t12:00:00z", registry)).toBe(true);
+  expect(validateSchema(schema, "2016-12-31T23:59:60Z", registry)).toBe(true);
+  expect(() => validateSchema(schema, "2026-02-30T12:00:00Z", registry)).toThrow("FORMAT:date-time");
+  expect(() => validateSchema(schema, "2026-08-22T12:00:00", registry)).toThrow("FORMAT:date-time");
+});
+
+test("EXT-SCHEMA-REF-SIBLING evaluates Draft 2020-12 sibling keywords", () => {
+  const root = {
+    $id: "https://schemas.nirvana-os.dev/ref-sibling",
+    $defs: { value: { type: "string" } },
+    $ref: "#/$defs/value",
+    minLength: 2,
+  } as JsonSchema;
+  const registry = createSchemaRegistry([root]);
+  expect(() => validateSchema(root, "x", registry)).toThrow("MIN_LENGTH");
+  expect(validateSchema(root, "ok", registry)).toBe(true);
+});
+
+test("EXT-SCHEMA-REGISTRY-REFS rejects unused remote and unknown references offline", () => {
+  expect(() => createSchemaRegistry([{
+    $id: "https://schemas.nirvana-os.dev/unused-remote",
+    $defs: { unused: { $ref: "https://example.test/schema" } },
+  }])).toThrow("REMOTE_REF_FORBIDDEN");
+  expect(() => createSchemaRegistry([{
+    $id: "https://schemas.nirvana-os.dev/unused-unknown",
+    $defs: { unused: { $ref: "https://schemas.nirvana-os.dev/missing" } },
+  }])).toThrow("UNKNOWN_REF");
+  expect(() => createSchemaRegistry([{ $id: "relative-id" }])).toThrow("SCHEMA_ID");
 });
 
 test("EXT-SCHEMA-EXTRACT-EXIT-CODES distinguish source rejection from I/O failure", () => {

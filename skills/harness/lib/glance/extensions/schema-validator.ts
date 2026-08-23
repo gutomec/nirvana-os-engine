@@ -31,7 +31,40 @@ const KEYS = new Set([
   "minLength", "maxLength", "pattern", "format", "minimum", "maximum",
 ]);
 
-const equal = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
+function equal(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right) && left.length === right.length &&
+      left.every((item, index) => equal(item, right[index]));
+  }
+  if (left && right && typeof left === "object" && typeof right === "object") {
+    const leftRecord = left as Record<string, unknown>;
+    const rightRecord = right as Record<string, unknown>;
+    const leftKeys = Object.keys(leftRecord).sort();
+    const rightKeys = Object.keys(rightRecord).sort();
+    return leftKeys.length === rightKeys.length && leftKeys.every((key, index) =>
+      key === rightKeys[index] && equal(leftRecord[key], rightRecord[key]));
+  }
+  return false;
+}
+
+function isDateTime(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?([Zz]|[+-](\d{2}):(\d{2}))$/.exec(value);
+  if (!match) return false;
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText, , offsetHourText, offsetMinuteText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  const offsetHour = offsetHourText === undefined ? 0 : Number(offsetHourText);
+  const offsetMinute = offsetMinuteText === undefined ? 0 : Number(offsetMinuteText);
+  if (month < 1 || month > 12 || day < 1 || hour > 23 || minute > 59 || second > 60 || offsetHour > 23 || offsetMinute > 59) {
+    return false;
+  }
+  return day <= new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
 
 export function validateSchema(
   schema: JsonSchema | boolean,
@@ -54,12 +87,13 @@ export function validateSchema(
     if (schema.$ref.startsWith("#/$defs/")) {
       const target = root.$defs?.[schema.$ref.slice(8)];
       if (!target) throw new Error("UNKNOWN_LOCAL_REF");
-      return validateSchema(target, value, registry, root);
+      validateSchema(target, value, registry, root);
+    } else {
+      if (!schema.$ref.startsWith("https://schemas.nirvana-os.dev/")) throw new Error("REMOTE_REF_FORBIDDEN");
+      const target = registry.get(schema.$ref);
+      if (!target) throw new Error("UNKNOWN_REF");
+      validateSchema(target, value, registry, target);
     }
-    if (!schema.$ref.startsWith("https://schemas.nirvana-os.dev/")) throw new Error("REMOTE_REF_FORBIDDEN");
-    const target = registry.get(schema.$ref);
-    if (!target) throw new Error("UNKNOWN_REF");
-    return validateSchema(target, value, registry, target);
   }
 
   if (schema.const !== undefined && !equal(schema.const, value)) throw new Error("CONST");
@@ -82,11 +116,12 @@ export function validateSchema(
     throw new Error(`TYPE:${schema.type}`);
   }
   if (typeof value === "string") {
-    if (schema.minLength !== undefined && value.length < schema.minLength) throw new Error("MIN_LENGTH");
-    if (schema.maxLength !== undefined && value.length > schema.maxLength) throw new Error("MAX_LENGTH");
+    const length = [...value].length;
+    if (schema.minLength !== undefined && length < schema.minLength) throw new Error("MIN_LENGTH");
+    if (schema.maxLength !== undefined && length > schema.maxLength) throw new Error("MAX_LENGTH");
     if (schema.pattern && !new RegExp(schema.pattern).test(value)) throw new Error("PATTERN");
     if (schema.format === "uuid" && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) throw new Error("FORMAT:uuid");
-    if (schema.format === "date-time" && (!/^\d{4}-\d\d-\d\dT/.test(value) || Number.isNaN(Date.parse(value)))) throw new Error("FORMAT:date-time");
+    if (schema.format === "date-time" && !isDateTime(value)) throw new Error("FORMAT:date-time");
     if (schema.format === "uri") {
       try { if (!new URL(value).protocol) throw new Error(); } catch { throw new Error("FORMAT:uri"); }
     }
@@ -98,7 +133,9 @@ export function validateSchema(
   if (Array.isArray(value)) {
     if (schema.minItems !== undefined && value.length < schema.minItems) throw new Error("MIN_ITEMS");
     if (schema.maxItems !== undefined && value.length > schema.maxItems) throw new Error("MAX_ITEMS");
-    if (schema.uniqueItems && new Set(value.map(JSON.stringify)).size !== value.length) throw new Error("UNIQUE_ITEMS");
+    if (schema.uniqueItems && value.some((item, index) => value.slice(0, index).some((prior) => equal(item, prior)))) {
+      throw new Error("UNIQUE_ITEMS");
+    }
     if (schema.items) for (const item of value) validateSchema(schema.items, item, registry, root);
   }
   if (value && actual === "object") {
@@ -116,22 +153,33 @@ export function validateSchema(
 
 export function createSchemaRegistry(documents: readonly JsonSchema[]): ReadonlyMap<string, JsonSchema> {
   const registry = new Map<string, JsonSchema>();
-  const walk = (schema: JsonSchema | boolean): void => {
+  const walk = (schema: JsonSchema | boolean, root: JsonSchema, validateRefs: boolean): void => {
     if (typeof schema === "boolean") return;
     for (const key of Object.keys(schema)) if (!KEYS.has(key)) throw new Error(`UNSUPPORTED_KEYWORD:${key}`);
     if (schema.$schema && schema.$schema !== "https://json-schema.org/draft/2020-12/schema") throw new Error("UNSUPPORTED_DIALECT");
-    for (const child of Object.values(schema.$defs ?? {})) walk(child);
-    for (const child of Object.values(schema.properties ?? {})) walk(child);
-    for (const child of schema.allOf ?? []) walk(child);
-    for (const child of schema.oneOf ?? []) walk(child);
-    if (schema.if) walk(schema.if);
-    if (schema.then) walk(schema.then);
-    if (schema.items) walk(schema.items);
+    if (validateRefs && schema.$ref) {
+      if (schema.$ref.startsWith("#/$defs/")) {
+        if (!root.$defs?.[schema.$ref.slice(8)]) throw new Error("UNKNOWN_LOCAL_REF");
+      } else {
+        if (!schema.$ref.startsWith("https://schemas.nirvana-os.dev/")) throw new Error("REMOTE_REF_FORBIDDEN");
+        if (!registry.has(schema.$ref)) throw new Error("UNKNOWN_REF");
+      }
+    }
+    for (const child of Object.values(schema.$defs ?? {})) walk(child, root, validateRefs);
+    for (const child of Object.values(schema.properties ?? {})) walk(child, root, validateRefs);
+    for (const child of schema.allOf ?? []) walk(child, root, validateRefs);
+    for (const child of schema.oneOf ?? []) walk(child, root, validateRefs);
+    if (schema.if) walk(schema.if, root, validateRefs);
+    if (schema.then) walk(schema.then, root, validateRefs);
+    if (schema.items) walk(schema.items, root, validateRefs);
   };
   for (const document of documents) {
-    if (!document.$id || registry.has(document.$id)) throw new Error("SCHEMA_ID");
-    walk(document);
+    if (!document.$id || !document.$id.startsWith("https://schemas.nirvana-os.dev/") || registry.has(document.$id)) {
+      throw new Error("SCHEMA_ID");
+    }
+    walk(document, document, false);
     registry.set(document.$id, document);
   }
+  for (const document of documents) walk(document, document, true);
   return registry;
 }
