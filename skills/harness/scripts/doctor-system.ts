@@ -717,7 +717,7 @@ try {
     add("library: watermarks", "PASS", `clean — ${scanned} files checked in ${libs.length} librar${libs.length > 1 ? "ies" : "y"}`);
   } else if (isAuthor) {
     add("library: watermarks", "FAIL",
-      `${hits} per-buyer marker(s) in ${dirty.join(", ")} — this machine authors packs, so they would ship and misattribute every buyer's copy. Strip before building: ${STRIP_HINT}`);
+      `${hits} per-buyer marker(s) in ${dirty.join(", ")} — this machine authors packs, so they would ship and misattribute every buyer's copy. ${STRIP_HINT}`);
   } else {
     add("library: watermarks", "WARN",
       `${hits} per-buyer marker(s) in ${dirty.join(", ")} — normal for installed paid content; only a problem if this machine builds packs`);

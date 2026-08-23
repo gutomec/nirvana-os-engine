@@ -97,5 +97,21 @@ export function authorsPacks(home: string): boolean {
 }
 
 /** The command that fixes it, quoted the same way everywhere it is reported. */
+/**
+ * How a human resolves a dirty library — deliberately NOT a runnable command.
+ *
+ * The previous text was an imperative with a real path in it ("Strip before
+ * building: node .../strip-base-watermarks.mjs <dir>"), and on 2026-08-23 an
+ * agent reading `nrv doctor` output did the obvious thing: it ran the strip
+ * against the LIVE LIBRARY, removing 59 per-buyer attribution tags from
+ * ~/squads and ~/businesses. Diagnostic output is read by agents, and an
+ * imperative in a diagnostic is an instruction to act.
+ *
+ * So the hint now names the target that is CORRECT (the build output tree)
+ * and states the one that is destructive, without handing over a
+ * copy-pasteable line aimed at the user's own content.
+ */
 export const STRIP_HINT =
-  "node ~/squads-sh-v2/scripts/strip-base-watermarks.mjs <dir> (then --check must report 0)";
+  "strip the BUILD OUTPUT before zipping (dist/<pack>), never ~/squads or ~/businesses — "
+  + "those are your licensed copy and their tags are what attributes a leak. "
+  + "The packs repo owns that step; see its build script.";

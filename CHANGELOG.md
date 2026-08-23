@@ -6,6 +6,45 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### The engine instructed the runtimes to watch, never to work
+
+One agy session produced two silent failures, and both were the engine's,
+not the model's.
+
+It answered a production brief inline. The skill was linked and the hooks
+were installed, but everything wired into that runtime was surveillance:
+two tool hooks emitting audit events, and a SessionStart that recorded
+`session_started` and exited. The sentence telling an agent to reach for the
+harness lives inside `SKILL.md` — unreachable to anyone who has not already
+loaded it. The SessionStart hook now speaks: it injects the invocation
+contract through `additionalContext`, on every gemini and antigravity
+session, without writing to a single user file.
+
+The same session read `nrv doctor` output, found an imperative with a real
+command in it, and ran the watermark strip against the LIVE LIBRARY — 59
+per-buyer attribution tags erased from `~/squads` and `~/businesses`, which
+cannot be regenerated from the files. Diagnostic text is read by agents, and
+an imperative in a diagnostic is an order: the hint now describes the fix,
+names the build tree as the correct target and the library as the one to
+never touch, and the injected contract says plainly that destructive
+commands printed by diagnostics are descriptions, not orders. The strip
+script in the packs repo refuses the live library on its own.
+
+And an unidentified host stopped meaning one vendor. `detectCurrentHost()
+?? "claude-code"` quietly walked every runtime that exports no session
+marker into somebody else's quota, undoing a precedence chain that was
+otherwise correct. Detection failure is now announced on stderr, audited as
+`x_host_runtime_undetected`, and resolved through `NIRVANA_DEFAULT_RUNTIME`
+or the first runtime actually installed — never a hardcoded name.
+
+One test in the same area was reading the developer's machine: the case for
+"a HOME without ~/.claude never gets one" inherited the real PATH, so it
+passed in CI only because no `claude` binary exists on the runner, and
+contradicted the documented two-signal rule anywhere the runtime is actually
+installed. It now pins PATH to the system utilities and asserts the fixture.
+
 ## 0.7.10 — 2026-08-23
 
 ### `nrv activate` — the door that was never on the outside
