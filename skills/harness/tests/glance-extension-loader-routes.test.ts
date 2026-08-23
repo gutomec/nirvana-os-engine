@@ -177,6 +177,42 @@ test("EXT-LOADER-LIMIT-65 isolates the deterministic excess extension", () => {
   expect(validateSchema(SCHEMAS.catalog, context.catalog, context.registry)).toBe(true);
 });
 
+for (const count of [64, 65, 257] as const) {
+  test(`EXT-LOADER-DIAGNOSTIC-LIMIT-${count} returns a deterministic schema-valid catalog`, () => {
+    const value = roots(`diagnostic-limit-${count}`);
+    for (let index = 0; index < count; index++) {
+      mkdirSync(join(value.global, `invalid-${String(index).padStart(3, "0")}`), { recursive: true });
+    }
+    let correlationCalls = 0;
+    const context = discoverExtensionContext({
+      nirvanaHome: value.home,
+      projectRoot: value.project,
+      scope: "global",
+      schemas: SCHEMAS,
+      correlationId: () => {
+        correlationCalls += 1;
+        return `00000000-0000-4000-8000-${String(correlationCalls).padStart(12, "0")}`;
+      },
+      now: new Date("2026-08-22T12:30:00Z"),
+    });
+
+    expect(context.extensions.size).toBe(0);
+    expect(context.catalog.extensions).toEqual([]);
+    expect(context.catalog.diagnostics).toHaveLength(64);
+    expect(context.catalog.diagnostics.every((item) => item.error.code === "MANIFEST_INVALID")).toBe(true);
+    expect(correlationCalls).toBe(count === 64 ? 64 : 65);
+    expect(context.catalog.diagnostics.map((item) => item.error.correlation_id)).toEqual(
+      count === 64
+        ? Array.from({ length: 64 }, (_, index) => `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`)
+        : [
+            ...Array.from({ length: 63 }, (_, index) => `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`),
+            "00000000-0000-4000-8000-000000000065",
+          ],
+    );
+    expect(validateSchema(SCHEMAS.catalog, context.catalog, context.registry)).toBe(true);
+  });
+}
+
 test("EXT-LOADER-INCOMPATIBLE remains diagnostic and does not load", () => {
   const value = roots("incompatible");
   const manifest = validManifest("future-ext");

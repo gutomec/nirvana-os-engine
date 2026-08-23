@@ -34,6 +34,7 @@ import type {
 const MANIFEST_FILE = "glance-extension.json";
 const MAX_MANIFEST_BYTES = 128 * 1024;
 const MAX_EXTENSIONS = 64;
+const MAX_DIAGNOSTICS = 64;
 const HOST_API_VERSION = "1.0.0";
 
 export interface ExtensionSchemas {
@@ -253,6 +254,7 @@ export function discoverExtensionContext(options: DiscoverExtensionOptions): Ext
   const rejected: LoadedGlanceExtension[] = [];
   const diagnostics: GlanceExtensionPublicErrorV1[] = [];
   const candidates: LoadedGlanceExtension[] = [];
+  let excessDiagnostic: GlanceExtensionPublicErrorV1 | undefined;
 
   let entries: Dirent[] = [];
   try {
@@ -263,8 +265,9 @@ export function discoverExtensionContext(options: DiscoverExtensionOptions): Ext
 
   for (const [index, entry] of entries.entries()) {
     if (index >= MAX_EXTENSIONS) {
-      diagnostics.push(safePublicError("MANIFEST_INVALID", correlation));
-      continue;
+      excessDiagnostic = safePublicError("MANIFEST_INVALID", correlation);
+      if (diagnostics.length === MAX_DIAGNOSTICS) diagnostics.pop();
+      break;
     }
     const extensionRoot = join(selectedRoot, entry.name);
     try {
@@ -301,8 +304,16 @@ export function discoverExtensionContext(options: DiscoverExtensionOptions): Ext
   }
   for (const group of byId.values()) {
     if (group.length === 1) accepted.push(group[0]!);
-    else for (const record of group) diagnostics.push(safePublicError("COLLISION", correlation, record.manifest.id));
+    else {
+      for (const record of group) {
+        const capacity = MAX_DIAGNOSTICS - (excessDiagnostic ? 1 : 0);
+        if (diagnostics.length < capacity) {
+          diagnostics.push(safePublicError("COLLISION", correlation, record.manifest.id));
+        }
+      }
+    }
   }
+  if (excessDiagnostic) diagnostics.push(excessDiagnostic);
 
   const context = buildExtensionContext(accepted, options.scope, rootDigest, options.schemas, projectRootDigest);
   context.catalog.extensions.push(
