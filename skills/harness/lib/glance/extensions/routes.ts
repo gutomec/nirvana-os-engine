@@ -123,7 +123,7 @@ export async function handleExtensionRoute(
     if (api && parts.length === 3) {
       const metadata = context.extension.catalog.extensions.find((item) => item.id === extensionId && item.status === "accepted");
       return metadata
-        ? json(metadata, 200, head)
+        ? json({ ...metadata, external_navigation: record.manifest.external_navigation }, 200, head)
         : failure(context, "EXTENSION_NOT_FOUND", 404, head, extensionId);
     }
 

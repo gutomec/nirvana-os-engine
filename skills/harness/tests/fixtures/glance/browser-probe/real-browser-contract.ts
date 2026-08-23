@@ -6,6 +6,7 @@ export interface BrowserProbe {
   confirmPointer(): Promise<void>;
   confirmKeyboard(key: "Enter" | " "): Promise<void>;
   cancelPointer(): Promise<void>;
+  cancelEscape(): Promise<{ opened: number; focusId: string }>;
   confirmSynthetic(): Promise<void>;
   advanceMonotonic(ms: number): Promise<void>;
   setOpenMode(mode: "normal" | "failure"): Promise<void>;
@@ -13,7 +14,14 @@ export interface BrowserProbe {
   closePopups(): Promise<void>;
   failureReported(): Promise<boolean>;
   openerWasNull(): Promise<boolean>;
-  baseline(): Promise<{ pwned: false; cards759: "grid"; table759: "none"; cards760: "none"; table760: "table"; focusOutlineStyle: "solid"; statusText: "Snapshot expired"; iframeSandbox: "allow-scripts"; hostControlOutsideIframe: true }>;
+  baseline(): Promise<{
+    pwned: false;
+    cards759: "grid"; table759: "none"; cards760: "none"; table760: "table";
+    panel759: string; panel760: string;
+    focusOutlineStyle: "solid"; statusText: string;
+    iframeSandbox: "allow-scripts"; iframeRoute: string; catalogRequested: true;
+    hostControlOutsideIframe: true;
+  }>;
 }
 
 async function openedBy(probe: BrowserProbe, action: () => Promise<void>) {
@@ -36,6 +44,8 @@ export async function runBrowserContract(probe: BrowserProbe) {
   const iframeTrustedOpened = await openedBy(probe, () => probe.confirmPointer());
   await probe.requestFromIframe(); await probe.cancelPointer();
   const cancelOpened = await openedBy(probe, () => probe.confirmPointer());
+  await probe.requestFromIframe();
+  const escape = await probe.cancelEscape();
   await probe.requestFromIframe(); await probe.advanceMonotonic(30_001);
   const expiredOpened = await openedBy(probe, () => probe.confirmPointer());
   await probe.requestFromIframe(); await probe.setOpenMode("failure");
@@ -56,7 +66,8 @@ export async function runBrowserContract(probe: BrowserProbe) {
     iframeRequestTrusted: observed.eventTrusted, iframeRequestEventType: observed.eventType,
     iframeRequestFrameId: observed.frameId, iframeTargetFrameId: observed.targetFrameId,
     iframeRequestFrameMatches: observed.frameId === observed.targetFrameId,
-    iframeTrustedOpened, cancelOpened, expiredOpened, failedOpenOpened, failureReported, syntheticOpened,
+    iframeTrustedOpened, cancelOpened, escapeOpened: escape.opened, escapeFocusId: escape.focusId,
+    expiredOpened, failedOpenOpened, failureReported, syntheticOpened,
     trustedPointerOpened: iframeTrustedOpened, trustedEnterOpened, trustedSpaceOpened, openerIsNull, ...baseline,
   };
 }

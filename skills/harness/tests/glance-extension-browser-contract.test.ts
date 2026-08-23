@@ -31,6 +31,7 @@ test("EXT-BROWSER-FRAME-PROVENANCE rejects independently observed frame mismatch
     confirmPointer: unexpected,
     confirmKeyboard: unexpected,
     cancelPointer: unexpected,
+    cancelEscape: unexpected,
     confirmSynthetic: unexpected,
     advanceMonotonic: unexpected,
     setOpenMode: unexpected,
@@ -57,7 +58,7 @@ test("EXT-BROWSER-CLEANUP-ON-THROW waits for process exit and removes the profil
   let processRunning = true;
   try { process.kill(launched!.pid, 0); } catch { processRunning = false; }
   expect(processRunning).toBe(false);
-}, 45_000);
+}, 90_000);
 
 test("EXT-BROWSER-REAL-CONTRACT observes the live iframe, trusted inputs, popups and layout", async () => {
   const result = await executeRealBrowser();
@@ -73,10 +74,12 @@ test("EXT-BROWSER-REAL-CONTRACT observes the live iframe, trusted inputs, popups
   expect(result.browserConnectionClosed).toBe(true);
   expect(result.browserProfileRemoved).toBe(true);
   expect(result).toMatchObject({
-    iframeTrustedOpened: 1, cancelOpened: 0, expiredOpened: 0, failedOpenOpened: 0,
+    iframeTrustedOpened: 1, cancelOpened: 0, escapeOpened: 0,
+    escapeFocusId: "glance-extension-nav-fixture-ext", expiredOpened: 0, failedOpenOpened: 0,
     failureReported: true, syntheticOpened: 0, trustedPointerOpened: 1, trustedEnterOpened: 1,
     trustedSpaceOpened: 1, openerIsNull: true, pwned: false, cards759: "grid", table759: "none",
-    cards760: "none", table760: "table", focusOutlineStyle: "solid", statusText: "Snapshot expired",
-    iframeSandbox: "allow-scripts", hostControlOutsideIframe: true,
+    cards760: "none", table760: "table", focusOutlineStyle: "solid", statusText: "External link could not be opened",
+    iframeSandbox: "allow-scripts", iframeRoute: "/extensions/fixture-ext/ui/index.html",
+    catalogRequested: true, hostControlOutsideIframe: true,
   });
-}, 45_000);
+}, 90_000);

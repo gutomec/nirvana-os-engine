@@ -23,6 +23,7 @@
   <link rel="stylesheet" href="/tokens.css?v=__ASSET_VER__">
   <link rel="stylesheet" href="/components.css?v=__ASSET_VER__">
   <link rel="stylesheet" href="/glance.css?v=__ASSET_VER__">
+  <link rel="stylesheet" href="/extension-host.css?v=__ASSET_VER__">
 </head>
 <body class="font-inter antialiased">
 
@@ -168,6 +169,10 @@
             </span>
           </button>
         </template>
+        <section id="glance-extension-navigation" class="glance-extension-catalog" aria-label="Extensions" hidden>
+          <div class="glance-extension-catalog-label">Extensions</div>
+          <div id="glance-extension-navigation-items"></div>
+        </section>
       </div>
 
       <!-- ══ NÍVEL 2 — lista (só p/ LIST_KINDS): back header + filtro + lista full-height ══ -->
@@ -532,6 +537,32 @@
           </div>
         </div>
       </template>
+    </main>
+
+    <!-- ─── Generic extension pane (inventoried, sandboxed, read-only) ─── -->
+    <main id="glance-extension-panel" class="detail-pane glance-extension-pane" hidden>
+      <section id="glance-extension-host" class="glance-extension-host" aria-labelledby="glance-extension-title">
+        <header class="glance-extension-header">
+          <div>
+            <div class="text-label">Extension</div>
+            <h1 id="glance-extension-title" class="detail-title"></h1>
+            <p id="glance-extension-description" class="text-secondary"></p>
+          </div>
+          <span id="glance-extension-status" class="meta-pill" role="status" aria-live="polite">Extension not selected</span>
+        </header>
+        <div id="glance-extension-text" class="glance-extension-text" aria-live="polite"></div>
+        <section id="glance-extension-external-navigation" class="glance-extension-navigation" aria-label="External navigation confirmation" hidden>
+          <span id="glance-extension-pending"></span>
+          <button id="glance-extension-confirm" type="button" class="btn btn-primary glance-extension-confirm" hidden>Open GitHub</button>
+          <button id="glance-extension-cancel" type="button" class="btn btn-ghost glance-extension-cancel" hidden>Cancel</button>
+        </section>
+        <iframe
+          id="glance-extension-frame"
+          class="glance-extension-frame"
+          title="Glance extension"
+          sandbox="allow-scripts"
+          referrerpolicy="no-referrer"></iframe>
+      </section>
     </main>
 
     <!-- ─── Agents pane (live agents working — SSE-driven swimlanes + workspace) ─── -->

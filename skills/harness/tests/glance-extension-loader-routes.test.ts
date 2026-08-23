@@ -311,7 +311,11 @@ test("EXT-HTTP-METADATA percent-decodes an id exactly once", async () => {
   const { routes } = discoveredRouteFixture("http-metadata");
   const response = await handleExtensionRoute(new Request("http://127.0.0.1/api/extensions/fixture%2dext"), routes);
   expect(response?.status).toBe(200);
-  expect(await body(response)).toMatchObject({ id: "fixture-ext", status: "accepted" });
+  expect(await body(response)).toMatchObject({
+    id: "fixture-ext",
+    status: "accepted",
+    external_navigation: { mode: "host-mediated", allowed_hosts: ["github.com"] },
+  });
 });
 
 test("EXT-HTTP-UI serves only the inventoried document", async () => {

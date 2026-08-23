@@ -75,6 +75,17 @@ test("EXT-HOST-INVALID-INIT leaves no ready timer after terminal cleanup", async
   expect(h.pendingTimerCount()).toBe(0);
 });
 
+test("EXT-KEYBOARD-ESCAPE and EXT-KEYBOARD-FOCUS cancel a pending request and restore host focus", async () => {
+  const h = makeHostHarness();
+  h.connect();
+  h.send(ready(h));
+  h.send(request(h, 1));
+  await h.flush();
+  expect(h.pressHostKey("Escape")).toEqual({ defaultPrevented: true, focusCount: 1, pending: false });
+  expect(h.pressHostKey("Escape")).toEqual({ defaultPrevented: false, focusCount: 1, pending: false });
+  h.close();
+});
+
 test("EXT-HOST-AFTER-CLOSE-IS-DISCARDED observes the real platform port after-close behavior", async () => {
   const h = makeHostHarness();
   h.connect(); h.send(ready(h));

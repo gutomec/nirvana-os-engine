@@ -54,14 +54,17 @@ export class ExtensionHostController {
       !this.runtime.coreHosts.includes("github.com")) throw new Error("URL_REJECTED");
     this.pending = { url: parsed.href, displayLabel, requestId, created: this.runtime.monotonicNow() };
     if (this.runtime.pendingTarget) this.runtime.pendingTarget.textContent = `${displayLabel} (github.com)`;
+    if (this.runtime.navigationTarget) this.runtime.navigationTarget.hidden = false;
     if (this.runtime.confirmControl) this.runtime.confirmControl.hidden = false;
     if (this.runtime.cancelControl) this.runtime.cancelControl.hidden = false;
+    this.runtime.confirmControl?.focus?.();
     return true;
   }
 
   clearPending() {
     this.pending = null;
     if (this.runtime.pendingTarget) this.runtime.pendingTarget.textContent = "";
+    if (this.runtime.navigationTarget) this.runtime.navigationTarget.hidden = true;
     if (this.runtime.confirmControl) this.runtime.confirmControl.hidden = true;
     if (this.runtime.cancelControl) this.runtime.cancelControl.hidden = true;
   }
@@ -120,7 +123,8 @@ export function mountExtensionHost(options) {
     manifestHosts: options.manifestHosts ?? [], coreHosts: options.coreHosts ?? ["github.com"],
     hostRoot: options.hostRoot,
     confirmControl: options.confirmControl, cancelControl: options.cancelControl,
-    pendingTarget: options.pendingTarget, textTarget: options.textTarget, statusTarget: options.statusTarget,
+    navigationTarget: options.navigationTarget, pendingTarget: options.pendingTarget,
+    textTarget: options.textTarget, statusTarget: options.statusTarget,
     monotonicNow, audit, open: options.open ?? ((...args) => window.open(...args)),
   });
   const onConfirmClick = (event) => opener.confirm(event);
@@ -131,9 +135,16 @@ export function mountExtensionHost(options) {
     }
   };
   const onCancelClick = () => opener.cancel();
+  const onHostKeydown = (event) => {
+    if (event.key !== "Escape" || !opener.pending) return;
+    event.preventDefault?.();
+    opener.cancel();
+    options.returnFocusTarget?.focus?.();
+  };
 
   const cleanup = () => {
     windowTarget.removeEventListener("message", onWindowMessage);
+    windowTarget.removeEventListener("keydown", onHostKeydown);
     options.confirmControl?.removeEventListener?.("click", onConfirmClick);
     options.confirmControl?.removeEventListener?.("keydown", onConfirmKeydown);
     options.cancelControl?.removeEventListener?.("click", onCancelClick);
@@ -236,6 +247,7 @@ export function mountExtensionHost(options) {
   options.confirmControl?.addEventListener?.("keydown", onConfirmKeydown);
   options.cancelControl?.addEventListener?.("click", onCancelClick);
   windowTarget.addEventListener("message", onWindowMessage);
+  windowTarget.addEventListener("keydown", onHostKeydown);
   bootstrapTimer = setTimer(() => reject(-1), TIMEOUT_MS);
   return api;
 }

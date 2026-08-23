@@ -1,9 +1,18 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><title>Inventoried extension iframe</title></head>
+<head>
+  <meta charset="utf-8"><title>Inventoried extension iframe</title>
+  <style>
+    #cards { display: none; }
+    #table { display: table; }
+    @media (max-width: 759px) { #cards { display: grid; } #table { display: none; } }
+  </style>
+</head>
 <body>
   <button id="request-open">Request GitHub</button>
   <pre id="payload"></pre>
+  <div id="cards">Cards</div>
+  <table id="table"><tbody><tr><td>Table</td></tr></tbody></table>
   <script>
     window.pwned = false;
     let port;

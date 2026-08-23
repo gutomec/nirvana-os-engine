@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { digestSnapshot } from "../../lib/glance/extensions/canonicalize.ts";
+import { digestPayload, digestSnapshot } from "../../lib/glance/extensions/canonicalize.ts";
 import type { LoadedGlanceExtension } from "../../lib/glance/extensions/types.ts";
 import {
   EXTENSION_BOOTSTRAP_PACKET,
@@ -27,6 +27,7 @@ export interface ChannelHarness {
   listenerCounts(): { window: number; confirm: number; cancel: number };
   pendingTimerCount(): number;
   inboundDeliveries(): number;
+  pressHostKey(key: string): { defaultPrevented: boolean; focusCount: number; pending: boolean };
 }
 
 class CountingEventTarget extends EventTarget {
@@ -80,6 +81,8 @@ export function makeHostHarness(options: { theme?: string; tokens?: Record<strin
   const textTarget = { textContent: "" };
   const statusTarget = { textContent: "" };
   const pendingTarget = { textContent: "" };
+  let returnFocusCount = 0;
+  const returnFocusTarget = { focus: () => { returnFocusCount++; } };
 
   const host = mountExtensionHost({
     iframe,
@@ -87,6 +90,7 @@ export function makeHostHarness(options: { theme?: string; tokens?: Record<strin
     confirmControl,
     cancelControl,
     pendingTarget,
+    returnFocusTarget,
     textTarget,
     statusTarget,
     extensionId: "fixture-ext",
@@ -156,6 +160,12 @@ export function makeHostHarness(options: { theme?: string; tokens?: Record<strin
     listenerCounts: () => ({ window: windowTarget.listenerCount(), confirm: confirmControl.listenerCount(), cancel: cancelControl.listenerCount() }),
     pendingTimerCount: () => timers.size,
     inboundDeliveries: host.inboundDeliveries,
+    pressHostKey(key) {
+      const event = new Event("keydown", { cancelable: true });
+      Object.defineProperty(event, "key", { value: key });
+      windowTarget.dispatchEvent(event);
+      return { defaultPrevented: event.defaultPrevented, focusCount: returnFocusCount, pending: host.opener.pending !== null };
+    },
   };
 }
 
@@ -163,6 +173,9 @@ export interface StartGlanceProcessOptions {
   extension: LoadedGlanceExtension;
   dataset: "valid" | "invalid";
   scope: "global" | "project";
+  uiBytes?: Uint8Array;
+  payload?: unknown;
+  installExtension?: boolean;
 }
 
 export interface RunningGlanceProcess {
@@ -205,23 +218,36 @@ async function waitForHealth(port: number, child: ReturnType<typeof Bun.spawn>):
 
 export async function startGlanceProcess(options: StartGlanceProcessOptions): Promise<RunningGlanceProcess> {
   const home = mkdtempSync(join(tmpdir(), "glance-extension-process-"));
-  const extensionRoot = join(home, ".nirvana", "glance", "extensions", options.extension.manifest.id);
-  mkdirSync(join(extensionRoot, "ui"), { recursive: true });
-  mkdirSync(join(extensionRoot, "data"), { recursive: true });
-  writeJson(join(extensionRoot, "glance-extension.json"), options.extension.manifest);
-  writeFileSync(join(extensionRoot, "ui", "index.html"), UI_BYTES);
-  const envelope = validEnvelope(
-    options.extension.manifest.id,
-    options.scope,
-    options.scope === "project" ? pathDigest(home) : undefined,
-  );
-  const now = new Date().toISOString();
-  envelope.freshness.observed_at = now;
-  envelope.freshness.state = "fresh";
-  envelope.generated_at = now;
-  envelope.snapshot_id = digestSnapshot(envelope as unknown as Record<string, unknown>);
-  if (options.dataset === "invalid") envelope.payload = { records: [{ altered: true }] };
-  writeJson(join(extensionRoot, "data", "snapshot.snapshot.json"), envelope);
+  if (options.installExtension !== false) {
+    const manifest = structuredClone(options.extension.manifest);
+    const uiBytes = options.uiBytes ?? UI_BYTES;
+    manifest.files[0] = {
+      ...manifest.files[0],
+      bytes: uiBytes.byteLength,
+      sha256: createHash("sha256").update(uiBytes).digest("hex"),
+    };
+    const extensionRoot = join(home, ".nirvana", "glance", "extensions", manifest.id);
+    mkdirSync(join(extensionRoot, "ui"), { recursive: true });
+    mkdirSync(join(extensionRoot, "data"), { recursive: true });
+    writeJson(join(extensionRoot, "glance-extension.json"), manifest);
+    writeFileSync(join(extensionRoot, "ui", "index.html"), uiBytes);
+    const envelope = validEnvelope(
+      manifest.id,
+      options.scope,
+      options.scope === "project" ? pathDigest(home) : undefined,
+    );
+    const now = new Date().toISOString();
+    envelope.freshness.observed_at = now;
+    envelope.freshness.state = "fresh";
+    envelope.generated_at = now;
+    if (options.payload !== undefined) {
+      envelope.payload = options.payload;
+      envelope.integrity.payload_digest = digestPayload(options.payload);
+    }
+    envelope.snapshot_id = digestSnapshot(envelope as unknown as Record<string, unknown>);
+    if (options.dataset === "invalid") envelope.payload = { records: [{ altered: true }] };
+    writeJson(join(extensionRoot, "data", "snapshot.snapshot.json"), envelope);
+  }
 
   const port = reserveLoopbackPort();
   const glanceScript = join(import.meta.dir, "../../scripts/glance.ts");
