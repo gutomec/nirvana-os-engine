@@ -7,8 +7,25 @@ import { parseStrictJson } from "./strict-json.ts";
 export class ServiceIoError extends Error { constructor(operation: string, cause?: unknown) { super(`SERVICE_IO:${operation}`, { cause }); } }
 export class IncompatibleStateError extends Error {}
 export interface ServiceIo { read(path: string): Uint8Array; archive(path: string): void; }
+export interface PrivateWriteRuntime {
+  fsyncFile(descriptor: number): void;
+  close(descriptor: number): void;
+  rename(from: string, to: string): void;
+  fsyncDirectory(path: string): void;
+  reread(path: string): Uint8Array;
+  remove(path: string): void;
+}
 
-export function writePrivateBytes(path: string, bytes: Uint8Array): void {
+export const privateWriteRuntime: PrivateWriteRuntime = {
+  fsyncFile: fsyncSync,
+  close: closeSync,
+  rename: renameSync,
+  fsyncDirectory,
+  reread: readFileSync,
+  remove: path => rmSync(path, { force: true }),
+};
+
+export function writePrivateBytes(path: string, bytes: Uint8Array, io: PrivateWriteRuntime = privateWriteRuntime): void {
   const parent = dirname(path);
   const temporary = join(parent, `.${basename(path)}.${randomUUID()}.tmp`);
   let descriptor: number | undefined;
@@ -20,16 +37,15 @@ export function writePrivateBytes(path: string, bytes: Uint8Array): void {
     descriptor = openSync(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
     restrictFile(temporary);
     writeFileSync(descriptor, bytes);
-    fsyncSync(descriptor);
-    closeSync(descriptor);
+    io.fsyncFile(descriptor);
+    io.close(descriptor);
     descriptor = undefined;
-    renameSync(temporary, path);
-    restrictFile(path);
-    fsyncDirectory(parent);
-    if (!Buffer.from(readFileSync(path)).equals(Buffer.from(bytes))) throw new Error("REREAD_MISMATCH");
+    io.rename(temporary, path);
+    io.fsyncDirectory(parent);
+    if (!Buffer.from(io.reread(path)).equals(Buffer.from(bytes))) throw new Error("REREAD_MISMATCH");
   } catch (cause) { primary = cause; }
-  if (descriptor !== undefined) { try { closeSync(descriptor); } catch (cause) { cleanup ??= cause; } }
-  try { rmSync(temporary, { force: true }); } catch (cause) { cleanup ??= cause; }
+  if (descriptor !== undefined) { try { io.close(descriptor); } catch (cause) { cleanup ??= cause; } }
+  try { io.remove(temporary); } catch (cause) { cleanup ??= cause; }
   if (primary) { const error = new ServiceIoError("PRIVATE_WRITE", primary); Object.assign(error, { cleanup }); throw error; }
   if (cleanup) throw new ServiceIoError("PRIVATE_WRITE_CLEANUP", cleanup);
 }

@@ -16,10 +16,9 @@ export function assertWindowsAclPrivate(principals: readonly string[], currentUs
 }
 
 export function assertWindowsAclSids(aces: readonly WindowsAce[], currentUserSid: string, logonSid: string | undefined): void {
-  const allowed = new Set([currentUserSid, "S-1-5-18"]);
-  if (logonSid) allowed.add(logonSid);
+  const fullControlSids = new Set([currentUserSid, "S-1-5-18"]);
   const validLogon = (ace: WindowsAce) => logonSid !== undefined && ace.sid === logonSid && ace.rights === "0x1200a9";
-  const valid = (ace: WindowsAce) => ace.type === "allow" && (allowed.has(ace.sid) && ace.rights === "FA" || validLogon(ace));
+  const valid = (ace: WindowsAce) => ace.type === "allow" && ((fullControlSids.has(ace.sid) && ace.rights === "FA") || validLogon(ace));
   if (!aces.length || aces.some(ace => !valid(ace))) throw new ServicePermissionError("WINDOWS_ACL_NOT_PRIVATE");
 }
 
@@ -58,10 +57,11 @@ function inspectWindowsAces(path: string): WindowsAce[] {
 function restrictWindows(path: string): void {
   const currentUser = process.env.USERNAME;
   if (!currentUser) throw new ServicePermissionError("WINDOWS_CURRENT_USER_UNAVAILABLE");
+  const capturedLogonSid = basename(path).endsWith(".tmp") ? inspectWindowsAces(path).find(ace => ace.type === "allow" && ace.rights === "0x1200a9" && /^S-1-5-5-\d+-\d+$/.test(ace.sid))?.sid : undefined;
   const result = Bun.spawnSync(["icacls", path, "/inheritance:r", "/grant:r", `${currentUser}:(F)`], { stdout: "pipe", stderr: "pipe" });
   if (result.exitCode !== 0) throw new ServicePermissionError("WINDOWS_ACL_SET");
   const currentUserSid = sidFromWhoAmI(["/user", "/fo", "csv", "/nh"], true)!;
-  const logonSid = sidFromWhoAmI(["/groups", "/fo", "csv", "/nh"], false);
+  const logonSid = capturedLogonSid ?? sidFromWhoAmI(["/groups", "/fo", "csv", "/nh"], false);
   assertWindowsAclSids(inspectWindowsAces(path), currentUserSid, logonSid);
 }
 
