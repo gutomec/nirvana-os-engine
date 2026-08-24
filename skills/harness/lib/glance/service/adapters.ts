@@ -1,3 +1,7 @@
+import { createHash } from "node:crypto";
+import { closeSync, mkdirSync, openSync } from "node:fs";
+import { dirname } from "node:path";
+import { canonicalizeJcs } from "./canonicalize.ts";
 import { digestJcs } from "./state.ts";
 import type { ServiceConfigV1 } from "./types.ts";
 
@@ -20,4 +24,133 @@ export function buildServiceHealth(config: ServiceConfigV1, instance: { instance
     read_only: true,
     persistent: true,
   };
+}
+
+export interface SpawnedService { pid: number; unref(): void }
+export interface ProcessInspection { exists: boolean; entrypoint?: string; argv?: string[] }
+export interface ServiceProcessAdapter {
+  spawn(argv: readonly string[], env: Readonly<Record<string, string>>, logPath: string): SpawnedService;
+  inspect(pid: number): Promise<ProcessInspection>;
+  terminateOwn(pid: number): never;
+}
+
+export function canonicalWorkerArgv(worker: string, serviceRoot: string, startupId: string): string[] {
+  return [process.execPath, worker, "--service-root", serviceRoot, "--config-ref", "config.json", "--instance-ref", "instance.json", "--startup-id", startupId];
+}
+
+export interface WorkerIdentityParts { entrypoint: string; serviceRoot: string; startupId: string }
+
+export function processDigestFromIdentity(parts: WorkerIdentityParts): `sha256:${string}` {
+  return `sha256:${createHash("sha256").update(canonicalizeJcs(parts)).digest("hex")}`;
+}
+
+export function extractWorkerIdentityFromArgv(argv: readonly string[]): WorkerIdentityParts | null {
+  if (argv.length < 6) return null;
+  const readFlag = (flag: string): string | undefined => {
+    const index = argv.indexOf(flag);
+    return index >= 0 && index + 1 < argv.length ? argv[index + 1] : undefined;
+  };
+  const serviceRoot = readFlag("--service-root");
+  const startupId = readFlag("--startup-id");
+  if (serviceRoot === undefined || startupId === undefined) return null;
+  return { entrypoint: argv[1] ?? argv[0], serviceRoot, startupId };
+}
+
+function splitWindowsCommandLine(commandLine: string): string[] {
+  const parts: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let index = 0; index < commandLine.length; index++) {
+    const character = commandLine[index];
+    if (character === '"') { inQuotes = !inQuotes; continue; }
+    if (!inQuotes && character === " ") { if (current) { parts.push(current); current = ""; } continue; }
+    current += character;
+  }
+  if (current) parts.push(current);
+  return parts;
+}
+
+function inspectWindowsProcess(pid: number): ProcessInspection {
+  const script = `$p=Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}' | Select-Object -First 1 ExecutablePath,CommandLine; if($p){[Console]::Out.Write(($p|ConvertTo-Json -Compress))}`;
+  const result = Bun.spawnSync(["powershell", "-NoProfile", "-NonInteractive", "-Command", script], { stdout: "pipe", stderr: "pipe" });
+  const output = result.stdout ? new TextDecoder().decode(result.stdout).trim() : "";
+  if (!output) return { exists: false };
+  try {
+    const parsed = JSON.parse(output) as { ExecutablePath?: string; CommandLine?: string };
+    return { exists: true, entrypoint: parsed.ExecutablePath ?? undefined, argv: parsed.CommandLine ? splitWindowsCommandLine(parsed.CommandLine) : undefined };
+  } catch { return { exists: false }; }
+}
+
+function inspectPosixProcess(pid: number): ProcessInspection {
+  try {
+    const bytes = new TextDecoder().decode(require("node:fs").readFileSync(`/proc/${pid}/cmdline`));
+    const argv = bytes.split("\0").filter(part => part.length > 0);
+    if (!argv.length) return { exists: false };
+    return { exists: true, entrypoint: argv[0], argv };
+  } catch {
+    const result = Bun.spawnSync(["ps", "-p", String(pid), "-o", "command="], { stdout: "pipe", stderr: "pipe" });
+    const line = result.stdout ? new TextDecoder().decode(result.stdout).trim() : "";
+    if (!line || result.exitCode !== 0) return { exists: false };
+    return { exists: true, entrypoint: line.split(" ")[0]!, argv: line.split(" ") };
+  }
+}
+
+export function createBunProcessAdapter(): ServiceProcessAdapter {
+  return {
+    spawn(argv: readonly string[], env: Readonly<Record<string, string>>, logPath: string): SpawnedService {
+      mkdirSync(dirname(logPath), { recursive: true });
+      const logDescriptor = openSync(logPath, "a");
+      try {
+        const child = Bun.spawn([...argv], { env: { ...process.env, ...env }, stdin: "ignore", stdout: logDescriptor, stderr: logDescriptor });
+        return { pid: child.pid, unref() { child.unref(); } };
+      } finally { closeSync(logDescriptor); }
+    },
+    async inspect(pid: number): Promise<ProcessInspection> {
+      if (!Number.isInteger(pid) || pid <= 0) return { exists: false };
+      return process.platform === "win32" ? inspectWindowsProcess(pid) : inspectPosixProcess(pid);
+    },
+    terminateOwn(): never { throw new Error("SERVICE_TERMINATE_FORBIDDEN"); },
+  };
+}
+
+export type ExistingServiceVerdict =
+  | { kind: "match"; restartRequired: false }
+  | { kind: "stale"; processAbsent: boolean }
+  | { kind: "indeterminate"; code: string }
+  | { kind: "conflict"; code: string }
+  | { kind: "drift"; restartRequired: true };
+
+export interface ExistingServiceEvidence {
+  expected: {
+    instanceId: string;
+    effectiveConfigDigest: string;
+    engineVersion: string;
+    workerEntrypoint: string;
+    expectedServiceRoot: string;
+    recordedProcessDigest: string;
+  };
+  process: ProcessInspection;
+  portOwnedByListener: boolean;
+  health?: Record<string, unknown>;
+}
+
+export function classifyExistingService(evidence: ExistingServiceEvidence): ExistingServiceVerdict {
+  const { expected, process, health } = evidence;
+  if (!process.exists) return { kind: "stale", processAbsent: true };
+  if (!health || typeof health !== "object") return { kind: "indeterminate", code: "HEALTH_UNAVAILABLE" };
+  if (health.mode !== "service") return { kind: "conflict", code: "FOREIGN_LISTENER" };
+  if (health.instance_id !== expected.instanceId) return { kind: "conflict", code: "INSTANCE_CONFLICT" };
+  if (health.effective_config_digest !== expected.effectiveConfigDigest) return { kind: "conflict", code: "CONFIG_CONFLICT" };
+  if (health.engine_version !== expected.engineVersion) return { kind: "conflict", code: "ENGINE_CONFLICT" };
+  const liveIdentity = process.argv ? extractWorkerIdentityFromArgv(process.argv) : null;
+  if (!liveIdentity) return { kind: "conflict", code: "FOREIGN_LISTENER" };
+  const liveProcessDigest = processDigestFromIdentity(liveIdentity);
+  if (health.process_digest !== expected.recordedProcessDigest && health.process_digest !== liveProcessDigest) {
+    return { kind: "conflict", code: "PROCESS_CONFLICT" };
+  }
+  if (liveIdentity.serviceRoot !== expected.expectedServiceRoot) return { kind: "conflict", code: "ROOT_CONFLICT" };
+  if (liveIdentity.entrypoint !== expected.workerEntrypoint || liveProcessDigest !== expected.recordedProcessDigest) {
+    return { kind: "drift", restartRequired: true };
+  }
+  return { kind: "match", restartRequired: false };
 }

@@ -1,11 +1,13 @@
 import { expect, test } from "bun:test";
 import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stopMacInput } from "../lib/glance/service/control.ts";
 import { drainServer } from "../lib/glance/service/request-drain.ts";
 import { resolveServiceRef } from "../lib/glance/service/paths.ts";
+import { validateInstance } from "../lib/glance/service/schema-validator.ts";
+import { parseStrictJson } from "../lib/glance/service/strict-json.ts";
 import { digestJcs, writeDurableJson, writePrivateBytes } from "../lib/glance/service/state.ts";
 import { createStartupReadiness, createStopControl, runServiceWorker } from "../scripts/glance-service-worker.ts";
 
@@ -118,6 +120,15 @@ function assembleRuntime(harness: ReturnType<typeof createWorkerHarness>, schedu
     watchStop: stopControl.watchStop,
     validateAndConsume: stopControl.validateAndConsume,
     drain: (server: Bun.Server<unknown>) => drainServer(server, { timeoutMs: 2_000 }),
+    finalizeStop: async (instance: unknown) => {
+      const instancePath = resolveServiceRef(harness.root, "instance.json", false);
+      try {
+        if (digestJcs(parseStrictJson(readFileSync(instancePath))) !== digestJcs(instance)) return;
+        rmSync(instancePath, { force: true });
+      } catch { return; }
+      try { rmSync(resolveServiceRef(harness.root, (instance as { control_secret_ref: string }).control_secret_ref, true), { force: true }); } catch {}
+      try { appendFileSync(resolveServiceRef(harness.root, (instance as { log_ref: string }).log_ref, false), "stopped\n"); } catch {}
+    },
     metadata: { engineVersion: "0.7.11", extensionRootDigest: `sha256:${"e".repeat(64)}` as const },
   };
   return { runtime, stopControl };
@@ -176,6 +187,8 @@ test("SVC-STARTUP-WORKER-FASTER-THAN-MANAGER", async () => {
     expect(existsSync(harness.noncePath(requestId))).toBe(false);
     expect(existsSync(harness.processingPath(requestId))).toBe(false);
     expect(existsSync(harness.readyPath)).toBe(false);
+    expect(existsSync(harness.instancePath)).toBe(false);
+    expect(existsSync(harness.secretPath)).toBe(false);
   } finally {
     rmSync(harness.root, { recursive: true, force: true });
   }

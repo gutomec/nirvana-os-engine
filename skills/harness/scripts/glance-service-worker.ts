@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { startServer, type ServerRuntime } from "../lib/glance/server.ts";
 import { buildServiceHealth } from "../lib/glance/service/adapters.ts";
@@ -22,6 +22,7 @@ export interface WorkerRuntime {
   watchStop(callback: (request: unknown) => Promise<void>): Promise<void>;
   validateAndConsume(request: unknown, secret: Uint8Array, nonce: Uint8Array, instance: unknown): Promise<void>;
   drain(server: Bun.Server<unknown>): Promise<void>;
+  finalizeStop(instance: unknown): Promise<void>;
   serverRuntime?: Partial<ServerRuntime>;
   metadata: { engineVersion: string; extensionRootDigest: `sha256:${string}` };
 }
@@ -47,6 +48,7 @@ export async function runServiceWorker(args: ServiceWorkerArgs, runtime: WorkerR
     await runtime.validateAndConsume(request, secret, nonce, instance);
     await runtime.drain(running.server);
   });
+  await runtime.finalizeStop(instance);
 }
 
 export function createWorkerNonce(path: string, bytes: Uint8Array): void {
@@ -168,6 +170,16 @@ export function createStopControl(deps: StopControlDeps) {
 export function createProductionRuntime(serviceRoot: string, metadata: { engineVersion: string; extensionRootDigest: `sha256:${string}` }, overrides: Partial<WorkerRuntime> = {}): WorkerRuntime {
   const readiness = createStartupReadiness({ now: () => Date.now(), schedule: (callback, ms) => setTimeout(callback, ms) });
   const stopControl = createStopControl({ root: serviceRoot, now: () => Date.now(), schedule: (callback, ms) => setTimeout(callback, ms), readPrivate: readFileSync });
+  const finalizeStop = async (instance: unknown): Promise<void> => {
+    const typed = validateInstance(instance);
+    const instancePath = resolveServiceRef(serviceRoot, "instance.json", false);
+    try {
+      if (digestJcs(parseStrictJson(readFileSync(instancePath))) === digestJcs(typed)) rmSync(instancePath, { force: true });
+      else return;
+    } catch { return; }
+    try { rmSync(resolveServiceRef(serviceRoot, typed.control_secret_ref, true), { force: true }); } catch {}
+    try { appendFileSync(resolveServiceRef(serviceRoot, typed.log_ref, false), `[glance-service] stopped ${typed.instance_id}\n`); } catch {}
+  };
   return {
     io: { read: readFileSync, archive: path => { rmSync(path); } },
     readPrivate: readFileSync,
@@ -176,6 +188,7 @@ export function createProductionRuntime(serviceRoot: string, metadata: { engineV
     watchStop: stopControl.watchStop,
     validateAndConsume: stopControl.validateAndConsume,
     drain: server => drainServer(server),
+    finalizeStop,
     metadata,
     ...overrides,
   };
