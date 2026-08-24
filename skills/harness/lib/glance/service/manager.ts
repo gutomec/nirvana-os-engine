@@ -4,11 +4,12 @@ import { join } from "node:path";
 import { canonicalizeJcs } from "./canonicalize.ts";
 import { canonicalWorkerArgv, classifyExistingService, createBunProcessAdapter, fetchServiceHealth, portFreeProbe, processDigestFromIdentity, terminateVerifiedProcess, type ProcessInspection, type ServiceProcessAdapter } from "./adapters.ts";
 import { acquireLock, captureLockIdentity, createPrivateLockCandidateDirectory, removeLockCandidateIfOwned, removeLockTokenIfOwned } from "./lock.ts";
-import { digestCanonicalPath, resolveServiceRef } from "./paths.ts";
+import { ServicePathError, digestCanonicalPath, resolveServiceRef } from "./paths.ts";
 import { publishNoReplace } from "./no-replace.ts";
 import { createNativeNoReplace } from "./no-replace-native.ts";
-import { validateInstance, validateLockOwner, validateServiceConfig } from "./schema-validator.ts";
-import { IncompatibleStateError, createPrivateWriteTestHarness, readStateFileStrict, writeDurableJson, writePrivateBytes, digestJcs, type ServiceIo } from "./state.ts";
+import { ServiceSchemaError, validateInstance, validateLockOwner, validateServiceConfig } from "./schema-validator.ts";
+import { IncompatibleStateError, ServiceIoError, createPrivateWriteTestHarness, readStateFileStrict, writeDurableJson, writePrivateBytes, digestJcs, type ServiceIo } from "./state.ts";
+import { parseStrictJson } from "./strict-json.ts";
 import { stopMacInput } from "./control.ts";
 import type { GlanceServiceCommandResultV1, ServiceConfigV1, ServiceTarget } from "./types.ts";
 
@@ -175,7 +176,7 @@ export async function startBackend(backend: ManagerBackend, home: string, reques
       if (currentConfigDigest === target.configDigest) return { ...inspection.result, command: "start", ok: true, state: "running", pid: inspection.pid, effective_config_digest: currentConfigDigest };
       return backend.conflict("start", "CONFIG_CONFLICT", inspection.result);
     }
-    if (inspection.kind === "conflict") return backend.conflict("start", String(inspection.result.code || "IDENTITY_CONFLICT"), inspection.result);
+    if (inspection.kind === "conflict") return backend.conflict("start", "IDENTITY_CONFLICT", inspection.result);
     if (inspection.kind === "indeterminate") return backend.terminal("start", "stale", 3, inspection.code);
     await backend.archiveProvenStale({ root, configDigest: currentConfigDigest, instanceDigest, instanceId: (instance as { instance_id: string }).instance_id });
     const afterArchive = await backend.observeStatePair(root);
@@ -184,7 +185,42 @@ export async function startBackend(backend: ManagerBackend, home: string, reques
   });
 }
 
-async function stopWithinLock(backend: ManagerBackend, root: string, home: string): Promise<GlanceServiceCommandResultV1> {
+function classifyContainedStateFile(path: string): boolean {
+  let stats: ReturnType<typeof lstatSync>;
+  try { stats = lstatSync(path); } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw new ServiceIoError("STATE_PAIR_LSTAT", error);
+  }
+  if (stats.isSymbolicLink() || !stats.isFile()) throw new ServiceIoError("STATE_PAIR_NONREGULAR");
+  return true;
+}
+
+function roundContainedStatePair(root: string): { config: boolean; instance: boolean } {
+  const classify = (name: string): boolean => {
+    let path: string;
+    try { path = resolveServiceRef(root, name, false); } catch (error) {
+      if (error instanceof ServicePathError) throw new ServiceIoError("STATE_PAIR_REF", error);
+      throw error;
+    }
+    return classifyContainedStateFile(path);
+  };
+  return { config: classify("config.json"), instance: classify("instance.json") };
+}
+
+function releaseManagerLockIfOwned(destination: string, token: Uint8Array): void {
+  let observed: Uint8Array;
+  try { observed = readFileSync(join(destination, ".owner-token")); } catch {
+    console.error(`[glance-service] manager.lock owner token unreadable; leaving ${destination} untouched`);
+    return;
+  }
+  if (!Buffer.from(observed).equals(Buffer.from(token))) {
+    console.error("[glance-service] manager.lock replaced by another owner; leaving it untouched");
+    return;
+  }
+  rmSync(destination, { recursive: true, force: true });
+}
+
+async function stopWithinLock(backend: ManagerBackend, root: string, home: string, outerConfigDigest: string): Promise<GlanceServiceCommandResultV1> {
   const observed = await backend.observeStatePair(root);
   if (observed.kind === "absent") return backend.terminal("stop", "stopped", 0, "ALREADY_STOPPED");
   if (observed.kind === "partial") return backend.terminal("stop", "stale", 3, "STATE_PARTIAL");
@@ -196,6 +232,7 @@ async function stopWithinLock(backend: ManagerBackend, root: string, home: strin
     if (error instanceof IncompatibleStateError) return backend.terminal("stop", "stale", 3, "STATE_INCOMPATIBLE");
     throw error;
   }
+  if (digest(currentConfig) !== outerConfigDigest) return backend.terminal("stop", "stale", 3, "STATE_CHANGED");
   void deriveServiceTarget(home, currentConfig);
   const typedInstance = instance as { instance_id: string; control_secret_ref: string };
   const secretPath = resolveServiceRef(root, typedInstance.control_secret_ref, true);
@@ -223,7 +260,7 @@ export async function stopBackend(backend: ManagerBackend, home: string): Promis
     throw error;
   }
   const target = deriveServiceTarget(home, config);
-  return backend.withLock(target, "stop", () => stopWithinLock(backend, root, home));
+  return backend.withLock(target, "stop", () => stopWithinLock(backend, root, home, digest(config)));
 }
 
 export async function statusBackend(backend: ManagerBackend, home: string): Promise<GlanceServiceCommandResultV1> {
@@ -247,42 +284,96 @@ export async function statusBackend(backend: ManagerBackend, home: string): Prom
   }
 }
 
-export async function restartBackend(backend: ManagerBackend, home: string, requested: ServiceConfigV1): Promise<GlanceServiceCommandResultV1> {
-  const config = validateServiceConfig(requested);
+export async function restartBackend(backend: ManagerBackend, home: string, requested?: ServiceConfigV1): Promise<GlanceServiceCommandResultV1> {
   const root = backend.serviceRoot(home);
-  const target = deriveServiceTarget(home, config);
+  const configPath = resolveServiceRef(root, "config.json", false);
+  let replacement: ServiceConfigV1;
+  if (requested !== undefined) replacement = validateServiceConfig(requested);
+  else {
+    try { replacement = readStateFileStrict(resolveServiceRef(root, "config.json", true), validateServiceConfig, backend.stateIo); } catch (error) {
+      if (error instanceof IncompatibleStateError) return backend.terminal("restart", "stale", 3, "NO_CURRENT_CONFIG");
+      throw error;
+    }
+  }
+  const target = deriveServiceTarget(home, replacement);
   return backend.withLock(target, "restart", async () => {
     const observed = await backend.observeStatePair(root);
     if (observed.kind === "partial") return backend.terminal("restart", "stale", 3, "STATE_PARTIAL");
-    let priorConfigRaw: Uint8Array | undefined;
+    let priorRaw: Uint8Array | undefined;
     if (observed.kind === "complete") {
-      const configPath = resolveServiceRef(root, "config.json", true);
-      priorConfigRaw = backend.stateIo.read(configPath);
+      priorRaw = backend.stateIo.read(configPath);
+      try { validateServiceConfig(parseStrictJson(priorRaw)); } catch (error) {
+        if (error instanceof IncompatibleStateError || error instanceof ServiceSchemaError) return backend.terminal("restart", "stale", 3, "STATE_INCOMPATIBLE");
+        throw error;
+      }
       const classification = await classifyCompleteState(backend, root, home);
       if ("failure" in classification) return { ...classification.failure, command: "restart" as const };
-      const stopOutcome = await stopWithinLock(backend, root, home);
+      const { inspection, config: priorConfig, instance: priorInstance } = classification;
+      if (inspection.kind === "conflict") return { ...inspection.result, command: "restart" as const, ok: false, state: "conflict" as const };
+      if (inspection.kind === "indeterminate") return backend.terminal("restart", "stale", 3, inspection.code);
+      const sameConfig = digest(priorConfig) === target.configDigest;
+      if (inspection.kind === "stale") {
+        try {
+          await portFreeProbeGuard(target.port);
+          await backend.archiveProvenStale({ root, configDigest: digest(priorConfig), instanceDigest: digest(priorInstance), instanceId: (priorInstance as { instance_id: string }).instance_id });
+        } catch (error) {
+          if (error instanceof Error && error.message === "PORT_BUSY") return conflictRestart(target.port);
+          throw error;
+        }
+        const afterArchive = await backend.observeStatePair(root);
+        if (afterArchive.kind !== "absent") return backend.terminal("restart", "stale", 3, "STALE_ARCHIVE_INCOMPLETE");
+        priorRaw = undefined;
+        return runReplacement(backend, root, target, replacement, undefined);
+      }
+      if (!sameConfig) {
+        const free = await portFreeProbe(target.port);
+        if (!free) return conflictRestart(target.port);
+      }
+      let stopOutcome: GlanceServiceCommandResultV1;
+      try { stopOutcome = await stopWithinLock(backend, root, home, digest(priorConfig)); } catch {
+        return backend.terminal("restart", "stale", 3, "RESTART_STOP_FAILED");
+      }
       if (!(stopOutcome.ok && stopOutcome.state === "stopped")) {
         return { ...stopOutcome, command: "restart" as const, ok: false, code: "RESTART_STOP_FAILED", message: "authenticated stop failed before replacement" };
       }
+      return runReplacement(backend, root, target, replacement, priorRaw);
     }
-    try {
-      const fresh = await startFreshLocked(backend, root, target, config);
-      return { ...fresh, command: "restart" as const, rollback_attempted: false, rollback_state: "not_needed" as const };
-    } catch (error) {
-      if (!(error instanceof StartFailure)) throw error;
-      let rollbackState: "restored_previous" | "restore_failed" = "restore_failed";
-      let rollbackAttempted = false;
-      if (priorConfigRaw) {
-        rollbackAttempted = true;
-        try {
-          backend.writeJson(resolveServiceRef(root, "config.json", false), JSON.parse(new TextDecoder().decode(priorConfigRaw)));
-          rollbackState = "restored_previous";
-        } catch { rollbackState = "restore_failed"; }
-      }
-      const base = backend.terminal("restart", "stale", 3, "REPLACEMENT_FAILED");
-      return { ...base, rollback_attempted: rollbackAttempted, rollback_state: rollbackAttempted ? rollbackState : "not_needed" };
-    }
+    const free = await portFreeProbe(target.port);
+    if (!free) return conflictRestart(target.port);
+    return runReplacement(backend, root, target, replacement, undefined);
   });
+}
+
+function conflictRestart(port: number): GlanceServiceCommandResultV1 {
+  return { schema_version: "1.0.0", command: "restart", ok: false, state: "conflict", read_only: true, persistent: true, log_path: "logs/service.log", port, url: `http://127.0.0.1:${port}`, code: "PORT_BUSY", message: "replacement port is held by another listener" };
+}
+
+async function portFreeProbeGuard(port: number): Promise<void> {
+  if (!(await portFreeProbe(port))) throw new Error("PORT_BUSY");
+}
+
+async function runReplacement(backend: ManagerBackend, root: string, target: ServiceTarget, replacement: ServiceConfigV1, priorRaw: Uint8Array | undefined): Promise<GlanceServiceCommandResultV1> {
+  try {
+    const fresh = await startFreshLocked(backend, root, target, replacement);
+    return { ...fresh, command: "restart" as const, requested_config_digest: target.configDigest, rollback_attempted: false, rollback_state: "not_needed" as const };
+  } catch (error) {
+    if (!(error instanceof StartFailure)) throw error;
+    const timeoutClass = error.original instanceof Error && /TIMEOUT|_HEALTH|WORKER_EXITED/i.test(error.original.message);
+    let rollbackState: "restored_previous" | "restore_failed" | "not_needed" = "not_needed";
+    let rollbackAttempted = false;
+    let effectiveDigest: ReturnType<typeof digest> | undefined;
+    if (priorRaw) {
+      rollbackAttempted = true;
+      try {
+        const restored = validateServiceConfig(parseStrictJson(priorRaw));
+        backend.writeJson(resolveServiceRef(root, "config.json", false), restored);
+        rollbackState = "restored_previous";
+        effectiveDigest = digest(restored);
+      } catch { rollbackState = "restore_failed"; }
+    }
+    const base = backend.terminal("restart", "stale", 3, timeoutClass ? "REPLACEMENT_TIMEOUT" : "REPLACEMENT_FAILED");
+    return { ...base, requested_config_digest: target.configDigest, ...(effectiveDigest ? { effective_config_digest: effectiveDigest } : {}), rollback_attempted: rollbackAttempted, rollback_state: rollbackState };
+  }
 }
 
 function artifactOf(path: string): "config" | "instance" | "secret" | "readiness" | undefined {
@@ -340,24 +431,17 @@ export function createGlanceServiceManager(home: string, instrumentation: Manage
           if (operation === "file-fsync" || operation === "directory-fsync") throw new Error(`INJECTED_${artifact.toUpperCase()}_FSYNC`);
           perform();
         });
-        harness.write(path, new TextEncoder().encode(`${JSON.stringify(value)}\n`));
+        try { harness.write(path, new TextEncoder().encode(`${JSON.stringify(value)}\n`)); } catch (error) { throw (error as { cause?: unknown }).cause ?? error; }
         return;
       }
       writeDurableJson(path, value);
     },
     async observeStatePair(root: string): Promise<StatePair> {
-      const classify = (name: string): "present" | "absent" => {
-        try {
-          const target = resolveServiceRef(root, name, false);
-          if (!existsSync(target)) return "absent";
-          return lstatSync(target).isFile() && !lstatSync(target).isSymbolicLink() ? "present" : "present";
-        } catch { return "absent"; }
-      };
-      const firstConfig = classify("config.json"), firstInstance = classify("instance.json");
-      const secondConfig = classify("config.json"), secondInstance = classify("instance.json");
-      if (firstConfig === "absent" && firstInstance === "absent" && secondConfig === "absent" && secondInstance === "absent") return { kind: "absent" };
-      if (firstConfig === "present" && firstInstance === "present" && secondConfig === "present" && secondInstance === "present") return { kind: "complete" };
-      return { kind: "partial", configPresent: secondConfig === "present", instancePresent: secondInstance === "present", changed: firstConfig !== secondConfig || firstInstance !== secondInstance };
+      const first = roundContainedStatePair(root);
+      const second = roundContainedStatePair(root);
+      if (!first.config && !first.instance && !second.config && !second.instance) return { kind: "absent" };
+      if (first.config && first.instance && second.config && second.instance) return { kind: "complete" };
+      return { kind: "partial", configPresent: second.config, instancePresent: second.instance, changed: first.config !== second.config || first.instance !== second.instance };
     },
     async withLock<T>(_target: ServiceTarget, operation: MutatingOperation, fn: () => Promise<T>): Promise<T> {
       const root = rootOf();
@@ -366,6 +450,7 @@ export function createGlanceServiceManager(home: string, instrumentation: Manage
       const ownerUuid = randomUUID();
       const token = randomBytes(32);
       const acquiredAt = now();
+      const acquireDeadline = acquiredAt + 45_000;
       const owner = validateLockOwner({
         schema_version: "1.0.0",
         owner_id: ownerUuid,
@@ -399,14 +484,18 @@ export function createGlanceServiceManager(home: string, instrumentation: Manage
           acquireLock(io, `${operation}-${randomUUID()}`, token, owner);
           break;
         } catch (error) {
-          if (error instanceof Error && error.message === "LOCK_EXISTS") { await sleep(150); continue; }
+          if (error instanceof Error && error.message === "LOCK_EXISTS") {
+            if (now() >= acquireDeadline) throw new ServiceIoError("LOCK_TIMEOUT");
+            await sleep(150);
+            continue;
+          }
           throw error;
         }
       }
       try {
         return await fn();
       } finally {
-        rmSync(destination, { recursive: true, force: true });
+        releaseManagerLockIfOwned(destination, token);
       }
     },
     async inspectExisting({ root, currentTarget, config, instance }) {
@@ -502,15 +591,17 @@ export function createGlanceServiceManager(home: string, instrumentation: Manage
       const configPath = resolveServiceRef(root, "config.json", false);
       let port: number | undefined;
       try {
-        const parsed = JSON.parse(new TextDecoder().decode(readFileSync(configPath))) as { port?: number };
-        if (typeof parsed.port === "number") port = parsed.port;
+        port = readStateFileStrict(configPath, validateServiceConfig, backend.stateIo).port;
       } catch {}
       if (existsSync(configPath)) {
         try { if (digestJcs(readStateFileStrict(configPath, validateServiceConfig, backend.stateIo)) === attempt.configDigest) rmSync(configPath); } catch {}
       }
       const instancePath = resolveServiceRef(root, "instance.json", false);
       if (existsSync(instancePath)) {
-        rmSync(instancePath, { force: true });
+        try {
+          const persisted = readStateFileStrict(instancePath, validateInstance, backend.stateIo);
+          if (attempt.startingInstanceDigest !== undefined && digestJcs(persisted) === attempt.startingInstanceDigest && persisted.instance_id === attempt.instanceId) rmSync(instancePath);
+        } catch {}
       }
       const startupDir = resolveServiceRef(root, "control/startup", false);
       if (existsSync(startupDir)) {
@@ -518,8 +609,8 @@ export function createGlanceServiceManager(home: string, instrumentation: Manage
           if (!entry.endsWith(".ready.json")) continue;
           const readyPath = join(startupDir, entry);
           try {
-            const raw = JSON.parse(new TextDecoder().decode(readFileSync(readyPath))) as { startup_id?: string };
-            if (raw.startup_id === attempt.startupId) rmSync(readyPath);
+            const ready = parseStrictJson(readFileSync(readyPath)) as { startup_id?: string };
+            if (ready.startup_id === attempt.startupId) rmSync(readyPath);
           } catch { if (entry.includes(attempt.startupId)) rmSync(readyPath, { force: true }); }
         }
       }

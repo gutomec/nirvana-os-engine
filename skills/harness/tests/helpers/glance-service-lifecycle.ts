@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fetchServiceHealth, portFreeProbe, createBunProcessAdapter, type ProcessInspection, type ServiceProcessAdapter } from "../../lib/glance/service/adapters.ts";
 import { createGlanceServiceManager, restartBackend, startBackend, statusBackend, stopBackend, type FailedStartCleanup, type ManagerBackend, type ManagerInstrumentation, type StartAttempt } from "../../lib/glance/service/manager.ts";
+import type { ServiceConfigV1 } from "../../lib/glance/service/types.ts";
 
 type WriteFailureRequest = { artifact: "config" | "instance" | "secret" | "readiness"; boundary: "before" | "fsync" };
 
@@ -23,9 +24,10 @@ export function createRealLifecycleHarness() {
   const cleanupResults: FailedStartCleanup[] = [];
   const cleanupAttempts: Readonly<StartAttempt>[] = [];
   const writeFailures: WriteFailureRequest[] = [];
-  const stopDeliveries: string[] = ["allow"];
+  let stopDeliveryFailures = 0;
   type InspectionMode = undefined | { kind: "foreign" } | { kind: "indeterminate" };
   let inspectionMode: InspectionMode = undefined;
+  let pendingInspectionMode: InspectionMode = undefined;
 
   const baseAdapter = createBunProcessAdapter();
   const adapter: ServiceProcessAdapter = {
@@ -53,14 +55,15 @@ export function createRealLifecycleHarness() {
       return true;
     },
     onSpawn(spawned) {
+      if (pendingInspectionMode) { inspectionMode = pendingInspectionMode; pendingInspectionMode = undefined; }
       lastSpawned = { ...spawned, attempt: cleanupAttempts[cleanupAttempts.length - 1] };
       spawnedChildren.push(lastSpawned);
     },
     onCleanup(cleanup) { cleanupResults.push(cleanup); },
     onCleanupAttempt(attempt) { cleanupAttempts.push(attempt); },
     failStopDelivery() {
-      const next = stopDeliveries.shift() ?? "allow";
-      return next === "fail";
+      if (stopDeliveryFailures > 0) { stopDeliveryFailures -= 1; return true; }
+      return false;
     },
   };
 
@@ -120,7 +123,7 @@ export function createRealLifecycleHarness() {
     },
     async status(home: string) { return statusBackend(harness.backend(), home); },
     async stop(home: string) { return stopBackend(harness.backend(), home); },
-    async restart(home: string, config: ReturnType<typeof harness.globalConfig>) { return restartBackend(harness.backend(), home, config); },
+    async restart(home: string, config?: ServiceConfigV1) { return restartBackend(harness.backend(), home, config); },
     async health(started: { port: number }) { return fetchServiceHealth(started.port, 2_000); },
     observedLockTarget(): unknown { return observedTarget; },
     lockOperations(): readonly string[] { return [...lockOperations]; },
@@ -135,10 +138,17 @@ export function createRealLifecycleHarness() {
         if (entries.length) readiness = b64(readFileSync(join(startupDir, entries[0])));
       }
       let secret: string | null = null;
+      const secretRefs: string[] = [];
+      const attemptSecretRef = cleanupAttempts[cleanupAttempts.length - 1]?.secretRef;
+      if (attemptSecretRef) secretRefs.push(attemptSecretRef);
       try {
         const instanceRaw = JSON.parse(new TextDecoder().decode(readFileSync(join(root, "instance.json")))) as { control_secret_ref?: string };
-        if (instanceRaw.control_secret_ref) secret = readOrNull(join(root, ...instanceRaw.control_secret_ref.split("/")));
+        if (instanceRaw.control_secret_ref) secretRefs.push(instanceRaw.control_secret_ref);
       } catch {}
+      for (const ref of secretRefs) {
+        const bytes = readOrNull(join(root, ...ref.split("/")));
+        if (bytes !== null) { secret = bytes; break; }
+      }
       return {
         config: readOrNull(join(root, "config.json")),
         instance: readOrNull(join(root, "instance.json")),
@@ -192,23 +202,31 @@ export function createRealLifecycleHarness() {
       };
       const boundManager = createGlanceServiceManager;
       void boundManager;
-      if (options.identityProof === "indeterminate") inspectionMode = { kind: "indeterminate" };
+      if (options.identityProof === "indeterminate") pendingInspectionMode = { kind: "indeterminate" };
     },
     failNextOwnedWrite(request: WriteFailureRequest): void { writeFailures.push(request); },
-    replaceSpawnIdentityBeforeCleanup(_mode: string): void { inspectionMode = { kind: "foreign" }; },
-    makeSpawnInspectionIndeterminate(): void { inspectionMode = { kind: "indeterminate" }; },
+    queueStopDeliveryFailure(): void { stopDeliveryFailures += 1; },
+    drainPendingFailureArming(): void {
+      const pendingHealth = instrumentation.fetchHealth;
+      instrumentation.fetchHealth = undefined;
+      inspectionMode = undefined;
+      pendingInspectionMode = undefined;
+      if (pendingHealth) void pendingHealth(0).catch(() => {});
+    },
+    replaceSpawnIdentityBeforeCleanup(_mode: string): void { pendingInspectionMode = { kind: "foreign" }; },
+    makeSpawnInspectionIndeterminate(): void { pendingInspectionMode = { kind: "indeterminate" }; },
     lastSpawned() {
       if (!lastSpawned) throw new Error("NO_SPAWN_RECORDED");
       return lastSpawned;
     },
     lastCleanup() {
-      const cleanup = cleanupResults[cleanupResults.length - 1];
       const attempt = cleanupAttempts[cleanupAttempts.length - 1];
-      if (!cleanup || !attempt) throw new Error("NO_CLEANUP_RECORDED");
-      return { cleanup, attempt };
+      const result = cleanupResults[cleanupResults.length - 1];
+      if (!result || !attempt) throw new Error("NO_CLEANUP_RECORDED");
+      return { attempt, result };
     },
     killPids(): number[] { return [...killLog]; },
-    async processPresent(pid: number): Promise<boolean> { return (await adapter.inspect(pid)).exists; },
+    async processPresent(pid: number): Promise<boolean> { return (await baseAdapter.inspect(pid)).exists; },
     async terminateExactWorker(first: { pid: number }): Promise<void> { await harness.terminateFixtureProcess(first.pid); },
     async proveNoProcessPortOrHealth(first: { pid: number; port: number }): Promise<void> {
       if (await harness.processPresent(first.pid)) throw new Error("PROCESS_STILL_PRESENT");
