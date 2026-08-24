@@ -22,6 +22,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildEmployeePrompt } from "../lib/employee-prompt.ts";
+import { CAPABILITY_VERIFICATION_DIRECTIVE } from "../../_shared/lib/capability-verification.ts";
 
 /**
  * A project-scoped root, so the fixture businesses are the ones resolved rather
@@ -84,6 +85,18 @@ describe("the section still renders when the library is absent", () => {
     const p = prompt("beta-co", "uma tarefa qualquer sem correspondência");
     expect(p).toContain("MIND-CLONES YOU EMBODY");
     expect(p.length).toBeGreaterThan(0);
+  });
+});
+
+describe("single-target business dispatch verifies existing capabilities first", () => {
+  test("the real employee prompt carries the three diagnostic outcomes", () => {
+    const p = prompt("capability-check-co", "propose a new core service");
+    expect(p).toContain(CAPABILITY_VERIFICATION_DIRECTIVE);
+    expect(p).toMatch(/existing and usable/i);
+    expect(p).toMatch(/existing but misconfigured/i);
+    expect(p).toMatch(/genuinely missing/i);
+    expect(p).toMatch(/narrowest sufficient layer/i);
+    expect(p).toContain("propose a new core service");
   });
 });
 

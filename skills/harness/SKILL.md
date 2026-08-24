@@ -261,8 +261,14 @@ Treating the receipt as the result is the bug this paragraph exists to prevent. 
 | Target | Command |
 |---|---|
 | Business | `bun ~/.nirvana/skills/businesses/scripts/brief-business.ts <slug> "<brief>" --project <trace_id>` then `Agent({subagent_type: "general-purpose", prompt: buildEmployeePrompt({...})})` |
-| Squad | `bun ~/.nirvana/skills/squads/scripts/brief-squad.ts <slug> "<brief>" --project <trace_id>` then `Agent({subagent_type: "general-purpose", prompt: "<read squad.yaml + workflow> + enriched brief path + output_path"})`. The `brief-squad.ts` prep step scaffolds the project dir + HANDOFF, **emits `brief_received`/`dispatch_squad` automatically** (runtime-agnostic audit — you don't rely on `nrv audit emit` firing) and **opens the ledger run**, printing the run id you must close in Phase 7. |
-| agent-x | `Agent({subagent_type: "general-purpose", prompt: "Read ~/.nirvana/skills/_shared/agents/agent-x.<runtime>.md. Enriched brief at <path>. Output to <output_path>. Trace: <trace_id>."})` |
+| Squad | `bun ~/.nirvana/skills/squads/scripts/brief-squad.ts <slug> "<brief>" --project <trace_id>` then `Agent({subagent_type: "general-purpose", prompt: buildSquadPrompt({...})})`. The `brief-squad.ts` prep step scaffolds the project dir + HANDOFF, **emits `brief_received`/`dispatch_squad` automatically** (runtime-agnostic audit — you don't rely on `nrv audit emit` firing) and **opens the ledger run**, printing the run id you must close in Phase 7. |
+| agent-x | Read the runtime persona resolved by `resolveAgentXPromptPath(...)`, then `Agent({subagent_type: "general-purpose", prompt: buildAgentXPrompt({persona, brief, briefPath, projectId, projectDir, outputsRoot, reason})})` |
+
+Use those builders verbatim for native single-target dispatch. All three import
+the same `capability-verification.ts` directive, so a business employee, a
+squad and agent-x receive the same requirement to inspect and classify existing
+capabilities before they propose structural work. Hand-composed prompts bypass
+that contract.
 
 **Parallel means one message with several calls.** A wave of independent targets goes out as several `Agent(...)` calls **in a single message** — they run concurrently and each notifies as it lands. Serial order is the opposite move for the opposite reason: dispatch one, wait for ITS notification, then dispatch the next with what you learned. What decides between them is the dependency analysis above, never convenience.
 
@@ -450,6 +456,26 @@ have none of them.
   the rubric for the artifact type up front, then dispatch → judge → revise →
   re-judge. No `gate_passed`, no delivery; a "done" message without that chain is
   fiction.
+
+### Verify before structural change
+
+Before proposing a new service, abstraction, business, pack, global squad or
+core change, inspect the current implementation, configuration, documentation
+and diagnostics. Do not start broad external research until this inspection
+shows a genuine gap. Record that evidence and classify the capability as
+**existing and usable**, **existing but misconfigured**, or **genuinely
+missing**. Existing capability means enable or repair it, not replace it. A
+genuine gap goes to the narrowest sufficient layer: project, then business or
+pack, then global squad, and core only for an invariant every consumer must
+share.
+
+Adaptive loading of businesses, squads, skills and clones is different from
+lifecycle management of an external component installed in the environment.
+Do not design the second when the first already solves the problem. Every
+structural proposal names the inspected evidence, expected impact, minimum
+viable alternative and why its selected layer is necessary. If a maintainer
+shows that the capability exists, narrow or withdraw the proposal and keep a
+fallback with no core change.
 
 ## Core principles (HP1–HP8)
 - **HP1** Stateless between briefs. All state on filesystem.

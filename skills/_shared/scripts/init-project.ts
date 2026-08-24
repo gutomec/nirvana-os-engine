@@ -328,16 +328,19 @@ async function main() {
     // content). Forces every agent runtime to read the Nirvana invocation
     // contract before touching the project, regardless of skill activation.
     //
-    // Two phases per target file:
+    // Three phases per target file:
     //   1. If the file doesn't exist, copy the base template (universal agent
     //      contract: Nirvana protocol, behavioral guidelines, etc.).
-    //   2. Always append the writing-contract snippet ONLY if its marker isn't
-    //      already present (idempotent). Pre-existing user rules are preserved.
+    //   2. Append the writing contract when its marker is absent.
+    //   3. Append independently versioned behavioral migrations when their
+    //      marker is absent. Pre-existing user rules are always preserved.
     const agentsTemplate = path.join(SKILLS_ROOT, "_shared", "templates", "AGENTS.md");
     const writingContractSnippet = path.join(SKILLS_ROOT, "_shared", "templates", "writing-contract-snippet.md");
+    const capabilityVerificationSnippet = path.join(SKILLS_ROOT, "_shared", "templates", "capability-verification-contract-snippet.md");
     const onDemandSnippet = path.join(SKILLS_ROOT, "_shared", "templates", "on-demand-contract-snippet.md");
     const WRITING_CONTRACT_MARKER = "<!-- nirvana-os:writing-contract:v1 -->";
     const INVOCATION_CONTRACT_MARKER = "<!-- nirvana-os:invocation-contract:v1 -->";
+    const CAPABILITY_VERIFICATION_MARKER = "<!-- nirvana-os:capability-verification-contract:v1 -->";
     const ON_DEMAND_MARKER = "<!-- nirvana-os:on-demand-contract:v1 -->";
 
     // How Nirvana behaves in THIS project is the owner's call, and it matters
@@ -405,6 +408,9 @@ async function main() {
         }
         // Phase 2: append the writing contract (idempotent via marker).
         appendWithMarker(writingContractSnippet, dst, WRITING_CONTRACT_MARKER, "writing contract");
+        // Phase 3, independent versioned block: a v1 invocation contract must
+        // still receive new behavioral rules without replacing user content.
+        appendWithMarker(capabilityVerificationSnippet, dst, CAPABILITY_VERIFICATION_MARKER, "capability verification contract");
       }
     } else {
       log.warn(`AGENTS.md template missing: ${agentsTemplate} — skipping agent contract`);

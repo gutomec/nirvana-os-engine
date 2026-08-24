@@ -12,10 +12,12 @@
 import { describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { AUTONOMOUS_DIRECTIVE } from "../lib/host-agent-driver.ts";
 
 const ROOT = path.resolve(import.meta.dir, "..", "..", "..");
 const tpl = fs.readFileSync(path.join(ROOT, "skills/harness/templates/DISPATCH-INSTRUCTION.template.md"), "utf8");
 const skill = fs.readFileSync(path.join(ROOT, "skills/harness/SKILL.md"), "utf8");
+const projectContract = fs.readFileSync(path.join(ROOT, "skills/_shared/templates/AGENTS.md"), "utf8");
 const ADAPTERS = path.join(ROOT, "skills/_shared/adapters");
 
 describe("the builder's rules ride the dispatch", () => {
@@ -70,5 +72,26 @@ describe("no runtime is left out", () => {
     // The template is written per dispatch by the orchestrator; it exists
     // regardless of whether the project was ever initialised.
     expect(tpl).toMatch(/travel with the dispatch instead of with the directory/i);
+  });
+});
+
+describe("structural proposals start with capability evidence", () => {
+  const consumingPaths = [
+    ["initialized project contract", projectContract],
+    ["multi-target dispatch", tpl],
+    ["orchestrator skill", skill],
+    ["headless worker directive", AUTONOMOUS_DIRECTIVE],
+  ] as const;
+
+  test.each(consumingPaths)("%s carries the same diagnostic outcomes", (_name, prompt) => {
+    expect(prompt).toMatch(/existing\s+and\s+usable/i);
+    expect(prompt).toMatch(/existing\s+but\s+misconfigured/i);
+    expect(prompt).toMatch(/genuinely\s+missing/i);
+  });
+
+  test.each(consumingPaths)("%s requires evidence and the narrowest sufficient layer", (_name, prompt) => {
+    expect(prompt).toMatch(/evidence/i);
+    expect(prompt).toMatch(/narrowest sufficient layer/i);
+    expect(prompt).toMatch(/broad external research/i);
   });
 });

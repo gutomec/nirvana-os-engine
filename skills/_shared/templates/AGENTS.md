@@ -230,6 +230,28 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - **Surgical scope** (9.3) — Never mutate `~/squads/`, `~/businesses/`, or `~/businesses/_library/dna/` as a side effect of a dispatch. Write only to the trace output path, `.nirvana/briefs/`, and the logs. Don't "improve" a squad or business you were only asked to invoke; spot a real defect, report it, don't edit it mid-run. (When the *dispatched* agent edits code or artifacts, 9.3 holds verbatim: every changed line traces to the brief.)
 - **Gate-driven execution** (9.4) — Your "tests pass" is the `gate_passed` event in `~/.harness-logs/.../audit.jsonl`. State the rubric for the artifact type up front (prose → wiki-lint + structure-bounds; code → tests + type-check; image → brief-fidelity), then dispatch → judge → revise → re-judge. No `gate_passed`, no delivery. A "done" message without a real dispatch + gate chain is fiction (see §6): iterate, don't fake.
 
+<!-- nirvana-os:capability-verification-contract:v1 -->
+### 9.6 Verify before structural change
+
+Before proposing a new service, abstraction, business, pack, global squad, or
+core change, inspect the current implementation, configuration, documentation,
+and available diagnostics. Do not start broad external research until this
+inspection shows a genuine gap. Record what you inspected and classify the result:
+
+- **Existing and usable:** use or enable it. Do not propose a replacement.
+- **Existing but misconfigured:** fix configuration or the project-level
+  integration. Do not call it a platform gap.
+- **Genuinely missing:** choose the narrowest sufficient layer: project first,
+  then business or pack, then global squad, and core only for an invariant that
+  every consumer must share.
+
+Do not confuse adaptive loading of businesses, squads, skills, or clones with
+lifecycle management of an external component installed in the environment.
+Before recommending structural work, provide evidence, expected impact, the
+minimum viable alternative, and why the selected layer is necessary. If a
+maintainer demonstrates that the capability already exists, narrow or withdraw
+the proposal and preserve a fallback that requires no core change.
+
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, clarifying questions come *before* implementation rather than after mistakes, and every production brief shows up in `~/.harness-logs/.../audit.jsonl` with a real `gate_passed` chain.

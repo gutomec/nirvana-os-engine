@@ -86,6 +86,49 @@ describe("a project that already has a contract file", () => {
   }, INIT_TIMEOUT_MS);
 });
 
+describe("a project initialized with the previous invocation contract", () => {
+  const legacyMarker = "<!-- nirvana-os:invocation-contract:v1 -->";
+  const capabilityMarker = "<!-- nirvana-os:capability-verification-contract:v1 -->";
+
+  test("the first migration preserves every user prefix and updates all mirrors", () => {
+    const originals = {
+      "AGENTS.md": `# Agent rules\nOWNER AGENTS LINE\n\n${legacyMarker}\n# Old Nirvana contract\n`,
+      "CLAUDE.md": `# Claude rules\nOWNER CLAUDE LINE\n\n${legacyMarker}\n# Old Nirvana contract\n`,
+      "GEMINI.md": `# Gemini rules\nOWNER GEMINI LINE\n\n${legacyMarker}\n# Old Nirvana contract\n`,
+    };
+    const dir = project("legacy-capability-first", originals);
+    const r = runInit(dir);
+    expect(r.status).toBe(0);
+
+    for (const [name, original] of Object.entries(originals)) {
+      const migrated = fs.readFileSync(path.join(dir, name), "utf8");
+      expect(migrated.startsWith(original)).toBe(true);
+      expect(migrated.match(new RegExp(capabilityMarker, "g"))).toHaveLength(1);
+      expect(migrated).toMatch(/existing and usable/i);
+      expect(migrated).toMatch(/existing but misconfigured/i);
+      expect(migrated).toMatch(/genuinely missing/i);
+    }
+  }, INIT_TIMEOUT_MS);
+
+  test("re-running the migration is a byte-for-byte no-op", () => {
+    const original = `# Mine\nDO NOT REWRITE\n\n${legacyMarker}\n# Old Nirvana contract\n`;
+    const dir = project("legacy-capability-twice", {
+      "AGENTS.md": original,
+      "CLAUDE.md": original,
+      "GEMINI.md": original,
+    });
+    expect(runInit(dir).status).toBe(0);
+    const first = Object.fromEntries(
+      ["AGENTS.md", "CLAUDE.md", "GEMINI.md"].map((name) => [name, fs.readFileSync(path.join(dir, name), "utf8")]),
+    );
+    for (const body of Object.values(first)) expect(body).toContain(capabilityMarker);
+    expect(runInit(dir).status).toBe(0);
+    for (const [name, body] of Object.entries(first)) {
+      expect(fs.readFileSync(path.join(dir, name), "utf8")).toBe(body);
+    }
+  }, INIT_TIMEOUT_MS);
+});
+
 /**
  * On-demand mode — adopting Nirvana must not silently change a configured
  * project.
@@ -115,6 +158,7 @@ describe("on-demand mode leaves the project's behavior alone", () => {
     expect(agents).toContain("ONLY when the user explicitly asks");
     expect(agents).not.toContain("nirvana-os:invocation-contract:v1");
     expect(agents).not.toContain("nirvana-os:writing-contract:v1");
+    expect(agents).not.toContain("nirvana-os:capability-verification-contract:v1");
     expect(agents).not.toMatch(/invoke the .?harness.? skill for any concrete artifact/i);
   }, INIT_TIMEOUT_MS);
 

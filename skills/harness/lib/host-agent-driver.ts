@@ -27,6 +27,7 @@ export type {
   RunHeadlessResult,
   LedgerHeartbeatOpts,
 } from "../../_shared/lib/host-agent-driver.ts";
+import { CAPABILITY_VERIFICATION_DIRECTIVE } from "../../_shared/lib/capability-verification.ts";
 
 /** Autonomous-mode directive — full-trust quality contract. Appended to the
  * system prompt so a headless run never blocks AND uses every tool it needs
@@ -76,6 +77,7 @@ export const AUTONOMOUS_DIRECTIVE = [
   "- HEADLESS SESSION LIFETIME (field-verified on a VPS, 2026-08-22): this session DIES the instant your final turn ends — nothing survives to receive a background child's notification. NEVER launch a background subagent (or `bash ... &`) and end your turn 'waiting for the notification': the child is orphaned and the next phase never runs. Delegate SYNCHRONOUSLY (foreground `nrv dispatch ... --exec`, a foreground `claude -p` pipe) or execute the phase yourself. Your turn is over only when every phase's files are on disk — ending it with work in flight is abandonment, not patience.",
   "- CONTINUOUS FLOW (phases / HANDOFF): if the work has phases (HANDOFF.json or a staged plan), advance them in SEQUENCE until `complete` WITHOUT PAUSING between them. When a phase finishes, START THE NEXT ONE IMMEDIATELY in the same execution — do not stop to confirm, do not report intermediate status, do not hand control back. Interrupt only on an unrecoverable error or an explicit `notify: human` trigger. You are the autopilot: run end to end.",
   "- MESSAGE INTERRUPTION (not idle): if a question or status message arrives MID-execution, answer in ONE line with the current state and RESUME execution in the same action. NEVER go idle waiting for a new order — the order to continue is this one.",
+  CAPABILITY_VERIFICATION_DIRECTIVE,
   "- HYPHEN (hard rule, before writing): use '-' ONLY for compound words and ranges. NEVER use '-' or '—' to stitch clauses or pauses — replace with a comma, colon or period. Follow the writing contract in AGENTS.md / CLAUDE.md / GEMINI.md.",
   "- Finish by writing files, never by printing a summary of what you would write.",
 ].join("\n");

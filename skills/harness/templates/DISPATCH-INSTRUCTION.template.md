@@ -125,3 +125,24 @@ anyway — so the rules travel with the dispatch instead of with the directory.
 The test for every diff you produce: each changed line traces back to something
 in section 2. A reviewer who cannot make that trace will assume you went
 exploring, and they will be right.
+
+## 10. Verify before structural change
+
+Before proposing a new service, abstraction, business, pack, global squad or
+core change, inspect the current implementation, configuration, documentation
+and diagnostics. Do not start broad external research until this inspection
+shows a genuine gap. In the proposal, record the evidence and classify the result:
+
+- **Existing and usable:** use or enable it. Do not propose a replacement.
+- **Existing but misconfigured:** repair configuration or project integration.
+  Do not present it as a platform gap.
+- **Genuinely missing:** select the narrowest sufficient layer: project first,
+  then business or pack, then global squad, and core only for an invariant every
+  consumer must share.
+
+Adaptive loading of businesses, squads, skills and clones is different from
+lifecycle management of an external component installed in the environment.
+Do not design the second when the first solves the problem. State the expected
+impact, the minimum viable alternative and why the selected layer is necessary.
+If a maintainer demonstrates that the capability exists, narrow or withdraw the
+proposal and preserve a fallback with no core change.

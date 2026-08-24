@@ -173,6 +173,25 @@ confirmation_required (exit 2, consentido via --confirm-heavy), e execução
 como root remove o prefixo sudo (containers mínimos não têm o binário sudo).
 Dois testes fixam ambos.
 
+### Propostas estruturais precisam primeiro provar a lacuna
+
+Antes de propor novo serviço, abstração, business, pack, squad global ou
+mudança no core, orquestradores e workers despachados agora inspecionam a
+implementação, a configuração, a documentação e os diagnósticos existentes.
+Eles classificam a capacidade como existente e utilizável, existente porém mal
+configurada, ou realmente ausente. Só uma lacuna real pode justificar trabalho
+estrutural, na camada suficiente mais estreita.
+
+A regra viaja pelos contratos de projeto inicializados, pelos prompts nativos
+single-target de business, squad e agent-x, pela skill do harness, pelas
+instruções de dispatch multi-target e pela diretiva do worker headless. Projetos
+inicializados com o contrato de invocação anterior recebem uma migração própria,
+versionada e idempotente em AGENTS.md, CLAUDE.md e GEMINI.md, sem substituir o
+conteúdo do usuário. A regra também separa carregamento adaptativo de entidades
+da gestão do ciclo de vida de componentes externos e exige evidência, impacto,
+alternativa mínima e justificativa da camada escolhida. É um contrato de
+instrução, sem novo serviço, dependência de rede ou control plane.
+
 ## 0.7.5 — 2026-08-21
 
 ### O gate aprende que "todo" é português

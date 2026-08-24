@@ -29,6 +29,7 @@ import type { AgenticRouteDecision, RouteCandidate } from "./agentic-router.ts";
 import type { Runtime } from "./host-agent-driver.ts";
 import { runWithCascade } from "./cascade-runner.ts";
 import type { RouterFailurePolicy } from "./harness-config.ts";
+import { withCapabilityVerificationDirective } from "../../_shared/lib/capability-verification.ts";
 
 export type DispatchStepKind = "business" | "squad" | "agent-x";
 
@@ -342,20 +343,20 @@ export interface AgentXResult {
   finalRuntime: Runtime;
 }
 
-/** Dispatch the generalist fallback: persona from _shared/agents +
- * the enriched brief, run through the LLM cascade. Emits dispatch_agent_x
- * (closed-enum event) + agent_executed. */
-export function runAgentX(args: RunAgentXArgs): AgentXResult {
-  const emit = args.audit;
-  const promptPath = resolveAgentXPromptPath(args.runtime, args.agentsDir);
-  const persona = promptPath ? fs.readFileSync(promptPath, "utf8") : [
-    "# Agent-X — autonomous generalist (persona file missing)",
-    "You are the bottom of the harness dispatch cascade. Execute the brief end",
-    "to end, autonomously, with professional defaults. Never ask a human.",
-  ].join("\n");
+export interface BuildAgentXPromptArgs {
+  persona: string;
+  brief: string;
+  briefPath: string;
+  projectId: string;
+  projectDir: string;
+  outputsRoot: string;
+  reason: string;
+}
 
-  const prompt = [
-    persona,
+/** Build the exact prompt used by both native Agent() and scripted agent-x. */
+export function buildAgentXPrompt(args: BuildAgentXPromptArgs): string {
+  return withCapabilityVerificationDirective([
+    args.persona,
     "",
     "============================================================",
     "# DISPATCH (agent-x fallback)",
@@ -372,7 +373,30 @@ export function runAgentX(args: RunAgentXArgs): AgentXResult {
     `Write every final deliverable as a file under: ${args.outputsRoot}`,
     "Do not print a summary of what you would do — deliver files. Record",
     'assumptions under "## Premissas assumidas" in the main deliverable.',
+  ].join("\n"));
+}
+
+/** Dispatch the generalist fallback: persona from _shared/agents +
+ * the enriched brief, run through the LLM cascade. Emits dispatch_agent_x
+ * (closed-enum event) + agent_executed. */
+export function runAgentX(args: RunAgentXArgs): AgentXResult {
+  const emit = args.audit;
+  const promptPath = resolveAgentXPromptPath(args.runtime, args.agentsDir);
+  const persona = promptPath ? fs.readFileSync(promptPath, "utf8") : [
+    "# Agent-X — autonomous generalist (persona file missing)",
+    "You are the bottom of the harness dispatch cascade. Execute the brief end",
+    "to end, autonomously, with professional defaults. Never ask a human.",
   ].join("\n");
+
+  const prompt = buildAgentXPrompt({
+    persona,
+    brief: args.brief,
+    briefPath: args.briefPath,
+    projectId: args.projectId,
+    projectDir: args.projectDir,
+    outputsRoot: args.outputsRoot,
+    reason: args.reason,
+  });
 
   emit("dispatch_agent_x", {
     trace_id: args.projectId, project_id: args.projectId,
