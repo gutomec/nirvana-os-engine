@@ -38,7 +38,7 @@ function writePrivateBytesWithRuntime(path: string, bytes: Uint8Array, io: Priva
   let primary: unknown;
   let cleanup: unknown;
   try {
-    mkdirSync(parent, { recursive: true, mode: 0o700 });
+    try { mkdirSync(parent, { recursive: true, mode: 0o700 }); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
     restrictDirectory(parent);
     fresh = openPrivateFreshFile(temporary);
     descriptor = fresh.descriptor;

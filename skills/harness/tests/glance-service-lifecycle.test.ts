@@ -10,6 +10,8 @@ import { validateInstance } from "../lib/glance/service/schema-validator.ts";
 import { parseStrictJson } from "../lib/glance/service/strict-json.ts";
 import { digestJcs, writeDurableJson, writePrivateBytes } from "../lib/glance/service/state.ts";
 import { createStartupReadiness, createStopControl, runServiceWorker } from "../scripts/glance-service-worker.ts";
+import { startBackend } from "../lib/glance/service/manager.ts";
+import { createRealLifecycleHarness } from "./helpers/glance-service-lifecycle.ts";
 
 function allocateLoopbackPort(): number {
   const probe = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("probe") });
@@ -122,8 +124,13 @@ function assembleRuntime(harness: ReturnType<typeof createWorkerHarness>, schedu
     drain: (server: Bun.Server<unknown>) => drainServer(server, { timeoutMs: 2_000 }),
     finalizeStop: async (instance: unknown) => {
       const instancePath = resolveServiceRef(harness.root, "instance.json", false);
+      const coreOf = (value: unknown): Record<string, unknown> => {
+        const copy = { ...(value as Record<string, unknown>) };
+        delete copy.state;
+        return copy;
+      };
       try {
-        if (digestJcs(parseStrictJson(readFileSync(instancePath))) !== digestJcs(instance)) return;
+        if (digestJcs(coreOf(parseStrictJson(readFileSync(instancePath)))) !== digestJcs(coreOf(instance))) return;
         rmSync(instancePath, { force: true });
       } catch { return; }
       try { rmSync(resolveServiceRef(harness.root, (instance as { control_secret_ref: string }).control_secret_ref, true), { force: true }); } catch {}
@@ -231,3 +238,145 @@ test("SVC-STARTUP-READY-DIGEST", async () => {
     expect(String((failure as Error)?.message)).toContain("STARTUP_INSTANCE_DIGEST");
   } finally { rmSync(harness.root, { recursive: true, force: true }); }
 }, 30_000);
+
+const realLifecycle = createRealLifecycleHarness();
+
+test("SVC-CONTRACT-MANAGER-WORKER", async () => {
+  const globalHome = await realLifecycle.home();
+  const port = allocateLoopbackPort();
+  const started = await realLifecycle.start(globalHome, { scope: "global", port });
+  expect(started.ok).toBe(true);
+  expect(await realLifecycle.health(started)).toMatchObject({
+    schema_version: "1.0.0",
+    mode: "service",
+    instance_id: started.instance_id,
+    port,
+    scope: "global",
+    lifetime: "persistent",
+    allow_actions: false,
+    engine_version: expect.any(String),
+    uptime_seconds: expect.any(Number),
+    effective_config_digest: expect.stringMatching(/^sha256:/),
+    process_digest: expect.stringMatching(/^sha256:/),
+    extension_root_digest: expect.stringMatching(/^sha256:/),
+    read_only: true,
+    persistent: true,
+  });
+  const status = await realLifecycle.status(globalHome);
+  expect(status).toMatchObject({ command: "status", state: "running", instance_id: started.instance_id, scope: "global" });
+  const stopped = await realLifecycle.stop(globalHome);
+  expect(stopped.state).toBe("stopped");
+  expect(await realLifecycle.privateArtifacts(globalHome)).toEqual([]);
+}, 90_000);
+
+test("SVC-CONTRACT-MANAGER-WORKER-PROJECT", async () => {
+  const home = await realLifecycle.home(), project = await realLifecycle.project();
+  const port = allocateLoopbackPort();
+  const started = await realLifecycle.start(home, { scope: "project", project_root: project, port });
+  try {
+    expect(started.ok).toBe(true);
+    expect(realLifecycle.observedLockTarget()).toMatchObject({ nirvanaHomeDigest: realLifecycle.digestHome(home), scope: "project", projectRootDigest: realLifecycle.digestProject(project), port });
+    const status = await realLifecycle.status(home);
+    expect(status.scope).toBe("project");
+    expect(realLifecycle.lockOperations()).not.toContain("status");
+    await realLifecycle.stop(home);
+  } catch (error) {
+    await realLifecycle.terminateFixtureProcess(started.pid!).catch(() => {});
+    throw error;
+  }
+}, 90_000);
+
+test("SVC-START-IDEMPOTENT-REAL-BACKEND-TWICE", async () => {
+  const home = await realLifecycle.home(), backend = realLifecycle.backend(), port = allocateLoopbackPort();
+  const first = await startBackend(backend, home, realLifecycle.globalConfig(port));
+  try {
+    const countersBefore = realLifecycle.counters(), bytesBefore = await realLifecycle.ownedByteSnapshot(home);
+    const second = await startBackend(backend, home, realLifecycle.globalConfig(port));
+    const countersAfter = realLifecycle.counters(), bytesAfter = await realLifecycle.ownedByteSnapshot(home);
+    expect(second).toMatchObject({ state: "running", pid: first.pid, instance_id: first.instance_id });
+    expect(countersAfter.spawn).toBe(countersBefore.spawn);
+    expect(countersAfter.write).toBe(countersBefore.write);
+    expect(bytesAfter).toEqual(bytesBefore);
+    expect((await realLifecycle.persistedInstance(home)).state).toBe("running");
+  } finally { await realLifecycle.stop(home); }
+}, 120_000);
+
+test("SVC-START-CONFLICT-PRESERVES-OWNED-BYTES", async () => {
+  const home = await realLifecycle.home(), backend = realLifecycle.backend(), port = allocateLoopbackPort();
+  const first = await startBackend(backend, home, realLifecycle.globalConfig(port));
+  try {
+    const bytesBefore = await realLifecycle.ownedByteSnapshot(home);
+    const conflict = await startBackend(backend, home, realLifecycle.globalConfig(allocateLoopbackPort()));
+    const bytesAfter = await realLifecycle.ownedByteSnapshot(home);
+    expect(conflict).toMatchObject({ ok: false, state: "conflict", code: "CONFIG_CONFLICT", pid: first.pid });
+    expect(realLifecycle.exitCode(conflict)).toBe(4);
+    expect(bytesAfter).toEqual(bytesBefore);
+    expect(Object.keys(bytesAfter).sort()).toEqual(["config", "instance", "readiness", "secret"]);
+  } finally { await realLifecycle.stop(home); }
+}, 120_000);
+
+test("SVC-START-FAILURE-CLEANUP-PROVEN", async () => {
+  const home = await realLifecycle.home(), backend = realLifecycle.backend(), port = allocateLoopbackPort();
+  realLifecycle.failNextHealth({ workerOutcome: "exited", identityProof: "absent" });
+  const outcome = await startBackend(backend, home, realLifecycle.globalConfig(port)).then(v => ({ resolved: JSON.stringify(v).slice(0, 200) }), e => ({ rejected: String((e as Error).message) }));
+  console.error("OUTCOME:", JSON.stringify(outcome));
+  if ("rejected" in outcome) expect(outcome.rejected).toContain("START_HEALTH"); else throw new Error("EXPECTED REJECTION GOT " + outcome.resolved);
+  expect(await realLifecycle.privateArtifacts(home)).toEqual([]);
+  expect(await realLifecycle.ownedByteSnapshot(home)).toEqual({ config: null, instance: null, readiness: null, secret: null });
+}, 120_000);
+
+test("SVC-START-PRE-SPAWN-CLEANUP-NO-PROCESS", async () => {
+  const home = await realLifecycle.home(), backend = realLifecycle.backend(), port = allocateLoopbackPort();
+  const killsBefore = realLifecycle.killPids().length;
+  realLifecycle.failNextOwnedWrite({ artifact: "config", boundary: "before" });
+  await expect(startBackend(backend, home, realLifecycle.globalConfig(port))).rejects.toThrow("INJECTED_CONFIG_WRITE");
+  const { cleanup, attempt } = realLifecycle.lastCleanup();
+  expect(attempt).toMatchObject({ phase: "secret_written", spawned: undefined });
+  expect(cleanup).toMatchObject({ kind: "cleaned", identity: "not-spawned", terminated: false });
+  expect(realLifecycle.killPids().length).toBe(killsBefore);
+  expect(await realLifecycle.ownedByteSnapshot(home)).toEqual({ config: null, instance: null, readiness: null, secret: null });
+}, 120_000);
+
+test("SVC-LIFECYCLE-STOP-IDEMPOTENT", async () => {
+  const home = await realLifecycle.home();
+  const stopped = await realLifecycle.stop(home);
+  expect(stopped.state).toBe("stopped");
+  expect(stopped.code).toBe("ALREADY_STOPPED");
+  expect(realLifecycle.exitCode(stopped)).toBe(0);
+}, 60_000);
+
+test("SVC-LIFECYCLE-STATUS-STOPPED", async () => {
+  const home = await realLifecycle.home();
+  const status = await realLifecycle.status(home);
+  expect(status).toMatchObject({ command: "status", ok: false, state: "stopped", code: "NOT_RUNNING" });
+  expect(realLifecycle.exitCode(status)).toBe(1);
+}, 60_000);
+
+test("SVC-STATEPAIR-CONFIG-ONLY", async () => {
+  const home = await realLifecycle.home(), backend = realLifecycle.backend();
+  const root = backend.serviceRoot(home);
+  const { mkdirSync: mk, writeFileSync: wf } = await import("node:fs");
+  mk(join(root, "control"), { recursive: true });
+  wf(join(root, "config.json"), new TextEncoder().encode(`${JSON.stringify(realLifecycle.globalConfig(allocateLoopbackPort()))}\n`));
+  const status = await realLifecycle.status(home);
+  expect(status).toMatchObject({ ok: false, state: "stale", code: "STATE_PARTIAL" });
+  const stopped = await realLifecycle.stop(home);
+  expect(stopped).toMatchObject({ state: "stale", code: "STATE_PARTIAL" });
+}, 60_000);
+
+test("SVC-RESTART-RESTORED", async () => {
+  const home = await realLifecycle.home(), backend = realLifecycle.backend(), port = allocateLoopbackPort();
+  const started = await startBackend(backend, home, realLifecycle.globalConfig(port));
+  try {
+    expect(started.ok).toBe(true);
+    const replacementPort = allocateLoopbackPort();
+    realLifecycle.failNextHealth({ workerOutcome: "exited", identityProof: "absent" });
+    const restarted = await realLifecycle.restart(home, realLifecycle.globalConfig(replacementPort));
+    expect(restarted.command).toBe("restart");
+    expect(restarted.ok).toBe(false);
+    expect(restarted.rollback_attempted).toBe(true);
+    expect(restarted.rollback_state).toBe("restored_previous");
+    const persistedConfig = JSON.parse(new TextDecoder().decode(readFileSync(join(home, ".nirvana", "glance", "service", "config.json")))) as { port?: number };
+    expect(persistedConfig.port).toBe(port);
+  } finally { await realLifecycle.terminateFixtureProcess(started.pid!).catch(() => {}); }
+}, 120_000);

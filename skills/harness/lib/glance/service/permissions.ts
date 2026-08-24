@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { chmodSync, closeSync, constants, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, rmSync, statSync } from "node:fs";
+import { chmodSync, closeSync, constants, existsSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
 export class ServicePermissionError extends Error {}
@@ -29,12 +29,31 @@ export function assertWindowsAclSids(aces: readonly WindowsAce[], currentUserSid
 let cachedUserSid: string | undefined;
 function currentUserSid(): string {
   if (cachedUserSid) return cachedUserSid;
-  const result = Bun.spawnSync(["whoami", "/user", "/fo", "csv", "/nh"], { stdout: "pipe", stderr: "pipe" });
-  if (result.exitCode !== 0) throw new ServicePermissionError("WINDOWS_IDENTITY_READ");
-  const sid = new TextDecoder().decode(result.stdout).match(/S-1-\d+(?:-\d+)+/)?.[0];
-  if (!sid) throw new ServicePermissionError("WINDOWS_CURRENT_SID_MISSING");
-  cachedUserSid = sid;
-  return sid;
+  let last: Bun.SyncSpawnResult | undefined;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const result = Bun.spawnSync(["whoami", "/user", "/fo", "csv", "/nh"], { stdout: "pipe", stderr: "pipe" });
+    if (result.exitCode === 0) {
+      const sid = new TextDecoder().decode(result.stdout).match(/S-1-\d+(?:-\d+)+/)?.[0];
+      if (!sid) throw new ServicePermissionError("WINDOWS_CURRENT_SID_MISSING");
+      cachedUserSid = sid;
+      return sid;
+    }
+    last = result;
+    Bun.sleepSync(25);
+  }
+  void last;
+  throw new ServicePermissionError("WINDOWS_IDENTITY_READ");
+}
+
+function runIcacls(argumentsList: readonly string[]): void {
+  let last = -1;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const result = Bun.spawnSync(["icacls", ...argumentsList], { stdout: "pipe", stderr: "pipe" });
+    if (result.exitCode === 0) return;
+    last = result.exitCode ?? last;
+    Bun.sleepSync(25);
+  }
+  throw new ServicePermissionError(`WINDOWS_ACL_SET:${last}`);
 }
 
 function parseWindowsSddl(sddl: string): WindowsAce[] {
@@ -53,8 +72,13 @@ function inspectWindowsAces(path: string): WindowsAce[] {
   const staging = join(dirname(path), `.${basename(path)}.${randomUUID()}.acl`);
   try {
     mkdirSync(staging, { mode: 0o700 });
-    const saved = Bun.spawnSync(["icacls", path, "/save", "acl.txt"], { cwd: staging, stdout: "pipe", stderr: "pipe" });
-    if (saved.exitCode !== 0) throw new ServicePermissionError("WINDOWS_ACL_SAVE");
+    let saved: Bun.SyncSpawnResult | undefined;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      saved = Bun.spawnSync(["icacls", path, "/save", "acl.txt"], { cwd: staging, stdout: "pipe", stderr: "pipe" });
+      if (saved.exitCode === 0 && existsSync(join(staging, "acl.txt"))) break;
+      Bun.sleepSync(25);
+    }
+    if (!saved || saved.exitCode !== 0) throw new ServicePermissionError("WINDOWS_ACL_SAVE");
     const bytes = readFileSync(join(staging, "acl.txt"));
     const encoding = (bytes[0] === 0xff && bytes[1] === 0xfe) || bytes[1] === 0 ? "utf-16le" : "utf-8";
     return parseWindowsSddl(new TextDecoder(encoding).decode(bytes));
@@ -63,17 +87,13 @@ function inspectWindowsAces(path: string): WindowsAce[] {
 
 function purgeLogonSidAces(path: string, aces: readonly WindowsAce[]): void {
   const sids = [...new Set(aces.filter(ace => /^S-1-5-5-\d+-\d+$/.test(ace.sid)).map(ace => ace.sid))];
-  for (const sid of sids) {
-    const removed = Bun.spawnSync(["icacls", path, "/remove:g", `*${sid}`], { stdout: "pipe", stderr: "pipe" });
-    if (removed.exitCode !== 0) throw new ServicePermissionError("WINDOWS_LOGON_ACE_REMOVE");
-  }
+  for (const sid of sids) runIcacls([path, "/remove:g", `*${sid}`]);
 }
 
 function restrictWindows(path: string, capturedLogonSid?: string): void {
   const currentUser = process.env.USERNAME;
   if (!currentUser) throw new ServicePermissionError("WINDOWS_CURRENT_USER_UNAVAILABLE");
-  const result = Bun.spawnSync(["icacls", path, "/inheritance:r", "/grant:r", `${currentUser}:(F)`], { stdout: "pipe", stderr: "pipe" });
-  if (result.exitCode !== 0) throw new ServicePermissionError("WINDOWS_ACL_SET");
+  runIcacls([path, "/inheritance:r", "/grant:r", `${currentUser}:(F)`]);
   let aces = inspectWindowsAces(path);
   if (aces.some(ace => /^S-1-5-5-\d+-\d+$/.test(ace.sid))) {
     purgeLogonSidAces(path, aces);

@@ -71,12 +71,13 @@ export function createStartupReadiness(deps: StartupReadinessDeps) {
   const captured = deps.capture ?? new Map<string, Uint8Array>();
   return {
     async waitForStartupReady(path: string, deadlineMs: number): Promise<unknown> {
+      const startedAt = deps.now();
       for (;;) {
         let bytes: Uint8Array;
         try {
           bytes = read(path);
         } catch {
-          if (deps.now() >= deadlineMs) throw new Error("STARTUP_READY_TIMEOUT");
+          if (deps.now() - startedAt >= deadlineMs) throw new Error("STARTUP_READY_TIMEOUT");
           await new Promise<void>(resolveTask => deps.schedule(resolveTask, pollMs));
           continue;
         }
@@ -173,9 +174,14 @@ export function createProductionRuntime(serviceRoot: string, metadata: { engineV
   const finalizeStop = async (instance: unknown): Promise<void> => {
     const typed = validateInstance(instance);
     const instancePath = resolveServiceRef(serviceRoot, "instance.json", false);
+    const coreOf = (value: unknown): Record<string, unknown> => {
+      const copy = { ...(value as Record<string, unknown>) };
+      delete copy.state;
+      return copy;
+    };
     try {
-      if (digestJcs(parseStrictJson(readFileSync(instancePath))) === digestJcs(typed)) rmSync(instancePath, { force: true });
-      else return;
+      if (digestJcs(coreOf(parseStrictJson(readFileSync(instancePath)))) !== digestJcs(coreOf(typed))) return;
+      rmSync(instancePath, { force: true });
     } catch { return; }
     try { rmSync(resolveServiceRef(serviceRoot, typed.control_secret_ref, true), { force: true }); } catch {}
     try { appendFileSync(resolveServiceRef(serviceRoot, typed.log_ref, false), `[glance-service] stopped ${typed.instance_id}\n`); } catch {}

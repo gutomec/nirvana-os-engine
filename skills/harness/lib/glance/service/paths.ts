@@ -1,4 +1,5 @@
 import { existsSync, lstatSync, realpathSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { isAbsolute as isPosixAbsolute, resolve, win32 } from "node:path";
 
 export class ServicePathError extends Error {}
@@ -8,4 +9,11 @@ export function resolveServiceRef(serviceRoot: string, ref: string, mustExist: b
   const root = realpathSync.native(serviceRoot), target = resolve(root, ...segments); if (target !== root && !target.startsWith(`${root}${process.platform === "win32" ? "\\" : "/"}`)) throw new ServicePathError("ESCAPING_SERVICE_REF");
   let current = root; for (const segment of segments) { current = resolve(current, segment); if (existsSync(current) && lstatSync(current).isSymbolicLink()) throw new ServicePathError("LINKED_SERVICE_REF"); }
   if (mustExist && !existsSync(target)) throw new ServicePathError("MISSING_SERVICE_REF"); return target;
+}
+
+export function canonicalPath(path: string): string {
+  return realpathSync.native(path);
+}
+export function digestCanonicalPath(path: string): `sha256:${string}` {
+  return `sha256:${createHash("sha256").update(canonicalPath(path)).digest("hex")}`;
 }

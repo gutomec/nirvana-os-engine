@@ -120,6 +120,56 @@ export type ExistingServiceVerdict =
   | { kind: "conflict"; code: string }
   | { kind: "drift"; restartRequired: true };
 
+export interface VerifiedTerminationTarget { entrypoint: string; serviceRoot: string; startupId: string }
+
+async function probeHealth(url: string, timeoutMs: number): Promise<Record<string, unknown> | undefined> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) return undefined;
+    return await response.json() as Record<string, unknown>;
+  } catch { return undefined; } finally { clearTimeout(timer); }
+}
+
+export async function fetchServiceHealth(port: number, timeoutMs = 750): Promise<Record<string, unknown> | undefined> {
+  return probeHealth(`http://127.0.0.1:${port}/api/health`, timeoutMs);
+}
+
+export async function portFreeProbe(port: number): Promise<boolean> {
+  try {
+    const probe = Bun.serve({ hostname: "127.0.0.1", port, fetch: () => new Response("probe") });
+    probe.stop(true);
+    return true;
+  } catch { return false; }
+}
+
+export async function terminateVerifiedProcess(adapter: ServiceProcessAdapter, pid: number, expected: VerifiedTerminationTarget, options: { waitMs?: number; sleep?(ms: number): Promise<void>; expectedDigest?: string } = {}): Promise<"terminated" | "absent" | "foreign" | "indeterminate"> {
+  const waitMs = options.waitMs ?? 5_000;
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)));
+  let inspection: ProcessInspection;
+  try { inspection = await adapter.inspect(pid); } catch { return "indeterminate"; }
+  if (!inspection.exists) return "absent";
+  const liveIdentity = inspection.argv ? extractWorkerIdentityFromArgv(inspection.argv) : null;
+  if (!liveIdentity) return "foreign";
+  if (liveIdentity.entrypoint !== expected.entrypoint || liveIdentity.serviceRoot !== expected.serviceRoot || liveIdentity.startupId !== expected.startupId) return "foreign";
+  if (options.expectedDigest && processDigestFromIdentity(liveIdentity) !== options.expectedDigest) return "foreign";
+  if (process.platform === "win32") {
+    const killed = Bun.spawnSync(["taskkill", "/F", "/PID", String(pid), "/T"], { stdout: "pipe", stderr: "pipe" });
+    if (killed.exitCode !== 0) return "indeterminate";
+  } else {
+    try { process.kill(pid, "SIGTERM"); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") return "indeterminate"; }
+  }
+  const deadline = Date.now() + waitMs;
+  for (;;) {
+    let stillThere: boolean;
+    try { stillThere = (await adapter.inspect(pid)).exists; } catch { return "indeterminate"; }
+    if (!stillThere) return "terminated";
+    if (Date.now() >= deadline) return "indeterminate";
+    await sleep(50);
+  }
+}
+
 export interface ExistingServiceEvidence {
   expected: {
     instanceId: string;
