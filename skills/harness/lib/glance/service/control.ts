@@ -39,6 +39,20 @@ export function resolveControlSecret(serviceRoot: string, instance: { control_se
   return read(resolveServiceRef(serviceRoot, instance.control_secret_ref, true));
 }
 
+export function verifyWindowAndInstance(input: { request: ServiceStopRequestV1; instance: { instance_id: string }; now: number }): void {
+  if (input.now >= Date.parse(input.request.expires_at)) throw new StopRequestError("WINDOW_EXPIRED");
+  if (input.now < Date.parse(input.request.created_at)) throw new StopRequestError("WINDOW_FUTURE");
+  if (input.request.instance_id !== input.instance.instance_id) throw new StopRequestError("INSTANCE_MISMATCH");
+}
+export function verifyNonceAndMac(request: ServiceStopRequestV1, secret: Uint8Array, nonce: Uint8Array): void {
+  if (sha256Digest(nonce) !== request.nonce_digest) throw new StopRequestError("NONCE_DIGEST");
+  if (!verifyStopRequest(request, secret)) throw new StopRequestError("AUTH_TAG");
+}
+export function verifyStopRequestAgainstInstance(input: { request: ServiceStopRequestV1; secret: Uint8Array; nonce: Uint8Array; instance: { instance_id: string }; now: number }): void {
+  verifyWindowAndInstance({ request: input.request, instance: input.instance, now: input.now });
+  verifyNonceAndMac(input.request, input.secret, input.nonce);
+}
+
 export function consumeStopRequest(input: {
   serviceRoot: string;
   pendingRef: string;
@@ -54,10 +68,7 @@ export function consumeStopRequest(input: {
   const claimedPath = resolveServiceRef(serviceRoot, processingRef, true);
   const bytes = io.readBytes(claimedPath);
   const request = parseStopRequestBytes(bytes);
-  const observedMs = io.now();
-  if (observedMs >= Date.parse(request.expires_at)) throw new StopRequestError("WINDOW_EXPIRED");
-  if (observedMs < Date.parse(request.created_at)) throw new StopRequestError("WINDOW_FUTURE");
-  if (request.instance_id !== instance.instance_id) throw new StopRequestError("INSTANCE_MISMATCH");
+  verifyWindowAndInstance({ request, instance, now: io.now() });
   let nonce: Uint8Array;
   let noncePath: string;
   try {
@@ -68,8 +79,7 @@ export function consumeStopRequest(input: {
     if (error instanceof ServicePathError || error instanceof StopRequestError) throw error;
     throw new StopRequestError("NONCE_REF_REJECTED", error);
   }
-  if (sha256Digest(nonce) !== request.nonce_digest) throw new StopRequestError("NONCE_DIGEST");
-  if (!verifyStopRequest(request, secret)) throw new StopRequestError("AUTH_TAG");
+  verifyNonceAndMac(request, secret, nonce);
   if (!Buffer.from(io.readBytes(claimedPath)).equals(Buffer.from(bytes))) throw new StopRequestError("PROCESSING_SUBSTITUTED");
   let observedNonce: Uint8Array;
   try { observedNonce = io.readBytes(noncePath); } catch (cause) { throw new StopRequestError("REPLAY", cause); }

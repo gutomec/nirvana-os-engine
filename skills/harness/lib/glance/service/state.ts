@@ -1,12 +1,14 @@
 import { closeSync, fsyncSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { basename, dirname, join } from "node:path";
+import { canonicalizeJcs } from "./canonicalize.ts";
 import { cleanupPrivateFreshFile, fsyncDirectory, openPrivateFreshFile, restrictDirectory, ServicePermissionError, type PrivateCleanupResult, type PrivateFileIdentity, type PrivateFreshFile } from "./permissions.ts";
 import { parseStrictJson } from "./strict-json.ts";
 
 export class ServiceIoError extends Error { constructor(operation: string, cause?: unknown) { super(`SERVICE_IO:${operation}`, { cause }); } }
 export class IncompatibleStateError extends Error {}
 export interface ServiceIo { read(path: string): Uint8Array; archive(path: string): void; }
+export function digestJcs(value: unknown): `sha256:${string}` { return `sha256:${createHash("sha256").update(canonicalizeJcs(value)).digest("hex")}`; }
 interface PrivateWriteRuntime {
   fsyncFile(descriptor: number): void;
   close(descriptor: number): void;

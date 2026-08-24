@@ -26,11 +26,14 @@ export function assertWindowsAclSids(aces: readonly WindowsAce[], currentUserSid
   if (!aces.length || aces.some(ace => !valid(ace))) throw new ServicePermissionError("WINDOWS_ACL_NOT_PRIVATE");
 }
 
+let cachedUserSid: string | undefined;
 function currentUserSid(): string {
+  if (cachedUserSid) return cachedUserSid;
   const result = Bun.spawnSync(["whoami", "/user", "/fo", "csv", "/nh"], { stdout: "pipe", stderr: "pipe" });
   if (result.exitCode !== 0) throw new ServicePermissionError("WINDOWS_IDENTITY_READ");
   const sid = new TextDecoder().decode(result.stdout).match(/S-1-\d+(?:-\d+)+/)?.[0];
   if (!sid) throw new ServicePermissionError("WINDOWS_CURRENT_SID_MISSING");
+  cachedUserSid = sid;
   return sid;
 }
 
@@ -58,13 +61,25 @@ function inspectWindowsAces(path: string): WindowsAce[] {
   } finally { rmSync(staging, { recursive: true, force: true }); }
 }
 
+function purgeLogonSidAces(path: string, aces: readonly WindowsAce[]): void {
+  const sids = [...new Set(aces.filter(ace => /^S-1-5-5-\d+-\d+$/.test(ace.sid)).map(ace => ace.sid))];
+  for (const sid of sids) {
+    const removed = Bun.spawnSync(["icacls", path, "/remove:g", `*${sid}`], { stdout: "pipe", stderr: "pipe" });
+    if (removed.exitCode !== 0) throw new ServicePermissionError("WINDOWS_LOGON_ACE_REMOVE");
+  }
+}
+
 function restrictWindows(path: string, capturedLogonSid?: string): void {
   const currentUser = process.env.USERNAME;
   if (!currentUser) throw new ServicePermissionError("WINDOWS_CURRENT_USER_UNAVAILABLE");
   const result = Bun.spawnSync(["icacls", path, "/inheritance:r", "/grant:r", `${currentUser}:(F)`], { stdout: "pipe", stderr: "pipe" });
   if (result.exitCode !== 0) throw new ServicePermissionError("WINDOWS_ACL_SET");
-  const userSid = currentUserSid();
-  assertWindowsAclSids(inspectWindowsAces(path), userSid, capturedLogonSid);
+  let aces = inspectWindowsAces(path);
+  if (aces.some(ace => /^S-1-5-5-\d+-\d+$/.test(ace.sid))) {
+    purgeLogonSidAces(path, aces);
+    aces = inspectWindowsAces(path);
+  }
+  assertWindowsAclSids(aces, currentUserSid(), capturedLogonSid);
 }
 
 export function restrictDirectory(path: string): void { if (process.platform === "win32") restrictWindows(path); else { chmodSync(path, 0o700); assertPrivateMode(path, 0o700); } }

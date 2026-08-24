@@ -40,6 +40,7 @@ import { readEnvFile, writeEnvFile, setVar, deleteVar, getVar, toMap } from "../
 import { CONFIG_SCHEMA, getField, isEditableKey, maskSecret } from "./config-schema.ts";
 import { validateMindCloneFile, type ValidationResult } from "../../../_shared/lib/mindclone-validator.ts";
 import { handleObservabilityRoute } from "./views/observability-handler.ts";
+import type { ServiceHealthV1 } from "./service/adapters.ts";
 
 const VIEWS_DIR = path.dirname(import.meta.path) + "/views";
 // Runtime state lives in the engine's own home, never in a runtime's dir.
@@ -54,13 +55,34 @@ const STARTED_AT = Date.now();
 const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
   || (fs.existsSync(path.join(os.homedir(), ".nirvana", "skills")) ? path.join(os.homedir(), ".nirvana", "skills") : path.join(os.homedir(), ".claude", "skills"));
 
-interface ServerOptions {
+export interface ServerRuntime { now(): number; openBrowser(url: string): Promise<void> | void; setInterval(callback: () => void, ms: number): unknown; clearInterval(handle: unknown): void; log(line: string): void; exit(code: number): void }
+export const defaultServerRuntime: ServerRuntime = {
+  now: () => Date.now(),
+  openBrowser: url => openBrowser(url),
+  setInterval: (callback, ms) => setInterval(callback, ms),
+  clearInterval: handle => clearInterval(handle as ReturnType<typeof setInterval>),
+  log: line => console.error(line),
+  exit: code => process.exit(code),
+};
+
+interface NormalServerOptions {
   port: number | "auto";
   open: boolean;
   idleMin: number;
   allowActions: boolean;  // future use; default false
   theme: "apple" | "apple-dark" | "awwwards";
 }
+
+interface PersistentServerOptions {
+  port: number;
+  open: false;
+  allowActions: false;
+  theme: "apple" | "apple-dark" | "awwwards";
+  lifetime: { mode: "persistent" };
+  serviceHealth: Omit<ServiceHealthV1, "uptime_seconds">;
+}
+
+type ServerOptions = NormalServerOptions | PersistentServerOptions;
 
 // ─── Setup copy helper (used by /api/setup/copy-batch and /api/setup/copy-stream) ───
 // kind=squads|businesses → source is a directory `<slug>/`, copy recursively.
@@ -228,7 +250,11 @@ function findFreePort(start = 3737, attempts = 50): number {
   return Math.floor(Math.random() * (65535 - 49152)) + 49152;
 }
 
-export async function startServer(opts: ServerOptions) {
+export async function startServer(opts: ServerOptions, runtimeOverrides?: Partial<ServerRuntime>) {
+  const runtime: ServerRuntime = { ...defaultServerRuntime, ...runtimeOverrides };
+  const persistent = "lifetime" in opts && opts.lifetime.mode === "persistent";
+  const idleMin = "idleMin" in opts ? opts.idleMin : 0;
+  const startedAt = runtime.now();
   const port = opts.port === "auto" ? findFreePort() : opts.port;
   const url = `http://localhost:${port}`;
 
@@ -1027,12 +1053,15 @@ export async function startServer(opts: ServerOptions) {
 
       // ─── API ───
       if (p === "/api/health") {
+        if (persistent) {
+          return json({ ...opts.serviceHealth, uptime_seconds: Math.max(0, Math.floor((runtime.now() - startedAt) / 1000)) });
+        }
         return json({
           ok: true,
           version: "1.0.0",
           uptime_ms: Date.now() - STARTED_AT,
           idle_ms: Date.now() - lastActivity,
-          idle_timeout_ms: opts.idleMin * 60_000,
+          idle_timeout_ms: idleMin * 60_000,
           allow_actions: opts.allowActions,
           scope: getScope(),
         });
@@ -1536,16 +1565,19 @@ export async function startServer(opts: ServerOptions) {
   });
 
   console.error(`[glance] up on ${url}  (scope=${getScope().mode}, allow_actions=${opts.allowActions}, theme=${opts.theme})`);
-  console.error(`[glance] auto-shutdown after ${opts.idleMin}min idle  ·  Ctrl+C to exit`);
-  if (opts.open) openBrowser(url);
+  let watchdog: ReturnType<typeof setInterval> | undefined;
+  if (!persistent) {
+    console.error(`[glance] auto-shutdown after ${idleMin}min idle  ·  Ctrl+C to exit`);
+    if (opts.open) openBrowser(url);
 
-  // Idle watchdog
-  const watchdog = setInterval(() => {
-    if (Date.now() - lastActivity > opts.idleMin * 60_000) {
-      console.error(`[glance] idle ${opts.idleMin}min — shutting down`);
-      shutdown(server, watchdog);
-    }
-  }, 30_000);
+    // Idle watchdog
+    watchdog = setInterval(() => {
+      if (Date.now() - lastActivity > idleMin * 60_000) {
+        console.error(`[glance] idle ${idleMin}min — shutting down`);
+        shutdown(server, watchdog!);
+      }
+    }, 30_000);
+  }
 
   // SIGINT cleanup
   const onSignal = () => { console.error("\n[glance] SIGINT — shutting down"); shutdown(server, watchdog); };
