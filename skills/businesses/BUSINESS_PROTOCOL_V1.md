@@ -400,6 +400,7 @@ memory:
 
 ```yaml
 runtime_requirements:
+  # Use policy: active to select the session runtime without an allowlist.
   minimum:
     - {runtime: claude-code, version: ">=1.0.0"}
   compatible:

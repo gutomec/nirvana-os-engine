@@ -269,6 +269,12 @@ See [§18 Runtime Compatibility](#18-runtime-compatibility) for the full adapter
 
 A squad declares `runtime_requirements` in its manifest:
 
+The optional `policy` field defaults to `declared`, preserving existing manifests.
+Under `declared`, `minimum` must contain at least one runtime. Under `active`, the
+host runtime is selected without allowlist membership; a registered adapter or an
+explicit bridge must prove required features. `incompatible` remains a hard denial,
+and the engine never installs, starts, or switches runtimes.
+
 ```yaml
 runtime_requirements:
   minimum:                        # at least one must match host

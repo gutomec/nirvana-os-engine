@@ -169,6 +169,7 @@ class SquadDiscovery {
       workflows,
       tasks,
       runtimes,
+      runtimePolicy: parsed.runtime_requirements?.policy || 'declared',
       featuresRequired,
       featuresOptional,
       harness: !!parsed.harness,
@@ -231,6 +232,9 @@ class SquadDiscovery {
     }
     if (Array.isArray(rr.compatible)) {
       rr.compatible.forEach(r => runtimes.push({ runtime: r.runtime, type: 'compatible' }));
+    }
+    if (Array.isArray(rr.incompatible)) {
+      rr.incompatible.forEach(r => runtimes.push({ runtime: r.runtime, type: 'incompatible' }));
     }
 
     return runtimes;
