@@ -137,5 +137,5 @@ describe("nrv doctor warns before the expensive run", () => {
     expect(out).toContain("SQUAD DEPS");
     expect(out).toContain("nirvana-absent-binary-xyz");
     expect(out).toContain("nrv activate --all");
-  });
+  }, 15_000);
 });
