@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import {
   existsSync,
   chmodSync,
+  copyFileSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -494,15 +495,21 @@ describe("engine update safety", () => {
     const { root, home } = fixtureRoot();
     const bin = join(root, "bin");
     mkdirSync(bin, { recursive: true });
-    const fakeRsync = join(bin, process.platform === "win32" ? "rsync.cmd" : "rsync");
-    writeFileSync(fakeRsync, process.platform === "win32"
-      ? "@echo off\r\nif \"%1\"==\"--version\" exit /b 0\r\nexit /b 23\r\n"
-      : "#!/bin/sh\n[ \"$1\" = \"--version\" ] && exit 0\nexit 23\n");
-    if (process.platform !== "win32") chmodSync(fakeRsync, 0o755);
+    const fakeRsync = join(bin, process.platform === "win32" ? "rsync.exe" : "rsync");
+    if (process.platform === "win32") {
+      // CreateProcess resolves .exe but never .cmd. Windows ships curl.exe;
+      // --version succeeds, while rsync's --delete flag fails before any URL
+      // is attempted, so the installer reaches its post-acquisition error path.
+      const curl = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "curl.exe");
+      copyFileSync(curl, fakeRsync);
+    } else {
+      writeFileSync(fakeRsync, "#!/bin/sh\n[ \"$1\" = \"--version\" ] && exit 0\nexit 23\n");
+      chmodSync(fakeRsync, 0o755);
+    }
 
     const install = runEngine(home, { pathPrefix: bin });
     expect(install.code).toBe(1);
-    expect(install.out).toContain("rsync failed with exit code 23");
+    expect(install.out).toMatch(/rsync failed with exit code [1-9]\d*/);
     const skillsRoot = join(home, ".nirvana", "skills");
     const locks = existsSync(skillsRoot)
       ? readdirSync(skillsRoot).filter((entry) => entry.endsWith(".nirvana-update.lock"))
