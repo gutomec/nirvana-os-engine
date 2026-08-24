@@ -601,6 +601,7 @@ describe("engine update safety", () => {
 
   test("blocks drift in marked Codex and generic copy-mode runtime mirrors before regenerating them", () => {
     const { home } = fixtureRoot();
+    mkdirSync(join(home, ".codex"), { recursive: true });
     mkdirSync(join(home, ".gemini"), { recursive: true });
     expect(runEngine(home, { copySkills: true }).code).toBe(0);
 
