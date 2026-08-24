@@ -56,6 +56,26 @@ external_apps:
         args: [install, --cask, application]
 `;
 
+const PLATFORM_CHECKS_APP = APP
+  .replace(`      check:
+        command: application
+        args: [status, --json]`, `      check:
+        win32:
+          command: winget
+          args: [list, --id, Vendor.Application, --exact]
+        darwin:
+          command: brew
+          args: [list, --cask, application]`)
+  .replace(`    presence_check:
+      command: application
+      args: [--version]`, `    presence_check:
+      win32:
+        command: winget
+        args: [list, --id, Vendor.Application, --exact]
+      darwin:
+        command: brew
+        args: [list, --cask, application]`);
+
 afterEach(() => {
   for (const root of tempRoots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
@@ -123,6 +143,44 @@ describe("discoverExternalApps", () => {
     const legacy = writeSidecar(root, "legacy", "schema_version: '1.0'\nenv_vars:\n  - name: TOKEN\n    required: false\n");
 
     expect(discoverExternalApps([{ slug: "legacy", path: legacy }])).toEqual([]);
+  });
+
+  test("keeps legacy single-command checks valid on every declared platform", () => {
+    const root = tempRoot();
+    const squad = writeSidecar(root, "legacy-checks", APP);
+    const app = discoverExternalApps([{ slug: "legacy-checks", path: squad }])[0];
+
+    expect(buildExternalAppPlan([app], { platform: "win32" }).results[0].presence_check?.command).toBe("application");
+    expect(buildExternalAppPlan([app], { platform: "darwin" }).results[0].presence_check?.command).toBe("application");
+  });
+
+  test("selects platform-specific presence and compatibility checks into the consent plan", () => {
+    const root = tempRoot();
+    const squad = writeSidecar(root, "platform-checks", PLATFORM_CHECKS_APP);
+    const app = discoverExternalApps([{ slug: "platform-checks", path: squad }])[0];
+
+    const windows = buildExternalAppPlan([app], { platform: "win32" });
+    const macos = buildExternalAppPlan([app], { platform: "darwin" });
+
+    expect(windows.results[0].presence_check).toEqual({
+      command: "winget",
+      args: ["list", "--id", "Vendor.Application", "--exact"],
+    });
+    expect(windows.results[0].compatibility_check?.command).toBe("winget");
+    expect(macos.results[0].presence_check).toEqual({
+      command: "brew",
+      args: ["list", "--cask", "application"],
+    });
+    expect(macos.results[0].compatibility_check?.command).toBe("brew");
+    expect(windows.digest).not.toBe(macos.digest);
+
+    const changedMacSquad = writeSidecar(root, "platform-checks", PLATFORM_CHECKS_APP.replaceAll(
+      "args: [list, --cask, application]",
+      "args: [list, --cask, application-renamed]",
+    ));
+    const changedMacApp = discoverExternalApps([{ slug: "platform-checks", path: changedMacSquad }])[0];
+    expect(buildExternalAppPlan([changedMacApp], { platform: "win32" }).digest).toBe(windows.digest);
+    expect(buildExternalAppPlan([changedMacApp], { platform: "darwin" }).digest).not.toBe(macos.digest);
   });
 
   test("rejects shell-shaped or extensible command declarations", () => {

@@ -11,6 +11,8 @@ export interface ExternalCommand {
   timeout_ms?: number;
 }
 
+export type ExternalCommandRecipe = ExternalCommand | Partial<Record<ExternalAppPlatform, ExternalCommand>>;
+
 export interface ExternalAppDependency {
   id: string;
   name: string;
@@ -22,8 +24,8 @@ export interface ExternalAppDependency {
   source: string;
   platforms: ExternalAppPlatform[];
   permissions: string[];
-  compatibility: { requirement: string; check?: ExternalCommand };
-  presence_check: ExternalCommand;
+  compatibility: { requirement: string; check?: ExternalCommandRecipe };
+  presence_check: ExternalCommandRecipe;
   install: Record<string, ExternalCommand>;
   source_squads: string[];
 }
@@ -54,7 +56,7 @@ export interface ExternalAppResult {
   permissions: string[];
   compatibility_requirement: string;
   source_squads: string[];
-  presence_check: ExternalCommand;
+  presence_check?: ExternalCommand;
   compatibility_check?: ExternalCommand;
   install_action?: ExternalCommand;
   status: ExternalAppStatus;
@@ -221,6 +223,32 @@ function parseCommand(value: unknown, label: string): ExternalCommand {
   return { command, args, ...(timeoutMs ? { timeout_ms: timeoutMs } : {}) };
 }
 
+function parseCommandRecipe(value: unknown, label: string, platforms: ExternalAppPlatform[]): ExternalCommandRecipe {
+  const raw = requireObject(value, label);
+  if ("command" in raw || "args" in raw || "timeout_ms" in raw) return parseCommand(raw, label);
+
+  const declared = new Set(platforms);
+  const keys = Object.keys(raw);
+  if (keys.length === 0) throw new Error(`${label} must be a command or platform command map`);
+  for (const platform of keys) {
+    if (!PLATFORMS.has(platform as ExternalAppPlatform)) throw new Error(`${label} contains unsupported platform '${platform}'`);
+    if (!declared.has(platform as ExternalAppPlatform)) throw new Error(`${label} contains undeclared platform '${platform}'`);
+  }
+  for (const platform of platforms) {
+    if (raw[platform] === undefined) throw new Error(`${label} must define a command for declared platform '${platform}'`);
+  }
+
+  return Object.fromEntries(platforms.map((platform) => [
+    platform,
+    parseCommand(raw[platform], `${label}.${platform}`),
+  ])) as Partial<Record<ExternalAppPlatform, ExternalCommand>>;
+}
+
+function commandForPlatform(recipe: ExternalCommandRecipe | undefined, platform: ExternalAppPlatform): ExternalCommand | undefined {
+  if (!recipe) return undefined;
+  return "command" in recipe ? (recipe as ExternalCommand) : recipe[platform];
+}
+
 function parseExternalApp(value: unknown, sourceSlug: string, index: number): ExternalAppDependency {
   const label = `external_apps[${index}] in squad '${sourceSlug}'`;
   const raw = requireObject(value, label);
@@ -257,9 +285,11 @@ function parseExternalApp(value: unknown, sourceSlug: string, index: number): Ex
     permissions: requireStringArray(raw.permissions, `${label}.permissions`).sort(),
     compatibility: {
       requirement: requireString(compatibilityRaw.requirement, `${label}.compatibility.requirement`),
-      ...(compatibilityRaw.check === undefined ? {} : { check: parseCommand(compatibilityRaw.check, `${label}.compatibility.check`) }),
+      ...(compatibilityRaw.check === undefined ? {} : {
+        check: parseCommandRecipe(compatibilityRaw.check, `${label}.compatibility.check`, platforms),
+      }),
     },
-    presence_check: parseCommand(raw.presence_check, `${label}.presence_check`),
+    presence_check: parseCommandRecipe(raw.presence_check, `${label}.presence_check`, platforms),
     install,
     source_squads: [sourceSlug],
   };
@@ -331,7 +361,9 @@ export function buildExternalAppPlan(
 ): ExternalAppPlan {
   const platform = options.platform ?? (process.platform as ExternalAppPlatform);
   const results = [...dependencies].sort((a, b) => a.id.localeCompare(b.id)).map((app): ExternalAppResult => {
-    const supported = app.platforms.includes(platform) && !!app.install[platform];
+    const presenceCheck = commandForPlatform(app.presence_check, platform);
+    const compatibilityCheck = commandForPlatform(app.compatibility.check, platform);
+    const supported = app.platforms.includes(platform) && !!app.install[platform] && !!presenceCheck;
     return {
       id: app.id,
       name: app.name,
@@ -346,8 +378,8 @@ export function buildExternalAppPlan(
       permissions: app.permissions,
       compatibility_requirement: app.compatibility.requirement,
       source_squads: [...app.source_squads].sort(),
-      presence_check: app.presence_check,
-      ...(app.compatibility.check ? { compatibility_check: app.compatibility.check } : {}),
+      ...(presenceCheck ? { presence_check: presenceCheck } : {}),
+      ...(compatibilityCheck ? { compatibility_check: compatibilityCheck } : {}),
       ...(app.install[platform] ? { install_action: app.install[platform] } : {}),
       status: supported ? "pending_decision" : "unsupported_platform",
       ...(!supported ? { enable_hint: unsupportedHint(platform) } : {}),
@@ -383,7 +415,7 @@ function cloneResults(results: ExternalAppResult[]): ExternalAppResult[] {
     platforms: [...result.platforms],
     permissions: [...result.permissions],
     source_squads: [...result.source_squads],
-    presence_check: { ...result.presence_check, args: [...result.presence_check.args] },
+    ...(result.presence_check ? { presence_check: { ...result.presence_check, args: [...result.presence_check.args] } } : {}),
     ...(result.compatibility_check ? { compatibility_check: { ...result.compatibility_check, args: [...result.compatibility_check.args] } } : {}),
     ...(result.install_action ? { install_action: { ...result.install_action, args: [...result.install_action.args] } } : {}),
   }));
@@ -461,6 +493,11 @@ export function executeExternalAppPlan(plan: ExternalAppPlan, acceptedDigest: st
 
   for (const result of results) {
     if (result.status === "unsupported_platform") continue;
+    if (!result.presence_check) {
+      result.status = "unsupported_platform";
+      result.enable_hint = unsupportedHint(result.platform);
+      continue;
+    }
     const present = recordAction(actions, result.id, "presence_check", result.presence_check);
     const compatible = present && (!result.compatibility_check || recordAction(actions, result.id, "compatibility_check", result.compatibility_check));
     if (present && compatible) result.status = "already_present";
@@ -478,6 +515,11 @@ export function executeExternalAppPlan(plan: ExternalAppPlan, acceptedDigest: st
 
   const installOne = (result: ExternalAppResult): void => {
     if (!result.install_action) {
+      result.status = "unsupported_platform";
+      result.enable_hint = unsupportedHint(result.platform);
+      return;
+    }
+    if (!result.presence_check) {
       result.status = "unsupported_platform";
       result.enable_hint = unsupportedHint(result.platform);
       return;

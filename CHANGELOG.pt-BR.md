@@ -18,6 +18,11 @@ Planos apenas opcionais podem instalar em modo degradado sem decisão;
 aplicativos obrigatórios continuam fail-closed. Validações estritas de
 manifesto, caminhos, segredos, URLs e argv protegem a fronteira, enquanto o
 resultado separa os efeitos externos do rollback transacional dos assets.
+As verificações de presença e compatibilidade podem ser declaradas uma vez para
+todas as plataformas ou como um mapa estrito por plataforma. Os planos de
+consentimento selecionam e incluem no hash apenas as verificações e o instalador
+efetivos da plataforma atual, permitindo reutilizar com segurança aplicativos
+cujas instalações no Windows e no macOS expõem comandos diferentes.
 
 ### Disputa de lock no Windows deixou de parecer falha
 

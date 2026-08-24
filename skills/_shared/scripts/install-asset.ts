@@ -93,7 +93,7 @@ function printExternalPlan(result: Awaited<ReturnType<typeof install>>, write: (
     write(`     platform: ${dependency.platform}; supported: ${dependency.platforms.join(", ")}`);
     write(`     permissions: ${dependency.permissions.join(", ") || "none"}`);
     write(`     compatibility: ${dependency.compatibility_requirement}`);
-    write(`     presence argv: ${JSON.stringify([dependency.presence_check.command, ...dependency.presence_check.args])}`);
+    if (dependency.presence_check) write(`     presence argv: ${JSON.stringify([dependency.presence_check.command, ...dependency.presence_check.args])}`);
     if (dependency.compatibility_check) write(`     compatibility argv: ${JSON.stringify([dependency.compatibility_check.command, ...dependency.compatibility_check.args])}`);
     if (dependency.install_action) write(`     install argv: ${JSON.stringify([dependency.install_action.command, ...dependency.install_action.args])}`);
     if (dependency.error) write(`     error: ${dependency.error}`);

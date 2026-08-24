@@ -17,6 +17,10 @@ checks or installers run. Optional-only plans can install degraded without a
 decision; required applications remain fail-closed. Strict manifest, path,
 secret, URL, and argv validation protects the boundary, while results report
 external side effects separately from transactional pack asset rollback.
+Presence and compatibility checks can be declared once for every platform or
+as a strict per-platform map. Consent plans select and hash only the current
+platform's effective checks and installer, allowing safe reuse of applications
+whose Windows and macOS installation recipes expose different commands.
 
 ### Contention on Windows stopped looking like a crash
 

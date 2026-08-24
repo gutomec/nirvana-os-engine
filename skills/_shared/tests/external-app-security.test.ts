@@ -126,13 +126,43 @@ describe("untrusted external app declarations", () => {
   test("accepts macOS argv and Windows absolute executable paths with spaces", () => {
     const root = tempRoot();
     const windows = BASE_YAML.replace("command: application.exe", "command: 'C:\\\\Program Files\\\\Application\\\\application.exe'");
-    expect(discoverExternalApps([{ slug: "squad", path: writeSidecar(root, windows) }])[0].presence_check.command).toContain("Program Files");
+    const windowsApp = discoverExternalApps([{ slug: "squad", path: writeSidecar(root, windows) }])[0];
+    expect(buildExternalAppPlan([windowsApp], { platform: "win32" }).results[0].presence_check?.command).toContain("Program Files");
 
     const mac = BASE_YAML
       .replaceAll("win32", "darwin")
       .replace("command: application.exe", "command: /Applications/Application.app/Contents/MacOS/application")
       .replace("args: [--version]", "args: [status, '--output format', json]");
-    expect(discoverExternalApps([{ slug: "squad", path: writeSidecar(root, mac) }])[0].presence_check.args).toEqual(["status", "--output format", "json"]);
+    const macApp = discoverExternalApps([{ slug: "squad", path: writeSidecar(root, mac) }])[0];
+    expect(buildExternalAppPlan([macApp], { platform: "darwin" }).results[0].presence_check?.args).toEqual(["status", "--output format", "json"]);
+  });
+
+  test("rejects incomplete, unknown, and unsafe platform-specific check maps", () => {
+    const root = tempRoot();
+    const platformMap = BASE_YAML.replace(`    presence_check:
+      command: application.exe
+      args: [--version]`, `    presence_check:
+      win32:
+        command: application.exe
+        args: [--version]`);
+    const missing = platformMap
+      .replace("platforms: [win32]", "platforms: [win32, darwin]")
+      .replace(`    install:
+      win32:`, `    install:
+      darwin:
+        command: brew
+        args: [install, --cask, application]
+      win32:`);
+    expect(() => discoverExternalApps([{ slug: "missing", path: writeSidecar(root, missing) }]))
+      .toThrow("must define a command for declared platform 'darwin'");
+
+    const unknown = platformMap.replace("      win32:", "      solaris:");
+    expect(() => discoverExternalApps([{ slug: "unknown", path: writeSidecar(root, unknown) }]))
+      .toThrow("contains unsupported platform 'solaris'");
+
+    const unsafe = platformMap.replace("command: application.exe", "command: powershell.exe");
+    expect(() => discoverExternalApps([{ slug: "unsafe", path: writeSidecar(root, unsafe) }]))
+      .toThrow("shell or inline interpreter");
   });
 });
 
@@ -170,6 +200,22 @@ describe("pure preflight and digest-bound execution", () => {
     expect(result.readiness).toBe("confirmation_required");
     expect(result.actions).toEqual([]);
     expect(result.changedApps).toEqual([]);
+    expect(existsSync(join(root, "order.log"))).toBe(false);
+  });
+
+  test("binds the selected platform check argv to the consent digest", () => {
+    const root = tempRoot();
+    const app = dependency(root, { required: true });
+    const legacyPresence = app.presence_check;
+    if (!("command" in legacyPresence)) throw new Error("test fixture must use a legacy command");
+    app.presence_check = { win32: legacyPresence };
+    const plan = buildExternalAppPlan([app], { platform: "win32" });
+    plan.results[0].presence_check?.args.push("--changed-after-consent");
+
+    const result = executeExternalAppPlan(plan, plan.digest);
+
+    expect(result.readiness).toBe("confirmation_required");
+    expect(result.actions).toEqual([]);
     expect(existsSync(join(root, "order.log"))).toBe(false);
   });
 

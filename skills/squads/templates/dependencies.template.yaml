@@ -118,12 +118,22 @@ external_apps:
     permissions: [accessibility, screen-recording]
     compatibility:
       requirement: ">=1.4.0 <2.0.0"
+      # A single command remains valid when every platform uses the same CLI.
+      # Use a complete platform map when checks differ by operating system.
       check:
-        command: application
-        args: [status, --json]
+        win32:
+          command: winget
+          args: [list, --id, Vendor.Application, --exact]
+        darwin:
+          command: brew
+          args: [list, --cask, application]
     presence_check:
-      command: application
-      args: [--version]
+      win32:
+        command: winget
+        args: [list, --id, Vendor.Application, --exact]
+      darwin:
+        command: brew
+        args: [list, --cask, application]
     install:
       win32:
         command: winget
