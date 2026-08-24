@@ -82,6 +82,23 @@ export function lockDirFor(targetPath: string): string {
 
 /** Acquire the lock for `targetPath` (blocking, sync). Throws after
  * `timeoutMs` of contention against a live holder. */
+/**
+ * Did mkdir fail because somebody else holds the lock, or for a real reason?
+ *
+ * POSIX answers EEXIST and nothing else. Windows has a second answer: a
+ * directory whose deletion is still pending rejects mkdir with EPERM (and,
+ * with an indexer or antivirus holding a handle, EACCES or EBUSY). That is
+ * the ordinary rm/mkdir race between two contenders — the same situation
+ * EEXIST describes — so rethrowing it turned contention into a hard failure.
+ * It surfaced as a rare red on the Windows runner in the lost-update test;
+ * on a buyer's machine it would abort a spend-tracker or cooldown write.
+ */
+export function isContention(e: unknown): boolean {
+  const code = (e as NodeJS.ErrnoException)?.code;
+  if (code === "EEXIST") return true;
+  return process.platform === "win32" && (code === "EPERM" || code === "EACCES" || code === "EBUSY");
+}
+
 export function acquireLockSync(targetPath: string, opts: FileLockOpts = {}): FileLock {
   const timeoutMs = opts.timeoutMs ?? 10_000;
   const staleMs = opts.staleMs ?? 30_000;
@@ -90,6 +107,11 @@ export function acquireLockSync(targetPath: string, opts: FileLockOpts = {}): Fi
   fs.mkdirSync(path.dirname(dir), { recursive: true });
 
   const deadline = Date.now() + timeoutMs;
+  // Windows can answer contention with EPERM/EACCES/EBUSY, which also cover
+  // "this path is genuinely not writable". Waiting it out is right for the
+  // first case and merely slow for the second — so the timeout says which
+  // answer it kept getting instead of blaming a process that may not exist.
+  let lastWindowsCode: string | undefined;
   for (;;) {
     try {
       fs.mkdirSync(dir); // atomic: exactly one contender wins
@@ -106,7 +128,9 @@ export function acquireLockSync(targetPath: string, opts: FileLockOpts = {}): Fi
         },
       };
     } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+      if (!isContention(e)) throw e;
+      const code = (e as NodeJS.ErrnoException)?.code;
+      if (code !== "EEXIST") lastWindowsCode = code;
     }
     if (isStale(dir, staleMs)) {
       // Takeover: remove and re-contend. The rm/mkdir race between multiple
@@ -115,7 +139,10 @@ export function acquireLockSync(targetPath: string, opts: FileLockOpts = {}): Fi
       continue;
     }
     if (Date.now() >= deadline) {
-      throw new Error(`file-lock: timed out after ${timeoutMs}ms waiting for ${dir} (held by a live process)`);
+      throw new Error(
+        `file-lock: timed out after ${timeoutMs}ms waiting for ${dir} `
+        + (lastWindowsCode ? `(mkdir kept failing with ${lastWindowsCode} — contention, or the path is not writable)` : "(held by a live process)"),
+      );
     }
     sleepSync(pollMs);
   }

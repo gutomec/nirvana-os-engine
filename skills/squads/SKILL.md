@@ -199,6 +199,16 @@ Activation is end-to-end for activation-managed dependencies: validate, install 
 
 1. Skill detects intent and reads `agents/squad-activator.md`.
 2. Spawns `Agent({subagent_type: "general-purpose", prompt: <persona> + <slug>})`. Step 3 onwards reads what the persona reported — which arrives in the completion notification, not in the spawn result.
+**Activating an installed library (the buyer's path, not the author's).** The
+steps below are the AUTHORING flow, run from inside a squad being built. A
+user who just installed a pack activates through the CLI instead:
+`nrv activate <slug>`, or `nrv activate --all --only-declared` to walk the
+whole library one squad at a time (add `--dry-run` to see the plan,
+`--confirm-heavy` to accept large downloads and sudo installs). Activation is
+advisory — nothing blocks a dispatch — but a squad whose task shells out to
+ffmpeg or epubcheck fails MID-RUN when the tool is absent, after the dispatch
+is already paid for. `nrv doctor` warns when a declared tool is missing.
+
 3. Persona runs `bun scripts/activate-squad.ts status <slug>` first; if already active, asks reverify vs reactivate.
 4. Persona runs `bun scripts/activate-squad.ts activate <slug> --dry-run` to compute scope, then translates the JSON into a human summary listing CLIs, services to clone, custom nodes, model downloads (with sizes), env vars to check.
 5. Persona uses `AskUserQuestion` for any item >1 GB or sudo.

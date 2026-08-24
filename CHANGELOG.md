@@ -18,6 +18,138 @@ decision; required applications remain fail-closed. Strict manifest, path,
 secret, URL, and argv validation protects the boundary, while results report
 external side effects separately from transactional pack asset rollback.
 
+### Contention on Windows stopped looking like a crash
+
+`withLock` treated anything but `EEXIST` as a real error. Windows has a
+second answer for "somebody else has this": a directory whose deletion is
+still pending rejects `mkdir` with `EPERM`, and an indexer or antivirus
+holding a handle turns it into `EACCES` or `EBUSY`. All three are the
+ordinary rm/mkdir race between two contenders, and rethrowing them made a
+spend-tracker or cooldown write die instead of waiting its turn. They now
+poll like `EEXIST` does — on Windows only, since on POSIX those codes still
+mean what they say. When the wait does time out, the message reports the code
+it kept receiving rather than blaming a live holder that may not exist.
+
+## 0.7.11 — 2026-08-23
+
+### The engine instructed the runtimes to watch, never to work
+
+One agy session produced two silent failures, and both were the engine's,
+not the model's.
+
+It answered a production brief inline. The skill was linked and the hooks
+were installed, but everything wired into that runtime was surveillance:
+two tool hooks emitting audit events, and a SessionStart that recorded
+`session_started` and exited. The sentence telling an agent to reach for the
+harness lives inside `SKILL.md` — unreachable to anyone who has not already
+loaded it. The SessionStart hook now speaks: it injects the invocation
+contract through `additionalContext`, on every gemini and antigravity
+session, without writing to a single user file.
+
+The same session read `nrv doctor` output, found an imperative with a real
+command in it, and ran the watermark strip against the LIVE LIBRARY — 59
+per-buyer attribution tags erased from `~/squads` and `~/businesses`, which
+cannot be regenerated from the files. Diagnostic text is read by agents, and
+an imperative in a diagnostic is an order: the hint now describes the fix,
+names the build tree as the correct target and the library as the one to
+never touch, and the injected contract says plainly that destructive
+commands printed by diagnostics are descriptions, not orders. The strip
+script in the packs repo refuses the live library on its own.
+
+And an unidentified host stopped meaning one vendor. `detectCurrentHost()
+?? "claude-code"` quietly walked every runtime that exports no session
+marker into somebody else's quota, undoing a precedence chain that was
+otherwise correct. Detection failure is now announced on stderr, audited as
+`x_host_runtime_undetected`, and resolved through `NIRVANA_DEFAULT_RUNTIME`
+or the first runtime actually installed — never a hardcoded name.
+
+One test in the same area was reading the developer's machine: the case for
+"a HOME without ~/.claude never gets one" inherited the real PATH, so it
+passed in CI only because no `claude` binary exists on the runner, and
+contradicted the documented two-signal rule anywhere the runtime is actually
+installed. It now pins PATH to the system utilities and asserts the fixture.
+
+## 0.7.10 — 2026-08-23
+
+### `nrv activate` — the door that was never on the outside
+
+Squads declare what they need in `dependencies.yaml`: ffmpeg, epubcheck,
+Python libraries, model downloads. Installing that was reachable only as a
+raw script path, invisible to `nrv --help`, one squad per invocation. Asked
+to "activate all squads and install the dependencies", an agent ran the
+help, found nothing, grepped the filesystem to locate the script, and then
+started walking 107 squads by hand. It was not lost — it was looking for a
+door with no handle on the outside.
+
+`nrv activate <slug>` is that handle, and `nrv activate --all` is the batch
+the library-sized case always needed: one squad at a time, never stopping on
+a failure, with a summary that separates ready from needs-confirmation from
+failed and an exit code aggregating the per-squad contract.
+`--only-declared` skips squads that need no activation at all; `--dry-run`
+shows the plan. And because activation is advisory — nothing blocks a
+dispatch, so a missing tool kills the run halfway through, after the
+dispatch is paid for — `nrv doctor` now warns when a declared tool is not on
+PATH, naming the tool, how many squads want it, and the command that fixes
+it.
+
+## 0.7.9 — 2026-08-22
+
+### Where the intelligence comes from is not where the files are written
+
+The first `nrv serve` cut created every session with `NIRVANA_SCOPE=project`,
+conflating two decisions that must stay apart: a session's LIBRARY (which
+businesses, squads and clones a brief may route to) and its FILES (logs,
+outputs, run state). The library must never default to the project — a
+session that starts blind sends every brief to the generalist.
+
+A global session (the default) now initialises with `merge`: the operator's
+library resolves, project entries win on conflict, and artifacts still land
+inside the session. Isolated sessions keep the project-only source a
+multi-tenant host needs. Either way the server pins `HARNESS_LOGS_DIR` and
+`NIRVANA_PROJECT_ROOT` to the session, so pointing
+`NIRVANA_SERVE_SESSIONS_ROOT` at a mounted volume puts every caller's
+outputs, logs and run state on that volume.
+
+## 0.7.8 — 2026-08-22
+
+### The gate finally covers PDF
+
+PDF is one of the most common deliverable formats and the auto gate never
+saw it: `.pdf` was not gateable, so a PDF-only delivery came out
+INDETERMINATE — the first field run to notice had to gate by hand with qpdf
+and emit `x_quality_gate_tooling_gap`. The new `pdf-valid` rubric closes the
+structural half: header, `%%EOF` trailer, stub floor, and page count via
+qpdf or pdfinfo when present — falling back to a declared-unverified pass on
+object-stream-compressed PDFs instead of failing on the naive regex that
+reads them as zero pages. Verified live against the field run's own 2-page,
+4 MB deliverable, with and without tools on PATH.
+
+### `nrv serve` — the protocol over HTTP
+
+The API is the fourth projection of the protocol (graph, glance, CLI, HTTP)
+and a control plane by construction: a session IS a project directory, a
+brief becomes a child `nrv dispatch --auto --exec`, and every answer reads
+what the engine already wrote — run ledger, audit log, outputs tree. No
+second executor, ever.
+
+`nrv serve keygen` mints keys whose budget and daily quota are attributes of
+the KEY, never client input; the server binds 127.0.0.1 unless told
+otherwise, refuses to run as root, and hands artifacts back only from inside
+the run's outputs root (traversal, encoded or not, is refused). The envelope
+carries the gate verdict and promotes `_SUMMARY.md` and
+`_QA-RESERVATIONS.md` to fields, so a delivery accepted with reservations
+arrives honest. `/events` streams the project's audit log as SSE. A server
+restart no longer orphans work: each run persists beside its artifacts and
+rehydrates on lookup.
+
+A session declares which library its briefs may route to: `global` (the
+default) sees the operator's own businesses, squads and clones — without it
+every brief falls to the generalist, which the first live run showed
+plainly — and `isolated` keeps the project-only scope a multi-tenant host
+needs. `/v1/health` also reports seat consumption, because a fleet of API
+workers consumes one licence seat per host today. Full guide:
+`references/06-api.md`.
+
 ## 0.7.7 — 2026-08-22
 
 ### Headless sessions die with the turn — the protocol now says so

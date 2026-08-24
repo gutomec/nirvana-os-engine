@@ -19,6 +19,141 @@ aplicativos obrigatórios continuam fail-closed. Validações estritas de
 manifesto, caminhos, segredos, URLs e argv protegem a fronteira, enquanto o
 resultado separa os efeitos externos do rollback transacional dos assets.
 
+### Disputa de lock no Windows deixou de parecer falha
+
+O `withLock` tratava qualquer coisa que não fosse `EEXIST` como erro real. O
+Windows tem uma segunda resposta para "outro processo já tem isto": um
+diretório com exclusão pendente recusa o `mkdir` com `EPERM`, e um indexador
+ou antivírus segurando um handle transforma isso em `EACCES` ou `EBUSY`. Os
+três são a corrida comum de rm/mkdir entre dois contendores, e relançá-los
+matava uma escrita de spend-tracker ou de cooldown em vez de deixá-la esperar
+a vez. Agora eles fazem poll como o `EEXIST` — só no Windows, porque no POSIX
+esses códigos continuam significando o que dizem. Quando a espera realmente
+estoura, a mensagem informa o código que vinha recebendo em vez de acusar um
+dono vivo que pode não existir.
+
+## 0.7.11 — 2026-08-23
+
+### O engine mandava os runtimes vigiarem, nunca trabalharem
+
+Uma sessão do agy produziu duas falhas silenciosas, e as duas eram do
+engine, não do modelo.
+
+Ela respondeu um brief de produção inline. A skill estava linkada e os hooks
+instalados, mas tudo que o engine liga naquele runtime é vigilância: dois
+hooks de ferramenta emitindo auditoria, e um SessionStart que gravava
+`session_started` e saía. A frase que manda um agente carregar o harness
+mora dentro do `SKILL.md` — inalcançável para quem ainda não o carregou. O
+hook de SessionStart agora fala: injeta o contrato de invocação por
+`additionalContext`, em toda sessão de gemini e antigravity, sem escrever em
+nenhum arquivo do usuário.
+
+A mesma sessão leu a saída do `nrv doctor`, encontrou um imperativo com um
+comando real dentro, e rodou o strip de watermark contra a BIBLIOTECA VIVA —
+59 marcadores de atribuição por-comprador apagados de `~/squads` e
+`~/businesses`, que não se regeneram a partir dos arquivos. Texto de
+diagnóstico é lido por agentes, e um imperativo num diagnóstico é uma ordem:
+a dica agora descreve o reparo, nomeia a árvore de build como alvo correto e
+a biblioteca como a que nunca se toca, e o contrato injetado diz com todas as
+letras que comando destrutivo impresso por diagnóstico é descrição, não
+ordem. O script de strip no repo dos packs recusa a biblioteca viva sozinho.
+
+E host não identificado deixou de significar um fornecedor.
+`detectCurrentHost() ?? "claude-code"` levava em silêncio todo runtime que
+não exporta marcador de sessão para a cota de outro, desfazendo uma cadeia de
+precedência que estava correta. Falha de detecção agora é anunciada no
+stderr, auditada como `x_host_runtime_undetected`, e resolvida por
+`NIRVANA_DEFAULT_RUNTIME` ou pelo primeiro runtime realmente instalado —
+nunca por um nome chumbado.
+
+Um teste da mesma área lia a máquina do desenvolvedor: o caso "um HOME sem
+~/.claude nunca ganha um" herdava o PATH real, então passava no CI só porque
+não existe binário `claude` no runner, e contradizia a regra dos dois sinais
+em qualquer máquina onde o runtime está de fato instalado. Agora ele fixa o
+PATH nos utilitários do sistema e afirma sobre a fixture.
+
+## 0.7.10 — 2026-08-23
+
+### `nrv activate` — a porta que nunca teve maçaneta do lado de fora
+
+Squads declaram o que precisam em `dependencies.yaml`: ffmpeg, epubcheck,
+bibliotecas Python, download de modelos. Instalar isso só era alcançável
+como caminho de script cru, invisível ao `nrv --help`, um squad por
+invocação. Pedido para "ativar todos os squads e instalar as dependências",
+um agente rodou o help, não achou nada, fez grep no filesystem para
+localizar o script, e começou a percorrer 107 squads na mão. Ele não estava
+perdido — procurava uma porta sem maçaneta do lado de fora.
+
+`nrv activate <slug>` é essa maçaneta, e `nrv activate --all` é o lote que o
+caso do tamanho da biblioteca sempre exigiu: um squad por vez, sem parar na
+primeira falha, com um resumo que separa pronto de precisa-confirmar de
+falhou e um exit code que agrega o contrato por squad. `--only-declared`
+pula squads que não precisam de ativação; `--dry-run` mostra o plano. E
+porque a ativação é advisória — nada bloqueia um dispatch, então uma
+ferramenta ausente mata a execução no meio, depois do dispatch já pago — o
+`nrv doctor` agora avisa quando uma ferramenta declarada não está na PATH,
+nomeando a ferramenta, quantos squads a querem e o comando que resolve.
+
+## 0.7.9 — 2026-08-22
+
+### De onde vem a inteligência não é onde os arquivos nascem
+
+O primeiro corte do `nrv serve` criava toda sessão com
+`NIRVANA_SCOPE=project`, confundindo duas decisões que precisam ficar
+separadas: a BIBLIOTECA da sessão (para quais empresas, squads e clones um
+brief pode rotear) e os ARQUIVOS dela (logs, outputs, estado de run). A
+biblioteca jamais pode nascer com escopo de projeto — uma sessão que começa
+cega manda todo brief para o generalista.
+
+Uma sessão global (o padrão) agora inicializa com `merge`: a biblioteca do
+operador resolve, entradas do projeto vencem em conflito, e os artefatos
+continuam nascendo dentro da sessão. Sessões isoladas mantêm a fonte
+só-do-projeto que um host multi-tenant precisa. Em ambos os casos o servidor
+fixa `HARNESS_LOGS_DIR` e `NIRVANA_PROJECT_ROOT` na sessão, então apontar
+`NIRVANA_SERVE_SESSIONS_ROOT` para um volume montado coloca outputs, logs e
+estado de todos os chamadores nesse volume.
+
+## 0.7.8 — 2026-08-22
+
+### O gate finalmente cobre PDF
+
+PDF é um dos formatos de entrega mais comuns e o gate automático nunca o
+via: `.pdf` não era gateável, então uma entrega só-PDF saía INDETERMINATE —
+a primeira execução de campo a notar precisou gatear à mão com qpdf e emitir
+`x_quality_gate_tooling_gap`. A nova rubrica `pdf-valid` fecha a metade
+estrutural: header, trailer `%%EOF`, piso de stub, e contagem de páginas via
+qpdf ou pdfinfo quando presentes — caindo para um passe declarado-como-não-
+verificado em PDFs com object streams comprimidos, em vez de reprovar pela
+regex ingênua que os lê como zero páginas. Verificada ao vivo contra o
+próprio entregável da execução de campo (2 páginas, 4 MB), com e sem
+ferramentas na PATH.
+
+### `nrv serve` — o protocolo sobre HTTP
+
+A API é a quarta projeção do protocolo (grafo, glance, CLI, HTTP) e um plano
+de controle por construção: uma sessão É um diretório de projeto, um brief
+vira um `nrv dispatch --auto --exec` filho, e toda resposta lê o que o
+engine já escreveu — run ledger, log de auditoria, árvore de outputs.
+Nenhum segundo executor, nunca.
+
+`nrv serve keygen` cria chaves cujo orçamento e cota diária são atributos DA
+CHAVE, jamais entrada do cliente; o servidor sobe em 127.0.0.1 salvo ordem
+contrária, recusa rodar como root, e devolve artefatos apenas de dentro do
+outputs root do run (traversal, codificado ou não, é recusado). O envelope
+carrega o veredito do gate e promove `_SUMMARY.md` e `_QA-RESERVATIONS.md` a
+campos, então uma entrega aceita com ressalvas chega honesta. `/events`
+transmite o log de auditoria do projeto por SSE. Reiniciar o servidor não
+orfana mais trabalho: cada run persiste ao lado dos artefatos e é
+reidratado na consulta.
+
+Uma sessão declara para qual biblioteca seus briefs podem rotear: `global`
+(o padrão) enxerga as empresas, squads e clones do operador — sem isso todo
+brief cai no generalista, como a primeira execução ao vivo mostrou — e
+`isolated` mantém o escopo só-do-projeto que um host multi-tenant precisa.
+O `/v1/health` também reporta consumo de seats, porque hoje uma frota de
+workers de API consome um seat de licença por host. Guia completo:
+`references/06-api.md`.
+
 ## 0.7.7 — 2026-08-22
 
 ### Sessões headless morrem com o turno — o protocolo agora diz isso

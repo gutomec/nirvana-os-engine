@@ -354,7 +354,7 @@ console.log("");
 checkInstalledPacks();
 warnIfLibrariesWatermarked();
 console.log("");
-console.log(c("dim", "If something broke, rollback:"));
+console.log(c("dim", "If something broke, the owner can roll back with (do not run unasked):"));
 console.log("  " + c("yellow", `rm -rf ${skillsDir} && mv ${backupDir} ${skillsDir}`));
 console.log("");
 
