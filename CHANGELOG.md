@@ -8,6 +8,20 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Pack dependencies can declare external applications safely
+
+Squad `dependencies.yaml` sidecars may now declare provider-neutral
+`external_apps` for pack installation. Preflight is command-free, exposes a
+canonical SHA-256 plan, and requires consent bound to that exact digest before
+checks or installers run. Optional-only plans can install degraded without a
+decision; required applications remain fail-closed. Strict manifest, path,
+secret, URL, and argv validation protects the boundary, while results report
+external side effects separately from transactional pack asset rollback.
+Presence and compatibility checks can be declared once for every platform or
+as a strict per-platform map. Consent plans select and hash only the current
+platform's effective checks and installer, allowing safe reuse of applications
+whose Windows and macOS installation recipes expose different commands.
+
 ### Contention on Windows stopped looking like a crash
 
 `withLock` treated anything but `EEXIST` as a real error. Windows has a

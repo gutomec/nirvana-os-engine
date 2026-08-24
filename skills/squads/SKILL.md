@@ -187,7 +187,7 @@ Classify user input → load ONLY the relevant reference files → execute.
 
 ### Activation (with automatic dependency install)
 
-Activation is end-to-end: validate, install everything declared in `<squad>/dependencies.yaml`, register for slash commands. The squads skill delegates to a shared agent persona that handles the conversation (scope summary, consent for heavy items, error reporting).
+Activation is end-to-end for activation-managed dependencies: validate, install the existing runtime categories declared in `<squad>/dependencies.yaml`, and register for slash commands. Pack-level `external_apps` are handled by `nrv install <pack>`. The squads skill delegates to a shared agent persona that handles the conversation (scope summary, consent for heavy items, error reporting).
 
 - `*squad activate {name}` — full activation (delegates to `agents/squad-activator.md` persona)
 - `*squad activate {name} --dry-run` — preview only, no installs run
@@ -215,7 +215,7 @@ is already paid for. `nrv doctor` warns when a declared tool is missing.
 6. After consent, persona runs `bun scripts/activate-squad.ts activate <slug> [--confirm-heavy]`.
 7. Persona reports the final state and the start commands for any long-running services (the user runs long-lived daemons such as ComfyUI manually).
 
-**Sidecar `dependencies.yaml`.** Each squad declares its install needs in `<squad>/dependencies.yaml` (sidecar, not part of `squad.yaml`). The 7 categories are:
+**Sidecar `dependencies.yaml`.** Each squad declares its install needs in `<squad>/dependencies.yaml` (sidecar, not part of `squad.yaml`). The 9 categories are:
 
 | Category | Purpose |
 |---|---|
@@ -226,9 +226,12 @@ is already paid for. `nrv doctor` warns when a declared tool is missing.
 | `custom_nodes` | ComfyUI custom node repos cloned to `~/comfyui/custom_nodes/` |
 | `models` | HuggingFace / URL downloads. Items with `size_gb > 1` require explicit consent |
 | `env_vars` | Checked only (never written) — surfaced as set / missing_required / missing_optional |
+| `external_apps` | Desktop applications aggregated during pack installation; execution requires consent bound to the exact preflight digest |
 | `post_install` | Hooks run after everything else (e.g. re-index, ping health check) |
 
 Template: `templates/dependencies.template.yaml`. Reference impl: `lib/activator.js`. State per squad: `~/.claude/squads-state/<slug>/activated.json`.
+
+For packs, `nrv install <pack> --dry-run --json` returns a deduplicated external application plan and SHA-256 digest from bundled squads and already-installed required squads without executing declared checks or installers. With no decision, an optional-only plan installs the parent pack degraded without external commands; any required application pauses installation before pack asset copy. The user accepts that exact plan with `--accept-external-apps=<digest>` or explicitly refuses with `--decline-external-apps`. A refusal installs the parent pack only when all refused applications are optional. Required refusals block pack readiness. To enable a deferred application after the pack is installed, preflight again with `--force --dry-run`, then use `--force --accept-external-apps=<digest>`. Accepted execution reuses compatible applications and reports every external action; external installations are not rolled back with pack assets. Direct squad activation retains the existing activator behavior.
 
 **Synthesis fallback.** If a squad has no `dependencies.yaml` but contains `package.json`, `pyproject.toml`, or `requirements.txt`, the activator auto-synthesizes a manifest and caches it at `~/.claude/squads-state/<slug>/synth-deps.yaml`. The persona surfaces this and offers to promote it to a real sidecar.
 

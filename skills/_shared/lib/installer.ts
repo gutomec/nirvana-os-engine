@@ -18,16 +18,29 @@ import {
   rmSync,
   renameSync,
   statSync,
+  lstatSync,
   cpSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
-import { join, dirname, basename, relative, resolve, sep } from "node:path";
+import { join, dirname, basename, relative, resolve, sep, isAbsolute } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 
 import { InstallManifest, type AssetKind, type InstallEvent, type InstalledItem } from "./install-manifest.ts";
 import { resolveScope } from "./scope.ts";
+import {
+  buildExternalAppPlan,
+  confirmationRequiredExternalAppPlan,
+  deferOptionalExternalAppPlan,
+  declineExternalAppPlan,
+  discoverExternalApps,
+  executeExternalAppPlan,
+  type ExternalActionResult,
+  type ExternalAppResult,
+  type SquadDependencySource,
+} from "./external-app-dependencies.ts";
 
 // Lazy path resolution — picks up env changes (useful for tests + project scope).
 function nirvanaHome(): string { return process.env.NIRVANA_HOME ?? homedir(); }
@@ -49,6 +62,8 @@ export interface InstallOptions {
   skipReindex?: boolean;
   skipValidate?: boolean;
   quiet?: boolean;
+  acceptExternalAppsDigest?: string;
+  declineExternalApps?: boolean;
 }
 
 export interface InstallResult {
@@ -65,6 +80,14 @@ export interface InstallResult {
   prev_version?: string;
   backup_path?: string;
   dry_run?: boolean;
+  readiness?: "ready" | "degraded" | "blocked" | "confirmation_required";
+  external_dependencies?: ExternalAppResult[];
+  degraded_capabilities?: string[];
+  external_plan_digest?: string;
+  external_actions?: ExternalActionResult[];
+  changed_external_apps?: string[];
+  confirmation_required?: boolean;
+  exit_code?: 1 | 2;
 }
 
 export interface UninstallOptions {
@@ -304,7 +327,8 @@ function walkFiles(dir: string, base: string = dir): string[] {
     if (name.startsWith(".git")) continue;
     if (name === ".DS_Store") continue;
     const full = join(dir, name);
-    const st = statSync(full);
+    const st = lstatSync(full);
+    if (st.isSymbolicLink()) throw new Error(`checksum source contains a symbolic link: ${relative(base, full)}`);
     if (st.isDirectory()) out.push(...walkFiles(full, base));
     else out.push(full.slice(base.length + 1));
   }
@@ -362,6 +386,57 @@ export function targetPathFor(kind: AssetKind, name: string, opts: { scope: "glo
   throw new Error("pack has no single target");
 }
 
+export interface AtomicFileOperations {
+  writeFile?: (path: string, content: string) => void;
+  renameFile?: (source: string, destination: string) => void;
+  removeFile?: (path: string) => void;
+  fileExists?: (path: string) => boolean;
+}
+
+export function writeFileAtomically(file: string, content: string, operations: AtomicFileOperations = {}): void {
+  const write = operations.writeFile ?? ((path, value) => writeFileSync(path, value));
+  const rename = operations.renameFile ?? renameSync;
+  const remove = operations.removeFile ?? ((path) => rmSync(path, { force: true }));
+  const exists = operations.fileExists ?? existsSync;
+  const nonce = randomBytes(8).toString("hex");
+  const temporary = `${file}.tmp.${nonce}`;
+  const backup = `${file}.bak.${nonce}`;
+  const hadOriginal = exists(file);
+  let previousMoved = false;
+  let promotionAttempted = false;
+  const restoreErrors: string[] = [];
+
+  try {
+    write(temporary, content);
+    if (hadOriginal) {
+      rename(file, backup);
+      previousMoved = true;
+    }
+    promotionAttempted = true;
+    rename(temporary, file);
+    if (previousMoved) remove(backup);
+  } catch (error) {
+    const mayContainReplacement = previousMoved || (!hadOriginal && promotionAttempted);
+    for (const candidate of [temporary, ...(mayContainReplacement ? [file] : [])]) {
+      if (!exists(candidate)) continue;
+      try { remove(candidate); } catch (restoreError) {
+        restoreErrors.push(`failed to remove ${candidate}: ${(restoreError as Error).message}`);
+      }
+    }
+    if (previousMoved) {
+      if (!exists(backup)) {
+        restoreErrors.push(`atomic backup missing: ${backup}`);
+      } else {
+        try { rename(backup, file); } catch (restoreError) {
+          restoreErrors.push(`failed to restore ${file}: ${(restoreError as Error).message}`);
+        }
+      }
+    }
+    const suffix = restoreErrors.length > 0 ? `; metadata rollback incomplete: ${restoreErrors.join("; ")}` : "";
+    throw new Error(`${(error as Error).message}${suffix}`);
+  }
+}
+
 /**
  * Merges `{slug: category}` into the library's `.pack-categories.json`. It is
  * the map `index-clones.ts` reads to fill `pack_category` — with nobody
@@ -380,7 +455,7 @@ function mergePackCategories(libraryDir: string, entries: Record<string, string>
   // EEXIST tolerated: on Windows Bun throws even with recursive:true.
   try { mkdirSync(libraryDir, { recursive: true }); }
   catch (e) { if ((e as NodeJS.ErrnoException)?.code !== "EEXIST") throw e; }
-  writeFileSync(file, JSON.stringify({ ...current, ...entries }, null, 1) + "\n");
+  writeFileAtomically(file, JSON.stringify({ ...current, ...entries }, null, 1) + "\n");
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -392,6 +467,71 @@ function backupExisting(target: string, prevVersion: string): string {
   const backup = `${target}.${prevVersion}.bak.${stamp}`;
   renameSync(target, backup);
   return backup;
+}
+
+export interface PackAssetCopyOperation {
+  srcDir: string;
+  targetDir: string;
+  previousVersion?: string;
+}
+
+export class PackAssetCopyFailure extends Error {
+  constructor(
+    message: string,
+    public readonly rolledBack: number,
+    public readonly rollbackErrors: string[] = [],
+  ) {
+    super(message);
+    this.name = "PackAssetCopyFailure";
+  }
+}
+
+export function applyPackAssetCopies(
+  operations: PackAssetCopyOperation[],
+  copyDirectory: ((source: string, destination: string) => void) | undefined = undefined,
+  finalize: () => void = () => {},
+): void {
+  const started: { target: string; backup?: string }[] = [];
+  const copy = copyDirectory ?? ((source: string, destination: string) => cpSync(source, destination, { recursive: true }));
+  try {
+    for (const operation of operations) {
+      let backup: string | undefined;
+      if (existsSync(operation.targetDir)) {
+        if (!operation.previousVersion) throw new Error(`pack item conflicts with existing: ${operation.targetDir} — use --force`);
+        backup = backupExisting(operation.targetDir, operation.previousVersion);
+      }
+      started.push({ target: operation.targetDir, ...(backup ? { backup } : {}) });
+      copy(operation.srcDir, operation.targetDir);
+    }
+    finalize();
+  } catch (error) {
+    let rolledBack = 0;
+    const rollbackErrors: string[] = [];
+    for (const record of [...started].reverse()) {
+      let restored = true;
+      try {
+        rmSync(record.target, { recursive: true, force: true });
+      } catch (rollbackError) {
+        restored = false;
+        rollbackErrors.push(`failed to remove partial target ${record.target}: ${(rollbackError as Error).message}`);
+      }
+      if (record.backup) {
+        if (!existsSync(record.backup)) {
+          restored = false;
+          rollbackErrors.push(`backup missing for ${record.target}: ${record.backup}`);
+        } else {
+          try {
+            renameSync(record.backup, record.target);
+          } catch (rollbackError) {
+            restored = false;
+            rollbackErrors.push(`failed to restore backup for ${record.target}: ${(rollbackError as Error).message}`);
+          }
+        }
+      }
+      if (restored) rolledBack++;
+    }
+    throw new PackAssetCopyFailure((error as Error).message, rolledBack, rollbackErrors);
+  }
 }
 
 function atomicMove(srcDir: string, target: string): void {
@@ -677,6 +817,63 @@ function readPackYaml(dir: string): PackManifest {
   return meta as PackManifest;
 }
 
+const STRICT_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+function isContained(root: string, candidate: string): boolean {
+  const rel = relative(root, candidate);
+  return rel !== "" && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+}
+
+function resolvePackItemPath(packDir: string, itemPath: unknown): string {
+  if (typeof itemPath !== "string" || itemPath.trim() === "") throw new Error("unsafe pack item path: expected a non-empty relative path");
+  const value = itemPath.trim();
+  const segments = value.split(/[\\/]+/);
+  if (isAbsolute(value) || /^[A-Za-z]:[\\/]/.test(value) || /^[/\\]{2}/.test(value) || segments.includes("..")) {
+    throw new Error(`unsafe pack item path: ${value}`);
+  }
+  const root = realpathSync(packDir);
+  const lexical = resolve(root, value);
+  if (!isContained(root, lexical)) throw new Error(`unsafe pack item path: ${value}`);
+  if (!existsSync(lexical)) return lexical;
+  const actual = realpathSync(lexical);
+  if (!isContained(root, actual)) throw new Error(`pack item path escapes pack root: ${value}`);
+  return actual;
+}
+
+function rejectNestedPackItemLinks(root: string, current: string = root): void {
+  for (const name of readdirSync(current)) {
+    const entry = join(current, name);
+    const stat = lstatSync(entry);
+    if (stat.isSymbolicLink()) throw new Error(`pack item contains a symbolic link: ${relative(root, entry)}`);
+    if (stat.isDirectory()) rejectNestedPackItemLinks(root, entry);
+  }
+}
+
+function containedInstalledSquad(base: string, name: string): string | null {
+  if (!existsSync(base)) return null;
+  const candidate = join(base, name);
+  if (!existsSync(candidate)) return null;
+  const baseReal = realpathSync(base);
+  const candidateReal = realpathSync(candidate);
+  if (!isContained(baseReal, candidateReal)) throw new Error(`required squad path escapes registry root: ${name}`);
+  return candidateReal;
+}
+
+function installedSquadPath(name: string, opts: InstallOptions): string | null {
+  if (!STRICT_SLUG.test(name)) throw new Error(`invalid required squad slug: ${name}`);
+  const bases: string[] = [];
+  if (opts.scope === "project") {
+    const projectTarget = targetPathFor("squad", name, { scope: "project", projectRoot: opts.projectRoot });
+    bases.push(dirname(projectTarget));
+  }
+  bases.push(squadsDir());
+  for (const base of bases) {
+    const found = containedInstalledSquad(base, name);
+    if (found) return found;
+  }
+  return null;
+}
+
 async function installPack(packDir: string, opts: InstallOptions, manifest: InstallManifest, installId: string, originUri: string): Promise<InstallResult> {
   const warnings: string[] = [];
   const errors: string[] = [];
@@ -694,7 +891,11 @@ async function installPack(packDir: string, opts: InstallOptions, manifest: Inst
   }
   if (pack.dependencies?.required_squads) {
     for (const dep of pack.dependencies.required_squads) {
-      if (!existsSync(join(squadsDir(), dep))) errors.push(`required squad missing: ${dep}`);
+      try {
+        if (!installedSquadPath(dep, opts)) errors.push(`required squad missing: ${dep}`);
+      } catch (error) {
+        errors.push((error as Error).message);
+      }
     }
   }
   if (pack.dependencies?.required_businesses) {
@@ -707,20 +908,28 @@ async function installPack(packDir: string, opts: InstallOptions, manifest: Inst
   }
 
   // Pre-flight: validate every asset path
-  const planItems: { kind: AssetKind; srcDir: string; meta: AssetMeta; targetDir: string; cloneCategory?: string }[] = [];
+  const planItems: { kind: AssetKind; srcDir: string; meta: AssetMeta; targetDir: string; cloneCategory?: string; previousVersion?: string }[] = [];
   const claimedTargets = new Map<string, string>(); // targetDir → item.path that claimed it
   for (const k of ["businesses", "squads", "mind-clones"] as const) {
     const list = (pack.contents as any)[k] ?? [];
     for (const item of list) {
-      const srcDir = join(packDir, item.path);
+      let srcDir: string;
+      try {
+        srcDir = resolvePackItemPath(packDir, item.path);
+      } catch (error) {
+        errors.push((error as Error).message);
+        continue;
+      }
       if (!existsSync(srcDir)) {
         errors.push(`pack item missing: ${item.path}`);
         continue;
       }
       const kind: AssetKind = k === "businesses" ? "business" : k === "squads" ? "squad" : "mind-clone";
       try {
+        rejectNestedPackItemLinks(srcDir);
         const meta = readAssetMeta(srcDir, kind);
         const name = item.rename_to ?? meta.name;
+        if (!STRICT_SLUG.test(name)) throw new Error(`invalid pack item slug: ${name}`);
         // Flat layout: the category becomes metadata, not a subdirectory.
         const cloneCategory = kind === "mind-clone" ? (inferMindCloneCategory(srcDir) ?? undefined) : undefined;
         const targetDir = targetPathFor(kind, name, { scope: opts.scope ?? "global", projectRoot: opts.projectRoot });
@@ -732,10 +941,15 @@ async function installPack(packDir: string, opts: InstallOptions, manifest: Inst
           continue;
         }
         claimedTargets.set(targetDir, item.path);
-        if (existsSync(targetDir) && !opts.force) {
-          errors.push(`pack item conflicts with existing: ${targetDir} — use --force`);
+        let previousVersion: string | undefined;
+        if (existsSync(targetDir)) {
+          if (!opts.force) {
+            errors.push(`pack item conflicts with existing: ${targetDir} — use --force`);
+          } else {
+            try { previousVersion = readAssetMeta(targetDir, kind).version; } catch { previousVersion = "old"; }
+          }
         }
-        planItems.push({ kind, srcDir, meta: { ...meta, name }, targetDir, cloneCategory });
+        planItems.push({ kind, srcDir, meta: { ...meta, name }, targetDir, cloneCategory, ...(previousVersion ? { previousVersion } : {}) });
       } catch (e) {
         errors.push(`pack item ${item.path} invalid: ${(e as Error).message}`);
       }
@@ -745,7 +959,74 @@ async function installPack(packDir: string, opts: InstallOptions, manifest: Inst
     return { ok: false, install_id: installId, kind: "pack", name: pack.name, version: pack.version, path: "", checksum: "", warnings, errors };
   }
 
-  const checksum = checksumDir(packDir);
+  let checksum: string;
+  try {
+    checksum = checksumDir(packDir);
+  } catch (error) {
+    errors.push(`pack checksum failed: ${(error as Error).message}`);
+    return { ok: false, install_id: installId, kind: "pack", name: pack.name, version: pack.version, path: "", checksum: "", warnings, errors };
+  }
+
+  const squadSources: SquadDependencySource[] = planItems
+    .filter((item) => item.kind === "squad")
+    .map((item) => ({ slug: item.meta.name, path: item.srcDir }));
+  for (const slug of pack.dependencies?.required_squads ?? []) {
+    const path = installedSquadPath(slug, opts);
+    if (path) squadSources.push({ slug, path });
+  }
+
+  let externalPlan: ReturnType<typeof buildExternalAppPlan> | undefined;
+  let externalExecution: ReturnType<typeof executeExternalAppPlan> | undefined;
+  try {
+    const externalApps = discoverExternalApps(squadSources);
+    if (externalApps.length > 0) {
+      externalPlan = buildExternalAppPlan(externalApps);
+      if (opts.dryRun) {
+        externalExecution = confirmationRequiredExternalAppPlan(externalPlan);
+      } else if (opts.acceptExternalAppsDigest && opts.declineExternalApps) {
+        externalExecution = confirmationRequiredExternalAppPlan(externalPlan, "choose either acceptance or decline, not both");
+      } else if (opts.declineExternalApps) {
+        externalExecution = declineExternalAppPlan(externalPlan);
+      } else if (opts.acceptExternalAppsDigest) {
+        externalExecution = executeExternalAppPlan(externalPlan, opts.acceptExternalAppsDigest);
+      } else {
+        externalExecution = deferOptionalExternalAppPlan(externalPlan);
+      }
+    }
+  } catch (error) {
+    errors.push(`external app dependency plan failed: ${(error as Error).message}`);
+    return { ok: false, install_id: installId, kind: "pack", name: pack.name, version: pack.version, path: "", checksum, warnings, errors };
+  }
+
+  const externalFields = externalPlan && externalExecution ? {
+    readiness: externalExecution.readiness,
+    external_dependencies: externalExecution.results,
+    degraded_capabilities: externalExecution.degradedCapabilities,
+    external_plan_digest: externalPlan.digest,
+    external_actions: externalExecution.actions,
+    changed_external_apps: externalExecution.changedApps,
+    confirmation_required: externalExecution.confirmationRequired,
+  } : {};
+
+  if (externalExecution?.warnings.length) warnings.push(...externalExecution.warnings);
+
+  if (externalExecution?.readiness === "confirmation_required" && !opts.dryRun) {
+    errors.push(...(externalExecution.blockingErrors.length > 0
+      ? externalExecution.blockingErrors
+      : [`external app confirmation required: use --accept-external-apps=${externalPlan!.digest} or --decline-external-apps`]));
+    return {
+      ok: false, install_id: installId, kind: "pack", name: pack.name, version: pack.version,
+      path: "", checksum, warnings, errors, exit_code: 2, ...externalFields,
+    };
+  }
+
+  if (externalExecution?.readiness === "blocked" && !opts.dryRun) {
+    errors.push(...externalExecution.blockingErrors);
+    return {
+      ok: false, install_id: installId, kind: "pack", name: pack.name, version: pack.version,
+      path: "", checksum, warnings, errors, exit_code: 1, ...externalFields,
+    };
+  }
 
   if (opts.dryRun) {
     return {
@@ -760,41 +1041,40 @@ async function installPack(packDir: string, opts: InstallOptions, manifest: Inst
       warnings,
       errors,
       dry_run: true,
+      ...externalFields,
     };
   }
 
-  // Apply with rollback on failure
-  const completed: { kind: AssetKind; target: string; backup?: string }[] = [];
+  // Apply pack assets with rollback on failure. Accepted external changes are
+  // deliberately reported but cannot be rolled back by the pack installer.
+  const cloneCategories: Record<string, string> = {};
+  for (const p of planItems) if (p.kind === "mind-clone" && p.cloneCategory) cloneCategories[p.meta.name] = p.cloneCategory;
   try {
+    applyPackAssetCopies(
+      planItems.map((p) => ({ srcDir: p.srcDir, targetDir: p.targetDir, previousVersion: p.previousVersion })),
+      undefined,
+      () => mergePackCategories(
+        mindCloneLibraryDir({ scope: opts.scope ?? "global", projectRoot: opts.projectRoot }),
+        cloneCategories,
+      ),
+    );
     for (const p of planItems) {
-      let backup: string | undefined;
-      if (existsSync(p.targetDir)) {
-        try {
-          const prev = readAssetMeta(p.targetDir, p.kind);
-          backup = backupExisting(p.targetDir, prev.version);
-        } catch {
-          backup = backupExisting(p.targetDir, "old");
-        }
-      }
-      cpSync(p.srcDir, p.targetDir, { recursive: true });
-      completed.push({ kind: p.kind, target: p.targetDir, backup });
       items.push({ kind: p.kind, name: p.meta.name, path: p.targetDir, slug: p.meta.name });
     }
   } catch (e) {
-    // Rollback: remove what we put, restore backups
-    for (const c of completed) {
-      safeRm(c.target);
-      if (c.backup && existsSync(c.backup)) renameSync(c.backup, c.target);
+    const rolledBack = e instanceof PackAssetCopyFailure ? e.rolledBack : 0;
+    errors.push(`pack install failed: ${(e as Error).message} — rolled back ${rolledBack} pack items`);
+    if (e instanceof PackAssetCopyFailure) {
+      for (const rollbackError of e.rollbackErrors) errors.push(`pack rollback incomplete: ${rollbackError}`);
     }
-    errors.push(`pack install failed: ${(e as Error).message} — rolled back ${completed.length} items`);
-    return { ok: false, install_id: installId, kind: "pack", name: pack.name, version: pack.version, path: "", checksum, warnings, errors };
+    if (externalExecution?.actions.some((action) => action.phase === "install")) {
+      warnings.push("Pack asset installation failed after external installers ran; external changes were not rolled back.");
+    }
+    return {
+      ok: false, install_id: installId, kind: "pack", name: pack.name, version: pack.version,
+      path: "", checksum, warnings, errors, exit_code: 1, ...externalFields,
+    };
   }
-
-  // Pack clone categories → library metadata (before the reindex, which is
-  // what reads the map to fill `pack_category`).
-  const cloneCategories: Record<string, string> = {};
-  for (const p of planItems) if (p.kind === "mind-clone" && p.cloneCategory) cloneCategories[p.meta.name] = p.cloneCategory;
-  mergePackCategories(mindCloneLibraryDir({ scope: opts.scope ?? "global", projectRoot: opts.projectRoot }), cloneCategories);
 
   if (!opts.skipReindex) {
     const r = reindex({ quiet: opts.quiet });
@@ -844,6 +1124,7 @@ async function installPack(packDir: string, opts: InstallOptions, manifest: Inst
     items,
     warnings,
     errors,
+    ...externalFields,
   };
 }
 
