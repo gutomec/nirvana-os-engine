@@ -95,14 +95,20 @@ function inspectPosixProcess(pid: number): ProcessInspection {
   }
 }
 
+function detachSpawn(command: string, args: readonly string[], options: { stdio: ["ignore", number, number]; detached: boolean; windowsHide: boolean; env: Record<string, string> }): { pid: number; unref(): void } {
+  const child = require("node:child_process").spawn(command, args, options);
+  return { pid: child.pid, unref: () => child.unref() };
+}
+
 export function createBunProcessAdapter(): ServiceProcessAdapter {
   return {
     spawn(argv: readonly string[], env: Readonly<Record<string, string>>, logPath: string): SpawnedService {
       mkdirSync(dirname(logPath), { recursive: true });
       const logDescriptor = openSync(logPath, "a");
       try {
-        const child = Bun.spawn([...argv], { env: { ...process.env, ...env }, stdin: "ignore", stdout: logDescriptor, stderr: logDescriptor });
-        return { pid: child.pid, unref() { child.unref(); } };
+        const child = detachSpawn(argv[0]!, argv.slice(1), { stdio: ["ignore", logDescriptor, logDescriptor], detached: true, windowsHide: true, env: { ...process.env, ...env } });
+        child.unref();
+        return { pid: child.pid!, unref() { child.unref(); } };
       } finally { closeSync(logDescriptor); }
     },
     async inspect(pid: number): Promise<ProcessInspection> {

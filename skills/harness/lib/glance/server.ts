@@ -184,9 +184,6 @@ function copyAsset(opts: {
   }
 }
 
-let lastActivity = Date.now();
-const bumpActivity = () => { lastActivity = Date.now(); };
-
 function readView(name: string): string {
   const p = path.join(VIEWS_DIR, name);
   if (!fs.existsSync(p)) throw new Error(`view not found: ${p}`);
@@ -255,6 +252,8 @@ export async function startServer(opts: ServerOptions, runtimeOverrides?: Partia
   const persistent = "lifetime" in opts && opts.lifetime.mode === "persistent";
   const idleMin = "idleMin" in opts ? opts.idleMin : 0;
   const startedAt = runtime.now();
+  let lastActivity = startedAt;
+  const bumpActivity = () => { lastActivity = runtime.now(); };
   const port = opts.port === "auto" ? findFreePort() : opts.port;
   const url = `http://localhost:${port}`;
 
@@ -270,9 +269,9 @@ export async function startServer(opts: ServerOptions, runtimeOverrides?: Partia
     // machine, never exposed to the LAN by default.
     hostname: "127.0.0.1",
     async fetch(req) {
-      bumpActivity();
       const u = new URL(req.url);
       const p = u.pathname;
+      if (p !== "/api/health") bumpActivity();
 
       // ─── Project-scope filter (?project=<absolute_path>) ────────────────
       // Frontend sends this on Agents/Runs/Cost/Memory/Activity when the user
@@ -1059,8 +1058,8 @@ export async function startServer(opts: ServerOptions, runtimeOverrides?: Partia
         return json({
           ok: true,
           version: "1.0.0",
-          uptime_ms: Date.now() - STARTED_AT,
-          idle_ms: Date.now() - lastActivity,
+          uptime_ms: runtime.now() - startedAt,
+          idle_ms: runtime.now() - lastActivity,
           idle_timeout_ms: idleMin * 60_000,
           allow_actions: opts.allowActions,
           scope: getScope(),
@@ -1564,23 +1563,24 @@ export async function startServer(opts: ServerOptions, runtimeOverrides?: Partia
     },
   });
 
-  console.error(`[glance] up on ${url}  (scope=${getScope().mode}, allow_actions=${opts.allowActions}, theme=${opts.theme})`);
-  let watchdog: ReturnType<typeof setInterval> | undefined;
+  runtime.log(`[glance] up on ${url}  (scope=${getScope().mode}, allow_actions=${opts.allowActions}, theme=${opts.theme})`);
+  let watchdog: unknown = undefined;
+  const shutdownWithRuntime = () => shutdown(server, watchdog, runtime);
   if (!persistent) {
-    console.error(`[glance] auto-shutdown after ${idleMin}min idle  ·  Ctrl+C to exit`);
-    if (opts.open) openBrowser(url);
+    runtime.log(`[glance] auto-shutdown after ${idleMin}min idle  ·  Ctrl+C to exit`);
+    if (opts.open) void runtime.openBrowser(url);
 
     // Idle watchdog
-    watchdog = setInterval(() => {
-      if (Date.now() - lastActivity > idleMin * 60_000) {
-        console.error(`[glance] idle ${idleMin}min — shutting down`);
-        shutdown(server, watchdog!);
+    watchdog = runtime.setInterval(() => {
+      if (runtime.now() - lastActivity > idleMin * 60_000) {
+        runtime.log(`[glance] idle ${idleMin}min — shutting down`);
+        shutdownWithRuntime();
       }
     }, 30_000);
   }
 
-  // SIGINT cleanup
-  const onSignal = () => { console.error("\n[glance] SIGINT — shutting down"); shutdown(server, watchdog); };
+  // SIGINT/SIGTERM cleanup
+  const onSignal = () => { runtime.log("[glance] SIGINT — shutting down"); shutdownWithRuntime(); };
   process.on("SIGINT", onSignal);
   process.on("SIGTERM", onSignal);
 
@@ -1819,9 +1819,9 @@ function streamJobSSE(req: Request, id: string): Response {
   });
 }
 
-function shutdown(server: any, watchdog: ReturnType<typeof setInterval>) {
-  clearInterval(watchdog);
+function shutdown(server: any, watchdog: unknown, runtime: ServerRuntime = defaultServerRuntime): void {
+  if (watchdog !== undefined && watchdog !== null) runtime.clearInterval(watchdog);
   try { server.stop(true); } catch {}
   try { fs.unlinkSync(PID_FILE); } catch {}
-  process.exit(0);
+  runtime.exit(0);
 }
