@@ -8,6 +8,14 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Unreleased
 
+### Contrato explícito de execução por ação
+
+O engine agora resolve os modos `action`, `workflow` e `auto` com precedência
+determinística de configuração, valida entrada e saída de ações versionadas e
+registra a identidade da execução sem dados do payload. Squads existentes
+continuam em workflows, salvo quando uma chamada ou configuração seleciona
+outro modo.
+
 ### Disputa de lock no Windows deixou de parecer falha
 
 O `withLock` tratava qualquer coisa que não fosse `EEXIST` como erro real. O

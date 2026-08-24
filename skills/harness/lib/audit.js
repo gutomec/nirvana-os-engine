@@ -34,6 +34,7 @@ const ALLOWED_EVENTS = new Set([
   'escalation_trigger_fired', 'human_notification_required', 'human_response_received',
   'resume', 'approval_checkpoint', 'approval_granted', 'approval_rejected',
   'budget_violation', 'memory_write', 'isolation_violation', 'validation_failed',
+  'execution_selected', 'execution_fallback',
   'humanization_applied', 'humanization_skipped', 'loop_detected', 'context_budget_warning',
   'stall_detected', 'stall_retry', 'gate_failed', 'gate_passed',
   // Phase A — dispatch quality invariants (see docs/plans/dispatch-quality-gate-and-mind-clone-injection.md)

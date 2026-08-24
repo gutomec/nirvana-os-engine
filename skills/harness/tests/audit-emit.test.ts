@@ -72,4 +72,27 @@ describe("audit.emit — event contract", () => {
     expect(audit.ALLOWED_EVENTS.has("gate_passed")).toBe(true);
     expect(audit.ALLOWED_EVENTS.has("gate_failed")).toBe(true);
   });
+
+  test("writes action execution lifecycle events without extension remapping", () => {
+    process.env.NIRVANA_AUDIT_STRICT = "1";
+    try {
+      audit.emit("execution_selected", {
+        mode: "action",
+        action_id: "accounting.close-month",
+        action_version: "1.0.0",
+      });
+      audit.emit("execution_fallback", {
+        mode: "auto",
+        fallback: "workflow",
+        reason: "action_unavailable",
+      });
+    } finally {
+      delete process.env.NIRVANA_AUDIT_STRICT;
+    }
+
+    expect(todayLines().map(({ event, mode }) => ({ event, mode }))).toEqual([
+      { event: "execution_selected", mode: "action" },
+      { event: "execution_fallback", mode: "auto" },
+    ]);
+  });
 });

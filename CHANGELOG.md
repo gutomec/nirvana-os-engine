@@ -8,6 +8,14 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Explicit action execution contract
+
+The engine now resolves `action`, `workflow`, and `auto` execution modes with
+deterministic configuration precedence, validates versioned action input and
+output, and records the selected execution identity without payload data.
+Existing squads remain on workflows unless a caller or configuration selects
+another mode.
+
 ### Contention on Windows stopped looking like a crash
 
 `withLock` treated anything but `EEXIST` as a real error. Windows has a
