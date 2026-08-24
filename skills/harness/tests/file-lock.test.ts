@@ -11,7 +11,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { spawn } from "node:child_process";
 
-import { acquireLockSync, withLock, lockDirFor } from "../../_shared/lib/file-lock.ts";
+import { acquireLockSync, withLock, lockDirFor, isContention } from "../../_shared/lib/file-lock.ts";
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-file-lock-test-"));
 const LOCK_MODULE = path.resolve(import.meta.dir, "..", "..", "_shared", "lib", "file-lock.ts");
@@ -32,6 +32,38 @@ function runWorkers(script: string, argvPerWorker: string[][], env: Record<strin
     child.on("error", reject);
   })));
 }
+
+describe("file-lock — what counts as contention", () => {
+  // A Windows runner went red here once: mkdir on a lock dir whose deletion was
+  // still pending answers EPERM, not EEXIST, and rethrowing it turned an
+  // ordinary race between two contenders into a dead worker.
+  const platform = process.platform;
+  const asPlatform = (p: string) => Object.defineProperty(process, "platform", { value: p, configurable: true });
+  afterAll(() => asPlatform(platform));
+
+  test("EEXIST is contention on every platform", () => {
+    for (const p of ["win32", "darwin", "linux"]) {
+      asPlatform(p);
+      expect(isContention({ code: "EEXIST" })).toBe(true);
+    }
+  });
+
+  test("a pending delete (EPERM/EACCES/EBUSY) is contention on Windows only", () => {
+    for (const code of ["EPERM", "EACCES", "EBUSY"]) {
+      asPlatform("win32");
+      expect(isContention({ code })).toBe(true);
+      asPlatform("linux");
+      expect(isContention({ code })).toBe(false);
+    }
+  });
+
+  test("a real error is never swallowed", () => {
+    asPlatform("win32");
+    expect(isContention({ code: "ENOSPC" })).toBe(false);
+    expect(isContention(new Error("no code at all"))).toBe(false);
+    expect(isContention(undefined)).toBe(false);
+  });
+});
 
 describe("file-lock — concurrent writers", () => {
   test("two subprocesses increment a shared counter with no lost updates", async () => {

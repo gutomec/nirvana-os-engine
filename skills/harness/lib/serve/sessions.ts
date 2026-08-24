@@ -1,0 +1,118 @@
+// sessions.ts — a session IS a project directory (HP7: isolation by
+// construction). Creating one runs the same init-project.ts the CLI uses,
+// so every session carries the agent contract and the .nirvana scaffold.
+
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { randomBytes } from "node:crypto";
+import { spawnSync } from "node:child_process";
+import { serveDir } from "./auth.ts";
+
+/**
+ * Which library a session's briefs can route to.
+ *
+ * `global` (the default) lets the session see the operator's own
+ * businesses, squads and clones — the reason they bought the packs. Without
+ * it every brief falls to agent-x, which the first live E2E showed plainly:
+ * the router reported `businesses=0, squads=0, mind_clones=0` and took the
+ * generalist branch, correctly and uselessly.
+ *
+ * `isolated` keeps the project-only scope (HP7 to the letter) and is what a
+ * multi-tenant host wants: tenant A must never route into tenant B's
+ * library. Choosing at creation costs one field and saves a migration.
+ */
+export type SessionLibrary = "global" | "isolated";
+
+export interface SessionRecord {
+  id: string;
+  key_id: string;
+  dir: string;
+  created_at: string;
+  library: SessionLibrary;
+  expired?: boolean;
+}
+
+interface SessionsFile { sessions: SessionRecord[] }
+
+export function sessionsRoot(): string {
+  return process.env.NIRVANA_SERVE_SESSIONS_ROOT || path.join(serveDir(), "sessions");
+}
+const regPath = () => path.join(serveDir(), "sessions.json");
+
+function load(): SessionsFile {
+  try { return JSON.parse(fs.readFileSync(regPath(), "utf8")); }
+  catch { return { sessions: [] }; }
+}
+function save(f: SessionsFile): void {
+  fs.mkdirSync(serveDir(), { recursive: true });
+  fs.writeFileSync(regPath(), JSON.stringify(f, null, 2), { mode: 0o600 });
+}
+
+const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
+  || (fs.existsSync(path.join(process.env.HOME || "", ".nirvana", "skills"))
+    ? path.join(process.env.HOME || "", ".nirvana", "skills")
+    : path.resolve(import.meta.dir, "..", "..", ".."));
+
+/**
+ * Two different things travel under the word "scope", and conflating them
+ * was a real defect in the first cut of this server:
+ *
+ *   WHERE THE INTELLIGENCE COMES FROM — businesses, squads, mind-clones.
+ *   This must default to the operator's library (`merge`), never to the
+ *   empty project. A session that starts blind routes every brief to the
+ *   generalist, which is the least of what the system can do.
+ *
+ *   WHERE THE FILES ARE WRITTEN — logs, outputs, run state, HANDOFF.
+ *   These always stay inside the session's own directory (or a mounted
+ *   volume pointing at it), because isolation of ARTIFACTS is what keeps
+ *   one caller's work out of another's.
+ *
+ * `merge` gives exactly that split: the library resolves globally, the
+ * project's own entries win on conflict, and everything written lands in
+ * the project. `isolated` (multi-tenant) is the only case that narrows the
+ * source to the project itself.
+ */
+const SCOPE_FOR_LIBRARY: Record<SessionLibrary, string> = {
+  global: "merge",
+  isolated: "project",
+};
+
+export function createSession(keyId: string, library: SessionLibrary = "global"): SessionRecord {
+  const id = "ses_" + randomBytes(8).toString("hex");
+  const dir = path.join(sessionsRoot(), id);
+  fs.mkdirSync(dir, { recursive: true });
+  // Same init the CLI runs — contract files + .nirvana scaffold. Failure is
+  // non-fatal: a session without the contract still dispatches (the API
+  // invokes the scripted cascade directly), but we record the warning.
+  const init = path.join(SKILLS_ROOT, "_shared", "scripts", "init-project.ts");
+  if (fs.existsSync(init)) {
+    spawnSync(process.env.NIRVANA_SERVE_BUN || "bun", [init, dir, `--scope=${SCOPE_FOR_LIBRARY[library]}`], {
+      stdio: "ignore", timeout: 60_000, env: { ...process.env },
+    });
+  }
+  const rec: SessionRecord = { id, key_id: keyId, dir, created_at: new Date().toISOString(), library };
+  const f = load();
+  f.sessions.push(rec);
+  save(f);
+  return rec;
+}
+
+export function getSession(id: string, keyId?: string): SessionRecord | null {
+  const s = load().sessions.find((x) => x.id === id && !x.expired) || null;
+  if (!s) return null;
+  if (keyId && s.key_id !== keyId) return null; // a key only sees its own sessions
+  return s;
+}
+
+export function listSessions(keyId: string): SessionRecord[] {
+  return load().sessions.filter((x) => x.key_id === keyId && !x.expired);
+}
+
+export function expireSession(id: string, keyId: string): boolean {
+  const f = load();
+  const s = f.sessions.find((x) => x.id === id && x.key_id === keyId && !x.expired);
+  if (!s) return false;
+  s.expired = true;
+  save(f);
+  return true;
+}

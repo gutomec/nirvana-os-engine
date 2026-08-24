@@ -33,6 +33,7 @@ import * as os from "node:os";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { runHeadless, runtimeAvailable, AUTONOMOUS_DIRECTIVE, LEDGER_DEFAULT_TIMEOUT_MS, type Runtime } from "../lib/host-agent-driver.ts";
+import { listRuntimes } from "../../_shared/lib/host-agent-driver.ts";
 import { amplify } from "../lib/amplifier.ts";
 import { proxyEnrichBrief } from "../lib/brief-proxy.ts";
 import { resolveRoutingMode } from "../../_shared/lib/routing-mode.ts";
@@ -331,7 +332,31 @@ const explicitRuntime: Runtime | null = (() => {
   if (runtimeFlagGiven) return normRuntime(runtime);
   return null;
 })();
-const hostDefault: Runtime = detectCurrentHost() ?? "claude-code";
+// An unidentified host is a STATE THE SYSTEM DECLARES, never a silent
+// synonym for one vendor. The old `?? "claude-code"` meant that whenever
+// detection failed — which is every runtime that exports no session marker —
+// the dispatch quietly walked away from the CLI the user was sitting in and
+// spent another vendor's quota. Precedence (flag > brief > rules > host) was
+// correct above this line and undone by one fallback.
+const detectedHost = detectCurrentHost();
+const envDefault = (process.env.NIRVANA_DEFAULT_RUNTIME || "").trim();
+// Resolution order once detection fails: an explicit NIRVANA_DEFAULT_RUNTIME,
+// then whatever is actually installed — chosen from the roster, never
+// hardcoded to one vendor. The run always proceeds (a brief must not stall),
+// but the choice is announced and audited instead of assumed.
+const firstAvailable = (): Runtime | null =>
+  (listRuntimes().map(r => r.name).find(n => runtimeAvailable(n)) ?? null);
+const hostDefault: Runtime =
+  detectedHost
+  ?? (envDefault ? normRuntime(envDefault) : null)
+  ?? firstAvailable()
+  ?? "claude-code";
+if (!detectedHost) {
+  const how = envDefault ? `NIRVANA_DEFAULT_RUNTIME=${hostDefault}` : `first available on PATH: ${hostDefault}`;
+  console.error(c("yellow", "⚠") + ` host runtime not identified — using ${how}.`
+    + " Pin it with NIRVANA_DEFAULT_RUNTIME in .env, --runtime, or by naming it in the brief.");
+  emit("x_host_runtime_undetected", { used: hostDefault, from: envDefault ? "env" : "path-scan", cwd: process.cwd() });
+}
 let runtimeDecision: RuntimeDecision = decideRuntime({
   brief, explicitRuntime, defaultRuntime: hostDefault,
   rules: runtimeRules, mode: routingMode as "agentic" | "fast",

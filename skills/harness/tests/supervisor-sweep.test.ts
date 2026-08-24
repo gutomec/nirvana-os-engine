@@ -556,7 +556,9 @@ const STUB_PNG = Buffer.concat([
   Buffer.alloc(300, 7),
 ]);
 
-const NON_GATEABLE_PDF = "%PDF-1.7\n" + "conteúdo binário simulado ".repeat(20) + "\n%%EOF\n";
+// .pdf became gateable in the pdf-valid change (2026-08-22); use a blob the
+// gate really cannot judge so the INDETERMINATE path stays exercised.
+const NON_GATEABLE_BLOB = "PK\u0003\u0004" + "conteúdo binário simulado ".repeat(20);
 
 let redispatchSeq = 0;
 
@@ -603,7 +605,7 @@ function quietDelivery(revisionCalls: unknown[] = []): RedispatchOverrides {
 describe("supervisor redispatch — the outcome goes through the delivery pipeline", () => {
   test("THE FAIL-OPEN, CLOSED: only non-gateable artifacts → INDETERMINATE, never delivered", () => {
     const h = freshLedger();
-    const { row } = redispatchCase(h, { "relatorio.pdf": NON_GATEABLE_PDF });
+    const { row } = redispatchCase(h, { "relatorio.zip": NON_GATEABLE_BLOB });
     const res = redispatchRun(h, row, quietDelivery());
     // Old behavior: {ok:true, finalState:"delivered", detail:"…gate indeterminate"}.
     expect(res.ok).toBe(false);
@@ -769,7 +771,7 @@ describe("supervisor redispatch — the outcome goes through the delivery pipeli
   test("through the sweep: a withheld redispatch is NOT counted as recovered", () => {
     const h = freshLedger();
     const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: "ignore" });
-    const { row } = redispatchCase(h, { "relatorio.pdf": NON_GATEABLE_PDF });
+    const { row } = redispatchCase(h, { "relatorio.zip": NON_GATEABLE_BLOB });
     markState(h, row.run_id, "failed");
     markState(h, row.run_id, "running", { childPid: child.pid });
     const s = sweep({

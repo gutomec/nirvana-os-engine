@@ -40,4 +40,19 @@ describe("Windows wrappers never redirect to nul", () => {
     expect(src.includes(">nul")).toBeFalse();
     expect(src).toContain("where /q bun");
   });
+
+  test("the nrv launcher prefers the standard absolute Bun path", () => {
+    const src = readFileSync(join(REPO, "scripts", "install.ts"), "utf8");
+    const absolute = src.indexOf('set "BUN=%USERPROFILE%\\\\.bun\\\\bin\\\\bun.exe"');
+    const missingAbsolute = src.indexOf('if not exist "%BUN%" (', absolute);
+    const pathLookup = src.indexOf("where /q bun", absolute);
+    const pathFallback = src.indexOf('set "BUN=bun"', pathLookup);
+    const entrypointCheck = src.indexOf('if not exist "%NRVTS%" (', pathFallback);
+
+    expect(absolute).toBeGreaterThan(-1);
+    expect(missingAbsolute).toBeGreaterThan(absolute);
+    expect(pathLookup).toBeGreaterThan(missingAbsolute);
+    expect(pathFallback).toBeGreaterThan(pathLookup);
+    expect(entrypointCheck).toBeGreaterThan(pathFallback);
+  });
 });

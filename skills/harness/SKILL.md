@@ -276,6 +276,8 @@ Three things about notifications that cost a wrong conclusion to learn:
 
 **An honest failure is the system working.** A target that reports it was blocked — a sandbox policy, a missing credential, a hard dependency — has done its job by telling you. Record it, close the run `failed` with the reason, and surface it. Do not re-dispatch the same brief hoping for a different outcome; a blocker that is real stays real, and the retry burns budget to arrive at the same wall.
 
+**Headless sessions die with the turn — never dispatch-and-wait there.** The background-dispatch contract above assumes an interactive session: something stays alive to receive the `<task-notification>`. A headless run (`claude -p`, `runHeadless`, cron, systemd, `ssh host 'claude -p ...'`) has no such thing — the process exits the moment the main agent's turn ends, orphaning every background child. The maestro that writes "I will wait for the phase-1 notification" and ends its turn has just killed its own run; field-verified on a VPS (2026-08-22): phase 1's images landed, the parent exited on its waiting message, phase 2 never started. In a headless context, execute the phases YOURSELF in sequence, or dispatch through the scripted path (`nrv dispatch --exec`) — synchronous and ledger-tracked. The supervisor sweep salvages what an orphaned run left on disk, but salvage is the net, not the plan.
+
 **On OpenClaw there is no in-process subagent, so the scripted path IS the dispatch.** It has no `Agent(...)`: work is delegated with `bash background:true` to a child CLI, tracked with `process poll`, and the child announces its own completion. That is exactly what `nrv dispatch --exec` does, so use it — the prep step, the ledger, the gate and the audit are unchanged. Details and the exact command shapes: `../_shared/adapters/openclaw.md`. The same holds for any runtime whose only delegation primitive is a shell.
 
 On claude-code, codex, and antigravity you dispatch through the runtime's **native in-process subagent** (the claude `Agent` tool, codex `[agents]`, antigravity dynamic subagents) — **not** `nrv dispatch --exec`, **not** a child `claude -p`. The in-process path runs inside your session with no 20-min wall-clock kill, so long deliverables don't get truncated. Reserve `--exec` / `runHeadless` for standalone headless scripted runs and sub-process-only runtimes (legacy gemini-cli, hermes).
@@ -379,6 +381,31 @@ The guarantee is behavioral, and it now covers both paths: a brief that entered 
 Every recovery ends in the delivery pipeline, never in a private verdict: a re-dispatch hands its fresh output to `runDelivery()` (verify → gate → delivered | withheld | indeterminate) and a resume reads `nrv revise`'s exit code (0 delivered · 2 withheld · 3 indeterminate). Both run with zero auto-revisions — an unattended sweep must not spend LLM budget in a fix loop nobody is watching; a failing gate is withheld and escalated so a human can run `nrv revise` deliberately. A re-dispatch that ran to completion is NOT capped by the completeness ceiling (that cap is for interrupted runs; see the salvage below).
 
 When the retries are exhausted the sweep marks the run `stalled` and escalates — and, before it does, it **salvages** whatever the run left on disk: the artifacts go once through the same verify → quality-gate path as a normal delivery (read-only: zero revisions, offline rubrics, no runtime spawn), so nothing is abandoned unjudged. Because an interrupted run's file set is unproven, `delivered` is reachable only when a manifest verification passes; otherwise the best outcome is `withheld` with the gate verdict attached. The escalation still fires in full — `human_notification_required`, `x_ledger_notify_human`, the stderr block and the OS notification — now carrying the verdict (artifacts found, gateable count, gate outcome, decision, where the files are). The salvage runs once per run (`meta.salvaged`).
+
+---
+
+## Serving the protocol over HTTP (`nrv serve`)
+
+The API is the fourth projection of this protocol — graph, glance, CLI, and
+HTTP — and it is a CONTROL PLANE, never a second executor: a session is a
+project directory, a brief becomes `nrv dispatch --auto --exec` in a child
+process, and every answer reads what the engine already wrote (run ledger,
+`audit.jsonl`, the outputs tree). It binds to 127.0.0.1 unless `--host` says
+otherwise, authenticates with keys whose budget and quota are attributes of
+the KEY (never client input), and refuses to run as root.
+
+```bash
+nrv activate --all --only-declared   # install what the squads' dependencies.yaml declare
+nrv serve keygen --budget-usd 5      # token shown once
+nrv serve --port 7777                # local by default; proxy TLS to expose
+```
+
+`POST /v1/sessions` → `POST /v1/sessions/{id}/briefs` (202, async — a real
+brief takes minutes) → `GET .../runs/{trace}` for the envelope, `/events`
+for the live audit stream, `/artifacts` to list and download. The envelope
+carries the gate verdict and promotes `_SUMMARY.md` and
+`_QA-RESERVATIONS.md` to fields, so a delivery accepted with reservations
+arrives honest rather than silently.
 
 ---
 
