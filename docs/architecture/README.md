@@ -27,6 +27,7 @@ Este diretório é a fonte canônica para a evolução integrada do Run Kernel, 
 7. [Plano incremental](implementation-plan.md)
 8. [Matriz de testes](test-matrix.md)
 9. [Matriz de rastreabilidade](traceability-matrix.md)
+10. [Operação do Run Kernel](run-kernel-operations.md)
 
 ## ADRs
 
