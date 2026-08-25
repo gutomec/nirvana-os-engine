@@ -53,6 +53,7 @@ import { loadHarnessConfig } from "../lib/harness-config.ts";
 import { planRouteWithFallback, runAgentX, type DispatchPlan } from "../lib/dispatch-cascade.ts";
 import { runSquadHeadless } from "../lib/squad-exec.ts";
 import { runDelivery, deliverAfterRuntimeError, gateableFiles, runGateOnce, type DeliveryArgs, type DeliveryResult, type RuntimeErrorOutcome } from "../lib/delivery-pipeline.ts";
+import { runBusinessPostGate } from "../lib/business-post-gate.ts";
 import { parseExecutionOptions } from "../lib/gauntlet/execution-options.ts";
 import { runAgentXGauntlet, shouldRunAgentXGauntlet, shouldRunSquadGauntlet, type AgentXGauntletEvaluator } from "../lib/gauntlet/agent-x-cutover.ts";
 import { createHarnessLegacyAdapter, openKernel } from "../lib/run-kernel/index.ts";
@@ -1240,119 +1241,18 @@ if (wantExec) {
   let zipPathOut: string | null = null;
 
   const afterGate = (): { zipPath: string | null } => {
-    // Step 6.5 — optional PDF report. The report-publisher employee (LLM, no
-    // shell) writes relatorio/resumo-executivo.md + relatorio/order.json; the
-    // harness then runs build-report-pdf.ts to produce relatorio-final.pdf
-    // inside deliverables/ (so it lands in the --deliverables-only zip).
-    if (wantPdf) {
-      // Build script: the business's own (if it ships one) else the shared harness
-      // script. Publisher: the business's report-publisher employee (if any) else a
-      // generic inline publisher prompt. So --pdf works for ANY business.
-      const bizHome = path.join(os.homedir(), "businesses", slug);
-      const bizBuild = path.join(bizHome, "scripts", "build-report-pdf.ts");
-      const buildScript = fs.existsSync(bizBuild) ? bizBuild : path.join(SKILLS, "harness/scripts/build-report-pdf.ts");
-      const pubEmployee = path.join(bizHome, "employees", "report-publisher.md");
-      const hasPublisher = fs.existsSync(pubEmployee);
-      if (!fs.existsSync(buildScript)) {
-        console.log(c("yellow", `  ⚠ --pdf: build-report-pdf.ts not found; skipping PDF`));
-      } else {
-        console.log(c("lime", "▶") + c("bold", ` Step 6.5 — PDF report (${hasPublisher ? "report-publisher" : "generic publisher"})`));
-        const relatorioDir = path.join(projDir, "relatorio");
-        fs.mkdirSync(relatorioDir, { recursive: true });
-        const summaryPath = path.join(relatorioDir, "resumo-executivo.md");
-        const orderPath = path.join(relatorioDir, "order.json");
-        const pubBrief = [
-          "Você é o publicador do relatório final. Compile a entrega.",
-          `Leia TODOS os arquivos .md em: ${oroot}`,
-          "",
-          "Escreva EXATAMENTE dois arquivos (use a ferramenta Write, não rode shell):",
-          `1. ${summaryPath} — resumo executivo fiel (markdown), que vai na capa do PDF.`,
-          `2. ${orderPath} — JSON: {"title": "...", "subtitle": "...", "client": "...", "summary_file": "${summaryPath}", "order": ["arquivo1.md", "arquivo2.md", ...]}`,
-          "   - order = nomes dos .md em " + oroot + " na sequência ideal (resposta direta primeiro, depois análise, base e anexos).",
-          "Não invente conclusão nem fonte. Apenas sintetize e ordene.",
-        ].join("\n");
-        const pubBriefFile = path.join(relatorioDir, ".publisher-brief.md");
-        fs.writeFileSync(pubBriefFile, pubBrief);
-
-        // Prompt: DNA-injected employee persona if the business has one, else the
-        // self-contained generic brief above.
-        let pubPrompt = pubBrief;
-        if (hasPublisher) {
-          const ep = spawnSync("bun", [employeePrompt, slug, "report-publisher", projDir, pubBriefFile, relatorioDir], { encoding: "utf8" });
-          if (ep.status === 0 && ep.stdout) pubPrompt = ep.stdout;
-          else console.error(c("yellow", `  ⚠ report-publisher prompt failed; using the generic publisher`));
-        }
-        {
-          const pubRes = runHeadless({
-            runtime: rt, prompt: pubPrompt, cwd: projDir, addDirs: [projectRoot],
-            appendSystemPrompt: AUTONOMOUS_DIRECTIVE + rulesDirective,
-            maxBudgetUsd: effectiveBudgetUsd(),
-            timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined, yolo,
-          });
-          emit("report_publisher_ran", { trace_id: pid, project_id: pid, business_slug: slug, ok: pubRes.ok, publisher: hasPublisher ? "employee" : "generic" });
-
-          // Assemble the PDF into deliverables/ so the zip includes it.
-          const pdfOut = path.join(oroot, "relatorio-final.pdf");
-          const pdfArgs = [buildScript, "--deliverables", oroot, "--output", pdfOut];
-          if (fs.existsSync(summaryPath)) pdfArgs.push("--summary", summaryPath);
-          let title = `Relatório — ${pid}`, subtitle = "", clientName = "", brand = slug;
-          if (fs.existsSync(orderPath)) {
-            try {
-              const meta = JSON.parse(fs.readFileSync(orderPath, "utf8"));
-              if (Array.isArray(meta.order) && meta.order.length) pdfArgs.push("--order", meta.order.join(","));
-              if (meta.title) title = meta.title;
-              if (meta.subtitle) subtitle = meta.subtitle;
-              if (meta.client) clientName = meta.client;
-              if (meta.brand) brand = meta.brand;
-            } catch { /* use defaults */ }
-          }
-          pdfArgs.push("--title", title, "--brand", brand);
-          if (subtitle) pdfArgs.push("--subtitle", subtitle);
-          if (clientName) pdfArgs.push("--client", clientName);
-          const pdf = spawnSync("bun", pdfArgs, { encoding: "utf8" });
-          if (pdf.status === 0 && fs.existsSync(pdfOut)) {
-            console.log(c("green", `  ✓ PDF: ${pdfOut} (${(fs.statSync(pdfOut).size / 1024).toFixed(1)} KB)`));
-            emit("report_pdf_generated", { trace_id: pid, project_id: pid, business_slug: slug, output: pdfOut });
-          } else {
-            console.error(c("yellow", `  ⚠ build-report-pdf failed: ${(pdf.stdout || "") + (pdf.stderr || "")}`));
-          }
-        }
-      }
-    }
-
-    // Step 6.6 — HTML report (DEFAULT; skipped only in fast mode or with --no-html).
-    // Renders every project markdown into an Apple-style HTML. Lands in deliverables/
-    // so the --zip bundle picks it up. --offline-snapshot produces a 100% offline copy.
-    if (!skipHtml) {
-      console.log(c("lime", "▶") + c("bold", " Step 6.6 — HTML report"));
-      const htmlBuild = path.join(SKILLS, "harness/scripts/build-report-html.ts");
-      const htmlOut = path.join(oroot, "relatorio-final.html");
-      const htmlArgs = [htmlBuild, "--project", projDir, "--output", htmlOut, "--title", `Relatório — ${slug}`];
-      if (process.argv.includes("--offline-snapshot")) htmlArgs.push("--offline-snapshot");
-      const h = spawnSync("bun", htmlArgs, { encoding: "utf8", stdio: "inherit" });
-      if (h.status === 0) emit("report_html_generated", { trace_id: pid, project_id: pid, business_slug: slug, output: htmlOut });
-      else console.error(c("yellow", `  ⚠ build-report-html failed (rc=${h.status})`));
-    } else if (routingMode === "fast") {
-      emit("report_skipped_fast", { trace_id: pid, project_id: pid, business_slug: slug });
-    }
-
-    // Step 7 — export .zip
-    let zipPath: string | null = null;
-    if (wantZip) {
-      console.log(c("lime", "▶") + c("bold", " Step 7/7 — export .zip"));
-      const exportScript = path.join(SKILLS, "harness/scripts/export.ts");
-      const out = path.resolve(`./${pid}.zip`);
-      const z = spawnSync("bun", [exportScript, pid, "--format=zip", "--deliverables-only", `--output=${out}`], { encoding: "utf8", stdio: "inherit" });
-      if (z.status === 0) {
-        zipPath = out;
-        sessionData.zip_path = out;
-        fs.writeFileSync(sessionFile, JSON.stringify(sessionData, null, 2));
-      } else {
-        console.error(c("yellow", "  ⚠ export failed (deliverables are in the project folder)"));
-      }
-    }
-    zipPathOut = zipPath;
-    return { zipPath };
+    const result = runBusinessPostGate({
+      projectId: pid, businessSlug: slug, runtime: rt, projectDir: projDir, projectRoot,
+      outputsRoot: oroot, skillsRoot: SKILLS, employeePromptScript: employeePrompt,
+      sessionFile, sessionData, rulesDirective, maxBudgetUsd: effectiveBudgetUsd(),
+      timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
+      yolo, wantPdf, skipHtml, offlineSnapshot: process.argv.includes("--offline-snapshot"),
+      routingMode, wantZip, emit,
+      log: message => console.log(c("lime", message)),
+      warn: message => console.error(c("yellow", message)),
+    });
+    zipPathOut = result.zipPath;
+    return result;
   };
 
   const bizDeliverOpts = {

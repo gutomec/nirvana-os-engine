@@ -15,6 +15,8 @@ Este documento separa fundação implementada, integração ativa e cutovers ain
 | Glance Project Workspace | Control plane com canário operacional | Project, Conversation, Message, Run, Events, SSE e queue recuperável | Runs `running` só podem ser retomados quando uma lease recuperável for comprovada |
 | Cutover vertical | Canário concluído | `agent-x light` une dispatch, Run Kernel, Gauntlet, gate final e leitura no Glance | A expansão para os demais targets permanece pendente |
 
+O pós-gate de Business agora passa por `runBusinessPostGate`, uma fronteira reutilizável chamada pelo mesmo hook da delivery pipeline. A extração preserva PDF, HTML, ZIP, manifesto, session file, audit e decisões terminais. Ela prepara um futuro adapter de Business, mas não ativa o Business Gauntlet. Esse cutover continua bloqueado até a comparação de paridade cobrir o fluxo completo.
+
 ## O que já funciona
 
 ### Runtime universal
@@ -75,7 +77,7 @@ O modo `standard` deve continuar padrão. O cutover precisa de uma flag independ
 
 ## Resultado de testes nesta integração
 
-A bateria focada integrada mais recente aprovou 53 testes e 168 asserções depois do cutover do chat, cobrindo API, Message, Run, vínculo persistente, restart, cancelamento, capability ausente, events, SSE, queue, Run Kernel, delivery e canário `agent-x`.
+A bateria focada da fronteira de pós-gate aprovou os cenários de PDF, HTML, ZIP, session, audit, falhas não fatais e skip em modo fast. A delivery pipeline também foi repetida para confirmar que o hook só executa depois de uma decisão entregável.
 
 A suíte conjunta de Harness e Squads aprovou 844 testes e 2.614 asserções antes do último corte do chat. O conjunto afetado foi repetido depois do corte, sem falhas.
 
