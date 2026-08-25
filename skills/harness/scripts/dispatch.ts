@@ -54,7 +54,7 @@ import { planRouteWithFallback, runAgentX, type DispatchPlan } from "../lib/disp
 import { runSquadHeadless } from "../lib/squad-exec.ts";
 import { runDelivery, deliverAfterRuntimeError, gateableFiles, runGateOnce, type DeliveryArgs, type DeliveryResult, type RuntimeErrorOutcome } from "../lib/delivery-pipeline.ts";
 import { parseExecutionOptions } from "../lib/gauntlet/execution-options.ts";
-import { runAgentXGauntlet, shouldRunAgentXGauntlet, type AgentXGauntletEvaluator } from "../lib/gauntlet/agent-x-cutover.ts";
+import { runAgentXGauntlet, shouldRunAgentXGauntlet, shouldRunSquadGauntlet, type AgentXGauntletEvaluator } from "../lib/gauntlet/agent-x-cutover.ts";
 import { createHarnessLegacyAdapter, openKernel } from "../lib/run-kernel/index.ts";
 
 // Back-compat re-exports: these helpers moved to lib/delivery-pipeline.ts in
@@ -759,6 +759,63 @@ if (pendingCascade?.kind === "squad-only") {
   }
   const oroot = outputsRoot || path.join(projectRoot, "deliverables");
   fs.mkdirSync(oroot, { recursive: true });
+  if (shouldRunSquadGauntlet({ squadCount: squads.length, wantExec, resolvedMode: executionOptions.resolvedMode,
+    intensity: executionOptions.intensity })) {
+    const squad = squads[0];
+    const capabilityId = pendingCascade.plan.steps.find(step => step.kind === "squad" && step.slug === squad)?.capability || "squad.execute";
+    const producerTarget = { kind: "squad" as const, slug: squad, capabilityId };
+    const canonicalRunId = `run_${pid.replace(/[^A-Za-z0-9-]/g, "-")}`;
+    const gauntletBudgetUsd = Math.min(effectiveBudgetUsd() ?? 5, 5);
+    const kernel = openKernel(path.join(projectRoot, ".nirvana", "run-kernel.sqlite"));
+    const legacy = runLedger.openLedger();
+    const evaluatorTarget = { kind: "squad" as const, slug: "harness-quality-gate", capabilityId: "quality.specification_conformance" };
+    const evaluator: AgentXGauntletEvaluator = {
+      target: evaluatorTarget,
+      evaluate({ runId, candidateRoot, artifactRefs }) {
+        const files = gateableFiles(candidateRoot, new Set());
+        const gate = files.length ? runGateOnce(files, { gateScript: gateScriptPath, offline: true,
+          env: { NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid } }) : { pass: false, fails: [] };
+        return [{ evaluationId: `evl_${runId}_1`, candidateId: "can_1", revisionId: `crv_${runId}_1`,
+          gauntletId: "brief-conformance", rubricVersion: "harness-quality-gate/v1", verdict: gate.pass ? "pass" : "reject",
+          dimensions: [{ id: "brief-conformance", score: gate.pass ? 1 : 0, confidence: 1, blocking: true,
+            passed: gate.pass, evidenceRefs: artifactRefs.map(ref => ref.revisionId) }], regressions: [],
+          revisionRequests: gate.pass ? [] : [{ requirementId: "brief-conformance",
+            evidenceRefs: gate.fails.map(failure => pathToFileURL(failure.file).href) }], evaluator: evaluatorTarget,
+          costUsd: 0, createdAt: new Date().toISOString() }];
+      },
+    };
+    let finalDelivery: DeliveryResult | null = null;
+    try {
+      const result = runAgentXGauntlet({
+        kernel, legacy: createHarnessLegacyAdapter({ ledger: legacy, auditCwd: projDir }), producerTarget,
+        projectId: pid, runId: canonicalRunId, traceId: pid, brief, projectRoot, outputsRoot: oroot,
+        expectedCostUsd: gauntletBudgetUsd,
+        executeCandidate(candidateRoot) {
+          const candidate = runSquadHeadless({ squadSlug: squad, brief, projectId: pid, projectDir: projDir, projectRoot,
+            outputsDir: candidateRoot, runtime: rt, businessSlug: null, mode: "squad-only",
+            maxBudgetUsd: gauntletBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
+            rulesDirective, autonomousDirective: AUTONOMOUS_DIRECTIVE,
+            ledger: { runId: canonicalRunId, watchDir: candidateRoot } });
+          if (candidate.sessionId) runLedger.recordSession(legacy, canonicalRunId, candidate.sessionId);
+          return { ok: candidate.ok, sessionId: candidate.sessionId, costUsd: candidate.costUsd, error: candidate.error };
+        },
+        evaluator,
+        finalGate({ sessionId }) {
+          finalDelivery = runDelivery({ ...deliveryArgs({ pid, slugOrNull: null, targetKind: "squad", rt, oroot,
+            projDir, projectRoot, sessionId, withManifest: false }), ledger: null, maxRevisions: 0 });
+          return { exitCode: finalDelivery.exitCode, gateOutcome: finalDelivery.gateOutcome };
+        },
+      });
+      if (finalDelivery) printDeliverySummary(finalDelivery, pid, oroot, null);
+      else console.error(c("yellow", `⚠ Gauntlet stopped before the final gate (${result.run.state}).`));
+      kernel.close(); legacy.close();
+      process.exit(result.exitCode);
+    } catch (error) {
+      kernel.close(); legacy.close();
+      console.error(c("red", `✗ squad Gauntlet failed: ${(error as Error).message}`));
+      process.exit(1);
+    }
+  }
   ledgerTry(() => {
     ledgerHandle = runLedger.openLedger();
     const row = runLedger.openRun(ledgerHandle, {

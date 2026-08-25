@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-  AgentXGauntletInterruption, runAgentXGauntlet, shouldRunAgentXGauntlet, type AgentXGauntletEvaluator,
+  AgentXGauntletInterruption, runAgentXGauntlet, shouldRunAgentXGauntlet, shouldRunSquadGauntlet, type AgentXGauntletEvaluator,
 } from "../lib/gauntlet/agent-x-cutover.ts";
 import { getRun, listEvents, openKernel, type KernelHandle } from "../lib/run-kernel/index.ts";
 
@@ -66,6 +66,15 @@ describe("agent-x light Gauntlet cutover", () => {
     expect(shouldRunAgentXGauntlet({ ...base, targetKind: "business" })).toBeFalse();
     expect(shouldRunAgentXGauntlet({ ...base, targetKind: "squad" })).toBeFalse();
     expect(shouldRunAgentXGauntlet({ ...base, intensity: "balanced" })).toBeFalse();
+  });
+
+  test("enables only one light squad in the typed canary", () => {
+    const base = { squadCount: 1, wantExec: true, resolvedMode: "gauntlet" as const, intensity: "light" as const };
+    expect(shouldRunSquadGauntlet(base)).toBeTrue();
+    expect(shouldRunSquadGauntlet({ ...base, squadCount: 2 })).toBeFalse();
+    expect(shouldRunSquadGauntlet({ ...base, wantExec: false })).toBeFalse();
+    expect(shouldRunSquadGauntlet({ ...base, resolvedMode: "standard" })).toBeFalse();
+    expect(shouldRunSquadGauntlet({ ...base, intensity: "balanced" })).toBeFalse();
   });
 
   test("persists plan and candidate before an independent evaluation, then runs the final gate", () => {

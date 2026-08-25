@@ -1,4 +1,4 @@
-# Canário Gauntlet para agent-x
+# Canário Gauntlet para agent-x e Squad
 
 ## Escopo habilitado
 
@@ -9,7 +9,9 @@ O primeiro cutover vertical do Gauntlet é deliberadamente restrito. Ele executa
 - o modo resolvido é `gauntlet`;
 - a intensidade é `light`.
 
-O modo `standard` continua no fluxo anterior. Rotas de business e squad também permanecem intactas, mesmo quando uma opção de Gauntlet é informada.
+Uma rota direta para exatamente um Squad também entra no canário quando `--exec`, `gauntlet` e `light` estão ativos. Rotas com dois ou mais Squads permanecem no fluxo anterior, pois exigem isolamento e composição explícitos entre outputs.
+
+O modo `standard` continua no fluxo anterior. Rotas de Business permanecem intactas. `balanced` e `exhaustive` ainda não entram no cutover.
 
 ## Fluxo do canário
 
@@ -30,7 +32,7 @@ O endpoint `POST /api/v1/runs/{run_id}:cancel` cancela Runs ainda na fila antes 
 ## Limites
 
 - Há um candidato e nenhuma revisão automática nesta fase.
-- `balanced`, `exhaustive`, business e squad ainda não entram no cutover.
+- `balanced`, `exhaustive`, Business e rotas com múltiplos Squads ainda não entram no cutover.
 - O evaluator inicial usa o quality gate offline do harness por um adapter injetável. Uma capability organizacional dedicada poderá substituí-lo sem alterar o controller.
 - A publicação usa arquivos temporários e rename por arquivo. Ela é retomável e não sobrescreve arquivos idênticos, mas ainda não oferece commit atômico do diretório inteiro.
 - Uma interrupção após persistir o candidato retoma sem novo dispatch. Uma interrupção durante o gate final pode repetir o gate, que deve permanecer idempotente por artifacts e event identity.

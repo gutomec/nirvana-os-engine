@@ -58,6 +58,15 @@ export function shouldRunAgentXGauntlet(input: {
   return input.targetKind === "agent-x" && input.wantExec && input.resolvedMode === "gauntlet" && input.intensity === "light";
 }
 
+export function shouldRunSquadGauntlet(input: {
+  squadCount: number;
+  wantExec: boolean;
+  resolvedMode: "standard" | "gauntlet";
+  intensity: "light" | "balanced" | "exhaustive";
+}): boolean {
+  return input.squadCount === 1 && input.wantExec && input.resolvedMode === "gauntlet" && input.intensity === "light";
+}
+
 function filesUnder(root: string): string[] {
   const files: string[] = [];
   const visit = (directory: string): void => {
