@@ -72,4 +72,4 @@ Ausência de política ou de `maxCostUsd` retorna reserva nula e preserva o plan
 
 ## Limitações e próximo cutover
 
-Este incremento não conecta decisões ou reservas ao dispatch multi-target, ao controller Gauntlet ou ao Run Kernel. A reserva é preventiva e não representa dinheiro consumido. O próximo cutover deve consumir os snapshots imutáveis no executor existente, preservar idempotência e crash resume e provar que uma decisão `standard` segue o caminho legado sem divergência.
+O coordenador interno já consome decisões e reservas por adapters injetáveis, sem cutover público. Ele continua desconectado do dispatch, de adapters de produção e do Run Kernel concreto. A reserva é preventiva e não representa dinheiro consumido. O próximo cutover deve implementar as portas canônicas, preservar idempotência e crash resume com storage real e provar uma allowlist isolada antes de alterar qualquer rota pública.
