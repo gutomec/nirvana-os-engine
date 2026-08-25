@@ -35,6 +35,15 @@ export class ConversationService {
     if (!conversation || conversation.project_id !== input.projectId) throw new Error("conversation does not belong to project");
     if (!input.content.trim()) throw new Error("message content is required");
     if (!["user", "assistant", "system"].includes(input.role)) throw new Error("invalid visible message role");
+    if (input.messageId) {
+      const existing = this.db.query("SELECT * FROM conversation_messages WHERE message_id = ?").get(input.messageId) as Message | null;
+      if (existing) {
+        if (existing.conversation_id !== input.conversationId || existing.project_id !== input.projectId || existing.role !== input.role || existing.content !== input.content) {
+          throw new Error("message identity conflict");
+        }
+        return existing;
+      }
+    }
     const createdAt = new Date().toISOString();
     return this.db.transaction(() => {
       const row = this.db.query("SELECT COALESCE(MAX(sequence), 0) + 1 AS next FROM conversation_messages WHERE conversation_id = ?").get(input.conversationId) as { next: number };
@@ -45,4 +54,13 @@ export class ConversationService {
     })();
   }
   messages(conversationId: string): Message[] { return this.db.query("SELECT * FROM conversation_messages WHERE conversation_id = ? ORDER BY sequence").all(conversationId) as Message[]; }
+  linkRun(messageId: string, projectId: string, runId: string): Message {
+    const result = this.db.run("UPDATE conversation_messages SET run_id = ? WHERE message_id = ? AND project_id = ? AND run_id IS NULL", runId, messageId, projectId);
+    if (result.changes !== 1) {
+      const existing = this.db.query("SELECT * FROM conversation_messages WHERE message_id = ? AND project_id = ?").get(messageId, projectId) as Message | null;
+      if (!existing || existing.run_id !== runId) throw new Error("message cannot be linked to run");
+      return existing;
+    }
+    return this.db.query("SELECT * FROM conversation_messages WHERE message_id = ?").get(messageId) as Message;
+  }
 }

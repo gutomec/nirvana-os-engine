@@ -115,7 +115,7 @@ export function runAgentXGauntlet(input: AgentXGauntletInput): AgentXGauntletRes
   const actor = { kind: "kernel", id: "agent-x-gauntlet-cutover" };
   const correlationId = `cor_${input.runId}`;
   const facade = new RunKernelCompatibilityFacade(input.kernel, input.legacy);
-  let run = facade.create({ projectId: input.projectId, runId: input.runId, traceId: input.traceId,
+  let run = getRun(input.kernel, input.projectId, input.runId) ?? facade.create({ projectId: input.projectId, runId: input.runId, traceId: input.traceId,
     planId: `plan_${input.runId}`, target: { kind: "agent-x", slug: "agent-x" }, policySnapshotRef: "gauntlet-light-canary",
     actor, correlationId, idempotencyKey: `agent-x-gauntlet:${input.runId}:create` });
   try {
