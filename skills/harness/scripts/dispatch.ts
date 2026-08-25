@@ -32,6 +32,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 import { runHeadless, runtimeAvailable, AUTONOMOUS_DIRECTIVE, LEDGER_DEFAULT_TIMEOUT_MS, type Runtime } from "../lib/host-agent-driver.ts";
 import { listRuntimes } from "../../_shared/lib/host-agent-driver.ts";
 import { amplify } from "../lib/amplifier.ts";
@@ -51,8 +52,10 @@ import * as runLedger from "../lib/run-ledger.ts";
 import { loadHarnessConfig } from "../lib/harness-config.ts";
 import { planRouteWithFallback, runAgentX, type DispatchPlan } from "../lib/dispatch-cascade.ts";
 import { runSquadHeadless } from "../lib/squad-exec.ts";
-import { runDelivery, deliverAfterRuntimeError, type DeliveryArgs, type DeliveryResult, type RuntimeErrorOutcome } from "../lib/delivery-pipeline.ts";
+import { runDelivery, deliverAfterRuntimeError, gateableFiles, runGateOnce, type DeliveryArgs, type DeliveryResult, type RuntimeErrorOutcome } from "../lib/delivery-pipeline.ts";
 import { parseExecutionOptions } from "../lib/gauntlet/execution-options.ts";
+import { runAgentXGauntlet, shouldRunAgentXGauntlet, type AgentXGauntletEvaluator } from "../lib/gauntlet/agent-x-cutover.ts";
+import { createHarnessLegacyAdapter, openKernel } from "../lib/run-kernel/index.ts";
 
 // Back-compat re-exports: these helpers moved to lib/delivery-pipeline.ts in
 // routing-360 Phase 4.2 (the pipeline is shared by all three dispatch paths).
@@ -850,6 +853,62 @@ if (pendingCascade?.kind === "agent-x") {
   }
   const oroot = outputsRoot || path.join(base, "deliverables");
   fs.mkdirSync(oroot, { recursive: true });
+  if (shouldRunAgentXGauntlet({ targetKind: "agent-x", wantExec, resolvedMode: executionOptions.resolvedMode, intensity: executionOptions.intensity })) {
+    const canonicalRunId = `run_${pid.replace(/[^A-Za-z0-9-]/g, "-")}`;
+    const gauntletBudgetUsd = Math.min(effectiveBudgetUsd() ?? 5, 5);
+    const kernel = openKernel(path.join(base, ".nirvana", "run-kernel.sqlite"));
+    const legacy = runLedger.openLedger();
+    const evaluatorTarget = { kind: "squad" as const, slug: "harness-quality-gate", capabilityId: "quality.specification_conformance" };
+    const evaluator: AgentXGauntletEvaluator = {
+      target: evaluatorTarget,
+      evaluate({ runId, candidateRoot, artifactRefs }) {
+        const files = gateableFiles(candidateRoot, new Set());
+        const gate = files.length ? runGateOnce(files, { gateScript: gateScriptPath, offline: true,
+          env: { NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid } }) : { pass: false, fails: [] };
+        return [{ evaluationId: `evl_${runId}_1`, candidateId: "can_1", revisionId: `crv_${runId}_1`,
+          gauntletId: "brief-conformance", rubricVersion: "harness-quality-gate/v1",
+          verdict: gate.pass ? "pass" : "reject",
+          dimensions: [{ id: "brief-conformance", score: gate.pass ? 1 : 0, confidence: 1, blocking: true,
+            passed: gate.pass, evidenceRefs: artifactRefs.map(ref => ref.revisionId) }],
+          regressions: [], revisionRequests: gate.pass ? [] : [{ requirementId: "brief-conformance",
+            evidenceRefs: gate.fails.map(failure => pathToFileURL(failure.file).href) }],
+          evaluator: evaluatorTarget, costUsd: 0, createdAt: new Date().toISOString() }];
+      },
+    };
+    let finalDelivery: DeliveryResult | null = null;
+    try {
+      const result = runAgentXGauntlet({
+        kernel, legacy: createHarnessLegacyAdapter({ ledger: legacy, auditCwd: projDir }),
+        projectId: pid, runId: canonicalRunId, traceId: pid, brief, projectRoot: base, outputsRoot: oroot,
+        expectedCostUsd: gauntletBudgetUsd,
+        executeCandidate(candidateRoot) {
+          const candidate = runAgentX({ brief, briefPath, runtime: rt, projectId: pid, projectDir: projDir, projectRoot: base,
+            outputsRoot: candidateRoot, reason: pendingCascade.reason, appendSystemPrompt: AUTONOMOUS_DIRECTIVE + rulesDirective,
+            maxBudgetUsd: gauntletBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
+            yolo, ledger: { runId: canonicalRunId, watchDir: candidateRoot }, audit: emit });
+          if (candidate.sessionId) runLedger.recordSession(legacy, canonicalRunId, candidate.sessionId);
+          if (!candidate.ok) emit("agent_exec_failed", { trace_id: pid, project_id: pid, employee: "agent-x", runtime: rt,
+            exit_code: candidate.exitCode, error: candidate.error || candidate.stderr });
+          return { ok: candidate.ok, sessionId: candidate.sessionId, costUsd: candidate.costUsd,
+            error: candidate.error || candidate.stderr || undefined };
+        },
+        evaluator,
+        finalGate({ sessionId }) {
+          finalDelivery = runDelivery({ ...deliveryArgs({ pid, slugOrNull: null, targetKind: "agent-x", rt, oroot,
+            projDir, projectRoot: base, sessionId, withManifest: false }), ledger: null, maxRevisions: 0 });
+          return { exitCode: finalDelivery.exitCode, gateOutcome: finalDelivery.gateOutcome };
+        },
+      });
+      if (finalDelivery) printDeliverySummary(finalDelivery, pid, oroot, null);
+      else console.error(c("yellow", `⚠ Gauntlet stopped before the final gate (${result.run.state}).`));
+      kernel.close(); legacy.close();
+      process.exit(result.exitCode);
+    } catch (error) {
+      kernel.close(); legacy.close();
+      console.error(c("red", `✗ agent-x Gauntlet failed: ${(error as Error).message}`));
+      process.exit(1);
+    }
+  }
   ledgerTry(() => {
     ledgerHandle = runLedger.openLedger();
     const row = runLedger.openRun(ledgerHandle, {
