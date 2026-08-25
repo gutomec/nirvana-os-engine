@@ -1475,72 +1475,49 @@ function glance() {
       es.onerror = () => { /* keep — reopens on the next turn */ };
       this.chatRunES = es;
     },
-    // Human label for an audit event (the golden 5 + the rest).
+    // Human label for an audit event. Single source: run-event-labels.js,
+    // exposed by the index.html module adapter as window.NirvanaRunEventLabels.
     chatEventLabel(ev) {
-      const map = {
-        agentic_route_decision: 'Roteou', dispatch_business: 'Despachou empresa', dispatch_squad: 'Despachou squad',
-        mind_clone_injected: 'Injetou mind-clone', agent_executed: 'Executou', gate_passed: 'Passou no gate',
-        gate_failed: 'Falhou no gate', delivered: 'Entregou', routing_rule_applied: 'Regra de runtime',
-        team_chain_selected: 'Montou o time', research_completed: 'Pesquisou', brief_received: 'Recebeu o brief',
-      };
-      return map[ev.event] || ev.event;
+      return window.NirvanaRunEventLabels?.chatEventLabel(ev) || ev.event || ev.type || 'evento';
     },
-    // AG-UI orchestration surface: maps each audit event into a semantic block
-    // {icon, title, sub, tone} — who (business/squad/agent), what,
-    // with cost/step. Foundation of the run mode's live timeline.
+    // AG-UI orchestration surface: maps each event (canonical `ev.type` or
+    // legacy `ev.event`) into a semantic block {icon, title, sub, tone}.
+    // Foundation of the run mode's live timeline.
     runEventView(ev) {
-      const biz = ev.business_slug, sq = ev.squad_slug || ev.squad_name;
-      const cost = ev.cost_usd != null ? `$${Number(ev.cost_usd).toFixed(2)}` : '';
-      const dur = ev.duration_ms != null ? `${(ev.duration_ms / 1000).toFixed(0)}s` : '';
-      const rt = ev.runtime ? String(ev.runtime).replace('claude-code', 'claude') : '';
-      const step = (ev.step && ev.total) ? `passo ${ev.step}/${ev.total}` : '';
-      const sub = (...xs) => xs.filter(Boolean).join(' · ');
-      const M = {
-        brief_received:       { icon: 'inbox', title: 'Brief recebido', tone: '' },
-        brief_amplified:      { icon: 'sparkles', title: 'Brief enriquecido', tone: '' },
-        agentic_route_decision:{ icon: 'compass', title: `Roteou → ${biz || ev.primary_business || '?'}`, sub: ev.rationale || ev.method || '', tone: 'active' },
-        auto_route_selected:  { icon: 'compass', title: `Roteou → ${biz || '?'}`, sub: ev.method || '', tone: 'active' },
-        routing_rule_applied: { icon: 'settings-2', title: `Regra de runtime → ${ev.runtime || ''}`, tone: '' },
-        dispatch_business:    { icon: 'building-2', title: `${biz || 'empresa'} assumiu`, tone: 'active' },
-        dispatch_squad:       { icon: 'users', title: `squad ${sq || ''}`, tone: 'active' },
-        mind_clone_injected:  { icon: 'brain', title: `Mind-clone: ${ev.clone || ev.dna || ev.slug || ev.file || 'persona'}`, tone: '' },
-        team_chain_selected:  { icon: 'link', title: 'Time montado', sub: sub(biz), tone: '' },
-        agent_executed:       { icon: 'bot', title: ev.employee || 'agente', sub: sub(step, rt, cost, dur), tone: 'ok' },
-        agent_exec_failed:    { icon: 'alert-triangle', title: `${ev.employee || 'agente'} falhou`, tone: 'fail' },
-        tool_invoked:         { icon: 'wrench', title: ev.tool || 'ferramenta', tone: '' },
-        bash_completed:       { icon: 'terminal-square', title: 'comando', tone: '' },
-        ask_invoked:          { icon: 'message-circle-question', title: `consultou ${ev.clone || 'mind-clone'}`, tone: '' },
-        verify_passed:        { icon: 'check-circle-2', title: 'Verificação passou', tone: 'ok' },
-        verify_failed:        { icon: 'x-circle', title: 'Verificação falhou', tone: 'fail' },
-        gate_passed:          { icon: 'shield-check', title: 'Gate passou', sub: (ev.rubrics || []).join(', '), tone: 'ok' },
-        report_html_generated:{ icon: 'file-text', title: 'HTML gerado', tone: '' },
-        report_pdf_generated: { icon: 'file-text', title: 'PDF gerado', tone: '' },
-        artifact_published:    { icon: 'package-check', title: `Artifact: ${ev.artifact_id || ev.path || 'publicado'}`, sub: ev.media_type || '', tone: 'ok' },
-        model_selected:        { icon: 'cpu', title: `Modelo: ${ev.model || ev.model_id || 'selecionado'}`, sub: rt, tone: '' },
-        approval_required:     { icon: 'badge-help', title: 'Aprovação necessária', sub: ev.reason || '', tone: 'active' },
-        delivered:            { icon: 'party-popper', title: 'Entregue', tone: 'ok' },
-        runtime_handoff:      { icon: 'refresh-cw', title: `Trocou runtime → ${ev.to || ev.runtime || ''}`, tone: '' },
-        runtime_quota_exhausted: { icon: 'ban', title: 'Cota esgotada', tone: 'fail' },
-        cascade_exhausted:    { icon: 'ban', title: 'Cascata esgotada', tone: 'fail' },
-      };
-      return M[ev.event] || { icon: 'circle', title: this.chatEventLabel(ev), sub: '', tone: '' };
+      const labels = window.NirvanaRunEventLabels;
+      return labels ? labels.runEventView(ev) : { icon: 'circle', title: ev.type || ev.event || 'evento', sub: '', tone: '' };
     },
-    // Live header derived from the stream: current business/squad/agent + total cost.
+    // Timeline rows for one message. Infrastructure events (coordinator
+    // snapshots, lease renewals) stay in the stream but are hidden until the
+    // user toggles them; `hidden` feeds the toggle label.
+    chatInfraVisible: false,
+    runTimeline(events) {
+      const labels = window.NirvanaRunEventLabels;
+      return labels ? labels.runTimeline(events, this.chatInfraVisible) : { visible: events || [], hidden: 0 };
+    },
+    // Live header derived from the stream: business/squad/agent, canonical
+    // state, Gauntlet decision and cost (see summarizeRunEvents).
     get runSummary() {
-      const evs = this.chatRunEvents || [];
-      let business = null, squad = null, mindClone = null, runtime = null, model = null, gate = null, artifacts = 0, lastAgent = null, agents = 0, cost = 0;
-      for (const ev of evs) {
-        if (ev.business_slug || ev.business) business = ev.business_slug || ev.business;
-        if (ev.squad_slug || ev.squad_name || ev.squad) squad = ev.squad_slug || ev.squad_name || ev.squad;
-        if (ev.event === 'mind_clone_injected') mindClone = ev.clone || ev.dna || ev.slug || ev.file;
-        if (ev.runtime) runtime = ev.runtime;
-        if (ev.model || ev.model_id) model = ev.model || ev.model_id;
-        if (ev.event === 'gate_passed' || ev.event === 'gate_failed') gate = ev.event === 'gate_passed' ? 'passed' : 'failed';
-        if (ev.event === 'artifact_published' || ev.event === 'report_html_generated' || ev.event === 'report_pdf_generated') artifacts++;
-        if (ev.event === 'agent_executed') { agents++; lastAgent = ev.employee || lastAgent; }
-        if (ev.cost_usd != null) cost += Number(ev.cost_usd) || 0;
-      }
-      return { business, squad, mindClone, runtime, model, gate, artifacts, lastAgent, agents, cost, count: evs.length };
+      const labels = window.NirvanaRunEventLabels;
+      return labels ? labels.summarizeRunEvents(this.chatRunEvents) : { cost: 0, count: (this.chatRunEvents || []).length };
+    },
+    runStateVariant(state) {
+      return ({ completed: 'success', delivered_with_reservations: 'success', running: 'warn', verifying: 'warn', revising: 'warn',
+        waiting: 'info', prepared: 'info', failed: 'danger', withheld: 'danger', cancelled: 'danger', rolled_back: 'danger', abandoned: 'danger' })[state] || 'neutral';
+    },
+    // Multi-target coordinator projection of the streaming canonical Run
+    // (GET /api/v1/runs/:run/multi-target). Null until the Run saves a snapshot.
+    chatMultiTarget: null,
+    async refreshMultiTarget(projectId, runId) {
+      try {
+        const result = await api(`/api/v1/runs/${encodeURIComponent(runId)}/multi-target?project_id=${encodeURIComponent(projectId)}`);
+        this.chatMultiTarget = result.projection || null;
+      } catch {}
+    },
+    runMultiTarget(m) { return m.streaming ? this.chatMultiTarget : (m.multiTarget || null); },
+    multiTargetWaveCount(projection) { return (projection?.nodes || []).reduce((max, node) => Math.max(max, node.waveIndex + 1), 0); },
+    multiTargetStateVariant(state) {
+      return ({ delivered: 'success', running: 'warn', ready: 'info', pending: 'neutral', withheld: 'warn', skipped: 'neutral', failed: 'danger', stalled: 'danger' })[state] || 'neutral';
     },
     chatRuntime: '',           // '' = auto (session host); or claude-code/codex/…
     chatFast: false,           // fast/cheap mode (opt-in); default = agentic
@@ -1614,6 +1591,8 @@ function glance() {
     },
     subscribeCanonicalRun(projectId, runId, after, asst) {
       if (this.chatRunES) this.chatRunES.close();
+      this.chatRunEvents = [];
+      this.chatMultiTarget = null;
       const es = new EventSource(`/api/v1/projects/${encodeURIComponent(projectId)}/stream?after=${Number(after) || 0}`);
       this.chatRunES = es;
       es.addEventListener('event', async (event) => {
@@ -1621,9 +1600,16 @@ function glance() {
           const item = JSON.parse(event.data);
           if (item.runId !== runId) return;
           this.chatRunEvents.push(item);
+          // Only snapshots, node events and the terminal event change the projection.
+          if (item.type === 'multi_target.snapshot_saved' || item.type === 'multi_target.plan_terminal' || item.payload?.node) this.refreshMultiTarget(projectId, runId);
           if (item.type === 'run.transitioned' && ['completed', 'withheld', 'delivered_with_reservations', 'cancelled', 'failed', 'rolled_back'].includes(item.payload?.to)) {
-            es.close(); asst.streaming = false; this.chatBusy = false;
+            es.close();
+            if (this.chatMultiTarget) await this.refreshMultiTarget(projectId, runId);
+            // Keep the timeline and the projection with the message once the stream ends.
+            asst.events = [...this.chatRunEvents];
+            asst.multiTarget = this.chatMultiTarget;
             asst.text = `Run ${item.payload.to}.`;
+            asst.streaming = false; this.chatBusy = false;
             this.$nextTick(() => this.scrollChatBottom());
           }
         } catch {}

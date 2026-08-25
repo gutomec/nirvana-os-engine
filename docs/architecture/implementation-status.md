@@ -12,7 +12,7 @@ Este documento separa fundação implementada, integração ativa e cutovers ain
 | Runtime Provider e Model Broker | Implementados | Catálogos extensíveis, seleção por capability, stale data e snapshot nos Runs do canário | O dispatch legado ainda não persiste o snapshot escolhido em todo Run |
 | Run Kernel | Implementado como fundação opt-in | Journal, projeções, outbox, transcript, ArtifactRef e recovery | O dispatch legado ainda não faz dual-write em todos os caminhos |
 | Gauntlet Engine | Engine implementada, com canário operacional | Compiler, stores, controller, budgets, replay, `agent-x light`, Squad único `light`, política, reserva, coordenador multi-target, portas Run Kernel com lease, heartbeat e abort, adapters de dispatch por subprocesso | O coordenador multi-target ainda não tem cutover público; `balanced` e `exhaustive` ainda não usam o controller e são recusados pelos adapters |
-| Glance Project Workspace | Control plane com canário operacional | Project, Conversation, Message, Run, Events, SSE e queue recuperável | Runs `running` só podem ser retomados quando uma lease recuperável for comprovada |
+| Glance Project Workspace | Control plane com canário operacional | Project, Conversation, Message, Run, Events, SSE, queue recuperável, timeline canônica rotulada e projeção multi-target por Run | Runs `running` só podem ser retomados quando uma lease recuperável for comprovada; a projeção multi-target só existe depois do primeiro snapshot do coordenador |
 | Cutover vertical | Canário concluído | `agent-x light` une dispatch, Run Kernel, Gauntlet, gate final e leitura no Glance | A expansão para os demais targets permanece pendente |
 
 O pós-gate de Business agora passa por `runBusinessPostGate`, uma fronteira reutilizável chamada pelo mesmo hook da delivery pipeline. A extração preserva PDF, HTML, ZIP, manifesto, session file, audit e decisões terminais. Ela prepara um futuro adapter de Business, mas não ativa o Business Gauntlet. Esse cutover continua bloqueado até a comparação de paridade cobrir o fluxo completo.
@@ -58,6 +58,10 @@ O servidor restringe ações a loopback, valida Origin, exige `Idempotency-Key` 
 No canário, uma Message de projeto adotado prepara um Run `agent-x light`, persiste o vínculo e entra numa fila serial segura. A UI não inicia o executor legado em paralelo. Projeto não adotado conserva o comportamento anterior. Capability ausente e cancelamento antes de side effects produzem estados terminais explícitos.
 
 No restart, Runs `prepared` vinculados a uma Message são reivindicados atomicamente e reencaminhados por `runId`. Dois restarts não repetem o side effect. Runs terminais, cancelados ou `running` sem lease recuperável são ignorados e registrados de forma explícita.
+
+A timeline do chat rotula todo evento canônico do Run Kernel por `type`, com título, subtítulo e tom em PT-BR, a partir de um único módulo (`run-event-labels.js`) compartilhado pela página e pelos testes. Eventos legados do audit continuam resolvendo pelo mapa antigo, e um tipo desconhecido aparece com o próprio nome, nunca sem título. Snapshots do coordenador e renovações de lease permanecem no stream, mas ficam ocultos até o usuário pedir para vê-los. O cabeçalho do Run mostra estado terminal, decisão do Gauntlet e custo vindos dos eventos canônicos.
+
+`GET /api/v1/runs/:run/multi-target` reconstrói a projeção do coordenador multi-target a partir do journal, com a mesma reaplicação de eventos que as portas do Run Kernel usam no reload. O painel do Run lista ondas, nós, estado, custo concedido e reportado, razão e bloqueios. Detalhes em [Timeline canônica no Glance](glance-canonical-timeline.md).
 
 ## Expansão vertical necessária
 

@@ -43,7 +43,7 @@ import { validateMindCloneFile, type ValidationResult } from "../../../_shared/l
 import { handleObservabilityRoute } from "./views/observability-handler.ts";
 import { AgentXCanaryQueue, ConversationService, ProjectService, type GlanceAgentXCanaryAdapter } from "../control-plane/index.ts";
 import { createRun as createKernelRun, getRun as getKernelRun, listEvents as listKernelEvents, openKernel } from "../run-kernel/index.ts";
-import { getGauntlet, listCandidateRevisions, listScorecards } from "../gauntlet/index.ts";
+import { getGauntlet, listCandidateRevisions, listScorecards, projectMultiTargetRun } from "../gauntlet/index.ts";
 
 const VIEWS_DIR = path.dirname(import.meta.path) + "/views";
 // Runtime state lives in the engine's own home, never in a runtime's dir.
@@ -380,6 +380,13 @@ export async function startServer(opts: ServerOptions) {
           return projection ? json({ projection,
             candidates: listCandidateRevisions(kernelService(), projectId, gauntletMatch[1]),
             scorecards: listScorecards(kernelService(), projectId, gauntletMatch[1]) }) : notFound("gauntlet run not found");
+        }
+        const multiTargetMatch = p.match(/^\/api\/v1\/runs\/(run_[A-Za-z0-9-]+)\/multi-target$/);
+        if (multiTargetMatch && req.method === "GET") {
+          const projectId = u.searchParams.get("project_id") || "";
+          if (!validId(projectId, "prj") && !projectId.startsWith("proj-")) return problem(400, "Invalid project", "project_id is required");
+          if (!getKernelRun(kernelService(), projectId, multiTargetMatch[1])) return notFound("run not found");
+          return json({ projection: projectMultiTargetRun(kernelService(), projectId, multiTargetMatch[1]) });
         }
         const eventsMatch = p.match(/^\/api\/v1\/projects\/(prj_[A-Za-z0-9-]+)\/events$/);
         if (eventsMatch && req.method === "GET") {
@@ -1179,6 +1186,7 @@ export async function startServer(opts: ServerOptions) {
         "/components.css": "text/css",
         "/glance.css": "text/css",
         "/glance.js": "application/javascript",
+        "/run-event-labels.js": "application/javascript",
         "/dag-renderer.js": "application/javascript",
         "/org-chart-renderer.js": "application/javascript",
         "/graph-renderer.js": "application/javascript",

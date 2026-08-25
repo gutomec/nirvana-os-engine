@@ -3084,6 +3084,17 @@ svg.icon-inline.lucide {
 .run-step.tone-ok .run-step-icon i, .run-step.tone-ok .run-step-icon svg { color: oklch(52% 0.15 155); opacity: 1; }
 .run-step.tone-fail .run-step-icon { background: oklch(58% 0.2 25 / 0.16); border-color: oklch(58% 0.2 25); }
 .run-step.tone-fail .run-step-icon i, .run-step.tone-fail .run-step-icon svg { color: oklch(55% 0.2 25); opacity: 1; }
+.run-infra-toggle { display: inline-block; margin: 4px 0 0 30px; padding: 0; border: none; background: none; color: var(--text-tertiary); font-size: 11px; cursor: pointer; text-decoration: underline dotted; }
+.run-infra-toggle:hover, .run-infra-toggle:focus-visible { color: var(--text-secondary); }
+.run-mt { margin-top: 8px; padding: 8px 10px; border-radius: var(--radius-md); border: 1px solid var(--border-subtle); background: var(--surface-0); }
+.run-mt-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
+.run-mt-title { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; font-size: 12.5px; }
+.run-mt-title .icon-inline { width: 14px; height: 14px; opacity: 0.85; }
+.run-mt-reason { margin-bottom: 6px; }
+.run-mt-scroll { overflow-x: auto; }
+.run-mt-table { font-size: 11.5px; }
+.run-mt-table th, .run-mt-table td { padding: 4px 6px; white-space: nowrap; }
+.run-mt-table tbody th { font-weight: 550; font-size: 11.5px; text-transform: none; letter-spacing: normal; color: var(--text-primary); font-family: var(--font-mono, monospace); }
 .chat-thinking { color: var(--text-tertiary); font-size: 13px; }
 .chat-tools { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
 .chat-tool-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-family: var(--font-mono, monospace); color: var(--text-secondary); background: var(--surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 2px 8px; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
