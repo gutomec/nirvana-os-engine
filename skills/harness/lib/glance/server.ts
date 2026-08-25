@@ -42,6 +42,7 @@ import { validateMindCloneFile, type ValidationResult } from "../../../_shared/l
 import { handleObservabilityRoute } from "./views/observability-handler.ts";
 import { ConversationService, ProjectService } from "../control-plane/index.ts";
 import { createRun as createKernelRun, getRun as getKernelRun, listEvents as listKernelEvents, openKernel } from "../run-kernel/index.ts";
+import { getGauntlet, listCandidateRevisions, listScorecards } from "../gauntlet/index.ts";
 
 const VIEWS_DIR = path.dirname(import.meta.path) + "/views";
 // Runtime state lives in the engine's own home, never in a runtime's dir.
@@ -347,6 +348,15 @@ export async function startServer(opts: ServerOptions) {
           const projectId = u.searchParams.get("project_id") || "";
           const run = validId(projectId, "prj") ? getKernelRun(kernelService(), projectId, runMatch[1]) : null;
           return run ? json(run) : notFound("run not found");
+        }
+        const gauntletMatch = p.match(/^\/api\/v1\/runs\/(run_[A-Za-z0-9-]+)\/gauntlet$/);
+        if (gauntletMatch && req.method === "GET") {
+          const projectId = u.searchParams.get("project_id") || "";
+          if (!validId(projectId, "prj") && !projectId.startsWith("proj-")) return problem(400, "Invalid project", "project_id is required");
+          const projection = getGauntlet(kernelService(), projectId, gauntletMatch[1]);
+          return projection ? json({ projection,
+            candidates: listCandidateRevisions(kernelService(), projectId, gauntletMatch[1]),
+            scorecards: listScorecards(kernelService(), projectId, gauntletMatch[1]) }) : notFound("gauntlet run not found");
         }
         const eventsMatch = p.match(/^\/api\/v1\/projects\/(prj_[A-Za-z0-9-]+)\/events$/);
         if (eventsMatch && req.method === "GET") {

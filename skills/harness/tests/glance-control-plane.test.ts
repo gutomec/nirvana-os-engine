@@ -2,6 +2,8 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { GauntletController, compileGauntletPlan } from "../lib/gauntlet/index.ts";
+import { openKernel } from "../lib/run-kernel/index.ts";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-glance-control-"));
 let instance: any;
@@ -67,5 +69,14 @@ describe("Glance project control plane", () => {
     expect(chunk).toContain("id: 2");
     expect(chunk).not.toContain(`id: 1\n`);
     expect((await fetch(`${base}/api/v1/runs/${first.runId}?project_id=${projectId}`).then(r => r.json()) as any).target.kind).toBe("squad");
+    const kernel = openKernel(path.join(root, ".nirvana", "run-kernel.sqlite"));
+    const gauntlet = new GauntletController(kernel, { projectId, runId: first.runId, traceId: first.traceId,
+      actor: { kind: "test", id: "glance" }, correlationId: "cor_glance" });
+    gauntlet.begin(compileGauntletPlan({ brief: "Test Glance projection", intensity: "light" }));
+    kernel.close();
+    const gauntletView = await fetch(`${base}/api/v1/runs/${first.runId}/gauntlet?project_id=${projectId}`).then(r => r.json()) as any;
+    expect(gauntletView.projection.plan.intensity).toBe("light");
+    expect(gauntletView.candidates).toEqual([]);
+    expect(gauntletView.scorecards).toEqual([]);
   });
 });
