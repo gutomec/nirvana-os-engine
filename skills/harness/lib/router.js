@@ -406,6 +406,12 @@ function buildMatchDocs(squadsRegistry, businessesRegistry) {
   return docs;
 }
 
+/** Prepare one immutable sparse corpus for batch callers using one registry snapshot. */
+function prepareMatchIndex(registries) {
+  const docs = buildMatchDocs(registries && registries.squads, registries && registries.businesses);
+  return Object.freeze({ docs, index: docs.length ? bm25.buildIndex(docs) : null });
+}
+
 /**
  * Content coverage: how many of the brief's content tokens the document matches.
  * Content tokens = the bm25 tokenizer's output (stopwords and scaffolding
@@ -656,10 +662,11 @@ async function stage2MatchHybrid(intent, registries, opts) {
   // measurement base (real ≥3 matched, out-of-domain ≤2) is the raw brief.
   const coverageBrief = (opts && opts.coverageBrief) || brief;
   const topK = (opts && opts.topK) || 10;
-  const docs = buildMatchDocs(registries.squads, registries.businesses);
+  const prepared = opts && opts.preparedMatchIndex;
+  const docs = prepared ? prepared.docs : buildMatchDocs(registries.squads, registries.businesses);
   if (docs.length === 0) return [];
 
-  const idx = bm25.buildIndex(docs);
+  const idx = prepared ? prepared.index : bm25.buildIndex(docs);
   const queryStr = brief + ' ' + ((intent && intent.domains) || []).join(' ') + ' ' + ((intent && intent.verbs) || []).join(' ');
   const bm25Full = bm25.query(idx, queryStr, { topK: docs.length });
 
@@ -1885,7 +1892,10 @@ async function route(brief, ctx) {
       });
 
   // Stage 2 — Capability matching (BM25 + denso opcional + business_route, RRF)
-  let matches = await stage2MatchHybrid(intent, registries, { brief, topK: 10, businessRouteRanked, coverageBrief: originalBrief });
+  let matches = await stage2MatchHybrid(intent, registries, {
+    brief, topK: 10, businessRouteRanked, coverageBrief: originalBrief,
+    preparedMatchIndex: context.preparedMatchIndex,
+  });
 
   // Stage 2.7 — Amplification bridge (routing-360 Phase 3.3, the inversion fix).
   //
@@ -1920,7 +1930,7 @@ async function route(brief, ctx) {
       : loadKeywordAliases(registries);
     if (aliasMap) {
       const docsById = new Map(
-        buildMatchDocs(registries.squads, registries.businesses).map((d) => [d.id, d]),
+        (context.preparedMatchIndex?.docs || buildMatchDocs(registries.squads, registries.businesses)).map((d) => [d.id, d]),
       );
       const briefToks = bm25.tokenize(originalBrief);
       const aliasCov = matches.map((m) => {
@@ -1965,6 +1975,7 @@ async function route(brief, ctx) {
           : businessRouteCoverageRanked(brief, registries.businesses, { threshold: context.stage0Threshold });
         matches = await stage2MatchHybrid(intent, registries, {
           brief, topK: 10, businessRouteRanked: rerankedRoutes, coverageBrief: originalBrief,
+          preparedMatchIndex: context.preparedMatchIndex,
         });
         // Post-amplify guard (a) — drift-to-zero (routing-360 Phase 4).
         // "Amplification is a lens, not a replacement": each candidate's
@@ -2065,6 +2076,7 @@ module.exports = {
   stage4BudgetCheck,
   stage5Invoke,
   buildMatchDocs,
+  prepareMatchIndex,
   buildAliasMap,
   loadKeywordAliases,
   resolveDestination,
