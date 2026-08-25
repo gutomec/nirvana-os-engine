@@ -4,3 +4,4 @@ export * from "./evaluator-registry.ts";
 export * from "./store.ts";
 export * from "./controller.ts";
 export * from "./execution-options.ts";
+export * from "./agent-x-cutover.ts";
