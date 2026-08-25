@@ -54,6 +54,9 @@ export class ConversationService {
     })();
   }
   messages(conversationId: string): Message[] { return this.db.query("SELECT * FROM conversation_messages WHERE conversation_id = ? ORDER BY sequence").all(conversationId) as Message[]; }
+  messageForRun(projectId: string, runId: string): Message | null {
+    return this.db.query("SELECT * FROM conversation_messages WHERE project_id = ? AND run_id = ? ORDER BY sequence LIMIT 1").get(projectId, runId) as Message | null;
+  }
   linkRun(messageId: string, projectId: string, runId: string): Message {
     const result = this.db.run("UPDATE conversation_messages SET run_id = ? WHERE message_id = ? AND project_id = ? AND run_id IS NULL", runId, messageId, projectId);
     if (result.changes !== 1) {

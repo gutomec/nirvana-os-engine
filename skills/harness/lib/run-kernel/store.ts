@@ -266,6 +266,13 @@ export function getRun(handle: KernelHandle, projectId: string, runId: string): 
   return row ? JSON.parse(row.projection_json) as RunProjection : null;
 }
 
+export function listRuns(handle: KernelHandle, projectId?: string): RunProjection[] {
+  const rows = projectId
+    ? handle.db.query("SELECT projection_json FROM run_projections WHERE project_id = ? ORDER BY run_id").all(projectId)
+    : handle.db.query("SELECT projection_json FROM run_projections ORDER BY project_id, run_id").all();
+  return (rows as { projection_json: string }[]).map(row => JSON.parse(row.projection_json) as RunProjection);
+}
+
 export function listEvents(handle: KernelHandle, projectId: string, afterSequence = 0): RunEvent[] {
   return (handle.db.query("SELECT event_json FROM run_events WHERE project_id = ? AND sequence > ? ORDER BY sequence")
     .all(projectId, afterSequence) as { event_json: string }[]).map(row => JSON.parse(row.event_json));

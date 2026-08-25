@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { runAgentXGauntlet, type AgentXCandidateResult, type AgentXGauntletEvaluator } from "../gauntlet/agent-x-cutover.ts";
-import { createRun, getRun, transitionRun, type KernelHandle, type RunProjection } from "../run-kernel/index.ts";
+import { appendEvent, createRun, getRun, listRuns, transitionRun, type KernelHandle, type RunProjection } from "../run-kernel/index.ts";
 import type { ConversationService, Message } from "./conversation-service.ts";
 
 export interface GlanceAgentXCanaryAdapter {
@@ -19,6 +19,7 @@ interface QueueItem { projectId: string; runId: string; traceId: string; brief: 
 export class AgentXCanaryQueue {
   private readonly pending: QueueItem[] = [];
   private active: QueueItem | null = null;
+  private scheduled: ReturnType<typeof setTimeout> | null = null;
   constructor(private readonly kernel: KernelHandle, private readonly conversations: ConversationService, private readonly adapter?: GlanceAgentXCanaryAdapter) {}
 
   submit(input: { projectId: string; conversationId: string; messageId: string; brief: string; projectRoot: string; idempotencyKey: string }): CanaryReceipt {
@@ -37,8 +38,41 @@ export class AgentXCanaryQueue {
       return { run, message, queued: false, capability: "agent-x.gauntlet.light" };
     }
     this.pending.push({ projectId: input.projectId, runId, traceId, brief: input.brief, projectRoot: input.projectRoot, controller: new AbortController() });
-    setTimeout(() => void this.drain(), 10);
+    this.schedule();
     return { run, message, queued: true, capability: "agent-x.gauntlet.light" };
+  }
+
+  recover(projectId: string, projectRoot: string): { enqueued: string[]; skipped: Array<{ runId: string; reason: string }> } {
+    const enqueued: string[] = [];
+    const skipped: Array<{ runId: string; reason: string }> = [];
+    for (const run of listRuns(this.kernel, projectId)) {
+      if (run.state !== "prepared" || run.target.kind !== "agent-x" || run.policySnapshotRef !== "gauntlet-light-canary") {
+        skipped.push({ runId: run.runId, reason: run.state !== "prepared" ? `state_${run.state}` : "not_canary" });
+        continue;
+      }
+      const message = this.conversations.messageForRun(projectId, run.runId);
+      if (!message || message.conversation_id !== run.conversationId) {
+        this.recoveryEvent(run, "canary.recovery_skipped", { reason: "message_link_missing" });
+        skipped.push({ runId: run.runId, reason: "message_link_missing" });
+        continue;
+      }
+      if (!this.adapter?.available()) {
+        this.recoveryEvent(run, "canary.recovery_skipped", { reason: "capability_unavailable" });
+        skipped.push({ runId: run.runId, reason: "capability_unavailable" });
+        continue;
+      }
+      if (this.active?.runId === run.runId || this.pending.some(item => item.runId === run.runId)) continue;
+      this.recoveryEvent(run, "canary.recovery_enqueued", { reason: "restart_prepared_run" });
+      this.pending.push({ projectId, runId: run.runId, traceId: run.traceId, brief: message.content, projectRoot, controller: new AbortController() });
+      enqueued.push(run.runId);
+    }
+    if (enqueued.length) this.schedule();
+    return { enqueued, skipped };
+  }
+
+  shutdown(): void {
+    if (this.scheduled) clearTimeout(this.scheduled);
+    this.scheduled = null;
   }
 
   cancel(projectId: string, runId: string): { accepted: boolean; state: string } {
@@ -57,9 +91,14 @@ export class AgentXCanaryQueue {
   }
 
   private async drain(): Promise<void> {
+    this.scheduled = null;
     if (this.active || !this.adapter) return;
     const item = this.pending.shift();
     if (!item) return;
+    if (getRun(this.kernel, item.projectId, item.runId)?.state !== "prepared") {
+      this.schedule();
+      return;
+    }
     this.active = item;
     const outputsRoot = path.join(item.projectRoot, ".nirvana", "outputs", item.runId);
     fs.mkdirSync(outputsRoot, { recursive: true });
@@ -71,6 +110,17 @@ export class AgentXCanaryQueue {
           : this.adapter!.execute({ brief: item.brief, candidateRoot, signal: item.controller.signal }),
         evaluator: this.adapter.evaluator, finalGate: this.adapter.finalGate });
     } catch { /* runAgentXGauntlet records an honest terminal state */ }
-    finally { this.active = null; setTimeout(() => void this.drain(), 10); }
+    finally { this.active = null; this.schedule(); }
+  }
+
+  private schedule(): void {
+    if (this.scheduled || this.active || !this.pending.length) return;
+    this.scheduled = setTimeout(() => void this.drain(), 10);
+  }
+
+  private recoveryEvent(run: RunProjection, type: string, payload: Record<string, unknown>): void {
+    appendEvent(this.kernel, { projectId: run.projectId, runId: run.runId, traceId: run.traceId, type,
+      actor: { kind: "control-plane", id: "glance-recovery" }, correlationId: `cor_${run.runId}`,
+      idempotencyKey: `${type}:${run.runId}`, payload });
   }
 }
