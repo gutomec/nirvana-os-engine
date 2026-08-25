@@ -40,6 +40,8 @@ import { readEnvFile, writeEnvFile, setVar, deleteVar, getVar, toMap } from "../
 import { CONFIG_SCHEMA, getField, isEditableKey, maskSecret } from "./config-schema.ts";
 import { validateMindCloneFile, type ValidationResult } from "../../../_shared/lib/mindclone-validator.ts";
 import { handleObservabilityRoute } from "./views/observability-handler.ts";
+import { ConversationService, ProjectService } from "../control-plane/index.ts";
+import { createRun as createKernelRun, getRun as getKernelRun, listEvents as listKernelEvents, openKernel } from "../run-kernel/index.ts";
 
 const VIEWS_DIR = path.dirname(import.meta.path) + "/views";
 // Runtime state lives in the engine's own home, never in a runtime's dir.
@@ -229,8 +231,29 @@ function findFreePort(start = 3737, attempts = 50): number {
 }
 
 export async function startServer(opts: ServerOptions) {
-  const port = opts.port === "auto" ? findFreePort() : opts.port;
+  const port = opts.port === "auto" || opts.port === 0 ? findFreePort() : opts.port;
   const url = `http://localhost:${port}`;
+  const projectRoot = path.resolve(process.env.NIRVANA_PROJECT_ROOT || process.cwd());
+  const controlPlaneDb = path.join(projectRoot, ".nirvana", "control-plane.sqlite");
+  const kernelDb = path.join(projectRoot, ".nirvana", "run-kernel.sqlite");
+  const projectService = new ProjectService();
+  let conversations: ConversationService | null = null;
+  let kernel: ReturnType<typeof openKernel> | null = null;
+  const conversationService = () => conversations ||= new ConversationService(controlPlaneDb);
+  const kernelService = () => kernel ||= openKernel(kernelDb);
+  const projectInspection = () => projectService.inspect(projectRoot);
+
+  const problem = (status: number, title: string, detail: string) => new Response(JSON.stringify({
+    type: "about:blank", title, status, detail, correlation_id: `cor_${crypto.randomUUID()}`,
+  }), { status, headers: { "content-type": "application/problem+json", "cache-control": "no-store" } });
+  const validId = (value: string, prefix: string) => new RegExp(`^${prefix}_[A-Za-z0-9-]+$`).test(value);
+  const writeAuthorized = (req: Request): Response | null => {
+    if (!opts.allowActions) return problem(403, "Forbidden", "Glance actions are disabled");
+    const origin = req.headers.get("origin");
+    if (origin && origin !== url && origin !== `http://127.0.0.1:${port}`) return problem(403, "Forbidden", "Origin is not allowed");
+    if (!req.headers.get("idempotency-key")) return problem(400, "Missing idempotency key", "Idempotency-Key is required for writes");
+    return null;
+  };
 
   // Write PID file (auto-cleanup on exit)
   try {
@@ -247,6 +270,105 @@ export async function startServer(opts: ServerOptions) {
       bumpActivity();
       const u = new URL(req.url);
       const p = u.pathname;
+
+      // Canonical project control plane. Legacy routes below remain available
+      // as read fallbacks while callers migrate projection by projection.
+      if (p.startsWith("/api/v1/")) {
+        if (req.method !== "GET") {
+          const denied = writeAuthorized(req);
+          if (denied) return denied;
+        }
+        if (p === "/api/v1/projects" && req.method === "GET") {
+          const inspection = projectInspection();
+          return json({ projects: inspection.kind === "project" ? [inspection.project] : [], legacy: inspection.kind === "legacy" ? [inspection.plan] : [] });
+        }
+        if (p === "/api/v1/projects/plan" && req.method === "POST") {
+          const body = await req.json().catch(() => ({})) as any;
+          if (body.relative_root && (path.isAbsolute(body.relative_root) || body.relative_root.includes(".."))) return problem(400, "Invalid path", "relative_root must be confined to the Glance workspace");
+          const target = path.resolve(projectRoot, body.relative_root || ".");
+          if (target !== projectRoot && !target.startsWith(projectRoot + path.sep)) return problem(400, "Invalid path", "project path escapes the workspace");
+          return json(projectService.planCreate({ projectRoot: target, displayName: body.display_name, scope: body.scope, orchestrationMode: body.orchestration_mode }));
+        }
+        if (p === "/api/v1/projects" && req.method === "POST") {
+          const body = await req.json().catch(() => ({})) as any;
+          const relative = body.relative_root || ".";
+          if (path.isAbsolute(relative) || relative.includes("..")) return problem(400, "Invalid path", "relative_root must be confined to the Glance workspace");
+          const project = projectService.create({ projectRoot: path.resolve(projectRoot, relative), displayName: body.display_name, scope: body.scope, orchestrationMode: body.orchestration_mode }, body.plan_hash);
+          return json(project, 201);
+        }
+        if (p === "/api/v1/projects:adopt" && req.method === "POST") {
+          const body = await req.json().catch(() => ({})) as any;
+          if (!body.plan_hash) return problem(400, "Missing plan hash", "Adoption requires a preview plan_hash");
+          const project = projectService.adopt({ projectRoot, displayName: body.display_name, scope: body.scope, orchestrationMode: body.orchestration_mode }, body.plan_hash);
+          return json(project, 201);
+        }
+        const projectMatch = p.match(/^\/api\/v1\/projects\/(prj_[A-Za-z0-9-]+)$/);
+        if (projectMatch && req.method === "GET") {
+          const inspection = projectInspection();
+          return inspection.kind === "project" && inspection.project?.project_id === projectMatch[1] ? json(inspection.project) : notFound("project not found");
+        }
+        const conversationsMatch = p.match(/^\/api\/v1\/projects\/(prj_[A-Za-z0-9-]+)\/conversations$/);
+        if (conversationsMatch && req.method === "GET") return json({ conversations: conversationService().list(conversationsMatch[1]) });
+        if (conversationsMatch && req.method === "POST") {
+          const body = await req.json().catch(() => ({})) as any;
+          return json(conversationService().create(conversationsMatch[1], body.title), 201);
+        }
+        const conversationMatch = p.match(/^\/api\/v1\/conversations\/(cnv_[A-Za-z0-9-]+)$/);
+        if (conversationMatch && req.method === "GET") {
+          const conversation = conversationService().get(conversationMatch[1]);
+          return conversation ? json({ ...conversation, messages: conversationService().messages(conversationMatch[1]) }) : notFound("conversation not found");
+        }
+        const messagesMatch = p.match(/^\/api\/v1\/conversations\/(cnv_[A-Za-z0-9-]+)\/messages$/);
+        if (messagesMatch && req.method === "POST") {
+          const body = await req.json().catch(() => ({})) as any;
+          if (!validId(body.project_id || "", "prj")) return problem(400, "Invalid project", "project_id is required");
+          try { return json(conversationService().append({ conversationId: messagesMatch[1], projectId: body.project_id, role: body.role || "user", content: body.content || "", runId: body.run_id }), 201); }
+          catch (error) { return problem(409, "Message rejected", (error as Error).message); }
+        }
+        if (p === "/api/v1/runs" && req.method === "POST") {
+          const body = await req.json().catch(() => ({})) as any;
+          if (!validId(body.project_id || "", "prj")) return problem(400, "Invalid project", "project_id is required");
+          const runId = body.run_id || `run_${crypto.randomUUID()}`;
+          const target = body.target;
+          if (!target || !["business", "squad", "agent-x"].includes(target.kind)) return problem(400, "Invalid target", "A typed target is required");
+          const run = createKernelRun(kernelService(), { projectId: body.project_id, runId, traceId: body.trace_id || runId, conversationId: body.conversation_id, planId: body.plan_id || `plan_${crypto.randomUUID()}`, target, policySnapshotRef: body.policy_snapshot_ref || "active", actor: { kind: "control-plane", id: "glance" }, correlationId: `cor_${crypto.randomUUID()}`, idempotencyKey: req.headers.get("idempotency-key")! });
+          return json(run, 201);
+        }
+        const runMatch = p.match(/^\/api\/v1\/runs\/(run_[A-Za-z0-9-]+)$/);
+        if (runMatch && req.method === "GET") {
+          const projectId = u.searchParams.get("project_id") || "";
+          const run = validId(projectId, "prj") ? getKernelRun(kernelService(), projectId, runMatch[1]) : null;
+          return run ? json(run) : notFound("run not found");
+        }
+        const eventsMatch = p.match(/^\/api\/v1\/projects\/(prj_[A-Za-z0-9-]+)\/events$/);
+        if (eventsMatch && req.method === "GET") {
+          const after = Math.max(0, Number(u.searchParams.get("after") || "0"));
+          const limit = Math.min(500, Math.max(1, Number(u.searchParams.get("limit") || "100")));
+          const events = listKernelEvents(kernelService(), eventsMatch[1], after).slice(0, limit);
+          return json({ events, next_cursor: events.at(-1)?.sequence || after });
+        }
+        const streamMatch = p.match(/^\/api\/v1\/projects\/(prj_[A-Za-z0-9-]+)\/stream$/);
+        if (streamMatch && req.method === "GET") {
+          let cursor = Math.max(0, Number(req.headers.get("last-event-id") || u.searchParams.get("after") || "0"));
+          let timer: ReturnType<typeof setInterval>;
+          const stream = new ReadableStream({
+            start(controller) {
+              const encoder = new TextEncoder();
+              const pump = () => {
+                for (const event of listKernelEvents(kernelService(), streamMatch[1], cursor)) {
+                  controller.enqueue(encoder.encode(`id: ${event.sequence}\nevent: event\ndata: ${JSON.stringify(event)}\n\n`));
+                  cursor = event.sequence;
+                }
+                controller.enqueue(encoder.encode(": heartbeat\n\n"));
+              };
+              pump(); timer = setInterval(pump, 1000);
+            },
+            cancel() { clearInterval(timer); },
+          });
+          return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache", "connection": "keep-alive" } });
+        }
+        return notFound("control-plane route not found");
+      }
 
       // ─── Project-scope filter (?project=<absolute_path>) ────────────────
       // Frontend sends this on Agents/Runs/Cost/Memory/Activity when the user
