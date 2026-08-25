@@ -93,4 +93,46 @@ describe("bounded gauntlet controller", () => {
     expect(result.decision).toBe("reservations");
     expect(result.reservations).toEqual(["style"]);
   });
+
+  test("ranks sibling candidates independently and selects the best evidence", () => {
+    const { controller } = setup({ brief: "Build it", intensity: "balanced" });
+    controller.beginRound(1, "2026-08-25T12:00:01.000Z");
+    controller.addCandidate(candidate()); controller.addCandidate({ ...candidate(), candidateId: "can_2", revisionId: "crv_can_2_1" });
+    const result = controller.evaluateRound([
+      { ...score(1, 0.5), verdict: "reject" },
+      { ...score(1, 1), evaluationId: "evl_can_2_1", candidateId: "can_2", revisionId: "crv_can_2_1" },
+    ]);
+    expect(result).toMatchObject({ stopReason: "success", decision: "delivered", selectedRevisionId: "crv_can_2_1", bestScore: 1 });
+  });
+
+  test("does not read a sibling's pass as a regression of another candidate", () => {
+    const { controller } = setup({ brief: "Build it", stop: { minimumScore: 1, noProgressPatience: 3 } });
+    controller.beginRound(1, "2026-08-25T12:00:01.000Z");
+    controller.addCandidate(candidate()); controller.addCandidate({ ...candidate(), candidateId: "can_2", revisionId: "crv_can_2_1" });
+    expect(controller.evaluateRound([score(1, 0.95), { ...score(1, 0.5), evaluationId: "evl_can_2_1", candidateId: "can_2", revisionId: "crv_can_2_1" }]).state).toBe("revising");
+    controller.addCandidate({ ...candidate(2), candidateId: "can_2", revisionId: "crv_can_2_2", parentRevisionId: "crv_can_2_1", causalEvaluationIds: ["evl_can_2_1"] });
+    controller.markRegressionTesting(); controller.beginRound(1, "2026-08-25T12:00:02.000Z");
+    const result = controller.evaluateRound([{ ...score(2, 0.6), evaluationId: "evl_can_2_2", candidateId: "can_2", revisionId: "crv_can_2_2" }]);
+    expect(result.stopReason).not.toBe("critical_regression");
+    expect(result.state).toBe("revising");
+  });
+
+  test("keeps a round evaluation atomic so an interrupted decision replays from producing", () => {
+    const { handle, controller } = setup({ brief: "Build it", stop: { minimumScore: 1, noProgressPatience: 3 } });
+    controller.beginRound(1, "2026-08-25T12:00:01.000Z"); controller.addCandidate(candidate());
+    const db = new Proxy(handle.db, { get(target, property) {
+      if (property === "run") return (sql: string, ...rest: unknown[]) => {
+        if (sql.startsWith("INSERT INTO run_events") && JSON.stringify(rest).includes("gauntlet.revision_requested")) throw new Error("crash before decision");
+        return target.run(sql, ...(rest as [never]));
+      };
+      const value = Reflect.get(target, property);
+      return typeof value === "function" ? value.bind(target) : value;
+    } });
+    const crashing = new GauntletController({ ...handle, db }, { projectId: "prj_1", runId: "run_1", traceId: "trace_1", actor: { kind: "kernel", id: "controller" }, correlationId: "cor_1" });
+    expect(() => crashing.evaluateRound([score(1, 0.95)])).toThrow("crash before decision");
+    expect(controller.resume().state).toBe("producing");
+    expect(listEvents(handle, "prj_1").filter(event => event.type === "gauntlet.round_evaluated")).toHaveLength(0);
+    expect(controller.evaluateRound([score(1, 0.95)]).state).toBe("revising");
+    expect(listEvents(handle, "prj_1").filter(event => event.type === "gauntlet.round_evaluated")).toHaveLength(1);
+  });
 });

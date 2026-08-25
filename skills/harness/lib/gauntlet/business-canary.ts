@@ -4,14 +4,13 @@ export interface BusinessCanaryPolicyInput {
   teamMode: boolean;
   requestedMode: "standard" | "gauntlet" | "auto";
   resolvedMode: "standard" | "gauntlet";
-  intensity: "light" | "balanced" | "exhaustive";
   allowlist?: string;
   killSwitch?: string;
 }
 
 export interface BusinessCanaryDecision {
   enabled: boolean;
-  reason: "selected" | "kill_switch" | "not_explicit" | "not_light" | "scaffold_only" | "team_mode" | "not_allowlisted";
+  reason: "selected" | "kill_switch" | "not_explicit" | "scaffold_only" | "team_mode" | "not_allowlisted";
 }
 
 export function decideBusinessCanary(input: BusinessCanaryPolicyInput): BusinessCanaryDecision {
@@ -19,7 +18,6 @@ export function decideBusinessCanary(input: BusinessCanaryPolicyInput): Business
   if (!input.wantExec) return { enabled: false, reason: "scaffold_only" };
   if (input.teamMode) return { enabled: false, reason: "team_mode" };
   if (input.requestedMode !== "gauntlet" || input.resolvedMode !== "gauntlet") return { enabled: false, reason: "not_explicit" };
-  if (input.intensity !== "light") return { enabled: false, reason: "not_light" };
   const allowed = new Set((input.allowlist ?? "").split(",").map(slug => slug.trim()).filter(Boolean));
   if (!allowed.has(input.businessSlug)) return { enabled: false, reason: "not_allowlisted" };
   return { enabled: true, reason: "selected" };

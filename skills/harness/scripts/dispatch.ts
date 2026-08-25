@@ -56,7 +56,11 @@ import { runDelivery, deliverAfterRuntimeError, gateableFiles, runGateOnce, type
 import { runBusinessPostGate } from "../lib/business-post-gate.ts";
 import { parseExecutionOptions } from "../lib/gauntlet/execution-options.ts";
 import { decideBusinessCanary, runBusinessCanaryWithRollback } from "../lib/gauntlet/business-canary.ts";
-import { runAgentXGauntlet, shouldRunAgentXGauntlet, shouldRunSquadGauntlet, type AgentXGauntletEvaluator } from "../lib/gauntlet/agent-x-cutover.ts";
+import { compileGauntletPlan } from "../lib/gauntlet/compiler.ts";
+import {
+  gauntletRoundBudget, revisionDefectsSection, runAgentXGauntlet, shouldRunAgentXGauntlet, shouldRunSquadGauntlet,
+  type AgentXGauntletEvaluator, type AgentXRevisionRequest,
+} from "../lib/gauntlet/agent-x-cutover.ts";
 import { createHarnessLegacyAdapter, openKernel } from "../lib/run-kernel/index.ts";
 
 // Back-compat re-exports: these helpers moved to lib/delivery-pipeline.ts in
@@ -702,6 +706,36 @@ const employeePrompt = path.join(SKILLS, "businesses/lib/employee-prompt.ts");
 const gateScriptPath = path.join(SKILLS, "harness/scripts/quality-gate.ts");
 const verifyScriptPath = path.join(SKILLS, "businesses/scripts/verify-deliverable.ts");
 
+// Gauntlet evaluator shared by the three canaries: the offline quality gate, echoing the
+// candidate and revision ids the cutover assigns, with a graded score (share of gateable
+// files that pass) so the controller can measure progress between revisions.
+function gauntletEvaluator(env: Record<string, string>): AgentXGauntletEvaluator {
+  const target = { kind: "squad" as const, slug: "harness-quality-gate", capabilityId: "quality.specification_conformance" };
+  return {
+    target,
+    evaluate({ candidateId, revisionId, candidateRoot, artifactRefs }) {
+      const files = gateableFiles(candidateRoot, new Set());
+      const gate = files.length ? runGateOnce(files, { gateScript: gateScriptPath, offline: true, env }) : { pass: false, fails: [] };
+      return [{ evaluationId: `evl_${revisionId}`, candidateId, revisionId,
+        gauntletId: "brief-conformance", rubricVersion: "harness-quality-gate/v1", verdict: gate.pass ? "pass" : "revise",
+        dimensions: [{ id: "brief-conformance", score: files.length ? (files.length - gate.fails.length) / files.length : 0,
+          confidence: 1, blocking: true, passed: gate.pass, evidenceRefs: artifactRefs.map(ref => ref.revisionId) }], regressions: [],
+        revisionRequests: gate.pass ? [] : [{ requirementId: "brief-conformance",
+          evidenceRefs: gate.fails.map(failure => pathToFileURL(failure.file).href) }], evaluator: target,
+        costUsd: 0, createdAt: new Date().toISOString() }];
+    },
+  };
+}
+
+// Revision brief: the original brief plus the deterministic defects section. It is written
+// beside the candidate's revision directories, never inside one, so it is not an artifact.
+function writeRevisionBrief(brief: string, request: AgentXRevisionRequest): { text: string; file: string } {
+  const text = `${brief}\n\n${revisionDefectsSection(request)}\n`;
+  const file = path.join(path.dirname(request.candidateRoot), `brief-revision-${request.revision}.md`);
+  fs.writeFileSync(file, text, "utf8");
+  return { text, file };
+}
+
 // Shared delivery-pipeline invocation for all three cascade paths.
 interface DeliverOpts {
   pid: string; slugOrNull: string | null; targetKind: "business" | "squad" | "agent-x";
@@ -833,48 +867,36 @@ if (pendingCascade?.kind === "squad-only") {
   }
   const oroot = outputsRoot || path.join(projectRoot, "deliverables");
   fs.mkdirSync(oroot, { recursive: true });
-  if (shouldRunSquadGauntlet({ squadCount: squads.length, wantExec, resolvedMode: executionOptions.resolvedMode,
-    intensity: executionOptions.intensity })) {
+  if (shouldRunSquadGauntlet({ squadCount: squads.length, wantExec, resolvedMode: executionOptions.resolvedMode })) {
     const squad = squads[0];
     const capabilityId = pendingCascade.plan.steps.find(step => step.kind === "squad" && step.slug === squad)?.capability || "squad.execute";
     const producerTarget = { kind: "squad" as const, slug: squad, capabilityId };
     const canonicalRunId = `run_${pid.replace(/[^A-Za-z0-9-]/g, "-")}`;
-    const gauntletBudgetUsd = Math.min(effectiveBudgetUsd() ?? 5, 5);
+    const budget = gauntletRoundBudget(compileGauntletPlan({ brief, intensity: executionOptions.intensity }), effectiveBudgetUsd());
     const kernel = openKernel(path.join(projectRoot, ".nirvana", "run-kernel.sqlite"));
     const legacy = runLedger.openLedger();
-    const evaluatorTarget = { kind: "squad" as const, slug: "harness-quality-gate", capabilityId: "quality.specification_conformance" };
-    const evaluator: AgentXGauntletEvaluator = {
-      target: evaluatorTarget,
-      evaluate({ runId, candidateRoot, artifactRefs }) {
-        const files = gateableFiles(candidateRoot, new Set());
-        const gate = files.length ? runGateOnce(files, { gateScript: gateScriptPath, offline: true,
-          env: { NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid } }) : { pass: false, fails: [] };
-        return [{ evaluationId: `evl_${runId}_1`, candidateId: "can_1", revisionId: `crv_${runId}_1`,
-          gauntletId: "brief-conformance", rubricVersion: "harness-quality-gate/v1", verdict: gate.pass ? "pass" : "reject",
-          dimensions: [{ id: "brief-conformance", score: gate.pass ? 1 : 0, confidence: 1, blocking: true,
-            passed: gate.pass, evidenceRefs: artifactRefs.map(ref => ref.revisionId) }], regressions: [],
-          revisionRequests: gate.pass ? [] : [{ requirementId: "brief-conformance",
-            evidenceRefs: gate.fails.map(failure => pathToFileURL(failure.file).href) }], evaluator: evaluatorTarget,
-          costUsd: 0, createdAt: new Date().toISOString() }];
-      },
-    };
+    const evaluator = gauntletEvaluator({ NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid });
     let finalDelivery: DeliveryResult | null = null;
+    // One producer for the first candidate and for every revision: same squad, same runtime.
+    const produce = (candidateRoot: string, candidateBrief: string) => {
+      const candidate = runSquadHeadless({ squadSlug: squad, brief: candidateBrief, projectId: pid, projectDir: projDir, projectRoot,
+        outputsDir: candidateRoot, runtime: rt, businessSlug: null, mode: "squad-only",
+        maxBudgetUsd: budget.candidateBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
+        rulesDirective, autonomousDirective: AUTONOMOUS_DIRECTIVE,
+        ledger: { runId: canonicalRunId, watchDir: candidateRoot } });
+      if (candidate.sessionId) runLedger.recordSession(legacy, canonicalRunId, candidate.sessionId);
+      return { ok: candidate.ok, sessionId: candidate.sessionId, costUsd: candidate.costUsd, error: candidate.error };
+    };
     try {
       const result = runAgentXGauntlet({
         kernel, legacy: createHarnessLegacyAdapter({ ledger: legacy, auditCwd: projDir }), producerTarget,
         projectId: pid, runId: canonicalRunId, traceId: pid, brief, projectRoot, outputsRoot: oroot,
+        intensity: executionOptions.intensity,
         executionSnapshot: { runtime: { id: rt, source: runtimeDecision.source },
           provider: { selection: "runtime-provider", resolved: false }, model: { selection: "runtime-default", resolved: false } },
-        expectedCostUsd: gauntletBudgetUsd,
-        executeCandidate(candidateRoot) {
-          const candidate = runSquadHeadless({ squadSlug: squad, brief, projectId: pid, projectDir: projDir, projectRoot,
-            outputsDir: candidateRoot, runtime: rt, businessSlug: null, mode: "squad-only",
-            maxBudgetUsd: gauntletBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
-            rulesDirective, autonomousDirective: AUTONOMOUS_DIRECTIVE,
-            ledger: { runId: canonicalRunId, watchDir: candidateRoot } });
-          if (candidate.sessionId) runLedger.recordSession(legacy, canonicalRunId, candidate.sessionId);
-          return { ok: candidate.ok, sessionId: candidate.sessionId, costUsd: candidate.costUsd, error: candidate.error };
-        },
+        expectedCostUsd: budget.roundBudgetUsd,
+        executeCandidate: candidateRoot => produce(candidateRoot, brief),
+        reviseCandidate: request => produce(request.candidateRoot, writeRevisionBrief(brief, request).text),
         evaluator,
         finalGate({ sessionId }) {
           finalDelivery = runDelivery({ ...deliveryArgs({ pid, slugOrNull: null, targetKind: "squad", rt, oroot,
@@ -883,7 +905,7 @@ if (pendingCascade?.kind === "squad-only") {
         },
       });
       if (finalDelivery) printDeliverySummary(finalDelivery, pid, oroot, null);
-      else console.error(c("yellow", `⚠ Gauntlet stopped before the final gate (${result.run.state}).`));
+      else console.error(c("yellow", `⚠ Gauntlet stopped before the final gate (${result.run.state}: ${result.gauntlet.stopReason}).`));
       kernel.close(); legacy.close();
       process.exit(result.exitCode);
     } catch (error) {
@@ -986,46 +1008,37 @@ if (pendingCascade?.kind === "agent-x") {
   }
   const oroot = outputsRoot || path.join(base, "deliverables");
   fs.mkdirSync(oroot, { recursive: true });
-  if (shouldRunAgentXGauntlet({ targetKind: "agent-x", wantExec, resolvedMode: executionOptions.resolvedMode, intensity: executionOptions.intensity })) {
+  if (shouldRunAgentXGauntlet({ targetKind: "agent-x", wantExec, resolvedMode: executionOptions.resolvedMode })) {
     const canonicalRunId = `run_${pid.replace(/[^A-Za-z0-9-]/g, "-")}`;
-    const gauntletBudgetUsd = Math.min(effectiveBudgetUsd() ?? 5, 5);
+    const budget = gauntletRoundBudget(compileGauntletPlan({ brief, intensity: executionOptions.intensity }), effectiveBudgetUsd());
     const kernel = openKernel(path.join(base, ".nirvana", "run-kernel.sqlite"));
     const legacy = runLedger.openLedger();
-    const evaluatorTarget = { kind: "squad" as const, slug: "harness-quality-gate", capabilityId: "quality.specification_conformance" };
-    const evaluator: AgentXGauntletEvaluator = {
-      target: evaluatorTarget,
-      evaluate({ runId, candidateRoot, artifactRefs }) {
-        const files = gateableFiles(candidateRoot, new Set());
-        const gate = files.length ? runGateOnce(files, { gateScript: gateScriptPath, offline: true,
-          env: { NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid } }) : { pass: false, fails: [] };
-        return [{ evaluationId: `evl_${runId}_1`, candidateId: "can_1", revisionId: `crv_${runId}_1`,
-          gauntletId: "brief-conformance", rubricVersion: "harness-quality-gate/v1",
-          verdict: gate.pass ? "pass" : "reject",
-          dimensions: [{ id: "brief-conformance", score: gate.pass ? 1 : 0, confidence: 1, blocking: true,
-            passed: gate.pass, evidenceRefs: artifactRefs.map(ref => ref.revisionId) }],
-          regressions: [], revisionRequests: gate.pass ? [] : [{ requirementId: "brief-conformance",
-            evidenceRefs: gate.fails.map(failure => pathToFileURL(failure.file).href) }],
-          evaluator: evaluatorTarget, costUsd: 0, createdAt: new Date().toISOString() }];
-      },
-    };
+    const evaluator = gauntletEvaluator({ NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid });
     let finalDelivery: DeliveryResult | null = null;
+    // One producer for the first candidate and for every revision: same persona, same runtime.
+    const produce = (candidateRoot: string, candidateBrief: string, candidateBriefPath: string) => {
+      const candidate = runAgentX({ brief: candidateBrief, briefPath: candidateBriefPath, runtime: rt, projectId: pid, projectDir: projDir,
+        projectRoot: base, outputsRoot: candidateRoot, reason: pendingCascade.reason, appendSystemPrompt: AUTONOMOUS_DIRECTIVE + rulesDirective,
+        maxBudgetUsd: budget.candidateBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
+        yolo, ledger: { runId: canonicalRunId, watchDir: candidateRoot }, audit: emit });
+      if (candidate.sessionId) runLedger.recordSession(legacy, canonicalRunId, candidate.sessionId);
+      if (!candidate.ok) emit("agent_exec_failed", { trace_id: pid, project_id: pid, employee: "agent-x", runtime: rt,
+        exit_code: candidate.exitCode, error: candidate.error || candidate.stderr });
+      return { ok: candidate.ok, sessionId: candidate.sessionId, costUsd: candidate.costUsd,
+        error: candidate.error || candidate.stderr || undefined };
+    };
     try {
       const result = runAgentXGauntlet({
         kernel, legacy: createHarnessLegacyAdapter({ ledger: legacy, auditCwd: projDir }),
         projectId: pid, runId: canonicalRunId, traceId: pid, brief, projectRoot: base, outputsRoot: oroot,
+        intensity: executionOptions.intensity,
         executionSnapshot: { runtime: { id: rt, source: runtimeDecision.source },
           provider: { selection: "runtime-provider", resolved: false }, model: { selection: "runtime-default", resolved: false } },
-        expectedCostUsd: gauntletBudgetUsd,
-        executeCandidate(candidateRoot) {
-          const candidate = runAgentX({ brief, briefPath, runtime: rt, projectId: pid, projectDir: projDir, projectRoot: base,
-            outputsRoot: candidateRoot, reason: pendingCascade.reason, appendSystemPrompt: AUTONOMOUS_DIRECTIVE + rulesDirective,
-            maxBudgetUsd: gauntletBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
-            yolo, ledger: { runId: canonicalRunId, watchDir: candidateRoot }, audit: emit });
-          if (candidate.sessionId) runLedger.recordSession(legacy, canonicalRunId, candidate.sessionId);
-          if (!candidate.ok) emit("agent_exec_failed", { trace_id: pid, project_id: pid, employee: "agent-x", runtime: rt,
-            exit_code: candidate.exitCode, error: candidate.error || candidate.stderr });
-          return { ok: candidate.ok, sessionId: candidate.sessionId, costUsd: candidate.costUsd,
-            error: candidate.error || candidate.stderr || undefined };
+        expectedCostUsd: budget.roundBudgetUsd,
+        executeCandidate: candidateRoot => produce(candidateRoot, brief, briefPath),
+        reviseCandidate(request) {
+          const revision = writeRevisionBrief(brief, request);
+          return produce(request.candidateRoot, revision.text, revision.file);
         },
         evaluator,
         finalGate({ sessionId }) {
@@ -1035,7 +1048,7 @@ if (pendingCascade?.kind === "agent-x") {
         },
       });
       if (finalDelivery) printDeliverySummary(finalDelivery, pid, oroot, null);
-      else console.error(c("yellow", `⚠ Gauntlet stopped before the final gate (${result.run.state}).`));
+      else console.error(c("yellow", `⚠ Gauntlet stopped before the final gate (${result.run.state}: ${result.gauntlet.stopReason}).`));
       kernel.close(); legacy.close();
       process.exit(result.exitCode);
     } catch (error) {
@@ -1223,47 +1236,46 @@ if (wantExec) {
   }
   if (businessCanaryDecision.enabled) {
     const canonicalRunId = `run_${pid.replace(/[^A-Za-z0-9-]/g, "-")}`;
-    const gauntletBudgetUsd = Math.min(effectiveBudgetUsd() ?? 5, 5);
+    const budget = gauntletRoundBudget(compileGauntletPlan({ brief, intensity: executionOptions.intensity }), effectiveBudgetUsd());
     const kernel = openKernel(path.join(projectRoot, ".nirvana", "run-kernel.sqlite"));
     const canaryLedger = runLedger.openLedger();
-    const evaluatorTarget = { kind: "squad" as const, slug: "harness-quality-gate", capabilityId: "quality.specification_conformance" };
-    const evaluator: AgentXGauntletEvaluator = {
-      target: evaluatorTarget,
-      evaluate({ runId, candidateRoot, artifactRefs }) {
-        const files = gateableFiles(candidateRoot, new Set());
-        const gate = files.length ? runGateOnce(files, { gateScript: gateScriptPath, offline: true,
-          env: { NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid, NIRVANA_BUSINESS_SLUG: slug } }) : { pass: false, fails: [] };
-        return [{ evaluationId: `evl_${runId}_1`, candidateId: "can_1", revisionId: `crv_${runId}_1`,
-          gauntletId: "brief-conformance", rubricVersion: "harness-quality-gate/v1", verdict: gate.pass ? "pass" : "reject",
-          dimensions: [{ id: "brief-conformance", score: gate.pass ? 1 : 0, confidence: 1, blocking: true,
-            passed: gate.pass, evidenceRefs: artifactRefs.map(ref => ref.revisionId) }], regressions: [],
-          revisionRequests: gate.pass ? [] : [{ requirementId: "brief-conformance",
-            evidenceRefs: gate.fails.map(failure => pathToFileURL(failure.file).href) }], evaluator: evaluatorTarget,
-          costUsd: 0, createdAt: new Date().toISOString() }];
-      },
-    };
+    const evaluator = gauntletEvaluator({ NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid, NIRVANA_BUSINESS_SLUG: slug });
     let finalDelivery: DeliveryResult | null = null;
     let canarySessionId: string | null = null;
+    // The employee prompt embeds `outputs_root`, so it is rebuilt per candidate root: every
+    // candidate and revision writes into its own isolated directory, never into `oroot`.
+    const employeePromptFor = (briefFile: string, candidateRoot: string): string => {
+      const built = spawnSync("bun", [employeePrompt, slug, intake, projDir, briefFile, candidateRoot], { encoding: "utf8" });
+      if (built.status !== 0) throw new Error(`employee-prompt failed: ${built.stderr}`);
+      return built.stdout;
+    };
+    // One producer for the first candidate and for every revision: same employee, same runtime.
+    const produce = (candidateRoot: string, briefFile: string, candidateBrief: string) => {
+      const prompt = employeePromptFor(briefFile, candidateRoot);
+      attempt.markProductionStarted();
+      const candidate = runWithCascade({ runtime: rt, prompt, cwd: projDir,
+        addDirs: [projectRoot], appendSystemPrompt: AUTONOMOUS_DIRECTIVE + rulesDirective,
+        maxBudgetUsd: budget.candidateBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
+        yolo, brief: candidateBrief, projectRoot, outputsRoot: candidateRoot, taskHint: `business Gauntlet canary · ${slug}/${intake}`,
+        projectId: pid, ledger: { runId: canonicalRunId, watchDir: candidateRoot } });
+      canarySessionId = candidate.sessionId;
+      if (candidate.sessionId) runLedger.recordSession(canaryLedger, canonicalRunId, candidate.sessionId);
+      return { ok: candidate.ok, sessionId: candidate.sessionId, costUsd: candidate.costUsd,
+        error: candidate.error || candidate.stderr || undefined };
+    };
     const attempt = {
       markProductionStarted() {},
       run() {
         return runAgentXGauntlet({
           kernel, legacy: createHarnessLegacyAdapter({ ledger: canaryLedger, auditCwd: projDir }),
           producerTarget: { kind: "business", slug }, projectId: pid, runId: canonicalRunId, traceId: pid,
-          brief, projectRoot, outputsRoot: oroot, expectedCostUsd: gauntletBudgetUsd,
+          brief, projectRoot, outputsRoot: oroot, expectedCostUsd: budget.roundBudgetUsd, intensity: executionOptions.intensity,
           executionSnapshot: { runtime: { id: rt, source: runtimeDecision.source, resolved: true },
             provider: { selection: "runtime-provider", resolved: false }, model: { selection: "runtime-default", resolved: false } },
-          executeCandidate(candidateRoot) {
-            attempt.markProductionStarted();
-            const candidate = runWithCascade({ runtime: rt, prompt: fs.readFileSync(outputPath, "utf8"), cwd: projDir,
-              addDirs: [projectRoot], appendSystemPrompt: AUTONOMOUS_DIRECTIVE + rulesDirective,
-              maxBudgetUsd: gauntletBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
-              yolo, brief, projectRoot, outputsRoot: candidateRoot, taskHint: `business Gauntlet canary · ${slug}/${intake}`,
-              projectId: pid, ledger: { runId: canonicalRunId, watchDir: candidateRoot } });
-            canarySessionId = candidate.sessionId;
-            if (candidate.sessionId) runLedger.recordSession(canaryLedger, canonicalRunId, candidate.sessionId);
-            return { ok: candidate.ok, sessionId: candidate.sessionId, costUsd: candidate.costUsd,
-              error: candidate.error || candidate.stderr || undefined };
+          executeCandidate: candidateRoot => produce(candidateRoot, tmpBriefFile, brief),
+          reviseCandidate(request) {
+            const revision = writeRevisionBrief(brief, request);
+            return produce(request.candidateRoot, revision.file, revision.text);
           },
           evaluator,
           finalGate({ sessionId }) {
@@ -1274,7 +1286,7 @@ if (wantExec) {
             fs.writeFileSync(sessionFile, JSON.stringify(sessionData, null, 2));
             const afterGate = () => runBusinessPostGate({ projectId: pid, businessSlug: slug, runtime: rt,
               projectDir: projDir, projectRoot, outputsRoot: oroot, skillsRoot: SKILLS, employeePromptScript: employeePrompt,
-              sessionFile, sessionData, rulesDirective, maxBudgetUsd: gauntletBudgetUsd,
+              sessionFile, sessionData, rulesDirective, maxBudgetUsd: budget.candidateBudgetUsd,
               timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined, yolo, wantPdf, skipHtml,
               offlineSnapshot: process.argv.includes("--offline-snapshot"), routingMode, wantZip, emit,
               log: message => console.log(c("lime", message)), warn: message => console.error(c("yellow", message)) });
@@ -1295,7 +1307,7 @@ if (wantExec) {
       kernel.close(); canaryLedger.close();
       if (!("fallback" in outcome)) {
         if (finalDelivery) printDeliverySummary(finalDelivery, pid, oroot, finalDelivery.zipPath);
-        else console.error(c("yellow", `⚠ Business Gauntlet stopped before the final gate (${outcome.run.state}).`));
+        else console.error(c("yellow", `⚠ Business Gauntlet stopped before the final gate (${outcome.run.state}: ${outcome.gauntlet.stopReason}).`));
         process.exit(outcome.exitCode);
       }
       ledgerTry(() => {

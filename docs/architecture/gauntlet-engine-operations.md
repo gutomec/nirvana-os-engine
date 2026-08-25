@@ -58,8 +58,9 @@ Após crash, o caller reabre o kernel e instancia o controller com `projectId` e
 
 ## Limitações do primeiro cutover
 
-- O CLI reconhece e audita a seleção. O fan-out concreto continua sendo fornecido pelo adapter de dispatch por callbacks do controller.
-- Holdout é metadata `evaluator_only`. O isolamento do conteúdo depende do runtime adapter.
-- Cost é reservado antes da round. Reconciliação com cobrança real deve emitir o custo observado pelo adapter.
-- Arbitragem automática de judges não foi adicionada. Divergência material encerra com `judge_disagreement`.
+- O fan-out concreto vive em `runAgentXGauntlet`: candidates por rodada, revisão causal por `reviseCandidate` e publicação da revisão selecionada. Rotas com múltiplos Squads e o coordenador multi-target ainda não usam esse loop.
+- A seleção usa o ranking do controller por revisão: sem falha bloqueante, maior nota ponderada, id estável. Não há arbitragem entre judges; divergência sobre a mesma revisão encerra com `judge_disagreement`.
+- Holdout é metadata `evaluator_only` repassado ao evaluator. O isolamento do conteúdo depende do runtime adapter.
+- Cost é reservado antes da round como estimativa por candidate vezes `candidateStrategy.count`. Reconciliação com cobrança real deve emitir o custo observado pelo adapter.
+- Um candidate com nota zero em `light` para em `no_progress` na primeira rodada, porque a paciência do perfil é uma rodada.
 - Candidates preservam referências imutáveis. A validação física dos artifacts continua no `ArtifactRef` do Run Kernel.

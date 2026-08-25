@@ -3,8 +3,10 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-  AgentXGauntletInterruption, runAgentXGauntlet, shouldRunAgentXGauntlet, shouldRunSquadGauntlet, type AgentXGauntletEvaluator,
+  AgentXGauntletInterruption, gauntletRoundBudget, runAgentXGauntlet, shouldRunAgentXGauntlet, shouldRunSquadGauntlet,
+  type AgentXGauntletEvaluator,
 } from "../lib/gauntlet/agent-x-cutover.ts";
+import { compileGauntletPlan } from "../lib/gauntlet/compiler.ts";
 import { getRun, listEvents, openKernel, type KernelHandle } from "../lib/run-kernel/index.ts";
 
 const roots: string[] = [];
@@ -27,8 +29,8 @@ function evaluator(pass = true, self = false): AgentXGauntletEvaluator {
     : { kind: "squad" as const, slug: "quality-gate", capabilityId: "quality.specification_conformance" };
   return {
     target,
-    evaluate({ runId, artifactRefs }) {
-      return [{ evaluationId: `evl_${runId}_1`, candidateId: "can_1", revisionId: `crv_${runId}_1`,
+    evaluate({ candidateId, revisionId, artifactRefs }) {
+      return [{ evaluationId: `evl_${revisionId}`, candidateId, revisionId,
         gauntletId: "brief-conformance", rubricVersion: "test/v1", verdict: pass ? "pass" : "reject",
         dimensions: [{ id: "brief", score: pass ? 1 : 0, confidence: 1, blocking: true, passed: pass,
           evidenceRefs: artifactRefs.map(ref => ref.revisionId) }], regressions: [],
@@ -57,29 +59,36 @@ function run(overrides: Partial<Parameters<typeof runAgentXGauntlet>[0]> = {}) {
   return { ...fixture, result, executions, finalGates };
 }
 
-describe("agent-x light Gauntlet cutover", () => {
-  test("keeps standard, scaffold-only, business, squad, and non-light execution outside the canary", () => {
-    const base = { targetKind: "agent-x" as const, wantExec: true, resolvedMode: "gauntlet" as const, intensity: "light" as const };
+describe("agent-x Gauntlet cutover", () => {
+  test("keeps standard, scaffold-only, business and squad execution outside the agent-x canary at every intensity", () => {
+    const base = { targetKind: "agent-x" as const, wantExec: true, resolvedMode: "gauntlet" as const };
     expect(shouldRunAgentXGauntlet(base)).toBeTrue();
     expect(shouldRunAgentXGauntlet({ ...base, resolvedMode: "standard" })).toBeFalse();
     expect(shouldRunAgentXGauntlet({ ...base, wantExec: false })).toBeFalse();
     expect(shouldRunAgentXGauntlet({ ...base, targetKind: "business" })).toBeFalse();
     expect(shouldRunAgentXGauntlet({ ...base, targetKind: "squad" })).toBeFalse();
-    expect(shouldRunAgentXGauntlet({ ...base, intensity: "balanced" })).toBeFalse();
   });
 
-  test("enables only one light squad in the typed canary", () => {
-    const base = { squadCount: 1, wantExec: true, resolvedMode: "gauntlet" as const, intensity: "light" as const };
+  test("enables only one squad in the typed canary, regardless of intensity", () => {
+    const base = { squadCount: 1, wantExec: true, resolvedMode: "gauntlet" as const };
     expect(shouldRunSquadGauntlet(base)).toBeTrue();
     expect(shouldRunSquadGauntlet({ ...base, squadCount: 2 })).toBeFalse();
     expect(shouldRunSquadGauntlet({ ...base, wantExec: false })).toBeFalse();
     expect(shouldRunSquadGauntlet({ ...base, resolvedMode: "standard" })).toBeFalse();
-    expect(shouldRunSquadGauntlet({ ...base, intensity: "balanced" })).toBeFalse();
+  });
+
+  test("splits the plan budget across rounds and candidates without exceeding the plan ceiling", () => {
+    expect(gauntletRoundBudget(compileGauntletPlan({ brief: "Build", intensity: "light" }))).toEqual({ candidateBudgetUsd: 2.5, roundBudgetUsd: 2.5 });
+    expect(gauntletRoundBudget(compileGauntletPlan({ brief: "Build", intensity: "balanced" }), 1)).toEqual({ candidateBudgetUsd: 1, roundBudgetUsd: 3 });
+    const exhaustive = gauntletRoundBudget(compileGauntletPlan({ brief: "Build", intensity: "exhaustive" }), 500);
+    expect(exhaustive.candidateBudgetUsd).toBeCloseTo(100 / 30);
+    expect(exhaustive.roundBudgetUsd).toBeCloseTo(100 / 6);
   });
 
   test("persists plan and candidate before an independent evaluation, then runs the final gate", () => {
     const { handle, outputsRoot, result, executions, finalGates } = run();
     expect(result.run.state).toBe("completed");
+    expect(result.gauntlet).toMatchObject({ state: "stopped", stopReason: "success", selectedRevisionId: "crv_run_canary_can_1_1" });
     expect(executions).toBe(1); expect(finalGates).toBe(1);
     expect(fs.readFileSync(path.join(outputsRoot, "report.md"), "utf8")).toBe("Conteúdo aprovado.");
     const types = listEvents(handle, "prj_canary").map(event => event.type);
@@ -124,7 +133,14 @@ describe("agent-x light Gauntlet cutover", () => {
 
   test("withholds an evaluator rejection without invoking the final delivery gate", () => {
     const { result, finalGates } = run({ evaluator: evaluator(false) });
-    expect(result).toMatchObject({ exitCode: 2, finalGateRan: false, run: { state: "withheld" } });
+    expect(result).toMatchObject({ exitCode: 2, finalGateRan: false, run: { state: "withheld" }, gauntlet: { stopReason: "no_progress" } });
+    expect(finalGates).toBe(0);
+  });
+
+  test("stops a failed producer with an honest execution failure", () => {
+    const { result, finalGates } = run({ executeCandidate: () => ({ ok: false, sessionId: null, error: "runtime crashed" }) });
+    expect(result).toMatchObject({ exitCode: 1, finalGateRan: false, run: { state: "failed" },
+      gauntlet: { state: "stopped", stopReason: "execution_failure", reservations: ["runtime crashed"] } });
     expect(finalGates).toBe(0);
   });
 

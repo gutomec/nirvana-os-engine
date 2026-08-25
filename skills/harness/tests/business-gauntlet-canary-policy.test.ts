@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { decideBusinessCanary, runBusinessCanaryWithRollback } from "../lib/gauntlet/business-canary.ts";
 
 const selected = { businessSlug: "allowed-business", wantExec: true, teamMode: false, requestedMode: "gauntlet" as const,
-  resolvedMode: "gauntlet" as const, intensity: "light" as const, allowlist: "other, allowed-business" };
+  resolvedMode: "gauntlet" as const, allowlist: "other, allowed-business" };
 
-describe("Business light canary policy", () => {
+describe("Business canary policy", () => {
   test("requires every activation condition", () => {
     expect(decideBusinessCanary(selected)).toEqual({ enabled: true, reason: "selected" });
     expect(decideBusinessCanary({ ...selected, killSwitch: "1" }).reason).toBe("kill_switch");
@@ -12,8 +12,6 @@ describe("Business light canary policy", () => {
     expect(decideBusinessCanary({ ...selected, teamMode: true }).reason).toBe("team_mode");
     expect(decideBusinessCanary({ ...selected, requestedMode: "auto" }).reason).toBe("not_explicit");
     expect(decideBusinessCanary({ ...selected, resolvedMode: "standard" }).reason).toBe("not_explicit");
-    expect(decideBusinessCanary({ ...selected, intensity: "balanced" }).reason).toBe("not_light");
-    expect(decideBusinessCanary({ ...selected, intensity: "exhaustive" }).reason).toBe("not_light");
     expect(decideBusinessCanary({ ...selected, allowlist: "" }).reason).toBe("not_allowlisted");
     expect(decideBusinessCanary({ ...selected, allowlist: "allowed-business-extra" }).reason).toBe("not_allowlisted");
   });

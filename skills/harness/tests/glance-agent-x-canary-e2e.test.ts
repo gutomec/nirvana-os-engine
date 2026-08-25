@@ -23,7 +23,7 @@ function adapter(available = true): GlanceAgentXCanaryAdapter {
     },
     evaluator: {
       target: { kind: "squad", slug: "test-evaluator", capabilityId: "quality.specification_conformance" },
-      evaluate({ runId, artifactRefs }) { return [{ evaluationId: `evl_${runId}`, candidateId: "can_1", revisionId: `crv_${runId}_1`, gauntletId: "brief-conformance",
+      evaluate({ candidateId, revisionId, artifactRefs }) { return [{ evaluationId: `evl_${revisionId}`, candidateId, revisionId, gauntletId: "brief-conformance",
         rubricVersion: "test/v1", verdict: "pass", dimensions: [{ id: "brief", score: 1, confidence: 1, blocking: true, passed: true, evidenceRefs: artifactRefs.map(ref => ref.revisionId) }],
         regressions: [], revisionRequests: [], evaluator: this.target, costUsd: 0, createdAt: new Date().toISOString() }]; },
     },

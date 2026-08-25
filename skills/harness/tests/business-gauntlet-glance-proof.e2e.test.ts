@@ -22,8 +22,8 @@ const EVALUATOR = { kind: "squad" as const, slug: "proof-evaluator", capabilityI
 const PASSING_HTML = "<!doctype html><html><head><title>Proof</title></head><body><main><h1>Business proof</h1><p>Deterministic local candidate with enough structured content for the offline quality gate.</p><p>The evaluator, delivery and publication stages preserve causal evidence in the canonical journal.</p></main></body></html>";
 
 function evaluator(pass: boolean): AgentXGauntletEvaluator {
-  return { target: EVALUATOR, evaluate({ runId, artifactRefs }) { return [{
-    evaluationId: `evl_${runId}`, candidateId: "can_1", revisionId: `crv_${runId}_1`, gauntletId: "brief-conformance",
+  return { target: EVALUATOR, evaluate({ candidateId, revisionId, artifactRefs }) { return [{
+    evaluationId: `evl_${revisionId}`, candidateId, revisionId, gauntletId: "brief-conformance",
     rubricVersion: "proof/v1", verdict: pass ? "pass" : "reject",
     dimensions: [{ id: "brief", score: pass ? 1 : 0, confidence: 1, blocking: true, passed: pass,
       evidenceRefs: artifactRefs.map(ref => ref.revisionId) }], regressions: [],
@@ -136,6 +136,6 @@ describe("typed Business Gauntlet proof through Glance", () => {
     expect(proof.result).toMatchObject({ exitCode: 2, finalGateRan: false, run: { target: BUSINESS, state: "withheld" } });
     expect(proof.postGateCalls).toBe(0);
     expect(proof.timeline.some(event => event.type.startsWith("delivery."))).toBeFalse();
-    expect(shouldRunAgentXGauntlet({ targetKind: "business", wantExec: true, resolvedMode: "gauntlet", intensity: "light" })).toBeFalse();
+    expect(shouldRunAgentXGauntlet({ targetKind: "business", wantExec: true, resolvedMode: "gauntlet" })).toBeFalse();
   });
 });

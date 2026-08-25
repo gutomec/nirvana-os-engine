@@ -12,23 +12,42 @@ function weightedScore(scorecards: EvaluationScorecard[]): number {
   return weight === 0 ? 0 : dimensions.reduce((sum, dimension) => sum + dimension.score * dimension.confidence, 0) / weight;
 }
 
+/** Judges disagree only about the same candidate revision on the same gauntlet; sibling candidates may legitimately differ. */
 function hasJudgeDisagreement(scorecards: EvaluationScorecard[]): boolean {
   const verdicts = new Map<string, Set<string>>();
   for (const scorecard of scorecards) {
-    const set = verdicts.get(scorecard.gauntletId) ?? new Set<string>();
-    set.add(scorecard.verdict); verdicts.set(scorecard.gauntletId, set);
+    const key = `${scorecard.revisionId}:${scorecard.gauntletId}`;
+    const set = verdicts.get(key) ?? new Set<string>();
+    set.add(scorecard.verdict); verdicts.set(key, set);
   }
   return [...verdicts.values()].some(set => set.has("pass") && (set.has("reject") || set.has("indeterminate")));
 }
 
+/** A regression is measured within one candidate lineage: a dimension the same candidate passed before and fails now. */
 function criticalRegression(previous: EvaluationScorecard[], current: EvaluationScorecard[]): string[] {
   const passed = new Map<string, boolean>();
   for (const scorecard of previous) for (const dimension of scorecard.dimensions) {
-    if (dimension.passed) passed.set(dimension.id, dimension.blocking);
+    if (dimension.passed) passed.set(`${scorecard.candidateId}:${dimension.id}`, dimension.blocking);
   }
   return current.flatMap(scorecard => scorecard.dimensions
-    .filter(dimension => passed.has(dimension.id) && !dimension.passed && (dimension.blocking || passed.get(dimension.id)))
+    .filter(dimension => {
+      const key = `${scorecard.candidateId}:${dimension.id}`;
+      return passed.has(key) && !dimension.passed && (dimension.blocking || passed.get(key));
+    })
     .map(dimension => dimension.id));
+}
+
+interface RankedRevision { revisionId: string; score: number; blockingFailure: boolean; nonBlockingFailures: string[] }
+
+/** Evidence-weighted ranking per candidate revision: no blocking failure first, then the highest score, then the stable id. */
+function rankRevisions(scorecards: EvaluationScorecard[]): RankedRevision[] {
+  const groups = new Map<string, EvaluationScorecard[]>();
+  for (const scorecard of scorecards) groups.set(scorecard.revisionId, [...(groups.get(scorecard.revisionId) ?? []), scorecard]);
+  return [...groups.entries()].map(([revisionId, cards]) => ({
+    revisionId, score: weightedScore(cards),
+    blockingFailure: cards.some(card => card.dimensions.some(dimension => dimension.blocking && !dimension.passed)),
+    nonBlockingFailures: cards.flatMap(card => card.dimensions.filter(dimension => !dimension.blocking && !dimension.passed).map(dimension => dimension.id)),
+  })).sort((a, b) => Number(a.blockingFailure) - Number(b.blockingFailure) || b.score - a.score || a.revisionId.localeCompare(b.revisionId));
 }
 
 export class GauntletController {
@@ -75,31 +94,32 @@ export class GauntletController {
       if (!candidate) throw new Error(`gauntlet: candidate revision '${scorecard.revisionId}' not found`);
       if (!targetsAreIndependent(candidate.producer, scorecard.evaluator)) throw new Error("gauntlet: producer cannot evaluate its own candidate");
     }
-    const previous = listScorecards(this.handle, this.context.projectId, this.context.runId);
-    for (const scorecard of scorecards) saveScorecard(this.handle, this.context, scorecard);
-    const score = weightedScore(scorecards);
-    const evaluationKey = scorecards.map(scorecard => scorecard.evaluationId).sort().join(",");
-    const regressions = criticalRegression(previous, scorecards);
-    const blockingFailure = scorecards.some(scorecard => scorecard.dimensions.some(dimension => dimension.blocking && !dimension.passed));
-    const nonBlockingFailures = scorecards.flatMap(scorecard => scorecard.dimensions.filter(dimension => !dimension.blocking && !dimension.passed).map(dimension => dimension.id));
-    const improved = score - current.bestScore >= current.plan.stop.minimumDelta;
-    const flatRounds = improved ? 0 : current.flatRounds + 1;
-    const base = { ...current, state: "evaluating" as const, bestScore: Math.max(current.bestScore, score), flatRounds, version: current.version + 1 };
-    updateGauntlet(this.handle, this.context, base, { type: "gauntlet.round_evaluated",
-      idempotencyKey: `gauntlet:${current.runId}:round:${current.round}:evaluated:${evaluationKey}`, occurredAt: now,
-      payload: { round: current.round, score, improved, regressions, blockingFailure } });
-    if (regressions.length) return this.stop(base, "critical_regression", "withheld", now, regressions);
-    if (hasJudgeDisagreement(scorecards)) return this.stop(base, "judge_disagreement", "withheld", now);
-    if (!blockingFailure && score >= current.plan.stop.minimumScore) {
-      const selected = [...revisions].sort((a, b) => b.revision - a.revision || a.revisionId.localeCompare(b.revisionId))[0];
-      return this.stop(base, "success", nonBlockingFailures.length ? "reservations" : "delivered", now, nonBlockingFailures, selected?.revisionId);
-    }
-    if (flatRounds >= current.plan.stop.noProgressPatience) return this.stop(base, "no_progress", "withheld", now);
-    if (current.round >= current.plan.stop.maxRounds) return this.stop(base, "max_rounds", "withheld", now);
-    return updateGauntlet(this.handle, this.context, { ...base, state: "revising", version: base.version + 1 }, {
-      type: "gauntlet.revision_requested", idempotencyKey: `gauntlet:${current.runId}:round:${current.round}:revision`, occurredAt: now,
-      payload: { evaluationIds: scorecards.map(scorecard => scorecard.evaluationId), revisionRequests: scorecards.flatMap(scorecard => scorecard.revisionRequests) },
-    });
+    // Scorecards, the round evaluation and the follow-up decision commit together, so a crash
+    // leaves the round in `producing` and the caller replays the same evaluation.
+    return this.handle.db.transaction(() => {
+      const previous = listScorecards(this.handle, this.context.projectId, this.context.runId);
+      for (const scorecard of scorecards) saveScorecard(this.handle, this.context, scorecard);
+      const best = rankRevisions(scorecards)[0];
+      const evaluationKey = scorecards.map(scorecard => scorecard.evaluationId).sort().join(",");
+      const regressions = criticalRegression(previous, scorecards);
+      const improved = best.score - current.bestScore >= current.plan.stop.minimumDelta;
+      const flatRounds = improved ? 0 : current.flatRounds + 1;
+      const base = { ...current, state: "evaluating" as const, bestScore: Math.max(current.bestScore, best.score), flatRounds, version: current.version + 1 };
+      updateGauntlet(this.handle, this.context, base, { type: "gauntlet.round_evaluated",
+        idempotencyKey: `gauntlet:${current.runId}:round:${current.round}:evaluated:${evaluationKey}`, occurredAt: now,
+        payload: { round: current.round, score: best.score, improved, regressions, blockingFailure: best.blockingFailure, bestRevisionId: best.revisionId } });
+      if (regressions.length) return this.stop(base, "critical_regression", "withheld", now, regressions);
+      if (hasJudgeDisagreement(scorecards)) return this.stop(base, "judge_disagreement", "withheld", now);
+      if (!best.blockingFailure && best.score >= current.plan.stop.minimumScore) {
+        return this.stop(base, "success", best.nonBlockingFailures.length ? "reservations" : "delivered", now, best.nonBlockingFailures, best.revisionId);
+      }
+      if (flatRounds >= current.plan.stop.noProgressPatience) return this.stop(base, "no_progress", "withheld", now);
+      if (current.round >= current.plan.stop.maxRounds) return this.stop(base, "max_rounds", "withheld", now);
+      return updateGauntlet(this.handle, this.context, { ...base, state: "revising", version: base.version + 1 }, {
+        type: "gauntlet.revision_requested", idempotencyKey: `gauntlet:${current.runId}:round:${current.round}:revision`, occurredAt: now,
+        payload: { evaluationIds: scorecards.map(scorecard => scorecard.evaluationId), revisionRequests: scorecards.flatMap(scorecard => scorecard.revisionRequests) },
+      });
+    })();
   }
 
   markRegressionTesting(now = new Date().toISOString()): GauntletProjection {
