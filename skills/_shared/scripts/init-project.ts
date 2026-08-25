@@ -34,6 +34,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { parseArgs, EXIT, log, paths } from "../lib/bun-helpers.ts";
+import { ProjectService } from "../../harness/lib/control-plane/project-service.ts";
 
 const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
   || (fs.existsSync(path.join(os.homedir(), ".nirvana", "skills")) ? path.join(os.homedir(), ".nirvana", "skills") : path.join(os.homedir(), ".claude", "skills"));
@@ -528,6 +529,15 @@ async function main() {
     ensureDir(path.join(target, ".nirvana", sub));
   }
   copyFile(path.join(TEMPLATE_DIR, ".nirvana", "README.md"), path.join(target, ".nirvana", "README.md"), force);
+  if (!linkOnly) {
+    const projectService = new ProjectService();
+    const project = projectService.create({
+      projectRoot: target,
+      scope: (scope as "global" | "project" | "merge" | null) || "global",
+      orchestrationMode: orchestrators as "always" | "on-demand",
+    });
+    log.ok(`project manifest: ${path.join(target, ".nirvana", "project.yaml")} (${project.project_id})`);
+  }
 
   // Per-agent symlinks (or copies) — only when withSkills is on.
   // Otherwise we'd create dozens of symlinks pointing to a non-existent
