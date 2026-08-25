@@ -29,6 +29,7 @@ Este diretório é a fonte canônica para a evolução integrada do Run Kernel, 
 9. [Matriz de rastreabilidade](traceability-matrix.md)
 10. [Operação do Run Kernel](run-kernel-operations.md)
 11. [Operação do Gauntlet Engine](gauntlet-engine-operations.md)
+12. [Estado da implementação](implementation-status.md)
 
 ## ADRs
 
