@@ -79,7 +79,7 @@ A suíte conjunta de Harness e Squads aprovou 844 testes e 2.614 asserções ant
 
 O `routing-eval.test.ts` reconstruía o mesmo índice BM25 para cada um dos 3.449 casos. A avaliação em lote agora prepara o índice uma vez, sem cache global e sem alterar o caminho normal do roteador. O teste caiu de mais de 230 segundos para cerca de 26 segundos. Os nove pisos passaram, com top-1 de 98,5%, MRR de 0,989 e false-dispatch de 0%.
 
-O smoke test do Pi confirmou o provider padrão `openrouter` e o modelo padrão `stealth/ox-alpha`. A execução sem tools, sessão ou contexto respondeu `PI_RUNTIME_OK`. Esse teste confirma disponibilidade do runtime, mas não substitui os testes herméticos do engine.
+O smoke test do Pi confirmou sua configuração interna com provider `openrouter` e modelo `stealth/ox-alpha`. Essa configuração pertence ao Pi e não define o runtime padrão do Nirvana ou deste projeto. O projeto continua no runtime ativo da sessão. O Pi é reservado para testes auxiliares com alto consumo de tokens de LLM. A execução sem tools, sessão ou contexto respondeu `PI_RUNTIME_OK`; ela confirma disponibilidade do executor auxiliar, mas não substitui os testes herméticos do engine.
 
 ## Regra de entrega
 
