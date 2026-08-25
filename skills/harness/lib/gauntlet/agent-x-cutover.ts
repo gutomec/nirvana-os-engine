@@ -33,6 +33,7 @@ export interface AgentXGauntletInput {
   projectRoot: string;
   outputsRoot: string;
   expectedCostUsd: number;
+  producerTarget?: TargetRef;
   executeCandidate(candidateRoot: string): AgentXCandidateResult;
   evaluator: AgentXGauntletEvaluator;
   afterCandidatePersisted?(): void;
@@ -78,6 +79,7 @@ function mediaType(filePath: string): string {
 }
 
 function artifactRefs(input: AgentXGauntletInput, candidateRoot: string): ArtifactRef[] {
+  const producer = input.producerTarget ?? { kind: "agent-x" as const, slug: "agent-x" as const };
   return filesUnder(candidateRoot).map((filePath, index) => {
     const content = fs.readFileSync(filePath);
     const relative = path.relative(candidateRoot, filePath);
@@ -87,7 +89,8 @@ function artifactRefs(input: AgentXGauntletInput, candidateRoot: string): Artifa
       revisionId: `arv_${createHash("sha256").update(`${input.runId}:${relative}:1`).digest("hex").slice(0, 24)}`,
       revision: 1, role: "candidate", mediaType: mediaType(filePath), bytes: content.byteLength,
       sha256: createHash("sha256").update(content).digest("hex"), publishedUri: pathToFileURL(filePath).href,
-      classification: "internal", producer: { targetKind: "agent-x", targetSlug: "agent-x" },
+      classification: "internal", producer: { targetKind: producer.kind, targetSlug: producer.slug,
+        ...(producer.kind === "squad" ? { capabilityId: producer.capabilityId } : {}) },
     };
   });
 }
@@ -112,11 +115,12 @@ function terminalForGate(gate: { exitCode: 0 | 1 | 2 | 3; gateOutcome: string })
 }
 
 export function runAgentXGauntlet(input: AgentXGauntletInput): AgentXGauntletResult {
+  const producer = input.producerTarget ?? { kind: "agent-x" as const, slug: "agent-x" as const };
   const actor = { kind: "kernel", id: "agent-x-gauntlet-cutover" };
   const correlationId = `cor_${input.runId}`;
   const facade = new RunKernelCompatibilityFacade(input.kernel, input.legacy);
   let run = getRun(input.kernel, input.projectId, input.runId) ?? facade.create({ projectId: input.projectId, runId: input.runId, traceId: input.traceId,
-    planId: `plan_${input.runId}`, target: { kind: "agent-x", slug: "agent-x" }, policySnapshotRef: "gauntlet-light-canary",
+    planId: `plan_${input.runId}`, target: producer, policySnapshotRef: "gauntlet-light-canary",
     actor, correlationId, idempotencyKey: `agent-x-gauntlet:${input.runId}:create` });
   try {
     const controller = new GauntletController(input.kernel, { projectId: input.projectId, runId: input.runId, traceId: input.traceId, actor, correlationId });
@@ -150,7 +154,7 @@ export function runAgentXGauntlet(input: AgentXGauntletInput): AgentXGauntletRes
       }
       for (const ref of refs) { verifyArtifactRef(ref, candidateRoot); saveArtifactRef(input.kernel, ref); }
       controller.addCandidate({ candidateId: "can_1", revision: 1, revisionId: `crv_${input.runId}_1`,
-        artifactRefs: refs.map(ref => ref.revisionId), producer: { kind: "agent-x", slug: "agent-x" }, causalEvaluationIds: [], createdAt: new Date().toISOString() });
+        artifactRefs: refs.map(ref => ref.revisionId), producer, causalEvaluationIds: [], createdAt: new Date().toISOString() });
       input.afterCandidatePersisted?.();
       revisions = listCandidateRevisions(input.kernel, input.projectId, input.runId);
     }

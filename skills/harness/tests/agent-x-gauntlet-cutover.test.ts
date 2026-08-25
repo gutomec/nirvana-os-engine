@@ -79,6 +79,14 @@ describe("agent-x light Gauntlet cutover", () => {
     expect(types.at(-1)).toBe("run.transitioned");
   });
 
+  test("persists a typed squad producer without changing the agent-x default", () => {
+    const producerTarget = { kind: "squad" as const, slug: "document-factory", capabilityId: "document.generate" };
+    const { handle, result } = run({ producerTarget });
+    expect(result.run.target).toEqual(producerTarget);
+    const candidate = listEvents(handle, "prj_canary").find(event => event.type === "gauntlet.candidate_created");
+    expect((candidate?.payload as any).producer).toEqual(producerTarget);
+  });
+
   test("rejects a producer evaluating its own candidate and records a post-start failure", () => {
     const fixture = setup();
     expect(() => runAgentXGauntlet({ kernel: fixture.handle, projectId: "prj_canary", runId: "run_self", traceId: "trace_self",
