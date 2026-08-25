@@ -19,7 +19,9 @@ O pós-gate de Business agora passa por `runBusinessPostGate`, uma fronteira reu
 
 A prova hermética `business-delivery-parity.e2e.test.ts` compara o contrato legado congelado com a nova fronteira. No sucesso, ela atravessa manifesto, gate offline, PDF, HTML, ZIP e session file, então compara resultado, arquivos, eventos e estado terminal `delivered`. Na falha de manifesto, ambos os caminhos terminam em `failed`, sem publicação nem evento `delivered`. A prova não chama LLM, runtime externo, credenciais ou rede.
 
-Essa evidência cobre somente a região afetada pela extração. Ainda faltam producer Business real por adapter fake, revision causal pelo GauntletController, snapshot canônico e leitura da timeline pelo Glance no mesmo cenário. Por isso o Business Gauntlet permanece desativado.
+Essa evidência cobre somente a região afetada pela extração. O teste integrado `business-gauntlet-glance-proof.e2e.test.ts` fecha a etapa seguinte com um target `business` tipado: produção local, candidate e scorecard pelo `GauntletController`, evaluator independente, snapshot honesto de runtime, provider e modelo, delivery final, pós-gate e leitura da timeline pelo Glance. Os eventos de delivery preservam causalidade e sequência. Uma rejeição bloqueia delivery e pós-gate.
+
+As precondições técnicas estão comprovadas para propor um canário Business `light` restrito. O cutover continua desativado porque este incremento não adiciona a flag de produção, rollback operacional nem autorização de rollout. A prova usa decisão direta, sem revision, e não cobre `balanced`, `exhaustive`, múltiplos Squads ou runtime real.
 
 ## O que já funciona
 
@@ -81,7 +83,7 @@ O modo `standard` deve continuar padrão. O cutover precisa de uma flag independ
 
 ## Resultado de testes nesta integração
 
-A bateria focada da fronteira de pós-gate aprovou os cenários de PDF, HTML, ZIP, session, audit, falhas não fatais e skip em modo fast. A prova E2E de paridade aprovou sucesso e falha de manifesto. A delivery pipeline também foi repetida para confirmar que o hook só executa depois de uma decisão entregável.
+A bateria focada da fronteira de pós-gate aprovou os cenários de PDF, HTML, ZIP, session, audit, falhas não fatais e skip em modo fast. A prova E2E de paridade aprovou sucesso e falha de manifesto. A prova integrada Business aprovou sucesso com timeline completa e rejeição antes do delivery. A delivery pipeline também foi repetida para confirmar que o hook só executa depois de uma decisão entregável.
 
 A suíte conjunta de Harness e Squads aprovou 844 testes e 2.614 asserções antes do último corte do chat. O conjunto afetado foi repetido depois do corte, sem falhas.
 
