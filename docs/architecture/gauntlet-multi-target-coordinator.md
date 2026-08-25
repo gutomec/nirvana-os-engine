@@ -33,10 +33,10 @@ O estado terminal do plano é `failed` quando existe falha ou nó sem lease recu
 
 ## Retomada e projeção
 
-As portas `state` e `journal` são injetáveis. A primeira carrega e persiste `MultiTargetCoordinatorSnapshot`. A segunda persiste as referências imutáveis e recebe eventos tipados que podem ser projetados futuramente no Run Kernel.
+As portas `state` e `journal` são injetáveis. A primeira carrega e persiste `MultiTargetCoordinatorSnapshot`. A segunda persiste as referências imutáveis e recebe eventos tipados. `createRunKernelMultiTargetPorts` implementa ambas sobre o journal, sequence e outbox canônicos, além da lease operacional por nó.
 
 Nós terminais não executam novamente. Um nó persistido como `running` só é reenviado quando a porta de lease confirma recuperação; nesse caso, o adapter recebe a mesma chave idempotente e `resume: true`. Sem lease, o nó vira `stalled` e nenhum side effect é presumido seguro.
 
 ## Limitações e próximo cutover
 
-Não há adapter de produção registrado, escrita direta no Run Kernel, cancellation policy, lease concreta nem comando público. Os testes usam somente adapters locais determinísticos. O próximo cutover deve implementar portas canônicas sobre o Run Kernel, provar crash resume com storage real e liberar uma allowlist separada antes de encaminhar qualquer dispatch público ao coordenador.
+Não há adapter de produção registrado, cancellation policy, recovery humano nem comando público. Os testes usam somente adapters locais determinísticos sobre SQLite real. O próximo cutover deve provar a integração no Glance e liberar uma allowlist separada antes de encaminhar qualquer dispatch público ao coordenador.

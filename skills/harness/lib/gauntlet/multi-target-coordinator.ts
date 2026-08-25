@@ -59,7 +59,11 @@ export interface MultiTargetCoordinatorPorts {
     persistSnapshots(input: { planDigest: string; reservationDigest: string | null }): Promise<void> | void;
     emit(event: { type: string; nodeId?: string; waveIndex?: number; payload?: Record<string, unknown> }): Promise<void> | void;
   };
-  lease?: { canResume(nodeId: string): Promise<boolean> | boolean };
+  lease?: {
+    claim?(nodeId: string): Promise<boolean> | boolean;
+    canResume(nodeId: string): Promise<boolean> | boolean;
+    release?(nodeId: string): Promise<boolean> | boolean;
+  };
 }
 
 function digest(value: unknown): string {
@@ -138,7 +142,7 @@ function terminalState(snapshot: MultiTargetCoordinatorSnapshot): Pick<MultiTarg
   return { state: "delivered" };
 }
 
-function cloneSnapshot(snapshot: MultiTargetCoordinatorSnapshot): MultiTargetCoordinatorSnapshot {
+function cloneSnapshot<T>(snapshot: T): T {
   return structuredClone(snapshot);
 }
 
@@ -158,6 +162,7 @@ export async function coordinateMultiTargetPlan(input: {
   if (snapshot.state === "delivered" || snapshot.state === "withheld" || snapshot.state === "failed") return snapshot;
 
   await input.ports.journal?.persistSnapshots({ planDigest: input.plan.digest, reservationDigest: input.reservation?.digest ?? null });
+  if (!persisted) await input.ports.state?.save(cloneSnapshot(snapshot));
   const decisions = decisionMap(input.plan);
   const phases = phaseMap(input.plan);
 
@@ -171,7 +176,7 @@ export async function coordinateMultiTargetPlan(input: {
       if (node.state === "running" && !(await input.ports.lease?.canResume(nodeId))) {
         node.state = "stalled";
         node.reason = "running node has no recoverable lease";
-        await input.ports.journal?.emit({ type: "multi_target.node_stalled", nodeId, waveIndex, payload: { reason: node.reason } });
+        await input.ports.journal?.emit({ type: "multi_target.node_stalled", nodeId, waveIndex, payload: { node: cloneSnapshot(node) } });
         continue;
       }
 
@@ -181,7 +186,7 @@ export async function coordinateMultiTargetPlan(input: {
         node.state = "skipped";
         node.blockedBy = blockedBy.sort();
         node.reason = `blocked by incomplete dependencies: ${node.blockedBy.join(", ")}`;
-        await input.ports.journal?.emit({ type: "multi_target.node_skipped", nodeId, waveIndex, payload: { blockedBy: node.blockedBy } });
+        await input.ports.journal?.emit({ type: "multi_target.node_skipped", nodeId, waveIndex, payload: { node: cloneSnapshot(node) } });
         continue;
       }
 
@@ -189,13 +194,19 @@ export async function coordinateMultiTargetPlan(input: {
       if (!decision || decision.targetKind === "support") {
         node.state = "delivered";
         node.outputPaths = [phase.outputs_path];
-        await input.ports.journal?.emit({ type: "multi_target.support_completed", nodeId, waveIndex });
+        await input.ports.journal?.emit({ type: "multi_target.support_completed", nodeId, waveIndex, payload: { node: cloneSnapshot(node) } });
         continue;
       }
       const resume = node.state === "running";
+      if (!resume && input.ports.lease?.claim && !(await input.ports.lease.claim(nodeId))) {
+        node.state = "stalled";
+        node.reason = "node lease claim was not acquired";
+        await input.ports.journal?.emit({ type: "multi_target.node_stalled", nodeId, waveIndex, payload: { node: cloneSnapshot(node) } });
+        continue;
+      }
       node.state = "running";
       runnable.push({ node, decision, phase, resume });
-      await input.ports.journal?.emit({ type: "multi_target.node_started", nodeId, waveIndex, payload: { mode: decision.mode, resume } });
+      await input.ports.journal?.emit({ type: "multi_target.node_started", nodeId, waveIndex, payload: { node: cloneSnapshot(node) } });
     }
 
     snapshot.state = "running";
@@ -236,12 +247,13 @@ export async function coordinateMultiTargetPlan(input: {
       if (invalidCost || overBudget) {
         node.state = "failed";
         node.reason = invalidCost ? "adapter reported an invalid cost" : `reported cost ${result.reportedCostUsd} exceeds grant ${node.grantedCostUsd}`;
-        await input.ports.journal?.emit({ type: "multi_target.budget_exceeded", nodeId, waveIndex, payload: { reportedCostUsd: result.reportedCostUsd, grantedCostUsd: node.grantedCostUsd } });
+        await input.ports.journal?.emit({ type: "multi_target.budget_exceeded", nodeId, waveIndex, payload: { node: cloneSnapshot(node) } });
       } else {
         node.state = result.state;
         node.reason = result.reason;
-        await input.ports.journal?.emit({ type: `multi_target.node_${result.state}`, nodeId, waveIndex, payload: { reportedCostUsd: result.reportedCostUsd } });
+        await input.ports.journal?.emit({ type: `multi_target.node_${result.state}`, nodeId, waveIndex, payload: { node: cloneSnapshot(node) } });
       }
+      await input.ports.lease?.release?.(nodeId);
     }
     snapshot.reportedCostUsd = snapshot.nodes.reduce((sum, node) => sum + node.reportedCostUsd, 0);
     snapshot.version++;
