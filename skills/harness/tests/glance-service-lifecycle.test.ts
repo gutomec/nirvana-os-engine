@@ -5,15 +5,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stopMacInput } from "../lib/glance/service/control.ts";
 import { drainServer } from "../lib/glance/service/request-drain.ts";
-import { fetchServiceHealth } from "../lib/glance/service/adapters.ts";
+import { buildServiceHealth, fetchServiceHealth, processDigestFromEntrypointBytes } from "../lib/glance/service/adapters.ts";
 import { resolveServiceRef } from "../lib/glance/service/paths.ts";
 import { validateInstance } from "../lib/glance/service/schema-validator.ts";
 import { parseStrictJson } from "../lib/glance/service/strict-json.ts";
 import { ServiceIoError, digestJcs, writeDurableJson, writePrivateBytes } from "../lib/glance/service/state.ts";
 import { createGlanceServiceManager, restartBackend, startBackend, statusBackend, stopBackend, type ManagerBackend } from "../lib/glance/service/manager.ts";
+import { startServer } from "../lib/glance/server.ts";
 import type { GlanceServiceCommandResultV1 } from "../lib/glance/service/types.ts";
-import { createStartupReadiness, createStopControl, runServiceWorker } from "../scripts/glance-service-worker.ts";
+import { createProductionRuntime, createStartupReadiness, createStopControl, runServiceWorker } from "../scripts/glance-service-worker.ts";
 import { createRealLifecycleHarness } from "./helpers/glance-service-lifecycle.ts";
+
+const realLifecycle = createRealLifecycleHarness();
 
 function allocateLoopbackPort(): number {
   const probe = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("probe") });
@@ -44,6 +47,7 @@ function createWorkerHarness(port: number) {
   const startupId = randomUUID();
   const secret = randomBytes(32);
   const config = { schema_version: "1.0.0", scope: "global", host: "127.0.0.1", port, read_only: true, lifetime: "persistent", no_open: true };
+  const workerProcessDigest = processDigestFromEntrypointBytes(readFileSync(join(import.meta.dir, "..", "scripts", "glance-service-worker.ts")));
   const instance = (state: string) => ({
     schema_version: "1.0.0",
     instance_id: instanceId,
@@ -51,7 +55,7 @@ function createWorkerHarness(port: number) {
     state,
     started_at: new Date().toISOString(),
     config_digest: digestJcs(config),
-    process_digest: `sha256:${"b".repeat(64)}`,
+    process_digest: workerProcessDigest,
     control_secret_ref: `secrets/${instanceId}.control`,
     control_secret_digest: `sha256:${createHash("sha256").update(secret).digest("hex")}`,
     log_ref: "logs/service.log",
@@ -181,7 +185,7 @@ test("SVC-STARTUP-WORKER-FASTER-THAN-MANAGER", async () => {
       allow_actions: false,
       uptime_seconds: expect.any(Number),
       effective_config_digest: digestJcs(harness.config),
-      process_digest: `sha256:${"b".repeat(64)}`,
+      process_digest: processDigestFromEntrypointBytes(readFileSync(join(import.meta.dir, "..", "scripts", "glance-service-worker.ts"))),
       extension_root_digest: `sha256:${"e".repeat(64)}`,
       read_only: true,
       persistent: true,
@@ -241,50 +245,55 @@ test("SVC-STARTUP-READY-DIGEST", async () => {
   } finally { rmSync(harness.root, { recursive: true, force: true }); }
 }, 30_000);
 
-const realLifecycle = createRealLifecycleHarness();
-
 test("SVC-CONTRACT-MANAGER-WORKER", async () => {
   const globalHome = await realLifecycle.home();
   const port = allocateLoopbackPort();
-  const started = await realLifecycle.start(globalHome, { scope: "global", port });
-  expect(started.ok).toBe(true);
-  expect(await realLifecycle.health(started)).toMatchObject({
-    schema_version: "1.0.0",
-    mode: "service",
-    instance_id: started.instance_id,
-    port,
-    scope: "global",
-    lifetime: "persistent",
-    allow_actions: false,
-    engine_version: expect.any(String),
-    uptime_seconds: expect.any(Number),
-    effective_config_digest: expect.stringMatching(/^sha256:/),
-    process_digest: expect.stringMatching(/^sha256:/),
-    extension_root_digest: expect.stringMatching(/^sha256:/),
-    read_only: true,
-    persistent: true,
-  });
-  const status = await realLifecycle.status(globalHome);
-  expect(status).toMatchObject({ command: "status", state: "running", instance_id: started.instance_id, scope: "global" });
-  const stopped = await realLifecycle.stop(globalHome);
-  expect(stopped.state).toBe("stopped");
-  expect(await realLifecycle.privateArtifacts(globalHome)).toEqual([]);
+  let started: Awaited<ReturnType<typeof realLifecycle.start>> | undefined;
+  try {
+    started = await realLifecycle.start(globalHome, { scope: "global", port });
+    expect(started.ok).toBe(true);
+    expect(await realLifecycle.health(started)).toMatchObject({
+      schema_version: "1.0.0",
+      mode: "service",
+      instance_id: started.instance_id,
+      port,
+      scope: "global",
+      lifetime: "persistent",
+      allow_actions: false,
+      engine_version: expect.any(String),
+      uptime_seconds: expect.any(Number),
+      effective_config_digest: expect.stringMatching(/^sha256:/),
+      process_digest: expect.stringMatching(/^sha256:/),
+      extension_root_digest: expect.stringMatching(/^sha256:/),
+      read_only: true,
+      persistent: true,
+    });
+    const status = await realLifecycle.status(globalHome);
+    expect(status).toMatchObject({ command: "status", state: "running", instance_id: started.instance_id, scope: "global" });
+    const stopped = await realLifecycle.stop(globalHome);
+    expect(stopped.state).toBe("stopped");
+    expect(await realLifecycle.privateArtifacts(globalHome)).toEqual([]);
+  } finally {
+    if (started?.pid) await realLifecycle.terminateFixtureProcess(started.pid).catch(() => {});
+    await realLifecycle.cleanupHome(globalHome);
+  }
 }, 90_000);
 
 test("SVC-CONTRACT-MANAGER-WORKER-PROJECT", async () => {
   const home = await realLifecycle.home(), project = await realLifecycle.project();
   const port = allocateLoopbackPort();
-  const started = await realLifecycle.start(home, { scope: "project", project_root: project, port });
+  let started: Awaited<ReturnType<typeof realLifecycle.start>> | undefined;
   try {
+    started = await realLifecycle.start(home, { scope: "project", project_root: project, port });
     expect(started.ok).toBe(true);
     expect(realLifecycle.observedLockTarget()).toMatchObject({ nirvanaHomeDigest: realLifecycle.digestHome(home), scope: "project", projectRootDigest: realLifecycle.digestProject(project), port });
     const status = await realLifecycle.status(home);
     expect(status.scope).toBe("project");
     expect(realLifecycle.lockOperations()).not.toContain("status");
     await realLifecycle.stop(home);
-  } catch (error) {
-    await realLifecycle.terminateFixtureProcess(started.pid!).catch(() => {});
-    throw error;
+  } finally {
+    if (started?.pid) await realLifecycle.terminateFixtureProcess(started.pid).catch(() => {});
+    await realLifecycle.cleanupHome(home, project);
   }
 }, 90_000);
 
@@ -300,7 +309,7 @@ test("SVC-START-IDEMPOTENT-REAL-BACKEND-TWICE", async () => {
     expect(countersAfter.write).toBe(countersBefore.write);
     expect(bytesAfter).toEqual(bytesBefore);
     expect((await realLifecycle.persistedInstance(home)).state).toBe("running");
-  } finally { await realLifecycle.stop(home); }
+  } finally { await realLifecycle.stop(home).catch(() => {}); await realLifecycle.cleanupHome(home); }
 }, 120_000);
 
 test("SVC-START-CONFLICT-PRESERVES-OWNED-BYTES", async () => {
@@ -314,50 +323,66 @@ test("SVC-START-CONFLICT-PRESERVES-OWNED-BYTES", async () => {
     expect(realLifecycle.exitCode(conflict)).toBe(4);
     expect(bytesAfter).toEqual(bytesBefore);
     expect(Object.keys(bytesAfter).sort()).toEqual(["config", "instance", "readiness", "secret"]);
-  } finally { await realLifecycle.stop(home); }
+  } finally { await realLifecycle.stop(home).catch(() => {}); await realLifecycle.cleanupHome(home); }
 }, 120_000);
 
 test("SVC-START-FAILURE-CLEANUP-PROVEN", async () => {
   const home = await realLifecycle.home(), backend = realLifecycle.backend(), port = allocateLoopbackPort();
-  realLifecycle.failNextHealth({ workerOutcome: "exited", identityProof: "absent" });
-  await expect(startBackend(backend, home, realLifecycle.globalConfig(port))).rejects.toThrow("START_HEALTH");
-  expect(await realLifecycle.privateArtifacts(home)).toEqual([]);
-  expect(await realLifecycle.ownedByteSnapshot(home)).toEqual({ config: null, instance: null, readiness: null, secret: null });
+  try {
+    realLifecycle.failNextHealth({ workerOutcome: "exited", identityProof: "absent" });
+    await expect(startBackend(backend, home, realLifecycle.globalConfig(port))).rejects.toThrow("START_HEALTH");
+    expect(await realLifecycle.privateArtifacts(home)).toEqual([]);
+    expect(await realLifecycle.ownedByteSnapshot(home)).toEqual({ config: null, instance: null, readiness: null, secret: null });
+  } finally {
+    await realLifecycle.cleanupHome(home);
+  }
 }, 120_000);
 
 test("SVC-START-PRE-SPAWN-CLEANUP-NO-PROCESS", async () => {
   const home = await realLifecycle.home(), backend = realLifecycle.backend(), port = allocateLoopbackPort();
   const killsBefore = realLifecycle.killPids().length;
-  realLifecycle.failNextOwnedWrite({ artifact: "config", boundary: "before" });
-  await expect(startBackend(backend, home, realLifecycle.globalConfig(port))).rejects.toThrow("INJECTED_CONFIG_WRITE");
-  const { attempt, result: cleanup } = realLifecycle.lastCleanup();
-  expect(attempt).toMatchObject({ phase: "secret_written", spawned: undefined });
-  expect(cleanup).toMatchObject({ kind: "cleaned", identity: "not-spawned", terminated: false });
-  expect(realLifecycle.killPids().length).toBe(killsBefore);
-  expect(await realLifecycle.ownedByteSnapshot(home)).toEqual({ config: null, instance: null, readiness: null, secret: null });
+  try {
+    realLifecycle.failNextOwnedWrite({ artifact: "config", boundary: "before" });
+    await expect(startBackend(backend, home, realLifecycle.globalConfig(port))).rejects.toThrow("INJECTED_CONFIG_WRITE");
+    const { attempt, result: cleanup } = realLifecycle.lastCleanup();
+    expect(attempt).toMatchObject({ phase: "secret_written", spawned: undefined });
+    expect(cleanup).toMatchObject({ kind: "cleaned", identity: "not-spawned", terminated: false });
+    expect(realLifecycle.killPids().length).toBe(killsBefore);
+    expect(await realLifecycle.ownedByteSnapshot(home)).toEqual({ config: null, instance: null, readiness: null, secret: null });
+  } finally {
+    await realLifecycle.cleanupHome(home);
+  }
 }, 120_000);
 
 test("SVC-START-INSTANCE-WRITE-FAIL-EXACT-CLEANUP", async () => {
   const home = await realLifecycle.home(), backend = realLifecycle.backend(), port = allocateLoopbackPort();
-  realLifecycle.failNextOwnedWrite({ artifact: "instance", boundary: "before" });
-  await expect(startBackend(backend, home, realLifecycle.globalConfig(port))).rejects.toThrow("INJECTED_INSTANCE_WRITE");
-  const spawned = realLifecycle.lastSpawned(), cleanup = realLifecycle.lastCleanup();
-  expect(cleanup.attempt).toMatchObject({ phase: "spawned", secretRef: spawned.secretRef, spawned: { pid: spawned.pid, processDigest: spawned.processDigest, logRef: spawned.logRef } });
-  expect(cleanup.result).toMatchObject({ kind: "cleaned", identity: "exact", terminated: true, portAbsent: true, healthAbsent: true });
-  expect(await realLifecycle.processPresent(spawned.pid)).toBe(false);
-  expect(await realLifecycle.ownedByteSnapshot(home)).toEqual({ config: null, instance: null, readiness: null, secret: null });
+  try {
+    realLifecycle.failNextOwnedWrite({ artifact: "instance", boundary: "before" });
+    await expect(startBackend(backend, home, realLifecycle.globalConfig(port))).rejects.toThrow("INJECTED_INSTANCE_WRITE");
+    const spawned = realLifecycle.lastSpawned(), cleanup = realLifecycle.lastCleanup();
+    expect(cleanup.attempt).toMatchObject({ phase: "spawned", secretRef: spawned.secretRef, spawned: { pid: spawned.pid, processDigest: spawned.processDigest, logRef: spawned.logRef } });
+    expect(cleanup.result).toMatchObject({ kind: "cleaned", identity: "exact", terminated: true, portAbsent: true, healthAbsent: true });
+    expect(await realLifecycle.processPresent(spawned.pid)).toBe(false);
+    expect(await realLifecycle.ownedByteSnapshot(home)).toEqual({ config: null, instance: null, readiness: null, secret: null });
+  } finally {
+    await realLifecycle.cleanupHome(home);
+  }
 }, 120_000);
 
 test("SVC-START-INSTANCE-FSYNC-FAIL-EXACT-CLEANUP", async () => {
   const home = await realLifecycle.home(), backend = realLifecycle.backend(), port = allocateLoopbackPort();
-  realLifecycle.failNextOwnedWrite({ artifact: "instance", boundary: "fsync" });
-  await expect(startBackend(backend, home, realLifecycle.globalConfig(port))).rejects.toThrow("INJECTED_INSTANCE_FSYNC");
-  const spawned = realLifecycle.lastSpawned(), cleanup = realLifecycle.lastCleanup();
-  expect(cleanup.attempt.startingInstanceDigest).toMatch(/^sha256:/);
-  expect(cleanup.attempt.spawned).toEqual({ pid: spawned.pid, processDigest: spawned.processDigest, logRef: spawned.logRef });
-  expect(cleanup.result).toMatchObject({ kind: "cleaned", identity: "exact", terminated: true });
-  expect(await realLifecycle.processPresent(spawned.pid)).toBe(false);
-  expect(await realLifecycle.ownedByteSnapshot(home)).toEqual({ config: null, instance: null, readiness: null, secret: null });
+  try {
+    realLifecycle.failNextOwnedWrite({ artifact: "instance", boundary: "fsync" });
+    await expect(startBackend(backend, home, realLifecycle.globalConfig(port))).rejects.toThrow("INJECTED_INSTANCE_FSYNC");
+    const spawned = realLifecycle.lastSpawned(), cleanup = realLifecycle.lastCleanup();
+    expect(cleanup.attempt.startingInstanceDigest).toMatch(/^sha256:/);
+    expect(cleanup.attempt.spawned).toEqual({ pid: spawned.pid, processDigest: spawned.processDigest, logRef: spawned.logRef });
+    expect(cleanup.result).toMatchObject({ kind: "cleaned", identity: "exact", terminated: true });
+    expect(await realLifecycle.processPresent(spawned.pid)).toBe(false);
+    expect(await realLifecycle.ownedByteSnapshot(home)).toEqual({ config: null, instance: null, readiness: null, secret: null });
+  } finally {
+    await realLifecycle.cleanupHome(home);
+  }
 }, 120_000);
 
 test("SVC-START-POST-SPAWN-FOREIGN-NOT-KILLED", async () => {
@@ -397,12 +422,18 @@ test("SVC-START-POST-SPAWN-INDETERMINATE-PRESERVED", async () => {
 
 test("SVC-START-FAILURE-CLEANUP-INDETERMINATE", async () => {
   const home = await realLifecycle.home(), backend = realLifecycle.backend(), port = allocateLoopbackPort();
-  realLifecycle.failNextHealth({ workerOutcome: "unknown", identityProof: "indeterminate" });
   try {
+    realLifecycle.failNextHealth({ workerOutcome: "unknown", identityProof: "indeterminate" });
     await expect(startBackend(backend, home, realLifecycle.globalConfig(port))).rejects.toThrow("START_HEALTH");
     expect(await realLifecycle.privateArtifacts(home)).not.toEqual([]);
     expect(await realLifecycle.diagnoseStartFailure(home)).toMatchObject({ state: expect.stringMatching(/error|stale/), evidence_preserved: true });
-  } finally { realLifecycle.drainPendingFailureArming(); }
+  } finally {
+    try {
+      const spawned = realLifecycle.lastSpawned();
+      if (await realLifecycle.processPresent(spawned.pid)) await realLifecycle.terminateFixtureProcess(spawned.pid).catch(() => {});
+    } catch {}
+    await realLifecycle.cleanupHome(home);
+  }
 }, 120_000);
 
 test("SVC-LIFECYCLE-LOCK-TIMEOUT", async () => {
@@ -484,7 +515,14 @@ test("SVC-RESTART-RESTORED", async () => {
     expect(restarted.rollback_state).toBe("restored_previous");
     const persistedConfig = JSON.parse(new TextDecoder().decode(readFileSync(join(home, ".nirvana", "glance", "service", "config.json")))) as { port?: number };
     expect(persistedConfig.port).toBe(port);
-  } finally { await realLifecycle.terminateFixtureProcess(started.pid!).catch(() => {}); }
+  } finally {
+    await realLifecycle.stop(home).catch(() => {});
+    try {
+      const last = realLifecycle.lastSpawned();
+      if (await realLifecycle.processPresent(last.pid)) await realLifecycle.terminateFixtureProcess(last.pid).catch(() => {});
+    } catch {}
+    await realLifecycle.cleanupHome(home);
+  }
 }, 120_000);
 
 function countStrictReads(backend: ManagerBackend): { wrapped: ManagerBackend; counts: { read: number } } {
@@ -634,7 +672,11 @@ test("SVC-STATUS-FULL-INSTANCE-DIGEST", async () => {
       expect(result).toMatchObject({ ok: false, state: "stale", code: "STATE_CHANGED" });
       expect(realLifecycle.exitCode(result)).toBe(3);
     }
-  } finally { await realLifecycle.stop(home); }
+  } finally {
+    await realLifecycle.stop(home).catch(() => {});
+    await realLifecycle.terminateLastOwned(home).catch(() => {});
+    await realLifecycle.cleanupHome(home);
+  }
 }, 180_000);
 
 test("SVC-STATEPAIR-CHANGED", async () => {
@@ -646,7 +688,11 @@ test("SVC-STATEPAIR-CHANGED", async () => {
     const disappeared = await statusAfterMutatingFiles(home, () => { rmSync(instancePath, { force: true }); });
     expect(disappeared).toMatchObject({ ok: false, state: "stale", code: "STATE_CHANGED" });
     expect(realLifecycle.exitCode(disappeared)).toBe(3);
-  } finally { await realLifecycle.stop(home); }
+  } finally {
+    await realLifecycle.stop(home).catch(() => {});
+    await realLifecycle.terminateLastOwned(home).catch(() => {});
+    await realLifecycle.cleanupHome(home);
+  }
 }, 120_000);
 
 test("SVC-STATUS-FULL-CONFIG-DIGEST", async () => {
@@ -667,7 +713,11 @@ test("SVC-STATUS-FULL-CONFIG-DIGEST", async () => {
       writeDurableJson(configPath, realLifecycle.projectConfig(allocateLoopbackPort(), project));
     });
     expect(swapped).toMatchObject({ ok: false, state: "stale", code: "STATE_CHANGED" });
-  } finally { await realLifecycle.stop(home); }
+  } finally {
+    await realLifecycle.stop(home).catch(() => {});
+    await realLifecycle.terminateLastOwned(home).catch(() => {});
+    await realLifecycle.cleanupHome(home);
+  }
 }, 120_000);
 
 test("SVC-LIFECYCLE-IO", async () => {
@@ -694,7 +744,7 @@ test("SVC-START-PROVEN-STALE-RECOVERY", async () => {
     expect(realLifecycle.counters().spawn).toBe(countersBefore.spawn + 1);
     expect(await realLifecycle.archivedInstanceIds(home)).toContain(first.instance_id);
     expect((await realLifecycle.persistedInstance(home)).state).toBe("running");
-  } finally { await realLifecycle.stop(home); }
+  } finally { await realLifecycle.stop(home).catch(() => {}); await realLifecycle.cleanupHome(home); }
 }, 120_000);
 
 test("SVC-LIFECYCLE-STALE-ARCHIVE", async () => {
@@ -708,7 +758,7 @@ test("SVC-LIFECYCLE-STALE-ARCHIVE", async () => {
     expect(archived).toContain(first.instance_id);
     expect(archived).not.toContain(second.instance_id);
     expect(existsSync(join(stateRoot(home), "control", "archive"))).toBe(true);
-  } finally { await realLifecycle.stop(home); }
+  } finally { await realLifecycle.stop(home).catch(() => {}); await realLifecycle.cleanupHome(home); }
 }, 120_000);
 
 test("SVC-LIFECYCLE-CONFLICT", async () => {
@@ -719,7 +769,7 @@ test("SVC-LIFECYCLE-CONFLICT", async () => {
     expect(conflict).toMatchObject({ ok: false, state: "conflict", code: "CONFIG_CONFLICT" });
     expect(realLifecycle.exitCode(conflict)).toBe(4);
     expect((await realLifecycle.persistedInstance(home)).state).toBe("running");
-  } finally { await realLifecycle.stop(home); }
+  } finally { await realLifecycle.stop(home).catch(() => {}); await realLifecycle.cleanupHome(home); }
 }, 120_000);
 
 test("SVC-LIFECYCLE-CRASH", async () => {
@@ -752,7 +802,7 @@ test("SVC-LIFECYCLE-FOREIGN", async () => {
       expect(realLifecycle.counters().spawn).toBe(spawnBefore);
       expect(await realLifecycle.ownedByteSnapshot(home)).toEqual(bytesBefore);
     } finally { foreign.stop(true); }
-  } finally { await realLifecycle.stop(home); }
+  } finally { await realLifecycle.stop(home).catch(() => {}); await realLifecycle.cleanupHome(home); }
 }, 120_000);
 
 test("SVC-LIFECYCLE-IDEMPOTENT", async () => {
@@ -764,7 +814,7 @@ test("SVC-LIFECYCLE-IDEMPOTENT", async () => {
     const second = await startBackend(backend, home, config);
     expect(second).toMatchObject({ ok: true, state: "running", pid: first.pid, instance_id: first.instance_id });
     expect(realLifecycle.counters().spawn).toBe(spawnBefore);
-  } finally { await realLifecycle.stop(home); }
+  } finally { await realLifecycle.stop(home).catch(() => {}); await realLifecycle.cleanupHome(home); }
 }, 120_000);
 
 test("SVC-LIFECYCLE-START", async () => {
@@ -775,7 +825,7 @@ test("SVC-LIFECYCLE-START", async () => {
     expect(started.pid).toBeGreaterThan(0);
     expect(realLifecycle.lockOperations()).toContain("start");
     expect((await realLifecycle.persistedInstance(home)).state).toBe("running");
-  } finally { await realLifecycle.stop(home); }
+  } finally { await realLifecycle.stop(home).catch(() => {}); await realLifecycle.cleanupHome(home); }
 }, 120_000);
 
 test("SVC-LIFECYCLE-STATUS", async () => {
@@ -785,7 +835,7 @@ test("SVC-LIFECYCLE-STATUS", async () => {
     const running = await realLifecycle.status(home);
     expect(running).toMatchObject({ ok: true, state: "running", instance_id: started.instance_id, port, uptime_seconds: expect.any(Number) });
     expect(realLifecycle.lockOperations()).not.toContain("status");
-  } finally { await realLifecycle.stop(home); }
+  } finally { await realLifecycle.stop(home).catch(() => {}); await realLifecycle.cleanupHome(home); }
 }, 120_000);
 
 test("SVC-LIFECYCLE-STOP", async () => {
@@ -847,7 +897,7 @@ test("SVC-RESTART-INVALID-BEFORE-STOP", async () => {
       expect((await realLifecycle.persistedInstance(home)).state).toBe("running");
       expect(await fetchServiceHealth(port)).toMatchObject({ mode: "service" });
     } finally { blocker.stop(true); }
-  } finally { await realLifecycle.stop(home); }
+  } finally { await realLifecycle.stop(home).catch(() => {}); await realLifecycle.cleanupHome(home); }
 }, 120_000);
 
 test("SVC-RESTART-PRESERVE", async () => {
@@ -863,7 +913,11 @@ test("SVC-RESTART-PRESERVE", async () => {
     expect(restarted.effective_config_digest).toBe(first.effective_config_digest);
     expect(readFileSync(join(stateRoot(home), "config.json")).equals(configBytesBefore)).toBe(true);
     expect(realLifecycle.counters().spawn).toBe(spawnBefore + 1);
-  } finally { await realLifecycle.stop(home); }
+  } finally {
+    await realLifecycle.stop(home).catch(() => {});
+    await realLifecycle.terminateLastOwned(home).catch(() => {});
+    await realLifecycle.cleanupHome(home);
+  }
 }, 120_000);
 
 test("SVC-RESTART-STALE-RECOVERY", async () => {
@@ -877,7 +931,11 @@ test("SVC-RESTART-STALE-RECOVERY", async () => {
     expect(restarted).toMatchObject({ ok: true, state: "running" });
     expect(restarted.instance_id).not.toBe(first.instance_id);
     expect(await realLifecycle.archivedInstanceIds(home)).toContain(first.instance_id);
-  } finally { await realLifecycle.stop(home); }
+  } finally {
+    await realLifecycle.stop(home).catch(() => {});
+    await realLifecycle.terminateLastOwned(home).catch(() => {});
+    await realLifecycle.cleanupHome(home);
+  }
 }, 120_000);
 
 test("SVC-RESTART-RESTORE-FAILED", async () => {
@@ -891,7 +949,12 @@ test("SVC-RESTART-RESTORE-FAILED", async () => {
     const restarted = await realLifecycle.restart(home, realLifecycle.globalConfig(allocateLoopbackPort()));
     expect(restarted).toMatchObject({ ok: false, rollback_attempted: true, rollback_state: "restore_failed" });
     expect(existsSync(join(stateRoot(home), "config.json"))).toBe(false);
-  } finally { realLifecycle.drainPendingFailureArming(); await realLifecycle.stop(home).catch(() => {}); }
+  } finally {
+    realLifecycle.drainPendingFailureArming();
+    await realLifecycle.stop(home).catch(() => {});
+    await realLifecycle.terminateLastOwned(home).catch(() => {});
+    await realLifecycle.cleanupHome(home);
+  }
 }, 120_000);
 
 test("SVC-RESTART-STOP-FAILED", async () => {
@@ -906,7 +969,268 @@ test("SVC-RESTART-STOP-FAILED", async () => {
     expect(realLifecycle.counters().spawn).toBe(spawnBefore);
     expect((await realLifecycle.persistedInstance(home)).state).toBe("running");
     expect(await fetchServiceHealth(port)).toMatchObject({ mode: "service" });
-  } finally { await realLifecycle.stop(home); }
+  } finally {
+    await realLifecycle.stop(home).catch(() => {});
+    await realLifecycle.terminateLastOwned(home).catch(() => {});
+    await realLifecycle.cleanupHome(home);
+  }
 }, 120_000);
+
+test("SVC-RD-LOGPATH-ECHO-RUNNING", async () => {
+  const home = await realLifecycle.home(), port = allocateLoopbackPort();
+  const started = await startBackend(realLifecycle.backend(), home, realLifecycle.globalConfig(port));
+  try {
+    expect(started.ok).toBe(true);
+    const logRef = (await realLifecycle.persistedInstance(home)).log_ref;
+    const status = await realLifecycle.status(home);
+    expect(status.state).toBe("running");
+    expect(status.log_path).toBe(logRef);
+    expect(status.log_path).toMatch(/^logs\/[A-Za-z0-9._-]{1,128}\.log$/);
+    expect(status.log_path).not.toBe("logs/service.log");
+  } finally { await realLifecycle.stop(home).catch(() => {}); await realLifecycle.cleanupHome(home); }
+}, 120_000);
+
+test("SVC-RD-LOGPATH-STOP-ECHOES", async () => {
+  const home = await realLifecycle.home(), port = allocateLoopbackPort();
+  const started = await startBackend(realLifecycle.backend(), home, realLifecycle.globalConfig(port));
+  try {
+    expect(started.ok).toBe(true);
+    const logRef = (await realLifecycle.persistedInstance(home)).log_ref;
+    const stopped = await realLifecycle.stop(home);
+    expect(stopped.state).toBe("stopped");
+    expect(stopped.log_path).toBe(logRef);
+  } finally { await realLifecycle.cleanupHome(home); }
+}, 120_000);
+
+test("SVC-RD-LOGPATH-EMPTY-NO-INSTANCE", async () => {
+  const home = await realLifecycle.home();
+  const status = await realLifecycle.status(home);
+  expect(status).toMatchObject({ ok: false, state: "stopped", code: "NOT_RUNNING" });
+  expect(status.log_path).toBe("");
+  const stopped = await realLifecycle.stop(home);
+  expect(stopped).toMatchObject({ ok: true, state: "stopped", code: "ALREADY_STOPPED" });
+  expect(stopped.log_path).toBe("");
+  await realLifecycle.cleanupHome(home);
+}, 60_000);
+
+test("SVC-SIGNAL-PERSISTENT-DELEGATES", async () => {
+  const port = allocateLoopbackPort();
+  const registered: Array<(signal: "SIGINT" | "SIGTERM") => void> = [];
+  let unregisterCalls = 0;
+  const delegated: Array<"SIGINT" | "SIGTERM"> = [];
+  const exits: number[] = [];
+  let running: Awaited<ReturnType<typeof startServer>> | undefined;
+  try {
+    running = await startServer({
+      port, open: false, allowActions: false, theme: "apple", lifetime: { mode: "persistent" },
+      serviceHealth: { schema_version: "1.0.0", mode: "service", instance_id: randomUUID(), port, scope: "global", lifetime: "persistent", allow_actions: false, engine_version: "0.7.11", effective_config_digest: `sha256:${"c".repeat(64)}`, process_digest: `sha256:${"d".repeat(64)}`, extension_root_digest: `sha256:${"e".repeat(64)}`, read_only: true, persistent: true },
+      handleSignal: signal => { delegated.push(signal); },
+    }, {
+      exit: code => { exits.push(code); },
+      registerSignals: handler => {
+        registered.push(handler);
+        return () => { unregisterCalls += 1; };
+      },
+    });
+    expect(registered.length).toBe(1);
+    const handler = registered[0]!;
+    handler("SIGTERM");
+    await Promise.resolve();
+    expect(delegated).toEqual(["SIGTERM"]);
+    expect(unregisterCalls).toBe(1);
+    expect(exits).toEqual([]);
+    handler("SIGTERM");
+    await Promise.resolve();
+    expect(delegated).toEqual(["SIGTERM"]);
+    expect(exits).toEqual([]);
+  } finally {
+    running?.server.stop(true);
+  }
+}, 15_000);
+
+test("SVC-SIGNAL-NORMAL-KEEPS-GENERIC", async () => {
+  const port = allocateLoopbackPort();
+  const registered: Array<(signal: "SIGINT" | "SIGTERM") => void> = [];
+  let unregisterCalls = 0;
+  const exits: number[] = [];
+  let running: Awaited<ReturnType<typeof startServer>> | undefined;
+  try {
+    running = await startServer({ port, open: false, idleMin: 30, allowActions: false, theme: "apple" }, {
+      now: () => 0,
+      setInterval: () => 1,
+      clearInterval: () => {},
+      log: () => {},
+      exit: code => { exits.push(code); },
+      registerSignals: handler => {
+        registered.push(handler);
+        return () => { unregisterCalls += 1; };
+      },
+    });
+    expect(registered.length).toBe(1);
+    registered[0]!("SIGTERM");
+    expect(unregisterCalls).toBe(1);
+    expect(exits).toEqual([0]);
+    await expect(fetch(`http://127.0.0.1:${port}/api/health`)).rejects.toThrow();
+  } finally {
+    running?.server.stop(true);
+  }
+}, 15_000);
+
+test("SVC-WORKER-SIGNAL-FINALIZER-EXACT", async () => {
+  const workerModule = await import("../scripts/glance-service-worker.ts");
+  const createGracefulSignalStop = (workerModule as { createGracefulSignalStop?: unknown }).createGracefulSignalStop;
+  expect(typeof createGracefulSignalStop).toBe("function");
+  const port = allocateLoopbackPort();
+  const harness = createWorkerHarness(port);
+  try {
+    writePrivateBytes(harness.secretPath, harness.secret);
+    writeDurableJson(harness.configPath, harness.config);
+    const instanceRunning = harness.instance("running");
+    writeDurableJson(harness.instancePath, instanceRunning);
+    mkdirSync(join(harness.root, "logs"), { recursive: true });
+    appendFileSync(join(harness.root, "logs", "service.log"), "[glance-service] boot\n");
+    const metadata = { engineVersion: "0.7.11", extensionRootDigest: `sha256:${"e".repeat(64)}` as const };
+    const running = await startServer({ port, open: false, allowActions: false, theme: "apple", lifetime: { mode: "persistent" }, serviceHealth: buildServiceHealth(harness.config, instanceRunning, metadata) });
+    const productionRuntime = createProductionRuntime(harness.root, metadata);
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let drainCount = 0;
+    let finalizeCount = 0;
+    const exits: number[] = [];
+    const logged: string[] = [];
+    const finalizer = createGracefulSignalStop({
+      drain: async () => {
+        drainCount += 1;
+        await drainServer(running.server).then(() => gate);
+      },
+      finalizeStop: async () => {
+        finalizeCount += 1;
+        await productionRuntime.finalizeStop(instanceRunning);
+      },
+      exit: code => { exits.push(code); },
+      log: line => { logged.push(line); },
+    }) as (signal: "SIGINT" | "SIGTERM") => Promise<void>;
+    try {
+      const first = finalizer("SIGTERM");
+      const second = finalizer("SIGINT");
+      expect(second).toBe(first);
+      let settled = false;
+      void first.then(() => { settled = true; }, () => { settled = true; });
+      for (let spin = 0; spin < 5; spin++) await Promise.resolve();
+      expect(settled).toBe(false);
+      release();
+      await Promise.all([first, second]);
+      expect(drainCount).toBe(1);
+      expect(finalizeCount).toBe(1);
+      await expect(fetch(`http://127.0.0.1:${port}/api/health`)).rejects.toThrow();
+      expect(existsSync(harness.instancePath)).toBe(false);
+      expect(existsSync(harness.secretPath)).toBe(false);
+      const logText = new TextDecoder().decode(readFileSync(join(harness.root, "logs", "service.log")));
+      expect(logText.trimEnd().endsWith(`[glance-service] stopped ${harness.instanceId}`)).toBe(true);
+      expect(exits).toEqual([0]);
+    } finally {
+      release();
+    }
+    const failureLogged: string[] = [];
+    const failureExits: number[] = [];
+    const failingFinalizer = createGracefulSignalStop({
+      drain: async () => { throw new Error("DRAIN_REJECTED_PROOF"); },
+      finalizeStop: async () => {},
+      exit: code => { failureExits.push(code); },
+      log: line => { failureLogged.push(line); },
+    }) as (signal: "SIGINT" | "SIGTERM") => Promise<void>;
+    await failingFinalizer("SIGTERM");
+    expect(failureExits).toEqual([1]);
+    expect(failureLogged.join("\n")).toContain("DRAIN_REJECTED_PROOF");
+  } finally {
+    rmSync(harness.root, { recursive: true, force: true });
+  }
+}, 30_000);
+
+test.skipIf(process.platform === "win32")("SVC-WORKER-SIGNAL-REAL-SIGTERM", async () => {
+  const home = await realLifecycle.home(), port = allocateLoopbackPort();
+  const started = await startBackend(realLifecycle.backend(), home, realLifecycle.globalConfig(port));
+  try {
+    expect(started.ok).toBe(true);
+    expect(await waitForHealth(`http://127.0.0.1:${port}/api/health`)).toMatchObject({ mode: "service" });
+    const serviceRoot = stateRoot(home);
+    const logRef = (await realLifecycle.persistedInstance(home)).log_ref as string;
+    process.kill(started.pid, "SIGTERM");
+    const deadline = Date.now() + 20_000;
+    while (Date.now() < deadline && await realLifecycle.processPresent(started.pid)) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    expect(await realLifecycle.processPresent(started.pid)).toBe(false);
+    await realLifecycle.proveNoProcessPortOrHealth(started);
+    expect(await realLifecycle.privateArtifacts(home)).toEqual([]);
+    const logText = new TextDecoder().decode(readFileSync(join(serviceRoot, ...logRef.split("/"))));
+    expect(logText.trimEnd().endsWith(`[glance-service] stopped ${started.instance_id}`)).toBe(true);
+  } finally {
+    await realLifecycle.terminateFixtureProcess(started.pid).catch(() => {});
+    await realLifecycle.cleanupHome(home);
+  }
+}, 60_000);
+
+test("SVC-WORKER-STARTUP-DIGEST-MISMATCH", async () => {
+  const port = allocateLoopbackPort();
+  const harness = createWorkerHarness(port);
+  const scheduler = manualScheduler();
+  try {
+    writePrivateBytes(harness.secretPath, harness.secret);
+    writeDurableJson(harness.configPath, harness.config);
+    const mismatched = { ...harness.instance("starting"), process_digest: `sha256:${"a".repeat(64)}` };
+    writeDurableJson(harness.instancePath, mismatched);
+    writeDurableJson(harness.readyPath, { schema_version: "1.0.0", startup_id: harness.startupId, instance_id: harness.instanceId, instance_digest: digestJcs(mismatched) });
+    let consumed = 0;
+    const readiness = createStartupReadiness({ now: scheduler.now, schedule: scheduler.schedule });
+    const stopControl = createStopControl({ root: harness.root, now: () => Date.now(), schedule: scheduler.schedule, readPrivate: readFileSync });
+    const runtime = {
+      io: { read: (path: string) => readFileSync(path), archive() { throw new Error("archive not wired"); } },
+      readPrivate: readFileSync,
+      waitForStartupReady: readiness.waitForStartupReady,
+      consumeStartupReady: async () => { consumed += 1; throw new Error("REACHED_CONSUME"); },
+      watchStop: stopControl.watchStop,
+      validateAndConsume: stopControl.validateAndConsume,
+      drain: (server: Bun.Server<unknown>) => drainServer(server, { timeoutMs: 2_000 }),
+      finalizeStop: async () => {},
+      metadata: { engineVersion: "0.7.11", extensionRootDigest: `sha256:${"e".repeat(64)}` as const },
+    };
+    const outcome = await runServiceWorker(
+      { serviceRoot: harness.root, configRef: "config.json", instanceRef: "instance.json", startupId: harness.startupId },
+      runtime,
+    ).then(() => "no-error", (error: unknown) => String((error as Error)?.message));
+    expect(outcome).toContain("STARTUP_PROCESS_DIGEST");
+    expect(consumed).toBe(0);
+  } finally { rmSync(harness.root, { recursive: true, force: true }); }
+}, 30_000);
+
+test("SVC-RD-BYTES-DRIFT-LIFECYCLE", async () => {
+  const home = await realLifecycle.home(), backend = realLifecycle.backend(), port = allocateLoopbackPort();
+  const started = await startBackend(backend, home, realLifecycle.globalConfig(port));
+  try {
+    expect(started.ok).toBe(true);
+    realLifecycle.injectEntrypointReader(path => {
+      const bytes = readFileSync(path);
+      const appended = new Uint8Array(bytes.length + 1);
+      appended.set(bytes);
+      appended[bytes.length] = 35;
+      return appended;
+    });
+    const drifted = await realLifecycle.status(home);
+    expect(drifted).toMatchObject({ state: "running", ok: true, restart_required: true, pid: started.pid, engine_version: expect.any(String) });
+    realLifecycle.injectEntrypointReader(undefined);
+    const restored = await realLifecycle.status(home);
+    expect(restored).toMatchObject({ restart_required: false, pid: started.pid });
+    const restarted = await realLifecycle.restart(home, undefined);
+    expect(restarted).toMatchObject({ ok: true, state: "running" });
+    expect(restarted.restart_required ?? false).toBe(false);
+    const workerEntrypoint = join(import.meta.dir, "..", "scripts", "glance-service-worker.ts");
+    expect((await realLifecycle.persistedInstance(home)).process_digest).toBe(processDigestFromEntrypointBytes(readFileSync(workerEntrypoint)));
+  } finally {
+    await realLifecycle.stop(home).catch(() => {});
+    await realLifecycle.terminateLastOwned(home).catch(() => {});
+    await realLifecycle.cleanupHome(home);
+  }
+}, 180_000);
 
 export const LIFECYCLE_CASES = ["SVC-LIFECYCLE-CONFLICT", "SVC-LIFECYCLE-CRASH", "SVC-LIFECYCLE-FOREIGN", "SVC-LIFECYCLE-IDEMPOTENT", "SVC-LIFECYCLE-IO", "SVC-LIFECYCLE-STALE-ARCHIVE", "SVC-LIFECYCLE-START", "SVC-LIFECYCLE-STATUS", "SVC-LIFECYCLE-STOP", "SVC-LIFECYCLE-STOP-IDEMPOTENT", "SVC-LIFECYCLE-STOPPED-STATUS", "SVC-STATEPAIR-ABSENT", "SVC-STATEPAIR-CONFIG-ONLY", "SVC-STATEPAIR-INSTANCE-ONLY", "SVC-STATEPAIR-CHANGED", "SVC-STATUS-FULL-CONFIG-DIGEST", "SVC-STATUS-FULL-INSTANCE-DIGEST", "SVC-STARTUP-WORKER-FASTER-THAN-MANAGER", "SVC-STARTUP-READY-TIMEOUT", "SVC-STARTUP-READY-DIGEST", "SVC-RESTART-INVALID-BEFORE-STOP", "SVC-RESTART-PRESERVE", "SVC-RESTART-RESTORE-FAILED", "SVC-RESTART-RESTORED", "SVC-RESTART-STOP-FAILED"] as const;

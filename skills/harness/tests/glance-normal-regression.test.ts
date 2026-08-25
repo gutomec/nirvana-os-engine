@@ -30,6 +30,7 @@ test("SVC-NORMAL-REAL-RUNGLANCE", async () => {
   let tick: (() => void) | undefined;
   let opened = "";
   const logged: string[] = [];
+  let exited = false;
   const code = await runGlance(["--port", String(port), "--idle-min", "1", "--read-only", "--theme", "apple"], {
     serviceManager: { run: async () => { throw new Error("service path used"); } },
     normalRuntime: {
@@ -38,7 +39,7 @@ test("SVC-NORMAL-REAL-RUNGLANCE", async () => {
       setInterval: callback => { tick = callback; return 1; },
       clearInterval: () => {},
       log: line => logged.push(line),
-      exit: exitCode => { if (exitCode !== 0) throw new Error(`unexpected exit ${exitCode}`); },
+      exit: exitCode => { if (exitCode !== 0) throw new Error(`unexpected exit ${exitCode}`); exited = true; },
     },
   });
   expect(code).toBe(0);
@@ -48,9 +49,15 @@ test("SVC-NORMAL-REAL-RUNGLANCE", async () => {
   expect(logged.some(line => line.includes(`allow_actions=false, theme=apple`))).toBe(true);
   now = 30_000;
   tick?.();
-  expect((await fetch(`${opened}/api/health`)).status).toBe(200);
+  expect(exited).toBe(false);
+  const refreshed = await (await fetch(`${opened}/api/health`)).json() as Record<string, unknown>;
+  expect(refreshed.idle_ms).toBe(0);
   now = 60_001;
   tick?.();
+  expect(exited).toBe(false);
+  now = 90_001;
+  tick?.();
+  expect(exited).toBe(true);
   await expect(fetch(`${opened}/api/health`)).rejects.toThrow();
 }, 60_000);
 

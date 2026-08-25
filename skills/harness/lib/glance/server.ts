@@ -55,7 +55,7 @@ const STARTED_AT = Date.now();
 const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
   || (fs.existsSync(path.join(os.homedir(), ".nirvana", "skills")) ? path.join(os.homedir(), ".nirvana", "skills") : path.join(os.homedir(), ".claude", "skills"));
 
-export interface ServerRuntime { now(): number; openBrowser(url: string): Promise<void> | void; setInterval(callback: () => void, ms: number): unknown; clearInterval(handle: unknown): void; log(line: string): void; exit(code: number): void }
+export interface ServerRuntime { now(): number; openBrowser(url: string): Promise<void> | void; setInterval(callback: () => void, ms: number): unknown; clearInterval(handle: unknown): void; log(line: string): void; exit(code: number): void; registerSignals(handler: (signal: "SIGINT" | "SIGTERM") => void): () => void }
 export const defaultServerRuntime: ServerRuntime = {
   now: () => Date.now(),
   openBrowser: url => openBrowser(url),
@@ -63,6 +63,12 @@ export const defaultServerRuntime: ServerRuntime = {
   clearInterval: handle => clearInterval(handle as ReturnType<typeof setInterval>),
   log: line => console.error(line),
   exit: code => process.exit(code),
+  registerSignals: handler => {
+    const h = (signal: "SIGINT" | "SIGTERM"): void => handler(signal);
+    process.on("SIGINT", h);
+    process.on("SIGTERM", h);
+    return () => { process.off("SIGINT", h); process.off("SIGTERM", h); };
+  },
 };
 
 interface NormalServerOptions {
@@ -80,6 +86,7 @@ interface PersistentServerOptions {
   theme: "apple" | "apple-dark" | "awwwards";
   lifetime: { mode: "persistent" };
   serviceHealth: Omit<ServiceHealthV1, "uptime_seconds">;
+  handleSignal?: (signal: "SIGINT" | "SIGTERM") => void | Promise<void>;
 }
 
 type ServerOptions = NormalServerOptions | PersistentServerOptions;
@@ -271,7 +278,7 @@ export async function startServer(opts: ServerOptions, runtimeOverrides?: Partia
     async fetch(req) {
       const u = new URL(req.url);
       const p = u.pathname;
-      if (p !== "/api/health") bumpActivity();
+      bumpActivity();
 
       // ─── Project-scope filter (?project=<absolute_path>) ────────────────
       // Frontend sends this on Agents/Runs/Cost/Memory/Activity when the user
@@ -1565,7 +1572,12 @@ export async function startServer(opts: ServerOptions, runtimeOverrides?: Partia
 
   runtime.log(`[glance] up on ${url}  (scope=${getScope().mode}, allow_actions=${opts.allowActions}, theme=${opts.theme})`);
   let watchdog: unknown = undefined;
-  const shutdownWithRuntime = () => shutdown(server, watchdog, runtime);
+  let delegatedOnce = false;
+  const unregisterRef: { current: (() => void) | undefined } = { current: undefined };
+  const shutdownWithRuntime = (): void => {
+    unregisterRef.current?.();
+    shutdown(server, watchdog, runtime);
+  };
   if (!persistent) {
     runtime.log(`[glance] auto-shutdown after ${idleMin}min idle  ·  Ctrl+C to exit`);
     if (opts.open) void runtime.openBrowser(url);
@@ -1580,10 +1592,21 @@ export async function startServer(opts: ServerOptions, runtimeOverrides?: Partia
   }
 
   // SIGINT/SIGTERM cleanup
-  const onSignal = () => { runtime.log("[glance] SIGINT — shutting down"); shutdownWithRuntime(); };
-  process.on("SIGINT", onSignal);
-  process.on("SIGTERM", onSignal);
-
+  function onSignal(signal: "SIGINT" | "SIGTERM"): void {
+    if (persistent && "handleSignal" in opts && typeof opts.handleSignal === "function") {
+      if (delegatedOnce) return;
+      delegatedOnce = true;
+      unregisterRef.current?.();
+      void Promise.resolve().then(() => opts.handleSignal!(signal)).catch((error: unknown) => {
+        runtime.log(`[glance-service] ${error instanceof Error ? error.message : String(error)}`);
+        runtime.exit(1);
+      });
+      return;
+    }
+    runtime.log("[glance] SIGINT — shutting down");
+    shutdownWithRuntime();
+  }
+  unregisterRef.current = runtime.registerSignals(onSignal);
   return { server, url, port };
 }
 

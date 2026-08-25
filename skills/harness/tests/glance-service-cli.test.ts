@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";import { tmpdir } from "node:os";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { parseGlanceArgs, renderGlanceHelp, resolveServiceRequest, runGlance } from "../scripts/glance.ts";
 import { parseServiceCommand, SERVICE_EXIT_TABLE, serviceExitCode } from "../lib/glance/service/command-registry.ts";
 import { digestCanonicalPath } from "../lib/glance/service/paths.ts";
@@ -132,7 +133,7 @@ test("SVC-CLI-EXIT-TABLE-FROZEN-COMPLETE", () => {
 });
 
 function stubResult(state: string, code: string, ok = false) {
-  return { schema_version: "1.0.0", command: "status", ok, state, read_only: true, persistent: true, log_path: "logs/service.log", code, message: code } as const;
+  return { schema_version: "1.0.0", command: "status", ok, state, read_only: true, persistent: true, log_path: "", code, message: code } as const;
 }
 
 const EXIT_MATRIX = [

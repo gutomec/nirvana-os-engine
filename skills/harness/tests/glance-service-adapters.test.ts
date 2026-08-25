@@ -1,14 +1,14 @@
 import { expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { canonicalizeJcs } from "../lib/glance/service/canonicalize.ts";
-import { canonicalWorkerArgv, classifyExistingService, createBunProcessAdapter, extractWorkerIdentityFromArgv, processDigestFromIdentity } from "../lib/glance/service/adapters.ts";
+import { canonicalWorkerArgv, classifyExistingService, createBunProcessAdapter, extractWorkerIdentityFromArgv } from "../lib/glance/service/adapters.ts";
 
 const WORKER_ENTRYPOINT = join("skills", "harness", "scripts", "glance-service-worker.ts");
 const SERVICE_ROOT = join(tmpdir(), "svc-root");
 const STARTUP_ID = "00000000-0000-4000-8000-000000000001";
-const PROCESS_DIGEST = processDigestFromIdentity({ entrypoint: WORKER_ENTRYPOINT, serviceRoot: SERVICE_ROOT, startupId: STARTUP_ID });
+const PROCESS_DIGEST = `sha256:${createHash("sha256").update(new TextEncoder().encode("worker-bytes")).digest("hex")}`;
 
 const baseEvidence = () => ({
   expected: {
@@ -18,6 +18,8 @@ const baseEvidence = () => ({
     workerEntrypoint: WORKER_ENTRYPOINT,
     expectedServiceRoot: SERVICE_ROOT,
     recordedProcessDigest: PROCESS_DIGEST,
+    startupId: STARTUP_ID,
+    currentProcessDigest: PROCESS_DIGEST,
   },
   process: { exists: true, entrypoint: process.execPath, argv: canonicalWorkerArgv(WORKER_ENTRYPOINT, SERVICE_ROOT, STARTUP_ID) },
   portOwnedByListener: true,
@@ -78,16 +80,26 @@ test("SVC-PROCESS-REAL-UNICODE-SPACES", async () => {
   }
 }, 30_000);
 
-test("SVC-PROCESS-DIGEST", () => {
-  const identity = { entrypoint: WORKER_ENTRYPOINT, serviceRoot: SERVICE_ROOT, startupId: STARTUP_ID };
-  expect(processDigestFromIdentity(identity)).toBe(`sha256:${new Bun.CryptoHasher("sha256").update(canonicalizeJcs(identity)).digest("hex")}`);
-  expect(processDigestFromIdentity({ ...identity, serviceRoot: "/srv/other" })).not.toBe(processDigestFromIdentity(identity));
+test("SVC-PROCESS-DIGEST", async () => {
+  const { processDigestFromEntrypointBytes, startupIdFromLogRef } = await import("../lib/glance/service/adapters.ts") as typeof import("../lib/glance/service/adapters.ts");
+  expect(typeof processDigestFromEntrypointBytes).toBe("function");
+  expect(typeof startupIdFromLogRef).toBe("function");
+  const bytes = new TextEncoder().encode("raw worker entrypoint bytes");
+  const expected = `sha256:${new Bun.CryptoHasher("sha256").update(bytes).digest("hex")}`;
+  expect(processDigestFromEntrypointBytes(bytes)).toBe(expected);
+  expect(processDigestFromEntrypointBytes(new TextEncoder().encode("other bytes"))).not.toBe(expected);
   expect(extractWorkerIdentityFromArgv(canonicalWorkerArgv(WORKER_ENTRYPOINT, SERVICE_ROOT, STARTUP_ID))).toEqual({
     entrypoint: WORKER_ENTRYPOINT,
     serviceRoot: SERVICE_ROOT,
     startupId: STARTUP_ID,
   });
   expect(extractWorkerIdentityFromArgv(["bun", "worker.ts"])).toBeNull();
+  expect(startupIdFromLogRef(`logs/${STARTUP_ID}.log`)).toBe(STARTUP_ID);
+  expect(startupIdFromLogRef("logs/not-a-uuid.log")).toBeNull();
+  expect(startupIdFromLogRef("logs/00000000-0000-4000-8000-00000000000A.log")).toBeNull();
+  expect(startupIdFromLogRef("logs/00000000-0000-5000-8000-000000000001.log")).toBeNull();
+  expect(startupIdFromLogRef("logs/00000000-0000-4000-8000-000000000001")).toBeNull();
+  expect(startupIdFromLogRef("logs/../x.log")).toBeNull();
 });
 
 test("SVC-IDENTITY-MATCH", () => {
@@ -124,10 +136,37 @@ test("SVC-IDENTITY-WRONG-CONFIG", () => {
   expect(classifyExistingService(evidence)).toMatchObject({ kind: "conflict", code: "CONFIG_CONFLICT" });
 });
 
-test("SVC-IDENTITY-WRONG-ENGINE-VERSION", () => {
+test("SVC-IDENTITY-ENGINE-UPDATE-DRIFT", () => {
   const evidence = baseEvidence();
   evidence.health.engine_version = "0.7.10";
-  expect(classifyExistingService(evidence)).toMatchObject({ kind: "conflict", code: "ENGINE_CONFLICT" });
+  expect(classifyExistingService(evidence)).toMatchObject({ kind: "drift", restartRequired: true });
+});
+
+test("SVC-IDENTITY-ENGINE-VERSION-PRECEDENCE", () => {
+  const evidence = baseEvidence();
+  evidence.health.instance_id = "123e4567-e89b-12d3-a456-426614174001";
+  evidence.health.engine_version = "0.7.10";
+  expect(classifyExistingService(evidence)).toMatchObject({ kind: "conflict", code: "INSTANCE_CONFLICT" });
+});
+
+test("SVC-IDENTITY-BYTES-DRIFT", () => {
+  const evidence = baseEvidence();
+  evidence.expected.currentProcessDigest = `sha256:${"7".repeat(64)}`;
+  expect(classifyExistingService(evidence)).toMatchObject({ kind: "drift", restartRequired: true });
+});
+
+test("SVC-IDENTITY-DIGEST-UNAVAILABLE", () => {
+  const unavailable = baseEvidence();
+  (unavailable.expected as { currentProcessDigest?: string }).currentProcessDigest = undefined;
+  expect(classifyExistingService(unavailable)).toMatchObject({ kind: "indeterminate", code: "PROCESS_DIGEST_UNAVAILABLE" });
+  const withWrongEngine = baseEvidence();
+  (withWrongEngine.expected as { currentProcessDigest?: string }).currentProcessDigest = undefined;
+  withWrongEngine.health.engine_version = "0.7.10";
+  expect(classifyExistingService(withWrongEngine)).toMatchObject({ kind: "drift", restartRequired: true });
+  const withChangedPath = baseEvidence();
+  (withChangedPath.expected as { currentProcessDigest?: string }).currentProcessDigest = undefined;
+  withChangedPath.process = { ...withChangedPath.process, argv: canonicalWorkerArgv(join("other", "worker.ts"), SERVICE_ROOT, STARTUP_ID) };
+  expect(classifyExistingService(withChangedPath)).toMatchObject({ kind: "drift", restartRequired: true });
 });
 
 test("SVC-IDENTITY-ENTRYPOINT-DRIFT", () => {
@@ -142,11 +181,16 @@ test("SVC-IDENTITY-WRONG-ROOT", () => {
   expect(classifyExistingService(evidence)).toMatchObject({ kind: "conflict", code: "ROOT_CONFLICT" });
 });
 
-test("SVC-IDENTITY-WRONG-PROCESS", () => {
+test("SVC-IDENTITY-STARTUP-MISMATCH", () => {
   const evidence = baseEvidence();
-  evidence.health.process_digest = PROCESS_DIGEST;
-  evidence.expected.recordedProcessDigest = `sha256:${"8".repeat(64)}`;
-  expect(classifyExistingService(evidence)).toMatchObject({ kind: "drift", restartRequired: true });
+  evidence.process = { ...evidence.process, argv: canonicalWorkerArgv(WORKER_ENTRYPOINT, SERVICE_ROOT, "99999999-9999-4999-8999-999999999999") };
+  expect(classifyExistingService(evidence)).toMatchObject({ kind: "conflict", code: "PROCESS_CONFLICT" });
+});
+
+test("SVC-IDENTITY-STARTUP-BEFORE-ROOT", () => {
+  const evidence = baseEvidence();
+  evidence.process = { ...evidence.process, argv: canonicalWorkerArgv(WORKER_ENTRYPOINT, join(tmpdir(), "elsewhere"), "99999999-9999-4999-8999-999999999999") };
+  expect(classifyExistingService(evidence)).toMatchObject({ kind: "conflict", code: "PROCESS_CONFLICT" });
 });
 
 test("SVC-STATUS-PROCESS-DRIFT", () => {
@@ -173,4 +217,4 @@ test("SVC-ADAPTER-SPAWN-LIFECYCLE", async () => {
   }
 }, 30_000);
 
-export const IDENTITY_CASES = ["SVC-PROCESS-REAL-UNICODE-SPACES", "SVC-PROCESS-DIGEST", "SVC-IDENTITY-ENTRYPOINT-DRIFT", "SVC-IDENTITY-FOREIGN-PORT", "SVC-IDENTITY-HEALTH-MISSING", "SVC-IDENTITY-MATCH", "SVC-IDENTITY-PID-MISSING", "SVC-IDENTITY-WRONG-CONFIG", "SVC-IDENTITY-WRONG-ENGINE-VERSION", "SVC-IDENTITY-WRONG-INSTANCE", "SVC-IDENTITY-WRONG-PROCESS", "SVC-IDENTITY-WRONG-ROOT", "SVC-STATUS-PROCESS-DRIFT"] as const;
+export const IDENTITY_CASES = ["SVC-PROCESS-REAL-UNICODE-SPACES", "SVC-PROCESS-DIGEST", "SVC-IDENTITY-BYTES-DRIFT", "SVC-IDENTITY-DIGEST-UNAVAILABLE", "SVC-IDENTITY-ENTRYPOINT-DRIFT", "SVC-IDENTITY-ENGINE-UPDATE-DRIFT", "SVC-IDENTITY-ENGINE-VERSION-PRECEDENCE", "SVC-IDENTITY-FOREIGN-PORT", "SVC-IDENTITY-HEALTH-MISSING", "SVC-IDENTITY-MATCH", "SVC-IDENTITY-PID-MISSING", "SVC-IDENTITY-STARTUP-BEFORE-ROOT", "SVC-IDENTITY-STARTUP-MISMATCH", "SVC-IDENTITY-WRONG-CONFIG", "SVC-IDENTITY-WRONG-INSTANCE", "SVC-IDENTITY-WRONG-ROOT", "SVC-STATUS-PROCESS-DRIFT"] as const;

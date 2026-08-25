@@ -204,6 +204,10 @@ export function createRealLifecycleHarness() {
       void boundManager;
       if (options.identityProof === "indeterminate") pendingInspectionMode = { kind: "indeterminate" };
     },
+    injectEntrypointReader(reader?: (path: string) => Uint8Array): void {
+      if (reader) instrumentation.readEntrypointBytes = reader;
+      else delete instrumentation.readEntrypointBytes;
+    },
     failNextOwnedWrite(request: WriteFailureRequest): void { writeFailures.push(request); },
     queueStopDeliveryFailure(): void { stopDeliveryFailures += 1; },
     drainPendingFailureArming(): void {
@@ -241,6 +245,21 @@ export function createRealLifecycleHarness() {
         try { process.kill(pid, "SIGTERM"); } catch {}
       }
     },
+    async terminateLastOwned(home: string): Promise<void> {
+      if (!lastSpawned) return;
+      const serviceRoot = join(home, ".nirvana", "glance", "service");
+      try {
+        const inspection = await adapter.inspect(lastSpawned.pid);
+        if (!inspection.exists) return;
+        const argv = (inspection.argv ?? []) as string[];
+        const entry = inspection.entrypoint ?? "";
+        const hasWorker = entry.includes("glance-service-worker") || argv.some(a => a.includes("glance-service-worker"));
+        const hasRoot = argv.some(a => a.includes(serviceRoot));
+        const hasStartup = argv.includes(lastSpawned.startupId);
+        if (!hasWorker || !hasRoot || !hasStartup) return;
+        await harness.terminateFixtureProcess(lastSpawned.pid);
+      } catch {}
+    },
     async diagnoseStartFailure(home: string): Promise<{ state: string; evidence_preserved: boolean }> {
       const cleanup = cleanupResults[cleanupResults.length - 1];
       return {
@@ -254,6 +273,22 @@ export function createRealLifecycleHarness() {
       if (result.state === "stale") return 3;
       if (result.state === "stopped" && !result.ok) return 1;
       return 6;
+    },
+    async cleanupHome(home: string, project?: string): Promise<void> {
+      harness.drainPendingFailureArming();
+      try {
+        rmSync(home, { recursive: true, force: true });
+      } catch {}
+      if (project) {
+        try {
+          rmSync(project, { recursive: true, force: true });
+        } catch {}
+      }
+      if (currentHome === home) {
+        currentHome = undefined;
+        backendInstance = undefined;
+      }
+      if (project && currentProject === project) currentProject = undefined;
     },
   };
   return harness;

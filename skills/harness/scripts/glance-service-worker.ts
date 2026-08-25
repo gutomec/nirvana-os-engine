@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { appendFileSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { startServer, type ServerRuntime } from "../lib/glance/server.ts";
-import { buildServiceHealth } from "../lib/glance/service/adapters.ts";
+import { buildServiceHealth, processDigestFromEntrypointBytes } from "../lib/glance/service/adapters.ts";
 import { verifyStopRequestAgainstInstance } from "../lib/glance/service/control.ts";
 import { publishNoReplace } from "../lib/glance/service/no-replace.ts";
 import { createNativeNoReplace } from "../lib/glance/service/no-replace-native.ts";
@@ -24,7 +24,27 @@ export interface WorkerRuntime {
   drain(server: Bun.Server<unknown>): Promise<void>;
   finalizeStop(instance: unknown): Promise<void>;
   serverRuntime?: Partial<ServerRuntime>;
+  exit?(code: number): void;
   metadata: { engineVersion: string; extensionRootDigest: `sha256:${string}` };
+}
+
+export interface GracefulSignalStopDeps { drain(): Promise<void>; finalizeStop(): Promise<void>; exit(code: number): void; log(line: string): void }
+export function createGracefulSignalStop(deps: GracefulSignalStopDeps): (signal: "SIGINT" | "SIGTERM") => Promise<void> {
+  let flight: Promise<void> | undefined;
+  return () => {
+    if (flight) return flight;
+    flight = (async () => {
+      try {
+        await deps.drain();
+        await deps.finalizeStop();
+        deps.exit(0);
+      } catch (error) {
+        deps.log(`[glance-service] ${error instanceof Error ? error.message : String(error)}`);
+        deps.exit(1);
+      }
+    })();
+    return flight;
+  };
 }
 
 export async function runServiceWorker(args: ServiceWorkerArgs, runtime: WorkerRuntime): Promise<void> {
@@ -37,16 +57,28 @@ export async function runServiceWorker(args: ServiceWorkerArgs, runtime: WorkerR
   if (instance.instance_id !== ready.instance_id || digestJcs(instance) !== ready.instance_digest) throw new Error("STARTUP_INSTANCE_DIGEST");
   const config = readStateFileStrict(configPath, validateServiceConfig, runtime.io);
   if (digestJcs(config) !== instance.config_digest) throw new Error("STARTUP_CONFIG_DIGEST");
+  if (processDigestFromEntrypointBytes(readFileSync(import.meta.path)) !== instance.process_digest) throw new Error("STARTUP_PROCESS_DIGEST");
   await runtime.consumeStartupReady(readyPath, args.startupId);
   const secretPath = resolveServiceRef(args.serviceRoot, instance.control_secret_ref, true);
   const secret = runtime.readPrivate(secretPath);
   const serviceHealth = buildServiceHealth(config, instance, runtime.metadata);
-  const running = await startServer({ port: config.port, open: false, allowActions: false, theme: "apple", lifetime: { mode: "persistent" }, serviceHealth }, runtime.serverRuntime);
+  let running: Awaited<ReturnType<typeof startServer>> | undefined;
+  const handleSignal = createGracefulSignalStop({
+    drain: async () => {
+      if (!running) throw new Error("WORKER_SERVER_NOT_STARTED");
+      await runtime.drain(running.server);
+    },
+    finalizeStop: () => runtime.finalizeStop(instance),
+    exit: runtime.exit ?? (code => process.exit(code)),
+    log: line => console.error(line),
+  });
+  const started = await startServer({ port: config.port, open: false, allowActions: false, theme: "apple", lifetime: { mode: "persistent" }, serviceHealth, handleSignal }, runtime.serverRuntime);
+  running = started;
   await runtime.watchStop(async request => {
     const noncePath = resolveServiceRef(args.serviceRoot, (request as { nonce_ref: string }).nonce_ref, true);
     const nonce = runtime.readPrivate(noncePath);
     await runtime.validateAndConsume(request, secret, nonce, instance);
-    await runtime.drain(running.server);
+    await runtime.drain(started.server);
   });
   await runtime.finalizeStop(instance);
 }

@@ -2,7 +2,7 @@ import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { canonicalizeJcs } from "./canonicalize.ts";
-import { canonicalWorkerArgv, classifyExistingService, createBunProcessAdapter, fetchServiceHealth, portFreeProbe, processDigestFromIdentity, terminateVerifiedProcess, type ProcessInspection, type ServiceProcessAdapter } from "./adapters.ts";
+import { canonicalWorkerArgv, classifyExistingService, createBunProcessAdapter, fetchServiceHealth, portFreeProbe, processDigestFromEntrypointBytes, startupIdFromLogRef, terminateVerifiedProcess, type ProcessInspection, type ServiceProcessAdapter } from "./adapters.ts";
 import { acquireLock, captureLockIdentity, createPrivateLockCandidateDirectory, removeLockCandidateIfOwned, removeLockTokenIfOwned } from "./lock.ts";
 import { ServicePathError, digestCanonicalPath, resolveServiceRef } from "./paths.ts";
 import { publishNoReplace } from "./no-replace.ts";
@@ -42,7 +42,8 @@ export interface ManagerInstrumentation {
   adapter?: ServiceProcessAdapter;
   workerEntrypoint?: string;
   fetchHealth?(port: number): Promise<Record<string, unknown> | undefined>;
-  count?(event: "spawn" | "write" | "lockWrite" | "terminate", detail?: string): void;
+  count?(metric: "spawn" | "write" | "lockWrite" | "terminate", detail?: string): void;
+  readEntrypointBytes?(path: string): Uint8Array;
   failWrite?: (artifact: "config" | "instance" | "secret" | "readiness", boundary: "before" | "fsync", path: string) => boolean;
   perturbInspection?(pid: number, inspection: ProcessInspection): ProcessInspection;
   failStopDelivery?(): boolean;
@@ -129,7 +130,7 @@ async function classifyCompleteState(backend: ManagerBackend, root: string, home
   return { config, instance, inspection, currentTarget };
 }
 
-function buildRunningResult(metadata: { engineVersion: string; extensionRootDigest: Sha256 }, instance: { pid: number; started_at: string; instance_id: string }, target: ServiceTarget, health: Record<string, unknown>, restartRequired: boolean): GlanceServiceCommandResultV1 {
+function buildRunningResult(metadata: { engineVersion: string; extensionRootDigest: Sha256 }, instance: { pid: number; started_at: string; instance_id: string; log_ref: string }, target: ServiceTarget, health: Record<string, unknown>, restartRequired: boolean): GlanceServiceCommandResultV1 {
   return {
     schema_version: "1.0.0",
     command: "status",
@@ -146,7 +147,7 @@ function buildRunningResult(metadata: { engineVersion: string; extensionRootDige
     engine_version: String(health.engine_version ?? metadata.engineVersion),
     read_only: true,
     persistent: true,
-    log_path: "logs/service.log",
+    log_path: instance.log_ref,
     extension_root_digest: metadata.extensionRootDigest,
     effective_config_digest: target.configDigest,
     restart_required: restartRequired,
@@ -317,7 +318,7 @@ export async function restartBackend(backend: ManagerBackend, home: string, requ
           await portFreeProbeGuard(target.port);
           await backend.archiveProvenStale({ root, configDigest: digest(priorConfig), instanceDigest: digest(priorInstance), instanceId: (priorInstance as { instance_id: string }).instance_id });
         } catch (error) {
-          if (error instanceof Error && error.message === "PORT_BUSY") return conflictRestart(target.port);
+          if (error instanceof Error && error.message === "PORT_BUSY") return conflictRestart(target.port, (priorInstance as { log_ref: string }).log_ref);
           throw error;
         }
         const afterArchive = await backend.observeStatePair(root);
@@ -327,7 +328,7 @@ export async function restartBackend(backend: ManagerBackend, home: string, requ
       }
       if (!sameConfig) {
         const free = await portFreeProbe(target.port);
-        if (!free) return conflictRestart(target.port);
+        if (!free) return conflictRestart(target.port, (priorInstance as { log_ref: string }).log_ref);
       }
       let stopOutcome: GlanceServiceCommandResultV1;
       try { stopOutcome = await stopWithinLock(backend, root, home, digest(priorConfig)); } catch {
@@ -344,8 +345,8 @@ export async function restartBackend(backend: ManagerBackend, home: string, requ
   });
 }
 
-function conflictRestart(port: number): GlanceServiceCommandResultV1 {
-  return { schema_version: "1.0.0", command: "restart", ok: false, state: "conflict", read_only: true, persistent: true, log_path: "logs/service.log", port, url: `http://127.0.0.1:${port}`, code: "PORT_BUSY", message: "replacement port is held by another listener" };
+function conflictRestart(port: number, logPath = ""): GlanceServiceCommandResultV1 {
+  return { schema_version: "1.0.0", command: "restart", ok: false, state: "conflict", read_only: true, persistent: true, log_path: logPath, port, url: `http://127.0.0.1:${port}`, code: "PORT_BUSY", message: "replacement port is held by another listener" };
 }
 
 async function portFreeProbeGuard(port: number): Promise<void> {
@@ -397,14 +398,16 @@ export function createGlanceServiceManager(home: string, instrumentation: Manage
   const now = instrumentation.now ?? (() => Date.now());
   const sleep = instrumentation.sleep ?? defaultSleep;
   const adapter = instrumentation.adapter ?? createBunProcessAdapter();
+  const readEntrypointBytes = (path: string): Uint8Array =>
+    (instrumentation.readEntrypointBytes ?? readFileSync)(path);
   const metadata = readEngineMetadata();
   const native = createNativeNoReplace();
   const rootOf = (): string => join(home, ".nirvana", "glance", "service");
 
-  const buildTerminal = (command: "start" | "stop" | "status" | "restart", state: "stopped" | "stale" | "error", exitCode: 0 | 1 | 3, code: string): GlanceServiceCommandResultV1 =>
-    ({ schema_version: "1.0.0", command, ok: exitCode === 0, state, read_only: true, persistent: true, log_path: "logs/service.log", code, message: code });
+  const buildTerminal = (command: "start" | "stop" | "status" | "restart", state: "stopped" | "stale" | "error", exitCode: 0 | 1 | 3, code: string, logPath = ""): GlanceServiceCommandResultV1 =>
+    ({ schema_version: "1.0.0", command, ok: exitCode === 0, state, read_only: true, persistent: true, log_path: logPath, code, message: code });
 
-  const runningResult = (instance: { pid: number; started_at: string; instance_id: string }, target: ServiceTarget, health: Record<string, unknown>, restartRequired: boolean): GlanceServiceCommandResultV1 =>
+  const runningResult = (instance: { pid: number; started_at: string; instance_id: string; log_ref: string }, target: ServiceTarget, health: Record<string, unknown>, restartRequired: boolean): GlanceServiceCommandResultV1 =>
     buildRunningResult(metadata, instance, target, health, restartRequired);
 
   const backend: ManagerBackend = {
@@ -499,12 +502,12 @@ export function createGlanceServiceManager(home: string, instrumentation: Manage
       }
     },
     async inspectExisting({ root, currentTarget, config, instance }) {
-      const typed = instance as { instance_id: string; pid: number; process_digest: string; started_at: string };
+      const typed = instance as { instance_id: string; pid: number; process_digest: string; started_at: string; log_ref: string };
       let inspection = await adapter.inspect(typed.pid);
       inspection = instrumentation.perturbInspection?.(typed.pid, inspection) ?? inspection;
       const health = await fetchServiceHealth(currentTarget.port).catch(() => undefined);
       const verdict = classifyExistingService({
-        expected: { instanceId: typed.instance_id, effectiveConfigDigest: digest(config), engineVersion: metadata.engineVersion, workerEntrypoint: this.workerEntrypoint, expectedServiceRoot: root, recordedProcessDigest: typed.process_digest },
+        expected: { instanceId: typed.instance_id, effectiveConfigDigest: digest(config), engineVersion: metadata.engineVersion, workerEntrypoint: this.workerEntrypoint, expectedServiceRoot: root, recordedProcessDigest: typed.process_digest, startupId: startupIdFromLogRef(typed.log_ref) ?? "", currentProcessDigest: (() => { try { return processDigestFromEntrypointBytes(readEntrypointBytes(this.workerEntrypoint)); } catch { return undefined; } })() },
         process: inspection,
         portOwnedByListener: true,
         health: health as Record<string, unknown> | undefined,
@@ -516,7 +519,7 @@ export function createGlanceServiceManager(home: string, instrumentation: Manage
         if (!portFree) return { kind: "indeterminate", code: "PROCESS_ABSENT_PORT_HELD" };
         return { kind: "stale", processAbsent: true as const, portFree: true as const, healthAbsent: true as const };
       }
-      if (verdict.kind === "conflict") return { kind: "conflict", result: { ...buildTerminal("start", "stale", 3, verdict.code), state: "conflict" as const, ok: false, pid: typed.pid, port: currentTarget.port, url: `http://127.0.0.1:${currentTarget.port}` } };
+      if (verdict.kind === "conflict") return { kind: "conflict", result: { ...buildTerminal("start", "stale", 3, verdict.code, typed.log_ref), state: "conflict" as const, ok: false, pid: typed.pid, port: currentTarget.port, url: `http://127.0.0.1:${currentTarget.port}` } };
       return { kind: "indeterminate", code: verdict.code };
     },
     async archiveProvenStale({ root, configDigest, instanceDigest, instanceId }) {
@@ -533,6 +536,7 @@ export function createGlanceServiceManager(home: string, instrumentation: Manage
     async spawnWaitingWorker({ root, startupId, secretRef, argv }) {
       instrumentation.count?.("spawn", startupId);
       const logRef = `logs/${startupId}.log`;
+      const processDigest = processDigestFromEntrypointBytes(readEntrypointBytes(this.workerEntrypoint)) as Sha256;
       const spawned = adapter.spawn(argv, {}, join(root, logRef));
       spawned.unref();
       const deadline = now() + 2_500;
@@ -542,7 +546,6 @@ export function createGlanceServiceManager(home: string, instrumentation: Manage
         if (now() >= deadline) throw new Error("WORKER_EXITED_IMMEDIATELY");
         await sleep(50);
       }
-      const processDigest = processDigestFromIdentity({ entrypoint: this.workerEntrypoint, serviceRoot: root, startupId }) as Sha256;
       instrumentation.onSpawn?.({ pid: spawned.pid, startupId, secretRef, processDigest, logRef });
       return { pid: spawned.pid, processDigest, logRef };
     },
@@ -556,7 +559,7 @@ export function createGlanceServiceManager(home: string, instrumentation: Manage
             url: `http://127.0.0.1:${target.port}`, port: target.port, scope: target.scope,
             uptime_seconds: Number(health.uptime_seconds ?? 0),
             engine_version: String(health.engine_version ?? metadata.engineVersion),
-            read_only: true, persistent: true, log_path: "logs/service.log",
+            read_only: true, persistent: true, log_path: (instance as { log_ref: string }).log_ref,
             extension_root_digest: metadata.extensionRootDigest,
             effective_config_digest: target.configDigest, code: "HEALTHY", message: "service reported closed health",
           } satisfies GlanceServiceCommandResultV1;
@@ -582,7 +585,7 @@ export function createGlanceServiceManager(home: string, instrumentation: Manage
         return notSpawnedCleanup;
       }
       instrumentation.count?.("terminate", String(attempt.spawned.pid));
-      const termination = await terminateVerifiedProcess(adapter, attempt.spawned.pid, { entrypoint: this.workerEntrypoint, serviceRoot: root, startupId: attempt.startupId }, { expectedDigest: attempt.spawned.processDigest });
+      const termination = await terminateVerifiedProcess(adapter, attempt.spawned.pid, { entrypoint: this.workerEntrypoint, serviceRoot: root, startupId: attempt.startupId });
       if (termination === "foreign" || termination === "indeterminate") {
         const cleanupResult = { kind: "preserved", identity: termination, terminated: false, evidenceRef } as FailedStartCleanup;
         instrumentation.onCleanup?.(cleanupResult);
@@ -655,28 +658,28 @@ export function createGlanceServiceManager(home: string, instrumentation: Manage
             mkdirSync(archiveDir, { recursive: true });
             renameSync(configPath, join(archiveDir, "config.json"));
           }
-          return { schema_version: "1.0.0", command: "stop", ok: true, state: "stopped", instance_id: (instance as { instance_id: string }).instance_id, read_only: true, persistent: true, log_path: "logs/service.log", code: "AUTHENTICATED_STOP", message: "worker drained and removed its capabilities" } satisfies GlanceServiceCommandResultV1;
+          return { schema_version: "1.0.0", command: "stop", ok: true, state: "stopped", instance_id: (instance as { instance_id: string }).instance_id, read_only: true, persistent: true, log_path: (instance as { log_ref: string }).log_ref, code: "AUTHENTICATED_STOP", message: "worker drained and removed its capabilities" } satisfies GlanceServiceCommandResultV1;
         }
-        if (now() >= deadline) return buildTerminal("stop", "stale", 3, "STOP_TIMEOUT");
+        if (now() >= deadline) return buildTerminal("stop", "stale", 3, "STOP_TIMEOUT", (instance as { log_ref: string }).log_ref);
         await sleep(100);
       }
     },
     async inspectStatus({ root, target, config, instance }) {
-      const typed = instance as { instance_id: string; pid: number; process_digest: string; started_at: string };
+      const typed = instance as { instance_id: string; pid: number; process_digest: string; started_at: string; log_ref: string };
       let inspection = await adapter.inspect(typed.pid);
       inspection = instrumentation.perturbInspection?.(typed.pid, inspection) ?? inspection;
       const health = await fetchServiceHealth(target.port).catch(() => undefined);
       const verdict = classifyExistingService({
-        expected: { instanceId: typed.instance_id, effectiveConfigDigest: digest(config), engineVersion: metadata.engineVersion, workerEntrypoint: this.workerEntrypoint, expectedServiceRoot: root, recordedProcessDigest: typed.process_digest },
+        expected: { instanceId: typed.instance_id, effectiveConfigDigest: digest(config), engineVersion: metadata.engineVersion, workerEntrypoint: this.workerEntrypoint, expectedServiceRoot: root, recordedProcessDigest: typed.process_digest, startupId: startupIdFromLogRef(typed.log_ref) ?? "", currentProcessDigest: (() => { try { return processDigestFromEntrypointBytes(readEntrypointBytes(this.workerEntrypoint)); } catch { return undefined; } })() },
         process: inspection,
         portOwnedByListener: true,
         health: health as Record<string, unknown> | undefined,
       });
       if (verdict.kind === "match") return runningResult(typed, target, health as Record<string, unknown>, false);
       if (verdict.kind === "drift") return runningResult(typed, target, health as Record<string, unknown>, true);
-      if (verdict.kind === "stale") return buildTerminal("status", "stale", 3, "PROCESS_ABSENT");
-      if (verdict.kind === "conflict") return { ...buildTerminal("status", "stale", 3, verdict.code), state: "conflict" as const, ok: false, pid: typed.pid, port: target.port };
-      return buildTerminal("status", "stale", 3, verdict.code);
+      if (verdict.kind === "stale") return buildTerminal("status", "stale", 3, "PROCESS_ABSENT", typed.log_ref);
+      if (verdict.kind === "conflict") return { ...buildTerminal("status", "stale", 3, verdict.code, typed.log_ref), state: "conflict" as const, ok: false, pid: typed.pid, port: target.port };
+      return buildTerminal("status", "stale", 3, verdict.code, typed.log_ref);
     },
     terminal(command, state, exitCode, code): GlanceServiceCommandResultV1 {
       return buildTerminal(command, state, exitCode, code);

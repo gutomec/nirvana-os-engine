@@ -20,6 +20,40 @@ poll like `EEXIST` does — on Windows only, since on POSIX those codes still
 mean what they say. When the wait does time out, the message reports the code
 it kept receiving rather than blaming a live holder that may not exist.
 
+### Glance gained a persistent service mode
+
+`nrv glance service start|stop|status|restart` runs the cockpit as a local
+background worker: loopback-only, read-only, no browser, no idle shutdown.
+The four verbs are generated from a declarative command registry together
+with their help text; unknown or illegal flags for a verb are rejected at
+parse time. State lives under `<NIRVANA_HOME>/.nirvana/glance/service/`
+as user-private files (`config.json`, `instance.json`, secrets, control
+requests), written through temp-file-plus-fsync publication with exact
+rereads. Start is idempotent for a healthy instance with the same
+effective config and returns conflict otherwise; stop sends an HMAC-signed,
+nonce-protected request that only the matching instance consumes, then the
+worker drains connections and removes its own state. Status cross-checks
+process, listener, health identity and config digests twice around the
+inspection, so mid-flight drift reports stale instead of guessing. Restart
+reuses the current config verbatim when no flag is given, validates any
+override and proves the replacement port feasible before stopping, and on
+a failed replacement makes one rollback attempt reported through
+`rollback_attempted` / `rollback_state`. Signals delivered directly to the
+worker (`SIGINT`/`SIGTERM`) take the same graceful lifecycle as an
+authenticated stop once identity is established: in-flight requests drain
+within bounds, state is finalized exactly once even under repeated
+signals, and the process exits cleanly. Command results report the
+instance's real per-instance log reference (`logs/<startup-id>.log`) and
+an empty string when no readable instance applies, never an invented
+path. A healthy running worker whose entrypoint bytes or engine version
+changed on disk keeps serving and reports `restart_required: true` on
+`status`; `restart` applies the update. In normal mode every request,
+including `/api/health`, refreshes the idle window, matching long-standing
+behavior. Exit codes are stable across
+platforms: 0 success, 1 stopped status, 2 usage or unsupported
+environment, 3 stale state, 4 conflict, 5 timeout, 6 permission/I-O.
+Normal `nrv glance` behavior is unchanged.
+
 ## 0.7.11 — 2026-08-23
 
 ### The engine instructed the runtimes to watch, never to work

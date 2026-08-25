@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { closeSync, mkdirSync, openSync } from "node:fs";
 import { dirname } from "node:path";
-import { canonicalizeJcs } from "./canonicalize.ts";
 import { digestJcs } from "./state.ts";
 import type { ServiceConfigV1 } from "./types.ts";
 
@@ -40,8 +39,13 @@ export function canonicalWorkerArgv(worker: string, serviceRoot: string, startup
 
 export interface WorkerIdentityParts { entrypoint: string; serviceRoot: string; startupId: string }
 
-export function processDigestFromIdentity(parts: WorkerIdentityParts): `sha256:${string}` {
-  return `sha256:${createHash("sha256").update(canonicalizeJcs(parts)).digest("hex")}`;
+export function processDigestFromEntrypointBytes(bytes: Uint8Array): `sha256:${string}` {
+  return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+}
+
+export function startupIdFromLogRef(logRef: string): string | null {
+  const match = /^logs\/([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.log$/.exec(logRef);
+  return match ? match[1]! : null;
 }
 
 export function extractWorkerIdentityFromArgv(argv: readonly string[]): WorkerIdentityParts | null {
@@ -150,7 +154,7 @@ export async function portFreeProbe(port: number): Promise<boolean> {
   } catch { return false; }
 }
 
-export async function terminateVerifiedProcess(adapter: ServiceProcessAdapter, pid: number, expected: VerifiedTerminationTarget, options: { waitMs?: number; sleep?(ms: number): Promise<void>; expectedDigest?: string } = {}): Promise<"terminated" | "absent" | "foreign" | "indeterminate"> {
+export async function terminateVerifiedProcess(adapter: ServiceProcessAdapter, pid: number, expected: VerifiedTerminationTarget, options: { waitMs?: number; sleep?(ms: number): Promise<void> } = {}): Promise<"terminated" | "absent" | "foreign" | "indeterminate"> {
   const waitMs = options.waitMs ?? 5_000;
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)));
   let inspection: ProcessInspection;
@@ -159,7 +163,6 @@ export async function terminateVerifiedProcess(adapter: ServiceProcessAdapter, p
   const liveIdentity = inspection.argv ? extractWorkerIdentityFromArgv(inspection.argv) : null;
   if (!liveIdentity) return "foreign";
   if (liveIdentity.entrypoint !== expected.entrypoint || liveIdentity.serviceRoot !== expected.serviceRoot || liveIdentity.startupId !== expected.startupId) return "foreign";
-  if (options.expectedDigest && processDigestFromIdentity(liveIdentity) !== options.expectedDigest) return "foreign";
   if (process.platform === "win32") {
     const killed = Bun.spawnSync(["taskkill", "/F", "/PID", String(pid), "/T"], { stdout: "pipe", stderr: "pipe" });
     if (killed.exitCode !== 0) return "indeterminate";
@@ -184,6 +187,8 @@ export interface ExistingServiceEvidence {
     workerEntrypoint: string;
     expectedServiceRoot: string;
     recordedProcessDigest: string;
+    startupId: string;
+    currentProcessDigest?: `sha256:${string}`;
   };
   process: ProcessInspection;
   portOwnedByListener: boolean;
@@ -197,16 +202,16 @@ export function classifyExistingService(evidence: ExistingServiceEvidence): Exis
   if (health.mode !== "service") return { kind: "conflict", code: "FOREIGN_LISTENER" };
   if (health.instance_id !== expected.instanceId) return { kind: "conflict", code: "INSTANCE_CONFLICT" };
   if (health.effective_config_digest !== expected.effectiveConfigDigest) return { kind: "conflict", code: "CONFIG_CONFLICT" };
-  if (health.engine_version !== expected.engineVersion) return { kind: "conflict", code: "ENGINE_CONFLICT" };
   const liveIdentity = process.argv ? extractWorkerIdentityFromArgv(process.argv) : null;
   if (!liveIdentity) return { kind: "conflict", code: "FOREIGN_LISTENER" };
-  const liveProcessDigest = processDigestFromIdentity(liveIdentity);
-  if (health.process_digest !== expected.recordedProcessDigest && health.process_digest !== liveProcessDigest) {
-    return { kind: "conflict", code: "PROCESS_CONFLICT" };
-  }
+  if (health.process_digest !== expected.recordedProcessDigest) return { kind: "conflict", code: "PROCESS_CONFLICT" };
+  if (liveIdentity.startupId !== expected.startupId) return { kind: "conflict", code: "PROCESS_CONFLICT" };
   if (liveIdentity.serviceRoot !== expected.expectedServiceRoot) return { kind: "conflict", code: "ROOT_CONFLICT" };
-  if (liveIdentity.entrypoint !== expected.workerEntrypoint || liveProcessDigest !== expected.recordedProcessDigest) {
+  if (health.engine_version !== expected.engineVersion) return { kind: "drift", restartRequired: true };
+  if (expected.currentProcessDigest !== undefined && expected.currentProcessDigest !== expected.recordedProcessDigest) {
     return { kind: "drift", restartRequired: true };
   }
+  if (liveIdentity.entrypoint !== expected.workerEntrypoint) return { kind: "drift", restartRequired: true };
+  if (expected.currentProcessDigest === undefined) return { kind: "indeterminate", code: "PROCESS_DIGEST_UNAVAILABLE" };
   return { kind: "match", restartRequired: false };
 }
