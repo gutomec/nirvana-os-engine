@@ -55,6 +55,7 @@ import { runSquadHeadless } from "../lib/squad-exec.ts";
 import { runDelivery, deliverAfterRuntimeError, gateableFiles, runGateOnce, type DeliveryArgs, type DeliveryResult, type RuntimeErrorOutcome } from "../lib/delivery-pipeline.ts";
 import { runBusinessPostGate } from "../lib/business-post-gate.ts";
 import { parseExecutionOptions } from "../lib/gauntlet/execution-options.ts";
+import { decideBusinessCanary, runBusinessCanaryWithRollback } from "../lib/gauntlet/business-canary.ts";
 import { runAgentXGauntlet, shouldRunAgentXGauntlet, shouldRunSquadGauntlet, type AgentXGauntletEvaluator } from "../lib/gauntlet/agent-x-cutover.ts";
 import { createHarnessLegacyAdapter, openKernel } from "../lib/run-kernel/index.ts";
 
@@ -1055,6 +1056,10 @@ const projectRoot = path.resolve(projDir, "..", "..");
 // includes but the scaffold dirs handoffs/tickets/employees are excluded).
 const execOutputsRoot = outputsRoot || (wantExec ? path.join(projDir, "deliverables") : undefined);
 if (execOutputsRoot && wantExec) fs.mkdirSync(execOutputsRoot, { recursive: true });
+const businessCanaryDecision = decideBusinessCanary({ businessSlug: slug, wantExec, teamMode: wantTeam,
+  requestedMode: executionOptions.requestedMode, resolvedMode: executionOptions.resolvedMode,
+  intensity: executionOptions.intensity, allowlist: process.env.NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST,
+  killSwitch: process.env.NIRVANA_BUSINESS_GAUNTLET_KILL_SWITCH });
 const tmpBriefFile = path.join(projectRoot, "brief.md");
 if (!fs.existsSync(tmpBriefFile)) {
   console.error(c("red", `✗ brief.md not found at ${tmpBriefFile}`));
@@ -1084,7 +1089,7 @@ dispatchAudit.bindProjectRoot(projDir);
 // Dispatch ledger — open the run BEFORE exec, so a crash anywhere between
 // here and delivery leaves a non-terminal row the supervisor can recover.
 // Scaffold-only mode opens nothing (there is no execution to supervise).
-if (wantExec) {
+if (wantExec && !businessCanaryDecision.enabled) {
   ledgerTry(() => {
     ledgerHandle = runLedger.openLedger();
     const row = runLedger.openRun(ledgerHandle, {
@@ -1122,6 +1127,12 @@ emit("dispatch_business", {
   dna_files_injected: dnaCount,
   prompt_size_chars: promptSize,
 });
+if (executionOptions.requestedMode === "gauntlet") {
+  emit(businessCanaryDecision.enabled ? "x_business_gauntlet_selected" : "x_business_gauntlet_bypassed", {
+    trace_id: pid, project_id: pid, business_slug: slug, reason: businessCanaryDecision.reason,
+    requested_mode: executionOptions.requestedMode, intensity: executionOptions.intensity,
+  });
+}
 console.log(c("dim", `  ✓ dispatch_business written to ${path.join(harnessLogsDir({ cwd: projDir }), new Date().toISOString().slice(0, 10))}/audit.jsonl`));
 
 // ── EXEC MODE — actually run the runtime headless, then verify+gate+deliver ─
@@ -1137,6 +1148,96 @@ if (wantExec) {
     emit("agent_exec_failed", { trace_id: pid, project_id: pid, business_slug: slug, runtime: rt, reason: "runtime not on PATH" });
     if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "failed", { error: "runtime not on PATH" }));
     process.exit(1);
+  }
+  if (businessCanaryDecision.enabled) {
+    const canonicalRunId = `run_${pid.replace(/[^A-Za-z0-9-]/g, "-")}`;
+    const gauntletBudgetUsd = Math.min(effectiveBudgetUsd() ?? 5, 5);
+    const kernel = openKernel(path.join(projectRoot, ".nirvana", "run-kernel.sqlite"));
+    const canaryLedger = runLedger.openLedger();
+    const evaluatorTarget = { kind: "squad" as const, slug: "harness-quality-gate", capabilityId: "quality.specification_conformance" };
+    const evaluator: AgentXGauntletEvaluator = {
+      target: evaluatorTarget,
+      evaluate({ runId, candidateRoot, artifactRefs }) {
+        const files = gateableFiles(candidateRoot, new Set());
+        const gate = files.length ? runGateOnce(files, { gateScript: gateScriptPath, offline: true,
+          env: { NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid, NIRVANA_BUSINESS_SLUG: slug } }) : { pass: false, fails: [] };
+        return [{ evaluationId: `evl_${runId}_1`, candidateId: "can_1", revisionId: `crv_${runId}_1`,
+          gauntletId: "brief-conformance", rubricVersion: "harness-quality-gate/v1", verdict: gate.pass ? "pass" : "reject",
+          dimensions: [{ id: "brief-conformance", score: gate.pass ? 1 : 0, confidence: 1, blocking: true,
+            passed: gate.pass, evidenceRefs: artifactRefs.map(ref => ref.revisionId) }], regressions: [],
+          revisionRequests: gate.pass ? [] : [{ requirementId: "brief-conformance",
+            evidenceRefs: gate.fails.map(failure => pathToFileURL(failure.file).href) }], evaluator: evaluatorTarget,
+          costUsd: 0, createdAt: new Date().toISOString() }];
+      },
+    };
+    let finalDelivery: DeliveryResult | null = null;
+    let canarySessionId: string | null = null;
+    const attempt = {
+      markProductionStarted() {},
+      run() {
+        return runAgentXGauntlet({
+          kernel, legacy: createHarnessLegacyAdapter({ ledger: canaryLedger, auditCwd: projDir }),
+          producerTarget: { kind: "business", slug }, projectId: pid, runId: canonicalRunId, traceId: pid,
+          brief, projectRoot, outputsRoot: oroot, expectedCostUsd: gauntletBudgetUsd,
+          executionSnapshot: { runtime: { id: rt, source: runtimeDecision.source, resolved: true },
+            provider: { selection: "runtime-provider", resolved: false }, model: { selection: "runtime-default", resolved: false } },
+          executeCandidate(candidateRoot) {
+            attempt.markProductionStarted();
+            const candidate = runWithCascade({ runtime: rt, prompt: fs.readFileSync(outputPath, "utf8"), cwd: projDir,
+              addDirs: [projectRoot], appendSystemPrompt: AUTONOMOUS_DIRECTIVE + rulesDirective,
+              maxBudgetUsd: gauntletBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
+              yolo, brief, projectRoot, outputsRoot: candidateRoot, taskHint: `business Gauntlet canary · ${slug}/${intake}`,
+              projectId: pid, ledger: { runId: canonicalRunId, watchDir: candidateRoot } });
+            canarySessionId = candidate.sessionId;
+            if (candidate.sessionId) runLedger.recordSession(canaryLedger, canonicalRunId, candidate.sessionId);
+            return { ok: candidate.ok, sessionId: candidate.sessionId, costUsd: candidate.costUsd,
+              error: candidate.error || candidate.stderr || undefined };
+          },
+          evaluator,
+          finalGate({ sessionId }) {
+            const sessionFile = path.join(projDir, "session.json");
+            const sessionData: Record<string, any> = { project_id: pid, business_slug: slug, employee: intake, runtime: rt,
+              session_id: sessionId, project_dir: projDir, project_root: projectRoot, outputs_root: oroot,
+              zip_path: null, created_at: new Date().toISOString(), manifest: manifest ?? null };
+            fs.writeFileSync(sessionFile, JSON.stringify(sessionData, null, 2));
+            const afterGate = () => runBusinessPostGate({ projectId: pid, businessSlug: slug, runtime: rt,
+              projectDir: projDir, projectRoot, outputsRoot: oroot, skillsRoot: SKILLS, employeePromptScript: employeePrompt,
+              sessionFile, sessionData, rulesDirective, maxBudgetUsd: gauntletBudgetUsd,
+              timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined, yolo, wantPdf, skipHtml,
+              offlineSnapshot: process.argv.includes("--offline-snapshot"), routingMode, wantZip, emit,
+              log: message => console.log(c("lime", message)), warn: message => console.error(c("yellow", message)) });
+            finalDelivery = runDelivery({ ...deliveryArgs({ pid, slugOrNull: slug, targetKind: "business", rt, oroot,
+              projDir, projectRoot, sessionId, withManifest: true, afterGate }), ledger: null, maxRevisions: 0 });
+            return { exitCode: finalDelivery.exitCode, gateOutcome: finalDelivery.gateOutcome };
+          },
+        });
+      },
+      shouldRollback(result: ReturnType<typeof runAgentXGauntlet>) {
+        return !result.finalGateRan && result.run.state === "rolled_back";
+      },
+    };
+    try {
+      const outcome = runBusinessCanaryWithRollback({ attempt,
+        runLegacy: () => ({ fallback: true as const }),
+        emit: (event, payload) => emit(event, { trace_id: pid, project_id: pid, business_slug: slug, ...payload }) });
+      kernel.close(); canaryLedger.close();
+      if (!("fallback" in outcome)) {
+        if (finalDelivery) printDeliverySummary(finalDelivery, pid, oroot, finalDelivery.zipPath);
+        else console.error(c("yellow", `⚠ Business Gauntlet stopped before the final gate (${outcome.run.state}).`));
+        process.exit(outcome.exitCode);
+      }
+      ledgerTry(() => {
+        ledgerHandle = runLedger.openLedger();
+        const row = runLedger.openRun(ledgerHandle, { traceId: pid, projectId: pid, targetSlug: slug, targetKind: "business",
+          runtime: rt, childPid: process.pid, meta: { project_dir: projDir, project_root: projectRoot,
+            outputs_root: oroot, prompt_path: outputPath, brief_path: tmpBriefFile, mode: "single" } });
+        ledgerRunId = row.run_id;
+      });
+    } catch (error) {
+      kernel.close(); canaryLedger.close();
+      console.error(c("red", `✗ Business Gauntlet failed after production started: ${(error as Error).message}`));
+      process.exit(1);
+    }
   }
   if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "running", { childPid: process.pid }));
 

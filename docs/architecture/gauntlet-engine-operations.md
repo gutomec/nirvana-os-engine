@@ -10,6 +10,23 @@ nrv run <business> "<brief>" --execution-mode=gauntlet --gauntlet-intensity=bala
 
 Os perfis disponíveis são `light`, `balanced` e `exhaustive`. O modo `auto` só escolhe Gauntlet quando a policy permite seleção automática e o brief foi classificado como verificável e de risco médio ou alto. A decisão e o motivo entram no audit.
 
+### Canário Business light
+
+O canário de Business exige allowlist explícita:
+
+```bash
+export NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST="business-slug"
+nrv run business-slug "<brief>" --execution-mode=gauntlet --gauntlet-intensity=light
+```
+
+Vários slugs usam separação por vírgula. Não há valor padrão e não existe Business hardcoded. Para rollback operacional imediato:
+
+```bash
+export NIRVANA_BUSINESS_GAUNTLET_KILL_SWITCH=1
+```
+
+O kill switch e qualquer bypass são avaliados antes do producer. Falha pré-produção pode retornar ao executor legado. Depois que a produção começa, o canário termina de forma auditável e nunca dispara a produção legada na mesma tentativa.
+
 ## Contrato de aplicação
 
 O módulo `skills/harness/lib/gauntlet/` expõe compiler, evaluator registry, store durável e controller. O caller cria o Run no kernel, compila o plano e inicia `GauntletController`. Antes de cada fan-out, chama `beginRound` com a reserva de custo. Candidates, revisions e scorecards são registrados com IDs estáveis.

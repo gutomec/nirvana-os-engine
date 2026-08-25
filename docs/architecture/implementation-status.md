@@ -21,7 +21,11 @@ A prova hermética `business-delivery-parity.e2e.test.ts` compara o contrato leg
 
 Essa evidência cobre somente a região afetada pela extração. O teste integrado `business-gauntlet-glance-proof.e2e.test.ts` fecha a etapa seguinte com um target `business` tipado: produção local, candidate e scorecard pelo `GauntletController`, evaluator independente, snapshot honesto de runtime, provider e modelo, delivery final, pós-gate e leitura da timeline pelo Glance. Os eventos de delivery preservam causalidade e sequência. Uma rejeição bloqueia delivery e pós-gate.
 
-As precondições técnicas estão comprovadas para propor um canário Business `light` restrito. O cutover continua desativado porque este incremento não adiciona a flag de produção, rollback operacional nem autorização de rollout. A prova usa decisão direta, sem revision, e não cobre `balanced`, `exhaustive`, múltiplos Squads ou runtime real.
+O canário Business `light` está disponível de forma estritamente opt-in. Ele exige pedido explícito de `gauntlet`, intensidade `light`, execução individual e slug presente em `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST`. `NIRVANA_BUSINESS_GAUNTLET_KILL_SWITCH=1` desliga o canário antes da produção. Ausência de qualquer condição mantém o executor legado.
+
+Rollback automático só ocorre antes do producer iniciar. Depois desse marco, erro ou rejeição encerra o Run canônico e nunca chama o producer legado. Os eventos `x_business_gauntlet_selected`, `x_business_gauntlet_bypassed`, `x_business_gauntlet_rollback` e `x_business_gauntlet_terminal` registram a decisão operacional.
+
+O rollout não inclui `balanced`, `exhaustive`, modo `auto`, team mode, múltiplos Squads ou troca automática de runtime. A prova hermética usa decisão direta, sem revision. A allowlist vazia mantém todos os Businesses no fluxo anterior.
 
 ## O que já funciona
 
