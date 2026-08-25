@@ -12,7 +12,7 @@ Este documento separa fundação implementada, integração ativa e cutovers ain
 | Runtime Provider e Model Broker | Implementados | Catálogos extensíveis, seleção por capability e testes de stale data | O dispatch legado ainda não persiste o snapshot escolhido em todo Run |
 | Run Kernel | Implementado como fundação opt-in | Journal, projeções, outbox, transcript, ArtifactRef e recovery | O dispatch legado ainda não faz dual-write em todos os caminhos |
 | Gauntlet Engine | Engine implementada, com canário operacional | Compiler, stores, controller, budgets, replay e `agent-x light` | Business, Squad, `balanced` e `exhaustive` ainda não usam o controller |
-| Glance Project Workspace | Control plane com canário operacional | Project, Conversation, Message, Run, Events, SSE e queue segura | A queue canônica ainda não recupera automaticamente um item apenas enfileirado durante restart |
+| Glance Project Workspace | Control plane com canário operacional | Project, Conversation, Message, Run, Events, SSE e queue recuperável | Runs `running` só podem ser retomados quando uma lease recuperável for comprovada |
 | Cutover vertical | Canário concluído | `agent-x light` une dispatch, Run Kernel, Gauntlet, gate final e leitura no Glance | A expansão para os demais targets permanece pendente |
 
 ## O que já funciona
@@ -42,6 +42,8 @@ Projetos adotados têm identidade estável em `.nirvana/project.yaml`. Adoção 
 O servidor restringe ações a loopback, valida Origin, exige `Idempotency-Key` nas escritas e rejeita path traversal. O navegador não recebe uma rota de shell arbitrário.
 
 No canário, uma Message de projeto adotado prepara um Run `agent-x light`, persiste o vínculo e entra numa fila serial segura. A UI não inicia o executor legado em paralelo. Projeto não adotado conserva o comportamento anterior. Capability ausente e cancelamento antes de side effects produzem estados terminais explícitos.
+
+No restart, Runs `prepared` vinculados a uma Message são reivindicados atomicamente e reencaminhados por `runId`. Dois restarts não repetem o side effect. Runs terminais, cancelados ou `running` sem lease recuperável são ignorados e registrados de forma explícita.
 
 ## Expansão vertical necessária
 
