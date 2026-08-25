@@ -34,5 +34,7 @@ O endpoint `POST /api/v1/runs/{run_id}:cancel` cancela Runs ainda na fila antes 
 - O evaluator inicial usa o quality gate offline do harness por um adapter injetável. Uma capability organizacional dedicada poderá substituí-lo sem alterar o controller.
 - A publicação usa arquivos temporários e rename por arquivo. Ela é retomável e não sobrescreve arquivos idênticos, mas ainda não oferece commit atômico do diretório inteiro.
 - Uma interrupção após persistir o candidato retoma sem novo dispatch. Uma interrupção durante o gate final pode repetir o gate, que deve permanecer idempotente por artifacts e event identity.
-- A fila em memória não é uma segunda fonte de verdade. Após restart, Messages, vínculo, Run e events continuam disponíveis; retomada automática de um item que estava apenas enfileirado ainda não faz parte deste corte.
+- A fila em memória não é uma segunda fonte de verdade. No restart, o Glance procura Runs `prepared` desse canário que tenham `conversationId` e uma Message vinculada ao mesmo `runId`. Esses Runs recebem `canary.recovery_enqueued` e voltam à fila pelo adapter injetado.
+- Recovery é conservador. Runs `running`, cancelados e terminais não são retomados. Um Run `running` só poderá voltar a executar quando um marco posterior provar uma lease recuperável do provider.
+- O claim acontece pela transição atômica `prepared → running`. Dois restarts podem descobrir o mesmo Run, mas somente um alcança o side effect. O evento de recovery usa idempotência por `runId`.
 - O Glance não escolhe runtime ou modelo neste canário. A ausência do adapter é tratada como capability indisponível.

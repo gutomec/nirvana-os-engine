@@ -46,8 +46,14 @@ export class AgentXCanaryQueue {
     const enqueued: string[] = [];
     const skipped: Array<{ runId: string; reason: string }> = [];
     for (const run of listRuns(this.kernel, projectId)) {
-      if (run.state !== "prepared" || run.target.kind !== "agent-x" || run.policySnapshotRef !== "gauntlet-light-canary") {
-        skipped.push({ runId: run.runId, reason: run.state !== "prepared" ? `state_${run.state}` : "not_canary" });
+      if (run.target.kind !== "agent-x" || run.policySnapshotRef !== "gauntlet-light-canary") {
+        skipped.push({ runId: run.runId, reason: "not_canary" });
+        continue;
+      }
+      if (run.state !== "prepared") {
+        const reason = `state_${run.state}`;
+        this.recoveryEvent(run, "canary.recovery_skipped", { reason });
+        skipped.push({ runId: run.runId, reason });
         continue;
       }
       const message = this.conversations.messageForRun(projectId, run.runId);

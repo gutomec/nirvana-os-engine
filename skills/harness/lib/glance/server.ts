@@ -1718,7 +1718,12 @@ export async function startServer(opts: ServerOptions) {
   process.on("SIGINT", onSignal);
   process.on("SIGTERM", onSignal);
 
-  return { server, url, port };
+  const inspection = projectInspection();
+  const recovery = inspection.kind === "project" && inspection.project
+    ? agentXQueue().recover(inspection.project.project_id, projectRoot)
+    : { enqueued: [], skipped: [] };
+
+  return { server, url, port, recovery };
 }
 
 // ─────────────────────────────────────────────────────────────────────

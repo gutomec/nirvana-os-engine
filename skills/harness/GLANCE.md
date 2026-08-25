@@ -99,6 +99,8 @@ Current limitation: canonical Project discovery is scoped to the workspace where
 
 Em Projects adotados, uma Message de usuário prepara e enfileira somente o canário `agent-x` com Gauntlet `light`. A resposta contém Message, Run e capability. O histórico e o vínculo sobrevivem ao restart, e a timeline usa os events do Run Kernel. Se o host não fornecer o adapter dessa capability, o Run registra `capability_unavailable`; o Glance não troca silenciosamente de target, runtime ou modo. Projects legados continuam usando o action runner anterior.
 
+No startup, a recuperação canônica reencaminha somente Runs `prepared` do canário com Message vinculada. O claim `prepared → running` impede side effects duplicados em restart concorrente. Runs `running`, cancelados ou terminais são ignorados sem uma lease de provider comprovadamente recuperável. Os events `canary.recovery_enqueued` e `canary.recovery_skipped` tornam a decisão visível na timeline.
+
 ## Security
 
 - Bind only to `localhost` (Bun.serve default).
