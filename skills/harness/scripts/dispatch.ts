@@ -52,6 +52,7 @@ import { loadHarnessConfig } from "../lib/harness-config.ts";
 import { planRouteWithFallback, runAgentX, type DispatchPlan } from "../lib/dispatch-cascade.ts";
 import { runSquadHeadless } from "../lib/squad-exec.ts";
 import { runDelivery, deliverAfterRuntimeError, type DeliveryArgs, type DeliveryResult, type RuntimeErrorOutcome } from "../lib/delivery-pipeline.ts";
+import { parseExecutionOptions } from "../lib/gauntlet/execution-options.ts";
 
 // Back-compat re-exports: these helpers moved to lib/delivery-pipeline.ts in
 // routing-360 Phase 4.2 (the pipeline is shared by all three dispatch paths).
@@ -83,7 +84,7 @@ function arg(name: string, fallback?: string): string | undefined {
 // filter(!startsWith("--")) treats the "X" in "--project X" as a positional,
 // which made "--project caso-bruno" leak its value as the inline brief and
 // override --brief-file. Skip the token after each known value-flag.
-const VALUE_FLAGS = new Set(["--project", "--runtime", "--manifest", "--brief-file", "--outputs-root", "--max-budget", "--timeout", "--max-revisions"]);
+const VALUE_FLAGS = new Set(["--project", "--runtime", "--manifest", "--brief-file", "--outputs-root", "--max-budget", "--timeout", "--max-revisions", "--execution-mode", "--gauntlet-intensity"]);
 function extractPositional(argv: string[]): string[] {
   const out: string[] = [];
   for (let i = 0; i < argv.length; i++) {
@@ -160,6 +161,14 @@ const maxRevisionsFlag = arg("--max-revisions");
 const strictRoute = process.argv.includes("--strict-route");
 // --force-deliver: deliver despite a failed gate (delivered gate:"fail-forced").
 const forceDeliver = process.argv.includes("--force-deliver");
+let executionOptions: ReturnType<typeof parseExecutionOptions>;
+try {
+  executionOptions = parseExecutionOptions(process.argv.slice(2));
+} catch (error) {
+  if (import.meta.main) console.error(`nrv dispatch: ${(error as Error).message}`);
+  if (import.meta.main) process.exit(4);
+  throw error;
+}
 
 // ── audit facade (routing-360 Phase 4.3, dispatch side) ───────────────────
 // lib/audit.js emit() is the canonical writer (closed enum + open x_
@@ -217,6 +226,12 @@ if (import.meta.main) {
 // dispatch-side emission.
 const dispatchAudit = createDispatchAudit();
 const emit = (event: string, payload: Record<string, any>) => dispatchAudit.emit(event, payload);
+if (executionOptions.requestedMode !== "standard") {
+  emit("x_gauntlet_execution_requested", {
+    requested_mode: executionOptions.requestedMode, resolved_mode: executionOptions.resolvedMode,
+    intensity: executionOptions.intensity, reason: executionOptions.reason,
+  });
+}
 
 if (!slug && !autoMode) {
   console.error("Usage: nrv dispatch <business_slug> \"<brief>\" [opts]");
@@ -237,6 +252,8 @@ if (!slug && !autoMode) {
     console.error("    --pdf                   build relatorio-final.pdf via report-publisher (if the business has one)");
     console.error("    --html                  build relatorio-final.html from every markdown in the project (marked)");
   console.error("    --team                  real multi-employee orchestration (director + chain, each step audits)");
+  console.error("    --execution-mode=<mode> standard|gauntlet|auto (default: standard)");
+  console.error("    --gauntlet-intensity=<profile> light|balanced|exhaustive");
   console.error("    --max-budget=<usd>      cost ceiling for the run (claude --max-budget-usd)");
   console.error("    --timeout=<min>         wall-clock ceiling for the run (default 24h; a real hang is caught by ~5 min of inactivity)");
   console.error("    --safe                  opt in to restricted mode (limited tools + sandbox); default = full trust");

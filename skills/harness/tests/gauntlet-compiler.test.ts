@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { EvaluatorRegistry, compileGauntletPlan, resolveExecutionMode } from "../lib/gauntlet/index.ts";
+import { EvaluatorRegistry, compileGauntletPlan, parseExecutionOptions, resolveExecutionMode } from "../lib/gauntlet/index.ts";
 
 describe("gauntlet compiler", () => {
   test("keeps standard as the default and makes auto policy explicit", () => {
@@ -25,6 +25,13 @@ describe("gauntlet compiler", () => {
     const input = { brief: "Choose the deployment region", ambiguities: ["Region requires owner approval"] };
     expect(compileGauntletPlan(input)).toEqual(compileGauntletPlan(input));
     expect(compileGauntletPlan(input).successContract.humanRequired).toBeTrue();
+  });
+
+  test("parses opt-in CLI flags without changing legacy defaults", () => {
+    expect(parseExecutionOptions([], {})).toMatchObject({ requestedMode: "standard", resolvedMode: "standard", intensity: "balanced" });
+    expect(parseExecutionOptions(["--execution-mode=gauntlet", "--gauntlet-intensity", "exhaustive"], {}))
+      .toMatchObject({ requestedMode: "gauntlet", resolvedMode: "gauntlet", intensity: "exhaustive" });
+    expect(() => parseExecutionOptions(["--execution-mode=forever"], {})).toThrow(/invalid execution mode/);
   });
 });
 

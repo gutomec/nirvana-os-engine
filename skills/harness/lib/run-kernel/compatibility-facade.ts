@@ -1,5 +1,5 @@
 import type { CanonicalRunState, RunEvent, RunProjection } from "./types.ts";
-import { createRun, transitionRun, type CreateRunInput, type KernelHandle, type TransitionInput } from "./store.ts";
+import { createRun, publishOutbox, transitionRun, type CreateRunInput, type KernelHandle, type TransitionInput } from "./store.ts";
 import { createRequire } from "node:module";
 import {
   canTransition as canLegacyTransition,
@@ -33,6 +33,12 @@ export function createHarnessLegacyAdapter(options: HarnessLegacyAdapterOptions)
     }, { trace_id: run.traceId, project_id: run.projectId, cwd: options.auditCwd });
   };
   return {
+    emitAudit(event) {
+      audit.emit("x_run_kernel_projection", {
+        operation: "event", event_id: event.eventId, run_id: event.runId, sequence: event.sequence,
+        canonical_event: event.type, payload: event.payload,
+      }, { trace_id: event.traceId, project_id: event.projectId, cwd: options.auditCwd });
+    },
     openRun(run) {
       const targetSlug = run.target.slug;
       const existing = getLegacyRun(options.ledger, run.runId);
@@ -81,5 +87,9 @@ export class RunKernelCompatibilityFacade {
     const run = transitionRun(this.kernel, input);
     this.legacy.transitionRun?.(run, legacyStateFor(run.state));
     return run;
+  }
+
+  publishPending(limit = 100): Promise<number> {
+    return publishOutbox(this.kernel, event => this.legacy.emitAudit?.(event), limit);
   }
 }

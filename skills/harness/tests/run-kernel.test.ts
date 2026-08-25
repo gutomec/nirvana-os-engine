@@ -224,7 +224,7 @@ describe("ArtifactRef and compatibility facade", () => {
     expect(getRun(handle, "prj_a", "run_a")?.state).toBe("delivered_with_reservations");
   });
 
-  test("opens and updates the existing ledger while preserving its schema and audit projection", () => {
+  test("opens and updates the existing ledger while preserving its schema and audit projection", async () => {
     const { handle, root } = fresh();
     const previousLogs = process.env.HARNESS_LOGS_DIR;
     const previousState = process.env.NIRVANA_STATE_DB;
@@ -237,6 +237,7 @@ describe("ArtifactRef and compatibility facade", () => {
       facade.transition({ projectId: "prj_a", runId: "run_a", to: "running", actor: { kind: "kernel", id: "test" }, correlationId: "cor" });
       facade.transition({ projectId: "prj_a", runId: "run_a", to: "verifying", actor: { kind: "kernel", id: "test" }, correlationId: "cor" });
       facade.transition({ projectId: "prj_a", runId: "run_a", to: "completed", actor: { kind: "kernel", id: "test" }, correlationId: "cor" });
+      expect(await facade.publishPending()).toBe(4);
       expect(getLegacyRun(ledger, "run_a")?.state).toBe("delivered");
       expect(getRun(handle, "prj_a", "run_a")?.state).toBe("completed");
       const columns = ledger.db.query("PRAGMA table_info(runs)").all() as { name: string }[];
