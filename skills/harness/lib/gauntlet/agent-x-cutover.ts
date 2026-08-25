@@ -7,9 +7,10 @@ import { compileGauntletPlan } from "./compiler.ts";
 import { listCandidateRevisions, listScorecards } from "./store.ts";
 import type { EvaluationScorecard } from "./types.ts";
 import {
-  RunKernelCompatibilityFacade, getRun, saveArtifactRef, verifyArtifactRef,
+  RunKernelCompatibilityFacade, appendEvent, getRun, saveArtifactRef, verifyArtifactRef,
   type ArtifactRef, type KernelHandle, type LegacyCompatibilityAdapter, type RunProjection, type TargetRef,
 } from "../run-kernel/index.ts";
+import { canonicalJson } from "../run-kernel/canonical-json.ts";
 
 export interface AgentXCandidateResult {
   ok: boolean;
@@ -34,6 +35,7 @@ export interface AgentXGauntletInput {
   outputsRoot: string;
   expectedCostUsd: number;
   producerTarget?: TargetRef;
+  executionSnapshot?: Record<string, unknown>;
   executeCandidate(candidateRoot: string): AgentXCandidateResult;
   evaluator: AgentXGauntletEvaluator;
   afterCandidatePersisted?(): void;
@@ -128,9 +130,15 @@ export function runAgentXGauntlet(input: AgentXGauntletInput): AgentXGauntletRes
   const actor = { kind: "kernel", id: "agent-x-gauntlet-cutover" };
   const correlationId = `cor_${input.runId}`;
   const facade = new RunKernelCompatibilityFacade(input.kernel, input.legacy);
+  const snapshot = input.executionSnapshot ?? { runtime: { selection: "active", resolved: false },
+    model: { selection: "runtime-default", resolved: false } };
+  const policySnapshotRef = `snapshot_${createHash("sha256").update(canonicalJson(snapshot)).digest("hex").slice(0, 24)}`;
   let run = getRun(input.kernel, input.projectId, input.runId) ?? facade.create({ projectId: input.projectId, runId: input.runId, traceId: input.traceId,
-    planId: `plan_${input.runId}`, target: producer, policySnapshotRef: "gauntlet-light-canary",
+    planId: `plan_${input.runId}`, target: producer, policySnapshotRef,
     actor, correlationId, idempotencyKey: `agent-x-gauntlet:${input.runId}:create` });
+  appendEvent(input.kernel, { projectId: input.projectId, runId: input.runId, traceId: input.traceId,
+    type: "runtime.selection_snapshot", actor, correlationId,
+    idempotencyKey: `agent-x-gauntlet:${input.runId}:execution-snapshot`, payload: { ref: policySnapshotRef, snapshot } });
   try {
     const controller = new GauntletController(input.kernel, { projectId: input.projectId, runId: input.runId, traceId: input.traceId, actor, correlationId });
     let gauntlet = controller.begin(compileGauntletPlan({ brief: input.brief, intensity: "light" }));

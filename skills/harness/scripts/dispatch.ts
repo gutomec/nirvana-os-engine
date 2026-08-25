@@ -789,6 +789,8 @@ if (pendingCascade?.kind === "squad-only") {
       const result = runAgentXGauntlet({
         kernel, legacy: createHarnessLegacyAdapter({ ledger: legacy, auditCwd: projDir }), producerTarget,
         projectId: pid, runId: canonicalRunId, traceId: pid, brief, projectRoot, outputsRoot: oroot,
+        executionSnapshot: { runtime: { id: rt, source: runtimeDecision.source },
+          provider: { selection: "runtime-provider", resolved: false }, model: { selection: "runtime-default", resolved: false } },
         expectedCostUsd: gauntletBudgetUsd,
         executeCandidate(candidateRoot) {
           const candidate = runSquadHeadless({ squadSlug: squad, brief, projectId: pid, projectDir: projDir, projectRoot,
@@ -937,6 +939,8 @@ if (pendingCascade?.kind === "agent-x") {
       const result = runAgentXGauntlet({
         kernel, legacy: createHarnessLegacyAdapter({ ledger: legacy, auditCwd: projDir }),
         projectId: pid, runId: canonicalRunId, traceId: pid, brief, projectRoot: base, outputsRoot: oroot,
+        executionSnapshot: { runtime: { id: rt, source: runtimeDecision.source },
+          provider: { selection: "runtime-provider", resolved: false }, model: { selection: "runtime-default", resolved: false } },
         expectedCostUsd: gauntletBudgetUsd,
         executeCandidate(candidateRoot) {
           const candidate = runAgentX({ brief, briefPath, runtime: rt, projectId: pid, projectDir: projDir, projectRoot: base,

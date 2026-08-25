@@ -96,6 +96,15 @@ describe("agent-x light Gauntlet cutover", () => {
     expect((candidate?.payload as any).producer).toEqual(producerTarget);
   });
 
+  test("freezes the runtime and model decision in the canonical journal", () => {
+    const snapshot = { runtime: { id: "codex", source: "active-session" },
+      provider: { id: "openai", resolved: true }, model: { id: "gpt-active", resolved: true } };
+    const { handle, result } = run({ executionSnapshot: snapshot });
+    const event = listEvents(handle, "prj_canary").find(item => item.type === "runtime.selection_snapshot");
+    expect((event?.payload as any).snapshot).toEqual(snapshot);
+    expect(result.run.policySnapshotRef).toBe((event?.payload as any).ref);
+  });
+
   test("rejects a producer evaluating its own candidate and records a post-start failure", () => {
     const fixture = setup();
     expect(() => runAgentXGauntlet({ kernel: fixture.handle, projectId: "prj_canary", runId: "run_self", traceId: "trace_self",

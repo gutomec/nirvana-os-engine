@@ -9,7 +9,7 @@ Este documento separa fundação implementada, integração ativa e cutovers ain
 | Área | Estado | Evidência | Limite atual |
 |---|---|---|---|
 | Política de runtime ativo | Implementada | Testes de compatibilidade e fallback | Nenhuma enumeração central é exigida pela política `active` |
-| Runtime Provider e Model Broker | Implementados | Catálogos extensíveis, seleção por capability e testes de stale data | O dispatch legado ainda não persiste o snapshot escolhido em todo Run |
+| Runtime Provider e Model Broker | Implementados | Catálogos extensíveis, seleção por capability, stale data e snapshot nos Runs do canário | O dispatch legado ainda não persiste o snapshot escolhido em todo Run |
 | Run Kernel | Implementado como fundação opt-in | Journal, projeções, outbox, transcript, ArtifactRef e recovery | O dispatch legado ainda não faz dual-write em todos os caminhos |
 | Gauntlet Engine | Engine implementada, com canário operacional | Compiler, stores, controller, budgets, replay, `agent-x light` e Squad único `light` | Business, múltiplos Squads, `balanced` e `exhaustive` ainda não usam o controller |
 | Glance Project Workspace | Control plane com canário operacional | Project, Conversation, Message, Run, Events, SSE e queue recuperável | Runs `running` só podem ser retomados quando uma lease recuperável for comprovada |
@@ -20,6 +20,8 @@ Este documento separa fundação implementada, integração ativa e cutovers ain
 ### Runtime universal
 
 A política `active` aceita o runtime da sessão quando há provider ou bridge compatível. Um runtime novo pode entrar pelo catálogo sem alteração de allowlist no core. O Model Broker filtra capabilities e modalidades antes de ordenar modelos. Catálogos vencidos falham de forma explícita, salvo autorização específica para aceitar stale data.
+
+Runs do canário congelam a decisão de execução no journal. Quando provider ou modelo continuam sob escolha interna do runtime, o snapshot registra `resolved: false` e `runtime-default` em vez de inventar uma identidade. O digest dessa estrutura fica em `policySnapshotRef`.
 
 Manifests legados continuam usando `declared`. A ausência de `runtime_requirements` não cria obrigação de instalar Claude Code, Codex, Gemini CLI ou outro produto enumerado.
 
