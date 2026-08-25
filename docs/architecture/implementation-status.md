@@ -12,7 +12,7 @@ Este documento separa fundação implementada, integração ativa e cutovers ain
 | Runtime Provider e Model Broker | Implementados | Catálogos extensíveis, seleção por capability e testes de stale data | O dispatch legado ainda não persiste o snapshot escolhido em todo Run |
 | Run Kernel | Implementado como fundação opt-in | Journal, projeções, outbox, transcript, ArtifactRef e recovery | O dispatch legado ainda não faz dual-write em todos os caminhos |
 | Gauntlet Engine | Engine implementada, com canário operacional | Compiler, stores, controller, budgets, replay e `agent-x light` | Business, Squad, `balanced` e `exhaustive` ainda não usam o controller |
-| Glance Project Workspace | Implementado como control plane local | Project, Conversation, Message, Run, Events e SSE persistentes | O chat persistente ainda aciona o action runner legado |
+| Glance Project Workspace | Control plane com canário operacional | Project, Conversation, Message, Run, Events, SSE e queue segura | A queue canônica ainda não recupera automaticamente um item apenas enfileirado durante restart |
 | Cutover vertical | Canário concluído | `agent-x light` une dispatch, Run Kernel, Gauntlet, gate final e leitura no Glance | A expansão para os demais targets permanece pendente |
 
 ## O que já funciona
@@ -40,6 +40,8 @@ Essas garantias foram testadas com adapters determinísticos. No CLI de produç�
 Projetos adotados têm identidade estável em `.nirvana/project.yaml`. Adoção exige preview e `plan_hash`. Conversations e Messages sobrevivem a reinício. Runs e Events usam o Run Kernel, a timeline é ordenada por sequência e SSE retoma com `Last-Event-ID`.
 
 O servidor restringe ações a loopback, valida Origin, exige `Idempotency-Key` nas escritas e rejeita path traversal. O navegador não recebe uma rota de shell arbitrário.
+
+No canário, uma Message de projeto adotado prepara um Run `agent-x light`, persiste o vínculo e entra numa fila serial segura. A UI não inicia o executor legado em paralelo. Projeto não adotado conserva o comportamento anterior. Capability ausente e cancelamento antes de side effects produzem estados terminais explícitos.
 
 ## Expansão vertical necessária
 
@@ -69,7 +71,9 @@ O modo `standard` deve continuar padrão. O cutover precisa de uma flag independ
 
 ## Resultado de testes nesta integração
 
-A bateria focada integrada mais recente aprovou 143 testes e 443 asserções, cobrindo runtime broker, política ativa, Run Kernel, Gauntlet Engine, canário `agent-x`, Project, Conversation, Glance API, SSE, delivery pipeline e roteamento.
+A bateria focada integrada mais recente aprovou 53 testes e 168 asserções depois do cutover do chat, cobrindo API, Message, Run, vínculo persistente, restart, cancelamento, capability ausente, events, SSE, queue, Run Kernel, delivery e canário `agent-x`.
+
+A suíte conjunta de Harness e Squads aprovou 844 testes e 2.614 asserções antes do último corte do chat. O conjunto afetado foi repetido depois do corte, sem falhas.
 
 O `routing-eval.test.ts` reconstruía o mesmo índice BM25 para cada um dos 3.449 casos. A avaliação em lote agora prepara o índice uma vez, sem cache global e sem alterar o caminho normal do roteador. O teste caiu de mais de 230 segundos para cerca de 26 segundos. Os nove pisos passaram, com top-1 de 98,5%, MRR de 0,989 e false-dispatch de 0%.
 
