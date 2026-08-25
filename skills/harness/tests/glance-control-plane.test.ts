@@ -48,8 +48,8 @@ describe("Glance project control plane", () => {
   test("persists conversation messages and keeps entities separate", async () => {
     const conversation = await fetch(`${base}/api/v1/projects/${projectId}/conversations`, { method: "POST", headers: headers(), body: JSON.stringify({ title: "Workspace" }) }).then(r => r.json()) as any;
     expect(conversation.conversation_id).toStartWith("cnv_");
-    const message = await fetch(`${base}/api/v1/conversations/${conversation.conversation_id}/messages`, { method: "POST", headers: headers(), body: JSON.stringify({ project_id: projectId, role: "user", content: "Brief persistente" }) }).then(r => r.json()) as any;
-    expect(message.sequence).toBe(1);
+    const message = await fetch(`${base}/api/v1/conversations/${conversation.conversation_id}/messages`, { method: "POST", headers: headers(), body: JSON.stringify({ project_id: projectId, role: "user", content: "Brief persistente", prepare_run: false }) }).then(r => r.json()) as any;
+    expect(message.message.sequence).toBe(1);
     const opened = await fetch(`${base}/api/v1/conversations/${conversation.conversation_id}`).then(r => r.json()) as any;
     expect(opened.messages.map((item: any) => item.content)).toEqual(["Brief persistente"]);
   });

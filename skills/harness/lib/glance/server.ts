@@ -9,6 +9,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import { createHash } from "node:crypto";
 import {
   getScope,
   listSquads,
@@ -40,7 +41,7 @@ import { readEnvFile, writeEnvFile, setVar, deleteVar, getVar, toMap } from "../
 import { CONFIG_SCHEMA, getField, isEditableKey, maskSecret } from "./config-schema.ts";
 import { validateMindCloneFile, type ValidationResult } from "../../../_shared/lib/mindclone-validator.ts";
 import { handleObservabilityRoute } from "./views/observability-handler.ts";
-import { ConversationService, ProjectService } from "../control-plane/index.ts";
+import { AgentXCanaryQueue, ConversationService, ProjectService, type GlanceAgentXCanaryAdapter } from "../control-plane/index.ts";
 import { createRun as createKernelRun, getRun as getKernelRun, listEvents as listKernelEvents, openKernel } from "../run-kernel/index.ts";
 import { getGauntlet, listCandidateRevisions, listScorecards } from "../gauntlet/index.ts";
 
@@ -57,12 +58,13 @@ const STARTED_AT = Date.now();
 const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
   || (fs.existsSync(path.join(os.homedir(), ".nirvana", "skills")) ? path.join(os.homedir(), ".nirvana", "skills") : path.join(os.homedir(), ".claude", "skills"));
 
-interface ServerOptions {
+export interface ServerOptions {
   port: number | "auto";
   open: boolean;
   idleMin: number;
   allowActions: boolean;  // future use; default false
   theme: "apple" | "apple-dark" | "awwwards";
+  agentXCanaryAdapter?: GlanceAgentXCanaryAdapter;
 }
 
 // ─── Setup copy helper (used by /api/setup/copy-batch and /api/setup/copy-stream) ───
@@ -242,6 +244,8 @@ export async function startServer(opts: ServerOptions) {
   let kernel: ReturnType<typeof openKernel> | null = null;
   const conversationService = () => conversations ||= new ConversationService(controlPlaneDb);
   const kernelService = () => kernel ||= openKernel(kernelDb);
+  let canaryQueue: AgentXCanaryQueue | null = null;
+  const agentXQueue = () => canaryQueue ||= new AgentXCanaryQueue(kernelService(), conversationService(), opts.agentXCanaryAdapter);
   const projectInspection = () => projectService.inspect(projectRoot);
 
   const problem = (status: number, title: string, detail: string) => new Response(JSON.stringify({
@@ -331,7 +335,19 @@ export async function startServer(opts: ServerOptions) {
         if (messagesMatch && req.method === "POST") {
           const body = await req.json().catch(() => ({})) as any;
           if (!validId(body.project_id || "", "prj")) return problem(400, "Invalid project", "project_id is required");
-          try { return json(conversationService().append({ conversationId: messagesMatch[1], projectId: body.project_id, role: body.role || "user", content: body.content || "", runId: body.run_id }), 201); }
+          try {
+            const idempotencyKey = req.headers.get("idempotency-key")!;
+            const messageId = `msg_${createHash("sha256").update(`${messagesMatch[1]}:${idempotencyKey}`).digest("hex").slice(0, 24)}`;
+            const message = conversationService().append({ conversationId: messagesMatch[1], projectId: body.project_id, role: body.role || "user", content: body.content || "", runId: body.run_id, messageId });
+            if ((body.role || "user") === "user" && body.prepare_run !== false) {
+              const inspection = projectInspection();
+              if (inspection.kind !== "project" || inspection.project?.project_id !== body.project_id) return problem(409, "Project not adopted", "Canonical dispatch requires an adopted project");
+              const receipt = agentXQueue().submit({ projectId: body.project_id, conversationId: messagesMatch[1], messageId: message.message_id,
+                brief: message.content, projectRoot, idempotencyKey });
+              return json({ message: receipt.message, run: receipt.run, queued: receipt.queued, capability: receipt.capability }, receipt.queued ? 202 : 200);
+            }
+            return json({ message }, 201);
+          }
           catch (error) { return problem(409, "Message rejected", (error as Error).message); }
         }
         if (p === "/api/v1/runs" && req.method === "POST") {
@@ -348,6 +364,13 @@ export async function startServer(opts: ServerOptions) {
           const projectId = u.searchParams.get("project_id") || "";
           const run = validId(projectId, "prj") ? getKernelRun(kernelService(), projectId, runMatch[1]) : null;
           return run ? json(run) : notFound("run not found");
+        }
+        const cancelMatch = p.match(/^\/api\/v1\/runs\/(run_[A-Za-z0-9-]+):cancel$/);
+        if (cancelMatch && req.method === "POST") {
+          const body = await req.json().catch(() => ({})) as any;
+          if (!validId(body.project_id || "", "prj")) return problem(400, "Invalid project", "project_id is required");
+          const result = agentXQueue().cancel(body.project_id, cancelMatch[1]);
+          return result.accepted ? json(result, 202) : problem(result.state === "not_found" ? 404 : 409, "Cancellation not accepted", `Run state is ${result.state}`);
         }
         const gauntletMatch = p.match(/^\/api\/v1\/runs\/(run_[A-Za-z0-9-]+)\/gauntlet$/);
         if (gauntletMatch && req.method === "GET") {

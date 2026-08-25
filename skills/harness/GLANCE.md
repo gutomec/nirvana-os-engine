@@ -97,6 +97,8 @@ Every `/api/v1` write requires `--allow-actions`, a same-origin request and `Ide
 
 Current limitation: canonical Project discovery is scoped to the workspace where Glance was started. Multi-root registration, archive/fork commands, typed approvals and automatic dispatch from a prepared canonical Run remain later cutovers. The current action runner continues to execute legacy chat jobs while their resulting messages are persisted by `ConversationService`.
 
+Em Projects adotados, uma Message de usuário prepara e enfileira somente o canário `agent-x` com Gauntlet `light`. A resposta contém Message, Run e capability. O histórico e o vínculo sobrevivem ao restart, e a timeline usa os events do Run Kernel. Se o host não fornecer o adapter dessa capability, o Run registra `capability_unavailable`; o Glance não troca silenciosamente de target, runtime ou modo. Projects legados continuam usando o action runner anterior.
+
 ## Security
 
 - Bind only to `localhost` (Bun.serve default).

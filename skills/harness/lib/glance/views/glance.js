@@ -1560,11 +1560,20 @@ function glance() {
       this.chatInput = '';
       this.chatMessages.push({ role: 'user', text: msg });
       this.chatMessages.push({ role: 'assistant', text: '', events: [], streaming: true });
+      let canonicalReceipt = null;
       if (this.canonicalProjectId && this.chatId.startsWith('cnv_')) {
-        fetch(`/api/v1/conversations/${encodeURIComponent(this.chatId)}/messages`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
-          body: JSON.stringify({ project_id: this.canonicalProjectId, role: 'user', content: msg }),
-        }).catch(() => {});
+        try {
+          const response = await fetch(`/api/v1/conversations/${encodeURIComponent(this.chatId)}/messages`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
+            body: JSON.stringify({ project_id: this.canonicalProjectId, role: 'user', content: msg }),
+          });
+          canonicalReceipt = await response.json();
+          if (!response.ok) throw new Error(canonicalReceipt.detail || canonicalReceipt.title || 'falha ao preparar o Run');
+        } catch (error) {
+          const asst = this.chatMessages[this.chatMessages.length - 1];
+          asst.text = `⚠ ${error.message || error}`; asst.streaming = false; this.chatBusy = false;
+          return;
+        }
       }
       // Grab the REACTIVE reference (array proxy) — mutating the raw object would
       // not trigger Alpine's re-render, and the bubble would stay at "orquestrando…".
@@ -1574,6 +1583,15 @@ function glance() {
       this.saveChatToHistory();
       try { location.hash = `#/chat/${this.chatId}`; } catch {}
       this.$nextTick(() => this.scrollChatBottom());
+
+      if (canonicalReceipt?.run) {
+        asst.text = canonicalReceipt.queued
+          ? 'Run canônico preparado. Executando agent-x no Gauntlet light…'
+          : `Run não executado: ${canonicalReceipt.run.state}.`;
+        if (canonicalReceipt.queued) this.subscribeCanonicalRun(this.canonicalProjectId, canonicalReceipt.run.runId, canonicalReceipt.run.lastSequence || 0, asst);
+        else { asst.streaming = false; this.chatBusy = false; }
+        return;
+      }
 
       // revise/resume = continue a specific production RUN (nrv revise/resume).
       // Otherwise, the conversational concierge.
@@ -1593,6 +1611,24 @@ function glance() {
       } catch (e) {
         asst.text = `⚠ ${e.message}`; asst.streaming = false; this.chatBusy = false;
       }
+    },
+    subscribeCanonicalRun(projectId, runId, after, asst) {
+      if (this.chatRunES) this.chatRunES.close();
+      const es = new EventSource(`/api/v1/projects/${encodeURIComponent(projectId)}/stream?after=${Number(after) || 0}`);
+      this.chatRunES = es;
+      es.addEventListener('event', async (event) => {
+        try {
+          const item = JSON.parse(event.data);
+          if (item.runId !== runId) return;
+          this.chatRunEvents.push(item);
+          if (item.type === 'run.transitioned' && ['completed', 'withheld', 'delivered_with_reservations', 'cancelled', 'failed', 'rolled_back'].includes(item.payload?.to)) {
+            es.close(); asst.streaming = false; this.chatBusy = false;
+            asst.text = `Run ${item.payload.to}.`;
+            this.$nextTick(() => this.scrollChatBottom());
+          }
+        } catch {}
+      });
+      es.onerror = () => { /* EventSource resumes from the cursor query and SSE id. */ };
     },
     // Kept as a compatibility method for old bookmarked UI state. The control
     // plane intentionally has no browser shell route.

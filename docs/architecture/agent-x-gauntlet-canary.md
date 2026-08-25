@@ -19,6 +19,14 @@ Um adapter de avaliação processualmente separado produz o scorecard com identi
 
 O Glance expõe `GET /api/v1/runs/{run_id}/gauntlet?project_id={project_id}`. O servidor precisa abrir o mesmo Project root que contém `.nirvana/run-kernel.sqlite`.
 
+## Corte vertical do chat
+
+Em um Project adotado, `POST /api/v1/conversations/{conversation_id}/messages` persiste a Message, prepara um Run canônico e grava o vínculo `message.run_id`. A única execução permitida nesse corte é `agent-x` com `policySnapshotRef: gauntlet-light-canary`. O mesmo `Idempotency-Key` retorna a mesma Message e o mesmo Run.
+
+Uma fila local serializa o canário e recebe um adapter explícito. O adapter declara se a capability `agent-x.gauntlet.light` existe, executa o candidate, fornece evaluator independente e chama o gate final. Sem adapter compatível, o Run termina em `rolled_back` com `reason: capability_unavailable`; não há fallback silencioso para outro runtime, target ou intensidade.
+
+O endpoint `POST /api/v1/runs/{run_id}:cancel` cancela Runs ainda na fila antes de qualquer side effect. Cancelamento durante execução é cooperativo pelo `AbortSignal` do adapter. A UI acompanha o mesmo `.nirvana/run-kernel.sqlite` por SSE e deixa de iniciar o action runner legado quando recebe um Run canônico. Projetos não adotados continuam no chat legado.
+
 ## Limites
 
 - Há um candidato e nenhuma revisão automática nesta fase.
@@ -26,3 +34,5 @@ O Glance expõe `GET /api/v1/runs/{run_id}/gauntlet?project_id={project_id}`. O 
 - O evaluator inicial usa o quality gate offline do harness por um adapter injetável. Uma capability organizacional dedicada poderá substituí-lo sem alterar o controller.
 - A publicação usa arquivos temporários e rename por arquivo. Ela é retomável e não sobrescreve arquivos idênticos, mas ainda não oferece commit atômico do diretório inteiro.
 - Uma interrupção após persistir o candidato retoma sem novo dispatch. Uma interrupção durante o gate final pode repetir o gate, que deve permanecer idempotente por artifacts e event identity.
+- A fila em memória não é uma segunda fonte de verdade. Após restart, Messages, vínculo, Run e events continuam disponíveis; retomada automática de um item que estava apenas enfileirado ainda não faz parte deste corte.
+- O Glance não escolhe runtime ou modelo neste canário. A ausência do adapter é tratada como capability indisponível.
