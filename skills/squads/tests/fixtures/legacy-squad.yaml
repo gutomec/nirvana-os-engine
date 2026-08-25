@@ -1,0 +1,7 @@
+name: legacy-runtime-squad
+version: 1.0.0
+protocol: "5.0"
+components: {}
+runtime_requirements:
+  minimum:
+    - runtime: codex

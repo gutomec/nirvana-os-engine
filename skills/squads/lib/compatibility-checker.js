@@ -12,8 +12,9 @@ class CompatibilityChecker {
   /**
    * @param {string} skillRoot - Path to the squads skill directory
    */
-  constructor(skillRoot) {
+  constructor(skillRoot, { runtimeBroker = null } = {}) {
     this.adapterLoader = new AdapterLoader(skillRoot);
+    this.runtimeBroker = runtimeBroker;
   }
 
   /**
@@ -52,6 +53,14 @@ class CompatibilityChecker {
         return result;
       }
     }
+
+    const brokerResult = policy === 'active' && this.runtimeBroker
+      ? this.runtimeBroker.evaluateActive(runtimeId, {
+        featuresRequired: squadInfo.featuresRequired || [],
+        modelRequirements: squadInfo.modelRequirements || {},
+      })
+      : null;
+    if (brokerResult) return brokerResult;
 
     // Prefer a registered adapter. Active policy may use an explicit semantic bridge.
     const adapter = this.adapterLoader.loadAdapter(runtimeId);

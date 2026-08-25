@@ -1,0 +1,24 @@
+schema_version: nirvana.runtime-provider/v1alpha1
+provider:
+  id: fixture-provider
+catalog:
+  observed_at: 2026-08-24T00:00:00Z
+  max_age_seconds: 172800
+runtimes:
+  - id: future-runtime
+    version: 1.2.0
+    capabilities:
+      file_read: { support: native }
+      audit_trail: { support: native }
+models:
+  - canonical_id: fixture-provider/text-model/1
+    priority: 10
+    modalities: { input: [text], output: [text] }
+    capabilities:
+      tool_calling: { support: native }
+  - canonical_id: fixture-provider/image-model/1
+    priority: 5
+    modalities: { input: [text, image], output: [text, image] }
+    capabilities:
+      tool_calling: { support: native }
+      image_generation: { support: native }
