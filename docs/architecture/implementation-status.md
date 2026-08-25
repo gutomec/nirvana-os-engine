@@ -11,9 +11,9 @@ Este documento separa fundação implementada, integração ativa e cutovers ain
 | Política de runtime ativo | Implementada | Testes de compatibilidade e fallback | Nenhuma enumeração central é exigida pela política `active` |
 | Runtime Provider e Model Broker | Implementados | Catálogos extensíveis, seleção por capability e testes de stale data | O dispatch legado ainda não persiste o snapshot escolhido em todo Run |
 | Run Kernel | Implementado como fundação opt-in | Journal, projeções, outbox, transcript, ArtifactRef e recovery | O dispatch legado ainda não faz dual-write em todos os caminhos |
-| Gauntlet Engine | Implementado como engine | Compiler, stores, controller, budgets, replay e decisões terminais | As flags do CLI ainda não comandam o fan-out real do dispatch |
+| Gauntlet Engine | Engine implementada, com canário operacional | Compiler, stores, controller, budgets, replay e `agent-x light` | Business, Squad, `balanced` e `exhaustive` ainda não usam o controller |
 | Glance Project Workspace | Implementado como control plane local | Project, Conversation, Message, Run, Events e SSE persistentes | O chat persistente ainda aciona o action runner legado |
-| Cutover vertical | Não concluído | Contratos e seams existem | Falta unir dispatch, broker, kernel, Gauntlet e Glance numa execução real |
+| Cutover vertical | Canário concluído | `agent-x light` une dispatch, Run Kernel, Gauntlet, gate final e leitura no Glance | A expansão para os demais targets permanece pendente |
 
 ## O que já funciona
 
@@ -33,7 +33,7 @@ A facade de compatibilidade é opt-in. Ela não altera readers legados por simpl
 
 O compiler produz planos determinísticos para `light`, `balanced` e `exhaustive`. O controller bloqueia nova rodada sem orçamento, impõe duração e quantidade máxima de rounds, detecta falta de progresso, impede autoavaliação e registra candidates e scorecards imutáveis.
 
-Essas garantias foram testadas com adapters determinísticos. No CLI de produção, `--execution-mode` ainda registra a intenção, mas não substitui o executor legado pelo controller. Portanto, usar a flag hoje não autoriza afirmar que houve competição entre candidates.
+Essas garantias foram testadas com adapters determinísticos. No CLI de produção, o corte `agent-x + --exec + gauntlet + light` substitui o executor legado pelo controller. O canário executa um candidate isolado, uma avaliação independente e o gate final. As demais combinações permanecem fora do cutover e não autorizam afirmar que houve competição entre candidates.
 
 ### Glance
 
@@ -41,9 +41,9 @@ Projetos adotados têm identidade estável em `.nirvana/project.yaml`. Adoção 
 
 O servidor restringe ações a loopback, valida Origin, exige `Idempotency-Key` nas escritas e rejeita path traversal. O navegador não recebe uma rota de shell arbitrário.
 
-## Cutover vertical necessário
+## Expansão vertical necessária
 
-O próximo incremento deve ser único e observável:
+O canário provou as etapas 1, 4, 5, 7 e 8 para `agent-x light`. Os próximos incrementos devem completar o mesmo contrato:
 
 1. O Glance recebe uma Message e prepara um Run canônico.
 2. O harness resolve Business, Squad ou `agent-x` sem mudar a cascata atual.
@@ -56,11 +56,11 @@ O próximo incremento deve ser único e observável:
 
 O modo `standard` deve continuar padrão. O cutover precisa de uma flag independente e rollback por facade, sem reescrever businesses, squads ou mind-clones.
 
-## Critérios para declarar o cutover concluído
+## Critérios para declarar o programa completo
 
 - Um teste E2E cria Project, Conversation, Message e Run, despacha um target real por adapter fake e observa toda a timeline por SSE.
 - `standard` mantém exit codes, artifacts, audit e session files atuais.
-- `gauntlet light` executa produção, avaliação independente, revisão causal e gate final.
+- `gauntlet light` executa produção, avaliação independente, revisão causal e gate final para Business, Squad e `agent-x`.
 - Reiniciar depois de `candidate_created` retoma sem repetir side effect.
 - Budget insuficiente impede a próxima execução antes de reservar recursos.
 - Snapshot de runtime e modelo permanece consultável mesmo depois de atualizar o catálogo.
@@ -69,10 +69,12 @@ O modo `standard` deve continuar padrão. O cutover precisa de uma flag independ
 
 ## Resultado de testes nesta integração
 
-A bateria focada integrada aprovou 53 testes e 153 asserções, cobrindo runtime broker, política ativa, Run Kernel, Gauntlet Engine, Project, Conversation, Glance API e SSE.
+A bateria focada integrada mais recente aprovou 143 testes e 443 asserções, cobrindo runtime broker, política ativa, Run Kernel, Gauntlet Engine, canário `agent-x`, Project, Conversation, Glance API, SSE, delivery pipeline e roteamento.
 
-A execução conjunta de `skills/harness/tests` e `skills/squads/tests` avançou por centenas de casos sem falha observada, mas `skills/harness/tests/routing-eval.test.ts` permaneceu sem saída por mais de um minuto e foi interrompido. Esse resultado não equivale a uma suíte global aprovada. O teste precisa de diagnóstico isolado antes de virar gate obrigatório deste programa.
+O `routing-eval.test.ts` reconstruía o mesmo índice BM25 para cada um dos 3.449 casos. A avaliação em lote agora prepara o índice uma vez, sem cache global e sem alterar o caminho normal do roteador. O teste caiu de mais de 230 segundos para cerca de 26 segundos. Os nove pisos passaram, com top-1 de 98,5%, MRR de 0,989 e false-dispatch de 0%.
+
+O smoke test do Pi confirmou o provider padrão `openrouter` e o modelo padrão `stealth/ox-alpha`. A execução sem tools, sessão ou contexto respondeu `PI_RUNTIME_OK`. Esse teste confirma disponibilidade do runtime, mas não substitui os testes herméticos do engine.
 
 ## Regra de entrega
 
-Até os critérios acima passarem, a implementação deve ser descrita como fundação integrada em andamento. As APIs e engines já são utilizáveis para desenvolvimento e testes controlados. Elas ainda não sustentam a alegação de que o fluxo inteiro opera em Gauntlet a partir do Glance.
+Até os critérios acima passarem, a implementação deve ser descrita como fundação integrada com canário operacional. O fluxo `agent-x light` opera pelo Gauntlet e pode ser inspecionado no Glance. O sistema inteiro ainda não opera em Gauntlet, pois Business, Squad e intensidades maiores permanecem no caminho anterior.
