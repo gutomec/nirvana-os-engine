@@ -75,4 +75,22 @@ describe("bounded gauntlet controller", () => {
     expect(resumed.beginRound(1)).toEqual(first);
     expect(listEvents(handle, "prj_1").filter(event => event.type === "gauntlet.round_started")).toHaveLength(1);
   });
+
+  test("stops at max rounds before another fan-out", () => {
+    const { controller } = setup({ brief: "Build it", stop: { maxRounds: 1, noProgressPatience: 3 } });
+    controller.beginRound(1, "2026-08-25T12:00:01.000Z"); controller.addCandidate(candidate());
+    expect(controller.evaluateRound([score(1, 0.6)]).stopReason).toBe("max_rounds");
+    expect(controller.resume().round).toBe(1);
+  });
+
+  test("delivers with explicit reservations for non-blocking failures", () => {
+    const { controller } = setup({ brief: "Build it", stop: { minimumScore: 0.9 } });
+    controller.beginRound(1, "2026-08-25T12:00:01.000Z"); controller.addCandidate(candidate());
+    const result = controller.evaluateRound([{ ...score(1, 1), dimensions: [
+      { id: "brief", score: 1, confidence: 1, blocking: true, passed: true, evidenceRefs: ["test:brief"] },
+      { id: "style", score: 0.8, confidence: 0.2, blocking: false, passed: false, evidenceRefs: ["review:style"] },
+    ] }]);
+    expect(result.decision).toBe("reservations");
+    expect(result.reservations).toEqual(["style"]);
+  });
 });
