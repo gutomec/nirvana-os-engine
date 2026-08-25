@@ -45,7 +45,7 @@ Runtime desconhecido em `active` pode executar se o host descriptor satisfizer f
 
 ## 5. Projects
 
-Projetos existentes com `.nirvana/` e sem manifesto aparecem como legacy. `inspect` é read-only. `adopt` produz plano, diff e `plan_hash`; só então grava `.nirvana/project.json`. O path pode mudar sem alterar `project_id`.
+Projetos existentes com `.nirvana/` e sem manifesto aparecem como legacy. `inspect` é read-only. `adopt` produz plano, diff e `plan_hash`; só então grava `.nirvana/project.yaml`. O path pode mudar sem alterar `project_id`.
 
 ## 6. Dados e recovery
 

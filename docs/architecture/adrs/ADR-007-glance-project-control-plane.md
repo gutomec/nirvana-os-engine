@@ -9,7 +9,7 @@ Glance já observa e aciona o engine, mas Projects são descobertos heuristicame
 
 ## Decisão
 
-Glance, CLI e `nrv serve` chamam os mesmos application services. `nrv init` continua contrato público e delega ao `ProjectService`. Project recebe ID estável e manifesto. Conversation e Message são persistentes. Chat, timeline, DAG, lineage, costs e gates são projections do journal e transcript vinculados.
+Glance, CLI e `nrv serve` chamam os mesmos application services. `nrv init` continua contrato público e delega ao `ProjectService`. Project recebe ID estável e manifesto `.nirvana/project.yaml`. Conversation e Message são persistentes. Chat, timeline, DAG, lineage, costs e gates são projections do journal e transcript vinculados.
 
 ## Consequências
 

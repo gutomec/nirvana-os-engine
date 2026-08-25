@@ -201,7 +201,7 @@ function glance() {
         }
       } catch {}
       // Chat history + hash router (deep-link).
-      this.loadChatHistory();
+      await this.loadChatHistory();
       this.applyHash();
       window.addEventListener('hashchange', () => this.applyHash());
       // Awwwards hero only on awwwards theme
@@ -1210,9 +1210,20 @@ function glance() {
     chatMode: 'run',           // 'run' (new dispatch) | 'revise' | 'resume'
     chatHistory: [],           // [{id, title, mode, updatedAt}] persisted in localStorage
     chatHistoryOpen: false,    // history drawer inside the panel
+    canonicalProjectId: null,
 
-    // Chat history (localStorage — the full transcript comes from /api/runs).
-    loadChatHistory() {
+    // The control plane is canonical when this workspace has been adopted.
+    // localStorage remains a compatibility fallback for legacy workspaces.
+    async loadChatHistory() {
+      try {
+        const result = await api('/api/v1/projects');
+        this.canonicalProjectId = result.projects?.[0]?.project_id || null;
+        if (this.canonicalProjectId) {
+          const history = await api(`/api/v1/projects/${encodeURIComponent(this.canonicalProjectId)}/conversations`);
+          this.chatHistory = (history.conversations || []).map(c => ({ id: c.conversation_id, title: c.title, mode: 'run', updatedAt: Date.parse(c.updated_at) }));
+          return;
+        }
+      } catch {}
       try { this.chatHistory = JSON.parse(localStorage.getItem('glance.chatHistory') || '[]'); } catch { this.chatHistory = []; }
     },
     saveChatToHistory() {
@@ -1222,13 +1233,22 @@ function glance() {
       const entry = { id: this.chatId, title, mode: this.chatMode, updatedAt: Date.now() };
       if (existing >= 0) this.chatHistory[existing] = entry; else this.chatHistory.unshift(entry);
       this.chatHistory = this.chatHistory.slice(0, 30);
-      try { localStorage.setItem('glance.chatHistory', JSON.stringify(this.chatHistory)); } catch {}
+      if (!this.canonicalProjectId) {
+        try { localStorage.setItem('glance.chatHistory', JSON.stringify(this.chatHistory)); } catch {}
+      }
     },
     async openChatFromHistory(entry) {
       this.chatId = entry.id;
       this.chatMode = entry.mode || 'run';
       this.chatHistoryOpen = false;
       this.chatOpen = true;
+      if (this.canonicalProjectId && entry.id.startsWith('cnv_')) {
+        try {
+          const conversation = await api(`/api/v1/conversations/${encodeURIComponent(entry.id)}`);
+          this.chatMessages = (conversation.messages || []).map(m => ({ role: m.role, text: m.content }));
+          return;
+        } catch {}
+      }
       const isRun = this.chatMode === 'revise' || this.chatMode === 'resume';
       if (isRun) {
         // Production run: rehydrate the timeline from the trace's audit trail.
@@ -1246,7 +1266,9 @@ function glance() {
     },
     deleteChatFromHistory(id) {
       this.chatHistory = this.chatHistory.filter(c => c.id !== id);
-      try { localStorage.setItem('glance.chatHistory', JSON.stringify(this.chatHistory)); } catch {}
+      if (!this.canonicalProjectId) {
+        try { localStorage.setItem('glance.chatHistory', JSON.stringify(this.chatHistory)); } catch {}
+      }
     },
 
     // Open the chat pointed at an existing run, to continue the session.
@@ -1419,9 +1441,17 @@ function glance() {
       }
     },
     // ─── Chat: methods (Phase 3) ───
-    openChat() {
+    async openChat() {
       // Free chat: conversational concierge. Generates a fresh chatId.
-      this.chatId = 'chat-' + Date.now().toString(36);
+      if (this.canonicalProjectId) {
+        try {
+          const response = await fetch(`/api/v1/projects/${encodeURIComponent(this.canonicalProjectId)}/conversations`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify({ title: 'Nova conversa' }),
+          });
+          const conversation = await response.json();
+          this.chatId = conversation.conversation_id;
+        } catch { this.chatId = 'chat-' + Date.now().toString(36); }
+      } else this.chatId = 'chat-' + Date.now().toString(36);
       this.chatMode = 'run';        // 'run' here = concierge (chat-agent)
       this.chatMessages = [];
       this.chatRunEvents = [];
@@ -1485,6 +1515,9 @@ function glance() {
         gate_passed:          { icon: 'shield-check', title: 'Gate passou', sub: (ev.rubrics || []).join(', '), tone: 'ok' },
         report_html_generated:{ icon: 'file-text', title: 'HTML gerado', tone: '' },
         report_pdf_generated: { icon: 'file-text', title: 'PDF gerado', tone: '' },
+        artifact_published:    { icon: 'package-check', title: `Artifact: ${ev.artifact_id || ev.path || 'publicado'}`, sub: ev.media_type || '', tone: 'ok' },
+        model_selected:        { icon: 'cpu', title: `Modelo: ${ev.model || ev.model_id || 'selecionado'}`, sub: rt, tone: '' },
+        approval_required:     { icon: 'badge-help', title: 'Aprovação necessária', sub: ev.reason || '', tone: 'active' },
         delivered:            { icon: 'party-popper', title: 'Entregue', tone: 'ok' },
         runtime_handoff:      { icon: 'refresh-cw', title: `Trocou runtime → ${ev.to || ev.runtime || ''}`, tone: '' },
         runtime_quota_exhausted: { icon: 'ban', title: 'Cota esgotada', tone: 'fail' },
@@ -1495,14 +1528,19 @@ function glance() {
     // Live header derived from the stream: current business/squad/agent + total cost.
     get runSummary() {
       const evs = this.chatRunEvents || [];
-      let business = null, squad = null, lastAgent = null, agents = 0, cost = 0;
+      let business = null, squad = null, mindClone = null, runtime = null, model = null, gate = null, artifacts = 0, lastAgent = null, agents = 0, cost = 0;
       for (const ev of evs) {
         if (ev.business_slug || ev.business) business = ev.business_slug || ev.business;
         if (ev.squad_slug || ev.squad_name || ev.squad) squad = ev.squad_slug || ev.squad_name || ev.squad;
+        if (ev.event === 'mind_clone_injected') mindClone = ev.clone || ev.dna || ev.slug || ev.file;
+        if (ev.runtime) runtime = ev.runtime;
+        if (ev.model || ev.model_id) model = ev.model || ev.model_id;
+        if (ev.event === 'gate_passed' || ev.event === 'gate_failed') gate = ev.event === 'gate_passed' ? 'passed' : 'failed';
+        if (ev.event === 'artifact_published' || ev.event === 'report_html_generated' || ev.event === 'report_pdf_generated') artifacts++;
         if (ev.event === 'agent_executed') { agents++; lastAgent = ev.employee || lastAgent; }
         if (ev.cost_usd != null) cost += Number(ev.cost_usd) || 0;
       }
-      return { business, squad, lastAgent, agents, cost, count: evs.length };
+      return { business, squad, mindClone, runtime, model, gate, artifacts, lastAgent, agents, cost, count: evs.length };
     },
     chatRuntime: '',           // '' = auto (session host); or claude-code/codex/…
     chatFast: false,           // fast/cheap mode (opt-in); default = agentic
@@ -1522,6 +1560,12 @@ function glance() {
       this.chatInput = '';
       this.chatMessages.push({ role: 'user', text: msg });
       this.chatMessages.push({ role: 'assistant', text: '', events: [], streaming: true });
+      if (this.canonicalProjectId && this.chatId.startsWith('cnv_')) {
+        fetch(`/api/v1/conversations/${encodeURIComponent(this.chatId)}/messages`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
+          body: JSON.stringify({ project_id: this.canonicalProjectId, role: 'user', content: msg }),
+        }).catch(() => {});
+      }
       // Grab the REACTIVE reference (array proxy) — mutating the raw object would
       // not trigger Alpine's re-render, and the bubble would stay at "orquestrando…".
       const asst = this.chatMessages[this.chatMessages.length - 1];
@@ -1550,21 +1594,10 @@ function glance() {
         asst.text = `⚠ ${e.message}`; asst.streaming = false; this.chatBusy = false;
       }
     },
-    // `!<cmd>` — runs an arbitrary shell command (free-form; localhost + gate).
+    // Kept as a compatibility method for old bookmarked UI state. The control
+    // plane intentionally has no browser shell route.
     async runShell(cmd) {
-      if (!cmd) return;
-      if (!this.chatId) this.chatId = 'chat-' + Date.now().toString(36);
-      this.chatMessages.push({ role: 'user', text: '$ ' + cmd });
-      this.chatMessages.push({ role: 'assistant', text: '', events: [], streaming: true });
-      const asst = this.chatMessages[this.chatMessages.length - 1];
-      this.chatBusy = true;
-      this.saveChatToHistory();
-      this.$nextTick(() => this.scrollChatBottom());
-      try {
-        const r = await fetch('/api/actions/chat-shell', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: this.chatId, command: cmd }) }).then(x => x.json());
-        if (r.error || !r.job) { asst.text = `⚠ ${r.error || 'falha ao iniciar o comando'}`; asst.streaming = false; this.chatBusy = false; return; }
-        this.followChatJob(r.job.id, asst, 'shell');
-      } catch (e) { asst.text = `⚠ ${e.message}`; asst.streaming = false; this.chatBusy = false; }
+      this.chatMessages.push({ role: 'system', text: 'Comandos de shell não são aceitos pelo control plane do browser.' });
     },
     // `/<cmd>` — slash commands (client-side; no shell).
     runSlash(raw) {
@@ -1596,7 +1629,7 @@ function glance() {
             '`/route <brief>` — qual empresa/squad usar',
             '`/run <slug> <brief>` — despachar um trabalho',
             '`/fast` · `/agentic` — trocar o modo de roteamento',
-            '`!<comando>` — rodar um comando de shell (ex.: `!nrv list-businesses`)',
+            'Comandos de shell não são expostos pelo browser.',
           ].join('\n'));
           return;
       }
@@ -1656,6 +1689,12 @@ function glance() {
           asst.events = [...this.chatRunEvents];
         }
         this.saveChatToHistory();
+        if (this.canonicalProjectId && this.chatId?.startsWith('cnv_') && asst.text) {
+          fetch(`/api/v1/conversations/${encodeURIComponent(this.chatId)}/messages`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
+            body: JSON.stringify({ project_id: this.canonicalProjectId, role: 'assistant', content: asst.text }),
+          }).catch(() => {});
+        }
         this.$nextTick(() => { this.scrollChatBottom(); try { window.lucide?.createIcons(); } catch {} });
       };
       // Final safety net: if nothing signals 'done' (hung job), don't leave an

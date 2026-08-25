@@ -38,6 +38,9 @@ describe("Glance project control plane", () => {
     expect((await fetch(`${base}/api/v1/projects`, { method: "POST", headers: { "content-type": "application/json", origin: base }, body: "{}" })).status).toBe(400);
     expect((await fetch(`${base}/api/v1/projects`, { method: "POST", headers: { ...headers(), origin: "https://evil.example" }, body: "{}" })).status).toBe(403);
     expect((await fetch(`${base}/api/v1/projects/plan`, { method: "POST", headers: headers(), body: JSON.stringify({ relative_root: "../escape" }) })).status).toBe(400);
+    expect((await fetch(`${base}/api/actions/chat-shell`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ command: "pwd" }) })).status).toBe(404);
+    const capabilities = await fetch(`${base}/api/v1/capabilities`).then(r => r.json()) as any;
+    expect(capabilities.permissions["tool.execute.shell"]).toBe(false);
   });
 
   test("persists conversation messages and keeps entities separate", async () => {

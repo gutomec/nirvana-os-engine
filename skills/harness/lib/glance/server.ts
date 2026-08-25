@@ -282,6 +282,14 @@ export async function startServer(opts: ServerOptions) {
           const inspection = projectInspection();
           return json({ projects: inspection.kind === "project" ? [inspection.project] : [], legacy: inspection.kind === "legacy" ? [inspection.plan] : [] });
         }
+        if (p === "/api/v1/capabilities" && req.method === "GET") {
+          return json({ permissions: {
+            "project.read": true, "conversation.read": true, "run.read": true,
+            "project.create": opts.allowActions, "project.adopt": opts.allowActions,
+            "conversation.write": opts.allowActions, "run.prepare": opts.allowActions,
+            "tool.execute.shell": false,
+          } });
+        }
         if (p === "/api/v1/projects/plan" && req.method === "POST") {
           const body = await req.json().catch(() => ({})) as any;
           if (body.relative_root && (path.isAbsolute(body.relative_root) || body.relative_root.includes(".."))) return problem(400, "Invalid path", "relative_root must be confined to the Glance workspace");
@@ -415,6 +423,9 @@ export async function startServer(opts: ServerOptions) {
 
       // ─── ACTION endpoints (POST) — gated by --allow-actions ───
       if (req.method === "POST" && p.startsWith("/api/actions/")) {
+        if (p === "/api/actions/chat-shell") {
+          return problem(404, "Unsupported command", "The browser control plane does not expose arbitrary shell execution");
+        }
         if (!opts.allowActions) {
           return json({ error: "actions disabled; restart Glance with --allow-actions to enable", action: p }, 403);
         }

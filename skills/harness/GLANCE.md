@@ -1,6 +1,6 @@
 # Nirvana Glance — visualizador instantâneo do harness
 
-> Ephemeral browser-based control panel for the Nirvana system. **Read-only by default.** No installation, no daemon, no persistence. Closes when you close the terminal.
+> Local browser-based control plane for the Nirvana system. **Read-only by default.** Project, Conversation, Message and Run state persists in the project; the server process remains ephemeral.
 
 ## Quick start
 
@@ -87,11 +87,21 @@ Toggle live with the `◐` button in the nav bar.
 
 Glance respects `NIRVANA_SCOPE`. Run from inside a `scope=project` tree → see only that project's squads/businesses, registries pulled from `<project>/.nirvana/`, logs from `<project>/.nirvana/logs/`. Run from anywhere else → see globals, registries from `$HOME`. The scope panel on the right always shows the active mode.
 
+## Project workspace control plane
+
+`nrv init` and Glance share `ProjectService`. The stable identity lives in `.nirvana/project.yaml`; moving the workspace does not change `project_id`. A directory with `.nirvana/` and no manifest is reported as legacy. Reading it never writes. Adoption requires a preview and the matching `plan_hash`.
+
+The `/api/v1` surface persists conversations in `.nirvana/control-plane.sqlite` and canonical Runs and events in `.nirvana/run-kernel.sqlite`. Event pagination and SSE use the Project sequence, not timestamps. `Last-Event-ID` resumes after that sequence. The existing `/api/projects`, `/api/runs` and audit-derived views remain available as compatibility fallbacks.
+
+Every `/api/v1` write requires `--allow-actions`, a same-origin request and `Idempotency-Key`. Paths are workspace-relative and traversal is rejected. The browser has no arbitrary shell capability; `/api/v1/capabilities` reports the effective minimum permission set.
+
+Current limitation: canonical Project discovery is scoped to the workspace where Glance was started. Multi-root registration, archive/fork commands, typed approvals and automatic dispatch from a prepared canonical Run remain later cutovers. The current action runner continues to execute legacy chat jobs while their resulting messages are persisted by `ConversationService`.
+
 ## Security
 
 - Bind only to `localhost` (Bun.serve default).
 - Random port (3737-onwards) — unlikely collision but caller can fix with `--port`.
-- Read-only: no shell exec, no fs writes outside `~/.nirvana/.glance.pid`.
+- Read-only by default. With `--allow-actions`, writes are confined to the selected project and typed action allowlist.
 - No auth: anyone with localhost access (= you) can read. Matches the existing skill ergonomics.
 - Future `--allow-actions` mode will gate behind explicit flag + per-action confirmation banner.
 
@@ -175,7 +185,7 @@ When `--allow-actions` is on, Glance gains:
 
 ## Why this works
 
-- **Não persistente:** server lives only during the terminal session. No daemon.
+- **Processo efêmero, estado persistente:** o servidor vive apenas durante a sessão; Projects, Conversations, Messages e Runs canônicos sobrevivem ao restart.
 - **Cross-platform:** Bun runs natively on macOS / Linux / Windows / WSL2 / Alpine.
 - **Zero build:** all frontend deps via CDN (Tailwind, Alpine, D3, Inter, JetBrains Mono). Just open the URL.
 - **Scope-coherent:** reads everything via the same `paths.js` / `scope.ts` the rest of the system uses. What Glance shows = what the harness sees.

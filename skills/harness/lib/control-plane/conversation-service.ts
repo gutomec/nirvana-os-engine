@@ -34,6 +34,7 @@ export class ConversationService {
     const conversation = this.get(input.conversationId);
     if (!conversation || conversation.project_id !== input.projectId) throw new Error("conversation does not belong to project");
     if (!input.content.trim()) throw new Error("message content is required");
+    if (!["user", "assistant", "system"].includes(input.role)) throw new Error("invalid visible message role");
     const createdAt = new Date().toISOString();
     return this.db.transaction(() => {
       const row = this.db.query("SELECT COALESCE(MAX(sequence), 0) + 1 AS next FROM conversation_messages WHERE conversation_id = ?").get(input.conversationId) as { next: number };

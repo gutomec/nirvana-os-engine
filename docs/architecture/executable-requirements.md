@@ -92,7 +92,7 @@ CLI e Glance devem produzir manifesto e scaffold semanticamente equivalentes ao 
 
 ### GL-002, identidade de Project [crítico, proposto]
 
-Project deve ter ID estável independente do path e manifesto `.nirvana/project.json`. Abrir Project legado não pode migrá-lo implicitamente.
+Project deve ter ID estável independente do path e manifesto `.nirvana/project.yaml`. Abrir Project legado não pode migrá-lo implicitamente.
 
 ### GL-003, chat persistente [crítico, proposto]
 
