@@ -28,6 +28,7 @@ Este diretório é a fonte canônica para a evolução integrada do Run Kernel, 
 8. [Matriz de testes](test-matrix.md)
 9. [Matriz de rastreabilidade](traceability-matrix.md)
 10. [Operação do Run Kernel](run-kernel-operations.md)
+11. [Canário Gauntlet para agent-x](agent-x-gauntlet-canary.md)
 11. [Operação do Gauntlet Engine](gauntlet-engine-operations.md)
 12. [Estado da implementação](implementation-status.md)
 
