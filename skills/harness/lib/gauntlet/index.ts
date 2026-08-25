@@ -9,3 +9,4 @@ export * from "./agent-x-cutover.ts";
 export * from "./aggregate-budget.ts";
 export * from "./multi-target-coordinator.ts";
 export * from "./run-kernel-multi-target-ports.ts";
+export * from "./multi-target-dispatch-adapters.ts";

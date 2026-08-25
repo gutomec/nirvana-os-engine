@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DependencyGraph } from "../../_shared/lib/dependency-graph.ts";
 import { reserveAggregateGauntletBudget } from "../lib/gauntlet/aggregate-budget.ts";
-import { coordinateMultiTargetPlan, type MultiTargetAdapterInput } from "../lib/gauntlet/multi-target-coordinator.ts";
+import { coordinateMultiTargetPlan, type MultiTargetAdapterInput, type MultiTargetAdapterResult } from "../lib/gauntlet/multi-target-coordinator.ts";
 import { createRunKernelMultiTargetPorts } from "../lib/gauntlet/run-kernel-multi-target-ports.ts";
 import { compileMultiTargetGauntletPolicy } from "../lib/plan-compiler.ts";
 import { createRun, listEvents, openKernel, type KernelHandle } from "../lib/run-kernel/store.ts";
@@ -62,10 +62,13 @@ function concrete(args: {
   ownerId?: string;
   now?: () => number;
   calls?: MultiTargetAdapterInput[];
+  run?: (input: MultiTargetAdapterInput) => Promise<MultiTargetAdapterResult>;
+  heartbeatMs?: number;
+  schedule?: (fn: () => void, ms: number) => () => void;
 }) {
   const run = async (input: MultiTargetAdapterInput) => {
     args.calls?.push(input);
-    return adapter(input);
+    return args.run ? args.run(input) : adapter(input);
   };
   return createRunKernelMultiTargetPorts({
     ...args,
@@ -76,6 +79,24 @@ function concrete(args: {
     standard: { run },
     gauntlet: { run },
   });
+}
+
+/** Timer seam: heartbeats fire only when the test invokes them, never on real time. */
+function manualScheduler() {
+  const scheduled: Array<{ fn: () => void; ms: number }> = [];
+  let cancelled = 0;
+  return {
+    scheduled,
+    cancelled: () => cancelled,
+    schedule(fn: () => void, ms: number) { scheduled.push({ fn, ms }); return () => { cancelled++; }; },
+  };
+}
+
+function nodeInput(nodeId: string): MultiTargetAdapterInput {
+  return {
+    nodeId, target: { kind: "business", id: nodeId }, mode: "standard", grantedCostUsd: 0, upstreamPaths: [],
+    outputPath: `businesses/${nodeId}/outputs/`, idempotencyKey: `key-${nodeId}`, resume: false,
+  };
 }
 
 describe("Run Kernel multi-target ports", () => {
@@ -230,6 +251,103 @@ describe("Run Kernel multi-target ports", () => {
       currentWave: -1, nodes: [], reportedCostUsd: 0, version: 1,
     });
     await expect(coordinateMultiTargetPlan({ ...compiled, ports })).rejects.toThrow("persisted snapshot does not match");
+    setup.kernel.close();
+  });
+
+  test("heartbeat renews the lease while the adapter is pending and stops on completion", async () => {
+    let clock = 10_000;
+    const setup = fixture();
+    const timer = manualScheduler();
+    let finish!: () => void;
+    let observed: AbortSignal | undefined;
+    const ports = concrete({
+      ...setup, now: () => clock, heartbeatMs: 300, schedule: timer.schedule,
+      run: async (input) => {
+        observed = input.signal;
+        await new Promise<void>((resolve) => { finish = resolve; });
+        return { state: "delivered", reportedCostUsd: 1 };
+      },
+    });
+    expect(ports.lease.claim("business-a")).toBeTrue();
+    const pending = ports.standard.run(nodeInput("business-a"));
+    expect(timer.scheduled.map((entry) => entry.ms)).toEqual([300]);
+    const renewals = () => listEvents(setup.kernel, setup.projectId).filter((event) => event.type === "multi_target.lease_renewed");
+    for (let tick = 1; tick <= 3; tick++) {
+      clock += 300;
+      timer.scheduled[0].fn();
+      expect(renewals()).toHaveLength(tick);
+    }
+    expect(observed?.aborted).toBeFalse();
+    finish();
+    expect(await pending).toEqual({ state: "delivered", reportedCostUsd: 1 });
+    expect(timer.cancelled()).toBe(1);
+    timer.scheduled[0].fn();
+    expect(renewals()).toHaveLength(3);
+    expect(ports.lease.canResume("business-a")).toBeTrue();
+    setup.kernel.close();
+  });
+
+  test("a lost lease aborts the running adapter, journals lease_lost and never delivers the node", async () => {
+    let clock = 20_000;
+    const setup = fixture();
+    const compiled = plan();
+    const timer = manualScheduler();
+    let started!: () => void;
+    const startedPromise = new Promise<void>((resolve) => { started = resolve; });
+    let release!: () => void;
+    const barrier = new Promise<void>((resolve) => { release = resolve; });
+    let observed: AbortSignal | undefined;
+    const ports = concrete({
+      ...setup, now: () => clock, heartbeatMs: 300, schedule: timer.schedule,
+      run: async (input) => {
+        if (input.nodeId !== "business-a") return { state: "delivered", reportedCostUsd: 0 };
+        observed = input.signal;
+        started();
+        await barrier;
+        return { state: "delivered", reportedCostUsd: 0.25, outputPaths: [`${input.outputPath}artifact.md`] };
+      },
+    });
+    const running = coordinateMultiTargetPlan({ ...compiled, ports });
+    await startedPromise;
+    // Let the sibling adapter settle its own lease check before the clock jumps.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    clock += 2_000;
+    for (const entry of timer.scheduled) entry.fn();
+    expect(observed?.aborted).toBeTrue();
+    expect(observed?.reason).toBe("lease_lost");
+    release();
+    const snapshot = await running;
+    const businessA = snapshot.nodes.find((node) => node.nodeId === "business-a")!;
+    expect(businessA.state).toBe("failed");
+    expect(businessA.reason).toStartWith("lease_lost:");
+    expect(businessA.reportedCostUsd).toBe(0.25);
+    expect(snapshot.nodes.find((node) => node.nodeId === "business-b")!.state).toBe("delivered");
+    expect(snapshot.nodes.find((node) => node.nodeId === "squad-c")!.state).toBe("skipped");
+    expect(snapshot.state).toBe("failed");
+    const events = listEvents(setup.kernel, setup.projectId);
+    const lost = events.filter((event) => event.type === "multi_target.lease_lost");
+    expect(lost).toHaveLength(1);
+    expect(lost[0].payload).toMatchObject({ nodeId: "business-a", ownerId: "worker-a" });
+    expect(events.some((event) => event.type === "multi_target.node_delivered"
+      && (event.payload as { node: { nodeId: string } }).node.nodeId === "business-a")).toBeFalse();
+    setup.kernel.close();
+  });
+
+  test("an adapter that finishes after its lease expired fails closed and heartbeat bounds are validated", async () => {
+    let clock = 30_000;
+    const setup = fixture();
+    const timer = manualScheduler();
+    const ports = concrete({
+      ...setup, now: () => clock, heartbeatMs: 300, schedule: timer.schedule,
+      run: async () => { clock += 2_000; return { state: "delivered", reportedCostUsd: 0 }; },
+    });
+    expect(ports.lease.claim("business-a")).toBeTrue();
+    const result = await ports.standard.run(nodeInput("business-a"));
+    expect(result).toMatchObject({ state: "failed", reason: expect.stringContaining("lease_lost") });
+    expect(listEvents(setup.kernel, setup.projectId).filter((event) => event.type === "multi_target.lease_lost")).toHaveLength(1);
+    expect(timer.cancelled()).toBe(1);
+    expect(() => concrete({ ...setup, heartbeatMs: 1_000 })).toThrow("heartbeatMs");
+    expect(() => concrete({ ...setup, heartbeatMs: 0 })).toThrow("heartbeatMs");
     setup.kernel.close();
   });
 });

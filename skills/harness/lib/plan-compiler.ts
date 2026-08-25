@@ -94,6 +94,9 @@ export interface MultiTargetPolicyIssue {
 }
 
 const INTENSITY_RANK: Record<GauntletIntensity, number> = { light: 0, balanced: 1, exhaustive: 2 };
+// Workspace directory per node type, per references/04-multi-target.md; other
+// types keep the plain `<type>s` rule.
+const OUTPUTS_DIR_BY_NODE_TYPE: Record<string, string> = { company: "businesses", squad: "squads", deliverable: "deliverables", brief: "briefs" };
 const POLICY_SCOPES = new Set<MultiTargetGauntletScope>(["final-only", "each-target", "critical-targets", "each-target-and-final", "adaptive"]);
 const POLICY_INTENSITIES = new Set<GauntletIntensity>(["light", "balanced", "exhaustive"]);
 
@@ -302,7 +305,7 @@ export function compileManifest(
     status: "pending",
     depends_on: [...deps.get(n.id)!].sort(),
     consumed_by: [...consumers.get(n.id)!].sort(),
-    outputs_path: `${n.type}s/${n.id.replace(/[^a-zA-Z0-9_-]+/g, "-")}/outputs/`,
+    outputs_path: `${OUTPUTS_DIR_BY_NODE_TYPE[n.type] ?? `${n.type}s`}/${n.id.replace(/[^a-zA-Z0-9_-]+/g, "-")}/outputs/`,
   }));
 
   const plan = planDag(toDagNodes(graph, { parallelSafe: opts.parallelSafe ?? (() => true) }));

@@ -2,6 +2,7 @@ import { canonicalJson } from "../run-kernel/canonical-json.ts";
 import { appendEvent, getRun, listEvents, type KernelHandle } from "../run-kernel/store.ts";
 import type { RunEvent } from "../run-kernel/types.ts";
 import type {
+  MultiTargetAdapterResult,
   MultiTargetCoordinatorPorts,
   MultiTargetCoordinatorSnapshot,
   MultiTargetNodeProjection,
@@ -77,6 +78,10 @@ export function createRunKernelMultiTargetPorts(input: {
   actor: { kind: string; id: string };
   correlationId: string;
   leaseDurationMs?: number;
+  /** Lease renewal period while an adapter is pending; defaults to a third of the lease. */
+  heartbeatMs?: number;
+  /** Timer seam (default setInterval/clearInterval) so tests can drive heartbeats without real time. */
+  schedule?: (fn: () => void, ms: number) => () => void;
   now?: () => number;
   standard: MultiTargetCoordinatorPorts["standard"];
   gauntlet: MultiTargetCoordinatorPorts["gauntlet"];
@@ -86,6 +91,11 @@ export function createRunKernelMultiTargetPorts(input: {
   if (!input.ownerId.trim()) throw new Error("multi-target kernel ports: ownerId is required");
   const leaseDurationMs = input.leaseDurationMs ?? 30_000;
   if (!Number.isFinite(leaseDurationMs) || leaseDurationMs <= 0) throw new Error("multi-target kernel ports: leaseDurationMs must be positive");
+  const heartbeatMs = input.heartbeatMs ?? Math.floor(leaseDurationMs / 3);
+  if (!Number.isFinite(heartbeatMs) || heartbeatMs <= 0 || heartbeatMs >= leaseDurationMs) {
+    throw new Error("multi-target kernel ports: heartbeatMs must be positive and below leaseDurationMs");
+  }
+  const schedule = input.schedule ?? ((fn, ms) => { const timer = setInterval(fn, ms); return () => clearInterval(timer); });
   const now = input.now ?? Date.now;
   initializeLeaseStore(input.kernel);
 
@@ -171,9 +181,55 @@ export function createRunKernelMultiTargetPorts(input: {
     return true;
   };
 
+  const leaseValid = (nodeId: string): boolean => {
+    const current = readLease(nodeId);
+    return !!current && current.owner_id === input.ownerId && current.expires_at > now();
+  };
+
+  const recordLeaseLost = (nodeId: string, reason: string): void => {
+    const observed = readLease(nodeId);
+    appendCausal("multi_target.lease_lost", leaseKey("lost", nodeId, observed?.version ?? 0), {
+      nodeId, ownerId: input.ownerId, reason, observedOwnerId: observed?.owner_id ?? null, observedVersion: observed?.version ?? null,
+    });
+  };
+
+  // While an adapter is pending the lease is renewed every heartbeat. A failed
+  // renewal (expired, owner changed, released elsewhere) aborts the adapter and
+  // fails closed: its result is never surfaced as delivered without a live lease.
+  const guarded = (adapter: MultiTargetCoordinatorPorts["standard"]): MultiTargetCoordinatorPorts["standard"] => ({
+    async run(adapterInput) {
+      const controller = new AbortController();
+      let lost: string | null = null;
+      let stopped = false;
+      const markLost = (reason: string) => {
+        if (lost) return;
+        lost = reason;
+        recordLeaseLost(adapterInput.nodeId, reason);
+        controller.abort("lease_lost");
+      };
+      const stop = schedule(() => {
+        if (stopped || lost) return;
+        if (!renew(adapterInput.nodeId)) markLost("lease renewal failed while the adapter was running");
+      }, heartbeatMs);
+      let result: MultiTargetAdapterResult | null = null;
+      try {
+        result = await adapter.run({ ...adapterInput, signal: controller.signal });
+      } catch (error) {
+        if (!lost) throw error;
+      } finally {
+        stopped = true;
+        stop();
+      }
+      if (!lost && !leaseValid(adapterInput.nodeId)) markLost("lease was not valid when the adapter finished");
+      if (!lost) return result!;
+      const spent = result && Number.isFinite(result.reportedCostUsd) && result.reportedCostUsd > 0 ? result.reportedCostUsd : 0;
+      return { state: "failed", reportedCostUsd: spent, reason: `lease_lost: ${lost}` };
+    },
+  });
+
   return {
-    standard: input.standard,
-    gauntlet: input.gauntlet,
+    standard: guarded(input.standard),
+    gauntlet: guarded(input.gauntlet),
     state: {
       load(): MultiTargetCoordinatorSnapshot | null {
         const events = listEvents(input.kernel, input.projectId).filter((event) => event.runId === input.runId);

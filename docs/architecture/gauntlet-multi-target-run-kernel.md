@@ -30,8 +30,18 @@ A chave de lease é `(project_id, run_id, node_id)`. Cada registro contém:
 
 Ao recuperar um snapshot com nó `running`, o coordenador chama `canResume`. Somente owner igual e prazo válido autorizam `resume: true` com a mesma chave idempotente do adapter. Expiração ou owner incompatível produz `stalled`; não existe takeover automático.
 
+## Heartbeat e abort
+
+Enquanto `standard.run` ou `gauntlet.run` estiver pendente, a porta chama `renew` a cada `heartbeatMs`. O padrão é um terço de `leaseDurationMs`; um valor injetado precisa ser positivo e menor que a duração da lease. O agendador também é injetável (`schedule`), com `setInterval` e `clearInterval` como padrão, então os testes dirigem os batimentos sem tempo real.
+
+Cada adapter recebe `signal`, um `AbortSignal` opcional em `MultiTargetAdapterInput`. Quando `renew` devolve `false`, por expiração, troca de owner ou release externo, a porta aborta o sinal com razão `lease_lost`, registra `multi_target.lease_lost` no journal causal e descarta o que o adapter devolver: o nó termina como `failed` com razão `lease_lost: ...`. O custo que o adapter tenha reportado é preservado na projeção, porque foi gasto de fato.
+
+Ao fim do adapter, a porta confere de novo que a lease continua do mesmo owner e dentro do prazo. Sem lease válida nesse momento, o resultado também é descartado. Um nó nunca é marcado `delivered` sem lease válida no fim.
+
+O timer é sempre limpo quando a promise resolve ou rejeita, e um batimento disparado depois disso é ignorado. Renovações continuam idempotentes por versão; o evento de perda usa a versão observada no momento da falha.
+
 ## Garantias e limitações
 
-As provas herméticas cobrem concorrência de claim, isolamento entre Projects e Runs, crash entre evento e snapshot, crash com lease viva, expiração, owner incompatível e replay sem duplicação.
+As provas herméticas cobrem concorrência de claim, isolamento entre Projects e Runs, crash entre evento e snapshot, crash com lease viva, expiração, owner incompatível, replay sem duplicação, heartbeat com agendador manual, perda de lease durante a execução e expiração no fim do adapter.
 
-A lease protege o início e a retomada, mas não encerra um processo externo. Renovação precisa ser chamada pelo futuro adapter enquanto o side effect estiver ativo. Ainda não há política de recovery humano, publicação específica no Glance, adapter real nem cutover por allowlist.
+A lease protege início, execução e retomada. A renovação é responsabilidade da porta, nunca do adapter. O abort encerra o subprocesso dos adapters de dispatch (ver [adapters de dispatch](gauntlet-multi-target-adapters.md)); um adapter que ignore o sinal continua rodando por conta própria, e ainda assim seu resultado é descartado. Ainda não há política de recovery humano, publicação específica no Glance nem cutover por allowlist.

@@ -39,6 +39,8 @@ export interface MultiTargetAdapterInput {
   outputPath: string;
   idempotencyKey: string;
   resume: boolean;
+  /** Aborted by the port when the node lease is lost mid-run; adapters must stop their side effect. */
+  signal?: AbortSignal;
 }
 
 export interface MultiTargetAdapterResult {

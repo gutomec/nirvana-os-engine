@@ -104,7 +104,7 @@ describe("multi-target wave coordinator", () => {
       ["final-output", "gauntlet", "synthesis"],
     ]);
     expect(calls.find((call) => call.nodeId === "squad-c")!.upstreamPaths).toEqual([
-      "companys/business-a/outputs/artifact.md", "companys/business-b/outputs/artifact.md",
+      "businesses/business-a/outputs/artifact.md", "businesses/business-b/outputs/artifact.md",
     ]);
     expect(calls.find((call) => call.nodeId === "final-output")!.upstreamPaths).toEqual(["squads/squad-c/outputs/artifact.md"]);
     expect(calls.find((call) => call.nodeId === "business-b")!.grantedCostUsd).toBeGreaterThan(0);
