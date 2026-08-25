@@ -6,3 +6,4 @@ export * from "./controller.ts";
 export * from "./execution-options.ts";
 export * from "./business-canary.ts";
 export * from "./agent-x-cutover.ts";
+export * from "./aggregate-budget.ts";

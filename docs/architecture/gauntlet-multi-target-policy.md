@@ -53,6 +53,23 @@ Um override pode reduzir intensidade e limites, mas não ampliá-los. A intensid
 
 Referências inexistentes, ciclos, escopos, intensidades, modos, riscos e limites inválidos impedem a emissão do plano compilado.
 
+## Reserva agregada de custo
+
+`reserveAggregateGauntletBudget` projeta uma reserva sobre o `CompiledMultiTargetPlan`. O digest da reserva inclui `policyDigest`, ligando a alocação ao snapshot exato que a originou. A função não chama executor, runtime, rede nem medidor de consumo real.
+
+O `maxCostUsd` global da política é o teto agregado. O limite efetivo de cada decisão é sua solicitação individual. Decisões `standard` registram solicitação e concessão zero. Cada alocação informa target, onda, valor solicitado, valor concedido, saldo e razão. Totais por onda tornam o paralelismo visível sem alterar o DAG.
+
+Valores são convertidos para micros de dólar antes do cálculo. Isso evita divergência por ponto flutuante. A ordem é estável:
+
+1. reservar o piso seguro de cada decisão Gauntlet, com USD 1 para `light`, USD 2 para `balanced` e USD 5 para `exhaustive`;
+2. rejeitar a reserva inteira quando o teto ou um limite individual não comportar esses pisos;
+3. completar a solicitação da síntese, quando houver;
+4. ratear o saldo proporcionalmente entre targets, com resíduos de um micro distribuídos pela maior fração e depois pelo ID.
+
+A soma concedida nunca supera o teto nem a solicitação individual. A síntese é protegida, mas não pode consumir os pisos já reservados para targets anteriores.
+
+Ausência de política ou de `maxCostUsd` retorna reserva nula e preserva o plano. Zero explícito é um teto real: um Gauntlet ativo é rejeitado porque não comporta seu piso seguro. Duração não é somada porque ondas paralelas compartilham tempo de parede. Rounds continuam como limites locais, pois somá-los não descreve consumo agregado.
+
 ## Limitações e próximo cutover
 
-Este incremento não conecta decisões ao dispatch multi-target, ao controller Gauntlet ou ao Run Kernel. Também não reserva orçamento entre targets e síntese. O próximo cutover deve consumir o snapshot imutável no executor existente, preservar idempotência e crash resume e provar que uma decisão `standard` segue o caminho legado sem divergência.
+Este incremento não conecta decisões ou reservas ao dispatch multi-target, ao controller Gauntlet ou ao Run Kernel. A reserva é preventiva e não representa dinheiro consumido. O próximo cutover deve consumir os snapshots imutáveis no executor existente, preservar idempotência e crash resume e provar que uma decisão `standard` segue o caminho legado sem divergência.
