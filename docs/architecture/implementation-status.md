@@ -17,6 +17,10 @@ Este documento separa fundação implementada, integração ativa e cutovers ain
 
 O pós-gate de Business agora passa por `runBusinessPostGate`, uma fronteira reutilizável chamada pelo mesmo hook da delivery pipeline. A extração preserva PDF, HTML, ZIP, manifesto, session file, audit e decisões terminais. Ela prepara um futuro adapter de Business, mas não ativa o Business Gauntlet. Esse cutover continua bloqueado até a comparação de paridade cobrir o fluxo completo.
 
+A prova hermética `business-delivery-parity.e2e.test.ts` compara o contrato legado congelado com a nova fronteira. No sucesso, ela atravessa manifesto, gate offline, PDF, HTML, ZIP e session file, então compara resultado, arquivos, eventos e estado terminal `delivered`. Na falha de manifesto, ambos os caminhos terminam em `failed`, sem publicação nem evento `delivered`. A prova não chama LLM, runtime externo, credenciais ou rede.
+
+Essa evidência cobre somente a região afetada pela extração. Ainda faltam producer Business real por adapter fake, revision causal pelo GauntletController, snapshot canônico e leitura da timeline pelo Glance no mesmo cenário. Por isso o Business Gauntlet permanece desativado.
+
 ## O que já funciona
 
 ### Runtime universal
@@ -77,7 +81,7 @@ O modo `standard` deve continuar padrão. O cutover precisa de uma flag independ
 
 ## Resultado de testes nesta integração
 
-A bateria focada da fronteira de pós-gate aprovou os cenários de PDF, HTML, ZIP, session, audit, falhas não fatais e skip em modo fast. A delivery pipeline também foi repetida para confirmar que o hook só executa depois de uma decisão entregável.
+A bateria focada da fronteira de pós-gate aprovou os cenários de PDF, HTML, ZIP, session, audit, falhas não fatais e skip em modo fast. A prova E2E de paridade aprovou sucesso e falha de manifesto. A delivery pipeline também foi repetida para confirmar que o hook só executa depois de uma decisão entregável.
 
 A suíte conjunta de Harness e Squads aprovou 844 testes e 2.614 asserções antes do último corte do chat. O conjunto afetado foi repetido depois do corte, sem falhas.
 
