@@ -33,6 +33,24 @@ const VERDICT_LABELS = { pass: 'aprovado', revise: 'revisar', reject: 'rejeitado
 const VERDICT_TONES = { pass: 'ok', revise: 'active', reject: 'fail' };
 const PLAN_STATE_LABELS = { ready: 'pronto', running: 'em execução', delivered: 'entregue', withheld: 'retido', failed: 'falhou' };
 const PLAN_STATE_TONES = { delivered: 'ok', running: 'active', withheld: 'fail', failed: 'fail' };
+// Legacy run ledger (x_ledger_* audit events). A withheld row keeps the
+// supervisor's reason in last_error when it got there through a stall, and
+// carries none when the gate withheld it — the subtitle tells the two apart.
+const LEDGER_STATE_LABELS = {
+  dispatched: 'despachado', running: 'em execução', verifying: 'verificando', gated: 'no gate', delivered: 'entregue',
+  withheld: 'retido', stalled: 'travado', failed: 'falhou', abandoned: 'abandonado',
+};
+const LEDGER_STATE_ICONS = { delivered: 'check-circle-2', withheld: 'pause-circle', stalled: 'alert-triangle', failed: 'x-circle' };
+const LEDGER_STATE_TONES = { delivered: 'ok', withheld: 'fail', stalled: 'fail', failed: 'fail' };
+const LIVENESS_SOURCE_LABELS = {
+  heartbeat: 'batimento explícito', child_run: 'squad ou funcionário despachado', child_delivered: 'entrega do filho recém-concluída',
+  hook_activity: 'atividade de hook do trace', file_activity: 'atividade de arquivo',
+};
+function ledgerReason(ev) {
+  const reason = ev.error || ev.last_error;
+  if (reason) return String(reason);
+  return ev.to === 'withheld' ? 'retido pelo gate' : '';
+}
 
 // Node events carry the full node projection in `payload.node`; the target kind
 // (business, squad, agent-x, synthesis, support) follows the wave when present.
@@ -147,6 +165,8 @@ function legacyRunEventView(ev) {
     runtime_handoff:      { icon: 'refresh-cw', title: `Trocou runtime → ${ev.to || ev.runtime || ''}`, tone: '' },
     runtime_quota_exhausted: { icon: 'ban', title: 'Cota esgotada', tone: 'fail' },
     cascade_exhausted:    { icon: 'ban', title: 'Cascata esgotada', tone: 'fail' },
+    x_ledger_state_changed: { icon: LEDGER_STATE_ICONS[ev.to] || 'arrow-right-circle', title: `Ledger: ${label(LEDGER_STATE_LABELS, ev.to, 'transicionou')}`, sub: ledgerReason(ev), tone: LEDGER_STATE_TONES[ev.to] || '' },
+    x_ledger_grace_extended: { icon: 'activity', title: `Prova de vida: ${label(LIVENESS_SOURCE_LABELS, ev.liveness_source, 'lease renovada')}`, sub: sub(ev.child_run_id), tone: 'active' },
   };
   return M[ev.event] || { icon: 'circle', title: chatEventLabel(ev), sub: '', tone: '' };
 }

@@ -62,6 +62,19 @@ A regra nasceu de um plano multi-target cujos nós derivavam todos `run_<project
 
 Um Run adotado que ainda não terminou ganha, na adoção pelo cutover, a linha do run-ledger legado sob o mesmo `run_id`. Só `facade.create` a abria: um Run preparado pelo Glance chegava ao cutover sem linha, o dual-write lançava `legacy run '<id>' is missing` na primeira transição e `recordSession` registrava `run '<id>' not found` depois de cada produtor. O `openRun` do adapter legado é idempotente sobre uma linha existente, então a adoção o chama sem duplicar nada.
 
+## Prova de vida de runs agênticos
+
+O supervisor (`skills/harness/scripts/supervisor.ts`) só retém por stall uma linha agêntica do ledger legado (`meta.path = "agentic"`, sem pid, aberta por `brief-business`, `brief-squad` ou `nrv run-track open`) quando nada no trace dela mostra vida dentro da janela do lease agêntico (`AGENTIC_LEASE_SEC`, 1800 s). A leitura é de `resolveAgenticLiveness` (`skills/harness/lib/run-ledger.ts`), na ordem mais barata, e o primeiro sinal encontrado encerra a busca:
+
+1. `heartbeat_at` da própria linha: um `nrv run-track beat`, ou o beat que `updateHandoffPhase` (`skills/_shared/lib/handoff.js`) e `brief-squad` fazem como efeito colateral, sem comando novo. O `x_ledger_lease_renewed` desses beats leva `source` (`handoff_phase_advanced`, `brief-squad`).
+2. Um run filho no mesmo `project_id` ou `trace_id` (a linha que `nrv dispatch --exec --project <id>` ou `brief-squad --project <id>` abre): em estado `dispatched`, `running`, `verifying` ou `gated`, com `updated_at` ou `heartbeat_at` dentro da janela (`child_run`); ou `delivered` com `terminal_at` dentro da janela (`child_delivered`). O segundo caso é o período de graça para o funcionário integrar a entrega: dura uma janela a partir da entrega, e depois a regra normal volta a valer. Filhos em `failed` ou `stalled` não contam.
+3. Um evento de hook do trace no audit diário (`tool_invoked`, `artifact_touched`, `bash_completed`), lido com `audit.readRecent` no root de `HOME` (onde `audit-emit-from-hook.ts` grava) e no root do projeto quando difere. O evento pertence ao run quando traz o mesmo `run_id`, `project_id` ou `trace_id`, ou quando `file_path` ou `cwd` cai sob o diretório do projeto (`dirname` de `meta.brief_path`), o que cobre a pasta do squad e os handoffs que a mtime do `outputs_root` nunca vê.
+4. Atividade de arquivo sob `meta.outputs_root` (a regra anterior, agora a última).
+
+Com vida, a linha ganha mais um lease e o audit recebe `x_ledger_grace_extended` com `liveness_source` (`heartbeat`, `child_run`, `child_delivered`, `hook_activity`, `file_activity`), `liveness_at` e, nos casos de filho, `child_run_id`. Sem sinal algum, a linha é escalada como antes, com `last_error` `supervisor: agentic run stopped reporting (no heartbeat, no child run, no hook activity, no file activity)`, e o salvage a leva a `withheld` preservando esse motivo. `x_ledger_state_changed` passou a levar `last_error` além de `error`: uma linha `withheld` com `last_error` do supervisor foi retida por stall; sem ele, foi retida pelo gate (`meta.gate`).
+
+A medição que motivou a regra (26/08/2026, `~/.nirvana/run-ledger.sqlite`): de 39 runs de empresa retidos desde 01/08, 35 tinham esse `last_error`, em 15 empresas e 10 dias, sem falha de gate. A empresa delegava a um squad e escrevia fora do próprio `outputs_root`. O limiar `supervisor.stall_threshold_ms` e o `AGENTIC_LEASE_SEC` não mudaram.
+
 ## Limites conhecidos
 
 Esta fundação não altera Gauntlet, runtime providers nem supervisor; o dispatch escreve no kernel apenas pela publicação do modo `standard` descrita acima. A outbox oferece entrega pelo menos uma vez, com identidade estável para deduplicação, porque exatamente uma vez entre SQLite e um side effect externo exige cooperação do consumer. A publicação atômica de artifacts além da verificação de `ArtifactRef` fica para o marco próprio previsto no plano incremental.
