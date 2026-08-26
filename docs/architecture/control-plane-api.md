@@ -42,9 +42,11 @@ interface RuntimeProvider {
 | `POST /projects/{id}:inspect` | Diagnóstico sem mutação |
 | `POST /projects/{id}:archive` | Arquivamento lógico |
 | `POST /projects/{id}/conversations` | Conversation persistente |
-| `POST /conversations/{id}/messages` | Message e eventual Run |
+| `POST /conversations/{id}/messages` | Message e eventual Run (`202` quando o Run entrou na fila de execução) |
 | `POST /conversations/{id}:fork` | Conversation com ancestry |
 | `GET /runs/{id}` | Run projection |
+| `GET /runs/{id}/gauntlet` | Projeção do Gauntlet, candidates e scorecards do Run |
+| `GET /runs/{id}/multi-target` | Projeção do coordenador multi-target reconstruída do journal (`projection: null` sem snapshot) |
 | `POST /runs/{id}:followup` | Próxima interação |
 | `POST /runs/{id}:steer` | Intervenção no ponto seguro |
 | `POST /runs/{id}:cancel` | Cancelamento idempotente |
@@ -58,6 +60,10 @@ interface RuntimeProvider {
 ## 4. Stream
 
 SSE usa `id: <sequence>`. O client envia `Last-Event-ID`. O servidor repete a partir da próxima sequence. Heartbeats não entram no journal. Se o cursor preceder a retenção, a API responde com checkpoint e cursor inicial verificável.
+
+## 4.1. Execução de Messages
+
+Uma Message de projeto adotado prepara um Run com `policySnapshotRef: gauntlet-light-canary` e o entrega à fila do Glance. O texto pode nomear o alvo no início: `use business <slug>:` ou `use squad <slug>:`; sem isso o alvo é `agent-x`. Com runner configurado, o Run roda em um processo filho do `dispatch.ts` com `--run-id`, e a timeline (`glance.child_started`, eventos do Gauntlet, `glance.child_exited`) chega pelo stream. `POST /runs/{id}:cancel` mata o filho e conclui `cancelling → cancelled`. Detalhes, recuperação após restart e variáveis de ambiente em [Execução no Glance](glance-execution.md).
 
 ## 5. Segurança
 

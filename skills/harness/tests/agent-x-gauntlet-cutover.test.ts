@@ -7,7 +7,7 @@ import {
   type AgentXGauntletEvaluator,
 } from "../lib/gauntlet/agent-x-cutover.ts";
 import { compileGauntletPlan } from "../lib/gauntlet/compiler.ts";
-import { getRun, listEvents, openKernel, type KernelHandle } from "../lib/run-kernel/index.ts";
+import { createRun, getRun, listEvents, openKernel, type KernelHandle } from "../lib/run-kernel/index.ts";
 
 const roots: string[] = [];
 const handles: KernelHandle[] = [];
@@ -157,6 +157,25 @@ describe("agent-x Gauntlet cutover", () => {
     expect(getRun(fixture.handle, "prj_canary", "run_resume")?.state).toBe("running");
     expect(runAgentXGauntlet(common).run.state).toBe("completed");
     expect(executions).toBe(1);
+  });
+
+  test("adopts a Run a control plane already prepared under the same runId instead of creating a second one", () => {
+    const fixture = setup();
+    createRun(fixture.handle, { projectId: "prj_canary", runId: "run_adopted", traceId: "trace_glance", conversationId: "cnv_glance",
+      planId: "plan_run_adopted", target: { kind: "agent-x", slug: "agent-x" }, policySnapshotRef: "gauntlet-light-canary",
+      actor: { kind: "control-plane", id: "glance" }, correlationId: "cor_run_adopted", idempotencyKey: "glance-canary:adopt" });
+    let executions = 0;
+    const result = runAgentXGauntlet({
+      kernel: fixture.handle, projectId: "prj_canary", runId: "run_adopted", traceId: "trace_dispatch", brief: "Build",
+      projectRoot: fixture.root, outputsRoot: fixture.outputsRoot, expectedCostUsd: 1, evaluator: evaluator(),
+      executeCandidate(root) { executions += 1; fs.mkdirSync(root, { recursive: true }); fs.writeFileSync(path.join(root, "out.md"), "valid", "utf8"); return { ok: true, sessionId: null }; },
+      finalGate() { return { exitCode: 0, gateOutcome: "pass" }; },
+    });
+    expect(result.run).toMatchObject({ state: "completed", traceId: "trace_glance", conversationId: "cnv_glance", policySnapshotRef: "gauntlet-light-canary" });
+    expect(executions).toBe(1);
+    const events = listEvents(fixture.handle, "prj_canary").filter(event => event.runId === "run_adopted");
+    expect(events.filter(event => event.type === "run.prepared")).toHaveLength(1);
+    expect(new Set(events.map(event => event.traceId))).toEqual(new Set(["trace_glance"]));
   });
 
   test("rolls back when the light budget blocks execution before the candidate", () => {

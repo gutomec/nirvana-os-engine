@@ -41,7 +41,7 @@ import { readEnvFile, writeEnvFile, setVar, deleteVar, getVar, toMap } from "../
 import { CONFIG_SCHEMA, getField, isEditableKey, maskSecret } from "./config-schema.ts";
 import { validateMindCloneFile, type ValidationResult } from "../../../_shared/lib/mindclone-validator.ts";
 import { handleObservabilityRoute } from "./views/observability-handler.ts";
-import { AgentXCanaryQueue, ConversationService, ProjectService, type GlanceAgentXCanaryAdapter } from "../control-plane/index.ts";
+import { AgentXCanaryQueue, ConversationService, ProjectService, type GlanceAgentXCanaryAdapter, type GlanceExecutionRunner } from "../control-plane/index.ts";
 import { createRun as createKernelRun, getRun as getKernelRun, listEvents as listKernelEvents, openKernel } from "../run-kernel/index.ts";
 import { getGauntlet, listCandidateRevisions, listScorecards, projectMultiTargetRun } from "../gauntlet/index.ts";
 
@@ -65,6 +65,8 @@ export interface ServerOptions {
   allowActions: boolean;  // future use; default false
   theme: "apple" | "apple-dark" | "awwwards";
   agentXCanaryAdapter?: GlanceAgentXCanaryAdapter;
+  // Child-process execution of adopted-project Messages; wins over the in-process adapter.
+  executionRunner?: GlanceExecutionRunner;
 }
 
 // ─── Setup copy helper (used by /api/setup/copy-batch and /api/setup/copy-stream) ───
@@ -245,7 +247,7 @@ export async function startServer(opts: ServerOptions) {
   const conversationService = () => conversations ||= new ConversationService(controlPlaneDb);
   const kernelService = () => kernel ||= openKernel(kernelDb);
   let canaryQueue: AgentXCanaryQueue | null = null;
-  const agentXQueue = () => canaryQueue ||= new AgentXCanaryQueue(kernelService(), conversationService(), opts.agentXCanaryAdapter);
+  const agentXQueue = () => canaryQueue ||= new AgentXCanaryQueue(kernelService(), conversationService(), opts.agentXCanaryAdapter, opts.executionRunner);
   const projectInspection = () => projectService.inspect(projectRoot);
 
   const problem = (status: number, title: string, detail: string) => new Response(JSON.stringify({
@@ -1729,9 +1731,11 @@ export async function startServer(opts: ServerOptions) {
   const inspection = projectInspection();
   const recovery = inspection.kind === "project" && inspection.project
     ? agentXQueue().recover(inspection.project.project_id, projectRoot)
-    : { enqueued: [], skipped: [] };
+    : { enqueued: [], reattached: [], redispatched: [], skipped: [] };
 
-  return { server, url, port, recovery };
+  // Detaches the queue from its children (tests stop servers without exiting the process).
+  const detach = () => canaryQueue?.shutdown();
+  return { server, url, port, recovery, detach };
 }
 
 // ─────────────────────────────────────────────────────────────────────

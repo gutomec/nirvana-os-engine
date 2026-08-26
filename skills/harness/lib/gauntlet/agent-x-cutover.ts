@@ -162,9 +162,11 @@ function artifactRefs(input: AgentXGauntletInput, candidateRoot: string, candida
   return filesUnder(candidateRoot).map(filePath => {
     const content = fs.readFileSync(filePath);
     const relative = path.relative(candidateRoot, filePath);
+    // Artifact identity is scoped to the Run: two Runs of one project (a Glance kernel holds
+    // many) may both produce can_1/result.md, and artifact_refs is unique per (project, artifact, revision).
     return {
       schemaVersion: "nirvana.artifact-ref/v1alpha1", projectId: input.projectId, runId: input.runId,
-      artifactId: `art_${createHash("sha256").update(`${candidateId}:${relative}`).digest("hex").slice(0, 20)}`,
+      artifactId: `art_${createHash("sha256").update(`${input.runId}:${candidateId}:${relative}`).digest("hex").slice(0, 20)}`,
       revisionId: `arv_${createHash("sha256").update(`${input.runId}:${candidateId}:${relative}:${revision}`).digest("hex").slice(0, 24)}`,
       revision, role: "candidate", mediaType: mediaType(filePath), bytes: content.byteLength,
       sha256: createHash("sha256").update(content).digest("hex"), publishedUri: pathToFileURL(filePath).href,
@@ -213,7 +215,10 @@ export function runAgentXGauntlet(input: AgentXGauntletInput): AgentXGauntletRes
   let run = getRun(input.kernel, input.projectId, input.runId) ?? facade.create({ projectId: input.projectId, runId: input.runId, traceId: input.traceId,
     planId: `plan_${input.runId}`, target: producer, policySnapshotRef,
     actor, correlationId, idempotencyKey: `agent-x-gauntlet:${input.runId}:create` });
-  appendEvent(input.kernel, { projectId: input.projectId, runId: input.runId, traceId: input.traceId,
+  // An adopted Run (prepared elsewhere, e.g. by Glance with --run-id) keeps the trace it was
+  // prepared with, so every event of one Run shares one trace; a fresh Run uses the caller's.
+  const traceId = run.traceId;
+  appendEvent(input.kernel, { projectId: input.projectId, runId: input.runId, traceId,
     type: "runtime.selection_snapshot", actor, correlationId,
     idempotencyKey: `agent-x-gauntlet:${input.runId}:execution-snapshot`, payload: { ref: policySnapshotRef, snapshot } });
   const transition = (to: CanonicalRunState, key: string, payload?: Record<string, unknown>): RunProjection =>
@@ -222,7 +227,7 @@ export function runAgentXGauntlet(input: AgentXGauntletInput): AgentXGauntletRes
   const sessions = new Map<string, string>();
   let sessionId: string | null = null;
   try {
-    const controller = new GauntletController(input.kernel, { projectId: input.projectId, runId: input.runId, traceId: input.traceId, actor, correlationId });
+    const controller = new GauntletController(input.kernel, { projectId: input.projectId, runId: input.runId, traceId, actor, correlationId });
     const plan = compileGauntletPlan({ brief: input.brief, intensity: input.intensity ?? "light" });
     const candidateIds = Array.from({ length: plan.candidateStrategy.count }, (_, index) => `can_${index + 1}`);
     const holdout = plan.gauntlets.some(gauntlet => gauntlet.holdout.enabled);

@@ -2,13 +2,16 @@ import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { AgentXCanaryQueue, ConversationService, type GlanceAgentXCanaryAdapter } from "../lib/control-plane/index.ts";
+import { AgentXCanaryQueue, ConversationService, createDispatchExecutionRunner, type GlanceAgentXCanaryAdapter } from "../lib/control-plane/index.ts";
 import { createRun, getRun, listEvents, openKernel, transitionRun } from "../lib/run-kernel/index.ts";
+import { childState, pidAlive, shimRuntimeOnPath, waitUntil, writeFakeGlanceChild } from "./helpers/fake-glance-child.ts";
 
 const roots: string[] = [];
 const queues: AgentXCanaryQueue[] = [];
+const restores: Array<() => void> = [];
 afterEach(() => {
   while (queues.length) queues.pop()!.shutdown();
+  while (restores.length) restores.pop()!();
   while (roots.length) fs.rmSync(roots.pop()!, { recursive: true, force: true });
 });
 
@@ -29,13 +32,36 @@ function adapter(counter: { executions: number }): GlanceAgentXCanaryAdapter {
   };
 }
 
-async function waitForState(kernelPath: string, projectId: string, runId: string, state: string) {
-  for (let i = 0; i < 100; i++) {
+async function waitForState(kernelPath: string, projectId: string, runId: string, state: string, attempts = 100) {
+  for (let i = 0; i < attempts; i++) {
     const handle = openKernel(kernelPath); const current = getRun(handle, projectId, runId); handle.close();
     if (current?.state === state) return;
     await Bun.sleep(10);
   }
   throw new Error(`run did not reach ${state}`);
+}
+
+/** A project with one Message, a runtime shim on PATH and fake-child runners keyed by knobs. */
+function childFixture() {
+  const { root, kernelPath, conversationPath } = fixture();
+  restores.push(shimRuntimeOnPath(root, "claude"));
+  const script = writeFakeGlanceChild(path.join(root, "helpers"));
+  const stateRoot = path.join(root, "fake-state");
+  const runner = (knobs: Record<string, string> = {}) => createDispatchExecutionRunner({ dispatchScriptPath: script,
+    env: { NIRVANA_HOST_RUNTIME: "claude-code", FAKE_CHILD_STATE_DIR: stateRoot, ...knobs } });
+  const conversations = new ConversationService(conversationPath);
+  const conversation = conversations.create("prj_child", "Child", "cnv_child");
+  const message = conversations.append({ conversationId: conversation.conversation_id, projectId: "prj_child", role: "user", content: "Produza e sobreviva ao restart", messageId: "msg_child" });
+  conversations.close();
+  const open = () => ({ kernel: openKernel(kernelPath), conversations: new ConversationService(conversationPath) });
+  const queue = (knobs?: Record<string, string>) => {
+    const handles = open();
+    const instance = new AgentXCanaryQueue(handles.kernel, handles.conversations, undefined, runner(knobs)); queues.push(instance);
+    return { ...handles, queue: instance, close: () => { handles.kernel.close(); handles.conversations.close(); } };
+  };
+  const runEvents = (runId: string) => { const handle = openKernel(kernelPath); const events = listEvents(handle, "prj_child").filter(event => event.runId === runId); handle.close(); return events; };
+  const childPid = (runId: string, attempt: number) => Number(runEvents(runId).find(event => event.type === "glance.child_started" && (event.payload as any).attempt === attempt)!.payload.pid);
+  return { root, kernelPath, message, state: (runId: string) => childState(stateRoot, runId), queue, runEvents, childPid };
 }
 
 describe("durable agent-x canary recovery", () => {
@@ -80,4 +106,72 @@ describe("durable agent-x canary recovery", () => {
     expect(listEvents(kernel, "prj_states").filter(event => event.type === "canary.recovery_skipped")).toHaveLength(2);
     kernel.close(); conversations.close();
   });
+
+  test("a running run whose child is dead is redispatched once across two restarts and resumes without repeating the producer", async () => {
+    const fx = childFixture();
+    const first = fx.queue({ FAKE_CHILD_HOLD: "1", FAKE_CHILD_AFTER_WAIT: "crash" });
+    const receipt = first.queue.submit({ projectId: "prj_child", conversationId: "cnv_child", messageId: fx.message.message_id, brief: fx.message.content, projectRoot: fx.root, idempotencyKey: "child" });
+    const runId = receipt.run.runId;
+    const child = fx.state(runId);
+    await child.waitFor("holding");
+    // The server dies while the child is mid-flight; then the child crashes with the candidate persisted.
+    first.queue.shutdown(); first.close();
+    const pid = fx.childPid(runId, 1);
+    child.release();
+    await waitUntil(() => !pidAlive(pid), "the first child to die");
+    expect(child.has("crashed")).toBe(true);
+    expect(child.count("producer")).toBe(1);
+    expect(getRun(openKernel(fx.kernelPath), "prj_child", runId)?.state).toBe("running");
+
+    const second = fx.queue();
+    expect(second.queue.recover("prj_child", fx.root)).toMatchObject({ enqueued: [], reattached: [], redispatched: [runId] });
+    // A second restart before the redispatched child even starts records nothing new.
+    second.queue.shutdown(); second.close();
+    const third = fx.queue();
+    expect(third.queue.recover("prj_child", fx.root)).toMatchObject({ redispatched: [runId] });
+    await waitForState(fx.kernelPath, "prj_child", runId, "completed", 500);
+    expect(child.count("spawns")).toBe(2);
+    expect(child.count("producer")).toBe(1);
+    expect(child.count("final-gate")).toBe(1);
+    const events = fx.runEvents(runId);
+    expect(events.filter(event => event.type === "canary.recovery_redispatched")).toHaveLength(1);
+    expect(events.find(event => event.type === "canary.recovery_redispatched")!.payload).toMatchObject({ pid, attempt: 1, reason: "child_pid_dead" });
+    expect(events.filter(event => event.type === "glance.child_started").map(event => (event.payload as any).attempt)).toEqual([1, 2]);
+    expect(events.filter(event => event.type === "glance.child_exited").map(event => (event.payload as any).attempt)).toEqual([2]);
+    expect(events.filter(event => event.type === "gauntlet.candidate_created")).toHaveLength(1);
+    third.close();
+  }, 30000);
+
+  test("a running run whose child is alive is reattached, never respawned, and settles when the child finishes", async () => {
+    const fx = childFixture();
+    const first = fx.queue({ FAKE_CHILD_HOLD: "1" });
+    const receipt = first.queue.submit({ projectId: "prj_child", conversationId: "cnv_child", messageId: fx.message.message_id, brief: fx.message.content, projectRoot: fx.root, idempotencyKey: "child-alive" });
+    const runId = receipt.run.runId;
+    const child = fx.state(runId);
+    await child.waitFor("holding");
+    first.queue.shutdown(); first.close();
+    const pid = fx.childPid(runId, 1);
+    expect(pidAlive(pid)).toBe(true);
+
+    const second = fx.queue();
+    expect(second.queue.recover("prj_child", fx.root)).toMatchObject({ enqueued: [], reattached: [runId], redispatched: [] });
+    await Bun.sleep(300);
+    expect(child.count("spawns")).toBe(1);
+    expect(getRun(second.kernel, "prj_child", runId)?.state).toBe("running");
+    child.release();
+    await waitForState(fx.kernelPath, "prj_child", runId, "completed", 500);
+    await waitUntil(() => fx.runEvents(runId).some(event => event.type === "glance.child_exited"), "the reattached exit event");
+    expect(child.count("spawns")).toBe(1);
+    expect(child.count("producer")).toBe(1);
+    const events = fx.runEvents(runId);
+    expect(events.filter(event => event.type === "canary.recovery_reattached")).toHaveLength(1);
+    expect(events.find(event => event.type === "canary.recovery_reattached")!.payload).toMatchObject({ pid, attempt: 1 });
+    expect(events.filter(event => event.type === "glance.child_started")).toHaveLength(1);
+    expect(events.at(-1)!.type).toBe("glance.child_exited");
+    expect(events.at(-1)!.payload).toMatchObject({ pid, attempt: 1, exitCode: null, reattached: true });
+    // A restart after completion skips the run like any terminal one.
+    const third = fx.queue();
+    expect(third.queue.recover("prj_child", fx.root).skipped).toEqual([{ runId, reason: "state_completed" }]);
+    second.close(); third.close();
+  }, 30000);
 });

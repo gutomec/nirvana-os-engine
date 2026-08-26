@@ -45,7 +45,7 @@ import { runWithCascade } from "../lib/cascade-runner.ts";
 import { resolveCascadeRoot, loadCascade, nextAfter } from "../lib/cascade.ts";
 import { classify } from "../lib/quota-detector.ts";
 import { isInCooldown, getCooldown, markCooldown } from "../lib/cooldown-registry.ts";
-import { loadRuntimeRules, decideRuntime, detectCurrentHost, formatRulesForDirective, type RuntimeDecision } from "../lib/runtime-rules.ts";
+import { loadRuntimeRules, decideRuntime, detectCurrentHost, formatRulesForDirective, resolveDefaultRuntime, type RuntimeDecision } from "../lib/runtime-rules.ts";
 import { preflightReindex } from "../lib/preflight-index.ts";
 import { maybeSweep } from "./supervisor.ts";
 import * as runLedger from "../lib/run-ledger.ts";
@@ -93,7 +93,7 @@ function arg(name: string, fallback?: string): string | undefined {
 // filter(!startsWith("--")) treats the "X" in "--project X" as a positional,
 // which made "--project caso-bruno" leak its value as the inline brief and
 // override --brief-file. Skip the token after each known value-flag.
-const VALUE_FLAGS = new Set(["--project", "--runtime", "--manifest", "--brief-file", "--outputs-root", "--max-budget", "--timeout", "--max-revisions", "--execution-mode", "--gauntlet-intensity", "--business", "--squad"]);
+const VALUE_FLAGS = new Set(["--project", "--runtime", "--manifest", "--brief-file", "--outputs-root", "--max-budget", "--timeout", "--max-revisions", "--execution-mode", "--gauntlet-intensity", "--business", "--squad", "--run-id"]);
 function extractPositional(argv: string[]): string[] {
   const out: string[] = [];
   for (let i = 0; i < argv.length; i++) {
@@ -135,6 +135,12 @@ export function parseExplicitTarget(argv: string[]): { target: ExplicitTarget | 
   return { target: null, error: null };
 }
 
+/** Canonical Run id of the Gauntlet canaries: `--run-id` when given (the Run was prepared
+ * by a control plane such as Glance and is adopted), else `run_<project>` as before. */
+export function canonicalRunIdFor(projectId: string, runIdFlag?: string): string {
+  return runIdFlag || `run_${projectId.replace(/[^A-Za-z0-9-]/g, "-")}`;
+}
+
 // Decision placeholder for resolveDispatchPlan: an explicit target returns
 // before any field of the decision is read, so the router never runs.
 const NO_ROUTER_DECISION: AgenticRouteDecision = {
@@ -167,6 +173,16 @@ const inlineBrief = (autoMode || explicitTarget) ? positional[0] : positional[1]
 const briefFile = arg("--brief-file");
 const manifest = arg("--manifest");
 const projectId = arg("--project");
+// --run-id: adopt a Run another control plane already prepared (Glance) instead
+// of deriving run_<project>. The Run lives in the project root's kernel (the
+// root Glance serves: NIRVANA_PROJECT_ROOT, else the cwd), so with the flag the
+// canaries open that kernel; without it each dispatch keeps its own under
+// outputs/<pid>, byte-for-byte the previous behaviour.
+const runIdFlag = arg("--run-id");
+function canaryKernelPath(dispatchRoot: string): string {
+  const root = runIdFlag ? path.resolve(process.env.NIRVANA_PROJECT_ROOT || process.cwd()) : dispatchRoot;
+  return path.join(root, ".nirvana", "run-kernel.sqlite");
+}
 const runtime = arg("--runtime", "claude-code");
 // Was the --runtime flag GIVEN by the user? (arg() can't tell flag from default;
 // an explicit flag ALWAYS beats the USE_* rules — a rule only beats the default.)
@@ -322,6 +338,7 @@ if (!slug && !autoMode && !explicitTarget) {
   console.error("    --team                  real multi-employee orchestration (director + chain, each step audits)");
   console.error("    --execution-mode=<mode> standard|gauntlet|auto (default: standard)");
   console.error("    --gauntlet-intensity=<profile> light|balanced|exhaustive");
+  console.error("    --run-id=<runId>        adopt a Run already prepared in the project kernel (Glance); default run_<project>");
   console.error("    --max-budget=<usd>      cost ceiling for the run (claude --max-budget-usd)");
   console.error("    --timeout=<min>         wall-clock ceiling for the run (default 24h; a real hang is caught by ~5 min of inactivity)");
   console.error("    --safe                  opt in to restricted mode (limited tools + sandbox); default = full trust");
@@ -431,11 +448,7 @@ const envDefault = (process.env.NIRVANA_DEFAULT_RUNTIME || "").trim();
 // but the choice is announced and audited instead of assumed.
 const firstAvailable = (): Runtime | null =>
   (listRuntimes().map(r => r.name).find(n => runtimeAvailable(n)) ?? null);
-const hostDefault: Runtime =
-  detectedHost
-  ?? (envDefault ? normRuntime(envDefault) : null)
-  ?? firstAvailable()
-  ?? "claude-code";
+const hostDefault: Runtime = resolveDefaultRuntime({ detectedHost, envDefault, normalize: normRuntime, firstAvailable }).runtime;
 if (!detectedHost) {
   const how = envDefault ? `NIRVANA_DEFAULT_RUNTIME=${hostDefault}` : `first available on PATH: ${hostDefault}`;
   console.error(c("yellow", "⚠") + ` host runtime not identified — using ${how}.`
@@ -871,9 +884,9 @@ if (pendingCascade?.kind === "squad-only") {
     const squad = squads[0];
     const capabilityId = pendingCascade.plan.steps.find(step => step.kind === "squad" && step.slug === squad)?.capability || "squad.execute";
     const producerTarget = { kind: "squad" as const, slug: squad, capabilityId };
-    const canonicalRunId = `run_${pid.replace(/[^A-Za-z0-9-]/g, "-")}`;
+    const canonicalRunId = canonicalRunIdFor(pid, runIdFlag);
     const budget = gauntletRoundBudget(compileGauntletPlan({ brief, intensity: executionOptions.intensity }), effectiveBudgetUsd());
-    const kernel = openKernel(path.join(projectRoot, ".nirvana", "run-kernel.sqlite"));
+    const kernel = openKernel(canaryKernelPath(projectRoot));
     const legacy = runLedger.openLedger();
     const evaluator = gauntletEvaluator({ NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid });
     let finalDelivery: DeliveryResult | null = null;
@@ -1009,9 +1022,9 @@ if (pendingCascade?.kind === "agent-x") {
   const oroot = outputsRoot || path.join(base, "deliverables");
   fs.mkdirSync(oroot, { recursive: true });
   if (shouldRunAgentXGauntlet({ targetKind: "agent-x", wantExec, resolvedMode: executionOptions.resolvedMode })) {
-    const canonicalRunId = `run_${pid.replace(/[^A-Za-z0-9-]/g, "-")}`;
+    const canonicalRunId = canonicalRunIdFor(pid, runIdFlag);
     const budget = gauntletRoundBudget(compileGauntletPlan({ brief, intensity: executionOptions.intensity }), effectiveBudgetUsd());
-    const kernel = openKernel(path.join(base, ".nirvana", "run-kernel.sqlite"));
+    const kernel = openKernel(canaryKernelPath(base));
     const legacy = runLedger.openLedger();
     const evaluator = gauntletEvaluator({ NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid });
     let finalDelivery: DeliveryResult | null = null;
@@ -1235,9 +1248,9 @@ if (wantExec) {
     process.exit(1);
   }
   if (businessCanaryDecision.enabled) {
-    const canonicalRunId = `run_${pid.replace(/[^A-Za-z0-9-]/g, "-")}`;
+    const canonicalRunId = canonicalRunIdFor(pid, runIdFlag);
     const budget = gauntletRoundBudget(compileGauntletPlan({ brief, intensity: executionOptions.intensity }), effectiveBudgetUsd());
-    const kernel = openKernel(path.join(projectRoot, ".nirvana", "run-kernel.sqlite"));
+    const kernel = openKernel(canaryKernelPath(projectRoot));
     const canaryLedger = runLedger.openLedger();
     const evaluator = gauntletEvaluator({ NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid, NIRVANA_BUSINESS_SLUG: slug });
     let finalDelivery: DeliveryResult | null = null;

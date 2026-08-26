@@ -12,6 +12,7 @@
  */
 
 import { parseArgs } from "../../_shared/lib/bun-helpers.ts";
+import { createDispatchExecutionRunner, detectExecutionRuntime } from "../lib/control-plane/execution-runner.ts";
 import { startServer } from "../lib/glance/server.ts";
 
 const { flags } = parseArgs();
@@ -35,6 +36,11 @@ WRITE ACTIONS (ON by default)
   127.0.0.1 only, so it stays private to this machine.
   Use --read-only for a safe, look-but-don't-touch session.
 
+EXECUTION
+  A Message in an adopted project runs in a child dispatch process (the server
+  never blocks). NIRVANA_GLANCE_EXECUTION=0 keeps the cockpit up without
+  spawning anything; --read-only disables execution as well.
+
 EXAMPLES
   glance                              # full cockpit (most common usage)
   glance --read-only                  # browse without any write capability
@@ -57,4 +63,16 @@ const allowActions = !flags["read-only"];
 const themeFlag = (flags.theme as string) || "apple";
 const theme = (["apple", "apple-dark", "awwwards"].includes(themeFlag) ? themeFlag : "apple") as "apple" | "apple-dark" | "awwwards";
 
-await startServer({ port, open, idleMin, allowActions, theme });
+// Real execution of adopted-project Messages, by child dispatch process. --read-only
+// disables it; NIRVANA_GLANCE_EXECUTION=0 keeps the cockpit up without spawning
+// anything (a Message then ends in rolled_back / capability_unavailable).
+const executionEnabled = allowActions && process.env.NIRVANA_GLANCE_EXECUTION !== "0";
+const executionRunner = executionEnabled ? createDispatchExecutionRunner() : undefined;
+if (executionEnabled) {
+  const probe = detectExecutionRuntime();
+  console.error(`[glance] execution ON — runtime ${probe.runtime} (${probe.from}${probe.available ? "" : "; not on PATH, Messages will end in capability_unavailable"})`);
+} else {
+  console.error(`[glance] execution OFF (${allowActions ? "NIRVANA_GLANCE_EXECUTION=0" : "--read-only"})`);
+}
+
+await startServer({ port, open, idleMin, allowActions, theme, executionRunner });

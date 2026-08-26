@@ -1562,8 +1562,11 @@ function glance() {
       this.$nextTick(() => this.scrollChatBottom());
 
       if (canonicalReceipt?.run) {
+        const target = canonicalReceipt.run.target || {};
         asst.text = canonicalReceipt.queued
-          ? 'Run canônico preparado. Executando agent-x no Gauntlet light…'
+          ? (target.kind === 'agent-x' || !target.kind
+            ? 'Run canônico preparado. Executando agent-x no Gauntlet light…'
+            : `Run canônico preparado. Executando ${target.kind} ${target.slug || ''}…`)
           : `Run não executado: ${canonicalReceipt.run.state}.`;
         if (canonicalReceipt.queued) this.subscribeCanonicalRun(this.canonicalProjectId, canonicalReceipt.run.runId, canonicalReceipt.run.lastSequence || 0, asst);
         else { asst.streaming = false; this.chatBusy = false; }

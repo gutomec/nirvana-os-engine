@@ -23,7 +23,7 @@ export const FAKE_DISPATCH_SOURCE = String.raw`
 import * as fs from "node:fs";
 import * as path from "node:path";
 const argv = Bun.argv.slice(2);
-const VALUE_FLAGS = new Set(["--brief-file", "--project", "--outputs-root", "--runtime", "--max-budget", "--business", "--squad"]);
+const VALUE_FLAGS = new Set(["--brief-file", "--project", "--outputs-root", "--runtime", "--max-budget", "--business", "--squad", "--run-id"]);
 const value = (name) => {
   const index = argv.findIndex((item) => item === name || item.startsWith(name + "="));
   if (index < 0) return undefined;

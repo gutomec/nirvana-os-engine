@@ -9,7 +9,8 @@ const CANONICAL_TYPES = [
   "run.prepared", "run.transitioned", "runtime.selection_snapshot",
   "gauntlet.plan_compiled", "gauntlet.candidate_created", "gauntlet.candidate_revised", "gauntlet.evaluation_recorded",
   "gauntlet.round_started", "gauntlet.round_evaluated", "gauntlet.revision_requested", "gauntlet.regression_started", "gauntlet.stopped",
-  "canary.recovery_enqueued", "canary.recovery_skipped",
+  "canary.recovery_enqueued", "canary.recovery_skipped", "canary.recovery_reattached", "canary.recovery_redispatched",
+  "glance.child_started", "glance.child_exited", "glance.child_killed",
   "multi_target.snapshots_bound", "multi_target.snapshot_saved",
   "multi_target.node_started", "multi_target.node_delivered", "multi_target.node_withheld", "multi_target.node_failed",
   "multi_target.node_skipped", "multi_target.node_stalled", "multi_target.support_completed", "multi_target.budget_exceeded",
@@ -57,6 +58,16 @@ describe("Glance run event labels", () => {
     expect(runEventView({ type: "multi_target.node_skipped", payload: { node: { ...node, state: "skipped" } } }).sub).toBe("onda 2 · bloqueado por brief");
     expect(runEventView({ type: "multi_target.lease_lost", payload: { nodeId: "squad-c", ownerId: "w", version: 2 } })).toMatchObject({ title: "Lease de squad-c perdida", sub: "w · v2", tone: "fail" });
     expect(runEventView({ type: "multi_target.plan_terminal", payload: { state: "withheld", reason: "node x was withheld" } })).toMatchObject({ title: "Plano multi-target retido", sub: "node x was withheld", tone: "fail" });
+  });
+
+  test("child-process and recovery events show pid, attempt and exit", () => {
+    expect(runEventView({ type: "glance.child_started", payload: { pid: 42, attempt: 1, argv: ["--agent-x"] } })).toEqual({ icon: "terminal-square", title: "Processo filho iniciado", sub: "pid 42 · tentativa 1", tone: "active" });
+    expect(runEventView({ type: "glance.child_exited", payload: { pid: 42, attempt: 1, exitCode: 0 } })).toEqual({ icon: "check-circle-2", title: "Processo filho encerrou", sub: "pid 42 · tentativa 1 · saída 0", tone: "ok" });
+    expect(runEventView({ type: "glance.child_exited", payload: { pid: 42, attempt: 2, exitCode: 1 } })).toMatchObject({ icon: "x-circle", sub: "pid 42 · tentativa 2 · saída 1", tone: "fail" });
+    expect(runEventView({ type: "glance.child_exited", payload: { pid: 42, attempt: 1, exitCode: null } })).toMatchObject({ sub: "pid 42 · tentativa 1 · sem código de saída", tone: "" });
+    expect(runEventView({ type: "glance.child_killed", payload: { pid: 42, attempt: 1, signal: "SIGTERM" } })).toEqual({ icon: "ban", title: "Processo filho interrompido", sub: "pid 42 · tentativa 1 · SIGTERM", tone: "fail" });
+    expect(runEventView({ type: "canary.recovery_reattached", payload: { pid: 42, attempt: 1 } })).toEqual({ icon: "link", title: "Recuperação reanexada ao processo", sub: "pid 42 · tentativa 1", tone: "active" });
+    expect(runEventView({ type: "canary.recovery_redispatched", payload: { pid: 42, attempt: 1, reason: "child_pid_dead" } })).toEqual({ icon: "refresh-cw", title: "Recuperação redespachada", sub: "pid 42 · tentativa 1 · child_pid_dead", tone: "active" });
   });
 
   test("legacy audit events keep resolving through the old map", () => {

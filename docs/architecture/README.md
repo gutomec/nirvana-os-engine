@@ -30,7 +30,8 @@ Este diretório é a fonte canônica para a evolução integrada do Run Kernel, 
 10. [Operação do Run Kernel](run-kernel-operations.md)
 11. [Canário Gauntlet para agent-x](agent-x-gauntlet-canary.md)
 11. [Operação do Gauntlet Engine](gauntlet-engine-operations.md)
-12. [Estado da implementação](implementation-status.md)
+12. [Execução no Glance](glance-execution.md)
+13. [Estado da implementação](implementation-status.md)
 
 ## ADRs
 

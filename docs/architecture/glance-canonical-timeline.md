@@ -30,6 +30,11 @@ Um tipo canônico desconhecido produz o próprio tipo como título. Um evento se
 | `gauntlet.stopped` | Gauntlet parou: decisão | motivo, ressalvas e gate final pendente | pela decisão |
 | `canary.recovery_enqueued` | Recuperação enfileirada | motivo | active |
 | `canary.recovery_skipped` | Recuperação ignorada | motivo | neutro |
+| `canary.recovery_reattached` | Recuperação reanexada ao processo | pid e tentativa | active |
+| `canary.recovery_redispatched` | Recuperação redespachada | pid, tentativa e motivo | active |
+| `glance.child_started` | Processo filho iniciado | pid e tentativa | active |
+| `glance.child_exited` | Processo filho encerrou | pid, tentativa e código de saída | ok, fail ou neutro pelo código |
+| `glance.child_killed` | Processo filho interrompido | pid, tentativa e sinal | fail |
 | `multi_target.snapshots_bound` | Plano multi-target vinculado | digests abreviados | neutro |
 | `multi_target.snapshot_saved` | Snapshot vN salvo | estado e onda | neutro, oculto por padrão |
 | `multi_target.node_started` | Nó id iniciado | onda, modo e custo concedido | active |

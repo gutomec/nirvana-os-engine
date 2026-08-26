@@ -44,6 +44,11 @@ function leaseView(ev, icon, verb, tone = '') {
   const p = ev.payload || {};
   return { icon, title: `Lease de ${p.nodeId || '?'} ${verb}`, sub: join(p.ownerId, p.version != null ? `v${p.version}` : '', p.reason), tone };
 }
+// Child-process events carry the pid and the attempt number of that child.
+function childInfo(p) {
+  const payload = p || {};
+  return join(payload.pid != null ? `pid ${payload.pid}` : '', payload.attempt != null ? `tentativa ${payload.attempt}` : '');
+}
 function candidateView(ev, icon, verb) {
   const p = ev.payload || {};
   return { icon, title: `Candidate ${p.candidateId || '?'} ${verb}`, sub: join(p.revision != null ? `r${p.revision}` : '', targetName(p.producer), p.artifactRefs?.length ? `${p.artifactRefs.length} artifacts` : ''), tone: 'active' };
@@ -66,6 +71,11 @@ const CANONICAL = {
   'gauntlet.stopped': (ev) => { const p = ev.payload || {}; return { icon: 'flag', title: `Gauntlet parou: ${label(GAUNTLET_DECISION_LABELS, p.decision, 'sem decisão')}`, sub: join(label(GAUNTLET_STOP_REASON_LABELS, p.reason), p.reservations?.length ? `${p.reservations.length} ressalvas` : '', p.finalQualityGateRequired ? 'gate final pendente' : ''), tone: GAUNTLET_DECISION_TONES[p.decision] || '' }; },
   'canary.recovery_enqueued': (ev) => ({ icon: 'refresh-cw', title: 'Recuperação enfileirada', sub: ev.payload?.reason || '', tone: 'active' }),
   'canary.recovery_skipped': (ev) => ({ icon: 'skip-forward', title: 'Recuperação ignorada', sub: ev.payload?.reason || '', tone: '' }),
+  'canary.recovery_reattached': (ev) => ({ icon: 'link', title: 'Recuperação reanexada ao processo', sub: childInfo(ev.payload), tone: 'active' }),
+  'canary.recovery_redispatched': (ev) => ({ icon: 'refresh-cw', title: 'Recuperação redespachada', sub: join(childInfo(ev.payload), ev.payload?.reason), tone: 'active' }),
+  'glance.child_started': (ev) => ({ icon: 'terminal-square', title: 'Processo filho iniciado', sub: childInfo(ev.payload), tone: 'active' }),
+  'glance.child_exited': (ev) => { const p = ev.payload || {}; const code = p.exitCode; return { icon: code === 0 ? 'check-circle-2' : 'x-circle', title: 'Processo filho encerrou', sub: join(childInfo(p), code == null ? 'sem código de saída' : `saída ${code}`), tone: code === 0 ? 'ok' : (code == null ? '' : 'fail') }; },
+  'glance.child_killed': (ev) => ({ icon: 'ban', title: 'Processo filho interrompido', sub: join(childInfo(ev.payload), ev.payload?.signal), tone: 'fail' }),
   'multi_target.snapshots_bound': (ev) => ({ icon: 'link', title: 'Plano multi-target vinculado', sub: join(shortDigest(ev.payload?.planDigest), shortDigest(ev.payload?.reservationDigest)), tone: '' }),
   'multi_target.snapshot_saved': (ev) => { const s = ev.payload?.snapshot || {}; return { icon: 'save', title: `Snapshot v${s.version ?? '?'} salvo`, sub: join(label(PLAN_STATE_LABELS, s.state), s.currentWave >= 0 ? `onda ${s.currentWave + 1}` : ''), tone: '' }; },
   'multi_target.node_started': (ev) => nodeView(ev, 'play', 'iniciado', 'active', (n) => [n.mode, n.grantedCostUsd ? `concedido ${usd(n.grantedCostUsd)}` : '']),
