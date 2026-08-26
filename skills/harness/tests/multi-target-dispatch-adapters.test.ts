@@ -242,8 +242,12 @@ describe("multi-target dispatch adapters", () => {
     const controller = new AbortController();
     const pending = ports.standard.run(nodeInput(plan, "business-a", { signal: controller.signal }));
     const captureFile = join(setup.workspaceRoot, "businesses", "business-a", "outputs", "dispatch-capture.json");
+    // The fake writes its capture, then its spawn-log line, then sleeps. Aborting the instant the capture
+    // existed killed it between the two writes on the Windows runner (PR #96, run 32931392895: spawnCount
+    // read 0), so the spawn record is the signal to wait for; once it is on disk the kill can land anywhere.
     const deadline = Date.now() + 10_000;
-    while (!existsSync(captureFile) && Date.now() < deadline) await Bun.sleep(20);
+    while (spawnCount(setup) < 1 && Date.now() < deadline) await Bun.sleep(20);
+    expect(spawnCount(setup)).toBe(1);
     expect(existsSync(captureFile)).toBeTrue();
     const abortedAt = Date.now();
     controller.abort("lease_lost");
