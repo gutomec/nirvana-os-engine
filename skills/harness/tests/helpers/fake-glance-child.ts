@@ -20,7 +20,8 @@
 //
 // Markers written under <state>: started, holding, killed, crashed, exited-early,
 // completed. Counters: spawns, producer, evaluator, final-gate. argv.json records
-// the argv, cwd and NIRVANA_PROJECT_ROOT the child saw.
+// the argv, cwd, NIRVANA_PROJECT_ROOT and the NIRVANA_* environment the child saw
+// (the settings the runner pinned into it).
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -50,7 +51,8 @@ const bump = (name) => {
   const current = fs.existsSync(file) ? Number(fs.readFileSync(file, "utf8")) : 0;
   fs.writeFileSync(file, String(current + 1));
 };
-fs.writeFileSync(path.join(state, "argv.json"), JSON.stringify({ argv, cwd: process.cwd(), projectRoot: process.env.NIRVANA_PROJECT_ROOT ?? null }));
+const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => key.startsWith("NIRVANA_")));
+fs.writeFileSync(path.join(state, "argv.json"), JSON.stringify({ argv, cwd: process.cwd(), projectRoot: process.env.NIRVANA_PROJECT_ROOT ?? null, env }));
 bump("spawns"); mark("started");
 const kernel = openKernel(path.join(process.cwd(), ".nirvana", "run-kernel.sqlite"));
 if (!argv.some((item) => item.startsWith("--execution-mode=gauntlet"))) {
@@ -132,7 +134,7 @@ export function childState(stateRoot: string, runId: string) {
     dir,
     has: (name: string) => fs.existsSync(path.join(dir, name)),
     count: (name: string) => fs.existsSync(path.join(dir, name)) ? Number(fs.readFileSync(path.join(dir, name), "utf8")) : 0,
-    argv: () => JSON.parse(fs.readFileSync(path.join(dir, "argv.json"), "utf8")) as { argv: string[]; cwd: string; projectRoot: string | null },
+    argv: () => JSON.parse(fs.readFileSync(path.join(dir, "argv.json"), "utf8")) as { argv: string[]; cwd: string; projectRoot: string | null; env: Record<string, string> },
     release: () => { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, "go"), "go"); },
     async waitFor(name: string, timeoutMs = 15000) {
       const deadline = Date.now() + timeoutMs;
