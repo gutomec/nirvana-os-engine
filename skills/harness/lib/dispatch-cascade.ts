@@ -29,6 +29,7 @@ import type { AgenticRouteDecision, RouteCandidate } from "./agentic-router.ts";
 import type { Runtime } from "./host-agent-driver.ts";
 import { runWithCascade } from "./cascade-runner.ts";
 import type { RouterFailurePolicy } from "./harness-config.ts";
+import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 
 export type DispatchStepKind = "business" | "squad" | "agent-x";
 
@@ -372,6 +373,7 @@ export function runAgentX(args: RunAgentXArgs): AgentXResult {
     `Write every final deliverable as a file under: ${args.outputsRoot}`,
     "Do not print a summary of what you would do — deliver files. Record",
     'assumptions under "## Premissas assumidas" in the main deliverable.',
+    scopeGuard("en"),
   ].join("\n");
 
   emit("dispatch_agent_x", {

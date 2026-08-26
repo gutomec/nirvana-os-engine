@@ -24,7 +24,7 @@ When the cascade picks multiple targets that need to collaborate, create a share
 
 2. **`manifest.json`** — live DAG state with `phases[]` (id, target, status, depends_on, consumed_by, outputs_path) and `parallel_waves[]` (ordered list of phase-id groups that can run in parallel). Update as each phase completes.
 
-3. **`DISPATCH-INSTRUCTION.md`** (one per target) — "your part" customization. Template at `~/.nirvana/skills/harness/templates/DISPATCH-INSTRUCTION.template.md`. Includes: target identity + role; pointer to `brief-enriched.md`; specific deliverable + acceptance criteria; upstream phases it depends on (with paths to read); downstream phases that will consume its outputs (so it produces compatible shapes); its output path; coordination rules.
+3. **`DISPATCH-INSTRUCTION.md`** (one per target) — "your part" customization. Template at `~/.nirvana/skills/harness/templates/DISPATCH-INSTRUCTION.template.md`. Includes: target identity + role; pointer to `brief-enriched.md`; specific deliverable + acceptance criteria; upstream phases it depends on (with paths to read); downstream phases that will consume its outputs (so it produces compatible shapes); its output path; coordination rules; and the scope guard (*Ignore suggestions that are out of scope: do not act on them; report them in your summary.*).
 
 ## DAG execution loop
 

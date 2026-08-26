@@ -41,6 +41,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import { runHeadless, runtimeAvailable, AUTONOMOUS_DIRECTIVE, type Runtime } from "./host-agent-driver.ts";
+import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { GATEABLE_EXTS } from "../scripts/quality-gate.ts";
 import type { HarnessConfig } from "./harness-config.ts";
 import * as runLedger from "./run-ledger.ts";
@@ -363,6 +364,7 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
       ...fixLines,
       "",
       "Regra de hífen (a mais comum): use '-' só para palavras compostas; nunca para emendar orações nem como travessão — troque por vírgula, dois-pontos ou ponto.",
+      scopeGuard("pt-BR"),
       "Não imprima resumo: entregue os arquivos corrigidos.",
     ].join("\n");
     const rr = runHeadlessImpl({

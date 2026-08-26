@@ -24,6 +24,7 @@ import { resolveClonePersona, loadCloneRegistry } from "../../_shared/lib/clone-
 import { layersForPhase } from "../../_shared/lib/dna-layer-policy.ts";
 import { findCloneForTask } from "../../_shared/lib/clone-search.ts";
 import { paths } from "../../_shared/lib/bun-helpers.ts";
+import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 
 export type SquadExecMode = "team-mandatory" | "squad-only";
 
@@ -207,6 +208,8 @@ ${brief}
 Execute a SUA especialidade aplicada ao brief acima. Escreva arquivos sob \`${outDir}\` (HTML, CSS, JS, MD, PNG/JPG via skills de imagem, o que for da sua expertise). Não invoque a skill harness, não rode \`nrv run\`/\`nrv dispatch\` para este mesmo brief (anti-loop). Pode usar Bash, Read, Write, Edit, geração de imagem (nano-banana-pro), e qualquer ferramenta disponível para entregar o melhor possível.
 
 Se o brief mencionar você por nome (ex.: "use o squad ${squadSlug}"), priorize fazer EXATAMENTE o que o usuário pediu nesse parágrafo. O usuário manda.
+
+${scopeGuard("pt-BR")} Escopo é o brief acima e os critérios de aceitação da sua sub-tarefa.
 
 ## SAÍDA
 Arquivos no diretório acima. Não printe sumário — entregue arquivos. ${doneLine}`;
