@@ -5,7 +5,7 @@ import { basename, dirname, join } from "node:path";
 export class ServicePermissionError extends Error {}
 
 export interface WindowsAce { sid: string; type: "allow" | "deny"; rights: string; }
-export interface PrivateFileIdentity { readonly dev: number; readonly ino: number; }
+export interface PrivateFileIdentity { readonly dev: number; readonly ino: number; readonly birthtimeMs: number; }
 export interface PrivateFreshFile { readonly descriptor: number; readonly identity: PrivateFileIdentity; }
 export type PrivateCleanupResult = "removed" | "absent" | "preserved";
 export type PrivateFreshFileTestHook = (fresh: PrivateFreshFile, path: string) => void;
@@ -57,6 +57,8 @@ function runIcacls(argumentsList: readonly string[]): void {
   throw new ServicePermissionError(`WINDOWS_ACL_SET:${last}`);
 }
 
+const WINDOWS_SDDL_SID_ALIASES: Readonly<Record<string, string>> = Object.freeze({ BA: "S-1-5-32-544", AU: "S-1-5-11", WD: "S-1-1-0", CO: "S-1-3-0" });
+
 function parseWindowsSddl(sddl: string): WindowsAce[] {
   const descriptor = sddl.match(/D:([^\r\n]+)/)?.[1];
   if (!descriptor) throw new ServicePermissionError("WINDOWS_ACL_SDDL_MISSING");
@@ -64,7 +66,8 @@ function parseWindowsSddl(sddl: string): WindowsAce[] {
   for (const match of descriptor.matchAll(/\(([^;]*);[^;]*;([^;]*);[^;]*;[^;]*;([^)]+)\)/g)) {
     const type = match[1] === "A" ? "allow" : match[1] === "D" ? "deny" : undefined;
     if (!type) throw new ServicePermissionError("WINDOWS_ACL_TYPE");
-    aces.push({ sid: match[3] === "SY" ? "S-1-5-18" : match[3], type, rights: match[2] });
+    const sid = match[3] === "SY" ? "S-1-5-18" : WINDOWS_SDDL_SID_ALIASES[match[3]] ?? match[3];
+    aces.push({ sid, type, rights: match[2] });
   }
   return aces;
 }
@@ -86,9 +89,12 @@ function inspectWindowsAces(path: string): WindowsAce[] {
   } finally { rmSync(staging, { recursive: true, force: true }); }
 }
 
-function purgeLogonSidAces(path: string, aces: readonly WindowsAce[]): void {
-  const sids = [...new Set(aces.filter(ace => /^S-1-5-5-\d+-\d+$/.test(ace.sid)).map(ace => ace.sid))];
-  for (const sid of sids) runIcacls([path, "/remove:g", `*${sid}`]);
+function purgeForeignAces(path: string, aces: readonly WindowsAce[], permittedSids: ReadonlySet<string>): void {
+  const sids = [...new Set(aces.filter(ace => !permittedSids.has(ace.sid)).map(ace => ace.sid))];
+  for (const sid of sids) {
+    runIcacls([path, "/remove:g", `*${sid}`]);
+    runIcacls([path, "/remove:d", `*${sid}`]);
+  }
 }
 
 function restrictWindows(path: string, capturedLogonSid?: string): void {
@@ -96,8 +102,9 @@ function restrictWindows(path: string, capturedLogonSid?: string): void {
   if (!currentUser) throw new ServicePermissionError("WINDOWS_CURRENT_USER_UNAVAILABLE");
   runIcacls([path, "/inheritance:r", "/grant:r", `${currentUser}:(F)`]);
   let aces = inspectWindowsAces(path);
-  if (aces.some(ace => /^S-1-5-5-\d+-\d+$/.test(ace.sid))) {
-    purgeLogonSidAces(path, aces);
+  const permittedSids = new Set([currentUserSid(), "S-1-5-18"]);
+  if (aces.some(ace => !permittedSids.has(ace.sid))) {
+    purgeForeignAces(path, aces, permittedSids);
     aces = inspectWindowsAces(path);
   }
   assertWindowsAclSids(aces, currentUserSid(), capturedLogonSid);
@@ -106,11 +113,11 @@ function restrictWindows(path: string, capturedLogonSid?: string): void {
 export function restrictDirectory(path: string): void { if (process.platform === "win32") restrictWindows(path); else { chmodSync(path, 0o700); assertPrivateMode(path, 0o700); } }
 export function restrictFile(path: string): void { if (process.platform === "win32") restrictWindows(path); else { chmodSync(path, 0o600); assertPrivateMode(path, 0o600); } }
 
-function sameIdentity(left: PrivateFileIdentity, right: PrivateFileIdentity): boolean { return left.dev === right.dev && left.ino === right.ino; }
-function descriptorIdentity(descriptor: number): PrivateFileIdentity { const stat = fstatSync(descriptor); return Object.freeze({ dev: stat.dev, ino: stat.ino }); }
+function sameIdentity(left: PrivateFileIdentity, right: PrivateFileIdentity): boolean { return left.dev === right.dev && left.ino === right.ino && left.birthtimeMs === right.birthtimeMs; }
+function descriptorIdentity(descriptor: number): PrivateFileIdentity { const stat = fstatSync(descriptor); return Object.freeze({ dev: stat.dev, ino: stat.ino, birthtimeMs: stat.birthtimeMs }); }
 function assertFreshFileIdentity(path: string, descriptor: number, identity: PrivateFileIdentity): void {
   const named = lstatSync(path);
-  if (!sameIdentity(identity, descriptorIdentity(descriptor)) || !sameIdentity(identity, { dev: named.dev, ino: named.ino })) throw new ServicePermissionError("FRESH_FILE_IDENTITY");
+  if (!sameIdentity(identity, descriptorIdentity(descriptor)) || !sameIdentity(identity, { dev: named.dev, ino: named.ino, birthtimeMs: named.birthtimeMs })) throw new ServicePermissionError("FRESH_FILE_IDENTITY");
 }
 
 function restrictFreshFile(path: string, descriptor: number, identity: PrivateFileIdentity): void {
@@ -127,7 +134,7 @@ export function cleanupPrivateFreshFile(path: string, identity: PrivateFileIdent
   let named: ReturnType<typeof lstatSync>;
   try { named = lstatSync(path); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return "absent"; throw error; }
-  if (!sameIdentity(identity, { dev: named.dev, ino: named.ino })) return "preserved";
+  if (!sameIdentity(identity, { dev: named.dev, ino: named.ino, birthtimeMs: named.birthtimeMs })) return "preserved";
   try { rmSync(path); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return "absent"; throw error; }
   return "removed";

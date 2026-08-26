@@ -1231,6 +1231,20 @@ test.skipIf(process.platform === "win32")("SVC-WORKER-SIGNAL-REAL-SIGTERM", asyn
   }
 }, 60_000);
 
+test.skipIf(process.platform === "win32")("SVC-HARNESS-CRASH-KILL-BEYOND-SIGTERM", async () => {
+  const child = Bun.spawn([process.execPath, "-e", "process.on('SIGTERM', () => {});process.on('SIGINT', () => {});setInterval(() => {}, 1_000);"], { stdout: "ignore", stderr: "ignore" });
+  try {
+    await new Promise(resolve => setTimeout(resolve, 300));
+    process.kill(child.pid, "SIGTERM");
+    await new Promise(resolve => setTimeout(resolve, 400));
+    expect(await realLifecycle.processPresent(child.pid)).toBe(true);
+    await realLifecycle.terminateFixtureProcess(child.pid);
+    expect(await realLifecycle.processPresent(child.pid)).toBe(false);
+  } finally {
+    if (await realLifecycle.processPresent(child.pid).catch(() => false)) { try { process.kill(child.pid, "SIGKILL"); } catch {} }
+  }
+}, 30_000);
+
 test("SVC-WORKER-STARTUP-DIGEST-MISMATCH", async () => {
   const port = allocateLoopbackPort();
   const harness = createWorkerHarness(port);

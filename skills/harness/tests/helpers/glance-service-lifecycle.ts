@@ -244,7 +244,7 @@ export function createRealLifecycleHarness() {
       if (process.platform === "win32") {
         Bun.spawnSync(["taskkill", "/F", "/PID", String(pid), "/T"], { stdout: "ignore", stderr: "ignore" });
       } else {
-        try { process.kill(pid, "SIGTERM"); } catch {}
+        try { process.kill(pid, "SIGKILL"); } catch {}
       }
       const deadline = Date.now() + 10_000;
       while (Date.now() < deadline && (await baseAdapter.inspect(pid)).exists) {
