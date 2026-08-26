@@ -7,6 +7,13 @@
 // reads. Target selection is explicit (--agent-x | --business | --squad) and
 // `--run-id` makes the child adopt the Run the control plane already prepared
 // instead of creating a second one. Nothing here re-implements dispatch.
+//
+// The child leads its own process group (`detached`), and `kill()` signals the
+// group rather than the pid: the runtime the dispatch spawns (`claude -p`,
+// `codex`, ...) runs under a blocking `spawnSync`, so no JavaScript handler in
+// dispatch.ts could ever forward the signal in time. The kernel delivers it to
+// the whole group instead, and the grandchild dies with the dispatch.
+import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -54,6 +61,14 @@ export function glanceRunDir(projectRoot: string, runId: string): string {
   return path.join(projectRoot, ".nirvana", "glance", "runs", runId);
 }
 
+/** Sends `signal` to the process group `pid` leads (a child of this runner leads its own, so the
+ * runtime it spawned is reached too); falls back to the pid alone where process groups are
+ * unavailable (Windows) or the leader is already gone. */
+export function signalProcessGroup(pid: number, signal: NodeJS.Signals = "SIGTERM"): void {
+  try { process.kill(-pid, signal); return; } catch { /* no group to signal */ }
+  try { process.kill(pid, signal); } catch { /* already gone */ }
+}
+
 /** The runtime a child dispatch settles on with no flag, brief mention or rule (the same
  * rule dispatch.ts applies), and whether its CLI is on PATH right now. */
 export function detectExecutionRuntime(env: NodeJS.ProcessEnv = process.env): { runtime: Runtime; from: "host" | "env" | "path-scan" | "fallback"; available: boolean } {
@@ -92,12 +107,15 @@ export function createDispatchExecutionRunner(options: DispatchExecutionRunnerOp
       if (input.target.kind === "agent-x") argv.push("--execution-mode=gauntlet", `--gauntlet-intensity=${input.intensity}`);
       if (options.runtime) argv.push("--runtime", options.runtime);
       const log = fs.openSync(path.join(runDir, "child.log"), "a");
-      const child = Bun.spawn(argv, {
+      const child = spawn(argv[0], argv.slice(1), {
         cwd: input.projectRoot, env: { ...environment(), NIRVANA_PROJECT_ROOT: input.projectRoot },
-        stdin: "ignore", stdout: log, stderr: log,
+        stdio: ["ignore", log, log], detached: true,
       });
-      const done = child.exited.then(() => ({ exitCode: child.exitCode })).finally(() => fs.closeSync(log));
-      return { pid: child.pid, argv, done, kill() { try { child.kill(); } catch { /* already gone */ } } };
+      const done = new Promise<{ exitCode: number | null }>(resolve => {
+        child.once("exit", code => resolve({ exitCode: code }));
+        child.once("error", () => resolve({ exitCode: null }));
+      }).finally(() => { try { fs.closeSync(log); } catch { /* already closed */ } });
+      return { pid: child.pid ?? 0, argv, done, kill() { if (child.pid) signalProcessGroup(child.pid); } };
     },
   };
 }

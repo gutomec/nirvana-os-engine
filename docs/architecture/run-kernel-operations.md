@@ -41,6 +41,19 @@ O cutover recomendado é vertical:
 4. promover um reader por vez;
 5. manter o fallback legado durante a janela de paridade.
 
+## Publicação do modo standard
+
+O modo `standard` do `dispatch.ts` publica cada execução com `--exec` como Run canônico pelo módulo `standard-publication.ts`, em vez da facade: o run-ledger legado já é aberto pelo próprio dispatch, e a facade com adapter legado criaria uma segunda linha sem heartbeat. As branches chamam quatro operações e nada mais.
+
+1. `openStandardPublication` abre o kernel do projeto, cria o Run tipado (`{kind: "business", slug}`, `{kind: "squad", slug, capabilityId}` ou `{kind: "agent-x", slug: "agent-x"}`) ou adota o Run que o Glance preparou com `--run-id`, grava `runtime.selection_snapshot` com o snapshot congelado pelo broker e deriva `policySnapshotRef` do digest desse snapshot. Um Run adotado mantém o trace e o `policySnapshotRef` com que foi preparado, e não recebe um segundo `run.prepared`.
+2. `start` transiciona `prepared → running` antes do executor.
+3. `verify` transiciona `running → verifying` antes da delivery pipeline.
+4. `finish` aplica o estado terminal pelo resultado da entrega: `completed` (exit 0, gate `pass`), `delivered_with_reservations` (exit 0 com `fail-forced` ou `fail-accepted`), `withheld` (exit 2 ou 3) ou `failed` (exit 1 ou erro de runtime, com `payload.error`). O payload terminal registra `exitCode`, `gateOutcome` e `outputsRoot`.
+
+As chaves idempotentes usam o prefixo `standard:<runId>:` (`create`, `execution-snapshot`, `running`, `verifying`, `terminal`), então repetir um dispatch sobre o mesmo Run não duplica eventos. Snapshot com erros do broker encerra o Run em `rolled_back` com `reason: runtime_incompatible` antes do producer, e o dispatch sai com 1.
+
+A publicação é fail-open. Kernel que não abre ou não aceita a transição (disco, permissão, Run adotado já terminal) gera `x_run_kernel_unavailable` no audit legado, com `stage` e `error`, e a publicação fica inerte: exit codes, artifacts, audit e session file seguem idênticos ao fluxo anterior. Sem `--exec`, ou com argumentos inválidos, nenhum Run é criado. Uma rota com vários Squads publica sob o primeiro; depois de um rollback do canário Business, o fallback legado não publica um segundo Run, porque o kernel já guarda o estado terminal daquele `runId`.
+
 ## Limites conhecidos
 
-Esta fundação não altera Glance, Gauntlet, runtime providers, supervisor ou dispatch. A outbox oferece entrega pelo menos uma vez, com identidade estável para deduplicação, porque exatamente uma vez entre SQLite e um side effect externo exige cooperação do consumer. A publicação atômica de artifacts além da verificação de `ArtifactRef` fica para o marco próprio previsto no plano incremental.
+Esta fundação não altera Gauntlet, runtime providers nem supervisor; o dispatch escreve no kernel apenas pela publicação do modo `standard` descrita acima. A outbox oferece entrega pelo menos uma vez, com identidade estável para deduplicação, porque exatamente uma vez entre SQLite e um side effect externo exige cooperação do consumer. A publicação atômica de artifacts além da verificação de `ArtifactRef` fica para o marco próprio previsto no plano incremental.

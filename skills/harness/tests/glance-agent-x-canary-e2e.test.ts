@@ -236,27 +236,44 @@ describe("Glance child-process execution", () => {
     expect(seen.at(-1).payload).toMatchObject({ from: "running", to: "failed", reason: "child_exited_without_terminal_state", exitCode: 0 });
   }, 30000);
 
-  test("`use squad <slug>:` and `use business <slug>:` prepare typed Runs and the child receives the explicit target", async () => {
+  test("`use squad <slug>:` and `use business <slug>:` prepare typed Runs; the standard child adopts them and reaches a real terminal state over SSE", async () => {
     const { project, base, state } = await startWithChild();
-    const cnv = await conversation(base, project.project_id, "c-target");
-    const squad = await send(base, project.project_id, cnv, "m-squad", "use squad brandcraft: produza o manifesto");
+    const projectId = project.project_id;
+    const cnv = await conversation(base, projectId, "c-target");
+    const streaming = readStream(base, projectId, 0, seen => seen.some(event => event.type === "glance.child_exited"));
+    const squad = await send(base, projectId, cnv, "m-squad", "use squad brandcraft: produza o manifesto");
     expect(squad.status).toBe(202);
     expect(squad.receipt.run.target).toEqual({ kind: "squad", slug: "brandcraft", capabilityId: "squad.execute" });
     expect(squad.receipt.run.policySnapshotRef).toBe("gauntlet-light-canary");
     expect(squad.receipt.capability).toBe("squad.dispatch");
-    await waitFor(base, project.project_id, squad.receipt.run.runId, "completed", 500);
+    // Without --execution-mode=gauntlet the child runs the standard path, which publishes through
+    // lib/run-kernel/standard-publication.ts: no Gauntlet events, one run.prepared, a real terminal state.
+    const standardTimeline = ["run.prepared", "glance.child_started", "runtime.selection_snapshot", "run.transitioned:running",
+      "run.transitioned:verifying", "run.transitioned:completed", "glance.child_exited"];
+    const { seen, ids } = await streaming;
+    expect(ids).toEqual(seen.map((_, index) => index + 1));
+    expect(seen.every(event => event.runId === squad.receipt.run.runId)).toBe(true);
+    expect(seen.map(typeOf)).toEqual(standardTimeline);
+    expect(seen.find(event => event.type === "run.transitioned" && event.payload.to === "completed").payload).toMatchObject({ from: "verifying", exitCode: 0, gateOutcome: "pass" });
+    expect(seen.at(-1).payload).toMatchObject({ attempt: 1, exitCode: 0 });
+    const squadRun = await waitFor(base, projectId, squad.receipt.run.runId, "completed");
+    expect(squadRun.policySnapshotRef).toBe("gauntlet-light-canary");
     const squadArgv = state(squad.receipt.run.runId).argv().argv;
     expect(squadArgv.slice(0, 2)).toEqual(["--squad", "brandcraft"]);
     expect(squadArgv.some(part => part.startsWith("--execution-mode"))).toBe(false);
-    const business = await send(base, project.project_id, cnv, "m-business", "Use business web-studio: landing page");
+    expect(state(squad.receipt.run.runId).count("producer")).toBe(1);
+    expect(fs.existsSync(path.join(process.env.NIRVANA_PROJECT_ROOT!, ".nirvana", "glance", "runs", squad.receipt.run.runId, "outputs", "result.md"))).toBe(true);
+    const business = await send(base, projectId, cnv, "m-business", "Use business web-studio: landing page");
     expect(business.receipt.run.target).toEqual({ kind: "business", slug: "web-studio" });
     expect(business.receipt.capability).toBe("business.dispatch");
-    await waitFor(base, project.project_id, business.receipt.run.runId, "completed", 500);
+    await waitFor(base, projectId, business.receipt.run.runId, "completed", 500);
     expect(state(business.receipt.run.runId).argv().argv.slice(0, 2)).toEqual(["--business", "web-studio"]);
-    const seen = await events(base, project.project_id);
-    expect(seen.find(event => event.type === "glance.child_started" && event.runId === squad.receipt.run.runId).payload.argv).toEqual(expect.arrayContaining(["--squad", "brandcraft"]));
-    expect(seen.find(event => event.type === "glance.child_started" && event.runId === business.receipt.run.runId).payload.argv).toEqual(expect.arrayContaining(["--business", "web-studio"]));
-    expect(seen.filter(event => event.type === "run.prepared").map(event => event.payload.target.kind)).toEqual(["squad", "business"]);
+    const all = await events(base, projectId);
+    expect(all.filter(event => event.runId === business.receipt.run.runId).map(typeOf)).toEqual(standardTimeline);
+    expect(all.find(event => event.type === "runtime.selection_snapshot" && event.runId === squad.receipt.run.runId).idempotencyKey).toBe(`standard:${squad.receipt.run.runId}:execution-snapshot`);
+    expect(all.find(event => event.type === "glance.child_started" && event.runId === squad.receipt.run.runId).payload.argv).toEqual(expect.arrayContaining(["--squad", "brandcraft"]));
+    expect(all.find(event => event.type === "glance.child_started" && event.runId === business.receipt.run.runId).payload.argv).toEqual(expect.arrayContaining(["--business", "web-studio"]));
+    expect(all.filter(event => event.type === "run.prepared").map(event => event.payload.target.kind)).toEqual(["squad", "business"]);
   }, 30000);
 
   test("an unavailable runner without an in-process adapter rolls the run back as capability_unavailable", async () => {
@@ -269,5 +286,19 @@ describe("Glance child-process execution", () => {
     expect(receipt.run.state).toBe("rolled_back");
     const seen = await events(base, project.project_id);
     expect(seen.at(-1).payload).toMatchObject({ reason: "capability_unavailable", capability: "agent-x.gauntlet.light" });
+  });
+});
+
+describe("Glance shutdown", () => {
+  test("shutdown() detaches the queue before stopping the server, removes the pid file and exits 0", async () => {
+    const { shutdown } = await import("../lib/glance/server.ts");
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-glance-shutdown-")); roots.push(root);
+    const pidFile = path.join(root, ".glance.pid");
+    fs.writeFileSync(pidFile, "{}", "utf8");
+    const order: string[] = [];
+    const watchdog = setInterval(() => order.push("tick"), 60_000);
+    shutdown({ stop: () => { order.push("server.stop"); } }, watchdog, () => { order.push("queue.shutdown"); }, code => { order.push(`exit ${code}`); }, pidFile);
+    expect(order).toEqual(["queue.shutdown", "server.stop", "exit 0"]);
+    expect(fs.existsSync(pidFile)).toBe(false);
   });
 });

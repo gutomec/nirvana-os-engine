@@ -7,7 +7,7 @@ import {
   type CanonicalRunState, type KernelHandle, type RunProjection, type TargetRef,
 } from "../run-kernel/index.ts";
 import type { ConversationService, Message } from "./conversation-service.ts";
-import { glanceRunDir, type GlanceExecutionRunner, type StartedExecution } from "./execution-runner.ts";
+import { glanceRunDir, signalProcessGroup, type GlanceExecutionRunner, type StartedExecution } from "./execution-runner.ts";
 
 export interface GlanceAgentXCanaryAdapter {
   available(): boolean;
@@ -102,20 +102,16 @@ export class AgentXCanaryQueue {
         const recovered = this.runner ? this.recoverChild(run, projectRoot) : null;
         if (recovered === "reattach") { result.reattached.push(run.runId); continue; }
         if (recovered === "redispatch") { result.redispatched.push(run.runId); continue; }
-        const reason = `state_${run.state}`;
-        this.recoveryEvent(run, "canary.recovery_skipped", { reason });
-        result.skipped.push({ runId: run.runId, reason });
+        this.skipRecovery(result, run, `state_${run.state}`);
         continue;
       }
       const message = this.conversations.messageForRun(projectId, run.runId);
       if (!message || message.conversation_id !== run.conversationId) {
-        this.recoveryEvent(run, "canary.recovery_skipped", { reason: "message_link_missing" });
-        result.skipped.push({ runId: run.runId, reason: "message_link_missing" });
+        this.skipRecovery(result, run, "message_link_missing");
         continue;
       }
       if (!this.executionAvailable()) {
-        this.recoveryEvent(run, "canary.recovery_skipped", { reason: "capability_unavailable" });
-        result.skipped.push({ runId: run.runId, reason: "capability_unavailable" });
+        this.skipRecovery(result, run, "capability_unavailable");
         continue;
       }
       this.recoveryEvent(run, "canary.recovery_enqueued", { reason: "restart_prepared_run" });
@@ -124,6 +120,14 @@ export class AgentXCanaryQueue {
     }
     if (this.pending.length) this.schedule();
     return result;
+  }
+
+  /** One Run may be skipped for a different reason on each restart (`capability_unavailable`, then
+   * `state_completed`), so the reason is part of the event identity: the same reason twice is one
+   * event, a new reason is a new event, never an identity conflict inside `recover()`. */
+  private skipRecovery(result: CanaryRecoveryResult, run: RunProjection, reason: string): void {
+    this.recoveryEvent(run, "canary.recovery_skipped", { reason }, `:${reason}`);
+    result.skipped.push({ runId: run.runId, reason });
   }
 
   /** Stops scheduling and detaches from any child still running: a stopped queue never
@@ -276,7 +280,8 @@ export class AgentXCanaryQueue {
       item.child.kill();
       this.childEvent(item, "glance.child_killed", { pid: item.pid, attempt: item.attempt, signal: "SIGTERM" });
     } else if (item.pid !== null && pidAlive(item.pid)) {
-      try { process.kill(item.pid, "SIGTERM"); } catch { /* raced with its exit */ }
+      // A child from a previous server process leads its own group as well (see execution-runner.ts).
+      signalProcessGroup(item.pid);
       this.childEvent(item, "glance.child_killed", { pid: item.pid, attempt: item.attempt, signal: "SIGTERM" });
     }
     const run = getRun(this.kernel, item.projectId, item.runId);

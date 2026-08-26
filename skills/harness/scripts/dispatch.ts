@@ -62,6 +62,7 @@ import {
   type AgentXGauntletEvaluator, type AgentXRevisionRequest,
 } from "../lib/gauntlet/agent-x-cutover.ts";
 import { createHarnessLegacyAdapter, openKernel } from "../lib/run-kernel/index.ts";
+import { inertStandardPublication, openStandardPublication } from "../lib/run-kernel/standard-publication.ts";
 import { freezeExecutionSnapshot } from "../lib/runtime-snapshot.ts";
 
 // Back-compat re-exports: these helpers moved to lib/delivery-pipeline.ts in
@@ -900,9 +901,9 @@ if (pendingCascade?.kind === "squad-only") {
   }
   const oroot = outputsRoot || path.join(projectRoot, "deliverables");
   fs.mkdirSync(oroot, { recursive: true });
+  const capabilityId = pendingCascade.plan.steps.find(step => step.kind === "squad" && step.slug === squads[0])?.capability || "squad.execute";
   if (shouldRunSquadGauntlet({ squadCount: squads.length, wantExec, resolvedMode: executionOptions.resolvedMode })) {
     const squad = squads[0];
-    const capabilityId = pendingCascade.plan.steps.find(step => step.kind === "squad" && step.slug === squad)?.capability || "squad.execute";
     const producerTarget = { kind: "squad" as const, slug: squad, capabilityId };
     const canonicalRunId = canonicalRunIdFor(pid, runIdFlag);
     const budget = gauntletRoundBudget(compileGauntletPlan({ brief, intensity: executionOptions.intensity }), effectiveBudgetUsd());
@@ -946,6 +947,12 @@ if (pendingCascade?.kind === "squad-only") {
       process.exit(1);
     }
   }
+  // Standard mode publishes the same canonical Run the Gauntlet canary would (dual-write through
+  // lib/run-kernel/standard-publication.ts, fail-open); a chain of squads publishes under its first squad.
+  const publication = openStandardPublication({ kernelPath: canaryKernelPath(projectRoot), projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag),
+    traceId: pid, target: { kind: "squad", slug: squads[0], capabilityId }, snapshot: frozenExecutionSnapshot(pid, rt, "squad"),
+    audit: emit, warn: line => console.error(c("yellow", line)) });
+  if (publication.incompatible) process.exit(1);
   ledgerTry(() => {
     ledgerHandle = runLedger.openLedger();
     const row = runLedger.openRun(ledgerHandle, {
@@ -958,6 +965,7 @@ if (pendingCascade?.kind === "squad-only") {
   if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "running", { childPid: process.pid }));
 
   console.log(c("lime", "▶") + c("bold", ` Squad-only — exec headless (${rt})`));
+  publication.start();
   let lastSession: string | null = null;
   let squadError: string | null = null;
   let failedSquad: string | null = null;
@@ -989,8 +997,10 @@ if (pendingCascade?.kind === "squad-only") {
     pid, slugOrNull: null, targetKind: "squad" as const, rt, oroot,
     projDir, projectRoot, sessionId: lastSession, withManifest: false,
   };
+  publication.verify();
   if (squadError) {
     const outcome = deliverAfterError(squadDeliverOpts, squadError, { squad_slug: failedSquad });
+    publication.finish({ exitCode: outcome.exitCode, gateOutcome: outcome.result?.gateOutcome ?? "indeterminate", error: squadError }, oroot);
     if (!outcome.judged) {
       console.error(c("red", `✗ nothing was produced in ${oroot} — nothing to judge.`));
       process.exit(1);
@@ -1001,6 +1011,7 @@ if (pendingCascade?.kind === "squad-only") {
 
   console.log(c("lime", "▶") + c("bold", " Delivery pipeline — verify → gate → deliver"));
   const res = deliver(squadDeliverOpts);
+  publication.finish({ exitCode: res.exitCode, gateOutcome: res.gateOutcome }, oroot);
   printDeliverySummary(res, pid, oroot, null);
   process.exit(res.exitCode);
 }
@@ -1088,6 +1099,11 @@ if (pendingCascade?.kind === "agent-x") {
       process.exit(1);
     }
   }
+  // Standard mode publishes the same canonical Run the Gauntlet canary would (dual-write, fail-open).
+  const publication = openStandardPublication({ kernelPath: canaryKernelPath(base), projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag),
+    traceId: pid, target: { kind: "agent-x", slug: "agent-x" }, snapshot: frozenExecutionSnapshot(pid, rt, "agent-x"),
+    audit: emit, warn: line => console.error(c("yellow", line)) });
+  if (publication.incompatible) process.exit(1);
   ledgerTry(() => {
     ledgerHandle = runLedger.openLedger();
     const row = runLedger.openRun(ledgerHandle, {
@@ -1100,6 +1116,7 @@ if (pendingCascade?.kind === "agent-x") {
   if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "running", { childPid: process.pid }));
 
   console.log(c("lime", "▶") + c("bold", ` Agent-x — exec headless (${rt})`));
+  publication.start();
   const r = runAgentX({
     brief, briefPath, runtime: rt, projectId: pid,
     projectDir: projDir, projectRoot: base, outputsRoot: oroot,
@@ -1116,10 +1133,13 @@ if (pendingCascade?.kind === "agent-x") {
     pid, slugOrNull: null, targetKind: "agent-x" as const, rt, oroot,
     projDir, projectRoot: base, sessionId: r.sessionId, withManifest: false,
   };
+  publication.verify();
   if (!r.ok) {
     console.error(c("red", `✗ agent-x failed (exit ${r.exitCode}): ${r.error || r.stderr || "unknown"}`));
     emit("agent_exec_failed", { trace_id: pid, project_id: pid, employee: "agent-x", runtime: rt, exit_code: r.exitCode, error: r.error || r.stderr });
-    const outcome = deliverAfterError(agentXDeliverOpts, r.error || r.stderr || `exit ${r.exitCode}`, { employee: "agent-x" });
+    const runtimeError = r.error || r.stderr || `exit ${r.exitCode}`;
+    const outcome = deliverAfterError(agentXDeliverOpts, runtimeError, { employee: "agent-x" });
+    publication.finish({ exitCode: outcome.exitCode, gateOutcome: outcome.result?.gateOutcome ?? "indeterminate", error: runtimeError }, oroot);
     if (!outcome.judged) {
       console.error(c("red", `✗ nothing was produced in ${oroot} — nothing to judge.`));
       process.exit(1);
@@ -1131,6 +1151,7 @@ if (pendingCascade?.kind === "agent-x") {
 
   console.log(c("lime", "▶") + c("bold", " Delivery pipeline — verify → gate → deliver"));
   const res = deliver(agentXDeliverOpts);
+  publication.finish({ exitCode: res.exitCode, gateOutcome: res.gateOutcome }, oroot);
   printDeliverySummary(res, pid, oroot, null);
   process.exit(res.exitCode);
 }
@@ -1356,7 +1377,17 @@ if (wantExec) {
       process.exit(1);
     }
   }
+  // Standard mode publishes the canonical Run (dual-write, fail-open). After a canary rollback the
+  // kernel already holds this Run's terminal state, so the legacy fallback publishes nothing new.
+  const publication = businessCanaryDecision.enabled ? inertStandardPublication(canonicalRunIdFor(pid, runIdFlag))
+    : openStandardPublication({ kernelPath: canaryKernelPath(projectRoot), projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag), traceId: pid,
+      target: { kind: "business", slug }, snapshot: frozenExecutionSnapshot(pid, rt, "business"), audit: emit, warn: line => console.error(c("yellow", line)) });
+  if (publication.incompatible) {
+    if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "failed", { error: "runtime incompatible with the provider catalog" }));
+    process.exit(1);
+  }
   if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "running", { childPid: process.pid }));
+  publication.start();
 
   // res = unified result shape consumed by the delivery pipeline below.
   let res: { ok: boolean; sessionId: string | null; durationMs: number; costUsd: number | null; exitCode?: number; error?: string; stderr?: string };
@@ -1484,8 +1515,10 @@ if (wantExec) {
     },
   };
   let delivery: DeliveryResult;
+  publication.verify();
   if (runtimeError) {
     const outcome = deliverAfterError(bizDeliverOpts, runtimeError, { employee: intake, mode: wantTeam ? "team" : "single" });
+    publication.finish({ exitCode: outcome.exitCode, gateOutcome: outcome.result?.gateOutcome ?? "indeterminate", error: runtimeError }, oroot);
     if (!outcome.judged) {
       console.error(c("red", `✗ nothing was produced in ${oroot} — nothing to judge.`));
       process.exit(1);
@@ -1494,6 +1527,7 @@ if (wantExec) {
     advanceHandoff();
   } else {
     delivery = deliver(bizDeliverOpts);
+    publication.finish({ exitCode: delivery.exitCode, gateOutcome: delivery.gateOutcome }, oroot);
   }
 
   printDeliverySummary(delivery, pid, oroot, zipPathOut, !!runtimeError);

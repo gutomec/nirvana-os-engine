@@ -1715,16 +1715,21 @@ export async function startServer(opts: ServerOptions) {
   console.error(`[glance] auto-shutdown after ${opts.idleMin}min idle  ·  Ctrl+C to exit`);
   if (opts.open) openBrowser(url);
 
+  // Detaches the queue from its children (tests stop servers without exiting the process;
+  // shutdown() runs it before the server stops, so a child still running is left to the next
+  // server's recovery instead of being settled by a dying one).
+  const detach = () => canaryQueue?.shutdown();
+
   // Idle watchdog
   const watchdog = setInterval(() => {
     if (Date.now() - lastActivity > opts.idleMin * 60_000) {
       console.error(`[glance] idle ${opts.idleMin}min — shutting down`);
-      shutdown(server, watchdog);
+      shutdown(server, watchdog, detach);
     }
   }, 30_000);
 
   // SIGINT cleanup
-  const onSignal = () => { console.error("\n[glance] SIGINT — shutting down"); shutdown(server, watchdog); };
+  const onSignal = () => { console.error("\n[glance] SIGINT — shutting down"); shutdown(server, watchdog, detach); };
   process.on("SIGINT", onSignal);
   process.on("SIGTERM", onSignal);
 
@@ -1733,8 +1738,6 @@ export async function startServer(opts: ServerOptions) {
     ? agentXQueue().recover(inspection.project.project_id, projectRoot)
     : { enqueued: [], reattached: [], redispatched: [], skipped: [] };
 
-  // Detaches the queue from its children (tests stop servers without exiting the process).
-  const detach = () => canaryQueue?.shutdown();
   return { server, url, port, recovery, detach };
 }
 
@@ -1970,9 +1973,13 @@ function streamJobSSE(req: Request, id: string): Response {
   });
 }
 
-function shutdown(server: any, watchdog: ReturnType<typeof setInterval>) {
+/** Orderly stop: the execution queue detaches first, then the server, the pid file and the process.
+ * `exit` and `pidFile` are seams for the unit test; production passes only the first three. */
+export function shutdown(server: { stop(closeActiveConnections?: boolean): void }, watchdog: ReturnType<typeof setInterval>,
+  detach: () => void = () => {}, exit: (code: number) => void = code => process.exit(code), pidFile: string = PID_FILE): void {
   clearInterval(watchdog);
+  try { detach(); } catch {}
   try { server.stop(true); } catch {}
-  try { fs.unlinkSync(PID_FILE); } catch {}
-  process.exit(0);
+  try { fs.unlinkSync(pidFile); } catch {}
+  exit(0);
 }

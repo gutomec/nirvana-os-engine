@@ -107,6 +107,29 @@ describe("durable agent-x canary recovery", () => {
     kernel.close(); conversations.close();
   });
 
+  test("one run skipped for a different reason on each restart records both reasons and never conflicts", () => {
+    const { root, kernelPath, conversationPath } = fixture();
+    const kernel = openKernel(kernelPath); const conversations = new ConversationService(conversationPath);
+    conversations.create("prj_skip", "Skip", "cnv_skip");
+    conversations.append({ conversationId: "cnv_skip", projectId: "prj_skip", role: "user", content: "skip me", messageId: "msg_skip", runId: "run_skip" });
+    const actor = { kind: "test", id: "recovery" };
+    createRun(kernel, { projectId: "prj_skip", runId: "run_skip", traceId: "run_skip", conversationId: "cnv_skip", planId: "plan_run_skip",
+      target: { kind: "agent-x", slug: "agent-x" }, policySnapshotRef: "gauntlet-light-canary", actor, correlationId: "cor_run_skip" });
+    // First boot: no runtime, the prepared Run is skipped as capability_unavailable.
+    const unavailable = new AgentXCanaryQueue(kernel, conversations, { ...adapter({ executions: 0 }), available: () => false }); queues.push(unavailable);
+    expect(unavailable.recover("prj_skip", root).skipped).toEqual([{ runId: "run_skip", reason: "capability_unavailable" }]);
+    unavailable.shutdown();
+    // Something else ends the Run; the next boot skips it again, for another reason.
+    transitionRun(kernel, { projectId: "prj_skip", runId: "run_skip", to: "rolled_back", actor, correlationId: "cor_run_skip" });
+    const restarted = new AgentXCanaryQueue(kernel, conversations, adapter({ executions: 0 })); queues.push(restarted);
+    expect(() => restarted.recover("prj_skip", root)).not.toThrow();
+    expect(restarted.recover("prj_skip", root).skipped).toEqual([{ runId: "run_skip", reason: "state_rolled_back" }]);
+    const skipped = listEvents(kernel, "prj_skip").filter(event => event.type === "canary.recovery_skipped");
+    expect(skipped.map(event => (event.payload as { reason: string }).reason)).toEqual(["capability_unavailable", "state_rolled_back"]);
+    expect(skipped.map(event => event.idempotencyKey)).toEqual(["canary.recovery_skipped:run_skip:capability_unavailable", "canary.recovery_skipped:run_skip:state_rolled_back"]);
+    kernel.close(); conversations.close();
+  });
+
   test("a running run whose child is dead is redispatched once across two restarts and resumes without repeating the producer", async () => {
     const fx = childFixture();
     const first = fx.queue({ FAKE_CHILD_HOLD: "1", FAKE_CHILD_AFTER_WAIT: "crash" });

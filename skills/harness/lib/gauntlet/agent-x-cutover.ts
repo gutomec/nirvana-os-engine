@@ -198,7 +198,8 @@ function defectsFor(scorecards: EvaluationScorecard[]): AgentXRevisionDefects {
   };
 }
 
-function terminalForGate(gate: { exitCode: 0 | 1 | 2 | 3; gateOutcome: string }): "completed" | "delivered_with_reservations" | "withheld" | "failed" {
+/** Terminal Run state for a final gate result; shared with the standard-mode publication. */
+export function terminalForGate(gate: { exitCode: 0 | 1 | 2 | 3; gateOutcome: string }): "completed" | "delivered_with_reservations" | "withheld" | "failed" {
   if (gate.exitCode === 0) return gate.gateOutcome === "pass" ? "completed" : "delivered_with_reservations";
   if (gate.exitCode === 2 || gate.exitCode === 3) return "withheld";
   return "failed";

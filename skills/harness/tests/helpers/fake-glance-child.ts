@@ -1,11 +1,16 @@
 // fake-glance-child.ts — a stand-in for scripts/dispatch.ts spawned by the Glance
 // execution runner. It reads --project, --run-id, --brief-file and --outputs-root,
-// opens the kernel of its cwd (the same file the server serves) and drives
-// runAgentXGauntlet with a deterministic producer, evaluator and final gate, so
-// the tests prove the whole chain across processes: Message → Run → child →
-// kernel → SSE. Zero LLM, zero network.
+// opens the kernel of its cwd (the same file the server serves) and, like the
+// real dispatch, picks the execution path from its argv: with
+// `--execution-mode=gauntlet` it drives runAgentXGauntlet with a deterministic
+// producer, evaluator and final gate; without it (the `--business` / `--squad`
+// children of the chat) it runs the standard-mode publication (open → start →
+// verify → finish) with a deterministic deliverable. Either way the tests prove
+// the whole chain across processes: Message → Run → child → kernel → SSE. Zero
+// LLM, zero network.
 //
-// Knobs, read from the environment of the spawned process:
+// Knobs, read from the environment of the spawned process (the hold knobs apply
+// to the Gauntlet path only):
 //   FAKE_CHILD_STATE_DIR   root for markers and counters; each Run uses <root>/<runId>
 //   FAKE_CHILD_HOLD        "1": after the first candidate is persisted, stop the
 //                          Gauntlet and wait (asynchronously, so SIGTERM is honoured)
@@ -26,6 +31,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { AgentXGauntletInterruption, runAgentXGauntlet } from ${JSON.stringify(path.join(LIB_DIR, "gauntlet", "agent-x-cutover.ts"))};
 import { openKernel } from ${JSON.stringify(path.join(LIB_DIR, "run-kernel", "index.ts"))};
+import { openStandardPublication } from ${JSON.stringify(path.join(LIB_DIR, "run-kernel", "standard-publication.ts"))};
 const argv = Bun.argv.slice(2);
 const value = (name) => {
   const index = argv.findIndex((item) => item === name || item.startsWith(name + "="));
@@ -47,6 +53,24 @@ const bump = (name) => {
 fs.writeFileSync(path.join(state, "argv.json"), JSON.stringify({ argv, cwd: process.cwd(), projectRoot: process.env.NIRVANA_PROJECT_ROOT ?? null }));
 bump("spawns"); mark("started");
 const kernel = openKernel(path.join(process.cwd(), ".nirvana", "run-kernel.sqlite"));
+if (!argv.some((item) => item.startsWith("--execution-mode=gauntlet"))) {
+  // Standard mode: the publication module the real dispatch uses, around a deterministic executor.
+  const target = value("--business") ? { kind: "business", slug: value("--business") }
+    : value("--squad") ? { kind: "squad", slug: value("--squad"), capabilityId: "squad.execute" } : { kind: "agent-x", slug: "agent-x" };
+  const publication = openStandardPublication({ kernelPath: kernel.path, projectId, runId, traceId: "trace_fake_child", target,
+    snapshot: { runtime: { id: "claude-code", source: "default" }, provider: { selection: "runtime-provider", resolved: false },
+      model: { selection: "runtime-default", resolved: false }, reason: "no provider descriptor for runtime" },
+    audit() {}, warn() {} });
+  publication.start();
+  bump("producer"); fs.mkdirSync(outputsRoot, { recursive: true });
+  fs.writeFileSync(path.join(outputsRoot, "result.md"), "# Resultado\n\n" + brief, "utf8");
+  publication.verify();
+  bump("final-gate");
+  publication.finish({ exitCode: 0, gateOutcome: "pass" }, outputsRoot);
+  mark("completed");
+  kernel.close();
+  process.exit(0);
+}
 const evaluatorTarget = { kind: "squad", slug: "fake-evaluator", capabilityId: "quality.specification_conformance" };
 const common = {
   kernel, projectId, runId, traceId: "trace_fake_child", brief, projectRoot: process.cwd(), outputsRoot, expectedCostUsd: 1,

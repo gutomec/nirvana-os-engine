@@ -86,6 +86,8 @@ describe("createDispatchExecutionRunner", () => {
     const sleeping = createDispatchExecutionRunner({ dispatchScriptPath: fake, env: { FAKE_DISPATCH_SLEEP_MS: "10000" } });
     const held = sleeping.start({ projectRoot: root, projectId: "prj_three", runId: "run_kill", briefFile, target: { kind: "agent-x", slug: "agent-x" }, intensity: "light" });
     await Bun.sleep(150);
+    // The child leads its own process group, so kill() reaches the runtime it spawns as well.
+    if (process.platform !== "win32") expect(() => process.kill(-held.pid, 0)).not.toThrow();
     held.kill();
     expect((await held.done).exitCode).toBeNull();
   });
