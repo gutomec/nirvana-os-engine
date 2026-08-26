@@ -737,6 +737,13 @@ const employeePrompt = path.join(SKILLS, "businesses/lib/employee-prompt.ts");
 const gateScriptPath = path.join(SKILLS, "harness/scripts/quality-gate.ts");
 const verifyScriptPath = path.join(SKILLS, "businesses/scripts/verify-deliverable.ts");
 
+// The prep scripts (brief-squad / brief-business) open an agentic ledger row for an agent that
+// orchestrates in-session. This dispatch tracks its own run (the scripted row in standard mode,
+// the canonical Run's row in a Gauntlet canary), so it tells them not to: the agentic row had no
+// owner here, survived every scripted dispatch as `running` and was escalated to a human as
+// stalled once its 30-minute lease expired (smoke-judge-squad, 2026-08-26).
+const prepScriptEnv = { ...process.env, NIRVANA_DISPATCH_TRACKS_RUN: "1" };
+
 // Frozen runtime, provider and model decision of one canary Run: the broker answers
 // from the provider catalogs on disk (lib/runtime-snapshot.ts); without a descriptor
 // the snapshot is the previous literal and nothing changes. Broker errors are
@@ -953,7 +960,7 @@ if (pendingCascade?.kind === "squad-only") {
   console.log(c("lime", "▶") + c("bold", ` Squad-only — scaffold (${squads.length} squad(s))`));
   let projDir: string | null = null;
   for (const sq of squads) {
-    const r = spawnSync("bun", [briefSquadScript, sq, brief, "--project", pid], { encoding: "utf8" });
+    const r = spawnSync("bun", [briefSquadScript, sq, brief, "--project", pid], { encoding: "utf8", env: prepScriptEnv });
     if (r.status !== 0) {
       console.error(c("red", `✗ brief-squad failed for '${sq}':`));
       console.error(r.stdout || r.stderr);
@@ -1320,7 +1327,7 @@ console.log(c("lime", "▶") + c("bold", " Step 1/4 — brief-business.ts"));
 const args = [briefBiz, slug, brief];
 if (projectId) args.push("--project", projectId);
 if (manifest) args.push("--manifest", manifest);
-const r1 = spawnSync("bun", args, { encoding: "utf8" });
+const r1 = spawnSync("bun", args, { encoding: "utf8", env: prepScriptEnv });
 if (r1.status !== 0) {
   console.error(c("red", "✗ brief-business failed:"));
   console.error(r1.stdout || r1.stderr);

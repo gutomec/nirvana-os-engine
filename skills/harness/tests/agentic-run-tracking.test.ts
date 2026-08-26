@@ -152,6 +152,35 @@ describe("brief-squad opens the ledger run by itself", () => {
     expect(r.stdout).toContain("nrv run-track close");
     expect(r.stdout).toContain(row.run_id);
   }, spawnBudgetMs(1));
+
+  test("under a scripted dispatch (NIRVANA_DISPATCH_TRACKS_RUN=1) the prep step opens no row: the dispatch tracks its own", () => {
+    // `nrv dispatch --exec` spawns brief-squad only to scaffold and opens its own ledger row.
+    // The agentic row it used to leave here had no owner: still `running` after the dispatch
+    // delivered, escalated as stalled once its lease expired (smoke-judge-squad, 2026-08-26).
+    const scriptedLedger = path.join(TMP, "brief-squad-scripted.sqlite");
+    const r = spawnSync(process.execPath, [
+      path.join(SKILLS, "squads", "scripts", "brief-squad.ts"),
+      "fixture-squad", "Uma landing page para uma clínica veterinária", "--project", "projeto-scriptado",
+    ], {
+      encoding: "utf8",
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        SQUADS_DIR: path.join(home, "squads"),
+        NIRVANA_HOME: home,
+        NIRVANA_PROJECT_ROOT: projectRoot,
+        NIRVANA_RUN_LEDGER_DB: scriptedLedger,
+        NIRVANA_SKILLS_DIR: SKILLS,
+        NIRVANA_DISPATCH_TRACKS_RUN: "1",
+      },
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("tracked by the dispatch that spawned this step");
+    expect(r.stdout).not.toContain("nrv run-track close");
+    // No row at all, not a closed one: the dispatch's own row is the run's only record.
+    const count = openLedger(scriptedLedger).db.query("SELECT COUNT(*) AS n FROM runs").get() as { n: number };
+    expect(count.n).toBe(0);
+  }, spawnBudgetMs(1));
 });
 
 // ── 2. the supervisor's agentic door ──────────────────────────────────────
