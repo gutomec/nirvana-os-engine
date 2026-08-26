@@ -127,6 +127,23 @@ describe("the gate runs and reports", () => {
     expect(d.entries).toBe(2);
     expect(d.dead).toBe(1);
   }, 60_000);
+
+  test("a fence that fires on its own capability's brief is counted as self-firing, and only counted", () => {
+    // The opposite defect to a dead fence: this one vetoes the squad on the
+    // brief it should win. Information only — the exit code does not move.
+    const r = run(["--json", "--registry", fixture({
+      "a.b.c": [{ squad: "s", not_for: ["seo audit", "live streaming"], example_briefs: ["run an seo audit for my site"] }],
+      "d.e.f": [{ squad: "t", not_for: ["seo audit"], example_briefs: ["stream my launch live"] }],
+    })]);
+    const d = JSON.parse(r.out);
+    expect(d.self_fire).toBe(1);
+    expect(r.code).toBe(0);
+    const one = run(["s", "--registry", fixture({
+      "a.b.c": [{ squad: "s", not_for: ["seo audit"], example_briefs: ["run an seo audit for my site"] }],
+    })]);
+    expect(one.code).toBe(0);
+    expect(one.out).toMatch(/1\/1 self-firing/);
+  }, 60_000);
 });
 
 /**

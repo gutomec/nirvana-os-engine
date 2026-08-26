@@ -58,6 +58,16 @@
  * travels with the scope it describes and never puts entity names in the engine
  * repo. `--record` refuses to raise a ceiling without `--allow-regression`:
  * recording after a fix is routine, recording a regression has to be said out loud.
+ *
+ * **Self-firing, reported but not gated.** The opposite defect: a fence that
+ * fires on an example_brief of its OWN capability vetoes the squad on the very
+ * brief it should win (score × 0.4, and the runner-up takes it). Measured
+ * across the library with the rule above (not-for-experiment.ts, 2026-08-26):
+ * zero today, and every more sensitive rule variant tried introduced some,
+ * because authors phrase the fence as a contrast to the capability's own scope
+ * ("apenas X sem Y") and the negation words are stopwords. The count is printed
+ * and returned in --json so a rewrite that turns a dead fence into a
+ * self-firing one is visible; it never changes the exit code.
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -165,45 +175,58 @@ const corpusCaps: Array<Record<string, unknown>> = [
   ...Object.values(caps).flat(),
   ...(fixture ? [] : Object.values((registryLoader.loadAll()?.squads?.capabilities ?? {}) as Record<string, Array<Record<string, unknown>>>).flat()),
 ];
-const briefSets: Array<Set<string>> = [];
+interface BriefView { lc: string; tokens: Set<string> }
+const briefView = (b: string): BriefView => ({ lc: b.toLowerCase(), tokens: new Set(bm25.tokenize(b)) });
+const briefSets: BriefView[] = [];
 for (const c of corpusCaps) {
   for (const b of ((c.example_briefs as string[]) ?? [])) {
-    if (typeof b === "string") briefSets.push(new Set(bm25.tokenize(b)));
+    if (typeof b === "string") briefSets.push(briefView(b));
   }
+}
+
+/** router.js `notForFires`, against one brief. `tokens` are the entry's unique
+ *  content tokens, computed once by the caller. */
+function firesOn(entry: string, tokens: string[], brief: BriefView): boolean {
+  if (entry.length <= SUBSTRING_MAX_CHARS) return entry.length > 2 && brief.lc.includes(entry.toLowerCase());
+  if (tokens.length < MIN_CONTENT_TOKENS) return false;
+  let matched = 0;
+  for (const t of tokens) if (brief.tokens.has(t)) matched++;
+  return matched / tokens.length >= TOKEN_OVERLAP_MIN;
 }
 
 type Verdict = "fires" | "dead" | "too-short";
 
-function verdict(entry: string): Verdict {
+function verdict(entry: string, tokens: string[]): Verdict {
   if (entry.length <= SUBSTRING_MAX_CHARS) {
     // The substring path fires on any brief containing the literal text. Two
     // characters or fewer can never fire (router.js:512).
     return entry.length > 2 ? "fires" : "too-short";
   }
-  const tokens = [...new Set<string>(bm25.tokenize(entry))];
   if (tokens.length < MIN_CONTENT_TOKENS) return "dead";
-  for (const bs of briefSets) {
-    let matched = 0;
-    for (const t of tokens) if (bs.has(t)) matched++;
-    if (matched / tokens.length >= TOKEN_OVERLAP_MIN) return "fires";
-  }
+  for (const b of briefSets) if (firesOn(entry, tokens, b)) return "fires";
   return "dead";
 }
 
-interface Row { entity: string; total: number; dead: number; deadEntries: string[]; }
+interface Row { entity: string; total: number; dead: number; deadEntries: string[]; selfFire: number; selfFireEntries: string[]; }
 const rows = new Map<string, Row>();
 
 for (const list of Object.values(caps)) {
   for (const c of list) {
     const slug = (c.squad ?? c.business) as string | undefined;
     if (!slug || (only && slug !== only)) continue;
-    const row = rows.get(slug) ?? { entity: slug, total: 0, dead: 0, deadEntries: [] };
+    const row = rows.get(slug) ?? { entity: slug, total: 0, dead: 0, deadEntries: [], selfFire: 0, selfFireEntries: [] };
+    const own = ((c.example_briefs as string[]) ?? []).filter((b) => typeof b === "string").map(briefView);
     for (const nf of ((c.not_for as string[]) ?? [])) {
       if (typeof nf !== "string") continue;
       row.total++;
-      if (verdict(nf) !== "fires") {
+      const tokens = [...new Set<string>(bm25.tokenize(nf))];
+      if (verdict(nf, tokens) !== "fires") {
         row.dead++;
         if (row.deadEntries.length < 40) row.deadEntries.push(nf);
+      }
+      if (own.some((b) => firesOn(nf, tokens, b))) {
+        row.selfFire++;
+        if (row.selfFireEntries.length < 10) row.selfFireEntries.push(nf);
       }
     }
     rows.set(slug, row);
@@ -213,6 +236,7 @@ for (const list of Object.values(caps)) {
 const all = [...rows.values()].filter((r) => r.total > 0);
 const totalEntries = all.reduce((n, r) => n + r.total, 0);
 const totalDead = all.reduce((n, r) => n + r.dead, 0);
+const totalSelfFire = all.reduce((n, r) => n + r.selfFire, 0);
 
 // An entity is over budget when MOST of its fences are dead — that is the state
 // where an author has a boundary in mind and the router has none. A single dead
@@ -253,7 +277,7 @@ if (flags.record) {
 
 if (flags.json) {
   console.log(JSON.stringify({
-    entities: all.length, entries: totalEntries, dead: totalDead,
+    entities: all.length, entries: totalEntries, dead: totalDead, self_fire: totalSelfFire,
     over_budget: overBudget,
     ceiling: ceilings ? { grew: grew.map((r) => r.entity), unrecorded: unrecorded.map((r) => r.entity) } : null,
   }, null, 2));
@@ -270,6 +294,10 @@ if (only) {
   const c = r.dead === 0 ? GRN : r.dead / r.total > 0.5 ? RED : YEL;
   console.log(`  ${r.entity}: ${c}${r.dead}/${r.total} dead${RST}`);
   for (const e of r.deadEntries) console.log(`    ${DIM}${e.length} chars · ${e.slice(0, 78)}${RST}`);
+  if (r.selfFire) {
+    console.log(`  ${r.entity}: ${RED}${r.selfFire}/${r.total} self-firing${RST} ${DIM}(fires on a brief of its own capability)${RST}`);
+    for (const e of r.selfFireEntries) console.log(`    ${DIM}${e.slice(0, 78)}${RST}`);
+  }
   console.log(`\n${DIM}  Rewrite each as 2-4 content words, <=${SUBSTRING_MAX_CHARS} chars, EN and PT as separate`);
   console.log(`  entries, accented and unaccented as separate entries, no "(use X)" suffix.${RST}\n`);
   process.exit(flags.strict && failures.some((f) => f.entity === r.entity) ? 1 : 0);
@@ -278,6 +306,7 @@ if (only) {
 const pct = Math.round((100 * totalDead) / Math.max(totalEntries, 1));
 const color = pct > 40 ? RED : pct > 15 ? YEL : GRN;
 console.log(`  dead: ${color}${totalDead}/${totalEntries} (${pct}%)${RST}`);
+console.log(`  self-firing: ${totalSelfFire ? RED : GRN}${totalSelfFire}/${totalEntries}${RST} ${DIM}(fires on a brief of its own capability — information only)${RST}`);
 console.log(`  entities where most fences are dead: ${overBudget.length ? RED : GRN}${overBudget.length}${RST}\n`);
 
 for (const r of overBudget.sort((a, b) => b.dead - a.dead).slice(0, 15)) {
