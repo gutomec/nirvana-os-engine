@@ -810,11 +810,15 @@ function gauntletEvaluatorFor(args: { pid: string; producer: TargetRef; plan: Ga
     emit("x_gauntlet_evaluator_fallback", { trace_id: args.pid, project_id: args.pid, from: fallback.from, reason: fallback.reason,
       ...(fallback.detail ? { detail: fallback.detail } : {}), producer: describeTarget(args.producer) });
   }
+  // The legacy adapter closes the Run's run-ledger row as `failed` with the reason, the way the
+  // canaries close it on every other exit; without it the ledger never heard of the attempt.
   const rollback = (reason: "evaluator_unavailable" | "max_cost", errors: string[]): void => {
     const kernel = openKernel(args.kernelPath);
+    const ledger = runLedger.openLedger();
     try {
-      rollbackGauntletBeforeProducer({ kernel, projectId: args.pid, runId: args.runId, traceId: args.pid, producer: args.producer, plan: args.plan, reason, errors });
-    } finally { kernel.close(); }
+      rollbackGauntletBeforeProducer({ kernel, legacy: createHarnessLegacyAdapter({ ledger, auditCwd: args.projectRoot }),
+        projectId: args.pid, runId: args.runId, traceId: args.pid, producer: args.producer, plan: args.plan, reason, errors });
+    } finally { kernel.close(); ledger.close(); }
   };
   if (selection.kind === "unavailable") {
     emit("x_gauntlet_evaluator_unavailable", { trace_id: args.pid, project_id: args.pid, producer: describeTarget(args.producer), runtime: args.rt,

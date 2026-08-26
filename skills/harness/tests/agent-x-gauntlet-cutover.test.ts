@@ -3,8 +3,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-  AgentXGauntletInterruption, GAUNTLET_EVALUATION_FLOOR_USD, GAUNTLET_EVALUATION_SHARE, gauntletRoundBudget, runAgentXGauntlet, shouldRunAgentXGauntlet, shouldRunSquadGauntlet,
-  type AgentXGauntletEvaluator,
+  AgentXGauntletInterruption, GAUNTLET_EVALUATION_FLOOR_USD, GAUNTLET_EVALUATION_SHARE, gauntletRoundBudget, rollbackGauntletBeforeProducer, runAgentXGauntlet,
+  shouldRunAgentXGauntlet, shouldRunSquadGauntlet, type AgentXGauntletEvaluator,
 } from "../lib/gauntlet/agent-x-cutover.ts";
 import { compileGauntletPlan } from "../lib/gauntlet/compiler.ts";
 import {
@@ -296,6 +296,36 @@ describe("agent-x Gauntlet cutover", () => {
       });
       expect(result.run).toMatchObject({ state: "completed", traceId: "trace_glance" });
       expect(getLegacyRun(ledger, "run_glance")).toMatchObject({ state: "delivered", session_id: "sess-adopted", trace_id: "trace_glance", project_id: "prj_canary", target_kind: "agent-x" });
+    } finally {
+      ledger.close();
+      if (previous.logs === undefined) delete process.env.HARNESS_LOGS_DIR; else process.env.HARNESS_LOGS_DIR = previous.logs;
+      if (previous.state === undefined) delete process.env.NIRVANA_STATE_DB; else process.env.NIRVANA_STATE_DB = previous.state;
+    }
+  }, KERNEL_BUDGET_MS);
+
+  test("a rollback before the producer closes the Run's legacy ledger row as failed with the reason, for a created and for an adopted Run", () => {
+    const fixture = setup();
+    const previous = { logs: process.env.HARNESS_LOGS_DIR, state: process.env.NIRVANA_STATE_DB };
+    process.env.HARNESS_LOGS_DIR = path.join(fixture.root, "logs");
+    process.env.NIRVANA_STATE_DB = path.join(STATE_ROOT, "state.sqlite");
+    const ledger = openLedger(path.join(fixture.root, "ledger.sqlite"));
+    try {
+      const producer = { kind: "squad" as const, slug: "brandcraft", capabilityId: "squad.execute" };
+      const common = { kernel: fixture.handle, legacy: createHarnessLegacyAdapter({ ledger, auditCwd: fixture.root }), projectId: "prj_canary",
+        traceId: "trace_dispatch", producer, plan: compileGauntletPlan({ brief: "Build", intensity: "light" }) };
+      const created = rollbackGauntletBeforeProducer({ ...common, runId: "run_preflight", reason: "evaluator_unavailable",
+        errors: ["no judge-x persona for runtime 'qwen-code'"] });
+      expect(created).toMatchObject({ state: "rolled_back", traceId: "trace_dispatch" });
+      expect(getLegacyRun(ledger, "run_preflight")).toMatchObject({ state: "failed", trace_id: "trace_dispatch", target_kind: "squad", target_slug: "brandcraft",
+        last_error: "evaluator_unavailable: no judge-x persona for runtime 'qwen-code'", meta: { canonical_state: "rolled_back" } });
+      // Prepared elsewhere (Glance, --run-id): adopted with its trace, and its row opened here, as runAgentXGauntlet does.
+      createRun(fixture.handle, { projectId: "prj_canary", runId: "run_glance_preflight", traceId: "trace_glance", planId: "plan_run_glance_preflight",
+        target: producer, policySnapshotRef: "gauntlet-light-canary", actor: { kind: "control-plane", id: "glance" }, correlationId: "cor_run_glance_preflight" });
+      expect(getLegacyRun(ledger, "run_glance_preflight")).toBeNull();
+      const adopted = rollbackGauntletBeforeProducer({ ...common, runId: "run_glance_preflight", reason: "max_cost", errors: ["the evaluation floor leaves the producer nothing"] });
+      expect(adopted).toMatchObject({ state: "rolled_back", traceId: "trace_glance" });
+      expect(getLegacyRun(ledger, "run_glance_preflight")).toMatchObject({ state: "failed", trace_id: "trace_glance",
+        last_error: "max_cost: the evaluation floor leaves the producer nothing", meta: { canonical_state: "rolled_back" } });
     } finally {
       ledger.close();
       if (previous.logs === undefined) delete process.env.HARNESS_LOGS_DIR; else process.env.HARNESS_LOGS_DIR = previous.logs;
