@@ -8,6 +8,40 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Filhos headless pulam permissões em todo runtime verificado, com um único interruptor
+
+O adapter `claude-code` da camada leve montava `claude -p --no-session-persistence
+--output-format json` sem `--dangerously-skip-permissions`: um filho não
+interativo morria na primeira ferramenta que pedia aprovação, enquanto a camada
+headless passava a flag sem jeito de desligá-la. Todo adapter cujo CLI documenta
+uma flag de bypass de aprovação agora a passa por padrão nas duas camadas:
+`claude --dangerously-skip-permissions`, `codex exec
+--dangerously-bypass-approvals-and-sandbox`, `gemini --approval-mode yolo`,
+`agy --dangerously-skip-permissions` e `grok --always-approve`, cada uma citada
+do `--help` do próprio CLI no adapter. `NIRVANA_HEADLESS_SKIP_PERMISSIONS=0`
+desliga o bypass em todo lugar: a camada leve omite a flag e o `runHeadless`
+toma o caminho restrito que `nrv dispatch --safe` seleciona. O `--approve` do
+pi é confiança em arquivos do projeto, e não permissão de ferramenta, e kimi,
+qwen e opencode não puderam ser verificados, então esses quatro ficam como
+estavam; um teste por adapter fixa o argv nos dois estados.
+
+### Os arquivos do próprio adapter do avaliador não são artefatos do avaliador
+
+O adapter do avaliador do Gauntlet gravava `evaluation-request.json` e
+`evaluation-brief.md` no diretório de avaliação e entregava esse mesmo
+diretório ao `dispatch.ts` filho como `--outputs-root`. Um filho cujo executor
+não escrevia nada ainda contava os dois arquivos do adapter como entregáveis
+(`verify_passed` com dois arquivos, gate aprovado, Run canônico `completed`),
+enquanto o pai, corretamente, não encontrava scorecard e retinha o Run como
+`evaluation_indeterminate`. O filho agora recebe `<evaluationDir>/outputs/`,
+esvaziado antes do spawn, como outputs root; o pedido e o brief ficam um nível
+acima, e o scorecard é esperado em `outputs/scorecard.json`. O brief de
+avaliação diz ao executor para escrever `scorecard.json` no seu `output_path`
+(o caminho absoluto continua no pedido), que o candidate é somente leitura e
+que ler arquivos basta, sem shell. Sem nada sob o outputs root, o Run do filho
+falha na verificação em vez de completar, provado por um `dispatch.ts` filho
+real no teste e2e.
+
 ### O Gauntlet passa a ser julgado por um avaliador real e independente
 
 Os três canários do Gauntlet no `dispatch.ts` pontuavam cada candidate com
