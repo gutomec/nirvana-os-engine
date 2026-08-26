@@ -49,7 +49,7 @@ export const COMMANDS: Command[] = [
   { name: "help", aliases: ["--help", "-h"], custom: true, category: "first-run", summary: "Show this help", visibility: "user" },
 
   // install & lifecycle
-  { name: "install", custom: true, category: "install", args: "<source> | --bootstrap | --check", summary: "Install an asset (squad/business/clone/pack); --bootstrap wires audit hooks", visibility: "user" },
+  { name: "install", custom: true, category: "install", args: "<source> | --bootstrap | --check | --repair-path", summary: "Install an asset (squad/business/clone/pack); --bootstrap wires audit hooks; --repair-path cleans the Windows user PATH", visibility: "user" },
   { name: "uninstall", custom: true, category: "install", args: "<name> | --engine | --hooks", summary: "Remove an asset, the engine (keeps content), or just the hooks", visibility: "user" },
   { name: "installed", aliases: ["list-installed"], target: "_shared/scripts/list-installed.ts", category: "install", summary: "List active installations", visibility: "user" },
   { name: "update", aliases: ["self-update", "upgrade"], target: "harness/scripts/update.ts", category: "install", args: "[--check]", summary: "Update the engine: git pull (dev) or re-fetch the latest release (npx)", visibility: "user" },

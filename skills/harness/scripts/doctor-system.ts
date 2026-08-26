@@ -29,6 +29,7 @@ import { resolveScope, enumerate } from "../../_shared/lib/scope.ts";
 import { RUNTIME_TARGETS, RUNTIME_SKILL_DIRS, PROJECT_CONTRACT_FILES } from "../../_shared/lib/runtime-dirs.ts";
 import { scanLibrary, authorsPacks, STRIP_HINT } from "../../_shared/lib/watermark-scan.ts";
 import { listRuntimes } from "../../_shared/lib/host-agent-driver.ts";
+import { expandEnv, findTempNrvEntries, readUserPath, tempRoots } from "../../_shared/lib/windows-user-path.ts";
 
 const ANSI = {
   reset: "\x1b[0m", bold: "\x1b[1m", dim: "\x1b[2m",
@@ -332,6 +333,32 @@ if (which("claude")) {
   }
 
   try { fs.rmSync(envTmp, { recursive: true, force: true }); } catch { /* tmp */ }
+
+  // user PATH (Windows): engines up to 0.8.0 persisted %USERPROFILE%\.local\bin
+  // to HKCU\Environment\Path even when USERPROFILE was a test's temporary HOME,
+  // and deleting that HOME never removed the entry (issue #87: 22 of them on
+  // one machine). The value is read as stored, so an unexpanded
+  // %LOCALAPPDATA%\Temp\nrv-* entry is found too. Only reported here;
+  // `nrv install --repair-path --apply` removes exactly these.
+  if (process.platform === "win32") {
+    const reg = readUserPath();
+    if (!reg) {
+      add("env: user PATH", "WARN", "could not read HKCU\\Environment\\Path (no such value, or PowerShell unavailable) — temporary nrv entries not checked");
+    } else {
+      const stale = findTempNrvEntries(reg.value, tempRoots());
+      if (stale.length === 0) {
+        add("env: user PATH", "PASS", "no temporary nrv entries in HKCU\\Environment\\Path");
+      } else {
+        const exists = (e: string) => fs.existsSync(expandEnv(e));
+        const missing = stale.filter((e) => !exists(e)).length;
+        const shown = stale.slice(0, 3).map((e) => `${e}${exists(e) ? "" : " (missing)"}`);
+        add("env: user PATH", "WARN",
+          `${stale.length} temporary nrv entr${stale.length === 1 ? "y" : "ies"} in HKCU\\Environment\\Path, ${missing} pointing at `
+          + `directories that no longer exist: ${shown.join("; ")}${stale.length > shown.length ? `; … ${stale.length - shown.length} more` : ""}`
+          + " — review with `nrv install --repair-path`, remove with `nrv install --repair-path --apply`");
+      }
+    }
+  }
 }
 
 // SECTION 2: SKILLS

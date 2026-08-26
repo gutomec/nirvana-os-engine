@@ -16,6 +16,7 @@ nrv <subcommand> [args]
 |---|---|
 | `nrv install --bootstrap` | Wire audit hooks into Claude Code, Gemini-CLI, and Antigravity (run once after installing; idempotent). |
 | `nrv install --check` | Report status; exit 0 if ready, 1 if it needs setup. |
+| `nrv install --repair-path` | Windows: list temporary `nrv-*` entries left on the user PATH (nothing written); `--apply` removes exactly those. |
 | `nrv doctor` | Full system diagnostic (binaries, skills, hooks, patches). |
 
 ## Talk to it / run work

@@ -21,6 +21,7 @@
  *   nrv install --dry      # show what would change, don't write
  *   nrv install --uninstall  # remove our hooks (keeps user's other settings)
  *   nrv install --check    # report installation status, exit 0/1
+ *   nrv install --repair-path [--apply]  # Windows: drop temporary nrv-* entries from the user PATH
  *   nrv install -h         # this message
  */
 
@@ -30,7 +31,10 @@ import * as os from "node:os";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { parseArgs, EXIT, log } from "../lib/bun-helpers.ts";
-import { SKIP_PATH_PERSIST_ENV, skipPathPersist, isUnderTempRoot, broadcastEnvironmentChange } from "../lib/windows-user-path.ts";
+import {
+  SKIP_PATH_PERSIST_ENV, skipPathPersist, isUnderTempRoot, broadcastEnvironmentChange,
+  readUserPath, writeUserPath, removeTempNrvEntries, tempRoots, expandEnv, joinPath,
+} from "../lib/windows-user-path.ts";
 
 // ─── Marker that identifies hooks added by this script ────────────────
 // Any hook whose command contains one of these tokens is "ours" and is
@@ -401,6 +405,50 @@ function installDependencies(repoRoot: string, dry: boolean): { ok: boolean; not
   return { ok, notes };
 }
 
+// ─── Windows user PATH repair (issue #87) ─────────────────────────────
+// Engines up to 0.8.0 persisted %USERPROFILE%\.local\bin to the user PATH even
+// when USERPROFILE was a test's temporary HOME, and deleting that HOME never
+// removed the entry. Reports what would go by default; --apply rewrites the
+// value with exactly those entries dropped — everything else verbatim, in its
+// order, with the value kind it had — then broadcasts WM_SETTINGCHANGE so new
+// terminals see it.
+function repairUserPath(apply: boolean): number {
+  console.log("Windows user PATH repair (HKCU\\Environment\\Path)\n");
+  if (process.platform !== "win32") {
+    console.log("  only Windows keeps the user PATH in the registry — nothing to repair here.");
+    return EXIT.OK;
+  }
+  const reg = readUserPath();
+  if (!reg) {
+    console.log("  no user PATH value in HKCU\\Environment (or it could not be read) — nothing to repair.");
+    return EXIT.OK;
+  }
+  const { before, after, removed } = removeTempNrvEntries(reg.value, tempRoots());
+  const show = (entries: string[]) => entries.forEach((e, i) => {
+    const mark = removed.includes(e) ? `   ← temporary nrv entry${fs.existsSync(expandEnv(e)) ? "" : " (missing on disk)"}` : "";
+    console.log(`    ${String(i + 1).padStart(2)}. ${e === "" ? "(empty)" : e}${mark}`);
+  });
+  console.log(`  before (${before.length} entries):`);
+  show(before);
+  if (removed.length === 0) {
+    console.log("\n  no temporary nrv entries — nothing to remove.");
+    return EXIT.OK;
+  }
+  console.log(`\n  after (${after.length} entries):`);
+  show(after);
+  if (!apply) {
+    console.log(`\n(dry run — ${removed.length} entr${removed.length === 1 ? "y" : "ies"} would be removed, nothing written. Re-run with --apply to remove them.)`);
+    return EXIT.OK;
+  }
+  if (!writeUserPath({ value: joinPath(after), kind: reg.kind })) {
+    console.log("\n✗ could not write HKCU\\Environment\\Path — nothing changed.");
+    return EXIT.FAILURES;
+  }
+  broadcastEnvironmentChange();
+  console.log(`\n✓ removed ${removed.length} entr${removed.length === 1 ? "y" : "ies"}; user PATH rewritten (${reg.kind}) and WM_SETTINGCHANGE broadcast — new terminals see the clean PATH.`);
+  return EXIT.OK;
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────
 function main() {
   const { flags } = parseArgs();
@@ -412,6 +460,9 @@ USAGE
   nrv install --dry        show what would change, don't write anything
   nrv install --check      report status (exit 0 = ready, 1 = needs setup)
   nrv install --uninstall  remove our hooks (keeps user's other settings)
+  nrv install --repair-path          Windows: list temporary nrv-* entries left on the
+                                     user PATH by earlier test runs (nothing written)
+  nrv install --repair-path --apply  remove exactly those entries, keep the rest as is
   nrv install -h           this help
 
 WHAT IT DOES
@@ -436,6 +487,8 @@ inline, with no dispatch, no quality gate and no audit trail.
 `);
     process.exit(EXIT.OK);
   }
+
+  if (flags["repair-path"]) process.exit(repairUserPath(!!flags.apply && !flags.dry));
 
   const dryRun = !!flags.dry;
   const uninstall = !!flags.uninstall;
