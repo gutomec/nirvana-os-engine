@@ -12,6 +12,7 @@ import {
   STANDARD_PUBLICATION_ACTOR, inertStandardPublication, openStandardPublication, policySnapshotRefFor, standardIdempotencyKey,
   terminalForDelivery, type DeliveryVerdict, type StandardPublicationInput,
 } from "../lib/run-kernel/standard-publication.ts";
+import { transitionsTo } from "./helpers/run-states.ts";
 import { removeDir } from "./helpers/temp-dirs.ts";
 
 const roots: string[] = [];
@@ -42,22 +43,10 @@ function fixture() {
     const handle = openKernel(kernelPath);
     createRun(handle, { projectId: "prj_std", runId, traceId: runId, planId: `plan_${runId}`, target: { kind: "agent-x", slug: "agent-x" },
       policySnapshotRef: "gauntlet-light-canary", actor: glance, correlationId: `cor_${runId}` });
-    for (const to of pathTo(state)) transitionRun(handle, { projectId: "prj_std", runId, to, actor: glance, correlationId: `cor_${runId}` });
+    for (const to of transitionsTo(state)) transitionRun(handle, { projectId: "prj_std", runId, to, actor: glance, correlationId: `cor_${runId}` });
     handle.close();
   };
   return { root, kernelPath, audit, warnings, open, read, prepare };
-}
-
-/** The transitions that take a fresh Run to `state` (lib/run-kernel/lifecycle.ts). */
-function pathTo(state: CanonicalRunState): CanonicalRunState[] {
-  switch (state) {
-    case "prepared": return [];
-    case "rolled_back": return ["rolled_back"];
-    case "running": return ["running"];
-    case "cancelled": return ["running", "cancelling", "cancelled"];
-    case "abandoned": return ["running", "abandoned"];
-    default: return ["running", "verifying", state];
-  }
 }
 
 describe("terminalForDelivery", () => {

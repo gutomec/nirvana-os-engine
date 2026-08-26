@@ -64,7 +64,7 @@ import {
 import { createDispatchEvaluator, describeTarget } from "../lib/gauntlet/evaluator-adapter.ts";
 import { GAUNTLET_EVALUATOR_ENV, loadInstalledSquads, selectGauntletEvaluator } from "../lib/gauntlet/evaluator-selection.ts";
 import type { GauntletPlan } from "../lib/gauntlet/types.ts";
-import { createHarnessLegacyAdapter, openKernel, type TargetRef } from "../lib/run-kernel/index.ts";
+import { RunAlreadyTerminalError, createHarnessLegacyAdapter, openKernel, type TargetRef } from "../lib/run-kernel/index.ts";
 import { inertStandardPublication, openStandardPublication } from "../lib/run-kernel/standard-publication.ts";
 import { freezeExecutionSnapshot } from "../lib/runtime-snapshot.ts";
 
@@ -964,7 +964,7 @@ if (pendingCascade?.kind === "squad-only") {
       const result = runAgentXGauntlet({
         kernel, legacy: createHarnessLegacyAdapter({ ledger: legacy, auditCwd: projDir }), producerTarget,
         projectId: pid, runId: canonicalRunId, traceId: pid, brief, projectRoot, outputsRoot: oroot,
-        intensity: executionOptions.intensity, executionSnapshot,
+        intensity: executionOptions.intensity, executionSnapshot, audit: emit,
         expectedCostUsd: budget.roundBudgetUsd,
         executeCandidate: candidateRoot => produce(candidateRoot, brief),
         reviseCandidate: request => produce(request.candidateRoot, writeRevisionBrief(brief, request).text),
@@ -1114,7 +1114,7 @@ if (pendingCascade?.kind === "agent-x") {
       const result = runAgentXGauntlet({
         kernel, legacy: createHarnessLegacyAdapter({ ledger: legacy, auditCwd: projDir }),
         projectId: pid, runId: canonicalRunId, traceId: pid, brief, projectRoot: base, outputsRoot: oroot,
-        intensity: executionOptions.intensity, executionSnapshot,
+        intensity: executionOptions.intensity, executionSnapshot, audit: emit,
         expectedCostUsd: budget.roundBudgetUsd,
         executeCandidate: candidateRoot => produce(candidateRoot, brief, briefPath),
         reviseCandidate(request) {
@@ -1363,7 +1363,7 @@ if (wantExec) {
           kernel, legacy: createHarnessLegacyAdapter({ ledger: canaryLedger, auditCwd: projDir }),
           producerTarget: { kind: "business", slug }, projectId: pid, runId: canonicalRunId, traceId: pid,
           brief, projectRoot, outputsRoot: oroot, expectedCostUsd: budget.roundBudgetUsd, intensity: executionOptions.intensity,
-          executionSnapshot,
+          executionSnapshot, audit: emit,
           executeCandidate: candidateRoot => produce(candidateRoot, tmpBriefFile, brief),
           reviseCandidate(request) {
             const revision = writeRevisionBrief(brief, request);
@@ -1413,7 +1413,9 @@ if (wantExec) {
       });
     } catch (error) {
       kernel.close(); canaryLedger.close();
-      console.error(c("red", `✗ Business Gauntlet failed after production started: ${(error as Error).message}`));
+      console.error(c("red", error instanceof RunAlreadyTerminalError
+        ? `✗ Business Gauntlet refused: ${error.message}`
+        : `✗ Business Gauntlet failed after production started: ${(error as Error).message}`));
       process.exit(1);
     }
   }

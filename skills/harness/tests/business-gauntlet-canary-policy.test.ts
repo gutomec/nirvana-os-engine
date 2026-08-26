@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { decideBusinessCanary, runBusinessCanaryWithRollback } from "../lib/gauntlet/business-canary.ts";
+import { RunAlreadyTerminalError } from "../lib/run-kernel/index.ts";
 
 const selected = { businessSlug: "allowed-business", wantExec: true, teamMode: false, requestedMode: "gauntlet" as const,
   resolvedMode: "gauntlet" as const, allowlist: "other, allowed-business" };
@@ -39,5 +40,15 @@ describe("Business canary policy", () => {
     const attempt = { markProductionStarted() {}, run() { this.markProductionStarted(); throw new Error("producer failed"); }, shouldRollback: () => false };
     expect(() => runBusinessCanaryWithRollback({ attempt, runLegacy: () => { legacy += 1; return null as never; }, emit: () => {} })).toThrow("producer failed");
     expect(legacy).toBe(0);
+  });
+
+  test("a Run that already ended under the canary's id is refused, never rolled back into the legacy producer", () => {
+    let legacy = 0;
+    const events: string[] = [];
+    const attempt = { markProductionStarted() {}, run(): never { throw new RunAlreadyTerminalError("run_p", "completed"); }, shouldRollback: () => true };
+    expect(() => runBusinessCanaryWithRollback({ attempt, runLegacy: () => { legacy += 1; return null as never; }, emit: event => events.push(event) }))
+      .toThrow("run 'run_p' is already terminal (completed); pass a fresh --run-id");
+    expect(legacy).toBe(0);
+    expect(events).toEqual([]);
   });
 });

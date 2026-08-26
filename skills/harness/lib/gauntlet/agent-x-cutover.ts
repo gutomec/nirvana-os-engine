@@ -7,7 +7,7 @@ import { compileGauntletPlan } from "./compiler.ts";
 import { listCandidateRevisions, listScorecards } from "./store.ts";
 import type { CandidateRevision, EvaluationScorecard, GauntletIntensity, GauntletPlan, GauntletProjection } from "./types.ts";
 import {
-  RunKernelCompatibilityFacade, appendEvent, getRun, saveArtifactRef, verifyArtifactRef,
+  RunAlreadyTerminalError, RunKernelCompatibilityFacade, TERMINAL_RUN_STATES, appendEvent, getRun, saveArtifactRef, verifyArtifactRef,
   type ArtifactRef, type CanonicalRunState, type KernelHandle, type LegacyCompatibilityAdapter, type RunProjection, type TargetRef,
 } from "../run-kernel/index.ts";
 import { canonicalJson } from "../run-kernel/canonical-json.ts";
@@ -69,6 +69,8 @@ export interface AgentXGauntletInput {
   intensity?: GauntletIntensity;
   producerTarget?: TargetRef;
   executionSnapshot?: Record<string, unknown>;
+  /** Legacy audit emitter: `x_run_id_collision` when the Run under `runId` already ended. */
+  audit?: (event: string, payload: Record<string, unknown>) => void;
   executeCandidate(candidateRoot: string, context: AgentXCandidateContext): AgentXCandidateResult;
   /** Produces the next revision of one candidate from its evaluated defects. Without it a
    * `revising` Gauntlet is withheld with reason `revision_unavailable`. */
@@ -227,7 +229,17 @@ export function runAgentXGauntlet(input: AgentXGauntletInput): AgentXGauntletRes
   const snapshot = input.executionSnapshot ?? { runtime: { selection: "active", resolved: false },
     model: { selection: "runtime-default", resolved: false } };
   const policySnapshotRef = `snapshot_${createHash("sha256").update(canonicalJson(snapshot)).digest("hex").slice(0, 24)}`;
-  let run = getRun(input.kernel, input.projectId, input.runId) ?? facade.create({ projectId: input.projectId, runId: input.runId, traceId: input.traceId,
+  // Local alias named `emit` so check-audit-parity's literal scan sees the event.
+  const emit = input.audit ?? (() => {});
+  const existing = getRun(input.kernel, input.projectId, input.runId);
+  if (existing && TERMINAL_RUN_STATES.has(existing.state)) {
+    // Fail closed before any kernel write: a Run that already ended is neither re-created nor
+    // transitioned, and its candidates and scorecards are not this dispatch's to resume.
+    emit("x_run_id_collision", { trace_id: input.traceId, project_id: input.projectId, run_id: input.runId, state: existing.state,
+      target_kind: producer.kind, run_target: existing.target, mode: "gauntlet" });
+    throw new RunAlreadyTerminalError(input.runId, existing.state);
+  }
+  let run = existing ?? facade.create({ projectId: input.projectId, runId: input.runId, traceId: input.traceId,
     planId: `plan_${input.runId}`, target: producer, policySnapshotRef,
     actor, correlationId, idempotencyKey: `agent-x-gauntlet:${input.runId}:create` });
   // An adopted Run (prepared elsewhere, e.g. by Glance with --run-id) keeps the trace it was

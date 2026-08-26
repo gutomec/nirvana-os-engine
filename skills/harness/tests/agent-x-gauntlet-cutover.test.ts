@@ -7,7 +7,8 @@ import {
   type AgentXGauntletEvaluator,
 } from "../lib/gauntlet/agent-x-cutover.ts";
 import { compileGauntletPlan } from "../lib/gauntlet/compiler.ts";
-import { createRun, getRun, listEvents, openKernel, type KernelHandle } from "../lib/run-kernel/index.ts";
+import { RunAlreadyTerminalError, TERMINAL_RUN_STATES, createRun, getRun, listEvents, openKernel, transitionRun, type KernelHandle } from "../lib/run-kernel/index.ts";
+import { transitionsTo } from "./helpers/run-states.ts";
 import { KERNEL_BUDGET_MS } from "./helpers/test-budgets.ts";
 
 const roots: string[] = [];
@@ -215,5 +216,36 @@ describe("agent-x Gauntlet cutover", () => {
       expect(executions).toBe(intensity === "light" ? 1 : 3);
       expect(revisions).toBe(0); expect(finalGates).toBe(0);
     }
+  }, KERNEL_BUDGET_MS);
+
+  test("refuses a Run that already ended under the same id: x_run_id_collision, RunAlreadyTerminalError, no producer, nothing appended", () => {
+    const fixture = setup();
+    const glance = { kind: "control-plane", id: "glance" };
+    const audit: Array<{ event: string; payload: Record<string, unknown> }> = [];
+    let executions = 0;
+    const states = [...TERMINAL_RUN_STATES];
+    for (const state of states) {
+      const runId = `run_${state}`;
+      createRun(fixture.handle, { projectId: "prj_canary", runId, traceId: "trace_glance", planId: `plan_${runId}`,
+        target: { kind: "squad", slug: "brandcraft", capabilityId: "squad.execute" }, policySnapshotRef: "gauntlet-light-canary", actor: glance, correlationId: `cor_${runId}` });
+      for (const to of transitionsTo(state)) transitionRun(fixture.handle, { projectId: "prj_canary", runId, to, actor: glance, correlationId: `cor_${runId}` });
+      const before = listEvents(fixture.handle, "prj_canary").length;
+      let thrown: unknown;
+      try {
+        runAgentXGauntlet({ kernel: fixture.handle, projectId: "prj_canary", runId, traceId: "trace_dispatch", brief: "Build",
+          projectRoot: fixture.root, outputsRoot: fixture.outputsRoot, expectedCostUsd: 1, evaluator: evaluator(),
+          audit: (event, payload) => audit.push({ event, payload }),
+          executeCandidate() { executions += 1; return { ok: true, sessionId: null }; },
+          finalGate() { throw new Error("must not run"); } });
+      } catch (error) { thrown = error; }
+      expect(thrown, state).toBeInstanceOf(RunAlreadyTerminalError);
+      expect((thrown as Error).message, state).toBe(`run '${runId}' is already terminal (${state}); pass a fresh --run-id`);
+      expect(getRun(fixture.handle, "prj_canary", runId)?.state, state).toBe(state);
+      expect(listEvents(fixture.handle, "prj_canary"), state).toHaveLength(before);
+    }
+    expect(executions).toBe(0);
+    expect(audit.map(entry => entry.event)).toEqual(states.map(() => "x_run_id_collision"));
+    expect(audit[0].payload).toEqual({ trace_id: "trace_dispatch", project_id: "prj_canary", run_id: `run_${states[0]}`, state: states[0],
+      target_kind: "agent-x", run_target: { kind: "squad", slug: "brandcraft", capabilityId: "squad.execute" }, mode: "gauntlet" });
   }, KERNEL_BUDGET_MS);
 });
