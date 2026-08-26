@@ -10,8 +10,11 @@
 # sobrevivem para checkouts parciais e para o tarball instalado.
 name: smoke
 on:
+  # Um run por mudança: `push` só em main (pós-merge); branches de trabalho
+  # recebem o CI pelo `pull_request` abaixo. Antes, um push numa `feat/**`
+  # com PR aberto disparava dois runs completos e o merge esperava pelos dois.
   push:
-    branches: [main, "feat/**"]
+    branches: [main]
   # PRs de fork: `pull_request` (nunca pull_request_target) — roda o código do
   # contribuidor SEM secrets e sem token de escrita. É o que dá feedback de CI
   # a quem contribui, e é seguro por construção.
