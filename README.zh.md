@@ -150,7 +150,7 @@ and a competitive teardown.
 | `nrv search "<topic>"` | 在全部三个注册表中查找 capability |
 | `nrv dispatch --business <slug> \| --squad <slug> \| --agent-x "<brief>" --exec` | 针对你指定的目标运行一份简报；从不咨询路由器 |
 | `nrv run <business> "<brief>" --execution-mode=gauntlet --gauntlet-intensity=light\|balanced\|exhaustive` | 选择进入 Gauntlet：候选、评估和修订轮次，分三档强度（Business 目标需要 `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST`） |
-| `nrv multi-target plan\|run\|status <plan.json>` | 在 Run Kernel 之上编译、执行或检视一份多目标计划（`run` 需要 `NIRVANA_MULTI_TARGET_ENGINE=1`） |
+| `nrv multi-target plan\|run\|status <plan.json>` | 在 Run Kernel 之上编译、执行或检视一份多目标计划（`NIRVANA_MULTI_TARGET_KILL_SWITCH=1` 关闭 `run`） |
 | `nrv update <pack>` | 更新一个已安装的 pack |
 | `nrv doctor` | 检查安装；在 Windows 上，`nrv install --repair-path` 会清理它警告过的用户 PATH 条目 |
 

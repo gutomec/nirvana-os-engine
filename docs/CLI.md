@@ -30,7 +30,7 @@ nrv <subcommand> [args]
 | `nrv revise <project> "<change>"` | Apply a change while keeping the same runtime session. |
 | `nrv launch <name> --pillars=brand,marketing,gtm` | Scaffold a multi-pillar 360° launch (default: all 11 pillars). |
 | `nrv ask <clone> "<question>"` | Talk directly to a single specialist (mind-clone), DNA injected. |
-| `nrv multi-target plan\|run\|status <plan.json>` | Multi-target engine by plan file (alias `nrv mt`): `plan` compiles the waves, `run` executes them over the Run Kernel (needs `NIRVANA_MULTI_TARGET_ENGINE=1`), `status` reads the projection. |
+| `nrv multi-target plan\|run\|status <plan.json>` | Multi-target engine by plan file (alias `nrv mt`): `plan` compiles the waves, `run` executes them over the Run Kernel (`NIRVANA_MULTI_TARGET_KILL_SWITCH=1` turns it off), `status` reads the projection. |
 
 Useful flags on `run` / `auto`: `--team` (real multi-employee orchestration), `--zip` / `--pdf` (bundle deliverables), `--runtime=claude-code|codex|gemini-cli|antigravity-cli`, `--max-budget=<usd>`, `--timeout=<min>`, `--mode=agentic|fast` (routing mode), `--execution-mode=standard|gauntlet|auto` (default `standard`), `--gauntlet-intensity=light|balanced|exhaustive` (a Business target needs `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST=<slug>`), `--run-id=<runId>` (adopt a Run already prepared in the project's kernel, the way Glance does).
 

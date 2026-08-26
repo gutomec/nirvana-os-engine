@@ -150,7 +150,7 @@ and a competitive teardown.
 | `nrv search "<topic>"` | तीनों रजिस्ट्रियों में capabilities खोजता है |
 | `nrv dispatch --business <slug> \| --squad <slug> \| --agent-x "<brief>" --exec` | आपके नामित लक्ष्य के विरुद्ध एक ब्रीफ़ चलाता है; राउटर से कभी नहीं पूछा जाता |
 | `nrv run <business> "<brief>" --execution-mode=gauntlet --gauntlet-intensity=light\|balanced\|exhaustive` | Gauntlet में opt-in करता है: तीन तीव्रताओं में उम्मीदवार, मूल्यांकन और संशोधन दौर (Business लक्ष्यों को `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST` चाहिए) |
-| `nrv multi-target plan\|run\|status <plan.json>` | Run Kernel के ऊपर एक multi-target प्लान को कंपाइल, निष्पादित या निरीक्षण करता है (`run` को `NIRVANA_MULTI_TARGET_ENGINE=1` चाहिए) |
+| `nrv multi-target plan\|run\|status <plan.json>` | Run Kernel के ऊपर एक multi-target प्लान को कंपाइल, निष्पादित या निरीक्षण करता है (`NIRVANA_MULTI_TARGET_KILL_SWITCH=1` `run` को बंद करता है) |
 | `nrv update <pack>` | एक इंस्टॉल किया हुआ pack अपडेट करता है |
 | `nrv doctor` | इंस्टॉलेशन जाँचता है; Windows पर, `nrv install --repair-path` उन यूज़र PATH एंट्रीज़ को साफ़ करता है जिनके बारे में यह चेतावनी देता है |
 

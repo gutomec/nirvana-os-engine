@@ -78,4 +78,4 @@ Ausência de política ou de `maxCostUsd` retorna reserva nula e preserva o plan
 
 ## Limitações e próximo cutover
 
-O coordenador consome decisões e reservas pelas portas do Run Kernel e pelos adapters de dispatch, com entrada pública opt-in em `nrv multi-target run` ([Comando multi-target](gauntlet-multi-target-cli.md)). A reserva é preventiva e não representa dinheiro consumido; o custo observado vem dos eventos `agent_executed` de cada nó. Nenhuma rota existente do dispatch foi alterada.
+O coordenador consome decisões e reservas pelas portas do Run Kernel e pelos adapters de dispatch, com entrada pública em `nrv multi-target run` ([Comando multi-target](gauntlet-multi-target-cli.md)). A reserva é preventiva e não representa dinheiro consumido; o custo observado vem dos eventos `agent_executed` de cada nó. Nenhuma rota existente do dispatch foi alterada.

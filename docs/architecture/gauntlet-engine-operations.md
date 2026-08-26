@@ -33,12 +33,11 @@ O kill switch e qualquer bypass são avaliados antes do producer. Falha pré-pro
 
 ```bash
 nrv multi-target plan .nirvana/plans/proj-x.json            # compila e imprime ondas, decisões e reserva
-export NIRVANA_MULTI_TARGET_ENGINE=1
 nrv multi-target run .nirvana/plans/proj-x.json             # executa; repetir retoma
 nrv multi-target status .nirvana/plans/proj-x.json --json   # projeção do Run, sem side effects
 ```
 
-`run` é opt-in e `NIRVANA_MULTI_TARGET_KILL_SWITCH=1` o desliga. Exit 0 entregue, 1 falhou, 2 retido, 4 plano inválido ou opt-in ausente. Cada nó roda `nrv dispatch` como subprocesso com alvo explícito (`--business`, `--squad`, `--agent-x`), então exit codes, audit e canários do caminho legado não mudam. Schema, audit, retomada e limitações em [Comando multi-target](gauntlet-multi-target-cli.md).
+`run` executa sem variável; `NIRVANA_MULTI_TARGET_KILL_SWITCH=1` o desliga, e `NIRVANA_MULTI_TARGET_ENGINE=0` também. Exit 0 entregue, 1 falhou, 2 retido, 4 plano inválido ou engine desligado. Cada nó roda `nrv dispatch` como subprocesso com alvo explícito (`--business`, `--squad`, `--agent-x`), então exit codes, audit e canários do caminho legado não mudam. Schema, audit, retomada e limitações em [Comando multi-target](gauntlet-multi-target-cli.md).
 
 ## Contrato de aplicação
 

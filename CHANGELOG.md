@@ -8,6 +8,29 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### `nrv multi-target run` is on by default; a kill switch turns it off
+
+The engine has 1.4k tests, CI on three systems and two real smoke runs, so the
+opt-in of the first releases is inverted: `run` executes with no variable set.
+`NIRVANA_MULTI_TARGET_KILL_SWITCH=1` (or `true`, `on`) switches it off, and so
+does `NIRVANA_MULTI_TARGET_ENGINE=0` (or `false`, `off`), for environments
+that already used the flag that way. `NIRVANA_MULTI_TARGET_ENGINE=1` is still
+accepted and changes nothing. A refusal names the variable and its value on
+stderr, writes `x_multi_target_disabled` to the audit, exits 4 and touches
+neither the kernel nor the workspace. `plan` and `status` are unchanged.
+
+| Environment | `run` |
+| --- | --- |
+| no variable | executes |
+| `NIRVANA_MULTI_TARGET_KILL_SWITCH=1`, `true` or `on` | exit 4, even with `NIRVANA_MULTI_TARGET_ENGINE=1` |
+| `NIRVANA_MULTI_TARGET_ENGINE=0`, `false` or `off` | exit 4 |
+| `NIRVANA_MULTI_TARGET_ENGINE=1` | executes; accepted for compatibility, no effect |
+
+The harness reference and `SKILL.md` now state when the maestro takes the
+scripted engine instead of the in-process protocol: Gauntlet per node, a
+canonical Run in the kernel, a resume after a failure, or a headless or
+shell-only session.
+
 ### The synthesis of a multi-target plan takes its own Gauntlet limits
 
 Under `each-target-and-final` and `adaptive`, the aggregate reservation

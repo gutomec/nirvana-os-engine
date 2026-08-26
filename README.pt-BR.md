@@ -150,7 +150,7 @@ A camada paga é **conteúdo, não capacidade**: coleções curadas e prontas pa
 | `nrv search "<topic>"` | Busca capabilities pelos três registries |
 | `nrv dispatch --business <slug> \| --squad <slug> \| --agent-x "<brief>" --exec` | Roda um briefing contra um alvo que você nomeia; o roteador nunca é consultado |
 | `nrv run <business> "<brief>" --execution-mode=gauntlet --gauntlet-intensity=light\|balanced\|exhaustive` | Opta pelo Gauntlet: candidates, avaliações e rodadas de revisão em três intensidades (alvos Business exigem `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST`) |
-| `nrv multi-target plan\|run\|status <plan.json>` | Compila, executa ou inspeciona um plano multi-target sobre o Run Kernel (`run` exige `NIRVANA_MULTI_TARGET_ENGINE=1`) |
+| `nrv multi-target plan\|run\|status <plan.json>` | Compila, executa ou inspeciona um plano multi-target sobre o Run Kernel (`NIRVANA_MULTI_TARGET_KILL_SWITCH=1` desliga o `run`) |
 | `nrv update <pack>` | Atualiza um pack instalado |
 | `nrv doctor` | Verifica a instalação; no Windows, `nrv install --repair-path` limpa as entradas do PATH do usuário sobre as quais ele avisa |
 

@@ -150,7 +150,7 @@ and a competitive teardown.
 | `nrv search "<topic>"` | العثور على القدرات عبر السجلات الثلاثة كلها |
 | `nrv dispatch --business <slug> \| --squad <slug> \| --agent-x "<brief>" --exec` | تشغيل موجز على هدف تسمّيه أنت؛ لا يُستشار الموجّه أبداً |
 | `nrv run <business> "<brief>" --execution-mode=gauntlet --gauntlet-intensity=light\|balanced\|exhaustive` | الانضمام إلى Gauntlet: مرشحون وتقييمات وجولات مراجعة بثلاث شدّات (أهداف Business تحتاج `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST`) |
-| `nrv multi-target plan\|run\|status <plan.json>` | تجميع خطة متعددة الأهداف أو تنفيذها أو فحصها فوق Run Kernel (`run` يحتاج `NIRVANA_MULTI_TARGET_ENGINE=1`) |
+| `nrv multi-target plan\|run\|status <plan.json>` | تجميع خطة متعددة الأهداف أو تنفيذها أو فحصها فوق Run Kernel (`NIRVANA_MULTI_TARGET_KILL_SWITCH=1` يعطّل `run`) |
 | `nrv update <pack>` | تحديث حزمة مثبّتة |
 | `nrv doctor` | فحص التثبيت؛ على Windows، ينظّف `nrv install --repair-path` مدخلات PATH الخاصة بالمستخدم التي يحذّر منها |
 

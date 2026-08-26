@@ -150,7 +150,7 @@ The paid layer is **content, not capability**: curated, ready-to-run collections
 | `nrv search "<topic>"` | Find capabilities across all three registries |
 | `nrv dispatch --business <slug> \| --squad <slug> \| --agent-x "<brief>" --exec` | Run a brief against a target you name; the router is never consulted |
 | `nrv run <business> "<brief>" --execution-mode=gauntlet --gauntlet-intensity=light\|balanced\|exhaustive` | Opt into the Gauntlet: candidates, evaluations, and revision rounds at three intensities (Business targets need `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST`) |
-| `nrv multi-target plan\|run\|status <plan.json>` | Compile, execute, or inspect a multi-target plan over the Run Kernel (`run` needs `NIRVANA_MULTI_TARGET_ENGINE=1`) |
+| `nrv multi-target plan\|run\|status <plan.json>` | Compile, execute, or inspect a multi-target plan over the Run Kernel (`NIRVANA_MULTI_TARGET_KILL_SWITCH=1` turns `run` off) |
 | `nrv update <pack>` | Update an installed pack |
 | `nrv doctor` | Check the installation; on Windows, `nrv install --repair-path` cleans the user PATH entries it warns about |
 
