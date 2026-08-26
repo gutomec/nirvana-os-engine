@@ -990,7 +990,7 @@ if (pendingCascade?.kind === "squad-only") {
   const publication = openStandardPublication({ kernelPath: canaryKernelPath(projectRoot), projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag),
     traceId: pid, target: { kind: "squad", slug: squads[0], capabilityId }, snapshot: frozenExecutionSnapshot(pid, rt, "squad"),
     audit: emit, warn: line => console.error(c("yellow", line)) });
-  if (publication.incompatible) process.exit(1);
+  if (publication.incompatible || publication.collided) process.exit(1);
   ledgerTry(() => {
     ledgerHandle = runLedger.openLedger();
     const row = runLedger.openRun(ledgerHandle, {
@@ -1142,7 +1142,7 @@ if (pendingCascade?.kind === "agent-x") {
   const publication = openStandardPublication({ kernelPath: canaryKernelPath(base), projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag),
     traceId: pid, target: { kind: "agent-x", slug: "agent-x" }, snapshot: frozenExecutionSnapshot(pid, rt, "agent-x"),
     audit: emit, warn: line => console.error(c("yellow", line)) });
-  if (publication.incompatible) process.exit(1);
+  if (publication.incompatible || publication.collided) process.exit(1);
   ledgerTry(() => {
     ledgerHandle = runLedger.openLedger();
     const row = runLedger.openRun(ledgerHandle, {
@@ -1422,8 +1422,9 @@ if (wantExec) {
   const publication = businessCanaryDecision.enabled ? inertStandardPublication(canonicalRunIdFor(pid, runIdFlag))
     : openStandardPublication({ kernelPath: canaryKernelPath(projectRoot), projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag), traceId: pid,
       target: { kind: "business", slug }, snapshot: frozenExecutionSnapshot(pid, rt, "business"), audit: emit, warn: line => console.error(c("yellow", line)) });
-  if (publication.incompatible) {
-    if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "failed", { error: "runtime incompatible with the provider catalog" }));
+  if (publication.incompatible || publication.collided) {
+    const error = publication.collided ? `run ${publication.runId} is already terminal` : "runtime incompatible with the provider catalog";
+    if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "failed", { error }));
     process.exit(1);
   }
   if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "running", { childPid: process.pid }));

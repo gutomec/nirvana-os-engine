@@ -1,13 +1,13 @@
 // standard-publication.test.ts — the standard-mode publication of one dispatch as a
 // canonical Run (lib/run-kernel/standard-publication.ts): delivery result → terminal
-// state, adoption of a Run prepared with --run-id, idempotent keys, and the fail-open
-// contract when the kernel is unavailable or refuses a transition.
+// state, adoption of a Run prepared with --run-id, the refusal of a Run that already ended,
+// idempotent keys, and the fail-open contract when the kernel is unavailable or refuses a transition.
 // Runs with: bun test skills/harness/tests
 import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { createRun, getRun, listEvents, openKernel, transitionRun, type RunEvent } from "../lib/run-kernel/index.ts";
+import { TERMINAL_RUN_STATES, createRun, getRun, listEvents, openKernel, transitionRun, type CanonicalRunState, type RunEvent } from "../lib/run-kernel/index.ts";
 import {
   STANDARD_PUBLICATION_ACTOR, inertStandardPublication, openStandardPublication, policySnapshotRefFor, standardIdempotencyKey,
   terminalForDelivery, type DeliveryVerdict, type StandardPublicationInput,
@@ -37,16 +37,27 @@ function fixture() {
     try { return { run: getRun(handle, "prj_std", runId), events: listEvents(handle, "prj_std").filter(event => event.runId === runId) }; }
     finally { handle.close(); }
   };
-  const prepare = (runId: string, state: "prepared" | "rolled_back" = "prepared") => {
+  const glance = { kind: "control-plane", id: "glance" };
+  const prepare = (runId: string, state: CanonicalRunState = "prepared") => {
     const handle = openKernel(kernelPath);
     createRun(handle, { projectId: "prj_std", runId, traceId: runId, planId: `plan_${runId}`, target: { kind: "agent-x", slug: "agent-x" },
-      policySnapshotRef: "gauntlet-light-canary", actor: { kind: "control-plane", id: "glance" }, correlationId: `cor_${runId}` });
-    if (state === "rolled_back") {
-      transitionRun(handle, { projectId: "prj_std", runId, to: "rolled_back", actor: { kind: "control-plane", id: "glance" }, correlationId: `cor_${runId}` });
-    }
+      policySnapshotRef: "gauntlet-light-canary", actor: glance, correlationId: `cor_${runId}` });
+    for (const to of pathTo(state)) transitionRun(handle, { projectId: "prj_std", runId, to, actor: glance, correlationId: `cor_${runId}` });
     handle.close();
   };
   return { root, kernelPath, audit, warnings, open, read, prepare };
+}
+
+/** The transitions that take a fresh Run to `state` (lib/run-kernel/lifecycle.ts). */
+function pathTo(state: CanonicalRunState): CanonicalRunState[] {
+  switch (state) {
+    case "prepared": return [];
+    case "rolled_back": return ["rolled_back"];
+    case "running": return ["running"];
+    case "cancelled": return ["running", "cancelling", "cancelled"];
+    case "abandoned": return ["running", "abandoned"];
+    default: return ["running", "verifying", state];
+  }
 }
 
 describe("terminalForDelivery", () => {
@@ -163,14 +174,35 @@ describe("openStandardPublication", () => {
 
   test("a transition the kernel refuses turns the publication inert without touching the legacy flow", () => {
     const fx = fixture();
-    fx.prepare("run_ended", "rolled_back");
-    const publication = fx.open({ runId: "run_ended" });
-    expect(publication.active).toBe(true);
+    fx.prepare("run_live", "running");
+    const publication = fx.open({ runId: "run_live" });
+    expect(publication).toMatchObject({ active: true, collided: false });
     expect(() => { publication.start(); publication.verify(); publication.finish({ exitCode: 0, gateOutcome: "pass" }, "/out"); }).not.toThrow();
     expect(fx.audit.map(entry => entry.event)).toEqual(["x_run_kernel_unavailable"]);
-    expect(fx.audit[0].payload).toMatchObject({ run_id: "run_ended", stage: "running" });
-    expect(fx.audit[0].payload.error).toContain("illegal transition rolled_back -> running");
-    expect(fx.read("run_ended").run?.state).toBe("rolled_back");
+    expect(fx.audit[0].payload).toMatchObject({ run_id: "run_live", stage: "running" });
+    expect(fx.audit[0].payload.error).toContain("illegal transition running -> running");
+    expect(fx.read("run_live").run?.state).toBe("running");
+  });
+
+  test("a Run that already ended under the same id is refused before any producer: x_run_id_collision, collided, nothing appended", () => {
+    const fx = fixture();
+    const states = [...TERMINAL_RUN_STATES];
+    expect(states.sort()).toEqual(["abandoned", "cancelled", "completed", "delivered_with_reservations", "failed", "rolled_back", "withheld"]);
+    for (const state of states) {
+      const runId = `run_${state}`;
+      fx.prepare(runId, state);
+      const before = fx.read(runId).events.length;
+      const publication = fx.open({ runId });
+      expect(publication, state).toMatchObject({ runId, active: false, incompatible: false, collided: true });
+      expect(() => { publication.start(); publication.verify(); publication.finish({ exitCode: 0, gateOutcome: "pass" }, "/out"); }).not.toThrow();
+      expect(fx.read(runId).run?.state, state).toBe(state);
+      expect(fx.read(runId).events, state).toHaveLength(before);
+      expect(fx.warnings.at(-1), state).toBe(`[run-kernel] run '${runId}' is already terminal (${state}); pass a fresh --run-id`);
+    }
+    expect(fx.audit.map(entry => entry.event)).toEqual(states.map(() => "x_run_id_collision"));
+    expect(fx.audit[0].payload).toEqual({ trace_id: "trace_std", project_id: "prj_std", run_id: "run_abandoned", state: "abandoned",
+      kernel_path: fx.kernelPath, target_kind: "squad", run_target: { kind: "agent-x", slug: "agent-x" }, mode: "standard" });
+    expect(fx.audit.some(entry => entry.event === "x_run_kernel_unavailable")).toBe(false);
   });
 
   test("broker errors in the frozen snapshot end the Run rolled_back before any producer (RT-002)", () => {

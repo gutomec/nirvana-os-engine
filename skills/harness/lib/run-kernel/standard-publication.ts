@@ -16,8 +16,15 @@
 // the legacy behaviour: the failure is recorded as `x_run_kernel_unavailable` in
 // the audit, the publication becomes inert and the dispatch continues with its
 // usual exit codes, artifacts, audit and session files.
+//
+// One refusal is fail-closed: a Run that already ended under the given id. Every node of a
+// multi-target plan shared `--project`, so every node derived `run_<project>`: wave 1 published
+// and completed that Run, wave 2 replayed its events and wave 3 died on an illegal transition.
+// Continuing a terminal Run is never right, so the publication records `x_run_id_collision`,
+// reports `collided` and the dispatch exits 1 before any producer.
 import { createHash } from "node:crypto";
 import { canonicalJson } from "./canonical-json.ts";
+import { RunAlreadyTerminalError, TERMINAL_RUN_STATES } from "./lifecycle.ts";
 import { appendEvent, createRun, getRun, openKernel, transitionRun, type KernelHandle } from "./store.ts";
 import type { CanonicalRunState, TargetRef } from "./types.ts";
 import { terminalForGate } from "../gauntlet/agent-x-cutover.ts";
@@ -49,6 +56,8 @@ export interface StandardPublication {
   readonly active: boolean;
   /** True when the frozen snapshot carries broker errors: the Run ended `rolled_back` before any producer. */
   readonly incompatible: boolean;
+  /** True when a Run under this id had already ended: the dispatch exits 1 before any producer (`x_run_id_collision`). */
+  readonly collided: boolean;
   /** `prepared → running`, before the executor. */
   start(): void;
   /** `running → verifying`, before the delivery pipeline. */
@@ -75,8 +84,8 @@ export function terminalForDelivery(verdict: DeliveryVerdict): CanonicalRunState
 }
 
 /** A publication that records nothing; used when the kernel is unavailable or the caller opted out. */
-export function inertStandardPublication(runId: string, incompatible = false): StandardPublication {
-  return { runId, active: false, incompatible, start() {}, verify() {}, finish() {} };
+export function inertStandardPublication(runId: string, incompatible = false, collided = false): StandardPublication {
+  return { runId, active: false, incompatible, collided, start() {}, verify() {}, finish() {} };
 }
 
 export function openStandardPublication(input: StandardPublicationInput): StandardPublication {
@@ -102,7 +111,16 @@ export function openStandardPublication(input: StandardPublicationInput): Standa
     const policySnapshotRef = policySnapshotRefFor(input.snapshot);
     // An adopted Run (prepared by Glance with --run-id) keeps the trace it was prepared with, so
     // every event of one Run shares one trace; a fresh Run uses the dispatch's.
-    const run = getRun(kernel, projectId, runId) ?? createRun(kernel, { projectId, runId, traceId, planId: `plan_${runId}`, target,
+    const existing = getRun(kernel, projectId, runId);
+    if (existing && TERMINAL_RUN_STATES.has(existing.state)) {
+      const refusal = new RunAlreadyTerminalError(runId, existing.state);
+      warn(`[run-kernel] ${refusal.message}`);
+      emit("x_run_id_collision", { trace_id: input.traceId, project_id: projectId, run_id: runId, state: existing.state,
+        kernel_path: input.kernelPath, target_kind: target.kind, run_target: existing.target, mode: "standard" });
+      closeKernel();
+      return inertStandardPublication(runId, false, true);
+    }
+    const run = existing ?? createRun(kernel, { projectId, runId, traceId, planId: `plan_${runId}`, target,
       policySnapshotRef, actor: STANDARD_PUBLICATION_ACTOR, correlationId, idempotencyKey: key("create") });
     traceId = run.traceId;
     appendEvent(kernel, { projectId, runId, traceId, type: "runtime.selection_snapshot", actor: STANDARD_PUBLICATION_ACTOR, correlationId,
@@ -128,7 +146,7 @@ export function openStandardPublication(input: StandardPublicationInput): Standa
     } catch (error) { unavailable(step, error); }
   };
   return {
-    runId, active: true, incompatible: false,
+    runId, active: true, incompatible: false, collided: false,
     start() { transition("running", "running"); },
     verify() { transition("verifying", "verifying"); },
     finish(verdict, outputsRoot) {
