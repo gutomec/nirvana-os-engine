@@ -112,19 +112,34 @@ export function engineConfigPath(env: SettingsEnv = process.env): string | null 
   return null;
 }
 
-function sameDir(a: string, b: string): boolean {
-  try { return fs.realpathSync(a) === fs.realpathSync(b); } catch { return path.resolve(a) === path.resolve(b); }
+/** One spelling per directory: the OS's own real path (expands Windows 8.3 short
+ * names such as `RUNNER~1`, which `realpathSync` leaves alone), case-folded where
+ * the filesystem is. */
+function canonicalDir(dir: string): string {
+  let resolved = path.resolve(dir);
+  try {
+    const native = (fs.realpathSync as unknown as { native?: (target: string) => string }).native;
+    resolved = native ? native(resolved) : fs.realpathSync(resolved);
+  } catch { /* keep the resolved spelling */ }
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 }
 
-/** NIRVANA_PROJECT_ROOT, else the nearest ancestor of `cwd` with a `.nirvana/` directory; never HOME, never the root. */
+/**
+ * NIRVANA_PROJECT_ROOT, else the nearest ancestor of `cwd` with a `.nirvana/`
+ * directory. Never HOME (under any of its names) and never the root; and a
+ * `.nirvana/` that holds `skills/` is the engine's own store, not a project,
+ * whatever directory it sits in: on Windows the temp directory lives under
+ * HOME, so a walk from a temp cwd reaches the store before the root.
+ */
 export function discoverProjectRoot(env: SettingsEnv = process.env, cwd: string = process.cwd()): string | null {
   if (env.NIRVANA_PROJECT_ROOT) return path.resolve(env.NIRVANA_PROJECT_ROOT);
-  const homes = [env.NIRVANA_HOME, env.HOME, os.homedir()].filter((dir): dir is string => !!dir);
+  const homes = new Set([env.NIRVANA_HOME, env.HOME, env.USERPROFILE, os.homedir()].filter((dir): dir is string => !!dir).map(canonicalDir));
   let dir = path.resolve(cwd);
   for (let depth = 0; depth < 40; depth++) {
-    if (dir === path.parse(dir).root || homes.some((home) => sameDir(home, dir))) return null;
+    if (dir === path.parse(dir).root || homes.has(canonicalDir(dir))) return null;
+    const store = path.join(dir, ".nirvana");
     try {
-      if (fs.statSync(path.join(dir, ".nirvana")).isDirectory()) return dir;
+      if (fs.statSync(store).isDirectory()) return fs.existsSync(path.join(store, "skills")) ? null : dir;
     } catch { /* not here */ }
     const parent = path.dirname(dir);
     if (parent === dir) return null;

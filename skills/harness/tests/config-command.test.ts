@@ -43,8 +43,11 @@ function nrvConfig(setup: Fixture, args: string[], opts: { cwd?: string; env?: R
     NIRVANA_SCOPE_QUIET: "1", NIRVANA_SKIP_PATH_PERSIST: "1", NO_COLOR: "1",
   }, opts.env ?? {});
   const r = spawnSync(process.execPath, [SCRIPT, ...args], { cwd: opts.cwd ?? setup.root, encoding: "utf8", env });
-  return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
+  // `out` / `err` read paths with slashes whatever the OS prints; `stdout` stays raw for JSON.
+  return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "", out: slashes(r.stdout ?? ""), err: slashes(r.stderr ?? "") };
 }
+
+const slashes = (text: string): string => text.replace(/\\/g, "/");
 
 function auditEvents(setup: Fixture): Array<Record<string, unknown>> {
   let days: string[] = [];
@@ -61,9 +64,9 @@ describe("nrv config", () => {
     fs.writeFileSync(setup.globalFile, "routing:\n  mode: fast\n", "utf8");
     const text = nrvConfig(setup, ["list"]);
     expect(text.status).toBe(0);
-    expect(text.stdout).toMatch(/^chave\s+valor\s+origem\s+padrão$/m);
-    expect(text.stdout).toMatch(/^routing\.mode\s+fast\s+global ~\/\.nirvana\/config\.yaml\s+agentic$/m);
-    expect(text.stdout).toMatch(/^multi_target\.enabled\s+true\s+padrão\s+true$/m);
+    expect(text.out).toMatch(/^chave\s+valor\s+origem\s+padrão$/m);
+    expect(text.out).toMatch(/^routing\.mode\s+fast\s+global ~\/\.nirvana\/config\.yaml\s+agentic$/m);
+    expect(text.out).toMatch(/^multi_target\.enabled\s+true\s+padrão\s+true$/m);
     const json = nrvConfig(setup, ["list", "--json"], { env: { NIRVANA_ROUTER_DENSE: "1" } });
     expect(json.status).toBe(0);
     const rows = JSON.parse(json.stdout) as Array<Record<string, unknown>>;
@@ -77,17 +80,17 @@ describe("nrv config", () => {
     const setup = fixture();
     const inside = nrvConfig(setup, ["set", "routing.mode", "fast"], { cwd: path.join(setup.project, ".nirvana") });
     expect(inside.status).toBe(0);
-    expect(inside.stdout).toContain(`routing.mode = fast gravado em ${setup.projectFile} (projeto)`);
+    expect(inside.out).toContain(`routing.mode = fast gravado em ${slashes(setup.projectFile)} (projeto)`);
     expect(fs.readFileSync(setup.projectFile, "utf8")).toBe('routing:\n  mode: "fast"\n');
 
     const outside = nrvConfig(setup, ["set", "quality_gate.max_revisions", "4"]);
     expect(outside.status).toBe(0);
-    expect(outside.stdout).toContain("quality_gate.max_revisions = 4 gravado em ~/.nirvana/config.yaml (global)");
+    expect(outside.out).toContain("quality_gate.max_revisions = 4 gravado em ~/.nirvana/config.yaml (global)");
     expect(fs.readFileSync(setup.globalFile, "utf8")).toBe("quality_gate:\n  max_revisions: 4\n");
 
     const shadowed = nrvConfig(setup, ["set", "routing.mode", "agentic", "--global"], { cwd: setup.project });
-    expect(shadowed.stdout).toContain("routing.mode = agentic gravado em ~/.nirvana/config.yaml (global)");
-    expect(shadowed.stdout).toContain(`valor efetivo agora: fast (projeto ${setup.projectFile})`);
+    expect(shadowed.out).toContain("routing.mode = agentic gravado em ~/.nirvana/config.yaml (global)");
+    expect(shadowed.out).toContain(`valor efetivo agora: fast (projeto ${slashes(setup.projectFile)})`);
     expect(nrvConfig(setup, ["get", "routing.mode"], { cwd: setup.project }).stdout.trim()).toBe("fast");
     expect(nrvConfig(setup, ["get", "routing.mode"]).stdout.trim()).toBe("agentic");
     expect(JSON.parse(nrvConfig(setup, ["get", "quality_gate.max_revisions", "--json"]).stdout)).toMatchObject({ key: "quality_gate.max_revisions", value: 4, source: "global" });
@@ -130,9 +133,9 @@ describe("nrv config", () => {
     fs.writeFileSync(setup.globalFile, "# mine\nrouting:\n  mode: fast\n  dense: fallback\n", "utf8");
     const removed = nrvConfig(setup, ["unset", "routing.mode"]);
     expect(removed.status).toBe(0);
-    expect(removed.stdout).toContain("routing.mode removido de ~/.nirvana/config.yaml (global); era fast");
+    expect(removed.out).toContain("routing.mode removido de ~/.nirvana/config.yaml (global); era fast");
     expect(fs.readFileSync(setup.globalFile, "utf8")).toBe("# mine\nrouting:\n  dense: fallback\n");
-    expect(nrvConfig(setup, ["unset", "routing.mode"]).stdout).toContain("não estava definido");
+    expect(nrvConfig(setup, ["unset", "routing.mode"]).out).toContain("não estava definido");
     expect(auditEvents(setup).filter((event) => event.event === "x_settings_changed")).toEqual([
       expect.objectContaining({ key: "routing.mode", scope: "global", from: "fast", to: null }),
     ]);
@@ -144,7 +147,7 @@ describe("nrv config", () => {
     expect(explain.stdout).toContain("padrão:   off");
     expect(explain.stdout).toContain("escopos:  global, projeto");
     expect(explain.stdout).toContain("variável: NIRVANA_ROUTER_DENSE");
-    expect(explain.stdout).toContain("efetivo:  fallback (global ~/.nirvana/config.yaml)");
+    expect(explain.out).toContain("efetivo:  fallback (global ~/.nirvana/config.yaml)");
     expect(nrvConfig(setup, ["explain", "multi_target.enabled"]).stdout).toContain("(também NIRVANA_MULTI_TARGET_ENGINE)");
   }, spawnBudgetMs(4));
 
@@ -153,11 +156,11 @@ describe("nrv config", () => {
     fs.writeFileSync(setup.globalFile, "routing: [oops\n", "utf8");
     const broken = nrvConfig(setup, ["list"]);
     expect(broken.status).toBe(1);
-    expect(broken.stderr).toContain(`nrv config: ${setup.globalFile}: YAML inválido`);
+    expect(broken.err).toContain(`nrv config: ${slashes(setup.globalFile)}: YAML inválido`);
     fs.writeFileSync(setup.globalFile, "routing:\n  mode: turbo\n", "utf8");
     const bad = nrvConfig(setup, ["get", "routing.mode"]);
     expect(bad.status).toBe(4);
-    expect(bad.stderr).toContain(`${setup.globalFile}: routing.mode: valor inválido "turbo"`);
+    expect(bad.err).toContain(`${slashes(setup.globalFile)}: routing.mode: valor inválido "turbo"`);
     // The write does not validate what it replaces, so the file can be repaired from the CLI.
     expect(nrvConfig(setup, ["set", "routing.mode", "fast"]).status).toBe(0);
     expect(nrvConfig(setup, ["get", "routing.mode"]).stdout.trim()).toBe("fast");

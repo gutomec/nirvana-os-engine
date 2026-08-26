@@ -129,7 +129,17 @@ describe("project discovery", () => {
     expect(discoverProjectRoot({}, deep)).toBe(project);
     expect(discoverProjectRoot({ NIRVANA_HOME: home }, path.join(home, "work"))).toBeNull();
     expect(discoverProjectRoot({ HOME: home }, home)).toBeNull();
+    expect(discoverProjectRoot({ USERPROFILE: home }, path.join(home, "x"))).toBeNull();
     expect(discoverProjectRoot({}, tmp)).toBeNull();
+  });
+
+  test("a .nirvana/ that holds skills/ is the engine's store, never a project, wherever it sits", () => {
+    const store = path.join(tmp, "store");
+    fs.mkdirSync(path.join(store, ".nirvana", "skills"), { recursive: true });
+    fs.mkdirSync(path.join(store, "work", "deeper"), { recursive: true });
+    expect(discoverProjectRoot({}, path.join(store, "work", "deeper"))).toBeNull();
+    fs.mkdirSync(path.join(store, "work", ".nirvana"), { recursive: true });
+    expect(discoverProjectRoot({}, path.join(store, "work", "deeper"))).toBe(path.join(store, "work"));
   });
 
   test("the resolution discovers the project from cwd, and HOME's own .nirvana/ is the global layer, not a project", () => {

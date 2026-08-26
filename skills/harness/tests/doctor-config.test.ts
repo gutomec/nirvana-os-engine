@@ -52,7 +52,8 @@ describe("doctor — config", () => {
     const config = checks.filter((check) => check.name.startsWith("config: "));
     expect(config.map((check) => check.name)).toEqual(["config: files", ...SETTINGS_SCHEMA.map((spec) => `config: ${spec.key}`)]);
     expect(config.every((check) => check.status === "PASS")).toBe(true);
-    const byKey = Object.fromEntries(config.map((check) => [check.name.slice("config: ".length), check.note]));
+    // Notes carry OS-native separators; the assertions read them with slashes.
+    const byKey = Object.fromEntries(config.map((check) => [check.name.slice("config: ".length), check.note.replace(/\\/g, "/")]));
     expect(byKey.files).toContain("project ~/work/.nirvana/config.yaml");
     expect(byKey.files).toContain("global ~/.nirvana/config.yaml");
     expect(byKey.files).toMatch(/engine .*config\.yaml/);
