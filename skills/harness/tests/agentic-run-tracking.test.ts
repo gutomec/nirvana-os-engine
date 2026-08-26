@@ -29,6 +29,7 @@ process.env.NIRVANA_NO_DESKTOP_NOTIFY = "1";
 
 import { sweep, type RecoveryResult, type SalvageVerdict } from "../scripts/supervisor.ts";
 import { openLedger, openAgenticRun, openRun, getRun, markState, findNonTerminal, type LedgerHandle, type RunRow } from "../lib/run-ledger.ts";
+import { SCOPE_GUARD_PT_BR } from "../../_shared/lib/scope-guard.ts";
 
 let dbSeq = 0;
 function freshLedger(): LedgerHandle {
@@ -119,6 +120,11 @@ describe("brief-squad opens the ledger run by itself", () => {
       },
     });
     expect(r.status).toBe(0);
+
+    // The brief file the executor is handed carries the scope guard.
+    const briefFile = r.stdout.match(/Brief file:\s+(.+)/)?.[1]?.trim();
+    expect(briefFile).toBeTruthy();
+    expect(fs.readFileSync(briefFile!, "utf8")).toContain(SCOPE_GUARD_PT_BR);
 
     const rows = findNonTerminal(openLedger(ledger));
     expect(rows.length).toBe(1);

@@ -14,6 +14,7 @@ import { getGauntlet, listCandidateRevisions, listScorecards } from "../lib/gaun
 import type { GauntletIntensity } from "../lib/gauntlet/types.ts";
 import { loadHarnessConfig } from "../lib/harness-config.ts";
 import { getRun, listEvents, openKernel, type KernelHandle, type TargetRef } from "../lib/run-kernel/index.ts";
+import { SCOPE_GUARD_PT_BR } from "../../_shared/lib/scope-guard.ts";
 
 const roots: string[] = [];
 const handles: KernelHandle[] = [];
@@ -116,6 +117,7 @@ describe("Gauntlet causal revision loop", () => {
     expect(fs.readFileSync(path.join(request.previousRoot, "report.md"), "utf8")).toContain("Candidate can_1");
     const section = revisionDefectsSection(request);
     expect(section).toContain("## Defeitos a corrigir");
+    expect(section).toContain(SCOPE_GUARD_PT_BR);
     expect(section).toContain(request.previousRoot); expect(section).toContain(request.candidateRoot);
     expect(section).toContain("evl_crv_run_loop_can_1_1"); expect(section).toContain("- brief: loop:crv_run_loop_can_1_1:brief");
     const revisions = loop.revisions();

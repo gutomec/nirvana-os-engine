@@ -20,6 +20,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import { writeFakeCli } from "./helpers/fake-cli.ts";
+import { SCOPE_GUARD_PT_BR } from "../../_shared/lib/scope-guard.ts";
 
 const SKILLS = path.resolve(import.meta.dir, "..", "..");
 const REVISE = path.join(SKILLS, "harness", "scripts", "revise.ts");
@@ -72,6 +73,8 @@ interface ReviseCase {
   stdout: string;
   audit: any[];
   runtimeCalls: number;
+  /** Everything the fake runtime received: its argv and its stdin. */
+  prompt: string;
   oroot: string;
 }
 
@@ -100,6 +103,7 @@ function runRevise(files: Record<string, string | Buffer>, opts: { env?: Record<
   const binDir = path.join(home, "bin");
   fs.mkdirSync(binDir, { recursive: true });
   const callsFile = path.join(home, "runtime-calls.log");
+  const promptFile = path.join(home, "runtime-prompt.log");
   // Bun/TS body with a per-OS launcher: a `#!/bin/sh` fake is invisible to
   // Windows, which is why this whole file used to fail there.
   const envelope = opts.runtimeFails
@@ -109,8 +113,10 @@ function runRevise(files: Record<string, string | Buffer>, opts: { env?: Record<
     : { type: "result", is_error: false, result: "ok", session_id: "sess-fake", total_cost_usd: 0 };
   writeFakeCli(binDir, "claude", `
     import * as fs from "node:fs";
-    try { await Bun.stdin.text(); } catch {}
+    let stdin = "";
+    try { stdin = await Bun.stdin.text(); } catch {}
     try { fs.appendFileSync(${JSON.stringify(callsFile)}, "call\\n"); } catch {}
+    try { fs.writeFileSync(${JSON.stringify(promptFile)}, process.argv.slice(2).join("\\n") + "\\n" + stdin); } catch {}
     console.log(JSON.stringify(${JSON.stringify(envelope)}));
     process.exit(0);
   `);
@@ -137,7 +143,8 @@ function runRevise(files: Record<string, string | Buffer>, opts: { env?: Record<
     ? fs.readFileSync(auditFile, "utf8").split("\n").filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return {}; } })
     : [];
   const runtimeCalls = fs.existsSync(callsFile) ? fs.readFileSync(callsFile, "utf8").split("\n").filter(Boolean).length : 0;
-  return { status: r.status, stdout: (r.stdout || "") + (r.stderr || ""), audit, runtimeCalls, oroot };
+  const prompt = fs.existsSync(promptFile) ? fs.readFileSync(promptFile, "utf8") : "";
+  return { status: r.status, stdout: (r.stdout || "") + (r.stderr || ""), audit, runtimeCalls, prompt, oroot };
 }
 
 /** DELIVERY-level events only. quality-gate.ts appends its own per-file
@@ -146,6 +153,12 @@ function runRevise(files: Record<string, string | Buffer>, opts: { env?: Record<
 const events = (c: ReviseCase) => c.audit.filter(l => !l.artifact).map(l => l.event);
 
 describe("nrv revise — the outcome goes through the delivery pipeline", () => {
+  test("the revision prompt the runtime receives carries the scope guard in PT-BR", () => {
+    const c = runRevise({ "nota.md": PASSING_MD });
+    expect(c.runtimeCalls).toBeGreaterThanOrEqual(1);
+    expect(c.prompt).toContain(SCOPE_GUARD_PT_BR);
+  }, 30_000);
+
   test("THE FAIL-OPEN, CLOSED: zero text files never claims a gate pass", () => {
     // Not one .md/.txt/.json. The old gate looped zero times, kept allPass=true
     // and emitted gate_passed + delivered (gate "pass") with exit 0.

@@ -22,6 +22,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildEmployeePrompt } from "../lib/employee-prompt.ts";
+import { SCOPE_GUARD_EN } from "../../_shared/lib/scope-guard.ts";
 
 /**
  * A project-scoped root, so the fixture businesses are the ones resolved rather
@@ -184,5 +185,13 @@ describe("with no clone channeled, the identity line stays honest", () => {
       expect(p).not.toContain("channeling the mind-clones above");
       expect(p).toContain("your persona above is your full operating identity");
     }
+  });
+});
+
+describe("the scope guard rides the employee prompt", () => {
+  test("it is a hard protocol rule, stated before the persona", () => {
+    const p = prompt("delta-co", "um relatório de mercado");
+    const rules = p.slice(p.indexOf("## PROTOCOL COMPLIANCE"), p.indexOf("## YOUR PERSONA"));
+    expect(rules).toContain(SCOPE_GUARD_EN);
   });
 });
