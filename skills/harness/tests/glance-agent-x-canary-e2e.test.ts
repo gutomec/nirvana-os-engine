@@ -5,6 +5,7 @@ import * as path from "node:path";
 import { createDispatchExecutionRunner, type GlanceAgentXCanaryAdapter, type GlanceExecutionRunner } from "../lib/control-plane/index.ts";
 import { childState, shimRuntimeOnPath, writeFakeGlanceChild } from "./helpers/fake-glance-child.ts";
 import { removeDir } from "./helpers/temp-dirs.ts";
+import { KERNEL_BUDGET_MS } from "./helpers/test-budgets.ts";
 
 const roots: string[] = [];
 const servers: any[] = [];
@@ -60,13 +61,14 @@ async function startWithChild(knobs: Record<string, string> = {}) {
 }
 
 const headers = (base: string, key: string) => ({ "content-type": "application/json", origin: base, "idempotency-key": key });
-async function waitFor(base: string, projectId: string, runId: string, state: string, attempts = 100) {
-  for (let i = 0; i < attempts; i++) {
+async function waitFor(base: string, projectId: string, runId: string, state: string, timeoutMs = 15_000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
     const run = await fetch(`${base}/api/v1/runs/${runId}?project_id=${projectId}`).then(r => r.json()) as any;
     if (run.state === state) return run;
+    if (Date.now() > deadline) throw new Error(`run did not reach ${state} within ${timeoutMs} ms`);
     await Bun.sleep(10);
   }
-  throw new Error(`run did not reach ${state}`);
 }
 async function conversation(base: string, projectId: string, key: string) {
   return (await fetch(`${base}/api/v1/projects/${projectId}/conversations`, { method: "POST", headers: headers(base, key), body: "{}" }).then(r => r.json()) as any).conversation_id as string;
@@ -143,7 +145,7 @@ describe("Glance agent-x light canary", () => {
     const restarted = await startServer({ port: 0, open: false, idleMin: 60, allowActions: true, theme: "apple", agentXCanaryAdapter: adapter() }); servers.push(restarted);
     const reopened = await fetch(`http://127.0.0.1:${restarted.port}/api/v1/conversations/${conversation.conversation_id}`).then(r => r.json()) as any;
     expect(reopened.messages[0].run_id).toBe(receipt.run.runId);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("missing capability records an honest terminal run", async () => {
     const { project, base } = await start();
@@ -153,7 +155,7 @@ describe("Glance agent-x light canary", () => {
     expect(receipt.run.state).toBe("rolled_back");
     const events = await fetch(`${base}/api/v1/projects/${project.project_id}/events`).then(r => r.json()) as any;
     expect(events.events.at(-1).payload.reason).toBe("capability_unavailable");
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("queued run can be cancelled without invoking the adapter", async () => {
     const { project, base } = await start(adapter());
@@ -162,7 +164,7 @@ describe("Glance agent-x light canary", () => {
     const cancelled = await fetch(`${base}/api/v1/runs/${receipt.run.runId}:cancel`, { method: "POST", headers: headers(base, "cancel-command"), body: JSON.stringify({ project_id: project.project_id }) });
     expect(cancelled.status).toBe(202);
     expect(((await cancelled.json()) as any).state).toBe("rolled_back");
-  });
+  }, KERNEL_BUDGET_MS);
 });
 
 describe("Glance child-process execution", () => {
@@ -208,8 +210,10 @@ describe("Glance child-process execution", () => {
       expect(performance.now() - startedAt).toBeLessThan(500);
     }
     child.release();
-    await waitFor(base, project.project_id, receipt.run.runId, "completed", 500);
-    expect(child.has("completed")).toBe(true);
+    await waitFor(base, project.project_id, receipt.run.runId, "completed");
+    // The child transitions the Run and only then writes its marker: wait for the marker instead of
+    // reading it the instant the kernel shows completed.
+    await child.waitFor("completed");
   }, 30000);
 
   test("cancel during execution kills the child and settles cancelled", async () => {
@@ -221,7 +225,7 @@ describe("Glance child-process execution", () => {
     const cancelled = await fetch(`${base}/api/v1/runs/${receipt.run.runId}:cancel`, { method: "POST", headers: headers(base, "cancel-running"), body: JSON.stringify({ project_id: project.project_id }) });
     expect(cancelled.status).toBe(202);
     expect(((await cancelled.json()) as any).state).toBe("cancelling");
-    await waitFor(base, project.project_id, receipt.run.runId, "cancelled", 500);
+    await waitFor(base, project.project_id, receipt.run.runId, "cancelled");
     // Windows has no catchable SIGTERM: taskkill /F ends the child before any handler runs, so the
     // fake never writes `killed` there and the exit code is the forced one, never 143.
     if (process.platform !== "win32") await child.waitFor("killed");
@@ -244,7 +248,7 @@ describe("Glance child-process execution", () => {
     const child = state(receipt.run.runId);
     await child.waitFor("holding");
     child.release();
-    const run = await waitFor(base, project.project_id, receipt.run.runId, "failed", 500);
+    const run = await waitFor(base, project.project_id, receipt.run.runId, "failed");
     expect(run.state).toBe("failed");
     const seen = (await events(base, project.project_id)).filter(event => event.runId === receipt.run.runId);
     expect(seen.at(-2).type).toBe("glance.child_exited");
@@ -281,7 +285,7 @@ describe("Glance child-process execution", () => {
     const business = await send(base, projectId, cnv, "m-business", "Use business web-studio: landing page");
     expect(business.receipt.run.target).toEqual({ kind: "business", slug: "web-studio" });
     expect(business.receipt.capability).toBe("business.dispatch");
-    await waitFor(base, projectId, business.receipt.run.runId, "completed", 500);
+    await waitFor(base, projectId, business.receipt.run.runId, "completed");
     // The child writes `completed` and exits; the queue records glance.child_exited only after the
     // process exit event, so the terminal state alone does not mean the timeline is final.
     await waitForEvent(base, projectId, business.receipt.run.runId, "glance.child_exited");
@@ -304,7 +308,7 @@ describe("Glance child-process execution", () => {
     expect(receipt.run.state).toBe("rolled_back");
     const seen = await events(base, project.project_id);
     expect(seen.at(-1).payload).toMatchObject({ reason: "capability_unavailable", capability: "agent-x.gauntlet.light" });
-  });
+  }, KERNEL_BUDGET_MS);
 });
 
 describe("Glance shutdown", () => {

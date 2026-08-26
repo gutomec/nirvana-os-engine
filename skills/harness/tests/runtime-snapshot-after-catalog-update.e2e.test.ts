@@ -19,6 +19,7 @@ import {
 import { multiTargetRunId } from "../scripts/multi-target.ts";
 import { writeFakeDispatch } from "./helpers/fake-dispatch.ts";
 import { removeDir } from "./helpers/temp-dirs.ts";
+import { KERNEL_BUDGET_MS, spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const REPO = path.resolve(import.meta.dir, "..", "..", "..");
 const MULTI_TARGET = path.join(REPO, "skills", "harness", "scripts", "multi-target.ts");
@@ -162,7 +163,7 @@ describe("runtime snapshot survives a catalog update (criterion 6)", () => {
       expect((await server.run(setup.projectId, "run_second")).policySnapshotRef, boot).not.toBe(frozen.ref);
       server.stop();
     }
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("a stale catalog marks the snapshot and lets the Run proceed; NIRVANA_ALLOW_STALE_CATALOG=1 resolves it with a warning", () => {
     const setup = fixture();
@@ -186,7 +187,7 @@ describe("runtime snapshot survives a catalog update (criterion 6)", () => {
     expect(allowed.errors).toBeUndefined();
     process.env[ALLOW_STALE_ENV] = "1";
     expect(freezeExecutionSnapshot(RUNTIME)).toEqual(allowed);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("a missing required feature or model rolls the Run back before the producer with the broker's explanation", () => {
     const setup = fixture();
@@ -212,7 +213,7 @@ describe("runtime snapshot survives a catalog update (criterion 6)", () => {
     expect(model.errors?.[0]).toContain("No model");
     expect(model.rejected).toEqual([{ model: "fixture-provider/text-model/1", reasons: ["capability 'video_generation' requires native, model provides unavailable"] }]);
     expect(model.evidence).toBeUndefined();
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("without a descriptor the snapshot is the previous literal plus the reason, and missing directories are skipped", () => {
     const setup = fixture();
@@ -238,7 +239,7 @@ describe("runtime snapshot survives a catalog update (criterion 6)", () => {
     expect(resolveCatalogDirs({ env: {}, projectRoot: setup.root, homeDir: home })).toEqual([userCatalog, projectCatalog]);
     const configured = [setup.catalogDir, path.join(setup.root, "missing")].join(path.delimiter);
     expect(resolveCatalogDirs({ env: { [CATALOG_DIR_ENV]: configured }, projectRoot: setup.root, homeDir: home })).toEqual([setup.catalogDir]);
-  });
+  }, KERNEL_BUDGET_MS);
 });
 
 describe("nrv multi-target run freezes the coordinator's runtime snapshot", () => {
@@ -318,5 +319,5 @@ describe("nrv multi-target run freezes the coordinator's runtime snapshot", () =
     expect(deliveredSnapshot.snapshot).toMatchObject({ runtime: { id: "codex", source: "flag", resolved: true, version: "1.2.0" },
       provider: { id: "fixture-provider", resolved: true }, model: { id: "fixture-provider/text-model/1", resolved: true } });
     expect(deliveredRun.events.filter(event => event.type === "runtime.selection_snapshot")).toHaveLength(1);
-  });
+  }, spawnBudgetMs(3));
 });

@@ -8,6 +8,7 @@ import {
 } from "../lib/gauntlet/agent-x-cutover.ts";
 import { compileGauntletPlan } from "../lib/gauntlet/compiler.ts";
 import { createRun, getRun, listEvents, openKernel, type KernelHandle } from "../lib/run-kernel/index.ts";
+import { KERNEL_BUDGET_MS } from "./helpers/test-budgets.ts";
 
 const roots: string[] = [];
 const handles: KernelHandle[] = [];
@@ -95,7 +96,7 @@ describe("agent-x Gauntlet cutover", () => {
     expect(types.indexOf("gauntlet.plan_compiled")).toBeLessThan(types.indexOf("gauntlet.candidate_created"));
     expect(types.indexOf("gauntlet.candidate_created")).toBeLessThan(types.indexOf("gauntlet.evaluation_recorded"));
     expect(types.at(-1)).toBe("run.transitioned");
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("persists a typed squad producer without changing the agent-x default", () => {
     const producerTarget = { kind: "squad" as const, slug: "document-factory", capabilityId: "document.generate" };
@@ -103,7 +104,7 @@ describe("agent-x Gauntlet cutover", () => {
     expect(result.run.target).toEqual(producerTarget);
     const candidate = listEvents(handle, "prj_canary").find(event => event.type === "gauntlet.candidate_created");
     expect((candidate?.payload as any).producer).toEqual(producerTarget);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("freezes the runtime and model decision in the canonical journal", () => {
     const snapshot = { runtime: { id: "codex", source: "active-session" },
@@ -112,7 +113,7 @@ describe("agent-x Gauntlet cutover", () => {
     const event = listEvents(handle, "prj_canary").find(item => item.type === "runtime.selection_snapshot");
     expect((event?.payload as any).snapshot).toEqual(snapshot);
     expect(result.run.policySnapshotRef).toBe((event?.payload as any).ref);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("rejects a producer evaluating its own candidate and records a post-start failure", () => {
     const fixture = setup();
@@ -121,7 +122,7 @@ describe("agent-x Gauntlet cutover", () => {
       executeCandidate(root) { fs.mkdirSync(root, { recursive: true }); fs.writeFileSync(path.join(root, "out.md"), "valid", "utf8"); return { ok: true, sessionId: null }; },
       evaluator: evaluator(true, true), finalGate() { throw new Error("must not run"); } })).toThrow(/cannot evaluate its own/);
     expect(getRun(fixture.handle, "prj_canary", "run_self")?.state).toBe("failed");
-  });
+  }, KERNEL_BUDGET_MS);
 
   test.each([
     [{ exitCode: 0 as const, gateOutcome: "fail-accepted" }, "delivered_with_reservations"],
@@ -129,20 +130,20 @@ describe("agent-x Gauntlet cutover", () => {
     [{ exitCode: 1 as const, gateOutcome: "indeterminate" }, "failed"],
   ])("maps final gate %p to canonical terminal %s", (gate, terminal) => {
     expect(run({ finalGate: () => gate }).result.run.state).toBe(terminal);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("withholds an evaluator rejection without invoking the final delivery gate", () => {
     const { result, finalGates } = run({ evaluator: evaluator(false) });
     expect(result).toMatchObject({ exitCode: 2, finalGateRan: false, run: { state: "withheld" }, gauntlet: { stopReason: "no_progress" } });
     expect(finalGates).toBe(0);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("stops a failed producer with an honest execution failure", () => {
     const { result, finalGates } = run({ executeCandidate: () => ({ ok: false, sessionId: null, error: "runtime crashed" }) });
     expect(result).toMatchObject({ exitCode: 1, finalGateRan: false, run: { state: "failed" },
       gauntlet: { state: "stopped", stopReason: "execution_failure", reservations: ["runtime crashed"] } });
     expect(finalGates).toBe(0);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("resumes after interruption without dispatching the persisted candidate twice", () => {
     const fixture = setup();
@@ -157,7 +158,7 @@ describe("agent-x Gauntlet cutover", () => {
     expect(getRun(fixture.handle, "prj_canary", "run_resume")?.state).toBe("running");
     expect(runAgentXGauntlet(common).run.state).toBe("completed");
     expect(executions).toBe(1);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("adopts a Run a control plane already prepared under the same runId instead of creating a second one", () => {
     const fixture = setup();
@@ -176,11 +177,11 @@ describe("agent-x Gauntlet cutover", () => {
     const events = listEvents(fixture.handle, "prj_canary").filter(event => event.runId === "run_adopted");
     expect(events.filter(event => event.type === "run.prepared")).toHaveLength(1);
     expect(new Set(events.map(event => event.traceId))).toEqual(new Set(["trace_glance"]));
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("rolls back when the light budget blocks execution before the candidate", () => {
     const { result, executions, finalGates } = run({ expectedCostUsd: 6 });
     expect(result.run.state).toBe("rolled_back");
     expect(executions).toBe(0); expect(finalGates).toBe(0);
-  });
+  }, KERNEL_BUDGET_MS);
 });

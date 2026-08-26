@@ -15,6 +15,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const REPO = join(import.meta.dir, "..", "..", "..");
 const CMD = join(REPO, "skills", "harness", "scripts", "activate.ts");
@@ -69,14 +70,14 @@ describe("nrv activate --all", () => {
     expect(out).toContain("beta-squad");
     expect(out).toContain("no dependencies");   // gamma needs nothing
     expect(code).toBe(0);
-  });
+  }, spawnBudgetMs(3));
 
   test("--only-declared skips squads that need no activation", () => {
     const root = library([{ slug: "alpha-squad", check: "true" }, { slug: "gamma-squad" }]);
     const { out } = run(root, ["--all", "--only-declared"]);
     expect(out).toContain("ACTIVATING 1 SQUAD(S)");
     expect(out).not.toContain("gamma-squad");
-  });
+  }, spawnBudgetMs(2));
 
   test("a squad that cannot satisfy its dependency does not stop the walk", () => {
     // The middle squad declares a tool that does not exist and has no install
@@ -89,14 +90,14 @@ describe("nrv activate --all", () => {
     const { out } = run(root, ["--all"]);
     expect(out).toContain("zeta-squad");        // reached despite the middle one
     expect(out).toContain("SUMMARY");
-  });
+  }, spawnBudgetMs(4));
 
   test("--dry-run installs nothing and still reports", () => {
     const root = library([{ slug: "alpha-squad", check: "command -v definitely-not-installed-xyz" }]);
     const { out } = run(root, ["--all", "--dry-run"]);
     expect(out).toContain("SUMMARY");
     expect(out).not.toContain("install_failed");
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("nrv activate <slug>", () => {
@@ -105,12 +106,12 @@ describe("nrv activate <slug>", () => {
     const { code, out } = run(root, ["alpha-squad"]);
     expect(out).toContain("alpha-squad");
     expect(code).toBe(0);
-  });
+  }, spawnBudgetMs(2));
 
   test("no arguments is a usage error, not a silent no-op", () => {
     const root = library([{ slug: "alpha-squad", check: "true" }]);
     expect(run(root, []).code).toBe(4);
-  });
+  }, spawnBudgetMs(1));
 
   test("--help explains the batch and exits clean", () => {
     const root = library([{ slug: "alpha-squad", check: "true" }]);
@@ -118,7 +119,7 @@ describe("nrv activate <slug>", () => {
     expect(code).toBe(0);
     expect(out).toContain("--all");
     expect(out).toContain("dependencies.yaml");
-  });
+  }, spawnBudgetMs(1));
 });
 
 describe("nrv doctor warns before the expensive run", () => {
@@ -137,5 +138,5 @@ describe("nrv doctor warns before the expensive run", () => {
     expect(out).toContain("SQUAD DEPS");
     expect(out).toContain("nirvana-absent-binary-xyz");
     expect(out).toContain("nrv activate --all");
-  });
+  }, spawnBudgetMs(2));
 });

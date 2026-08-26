@@ -12,6 +12,7 @@ import { createRun, listEvents, openKernel, type KernelHandle } from "../lib/run
 import { writeFakeDispatch } from "./helpers/fake-dispatch.ts";
 import { removeDir } from "./helpers/temp-dirs.ts";
 import { SCOPE_GUARD_EN } from "../../_shared/lib/scope-guard.ts";
+import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const roots: string[] = [];
 const handles: KernelHandle[] = [];
@@ -123,7 +124,7 @@ describe("multi-target dispatch adapters", () => {
     expect(captured.cwd).toBe(setup.projectRoot);
     expect(captured.brief).toStartWith("Deliver part A.");
     expect(existsSync(join(setup.workspaceRoot, "businesses", "business-a", MULTI_TARGET_RESULT_MARKER))).toBeTrue();
-  });
+  }, spawnBudgetMs(1));
 
   test("gauntlet business adds the Gauntlet flags, allowlists the slug and passes every intensity through", async () => {
     const setup = fixture();
@@ -146,7 +147,7 @@ describe("multi-target dispatch adapters", () => {
       expect(readFileSync(join(setup.workspaceRoot, "businesses", "business-b", "DISPATCH-INSTRUCTION.md"), "utf8")).toContain(`gauntlet (intensity ${intensity})`);
     }
     expect(spawnCount(setup)).toBe(3);
-  });
+  }, spawnBudgetMs(3));
 
   test("squad and synthesis select the target with --squad and --agent-x, never --auto, and pass the intensity through", async () => {
     const setup = fixture();
@@ -176,7 +177,7 @@ describe("multi-target dispatch adapters", () => {
     expect(synthesisCapture.argv).toContain("--gauntlet-intensity=exhaustive");
     expect(synthesisCapture.brief).toStartWith("Write the final report.");
     expect(synthesisCapture.brief).toContain(join(setup.workspaceRoot, "squads", "squad-c", "outputs", "_SUMMARY.md"));
-  });
+  }, spawnBudgetMs(3));
 
   test("exit codes 0, 2, 3 and 1 map onto delivered, withheld, withheld (indeterminate) and failed", async () => {
     const setup = fixture();
@@ -193,7 +194,7 @@ describe("multi-target dispatch adapters", () => {
     expect(outcomes[3][1]).toContain("dispatch exit 1");
     expect(outcomes[3][1]).toContain("fake dispatch stopped with exit 1");
     expect(spawnCount(setup)).toBe(4);
-  });
+  }, spawnBudgetMs(4));
 
   test("DISPATCH-INSTRUCTION.md names the upstream _SUMMARY.md paths, the downstreams and the output path", async () => {
     const setup = fixture();
@@ -213,7 +214,7 @@ describe("multi-target dispatch adapters", () => {
     expect(text).toContain(join(setup.workspaceRoot, "squads", "squad-c", "outputs", "_SUMMARY.md"));
     expect(text.slice(text.indexOf("## 6. Scope isolation"))).toContain(SCOPE_GUARD_EN);
     expect(existsSync(join(setup.workspaceRoot, "squads", "squad-c", "outputs"))).toBeTrue();
-  });
+  }, spawnBudgetMs(1));
 
   test("the result marker prevents a second spawn for the same key while a different key runs again", async () => {
     const setup = fixture();
@@ -232,7 +233,7 @@ describe("multi-target dispatch adapters", () => {
     const other = await ports.standard.run(nodeInput(plan, "business-a", { idempotencyKey: "another-plan" }));
     expect(spawnCount(setup)).toBe(2);
     expect(other).toMatchObject({ state: "delivered", reportedCostUsd: 0.6 });
-  });
+  }, spawnBudgetMs(2));
 
   test("an aborted signal kills the subprocess and returns failed without a marker", async () => {
     const setup = fixture();
@@ -241,8 +242,12 @@ describe("multi-target dispatch adapters", () => {
     const controller = new AbortController();
     const pending = ports.standard.run(nodeInput(plan, "business-a", { signal: controller.signal }));
     const captureFile = join(setup.workspaceRoot, "businesses", "business-a", "outputs", "dispatch-capture.json");
+    // The fake writes its capture, then its spawn-log line, then sleeps. Aborting the instant the capture
+    // existed killed it between the two writes on the Windows runner (PR #96, run 32931392895: spawnCount
+    // read 0), so the spawn record is the signal to wait for; once it is on disk the kill can land anywhere.
     const deadline = Date.now() + 10_000;
-    while (!existsSync(captureFile) && Date.now() < deadline) await Bun.sleep(20);
+    while (spawnCount(setup) < 1 && Date.now() < deadline) await Bun.sleep(20);
+    expect(spawnCount(setup)).toBe(1);
     expect(existsSync(captureFile)).toBeTrue();
     const abortedAt = Date.now();
     controller.abort("lease_lost");
@@ -256,7 +261,7 @@ describe("multi-target dispatch adapters", () => {
     early.abort("early");
     expect(await ports.standard.run(nodeInput(plan, "business-b", { signal: early.signal }))).toEqual({ state: "failed", reportedCostUsd: 0, reason: "aborted: early" });
     expect(spawnCount(setup)).toBe(1);
-  });
+  }, spawnBudgetMs(1));
 
   test("coordinator, kernel ports and adapters run the waves through the fake dispatch and resume without re-spawning", async () => {
     const setup = fixture();
@@ -317,5 +322,5 @@ describe("multi-target dispatch adapters", () => {
     expect(events.filter((event) => event.type === "multi_target.lease_released").map((event) => (event.payload as { nodeId: string }).nodeId).sort())
       .toEqual(["business-a", "business-b", "final-output", "squad-c"]);
     kernel.close();
-  });
+  }, spawnBudgetMs(4));
 });

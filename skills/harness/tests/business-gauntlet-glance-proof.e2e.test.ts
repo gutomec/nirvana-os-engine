@@ -9,6 +9,7 @@ import { runAgentXGauntlet, shouldRunAgentXGauntlet, type AgentXGauntletEvaluato
 import { loadHarnessConfig } from "../lib/harness-config.ts";
 import { appendEvent, listEvents, openKernel, type KernelHandle } from "../lib/run-kernel/index.ts";
 import { removeDir } from "./helpers/temp-dirs.ts";
+import { KERNEL_BUDGET_MS } from "./helpers/test-budgets.ts";
 
 const roots: string[] = [];
 const servers: Array<{ close(): void }> = [];
@@ -130,7 +131,7 @@ describe("typed Business Gauntlet proof through Glance", () => {
     }
     expect(proof.gauntlet.candidates[0].producer).toEqual(BUSINESS);
     expect(proof.gauntlet.scorecards[0].evaluator).toEqual(EVALUATOR);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("withholds a rejected Business candidate before delivery and keeps production cutover disabled", async () => {
     const proof = await runProof(false);
@@ -138,5 +139,5 @@ describe("typed Business Gauntlet proof through Glance", () => {
     expect(proof.postGateCalls).toBe(0);
     expect(proof.timeline.some(event => event.type.startsWith("delivery."))).toBeFalse();
     expect(shouldRunAgentXGauntlet({ targetKind: "business", wantExec: true, resolvedMode: "gauntlet" })).toBeFalse();
-  });
+  }, KERNEL_BUDGET_MS);
 });

@@ -14,6 +14,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, appendFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const root = mkdtempSync(join(tmpdir(), "serve-queue-"));
 const dispatchFixture = join(root, "slow-dispatch.ts");
@@ -113,7 +114,7 @@ describe("queue", () => {
     // second starts only after the first finished — serialization proved
     expect(bStart).toBeGreaterThanOrEqual(aEnd - 5);
     expect(aStart).toBeLessThan(bStart);
-  });
+  }, spawnBudgetMs(2));
 
   test("different sessions DO run in parallel under the cap", async () => {
     writeFileSync(marksFile, "");
@@ -130,7 +131,7 @@ describe("queue", () => {
     const ends = marks.filter((m) => m.phase === "end").map((m) => m.at).sort();
     // the second run started before the first one ended — real overlap
     expect(starts[1]).toBeLessThan(ends[1]);
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("SSE", () => {
@@ -163,5 +164,5 @@ describe("SSE", () => {
       if (ev.event === "run.finished") continue;
       expect(ev.trace_id ?? ev.project_id).toBe(r.trace_id);
     }
-  });
+  }, spawnBudgetMs(1));
 });

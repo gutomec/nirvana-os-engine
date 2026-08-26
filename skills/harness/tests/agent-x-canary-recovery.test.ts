@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -6,6 +7,7 @@ import { AgentXCanaryQueue, ConversationService, createDispatchExecutionRunner, 
 import { createRun, getRun, listEvents, openKernel, transitionRun } from "../lib/run-kernel/index.ts";
 import { childState, pidAlive, shimRuntimeOnPath, waitUntil, writeFakeGlanceChild } from "./helpers/fake-glance-child.ts";
 import { removeDir } from "./helpers/temp-dirs.ts";
+import { KERNEL_BUDGET_MS } from "./helpers/test-budgets.ts";
 
 const roots: string[] = [];
 const queues: AgentXCanaryQueue[] = [];
@@ -36,13 +38,27 @@ function adapter(counter: { executions: number }): GlanceAgentXCanaryAdapter {
   };
 }
 
-async function waitForState(kernelPath: string, projectId: string, runId: string, state: string, attempts = 100) {
-  for (let i = 0; i < attempts; i++) {
+async function waitForState(kernelPath: string, projectId: string, runId: string, state: string, timeoutMs = 15_000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
     const handle = openKernel(kernelPath); const current = getRun(handle, projectId, runId); handle.close();
     if (current?.state === state) return;
+    if (Date.now() > deadline) throw new Error(`run did not reach ${state} within ${timeoutMs} ms`);
     await Bun.sleep(10);
   }
-  throw new Error(`run did not reach ${state}`);
+}
+
+/** True once the kernel opens again. On the Windows runner the file can stay locked for a moment
+ * after a crashed child's pid is gone: `openKernel` right after the crash failed with
+ * SQLITE_IOERR_TRUNCATE on PR #90 (run 32929139083, attempt 1). The probe runs the same first
+ * statement as openKernel and closes its own handle either way, so a failed attempt holds nothing. */
+function kernelReleased(kernelPath: string): boolean {
+  let db: Database | undefined;
+  try { db = new Database(kernelPath); db.exec("PRAGMA journal_mode = WAL"); return true; }
+  catch (error) {
+    if (/^SQLITE_(IOERR|BUSY|LOCKED)/.test(String((error as { code?: string }).code))) return false;
+    throw error;
+  } finally { db?.close(); }
 }
 
 /** A project with one Message, a runtime shim on PATH and fake-child runners keyed by knobs. */
@@ -94,7 +110,7 @@ describe("durable agent-x canary recovery", () => {
     const events = listEvents(kernel, "prj_recovery").filter(event => event.type === "canary.recovery_enqueued");
     expect(events).toHaveLength(1);
     kernel.close(); conversations.close();
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("ignores terminal and running runs without a recoverable lease", () => {
     const { root, kernelPath, conversationPath } = fixture();
@@ -111,7 +127,7 @@ describe("durable agent-x canary recovery", () => {
     expect(result.skipped).toEqual(expect.arrayContaining([{ runId: "run_terminal", reason: "state_rolled_back" }, { runId: "run_running", reason: "state_running" }]));
     expect(listEvents(kernel, "prj_states").filter(event => event.type === "canary.recovery_skipped")).toHaveLength(2);
     kernel.close(); conversations.close();
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("one run skipped for a different reason on each restart records both reasons and never conflicts", () => {
     const { root, kernelPath, conversationPath } = fixture();
@@ -134,7 +150,7 @@ describe("durable agent-x canary recovery", () => {
     expect(skipped.map(event => (event.payload as { reason: string }).reason)).toEqual(["capability_unavailable", "state_rolled_back"]);
     expect(skipped.map(event => event.idempotencyKey)).toEqual(["canary.recovery_skipped:run_skip:capability_unavailable", "canary.recovery_skipped:run_skip:state_rolled_back"]);
     kernel.close(); conversations.close();
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("a running run whose child is dead is redispatched once across two restarts and resumes without repeating the producer", async () => {
     const fx = childFixture();
@@ -148,6 +164,7 @@ describe("durable agent-x canary recovery", () => {
     const pid = fx.childPid(runId, 1);
     child.release();
     await waitUntil(() => !pidAlive(pid), "the first child to die");
+    await waitUntil(() => kernelReleased(fx.kernelPath), "the crashed child's kernel handles to be released");
     expect(child.has("crashed")).toBe(true);
     expect(child.count("producer")).toBe(1);
     const reopened = openKernel(fx.kernelPath);
@@ -160,7 +177,7 @@ describe("durable agent-x canary recovery", () => {
     second.queue.shutdown(); second.close();
     const third = fx.queue();
     expect(third.queue.recover("prj_child", fx.root)).toMatchObject({ redispatched: [runId] });
-    await waitForState(fx.kernelPath, "prj_child", runId, "completed", 500);
+    await waitForState(fx.kernelPath, "prj_child", runId, "completed");
     // The child writes `completed` and exits; the queue records glance.child_exited only after the
     // process exit event, so the terminal state alone does not mean the journal is final.
     await waitUntil(() => fx.runEvents(runId).some(event => event.type === "glance.child_exited"), "the redispatched exit event");
@@ -193,7 +210,7 @@ describe("durable agent-x canary recovery", () => {
     expect(child.count("spawns")).toBe(1);
     expect(getRun(second.kernel, "prj_child", runId)?.state).toBe("running");
     child.release();
-    await waitForState(fx.kernelPath, "prj_child", runId, "completed", 500);
+    await waitForState(fx.kernelPath, "prj_child", runId, "completed");
     await waitUntil(() => fx.runEvents(runId).some(event => event.type === "glance.child_exited"), "the reattached exit event");
     expect(child.count("spawns")).toBe(1);
     expect(child.count("producer")).toBe(1);
