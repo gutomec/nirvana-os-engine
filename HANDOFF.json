@@ -1,0 +1,53 @@
+{
+  "schema_version": "1.0",
+  "decisions": [
+    {
+      "ts": "2026-08-25T04:29:17.6532233Z",
+      "decision": "pause-before-material-scope-expansion",
+      "reason": "Independent final review found plan/spec contradictions that cannot be changed safely without user authorization."
+    },
+    {
+      "ts": "2026-08-25T13:13:25.126Z",
+      "decision": "authorize-limited-contract-revision",
+      "reason": "The user explicitly approved resolving graceful signals, truthful log_path, normal health-idle semantics, and post-update restart_required behavior."
+    }
+  ],
+  "open_questions": [],
+  "active_revision": {
+    "kind": "limited-contract-delta",
+    "scope": [
+      "graceful_signals",
+      "truthful_log_path",
+      "normal_health_idle_semantics",
+      "post_update_restart_required"
+    ],
+    "publication_authorized": false
+  },
+  "loop_guard_state": {
+    "cfg": {
+      "max_steps": 12,
+      "max_repeat": 3,
+      "max_flat_steps": 4
+    },
+    "step_count": 5,
+    "last_progress_step": 5,
+    "progress_marker": "plan-brief-ready",
+    "seen_signatures": {
+      "dispatch-openrouter-ox-alpha-max::bf21a9e8fbc5": 1,
+      "revision::bf21a9e8fbc5": 2,
+      "independent-review::bf21a9e8fbc5": 1,
+      "dispatch-opencode-go-ox-alpha-max::bf21a9e8fbc5": 1
+    },
+    "history_tail": [
+      {
+        "step": 5,
+        "signature": "dispatch-opencode-go-ox-alpha-max::bf21a9e8fbc5",
+        "progress_marker": "plan-brief-ready",
+        "ts": "2026-08-25T13:17:44.530Z"
+      }
+    ]
+  },
+  "handoff_timestamp": "2026-08-25T13:17:44.531Z",
+  "dag_snapshot_path": "dag-state.json",
+  "audit_log_path": "audit.jsonl"
+}

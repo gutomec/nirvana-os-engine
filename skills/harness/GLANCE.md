@@ -31,6 +31,73 @@ bun glance.ts --allow-actions    # ⚠ Phase 5 only: enables write endpoints (re
 bun glance.ts --scope=project    # force a specific scope (overrides .env)
 ```
 
+## Service mode — persistent background cockpit
+
+```bash
+nrv glance service start    [--port <n>] [--scope global|project] [--project-root <p>] [--json]
+nrv glance service status   [--json]
+nrv glance service stop     [--json]
+nrv glance service restart  [--port <n>] [--scope global|project] [--project-root <p>] [--json]
+```
+
+Service mode runs the same UI as a detached local worker: it binds to
+`127.0.0.1` only, stays read-only, never opens a browser, and has no idle
+shutdown. It keeps running until an explicit `stop`, process termination, or
+machine shutdown. Autostart is never installed by these commands.
+
+**Behavior.** The verbs, options, descriptions, and help text are generated
+from one declarative command registry; flags that are not legal for a verb
+(`--host`, `--allow-actions`, `--idle-min`, `--no-open`, `--autostart`, or
+any config flag on `stop`/`status`) are rejected at parse time with exit 2.
+`start` validates everything before acquiring the lock, is idempotent for a
+healthy instance with the exact same effective config (zero new writes), and
+returns conflict exit 4 for any different requested config or foreign
+process/listener/health.
+
+**Files and permissions.** All state lives under
+`<NIRVANA_HOME>/.nirvana/glance/service/`: `config.json` (effective config),
+`instance.json` (identity: instance ID, PID, state, digests),
+`secrets/` (256-bit control secrets, user-only permissions),
+`control/pending|processing|startup|archive/` (signed requests and startup
+records), `manager.lock/` (owner snapshot while a lifecycle command runs),
+and `logs/`. Every JSON publication is temp-file + fsync + atomic rename +
+exact reread; directories are restricted to the current user. Secrets never
+appear inside JSON or command output.
+
+**Identity and authenticated drain.** Health reports the instance ID, port,
+scope, engine version, uptime, and process digest. Stop does not accept PIDs:
+the manager writes an HMAC-SHA-256-signed request (with a fresh nonce) into
+`control/pending/`; only the worker whose instance ID, secret, nonce, and
+time window all match consumes it by atomic rename, drains in-flight
+requests up to 5 seconds, then removes its own instance and secret.
+SIGINT/SIGTERM take the same path inside the worker.
+
+**Status, stale, conflict, restart drift.** `status` cross-checks persisted
+state, live process, port listener, and health identity twice around the
+inspection; anything changing mid-flight reports `stale` (exit 3) instead of
+guessing. A proven-dead instance is archived only after affirmative
+process/port/health absence proofs, then `start` recovers cleanly. A healthy
+instance under a different effective config answers conflict (exit 4).
+`restart` with no config flags reuses the current on-disk config verbatim;
+explicit flags merge onto the current config and are validated, including a
+port-feasibility probe, before anything stops. If the replacement fails to
+become healthy, restart makes exactly one rollback attempt of the previous
+config and reports `rollback_attempted` plus `rollback_state`
+(`restored_previous` / `restore_failed`); if the authenticated stop itself
+fails, no start and no rollback happen.
+
+**Exits.** 0 success or healthy idempotent result · 1 `status` when stopped ·
+2 usage/configuration error or unsupported environment · 3 stale or
+inconsistent state · 4 conflict · 5 timeout · 6 permission/I-O at runtime
+state. `SERVICE_UNSUPPORTED` maps to 2 without stealing 3.
+
+**Redaction and logs.** Command output (`--json` or human) carries digests
+and IDs, never secrets, tokens, or log contents. Worker stdout/stderr go to
+`service/logs/<startup-id>.log` per instance under the same service root;
+logs remain alongside state and are not emitted in command output. Update
+or reinstall flows that replace skills leave existing service state untouched
+and removing the engine does not delete user state files.
+
 ## Themes
 
 | Theme | When to use |

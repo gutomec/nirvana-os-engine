@@ -21,6 +21,41 @@ esses códigos continuam significando o que dizem. Quando a espera realmente
 estoura, a mensagem informa o código que vinha recebendo em vez de acusar um
 dono vivo que pode não existir.
 
+### Glance ganhou um modo de serviço persistente
+
+`nrv glance service start|stop|status|restart` roda o cockpit como um worker
+local em segundo plano: apenas loopback, somente leitura, sem navegador e sem
+desligamento por inatividade. Os quatro verbos são gerados a partir de um
+registro declarativo de comandos junto com o help; flags desconhecidas ou
+ilegais para um verbo são rejeitadas no parse. O estado vive em
+`<NIRVANA_HOME>/.nirvana/glance/service/` como arquivos privados do usuário
+(`config.json`, `instance.json`, segredos, pedidos de controle), publicados
+com arquivo temporário mais fsync e releitura exata. O start é idempotente
+para uma instância saudável com a mesma configuração efetiva e retorna
+conflito caso contrário; o stop envia um pedido assinado com HMAC e nonce
+que só a instância correspondente consome, e o worker então drena as conexões
+e remove o próprio estado. O status cruza processo, listener, identidade do
+health e digests de configuração duas vezes ao redor da inspeção, então
+mudança em pleno voo reporta stale em vez de adivinhar. O restart reutiliza a
+configuração vigente quando nenhuma flag chega, valida qualquer override e
+prova a viabilidade da porta nova antes de parar, e diante de uma reposição
+mal-sucedida faz uma única tentativa de rollback relatada por
+`rollback_attempted` / `rollback_state`. Sinais entregues diretamente ao
+worker (`SIGINT`/`SIGTERM`) seguem o mesmo ciclo gracioso de um stop
+autenticado depois que a identidade é estabelecida: as requisições em curso
+drenam dentro de um limite, o estado é finalizado exatamente uma vez mesmo
+sob sinais repetidos, e o processo encerra limpo. Os resultados dos comandos
+informam a referência real de log por instância (`logs/<startup-id>.log`) e
+uma string vazia quando nenhuma instância legível se aplica, nunca um
+caminho inventado. Um worker saudável cujos bytes de entrypoint ou a versão
+do engine mudaram no disco continua atendendo e passa a reportar
+`restart_required: true` no `status`; o `restart` aplica a atualização. No
+modo normal toda requisição, incluindo `/api/health`, renova a janela de
+inatividade, como sempre foi. Os códigos de saída são estáveis
+entre plataformas: 0 sucesso, 1 status parado, 2 uso ou ambiente não
+suportado, 3 estado stale, 4 conflito, 5 timeout, 6 permissão/I-O.
+O comportamento normal do `nrv glance` não mudou.
+
 ## 0.7.11 — 2026-08-23
 
 ### O engine mandava os runtimes vigiarem, nunca trabalharem

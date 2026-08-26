@@ -56,15 +56,22 @@ const KEEP_AFTER_DONE_MS = 60 * 60 * 1000;  // 1h
 let activeMutator: string | null = null;
 let activeChat: string | null = null;   // separate slot for the chat lane
 
-// Periodic GC of finished jobs
-setInterval(() => {
-  const now = Date.now();
-  for (const [id, j] of JOBS) {
-    if (j.status !== "running" && j.status !== "queued" && j.finished_at && now - j.finished_at > KEEP_AFTER_DONE_MS) {
-      JOBS.delete(id);
+// Periodic GC of finished jobs. Started lazily on the first job so that
+// importing this module (via the Glance CLI help/usage paths) never keeps a
+// timer — and therefore the process — alive.
+let jobGcTimer: ReturnType<typeof setInterval> | undefined;
+function ensureJobGc(): void {
+  if (jobGcTimer !== undefined) return;
+  jobGcTimer = setInterval(() => {
+    const now = Date.now();
+    for (const [id, j] of JOBS) {
+      if (j.status !== "running" && j.status !== "queued" && j.finished_at && now - j.finished_at > KEEP_AFTER_DONE_MS) {
+        JOBS.delete(id);
+      }
     }
-  }
-}, 5 * 60 * 1000);
+  }, 5 * 60 * 1000);
+  (jobGcTimer as { unref?: () => void }).unref?.();
+}
 
 function uuid() {
   return Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
@@ -86,6 +93,7 @@ export interface StartOpts {
 }
 
 export function startJob(opts: StartOpts): { job: Job; reason?: string } | { error: string } {
+  ensureJobGc();
   const lane = opts.lane || "maintenance";
   if (opts.mutating && lane === "maintenance" && activeMutator) {
     return { error: `Another mutating action is already running (job ${activeMutator}). Cancel it or wait.` };

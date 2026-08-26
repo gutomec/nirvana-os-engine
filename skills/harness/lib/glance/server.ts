@@ -40,6 +40,7 @@ import { readEnvFile, writeEnvFile, setVar, deleteVar, getVar, toMap } from "../
 import { CONFIG_SCHEMA, getField, isEditableKey, maskSecret } from "./config-schema.ts";
 import { validateMindCloneFile, type ValidationResult } from "../../../_shared/lib/mindclone-validator.ts";
 import { handleObservabilityRoute } from "./views/observability-handler.ts";
+import type { ServiceHealthV1 } from "./service/adapters.ts";
 
 const VIEWS_DIR = path.dirname(import.meta.path) + "/views";
 // Runtime state lives in the engine's own home, never in a runtime's dir.
@@ -54,13 +55,41 @@ const STARTED_AT = Date.now();
 const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
   || (fs.existsSync(path.join(os.homedir(), ".nirvana", "skills")) ? path.join(os.homedir(), ".nirvana", "skills") : path.join(os.homedir(), ".claude", "skills"));
 
-interface ServerOptions {
+export interface ServerRuntime { now(): number; openBrowser(url: string): Promise<void> | void; setInterval(callback: () => void, ms: number): unknown; clearInterval(handle: unknown): void; log(line: string): void; exit(code: number): void; registerSignals(handler: (signal: "SIGINT" | "SIGTERM") => void): () => void }
+export const defaultServerRuntime: ServerRuntime = {
+  now: () => Date.now(),
+  openBrowser: url => openBrowser(url),
+  setInterval: (callback, ms) => setInterval(callback, ms),
+  clearInterval: handle => clearInterval(handle as ReturnType<typeof setInterval>),
+  log: line => console.error(line),
+  exit: code => process.exit(code),
+  registerSignals: handler => {
+    const h = (signal: "SIGINT" | "SIGTERM"): void => handler(signal);
+    process.on("SIGINT", h);
+    process.on("SIGTERM", h);
+    return () => { process.off("SIGINT", h); process.off("SIGTERM", h); };
+  },
+};
+
+interface NormalServerOptions {
   port: number | "auto";
   open: boolean;
   idleMin: number;
   allowActions: boolean;  // future use; default false
   theme: "apple" | "apple-dark" | "awwwards";
 }
+
+interface PersistentServerOptions {
+  port: number;
+  open: false;
+  allowActions: false;
+  theme: "apple" | "apple-dark" | "awwwards";
+  lifetime: { mode: "persistent" };
+  serviceHealth: Omit<ServiceHealthV1, "uptime_seconds">;
+  handleSignal?: (signal: "SIGINT" | "SIGTERM") => void | Promise<void>;
+}
+
+type ServerOptions = NormalServerOptions | PersistentServerOptions;
 
 // ─── Setup copy helper (used by /api/setup/copy-batch and /api/setup/copy-stream) ───
 // kind=squads|businesses → source is a directory `<slug>/`, copy recursively.
@@ -162,9 +191,6 @@ function copyAsset(opts: {
   }
 }
 
-let lastActivity = Date.now();
-const bumpActivity = () => { lastActivity = Date.now(); };
-
 function readView(name: string): string {
   const p = path.join(VIEWS_DIR, name);
   if (!fs.existsSync(p)) throw new Error(`view not found: ${p}`);
@@ -228,7 +254,13 @@ function findFreePort(start = 3737, attempts = 50): number {
   return Math.floor(Math.random() * (65535 - 49152)) + 49152;
 }
 
-export async function startServer(opts: ServerOptions) {
+export async function startServer(opts: ServerOptions, runtimeOverrides?: Partial<ServerRuntime>) {
+  const runtime: ServerRuntime = { ...defaultServerRuntime, ...runtimeOverrides };
+  const persistent = "lifetime" in opts && opts.lifetime.mode === "persistent";
+  const idleMin = "idleMin" in opts ? opts.idleMin : 0;
+  const startedAt = runtime.now();
+  let lastActivity = startedAt;
+  const bumpActivity = () => { lastActivity = runtime.now(); };
   const port = opts.port === "auto" ? findFreePort() : opts.port;
   const url = `http://localhost:${port}`;
 
@@ -244,9 +276,9 @@ export async function startServer(opts: ServerOptions) {
     // machine, never exposed to the LAN by default.
     hostname: "127.0.0.1",
     async fetch(req) {
-      bumpActivity();
       const u = new URL(req.url);
       const p = u.pathname;
+      bumpActivity();
 
       // ─── Project-scope filter (?project=<absolute_path>) ────────────────
       // Frontend sends this on Agents/Runs/Cost/Memory/Activity when the user
@@ -1027,12 +1059,15 @@ export async function startServer(opts: ServerOptions) {
 
       // ─── API ───
       if (p === "/api/health") {
+        if (persistent) {
+          return json({ ...opts.serviceHealth, uptime_seconds: Math.max(0, Math.floor((runtime.now() - startedAt) / 1000)) });
+        }
         return json({
           ok: true,
           version: "1.0.0",
-          uptime_ms: Date.now() - STARTED_AT,
-          idle_ms: Date.now() - lastActivity,
-          idle_timeout_ms: opts.idleMin * 60_000,
+          uptime_ms: runtime.now() - startedAt,
+          idle_ms: runtime.now() - lastActivity,
+          idle_timeout_ms: idleMin * 60_000,
           allow_actions: opts.allowActions,
           scope: getScope(),
         });
@@ -1535,23 +1570,43 @@ export async function startServer(opts: ServerOptions) {
     },
   });
 
-  console.error(`[glance] up on ${url}  (scope=${getScope().mode}, allow_actions=${opts.allowActions}, theme=${opts.theme})`);
-  console.error(`[glance] auto-shutdown after ${opts.idleMin}min idle  ·  Ctrl+C to exit`);
-  if (opts.open) openBrowser(url);
+  runtime.log(`[glance] up on ${url}  (scope=${getScope().mode}, allow_actions=${opts.allowActions}, theme=${opts.theme})`);
+  let watchdog: unknown = undefined;
+  let delegatedOnce = false;
+  const unregisterRef: { current: (() => void) | undefined } = { current: undefined };
+  const shutdownWithRuntime = (): void => {
+    unregisterRef.current?.();
+    shutdown(server, watchdog, runtime);
+  };
+  if (!persistent) {
+    runtime.log(`[glance] auto-shutdown after ${idleMin}min idle  ·  Ctrl+C to exit`);
+    if (opts.open) void runtime.openBrowser(url);
 
-  // Idle watchdog
-  const watchdog = setInterval(() => {
-    if (Date.now() - lastActivity > opts.idleMin * 60_000) {
-      console.error(`[glance] idle ${opts.idleMin}min — shutting down`);
-      shutdown(server, watchdog);
+    // Idle watchdog
+    watchdog = runtime.setInterval(() => {
+      if (runtime.now() - lastActivity > idleMin * 60_000) {
+        runtime.log(`[glance] idle ${idleMin}min — shutting down`);
+        shutdownWithRuntime();
+      }
+    }, 30_000);
+  }
+
+  // SIGINT/SIGTERM cleanup
+  function onSignal(signal: "SIGINT" | "SIGTERM"): void {
+    if (persistent && "handleSignal" in opts && typeof opts.handleSignal === "function") {
+      if (delegatedOnce) return;
+      delegatedOnce = true;
+      unregisterRef.current?.();
+      void Promise.resolve().then(() => opts.handleSignal!(signal)).catch((error: unknown) => {
+        runtime.log(`[glance-service] ${error instanceof Error ? error.message : String(error)}`);
+        runtime.exit(1);
+      });
+      return;
     }
-  }, 30_000);
-
-  // SIGINT cleanup
-  const onSignal = () => { console.error("\n[glance] SIGINT — shutting down"); shutdown(server, watchdog); };
-  process.on("SIGINT", onSignal);
-  process.on("SIGTERM", onSignal);
-
+    runtime.log("[glance] SIGINT — shutting down");
+    shutdownWithRuntime();
+  }
+  unregisterRef.current = runtime.registerSignals(onSignal);
   return { server, url, port };
 }
 
@@ -1787,9 +1842,9 @@ function streamJobSSE(req: Request, id: string): Response {
   });
 }
 
-function shutdown(server: any, watchdog: ReturnType<typeof setInterval>) {
-  clearInterval(watchdog);
+function shutdown(server: any, watchdog: unknown, runtime: ServerRuntime = defaultServerRuntime): void {
+  if (watchdog !== undefined && watchdog !== null) runtime.clearInterval(watchdog);
   try { server.stop(true); } catch {}
   try { fs.unlinkSync(PID_FILE); } catch {}
-  process.exit(0);
+  runtime.exit(0);
 }

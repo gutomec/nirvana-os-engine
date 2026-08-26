@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.nirvana-os.dev/glance/service-lock-owner/1.0.0",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "owner_id", "manager_pid", "operation", "target", "acquired_at", "expires_at", "token_ref", "token_digest"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "owner_id": { "type": "string", "format": "uuid" },
+    "manager_pid": { "type": "integer", "minimum": 1 },
+    "operation": { "enum": ["start", "stop", "restart"] },
+    "target": {
+      "type": "object", "additionalProperties": false,
+      "required": ["nirvana_home_digest", "scope", "port"],
+      "properties": {
+        "nirvana_home_digest": { "$ref": "#/$defs/digest" },
+        "scope": { "enum": ["global", "project"] },
+        "project_root_digest": { "$ref": "#/$defs/digest" },
+        "port": { "type": "integer", "minimum": 1024, "maximum": 65535 }
+      }
+    },
+    "acquired_at": { "type": "string", "format": "date-time" },
+    "expires_at": { "type": "string", "format": "date-time" },
+    "token_ref": { "type": "string", "pattern": "^secrets/[a-f0-9-]{36}\\.manager$" },
+    "token_digest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": { "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" } }
+}
