@@ -58,11 +58,13 @@ import { parseExecutionOptions } from "../lib/gauntlet/execution-options.ts";
 import { decideBusinessCanary, runBusinessCanaryWithRollback } from "../lib/gauntlet/business-canary.ts";
 import { compileGauntletPlan } from "../lib/gauntlet/compiler.ts";
 import {
-  GAUNTLET_EVALUATION_SHARE, gauntletRoundBudget, revisionDefectsSection, runAgentXGauntlet, shouldRunAgentXGauntlet, shouldRunSquadGauntlet,
-  type AgentXGauntletEvaluator, type AgentXRevisionRequest,
+  GAUNTLET_EVALUATION_FLOOR_USD, GAUNTLET_EVALUATION_SHARE, gauntletRoundBudget, revisionDefectsSection, rollbackGauntletBeforeProducer,
+  runAgentXGauntlet, shouldRunAgentXGauntlet, shouldRunSquadGauntlet, type AgentXGauntletEvaluator, type AgentXRevisionRequest, type GauntletRoundBudget,
 } from "../lib/gauntlet/agent-x-cutover.ts";
+import { EVALUATION_REQUEST_FILE, SCORECARD_FILE, type EvaluationRequest } from "../lib/gauntlet/evaluation-contract.ts";
 import { createDispatchEvaluator, describeTarget } from "../lib/gauntlet/evaluator-adapter.ts";
-import { GAUNTLET_EVALUATOR_ENV, loadInstalledSquads, selectGauntletEvaluator } from "../lib/gauntlet/evaluator-selection.ts";
+import { CONFORMANCE_CAPABILITY, GAUNTLET_EVALUATOR_ENV, loadInstalledSquads, selectGauntletEvaluator } from "../lib/gauntlet/evaluator-selection.ts";
+import { JUDGE_X_TARGET, judgeXAvailability, judgeXOutcome, runJudgeX } from "../lib/gauntlet/judge-x.ts";
 import type { GauntletPlan } from "../lib/gauntlet/types.ts";
 import { createHarnessLegacyAdapter, openKernel, type TargetRef } from "../lib/run-kernel/index.ts";
 import { inertStandardPublication, openStandardPublication } from "../lib/run-kernel/standard-publication.ts";
@@ -115,8 +117,10 @@ function extractPositional(argv: string[]): string[] {
 // ── explicit target selection ──────────────────────────────────────────────
 // --business <slug> · --squad <slug> · --agent-x name the target directly and
 // never consult the router. They are mutually exclusive with each other and
-// with --auto. Pure: the CLI flow turns an error into exit 4.
-export type ExplicitTarget = { kind: "business" | "squad"; slug: string } | { kind: "agent-x" };
+// with --auto. --judge-x is the engine's Gauntlet judge (lib/gauntlet/judge-x.ts):
+// the evaluator adapter spawns it on an evaluation brief; it never enters the
+// cascade. Pure: the CLI flow turns an error into exit 4.
+export type ExplicitTarget = { kind: "business" | "squad"; slug: string } | { kind: "agent-x" } | { kind: "judge-x" };
 export function parseExplicitTarget(argv: string[]): { target: ExplicitTarget | null; error: string | null } {
   // undefined = flag absent · null = flag given without a slug · string = slug
   const value = (name: string): string | null | undefined => {
@@ -128,8 +132,9 @@ export function parseExplicitTarget(argv: string[]): { target: ExplicitTarget | 
   const business = value("--business");
   const squad = value("--squad");
   const agentX = argv.includes("--agent-x");
+  const judgeX = argv.includes("--judge-x");
   const auto = argv.includes("--auto");
-  const given = [business !== undefined && "--business", squad !== undefined && "--squad", agentX && "--agent-x", auto && "--auto"]
+  const given = [business !== undefined && "--business", squad !== undefined && "--squad", agentX && "--agent-x", judgeX && "--judge-x", auto && "--auto"]
     .filter((flag): flag is string => typeof flag === "string");
   if (given.length > 1) return { target: null, error: `${given.join(", ")} are mutually exclusive: name one target, or use --auto` };
   if (business === null) return { target: null, error: "--business requires a slug" };
@@ -137,6 +142,7 @@ export function parseExplicitTarget(argv: string[]): { target: ExplicitTarget | 
   if (business) return { target: { kind: "business", slug: business }, error: null };
   if (squad) return { target: { kind: "squad", slug: squad }, error: null };
   if (agentX) return { target: { kind: "agent-x" }, error: null };
+  if (judgeX) return { target: { kind: "judge-x" }, error: null };
   return { target: null, error: null };
 }
 
@@ -153,8 +159,8 @@ const NO_ROUTER_DECISION: AgenticRouteDecision = {
   suggested_mind_clones: [], candidates: [], rationale: "", runtime: null, warnings: [], cost_usd: null, duration_ms: 0,
 };
 
-/** Dispatch plan for an explicit target: one step, source "explicit", no router. */
-export async function explicitTargetPlan(target: ExplicitTarget): Promise<DispatchPlan> {
+/** Dispatch plan for an explicit cascade target: one step, source "explicit", no router. */
+export async function explicitTargetPlan(target: Exclude<ExplicitTarget, { kind: "judge-x" }>): Promise<DispatchPlan> {
   if (target.kind === "agent-x") {
     return {
       ok: true, steps: [{ kind: "agent-x", reason: "explicit user target" }],
@@ -333,7 +339,8 @@ if (!slug && !autoMode && !explicitTarget) {
   console.error("    --business=<slug>       name the business explicitly (same as the positional slug)");
   console.error("    --squad=<slug>          name the squad explicitly: squad-only route, no router");
   console.error("    --agent-x               dispatch the generalist explicitly, no router");
-  console.error("                            (--business, --squad, --agent-x and --auto are mutually exclusive)");
+  console.error("    --judge-x               run the engine's Gauntlet judge on an evaluation brief (the evaluator adapter's child)");
+  console.error("                            (--business, --squad, --agent-x, --judge-x and --auto are mutually exclusive)");
   console.error("    --exec[=runtime]        run the agent headless (without it, only scaffolds)");
   console.error("    --claude-code           shortcut for --exec=claude-code");
   console.error("    --auto-brief            enrich a thin brief and decide for the human");
@@ -540,6 +547,7 @@ function corpusLanguageMix(): { enPct: number; ptPct: number; minorityPct: numbe
 let pendingCascade:
   | { kind: "squad-only"; squads: string[]; plan: DispatchPlan }
   | { kind: "agent-x"; reason: string; plan: DispatchPlan }
+  | { kind: "judge-x" }
   | null = null;
 if (autoMode && routingMode === "fast") {
   // fast mode: BM25 business pick, zero-token. Honest fallback when BM25 can't
@@ -666,6 +674,10 @@ if (autoMode && routingMode === "fast") {
     emit("auto_route_selected", { project_id: projectId || null, business_slug: null, method: "agentic", source: plan.source, agent_x: true, reason: step.reason });
     pendingCascade = { kind: "agent-x", reason: step.reason, plan };
   }
+} else if (explicitTarget?.kind === "judge-x") {
+  // --judge-x: the evaluator adapter's child. No plan, no cascade: the judge route below.
+  console.log(c("lime", "▶") + c("bold", " Explicit target — judge-x") + c("dim", " (Gauntlet judge, no router)"));
+  pendingCascade = { kind: "judge-x" };
 } else if (explicitTarget && explicitTarget.kind !== "business") {
   // --squad / --agent-x: the user named the target, so the plan is resolved
   // without the router (dispatch-cascade layer 0) and flows into the same
@@ -767,32 +779,68 @@ function heuristicGauntletEvaluator(env: Record<string, string>): AgentXGauntlet
 
 // Gauntlet evaluator and round budget shared by the three canaries. The target comes from
 // lib/gauntlet/evaluator-selection.ts (NIRVANA_GAUNTLET_EVALUATOR, else an installed squad
-// declaring quality.specification_conformance, else agent-x when the producer is not agent-x,
-// else the heuristic); every fallback and the final choice are audited. A variable that cannot
-// be honoured ends the dispatch with exit 4 before any producer runs. A real evaluator runs
-// through lib/gauntlet/evaluator-adapter.ts and its estimated cost is part of the round reserve.
+// declaring quality.specification_conformance, else judge-x for any producer); every fallback
+// and the final choice are audited. The judgement is agentic by policy: the offline heuristic
+// runs only by explicit opt-in (NIRVANA_GAUNTLET_EVALUATOR=heuristic, audited as
+// x_gauntlet_evaluator_heuristic_opt_in). A variable that cannot be honoured ends the dispatch
+// with exit 4 before any producer runs. With no agentic evaluator available (no judge-x persona
+// for the runtime, CLI off the PATH) the Gauntlet does not start: x_gauntlet_evaluator_unavailable,
+// the Run rolled back as `evaluator_unavailable` and exit 4. A real evaluator runs through
+// lib/gauntlet/evaluator-adapter.ts with the evaluation budget (share or floor) as its cap; a
+// slice the floor consumes entirely rolls the Run back as `max_cost` before the producer.
 function gauntletEvaluatorFor(args: { pid: string; producer: TargetRef; plan: GauntletPlan; projectRoot: string; rt: Runtime;
-  heuristicEnv: Record<string, string> }): { evaluator: AgentXGauntletEvaluator; budget: ReturnType<typeof gauntletRoundBudget> } {
+  kernelPath: string; runId: string; heuristicEnv: Record<string, string> }): { evaluator: AgentXGauntletEvaluator; budget: GauntletRoundBudget } {
+  const judge = judgeXAvailability(args.rt);
   let selection: ReturnType<typeof selectGauntletEvaluator>;
   try {
-    selection = selectGauntletEvaluator({ envValue: process.env[GAUNTLET_EVALUATOR_ENV], producer: args.producer, installed: loadInstalledSquads() });
+    selection = selectGauntletEvaluator({ envValue: process.env[GAUNTLET_EVALUATOR_ENV], producer: args.producer, installed: loadInstalledSquads(), judge });
   } catch (error) {
     console.error(c("red", `✗ Gauntlet evaluator: ${(error as Error).message}`));
     process.exit(4);
   }
-  const evaluatorLabel = selection.kind === "heuristic" ? "heuristic" : describeTarget(selection.target);
   for (const fallback of selection.fallbacks) {
     emit("x_gauntlet_evaluator_fallback", { trace_id: args.pid, project_id: args.pid, from: fallback.from, reason: fallback.reason,
-      producer: describeTarget(args.producer) });
+      ...(fallback.detail ? { detail: fallback.detail } : {}), producer: describeTarget(args.producer) });
   }
+  const rollback = (reason: "evaluator_unavailable" | "max_cost", errors: string[]): void => {
+    const kernel = openKernel(args.kernelPath);
+    try {
+      rollbackGauntletBeforeProducer({ kernel, projectId: args.pid, runId: args.runId, traceId: args.pid, producer: args.producer, plan: args.plan, reason, errors });
+    } finally { kernel.close(); }
+  };
+  if (selection.kind === "unavailable") {
+    emit("x_gauntlet_evaluator_unavailable", { trace_id: args.pid, project_id: args.pid, producer: describeTarget(args.producer), runtime: args.rt,
+      reason: selection.reason, run_id: args.runId });
+    console.error(c("red", `✗ Gauntlet evaluator: no agentic evaluator is available (${selection.reason}); the Gauntlet does not start.`));
+    console.error(c("dim", `  Install a squad declaring ${CONFORMANCE_CAPABILITY} and run nrv index, use a runtime with a judge-x persona,`));
+    console.error(c("dim", `  or opt into the offline heuristic explicitly with ${GAUNTLET_EVALUATOR_ENV}=heuristic.`));
+    rollback("evaluator_unavailable", [selection.reason]);
+    process.exit(4);
+  }
+  const evaluatorLabel = selection.kind === "heuristic" ? "heuristic" : describeTarget(selection.target);
   emit("x_gauntlet_evaluator_selected", { trace_id: args.pid, project_id: args.pid, evaluator: evaluatorLabel, source: selection.source,
     target: selection.kind === "heuristic" ? null : selection.target, producer: describeTarget(args.producer),
-    evaluation_share: selection.kind === "heuristic" ? 0 : GAUNTLET_EVALUATION_SHARE });
+    evaluation_share: selection.kind === "heuristic" ? 0 : GAUNTLET_EVALUATION_SHARE,
+    evaluation_floor_usd: selection.kind === "heuristic" ? 0 : GAUNTLET_EVALUATION_FLOOR_USD });
   console.log(c("dim", `  Gauntlet evaluator: ${evaluatorLabel} (${selection.source})`));
   if (selection.kind === "heuristic") {
+    emit("x_gauntlet_evaluator_heuristic_opt_in", { trace_id: args.pid, project_id: args.pid, producer: describeTarget(args.producer),
+      env_value: process.env[GAUNTLET_EVALUATOR_ENV] ?? null });
+    console.log(c("yellow", `  ⚠ offline heuristic by explicit opt-in (${GAUNTLET_EVALUATOR_ENV}=heuristic): the round is scored by the quality gate, not judged`));
     return { evaluator: heuristicGauntletEvaluator(args.heuristicEnv), budget: gauntletRoundBudget(args.plan, effectiveBudgetUsd()) };
   }
   const budget = gauntletRoundBudget(args.plan, effectiveBudgetUsd(), GAUNTLET_EVALUATION_SHARE);
+  if (budget.insufficient) {
+    const account = `plan ceiling USD ${args.plan.budget.maxCostUsd} / (${args.plan.candidateStrategy.count} candidate(s) × ${args.plan.stop.maxRounds} round(s))`
+      + `${effectiveBudgetUsd() !== undefined ? `, --max-budget USD ${effectiveBudgetUsd()}` : ""} = USD ${budget.candidateBudgetUsd + budget.evaluationBudgetUsd} per candidate; `
+      + `the evaluation takes USD ${budget.evaluationBudgetUsd} (${GAUNTLET_EVALUATION_SHARE * 100}% or the USD ${GAUNTLET_EVALUATION_FLOOR_USD} floor) and leaves the producer nothing`;
+    emit("x_gauntlet_budget_insufficient", { trace_id: args.pid, project_id: args.pid, producer: describeTarget(args.producer), evaluator: evaluatorLabel,
+      plan_max_cost_usd: args.plan.budget.maxCostUsd, max_budget_usd: effectiveBudgetUsd() ?? null, candidate_budget_usd: budget.candidateBudgetUsd,
+      evaluation_budget_usd: budget.evaluationBudgetUsd, evaluation_floor_usd: GAUNTLET_EVALUATION_FLOOR_USD, run_id: args.runId });
+    console.error(c("red", `✗ Gauntlet budget: ${account}. The Gauntlet does not start (max_cost before the producer).`));
+    rollback("max_cost", [account]);
+    process.exit(1);
+  }
   const evaluator = createDispatchEvaluator({ target: selection.target, producer: args.producer, plan: args.plan, brief: brief!,
     projectRoot: args.projectRoot, projectId: args.pid, runtime: args.rt, budgetUsd: budget.evaluationBudgetUsd,
     timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined, audit: emit });
@@ -945,7 +993,7 @@ if (pendingCascade?.kind === "squad-only") {
     const producerTarget = { kind: "squad" as const, slug: squad, capabilityId };
     const canonicalRunId = canonicalRunIdFor(pid, runIdFlag);
     const { evaluator, budget } = gauntletEvaluatorFor({ pid, producer: producerTarget, plan: compileGauntletPlan({ brief, intensity: executionOptions.intensity }),
-      projectRoot, rt, heuristicEnv: { NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid } });
+      projectRoot, rt, kernelPath: canaryKernelPath(projectRoot), runId: canonicalRunId, heuristicEnv: { NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid } });
     const kernel = openKernel(canaryKernelPath(projectRoot));
     const legacy = runLedger.openLedger();
     let finalDelivery: DeliveryResult | null = null;
@@ -1054,6 +1102,71 @@ if (pendingCascade?.kind === "squad-only") {
   process.exit(res.exitCode);
 }
 
+// ── JUDGE-X ROUTE — the engine's Gauntlet judge, the evaluator adapter's child ──
+// No cascade, no nested Gauntlet, no delivery gate over content: the only artifact
+// is scorecard.json, validated here against the evaluation request the adapter wrote
+// beside the outputs root. The canonical Run ends `completed` only with a valid
+// scorecard; otherwise `withheld`, and a spent cap is named `budget_exhausted`.
+if (pendingCascade?.kind === "judge-x") {
+  const rt = runtimeDecision.runtime;
+  const ts = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "");
+  const pid = projectId || `proj-${ts}-judge-x`;
+  const base = path.join(process.cwd(), "outputs", pid);
+  const projDir = path.join(base, "judge-x");
+  fs.mkdirSync(projDir, { recursive: true });
+  dispatchAudit.bindProjectRoot(projDir);
+  emit("brief_received", { trace_id: pid, project_id: pid, target: "judge-x", brief_chars: brief.length });
+
+  if (!wantExec) {
+    console.log(c("cyan", "  judge-x runs only with --exec: nothing was judged."));
+    console.log(c("green", "✓ Scaffold ready. Project ID: " + pid));
+    console.log(c("dim", "  (exit 3 — nothing dispatched, nothing judged)"));
+    process.exit(3);
+  }
+  const oroot = outputsRoot || path.join(base, "deliverables");
+  fs.mkdirSync(oroot, { recursive: true });
+  const requestFile = path.join(path.dirname(oroot), EVALUATION_REQUEST_FILE);
+  let request: EvaluationRequest;
+  try { request = JSON.parse(fs.readFileSync(requestFile, "utf8")) as EvaluationRequest; }
+  catch (error) {
+    console.error(c("red", `✗ judge-x needs ${EVALUATION_REQUEST_FILE} beside its outputs root (${requestFile}): ${(error as Error).message}`));
+    console.error(c("dim", "  The Gauntlet evaluator adapter writes it; judge-x is not a producer and takes no free-form brief."));
+    process.exit(4);
+  }
+  const judge = judgeXAvailability(rt);
+  if (!judge.available) {
+    console.error(c("red", `✗ judge-x: ${judge.reason}`));
+    emit("agent_exec_failed", { trace_id: pid, project_id: pid, employee: "judge-x", runtime: rt, reason: judge.reason });
+    process.exit(1);
+  }
+  const scorecardPath = path.join(oroot, SCORECARD_FILE);
+  const publication = openStandardPublication({ kernelPath: canaryKernelPath(base), projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag),
+    traceId: pid, target: JUDGE_X_TARGET, snapshot: frozenExecutionSnapshot(pid, rt, "agent-x"),
+    audit: emit, warn: line => console.error(c("yellow", line)) });
+  if (publication.incompatible) process.exit(1);
+
+  console.log(c("lime", "▶") + c("bold", ` Judge-x — exec headless (${rt})`));
+  publication.start();
+  const maxBudgetUsd = effectiveBudgetUsd();
+  const r = runJudgeX({ brief, runtime: rt, projectId: pid, projectDir: projDir, projectRoot: base, outputsRoot: oroot, scorecardPath,
+    candidateRoot: request.candidateRoot, maxBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined, yolo, audit: emit });
+  console.log(c("dim", `  session: ${r.sessionId || "(none)"} · ${r.durationMs}ms${r.costUsd != null ? ` · $${r.costUsd.toFixed(4)}` : ""} · prompt ${r.promptChars} chars`));
+  publication.verify();
+  const outcome = judgeXOutcome({ scorecardPath, requirements: request.requirements, run: r, maxBudgetUsd });
+  if (outcome.exitCode === 0) {
+    emit("verify_passed", { trace_id: pid, project_id: pid, business_slug: null, files: 1, scorecard: scorecardPath, verdict: outcome.scorecard.verdict });
+    publication.finish({ exitCode: 0, gateOutcome: "pass" }, oroot);
+    console.log(c("green", `✓ judge-x wrote a valid ${SCORECARD_FILE} (verdict ${outcome.scorecard.verdict}).`));
+    process.exit(0);
+  }
+  if (!r.ok) emit("agent_exec_failed", { trace_id: pid, project_id: pid, employee: "judge-x", runtime: rt, exit_code: r.exitCode,
+    error: r.error || r.stderr, ...(r.budgetExhausted ? { budget_exhausted: true, max_budget_usd: maxBudgetUsd ?? null } : {}) });
+  emit("verify_failed", { trace_id: pid, project_id: pid, business_slug: null, reason: outcome.reason });
+  publication.finish({ exitCode: 2, gateOutcome: "fail", error: outcome.reason }, oroot);
+  console.error(c("yellow", `⚠ judge-x withheld: ${outcome.reason}`));
+  process.exit(2);
+}
+
 // ── AGENT-X ROUTE — the cascade bottom delivers (Phase 4.1) ───────────────
 // NO_MATCH (and unresolvable router failures) used to exit 1 — a contract
 // inversion of SKILL.md's cascade step 3. Now the generalist runs with the
@@ -1093,7 +1206,7 @@ if (pendingCascade?.kind === "agent-x") {
     const canonicalRunId = canonicalRunIdFor(pid, runIdFlag);
     const { evaluator, budget } = gauntletEvaluatorFor({ pid, producer: { kind: "agent-x", slug: "agent-x" },
       plan: compileGauntletPlan({ brief, intensity: executionOptions.intensity }), projectRoot: base, rt,
-      heuristicEnv: { NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid } });
+      kernelPath: canaryKernelPath(base), runId: canonicalRunId, heuristicEnv: { NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid } });
     const kernel = openKernel(canaryKernelPath(base));
     const legacy = runLedger.openLedger();
     let finalDelivery: DeliveryResult | null = null;
@@ -1329,7 +1442,7 @@ if (wantExec) {
     const canonicalRunId = canonicalRunIdFor(pid, runIdFlag);
     const { evaluator, budget } = gauntletEvaluatorFor({ pid, producer: { kind: "business", slug },
       plan: compileGauntletPlan({ brief, intensity: executionOptions.intensity }), projectRoot, rt,
-      heuristicEnv: { NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid, NIRVANA_BUSINESS_SLUG: slug } });
+      kernelPath: canaryKernelPath(projectRoot), runId: canonicalRunId, heuristicEnv: { NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid, NIRVANA_BUSINESS_SLUG: slug } });
     const kernel = openKernel(canaryKernelPath(projectRoot));
     const canaryLedger = runLedger.openLedger();
     let finalDelivery: DeliveryResult | null = null;

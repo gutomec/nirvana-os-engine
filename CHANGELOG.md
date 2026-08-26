@@ -8,6 +8,60 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### The Gauntlet is always judged by an agent: judge-x, the engine's own judge
+
+The first real smoke of the evaluator (2026-08-26, Café Solar) showed two
+things. The offline heuristic cannot judge: on four candidates it approved a
+good one, could not tell an incomplete English draft from a poem (0/2 for
+both), and passed the main file of a copy written for another product, while
+the agentic judge got all four right with verifiable evidence. And the
+agent-x evaluator died on its first turn: the agent-x prompt (persona,
+autonomous directive, squad catalog, brief) cost USD 0.82 under the USD 0.625
+that 25% of `light`'s USD 2.50 slice allowed. The Gauntlet is now judged by an
+agent by policy (`required`), and the engine ships the judge.
+
+`judge-x` is the engine's own evaluator: seven personas,
+`skills/_shared/agents/judge-x.<runtime>.md`, short and closed (read the
+brief, the contract and the candidate, write one `scorecard.json`, evidence
+by file and passage, conservative scores, `indeterminate` when it cannot
+judge, no recruiting, no editing), covered by `check-scope-guard`. Its
+identity is `{ kind: "agent-x", slug: "judge-x" }`: independence is compared
+by kind and slug, so the judge is independent of the agent-x producer, of
+every squad and of every business, and the kernel, Glance and the validators,
+which only read `kind`, accept it unchanged; a kind of its own would have
+touched every `kind` union for nothing. `dispatch.ts --judge-x` runs it
+through the headless driver on a lean prompt, persona plus evaluation brief
+and nothing else (about 7K chars against agent-x's 15.5K on the same brief;
+the wrap around the brief drops to a third), with no cascade, no nested
+Gauntlet and no delivery gate over content: its Run is `completed` only with
+a valid scorecard, else `withheld`, and a spent cap (claude's
+`error_max_budget_usd`) is named `budget_exhausted` on the child's stderr, in
+its audit and in the `indeterminate` scorecard, never an anonymous error.
+
+Selection order: `NIRVANA_GAUNTLET_EVALUATOR` (now also `judge-x`), then an
+installed squad declaring `quality.specification_conformance`, then judge-x
+for any producer. agent-x is no longer an implicit default (it stays
+accepted by the variable when the producer is not agent-x). Without the
+variable and without a judge (a runtime with no persona, or its CLI off the
+PATH) the Gauntlet does not start: `x_gauntlet_evaluator_unavailable`, the
+Run rolled back as `evaluator_unavailable` and exit 4 before any producer.
+The heuristic is an explicit opt-in, `NIRVANA_GAUNTLET_EVALUATOR=heuristic`,
+audited as `x_gauntlet_evaluator_heuristic_opt_in`. `nrv doctor` gained a
+`gauntlet: evaluator` line saying who would judge today and why.
+
+The evaluation budget is realistic: the judge takes the larger of 25% of the
+candidate's slice and a floor of USD 1.50 (`GAUNTLET_EVALUATION_FLOOR_USD`),
+as its `--max-budget`; the producer takes the rest. A slice the floor consumes
+rolls the Run back as `max_cost` before the producer
+(`x_gauntlet_budget_insufficient` with the account) instead of blowing up mid
+round. `light` costs USD 8 instead of 5, so each slice is USD 4: USD 1.50 to
+the judge, USD 2.50 to the producer. The engine does not materialize a judge
+squad in `~/squads`: registries start empty by design, and judge-x covers
+every machine; a judge of your own is a squad in your library declaring the
+capability, and the selection prefers it. Contract, identity, measured
+numbers and the evidence table in
+`docs/architecture/gauntlet-evaluator-contract.md`.
+
 ### Multi-target plans accept `agent` nodes: a role no squad covers, run by agent-x
 
 A multi-target plan could name a company, a squad, a deliverable or a brief.

@@ -803,6 +803,11 @@ export interface RunHeadlessResult {
   result: string;
   /** Native USD figure reported by the CLI itself. null = not reported. */
   costUsd: number | null;
+  /** The CLI's own result subtype when its output format carries one (claude-code:
+   * `success`, `error_max_turns`, `error_max_budget_usd`, `error_during_execution`).
+   * A caller that set `maxBudgetUsd` reads `error_max_budget_usd` here to tell a
+   * spent cap from any other failure. Absent on runtimes without the field. */
+  resultSubtype?: string;
   /** True when the CLI's output format carries NO native USD figure for this
    * run — "cost unknown", explicitly distinct from a reported $0. Downstream
    * (spend-tracker / cost-estimator) may still ESTIMATE from token counts;
@@ -1009,12 +1014,14 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
   let sessionId: string | null = null;
   let result = "";
   let costUsd: number | null = null;
+  let resultSubtype: string | undefined;
   let isError = exitCode !== 0;
   try {
     const parsed = JSON.parse(stdout.trim());
     sessionId = parsed.session_id ?? null;
     result = typeof parsed.result === "string" ? parsed.result : JSON.stringify(parsed.result ?? "");
     costUsd = typeof parsed.total_cost_usd === "number" ? parsed.total_cost_usd : null;
+    if (typeof parsed.subtype === "string") resultSubtype = parsed.subtype;
     if (typeof parsed.is_error === "boolean") isError = isError || parsed.is_error;
   } catch {
     // Non-JSON stdout (e.g. early crash). Keep raw for diagnostics.
@@ -1028,6 +1035,7 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
     result,
     costUsd,
     ...(costUsd === null ? { costUnavailable: true } : {}),
+    ...(resultSubtype !== undefined ? { resultSubtype } : {}),
     exitCode,
     stderr,
     durationMs,

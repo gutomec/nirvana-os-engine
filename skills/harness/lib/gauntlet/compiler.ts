@@ -3,7 +3,11 @@ import { canonicalJson } from "../run-kernel/canonical-json.ts";
 import type { ExecutionConfig, GauntletIntensity, GauntletPlan, SuccessRequirement } from "./types.ts";
 
 const PROFILES = {
-  light: { candidates: 1, rounds: 2, cost: 5, duration: 1800, score: 0.85, delta: 0.03, patience: 1, model: "preferred", runtime: "preferred", holdout: false },
+  // `light` was USD 5: one candidate, two rounds, a USD 2.50 slice per candidate that the
+  // evaluation floor (GAUNTLET_EVALUATION_FLOOR_USD, USD 1.50) would leave the producer USD 1.00
+  // of, below what one real candidate costs (USD 1.65 in the first smoke). USD 8 gives each
+  // slice USD 4: USD 2.50 to the producer, USD 1.50 to the judge.
+  light: { candidates: 1, rounds: 2, cost: 8, duration: 1800, score: 0.85, delta: 0.03, patience: 1, model: "preferred", runtime: "preferred", holdout: false },
   balanced: { candidates: 3, rounds: 4, cost: 25, duration: 7200, score: 0.92, delta: 0.03, patience: 2, model: "preferred", runtime: "preferred", holdout: true },
   exhaustive: { candidates: 5, rounds: 6, cost: 100, duration: 21600, score: 0.96, delta: 0.02, patience: 2, model: "required", runtime: "required", holdout: true },
 } as const;
