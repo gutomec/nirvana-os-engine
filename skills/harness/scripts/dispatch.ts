@@ -178,8 +178,9 @@ const inlineBrief = (autoMode || explicitTarget) ? positional[0] : positional[1]
 const briefFile = arg("--brief-file");
 const manifest = arg("--manifest");
 const projectId = arg("--project");
-// --run-id: adopt a Run another control plane already prepared (Glance) instead
-// of deriving run_<project>. The Run lives in the project root's kernel (the
+// --run-id: the Run's id instead of the derived run_<project>: adopted when a
+// control plane prepared it (Glance), created when it does not exist yet (one
+// per multi-target node attempt). The Run lives in the project root's kernel (the
 // root Glance serves: NIRVANA_PROJECT_ROOT, else the cwd), so with the flag the
 // canaries open that kernel; without it each dispatch keeps its own under
 // outputs/<pid>, byte-for-byte the previous behaviour.
@@ -343,7 +344,7 @@ if (!slug && !autoMode && !explicitTarget) {
   console.error("    --team                  real multi-employee orchestration (director + chain, each step audits)");
   console.error("    --execution-mode=<mode> standard|gauntlet|auto (default: standard)");
   console.error("    --gauntlet-intensity=<profile> light|balanced|exhaustive");
-  console.error("    --run-id=<runId>        adopt a Run already prepared in the project kernel (Glance); default run_<project>");
+  console.error("    --run-id=<runId>        the Run's id in the project kernel: adopted when prepared (Glance), created otherwise (multi-target nodes); default run_<project>");
   console.error("    --max-budget=<usd>      cost ceiling for the run (claude --max-budget-usd)");
   console.error("    --timeout=<min>         wall-clock ceiling for the run (default 24h; a real hang is caught by ~5 min of inactivity)");
   console.error("    --safe                  opt in to restricted mode (limited tools + sandbox); default = full trust");

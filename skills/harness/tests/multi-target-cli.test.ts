@@ -639,3 +639,69 @@ describe("nrv multi-target with an agent node", () => {
     expect(spawns(setup)).toHaveLength(4);
   }, spawnBudgetMs(6));
 });
+
+// The shape of the first real smoke plan: one standard squad, then the synthesis under a light
+// Gauntlet, in one project. Before the per-node Run ids both nodes derived `run_<project>`.
+const SMOKE_PLAN = {
+  schemaVersion: "nirvana.multi-target-plan/v1alpha1",
+  brief: "# Brief\n\nLaunch material for a fictional product.\n",
+  briefs: { "squad-copy": "Write the copy.", "final-output": "Assemble the launch note from the copy." },
+  graph: {
+    nodes: [{ id: "brief-main", type: "brief" }, { id: "squad-copy", type: "squad" }, { id: "final-output", type: "deliverable" }],
+    edges: [
+      { id: "b1", source: "brief-main", target: "squad-copy", type: "briefs" },
+      { id: "y1", source: "squad-copy", target: "final-output", type: "yields" },
+    ],
+  },
+  policy: { scope: "final-only", intensity: "light", synthesisNodeId: "final-output", limits: { maxCostUsd: 6 } },
+};
+
+describe("nrv multi-target run with a standard node and a Gauntlet synthesis in one project", () => {
+  test("every node attempt gets its own Run id; the third attempt reruns only the synthesis under _a3 while the delivered squad keeps _a1", () => {
+    const setup = fixture("smoke-cafe");
+    fs.writeFileSync(setup.planFile, JSON.stringify(SMOKE_PLAN, null, 2));
+    const captureOf = (kind: string, id: string) => JSON.parse(fs.readFileSync(path.join(setup.workspace, kind, id, "outputs", "dispatch-capture.json"), "utf8"));
+    const runIdOf = (kind: string, id: string) => { const c = captureOf(kind, id); return c.argv[c.argv.indexOf("--run-id") + 1] as string; };
+    const [r1, r2, r3] = [1, 2, 3].map((attempt) => multiTargetRunId(setup.projectId, attempt));
+
+    const first = nrv(setup, ["run", setup.planFile], { ...ENGINE, FAKE_DISPATCH_EXIT_CODE_FOR: "final-output=1" });
+    expect(first.status).toBe(1);
+    expect(spawns(setup)).toEqual(["squad-copy", "final-output"]);
+    expect(runIdOf("squads", "squad-copy")).toBe("run_smoke-cafe_squad-copy_a1");
+    expect(runIdOf("deliverables", "final-output")).toBe("run_smoke-cafe_final-output_a1");
+
+    // The cause still there: _r2 keeps the squad and fails on the synthesis again, under _a2.
+    const second = nrv(setup, ["run", setup.planFile, "--retry-failed"], { ...ENGINE, FAKE_DISPATCH_EXIT_CODE_FOR: "final-output=1" });
+    expect(second.status).toBe(1);
+    expect(second.stdout).toContain(`▶ Run ${r2} criado a partir de ${r1}`);
+    expect(spawns(setup)).toEqual(["squad-copy", "final-output", "final-output"]);
+    expect(runIdOf("deliverables", "final-output")).toBe("run_smoke-cafe_final-output_a2");
+
+    // The cause fixed: _r3 keeps waves 1 and 2, runs only the synthesis, under its own id.
+    const third = nrv(setup, ["run", setup.planFile, "--retry-failed"], ENGINE);
+    expect(third.status).toBe(0);
+    expect(third.stdout).toContain(`▶ Run ${r3} criado a partir de ${r2} (owner`);
+    expect(third.stdout).toContain("voltam a pending: final-output\n");
+    expect(third.stdout).toContain("✓ Plano multi-target entregue.");
+    expect(spawns(setup)).toEqual(["squad-copy", "final-output", "final-output", "final-output"]);
+    expect(runIdOf("squads", "squad-copy")).toBe("run_smoke-cafe_squad-copy_a1");
+    expect(runIdOf("deliverables", "final-output")).toBe("run_smoke-cafe_final-output_a3");
+    const synthesis = captureOf("deliverables", "final-output");
+    expect(synthesis.argv).toContain("--agent-x");
+    expect(synthesis.argv).toContain("--execution-mode=gauntlet");
+    expect(synthesis.argv[synthesis.argv.indexOf("--project") + 1]).toBe(setup.projectId);
+    expect(synthesis.env.NIRVANA_PROJECT_ROOT).toBe(setup.projectRoot);
+    withKernel(setup, (kernel) => {
+      expect(getRun(kernel, setup.projectId, r1)!.state).toBe("failed");
+      expect(getRun(kernel, setup.projectId, r2)).toMatchObject({ state: "failed", parentRunId: r1 });
+      expect(getRun(kernel, setup.projectId, r3)).toMatchObject({ state: "completed", parentRunId: r2 });
+      const projection = projectMultiTargetRun(kernel, setup.projectId, r3)!;
+      expect(projection).toMatchObject({ state: "delivered", attempt: 3 });
+      expect(projection.nodes.map((node) => [node.nodeId, node.mode, node.state])).toEqual([
+        ["brief-main", "standard", "delivered"], ["squad-copy", "standard", "delivered"], ["final-output", "gauntlet", "delivered"],
+      ]);
+    });
+    const retried = auditEvents(setup).filter((event) => event.event === "x_multi_target_plan_retried");
+    expect(retried.map((event) => [event.run_id, event.previous_run_id, event.reset_nodes, event.attempt])).toEqual([[r2, r1, ["final-output"], 2], [r3, r2, ["final-output"], 3]]);
+  }, spawnBudgetMs(7));
+});

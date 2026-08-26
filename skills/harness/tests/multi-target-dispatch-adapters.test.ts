@@ -5,7 +5,7 @@ import { isAbsolute, join } from "node:path";
 import type { DependencyGraph } from "../../_shared/lib/dependency-graph.ts";
 import { reserveAggregateGauntletBudget } from "../lib/gauntlet/aggregate-budget.ts";
 import { coordinateMultiTargetPlan, type MultiTargetAdapterInput } from "../lib/gauntlet/multi-target-coordinator.ts";
-import { costMatcher, createDispatchMultiTargetAdapters, MULTI_TARGET_RESULT_MARKER, type DispatchSpawn } from "../lib/gauntlet/multi-target-dispatch-adapters.ts";
+import { costMatcher, createDispatchMultiTargetAdapters, MULTI_TARGET_RESULT_MARKER, nodeRunId, type DispatchSpawn } from "../lib/gauntlet/multi-target-dispatch-adapters.ts";
 import { createRunKernelMultiTargetPorts } from "../lib/gauntlet/run-kernel-multi-target-ports.ts";
 import { compileMultiTargetGauntletPolicy, type CompiledMultiTargetPlan } from "../lib/plan-compiler.ts";
 import { createRun, listEvents, openKernel, type KernelHandle } from "../lib/run-kernel/store.ts";
@@ -83,7 +83,7 @@ function nodeInput(plan: CompiledMultiTargetPlan, nodeId: string, overrides: Par
   return {
     nodeId, target: { kind: decision.targetKind as MultiTargetAdapterInput["target"]["kind"], id: nodeId },
     mode: decision.mode, intensity: decision.intensity, grantedCostUsd: 0, upstreamPaths: [],
-    outputPath: phase.outputs_path, idempotencyKey: `multi-target:${plan.digest}:${nodeId}`, resume: false,
+    outputPath: phase.outputs_path, attempt: 1, idempotencyKey: `multi-target:${plan.digest}:${nodeId}`, resume: false,
     ...overrides,
   };
 }
@@ -180,6 +180,26 @@ describe("multi-target dispatch adapters", () => {
     expect(synthesisCapture.brief).toStartWith("Write the final report.");
     expect(synthesisCapture.brief).toContain(join(setup.workspaceRoot, "squads", "squad-c", "outputs", "_SUMMARY.md"));
   }, spawnBudgetMs(3));
+
+  test("every node attempt runs under its own Run id in the project kernel: run_<project>_<node>_a<attempt>", async () => {
+    const setup = fixture();
+    const { plan } = compile();
+    const ports = adapters(setup, plan);
+    expect(nodeRunId("prj_x.y", "node_z", 2)).toBe("run_prj-x-y_node-z_a2");
+    const runIdOf = (outputPath: string) => flag(capture(setup, outputPath), "--run-id");
+    await ports.standard.run(nodeInput(plan, "business-a"));
+    expect(runIdOf("businesses/business-a/outputs/")).toBe("run_trace-multi_business-a_a1");
+    await ports.standard.run(nodeInput(plan, "squad-c"));
+    expect(runIdOf("squads/squad-c/outputs/")).toBe("run_trace-multi_squad-c_a1");
+    await ports.gauntlet.run(nodeInput(plan, "final-output", { grantedCostUsd: 1 }));
+    expect(runIdOf("deliverables/final-output/outputs/")).toBe("run_trace-multi_final-output_a1");
+    // A retried plan hands the adapter the next attempt: same node, same project, a fresh Run.
+    await ports.standard.run(nodeInput(plan, "business-a", { attempt: 2, idempotencyKey: `multi-target:${plan.digest}:business-a:attempt-2` }));
+    expect(runIdOf("businesses/business-a/outputs/")).toBe("run_trace-multi_business-a_a2");
+    // With --run-id the dispatch opens the project kernel; the child is told which root that is.
+    expect(capture(setup, "businesses/business-a/outputs/").env.NIRVANA_PROJECT_ROOT).toBe(setup.projectRoot);
+    expect(spawnCount(setup)).toBe(4);
+  }, spawnBudgetMs(4));
 
   test("exit codes 0, 2, 3 and 1 map onto delivered, withheld, withheld (indeterminate) and failed", async () => {
     const setup = fixture();
