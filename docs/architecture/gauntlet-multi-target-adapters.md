@@ -29,15 +29,23 @@ O scaffold legado do dispatch (agent-prompt, session.json, handoffs) continua on
 
 | Alvo | Comando |
 | --- | --- |
-| `business` | `bun dispatch.ts --business <slug> --brief-file <...> --exec --project <id> --outputs-root <abs>` |
-| `squad` | `bun dispatch.ts --squad <slug> --brief-file <...> --exec --project <id> --outputs-root <abs>` |
-| `agent-x` (nó `agent`) e `synthesis` | `bun dispatch.ts --agent-x --brief-file <...> --exec --project <id> --outputs-root <abs>` |
+| `business` | `bun dispatch.ts --business <slug> --brief-file <...> --exec --project <id> --run-id <id do Run do nó> --outputs-root <abs>` |
+| `squad` | `bun dispatch.ts --squad <slug> --brief-file <...> --exec --project <id> --run-id <id do Run do nó> --outputs-root <abs>` |
+| `agent-x` (nó `agent`) e `synthesis` | `bun dispatch.ts --agent-x --brief-file <...> --exec --project <id> --run-id <id do Run do nó> --outputs-root <abs>` |
 
 Os dois alvos agent-x se distinguem pelo brief e pelo diretório: o nó `agent` recebe o próprio sub-brief, obrigatório, em `agents/<id>/`; a síntese recebe o texto padrão mais a lista dos `_SUMMARY.md` upstream, em `deliverables/<id>/`.
 
 `--runtime <rt>` é acrescentado quando informado. `--max-budget` recebe o menor valor entre a concessão da reserva (modo `gauntlet`) e `budgetUsd[nodeId]`.
 
 As três flags são mutuamente exclusivas entre si e com `--auto`. `--business` equivale ao positional; `--squad` preenche `resolveDispatchPlan.explicitTarget` e segue pela rota squad-only; `--agent-x` entra direto no branch agent-x. Nenhuma consulta o roteador, então um nó não paga chamada de LLM para ser selecionado, e o brief entregue ao dispatch é o sub-brief sem prefixo.
+
+## Id de Run por nó e tentativa
+
+Todo spawn passa `--run-id run_<projectId>_<nodeId>_a<attempt>` (`nodeRunId`), com cada parte sanitizada como `canonicalRunIdFor` sanitiza o project id (`[^A-Za-z0-9-]` vira `-`): `run_smoke-cafe-solar_final-output_a1` na primeira execução, `_a2` para os nós que uma retomada com `--retry-failed` reexecuta, enquanto os nós entregues não spawnam. Vale para `standard` e `gauntlet`, business, squad, agent-x e síntese; a `attempt` vem do snapshot do coordenador, no mesmo `MultiTargetAdapterInput` que carrega a chave idempotente.
+
+Sem o id explícito, o `dispatch.ts` derivava `run_<projectId>` de `--project`, que todos os nós de um plano compartilham. Na primeira retomada real, o nó `standard` da onda 1 publicou e concluiu `run_smoke-cafe-solar`; a onda 2 reproduziu os eventos desse Run e gerou `x_run_kernel_unavailable` na transição terminal; o canário Gauntlet da onda 3 adotou o Run já `completed`, produziu um candidato de USD 2,27, passou no gate e morreu em `illegal transition completed -> completed`. Candidatos, scorecards e o diretório `.nirvana/gauntlet/<runId>/` também eram compartilhados pelo mesmo id.
+
+Com `--run-id`, o dispatch abre o kernel do projeto (`<NIRVANA_PROJECT_ROOT || cwd>/.nirvana/run-kernel.sqlite`), o mesmo que guarda o Run do plano (`run_mt_<projectId>`) e que o Glance lê; o adapter fixa `NIRVANA_PROJECT_ROOT` no `projectRoot` em que roda, então o kernel é esse independentemente do shell do chamador. O Run do nó não existe antes do spawn: o filho o cria sob o id recebido, e um Run já terminal sob esse id é recusado com `x_run_id_collision` e exit 1 antes do produtor ([Operação do Run Kernel](run-kernel-operations.md)). O adapter do avaliador Gauntlet não passa `--run-id`: ele roda sob um project id próprio (`<projectId>-evl-<revisionId>`), que já carrega o Run do nó, e por isso não colide.
 
 ## Modo gauntlet
 

@@ -88,7 +88,7 @@ Faz tudo do `plan` e então:
 1. abre `<projectRoot>/.nirvana/run-kernel.sqlite`, o mesmo kernel que o Glance lê (`NIRVANA_PROJECT_ROOT`, senão o diretório atual);
 2. localiza o Run mais recente da cadeia do plano (`run_mt_<projectId>`, depois `run_mt_<projectId>_r2`, `_r3`, enquanto existirem) ou cria o primeiro com `target: { kind: "agent-x", slug: "agent-x" }`, `planId: plan_<runId>` e `policySnapshotRef: snapshot_<prefixo do digest do plano>`, sob chave idempotente;
 3. transiciona `prepared → running` antes da primeira onda;
-4. executa o coordenador com `createRunKernelMultiTargetPorts` e `createDispatchMultiTargetAdapters`;
+4. executa o coordenador com `createRunKernelMultiTargetPorts` e `createDispatchMultiTargetAdapters`; cada nó roda sob o próprio Run canônico, `run_<projectId>_<nó>_a<tentativa>`, no mesmo kernel ([adapters](gauntlet-multi-target-adapters.md));
 5. transiciona `running → verifying → completed|withheld|failed` conforme o estado terminal do coordenador.
 
 `--owner` identifica o dono das leases por nó; o padrão é `hostname:pid`. `--json` imprime apenas `{ projectId, runId, run, projection, exitCode }` no stdout.
@@ -105,7 +105,7 @@ O que a retomada faz, nesta ordem:
 2. lê o último snapshot do coordenador do Run anterior e deriva o snapshot de retomada (`retryMultiTargetSnapshot`): os nós `delivered` ficam como estão, com outputs e marcadores intactos; `failed`, `withheld`, `skipped` e `stalled` voltam a `pending`; o estado do plano volta a `ready`, a `attempt` é incrementada e a `version` é a do snapshot anterior mais um;
 3. cria um Run canônico novo, `run_mt_<projectId>_r<attempt>`, com `parentRunId` apontando para o Run anterior e o mesmo `policySnapshotRef`, congela o `runtime.selection_snapshot` dele como em qualquer Run novo e transiciona `prepared → running`;
 4. grava no journal do Run novo `multi_target.plan_retried { previousRunId, resetNodes }` e o snapshot de retomada, e emite `x_multi_target_plan_retried` no audit;
-5. executa o coordenador: ele carrega o snapshot, pula os nós entregues e executa só os que voltaram a `pending`, com chaves idempotentes que carregam a tentativa (`multi-target:<digest>:<nó>:attempt-<n>`), então o marcador `.multi-target-result.json` da tentativa falha nunca responde pela nova.
+5. executa o coordenador: ele carrega o snapshot, pula os nós entregues e executa só os que voltaram a `pending`, com chaves idempotentes que carregam a tentativa (`multi-target:<digest>:<nó>:attempt-<n>`), então o marcador `.multi-target-result.json` da tentativa falha nunca responde pela nova; cada nó reexecutado recebe um Run canônico novo, `run_<projectId>_<nó>_a<n>`, e os nós entregues mantêm o Run da tentativa em que foram entregues.
 
 Por que um Run novo, e não o mesmo: a máquina de estados do Run (`lib/run-kernel/lifecycle.ts`) não tem transição a partir de nenhum estado terminal; `failed`, `withheld`, `completed`, `rolled_back`, `cancelled` e `abandoned` têm lista de transições vazia, e `assertTransition` recusa `failed → running`. Reabrir o mesmo Run exigiria mudar a máquina de estados, e um Run que ora é terminal, ora não, quebraria o Glance, a recuperação após restart e todo leitor que confia em `TERMINAL_RUN_STATES`. O Run novo encadeado por `parentRunId` (campo que `RunProjection` já tinha) preserva a história: o Run anterior continua `failed` com seu journal, e o novo começa do snapshot herdado. `run` e `status` por arquivo de plano sempre resolvem o Run mais recente da cadeia; `status <runId>` lê um Run específico.
 
@@ -119,6 +119,8 @@ nrv multi-target run .nirvana/plans/smoke-cafe-solar.json --retry-failed
 ```
 
 cria `run_mt_smoke-cafe-solar_r2`, mantém `nirvana-pesquisa-mercado` e executa só `high-conversion-copy` e `final-output`.
+
+Foi essa retomada que expôs a colisão de ids: `high-conversion-copy` foi entregue, e `final-output` (síntese, Gauntlet `light`) falhou com `[run-ledger] recordSession: run 'run_smoke-cafe-solar' not found` seguido de `illegal transition completed -> completed`, porque os três nós derivavam o mesmo `run_smoke-cafe-solar` de `--project` e a onda 1 já o tinha concluído. Com o id por nó e tentativa, `nrv multi-target run .nirvana/plans/smoke-cafe-solar.json --retry-failed` cria `run_mt_smoke-cafe-solar_r3`, mantém as ondas 1 e 2 e executa só `final-output`, sob `run_smoke-cafe-solar_final-output_a3`. O teste de CLI reproduz a cadeia com o dispatch falso: um squad `standard` na onda 1, a síntese `gauntlet` na onda 2, duas tentativas em que a síntese falha e uma terceira que cria `_r3` e executa um único nó.
 
 ### `status <arquivo|runId> [--project <id>] [--json]`
 
@@ -152,7 +154,7 @@ O comando escreve no audit legado (`lib/audit.js`) com `trace_id` e `project_id`
 | `x_multi_target_cost_unobserved` | por nó que executou sem evento de custo | nó, onda, modo, estado, `logs_dir` lido pelo coordenador |
 | `x_multi_target_terminal` | fim do `run` | estado do plano, estado do Run, custo total, `cost_unobserved_nodes`, razão, exit |
 
-Os subprocessos de cada nó seguem emitindo a própria cadeia legada (`dispatch_business`, `dispatch_squad`, `dispatch_agent_x`, `gate_passed`, `delivered`) no mesmo log: os adapters passam `HARNESS_LOGS_DIR` ao filho apontando para o diretório que o coordenador lê, então o `agent_executed` de cada nó chega onde o custo é somado ([adapters](gauntlet-multi-target-adapters.md)). O journal canônico (`multi_target.*`, `run.transitioned`) fica no kernel e aparece no Glance.
+Os subprocessos de cada nó seguem emitindo a própria cadeia legada (`dispatch_business`, `dispatch_squad`, `dispatch_agent_x`, `gate_passed`, `delivered`) no mesmo log: os adapters passam `HARNESS_LOGS_DIR` ao filho apontando para o diretório que o coordenador lê, então o `agent_executed` de cada nó chega onde o custo é somado ([adapters](gauntlet-multi-target-adapters.md)). Um nó que encontra um Run já terminal sob o `--run-id` recebido grava `x_run_id_collision` e sai com 1 antes do produtor ([Operação do Run Kernel](run-kernel-operations.md)). O journal canônico (`multi_target.*`, `run.transitioned`), o Run do plano e o Run de cada nó ficam no mesmo kernel e aparecem no Glance.
 
 ## Retomada
 

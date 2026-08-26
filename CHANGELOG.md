@@ -8,6 +8,43 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Every multi-target node runs under its own Run id, and a Run that already ended is refused
+
+The first real resumption of a multi-target plan (`--retry-failed`) delivered
+wave 2 and failed wave 3 with `[run-ledger] recordSession: run
+'run_smoke-cafe-solar' not found` followed by `illegal transition completed ->
+completed`. Every node of a plan shares `--project`, and the dispatch derived
+its canonical Run id, `run_<project>`, from it: the standard squad of wave 1
+published and completed that Run, wave 2 replayed its events
+(`x_run_kernel_unavailable` on the terminal transition) and the Gauntlet
+synthesis of wave 3 adopted the completed Run, produced a USD 2.27 candidate,
+passed the gate and died on the transition.
+
+The dispatch adapters now pass `--run-id run_<project>_<node>_a<attempt>` on
+every spawn, standard or gauntlet, business, squad, agent-x or synthesis, each
+part sanitized the way the dispatch sanitizes a project id; a retried plan gives
+the nodes it reruns `_a2`, `_a3`, while delivered nodes never spawn. With
+`--run-id` the node's Run lives in the project kernel beside the plan's
+`run_mt_<project>`, and the adapter pins `NIRVANA_PROJECT_ROOT` so that kernel
+is the one the child opens. Adoption itself is fail-closed: the standard
+publication and `runAgentXGauntlet` read the Run before any producer, and a
+terminal one (`completed`, `withheld`, `delivered_with_reservations`, `failed`,
+`rolled_back`, `cancelled`, `abandoned`) is neither re-created nor
+transitioned: `x_run_id_collision` in the audit, `run '<id>' is already
+terminal (<state>); pass a fresh --run-id` on stderr, exit 1. The business
+canary never rolls that refusal back into the legacy producer, which would run
+under the same id. On the smoke plan, `--retry-failed` now creates `_r3`, keeps
+waves 1 and 2 and runs only `final-output`, under
+`run_smoke-cafe-solar_final-output_a3`; the CLI test replays that chain with the
+fake dispatch.
+
+The run-ledger message had a cause of its own: the legacy row of a canary is
+keyed by the canonical run id, and only the creation path opened it, so any
+adopted Run, Glance's `--run-id` included, had no row; the dual-write threw
+`legacy run '<id>' is missing` on the first transition and `recordSession`
+logged `not found` after every producer. The cutover now opens the row on
+adoption, through the same idempotent `openRun`.
+
 ### Multi-target plans accept `agent` nodes: a role no squad covers, run by agent-x
 
 A multi-target plan could name a company, a squad, a deliverable or a brief.
