@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -27,6 +27,12 @@ afterEach(() => {
   while (handles.length) handles.pop()!.close();
   while (roots.length) fs.rmSync(roots.pop()!, { recursive: true, force: true });
 });
+
+// lib/audit.js opens the state db lazily, once per process, at the NIRVANA_STATE_DB in force on its first
+// emit, and never closes it. A state db under a fixture root keeps that root locked on Windows: the
+// afterEach rmSync failed with EBUSY on run 32943720260. It lives here, released best-effort at the end.
+const STATE_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-agent-x-gauntlet-state-"));
+afterAll(() => { try { fs.rmSync(STATE_ROOT, { recursive: true, force: true }); } catch { /* an open state db keeps it on Windows */ } });
 
 function evaluator(pass = true, self = false): AgentXGauntletEvaluator {
   const target = self
@@ -256,7 +262,7 @@ describe("agent-x Gauntlet cutover", () => {
     const fixture = setup();
     const previous = { logs: process.env.HARNESS_LOGS_DIR, state: process.env.NIRVANA_STATE_DB };
     process.env.HARNESS_LOGS_DIR = path.join(fixture.root, "logs");
-    process.env.NIRVANA_STATE_DB = path.join(fixture.root, "state.sqlite");
+    process.env.NIRVANA_STATE_DB = path.join(STATE_ROOT, "state.sqlite");
     const ledger = openLedger(path.join(fixture.root, "ledger.sqlite"));
     try {
       createRun(fixture.handle, { projectId: "prj_canary", runId: "run_glance", traceId: "trace_glance", planId: "plan_run_glance",
