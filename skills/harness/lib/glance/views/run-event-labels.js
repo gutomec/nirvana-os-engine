@@ -33,7 +33,8 @@ const VERDICT_LABELS = { pass: 'aprovado', revise: 'revisar', reject: 'rejeitado
 const VERDICT_TONES = { pass: 'ok', revise: 'active', reject: 'fail' };
 const PLAN_STATE_LABELS = { ready: 'pronto', running: 'em execução', delivered: 'entregue', withheld: 'retido', failed: 'falhou' };
 const PLAN_STATE_TONES = { delivered: 'ok', running: 'active', withheld: 'fail', failed: 'fail' };
-// How the target of a Run was decided (`payload.route` of `run.prepared`).
+// How the target of a Run was decided (`payload.route` of `run.prepared`, or of
+// `x_run_route_resolved` when the queue routed the Message after preparing the Run).
 const ROUTE_SOURCE_LABELS = { explicit: 'alvo nomeado na Message', router: 'escolhido pelo roteador', fallback: 'agent-x por fallback' };
 export const routeSourceLabel = (route) => (route ? label(ROUTE_SOURCE_LABELS, route.source) : '');
 const routeInfo = (route) => (route ? join(routeSourceLabel(route), route.rationale) : '');
@@ -82,6 +83,7 @@ function candidateView(ev, icon, verb) {
 // engine must be listed here; the test suite enforces the list.
 const CANONICAL = {
   'run.prepared': (ev) => { const t = ev.payload?.target; return { icon: 'inbox', title: `Run preparado → ${targetName(t) || 'alvo'}`, sub: join(t?.kind, t?.capabilityId, routeInfo(ev.payload?.route)), tone: '' }; },
+  'x_run_route_resolved': (ev) => { const t = ev.payload?.target; return { icon: 'compass', title: `Alvo resolvido → ${targetName(t) || 'alvo'}`, sub: join(t?.kind, t?.capabilityId, routeInfo(ev.payload?.route)), tone: 'active' }; },
   'run.transitioned': (ev) => { const p = ev.payload || {}; return { icon: p.to === 'completed' ? 'party-popper' : 'arrow-right-circle', title: `Run ${label(RUN_STATE_LABELS, p.to, 'transicionou')}`, sub: p.from && p.to ? `${p.from} → ${p.to}` : '', tone: RUN_STATE_TONES[p.to] || '' }; },
   'runtime.selection_snapshot': (ev) => { const s = ev.payload?.snapshot || {}; return { icon: 'cpu', title: `Runtime: ${s.runtime?.id || 'indefinido'}`, sub: join(s.provider?.id, s.model?.id), tone: '' }; },
   'gauntlet.plan_compiled': (ev) => { const p = ev.payload || {}; return { icon: 'clipboard-list', title: p.plan?.intensity ? `Plano Gauntlet ${p.plan.intensity}` : 'Plano Gauntlet', sub: join(p.state, label(GAUNTLET_STOP_REASON_LABELS, p.stopReason)), tone: '' }; },
@@ -211,7 +213,8 @@ export function runTimeline(events, showInfra = false) {
 }
 
 // Live header derived from the stream. Canonical Runs contribute state
-// (`run.transitioned`), target (`run.prepared`), runtime and model
+// (`run.transitioned`), target (`run.prepared`, re-targeted by
+// `x_run_route_resolved` once the queue routed the Message), runtime and model
 // (`runtime.selection_snapshot`), Gauntlet decision (`gauntlet.stopped`) and
 // cost: reported per node when multi-target events exist, otherwise the
 // amount reserved by `gauntlet.round_started`. Legacy fields are unchanged.
@@ -236,7 +239,7 @@ export function summarizeRunEvents(events) {
     if (!type) { legacy(ev || {}); continue; }
     const p = ev.payload || {};
     if (type.startsWith('delivery.')) { legacy(unwrapDelivery(ev)); continue; }
-    if (type === 'run.prepared' && p.target) {
+    if ((type === 'run.prepared' || type === 'x_run_route_resolved') && p.target) {
       target = p.target;
       route = p.route || null;
       if (p.target.kind === 'business') business = p.target.slug;

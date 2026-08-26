@@ -40,6 +40,43 @@ invólucro fino). Prova: `glance-maestro-turn.test.ts`, com um `claude` falso
 que fala stream-json; nota de design em
 `docs/architecture/maestro-sessions.md`.
 
+### O recibo da Message volta a ser imediato, e uma pergunta nunca vira um Gauntlet
+
+Desde o #113 o `AgentXCanaryQueue.submit()` esperava o roteador agêntico antes
+de preparar o Run, então `POST /api/v1/conversations/{id}/messages` ficava
+pendente enquanto o roteador durasse. Medido em 26/08/2026: uma pergunta de uma
+linha sobre as empresas do próprio usuário esperou 39 s pelo `202` (USD 1,45 de
+roteamento), caiu em `agent-x` como `no_match` e abriu um Gauntlet light com
+USD 4 reservados antes de o orquestrador cancelar.
+
+Agora `submit()` resolve só o prefixo explícito (`use business <slug>:`,
+`use squad <slug>:`), de forma síncrona e sem roteador; qualquer outra Message
+prepara o Run em `agent-x` sem `route` e responde `202` na hora. A fila resolve
+o alvo como primeira etapa do item, antes de gravar o brief e iniciar o filho,
+e registra a decisão no Run como `x_run_route_resolved` (`target`, `route`): o
+Run Kernel aplica o evento à projeção (só um Run `prepared`), `GET
+/api/v1/runs/{id}` mostra o alvo a partir daí, a timeline rotula o evento como
+`Alvo resolvido → <slug>`, e a bolha do chat troca "Roteando a Message…" pelo
+alvo. Um Run sem `route` é uma Message que o roteador ainda não posicionou; a
+recuperação após restart o roteia de novo. Um cancelamento durante a resolução
+aborta o sinal do item: `routeWithin` devolve na hora mesmo contra um roteador
+que ignora o sinal, o roteador em Worker encerra o Worker, e o Run é revertido
+como `cancelled_before_execution` sem nada no audit.
+
+`no_match` deixa de executar `agent-x` a partir do chat. A regra do maestro
+(NO_MATCH muda quem executa, nunca se executa) continua no `dispatch.ts
+--auto`; uma Message do Glance muitas vezes é uma pergunta, e pergunta não é
+brief. A fila encerra o Run `rolled_back` com `reason: no_dispatchable_target`,
+não inicia filho e acrescenta à conversa uma mensagem `assistant` (ligada pelo
+`run_id`) com a razão do roteador e como pedir trabalho ou nomear o alvo. Falha
+ou timeout do roteador continua seguindo `routing.on_router_failure`
+(`cascade` executa `agent-x`; `fail` reverte com `router_failed`, agora na
+fila, depois do recibo). O `capability` do recibo é o do alvo no momento do
+recibo. Prova: `glance-message-route.test.ts` ("the receipt never waits for the
+router…", "a no_match Message never starts a child…", "a cancel while the
+router is deciding…"), `run-kernel.test.ts` ("x_run_route_resolved re-targets
+a prepared run…") e `glance-run-event-labels.test.ts`.
+
 ### Uma Message do Glance passa pela mesma cascata do maestro
 
 Uma Message de projeto adotado só chegava a uma empresa ou a um squad quando o

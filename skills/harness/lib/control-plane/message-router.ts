@@ -20,9 +20,14 @@ export function createAgenticMessageRouter(options: AgenticMessageRouterOptions 
   return {
     route(input) {
       return new Promise<AgenticRouteDecision>((resolve, reject) => {
+        // A Message cancelled while the router decides ends the Worker: nothing waits for the CLI call.
+        if (input.signal?.aborted) return reject(new Error("message route cancelled"));
         const worker = new Worker(workerUrl);
-        worker.onmessage = event => { worker.terminate(); resolve(event.data as AgenticRouteDecision); };
-        worker.onerror = event => { worker.terminate(); reject(new Error((event.message || "message route worker failed").split("\n")[0])); };
+        const cancel = () => { worker.terminate(); reject(new Error("message route cancelled")); };
+        input.signal?.addEventListener("abort", cancel, { once: true });
+        const settle = () => { input.signal?.removeEventListener("abort", cancel); worker.terminate(); };
+        worker.onmessage = event => { settle(); resolve(event.data as AgenticRouteDecision); };
+        worker.onerror = event => { settle(); reject(new Error((event.message || "message route worker failed").split("\n")[0])); };
         worker.postMessage({ brief: input.brief, cwd: input.projectRoot, projectId: input.projectId,
           runtime: options.runtime ?? detectExecutionRuntime().runtime, timeoutMs: options.timeoutMs ?? MESSAGE_ROUTE_TIMEOUT_MS });
       });

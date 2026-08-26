@@ -224,6 +224,18 @@ function applyEventToProjection(handle: KernelHandle, event: RunEvent): void {
     const projection = { ...current, state: to, updatedAt: event.occurredAt, version: current.version + 1, lastSequence: event.sequence };
     handle.db.run("UPDATE run_projections SET projection_json = ?, version = ?, last_sequence = ? WHERE project_id = ? AND run_id = ?",
       [canonicalJson(projection), projection.version, event.sequence, event.projectId, event.runId]);
+    return;
+  }
+  // A Run prepared before its target was known (a Glance Message the router had not placed yet)
+  // takes `target` and `route` from the resolution; only a prepared Run can still be re-targeted.
+  if (event.type === "x_run_route_resolved") {
+    const current = getRun(handle, event.projectId, event.runId);
+    if (!current) throw new Error(`run-kernel: run '${event.runId}' not found`);
+    if (current.state !== "prepared") throw new Error(`run-kernel: a route resolves a prepared run, found ${current.state}`);
+    const { target, route } = event.payload as unknown as Pick<RunProjection, "target" | "route">;
+    const projection = { ...current, target, ...(route ? { route } : {}), updatedAt: event.occurredAt, version: current.version + 1, lastSequence: event.sequence };
+    handle.db.run("UPDATE run_projections SET projection_json = ?, version = ?, last_sequence = ? WHERE project_id = ? AND run_id = ?",
+      [canonicalJson(projection), projection.version, event.sequence, event.projectId, event.runId]);
   }
 }
 

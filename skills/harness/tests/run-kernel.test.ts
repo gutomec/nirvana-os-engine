@@ -123,6 +123,23 @@ describe("canonical lifecycle and journal", () => {
     expect(projectionSnapshot(handle, "prj_a")).toBe(before);
   }, KERNEL_BUDGET_MS);
 
+  test("x_run_route_resolved re-targets a prepared run in the projection, refuses a run past prepared, and replays", () => {
+    const { handle } = fresh();
+    createRun(handle, { ...runInput(), target: { kind: "agent-x", slug: "agent-x" } });
+    const actor = { kind: "control-plane", id: "glance" };
+    const resolved = { target: { kind: "business" as const, slug: "web-studio" }, route: { source: "router" as const, rationale: "OBJECT=site." } };
+    appendEvent(handle, { projectId: "prj_a", runId: "run_a", traceId: "trace_prj_a", type: "x_run_route_resolved", actor, correlationId: "cor",
+      idempotencyKey: "x_run_route_resolved:run_a", occurredAt: "2026-08-25T12:00:01.000Z", payload: resolved });
+    expect(getRun(handle, "prj_a", "run_a")).toMatchObject({ ...resolved, state: "prepared", version: 2, lastSequence: 2, updatedAt: "2026-08-25T12:00:01.000Z" });
+    transitionRun(handle, { projectId: "prj_a", runId: "run_a", to: "running", actor, correlationId: "cor", occurredAt: "2026-08-25T12:00:02.000Z" });
+    expect(() => appendEvent(handle, { projectId: "prj_a", runId: "run_a", traceId: "trace_prj_a", type: "x_run_route_resolved", actor, correlationId: "cor",
+      payload: { target: { kind: "squad", slug: "other", capabilityId: "squad.execute" }, route: { source: "router", rationale: "late" } } })).toThrow(/a route resolves a prepared run, found running/);
+    expect(getRun(handle, "prj_a", "run_a")).toMatchObject({ ...resolved, state: "running", version: 3 });
+    const before = projectionSnapshot(handle, "prj_a");
+    rebuildProjections(handle, "prj_a");
+    expect(projectionSnapshot(handle, "prj_a")).toBe(before);
+  }, KERNEL_BUDGET_MS);
+
   test("isolates runs and event cursors by project", () => {
     const { handle } = fresh();
     createRun(handle, runInput("prj_a", "run_same"));

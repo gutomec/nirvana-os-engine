@@ -179,8 +179,10 @@ describe("Glance child-process execution", () => {
     const { seen, ids } = await streaming;
     expect(ids).toEqual(seen.map((_, index) => index + 1));
     expect(seen.every(event => event.runId === receipt.run.runId)).toBe(true);
+    // No prefix and no router on this server: the queue still resolves the route (agent-x by
+    // fallback) as the first step of the item, before the child.
     expect(seen.map(typeOf)).toEqual([
-      "run.prepared", "glance.child_started", "runtime.selection_snapshot", "gauntlet.plan_compiled", "gauntlet.round_started",
+      "run.prepared", "x_run_route_resolved", "glance.child_started", "runtime.selection_snapshot", "gauntlet.plan_compiled", "gauntlet.round_started",
       "run.transitioned:running", "gauntlet.candidate_created", "gauntlet.evaluation_recorded", "gauntlet.round_evaluated", "gauntlet.stopped",
       "run.transitioned:verifying", "run.transitioned:completed", "glance.child_exited",
     ]);

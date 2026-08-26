@@ -39,6 +39,44 @@ the legacy `chat-agent` action (`chat-concierge.ts` is now a thin wrapper).
 Proof: `glance-maestro-turn.test.ts`, with a fake stream-json `claude`; design
 note in `docs/architecture/maestro-sessions.md`.
 
+### The Message receipt is immediate again, and a question never becomes a Gauntlet
+
+Since #113 `AgentXCanaryQueue.submit()` awaited the agentic router before
+preparing the Run, so `POST /api/v1/conversations/{id}/messages` hung for as
+long as the router took. Measured on 2026-08-26: a one-line question about the
+user's own businesses waited 39 s for its `202` (USD 1.45 of routing), then
+fell to `agent-x` as `no_match` and opened a light Gauntlet with USD 4
+reserved before the orchestrator cancelled it.
+
+`submit()` now resolves only an explicit prefix (`use business <slug>:`,
+`use squad <slug>:`), synchronously and without the router; any other Message
+prepares the Run on `agent-x` with no `route` and answers `202` at once. The
+queue resolves the target as the first step of the item, before the brief is
+written and the child spawns, and records the decision on the Run as
+`x_run_route_resolved` (`target`, `route`): the Run Kernel applies it to the
+projection (a prepared Run only), `GET /api/v1/runs/{id}` shows the target from
+then on, the timeline labels it `Alvo resolvido → <slug>`, and the chat bubble
+swaps "Roteando a Message…" for the target. A Run without `route` is a
+Message the router has not placed yet; recovery after a restart routes it
+again. A cancel during the resolution aborts the item's signal: `routeWithin`
+returns at once even against a router that ignores it, the Worker-backed
+router terminates its Worker, and the Run rolls back as
+`cancelled_before_execution` with nothing audited.
+
+`no_match` no longer runs `agent-x` from the chat. The maestro's rule (NO_MATCH
+changes who executes, never whether) stays for `dispatch.ts --auto`; a Glance
+Message is often a question, and a question is not a brief. The queue ends the
+Run `rolled_back` with `reason: no_dispatchable_target`, starts no child, and
+appends an `assistant` message to the conversation (linked by `run_id`) with
+the router's rationale and how to ask for work or name a target. A router
+failure or timeout still follows `routing.on_router_failure` (`cascade` runs
+`agent-x`; `fail` rolls back with `router_failed`, now in the queue, after the
+receipt). The receipt's `capability` is that of the target at receipt time.
+Proof: `glance-message-route.test.ts` ("the receipt never waits for the
+router…", "a no_match Message never starts a child…", "a cancel while the
+router is deciding…"), `run-kernel.test.ts` ("x_run_route_resolved re-targets
+a prepared run…") and `glance-run-event-labels.test.ts`.
+
 ### A Glance Message routes through the same cascade as the maestro
 
 A Message of an adopted project used to reach a business or a squad only when

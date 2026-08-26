@@ -6,7 +6,7 @@ import {
 // Every canonical type the engine emits today, plus `multi_target.lease_lost`
 // (added by a parallel cut). The label module must cover exactly this set.
 const CANONICAL_TYPES = [
-  "run.prepared", "run.transitioned", "runtime.selection_snapshot",
+  "run.prepared", "x_run_route_resolved", "run.transitioned", "runtime.selection_snapshot",
   "gauntlet.plan_compiled", "gauntlet.candidate_created", "gauntlet.candidate_revised", "gauntlet.evaluation_recorded",
   "gauntlet.round_started", "gauntlet.round_evaluated", "gauntlet.revision_requested", "gauntlet.regression_started", "gauntlet.stopped",
   "canary.recovery_enqueued", "canary.recovery_skipped", "canary.recovery_reattached", "canary.recovery_redispatched",
@@ -51,6 +51,8 @@ describe("Glance run event labels", () => {
     expect(runEventView({ type: "run.prepared", payload: { target: { kind: "business", slug: "proof" }, route: { source: "router", rationale: "OBJECT=site." } } }).sub)
       .toBe("business · escolhido pelo roteador · OBJECT=site.");
     expect(runEventView({ type: "run.prepared", payload: { target: { kind: "agent-x", slug: "agent-x" }, route: { source: "fallback", rationale: "" } } }).sub).toBe("agent-x · agent-x por fallback");
+    expect(runEventView({ type: "x_run_route_resolved", payload: { target: { kind: "business", slug: "proof" }, route: { source: "router", rationale: "OBJECT=site." } } }))
+      .toEqual({ icon: "compass", title: "Alvo resolvido → proof", sub: "business · escolhido pelo roteador · OBJECT=site.", tone: "active" });
     expect(runEventView({ type: "runtime.selection_snapshot", payload: { snapshot: { runtime: { id: "codex" }, provider: { id: "openai" }, model: { id: "runtime-default" } } } }))
       .toMatchObject({ title: "Runtime: codex", sub: "openai · runtime-default" });
     expect(runEventView({ type: "gauntlet.round_started", payload: { round: 1, costReservedUsd: 1.5 } })).toMatchObject({ title: "Rodada 1 iniciada", sub: "reservado $1.50", tone: "active" });
@@ -131,6 +133,11 @@ describe("Glance run event labels", () => {
       decision: "delivered", stopReason: "success", state: "completed", target: { kind: "business", slug: "proof" }, count: 7,
     });
     expect(summarizeRunEvents([{ type: "run.prepared", payload: { target: { kind: "agent-x", slug: "agent-x" } } }])).toMatchObject({ lastAgent: "agent-x", state: null });
+    // A Message routed by the queue: the Run is prepared on agent-x with no route, then re-targeted.
+    expect(summarizeRunEvents([
+      { type: "run.prepared", payload: { target: { kind: "agent-x", slug: "agent-x" } } },
+      { type: "x_run_route_resolved", payload: { target: { kind: "business", slug: "proof" }, route: { source: "router", rationale: "OBJECT=site." } } },
+    ])).toMatchObject({ business: "proof", target: { kind: "business", slug: "proof" }, route: { source: "router", rationale: "OBJECT=site." } });
     // Reported cost per node wins over reserved cost; each node counts its latest value once.
     const multi = [
       { type: "gauntlet.round_started", payload: { round: 1, expectedCostUsd: 9 } },
