@@ -28,13 +28,52 @@ Schema `nirvana.multi-target-plan/v1alpha1`, em JSON, por convenção em `.nirva
 | `schemaVersion` | sim | literal `nirvana.multi-target-plan/v1alpha1` |
 | `projectId` | não | trace id; `--project` vence, e sem ambos vale o nome do arquivo sem extensão |
 | `brief` | sim | conteúdo de `brief-enriched.md`, lido por todo target |
-| `briefs` | sim | sub-brief por nó; todo nó `company` ou `squad` precisa de um; `deliverable` é opcional |
-| `graph` | sim | `DependencyGraph` com nós `company`, `squad`, `deliverable` e `brief` |
+| `briefs` | sim | sub-brief por nó; todo nó `company`, `squad` ou `agent` precisa de um; `deliverable` é opcional |
+| `graph` | sim | `DependencyGraph` com nós `company`, `squad`, `agent`, `deliverable` e `brief` |
 | `policy` | não | `MultiTargetGauntletPolicy`, repassada ao compilador sem reinterpretação |
 | `runtime` | não | runtime passado a cada subprocesso; `--runtime` vence |
 | `budgetUsd` | não | teto por nó em USD, combinado com a concessão da reserva (vale o menor) |
 
 A validação é estrita (`zod`): chave desconhecida, tipo de nó fora da lista, sub-brief ausente para nó executável, chave de `briefs` ou `budgetUsd` sem nó correspondente. Ciclos, referências e limites inválidos da política vêm do compilador no mesmo formato, e uma reserva rejeitada também invalida o plano. Cada problema sai como `path: message` e o comando termina com exit 4.
+
+### Nó `agent`
+
+Um papel sem squad especializado (a copy de um lançamento entre o squad de pesquisa e o de design) entra no plano como nó `agent`. O `id` é o nome do papel, um slug livre que não precisa existir em registro nenhum. O nó é briefado, depende e produz (`briefs`, `depends_on`, `yields`) como um squad; compila para `target: "agent/<id>"`, `outputs_path: "agents/<id>/outputs/"` e decisão de tipo `agent-x`; entra em todo escopo da política, em `criticalTargetIds`, em `targets` e na reserva agregada como um squad ([política](gauntlet-multi-target-policy.md)); e executa como `dispatch.ts --agent-x` com o sub-brief do nó, obrigatório como para squads ([adapters](gauntlet-multi-target-adapters.md)). A síntese continua sendo o nó `deliverable`.
+
+```json
+{
+  "schemaVersion": "nirvana.multi-target-plan/v1alpha1",
+  "brief": "# Brief\n\nLaunch the thing; the copy has no squad.\n",
+  "briefs": {
+    "squad-research": "Research the market.",
+    "role-copywriter": "Write the launch copy from the research.",
+    "squad-design": "Design the landing page around the copy.",
+    "final-output": "Assemble the launch kit."
+  },
+  "graph": {
+    "nodes": [
+      { "id": "brief-main", "type": "brief" },
+      { "id": "squad-research", "type": "squad" },
+      { "id": "role-copywriter", "type": "agent" },
+      { "id": "squad-design", "type": "squad" },
+      { "id": "final-output", "type": "deliverable" }
+    ],
+    "edges": [
+      { "id": "brief-research", "source": "brief-main", "target": "squad-research", "type": "briefs" },
+      { "id": "copy-after-research", "source": "role-copywriter", "target": "squad-research", "type": "depends_on" },
+      { "id": "design-after-copy", "source": "squad-design", "target": "role-copywriter", "type": "depends_on" },
+      { "id": "final", "source": "squad-design", "target": "final-output", "type": "yields" }
+    ]
+  },
+  "policy": {
+    "scope": "each-target-and-final", "intensity": "light", "synthesisNodeId": "final-output", "limits": { "maxCostUsd": 10 },
+    "targets": { "squad-research": { "mode": "standard" }, "role-copywriter": { "limits": { "maxCostUsd": 2 } }, "squad-design": { "mode": "standard" } }
+  },
+  "budgetUsd": { "role-copywriter": 1.5 }
+}
+```
+
+As ondas são `brief-main`, `squad-research`, `role-copywriter`, `squad-design` e `final-output`, uma por vez. O `DISPATCH-INSTRUCTION.md` de `agents/role-copywriter/` apresenta o executor como o agent-x no papel `role-copywriter`, aponta o `_SUMMARY.md` de `squads/squad-research/outputs/` e nomeia `squad-design` como consumidor. É o plano que `skills/harness/tests/multi-target-cli.test.ts` executa de ponta a ponta com o dispatch falso.
 
 ## Comandos
 
@@ -83,7 +122,7 @@ cria `run_mt_smoke-cafe-solar_r2`, mantém `nirvana-pesquisa-mercado` e executa 
 
 ### `status <arquivo|runId> [--project <id>] [--json]`
 
-Lê o Run e `projectMultiTargetRun` sem side effects: estado do Run, estado do plano, onda atual, custo e cada nó com modo, estado, custo concedido e reportado, razão e bloqueios. Por arquivo de plano, o Run mostrado é o mais recente da cadeia; um Run reaberto imprime `reaberto de <parentRunId>` e `tentativa <n>`. Um nó cujo custo não foi observado carrega a nota `custo não observado`. Com um `runId` em vez de arquivo, `--project` é obrigatório. Sem kernel no projeto ou sem o Run, exit 1.
+Lê o Run e `projectMultiTargetRun` sem side effects: estado do Run, estado do plano, onda atual, custo e cada nó com tipo do alvo (`business`, `squad`, `agent-x`, `synthesis`, `support`), modo, estado, custo concedido e reportado, razão e bloqueios. Por arquivo de plano, o Run mostrado é o mais recente da cadeia; um Run reaberto imprime `reaberto de <parentRunId>` e `tentativa <n>`. Um nó cujo custo não foi observado carrega a nota `custo não observado`. Com um `runId` em vez de arquivo, `--project` é obrigatório. Sem kernel no projeto ou sem o Run, exit 1.
 
 ## Exit codes
 
@@ -109,7 +148,7 @@ O comando escreve no audit legado (`lib/audit.js`) com `trace_id` e `project_id`
 | `x_multi_target_plan_compiled` | `plan` e `run` | digests, ondas, quantidade de nós, workspace |
 | `x_multi_target_run_started` | `run` | `run_id`, owner, runtime, `resumed`, `retried_from` (Run anterior numa retomada, senão `null`) |
 | `x_multi_target_plan_retried` | `run --retry-failed` | `run_id`, `previous_run_id`, `reset_nodes`, `attempt`, `snapshot_version` |
-| `x_multi_target_node_terminal` | por nó terminal | nó, onda, modo, estado, custo reportado e concedido, `cost_observed` (`false` quando o adapter não achou evento de custo; `null` para nós de suporte), razão, bloqueios |
+| `x_multi_target_node_terminal` | por nó terminal | nó, onda, tipo do alvo (`target_kind`; `null` em snapshots anteriores ao campo), modo, estado, custo reportado e concedido, `cost_observed` (`false` quando o adapter não achou evento de custo; `null` para nós de suporte), razão, bloqueios |
 | `x_multi_target_cost_unobserved` | por nó que executou sem evento de custo | nó, onda, modo, estado, `logs_dir` lido pelo coordenador |
 | `x_multi_target_terminal` | fim do `run` | estado do plano, estado do Run, custo total, `cost_unobserved_nodes`, razão, exit |
 
@@ -134,3 +173,4 @@ Um plano diferente sob o mesmo `projectId` é recusado com exit 4, porque o Run 
 - Retomar um nó em execução depende de owner e lease; não há recovery humano nem cancelamento conjunto.
 - `--retry-failed` reexecuta um nó `withheld` com o mesmo sub-brief; ele paga de novo por esse nó, e os outputs retidos são sobrescritos pela nova execução.
 - Interromper o comando não encerra os subprocessos de dispatch em andamento; a lease expira e o próximo `run` marca o nó como `stalled`.
+- Um nó `agent` em modo `gauntlet` é julgado como qualquer produtor agent-x: o avaliador precisa ser independente (`evaluator-registry.ts`), então sem squad instalado que declare `quality.specification_conformance` a rodada cai na heurística, auditada em `x_gauntlet_evaluator_fallback`. Um `judge-x` independente é outro corte.

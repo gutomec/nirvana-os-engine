@@ -8,6 +8,39 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Multi-target plans accept `agent` nodes: a role no squad covers, run by agent-x
+
+A multi-target plan could name a company, a squad, a deliverable or a brief.
+A role with no specialised squad (the copywriter between a research squad
+and a design squad) had no node to live in, although the policy compiler
+already reserved the `agent-x` decision kind and the dispatch adapters
+already ran `--agent-x` targets for the synthesis. The graph now accepts a
+node of type `agent`: its id is the role name, a free slug that exists in no
+registry; it is briefed, depends and yields like a squad. The compiler maps
+it to targetKind `agent-x`, target `agent/<id>` and outputs under
+`agents/<id>/outputs/`; every Gauntlet scope, `criticalTargetIds`, the
+per-target overrides and the aggregate reservation treat it like a squad.
+The adapters run it as `dispatch.ts --agent-x` with the node's sub-brief and
+a `DISPATCH-INSTRUCTION.md` that names the role, the upstream summaries and
+the downstream phases, with the same result marker and observed cost; the
+synthesis node stays a `deliverable`. The plan file requires a sub-brief for
+an `agent` node and honours `budgetUsd` for it. `status`, the
+`x_multi_target_node_terminal` event, the Glance timeline and the node table
+show the target kind of each node.
+
+Two agent-x children of one plan (an `agent` node and the synthesis) share
+`employee: "agent-x"` under the same trace, a collision the adapters had
+documented as one the graph did not produce. The adapter now names the node
+in `NIRVANA_MULTI_TARGET_NODE_ID` for every child, `runAgentX` copies it as
+`node_id` onto its `agent_executed` event, and the cost matcher of an
+agent-x target reads it back; the Gauntlet evaluator adapter, which carries
+no node id, keeps matching every agent-x event of its own project id. An
+`agent` node in gauntlet mode is judged like any agent-x producer: the
+evaluator must be independent, so without an installed squad declaring
+`quality.specification_conformance` the round falls back to the heuristic,
+audited as `x_gauntlet_evaluator_fallback`; an independent `judge-x` is
+another cut.
+
 ### The multi-target coordinator observes the cost its children spend
 
 The first real smoke run of the multi-target engine delivered a squad node
