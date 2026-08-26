@@ -11,6 +11,7 @@ import { compileMultiTargetGauntletPolicy, type CompiledMultiTargetPlan } from "
 import { createRun, listEvents, openKernel, type KernelHandle } from "../lib/run-kernel/store.ts";
 import { writeFakeDispatch } from "./helpers/fake-dispatch.ts";
 import { removeDir } from "./helpers/temp-dirs.ts";
+import { SCOPE_GUARD_EN } from "../../_shared/lib/scope-guard.ts";
 
 const roots: string[] = [];
 const handles: KernelHandle[] = [];
@@ -210,6 +211,7 @@ describe("multi-target dispatch adapters", () => {
     expect(text).not.toContain("brief-main");
     expect(text).toContain("**final-output**");
     expect(text).toContain(join(setup.workspaceRoot, "squads", "squad-c", "outputs", "_SUMMARY.md"));
+    expect(text.slice(text.indexOf("## 6. Scope isolation"))).toContain(SCOPE_GUARD_EN);
     expect(existsSync(join(setup.workspaceRoot, "squads", "squad-c", "outputs"))).toBeTrue();
   });
 

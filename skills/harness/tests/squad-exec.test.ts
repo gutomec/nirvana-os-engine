@@ -13,6 +13,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { runSquadHeadless, buildSquadPrompt } from "../lib/squad-exec.ts";
 import { sessionKey, putSession } from "../lib/session-store.ts";
+import { SCOPE_GUARD_PT_BR } from "../../_shared/lib/scope-guard.ts";
 
 let tmp: string;
 const savedLogsDir = process.env.HARNESS_LOGS_DIR;
@@ -80,6 +81,15 @@ describe("buildSquadPrompt — framing per mode", () => {
     expect(p).toContain("de ponta a ponta");
     expect(p).toContain("ENTREGÁVEL FINAL");
     expect(p).not.toContain("synthesizer do business");
+  });
+
+  test("both framings carry the scope guard in PT-BR, inside the sub-task block", () => {
+    const squadDir = scaffoldSquad(path.join(tmp, "squads"), "brandcraft");
+    for (const mode of ["team-mandatory", "squad-only"] as const) {
+      const p = buildSquadPrompt({ squadSlug: "brandcraft", squadDir, brief: "the brief", outDir: "/out/dir", mode, cloneInjection: { block: "", decision: "PADRÃO" } });
+      const subTask = p.slice(p.indexOf("## SUA SUB-TAREFA"), p.indexOf("## SAÍDA"));
+      expect(subTask).toContain(SCOPE_GUARD_PT_BR);
+    }
   });
 });
 

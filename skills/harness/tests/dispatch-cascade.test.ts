@@ -17,6 +17,7 @@ import {
   resolveAgentXPromptPath,
   runAgentX,
 } from "../lib/dispatch-cascade.ts";
+import { SCOPE_GUARD_EN } from "../../_shared/lib/scope-guard.ts";
 
 function mkDecision(partial: Partial<AgenticRouteDecision>): AgenticRouteDecision {
   return {
@@ -286,6 +287,8 @@ describe("runAgentX — the cascade bottom (injected runWithCascade seam)", () =
       expect(seen[0].prompt).toContain("Deliver the impossible artifact.");
       expect(seen[0].prompt).toContain(oroot);
       expect(seen[0].prompt).toContain("router no_match: nothing fits");
+      // The persona fixture carries no guard of its own: this line is runAgentX's.
+      expect(seen[0].prompt).toContain(SCOPE_GUARD_EN);
       const dx = spy.calls.find(x => x.event === "dispatch_agent_x");
       expect(dx).toBeTruthy();
       expect(dx!.payload.trace_id).toBe("proj-test-ax");

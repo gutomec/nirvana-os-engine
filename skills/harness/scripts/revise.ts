@@ -29,6 +29,7 @@ import { runHeadless, runtimeAvailable, AUTONOMOUS_DIRECTIVE, type Runtime } fro
 import { runDelivery, deliverAfterRuntimeError, type DeliveryResult } from "../lib/delivery-pipeline.ts";
 import { loadHarnessConfig } from "../lib/harness-config.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
+import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 
 const ANSI = { reset: "\x1b[0m", bold: "\x1b[1m", dim: "\x1b[2m", green: "\x1b[32m", red: "\x1b[31m", yellow: "\x1b[33m", cyan: "\x1b[36m", lime: "\x1b[38;5;154m" };
 const noColor = process.argv.includes("--no-color") || !process.stdout.isTTY;
@@ -134,6 +135,7 @@ const revisePrompt = [
   change,
   "",
   `Reescreva/atualize os entregáveis como arquivos sob: ${oroot}`,
+  scopeGuard("pt-BR"),
   'Não imprima resumo: entregue os arquivos atualizados. Atualize a seção "## Premissas assumidas" se algo mudou.',
 ].join("\n");
 

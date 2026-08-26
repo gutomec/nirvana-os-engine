@@ -11,6 +11,7 @@ import {
   type ArtifactRef, type CanonicalRunState, type KernelHandle, type LegacyCompatibilityAdapter, type RunProjection, type TargetRef,
 } from "../run-kernel/index.ts";
 import { canonicalJson } from "../run-kernel/canonical-json.ts";
+import { scopeGuard } from "../../../_shared/lib/scope-guard.ts";
 
 export interface AgentXCandidateResult {
   ok: boolean;
@@ -120,6 +121,7 @@ export function revisionDefectsSection(request: AgentXRevisionRequest): string {
     `Esta é a revisão ${request.revision} do candidate ${request.candidateId} (rodada ${request.round}).`,
     `Leia a revisão anterior em ${request.previousRoot} e escreva a revisão completa em ${request.candidateRoot}.`,
     "Corrija somente os defeitos listados e preserve tudo o que já foi aprovado.",
+    scopeGuard("pt-BR"),
     "",
     `Dimensões reprovadas: ${request.defects.failedDimensions.join(", ")}`,
     `Avaliações causais: ${request.defects.evaluationIds.join(", ")}`,

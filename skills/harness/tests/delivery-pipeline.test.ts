@@ -26,6 +26,7 @@ import {
 } from "../lib/delivery-pipeline.ts";
 import { loadHarnessConfig } from "../lib/harness-config.ts";
 import * as runLedger from "../lib/run-ledger.ts";
+import { SCOPE_GUARD_PT_BR } from "../../_shared/lib/scope-guard.ts";
 
 const GATE = path.join(import.meta.dir, "..", "scripts", "quality-gate.ts");
 
@@ -202,6 +203,7 @@ describe("runDelivery — outcomes", () => {
       runHeadlessImpl: ((opts: any) => {
         revisions++;
         expect(opts.prompt).toContain("quality gate reprovou");
+        expect(opts.prompt).toContain(SCOPE_GUARD_PT_BR);
         fs.writeFileSync(artifact, PASSING_MD); // the "agent" fixes the file
         return { ok: true, runtime: opts.runtime, sessionId: "sess-rev-1", result: "", costUsd: null, exitCode: 0, stderr: "", durationMs: 5 };
       }) as any,

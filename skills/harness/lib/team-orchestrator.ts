@@ -24,6 +24,7 @@ import { runHeadless, AUTONOMOUS_DIRECTIVE, type Runtime } from "./host-agent-dr
 import { runWithCascade } from "./cascade-runner.ts";
 import { sessionKey, getSession, putSession, dropSession, type EntityKind } from "./session-store.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
+import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { runSquadHeadless } from "./squad-exec.ts";
 
 const SKILLS = process.env.NIRVANA_SKILLS_DIR
@@ -177,11 +178,11 @@ function runWithSession(
   return res;
 }
 
-function runStep(step: ChainStep, idx: number, total: number, args: TeamRunArgs, priorOutputs: { employee: string; dir: string }[]): StepResult {
+/** The step brief handed to one employee of the chain: its sub-task, the client's
+ * brief, the colleagues' outputs so far and where to write. Exported so the
+ * scope-guard gate and the tests render it without running the chain. */
+export function buildStepBrief(step: ChainStep, idx: number, total: number, args: Pick<TeamRunArgs, "brief" | "outputsRoot">, priorOutputs: { employee: string; dir: string }[], employeeOutDir: string): string {
   const isLast = idx === total - 1;
-  const employeeOutDir = isLast ? args.outputsRoot : path.join(args.outputsRoot, "_team", step.employee);
-  fs.mkdirSync(employeeOutDir, { recursive: true });
-
   const priorBlock = priorOutputs.length
     ? "## Outputs dos colegas (leia antes de produzir o seu)\n" + priorOutputs.map(p => `- **${p.employee}** → ${p.dir}`).join("\n") + "\n\n"
     : "";
@@ -189,7 +190,7 @@ function runStep(step: ChainStep, idx: number, total: number, args: TeamRunArgs,
     ? `## Saída\nEscreva os ENTREGÁVEIS FINAIS como arquivos sob: \`${args.outputsRoot}\`\nLeia tudo que os colegas produziram em \`_team/*\` e consolide. Cite as premissas em "## Premissas assumidas" no entregável principal. NÃO duplique trabalho dos colegas — sintetize, refine, complete.`
     : `## Saída\nEscreva o SEU trabalho como arquivos Markdown bem nomeados sob: \`${employeeOutDir}\`\nUm ou mais arquivos com sua análise + entregável da sua especialidade. Os colegas seguintes vão ler para continuar — escreva pensando neles.`;
 
-  const stepBrief = [
+  return [
     `# Tarefa para ${step.employee} — step ${idx + 1} de ${total}`,
     "",
     "## Sua sub-tarefa nesta cadeia",
@@ -199,7 +200,16 @@ function runStep(step: ChainStep, idx: number, total: number, args: TeamRunArgs,
     args.brief,
     "",
     priorBlock + outputInstr,
+    scopeGuard("pt-BR"),
   ].join("\n");
+}
+
+function runStep(step: ChainStep, idx: number, total: number, args: TeamRunArgs, priorOutputs: { employee: string; dir: string }[]): StepResult {
+  const isLast = idx === total - 1;
+  const employeeOutDir = isLast ? args.outputsRoot : path.join(args.outputsRoot, "_team", step.employee);
+  fs.mkdirSync(employeeOutDir, { recursive: true });
+
+  const stepBrief = buildStepBrief(step, idx, total, args, priorOutputs, employeeOutDir);
 
   const stepBriefFile = path.join(employeeOutDir, ".step-brief.md");
   fs.writeFileSync(stepBriefFile, stepBrief);

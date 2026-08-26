@@ -25,6 +25,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { exec, paths, EXIT, BUN_BIN } from "../../_shared/lib/bun-helpers.ts";
 import { resolveScope, enumerate, outputsDir } from "../../_shared/lib/scope.ts";
+import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 
 const skillDir = path.join(paths.CLAUDE_SKILLS_DIR, "squads");
 const scope = resolveScope();
@@ -88,6 +89,8 @@ fs.writeFileSync(briefFile, `# Brief
 ## Conteúdo
 
 ${brief}
+
+${scopeGuard("pt-BR")}
 `);
 
 // Audit — the whole point. Emit brief_received AND dispatch_squad with the
