@@ -1721,6 +1721,55 @@ body {
 }
 .settings-footer-actions { display: flex; gap: 10px; }
 
+/* ── Settings modal: the engine section (nrv config), one control per key ── */
+.settings-tabs-nav { align-items: center; }
+.settings-tabs-source {
+  flex-shrink: 0; padding: 0 var(--space-2) 0 var(--space-1);
+  font-size: 10px; font-weight: var(--weight-semibold);
+  text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--text-tertiary); white-space: nowrap;
+}
+.settings-tabs-source + .tab { margin-left: 0; }
+.settings-engine-intro { margin: var(--space-2) 0 var(--space-3); line-height: 1.5; }
+.settings-engine-intro code, .settings-engine-scope code {
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  background: var(--surface-3); padding: 1px 5px; border-radius: 3px;
+}
+.settings-engine-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.settings-engine-input { flex: 1 1 220px; min-width: 160px; font-family: var(--font-mono); }
+.settings-engine-scope { display: inline-flex; align-items: center; gap: var(--space-1); white-space: nowrap; }
+.settings-field-locked .settings-engine-row { opacity: 0.75; }
+.settings-engine-note  { color: var(--status-warn-fg);    margin-top: var(--space-1); line-height: 1.45; }
+.settings-engine-error { color: var(--status-danger-fg);  margin-top: var(--space-1); line-height: 1.45; }
+.settings-engine-ok    { color: var(--status-success-fg); margin-top: var(--space-1); line-height: 1.45; }
+
+/* A switch that says its state in words: the colour is never the only signal. */
+.switch {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  padding: 3px 12px 3px 3px;
+  font: inherit; font-size: var(--text-sm); font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border: 1px solid var(--border-default); border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+.switch-knob {
+  position: relative; width: 30px; height: 18px; border-radius: 9px;
+  background: var(--status-neutral-solid);
+  transition: background var(--dur-fast);
+}
+.switch-knob::after {
+  content: ''; position: absolute; top: 2px; left: 2px;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--text-inverse);
+  transition: transform var(--dur-fast);
+}
+.switch.on { color: var(--status-success-fg); }
+.switch.on .switch-knob { background: var(--status-success-solid); }
+.switch.on .switch-knob::after { transform: translateX(12px); }
+.switch:disabled { cursor: not-allowed; opacity: 0.6; }
+.switch:focus-visible { outline: none; box-shadow: var(--shadow-focus); }
+
 /* ═════════════ Lucide icons ═════════════ */
 [data-lucide],
 svg.lucide {
