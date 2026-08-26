@@ -55,7 +55,7 @@ export function originDetail(entry) {
 
 export function lockReason(entry) {
   if (!entry || entry.source !== 'env') return '';
-  return `Fixado pela variável ${entry.variable}=${entry.raw ?? ''} no ambiente do servidor do Glance; um valor gravado no arquivo só valeria sem a variável. Remova a variável e reinicie o Glance para editar aqui.`;
+  return `Fixado pela variável ${entry.variable}=${entry.raw ?? ''} no ambiente do servidor do Glance (o shell que o iniciou ou o .env do projeto); um valor gravado no arquivo só valeria sem a variável. Remova a variável, reinicie o Glance e edite aqui.`;
 }
 
 // `nrv config set` writes the project inside one; the panel follows that rule
