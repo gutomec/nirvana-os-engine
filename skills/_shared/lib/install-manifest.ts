@@ -103,11 +103,13 @@ export class InstallManifest {
     if (filter?.kind) arr = arr.filter((x) => x.kind === filter.kind);
     if (filter?.scope) arr = arr.filter((x) => x.scope === filter.scope);
     if (filter?.projectRoot) {
-      // Discriminate installs by project: keep only entries whose recorded
-      // path lives under the given projectRoot. Without this, scope:"project"
-      // mixes installs from every project sharing the global manifest.
+      // Discriminate project installs by project: keep only project-scoped
+      // entries whose recorded path lives under the given projectRoot. Without
+      // this, scope:"project" mixes installs from every project sharing the
+      // global manifest. Global entries always stay: the project the caller
+      // stands in says nothing about what is installed in HOME.
       const rootPrefix = resolve(filter.projectRoot) + sep;
-      arr = arr.filter((x) => (resolve(x.path) + sep).startsWith(rootPrefix));
+      arr = arr.filter((x) => x.scope !== "project" || (resolve(x.path) + sep).startsWith(rootPrefix));
     }
     return arr.sort((a, b) => b.ts.localeCompare(a.ts));
   }

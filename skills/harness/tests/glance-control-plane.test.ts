@@ -4,6 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { GauntletController, compileGauntletPlan } from "../lib/gauntlet/index.ts";
 import { openKernel } from "../lib/run-kernel/index.ts";
+import { removeDir } from "./helpers/temp-dirs.ts";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-glance-control-"));
 let instance: any;
@@ -19,9 +20,9 @@ beforeAll(async () => {
   base = `http://127.0.0.1:${instance.port}`;
 });
 afterAll(() => {
-  try { instance?.server.stop(true); } catch {}
+  try { instance?.close(); } catch {}
   delete process.env.NIRVANA_PROJECT_ROOT;
-  fs.rmSync(root, { recursive: true, force: true });
+  removeDir(root);
 });
 
 describe("Glance project control plane", () => {

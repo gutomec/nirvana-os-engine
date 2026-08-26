@@ -6,7 +6,31 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
-## Unreleased
+## 0.8.1 — 2026-08-26
+
+### A temporary HOME no longer reaches the Windows user PATH
+
+`wireLocalBinOnPath()` persists `%USERPROFILE%\.local\bin` to the user PATH
+through the registry. The USERPROFILE a test sets decides the path being
+written; the `User` target is always the hive of the account running the
+process. Every test that installed into a temporary HOME therefore left
+`%TEMP%\nrv-*\home\.local\bin` on the real user PATH, and deleting the
+directory never removed the entry: 22 of them on one machine, most pointing
+nowhere (#87). The installer now refuses to persist a `.local\bin` that
+lives under a temporary directory, and `NIRVANA_SKIP_PATH_PERSIST=1` skips
+the registry write and the broadcast outright, while the current process
+still gets the entry. Every test that runs an installer in a fake HOME sets
+the flag through one shared helper, and a Windows-only regression test reads
+`HKCU\Environment\Path` before and after two real installs in a temporary
+HOME, one with the flag and one without.
+
+For machines already affected, `nrv doctor` reports the temporary entries
+with a count and which ones no longer exist, and
+`nrv install --repair-path` lists them without writing; `--apply` removes
+exactly those, keeps every other entry verbatim and in order, preserves the
+value kind, and broadcasts the change.
+
+## 0.8.0 — 2026-08-25
 
 ### The runtime, Glance and Gauntlet program is documented from its proofs
 

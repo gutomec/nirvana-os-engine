@@ -16,6 +16,7 @@ nrv <subcommand> [args]
 |---|---|
 | `nrv install --bootstrap` | Wire audit hooks into Claude Code, Gemini-CLI, and Antigravity (run once after installing; idempotent). |
 | `nrv install --check` | Report status; exit 0 if ready, 1 if it needs setup. |
+| `nrv install --repair-path` | Windows: list temporary `nrv-*` entries left on the user PATH (nothing written); `--apply` removes exactly those. |
 | `nrv doctor` | Full system diagnostic (binaries, skills, hooks, patches). |
 
 ## Talk to it / run work
@@ -25,17 +26,19 @@ nrv <subcommand> [args]
 | `nrv auto "<brief>"` | **Autopilot.** The router picks the best company for your brief, executes it headless, verifies, and runs the quality gate. (= `run --auto`.) |
 | `nrv run <business> "<brief>"` | Autopilot against a company you name: dispatch + execute + verify + gate. |
 | `nrv dispatch <business> "<brief>"` | Scaffold a run (brief + DNA injection + audit) without auto-executing. |
+| `nrv dispatch --business <slug> \| --squad <slug> \| --agent-x "<brief>" [--exec]` | Name the target yourself; the three flags are mutually exclusive with each other and with `--auto`, and none of them consults the router. `--exec` runs it, otherwise it only scaffolds. |
 | `nrv revise <project> "<change>"` | Apply a change while keeping the same runtime session. |
 | `nrv launch <name> --pillars=brand,marketing,gtm` | Scaffold a multi-pillar 360° launch (default: all 11 pillars). |
 | `nrv ask <clone> "<question>"` | Talk directly to a single specialist (mind-clone), DNA injected. |
+| `nrv multi-target plan\|run\|status <plan.json>` | Multi-target engine by plan file (alias `nrv mt`): `plan` compiles the waves, `run` executes them over the Run Kernel (needs `NIRVANA_MULTI_TARGET_ENGINE=1`), `status` reads the projection. |
 
-Useful flags on `run` / `auto`: `--team` (real multi-employee orchestration), `--zip` / `--pdf` (bundle deliverables), `--runtime=claude-code|codex|gemini-cli|antigravity-cli`, `--max-budget=<usd>`, `--timeout=<min>`, `--mode=agentic|fast` (routing mode).
+Useful flags on `run` / `auto`: `--team` (real multi-employee orchestration), `--zip` / `--pdf` (bundle deliverables), `--runtime=claude-code|codex|gemini-cli|antigravity-cli`, `--max-budget=<usd>`, `--timeout=<min>`, `--mode=agentic|fast` (routing mode), `--execution-mode=standard|gauntlet|auto` (default `standard`), `--gauntlet-intensity=light|balanced|exhaustive` (a Business target needs `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST=<slug>`), `--run-id=<runId>` (adopt a Run already prepared in the project's kernel, the way Glance does).
 
 ## See it happen
 
 | Command | What it does |
 |---|---|
-| `nrv glance [--allow-actions]` | Open the **Glance** web cockpit: live runs, the capability graph, and the audit trail of everything your organization is doing. |
+| `nrv glance [--read-only]` | Open the **Glance** web cockpit: live runs, the capability graph, and the audit trail of everything your organization is doing. In an adopted project, a chat Message runs a child `dispatch.ts` with a live timeline, cancel, and recovery after a restart; `--read-only` disables execution and every write endpoint (`NIRVANA_GLANCE_EXECUTION=0` keeps the cockpit up without spawning). |
 | `nrv tui [--once\|--json]` | Terminal cockpit: live audit, active projects, registries. |
 | `nrv watch [project]` | Tail audit events live in the terminal. |
 | `nrv audit-view <project>` | Rich chronological view of a project's audit chain. |
@@ -89,7 +92,7 @@ nrv auto "crie uma landing page para um SaaS de logística"   # autopilot, route
 nrv run brand-creative-studio "Manifesto for a SaaS called Atlas"
 nrv launch atlas --pillars=brand,marketing,gtm
 nrv ask rory-sutherland "Critique this headline: ..."
-nrv glance --allow-actions                              # watch your organization work
+nrv glance                                              # watch your organization work
 nrv init ~/Projects/cliente-x --copy
 ```
 

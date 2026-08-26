@@ -12,8 +12,10 @@
 // group rather than the pid: the runtime the dispatch spawns (`claude -p`,
 // `codex`, ...) runs under a blocking `spawnSync`, so no JavaScript handler in
 // dispatch.ts could ever forward the signal in time. The kernel delivers it to
-// the whole group instead, and the grandchild dies with the dispatch.
-import { spawn } from "node:child_process";
+// the whole group instead, and the grandchild dies with the dispatch. Windows
+// has neither process groups nor a catchable SIGTERM, so there `kill()` ends
+// the whole tree through `taskkill /T /F`.
+import { spawn, spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -62,9 +64,17 @@ export function glanceRunDir(projectRoot: string, runId: string): string {
 }
 
 /** Sends `signal` to the process group `pid` leads (a child of this runner leads its own, so the
- * runtime it spawned is reached too); falls back to the pid alone where process groups are
- * unavailable (Windows) or the leader is already gone. */
+ * runtime it spawned is reached too); falls back to the pid alone when the leader is already gone.
+ * On Windows `process.kill(-pid)` does not exist and `process.kill(pid)` ends only the leader, so
+ * the tree is terminated with `taskkill /T /F` (forced: a console-less child receives no close
+ * request), falling back to the pid alone when taskkill is unavailable. */
 export function signalProcessGroup(pid: number, signal: NodeJS.Signals = "SIGTERM"): void {
+  if (process.platform === "win32") {
+    const tree = spawnSync("taskkill", ["/T", "/F", "/PID", String(pid)], { stdio: "ignore", windowsHide: true });
+    if (tree.status === 0) return;
+    try { process.kill(pid, signal); } catch { /* already gone */ }
+    return;
+  }
   try { process.kill(-pid, signal); return; } catch { /* no group to signal */ }
   try { process.kill(pid, signal); } catch { /* already gone */ }
 }
@@ -109,7 +119,7 @@ export function createDispatchExecutionRunner(options: DispatchExecutionRunnerOp
       const log = fs.openSync(path.join(runDir, "child.log"), "a");
       const child = spawn(argv[0], argv.slice(1), {
         cwd: input.projectRoot, env: { ...environment(), NIRVANA_PROJECT_ROOT: input.projectRoot },
-        stdio: ["ignore", log, log], detached: true,
+        stdio: ["ignore", log, log], detached: true, windowsHide: true,
       });
       const done = new Promise<{ exitCode: number | null }>(resolve => {
         child.once("exit", code => resolve({ exitCode: code }));

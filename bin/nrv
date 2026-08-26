@@ -132,7 +132,7 @@ case "$cmd" in
   install)
     # nrv install — overloaded: with --bootstrap routes to the system installer.
     # Default routes to the asset installer (Tier 0/1: businesses, squads, mind-clones, packs).
-    if [[ "${1:-}" == "--bootstrap" || "${1:-}" == "--check" || "${1:-}" == "--starter" || "${1:-}" == "--no-starter" || "${1:-}" == "--dry" ]]; then
+    if [[ "${1:-}" == "--bootstrap" || "${1:-}" == "--check" || "${1:-}" == "--starter" || "${1:-}" == "--no-starter" || "${1:-}" == "--dry" || "${1:-}" == "--repair-path" ]]; then
       exec "$BUN_BIN" "$SKILLS/_shared/scripts/install.ts" "$@"
     fi
     exec "$BUN_BIN" "$SKILLS/_shared/scripts/install-asset.ts" "$@" ;;

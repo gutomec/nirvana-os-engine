@@ -19,6 +19,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { fakeHomeEnv } from "../../harness/tests/helpers/fake-home.ts";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const SKILLS = ["harness", "businesses", "squads", "_shared", "nirvana-os"];
@@ -74,7 +75,7 @@ function install(
   const r = spawnSync(
     process.execPath,
     [path.join(fakeRepo, "scripts", "install.ts"), "--no-starter", "--no-index", "--no-hermes", ...extraArgs],
-    { env: { ...process.env, HOME: home, USERPROFILE: home, NIRVANA_PACKS_DIR: path.join(home, "no-packs"), ...envOverride }, encoding: "utf8" },
+    { env: fakeHomeEnv(home, { NIRVANA_PACKS_DIR: path.join(home, "no-packs"), ...envOverride }), encoding: "utf8" },
   );
   return { code: r.status ?? 1, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
 }
@@ -83,7 +84,7 @@ function uninstall(home: string): { code: number; out: string } {
   const r = spawnSync(
     process.execPath,
     [path.join(REPO, "skills", "_shared", "scripts", "uninstall-engine.ts")],
-    { env: { ...process.env, HOME: home, USERPROFILE: home }, encoding: "utf8" },
+    { env: fakeHomeEnv(home), encoding: "utf8" },
   );
   return { code: r.status ?? 1, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
 }

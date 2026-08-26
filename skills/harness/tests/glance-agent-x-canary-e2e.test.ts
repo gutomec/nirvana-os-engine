@@ -4,15 +4,18 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { createDispatchExecutionRunner, type GlanceAgentXCanaryAdapter, type GlanceExecutionRunner } from "../lib/control-plane/index.ts";
 import { childState, shimRuntimeOnPath, writeFakeGlanceChild } from "./helpers/fake-glance-child.ts";
+import { removeDir } from "./helpers/temp-dirs.ts";
 
 const roots: string[] = [];
 const servers: any[] = [];
 const restores: Array<() => void> = [];
 afterEach(() => {
-  while (servers.length) { const instance = servers.pop(); try { instance.detach?.(); instance.server.stop(true); } catch {} }
+  while (servers.length) { try { servers.pop().close(); } catch {} }
   while (restores.length) restores.pop()!();
-  while (roots.length) fs.rmSync(roots.pop()!, { recursive: true, force: true });
+  // The env goes back before the roots go: a removal that throws must not leak the project root
+  // into the files that run next.
   delete process.env.NIRVANA_PROJECT_ROOT;
+  while (roots.length) removeDir(roots.pop()!);
 });
 
 function adapter(available = true): GlanceAgentXCanaryAdapter {
@@ -74,6 +77,15 @@ async function send(base: string, projectId: string, conversationId: string, key
 }
 const events = async (base: string, projectId: string) => ((await fetch(`${base}/api/v1/projects/${projectId}/events?limit=500`).then(r => r.json())) as any).events as any[];
 const typeOf = (event: any) => event.type === "run.transitioned" ? `run.transitioned:${event.payload.to}` : event.type;
+/** Polls the journal until the Run has recorded `type`: the child writes its terminal state and exits, and the
+ * queue records glance.child_exited only when the process exit event arrives. */
+async function waitForEvent(base: string, projectId: string, runId: string, type: string, timeoutMs = 10000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!(await events(base, projectId)).some(event => event.runId === runId && event.type === type)) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${type} on ${runId}`);
+    await Bun.sleep(10);
+  }
+}
 
 /** Consumes the SSE stream from `after` until `until` holds (heartbeats keep reads short). */
 async function readStream(base: string, projectId: string, after: number, until: (seen: any[]) => boolean, timeoutMs = 30000) {
@@ -125,7 +137,7 @@ describe("Glance agent-x light canary", () => {
     const stream = await fetch(`${base}/api/v1/projects/${project.project_id}/stream`, { headers: { "last-event-id": "1" }, signal: streamController.signal });
     const chunk = new TextDecoder().decode((await stream.body!.getReader().read()).value); streamController.abort();
     expect(chunk).toContain("id: 2");
-    servers.pop().server.stop(true);
+    servers.pop().close();
     process.env.NIRVANA_PROJECT_ROOT = root;
     const { startServer } = await import("../lib/glance/server.ts");
     const restarted = await startServer({ port: 0, open: false, idleMin: 60, allowActions: true, theme: "apple", agentXCanaryAdapter: adapter() }); servers.push(restarted);
@@ -210,7 +222,9 @@ describe("Glance child-process execution", () => {
     expect(cancelled.status).toBe(202);
     expect(((await cancelled.json()) as any).state).toBe("cancelling");
     await waitFor(base, project.project_id, receipt.run.runId, "cancelled", 500);
-    await child.waitFor("killed");
+    // Windows has no catchable SIGTERM: taskkill /F ends the child before any handler runs, so the
+    // fake never writes `killed` there and the exit code is the forced one, never 143.
+    if (process.platform !== "win32") await child.waitFor("killed");
     expect(child.has("completed")).toBe(false);
     const seen = (await events(base, project.project_id)).filter(event => event.runId === receipt.run.runId);
     const types = seen.map(typeOf);
@@ -219,7 +233,8 @@ describe("Glance child-process execution", () => {
     expect(types.indexOf("glance.child_exited")).toBeGreaterThan(types.indexOf("run.transitioned:cancelling"));
     expect(types.at(-1)).toBe("run.transitioned:cancelled");
     expect(seen.at(-1).payload.reason).toBe("cancelled_by_user");
-    expect(seen.find(event => event.type === "glance.child_exited").payload.exitCode).toBe(143);
+    const exitCode = seen.find(event => event.type === "glance.child_exited").payload.exitCode;
+    if (process.platform === "win32") expect(exitCode).not.toBe(0); else expect(exitCode).toBe(143);
   }, 30000);
 
   test("a child that exits without a terminal transition fails the run honestly", async () => {
@@ -267,6 +282,9 @@ describe("Glance child-process execution", () => {
     expect(business.receipt.run.target).toEqual({ kind: "business", slug: "web-studio" });
     expect(business.receipt.capability).toBe("business.dispatch");
     await waitFor(base, projectId, business.receipt.run.runId, "completed", 500);
+    // The child writes `completed` and exits; the queue records glance.child_exited only after the
+    // process exit event, so the terminal state alone does not mean the timeline is final.
+    await waitForEvent(base, projectId, business.receipt.run.runId, "glance.child_exited");
     expect(state(business.receipt.run.runId).argv().argv.slice(0, 2)).toEqual(["--business", "web-studio"]);
     const all = await events(base, projectId);
     expect(all.filter(event => event.runId === business.receipt.run.runId).map(typeOf)).toEqual(standardTimeline);

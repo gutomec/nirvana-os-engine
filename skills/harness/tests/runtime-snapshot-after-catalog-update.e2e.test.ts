@@ -18,6 +18,7 @@ import {
 } from "../lib/runtime-snapshot.ts";
 import { multiTargetRunId } from "../scripts/multi-target.ts";
 import { writeFakeDispatch } from "./helpers/fake-dispatch.ts";
+import { removeDir } from "./helpers/temp-dirs.ts";
 
 const REPO = path.resolve(import.meta.dir, "..", "..", "..");
 const MULTI_TARGET = path.join(REPO, "skills", "harness", "scripts", "multi-target.ts");
@@ -30,14 +31,14 @@ const TEXT_MODEL_2 = { canonical_id: "fixture-provider/text-model/2", priority: 
 
 const roots: string[] = [];
 const handles: KernelHandle[] = [];
-const servers: Array<{ server: { stop(closeActiveConnections?: boolean): void } }> = [];
+const servers: Array<{ close(): void }> = [];
 const ENV_KEYS = [CATALOG_DIR_ENV, ALLOW_STALE_ENV, "NIRVANA_PROJECT_ROOT"];
 const savedEnv = Object.fromEntries(ENV_KEYS.map(key => [key, process.env[key]]));
 afterEach(() => {
-  while (servers.length) servers.pop()!.server.stop(true);
+  while (servers.length) servers.pop()!.close();
   while (handles.length) handles.pop()!.close();
-  while (roots.length) fs.rmSync(roots.pop()!, { recursive: true, force: true });
   for (const key of ENV_KEYS) { if (savedEnv[key] === undefined) delete process.env[key]; else process.env[key] = savedEnv[key]; }
+  while (roots.length) removeDir(roots.pop()!);
 });
 
 function descriptor(overrides: Record<string, unknown> = {}) {
@@ -113,7 +114,7 @@ async function glance(root: string) {
       .then(response => response.json()) as Promise<{ state: string; policySnapshotRef: string }>,
     events: (projectId: string) => fetch(`${base}/api/v1/projects/${projectId}/events?limit=500`)
       .then(response => response.json()).then(body => (body as { events: RunEvent[] }).events),
-    stop() { servers.splice(servers.indexOf(instance), 1); instance.server.stop(true); },
+    stop() { servers.splice(servers.indexOf(instance), 1); instance.close(); },
   };
 }
 

@@ -1738,7 +1738,18 @@ export async function startServer(opts: ServerOptions) {
     ? agentXQueue().recover(inspection.project.project_id, projectRoot)
     : { enqueued: [], reattached: [], redispatched: [], skipped: [] };
 
-  return { server, url, port, recovery, detach };
+  // Releases what an embedding host or a test holds through this instance: the queue detaches,
+  // the listener stops, then the kernel and conversation handles close. `server.stop()` alone
+  // leaves both SQLite files open, and an open file cannot be deleted on Windows.
+  const close = () => {
+    try { detach(); } catch {}
+    try { server.stop(true); } catch {}
+    try { kernel?.close(); } catch {}
+    try { conversations?.close(); } catch {}
+    kernel = null; conversations = null;
+  };
+
+  return { server, url, port, recovery, detach, close };
 }
 
 // ─────────────────────────────────────────────────────────────────────

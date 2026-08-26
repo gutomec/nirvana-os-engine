@@ -252,3 +252,55 @@ describe("ArtifactRef and compatibility facade", () => {
     }
   });
 });
+
+describe("two processes writing one kernel", () => {
+  // The Glance server and the dispatch child it spawns append to the same run-kernel.sqlite.
+  // A transaction that begins deferred takes its read snapshot first and only then asks for the
+  // write lock; SQLite answers that upgrade with SQLITE_BUSY at once, without consulting the busy
+  // handler, whenever another connection wrote in between. Every kernel write therefore begins
+  // immediate, so it waits on busy_timeout like any other writer instead of failing.
+  test("a child hammering appendEvent never makes the parent's writes fail with SQLITE_BUSY", async () => {
+    const { handle, root } = fresh();
+    const kernelPath = handle.path;
+    createRun(handle, { ...runInput("prj_busy", "run_parent"), occurredAt: undefined });
+    const store = pathToFileURL(path.resolve(import.meta.dir, "..", "lib", "run-kernel", "store.ts")).href;
+    const writer = path.join(root, "writer.ts");
+    fs.writeFileSync(writer, `
+import { appendEvent, createRun, openKernel } from ${JSON.stringify(store)};
+const kernel = openKernel(process.argv[2]);
+const actor = { kind: "test", id: "child" };
+createRun(kernel, { projectId: "prj_busy", runId: "run_child", traceId: "trace_child", planId: "plan_child",
+  target: { kind: "agent-x", slug: "agent-x" }, policySnapshotRef: "test", actor, correlationId: "cor_child" });
+const deadline = Date.now() + Number(process.argv[3]);
+let count = 0;
+while (Date.now() < deadline) {
+  appendEvent(kernel, { projectId: "prj_busy", runId: "run_child", traceId: "trace_child", type: "test.child_write", actor, correlationId: "cor_child", payload: { count } });
+  count += 1;
+}
+kernel.close();
+console.log(count);
+`, "utf8");
+    const child = Bun.spawn([process.execPath, writer, kernelPath, "1500"], { stdout: "pipe", stderr: "pipe" });
+    const deadline = Date.now() + 10_000;
+    while (!listEvents(handle, "prj_busy").some(event => event.type === "test.child_write")) {
+      if (Date.now() > deadline) throw new Error("the child never started writing");
+      await Bun.sleep(5);
+    }
+    const actor = { kind: "test", id: "parent" };
+    let parentWrites = 0;
+    const until = Date.now() + 1_000;
+    while (Date.now() < until) {
+      appendEvent(handle, { projectId: "prj_busy", runId: "run_parent", traceId: "trace_prj_busy", type: "test.parent_write", actor, correlationId: "cor_prj_busy", payload: { parentWrites } });
+      parentWrites += 1;
+    }
+    transitionRun(handle, { projectId: "prj_busy", runId: "run_parent", to: "running", actor, correlationId: "cor_prj_busy" });
+    expect(await child.exited).toBe(0);
+    const childWrites = Number((await new Response(child.stdout).text()).trim());
+    expect(parentWrites).toBeGreaterThan(0);
+    expect(childWrites).toBeGreaterThan(0);
+    const events = listEvents(handle, "prj_busy");
+    expect(events).toHaveLength(parentWrites + childWrites + 3);
+    expect(events.map(event => event.sequence)).toEqual(events.map((_, index) => index + 1));
+    expect(getRun(handle, "prj_busy", "run_parent")?.state).toBe("running");
+  }, 30000);
+});

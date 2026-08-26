@@ -10,6 +10,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
+import { fakeHomeEnv } from "./helpers/fake-home.ts";
 
 const SCRIPT = path.resolve(import.meta.dir, "..", "..", "_shared", "scripts", "license.ts");
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-lic-"));
@@ -34,7 +35,7 @@ function pack(h: string, dir = "Downloads/nirvana-os-genesis-circle-pack"): stri
 }
 
 const run = (h: string, args: string[], cwd = h) =>
-  spawnSync(process.execPath, [SCRIPT, ...args], { encoding: "utf8", cwd, env: { ...process.env, HOME: h, USERPROFILE: h } });
+  spawnSync(process.execPath, [SCRIPT, ...args], { encoding: "utf8", cwd, env: fakeHomeEnv(h) });
 
 const store = (h: string) => path.join(h, ".nirvana-license", "PROVENANCE.json");
 

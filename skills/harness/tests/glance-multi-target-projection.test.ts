@@ -9,6 +9,7 @@ import { coordinateMultiTargetPlan, type MultiTargetAdapterInput, type MultiTarg
 import { createRunKernelMultiTargetPorts } from "../lib/gauntlet/run-kernel-multi-target-ports.ts";
 import { compileMultiTargetGauntletPolicy } from "../lib/plan-compiler.ts";
 import { createRun, listEvents, openKernel, type KernelHandle } from "../lib/run-kernel/store.ts";
+import { removeDir } from "./helpers/temp-dirs.ts";
 
 const roots: string[] = [];
 const projectId = "prj_multi-target";
@@ -78,9 +79,9 @@ beforeAll(async () => {
   base = `http://127.0.0.1:${instance.port}`;
 });
 afterAll(() => {
-  try { instance?.server.stop(true); } catch {}
+  try { instance?.close(); } catch {}
   delete process.env.NIRVANA_PROJECT_ROOT;
-  while (roots.length) fs.rmSync(roots.pop()!, { recursive: true, force: true });
+  while (roots.length) removeDir(roots.pop()!);
 });
 
 describe("Glance multi-target projection", () => {

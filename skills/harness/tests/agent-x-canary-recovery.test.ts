@@ -5,14 +5,18 @@ import * as path from "node:path";
 import { AgentXCanaryQueue, ConversationService, createDispatchExecutionRunner, type GlanceAgentXCanaryAdapter } from "../lib/control-plane/index.ts";
 import { createRun, getRun, listEvents, openKernel, transitionRun } from "../lib/run-kernel/index.ts";
 import { childState, pidAlive, shimRuntimeOnPath, waitUntil, writeFakeGlanceChild } from "./helpers/fake-glance-child.ts";
+import { removeDir } from "./helpers/temp-dirs.ts";
 
 const roots: string[] = [];
 const queues: AgentXCanaryQueue[] = [];
 const restores: Array<() => void> = [];
+const closers: Array<() => void> = [];
 afterEach(() => {
   while (queues.length) queues.pop()!.shutdown();
+  // A handle a failed assertion left open keeps the kernel file busy on Windows.
+  while (closers.length) closers.pop()!();
   while (restores.length) restores.pop()!();
-  while (roots.length) fs.rmSync(roots.pop()!, { recursive: true, force: true });
+  while (roots.length) removeDir(roots.pop()!);
 });
 
 function fixture() {
@@ -57,7 +61,9 @@ function childFixture() {
   const queue = (knobs?: Record<string, string>) => {
     const handles = open();
     const instance = new AgentXCanaryQueue(handles.kernel, handles.conversations, undefined, runner(knobs)); queues.push(instance);
-    return { ...handles, queue: instance, close: () => { handles.kernel.close(); handles.conversations.close(); } };
+    const close = () => { handles.kernel.close(); handles.conversations.close(); };
+    closers.push(close);
+    return { ...handles, queue: instance, close };
   };
   const runEvents = (runId: string) => { const handle = openKernel(kernelPath); const events = listEvents(handle, "prj_child").filter(event => event.runId === runId); handle.close(); return events; };
   const childPid = (runId: string, attempt: number) => Number(runEvents(runId).find(event => event.type === "glance.child_started" && (event.payload as any).attempt === attempt)!.payload.pid);
@@ -144,7 +150,9 @@ describe("durable agent-x canary recovery", () => {
     await waitUntil(() => !pidAlive(pid), "the first child to die");
     expect(child.has("crashed")).toBe(true);
     expect(child.count("producer")).toBe(1);
-    expect(getRun(openKernel(fx.kernelPath), "prj_child", runId)?.state).toBe("running");
+    const reopened = openKernel(fx.kernelPath);
+    expect(getRun(reopened, "prj_child", runId)?.state).toBe("running");
+    reopened.close();
 
     const second = fx.queue();
     expect(second.queue.recover("prj_child", fx.root)).toMatchObject({ enqueued: [], reattached: [], redispatched: [runId] });
@@ -153,6 +161,9 @@ describe("durable agent-x canary recovery", () => {
     const third = fx.queue();
     expect(third.queue.recover("prj_child", fx.root)).toMatchObject({ redispatched: [runId] });
     await waitForState(fx.kernelPath, "prj_child", runId, "completed", 500);
+    // The child writes `completed` and exits; the queue records glance.child_exited only after the
+    // process exit event, so the terminal state alone does not mean the journal is final.
+    await waitUntil(() => fx.runEvents(runId).some(event => event.type === "glance.child_exited"), "the redispatched exit event");
     expect(child.count("spawns")).toBe(2);
     expect(child.count("producer")).toBe(1);
     expect(child.count("final-gate")).toBe(1);
