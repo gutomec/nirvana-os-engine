@@ -242,6 +242,11 @@ export function runAgentXGauntlet(input: AgentXGauntletInput): AgentXGauntletRes
   let run = existing ?? facade.create({ projectId: input.projectId, runId: input.runId, traceId: input.traceId,
     planId: `plan_${input.runId}`, target: producer, policySnapshotRef,
     actor, correlationId, idempotencyKey: `agent-x-gauntlet:${input.runId}:create` });
+  // An adopted Run reached the kernel through another process (Glance's --run-id). Its legacy
+  // ledger row is keyed by the same run id and only `facade.create` opened one, so the dual-write
+  // threw "legacy run is missing" and recordSession logged "not found" on every adopted Run.
+  // The adapter's openRun is idempotent on an existing row.
+  if (existing) input.legacy?.openRun?.(existing);
   // An adopted Run (prepared elsewhere, e.g. by Glance with --run-id) keeps the trace it was
   // prepared with, so every event of one Run shares one trace; a fresh Run uses the caller's.
   const traceId = run.traceId;

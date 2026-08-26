@@ -7,7 +7,10 @@ import {
   type AgentXGauntletEvaluator,
 } from "../lib/gauntlet/agent-x-cutover.ts";
 import { compileGauntletPlan } from "../lib/gauntlet/compiler.ts";
-import { RunAlreadyTerminalError, TERMINAL_RUN_STATES, createRun, getRun, listEvents, openKernel, transitionRun, type KernelHandle } from "../lib/run-kernel/index.ts";
+import {
+  RunAlreadyTerminalError, TERMINAL_RUN_STATES, createHarnessLegacyAdapter, createRun, getRun, listEvents, openKernel, transitionRun, type KernelHandle,
+} from "../lib/run-kernel/index.ts";
+import { getRun as getLegacyRun, openLedger, recordSession } from "../lib/run-ledger.ts";
 import { transitionsTo } from "./helpers/run-states.ts";
 import { KERNEL_BUDGET_MS } from "./helpers/test-budgets.ts";
 
@@ -247,5 +250,36 @@ describe("agent-x Gauntlet cutover", () => {
     expect(audit.map(entry => entry.event)).toEqual(states.map(() => "x_run_id_collision"));
     expect(audit[0].payload).toEqual({ trace_id: "trace_dispatch", project_id: "prj_canary", run_id: `run_${states[0]}`, state: states[0],
       target_kind: "agent-x", run_target: { kind: "squad", slug: "brandcraft", capabilityId: "squad.execute" }, mode: "gauntlet" });
+  }, KERNEL_BUDGET_MS);
+
+  test("an adopted Run opens its legacy ledger row: the dual-write and recordSession find it under the same id", () => {
+    const fixture = setup();
+    const previous = { logs: process.env.HARNESS_LOGS_DIR, state: process.env.NIRVANA_STATE_DB };
+    process.env.HARNESS_LOGS_DIR = path.join(fixture.root, "logs");
+    process.env.NIRVANA_STATE_DB = path.join(fixture.root, "state.sqlite");
+    const ledger = openLedger(path.join(fixture.root, "ledger.sqlite"));
+    try {
+      createRun(fixture.handle, { projectId: "prj_canary", runId: "run_glance", traceId: "trace_glance", planId: "plan_run_glance",
+        target: { kind: "agent-x", slug: "agent-x" }, policySnapshotRef: "gauntlet-light-canary", actor: { kind: "control-plane", id: "glance" }, correlationId: "cor_run_glance" });
+      expect(getLegacyRun(ledger, "run_glance")).toBeNull();
+      const result = runAgentXGauntlet({
+        kernel: fixture.handle, legacy: createHarnessLegacyAdapter({ ledger, auditCwd: fixture.root }),
+        projectId: "prj_canary", runId: "run_glance", traceId: "trace_dispatch", brief: "Build", projectRoot: fixture.root, outputsRoot: fixture.outputsRoot,
+        expectedCostUsd: 1, evaluator: evaluator(),
+        executeCandidate(root) {
+          fs.mkdirSync(root, { recursive: true }); fs.writeFileSync(path.join(root, "out.md"), "valid", "utf8");
+          // What the dispatch canaries do after each producer: the row must exist by now.
+          recordSession(ledger, "run_glance", "sess-adopted");
+          return { ok: true, sessionId: "sess-adopted" };
+        },
+        finalGate() { return { exitCode: 0, gateOutcome: "pass" }; },
+      });
+      expect(result.run).toMatchObject({ state: "completed", traceId: "trace_glance" });
+      expect(getLegacyRun(ledger, "run_glance")).toMatchObject({ state: "delivered", session_id: "sess-adopted", trace_id: "trace_glance", project_id: "prj_canary", target_kind: "agent-x" });
+    } finally {
+      ledger.close();
+      if (previous.logs === undefined) delete process.env.HARNESS_LOGS_DIR; else process.env.HARNESS_LOGS_DIR = previous.logs;
+      if (previous.state === undefined) delete process.env.NIRVANA_STATE_DB; else process.env.NIRVANA_STATE_DB = previous.state;
+    }
   }, KERNEL_BUDGET_MS);
 });
