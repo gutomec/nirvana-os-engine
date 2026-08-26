@@ -42,6 +42,47 @@ que ler arquivos basta, sem shell. Sem nada sob o outputs root, o Run do filho
 falha na verificação em vez de completar, provado por um `dispatch.ts` filho
 real no teste e2e.
 
+### O coordenador multi-target observa o custo que os filhos gastam
+
+O primeiro smoke com LLM real do engine multi-target entregou um nó de squad
+que custou USD 2,15 e registrou USD 0 para ele. O `dispatch.ts` filho, sem
+`HARNESS_LOGS_DIR` no ambiente, ancora o audit no scaffold que ele mesmo cria
+(`<projectRoot>/outputs/<projectId>/.nirvana/logs/harness`), enquanto os
+adapters somavam `agent_executed.cost_usd` em
+`<projectRoot>/.nirvana/logs/harness`. Os testes herméticos fixavam a variável
+por fixture, então o desvio nunca apareceu. Os adapters multi-target e o runner
+de execução do Glance agora passam `HARNESS_LOGS_DIR` ao filho apontando para o
+diretório que o pai lê, sem sobrescrever um valor definido pelo chamador; o
+adapter do avaliador Gauntlet já fazia isso. O dispatch falso dos testes grava
+o evento de custo onde o real grava, então o desvio é reproduzido e a correção,
+testada.
+
+Um nó que executou sem deixar evento de custo deixa de ser um zero silencioso.
+O resultado do adapter e a projeção do nó carregam `costObserved: false`, o
+coordenador registra `multi_target.cost_unobserved` no journal, o comando
+audita `x_multi_target_cost_unobserved`, e `run` e `status` imprimem `custo não
+observado` nesses nós, com a lista repetida no resumo e em
+`x_multi_target_terminal`. A proteção de orçamento do Gauntlet continua
+comparando o número reportado; a marca diz quando ela ficou cega.
+
+### `nrv multi-target run --retry-failed` reabre um plano falho sem pagar duas vezes
+
+Um plano cujo Run terminou `failed` ou `withheld` ficava preso: repetir `run`
+devolvia o Run terminal sem executar, e a única saída era um `--project` novo,
+pagando de novo por todo nó já entregue. A flag reabre esse plano depois que a
+causa foi corrigida. A máquina de estados do Run não tem transição a partir de
+estado terminal, então a retomada é um Run canônico novo,
+`run_mt_<projectId>_r<n>`, encadeado ao anterior por `parentRunId`. Ele parte
+do último snapshot do coordenador com os nós entregues preservados (outputs e
+marcadores intactos) e os nós `failed`, `withheld`, `skipped` e `stalled` de
+volta a `pending`, grava `multi_target.plan_retried { previousRunId,
+resetNodes }` e um snapshot com a versão incrementada, e executa só o que
+falta. A chave idempotente de um nó retomado carrega a tentativa, então o
+marcador da tentativa falha nunca responde pela nova. A retomada é recusada
+com exit 4 quando o plano ou a reserva mudaram, quando o Run não é terminal ou
+quando não há nada a reabrir. `run` e `status` por arquivo de plano apontam
+para o Run mais recente da cadeia. Sem a flag, nada muda.
+
 ### O Gauntlet passa a ser julgado por um avaliador real e independente
 
 Os três canários do Gauntlet no `dispatch.ts` pontuavam cada candidate com

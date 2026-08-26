@@ -20,6 +20,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { listRuntimes, runtimeAvailable } from "../../../_shared/lib/host-agent-driver.ts";
+import { harnessLogsDir } from "../../../_shared/lib/log-paths.ts";
 import type { Runtime } from "../host-agent-driver.ts";
 import { canonicalRuntimeName, detectCurrentHost, resolveDefaultRuntime } from "../runtime-rules.ts";
 import type { TargetRef } from "../run-kernel/index.ts";
@@ -117,9 +118,12 @@ export function createDispatchExecutionRunner(options: DispatchExecutionRunnerOp
       if (input.target.kind === "agent-x") argv.push("--execution-mode=gauntlet", `--gauntlet-intensity=${input.intensity}`);
       if (options.runtime) argv.push("--runtime", options.runtime);
       const log = fs.openSync(path.join(runDir, "child.log"), "a");
+      const env = { ...environment(), NIRVANA_PROJECT_ROOT: input.projectRoot };
+      // Without it the child anchors its audit on the scaffold it creates (outputs/<pid>/.nirvana/logs),
+      // not on the project's harness log the cockpit and the cost readers open; a caller's value wins.
+      if (!env.HARNESS_LOGS_DIR) env.HARNESS_LOGS_DIR = harnessLogsDir({ projectRoot: input.projectRoot });
       const child = spawn(argv[0], argv.slice(1), {
-        cwd: input.projectRoot, env: { ...environment(), NIRVANA_PROJECT_ROOT: input.projectRoot },
-        stdio: ["ignore", log, log], detached: true, windowsHide: true,
+        cwd: input.projectRoot, env, stdio: ["ignore", log, log], detached: true, windowsHide: true,
       });
       const done = new Promise<{ exitCode: number | null }>(resolve => {
         child.once("exit", code => resolve({ exitCode: code }));
