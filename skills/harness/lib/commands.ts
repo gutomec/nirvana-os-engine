@@ -63,6 +63,7 @@ export const COMMANDS: Command[] = [
   { name: "find", target: "harness/scripts/find.ts", category: "core", args: '"<query>"', summary: "Dry-run capability discovery", visibility: "user" },
   { name: "validate", target: "harness/scripts/validate.ts", category: "core", summary: "Self-test (delegates to doctor: binaries, skills, registries, hooks)", visibility: "user" },
   { name: "index", target: "harness/scripts/index.ts", category: "core", summary: "Re-index squads + businesses", visibility: "user" },
+  { name: "config", target: "harness/scripts/config.ts", category: "core", args: "list|get|set|unset|explain [<key> [<value>]] [--global|--project]", summary: "Operational settings: effective value + origin per key; set/unset write the project or the global config.yaml", visibility: "user" },
 
   // dispatch & execute
   { name: "dispatch", target: "harness/scripts/dispatch.ts", category: "dispatch", args: '<business> "<brief>"', summary: "Scaffold a run (brief + DNA injection + audit; no exec)", visibility: "user" },
