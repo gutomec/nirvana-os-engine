@@ -30,6 +30,7 @@ import * as os from "node:os";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { parseArgs, EXIT, log } from "../lib/bun-helpers.ts";
+import { SKIP_PATH_PERSIST_ENV, skipPathPersist, isUnderTempRoot, broadcastEnvironmentChange } from "../lib/windows-user-path.ts";
 
 // ─── Marker that identifies hooks added by this script ────────────────
 // Any hook whose command contains one of these tokens is "ours" and is
@@ -237,8 +238,30 @@ function wireLocalBinOnPath(dry: boolean): string[] {
   const notes: string[] = [];
   const home = os.homedir();
   const localBin = path.join(home, ".local", "bin");
+  // Issue #87: the persistence target is the REAL user's — the registry hive on
+  // Windows, the shell rc files elsewhere — even when HOME/USERPROFILE point at
+  // a fake home, so a test that ran this with a temporary HOME left that path on
+  // the real user PATH for good. Two guards, both stated in the output:
+  // NIRVANA_SKIP_PATH_PERSIST=1 (every fake-home test sets it), and on Windows,
+  // where the hive is shared, a localBin under a temporary directory is never
+  // persisted, flag or not. The current process still gets it on its own PATH.
+  const skipReason = skipPathPersist() ? `${SKIP_PATH_PERSIST_ENV}=1`
+    : process.platform === "win32" && isUnderTempRoot(localBin) ? `${localBin} is under a temporary directory`
+    : null;
   if (process.platform === "win32") {
-    if (dry) { notes.push(`would add ${localBin} to the user PATH (Windows)`); return notes; }
+    if (dry) {
+      notes.push(skipReason ? `would not persist ${localBin} to the user PATH (${skipReason})` : `would add ${localBin} to the user PATH (Windows)`);
+      return notes;
+    }
+    // Make the CURRENT install process see it, so the post-install `nrv index`
+    // (this same run) resolves the launcher without a restart.
+    if (!(process.env.PATH || "").split(";").some(p => p.trim().replace(/\\+$/, "").toLowerCase() === localBin.toLowerCase())) {
+      process.env.PATH = `${localBin};${process.env.PATH || ""}`;
+    }
+    if (skipReason) {
+      notes.push(`not persisting ${localBin} to the user PATH (${skipReason}) — this process only; registry untouched, no WM_SETTINGCHANGE broadcast.`);
+      return notes;
+    }
     // 1) PERSIST to the USER PATH via the registry ([Environment]::SetEnvironmentVariable
     //    'User') — NOT setx, which truncates PATH at 1024 chars. Idempotent.
     const persistPs =
@@ -252,29 +275,20 @@ function wireLocalBinOnPath(dry: boolean): string[] {
       persisted = r.stdout || "";
     } catch { /* fall through to the manual-add note below */ }
 
-    // Make the CURRENT install process see it too, so the post-install `nrv index`
-    // (this same run) resolves the launcher without a restart.
-    if (!(process.env.PATH || "").split(";").some(p => p.trim().replace(/\\+$/, "").toLowerCase() === localBin.toLowerCase())) {
-      process.env.PATH = `${localBin};${process.env.PATH || ""}`;
-    }
-
-    // 2) BEST-EFFORT broadcast WM_SETTINGCHANGE (0x1A) to HWND_BROADCAST so an
-    //    already-running Explorer reloads its environment block — terminals opened
-    //    afterwards inherit the new PATH WITHOUT a logoff/restart. Isolated in its
-    //    own process+try so a failure here can NEVER undo the persistence above.
-    if (/added/.test(persisted)) {
-      const bcastPs =
-        "$s='[DllImport(\"user32.dll\")] public static extern int SendMessageTimeout(IntPtr h,int m,IntPtr w,string l,int f,int t,out IntPtr r);'; " +
-        "Add-Type -MemberDefinition $s -Name W -Namespace N | Out-Null; " +
-        "$r=[IntPtr]::Zero; [void][N.W]::SendMessageTimeout([IntPtr]0xffff,0x1A,[IntPtr]::Zero,'Environment',2,5000,[ref]$r)";
-      try { spawnSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", bcastPs], { encoding: "utf8", timeout: 8000 }); } catch { /* best-effort */ }
-    }
+    // 2) BEST-EFFORT broadcast so terminals opened afterwards inherit the new
+    //    PATH WITHOUT a logoff/restart. Its own process and try, so a failure
+    //    here can NEVER undo the persistence above.
+    if (/added/.test(persisted)) broadcastEnvironmentChange();
 
     if (/added/.test(persisted)) {
       notes.push(`added ${localBin} to the user PATH (Windows) — new terminals work immediately (no restart).`);
       notes.push(`  this window only: run  set PATH=%USERPROFILE%\\.local\\bin;%PATH%`);
     } else if (/present/.test(persisted)) { /* already there */ }
     else notes.push(`não consegui ajustar o PATH automaticamente — adicione "%USERPROFILE%\\.local\\bin" ao PATH do usuário.`);
+    return notes;
+  }
+  if (skipReason) {
+    notes.push(`${dry ? "would not persist" : "not persisting"} ~/.local/bin to a shell profile (${skipReason}).`);
     return notes;
   }
   const marker = "# nirvana-os: nrv on PATH";
@@ -407,6 +421,12 @@ WHAT IT DOES
        - Gemini-CLI:  ~/.gemini/settings.json  (BeforeTool/AfterTool/SessionStart)
   3. Creates timestamped backups before modifying any file
   4. Smoke-tests the audit pipe (writes a sentinel event)
+
+ENVIRONMENT
+  NIRVANA_SKIP_PATH_PERSIST=1  never persist ~/.local/bin to the user PATH
+                               (Windows registry / shell profile); this process
+                               only. Set by every test that installs into a
+                               temporary HOME.
 
 After install, every Write/Edit/Bash by Claude Code OR Gemini-CLI lands in
 ~/.harness-logs/<today>/audit.jsonl automatically. Watch with 'nrv watch'.
