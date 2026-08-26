@@ -1615,14 +1615,15 @@
                        spellcheck="false" autocomplete="off">
                 <label class="text-caption settings-engine-scope">
                   <span>gravar em</span>
-                  <select class="input input-sm" x-model="engineScope[f.key]" :disabled="!f.writable" :aria-label="'Escopo de ' + f.key">
-                    <template x-for="s in f.scopes" :key="s"><option :value="s" x-text="s === 'project' ? 'projeto' : 'global'"></option></template>
+                  <select class="input input-sm" :disabled="!f.writable" :aria-label="'Escopo de ' + f.key"
+                          @change="engineScope[f.key] = $event.target.value">
+                    <template x-for="s in f.scopes" :key="s"><option :value="s" x-text="s === 'project' ? 'projeto' : 'global'" :selected="s === engineScope[f.key]"></option></template>
                   </select>
                 </label>
                 <button type="button" class="btn btn-solid btn-primary btn-sm" @click="saveEngineSetting(f)"
-                        :disabled="!f.writable || engineSaving[f.key]" x-text="engineSaving[f.key] ? 'salvando…' : 'Salvar'"></button>
+                        :disabled="!f.writable || !!engineSaving[f.key]" x-text="engineSaving[f.key] ? 'salvando…' : 'Salvar'"></button>
                 <button type="button" class="btn btn-ghost btn-sm" @click="unsetEngineSetting(f)"
-                        :disabled="!f.writable || engineSaving[f.key]" :title="'Remover ' + f.key + ' do arquivo escolhido; a camada seguinte passa a valer'">Remover do arquivo</button>
+                        :disabled="!f.writable || !!engineSaving[f.key]" :title="'Remover ' + f.key + ' do arquivo escolhido; a camada seguinte passa a valer'">Remover do arquivo</button>
               </div>
               <div class="settings-field-foot text-caption">
                 <span>padrão: <code class="text-mono-sm" x-text="engineDisplay(f, f.default)"></code></span>

@@ -1723,6 +1723,7 @@ body {
 
 /* ── Settings modal: the engine section (nrv config), one control per key ── */
 .settings-tabs-nav { align-items: center; }
+.settings-tabs-nav .tab { white-space: nowrap; }
 .settings-tabs-source {
   flex-shrink: 0; padding: 0 var(--space-2) 0 var(--space-1);
   font-size: 10px; font-weight: var(--weight-semibold);
