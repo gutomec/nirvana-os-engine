@@ -29,6 +29,18 @@
  *     MAX_ARGV_PROMPT_BYTES (agy, kimi, opencode) or pi's native @file
  *     attachment (pi).
  * Verification notes (per-CLI --help audits) live on each adapter below.
+ *
+ * HEADLESS AUTONOMY: a non-interactive child cannot answer an approval prompt,
+ * so every adapter whose CLI documents an approval-bypass flag passes it by
+ * default, in BOTH layers (per-CLI --help audits, 2026-08-26: claude
+ * --dangerously-skip-permissions, codex --dangerously-bypass-approvals-and-
+ * sandbox, gemini --approval-mode yolo, agy --dangerously-skip-permissions,
+ * grok --always-approve). NIRVANA_HEADLESS_SKIP_PERMISSIONS=0 turns the bypass
+ * off everywhere (headlessSkipPermissions): the light layer then omits the
+ * flag and runHeadless takes each runner's restricted path (the --safe path).
+ * CLIs whose flag could not be verified here (kimi, qwen, opencode) and pi,
+ * whose --approve is project-file trust rather than tool permission, stay as
+ * they are.
  */
 
 import { spawn, spawnSync } from "node:child_process";
@@ -48,6 +60,16 @@ const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
  * Linux MAX_ARG_STRLEN is 128 KiB per argument; macOS shares ~256 KiB across
  * argv+env. 100 KB keeps clear of both with room for the other flags. */
 export const MAX_ARGV_PROMPT_BYTES = 100_000;
+
+/** The one switch for headless autonomy. `0` (also `false`, `off`, `no`)
+ * keeps every headless child on its CLI's own approval path; anything else,
+ * unset included, is the autonomous default. */
+export const HEADLESS_SKIP_PERMISSIONS_ENV = "NIRVANA_HEADLESS_SKIP_PERMISSIONS";
+
+/** True unless NIRVANA_HEADLESS_SKIP_PERMISSIONS disables the permission bypass. */
+export function headlessSkipPermissions(): boolean {
+  return !/^(0|false|off|no)$/i.test((process.env[HEADLESS_SKIP_PERMISSIONS_ENV] ?? "").trim());
+}
 
 /** Max persona chars accepted by --append-system-prompt-style flags. */
 const PERSONA_MAX_CHARS = 8_000;
@@ -221,12 +243,15 @@ const RUNTIMES: RuntimeAdapter[] = [
     cli: "claude",
     // `claude -p` reads the prompt from STDIN when no positional is given
     // (same channel runClaudeCode uses) — argv stays small no matter the
-    // prompt size.
+    // prompt size. `claude --help` (audited 2026-08-26): "--dangerously-skip-
+    // permissions  Bypass all permission checks" — without it a headless
+    // child dies on the first tool that needs approval.
     buildCall(persona, userMsg) {
       // System model (what the user's session runs) propagated to the child —
       // without this, judge/gate/verify fell to the CLI default (sonnet)
       // instead of inheriting fable/opus. null → no --model (keeps the default).
       const args = ["-p", "--no-session-persistence", "--output-format", "json"];
+      if (headlessSkipPermissions()) args.push("--dangerously-skip-permissions");
       const model = resolveSystemModel("claude-code");
       if (model) args.push("--model", model);
       if (persona) args.push("--append-system-prompt", clampPersona(persona, "claude-code"));
@@ -269,9 +294,14 @@ const RUNTIMES: RuntimeAdapter[] = [
     cli: "codex",
     // `codex exec` with no positional PROMPT reads instructions from stdin
     // (verified via `codex exec --help`) — never pass the prompt via argv.
+    // Autonomy (`codex exec --help`, audited 2026-08-26): "--dangerously-
+    // bypass-approvals-and-sandbox  Skip all confirmation prompts and execute
+    // commands without sandboxing" — the same flag runCodex passes.
     buildCall(persona, userMsg) {
       const merged = persona ? `${persona}\n\n---\n\n${userMsg}` : userMsg;
-      return { args: ["exec"], input: merged };
+      const args = ["exec"];
+      if (headlessSkipPermissions()) args.push("--dangerously-bypass-approvals-and-sandbox");
+      return { args, input: merged };
     },
     parseStdout(stdout) { return stdout.trim(); },
     envHints: ["CODEX_HOME"],
@@ -282,12 +312,15 @@ const RUNTIMES: RuntimeAdapter[] = [
     // (audited 2026-08-06): -p/--print runs a single prompt non-interactively;
     // NO stdin channel and NO prompt-file flag documented, so large prompts
     // degrade to the temp-file bootstrap. --dangerously-skip-permissions for
-    // autonomous runs (without it agy halts waiting for approval).
+    // autonomous runs (without it agy halts waiting for approval; `agy --help`
+    // audited 2026-08-26: "Auto-approve all tool permission requests without
+    // prompting").
     name: "antigravity-cli",
     cli: "agy",
     buildCall(persona, userMsg) {
       const merged = persona ? `${persona}\n\n---\n\n${userMsg}` : userMsg;
-      return argvOrPromptFile(merged, (p) => ["-p", p, "--dangerously-skip-permissions"]);
+      const autonomy = headlessSkipPermissions() ? ["--dangerously-skip-permissions"] : [];
+      return argvOrPromptFile(merged, (p) => ["-p", p, ...autonomy]);
     },
     parseStdout(stdout) { return stdout.trim(); },
     envHints: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
@@ -298,9 +331,13 @@ const RUNTIMES: RuntimeAdapter[] = [
     // `gemini --help` (audited 2026-08-06): "-p ... Appended to input on
     // stdin (if any)" — stdin is a documented prompt channel. The prompt goes
     // via STDIN; `-p ""` keeps headless mode without duplicating content.
+    // Autonomy (`gemini --help`, audited 2026-08-26): "--approval-mode ...
+    // yolo (auto-approve all tools)" — the same flag runGemini passes.
     buildCall(persona, userMsg) {
       const merged = persona ? `${persona}\n\n---\n\n${userMsg}` : userMsg;
-      return { args: ["-p", ""], input: merged };
+      const args = ["-p", ""];
+      if (headlessSkipPermissions()) args.push("--approval-mode", "yolo");
+      return { args, input: merged };
     },
     parseStdout(stdout) { return stdout.trim(); },
     envHints: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
@@ -346,13 +383,17 @@ const RUNTIMES: RuntimeAdapter[] = [
   {
     // Grok Build CLI (`grok`, xAI). `grok --help` (audited 2026-08-06):
     // native `--prompt-file <PATH>` = "Single-turn prompt from a file" — the
-    // lossless channel for any prompt size.
+    // lossless channel for any prompt size. Autonomy (`grok --help`, audited
+    // 2026-08-26): "--always-approve  Auto-approve all tool executions" — the
+    // same flag runGrok passes.
     name: "grok-cli",
     cli: "grok",
     buildCall(persona, userMsg) {
       const merged = persona ? `${persona}\n\n---\n\n${userMsg}` : userMsg;
       const f = writePromptFile(merged);
-      return { args: ["--prompt-file", f], tmpFiles: [f] };
+      const args = ["--prompt-file", f];
+      if (headlessSkipPermissions()) args.push("--always-approve");
+      return { args, tmpFiles: [f] };
     },
     parseStdout(stdout) {
       try {
@@ -689,7 +730,10 @@ export interface RunHeadlessOpts {
    * with exit 143). Callers that want a cap pass it explicitly (e.g. the fast
    * router sets 5 min; `nrv dispatch --timeout=<min>`). */
   timeoutMs?: number;
-  /** Bypass all permission checks (claude --dangerously-skip-permissions). */
+  /** Bypass all permission checks (claude --dangerously-skip-permissions and
+   * each runtime's equivalent). Default true; `false` is the restricted path
+   * (`nrv dispatch --safe`). NIRVANA_HEADLESS_SKIP_PERMISSIONS=0 forces
+   * `false` for every run (see headlessSkipPermissions). */
   yolo?: boolean;
   /** Optional model override. Passed as `--model <id>` (or equivalent) to the
    * underlying CLI. Honors model hints from LLM_CASCADE entries. If unset,
@@ -1590,6 +1634,9 @@ const BUDGET_CAPABLE: ReadonlySet<Runtime> = new Set<Runtime>(["claude-code"]);
 const _warnedUncappable = new Set<string>();
 
 export function runHeadless(opts: RunHeadlessOpts): RunHeadlessResult {
+  // The operator's switch outranks the caller: with the bypass disabled every
+  // runner takes its restricted path, the same one `--safe` selects.
+  if (!headlessSkipPermissions() && opts.yolo !== false) opts = { ...opts, yolo: false };
   // A budget cap the runtime cannot enforce is worse than no cap: the caller
   // believes the run is bounded. The contract calls the cap HARD, so say
   // plainly when it is not being applied. The caller-side accumulator
