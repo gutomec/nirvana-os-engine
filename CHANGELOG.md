@@ -8,6 +8,37 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### The Gauntlet is judged by a real, independent evaluator
+
+The three Gauntlet canaries of `dispatch.ts` scored every candidate with a
+heuristic, the share of gateable files that pass the offline quality gate,
+signed by a nominal target (`harness-quality-gate`) that is not installed
+anywhere. The revision loop, the selection and the finite stop worked; the
+judgement did not tell a good candidate from a bad one. A round is now judged
+by a real executor. `NIRVANA_GAUNTLET_EVALUATOR` names it
+(`squad:<slug>[:<capabilityId>]`, `agent-x` or `heuristic`); without the
+variable the installed registry is searched for a squad declaring
+`quality.specification_conformance`, then agent-x when the producer is not
+agent-x, then the heuristic. A value that cannot be honoured ends the
+dispatch with exit 4 before any producer runs. Every rung skipped is audited
+as `x_gauntlet_evaluator_fallback`, the choice as
+`x_gauntlet_evaluator_selected`.
+
+The evaluator runs as a subprocess of `dispatch.ts` with an explicit target,
+in standard mode, under a project id of its own, inside
+`.nirvana/gauntlet/<run>/evaluations/<revision>/`, with a PT-BR brief that
+carries the original brief, the success contract, the read-only candidate
+path, the rule of not producing or editing, and the path of the one file it
+writes: `scorecard.json`. The file is validated strictly (zod) against the
+contract: one dimension per requirement, no pass below the minimum score, no
+`pass` verdict with a failed dimension. A missing, invalid or out-of-contract
+scorecard is `indeterminate`, every blocking dimension failed with the
+reason, and the Run is withheld as `evaluation_indeterminate` without a
+revision and without the final gate. The scorecard records the real target,
+the cost observed in the audit log (the multi-target adapters' source) and
+`x_gauntlet_evaluation_completed`. A real evaluator takes 25% of each
+candidate's share inside the same round reserve, so the plan ceiling holds.
+Contract and schema in `docs/architecture/gauntlet-evaluator-contract.md`.
 ### A failed `openKernel` no longer leaks the database handle
 
 `openKernel` opened the SQLite `Database` and only then ran `initialize`

@@ -51,6 +51,7 @@ const { buildSquadPrompt } = await import("../skills/harness/lib/squad-exec.ts")
 const { runAgentX } = await import("../skills/harness/lib/dispatch-cascade.ts");
 const { renderInstruction } = await import("../skills/harness/lib/gauntlet/multi-target-dispatch-adapters.ts");
 const { revisionDefectsSection } = await import("../skills/harness/lib/gauntlet/agent-x-cutover.ts");
+const { renderEvaluationBrief } = await import("../skills/harness/lib/gauntlet/evaluation-contract.ts");
 const { AUTONOMOUS_DIRECTIVE } = await import("../skills/harness/lib/host-agent-driver.ts");
 
 type Surface =
@@ -109,6 +110,14 @@ const SURFACES: Surface[] = [
       candidateId: "can_1", revision: 2, round: 2, candidateRoot: path.join(TMP, "rev-2"), previousRoot: path.join(TMP, "rev-1"), previousRevisionId: "crv_1",
       defects: { failedDimensions: ["brief"], evaluationIds: ["evl_1"], revisionRequests: [{ requirementId: "brief", evidenceRefs: [] }] },
     } as any) },
+  { label: "Gauntlet evaluation brief (skills/harness/lib/gauntlet/evaluation-contract.ts renderEvaluationBrief)", kind: "render",
+    render: () => renderEvaluationBrief({
+      schemaVersion: "nirvana.gauntlet-evaluation-request/v1alpha1", projectId: "scope-guard-gate", runId: "run_gate", candidateId: "can_1",
+      revisionId: "crv_run_gate_can_1_1", revision: 1, round: 1, holdout: false, candidateRoot: path.join(TMP, "rev-1"),
+      scorecardPath: path.join(TMP, "evaluation", "scorecard.json"), briefDigest: "gate",
+      requirements: [{ id: "brief-conformance", description: "The candidate satisfies the brief", capability: "quality.specification_conformance", blocking: true, minimumScore: 0.85 }],
+      gauntletIds: ["brief-conformance"],
+    }, BRIEF) },
   { label: "autonomous directive (skills/harness/lib/host-agent-driver.ts AUTONOMOUS_DIRECTIVE)", kind: "render", render: () => AUTONOMOUS_DIRECTIVE },
   // Scripts that build their prompt inline: proven at the source.
   { label: "nrv revise prompt (skills/harness/scripts/revise.ts revisePrompt)", kind: "source", file: "skills/harness/scripts/revise.ts",

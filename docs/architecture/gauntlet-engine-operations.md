@@ -48,6 +48,18 @@ Uma revision exige parent, evaluations causais e hipótese de melhoria. O evalua
 
 O resultado do controller é `delivered`, `withheld` ou `reservations`. Essa decisão não substitui o quality gate final. O evento terminal contém `finalQualityGateRequired: true`.
 
+## Avaliador independente
+
+Cada rodada é julgada por um avaliador escolhido antes do primeiro produtor, pela mesma função nos três canários:
+
+```bash
+export NIRVANA_GAUNTLET_EVALUATOR=squad:<slug>[:<capabilityId>]   # ou agent-x, ou heuristic
+```
+
+Sem a variável, o dispatch procura no registro instalado um squad que declare a capability `quality.specification_conformance` e seja independente do produtor; senão usa `agent-x`, quando o produtor não é agent-x; senão a heurística do quality gate offline. Uma variável que não pode ser honrada (valor ilegível, squad não instalado, capability não declarada, alvo igual ao produtor) encerra o dispatch com exit 4 antes de produzir. Cada degrau pulado grava `x_gauntlet_evaluator_fallback { from, reason }` e a escolha grava `x_gauntlet_evaluator_selected { evaluator, source, target }`.
+
+O avaliador real roda como subprocesso do `dispatch.ts` com alvo explícito e modo `standard`, em `.nirvana/gauntlet/<runId>/evaluations/<revisionId>/`, lê o candidate sem editá-lo e escreve `scorecard.json`. O adapter valida o arquivo contra o contrato de sucesso do plano, preenche identidade, alvo real e custo observado no audit, e emite `x_gauntlet_evaluation_completed`. Scorecard ausente, inválido ou fora do contrato vira `indeterminate`: o Run termina `withheld` com `reason: evaluation_indeterminate`, sem revisão e sem gate final. Com avaliador real, 25% da parcela de cada candidate fica reservada para a avaliação dentro da mesma reserva de rodada. Contrato, schema e regras em [Contrato do avaliador do Gauntlet](gauntlet-evaluator-contract.md).
+
 ## Recovery e replay
 
 Plan, candidates, evaluations e projection usam o mesmo SQLite do Run Kernel. Cada escrita de domínio inclui um event na outbox dentro da mesma transação. Repetir a mesma chave retorna o estado persistido. Repetir um ID com conteúdo diferente falha.
@@ -61,6 +73,6 @@ Após crash, o caller reabre o kernel e instancia o controller com `projectId` e
 - O fan-out concreto vive em `runAgentXGauntlet`: candidates por rodada, revisão causal por `reviseCandidate` e publicação da revisão selecionada. Rotas com múltiplos Squads e o coordenador multi-target ainda não usam esse loop.
 - A seleção usa o ranking do controller por revisão: sem falha bloqueante, maior nota ponderada, id estável. Não há arbitragem entre judges; divergência sobre a mesma revisão encerra com `judge_disagreement`.
 - Holdout é metadata `evaluator_only` repassado ao evaluator. O isolamento do conteúdo depende do runtime adapter.
-- Cost é reservado antes da round como estimativa por candidate vezes `candidateStrategy.count`. Reconciliação com cobrança real deve emitir o custo observado pelo adapter.
+- Cost é reservado antes da round como estimativa por candidate vezes `candidateStrategy.count`, com a parcela da avaliação incluída quando o avaliador é real. O custo observado entra no scorecard pelo audit; a reconciliação da produção com a cobrança real continua a cargo do adapter de produção.
 - Um candidate com nota zero em `light` para em `no_progress` na primeira rodada, porque a paciência do perfil é uma rodada.
 - Candidates preservam referências imutáveis. A validação física dos artifacts continua no `ArtifactRef` do Run Kernel.

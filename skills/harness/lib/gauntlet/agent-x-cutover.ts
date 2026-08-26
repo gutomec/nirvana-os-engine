@@ -105,12 +105,24 @@ export function shouldRunSquadGauntlet(input: {
   return input.squadCount === 1 && input.wantExec && input.resolvedMode === "gauntlet";
 }
 
+/** Share of each candidate's budget reserved for its independent evaluation when a real
+ * evaluator (an installed squad or agent-x) judges the round; the offline heuristic costs nothing. */
+export const GAUNTLET_EVALUATION_SHARE = 0.25;
+
 /** Splits the plan budget evenly across rounds and candidates so every round stays affordable;
- * the caller's `maxBudgetUsd` only lowers the per-candidate share. */
-export function gauntletRoundBudget(plan: GauntletPlan, maxBudgetUsd?: number): { candidateBudgetUsd: number; roundBudgetUsd: number } {
+ * the caller's `maxBudgetUsd` only lowers the per-candidate share. With `evaluationShare` the
+ * share of one candidate is split between its producer and its evaluation, so the round reserve
+ * (`roundBudgetUsd`, what `beginRound` books) already carries the estimated evaluation cost and
+ * the plan ceiling still holds. */
+export function gauntletRoundBudget(plan: GauntletPlan, maxBudgetUsd?: number, evaluationShare = 0): {
+  candidateBudgetUsd: number; evaluationBudgetUsd: number; roundBudgetUsd: number;
+} {
+  if (evaluationShare < 0 || evaluationShare >= 1) throw new Error("gauntlet: evaluation share must be in [0, 1)");
   const share = plan.budget.maxCostUsd / (plan.candidateStrategy.count * plan.stop.maxRounds);
-  const candidateBudgetUsd = Math.min(maxBudgetUsd ?? share, share);
-  return { candidateBudgetUsd, roundBudgetUsd: Math.min(candidateBudgetUsd * plan.candidateStrategy.count, plan.budget.maxCostUsd) };
+  const perCandidate = Math.min(maxBudgetUsd ?? share, share);
+  const evaluationBudgetUsd = perCandidate * evaluationShare;
+  return { candidateBudgetUsd: perCandidate - evaluationBudgetUsd, evaluationBudgetUsd,
+    roundBudgetUsd: Math.min(perCandidate * plan.candidateStrategy.count, plan.budget.maxCostUsd) };
 }
 
 /** Deterministic section appended to the original brief when a candidate is revised. */
@@ -251,8 +263,23 @@ export function runAgentXGauntlet(input: AgentXGauntletInput): AgentXGauntletRes
       return { run, gauntlet, exitCode: 1, sessionId: failedSessionId, finalGateRan: false };
     };
 
+    // An `indeterminate` verdict means the judge could not judge (missing, invalid or
+    // out-of-contract scorecard, timeout, abort). It never leads to a revision: the
+    // candidate was not evaluated, so there is nothing causal to fix. Checked from the
+    // persisted scorecards so a resumed Run takes the same decision.
+    const roundIndeterminate = (round: number): boolean => {
+      const roundIds = new Set(candidateIds.map(id => revisionIdFor(input.runId, id, round)));
+      return listScorecards(input.kernel, input.projectId, input.runId)
+        .some(scorecard => roundIds.has(scorecard.revisionId) && scorecard.verdict === "indeterminate");
+    };
+
     while (gauntlet.state !== "stopped") {
       if (gauntlet.state === "revising") {
+        if (roundIndeterminate(gauntlet.round)) {
+          withheldReason = "evaluation_indeterminate";
+          gauntlet = controller.fail(withheldReason);
+          break;
+        }
         if (!input.reviseCandidate) {
           withheldReason = "revision_unavailable";
           gauntlet = controller.fail(withheldReason);
@@ -314,6 +341,9 @@ export function runAgentXGauntlet(input: AgentXGauntletInput): AgentXGauntletRes
           revisionId, candidateRoot, artifactRefs: artifactRefs(input, candidateRoot, candidateId, round), holdout }));
       }
       gauntlet = controller.evaluateRound(scorecards);
+      // The controller may already have stopped (no progress, regression, rounds) on an
+      // indeterminate round; the Run still names the honest reason.
+      if (scorecards.some(scorecard => scorecard.verdict === "indeterminate")) withheldReason = "evaluation_indeterminate";
       if (gauntlet.state === "revising") input.afterRevisionRequested?.();
     }
 

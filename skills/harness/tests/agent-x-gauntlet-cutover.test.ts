@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-  AgentXGauntletInterruption, gauntletRoundBudget, runAgentXGauntlet, shouldRunAgentXGauntlet, shouldRunSquadGauntlet,
+  AgentXGauntletInterruption, GAUNTLET_EVALUATION_SHARE, gauntletRoundBudget, runAgentXGauntlet, shouldRunAgentXGauntlet, shouldRunSquadGauntlet,
   type AgentXGauntletEvaluator,
 } from "../lib/gauntlet/agent-x-cutover.ts";
 import { compileGauntletPlan } from "../lib/gauntlet/compiler.ts";
@@ -79,11 +79,21 @@ describe("agent-x Gauntlet cutover", () => {
   });
 
   test("splits the plan budget across rounds and candidates without exceeding the plan ceiling", () => {
-    expect(gauntletRoundBudget(compileGauntletPlan({ brief: "Build", intensity: "light" }))).toEqual({ candidateBudgetUsd: 2.5, roundBudgetUsd: 2.5 });
-    expect(gauntletRoundBudget(compileGauntletPlan({ brief: "Build", intensity: "balanced" }), 1)).toEqual({ candidateBudgetUsd: 1, roundBudgetUsd: 3 });
+    expect(gauntletRoundBudget(compileGauntletPlan({ brief: "Build", intensity: "light" }))).toEqual({ candidateBudgetUsd: 2.5, evaluationBudgetUsd: 0, roundBudgetUsd: 2.5 });
+    expect(gauntletRoundBudget(compileGauntletPlan({ brief: "Build", intensity: "balanced" }), 1)).toEqual({ candidateBudgetUsd: 1, evaluationBudgetUsd: 0, roundBudgetUsd: 3 });
     const exhaustive = gauntletRoundBudget(compileGauntletPlan({ brief: "Build", intensity: "exhaustive" }), 500);
     expect(exhaustive.candidateBudgetUsd).toBeCloseTo(100 / 30);
     expect(exhaustive.roundBudgetUsd).toBeCloseTo(100 / 6);
+  });
+
+  test("reserves the evaluation share inside the same round budget when a real evaluator judges", () => {
+    expect(GAUNTLET_EVALUATION_SHARE).toBe(0.25);
+    expect(gauntletRoundBudget(compileGauntletPlan({ brief: "Build", intensity: "light" }), undefined, GAUNTLET_EVALUATION_SHARE))
+      .toEqual({ candidateBudgetUsd: 1.875, evaluationBudgetUsd: 0.625, roundBudgetUsd: 2.5 });
+    const balanced = gauntletRoundBudget(compileGauntletPlan({ brief: "Build", intensity: "balanced" }), 1, GAUNTLET_EVALUATION_SHARE);
+    expect(balanced).toEqual({ candidateBudgetUsd: 0.75, evaluationBudgetUsd: 0.25, roundBudgetUsd: 3 });
+    expect(balanced.candidateBudgetUsd + balanced.evaluationBudgetUsd).toBe(1);
+    expect(() => gauntletRoundBudget(compileGauntletPlan({ brief: "Build" }), undefined, 1)).toThrow("evaluation share must be in [0, 1)");
   });
 
   test("persists plan and candidate before an independent evaluation, then runs the final gate", () => {
@@ -183,5 +193,27 @@ describe("agent-x Gauntlet cutover", () => {
     const { result, executions, finalGates } = run({ expectedCostUsd: 6 });
     expect(result.run.state).toBe("rolled_back");
     expect(executions).toBe(0); expect(finalGates).toBe(0);
+  }, KERNEL_BUDGET_MS);
+
+  test("an indeterminate evaluation withholds the Run as evaluation_indeterminate: no revision, no final gate, at any intensity", () => {
+    const indeterminate: AgentXGauntletEvaluator = {
+      target: { kind: "squad", slug: "quality-gate", capabilityId: "quality.specification_conformance" },
+      evaluate({ candidateId, revisionId }) {
+        return [{ evaluationId: `evl_${revisionId}`, candidateId, revisionId, gauntletId: "brief-conformance", rubricVersion: "test/v1",
+          verdict: "indeterminate", dimensions: [{ id: "brief", score: 0, confidence: 1, blocking: true, passed: false, evidenceRefs: ["indeterminate: scorecard.json not found"] }],
+          regressions: [], revisionRequests: [], evaluator: this.target, costUsd: 0, createdAt: "2026-08-25T12:00:02.000Z" }];
+      },
+    };
+    for (const intensity of ["light", "balanced"] as const) {
+      let revisions = 0;
+      const { handle, result, executions, finalGates } = run({ intensity, evaluator: indeterminate, expectedCostUsd: 0.1,
+        reviseCandidate() { revisions += 1; return { ok: true, sessionId: null }; } });
+      expect(result).toMatchObject({ exitCode: 2, finalGateRan: false, run: { state: "withheld" }, gauntlet: { state: "stopped", decision: "withheld", round: 1 } });
+      expect(result.gauntlet.stopReason).toBe(intensity === "light" ? "no_progress" : "execution_failure");
+      if (intensity === "balanced") expect(result.gauntlet.reservations).toEqual(["evaluation_indeterminate"]);
+      expect((listEvents(handle, "prj_canary").at(-1)?.payload as { to: string; reason: string })).toMatchObject({ to: "withheld", reason: "evaluation_indeterminate" });
+      expect(executions).toBe(intensity === "light" ? 1 : 3);
+      expect(revisions).toBe(0); expect(finalGates).toBe(0);
+    }
   }, KERNEL_BUDGET_MS);
 });

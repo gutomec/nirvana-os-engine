@@ -13,6 +13,13 @@
 //   FAKE_DISPATCH_KILL_PARENT_FOR  "<nodeId>": SIGKILL the parent process before
 //                                  doing anything else, simulating the engine
 //                                  crashing while that node is running
+//   FAKE_DISPATCH_SCORECARD        act as a Gauntlet evaluator: read the
+//                                  evaluation-request.json the adapter wrote in
+//                                  the outputs root and write scorecard.json as
+//                                  pass | revise | missing | invalid-json |
+//                                  foreign-dimension | implicit-pass
+//   FAKE_DISPATCH_SCORECARD_FOR    "<revision>=<mode>[,...]" mode per candidate
+//                                  revision number, over FAKE_DISPATCH_SCORECARD
 //
 // The node id comes from --business / --squad, or from the outputs root for
 // agent-x nodes (<workspace>/<kind>/<nodeId>/outputs).
@@ -50,6 +57,26 @@ if (cost > 0) {
   const project = value("--project");
   fs.appendFileSync(path.join(day, "audit.jsonl"), JSON.stringify({ ts: new Date().toISOString(), event: "agent_executed",
     trace_id: project, project_id: project, ...target, cost_usd: cost }) + "\n");
+}
+const requestFile = path.join(outputsRoot, "evaluation-request.json");
+if ((process.env.FAKE_DISPATCH_SCORECARD || process.env.FAKE_DISPATCH_SCORECARD_FOR) && fs.existsSync(requestFile)) {
+  const request = JSON.parse(fs.readFileSync(requestFile, "utf8"));
+  const perRevision = (process.env.FAKE_DISPATCH_SCORECARD_FOR ?? "").split(",").map((item) => item.split("=")).find(([revision]) => Number(revision) === request.revision);
+  const mode = perRevision?.[1] ?? process.env.FAKE_DISPATCH_SCORECARD ?? "pass";
+  const dimension = (requirement, passed) => ({ id: requirement.id, score: passed ? 1 : 0.5, confidence: 1, blocking: requirement.blocking, passed,
+    evidenceRefs: ["fake:" + request.revisionId + ":" + requirement.id] });
+  const scorecard = mode === "pass"
+    ? { verdict: "pass", dimensions: request.requirements.map((requirement) => dimension(requirement, true)), revisionRequests: [], regressions: [] }
+    : mode === "revise"
+      ? { verdict: "revise", dimensions: request.requirements.map((requirement) => dimension(requirement, false)),
+        revisionRequests: request.requirements.map((requirement) => ({ requirementId: requirement.id, evidenceRefs: ["fake:" + request.revisionId + ":" + requirement.id] })), regressions: [] }
+      : mode === "foreign-dimension"
+        ? { verdict: "revise", dimensions: [dimension({ id: "not-in-contract", blocking: true }, false)], revisionRequests: [], regressions: [] }
+        : mode === "implicit-pass"
+          ? { verdict: "pass", dimensions: request.requirements.map((requirement) => ({ ...dimension(requirement, true), score: 0.2 })), revisionRequests: [], regressions: [] }
+          : null;
+  if (mode === "invalid-json") fs.writeFileSync(request.scorecardPath, "{ not json", "utf8");
+  else if (scorecard) fs.writeFileSync(request.scorecardPath, JSON.stringify(scorecard, null, 2), "utf8");
 }
 fs.writeFileSync(path.join(outputsRoot, "_SUMMARY.md"), "# Summary\n\n" + nodeId + "\n");
 const perNode = (process.env.FAKE_DISPATCH_EXIT_CODE_FOR ?? "").split(",").map((item) => item.split("=")).find(([id]) => id === nodeId);

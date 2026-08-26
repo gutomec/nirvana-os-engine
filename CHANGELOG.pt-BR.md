@@ -8,6 +8,37 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### O Gauntlet passa a ser julgado por um avaliador real e independente
+
+Os três canários do Gauntlet no `dispatch.ts` pontuavam cada candidate com
+uma heurística, a fração dos arquivos avaliáveis que passa no quality gate
+offline, assinada por um alvo nominal (`harness-quality-gate`) que não existe
+instalado. O loop de revisão, a seleção e a parada finita funcionavam; o
+julgamento não distinguia um candidate bom de um ruim. Uma rodada agora é
+julgada por um executor real. `NIRVANA_GAUNTLET_EVALUATOR` o nomeia
+(`squad:<slug>[:<capabilityId>]`, `agent-x` ou `heuristic`); sem a variável,
+o registro instalado é percorrido em busca de um squad que declare
+`quality.specification_conformance`, depois agent-x quando o produtor não é
+agent-x, depois a heurística. Um valor que não pode ser honrado encerra o
+dispatch com exit 4 antes de qualquer produtor. Cada degrau pulado vira
+`x_gauntlet_evaluator_fallback`; a escolha, `x_gauntlet_evaluator_selected`.
+
+O avaliador roda como subprocesso do `dispatch.ts` com alvo explícito, em
+modo standard, sob um project id próprio, dentro de
+`.nirvana/gauntlet/<run>/evaluations/<revision>/`, com um brief em PT-BR que
+traz o brief original, o contrato de sucesso, o caminho somente leitura do
+candidate, a regra de não produzir nem editar e o caminho do único arquivo
+que ele escreve: `scorecard.json`. O arquivo é validado de forma estrita
+(zod) contra o contrato: uma dimensão por requisito, nenhuma aprovação abaixo
+da nota mínima, nenhum veredito `pass` com dimensão reprovada. Scorecard
+ausente, inválido ou fora do contrato é `indeterminate`, com toda dimensão
+bloqueante reprovada e a razão anexada, e o Run fica retido como
+`evaluation_indeterminate`, sem revisão e sem gate final. O scorecard registra
+o alvo real, o custo observado no audit (a mesma fonte dos adapters
+multi-target) e `x_gauntlet_evaluation_completed`. Um avaliador real toma 25%
+da parcela de cada candidate dentro da mesma reserva de rodada, então o teto
+do plano continua valendo. Contrato e schema em
+`docs/architecture/gauntlet-evaluator-contract.md`.
 ### Um `openKernel` que falha não vaza mais o handle do banco
 
 O `openKernel` abria o `Database` SQLite e só então rodava o `initialize`
