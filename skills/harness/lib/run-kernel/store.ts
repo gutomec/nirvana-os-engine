@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { assertTransition } from "./lifecycle.ts";
 import { canonicalJson } from "./canonical-json.ts";
-import type { ArtifactRef, CanonicalRunState, RunEvent, RunProjection, TargetRef, TranscriptMessage } from "./types.ts";
+import type { ArtifactRef, CanonicalRunState, RunEvent, RunProjection, RunRoute, TargetRef, TranscriptMessage } from "./types.ts";
 
 export interface KernelHandle {
   db: Database;
@@ -20,6 +20,7 @@ export interface CreateRunInput {
   parentRunId?: string;
   planId: string;
   target: TargetRef;
+  route?: RunRoute;
   policySnapshotRef: string;
   actor: { kind: string; id: string };
   correlationId: string;
@@ -241,7 +242,8 @@ export function createRun(handle: KernelHandle, input: CreateRunInput): RunProje
     payload: {
       projectId: input.projectId, ...(input.conversationId ? { conversationId: input.conversationId } : {}),
       runId, traceId: input.traceId, ...(input.parentRunId ? { parentRunId: input.parentRunId } : {}),
-      planId: input.planId, target: input.target, policySnapshotRef: input.policySnapshotRef, createdAt,
+      planId: input.planId, target: input.target, ...(input.route ? { route: input.route } : {}),
+      policySnapshotRef: input.policySnapshotRef, createdAt,
     },
   });
   return getRun(handle, input.projectId, runId)!;

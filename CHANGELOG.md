@@ -8,6 +8,38 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### A Glance Message routes through the same cascade as the maestro
+
+A Message of an adopted project used to reach a business or a squad only when
+its text opened with `use business <slug>:` or `use squad <slug>:`; anything
+else went straight to `agent-x`. Now a Message without that prefix goes through
+the agentic router (`agenticRoute`, the engine's one router) before its Run is
+prepared, and the decision is mapped by the same `resolveDispatchPlan` the
+dispatch uses: `primary_business` becomes a `business` Run; otherwise exactly
+one squad in `mandatory_squads` becomes a `squad` Run (`squad.execute`); and
+everything else (`no_match`, two or more squads, a router that fails or times
+out, `routing.mode=fast`, a server without a router) stays on `agent-x`, as
+before. The explicit prefix still wins and never calls the router. With
+`routing.on_router_failure=fail`, a router failure leaves the Run
+`rolled_back` with `reason: router_failed` instead of executing `agent-x`.
+
+The router runs in a Worker (`createAgenticMessageRouter`), so the blocking
+headless CLI call never freezes the cockpit; one call is capped at 120 s
+(`MESSAGE_ROUTE_TIMEOUT_MS`, a fixed ceiling until a settings key exists).
+The router is injected into the queue and into the server
+(`startServer({ messageRouter })`), so tests use a fake and never call an LLM.
+
+The decision is recorded twice, with the Message's `trace_id`: as
+`auto_route_selected` in the project's audit (`source`, `plan_source`, target,
+rationale, cost and duration of the router; `agentic_route_failed` as well when
+the router throws or times out), and as
+`route: { source: "explicit" | "router" | "fallback", rationale }` on the Run,
+present in the `run.prepared` payload, in `GET /api/v1/runs/{id}` and in the
+`202` receipt of the Message. The chat shows the target and why before the
+child starts, the timeline labels `run.prepared` with the origin and the
+rationale, and the Run header names the origin. Proof:
+`glance-message-route.test.ts`.
+
 ### A business that delegates is alive: child runs, hook activity and handoff beats are proof of life
 
 Since 2026-08-01 the run ledger held 39 withheld business runs; 35 of them

@@ -39,7 +39,7 @@ describe("parseMessageTarget", () => {
     expect(parseMessageTarget("USE SQUAD Doc-Factory: relatório")).toEqual({ kind: "squad", slug: "doc-factory", capabilityId: "squad.execute" });
   });
 
-  test("anything else stays on the agent-x canary", () => {
+  test("anything else names no target: agent-x here, and the queue asks the router before preparing the Run (glance-message-route.test.ts)", () => {
     for (const content of ["Produza o artifact", "use squad brandcraft produza", "use the squad brandcraft: x", "use squad brand_craft: x", "squad brandcraft: x"]) {
       expect(parseMessageTarget(content)).toEqual({ kind: "agent-x", slug: "agent-x" });
     }

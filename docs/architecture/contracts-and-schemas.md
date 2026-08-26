@@ -32,6 +32,7 @@ interface RunEnvelope {
   parentRunId?: string;
   planId: string;
   target: TargetRef;
+  route?: { source: "explicit" | "router" | "fallback"; rationale: string };
   state: RunState;
   policySnapshotRef: string;
   createdAt: string;

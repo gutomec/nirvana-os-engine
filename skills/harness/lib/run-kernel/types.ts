@@ -21,6 +21,13 @@ export type CanonicalRunState =
   | "failed"
   | "abandoned";
 
+/** How the target of a Run was decided: named by the user (`explicit`), chosen by the router
+ * (`router`) or the cascade bottom, agent-x, when nothing else applied (`fallback`). */
+export interface RunRoute {
+  source: "explicit" | "router" | "fallback";
+  rationale: string;
+}
+
 export interface RunProjection {
   schemaVersion: "nirvana.run/v1alpha1";
   projectId: string;
@@ -30,6 +37,7 @@ export interface RunProjection {
   parentRunId?: string;
   planId: string;
   target: TargetRef;
+  route?: RunRoute;
   state: CanonicalRunState;
   policySnapshotRef: string;
   createdAt: string;

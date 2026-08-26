@@ -14,6 +14,7 @@
 import { parseArgs } from "../../_shared/lib/bun-helpers.ts";
 import { describeSettingSource, resolveSetting } from "../../_shared/lib/settings.ts";
 import { createDispatchExecutionRunner, detectExecutionRuntime } from "../lib/control-plane/execution-runner.ts";
+import { createAgenticMessageRouter } from "../lib/control-plane/message-router.ts";
 import { startServer } from "../lib/glance/server.ts";
 
 const { flags } = parseArgs();
@@ -71,11 +72,15 @@ const theme = (["apple", "apple-dark", "awwwards"].includes(themeFlag) ? themeFl
 const execution = resolveSetting("glance.execution");
 const executionEnabled = allowActions && execution.value;
 const executionRunner = executionEnabled ? createDispatchExecutionRunner() : undefined;
+// A Message without `use business <slug>:` / `use squad <slug>:` goes through the agentic
+// router before its Run is prepared (business, then squad, then agent-x), as a brief does
+// in the maestro. Same runtime rule as the runner; `routing.mode=fast` keeps agent-x.
+const messageRouter = executionEnabled ? createAgenticMessageRouter() : undefined;
 if (executionEnabled) {
   const probe = detectExecutionRuntime();
-  console.error(`[glance] execution ON — runtime ${probe.runtime} (${probe.from}${probe.available ? "" : "; not on PATH, Messages will end in capability_unavailable"})`);
+  console.error(`[glance] execution ON — runtime ${probe.runtime} (${probe.from}${probe.available ? "" : "; not on PATH, Messages will end in capability_unavailable"}); Messages route through the agentic router`);
 } else {
   console.error(`[glance] execution OFF (${allowActions ? `glance.execution=false via ${describeSettingSource(execution)}` : "--read-only"})`);
 }
 
-await startServer({ port, open, idleMin, allowActions, theme, executionRunner });
+await startServer({ port, open, idleMin, allowActions, theme, executionRunner, messageRouter });

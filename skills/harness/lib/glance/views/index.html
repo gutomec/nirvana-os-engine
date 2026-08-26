@@ -1815,6 +1815,7 @@
                     <span class="run-head-actor" x-show="runSummary.business"><i data-lucide="building-2" class="icon-inline"></i><span x-text="runSummary.business"></span></span>
                     <span class="run-head-sq text-caption" x-show="runSummary.squad" x-text="'· ' + runSummary.squad"></span>
                     <span class="run-head-actor run-head-agent" x-show="runSummary.lastAgent"><i data-lucide="bot" class="icon-inline"></i><span x-text="runSummary.lastAgent"></span></span>
+                    <span class="run-head-sq text-caption" x-show="runSummary.route" :title="runSummary.route?.rationale || ''" x-text="'· ' + routeLabel(runSummary.route)"></span>
                     <span class="badge badge-sm badge-subtle" :class="'badge-' + runStateVariant(runSummary.state)" x-show="runSummary.state" x-text="runSummary.state"></span>
                     <span class="run-head-sq text-caption" x-show="runSummary.decision" x-text="'· gauntlet: ' + runSummary.decision + (runSummary.stopReason ? ' (' + runSummary.stopReason + ')' : '')"></span>
                     <span class="run-head-cost" x-show="runSummary.cost > 0" x-text="'$' + runSummary.cost.toFixed(2)"></span>

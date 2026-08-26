@@ -8,6 +8,37 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Uma Message do Glance passa pela mesma cascata do maestro
+
+Uma Message de projeto adotado só chegava a uma empresa ou a um squad quando o
+texto começava com `use business <slug>:` ou `use squad <slug>:`; qualquer
+outro texto ia direto para `agent-x`. Agora uma Message sem esse prefixo passa
+pelo roteador agêntico (`agenticRoute`, o único roteador do engine) antes de o
+Run ser preparado, e a decisão é mapeada pelo mesmo `resolveDispatchPlan` que
+o dispatch usa: `primary_business` vira um Run `business`; senão, exatamente
+um squad em `mandatory_squads` vira um Run `squad` (`squad.execute`); e todo o
+resto (`no_match`, dois ou mais squads, roteador que falha ou estoura o teto,
+`routing.mode=fast`, servidor sem roteador) fica em `agent-x`, como antes. O
+prefixo explícito continua mandando e nunca chama o roteador. Com
+`routing.on_router_failure=fail`, a falha do roteador deixa o Run
+`rolled_back` com `reason: router_failed` em vez de executar `agent-x`.
+
+O roteador roda num Worker (`createAgenticMessageRouter`), então a chamada
+headless bloqueante nunca congela o cockpit; uma chamada tem teto de 120 s
+(`MESSAGE_ROUTE_TIMEOUT_MS`, fixo até existir uma chave de settings). O
+roteador é injetado na fila e no servidor (`startServer({ messageRouter })`),
+então os testes usam um falso e nunca chamam LLM.
+
+A decisão é registrada duas vezes, com o `trace_id` da Message: como
+`auto_route_selected` no audit do projeto (`source`, `plan_source`, alvo,
+razão, custo e duração do roteador; `agentic_route_failed` também quando o
+roteador lança ou estoura o teto) e como
+`route: { source: "explicit" | "router" | "fallback", rationale }` no Run,
+presente no payload de `run.prepared`, em `GET /api/v1/runs/{id}` e no recibo
+`202` da Message. O chat mostra o alvo e o porquê antes de o filho iniciar, a
+timeline rotula `run.prepared` com a origem e a razão, e o cabeçalho do Run
+nomeia a origem. Prova: `glance-message-route.test.ts`.
+
 ### A empresa que delega está viva: runs filhos, atividade de hook e beats de handoff são prova de vida
 
 Desde 01/08/2026 o run ledger guardava 39 runs de empresa retidos; 35 deles
