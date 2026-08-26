@@ -1,5 +1,5 @@
 // dispatch-explicit-target.test.ts — explicit target selection in the scripted
-// dispatch: --business <slug> · --squad <slug> · --agent-x.
+// dispatch: --business <slug> · --squad <slug> · --agent-x · --judge-x.
 //
 // The multi-target adapters used to name a squad through `--auto` with a brief
 // that opened `use squad <slug>:` and agent-x through `use agent-x`: one LLM
@@ -23,6 +23,7 @@ describe("parseExplicitTarget", () => {
     expect(parseExplicitTarget(["--business", "web-studio", "brief", "--exec"])).toEqual({ target: { kind: "business", slug: "web-studio" }, error: null });
     expect(parseExplicitTarget(["brief", "--business=web-studio"])).toEqual({ target: { kind: "business", slug: "web-studio" }, error: null });
     expect(parseExplicitTarget(["--agent-x", "brief"])).toEqual({ target: { kind: "agent-x" }, error: null });
+    expect(parseExplicitTarget(["--judge-x", "--brief-file", "evaluation-brief.md"])).toEqual({ target: { kind: "judge-x" }, error: null });
   });
 
   test("the flags are mutually exclusive with each other and with --auto", () => {
@@ -31,6 +32,8 @@ describe("parseExplicitTarget", () => {
       ["--business", "a", "--squad", "b", "brief"],
       ["--agent-x", "--auto", "brief"],
       ["--business", "a", "--agent-x", "brief"],
+      ["--judge-x", "--agent-x", "brief"],
+      ["--judge-x", "--squad", "a", "brief"],
     ]) {
       const parsed = parseExplicitTarget(argv);
       expect(parsed.target).toBeNull();
@@ -112,5 +115,6 @@ describe("dispatch.ts exits 4 on an invalid flag combination before anything run
     expect(r.stderr).toContain("Usage: nrv dispatch <business_slug>");
     expect(r.stderr).toContain("--squad=<slug>");
     expect(r.stderr).toContain("--agent-x");
+    expect(r.stderr).toContain("--judge-x");
   });
 });

@@ -30,7 +30,9 @@
 //                                  revision number, over FAKE_DISPATCH_SCORECARD
 //
 // The node id comes from --business / --squad, or from the outputs root for
-// agent-x nodes (<workspace>/<kind>/<nodeId>/outputs).
+// agent-x and judge-x nodes (<workspace>/<kind>/<nodeId>/outputs). The cost
+// event names the executor the way the real dispatch does: `squad_slug`,
+// `business_slug`, or `employee` "agent-x" / "judge-x" (`--judge-x`).
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -58,7 +60,8 @@ if (sleepMs > 0) await Bun.sleep(sleepMs);
 const cost = Number(process.env.FAKE_DISPATCH_COST_USD ?? 0);
 if (cost > 0) {
   const target = value("--business") ? { business_slug: value("--business"), employee: "intake" }
-    : value("--squad") ? { squad_slug: value("--squad"), employee: "squad:" + value("--squad") } : { employee: "agent-x" };
+    : value("--squad") ? { squad_slug: value("--squad"), employee: "squad:" + value("--squad") }
+      : { employee: argv.includes("--judge-x") ? "judge-x" : "agent-x" };
   const project = value("--project");
   const logsDir = process.env.HARNESS_LOGS_DIR ?? path.join(process.cwd(), "outputs", project, ".nirvana", "logs", "harness");
   const day = path.join(logsDir, new Date().toISOString().slice(0, 10));
