@@ -58,10 +58,13 @@ import { parseExecutionOptions } from "../lib/gauntlet/execution-options.ts";
 import { decideBusinessCanary, runBusinessCanaryWithRollback } from "../lib/gauntlet/business-canary.ts";
 import { compileGauntletPlan } from "../lib/gauntlet/compiler.ts";
 import {
-  gauntletRoundBudget, revisionDefectsSection, runAgentXGauntlet, shouldRunAgentXGauntlet, shouldRunSquadGauntlet,
+  GAUNTLET_EVALUATION_SHARE, gauntletRoundBudget, revisionDefectsSection, runAgentXGauntlet, shouldRunAgentXGauntlet, shouldRunSquadGauntlet,
   type AgentXGauntletEvaluator, type AgentXRevisionRequest,
 } from "../lib/gauntlet/agent-x-cutover.ts";
-import { createHarnessLegacyAdapter, openKernel } from "../lib/run-kernel/index.ts";
+import { createDispatchEvaluator, describeTarget } from "../lib/gauntlet/evaluator-adapter.ts";
+import { GAUNTLET_EVALUATOR_ENV, loadInstalledSquads, selectGauntletEvaluator } from "../lib/gauntlet/evaluator-selection.ts";
+import type { GauntletPlan } from "../lib/gauntlet/types.ts";
+import { createHarnessLegacyAdapter, openKernel, type TargetRef } from "../lib/run-kernel/index.ts";
 import { inertStandardPublication, openStandardPublication } from "../lib/run-kernel/standard-publication.ts";
 import { freezeExecutionSnapshot } from "../lib/runtime-snapshot.ts";
 
@@ -740,10 +743,11 @@ function frozenExecutionSnapshot(pid: string, rt: Runtime, targetKind: "business
   return snapshot;
 }
 
-// Gauntlet evaluator shared by the three canaries: the offline quality gate, echoing the
-// candidate and revision ids the cutover assigns, with a graded score (share of gateable
-// files that pass) so the controller can measure progress between revisions.
-function gauntletEvaluator(env: Record<string, string>): AgentXGauntletEvaluator {
+// Heuristic Gauntlet evaluator: the offline quality gate, echoing the candidate and revision
+// ids the cutover assigns, with a graded score (share of gateable files that pass) so the
+// controller can measure progress between revisions. Signed by a nominal target that is not
+// installed anywhere; it is the last rung of the selection ladder below.
+function heuristicGauntletEvaluator(env: Record<string, string>): AgentXGauntletEvaluator {
   const target = { kind: "squad" as const, slug: "harness-quality-gate", capabilityId: "quality.specification_conformance" };
   return {
     target,
@@ -759,6 +763,40 @@ function gauntletEvaluator(env: Record<string, string>): AgentXGauntletEvaluator
         costUsd: 0, createdAt: new Date().toISOString() }];
     },
   };
+}
+
+// Gauntlet evaluator and round budget shared by the three canaries. The target comes from
+// lib/gauntlet/evaluator-selection.ts (NIRVANA_GAUNTLET_EVALUATOR, else an installed squad
+// declaring quality.specification_conformance, else agent-x when the producer is not agent-x,
+// else the heuristic); every fallback and the final choice are audited. A variable that cannot
+// be honoured ends the dispatch with exit 4 before any producer runs. A real evaluator runs
+// through lib/gauntlet/evaluator-adapter.ts and its estimated cost is part of the round reserve.
+function gauntletEvaluatorFor(args: { pid: string; producer: TargetRef; plan: GauntletPlan; projectRoot: string; rt: Runtime;
+  heuristicEnv: Record<string, string> }): { evaluator: AgentXGauntletEvaluator; budget: ReturnType<typeof gauntletRoundBudget> } {
+  let selection: ReturnType<typeof selectGauntletEvaluator>;
+  try {
+    selection = selectGauntletEvaluator({ envValue: process.env[GAUNTLET_EVALUATOR_ENV], producer: args.producer, installed: loadInstalledSquads() });
+  } catch (error) {
+    console.error(c("red", `✗ Gauntlet evaluator: ${(error as Error).message}`));
+    process.exit(4);
+  }
+  const evaluatorLabel = selection.kind === "heuristic" ? "heuristic" : describeTarget(selection.target);
+  for (const fallback of selection.fallbacks) {
+    emit("x_gauntlet_evaluator_fallback", { trace_id: args.pid, project_id: args.pid, from: fallback.from, reason: fallback.reason,
+      producer: describeTarget(args.producer) });
+  }
+  emit("x_gauntlet_evaluator_selected", { trace_id: args.pid, project_id: args.pid, evaluator: evaluatorLabel, source: selection.source,
+    target: selection.kind === "heuristic" ? null : selection.target, producer: describeTarget(args.producer),
+    evaluation_share: selection.kind === "heuristic" ? 0 : GAUNTLET_EVALUATION_SHARE });
+  console.log(c("dim", `  Gauntlet evaluator: ${evaluatorLabel} (${selection.source})`));
+  if (selection.kind === "heuristic") {
+    return { evaluator: heuristicGauntletEvaluator(args.heuristicEnv), budget: gauntletRoundBudget(args.plan, effectiveBudgetUsd()) };
+  }
+  const budget = gauntletRoundBudget(args.plan, effectiveBudgetUsd(), GAUNTLET_EVALUATION_SHARE);
+  const evaluator = createDispatchEvaluator({ target: selection.target, producer: args.producer, plan: args.plan, brief: brief!,
+    projectRoot: args.projectRoot, projectId: args.pid, runtime: args.rt, budgetUsd: budget.evaluationBudgetUsd,
+    timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined, audit: emit });
+  return { evaluator, budget };
 }
 
 // Revision brief: the original brief plus the deterministic defects section. It is written
@@ -906,10 +944,10 @@ if (pendingCascade?.kind === "squad-only") {
     const squad = squads[0];
     const producerTarget = { kind: "squad" as const, slug: squad, capabilityId };
     const canonicalRunId = canonicalRunIdFor(pid, runIdFlag);
-    const budget = gauntletRoundBudget(compileGauntletPlan({ brief, intensity: executionOptions.intensity }), effectiveBudgetUsd());
+    const { evaluator, budget } = gauntletEvaluatorFor({ pid, producer: producerTarget, plan: compileGauntletPlan({ brief, intensity: executionOptions.intensity }),
+      projectRoot, rt, heuristicEnv: { NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid } });
     const kernel = openKernel(canaryKernelPath(projectRoot));
     const legacy = runLedger.openLedger();
-    const evaluator = gauntletEvaluator({ NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid });
     let finalDelivery: DeliveryResult | null = null;
     // One producer for the first candidate and for every revision: same squad, same runtime.
     const produce = (candidateRoot: string, candidateBrief: string) => {
@@ -1053,10 +1091,11 @@ if (pendingCascade?.kind === "agent-x") {
   fs.mkdirSync(oroot, { recursive: true });
   if (shouldRunAgentXGauntlet({ targetKind: "agent-x", wantExec, resolvedMode: executionOptions.resolvedMode })) {
     const canonicalRunId = canonicalRunIdFor(pid, runIdFlag);
-    const budget = gauntletRoundBudget(compileGauntletPlan({ brief, intensity: executionOptions.intensity }), effectiveBudgetUsd());
+    const { evaluator, budget } = gauntletEvaluatorFor({ pid, producer: { kind: "agent-x", slug: "agent-x" },
+      plan: compileGauntletPlan({ brief, intensity: executionOptions.intensity }), projectRoot: base, rt,
+      heuristicEnv: { NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid } });
     const kernel = openKernel(canaryKernelPath(base));
     const legacy = runLedger.openLedger();
-    const evaluator = gauntletEvaluator({ NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid });
     let finalDelivery: DeliveryResult | null = null;
     // One producer for the first candidate and for every revision: same persona, same runtime.
     const produce = (candidateRoot: string, candidateBrief: string, candidateBriefPath: string) => {
@@ -1288,10 +1327,11 @@ if (wantExec) {
   }
   if (businessCanaryDecision.enabled) {
     const canonicalRunId = canonicalRunIdFor(pid, runIdFlag);
-    const budget = gauntletRoundBudget(compileGauntletPlan({ brief, intensity: executionOptions.intensity }), effectiveBudgetUsd());
+    const { evaluator, budget } = gauntletEvaluatorFor({ pid, producer: { kind: "business", slug },
+      plan: compileGauntletPlan({ brief, intensity: executionOptions.intensity }), projectRoot, rt,
+      heuristicEnv: { NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid, NIRVANA_BUSINESS_SLUG: slug } });
     const kernel = openKernel(canaryKernelPath(projectRoot));
     const canaryLedger = runLedger.openLedger();
-    const evaluator = gauntletEvaluator({ NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid, NIRVANA_BUSINESS_SLUG: slug });
     let finalDelivery: DeliveryResult | null = null;
     let canarySessionId: string | null = null;
     // The employee prompt embeds `outputs_root`, so it is rebuilt per candidate root: every

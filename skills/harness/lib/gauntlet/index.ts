@@ -13,3 +13,4 @@ export * from "./multi-target-dispatch-adapters.ts";
 export * from "./multi-target-projection.ts";
 export * from "./evaluation-contract.ts";
 export * from "./evaluator-adapter.ts";
+export * from "./evaluator-selection.ts";
