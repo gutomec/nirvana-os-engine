@@ -244,17 +244,21 @@ export type GauntletPreflightFailure = "evaluator_unavailable" | "max_cost";
  * `rolled_back` with the reason and the explanation in the journal, and the Gauntlet projection
  * is stopped with `execution_failure`. Used when no agentic evaluator is available and when the
  * evaluation floor leaves the producer no budget: nothing is switched silently, nothing runs.
+ * With `legacy`, the run-ledger row of the Run (opened here, or adopted like `runAgentXGauntlet`
+ * adopts it) ends `failed` with the reason as its error, so the ledger records the attempt too.
  */
 export function rollbackGauntletBeforeProducer(input: {
-  kernel: KernelHandle; projectId: string; runId: string; traceId: string; producer: TargetRef; plan: GauntletPlan;
+  kernel: KernelHandle; legacy?: LegacyCompatibilityAdapter; projectId: string; runId: string; traceId: string; producer: TargetRef; plan: GauntletPlan;
   reason: GauntletPreflightFailure; errors: string[];
 }): RunProjection {
   const actor = { kind: "kernel", id: "agent-x-gauntlet-cutover" };
   const correlationId = `cor_${input.runId}`;
-  const facade = new RunKernelCompatibilityFacade(input.kernel);
-  const run = getRun(input.kernel, input.projectId, input.runId) ?? facade.create({ projectId: input.projectId, runId: input.runId,
+  const facade = new RunKernelCompatibilityFacade(input.kernel, input.legacy);
+  const existing = getRun(input.kernel, input.projectId, input.runId);
+  const run = existing ?? facade.create({ projectId: input.projectId, runId: input.runId,
     traceId: input.traceId, planId: `plan_${input.runId}`, target: input.producer, policySnapshotRef: "preflight", actor, correlationId,
     idempotencyKey: `agent-x-gauntlet:${input.runId}:create` });
+  if (existing) input.legacy?.openRun?.(existing);
   const controller = new GauntletController(input.kernel, { projectId: input.projectId, runId: input.runId, traceId: run.traceId, actor, correlationId });
   controller.begin(input.plan);
   controller.fail(`${input.reason}: ${input.errors.join(" ")}`);

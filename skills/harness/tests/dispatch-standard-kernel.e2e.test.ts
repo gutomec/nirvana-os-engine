@@ -12,6 +12,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { createDispatchExecutionRunner, glanceRunDir } from "../lib/control-plane/index.ts";
 import { createRun, getRun, listEvents, openKernel, type RunEvent, type TargetRef } from "../lib/run-kernel/index.ts";
+import { openLedger } from "../lib/run-ledger.ts";
 import { canonicalRunIdFor } from "../scripts/dispatch.ts";
 import { writeFakeCli } from "./helpers/fake-cli.ts";
 import { pidAlive, waitUntil } from "./helpers/fake-glance-child.ts";
@@ -159,6 +160,13 @@ describe("standard dispatch publishes a canonical Run", () => {
     expect(events.find(event => event.type === "runtime.selection_snapshot")!.idempotencyKey).toBe("standard:run_adopted:execution-snapshot");
     expect(events.at(-1)!.payload).toMatchObject({ from: "verifying", to: "completed", exitCode: 0, gateOutcome: "pass", outputsRoot: outputs });
     expect(fx.audit().some(entry => entry.event === "dispatch_squad")).toBe(true);
+    // The prep step the squad path spawned (brief-squad) opened no agentic row under the dispatch:
+    // the dispatch's own row is the ledger's only one, and it is closed.
+    const ledger = openLedger(path.join(fx.root, "ledger.sqlite"));
+    try {
+      const rows = ledger.db.query("SELECT state, meta FROM runs").all() as Array<{ state: string; meta: string }>;
+      expect(rows.map(row => [row.state, JSON.parse(row.meta).opened_by ?? null])).toEqual([["delivered", null]]);
+    } finally { ledger.close(); }
   }, 90000);
 
   test("a runtime failure with nothing on disk ends the Run failed with the error and the legacy exit 1", () => {

@@ -118,16 +118,24 @@ emit("dispatch_squad", { trace_id: projectId });
 // so a run that finished — or died — reached nobody. Making it a side effect of
 // the prep step the agent must run anyway is what turns the guarantee from prose
 // into coverage. Fail-soft: openAgenticRun warns and returns null, never throws.
+//
+// Not under a scripted dispatch: `nrv dispatch --exec` spawns this script only to scaffold and
+// tracks the run in the ledger itself, which it states with NIRVANA_DISPATCH_TRACKS_RUN=1. The
+// agentic row would then be a second one that no process closes, escalated to a human as
+// stalled once its lease expired.
+const trackedByDispatch = process.env.NIRVANA_DISPATCH_TRACKS_RUN === "1";
 let runId: string | null = null;
-try {
-  const { openAgenticRun } = require(path.join(skillDir, "..", "harness", "lib", "run-ledger.ts"));
-  runId = openAgenticRun({
-    projectId, traceId: projectId, targetSlug: slug, targetKind: "squad",
-    outputsRoot: projectDir, projectDir,
-    meta: { opened_by: "brief-squad", brief_path: briefFile },
-  })?.runId ?? null;
-} catch (e: any) {
-  console.error(`[brief-squad] WARN: run-ledger unavailable (${e.message}) — this dispatch will not be supervised`);
+if (!trackedByDispatch) {
+  try {
+    const { openAgenticRun } = require(path.join(skillDir, "..", "harness", "lib", "run-ledger.ts"));
+    runId = openAgenticRun({
+      projectId, traceId: projectId, targetSlug: slug, targetKind: "squad",
+      outputsRoot: projectDir, projectDir,
+      meta: { opened_by: "brief-squad", brief_path: briefFile },
+    })?.runId ?? null;
+  } catch (e: any) {
+    console.error(`[brief-squad] WARN: run-ledger unavailable (${e.message}) — this dispatch will not be supervised`);
+  }
 }
 
 // Initial HANDOFF.json — minimum state to allow resume after /clear or crash.
@@ -157,7 +165,7 @@ console.log(`OK: brief registered.
   Project dir:   ${projectDir}
   Brief file:    ${briefFile}
   Audit log:     ${auditFile}
-  Run ID:        ${runId ?? "(not tracked — see the warning above)"}
+  Run ID:        ${runId ?? (trackedByDispatch ? "(tracked by the dispatch that spawned this step)" : "(not tracked — see the warning above)")}
 
 Next step (run by the skill via the Agent tool):
   Spawn a subagent over ${slug}/squad.yaml + workflow, with the brief above and

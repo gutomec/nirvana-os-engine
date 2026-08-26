@@ -13,7 +13,8 @@ export type LegacyRunState = "dispatched" | "running" | "verifying" | "gated" | 
 
 export interface LegacyCompatibilityAdapter {
   openRun?(run: RunProjection): void;
-  transitionRun?(run: RunProjection, legacyState: LegacyRunState): void;
+  /** `payload` is the canonical transition's payload; a legacy `failed` row takes its error from it. */
+  transitionRun?(run: RunProjection, legacyState: LegacyRunState, payload?: Record<string, unknown>): void;
   emitAudit?(event: RunEvent): void;
 }
 
@@ -51,15 +52,29 @@ export function createHarnessLegacyAdapter(options: HarnessLegacyAdapterOptions)
       }
       emitProjection("open", run, "dispatched");
     },
-    transitionRun(run, legacyState) {
+    transitionRun(run, legacyState, payload) {
       const legacy = getLegacyRun(options.ledger, run.runId);
       if (!legacy) throw new Error(`run-kernel compatibility: legacy run '${run.runId}' is missing`);
       if (legacy.state !== legacyState && canLegacyTransition(legacy.state, legacyState)) {
-        markLegacyState(options.ledger, run.runId, legacyState, { metaPatch: { canonical_state: run.state, canonical_version: run.version } });
+        markLegacyState(options.ledger, run.runId, legacyState, {
+          metaPatch: { canonical_state: run.state, canonical_version: run.version },
+          // `failed` is the legacy row of every canonical failure (failed, rolled_back, cancelled);
+          // its last_error says which one and why, for a reader of the ledger alone.
+          ...(legacyState === "failed" ? { error: legacyErrorFor(run.state, payload) } : {}),
+        });
       }
       emitProjection("transition", run, legacyState);
     },
   };
+}
+
+/** `last_error` of a legacy `failed` row: the transition's `error`, else its `reason` with the
+ * `errors` it lists, else the canonical state itself (`rolled_back`, `cancelled`, `failed`). */
+export function legacyErrorFor(state: CanonicalRunState, payload?: Record<string, unknown>): string {
+  if (typeof payload?.error === "string" && payload.error) return payload.error;
+  const reason = typeof payload?.reason === "string" && payload.reason ? payload.reason : state;
+  const errors = Array.isArray(payload?.errors) ? payload.errors.filter((item): item is string => typeof item === "string") : [];
+  return errors.length ? `${reason}: ${errors.join(" ")}` : reason;
 }
 
 export function legacyStateFor(state: CanonicalRunState): LegacyRunState {
@@ -85,7 +100,7 @@ export class RunKernelCompatibilityFacade {
 
   transition(input: TransitionInput): RunProjection {
     const run = transitionRun(this.kernel, input);
-    this.legacy.transitionRun?.(run, legacyStateFor(run.state));
+    this.legacy.transitionRun?.(run, legacyStateFor(run.state), input.payload);
     return run;
   }
 

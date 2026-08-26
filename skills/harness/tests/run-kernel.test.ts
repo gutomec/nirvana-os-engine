@@ -13,6 +13,7 @@ import {
   appendTranscriptMessage,
   createRun,
   getRun,
+  legacyErrorFor,
   legacyStateFor,
   listEvents,
   openKernel,
@@ -247,6 +248,36 @@ describe("ArtifactRef and compatibility facade", () => {
       const auditFiles = fs.readdirSync(path.join(root, "logs"), { recursive: true })
         .filter(entry => String(entry).endsWith("audit.jsonl"));
       expect(auditFiles.length).toBeGreaterThan(0);
+    } finally {
+      ledger.close();
+      if (previousLogs === undefined) delete process.env.HARNESS_LOGS_DIR; else process.env.HARNESS_LOGS_DIR = previousLogs;
+      if (previousState === undefined) delete process.env.NIRVANA_STATE_DB; else process.env.NIRVANA_STATE_DB = previousState;
+    }
+  }, KERNEL_BUDGET_MS);
+
+  test("projects every canonical failure as a legacy `failed` row whose last_error is the transition's error, else its reason", () => {
+    const { handle, root } = fresh();
+    const previousLogs = process.env.HARNESS_LOGS_DIR;
+    const previousState = process.env.NIRVANA_STATE_DB;
+    process.env.HARNESS_LOGS_DIR = path.join(root, "logs");
+    process.env.NIRVANA_STATE_DB = path.join(root, "state.sqlite");
+    const ledger = openLedger(path.join(root, "legacy-ledger.sqlite"));
+    const actor = { kind: "kernel", id: "test" };
+    try {
+      const facade = new RunKernelCompatibilityFacade(handle, createHarnessLegacyAdapter({ ledger, auditCwd: root }));
+      facade.create(runInput("prj_a", "run_failed"));
+      facade.transition({ projectId: "prj_a", runId: "run_failed", to: "running", actor, correlationId: "cor" });
+      facade.transition({ projectId: "prj_a", runId: "run_failed", to: "failed", actor, correlationId: "cor", payload: { error: "runtime crashed" } });
+      expect(getLegacyRun(ledger, "run_failed")).toMatchObject({ state: "failed", last_error: "runtime crashed", meta: { canonical_state: "failed" } });
+      // A rollback before the producer names its reason and the errors behind it.
+      facade.create(runInput("prj_a", "run_rolled_back"));
+      facade.transition({ projectId: "prj_a", runId: "run_rolled_back", to: "rolled_back", actor, correlationId: "cor",
+        payload: { reason: "evaluator_unavailable", errors: ["no judge-x persona for runtime 'qwen-code'"] } });
+      expect(getLegacyRun(ledger, "run_rolled_back")).toMatchObject({ state: "failed", last_error: "evaluator_unavailable: no judge-x persona for runtime 'qwen-code'",
+        meta: { canonical_state: "rolled_back" } });
+      expect(legacyErrorFor("rolled_back", { reason: "max_cost" })).toBe("max_cost");
+      expect(legacyErrorFor("cancelled")).toBe("cancelled");
+      expect(legacyErrorFor("failed", { error: "", reason: "runtime_incompatible", errors: ["model unknown", 42] })).toBe("runtime_incompatible: model unknown");
     } finally {
       ledger.close();
       if (previousLogs === undefined) delete process.env.HARNESS_LOGS_DIR; else process.env.HARNESS_LOGS_DIR = previousLogs;

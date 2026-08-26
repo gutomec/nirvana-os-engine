@@ -8,6 +8,48 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Every Gauntlet canary exit closes its run-ledger row, and a scripted dispatch leaves no agentic row behind
+
+The first Gauntlet smoke with judge-x (`nrv dispatch --squad
+high-conversion-copy --execution-mode=gauntlet --gauntlet-intensity=light
+--project smoke-judge-squad`, 2026-08-26) exited 0 with the canonical Run
+`completed` and its run-ledger row `delivered`, and `nrv run-track list` still
+showed a second row of the same project `running` under a 30-minute lease. That
+row was not the canary's. `dispatch.ts` spawns `brief-squad.ts` (and
+`brief-business.ts`) to scaffold the project, and the prep scripts open the
+agentic ledger row meant for an agent that orchestrates in-session: no pid, no
+owner. Nothing closed it, in Gauntlet or in standard mode, and once the lease
+expired the supervisor escalated each such row to a human as stalled, salvaging
+the outputs into `withheld` after a run that had delivered. The earlier smokes
+of the same day show the pattern on five rows.
+
+The dispatch now spawns the prep scripts with `NIRVANA_DISPATCH_TRACKS_RUN=1`,
+and under it they open no row: the dispatch's own row (the scripted row in
+standard mode, the canonical Run's row in a canary) is the run's only record.
+The in-session door is unchanged. Two smaller gaps closed with it. A Gauntlet
+that ends before its producer (`evaluator_unavailable`, exit 4; `max_cost`,
+exit 1) rolled the Run back without a legacy adapter, so the ledger never heard
+of the attempt; the rollback now opens or adopts the row and closes it
+`failed`. And a legacy `failed` row carried no `last_error`; it now names the
+transition's error, else its reason and the errors it lists.
+
+The canonical → legacy map of the compatibility facade, now documented in
+`run-kernel-operations.md`: `completed` and `delivered_with_reservations` →
+`delivered` (the reservation stays in `meta.canonical_state`); `withheld` →
+`withheld`; `failed`, `rolled_back` and `cancelled` → `failed` with
+`last_error`. The ledger after each exit, before and after:
+
+| exit | before | after |
+|------|--------|-------|
+| squad or business canary, delivered or withheld | canonical row closed; agentic row `running` | one row, closed |
+| any canary, producer failed or rolled back | `failed` with no `last_error`; squad and business also an agentic row `running` | one row, `failed` with the reason |
+| any canary, rolled back before the producer (exit 4 or 1) | no canonical row; squad and business an agentic row `running` | one row, `failed` with the reason |
+| standard `--exec`, squad or business | scripted row closed; agentic row `running` | one row, closed |
+
+`dispatch-gauntlet-ledger.e2e.test.ts` runs the real dispatch with a fake
+runtime on the squad and agent-x canaries, with and without `--run-id`, and on
+both pre-producer failures, and reads the ledger back.
+
 ### Every multi-target node runs under its own Run id, and a Run that already ended is refused
 
 The first real resumption of a multi-target plan (`--retry-failed`) delivered
