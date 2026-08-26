@@ -1249,6 +1249,8 @@ function glance() {
       }
     },
     async openChatFromHistory(entry) {
+      // The conversation whose turn is streaming right now: just show it, never rebuild the bubbles.
+      if (entry.id === this.chatId && this.chatBusy) { this.chatHistoryOpen = false; this.chatOpen = true; return; }
       this.chatId = entry.id;
       this.chatMode = entry.mode || 'run';
       this.chatHistoryOpen = false;
@@ -1257,6 +1259,14 @@ function glance() {
         try {
           const conversation = await api(`/api/v1/conversations/${encodeURIComponent(entry.id)}`);
           this.chatMessages = (conversation.messages || []).map(m => ({ role: m.role, text: m.content }));
+          this.chatSession = null; this.chatSessionRuntime = null; this.chatResumeCommand = null;
+          this.applySession(conversation.session, null);
+          if (conversation.active_turn) {
+            // A turn still running (or queued) for this conversation: follow it again after a reload.
+            this.chatMessages.push({ role: 'assistant', text: '', events: [], streaming: true });
+            this.chatBusy = true;
+            this.subscribeTurn(conversation.active_turn, this.chatMessages[this.chatMessages.length - 1]);
+          }
           return;
         } catch {}
       }
@@ -1531,6 +1541,8 @@ function glance() {
       this.chatMessages = [];
       this.chatRunEvents = [];
       this.chatResumeSession = null;
+      this.chatSession = null; this.chatSessionRuntime = null; this.chatResumeCommand = null; this.chatTurnId = null;
+      if (this.chatTurnES) { this.chatTurnES.close(); this.chatTurnES = null; }
       this.chatHistoryOpen = false;
       this.chatOpen = true;
     },
@@ -1602,6 +1614,11 @@ function glance() {
     chatRuntime: '',           // '' = auto (session host); or claude-code/codex/…
     chatFast: false,           // fast/cheap mode (opt-in); default = agentic
     chatResumeSession: null,   // runtime session_id to continue the conversation
+    chatSession: null,         // native runtime session of the canonical conversation (maestro turn)
+    chatSessionRuntime: null,
+    chatResumeCommand: null,   // how to continue the same session from a terminal in the project root
+    chatTurnId: null,          // the maestro turn running for the open conversation (cancel target)
+    chatTurnES: null,          // EventSource of that turn
     // Send a turn. Default = conversational concierge (chat-agent). The
     // revise/resume mode is only used on "Continuar session" of an existing run.
     async sendChat() {
@@ -1622,10 +1639,10 @@ function glance() {
         try {
           const response = await fetch(`/api/v1/conversations/${encodeURIComponent(this.chatId)}/messages`, {
             method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
-            body: JSON.stringify({ project_id: this.canonicalProjectId, role: 'user', content: msg }),
+            body: JSON.stringify({ project_id: this.canonicalProjectId, role: 'user', content: msg, mode: 'turn' }),
           });
           canonicalReceipt = await response.json();
-          if (!response.ok) throw new Error(canonicalReceipt.detail || canonicalReceipt.title || 'falha ao preparar o Run');
+          if (!response.ok) throw new Error(canonicalReceipt.detail || canonicalReceipt.title || 'falha ao iniciar o turno');
         } catch (error) {
           const asst = this.chatMessages[this.chatMessages.length - 1];
           asst.text = `⚠ ${error.message || error}`; asst.streaming = false; this.chatBusy = false;
@@ -1641,6 +1658,18 @@ function glance() {
       try { location.hash = `#/chat/${this.chatId}`; } catch {}
       this.$nextTick(() => this.scrollChatBottom());
 
+      if (canonicalReceipt?.turn) {
+        // A maestro turn: the project's runtime session answers; the events arrive by SSE.
+        const turn = canonicalReceipt.turn;
+        if (turn.state === 'unavailable') {
+          asst.text = `⚠ Turnos do maestro indisponíveis (${turn.detail || turn.reason}).`;
+          asst.streaming = false; this.chatBusy = false;
+          return;
+        }
+        this.applySession(canonicalReceipt.session, turn);
+        this.subscribeTurn(turn, asst);
+        return;
+      }
       if (canonicalReceipt?.run) {
         const target = canonicalReceipt.run.target || {};
         // The target and why, before the child starts: the receipt carries `run.route`.
@@ -1701,6 +1730,70 @@ function glance() {
         } catch {}
       });
       es.onerror = () => { /* EventSource resumes from the cursor query and SSE id. */ };
+    },
+    // The native session of the conversation's runtime (kept by the runtime, per working
+    // directory): shown short in the header, with the terminal command that continues it.
+    applySession(session, turn) {
+      const id = (session && session.session_id) || (turn && turn.session_id) || null;
+      if (!id) return;
+      this.chatSession = id;
+      this.chatSessionRuntime = (session && session.session_runtime) || (turn && turn.runtime) || this.chatSessionRuntime;
+      this.chatResumeCommand = (session && session.resume_command) || (this.chatSessionRuntime === 'claude-code' ? `claude --resume ${id}` : null);
+    },
+    // Follow one maestro turn by SSE: tok → live text, tool → chip, run → link to the Run the
+    // maestro opened, done → the reply. The server persists the assistant message; nothing to POST.
+    subscribeTurn(turn, asst) {
+      if (this.chatTurnES) { this.chatTurnES.close(); this.chatTurnES = null; }
+      this.chatTurnId = turn.turn_id;
+      asst.turnId = turn.turn_id; asst.tools = []; asst.runs = [];
+      const es = new EventSource(turn.events_url);
+      this.chatTurnES = es;
+      let graceTimer = null;
+      const clearGrace = () => { if (graceTimer) { clearTimeout(graceTimer); graceTimer = null; } };
+      const finish = (errText) => {
+        clearGrace(); es.close();
+        if (this.chatTurnES === es) this.chatTurnES = null;
+        this.chatTurnId = null;
+        asst.streaming = false; this.chatBusy = false;
+        if (errText && !asst.text) asst.text = errText;
+        this.saveChatToHistory();
+        this.$nextTick(() => { this.scrollChatBottom(); try { window.lucide?.createIcons(); } catch {} });
+      };
+      es.onmessage = (e) => {
+        clearGrace();
+        let ev; try { ev = JSON.parse(e.data); } catch { return; }
+        if (ev.t === 'tok') { asst.text = (asst.text || '') + ev.v; this.$nextTick(() => this.scrollChatBottom()); }
+        else if (ev.t === 'tool') { asst.tools = [...(asst.tools || []), { name: ev.name, cmd: ev.cmd }]; this.$nextTick(() => this.scrollChatBottom()); }
+        else if (ev.t === 'run') { asst.runs = [...(asst.runs || []), ev]; this.fetchRuns(); this.$nextTick(() => { try { window.lucide?.createIcons(); } catch {} }); }
+        else if (ev.t === 'done') {
+          asst.text = ev.result || (asst.text || '').trim() || (ev.state === 'cancelled' ? 'Turno cancelado.' : (ev.error ? `⚠ ${ev.error}` : '(sem resposta)'));
+          asst.cost = ev.cost_usd; asst.turnState = ev.state;
+          this.applySession({ session_id: ev.session_id, session_runtime: ev.runtime, resume_command: ev.resume_command }, null);
+          finish();
+        }
+      };
+      es.onerror = () => {
+        // CLOSED = the server ended the stream without `done` (it died). CONNECTING = the
+        // EventSource reconnects on its own (Last-Event-ID resumes); 20 s of grace, then give up
+        // instead of an eternal "orquestrando…".
+        if (es.readyState === EventSource.CLOSED) { if (asst.streaming) finish('⚠ conexão encerrada. Recarregue a página.'); return; }
+        if (asst.streaming && !graceTimer) graceTimer = setTimeout(() => { if (asst.streaming) finish('⚠ conexão perdida (o servidor pode ter reiniciado). Recarregue a página.'); }, 20000);
+      };
+    },
+    // SIGTERM on the turn's process group; the stream ends with done.state = cancelled.
+    async cancelTurn() {
+      if (!this.chatTurnId || !this.chatId) return;
+      try {
+        await fetch(`/api/v1/conversations/${encodeURIComponent(this.chatId)}/turns/${encodeURIComponent(this.chatTurnId)}:cancel`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
+          body: JSON.stringify({ project_id: this.canonicalProjectId }),
+        });
+      } catch {}
+    },
+    // A Run the maestro opened during the turn: the Runs tab, with that Run selected.
+    openRunFromChat(run) {
+      this.enterKind('runs');
+      this.$nextTick(() => { const it = (this.runs || []).find(x => x.trace_id === run.trace_id || x.trace_id === run.run_id); if (it) this.selectRun(it); });
     },
     // Kept as a compatibility method for old bookmarked UI state. The control
     // plane intentionally has no browser shell route.
