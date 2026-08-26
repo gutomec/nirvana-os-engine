@@ -262,6 +262,16 @@ function updateHandoffPhase(projectDir, newPhase, opts) {
     // non-fatal — handoff.json was still written
   }
 
+  // Proof of life, as a side effect: advancing a phase means the run is alive,
+  // so beat its agentic ledger row and the business row(s) of the project. The
+  // employee never has to remember a heartbeat. Best effort, never throws.
+  try {
+    const ledger = require(path.join(SKILLS_ROOT, 'harness', 'lib', 'run-ledger.ts'));
+    ledger.beatAgenticRuns({ runId: merged.run_id || null, projectId: merged.project_id || null, source: 'handoff_phase_advanced' });
+  } catch (e) {
+    // non-fatal — the ledger is not this script's job
+  }
+
   return merged;
 }
 

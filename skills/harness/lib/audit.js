@@ -288,9 +288,10 @@ function rotate(retentionDays) {
 /**
  * Read recent audit events (most recent first) up to `limit`.
  * Useful for diagnostics. Reads the current day file by default.
+ * `cwd` (optional) anchors which root is read — see harnessLogsRoot.
  */
-function readRecent(limit = 100, dateStr) {
-  const { file } = logPath(dateStr);
+function readRecent(limit = 100, dateStr, cwd) {
+  const { file } = logPath(dateStr, cwd);
   if (!fs.existsSync(file)) return [];
   const lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean);
   const tail = lines.slice(-limit);

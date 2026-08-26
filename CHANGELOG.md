@@ -40,6 +40,44 @@ child starts, the timeline labels `run.prepared` with the origin and the
 rationale, and the Run header names the origin. Proof:
 `glance-message-route.test.ts`.
 
+### A business that delegates is alive: child runs, hook activity and handoff beats are proof of life
+
+Since 2026-08-01 the run ledger held 39 withheld business runs; 35 of them
+(15 businesses, 10 days) carried `supervisor: agentic run stopped reporting
+(no heartbeat, no file activity)`, and none had failed a gate. The agentic
+business row (`brief-business`, no pid) was judged by the newest mtime under
+its own outputs root, and a business that delegates writes nothing there: its
+employee dispatches a squad, which writes under the squad's dir; the session's
+hooks log `tool_invoked` / `artifact_touched` / `bash_completed`; the handoff
+scripts advance. The supervisor read none of it and escalated the business
+while it was working.
+
+`resolveAgenticLiveness` (`skills/harness/lib/run-ledger.ts`) now reads the
+trace's proof of life, cheapest first, inside the agentic lease window
+(1800 s): the row's own `heartbeat_at`; a child run of the same `project_id`
+or `trace_id` that is active and recently updated, or delivered inside the
+window (a grace of one window for the employee to integrate the delivery,
+after which the normal rule applies); a hook event of the trace in the daily
+audit, matched by `run_id`, `project_id`, `trace_id` or by a path under the
+project's dir; and, last, file activity under `outputs_root`. A run with no
+signal at all is still escalated, now with `(no heartbeat, no child run, no
+hook activity, no file activity)`. `supervisor.stall_threshold_ms` and
+`AGENTIC_LEASE_SEC` are unchanged.
+
+The scripts the employee runs anyway beat the business row as a side effect,
+with no new command: `updateHandoffPhase` beats the run its handoff names and
+the business rows of the project; `brief-squad` beats the business rows of
+the `--project` it is dispatched under. Both are fail-soft.
+
+The audit explains the grace: `x_ledger_grace_extended` carries
+`liveness_source`, `liveness_at` and `child_run_id`; `x_ledger_lease_renewed`
+carries `source` for the beats; `x_ledger_state_changed` carries
+`last_error`, so a `withheld` reached through a stall keeps the supervisor's
+reason and one reached through the gate does not. The Glance run timeline
+labels both events (`Ledger: retido` with the reason, `Prova de vida: …`
+with the source), with no new screen.
+`docs/architecture/run-kernel-operations.md` documents the rule.
+
 ## 0.9.0 — 2026-08-26
 
 ### The Glance "Configuração" panel: every `nrv config` key with an API and a screen

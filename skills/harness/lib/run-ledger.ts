@@ -174,11 +174,19 @@ export function openLedger(dbPath?: string): LedgerHandle {
 // never thrown and never silently swallowed: the ledger write is the source
 // of truth and must not be blocked by a log path problem.
 
-let _audit: { emit: (e: string, p: Record<string, unknown>, ctx?: Record<string, unknown>) => unknown } | null = null;
+interface AuditLib {
+  emit: (e: string, p: Record<string, unknown>, ctx?: Record<string, unknown>) => unknown;
+  readRecent: (limit: number, dateStr?: string, cwd?: string) => Record<string, unknown>[];
+  logPath: (dateStr?: string, cwd?: string) => { dir: string; file: string };
+}
+let _audit: AuditLib | null = null;
+function auditLib(): AuditLib {
+  if (!_audit) _audit = createRequire(import.meta.url)("./audit.js");
+  return _audit!;
+}
 function emitLedgerAudit(event: string, payload: Record<string, unknown>, row?: Pick<RunRow, "trace_id" | "project_id"> | null): void {
   try {
-    if (!_audit) _audit = createRequire(import.meta.url)("./audit.js");
-    _audit!.emit(event, payload, {
+    auditLib().emit(event, payload, {
       trace_id: row?.trace_id ?? undefined,
       project_id: row?.project_id ?? undefined,
     });
@@ -287,9 +295,10 @@ export interface AgenticRunOpts {
   traceId?: string | null;
   targetSlug: string;
   targetKind: string;
-  /** Where the run writes. This is the run's real heartbeat: the supervisor
-   *  reads the newest mtime under it, so a run that is producing files is never
-   *  mistaken for a dead one — no cooperation from the agent required. */
+  /** Where the run writes. One of the run's proofs of life (see
+   *  resolveAgenticLiveness): the supervisor reads the newest mtime under it,
+   *  so a run that is producing files is never mistaken for a dead one — no
+   *  cooperation from the agent required. */
   outputsRoot?: string | null;
   projectDir?: string | null;
   runtime?: string | null;
@@ -312,8 +321,10 @@ export interface AgenticRunOpts {
  *    that ran this script, dead seconds later, and a recycled pid could get a
  *    stranger's process SIGTERMed by a sweep. `null` says the truth — nothing
  *    here is ours to signal.
- *  - **outputs_root is mandatory in practice.** Without a pid, file activity is
- *    the only proof of life the supervisor can read.
+ *  - **No pid means no process to watch.** Proof of life is read from the
+ *    trace instead: the row's own beats, the child runs of the same project,
+ *    the hook activity of the session and the files under outputs_root — see
+ *    resolveAgenticLiveness.
  *
  * Fail-soft by contract: returns `null` and warns on any ledger failure. Losing
  * the tracking of a run is bad; losing the RUN because tracking broke is worse.
@@ -347,8 +358,9 @@ export function openAgenticRun(opts: AgenticRunOpts): { runId: string; handle: L
 
 /** Extend the lease by `seconds` from now and advance heartbeat_at. Returns
  *  false (with a stderr warn) on terminal/missing runs — a heartbeat must
- *  never resurrect a finished run. */
-export function renewLease(handle: LedgerHandle, runId: string, seconds: number): boolean {
+ *  never resurrect a finished run. `source` names who beat (a handoff script,
+ *  brief-squad) so the audit can say why the run stayed alive. */
+export function renewLease(handle: LedgerHandle, runId: string, seconds: number, source?: string): boolean {
   const row = getRun(handle, runId);
   if (!row) { console.error(`[run-ledger] renewLease: run '${runId}' not found`); return false; }
   if (isTerminal(row.state)) {
@@ -361,7 +373,7 @@ export function renewLease(handle: LedgerHandle, runId: string, seconds: number)
     "UPDATE runs SET lease_expires_at = ?, heartbeat_at = ?, updated_at = ? WHERE run_id = ?",
     [lease, now, now, runId],
   );
-  emitLedgerAudit("x_ledger_lease_renewed", { run_id: runId, lease_expires_at: lease }, row);
+  emitLedgerAudit("x_ledger_lease_renewed", { run_id: runId, lease_expires_at: lease, ...(source ? { source } : {}) }, row);
   return true;
 }
 
@@ -401,8 +413,11 @@ export function markState(handle: LedgerHandle, runId: string, next: RunState, e
      WHERE run_id = ?`,
     [next, now, terminalAt, extra.error ?? null, extra.childPid ?? null, extra.sessionId ?? null, JSON.stringify(meta), runId],
   );
+  // last_error rides along: a `withheld` reached through a stall keeps the
+  // supervisor's reason, one reached through the gate does not, and that is how
+  // a reader of the trail (Glance included) tells the two apart.
   emitLedgerAudit("x_ledger_state_changed", {
-    run_id: runId, from: row.state, to: next, error: extra.error ?? null,
+    run_id: runId, from: row.state, to: next, error: extra.error ?? null, last_error: extra.error ?? row.last_error ?? null,
   }, row);
   return getRun(handle, runId)!;
 }
@@ -500,6 +515,174 @@ export function resumeInfo(handle: LedgerHandle, runId: string): {
     runId: row.run_id, state: row.state, sessionId: row.session_id, runtime: row.runtime,
     projectId: row.project_id, retries: row.retries, maxRetries: row.max_retries, meta: row.meta,
   };
+}
+
+// ── proof of life of an agentic run ─────────────────────────────────────
+// An agentic run has no pid of ours to watch, and a business that delegates
+// does not write under its own outputs root: its employee dispatches a squad
+// (a child row in the same project, writing under the squad's dir), the
+// session's hooks log tool_invoked / artifact_touched / bash_completed for the
+// trace, and the handoff scripts keep advancing. Measured 2026-08-26: 35 of 39
+// business runs withheld since 2026-08-01 carried "agentic run stopped
+// reporting (no heartbeat, no file activity)" — none had failed a gate. The
+// supervisor read only the mtime under outputs_root. So life is any of these
+// signals inside the window, cheapest first.
+
+export type LivenessSource = "heartbeat" | "child_run" | "child_delivered" | "hook_activity" | "file_activity";
+
+export interface AgenticLiveness {
+  alive: boolean;
+  /** Which signal proved life; null when none did. */
+  source: LivenessSource | null;
+  /** When that signal was last seen (ms epoch); 0 when none. */
+  at: number;
+  /** The child run behind a child_* source; null otherwise. */
+  childRunId: string | null;
+}
+
+/** A child in a supervisor recovery state (failed, stalled) is not proof that
+ *  anyone is working; a child that is dispatched, running or being judged is. */
+const CHILD_ACTIVE_STATES: ReadonlySet<RunState> = new Set(["dispatched", "running", "verifying", "gated"]);
+
+/** The hook events audit-emit-from-hook.ts writes while an agent works. */
+const HOOK_EVENTS: ReadonlySet<string> = new Set(["tool_invoked", "artifact_touched", "bash_completed"]);
+/** Newest lines read per daily audit file; a 30-minute window is well inside it. */
+const HOOK_SCAN_LIMIT = 4000;
+
+function metaString(meta: Record<string, unknown>, key: string): string | null {
+  const v = meta?.[key];
+  return typeof v === "string" && v ? v : null;
+}
+
+/** Runs of the same project or trace, other than `row` — the squads and
+ *  employees the run dispatched (a `dispatch --exec` or brief-squad under the
+ *  same --project opens one). Newest first. */
+export function findRelatedRuns(handle: LedgerHandle, row: RunRow): RunRow[] {
+  if (!row.project_id && !row.trace_id) return [];
+  const rows = handle.db
+    .query("SELECT * FROM runs WHERE run_id != ? AND (project_id = ? OR trace_id = ?) ORDER BY updated_at DESC")
+    .all(row.run_id, row.project_id ?? "", row.trace_id ?? "") as Record<string, unknown>[];
+  return rows.map(r => parseRow(r)!);
+}
+
+/** Does a hook event belong to this run's trace? By id when the hook carried
+ *  one (run_id, project_id, trace_id), else by the path it touched or ran in
+ *  falling under the project's dir — the squad dir, a handoff — which the
+ *  outputs-root mtime never sees. */
+function hookEventOfRun(ev: Record<string, unknown>, row: RunRow, prefix: string | null): boolean {
+  if (ev.run_id && ev.run_id === row.run_id) return true;
+  if (ev.project_id && ev.project_id === row.project_id) return true;
+  if (ev.trace_id && ev.trace_id === row.trace_id) return true;
+  if (!prefix) return false;
+  const under = (p: unknown) => typeof p === "string" && p.length > 0 && path.resolve(p).startsWith(prefix);
+  return under(ev.file_path) || under(ev.cwd);
+}
+
+/** Newest hook event of the run's trace (ms epoch) since `now - windowMs`, 0
+ *  when none. Hooks write to the daily audit of the HOME root
+ *  (audit-emit-from-hook.ts), so that root is read first; the project's own
+ *  root is read too when it differs. Same reader as every other consumer of
+ *  the audit (audit.readRecent) — no parser of its own. */
+export function latestHookActivityMs(row: RunRow, now: number, windowMs: number): number {
+  const since = now - windowMs;
+  const dayOf = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+  const days = [dayOf(now)];
+  if (dayOf(since) !== days[0]) days.push(dayOf(since));
+  const scope = metaString(row.meta, "brief_path");
+  const prefix = scope ? path.resolve(path.dirname(scope)) + path.sep
+    : metaString(row.meta, "outputs_root") ? path.resolve(metaString(row.meta, "outputs_root")!) + path.sep : null;
+  const anchors = [os.homedir(), metaString(row.meta, "project_dir")].filter((a): a is string => !!a);
+  let audit: AuditLib;
+  try { audit = auditLib(); } catch { return 0; }
+  const seen = new Set<string>();
+  let latest = 0;
+  for (const anchor of anchors) {
+    for (const day of days) {
+      let file: string;
+      try { file = audit.logPath(day, anchor).file; } catch { continue; }
+      if (seen.has(file)) continue;
+      seen.add(file);
+      let events: Record<string, unknown>[] = [];
+      try { events = audit.readRecent(HOOK_SCAN_LIMIT, day, anchor); } catch { continue; }
+      for (const ev of events) {
+        if (!HOOK_EVENTS.has(String(ev.event))) continue;
+        const t = Date.parse(String(ev.ts ?? ""));
+        if (!(t > since) || t <= latest) continue;
+        if (hookEventOfRun(ev, row, prefix)) latest = t;
+      }
+    }
+  }
+  return latest;
+}
+
+/**
+ * Is this agentic run alive at `now`? Signals, cheapest first, any one inside
+ * `windowMs` is enough:
+ *   1. heartbeat_at of the row itself (run-track beat, or the beats the
+ *      handoff scripts and brief-squad make as a side effect);
+ *   2. a child run of the same project/trace: active and updated inside the
+ *      window (`child_run`), or delivered inside the window
+ *      (`child_delivered` — the grace for the employee to integrate the
+ *      delivery; after it the normal rule applies again);
+ *   3. a hook event of the trace in the audit;
+ *   4. file activity under outputs_root.
+ * The source is reported so the audit (`x_ledger_grace_extended`) and Glance
+ * can say what kept the run alive.
+ */
+export function resolveAgenticLiveness(handle: LedgerHandle, row: RunRow, now: number, windowMs: number): AgenticLiveness {
+  const since = now - windowMs;
+  const hb = row.heartbeat_at ? Date.parse(row.heartbeat_at) : 0;
+  if (hb > since) return { alive: true, source: "heartbeat", at: hb, childRunId: null };
+  for (const child of findRelatedRuns(handle, row)) {
+    const touched = Math.max(Date.parse(child.updated_at) || 0, child.heartbeat_at ? Date.parse(child.heartbeat_at) : 0);
+    if (CHILD_ACTIVE_STATES.has(child.state) && touched > since) {
+      return { alive: true, source: "child_run", at: touched, childRunId: child.run_id };
+    }
+    const delivered = child.state === "delivered" && child.terminal_at ? Date.parse(child.terminal_at) : 0;
+    if (delivered > since) return { alive: true, source: "child_delivered", at: delivered, childRunId: child.run_id };
+  }
+  const hook = latestHookActivityMs(row, now, windowMs);
+  if (hook > since) return { alive: true, source: "hook_activity", at: hook, childRunId: null };
+  const oroot = metaString(row.meta, "outputs_root");
+  if (oroot) {
+    const m = latestMtimeMs(oroot);
+    if (m > since) return { alive: true, source: "file_activity", at: m, childRunId: null };
+  }
+  return { alive: false, source: null, at: 0, childRunId: null };
+}
+
+export interface BeatAgenticRunsOpts {
+  projectId?: string | null;
+  traceId?: string | null;
+  /** A specific run to beat as well — the run a handoff belongs to. */
+  runId?: string | null;
+  /** Who is beating (rides into x_ledger_lease_renewed as `source`). */
+  source: string;
+}
+
+/**
+ * Beat the agentic business row(s) of a project — and `runId` when given — as a
+ * side effect of a script the employee runs anyway (updateHandoffPhase,
+ * brief-squad). The employee never has to remember a heartbeat: delegating,
+ * or advancing a phase, IS the heartbeat. Fail-soft by contract: never throws,
+ * returns how many rows were beaten (0 when the ledger is unavailable).
+ */
+export function beatAgenticRuns(opts: BeatAgenticRunsOpts): number {
+  try {
+    const handle = openLedger();
+    const rows = handle.db
+      .query(`SELECT * FROM runs WHERE state IN (${ACTIVE_IN}) AND (run_id = ? OR (target_kind = 'business' AND (project_id = ? OR trace_id = ?)))`)
+      .all(...ACTIVE_STATES, opts.runId ?? "", opts.projectId ?? "", opts.traceId ?? opts.projectId ?? "") as Record<string, unknown>[];
+    let beaten = 0;
+    for (const row of rows.map(r => parseRow(r)!)) {
+      if (row.meta?.path !== "agentic") continue;
+      if (renewLease(handle, row.run_id, AGENTIC_LEASE_SEC, opts.source)) beaten++;
+    }
+    return beaten;
+  } catch (e) {
+    console.error(`[run-ledger] beat from ${opts.source} skipped (${(e as Error)?.message ?? e})`);
+    return 0;
+  }
 }
 
 // ── supervisor meta (lazy-sweep bookkeeping) ────────────────────────────
