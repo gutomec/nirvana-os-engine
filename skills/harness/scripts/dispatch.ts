@@ -62,6 +62,7 @@ import {
   type AgentXGauntletEvaluator, type AgentXRevisionRequest,
 } from "../lib/gauntlet/agent-x-cutover.ts";
 import { createHarnessLegacyAdapter, openKernel } from "../lib/run-kernel/index.ts";
+import { freezeExecutionSnapshot } from "../lib/runtime-snapshot.ts";
 
 // Back-compat re-exports: these helpers moved to lib/delivery-pipeline.ts in
 // routing-360 Phase 4.2 (the pipeline is shared by all three dispatch paths).
@@ -719,6 +720,25 @@ const employeePrompt = path.join(SKILLS, "businesses/lib/employee-prompt.ts");
 const gateScriptPath = path.join(SKILLS, "harness/scripts/quality-gate.ts");
 const verifyScriptPath = path.join(SKILLS, "businesses/scripts/verify-deliverable.ts");
 
+// Frozen runtime, provider and model decision of one canary Run: the broker answers
+// from the provider catalogs on disk (lib/runtime-snapshot.ts); without a descriptor
+// the snapshot is the previous literal and nothing changes. Broker errors are
+// explained here and end the Run before the producer inside runAgentXGauntlet
+// (RT-002): no silent switch, no legacy fallback.
+function frozenExecutionSnapshot(pid: string, rt: Runtime, targetKind: "business" | "squad" | "agent-x") {
+  const snapshot = freezeExecutionSnapshot({ runtimeId: rt, runtimeSource: runtimeDecision.source,
+    projectRoot: path.resolve(process.env.NIRVANA_PROJECT_ROOT || process.cwd()) });
+  if (snapshot.errors?.length) {
+    console.error(c("red", `✗ runtime '${rt}' is incompatible with the provider catalog; the Run ends before the producer:`));
+    for (const error of snapshot.errors) console.error(c("red", `    ${error}`));
+    emit("x_runtime_incompatible", { trace_id: pid, project_id: pid, target_kind: targetKind, runtime: rt,
+      runtime_source: runtimeDecision.source, errors: snapshot.errors, rejected: snapshot.rejected ?? [], catalog_dirs: snapshot.catalog?.dirs ?? [] });
+  } else {
+    for (const warning of snapshot.warnings ?? []) console.error(c("yellow", `⚠ ${warning}`));
+  }
+  return snapshot;
+}
+
 // Gauntlet evaluator shared by the three canaries: the offline quality gate, echoing the
 // candidate and revision ids the cutover assigns, with a graded score (share of gateable
 // files that pass) so the controller can measure progress between revisions.
@@ -900,13 +920,12 @@ if (pendingCascade?.kind === "squad-only") {
       if (candidate.sessionId) runLedger.recordSession(legacy, canonicalRunId, candidate.sessionId);
       return { ok: candidate.ok, sessionId: candidate.sessionId, costUsd: candidate.costUsd, error: candidate.error };
     };
+    const executionSnapshot = frozenExecutionSnapshot(pid, rt, "squad");
     try {
       const result = runAgentXGauntlet({
         kernel, legacy: createHarnessLegacyAdapter({ ledger: legacy, auditCwd: projDir }), producerTarget,
         projectId: pid, runId: canonicalRunId, traceId: pid, brief, projectRoot, outputsRoot: oroot,
-        intensity: executionOptions.intensity,
-        executionSnapshot: { runtime: { id: rt, source: runtimeDecision.source },
-          provider: { selection: "runtime-provider", resolved: false }, model: { selection: "runtime-default", resolved: false } },
+        intensity: executionOptions.intensity, executionSnapshot,
         expectedCostUsd: budget.roundBudgetUsd,
         executeCandidate: candidateRoot => produce(candidateRoot, brief),
         reviseCandidate: request => produce(request.candidateRoot, writeRevisionBrief(brief, request).text),
@@ -1040,13 +1059,12 @@ if (pendingCascade?.kind === "agent-x") {
       return { ok: candidate.ok, sessionId: candidate.sessionId, costUsd: candidate.costUsd,
         error: candidate.error || candidate.stderr || undefined };
     };
+    const executionSnapshot = frozenExecutionSnapshot(pid, rt, "agent-x");
     try {
       const result = runAgentXGauntlet({
         kernel, legacy: createHarnessLegacyAdapter({ ledger: legacy, auditCwd: projDir }),
         projectId: pid, runId: canonicalRunId, traceId: pid, brief, projectRoot: base, outputsRoot: oroot,
-        intensity: executionOptions.intensity,
-        executionSnapshot: { runtime: { id: rt, source: runtimeDecision.source },
-          provider: { selection: "runtime-provider", resolved: false }, model: { selection: "runtime-default", resolved: false } },
+        intensity: executionOptions.intensity, executionSnapshot,
         expectedCostUsd: budget.roundBudgetUsd,
         executeCandidate: candidateRoot => produce(candidateRoot, brief, briefPath),
         reviseCandidate(request) {
@@ -1276,6 +1294,7 @@ if (wantExec) {
       return { ok: candidate.ok, sessionId: candidate.sessionId, costUsd: candidate.costUsd,
         error: candidate.error || candidate.stderr || undefined };
     };
+    const executionSnapshot = frozenExecutionSnapshot(pid, rt, "business");
     const attempt = {
       markProductionStarted() {},
       run() {
@@ -1283,8 +1302,7 @@ if (wantExec) {
           kernel, legacy: createHarnessLegacyAdapter({ ledger: canaryLedger, auditCwd: projDir }),
           producerTarget: { kind: "business", slug }, projectId: pid, runId: canonicalRunId, traceId: pid,
           brief, projectRoot, outputsRoot: oroot, expectedCostUsd: budget.roundBudgetUsd, intensity: executionOptions.intensity,
-          executionSnapshot: { runtime: { id: rt, source: runtimeDecision.source, resolved: true },
-            provider: { selection: "runtime-provider", resolved: false }, model: { selection: "runtime-default", resolved: false } },
+          executionSnapshot,
           executeCandidate: candidateRoot => produce(candidateRoot, tmpBriefFile, brief),
           reviseCandidate(request) {
             const revision = writeRevisionBrief(brief, request);
@@ -1310,7 +1328,9 @@ if (wantExec) {
         });
       },
       shouldRollback(result: ReturnType<typeof runAgentXGauntlet>) {
-        return !result.finalGateRan && result.run.state === "rolled_back";
+        // RT-002: an incompatible runtime ends the Run with the explanation; it never
+        // falls back to the legacy executor.
+        return !result.finalGateRan && result.run.state === "rolled_back" && !executionSnapshot.errors?.length;
       },
     };
     try {

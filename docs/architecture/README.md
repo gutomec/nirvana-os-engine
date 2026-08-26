@@ -37,7 +37,8 @@ Este diretório é a fonte canônica para a evolução integrada do Run Kernel, 
 17. [Comando multi-target](gauntlet-multi-target-cli.md)
 18. [Timeline canônica no Glance](glance-canonical-timeline.md)
 19. [Execução no Glance](glance-execution.md)
-20. [Estado da implementação](implementation-status.md)
+20. [Snapshot de runtime](runtime-snapshot.md)
+21. [Estado da implementação](implementation-status.md)
 
 ## ADRs
 

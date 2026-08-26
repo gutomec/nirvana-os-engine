@@ -71,7 +71,7 @@ function env(setup: Fixture, extra: Record<string, string> = {}): Record<string,
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (value === undefined) continue;
-    if (/^(HARNESS_LOGS_DIR|NIRVANA_MULTI_TARGET_|NIRVANA_PROJECT_ROOT|NIRVANA_STATE_DB|NIRVANA_DISPATCH_SCRIPT|NIRVANA_BUSINESS_GAUNTLET|FAKE_DISPATCH_)/.test(key)) continue;
+    if (/^(HARNESS_LOGS_DIR|NIRVANA_MULTI_TARGET_|NIRVANA_PROJECT_ROOT|NIRVANA_STATE_DB|NIRVANA_DISPATCH_SCRIPT|NIRVANA_BUSINESS_GAUNTLET|FAKE_DISPATCH_|NIRVANA_PROVIDER_CATALOG_DIR|NIRVANA_ALLOW_STALE_CATALOG)/.test(key)) continue;
     out[key] = value;
   }
   return {
@@ -220,6 +220,11 @@ describe("nrv multi-target run", () => {
       expect(run.policySnapshotRef).toStartWith("snapshot_");
       const transitions = listEvents(kernel, setup.projectId).filter((event) => event.type === "run.transitioned").map((event) => (event.payload as { to: string }).to);
       expect(transitions).toEqual(["running", "verifying", "completed"]);
+      // The coordinator freezes the runtime it hands every node, like the canaries do.
+      const snapshot = listEvents(kernel, setup.projectId).find((event) => event.type === "runtime.selection_snapshot")!;
+      expect(snapshot.runId).toBe(runId);
+      expect((snapshot.payload as { ref: string }).ref).toStartWith("snapshot_");
+      expect((snapshot.payload as { snapshot: { runtime: unknown } }).snapshot.runtime).toMatchObject({ id: "codex", source: "flag" });
       return projectMultiTargetRun(kernel, setup.projectId, runId)!;
     });
     expect(projection.state).toBe("delivered");

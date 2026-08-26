@@ -232,6 +232,15 @@ export function runAgentXGauntlet(input: AgentXGauntletInput): AgentXGauntletRes
     const candidateIds = Array.from({ length: plan.candidateStrategy.count }, (_, index) => `can_${index + 1}`);
     const holdout = plan.gauntlets.some(gauntlet => gauntlet.holdout.enabled);
     let gauntlet = controller.begin(plan);
+    // RT-002: a frozen snapshot carrying the broker's `errors` (runtime, provider or
+    // model incompatible) ends the Run here, before any producer, with the reasons in
+    // the journal. Nothing is switched silently and the legacy executor never runs.
+    const incompatibility = Array.isArray((snapshot as { errors?: unknown }).errors) ? (snapshot as { errors: string[] }).errors : [];
+    if (incompatibility.length) {
+      gauntlet = controller.fail(`runtime incompatible: ${incompatibility.join(" ")}`);
+      run = transition("rolled_back", "rolled-back-runtime-incompatible", { reason: "runtime_incompatible", errors: incompatibility });
+      return { run, gauntlet, exitCode: 1, sessionId: null, finalGateRan: false };
+    }
     let withheldReason: string | undefined;
     const fail = (reason: string, key: string, failedSessionId: string | null): AgentXGauntletResult => {
       gauntlet = controller.fail(reason);

@@ -25,6 +25,7 @@
 // i18n-user-facing: file — what the user reads is PT-BR by contract; code,
 // identifiers and comments stay English.
 
+import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -37,9 +38,13 @@ import { coordinateMultiTargetPlan, type MultiTargetCoordinatorSnapshot, type Mu
 import { createRunKernelMultiTargetPorts, type RunKernelMultiTargetPorts } from "../lib/gauntlet/run-kernel-multi-target-ports.ts";
 import { createDispatchMultiTargetAdapters } from "../lib/gauntlet/multi-target-dispatch-adapters.ts";
 import { projectMultiTargetRun } from "../lib/gauntlet/multi-target-projection.ts";
-import { createRun, getRun, openKernel, transitionRun, type KernelHandle } from "../lib/run-kernel/store.ts";
+import { appendEvent, createRun, getRun, openKernel, transitionRun, type KernelHandle } from "../lib/run-kernel/store.ts";
+import { canonicalJson } from "../lib/run-kernel/canonical-json.ts";
 import { TERMINAL_RUN_STATES } from "../lib/run-kernel/lifecycle.ts";
 import type { CanonicalRunState, RunProjection } from "../lib/run-kernel/types.ts";
+import { detectExecutionRuntime } from "../lib/control-plane/execution-runner.ts";
+import { canonicalRuntimeName } from "../lib/runtime-rules.ts";
+import { freezeExecutionSnapshot } from "../lib/runtime-snapshot.ts";
 
 const requireCjs = createRequire(import.meta.url);
 const auditLib = requireCjs("../lib/audit.js") as {
@@ -316,7 +321,8 @@ async function commandRun(file: string, argv: string[]): Promise<number> {
   if (!json) printPlan(projectId, loaded, ws);
 
   const owner = flag(argv, "owner") || `${os.hostname()}:${process.pid}`;
-  const runtime = flag(argv, "runtime") || loaded.file.runtime;
+  const runtimeFlag = flag(argv, "runtime");
+  const runtime = runtimeFlag || loaded.file.runtime;
   const runId = multiTargetRunId(projectId);
   const policySnapshotRef = `snapshot_${loaded.compiled.digest.slice(0, 24)}`;
   const actor = { kind: "cli", id: owner };
@@ -338,6 +344,23 @@ async function commandRun(file: string, argv: string[]): Promise<number> {
         projectId, runId, traceId: projectId, planId: `plan_${runId}`, target: { kind: "agent-x", slug: "agent-x" },
         policySnapshotRef, actor, correlationId: runId, idempotencyKey: `multi-target:${runId}:create`,
       });
+      // The runtime every node inherits, frozen from the provider catalogs the way the
+      // canaries freeze theirs: `--runtime`, else the plan's, else the session host. The
+      // journal keeps this snapshot after any catalog update; a resumed Run never refreezes.
+      const runtimeSource = runtimeFlag ? "flag" : loaded.file.runtime ? "plan" : "default";
+      const runtimeId = runtime ? canonicalRuntimeName(runtime) : detectExecutionRuntime().runtime;
+      const snapshot = freezeExecutionSnapshot({ runtimeId, runtimeSource, projectRoot });
+      appendEvent(kernel, { projectId, runId, traceId: projectId, type: "runtime.selection_snapshot", actor, correlationId: runId,
+        idempotencyKey: `multi-target:${runId}:execution-snapshot`,
+        payload: { ref: `snapshot_${createHash("sha256").update(canonicalJson(snapshot)).digest("hex").slice(0, 24)}`, snapshot } });
+      if (snapshot.errors?.length) {
+        // RT-002: an incompatible runtime ends the Run before any node, reasons journaled.
+        emit("x_runtime_incompatible", { run_id: runId, runtime: runtimeId, runtime_source: runtimeSource, errors: snapshot.errors, rejected: snapshot.rejected ?? [] });
+        run = transition(kernel, projectId, runId, "rolled_back", actor, { reason: "runtime_incompatible", errors: snapshot.errors });
+        console.error(`✗ O runtime ${runtimeId} é incompatível com o catálogo de providers; o Run ${runId} foi encerrado antes de qualquer nó.`);
+        for (const error of snapshot.errors) console.error(`  ${error}`);
+        return report({ json, projectId, runId, run, projection: null, ws, file, code: EXIT.failed });
+      }
     }
     emit("x_multi_target_run_started", {
       run_id: runId, plan_digest: loaded.compiled.digest, reservation_digest: loaded.reservation?.digest ?? null,
