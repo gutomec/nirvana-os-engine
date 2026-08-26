@@ -21,6 +21,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { listRuntimes, runtimeAvailable } from "../../../_shared/lib/host-agent-driver.ts";
 import { harnessLogsDir } from "../../../_shared/lib/log-paths.ts";
+import { resolveSetting, settingsEnvForChild } from "../../../_shared/lib/settings.ts";
 import type { Runtime } from "../host-agent-driver.ts";
 import { canonicalRuntimeName, detectCurrentHost, resolveDefaultRuntime } from "../runtime-rules.ts";
 import type { TargetRef } from "../run-kernel/index.ts";
@@ -85,7 +86,7 @@ export function signalProcessGroup(pid: number, signal: NodeJS.Signals = "SIGTER
 export function detectExecutionRuntime(env: NodeJS.ProcessEnv = process.env): { runtime: Runtime; from: "host" | "env" | "path-scan" | "fallback"; available: boolean } {
   const decision = resolveDefaultRuntime({
     detectedHost: detectCurrentHost(env),
-    envDefault: (env.NIRVANA_DEFAULT_RUNTIME || "").trim(),
+    envDefault: resolveSetting("execution.default_runtime", { env }).value.trim(),
     normalize: canonicalRuntimeName,
     firstAvailable: () => listRuntimes().map(item => item.name).find(name => runtimeAvailable(name)) ?? null,
   });
@@ -113,12 +114,15 @@ export function createDispatchExecutionRunner(options: DispatchExecutionRunnerOp
       argv.push("--brief-file", input.briefFile, "--exec", "--project", input.projectId, "--run-id", input.runId,
         "--outputs-root", path.join(runDir, "outputs"));
       // The light Gauntlet is the agent-x canary's contract. Business and squad are not
-      // forced into a mode: the child inherits the server's env (NIRVANA_EXECUTION_MODE,
-      // allowlists) and decides as any dispatch would.
+      // forced into a mode: the child gets the effective settings (gauntlet.default_mode,
+      // the allowlist) pinned into its env below and decides as any dispatch would.
       if (input.target.kind === "agent-x") argv.push("--execution-mode=gauntlet", `--gauntlet-intensity=${input.intensity}`);
       if (options.runtime) argv.push("--runtime", options.runtime);
       const log = fs.openSync(path.join(runDir, "child.log"), "a");
-      const env = { ...environment(), NIRVANA_PROJECT_ROOT: input.projectRoot };
+      const base = { ...environment(), NIRVANA_PROJECT_ROOT: input.projectRoot };
+      // The effective settings travel as the variables the child reads (settings.ts
+      // settingsEnvForChild), so the project's and the user's config hold in the child.
+      const env = { ...base, ...settingsEnvForChild({ env: base, projectRoot: input.projectRoot }) };
       // Without it the child anchors its audit on the scaffold it creates (outputs/<pid>/.nirvana/logs),
       // not on the project's harness log the cockpit and the cost readers open; a caller's value wins.
       if (!env.HARNESS_LOGS_DIR) env.HARNESS_LOGS_DIR = harnessLogsDir({ projectRoot: input.projectRoot });

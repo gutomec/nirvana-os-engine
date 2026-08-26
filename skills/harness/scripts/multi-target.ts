@@ -14,11 +14,13 @@
 //   nrv multi-target run    <file> [--project <id>] [--runtime <rt>] [--owner <id>] [--retry-failed] [--json]
 //   nrv multi-target status <file|runId> [--project <id>] [--json]        read-only projection
 //
-// `run` is on by default. NIRVANA_MULTI_TARGET_KILL_SWITCH=1|true|on turns it
-// off, and so does NIRVANA_MULTI_TARGET_ENGINE=0|false|off (the opt-in flag of
-// the first releases; `=1` is still accepted and changes nothing). A refusal
-// names the variable, audits `x_multi_target_disabled`, exits 4 and touches
-// neither the kernel nor the workspace. Repeating `run` with the same plan
+// `run` is on by default: the `multi_target.enabled` setting (settings.ts).
+// NIRVANA_MULTI_TARGET_KILL_SWITCH=1|true|on turns it off, and so does
+// NIRVANA_MULTI_TARGET_ENGINE=0|false|off (the opt-in flag of the first
+// releases; `=1` is still accepted and changes nothing), or
+// `multi_target.enabled: false` in the project or global config. A refusal
+// names what switched it off, audits `x_multi_target_disabled`, exits 4 and
+// touches neither the kernel nor the workspace. Repeating `run` with the same plan
 // resumes: the coordinator is idempotent, completed nodes never spawn twice,
 // and a terminal Run answers without executing anything.
 //
@@ -60,6 +62,8 @@ import { detectExecutionRuntime } from "../lib/control-plane/execution-runner.ts
 import { canonicalRuntimeName } from "../lib/runtime-rules.ts";
 import { freezeExecutionSnapshot } from "../lib/runtime-snapshot.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
+import { MULTI_TARGET_ENGINE_ENV, MULTI_TARGET_KILL_SWITCH_ENV } from "../../_shared/lib/settings-schema.ts";
+import { resolveSetting } from "../../_shared/lib/settings.ts";
 
 const requireCjs = createRequire(import.meta.url);
 const auditLib = requireCjs("../lib/audit.js") as {
@@ -67,10 +71,8 @@ const auditLib = requireCjs("../lib/audit.js") as {
 };
 
 export const PLAN_SCHEMA_VERSION = "nirvana.multi-target-plan/v1alpha1";
-export const ENGINE_FLAG = "NIRVANA_MULTI_TARGET_ENGINE";
-export const KILL_SWITCH = "NIRVANA_MULTI_TARGET_KILL_SWITCH";
-const ON_VALUES = new Set(["1", "true", "on"]);
-const OFF_VALUES = new Set(["0", "false", "off"]);
+export const ENGINE_FLAG = MULTI_TARGET_ENGINE_ENV;
+export const KILL_SWITCH = MULTI_TARGET_KILL_SWITCH_ENV;
 const DISPATCH_SCRIPT_ENV = "NIRVANA_DISPATCH_SCRIPT";
 const EXIT = { delivered: 0, failed: 1, withheld: 2, invalid: 4 } as const;
 const TERMINAL_NODE_STATES = new Set<MultiTargetNodeProjection["state"]>(["delivered", "withheld", "failed", "skipped", "stalled"]);
@@ -183,26 +185,37 @@ export function resolveMultiTargetRun(kernel: KernelHandle, projectId: string): 
   return { run, runId: run.runId, attempt };
 }
 
-export interface EngineGate { enabled: boolean; variable: string | null; value: string | null; message: string }
-
-/**
- * `run` is on unless a variable switches it off: the kill switch at 1|true|on,
- * or the legacy opt-in flag at 0|false|off. The flag at `1` (or any other
- * value) changes nothing, so an environment set up for the opt-in era keeps
- * working. The message names the variable that switched the engine off.
- */
-export function engineGate(env: Record<string, string | undefined>): EngineGate {
-  const kill = env[KILL_SWITCH];
-  if (kill !== undefined && ON_VALUES.has(kill.trim().toLowerCase())) return disabledBy(KILL_SWITCH, kill);
-  const legacy = env[ENGINE_FLAG];
-  if (legacy !== undefined && OFF_VALUES.has(legacy.trim().toLowerCase())) return disabledBy(ENGINE_FLAG, legacy);
-  return { enabled: true, variable: null, value: null, message: "" };
+export interface EngineGate {
+  enabled: boolean;
+  /** The variable, or the key `multi_target.enabled` when a config file switched it off. */
+  variable: string | null;
+  value: string | null;
+  /** Where the refusal came from: `env`, `project` or `global`. */
+  source: string | null;
+  /** The config file, when one switched it off. */
+  path: string | null;
+  message: string;
 }
 
-function disabledBy(variable: string, value: string): EngineGate {
+/**
+ * `run` is on unless the `multi_target.enabled` setting switches it off: the
+ * kill switch variable at 1|true|on, the legacy opt-in flag at 0|false|off
+ * (at `1`, or any other value, it changes nothing, so an environment set up
+ * for the opt-in era keeps working), or `false` in the project or global
+ * config. The message names what switched the engine off.
+ */
+export function engineGate(env: Record<string, string | undefined>): EngineGate {
+  const enabled = resolveSetting("multi_target.enabled", { env });
+  if (enabled.value) return { enabled: true, variable: null, value: null, source: null, path: null, message: "" };
+  if (enabled.source === "env") {
+    return {
+      enabled: false, variable: enabled.variable!, value: enabled.raw!, source: "env", path: null,
+      message: `O engine multi-target está desligado por ${enabled.variable}=${enabled.raw}. Remova a variável para executar; plan e status funcionam sempre.`,
+    };
+  }
   return {
-    enabled: false, variable, value,
-    message: `O engine multi-target está desligado por ${variable}=${value}. Remova a variável para executar; plan e status funcionam sempre.`,
+    enabled: false, variable: "multi_target.enabled", value: "false", source: enabled.source, path: enabled.path ?? null,
+    message: `O engine multi-target está desligado por multi_target.enabled=false em ${enabled.path}. Rode nrv config set multi_target.enabled true (ou nrv config unset multi_target.enabled) para executar; plan e status funcionam sempre.`,
   };
 }
 
@@ -329,7 +342,7 @@ function usage(code: number): never {
     "  nrv multi-target run    <arquivo> [--project <id>] [--runtime <rt>] [--owner <id>] [--retry-failed] [--json]",
     "  nrv multi-target status <arquivo|runId> [--project <id>] [--json]",
     "",
-    `  run executa sem variável; ${KILL_SWITCH}=1 ou ${ENGINE_FLAG}=0 desligam. plan e status funcionam sempre.`,
+    `  run executa sem variável; ${KILL_SWITCH}=1, ${ENGINE_FLAG}=0 ou nrv config set multi_target.enabled false desligam. plan e status funcionam sempre.`,
     "  --retry-failed reabre um Run failed ou withheld num Run novo encadeado: nós entregues ficam, o resto volta a pending.",
     "  exit: 0 entregue · 1 falhou · 2 retido · 4 plano ou argumentos inválidos, engine desligado, ou retomada recusada",
   ].join("\n"));
@@ -369,7 +382,7 @@ async function commandRun(file: string, argv: string[]): Promise<number> {
   if (!gate.enabled) {
     // A refusal opens no kernel and writes no workspace; the audit line is its only trace.
     auditContext = { projectRoot: resolveProjectRoot(), projectId: resolveProjectId(file, null, flag(argv, "project")) };
-    emit("x_multi_target_disabled", { plan_file: path.resolve(file), variable: gate.variable, value: gate.value, exit: EXIT.invalid });
+    emit("x_multi_target_disabled", { plan_file: path.resolve(file), variable: gate.variable, value: gate.value, source: gate.source, path: gate.path, exit: EXIT.invalid });
     console.error(gate.message);
     return EXIT.invalid;
   }

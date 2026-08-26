@@ -12,6 +12,7 @@
  */
 
 import { parseArgs } from "../../_shared/lib/bun-helpers.ts";
+import { describeSettingSource, resolveSetting } from "../../_shared/lib/settings.ts";
 import { createDispatchExecutionRunner, detectExecutionRuntime } from "../lib/control-plane/execution-runner.ts";
 import { startServer } from "../lib/glance/server.ts";
 
@@ -38,8 +39,8 @@ WRITE ACTIONS (ON by default)
 
 EXECUTION
   A Message in an adopted project runs in a child dispatch process (the server
-  never blocks). NIRVANA_GLANCE_EXECUTION=0 keeps the cockpit up without
-  spawning anything; --read-only disables execution as well.
+  never blocks). NIRVANA_GLANCE_EXECUTION=0 (or nrv config set glance.execution false)
+  keeps the cockpit up without spawning anything; --read-only disables execution as well.
 
 EXAMPLES
   glance                              # full cockpit (most common usage)
@@ -64,15 +65,17 @@ const themeFlag = (flags.theme as string) || "apple";
 const theme = (["apple", "apple-dark", "awwwards"].includes(themeFlag) ? themeFlag : "apple") as "apple" | "apple-dark" | "awwwards";
 
 // Real execution of adopted-project Messages, by child dispatch process. --read-only
-// disables it; NIRVANA_GLANCE_EXECUTION=0 keeps the cockpit up without spawning
-// anything (a Message then ends in rolled_back / capability_unavailable).
-const executionEnabled = allowActions && process.env.NIRVANA_GLANCE_EXECUTION !== "0";
+// disables it; the `glance.execution` setting at false (NIRVANA_GLANCE_EXECUTION=0, or
+// the project / global config) keeps the cockpit up without spawning anything (a
+// Message then ends in rolled_back / capability_unavailable).
+const execution = resolveSetting("glance.execution");
+const executionEnabled = allowActions && execution.value;
 const executionRunner = executionEnabled ? createDispatchExecutionRunner() : undefined;
 if (executionEnabled) {
   const probe = detectExecutionRuntime();
   console.error(`[glance] execution ON — runtime ${probe.runtime} (${probe.from}${probe.available ? "" : "; not on PATH, Messages will end in capability_unavailable"})`);
 } else {
-  console.error(`[glance] execution OFF (${allowActions ? "NIRVANA_GLANCE_EXECUTION=0" : "--read-only"})`);
+  console.error(`[glance] execution OFF (${allowActions ? `glance.execution=false via ${describeSettingSource(execution)}` : "--read-only"})`);
 }
 
 await startServer({ port, open, idleMin, allowActions, theme, executionRunner });

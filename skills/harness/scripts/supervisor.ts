@@ -74,11 +74,12 @@ import {
 } from "../lib/run-ledger.ts";
 import { acquireLockSync } from "../../_shared/lib/file-lock.ts";
 import type { DeliveryArgs, DeliveryResult, GateOutcome } from "../lib/delivery-pipeline.ts";
+import { resolveSetting } from "../../_shared/lib/settings.ts";
 
 const requireCjs = createRequire(import.meta.url);
 const SUPERVISOR_PATH = fileURLToPath(import.meta.url);
 
-const STALL_BUDGET_MS = 5 * 60_000;   // matches the driver's default stall budget
+const STALL_BUDGET_MS = resolveSetting("supervisor.stall_threshold_ms").value;   // the driver's stall budget reads the same setting
 const GRACE_LEASE_SEC = 600;          // lease extension when a live run shows activity
 const SWEEP_MIN_INTERVAL_MS = 5 * 60_000;
 const RESUME_TIMEOUT_MS = 50 * 60_000;
@@ -86,8 +87,9 @@ const PID_EXIT_WAIT_MS = 2000;        // bounded wait for a SIGTERMed child befo
 /** How often a still-running run reports in. The owner asked to be kept in the
  *  loop, not only told at the end: an hour of silence is indistinguishable from
  *  a dead run. Rate-limited per row, so a 120s sweep never becomes spam.
- *  0 disables it. */
-const PROGRESS_PING_SEC = Number(process.env.NIRVANA_PROGRESS_PING_SEC ?? 1800);
+ *  0 disables it (the supervisor.progress_ping_sec setting: env
+ *  NIRVANA_PROGRESS_PING_SEC, else the project or global config). */
+const PROGRESS_PING_SEC = resolveSetting("supervisor.progress_ping_sec").value;
 const LAUNCHD_LABEL = "sh.nirvana.supervisor";
 
 /** Why an escalated run's artifacts can never be called complete: the run was
