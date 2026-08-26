@@ -27,6 +27,19 @@ export NIRVANA_BUSINESS_GAUNTLET_KILL_SWITCH=1
 
 O kill switch e qualquer bypass são avaliados antes do producer. Falha pré-produção pode retornar ao executor legado. Depois que a produção começa, o canário termina de forma auditável e nunca dispara a produção legada na mesma tentativa.
 
+### Engine multi-target por arquivo de plano
+
+`nrv multi-target` leva um plano declarado em `.nirvana/plans/<trace_id>.json` até o coordenador multi-target, com portas do Run Kernel e adapters de dispatch reais:
+
+```bash
+nrv multi-target plan .nirvana/plans/proj-x.json            # compila e imprime ondas, decisões e reserva
+export NIRVANA_MULTI_TARGET_ENGINE=1
+nrv multi-target run .nirvana/plans/proj-x.json             # executa; repetir retoma
+nrv multi-target status .nirvana/plans/proj-x.json --json   # projeção do Run, sem side effects
+```
+
+`run` é opt-in e `NIRVANA_MULTI_TARGET_KILL_SWITCH=1` o desliga. Exit 0 entregue, 1 falhou, 2 retido, 4 plano inválido ou opt-in ausente. Cada nó roda `nrv dispatch` como subprocesso com alvo explícito (`--business`, `--squad`, `--agent-x`), então exit codes, audit e canários do caminho legado não mudam. Schema, audit, retomada e limitações em [Comando multi-target](gauntlet-multi-target-cli.md).
+
 ## Contrato de aplicação
 
 O módulo `skills/harness/lib/gauntlet/` expõe compiler, evaluator registry, store durável e controller. O caller cria o Run no kernel, compila o plano e inicia `GauntletController`. Antes de cada fan-out, chama `beginRound` com a reserva de custo. Candidates, revisions e scorecards são registrados com IDs estáveis.

@@ -1,12 +1,12 @@
 import { canonicalJson } from "../run-kernel/canonical-json.ts";
-import { appendEvent, getRun, listEvents, type KernelHandle } from "../run-kernel/store.ts";
+import { appendEvent, getRun, type KernelHandle } from "../run-kernel/store.ts";
 import type { RunEvent } from "../run-kernel/types.ts";
 import type {
   MultiTargetAdapterResult,
   MultiTargetCoordinatorPorts,
   MultiTargetCoordinatorSnapshot,
-  MultiTargetNodeProjection,
 } from "./multi-target-coordinator.ts";
+import { projectMultiTargetRun } from "./multi-target-projection.ts";
 
 interface LeaseRow {
   owner_id: string;
@@ -48,26 +48,6 @@ function latestRunEvent(handle: KernelHandle, projectId: string, runId: string):
   const row = handle.db.query("SELECT event_json FROM run_events WHERE project_id = ? AND run_id = ? ORDER BY sequence DESC LIMIT 1")
     .get(projectId, runId) as { event_json: string } | null;
   return row ? JSON.parse(row.event_json) as RunEvent : null;
-}
-
-function applyEventsAfterSnapshot(snapshot: MultiTargetCoordinatorSnapshot, events: RunEvent[]): MultiTargetCoordinatorSnapshot {
-  const projected = structuredClone(snapshot);
-  for (const event of events) {
-    const node = (event.payload as { node?: MultiTargetNodeProjection }).node;
-    if (node) {
-      const index = projected.nodes.findIndex((item) => item.nodeId === node.nodeId);
-      if (index >= 0) projected.nodes[index] = structuredClone(node);
-      projected.currentWave = Math.max(projected.currentWave, node.waveIndex);
-      projected.state = "running";
-    }
-    if (event.type === "multi_target.plan_terminal") {
-      const payload = event.payload as { state?: MultiTargetCoordinatorSnapshot["state"]; reason?: string };
-      if (payload.state) projected.state = payload.state;
-      if (payload.reason) projected.terminalReason = payload.reason;
-    }
-  }
-  projected.reportedCostUsd = projected.nodes.reduce((sum, node) => sum + node.reportedCostUsd, 0);
-  return projected;
 }
 
 export function createRunKernelMultiTargetPorts(input: {
@@ -231,13 +211,10 @@ export function createRunKernelMultiTargetPorts(input: {
     standard: guarded(input.standard),
     gauntlet: guarded(input.gauntlet),
     state: {
+      // The same replay Glance reads: last snapshot plus every later
+      // multi_target.* event, from the one source in multi-target-projection.ts.
       load(): MultiTargetCoordinatorSnapshot | null {
-        const events = listEvents(input.kernel, input.projectId).filter((event) => event.runId === input.runId);
-        const snapshots = events.filter((event) => event.type === "multi_target.snapshot_saved");
-        const latest = snapshots.at(-1);
-        if (!latest) return null;
-        const snapshot = structuredClone((latest.payload as { snapshot: MultiTargetCoordinatorSnapshot }).snapshot);
-        return applyEventsAfterSnapshot(snapshot, events.filter((event) => event.sequence > latest.sequence));
+        return projectMultiTargetRun(input.kernel, input.projectId, input.runId);
       },
       save(snapshot): void {
         appendCausal("multi_target.snapshot_saved", `multi-target:${input.runId}:snapshot:${snapshot.version}`, { snapshot });

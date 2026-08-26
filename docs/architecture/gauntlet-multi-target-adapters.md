@@ -2,7 +2,7 @@
 
 ## Estado
 
-`createDispatchMultiTargetAdapters` devolve os adapters `standard` e `gauntlet` esperados por `MultiTargetCoordinatorPorts`. Cada nó executa `skills/harness/scripts/dispatch.ts` como subprocesso, então exit codes, artifacts, audit, session files e canários do caminho legado continuam valendo sem alteração. A factory é interna: nenhum comando público chama o coordenador neste corte, e os únicos consumidores são os testes.
+`createDispatchMultiTargetAdapters` devolve os adapters `standard` e `gauntlet` esperados por `MultiTargetCoordinatorPorts`. Cada nó executa `skills/harness/scripts/dispatch.ts` como subprocesso, então exit codes, artifacts, audit, session files e canários do caminho legado continuam valendo sem alteração. A factory é consumida por `nrv multi-target run` ([Comando multi-target](gauntlet-multi-target-cli.md)) e pelos testes.
 
 ## Entrada da factory
 
@@ -18,7 +18,7 @@
 O diretório do nó vem de `outputs_path` do manifest sob `workspaceRoot` (`businesses/<slug>/`, `squads/<slug>/`, `deliverables/<id>/`). Antes do spawn, o adapter grava:
 
 - `DISPATCH-INSTRUCTION.md`, seguindo o template do harness: identidade do target, ponteiro para `brief-enriched.md`, entregável, caminhos absolutos dos `_SUMMARY.md` dos upstreams entregues, fases downstream e o caminho de saída;
-- `dispatch-brief.md`, o brief entregue ao dispatch via `--brief-file`, com o seletor explícito do alvo, o sub-brief e o ponteiro para a instrução;
+- `dispatch-brief.md`, o brief entregue ao dispatch via `--brief-file`, com o sub-brief e o ponteiro para a instrução;
 - `outputs/`, destino de `--outputs-root`.
 
 Upstreams do tipo `support`, como o brief, não entram na lista de resumos, porque não produzem `_SUMMARY.md`.
@@ -29,13 +29,13 @@ O scaffold legado do dispatch (agent-prompt, session.json, handoffs) continua on
 
 | Alvo | Comando |
 | --- | --- |
-| `business` | `bun dispatch.ts <slug> --brief-file <...> --exec --project <id> --outputs-root <abs>` |
-| `squad` | `bun dispatch.ts --auto --brief-file <...>`, com o brief iniciando por `use squad <slug>:` |
-| `agent-x` e `synthesis` | `bun dispatch.ts --auto --brief-file <...>`, com o brief iniciando por `use agent-x` |
+| `business` | `bun dispatch.ts --business <slug> --brief-file <...> --exec --project <id> --outputs-root <abs>` |
+| `squad` | `bun dispatch.ts --squad <slug> --brief-file <...> --exec --project <id> --outputs-root <abs>` |
+| `agent-x` e `synthesis` | `bun dispatch.ts --agent-x --brief-file <...> --exec --project <id> --outputs-root <abs>` |
 
 `--runtime <rt>` é acrescentado quando informado. `--max-budget` recebe o menor valor entre a concessão da reserva (modo `gauntlet`) e `budgetUsd[nodeId]`.
 
-Apenas o business tem seleção determinística em código. O dispatch nunca conecta `resolveDispatchPlan.explicitTarget`; para squads ele depende do roteador agêntico honrar a menção `use squad <slug>`, e para agent-x não existe seletor algum. O adapter usa a forma mais explícita que o CLI legado aceita e não faz roteamento por palavra-chave. Um seletor determinístico no dispatch é trabalho fora deste corte.
+As três flags são mutuamente exclusivas entre si e com `--auto`. `--business` equivale ao positional; `--squad` preenche `resolveDispatchPlan.explicitTarget` e segue pela rota squad-only; `--agent-x` entra direto no branch agent-x. Nenhuma consulta o roteador, então um nó não paga chamada de LLM para ser selecionado, e o brief entregue ao dispatch é o sub-brief sem prefixo.
 
 ## Modo gauntlet
 
@@ -70,4 +70,4 @@ Recusas de intensidade e abortos não gravam marcador: a primeira não executou 
 
 ## Limitações
 
-Não há cutover no CLI; o coordenador segue sem comando público. O scaffold legado e o workspace multi-target são árvores separadas. A seleção de squad e agent-x passa pelo roteador agêntico do dispatch, com o custo de roteamento que ele tem. Nenhum teste toca rede, LLM ou runtime real: o dispatch é substituído por um script Bun que grava argv, ambiente e cwd, emite o evento de custo e sai com o código configurado.
+O scaffold legado e o workspace multi-target são árvores separadas. Nenhum teste toca rede, LLM ou runtime real: o dispatch é substituído por um script Bun compartilhado (`tests/helpers/fake-dispatch.ts`) que grava argv, ambiente e cwd, emite o evento de custo e sai com o código configurado.

@@ -2,7 +2,7 @@
 
 ## Estado e fronteira
 
-`coordinateMultiTargetPlan` é a fronteira interna que consome `CompiledMultiTargetPlan` e `AggregateGauntletBudgetReservation`. Ela executa o manifest existente por ondas, mas não está conectada ao CLI, ao dispatch público ou a entidades instaladas.
+`coordinateMultiTargetPlan` é a fronteira interna que consome `CompiledMultiTargetPlan` e `AggregateGauntletBudgetReservation`. Ela executa o manifest existente por ondas. O comando opt-in `nrv multi-target run` a conecta ao CLI e aos adapters de dispatch ([Comando multi-target](gauntlet-multi-target-cli.md)); nenhuma rota existente do dispatch a chama.
 
 O coordenador não recompila política, não recalcula reserva e não constrói outro DAG. Antes de qualquer side effect, ele recalcula os digests dos snapshots, exige correspondência entre `reservation.policyDigest` e `plan.digest` e recusa reservas rejeitadas. Um plano com decisões Gauntlet não pode iniciar sem reserva agregada.
 
@@ -39,4 +39,4 @@ Nós terminais não executam novamente. Um nó persistido como `running` só é 
 
 ## Limitações e próximo cutover
 
-Não há adapter de produção registrado, cancellation policy, recovery humano nem comando público. Os testes usam somente adapters locais determinísticos sobre SQLite real. O próximo cutover deve provar a integração no Glance e liberar uma allowlist separada antes de encaminhar qualquer dispatch público ao coordenador.
+Não há cancellation policy nem recovery humano. Os adapters de produção e o comando público existem ([adapters](gauntlet-multi-target-adapters.md), [comando](gauntlet-multi-target-cli.md)); o comando permanece opt-in por variável de ambiente, e nenhuma rota existente do dispatch encaminha ao coordenador.

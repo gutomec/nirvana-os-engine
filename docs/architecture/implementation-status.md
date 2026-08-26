@@ -11,7 +11,7 @@ Este documento separa fundação implementada, integração ativa e cutovers ain
 | Política de runtime ativo | Implementada | Testes de compatibilidade e fallback | Nenhuma enumeração central é exigida pela política `active` |
 | Runtime Provider e Model Broker | Implementados | Catálogos extensíveis, seleção por capability, stale data e snapshot nos Runs do canário | O dispatch legado ainda não persiste o snapshot escolhido em todo Run |
 | Run Kernel | Implementado como fundação opt-in | Journal, projeções, outbox, transcript, ArtifactRef e recovery | O dispatch legado ainda não faz dual-write em todos os caminhos |
-| Gauntlet Engine | Engine implementada, com canário operacional | Compiler, stores, controller, budgets, replay, `agent-x light`, Squad único `light`, política, reserva, coordenador multi-target, portas Run Kernel com lease, heartbeat e abort, adapters de dispatch por subprocesso | O coordenador multi-target ainda não tem cutover público; `balanced` e `exhaustive` ainda não usam o controller e são recusados pelos adapters |
+| Gauntlet Engine | Engine implementada, com canário operacional | Compiler, stores, controller, budgets, replay, `agent-x light`, Squad único `light`, política, reserva, coordenador multi-target, portas Run Kernel com lease, heartbeat e abort, adapters de dispatch por subprocesso com alvo explícito, comando opt-in `nrv multi-target plan|run|status` | O comando multi-target exige `NIRVANA_MULTI_TARGET_ENGINE=1` e o protocolo em prosa segue padrão nos runtimes interativos; `balanced` e `exhaustive` ainda não usam o controller e são recusados pelos adapters |
 | Glance Project Workspace | Control plane com canário operacional | Project, Conversation, Message, Run, Events, SSE, queue recuperável, timeline canônica rotulada e projeção multi-target por Run | Runs `running` só podem ser retomados quando uma lease recuperável for comprovada; a projeção multi-target só existe depois do primeiro snapshot do coordenador |
 | Cutover vertical | Canário concluído | `agent-x light` une dispatch, Run Kernel, Gauntlet, gate final e leitura no Glance | A expansão para os demais targets permanece pendente |
 
@@ -48,6 +48,8 @@ A facade de compatibilidade é opt-in. Ela não altera readers legados por simpl
 O compiler produz planos determinísticos para `light`, `balanced` e `exhaustive`. O controller bloqueia nova rodada sem orçamento, impõe duração e quantidade máxima de rounds, detecta falta de progresso, impede autoavaliação e registra candidates e scorecards imutáveis.
 
 Essas garantias foram testadas com adapters determinísticos. No CLI de produção, o corte `agent-x + --exec + gauntlet + light` substitui o executor legado pelo controller. O canário executa um candidate isolado, uma avaliação independente e o gate final. As demais combinações permanecem fora do cutover e não autorizam afirmar que houve competição entre candidates.
+
+O engine multi-target tem entrada pública escriturada: `nrv multi-target plan|run|status` compila um plano em arquivo (`nirvana.multi-target-plan/v1alpha1`), cria o Run no kernel do projeto, executa as ondas pelas portas do Run Kernel e pelos adapters de dispatch, e transiciona `prepared → running → verifying → completed|withheld|failed`. O `run` é opt-in por `NIRVANA_MULTI_TARGET_ENGINE=1`, com kill switch, e repetir o comando retoma sem reexecutar nós concluídos. O dispatch ganhou `--business`, `--squad` e `--agent-x`, então os adapters selecionam o alvo sem chamada ao roteador. Detalhes em [Comando multi-target](gauntlet-multi-target-cli.md).
 
 ### Glance
 

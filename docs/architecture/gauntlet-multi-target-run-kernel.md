@@ -2,7 +2,7 @@
 
 ## Estado
 
-`createRunKernelMultiTargetPorts` conecta o coordenador interno ao Run Kernel existente. A factory recebe um `KernelHandle`, identidade de Project e Run, owner da execução, actor, correlation e os dois adapters injetáveis. Nenhum comando público usa essa factory neste corte.
+`createRunKernelMultiTargetPorts` conecta o coordenador interno ao Run Kernel existente. A factory recebe um `KernelHandle`, identidade de Project e Run, owner da execução, actor, correlation e os dois adapters injetáveis. `nrv multi-target run` usa essa factory ([Comando multi-target](gauntlet-multi-target-cli.md)).
 
 Não existe banco ou ledger paralelo. Snapshots e eventos entram em `run_events`, recebem sequence do Project e seguem para o outbox canônico. A única tabela operacional adicional no mesmo SQLite é `kernel_multi_target_leases`, usada para exclusão e recuperação por nó.
 
@@ -12,7 +12,7 @@ Cada snapshot usa o evento idempotente `multi_target.snapshot_saved`, identifica
 
 Eventos de nó carregam sua projeção completa. A porta mantém uma cadeia causal dentro do Run: cada novo evento aponta para o evento anterior por `causationId`. O Run Kernel fornece sequence monotônica por Project, isolamento, identidade idempotente e outbox durável.
 
-No reload, a porta lê o último snapshot e reaplica eventos `multi_target.*` posteriores. Isso cobre uma interrupção depois de `node_delivered`, `node_withheld` ou `budget_exceeded` e antes do próximo `snapshot_saved`. Um nó terminal recuperado pelo journal não executa novamente.
+No reload, a porta delega a `projectMultiTargetRun` (`multi-target-projection.ts`), a mesma leitura do Glance: o último snapshot mais os eventos `multi_target.*` posteriores, de uma única fonte. Isso cobre uma interrupção depois de `node_delivered`, `node_withheld` ou `budget_exceeded` e antes do próximo `snapshot_saved`. Um nó terminal recuperado pelo journal não executa novamente.
 
 Repetir a mesma operação com o mesmo payload retorna o evento existente. Reusar a identidade com payload divergente falha fechado.
 
@@ -44,4 +44,4 @@ O timer é sempre limpo quando a promise resolve ou rejeita, e um batimento disp
 
 As provas herméticas cobrem concorrência de claim, isolamento entre Projects e Runs, crash entre evento e snapshot, crash com lease viva, expiração, owner incompatível, replay sem duplicação, heartbeat com agendador manual, perda de lease durante a execução e expiração no fim do adapter.
 
-A lease protege início, execução e retomada. A renovação é responsabilidade da porta, nunca do adapter. O abort encerra o subprocesso dos adapters de dispatch (ver [adapters de dispatch](gauntlet-multi-target-adapters.md)); um adapter que ignore o sinal continua rodando por conta própria, e ainda assim seu resultado é descartado. Ainda não há política de recovery humano, publicação específica no Glance nem cutover por allowlist.
+A lease protege início, execução e retomada. A renovação é responsabilidade da porta, nunca do adapter. O abort encerra o subprocesso dos adapters de dispatch (ver [adapters de dispatch](gauntlet-multi-target-adapters.md)); um adapter que ignore o sinal continua rodando por conta própria, e ainda assim seu resultado é descartado. Ainda não há política de recovery humano; a entrada pública é o comando opt-in `nrv multi-target run`.

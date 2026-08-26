@@ -72,4 +72,4 @@ Ausência de política ou de `maxCostUsd` retorna reserva nula e preserva o plan
 
 ## Limitações e próximo cutover
 
-O coordenador interno já consome decisões e reservas por adapters injetáveis, sem cutover público. Ele continua desconectado do dispatch, de adapters de produção e do Run Kernel concreto. A reserva é preventiva e não representa dinheiro consumido. O próximo cutover deve implementar as portas canônicas, preservar idempotência e crash resume com storage real e provar uma allowlist isolada antes de alterar qualquer rota pública.
+O coordenador consome decisões e reservas pelas portas do Run Kernel e pelos adapters de dispatch, com entrada pública opt-in em `nrv multi-target run` ([Comando multi-target](gauntlet-multi-target-cli.md)). A reserva é preventiva e não representa dinheiro consumido; o custo observado vem dos eventos `agent_executed` de cada nó. Nenhuma rota existente do dispatch foi alterada.

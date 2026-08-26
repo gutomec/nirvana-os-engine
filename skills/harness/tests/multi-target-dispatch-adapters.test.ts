@@ -9,6 +9,7 @@ import { createDispatchMultiTargetAdapters, MULTI_TARGET_RESULT_MARKER } from ".
 import { createRunKernelMultiTargetPorts } from "../lib/gauntlet/run-kernel-multi-target-ports.ts";
 import { compileMultiTargetGauntletPolicy, type CompiledMultiTargetPlan } from "../lib/plan-compiler.ts";
 import { createRun, listEvents, openKernel } from "../lib/run-kernel/store.ts";
+import { writeFakeDispatch } from "./helpers/fake-dispatch.ts";
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -39,47 +40,6 @@ function compile() {
   return { plan: compiled.plan!, reservation: reserveAggregateGauntletBudget(compiled.plan!).reservation! };
 }
 
-// The fake dispatch stands in for scripts/dispatch.ts: it records argv, the
-// Nirvana env keys, cwd and the brief it received into the outputs root,
-// appends one agent_executed cost event exactly where the legacy paths write
-// it, produces _SUMMARY.md and exits with the configured code.
-const FAKE_DISPATCH = `
-import * as fs from "node:fs";
-import * as path from "node:path";
-const argv = Bun.argv.slice(2);
-const VALUE_FLAGS = new Set(["--brief-file", "--project", "--outputs-root", "--runtime", "--max-budget"]);
-const value = (name) => {
-  const index = argv.findIndex((item) => item === name || item.startsWith(name + "="));
-  if (index < 0) return undefined;
-  return argv[index].includes("=") ? argv[index].slice(name.length + 1) : argv[index + 1];
-};
-const positional = argv.filter((item, index) => !item.startsWith("--") && !(index > 0 && VALUE_FLAGS.has(argv[index - 1])));
-const outputsRoot = value("--outputs-root");
-const brief = fs.readFileSync(value("--brief-file"), "utf8");
-fs.mkdirSync(outputsRoot, { recursive: true });
-const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => /^(NIRVANA_|HARNESS_|FAKE_)/.test(key)));
-fs.writeFileSync(path.join(outputsRoot, "dispatch-capture.json"), JSON.stringify({ argv, positional, env, cwd: process.cwd(), brief }));
-if (process.env.FAKE_DISPATCH_SPAWN_LOG) fs.appendFileSync(process.env.FAKE_DISPATCH_SPAWN_LOG, outputsRoot + "\\n");
-const sleepMs = Number(process.env.FAKE_DISPATCH_SLEEP_MS ?? 0);
-if (sleepMs > 0) await Bun.sleep(sleepMs);
-const cost = Number(process.env.FAKE_DISPATCH_COST_USD ?? 0);
-if (cost > 0) {
-  const squad = brief.match(/^use squad ([a-z0-9-]+):/);
-  const target = positional[0] ? { business_slug: positional[0], employee: "intake" }
-    : squad ? { squad_slug: squad[1], employee: "squad:" + squad[1] } : { employee: "agent-x" };
-  const logsDir = process.env.HARNESS_LOGS_DIR ?? path.join(process.cwd(), ".nirvana", "logs", "harness");
-  const day = path.join(logsDir, new Date().toISOString().slice(0, 10));
-  fs.mkdirSync(day, { recursive: true });
-  const project = value("--project");
-  fs.appendFileSync(path.join(day, "audit.jsonl"), JSON.stringify({ ts: new Date().toISOString(), event: "agent_executed",
-    trace_id: project, project_id: project, ...target, cost_usd: cost }) + "\\n");
-}
-fs.writeFileSync(path.join(outputsRoot, "_SUMMARY.md"), "# Summary\\n\\n" + positional.join(" ") + "\\n");
-const code = Number(process.env.FAKE_DISPATCH_EXIT_CODE ?? 0);
-if (code !== 0) console.error("fake dispatch stopped with exit " + code);
-process.exit(code);
-`;
-
 function fixture() {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "nirvana-multi-target-adapters-")));
   roots.push(root);
@@ -88,8 +48,7 @@ function fixture() {
   const workspaceRoot = join(projectRoot, ".nirvana", "outputs", projectId);
   mkdirSync(workspaceRoot, { recursive: true });
   writeFileSync(join(workspaceRoot, "brief-enriched.md"), "# Brief\n", "utf8");
-  const dispatchScriptPath = join(root, "fake-dispatch.ts");
-  writeFileSync(dispatchScriptPath, FAKE_DISPATCH, "utf8");
+  const dispatchScriptPath = writeFakeDispatch(root);
   return { root, projectRoot, projectId, workspaceRoot, dispatchScriptPath, spawnLog: join(root, "spawns.log") };
 }
 
@@ -135,13 +94,14 @@ function spawnCount(setup: Fixture): number {
 }
 
 describe("multi-target dispatch adapters", () => {
-  test("standard business selects the slug explicitly with exec, project and an absolute outputs root", async () => {
+  test("standard business selects the slug explicitly with --business, exec, project and an absolute outputs root", async () => {
     const setup = fixture();
     const { plan } = compile();
     const result = await adapters(setup, plan, { FAKE_DISPATCH_COST_USD: "0.4" }, { runtime: "codex" }).standard.run(nodeInput(plan, "business-a"));
     expect(result).toEqual({ state: "delivered", reportedCostUsd: 0.4, outputPaths: ["businesses/business-a/outputs/"] });
     const captured = capture(setup, "businesses/business-a/outputs/");
-    expect(captured.positional).toEqual(["business-a"]);
+    expect(captured.positional).toEqual([]);
+    expect(flag(captured, "--business")).toBe("business-a");
     expect(captured.argv).not.toContain("--auto");
     expect(captured.argv).toContain("--exec");
     expect(flag(captured, "--project")).toBe(setup.projectId);
@@ -163,7 +123,7 @@ describe("multi-target dispatch adapters", () => {
     const result = await ports.gauntlet.run(nodeInput(plan, "business-b", { grantedCostUsd: 2 }));
     expect(result.state).toBe("delivered");
     const captured = capture(setup, "businesses/business-b/outputs/");
-    expect(captured.positional).toEqual(["business-b"]);
+    expect(flag(captured, "--business")).toBe("business-b");
     expect(captured.argv).toContain("--execution-mode=gauntlet");
     expect(captured.argv).toContain("--gauntlet-intensity=light");
     expect(flag(captured, "--max-budget")).toBe("2");
@@ -176,7 +136,7 @@ describe("multi-target dispatch adapters", () => {
     expect(spawnCount(setup)).toBe(1);
   });
 
-  test("squad and synthesis go through --auto with explicit 'use squad' and 'use agent-x' selectors", async () => {
+  test("squad and synthesis select the target with --squad and --agent-x, never --auto", async () => {
     const setup = fixture();
     const { plan } = compile();
     const ports = adapters(setup, plan, { FAKE_DISPATCH_COST_USD: "0.1" });
@@ -186,16 +146,18 @@ describe("multi-target dispatch adapters", () => {
     expect(squad).toMatchObject({ state: "delivered", reportedCostUsd: 0.1 });
     const squadCapture = capture(setup, "squads/squad-c/outputs/");
     expect(squadCapture.positional).toEqual([]);
-    expect(squadCapture.argv).toContain("--auto");
-    expect(squadCapture.brief).toStartWith("use squad squad-c: Assemble C from A and B.");
+    expect(squadCapture.argv).not.toContain("--auto");
+    expect(flag(squadCapture, "--squad")).toBe("squad-c");
+    expect(squadCapture.brief).toStartWith("Assemble C from A and B.");
 
     const synthesis = await ports.gauntlet.run(nodeInput(plan, "final-output", { grantedCostUsd: 1, upstreamPaths: ["squads/squad-c/outputs/"] }));
     expect(synthesis).toMatchObject({ state: "delivered", reportedCostUsd: 0.1 });
     const synthesisCapture = capture(setup, "deliverables/final-output/outputs/");
     expect(synthesisCapture.positional).toEqual([]);
-    expect(synthesisCapture.argv).toContain("--auto");
+    expect(synthesisCapture.argv).not.toContain("--auto");
+    expect(synthesisCapture.argv).toContain("--agent-x");
     expect(synthesisCapture.argv).toContain("--execution-mode=gauntlet");
-    expect(synthesisCapture.brief).toStartWith("use agent-x");
+    expect(synthesisCapture.brief).toStartWith("Write the final report.");
     expect(synthesisCapture.brief).toContain(join(setup.workspaceRoot, "squads", "squad-c", "outputs", "_SUMMARY.md"));
   });
 

@@ -3,13 +3,9 @@
 // subprocess, so the legacy contract (exit codes, artifacts, audit, session
 // files, canaries) is preserved verbatim: nothing here re-implements dispatch.
 //
-// Target selection is always explicit, never keyword routing:
-//   business  → positional `<slug>` (dispatch.ts resolves it without a router)
-//   squad     → `--auto` with a brief that opens with `use squad <slug>:`, the
-//               form the agentic router is instructed to honor without negotiation
-//   agent-x / synthesis → `--auto` with a brief that opens with `use agent-x`;
-//               dispatch.ts has no deterministic agent-x selector, so this is the
-//               closest explicit form the legacy CLI accepts
+// Target selection is always explicit, never keyword routing: dispatch.ts
+// resolves `--business <slug>`, `--squad <slug>` and `--agent-x` without
+// consulting the router (synthesis nodes run as agent-x).
 //
 // Cost source: `agent_executed.cost_usd` events in the harness audit log,
 // filtered by trace and by the target discriminator each legacy path writes
@@ -136,12 +132,6 @@ function observedCostUsd(logsDir: string, projectId: string, matches: (event: Re
     }
   }
   return total;
-}
-
-function selector(target: MultiTargetAdapterInput["target"]): string | null {
-  if (target.kind === "business") return null;
-  if (target.kind === "squad") return `use squad ${target.id}`;
-  return "use agent-x (generalist; no business or squad)";
 }
 
 function renderInstruction(args: {
@@ -272,15 +262,15 @@ export function createDispatchMultiTargetAdapters(input: DispatchMultiTargetAdap
       downstreams: phase.consumed_by.map((id) => phases.get(id)).filter((consumer): consumer is ManifestPhase => !!consumer),
     }), "utf8");
     const briefFile = path.join(nodeDir, MULTI_TARGET_BRIEF_FILE);
-    const prefix = selector(adapterInput.target);
-    fs.writeFileSync(briefFile, `${prefix ? `${prefix}: ${deliverable}` : deliverable}
+    fs.writeFileSync(briefFile, `${deliverable}
 
 Read ${instructionFile} before producing anything: it names the upstream summaries to read first and fixes your output path (${outputsDir}). Write ${path.join(outputsDir, "_SUMMARY.md")} last.
 `, "utf8");
 
     const command = ["bun", dispatchScript];
-    if (adapterInput.target.kind === "business") command.push(adapterInput.target.id);
-    else command.push("--auto");
+    if (adapterInput.target.kind === "business") command.push("--business", adapterInput.target.id);
+    else if (adapterInput.target.kind === "squad") command.push("--squad", adapterInput.target.id);
+    else command.push("--agent-x");
     command.push("--brief-file", briefFile, "--exec", "--project", input.projectId, "--outputs-root", outputsDir);
     if (input.runtime) command.push("--runtime", input.runtime);
     const budgets = [adapterInput.mode === "gauntlet" ? adapterInput.grantedCostUsd : NaN, input.budgetUsd?.[adapterInput.nodeId] ?? NaN]

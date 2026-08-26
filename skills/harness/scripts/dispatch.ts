@@ -40,7 +40,7 @@ import { proxyEnrichBrief } from "../lib/brief-proxy.ts";
 import { resolveRoutingMode } from "../../_shared/lib/routing-mode.ts";
 import { runTeam } from "../lib/team-orchestrator.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
-import { agenticRoute } from "../lib/agentic-router.ts";
+import { agenticRoute, type AgenticRouteDecision } from "../lib/agentic-router.ts";
 import { runWithCascade } from "../lib/cascade-runner.ts";
 import { resolveCascadeRoot, loadCascade, nextAfter } from "../lib/cascade.ts";
 import { classify } from "../lib/quota-detector.ts";
@@ -50,7 +50,7 @@ import { preflightReindex } from "../lib/preflight-index.ts";
 import { maybeSweep } from "./supervisor.ts";
 import * as runLedger from "../lib/run-ledger.ts";
 import { loadHarnessConfig } from "../lib/harness-config.ts";
-import { planRouteWithFallback, runAgentX, type DispatchPlan } from "../lib/dispatch-cascade.ts";
+import { planRouteWithFallback, resolveDispatchPlan, runAgentX, type DispatchPlan } from "../lib/dispatch-cascade.ts";
 import { runSquadHeadless } from "../lib/squad-exec.ts";
 import { runDelivery, deliverAfterRuntimeError, gateableFiles, runGateOnce, type DeliveryArgs, type DeliveryResult, type RuntimeErrorOutcome } from "../lib/delivery-pipeline.ts";
 import { runBusinessPostGate } from "../lib/business-post-gate.ts";
@@ -89,7 +89,7 @@ function arg(name: string, fallback?: string): string | undefined {
 // filter(!startsWith("--")) treats the "X" in "--project X" as a positional,
 // which made "--project caso-bruno" leak its value as the inline brief and
 // override --brief-file. Skip the token after each known value-flag.
-const VALUE_FLAGS = new Set(["--project", "--runtime", "--manifest", "--brief-file", "--outputs-root", "--max-budget", "--timeout", "--max-revisions", "--execution-mode", "--gauntlet-intensity"]);
+const VALUE_FLAGS = new Set(["--project", "--runtime", "--manifest", "--brief-file", "--outputs-root", "--max-budget", "--timeout", "--max-revisions", "--execution-mode", "--gauntlet-intensity", "--business", "--squad"]);
 function extractPositional(argv: string[]): string[] {
   const out: string[] = [];
   for (let i = 0; i < argv.length; i++) {
@@ -102,14 +102,64 @@ function extractPositional(argv: string[]): string[] {
   }
   return out;
 }
+
+// ── explicit target selection ──────────────────────────────────────────────
+// --business <slug> · --squad <slug> · --agent-x name the target directly and
+// never consult the router. They are mutually exclusive with each other and
+// with --auto. Pure: the CLI flow turns an error into exit 4.
+export type ExplicitTarget = { kind: "business" | "squad"; slug: string } | { kind: "agent-x" };
+export function parseExplicitTarget(argv: string[]): { target: ExplicitTarget | null; error: string | null } {
+  // undefined = flag absent · null = flag given without a slug · string = slug
+  const value = (name: string): string | null | undefined => {
+    const i = argv.findIndex(a => a === name || a.startsWith(`${name}=`));
+    if (i === -1) return undefined;
+    const v = argv[i].includes("=") ? argv[i].slice(name.length + 1) : argv[i + 1];
+    return v && !v.startsWith("--") ? v : null;
+  };
+  const business = value("--business");
+  const squad = value("--squad");
+  const agentX = argv.includes("--agent-x");
+  const auto = argv.includes("--auto");
+  const given = [business !== undefined && "--business", squad !== undefined && "--squad", agentX && "--agent-x", auto && "--auto"]
+    .filter((flag): flag is string => typeof flag === "string");
+  if (given.length > 1) return { target: null, error: `${given.join(", ")} are mutually exclusive: name one target, or use --auto` };
+  if (business === null) return { target: null, error: "--business requires a slug" };
+  if (squad === null) return { target: null, error: "--squad requires a slug" };
+  if (business) return { target: { kind: "business", slug: business }, error: null };
+  if (squad) return { target: { kind: "squad", slug: squad }, error: null };
+  if (agentX) return { target: { kind: "agent-x" }, error: null };
+  return { target: null, error: null };
+}
+
+// Decision placeholder for resolveDispatchPlan: an explicit target returns
+// before any field of the decision is read, so the router never runs.
+const NO_ROUTER_DECISION: AgenticRouteDecision = {
+  ok: true, kind: "decision", primary_business: null, mandatory_squads: [], optional_squads: [],
+  suggested_mind_clones: [], candidates: [], rationale: "", runtime: null, warnings: [], cost_usd: null, duration_ms: 0,
+};
+
+/** Dispatch plan for an explicit target: one step, source "explicit", no router. */
+export async function explicitTargetPlan(target: ExplicitTarget): Promise<DispatchPlan> {
+  if (target.kind === "agent-x") {
+    return {
+      ok: true, steps: [{ kind: "agent-x", reason: "explicit user target" }],
+      mandatorySquads: [], optionalSquads: [], suggestedMindClones: [], rationale: "", source: "explicit",
+    };
+  }
+  return resolveDispatchPlan(NO_ROUTER_DECISION, { explicitTarget: target });
+}
+
 const positional = extractPositional(process.argv.slice(2));
 // --auto: no business is named; the router picks the best one for the brief.
-// In that mode the first positional is the brief itself.
+// In that mode the first positional is the brief itself, as it is when an
+// explicit --business / --squad / --agent-x flag names the target.
 const autoMode = process.argv.includes("--auto");
+const explicit = parseExplicitTarget(process.argv.slice(2));
+const explicitTarget = explicit.target;
 // Routing mode (agentic default | fast). Precedence: --mode > env > config.
 const routingMode = resolveRoutingMode(arg("--mode"));
-let slug = autoMode ? "" : positional[0];
-const inlineBrief = autoMode ? positional[0] : positional[1];
+let slug = autoMode ? "" : explicitTarget ? (explicitTarget.kind === "business" ? explicitTarget.slug : "") : positional[0];
+const inlineBrief = (autoMode || explicitTarget) ? positional[0] : positional[1];
 const briefFile = arg("--brief-file");
 const manifest = arg("--manifest");
 const projectId = arg("--project");
@@ -227,6 +277,11 @@ export function createDispatchAudit(opts: {
 // effects. Body intentionally kept at original indentation for a minimal diff.
 if (import.meta.main) {
 
+if (explicit.error) {
+  console.error(`nrv dispatch: ${explicit.error}`);
+  process.exit(4);
+}
+
 // Named `emit` so check-audit-parity's literal emit-call scan sees every
 // dispatch-side emission.
 const dispatchAudit = createDispatchAudit();
@@ -238,7 +293,7 @@ if (executionOptions.requestedMode !== "standard") {
   });
 }
 
-if (!slug && !autoMode) {
+if (!slug && !autoMode && !explicitTarget) {
   console.error("Usage: nrv dispatch <business_slug> \"<brief>\" [opts]");
   console.error("");
   console.error("  Opts:");
@@ -250,6 +305,10 @@ if (!slug && !autoMode) {
   console.error("");
   console.error("  Exec (autopilot):");
   console.error("    --auto                  no business named: the router picks the best one for the brief");
+  console.error("    --business=<slug>       name the business explicitly (same as the positional slug)");
+  console.error("    --squad=<slug>          name the squad explicitly: squad-only route, no router");
+  console.error("    --agent-x               dispatch the generalist explicitly, no router");
+  console.error("                            (--business, --squad, --agent-x and --auto are mutually exclusive)");
   console.error("    --exec[=runtime]        run the agent headless (without it, only scaffolds)");
   console.error("    --claude-code           shortcut for --exec=claude-code");
   console.error("    --auto-brief            enrich a thin brief and decide for the human");
@@ -583,6 +642,19 @@ if (autoMode && routingMode === "fast") {
   } else {
     console.log(c("yellow", "  →") + c("bold", " agent-x route (generalist)") + c("dim", ` (${plan.source}: ${step.reason})`));
     emit("auto_route_selected", { project_id: projectId || null, business_slug: null, method: "agentic", source: plan.source, agent_x: true, reason: step.reason });
+    pendingCascade = { kind: "agent-x", reason: step.reason, plan };
+  }
+} else if (explicitTarget && explicitTarget.kind !== "business") {
+  // --squad / --agent-x: the user named the target, so the plan is resolved
+  // without the router (dispatch-cascade layer 0) and flows into the same
+  // squad-only / agent-x branches the --auto route uses.
+  const plan = await explicitTargetPlan(explicitTarget);
+  const step = plan.steps[0];
+  if (step.kind === "squad") {
+    console.log(c("lime", "▶") + c("bold", ` Explicit target — squad ${step.slug}`) + c("dim", " (no router)"));
+    pendingCascade = { kind: "squad-only", squads: [step.slug!], plan };
+  } else {
+    console.log(c("lime", "▶") + c("bold", " Explicit target — agent-x") + c("dim", " (no router)"));
     pendingCascade = { kind: "agent-x", reason: step.reason, plan };
   }
 }

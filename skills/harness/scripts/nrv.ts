@@ -102,6 +102,7 @@ switch (cmd) {
   case "auto": runScript(join(H, "dispatch.ts"), [...rest, "--exec", "--auto"]);
   case "revise": runScript(join(H, "revise.ts"), rest);
   case "run-track": runScript(join(H, "run-track.ts"), rest);
+  case "multi-target": case "mt": runScript(join(H, "multi-target.ts"), rest);
   case "supervisor": runScript(join(H, "supervisor.ts"), rest);
   case "clean": case "clean-project": case "purge": runScript(join(H, "clean-project.ts"), rest);
   case "update": case "self-update": case "upgrade": {
