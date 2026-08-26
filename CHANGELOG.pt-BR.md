@@ -8,6 +8,59 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### O Gauntlet é sempre julgado por um agente: judge-x, o juiz do próprio engine
+
+O primeiro smoke real do avaliador (26/08/2026, Café Solar) mostrou duas
+coisas. A heurística offline não julga: em quatro candidates ela aprovou um
+bom, não distinguiu um rascunho incompleto em inglês de um poema (0/2 para os
+dois) e aprovou o arquivo principal de uma copy escrita para outro produto,
+enquanto o juiz agêntico acertou os quatro com evidência verificável. E o
+avaliador agent-x morreu no primeiro turno: o prompt do agent-x (persona,
+diretiva autônoma, catálogo de squads, brief) custou USD 0,82 sob os USD 0,625
+que 25% da parcela de USD 2,50 do `light` permitiam. O Gauntlet passa a ser
+julgado por um agente por política (`required`), e o engine traz o juiz.
+
+`judge-x` é o avaliador do próprio engine: sete personas,
+`skills/_shared/agents/judge-x.<runtime>.md`, curtas e fechadas (lê o brief, o
+contrato e o candidate, escreve um único `scorecard.json`, evidência por
+arquivo e trecho, nota conservadora, `indeterminate` quando não consegue
+julgar, sem recrutar, sem editar), cobertas pelo `check-scope-guard`. A
+identidade é `{ kind: "agent-x", slug: "judge-x" }`: a independência é
+comparada por kind e slug, então o judge é independente do produtor agent-x,
+de todo squad e de todo business, e o kernel, o Glance e os validadores, que
+só leem `kind`, o aceitam sem mudança; um kind próprio teria tocado toda união
+de `kind` para nada. `dispatch.ts --judge-x` o roda pelo driver headless com
+prompt enxuto, persona mais brief de avaliação e nada mais (cerca de 7 mil
+caracteres contra 15,5 mil do agent-x no mesmo brief; o que envolve o brief
+cai a um terço), sem cascata, sem Gauntlet aninhado e sem gate de entrega de
+conteúdo: o Run dele termina `completed` só com scorecard válido, senão
+`withheld`, e um estouro da cota (`error_max_budget_usd` do claude) é nomeado
+`budget_exhausted` no stderr do filho, no audit e no scorecard
+`indeterminate`, nunca um erro anônimo.
+
+Ordem de seleção: `NIRVANA_GAUNTLET_EVALUATOR` (agora também `judge-x`),
+depois um squad instalado que declare `quality.specification_conformance`,
+depois o judge-x para qualquer produtor. O agent-x deixa de ser padrão
+implícito (continua aceito pela variável quando o produtor não é agent-x).
+Sem a variável e sem juiz (runtime sem persona, ou CLI fora do PATH) o
+Gauntlet não inicia: `x_gauntlet_evaluator_unavailable`, Run rolado para
+`evaluator_unavailable` e exit 4 antes de qualquer produtor. A heurística é
+opt-in explícito, `NIRVANA_GAUNTLET_EVALUATOR=heuristic`, auditado como
+`x_gauntlet_evaluator_heuristic_opt_in`. O `nrv doctor` ganhou a linha
+`gauntlet: evaluator`, que diz quem julgaria hoje e por quê.
+
+A cota de avaliação é realista: o juiz recebe o maior entre 25% da parcela do
+candidate e um piso de USD 1,50 (`GAUNTLET_EVALUATION_FLOOR_USD`), como seu
+`--max-budget`; o produtor recebe o restante. Uma parcela que o piso consome
+rola o Run para `max_cost` antes do produtor (`x_gauntlet_budget_insufficient`
+com a conta) em vez de estourar no meio da rodada. O `light` custa USD 8 em
+vez de 5, então cada parcela é USD 4: USD 1,50 para o juiz, USD 2,50 para o
+produtor. O engine não materializa um squad avaliador em `~/squads`: os
+registros começam vazios por desenho, e o judge-x cobre toda máquina; um juiz
+próprio é um squad da sua biblioteca declarando a capability, e a seleção o
+prefere. Contrato, identidade, números medidos e a tabela de evidência em
+`docs/architecture/gauntlet-evaluator-contract.md`.
+
 ### Filhos headless pulam permissões em todo runtime verificado, com um único interruptor
 
 O adapter `claude-code` da camada leve montava `claude -p --no-session-persistence
