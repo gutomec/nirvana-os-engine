@@ -1002,17 +1002,15 @@ const BODY_DOC_MAX_NORMALIZED = Number(process.env.NIRVANA_BODY_DOC_MAX) || 0.85
 const DENSE_FALLBACK_MIN_COSINE = 0.55;
 
 /** Effective mode of the fallback slot: 'off' | 'fallback'.
- *  context.denseMode is the test hook; env > config otherwise. */
+ *  context.denseMode is the test hook; the routing.dense setting otherwise. */
 function denseFallbackMode(context) {
   if (context && (context.denseMode === 'off' || context.denseMode === 'fallback')) {
     return context.denseMode;
   }
-  const env = process.env.NIRVANA_ROUTER_DENSE;
-  if (env === '1') return 'fallback';
-  if (env === '0') return 'off';
   try {
-    // harness-config.ts owns the config precedence; requiring .ts works under
-    // Bun (same pattern as host-agent-driver.ts). Failure → off, never a crash.
+    // harness-config.ts resolves the setting (env > project > global > engine
+    // default); requiring .ts works under Bun (same pattern as
+    // host-agent-driver.ts). Failure → off, never a crash.
     const cfg = require(path.join(__dirname, 'harness-config.ts'));
     return cfg.denseRoutingMode();
   } catch {
