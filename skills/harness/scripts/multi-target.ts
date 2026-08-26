@@ -14,10 +14,13 @@
 //   nrv multi-target run    <file> [--project <id>] [--runtime <rt>] [--owner <id>] [--retry-failed] [--json]
 //   nrv multi-target status <file|runId> [--project <id>] [--json]        read-only projection
 //
-// `run` is opt-in: NIRVANA_MULTI_TARGET_ENGINE=1 enables it and
-// NIRVANA_MULTI_TARGET_KILL_SWITCH=1 turns it off again. Repeating `run` with
-// the same plan resumes: the coordinator is idempotent, completed nodes never
-// spawn twice, and a terminal Run answers without executing anything.
+// `run` is on by default. NIRVANA_MULTI_TARGET_KILL_SWITCH=1|true|on turns it
+// off, and so does NIRVANA_MULTI_TARGET_ENGINE=0|false|off (the opt-in flag of
+// the first releases; `=1` is still accepted and changes nothing). A refusal
+// names the variable, audits `x_multi_target_disabled`, exits 4 and touches
+// neither the kernel nor the workspace. Repeating `run` with the same plan
+// resumes: the coordinator is idempotent, completed nodes never spawn twice,
+// and a terminal Run answers without executing anything.
 //
 // `--retry-failed` reopens a plan whose Run ended `failed` or `withheld` once
 // its cause was fixed. The Run state machine (lib/run-kernel/lifecycle.ts) has
@@ -30,8 +33,8 @@
 // of that chain.
 //
 // Exit codes: 0 delivered · 1 failed · 2 withheld · 4 invalid plan, invalid
-// arguments, opt-in missing, or a retry refused (plan or reservation changed,
-// Run not terminal, nothing to reopen).
+// arguments, engine switched off, or a retry refused (plan or reservation
+// changed, Run not terminal, nothing to reopen).
 //
 // i18n-user-facing: file — what the user reads is PT-BR by contract; code,
 // identifiers and comments stay English.
@@ -66,6 +69,8 @@ const auditLib = requireCjs("../lib/audit.js") as {
 export const PLAN_SCHEMA_VERSION = "nirvana.multi-target-plan/v1alpha1";
 export const ENGINE_FLAG = "NIRVANA_MULTI_TARGET_ENGINE";
 export const KILL_SWITCH = "NIRVANA_MULTI_TARGET_KILL_SWITCH";
+const ON_VALUES = new Set(["1", "true", "on"]);
+const OFF_VALUES = new Set(["0", "false", "off"]);
 const DISPATCH_SCRIPT_ENV = "NIRVANA_DISPATCH_SCRIPT";
 const EXIT = { delivered: 0, failed: 1, withheld: 2, invalid: 4 } as const;
 const TERMINAL_NODE_STATES = new Set<MultiTargetNodeProjection["state"]>(["delivered", "withheld", "failed", "skipped", "stalled"]);
@@ -178,14 +183,27 @@ export function resolveMultiTargetRun(kernel: KernelHandle, projectId: string): 
   return { run, runId: run.runId, attempt };
 }
 
-export function engineGate(env: Record<string, string | undefined>): { enabled: boolean; message: string } {
-  if (env[KILL_SWITCH] === "1") {
-    return { enabled: false, message: `O engine multi-target está desligado por ${KILL_SWITCH}=1. Remova a variável para executar.` };
-  }
-  if (env[ENGINE_FLAG] !== "1") {
-    return { enabled: false, message: `O engine multi-target é opt-in: exporte ${ENGINE_FLAG}=1 para executar (plan e status funcionam sem a flag).` };
-  }
-  return { enabled: true, message: "" };
+export interface EngineGate { enabled: boolean; variable: string | null; value: string | null; message: string }
+
+/**
+ * `run` is on unless a variable switches it off: the kill switch at 1|true|on,
+ * or the legacy opt-in flag at 0|false|off. The flag at `1` (or any other
+ * value) changes nothing, so an environment set up for the opt-in era keeps
+ * working. The message names the variable that switched the engine off.
+ */
+export function engineGate(env: Record<string, string | undefined>): EngineGate {
+  const kill = env[KILL_SWITCH];
+  if (kill !== undefined && ON_VALUES.has(kill.trim().toLowerCase())) return disabledBy(KILL_SWITCH, kill);
+  const legacy = env[ENGINE_FLAG];
+  if (legacy !== undefined && OFF_VALUES.has(legacy.trim().toLowerCase())) return disabledBy(ENGINE_FLAG, legacy);
+  return { enabled: true, variable: null, value: null, message: "" };
+}
+
+function disabledBy(variable: string, value: string): EngineGate {
+  return {
+    enabled: false, variable, value,
+    message: `O engine multi-target está desligado por ${variable}=${value}. Remova a variável para executar; plan e status funcionam sempre.`,
+  };
 }
 
 function exitForRunState(state: CanonicalRunState): number {
@@ -311,9 +329,9 @@ function usage(code: number): never {
     "  nrv multi-target run    <arquivo> [--project <id>] [--runtime <rt>] [--owner <id>] [--retry-failed] [--json]",
     "  nrv multi-target status <arquivo|runId> [--project <id>] [--json]",
     "",
-    `  run exige ${ENGINE_FLAG}=1 (${KILL_SWITCH}=1 desliga); plan e status funcionam sempre.`,
+    `  run executa sem variável; ${KILL_SWITCH}=1 ou ${ENGINE_FLAG}=0 desligam. plan e status funcionam sempre.`,
     "  --retry-failed reabre um Run failed ou withheld num Run novo encadeado: nós entregues ficam, o resto volta a pending.",
-    "  exit: 0 entregue · 1 falhou · 2 retido · 4 plano ou argumentos inválidos, ou retomada recusada",
+    "  exit: 0 entregue · 1 falhou · 2 retido · 4 plano ou argumentos inválidos, engine desligado, ou retomada recusada",
   ].join("\n"));
   process.exit(code);
 }
@@ -340,7 +358,7 @@ function commandPlan(file: string, argv: string[]): number {
   const ws = writeWorkspace(projectRoot, projectId, loaded);
   emitPlanCompiled(loaded, ws, file);
   printPlan(projectId, loaded, ws);
-  console.log(`Nada foi executado. Para executar: nrv multi-target run ${file} (exige ${ENGINE_FLAG}=1).`);
+  console.log(`Nada foi executado. Para executar: nrv multi-target run ${file}.`);
   return EXIT.delivered;
 }
 
@@ -349,6 +367,9 @@ async function commandRun(file: string, argv: string[]): Promise<number> {
   const retryFailed = argv.includes("--retry-failed");
   const gate = engineGate(process.env);
   if (!gate.enabled) {
+    // A refusal opens no kernel and writes no workspace; the audit line is its only trace.
+    auditContext = { projectRoot: resolveProjectRoot(), projectId: resolveProjectId(file, null, flag(argv, "project")) };
+    emit("x_multi_target_disabled", { plan_file: path.resolve(file), variable: gate.variable, value: gate.value, exit: EXIT.invalid });
     console.error(gate.message);
     return EXIT.invalid;
   }
