@@ -107,6 +107,24 @@ rm -rf ~/squads/ ~/businesses/    # this deletes your capability library
 
 ---
 
+## Windows: the user PATH
+
+On Windows the installer adds `%USERPROFILE%\.local\bin` to the **user** PATH in the registry (`HKCU\Environment\Path`) and broadcasts the change, so `nrv` resolves in new terminals without a logoff. Two things keep that write from landing where it should not:
+
+- **`NIRVANA_SKIP_PATH_PERSIST=1`** skips the registry write and the broadcast (and the shell-profile append on macOS and Linux). The current process still gets `.local\bin` on its own PATH. The engine tests set it whenever they install into a temporary HOME.
+- **A temporary HOME is never persisted.** When `%USERPROFILE%\.local\bin` resolves under `%TEMP%`, `%TMP%`, `%LOCALAPPDATA%\Temp` or the process tmpdir, the installer says so and leaves the registry alone, flag or not.
+
+Engines up to 0.8.0 had neither, and running the test suite on Windows left `%TEMP%\nrv-*\home\.local\bin` entries on the real user PATH (issue #87). `nrv doctor` reports them. To remove them:
+
+```bash
+nrv install --repair-path          # lists the temporary nrv-* entries, writes nothing
+nrv install --repair-path --apply  # removes exactly those, keeps every other entry and its order
+```
+
+The repair rewrites the value with the kind it had (a `REG_EXPAND_SZ` stays unexpanded) and broadcasts `WM_SETTINGCHANGE`. Open a new terminal to see the clean PATH.
+
+---
+
 ## Troubleshooting
 
 **`nrv: command not found`** — `~/.local/bin` is not on `$PATH`. Add `export PATH="$HOME/.local/bin:$PATH"` to your shell rc and open a new terminal.
