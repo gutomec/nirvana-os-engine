@@ -77,6 +77,15 @@ async function send(base: string, projectId: string, conversationId: string, key
 }
 const events = async (base: string, projectId: string) => ((await fetch(`${base}/api/v1/projects/${projectId}/events?limit=500`).then(r => r.json())) as any).events as any[];
 const typeOf = (event: any) => event.type === "run.transitioned" ? `run.transitioned:${event.payload.to}` : event.type;
+/** Polls the journal until the Run has recorded `type`: the child writes its terminal state and exits, and the
+ * queue records glance.child_exited only when the process exit event arrives. */
+async function waitForEvent(base: string, projectId: string, runId: string, type: string, timeoutMs = 10000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!(await events(base, projectId)).some(event => event.runId === runId && event.type === type)) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${type} on ${runId}`);
+    await Bun.sleep(10);
+  }
+}
 
 /** Consumes the SSE stream from `after` until `until` holds (heartbeats keep reads short). */
 async function readStream(base: string, projectId: string, after: number, until: (seen: any[]) => boolean, timeoutMs = 30000) {
@@ -273,6 +282,9 @@ describe("Glance child-process execution", () => {
     expect(business.receipt.run.target).toEqual({ kind: "business", slug: "web-studio" });
     expect(business.receipt.capability).toBe("business.dispatch");
     await waitFor(base, projectId, business.receipt.run.runId, "completed", 500);
+    // The child writes `completed` and exits; the queue records glance.child_exited only after the
+    // process exit event, so the terminal state alone does not mean the timeline is final.
+    await waitForEvent(base, projectId, business.receipt.run.runId, "glance.child_exited");
     expect(state(business.receipt.run.runId).argv().argv.slice(0, 2)).toEqual(["--business", "web-studio"]);
     const all = await events(base, projectId);
     expect(all.filter(event => event.runId === business.receipt.run.runId).map(typeOf)).toEqual(standardTimeline);
