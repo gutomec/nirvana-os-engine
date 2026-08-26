@@ -73,6 +73,28 @@ When a squad declares a feature under `features_optional` and the adapter lists 
 
 When a squad declares a feature under `features_required` and the adapter lacks it:
 
+## Active runtime policy
+
+`runtime_requirements.policy` controls runtime selection:
+
+```yaml
+runtime_requirements:
+  policy: active
+  incompatible: []
+```
+
+- `declared` is the default. The active runtime must occur in `minimum` or
+  `compatible`, and `minimum` must contain at least one entry.
+- `active` selects the runtime hosting the current session. `minimum` and
+  `compatible` may be omitted and do not act as an allowlist.
+- A registered adapter is preferred. If none exists, activation must pass an
+  explicit runtime bridge with `protocolVersion` and `featuresSupported`.
+- Required features fail closed. Unsupported optional features emit auditable
+  degradation warnings. `incompatible` is a hard denial under both policies.
+- Selection never installs, starts, or switches to another runtime.
+
+Legacy manifests without `policy` retain the `declared` behavior.
+
 1. Harness refuses to load the squad.
 2. Error message points to the adapter's Feature Support Matrix.
 3. Fail-closed (Core P5).

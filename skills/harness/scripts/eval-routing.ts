@@ -156,7 +156,7 @@ export async function runEval(opts: RunEvalOptions = {}) {
 
   const registries = opts.registries || registryLoader.loadAll();
   // amplify OFF: zero LLM calls, fully deterministic given the same registries.
-  const ctx = { registries, amplify: false };
+  const ctx = { registries, amplify: false, preparedMatchIndex: router.prepareMatchIndex(registries) };
 
   const warnings: string[] = [];
   for (const flag of ROUTER_ENV_FLAGS) {

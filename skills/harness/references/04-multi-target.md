@@ -116,3 +116,34 @@ with `nrv resume <projectRoot>`. Skipping this is what turns a long multi-target
 run quadratic — the orchestrator of a 13-target run measured 275k tokens of
 context by the last wave, and every message in it re-read that whole
 accumulation.
+
+## Scripted path: `nrv multi-target plan|run|status`
+
+The loop above is what you run in an interactive session: one `Agent(...)` per
+target, each return gated as it lands. When nothing stays alive to receive a
+notification (a headless run, a runtime whose only delegation primitive is a
+shell, a run you need to pick up after a crash), the same DAG runs through the
+typed engine instead:
+
+```bash
+nrv multi-target plan .nirvana/plans/<trace_id>.json     # compile: waves, decisions, reservation, workspace
+export NIRVANA_MULTI_TARGET_ENGINE=1
+nrv multi-target run .nirvana/plans/<trace_id>.json      # execute over the Run Kernel; repeat to resume
+nrv multi-target status .nirvana/plans/<trace_id>.json   # read-only projection of the Run
+```
+
+The plan file (`nirvana.multi-target-plan/v1alpha1`) carries the enriched
+brief, one sub-brief per node, the dependency graph and, optionally, the
+Gauntlet policy, the runtime and per-node budgets. `plan` writes
+`manifest.json` and `brief-enriched.md` into the workspace above and executes
+nothing. `run` is opt-in (`NIRVANA_MULTI_TARGET_ENGINE=1`;
+`NIRVANA_MULTI_TARGET_KILL_SWITCH=1` turns it off), creates one Run in the
+project's kernel, executes every wave through `nrv dispatch` subprocesses with
+explicit targets (`--business`, `--squad`, `--agent-x`), and exits `0`
+delivered, `1` failed, `2` withheld, `4` invalid plan or missing opt-in.
+Repeating `run` after a crash resumes: completed nodes never spawn twice.
+
+What does not change: the workspace layout, `DISPATCH-INSTRUCTION.md` per
+target, the `_SUMMARY.md` contract, the audit chain each node writes, and the
+prose protocol itself, which stays the default whenever you can dispatch
+in-process. Reference: `docs/architecture/gauntlet-multi-target-cli.md`.

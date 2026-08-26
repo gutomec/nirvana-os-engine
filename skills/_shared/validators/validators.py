@@ -218,9 +218,16 @@ class RuntimeRequirementMin(BaseModel):
 
 
 class RuntimeRequirements(StrictModel):
-    minimum: Annotated[list[RuntimeRequirementMin], Field(min_length=1)]
+    policy: Literal["declared", "active"] = "declared"
+    minimum: Optional[Annotated[list[RuntimeRequirementMin], Field(min_length=1)]] = None
     compatible: Optional[list[Any]] = None
     incompatible: Optional[list[Any]] = None
+
+    @model_validator(mode="after")
+    def _require_minimum_for_declared(self) -> "RuntimeRequirements":
+        if self.policy == "declared" and not self.minimum:
+            raise ValueError("runtime_requirements.minimum is required when policy is declared")
+        return self
 
 
 class SquadComponents(StrictModel):
@@ -1813,6 +1820,24 @@ def test_registry_businesses_minimal_valid() -> None:
     )
     assert "nexus-council" in reg.businesses
     assert reg.businesses["nexus-council"].employee_count == 9
+
+
+def test_runtime_requirements_active_allows_omitting_minimum() -> None:
+    requirements = RuntimeRequirements.model_validate({"policy": "active", "incompatible": []})
+    assert requirements.policy == "active"
+    assert requirements.minimum is None
+
+
+def test_runtime_requirements_declared_requires_minimum() -> None:
+    import pytest
+
+    with pytest.raises(Exception):
+        RuntimeRequirements.model_validate({})
+
+    requirements = RuntimeRequirements.model_validate(
+        {"minimum": [{"runtime": "codex"}]}
+    )
+    assert requirements.policy == "declared"
 
 
 def test_registry_businesses_rejects_bad_legacy_uuid() -> None:

@@ -274,15 +274,16 @@ function c8_runtime_requirements({ manifest }) {
   if (!manifest) return { score: 0, max, evidence: 'no manifest', fixable_diff: null };
   const rr = manifest.runtime_requirements || {};
   const min = Array.isArray(rr.minimum) ? rr.minimum : [];
+  const usesActiveRuntime = rr.policy === 'active';
   const feats = Array.isArray(manifest.features_required) ? manifest.features_required : [];
   let score = 0;
-  if (min.length >= 1) score += 4;
+  if (usesActiveRuntime || min.length >= 1) score += 4;
   if (feats.length >= 1) score += 2;
   return {
     score, max,
-    evidence: `runtimes=${min.length} · features_required=${feats.length}`,
-    fixable_diff: (min.length === 0 || feats.length === 0)
-      ? { kind: 'runtime_requirements_default', missing_min: min.length === 0, missing_feats: feats.length === 0 }
+    evidence: `policy=${rr.policy || 'declared'} · runtimes=${min.length} · features_required=${feats.length}`,
+    fixable_diff: ((!usesActiveRuntime && min.length === 0) || feats.length === 0)
+      ? { kind: 'runtime_requirements_default', missing_min: !usesActiveRuntime && min.length === 0, missing_feats: feats.length === 0 }
       : null,
   };
 }

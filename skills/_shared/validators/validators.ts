@@ -146,13 +146,15 @@ export const SquadManifestSchema = z.object({
     schemas: z.array(z.string()).optional(),  // JSON Schemas the squad ships for output validation
   }).strict(),
   runtime_requirements: z.object({
+    policy: z.enum(['declared', 'active']).default('declared'),
     minimum: z.array(z.object({
       runtime: Runtime,
       version: z.string().optional(),
-    }).strict()).min(1),
+    }).strict()).min(1).optional(),
     compatible: z.array(z.unknown()).optional(),
     incompatible: z.array(z.unknown()).optional(),
-  }).strict().optional(),
+  }).strict().refine((r) => r.policy === 'active' || (r.minimum?.length ?? 0) > 0,
+    'runtime_requirements.minimum is required when policy is declared').optional(),
   features_required: z.array(Feature).optional(),
   features_optional: z.array(z.string()).optional(),
   output: z.object({
@@ -303,13 +305,15 @@ export const BusinessManifestSchema = z.object({
     }).strict().optional(),
   }).strict().optional(),
   runtime_requirements: z.object({
+    policy: z.enum(['declared', 'active']).default('declared'),
     minimum: z.array(z.object({
       runtime: Runtime,
       version: z.string().optional(),
-    }).strict()).min(1),
+    }).strict()).min(1).optional(),
     compatible: z.array(z.unknown()).optional(),
     incompatible: z.array(z.unknown()).optional(),
-  }).strict(),
+  }).strict().refine((r) => r.policy === 'active' || (r.minimum?.length ?? 0) > 0,
+    'runtime_requirements.minimum is required when policy is declared'),
   features_required: z.array(Feature).optional(),
   features_optional: z.array(z.string()).optional(),
   env_required: z.array(z.string().regex(ENV_VAR)).optional(),

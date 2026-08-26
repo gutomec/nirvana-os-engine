@@ -132,6 +132,7 @@ components:
     - main-pipeline.yaml
 
 runtime_requirements:
+  policy: active
   minimum:
     - { runtime: claude-code, version: ">=1.0.0" }
   compatible:

@@ -115,7 +115,8 @@ Each business has a manifest with optional fields:
 |---|---|---|
 | `operation_mode` | `zero_human` | `zero_human` (autonomous), `hybrid` (escalation gates), `human_in_loop` (every decision validated with a human) |
 | `authority_level` | `tier-2` | `tier-1` (board approval for changes), `tier-2` (default), `tier-3` (more permissive) |
-| `runtime_requirements.minimum[]` | `[{runtime: claude-code}]` | Which runtimes are supported (claude-code, codex, antigravity-cli, gemini-cli, cursor, openclaw, opencode) |
+| `runtime_requirements.policy` | `declared` | `declared` requires `minimum[]`; `active` uses the session runtime without an allowlist |
+| `runtime_requirements.minimum[]` | `[{runtime: claude-code}]` | Which runtimes are supported under `policy: declared` |
 | `features_required[]` | `[]` | Features that MUST exist in the runtime: `max_turns, tool_whitelist, subagent_spawning, audit_trail, scheduled_invocation, event_bus, hooks, sandboxing, session_memory, project_memory, global_memory, handoff_artifacts, fork_context, teammate_primitive, telemetry_otel` |
 | `features_optional[]` | `[]` | Features that improve experience but do not block |
 | `env_required[]` | `[]` | List of env var keys that must exist before the business can operate |

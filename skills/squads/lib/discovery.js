@@ -157,6 +157,7 @@ class SquadDiscovery {
     // v4: Parse features
     const featuresRequired = parsed.features_required || [];
     const featuresOptional = parsed.features_optional || [];
+    const modelRequirements = parsed.model_requirements || {};
 
     return {
       name: parsed.name,
@@ -169,8 +170,10 @@ class SquadDiscovery {
       workflows,
       tasks,
       runtimes,
+      runtimePolicy: parsed.runtime_requirements?.policy || 'declared',
       featuresRequired,
       featuresOptional,
+      modelRequirements,
       harness: !!parsed.harness,
     };
   }
@@ -231,6 +234,9 @@ class SquadDiscovery {
     }
     if (Array.isArray(rr.compatible)) {
       rr.compatible.forEach(r => runtimes.push({ runtime: r.runtime, type: 'compatible' }));
+    }
+    if (Array.isArray(rr.incompatible)) {
+      rr.incompatible.forEach(r => runtimes.push({ runtime: r.runtime, type: 'incompatible' }));
     }
 
     return runtimes;

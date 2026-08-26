@@ -30,6 +30,7 @@ employee_count: 6
 authority_level: tier-3
 operation_mode: zero_human
 runtime_requirements:
+  policy: active
   minimum:
   - runtime: claude-code
     version: '>=1.0.0'

@@ -133,6 +133,12 @@ Escaneia + gera `${SQUADS_REGISTRY_PATH}` (incluindo `_v4_inferred_capabilities`
 
 ### `runtime_requirements` (obrigatório)
 
+`policy: declared` é o padrão retrocompatível e exige `minimum[]`. `policy: active`
+usa o runtime que hospeda a sessão e pode omitir `minimum`; adapters registrados
+continuam preferenciais, features obrigatórias continuam fail-closed e
+`incompatible[]` continua sendo uma negação explícita. O engine nunca instala,
+inicia ou troca de runtime.
+
 | Campo | Função |
 |---|---|
 | `minimum[]` | Lista de `{runtime: <id>, version?: <v>}`. Runtimes aceitos: `claude-code, codex, gemini-cli, cursor, antigravity, openclaw, opencode` |

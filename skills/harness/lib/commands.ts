@@ -73,6 +73,7 @@ export const COMMANDS: Command[] = [
   { name: "launch", target: "harness/scripts/launch.ts", category: "dispatch", args: "<name> [--pillars=...]", summary: "Scaffold a multi-pillar 360 launch", visibility: "user" },
   { name: "clean", aliases: ["clean-project", "purge"], target: "harness/scripts/clean-project.ts", category: "dispatch", args: "<project> [--hard]", summary: "Remove a project scaffold (trash by default)", visibility: "user" },
   { name: "run-track", target: "harness/scripts/run-track.ts", category: "dispatch", args: "open|beat|close|list ...", summary: "Ledger door for agent-orchestrated runs — so nothing is ever forgotten", visibility: "user" },
+  { name: "multi-target", aliases: ["mt"], target: "harness/scripts/multi-target.ts", category: "dispatch", args: "plan|run|status <plan.json>", summary: "Multi-target engine by plan file: plan compiles the waves, run executes them over the Run Kernel (opt-in), status reads the projection", visibility: "user" },
   { name: "supervisor", target: "harness/scripts/supervisor.ts", category: "dispatch", args: "sweep|status|watch|install|uninstall", summary: "Dispatch-ledger supervisor: resume/re-dispatch stalled runs (never-stall)", visibility: "user" },
 
   // distribution

@@ -206,6 +206,8 @@ case "$cmd" in
     exec "$BUN_BIN" "$SKILLS/harness/scripts/revise.ts" "$@" ;;
   run-track)
     exec "$BUN_BIN" "$SKILLS/harness/scripts/run-track.ts" "$@" ;;
+  multi-target|mt)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/multi-target.ts" "$@" ;;
   supervisor)
     exec "$BUN_BIN" "$SKILLS/harness/scripts/supervisor.ts" "$@" ;;
   clean|clean-project|purge)

@@ -57,7 +57,7 @@ function fix_runtime_requirements_default(squadDir, patch) {
   if (!m) return { ok: false, reason: 'manifest unreadable' };
   m.runtime_requirements ??= {};
   // Pydantic SquadManifest expects RuntimeRequirementMin objects: {runtime, version?}
-  if (!Array.isArray(m.runtime_requirements.minimum) || m.runtime_requirements.minimum.length === 0) {
+  if (m.runtime_requirements.policy !== 'active' && (!Array.isArray(m.runtime_requirements.minimum) || m.runtime_requirements.minimum.length === 0)) {
     m.runtime_requirements.minimum = [{ runtime: 'claude-code' }];
   } else {
     // Coerce string entries to objects (legacy v4 squads sometimes used bare strings)

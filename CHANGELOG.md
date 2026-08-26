@@ -8,6 +8,29 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### The runtime, Glance and Gauntlet program is documented from its proofs
+
+Eight cuts landed on the integration branch after `68012d9`: multi-target
+dispatch adapters with a lease heartbeat, the canonical Run timeline in
+Glance, the `nrv multi-target plan|run|status` command with explicit targets
+on `dispatch.ts` (`--business`, `--squad`, `--agent-x`), causal revision
+rounds in the Gauntlet cutover at all three intensities, Glance Messages
+executed in a child `dispatch.ts` process (cancel reaches the runtime
+grandchild; a restart reattaches or redispatches by pid), the organizational
+non-regression gate in `check:all`, broker-frozen runtime snapshots on every
+canary and multi-target Run, and `standard` mode publishing each `--exec`
+run to the Run Kernel on all three branches.
+
+`docs/architecture/implementation-status.md` now states only what a test or
+a check script proves. Each of the eight completion criteria names its test
+file and test title, the eight vertical-expansion steps carry a state, and
+the test results are this round's numbers, including the step where
+`check:all` stops on this machine and why. `executable-requirements.md` tags
+every requirement `[implementado]`, `[parcial]` or `[proposto]` with the
+proof beside it, and `traceability-matrix.md` gains a column with the real
+test files per requirement, marking the two without any coverage (`RT-003`,
+`GL-006`). No production code, test or script changed in this cut.
+
 ### Contention on Windows stopped looking like a crash
 
 `withLock` treated anything but `EEXIST` as a real error. Windows has a

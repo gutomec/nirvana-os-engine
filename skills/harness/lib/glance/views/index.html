@@ -1731,16 +1731,18 @@
             <template x-if="m.role === 'assistant' && (m.events?.length || (m.streaming && chatRunEvents.length))">
               <div class="run-surface">
                 <!-- cabeçalho vivo: qual empresa/squad/agente está trabalhando + custo -->
-                <template x-if="m.streaming && (runSummary.business || runSummary.lastAgent)">
+                <template x-if="m.streaming && (runSummary.business || runSummary.lastAgent || runSummary.state)">
                   <div class="run-head">
                     <span class="run-head-actor" x-show="runSummary.business"><i data-lucide="building-2" class="icon-inline"></i><span x-text="runSummary.business"></span></span>
                     <span class="run-head-sq text-caption" x-show="runSummary.squad" x-text="'· ' + runSummary.squad"></span>
                     <span class="run-head-actor run-head-agent" x-show="runSummary.lastAgent"><i data-lucide="bot" class="icon-inline"></i><span x-text="runSummary.lastAgent"></span></span>
+                    <span class="badge badge-sm badge-subtle" :class="'badge-' + runStateVariant(runSummary.state)" x-show="runSummary.state" x-text="runSummary.state"></span>
+                    <span class="run-head-sq text-caption" x-show="runSummary.decision" x-text="'· gauntlet: ' + runSummary.decision + (runSummary.stopReason ? ' (' + runSummary.stopReason + ')' : '')"></span>
                     <span class="run-head-cost" x-show="runSummary.cost > 0" x-text="'$' + runSummary.cost.toFixed(2)"></span>
                   </div>
                 </template>
                 <div class="run-steps">
-                  <template x-for="(ev, ei) in (m.streaming ? chatRunEvents : m.events)" :key="ei">
+                  <template x-for="(ev, ei) in runTimeline(m.streaming ? chatRunEvents : m.events).visible" :key="ei">
                     <div class="run-step" :class="'tone-' + (runEventView(ev).tone || 'none')">
                       <span class="run-step-icon"><i :data-lucide="runEventView(ev).icon"></i></span>
                       <div class="run-step-body">
@@ -1750,6 +1752,44 @@
                     </div>
                   </template>
                 </div>
+                <!-- Infrastructure events (coordinator snapshots, lease renewals) stay in the stream, hidden until toggled -->
+                <button type="button" class="run-infra-toggle text-caption" x-show="chatInfraVisible || runTimeline(m.streaming ? chatRunEvents : m.events).hidden > 0"
+                        :aria-expanded="chatInfraVisible ? 'true' : 'false'" @click="chatInfraVisible = !chatInfraVisible"
+                        x-text="chatInfraVisible ? 'Ocultar eventos de infraestrutura' : `Mostrar ${runTimeline(m.streaming ? chatRunEvents : m.events).hidden} eventos de infraestrutura`"></button>
+                <!-- Multi-target projection of the Run (GET /api/v1/runs/:run/multi-target); rendered only once the coordinator saved a snapshot -->
+                <template x-if="runMultiTarget(m)">
+                  <div class="run-mt">
+                    <div class="run-mt-head">
+                      <span class="run-mt-title"><i data-lucide="layers" class="icon-inline"></i><span>Multi-target</span></span>
+                      <span class="badge badge-sm badge-subtle" :class="'badge-' + multiTargetStateVariant(runMultiTarget(m).state)" x-text="runMultiTarget(m).state"></span>
+                      <span class="text-caption" x-text="'onda ' + Math.max(runMultiTarget(m).currentWave + 1, 0) + ' de ' + multiTargetWaveCount(runMultiTarget(m))"></span>
+                      <span class="run-head-cost" x-text="'reportado $' + Number(runMultiTarget(m).reportedCostUsd || 0).toFixed(2)"></span>
+                    </div>
+                    <div class="text-caption run-mt-reason" x-show="runMultiTarget(m).terminalReason" x-text="runMultiTarget(m).terminalReason"></div>
+                    <div class="run-mt-scroll">
+                      <table class="cap-table run-mt-table">
+                        <caption class="sr-only">Nós do plano multi-target por onda</caption>
+                        <thead>
+                          <tr><th scope="col">Onda</th><th scope="col">Nó</th><th scope="col">Modo</th><th scope="col">Estado</th><th scope="col">Concedido</th><th scope="col">Reportado</th><th scope="col">Razão</th><th scope="col">Bloqueios</th></tr>
+                        </thead>
+                        <tbody>
+                          <template x-for="node in runMultiTarget(m).nodes" :key="node.nodeId">
+                            <tr>
+                              <td x-text="node.waveIndex + 1"></td>
+                              <th scope="row" x-text="node.nodeId"></th>
+                              <td x-text="node.mode"></td>
+                              <td><span class="badge badge-sm badge-subtle" :class="'badge-' + multiTargetStateVariant(node.state)" x-text="node.state"></span></td>
+                              <td x-text="'$' + Number(node.grantedCostUsd || 0).toFixed(2)"></td>
+                              <td x-text="'$' + Number(node.reportedCostUsd || 0).toFixed(2)"></td>
+                              <td x-text="node.reason || '—'"></td>
+                              <td x-text="(node.blockedBy || []).join(', ') || '—'"></td>
+                            </tr>
+                          </template>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </template>
               </div>
             </template>
             <!-- Ferramentas que o agente chamou enquanto pensava (nrv route, bash…) -->
@@ -1851,6 +1891,12 @@
 </div>
 
 <script src="/glance.js?v=__ASSET_VER__"></script>
+<script type="module">
+  // run-event-labels.js is a pure ES module shared with bun test; glance.js is
+  // a classic script, so the exports are exposed on window for the Alpine app.
+  import * as runEventLabels from '/run-event-labels.js?v=__ASSET_VER__';
+  window.NirvanaRunEventLabels = runEventLabels;
+</script>
 <script src="/dag-renderer.js?v=__ASSET_VER__"></script>
 <script src="/org-chart-renderer.js?v=__ASSET_VER__"></script>
 <script src="/graph-renderer.js?v=__ASSET_VER__"></script>

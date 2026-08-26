@@ -8,6 +8,30 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Unreleased
 
+### O programa de runtime, Glance e Gauntlet está documentado pelas provas
+
+Oito cortes entraram na branch de integração depois de `68012d9`: adapters
+de dispatch multi-target com heartbeat de lease, a timeline canônica do Run
+no Glance, o comando `nrv multi-target plan|run|status` com alvos explícitos
+no `dispatch.ts` (`--business`, `--squad`, `--agent-x`), rodadas de revisão
+causal no cutover do Gauntlet nas três intensidades, Messages do Glance
+executadas em processo filho do `dispatch.ts` (cancelar alcança o runtime
+neto; um restart reanexa ou redespacha pelo pid), o gate de não regressão
+organizacional no `check:all`, snapshots de runtime congelados pelo broker em
+todo Run canário e multi-target, e o modo `standard` publicando cada
+execução com `--exec` no Run Kernel nas três branches.
+
+`docs/architecture/implementation-status.md` agora afirma só o que um teste
+ou script de check prova. Cada um dos oito critérios de conclusão nomeia seu
+arquivo e título de teste, os oito passos da expansão vertical carregam um
+estado, e os resultados de teste são os números desta rodada, inclusive o
+passo em que o `check:all` para nesta máquina e por quê. O
+`executable-requirements.md` marca cada requisito como `[implementado]`,
+`[parcial]` ou `[proposto]` com a prova ao lado, e o `traceability-matrix.md`
+ganha uma coluna com os arquivos de teste reais por requisito, marcando os
+dois sem cobertura alguma (`RT-003`, `GL-006`). Nenhum código de produção,
+teste ou script mudou neste corte.
+
 ### Disputa de lock no Windows deixou de parecer falha
 
 O `withLock` tratava qualquer coisa que não fosse `EEXIST` como erro real. O
