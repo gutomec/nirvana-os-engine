@@ -8,7 +8,7 @@
 
 [![npm downloads](https://img.shields.io/npm/dm/@nirvana-os/cli)](https://www.npmjs.com/package/@nirvana-os/cli)
 [![GitHub stars](https://img.shields.io/github/stars/gutomec/nirvana-os-engine)](https://github.com/gutomec/nirvana-os-engine/stargazers)
-[![version](https://img.shields.io/badge/version-0.7.11-blue)](./CHANGELOG.md)
+[![version](https://img.shields.io/github/v/release/gutomec/nirvana-os-engine?label=version)](./CHANGELOG.md)
 [![CI](https://github.com/gutomec/nirvana-os-engine/actions/workflows/smoke.yml/badge.svg)](https://github.com/gutomec/nirvana-os-engine/actions/workflows/smoke.yml)
 [![license](https://img.shields.io/badge/license-SUL-lightgrey)](./LICENSE)
 [![npm](https://img.shields.io/npm/v/@nirvana-os/cli?label=npm)](https://www.npmjs.com/package/@nirvana-os/cli)
@@ -75,6 +75,8 @@ Confirm the install is healthy:
 nrv doctor
 ```
 
+On Windows, `nrv doctor` also checks the user PATH for temporary `nrv-*` entries that engines up to 0.8.0 could leave behind. `nrv install --repair-path` lists them without writing anything; `--apply` removes exactly those and keeps every other entry as it is.
+
 Then open your agent and say **"use Nirvana-OS to…"**. For agent-driven setup, point your runtime at [`AGENT-QUICKSTART.md`](./AGENT-QUICKSTART.md).
 
 ## 90-second demo
@@ -121,7 +123,7 @@ More flows, including "design the agency, clone the specialists, build it" in th
 
 Multi-agent systems have a trust problem: an orchestrator can announce anything in its final message. Nirvana-OS answers with three guarantees, each backed by a mechanism you can open on disk.
 
-- **Traceable.** Every action becomes an append-only event in `~/.harness-logs/<date>/audit.jsonl`: brief received, dispatch, mind-clone injected, gate passed or failed. Without these events, no completion message is honest.
+- **Traceable.** Every action becomes an append-only event in `~/.harness-logs/<date>/audit.jsonl`: brief received, dispatch, mind-clone injected, gate passed or failed. Every `--exec` run, in `standard` mode or through the Gauntlet, also leaves a canonical Run in the project's `.nirvana/run-kernel.sqlite`, an append-only journal that Glance reads. Without these events, no completion message is honest.
 - **Tested.** `verify-deliverable.ts` compares what the brief promised against what actually exists on disk. `quality-gate.ts` runs rubrics per file type in a judge, critique, and revise loop. No verify PASS, no legitimate completion.
 - **Contracted.** Tasks have binary acceptance criteria. Capabilities have typed inputs and outputs. Client-bound output passes an approval chain: producer, then reviewer, then approver. Budgets are a hard ceiling, and escalation triggers define exactly when a human enters the loop.
 
@@ -143,11 +145,14 @@ The paid layer is **content, not capability**: curated, ready-to-run collections
 | You type | What it does |
 |---|---|
 | `npx @nirvana-os/cli` | Install or update the engine (idempotent) |
-| `nrv glance` | Read-only web cockpit: companies, squads, clones, audit, costs |
+| `nrv glance` | Web cockpit: companies, squads, clones, audit, costs. In an adopted project, a chat Message runs a real dispatch in a child process, with a live timeline, cancel, and recovery after a restart. `--read-only` keeps it browse only |
 | `nrv list-businesses` / `nrv list-squads` / `nrv list-clones` | Browse the three registries |
 | `nrv search "<topic>"` | Find capabilities across all three registries |
+| `nrv dispatch --business <slug> \| --squad <slug> \| --agent-x "<brief>" --exec` | Run a brief against a target you name; the router is never consulted |
+| `nrv run <business> "<brief>" --execution-mode=gauntlet --gauntlet-intensity=light\|balanced\|exhaustive` | Opt into the Gauntlet: candidates, evaluations, and revision rounds at three intensities (Business targets need `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST`) |
+| `nrv multi-target plan\|run\|status <plan.json>` | Compile, execute, or inspect a multi-target plan over the Run Kernel (`run` needs `NIRVANA_MULTI_TARGET_ENGINE=1`) |
 | `nrv update <pack>` | Update an installed pack |
-| `nrv doctor` | Check the installation |
+| `nrv doctor` | Check the installation; on Windows, `nrv install --repair-path` cleans the user PATH entries it warns about |
 
 Everything else, your agent runs. Full reference: [docs/CLI.md](./docs/CLI.md).
 
@@ -169,4 +174,4 @@ Author: **Luiz Gustavo Vieira Rodrigues (gutomec / Prospecteezy)**. No co-author
 
 License: the Nirvana-OS Sustainable Use License (SUL) v1.0. The source is published and openly readable, and the engine is free to use. It is source-available, not an OSI-approved open-source license, and certain commercial uses require a separate commercial license. Read [LICENSE](./LICENSE) before relying on any summary, including this one.
 
-Status: beta (0.x, currently 0.7.11). The engine works today and installs in minutes. Expect the surface to keep moving until 1.0.
+Status: beta (0.x, currently 0.8.1). The engine works today and installs in minutes. Expect the surface to keep moving until 1.0.
