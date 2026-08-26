@@ -4,6 +4,13 @@
  *
  * Anything NOT in this schema is invisible to the UI (cannot be read or written).
  * Adding a key here is an opt-in to web-UI editability.
+ *
+ * The operational settings of the engine (routing mode, the pinned model, DNA
+ * injection, the stall threshold, ...) are NOT here: they are keys of
+ * _shared/lib/settings-schema.ts, edited by the engine section of the same
+ * panel over /api/v1/settings, and a variable set here would only pin them.
+ * This whitelist keeps what has no schema key: secrets, library scope, paths,
+ * verbosity, the legacy host defaults and LLM_CASCADE.
  */
 
 export type FieldType =
@@ -207,14 +214,6 @@ export const CONFIG_SCHEMA: ConfigGroup[] = [
         recommendedScope: "global",
       },
       {
-        key: "NIRVANA_MODEL",
-        type: "string",
-        label: "System model (spawns)",
-        description: "O model que TODO spawn do Nirvana usa (--model). Vazio → herda o model da sua sessão. Alias recomendado: opus, sonnet, haiku, fable.",
-        placeholder: "opus",
-        recommendedScope: "global",
-      },
-      {
         key: "NIRVANA_HOST_RUNTIME",
         type: "enum",
         label: "Host runtime override",
@@ -229,44 +228,19 @@ export const CONFIG_SCHEMA: ConfigGroup[] = [
         description: "Stall watchdog poll interval; default 5000",
         recommendedScope: "global",
       },
-      {
-        key: "NIRVANA_STALL_THRESHOLD_MS",
-        type: "string",
-        label: "Stall threshold (ms)",
-        description: "Time without heartbeat before stall_detected; default 60000",
-        recommendedScope: "global",
-      },
     ],
   },
   {
     id: "routing",
     label: "Roteamento & resiliência",
-    description: "Como o Nirvana escolhe runtime/model, faz failover de cota e injeta DNA",
+    description: "Failover de cota e afinação do roteador. Modo de roteamento, modelo fixado e injeção de DNA ficam na seção Engine (nrv config).",
     fields: [
-      {
-        key: "NIRVANA_ROUTING_MODE",
-        type: "enum",
-        label: "Routing mode",
-        description: "agentic → um LLM lê o brief e os registries e decide · fast → BM25 zero-token (determinístico)",
-        options: ["agentic", "fast"],
-        default: "agentic",
-        recommendedScope: "global",
-      },
       {
         key: "LLM_CASCADE",
         type: "string",
         label: "LLM cascade (failover de cota)",
         description: "Cadeia ordenada de runtime:model@provider$budget separada por vírgula. Se um esgotar a cota, o próximo assume. Ex.: claude-code:opus,codex:gpt-5.5$10,gemini-cli:gemini-3-flash",
         placeholder: "claude-code,codex,gemini-cli",
-        recommendedScope: "global",
-      },
-      {
-        key: "NIRVANA_DNA_INJECTION",
-        type: "enum",
-        label: "DNA injection depth",
-        description: "full → persona inteira do mind-clone · fragments → só as camadas relevantes por fase (economiza contexto)",
-        options: ["full", "fragments"],
-        default: "full",
         recommendedScope: "global",
       },
       {

@@ -10,6 +10,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
 import {
   getScope,
   listSquads,
@@ -39,6 +40,11 @@ import { deriveAgentStates, summarizeStates } from "./agent-state.ts";
 import { paths, invalidatePathsCache } from "../../../_shared/lib/bun-helpers.ts";
 import { readEnvFile, writeEnvFile, setVar, deleteVar, getVar, toMap } from "../../../_shared/lib/env-file.ts";
 import { CONFIG_SCHEMA, getField, isEditableKey, maskSecret } from "./config-schema.ts";
+import {
+  SETTINGS_SCHEMA, SettingsError, engineConfigPath, globalConfigPath, projectConfigPath,
+  requireSpec, resolveAllSettings, resolveSetting, setSetting, settingInfo, unsetSetting,
+  type ResolveOptions, type ResolvedSetting, type SettingScope, type SettingsAudit, type SettingsErrorCode,
+} from "../../../_shared/lib/settings.ts";
 import { validateMindCloneFile, type ValidationResult } from "../../../_shared/lib/mindclone-validator.ts";
 import { handleObservabilityRoute } from "./views/observability-handler.ts";
 import { AgentXCanaryQueue, ConversationService, ProjectService, type GlanceAgentXCanaryAdapter, type GlanceExecutionRunner } from "../control-plane/index.ts";
@@ -262,6 +268,63 @@ export async function startServer(opts: ServerOptions) {
     return null;
   };
 
+  // ─── Settings (the settings core, _shared/lib/settings.ts) ───
+  // The project layer is this server's projectRoot: the root the execution runner spawns
+  // children with, so what the panel shows is what the next child receives. The runner
+  // resolves at every spawn and the core invalidates its file cache on every write, so a
+  // change here holds for the next dispatch without a restart. Writes audit
+  // `x_settings_changed` with `actor: "glance"` through the same lib/audit.js the CLI uses,
+  // anchored on the project's harness log.
+  const settingsAudit: SettingsAudit = (event, payload) => {
+    try { createRequire(import.meta.url)("../audit.js").emit(event, { ...payload, actor: "glance" }, { cwd: projectRoot }); }
+    catch (error) { console.error(`[glance] audit not written (${(error as Error).message})`); }
+  };
+  const settingsResolveOptions = (): ResolveOptions => ({ env: process.env, projectRoot });
+  const settingValueView = (resolved: ResolvedSetting) => ({
+    value: resolved.value, source: resolved.source, path: resolved.path ?? null,
+    variable: resolved.variable ?? null, raw: resolved.raw ?? null, locked: resolved.source === "env",
+  });
+  const settingsPayload = () => {
+    const values: Record<string, ReturnType<typeof settingValueView>> = {};
+    for (const resolved of resolveAllSettings(settingsResolveOptions())) values[resolved.key] = settingValueView(resolved);
+    const fileInfo = (file: string | null) => ({ path: file, exists: !!file && fs.existsSync(file) });
+    return {
+      schema: SETTINGS_SCHEMA.map(settingInfo), values,
+      files: { project: fileInfo(projectConfigPath(projectRoot)), global: fileInfo(globalConfigPath(process.env)), engine: fileInfo(engineConfigPath(process.env)) },
+      allow_actions: opts.allowActions,
+    };
+  };
+  const SETTINGS_ERROR_STATUS: Record<SettingsErrorCode, [number, string]> = {
+    unknown_key: [404, "Unknown setting"], invalid_value: [400, "Invalid value"], scope: [400, "Scope not accepted"],
+    no_project: [400, "No project"], pinned_by_env: [409, "Setting pinned by the environment"],
+    invalid_file: [409, "Config file unreadable"], invalid_env: [409, "Environment variable invalid"],
+  };
+  const settingsProblem = (error: unknown): Response => {
+    if (!(error instanceof SettingsError)) throw error;
+    const [status, title] = SETTINGS_ERROR_STATUS[error.code];
+    return problem(status, title, error.message);
+  };
+  // Idempotency for settings writes: the same Idempotency-Key with the same request replays
+  // the stored response without a second write (or a second audit event); the same key with
+  // another request is refused. Only successful writes are stored: a refusal wrote nothing,
+  // so repeating it after fixing the cause must run again. In-memory, like the server.
+  const settingsReplays = new Map<string, { fingerprint: string; response: Response }>();
+  const settingsWrite = async (req: Request, fingerprint: string, run: () => Response): Promise<Response> => {
+    const key = req.headers.get("idempotency-key")!;
+    const stored = settingsReplays.get(key);
+    if (stored) {
+      if (stored.fingerprint === fingerprint) return stored.response.clone();
+      return problem(409, "Idempotency key reused", "Idempotency-Key was already used for a different settings request");
+    }
+    const response = run();
+    if (response.ok) {
+      if (settingsReplays.size >= 500) settingsReplays.delete(settingsReplays.keys().next().value!);
+      settingsReplays.set(key, { fingerprint, response: response.clone() });
+    }
+    return response;
+  };
+  const settingScope = (value: unknown): SettingScope | null => (value === "project" || value === "global" ? value : null);
+
   // Write PID file (auto-cleanup on exit)
   try {
     fs.mkdirSync(path.dirname(PID_FILE), { recursive: true });
@@ -416,6 +479,33 @@ export async function startServer(opts: ServerOptions) {
             cancel() { clearInterval(timer); },
           });
           return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache", "connection": "keep-alive" } });
+        }
+        // Settings: GET the schema with the effective value, origin and lock of every key;
+        // PUT { value, scope } sets one key in the file of `scope`; DELETE ?scope= unsets it.
+        if (p === "/api/v1/settings" && req.method === "GET") {
+          const projectId = u.searchParams.get("project_id");
+          if (projectId !== null) {
+            const inspection = projectInspection();
+            if (inspection.kind !== "project" || inspection.project?.project_id !== projectId) return problem(404, "Project not found", "project_id does not name the project this Glance serves");
+          }
+          try { return json(settingsPayload()); } catch (error) { return settingsProblem(error); }
+        }
+        const settingMatch = p.match(/^\/api\/v1\/settings\/([A-Za-z0-9_.-]+)$/);
+        if (settingMatch && (req.method === "PUT" || req.method === "DELETE")) {
+          const key = settingMatch[1];
+          try { requireSpec(key); } catch (error) { return settingsProblem(error); }
+          const body = req.method === "PUT" ? await req.json().catch(() => null) as any : null;
+          if (req.method === "PUT" && (!body || typeof body !== "object" || body.value === undefined)) return problem(400, "Missing value", "PUT /api/v1/settings/<key> requires a JSON body { value, scope }");
+          const scope = settingScope(req.method === "PUT" ? body.scope : u.searchParams.get("scope"));
+          if (!scope) return problem(400, "Invalid scope", "scope must be project or global");
+          const fingerprint = req.method === "PUT" ? `PUT ${key} ${JSON.stringify({ value: body.value, scope })}` : `DELETE ${key} ${scope}`;
+          return settingsWrite(req, fingerprint, () => {
+            try {
+              const options = { ...settingsResolveOptions(), scope, audit: settingsAudit };
+              const change = req.method === "PUT" ? setSetting(key, body.value, options) : unsetSetting(key, options);
+              return json({ ...change, effective: settingValueView(resolveSetting(key, settingsResolveOptions())) });
+            } catch (error) { return settingsProblem(error); }
+          });
         }
         return notFound("control-plane route not found");
       }
@@ -1189,6 +1279,7 @@ export async function startServer(opts: ServerOptions) {
         "/glance.css": "text/css",
         "/glance.js": "application/javascript",
         "/run-event-labels.js": "application/javascript",
+        "/settings-panel.js": "application/javascript",
         "/dag-renderer.js": "application/javascript",
         "/org-chart-renderer.js": "application/javascript",
         "/graph-renderer.js": "application/javascript",

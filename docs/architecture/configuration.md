@@ -142,9 +142,11 @@ Variáveis que o schema não absorve, agrupadas pelo motivo:
 
 `LLM_CASCADE` (a cadeia de failover de cota) é uma preferência real de operação, mas tem sintaxe e arquivo próprios (`cascade.ts`); fica para um corte seguinte decidir se entra no schema.
 
-## A API para o painel do Glance
+## Pelo Glance
 
-O painel do Glance hoje edita `.env` pela `harness/lib/glance/config-schema.ts`. O corte seguinte troca isso por uma API sobre este núcleo, sem lógica própria de precedência. Tudo sai de `skills/_shared/lib/settings.ts`:
+O painel "Configuração" do Glance é um adapter sobre este núcleo, sem lógica própria de precedência: `GET /api/v1/settings` devolve o schema com o valor efetivo, a origem e `locked` de cada chave; `PUT /api/v1/settings/<chave>` com `{ value, scope }` e `DELETE /api/v1/settings/<chave>?scope=` gravam pelo `setSetting` e `unsetSetting`, com a autorização de toda escrita do Glance (`--read-only` recusa, `Origin` local, `Idempotency-Key`) e o mesmo `x_settings_changed` do CLI, com `actor: "glance"`. A camada de projeto é o root que o servidor serve, o mesmo que o runner fixa nos filhos, então a gravação vale no próximo despacho pelo Glance sem reiniciar. Uma chave fixada por variável no ambiente do servidor aparece como somente leitura e a gravação é recusada com `409`. O painel, as regras e o que fica somente leitura estão em [Configuração pelo Glance](glance-settings.md); as rotas e os códigos em [API do control plane](control-plane-api.md#42-configuração).
+
+A seção `.env` do mesmo painel (`harness/lib/glance/config-schema.ts`) continua para o que não tem chave no schema: segredos, escopo de biblioteca, caminhos, `LLM_CASCADE`. As variáveis que viraram chave saíram dessa lista. Tudo sai de `skills/_shared/lib/settings.ts`:
 
 ```ts
 import {
@@ -168,7 +170,7 @@ defaultWriteScope(opts?: ResolveOptions): { scope: "global" | "project"; project
 settingInfo(spec): { key, kind, default, scopes, description, expects, options, env, envAliases, secret: false }
 ```
 
-`nrv config list --json` já devolve `settingInfo(spec)` e `ResolvedSetting` fundidos por chave; é a forma que o painel deve ler. A gravação pelo painel passa o mesmo `audit` (`lib/audit.js` `emit`) que o CLI passa, para que `x_settings_changed` seja o registro dos dois. `SettingsError.code` distingue as recusas: `unknown_key`, `invalid_value`, `invalid_file`, `invalid_env`, `scope`, `pinned_by_env`, `no_project`.
+`nrv config list --json` devolve `settingInfo(spec)` e `ResolvedSetting` fundidos por chave; o `GET` do Glance devolve os dois lados separados (`schema` e `values`), a mesma informação. A gravação pelo painel passa o mesmo `audit` (`lib/audit.js` `emit`) que o CLI passa, para que `x_settings_changed` seja o registro dos dois. `SettingsError.code` distingue as recusas, e a API os traduz em códigos HTTP: `unknown_key` 404; `invalid_value`, `scope` e `no_project` 400; `pinned_by_env`, `invalid_file` e `invalid_env` 409.
 
 ## Testes
 
@@ -181,3 +183,4 @@ settingInfo(spec): { key, kind, default, scopes, description, expects, options, 
 | `skills/harness/tests/settings-spawners.test.ts` | os quatro spawners fixando o efetivo no filho (o fake dispatch lê as variáveis) |
 | `skills/harness/tests/config-command.test.ts` | `nrv config` de ponta a ponta, recusas e audit |
 | `skills/harness/tests/doctor-config.test.ts` | a seção `config` do doctor e o FAIL de um arquivo recusado |
+| `skills/harness/tests/glance-settings-api.test.ts`, `glance-settings-panel.test.ts` | as rotas de `settings` do Glance, o efeito no próximo filho sem reiniciar e o módulo do painel (ver [Configuração pelo Glance](glance-settings.md)) |

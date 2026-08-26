@@ -115,12 +115,23 @@ function glance() {
     // Settings modal state (env editor)
     settingsOpen: false,
     settingsData: null,
-    settingsActiveGroup: 'scope',
-    settingsScopePicker: 'project',  // 'project' | 'global'
+    // 'engine:<section>' for the engine settings (nrv config), a .env group id, or '__rules__'.
+    // Empty until the modal opens: the first engine group becomes the default then.
+    settingsActiveGroup: '',
+    settingsScopePicker: 'project',  // 'project' | 'global' (the .env section)
     settingsDraft: {},
     settingsDeletes: {},
     settingsSaving: false,
     settingsRestartRequired: false,
+    // ── Engine settings (nrv config) over /api/v1/settings; logic in settings-panel.js ──
+    engineSettings: null,      // the GET payload
+    engineGroups: [],          // buildSettingsPanel(payload).groups
+    engineDraft: {},           // key → control input (a boolean for a switch, text otherwise)
+    engineScope: {},           // key → 'project' | 'global'
+    engineErrors: {},          // key → refusal shown inline
+    engineNotice: {},          // key → what the last write did
+    engineSaving: {},          // key → true while a write is in flight
+    engineError: null,         // the whole section failed to load (a config file the resolver refuses)
     selected: null,
     detail: null,
     mindCloneContent: null,
@@ -1289,7 +1300,68 @@ function glance() {
     async openSettings() {
       this.settingsOpen = true;
       this.settingsRestartRequired = false;
+      this.engineDraft = {}; this.engineErrors = {}; this.engineNotice = {}; this.engineSaving = {};
+      // The engine section first: its first group is the default tab when none was chosen yet.
+      await this.fetchEngineSettings();
       await Promise.all([this.fetchSettings(), this.fetchRules()]);
+    },
+    settingsIsEngineTab() { return String(this.settingsActiveGroup || '').startsWith('engine:'); },
+    engineActiveGroup() { return this.engineGroups.find(g => 'engine:' + g.id === this.settingsActiveGroup) || null; },
+    async fetchEngineSettings() {
+      const panel = window.NirvanaSettingsPanel;
+      if (!panel) { this.engineError = 'settings-panel.js não carregou'; return; }
+      try {
+        const query = this.canonicalProjectId ? `?project_id=${encodeURIComponent(this.canonicalProjectId)}` : '';
+        const r = await fetch(`/api/v1/settings${query}`);
+        const body = await r.json().catch(() => null);
+        if (!r.ok) { this.engineError = panel.problemMessage(body, r.status); this.engineGroups = []; return; }
+        this.engineSettings = body;
+        this.engineError = null;
+        const built = panel.buildSettingsPanel(body);
+        this.engineGroups = built.groups;
+        for (const g of built.groups) for (const f of g.fields) if (!(f.key in this.engineScope)) this.engineScope[f.key] = panel.defaultScope(f);
+        if (!this.settingsActiveGroup && built.groups.length) this.settingsActiveGroup = 'engine:' + built.groups[0].id;
+      } catch (e) {
+        this.engineError = String(e.message || e);
+        this.engineGroups = [];
+      }
+    },
+    // The control's current input: the draft when the user touched it, else the effective value.
+    engineDraftValue(f) {
+      return f.key in this.engineDraft ? this.engineDraft[f.key] : window.NirvanaSettingsPanel.controlState(f);
+    },
+    engineDisplay(f, value) { return window.NirvanaSettingsPanel.displayValue(f, value); },
+    async saveEngineSetting(f) {
+      const panel = window.NirvanaSettingsPanel;
+      await this.engineWrite(f, panel.writeRequest(f, this.engineScope[f.key], this.engineDraftValue(f)));
+    },
+    async unsetEngineSetting(f) {
+      const panel = window.NirvanaSettingsPanel;
+      await this.engineWrite(f, panel.unsetRequest(f, this.engineScope[f.key]));
+    },
+    // One write per key: a fresh Idempotency-Key, the refusal inline (the schema's own message),
+    // the notice from the API's answer, then the section re-reads the effective values.
+    async engineWrite(f, request) {
+      const panel = window.NirvanaSettingsPanel;
+      this.engineSaving[f.key] = true;
+      this.engineErrors[f.key] = '';
+      this.engineNotice[f.key] = '';
+      try {
+        const r = await fetch(request.path, {
+          method: request.method,
+          headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
+          body: request.body ? JSON.stringify(request.body) : undefined,
+        });
+        const body = await r.json().catch(() => null);
+        if (!r.ok) { this.engineErrors[f.key] = panel.problemMessage(body, r.status); return; }
+        this.engineNotice[f.key] = panel.changeNotice(body);
+        delete this.engineDraft[f.key];
+        await this.fetchEngineSettings();
+      } catch (e) {
+        this.engineErrors[f.key] = String(e.message || e);
+      } finally {
+        this.engineSaving[f.key] = false;
+      }
     },
     async fetchRules() {
       this.rulesLoading = true;
@@ -1345,6 +1417,9 @@ function glance() {
       this.settingsOpen = false;
       this.settingsDraft = {};
       this.settingsDeletes = {};
+      this.engineDraft = {};
+      this.engineErrors = {};
+      this.engineNotice = {};
     },
     async fetchSettings() {
       try {

@@ -118,7 +118,7 @@
       </div>
       <button @click="toggleSetupMode()" :class="setupMode ? 'icon-btn icon-btn-active' : 'icon-btn'" x-cloak x-show="health.allow_actions" title="Setup mode — pick squads/businesses/mind-clones to copy to a project"><i data-lucide="package"></i></button>
       <button @click="chatOpen ? closeChat() : openChat()" :class="chatOpen ? 'icon-btn icon-btn-active' : 'icon-btn'" title="Chat — converse com o Nirvana e opere o sistema"><i data-lucide="message-square"></i></button>
-      <button @click="openSettings()" :class="settingsOpen ? 'icon-btn icon-btn-active' : 'icon-btn'" title="Settings — configure .env variables"><i data-lucide="settings"></i></button>
+      <button @click="openSettings()" :class="settingsOpen ? 'icon-btn icon-btn-active' : 'icon-btn'" title="Configuração" aria-label="Configuração"><i data-lucide="settings"></i></button>
       <button @click="consoleOpen = !consoleOpen" title="Console" class="icon-btn" :class="jobs.some(j => j.status==='running') ? 'icon-btn-pulse' : ''"><i data-lucide="terminal"></i></button>
       <button @click="cycleTheme()" title="Toggle theme" class="icon-btn"><i data-lucide="palette"></i></button>
       <button @click="refreshAll()" title="Refresh" class="icon-btn"><i data-lucide="rotate-cw"></i></button>
@@ -1493,17 +1493,17 @@
     </div>
   </div>
 
-  <!-- ───────── Settings modal (env editor) ───────── -->
-  <div class="modal" x-cloak x-show="settingsOpen" x-transition.opacity @click.self="closeSettings()" @keydown.escape.window="closeSettings()">
+  <!-- ───────── Settings modal: the engine settings (nrv config) and the .env editor, one tab, two sources ───────── -->
+  <div class="modal" x-cloak x-show="settingsOpen" x-transition.opacity @click.self="closeSettings()" @keydown.escape.window="closeSettings()" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
     <div class="modal-card modal-xl settings-modal-card" @click.stop>
       <header class="modal-head">
         <div class="modal-head-title">
           <i data-lucide="settings"></i>
-          <span class="text-headline">Settings</span>
-          <span class="text-caption">Edit Nirvana environment configuration</span>
+          <span class="text-headline" id="settings-modal-title">Configuração</span>
+          <span class="text-caption" x-text="settingsIsEngineTab() ? 'Engine (nrv config): vale no próximo despacho, sem reiniciar' : 'Ambiente (.env): segredos, escopo de biblioteca, regras de runtime'"></span>
         </div>
         <div class="modal-head-meta">
-          <div class="toolbar toolbar-sm">
+          <div class="toolbar toolbar-sm" x-show="!settingsIsEngineTab()">
             <button @click="settingsScopePicker = 'global'"
                     :class="settingsScopePicker === 'global' ? 'toolbar-btn active' : 'toolbar-btn'">
               <i data-lucide="globe"></i><span>Global</span>
@@ -1518,8 +1518,8 @@
       </header>
 
       <div class="modal-body">
-        <!-- File path indicator -->
-        <div class="settings-filepath text-caption" x-show="settingsData">
+        <!-- File path indicator (.env section) -->
+        <div class="settings-filepath text-caption" x-show="settingsData && !settingsIsEngineTab()">
           <span x-show="settingsScopePicker === 'project'">
             Editing: <code class="text-mono-sm" x-text="settingsData?.project_env_path"></code>
             <span class="badge badge-warn badge-xs" x-show="!settingsData?.project_env_exists">will be created</span>
@@ -1547,17 +1547,96 @@
           </div>
         </div>
 
-        <!-- Group tabs -->
-        <nav class="tabs" x-show="settingsData">
+        <!-- Group tabs: the engine settings (nrv config) first, then the .env groups, each cluster labelled -->
+        <nav class="tabs settings-tabs-nav" x-show="settingsData || engineGroups.length" aria-label="Seções de configuração">
+          <span class="settings-tabs-source text-caption" x-show="engineGroups.length">Engine</span>
+          <template x-for="g in engineGroups" :key="'engine:' + g.id">
+            <button @click="settingsActiveGroup = 'engine:' + g.id"
+                    :class="settingsActiveGroup === 'engine:' + g.id ? 'tab active' : 'tab'"
+                    :aria-current="settingsActiveGroup === 'engine:' + g.id ? 'true' : null"
+                    x-text="g.label"></button>
+          </template>
+          <span class="settings-tabs-source text-caption" x-show="settingsData">Ambiente (.env)</span>
           <template x-for="g in settingsData?.groups || []" :key="g.id">
             <button @click="settingsActiveGroup = g.id"
                     :class="settingsActiveGroup === g.id ? 'tab active' : 'tab'"
+                    :aria-current="settingsActiveGroup === g.id ? 'true' : null"
                     x-text="g.label"></button>
           </template>
           <!-- Aba especial: regras de roteamento por runtime (chaves dinâmicas) -->
           <button @click="settingsActiveGroup = '__rules__'"
-                  :class="settingsActiveGroup === '__rules__' ? 'tab active' : 'tab'">Runtime rules</button>
+                  :class="settingsActiveGroup === '__rules__' ? 'tab active' : 'tab'"
+                  :aria-current="settingsActiveGroup === '__rules__' ? 'true' : null">Runtime rules</button>
         </nav>
+
+        <!-- ══ Engine settings (nrv config): one control per key, saved per key ══ -->
+        <div class="settings-body" x-show="settingsIsEngineTab()">
+          <p class="text-caption settings-engine-intro">
+            Precedência: variável de ambiente &gt; projeto (<code x-text="engineSettings?.files?.project?.path || '.nirvana/config.yaml'"></code>) &gt; global (<code x-text="engineSettings?.files?.global?.path || '~/.nirvana/config.yaml'"></code>) &gt; engine &gt; padrão.
+            Cada gravação vale no próximo despacho pelo Glance, sem reiniciar; o mesmo que <code>nrv config set</code>.
+          </p>
+          <div x-show="engineError" class="run-suspicious-banner" role="alert">
+            <div class="run-suspicious-banner-head">
+              <span class="badge badge-danger">Configuração ilegível</span>
+              <strong x-text="engineError"></strong>
+            </div>
+          </div>
+          <template x-for="f in engineActiveGroup()?.fields || []" :key="f.key">
+            <div class="settings-field" :class="f.locked ? 'settings-field-locked' : ''">
+              <div class="settings-field-head">
+                <label class="settings-field-label" :for="'engine-' + f.key" x-text="f.name"></label>
+                <span class="badge badge-xs" :class="f.source === 'project' ? 'badge-success' : f.source === 'global' ? 'badge-info' : f.source === 'env' ? 'badge-warn' : 'badge-neutral'" x-text="f.sourceLabel"></span>
+                <span class="badge badge-xs badge-warn" x-show="f.locked"><i data-lucide="lock" class="icon-inline"></i> somente leitura</span>
+                <code class="text-mono-sm settings-field-key" x-text="f.key"></code>
+              </div>
+              <div class="text-caption settings-field-desc" :id="'engine-desc-' + f.key" x-text="f.description"></div>
+              <div class="settings-engine-row">
+                <!-- Boolean: a switch that says its state in words -->
+                <button x-show="f.control === 'toggle'" type="button" role="switch" class="switch"
+                        :id="'engine-' + f.key" :class="engineDraftValue(f) === true ? 'on' : ''"
+                        :aria-checked="engineDraftValue(f) === true ? 'true' : 'false'" :aria-describedby="'engine-desc-' + f.key"
+                        :disabled="!f.writable" @click="engineDraft[f.key] = engineDraftValue(f) !== true">
+                  <span class="switch-knob" aria-hidden="true"></span>
+                  <span class="switch-text" x-text="engineDraftValue(f) === true ? 'ligado' : 'desligado'"></span>
+                </button>
+                <!-- Enum: a select over the schema's options -->
+                <select x-show="f.control === 'select'" class="input input-md settings-engine-input"
+                        :id="'engine-' + f.key" :aria-describedby="'engine-desc-' + f.key" :disabled="!f.writable"
+                        @change="engineDraft[f.key] = $event.target.value">
+                  <template x-for="opt in f.options || []" :key="opt">
+                    <option :value="opt" x-text="opt" :selected="opt === String(engineDraftValue(f))"></option>
+                  </template>
+                </select>
+                <!-- Number and string (lists included): a field; the server validates by the schema -->
+                <input x-show="f.control === 'number' || f.control === 'text'" :type="f.control === 'number' ? 'number' : 'text'"
+                       class="input input-md settings-engine-input"
+                       :id="'engine-' + f.key" :aria-describedby="'engine-desc-' + f.key" :disabled="!f.writable"
+                       :value="engineDraftValue(f)" :placeholder="f.expects" @input="engineDraft[f.key] = $event.target.value"
+                       spellcheck="false" autocomplete="off">
+                <label class="text-caption settings-engine-scope">
+                  <span>gravar em</span>
+                  <select class="input input-sm" :disabled="!f.writable" :aria-label="'Escopo de ' + f.key"
+                          @change="engineScope[f.key] = $event.target.value">
+                    <template x-for="s in f.scopes" :key="s"><option :value="s" x-text="s === 'project' ? 'projeto' : 'global'" :selected="s === engineScope[f.key]"></option></template>
+                  </select>
+                </label>
+                <button type="button" class="btn btn-solid btn-primary btn-sm" @click="saveEngineSetting(f)"
+                        :disabled="!f.writable || !!engineSaving[f.key]" x-text="engineSaving[f.key] ? 'salvando…' : 'Salvar'"></button>
+                <button type="button" class="btn btn-ghost btn-sm" @click="unsetEngineSetting(f)"
+                        :disabled="!f.writable || !!engineSaving[f.key]" :title="'Remover ' + f.key + ' do arquivo escolhido; a camada seguinte passa a valer'">Remover do arquivo</button>
+              </div>
+              <div class="settings-field-foot text-caption">
+                <span>padrão: <code class="text-mono-sm" x-text="engineDisplay(f, f.default)"></code></span>
+                <span x-text="'esperado: ' + f.expects"></span>
+                <span x-show="f.env" x-text="'variável: ' + f.env"></span>
+                <span x-show="f.origin" x-text="'origem: ' + f.origin"></span>
+              </div>
+              <div class="settings-engine-note text-caption" x-show="f.locked" x-text="f.lockReason"></div>
+              <div class="settings-engine-error text-caption" role="alert" x-show="engineErrors[f.key]" x-text="engineErrors[f.key]"></div>
+              <div class="settings-engine-ok text-caption" role="status" x-show="engineNotice[f.key]" x-text="engineNotice[f.key]"></div>
+            </div>
+          </template>
+        </div>
 
         <!-- ══ Painel de REGRAS USE_*/NOT_USE_* ══ -->
         <div class="settings-body" x-show="settingsData && settingsActiveGroup === '__rules__'">
@@ -1586,11 +1665,11 @@
           </div>
         </div>
 
-        <!-- Group description (schema tabs) -->
-        <p class="text-caption" x-show="settingsActiveGroupObj() && settingsActiveGroup !== '__rules__'" x-text="settingsActiveGroupObj()?.description"></p>
+        <!-- Group description (.env tabs) -->
+        <p class="text-caption" x-show="settingsActiveGroupObj() && settingsActiveGroup !== '__rules__' && !settingsIsEngineTab()" x-text="settingsActiveGroupObj()?.description"></p>
 
-        <!-- Fields (schema tabs) -->
-        <div class="settings-body" x-show="settingsData && settingsActiveGroup !== '__rules__'">
+        <!-- Fields (.env tabs) -->
+        <div class="settings-body" x-show="settingsData && settingsActiveGroup !== '__rules__' && !settingsIsEngineTab()">
           <template x-for="f in settingsActiveGroupObj()?.fields || []" :key="f.key">
             <div class="settings-field">
               <div class="settings-field-head">
@@ -1653,8 +1732,8 @@
         </div>
       </div>
 
-      <!-- Footer / save bar (só para as abas de schema; Rules tem seu próprio save) -->
-      <footer class="modal-foot" x-show="settingsData && settingsActiveGroup !== '__rules__'">
+      <!-- Footer / save bar (.env tabs only; Rules has its own save, the engine section saves per key) -->
+      <footer class="modal-foot" x-show="settingsData && settingsActiveGroup !== '__rules__' && !settingsIsEngineTab()">
         <span class="text-caption"
               x-text="`${settingsPendingCount()} change${settingsPendingCount() === 1 ? '' : 's'} staged`"></span>
         <div class="modal-foot-actions">
@@ -1897,6 +1976,12 @@
   // a classic script, so the exports are exposed on window for the Alpine app.
   import * as runEventLabels from '/run-event-labels.js?v=__ASSET_VER__';
   window.NirvanaRunEventLabels = runEventLabels;
+</script>
+<script type="module">
+  // settings-panel.js is the pure module behind the engine section of the
+  // settings modal, shared with bun test the same way.
+  import * as settingsPanel from '/settings-panel.js?v=__ASSET_VER__';
+  window.NirvanaSettingsPanel = settingsPanel;
 </script>
 <script src="/dag-renderer.js?v=__ASSET_VER__"></script>
 <script src="/org-chart-renderer.js?v=__ASSET_VER__"></script>

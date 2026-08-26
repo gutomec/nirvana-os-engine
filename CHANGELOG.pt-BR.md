@@ -8,6 +8,48 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### O painel "Configuração" do Glance: toda chave do `nrv config` com API e tela
+
+O modal de configuração do cockpit Glance passa a ser o painel do núcleo de
+configuração. A primeira família de abas é o engine: toda chave de
+`settings-schema.ts`, agrupada por seção na ordem do schema (Multi-target,
+Gauntlet, Execução, Glance, Runtime, Roteamento, Supervisor, Atualizações,
+Orçamento, Baselines de custo, Quality gate), um controle por chave (um
+interruptor que diz o estado em palavras para booleanos, um select para
+enums, um campo para números, strings e listas), a descrição do schema, a
+forma esperada, o padrão, a variável legada, o valor efetivo e a origem em
+palavras, um select de escopo por controle (projeto ou global, só os escopos
+que a chave aceita), salvar e remover por chave, e a recusa embaixo do
+controle com a mensagem do próprio schema. Uma chave fixada por variável no
+ambiente do servidor fica somente leitura, com o motivo. A seção `.env`
+continua no mesmo modal, como antes, para o que não tem chave no schema
+(segredos, escopo de biblioteca, caminhos, `LLM_CASCADE`, as regras de
+runtime); as quatro variáveis que viraram chave (`NIRVANA_MODEL`,
+`NIRVANA_ROUTING_MODE`, `NIRVANA_DNA_INJECTION`,
+`NIRVANA_STALL_THRESHOLD_MS`) saíram da lista dela, então nada se configura
+em dois lugares.
+
+O painel lê e grava por três rotas novas, adapters do núcleo sem lógica
+própria de precedência, sob a autorização de toda escrita de `/api/v1`
+(ações ligadas, `Origin` local, `Idempotency-Key`):
+
+| Rota | Resultado |
+| --- | --- |
+| `GET /api/v1/settings?project_id=` | o schema com valor efetivo, origem, arquivo e `locked` de cada chave |
+| `PUT /api/v1/settings/<chave>` com `{ value, scope }` | grava a chave no arquivo do projeto ou no global; `404` chave desconhecida, `400` valor que o schema recusa ou escopo que a chave não aceita, `409` chave fixada por variável (nomeando-a) ou arquivo de configuração ilegível |
+| `DELETE /api/v1/settings/<chave>?scope=` | remove a chave daquele arquivo; a camada seguinte passa a valer |
+
+A mesma `Idempotency-Key` com a mesma requisição devolve a mesma resposta
+sem segunda gravação; outra requisição sob ela é `409`. Toda gravação que
+muda um arquivo grava `x_settings_changed` com `actor: "glance"` no audit do
+projeto, o mesmo evento do CLI. O runner de execução resolve as
+configurações a cada spawn e o núcleo invalida o cache a cada gravação,
+então uma mudança no painel vale na próxima Message que o cockpit despacha,
+sem reiniciar; o teste prova isso com o filho fake, que agora registra o
+ambiente que recebeu. `glance.execution` e `updates.check` são lidas no boot
+e valem a partir do próximo `nrv glance`. `docs/architecture/glance-settings.md`
+é o contrato do painel; `control-plane-api.md` lista as rotas e os códigos.
+
 ### Um núcleo de configuração: `nrv config`, quatro camadas, uma precedência
 
 Todo interruptor operacional do engine (multi-target, padrões e avaliador do
