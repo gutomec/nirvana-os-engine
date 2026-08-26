@@ -8,6 +8,29 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### A síntese de um plano multi-target tem limites Gauntlet próprios
+
+Nos escopos `each-target-and-final` e `adaptive`, a reserva agregada completa
+primeiro a solicitação da síntese com `min(teto, limite da síntese)`, e a
+síntese não tinha limite próprio: `compileMultiTargetGauntletPolicy` recusava
+`policy.targets[<synthesisNodeId>]` com `target node not found`, porque o nó
+`deliverable` não é um target. A síntese pedia então o teto inteiro e todo
+outro target Gauntlet ficava no piso de segurança. O plano `landing-clinica`,
+com teto USD 32, squad `landing-page-nirvana` limitado a USD 20 e síntese sem
+limite, reservava USD 31 para a síntese e USD 1 para o squad.
+
+A política agora aceita `policy.synthesis: { intensity?, limits? }`, e
+`policy.targets[<synthesisNodeId>]` como alias com o mesmo significado; as duas
+grafias geram o mesmo snapshot e o mesmo digest. Os limites herdam de forma
+conservadora, como os de um target; uma intensidade acima da global é recusada
+com o caminho, assim como um `mode` na síntese, porque só o escopo decide se
+ela roda Gauntlet. A decisão compilada da síntese leva os limites efetivos com
+`source: "target-override"`, então a reserva pede `min(teto, limite da
+síntese)` para ela e o saldo vai para os targets. O mesmo plano com a síntese
+limitada a USD 10: síntese USD 10, squad USD 20, USD 2 retidos. Sem limite na
+síntese nada muda. O `nrv multi-target plan` imprime a alocação nova; os
+documentos da política e do comando descrevem o campo.
+
 ### Toda saída de canário Gauntlet fecha a linha do run-ledger, e um dispatch scriptado não deixa linha agêntica para trás
 
 O primeiro smoke do Gauntlet com judge-x (`nrv dispatch --squad

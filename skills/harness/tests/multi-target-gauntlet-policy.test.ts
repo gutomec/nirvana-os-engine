@@ -196,3 +196,79 @@ describe("multi-target Gauntlet policy compiler with agent nodes", () => {
     expect(decisionOf({ scope: "final-only", synthesisNodeId: "final-output", targets: { "role-copywriter": { mode: "gauntlet" } } })).toMatchObject({ mode: "gauntlet", source: "target-override" });
   });
 });
+
+// The synthesis takes its own intensity and limits; its mode stays the scope's.
+describe("multi-target Gauntlet policy compiler with synthesis limits", () => {
+  const base: MultiTargetGauntletPolicy = {
+    scope: "each-target-and-final", intensity: "balanced", synthesisNodeId: "final-output",
+    limits: { maxCostUsd: 32, maxDurationSeconds: 600, maxRounds: 4 },
+  };
+  const compiled = (policy: MultiTargetGauntletPolicy) => {
+    const result = compileMultiTargetGauntletPolicy(graph, policy);
+    expect(result.issues).toEqual([]);
+    return result.plan!;
+  };
+  const issuesOf = (policy: MultiTargetGauntletPolicy) => {
+    const result = compileMultiTargetGauntletPolicy(graph, policy);
+    expect(result.plan).toBeNull();
+    return result.issues;
+  };
+
+  test("policy.synthesis sets the synthesis intensity and limits, inheriting only downwards", () => {
+    const plan = compiled({ ...base, synthesis: { intensity: "light", limits: { maxCostUsd: 10, maxDurationSeconds: 900, maxRounds: 2 } } });
+    expect(plan.synthesis).toEqual({
+      nodeId: "final-output", targetKind: "synthesis", mode: "gauntlet", intensity: "light",
+      limits: { maxCostUsd: 10, maxDurationSeconds: 600, maxRounds: 2 },
+      reason: "selected by each-target-and-final scope with its own intensity and limits", source: "target-override",
+    });
+    // The targets do not see the synthesis override.
+    expect(plan.decisions.find((decision) => decision.nodeId === "squad-c")).toMatchObject({
+      mode: "gauntlet", intensity: "balanced", limits: { maxCostUsd: 32, maxDurationSeconds: 600, maxRounds: 4 }, source: "scope",
+    });
+  });
+
+  test("without an override the synthesis keeps the scope intensity and the global limits", () => {
+    expect(compiled(base).synthesis).toMatchObject({
+      intensity: "balanced", limits: { maxCostUsd: 32, maxDurationSeconds: 600, maxRounds: 4 },
+      reason: "selected by each-target-and-final scope", source: "scope",
+    });
+  });
+
+  test("targets[synthesisNodeId] is an alias of policy.synthesis with the same snapshot and digest", () => {
+    const direct = compiled({ ...base, synthesis: { limits: { maxCostUsd: 10 } } });
+    const alias = compiled({ ...base, targets: { "final-output": { limits: { maxCostUsd: 10 } } } });
+    expect(alias).toEqual(direct);
+    expect(alias.policySnapshot).toMatchObject({ synthesis: { limits: { maxCostUsd: 10 } }, targets: {} });
+  });
+
+  test("the digest changes with the synthesis limit", () => {
+    const ten = compiled({ ...base, synthesis: { limits: { maxCostUsd: 10 } } });
+    const twelve = compiled({ ...base, synthesis: { limits: { maxCostUsd: 12 } } });
+    expect(twelve.digest).not.toBe(ten.digest);
+    expect(ten.digest).not.toBe(compiled(base).digest);
+  });
+
+  test("a scope that does not select the synthesis leaves it standard even with limits", () => {
+    expect(compiled({ ...base, scope: "each-target", synthesis: { limits: { maxCostUsd: 10 } } }).synthesis).toEqual({
+      nodeId: "final-output", targetKind: "synthesis", mode: "standard", reason: "scope does not select synthesis", source: "scope",
+    });
+  });
+
+  test("rejects invalid limits, an intensity above the policy, a mode on the synthesis and a synthesis without node", () => {
+    expect(issuesOf({ ...base, synthesis: { limits: { maxCostUsd: -1, maxRounds: 1.5 } } }).map((issue) => issue.path))
+      .toEqual(["/policy/synthesis/limits/maxCostUsd", "/policy/synthesis/limits/maxRounds"]);
+    expect(issuesOf({ ...base, synthesis: { intensity: "exhaustive" } }))
+      .toEqual([{ path: "/policy/synthesis/intensity", message: "must not exceed the policy intensity balanced" }]);
+    expect(issuesOf({ ...base, targets: { "final-output": { mode: "gauntlet", limits: { maxCostUsd: 10 } } } }))
+      .toEqual([{ path: "/policy/targets/final-output/mode", message: "synthesis mode comes from the scope; declare only intensity and limits" }]);
+    expect(issuesOf({ ...base, targets: { "final-output": { risk: "high" } } }))
+      .toEqual([{ path: "/policy/targets/final-output/risk", message: "synthesis accepts only intensity and limits" }]);
+    expect(issuesOf({ scope: "each-target", synthesis: { limits: { maxCostUsd: 10 } } }))
+      .toEqual([{ path: "/policy/synthesis", message: "requires policy.synthesisNodeId" }]);
+    expect(issuesOf({ ...base, synthesis: { limits: { maxCostUsd: 10 } }, targets: { "final-output": { limits: { maxCostUsd: 10 } } } }))
+      .toEqual([{ path: "/policy/targets/final-output", message: "synthesis is already configured by policy.synthesis" }]);
+    // A deliverable that is not the declared synthesis is still not a target.
+    expect(issuesOf({ scope: "each-target", targets: { "final-output": { limits: { maxCostUsd: 10 } } } }))
+      .toEqual([{ path: "/policy/targets/final-output", message: "deliverable final-output is not the declared synthesis; set policy.synthesisNodeId" }]);
+  });
+});

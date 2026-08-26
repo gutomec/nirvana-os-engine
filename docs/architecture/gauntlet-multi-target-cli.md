@@ -75,6 +75,26 @@ Um papel sem squad especializado (a copy de um lançamento entre o squad de pesq
 
 As ondas são `brief-main`, `squad-research`, `role-copywriter`, `squad-design` e `final-output`, uma por vez. O `DISPATCH-INSTRUCTION.md` de `agents/role-copywriter/` apresenta o executor como o agent-x no papel `role-copywriter`, aponta o `_SUMMARY.md` de `squads/squad-research/outputs/` e nomeia `squad-design` como consumidor. É o plano que `skills/harness/tests/multi-target-cli.test.ts` executa de ponta a ponta com o dispatch falso.
 
+### Limites da síntese
+
+A síntese (o nó `deliverable` em `synthesisNodeId`) pede à reserva agregada `min(teto, limite próprio)`; sem limite próprio ela pede o teto inteiro e deixa os outros targets Gauntlet no piso. `policy.synthesis` declara intensidade e limites só dela, e `policy.targets[<synthesisNodeId>]` é um alias com o mesmo significado, sem `mode`, porque o modo da síntese é do escopo ([política](gauntlet-multi-target-policy.md)). Um plano com teto USD 32, squad limitado a USD 20 e síntese limitada a USD 10:
+
+```json
+"policy": {
+  "scope": "each-target-and-final",
+  "intensity": "light",
+  "synthesisNodeId": "final-output",
+  "limits": { "maxCostUsd": 32 },
+  "synthesis": { "limits": { "maxCostUsd": 10 } },
+  "targets": {
+    "visual-brief": { "mode": "standard" },
+    "landing-page-nirvana": { "limits": { "maxCostUsd": 20 } }
+  }
+}
+```
+
+`nrv multi-target plan` imprime a alocação: `landing-page-nirvana` na onda 2 com USD 20 solicitados e concedidos, `final-output` na onda 3 com USD 10 solicitados e concedidos, saldo USD 2. Sem `synthesis`, o mesmo plano concede USD 31 à síntese e USD 1 ao squad.
+
 ## Comandos
 
 ### `plan <arquivo> [--project <id>]`

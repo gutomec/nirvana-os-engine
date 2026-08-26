@@ -8,6 +8,30 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### The synthesis of a multi-target plan takes its own Gauntlet limits
+
+Under `each-target-and-final` and `adaptive`, the aggregate reservation
+completes the synthesis first with `min(cap, synthesis limit)`, and the
+synthesis had no limit of its own: `compileMultiTargetGauntletPolicy` refused
+`policy.targets[<synthesisNodeId>]` with `target node not found`, since the
+`deliverable` node is not a target. The synthesis therefore requested the whole
+cap and every other Gauntlet target was left at its safe minimum. The
+`landing-clinica` plan, cap USD 32, squad `landing-page-nirvana` limited to
+USD 20 and synthesis unlimited, reserved USD 31 for the synthesis and USD 1 for
+the squad.
+
+The policy now accepts `policy.synthesis: { intensity?, limits? }`, and
+`policy.targets[<synthesisNodeId>]` as an alias with the same meaning; both
+snapshot and digest alike. Limits inherit conservatively, like a target's; an
+intensity above the policy's is refused with its path, and so is a `mode` on
+the synthesis, because the scope alone decides whether it runs Gauntlet. The
+compiled synthesis decision carries the effective limits with
+`source: "target-override"`, so the reservation asks `min(cap, synthesis
+limit)` for it and the balance goes to the targets. The same plan with the
+synthesis capped at USD 10: synthesis USD 10, squad USD 20, USD 2 held back.
+Without a synthesis limit nothing changes. `nrv multi-target plan` prints the
+new allocation; the policy and CLI documents describe the field.
+
 ### Every Gauntlet canary exit closes its run-ledger row, and a scripted dispatch leaves no agentic row behind
 
 The first Gauntlet smoke with judge-x (`nrv dispatch --squad

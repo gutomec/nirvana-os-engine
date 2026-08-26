@@ -53,6 +53,12 @@ Um override pode reduzir intensidade e limites, mas não ampliá-los. A intensid
 
 Referências inexistentes, ciclos, escopos, intensidades, modos, riscos e limites inválidos impedem a emissão do plano compilado.
 
+## Limites da síntese
+
+`policy.synthesis` dá à síntese intensidade e limites próprios, no formato `{ "intensity": "light", "limits": { "maxCostUsd": 10 } }`. Por conveniência, `policy.targets[<synthesisNodeId>]` tem o mesmo significado: as duas grafias produzem o mesmo snapshot e o mesmo digest, e declarar as duas é erro em `/policy/targets/<id>`. O modo da síntese continua vindo do escopo, então `mode` nessa entrada é recusado com o caminho e uma explicação, assim como `critical`, `risk` e `estimatedCostUsd`.
+
+Os limites herdam como nos targets: cada limite efetivo é o menor entre o global e o da síntese. A intensidade é mais estrita, porque um valor acima da intensidade global é erro em `/policy/synthesis/intensity`, não um corte silencioso. A decisão compilada da síntese leva os limites efetivos e `source: "target-override"`; sem override, leva os limites globais e `source: "scope"`. Num escopo que não seleciona a síntese ela fica `standard`, e o override não tem efeito. `policy.synthesis` sem `synthesisNodeId` é erro em `/policy/synthesis`.
+
 ## Reserva agregada de custo
 
 `reserveAggregateGauntletBudget` projeta uma reserva sobre o `CompiledMultiTargetPlan`. O digest da reserva inclui `policyDigest`, ligando a alocação ao snapshot exato que a originou. A função não chama executor, runtime, rede nem medidor de consumo real.
@@ -63,10 +69,10 @@ Valores são convertidos para micros de dólar antes do cálculo. Isso evita div
 
 1. reservar o piso seguro de cada decisão Gauntlet, com USD 1 para `light`, USD 2 para `balanced` e USD 5 para `exhaustive`;
 2. rejeitar a reserva inteira quando o teto ou um limite individual não comportar esses pisos;
-3. completar a solicitação da síntese, quando houver;
+3. completar a solicitação da síntese, quando houver: `min(teto, maxCostUsd da síntese)`, ou o teto inteiro quando a síntese não tem limite próprio;
 4. ratear o saldo proporcionalmente entre targets, com resíduos de um micro distribuídos pela maior fração e depois pelo ID.
 
-A soma concedida nunca supera o teto nem a solicitação individual. A síntese é protegida, mas não pode consumir os pisos já reservados para targets anteriores.
+A soma concedida nunca supera o teto nem a solicitação individual. A síntese é protegida, mas não pode consumir os pisos já reservados para os targets, e o que ela não pede fica para eles. Sem limite próprio ela pede o teto inteiro e os targets ficam no piso: num plano `light` com teto USD 32, squad limitado a USD 20 e síntese sem limite, a síntese recebe USD 31 e o squad USD 1. Com `synthesis.limits.maxCostUsd: 10`, a síntese recebe USD 10, o squad USD 20 e o saldo de USD 2 fica retido, porque nenhuma solicitação ficou em aberto. Com dois targets de USD 12 sob intensidade `balanced` e a mesma síntese de USD 10, os pisos somam USD 6, a síntese completa USD 10 e os USD 18 restantes vão USD 9 para cada target.
 
 Ausência de política ou de `maxCostUsd` retorna reserva nula e preserva o plano. Zero explícito é um teto real: um Gauntlet ativo é rejeitado porque não comporta seu piso seguro. Duração não é somada porque ondas paralelas compartilham tempo de parede. Rounds continuam como limites locais, pois somá-los não descreve consumo agregado.
 
