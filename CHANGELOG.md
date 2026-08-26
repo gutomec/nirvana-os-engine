@@ -8,6 +8,21 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### A failed `openKernel` no longer leaks the database handle
+
+`openKernel` opened the SQLite `Database` and only then ran `initialize`
+(the journal pragmas and the schema). When `initialize` threw, the handle
+stayed open and the file stayed locked. On Windows, `PRAGMA journal_mode =
+WAL` right after a child process died failed with `SQLITE_IOERR_TRUNCATE`,
+and every later `rmSync` on that directory cascaded into `EBUSY` during
+teardown (run 32929139083). `openKernel` now closes the `Database` before
+rethrowing the original error, untouched; the success path is unchanged. The
+regression test provokes the failure with a file that is not a SQLite
+database at the kernel path (SQLite reads nothing at open, so the first
+pragma is what fails) and checks that `close` ran once, that the caller
+receives the `SQLiteError` itself, and that the file can be removed and
+reopened right away.
+
 ### Every dispatched instruction carries the scope guard
 
 A dispatched executor used to receive its scope only implicitly, and a

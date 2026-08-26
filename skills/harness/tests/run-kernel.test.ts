@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { Database, SQLiteError } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -303,4 +304,36 @@ console.log(count);
     expect(events.map(event => event.sequence)).toEqual(events.map((_, index) => index + 1));
     expect(getRun(handle, "prj_busy", "run_parent")?.state).toBe("running");
   }, 30000);
+});
+
+describe("opening a kernel", () => {
+  // openKernel opens the Database and only then runs initialize (the journal pragmas and the
+  // schema). On Windows, PRAGMA journal_mode = WAL right after a child process died failed with
+  // SQLITE_IOERR_TRUNCATE, and the handle left open kept the file locked: every rmSync on that
+  // directory cascaded into EBUSY during teardown (run 32929139083). A file that is not a SQLite
+  // database provokes the same shape deterministically: SQLite reads nothing at open, so
+  // new Database() succeeds and the first pragma fails with SQLITE_NOTADB.
+  test("closes the database and rethrows the original error when initialize fails", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-kernel-"));
+    roots.push(root);
+    const kernelPath = path.join(root, "kernel.sqlite");
+    fs.writeFileSync(kernelPath, "not a sqlite database\n", "utf8");
+    // Unlinking an open file succeeds on POSIX, so rmSync below only proves the fix on Windows;
+    // the spy makes a leaked handle visible on every OS.
+    const close = spyOn(Database.prototype, "close");
+    try {
+      let thrown: unknown;
+      try { openKernel(kernelPath); } catch (error) { thrown = error; }
+      expect(thrown).toBeInstanceOf(SQLiteError);
+      expect((thrown as SQLiteError).code).toBe("SQLITE_NOTADB");
+      expect(close).toHaveBeenCalledTimes(1);
+    } finally {
+      close.mockRestore();
+    }
+    fs.rmSync(kernelPath);
+    const reopened = openKernel(kernelPath);
+    handles.push(reopened);
+    createRun(reopened, runInput());
+    expect(getRun(reopened, "prj_a", "run_a")?.state).toBe("prepared");
+  });
 });
