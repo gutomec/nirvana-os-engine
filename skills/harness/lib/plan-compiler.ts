@@ -96,13 +96,16 @@ export interface MultiTargetPolicyIssue {
 const INTENSITY_RANK: Record<GauntletIntensity, number> = { light: 0, balanced: 1, exhaustive: 2 };
 // Workspace directory per node type, per references/04-multi-target.md; other
 // types keep the plain `<type>s` rule.
-const OUTPUTS_DIR_BY_NODE_TYPE: Record<string, string> = { company: "businesses", squad: "squads", deliverable: "deliverables", brief: "briefs" };
+const OUTPUTS_DIR_BY_NODE_TYPE: Record<string, string> = { company: "businesses", squad: "squads", agent: "agents", deliverable: "deliverables", brief: "briefs" };
+// Node types the policy decides on: they run through an adapter and take a mode.
+const EXECUTABLE_NODE_TYPES = new Set<GraphNode["type"]>(["company", "squad", "agent"]);
 const POLICY_SCOPES = new Set<MultiTargetGauntletScope>(["final-only", "each-target", "critical-targets", "each-target-and-final", "adaptive"]);
 const POLICY_INTENSITIES = new Set<GauntletIntensity>(["light", "balanced", "exhaustive"]);
 
 function targetKind(node: GraphNode): CompiledGauntletDecision["targetKind"] {
   if (node.type === "company") return "business";
   if (node.type === "squad") return "squad";
+  if (node.type === "agent") return "agent-x";
   if (node.type === "deliverable") return "synthesis";
   return "support";
 }
@@ -162,7 +165,7 @@ export function compileMultiTargetGauntletPolicy(
   const manifest = compiled.manifest;
   const issues: MultiTargetPolicyIssue[] = [];
   const nodes = new Map(graph.nodes.map((node) => [node.id, node]));
-  const targetIds = new Set(graph.nodes.filter((node) => node.type === "company" || node.type === "squad").map((node) => node.id));
+  const targetIds = new Set(graph.nodes.filter((node) => EXECUTABLE_NODE_TYPES.has(node.type)).map((node) => node.id));
 
   if (policy) {
     if (!POLICY_SCOPES.has(policy.scope)) issues.push({ path: "/policy/scope", message: `invalid scope: ${policy.scope}` });

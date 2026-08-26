@@ -35,7 +35,7 @@ O estado terminal do plano é `failed` quando existe falha ou nó sem lease recu
 
 ## Retomada e projeção
 
-As portas `state` e `journal` são injetáveis. A primeira carrega e persiste `MultiTargetCoordinatorSnapshot`. A segunda persiste as referências imutáveis e recebe eventos tipados. `createRunKernelMultiTargetPorts` implementa ambas sobre o journal, sequence e outbox canônicos, além da lease operacional por nó.
+As portas `state` e `journal` são injetáveis. A primeira carrega e persiste `MultiTargetCoordinatorSnapshot`; cada nó da projeção carrega `targetKind` (`business`, `squad`, `agent-x`, `synthesis` ou `support`), ausente só em snapshots gravados antes do campo existir. A segunda persiste as referências imutáveis e recebe eventos tipados. `createRunKernelMultiTargetPorts` implementa ambas sobre o journal, sequence e outbox canônicos, além da lease operacional por nó.
 
 Nós terminais não executam novamente. Um nó persistido como `running` só é reenviado quando a porta de lease confirma recuperação; nesse caso, o adapter recebe a mesma chave idempotente e `resume: true`. Sem lease, o nó vira `stalled` e nenhum side effect é presumido seguro.
 

@@ -1770,13 +1770,14 @@
                       <table class="cap-table run-mt-table">
                         <caption class="sr-only">Nós do plano multi-target por onda</caption>
                         <thead>
-                          <tr><th scope="col">Onda</th><th scope="col">Nó</th><th scope="col">Modo</th><th scope="col">Estado</th><th scope="col">Concedido</th><th scope="col">Reportado</th><th scope="col">Razão</th><th scope="col">Bloqueios</th></tr>
+                          <tr><th scope="col">Onda</th><th scope="col">Nó</th><th scope="col">Alvo</th><th scope="col">Modo</th><th scope="col">Estado</th><th scope="col">Concedido</th><th scope="col">Reportado</th><th scope="col">Razão</th><th scope="col">Bloqueios</th></tr>
                         </thead>
                         <tbody>
                           <template x-for="node in runMultiTarget(m).nodes" :key="node.nodeId">
                             <tr>
                               <td x-text="node.waveIndex + 1"></td>
                               <th scope="row" x-text="node.nodeId"></th>
+                              <td x-text="node.targetKind || '—'"></td>
                               <td x-text="node.mode"></td>
                               <td><span class="badge badge-sm badge-subtle" :class="'badge-' + multiTargetStateVariant(node.state)" x-text="node.state"></span></td>
                               <td x-text="'$' + Number(node.grantedCostUsd || 0).toFixed(2)"></td>

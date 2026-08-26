@@ -56,6 +56,10 @@ describe("Glance run event labels", () => {
     expect(runEventView({ type: "gauntlet.stopped", payload: { reason: "critical_regression", decision: "withheld" } })).toMatchObject({ title: "Gauntlet parou: reter", tone: "fail" });
     expect(runEventView({ type: "multi_target.node_delivered", payload: { node } })).toMatchObject({ title: "Nó business-a entregue", sub: "onda 2 · reportado $0.25", tone: "ok" });
     expect(runEventView({ type: "multi_target.node_skipped", payload: { node: { ...node, state: "skipped" } } }).sub).toBe("onda 2 · bloqueado por brief");
+    // The target kind of the node follows the wave when the projection carries it (agent-x for an agent node).
+    expect(runEventView({ type: "multi_target.node_started", payload: { node: { ...node, nodeId: "role-copywriter", targetKind: "agent-x", waveIndex: 2 } } }))
+      .toMatchObject({ title: "Nó role-copywriter iniciado", sub: "onda 3 · agent-x · gauntlet · concedido $2.00", tone: "active" });
+    expect(runEventView({ type: "multi_target.node_delivered", payload: { node: { ...node, targetKind: "squad" } } }).sub).toBe("onda 2 · squad · reportado $0.25");
     expect(runEventView({ type: "multi_target.lease_lost", payload: { nodeId: "squad-c", ownerId: "w", version: 2 } })).toMatchObject({ title: "Lease de squad-c perdida", sub: "w · v2", tone: "fail" });
     expect(runEventView({ type: "multi_target.plan_terminal", payload: { state: "withheld", reason: "node x was withheld" } })).toMatchObject({ title: "Plano multi-target retido", sub: "node x was withheld", tone: "fail" });
   });

@@ -9,6 +9,10 @@
 // which edges are legal, a cycle check saying which graphs are not, and a
 // topological order that is, without modification, install order.
 //
+// An `agent` node is a role executed by the runtime's generalist (agent-x):
+// its id is the role name, a free slug that exists in no registry. It is
+// briefed, depends and yields like a squad.
+//
 // The load-bearing subtlety is dependencyPair(): for the edge types
 // `depends_on`, `staffs` and `embodies` the BUILD direction is the reverse of
 // the drawn direction — `employee embodies mind_clone` means the clone must
@@ -27,7 +31,7 @@
 import type { DagNode } from "../../harness/lib/dag-planner.ts";
 
 export type NodeType =
-  | "brief" | "company" | "squad" | "mind_clone" | "employee" | "material" | "deliverable";
+  | "brief" | "company" | "squad" | "mind_clone" | "employee" | "material" | "deliverable" | "agent";
 export type EdgeType =
   | "briefs" | "owns" | "staffs" | "embodies" | "covers" | "feeds" | "depends_on" | "yields";
 
@@ -48,7 +52,7 @@ export interface DependencyGraph {
   edges: GraphEdge[];
 }
 
-const NODE_TYPES: NodeType[] = ["brief", "company", "squad", "mind_clone", "employee", "material", "deliverable"];
+const NODE_TYPES: NodeType[] = ["brief", "company", "squad", "mind_clone", "employee", "material", "deliverable", "agent"];
 const EDGE_TYPES: EdgeType[] = ["briefs", "owns", "staffs", "embodies", "covers", "feeds", "depends_on", "yields"];
 
 export function emptyGraph(): DependencyGraph {
@@ -58,14 +62,14 @@ export function emptyGraph(): DependencyGraph {
 /** Protocol table: which edge types may connect which node types. */
 export function isCompatibleEdge(type: EdgeType, from: NodeType, to: NodeType): boolean {
   switch (type) {
-    case "briefs": return from === "brief" && ["company", "squad", "mind_clone"].includes(to);
+    case "briefs": return from === "brief" && ["company", "squad", "mind_clone", "agent"].includes(to);
     case "owns": return from === "company" && to === "employee";
     case "staffs": return from === "employee" && to === "squad";
     case "embodies": return ["employee", "company"].includes(from) && to === "mind_clone";
     case "covers": return from === "squad" && to === "company";
     case "feeds": return from === "material" && ["mind_clone", "company", "squad"].includes(to);
     case "depends_on": return true;
-    case "yields": return ["company", "squad"].includes(from) && to === "deliverable";
+    case "yields": return ["company", "squad", "agent"].includes(from) && to === "deliverable";
   }
 }
 

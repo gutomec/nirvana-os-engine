@@ -394,11 +394,16 @@ export function runAgentX(args: RunAgentXArgs): AgentXResult {
     ...(args.ledger ? { ledger: { runId: args.ledger.runId, watchDir: args.ledger.watchDir ?? args.outputsRoot } } : {}),
   });
 
+  // A multi-target adapter names the node this child runs in NIRVANA_MULTI_TARGET_NODE_ID
+  // (lib/gauntlet/multi-target-dispatch-adapters.ts): every agent-x node of a plan shares
+  // `employee: "agent-x"` under one trace, and its cost matcher reads `node_id` back.
+  const multiTargetNodeId = process.env.NIRVANA_MULTI_TARGET_NODE_ID;
   emit("agent_executed", {
     trace_id: args.projectId, project_id: args.projectId,
     employee: "agent-x", runtime: res.finalRuntime, session_id: res.sessionId,
     cost_usd: res.costUsd, duration_ms: res.durationMs, mode: "agent-x",
     handoffs: res.handoffs.length ? res.handoffs : undefined,
+    ...(multiTargetNodeId ? { node_id: multiTargetNodeId } : {}),
   });
 
   return {

@@ -32,7 +32,9 @@
 // The node id comes from --business / --squad, or from the outputs root for
 // agent-x and judge-x nodes (<workspace>/<kind>/<nodeId>/outputs). The cost
 // event names the executor the way the real dispatch does: `squad_slug`,
-// `business_slug`, or `employee` "agent-x" / "judge-x" (`--judge-x`).
+// `business_slug`, or `employee` "agent-x" / "judge-x" (`--judge-x`). Like
+// runAgentX, an agent-x cost event copies NIRVANA_MULTI_TARGET_NODE_ID as
+// `node_id` when the parent set it.
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -59,8 +61,10 @@ const sleepMs = Number(process.env.FAKE_DISPATCH_SLEEP_MS ?? 0);
 if (sleepMs > 0) await Bun.sleep(sleepMs);
 const cost = Number(process.env.FAKE_DISPATCH_COST_USD ?? 0);
 if (cost > 0) {
+  const multiTargetNodeId = process.env.NIRVANA_MULTI_TARGET_NODE_ID;
   const target = value("--business") ? { business_slug: value("--business"), employee: "intake" }
     : value("--squad") ? { squad_slug: value("--squad"), employee: "squad:" + value("--squad") }
+    : multiTargetNodeId ? { employee: argv.includes("--judge-x") ? "judge-x" : "agent-x", node_id: multiTargetNodeId }
       : { employee: argv.includes("--judge-x") ? "judge-x" : "agent-x" };
   const project = value("--project");
   const logsDir = process.env.HARNESS_LOGS_DIR ?? path.join(process.cwd(), "outputs", project, ".nirvana", "logs", "harness");

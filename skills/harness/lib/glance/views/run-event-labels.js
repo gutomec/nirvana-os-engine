@@ -34,11 +34,12 @@ const VERDICT_TONES = { pass: 'ok', revise: 'active', reject: 'fail' };
 const PLAN_STATE_LABELS = { ready: 'pronto', running: 'em execução', delivered: 'entregue', withheld: 'retido', failed: 'falhou' };
 const PLAN_STATE_TONES = { delivered: 'ok', running: 'active', withheld: 'fail', failed: 'fail' };
 
-// Node events carry the full node projection in `payload.node`.
+// Node events carry the full node projection in `payload.node`; the target kind
+// (business, squad, agent-x, synthesis, support) follows the wave when present.
 function nodeView(ev, icon, verb, tone, detail) {
   const node = ev.payload?.node || {};
   const wave = node.waveIndex != null ? `onda ${node.waveIndex + 1}` : '';
-  return { icon, title: `Nó ${node.nodeId || ev.payload?.nodeId || '?'} ${verb}`, sub: join(wave, ...detail(node)), tone };
+  return { icon, title: `Nó ${node.nodeId || ev.payload?.nodeId || '?'} ${verb}`, sub: join(wave, node.targetKind, ...detail(node)), tone };
 }
 function leaseView(ev, icon, verb, tone = '') {
   const p = ev.payload || {};

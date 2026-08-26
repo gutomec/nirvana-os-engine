@@ -5,7 +5,7 @@ import { isAbsolute, join } from "node:path";
 import type { DependencyGraph } from "../../_shared/lib/dependency-graph.ts";
 import { reserveAggregateGauntletBudget } from "../lib/gauntlet/aggregate-budget.ts";
 import { coordinateMultiTargetPlan, type MultiTargetAdapterInput } from "../lib/gauntlet/multi-target-coordinator.ts";
-import { createDispatchMultiTargetAdapters, MULTI_TARGET_RESULT_MARKER, type DispatchSpawn } from "../lib/gauntlet/multi-target-dispatch-adapters.ts";
+import { costMatcher, createDispatchMultiTargetAdapters, MULTI_TARGET_RESULT_MARKER, type DispatchSpawn } from "../lib/gauntlet/multi-target-dispatch-adapters.ts";
 import { createRunKernelMultiTargetPorts } from "../lib/gauntlet/run-kernel-multi-target-ports.ts";
 import { compileMultiTargetGauntletPolicy, type CompiledMultiTargetPlan } from "../lib/plan-compiler.ts";
 import { createRun, listEvents, openKernel, type KernelHandle } from "../lib/run-kernel/store.ts";
@@ -374,4 +374,106 @@ describe("multi-target dispatch adapters", () => {
       .toEqual(["business-a", "business-b", "final-output", "squad-c"]);
     kernel.close();
   }, spawnBudgetMs(4));
+});
+
+describe("multi-target dispatch adapters with agent nodes", () => {
+  const agentGraph: DependencyGraph = {
+    nodes: [
+      { id: "brief-main", type: "brief" },
+      { id: "squad-research", type: "squad" },
+      { id: "role-copywriter", type: "agent" },
+      { id: "squad-design", type: "squad" },
+      { id: "final-output", type: "deliverable" },
+    ],
+    edges: [
+      { id: "brief-research", source: "brief-main", target: "squad-research", type: "briefs" },
+      { id: "copy-after-research", source: "role-copywriter", target: "squad-research", type: "depends_on" },
+      { id: "design-after-copy", source: "squad-design", target: "role-copywriter", type: "depends_on" },
+      { id: "final", source: "squad-design", target: "final-output", type: "yields" },
+    ],
+  };
+
+  function compileAgentPlan() {
+    const compiled = compileMultiTargetGauntletPolicy(agentGraph, {
+      scope: "each-target-and-final", intensity: "light", synthesisNodeId: "final-output", limits: { maxCostUsd: 10 },
+      targets: { "squad-research": { mode: "standard" }, "role-copywriter": { limits: { maxCostUsd: 2 } }, "squad-design": { mode: "standard" } },
+    });
+    expect(compiled.issues).toEqual([]);
+    return compiled.plan!;
+  }
+
+  function agentAdapters(setup: Fixture, plan: CompiledMultiTargetPlan, env: Record<string, string> = {}, briefs: Record<string, string> = {}) {
+    return createDispatchMultiTargetAdapters({
+      projectRoot: setup.projectRoot, projectId: setup.projectId, plan,
+      nodeBriefs: { "squad-research": "Research the market.", "role-copywriter": "Write the launch copy from the research.", "squad-design": "Design around the copy.", "final-output": "Assemble the kit.", ...briefs },
+      dispatchScriptPath: setup.dispatchScriptPath, env: { FAKE_DISPATCH_SPAWN_LOG: setup.spawnLog, HARNESS_LOGS_DIR: join(setup.root, "logs"), ...env },
+      budgetUsd: { "role-copywriter": 1.5 },
+    });
+  }
+
+  test("an agent node runs as --agent-x under agents/<id>/ with the role in its instruction, and its cost is told apart from the synthesis", async () => {
+    const setup = fixture();
+    const plan = compileAgentPlan();
+    const ports = agentAdapters(setup, plan, { FAKE_DISPATCH_COST_USD: "0.4" });
+    const role = await ports.gauntlet.run(nodeInput(plan, "role-copywriter", { grantedCostUsd: 2, upstreamPaths: ["squads/squad-research/outputs/"] }));
+    expect(role).toEqual({ state: "delivered", reportedCostUsd: 0.4, costObserved: true, outputPaths: ["agents/role-copywriter/outputs/"] });
+    const captured = capture(setup, "agents/role-copywriter/outputs/");
+    expect(captured.positional).toEqual([]);
+    expect(captured.argv).toContain("--agent-x");
+    expect(captured.argv).not.toContain("--squad");
+    expect(captured.argv).not.toContain("--business");
+    expect(captured.argv).not.toContain("--auto");
+    expect(captured.argv).toContain("--execution-mode=gauntlet");
+    expect(captured.argv).toContain("--gauntlet-intensity=light");
+    // The smaller of the reservation grant (2) and budgetUsd (1.5).
+    expect(flag(captured, "--max-budget")).toBe("1.5");
+    expect(flag(captured, "--outputs-root")).toBe(join(setup.workspaceRoot, "agents", "role-copywriter", "outputs"));
+    expect(captured.env.NIRVANA_MULTI_TARGET_NODE_ID).toBe("role-copywriter");
+    expect(captured.brief).toStartWith("Write the launch copy from the research.");
+    expect(captured.brief).not.toContain("Upstream summaries to synthesize");
+    const text = readFileSync(join(setup.workspaceRoot, "agents", "role-copywriter", "DISPATCH-INSTRUCTION.md"), "utf8");
+    expect(text).toContain("target: agent/role-copywriter");
+    expect(text).toContain("You are **agent-x**, the runtime's generalist, acting in the role **role-copywriter**");
+    expect(text).toContain(join(setup.workspaceRoot, "squads", "squad-research", "outputs", "_SUMMARY.md"));
+    expect(text).toContain("**squad-design** (`squad/squad-design`)");
+    expect(text).toContain("gauntlet (intensity light)");
+    expect(text.slice(text.indexOf("## 6. Scope isolation"))).toContain(SCOPE_GUARD_EN);
+    const marker = JSON.parse(readFileSync(join(setup.workspaceRoot, "agents", "role-copywriter", MULTI_TARGET_RESULT_MARKER), "utf8"));
+    expect(marker).toMatchObject({ idempotencyKey: `multi-target:${plan.digest}:role-copywriter`, state: "delivered", reportedCostUsd: 0.4, costObserved: true });
+
+    // The synthesis is agent-x too, under the same trace: it reports its own 0.1, not 0.5.
+    const synthesis = await ports.gauntlet.run(nodeInput(plan, "final-output", { grantedCostUsd: 1, upstreamPaths: ["squads/squad-design/outputs/"], idempotencyKey: "synthesis" }));
+    expect(synthesis).toMatchObject({ state: "delivered", reportedCostUsd: 0.4, costObserved: true });
+    const synthesisCapture = capture(setup, "deliverables/final-output/outputs/");
+    expect(synthesisCapture.argv).toContain("--agent-x");
+    expect(synthesisCapture.env.NIRVANA_MULTI_TARGET_NODE_ID).toBe("final-output");
+    expect(synthesisCapture.brief).toContain("Upstream summaries to synthesize");
+    expect(readFileSync(join(setup.workspaceRoot, "deliverables", "final-output", "DISPATCH-INSTRUCTION.md"), "utf8")).not.toContain("acting in the role");
+    // Read again with the role's key: still its own 0.4, although two agent-x events now share the trace.
+    expect(await ports.gauntlet.run(nodeInput(plan, "role-copywriter", { grantedCostUsd: 2, idempotencyKey: "role-again" }))).toMatchObject({ reportedCostUsd: 0.8, costObserved: true });
+    expect(spawnCount(setup)).toBe(3);
+  }, spawnBudgetMs(3));
+
+  test("an agent node without a sub-brief fails before any spawn", async () => {
+    const setup = fixture();
+    const plan = compileAgentPlan();
+    const ports = agentAdapters(setup, plan, {}, { "role-copywriter": "" });
+    expect(await ports.standard.run(nodeInput(plan, "role-copywriter"))).toEqual({ state: "failed", reportedCostUsd: 0, reason: "no sub-brief for node role-copywriter" });
+    expect(spawnCount(setup)).toBe(0);
+    expect(existsSync(join(setup.workspaceRoot, "agents", "role-copywriter"))).toBeFalse();
+  }, spawnBudgetMs(0));
+
+  test("costMatcher with a node id only matches the agent-x events stamped with it; without one, every agent-x event", () => {
+    const events = [
+      { employee: "agent-x", node_id: "role-copywriter", cost_usd: 1 },
+      { employee: "agent-x", node_id: "final-output", cost_usd: 2 },
+      { employee: "agent-x", cost_usd: 4 },
+      { squad_slug: "squad-design", employee: "squad:squad-design", cost_usd: 8 },
+    ];
+    const sum = (matches: (event: Record<string, unknown>) => boolean) => events.filter(matches).reduce((total, event) => total + event.cost_usd, 0);
+    expect(sum(costMatcher({ kind: "agent-x", id: "role-copywriter", nodeId: "role-copywriter" }))).toBe(1);
+    expect(sum(costMatcher({ kind: "synthesis", id: "final-output", nodeId: "final-output" }))).toBe(2);
+    expect(sum(costMatcher({ kind: "agent-x", id: "agent-x" }))).toBe(7);
+    expect(sum(costMatcher({ kind: "squad", id: "squad-design", nodeId: "squad-design" }))).toBe(8);
+  });
 });

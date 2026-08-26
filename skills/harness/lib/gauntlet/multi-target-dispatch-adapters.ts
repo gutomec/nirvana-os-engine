@@ -11,7 +11,11 @@
 // filtered by trace and by the target discriminator each legacy path writes
 // (`business_slug`, `squad_slug`, `employee: "agent-x"`). The run-ledger stores
 // no cost, and the audit log is per project and append-only, which makes it
-// the one source every dispatch path already feeds.
+// the one source every dispatch path already feeds. Every agent-x child of a
+// plan (an `agent` node, the synthesis) shares `employee: "agent-x"` under the
+// same trace, so the adapter names the node in the child's environment
+// (NIRVANA_MULTI_TARGET_NODE_ID); runAgentX stamps it as `node_id` on the
+// event and the matcher reads it back.
 //
 // The child is told where that log is. Without HARNESS_LOGS_DIR in its env,
 // dispatch.ts anchors its audit on the scaffold it creates
@@ -33,6 +37,8 @@ import type { MultiTargetAdapterInput, MultiTargetAdapterResult, MultiTargetCoor
 export const MULTI_TARGET_RESULT_MARKER = ".multi-target-result.json";
 export const MULTI_TARGET_INSTRUCTION_FILE = "DISPATCH-INSTRUCTION.md";
 export const MULTI_TARGET_BRIEF_FILE = "dispatch-brief.md";
+/** Set on every child; an agent-x child copies it as `node_id` onto its `agent_executed` event. */
+export const MULTI_TARGET_NODE_ID_ENV = "NIRVANA_MULTI_TARGET_NODE_ID";
 
 export interface DispatchSpawnRequest {
   command: string[];
@@ -121,10 +127,13 @@ function readMarker(file: string): MultiTargetResultMarker | null {
 }
 
 /** Exported with `observedCostUsd`: the Gauntlet evaluator adapter reads the cost of its
- * subprocess from the same source, with the same discriminators. */
-export function costMatcher(target: Pick<MultiTargetAdapterInput["target"], "kind" | "id">): (event: Record<string, unknown>) => boolean {
+ * subprocess from the same source, with the same discriminators. With `nodeId`, an agent-x
+ * target only matches the events its own child stamped with that node id (an `agent` node and
+ * the synthesis of one plan share the trace); without it, every agent-x event of the trace. */
+export function costMatcher(target: Pick<MultiTargetAdapterInput["target"], "kind" | "id"> & { nodeId?: string }): (event: Record<string, unknown>) => boolean {
   if (target.kind === "business") return (event) => event.business_slug === target.id;
   if (target.kind === "squad") return (event) => event.squad_slug === target.id && !event.business_slug;
+  if (target.nodeId !== undefined) return (event) => event.employee === "agent-x" && event.node_id === target.nodeId;
   return (event) => event.employee === "agent-x";
 }
 
@@ -179,6 +188,10 @@ export function renderInstruction(args: {
   const downstream = args.downstreams.length
     ? args.downstreams.map((consumer) => `- **${consumer.id}** (\`${consumer.target}\`) reads your \`outputs/\` and starts from \`outputs/_SUMMARY.md\`. Produce shapes it can consume.`).join("\n")
     : "No phase consumes your outputs directly; the orchestrator gates them.";
+  // An `agent` node is a role no squad covers: the generalist takes it under the role's name.
+  const identity = input.target.kind === "agent-x"
+    ? `You are **agent-x**, the runtime's generalist, acting in the role **${input.target.id}** within project \`${args.projectId}\`. No squad covers this role; you execute it end to end.`
+    : `You are **${input.target.id}** within project \`${args.projectId}\`.`;
   return `---
 target: ${phase.target}
 phase_id: ${phase.id}
@@ -188,7 +201,7 @@ created_at: ${new Date().toISOString()}
 
 # Your mission in this dispatch
 
-You are **${input.target.id}** within project \`${args.projectId}\`. This file is your specific scope. The full project context lives elsewhere; read it first.
+${identity} This file is your specific scope. The full project context lives elsewhere; read it first.
 
 ## 1. Read the full context (mandatory, first action)
 
@@ -304,6 +317,7 @@ Read ${instructionFile} before producing anything: it names the upstream summari
     if (budgets.length) command.push("--max-budget", String(Math.min(...budgets)));
     const env: Record<string, string> = {};
     for (const [key, value] of Object.entries({ ...process.env, ...input.env })) if (value !== undefined) env[key] = value;
+    env[MULTI_TARGET_NODE_ID_ENV] = adapterInput.nodeId;
     if (adapterInput.mode === "gauntlet") {
       command.push("--execution-mode=gauntlet", `--gauntlet-intensity=${adapterInput.intensity ?? "light"}`);
       if (adapterInput.target.kind === "business") env[BUSINESS_ALLOWLIST_ENV] = mergeAllowlist(env[BUSINESS_ALLOWLIST_ENV], adapterInput.target.id);
@@ -316,7 +330,7 @@ Read ${instructionFile} before producing anything: it names the upstream summari
     const spawned = await spawn({ command, cwd: projectRoot, env, signal: adapterInput.signal });
     if (adapterInput.signal?.aborted) return failed(`aborted: ${String(adapterInput.signal.reason)}`);
 
-    const { costUsd: reportedCostUsd, observed: costObserved } = observeCost(logsDir, input.projectId, costMatcher(adapterInput.target));
+    const { costUsd: reportedCostUsd, observed: costObserved } = observeCost(logsDir, input.projectId, costMatcher({ ...adapterInput.target, nodeId: adapterInput.nodeId }));
     const outcome = mapExitCode(spawned.exitCode, spawned.stderr);
     const record: MultiTargetResultMarker = {
       idempotencyKey: adapterInput.idempotencyKey, state: outcome.state, exitCode: spawned.exitCode, reportedCostUsd, costObserved,
