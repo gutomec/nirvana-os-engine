@@ -8,6 +8,49 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Toda saída de canário Gauntlet fecha a linha do run-ledger, e um dispatch scriptado não deixa linha agêntica para trás
+
+O primeiro smoke do Gauntlet com judge-x (`nrv dispatch --squad
+high-conversion-copy --execution-mode=gauntlet --gauntlet-intensity=light
+--project smoke-judge-squad`, 26/08/2026) saiu com 0, o Run canônico
+`completed` e a linha dele no run-ledger `delivered`, e o `nrv run-track list`
+ainda mostrava uma segunda linha do mesmo projeto `running` sob uma lease de 30
+minutos. Essa linha não era do canário. O `dispatch.ts` roda o `brief-squad.ts`
+(e o `brief-business.ts`) para montar o projeto, e os scripts de preparação
+abrem a linha agêntica do ledger, feita para um agente que orquestra na própria
+sessão: sem pid, sem dono. Nada a fechava, em Gauntlet ou em modo standard, e
+quando a lease vencia o supervisor escalava cada uma dessas linhas a um humano
+como stalled, salvando os outputs em `withheld` depois de um run que tinha
+entregue. Os smokes anteriores do mesmo dia mostram o padrão em cinco linhas.
+
+O dispatch agora roda os scripts de preparação com
+`NIRVANA_DISPATCH_TRACKS_RUN=1`, e sob essa variável eles não abrem linha: a
+linha do próprio dispatch (a linha scriptada no modo standard, a linha do Run
+canônico num canário) é o único registro do run. A porta em sessão não muda.
+Duas brechas menores fecharam junto. Um Gauntlet que termina antes do producer
+(`evaluator_unavailable`, exit 4; `max_cost`, exit 1) rolava o Run de volta sem
+adapter legado, então o ledger nunca soube da tentativa; o rollback agora abre
+ou adota a linha e a fecha `failed`. E uma linha legada `failed` não trazia
+`last_error`; agora ela nomeia o `error` da transição, senão a razão e os erros
+que ela lista.
+
+O mapa canônico → legado da facade de compatibilidade, agora documentado em
+`run-kernel-operations.md`: `completed` e `delivered_with_reservations` →
+`delivered` (a reserva fica em `meta.canonical_state`); `withheld` →
+`withheld`; `failed`, `rolled_back` e `cancelled` → `failed` com `last_error`.
+O ledger depois de cada saída, antes e depois:
+
+| saída | antes | depois |
+|-------|-------|--------|
+| canário squad ou business, entregue ou retido | linha canônica fechada; linha agêntica `running` | uma linha, fechada |
+| qualquer canário, producer falhou ou rollback | `failed` sem `last_error`; squad e business também uma linha agêntica `running` | uma linha, `failed` com o motivo |
+| qualquer canário, rollback antes do producer (exit 4 ou 1) | sem linha canônica; squad e business uma linha agêntica `running` | uma linha, `failed` com o motivo |
+| `--exec` standard, squad ou business | linha scriptada fechada; linha agêntica `running` | uma linha, fechada |
+
+O `dispatch-gauntlet-ledger.e2e.test.ts` roda o dispatch real com um runtime
+falso nos canários squad e agent-x, com e sem `--run-id`, e nas duas falhas
+antes do producer, e lê o ledger de volta.
+
 ### Todo nó multi-target roda sob o próprio id de Run, e um Run já terminado é recusado
 
 A primeira retomada real de um plano multi-target (`--retry-failed`) entregou a

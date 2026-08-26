@@ -31,7 +31,7 @@ As projections podem ser descartadas e reconstruídas com `rebuildProjections`. 
 
 ## Compatibilidade e cutover
 
-`RunKernelCompatibilityFacade` centraliza o dual-write. `createHarnessLegacyAdapter` projeta apenas transições representáveis pelo ledger atual. Estados canônicos sem equivalente exato continuam preservados no kernel e aparecem no audit; a facade não força uma transição ilegal no ledger.
+`RunKernelCompatibilityFacade` centraliza o dual-write. `createHarnessLegacyAdapter` projeta apenas transições representáveis pelo ledger atual. Estados canônicos sem equivalente exato continuam preservados no kernel e aparecem no audit; a facade não força uma transição ilegal no ledger. O mapa canônico → legado é fixo: `prepared` → `dispatched`; `running`, `waiting`, `revising` e `cancelling` → `running`; `verifying` → `verifying`; `completed` e `delivered_with_reservations` → `delivered` (a reserva fica em `meta.canonical_state`); `withheld` → `withheld`; `failed`, `rolled_back` e `cancelled` → `failed`, com o `error` da transição, senão a `reason` e os `errors` dela, em `last_error`, inclusive no rollback antes do producer de um canário Gauntlet, que abre ou adota a linha pelo mesmo adapter; `abandoned` não é projetado, porque o ledger só chega lá por `abandon()`.
 
 O cutover recomendado é vertical:
 
