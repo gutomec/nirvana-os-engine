@@ -11,13 +11,35 @@ Prioridade na fila: runner quando presente; senão o adapter in-process; senão 
 ## Fluxo
 
 1. `POST /api/v1/conversations/:cnv/messages` persiste a Message, prepara o Run canônico com `policySnapshotRef: gauntlet-light-canary` e responde `202` quando o Run entrou na fila.
-2. O alvo vem do texto da Message: `use business <slug>:` ou `use squad <slug>:` no início (palavra-chave sem distinção de maiúsculas, slug `[a-z0-9-]+`) prepara um Run tipado `business` ou `squad`; qualquer outro texto é `agent-x`.
+2. O alvo segue a cascata do maestro. `use business <slug>:` ou `use squad <slug>:` no início da Message (palavra-chave sem distinção de maiúsculas, slug `[a-z0-9-]+`) prepara um Run tipado `business` ou `squad` sem consultar o roteador. Qualquer outro texto passa pelo roteador agêntico antes de o Run existir: `primary_business` vira alvo `business`; sem empresa, exatamente um squad em `mandatory_squads` vira alvo `squad` (`squad.execute`); o resto é `agent-x`. Detalhes em [Roteamento da Message](#roteamento-da-message).
 3. Ao drenar, a fila grava o brief em `<projectRoot>/.nirvana/glance/runs/<runId>/brief.md`, chama `runner.start` e registra `glance.child_started` com `pid`, `attempt` e o argv resumido.
 4. O filho é `bun dispatch.ts <--agent-x | --business <slug> | --squad <slug>> --brief-file <brief> --exec --project <prj> --run-id <runId> --outputs-root <projectRoot>/.nirvana/glance/runs/<runId>/outputs`, com `cwd` no root do projeto, `NIRVANA_PROJECT_ROOT` apontando para ele e `HARNESS_LOGS_DIR` apontando para o log do harness do projeto (`<projectRoot>/.nirvana/logs/harness`), a menos que o servidor já tenha a variável definida. Sem ela o dispatch ancora o audit no scaffold que ele cria (`outputs/<prj>/.nirvana/logs/harness`), fora do log que o cockpit e os leitores de custo abrem. Para `agent-x` o runner acrescenta `--execution-mode=gauntlet --gauntlet-intensity=light`, o contrato atual do canário. Business e squad não recebem modo forçado: o filho herda o env do servidor (`NIRVANA_EXECUTION_MODE`, allowlists) e decide sozinho. `stdout` e `stderr` vão para `child.log` no mesmo diretório.
 5. Com `--run-id`, o dispatch adota o Run já preparado (`getRun ?? create`) no kernel do projeto, em vez de criar `run_<project>` num kernel próprio. No Gauntlet a adoção é do cutover; em modo `standard` (business e squad sem `NIRVANA_EXECUTION_MODE=gauntlet`) é da publicação do modo standard (`lib/run-kernel/standard-publication.ts`, ver [Operação do Run Kernel](run-kernel-operations.md)). Nos dois casos os eventos do Run herdam o trace e o `policySnapshotRef` com que ele foi preparado.
 6. A fila aguarda o término e relê o Run no kernel. Estado terminal: nada a fazer. Estado não terminal: `failed` com `reason: child_exited_without_terminal_state` e o `exitCode` (`rolled_back` se o filho morreu antes de reivindicar o Run). Em ambos os casos `glance.child_exited` registra `pid`, `attempt` e `exitCode`.
 
 A sequência canônica de uma Message `agent-x` bem-sucedida é `run.prepared → glance.child_started → runtime.selection_snapshot → gauntlet.plan_compiled → gauntlet.round_started → run.transitioned(running) → gauntlet.candidate_created → gauntlet.evaluation_recorded → gauntlet.round_evaluated → gauntlet.stopped → run.transitioned(verifying) → run.transitioned(completed) → glance.child_exited`, sem lacunas de sequence. Uma Message `use squad <slug>:` ou `use business <slug>:` em modo `standard` produz `run.prepared → glance.child_started → runtime.selection_snapshot → run.transitioned(running) → run.transitioned(verifying) → run.transitioned(<terminal>) → glance.child_exited`, com `exitCode`, `gateOutcome` e `outputsRoot` no payload terminal. `Last-Event-ID` retoma o stream de qualquer ponto.
+
+## Roteamento da Message
+
+`resolveMessageTarget` (`skills/harness/lib/control-plane/agent-x-canary-queue.ts`) decide o alvo de uma Message com a mesma cascata que o maestro aplica a um brief: o usuário no comando, depois empresa, depois squad, depois `agent-x`. O roteador é o `agenticRoute` de `lib/agentic-router.ts`, o único do engine; o Glance não ranqueia nada. A decisão do roteador vira alvo pelo `resolveDispatchPlan` de `lib/dispatch-cascade.ts`, o mesmo mapeamento do `dispatch.ts --auto` fora de um TTY.
+
+| Situação | Alvo | `route.source` |
+|---|---|---|
+| `use business <slug>:` ou `use squad <slug>:` no início | o nomeado, sem chamar o roteador | `explicit` |
+| decisão com `primary_business` | `business` | `router` |
+| decisão sem empresa e com exatamente um squad em `mandatory_squads` | `squad`, capability `squad.execute` | `router` |
+| decisão `ambiguous` | o primeiro candidato despachável (empresa ou squad), com `x_route_ambiguous_autopicked` no audit | `router` |
+| decisão com dois ou mais squads e sem empresa | `agent-x`; um Run do Glance executa um alvo | `fallback` |
+| `no_match` | `agent-x`, com a razão do roteador | `fallback` |
+| roteador lança, devolve falha de transporte ou estoura o teto | `agent-x` com `routing.on_router_failure=cascade` (padrão); com `fail`, o Run é preparado e revertido (`rolled_back`, `reason: router_failed`) sem executar | `fallback` |
+| `routing.mode=fast` | `agent-x`, sem chamar o roteador; o Glance compõe só o roteador agêntico, e o BM25 do modo `fast` continua sendo do dispatch | `fallback` |
+| servidor sem roteador (`--read-only`, `glance.execution=false`, testes sem injeção) | `agent-x` | `fallback` |
+
+O teto de uma chamada é `MESSAGE_ROUTE_TIMEOUT_MS` (120 s), fixo: nenhuma chave de settings configura o timeout do roteador ainda, e o dispatch espera cinco minutos. O valor vai ao `agenticRoute`, que encerra a CLI headless no teto, e vale também para um roteador injetado que não responde. `routing.mode` e `routing.on_router_failure` são lidos por `resolveSetting` sobre o root do projeto a cada Message, então uma mudança pelo painel "Configuração" vale na próxima.
+
+Em produção, `nrv glance` compõe o roteador com `createAgenticMessageRouter` (`lib/control-plane/message-router.ts`): o `agenticRoute` roda num Worker, porque a chamada headless que ele faz é um `spawnSync`; no Worker ela bloqueia a própria thread, e o servidor segue respondendo HTTP e SSE enquanto uma Message é roteada. O runtime do roteador segue a mesma regra do runner (`detectExecutionRuntime`). O roteador é injetado na fila (`AgentXCanaryQueue`, quinto argumento) e no servidor (`startServer({ messageRouter })`); os testes passam um roteador falso e nunca chamam LLM nem rede.
+
+Cada resolução escreve `auto_route_selected` no audit do projeto (`<root>/.nirvana/logs/harness/<data>/audit.jsonl`) com o `trace_id` da Message (o `runId`), `message_id`, `source`, `plan_source`, `target_kind`, `target_slug`, `rationale` e, quando o roteador respondeu, `decision_kind`, `cost_usd` e `duration_ms`. Um roteador que lança ou estoura o teto escreve também `agentic_route_failed` com o mesmo `trace_id`; a falha de transporte que o próprio `agenticRoute` já registrou não é registrada duas vezes. O Run nasce com `route: { source, rationale }` no payload de `run.prepared` e na projeção (`GET /api/v1/runs/{id}`), e o recibo `202` já o traz: o chat mostra alvo e origem antes de o filho iniciar, a timeline rotula `run.prepared` com a origem e a razão, e o cabeçalho do Run nomeia a origem. Uma Message roteada uma vez fica roteada: o retry com a mesma `Idempotency-Key` reaproveita o Run, e dois envios simultâneos compartilham uma resolução.
 
 ## Cancelamento
 
@@ -59,5 +81,6 @@ O boot de `nrv glance` imprime uma linha dizendo se a execução está ativa e q
 - Só o sinal ao grupo alcança o neto. Um `kill <pid>` manual dirigido apenas ao `bun dispatch.ts` ainda deixa o runtime órfão; o Run já estará `cancelled` e o kernel rejeita transições posteriores desse processo.
 - A reanexação confia no pid. Um pid reutilizado por outro processo mantém a fila acompanhando até esse processo terminar ou o Run alcançar estado terminal.
 - A fila é serial: uma Message por vez por servidor, como antes.
+- Um Run do Glance executa um alvo, então a rota multi-squad do maestro (vários squads em sequência) cai em `agent-x`. O roteador da Message não recebe as regras `USE_*` de runtime nem teto de gasto por chamada; o dispatch passa ambos.
 - `available()` é uma sondagem de PATH; a cota, credenciais e a saúde do runtime só aparecem no `child.log` e no estado terminal do Run.
 - O `policySnapshotRef` de admissão é `gauntlet-light-canary` para os três alvos, e um Run adotado o mantém mesmo em modo `standard`; o snapshot real do broker fica no evento `runtime.selection_snapshot` do Run.
