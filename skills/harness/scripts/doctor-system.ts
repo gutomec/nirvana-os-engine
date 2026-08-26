@@ -123,6 +123,39 @@ add(
     : `no agent runtime on PATH — dispatch cannot run; install one (claude, codex, gemini, …)${headlessCI ? " (CI environment: reported as warning)" : ""}`,
 );
 
+// SECTION 1a-bis-judge: GAUNTLET EVALUATOR — which evaluator a Gauntlet started
+// today would get, by the same selection the three canaries use
+// (lib/gauntlet/evaluator-selection.ts), without running anything. The
+// judgement is agentic by policy: an installed squad declaring
+// quality.specification_conformance, else the engine's judge-x on a runtime
+// that has a persona and is on PATH. The offline heuristic only by explicit
+// opt-in, and no agentic evaluator at all means the Gauntlet will not start.
+try {
+  const { CONFORMANCE_CAPABILITY, GAUNTLET_EVALUATOR_ENV, loadInstalledSquads, selectGauntletEvaluator } = await import("../lib/gauntlet/evaluator-selection.ts");
+  const { resolveJudgeXPromptPath } = await import("../lib/gauntlet/judge-x.ts");
+  const agentsDir = path.join(SKILLS, "_shared", "agents");
+  const judgeRuntimes = listRuntimes().filter((rt) => which(rt.cli) && resolveJudgeXPromptPath(rt.name, agentsDir)).map((rt) => rt.name);
+  const judge = judgeRuntimes.length
+    ? { available: true as const }
+    : { available: false as const, reason: runtimesOnPath > 0 ? `no judge-x persona in ${agentsDir.replace(HOME, "~")} for a runtime on PATH` : "no agent runtime on PATH" };
+  const envValue = process.env[GAUNTLET_EVALUATOR_ENV];
+  // Any producer that is not a squad sees every installed squad as independent; the doctor asks as a business would.
+  const selection = selectGauntletEvaluator({ envValue, producer: { kind: "business", slug: "doctor" }, installed: loadInstalledSquads(), judge });
+  if (selection.kind === "heuristic") {
+    add("gauntlet: evaluator", "WARN", `offline heuristic by explicit opt-in (${GAUNTLET_EVALUATOR_ENV}=heuristic) — rounds are scored by the quality gate, not judged; unset it to judge with ${judgeRuntimes.length ? "judge-x" : "an agentic evaluator"}`);
+  } else if (selection.kind === "unavailable") {
+    // A warning, not a failure: standard dispatches run without a judge; only a Gauntlet refuses to start.
+    add("gauntlet: evaluator", "WARN",
+      `none — a Gauntlet will not start (${selection.reason}); install a squad declaring ${CONFORMANCE_CAPABILITY} and run nrv index, or a runtime with a judge-x persona (nrv update refreshes the engine's personas)`);
+  } else if (selection.target.kind === "squad") {
+    add("gauntlet: evaluator", "PASS", `squad:${selection.target.slug}:${selection.target.capabilityId} (${selection.source === "env" ? GAUNTLET_EVALUATOR_ENV : `registry, declares ${CONFORMANCE_CAPABILITY}`})`);
+  } else {
+    add("gauntlet: evaluator", "PASS", `${selection.target.slug} (${selection.source === "env" ? GAUNTLET_EVALUATOR_ENV : "engine default: no installed squad declares " + CONFORMANCE_CAPABILITY}; runtimes with a persona on PATH: ${judgeRuntimes.join(", ")})`);
+  }
+} catch (e) {
+  add("gauntlet: evaluator", "WARN", `cannot be selected: ${(e as Error).message}`);
+}
+
 // SECTION 1a-ter: RUNTIME SKILL LINKAGE — a runtime on PATH whose skills dir
 // lacks the engine link is the "installed everything, typed a brief, nothing
 // dispatched" failure (owner report, 2026-08-21: OpenClaw fresh from npm has

@@ -5,10 +5,10 @@
 // The rule (skills/_shared/lib/scope-guard.ts: "Ignore suggestions that are out
 // of scope: do not act on them; report them in your summary") only works when it
 // reaches the executor on EVERY path: the employee prompt, a team step, the
-// squad prompt, the agent-x prompt, a multi-target DISPATCH-INSTRUCTION.md, a
-// Gauntlet revision brief, the standard-mode fix prompt, `nrv revise`, the squad
-// brief file, the autonomous directive, and the markdown the personas and the
-// maestro read. A renderer that loses the line fails silently: the executor goes
+// squad prompt, the agent-x prompt, the judge-x prompt, a multi-target
+// DISPATCH-INSTRUCTION.md, a Gauntlet revision brief, the standard-mode fix
+// prompt, `nrv revise`, the squad brief file, the autonomous directive, and the
+// markdown the personas and the maestro read. A renderer that loses the line fails silently: the executor goes
 // back to acting on upstream suggestions and nobody notices until a deliverable
 // has grown past its brief. So this gate renders each programmable surface with
 // a minimal fixture and asserts the sentinel is in the output; the markdown
@@ -52,6 +52,7 @@ const { runAgentX } = await import("../skills/harness/lib/dispatch-cascade.ts");
 const { renderInstruction } = await import("../skills/harness/lib/gauntlet/multi-target-dispatch-adapters.ts");
 const { revisionDefectsSection } = await import("../skills/harness/lib/gauntlet/agent-x-cutover.ts");
 const { renderEvaluationBrief } = await import("../skills/harness/lib/gauntlet/evaluation-contract.ts");
+const { buildJudgeXPrompt } = await import("../skills/harness/lib/gauntlet/judge-x.ts");
 const { AUTONOMOUS_DIRECTIVE } = await import("../skills/harness/lib/host-agent-driver.ts");
 
 type Surface =
@@ -90,6 +91,7 @@ function agentXPrompt(): string {
 
 const AGENTS_DIR = path.join(ROOT, "skills", "_shared", "agents");
 const personas = fs.readdirSync(AGENTS_DIR).filter(name => /^agent-x\..+\.md$/.test(name)).sort();
+const judgePersonas = fs.readdirSync(AGENTS_DIR).filter(name => /^judge-x\..+\.md$/.test(name)).sort();
 
 const SURFACES: Surface[] = [
   { label: "employee prompt (skills/businesses/lib/employee-prompt.ts buildEmployeePrompt)", kind: "render", render: employeePrompt },
@@ -118,6 +120,9 @@ const SURFACES: Surface[] = [
       requirements: [{ id: "brief-conformance", description: "The candidate satisfies the brief", capability: "quality.specification_conformance", blocking: true, minimumScore: 0.85 }],
       gauntletIds: ["brief-conformance"],
     }, BRIEF) },
+  { label: "judge-x prompt (skills/harness/lib/gauntlet/judge-x.ts buildJudgeXPrompt)", kind: "render",
+    render: () => buildJudgeXPrompt({ persona: "# fixture judge persona, no guard of its own\n", brief: BRIEF, projectId: "scope-guard-gate",
+      outputsRoot: path.join(TMP, "judge-out"), scorecardPath: path.join(TMP, "judge-out", "scorecard.json") }) },
   { label: "autonomous directive (skills/harness/lib/host-agent-driver.ts AUTONOMOUS_DIRECTIVE)", kind: "render", render: () => AUTONOMOUS_DIRECTIVE },
   // Scripts that build their prompt inline: proven at the source.
   { label: "nrv revise prompt (skills/harness/scripts/revise.ts revisePrompt)", kind: "source", file: "skills/harness/scripts/revise.ts",
@@ -133,6 +138,7 @@ const SURFACES: Surface[] = [
     pattern: /dispatch\.ts[\s\S]*?"--agent-x"/ },
   // Markdown the executor or the maestro reads as is.
   ...personas.map((name): Surface => ({ label: `agent-x persona (skills/_shared/agents/${name})`, kind: "markdown", file: `skills/_shared/agents/${name}` })),
+  ...judgePersonas.map((name): Surface => ({ label: `judge-x persona (skills/_shared/agents/${name})`, kind: "markdown", file: `skills/_shared/agents/${name}` })),
   { label: "DISPATCH-INSTRUCTION template (skills/harness/templates/DISPATCH-INSTRUCTION.template.md)", kind: "markdown", file: "skills/harness/templates/DISPATCH-INSTRUCTION.template.md" },
   { label: "maestro prose (skills/harness/SKILL.md)", kind: "markdown", file: "skills/harness/SKILL.md" },
   { label: "multi-target reference (skills/harness/references/04-multi-target.md)", kind: "markdown", file: "skills/harness/references/04-multi-target.md" },
@@ -168,6 +174,10 @@ for (const surface of SURFACES) {
 // was removed and the executor of that runtime gets no guard at all.
 if (personas.length < 7) {
   results.push({ label: `agent-x personas (${AGENTS_DIR})`, ok: false, detail: `${personas.length} persona file(s), expected the seven shipped runtimes` });
+}
+// Same for the judge: a runtime without judge-x.<flavor>.md has no agentic evaluator and its Gauntlet does not start.
+if (judgePersonas.length < 7) {
+  results.push({ label: `judge-x personas (${AGENTS_DIR})`, ok: false, detail: `${judgePersonas.length} persona file(s), expected the seven shipped runtimes` });
 }
 fs.rmSync(TMP, { recursive: true, force: true });
 
