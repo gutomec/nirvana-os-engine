@@ -3,11 +3,14 @@
 // The three canaries in scripts/dispatch.ts used to judge candidates with a
 // heuristic (the share of gateable files that pass the offline quality gate),
 // signed by a nominal target that is not installed anywhere. This adapter runs
-// the evaluation through an installed squad or agent-x instead: one subprocess
-// of dispatch.ts per candidate revision, explicit target selection (`--squad
-// <slug>` or `--agent-x`, never the router), standard execution mode (a Gauntlet
-// must not judge itself with another Gauntlet), an isolated evaluation
-// directory, and the scorecard contract of evaluation-contract.ts.
+// the evaluation through an installed squad, judge-x or agent-x instead: one
+// subprocess of dispatch.ts per candidate revision, explicit target selection
+// (`--squad <slug>`, `--judge-x` or `--agent-x`, never the router), standard
+// execution mode (a Gauntlet must not judge itself with another Gauntlet), an
+// isolated evaluation directory, and the scorecard contract of
+// evaluation-contract.ts. judge-x (judge-x.ts) is the engine's own judge: a lean
+// prompt, no cascade, no delivery gate, and a child Run that is `completed` only
+// with a valid scorecard.
 //
 // Independence is checked before anything runs: a producer never evaluates its
 // own candidate (evaluator-registry.ts `targetsAreIndependent`). The controller
@@ -38,6 +41,7 @@ import {
   type EvaluationRequest, type ScorecardIdentity,
 } from "./evaluation-contract.ts";
 import { targetsAreIndependent } from "./evaluator-registry.ts";
+import { JUDGE_X_BUDGET_EXHAUSTED_MARK, JUDGE_X_SLUG, isJudgeX } from "./judge-x.ts";
 import { costMatcher, observedCostUsd } from "./multi-target-dispatch-adapters.ts";
 import type { EvaluationScorecard, GauntletPlan } from "./types.ts";
 
@@ -60,7 +64,7 @@ export type EvaluatorSpawn = (request: EvaluatorSpawnRequest) => EvaluatorSpawnR
 export type DispatchEvaluatorTarget = Extract<TargetRef, { kind: "squad" | "agent-x" }>;
 
 export interface DispatchEvaluatorInput {
-  /** The evaluator: an installed squad (with the capability it is invoked for) or agent-x. */
+  /** The evaluator: an installed squad (with the capability it is invoked for), judge-x or agent-x. */
   target: DispatchEvaluatorTarget;
   /** The candidates' producer; the evaluator must be independent of it. */
   producer: TargetRef;
@@ -97,6 +101,12 @@ const defaultSpawn: EvaluatorSpawn = (request) => {
 
 export function describeTarget(target: TargetRef): string {
   return target.kind === "squad" ? `squad:${target.slug}:${target.capabilityId}` : `${target.kind}:${target.slug}`;
+}
+
+/** The `agent_executed` events of one evaluator: by `squad_slug` for a squad, by `employee` for judge-x and agent-x. */
+export function evaluatorCostMatcher(target: DispatchEvaluatorTarget): (event: Record<string, unknown>) => boolean {
+  if (isJudgeX(target)) return (event) => event.employee === JUDGE_X_SLUG;
+  return costMatcher({ kind: target.kind, id: target.slug });
 }
 
 /** Project id the evaluation subprocess runs under: unique per revision, so cost, scaffold and sessions never mix with the producer's. */
@@ -164,12 +174,14 @@ export function createDispatchEvaluator(input: DispatchEvaluatorInput): AgentXGa
     };
     const indeterminate = (reason: string, detail: Record<string, unknown> = {}): EvaluationScorecard[] =>
       finish(indeterminateScorecard(requirements, reason, { ...identity, costUsd: Number(detail.observed_cost_usd ?? 0) }), { reason, ...detail });
+    // judge-x names a spent cap on its stderr; the reason then says `budget_exhausted`, not "error verdict".
+    const budgetExhausted = (spawned: EvaluatorSpawnResult): boolean => isJudgeX(target) && spawned.stderr.includes(JUDGE_X_BUDGET_EXHAUSTED_MARK);
 
     if (input.signal?.aborted) return indeterminate(`aborted before the evaluator ran: ${String(input.signal.reason)}`);
 
     const command = ["bun", dispatchScript];
     if (target.kind === "squad") command.push("--squad", target.slug);
-    else command.push("--agent-x");
+    else command.push(isJudgeX(target) ? "--judge-x" : "--agent-x");
     command.push("--brief-file", briefFile, "--exec", "--project", projectId, "--outputs-root", outputsRoot,
       "--execution-mode=standard", "--max-revisions", "0");
     if (input.runtime) command.push("--runtime", input.runtime);
@@ -181,11 +193,15 @@ export function createDispatchEvaluator(input: DispatchEvaluatorInput): AgentXGa
     env.HARNESS_LOGS_DIR = logsDir;
 
     const spawned = spawn({ command, cwd: projectRoot, env, timeoutMs });
-    const costUsd = observedCostUsd(logsDir, projectId, costMatcher({ kind: target.kind, id: target.slug }));
+    const costUsd = observedCostUsd(logsDir, projectId, evaluatorCostMatcher(target));
     const detail = { exit_code: spawned.exitCode, observed_cost_usd: costUsd };
     if (spawned.timedOut) return indeterminate(`evaluator timed out after ${timeoutMs} ms`, detail);
     if (input.signal?.aborted) return indeterminate(`aborted while the evaluator ran: ${String(input.signal.reason)}`, detail);
     if (!fs.existsSync(scorecardPath)) {
+      if (budgetExhausted(spawned)) {
+        return indeterminate(`budget_exhausted: the evaluator's spend cap of USD ${input.budgetUsd} ended the run before ${SCORECARD_FILE} was written `
+          + `(dispatch exit ${spawned.exitCode ?? "signal"}: ${summarizeStderr(spawned.stderr)})`, { ...detail, reason_code: "budget_exhausted", budget_usd: input.budgetUsd ?? null });
+      }
       return indeterminate(`${SCORECARD_FILE} not found at ${scorecardPath} (dispatch exit ${spawned.exitCode ?? "signal"}: ${summarizeStderr(spawned.stderr)})`, detail);
     }
     let raw: unknown;
