@@ -705,3 +705,45 @@ describe("nrv multi-target run with a standard node and a Gauntlet synthesis in 
     expect(retried.map((event) => [event.run_id, event.previous_run_id, event.reset_nodes, event.attempt])).toEqual([[r2, r1, ["final-output"], 2], [r3, r2, ["final-output"], 3]]);
   }, spawnBudgetMs(7));
 });
+
+describe("nrv multi-target plan with synthesis limits", () => {
+  test("prints the allocation of a capped synthesis next to the squad's and refuses a mode on the synthesis", () => {
+    const setup = fixture("landing-clinica");
+    const plan = {
+      ...PLAN,
+      briefs: { "visual-brief": "Write the style guide.", "landing-page-nirvana": "Build the page.", "final-output": "Assemble the package." },
+      graph: {
+        nodes: [
+          { id: "brief-main", type: "brief" },
+          { id: "visual-brief", type: "agent" },
+          { id: "landing-page-nirvana", type: "squad" },
+          { id: "final-output", type: "deliverable" },
+        ],
+        edges: [
+          { id: "b1", source: "brief-main", target: "visual-brief", type: "briefs" },
+          { id: "d1", source: "landing-page-nirvana", target: "visual-brief", type: "depends_on" },
+          { id: "y1", source: "landing-page-nirvana", target: "final-output", type: "yields" },
+        ],
+      },
+      policy: {
+        scope: "each-target-and-final", intensity: "light", synthesisNodeId: "final-output", limits: { maxCostUsd: 32 },
+        synthesis: { limits: { maxCostUsd: 10 } },
+        targets: { "visual-brief": { mode: "standard" }, "landing-page-nirvana": { limits: { maxCostUsd: 20 } } },
+      },
+      budgetUsd: { "visual-brief": 4, "landing-page-nirvana": 20, "final-output": 6 },
+    };
+    expect(validatePlanFile(plan).plan).not.toBeNull();
+    fs.writeFileSync(setup.planFile, JSON.stringify(plan));
+    const r = nrv(setup, ["plan", setup.planFile]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("alocações (teto USD 32 · concedido USD 30 · saldo USD 2)");
+    expect(r.stdout).toMatch(/landing-page-nirvana\s+onda 2\s+solicitado 20\s+concedido 20\s+requested_in_full/);
+    expect(r.stdout).toMatch(/final-output\s+onda 3\s+solicitado 10\s+concedido 10\s+requested_in_full/);
+
+    const withMode = { ...plan, policy: { ...plan.policy, synthesis: undefined, targets: { ...plan.policy.targets, "final-output": { mode: "gauntlet" } } } };
+    fs.writeFileSync(setup.planFile, JSON.stringify(withMode));
+    const refused = nrv(setup, ["plan", setup.planFile]);
+    expect(refused.status).toBe(4);
+    expect(refused.stderr).toContain("/policy/targets/final-output/mode: synthesis mode comes from the scope");
+  }, spawnBudgetMs(2));
+});

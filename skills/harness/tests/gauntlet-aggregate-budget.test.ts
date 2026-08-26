@@ -155,3 +155,69 @@ describe("aggregate Gauntlet budget reservation with agent nodes", () => {
     expect(rejected.allocations.find((item) => item.nodeId === "role-copywriter")).toMatchObject({ targetKind: "agent-x", grantedUsd: 0, reason: "aggregate_cap_rejected" });
   });
 });
+
+describe("aggregate Gauntlet budget reservation with synthesis limits", () => {
+  // The landing-clinica shape: a standard agent brief, one Gauntlet squad, the synthesis.
+  const landingGraph: DependencyGraph = {
+    nodes: [
+      { id: "brief-main", type: "brief" },
+      { id: "visual-brief", type: "agent" },
+      { id: "landing-page-nirvana", type: "squad" },
+      { id: "final-output", type: "deliverable" },
+    ],
+    edges: [
+      { id: "b1", source: "brief-main", target: "visual-brief", type: "briefs" },
+      { id: "d1", source: "landing-page-nirvana", target: "visual-brief", type: "depends_on" },
+      { id: "y1", source: "landing-page-nirvana", target: "final-output", type: "yields" },
+    ],
+  };
+  const landingPolicy: MultiTargetGauntletPolicy = {
+    scope: "each-target-and-final", intensity: "light", synthesisNodeId: "final-output", limits: { maxCostUsd: 32 },
+    targets: { "visual-brief": { mode: "standard" }, "landing-page-nirvana": { limits: { maxCostUsd: 20 } } },
+  };
+  const reserve = (policy: MultiTargetGauntletPolicy, target: DependencyGraph = landingGraph) => {
+    const compiled = compileMultiTargetGauntletPolicy(target, policy);
+    expect(compiled.issues).toEqual([]);
+    return reserveAggregateGauntletBudget(compiled.plan!).reservation!;
+  };
+  const grantedOf = (reservation: ReturnType<typeof reserve>) =>
+    Object.fromEntries(reservation.allocations.map((item) => [item.nodeId, item.grantedUsd]));
+
+  test("a capped synthesis requests min(cap, its limit) and the squad keeps its own request", () => {
+    const reservation = reserve({ ...landingPolicy, synthesis: { limits: { maxCostUsd: 10 } } });
+    expect(reservation).toMatchObject({ status: "reserved", aggregateCapUsd: 32, requestedUsd: 30, grantedUsd: 30, balanceUsd: 2 });
+    expect(grantedOf(reservation)).toEqual({ "brief-main": 0, "visual-brief": 0, "landing-page-nirvana": 20, "final-output": 10 });
+    expect(reservation.allocations.find((item) => item.nodeId === "final-output")).toMatchObject({ requestedUsd: 10, grantedUsd: 10, reason: "requested_in_full" });
+    expect(reservation.allocations.find((item) => item.nodeId === "landing-page-nirvana")).toMatchObject({ requestedUsd: 20, grantedUsd: 20, reason: "requested_in_full" });
+    expect(reservation.reason).toBe("all gauntlet requests fit within the aggregate cap");
+  });
+
+  test("without its own limit the synthesis still requests the whole cap and the squad keeps the floor", () => {
+    const reservation = reserve(landingPolicy);
+    expect(reservation).toMatchObject({ status: "reserved", requestedUsd: 52, grantedUsd: 32, balanceUsd: 0 });
+    expect(grantedOf(reservation)).toEqual({ "brief-main": 0, "visual-brief": 0, "landing-page-nirvana": 1, "final-output": 31 });
+  });
+
+  test("a synthesis limit above the cap clamps to the cap", () => {
+    const reservation = reserve({ ...landingPolicy, synthesis: { limits: { maxCostUsd: 50 } } });
+    expect(reservation.allocations.find((item) => item.nodeId === "final-output")).toMatchObject({ requestedUsd: 32, grantedUsd: 31 });
+  });
+
+  test("the balance a capped synthesis leaves is shared by the targets in proportion", () => {
+    const policy: MultiTargetGauntletPolicy = {
+      scope: "each-target-and-final", intensity: "balanced", synthesisNodeId: "final-output", limits: { maxCostUsd: 32 },
+      targets: { "business-a": { limits: { maxCostUsd: 12 } }, "business-b": { limits: { maxCostUsd: 12 } }, "squad-c": { mode: "standard" } },
+    };
+    // Floors 2 + 2 + 2; the synthesis completes to 10; the 18 left split 9 and 9.
+    expect(grantedOf(reserve({ ...policy, synthesis: { limits: { maxCostUsd: 10 } } }, graph)))
+      .toEqual({ "brief-main": 0, "business-a": 11, "business-b": 11, "squad-c": 0, "final-output": 10 });
+    // Same policy without the synthesis limit: the synthesis takes 28 and the targets stay on the floor.
+    expect(grantedOf(reserve(policy, graph)))
+      .toEqual({ "brief-main": 0, "business-a": 2, "business-b": 2, "squad-c": 0, "final-output": 28 });
+  });
+
+  test("a synthesis limit below its safe minimum rejects the reservation", () => {
+    const reservation = reserve({ ...landingPolicy, synthesis: { limits: { maxCostUsd: 0.5 } } });
+    expect(reservation).toMatchObject({ status: "rejected", grantedUsd: 0, reason: "decision final-output requests less than its safe minimum" });
+  });
+});
