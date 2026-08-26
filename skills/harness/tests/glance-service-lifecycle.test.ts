@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stopMacInput } from "../lib/glance/service/control.ts";
@@ -1145,6 +1145,66 @@ test("SVC-WORKER-SIGNAL-FINALIZER-EXACT", async () => {
   } finally {
     rmSync(harness.root, { recursive: true, force: true });
   }
+}, 30_000);
+
+test("SVC-WORKER-FINALIZE-STOP-ARCHIVES-CONFIG", async () => {
+  const port = allocateLoopbackPort();
+  const harness = createWorkerHarness(port);
+  try {
+    writePrivateBytes(harness.secretPath, harness.secret);
+    writeDurableJson(harness.configPath, harness.config);
+    const running = harness.instance("running");
+    writeDurableJson(harness.instancePath, running);
+    await createProductionRuntime(harness.root, { engineVersion: "0.7.11", extensionRootDigest: `sha256:${"e".repeat(64)}` as const }).finalizeStop(running);
+    expect(existsSync(harness.configPath)).toBe(false);
+    const archiveDir = join(harness.root, "control", "archive");
+    const entries = readdirSync(archiveDir);
+    expect(entries).toHaveLength(1);
+    expect(new TextDecoder().decode(readFileSync(join(archiveDir, entries[0]!, "config.json")))).toBe(`${JSON.stringify(harness.config)}\n`);
+  } finally { rmSync(harness.root, { recursive: true, force: true }); }
+}, 30_000);
+
+test("SVC-LIFECYCLE-STOP-RACES-WORKER-CONFIG-ARCHIVER", async () => {
+  const home = mkdtempSync(join(tmpdir(), "glance-stop-race-"));
+  try {
+    const port = allocateLoopbackPort();
+    const config = { schema_version: "1.0.0", scope: "global", host: "127.0.0.1", port, read_only: true, lifetime: "persistent", no_open: true };
+    const instance = fixtureInstance();
+    const root = stateRoot(home);
+    const configPath = join(root, "config.json");
+    writeDurableJson(configPath, config);
+    writeDurableJson(join(root, "instance.json"), instance);
+    writePrivateBytes(join(root, ...(instance.control_secret_ref as string).split("/")), randomBytes(32));
+    let workerArchivedConfig = false;
+    let workerDrainedStopArtifacts = false;
+    const backend = createGlanceServiceManager(home, {
+      now() {
+        if (!workerArchivedConfig && existsSync(configPath) && !existsSync(join(root, "instance.json")) && !existsSync(join(root, "control", "pending")) && !existsSync(join(root, "control", "processing"))) {
+          workerArchivedConfig = true;
+          const archiveDir = join(root, "control", "archive", `${Date.now()}-${randomUUID()}`);
+          mkdirSync(archiveDir, { recursive: true });
+          renameSync(configPath, join(archiveDir, "config.json"));
+        }
+        return Date.now();
+      },
+      async sleep() {
+        if (!workerDrainedStopArtifacts) {
+          workerDrainedStopArtifacts = true;
+          rmSync(join(root, "control", "pending"), { recursive: true, force: true });
+          rmSync(join(root, "control", "processing"), { recursive: true, force: true });
+          rmSync(join(root, "instance.json"), { force: true });
+        }
+      },
+    });
+    const stopped = await stopBackend(backend, home);
+    expect(stopped).toMatchObject({ ok: true, state: "stopped", code: "AUTHENTICATED_STOP" });
+    expect(existsSync(configPath)).toBe(false);
+    const archiveRoot = join(root, "control", "archive");
+    expect(readdirSync(archiveRoot)).toHaveLength(1);
+    const archivedConfigs = readdirSync(archiveRoot).map(entry => join(archiveRoot, entry, "config.json")).filter(path => existsSync(path)).map(path => JSON.parse(new TextDecoder().decode(readFileSync(path))));
+    expect(archivedConfigs).toHaveLength(1);
+    expect(archivedConfigs[0]).toEqual(config);
+  } finally { rmSync(home, { recursive: true, force: true }); }
 }, 30_000);
 
 test.skipIf(process.platform === "win32")("SVC-WORKER-SIGNAL-REAL-SIGTERM", async () => {

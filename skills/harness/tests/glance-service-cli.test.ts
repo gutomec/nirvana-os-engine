@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { parseGlanceArgs, renderGlanceHelp, resolveServiceRequest, runGlance } from "../scripts/glance.ts";
 import { parseServiceCommand, SERVICE_EXIT_TABLE, serviceExitCode } from "../lib/glance/service/command-registry.ts";
@@ -222,7 +222,7 @@ test("SVC-CLI-START-PROJECT-ROOT-DEFAULTS-PORT-3737", async () => {
 
 test("SVC-CLI-START-PROJECT-RESOLVES-CURRENT-PROJECT", async () => {
   await withTempHome(async home => {
-    const projectDir = mkdtempSync(join(tmpdir(), "glance-cwd-proj-"));
+    const projectDir = realpathSync.native(mkdtempSync(join(tmpdir(), "glance-cwd-proj-")));
     writeFileSync(join(projectDir, ".git"), new Uint8Array());
     const cwd = process.cwd();
     process.chdir(projectDir);

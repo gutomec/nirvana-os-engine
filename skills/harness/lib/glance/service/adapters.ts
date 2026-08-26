@@ -92,10 +92,14 @@ function inspectPosixProcess(pid: number): ProcessInspection {
     if (!argv.length) return { exists: false };
     return { exists: true, entrypoint: argv[0], argv };
   } catch {
-    const result = Bun.spawnSync(["ps", "-p", String(pid), "-o", "command="], { stdout: "pipe", stderr: "pipe" });
-    const line = result.stdout ? new TextDecoder().decode(result.stdout).trim() : "";
-    if (!line || result.exitCode !== 0) return { exists: false };
-    return { exists: true, entrypoint: line.split(" ")[0]!, argv: line.split(" ") };
+    const result = Bun.spawnSync(["ps", "-p", String(pid), "-o", "state=,command="], { stdout: "pipe", stderr: "pipe" });
+    const output = result.stdout ? new TextDecoder().decode(result.stdout).trim() : "";
+    if (!output || result.exitCode !== 0) return { exists: false };
+    const separator = output.indexOf(" ");
+    const state = separator < 0 ? output : output.slice(0, separator);
+    const command = separator < 0 ? "" : output.slice(separator + 1).trim();
+    if (!command || /^Z/.test(state)) return { exists: false };
+    return { exists: true, entrypoint: command.split(" ")[0]!, argv: command.split(" ") };
   }
 }
 

@@ -29,9 +29,10 @@ export function assertWindowsAclSids(aces: readonly WindowsAce[], currentUserSid
 let cachedUserSid: string | undefined;
 function currentUserSid(): string {
   if (cachedUserSid) return cachedUserSid;
+  const whoami = join(process.env.SystemRoot ?? join(process.env.SystemDrive ?? "C:", "Windows"), "System32", "whoami.exe");
   let last: Bun.SyncSpawnResult | undefined;
   for (let attempt = 0; attempt < 3; attempt++) {
-    const result = Bun.spawnSync(["whoami", "/user", "/fo", "csv", "/nh"], { stdout: "pipe", stderr: "pipe" });
+    const result = Bun.spawnSync([whoami, "/user", "/fo", "csv", "/nh"], { stdout: "pipe", stderr: "pipe" });
     if (result.exitCode === 0) {
       const sid = new TextDecoder().decode(result.stdout).match(/S-1-\d+(?:-\d+)+/)?.[0];
       if (!sid) throw new ServicePermissionError("WINDOWS_CURRENT_SID_MISSING");

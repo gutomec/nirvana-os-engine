@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { createHash, createHmac } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { canonicalizeJcs } from "../lib/glance/service/canonicalize.ts";
@@ -63,7 +63,7 @@ interface ControlFixture {
 }
 
 function createFixture(options: { now?: number; substituteOnReread?: boolean } = {}): ControlFixture {
-  const root = mkdtempSync(join(tmpdir(), "glance-control-"));
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), "glance-control-")));
   mkdirSync(join(root, "control", "pending"), { recursive: true });
   mkdirSync(join(root, "control", "nonces"), { recursive: true });
   mkdirSync(join(root, "secrets"), { recursive: true });

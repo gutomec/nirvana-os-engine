@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { canonicalWorkerArgv, classifyExistingService, createBunProcessAdapter, extractWorkerIdentityFromArgv } from "../lib/glance/service/adapters.ts";
@@ -215,6 +215,27 @@ test("SVC-ADAPTER-SPAWN-LIFECYCLE", async () => {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+}, 30_000);
+
+test("SVC-ADAPTER-POSIX-INSPECT-TREATS-ZOMBIE-AS-ABSENT", () => {
+  const fixture = mkdtempSync(join(tmpdir(), "glance-zombie-"));
+  try {
+    const library = join(import.meta.dir, "..", "lib", "glance", "service", "adapters.ts");
+    const probePath = join(fixture, "probe.ts");
+    writeFileSync(probePath, [
+      "import { pathToFileURL } from \"node:url\";",
+      "Object.defineProperty(process, \"platform\", { value: \"linux\" });",
+      "Bun.spawnSync = (() => ({ exitCode: 0, success: true, signalCode: null, stdout: new TextEncoder().encode(\"Z (bun)\"), stderr: new Uint8Array() })) as unknown as typeof Bun.spawnSync;",
+      "const { createBunProcessAdapter } = await import(pathToFileURL(process.env.LIBRARY!).href);",
+      "const inspection = await createBunProcessAdapter().inspect(Number(process.env.PID));",
+      "if (!inspection.exists) process.exit(0);",
+      "console.error(JSON.stringify(inspection));",
+      "process.exit(1);",
+    ].join("\n"));
+    const probe = Bun.spawnSync([process.execPath, probePath], { stdout: "pipe", stderr: "pipe", env: { ...process.env, LIBRARY: library, PID: "999999999" }, timeout: 30_000 });
+    expect(probe.exitCode).toBe(0);
+    expect(new TextDecoder().decode(probe.stderr)).not.toContain('"exists":true');
+  } finally { rmSync(fixture, { recursive: true, force: true }); }
 }, 30_000);
 
 export const IDENTITY_CASES = ["SVC-PROCESS-REAL-UNICODE-SPACES", "SVC-PROCESS-DIGEST", "SVC-IDENTITY-BYTES-DRIFT", "SVC-IDENTITY-DIGEST-UNAVAILABLE", "SVC-IDENTITY-ENTRYPOINT-DRIFT", "SVC-IDENTITY-ENGINE-UPDATE-DRIFT", "SVC-IDENTITY-ENGINE-VERSION-PRECEDENCE", "SVC-IDENTITY-FOREIGN-PORT", "SVC-IDENTITY-HEALTH-MISSING", "SVC-IDENTITY-MATCH", "SVC-IDENTITY-PID-MISSING", "SVC-IDENTITY-STARTUP-BEFORE-ROOT", "SVC-IDENTITY-STARTUP-MISMATCH", "SVC-IDENTITY-WRONG-CONFIG", "SVC-IDENTITY-WRONG-INSTANCE", "SVC-IDENTITY-WRONG-ROOT", "SVC-STATUS-PROCESS-DRIFT"] as const;

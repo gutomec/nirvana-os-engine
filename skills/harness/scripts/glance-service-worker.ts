@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
-import { createHash } from "node:crypto";
-import { appendFileSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { appendFileSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { startServer, type ServerRuntime } from "../lib/glance/server.ts";
 import { buildServiceHealth, processDigestFromEntrypointBytes } from "../lib/glance/service/adapters.ts";
@@ -216,6 +216,11 @@ export function createProductionRuntime(serviceRoot: string, metadata: { engineV
       rmSync(instancePath, { force: true });
     } catch { return; }
     try { rmSync(resolveServiceRef(serviceRoot, typed.control_secret_ref, true), { force: true }); } catch {}
+    try {
+      const archiveDir = resolveServiceRef(serviceRoot, `control/archive/${Date.now()}-${randomUUID()}`, false);
+      mkdirSync(archiveDir, { recursive: true });
+      renameSync(resolveServiceRef(serviceRoot, "config.json", false), join(archiveDir, "config.json"));
+    } catch {}
     try { appendFileSync(resolveServiceRef(serviceRoot, typed.log_ref, false), `[glance-service] stopped ${typed.instance_id}\n`); } catch {}
   };
   return {

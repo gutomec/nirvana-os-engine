@@ -215,6 +215,8 @@ export function createRealLifecycleHarness() {
       instrumentation.fetchHealth = undefined;
       inspectionMode = undefined;
       pendingInspectionMode = undefined;
+      writeFailures.length = 0;
+      stopDeliveryFailures = 0;
       if (pendingHealth) void pendingHealth(0).catch(() => {});
     },
     replaceSpawnIdentityBeforeCleanup(_mode: string): void { pendingInspectionMode = { kind: "foreign" }; },
@@ -243,6 +245,10 @@ export function createRealLifecycleHarness() {
         Bun.spawnSync(["taskkill", "/F", "/PID", String(pid), "/T"], { stdout: "ignore", stderr: "ignore" });
       } else {
         try { process.kill(pid, "SIGTERM"); } catch {}
+      }
+      const deadline = Date.now() + 10_000;
+      while (Date.now() < deadline && (await baseAdapter.inspect(pid)).exists) {
+        await new Promise(resolve => setTimeout(resolve, 50));
       }
     },
     async terminateLastOwned(home: string): Promise<void> {

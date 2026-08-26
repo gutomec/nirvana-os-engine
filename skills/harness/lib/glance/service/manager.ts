@@ -656,7 +656,12 @@ export function createGlanceServiceManager(home: string, instrumentation: Manage
           if (existsSync(configPath)) {
             const archiveDir = resolveServiceRef(root, `control/archive/${now()}-${randomUUID()}`, false);
             mkdirSync(archiveDir, { recursive: true });
-            renameSync(configPath, join(archiveDir, "config.json"));
+            try {
+              renameSync(configPath, join(archiveDir, "config.json"));
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") throw error;
+              try { rmSync(archiveDir, { recursive: true, force: true }); } catch {}
+            }
           }
           return { schema_version: "1.0.0", command: "stop", ok: true, state: "stopped", instance_id: (instance as { instance_id: string }).instance_id, read_only: true, persistent: true, log_path: (instance as { log_ref: string }).log_ref, code: "AUTHENTICATED_STOP", message: "worker drained and removed its capabilities" } satisfies GlanceServiceCommandResultV1;
         }
