@@ -9,12 +9,16 @@ import {
   type AgentXGauntletEvaluator, type AgentXGauntletInput, type AgentXRevisionRequest,
 } from "../lib/gauntlet/agent-x-cutover.ts";
 import { decideBusinessCanary } from "../lib/gauntlet/business-canary.ts";
+import { compileGauntletPlan } from "../lib/gauntlet/compiler.ts";
+import { createDispatchEvaluator, evaluationDirFor } from "../lib/gauntlet/evaluator-adapter.ts";
 import { parseExecutionOptions } from "../lib/gauntlet/execution-options.ts";
 import { getGauntlet, listCandidateRevisions, listScorecards } from "../lib/gauntlet/store.ts";
 import type { GauntletIntensity } from "../lib/gauntlet/types.ts";
 import { loadHarnessConfig } from "../lib/harness-config.ts";
 import { getRun, listEvents, openKernel, type KernelHandle, type TargetRef } from "../lib/run-kernel/index.ts";
 import { SCOPE_GUARD_PT_BR } from "../../_shared/lib/scope-guard.ts";
+import { writeFakeDispatch } from "./helpers/fake-dispatch.ts";
+import { KERNEL_BUDGET_MS, spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const roots: string[] = [];
 const handles: KernelHandle[] = [];
@@ -281,6 +285,32 @@ describe("Gauntlet causal revision loop", () => {
     expect(fs.readFileSync(path.join(loop.outputsRoot, "report.html"), "utf8")).toContain("Revision 2 of can_1");
     expect(fs.existsSync(path.join(loop.outputsRoot, "relatorio-final.pdf"))).toBeTrue();
   });
+
+  test("the dispatch evaluator drives the causal revision from the scorecard's revisionRequests and reaches the final gate", () => {
+    const loop = scenario({ grade: () => PASS });
+    loop.input.evaluator = createDispatchEvaluator({
+      target: EVALUATOR, producer: { kind: "agent-x", slug: "agent-x" }, plan: compileGauntletPlan({ brief: "Produza report.md", intensity: "light" }),
+      brief: "Produza report.md", projectRoot: loop.root, projectId: "prj_loop", dispatchScriptPath: writeFakeDispatch(path.join(loop.root, "fake")),
+      env: { HARNESS_LOGS_DIR: path.join(loop.root, "logs"), FAKE_DISPATCH_SCORECARD_FOR: "1=revise,2=pass", FAKE_DISPATCH_COST_USD: "0.1" },
+    });
+    const result = loop.run();
+    expect(result).toMatchObject({ exitCode: 0, finalGateRan: true, run: { state: "completed" },
+      gauntlet: { stopReason: "success", decision: "delivered", selectedRevisionId: "crv_run_loop_can_1_2", round: 2 } });
+    expect(loop.calls.revisions).toHaveLength(1);
+    const request = loop.calls.revisions[0];
+    expect(request.defects).toEqual({ failedDimensions: ["brief-conformance"], evaluationIds: ["evl_crv_run_loop_can_1_1"],
+      revisionRequests: [{ requirementId: "brief-conformance", evidenceRefs: ["fake:crv_run_loop_can_1_1:brief-conformance"] }] });
+    expect(revisionDefectsSection(request)).toContain("- brief-conformance: fake:crv_run_loop_can_1_1:brief-conformance");
+    const scorecards = loop.scorecards();
+    expect(scorecards.map(scorecard => [scorecard.verdict, scorecard.costUsd, scorecard.evaluator.slug])).toEqual([["revise", 0.1, "independent-evaluator"], ["pass", 0.1, "independent-evaluator"]]);
+    expect(loop.revisions()[1]).toMatchObject({ parentRevisionId: "crv_run_loop_can_1_1", causalEvaluationIds: ["evl_crv_run_loop_can_1_1"] });
+    for (const revisionId of ["crv_run_loop_can_1_1", "crv_run_loop_can_1_2"]) {
+      const evaluationDir = evaluationDirFor(loop.root, "run_loop", revisionId);
+      expect(fs.readFileSync(path.join(evaluationDir, "evaluation-brief.md"), "utf8")).toContain("Produza report.md");
+      expect(fs.existsSync(path.join(evaluationDir, "scorecard.json"))).toBeTrue();
+    }
+    expect(fs.readFileSync(path.join(loop.outputsRoot, "report.md"), "utf8")).toContain("Revision 2 of can_1");
+  }, KERNEL_BUDGET_MS + spawnBudgetMs(2));
 
   test.each(["balanced", "exhaustive"] as const)("%s enters every canary only with an explicit gauntlet request and --exec", intensity => {
     const explicit = parseExecutionOptions(["--execution-mode=gauntlet", `--gauntlet-intensity=${intensity}`], {});

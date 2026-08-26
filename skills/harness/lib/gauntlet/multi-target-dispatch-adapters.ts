@@ -109,14 +109,16 @@ function readMarker(file: string): MultiTargetResultMarker | null {
   try { return JSON.parse(fs.readFileSync(file, "utf8")) as MultiTargetResultMarker; } catch { return null; }
 }
 
-function costMatcher(target: MultiTargetAdapterInput["target"]): (event: Record<string, unknown>) => boolean {
+/** Exported with `observedCostUsd`: the Gauntlet evaluator adapter reads the cost of its
+ * subprocess from the same source, with the same discriminators. */
+export function costMatcher(target: Pick<MultiTargetAdapterInput["target"], "kind" | "id">): (event: Record<string, unknown>) => boolean {
   if (target.kind === "business") return (event) => event.business_slug === target.id;
   if (target.kind === "squad") return (event) => event.squad_slug === target.id && !event.business_slug;
   return (event) => event.employee === "agent-x";
 }
 
 /** Sum of `agent_executed.cost_usd` for this trace and target across every day folder of the audit log. */
-function observedCostUsd(logsDir: string, projectId: string, matches: (event: Record<string, unknown>) => boolean): number {
+export function observedCostUsd(logsDir: string, projectId: string, matches: (event: Record<string, unknown>) => boolean): number {
   let days: string[];
   try { days = fs.readdirSync(logsDir).filter((name) => /^\d{4}-\d{2}-\d{2}$/.test(name)); } catch { return 0; }
   let total = 0;

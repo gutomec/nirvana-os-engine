@@ -11,3 +11,5 @@ export * from "./multi-target-coordinator.ts";
 export * from "./run-kernel-multi-target-ports.ts";
 export * from "./multi-target-dispatch-adapters.ts";
 export * from "./multi-target-projection.ts";
+export * from "./evaluation-contract.ts";
+export * from "./evaluator-adapter.ts";
