@@ -62,7 +62,10 @@ function adapters(setup: Fixture, plan: CompiledMultiTargetPlan, env: Record<str
       "squad-c": "Assemble C from A and B.", "final-output": "Write the final report.",
     },
     dispatchScriptPath: setup.dispatchScriptPath,
-    env: { FAKE_DISPATCH_SPAWN_LOG: setup.spawnLog, ...env },
+    // One audit log per fixture. The adapter sums agent_executed.cost_usd by trace and target, the
+    // trace id is the same in every fixture, and other test files set HARNESS_LOGS_DIR at module
+    // scope without restoring it; under one shared log the sums of earlier tests leaked in (CI).
+    env: { FAKE_DISPATCH_SPAWN_LOG: setup.spawnLog, HARNESS_LOGS_DIR: join(setup.root, "logs"), ...env },
     ...extra,
   });
 }
