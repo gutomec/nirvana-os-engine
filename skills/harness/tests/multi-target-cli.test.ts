@@ -17,7 +17,6 @@ import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const REPO = path.resolve(import.meta.dir, "..", "..", "..");
 const SCRIPT = path.join(REPO, "skills", "harness", "scripts", "multi-target.ts");
-const ENGINE = { NIRVANA_MULTI_TARGET_ENGINE: "1" };
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) removeDir(root); });
@@ -209,23 +208,40 @@ describe("nrv multi-target plan", () => {
 });
 
 describe("nrv multi-target run", () => {
-  test("is opt-in: without NIRVANA_MULTI_TARGET_ENGINE=1 or with the kill switch it exits 4 and touches nothing", () => {
-    const setup = fixture();
-    const off = nrv(setup, ["run", setup.planFile]);
-    expect(off.status).toBe(4);
-    expect(off.stderr).toContain("NIRVANA_MULTI_TARGET_ENGINE=1");
-    const killed = nrv(setup, ["run", setup.planFile], { ...ENGINE, NIRVANA_MULTI_TARGET_KILL_SWITCH: "1" });
-    expect(killed.status).toBe(4);
-    expect(killed.stderr).toContain("NIRVANA_MULTI_TARGET_KILL_SWITCH=1");
-    expect(spawns(setup)).toEqual([]);
-    expect(fs.existsSync(setup.kernel)).toBeFalse();
-    expect(fs.existsSync(setup.workspace)).toBeFalse();
-  }, spawnBudgetMs(2));
+  test("is on by default: the kill switch and NIRVANA_MULTI_TARGET_ENGINE=0 refuse with exit 4, name the variable, audit it and touch nothing", () => {
+    // The kill switch wins over the legacy opt-in flag; the flag only counts when it says off.
+    const off: Array<Record<string, string>> = [
+      { NIRVANA_MULTI_TARGET_KILL_SWITCH: "1" },
+      { NIRVANA_MULTI_TARGET_KILL_SWITCH: "on", NIRVANA_MULTI_TARGET_ENGINE: "1" },
+      { NIRVANA_MULTI_TARGET_ENGINE: "0" },
+      { NIRVANA_MULTI_TARGET_ENGINE: "false" },
+    ];
+    for (const variables of off) {
+      const setup = fixture();
+      const [variable, value] = Object.entries(variables)[0];
+      const r = nrv(setup, ["run", setup.planFile], variables);
+      expect(r.status).toBe(4);
+      expect(r.stderr).toContain(`${variable}=${value}`);
+      expect(auditEvents(setup).filter((event) => event.event === "x_multi_target_disabled"))
+        .toMatchObject([{ trace_id: setup.projectId, variable, value, exit: 4 }]);
+      expect(spawns(setup)).toEqual([]);
+      expect(fs.existsSync(setup.kernel)).toBeFalse();
+      expect(fs.existsSync(setup.workspace)).toBeFalse();
+    }
+  }, spawnBudgetMs(4));
 
-  test("executes the waves through the dispatch adapters, completes the Run, audits every node and is idempotent", () => {
+  test("NIRVANA_MULTI_TARGET_ENGINE=1, the opt-in of the first releases, is accepted and changes nothing", () => {
+    const setup = fixture();
+    const r = nrv(setup, ["run", setup.planFile], { NIRVANA_MULTI_TARGET_ENGINE: "1", NIRVANA_MULTI_TARGET_KILL_SWITCH: "0" });
+    expect(r.status).toBe(0);
+    expect(spawns(setup)).toHaveLength(4);
+    expect(auditEvents(setup).some((event) => event.event === "x_multi_target_disabled")).toBeFalse();
+  }, spawnBudgetMs(5));
+
+  test("executes the waves without any variable, through the dispatch adapters, completes the Run, audits every node and is idempotent", () => {
     const setup = fixture();
     const runId = multiTargetRunId(setup.projectId);
-    const r = nrv(setup, ["run", setup.planFile, "--owner", "worker-test", "--runtime", "codex"], { ...ENGINE, FAKE_DISPATCH_COST_USD: "0.25" });
+    const r = nrv(setup, ["run", setup.planFile, "--owner", "worker-test", "--runtime", "codex"], { FAKE_DISPATCH_COST_USD: "0.25" });
     expect(r.status).toBe(0);
     expect(r.stdout).toContain(`▶ Run ${runId} criado (owner worker-test)`);
     expect(r.stdout).toContain("✓ Plano multi-target entregue.");
@@ -282,7 +298,7 @@ describe("nrv multi-target run", () => {
     expect(events.filter((event) => event.event === "agent_executed" && event.trace_id === setup.projectId)).toHaveLength(4);
 
     // Repeating the command: the Run is terminal, nothing spawns, --json is parseable.
-    const again = nrv(setup, ["run", setup.planFile, "--json"], ENGINE);
+    const again = nrv(setup, ["run", setup.planFile, "--json"]);
     expect(again.status).toBe(0);
     const parsed = JSON.parse(again.stdout);
     expect(parsed).toMatchObject({ projectId: setup.projectId, runId, exitCode: 0 });
@@ -309,7 +325,7 @@ describe("nrv multi-target run", () => {
   test("a node that exits 2 withholds the Run, blocks its consumers and the command exits 2", () => {
     const setup = fixture();
     const runId = multiTargetRunId(setup.projectId);
-    const r = nrv(setup, ["run", setup.planFile], { ...ENGINE, FAKE_DISPATCH_EXIT_CODE_FOR: "business-a=2" });
+    const r = nrv(setup, ["run", setup.planFile], { FAKE_DISPATCH_EXIT_CODE_FOR: "business-a=2" });
     expect(r.status).toBe(2);
     expect(r.stdout).toContain("⚠ Plano multi-target RETIDO");
     expect(spawns(setup).sort()).toEqual(["business-a", "business-b"]);
@@ -324,7 +340,7 @@ describe("nrv multi-target run", () => {
     });
     const terminal = auditEvents(setup).find((event) => event.event === "x_multi_target_terminal");
     expect(terminal).toMatchObject({ state: "withheld", kernel_state: "withheld", exit: 2 });
-    expect(nrv(setup, ["run", setup.planFile], ENGINE).status).toBe(2);
+    expect(nrv(setup, ["run", setup.planFile]).status).toBe(2);
     expect(spawns(setup)).toHaveLength(2);
   }, spawnBudgetMs(4));
 
@@ -333,7 +349,7 @@ describe("nrv multi-target run", () => {
     const runId = multiTargetRunId(setup.projectId);
     // The fake SIGKILLs the engine the moment squad-c (wave 2) starts: wave 1 is
     // already journaled as delivered and squad-c sits running under a live lease.
-    const crashed = nrv(setup, ["run", setup.planFile, "--owner", "worker-crash"], { ...ENGINE, FAKE_DISPATCH_KILL_PARENT_FOR: "squad-c" });
+    const crashed = nrv(setup, ["run", setup.planFile, "--owner", "worker-crash"], { FAKE_DISPATCH_KILL_PARENT_FOR: "squad-c" });
     expect(crashed.status).not.toBe(0);
     expect(spawns(setup).sort()).toEqual(["business-a", "business-b", "squad-c"]);
     withKernel(setup, (kernel) => {
@@ -346,7 +362,7 @@ describe("nrv multi-target run", () => {
     });
 
     // Same owner, inside the lease window: the running node resumes, the rest continues.
-    const resumed = nrv(setup, ["run", setup.planFile, "--owner", "worker-crash"], ENGINE);
+    const resumed = nrv(setup, ["run", setup.planFile, "--owner", "worker-crash"]);
     expect(resumed.status).toBe(0);
     expect(resumed.stdout).toContain(`▶ Retomando o Run ${runId} (estado running, owner worker-crash)`);
     const all = spawns(setup);
@@ -364,9 +380,9 @@ describe("nrv multi-target run", () => {
 
   test("a Run that exists for a different plan is refused with exit 4", () => {
     const setup = fixture();
-    expect(nrv(setup, ["run", setup.planFile], ENGINE).status).toBe(0);
+    expect(nrv(setup, ["run", setup.planFile]).status).toBe(0);
     fs.writeFileSync(setup.planFile, JSON.stringify({ ...PLAN, policy: undefined }));
-    const r = nrv(setup, ["run", setup.planFile], ENGINE);
+    const r = nrv(setup, ["run", setup.planFile]);
     expect(r.status).toBe(4);
     expect(r.stderr).toContain("já existe com outro plano");
     expect(spawns(setup)).toHaveLength(4);
@@ -379,7 +395,7 @@ describe("nrv multi-target run --retry-failed", () => {
     const first = multiTargetRunId(setup.projectId);
     const second = multiTargetRunId(setup.projectId, 2);
     expect(second).toBe(`${first}_r2`);
-    const failed = nrv(setup, ["run", setup.planFile], { ...ENGINE, FAKE_DISPATCH_COST_USD: "0.25", FAKE_DISPATCH_EXIT_CODE_FOR: "squad-c=1" });
+    const failed = nrv(setup, ["run", setup.planFile], { FAKE_DISPATCH_COST_USD: "0.25", FAKE_DISPATCH_EXIT_CODE_FOR: "squad-c=1" });
     expect(failed.status).toBe(1);
     expect(failed.stdout).toContain(`nrv multi-target run ${setup.planFile} --retry-failed`);
     expect(spawns(setup).sort()).toEqual(["business-a", "business-b", "squad-c"]);
@@ -391,15 +407,15 @@ describe("nrv multi-target run --retry-failed", () => {
       ["brief-main", "delivered"], ["business-a", "delivered"], ["business-b", "delivered"], ["squad-c", "failed"], ["final-output", "skipped"],
     ]);
 
-    // Without the flag the terminal Run answers as before, executing nothing, and points at the flag.
-    const repeat = nrv(setup, ["run", setup.planFile], ENGINE);
+    // Repeating the command: the terminal Run answers as before, executing nothing, and points at --retry-failed.
+    const repeat = nrv(setup, ["run", setup.planFile]);
     expect(repeat.status).toBe(1);
     expect(repeat.stdout).toContain(`Run ${first} já é terminal (failed)`);
     expect(repeat.stdout).toContain("--retry-failed");
     expect(spawns(setup)).toHaveLength(3);
 
     // Cause fixed (the fake no longer fails squad-c): only the reset nodes run, wave 1 keeps its outputs and markers.
-    const retried = nrv(setup, ["run", setup.planFile, "--retry-failed", "--owner", "worker-retry"], { ...ENGINE, FAKE_DISPATCH_COST_USD: "0.25" });
+    const retried = nrv(setup, ["run", setup.planFile, "--retry-failed", "--owner", "worker-retry"], { FAKE_DISPATCH_COST_USD: "0.25" });
     expect(retried.status).toBe(0);
     expect(retried.stdout).toContain(`▶ Run ${second} criado a partir de ${first} (owner worker-retry); voltam a pending: final-output, squad-c`);
     expect(retried.stdout).toContain("✓ Plano multi-target entregue.");
@@ -446,8 +462,8 @@ describe("nrv multi-target run --retry-failed", () => {
     expect(status.status).toBe(0);
     expect(status.stdout).toContain(`Run ${second} (projeto ${setup.projectId}): completed · reaberto de ${first}`);
     expect(status.stdout).toContain("tentativa 2");
-    expect(nrv(setup, ["run", setup.planFile], ENGINE).status).toBe(0);
-    const done = nrv(setup, ["run", setup.planFile, "--retry-failed"], ENGINE);
+    expect(nrv(setup, ["run", setup.planFile]).status).toBe(0);
+    const done = nrv(setup, ["run", setup.planFile, "--retry-failed"]);
     expect(done.status).toBe(4);
     expect(done.stderr).toContain(`O Run ${second} está completed: só um Run failed ou withheld pode ser reaberto`);
     expect(spawns(setup)).toHaveLength(5);
@@ -456,21 +472,21 @@ describe("nrv multi-target run --retry-failed", () => {
   test("refuses with exit 4 when nothing ran, when the Run is not terminal and when the plan changed; a stalled node is reopened like a failed one", () => {
     const setup = fixture();
     const first = multiTargetRunId(setup.projectId);
-    const never = nrv(setup, ["run", setup.planFile, "--retry-failed"], ENGINE);
+    const never = nrv(setup, ["run", setup.planFile, "--retry-failed"]);
     expect(never.status).toBe(4);
     expect(never.stderr).toContain("nunca executou");
     expect(fs.existsSync(setup.kernel)).toBeTrue();
 
     // A crash in wave 2 leaves the Run running: not terminal, refused, nothing spawned; the plain run still resumes it.
-    const crashed = nrv(setup, ["run", setup.planFile, "--owner", "worker-crash"], { ...ENGINE, FAKE_DISPATCH_KILL_PARENT_FOR: "squad-c" });
+    const crashed = nrv(setup, ["run", setup.planFile, "--owner", "worker-crash"], { FAKE_DISPATCH_KILL_PARENT_FOR: "squad-c" });
     expect(crashed.status).not.toBe(0);
-    const running = nrv(setup, ["run", setup.planFile, "--retry-failed", "--owner", "worker-crash"], ENGINE);
+    const running = nrv(setup, ["run", setup.planFile, "--retry-failed", "--owner", "worker-crash"]);
     expect(running.status).toBe(4);
     expect(running.stderr).toContain(`O Run ${first} não é terminal (running)`);
     expect(spawns(setup)).toHaveLength(3);
 
     // Another owner inside the lease window: squad-c stalls, the plan fails.
-    const stalled = nrv(setup, ["run", setup.planFile, "--owner", "worker-other"], ENGINE);
+    const stalled = nrv(setup, ["run", setup.planFile, "--owner", "worker-other"]);
     expect(stalled.status).toBe(1);
     withKernel(setup, (kernel) => {
       expect(getRun(kernel, setup.projectId, first)!.state).toBe("failed");
@@ -481,14 +497,14 @@ describe("nrv multi-target run --retry-failed", () => {
 
     // The plan file changed: the digest moved, the retry is refused before anything is created.
     fs.writeFileSync(setup.planFile, JSON.stringify({ ...PLAN, policy: undefined }));
-    const moved = nrv(setup, ["run", setup.planFile, "--retry-failed"], ENGINE);
+    const moved = nrv(setup, ["run", setup.planFile, "--retry-failed"]);
     expect(moved.status).toBe(4);
     expect(moved.stderr).toContain("já existe com outro plano");
     withKernel(setup, (kernel) => expect(getRun(kernel, setup.projectId, multiTargetRunId(setup.projectId, 2))).toBeNull());
 
     // The original plan restored: the stalled node and its consumer run again, nothing else.
     fs.writeFileSync(setup.planFile, JSON.stringify(PLAN, null, 2));
-    const retried = nrv(setup, ["run", setup.planFile, "--retry-failed"], ENGINE);
+    const retried = nrv(setup, ["run", setup.planFile, "--retry-failed"]);
     expect(retried.status).toBe(0);
     expect(retried.stdout).toContain("voltam a pending: final-output, squad-c");
     expect(spawns(setup).slice(3)).toEqual(["squad-c", "final-output"]);
@@ -500,7 +516,7 @@ describe("nrv multi-target run --retry-failed", () => {
   test("a node whose subprocess leaves no cost event is reported as cost-unobserved in the audit, the summary and status", () => {
     const setup = fixture();
     const runId = multiTargetRunId(setup.projectId);
-    const r = nrv(setup, ["run", setup.planFile], { ...ENGINE, FAKE_DISPATCH_COST_USD: "0" });
+    const r = nrv(setup, ["run", setup.planFile], { FAKE_DISPATCH_COST_USD: "0" });
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("· onda 1 business-a: delivered · USD 0 (custo não observado)");
     expect(r.stdout).toContain("· onda 0 brief-main: delivered · USD 0\n");
@@ -535,7 +551,7 @@ describe("nrv multi-target status and usage", () => {
     expect(none.status).toBe(1);
     expect(none.stderr).toContain("Nenhum Run Kernel");
     expect(fs.existsSync(setup.kernel)).toBeFalse();
-    expect(nrv(setup, ["run", setup.planFile], ENGINE).status).toBe(0);
+    expect(nrv(setup, ["run", setup.planFile]).status).toBe(0);
     const unknown = nrv(setup, ["status", "run_mt_ghost", "--project", setup.projectId]);
     expect(unknown.status).toBe(1);
     expect(unknown.stderr).toContain("não encontrado");
@@ -590,7 +606,7 @@ describe("nrv multi-target with an agent node", () => {
     const setup = fixture("proj-agent");
     fs.writeFileSync(setup.planFile, JSON.stringify(AGENT_PLAN, null, 2));
     const runId = multiTargetRunId(setup.projectId);
-    const r = nrv(setup, ["run", setup.planFile, "--owner", "worker-agent"], { ...ENGINE, FAKE_DISPATCH_COST_USD: "0.25" });
+    const r = nrv(setup, ["run", setup.planFile, "--owner", "worker-agent"], { FAKE_DISPATCH_COST_USD: "0.25" });
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("✓ Plano multi-target entregue.");
     expect(spawns(setup)).toEqual(["squad-research", "role-copywriter", "squad-design", "final-output"]);
@@ -664,21 +680,21 @@ describe("nrv multi-target run with a standard node and a Gauntlet synthesis in 
     const runIdOf = (kind: string, id: string) => { const c = captureOf(kind, id); return c.argv[c.argv.indexOf("--run-id") + 1] as string; };
     const [r1, r2, r3] = [1, 2, 3].map((attempt) => multiTargetRunId(setup.projectId, attempt));
 
-    const first = nrv(setup, ["run", setup.planFile], { ...ENGINE, FAKE_DISPATCH_EXIT_CODE_FOR: "final-output=1" });
+    const first = nrv(setup, ["run", setup.planFile], { FAKE_DISPATCH_EXIT_CODE_FOR: "final-output=1" });
     expect(first.status).toBe(1);
     expect(spawns(setup)).toEqual(["squad-copy", "final-output"]);
     expect(runIdOf("squads", "squad-copy")).toBe("run_smoke-cafe_squad-copy_a1");
     expect(runIdOf("deliverables", "final-output")).toBe("run_smoke-cafe_final-output_a1");
 
     // The cause still there: _r2 keeps the squad and fails on the synthesis again, under _a2.
-    const second = nrv(setup, ["run", setup.planFile, "--retry-failed"], { ...ENGINE, FAKE_DISPATCH_EXIT_CODE_FOR: "final-output=1" });
+    const second = nrv(setup, ["run", setup.planFile, "--retry-failed"], { FAKE_DISPATCH_EXIT_CODE_FOR: "final-output=1" });
     expect(second.status).toBe(1);
     expect(second.stdout).toContain(`▶ Run ${r2} criado a partir de ${r1}`);
     expect(spawns(setup)).toEqual(["squad-copy", "final-output", "final-output"]);
     expect(runIdOf("deliverables", "final-output")).toBe("run_smoke-cafe_final-output_a2");
 
     // The cause fixed: _r3 keeps waves 1 and 2, runs only the synthesis, under its own id.
-    const third = nrv(setup, ["run", setup.planFile, "--retry-failed"], ENGINE);
+    const third = nrv(setup, ["run", setup.planFile, "--retry-failed"]);
     expect(third.status).toBe(0);
     expect(third.stdout).toContain(`▶ Run ${r3} criado a partir de ${r2} (owner`);
     expect(third.stdout).toContain("voltam a pending: final-output\n");
