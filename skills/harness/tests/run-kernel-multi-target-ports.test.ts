@@ -95,7 +95,7 @@ function manualScheduler() {
 function nodeInput(nodeId: string): MultiTargetAdapterInput {
   return {
     nodeId, target: { kind: "business", id: nodeId }, mode: "standard", grantedCostUsd: 0, upstreamPaths: [],
-    outputPath: `businesses/${nodeId}/outputs/`, idempotencyKey: `key-${nodeId}`, resume: false,
+    outputPath: `businesses/${nodeId}/outputs/`, attempt: 1, idempotencyKey: `key-${nodeId}`, resume: false,
   };
 }
 

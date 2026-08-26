@@ -1,3 +1,5 @@
+import { RunAlreadyTerminalError } from "../run-kernel/index.ts";
+
 export interface BusinessCanaryPolicyInput {
   businessSlug: string;
   wantExec: boolean;
@@ -48,6 +50,9 @@ export function runBusinessCanaryWithRollback<T>(input: {
     input.emit("x_business_gauntlet_terminal", { production_started: productionStarted });
     return result;
   } catch (error) {
+    // A Run that already ended under this id is refused, never rolled back: the legacy producer
+    // would run under the same id, which is what the refusal exists to prevent.
+    if (error instanceof RunAlreadyTerminalError) throw error;
     if (!productionStarted) {
       input.emit("x_business_gauntlet_rollback", { reason: "pre_production_error", production_started: false,
         error: String((error as Error).message) });

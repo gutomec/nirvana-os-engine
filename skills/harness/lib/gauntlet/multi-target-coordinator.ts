@@ -43,6 +43,8 @@ export interface MultiTargetAdapterInput {
   grantedCostUsd: number;
   upstreamPaths: string[];
   outputPath: string;
+  /** Execution attempt of the plan (1, then one more per `--retry-failed`); the node's Run id carries it. */
+  attempt: number;
   idempotencyKey: string;
   resume: boolean;
   /** Aborted by the port when the node lease is lost mid-run; adapters must stop their side effect. */
@@ -296,6 +298,7 @@ export async function coordinateMultiTargetPlan(input: {
           grantedCostUsd: node.grantedCostUsd,
           upstreamPaths: [...upstreamPaths].sort(),
           outputPath: phase.outputs_path,
+          attempt: snapshot.attempt ?? 1,
           idempotencyKey: nodeIdempotencyKey(input.plan.digest, node.nodeId, snapshot.attempt),
           resume,
         });

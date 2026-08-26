@@ -66,7 +66,7 @@ import { createDispatchEvaluator, describeTarget } from "../lib/gauntlet/evaluat
 import { CONFORMANCE_CAPABILITY, GAUNTLET_EVALUATOR_ENV, loadInstalledSquads, selectGauntletEvaluator } from "../lib/gauntlet/evaluator-selection.ts";
 import { JUDGE_X_TARGET, judgeXAvailability, judgeXOutcome, runJudgeX } from "../lib/gauntlet/judge-x.ts";
 import type { GauntletPlan } from "../lib/gauntlet/types.ts";
-import { createHarnessLegacyAdapter, openKernel, type TargetRef } from "../lib/run-kernel/index.ts";
+import { RunAlreadyTerminalError, createHarnessLegacyAdapter, openKernel, type TargetRef } from "../lib/run-kernel/index.ts";
 import { inertStandardPublication, openStandardPublication } from "../lib/run-kernel/standard-publication.ts";
 import { freezeExecutionSnapshot } from "../lib/runtime-snapshot.ts";
 
@@ -184,8 +184,9 @@ const inlineBrief = (autoMode || explicitTarget) ? positional[0] : positional[1]
 const briefFile = arg("--brief-file");
 const manifest = arg("--manifest");
 const projectId = arg("--project");
-// --run-id: adopt a Run another control plane already prepared (Glance) instead
-// of deriving run_<project>. The Run lives in the project root's kernel (the
+// --run-id: the Run's id instead of the derived run_<project>: adopted when a
+// control plane prepared it (Glance), created when it does not exist yet (one
+// per multi-target node attempt). The Run lives in the project root's kernel (the
 // root Glance serves: NIRVANA_PROJECT_ROOT, else the cwd), so with the flag the
 // canaries open that kernel; without it each dispatch keeps its own under
 // outputs/<pid>, byte-for-byte the previous behaviour.
@@ -350,7 +351,7 @@ if (!slug && !autoMode && !explicitTarget) {
   console.error("    --team                  real multi-employee orchestration (director + chain, each step audits)");
   console.error("    --execution-mode=<mode> standard|gauntlet|auto (default: standard)");
   console.error("    --gauntlet-intensity=<profile> light|balanced|exhaustive");
-  console.error("    --run-id=<runId>        adopt a Run already prepared in the project kernel (Glance); default run_<project>");
+  console.error("    --run-id=<runId>        the Run's id in the project kernel: adopted when prepared (Glance), created otherwise (multi-target nodes); default run_<project>");
   console.error("    --max-budget=<usd>      cost ceiling for the run (claude --max-budget-usd)");
   console.error("    --timeout=<min>         wall-clock ceiling for the run (default 24h; a real hang is caught by ~5 min of inactivity)");
   console.error("    --safe                  opt in to restricted mode (limited tools + sandbox); default = full trust");
@@ -1012,7 +1013,7 @@ if (pendingCascade?.kind === "squad-only") {
       const result = runAgentXGauntlet({
         kernel, legacy: createHarnessLegacyAdapter({ ledger: legacy, auditCwd: projDir }), producerTarget,
         projectId: pid, runId: canonicalRunId, traceId: pid, brief, projectRoot, outputsRoot: oroot,
-        intensity: executionOptions.intensity, executionSnapshot,
+        intensity: executionOptions.intensity, executionSnapshot, audit: emit,
         expectedCostUsd: budget.roundBudgetUsd,
         executeCandidate: candidateRoot => produce(candidateRoot, brief),
         reviseCandidate: request => produce(request.candidateRoot, writeRevisionBrief(brief, request).text),
@@ -1038,7 +1039,7 @@ if (pendingCascade?.kind === "squad-only") {
   const publication = openStandardPublication({ kernelPath: canaryKernelPath(projectRoot), projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag),
     traceId: pid, target: { kind: "squad", slug: squads[0], capabilityId }, snapshot: frozenExecutionSnapshot(pid, rt, "squad"),
     audit: emit, warn: line => console.error(c("yellow", line)) });
-  if (publication.incompatible) process.exit(1);
+  if (publication.incompatible || publication.collided) process.exit(1);
   ledgerTry(() => {
     ledgerHandle = runLedger.openLedger();
     const row = runLedger.openRun(ledgerHandle, {
@@ -1227,7 +1228,7 @@ if (pendingCascade?.kind === "agent-x") {
       const result = runAgentXGauntlet({
         kernel, legacy: createHarnessLegacyAdapter({ ledger: legacy, auditCwd: projDir }),
         projectId: pid, runId: canonicalRunId, traceId: pid, brief, projectRoot: base, outputsRoot: oroot,
-        intensity: executionOptions.intensity, executionSnapshot,
+        intensity: executionOptions.intensity, executionSnapshot, audit: emit,
         expectedCostUsd: budget.roundBudgetUsd,
         executeCandidate: candidateRoot => produce(candidateRoot, brief, briefPath),
         reviseCandidate(request) {
@@ -1255,7 +1256,7 @@ if (pendingCascade?.kind === "agent-x") {
   const publication = openStandardPublication({ kernelPath: canaryKernelPath(base), projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag),
     traceId: pid, target: { kind: "agent-x", slug: "agent-x" }, snapshot: frozenExecutionSnapshot(pid, rt, "agent-x"),
     audit: emit, warn: line => console.error(c("yellow", line)) });
-  if (publication.incompatible) process.exit(1);
+  if (publication.incompatible || publication.collided) process.exit(1);
   ledgerTry(() => {
     ledgerHandle = runLedger.openLedger();
     const row = runLedger.openRun(ledgerHandle, {
@@ -1476,7 +1477,7 @@ if (wantExec) {
           kernel, legacy: createHarnessLegacyAdapter({ ledger: canaryLedger, auditCwd: projDir }),
           producerTarget: { kind: "business", slug }, projectId: pid, runId: canonicalRunId, traceId: pid,
           brief, projectRoot, outputsRoot: oroot, expectedCostUsd: budget.roundBudgetUsd, intensity: executionOptions.intensity,
-          executionSnapshot,
+          executionSnapshot, audit: emit,
           executeCandidate: candidateRoot => produce(candidateRoot, tmpBriefFile, brief),
           reviseCandidate(request) {
             const revision = writeRevisionBrief(brief, request);
@@ -1526,7 +1527,9 @@ if (wantExec) {
       });
     } catch (error) {
       kernel.close(); canaryLedger.close();
-      console.error(c("red", `✗ Business Gauntlet failed after production started: ${(error as Error).message}`));
+      console.error(c("red", error instanceof RunAlreadyTerminalError
+        ? `✗ Business Gauntlet refused: ${error.message}`
+        : `✗ Business Gauntlet failed after production started: ${(error as Error).message}`));
       process.exit(1);
     }
   }
@@ -1535,8 +1538,9 @@ if (wantExec) {
   const publication = businessCanaryDecision.enabled ? inertStandardPublication(canonicalRunIdFor(pid, runIdFlag))
     : openStandardPublication({ kernelPath: canaryKernelPath(projectRoot), projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag), traceId: pid,
       target: { kind: "business", slug }, snapshot: frozenExecutionSnapshot(pid, rt, "business"), audit: emit, warn: line => console.error(c("yellow", line)) });
-  if (publication.incompatible) {
-    if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "failed", { error: "runtime incompatible with the provider catalog" }));
+  if (publication.incompatible || publication.collided) {
+    const error = publication.collided ? `run ${publication.runId} is already terminal` : "runtime incompatible with the provider catalog";
+    if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "failed", { error }));
     process.exit(1);
   }
   if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "running", { childPid: process.pid }));

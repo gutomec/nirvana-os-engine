@@ -8,6 +8,42 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Todo nó multi-target roda sob o próprio id de Run, e um Run já terminado é recusado
+
+A primeira retomada real de um plano multi-target (`--retry-failed`) entregou a
+onda 2 e falhou a onda 3 com `[run-ledger] recordSession: run
+'run_smoke-cafe-solar' not found` seguido de `illegal transition completed ->
+completed`. Todo nó de um plano compartilha `--project`, e o dispatch derivava
+dele o id canônico do Run, `run_<project>`: o squad `standard` da onda 1
+publicou e concluiu esse Run, a onda 2 reproduziu os eventos dele
+(`x_run_kernel_unavailable` na transição terminal) e a síntese Gauntlet da
+onda 3 adotou o Run concluído, produziu um candidato de USD 2,27, passou no
+gate e morreu na transição.
+
+Os adapters de dispatch agora passam `--run-id run_<project>_<nó>_a<tentativa>`
+em todo spawn, standard ou gauntlet, business, squad, agent-x ou síntese, com
+cada parte sanitizada como o dispatch sanitiza um project id; um plano retomado
+dá aos nós que reexecuta `_a2`, `_a3`, enquanto os nós entregues nunca spawnam.
+Com `--run-id` o Run do nó vive no kernel do projeto, ao lado do
+`run_mt_<project>` do plano, e o adapter fixa `NIRVANA_PROJECT_ROOT` para que
+esse seja o kernel que o filho abre. A própria adoção passou a falhar fechada: a
+publicação do modo standard e o `runAgentXGauntlet` leem o Run antes de
+qualquer produtor, e um Run terminal (`completed`, `withheld`,
+`delivered_with_reservations`, `failed`, `rolled_back`, `cancelled`,
+`abandoned`) não é recriado nem transicionado: `x_run_id_collision` no audit,
+`run '<id>' is already terminal (<estado>); pass a fresh --run-id` no stderr,
+exit 1. O canário Business nunca converte essa recusa em rollback para o
+produtor legado, que rodaria sob o mesmo id. No plano do smoke,
+`--retry-failed` agora cria `_r3`, mantém as ondas 1 e 2 e executa só
+`final-output`, sob `run_smoke-cafe-solar_final-output_a3`; o teste de CLI
+reproduz essa cadeia com o dispatch falso.
+
+A mensagem do run-ledger tinha causa própria: a linha legada de um canário é
+chaveada pelo run id canônico, e só o caminho de criação a abria, então todo
+Run adotado, inclusive pelo `--run-id` do Glance, ficava sem linha; o dual-write
+lançava `legacy run '<id>' is missing` na primeira transição e o
+`recordSession` registrava `not found` depois de cada produtor. O cutover agora
+abre a linha na adoção, pelo mesmo `openRun` idempotente.
 ### O Gauntlet é sempre julgado por um agente: judge-x, o juiz do próprio engine
 
 O primeiro smoke real do avaliador (26/08/2026, Café Solar) mostrou duas

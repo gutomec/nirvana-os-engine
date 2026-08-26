@@ -22,3 +22,12 @@ export function canTransition(from: CanonicalRunState, to: CanonicalRunState): b
 export function assertTransition(from: CanonicalRunState, to: CanonicalRunState): void {
   if (!canTransition(from, to)) throw new Error(`run-kernel: illegal transition ${from} -> ${to}`);
 }
+
+/** Thrown when a dispatch would continue, under the id it was given, a Run that already ended.
+ * A terminal Run is never re-created nor transitioned: the caller fails closed before any producer. */
+export class RunAlreadyTerminalError extends Error {
+  constructor(readonly runId: string, readonly state: CanonicalRunState) {
+    super(`run '${runId}' is already terminal (${state}); pass a fresh --run-id`);
+    this.name = "RunAlreadyTerminalError";
+  }
+}

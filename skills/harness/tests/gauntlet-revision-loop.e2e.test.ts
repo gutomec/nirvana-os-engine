@@ -152,12 +152,16 @@ describe("Gauntlet causal revision loop", () => {
     expect((loop.events().at(-1)?.payload as any)).toMatchObject({ to: "withheld", reason: "critical_regression" });
   });
 
-  test("stops finitely at max_rounds and no_progress, and repeats nothing when invoked again", () => {
+  test("stops finitely at max_rounds and no_progress; invoked again on the ended Run it is refused and repeats nothing", () => {
     const maxRounds = scenario({ grade: (_, revision) => ({ brief: { score: revision === 1 ? 0.5 : 0.6, passed: false } }) });
     expect(maxRounds.run()).toMatchObject({ exitCode: 2, finalGateRan: false, run: { state: "withheld" }, gauntlet: { stopReason: "max_rounds", round: 2 } });
     expect(maxRounds.calls).toMatchObject({ executions: 1, finalGates: 0 });
     expect(maxRounds.calls.revisions).toHaveLength(1);
-    expect(maxRounds.run().run.state).toBe("withheld");
+    // The Run ended: a second invocation under its id is refused before any producer, and nothing is replayed.
+    const journaled = maxRounds.events().length;
+    expect(() => maxRounds.run()).toThrow("run 'run_loop' is already terminal (withheld); pass a fresh --run-id");
+    expect(getRun(maxRounds.handle, "prj_loop", "run_loop")?.state).toBe("withheld");
+    expect(maxRounds.events()).toHaveLength(journaled);
     expect(maxRounds.calls.executions).toBe(1); expect(maxRounds.calls.revisions).toHaveLength(1);
     expect(maxRounds.scorecards()).toHaveLength(2);
 

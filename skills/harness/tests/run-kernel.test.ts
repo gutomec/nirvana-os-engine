@@ -27,6 +27,7 @@ import {
   type KernelHandle,
 } from "../lib/run-kernel/index.ts";
 import { getRun as getLegacyRun, openLedger } from "../lib/run-ledger.ts";
+import { KERNEL_BUDGET_MS } from "./helpers/test-budgets.ts";
 
 const roots: string[] = [];
 const handles: KernelHandle[] = [];
@@ -75,7 +76,7 @@ describe("canonical lifecycle and journal", () => {
       projectId: "prj_b", runId: "run_b", traceId: "trace_prj_b", type: "cross-project.invalid",
       actor: { kind: "kernel", id: "test" }, correlationId: "cor", causationId: events[0].eventId,
     })).toThrow(/cannot cross project/);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("rejects invalid and terminal transitions", () => {
     const { handle } = fresh();
@@ -85,7 +86,7 @@ describe("canonical lifecycle and journal", () => {
     transitionRun(handle, { projectId: "prj_a", runId: "run_a", to: "rolled_back", actor: { kind: "kernel", id: "test" }, correlationId: "cor" });
     expect(() => transitionRun(handle, { projectId: "prj_a", runId: "run_a", to: "running", actor: { kind: "kernel", id: "test" }, correlationId: "cor" }))
       .toThrow(/illegal transition rolled_back -> running/);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("replays duplicate identities once and rejects divergent payloads", () => {
     const { handle } = fresh();
@@ -99,7 +100,7 @@ describe("canonical lifecycle and journal", () => {
     expect(duplicate).toEqual(first);
     expect(listEvents(handle, "prj_a")).toHaveLength(1);
     expect(() => appendEvent(handle, { ...base, payload: { usd: 2 } })).toThrow(/identity conflict/);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("retries run creation and transition commands by idempotency key", () => {
     const { handle } = fresh();
@@ -109,7 +110,7 @@ describe("canonical lifecycle and journal", () => {
     const running = transitionRun(handle, transition);
     expect(transitionRun(handle, transition)).toEqual(running);
     expect(listEvents(handle, "prj_a")).toHaveLength(2);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("rebuild produces the same deterministic projection snapshot", () => {
     const { handle } = fresh();
@@ -119,7 +120,7 @@ describe("canonical lifecycle and journal", () => {
     const before = projectionSnapshot(handle, "prj_a");
     rebuildProjections(handle, "prj_a");
     expect(projectionSnapshot(handle, "prj_a")).toBe(before);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("isolates runs and event cursors by project", () => {
     const { handle } = fresh();
@@ -130,7 +131,7 @@ describe("canonical lifecycle and journal", () => {
     expect(getRun(handle, "prj_b", "run_same")?.state).toBe("prepared");
     expect(listEvents(handle, "prj_a", 1)).toHaveLength(1);
     expect(listEvents(handle, "prj_b", 1)).toHaveLength(0);
-  });
+  }, KERNEL_BUDGET_MS);
 });
 
 describe("durable outbox and transcript", () => {
@@ -145,7 +146,7 @@ describe("durable outbox and transcript", () => {
     expect(received.size).toBe(1);
     expect(pendingOutboxCount(handle)).toBe(0);
     expect(await publishOutbox(handle, () => { throw new Error("must not republish"); })).toBe(0);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("stores the visible transcript separately and links it by ID", () => {
     const { handle } = fresh();
@@ -155,7 +156,7 @@ describe("durable outbox and transcript", () => {
     expect(event.transcriptMessageId).toBe("msg_1");
     const columns = handle.db.query("PRAGMA table_info(transcript_messages)").all() as { name: string }[];
     expect(columns.map(column => column.name)).toEqual(["message_id", "project_id", "run_id", "role", "content", "created_at"]);
-  });
+  }, KERNEL_BUDGET_MS);
 });
 
 describe("execution scopes", () => {
@@ -192,7 +193,7 @@ describe("ArtifactRef and compatibility facade", () => {
     expect(() => saveArtifactRef(handle, { ...ref, bytes: ref.bytes + 1 })).toThrow(/revision conflict/);
     fs.appendFileSync(artifactPath, " alterado", "utf8");
     expect(() => verifyArtifactRef(ref, root)).toThrow(/byte count mismatch/);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("rejects artifacts outside the authorized workspace", () => {
     const { root } = fresh();
@@ -208,7 +209,7 @@ describe("ArtifactRef and compatibility facade", () => {
       publishedUri: pathToFileURL(outside).href, classification: "internal",
       producer: { targetKind: "agent-x", targetSlug: "agent-x" },
     }, root)).toThrow(/escapes/);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("dual-writes through an opt-in legacy adapter without changing canonical semantics", () => {
     const { handle } = fresh();
@@ -223,7 +224,7 @@ describe("ArtifactRef and compatibility facade", () => {
     facade.transition({ projectId: "prj_a", runId: "run_a", to: "delivered_with_reservations", actor: { kind: "kernel", id: "test" }, correlationId: "cor" });
     expect(calls).toEqual(["open:dispatched", "transition:running", "transition:verifying", "transition:delivered"]);
     expect(getRun(handle, "prj_a", "run_a")?.state).toBe("delivered_with_reservations");
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("opens and updates the existing ledger while preserving its schema and audit projection", async () => {
     const { handle, root } = fresh();
@@ -251,7 +252,7 @@ describe("ArtifactRef and compatibility facade", () => {
       if (previousLogs === undefined) delete process.env.HARNESS_LOGS_DIR; else process.env.HARNESS_LOGS_DIR = previousLogs;
       if (previousState === undefined) delete process.env.NIRVANA_STATE_DB; else process.env.NIRVANA_STATE_DB = previousState;
     }
-  });
+  }, KERNEL_BUDGET_MS);
 });
 
 describe("two processes writing one kernel", () => {
@@ -335,5 +336,5 @@ describe("opening a kernel", () => {
     handles.push(reopened);
     createRun(reopened, runInput());
     expect(getRun(reopened, "prj_a", "run_a")?.state).toBe("prepared");
-  });
+  }, KERNEL_BUDGET_MS);
 });

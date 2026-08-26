@@ -25,6 +25,14 @@
 // now pins HARNESS_LOGS_DIR to the directory it reads (a value the caller set
 // wins), and when no cost event exists for a node that ran, the result says so
 // (`costObserved: false`) instead of reporting a silent zero.
+//
+// Run identity: every node of a plan shares `--project`, and the dispatch derives the
+// canonical Run id `run_<project>` from it, so the nodes of one plan published and ended one
+// Run (the first real resumption: wave 1 completed it, wave 2 replayed its events, wave 3
+// died on `illegal transition completed -> completed`). The adapter names the Run of every
+// spawn, `run_<project>_<node>_a<attempt>` (nodeRunId); with `--run-id` the dispatch keeps it
+// in the project kernel beside the plan's own `run_mt_<project>`, and NIRVANA_PROJECT_ROOT is
+// pinned to the root the adapter runs in so that kernel is the one the child opens.
 
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -120,6 +128,13 @@ function mergeAllowlist(existing: string | undefined, slug: string): string {
   const slugs = (existing ?? "").split(",").map((item) => item.trim()).filter(Boolean);
   if (!slugs.includes(slug)) slugs.push(slug);
   return slugs.join(",");
+}
+
+/** Canonical Run id of one node attempt, `run_<project>_<node>_a<attempt>`, each part sanitized the way
+ * dispatch's canonicalRunIdFor sanitizes a project id: distinct per node and per `--retry-failed` attempt. */
+export function nodeRunId(projectId: string, nodeId: string, attempt: number): string {
+  const part = (value: string) => value.replace(/[^A-Za-z0-9-]/g, "-");
+  return `run_${part(projectId)}_${part(nodeId)}_a${attempt}`;
 }
 
 function readMarker(file: string): MultiTargetResultMarker | null {
@@ -310,7 +325,8 @@ Read ${instructionFile} before producing anything: it names the upstream summari
     if (adapterInput.target.kind === "business") command.push("--business", adapterInput.target.id);
     else if (adapterInput.target.kind === "squad") command.push("--squad", adapterInput.target.id);
     else command.push("--agent-x");
-    command.push("--brief-file", briefFile, "--exec", "--project", input.projectId, "--outputs-root", outputsDir);
+    command.push("--brief-file", briefFile, "--exec", "--project", input.projectId,
+      "--run-id", nodeRunId(input.projectId, adapterInput.nodeId, adapterInput.attempt), "--outputs-root", outputsDir);
     if (input.runtime) command.push("--runtime", input.runtime);
     const budgets = [adapterInput.mode === "gauntlet" ? adapterInput.grantedCostUsd : NaN, input.budgetUsd?.[adapterInput.nodeId] ?? NaN]
       .filter((value) => Number.isFinite(value) && value > 0);
@@ -318,6 +334,9 @@ Read ${instructionFile} before producing anything: it names the upstream summari
     const env: Record<string, string> = {};
     for (const [key, value] of Object.entries({ ...process.env, ...input.env })) if (value !== undefined) env[key] = value;
     env[MULTI_TARGET_NODE_ID_ENV] = adapterInput.nodeId;
+    // With --run-id the dispatch opens `<NIRVANA_PROJECT_ROOT || cwd>/.nirvana/run-kernel.sqlite`: the node's
+    // Run lands beside the plan's `run_mt_<project>` whatever the caller's shell carries.
+    env.NIRVANA_PROJECT_ROOT = projectRoot;
     if (adapterInput.mode === "gauntlet") {
       command.push("--execution-mode=gauntlet", `--gauntlet-intensity=${adapterInput.intensity ?? "light"}`);
       if (adapterInput.target.kind === "business") env[BUSINESS_ALLOWLIST_ENV] = mergeAllowlist(env[BUSINESS_ALLOWLIST_ENV], adapterInput.target.id);

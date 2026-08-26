@@ -26,7 +26,7 @@ O Glance expõe `GET /api/v1/runs/{run_id}/gauntlet?project_id={project_id}`. O 
 
 ## Retomada
 
-`runAgentXGauntlet` é idempotente por rodada, candidate e revisão. Após um crash em qualquer ponto, reexecutar o helper continua da primeira unidade incompleta: rodadas já iniciadas não são reabertas, revisões persistidas não chamam producer nem `reviseCandidate`, e scorecards persistidos não chamam o evaluator. A avaliação de uma rodada é gravada em uma única transação com a decisão seguinte, então um crash entre as duas deixa o Gauntlet em `producing` e a reavaliação é repetida com a mesma chave.
+`runAgentXGauntlet` é idempotente por rodada, candidate e revisão. Após um crash em qualquer ponto, reexecutar o helper continua da primeira unidade incompleta: rodadas já iniciadas não são reabertas, revisões persistidas não chamam producer nem `reviseCandidate`, e scorecards persistidos não chamam o evaluator. Um Run já terminal sob o mesmo id não é retomado nem reproduzido: é recusado antes de qualquer producer ([regra de adoção](run-kernel-operations.md)). A avaliação de uma rodada é gravada em uma única transação com a decisão seguinte, então um crash entre as duas deixa o Gauntlet em `producing` e a reavaliação é repetida com a mesma chave.
 
 ## Corte vertical do chat
 

@@ -208,3 +208,37 @@ describe("cancelling a Glance child reaches the runtime grandchild", () => {
     expect(readKernel(fx.projectKernel, "prj_glance", "run_killed").run?.state).toBe("running");
   }, 90000);
 });
+
+describe("a Run that already ended under --run-id is refused before the runtime runs", () => {
+  test("--run-id creates the Run in the project kernel when none was prepared; a standard and a Gauntlet dispatch under the same id then exit 1 with x_run_id_collision", () => {
+    const fx = fixture();
+    const runId = "run_prj-glance_fixture-squad_a1";
+    const outputs = path.join(fx.root, "deliverables-node");
+    const args = (target: string[]) => [...target, "--brief-file", fx.briefFile, "--exec", "--project", "prj_glance", "--run-id", runId,
+      "--outputs-root", outputs, "--max-revisions", "0"];
+    const first = fx.dispatch(args(["--squad", "fixture-squad"]), { FAKE_CLAUDE_OUTPUTS_ROOT: outputs });
+    expect(first.status, first.stdout + first.stderr).toBe(0);
+    const { run, events } = readKernel(fx.projectKernel, "prj_glance", runId);
+    expect(run).toMatchObject({ state: "completed", traceId: "prj_glance", target: SQUAD, planId: `plan_${runId}` });
+    expect(timeline(events)).toEqual([...STANDARD_TIMELINE, "run.transitioned:completed"]);
+    expect(fs.existsSync(fx.dispatchKernel("prj_glance"))).toBe(false);
+    fs.rmSync(path.join(fx.capture, "pid"));
+
+    const second = fx.dispatch(args(["--squad", "fixture-squad"]), { FAKE_CLAUDE_OUTPUTS_ROOT: outputs });
+    expect(second.status, second.stdout + second.stderr).toBe(1);
+    expect(second.stderr).toContain(`run '${runId}' is already terminal (completed); pass a fresh --run-id`);
+    expect(fs.existsSync(path.join(fx.capture, "pid"))).toBe(false);
+
+    const third = fx.dispatch([...args(["--agent-x"]), "--execution-mode=gauntlet", "--gauntlet-intensity=light"], { FAKE_CLAUDE_OUTPUTS_ROOT: outputs });
+    expect(third.status, third.stdout + third.stderr).toBe(1);
+    expect(third.stderr).toContain(`✗ agent-x Gauntlet failed: run '${runId}' is already terminal (completed); pass a fresh --run-id`);
+    expect(fs.existsSync(path.join(fx.capture, "pid"))).toBe(false);
+
+    expect(readKernel(fx.projectKernel, "prj_glance", runId).events).toHaveLength(events.length);
+    const collisions = fx.audit().filter(entry => entry.event === "x_run_id_collision");
+    expect(collisions.map(entry => [entry.run_id, entry.state, entry.target_kind, entry.mode]))
+      .toEqual([[runId, "completed", "squad", "standard"], [runId, "completed", "agent-x", "gauntlet"]]);
+    expect(collisions[0]).toMatchObject({ trace_id: "prj_glance", project_id: "prj_glance", kernel_path: fx.projectKernel, run_target: SQUAD });
+    expect(collisions[1]).toMatchObject({ trace_id: "prj_glance", project_id: "prj_glance", run_target: SQUAD });
+  }, 120000);
+});
