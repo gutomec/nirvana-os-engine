@@ -6,7 +6,7 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
-## Unreleased
+## 0.8.0 — 2026-08-25
 
 ### O programa de runtime, Glance e Gauntlet está documentado pelas provas
 
