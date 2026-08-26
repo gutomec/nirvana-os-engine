@@ -33,6 +33,10 @@ const VERDICT_LABELS = { pass: 'aprovado', revise: 'revisar', reject: 'rejeitado
 const VERDICT_TONES = { pass: 'ok', revise: 'active', reject: 'fail' };
 const PLAN_STATE_LABELS = { ready: 'pronto', running: 'em execução', delivered: 'entregue', withheld: 'retido', failed: 'falhou' };
 const PLAN_STATE_TONES = { delivered: 'ok', running: 'active', withheld: 'fail', failed: 'fail' };
+// How the target of a Run was decided (`payload.route` of `run.prepared`).
+const ROUTE_SOURCE_LABELS = { explicit: 'alvo nomeado na Message', router: 'escolhido pelo roteador', fallback: 'agent-x por fallback' };
+export const routeSourceLabel = (route) => (route ? label(ROUTE_SOURCE_LABELS, route.source) : '');
+const routeInfo = (route) => (route ? join(routeSourceLabel(route), route.rationale) : '');
 
 // Node events carry the full node projection in `payload.node`; the target kind
 // (business, squad, agent-x, synthesis, support) follows the wave when present.
@@ -58,7 +62,7 @@ function candidateView(ev, icon, verb) {
 // Canonical Run Kernel events, keyed by `ev.type`. Every type emitted by the
 // engine must be listed here; the test suite enforces the list.
 const CANONICAL = {
-  'run.prepared': (ev) => { const t = ev.payload?.target; return { icon: 'inbox', title: `Run preparado → ${targetName(t) || 'alvo'}`, sub: join(t?.kind, t?.capabilityId), tone: '' }; },
+  'run.prepared': (ev) => { const t = ev.payload?.target; return { icon: 'inbox', title: `Run preparado → ${targetName(t) || 'alvo'}`, sub: join(t?.kind, t?.capabilityId, routeInfo(ev.payload?.route)), tone: '' }; },
   'run.transitioned': (ev) => { const p = ev.payload || {}; return { icon: p.to === 'completed' ? 'party-popper' : 'arrow-right-circle', title: `Run ${label(RUN_STATE_LABELS, p.to, 'transicionou')}`, sub: p.from && p.to ? `${p.from} → ${p.to}` : '', tone: RUN_STATE_TONES[p.to] || '' }; },
   'runtime.selection_snapshot': (ev) => { const s = ev.payload?.snapshot || {}; return { icon: 'cpu', title: `Runtime: ${s.runtime?.id || 'indefinido'}`, sub: join(s.provider?.id, s.model?.id), tone: '' }; },
   'gauntlet.plan_compiled': (ev) => { const p = ev.payload || {}; return { icon: 'clipboard-list', title: p.plan?.intensity ? `Plano Gauntlet ${p.plan.intensity}` : 'Plano Gauntlet', sub: join(p.state, label(GAUNTLET_STOP_REASON_LABELS, p.stopReason)), tone: '' }; },
@@ -193,7 +197,7 @@ export function runTimeline(events, showInfra = false) {
 export function summarizeRunEvents(events) {
   const evs = Array.isArray(events) ? events : [];
   let business = null, squad = null, mindClone = null, runtime = null, model = null, gate = null, artifacts = 0, lastAgent = null, agents = 0, cost = 0;
-  let state = null, decision = null, stopReason = null, target = null, reservedCost = 0;
+  let state = null, decision = null, stopReason = null, target = null, route = null, reservedCost = 0;
   const nodeCosts = new Map();
   const legacy = (ev) => {
     if (ev.business_slug || ev.business) business = ev.business_slug || ev.business;
@@ -213,6 +217,7 @@ export function summarizeRunEvents(events) {
     if (type.startsWith('delivery.')) { legacy(unwrapDelivery(ev)); continue; }
     if (type === 'run.prepared' && p.target) {
       target = p.target;
+      route = p.route || null;
       if (p.target.kind === 'business') business = p.target.slug;
       else if (p.target.kind === 'squad') squad = p.target.slug;
       else lastAgent = p.target.slug || lastAgent;
@@ -225,5 +230,5 @@ export function summarizeRunEvents(events) {
     if (type.startsWith('multi_target.') && p.node?.nodeId) nodeCosts.set(p.node.nodeId, Number(p.node.reportedCostUsd) || 0);
   }
   cost += nodeCosts.size ? [...nodeCosts.values()].reduce((sum, value) => sum + value, 0) : reservedCost;
-  return { business, squad, mindClone, runtime, model, gate, artifacts, lastAgent, agents, cost, count: evs.length, state, decision, stopReason, target };
+  return { business, squad, mindClone, runtime, model, gate, artifacts, lastAgent, agents, cost, count: evs.length, state, decision, stopReason, target, route };
 }

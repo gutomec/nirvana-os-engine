@@ -1576,6 +1576,11 @@ function glance() {
       const labels = window.NirvanaRunEventLabels;
       return labels ? labels.summarizeRunEvents(this.chatRunEvents) : { cost: 0, count: (this.chatRunEvents || []).length };
     },
+    // How the Run's target was decided (`run.route`): named in the Message, chosen by the router, or agent-x by fallback.
+    routeLabel(route) {
+      const labels = window.NirvanaRunEventLabels;
+      return labels && route ? labels.routeSourceLabel(route) : '';
+    },
     runStateVariant(state) {
       return ({ completed: 'success', delivered_with_reservations: 'success', running: 'warn', verifying: 'warn', revising: 'warn',
         waiting: 'info', prepared: 'info', failed: 'danger', withheld: 'danger', cancelled: 'danger', rolled_back: 'danger', abandoned: 'danger' })[state] || 'neutral';
@@ -1638,11 +1643,14 @@ function glance() {
 
       if (canonicalReceipt?.run) {
         const target = canonicalReceipt.run.target || {};
+        // The target and why, before the child starts: the receipt carries `run.route`.
+        const route = canonicalReceipt.run.route;
+        const via = route ? ` (${this.routeLabel(route)}${route.rationale ? ': ' + route.rationale : ''})` : '';
         asst.text = canonicalReceipt.queued
           ? (target.kind === 'agent-x' || !target.kind
-            ? 'Run canônico preparado. Executando agent-x no Gauntlet light…'
-            : `Run canônico preparado. Executando ${target.kind} ${target.slug || ''}…`)
-          : `Run não executado: ${canonicalReceipt.run.state}.`;
+            ? `Run canônico preparado${via}. Executando agent-x no Gauntlet light…`
+            : `Run canônico preparado${via}. Executando ${target.kind} ${target.slug || ''}…`)
+          : `Run não executado: ${canonicalReceipt.run.state}${via}.`;
         if (canonicalReceipt.queued) this.subscribeCanonicalRun(this.canonicalProjectId, canonicalReceipt.run.runId, canonicalReceipt.run.lastSequence || 0, asst);
         else { asst.streaming = false; this.chatBusy = false; }
         return;

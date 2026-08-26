@@ -47,7 +47,7 @@ import {
 } from "../../../_shared/lib/settings.ts";
 import { validateMindCloneFile, type ValidationResult } from "../../../_shared/lib/mindclone-validator.ts";
 import { handleObservabilityRoute } from "./views/observability-handler.ts";
-import { AgentXCanaryQueue, ConversationService, ProjectService, type GlanceAgentXCanaryAdapter, type GlanceExecutionRunner } from "../control-plane/index.ts";
+import { AgentXCanaryQueue, ConversationService, ProjectService, type GlanceAgentXCanaryAdapter, type GlanceExecutionRunner, type MessageRouter } from "../control-plane/index.ts";
 import { createRun as createKernelRun, getRun as getKernelRun, listEvents as listKernelEvents, openKernel } from "../run-kernel/index.ts";
 import { getGauntlet, listCandidateRevisions, listScorecards, projectMultiTargetRun } from "../gauntlet/index.ts";
 
@@ -73,6 +73,9 @@ export interface ServerOptions {
   agentXCanaryAdapter?: GlanceAgentXCanaryAdapter;
   // Child-process execution of adopted-project Messages; wins over the in-process adapter.
   executionRunner?: GlanceExecutionRunner;
+  // The agentic router a Message without an explicit target goes through before its Run is
+  // prepared (business, then squad, then agent-x); absent, such a Message stays on agent-x.
+  messageRouter?: MessageRouter;
 }
 
 // ─── Setup copy helper (used by /api/setup/copy-batch and /api/setup/copy-stream) ───
@@ -253,7 +256,7 @@ export async function startServer(opts: ServerOptions) {
   const conversationService = () => conversations ||= new ConversationService(controlPlaneDb);
   const kernelService = () => kernel ||= openKernel(kernelDb);
   let canaryQueue: AgentXCanaryQueue | null = null;
-  const agentXQueue = () => canaryQueue ||= new AgentXCanaryQueue(kernelService(), conversationService(), opts.agentXCanaryAdapter, opts.executionRunner);
+  const agentXQueue = () => canaryQueue ||= new AgentXCanaryQueue(kernelService(), conversationService(), opts.agentXCanaryAdapter, opts.executionRunner, { router: opts.messageRouter });
   const projectInspection = () => projectService.inspect(projectRoot);
 
   const problem = (status: number, title: string, detail: string) => new Response(JSON.stringify({
@@ -407,7 +410,7 @@ export async function startServer(opts: ServerOptions) {
             if ((body.role || "user") === "user" && body.prepare_run !== false) {
               const inspection = projectInspection();
               if (inspection.kind !== "project" || inspection.project?.project_id !== body.project_id) return problem(409, "Project not adopted", "Canonical dispatch requires an adopted project");
-              const receipt = agentXQueue().submit({ projectId: body.project_id, conversationId: messagesMatch[1], messageId: message.message_id,
+              const receipt = await agentXQueue().submit({ projectId: body.project_id, conversationId: messagesMatch[1], messageId: message.message_id,
                 brief: message.content, projectRoot, idempotencyKey });
               return json({ message: receipt.message, run: receipt.run, queued: receipt.queued, capability: receipt.capability }, receipt.queued ? 202 : 200);
             }

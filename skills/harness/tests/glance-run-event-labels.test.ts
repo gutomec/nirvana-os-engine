@@ -48,6 +48,9 @@ describe("Glance run event labels", () => {
       .toEqual({ icon: "party-popper", title: "Run concluído", sub: "running → completed", tone: "ok" });
     expect(runEventView({ type: "run.transitioned", payload: { from: "running", to: "failed" } })).toMatchObject({ title: "Run falhou", tone: "fail" });
     expect(runEventView({ type: "run.prepared", payload: { target: { kind: "business", slug: "proof" } } })).toMatchObject({ title: "Run preparado → proof", sub: "business" });
+    expect(runEventView({ type: "run.prepared", payload: { target: { kind: "business", slug: "proof" }, route: { source: "router", rationale: "OBJECT=site." } } }).sub)
+      .toBe("business · escolhido pelo roteador · OBJECT=site.");
+    expect(runEventView({ type: "run.prepared", payload: { target: { kind: "agent-x", slug: "agent-x" }, route: { source: "fallback", rationale: "" } } }).sub).toBe("agent-x · agent-x por fallback");
     expect(runEventView({ type: "runtime.selection_snapshot", payload: { snapshot: { runtime: { id: "codex" }, provider: { id: "openai" }, model: { id: "runtime-default" } } } }))
       .toMatchObject({ title: "Runtime: codex", sub: "openai · runtime-default" });
     expect(runEventView({ type: "gauntlet.round_started", payload: { round: 1, costReservedUsd: 1.5 } })).toMatchObject({ title: "Rodada 1 iniciada", sub: "reservado $1.50", tone: "active" });
@@ -138,7 +141,7 @@ describe("Glance run event labels", () => {
     ];
     expect(summarizeRunEvents(legacy)).toEqual({
       business: "acme", squad: null, mindClone: "seth", runtime: "codex", model: null, gate: "passed", artifacts: 1,
-      lastAgent: "writer", agents: 1, cost: 0.4, count: 6, state: null, decision: null, stopReason: null, target: null,
+      lastAgent: "writer", agents: 1, cost: 0.4, count: 6, state: null, decision: null, stopReason: null, target: null, route: null,
     });
     expect(summarizeRunEvents(undefined)).toMatchObject({ cost: 0, count: 0 });
   });

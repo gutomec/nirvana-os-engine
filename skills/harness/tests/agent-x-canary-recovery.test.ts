@@ -94,7 +94,7 @@ describe("durable agent-x canary recovery", () => {
     const conversation = conversations.create("prj_recovery", "Recovery", "cnv_recovery");
     const message = conversations.append({ conversationId: conversation.conversation_id, projectId: "prj_recovery", role: "user", content: "Recover me", messageId: "msg_recovery" });
     const first = new AgentXCanaryQueue(kernel, conversations, adapter(counter)); queues.push(first);
-    const receipt = first.submit({ projectId: "prj_recovery", conversationId: conversation.conversation_id, messageId: message.message_id, brief: message.content, projectRoot: root, idempotencyKey: "recovery" });
+    const receipt = await first.submit({ projectId: "prj_recovery", conversationId: conversation.conversation_id, messageId: message.message_id, brief: message.content, projectRoot: root, idempotencyKey: "recovery" });
     first.shutdown(); kernel.close(); conversations.close();
 
     kernel = openKernel(kernelPath); conversations = new ConversationService(conversationPath);
@@ -155,7 +155,7 @@ describe("durable agent-x canary recovery", () => {
   test("a running run whose child is dead is redispatched once across two restarts and resumes without repeating the producer", async () => {
     const fx = childFixture();
     const first = fx.queue({ FAKE_CHILD_HOLD: "1", FAKE_CHILD_AFTER_WAIT: "crash" });
-    const receipt = first.queue.submit({ projectId: "prj_child", conversationId: "cnv_child", messageId: fx.message.message_id, brief: fx.message.content, projectRoot: fx.root, idempotencyKey: "child" });
+    const receipt = await first.queue.submit({ projectId: "prj_child", conversationId: "cnv_child", messageId: fx.message.message_id, brief: fx.message.content, projectRoot: fx.root, idempotencyKey: "child" });
     const runId = receipt.run.runId;
     const child = fx.state(runId);
     await child.waitFor("holding");
@@ -196,7 +196,7 @@ describe("durable agent-x canary recovery", () => {
   test("a running run whose child is alive is reattached, never respawned, and settles when the child finishes", async () => {
     const fx = childFixture();
     const first = fx.queue({ FAKE_CHILD_HOLD: "1" });
-    const receipt = first.queue.submit({ projectId: "prj_child", conversationId: "cnv_child", messageId: fx.message.message_id, brief: fx.message.content, projectRoot: fx.root, idempotencyKey: "child-alive" });
+    const receipt = await first.queue.submit({ projectId: "prj_child", conversationId: "cnv_child", messageId: fx.message.message_id, brief: fx.message.content, projectRoot: fx.root, idempotencyKey: "child-alive" });
     const runId = receipt.run.runId;
     const child = fx.state(runId);
     await child.waitFor("holding");
