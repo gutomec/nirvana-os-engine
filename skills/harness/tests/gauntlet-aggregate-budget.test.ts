@@ -117,3 +117,41 @@ describe("aggregate Gauntlet budget reservation", () => {
     expect(allocation.grantedUsd).toBeLessThanOrEqual(3);
   });
 });
+
+describe("aggregate Gauntlet budget reservation with agent nodes", () => {
+  const agentGraph: DependencyGraph = {
+    nodes: [
+      { id: "brief-main", type: "brief" },
+      { id: "squad-research", type: "squad" },
+      { id: "role-copywriter", type: "agent" },
+      { id: "squad-design", type: "squad" },
+      { id: "final-output", type: "deliverable" },
+    ],
+    edges: [
+      { id: "brief-research", source: "brief-main", target: "squad-research", type: "briefs" },
+      { id: "copy-after-research", source: "role-copywriter", target: "squad-research", type: "depends_on" },
+      { id: "design-after-copy", source: "squad-design", target: "role-copywriter", type: "depends_on" },
+      { id: "final", source: "squad-design", target: "final-output", type: "yields" },
+    ],
+  };
+
+  test("an agent node takes the same safe minimum and proportional share as a squad", () => {
+    const compiled = compileMultiTargetGauntletPolicy(agentGraph, {
+      scope: "each-target", intensity: "balanced", limits: { maxCostUsd: 9 },
+      targets: { "squad-research": { limits: { maxCostUsd: 4 } }, "role-copywriter": { limits: { maxCostUsd: 4 } }, "squad-design": { limits: { maxCostUsd: 4 } } },
+    });
+    expect(compiled.issues).toEqual([]);
+    const reservation = reserveAggregateGauntletBudget(compiled.plan!).reservation!;
+    expect(reservation).toMatchObject({ status: "reserved", requestedUsd: 12, grantedUsd: 9, balanceUsd: 0 });
+    expect(reservation.allocations.find((item) => item.nodeId === "role-copywriter")).toEqual({
+      nodeId: "role-copywriter", targetKind: "agent-x", waveIndex: 2, requestedUsd: 4, grantedUsd: 3, balanceUsd: 1, reason: "reduced_to_aggregate_cap",
+    });
+    expect(reservation.allocations.filter((item) => item.targetKind !== "support").map((item) => item.grantedUsd)).toEqual([3, 3, 3]);
+    expect(reservation.waves.map(({ waveIndex, grantedUsd }) => [waveIndex, grantedUsd])).toEqual([[0, 0], [1, 3], [2, 3], [3, 3], [4, 0]]);
+
+    // Below the balanced floor for three Gauntlet nodes the whole reservation is rejected, agent included.
+    const rejected = reserveAggregateGauntletBudget(compileMultiTargetGauntletPolicy(agentGraph, { scope: "each-target", intensity: "balanced", limits: { maxCostUsd: 5 } }).plan!).reservation!;
+    expect(rejected.status).toBe("rejected");
+    expect(rejected.allocations.find((item) => item.nodeId === "role-copywriter")).toMatchObject({ targetKind: "agent-x", grantedUsd: 0, reason: "aggregate_cap_rejected" });
+  });
+});
