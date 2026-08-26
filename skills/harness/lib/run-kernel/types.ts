@@ -1,7 +1,10 @@
 export type TargetRef =
   | { kind: "business"; slug: string }
   | { kind: "squad"; slug: string; capabilityId: string }
-  | { kind: "agent-x"; slug: "agent-x" };
+  // The engine's own personas share one kind: `agent-x` produces, `judge-x` judges. The slug
+  // is the identity `targetsAreIndependent` compares, so the judge is independent of the
+  // producer without a kind of its own (validators, Glance and the kernel only read `kind`).
+  | { kind: "agent-x"; slug: "agent-x" | "judge-x" };
 
 export type CanonicalRunState =
   | "prepared"
