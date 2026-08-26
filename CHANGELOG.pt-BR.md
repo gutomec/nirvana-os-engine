@@ -8,6 +8,46 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Um núcleo de configuração: `nrv config`, quatro camadas, uma precedência
+
+Todo interruptor operacional do engine (multi-target, padrões e avaliador do
+Gauntlet, runtime padrão, modelo fixado, injeção de DNA, permissões headless,
+execução do Glance, catálogo de providers, roteamento, supervisor, verificação
+de update, budget e quality gate) é declarado uma vez em
+`skills/_shared/lib/settings-schema.ts` e resolvido por `settings.ts` com uma
+precedência só: variável de ambiente > `<projeto>/.nirvana/config.yaml` >
+`~/.nirvana/config.yaml` > o `skills/harness/config.yaml` do engine > o
+padrão. O arquivo global do usuário é novo e sobrevive ao `nrv update`;
+`nrv embeddings enable` passa a persistir `routing.dense` nele, e não mais no
+arquivo do engine, que toda atualização sobrescrevia.
+
+Todo leitor passa pelo resolvedor (`harness-config.ts` é um adaptador sobre
+ele, não um segundo caminho), e os spawners (o executor de Messages do Glance,
+os adapters de dispatch do multi-target, o adapter do avaliador do Gauntlet, os
+prep scripts do dispatch) fixam os valores efetivos nos filhos como as
+variáveis legadas, então a config do projeto ou do usuário vale nos processos
+filhos. `nrv config list|get|set|unset|explain` lê e grava os dois arquivos (o
+do projeto por padrão dentro de um projeto), recusa valor inválido, escopo que
+a chave não aceita ou chave fixada por variável, cada um com o motivo, e grava
+`x_settings_changed { key, scope, path, from, to }` no audit. O `nrv doctor`
+ganha a seção `config`: uma linha por chave com o valor efetivo e a origem.
+Arquivo malformado ou valor inválido é erro claro com o arquivo e a chave,
+nunca um padrão silencioso. Sem nada configurado nada muda: os padrões do
+schema são os valores que cada leitor tinha em código.
+
+Variáveis que identificam um processo ou um run (`NIRVANA_PROJECT_ROOT`,
+`NIRVANA_TRACE_ID`, `HARNESS_LOGS_DIR`, ...), escopo de biblioteca, segredos,
+endpoints e seams de teste ficam no ambiente; `docs/architecture/configuration.md`
+traz a tabela completa de chaves, essa lista com os motivos e a API que o
+painel de configuração do Glance consome no corte seguinte.
+
+| Camada | Arquivo | Quem escreve |
+| --- | --- | --- |
+| variável de ambiente | o shell, o `.env` do projeto | o usuário, o CI, um spawner fixando o filho |
+| projeto | `<projeto>/.nirvana/config.yaml` | `nrv config set` dentro de um projeto (`--project`) |
+| global | `~/.nirvana/config.yaml` | `nrv config set --global`, `nrv embeddings enable` |
+| padrão do engine | `skills/harness/config.yaml` | o engine; todo `nrv update` o sobrescreve |
+
 ### `nrv multi-target run` passa a executar por padrão; um kill switch desliga
 
 O engine tem 1,4 mil testes, CI nos três sistemas e dois smokes reais, então o

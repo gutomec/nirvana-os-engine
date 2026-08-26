@@ -8,6 +8,46 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### One settings core: `nrv config`, four layers, one precedence
+
+Every operational switch of the engine (multi-target, the Gauntlet defaults
+and evaluator, the default runtime, the pinned model, DNA injection, headless
+permissions, Glance execution, the provider catalog, routing, the supervisor,
+the update check, budget and the quality gate) is declared once in
+`skills/_shared/lib/settings-schema.ts` and resolved by `settings.ts` with one
+precedence: environment variable > `<project>/.nirvana/config.yaml` >
+`~/.nirvana/config.yaml` > the engine's `skills/harness/config.yaml` > the
+default. The user's global file is new and survives `nrv update`;
+`nrv embeddings enable` now persists `routing.dense` there instead of in the
+engine file, which every update overwrote.
+
+Every reader goes through the resolver (`harness-config.ts` is an adapter over
+it, not a second path), and the spawners (the Glance execution runner, the
+multi-target dispatch adapters, the Gauntlet evaluator adapter, the dispatch
+prep scripts) pin the effective values into their children as the legacy
+variables, so a project's or the user's config holds in child processes.
+`nrv config list|get|set|unset|explain` reads and writes the two files (the
+project by default inside a project), refuses an invalid value, a scope the
+key rejects, or a key pinned by a variable, each with the reason, and audits
+`x_settings_changed { key, scope, path, from, to }`. `nrv doctor` gains a
+`config` section: one line per key with the effective value and its origin.
+A malformed file or an invalid value is a clear error naming the file and the
+key, never a silent default. Nothing changes when nothing is configured: the
+schema defaults are the values each reader carried in code.
+
+Variables that identify a process or a run (`NIRVANA_PROJECT_ROOT`,
+`NIRVANA_TRACE_ID`, `HARNESS_LOGS_DIR`, ...), library scope, secrets, endpoints
+and test seams stay in the environment; `docs/architecture/configuration.md`
+carries the full key table, that list and the reasons, and the API the Glance
+settings panel consumes in the next cut.
+
+| Layer | File | Written by |
+| --- | --- | --- |
+| environment variable | the shell, the project `.env` | the user, CI, a spawner pinning its child |
+| project | `<project>/.nirvana/config.yaml` | `nrv config set` inside a project (`--project`) |
+| global | `~/.nirvana/config.yaml` | `nrv config set --global`, `nrv embeddings enable` |
+| engine default | `skills/harness/config.yaml` | the engine; every `nrv update` overwrites it |
+
 ### `nrv multi-target run` is on by default; a kill switch turns it off
 
 The engine has 1.4k tests, CI on three systems and two real smoke runs, so the
