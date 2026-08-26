@@ -189,8 +189,10 @@ describe("a real dispatch.ts as the evaluator child", () => {
 
   function runChild(writes: "nothing" | "scorecard") {
     const fx = fixture({});
-    const bin = path.join(fx.root, "bin-evaluator");
-    writeFakeCli(bin, "claude", FAKE_EVALUATOR_CLAUDE);
+    // The evaluator fake replaces the producer fake in the fixture's own bin: the producer never runs
+    // here, and the child then sees exactly the environment the producer tests prove on every OS
+    // (a second directory prepended to PATH is not, once Windows merges `Path` and `PATH`).
+    writeFakeCli(path.join(fx.root, "bin"), "claude", FAKE_EVALUATOR_CLAUDE);
     // The parent's project root: where a parent dispatch keeps `.nirvana/gauntlet/<run>/`.
     const projectRoot = path.join(fx.projectRoot, "outputs", PROJECT);
     const candidateRoot = path.join(projectRoot, ".nirvana", "gauntlet", RUN, "candidates", "can_1", "rev_1");
@@ -200,7 +202,7 @@ describe("a real dispatch.ts as the evaluator child", () => {
     const evaluator = createDispatchEvaluator({
       target: { kind: "agent-x", slug: "agent-x" }, producer: { kind: "squad", slug: "producer", capabilityId: "general.write.execute" },
       plan: compileGauntletPlan({ brief: BRIEF, intensity: "light" }), brief: BRIEF, projectRoot, projectId: PROJECT, runtime: "claude-code",
-      dispatchScriptPath: DISPATCH, env: { ...fx.env, PATH: `${bin}${path.delimiter}${fx.env.PATH}`, FAKE_EVALUATOR_WRITES: writes },
+      dispatchScriptPath: DISPATCH, env: { ...fx.env, FAKE_EVALUATOR_WRITES: writes },
       audit: (event, payload) => audit.push({ event, ...payload }),
     });
     const [scorecard] = evaluator.evaluate({ projectId: PROJECT, runId: RUN, candidateId: "can_1", revision: 1, round: 1, revisionId: REVISION,
@@ -210,17 +212,21 @@ describe("a real dispatch.ts as the evaluator child", () => {
     const kernel = openKernel(path.join(projectRoot, "outputs", childProject, ".nirvana", "run-kernel.sqlite"));
     let childRun: ReturnType<typeof getRun>;
     try { childRun = getRun(kernel, childProject, canonicalRunIdFor(childProject)); } finally { kernel.close(); }
+    const seenFile = path.join(fx.root, "capture", "evaluator-output-paths");
+    const childAudit = fx.audit().filter(entry => entry.project_id === childProject);
+    // What the child said, for the failure message when the fake never ran: the adapter's reason carries
+    // the child's stderr tail, and agent_exec_failed carries the runtime's own error.
+    const diagnostics = JSON.stringify({ reason: scorecard.dimensions[0]?.evidenceRefs[0], failures: childAudit.filter(entry => entry.event === "agent_exec_failed") });
     return {
-      scorecard, evaluationDir, candidateRoot, childRun, audit,
-      childAudit: fx.audit().filter(entry => entry.project_id === childProject),
-      outputPathsSeen: fs.readFileSync(path.join(fx.root, "capture", "evaluator-output-paths"), "utf8").trim().split("\n"),
+      scorecard, evaluationDir, candidateRoot, childRun, audit, childAudit, diagnostics,
+      outputPathsSeen: fs.existsSync(seenFile) ? fs.readFileSync(seenFile, "utf8").trim().split("\n") : [],
     };
   }
 
   test("an evaluator that writes nothing leaves the outputs root empty: the child Run fails at verify, never completed, and the evaluation is indeterminate", () => {
     const child = runChild("nothing");
     const outputsRoot = path.join(child.evaluationDir, EVALUATION_OUTPUTS_DIR);
-    expect(child.outputPathsSeen).toEqual([outputsRoot]);
+    expect(child.outputPathsSeen, child.diagnostics).toEqual([outputsRoot]);
     expect(fs.readdirSync(outputsRoot)).toEqual([]);
     expect(fs.readdirSync(child.evaluationDir).sort()).toEqual(["evaluation-brief.md", "evaluation-request.json", EVALUATION_OUTPUTS_DIR]);
     expect(child.scorecard.verdict).toBe("indeterminate");
@@ -234,7 +240,7 @@ describe("a real dispatch.ts as the evaluator child", () => {
 
   test("an evaluator that writes scorecard.json into its output_path is read from <evaluationDir>/outputs/ and passes", () => {
     const child = runChild("scorecard");
-    expect(child.scorecard).toMatchObject({ verdict: "pass", evaluator: { kind: "agent-x", slug: "agent-x" }, costUsd: 0.02,
+    expect(child.scorecard, child.diagnostics).toMatchObject({ verdict: "pass", evaluator: { kind: "agent-x", slug: "agent-x" }, costUsd: 0.02,
       dimensions: [{ id: "brief-conformance", score: 0.95, passed: true }] });
     expect(fs.existsSync(path.join(child.evaluationDir, EVALUATION_OUTPUTS_DIR, "scorecard.json"))).toBeTrue();
     expect(fs.existsSync(path.join(child.evaluationDir, "scorecard.json"))).toBeFalse();
