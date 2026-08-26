@@ -8,6 +8,48 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### The multi-target coordinator observes the cost its children spend
+
+The first real smoke run of the multi-target engine delivered a squad node
+that cost USD 2.15 and recorded USD 0 for it. The child `dispatch.ts`, with no
+`HARNESS_LOGS_DIR` in its environment, anchors its audit on the scaffold it
+creates (`<projectRoot>/outputs/<projectId>/.nirvana/logs/harness`), while
+the adapters summed `agent_executed.cost_usd` from
+`<projectRoot>/.nirvana/logs/harness`. The hermetic tests pinned the variable
+per fixture, so the drift never showed. The multi-target adapters and the
+Glance execution runner now pass `HARNESS_LOGS_DIR` to the child pointing at
+the directory the parent reads, without overriding a value the caller set;
+the Gauntlet evaluator adapter already did. The fake dispatch used by the
+tests writes its cost event where the real one does, so the drift is
+reproduced and the fix is tested.
+
+A node that ran without leaving a cost event is no longer a silent zero. The
+adapter result and the node projection carry `costObserved: false`, the
+coordinator journals `multi_target.cost_unobserved`, the command audits
+`x_multi_target_cost_unobserved`, and `run` and `status` print `custo não
+observado` on those nodes, with the list repeated in the summary and in
+`x_multi_target_terminal`. The Gauntlet budget guard still compares the
+reported number; the marking says when it was blind.
+
+### `nrv multi-target run --retry-failed` reopens a failed plan without paying twice
+
+A plan whose Run ended `failed` or `withheld` was stuck: repeating `run`
+returned the terminal Run without executing, and the only way forward was a
+new `--project`, paying again for every node already delivered. The flag
+reopens such a plan once its cause is fixed. The Run state machine has no
+transition out of a terminal state, so the retry is a new canonical Run,
+`run_mt_<projectId>_r<n>`, chained to the previous one by `parentRunId`. It
+starts from the previous coordinator snapshot with the delivered nodes
+preserved (outputs and result markers untouched) and `failed`, `withheld`,
+`skipped` and `stalled` nodes back to `pending`, records
+`multi_target.plan_retried { previousRunId, resetNodes }` and a snapshot with
+the version incremented, and executes only what is missing. The idempotency
+key of a retried node carries the attempt, so the marker of the failed
+attempt never answers for the new one. The retry is refused with exit 4 when
+the plan or the reservation changed, when the Run is not terminal, or when
+there is nothing to reopen. `run` and `status` by plan file address the
+latest Run of the chain. Without the flag, nothing changes.
+
 ### The Gauntlet is judged by a real, independent evaluator
 
 The three Gauntlet canaries of `dispatch.ts` scored every candidate with a
