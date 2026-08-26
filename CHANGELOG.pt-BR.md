@@ -39,6 +39,20 @@ multi-target) e `x_gauntlet_evaluation_completed`. Um avaliador real toma 25%
 da parcela de cada candidate dentro da mesma reserva de rodada, então o teto
 do plano continua valendo. Contrato e schema em
 `docs/architecture/gauntlet-evaluator-contract.md`.
+### Um `openKernel` que falha não vaza mais o handle do banco
+
+O `openKernel` abria o `Database` SQLite e só então rodava o `initialize`
+(os pragmas de journal e o schema). Quando o `initialize` lançava, o handle
+ficava aberto e o arquivo, travado. No Windows, o `PRAGMA journal_mode =
+WAL` logo após a morte de um processo filho falhava com
+`SQLITE_IOERR_TRUNCATE`, e cada `rmSync` seguinte naquele diretório virava
+`EBUSY` em cascata no teardown (run 32929139083). O `openKernel` agora fecha
+o `Database` antes de relançar o erro original, intacto; o caminho de sucesso
+não muda. O teste de regressão provoca a falha com um arquivo que não é um
+banco SQLite no caminho do kernel (o SQLite não lê nada ao abrir, então é o
+primeiro pragma que falha) e verifica que o `close` rodou uma vez, que o
+chamador recebe o próprio `SQLiteError` e que o arquivo pode ser removido e
+reaberto na hora.
 
 ### Toda instrução despachada carrega a guarda de escopo
 

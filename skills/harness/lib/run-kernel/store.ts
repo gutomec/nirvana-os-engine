@@ -117,7 +117,14 @@ function initialize(db: Database): void {
 export function openKernel(dbPath: string): KernelHandle {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   const db = new Database(dbPath);
-  initialize(db);
+  try {
+    initialize(db);
+  } catch (error) {
+    // A handle that outlives a failed initialize keeps the file locked (EBUSY on Windows at
+    // teardown), so release it before the caller sees the original error.
+    try { db.close(); } catch { /* the initialize error is the one to report */ }
+    throw error;
+  }
   return { db, path: dbPath, close: () => db.close() };
 }
 
