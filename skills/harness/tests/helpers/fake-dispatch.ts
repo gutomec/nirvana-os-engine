@@ -4,6 +4,12 @@
 // agent_executed cost event exactly where the legacy paths write it, produces
 // _SUMMARY.md and exits with the configured code. Zero LLM, zero network.
 //
+// The cost event lands where the real dispatch puts it: HARNESS_LOGS_DIR when
+// the parent set it, else the harness log of the scaffold the dispatch creates
+// (`<cwd>/outputs/<project>/.nirvana/logs/harness`), never the parent's own
+// `.nirvana/logs/harness`. A parent that reads the latter without pinning the
+// former sees no cost, which is the drift the first real smoke run exposed.
+//
 // Knobs, read from the environment of the spawned process:
 //   FAKE_DISPATCH_SPAWN_LOG        append the outputs root on every spawn
 //   FAKE_DISPATCH_SLEEP_MS         wait before finishing
@@ -51,10 +57,10 @@ const cost = Number(process.env.FAKE_DISPATCH_COST_USD ?? 0);
 if (cost > 0) {
   const target = value("--business") ? { business_slug: value("--business"), employee: "intake" }
     : value("--squad") ? { squad_slug: value("--squad"), employee: "squad:" + value("--squad") } : { employee: "agent-x" };
-  const logsDir = process.env.HARNESS_LOGS_DIR ?? path.join(process.cwd(), ".nirvana", "logs", "harness");
+  const project = value("--project");
+  const logsDir = process.env.HARNESS_LOGS_DIR ?? path.join(process.cwd(), "outputs", project, ".nirvana", "logs", "harness");
   const day = path.join(logsDir, new Date().toISOString().slice(0, 10));
   fs.mkdirSync(day, { recursive: true });
-  const project = value("--project");
   fs.appendFileSync(path.join(day, "audit.jsonl"), JSON.stringify({ ts: new Date().toISOString(), event: "agent_executed",
     trace_id: project, project_id: project, ...target, cost_usd: cost }) + "\n");
 }

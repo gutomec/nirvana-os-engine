@@ -129,6 +129,7 @@ typed engine instead:
 nrv multi-target plan .nirvana/plans/<trace_id>.json     # compile: waves, decisions, reservation, workspace
 export NIRVANA_MULTI_TARGET_ENGINE=1
 nrv multi-target run .nirvana/plans/<trace_id>.json      # execute over the Run Kernel; repeat to resume
+nrv multi-target run .nirvana/plans/<trace_id>.json --retry-failed   # after fixing the cause of a failed/withheld Run: delivered nodes stay, the rest runs again
 nrv multi-target status .nirvana/plans/<trace_id>.json   # read-only projection of the Run
 ```
 
@@ -141,7 +142,10 @@ nothing. `run` is opt-in (`NIRVANA_MULTI_TARGET_ENGINE=1`;
 project's kernel, executes every wave through `nrv dispatch` subprocesses with
 explicit targets (`--business`, `--squad`, `--agent-x`), and exits `0`
 delivered, `1` failed, `2` withheld, `4` invalid plan or missing opt-in.
-Repeating `run` after a crash resumes: completed nodes never spawn twice.
+Repeating `run` after a crash resumes: completed nodes never spawn twice. A
+Run that ended `failed` or `withheld` is terminal; once its cause is fixed,
+`--retry-failed` opens a new Run chained to it (`parentRunId`) that keeps the
+delivered nodes and executes only the ones that failed, stalled or were skipped.
 
 What does not change: the workspace layout, `DISPATCH-INSTRUCTION.md` per
 target, the `_SUMMARY.md` contract, the audit chain each node writes, and the
