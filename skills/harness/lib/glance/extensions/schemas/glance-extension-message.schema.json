@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.nirvana-os.dev/glance/message/1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "protocol", "session_id", "sequence", "type", "payload"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "protocol": { "const": "glance.extension.messages" },
+    "session_id": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "sequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "type": { "enum": ["extension.ready", "host.init", "host.dataset", "host.refreshing", "host.error", "extension.rendered", "extension.error", "extension.open_external_url"] },
+    "payload": {}
+  },
+  "allOf": [
+    { "if": { "properties": { "type": { "const": "extension.ready" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/ready" } } } },
+    { "if": { "properties": { "type": { "const": "host.init" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/init" } } } },
+    { "if": { "properties": { "type": { "const": "host.dataset" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/dataset" } } } },
+    { "if": { "properties": { "type": { "const": "host.refreshing" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/refreshing" } } } },
+    { "if": { "properties": { "type": { "const": "host.error" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/hostError" } } } },
+    { "if": { "properties": { "type": { "const": "extension.rendered" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/rendered" } } } },
+    { "if": { "properties": { "type": { "const": "extension.error" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/extensionError" } } } },
+    { "if": { "properties": { "type": { "const": "extension.open_external_url" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/openExternal" } } } }
+  ],
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{2,62}$" },
+    "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "ready": {
+      "type": "object", "additionalProperties": false,
+      "required": ["ui_version", "accepted_envelope_versions"],
+      "properties": {
+        "ui_version": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$" },
+        "accepted_envelope_versions": { "const": ["1.0.0"] }
+      }
+    },
+    "init": {
+      "type": "object", "additionalProperties": false,
+      "required": ["extension_id", "api_version", "locale", "theme", "tokens"],
+      "properties": {
+        "extension_id": { "$ref": "#/$defs/id" },
+        "api_version": { "const": "1.0.0" },
+        "locale": { "type": "string", "pattern": "^[a-z]{2}(?:-[A-Z]{2})?$" },
+        "theme": { "enum": ["apple", "apple-dark", "awwwards"] },
+        "tokens": {
+          "type": "object", "additionalProperties": false,
+          "required": ["surface-0", "surface-1", "surface-2", "text-primary", "text-secondary", "border-default", "border-focus", "accent", "success-fg", "warn-fg", "danger-fg", "space-2"],
+          "properties": {
+            "surface-0": { "type": "string", "maxLength": 64 }, "surface-1": { "type": "string", "maxLength": 64 }, "surface-2": { "type": "string", "maxLength": 64 },
+            "text-primary": { "type": "string", "maxLength": 64 }, "text-secondary": { "type": "string", "maxLength": 64 },
+            "border-default": { "type": "string", "maxLength": 64 }, "border-focus": { "type": "string", "maxLength": 64 }, "accent": { "type": "string", "maxLength": 64 },
+            "success-fg": { "type": "string", "maxLength": 64 }, "warn-fg": { "type": "string", "maxLength": 64 }, "danger-fg": { "type": "string", "maxLength": 64 }, "space-2": { "type": "string", "maxLength": 32 }
+          }
+        }
+      }
+    },
+    "dataset": {
+      "type": "object", "additionalProperties": false,
+      "required": ["dataset_id", "envelope"],
+      "properties": {
+        "dataset_id": { "$ref": "#/$defs/id" },
+        "envelope": { "$ref": "https://schemas.nirvana-os.dev/glance/dataset-envelope/1.0.0" }
+      }
+    },
+    "refreshing": {
+      "type": "object", "additionalProperties": false,
+      "required": ["dataset_id"],
+      "properties": { "dataset_id": { "$ref": "#/$defs/id" } }
+    },
+    "hostError": {
+      "$ref": "https://schemas.nirvana-os.dev/glance/public-error/1.0.0"
+    },
+    "rendered": {
+      "type": "object", "additionalProperties": false,
+      "required": ["snapshot_id"],
+      "properties": { "snapshot_id": { "$ref": "#/$defs/digest" } }
+    },
+    "extensionError": {
+      "type": "object", "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "enum": ["PAYLOAD_SCHEMA_INVALID", "RENDER_FAILED"] },
+        "message": { "type": "string", "minLength": 1, "maxLength": 200 }
+      }
+    },
+    "openExternal": {
+      "type": "object", "additionalProperties": false,
+      "required": ["request_id", "url", "display_label"],
+      "properties": {
+        "request_id": { "type": "string", "format": "uuid" },
+        "url": { "type": "string", "format": "uri", "maxLength": 2048 },
+        "display_label": { "type": "string", "minLength": 1, "maxLength": 120 }
+      }
+    }
+  }
+}

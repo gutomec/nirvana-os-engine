@@ -150,6 +150,9 @@ function glance() {
     jobStreams: {},
     // Per-kind audit scores: { squads: { slug: {tier, score} }, businesses: ..., 'mind-clones': ... }
     auditScores: { squads: {}, businesses: {}, 'mind-clones': {} },
+    // Generic, read-only Glance extensions discovered from the local scope.
+    extensions: [],
+    extensionHost: null,
 
     // ─── Computed ───
     get currentList() {
@@ -326,6 +329,7 @@ function glance() {
         this.fetchAuditScores(),
         this.fetchSetupSources(),
         this.fetchSetupStatus(),
+        this.fetchExtensions(),
       ]);
       this.flash(`refreshed · ${this.squads.length} squads, ${this.businesses.length} bus`);
     },
@@ -349,6 +353,153 @@ function glance() {
           this.auditScores[kind] = map;
         } catch {}
       }));
+    },
+
+    async fetchExtensions() {
+      try {
+        const catalog = await api('/api/extensions');
+        this.extensions = Array.isArray(catalog?.extensions)
+          ? catalog.extensions.filter(extension => extension?.status === 'accepted')
+          : [];
+      } catch {
+        this.extensions = [];
+      }
+      this.renderExtensionNavigation();
+    },
+
+    renderExtensionNavigation() {
+      const navigation = document.getElementById('glance-extension-navigation');
+      const items = document.getElementById('glance-extension-navigation-items');
+      if (!navigation || !items) return;
+      items.replaceChildren();
+      navigation.hidden = this.extensions.length === 0;
+      for (const extension of this.extensions) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.id = `glance-extension-nav-${extension.id}`;
+        button.className = 'kind-card glance-extension-nav-button';
+        button.setAttribute('aria-label', `Open ${extension.title}`);
+
+        const icon = document.createElement('i');
+        icon.className = 'kind-card-icon';
+        icon.setAttribute('data-lucide', extension.icon);
+        const copy = document.createElement('span');
+        copy.className = 'glance-extension-nav-copy';
+        const title = document.createElement('span');
+        title.className = 'kind-card-label';
+        title.textContent = extension.title;
+        const description = document.createElement('span');
+        description.className = 'text-caption';
+        description.textContent = extension.description;
+        copy.append(title, description);
+        button.append(icon, copy);
+        button.addEventListener('click', () => {
+          this.activateExtension(extension, button).catch(error => {
+            const status = document.getElementById('glance-extension-status');
+            if (status) status.textContent = `Extension unavailable: ${error?.message || 'unknown error'}`;
+          });
+        });
+        items.append(button);
+      }
+      try { window.lucide?.createIcons(); } catch {}
+    },
+
+    extensionThemeTokens() {
+      const style = getComputedStyle(document.documentElement);
+      const read = name => style.getPropertyValue(name).trim();
+      return {
+        'surface-0': read('--surface-0'),
+        'surface-1': read('--surface-1'),
+        'surface-2': read('--surface-2'),
+        'text-primary': read('--text-primary'),
+        'text-secondary': read('--text-secondary'),
+        'border-default': read('--border-default'),
+        'border-focus': read('--border-focus'),
+        accent: read('--accent'),
+        'success-fg': read('--status-success-fg'),
+        'warn-fg': read('--status-warn-fg'),
+        'danger-fg': read('--status-danger-fg'),
+        'space-2': read('--space-2'),
+      };
+    },
+
+    async activateExtension(extension, returnFocusTarget) {
+      this.extensionHost?.close?.('extension_replaced');
+      this.extensionHost = null;
+      this.kind = `extension:${extension.id}`;
+      this.selected = null;
+      this.detail = null;
+
+      const panel = document.getElementById('glance-extension-panel');
+      const hostRoot = document.getElementById('glance-extension-host');
+      const previousFrame = document.getElementById('glance-extension-frame');
+      const statusTarget = document.getElementById('glance-extension-status');
+      const titleTarget = document.getElementById('glance-extension-title');
+      const descriptionTarget = document.getElementById('glance-extension-description');
+      const navigationTarget = document.getElementById('glance-extension-external-navigation');
+      const confirmControl = document.getElementById('glance-extension-confirm');
+      const cancelControl = document.getElementById('glance-extension-cancel');
+      const pendingTarget = document.getElementById('glance-extension-pending');
+      const textTarget = document.getElementById('glance-extension-text');
+      if (!panel || !hostRoot || !previousFrame || !statusTarget || !titleTarget || !descriptionTarget ||
+          !navigationTarget || !confirmControl || !cancelControl || !pendingTarget || !textTarget) {
+        throw new Error('EXTENSION_HOST_DOM_MISSING');
+      }
+
+      panel.hidden = false;
+      panel.style.display = 'block';
+      for (const legacyPane of document.querySelectorAll('main.detail-pane')) {
+        if (legacyPane === panel) continue;
+        if (!legacyPane.dataset.glanceExtensionDisplay) {
+          legacyPane.dataset.glanceExtensionDisplay = legacyPane.style.display || '__unset__';
+        }
+        legacyPane.style.display = 'none';
+      }
+      titleTarget.textContent = extension.title;
+      descriptionTarget.textContent = extension.description;
+      statusTarget.textContent = 'Connecting';
+      delete statusTarget.dataset.auditEvent;
+      navigationTarget.hidden = true;
+      const frame = previousFrame.cloneNode(false);
+      previousFrame.replaceWith(frame);
+
+      const metadata = await api(`/api/extensions/${encodeURIComponent(extension.id)}`);
+      const { mountExtensionHost } = await import('/extension-host.js');
+      const host = mountExtensionHost({
+        iframe: frame,
+        hostRoot,
+        navigationTarget,
+        confirmControl,
+        cancelControl,
+        pendingTarget,
+        textTarget,
+        statusTarget,
+        returnFocusTarget,
+        extensionId: extension.id,
+        locale: document.documentElement.lang || 'pt-BR',
+        theme: document.documentElement.dataset.theme || 'apple',
+        tokens: this.extensionThemeTokens(),
+        manifestHosts: metadata?.external_navigation?.allowed_hosts || [],
+        coreHosts: ['github.com'],
+        audit: event => {
+          statusTarget.dataset.auditEvent = event.event;
+          if (event.event === 'external_open_failed') statusTarget.textContent = 'External link could not be opened';
+        },
+        onActive: hostApi => {
+          void (async () => {
+            try {
+              const datasetId = extension.datasets[0];
+              const envelope = await api(`/api/extensions/${encodeURIComponent(extension.id)}/datasets/${encodeURIComponent(datasetId)}`);
+              if (!hostApi.sendDataset(datasetId, envelope)) throw new Error('DATASET_DELIVERY_FAILED');
+              statusTarget.textContent = 'Snapshot loaded';
+            } catch (error) {
+              statusTarget.textContent = `Snapshot unavailable: ${error?.message || 'unknown error'}`;
+            }
+          })();
+        },
+      });
+      this.extensionHost = host;
+      frame.src = `/extensions/${encodeURIComponent(extension.id)}/ui/index.html`;
     },
     scoreFor(item) {
       const map = this.auditScores[this.kind] || {};
@@ -1739,6 +1890,21 @@ function glance() {
     // Enter a type from the menu. LIST_KIND → Level 2; view-kind → switches the
     // page and keeps Level 1 (the card stays highlighted). Persists the section.
     enterKind(id) {
+      if (!String(id).startsWith('extension:')) {
+        this.extensionHost?.close?.('extension_navigation');
+        this.extensionHost = null;
+        const extensionPanel = document.getElementById('glance-extension-panel');
+        if (extensionPanel) {
+          extensionPanel.hidden = true;
+          extensionPanel.style.removeProperty('display');
+        }
+        for (const legacyPane of document.querySelectorAll('main.detail-pane[data-glance-extension-display]')) {
+          const previous = legacyPane.dataset.glanceExtensionDisplay;
+          if (previous === '__unset__') legacyPane.style.removeProperty('display');
+          else legacyPane.style.display = previous;
+          delete legacyPane.dataset.glanceExtensionDisplay;
+        }
+      }
       this.kind = id;
       this.selected = null;
       this.detail = null;

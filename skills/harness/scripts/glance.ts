@@ -13,6 +13,15 @@
 
 import { parseArgs } from "../../_shared/lib/bun-helpers.ts";
 import { startServer } from "../lib/glance/server.ts";
+import { getScope } from "../lib/glance/data-loader.ts";
+import {
+  discoverExtensionContext,
+  loadExtensionSchemas,
+  readExtensionDataset,
+  readExtensionUi,
+} from "../lib/glance/extensions/loader.ts";
+import { createRouteContext } from "../lib/glance/extensions/routes.ts";
+import * as os from "node:os";
 
 const { flags } = parseArgs();
 
@@ -57,4 +66,25 @@ const allowActions = !flags["read-only"];
 const themeFlag = (flags.theme as string) || "apple";
 const theme = (["apple", "apple-dark", "awwwards"].includes(themeFlag) ? themeFlag : "apple") as "apple" | "apple-dark" | "awwwards";
 
-await startServer({ port, open, idleMin, allowActions, theme });
+const scope = getScope();
+let extensionRoutes;
+if (scope.mode !== "merge") {
+  try {
+    const extension = discoverExtensionContext({
+      nirvanaHome: process.env.NIRVANA_HOME || os.homedir(),
+      projectRoot: scope.projectRoot ?? undefined,
+      scope: scope.mode,
+      schemas: loadExtensionSchemas(),
+    });
+    extensionRoutes = createRouteContext(
+      extension,
+      () => crypto.randomUUID(),
+      (extensionId, datasetId) => readExtensionDataset(extension, extensionId, datasetId),
+      (extensionId) => readExtensionUi(extension, extensionId),
+    );
+  } catch (error) {
+    console.error(`[glance] extension discovery disabled: ${(error as Error).message}`);
+  }
+}
+
+await startServer({ port, open, idleMin, allowActions, theme, extensionRoutes });

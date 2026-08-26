@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><title>Inventoried extension iframe</title>
+  <style>
+    #cards { display: none; }
+    #table { display: table; }
+    @media (max-width: 759px) { #cards { display: grid; } #table { display: none; } }
+  </style>
+</head>
+<body>
+  <button id="request-open">Request GitHub</button>
+  <pre id="payload"></pre>
+  <div id="cards">Cards</div>
+  <table id="table"><tbody><tr><td>Table</td></tr></tbody></table>
+  <script>
+    window.pwned = false;
+    let port;
+    let sessionId;
+    let nextSequence = 0;
+    const button = document.getElementById("request-open");
+    window.addEventListener("message", event => {
+      const packet = event.data;
+      if (packet?.schema_version !== "1.0.0" || packet?.protocol !== "glance.extension.messages" || packet?.type !== "host.connect" || event.ports.length !== 1) return;
+      port = event.ports[0];
+      port.onmessage = message => {
+        const value = message.data;
+        if (value.type === "host.init") {
+          sessionId = value.session_id;
+          port.postMessage({
+            schema_version: "1.0.0", protocol: "glance.extension.messages", session_id: sessionId,
+            sequence: nextSequence++, type: "extension.ready",
+            payload: { ui_version: "1.0.0", accepted_envelope_versions: ["1.0.0"] }
+          });
+        }
+        if (value.type === "host.dataset") {
+          document.getElementById("payload").textContent = JSON.stringify(value.payload.envelope.payload);
+        }
+      };
+      port.start();
+    });
+    button.addEventListener("click", event => {
+      if (!port || !sessionId) return;
+      const packet = {
+        schema_version: "1.0.0", protocol: "glance.extension.messages", session_id: sessionId,
+        sequence: nextSequence++, type: "extension.open_external_url",
+        payload: {
+          request_id: crypto.randomUUID(),
+          url: "https://github.com/gutomec/nirvana-os-engine",
+          display_label: "Nirvana-OS on GitHub"
+        }
+      };
+      button.dataset.eventTrusted = String(event.isTrusted);
+      button.dataset.eventType = event.type;
+      button.dataset.messageType = packet.type;
+      port.postMessage(packet);
+    });
+    parent.postMessage({ schema_version: "1.0.0", protocol: "glance.extension.messages", type: "extension.bootstrap" }, "*");
+  </script>
+</body>
+</html>

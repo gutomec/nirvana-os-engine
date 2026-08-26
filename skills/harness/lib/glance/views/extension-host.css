@@ -1,0 +1,80 @@
+.glance-extension-host {
+  display: grid;
+  gap: var(--space-4, 16px);
+  color: var(--text-primary);
+  width: 100%;
+  padding: var(--space-5, 20px);
+}
+
+.glance-extension-pane[hidden],
+.glance-extension-catalog[hidden] {
+  display: none;
+}
+
+.glance-extension-pane {
+  overflow: auto;
+}
+
+.glance-extension-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4, 16px);
+}
+
+.glance-extension-catalog {
+  display: grid;
+  gap: var(--space-2, 8px);
+  padding-top: var(--space-3, 12px);
+  border-top: 1px solid var(--border-default);
+}
+
+.glance-extension-catalog-label {
+  color: var(--text-secondary);
+  font-size: var(--text-xs, 10px);
+  font-weight: var(--weight-semibold, 600);
+  letter-spacing: var(--tracking-caps, 0.08em);
+  text-transform: uppercase;
+}
+
+#glance-extension-navigation-items {
+  display: grid;
+  gap: var(--space-2, 8px);
+}
+
+.glance-extension-nav-button {
+  width: 100%;
+}
+
+.glance-extension-nav-copy {
+  display: grid;
+  min-width: 0;
+  text-align: left;
+}
+
+.glance-extension-frame {
+  width: 100%;
+  min-height: 420px;
+  border: 1px solid var(--border-default);
+  background: var(--surface-0);
+}
+
+.glance-extension-text:empty {
+  display: none;
+}
+
+.glance-extension-navigation {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+}
+
+.glance-extension-navigation[hidden] {
+  display: none;
+}
+
+.glance-extension-confirm:focus-visible,
+.glance-extension-cancel:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}

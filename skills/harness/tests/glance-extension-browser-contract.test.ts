@@ -1,0 +1,191 @@
+import { expect, test } from "bun:test";
+import { existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { executeRealBrowser, glanceRealBrowserInternals } from "./helpers/glance-real-browser.ts";
+import {
+  runBrowserContract,
+  type BrowserProbe,
+} from "./fixtures/glance/browser-probe/real-browser-contract.ts";
+
+test("EXT-BROWSER-REQUIRES-LOCAL-BINARY fails instead of skipping when GLANCE_TEST_BROWSER is absent", async () => {
+  const saved = process.env.GLANCE_TEST_BROWSER;
+  delete process.env.GLANCE_TEST_BROWSER;
+  try {
+    await expect(executeRealBrowser()).rejects.toThrow("GLANCE_TEST_BROWSER_REQUIRED");
+  } finally {
+    if (saved) process.env.GLANCE_TEST_BROWSER = saved;
+  }
+});
+
+test("EXT-BROWSER-REJECTS-INVALID-LOCAL-BINARY fails before launch when the configured path is invalid", async () => {
+  const saved = process.env.GLANCE_TEST_BROWSER;
+  process.env.GLANCE_TEST_BROWSER = join(tmpdir(), `glance-browser-missing-${crypto.randomUUID()}`);
+  try {
+    await expect(executeRealBrowser()).rejects.toThrow("GLANCE_TEST_BROWSER_NOT_FOUND");
+  } finally {
+    if (saved) process.env.GLANCE_TEST_BROWSER = saved;
+    else delete process.env.GLANCE_TEST_BROWSER;
+  }
+});
+
+test("EXT-BROWSER-CDP-DEADLINE times out commands and events once without retry", async () => {
+  const operationTimeoutMs = 25;
+  const packets: Array<{ id: number; method: string }> = [];
+  let fourthPacket!: () => void;
+  const fourthPacketReceived = new Promise<void>((resolve) => { fourthPacket = resolve; });
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch(request, server) {
+      if (server.upgrade(request)) return;
+      return new Response("WebSocket upgrade required", { status: 426 });
+    },
+    websocket: {
+      message(_socket, raw) {
+        const packet = JSON.parse(String(raw)) as { id: number; method: string };
+        packets.push(packet);
+        if (packets.length === 4) fourthPacket();
+      },
+    },
+  });
+  let connection: Awaited<ReturnType<typeof glanceRealBrowserInternals.CdpConnection.connect>> | undefined;
+  try {
+    connection = await glanceRealBrowserInternals.CdpConnection.connect(
+      `ws://127.0.0.1:${server.port}/cdp`,
+      operationTimeoutMs,
+    );
+    const startedAt = performance.now();
+    const results = await Promise.all([
+      connection.send("Input.dispatchMouseEvent").then(() => "resolved", (error: Error) => error.message),
+      connection.send("Input.dispatchKeyEvent").then(() => "resolved", (error: Error) => error.message),
+      connection.send("Target.createTarget").then(() => "resolved", (error: Error) => error.message),
+      connection.waitFor("Page.loadEventFired", "missing-session").then(() => "resolved", (error: Error) => error.message),
+    ]);
+    const elapsedMs = performance.now() - startedAt;
+
+    expect(results).toEqual([
+      "CDP_COMMAND_TIMEOUT:Input.dispatchMouseEvent",
+      "CDP_COMMAND_TIMEOUT:Input.dispatchKeyEvent",
+      "CDP_COMMAND_TIMEOUT:Target.createTarget",
+      "CDP_EVENT_TIMEOUT:Page.loadEventFired",
+    ]);
+    expect(elapsedMs).toBeGreaterThanOrEqual(15);
+    expect(elapsedMs).toBeLessThan(1_000);
+    await Promise.race([fourthPacketReceived, Bun.sleep(operationTimeoutMs * 2)]);
+    expect(packets.map(({ method }) => method).sort()).toEqual([
+      "Input.dispatchKeyEvent",
+      "Input.dispatchMouseEvent",
+      "Target.createTarget",
+    ]);
+    expect(new Set(packets.map(({ id }) => id)).size).toBe(3);
+  } finally {
+    await connection?.close();
+    await server.stop(true);
+  }
+}, 5_000);
+
+function validationProbe(
+  version: Partial<Awaited<ReturnType<BrowserProbe["browserVersion"]>>> = {},
+  request: Partial<Awaited<ReturnType<BrowserProbe["requestFromIframe"]>>> = {},
+): BrowserProbe {
+  const unexpected = async () => { throw new Error("UNEXPECTED_HOST_ACTION"); };
+  return {
+    browserVersion: async () => ({
+      product: "browser", revision: "revision", userAgent: "agent", jsVersion: "js",
+      protocolVersion: "protocol", cdpSessionId: "live-session", ...version,
+    }),
+    requestFromIframe: async () => ({
+      eventTrusted: true, eventType: "click", frameId: "target-frame", targetFrameId: "target-frame",
+      messageType: "extension.open_external_url", cdpSessionId: "live-session", ...request,
+    }),
+    confirmPointer: unexpected,
+    confirmKeyboard: unexpected,
+    cancelPointer: unexpected,
+    cancelEscape: unexpected,
+    confirmSynthetic: unexpected,
+    advanceMonotonic: unexpected,
+    setOpenMode: unexpected,
+    pageCount: unexpected,
+    closePopups: unexpected,
+    failureReported: unexpected,
+    openerWasNull: unexpected,
+    baseline: unexpected,
+  };
+}
+
+test("EXT-BROWSER-CDP-VERSION-REQUIRED rejects an empty in-session Browser.getVersion field", async () => {
+  await expect(runBrowserContract(validationProbe({ revision: "" }))).rejects.toThrow("BROWSER_VERSION_INCOMPLETE");
+});
+
+test("EXT-BROWSER-CDP-SESSION-BOUND rejects a Browser.getVersion session mismatch", async () => {
+  await expect(runBrowserContract(validationProbe({}, { cdpSessionId: "different-session" }))).rejects.toThrow("BROWSER_CDP_SESSION_MISMATCH");
+});
+
+test("EXT-BROWSER-FRAME-PROVENANCE rejects independently observed frame mismatch before host actions", async () => {
+  const unexpected = async () => { throw new Error("UNEXPECTED_HOST_ACTION"); };
+  const probe = {
+    browserVersion: async () => ({
+      product: "browser", revision: "revision", userAgent: "agent", jsVersion: "js",
+      protocolVersion: "protocol", cdpSessionId: "live-session",
+    }),
+    requestFromIframe: async () => ({
+      eventTrusted: true as const, eventType: "click" as const,
+      frameId: "execution-context-frame", targetFrameId: "target-frame",
+      messageType: "extension.open_external_url" as const, cdpSessionId: "live-session",
+    }),
+    confirmPointer: unexpected,
+    confirmKeyboard: unexpected,
+    cancelPointer: unexpected,
+    cancelEscape: unexpected,
+    confirmSynthetic: unexpected,
+    advanceMonotonic: unexpected,
+    setOpenMode: unexpected,
+    pageCount: unexpected,
+    closePopups: unexpected,
+    failureReported: unexpected,
+    openerWasNull: unexpected,
+    baseline: unexpected,
+  } satisfies BrowserProbe;
+  await expect(runBrowserContract(probe)).rejects.toThrow("IFRAME_FRAME_MISMATCH");
+});
+
+test("EXT-BROWSER-CLEANUP-ON-THROW waits for process exit and removes the profile", async () => {
+  let launched: { pid: number; profile: string } | undefined;
+  let cleanup: { processIds: number[]; childExited: boolean; connectionClosed: boolean; profileRemoved: boolean } | undefined;
+  await expect(executeRealBrowser({
+    onLaunch(value) { launched = value; },
+    afterConnect() { throw new Error("FORCED_BROWSER_CONTRACT_FAILURE"); },
+    onCleanup(value) { cleanup = value; },
+  })).rejects.toThrow("FORCED_BROWSER_CONTRACT_FAILURE");
+  expect(launched).toBeDefined();
+  expect(cleanup).toEqual({ processIds: [], childExited: true, connectionClosed: true, profileRemoved: true });
+  expect(existsSync(launched!.profile)).toBe(false);
+  let processRunning = true;
+  try { process.kill(launched!.pid, 0); } catch { processRunning = false; }
+  expect(processRunning).toBe(false);
+}, 90_000);
+
+test("EXT-BROWSER-REAL-CONTRACT observes the live iframe, trusted inputs, popups and layout", async () => {
+  const result = await executeRealBrowser();
+  for (const value of [result.browserProduct, result.browserRevision, result.browserUserAgent, result.browserJsVersion, result.browserProtocolVersion]) expect(value).toMatch(/\S/);
+  expect(result.browserVersionCdpSessionId).toMatch(/\S/);
+  expect(result.assertionCdpSessionId).toBe(result.browserVersionCdpSessionId);
+  expect(result.iframeRequestTrusted).toBe(true);
+  expect(result.iframeRequestEventType).toBe("click");
+  expect(result.iframeRequestFrameId).toMatch(/\S/);
+  expect(result.iframeTargetFrameId).toBe(result.iframeRequestFrameId);
+  expect(result.iframeRequestFrameMatches).toBe(true);
+  expect(result.browserProcessExited).toBe(true);
+  expect(result.browserConnectionClosed).toBe(true);
+  expect(result.browserProfileRemoved).toBe(true);
+  expect(result).toMatchObject({
+    iframeTrustedOpened: 1, cancelOpened: 0, escapeOpened: 0,
+    escapeFocusId: "glance-extension-nav-fixture-ext", expiredOpened: 0, failedOpenOpened: 0,
+    failureReported: true, syntheticOpened: 0, trustedPointerOpened: 1, trustedEnterOpened: 1,
+    trustedSpaceOpened: 1, openerIsNull: true, pwned: false, cards759: "grid", table759: "none",
+    cards760: "none", table760: "table", focusOutlineStyle: "solid", statusText: "External link could not be opened",
+    iframeSandbox: "allow-scripts", iframeRoute: "/extensions/fixture-ext/ui/index.html",
+    catalogRequested: true, hostControlOutsideIframe: true,
+  });
+}, 90_000);

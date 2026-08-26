@@ -20,6 +20,16 @@ poll like `EEXIST` does — on Windows only, since on POSIX those codes still
 mean what they say. When the wait does time out, the message reports the code
 it kept receiving rather than blaming a live holder that may not exist.
 
+### Glance now has a safe, static extension boundary
+
+Glance can discover one user-owned global or project extension root and show
+accepted, read-only dashboards without loading plugin code into the engine.
+Closed manifests and dataset envelopes, stable inventoried bytes, an isolated
+`allow-scripts` iframe, a source-bound MessageChannel, host-mediated external
+navigation, redacted diagnostics, and a mandatory real-browser contract keep
+the boundary provider-neutral and fail-closed. Engine updates and rollback
+preserve both extension roots. Operator guide: `docs/glance-extensions.md`.
+
 ## 0.7.11 — 2026-08-23
 
 ### The engine instructed the runtimes to watch, never to work

@@ -69,7 +69,7 @@ when the docs prescribe a non-enum, non-`x_` event or when code emits one.
 
 <!-- BEGIN GENERATED: audit-events (scripts/gen-audit-events-doc.ts — do not edit by hand) -->
 
-96 events in the closed enum (declaration order of `ALLOWED_EVENTS` in `lib/audit.js`):
+101 events in the closed enum (declaration order of `ALLOWED_EVENTS` in `lib/audit.js`):
 
 ```
 brief_received
@@ -164,6 +164,11 @@ artifact_touched
 watch_started
 watch_stopped
 ask_invoked
+extension_channel_closed
+extension_message_rejected
+external_open_confirmed
+external_open_expired
+external_open_failed
 nirvana_updated
 pack_created
 project_exported

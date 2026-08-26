@@ -45,6 +45,20 @@ jobs:
           nrv index
           nrv index
 
+      - name: Resolve required local browser
+        shell: pwsh
+        run: |
+          $Candidates = switch ("${{ runner.os }}") {
+            "Linux"   { @("/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium", "/usr/bin/chromium-browser") }
+            "macOS"   { @("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge") }
+            "Windows" { @("$env:ProgramFiles\Google\Chrome\Application\chrome.exe", "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe") }
+            default   { throw "Unsupported runner OS: ${{ runner.os }}" }
+          }
+          $Browser = $Candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+          if (-not $Browser) { throw "Required Chrome, Chromium, or Edge executable is absent" }
+          "GLANCE_TEST_BROWSER=$Browser" | Out-File -LiteralPath $env:GITHUB_ENV -Encoding utf8 -Append
+          & $Browser --version
+
       # Every test, not one directory. This step used to run
       # `bun test skills/harness/tests`, which left 15 files in
       # skills/_shared/tests, skills/businesses/tests and skills/squads/tests
