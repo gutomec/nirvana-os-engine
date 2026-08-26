@@ -1,18 +1,21 @@
 // glance-message-route.test.ts — a Glance Message resolves its target through the
 // same cascade as the maestro: an explicit prefix wins, then the agentic router
-// (business, then squad), then agent-x as the bottom. The router is injected, so
-// nothing here calls an LLM or the network. Runs with: bun test skills/harness/tests
+// (business, then squad), then agent-x as the bottom. The receipt never waits for
+// the router: a Message without a prefix is routed by the queue, as the first step
+// of its item, and a `no_match` answers the chat instead of running agent-x. The
+// router is injected, so nothing here calls an LLM or the network.
+// Runs with: bun test skills/harness/tests
 import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { AgenticRouteDecision } from "../lib/agentic-router.ts";
 import {
-  AgentXCanaryQueue, ConversationService, MESSAGE_ROUTE_TIMEOUT_MS, createDispatchExecutionRunner, resolveMessageTarget,
-  type GlanceAgentXCanaryAdapter, type MessageRouteInput, type MessageRouter, type MessageRoutingSettings,
+  AgentXCanaryQueue, ConversationService, MESSAGE_ROUTE_TIMEOUT_MS, createAgenticMessageRouter, createDispatchExecutionRunner, resolveMessageTarget,
+  type ExecutionStartInput, type GlanceExecutionRunner, type MessageRouteInput, type MessageRouter, type MessageRoutingSettings,
 } from "../lib/control-plane/index.ts";
-import { getRun, listEvents, openKernel } from "../lib/run-kernel/index.ts";
-import { childState, shimRuntimeOnPath, writeFakeGlanceChild } from "./helpers/fake-glance-child.ts";
+import { getRun, listEvents, openKernel, type RunProjection } from "../lib/run-kernel/index.ts";
+import { childState, shimRuntimeOnPath, waitUntil, writeFakeGlanceChild } from "./helpers/fake-glance-child.ts";
 import { removeDir } from "./helpers/temp-dirs.ts";
 import { KERNEL_BUDGET_MS } from "./helpers/test-budgets.ts";
 
@@ -62,6 +65,17 @@ function deps(router: MessageRouter | undefined, audit: ReturnType<typeof auditS
   return { router, settings, audit: audit.sink, timeoutMs, projectId: "prj_route", projectRoot: "/tmp/prj_route", traceId: "run_trace", messageId: "msg_route" };
 }
 
+/** A runner whose child exits at once without touching the Run: the queue then rolls the Run
+ * back (`child_exited_without_terminal_state`), so a test sees the target the child was given. */
+function fakeRunner() {
+  const starts: ExecutionStartInput[] = [];
+  const runner: GlanceExecutionRunner = {
+    available: () => true,
+    start(input) { starts.push(input); return { pid: 1, argv: ["bun", "fake-dispatch.ts"], done: Promise.resolve({ exitCode: 0 }), kill() {} }; },
+  };
+  return { runner, starts };
+}
+
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-glance-route-")); roots.push(root);
   fs.mkdirSync(path.join(root, ".nirvana"), { recursive: true });
@@ -70,16 +84,19 @@ function fixture() {
   closers.push(() => { kernel.close(); conversations.close(); });
   const conversation = conversations.create("prj_route", "Route", "cnv_route");
   const message = conversations.append({ conversationId: conversation.conversation_id, projectId: "prj_route", role: "user", content: "Produza a landing page da clínica", messageId: "msg_route" });
-  // The queue never drains in these tests: shutdown() right after submit clears the scheduled drain.
-  const adapter = { available: () => true } as unknown as GlanceAgentXCanaryAdapter;
+  const { runner, starts } = fakeRunner();
   const queue = (router: MessageRouter | undefined, audit: ReturnType<typeof auditSink>, settings: MessageRoutingSettings = AGENTIC) => {
-    const instance = new AgentXCanaryQueue(kernel, conversations, adapter, undefined, { router, audit: audit.sink, settingsFor: () => settings });
+    const instance = new AgentXCanaryQueue(kernel, conversations, undefined, runner, { router, audit: audit.sink, settingsFor: () => settings });
     queues.push(instance);
     return instance;
   };
   const submit = (instance: AgentXCanaryQueue, content = message.content, idempotencyKey = "route") =>
     instance.submit({ projectId: "prj_route", conversationId: conversation.conversation_id, messageId: message.message_id, brief: content, projectRoot: root, idempotencyKey });
-  return { root, kernel, message, queue, submit };
+  const run = (runId: string): RunProjection => getRun(kernel, "prj_route", runId)!;
+  const events = (runId: string) => listEvents(kernel, "prj_route").filter(event => event.runId === runId);
+  const settled = (runId: string) => waitUntil(() => run(runId).state !== "prepared", `run ${runId} to leave prepared`);
+  const replies = () => conversations.messages(conversation.conversation_id).filter(item => item.role === "assistant");
+  return { root, kernel, message, starts, queue, submit, run, events, settled, replies };
 }
 
 describe("resolveMessageTarget", () => {
@@ -96,9 +113,22 @@ describe("resolveMessageTarget", () => {
     expect(calls).toHaveLength(0);
     expect(audit.named("auto_route_selected")).toHaveLength(2);
     expect(audit.named("auto_route_selected")[0].payload).toMatchObject({ source: "explicit", target_kind: "business", target_slug: "web-studio", trace_id: "run_trace", message_id: "msg_route" });
-  });
 
-  test("(b) a decision with primary_business prepares a business Run with capability business.dispatch", async () => {
+    // The explicit prefix still resolves at submit time: the receipt carries target and route.
+    const fx = fixture();
+    const queue = fx.queue(router, auditSink());
+    const receipt = await fx.submit(queue, "use business web-studio: landing page", "explicit");
+    queue.shutdown();
+    expect(receipt.queued).toBe(true);
+    expect(receipt.capability).toBe("business.dispatch");
+    expect(receipt.run.target).toEqual({ kind: "business", slug: "web-studio" });
+    expect(receipt.run.route).toMatchObject({ source: "explicit" });
+    expect(calls).toHaveLength(0);
+    const prepared = fx.events(receipt.run.runId).find(event => event.type === "run.prepared")!;
+    expect(prepared.payload).toMatchObject({ target: { kind: "business", slug: "web-studio" }, route: { source: "explicit" } });
+  }, KERNEL_BUDGET_MS);
+
+  test("(b) a decision with primary_business resolves a business Run: the receipt is immediate, the queue routes and starts the business child", async () => {
     const audit = auditSink();
     const { router, calls } = fakeRouter(decision({ primary_business: "web-studio", mandatory_squads: ["landing-lab"] }));
     const resolution = await resolveMessageTarget("Produza a landing page da clínica", deps(router, audit));
@@ -111,24 +141,42 @@ describe("resolveMessageTarget", () => {
     const fx = fixture();
     const queue = fx.queue(router, auditSink());
     const receipt = await fx.submit(queue);
-    queue.shutdown();
+    // The receipt never waits for the router: the Run is prepared on the cascade bottom, with no route yet.
     expect(receipt.queued).toBe(true);
-    expect(receipt.capability).toBe("business.dispatch");
-    expect(receipt.run.target).toEqual({ kind: "business", slug: "web-studio" });
-    expect(receipt.run.route).toEqual({ source: "router", rationale: "OBJECT=landing page, THEME=health." });
+    expect(receipt.run.state).toBe("prepared");
+    expect(receipt.run.target).toEqual(AGENT_X);
+    expect(receipt.run.route).toBeUndefined();
+    expect(receipt.capability).toBe("agent-x.gauntlet.light");
     expect(receipt.message.run_id).toBe(receipt.run.runId);
-    const prepared = listEvents(fx.kernel, "prj_route").find(event => event.runId === receipt.run.runId && event.type === "run.prepared")!;
-    expect(prepared.payload).toMatchObject({ target: { kind: "business", slug: "web-studio" }, route: { source: "router" } });
+    expect(calls).toHaveLength(1);
+    const prepared = fx.events(receipt.run.runId).find(event => event.type === "run.prepared")!;
+    expect(prepared.payload).toMatchObject({ target: AGENT_X });
+    expect(prepared.payload).not.toHaveProperty("route");
     expect(prepared.traceId).toBe(receipt.run.runId);
+    // The queue routes as the first step of the item and re-targets the Run before the child starts.
+    await waitUntil(() => fx.starts.length === 1, "the business child to start");
+    queue.shutdown();
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toMatchObject({ brief: "Produza a landing page da clínica", projectId: "prj_route", projectRoot: fx.root, traceId: receipt.run.runId });
+    expect(fx.starts[0].target).toEqual({ kind: "business", slug: "web-studio" });
+    const run = fx.run(receipt.run.runId);
+    expect(run.target).toEqual({ kind: "business", slug: "web-studio" });
+    expect(run.route).toEqual({ source: "router", rationale: "OBJECT=landing page, THEME=health." });
+    const types = fx.events(receipt.run.runId).map(event => event.type);
+    expect(types.slice(0, 3)).toEqual(["run.prepared", "x_run_route_resolved", "glance.child_started"]);
+    const resolved = fx.events(receipt.run.runId).find(event => event.type === "x_run_route_resolved")!;
+    expect(resolved.payload).toEqual({ target: { kind: "business", slug: "web-studio" }, route: { source: "router", rationale: "OBJECT=landing page, THEME=health." } });
+    expect(resolved.traceId).toBe(receipt.run.runId);
     // The stored Run keeps its target: a retry with the same key never routes again.
     const again = fx.queue(fakeRouter(decision({ primary_business: "other" })).router, auditSink());
     const retry = await fx.submit(again);
     again.shutdown();
     expect(retry.run.runId).toBe(receipt.run.runId);
     expect(retry.run.target).toEqual({ kind: "business", slug: "web-studio" });
+    expect(retry.capability).toBe("business.dispatch");
   }, KERNEL_BUDGET_MS);
 
-  test("(c) a squad-only decision prepares a squad Run with squad.execute; several mandatory squads fall to agent-x", async () => {
+  test("(c) a squad-only decision resolves a squad Run with squad.execute; several mandatory squads fall to agent-x", async () => {
     const audit = auditSink();
     const { router } = fakeRouter(decision({ mandatory_squads: ["brandcraft"], rationale: "OBJECT=branding PDF, THEME=none." }));
     const resolution = await resolveMessageTarget("Produza o PDF da marca", deps(router, audit));
@@ -139,23 +187,29 @@ describe("resolveMessageTarget", () => {
     const fx = fixture();
     const queue = fx.queue(router, auditSink());
     const receipt = await fx.submit(queue, "Produza o PDF da marca", "squad");
+    expect(receipt.run.route).toBeUndefined();
+    await waitUntil(() => fx.starts.length === 1, "the squad child to start");
     queue.shutdown();
-    expect(receipt.capability).toBe("squad.dispatch");
-    expect(receipt.run.target).toEqual({ kind: "squad", slug: "brandcraft", capabilityId: "squad.execute" });
-    expect(receipt.run.route.source).toBe("router");
+    expect(fx.starts[0].target).toEqual({ kind: "squad", slug: "brandcraft", capabilityId: "squad.execute" });
+    const run = fx.run(receipt.run.runId);
+    expect(run.target).toEqual({ kind: "squad", slug: "brandcraft", capabilityId: "squad.execute" });
+    expect(run.route!.source).toBe("router");
 
     const several = await resolveMessageTarget("Produza o PDF da marca", deps(fakeRouter(decision({ mandatory_squads: ["brandcraft", "doc-factory"] })).router, auditSink()));
     expect(several.target).toEqual(AGENT_X);
     expect(several.route.source).toBe("fallback");
+    expect(several.refused).toBeUndefined();
     expect(several.route.rationale).toContain("brandcraft, doc-factory");
   }, KERNEL_BUDGET_MS);
 
-  test("(d) no_match keeps the Message on agent-x, recorded as fallback with the router's reason", async () => {
+  test("(d) no_match refuses the Run instead of running agent-x: the resolution names no dispatchable target and carries the router's answer", async () => {
     const audit = auditSink();
-    const resolution = await resolveMessageTarget("Faça algo que nada cobre", deps(fakeRouter(decision({ kind: "no_match", rationale: "OBJECT=unknown. Nothing delivers it." })).router, audit));
+    const resolution = await resolveMessageTarget("Quais empresas eu tenho?", deps(fakeRouter(decision({ kind: "no_match", rationale: "OBJECT=unknown. Nothing delivers it." })).router, audit));
     expect(resolution.target).toEqual(AGENT_X);
     expect(resolution.route).toEqual({ source: "fallback", rationale: "router no_match: OBJECT=unknown. Nothing delivers it." });
-    expect(audit.named("auto_route_selected")[0].payload).toMatchObject({ source: "fallback", plan_source: "no-match", target_kind: "agent-x", decision_kind: "no_match" });
+    expect(resolution.refused).toBe("no_dispatchable_target");
+    expect(resolution.answer).toBe("OBJECT=unknown. Nothing delivers it.");
+    expect(audit.named("auto_route_selected")[0].payload).toMatchObject({ source: "fallback", plan_source: "no-match", target_kind: "agent-x", decision_kind: "no_match", refused: "no_dispatchable_target" });
   });
 
   test("(e) a router that throws or hangs falls to agent-x and agentic_route_failed carries the Message's trace", async () => {
@@ -180,6 +234,7 @@ describe("resolveMessageTarget", () => {
     const recorded = auditSink();
     const transport = await resolveMessageTarget("Produza", deps(fakeRouter(decision({ ok: false, kind: "no_match", error: "router run failed" })).router, recorded));
     expect(transport.target).toEqual(AGENT_X);
+    expect(transport.refused).toBeUndefined();
     expect(transport.route.rationale).toContain("router run failed");
     expect(recorded.events.map(item => item.event)).toEqual(["auto_route_selected"]);
   });
@@ -204,13 +259,20 @@ describe("resolveMessageTarget", () => {
     expect(refused.refused).toBe("router_failed");
     expect(refused.route.rationale).toContain("routing.on_router_failure=fail");
 
+    // The refusal happens in the queue, after the immediate receipt: the Run rolls back without a child and without an answer.
     const fx = fixture();
-    const receipt = await fx.submit(fx.queue(fakeRouter(new Error("digest exploded")).router, auditSink(), { mode: "agentic", onRouterFailure: "fail" }), "Produza", "refused");
-    expect(receipt.queued).toBe(false);
-    expect(receipt.run.state).toBe("rolled_back");
-    const run = getRun(fx.kernel, "prj_route", receipt.run.runId)!;
+    const queue = fx.queue(fakeRouter(new Error("digest exploded")).router, auditSink(), { mode: "agentic", onRouterFailure: "fail" });
+    const receipt = await fx.submit(queue, "Produza", "refused");
+    expect(receipt.queued).toBe(true);
+    expect(receipt.run.state).toBe("prepared");
+    await fx.settled(receipt.run.runId);
+    queue.shutdown();
+    const run = fx.run(receipt.run.runId);
+    expect(run.state).toBe("rolled_back");
     expect(run.route).toMatchObject({ source: "fallback" });
-    const transition = listEvents(fx.kernel, "prj_route").find(event => event.runId === run.runId && event.type === "run.transitioned")!;
+    expect(fx.starts).toHaveLength(0);
+    expect(fx.replies()).toHaveLength(0);
+    const transition = fx.events(run.runId).find(event => event.type === "run.transitioned")!;
     expect(transition.payload).toMatchObject({ to: "rolled_back", reason: "router_failed" });
   }, KERNEL_BUDGET_MS);
 
@@ -225,16 +287,117 @@ describe("resolveMessageTarget", () => {
     expect(audit.named("auto_route_selected")[0].payload).toMatchObject({ plan_source: "ambiguous-autopicked", decision_kind: "ambiguous" });
   });
 
-  test("concurrent submits of the same Message route once and share the Run", async () => {
+  test("concurrent submits of the same Message share the Run, and the queue routes it once", async () => {
     const fx = fixture();
     const { router, calls } = fakeRouter(decision({ primary_business: "web-studio" }));
     const queue = fx.queue(router, auditSink());
     const [first, second] = await Promise.all([fx.submit(queue), fx.submit(queue)]);
+    expect(second.run.runId).toBe(first.run.runId);
+    expect(fx.events(first.run.runId).filter(event => event.type === "run.prepared")).toHaveLength(1);
+    await waitUntil(() => fx.starts.length === 1, "the child to start");
     queue.shutdown();
     expect(calls).toHaveLength(1);
-    expect(second.run.runId).toBe(first.run.runId);
-    expect(listEvents(fx.kernel, "prj_route").filter(event => event.type === "run.prepared")).toHaveLength(1);
+    expect(fx.events(first.run.runId).filter(event => event.type === "x_run_route_resolved")).toHaveLength(1);
   }, KERNEL_BUDGET_MS);
+});
+
+describe("the receipt and the queue", () => {
+  test("the receipt never waits for the router: a router that answers after 2 s resolves in the queue, and the Run shows the target once it did", async () => {
+    const fx = fixture();
+    const calls: MessageRouteInput[] = [];
+    let answeredAt = 0;
+    const slow: MessageRouter = { async route(input) { calls.push(input); await Bun.sleep(2_000); answeredAt = Date.now(); return decision({ primary_business: "web-studio" }); } };
+    const queue = fx.queue(slow, auditSink());
+    const started = Date.now();
+    const receipt = await fx.submit(queue);
+    const receivedAt = Date.now();
+    // Two fsync-bound writes (the Run, the link) are the whole cost of the receipt: milliseconds
+    // here, more on the slowest CI runner (see helpers/test-budgets.ts), never the router's 2 s.
+    expect(receivedAt - started).toBeLessThan(1_000);
+    expect(calls).toHaveLength(0);
+    expect(receipt.queued).toBe(true);
+    expect(receipt.run.state).toBe("prepared");
+    expect(receipt.run.target).toEqual(AGENT_X);
+    expect(receipt.run.route).toBeUndefined();
+    expect(fx.run(receipt.run.runId).route).toBeUndefined();
+    await waitUntil(() => calls.length === 1, "the queue to ask the router");
+    expect(fx.run(receipt.run.runId)).toMatchObject({ state: "prepared", target: AGENT_X });
+    await waitUntil(() => fx.run(receipt.run.runId).route !== undefined, "the route to resolve");
+    expect(answeredAt).toBeGreaterThan(receivedAt);
+    expect(fx.run(receipt.run.runId).target).toEqual({ kind: "business", slug: "web-studio" });
+    expect(fx.run(receipt.run.runId).route).toEqual({ source: "router", rationale: "OBJECT=landing page, THEME=health." });
+    await waitUntil(() => fx.starts.length === 1, "the child to start");
+    queue.shutdown();
+    expect(fx.starts[0].target).toEqual({ kind: "business", slug: "web-studio" });
+  }, KERNEL_BUDGET_MS);
+
+  test("a no_match Message never starts a child: the Run rolls back as no_dispatchable_target and the chat gets the router's answer", async () => {
+    const fx = fixture();
+    const audit = auditSink();
+    const rationale = "OBJECT=one-line listing of the user's own businesses for marketing and ads (a registry lookup). Nothing in the catalog delivers it.";
+    const queue = fx.queue(fakeRouter(decision({ kind: "no_match", rationale })).router, audit);
+    const receipt = await fx.submit(queue, "Quais empresas eu tenho para marketing e ads? Responda em uma linha.", "question");
+    expect(receipt.queued).toBe(true);
+    await fx.settled(receipt.run.runId);
+    queue.shutdown();
+    expect(fx.starts).toHaveLength(0);
+    const run = fx.run(receipt.run.runId);
+    expect(run.state).toBe("rolled_back");
+    expect(run.target).toEqual(AGENT_X);
+    expect(run.route).toEqual({ source: "fallback", rationale: `router no_match: ${rationale}` });
+    const types = fx.events(run.runId).map(event => event.type);
+    expect(types).toEqual(["run.prepared", "x_run_route_resolved", "run.transitioned"]);
+    const transition = fx.events(run.runId).find(event => event.type === "run.transitioned")!;
+    expect(transition.payload).toMatchObject({ from: "prepared", to: "rolled_back", reason: "no_dispatchable_target" });
+    const replies = fx.replies();
+    expect(replies).toHaveLength(1);
+    expect(replies[0].run_id).toBe(run.runId);
+    expect(replies[0].content).toContain(rationale);
+    expect(replies[0].content).toContain("use business <slug>:");
+    expect(replies[0].sequence).toBeGreaterThan(fx.message.sequence);
+    expect(audit.named("auto_route_selected")[0].payload).toMatchObject({ trace_id: run.runId, message_id: fx.message.message_id, decision_kind: "no_match", refused: "no_dispatchable_target" });
+    // A retry with the same key finds the settled Run and never routes again.
+    const again = fx.queue(fakeRouter(decision({ primary_business: "web-studio" })).router, auditSink());
+    const retry = await fx.submit(again, "Quais empresas eu tenho para marketing e ads? Responda em uma linha.", "question");
+    again.shutdown();
+    expect(retry.queued).toBe(false);
+    expect(retry.run.state).toBe("rolled_back");
+    expect(fx.replies()).toHaveLength(1);
+  }, KERNEL_BUDGET_MS);
+
+  test("a cancel while the router is deciding aborts the routing, rolls the Run back and starts no child", async () => {
+    const fx = fixture();
+    const audit = auditSink();
+    // The router ignores the abort and never settles: the queue must not wait for it.
+    const { router, calls } = fakeRouter("hang");
+    const queue = fx.queue(router, audit);
+    const receipt = await fx.submit(queue);
+    await waitUntil(() => calls.length === 1, "the queue to ask the router");
+    expect(calls[0].signal).toBeInstanceOf(AbortSignal);
+    expect(calls[0].signal!.aborted).toBe(false);
+    expect(queue.cancel("prj_route", receipt.run.runId)).toEqual({ accepted: true, state: "prepared" });
+    expect(calls[0].signal!.aborted).toBe(true);
+    await fx.settled(receipt.run.runId);
+    queue.shutdown();
+    const run = fx.run(receipt.run.runId);
+    expect(run.state).toBe("rolled_back");
+    expect(run.route).toBeUndefined();
+    const transition = fx.events(run.runId).find(event => event.type === "run.transitioned")!;
+    expect(transition.payload).toMatchObject({ from: "prepared", to: "rolled_back", reason: "cancelled_before_execution" });
+    expect(fx.events(run.runId).map(event => event.type)).toEqual(["run.prepared", "run.transitioned"]);
+    expect(fx.starts).toHaveLength(0);
+    expect(fx.replies()).toHaveLength(0);
+    // Nothing was selected, so nothing was audited as a selection or a failure.
+    expect(audit.events).toHaveLength(0);
+  }, KERNEL_BUDGET_MS);
+
+  test("the Worker-backed router refuses a Message whose signal is already aborted, without starting a Worker", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const router = createAgenticMessageRouter({ runtime: "claude-code" });
+    await expect(router.route({ brief: "Produza", projectId: "prj_route", projectRoot: "/tmp/prj_route", traceId: "run_trace", signal: controller.signal }))
+      .rejects.toThrow("message route cancelled");
+  });
 });
 
 describe("Glance server", () => {
@@ -263,10 +426,10 @@ describe("Glance server", () => {
       body: JSON.stringify({ project_id: project.project_id, role: "user", content: "Produza a landing page da clínica" }) });
     expect(response.status).toBe(202);
     const receipt = await response.json() as any;
-    expect(receipt.capability).toBe("business.dispatch");
-    expect(receipt.run.target).toEqual({ kind: "business", slug: "web-studio" });
-    expect(receipt.run.route).toEqual({ source: "router", rationale: "OBJECT=landing page, THEME=health." });
-    expect(calls[0]).toMatchObject({ brief: "Produza a landing page da clínica", projectId: project.project_id, projectRoot: root, traceId: receipt.run.runId });
+    // The 202 comes back before the router is asked; the projection gains target and route once the queue resolved them.
+    expect(receipt.run.state).toBe("prepared");
+    expect(receipt.run.target).toEqual(AGENT_X);
+    expect(receipt.run.route).toBeUndefined();
     const deadline = Date.now() + 15_000;
     let run: any;
     for (;;) {
@@ -275,8 +438,14 @@ describe("Glance server", () => {
       if (Date.now() > deadline) throw new Error(`run stayed ${run.state}`);
       await Bun.sleep(10);
     }
-    expect(run.route.source).toBe("router");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ brief: "Produza a landing page da clínica", projectId: project.project_id, projectRoot: root, traceId: receipt.run.runId });
+    expect(run.target).toEqual({ kind: "business", slug: "web-studio" });
+    expect(run.route).toEqual({ source: "router", rationale: "OBJECT=landing page, THEME=health." });
     expect(childState(stateRoot, receipt.run.runId).argv().argv.slice(0, 2)).toEqual(["--business", "web-studio"]);
+    const events = await fetch(`${base}/api/v1/projects/${project.project_id}/events`).then(r => r.json()) as any;
+    const types = events.events.filter((event: any) => event.runId === receipt.run.runId).map((event: any) => event.type);
+    expect(types.slice(0, 3)).toEqual(["run.prepared", "x_run_route_resolved", "glance.child_started"]);
     // The decision is in the project's audit with the Message's trace, where the cockpit reads.
     const today = new Date().toISOString().slice(0, 10);
     const audit = fs.readFileSync(path.join(root, ".nirvana", "logs", "harness", today, "audit.jsonl"), "utf8").split("\n").filter(Boolean).map(line => JSON.parse(line));

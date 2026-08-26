@@ -39,7 +39,7 @@ const REATTACH_POLL_MS = 200;
 
 /** Explicit target at the head of a Message: `use business <slug>:` or `use squad <slug>:`
  * (keyword case-insensitive, slug `[a-z0-9-]+`). Any other text names no target: agent-x here,
- * and `resolveMessageTarget` then asks the router before the Run is prepared. */
+ * and the queue asks the router (`resolveMessageTarget`) after the Run is prepared, before any child. */
 export function parseMessageTarget(content: string): TargetRef {
   const match = content.match(/^\s*use\s+(business|squad)\s+([a-z0-9-]+)\s*:/i);
   if (!match) return AGENT_X_TARGET;
@@ -53,7 +53,11 @@ export function canaryCapabilityFor(target: TargetRef): CanaryCapability {
 
 // ── Message target: the maestro's cascade (explicit → business → squad → agent-x) from a Message ──
 
-export interface MessageRouteInput { brief: string; projectId: string; projectRoot: string; traceId: string }
+export interface MessageRouteInput {
+  brief: string; projectId: string; projectRoot: string; traceId: string;
+  /** Aborted when the Message is cancelled while the router is deciding; a Worker-backed router ends its Worker. */
+  signal?: AbortSignal;
+}
 /** The agentic router as the queue sees it: `agenticRoute` composed by the server
  * (`createAgenticMessageRouter`), a fake in tests. Nothing else ranks a Message. */
 export interface MessageRouter { route(input: MessageRouteInput): Promise<AgenticRouteDecision> }
@@ -74,12 +78,18 @@ export interface MessageRoutingDeps extends Omit<MessageRoutingOptions, "setting
   projectRoot: string;
   traceId: string;
   messageId?: string;
+  signal?: AbortSignal;
 }
 export interface MessageTargetResolution {
   target: TargetRef;
   route: RunRoute;
-  /** `routing.on_router_failure=fail` and the router failed: the Run is prepared and rolled back, never executed. */
-  refused?: "router_failed";
+  /** The Run is rolled back, never executed: `router_failed` when the router failed under
+   * `routing.on_router_failure=fail`; `no_dispatchable_target` when the router answered `no_match`. */
+  refused?: "router_failed" | "no_dispatchable_target";
+  /** With `no_dispatchable_target`: the router's rationale, the answer the chat shows for the Message. */
+  answer?: string;
+  /** The signal aborted while the router was deciding: nothing was selected, nothing was audited. */
+  cancelled?: true;
 }
 
 /** Ceiling of one routing call from a Message. No settings key configures the router's timeout
@@ -99,20 +109,29 @@ function defaultRouteAudit(deps: Pick<MessageRoutingDeps, "projectId" | "project
   };
 }
 
-async function routeWithin(router: MessageRouter, input: MessageRouteInput, timeoutMs: number): Promise<{ decision?: AgenticRouteDecision; error?: string; durationMs: number }> {
+async function routeWithin(router: MessageRouter, input: MessageRouteInput, timeoutMs: number): Promise<{ decision?: AgenticRouteDecision; error?: string; cancelled?: true; durationMs: number }> {
   const started = Date.now();
+  if (input.signal?.aborted) return { cancelled: true, durationMs: 0 };
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`router timed out after ${timeoutMs} ms`)), timeoutMs); });
-  try { return { decision: await Promise.race([Promise.resolve().then(() => router.route(input)), timeout]), durationMs: Date.now() - started }; }
-  catch (error) { return { error: error instanceof Error ? error.message : String(error), durationMs: Date.now() - started }; }
-  finally { clearTimeout(timer); }
+  // The abort wins the race even against a router that ignores its signal.
+  let onAbort = () => {};
+  const aborted = new Promise<never>((_, reject) => { onAbort = () => reject(new Error("routing cancelled")); input.signal?.addEventListener("abort", onAbort, { once: true }); });
+  try { return { decision: await Promise.race([Promise.resolve().then(() => router.route(input)), timeout, aborted]), durationMs: Date.now() - started }; }
+  catch (error) {
+    if (input.signal?.aborted) return { cancelled: true, durationMs: Date.now() - started };
+    return { error: error instanceof Error ? error.message : String(error), durationMs: Date.now() - started };
+  }
+  finally { clearTimeout(timer); input.signal?.removeEventListener("abort", onAbort); }
 }
 
 /** The target of a Message, by the same cascade the maestro applies: an explicit prefix wins;
  * otherwise the router decides (business, then exactly one squad) through `resolveDispatchPlan`,
- * the mapping the dispatch uses; agent-x is the bottom (no_match, several squads, router failure,
- * timeout, `routing.mode=fast`, no router). Every resolution is one `auto_route_selected` with the
- * Message's trace; a router that throws or times out is one `agentic_route_failed` as well. */
+ * the mapping the dispatch uses; agent-x is the bottom (several squads, router failure, timeout,
+ * `routing.mode=fast`, no router). A `no_match` is refused instead: the maestro runs agent-x with
+ * the gap named, the chat answers with the router's rationale, and no Gauntlet opens for a
+ * question. Every resolution is one `auto_route_selected` with the Message's trace; a router that
+ * throws or times out is one `agentic_route_failed` as well; a cancelled resolution audits nothing. */
 export async function resolveMessageTarget(content: string, deps: MessageRoutingDeps): Promise<MessageTargetResolution> {
   const audit = deps.audit ?? defaultRouteAudit(deps);
   const record = (resolution: MessageTargetResolution, plan?: DispatchPlan, decision?: AgenticRouteDecision): MessageTargetResolution => {
@@ -136,7 +155,9 @@ export async function resolveMessageTarget(content: string, deps: MessageRouting
   if (!deps.router) return record(fallback("no router configured on this server; the Message stays on agent-x"));
 
   const timeoutMs = deps.timeoutMs ?? MESSAGE_ROUTE_TIMEOUT_MS;
-  const outcome = await routeWithin(deps.router, { brief: content, projectId: deps.projectId, projectRoot: deps.projectRoot, traceId: deps.traceId }, timeoutMs);
+  const outcome = await routeWithin(deps.router, { brief: content, projectId: deps.projectId, projectRoot: deps.projectRoot, traceId: deps.traceId,
+    ...(deps.signal ? { signal: deps.signal } : {}) }, timeoutMs);
+  if (outcome.cancelled) return { ...fallback("the Message was cancelled while the router was deciding"), cancelled: true };
   // A transport failure the router returned is already its own `agentic_route_failed`; a throw or a timeout is not.
   if (!outcome.decision) audit("agentic_route_failed", { trace_id: deps.traceId, message_id: deps.messageId ?? null, error: outcome.error, duration_ms: outcome.durationMs });
   if (!outcome.decision || !outcome.decision.ok) {
@@ -152,7 +173,18 @@ export async function resolveMessageTarget(content: string, deps: MessageRouting
   if (step?.kind === "business" && step.slug) return record({ target: { kind: "business", slug: step.slug }, route: { source: "router", rationale: step.reason } }, plan, decision);
   if (step?.kind === "squad" && squads.length === 1) return record({ target: { kind: "squad", slug: squads[0], capabilityId: "squad.execute" }, route: { source: "router", rationale: step.reason } }, plan, decision);
   if (step?.kind === "squad") return record(fallback(`the router named ${squads.length} squads (${squads.join(", ")}); one Glance Run executes one target, so the Message stays on agent-x`), plan, decision);
+  if (decision.kind === "no_match") return record({ ...fallback(step?.reason ?? "router no_match"), refused: "no_dispatchable_target", answer: decision.rationale }, plan, decision);
   return record(fallback(step?.reason ?? plan.error ?? "the router named no dispatchable target"), plan, decision);
+}
+
+/** The chat's answer to a Message the router could not place (`no_match`): the router's own
+ * rationale, then how to ask for work or name a target. PT-BR, as every string the Glance shows. */
+function noMatchAnswer(rationale: string): string {
+  return [
+    "Nenhuma empresa ou squad da sua biblioteca entrega este pedido, e o Glance não abre um Gauntlet para respondê-lo.",
+    rationale ? `Razão do roteador: ${rationale}` : "",
+    "Para pedir um trabalho, descreva o artefato que quer receber. Para nomear o alvo, comece a Message com `use business <slug>:` ou `use squad <slug>:`.",
+  ].filter(Boolean).join("\n\n");
 }
 
 function pidAlive(pid: number): boolean {
@@ -179,8 +211,10 @@ export class AgentXCanaryQueue {
     private readonly adapter?: GlanceAgentXCanaryAdapter, private readonly runner?: GlanceExecutionRunner,
     private readonly routing: MessageRoutingOptions = {}) {}
 
-  /** Routes the Message (unless a Run for this key exists), prepares the Run and queues it. The same
-   * Message submitted twice while its routing is in flight shares one resolution and one Run. */
+  /** Prepares the Run for the Message (unless one exists for this key) and queues it: the receipt
+   * never waits for the router. An explicit prefix is resolved here, without the router; any other
+   * Message is prepared on agent-x with no route, and the queue routes it as the first step of its
+   * item. The same Message submitted twice while its preparation is in flight shares one Run. */
   submit(input: { projectId: string; conversationId: string; messageId: string; brief: string; projectRoot: string; idempotencyKey: string }): Promise<CanaryReceipt> {
     const runId = `run_${createHash("sha256").update(`${input.projectId}:${input.idempotencyKey}`).digest("hex").slice(0, 24)}`;
     const inflight = this.resolving.get(runId);
@@ -193,33 +227,54 @@ export class AgentXCanaryQueue {
   private async prepare(input: { projectId: string; conversationId: string; messageId: string; brief: string; projectRoot: string; idempotencyKey: string }, runId: string): Promise<CanaryReceipt> {
     const traceId = runId;
     // A Run already prepared for this key keeps its target: one Message is routed once.
-    const existing = getRun(this.kernel, input.projectId, runId);
-    const resolution = existing ? null : await resolveMessageTarget(input.brief, {
-      router: this.routing.router, timeoutMs: this.routing.timeoutMs, audit: this.routing.audit,
-      settings: (this.routing.settingsFor ?? routingSettingsFor)(input.projectRoot),
-      projectId: input.projectId, projectRoot: input.projectRoot, traceId, messageId: input.messageId });
-    const target = existing?.target ?? resolution!.target;
-    const capability = canaryCapabilityFor(target);
-    let run = createRun(this.kernel, { projectId: input.projectId, runId, traceId, conversationId: input.conversationId,
-      planId: `plan_${runId}`, target, route: existing?.route ?? resolution?.route, policySnapshotRef: CANARY_POLICY,
-      actor: ACTOR, correlationId: `cor_${runId}`, idempotencyKey: `glance-canary:${input.idempotencyKey}` });
+    let run = getRun(this.kernel, input.projectId, runId);
+    if (!run) {
+      const explicit = parseMessageTarget(input.brief).kind === "agent-x" ? null
+        : await resolveMessageTarget(input.brief, this.routingDeps(input, traceId, input.messageId));
+      run = createRun(this.kernel, { projectId: input.projectId, runId, traceId, conversationId: input.conversationId,
+        planId: `plan_${runId}`, target: explicit?.target ?? AGENT_X_TARGET, route: explicit?.route, policySnapshotRef: CANARY_POLICY,
+        actor: ACTOR, correlationId: `cor_${runId}`, idempotencyKey: `glance-canary:${input.idempotencyKey}` });
+    }
+    // The capability of the target as the receipt sees it; a Run without a route is re-targeted by the queue.
+    const capability = canaryCapabilityFor(run.target);
     const message = this.conversations.linkRun(input.messageId, input.projectId, runId);
     if (run.state !== "prepared" || this.active?.runId === runId || this.pending.some(item => item.runId === runId)) {
       return { run, message, queued: run.state === "prepared", capability };
-    }
-    if (resolution?.refused) {
-      run = transitionRun(this.kernel, { projectId: input.projectId, runId, to: "rolled_back", actor: ACTOR,
-        correlationId: `cor_${runId}`, idempotencyKey: `glance-canary:${runId}:router-failed`, payload: { reason: resolution.refused } });
-      return { run, message, queued: false, capability };
     }
     if (!this.executionAvailable()) {
       run = transitionRun(this.kernel, { projectId: input.projectId, runId, to: "rolled_back", actor: ACTOR,
         correlationId: `cor_${runId}`, idempotencyKey: `glance-canary:${runId}:capability-missing`, payload: { reason: "capability_unavailable", capability } });
       return { run, message, queued: false, capability };
     }
-    this.pending.push(this.item({ projectId: input.projectId, runId, traceId, brief: input.brief, projectRoot: input.projectRoot, target, mode: "start" }));
+    this.pending.push(this.item({ projectId: input.projectId, runId, traceId, brief: input.brief, projectRoot: input.projectRoot, target: run.target, mode: "start" }));
     this.schedule();
     return { run, message, queued: true, capability };
+  }
+
+  private routingDeps(scope: { projectId: string; projectRoot: string }, traceId: string, messageId: string | undefined, signal?: AbortSignal): MessageRoutingDeps {
+    return { router: this.routing.router, timeoutMs: this.routing.timeoutMs, audit: this.routing.audit,
+      settings: (this.routing.settingsFor ?? routingSettingsFor)(scope.projectRoot),
+      projectId: scope.projectId, projectRoot: scope.projectRoot, traceId, messageId, signal };
+  }
+
+  /** First step of a queued Message the router has not placed: the decision is recorded on the Run
+   * as `x_run_route_resolved` (the projection shows `target` and `route` from here on). False when
+   * there is nothing to execute: cancelled while the router was deciding, refused under
+   * `routing.on_router_failure=fail`, or `no_match`, which answers the chat instead of running agent-x. */
+  private async resolveTarget(item: QueueItem): Promise<boolean> {
+    const message = this.conversations.messageForRun(item.projectId, item.runId);
+    const resolution = await resolveMessageTarget(item.brief, this.routingDeps(item, item.traceId, message?.message_id, item.controller.signal));
+    if (resolution.cancelled || item.controller.signal.aborted) { this.settleCancelled(item); return false; }
+    appendEvent(this.kernel, { projectId: item.projectId, runId: item.runId, traceId: item.traceId, type: "x_run_route_resolved", actor: ACTOR,
+      correlationId: `cor_${item.runId}`, idempotencyKey: `x_run_route_resolved:${item.runId}`, payload: { target: resolution.target, route: resolution.route } });
+    item.target = resolution.target;
+    if (!resolution.refused) return true;
+    this.transition(item, "rolled_back", resolution.refused.replace(/_/g, "-"), { reason: resolution.refused });
+    if (resolution.refused === "no_dispatchable_target" && message) {
+      this.conversations.append({ conversationId: message.conversation_id, projectId: item.projectId, role: "assistant",
+        content: noMatchAnswer(resolution.answer || resolution.route.rationale), runId: item.runId });
+    }
+    return false;
   }
 
   recover(projectId: string, projectRoot: string): CanaryRecoveryResult {
@@ -314,6 +369,9 @@ export class AgentXCanaryQueue {
     }
     this.active = item;
     try {
+      // A Run prepared without a route is a Message the router has not placed yet: it is routed
+      // here, before any child, and a Run with nothing to execute ends here as well.
+      if (item.mode === "start" && !run.route && !(await this.resolveTarget(item))) return;
       if (this.runner) await (item.mode === "reattach" ? this.reattach(item) : this.runChild(item));
       else this.runInProcess(item);
     } catch { /* the kernel already holds an honest terminal state */ }
