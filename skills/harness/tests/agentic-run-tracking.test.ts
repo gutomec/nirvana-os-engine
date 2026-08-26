@@ -30,6 +30,7 @@ process.env.NIRVANA_NO_DESKTOP_NOTIFY = "1";
 import { sweep, type RecoveryResult, type SalvageVerdict } from "../scripts/supervisor.ts";
 import { openLedger, openAgenticRun, openRun, getRun, markState, findNonTerminal, type LedgerHandle, type RunRow } from "../lib/run-ledger.ts";
 import { SCOPE_GUARD_PT_BR } from "../../_shared/lib/scope-guard.ts";
+import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 let dbSeq = 0;
 function freshLedger(): LedgerHandle {
@@ -150,7 +151,7 @@ describe("brief-squad opens the ledger run by itself", () => {
     // The agent is told how to close it, in the output it already reads.
     expect(r.stdout).toContain("nrv run-track close");
     expect(r.stdout).toContain(row.run_id);
-  });
+  }, spawnBudgetMs(1));
 });
 
 // ── 2. the supervisor's agentic door ──────────────────────────────────────
@@ -300,7 +301,7 @@ describe("nrv run-track", () => {
     const closed = runTrack(["close", runId, "--state", "delivered"]);
     expect(closed.status).toBe(0);
     expect(getRun(h, runId)!.state).toBe("delivered");
-  });
+  }, spawnBudgetMs(2));
 
   test("a run the supervisor already escalated can still be closed truthfully", () => {
     // The realistic late finish: the sweep gave up at the lease, the human was
@@ -315,13 +316,13 @@ describe("nrv run-track", () => {
 
     expect(runTrack(["close", runId, "--state", "delivered"]).status).toBe(0);
     expect(getRun(h, runId)!.state).toBe("delivered");
-  });
+  }, spawnBudgetMs(1));
 
   test("closing an unknown run warns instead of failing the caller's work", () => {
     const r = runTrack(["close", "run-does-not-exist", "--state", "delivered"]);
     expect(r.status).toBe(0);
     expect(r.stderr).toContain("not found");
-  });
+  }, spawnBudgetMs(1));
 
   test("a failed close records why", () => {
     const outputs = path.join(TMP, "rt-outputs-2");
@@ -331,7 +332,7 @@ describe("nrv run-track", () => {
     const row = getRun(openLedger(ledger), runId)!;
     expect(row.state).toBe("failed");
     expect(row.last_error).toContain("cota");
-  });
+  }, spawnBudgetMs(2));
 });
 
 // ── 5. the lib door ───────────────────────────────────────────────────────

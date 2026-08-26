@@ -6,6 +6,7 @@ import { runBusinessPostGate, type BusinessPostGateDependencies } from "../lib/b
 import { runDelivery, type DeliveryArgs } from "../lib/delivery-pipeline.ts";
 import { loadHarnessConfig } from "../lib/harness-config.ts";
 import * as runLedger from "../lib/run-ledger.ts";
+import { KERNEL_BUDGET_MS } from "./helpers/test-budgets.ts";
 
 const roots: string[] = [];
 afterEach(() => { while (roots.length) fs.rmSync(roots.pop()!, { recursive: true, force: true }); });
@@ -102,7 +103,7 @@ describe("Business delivery parity E2E", () => {
     expect(boundary).toEqual(legacy);
     expect(boundary).toMatchObject({ terminal: "delivered", publicationCalls: 1,
       files: ["relatorio-final.html", "relatorio-final.pdf", "report.html"] });
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("keeps manifest failure terminal and never runs post-gate publication", () => {
     const legacy = runScenario("legacy-reference", 1);
@@ -110,5 +111,5 @@ describe("Business delivery parity E2E", () => {
     expect(boundary).toEqual(legacy);
     expect(boundary).toMatchObject({ terminal: "failed", publicationCalls: 0, files: ["report.html"] });
     expect((boundary.audit as AuditEntry[]).some(entry => entry.event === "delivered")).toBeFalse();
-  });
+  }, KERNEL_BUDGET_MS);
 });

@@ -11,13 +11,15 @@ import { projectMultiTargetRun } from "../lib/gauntlet/multi-target-projection.t
 import { getRun, listEvents, openKernel } from "../lib/run-kernel/store.ts";
 import { multiTargetRunId, validatePlanFile } from "../scripts/multi-target.ts";
 import { writeFakeDispatch } from "./helpers/fake-dispatch.ts";
+import { removeDir } from "./helpers/temp-dirs.ts";
+import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const REPO = path.resolve(import.meta.dir, "..", "..", "..");
 const SCRIPT = path.join(REPO, "skills", "harness", "scripts", "multi-target.ts");
 const ENGINE = { NIRVANA_MULTI_TARGET_ENGINE: "1" };
 
 const roots: string[] = [];
-afterEach(() => { for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true }); });
+afterEach(() => { for (const root of roots.splice(0)) removeDir(root); });
 
 const PLAN = {
   schemaVersion: "nirvana.multi-target-plan/v1alpha1",
@@ -137,7 +139,7 @@ describe("nrv multi-target plan", () => {
     const r2 = nrv(setup, ["plan", setup.planFile]);
     expect(r2.status).toBe(4);
     expect(r2.stderr).toContain("/policy/limits/maxCostUsd: reservation rejected");
-  });
+  }, spawnBudgetMs(3));
 
   test("compiles the manifest, policy and reservation, writes the workspace and executes nothing", () => {
     const setup = fixture();
@@ -162,7 +164,7 @@ describe("nrv multi-target plan", () => {
     expect(compiled).toHaveLength(1);
     expect(compiled[0]).toMatchObject({ trace_id: setup.projectId, project_id: setup.projectId, node_count: 5 });
     expect(compiled[0].waves).toEqual([["brief-main"], ["business-a", "business-b"], ["squad-c"], ["final-output"]]);
-  });
+  }, spawnBudgetMs(1));
 
   test("--project overrides the plan's id; without it the file name is the trace id", () => {
     const setup = fixture();
@@ -170,7 +172,7 @@ describe("nrv multi-target plan", () => {
     expect(fs.existsSync(path.join(setup.projectRoot, ".nirvana", "outputs", "proj-other", "manifest.json"))).toBeTrue();
     fs.writeFileSync(setup.planFile, JSON.stringify({ ...PLAN, projectId: "proj-declared" }));
     expect(nrv(setup, ["plan", setup.planFile]).stdout).toContain("Plano multi-target: proj-declared");
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("nrv multi-target run", () => {
@@ -185,7 +187,7 @@ describe("nrv multi-target run", () => {
     expect(spawns(setup)).toEqual([]);
     expect(fs.existsSync(setup.kernel)).toBeFalse();
     expect(fs.existsSync(setup.workspace)).toBeFalse();
-  });
+  }, spawnBudgetMs(2));
 
   test("executes the waves through the dispatch adapters, completes the Run, audits every node and is idempotent", () => {
     const setup = fixture();
@@ -269,7 +271,7 @@ describe("nrv multi-target run", () => {
     expect(human.stdout).toContain("plano delivered");
     expect(human.stdout).toContain("squad-c");
     expect(spawns(setup)).toHaveLength(4);
-  });
+  }, spawnBudgetMs(8));
 
   test("a node that exits 2 withholds the Run, blocks its consumers and the command exits 2", () => {
     const setup = fixture();
@@ -291,7 +293,7 @@ describe("nrv multi-target run", () => {
     expect(terminal).toMatchObject({ state: "withheld", kernel_state: "withheld", exit: 2 });
     expect(nrv(setup, ["run", setup.planFile], ENGINE).status).toBe(2);
     expect(spawns(setup)).toHaveLength(2);
-  });
+  }, spawnBudgetMs(4));
 
   test("a crash after the first execution wave resumes without re-spawning the completed nodes", () => {
     const setup = fixture();
@@ -325,7 +327,7 @@ describe("nrv multi-target run", () => {
     });
     const started = auditEvents(setup).filter((event) => event.event === "x_multi_target_run_started");
     expect(started.map((event) => event.resumed)).toEqual([false, true]);
-  });
+  }, spawnBudgetMs(7));
 
   test("a Run that exists for a different plan is refused with exit 4", () => {
     const setup = fixture();
@@ -335,7 +337,7 @@ describe("nrv multi-target run", () => {
     expect(r.status).toBe(4);
     expect(r.stderr).toContain("já existe com outro plano");
     expect(spawns(setup)).toHaveLength(4);
-  });
+  }, spawnBudgetMs(6));
 });
 
 describe("nrv multi-target status and usage", () => {
@@ -353,7 +355,7 @@ describe("nrv multi-target status and usage", () => {
     expect(noProject.status).toBe(4);
     expect(noProject.stderr).toContain("--project");
     expect(spawns(setup)).toHaveLength(4);
-  });
+  }, spawnBudgetMs(8));
 
   test("usage: no subcommand or an unknown one exits 4; help exits 0", () => {
     const setup = fixture();
@@ -361,5 +363,5 @@ describe("nrv multi-target status and usage", () => {
     expect(nrv(setup, ["bogus", setup.planFile]).status).toBe(4);
     expect(nrv(setup, ["plan"]).status).toBe(4);
     expect(nrv(setup, ["help"]).status).toBe(0);
-  });
+  }, spawnBudgetMs(4));
 });

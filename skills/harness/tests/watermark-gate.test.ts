@@ -14,6 +14,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
+import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const DOCTOR = path.join(import.meta.dir, "..", "scripts", "doctor-system.ts");
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-watermark-gate-"));
@@ -61,7 +62,7 @@ describe("watermark gate", () => {
     const line = watermarkLine(library({ clean: 3, author: true }).env);
     expect(line).toContain("✓");
     expect(line).toContain("clean");
-  });
+  }, spawnBudgetMs(1));
 
   test("THE INCIDENT: a marker on a pack-authoring machine FAILS", () => {
     // This is the case that shipped undetected. The author builds packs from this
@@ -74,7 +75,7 @@ describe("watermark gate", () => {
     // against the live library, erasing 59 attribution tags.
     expect(line).not.toContain("strip-base-watermarks");
     expect(line).toContain("never ~/squads");
-  });
+  }, spawnBudgetMs(1));
 
   test("the same marker on a buyer machine is a WARN, not a failure", () => {
     // A buyer's installed content is SUPPOSED to be watermarked. Failing there would
@@ -82,7 +83,7 @@ describe("watermark gate", () => {
     const line = watermarkLine(library({ marked: 2, author: false }).env);
     expect(line).toContain("⚠");
     expect(line).toContain("normal for installed paid content");
-  });
+  }, spawnBudgetMs(1));
 
   test("a 22-char string that is NOT alone on a line is not a marker", () => {
     // Prose and code mention such strings; only a line that is nothing but the tag
@@ -92,7 +93,7 @@ describe("watermark gate", () => {
     fs.mkdirSync(d, { recursive: true });
     fs.writeFileSync(path.join(d, "README.md"), "the id aBcDeFgHiJkLmNoPqRsTuV appears inline here.\n");
     expect(watermarkLine(lib.env)).toContain("✓");
-  });
+  }, spawnBudgetMs(1));
 
   test("no content library at all is not a failure", () => {
     const root = path.join(TMP, "empty-machine");
@@ -102,5 +103,5 @@ describe("watermark gate", () => {
       NIRVANA_PACKS_DIR: root, NIRVANA_SCOPE_QUIET: "1",
     } as Record<string, string>);
     expect(line).toContain("✓");
-  });
+  }, spawnBudgetMs(1));
 });

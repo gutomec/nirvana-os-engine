@@ -21,6 +21,7 @@ import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import { writeFakeCli } from "./helpers/fake-cli.ts";
 import { SCOPE_GUARD_PT_BR } from "../../_shared/lib/scope-guard.ts";
+import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const SKILLS = path.resolve(import.meta.dir, "..", "..");
 const REVISE = path.join(SKILLS, "harness", "scripts", "revise.ts");
@@ -221,7 +222,7 @@ describe("nrv revise — the outcome goes through the delivery pipeline", () => 
     const r = spawnSync(process.execPath, [REVISE], { encoding: "utf8" });
     expect(r.status).toBe(4);
     expect(r.stderr).toContain("Usage: nrv revise");
-  });
+  }, spawnBudgetMs(1));
 
   test("a FAILED revision still judges what is on disk instead of abandoning it", () => {
     // The runtime errors, but the artifacts exist. Old behavior: exit 1, nothing
@@ -231,7 +232,7 @@ describe("nrv revise — the outcome goes through the delivery pipeline", () => 
     expect(events(c)).toContain("revision_failed");  // the error is never swallowed
     expect(events(c)).toContain("x_runtime_errored_with_artifacts");
     expect(events(c)).toContain("delivered");
-  });
+  }, spawnBudgetMs(2));
 
   test("a FAILED revision whose artifacts fail the gate is WITHHELD, never delivered", () => {
     const c = runRevise({ "guia.md": FAILING_MD }, { runtimeFails: true });
@@ -239,12 +240,12 @@ describe("nrv revise — the outcome goes through the delivery pipeline", () => 
     expect(events(c)).toContain("x_runtime_errored_with_artifacts");
     expect(events(c)).toContain("x_delivery_withheld");
     expect(events(c)).not.toContain("delivered");
-  });
+  }, spawnBudgetMs(2));
 
   test("a FAILED revision with nothing on disk keeps the historical exit 1", () => {
     const c = runRevise({}, { runtimeFails: true });
     expect(c.status).toBe(1);
     expect(events(c)).toContain("revision_failed");
     expect(events(c)).not.toContain("delivered");
-  });
+  }, spawnBudgetMs(2));
 });
