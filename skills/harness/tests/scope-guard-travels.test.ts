@@ -51,8 +51,8 @@ describe("the gate", () => {
     expect(r.stdout).toContain("0 missing");
     expect(r.status).toBe(0);
     for (const surface of [
-      "employee prompt", "team step brief", "squad prompt", "agent-x prompt", "DISPATCH-INSTRUCTION.md", "revision brief",
-      "autonomous directive", "nrv revise", "fix prompt", "squad brief file", "Glance child", "agent-x persona",
+      "employee prompt", "team step brief", "squad prompt", "agent-x prompt", "judge-x prompt", "DISPATCH-INSTRUCTION.md", "revision brief",
+      "autonomous directive", "nrv revise", "fix prompt", "squad brief file", "Glance child", "agent-x persona", "judge-x persona",
       "DISPATCH-INSTRUCTION template", "SKILL.md", "04-multi-target.md",
     ]) expect(r.stdout).toContain(surface);
   });

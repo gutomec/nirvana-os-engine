@@ -282,7 +282,8 @@ export async function planRouteWithFallback(first: AgenticRouteDecision, opts: P
 
 const AGENTS_DIR_DEFAULT = path.resolve(path.join(import.meta.dir, "..", "..", "_shared", "agents"));
 
-function agentsDirCandidates(): string[] {
+/** Where the engine's personas live: the repository's `_shared/agents`, then the installed skills' one. Shared with judge-x. */
+export function agentsDirCandidates(): string[] {
   const SKILLS = process.env.NIRVANA_SKILLS_DIR
     || (fs.existsSync(path.join(os.homedir(), ".nirvana", "skills")) ? path.join(os.homedir(), ".nirvana", "skills") : path.join(os.homedir(), ".claude", "skills"));
   return [AGENTS_DIR_DEFAULT, path.join(SKILLS, "_shared", "agents")];

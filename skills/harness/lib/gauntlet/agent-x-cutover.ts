@@ -108,23 +108,44 @@ export function shouldRunSquadGauntlet(input: {
 }
 
 /** Share of each candidate's budget reserved for its independent evaluation when a real
- * evaluator (an installed squad or agent-x) judges the round; the offline heuristic costs nothing. */
+ * evaluator (an installed squad, judge-x or agent-x) judges the round; the offline heuristic costs nothing. */
 export const GAUNTLET_EVALUATION_SHARE = 0.25;
 
+/** Least an agentic evaluation is granted, whatever the share says. Measured 2026-08-26 on the
+ * Café Solar brief: one judgement by the evaluation brief costs USD 0.74 to 0.93 in three turns,
+ * and the agent-x evaluator of the first smoke died at USD 0.82 on its first turn under the USD
+ * 0.625 that 25% of `light`'s USD 2.50 slice allowed. USD 1.50 covers a judgement with room for a
+ * larger candidate; it is the judge's `--max-budget`. */
+export const GAUNTLET_EVALUATION_FLOOR_USD = 1.5;
+
+export interface GauntletRoundBudget {
+  /** The producer's `--max-budget` for one candidate: the slice minus the evaluation. */
+  candidateBudgetUsd: number;
+  /** The evaluator's `--max-budget` for one candidate: the share of the slice, never below the floor. */
+  evaluationBudgetUsd: number;
+  /** What `beginRound` books: one slice per candidate, within the plan ceiling. */
+  roundBudgetUsd: number;
+  /** True when the evaluation floor leaves the producer nothing: the Gauntlet must not start. */
+  insufficient: boolean;
+}
+
 /** Splits the plan budget evenly across rounds and candidates so every round stays affordable;
- * the caller's `maxBudgetUsd` only lowers the per-candidate share. With `evaluationShare` the
- * share of one candidate is split between its producer and its evaluation, so the round reserve
- * (`roundBudgetUsd`, what `beginRound` books) already carries the estimated evaluation cost and
- * the plan ceiling still holds. */
-export function gauntletRoundBudget(plan: GauntletPlan, maxBudgetUsd?: number, evaluationShare = 0): {
-  candidateBudgetUsd: number; evaluationBudgetUsd: number; roundBudgetUsd: number;
-} {
+ * the caller's `maxBudgetUsd` only lowers the per-candidate slice. With `evaluationShare` the
+ * slice of one candidate is split between its producer and its evaluation: the evaluation takes
+ * the share or the floor (`GAUNTLET_EVALUATION_FLOOR_USD`), whichever is larger, and the producer
+ * takes the rest. The round reserve (`roundBudgetUsd`, what `beginRound` books) is one slice per
+ * candidate, so it already carries the evaluation and the plan ceiling still holds. A slice that
+ * the floor consumes entirely is `insufficient`: the caller stops before any producer instead of
+ * running one with no budget. */
+export function gauntletRoundBudget(plan: GauntletPlan, maxBudgetUsd?: number, evaluationShare = 0): GauntletRoundBudget {
   if (evaluationShare < 0 || evaluationShare >= 1) throw new Error("gauntlet: evaluation share must be in [0, 1)");
   const share = plan.budget.maxCostUsd / (plan.candidateStrategy.count * plan.stop.maxRounds);
   const perCandidate = Math.min(maxBudgetUsd ?? share, share);
-  const evaluationBudgetUsd = perCandidate * evaluationShare;
-  return { candidateBudgetUsd: perCandidate - evaluationBudgetUsd, evaluationBudgetUsd,
-    roundBudgetUsd: Math.min(perCandidate * plan.candidateStrategy.count, plan.budget.maxCostUsd) };
+  const evaluationBudgetUsd = evaluationShare > 0 ? Math.max(perCandidate * evaluationShare, GAUNTLET_EVALUATION_FLOOR_USD) : 0;
+  const remainder = perCandidate - evaluationBudgetUsd;
+  return { candidateBudgetUsd: Math.max(remainder, 0), evaluationBudgetUsd,
+    roundBudgetUsd: Math.min(perCandidate * plan.candidateStrategy.count, plan.budget.maxCostUsd),
+    insufficient: evaluationShare > 0 && remainder <= 0 };
 }
 
 /** Deterministic section appended to the original brief when a candidate is revised. */
@@ -212,6 +233,33 @@ function defectsFor(scorecards: EvaluationScorecard[]): AgentXRevisionDefects {
     revisionRequests: scorecards.flatMap(scorecard => scorecard.revisionRequests),
     evaluationIds: scorecards.map(scorecard => scorecard.evaluationId),
   };
+}
+
+/** Why a Gauntlet ends before its first producer, besides the broker's `runtime_incompatible`. */
+export type GauntletPreflightFailure = "evaluator_unavailable" | "max_cost";
+
+/**
+ * Ends a Gauntlet before any producer, the way RT-002 ends one whose runtime is incompatible:
+ * the Run (created here, or adopted when a control plane prepared it with --run-id) is
+ * `rolled_back` with the reason and the explanation in the journal, and the Gauntlet projection
+ * is stopped with `execution_failure`. Used when no agentic evaluator is available and when the
+ * evaluation floor leaves the producer no budget: nothing is switched silently, nothing runs.
+ */
+export function rollbackGauntletBeforeProducer(input: {
+  kernel: KernelHandle; projectId: string; runId: string; traceId: string; producer: TargetRef; plan: GauntletPlan;
+  reason: GauntletPreflightFailure; errors: string[];
+}): RunProjection {
+  const actor = { kind: "kernel", id: "agent-x-gauntlet-cutover" };
+  const correlationId = `cor_${input.runId}`;
+  const facade = new RunKernelCompatibilityFacade(input.kernel);
+  const run = getRun(input.kernel, input.projectId, input.runId) ?? facade.create({ projectId: input.projectId, runId: input.runId,
+    traceId: input.traceId, planId: `plan_${input.runId}`, target: input.producer, policySnapshotRef: "preflight", actor, correlationId,
+    idempotencyKey: `agent-x-gauntlet:${input.runId}:create` });
+  const controller = new GauntletController(input.kernel, { projectId: input.projectId, runId: input.runId, traceId: run.traceId, actor, correlationId });
+  controller.begin(input.plan);
+  controller.fail(`${input.reason}: ${input.errors.join(" ")}`);
+  return facade.transition({ projectId: input.projectId, runId: input.runId, to: "rolled_back", actor, correlationId,
+    idempotencyKey: `agent-x-gauntlet:${input.runId}:rolled-back-${input.reason.replace(/_/g, "-")}`, payload: { reason: input.reason, errors: input.errors } });
 }
 
 /** Terminal Run state for a final gate result; shared with the standard-mode publication. */

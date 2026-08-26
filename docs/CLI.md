@@ -26,7 +26,7 @@ nrv <subcommand> [args]
 | `nrv auto "<brief>"` | **Autopilot.** The router picks the best company for your brief, executes it headless, verifies, and runs the quality gate. (= `run --auto`.) |
 | `nrv run <business> "<brief>"` | Autopilot against a company you name: dispatch + execute + verify + gate. |
 | `nrv dispatch <business> "<brief>"` | Scaffold a run (brief + DNA injection + audit) without auto-executing. |
-| `nrv dispatch --business <slug> \| --squad <slug> \| --agent-x "<brief>" [--exec]` | Name the target yourself; the three flags are mutually exclusive with each other and with `--auto`, and none of them consults the router. `--exec` runs it, otherwise it only scaffolds. |
+| `nrv dispatch --business <slug> \| --squad <slug> \| --agent-x "<brief>" [--exec]` | Name the target yourself; the three flags are mutually exclusive with each other and with `--auto`, and none of them consults the router. `--exec` runs it, otherwise it only scaffolds. (`--judge-x` is the engine's Gauntlet judge, spawned by the evaluator adapter on an evaluation brief; it is not a producer.) |
 | `nrv revise <project> "<change>"` | Apply a change while keeping the same runtime session. |
 | `nrv launch <name> --pillars=brand,marketing,gtm` | Scaffold a multi-pillar 360° launch (default: all 11 pillars). |
 | `nrv ask <clone> "<question>"` | Talk directly to a single specialist (mind-clone), DNA injected. |

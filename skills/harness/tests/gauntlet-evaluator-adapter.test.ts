@@ -17,6 +17,7 @@ import {
 import {
   createDispatchEvaluator, evaluationDirFor, evaluationProjectId, type DispatchEvaluatorTarget, type EvaluatorSpawnRequest,
 } from "../lib/gauntlet/evaluator-adapter.ts";
+import { JUDGE_X_BUDGET_EXHAUSTED_MARK, JUDGE_X_TARGET } from "../lib/gauntlet/judge-x.ts";
 import { listScorecards } from "../lib/gauntlet/store.ts";
 import type { TargetRef } from "../lib/run-kernel/types.ts";
 import { listEvents, openKernel, type KernelHandle } from "../lib/run-kernel/index.ts";
@@ -206,8 +207,39 @@ describe("dispatch evaluator adapter", () => {
     const setup = fixture();
     expect(() => evaluator(setup, { target: { kind: "agent-x", slug: "agent-x" }, producer: AGENT_X })).toThrow(/agent-x:agent-x cannot evaluate candidates produced by agent-x:agent-x/);
     expect(() => evaluator(setup, { target: SQUAD, producer: SQUAD })).toThrow(/squad:fixture-evaluator:quality.specification_conformance cannot evaluate/);
+    expect(() => evaluator(setup, { target: JUDGE_X_TARGET as DispatchEvaluatorTarget, producer: JUDGE_X_TARGET })).toThrow(/agent-x:judge-x cannot evaluate candidates produced by agent-x:judge-x/);
     expect(fs.existsSync(setup.spawnLog)).toBeFalse();
     expect(fs.existsSync(evaluationDirFor(setup.projectRoot, "run_1", "crv_run_1_can_1_1"))).toBeFalse();
+  });
+
+  test.each([
+    ["agent-x", AGENT_X],
+    ["a squad", SQUAD as TargetRef],
+    ["a business", { kind: "business", slug: "acme" } as TargetRef],
+  ])("judge-x is independent of %s: it runs as `dispatch.ts --judge-x` and its cost is read from the judge-x executor events", (_: string, producer: TargetRef) => {
+    const setup = fixture();
+    const [scorecard] = evaluator(setup, { target: JUDGE_X_TARGET as DispatchEvaluatorTarget, producer, budgetUsd: 1.5 }, { FAKE_DISPATCH_COST_USD: "0.4" }).evaluate(setup.evaluation());
+    expect(scorecard).toMatchObject({ verdict: "pass", evaluator: JUDGE_X_TARGET, costUsd: 0.4 });
+    const captured = setup.capture("crv_run_1_can_1_1");
+    expect(captured.argv).toContain("--judge-x");
+    expect(captured.argv).not.toContain("--agent-x");
+    expect(captured.argv).not.toContain("--squad");
+    expect(captured.argv).toContain("--execution-mode=standard");
+    expect(flag(captured.argv, "--max-budget")).toBe("1.5");
+    expect(setup.audit[0].payload).toMatchObject({ evaluator: "agent-x:judge-x", verdict: "pass", cost_usd: 0.4 });
+  }, spawnBudgetMs(1));
+
+  test("a judge-x child that ran out of budget before the scorecard is indeterminate as budget_exhausted, never an anonymous error", () => {
+    const setup = fixture();
+    const spawned = fakeSpawn(() => {}, { exitCode: 2, stderr: `⚠ judge-x withheld: ${JUDGE_X_BUDGET_EXHAUSTED_MARK}: the spend cap of USD 1.5 ended the run before scorecard.json was written` });
+    const [scorecard] = evaluator(setup, { target: JUDGE_X_TARGET as DispatchEvaluatorTarget, producer: AGENT_X, spawn: spawned.spawn, budgetUsd: 1.5 }).evaluate(setup.evaluation());
+    expect(scorecard.verdict).toBe("indeterminate");
+    expect(scorecard.dimensions[0].evidenceRefs[0]).toMatch(/^indeterminate: budget_exhausted: the evaluator's spend cap of USD 1.5 ended the run before scorecard\.json was written/);
+    expect(setup.audit[0].payload).toMatchObject({ verdict: "indeterminate", reason_code: "budget_exhausted", budget_usd: 1.5 });
+    // The same stderr from a squad evaluator is not a judge-x budget signal.
+    const squad = fakeSpawn(() => {}, { exitCode: 2, stderr: JUDGE_X_BUDGET_EXHAUSTED_MARK });
+    const [other] = evaluator(setup, { spawn: squad.spawn }).evaluate(setup.evaluation(2));
+    expect(other.dimensions[0].evidenceRefs[0]).toMatch(/^indeterminate: scorecard\.json not found/);
   });
 
   test("an evaluator that exceeds its timeout is killed and the evaluation is indeterminate", () => {
@@ -291,9 +323,9 @@ describe("cutover with the dispatch evaluator", () => {
     expect(loop.result).toMatchObject({ exitCode: 0, finalGateRan: true, run: { state: "completed" }, gauntlet: { stopReason: "success", decision: "delivered" } });
     expect(loop.scorecards()).toHaveLength(1);
     expect(loop.scorecards()[0]).toMatchObject({ evaluator: SQUAD, verdict: "pass", costUsd: 0.25, rubricVersion: EVALUATION_RUBRIC_VERSION });
-    expect(loop.budget).toEqual({ candidateBudgetUsd: 1.875, evaluationBudgetUsd: 0.625, roundBudgetUsd: 2.5 });
-    expect(loop.result.gauntlet.spentUsd).toBe(2.5);
-    expect((loop.events().find(event => event.type === "gauntlet.round_started")?.payload as { costReservedUsd: number }).costReservedUsd).toBe(2.5);
+    expect(loop.budget).toEqual({ candidateBudgetUsd: 2.5, evaluationBudgetUsd: 1.5, roundBudgetUsd: 4, insufficient: false });
+    expect(loop.result.gauntlet.spentUsd).toBe(4);
+    expect((loop.events().find(event => event.type === "gauntlet.round_started")?.payload as { costReservedUsd: number }).costReservedUsd).toBe(4);
     expect(setup.capture("crv_run_1_can_1_1").argv).toContain("--max-budget");
     expect(fs.existsSync(path.join(loop.outputsRoot, "report.md"))).toBeTrue();
   }, KERNEL_BUDGET_MS + spawnBudgetMs(1));

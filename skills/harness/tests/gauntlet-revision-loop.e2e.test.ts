@@ -11,6 +11,7 @@ import {
 import { decideBusinessCanary } from "../lib/gauntlet/business-canary.ts";
 import { compileGauntletPlan } from "../lib/gauntlet/compiler.ts";
 import { createDispatchEvaluator, evaluationDirFor } from "../lib/gauntlet/evaluator-adapter.ts";
+import { JUDGE_X_TARGET } from "../lib/gauntlet/judge-x.ts";
 import { parseExecutionOptions } from "../lib/gauntlet/execution-options.ts";
 import { getGauntlet, listCandidateRevisions, listScorecards } from "../lib/gauntlet/store.ts";
 import type { GauntletIntensity } from "../lib/gauntlet/types.ts";
@@ -312,6 +313,30 @@ describe("Gauntlet causal revision loop", () => {
       const evaluationDir = evaluationDirFor(loop.root, "run_loop", revisionId);
       expect(fs.readFileSync(path.join(evaluationDir, "evaluation-brief.md"), "utf8")).toContain("Produza report.md");
       expect(fs.existsSync(path.join(evaluationDir, "outputs", "scorecard.json"))).toBeTrue();
+    }
+    expect(fs.readFileSync(path.join(loop.outputsRoot, "report.md"), "utf8")).toContain("Revision 2 of can_1");
+  }, KERNEL_BUDGET_MS + spawnBudgetMs(2));
+
+  test("judge-x, through the dispatch evaluator, judges an agent-x producer across the causal revision to completed", () => {
+    const loop = scenario({ grade: () => PASS });
+    const spawnLog = path.join(loop.root, "spawns.log");
+    loop.input.evaluator = createDispatchEvaluator({
+      target: JUDGE_X_TARGET as Extract<TargetRef, { kind: "agent-x" }>, producer: { kind: "agent-x", slug: "agent-x" },
+      plan: compileGauntletPlan({ brief: "Produza report.md", intensity: "light" }), brief: "Produza report.md", projectRoot: loop.root, projectId: "prj_loop",
+      dispatchScriptPath: writeFakeDispatch(path.join(loop.root, "fake")), budgetUsd: 1.5,
+      env: { HARNESS_LOGS_DIR: path.join(loop.root, "logs"), FAKE_DISPATCH_SPAWN_LOG: spawnLog, FAKE_DISPATCH_SCORECARD_FOR: "1=revise,2=pass", FAKE_DISPATCH_COST_USD: "0.7" },
+    });
+    const result = loop.run();
+    expect(result).toMatchObject({ exitCode: 0, finalGateRan: true, run: { state: "completed", target: { kind: "agent-x", slug: "agent-x" } },
+      gauntlet: { stopReason: "success", decision: "delivered", selectedRevisionId: "crv_run_loop_can_1_2", round: 2 } });
+    expect(loop.calls.revisions).toHaveLength(1);
+    expect(loop.calls.revisions[0].defects.revisionRequests).toEqual([{ requirementId: "brief-conformance", evidenceRefs: ["fake:crv_run_loop_can_1_1:brief-conformance"] }]);
+    expect(loop.scorecards().map(scorecard => [scorecard.verdict, scorecard.costUsd, scorecard.evaluator])).toEqual([["revise", 0.7, JUDGE_X_TARGET], ["pass", 0.7, JUDGE_X_TARGET]]);
+    expect(fs.readFileSync(spawnLog, "utf8").trim().split("\n")).toHaveLength(2);
+    for (const revisionId of ["crv_run_loop_can_1_1", "crv_run_loop_can_1_2"]) {
+      const captured = JSON.parse(fs.readFileSync(path.join(evaluationDirFor(loop.root, "run_loop", revisionId), "outputs", "dispatch-capture.json"), "utf8")) as { argv: string[] };
+      expect(captured.argv).toContain("--judge-x");
+      expect(captured.argv[captured.argv.indexOf("--max-budget") + 1]).toBe("1.5");
     }
     expect(fs.readFileSync(path.join(loop.outputsRoot, "report.md"), "utf8")).toContain("Revision 2 of can_1");
   }, KERNEL_BUDGET_MS + spawnBudgetMs(2));

@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-  AgentXGauntletInterruption, GAUNTLET_EVALUATION_SHARE, gauntletRoundBudget, runAgentXGauntlet, shouldRunAgentXGauntlet, shouldRunSquadGauntlet,
+  AgentXGauntletInterruption, GAUNTLET_EVALUATION_FLOOR_USD, GAUNTLET_EVALUATION_SHARE, gauntletRoundBudget, runAgentXGauntlet, shouldRunAgentXGauntlet, shouldRunSquadGauntlet,
   type AgentXGauntletEvaluator,
 } from "../lib/gauntlet/agent-x-cutover.ts";
 import { compileGauntletPlan } from "../lib/gauntlet/compiler.ts";
@@ -89,20 +89,34 @@ describe("agent-x Gauntlet cutover", () => {
   });
 
   test("splits the plan budget across rounds and candidates without exceeding the plan ceiling", () => {
-    expect(gauntletRoundBudget(compileGauntletPlan({ brief: "Build", intensity: "light" }))).toEqual({ candidateBudgetUsd: 2.5, evaluationBudgetUsd: 0, roundBudgetUsd: 2.5 });
-    expect(gauntletRoundBudget(compileGauntletPlan({ brief: "Build", intensity: "balanced" }), 1)).toEqual({ candidateBudgetUsd: 1, evaluationBudgetUsd: 0, roundBudgetUsd: 3 });
+    expect(gauntletRoundBudget(compileGauntletPlan({ brief: "Build", intensity: "light" }))).toEqual({ candidateBudgetUsd: 4, evaluationBudgetUsd: 0, roundBudgetUsd: 4, insufficient: false });
+    expect(gauntletRoundBudget(compileGauntletPlan({ brief: "Build", intensity: "balanced" }), 1)).toEqual({ candidateBudgetUsd: 1, evaluationBudgetUsd: 0, roundBudgetUsd: 3, insufficient: false });
     const exhaustive = gauntletRoundBudget(compileGauntletPlan({ brief: "Build", intensity: "exhaustive" }), 500);
     expect(exhaustive.candidateBudgetUsd).toBeCloseTo(100 / 30);
     expect(exhaustive.roundBudgetUsd).toBeCloseTo(100 / 6);
   });
 
-  test("reserves the evaluation share inside the same round budget when a real evaluator judges", () => {
+  test("reserves the evaluation share, never below the floor, inside the same round budget when a real evaluator judges", () => {
     expect(GAUNTLET_EVALUATION_SHARE).toBe(0.25);
+    expect(GAUNTLET_EVALUATION_FLOOR_USD).toBe(1.5);
+    // light: USD 8 / (1 candidate × 2 rounds) = USD 4 per candidate; 25% is USD 1, below the floor, so the judge gets USD 1.50 and the producer USD 2.50.
     expect(gauntletRoundBudget(compileGauntletPlan({ brief: "Build", intensity: "light" }), undefined, GAUNTLET_EVALUATION_SHARE))
-      .toEqual({ candidateBudgetUsd: 1.875, evaluationBudgetUsd: 0.625, roundBudgetUsd: 2.5 });
-    const balanced = gauntletRoundBudget(compileGauntletPlan({ brief: "Build", intensity: "balanced" }), 1, GAUNTLET_EVALUATION_SHARE);
-    expect(balanced).toEqual({ candidateBudgetUsd: 0.75, evaluationBudgetUsd: 0.25, roundBudgetUsd: 3 });
-    expect(balanced.candidateBudgetUsd + balanced.evaluationBudgetUsd).toBe(1);
+      .toEqual({ candidateBudgetUsd: 2.5, evaluationBudgetUsd: 1.5, roundBudgetUsd: 4, insufficient: false });
+    // exhaustive with a generous cap: 25% of USD 100 / 30 is USD 0.83, so the floor applies too.
+    const exhaustive = gauntletRoundBudget(compileGauntletPlan({ brief: "Build", intensity: "exhaustive" }), undefined, GAUNTLET_EVALUATION_SHARE);
+    expect(exhaustive.evaluationBudgetUsd).toBe(1.5);
+    expect(exhaustive.candidateBudgetUsd).toBeCloseTo(100 / 30 - 1.5);
+    // A slice above USD 6 pays the share, not the floor.
+    const wide = gauntletRoundBudget(compileGauntletPlan({ brief: "Build", intensity: "light", budget: { maxCostUsd: 16 } }), undefined, GAUNTLET_EVALUATION_SHARE);
+    expect(wide).toEqual({ candidateBudgetUsd: 6, evaluationBudgetUsd: 2, roundBudgetUsd: 8, insufficient: false });
+    // --max-budget only lowers the slice: the judge keeps the floor and the producer takes the rest.
+    const capped = gauntletRoundBudget(compileGauntletPlan({ brief: "Build", intensity: "balanced" }), 2, GAUNTLET_EVALUATION_SHARE);
+    expect(capped).toEqual({ candidateBudgetUsd: 0.5, evaluationBudgetUsd: 1.5, roundBudgetUsd: 6, insufficient: false });
+    // A slice the floor consumes leaves the producer nothing: the caller must not start the Gauntlet.
+    expect(gauntletRoundBudget(compileGauntletPlan({ brief: "Build", intensity: "balanced" }), 1, GAUNTLET_EVALUATION_SHARE))
+      .toEqual({ candidateBudgetUsd: 0, evaluationBudgetUsd: 1.5, roundBudgetUsd: 3, insufficient: true });
+    expect(gauntletRoundBudget(compileGauntletPlan({ brief: "Build", intensity: "light" }), 1.5, GAUNTLET_EVALUATION_SHARE).insufficient).toBeTrue();
+    expect(gauntletRoundBudget(compileGauntletPlan({ brief: "Build", intensity: "light" }), 1)).toMatchObject({ evaluationBudgetUsd: 0, insufficient: false });
     expect(() => gauntletRoundBudget(compileGauntletPlan({ brief: "Build" }), undefined, 1)).toThrow("evaluation share must be in [0, 1)");
   });
 
@@ -200,7 +214,7 @@ describe("agent-x Gauntlet cutover", () => {
   }, KERNEL_BUDGET_MS);
 
   test("rolls back when the light budget blocks execution before the candidate", () => {
-    const { result, executions, finalGates } = run({ expectedCostUsd: 6 });
+    const { result, executions, finalGates } = run({ expectedCostUsd: 9 });
     expect(result.run.state).toBe("rolled_back");
     expect(executions).toBe(0); expect(finalGates).toBe(0);
   }, KERNEL_BUDGET_MS);
