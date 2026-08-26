@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import type { DependencyGraph } from "../../_shared/lib/dependency-graph.ts";
 import { reserveAggregateGauntletBudget } from "../lib/gauntlet/aggregate-budget.ts";
 import { coordinateMultiTargetPlan, type MultiTargetAdapterInput } from "../lib/gauntlet/multi-target-coordinator.ts";
-import { createDispatchMultiTargetAdapters, MULTI_TARGET_RESULT_MARKER } from "../lib/gauntlet/multi-target-dispatch-adapters.ts";
+import { createDispatchMultiTargetAdapters, MULTI_TARGET_RESULT_MARKER, type DispatchSpawn } from "../lib/gauntlet/multi-target-dispatch-adapters.ts";
 import { createRunKernelMultiTargetPorts } from "../lib/gauntlet/run-kernel-multi-target-ports.ts";
 import { compileMultiTargetGauntletPolicy, type CompiledMultiTargetPlan } from "../lib/plan-compiler.ts";
 import { createRun, listEvents, openKernel, type KernelHandle } from "../lib/run-kernel/store.ts";
@@ -108,9 +108,11 @@ describe("multi-target dispatch adapters", () => {
     const setup = fixture();
     const { plan } = compile();
     const result = await adapters(setup, plan, { FAKE_DISPATCH_COST_USD: "0.4" }, { runtime: "codex" }).standard.run(nodeInput(plan, "business-a"));
-    expect(result).toEqual({ state: "delivered", reportedCostUsd: 0.4, outputPaths: ["businesses/business-a/outputs/"] });
+    expect(result).toEqual({ state: "delivered", reportedCostUsd: 0.4, costObserved: true, outputPaths: ["businesses/business-a/outputs/"] });
     const captured = capture(setup, "businesses/business-a/outputs/");
     expect(captured.positional).toEqual([]);
+    // The caller's HARNESS_LOGS_DIR reaches the child untouched.
+    expect(captured.env.HARNESS_LOGS_DIR).toBe(join(setup.root, "logs"));
     expect(flag(captured, "--business")).toBe("business-a");
     expect(captured.argv).not.toContain("--auto");
     expect(captured.argv).toContain("--exec");
@@ -223,7 +225,7 @@ describe("multi-target dispatch adapters", () => {
     const first = await ports.standard.run(nodeInput(plan, "business-a"));
     expect(spawnCount(setup)).toBe(1);
     const marker = JSON.parse(readFileSync(join(setup.workspaceRoot, "businesses", "business-a", MULTI_TARGET_RESULT_MARKER), "utf8"));
-    expect(marker).toMatchObject({ idempotencyKey: `multi-target:${plan.digest}:business-a`, state: "delivered", exitCode: 0, reportedCostUsd: 0.3 });
+    expect(marker).toMatchObject({ idempotencyKey: `multi-target:${plan.digest}:business-a`, state: "delivered", exitCode: 0, reportedCostUsd: 0.3, costObserved: true });
     expect(typeof marker.finishedAt).toBe("string");
 
     const resumed = await ports.standard.run(nodeInput(plan, "business-a", { resume: true }));
@@ -234,6 +236,55 @@ describe("multi-target dispatch adapters", () => {
     expect(spawnCount(setup)).toBe(2);
     expect(other).toMatchObject({ state: "delivered", reportedCostUsd: 0.6 });
   }, spawnBudgetMs(2));
+
+  test("the child audits where the adapter reads: HARNESS_LOGS_DIR is pinned to the project's harness log, and a node without a cost event is reported as unobserved", async () => {
+    const setup = fixture();
+    const { plan } = compile();
+    // The fake mimics dispatch.ts: without HARNESS_LOGS_DIR it writes agent_executed under the scaffold it
+    // creates (outputs/<pid>/.nirvana/logs/harness), which the first real smoke run showed the coordinator never
+    // read (USD 2.15 delivered, USD 0 recorded). The variable is removed from this process so the adapter
+    // resolves the directory from projectRoot, the way `nrv multi-target run` does.
+    const previous = process.env.HARNESS_LOGS_DIR;
+    delete process.env.HARNESS_LOGS_DIR;
+    try {
+      const build = (env: Record<string, string>, spawn?: DispatchSpawn) => createDispatchMultiTargetAdapters({
+        projectRoot: setup.projectRoot, projectId: setup.projectId, plan, nodeBriefs: { "business-a": "Deliver part A.", "business-b": "Deliver part B." },
+        dispatchScriptPath: setup.dispatchScriptPath, env: { FAKE_DISPATCH_SPAWN_LOG: setup.spawnLog, ...env }, ...(spawn ? { spawn } : {}),
+      });
+      const projectLogs = join(setup.projectRoot, ".nirvana", "logs", "harness");
+      const scaffoldLogs = join(setup.projectRoot, "outputs", setup.projectId, ".nirvana", "logs", "harness");
+
+      const observed = await build({ FAKE_DISPATCH_COST_USD: "2.15" }).standard.run(nodeInput(plan, "business-a"));
+      expect(observed).toEqual({ state: "delivered", reportedCostUsd: 2.15, costObserved: true, outputPaths: ["businesses/business-a/outputs/"] });
+      expect(capture(setup, "businesses/business-a/outputs/").env.HARNESS_LOGS_DIR).toBe(projectLogs);
+      expect(readdirSync(projectLogs)).toHaveLength(1);
+      expect(existsSync(scaffoldLogs)).toBeFalse();
+
+      // What the adapter did before: the same child with the variable stripped writes its cost under the
+      // scaffold, and the parent, reading the project's log, no longer reports a silent zero but an unobserved cost.
+      const leaky: DispatchSpawn = async (request) => {
+        const env = { ...request.env };
+        delete env.HARNESS_LOGS_DIR;
+        const child = Bun.spawn(request.command, { cwd: request.cwd, env, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+        const [stdout, stderr, exitCode] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+        return { exitCode, stdout, stderr };
+      };
+      const drifted = await build({ FAKE_DISPATCH_COST_USD: "2.15" }, leaky).standard.run(nodeInput(plan, "business-b", { idempotencyKey: "drifted" }));
+      expect(drifted).toEqual({ state: "delivered", reportedCostUsd: 0, costObserved: false, outputPaths: ["businesses/business-b/outputs/"] });
+      expect(existsSync(scaffoldLogs)).toBeTrue();
+      expect(readFileSync(join(scaffoldLogs, readdirSync(scaffoldLogs)[0], "audit.jsonl"), "utf8")).toContain('"cost_usd":2.15');
+
+      // A child that leaves no cost event at all: unobserved, and the marker remembers it.
+      const silent = await build({ FAKE_DISPATCH_COST_USD: "0" }).standard.run(nodeInput(plan, "business-b"));
+      expect(silent).toEqual({ state: "delivered", reportedCostUsd: 0, costObserved: false, outputPaths: ["businesses/business-b/outputs/"] });
+      const marker = JSON.parse(readFileSync(join(setup.workspaceRoot, "businesses", "business-b", MULTI_TARGET_RESULT_MARKER), "utf8"));
+      expect(marker).toMatchObject({ state: "delivered", reportedCostUsd: 0, costObserved: false });
+      expect(await build({ FAKE_DISPATCH_COST_USD: "9" }).standard.run(nodeInput(plan, "business-b", { resume: true }))).toEqual(silent);
+      expect(spawnCount(setup)).toBe(3);
+    } finally {
+      if (previous !== undefined) process.env.HARNESS_LOGS_DIR = previous;
+    }
+  }, spawnBudgetMs(3));
 
   test("an aborted signal kills the subprocess and returns failed without a marker", async () => {
     const setup = fixture();

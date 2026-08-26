@@ -12,6 +12,15 @@
 // (`business_slug`, `squad_slug`, `employee: "agent-x"`). The run-ledger stores
 // no cost, and the audit log is per project and append-only, which makes it
 // the one source every dispatch path already feeds.
+//
+// The child is told where that log is. Without HARNESS_LOGS_DIR in its env,
+// dispatch.ts anchors its audit on the scaffold it creates
+// (`<projectRoot>/outputs/<projectId>/.nirvana/logs/harness`), while this
+// adapter reads `harnessLogsDir({ projectRoot })`: the first real smoke run
+// delivered a USD 2.15 node that the coordinator recorded as USD 0. The adapter
+// now pins HARNESS_LOGS_DIR to the directory it reads (a value the caller set
+// wins), and when no cost event exists for a node that ran, the result says so
+// (`costObserved: false`) instead of reporting a silent zero.
 
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -58,6 +67,8 @@ export interface MultiTargetResultMarker {
   state: MultiTargetAdapterResult["state"];
   exitCode: number | null;
   reportedCostUsd: number;
+  /** False when the subprocess ran and the audit log had no cost event for it; absent on markers written before the field existed. */
+  costObserved?: boolean;
   finishedAt: string;
   reason?: string;
 }
@@ -117,11 +128,14 @@ export function costMatcher(target: Pick<MultiTargetAdapterInput["target"], "kin
   return (event) => event.employee === "agent-x";
 }
 
-/** Sum of `agent_executed.cost_usd` for this trace and target across every day folder of the audit log. */
-export function observedCostUsd(logsDir: string, projectId: string, matches: (event: Record<string, unknown>) => boolean): number {
+/** Sum of `agent_executed.cost_usd` for this trace and target across every day folder of the audit log,
+ * and whether any such event was found at all (`observed`): a node that ran without leaving one has an
+ * unknown cost, not a zero one. */
+export function observeCost(logsDir: string, projectId: string, matches: (event: Record<string, unknown>) => boolean): { costUsd: number; observed: boolean } {
   let days: string[];
-  try { days = fs.readdirSync(logsDir).filter((name) => /^\d{4}-\d{2}-\d{2}$/.test(name)); } catch { return 0; }
+  try { days = fs.readdirSync(logsDir).filter((name) => /^\d{4}-\d{2}-\d{2}$/.test(name)); } catch { return { costUsd: 0, observed: false }; }
   let total = 0;
+  let observed = false;
   for (const day of days) {
     let text: string;
     try { text = fs.readFileSync(path.join(logsDir, day, "audit.jsonl"), "utf8"); } catch { continue; }
@@ -131,10 +145,17 @@ export function observedCostUsd(logsDir: string, projectId: string, matches: (ev
       try { event = JSON.parse(line) as Record<string, unknown>; } catch { continue; }
       if (event.event !== "agent_executed" || event.trace_id !== projectId || !matches(event)) continue;
       const cost = Number(event.cost_usd);
-      if (Number.isFinite(cost) && cost > 0) total += cost;
+      if (!Number.isFinite(cost)) continue;
+      observed = true;
+      if (cost > 0) total += cost;
     }
   }
-  return total;
+  return { costUsd: total, observed };
+}
+
+/** `observeCost` without the flag, for callers that only carry a number (the Gauntlet evaluator scorecard). */
+export function observedCostUsd(logsDir: string, projectId: string, matches: (event: Record<string, unknown>) => boolean): number {
+  return observeCost(logsDir, projectId, matches).costUsd;
 }
 
 /** The per-node DISPATCH-INSTRUCTION.md. Exported so the scope-guard gate and
@@ -241,6 +262,7 @@ export function createDispatchMultiTargetAdapters(input: DispatchMultiTargetAdap
     const marker = readMarker(markerFile);
     if (marker && marker.idempotencyKey === adapterInput.idempotencyKey) {
       return { state: marker.state, reportedCostUsd: marker.reportedCostUsd, outputPaths: [adapterInput.outputPath],
+        costObserved: marker.costObserved ?? marker.reportedCostUsd > 0,
         ...(marker.reason ? { reason: marker.reason } : {}) };
     }
     if (adapterInput.signal?.aborted) return failed(`aborted: ${String(adapterInput.signal.reason)}`);
@@ -287,18 +309,21 @@ Read ${instructionFile} before producing anything: it names the upstream summari
       if (adapterInput.target.kind === "business") env[BUSINESS_ALLOWLIST_ENV] = mergeAllowlist(env[BUSINESS_ALLOWLIST_ENV], adapterInput.target.id);
     }
 
+    // The child writes its audit where this adapter reads the cost from; a caller's HARNESS_LOGS_DIR wins.
+    const logsDir = env.HARNESS_LOGS_DIR ? path.resolve(env.HARNESS_LOGS_DIR) : harnessLogsDir({ projectRoot });
+    env.HARNESS_LOGS_DIR = logsDir;
+
     const spawned = await spawn({ command, cwd: projectRoot, env, signal: adapterInput.signal });
     if (adapterInput.signal?.aborted) return failed(`aborted: ${String(adapterInput.signal.reason)}`);
 
-    const logsDir = env.HARNESS_LOGS_DIR ? path.resolve(env.HARNESS_LOGS_DIR) : harnessLogsDir({ projectRoot });
-    const reportedCostUsd = observedCostUsd(logsDir, input.projectId, costMatcher(adapterInput.target));
+    const { costUsd: reportedCostUsd, observed: costObserved } = observeCost(logsDir, input.projectId, costMatcher(adapterInput.target));
     const outcome = mapExitCode(spawned.exitCode, spawned.stderr);
     const record: MultiTargetResultMarker = {
-      idempotencyKey: adapterInput.idempotencyKey, state: outcome.state, exitCode: spawned.exitCode, reportedCostUsd,
+      idempotencyKey: adapterInput.idempotencyKey, state: outcome.state, exitCode: spawned.exitCode, reportedCostUsd, costObserved,
       finishedAt: new Date().toISOString(), ...(outcome.reason ? { reason: outcome.reason } : {}),
     };
     fs.writeFileSync(markerFile, JSON.stringify(record, null, 2), "utf8");
-    return { state: outcome.state, reportedCostUsd, outputPaths: [adapterInput.outputPath], ...(outcome.reason ? { reason: outcome.reason } : {}) };
+    return { state: outcome.state, reportedCostUsd, costObserved, outputPaths: [adapterInput.outputPath], ...(outcome.reason ? { reason: outcome.reason } : {}) };
   };
 
   return { standard: { run }, gauntlet: { run } };

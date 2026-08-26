@@ -5,6 +5,7 @@ import { canonicalJson } from "../lib/run-kernel/canonical-json.ts";
 import { reserveAggregateGauntletBudget, type AggregateGauntletBudgetReservation } from "../lib/gauntlet/aggregate-budget.ts";
 import {
   coordinateMultiTargetPlan,
+  retryMultiTargetSnapshot,
   type MultiTargetAdapterInput,
   type MultiTargetCoordinatorPorts,
   type MultiTargetCoordinatorSnapshot,
@@ -227,5 +228,91 @@ describe("multi-target wave coordinator", () => {
     expect(legacyCalls.map((call) => call.nodeId)).toEqual(["business-a", "business-b", "squad-c"]);
     expect(legacyCalls.every((call) => call.mode === "standard" && call.grantedCostUsd === 0)).toBeTrue();
     expect(gauntletCalls).toBe(0);
+  });
+
+  test("an adapter that could not observe the cost marks the node and journals multi_target.cost_unobserved", async () => {
+    const { plan, reservation } = compile(mixedPolicy);
+    const events: Array<{ type: string; nodeId?: string; waveIndex?: number; payload?: Record<string, unknown> }> = [];
+    const snapshot = await coordinateMultiTargetPlan({
+      plan,
+      reservation,
+      ports: {
+        ...ports(async (input) => ({ state: "delivered", reportedCostUsd: 0, costObserved: input.nodeId !== "business-b" })),
+        journal: { persistSnapshots() {}, emit(event) { events.push(event); } },
+      },
+    });
+    expect(snapshot.state).toBe("delivered");
+    expect(snapshot.nodes.map((node) => [node.nodeId, node.costObserved])).toEqual([
+      ["brief-main", undefined], ["business-a", true], ["business-b", false], ["squad-c", true], ["final-output", true],
+    ]);
+    const unobserved = events.filter((event) => event.type === "multi_target.cost_unobserved");
+    expect(unobserved).toEqual([{ type: "multi_target.cost_unobserved", nodeId: "business-b", waveIndex: 1, payload: { nodeId: "business-b", waveIndex: 1, mode: "gauntlet", state: "delivered" } }]);
+    // The terminal node event carries the flag, so a replayed projection keeps it; the signal comes after it.
+    const terminal = events.find((event) => event.type === "multi_target.node_delivered" && event.nodeId === "business-b")!;
+    expect((terminal.payload as { node: { costObserved?: boolean } }).node.costObserved).toBeFalse();
+    expect(events.indexOf(terminal)).toBeLessThan(events.indexOf(unobserved[0]));
+  });
+
+  test("retryMultiTargetSnapshot reopens a failed plan: delivered nodes stay, the rest returns to pending, only the reset nodes run again", async () => {
+    const setup = compile(mixedPolicy);
+    const failed = await coordinateMultiTargetPlan({ ...setup, ports: ports(async (input) => input.nodeId === "squad-c"
+      ? { state: "failed", reportedCostUsd: 0, costObserved: false, reason: "dispatch exit 1" }
+      : { state: "delivered", reportedCostUsd: 0.5, costObserved: true }) });
+    expect(failed.state).toBe("failed");
+    expect(failed.nodes.map((node) => [node.nodeId, node.state])).toEqual([
+      ["brief-main", "delivered"], ["business-a", "delivered"], ["business-b", "delivered"], ["squad-c", "failed"], ["final-output", "skipped"],
+    ]);
+
+    const { snapshot, resetNodes } = retryMultiTargetSnapshot({ previous: failed, plan: setup.plan, reservation: setup.reservation });
+    expect(resetNodes).toEqual(["final-output", "squad-c"]);
+    expect(snapshot).toMatchObject({ state: "ready", currentWave: -1, attempt: 2, version: failed.version + 1, reportedCostUsd: 1, planDigest: failed.planDigest, reservationDigest: failed.reservationDigest });
+    expect(snapshot.terminalReason).toBeUndefined();
+    expect(snapshot.nodes.find((node) => node.nodeId === "business-a")).toEqual(failed.nodes.find((node) => node.nodeId === "business-a"));
+    expect(snapshot.nodes.find((node) => node.nodeId === "squad-c")).toEqual({ nodeId: "squad-c", waveIndex: 2, mode: "standard", state: "pending", outputPaths: [], reportedCostUsd: 0, grantedCostUsd: 0, blockedBy: [] });
+    expect(snapshot.nodes.find((node) => node.nodeId === "final-output")).toMatchObject({ state: "pending", blockedBy: [], outputPaths: [] });
+    expect(failed.nodes.find((node) => node.nodeId === "squad-c")!.state).toBe("failed");
+
+    const calls: MultiTargetAdapterInput[] = [];
+    const events: string[] = [];
+    let persisted: MultiTargetCoordinatorSnapshot | null = snapshot;
+    const retried = await coordinateMultiTargetPlan({ ...setup, ports: {
+      ...ports(async (input) => { calls.push(input); return { state: "delivered", reportedCostUsd: 0.25, costObserved: true }; }),
+      state: { load: () => persisted, save(value) { persisted = value; } },
+      journal: { persistSnapshots() {}, emit(event) { events.push(`${event.type}:${event.nodeId ?? "plan"}`); } },
+    } });
+    // Fresh idempotency keys for the retried nodes: the result marker of the failed attempt never answers for them.
+    expect(calls.map((call) => [call.nodeId, call.idempotencyKey, call.resume])).toEqual([
+      ["squad-c", `multi-target:${setup.plan.digest}:squad-c:attempt-2`, false],
+      ["final-output", `multi-target:${setup.plan.digest}:final-output:attempt-2`, false],
+    ]);
+    expect(calls[0].upstreamPaths).toEqual(["businesses/business-a/outputs/", "businesses/business-b/outputs/"]);
+    expect(events).not.toContain("multi_target.node_started:business-a");
+    expect(retried).toMatchObject({ state: "delivered", attempt: 2, reportedCostUsd: 1.5 });
+    expect(retried.version).toBeGreaterThan(snapshot.version);
+  });
+
+  test("retryMultiTargetSnapshot refuses a plan that is not failed or withheld and digests that moved; a withheld plan reopens its withheld node too", async () => {
+    const setup = compile(mixedPolicy);
+    const delivered = await coordinateMultiTargetPlan({ ...setup, ports: ports(async () => ({ state: "delivered", reportedCostUsd: 0 })) });
+    expect(() => retryMultiTargetSnapshot({ previous: delivered, ...setup })).toThrow("only a failed or withheld plan can be retried (state delivered)");
+
+    const withheld = await coordinateMultiTargetPlan({ ...setup, ports: ports(async (input) => input.nodeId === "business-a"
+      ? { state: "withheld", reportedCostUsd: 0.1, costObserved: true, reason: "gate failed" }
+      : { state: "delivered", reportedCostUsd: 0 }) });
+    expect(withheld.state).toBe("withheld");
+    expect(() => retryMultiTargetSnapshot({ previous: withheld, plan: setup.plan, reservation: null })).toThrow("does not match plan and reservation");
+    const moved = structuredClone(setup.plan);
+    moved.digest = "moved";
+    expect(() => retryMultiTargetSnapshot({ previous: withheld, plan: moved, reservation: setup.reservation })).toThrow("does not match plan and reservation");
+
+    const { snapshot, resetNodes } = retryMultiTargetSnapshot({ previous: withheld, ...setup });
+    expect(resetNodes).toEqual(["business-a", "final-output", "squad-c"]);
+    expect(snapshot.nodes.find((node) => node.nodeId === "business-b")!.state).toBe("delivered");
+    expect(snapshot.reportedCostUsd).toBe(0);
+    // A delivered node persisted before the cost was observed, with a zero cost, is marked unobserved; the support node is not.
+    expect(snapshot.nodes.map((node) => [node.nodeId, node.state, node.costObserved])).toEqual([
+      ["brief-main", "delivered", undefined], ["business-a", "pending", undefined], ["business-b", "delivered", false],
+      ["squad-c", "pending", undefined], ["final-output", "pending", undefined],
+    ]);
   });
 });

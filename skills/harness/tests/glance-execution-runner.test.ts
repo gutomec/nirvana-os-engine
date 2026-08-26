@@ -78,6 +78,24 @@ describe("createDispatchExecutionRunner", () => {
     expect(capture(root, "run_squad").argv.slice(0, 2)).toEqual(["--squad", "brandcraft"]);
   });
 
+  test("the child audits where the cockpit reads: HARNESS_LOGS_DIR is pinned to the project's harness log unless the caller set it", async () => {
+    const { root, briefFile, fake } = fixture();
+    const previous = process.env.HARNESS_LOGS_DIR;
+    delete process.env.HARNESS_LOGS_DIR;
+    restores.push(() => { if (previous !== undefined) process.env.HARNESS_LOGS_DIR = previous; });
+    // The fake writes its cost event where dispatch.ts does: under HARNESS_LOGS_DIR when set, else under the
+    // scaffold it creates (outputs/<pid>/.nirvana/logs/harness), which nothing on the server side reads.
+    const pinned = createDispatchExecutionRunner({ dispatchScriptPath: fake, env: { FAKE_DISPATCH_COST_USD: "0.3" } });
+    await pinned.start({ projectRoot: root, projectId: "prj_logs", runId: "run_pinned", briefFile, target: { kind: "agent-x", slug: "agent-x" }, intensity: "light" }).done;
+    const projectLogs = path.join(root, ".nirvana", "logs", "harness");
+    expect(capture(root, "run_pinned").env.HARNESS_LOGS_DIR).toBe(projectLogs);
+    expect(fs.readdirSync(projectLogs)).toHaveLength(1);
+    expect(fs.existsSync(path.join(root, "outputs"))).toBe(false);
+    const explicit = createDispatchExecutionRunner({ dispatchScriptPath: fake, env: { HARNESS_LOGS_DIR: path.join(root, "elsewhere") } });
+    await explicit.start({ projectRoot: root, projectId: "prj_logs", runId: "run_explicit", briefFile, target: { kind: "agent-x", slug: "agent-x" }, intensity: "light" }).done;
+    expect(capture(root, "run_explicit").env.HARNESS_LOGS_DIR).toBe(path.join(root, "elsewhere"));
+  });
+
   test("child.log captures stdout and stderr; done reports the exit code; kill ends a running child", async () => {
     const { root, briefFile, fake } = fixture();
     const failing = createDispatchExecutionRunner({ dispatchScriptPath: fake, env: { FAKE_DISPATCH_EXIT_CODE: "2" } });

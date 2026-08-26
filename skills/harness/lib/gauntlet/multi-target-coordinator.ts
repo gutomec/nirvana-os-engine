@@ -13,6 +13,8 @@ export interface MultiTargetNodeProjection {
   outputPaths: string[];
   reportedCostUsd: number;
   grantedCostUsd: number;
+  /** False when the node ran and its adapter found no cost event: `reportedCostUsd` is unknown, not zero. */
+  costObserved?: boolean;
   reason?: string;
   blockedBy: string[];
 }
@@ -27,6 +29,8 @@ export interface MultiTargetCoordinatorSnapshot {
   reportedCostUsd: number;
   terminalReason?: string;
   version: number;
+  /** Execution attempt of the plan: absent or 1 at first, incremented by `retryMultiTargetSnapshot`. */
+  attempt?: number;
 }
 
 export interface MultiTargetAdapterInput {
@@ -46,6 +50,8 @@ export interface MultiTargetAdapterInput {
 export interface MultiTargetAdapterResult {
   state: "delivered" | "withheld" | "failed";
   reportedCostUsd: number;
+  /** False when the adapter ran the node and found no cost event for it; absent when nothing ran. */
+  costObserved?: boolean;
   outputPaths?: string[];
   reason?: string;
 }
@@ -148,6 +154,63 @@ function cloneSnapshot<T>(snapshot: T): T {
   return structuredClone(snapshot);
 }
 
+/** The adapter's idempotency key. A retried plan changes it for the nodes it runs again, so the
+ * result marker of the failed attempt never answers for the new one. */
+function nodeIdempotencyKey(planDigest: string, nodeId: string, attempt: number | undefined): string {
+  const base = `multi-target:${planDigest}:${nodeId}`;
+  return attempt && attempt > 1 ? `${base}:attempt-${attempt}` : base;
+}
+
+/** Node states a retry sends back to `pending`; `delivered` is preserved with its outputs. */
+export const RETRYABLE_NODE_STATES: ReadonlySet<MultiTargetNodeState> = new Set(["failed", "withheld", "skipped", "stalled"]);
+
+/**
+ * The snapshot a new Run starts from when a `failed` or `withheld` plan is retried
+ * after its cause was fixed: same plan and reservation (digests are re-checked),
+ * `delivered` nodes kept as they are, every other terminal node back to `pending`,
+ * the attempt incremented (so the adapters get fresh idempotency keys) and the
+ * version incremented over the previous snapshot. Delivered nodes persisted before
+ * `costObserved` existed, with a zero cost, are marked as cost-unobserved: they ran
+ * and nothing was found, which is what the field states.
+ */
+export function retryMultiTargetSnapshot(input: {
+  previous: MultiTargetCoordinatorSnapshot;
+  plan: CompiledMultiTargetPlan;
+  reservation: AggregateGauntletBudgetReservation | null;
+}): { snapshot: MultiTargetCoordinatorSnapshot; resetNodes: string[] } {
+  const { previous, plan, reservation } = input;
+  assertResumeSnapshot(previous, plan, reservation);
+  if (previous.state !== "failed" && previous.state !== "withheld") {
+    throw new Error(`multi-target coordinator: only a failed or withheld plan can be retried (state ${previous.state})`);
+  }
+  const decisions = decisionMap(plan);
+  const snapshot = cloneSnapshot(previous);
+  const resetNodes: string[] = [];
+  for (const node of snapshot.nodes) {
+    if (RETRYABLE_NODE_STATES.has(node.state)) {
+      resetNodes.push(node.nodeId);
+      node.state = "pending";
+      node.outputPaths = [];
+      node.reportedCostUsd = 0;
+      node.blockedBy = [];
+      delete node.reason;
+      delete node.costObserved;
+      continue;
+    }
+    const decision = decisions.get(node.nodeId);
+    if (node.state === "delivered" && node.costObserved === undefined && node.reportedCostUsd === 0 && decision && decision.targetKind !== "support") {
+      node.costObserved = false;
+    }
+  }
+  snapshot.state = "ready";
+  snapshot.currentWave = -1;
+  delete snapshot.terminalReason;
+  snapshot.reportedCostUsd = snapshot.nodes.reduce((sum, node) => sum + node.reportedCostUsd, 0);
+  snapshot.attempt = (previous.attempt ?? 1) + 1;
+  snapshot.version = previous.version + 1;
+  return { snapshot, resetNodes: resetNodes.sort() };
+}
+
 export async function coordinateMultiTargetPlan(input: {
   plan: CompiledMultiTargetPlan;
   reservation: AggregateGauntletBudgetReservation | null;
@@ -230,7 +293,7 @@ export async function coordinateMultiTargetPlan(input: {
           grantedCostUsd: node.grantedCostUsd,
           upstreamPaths: [...upstreamPaths].sort(),
           outputPath: phase.outputs_path,
-          idempotencyKey: `multi-target:${input.plan.digest}:${node.nodeId}`,
+          idempotencyKey: nodeIdempotencyKey(input.plan.digest, node.nodeId, snapshot.attempt),
           resume,
         });
         return { nodeId: node.nodeId, result };
@@ -245,6 +308,7 @@ export async function coordinateMultiTargetPlan(input: {
       const invalidCost = !Number.isFinite(result.reportedCostUsd) || result.reportedCostUsd < 0;
       const overBudget = node.mode === "gauntlet" && result.reportedCostUsd > node.grantedCostUsd;
       node.reportedCostUsd = invalidCost ? 0 : result.reportedCostUsd;
+      if (result.costObserved !== undefined) node.costObserved = result.costObserved;
       node.outputPaths = result.outputPaths?.length ? [...result.outputPaths].sort() : [phase.outputs_path];
       if (invalidCost || overBudget) {
         node.state = "failed";
@@ -254,6 +318,11 @@ export async function coordinateMultiTargetPlan(input: {
         node.state = result.state;
         node.reason = result.reason;
         await input.ports.journal?.emit({ type: `multi_target.node_${result.state}`, nodeId, waveIndex, payload: { node: cloneSnapshot(node) } });
+      }
+      if (result.costObserved === false) {
+        // No node payload: the projection replays nodes from the terminal event above; this one is the signal
+        // that the budget guard was blind for this node and the reported cost is unknown, not zero.
+        await input.ports.journal?.emit({ type: "multi_target.cost_unobserved", nodeId, waveIndex, payload: { nodeId, waveIndex, mode: node.mode, state: node.state } });
       }
       await input.ports.lease?.release?.(nodeId);
     }
