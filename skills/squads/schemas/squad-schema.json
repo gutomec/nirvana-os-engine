@@ -46,9 +46,14 @@
       "description": "v4: runtime compatibility declaration",
       "additionalProperties": false,
       "properties": {
+        "policy": {
+          "enum": ["declared", "active"],
+          "default": "declared"
+        },
         "minimum": {
           "type": "array",
           "description": "At least one must be satisfied by host (fail-closed)",
+          "minItems": 1,
           "items": {
             "type": "object",
             "required": ["runtime"],
@@ -83,7 +88,12 @@
             }
           }
         }
-      }
+      },
+      "allOf": [{
+        "if": { "properties": { "policy": { "const": "active" } }, "required": ["policy"] },
+        "then": {},
+        "else": { "required": ["minimum"] }
+      }]
     },
 
     "features_required": {

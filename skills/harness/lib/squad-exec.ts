@@ -16,7 +16,6 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as os from "node:os";
 import { type Runtime } from "./host-agent-driver.ts";
 import { runWithCascade } from "./cascade-runner.ts";
 import { sessionKey, getSession, putSession, dropSession } from "./session-store.ts";
@@ -24,8 +23,7 @@ import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { resolveClonePersona, loadCloneRegistry } from "../../_shared/lib/clone-resolver.ts";
 import { layersForPhase } from "../../_shared/lib/dna-layer-policy.ts";
 import { findCloneForTask } from "../../_shared/lib/clone-search.ts";
-
-const SQUADS = path.join(os.homedir(), "squads");
+import { paths } from "../../_shared/lib/bun-helpers.ts";
 
 export type SquadExecMode = "team-mandatory" | "squad-only";
 
@@ -223,7 +221,9 @@ Arquivos no diretório acima. Não printe sumário — entregue arquivos. ${done
  * improve the result, never degrade it.
  */
 export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
-  const squadsRoot = args.squadsRoot ?? SQUADS;
+  // paths.SQUADS_DIR honours SQUADS_DIR and NIRVANA_HOME; os.homedir() ignored both and, on Windows,
+  // reads USERPROFILE, so a squad installed under a redirected HOME was "not found".
+  const squadsRoot = args.squadsRoot ?? paths.SQUADS_DIR;
   const squadDir = path.join(squadsRoot, args.squadSlug);
   const outDir = args.outputsDir;
   fs.mkdirSync(outDir, { recursive: true });

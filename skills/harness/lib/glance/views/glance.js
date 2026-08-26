@@ -201,7 +201,7 @@ function glance() {
         }
       } catch {}
       // Chat history + hash router (deep-link).
-      this.loadChatHistory();
+      await this.loadChatHistory();
       this.applyHash();
       window.addEventListener('hashchange', () => this.applyHash());
       // Awwwards hero only on awwwards theme
@@ -1210,9 +1210,20 @@ function glance() {
     chatMode: 'run',           // 'run' (new dispatch) | 'revise' | 'resume'
     chatHistory: [],           // [{id, title, mode, updatedAt}] persisted in localStorage
     chatHistoryOpen: false,    // history drawer inside the panel
+    canonicalProjectId: null,
 
-    // Chat history (localStorage — the full transcript comes from /api/runs).
-    loadChatHistory() {
+    // The control plane is canonical when this workspace has been adopted.
+    // localStorage remains a compatibility fallback for legacy workspaces.
+    async loadChatHistory() {
+      try {
+        const result = await api('/api/v1/projects');
+        this.canonicalProjectId = result.projects?.[0]?.project_id || null;
+        if (this.canonicalProjectId) {
+          const history = await api(`/api/v1/projects/${encodeURIComponent(this.canonicalProjectId)}/conversations`);
+          this.chatHistory = (history.conversations || []).map(c => ({ id: c.conversation_id, title: c.title, mode: 'run', updatedAt: Date.parse(c.updated_at) }));
+          return;
+        }
+      } catch {}
       try { this.chatHistory = JSON.parse(localStorage.getItem('glance.chatHistory') || '[]'); } catch { this.chatHistory = []; }
     },
     saveChatToHistory() {
@@ -1222,13 +1233,22 @@ function glance() {
       const entry = { id: this.chatId, title, mode: this.chatMode, updatedAt: Date.now() };
       if (existing >= 0) this.chatHistory[existing] = entry; else this.chatHistory.unshift(entry);
       this.chatHistory = this.chatHistory.slice(0, 30);
-      try { localStorage.setItem('glance.chatHistory', JSON.stringify(this.chatHistory)); } catch {}
+      if (!this.canonicalProjectId) {
+        try { localStorage.setItem('glance.chatHistory', JSON.stringify(this.chatHistory)); } catch {}
+      }
     },
     async openChatFromHistory(entry) {
       this.chatId = entry.id;
       this.chatMode = entry.mode || 'run';
       this.chatHistoryOpen = false;
       this.chatOpen = true;
+      if (this.canonicalProjectId && entry.id.startsWith('cnv_')) {
+        try {
+          const conversation = await api(`/api/v1/conversations/${encodeURIComponent(entry.id)}`);
+          this.chatMessages = (conversation.messages || []).map(m => ({ role: m.role, text: m.content }));
+          return;
+        } catch {}
+      }
       const isRun = this.chatMode === 'revise' || this.chatMode === 'resume';
       if (isRun) {
         // Production run: rehydrate the timeline from the trace's audit trail.
@@ -1246,7 +1266,9 @@ function glance() {
     },
     deleteChatFromHistory(id) {
       this.chatHistory = this.chatHistory.filter(c => c.id !== id);
-      try { localStorage.setItem('glance.chatHistory', JSON.stringify(this.chatHistory)); } catch {}
+      if (!this.canonicalProjectId) {
+        try { localStorage.setItem('glance.chatHistory', JSON.stringify(this.chatHistory)); } catch {}
+      }
     },
 
     // Open the chat pointed at an existing run, to continue the session.
@@ -1419,9 +1441,17 @@ function glance() {
       }
     },
     // ─── Chat: methods (Phase 3) ───
-    openChat() {
+    async openChat() {
       // Free chat: conversational concierge. Generates a fresh chatId.
-      this.chatId = 'chat-' + Date.now().toString(36);
+      if (this.canonicalProjectId) {
+        try {
+          const response = await fetch(`/api/v1/projects/${encodeURIComponent(this.canonicalProjectId)}/conversations`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify({ title: 'Nova conversa' }),
+          });
+          const conversation = await response.json();
+          this.chatId = conversation.conversation_id;
+        } catch { this.chatId = 'chat-' + Date.now().toString(36); }
+      } else this.chatId = 'chat-' + Date.now().toString(36);
       this.chatMode = 'run';        // 'run' here = concierge (chat-agent)
       this.chatMessages = [];
       this.chatRunEvents = [];
@@ -1445,64 +1475,49 @@ function glance() {
       es.onerror = () => { /* keep — reopens on the next turn */ };
       this.chatRunES = es;
     },
-    // Human label for an audit event (the golden 5 + the rest).
+    // Human label for an audit event. Single source: run-event-labels.js,
+    // exposed by the index.html module adapter as window.NirvanaRunEventLabels.
     chatEventLabel(ev) {
-      const map = {
-        agentic_route_decision: 'Roteou', dispatch_business: 'Despachou empresa', dispatch_squad: 'Despachou squad',
-        mind_clone_injected: 'Injetou mind-clone', agent_executed: 'Executou', gate_passed: 'Passou no gate',
-        gate_failed: 'Falhou no gate', delivered: 'Entregou', routing_rule_applied: 'Regra de runtime',
-        team_chain_selected: 'Montou o time', research_completed: 'Pesquisou', brief_received: 'Recebeu o brief',
-      };
-      return map[ev.event] || ev.event;
+      return window.NirvanaRunEventLabels?.chatEventLabel(ev) || ev.event || ev.type || 'evento';
     },
-    // AG-UI orchestration surface: maps each audit event into a semantic block
-    // {icon, title, sub, tone} — who (business/squad/agent), what,
-    // with cost/step. Foundation of the run mode's live timeline.
+    // AG-UI orchestration surface: maps each event (canonical `ev.type` or
+    // legacy `ev.event`) into a semantic block {icon, title, sub, tone}.
+    // Foundation of the run mode's live timeline.
     runEventView(ev) {
-      const biz = ev.business_slug, sq = ev.squad_slug || ev.squad_name;
-      const cost = ev.cost_usd != null ? `$${Number(ev.cost_usd).toFixed(2)}` : '';
-      const dur = ev.duration_ms != null ? `${(ev.duration_ms / 1000).toFixed(0)}s` : '';
-      const rt = ev.runtime ? String(ev.runtime).replace('claude-code', 'claude') : '';
-      const step = (ev.step && ev.total) ? `passo ${ev.step}/${ev.total}` : '';
-      const sub = (...xs) => xs.filter(Boolean).join(' · ');
-      const M = {
-        brief_received:       { icon: 'inbox', title: 'Brief recebido', tone: '' },
-        brief_amplified:      { icon: 'sparkles', title: 'Brief enriquecido', tone: '' },
-        agentic_route_decision:{ icon: 'compass', title: `Roteou → ${biz || ev.primary_business || '?'}`, sub: ev.rationale || ev.method || '', tone: 'active' },
-        auto_route_selected:  { icon: 'compass', title: `Roteou → ${biz || '?'}`, sub: ev.method || '', tone: 'active' },
-        routing_rule_applied: { icon: 'settings-2', title: `Regra de runtime → ${ev.runtime || ''}`, tone: '' },
-        dispatch_business:    { icon: 'building-2', title: `${biz || 'empresa'} assumiu`, tone: 'active' },
-        dispatch_squad:       { icon: 'users', title: `squad ${sq || ''}`, tone: 'active' },
-        mind_clone_injected:  { icon: 'brain', title: `Mind-clone: ${ev.clone || ev.dna || ev.slug || ev.file || 'persona'}`, tone: '' },
-        team_chain_selected:  { icon: 'link', title: 'Time montado', sub: sub(biz), tone: '' },
-        agent_executed:       { icon: 'bot', title: ev.employee || 'agente', sub: sub(step, rt, cost, dur), tone: 'ok' },
-        agent_exec_failed:    { icon: 'alert-triangle', title: `${ev.employee || 'agente'} falhou`, tone: 'fail' },
-        tool_invoked:         { icon: 'wrench', title: ev.tool || 'ferramenta', tone: '' },
-        bash_completed:       { icon: 'terminal-square', title: 'comando', tone: '' },
-        ask_invoked:          { icon: 'message-circle-question', title: `consultou ${ev.clone || 'mind-clone'}`, tone: '' },
-        verify_passed:        { icon: 'check-circle-2', title: 'Verificação passou', tone: 'ok' },
-        verify_failed:        { icon: 'x-circle', title: 'Verificação falhou', tone: 'fail' },
-        gate_passed:          { icon: 'shield-check', title: 'Gate passou', sub: (ev.rubrics || []).join(', '), tone: 'ok' },
-        report_html_generated:{ icon: 'file-text', title: 'HTML gerado', tone: '' },
-        report_pdf_generated: { icon: 'file-text', title: 'PDF gerado', tone: '' },
-        delivered:            { icon: 'party-popper', title: 'Entregue', tone: 'ok' },
-        runtime_handoff:      { icon: 'refresh-cw', title: `Trocou runtime → ${ev.to || ev.runtime || ''}`, tone: '' },
-        runtime_quota_exhausted: { icon: 'ban', title: 'Cota esgotada', tone: 'fail' },
-        cascade_exhausted:    { icon: 'ban', title: 'Cascata esgotada', tone: 'fail' },
-      };
-      return M[ev.event] || { icon: 'circle', title: this.chatEventLabel(ev), sub: '', tone: '' };
+      const labels = window.NirvanaRunEventLabels;
+      return labels ? labels.runEventView(ev) : { icon: 'circle', title: ev.type || ev.event || 'evento', sub: '', tone: '' };
     },
-    // Live header derived from the stream: current business/squad/agent + total cost.
+    // Timeline rows for one message. Infrastructure events (coordinator
+    // snapshots, lease renewals) stay in the stream but are hidden until the
+    // user toggles them; `hidden` feeds the toggle label.
+    chatInfraVisible: false,
+    runTimeline(events) {
+      const labels = window.NirvanaRunEventLabels;
+      return labels ? labels.runTimeline(events, this.chatInfraVisible) : { visible: events || [], hidden: 0 };
+    },
+    // Live header derived from the stream: business/squad/agent, canonical
+    // state, Gauntlet decision and cost (see summarizeRunEvents).
     get runSummary() {
-      const evs = this.chatRunEvents || [];
-      let business = null, squad = null, lastAgent = null, agents = 0, cost = 0;
-      for (const ev of evs) {
-        if (ev.business_slug || ev.business) business = ev.business_slug || ev.business;
-        if (ev.squad_slug || ev.squad_name || ev.squad) squad = ev.squad_slug || ev.squad_name || ev.squad;
-        if (ev.event === 'agent_executed') { agents++; lastAgent = ev.employee || lastAgent; }
-        if (ev.cost_usd != null) cost += Number(ev.cost_usd) || 0;
-      }
-      return { business, squad, lastAgent, agents, cost, count: evs.length };
+      const labels = window.NirvanaRunEventLabels;
+      return labels ? labels.summarizeRunEvents(this.chatRunEvents) : { cost: 0, count: (this.chatRunEvents || []).length };
+    },
+    runStateVariant(state) {
+      return ({ completed: 'success', delivered_with_reservations: 'success', running: 'warn', verifying: 'warn', revising: 'warn',
+        waiting: 'info', prepared: 'info', failed: 'danger', withheld: 'danger', cancelled: 'danger', rolled_back: 'danger', abandoned: 'danger' })[state] || 'neutral';
+    },
+    // Multi-target coordinator projection of the streaming canonical Run
+    // (GET /api/v1/runs/:run/multi-target). Null until the Run saves a snapshot.
+    chatMultiTarget: null,
+    async refreshMultiTarget(projectId, runId) {
+      try {
+        const result = await api(`/api/v1/runs/${encodeURIComponent(runId)}/multi-target?project_id=${encodeURIComponent(projectId)}`);
+        this.chatMultiTarget = result.projection || null;
+      } catch {}
+    },
+    runMultiTarget(m) { return m.streaming ? this.chatMultiTarget : (m.multiTarget || null); },
+    multiTargetWaveCount(projection) { return (projection?.nodes || []).reduce((max, node) => Math.max(max, node.waveIndex + 1), 0); },
+    multiTargetStateVariant(state) {
+      return ({ delivered: 'success', running: 'warn', ready: 'info', pending: 'neutral', withheld: 'warn', skipped: 'neutral', failed: 'danger', stalled: 'danger' })[state] || 'neutral';
     },
     chatRuntime: '',           // '' = auto (session host); or claude-code/codex/…
     chatFast: false,           // fast/cheap mode (opt-in); default = agentic
@@ -1522,6 +1537,21 @@ function glance() {
       this.chatInput = '';
       this.chatMessages.push({ role: 'user', text: msg });
       this.chatMessages.push({ role: 'assistant', text: '', events: [], streaming: true });
+      let canonicalReceipt = null;
+      if (this.canonicalProjectId && this.chatId.startsWith('cnv_')) {
+        try {
+          const response = await fetch(`/api/v1/conversations/${encodeURIComponent(this.chatId)}/messages`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
+            body: JSON.stringify({ project_id: this.canonicalProjectId, role: 'user', content: msg }),
+          });
+          canonicalReceipt = await response.json();
+          if (!response.ok) throw new Error(canonicalReceipt.detail || canonicalReceipt.title || 'falha ao preparar o Run');
+        } catch (error) {
+          const asst = this.chatMessages[this.chatMessages.length - 1];
+          asst.text = `⚠ ${error.message || error}`; asst.streaming = false; this.chatBusy = false;
+          return;
+        }
+      }
       // Grab the REACTIVE reference (array proxy) — mutating the raw object would
       // not trigger Alpine's re-render, and the bubble would stay at "orquestrando…".
       const asst = this.chatMessages[this.chatMessages.length - 1];
@@ -1530,6 +1560,18 @@ function glance() {
       this.saveChatToHistory();
       try { location.hash = `#/chat/${this.chatId}`; } catch {}
       this.$nextTick(() => this.scrollChatBottom());
+
+      if (canonicalReceipt?.run) {
+        const target = canonicalReceipt.run.target || {};
+        asst.text = canonicalReceipt.queued
+          ? (target.kind === 'agent-x' || !target.kind
+            ? 'Run canônico preparado. Executando agent-x no Gauntlet light…'
+            : `Run canônico preparado. Executando ${target.kind} ${target.slug || ''}…`)
+          : `Run não executado: ${canonicalReceipt.run.state}.`;
+        if (canonicalReceipt.queued) this.subscribeCanonicalRun(this.canonicalProjectId, canonicalReceipt.run.runId, canonicalReceipt.run.lastSequence || 0, asst);
+        else { asst.streaming = false; this.chatBusy = false; }
+        return;
+      }
 
       // revise/resume = continue a specific production RUN (nrv revise/resume).
       // Otherwise, the conversational concierge.
@@ -1550,21 +1592,37 @@ function glance() {
         asst.text = `⚠ ${e.message}`; asst.streaming = false; this.chatBusy = false;
       }
     },
-    // `!<cmd>` — runs an arbitrary shell command (free-form; localhost + gate).
+    subscribeCanonicalRun(projectId, runId, after, asst) {
+      if (this.chatRunES) this.chatRunES.close();
+      this.chatRunEvents = [];
+      this.chatMultiTarget = null;
+      const es = new EventSource(`/api/v1/projects/${encodeURIComponent(projectId)}/stream?after=${Number(after) || 0}`);
+      this.chatRunES = es;
+      es.addEventListener('event', async (event) => {
+        try {
+          const item = JSON.parse(event.data);
+          if (item.runId !== runId) return;
+          this.chatRunEvents.push(item);
+          // Only snapshots, node events and the terminal event change the projection.
+          if (item.type === 'multi_target.snapshot_saved' || item.type === 'multi_target.plan_terminal' || item.payload?.node) this.refreshMultiTarget(projectId, runId);
+          if (item.type === 'run.transitioned' && ['completed', 'withheld', 'delivered_with_reservations', 'cancelled', 'failed', 'rolled_back'].includes(item.payload?.to)) {
+            es.close();
+            if (this.chatMultiTarget) await this.refreshMultiTarget(projectId, runId);
+            // Keep the timeline and the projection with the message once the stream ends.
+            asst.events = [...this.chatRunEvents];
+            asst.multiTarget = this.chatMultiTarget;
+            asst.text = `Run ${item.payload.to}.`;
+            asst.streaming = false; this.chatBusy = false;
+            this.$nextTick(() => this.scrollChatBottom());
+          }
+        } catch {}
+      });
+      es.onerror = () => { /* EventSource resumes from the cursor query and SSE id. */ };
+    },
+    // Kept as a compatibility method for old bookmarked UI state. The control
+    // plane intentionally has no browser shell route.
     async runShell(cmd) {
-      if (!cmd) return;
-      if (!this.chatId) this.chatId = 'chat-' + Date.now().toString(36);
-      this.chatMessages.push({ role: 'user', text: '$ ' + cmd });
-      this.chatMessages.push({ role: 'assistant', text: '', events: [], streaming: true });
-      const asst = this.chatMessages[this.chatMessages.length - 1];
-      this.chatBusy = true;
-      this.saveChatToHistory();
-      this.$nextTick(() => this.scrollChatBottom());
-      try {
-        const r = await fetch('/api/actions/chat-shell', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: this.chatId, command: cmd }) }).then(x => x.json());
-        if (r.error || !r.job) { asst.text = `⚠ ${r.error || 'falha ao iniciar o comando'}`; asst.streaming = false; this.chatBusy = false; return; }
-        this.followChatJob(r.job.id, asst, 'shell');
-      } catch (e) { asst.text = `⚠ ${e.message}`; asst.streaming = false; this.chatBusy = false; }
+      this.chatMessages.push({ role: 'system', text: 'Comandos de shell não são aceitos pelo control plane do browser.' });
     },
     // `/<cmd>` — slash commands (client-side; no shell).
     runSlash(raw) {
@@ -1596,7 +1654,7 @@ function glance() {
             '`/route <brief>` — qual empresa/squad usar',
             '`/run <slug> <brief>` — despachar um trabalho',
             '`/fast` · `/agentic` — trocar o modo de roteamento',
-            '`!<comando>` — rodar um comando de shell (ex.: `!nrv list-businesses`)',
+            'Comandos de shell não são expostos pelo browser.',
           ].join('\n'));
           return;
       }
@@ -1656,6 +1714,12 @@ function glance() {
           asst.events = [...this.chatRunEvents];
         }
         this.saveChatToHistory();
+        if (this.canonicalProjectId && this.chatId?.startsWith('cnv_') && asst.text) {
+          fetch(`/api/v1/conversations/${encodeURIComponent(this.chatId)}/messages`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
+            body: JSON.stringify({ project_id: this.canonicalProjectId, role: 'assistant', content: asst.text }),
+          }).catch(() => {});
+        }
         this.$nextTick(() => { this.scrollChatBottom(); try { window.lucide?.createIcons(); } catch {} });
       };
       // Final safety net: if nothing signals 'done' (hung job), don't leave an

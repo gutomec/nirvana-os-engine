@@ -1,0 +1,7 @@
+{
+  "schema_version": "nirvana.runtime-provider/v1alpha1",
+  "provider": { "id": "stale-provider" },
+  "catalog": { "observed_at": "2020-01-01T00:00:00Z", "max_age_seconds": 60 },
+  "runtimes": [{ "id": "stale-runtime", "version": "1.0.0", "capabilities": { "file_read": { "support": "native" } } }],
+  "models": [{ "canonical_id": "stale-provider/model/1", "modalities": { "input": ["text"], "output": ["text"] }, "capabilities": {} }]
+}

@@ -12,8 +12,9 @@ class CompatibilityChecker {
   /**
    * @param {string} skillRoot - Path to the squads skill directory
    */
-  constructor(skillRoot) {
+  constructor(skillRoot, { runtimeBroker = null } = {}) {
     this.adapterLoader = new AdapterLoader(skillRoot);
+    this.runtimeBroker = runtimeBroker;
   }
 
   /**
@@ -28,7 +29,7 @@ class CompatibilityChecker {
    *   degradations: { feature: string, fallback: string }[]
    * }}
    */
-  checkCompatibility(squadInfo, runtimeId) {
+  checkCompatibility(squadInfo, runtimeId, runtimeBridge = null) {
     const result = {
       compatible: true,
       errors: [],
@@ -36,15 +37,46 @@ class CompatibilityChecker {
       degradations: [],
     };
 
-    // Load adapter
-    const adapter = this.adapterLoader.loadAdapter(runtimeId);
-    if (!adapter) {
+    const policy = squadInfo.runtimePolicy || 'declared';
+    const runtimes = squadInfo.runtimes || [];
+    const incompatible = runtimes.filter(r => r.type === 'incompatible').map(r => r.runtime);
+    if (incompatible.includes(runtimeId)) {
       result.compatible = false;
-      result.errors.push(`Adapter '${runtimeId}' not found or failed to load.`);
+      result.errors.push(`Squad explicitly declares '${runtimeId}' as incompatible.`);
       return result;
     }
+    if (policy === 'declared') {
+      const declared = runtimes.filter(r => r.type === 'minimum' || r.type === 'compatible').map(r => r.runtime);
+      if (!declared.includes(runtimeId)) {
+        result.compatible = false;
+        result.errors.push(`Runtime '${runtimeId}' is not declared in runtime_requirements.minimum or compatible.`);
+        return result;
+      }
+    }
 
-    const { supported, unsupported } = this.adapterLoader.getFeatureMatrix(runtimeId);
+    const brokerResult = policy === 'active' && this.runtimeBroker
+      ? this.runtimeBroker.evaluateActive(runtimeId, {
+        featuresRequired: squadInfo.featuresRequired || [],
+        modelRequirements: squadInfo.modelRequirements || {},
+      })
+      : null;
+    if (brokerResult) return brokerResult;
+
+    // Prefer a registered adapter. Active policy may use an explicit semantic bridge.
+    const adapter = this.adapterLoader.loadAdapter(runtimeId);
+    if (!adapter) {
+      if (policy !== 'active' || !runtimeBridge) {
+        result.compatible = false;
+        result.errors.push(`Adapter '${runtimeId}' not found and no active runtime bridge was provided.`);
+        return result;
+      }
+    }
+    const supported = adapter
+      ? this.adapterLoader.getFeatureMatrix(runtimeId).supported
+      : new Map((runtimeBridge.featuresSupported || []).map(feature => [feature, { id: feature }]));
+    const unsupported = adapter
+      ? this.adapterLoader.getFeatureMatrix(runtimeId).unsupported
+      : new Map();
 
     // Check features_required (fail-closed: all must be supported)
     const required = squadInfo.featuresRequired || [];
@@ -72,22 +104,8 @@ class CompatibilityChecker {
       }
     }
 
-    // Check runtime_requirements.incompatible
-    if (squadInfo.runtimes) {
-      const incompatible = squadInfo.runtimes
-        .filter(r => r.type === 'incompatible')
-        .map(r => r.runtime);
-
-      if (incompatible.includes(runtimeId)) {
-        result.compatible = false;
-        result.errors.push(
-          `Squad explicitly declares '${runtimeId}' as incompatible.`
-        );
-      }
-    }
-
     // Check protocol version
-    const adapterProtocol = adapter.adapter.protocol_version;
+    const adapterProtocol = adapter?.adapter?.protocol_version || runtimeBridge?.protocolVersion;
     if (squadInfo.protocol && adapterProtocol) {
       const squadMajor = parseInt(squadInfo.protocol);
       const adapterMajor = parseInt(adapterProtocol);
@@ -108,11 +126,26 @@ class CompatibilityChecker {
    * @param {object} squadInfo
    * @returns {Map<string, object>} runtimeId → compatibility result
    */
-  checkAllRuntimes(squadInfo) {
+  checkAllRuntimes(squadInfo, activeRuntimeId = null, runtimeBridge = null) {
     const results = new Map();
     const runtimes = squadInfo.runtimes || [];
 
+    if ((squadInfo.runtimePolicy || 'declared') === 'active') {
+      if (!activeRuntimeId) {
+        results.set('active', {
+          compatible: false,
+          errors: ['Active runtime ID is required for runtime_requirements.policy: active.'],
+          warnings: [],
+          degradations: [],
+        });
+        return results;
+      }
+      results.set(activeRuntimeId, this.checkCompatibility(squadInfo, activeRuntimeId, runtimeBridge));
+      return results;
+    }
+
     for (const r of runtimes) {
+      if (r.type === 'incompatible') continue;
       results.set(r.runtime, this.checkCompatibility(squadInfo, r.runtime));
     }
 

@@ -135,14 +135,15 @@ function c7_runtime_requirements({ manifest }) {
   const max = 8;
   const rr = manifest?.runtime_requirements;
   const hasMin = Array.isArray(rr?.minimum) && rr.minimum.length > 0;
+  const usesActiveRuntime = rr?.policy === 'active';
   const hasFeats = Array.isArray(manifest?.features_required) && manifest.features_required.length > 0;
   let score = 0;
-  if (hasMin) score += 5;
+  if (usesActiveRuntime || hasMin) score += 5;
   if (hasFeats) score += 3;
   return {
     score, max,
-    evidence: `min=${hasMin ? rr.minimum.length : 0} · features=${hasFeats ? manifest.features_required.length : 0}`,
-    fixable_diff: score < max ? { kind: 'runtime_requirements_business_default', missing_min: !hasMin, missing_feats: !hasFeats } : null,
+    evidence: `policy=${rr?.policy || 'declared'} · min=${hasMin ? rr.minimum.length : 0} · features=${hasFeats ? manifest.features_required.length : 0}`,
+    fixable_diff: score < max ? { kind: 'runtime_requirements_business_default', missing_min: !usesActiveRuntime && !hasMin, missing_feats: !hasFeats } : null,
   };
 }
 

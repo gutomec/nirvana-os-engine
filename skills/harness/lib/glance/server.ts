@@ -9,6 +9,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import { createHash } from "node:crypto";
 import {
   getScope,
   listSquads,
@@ -40,6 +41,9 @@ import { readEnvFile, writeEnvFile, setVar, deleteVar, getVar, toMap } from "../
 import { CONFIG_SCHEMA, getField, isEditableKey, maskSecret } from "./config-schema.ts";
 import { validateMindCloneFile, type ValidationResult } from "../../../_shared/lib/mindclone-validator.ts";
 import { handleObservabilityRoute } from "./views/observability-handler.ts";
+import { AgentXCanaryQueue, ConversationService, ProjectService, type GlanceAgentXCanaryAdapter, type GlanceExecutionRunner } from "../control-plane/index.ts";
+import { createRun as createKernelRun, getRun as getKernelRun, listEvents as listKernelEvents, openKernel } from "../run-kernel/index.ts";
+import { getGauntlet, listCandidateRevisions, listScorecards, projectMultiTargetRun } from "../gauntlet/index.ts";
 
 const VIEWS_DIR = path.dirname(import.meta.path) + "/views";
 // Runtime state lives in the engine's own home, never in a runtime's dir.
@@ -54,12 +58,15 @@ const STARTED_AT = Date.now();
 const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
   || (fs.existsSync(path.join(os.homedir(), ".nirvana", "skills")) ? path.join(os.homedir(), ".nirvana", "skills") : path.join(os.homedir(), ".claude", "skills"));
 
-interface ServerOptions {
+export interface ServerOptions {
   port: number | "auto";
   open: boolean;
   idleMin: number;
   allowActions: boolean;  // future use; default false
   theme: "apple" | "apple-dark" | "awwwards";
+  agentXCanaryAdapter?: GlanceAgentXCanaryAdapter;
+  // Child-process execution of adopted-project Messages; wins over the in-process adapter.
+  executionRunner?: GlanceExecutionRunner;
 }
 
 // ─── Setup copy helper (used by /api/setup/copy-batch and /api/setup/copy-stream) ───
@@ -229,8 +236,31 @@ function findFreePort(start = 3737, attempts = 50): number {
 }
 
 export async function startServer(opts: ServerOptions) {
-  const port = opts.port === "auto" ? findFreePort() : opts.port;
+  const port = opts.port === "auto" || opts.port === 0 ? findFreePort() : opts.port;
   const url = `http://localhost:${port}`;
+  const projectRoot = path.resolve(process.env.NIRVANA_PROJECT_ROOT || process.cwd());
+  const controlPlaneDb = path.join(projectRoot, ".nirvana", "control-plane.sqlite");
+  const kernelDb = path.join(projectRoot, ".nirvana", "run-kernel.sqlite");
+  const projectService = new ProjectService();
+  let conversations: ConversationService | null = null;
+  let kernel: ReturnType<typeof openKernel> | null = null;
+  const conversationService = () => conversations ||= new ConversationService(controlPlaneDb);
+  const kernelService = () => kernel ||= openKernel(kernelDb);
+  let canaryQueue: AgentXCanaryQueue | null = null;
+  const agentXQueue = () => canaryQueue ||= new AgentXCanaryQueue(kernelService(), conversationService(), opts.agentXCanaryAdapter, opts.executionRunner);
+  const projectInspection = () => projectService.inspect(projectRoot);
+
+  const problem = (status: number, title: string, detail: string) => new Response(JSON.stringify({
+    type: "about:blank", title, status, detail, correlation_id: `cor_${crypto.randomUUID()}`,
+  }), { status, headers: { "content-type": "application/problem+json", "cache-control": "no-store" } });
+  const validId = (value: string, prefix: string) => new RegExp(`^${prefix}_[A-Za-z0-9-]+$`).test(value);
+  const writeAuthorized = (req: Request): Response | null => {
+    if (!opts.allowActions) return problem(403, "Forbidden", "Glance actions are disabled");
+    const origin = req.headers.get("origin");
+    if (origin && origin !== url && origin !== `http://127.0.0.1:${port}`) return problem(403, "Forbidden", "Origin is not allowed");
+    if (!req.headers.get("idempotency-key")) return problem(400, "Missing idempotency key", "Idempotency-Key is required for writes");
+    return null;
+  };
 
   // Write PID file (auto-cleanup on exit)
   try {
@@ -247,6 +277,148 @@ export async function startServer(opts: ServerOptions) {
       bumpActivity();
       const u = new URL(req.url);
       const p = u.pathname;
+
+      // Canonical project control plane. Legacy routes below remain available
+      // as read fallbacks while callers migrate projection by projection.
+      if (p.startsWith("/api/v1/")) {
+        if (req.method !== "GET") {
+          const denied = writeAuthorized(req);
+          if (denied) return denied;
+        }
+        if (p === "/api/v1/projects" && req.method === "GET") {
+          const inspection = projectInspection();
+          return json({ projects: inspection.kind === "project" ? [inspection.project] : [], legacy: inspection.kind === "legacy" ? [inspection.plan] : [] });
+        }
+        if (p === "/api/v1/capabilities" && req.method === "GET") {
+          return json({ permissions: {
+            "project.read": true, "conversation.read": true, "run.read": true,
+            "project.create": opts.allowActions, "project.adopt": opts.allowActions,
+            "conversation.write": opts.allowActions, "run.prepare": opts.allowActions,
+            "tool.execute.shell": false,
+          } });
+        }
+        if (p === "/api/v1/projects/plan" && req.method === "POST") {
+          const body = await req.json().catch(() => ({})) as any;
+          if (body.relative_root && (path.isAbsolute(body.relative_root) || body.relative_root.includes(".."))) return problem(400, "Invalid path", "relative_root must be confined to the Glance workspace");
+          const target = path.resolve(projectRoot, body.relative_root || ".");
+          if (target !== projectRoot && !target.startsWith(projectRoot + path.sep)) return problem(400, "Invalid path", "project path escapes the workspace");
+          return json(projectService.planCreate({ projectRoot: target, displayName: body.display_name, scope: body.scope, orchestrationMode: body.orchestration_mode }));
+        }
+        if (p === "/api/v1/projects" && req.method === "POST") {
+          const body = await req.json().catch(() => ({})) as any;
+          const relative = body.relative_root || ".";
+          if (path.isAbsolute(relative) || relative.includes("..")) return problem(400, "Invalid path", "relative_root must be confined to the Glance workspace");
+          const project = projectService.create({ projectRoot: path.resolve(projectRoot, relative), displayName: body.display_name, scope: body.scope, orchestrationMode: body.orchestration_mode }, body.plan_hash);
+          return json(project, 201);
+        }
+        if (p === "/api/v1/projects:adopt" && req.method === "POST") {
+          const body = await req.json().catch(() => ({})) as any;
+          if (!body.plan_hash) return problem(400, "Missing plan hash", "Adoption requires a preview plan_hash");
+          const project = projectService.adopt({ projectRoot, displayName: body.display_name, scope: body.scope, orchestrationMode: body.orchestration_mode }, body.plan_hash);
+          return json(project, 201);
+        }
+        const projectMatch = p.match(/^\/api\/v1\/projects\/(prj_[A-Za-z0-9-]+)$/);
+        if (projectMatch && req.method === "GET") {
+          const inspection = projectInspection();
+          return inspection.kind === "project" && inspection.project?.project_id === projectMatch[1] ? json(inspection.project) : notFound("project not found");
+        }
+        const conversationsMatch = p.match(/^\/api\/v1\/projects\/(prj_[A-Za-z0-9-]+)\/conversations$/);
+        if (conversationsMatch && req.method === "GET") return json({ conversations: conversationService().list(conversationsMatch[1]) });
+        if (conversationsMatch && req.method === "POST") {
+          const body = await req.json().catch(() => ({})) as any;
+          return json(conversationService().create(conversationsMatch[1], body.title), 201);
+        }
+        const conversationMatch = p.match(/^\/api\/v1\/conversations\/(cnv_[A-Za-z0-9-]+)$/);
+        if (conversationMatch && req.method === "GET") {
+          const conversation = conversationService().get(conversationMatch[1]);
+          return conversation ? json({ ...conversation, messages: conversationService().messages(conversationMatch[1]) }) : notFound("conversation not found");
+        }
+        const messagesMatch = p.match(/^\/api\/v1\/conversations\/(cnv_[A-Za-z0-9-]+)\/messages$/);
+        if (messagesMatch && req.method === "POST") {
+          const body = await req.json().catch(() => ({})) as any;
+          if (!validId(body.project_id || "", "prj")) return problem(400, "Invalid project", "project_id is required");
+          try {
+            const idempotencyKey = req.headers.get("idempotency-key")!;
+            const messageId = `msg_${createHash("sha256").update(`${messagesMatch[1]}:${idempotencyKey}`).digest("hex").slice(0, 24)}`;
+            const message = conversationService().append({ conversationId: messagesMatch[1], projectId: body.project_id, role: body.role || "user", content: body.content || "", runId: body.run_id, messageId });
+            if ((body.role || "user") === "user" && body.prepare_run !== false) {
+              const inspection = projectInspection();
+              if (inspection.kind !== "project" || inspection.project?.project_id !== body.project_id) return problem(409, "Project not adopted", "Canonical dispatch requires an adopted project");
+              const receipt = agentXQueue().submit({ projectId: body.project_id, conversationId: messagesMatch[1], messageId: message.message_id,
+                brief: message.content, projectRoot, idempotencyKey });
+              return json({ message: receipt.message, run: receipt.run, queued: receipt.queued, capability: receipt.capability }, receipt.queued ? 202 : 200);
+            }
+            return json({ message }, 201);
+          }
+          catch (error) { return problem(409, "Message rejected", (error as Error).message); }
+        }
+        if (p === "/api/v1/runs" && req.method === "POST") {
+          const body = await req.json().catch(() => ({})) as any;
+          if (!validId(body.project_id || "", "prj")) return problem(400, "Invalid project", "project_id is required");
+          const runId = body.run_id || `run_${crypto.randomUUID()}`;
+          const target = body.target;
+          if (!target || !["business", "squad", "agent-x"].includes(target.kind)) return problem(400, "Invalid target", "A typed target is required");
+          const run = createKernelRun(kernelService(), { projectId: body.project_id, runId, traceId: body.trace_id || runId, conversationId: body.conversation_id, planId: body.plan_id || `plan_${crypto.randomUUID()}`, target, policySnapshotRef: body.policy_snapshot_ref || "active", actor: { kind: "control-plane", id: "glance" }, correlationId: `cor_${crypto.randomUUID()}`, idempotencyKey: req.headers.get("idempotency-key")! });
+          return json(run, 201);
+        }
+        const runMatch = p.match(/^\/api\/v1\/runs\/(run_[A-Za-z0-9-]+)$/);
+        if (runMatch && req.method === "GET") {
+          const projectId = u.searchParams.get("project_id") || "";
+          const run = validId(projectId, "prj") ? getKernelRun(kernelService(), projectId, runMatch[1]) : null;
+          return run ? json(run) : notFound("run not found");
+        }
+        const cancelMatch = p.match(/^\/api\/v1\/runs\/(run_[A-Za-z0-9-]+):cancel$/);
+        if (cancelMatch && req.method === "POST") {
+          const body = await req.json().catch(() => ({})) as any;
+          if (!validId(body.project_id || "", "prj")) return problem(400, "Invalid project", "project_id is required");
+          const result = agentXQueue().cancel(body.project_id, cancelMatch[1]);
+          return result.accepted ? json(result, 202) : problem(result.state === "not_found" ? 404 : 409, "Cancellation not accepted", `Run state is ${result.state}`);
+        }
+        const gauntletMatch = p.match(/^\/api\/v1\/runs\/(run_[A-Za-z0-9-]+)\/gauntlet$/);
+        if (gauntletMatch && req.method === "GET") {
+          const projectId = u.searchParams.get("project_id") || "";
+          if (!validId(projectId, "prj") && !projectId.startsWith("proj-")) return problem(400, "Invalid project", "project_id is required");
+          const projection = getGauntlet(kernelService(), projectId, gauntletMatch[1]);
+          return projection ? json({ projection,
+            candidates: listCandidateRevisions(kernelService(), projectId, gauntletMatch[1]),
+            scorecards: listScorecards(kernelService(), projectId, gauntletMatch[1]) }) : notFound("gauntlet run not found");
+        }
+        const multiTargetMatch = p.match(/^\/api\/v1\/runs\/(run_[A-Za-z0-9-]+)\/multi-target$/);
+        if (multiTargetMatch && req.method === "GET") {
+          const projectId = u.searchParams.get("project_id") || "";
+          if (!validId(projectId, "prj") && !projectId.startsWith("proj-")) return problem(400, "Invalid project", "project_id is required");
+          if (!getKernelRun(kernelService(), projectId, multiTargetMatch[1])) return notFound("run not found");
+          return json({ projection: projectMultiTargetRun(kernelService(), projectId, multiTargetMatch[1]) });
+        }
+        const eventsMatch = p.match(/^\/api\/v1\/projects\/(prj_[A-Za-z0-9-]+)\/events$/);
+        if (eventsMatch && req.method === "GET") {
+          const after = Math.max(0, Number(u.searchParams.get("after") || "0"));
+          const limit = Math.min(500, Math.max(1, Number(u.searchParams.get("limit") || "100")));
+          const events = listKernelEvents(kernelService(), eventsMatch[1], after).slice(0, limit);
+          return json({ events, next_cursor: events.at(-1)?.sequence || after });
+        }
+        const streamMatch = p.match(/^\/api\/v1\/projects\/(prj_[A-Za-z0-9-]+)\/stream$/);
+        if (streamMatch && req.method === "GET") {
+          let cursor = Math.max(0, Number(req.headers.get("last-event-id") || u.searchParams.get("after") || "0"));
+          let timer: ReturnType<typeof setInterval>;
+          const stream = new ReadableStream({
+            start(controller) {
+              const encoder = new TextEncoder();
+              const pump = () => {
+                for (const event of listKernelEvents(kernelService(), streamMatch[1], cursor)) {
+                  controller.enqueue(encoder.encode(`id: ${event.sequence}\nevent: event\ndata: ${JSON.stringify(event)}\n\n`));
+                  cursor = event.sequence;
+                }
+                controller.enqueue(encoder.encode(": heartbeat\n\n"));
+              };
+              pump(); timer = setInterval(pump, 1000);
+            },
+            cancel() { clearInterval(timer); },
+          });
+          return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache", "connection": "keep-alive" } });
+        }
+        return notFound("control-plane route not found");
+      }
 
       // ─── Project-scope filter (?project=<absolute_path>) ────────────────
       // Frontend sends this on Agents/Runs/Cost/Memory/Activity when the user
@@ -293,6 +465,9 @@ export async function startServer(opts: ServerOptions) {
 
       // ─── ACTION endpoints (POST) — gated by --allow-actions ───
       if (req.method === "POST" && p.startsWith("/api/actions/")) {
+        if (p === "/api/actions/chat-shell") {
+          return problem(404, "Unsupported command", "The browser control plane does not expose arbitrary shell execution");
+        }
         if (!opts.allowActions) {
           return json({ error: "actions disabled; restart Glance with --allow-actions to enable", action: p }, 403);
         }
@@ -1013,6 +1188,7 @@ export async function startServer(opts: ServerOptions) {
         "/components.css": "text/css",
         "/glance.css": "text/css",
         "/glance.js": "application/javascript",
+        "/run-event-labels.js": "application/javascript",
         "/dag-renderer.js": "application/javascript",
         "/org-chart-renderer.js": "application/javascript",
         "/graph-renderer.js": "application/javascript",
@@ -1539,20 +1715,41 @@ export async function startServer(opts: ServerOptions) {
   console.error(`[glance] auto-shutdown after ${opts.idleMin}min idle  ·  Ctrl+C to exit`);
   if (opts.open) openBrowser(url);
 
+  // Detaches the queue from its children (tests stop servers without exiting the process;
+  // shutdown() runs it before the server stops, so a child still running is left to the next
+  // server's recovery instead of being settled by a dying one).
+  const detach = () => canaryQueue?.shutdown();
+
   // Idle watchdog
   const watchdog = setInterval(() => {
     if (Date.now() - lastActivity > opts.idleMin * 60_000) {
       console.error(`[glance] idle ${opts.idleMin}min — shutting down`);
-      shutdown(server, watchdog);
+      shutdown(server, watchdog, detach);
     }
   }, 30_000);
 
   // SIGINT cleanup
-  const onSignal = () => { console.error("\n[glance] SIGINT — shutting down"); shutdown(server, watchdog); };
+  const onSignal = () => { console.error("\n[glance] SIGINT — shutting down"); shutdown(server, watchdog, detach); };
   process.on("SIGINT", onSignal);
   process.on("SIGTERM", onSignal);
 
-  return { server, url, port };
+  const inspection = projectInspection();
+  const recovery = inspection.kind === "project" && inspection.project
+    ? agentXQueue().recover(inspection.project.project_id, projectRoot)
+    : { enqueued: [], reattached: [], redispatched: [], skipped: [] };
+
+  // Releases what an embedding host or a test holds through this instance: the queue detaches,
+  // the listener stops, then the kernel and conversation handles close. `server.stop()` alone
+  // leaves both SQLite files open, and an open file cannot be deleted on Windows.
+  const close = () => {
+    try { detach(); } catch {}
+    try { server.stop(true); } catch {}
+    try { kernel?.close(); } catch {}
+    try { conversations?.close(); } catch {}
+    kernel = null; conversations = null;
+  };
+
+  return { server, url, port, recovery, detach, close };
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -1787,9 +1984,13 @@ function streamJobSSE(req: Request, id: string): Response {
   });
 }
 
-function shutdown(server: any, watchdog: ReturnType<typeof setInterval>) {
+/** Orderly stop: the execution queue detaches first, then the server, the pid file and the process.
+ * `exit` and `pidFile` are seams for the unit test; production passes only the first three. */
+export function shutdown(server: { stop(closeActiveConnections?: boolean): void }, watchdog: ReturnType<typeof setInterval>,
+  detach: () => void = () => {}, exit: (code: number) => void = code => process.exit(code), pidFile: string = PID_FILE): void {
   clearInterval(watchdog);
+  try { detach(); } catch {}
   try { server.stop(true); } catch {}
-  try { fs.unlinkSync(PID_FILE); } catch {}
-  process.exit(0);
+  try { fs.unlinkSync(pidFile); } catch {}
+  exit(0);
 }

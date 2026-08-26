@@ -50,6 +50,11 @@ Run full validation (see `03-validation.md`). If any Core blocking check fails â
 ### Step 3: Resolve target runtime
 
 Inspect `runtime_requirements`:
+
+- Missing `policy` means `declared`. The active runtime must appear in `minimum` or `compatible`.
+- `policy: active` selects the runtime hosting the session without list membership.
+- Prefer its registered adapter. Without one, require an explicit runtime bridge that proves every required semantic feature.
+- Never install, start, or switch runtimes. `incompatible` is always a hard denial.
 - Harness detects active runtime.
 - Verify it appears in `minimum` or `compatible`.
 - If runtime matches `incompatible` â†’ STOP with error.

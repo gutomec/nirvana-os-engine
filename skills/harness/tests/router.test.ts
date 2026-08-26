@@ -190,6 +190,17 @@ describe("route() — pipeline fast", () => {
       expect((alts[i - 1].score ?? 0)).toBeGreaterThanOrEqual(alts[i].score ?? 0);
     }
   });
+
+  test("índice preparado preserva exatamente a decisão do caminho normal", async () => {
+    const brief = "faça um background check do meu fornecedor";
+    const normal = await router.route(brief, ctx);
+    const prepared = await router.route(brief, {
+      ...ctx,
+      preparedMatchIndex: router.prepareMatchIndex(REG),
+    });
+    expect(prepared.stage2).toEqual(normal.stage2);
+    expect(prepared.stage3).toEqual(normal.stage3);
+  });
 });
 
 // ── Per-squad doc (routing-360 Phase 2) ───────────────────────────────────

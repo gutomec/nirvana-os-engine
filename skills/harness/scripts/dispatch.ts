@@ -32,6 +32,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 import { runHeadless, runtimeAvailable, AUTONOMOUS_DIRECTIVE, LEDGER_DEFAULT_TIMEOUT_MS, type Runtime } from "../lib/host-agent-driver.ts";
 import { listRuntimes } from "../../_shared/lib/host-agent-driver.ts";
 import { amplify } from "../lib/amplifier.ts";
@@ -39,19 +40,30 @@ import { proxyEnrichBrief } from "../lib/brief-proxy.ts";
 import { resolveRoutingMode } from "../../_shared/lib/routing-mode.ts";
 import { runTeam } from "../lib/team-orchestrator.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
-import { agenticRoute } from "../lib/agentic-router.ts";
+import { agenticRoute, type AgenticRouteDecision } from "../lib/agentic-router.ts";
 import { runWithCascade } from "../lib/cascade-runner.ts";
 import { resolveCascadeRoot, loadCascade, nextAfter } from "../lib/cascade.ts";
 import { classify } from "../lib/quota-detector.ts";
 import { isInCooldown, getCooldown, markCooldown } from "../lib/cooldown-registry.ts";
-import { loadRuntimeRules, decideRuntime, detectCurrentHost, formatRulesForDirective, type RuntimeDecision } from "../lib/runtime-rules.ts";
+import { loadRuntimeRules, decideRuntime, detectCurrentHost, formatRulesForDirective, resolveDefaultRuntime, type RuntimeDecision } from "../lib/runtime-rules.ts";
 import { preflightReindex } from "../lib/preflight-index.ts";
 import { maybeSweep } from "./supervisor.ts";
 import * as runLedger from "../lib/run-ledger.ts";
 import { loadHarnessConfig } from "../lib/harness-config.ts";
-import { planRouteWithFallback, runAgentX, type DispatchPlan } from "../lib/dispatch-cascade.ts";
+import { planRouteWithFallback, resolveDispatchPlan, runAgentX, type DispatchPlan } from "../lib/dispatch-cascade.ts";
 import { runSquadHeadless } from "../lib/squad-exec.ts";
-import { runDelivery, deliverAfterRuntimeError, type DeliveryArgs, type DeliveryResult, type RuntimeErrorOutcome } from "../lib/delivery-pipeline.ts";
+import { runDelivery, deliverAfterRuntimeError, gateableFiles, runGateOnce, type DeliveryArgs, type DeliveryResult, type RuntimeErrorOutcome } from "../lib/delivery-pipeline.ts";
+import { runBusinessPostGate } from "../lib/business-post-gate.ts";
+import { parseExecutionOptions } from "../lib/gauntlet/execution-options.ts";
+import { decideBusinessCanary, runBusinessCanaryWithRollback } from "../lib/gauntlet/business-canary.ts";
+import { compileGauntletPlan } from "../lib/gauntlet/compiler.ts";
+import {
+  gauntletRoundBudget, revisionDefectsSection, runAgentXGauntlet, shouldRunAgentXGauntlet, shouldRunSquadGauntlet,
+  type AgentXGauntletEvaluator, type AgentXRevisionRequest,
+} from "../lib/gauntlet/agent-x-cutover.ts";
+import { createHarnessLegacyAdapter, openKernel } from "../lib/run-kernel/index.ts";
+import { inertStandardPublication, openStandardPublication } from "../lib/run-kernel/standard-publication.ts";
+import { freezeExecutionSnapshot } from "../lib/runtime-snapshot.ts";
 
 // Back-compat re-exports: these helpers moved to lib/delivery-pipeline.ts in
 // routing-360 Phase 4.2 (the pipeline is shared by all three dispatch paths).
@@ -83,7 +95,7 @@ function arg(name: string, fallback?: string): string | undefined {
 // filter(!startsWith("--")) treats the "X" in "--project X" as a positional,
 // which made "--project caso-bruno" leak its value as the inline brief and
 // override --brief-file. Skip the token after each known value-flag.
-const VALUE_FLAGS = new Set(["--project", "--runtime", "--manifest", "--brief-file", "--outputs-root", "--max-budget", "--timeout", "--max-revisions"]);
+const VALUE_FLAGS = new Set(["--project", "--runtime", "--manifest", "--brief-file", "--outputs-root", "--max-budget", "--timeout", "--max-revisions", "--execution-mode", "--gauntlet-intensity", "--business", "--squad", "--run-id"]);
 function extractPositional(argv: string[]): string[] {
   const out: string[] = [];
   for (let i = 0; i < argv.length; i++) {
@@ -96,17 +108,83 @@ function extractPositional(argv: string[]): string[] {
   }
   return out;
 }
+
+// ── explicit target selection ──────────────────────────────────────────────
+// --business <slug> · --squad <slug> · --agent-x name the target directly and
+// never consult the router. They are mutually exclusive with each other and
+// with --auto. Pure: the CLI flow turns an error into exit 4.
+export type ExplicitTarget = { kind: "business" | "squad"; slug: string } | { kind: "agent-x" };
+export function parseExplicitTarget(argv: string[]): { target: ExplicitTarget | null; error: string | null } {
+  // undefined = flag absent · null = flag given without a slug · string = slug
+  const value = (name: string): string | null | undefined => {
+    const i = argv.findIndex(a => a === name || a.startsWith(`${name}=`));
+    if (i === -1) return undefined;
+    const v = argv[i].includes("=") ? argv[i].slice(name.length + 1) : argv[i + 1];
+    return v && !v.startsWith("--") ? v : null;
+  };
+  const business = value("--business");
+  const squad = value("--squad");
+  const agentX = argv.includes("--agent-x");
+  const auto = argv.includes("--auto");
+  const given = [business !== undefined && "--business", squad !== undefined && "--squad", agentX && "--agent-x", auto && "--auto"]
+    .filter((flag): flag is string => typeof flag === "string");
+  if (given.length > 1) return { target: null, error: `${given.join(", ")} are mutually exclusive: name one target, or use --auto` };
+  if (business === null) return { target: null, error: "--business requires a slug" };
+  if (squad === null) return { target: null, error: "--squad requires a slug" };
+  if (business) return { target: { kind: "business", slug: business }, error: null };
+  if (squad) return { target: { kind: "squad", slug: squad }, error: null };
+  if (agentX) return { target: { kind: "agent-x" }, error: null };
+  return { target: null, error: null };
+}
+
+/** Canonical Run id of the Gauntlet canaries: `--run-id` when given (the Run was prepared
+ * by a control plane such as Glance and is adopted), else `run_<project>` as before. */
+export function canonicalRunIdFor(projectId: string, runIdFlag?: string): string {
+  return runIdFlag || `run_${projectId.replace(/[^A-Za-z0-9-]/g, "-")}`;
+}
+
+// Decision placeholder for resolveDispatchPlan: an explicit target returns
+// before any field of the decision is read, so the router never runs.
+const NO_ROUTER_DECISION: AgenticRouteDecision = {
+  ok: true, kind: "decision", primary_business: null, mandatory_squads: [], optional_squads: [],
+  suggested_mind_clones: [], candidates: [], rationale: "", runtime: null, warnings: [], cost_usd: null, duration_ms: 0,
+};
+
+/** Dispatch plan for an explicit target: one step, source "explicit", no router. */
+export async function explicitTargetPlan(target: ExplicitTarget): Promise<DispatchPlan> {
+  if (target.kind === "agent-x") {
+    return {
+      ok: true, steps: [{ kind: "agent-x", reason: "explicit user target" }],
+      mandatorySquads: [], optionalSquads: [], suggestedMindClones: [], rationale: "", source: "explicit",
+    };
+  }
+  return resolveDispatchPlan(NO_ROUTER_DECISION, { explicitTarget: target });
+}
+
 const positional = extractPositional(process.argv.slice(2));
 // --auto: no business is named; the router picks the best one for the brief.
-// In that mode the first positional is the brief itself.
+// In that mode the first positional is the brief itself, as it is when an
+// explicit --business / --squad / --agent-x flag names the target.
 const autoMode = process.argv.includes("--auto");
+const explicit = parseExplicitTarget(process.argv.slice(2));
+const explicitTarget = explicit.target;
 // Routing mode (agentic default | fast). Precedence: --mode > env > config.
 const routingMode = resolveRoutingMode(arg("--mode"));
-let slug = autoMode ? "" : positional[0];
-const inlineBrief = autoMode ? positional[0] : positional[1];
+let slug = autoMode ? "" : explicitTarget ? (explicitTarget.kind === "business" ? explicitTarget.slug : "") : positional[0];
+const inlineBrief = (autoMode || explicitTarget) ? positional[0] : positional[1];
 const briefFile = arg("--brief-file");
 const manifest = arg("--manifest");
 const projectId = arg("--project");
+// --run-id: adopt a Run another control plane already prepared (Glance) instead
+// of deriving run_<project>. The Run lives in the project root's kernel (the
+// root Glance serves: NIRVANA_PROJECT_ROOT, else the cwd), so with the flag the
+// canaries open that kernel; without it each dispatch keeps its own under
+// outputs/<pid>, byte-for-byte the previous behaviour.
+const runIdFlag = arg("--run-id");
+function canaryKernelPath(dispatchRoot: string): string {
+  const root = runIdFlag ? path.resolve(process.env.NIRVANA_PROJECT_ROOT || process.cwd()) : dispatchRoot;
+  return path.join(root, ".nirvana", "run-kernel.sqlite");
+}
 const runtime = arg("--runtime", "claude-code");
 // Was the --runtime flag GIVEN by the user? (arg() can't tell flag from default;
 // an explicit flag ALWAYS beats the USE_* rules — a rule only beats the default.)
@@ -160,6 +238,14 @@ const maxRevisionsFlag = arg("--max-revisions");
 const strictRoute = process.argv.includes("--strict-route");
 // --force-deliver: deliver despite a failed gate (delivered gate:"fail-forced").
 const forceDeliver = process.argv.includes("--force-deliver");
+let executionOptions: ReturnType<typeof parseExecutionOptions>;
+try {
+  executionOptions = parseExecutionOptions(process.argv.slice(2));
+} catch (error) {
+  if (import.meta.main) console.error(`nrv dispatch: ${(error as Error).message}`);
+  if (import.meta.main) process.exit(4);
+  throw error;
+}
 
 // ── audit facade (routing-360 Phase 4.3, dispatch side) ───────────────────
 // lib/audit.js emit() is the canonical writer (closed enum + open x_
@@ -213,12 +299,23 @@ export function createDispatchAudit(opts: {
 // effects. Body intentionally kept at original indentation for a minimal diff.
 if (import.meta.main) {
 
+if (explicit.error) {
+  console.error(`nrv dispatch: ${explicit.error}`);
+  process.exit(4);
+}
+
 // Named `emit` so check-audit-parity's literal emit-call scan sees every
 // dispatch-side emission.
 const dispatchAudit = createDispatchAudit();
 const emit = (event: string, payload: Record<string, any>) => dispatchAudit.emit(event, payload);
+if (executionOptions.requestedMode !== "standard") {
+  emit("x_gauntlet_execution_requested", {
+    requested_mode: executionOptions.requestedMode, resolved_mode: executionOptions.resolvedMode,
+    intensity: executionOptions.intensity, reason: executionOptions.reason,
+  });
+}
 
-if (!slug && !autoMode) {
+if (!slug && !autoMode && !explicitTarget) {
   console.error("Usage: nrv dispatch <business_slug> \"<brief>\" [opts]");
   console.error("");
   console.error("  Opts:");
@@ -230,6 +327,10 @@ if (!slug && !autoMode) {
   console.error("");
   console.error("  Exec (autopilot):");
   console.error("    --auto                  no business named: the router picks the best one for the brief");
+  console.error("    --business=<slug>       name the business explicitly (same as the positional slug)");
+  console.error("    --squad=<slug>          name the squad explicitly: squad-only route, no router");
+  console.error("    --agent-x               dispatch the generalist explicitly, no router");
+  console.error("                            (--business, --squad, --agent-x and --auto are mutually exclusive)");
   console.error("    --exec[=runtime]        run the agent headless (without it, only scaffolds)");
   console.error("    --claude-code           shortcut for --exec=claude-code");
   console.error("    --auto-brief            enrich a thin brief and decide for the human");
@@ -237,6 +338,9 @@ if (!slug && !autoMode) {
     console.error("    --pdf                   build relatorio-final.pdf via report-publisher (if the business has one)");
     console.error("    --html                  build relatorio-final.html from every markdown in the project (marked)");
   console.error("    --team                  real multi-employee orchestration (director + chain, each step audits)");
+  console.error("    --execution-mode=<mode> standard|gauntlet|auto (default: standard)");
+  console.error("    --gauntlet-intensity=<profile> light|balanced|exhaustive");
+  console.error("    --run-id=<runId>        adopt a Run already prepared in the project kernel (Glance); default run_<project>");
   console.error("    --max-budget=<usd>      cost ceiling for the run (claude --max-budget-usd)");
   console.error("    --timeout=<min>         wall-clock ceiling for the run (default 24h; a real hang is caught by ~5 min of inactivity)");
   console.error("    --safe                  opt in to restricted mode (limited tools + sandbox); default = full trust");
@@ -346,11 +450,7 @@ const envDefault = (process.env.NIRVANA_DEFAULT_RUNTIME || "").trim();
 // but the choice is announced and audited instead of assumed.
 const firstAvailable = (): Runtime | null =>
   (listRuntimes().map(r => r.name).find(n => runtimeAvailable(n)) ?? null);
-const hostDefault: Runtime =
-  detectedHost
-  ?? (envDefault ? normRuntime(envDefault) : null)
-  ?? firstAvailable()
-  ?? "claude-code";
+const hostDefault: Runtime = resolveDefaultRuntime({ detectedHost, envDefault, normalize: normRuntime, firstAvailable }).runtime;
 if (!detectedHost) {
   const how = envDefault ? `NIRVANA_DEFAULT_RUNTIME=${hostDefault}` : `first available on PATH: ${hostDefault}`;
   console.error(c("yellow", "⚠") + ` host runtime not identified — using ${how}.`
@@ -563,6 +663,19 @@ if (autoMode && routingMode === "fast") {
     emit("auto_route_selected", { project_id: projectId || null, business_slug: null, method: "agentic", source: plan.source, agent_x: true, reason: step.reason });
     pendingCascade = { kind: "agent-x", reason: step.reason, plan };
   }
+} else if (explicitTarget && explicitTarget.kind !== "business") {
+  // --squad / --agent-x: the user named the target, so the plan is resolved
+  // without the router (dispatch-cascade layer 0) and flows into the same
+  // squad-only / agent-x branches the --auto route uses.
+  const plan = await explicitTargetPlan(explicitTarget);
+  const step = plan.steps[0];
+  if (step.kind === "squad") {
+    console.log(c("lime", "▶") + c("bold", ` Explicit target — squad ${step.slug}`) + c("dim", " (no router)"));
+    pendingCascade = { kind: "squad-only", squads: [step.slug!], plan };
+  } else {
+    console.log(c("lime", "▶") + c("bold", " Explicit target — agent-x") + c("dim", " (no router)"));
+    pendingCascade = { kind: "agent-x", reason: step.reason, plan };
+  }
 }
 
 // --auto-brief: deterministically enrich a thin brief so the headless agent can
@@ -607,6 +720,55 @@ const briefBiz = path.join(SKILLS, "businesses/scripts/brief-business.ts");
 const employeePrompt = path.join(SKILLS, "businesses/lib/employee-prompt.ts");
 const gateScriptPath = path.join(SKILLS, "harness/scripts/quality-gate.ts");
 const verifyScriptPath = path.join(SKILLS, "businesses/scripts/verify-deliverable.ts");
+
+// Frozen runtime, provider and model decision of one canary Run: the broker answers
+// from the provider catalogs on disk (lib/runtime-snapshot.ts); without a descriptor
+// the snapshot is the previous literal and nothing changes. Broker errors are
+// explained here and end the Run before the producer inside runAgentXGauntlet
+// (RT-002): no silent switch, no legacy fallback.
+function frozenExecutionSnapshot(pid: string, rt: Runtime, targetKind: "business" | "squad" | "agent-x") {
+  const snapshot = freezeExecutionSnapshot({ runtimeId: rt, runtimeSource: runtimeDecision.source,
+    projectRoot: path.resolve(process.env.NIRVANA_PROJECT_ROOT || process.cwd()) });
+  if (snapshot.errors?.length) {
+    console.error(c("red", `✗ runtime '${rt}' is incompatible with the provider catalog; the Run ends before the producer:`));
+    for (const error of snapshot.errors) console.error(c("red", `    ${error}`));
+    emit("x_runtime_incompatible", { trace_id: pid, project_id: pid, target_kind: targetKind, runtime: rt,
+      runtime_source: runtimeDecision.source, errors: snapshot.errors, rejected: snapshot.rejected ?? [], catalog_dirs: snapshot.catalog?.dirs ?? [] });
+  } else {
+    for (const warning of snapshot.warnings ?? []) console.error(c("yellow", `⚠ ${warning}`));
+  }
+  return snapshot;
+}
+
+// Gauntlet evaluator shared by the three canaries: the offline quality gate, echoing the
+// candidate and revision ids the cutover assigns, with a graded score (share of gateable
+// files that pass) so the controller can measure progress between revisions.
+function gauntletEvaluator(env: Record<string, string>): AgentXGauntletEvaluator {
+  const target = { kind: "squad" as const, slug: "harness-quality-gate", capabilityId: "quality.specification_conformance" };
+  return {
+    target,
+    evaluate({ candidateId, revisionId, candidateRoot, artifactRefs }) {
+      const files = gateableFiles(candidateRoot, new Set());
+      const gate = files.length ? runGateOnce(files, { gateScript: gateScriptPath, offline: true, env }) : { pass: false, fails: [] };
+      return [{ evaluationId: `evl_${revisionId}`, candidateId, revisionId,
+        gauntletId: "brief-conformance", rubricVersion: "harness-quality-gate/v1", verdict: gate.pass ? "pass" : "revise",
+        dimensions: [{ id: "brief-conformance", score: files.length ? (files.length - gate.fails.length) / files.length : 0,
+          confidence: 1, blocking: true, passed: gate.pass, evidenceRefs: artifactRefs.map(ref => ref.revisionId) }], regressions: [],
+        revisionRequests: gate.pass ? [] : [{ requirementId: "brief-conformance",
+          evidenceRefs: gate.fails.map(failure => pathToFileURL(failure.file).href) }], evaluator: target,
+        costUsd: 0, createdAt: new Date().toISOString() }];
+    },
+  };
+}
+
+// Revision brief: the original brief plus the deterministic defects section. It is written
+// beside the candidate's revision directories, never inside one, so it is not an artifact.
+function writeRevisionBrief(brief: string, request: AgentXRevisionRequest): { text: string; file: string } {
+  const text = `${brief}\n\n${revisionDefectsSection(request)}\n`;
+  const file = path.join(path.dirname(request.candidateRoot), `brief-revision-${request.revision}.md`);
+  fs.writeFileSync(file, text, "utf8");
+  return { text, file };
+}
 
 // Shared delivery-pipeline invocation for all three cascade paths.
 interface DeliverOpts {
@@ -739,6 +901,58 @@ if (pendingCascade?.kind === "squad-only") {
   }
   const oroot = outputsRoot || path.join(projectRoot, "deliverables");
   fs.mkdirSync(oroot, { recursive: true });
+  const capabilityId = pendingCascade.plan.steps.find(step => step.kind === "squad" && step.slug === squads[0])?.capability || "squad.execute";
+  if (shouldRunSquadGauntlet({ squadCount: squads.length, wantExec, resolvedMode: executionOptions.resolvedMode })) {
+    const squad = squads[0];
+    const producerTarget = { kind: "squad" as const, slug: squad, capabilityId };
+    const canonicalRunId = canonicalRunIdFor(pid, runIdFlag);
+    const budget = gauntletRoundBudget(compileGauntletPlan({ brief, intensity: executionOptions.intensity }), effectiveBudgetUsd());
+    const kernel = openKernel(canaryKernelPath(projectRoot));
+    const legacy = runLedger.openLedger();
+    const evaluator = gauntletEvaluator({ NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid });
+    let finalDelivery: DeliveryResult | null = null;
+    // One producer for the first candidate and for every revision: same squad, same runtime.
+    const produce = (candidateRoot: string, candidateBrief: string) => {
+      const candidate = runSquadHeadless({ squadSlug: squad, brief: candidateBrief, projectId: pid, projectDir: projDir, projectRoot,
+        outputsDir: candidateRoot, runtime: rt, businessSlug: null, mode: "squad-only",
+        maxBudgetUsd: budget.candidateBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
+        rulesDirective, autonomousDirective: AUTONOMOUS_DIRECTIVE,
+        ledger: { runId: canonicalRunId, watchDir: candidateRoot } });
+      if (candidate.sessionId) runLedger.recordSession(legacy, canonicalRunId, candidate.sessionId);
+      return { ok: candidate.ok, sessionId: candidate.sessionId, costUsd: candidate.costUsd, error: candidate.error };
+    };
+    const executionSnapshot = frozenExecutionSnapshot(pid, rt, "squad");
+    try {
+      const result = runAgentXGauntlet({
+        kernel, legacy: createHarnessLegacyAdapter({ ledger: legacy, auditCwd: projDir }), producerTarget,
+        projectId: pid, runId: canonicalRunId, traceId: pid, brief, projectRoot, outputsRoot: oroot,
+        intensity: executionOptions.intensity, executionSnapshot,
+        expectedCostUsd: budget.roundBudgetUsd,
+        executeCandidate: candidateRoot => produce(candidateRoot, brief),
+        reviseCandidate: request => produce(request.candidateRoot, writeRevisionBrief(brief, request).text),
+        evaluator,
+        finalGate({ sessionId }) {
+          finalDelivery = runDelivery({ ...deliveryArgs({ pid, slugOrNull: null, targetKind: "squad", rt, oroot,
+            projDir, projectRoot, sessionId, withManifest: false }), ledger: null, maxRevisions: 0 });
+          return { exitCode: finalDelivery.exitCode, gateOutcome: finalDelivery.gateOutcome };
+        },
+      });
+      if (finalDelivery) printDeliverySummary(finalDelivery, pid, oroot, null);
+      else console.error(c("yellow", `⚠ Gauntlet stopped before the final gate (${result.run.state}: ${result.gauntlet.stopReason}).`));
+      kernel.close(); legacy.close();
+      process.exit(result.exitCode);
+    } catch (error) {
+      kernel.close(); legacy.close();
+      console.error(c("red", `✗ squad Gauntlet failed: ${(error as Error).message}`));
+      process.exit(1);
+    }
+  }
+  // Standard mode publishes the same canonical Run the Gauntlet canary would (dual-write through
+  // lib/run-kernel/standard-publication.ts, fail-open); a chain of squads publishes under its first squad.
+  const publication = openStandardPublication({ kernelPath: canaryKernelPath(projectRoot), projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag),
+    traceId: pid, target: { kind: "squad", slug: squads[0], capabilityId }, snapshot: frozenExecutionSnapshot(pid, rt, "squad"),
+    audit: emit, warn: line => console.error(c("yellow", line)) });
+  if (publication.incompatible) process.exit(1);
   ledgerTry(() => {
     ledgerHandle = runLedger.openLedger();
     const row = runLedger.openRun(ledgerHandle, {
@@ -751,6 +965,7 @@ if (pendingCascade?.kind === "squad-only") {
   if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "running", { childPid: process.pid }));
 
   console.log(c("lime", "▶") + c("bold", ` Squad-only — exec headless (${rt})`));
+  publication.start();
   let lastSession: string | null = null;
   let squadError: string | null = null;
   let failedSquad: string | null = null;
@@ -782,8 +997,10 @@ if (pendingCascade?.kind === "squad-only") {
     pid, slugOrNull: null, targetKind: "squad" as const, rt, oroot,
     projDir, projectRoot, sessionId: lastSession, withManifest: false,
   };
+  publication.verify();
   if (squadError) {
     const outcome = deliverAfterError(squadDeliverOpts, squadError, { squad_slug: failedSquad });
+    publication.finish({ exitCode: outcome.exitCode, gateOutcome: outcome.result?.gateOutcome ?? "indeterminate", error: squadError }, oroot);
     if (!outcome.judged) {
       console.error(c("red", `✗ nothing was produced in ${oroot} — nothing to judge.`));
       process.exit(1);
@@ -794,6 +1011,7 @@ if (pendingCascade?.kind === "squad-only") {
 
   console.log(c("lime", "▶") + c("bold", " Delivery pipeline — verify → gate → deliver"));
   const res = deliver(squadDeliverOpts);
+  publication.finish({ exitCode: res.exitCode, gateOutcome: res.gateOutcome }, oroot);
   printDeliverySummary(res, pid, oroot, null);
   process.exit(res.exitCode);
 }
@@ -833,6 +1051,59 @@ if (pendingCascade?.kind === "agent-x") {
   }
   const oroot = outputsRoot || path.join(base, "deliverables");
   fs.mkdirSync(oroot, { recursive: true });
+  if (shouldRunAgentXGauntlet({ targetKind: "agent-x", wantExec, resolvedMode: executionOptions.resolvedMode })) {
+    const canonicalRunId = canonicalRunIdFor(pid, runIdFlag);
+    const budget = gauntletRoundBudget(compileGauntletPlan({ brief, intensity: executionOptions.intensity }), effectiveBudgetUsd());
+    const kernel = openKernel(canaryKernelPath(base));
+    const legacy = runLedger.openLedger();
+    const evaluator = gauntletEvaluator({ NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid });
+    let finalDelivery: DeliveryResult | null = null;
+    // One producer for the first candidate and for every revision: same persona, same runtime.
+    const produce = (candidateRoot: string, candidateBrief: string, candidateBriefPath: string) => {
+      const candidate = runAgentX({ brief: candidateBrief, briefPath: candidateBriefPath, runtime: rt, projectId: pid, projectDir: projDir,
+        projectRoot: base, outputsRoot: candidateRoot, reason: pendingCascade.reason, appendSystemPrompt: AUTONOMOUS_DIRECTIVE + rulesDirective,
+        maxBudgetUsd: budget.candidateBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
+        yolo, ledger: { runId: canonicalRunId, watchDir: candidateRoot }, audit: emit });
+      if (candidate.sessionId) runLedger.recordSession(legacy, canonicalRunId, candidate.sessionId);
+      if (!candidate.ok) emit("agent_exec_failed", { trace_id: pid, project_id: pid, employee: "agent-x", runtime: rt,
+        exit_code: candidate.exitCode, error: candidate.error || candidate.stderr });
+      return { ok: candidate.ok, sessionId: candidate.sessionId, costUsd: candidate.costUsd,
+        error: candidate.error || candidate.stderr || undefined };
+    };
+    const executionSnapshot = frozenExecutionSnapshot(pid, rt, "agent-x");
+    try {
+      const result = runAgentXGauntlet({
+        kernel, legacy: createHarnessLegacyAdapter({ ledger: legacy, auditCwd: projDir }),
+        projectId: pid, runId: canonicalRunId, traceId: pid, brief, projectRoot: base, outputsRoot: oroot,
+        intensity: executionOptions.intensity, executionSnapshot,
+        expectedCostUsd: budget.roundBudgetUsd,
+        executeCandidate: candidateRoot => produce(candidateRoot, brief, briefPath),
+        reviseCandidate(request) {
+          const revision = writeRevisionBrief(brief, request);
+          return produce(request.candidateRoot, revision.text, revision.file);
+        },
+        evaluator,
+        finalGate({ sessionId }) {
+          finalDelivery = runDelivery({ ...deliveryArgs({ pid, slugOrNull: null, targetKind: "agent-x", rt, oroot,
+            projDir, projectRoot: base, sessionId, withManifest: false }), ledger: null, maxRevisions: 0 });
+          return { exitCode: finalDelivery.exitCode, gateOutcome: finalDelivery.gateOutcome };
+        },
+      });
+      if (finalDelivery) printDeliverySummary(finalDelivery, pid, oroot, null);
+      else console.error(c("yellow", `⚠ Gauntlet stopped before the final gate (${result.run.state}: ${result.gauntlet.stopReason}).`));
+      kernel.close(); legacy.close();
+      process.exit(result.exitCode);
+    } catch (error) {
+      kernel.close(); legacy.close();
+      console.error(c("red", `✗ agent-x Gauntlet failed: ${(error as Error).message}`));
+      process.exit(1);
+    }
+  }
+  // Standard mode publishes the same canonical Run the Gauntlet canary would (dual-write, fail-open).
+  const publication = openStandardPublication({ kernelPath: canaryKernelPath(base), projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag),
+    traceId: pid, target: { kind: "agent-x", slug: "agent-x" }, snapshot: frozenExecutionSnapshot(pid, rt, "agent-x"),
+    audit: emit, warn: line => console.error(c("yellow", line)) });
+  if (publication.incompatible) process.exit(1);
   ledgerTry(() => {
     ledgerHandle = runLedger.openLedger();
     const row = runLedger.openRun(ledgerHandle, {
@@ -845,6 +1116,7 @@ if (pendingCascade?.kind === "agent-x") {
   if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "running", { childPid: process.pid }));
 
   console.log(c("lime", "▶") + c("bold", ` Agent-x — exec headless (${rt})`));
+  publication.start();
   const r = runAgentX({
     brief, briefPath, runtime: rt, projectId: pid,
     projectDir: projDir, projectRoot: base, outputsRoot: oroot,
@@ -861,10 +1133,13 @@ if (pendingCascade?.kind === "agent-x") {
     pid, slugOrNull: null, targetKind: "agent-x" as const, rt, oroot,
     projDir, projectRoot: base, sessionId: r.sessionId, withManifest: false,
   };
+  publication.verify();
   if (!r.ok) {
     console.error(c("red", `✗ agent-x failed (exit ${r.exitCode}): ${r.error || r.stderr || "unknown"}`));
     emit("agent_exec_failed", { trace_id: pid, project_id: pid, employee: "agent-x", runtime: rt, exit_code: r.exitCode, error: r.error || r.stderr });
-    const outcome = deliverAfterError(agentXDeliverOpts, r.error || r.stderr || `exit ${r.exitCode}`, { employee: "agent-x" });
+    const runtimeError = r.error || r.stderr || `exit ${r.exitCode}`;
+    const outcome = deliverAfterError(agentXDeliverOpts, runtimeError, { employee: "agent-x" });
+    publication.finish({ exitCode: outcome.exitCode, gateOutcome: outcome.result?.gateOutcome ?? "indeterminate", error: runtimeError }, oroot);
     if (!outcome.judged) {
       console.error(c("red", `✗ nothing was produced in ${oroot} — nothing to judge.`));
       process.exit(1);
@@ -876,6 +1151,7 @@ if (pendingCascade?.kind === "agent-x") {
 
   console.log(c("lime", "▶") + c("bold", " Delivery pipeline — verify → gate → deliver"));
   const res = deliver(agentXDeliverOpts);
+  publication.finish({ exitCode: res.exitCode, gateOutcome: res.gateOutcome }, oroot);
   printDeliverySummary(res, pid, oroot, null);
   process.exit(res.exitCode);
 }
@@ -917,6 +1193,10 @@ const projectRoot = path.resolve(projDir, "..", "..");
 // includes but the scaffold dirs handoffs/tickets/employees are excluded).
 const execOutputsRoot = outputsRoot || (wantExec ? path.join(projDir, "deliverables") : undefined);
 if (execOutputsRoot && wantExec) fs.mkdirSync(execOutputsRoot, { recursive: true });
+const businessCanaryDecision = decideBusinessCanary({ businessSlug: slug, wantExec, teamMode: wantTeam,
+  requestedMode: executionOptions.requestedMode, resolvedMode: executionOptions.resolvedMode,
+  intensity: executionOptions.intensity, allowlist: process.env.NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST,
+  killSwitch: process.env.NIRVANA_BUSINESS_GAUNTLET_KILL_SWITCH });
 const tmpBriefFile = path.join(projectRoot, "brief.md");
 if (!fs.existsSync(tmpBriefFile)) {
   console.error(c("red", `✗ brief.md not found at ${tmpBriefFile}`));
@@ -946,7 +1226,7 @@ dispatchAudit.bindProjectRoot(projDir);
 // Dispatch ledger — open the run BEFORE exec, so a crash anywhere between
 // here and delivery leaves a non-terminal row the supervisor can recover.
 // Scaffold-only mode opens nothing (there is no execution to supervise).
-if (wantExec) {
+if (wantExec && !businessCanaryDecision.enabled) {
   ledgerTry(() => {
     ledgerHandle = runLedger.openLedger();
     const row = runLedger.openRun(ledgerHandle, {
@@ -984,6 +1264,12 @@ emit("dispatch_business", {
   dna_files_injected: dnaCount,
   prompt_size_chars: promptSize,
 });
+if (executionOptions.requestedMode === "gauntlet") {
+  emit(businessCanaryDecision.enabled ? "x_business_gauntlet_selected" : "x_business_gauntlet_bypassed", {
+    trace_id: pid, project_id: pid, business_slug: slug, reason: businessCanaryDecision.reason,
+    requested_mode: executionOptions.requestedMode, intensity: executionOptions.intensity,
+  });
+}
 console.log(c("dim", `  ✓ dispatch_business written to ${path.join(harnessLogsDir({ cwd: projDir }), new Date().toISOString().slice(0, 10))}/audit.jsonl`));
 
 // ── EXEC MODE — actually run the runtime headless, then verify+gate+deliver ─
@@ -1000,7 +1286,108 @@ if (wantExec) {
     if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "failed", { error: "runtime not on PATH" }));
     process.exit(1);
   }
+  if (businessCanaryDecision.enabled) {
+    const canonicalRunId = canonicalRunIdFor(pid, runIdFlag);
+    const budget = gauntletRoundBudget(compileGauntletPlan({ brief, intensity: executionOptions.intensity }), effectiveBudgetUsd());
+    const kernel = openKernel(canaryKernelPath(projectRoot));
+    const canaryLedger = runLedger.openLedger();
+    const evaluator = gauntletEvaluator({ NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid, NIRVANA_BUSINESS_SLUG: slug });
+    let finalDelivery: DeliveryResult | null = null;
+    let canarySessionId: string | null = null;
+    // The employee prompt embeds `outputs_root`, so it is rebuilt per candidate root: every
+    // candidate and revision writes into its own isolated directory, never into `oroot`.
+    const employeePromptFor = (briefFile: string, candidateRoot: string): string => {
+      const built = spawnSync("bun", [employeePrompt, slug, intake, projDir, briefFile, candidateRoot], { encoding: "utf8" });
+      if (built.status !== 0) throw new Error(`employee-prompt failed: ${built.stderr}`);
+      return built.stdout;
+    };
+    // One producer for the first candidate and for every revision: same employee, same runtime.
+    const produce = (candidateRoot: string, briefFile: string, candidateBrief: string) => {
+      const prompt = employeePromptFor(briefFile, candidateRoot);
+      attempt.markProductionStarted();
+      const candidate = runWithCascade({ runtime: rt, prompt, cwd: projDir,
+        addDirs: [projectRoot], appendSystemPrompt: AUTONOMOUS_DIRECTIVE + rulesDirective,
+        maxBudgetUsd: budget.candidateBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
+        yolo, brief: candidateBrief, projectRoot, outputsRoot: candidateRoot, taskHint: `business Gauntlet canary · ${slug}/${intake}`,
+        projectId: pid, ledger: { runId: canonicalRunId, watchDir: candidateRoot } });
+      canarySessionId = candidate.sessionId;
+      if (candidate.sessionId) runLedger.recordSession(canaryLedger, canonicalRunId, candidate.sessionId);
+      return { ok: candidate.ok, sessionId: candidate.sessionId, costUsd: candidate.costUsd,
+        error: candidate.error || candidate.stderr || undefined };
+    };
+    const executionSnapshot = frozenExecutionSnapshot(pid, rt, "business");
+    const attempt = {
+      markProductionStarted() {},
+      run() {
+        return runAgentXGauntlet({
+          kernel, legacy: createHarnessLegacyAdapter({ ledger: canaryLedger, auditCwd: projDir }),
+          producerTarget: { kind: "business", slug }, projectId: pid, runId: canonicalRunId, traceId: pid,
+          brief, projectRoot, outputsRoot: oroot, expectedCostUsd: budget.roundBudgetUsd, intensity: executionOptions.intensity,
+          executionSnapshot,
+          executeCandidate: candidateRoot => produce(candidateRoot, tmpBriefFile, brief),
+          reviseCandidate(request) {
+            const revision = writeRevisionBrief(brief, request);
+            return produce(request.candidateRoot, revision.file, revision.text);
+          },
+          evaluator,
+          finalGate({ sessionId }) {
+            const sessionFile = path.join(projDir, "session.json");
+            const sessionData: Record<string, any> = { project_id: pid, business_slug: slug, employee: intake, runtime: rt,
+              session_id: sessionId, project_dir: projDir, project_root: projectRoot, outputs_root: oroot,
+              zip_path: null, created_at: new Date().toISOString(), manifest: manifest ?? null };
+            fs.writeFileSync(sessionFile, JSON.stringify(sessionData, null, 2));
+            const afterGate = () => runBusinessPostGate({ projectId: pid, businessSlug: slug, runtime: rt,
+              projectDir: projDir, projectRoot, outputsRoot: oroot, skillsRoot: SKILLS, employeePromptScript: employeePrompt,
+              sessionFile, sessionData, rulesDirective, maxBudgetUsd: budget.candidateBudgetUsd,
+              timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined, yolo, wantPdf, skipHtml,
+              offlineSnapshot: process.argv.includes("--offline-snapshot"), routingMode, wantZip, emit,
+              log: message => console.log(c("lime", message)), warn: message => console.error(c("yellow", message)) });
+            finalDelivery = runDelivery({ ...deliveryArgs({ pid, slugOrNull: slug, targetKind: "business", rt, oroot,
+              projDir, projectRoot, sessionId, withManifest: true, afterGate }), ledger: null, maxRevisions: 0 });
+            return { exitCode: finalDelivery.exitCode, gateOutcome: finalDelivery.gateOutcome };
+          },
+        });
+      },
+      shouldRollback(result: ReturnType<typeof runAgentXGauntlet>) {
+        // RT-002: an incompatible runtime ends the Run with the explanation; it never
+        // falls back to the legacy executor.
+        return !result.finalGateRan && result.run.state === "rolled_back" && !executionSnapshot.errors?.length;
+      },
+    };
+    try {
+      const outcome = runBusinessCanaryWithRollback({ attempt,
+        runLegacy: () => ({ fallback: true as const }),
+        emit: (event, payload) => emit(event, { trace_id: pid, project_id: pid, business_slug: slug, ...payload }) });
+      kernel.close(); canaryLedger.close();
+      if (!("fallback" in outcome)) {
+        if (finalDelivery) printDeliverySummary(finalDelivery, pid, oroot, finalDelivery.zipPath);
+        else console.error(c("yellow", `⚠ Business Gauntlet stopped before the final gate (${outcome.run.state}: ${outcome.gauntlet.stopReason}).`));
+        process.exit(outcome.exitCode);
+      }
+      ledgerTry(() => {
+        ledgerHandle = runLedger.openLedger();
+        const row = runLedger.openRun(ledgerHandle, { traceId: pid, projectId: pid, targetSlug: slug, targetKind: "business",
+          runtime: rt, childPid: process.pid, meta: { project_dir: projDir, project_root: projectRoot,
+            outputs_root: oroot, prompt_path: outputPath, brief_path: tmpBriefFile, mode: "single" } });
+        ledgerRunId = row.run_id;
+      });
+    } catch (error) {
+      kernel.close(); canaryLedger.close();
+      console.error(c("red", `✗ Business Gauntlet failed after production started: ${(error as Error).message}`));
+      process.exit(1);
+    }
+  }
+  // Standard mode publishes the canonical Run (dual-write, fail-open). After a canary rollback the
+  // kernel already holds this Run's terminal state, so the legacy fallback publishes nothing new.
+  const publication = businessCanaryDecision.enabled ? inertStandardPublication(canonicalRunIdFor(pid, runIdFlag))
+    : openStandardPublication({ kernelPath: canaryKernelPath(projectRoot), projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag), traceId: pid,
+      target: { kind: "business", slug }, snapshot: frozenExecutionSnapshot(pid, rt, "business"), audit: emit, warn: line => console.error(c("yellow", line)) });
+  if (publication.incompatible) {
+    if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "failed", { error: "runtime incompatible with the provider catalog" }));
+    process.exit(1);
+  }
   if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "running", { childPid: process.pid }));
+  publication.start();
 
   // res = unified result shape consumed by the delivery pipeline below.
   let res: { ok: boolean; sessionId: string | null; durationMs: number; costUsd: number | null; exitCode?: number; error?: string; stderr?: string };
@@ -1103,119 +1490,18 @@ if (wantExec) {
   let zipPathOut: string | null = null;
 
   const afterGate = (): { zipPath: string | null } => {
-    // Step 6.5 — optional PDF report. The report-publisher employee (LLM, no
-    // shell) writes relatorio/resumo-executivo.md + relatorio/order.json; the
-    // harness then runs build-report-pdf.ts to produce relatorio-final.pdf
-    // inside deliverables/ (so it lands in the --deliverables-only zip).
-    if (wantPdf) {
-      // Build script: the business's own (if it ships one) else the shared harness
-      // script. Publisher: the business's report-publisher employee (if any) else a
-      // generic inline publisher prompt. So --pdf works for ANY business.
-      const bizHome = path.join(os.homedir(), "businesses", slug);
-      const bizBuild = path.join(bizHome, "scripts", "build-report-pdf.ts");
-      const buildScript = fs.existsSync(bizBuild) ? bizBuild : path.join(SKILLS, "harness/scripts/build-report-pdf.ts");
-      const pubEmployee = path.join(bizHome, "employees", "report-publisher.md");
-      const hasPublisher = fs.existsSync(pubEmployee);
-      if (!fs.existsSync(buildScript)) {
-        console.log(c("yellow", `  ⚠ --pdf: build-report-pdf.ts not found; skipping PDF`));
-      } else {
-        console.log(c("lime", "▶") + c("bold", ` Step 6.5 — PDF report (${hasPublisher ? "report-publisher" : "generic publisher"})`));
-        const relatorioDir = path.join(projDir, "relatorio");
-        fs.mkdirSync(relatorioDir, { recursive: true });
-        const summaryPath = path.join(relatorioDir, "resumo-executivo.md");
-        const orderPath = path.join(relatorioDir, "order.json");
-        const pubBrief = [
-          "Você é o publicador do relatório final. Compile a entrega.",
-          `Leia TODOS os arquivos .md em: ${oroot}`,
-          "",
-          "Escreva EXATAMENTE dois arquivos (use a ferramenta Write, não rode shell):",
-          `1. ${summaryPath} — resumo executivo fiel (markdown), que vai na capa do PDF.`,
-          `2. ${orderPath} — JSON: {"title": "...", "subtitle": "...", "client": "...", "summary_file": "${summaryPath}", "order": ["arquivo1.md", "arquivo2.md", ...]}`,
-          "   - order = nomes dos .md em " + oroot + " na sequência ideal (resposta direta primeiro, depois análise, base e anexos).",
-          "Não invente conclusão nem fonte. Apenas sintetize e ordene.",
-        ].join("\n");
-        const pubBriefFile = path.join(relatorioDir, ".publisher-brief.md");
-        fs.writeFileSync(pubBriefFile, pubBrief);
-
-        // Prompt: DNA-injected employee persona if the business has one, else the
-        // self-contained generic brief above.
-        let pubPrompt = pubBrief;
-        if (hasPublisher) {
-          const ep = spawnSync("bun", [employeePrompt, slug, "report-publisher", projDir, pubBriefFile, relatorioDir], { encoding: "utf8" });
-          if (ep.status === 0 && ep.stdout) pubPrompt = ep.stdout;
-          else console.error(c("yellow", `  ⚠ report-publisher prompt failed; using the generic publisher`));
-        }
-        {
-          const pubRes = runHeadless({
-            runtime: rt, prompt: pubPrompt, cwd: projDir, addDirs: [projectRoot],
-            appendSystemPrompt: AUTONOMOUS_DIRECTIVE + rulesDirective,
-            maxBudgetUsd: effectiveBudgetUsd(),
-            timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined, yolo,
-          });
-          emit("report_publisher_ran", { trace_id: pid, project_id: pid, business_slug: slug, ok: pubRes.ok, publisher: hasPublisher ? "employee" : "generic" });
-
-          // Assemble the PDF into deliverables/ so the zip includes it.
-          const pdfOut = path.join(oroot, "relatorio-final.pdf");
-          const pdfArgs = [buildScript, "--deliverables", oroot, "--output", pdfOut];
-          if (fs.existsSync(summaryPath)) pdfArgs.push("--summary", summaryPath);
-          let title = `Relatório — ${pid}`, subtitle = "", clientName = "", brand = slug;
-          if (fs.existsSync(orderPath)) {
-            try {
-              const meta = JSON.parse(fs.readFileSync(orderPath, "utf8"));
-              if (Array.isArray(meta.order) && meta.order.length) pdfArgs.push("--order", meta.order.join(","));
-              if (meta.title) title = meta.title;
-              if (meta.subtitle) subtitle = meta.subtitle;
-              if (meta.client) clientName = meta.client;
-              if (meta.brand) brand = meta.brand;
-            } catch { /* use defaults */ }
-          }
-          pdfArgs.push("--title", title, "--brand", brand);
-          if (subtitle) pdfArgs.push("--subtitle", subtitle);
-          if (clientName) pdfArgs.push("--client", clientName);
-          const pdf = spawnSync("bun", pdfArgs, { encoding: "utf8" });
-          if (pdf.status === 0 && fs.existsSync(pdfOut)) {
-            console.log(c("green", `  ✓ PDF: ${pdfOut} (${(fs.statSync(pdfOut).size / 1024).toFixed(1)} KB)`));
-            emit("report_pdf_generated", { trace_id: pid, project_id: pid, business_slug: slug, output: pdfOut });
-          } else {
-            console.error(c("yellow", `  ⚠ build-report-pdf failed: ${(pdf.stdout || "") + (pdf.stderr || "")}`));
-          }
-        }
-      }
-    }
-
-    // Step 6.6 — HTML report (DEFAULT; skipped only in fast mode or with --no-html).
-    // Renders every project markdown into an Apple-style HTML. Lands in deliverables/
-    // so the --zip bundle picks it up. --offline-snapshot produces a 100% offline copy.
-    if (!skipHtml) {
-      console.log(c("lime", "▶") + c("bold", " Step 6.6 — HTML report"));
-      const htmlBuild = path.join(SKILLS, "harness/scripts/build-report-html.ts");
-      const htmlOut = path.join(oroot, "relatorio-final.html");
-      const htmlArgs = [htmlBuild, "--project", projDir, "--output", htmlOut, "--title", `Relatório — ${slug}`];
-      if (process.argv.includes("--offline-snapshot")) htmlArgs.push("--offline-snapshot");
-      const h = spawnSync("bun", htmlArgs, { encoding: "utf8", stdio: "inherit" });
-      if (h.status === 0) emit("report_html_generated", { trace_id: pid, project_id: pid, business_slug: slug, output: htmlOut });
-      else console.error(c("yellow", `  ⚠ build-report-html failed (rc=${h.status})`));
-    } else if (routingMode === "fast") {
-      emit("report_skipped_fast", { trace_id: pid, project_id: pid, business_slug: slug });
-    }
-
-    // Step 7 — export .zip
-    let zipPath: string | null = null;
-    if (wantZip) {
-      console.log(c("lime", "▶") + c("bold", " Step 7/7 — export .zip"));
-      const exportScript = path.join(SKILLS, "harness/scripts/export.ts");
-      const out = path.resolve(`./${pid}.zip`);
-      const z = spawnSync("bun", [exportScript, pid, "--format=zip", "--deliverables-only", `--output=${out}`], { encoding: "utf8", stdio: "inherit" });
-      if (z.status === 0) {
-        zipPath = out;
-        sessionData.zip_path = out;
-        fs.writeFileSync(sessionFile, JSON.stringify(sessionData, null, 2));
-      } else {
-        console.error(c("yellow", "  ⚠ export failed (deliverables are in the project folder)"));
-      }
-    }
-    zipPathOut = zipPath;
-    return { zipPath };
+    const result = runBusinessPostGate({
+      projectId: pid, businessSlug: slug, runtime: rt, projectDir: projDir, projectRoot,
+      outputsRoot: oroot, skillsRoot: SKILLS, employeePromptScript: employeePrompt,
+      sessionFile, sessionData, rulesDirective, maxBudgetUsd: effectiveBudgetUsd(),
+      timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
+      yolo, wantPdf, skipHtml, offlineSnapshot: process.argv.includes("--offline-snapshot"),
+      routingMode, wantZip, emit,
+      log: message => console.log(c("lime", message)),
+      warn: message => console.error(c("yellow", message)),
+    });
+    zipPathOut = result.zipPath;
+    return result;
   };
 
   const bizDeliverOpts = {
@@ -1229,8 +1515,10 @@ if (wantExec) {
     },
   };
   let delivery: DeliveryResult;
+  publication.verify();
   if (runtimeError) {
     const outcome = deliverAfterError(bizDeliverOpts, runtimeError, { employee: intake, mode: wantTeam ? "team" : "single" });
+    publication.finish({ exitCode: outcome.exitCode, gateOutcome: outcome.result?.gateOutcome ?? "indeterminate", error: runtimeError }, oroot);
     if (!outcome.judged) {
       console.error(c("red", `✗ nothing was produced in ${oroot} — nothing to judge.`));
       process.exit(1);
@@ -1239,6 +1527,7 @@ if (wantExec) {
     advanceHandoff();
   } else {
     delivery = deliver(bizDeliverOpts);
+    publication.finish({ exitCode: delivery.exitCode, gateOutcome: delivery.gateOutcome }, oroot);
   }
 
   printDeliverySummary(delivery, pid, oroot, zipPathOut, !!runtimeError);

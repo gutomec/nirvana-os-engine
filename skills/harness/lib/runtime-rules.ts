@@ -106,6 +106,30 @@ export function detectCurrentHost(env: NodeJS.ProcessEnv = process.env): Runtime
   return null;
 }
 
+/** Canonical runtime for a user-typed name (`claude`, `agy`, `pi-dev`, …) through the
+ *  same alias table as USE_* and NIRVANA_HOST_RUNTIME. Unknown names pass through. */
+export function canonicalRuntimeName(name: string): Runtime {
+  const alias = RUNTIME_ALIASES[name.trim().toUpperCase().replace(/-/g, "_")];
+  return alias && alias !== "hermes" ? (alias as Runtime) : (name.trim() as Runtime);
+}
+
+/** Default exec runtime once flag, brief mention and rules are silent, in the order
+ *  dispatch.ts applies: the session host, then NIRVANA_DEFAULT_RUNTIME, then the first
+ *  runtime installed on PATH, then claude-code. Pure, so the dispatch and the Glance
+ *  execution runner cannot disagree about which runtime a child would pick. */
+export function resolveDefaultRuntime(input: {
+  detectedHost: Runtime | null;
+  envDefault: string;
+  normalize: (name: string) => Runtime;
+  firstAvailable: () => Runtime | null;
+}): { runtime: Runtime; from: "host" | "env" | "path-scan" | "fallback" } {
+  if (input.detectedHost) return { runtime: input.detectedHost, from: "host" };
+  if (input.envDefault) return { runtime: input.normalize(input.envDefault), from: "env" };
+  const scanned = input.firstAvailable();
+  if (scanned) return { runtime: scanned, from: "path-scan" };
+  return { runtime: "claude-code", from: "fallback" };
+}
+
 /** Collects the USE_* vars along the SAME .env chain as LLM_CASCADE (literal
  *  file beats process.env — same reason as the cascade: Bun expands $ on auto-load).
  *  The first file defining a key wins (project overrides global). */
