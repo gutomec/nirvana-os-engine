@@ -115,7 +115,7 @@ junctionTest("EXT-FS-JUNCTION", () => useFixture((fixture) => {
 test("EXT-FS-CASE-SIBLING", () => useFixture((fixture) => {
   const alternate = "NESTED/DATA.JSON";
   if (process.platform !== "win32") {
-    mkdirSync(join(fixture.root, "NESTED"));
+    try { mkdirSync(join(fixture.root, "NESTED")); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
     writeFileSync(join(fixture.root, "NESTED", "DATA.JSON"), fixture.content);
   } else {
     expect(readFileSync(join(fixture.root, "NESTED", "DATA.JSON"))).toEqual(fixture.content);
