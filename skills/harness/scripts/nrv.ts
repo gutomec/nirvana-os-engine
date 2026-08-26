@@ -61,7 +61,7 @@ switch (cmd) {
   case "init": case "init-project": runScript(join(S, "init-project.ts"), rest);
   case "install": {
     const f = rest[0] ?? "";
-    if (["--bootstrap", "--check", "--starter", "--no-starter", "--dry"].includes(f)) runScript(join(S, "install.ts"), rest);
+    if (["--bootstrap", "--check", "--starter", "--no-starter", "--dry", "--repair-path"].includes(f)) runScript(join(S, "install.ts"), rest);
     runScript(join(S, "install-asset.ts"), rest);
   }
   case "setup": runScript(join(S, "install.ts"), rest);
