@@ -153,6 +153,9 @@ describe("durable agent-x canary recovery", () => {
     const third = fx.queue();
     expect(third.queue.recover("prj_child", fx.root)).toMatchObject({ redispatched: [runId] });
     await waitForState(fx.kernelPath, "prj_child", runId, "completed", 500);
+    // The child writes `completed` and exits; the queue records glance.child_exited only after the
+    // process exit event, so the terminal state alone does not mean the journal is final.
+    await waitUntil(() => fx.runEvents(runId).some(event => event.type === "glance.child_exited"), "the redispatched exit event");
     expect(child.count("spawns")).toBe(2);
     expect(child.count("producer")).toBe(1);
     expect(child.count("final-gate")).toBe(1);
