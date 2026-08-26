@@ -8,6 +8,40 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Headless children skip permissions on every verified runtime, with one switch
+
+The light-layer `claude-code` adapter built `claude -p --no-session-persistence
+--output-format json` without `--dangerously-skip-permissions`, so a
+non-interactive child died on the first tool that needed approval, while the
+headless layer passed the flag with no way to turn it off. Every adapter whose
+CLI documents an approval-bypass flag now passes it by default in both layers:
+`claude --dangerously-skip-permissions`, `codex exec
+--dangerously-bypass-approvals-and-sandbox`, `gemini --approval-mode yolo`,
+`agy --dangerously-skip-permissions` and `grok --always-approve`, each quoted
+from the CLI's own `--help` on the adapter. `NIRVANA_HEADLESS_SKIP_PERMISSIONS=0`
+turns the bypass off everywhere: the light layer omits the flag and
+`runHeadless` takes the restricted path that `nrv dispatch --safe` selects.
+pi's `--approve` is trust in project files rather than tool permission, and
+kimi, qwen and opencode could not be verified, so those four stay as they
+were; a test per adapter pins the argv in both states.
+
+### The evaluator adapter's own files are not the evaluator's artifacts
+
+The Gauntlet evaluator adapter wrote `evaluation-request.json` and
+`evaluation-brief.md` into the evaluation directory and handed that same
+directory to the child `dispatch.ts` as `--outputs-root`. A child whose
+executor wrote nothing still counted the two adapter files as deliverables
+(`verify_passed` with two files, a passing gate, a canonical Run `completed`)
+while the parent, correctly, found no scorecard and withheld the Run as
+`evaluation_indeterminate`. The child now receives
+`<evaluationDir>/outputs/`, emptied before the spawn, as its outputs root; the
+request and the brief stay one level up, and the scorecard is expected at
+`outputs/scorecard.json`. The evaluation brief tells the executor to write
+`scorecard.json` into its `output_path` (the absolute path stays in the
+request), that the candidate is read-only and that reading files is enough,
+no shell. With nothing under the outputs root the child Run fails at verify
+instead of completing, proven by a real `dispatch.ts` child in the e2e test.
+
 ### The multi-target coordinator observes the cost its children spend
 
 The first real smoke run of the multi-target engine delivered a squad node

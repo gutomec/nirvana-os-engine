@@ -20,8 +20,10 @@
 //                                  doing anything else, simulating the engine
 //                                  crashing while that node is running
 //   FAKE_DISPATCH_SCORECARD        act as a Gauntlet evaluator: read the
-//                                  evaluation-request.json the adapter wrote in
-//                                  the outputs root and write scorecard.json as
+//                                  evaluation-request.json the adapter wrote
+//                                  beside the outputs root (the outputs root is
+//                                  `<evaluationDir>/outputs/`) and write
+//                                  scorecard.json at the request's scorecardPath as
 //                                  pass | revise | missing | invalid-json |
 //                                  foreign-dimension | implicit-pass
 //   FAKE_DISPATCH_SCORECARD_FOR    "<revision>=<mode>[,...]" mode per candidate
@@ -64,7 +66,7 @@ if (cost > 0) {
   fs.appendFileSync(path.join(day, "audit.jsonl"), JSON.stringify({ ts: new Date().toISOString(), event: "agent_executed",
     trace_id: project, project_id: project, ...target, cost_usd: cost }) + "\n");
 }
-const requestFile = path.join(outputsRoot, "evaluation-request.json");
+const requestFile = path.join(path.dirname(outputsRoot), "evaluation-request.json");
 if ((process.env.FAKE_DISPATCH_SCORECARD || process.env.FAKE_DISPATCH_SCORECARD_FOR) && fs.existsSync(requestFile)) {
   const request = JSON.parse(fs.readFileSync(requestFile, "utf8"));
   const perRevision = (process.env.FAKE_DISPATCH_SCORECARD_FOR ?? "").split(",").map((item) => item.split("=")).find(([revision]) => Number(revision) === request.revision);

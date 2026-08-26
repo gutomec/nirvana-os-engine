@@ -8,18 +8,18 @@ Três propriedades são inegociáveis. O avaliador é independente do produtor: 
 
 ## O que o avaliador recebe
 
-Cada avaliação de uma revisão de candidate acontece em um diretório isolado, `.nirvana/gauntlet/<runId>/evaluations/<revisionId>/`, criado pelo adapter (`skills/harness/lib/gauntlet/evaluator-adapter.ts`). Antes de despachar, o adapter grava ali dois arquivos:
+Cada avaliação de uma revisão de candidate acontece em um diretório isolado, `.nirvana/gauntlet/<runId>/evaluations/<revisionId>/`, criado pelo adapter (`skills/harness/lib/gauntlet/evaluator-adapter.ts`). Antes de despachar, o adapter grava ali dois arquivos e cria, vazio, o subdiretório `outputs/`, o único caminho entregue ao executor como outputs root: os dois arquivos do adapter ficam fora dele e nunca contam como artefatos do executor.
 
 | Arquivo | Conteúdo |
 |---|---|
-| `evaluation-brief.md` | O brief de avaliação, em PT-BR como todo brief que o engine entrega a um executor: identificação do Run, do candidate e da revisão; a regra de não produzir nem editar; o caminho somente leitura do candidate; o brief original; o contrato de sucesso em tabela (id, capability, bloqueante, nota mínima, descrição); o caminho do scorecard; o formato JSON com as regras; a guarda de escopo; e, quando o plano marca holdout `evaluator_only`, a instrução de não compartilhar critérios com o produtor. |
+| `evaluation-brief.md` | O brief de avaliação, em PT-BR como todo brief que o engine entrega a um executor: identificação do Run, do candidate e da revisão; a regra de não produzir nem editar; o caminho somente leitura do candidate; a nota de que ler arquivos basta, sem shell; o brief original; o contrato de sucesso em tabela (id, capability, bloqueante, nota mínima, descrição); o caminho do scorecard; o formato JSON com as regras; a guarda de escopo; e, quando o plano marca holdout `evaluator_only`, a instrução de não compartilhar critérios com o produtor. |
 | `evaluation-request.json` | O mesmo pedido em forma legível por máquina (`nirvana.gauntlet-evaluation-request/v1alpha1`): `projectId`, `runId`, `candidateId`, `revisionId`, `revision`, `round`, `holdout`, `candidateRoot`, `scorecardPath`, `briefDigest`, `requirements[]` (os `SuccessRequirement` do plano) e `gauntletIds[]`. |
 
 O executor é despachado por um subprocesso do `dispatch.ts` com alvo explícito, nunca pelo roteador:
 
 ```
 bun dispatch.ts --squad <slug> | --agent-x --brief-file <dir>/evaluation-brief.md --exec \
-  --project <projectId>-evl-<revisionId> --outputs-root <dir> --execution-mode=standard --max-revisions 0 \
+  --project <projectId>-evl-<revisionId> --outputs-root <dir>/outputs --execution-mode=standard --max-revisions 0 \
   [--runtime <rt>] [--max-budget <usd>]
 ```
 
@@ -27,7 +27,7 @@ O modo é sempre `standard`: uma avaliação não abre outro Gauntlet, mesmo com
 
 ## O que o avaliador escreve
 
-Exatamente um arquivo, `scorecard.json`, no caminho indicado no brief. Schema `nirvana.gauntlet-scorecard/v1alpha1`, validado com zod em modo estrito (`evaluation-contract.ts`): chaves desconhecidas são rejeitadas.
+Exatamente um arquivo, `scorecard.json`, no seu `output_path`: `<dir>/outputs/scorecard.json`, o caminho absoluto indicado no brief e no pedido. Schema `nirvana.gauntlet-scorecard/v1alpha1`, validado com zod em modo estrito (`evaluation-contract.ts`): chaves desconhecidas são rejeitadas.
 
 ```json
 {
@@ -99,7 +99,7 @@ nrv dispatch --squad <squad-produtor> --brief-file brief.md --exec --project smo
   --execution-mode=gauntlet --gauntlet-intensity=light --runtime claude-code --max-budget 4
 ```
 
-Com produtor `agent-x`, o avaliador tem que ser um squad (`NIRVANA_GAUNTLET_EVALUATOR=squad:<slug>`), porque agent-x não avalia agent-x. Para um Business, some `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST=<slug>` e use `nrv dispatch <slug> ...`. A prova fica em três lugares: `outputs/<project>/.nirvana/gauntlet/run_<project>/evaluations/<revisionId>/` (brief, request e scorecard), o kernel do Run (`gauntlet.evaluation_recorded` com `evaluator` real e `costUsd` observado) e o audit (`x_gauntlet_evaluator_selected`, `x_gauntlet_evaluation_completed`). Nos testes, `NIRVANA_DISPATCH_SCRIPT` aponta o adapter para um dispatch falso que escreve o scorecard (`tests/helpers/fake-dispatch.ts`, knobs `FAKE_DISPATCH_SCORECARD` e `FAKE_DISPATCH_SCORECARD_FOR`).
+Com produtor `agent-x`, o avaliador tem que ser um squad (`NIRVANA_GAUNTLET_EVALUATOR=squad:<slug>`), porque agent-x não avalia agent-x. Para um Business, some `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST=<slug>` e use `nrv dispatch <slug> ...`. A prova fica em três lugares: `outputs/<project>/.nirvana/gauntlet/run_<project>/evaluations/<revisionId>/` (brief e request; o scorecard em `outputs/`), o kernel do Run (`gauntlet.evaluation_recorded` com `evaluator` real e `costUsd` observado) e o audit (`x_gauntlet_evaluator_selected`, `x_gauntlet_evaluation_completed`). Nos testes, `NIRVANA_DISPATCH_SCRIPT` aponta o adapter para um dispatch falso que escreve o scorecard (`tests/helpers/fake-dispatch.ts`, knobs `FAKE_DISPATCH_SCORECARD` e `FAKE_DISPATCH_SCORECARD_FOR`).
 
 ## Limites
 
