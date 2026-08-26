@@ -69,3 +69,25 @@ describe("compileManifest", () => {
     expect(issues.some((i) => i.message.includes("cycle"))).toBeTrue();
   });
 });
+
+describe("compileManifest with agent nodes", () => {
+  test("an agent node compiles to target agent/<id> under agents/<id>/outputs/, ordered like a squad", () => {
+    const g: DependencyGraph = {
+      nodes: [n("brief-1", "brief"), n("squad-a", "squad"), n("role-writer", "agent"), n("squad-b", "squad"), n("deliv-1", "deliverable")],
+      edges: [
+        e("e1", "brief-1", "squad-a", "briefs"),
+        e("e2", "role-writer", "squad-a", "depends_on"),
+        e("e3", "squad-b", "role-writer", "depends_on"),
+        e("e4", "squad-b", "deliv-1", "yields"),
+      ],
+    };
+    const { manifest, issues } = compileManifest(g);
+    expect(issues).toEqual([]);
+    const role = manifest!.phases.find((p) => p.id === "role-writer")!;
+    expect(role).toEqual({
+      id: "role-writer", target: "agent/role-writer", status: "pending",
+      depends_on: ["squad-a"], consumed_by: ["squad-b"], outputs_path: "agents/role-writer/outputs/",
+    });
+    expect(manifest!.parallel_waves).toEqual([["brief-1"], ["squad-a"], ["role-writer"], ["squad-b"], ["deliv-1"]]);
+  });
+});

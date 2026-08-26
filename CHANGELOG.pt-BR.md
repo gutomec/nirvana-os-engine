@@ -8,6 +8,38 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Planos multi-target aceitam nós `agent`: um papel sem squad, executado pelo agent-x
+
+Um plano multi-target podia nomear uma empresa, um squad, um deliverable ou
+um brief. Um papel sem squad especializado (a copy entre o squad de pesquisa
+e o de design) não tinha nó onde morar, embora o compilador de política já
+reservasse o tipo de decisão `agent-x` e os adapters de dispatch já
+executassem alvos `--agent-x` para a síntese. O grafo agora aceita um nó do
+tipo `agent`: o id é o nome do papel, um slug livre que não existe em
+registro nenhum; ele é briefado, depende e produz como um squad. O
+compilador o mapeia para targetKind `agent-x`, target `agent/<id>` e outputs
+em `agents/<id>/outputs/`; todo escopo Gauntlet, `criticalTargetIds`, os
+overrides por target e a reserva agregada o tratam como um squad. Os
+adapters o executam como `dispatch.ts --agent-x` com o sub-brief do nó e um
+`DISPATCH-INSTRUCTION.md` que nomeia o papel, os resumos upstream e as fases
+downstream, com o mesmo marcador de resultado e o mesmo custo observado; o
+nó de síntese continua sendo um `deliverable`. O arquivo de plano exige
+sub-brief para um nó `agent` e honra `budgetUsd` para ele. `status`, o
+evento `x_multi_target_node_terminal`, a timeline do Glance e a tabela de
+nós mostram o tipo do alvo de cada nó.
+
+Dois filhos agent-x de um plano (um nó `agent` e a síntese) compartilham
+`employee: "agent-x"` sob o mesmo trace, colisão que os adapters
+documentavam como uma que o grafo não produzia. O adapter agora nomeia o nó
+em `NIRVANA_MULTI_TARGET_NODE_ID` para todo filho, o `runAgentX` copia o
+valor como `node_id` no seu evento `agent_executed`, e o matcher de custo de
+um alvo agent-x o lê de volta; o adapter do avaliador Gauntlet, que não
+carrega id de nó, continua somando todo evento agent-x do seu próprio
+project id. Um nó `agent` em modo gauntlet é julgado como qualquer produtor
+agent-x: o avaliador precisa ser independente, então sem squad instalado que
+declare `quality.specification_conformance` a rodada cai na heurística,
+auditada como `x_gauntlet_evaluator_fallback`; um `judge-x` independente é
+outro corte.
 ### Filhos headless pulam permissões em todo runtime verificado, com um único interruptor
 
 O adapter `claude-code` da camada leve montava `claude -p --no-session-persistence

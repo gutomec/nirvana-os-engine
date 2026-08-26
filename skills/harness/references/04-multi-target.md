@@ -135,7 +135,11 @@ nrv multi-target status .nirvana/plans/<trace_id>.json   # read-only projection 
 
 The plan file (`nirvana.multi-target-plan/v1alpha1`) carries the enriched
 brief, one sub-brief per node, the dependency graph and, optionally, the
-Gauntlet policy, the runtime and per-node budgets. `plan` writes
+Gauntlet policy, the runtime and per-node budgets. Graph nodes are `company`,
+`squad`, `agent`, `deliverable` and `brief`; an `agent` node is a role no
+squad covers, named by its id (a free slug, in no registry), briefed, ordered
+and gated like a squad and run by the generalist as `--agent-x` under
+`agents/<id>/`. `plan` writes
 `manifest.json` and `brief-enriched.md` into the workspace above and executes
 nothing. `run` is opt-in (`NIRVANA_MULTI_TARGET_ENGINE=1`;
 `NIRVANA_MULTI_TARGET_KILL_SWITCH=1` turns it off), creates one Run in the

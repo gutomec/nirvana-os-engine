@@ -268,7 +268,7 @@ describe("multi-target wave coordinator", () => {
     expect(snapshot).toMatchObject({ state: "ready", currentWave: -1, attempt: 2, version: failed.version + 1, reportedCostUsd: 1, planDigest: failed.planDigest, reservationDigest: failed.reservationDigest });
     expect(snapshot.terminalReason).toBeUndefined();
     expect(snapshot.nodes.find((node) => node.nodeId === "business-a")).toEqual(failed.nodes.find((node) => node.nodeId === "business-a"));
-    expect(snapshot.nodes.find((node) => node.nodeId === "squad-c")).toEqual({ nodeId: "squad-c", waveIndex: 2, mode: "standard", state: "pending", outputPaths: [], reportedCostUsd: 0, grantedCostUsd: 0, blockedBy: [] });
+    expect(snapshot.nodes.find((node) => node.nodeId === "squad-c")).toEqual({ nodeId: "squad-c", waveIndex: 2, targetKind: "squad", mode: "standard", state: "pending", outputPaths: [], reportedCostUsd: 0, grantedCostUsd: 0, blockedBy: [] });
     expect(snapshot.nodes.find((node) => node.nodeId === "final-output")).toMatchObject({ state: "pending", blockedBy: [], outputPaths: [] });
     expect(failed.nodes.find((node) => node.nodeId === "squad-c")!.state).toBe("failed");
 
@@ -313,6 +313,54 @@ describe("multi-target wave coordinator", () => {
     expect(snapshot.nodes.map((node) => [node.nodeId, node.state, node.costObserved])).toEqual([
       ["brief-main", "delivered", undefined], ["business-a", "pending", undefined], ["business-b", "delivered", false],
       ["squad-c", "pending", undefined], ["final-output", "pending", undefined],
+    ]);
+  });
+});
+
+describe("multi-target wave coordinator with agent nodes", () => {
+  const agentGraph: DependencyGraph = {
+    nodes: [
+      { id: "brief-main", type: "brief" },
+      { id: "squad-research", type: "squad" },
+      { id: "role-copywriter", type: "agent" },
+      { id: "squad-design", type: "squad" },
+      { id: "final-output", type: "deliverable" },
+    ],
+    edges: [
+      { id: "brief-research", source: "brief-main", target: "squad-research", type: "briefs" },
+      { id: "copy-after-research", source: "role-copywriter", target: "squad-research", type: "depends_on" },
+      { id: "design-after-copy", source: "squad-design", target: "role-copywriter", type: "depends_on" },
+      { id: "final", source: "squad-design", target: "final-output", type: "yields" },
+    ],
+  };
+
+  test("runs the agent node as an agent-x target between the squads, with the upstream paths and its grant", async () => {
+    const compiled = compileMultiTargetGauntletPolicy(agentGraph, {
+      scope: "each-target-and-final", intensity: "light", synthesisNodeId: "final-output", limits: { maxCostUsd: 10 },
+      targets: { "squad-research": { mode: "standard" }, "role-copywriter": { limits: { maxCostUsd: 2 } }, "squad-design": { mode: "standard" } },
+    });
+    expect(compiled.issues).toEqual([]);
+    const reservation = reserveAggregateGauntletBudget(compiled.plan!).reservation;
+    const calls: MultiTargetAdapterInput[] = [];
+    const snapshot = await coordinateMultiTargetPlan({
+      plan: compiled.plan!, reservation,
+      ports: ports(async (input) => { calls.push(input); return { state: "delivered", reportedCostUsd: 0.5, outputPaths: [`${input.outputPath}artifact.md`] }; }),
+    });
+    expect(snapshot.state).toBe("delivered");
+    expect(calls.map(({ nodeId, mode, target }) => [nodeId, mode, target.kind, target.id])).toEqual([
+      ["squad-research", "standard", "squad", "squad-research"],
+      ["role-copywriter", "gauntlet", "agent-x", "role-copywriter"],
+      ["squad-design", "standard", "squad", "squad-design"],
+      ["final-output", "gauntlet", "synthesis", "final-output"],
+    ]);
+    // The synthesis request is completed before the targets share the rest: the role keeps its light floor.
+    const role = calls.find((call) => call.nodeId === "role-copywriter")!;
+    expect(role).toMatchObject({ intensity: "light", grantedCostUsd: 1, outputPath: "agents/role-copywriter/outputs/", upstreamPaths: ["squads/squad-research/outputs/artifact.md"] });
+    expect(calls.find((call) => call.nodeId === "squad-design")!.upstreamPaths).toEqual(["agents/role-copywriter/outputs/artifact.md"]);
+    // The projection names the target kind of every node, agent-x included.
+    expect(snapshot.nodes.map((node) => [node.nodeId, node.targetKind, node.state])).toEqual([
+      ["brief-main", "support", "delivered"], ["squad-research", "squad", "delivered"], ["role-copywriter", "agent-x", "delivered"],
+      ["squad-design", "squad", "delivered"], ["final-output", "synthesis", "delivered"],
     ]);
   });
 });

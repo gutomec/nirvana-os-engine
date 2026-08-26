@@ -272,3 +272,30 @@ describe("toDagNodes bridges into planDag", () => {
     expect(plan.layers[1]).toEqual(["emp"]);
   });
 });
+
+describe("agent nodes", () => {
+  // A role no squad covers: briefed, depending and yielding like a squad; nothing else may touch it.
+  test("an agent node accepts briefs, depends_on and yields, and nothing else", () => {
+    const g = emptyGraph();
+    addNode(g, node("brief-1", "brief"));
+    addNode(g, node("squad-a", "squad"));
+    addNode(g, node("role-writer", "agent"));
+    addNode(g, node("deliv-1", "deliverable"));
+    addEdge(g, edge("e1", "brief-1", "role-writer", "briefs"));
+    addEdge(g, edge("e2", "role-writer", "squad-a", "depends_on"));
+    addEdge(g, edge("e3", "role-writer", "deliv-1", "yields"));
+    expect(validateGraph(g)).toEqual([]);
+    expect(buildOrder(g).order.map((n) => n.id)).toEqual(["brief-1", "squad-a", "role-writer", "deliv-1"]);
+    expect(reachableFromBriefs(g).has("role-writer")).toBeTrue();
+
+    expect(isCompatibleEdge("briefs", "brief", "agent")).toBeTrue();
+    expect(isCompatibleEdge("yields", "agent", "deliverable")).toBeTrue();
+    expect(isCompatibleEdge("owns", "company", "agent")).toBeFalse();
+    expect(isCompatibleEdge("staffs", "employee", "agent")).toBeFalse();
+    expect(isCompatibleEdge("covers", "agent", "company")).toBeFalse();
+    expect(isCompatibleEdge("feeds", "material", "agent")).toBeFalse();
+    expect(isCompatibleEdge("embodies", "agent", "mind_clone")).toBeFalse();
+    const issues = validateGraph({ nodes: [node("company-a", "company"), node("role-writer", "agent")], edges: [edge("bad", "company-a", "role-writer", "owns")] });
+    expect(issues.map((i) => i.message)).toEqual(['edge type "owns" is not allowed from company to agent']);
+  });
+});

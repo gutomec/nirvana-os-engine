@@ -74,7 +74,7 @@ const TERMINAL_NODE_STATES = new Set<MultiTargetNodeProjection["state"]>(["deliv
 
 const NodeSchema = z.strictObject({
   id: z.string().min(1),
-  type: z.enum(["company", "squad", "deliverable", "brief"]),
+  type: z.enum(["company", "squad", "agent", "deliverable", "brief"]),
   payload: z.record(z.string(), z.unknown()).optional(),
 });
 const EdgeSchema = z.strictObject({
@@ -115,7 +115,7 @@ export function validatePlanFile(raw: unknown): { plan: MultiTargetPlanFile | nu
   const nodeIds = new Set(plan.graph.nodes.map((node) => node.id));
   for (const id of Object.keys(plan.briefs)) if (!nodeIds.has(id)) issues.push({ path: `/briefs/${id}`, message: "node not found in graph" });
   for (const node of plan.graph.nodes) {
-    if ((node.type === "company" || node.type === "squad") && !plan.briefs[node.id]) {
+    if ((node.type === "company" || node.type === "squad" || node.type === "agent") && !plan.briefs[node.id]) {
       issues.push({ path: `/briefs/${node.id}`, message: `executable node ${node.id} has no brief` });
     }
   }
@@ -267,7 +267,7 @@ function printStatus(run: RunProjection, projection: MultiTargetCoordinatorSnaps
   for (const node of projection.nodes) {
     const notes = [node.reason, node.blockedBy.length ? `bloqueado por ${node.blockedBy.join(", ")}` : "", node.costObserved === false ? COST_UNOBSERVED : ""]
       .filter(Boolean).join(" · ");
-    console.log(`    onda ${node.waveIndex}  ${node.nodeId.padEnd(24)} ${node.mode.padEnd(9)} ${node.state.padEnd(10)} USD ${node.reportedCostUsd}/${node.grantedCostUsd}${notes ? `  ${notes}` : ""}`);
+    console.log(`    onda ${node.waveIndex}  ${node.nodeId.padEnd(24)} ${(node.targetKind ?? "").padEnd(10)} ${node.mode.padEnd(9)} ${node.state.padEnd(10)} USD ${node.reportedCostUsd}/${node.grantedCostUsd}${notes ? `  ${notes}` : ""}`);
   }
 }
 
@@ -460,7 +460,7 @@ async function commandRun(file: string, argv: string[]): Promise<number> {
         const node = (event.payload as { node?: MultiTargetNodeProjection } | undefined)?.node;
         if (!node || !TERMINAL_NODE_STATES.has(node.state)) return;
         emit("x_multi_target_node_terminal", {
-          run_id: runId, node_id: node.nodeId, wave: node.waveIndex, mode: node.mode, state: node.state,
+          run_id: runId, node_id: node.nodeId, wave: node.waveIndex, target_kind: node.targetKind ?? null, mode: node.mode, state: node.state,
           cost_usd: node.reportedCostUsd, cost_observed: node.costObserved ?? null, granted_usd: node.grantedCostUsd, reason: node.reason ?? null, blocked_by: node.blockedBy,
         });
         if (!json) {

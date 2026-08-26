@@ -8,6 +8,8 @@ export type MultiTargetNodeState = "pending" | "running" | "delivered" | "withhe
 export interface MultiTargetNodeProjection {
   nodeId: string;
   waveIndex: number;
+  /** Adapter target the node runs as (`support` for phases that call no adapter); absent on snapshots persisted before the field existed. */
+  targetKind?: CompiledGauntletDecision["targetKind"];
   mode: "standard" | "gauntlet";
   state: MultiTargetNodeState;
   outputPaths: string[];
@@ -107,6 +109,7 @@ function initialSnapshot(
     return {
       nodeId,
       waveIndex,
+      targetKind: decision?.targetKind ?? "support",
       mode: decision?.mode ?? "standard",
       state: "pending",
       outputPaths: [],

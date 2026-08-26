@@ -51,6 +51,38 @@ const PLAN = {
   },
 };
 
+// A role no squad covers between two squads: squad → agent → squad → deliverable.
+const AGENT_PLAN = {
+  schemaVersion: "nirvana.multi-target-plan/v1alpha1",
+  brief: "# Brief\n\nLaunch the thing; the copy has no squad.\n",
+  briefs: {
+    "squad-research": "Research the market.",
+    "role-copywriter": "Write the launch copy from the research.",
+    "squad-design": "Design the landing page around the copy.",
+    "final-output": "Assemble the launch kit.",
+  },
+  graph: {
+    nodes: [
+      { id: "brief-main", type: "brief" },
+      { id: "squad-research", type: "squad" },
+      { id: "role-copywriter", type: "agent" },
+      { id: "squad-design", type: "squad" },
+      { id: "final-output", type: "deliverable" },
+    ],
+    edges: [
+      { id: "brief-research", source: "brief-main", target: "squad-research", type: "briefs" },
+      { id: "copy-after-research", source: "role-copywriter", target: "squad-research", type: "depends_on" },
+      { id: "design-after-copy", source: "squad-design", target: "role-copywriter", type: "depends_on" },
+      { id: "final", source: "squad-design", target: "final-output", type: "yields" },
+    ],
+  },
+  policy: {
+    scope: "each-target-and-final", intensity: "light", synthesisNodeId: "final-output", limits: { maxCostUsd: 10 },
+    targets: { "squad-research": { mode: "standard" }, "role-copywriter": { limits: { maxCostUsd: 2 } }, "squad-design": { mode: "standard" } },
+  },
+  budgetUsd: { "role-copywriter": 1.5 },
+};
+
 function fixture(projectId = "proj-multi") {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "nrv-multi-target-cli-")));
   roots.push(root);
@@ -520,4 +552,90 @@ describe("nrv multi-target status and usage", () => {
     expect(nrv(setup, ["plan"]).status).toBe(4);
     expect(nrv(setup, ["help"]).status).toBe(0);
   }, spawnBudgetMs(4));
+});
+
+describe("nrv multi-target with an agent node", () => {
+  test("plan compiles squad → agent → squad → deliverable with the agent as an agent-x target, and refuses the agent without a brief", () => {
+    const setup = fixture("proj-agent");
+    fs.writeFileSync(setup.planFile, JSON.stringify(AGENT_PLAN, null, 2));
+    const r = nrv(setup, ["plan", setup.planFile]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("1: squad-research");
+    expect(r.stdout).toContain("2: role-copywriter");
+    expect(r.stdout).toContain("3: squad-design");
+    expect(r.stdout).toContain("4: final-output");
+    expect(r.stdout).toMatch(/role-copywriter\s+agent-x\s+gauntlet light/);
+    expect(r.stdout).toContain("Nada foi executado");
+    const manifest = JSON.parse(fs.readFileSync(path.join(setup.workspace, "manifest.json"), "utf8"));
+    expect(manifest.phases.find((phase: { id: string }) => phase.id === "role-copywriter")).toMatchObject({
+      target: "agent/role-copywriter", outputs_path: "agents/role-copywriter/outputs/", depends_on: ["squad-research"], consumed_by: ["squad-design"],
+    });
+    expect(spawns(setup)).toEqual([]);
+
+    const { "role-copywriter": _omitted, ...briefs } = AGENT_PLAN.briefs;
+    const missing = validatePlanFile({ ...AGENT_PLAN, briefs });
+    expect(missing.plan).toBeNull();
+    expect(missing.issues).toEqual([{ path: "/briefs/role-copywriter", message: "executable node role-copywriter has no brief" }]);
+    fs.writeFileSync(setup.planFile, JSON.stringify({ ...AGENT_PLAN, briefs }));
+    const refused = nrv(setup, ["plan", setup.planFile]);
+    expect(refused.status).toBe(4);
+    expect(refused.stderr).toContain("/briefs/role-copywriter: executable node role-copywriter has no brief");
+
+    const badEdge = { ...AGENT_PLAN, graph: { ...AGENT_PLAN.graph, edges: [...AGENT_PLAN.graph.edges, { id: "bad", source: "squad-design", target: "role-copywriter", type: "covers" }] } };
+    fs.writeFileSync(setup.planFile, JSON.stringify(badEdge));
+    expect(nrv(setup, ["plan", setup.planFile])).toMatchObject({ status: 4, stderr: expect.stringContaining('edge type "covers" is not allowed from squad to agent') });
+  }, spawnBudgetMs(3));
+
+  test("run executes the agent node as --agent-x under agents/<id>/, distinguishes its cost from the synthesis and shows the target kind", () => {
+    const setup = fixture("proj-agent");
+    fs.writeFileSync(setup.planFile, JSON.stringify(AGENT_PLAN, null, 2));
+    const runId = multiTargetRunId(setup.projectId);
+    const r = nrv(setup, ["run", setup.planFile, "--owner", "worker-agent"], { ...ENGINE, FAKE_DISPATCH_COST_USD: "0.25" });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("✓ Plano multi-target entregue.");
+    expect(spawns(setup)).toEqual(["squad-research", "role-copywriter", "squad-design", "final-output"]);
+    for (const [kind, id] of [["squads", "squad-research"], ["agents", "role-copywriter"], ["squads", "squad-design"], ["deliverables", "final-output"]]) {
+      expect(fs.existsSync(path.join(setup.workspace, kind, id, "outputs", "_SUMMARY.md"))).toBeTrue();
+      expect(fs.existsSync(path.join(setup.workspace, kind, id, "DISPATCH-INSTRUCTION.md"))).toBeTrue();
+    }
+    const captureRole = JSON.parse(fs.readFileSync(path.join(setup.workspace, "agents", "role-copywriter", "outputs", "dispatch-capture.json"), "utf8"));
+    expect(captureRole.argv).toContain("--agent-x");
+    expect(captureRole.argv).not.toContain("--squad");
+    expect(captureRole.argv).not.toContain("--auto");
+    expect(captureRole.argv).toContain("--execution-mode=gauntlet");
+    expect(captureRole.argv).toContain("--gauntlet-intensity=light");
+    // The reservation completes the synthesis first, so the role keeps its light floor (1) under budgetUsd 1.5.
+    expect(captureRole.argv[captureRole.argv.indexOf("--max-budget") + 1]).toBe("1");
+    expect(captureRole.env.NIRVANA_MULTI_TARGET_NODE_ID).toBe("role-copywriter");
+    expect(captureRole.brief).toStartWith("Write the launch copy from the research.");
+    const instruction = fs.readFileSync(path.join(setup.workspace, "agents", "role-copywriter", "DISPATCH-INSTRUCTION.md"), "utf8");
+    expect(instruction).toContain("target: agent/role-copywriter");
+    expect(instruction).toContain("acting in the role **role-copywriter**");
+    expect(instruction).toContain(path.join(setup.workspace, "squads", "squad-research", "outputs", "_SUMMARY.md"));
+    expect(instruction).toContain("**squad-design** (`squad/squad-design`)");
+    expect(fs.readFileSync(path.join(setup.workspace, "squads", "squad-design", "DISPATCH-INSTRUCTION.md"), "utf8"))
+      .toContain(path.join(setup.workspace, "agents", "role-copywriter", "outputs", "_SUMMARY.md"));
+
+    const projection = withKernel(setup, (kernel) => {
+      expect(getRun(kernel, setup.projectId, runId)!.state).toBe("completed");
+      return projectMultiTargetRun(kernel, setup.projectId, runId)!;
+    });
+    expect(projection.state).toBe("delivered");
+    // Two agent-x children under one trace: the synthesis reports its own 0.25, not the role's as well.
+    expect(projection.nodes.map((node) => [node.nodeId, node.targetKind, node.state, node.reportedCostUsd])).toEqual([
+      ["brief-main", "support", "delivered", 0], ["squad-research", "squad", "delivered", 0.25], ["role-copywriter", "agent-x", "delivered", 0.25],
+      ["squad-design", "squad", "delivered", 0.25], ["final-output", "synthesis", "delivered", 0.25],
+    ]);
+    expect(projection.reportedCostUsd).toBe(1);
+    const audit = auditEvents(setup);
+    expect(audit.filter((event) => event.event === "agent_executed" && event.employee === "agent-x").map((event) => event.node_id).sort()).toEqual(["final-output", "role-copywriter"]);
+    expect(audit.find((event) => event.event === "x_multi_target_node_terminal" && event.node_id === "role-copywriter"))
+      .toMatchObject({ run_id: runId, wave: 2, target_kind: "agent-x", mode: "gauntlet", state: "delivered", cost_usd: 0.25 });
+    expect(audit.find((event) => event.event === "x_multi_target_terminal")).toMatchObject({ state: "delivered", cost_usd: 1, exit: 0 });
+
+    const status = nrv(setup, ["status", setup.planFile]);
+    expect(status.status).toBe(0);
+    expect(status.stdout).toMatch(/onda 2\s+role-copywriter\s+agent-x\s+gauntlet\s+delivered\s+USD 0\.25\/1/);
+    expect(spawns(setup)).toHaveLength(4);
+  }, spawnBudgetMs(6));
 });

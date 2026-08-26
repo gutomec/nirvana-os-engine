@@ -142,3 +142,57 @@ describe("multi-target Gauntlet policy compiler", () => {
     expect(compileMultiTargetGauntletPolicy(cyclic, { scope: "each-target" }).issues[0].message).toContain("cycle");
   });
 });
+
+// A role no squad covers sits between two squads: the policy must treat it exactly like them.
+const agentGraph: DependencyGraph = {
+  nodes: [
+    { id: "brief-main", type: "brief" },
+    { id: "squad-research", type: "squad" },
+    { id: "role-copywriter", type: "agent" },
+    { id: "squad-design", type: "squad" },
+    { id: "final-output", type: "deliverable" },
+  ],
+  edges: [
+    { id: "brief-research", source: "brief-main", target: "squad-research", type: "briefs" },
+    { id: "copy-after-research", source: "role-copywriter", target: "squad-research", type: "depends_on" },
+    { id: "design-after-copy", source: "squad-design", target: "role-copywriter", type: "depends_on" },
+    { id: "final", source: "squad-design", target: "final-output", type: "yields" },
+  ],
+};
+
+describe("multi-target Gauntlet policy compiler with agent nodes", () => {
+  const decisionOf = (policy: MultiTargetGauntletPolicy | undefined) => {
+    const result = compileMultiTargetGauntletPolicy(agentGraph, policy);
+    expect(result.issues).toEqual([]);
+    return result.plan!.decisions.find((decision) => decision.nodeId === "role-copywriter")!;
+  };
+
+  test("compiles the agent node as an agent-x target with its own phase and outputs path", () => {
+    const result = compileMultiTargetGauntletPolicy(agentGraph);
+    expect(result.plan!.manifest.parallel_waves).toEqual([["brief-main"], ["squad-research"], ["role-copywriter"], ["squad-design"], ["final-output"]]);
+    expect(result.plan!.manifest.phases.find((phase) => phase.id === "role-copywriter")).toMatchObject({
+      target: "agent/role-copywriter", outputs_path: "agents/role-copywriter/outputs/", depends_on: ["squad-research"], consumed_by: ["squad-design"],
+    });
+    expect(result.plan!.decisions.map(({ nodeId, targetKind }) => [nodeId, targetKind])).toEqual([
+      ["brief-main", "support"], ["role-copywriter", "agent-x"], ["squad-design", "squad"], ["squad-research", "squad"],
+    ]);
+    expect(decisionOf(undefined)).toMatchObject({ targetKind: "agent-x", mode: "standard", source: "default" });
+  });
+
+  test("every scope and override selects the agent node the way it selects a squad", () => {
+    expect(decisionOf({ scope: "each-target", intensity: "balanced" })).toMatchObject({ mode: "gauntlet", intensity: "balanced", source: "scope" });
+    expect(decisionOf({ scope: "each-target-and-final", synthesisNodeId: "final-output" })).toMatchObject({ mode: "gauntlet", intensity: "balanced" });
+    expect(decisionOf({ scope: "final-only", synthesisNodeId: "final-output" })).toMatchObject({ mode: "standard", reason: "final-only reserves gauntlet for synthesis" });
+    expect(decisionOf({ scope: "critical-targets" })).toMatchObject({ mode: "standard", reason: "target is not marked critical" });
+    expect(decisionOf({ scope: "critical-targets", criticalTargetIds: ["role-copywriter"] })).toMatchObject({ mode: "gauntlet", reason: "target is explicitly critical" });
+    expect(decisionOf({ scope: "critical-targets", targets: { "role-copywriter": { critical: true } } })).toMatchObject({ mode: "gauntlet" });
+    // Adaptive reads the same deterministic signals: two transitive dependents (squad-design, final-output) is fan-out.
+    expect(decisionOf({ scope: "adaptive" })).toMatchObject({ mode: "gauntlet", reason: "adaptive deterministic signals: fan-out" });
+    expect(decisionOf({ scope: "adaptive", targets: { "role-copywriter": { risk: "high" } } })).toMatchObject({ mode: "gauntlet", reason: "adaptive deterministic signals: high-risk, fan-out" });
+    expect(decisionOf({ scope: "each-target", intensity: "exhaustive", limits: { maxCostUsd: 10, maxRounds: 4 },
+      targets: { "role-copywriter": { intensity: "light", limits: { maxCostUsd: 3, maxRounds: 9 } } } }))
+      .toMatchObject({ mode: "gauntlet", intensity: "light", limits: { maxCostUsd: 3, maxRounds: 4 }, source: "scope" });
+    expect(decisionOf({ scope: "each-target", targets: { "role-copywriter": { mode: "standard" } } })).toMatchObject({ mode: "standard", source: "target-override" });
+    expect(decisionOf({ scope: "final-only", synthesisNodeId: "final-output", targets: { "role-copywriter": { mode: "gauntlet" } } })).toMatchObject({ mode: "gauntlet", source: "target-override" });
+  });
+});

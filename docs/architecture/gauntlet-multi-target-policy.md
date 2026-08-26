@@ -20,18 +20,18 @@ O compilador projeta a política sobre o manifest produzido por `compileManifest
 
 ## Decisões compiladas
 
-Cada target Business ou Squad recebe:
+Cada target Business, Squad ou agent recebe:
 
 - `mode`: `standard` ou `gauntlet`;
 - `intensity`, somente quando o modo é `gauntlet`;
 - limites efetivos de custo, duração e rounds;
 - `reason`, com o sinal ou regra que determinou a decisão;
 - `source`: padrão retrocompatível, escopo global ou override do target;
-- tipo canônico `business` ou `squad`.
+- tipo canônico `business`, `squad` ou `agent-x`.
 
 Fases auxiliares, como o brief, também recebem uma decisão explícita `standard` com tipo `support`. Nós `deliverable` não aparecem nessa lista: quando declarados como síntese, têm sua própria decisão no campo `synthesis`.
 
-O contrato reserva `agent-x` como tipo de decisão para compatibilidade futura, mas o grafo atual não fabrica esse target.
+Um nó `agent` (um papel sem squad especializado, executado pelo agent-x) compila para o tipo `agent-x` e entra em todo escopo, em `criticalTargetIds`, em `targets` e na reserva agregada exatamente como um squad: mesmos sinais do `adaptive`, mesma herança conservadora, mesmos pisos e rateio.
 
 Sem política explícita, todos os targets ficam em `standard` e não há síntese implícita.
 

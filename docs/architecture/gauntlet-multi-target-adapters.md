@@ -10,14 +10,14 @@
 - `projectId`: trace compartilhado por todos os nós, passado como `--project`.
 - `workspaceRoot`: padrão `<projectRoot>/.nirvana/outputs/<projectId>`, o layout de `references/04-multi-target.md`.
 - `plan`: o `CompiledMultiTargetPlan` já compilado; fornece fases, dependências e consumidores.
-- `nodeBriefs`: texto do sub-brief por nó. Um nó business ou squad sem sub-brief falha sem spawn; a síntese recebe um texto padrão.
+- `nodeBriefs`: texto do sub-brief por nó. Um nó business, squad ou agent sem sub-brief falha sem spawn; a síntese recebe um texto padrão.
 - `runtime`, `dispatchScriptPath`, `env`, `spawn` e `budgetUsd` são opcionais e injetáveis.
 
 ## Layout em disco por nó
 
-O diretório do nó vem de `outputs_path` do manifest sob `workspaceRoot` (`businesses/<slug>/`, `squads/<slug>/`, `deliverables/<id>/`). Antes do spawn, o adapter grava:
+O diretório do nó vem de `outputs_path` do manifest sob `workspaceRoot` (`businesses/<slug>/`, `squads/<slug>/`, `agents/<id>/`, `deliverables/<id>/`). Antes do spawn, o adapter grava:
 
-- `DISPATCH-INSTRUCTION.md`, seguindo o template do harness: identidade do target, ponteiro para `brief-enriched.md`, entregável, caminhos absolutos dos `_SUMMARY.md` dos upstreams entregues, fases downstream e o caminho de saída;
+- `DISPATCH-INSTRUCTION.md`, seguindo o template do harness: identidade do target (num nó `agent`, o agent-x no papel com o id do nó, que nenhum squad cobre), ponteiro para `brief-enriched.md`, entregável, caminhos absolutos dos `_SUMMARY.md` dos upstreams entregues, fases downstream e o caminho de saída;
 - `dispatch-brief.md`, o brief entregue ao dispatch via `--brief-file`, com o sub-brief e o ponteiro para a instrução;
 - `outputs/`, destino de `--outputs-root`.
 
@@ -31,7 +31,9 @@ O scaffold legado do dispatch (agent-prompt, session.json, handoffs) continua on
 | --- | --- |
 | `business` | `bun dispatch.ts --business <slug> --brief-file <...> --exec --project <id> --outputs-root <abs>` |
 | `squad` | `bun dispatch.ts --squad <slug> --brief-file <...> --exec --project <id> --outputs-root <abs>` |
-| `agent-x` e `synthesis` | `bun dispatch.ts --agent-x --brief-file <...> --exec --project <id> --outputs-root <abs>` |
+| `agent-x` (nó `agent`) e `synthesis` | `bun dispatch.ts --agent-x --brief-file <...> --exec --project <id> --outputs-root <abs>` |
+
+Os dois alvos agent-x se distinguem pelo brief e pelo diretório: o nó `agent` recebe o próprio sub-brief, obrigatório, em `agents/<id>/`; a síntese recebe o texto padrão mais a lista dos `_SUMMARY.md` upstream, em `deliverables/<id>/`.
 
 `--runtime <rt>` é acrescentado quando informado. `--max-budget` recebe o menor valor entre a concessão da reserva (modo `gauntlet`) e `budgetUsd[nodeId]`.
 
@@ -54,13 +56,13 @@ As três flags são mutuamente exclusivas entre si e com `--auto`. `--business` 
 
 ## Fonte de custo
 
-O custo reportado é a soma de `cost_usd` nos eventos `agent_executed` do audit do harness, lidos de todas as pastas diárias em `harnessLogsDir({ projectRoot })` (ou `HARNESS_LOGS_DIR`, quando o chamador o definiu). O filtro usa `trace_id` igual ao `projectId` e o discriminador que cada caminho legado já grava: `business_slug` para business, `squad_slug` sem `business_slug` para squad e `employee: "agent-x"` para agent-x e síntese.
+O custo reportado é a soma de `cost_usd` nos eventos `agent_executed` do audit do harness, lidos de todas as pastas diárias em `harnessLogsDir({ projectRoot })` (ou `HARNESS_LOGS_DIR`, quando o chamador o definiu). O filtro usa `trace_id` igual ao `projectId` e o discriminador que cada caminho legado já grava: `business_slug` para business, `squad_slug` sem `business_slug` para squad e `employee: "agent-x"` para agent-x e síntese. Como um nó `agent` e a síntese do mesmo plano são ambos agent-x sob o mesmo trace, o adapter nomeia o nó no ambiente de todo filho (`NIRVANA_MULTI_TARGET_NODE_ID`), o `runAgentX` copia o valor como `node_id` no `agent_executed`, e o matcher de um alvo agent-x só soma os eventos com o `node_id` do nó. O `costMatcher` sem `nodeId` continua somando todo evento agent-x do trace; é o contrato do adapter do avaliador Gauntlet, que roda sob um project id próprio.
 
 O filho é avisado de onde esse log fica. Sem `HARNESS_LOGS_DIR` no ambiente, o `dispatch.ts` ancora o audit no scaffold que ele mesmo cria (`<projectRoot>/outputs/<projectId>/.nirvana/logs/harness`, via `harnessLogsDir({ cwd: projDir })`), e não em `<projectRoot>/.nirvana/logs/harness`: no primeiro smoke com LLM real, um nó entregue por USD 2,15 foi registrado pelo coordenador como USD 0. O adapter agora define `HARNESS_LOGS_DIR` no ambiente do filho com o mesmo diretório que ele lê; um valor já definido pelo chamador não é sobrescrito. Os testes herméticos fixavam a variável por fixture, o que escondia o desvio; o dispatch falso passou a gravar o evento onde o real grava, então o desvio é reproduzido e a correção, testada.
 
 Quando nenhum `agent_executed` é encontrado para um nó que executou, o resultado traz `costObserved: false` com `reportedCostUsd: 0`, em vez de um zero silencioso: o custo é desconhecido, e o coordenador registra isso em `multi_target.cost_unobserved` e `x_multi_target_cost_unobserved` ([coordenador](gauntlet-multi-target-coordinator.md)). O `observeCost` exportado devolve `{ costUsd, observed }`; `observedCostUsd` continua existindo para quem só carrega o número (o scorecard do avaliador Gauntlet).
 
-Essa escolha segue o que o dispatch já escreve: o run-ledger não guarda custo, e o audit é por projeto e alimentado pelos três caminhos. Duas limitações conhecidas: o canário Gauntlet de business não emite `agent_executed`, então seu custo aparece como não observado; e dois nós agent-x no mesmo trace compartilhariam o discriminador, situação que o grafo atual não produz. A soma cobre todas as tentativas do nó no mesmo trace: um nó retomado por `--retry-failed` reporta o gasto acumulado.
+Essa escolha segue o que o dispatch já escreve: o run-ledger não guarda custo, e o audit é por projeto e alimentado pelos três caminhos. Duas limitações conhecidas: o canário Gauntlet de business não emite `agent_executed`, então seu custo aparece como não observado; e um evento agent-x sem `node_id` (um filho que não foi gerado pelos adapters) não conta para nenhum nó. A soma cobre todas as tentativas do nó no mesmo trace: um nó retomado por `--retry-failed` reporta o gasto acumulado.
 
 ## Marcador de retomada
 
