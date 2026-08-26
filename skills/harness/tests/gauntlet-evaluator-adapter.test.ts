@@ -11,7 +11,7 @@ import { SCOPE_GUARD_SENTINEL_PT_BR } from "../../_shared/lib/scope-guard.ts";
 import { GAUNTLET_EVALUATION_SHARE, gauntletRoundBudget, runAgentXGauntlet, type AgentXGauntletEvaluationInput } from "../lib/gauntlet/agent-x-cutover.ts";
 import { compileGauntletPlan } from "../lib/gauntlet/compiler.ts";
 import {
-  EVALUATION_BRIEF_FILE, EVALUATION_REQUEST_FILE, EVALUATION_RUBRIC_VERSION, SCORECARD_FILE, SCORECARD_SCHEMA_VERSION,
+  EVALUATION_BRIEF_FILE, EVALUATION_OUTPUTS_DIR, EVALUATION_REQUEST_FILE, EVALUATION_RUBRIC_VERSION, SCORECARD_FILE, SCORECARD_SCHEMA_VERSION,
   renderEvaluationBrief, validateScorecardFile, type EvaluationRequest,
 } from "../lib/gauntlet/evaluation-contract.ts";
 import {
@@ -52,7 +52,7 @@ function fixture() {
       projectId: "prj_1", runId: "run_1", candidateId: "can_1", revision, round: revision, revisionId: `crv_run_1_can_1_${revision}`,
       candidateRoot, artifactRefs: [], holdout: false,
     }),
-    capture: (revisionId: string) => JSON.parse(fs.readFileSync(path.join(evaluationDirFor(projectRoot, "run_1", revisionId), "dispatch-capture.json"), "utf8")) as
+    capture: (revisionId: string) => JSON.parse(fs.readFileSync(path.join(evaluationDirFor(projectRoot, "run_1", revisionId), EVALUATION_OUTPUTS_DIR, "dispatch-capture.json"), "utf8")) as
       { argv: string[]; env: Record<string, string>; cwd: string; brief: string },
   };
 }
@@ -139,6 +139,7 @@ describe("dispatch evaluator adapter", () => {
     const setup = fixture();
     const [scorecard] = evaluator(setup, { runtime: "codex", budgetUsd: 0.5 }, { FAKE_DISPATCH_COST_USD: "0.3" }).evaluate(setup.evaluation());
     const evaluationDir = evaluationDirFor(setup.projectRoot, "run_1", "crv_run_1_can_1_1");
+    const outputsRoot = path.join(evaluationDir, EVALUATION_OUTPUTS_DIR);
     expect(scorecard).toEqual({
       evaluationId: "evl_crv_run_1_can_1_1", candidateId: "can_1", revisionId: "crv_run_1_can_1_1", gauntletId: "brief-conformance",
       rubricVersion: EVALUATION_RUBRIC_VERSION, verdict: "pass", evaluator: SQUAD, costUsd: 0.3, createdAt: "2026-08-26T10:00:00.000Z",
@@ -152,7 +153,7 @@ describe("dispatch evaluator adapter", () => {
     expect(captured.argv).not.toContain("--agent-x");
     expect(captured.argv).not.toContain("--auto");
     expect(flag(captured.argv, "--project")).toBe(evaluationProjectId("prj_1", "crv_run_1_can_1_1"));
-    expect(flag(captured.argv, "--outputs-root")).toBe(evaluationDir);
+    expect(flag(captured.argv, "--outputs-root")).toBe(outputsRoot);
     expect(flag(captured.argv, "--brief-file")).toBe(path.join(evaluationDir, EVALUATION_BRIEF_FILE));
     expect(flag(captured.argv, "--max-revisions")).toBe("0");
     expect(flag(captured.argv, "--max-budget")).toBe("0.5");
@@ -164,8 +165,13 @@ describe("dispatch evaluator adapter", () => {
     expect(captured.brief).toContain(SCOPE_GUARD_SENTINEL_PT_BR);
     const request = JSON.parse(fs.readFileSync(path.join(evaluationDir, EVALUATION_REQUEST_FILE), "utf8")) as EvaluationRequest;
     expect(request).toMatchObject({ projectId: "prj_1", runId: "run_1", candidateId: "can_1", revisionId: "crv_run_1_can_1_1", revision: 1, round: 1,
-      holdout: false, candidateRoot: setup.candidateRoot, scorecardPath: path.join(evaluationDir, SCORECARD_FILE), briefDigest: plan.successContract.briefDigest,
+      holdout: false, candidateRoot: setup.candidateRoot, scorecardPath: path.join(outputsRoot, SCORECARD_FILE), briefDigest: plan.successContract.briefDigest,
       requirements, gauntletIds: ["brief-conformance"] });
+    // The adapter's files sit beside the outputs root, never inside it: only what the executor wrote is under --outputs-root.
+    expect(fs.readdirSync(evaluationDir).sort()).toEqual([EVALUATION_BRIEF_FILE, EVALUATION_REQUEST_FILE, EVALUATION_OUTPUTS_DIR].sort());
+    expect(fs.readdirSync(outputsRoot).sort()).toEqual(["_SUMMARY.md", "dispatch-capture.json", SCORECARD_FILE]);
+    expect(captured.brief).toContain(`\`${SCORECARD_FILE}\`, no seu output_path (caminho absoluto: \`${path.join(outputsRoot, SCORECARD_FILE)}\`)`);
+    expect(captured.brief).toContain("A tarefa não exige shell nem execução de comandos");
     expect(fs.readdirSync(setup.candidateRoot)).toEqual(["report.md"]);
     expect(setup.audit).toEqual([{ event: "x_gauntlet_evaluation_completed", payload: expect.objectContaining({
       trace_id: "prj_1", run_id: "run_1", candidate_id: "can_1", revision_id: "crv_run_1_can_1_1", evaluator: "squad:fixture-evaluator:quality.specification_conformance",
@@ -237,6 +243,21 @@ describe("dispatch evaluator adapter", () => {
     expect(spawned.calls[0].command).not.toContain("--max-budget");
     expect(spawned.calls[0].command).not.toContain("--runtime");
     expect(spawned.calls[0].command.slice(0, 2)).toEqual(["bun", setup.dispatchScriptPath]);
+    expect(fs.existsSync(path.join(evaluationDirFor(setup.projectRoot, "run_1", "crv_run_1_can_1_1"), EVALUATION_OUTPUTS_DIR, SCORECARD_FILE))).toBeTrue();
+  });
+
+  test("the outputs root handed to the child is emptied before the spawn, so a stale scorecard is never read as this evaluation's", () => {
+    const setup = fixture();
+    const outputsRoot = path.join(evaluationDirFor(setup.projectRoot, "run_1", "crv_run_1_can_1_1"), EVALUATION_OUTPUTS_DIR);
+    fs.mkdirSync(outputsRoot, { recursive: true });
+    fs.writeFileSync(path.join(outputsRoot, SCORECARD_FILE), JSON.stringify(validFile()), "utf8");
+    fs.writeFileSync(path.join(outputsRoot, "_SUMMARY.md"), "# stale\n", "utf8");
+    const seenAtSpawn: string[][] = [];
+    const spawned = fakeSpawn((request) => { seenAtSpawn.push(fs.readdirSync(flag(request.command, "--outputs-root")!)); });
+    const [scorecard] = evaluator(setup, { spawn: spawned.spawn }).evaluate(setup.evaluation());
+    expect(seenAtSpawn).toEqual([[]]);
+    expect(scorecard.verdict).toBe("indeterminate");
+    expect(scorecard.dimensions[0].evidenceRefs[0]).toMatch(/^indeterminate: scorecard\.json not found at /);
   });
 
   function setupWithInjectedSpawn(write: (scorecardFile: string) => void) {

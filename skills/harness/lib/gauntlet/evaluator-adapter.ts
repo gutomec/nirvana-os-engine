@@ -33,7 +33,7 @@ import { harnessLogsDir } from "../../../_shared/lib/log-paths.ts";
 import type { TargetRef } from "../run-kernel/types.ts";
 import type { AgentXGauntletEvaluationInput, AgentXGauntletEvaluator } from "./agent-x-cutover.ts";
 import {
-  EVALUATION_BRIEF_FILE, EVALUATION_REQUEST_FILE, EVALUATION_REQUEST_SCHEMA_VERSION, SCORECARD_FILE,
+  EVALUATION_BRIEF_FILE, EVALUATION_OUTPUTS_DIR, EVALUATION_REQUEST_FILE, EVALUATION_REQUEST_SCHEMA_VERSION, SCORECARD_FILE,
   indeterminateScorecard, renderEvaluationBrief, scorecardFromFile, scorecardGauntletId, validateScorecardFile,
   type EvaluationRequest, type ScorecardIdentity,
 } from "./evaluation-contract.ts";
@@ -130,8 +130,14 @@ export function createDispatchEvaluator(input: DispatchEvaluatorInput): AgentXGa
 
   const evaluate = (evaluation: AgentXGauntletEvaluationInput): EvaluationScorecard[] => {
     const evaluationDir = evaluationDirFor(projectRoot, evaluation.runId, evaluation.revisionId);
-    fs.mkdirSync(evaluationDir, { recursive: true });
-    const scorecardPath = path.join(evaluationDir, SCORECARD_FILE);
+    // The subprocess gets its own outputs root under the evaluation directory, empty before the
+    // spawn. The request and the brief stay one level up, so the child dispatch never counts the
+    // adapter's files as artifacts, and a scorecard left by an earlier attempt is never read as
+    // this one's.
+    const outputsRoot = path.join(evaluationDir, EVALUATION_OUTPUTS_DIR);
+    fs.rmSync(outputsRoot, { recursive: true, force: true });
+    fs.mkdirSync(outputsRoot, { recursive: true });
+    const scorecardPath = path.join(outputsRoot, SCORECARD_FILE);
     const request: EvaluationRequest = {
       schemaVersion: EVALUATION_REQUEST_SCHEMA_VERSION, projectId: evaluation.projectId, runId: evaluation.runId,
       candidateId: evaluation.candidateId, revisionId: evaluation.revisionId, revision: evaluation.revision, round: evaluation.round,
@@ -151,7 +157,7 @@ export function createDispatchEvaluator(input: DispatchEvaluatorInput): AgentXGa
       input.audit?.("x_gauntlet_evaluation_completed", {
         trace_id: evaluation.projectId, project_id: evaluation.projectId, run_id: evaluation.runId,
         candidate_id: evaluation.candidateId, revision_id: evaluation.revisionId, round: evaluation.round,
-        evaluator: describeTarget(target), evaluation_project_id: projectId, evaluation_dir: evaluationDir,
+        evaluator: describeTarget(target), evaluation_project_id: projectId, evaluation_dir: evaluationDir, outputs_root: outputsRoot,
         verdict: scorecard.verdict, cost_usd: scorecard.costUsd, ...detail,
       });
       return [scorecard];
@@ -164,7 +170,7 @@ export function createDispatchEvaluator(input: DispatchEvaluatorInput): AgentXGa
     const command = ["bun", dispatchScript];
     if (target.kind === "squad") command.push("--squad", target.slug);
     else command.push("--agent-x");
-    command.push("--brief-file", briefFile, "--exec", "--project", projectId, "--outputs-root", evaluationDir,
+    command.push("--brief-file", briefFile, "--exec", "--project", projectId, "--outputs-root", outputsRoot,
       "--execution-mode=standard", "--max-revisions", "0");
     if (input.runtime) command.push("--runtime", input.runtime);
     if (Number.isFinite(input.budgetUsd) && (input.budgetUsd as number) > 0) command.push("--max-budget", String(input.budgetUsd));

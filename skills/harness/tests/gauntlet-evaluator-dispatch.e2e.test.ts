@@ -10,8 +10,9 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { EVALUATION_RUBRIC_VERSION } from "../lib/gauntlet/evaluation-contract.ts";
-import { evaluationDirFor } from "../lib/gauntlet/evaluator-adapter.ts";
+import { compileGauntletPlan } from "../lib/gauntlet/compiler.ts";
+import { EVALUATION_OUTPUTS_DIR, EVALUATION_RUBRIC_VERSION } from "../lib/gauntlet/evaluation-contract.ts";
+import { createDispatchEvaluator, evaluationDirFor, evaluationProjectId } from "../lib/gauntlet/evaluator-adapter.ts";
 import { listScorecards } from "../lib/gauntlet/store.ts";
 import { getRun, openKernel } from "../lib/run-kernel/index.ts";
 import { canonicalRunIdFor } from "../scripts/dispatch.ts";
@@ -90,7 +91,7 @@ function fixture(installed: Record<string, string[]>) {
   };
   const producerRuns = () => { try { return fs.readFileSync(path.join(capture, "pids"), "utf8").split("\n").filter(Boolean).length; } catch { return 0; } };
   const kernel = (projectId: string) => path.join(projectRoot, "outputs", projectId, ".nirvana", "run-kernel.sqlite");
-  return { root, projectRoot, outputs, dispatch, audit, producerRuns, kernel };
+  return { root, projectRoot, outputs, env, dispatch, audit, producerRuns, kernel };
 }
 
 function scorecards(kernelPath: string, projectId: string) {
@@ -113,9 +114,9 @@ describe("dispatch.ts selects and runs the Gauntlet evaluator", () => {
       evaluator: { kind: "squad", slug: "fixture-evaluator", capabilityId: CONFORMANCE } });
     const projectRoot = path.join(fx.projectRoot, "outputs", "proj-env");
     const evaluationDir = evaluationDirFor(projectRoot, canonicalRunIdFor("proj-env"), "crv_run_proj-env_can_1_1");
-    expect(fs.existsSync(path.join(evaluationDir, "scorecard.json"))).toBeTrue();
+    expect(fs.existsSync(path.join(evaluationDir, EVALUATION_OUTPUTS_DIR, "scorecard.json"))).toBeTrue();
     expect(fs.readFileSync(path.join(evaluationDir, "evaluation-brief.md"), "utf8")).toContain("Produza o relatório final em report.html");
-    const captured = JSON.parse(fs.readFileSync(path.join(evaluationDir, "dispatch-capture.json"), "utf8")) as { argv: string[]; cwd: string };
+    const captured = JSON.parse(fs.readFileSync(path.join(evaluationDir, EVALUATION_OUTPUTS_DIR, "dispatch-capture.json"), "utf8")) as { argv: string[]; cwd: string };
     expect(captured.argv.slice(0, 2)).toEqual(["--squad", "fixture-evaluator"]);
     expect(captured.argv).toContain("--execution-mode=standard");
     expect(captured.argv[captured.argv.indexOf("--project") + 1]).toBe("proj-env-evl-crv_run_proj-env_can_1_1");
@@ -160,4 +161,84 @@ describe("dispatch.ts selects and runs the Gauntlet evaluator", () => {
     expect(fs.existsSync(fx.kernel("proj-self"))).toBeFalse();
     expect(fx.audit().some(entry => entry.event === "x_gauntlet_evaluator_selected")).toBeFalse();
   }, spawnBudgetMs(2) + 30_000);
+});
+
+// The fake claude a child dispatch.ts runs as the agent-x evaluator: it reads the prompt from STDIN,
+// records the output_path the prompt names and writes there what FAKE_EVALUATOR_WRITES says: nothing,
+// or a passing scorecard for the light plan's single requirement.
+const FAKE_EVALUATOR_CLAUDE = String.raw`
+import * as fs from "node:fs";
+import * as path from "node:path";
+const prompt = await Bun.stdin.text();
+const outputsRoot = /^- output_path: (.+)$/m.exec(prompt)?.[1]?.trim() ?? "";
+fs.appendFileSync(path.join(process.env.FAKE_CAPTURE_DIR, "evaluator-output-paths"), outputsRoot + "\n");
+if (process.env.FAKE_EVALUATOR_WRITES === "scorecard") {
+  fs.mkdirSync(outputsRoot, { recursive: true });
+  fs.writeFileSync(path.join(outputsRoot, "scorecard.json"), JSON.stringify({ schemaVersion: "nirvana.gauntlet-scorecard/v1alpha1", verdict: "pass",
+    dimensions: [{ id: "brief-conformance", score: 0.95, confidence: 0.9, blocking: true, passed: true, evidenceRefs: ["report.html#L1"] }],
+    revisionRequests: [], regressions: [] }, null, 2), "utf8");
+}
+console.log(JSON.stringify({ type: "result", subtype: "success", is_error: false, result: "evaluated", session_id: "sess-evaluator", total_cost_usd: 0.02 }));
+`;
+
+describe("a real dispatch.ts as the evaluator child", () => {
+  const BRIEF = "Produza o relatório final em report.html";
+  const PROJECT = "proj-child";
+  const RUN = "run_proj-child";
+  const REVISION = "crv_run_proj-child_can_1_1";
+
+  function runChild(writes: "nothing" | "scorecard") {
+    const fx = fixture({});
+    const bin = path.join(fx.root, "bin-evaluator");
+    writeFakeCli(bin, "claude", FAKE_EVALUATOR_CLAUDE);
+    // The parent's project root: where a parent dispatch keeps `.nirvana/gauntlet/<run>/`.
+    const projectRoot = path.join(fx.projectRoot, "outputs", PROJECT);
+    const candidateRoot = path.join(projectRoot, ".nirvana", "gauntlet", RUN, "candidates", "can_1", "rev_1");
+    fs.mkdirSync(candidateRoot, { recursive: true });
+    fs.writeFileSync(path.join(candidateRoot, "report.html"), PASSING_HTML, "utf8");
+    const audit: Array<Record<string, unknown>> = [];
+    const evaluator = createDispatchEvaluator({
+      target: { kind: "agent-x", slug: "agent-x" }, producer: { kind: "squad", slug: "producer", capabilityId: "general.write.execute" },
+      plan: compileGauntletPlan({ brief: BRIEF, intensity: "light" }), brief: BRIEF, projectRoot, projectId: PROJECT, runtime: "claude-code",
+      dispatchScriptPath: DISPATCH, env: { ...fx.env, PATH: `${bin}${path.delimiter}${fx.env.PATH}`, FAKE_EVALUATOR_WRITES: writes },
+      audit: (event, payload) => audit.push({ event, ...payload }),
+    });
+    const [scorecard] = evaluator.evaluate({ projectId: PROJECT, runId: RUN, candidateId: "can_1", revision: 1, round: 1, revisionId: REVISION,
+      candidateRoot, artifactRefs: [], holdout: false });
+    const evaluationDir = evaluationDirFor(projectRoot, RUN, REVISION);
+    const childProject = evaluationProjectId(PROJECT, REVISION);
+    const kernel = openKernel(path.join(projectRoot, "outputs", childProject, ".nirvana", "run-kernel.sqlite"));
+    let childRun: ReturnType<typeof getRun>;
+    try { childRun = getRun(kernel, childProject, canonicalRunIdFor(childProject)); } finally { kernel.close(); }
+    return {
+      scorecard, evaluationDir, candidateRoot, childRun, audit,
+      childAudit: fx.audit().filter(entry => entry.project_id === childProject),
+      outputPathsSeen: fs.readFileSync(path.join(fx.root, "capture", "evaluator-output-paths"), "utf8").trim().split("\n"),
+    };
+  }
+
+  test("an evaluator that writes nothing leaves the outputs root empty: the child Run fails at verify, never completed, and the evaluation is indeterminate", () => {
+    const child = runChild("nothing");
+    const outputsRoot = path.join(child.evaluationDir, EVALUATION_OUTPUTS_DIR);
+    expect(child.outputPathsSeen).toEqual([outputsRoot]);
+    expect(fs.readdirSync(outputsRoot)).toEqual([]);
+    expect(fs.readdirSync(child.evaluationDir).sort()).toEqual(["evaluation-brief.md", "evaluation-request.json", EVALUATION_OUTPUTS_DIR]);
+    expect(child.scorecard.verdict).toBe("indeterminate");
+    expect(child.scorecard.dimensions[0].evidenceRefs[0]).toMatch(/^indeterminate: scorecard\.json not found at .*outputs[\\/]scorecard\.json/);
+    expect(child.childRun?.state).toBe("failed");
+    expect(child.childAudit.some(entry => entry.event === "verify_failed")).toBeTrue();
+    expect(child.childAudit.filter(entry => ["verify_passed", "gate_passed", "delivered", "x_runtime_errored_with_artifacts"].includes(entry.event as string))).toEqual([]);
+    expect(child.audit).toEqual([expect.objectContaining({ event: "x_gauntlet_evaluation_completed", verdict: "indeterminate", outputs_root: outputsRoot })]);
+    expect(fs.readdirSync(child.candidateRoot)).toEqual(["report.html"]);
+  }, spawnBudgetMs(1) + 30_000);
+
+  test("an evaluator that writes scorecard.json into its output_path is read from <evaluationDir>/outputs/ and passes", () => {
+    const child = runChild("scorecard");
+    expect(child.scorecard).toMatchObject({ verdict: "pass", evaluator: { kind: "agent-x", slug: "agent-x" }, costUsd: 0.02,
+      dimensions: [{ id: "brief-conformance", score: 0.95, passed: true }] });
+    expect(fs.existsSync(path.join(child.evaluationDir, EVALUATION_OUTPUTS_DIR, "scorecard.json"))).toBeTrue();
+    expect(fs.existsSync(path.join(child.evaluationDir, "scorecard.json"))).toBeFalse();
+    expect(child.childRun?.state).toBe("completed");
+    expect(child.childAudit.find(entry => entry.event === "verify_passed")).toMatchObject({ files: 1 });
+  }, spawnBudgetMs(1) + 30_000);
 });
