@@ -41,6 +41,7 @@ Este diretório é a fonte canônica para a evolução integrada do Run Kernel, 
 21. [Snapshot de runtime](runtime-snapshot.md)
 22. [Estado da implementação](implementation-status.md)
 23. [Configuração](configuration.md)
+24. [Configuração pelo Glance](glance-settings.md)
 
 ## ADRs
 

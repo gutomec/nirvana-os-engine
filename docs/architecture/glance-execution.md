@@ -50,6 +50,8 @@ As chaves idempotentes incluem o número da tentativa (`glance.child_started:<ru
 | `NIRVANA_HOST_RUNTIME`, `NIRVANA_DEFAULT_RUNTIME` | Entram na mesma regra de runtime padrão do dispatch (host da sessão, depois a variável, depois o primeiro runtime no PATH, depois `claude-code`). `available()` do runner é verdadeiro quando esse runtime está no PATH. |
 | `NIRVANA_EXECUTION_MODE`, `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST` | Herdadas pelo filho; decidem o modo de business e squad. |
 
+Além do que o servidor herda, o runner fixa no filho o valor efetivo de cada chave do schema que tem variável (`settingsEnvForChild`), resolvido a cada spawn sobre o root do projeto. Uma mudança pelo painel "Configuração" ou por `nrv config set` vale, portanto, no próximo despacho, sem reiniciar o servidor; ver [Configuração pelo Glance](glance-settings.md).
+
 O boot de `nrv glance` imprime uma linha dizendo se a execução está ativa e qual runtime foi detectado.
 
 ## Limitações

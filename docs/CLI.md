@@ -48,7 +48,7 @@ Useful flags on `run` / `auto`: `--team` (real multi-employee orchestration), `-
 
 | Command | What it does |
 |---|---|
-| `nrv glance [--read-only]` | Open the **Glance** web cockpit: live runs, the capability graph, and the audit trail of everything your organization is doing. In an adopted project, a chat Message runs a child `dispatch.ts` with a live timeline, cancel, and recovery after a restart; `--read-only` disables execution and every write endpoint (`NIRVANA_GLANCE_EXECUTION=0` keeps the cockpit up without spawning). |
+| `nrv glance [--read-only]` | Open the **Glance** web cockpit: live runs, the capability graph, and the audit trail of everything your organization is doing. In an adopted project, a chat Message runs a child `dispatch.ts` with a live timeline, cancel, and recovery after a restart; `--read-only` disables execution and every write endpoint (`NIRVANA_GLANCE_EXECUTION=0` keeps the cockpit up without spawning). The gear opens the "Configuração" panel: every `nrv config` key with its own control, saved per key into the project or the global file and holding from the next Message; the `.env` section stays for secrets, library scope and `LLM_CASCADE`. |
 | `nrv tui [--once\|--json]` | Terminal cockpit: live audit, active projects, registries. |
 | `nrv watch [project]` | Tail audit events live in the terminal. |
 | `nrv audit-view <project>` | Rich chronological view of a project's audit chain. |

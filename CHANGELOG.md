@@ -8,6 +8,47 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### The Glance "Configuração" panel: every `nrv config` key with an API and a screen
+
+The settings modal of the Glance cockpit is now the panel of the settings
+core. Its first cluster of tabs is the engine: every key of
+`settings-schema.ts`, grouped by section in schema order (Multi-target,
+Gauntlet, Execução, Glance, Runtime, Roteamento, Supervisor, Atualizações,
+Orçamento, Baselines de custo, Quality gate), one control per key (a switch
+that says its state in words for booleans, a select for enums, a field for
+numbers, strings and lists), the schema's description, the expected shape,
+the default, the legacy variable, the effective value and its origin in
+words, a scope select per control (project or global, only the scopes the
+key accepts), save and unset per key, and the refusal inline with the
+schema's own message. A key pinned by a variable of the server's
+environment is read-only, with the reason. The `.env` section stays in the
+same modal, as before, for what has no schema key (secrets, library scope,
+paths, `LLM_CASCADE`, the runtime rules); the four variables that became
+schema keys (`NIRVANA_MODEL`, `NIRVANA_ROUTING_MODE`,
+`NIRVANA_DNA_INJECTION`, `NIRVANA_STALL_THRESHOLD_MS`) left its list, so
+nothing is configurable in two places.
+
+The panel reads and writes through three new routes, adapters of the core
+with no precedence logic of their own, under the authorization of every
+`/api/v1` write (actions enabled, local `Origin`, `Idempotency-Key`):
+
+| Route | Result |
+| --- | --- |
+| `GET /api/v1/settings?project_id=` | the schema with the effective value, origin, file and `locked` of every key |
+| `PUT /api/v1/settings/<key>` with `{ value, scope }` | writes the key in the project or the global file; `404` unknown key, `400` a value the schema refuses or a scope the key rejects, `409` a key pinned by a variable (naming it) or an unreadable config file |
+| `DELETE /api/v1/settings/<key>?scope=` | removes the key from that file; the next layer takes over |
+
+The same `Idempotency-Key` with the same request replays the answer without
+a second write; another request under it is `409`. Every write that changes
+a file audits `x_settings_changed` with `actor: "glance"` on the project's
+harness log, the CLI's own event. The execution runner resolves the settings
+at every spawn and the core invalidates its cache on write, so a change in
+the panel holds for the next Message the cockpit dispatches, without a
+restart; the test proves it with the fake child, which now records the
+environment it received. `glance.execution` and `updates.check` are read at
+boot and hold from the next `nrv glance`. `docs/architecture/glance-settings.md`
+is the panel's contract; `control-plane-api.md` lists the routes and codes.
+
 ### One settings core: `nrv config`, four layers, one precedence
 
 Every operational switch of the engine (multi-target, the Gauntlet defaults
