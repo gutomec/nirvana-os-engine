@@ -157,6 +157,11 @@ export function appendEvent(handle: KernelHandle, input: AppendEventInput): RunE
     payload: input.payload ?? {},
   };
 
+  // Immediate, never deferred: a deferred transaction takes its read snapshot first and asks for
+  // the write lock only at the first INSERT. When another process (the dispatch child under the
+  // Glance server) wrote in between, SQLite refuses that upgrade with SQLITE_BUSY at once, without
+  // consulting the busy handler. BEGIN IMMEDIATE takes the write lock up front and waits on
+  // busy_timeout instead.
   return handle.db.transaction(() => {
     const existing = existingByIdentity(handle, input, eventId);
     if (existing) {
@@ -188,7 +193,7 @@ export function appendEvent(handle: KernelHandle, input: AppendEventInput): RunE
       [event.eventId, event.projectId, event.sequence, serialized]);
     applyEventToProjection(handle, event);
     return event;
-  })();
+  }).immediate();
 }
 
 function applyEventToProjection(handle: KernelHandle, event: RunEvent): void {
@@ -282,7 +287,7 @@ export function rebuildProjections(handle: KernelHandle, projectId: string): voi
   handle.db.transaction(() => {
     handle.db.run("DELETE FROM run_projections WHERE project_id = ?", [projectId]);
     for (const event of listEvents(handle, projectId)) applyEventToProjection(handle, event);
-  })();
+  }).immediate();
 }
 
 export function projectionSnapshot(handle: KernelHandle, projectId: string): string {

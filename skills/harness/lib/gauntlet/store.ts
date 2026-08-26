@@ -51,7 +51,7 @@ export function beginGauntlet(handle: KernelHandle, context: GauntletContext, pl
       [context.projectId, context.runId, canonicalJson(projection), projection.version]);
     appendEvent(handle, { ...context, type: "gauntlet.plan_compiled", idempotencyKey: `gauntlet:${context.runId}:plan`, occurredAt: startedAt,
       payload: { plan, state: projection.state, stopReason: projection.stopReason ?? null } });
-  })();
+  }).immediate();
   return projection;
 }
 
@@ -70,7 +70,7 @@ export function updateGauntlet(handle: KernelHandle, context: GauntletContext, n
     if (result.changes !== 1) throw new Error("gauntlet: concurrent projection update");
     appendEvent(handle, { ...context, type: event.type, idempotencyKey: event.idempotencyKey, occurredAt: event.occurredAt,
       payload: { version: next.version, ...(event.payload ?? {}) } });
-  })();
+  }).immediate();
   return next;
 }
 
@@ -99,7 +99,7 @@ export function saveCandidateRevision(handle: KernelHandle, context: GauntletCon
       payload: { candidateId: candidate.candidateId, revisionId: candidate.revisionId, revision: candidate.revision,
         producer: candidate.producer, artifactRefs: candidate.artifactRefs, causalEvaluationIds: candidate.causalEvaluationIds,
         parentRevisionId: candidate.parentRevisionId ?? null, hypothesis: candidate.hypothesis ?? null } });
-  })();
+  }).immediate();
   return candidate;
 }
 
@@ -118,7 +118,7 @@ export function saveScorecard(handle: KernelHandle, context: GauntletContext, sc
     appendEvent(handle, { ...context, type: "gauntlet.evaluation_recorded",
       idempotencyKey: `gauntlet:${context.runId}:evaluation:${scorecard.evaluationId}`, occurredAt: scorecard.createdAt,
       payload: scorecard as unknown as Record<string, unknown> });
-  })();
+  }).immediate();
   return scorecard;
 }
 

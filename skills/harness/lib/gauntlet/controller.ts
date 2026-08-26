@@ -119,7 +119,7 @@ export class GauntletController {
         type: "gauntlet.revision_requested", idempotencyKey: `gauntlet:${current.runId}:round:${current.round}:revision`, occurredAt: now,
         payload: { evaluationIds: scorecards.map(scorecard => scorecard.evaluationId), revisionRequests: scorecards.flatMap(scorecard => scorecard.revisionRequests) },
       });
-    })();
+    }).immediate();
   }
 
   markRegressionTesting(now = new Date().toISOString()): GauntletProjection {

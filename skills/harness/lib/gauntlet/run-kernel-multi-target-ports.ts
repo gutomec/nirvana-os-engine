@@ -122,7 +122,7 @@ export function createRunKernelMultiTargetPorts(input: {
         ON CONFLICT(project_id, run_id, node_id) DO UPDATE SET owner_id = excluded.owner_id, expires_at = excluded.expires_at, version = excluded.version`,
       [input.projectId, input.runId, nodeId, input.ownerId, expiresAt, version]);
       return { acquired: true, changed: true, row: { owner_id: input.ownerId, expires_at: expiresAt, version } };
-    })();
+    }).immediate();
     if (result.acquired && result.changed) appendCausal("multi_target.lease_claimed", leaseKey("claim", nodeId, result.row.version), {
       nodeId, ownerId: input.ownerId, expiresAt: result.row.expires_at, version: result.row.version,
     });
@@ -140,7 +140,7 @@ export function createRunKernelMultiTargetPorts(input: {
         WHERE project_id = ? AND run_id = ? AND node_id = ? AND owner_id = ? AND version = ?`,
       [expiresAt, version, input.projectId, input.runId, nodeId, input.ownerId, current.version]);
       return update.changes === 1 ? { expiresAt, version } : null;
-    })();
+    }).immediate();
     if (!result) return false;
     appendCausal("multi_target.lease_renewed", leaseKey("renew", nodeId, result.version), {
       nodeId, ownerId: input.ownerId, expiresAt: result.expiresAt, version: result.version,

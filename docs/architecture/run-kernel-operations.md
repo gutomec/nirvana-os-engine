@@ -19,7 +19,7 @@ O kernel contém:
 
 ## Storage
 
-Cada instância usa um arquivo SQLite definido pelo caller. O schema inicial tem versão `1` e cria as tabelas `project_sequences`, `run_events`, `run_projections`, `kernel_outbox`, `transcript_messages` e `artifact_refs`. WAL, `busy_timeout`, foreign keys e `synchronous=FULL` são configurados na abertura.
+Cada instância usa um arquivo SQLite definido pelo caller. O schema inicial tem versão `1` e cria as tabelas `project_sequences`, `run_events`, `run_projections`, `kernel_outbox`, `transcript_messages` e `artifact_refs`. WAL, `busy_timeout`, foreign keys e `synchronous=FULL` são configurados na abertura. Toda transação de escrita do kernel (journal, projections, store do Gauntlet e leases multi-target) começa com `BEGIN IMMEDIATE`: uma transação deferred que lê antes de escrever recebe `SQLITE_BUSY` imediato, sem passar pelo busy handler, quando outro processo gravou entre a leitura e a escrita, e é exatamente isso que acontece entre o servidor do Glance e o filho de dispatch no mesmo arquivo.
 
 O journal e a outbox não devem ser apagados em rollback. Desativar o writer novo basta para retornar aos readers legados. A facade mantém o ledger atual no formato existente e adiciona somente eventos `x_run_kernel_projection` ao audit.
 
