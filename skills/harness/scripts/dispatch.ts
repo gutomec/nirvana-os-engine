@@ -50,6 +50,7 @@ import { preflightReindex } from "../lib/preflight-index.ts";
 import { maybeSweep } from "./supervisor.ts";
 import * as runLedger from "../lib/run-ledger.ts";
 import { loadHarnessConfig } from "../lib/harness-config.ts";
+import { describeSettingSource, resolveSetting, settingsEnvForChild } from "../../_shared/lib/settings.ts";
 import { planRouteWithFallback, resolveDispatchPlan, runAgentX, type DispatchPlan } from "../lib/dispatch-cascade.ts";
 import { runSquadHeadless } from "../lib/squad-exec.ts";
 import { runDelivery, deliverAfterRuntimeError, gateableFiles, runGateOnce, type DeliveryArgs, type DeliveryResult, type RuntimeErrorOutcome } from "../lib/delivery-pipeline.ts";
@@ -454,8 +455,10 @@ const explicitRuntime: Runtime | null = (() => {
 // spent another vendor's quota. Precedence (flag > brief > rules > host) was
 // correct above this line and undone by one fallback.
 const detectedHost = detectCurrentHost();
-const envDefault = (process.env.NIRVANA_DEFAULT_RUNTIME || "").trim();
-// Resolution order once detection fails: an explicit NIRVANA_DEFAULT_RUNTIME,
+// The execution.default_runtime setting: NIRVANA_DEFAULT_RUNTIME, else the project or global config.
+const defaultRuntimeSetting = resolveSetting("execution.default_runtime");
+const envDefault = defaultRuntimeSetting.value.trim();
+// Resolution order once detection fails: an explicit execution.default_runtime,
 // then whatever is actually installed — chosen from the roster, never
 // hardcoded to one vendor. The run always proceeds (a brief must not stall),
 // but the choice is announced and audited instead of assumed.
@@ -463,10 +466,10 @@ const firstAvailable = (): Runtime | null =>
   (listRuntimes().map(r => r.name).find(n => runtimeAvailable(n)) ?? null);
 const hostDefault: Runtime = resolveDefaultRuntime({ detectedHost, envDefault, normalize: normRuntime, firstAvailable }).runtime;
 if (!detectedHost) {
-  const how = envDefault ? `NIRVANA_DEFAULT_RUNTIME=${hostDefault}` : `first available on PATH: ${hostDefault}`;
+  const how = envDefault ? `execution.default_runtime=${hostDefault} (${describeSettingSource(defaultRuntimeSetting)})` : `first available on PATH: ${hostDefault}`;
   console.error(c("yellow", "⚠") + ` host runtime not identified — using ${how}.`
-    + " Pin it with NIRVANA_DEFAULT_RUNTIME in .env, --runtime, or by naming it in the brief.");
-  emit("x_host_runtime_undetected", { used: hostDefault, from: envDefault ? "env" : "path-scan", cwd: process.cwd() });
+    + " Pin it with NIRVANA_DEFAULT_RUNTIME in .env, nrv config set execution.default_runtime <runtime>, --runtime, or by naming it in the brief.");
+  emit("x_host_runtime_undetected", { used: hostDefault, from: envDefault ? defaultRuntimeSetting.source : "path-scan", cwd: process.cwd() });
 }
 let runtimeDecision: RuntimeDecision = decideRuntime({
   brief, explicitRuntime, defaultRuntime: hostDefault,
@@ -742,7 +745,10 @@ const verifyScriptPath = path.join(SKILLS, "businesses/scripts/verify-deliverabl
 // the canonical Run's row in a Gauntlet canary), so it tells them not to: the agentic row had no
 // owner here, survived every scripted dispatch as `running` and was escalated to a human as
 // stalled once its 30-minute lease expired (smoke-judge-squad, 2026-08-26).
-const prepScriptEnv = { ...process.env, NIRVANA_DISPATCH_TRACKS_RUN: "1" };
+// They also get the effective settings as the variables they read (settings.ts
+// settingsEnvForChild: routing.mode, execution.dna_injection, ...), so the project's
+// and the user's config hold in the prep scripts and in the employee prompt alike.
+const prepScriptEnv = { ...process.env, ...settingsEnvForChild(), NIRVANA_DISPATCH_TRACKS_RUN: "1" };
 
 // Frozen runtime, provider and model decision of one canary Run: the broker answers
 // from the provider catalogs on disk (lib/runtime-snapshot.ts); without a descriptor
@@ -799,9 +805,11 @@ function heuristicGauntletEvaluator(env: Record<string, string>): AgentXGauntlet
 function gauntletEvaluatorFor(args: { pid: string; producer: TargetRef; plan: GauntletPlan; projectRoot: string; rt: Runtime;
   kernelPath: string; runId: string; heuristicEnv: Record<string, string> }): { evaluator: AgentXGauntletEvaluator; budget: GauntletRoundBudget } {
   const judge = judgeXAvailability(args.rt);
+  // The gauntlet.evaluator setting: the variable, else the project or global config.
+  const gauntletEvaluatorSetting = resolveSetting("gauntlet.evaluator");
   let selection: ReturnType<typeof selectGauntletEvaluator>;
   try {
-    selection = selectGauntletEvaluator({ envValue: process.env[GAUNTLET_EVALUATOR_ENV], producer: args.producer, installed: loadInstalledSquads(), judge });
+    selection = selectGauntletEvaluator({ envValue: gauntletEvaluatorSetting.value || undefined, producer: args.producer, installed: loadInstalledSquads(), judge });
   } catch (error) {
     console.error(c("red", `✗ Gauntlet evaluator: ${(error as Error).message}`));
     process.exit(4);
@@ -837,8 +845,8 @@ function gauntletEvaluatorFor(args: { pid: string; producer: TargetRef; plan: Ga
   console.log(c("dim", `  Gauntlet evaluator: ${evaluatorLabel} (${selection.source})`));
   if (selection.kind === "heuristic") {
     emit("x_gauntlet_evaluator_heuristic_opt_in", { trace_id: args.pid, project_id: args.pid, producer: describeTarget(args.producer),
-      env_value: process.env[GAUNTLET_EVALUATOR_ENV] ?? null });
-    console.log(c("yellow", `  ⚠ offline heuristic by explicit opt-in (${GAUNTLET_EVALUATOR_ENV}=heuristic): the round is scored by the quality gate, not judged`));
+      env_value: gauntletEvaluatorSetting.value || null, source: describeSettingSource(gauntletEvaluatorSetting) });
+    console.log(c("yellow", `  ⚠ offline heuristic by explicit opt-in (gauntlet.evaluator=heuristic via ${describeSettingSource(gauntletEvaluatorSetting)}): the round is scored by the quality gate, not judged`));
     return { evaluator: heuristicGauntletEvaluator(args.heuristicEnv), budget: gauntletRoundBudget(args.plan, effectiveBudgetUsd()) };
   }
   const budget = gauntletRoundBudget(args.plan, effectiveBudgetUsd(), GAUNTLET_EVALUATION_SHARE);
@@ -1359,8 +1367,9 @@ const execOutputsRoot = outputsRoot || (wantExec ? path.join(projDir, "deliverab
 if (execOutputsRoot && wantExec) fs.mkdirSync(execOutputsRoot, { recursive: true });
 const businessCanaryDecision = decideBusinessCanary({ businessSlug: slug, wantExec, teamMode: wantTeam,
   requestedMode: executionOptions.requestedMode, resolvedMode: executionOptions.resolvedMode,
-  intensity: executionOptions.intensity, allowlist: process.env.NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST,
-  killSwitch: process.env.NIRVANA_BUSINESS_GAUNTLET_KILL_SWITCH });
+  // The gauntlet.business_allowlist and gauntlet.business_kill_switch settings (variables, else config).
+  intensity: executionOptions.intensity, allowlist: resolveSetting("gauntlet.business_allowlist").value,
+  killSwitch: resolveSetting("gauntlet.business_kill_switch").value ? "1" : undefined });
 const tmpBriefFile = path.join(projectRoot, "brief.md");
 if (!fs.existsSync(tmpBriefFile)) {
   console.error(c("red", `✗ brief.md not found at ${tmpBriefFile}`));
@@ -1368,7 +1377,7 @@ if (!fs.existsSync(tmpBriefFile)) {
 }
 const buildArgs = [employeePrompt, slug, intake, projDir, tmpBriefFile];
 if (execOutputsRoot) buildArgs.push(execOutputsRoot);
-const r2 = spawnSync("bun", buildArgs, { encoding: "utf8" });
+const r2 = spawnSync("bun", buildArgs, { encoding: "utf8", env: prepScriptEnv });
 if (r2.status !== 0) {
   console.error(c("red", "✗ employee-prompt failed:"));
   console.error(r2.stderr);
@@ -1462,7 +1471,7 @@ if (wantExec) {
     // The employee prompt embeds `outputs_root`, so it is rebuilt per candidate root: every
     // candidate and revision writes into its own isolated directory, never into `oroot`.
     const employeePromptFor = (briefFile: string, candidateRoot: string): string => {
-      const built = spawnSync("bun", [employeePrompt, slug, intake, projDir, briefFile, candidateRoot], { encoding: "utf8" });
+      const built = spawnSync("bun", [employeePrompt, slug, intake, projDir, briefFile, candidateRoot], { encoding: "utf8", env: prepScriptEnv });
       if (built.status !== 0) throw new Error(`employee-prompt failed: ${built.stderr}`);
       return built.stdout;
     };

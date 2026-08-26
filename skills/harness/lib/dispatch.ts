@@ -37,6 +37,7 @@ import { getMindClone } from "./glance/data-loader.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { resolveClonePersona } from "../../_shared/lib/clone-resolver.ts";
 import { layersForPhase } from "../../_shared/lib/dna-layer-policy.ts";
+import { resolveSetting } from "../../_shared/lib/settings.ts";
 
 // ───────────────────── types ─────────────────────
 
@@ -129,12 +130,12 @@ export function injectMindClones(opts: {
   const missing: { input: string; tried: string }[] = [];
 
   // Injection mode: "full" (getMindClone — AGENT+SOUL+MANIFEST, default) or
-  // "fragments" (SOUL + phase layers via resolveClonePersona). Opt-in via
-  // NIRVANA_DNA_INJECTION=fragments. Squads execute → execute layers.
+  // "fragments" (SOUL + phase layers via resolveClonePersona). Opt-in via the
+  // execution.dna_injection setting (NIRVANA_DNA_INJECTION=fragments, or the
+  // project / global config). Squads execute → execute layers.
   // Additive and regression-free: in fragments, if the clone does not resolve by
   // bare slug, fall back to getMindClone (legacy path). Flag off = byte-identical to today.
-  const dnaMode: "full" | "fragments" =
-    (process.env.NIRVANA_DNA_INJECTION || "full").toLowerCase() === "fragments" ? "fragments" : "full";
+  const dnaMode: "full" | "fragments" = resolveSetting("execution.dna_injection").value;
   const fragLayers = layersForPhase(opts.phase || "execute");
 
   for (const input of opts.slugs) {

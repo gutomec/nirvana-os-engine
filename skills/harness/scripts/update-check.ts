@@ -17,7 +17,8 @@
 //      script may cause is silence.
 //   3. NEVER nag. One line, on stderr (stdout stays machine-parseable), only
 //      when a newer version actually exists, at most once per CHECK_TTL.
-//   4. Opt out completely: NIRVANA_NO_UPDATE_CHECK=1, or CI=1.
+//   4. Opt out completely: the updates.check setting at false
+//      (NIRVANA_NO_UPDATE_CHECK=1, or `nrv config set updates.check false`), or CI=1.
 //
 // Cache contract (`~/.nirvana/cache/update-notice.txt`) — three lines of plain
 // text, because the reader is bash, and JSON parsing in bash is how you ship a
@@ -48,6 +49,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { resolveSetting } from "../../_shared/lib/settings.ts";
 
 const HOME = process.env.NIRVANA_HOME || os.homedir();
 const NIRVANA_DIR = path.join(HOME, ".nirvana");
@@ -106,10 +108,10 @@ export function installedVersion(): string | null {
   return null;
 }
 
-/** True when the user asked us to stay out of the way, or we are in CI. */
+/** True when the user asked us to stay out of the way (`updates.check: false`,
+ *  by the variable or the global config), or we are in CI. */
 export function checkDisabled(): boolean {
-  const off = (process.env.NIRVANA_NO_UPDATE_CHECK || "").toLowerCase();
-  if (off === "1" || off === "true" || off === "yes") return true;
+  if (!resolveSetting("updates.check").value) return true;
   return !!process.env.CI;
 }
 
@@ -181,7 +183,9 @@ export function renderMessage(current: string, latest: string): string {
 // ── commands ────────────────────────────────────────────────────────────────
 
 async function refresh(): Promise<void> {
-  if (checkDisabled()) return;
+  // Switched off: stamp the cache with nothing pending, so bin/nrv (which reads
+  // only the variable) prints no notice and stops respawning this refresher.
+  if (checkDisabled()) { writeNotice(null); return; }
   const current = installedVersion();
   if (!current) return;                       // unknown install — nothing to compare
   const latest = await fetchLatestVersion();
@@ -213,7 +217,7 @@ function status(): number {
   const age = ageMs();
   console.log(`installed:   ${current}`);
   console.log(`last check:  ${age === Infinity ? "never" : `${Math.floor(age / 60000)} min ago`}`);
-  console.log(`disabled:    ${checkDisabled() ? "yes (NIRVANA_NO_UPDATE_CHECK or CI)" : "no"}`);
+  console.log(`disabled:    ${checkDisabled() ? "yes (updates.check=false or CI)" : "no"}`);
   if (notice && current !== "unknown" && compareVersions(notice.latest, current) > 0) {
     console.log(`pending:     ${notice.latest}`);
     return 1;

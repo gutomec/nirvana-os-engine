@@ -1,9 +1,11 @@
-// harness-config.test.ts — typed reader for skills/harness/config.yaml.
+// harness-config.test.ts — the harness view over the settings core.
 //
-// Pins: routing.dense parsing ("off"|"fallback", anything else → "off"),
-// quality_gate passthrough with defaults, env precedence in denseRoutingMode,
-// and the comment-preserving setRoutingDense edit (only the dense line moves;
-// every comment byte survives).
+// Pins: routing.dense parsing ("off"|"fallback"), quality_gate defaults, the
+// layered resolution loadHarnessConfig reads through (project > global >
+// engine file), env precedence in denseRoutingMode, the clear error a
+// malformed file or an invalid value raises (never a silent default), and the
+// comment-preserving setRoutingDense edit (only the dense line moves; every
+// comment byte survives; without a path it writes the user's global config).
 // Runs with: bun test skills/harness/tests
 import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
@@ -14,18 +16,24 @@ import {
   denseRoutingMode,
   setRoutingDense,
 } from "../lib/harness-config.ts";
+import { _resetSettingsCache } from "../../_shared/lib/settings.ts";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "harness-config-test-"));
 const write = (name: string, content: string) => {
   const p = path.join(tmp, name);
+  fs.mkdirSync(path.dirname(p), { recursive: true });
   fs.writeFileSync(p, content, "utf8");
   return p;
 };
 
-const savedEnv = process.env.NIRVANA_ROUTER_DENSE;
+const MANAGED = ["NIRVANA_ROUTER_DENSE", "NIRVANA_HOME", "NIRVANA_PROJECT_ROOT", "HARNESS_LOGS_DIR"];
+const saved: Record<string, string | undefined> = Object.fromEntries(MANAGED.map((key) => [key, process.env[key]]));
 afterEach(() => {
-  if (savedEnv === undefined) delete process.env.NIRVANA_ROUTER_DENSE;
-  else process.env.NIRVANA_ROUTER_DENSE = savedEnv;
+  for (const key of MANAGED) {
+    if (saved[key] === undefined) delete process.env[key];
+    else process.env[key] = saved[key];
+  }
+  _resetSettingsCache();
 });
 
 describe("loadHarnessConfig", () => {
@@ -37,13 +45,13 @@ describe("loadHarnessConfig", () => {
   test('parses unquoted dense: off as the string mode "off"', () => {
     const p = write("b.yaml", "routing:\n  dense: off\n");
     // yaml v2 core schema reads `off` as a plain string; a boolean-reading
-    // parser would fail normalizeDense and land on the default — same result.
+    // parser would fail validation and raise, never land on a silent default.
     expect(loadHarnessConfig(p).routing.dense).toBe("off");
   });
 
-  test('unknown values degrade to "off"', () => {
+  test("an unknown value is a clear error naming the file, the key and the choices", () => {
     const p = write("c.yaml", 'routing:\n  dense: "always"\n');
-    expect(loadHarnessConfig(p).routing.dense).toBe("off");
+    expect(() => loadHarnessConfig(p)).toThrow(/c\.yaml.*routing\.dense.*off \| fallback/);
   });
 
   test("missing file / missing keys → defaults", () => {
@@ -55,17 +63,17 @@ describe("loadHarnessConfig", () => {
     expect(cfg.quality_gate.max_revisions).toBe(2);
   });
 
-  test("malformed YAML degrades to defaults, never throws", () => {
+  test("malformed YAML is a clear error naming the file, never a silent default", () => {
     const p = write("e.yaml", "routing: [unclosed\n  dense: fallback");
-    expect(loadHarnessConfig(p).routing.dense).toBe("off");
+    expect(() => loadHarnessConfig(p)).toThrow(/e\.yaml.*YAML/);
   });
 
-  test("quality_gate passthrough keeps user values and fills defaults", () => {
+  test("quality_gate reads the keys it knows and fills defaults for the rest", () => {
     const p = write("f.yaml", "quality_gate:\n  judge_enabled: true\n  custom_key: 7\n");
     const qg = loadHarnessConfig(p).quality_gate;
     expect(qg.judge_enabled).toBe(true);
-    expect(qg.custom_key).toBe(7);
     expect(qg.rubric_fallback).toBe("prose_shortform"); // default filled
+    expect(qg.max_revisions).toBe(2);
   });
 
   test("the committed config.yaml parses and its dense default is off", () => {
@@ -73,6 +81,7 @@ describe("loadHarnessConfig", () => {
     const cfg = loadHarnessConfig(committed);
     expect(cfg.routing.dense).toBe("off"); // Phase 3.4 DECISION — default off
     expect(cfg.quality_gate.judge_enabled).toBe(false); // Phase 4: judge stays opt-in
+    expect(cfg.config_path).toBe(committed);
   });
 
   // routing.on_router_failure — Phase 4 router-failure ladder policy.
@@ -82,9 +91,24 @@ describe("loadHarnessConfig", () => {
     expect(loadHarnessConfig(p).routing.on_router_failure).toBe("fail");
   });
 
-  test('unknown on_router_failure values degrade to "cascade"', () => {
+  test("an unknown on_router_failure is a clear error", () => {
     const p = write("orf-bad.yaml", "routing:\n  on_router_failure: explode\n");
-    expect(loadHarnessConfig(p).routing.on_router_failure).toBe("cascade");
+    expect(() => loadHarnessConfig(p)).toThrow(/orf-bad\.yaml.*routing\.on_router_failure.*cascade \| fail/);
+  });
+
+  test("without an explicit path the project and the global config apply over the engine file", () => {
+    const home = path.join(tmp, "home-layers");
+    const project = path.join(tmp, "project-layers");
+    write("home-layers/.nirvana/config.yaml", "quality_gate:\n  max_revisions: 5\nrouting:\n  on_router_failure: fail\n");
+    write("project-layers/.nirvana/config.yaml", "routing:\n  on_router_failure: cascade\n  dense: fallback\n");
+    process.env.NIRVANA_HOME = home;
+    process.env.NIRVANA_PROJECT_ROOT = project;
+    delete process.env.NIRVANA_ROUTER_DENSE;
+    const cfg = loadHarnessConfig();
+    expect(cfg.quality_gate.max_revisions).toBe(5);          // global
+    expect(cfg.routing.on_router_failure).toBe("cascade");   // project over global
+    expect(cfg.routing.dense).toBe("fallback");              // project
+    expect(cfg.config_path).toBe(path.join(import.meta.dir, "..", "config.yaml"));
   });
 });
 
@@ -151,7 +175,23 @@ describe("setRoutingDense — comment-preserving edit", () => {
     expect(loadHarnessConfig(p).routing.dense).toBe("off");
   });
 
-  test("returns null when there is no config file to edit", () => {
+  test("returns null when there is no explicit file to edit", () => {
     expect(setRoutingDense("fallback", path.join(tmp, "nope.yaml"))).toBeNull();
+  });
+
+  test("without a path it writes the user's global config (created when absent) and audits x_settings_changed", () => {
+    const home = path.join(tmp, "home-write");
+    const logs = path.join(tmp, "logs-write");
+    process.env.NIRVANA_HOME = home;
+    process.env.HARNESS_LOGS_DIR = logs;
+    process.env.NIRVANA_PROJECT_ROOT = path.join(tmp, "no-project-here");
+    delete process.env.NIRVANA_ROUTER_DENSE;
+    const globalFile = path.join(home, ".nirvana", "config.yaml");
+    expect(setRoutingDense("fallback")).toBe(globalFile);
+    expect(fs.readFileSync(globalFile, "utf8")).toContain('dense: "fallback"');
+    expect(denseRoutingMode()).toBe("fallback");
+    const day = fs.readdirSync(logs).find((name) => /^\d{4}-\d{2}-\d{2}$/.test(name))!;
+    const events = fs.readFileSync(path.join(logs, day, "audit.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    expect(events).toContainEqual(expect.objectContaining({ event: "x_settings_changed", key: "routing.dense", scope: "global", from: null, to: "fallback" }));
   });
 });

@@ -17,7 +17,17 @@ nrv <subcommand> [args]
 | `nrv install --bootstrap` | Wire audit hooks into Claude Code, Gemini-CLI, and Antigravity (run once after installing; idempotent). |
 | `nrv install --check` | Report status; exit 0 if ready, 1 if it needs setup. |
 | `nrv install --repair-path` | Windows: list temporary `nrv-*` entries left on the user PATH (nothing written); `--apply` removes exactly those. |
-| `nrv doctor` | Full system diagnostic (binaries, skills, hooks, patches). |
+| `nrv doctor` | Full system diagnostic (binaries, skills, hooks, patches, and the `config` section: every operational setting with its effective value and origin). |
+
+## Configure
+
+| Command | What it does |
+|---|---|
+| `nrv config list [--json]` | Every operational setting (multi-target, Gauntlet, runtime, routing, supervisor, updates, budget, quality gate) with its effective value, where it comes from (a variable, the project file, the global file, the engine file, the default) and its default. |
+| `nrv config get <key>` / `nrv config explain <key>` | The effective value; `explain` adds the description, the default, the allowed scopes and the legacy variable. |
+| `nrv config set <key> <value> [--global\|--project]` / `nrv config unset <key> [...]` | Writes `<project>/.nirvana/config.yaml` (the default inside a project) or `~/.nirvana/config.yaml` (kept across `nrv update`), one line at a time, comments preserved. Refuses a value the schema rejects, a scope the key does not accept, and a key pinned by a variable in this shell, each with the reason; every write audits `x_settings_changed`. |
+
+Precedence, always: environment variable > `<project>/.nirvana/config.yaml` > `~/.nirvana/config.yaml` > the engine's `skills/harness/config.yaml` > the default. The full key table, the variables that stay environment-only and the reasons are in `docs/architecture/configuration.md`.
 
 ## Talk to it / run work
 
@@ -30,7 +40,7 @@ nrv <subcommand> [args]
 | `nrv revise <project> "<change>"` | Apply a change while keeping the same runtime session. |
 | `nrv launch <name> --pillars=brand,marketing,gtm` | Scaffold a multi-pillar 360° launch (default: all 11 pillars). |
 | `nrv ask <clone> "<question>"` | Talk directly to a single specialist (mind-clone), DNA injected. |
-| `nrv multi-target plan\|run\|status <plan.json>` | Multi-target engine by plan file (alias `nrv mt`): `plan` compiles the waves, `run` executes them over the Run Kernel (`NIRVANA_MULTI_TARGET_KILL_SWITCH=1` turns it off), `status` reads the projection. |
+| `nrv multi-target plan\|run\|status <plan.json>` | Multi-target engine by plan file (alias `nrv mt`): `plan` compiles the waves, `run` executes them over the Run Kernel (`nrv config set multi_target.enabled false` or `NIRVANA_MULTI_TARGET_KILL_SWITCH=1` turns it off), `status` reads the projection. |
 
 Useful flags on `run` / `auto`: `--team` (real multi-employee orchestration), `--zip` / `--pdf` (bundle deliverables), `--runtime=claude-code|codex|gemini-cli|antigravity-cli`, `--max-budget=<usd>`, `--timeout=<min>`, `--mode=agentic|fast` (routing mode), `--execution-mode=standard|gauntlet|auto` (default `standard`), `--gauntlet-intensity=light|balanced|exhaustive` (a Business target needs `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST=<slug>`), `--run-id=<runId>` (adopt a Run already prepared in the project's kernel, the way Glance does).
 

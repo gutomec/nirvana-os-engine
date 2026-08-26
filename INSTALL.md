@@ -39,6 +39,8 @@ The free engine ships no content, so there is no starter pack to copy. Curated p
 
 **Idempotent.** Re-running is safe. Hooks you configured yourself are preserved; the Nirvana hooks are added once.
 
+**Settings.** `nrv config list` shows every operational switch with its effective value and where it comes from; `nrv config set <key> <value>` writes `~/.nirvana/config.yaml` (kept across `nrv update`) or, inside a project, `<project>/.nirvana/config.yaml`. An environment variable still wins over both. Reference: `docs/architecture/configuration.md`.
+
 ---
 
 ## Install from source (development)

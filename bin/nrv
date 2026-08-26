@@ -12,6 +12,7 @@
 #   nrv find "<query>"                    → dry-run capability discovery
 #   nrv validate                          → harness self-test
 #   nrv index                             → re-index squads + businesses
+#   nrv config list|get|set|unset|explain → operational settings (value + origin per key)
 #   nrv init <target_dir> [--copy]        → bootstrap a new Nirvana project
 #   nrv validate-mind-clones              → audit canonical mind-clone library
 #   nrv help                              → list all sub-commands
@@ -125,6 +126,8 @@ case "$cmd" in
     exec "$BUN_BIN" "$SKILLS/harness/scripts/watch-fs.ts" "$@" ;;
   index)
     exec "$BUN_BIN" "$SKILLS/harness/scripts/index.ts" "$@" ;;
+  config)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/config.ts" "$@" ;;
   pack-manifest|gen-pack-manifest)
     exec "$BUN_BIN" "$SKILLS/_shared/scripts/gen-pack-manifest.ts" "$@" ;;
   init|init-project)

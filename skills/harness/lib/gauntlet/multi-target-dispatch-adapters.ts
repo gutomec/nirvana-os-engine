@@ -39,6 +39,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { harnessLogsDir } from "../../../_shared/lib/log-paths.ts";
 import { scopeGuard } from "../../../_shared/lib/scope-guard.ts";
+import { settingsEnvForChild } from "../../../_shared/lib/settings.ts";
 import type { CompiledMultiTargetPlan, ManifestPhase } from "../plan-compiler.ts";
 import type { MultiTargetAdapterInput, MultiTargetAdapterResult, MultiTargetCoordinatorPorts } from "./multi-target-coordinator.ts";
 
@@ -337,6 +338,10 @@ Read ${instructionFile} before producing anything: it names the upstream summari
     // With --run-id the dispatch opens `<NIRVANA_PROJECT_ROOT || cwd>/.nirvana/run-kernel.sqlite`: the node's
     // Run lands beside the plan's `run_mt_<project>` whatever the caller's shell carries.
     env.NIRVANA_PROJECT_ROOT = projectRoot;
+    // The effective settings, as the variables the child reads (settings.ts settingsEnvForChild):
+    // the project's and the user's config hold in the child, and the allowlist below merges into
+    // the effective one, not only into what the shell carried.
+    Object.assign(env, settingsEnvForChild({ env, projectRoot }));
     if (adapterInput.mode === "gauntlet") {
       command.push("--execution-mode=gauntlet", `--gauntlet-intensity=${adapterInput.intensity ?? "light"}`);
       if (adapterInput.target.kind === "business") env[BUSINESS_ALLOWLIST_ENV] = mergeAllowlist(env[BUSINESS_ALLOWLIST_ENV], adapterInput.target.id);

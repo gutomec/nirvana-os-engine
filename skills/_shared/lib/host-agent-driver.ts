@@ -50,6 +50,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import { resolveSystemModel } from "./system-model.ts";
+import { resolveSetting } from "./settings.ts";
 
 const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
   || (fs.existsSync(path.join(os.homedir(), ".nirvana", "skills")) ? path.join(os.homedir(), ".nirvana", "skills") : path.join(os.homedir(), ".claude", "skills"));
@@ -61,14 +62,15 @@ const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
  * argv+env. 100 KB keeps clear of both with room for the other flags. */
 export const MAX_ARGV_PROMPT_BYTES = 100_000;
 
-/** The one switch for headless autonomy. `0` (also `false`, `off`, `no`)
- * keeps every headless child on its CLI's own approval path; anything else,
- * unset included, is the autonomous default. */
+/** The one switch for headless autonomy: the `execution.headless_skip_permissions`
+ * setting. Its variable at `0` (also `false`, `off`, `no`), or `false` in the
+ * project or global config, keeps every headless child on its CLI's own
+ * approval path; anything else, unset included, is the autonomous default. */
 export const HEADLESS_SKIP_PERMISSIONS_ENV = "NIRVANA_HEADLESS_SKIP_PERMISSIONS";
 
-/** True unless NIRVANA_HEADLESS_SKIP_PERMISSIONS disables the permission bypass. */
+/** True unless the setting (env > project > global config) disables the permission bypass. */
 export function headlessSkipPermissions(): boolean {
-  return !/^(0|false|off|no)$/i.test((process.env[HEADLESS_SKIP_PERMISSIONS_ENV] ?? "").trim());
+  return resolveSetting("execution.headless_skip_permissions").value;
 }
 
 /** Max persona chars accepted by --append-system-prompt-style flags. */
@@ -752,7 +754,8 @@ export interface RunHeadlessOpts {
    * explicitly for long book/PDF workloads). */
   ledger?: LedgerHeartbeatOpts;
   /** Max ms without observed activity before the heartbeat STOPS renewing the
-   * lease (default 5 min). Only meaningful together with opts.ledger. */
+   * lease (default: the supervisor.stall_threshold_ms setting, 5 min). Only
+   * meaningful together with opts.ledger. */
   stallBudgetMs?: number;
 }
 
@@ -891,7 +894,7 @@ function runWithLedgerHeartbeat(opts: RunHeadlessOpts, runner: (o: RunHeadlessOp
     "--run-id", led.runId,
     "--out", outFile, "--err", errFile, "--done", doneFile,
     "--interval", String(led.intervalMs ?? 15_000),
-    "--stall", String(opts.stallBudgetMs ?? 5 * 60_000),
+    "--stall", String(opts.stallBudgetMs ?? resolveSetting("supervisor.stall_threshold_ms").value),
     "--lease", String(led.leaseSec ?? 600),
     "--parent", String(process.pid),
   ];

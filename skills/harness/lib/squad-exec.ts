@@ -25,6 +25,7 @@ import { layersForPhase } from "../../_shared/lib/dna-layer-policy.ts";
 import { findCloneForTask } from "../../_shared/lib/clone-search.ts";
 import { paths } from "../../_shared/lib/bun-helpers.ts";
 import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
+import { resolveSetting } from "../../_shared/lib/settings.ts";
 
 export type SquadExecMode = "team-mandatory" | "squad-only";
 
@@ -113,10 +114,10 @@ export function squadCloneInjection(brief: string, cwd?: string): { block: strin
     decision = picked.length ? "encontrado por BUSCA" : "PADRÃO — nenhum clone útil";
   }
   if (!picked.length) return { block: "", decision, missingClones: [] };
-  // Same opt-in mode as employee-prompt: fragments injects SOUL + phase layers
-  // (squads execute → execute layers) with a byte budget; full = the whole persona.
-  const dnaMode: "full" | "fragments" =
-    (process.env.NIRVANA_DNA_INJECTION || "full").toLowerCase() === "fragments" ? "fragments" : "full";
+  // Same opt-in mode as employee-prompt (the execution.dna_injection setting):
+  // fragments injects SOUL + phase layers (squads execute → execute layers)
+  // with a byte budget; full = the whole persona.
+  const dnaMode: "full" | "fragments" = resolveSetting("execution.dna_injection").value;
   const fragLayers = layersForPhase("execute");
   const parts: string[] = [];
   const missingClones: string[] = [];

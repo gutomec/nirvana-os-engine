@@ -30,6 +30,9 @@ import { RUNTIME_TARGETS, RUNTIME_SKILL_DIRS, PROJECT_CONTRACT_FILES } from "../
 import { scanLibrary, authorsPacks, STRIP_HINT } from "../../_shared/lib/watermark-scan.ts";
 import { listRuntimes } from "../../_shared/lib/host-agent-driver.ts";
 import { expandEnv, findTempNrvEntries, readUserPath, tempRoots } from "../../_shared/lib/windows-user-path.ts";
+import {
+  describeSettingSource, discoverProjectRoot, engineConfigPath, globalConfigPath, projectConfigPath, resolveAllSettings, resolveSetting,
+} from "../../_shared/lib/settings.ts";
 
 const ANSI = {
   reset: "\x1b[0m", bold: "\x1b[1m", dim: "\x1b[2m",
@@ -131,26 +134,31 @@ add(
 // that has a persona and is on PATH. The offline heuristic only by explicit
 // opt-in, and no agentic evaluator at all means the Gauntlet will not start.
 try {
-  const { CONFORMANCE_CAPABILITY, GAUNTLET_EVALUATOR_ENV, loadInstalledSquads, selectGauntletEvaluator } = await import("../lib/gauntlet/evaluator-selection.ts");
+  const { CONFORMANCE_CAPABILITY, loadInstalledSquads, selectGauntletEvaluator } = await import("../lib/gauntlet/evaluator-selection.ts");
   const { resolveJudgeXPromptPath } = await import("../lib/gauntlet/judge-x.ts");
   const agentsDir = path.join(SKILLS, "_shared", "agents");
   const judgeRuntimes = listRuntimes().filter((rt) => which(rt.cli) && resolveJudgeXPromptPath(rt.name, agentsDir)).map((rt) => rt.name);
   const judge = judgeRuntimes.length
     ? { available: true as const }
     : { available: false as const, reason: runtimesOnPath > 0 ? `no judge-x persona in ${agentsDir.replace(HOME, "~")} for a runtime on PATH` : "no agent runtime on PATH" };
-  const envValue = process.env[GAUNTLET_EVALUATOR_ENV];
+  // The gauntlet.evaluator setting: the variable, else the project or global config.
+  const evaluatorSetting = resolveSetting("gauntlet.evaluator");
+  const envValue = evaluatorSetting.value || undefined;
+  const chosenBy = evaluatorSetting.source === "env"
+    ? `${evaluatorSetting.variable}=${evaluatorSetting.raw}`
+    : `gauntlet.evaluator=${evaluatorSetting.value} (${describeSettingSource(evaluatorSetting).replace(HOME, "~")})`;
   // Any producer that is not a squad sees every installed squad as independent; the doctor asks as a business would.
   const selection = selectGauntletEvaluator({ envValue, producer: { kind: "business", slug: "doctor" }, installed: loadInstalledSquads(), judge });
   if (selection.kind === "heuristic") {
-    add("gauntlet: evaluator", "WARN", `offline heuristic by explicit opt-in (${GAUNTLET_EVALUATOR_ENV}=heuristic) — rounds are scored by the quality gate, not judged; unset it to judge with ${judgeRuntimes.length ? "judge-x" : "an agentic evaluator"}`);
+    add("gauntlet: evaluator", "WARN", `offline heuristic by explicit opt-in (${chosenBy}) — rounds are scored by the quality gate, not judged; unset it to judge with ${judgeRuntimes.length ? "judge-x" : "an agentic evaluator"}`);
   } else if (selection.kind === "unavailable") {
     // A warning, not a failure: standard dispatches run without a judge; only a Gauntlet refuses to start.
     add("gauntlet: evaluator", "WARN",
       `none — a Gauntlet will not start (${selection.reason}); install a squad declaring ${CONFORMANCE_CAPABILITY} and run nrv index, or a runtime with a judge-x persona (nrv update refreshes the engine's personas)`);
   } else if (selection.target.kind === "squad") {
-    add("gauntlet: evaluator", "PASS", `squad:${selection.target.slug}:${selection.target.capabilityId} (${selection.source === "env" ? GAUNTLET_EVALUATOR_ENV : `registry, declares ${CONFORMANCE_CAPABILITY}`})`);
+    add("gauntlet: evaluator", "PASS", `squad:${selection.target.slug}:${selection.target.capabilityId} (${selection.source === "env" ? chosenBy : `registry, declares ${CONFORMANCE_CAPABILITY}`})`);
   } else {
-    add("gauntlet: evaluator", "PASS", `${selection.target.slug} (${selection.source === "env" ? GAUNTLET_EVALUATOR_ENV : "engine default: no installed squad declares " + CONFORMANCE_CAPABILITY}; runtimes with a persona on PATH: ${judgeRuntimes.join(", ")})`);
+    add("gauntlet: evaluator", "PASS", `${selection.target.slug} (${selection.source === "env" ? chosenBy : "engine default: no installed squad declares " + CONFORMANCE_CAPABILITY}; runtimes with a persona on PATH: ${judgeRuntimes.join(", ")})`);
   }
 } catch (e) {
   add("gauntlet: evaluator", "WARN", `cannot be selected: ${(e as Error).message}`);
@@ -804,6 +812,29 @@ const keyFiles: [string, string][] = [
 ];
 for (const [file, label] of keyFiles) {
   add(`patch: ${label}`, fs.existsSync(file) ? "PASS" : "FAIL", fs.existsSync(file) ? "applied" : `missing ${file}`);
+}
+
+// SECTION 9: CONFIG — the effective value and origin of every operational
+// setting (_shared/lib/settings-schema.ts), by the same resolution every reader
+// uses (env > project > global > engine default > default): one line per key,
+// no secrets (the schema holds none). A config file the resolver cannot read is
+// a FAIL here, because every reader refuses it the same way.
+try {
+  const projectRoot = discoverProjectRoot();
+  const files: Array<[string, string | null]> = [
+    ["project", projectRoot ? projectConfigPath(projectRoot) : null],
+    ["global", globalConfigPath()],
+    ["engine", engineConfigPath()],
+  ];
+  const settings = resolveAllSettings(); // refuses a broken file before any line is added
+  add("config: files", "PASS", files
+    .map(([label, file]) => `${label} ${file ? `${file.replace(HOME, "~")}${fs.existsSync(file) ? "" : " (absent)"}` : "(none)"}`)
+    .join(" · "));
+  for (const setting of settings) {
+    add(`config: ${setting.key}`, "PASS", `${JSON.stringify(setting.value)} (${describeSettingSource(setting).replace(HOME, "~")})`);
+  }
+} catch (e) {
+  add("config: files", "FAIL", `${(e as Error).message} — fix the file; every reader refuses it the same way (nrv config list shows the same error)`);
 }
 
 // OUTPUT

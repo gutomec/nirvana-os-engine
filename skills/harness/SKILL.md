@@ -29,7 +29,7 @@ When the mode is `agentic`, **routing is your job, not the script's** — the BM
 ### Rule 1 — You orchestrate; you don't delegate to a router
 For any production brief (build/create/write/generate verbs — in the user's language too: "criar/produzir/escrever/gerar" — applied to any artifact: book, video, PDF, post, copy, design, code, report, brand, illustration, page, app), enter **Agentic Mode** (§Pipeline). Do NOT shell out to `find.ts` and blindly follow its output — that script has known mis-routing failures (see `references/05-subsystems.md`). Reason over the registries.
 
-The only briefs that bypass Agentic Mode are pure utility lookups, served by the CLI: `nrv list-squads` / `nrv list-businesses` / `nrv list-clones`, `nrv inspect-clone <slug>`, `nrv audit <project>`, `nrv glance` (the cockpit's cost tab is the cost summary).
+The only briefs that bypass Agentic Mode are pure utility lookups, served by the CLI: `nrv list-squads` / `nrv list-businesses` / `nrv list-clones`, `nrv inspect-clone <slug>`, `nrv audit <project>`, `nrv glance` (the cockpit's cost tab is the cost summary), `nrv config list|get|set|unset|explain <key>` (the operational settings: effective value and origin per key; `docs/architecture/configuration.md`).
 
 **Creating system entities is ENGINE work, never squad work.** A brief asking
 to create/improve a squad, a business or a mind-clone routes to the matching

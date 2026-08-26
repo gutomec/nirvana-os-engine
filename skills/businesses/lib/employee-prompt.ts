@@ -58,6 +58,7 @@ export type BuildArgs = {
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { resolveRoutingMode } from "../../_shared/lib/routing-mode.ts";
+import { resolveSetting } from "../../_shared/lib/settings.ts";
 import { listMindClones } from "../../harness/lib/glance/data-loader.ts";
 import { resolveClonePersona, loadCloneRegistry } from "../../_shared/lib/clone-resolver.ts";
 import { layersForPhase } from "../../_shared/lib/dna-layer-policy.ts";
@@ -391,10 +392,10 @@ type CloneInjection = {
  *  override. */
 function resolveClonesByPriority(args: BuildArgs): CloneInjection {
   // DNA injection: "full" (whole persona, default) or "fragments" (SOUL + the
-  // layers relevant to the phase). Opt-in via NIRVANA_DNA_INJECTION=fragments —
+  // layers relevant to the phase). Opt-in via the execution.dna_injection
+  // setting (NIRVANA_DNA_INJECTION=fragments, or the project / global config) —
   // the default keeps every run byte-identical to today's.
-  const dnaMode: "full" | "fragments" =
-    (process.env.NIRVANA_DNA_INJECTION || "full").toLowerCase() === "fragments" ? "fragments" : "full";
+  const dnaMode: "full" | "fragments" = resolveSetting("execution.dna_injection").value;
   const MAX_INJECT = dnaMode === "fragments" ? 5 : 3; // fragments are ~3-4x smaller than the whole persona
   const PER_CLONE_BUDGET = 9000;                       // per-clone byte ceiling in fragments mode
   // Usefulness gate = the coverage gate carried on each CloneHit (below_gate),

@@ -11,7 +11,9 @@
 // TR-007 and TR-010).
 //
 // Catalog sources, in order; a missing directory is skipped without error:
-//   NIRVANA_PROVIDER_CATALOG_DIR       path-delimited list that replaces the defaults
+//   runtime.provider_catalog_dir       setting (env NIRVANA_PROVIDER_CATALOG_DIR, else the
+//                                      project or global config): a path-delimited list
+//                                      that replaces the defaults
 //   ~/.nirvana/providers               user catalog
 //   <projectRoot>/.nirvana/providers   project catalog
 //
@@ -28,6 +30,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { createRequire } from "node:module";
 import { canonicalJson } from "./run-kernel/canonical-json.ts";
+import { resolveSetting } from "../../_shared/lib/settings.ts";
 
 const requireCjs = createRequire(import.meta.url);
 const { RuntimeProviderCatalog } = requireCjs("../../_shared/lib/runtime-provider-catalog.js");
@@ -54,7 +57,7 @@ export interface FreezeExecutionSnapshotInput {
   env?: NodeJS.ProcessEnv;
   now?: () => Date;
   requirements?: ExecutionSnapshotRequirements;
-  /** Accept a stale catalog; NIRVANA_ALLOW_STALE_CATALOG=1 otherwise. */
+  /** Accept a stale catalog; the runtime.allow_stale_catalog setting (env NIRVANA_ALLOW_STALE_CATALOG) otherwise. */
   allowStale?: boolean;
 }
 
@@ -79,7 +82,8 @@ const UNRESOLVED_MODEL = { selection: "runtime-default", resolved: false } as co
 /** Catalog directories that exist, in resolution order. */
 export function resolveCatalogDirs(input: { env?: NodeJS.ProcessEnv; projectRoot?: string; homeDir?: string } = {}): string[] {
   const env = input.env ?? process.env;
-  const configured = (env[CATALOG_DIR_ENV] || "").split(path.delimiter).map(dir => dir.trim()).filter(Boolean);
+  const configured = resolveSetting("runtime.provider_catalog_dir", { env, projectRoot: input.projectRoot }).value
+    .split(path.delimiter).map(dir => dir.trim()).filter(Boolean);
   const candidates = configured.length ? configured : [
     path.join(input.homeDir ?? os.homedir(), ".nirvana", "providers"),
     path.join(path.resolve(input.projectRoot || env.NIRVANA_PROJECT_ROOT || process.cwd()), ".nirvana", "providers"),
@@ -109,7 +113,7 @@ export function freezeExecutionSnapshot(input: FreezeExecutionSnapshotInput): Ex
 
   const providerId = String(match.provider.provider.id);
   const version = String(match.runtime.version || "unknown");
-  const allowStale = input.allowStale ?? ["1", "true", "on"].includes(String(env[ALLOW_STALE_ENV] || "").trim().toLowerCase());
+  const allowStale = input.allowStale ?? resolveSetting("runtime.allow_stale_catalog", { env, projectRoot: input.projectRoot }).value;
   const featuresRequired = input.requirements?.featuresRequired ?? [];
   const modelRequirements = input.requirements?.modelRequirements ?? {};
   const policy = { allowStale, featuresRequired, modelRequirements };
@@ -119,7 +123,7 @@ export function freezeExecutionSnapshot(input: FreezeExecutionSnapshotInput): Ex
 
   if (freshness.stale && !allowStale) {
     return freeze({ ...unresolved, catalog: catalogInfo, policy, warnings: [
-      `Provider '${providerId}' model catalog is stale (observed at ${freshness.observedAt}); runtime and model stay unresolved. Set ${ALLOW_STALE_ENV}=1 to accept stale data.`,
+      `Provider '${providerId}' model catalog is stale (observed at ${freshness.observedAt}); runtime and model stay unresolved. Set ${ALLOW_STALE_ENV}=1 (or nrv config set runtime.allow_stale_catalog true) to accept stale data.`,
     ] });
   }
 

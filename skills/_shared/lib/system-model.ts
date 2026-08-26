@@ -13,6 +13,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { resolveSetting } from "./settings.ts";
 
 // Sanitizes a model id: strips real ANSI escapes AND ANSI fragments that leak
 // into the saved value (Claude Code's `/model` can record the label in bold
@@ -44,13 +45,14 @@ export function toAlias(model: string): string {
 
 // Resolves the system model, ALWAYS as an alias when it is a Claude family.
 // Priority:
-//   1. NIRVANA_MODEL   — explicit pin for Nirvana spawns
+//   1. the `execution.model` setting — env NIRVANA_MODEL, else the project or
+//      global config (_shared/lib/settings.ts): the explicit pin for Nirvana spawns
 //   2. ANTHROPIC_MODEL — standard env some setups use
 //   3. ~/.claude/settings.json "model" — the model the user set via /model
 // settings.json belongs to Claude Code; only valid for claude-code children.
 // Returns null when nothing resolves (the CLI decides — behavior unchanged).
 export function resolveSystemModel(runtime?: string): string | null {
-  const fromEnv = sanitizeModelId(process.env.NIRVANA_MODEL) || sanitizeModelId(process.env.ANTHROPIC_MODEL);
+  const fromEnv = sanitizeModelId(resolveSetting("execution.model").value) || sanitizeModelId(process.env.ANTHROPIC_MODEL);
   if (fromEnv) return toAlias(fromEnv);
   if (runtime && runtime !== "claude-code") return null;
   try {

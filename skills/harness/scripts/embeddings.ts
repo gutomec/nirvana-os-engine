@@ -19,7 +19,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { requestedBackend, neuralEmbedderAvailable, resolveEmbedder } from "../lib/../../_shared/lib/embedder.ts";
-import { loadHarnessConfig, denseRoutingMode, setRoutingDense } from "../lib/harness-config.ts";
+import { setRoutingDense } from "../lib/harness-config.ts";
+import { describeSettingSource, resolveSetting } from "../../_shared/lib/settings.ts";
 
 const NIRVANA_HOME = process.env.NIRVANA_HOME || path.join(os.homedir(), ".nirvana");
 const BACKEND_FILE = path.join(NIRVANA_HOME, "embedder-backend.txt");
@@ -37,12 +38,8 @@ async function status() {
     const ok = await neuralEmbedderAvailable();
     console.log(`neural model:      ${ok ? "loads OK" : "unavailable → hash_tfidf fallback"}`);
   }
-  const cfg = loadHarnessConfig();
-  const effective = denseRoutingMode();
-  console.log(`routing.dense:     ${cfg.routing.dense} (config${cfg.config_path ? ": " + cfg.config_path : " missing"})`);
-  if (effective !== cfg.routing.dense) {
-    console.log(`effective:         ${effective} (overridden by env NIRVANA_ROUTER_DENSE)`);
-  }
+  const dense = resolveSetting("routing.dense");
+  console.log(`routing.dense:     ${dense.value} (${describeSettingSource(dense)})`);
   let cached = 0;
   try { cached = fs.readdirSync(CACHE_DIR).filter((f) => f.startsWith("dense-")).length; } catch { /* none */ }
   console.log(`dense index:       ${cached} file(s) cached`);
@@ -71,7 +68,7 @@ export function enableSummary(neuralLoaded: boolean): { info: string[]; warn: st
   return {
     info: [
       "✓ Neural backend verified: the model loads and embeds.",
-      '✓ routing.dense set to "fallback" (config.yaml).',
+      '✓ routing.dense set to "fallback" (your global ~/.nirvana/config.yaml; survives nrv update).',
       "What that means — measured, not marketing (Phase 3.4, 2026-08-05):",
       "  - The dense arm is consulted ONLY when BM25 abstains (NO_MATCH).",
       "  - A candidate clearing cosine >= 0.55 is returned as an AMBIGUOUS",
@@ -98,12 +95,7 @@ async function enable() {
   const embedder = await resolveEmbedder();
   const neuralLoaded = embedder.name.startsWith("transformers:");
   const { info, warn, activate } = enableSummary(neuralLoaded);
-  if (activate) {
-    const written = setRoutingDense("fallback");
-    if (!written) {
-      console.error("⚠ config.yaml not found — routing.dense not persisted; use NIRVANA_ROUTER_DENSE=1 per run.");
-    }
-  }
+  if (activate) console.log(`routing.dense: "fallback" written to ${setRoutingDense("fallback")}`);
   for (const line of info) console.log(line);
   for (const line of warn) console.error(line);
 }
@@ -112,7 +104,7 @@ function disable() {
   try { fs.rmSync(BACKEND_FILE); } catch { /* já ausente */ }
   const written = setRoutingDense("off");
   console.log(`Neural backend disabled — back to BM25 + hash_tfidf (zero-dep).`);
-  console.log(written ? `routing.dense: "off" written to ${written}` : "config.yaml missing — nothing to revert.");
+  console.log(`routing.dense: "off" written to ${written}`);
 }
 
 function reindex() {

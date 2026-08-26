@@ -1,9 +1,14 @@
 /**
  * Pre-flight cost estimator for harness invocations (Stage 4).
  *
- * Reads optional ~/.nirvana/skills/harness/config.yaml and merges defaults from
- * Harness Protocol v1 §5.1. Parses with the `yaml` package (Bun-native); a tiny
- * inline parser is the final fallback if the package can't be resolved.
+ * Budget and baseline keys are settings (`budget.*` and `baselines.*` in
+ * _shared/lib/settings-schema.ts), resolved by _shared/lib/settings.ts with
+ * the engine's one precedence: env > project config > global config >
+ * skills/harness/config.yaml > default. Defaults follow Harness Protocol v1
+ * §5.1 and are sized so Nirvana stays out of the way: a cap of 0 (or any
+ * value <= 0) means UNLIMITED and the pre-flight is a no-op. Set a positive
+ * value to enforce a hard cap; tighten per business in
+ * business.yaml.run_budget_usd if needed.
  *
  * Estimation strategy:
  *  - Look up target.estimated_cost_usd if registry entry provides it.
@@ -22,89 +27,36 @@ const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
   || (fs.existsSync(path.join(os.homedir(), '.nirvana', 'skills')) ? path.join(os.homedir(), '.nirvana', 'skills') : path.join(os.homedir(), '.claude', 'skills'));
 
 const HARNESS_ROOT = path.join(SKILLS_ROOT, 'harness');
+/** The engine-default layer; kept for callers that print where defaults live. */
 const CONFIG_PATH = path.join(HARNESS_ROOT, 'config.yaml');
 
-// Defaults sized so Nirvana stays out of the way. A cap of 0 (or any value <= 0)
-// means UNLIMITED: the pre-flight is a no-op. Set a positive value to enforce a
-// hard cap; tighten on a per-business basis if needed.
-const DEFAULTS = Object.freeze({
-  budget: {
-    default_max_cost_usd: 0,               // 0 = unlimited
-    default_max_tokens: 0,                  // 0 = unlimited
-    default_max_handoffs: 0,                // 0 = unlimited
-    default_max_duration_seconds: 0,        // 0 = unlimited
-    on_budget_exceeded: 'warn',
-    auto_invoke_budget_usd: 0,              // 0 = unlimited
-  },
-  baselines: {
-    squad_capability_usd: 0.30,
-    business_usd: 0.80,
-    per_handoff_usd: 0.05,
-  },
-});
+// Requiring the .ts works under Bun (same pattern as router.js → harness-config.ts).
+const settings = require(path.join(__dirname, '..', '..', '_shared', 'lib', 'settings.ts'));
 
-/**
- * Read the harness YAML config (if present). Tries python3 first; falls back
- * to a tiny inline parser supporting top-level mappings (one level of nesting,
- * scalars, and lists of strings). Returns {} on missing file.
- */
-function loadConfig() {
-  if (!fs.existsSync(CONFIG_PATH)) return {};
-  const raw = fs.readFileSync(CONFIG_PATH, 'utf8');
-  try {
-    const YAML = require('yaml');
-    return YAML.parse(raw) || {};
-  } catch (_) {
-    return inlineYamlParse(raw);
-  }
-}
-
-/**
- * Tiny YAML parser — only enough for our config.yaml shape:
- *   key: value
- *   nested:
- *     key: value
- *     key: value
- * Strings/numbers/booleans only. Comments (#) supported.
- */
-function inlineYamlParse(src) {
+/** `{ budget.x: v }` → `{ x: v }` for one section prefix. */
+function section(prefix, values) {
   const out = {};
-  const lines = src.split('\n').map((l) => l.replace(/#.*$/, ''));
-  let cur = out;
-  let stack = [{ indent: -1, ref: out }];
-
-  for (const raw of lines) {
-    if (!raw.trim()) continue;
-    const indent = raw.length - raw.trimStart().length;
-    while (stack.length > 1 && indent <= stack[stack.length - 1].indent) stack.pop();
-    cur = stack[stack.length - 1].ref;
-
-    const m = raw.trim().match(/^([A-Za-z0-9_]+)\s*:\s*(.*)$/);
-    if (!m) continue;
-    const [, key, val] = m;
-
-    if (val === '' || val === '~') {
-      cur[key] = {};
-      stack.push({ indent, ref: cur[key] });
-    } else if (/^(true|false)$/.test(val)) {
-      cur[key] = val === 'true';
-    } else if (/^-?\d+(\.\d+)?$/.test(val)) {
-      cur[key] = Number(val);
-    } else {
-      cur[key] = val.replace(/^["']|["']$/g, '');
-    }
+  for (const [key, value] of Object.entries(values)) {
+    if (key.startsWith(prefix)) out[key.slice(prefix.length)] = value;
   }
   return out;
 }
 
+const SCHEMA_DEFAULTS = Object.fromEntries(settings.SETTINGS_SCHEMA.map((spec) => [spec.key, spec.default]));
+
+const DEFAULTS = Object.freeze({
+  budget: Object.freeze(section('budget.', SCHEMA_DEFAULTS)),
+  baselines: Object.freeze(section('baselines.', SCHEMA_DEFAULTS)),
+});
+
 /**
- * Merge user config over defaults (shallow per top-level key).
+ * The effective budget and baselines (settings.ts resolution).
  */
 function getEffectiveConfig() {
-  const user = loadConfig();
+  const values = settings.resolveSettingsMap();
   return {
-    budget: Object.assign({}, DEFAULTS.budget, (user && user.budget) || {}),
-    baselines: Object.assign({}, DEFAULTS.baselines, (user && user.baselines) || {}),
+    budget: section('budget.', values),
+    baselines: section('baselines.', values),
   };
 }
 

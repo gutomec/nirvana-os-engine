@@ -71,8 +71,10 @@ baselines:
   per_handoff_usd: 0.05
 ```
 
-`config.yaml` is read with the `yaml` package when available, falling back to
-a tiny inline parser (top-level mappings, one nesting level).
+The `budget.*` and `baselines.*` keys are settings of the engine's one
+resolver (`_shared/lib/settings.ts`): `nrv config set budget.default_max_cost_usd 5`
+writes the project's or the user's `config.yaml`, and the engine's `config.yaml`
+above is the default layer under them. Contract: `docs/architecture/configuration.md`.
 
 ## Auto-invoke gate
 

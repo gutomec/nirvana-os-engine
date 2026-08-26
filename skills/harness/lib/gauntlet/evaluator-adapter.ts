@@ -33,6 +33,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { harnessLogsDir } from "../../../_shared/lib/log-paths.ts";
+import { settingsEnvForChild } from "../../../_shared/lib/settings.ts";
 import type { TargetRef } from "../run-kernel/types.ts";
 import type { AgentXGauntletEvaluationInput, AgentXGauntletEvaluator } from "./agent-x-cutover.ts";
 import {
@@ -188,6 +189,8 @@ export function createDispatchEvaluator(input: DispatchEvaluatorInput): AgentXGa
     if (Number.isFinite(input.budgetUsd) && (input.budgetUsd as number) > 0) command.push("--max-budget", String(input.budgetUsd));
     const env: Record<string, string> = {};
     for (const [key, value] of Object.entries({ ...process.env, ...input.env })) if (value !== undefined) env[key] = value;
+    // The effective settings, as the variables the child reads (settings.ts settingsEnvForChild).
+    Object.assign(env, settingsEnvForChild({ env, projectRoot }));
     // The child writes its audit where this adapter reads the cost from.
     const logsDir = env.HARNESS_LOGS_DIR ? path.resolve(env.HARNESS_LOGS_DIR) : harnessLogsDir({ projectRoot });
     env.HARNESS_LOGS_DIR = logsDir;
