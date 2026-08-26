@@ -17,6 +17,7 @@ Um tipo canônico desconhecido produz o próprio tipo como título. Um evento se
 | Tipo | Título | Subtítulo | Tom |
 |---|---|---|---|
 | `run.prepared` | Run preparado → slug do alvo | kind e capability | neutro |
+| `x_run_route_resolved` | Alvo resolvido → slug do alvo | kind, capability, origem e razão da rota | active |
 | `run.transitioned` | Run + estado de destino | `from → to` | ok, active ou fail pelo estado |
 | `runtime.selection_snapshot` | Runtime: id | provider e modelo | neutro |
 | `gauntlet.plan_compiled` | Plano Gauntlet + intensidade | estado inicial e motivo de parada | neutro |
@@ -64,7 +65,7 @@ A ocultação com toggle foi escolhida no lugar da contagem agrupada porque snap
 `summarizeRunEvents(events)` alimenta o cabeçalho vivo e mantém os campos legados. Para eventos canônicos:
 
 - `state` vem do último `run.transitioned` (`payload.to`).
-- `business`, `squad` ou `lastAgent` vêm de `run.prepared` (`payload.target`).
+- `business`, `squad` ou `lastAgent` vêm de `run.prepared` (`payload.target`), e de `x_run_route_resolved` quando a fila roteou a Message depois de preparar o Run.
 - `runtime` e `model` vêm de `runtime.selection_snapshot`.
 - `decision` e `stopReason` vêm de `gauntlet.stopped`.
 - `artifacts` soma os `artifactRefs` de candidates criados ou revisados.

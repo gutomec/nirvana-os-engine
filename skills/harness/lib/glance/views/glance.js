@@ -1581,6 +1581,22 @@ function glance() {
       const labels = window.NirvanaRunEventLabels;
       return labels && route ? labels.routeSourceLabel(route) : '';
     },
+    routeVia(route) { return route ? ` (${this.routeLabel(route)}${route.rationale ? ': ' + route.rationale : ''})` : ''; },
+    // What a prepared Run is doing, from its target and `run.route`: a Run without a route is
+    // still being routed by the queue (`x_run_route_resolved` brings the target).
+    canonicalRunStep(target, route) {
+      if (!route) return 'Roteando a Message (empresa, squad ou agent-x)…';
+      const kind = target?.kind;
+      return (!kind || kind === 'agent-x') ? `Executando agent-x no Gauntlet light${this.routeVia(route)}…` : `Executando ${kind} ${target.slug || ''}${this.routeVia(route)}…`;
+    },
+    // The answer the queue wrote to the conversation for a Message the router could not place.
+    async canonicalRunAnswer(runId) {
+      try {
+        const conversation = await api(`/api/v1/conversations/${encodeURIComponent(this.chatId)}`);
+        const reply = (conversation.messages || []).filter(m => m.role === 'assistant' && m.run_id === runId).pop();
+        return reply ? reply.content : '';
+      } catch { return ''; }
+    },
     runStateVariant(state) {
       return ({ completed: 'success', delivered_with_reservations: 'success', running: 'warn', verifying: 'warn', revising: 'warn',
         waiting: 'info', prepared: 'info', failed: 'danger', withheld: 'danger', cancelled: 'danger', rolled_back: 'danger', abandoned: 'danger' })[state] || 'neutral';
@@ -1642,15 +1658,11 @@ function glance() {
       this.$nextTick(() => this.scrollChatBottom());
 
       if (canonicalReceipt?.run) {
-        const target = canonicalReceipt.run.target || {};
-        // The target and why, before the child starts: the receipt carries `run.route`.
-        const route = canonicalReceipt.run.route;
-        const via = route ? ` (${this.routeLabel(route)}${route.rationale ? ': ' + route.rationale : ''})` : '';
+        // The receipt is immediate: an explicit prefix already carries target and `run.route`; a
+        // routed Message shows them once the stream brings `x_run_route_resolved`.
         asst.text = canonicalReceipt.queued
-          ? (target.kind === 'agent-x' || !target.kind
-            ? `Run canônico preparado${via}. Executando agent-x no Gauntlet light…`
-            : `Run canônico preparado${via}. Executando ${target.kind} ${target.slug || ''}…`)
-          : `Run não executado: ${canonicalReceipt.run.state}${via}.`;
+          ? `Run canônico preparado. ${this.canonicalRunStep(canonicalReceipt.run.target, canonicalReceipt.run.route)}`
+          : `Run não executado: ${canonicalReceipt.run.state}${this.routeVia(canonicalReceipt.run.route)}.`;
         if (canonicalReceipt.queued) this.subscribeCanonicalRun(this.canonicalProjectId, canonicalReceipt.run.runId, canonicalReceipt.run.lastSequence || 0, asst);
         else { asst.streaming = false; this.chatBusy = false; }
         return;
@@ -1688,6 +1700,7 @@ function glance() {
           this.chatRunEvents.push(item);
           // Only snapshots, node events and the terminal event change the projection.
           if (item.type === 'multi_target.snapshot_saved' || item.type === 'multi_target.plan_terminal' || item.payload?.node) this.refreshMultiTarget(projectId, runId);
+          if (item.type === 'x_run_route_resolved') asst.text = `Run canônico preparado. ${this.canonicalRunStep(item.payload?.target, item.payload?.route)}`;
           if (item.type === 'run.transitioned' && ['completed', 'withheld', 'delivered_with_reservations', 'cancelled', 'failed', 'rolled_back'].includes(item.payload?.to)) {
             es.close();
             if (this.chatMultiTarget) await this.refreshMultiTarget(projectId, runId);
@@ -1695,6 +1708,8 @@ function glance() {
             asst.events = [...this.chatRunEvents];
             asst.multiTarget = this.chatMultiTarget;
             asst.text = `Run ${item.payload.to}.`;
+            // A Message the router could not place ends with the answer the queue wrote to the conversation.
+            if (item.payload.reason === 'no_dispatchable_target') asst.text = (await this.canonicalRunAnswer(runId)) || asst.text;
             asst.streaming = false; this.chatBusy = false;
             this.$nextTick(() => this.scrollChatBottom());
           }
