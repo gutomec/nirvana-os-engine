@@ -116,7 +116,7 @@ describe("multi-target dispatch adapters", () => {
     expect(existsSync(join(setup.workspaceRoot, "businesses", "business-a", MULTI_TARGET_RESULT_MARKER))).toBeTrue();
   });
 
-  test("gauntlet business light adds the Gauntlet flags and allowlists the slug; balanced is refused without a spawn", async () => {
+  test("gauntlet business adds the Gauntlet flags, allowlists the slug and passes every intensity through", async () => {
     const setup = fixture();
     const { plan } = compile();
     const ports = adapters(setup, plan, { NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST: "other-business" });
@@ -130,13 +130,16 @@ describe("multi-target dispatch adapters", () => {
     expect(captured.env.NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST.split(",")).toEqual(["other-business", "business-b"]);
     expect(spawnCount(setup)).toBe(1);
 
-    const refused = await ports.gauntlet.run(nodeInput(plan, "business-b", { intensity: "balanced", idempotencyKey: "other-key" }));
-    expect(refused.state).toBe("failed");
-    expect(refused.reason).toContain("balanced");
-    expect(spawnCount(setup)).toBe(1);
+    for (const intensity of ["balanced", "exhaustive"] as const) {
+      const passed = await ports.gauntlet.run(nodeInput(plan, "business-b", { intensity, idempotencyKey: `key-${intensity}` }));
+      expect(passed.state).toBe("delivered");
+      expect(capture(setup, "businesses/business-b/outputs/").argv).toContain(`--gauntlet-intensity=${intensity}`);
+      expect(readFileSync(join(setup.workspaceRoot, "businesses", "business-b", "DISPATCH-INSTRUCTION.md"), "utf8")).toContain(`gauntlet (intensity ${intensity})`);
+    }
+    expect(spawnCount(setup)).toBe(3);
   });
 
-  test("squad and synthesis select the target with --squad and --agent-x, never --auto", async () => {
+  test("squad and synthesis select the target with --squad and --agent-x, never --auto, and pass the intensity through", async () => {
     const setup = fixture();
     const { plan } = compile();
     const ports = adapters(setup, plan, { FAKE_DISPATCH_COST_USD: "0.1" });
@@ -150,13 +153,18 @@ describe("multi-target dispatch adapters", () => {
     expect(flag(squadCapture, "--squad")).toBe("squad-c");
     expect(squadCapture.brief).toStartWith("Assemble C from A and B.");
 
-    const synthesis = await ports.gauntlet.run(nodeInput(plan, "final-output", { grantedCostUsd: 1, upstreamPaths: ["squads/squad-c/outputs/"] }));
+    const squadGauntlet = await ports.gauntlet.run(nodeInput(plan, "squad-c", { mode: "gauntlet", intensity: "balanced", grantedCostUsd: 1, idempotencyKey: "squad-c-balanced" }));
+    expect(squadGauntlet).toMatchObject({ state: "delivered" });
+    expect(capture(setup, "squads/squad-c/outputs/").argv).toContain("--gauntlet-intensity=balanced");
+
+    const synthesis = await ports.gauntlet.run(nodeInput(plan, "final-output", { intensity: "exhaustive", grantedCostUsd: 1, upstreamPaths: ["squads/squad-c/outputs/"] }));
     expect(synthesis).toMatchObject({ state: "delivered", reportedCostUsd: 0.1 });
     const synthesisCapture = capture(setup, "deliverables/final-output/outputs/");
     expect(synthesisCapture.positional).toEqual([]);
     expect(synthesisCapture.argv).not.toContain("--auto");
     expect(synthesisCapture.argv).toContain("--agent-x");
     expect(synthesisCapture.argv).toContain("--execution-mode=gauntlet");
+    expect(synthesisCapture.argv).toContain("--gauntlet-intensity=exhaustive");
     expect(synthesisCapture.brief).toStartWith("Write the final report.");
     expect(synthesisCapture.brief).toContain(join(setup.workspaceRoot, "squads", "squad-c", "outputs", "_SUMMARY.md"));
   });

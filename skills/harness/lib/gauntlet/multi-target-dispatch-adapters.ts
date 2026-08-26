@@ -228,9 +228,6 @@ export function createDispatchMultiTargetAdapters(input: DispatchMultiTargetAdap
   const run = async (adapterInput: MultiTargetAdapterInput): Promise<MultiTargetAdapterResult> => {
     const phase = phases.get(adapterInput.nodeId);
     if (!phase) return failed(`no manifest phase for node ${adapterInput.nodeId}`);
-    if (adapterInput.mode === "gauntlet" && (adapterInput.intensity ?? "light") !== "light") {
-      return failed(`gauntlet intensity '${adapterInput.intensity}' is not supported by the dispatch canaries (light only)`);
-    }
     const outputsDir = resolveWorkspacePath(adapterInput.outputPath);
     const nodeDir = path.dirname(outputsDir);
     const markerFile = path.join(nodeDir, MULTI_TARGET_RESULT_MARKER);

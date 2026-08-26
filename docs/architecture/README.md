@@ -28,10 +28,16 @@ Este diretório é a fonte canônica para a evolução integrada do Run Kernel, 
 8. [Matriz de testes](test-matrix.md)
 9. [Matriz de rastreabilidade](traceability-matrix.md)
 10. [Operação do Run Kernel](run-kernel-operations.md)
-11. [Canário Gauntlet para agent-x](agent-x-gauntlet-canary.md)
-11. [Operação do Gauntlet Engine](gauntlet-engine-operations.md)
-12. [Execução no Glance](glance-execution.md)
-13. [Estado da implementação](implementation-status.md)
+11. [Canário Gauntlet para agent-x, Squad e Business](agent-x-gauntlet-canary.md)
+12. [Operação do Gauntlet Engine](gauntlet-engine-operations.md)
+13. [Política Gauntlet multi-target](gauntlet-multi-target-policy.md)
+14. [Coordenador Gauntlet multi-target](gauntlet-multi-target-coordinator.md)
+15. [Portas Run Kernel para multi-target](gauntlet-multi-target-run-kernel.md)
+16. [Adapters de dispatch para multi-target](gauntlet-multi-target-adapters.md)
+17. [Comando multi-target](gauntlet-multi-target-cli.md)
+18. [Timeline canônica no Glance](glance-canonical-timeline.md)
+19. [Execução no Glance](glance-execution.md)
+20. [Estado da implementação](implementation-status.md)
 
 ## ADRs
 

@@ -92,5 +92,4 @@ O painel aparece dentro da superfície do Run somente quando a projeção existe
 - O painel vive na superfície do chat, onde os Runs canônicos são exibidos. A aba Runs continua derivada do audit legado e não lê o kernel.
 - Razões e bloqueios são textos do coordenador, em inglês.
 - A projeção percorre todos os eventos do Project a cada leitura. As portas do Run Kernel já delegam a `projectMultiTargetRun`; um índice por Run fica para um corte futuro.
-- `multi_target.lease_lost` já tem rótulo, mas o evento ainda não é emitido neste corte.
 - O adaptador de módulo executa depois do `Alpine.start()`. Se o arquivo não carregar, `runEventView` degrada para o próprio tipo como título, sem mapa duplicado.

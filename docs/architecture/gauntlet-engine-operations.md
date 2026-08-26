@@ -10,9 +10,9 @@ nrv run <business> "<brief>" --execution-mode=gauntlet --gauntlet-intensity=bala
 
 Os perfis disponíveis são `light`, `balanced` e `exhaustive`. O modo `auto` só escolhe Gauntlet quando a policy permite seleção automática e o brief foi classificado como verificável e de risco médio ou alto. A decisão e o motivo entram no audit.
 
-### Canário Business light
+### Canário Business
 
-O canário de Business exige allowlist explícita:
+O canário de Business exige allowlist explícita e aceita `light`, `balanced` e `exhaustive`:
 
 ```bash
 export NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST="business-slug"

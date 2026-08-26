@@ -103,5 +103,4 @@ Um plano diferente sob o mesmo `projectId` é recusado com exit 4, porque o Run 
 - O `manifest.json` gravado no workspace é o manifest compilado, com todas as fases `pending`; o estado vivo está no kernel e em `status`.
 - O endpoint `/api/v1/runs/:run/multi-target` do Glance valida `project_id` com prefixo `prj_` ou `proj-`; um trace id fora desse padrão aparece só por `status`.
 - Retomar um nó em execução depende de owner e lease; não há recovery humano nem cancelamento conjunto.
-- Intensidades `balanced` e `exhaustive` continuam recusadas pelos adapters.
 - Interromper o comando não encerra os subprocessos de dispatch em andamento; a lease expira e o próximo `run` marca o nó como `stalled`.

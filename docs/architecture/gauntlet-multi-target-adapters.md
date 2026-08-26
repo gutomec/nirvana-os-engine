@@ -39,7 +39,7 @@ As três flags são mutuamente exclusivas entre si e com `--auto`. `--business` 
 
 ## Modo gauntlet
 
-`gauntlet` acrescenta `--execution-mode=gauntlet --gauntlet-intensity=<intensidade>`. Para alvo `business`, injeta o slug em `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST` no ambiente do filho, mesclando com o valor existente sem remover outros slugs. Intensidade acima de `light` é recusada com `failed` e razão explícita, sem spawn, enquanto os canários não a suportarem. `NIRVANA_BUSINESS_GAUNTLET_KILL_SWITCH` continua sendo respeitado pelo dispatch.
+`gauntlet` acrescenta `--execution-mode=gauntlet --gauntlet-intensity=<intensidade>`. Para alvo `business`, injeta o slug em `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST` no ambiente do filho, mesclando com o valor existente sem remover outros slugs. A intensidade vem da decisão do plano e segue como está para business, squad e agent-x; sem valor, o adapter usa `light`. `NIRVANA_BUSINESS_GAUNTLET_KILL_SWITCH` continua sendo respeitado pelo dispatch.
 
 ## Mapeamento de exit codes
 
@@ -62,7 +62,7 @@ Essa escolha segue o que o dispatch já escreve: o run-ledger não guarda custo,
 
 Ao concluir um subprocesso, o adapter grava `<dir do nó>/.multi-target-result.json` com `idempotencyKey`, `state`, `exitCode`, `reportedCostUsd`, `finishedAt` e, quando houver, `reason`. Uma nova chamada com a mesma chave devolve o resultado gravado sem spawn, tanto em `resume: true` quanto em repetição acidental. Chave divergente ignora o marcador e executa.
 
-Recusas de intensidade e abortos não gravam marcador: a primeira não executou nada e o segundo foi interrompido, então uma execução futura pode tentar de novo.
+Abortos não gravam marcador: a execução foi interrompida, então uma execução futura pode tentar de novo.
 
 ## Abort
 
@@ -70,4 +70,4 @@ Recusas de intensidade e abortos não gravam marcador: a primeira não executou 
 
 ## Limitações
 
-O scaffold legado e o workspace multi-target são árvores separadas. Nenhum teste toca rede, LLM ou runtime real: o dispatch é substituído por um script Bun compartilhado (`tests/helpers/fake-dispatch.ts`) que grava argv, ambiente e cwd, emite o evento de custo e sai com o código configurado.
+O scaffold legado e o workspace multi-target são árvores separadas. Nenhum teste toca rede, LLM ou runtime real: o dispatch é substituído por um script Bun compartilhado (`tests/helpers/fake-dispatch.ts`) que grava argv, ambiente e cwd, emite o evento de custo e sai com o código configurado. O adapter não valida a intensidade nem confirma que o Gauntlet executou: repassa a decisão do plano e deixa allowlist, kill switch e o loop do controller com o dispatch; o exit code decide o estado do nó, como antes.
