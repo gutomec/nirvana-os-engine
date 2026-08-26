@@ -123,11 +123,16 @@ The loop above is what you run in an interactive session: one `Agent(...)` per
 target, each return gated as it lands. When nothing stays alive to receive a
 notification (a headless run, a runtime whose only delegation primitive is a
 shell, a run you need to pick up after a crash), the same DAG runs through the
-typed engine instead:
+typed engine instead.
+
+**Choosing the path.** Take the scripted engine when the user asks for Gauntlet
+per node, for a canonical Run in the kernel, or to resume after a failure, and
+whenever the session is headless or the runtime delegates only through a
+shell. In every other case run the in-process protocol above: one `Agent(...)`
+per target, each return gated as it lands. Do not mix the two on the same plan.
 
 ```bash
 nrv multi-target plan .nirvana/plans/<trace_id>.json     # compile: waves, decisions, reservation, workspace
-export NIRVANA_MULTI_TARGET_ENGINE=1
 nrv multi-target run .nirvana/plans/<trace_id>.json      # execute over the Run Kernel; repeat to resume
 nrv multi-target run .nirvana/plans/<trace_id>.json --retry-failed   # after fixing the cause of a failed/withheld Run: delivered nodes stay, the rest runs again
 nrv multi-target status .nirvana/plans/<trace_id>.json   # read-only projection of the Run
@@ -141,11 +146,12 @@ squad covers, named by its id (a free slug, in no registry), briefed, ordered
 and gated like a squad and run by the generalist as `--agent-x` under
 `agents/<id>/`. `plan` writes
 `manifest.json` and `brief-enriched.md` into the workspace above and executes
-nothing. `run` is opt-in (`NIRVANA_MULTI_TARGET_ENGINE=1`;
-`NIRVANA_MULTI_TARGET_KILL_SWITCH=1` turns it off), creates one Run in the
-project's kernel, executes every wave through `nrv dispatch` subprocesses with
-explicit targets (`--business`, `--squad`, `--agent-x`), and exits `0`
-delivered, `1` failed, `2` withheld, `4` invalid plan or missing opt-in.
+nothing. `run` needs no variable (`NIRVANA_MULTI_TARGET_KILL_SWITCH=1` switches
+the engine off, and so does the legacy `NIRVANA_MULTI_TARGET_ENGINE=0`; `=1`
+is accepted and changes nothing), creates one Run in the project's kernel,
+executes every wave through `nrv dispatch` subprocesses with explicit targets
+(`--business`, `--squad`, `--agent-x`), and exits `0` delivered, `1` failed,
+`2` withheld, `4` invalid plan or engine switched off.
 Repeating `run` after a crash resumes: completed nodes never spawn twice. A
 Run that ended `failed` or `withheld` is terminal; once its cause is fixed,
 `--retry-failed` opens a new Run chained to it (`parentRunId`) that keeps the

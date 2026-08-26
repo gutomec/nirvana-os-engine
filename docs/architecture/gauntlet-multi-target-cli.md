@@ -134,7 +134,6 @@ O custo observado de um nó retomado soma o que o audit tem para aquele trace e 
 Um exemplo. O plano `.nirvana/plans/smoke-cafe-solar.json` teve o nó `nirvana-pesquisa-mercado` entregue e o nó `high-conversion-copy` falho por manifesto inválido do squad. Corrigido o manifesto:
 
 ```bash
-export NIRVANA_MULTI_TARGET_ENGINE=1
 nrv multi-target run .nirvana/plans/smoke-cafe-solar.json --retry-failed
 ```
 
@@ -153,11 +152,18 @@ Lê o Run e `projectMultiTargetRun` sem side effects: estado do Run, estado do p
 | 0 | plano `delivered`, Run `completed` | compilado | Run encontrado |
 | 1 | plano `failed`, erro do coordenador ou do kernel | | kernel ou Run ausentes |
 | 2 | plano `withheld` | | |
-| 4 | plano inválido, opt-in ausente, Run existente com outro plano, `--retry-failed` recusado (nada a reabrir, Run não terminal ou não `failed`/`withheld`, plano ou reserva mudaram) | plano inválido | plano inválido ou `--project` ausente |
+| 4 | plano inválido, engine desligado, Run existente com outro plano, `--retry-failed` recusado (nada a reabrir, Run não terminal ou não `failed`/`withheld`, plano ou reserva mudaram) | plano inválido | plano inválido ou `--project` ausente |
 
-## Opt-in
+## Kill switch
 
-`run` exige `NIRVANA_MULTI_TARGET_ENGINE=1`. `NIRVANA_MULTI_TARGET_KILL_SWITCH=1` desliga mesmo com a flag. Sem opt-in o comando termina com exit 4 e explica como habilitar, sem abrir o kernel nem gravar o workspace. `plan` e `status` funcionam sempre.
+`run` executa sem variável de ambiente. `NIRVANA_MULTI_TARGET_KILL_SWITCH=1` (ou `true`, `on`) desliga o engine; `NIRVANA_MULTI_TARGET_ENGINE=0` (ou `false`, `off`) também desliga, para quem já configurava a flag das primeiras releases assim, e `NIRVANA_MULTI_TARGET_ENGINE=1` continua aceito sem efeito. Desligado, o comando nomeia a variável e o valor no stderr, grava `x_multi_target_disabled` no audit e termina com exit 4, sem abrir o kernel nem gravar o workspace. `plan` e `status` funcionam sempre.
+
+| Ambiente | `run` |
+| --- | --- |
+| nenhuma variável | executa |
+| `NIRVANA_MULTI_TARGET_KILL_SWITCH=1`, `true` ou `on` | exit 4, mesmo com `NIRVANA_MULTI_TARGET_ENGINE=1` |
+| `NIRVANA_MULTI_TARGET_ENGINE=0`, `false` ou `off` | exit 4 |
+| `NIRVANA_MULTI_TARGET_ENGINE=1` | executa; aceito por compatibilidade, sem efeito |
 
 Para testes, `NIRVANA_DISPATCH_SCRIPT` aponta os adapters para outro script de dispatch; a variável só é honrada quando definida.
 
@@ -167,6 +173,7 @@ O comando escreve no audit legado (`lib/audit.js`) com `trace_id` e `project_id`
 
 | Evento | Quando | Payload |
 | --- | --- | --- |
+| `x_multi_target_disabled` | `run` recusado pelo kill switch | `plan_file`, `variable`, `value`, exit |
 | `x_multi_target_plan_compiled` | `plan` e `run` | digests, ondas, quantidade de nós, workspace |
 | `x_multi_target_run_started` | `run` | `run_id`, owner, runtime, `resumed`, `retried_from` (Run anterior numa retomada, senão `null`) |
 | `x_multi_target_plan_retried` | `run --retry-failed` | `run_id`, `previous_run_id`, `reset_nodes`, `attempt`, `snapshot_version` |

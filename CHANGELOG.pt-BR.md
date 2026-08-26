@@ -8,6 +8,28 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### `nrv multi-target run` passa a executar por padrão; um kill switch desliga
+
+O engine tem 1,4 mil testes, CI nos três sistemas e dois smokes reais, então o
+opt-in das primeiras releases foi invertido: `run` executa sem nenhuma
+variável. `NIRVANA_MULTI_TARGET_KILL_SWITCH=1` (ou `true`, `on`) desliga, e
+`NIRVANA_MULTI_TARGET_ENGINE=0` (ou `false`, `off`) também, para quem já
+configurava a flag assim. `NIRVANA_MULTI_TARGET_ENGINE=1` continua aceito e
+não tem efeito. A recusa nomeia a variável e o valor no stderr, grava
+`x_multi_target_disabled` no audit, termina com exit 4 e não abre o kernel nem
+grava o workspace. `plan` e `status` não mudam.
+
+| Ambiente | `run` |
+| --- | --- |
+| nenhuma variável | executa |
+| `NIRVANA_MULTI_TARGET_KILL_SWITCH=1`, `true` ou `on` | exit 4, mesmo com `NIRVANA_MULTI_TARGET_ENGINE=1` |
+| `NIRVANA_MULTI_TARGET_ENGINE=0`, `false` ou `off` | exit 4 |
+| `NIRVANA_MULTI_TARGET_ENGINE=1` | executa; aceito por compatibilidade, sem efeito |
+
+A referência do harness e o `SKILL.md` passam a dizer quando o maestro usa o
+engine escriturado em vez do protocolo em processo: Gauntlet por nó, Run
+canônico no kernel, retomada após falha, ou sessão headless ou só-shell.
+
 ### A síntese de um plano multi-target tem limites Gauntlet próprios
 
 Nos escopos `each-target-and-final` e `adaptive`, a reserva agregada completa

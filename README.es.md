@@ -150,7 +150,7 @@ La capa de pago es **contenido, no capacidad**: colecciones curadas y listas par
 | `nrv search "<topic>"` | Encuentra capabilities en los tres registros |
 | `nrv dispatch --business <slug> \| --squad <slug> \| --agent-x "<brief>" --exec` | Ejecuta un brief contra un objetivo que tú nombras; el router nunca se consulta |
 | `nrv run <business> "<brief>" --execution-mode=gauntlet --gauntlet-intensity=light\|balanced\|exhaustive` | Opta por el Gauntlet: candidatos, evaluaciones y rondas de revisión en tres intensidades (los objetivos Business necesitan `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST`) |
-| `nrv multi-target plan\|run\|status <plan.json>` | Compila, ejecuta o inspecciona un plan multi-target sobre el Run Kernel (`run` necesita `NIRVANA_MULTI_TARGET_ENGINE=1`) |
+| `nrv multi-target plan\|run\|status <plan.json>` | Compila, ejecuta o inspecciona un plan multi-target sobre el Run Kernel (`NIRVANA_MULTI_TARGET_KILL_SWITCH=1` desactiva `run`) |
 | `nrv update <pack>` | Actualiza un pack instalado |
 | `nrv doctor` | Revisa la instalación; en Windows, `nrv install --repair-path` limpia las entradas del PATH del usuario sobre las que avisa |
 

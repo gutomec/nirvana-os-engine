@@ -268,7 +268,7 @@ describe("nrv multi-target run freezes the coordinator's runtime snapshot", () =
       env[key] = value;
     }
     Object.assign(env, { NIRVANA_SKILLS_DIR: path.join(REPO, "skills"), NIRVANA_NO_UPDATE_CHECK: "1", NIRVANA_SCOPE_QUIET: "1",
-      NIRVANA_MULTI_TARGET_ENGINE: "1", NIRVANA_STATE_DB: path.join(root, "state.db"), NIRVANA_DISPATCH_SCRIPT: writeFakeDispatch(root),
+      NIRVANA_STATE_DB: path.join(root, "state.db"), NIRVANA_DISPATCH_SCRIPT: writeFakeDispatch(root),
       FAKE_DISPATCH_SPAWN_LOG: spawnLog, [CATALOG_DIR_ENV]: catalogDir });
     const run = (projectId: string) => spawnSync(process.execPath, [MULTI_TARGET, "run", planFile, "--project", projectId, "--runtime", "codex"],
       { cwd: projectRoot, encoding: "utf8", env });
