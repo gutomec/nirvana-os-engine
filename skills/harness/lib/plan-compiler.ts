@@ -53,12 +53,21 @@ export interface GauntletPolicyLimit {
   maxRounds?: number;
 }
 
+// Own intensity and limits of the synthesis. Its mode always comes from the
+// scope, so the override carries neither `mode` nor the adaptive signals.
+export interface GauntletSynthesisOverride {
+  intensity?: GauntletIntensity;
+  limits?: GauntletPolicyLimit;
+}
+
 export interface MultiTargetGauntletPolicy {
   scope: MultiTargetGauntletScope;
   intensity?: GauntletIntensity;
   limits?: GauntletPolicyLimit;
   criticalTargetIds?: string[];
   synthesisNodeId?: string;
+  synthesis?: GauntletSynthesisOverride;
+  // `targets[synthesisNodeId]` is accepted as an alias of `synthesis`.
   targets?: Record<string, {
     mode?: "standard" | "gauntlet";
     intensity?: GauntletIntensity;
@@ -123,6 +132,34 @@ function validateLimits(path: string, limits: GauntletPolicyLimit | undefined, i
   }
 }
 
+// The synthesis override is stricter than a target override: an intensity above
+// the policy's is an error rather than a silent clamp, and every other key is
+// refused, because the scope alone decides whether the synthesis runs Gauntlet.
+function validateSynthesisOverride(
+  path: string,
+  override: GauntletSynthesisOverride,
+  parentIntensity: GauntletIntensity | undefined,
+  issues: MultiTargetPolicyIssue[]
+): void {
+  for (const key of Object.keys(override)) {
+    if (key === "intensity" || key === "limits") continue;
+    issues.push({
+      path: `${path}/${key}`,
+      message: key === "mode"
+        ? "synthesis mode comes from the scope; declare only intensity and limits"
+        : "synthesis accepts only intensity and limits",
+    });
+  }
+  if (override.intensity !== undefined) {
+    if (!POLICY_INTENSITIES.has(override.intensity)) {
+      issues.push({ path: `${path}/intensity`, message: `invalid intensity: ${override.intensity}` });
+    } else if (parentIntensity && INTENSITY_RANK[override.intensity] > INTENSITY_RANK[parentIntensity]) {
+      issues.push({ path: `${path}/intensity`, message: `must not exceed the policy intensity ${parentIntensity}` });
+    }
+  }
+  validateLimits(`${path}/limits`, override.limits, issues);
+}
+
 function inheritedLimits(parent: GauntletPolicyLimit | undefined, child: GauntletPolicyLimit | undefined): GauntletPolicyLimit | undefined {
   if (!parent && !child) return undefined;
   const cap = (key: keyof GauntletPolicyLimit): number | undefined => {
@@ -176,8 +213,28 @@ export function compileMultiTargetGauntletPolicy(
     for (const id of policy.criticalTargetIds ?? []) {
       if (!targetIds.has(id)) issues.push({ path: "/policy/criticalTargetIds", message: `target node not found: ${id}` });
     }
+    const parentIntensity = policy.intensity === undefined ? "balanced" : POLICY_INTENSITIES.has(policy.intensity) ? policy.intensity : undefined;
+    const synthesisAlias = policy.synthesisNodeId && nodes.get(policy.synthesisNodeId)?.type === "deliverable"
+      ? policy.targets?.[policy.synthesisNodeId]
+      : undefined;
+    if (policy.synthesis) {
+      if (!policy.synthesisNodeId) issues.push({ path: "/policy/synthesis", message: "requires policy.synthesisNodeId" });
+      else if (synthesisAlias) issues.push({ path: `/policy/targets/${policy.synthesisNodeId}`, message: "synthesis is already configured by policy.synthesis" });
+      validateSynthesisOverride("/policy/synthesis", policy.synthesis, parentIntensity, issues);
+    }
     for (const [id, override] of Object.entries(policy.targets ?? {})) {
-      if (!targetIds.has(id)) issues.push({ path: `/policy/targets/${id}`, message: `target node not found: ${id}` });
+      if (synthesisAlias && id === policy.synthesisNodeId) {
+        validateSynthesisOverride(`/policy/targets/${id}`, override, parentIntensity, issues);
+        continue;
+      }
+      if (!targetIds.has(id)) {
+        issues.push({
+          path: `/policy/targets/${id}`,
+          message: nodes.get(id)?.type === "deliverable"
+            ? `deliverable ${id} is not the declared synthesis; set policy.synthesisNodeId`
+            : `target node not found: ${id}`,
+        });
+      }
       if (override.mode !== undefined && override.mode !== "standard" && override.mode !== "gauntlet") {
         issues.push({ path: `/policy/targets/${id}/mode`, message: `invalid mode: ${override.mode}` });
       }
@@ -253,18 +310,30 @@ export function compileMultiTargetGauntletPolicy(
     .sort((a, b) => a.id.localeCompare(b.id))
     .map(decideTarget);
   const synthesisNode = policy?.synthesisNodeId ? nodes.get(policy.synthesisNodeId)! : undefined;
+  const synthesisOverride: GauntletSynthesisOverride | undefined = synthesisNode ? policy?.synthesis ?? policy?.targets?.[synthesisNode.id] : undefined;
   const synthesisEnabled = !!policy && !!synthesisNode && ["final-only", "each-target-and-final", "adaptive"].includes(policy.scope);
   const synthesis: CompiledGauntletDecision | null = synthesisNode ? {
     nodeId: synthesisNode.id, targetKind: "synthesis", mode: synthesisEnabled ? "gauntlet" : "standard",
-    ...(synthesisEnabled ? { intensity, limits: inheritedLimits(policy?.limits, undefined) } : {}),
-    reason: synthesisEnabled ? `selected by ${policy!.scope} scope` : "scope does not select synthesis",
-    source: "scope",
+    ...(synthesisEnabled ? {
+      intensity: inheritedIntensity(intensity, synthesisOverride?.intensity),
+      limits: inheritedLimits(policy?.limits, synthesisOverride?.limits),
+    } : {}),
+    reason: synthesisEnabled
+      ? `selected by ${policy!.scope} scope${synthesisOverride ? " with its own intensity and limits" : ""}`
+      : "scope does not select synthesis",
+    source: synthesisEnabled && synthesisOverride ? "target-override" : "scope",
   } : null;
 
+  // The alias form folds into `synthesis`, so both spellings snapshot and digest alike.
   const normalizedPolicy = policy ? {
     ...policy,
     criticalTargetIds: [...(policy.criticalTargetIds ?? [])].sort(),
-    targets: Object.fromEntries(Object.entries(policy.targets ?? {}).sort(([left], [right]) => left.localeCompare(right))),
+    ...(synthesisOverride ? { synthesis: synthesisOverride } : {}),
+    targets: Object.fromEntries(
+      Object.entries(policy.targets ?? {})
+        .filter(([id]) => id !== synthesisNode?.id)
+        .sort(([left], [right]) => left.localeCompare(right))
+    ),
   } : null;
   const snapshot = { schemaVersion: "nirvana.multi-target-gauntlet-policy/v1alpha1" as const, manifest, decisions, synthesis, policySnapshot: normalizedPolicy };
   const digest = createHash("sha256").update(canonicalJson(snapshot)).digest("hex");
