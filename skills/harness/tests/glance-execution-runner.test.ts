@@ -11,14 +11,15 @@ import { canonicalRuntimeName, resolveDefaultRuntime } from "../lib/runtime-rule
 import { canonicalRunIdFor } from "../scripts/dispatch.ts";
 import { writeFakeDispatch } from "./helpers/fake-dispatch.ts";
 import { shimRuntimeOnPath } from "./helpers/fake-glance-child.ts";
+import { removeDir } from "./helpers/temp-dirs.ts";
 
 const DISPATCH = path.join(import.meta.dir, "..", "scripts", "dispatch.ts");
 const roots: string[] = [];
 const restores: Array<() => void> = [];
 afterEach(() => {
   while (restores.length) restores.pop()!();
-  while (roots.length) fs.rmSync(roots.pop()!, { recursive: true, force: true });
   delete process.env.NIRVANA_DISPATCH_SCRIPT;
+  while (roots.length) removeDir(roots.pop()!);
 });
 
 function fixture() {
@@ -89,7 +90,10 @@ describe("createDispatchExecutionRunner", () => {
     // The child leads its own process group, so kill() reaches the runtime it spawns as well.
     if (process.platform !== "win32") expect(() => process.kill(-held.pid, 0)).not.toThrow();
     held.kill();
-    expect((await held.done).exitCode).toBeNull();
+    const { exitCode } = await held.done;
+    // A signal leaves no exit code. Windows has no signals: taskkill /F ends the tree with a
+    // non-zero status, and either way the child never reached its own exit 0.
+    if (process.platform === "win32") expect(exitCode).not.toBe(0); else expect(exitCode).toBeNull();
   });
 
   test("NIRVANA_DISPATCH_SCRIPT overrides the default script; an explicit option wins over both", () => {

@@ -8,13 +8,14 @@ import { runDelivery } from "../lib/delivery-pipeline.ts";
 import { runAgentXGauntlet, shouldRunAgentXGauntlet, type AgentXGauntletEvaluator } from "../lib/gauntlet/agent-x-cutover.ts";
 import { loadHarnessConfig } from "../lib/harness-config.ts";
 import { appendEvent, listEvents, openKernel, type KernelHandle } from "../lib/run-kernel/index.ts";
+import { removeDir } from "./helpers/temp-dirs.ts";
 
 const roots: string[] = [];
-const servers: Array<{ server: { stop(closeActiveConnections?: boolean): void } }> = [];
+const servers: Array<{ close(): void }> = [];
 afterEach(() => {
-  while (servers.length) servers.pop()!.server.stop(true);
-  while (roots.length) fs.rmSync(roots.pop()!, { recursive: true, force: true });
+  while (servers.length) servers.pop()!.close();
   delete process.env.NIRVANA_PROJECT_ROOT;
+  while (roots.length) removeDir(roots.pop()!);
 });
 
 const BUSINESS = { kind: "business" as const, slug: "proof-business" };

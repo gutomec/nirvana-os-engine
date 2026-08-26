@@ -16,7 +16,8 @@ function fixture(overrides: Partial<BusinessPostGateInput> = {}, dependencyOverr
     resolve: pathname => `/cwd/${pathname.replace(/^\.\//, "")}`,
     spawn: (command, args) => {
       calls.push({ command, args });
-      if (args.some(argument => argument.endsWith("build-report-pdf.ts"))) files.set("/project/deliverables/relatorio-final.pdf", "pdf");
+      // The fake build writes where it was told (`--output`), whichever separator path.join used.
+      if (args.some(argument => argument.endsWith("build-report-pdf.ts"))) files.set(args[args.indexOf("--output") + 1], "pdf");
       return { status: 0, stdout: "publisher prompt", stderr: "" };
     },
     runPublisher: () => ({ ok: true, sessionId: "session", durationMs: 1, costUsd: 0 }),

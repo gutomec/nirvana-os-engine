@@ -12,9 +12,10 @@ import {
   STANDARD_PUBLICATION_ACTOR, inertStandardPublication, openStandardPublication, policySnapshotRefFor, standardIdempotencyKey,
   terminalForDelivery, type DeliveryVerdict, type StandardPublicationInput,
 } from "../lib/run-kernel/standard-publication.ts";
+import { removeDir } from "./helpers/temp-dirs.ts";
 
 const roots: string[] = [];
-afterEach(() => { while (roots.length) fs.rmSync(roots.pop()!, { recursive: true, force: true }); });
+afterEach(() => { while (roots.length) removeDir(roots.pop()!); });
 
 const SNAPSHOT = { runtime: { id: "claude-code", source: "default" }, provider: { selection: "runtime-provider", resolved: false },
   model: { selection: "runtime-default", resolved: false }, reason: "no provider descriptor for runtime" };
@@ -128,10 +129,16 @@ describe("openStandardPublication", () => {
 
   test("re-opening the same Run adds no duplicate events", () => {
     const fx = fixture();
-    fx.open();
-    fx.open();
-    const { events } = fx.read();
-    expect(events.map(typeOf)).toEqual(["run.prepared", "runtime.selection_snapshot"]);
+    const first = fx.open();
+    const second = fx.open();
+    expect(fx.read().events.map(typeOf)).toEqual(["run.prepared", "runtime.selection_snapshot"]);
+    // Both publications walk the lifecycle: every step carries the same idempotency key, so the
+    // second adds nothing, and finish() releases the kernel handle each open() took.
+    for (const publication of [first, second]) {
+      publication.start(); publication.verify(); publication.finish({ exitCode: 0, gateOutcome: "pass" }, "/out");
+    }
+    expect(fx.read().events.map(typeOf)).toEqual(["run.prepared", "runtime.selection_snapshot",
+      "run.transitioned:running", "run.transitioned:verifying", "run.transitioned:completed"]);
     expect(fx.audit).toEqual([]);
   });
 

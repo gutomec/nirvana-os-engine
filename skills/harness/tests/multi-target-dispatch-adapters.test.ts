@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import type { DependencyGraph } from "../../_shared/lib/dependency-graph.ts";
@@ -8,11 +8,16 @@ import { coordinateMultiTargetPlan, type MultiTargetAdapterInput } from "../lib/
 import { createDispatchMultiTargetAdapters, MULTI_TARGET_RESULT_MARKER } from "../lib/gauntlet/multi-target-dispatch-adapters.ts";
 import { createRunKernelMultiTargetPorts } from "../lib/gauntlet/run-kernel-multi-target-ports.ts";
 import { compileMultiTargetGauntletPolicy, type CompiledMultiTargetPlan } from "../lib/plan-compiler.ts";
-import { createRun, listEvents, openKernel } from "../lib/run-kernel/store.ts";
+import { createRun, listEvents, openKernel, type KernelHandle } from "../lib/run-kernel/store.ts";
 import { writeFakeDispatch } from "./helpers/fake-dispatch.ts";
+import { removeDir } from "./helpers/temp-dirs.ts";
 
 const roots: string[] = [];
-afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+const handles: KernelHandle[] = [];
+afterEach(() => {
+  while (handles.length) handles.pop()!.close();
+  for (const root of roots.splice(0)) removeDir(root);
+});
 
 const graph: DependencyGraph = {
   nodes: [
@@ -256,6 +261,7 @@ describe("multi-target dispatch adapters", () => {
     const { plan, reservation } = compile();
     const ws = setup.workspaceRoot;
     const kernel = openKernel(join(setup.root, "kernel.sqlite"));
+    handles.push(kernel);
     createRun(kernel, {
       projectId: setup.projectId, runId: "run-multi", traceId: setup.projectId, planId: "plan-multi",
       target: { kind: "agent-x", slug: "agent-x" }, policySnapshotRef: "pending", actor: { kind: "test", id: "fixture" },

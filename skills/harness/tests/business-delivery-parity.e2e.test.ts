@@ -20,7 +20,9 @@ const PASSING_HTML = [
 type AuditEntry = { event: string; payload: Record<string, unknown> };
 
 function normalize(value: unknown, root: string): unknown {
-  return JSON.parse(JSON.stringify(value).replaceAll(root, "<root>"));
+  // The root is matched in its JSON-encoded form: on Windows its backslashes are escaped inside
+  // the serialized text, so the raw string never matches there.
+  return JSON.parse(JSON.stringify(value).replaceAll(JSON.stringify(root).slice(1, -1), "<root>"));
 }
 
 function runScenario(kind: "legacy-reference" | "boundary", verifyExit: 0 | 1) {

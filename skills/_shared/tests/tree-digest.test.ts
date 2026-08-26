@@ -43,7 +43,8 @@ describe("snapshotTree", () => {
     symlinkSync(join("..", "outside"), join(root, "dna"));
     const snapshot = snapshotTree([root]);
     expect([...snapshot.keys()]).toEqual([join(root, "dna"), join(root, "keep.txt")]);
-    expect(snapshot.get(join(root, "dna"))).toEqual({ sha256: sha("../outside"), size: 10, link: join("..", "outside") });
+    // The link target is recorded as the platform spells it: `..\outside` on Windows.
+    expect(snapshot.get(join(root, "dna"))).toEqual({ sha256: sha(join("..", "outside")), size: 10, link: join("..", "outside") });
 
     writeFileSync(join(dir, "outside", "secret.txt"), "two", "utf8");
     expect(diffTreeSnapshots(snapshot, snapshotTree([root]))).toEqual({ added: [], removed: [], changed: [] });
