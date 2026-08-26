@@ -83,6 +83,15 @@ describe("Glance run event labels", () => {
     // Facade-wrapped legacy events carry the legacy fields inside payload.
     expect(runEventView({ type: "delivery.gate_passed", payload: { legacyEvent: "gate_passed", rubrics: ["wiki-lint"] } })).toMatchObject({ title: "Gate passou", sub: "wiki-lint" });
     expect(runEventView({ type: "delivery.report_pdf_generated", payload: {} }).title).toBe("PDF gerado");
+    // Run ledger: a withheld row says whether the supervisor (stall) or the gate withheld it,
+    // and a grace says which proof of life kept the run alive.
+    expect(runEventView({ event: "x_ledger_state_changed", to: "withheld", error: null, last_error: "supervisor: agentic run stopped reporting" }))
+      .toEqual({ icon: "pause-circle", title: "Ledger: retido", sub: "supervisor: agentic run stopped reporting", tone: "fail" });
+    expect(runEventView({ event: "x_ledger_state_changed", to: "withheld", error: null, last_error: null })).toMatchObject({ title: "Ledger: retido", sub: "retido pelo gate" });
+    expect(runEventView({ event: "x_ledger_state_changed", to: "running", error: null })).toMatchObject({ icon: "arrow-right-circle", title: "Ledger: em execução", sub: "", tone: "" });
+    expect(runEventView({ event: "x_ledger_grace_extended", liveness_source: "child_run", child_run_id: "run-1" }))
+      .toEqual({ icon: "activity", title: "Prova de vida: squad ou funcionário despachado", sub: "run-1", tone: "active" });
+    expect(runEventView({ event: "x_ledger_grace_extended" })).toMatchObject({ title: "Prova de vida: lease renovada", sub: "" });
   });
 
   test("unknown or empty events never yield an undefined title", () => {

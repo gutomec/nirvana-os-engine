@@ -63,6 +63,7 @@ import {
   latestMtimeMs,
   isTerminal,
   AGENTIC_LEASE_SEC,
+  resolveAgenticLiveness,
   canTransition,
   getSupervisorMeta,
   setSupervisorMeta,
@@ -706,7 +707,12 @@ function sweepOne(h: LedgerHandle, row: RunRow, now: number, deps: SweepDeps, su
   // to relaunch from. The third door is the right one: judge what it left on disk
   // and tell the human. So it escalates on the first expired lease instead of
   // burning two retries against recoveries that cannot apply — and, crucially, it
-  // consults file activity FIRST, which the pid-less path below never would.
+  // consults the trace's proof of life FIRST, which the pid-less path below never
+  // would: the row's own beats, the child runs its employee dispatched, the hook
+  // activity of the session, and only then the files under outputs_root
+  // (resolveAgenticLiveness). A business that delegates writes nothing under its
+  // own dir while its squad works; judged by that dir alone it was escalated
+  // while working.
   //
   // It also asks the liveness question on the right scale. The 5-minute stall
   // budget belongs to a driver that heartbeats every few seconds; an agentic run
@@ -715,13 +721,17 @@ function sweepOne(h: LedgerHandle, row: RunRow, now: number, deps: SweepDeps, su
   // working. So the window here is the lease itself: "anything at all since we
   // last looked?" — and a yes buys another full lease.
   if (isAgentic(row)) {
-    if (hasRecentActivity(row, now, AGENTIC_LEASE_SEC * 1000)) {
+    const life = resolveAgenticLiveness(h, row, now, AGENTIC_LEASE_SEC * 1000);
+    if (life.alive) {
       renewLease(h, row.run_id, AGENTIC_LEASE_SEC);
-      emitAudit("x_ledger_grace_extended", { run_id: row.run_id, lease_sec: AGENTIC_LEASE_SEC, path: "agentic" }, row);
+      emitAudit("x_ledger_grace_extended", {
+        run_id: row.run_id, lease_sec: AGENTIC_LEASE_SEC, path: "agentic",
+        liveness_source: life.source, liveness_at: new Date(life.at).toISOString(), child_run_id: life.childRunId,
+      }, row);
       summary.graced++;
       return;
     }
-    escalate(h, row, deps, summary, "agentic run stopped reporting (no heartbeat, no file activity)");
+    escalate(h, row, deps, summary, "agentic run stopped reporting (no heartbeat, no child run, no hook activity, no file activity)");
     return;
   }
 

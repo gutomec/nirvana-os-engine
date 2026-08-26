@@ -138,6 +138,14 @@ if (!trackedByDispatch) {
   }
 }
 
+// A business that delegates is alive: when an employee dispatches this squad under
+// the business's project, beat the business's agentic row as a side effect. Its
+// employee never has to remember a heartbeat. Fail-soft: beatAgenticRuns never throws.
+try {
+  const { beatAgenticRuns } = require(path.join(skillDir, "..", "harness", "lib", "run-ledger.ts"));
+  beatAgenticRuns({ projectId, traceId: projectId, source: "brief-squad" });
+} catch { /* the ledger is not this script's job */ }
+
 // Initial HANDOFF.json — minimum state to allow resume after /clear or crash.
 try {
   const { writeHandoff } = require(path.join(skillDir, "..", "_shared", "lib", "handoff.js"));

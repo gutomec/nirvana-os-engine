@@ -6,6 +6,46 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Não lançado
+
+### A empresa que delega está viva: runs filhos, atividade de hook e beats de handoff são prova de vida
+
+Desde 01/08/2026 o run ledger guardava 39 runs de empresa retidos; 35 deles
+(15 empresas, 10 dias) traziam `supervisor: agentic run stopped reporting
+(no heartbeat, no file activity)`, e nenhum tinha falhado no gate. A linha
+agêntica da empresa (`brief-business`, sem pid) era julgada pela mtime mais
+nova sob o próprio outputs root, e uma empresa que delega não escreve nada
+ali: o funcionário despacha um squad, que escreve na pasta do squad; os hooks
+da sessão registram `tool_invoked` / `artifact_touched` / `bash_completed`;
+os scripts de handoff avançam. O supervisor não lia nada disso e escalava a
+empresa enquanto ela trabalhava.
+
+`resolveAgenticLiveness` (`skills/harness/lib/run-ledger.ts`) passa a ler a
+prova de vida do trace, do sinal mais barato ao mais caro, dentro da janela
+do lease agêntico (1800 s): o `heartbeat_at` da própria linha; um run filho
+no mesmo `project_id` ou `trace_id` que esteja ativo e atualizado há pouco,
+ou entregue dentro da janela (um período de graça de uma janela para o
+funcionário integrar a entrega, e depois a regra normal volta a valer); um
+evento de hook do trace no audit diário, casado por `run_id`, `project_id`,
+`trace_id` ou por caminho sob o diretório do projeto; e, por último,
+atividade de arquivo sob `outputs_root`. Um run sem sinal algum continua
+sendo escalado, agora com `(no heartbeat, no child run, no hook activity, no
+file activity)`. `supervisor.stall_threshold_ms` e `AGENTIC_LEASE_SEC` não
+mudaram.
+
+Os scripts que o funcionário já roda batem na linha da empresa como efeito
+colateral, sem comando novo: `updateHandoffPhase` bate no run que o handoff
+nomeia e nas linhas de empresa do projeto; `brief-squad` bate nas linhas de
+empresa do `--project` sob o qual é despachado. Os dois são fail-soft.
+
+O audit explica a graça: `x_ledger_grace_extended` leva `liveness_source`,
+`liveness_at` e `child_run_id`; `x_ledger_lease_renewed` leva `source` nos
+beats; `x_ledger_state_changed` leva `last_error`, então uma linha `withheld`
+que chegou lá por stall guarda o motivo do supervisor e uma que chegou pelo
+gate não. A linha do tempo de runs do Glance rotula os dois eventos
+(`Ledger: retido` com o motivo, `Prova de vida: …` com a fonte), sem tela
+nova. `docs/architecture/run-kernel-operations.md` documenta a regra.
+
 ## 0.9.0 — 2026-08-26
 
 ### O painel "Configuração" do Glance: toda chave do `nrv config` com API e tela
