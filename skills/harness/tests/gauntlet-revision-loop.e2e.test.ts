@@ -307,7 +307,7 @@ describe("Gauntlet causal revision loop", () => {
     for (const revisionId of ["crv_run_loop_can_1_1", "crv_run_loop_can_1_2"]) {
       const evaluationDir = evaluationDirFor(loop.root, "run_loop", revisionId);
       expect(fs.readFileSync(path.join(evaluationDir, "evaluation-brief.md"), "utf8")).toContain("Produza report.md");
-      expect(fs.existsSync(path.join(evaluationDir, "scorecard.json"))).toBeTrue();
+      expect(fs.existsSync(path.join(evaluationDir, "outputs", "scorecard.json"))).toBeTrue();
     }
     expect(fs.readFileSync(path.join(loop.outputsRoot, "report.md"), "utf8")).toContain("Revision 2 of can_1");
   }, KERNEL_BUDGET_MS + spawnBudgetMs(2));

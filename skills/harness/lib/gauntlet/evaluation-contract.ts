@@ -5,7 +5,11 @@
 // as a subprocess of dispatch.ts (see evaluator-adapter.ts). It receives one
 // evaluation brief (PT-BR, the language of every brief the engine hands an
 // executor) and one machine-readable request, both inside an isolated
-// evaluation directory, and it writes exactly one file there: scorecard.json.
+// evaluation directory, and it writes exactly one file, scorecard.json, into
+// the outputs root the adapter hands the subprocess: `<evaluationDir>/outputs/`,
+// empty before the spawn. The adapter's own files stay one level up, so the
+// child dispatch can never count them as artifacts of an executor that wrote
+// nothing.
 //
 // The scorecard file is validated strictly against the plan's SuccessContract:
 // one dimension per requirement, ids exactly as declared, scores in [0, 1], no
@@ -24,6 +28,8 @@ import type { EvaluationScorecard, GauntletPlan, ScoreDimension, SuccessRequirem
 export const SCORECARD_FILE = "scorecard.json";
 export const EVALUATION_BRIEF_FILE = "evaluation-brief.md";
 export const EVALUATION_REQUEST_FILE = "evaluation-request.json";
+/** Outputs root handed to the evaluator subprocess, under the evaluation directory; the scorecard lives here. */
+export const EVALUATION_OUTPUTS_DIR = "outputs";
 export const SCORECARD_SCHEMA_VERSION = "nirvana.gauntlet-scorecard/v1alpha1";
 export const EVALUATION_REQUEST_SCHEMA_VERSION = "nirvana.gauntlet-evaluation-request/v1alpha1";
 /** Rubric the adapter stamps on every scorecard it builds from a file. */
@@ -41,7 +47,7 @@ export interface EvaluationRequest {
   holdout: boolean;
   /** Read-only for the evaluator. */
   candidateRoot: string;
-  /** The one file the evaluator writes. */
+  /** The one file the evaluator writes: `<evaluationDir>/outputs/scorecard.json`, inside its output_path. */
   scorecardPath: string;
   briefDigest: string;
   requirements: SuccessRequirement[];
@@ -183,6 +189,7 @@ export function renderEvaluationBrief(request: EvaluationRequest, originalBrief:
     "Você não produz nem edita o entregável. Sua única saída é o scorecard descrito abaixo.",
     `O diretório do candidate é somente leitura: \`${request.candidateRoot}\`. Não crie, altere nem remova arquivos nele.`,
     "Não escreva em nenhum outro lugar além do arquivo de scorecard.",
+    "A tarefa não exige shell nem execução de comandos: ler os arquivos do candidate com a ferramenta de leitura basta.",
     scopeGuard("pt-BR"),
     "",
     "## Brief original (o que o candidate deveria entregar)",
@@ -197,7 +204,7 @@ export function renderEvaluationBrief(request: EvaluationRequest, originalBrief:
     "",
     "## O que escrever",
     "",
-    `Escreva exatamente um arquivo, \`${request.scorecardPath}\`, com este formato JSON:`,
+    `Escreva exatamente um arquivo, \`${SCORECARD_FILE}\`, no seu output_path (caminho absoluto: \`${request.scorecardPath}\`), com este formato JSON:`,
     "",
     "```json",
     JSON.stringify(SCORECARD_EXAMPLE, null, 2),
