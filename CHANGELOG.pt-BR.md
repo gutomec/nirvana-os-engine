@@ -97,6 +97,66 @@ bloco YAML inválido.
 Limites novos: `workflow_body_words_max` (2500) e
 `squad_prompt_components_bytes_max` (65536).
 
+### Business Protocol 2.0: metadados de roteamento, clones fixados, squads preferidos, aceitação por cargo, um campo de orçamento e a superfície morta deprecada
+
+`skills/businesses/BUSINESS_PROTOCOL_V2.md` é o delta da v2 sobre a v1, na mesma
+forma que a v5 do Squad Protocol foi delta sobre a v4: documenta só o que muda.
+Ele foi escrito contra uma medição da biblioteca instalada, não contra intenção.
+Em 61 empresas e 581 funcionários: 475 cargos declaravam `heartbeat` e nenhum
+agendador existiu, 566 declaravam `self_score_contract` e nada lia, 234
+declaravam `escalation_triggers` e nada disparava, nenhuma empresa tinha o
+diretório `tickets/` que a spec chamava de obrigatório, e nenhuma das 61
+declarava `run_budget_usd`, o único campo de orçamento que o despacho lê.
+
+O que o protocolo ganha: metadados de roteamento entram no contrato
+(`produces`, `keywords`, `example_briefs` e `not_for`, novo no schema);
+`auto_routes` passa a ter um lugar só, `routing.yaml`, e um significado definido
+— primeiro candidato do BM25, depois seleção do cargo que recebe o brief;
+`pinned_mind_clones` (máximo 2) é o primeiro degrau da escada PINNED →
+SOLICITADO → BUSCA → AGENTE, então um cargo cuja identidade é uma voz ganha
+vínculo em vez de dica; `squads_preferred` ordena sem fechar e
+`squads_authorized` fecha só quando não é vazio, e vazio finalmente significa o
+mesmo que ausente — aberto — que é o que a v1 §6.2 sempre disse e o prompt do
+funcionário fazia ao contrário, em 30 manifestos e 201 cargos; `acceptance[]`
+por cargo substitui `self_score_contract` por um requisito que o juiz avalia,
+com conversão mecânica das 566 declarações mortas; `run_budget_usd` é o campo
+único de orçamento e `budget_monthly_usd` se aposenta, porque nada no sistema
+acumula um mês. A §16 é o catálogo de critérios do portão de admissão, id a id,
+preso a ele por um teste de paridade.
+
+A deprecação é uma política só, escrita uma vez e referenciada em todo lugar: o
+loader tolera, o portão avisa, só `--fix` converte ou remove, e o loader deixa
+de aceitar numa v3. Dezenove superfícies se aposentam sob ela. Nada muda para
+uma empresa v1: ela carrega, roteia e despacha exatamente como antes.
+
+O lado de engine deste corte é pequeno de propósito, porque ler esses campos é
+um corte posterior. `not_for` agora chega ao registro (`ScanItem`,
+`buildRegistry`), ao meta do documento de empresa no roteador e ao segmento
+`not:` do digest — cinco empresas declaravam a cerca havia meses e o roteador
+nunca tinha visto uma, porque um schema `.strict()` sem o campo não carrega o
+que o indexador não emite. O `RegistryBusinessesSchema` aceita o campo.
+`validateBusinessIntegrity` devolve avisos ao lado dos erros e deixa de reprovar
+uma carga por `employee_count`, que é derivado do disco (§6.12) — todas as 61
+autoravam o número que o registro já contava, e pagavam com falha de carga
+quando ele divergia. O `check-not-for-fires` cobre empresas nos dois caminhos,
+com a chave `business:<slug>`, onde o laço por capability não lia nada.
+
+Os quatro templates de tipo e o `example-business` são Protocol 2.0:
+`acceptance` no cargo de intake, sem `heartbeat`, sem `self_score_contract`, sem
+`employee_count` autorado, `run_budget_usd: 0`, um bloco `not_for` para
+preencher e sem esqueleto de `escalation-triggers.yaml` / `mention_routing` /
+`ticket_intake` para superfícies que o protocolo acabou de aposentar. O
+`skills/businesses/SKILL.md` deixa de apontar para seis arquivos de referência,
+um `tests/smoke.ts` e um diretório `adapters/` que nunca existiram, nomeia o Zod
+como o validador que roda e põe `nrv validate business <slug> --strict` no
+Round 5 do wizard.
+
+Prova: `smoke.test.ts` (init → validate → index → list contra um home temporário,
+com os templates do próprio repositório), `protocol-v2-spec-parity.test.ts`,
+`registry-description.test.ts` (uma empresa v1 e uma v2 indexando lado a lado,
+`not_for` chegando ao meta do roteador e ficando fora do texto indexado),
+`routing-digest.test.ts`, `not-for-fires.test.ts`.
+
 ### `nrv validate` é o portão de admissão de squads, empresas e mind-clones
 
 Todo squad, empresa e mind-clone que entra na biblioteca passa a ter um comando

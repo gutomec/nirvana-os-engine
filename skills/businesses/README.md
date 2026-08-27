@@ -1,6 +1,6 @@
 # businesses · Multi-Business Orchestrator Skill
 
-> **Business Protocol v1** · zero-deps · filesystem-first · auto-bootstrap · **DOMAIN-AGNOSTIC**
+> **Business Protocol v2** (v1 businesses still load) · zero-deps · filesystem-first · auto-bootstrap · **DOMAIN-AGNOSTIC**
 
 Create, validate, index, and invoke multi-agent organizations ("businesses") with hierarchical employees, memory isolation, and structured handoff primitives. Each business is a folder with a manifest, employees, an org chart, and routing rules — versionable, portable, auditable.
 
@@ -180,7 +180,8 @@ Routing rules drive the harness Stage 0 short-circuit: when a brief contains key
 ```
 ~/.nirvana/skills/businesses/
 ├── SKILL.md                      ← Claude-discoverable skill descriptor
-├── BUSINESS_PROTOCOL_V1.md       ← protocol spec (BP1-BP13, ~1850 lines)
+├── BUSINESS_PROTOCOL_V2.md       ← the v2 delta (routing metadata, pins, acceptance, budget)
+├── BUSINESS_PROTOCOL_V1.md       ← everything v2 leaves untouched (BP1-BP13, ~1850 lines)
 ├── lib/
 │   ├── loader.py                 ← load_business(path) → BusinessConfig
 │   └── registry.py               ← scan + write ${BUSINESSES_REGISTRY_PATH}
@@ -263,7 +264,7 @@ write_registry(registry)
 
 ## Spec & versioning
 
-- Protocol: **Business Protocol v1.0** (`BUSINESS_PROTOCOL_V1.md`, ~1850 lines)
+- Protocol: **Business Protocol v2.0** (`BUSINESS_PROTOCOL_V2.md`, the delta; `BUSINESS_PROTOCOL_V1.md` for the rest)
 - Schema version: `1.0.0`
 - 31 production businesses indexed at last count (328 employees, 387 auto_routes)
 - Test coverage: 6/6 smoke E2E + 36/36 pytest in `_shared/validators/`

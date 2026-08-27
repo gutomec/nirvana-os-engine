@@ -38,6 +38,10 @@ export const DEFAULTS: Record<string, number | null> = {
   business_example_briefs_item_max: 1000,
   business_keywords_max: 100,
   business_capabilities_max: 100,
+  // Business Protocol 2.0 §6.9: routing fences. Same ceiling the squad-side
+  // metadata contract uses — a fence list longer than this is a taxonomy, and a
+  // taxonomy does not fire.
+  business_not_for_max: 40,
 
   // employee frontmatter
   employee_description_max: null, // None = no ceiling (historical)
@@ -90,6 +94,7 @@ const SAFETY_BOUNDS: Record<string, [number | null, number | null]> = {
   business_example_briefs_item_max: [200, 2000],
   business_keywords_max: [15, 300],
   business_capabilities_max: [20, 500],
+  business_not_for_max: [5, 200],
 
   employee_description_max: [200, 8000],
   employee_max_turns_max: [50, 1000],

@@ -301,7 +301,9 @@ export const EmployeeFrontmatterSchema = z.object({
   acceptance: z.array(z.object({
     id: z.string().regex(ACCEPTANCE_ID),
     description: z.string().min(1),
-    blocking: z.boolean().optional(),
+    // Business Protocol 2.0 §11: a declared requirement blocks unless the
+    // author says otherwise — a non-blocking acceptance criterion is a note.
+    blocking: z.boolean().default(true),
     minimum_score: z.number().min(0).max(1).optional(),
     capability: z.string().optional(),
     path: z.string().optional(),
@@ -362,7 +364,12 @@ export const BusinessManifestSchema = z.object({
   // fences and a per-run budget. The manifest is passthrough, so `not_for`
   // stays as loose as it already was; the others are new keys.
   squads_preferred: z.array(z.string().regex(KEBAB_CASE)).optional(),
-  not_for: z.array(z.string()).optional(),
+  // Business Protocol 2.0 §6.9. Bounded like a fence, not like prose: the
+  // router fires an entry <=25 chars by substring and a longer one by >=60%
+  // token overlap, and 902 of the 910 long entries measured across the library
+  // fired against no real brief at all. 80 chars is the ceiling above which an
+  // entry is a sentence; the count ceiling is configurable.
+  not_for: z.array(z.string().min(5).max(80)).max(LIMITS.business_not_for_max!).optional(),
   run_budget_usd: z.number().min(0).optional(),
   operation_mode: z.enum(['zero_human', 'hybrid', 'human_in_loop']).default('zero_human'),
   output: z.object({
@@ -731,6 +738,10 @@ export const RegistryBusinessesSchema = z.object({
       produces: z.array(z.string()).optional(),
       example_briefs: z.array(z.string()).optional(),
       keywords: z.array(z.string()).optional(),
+      // Business Protocol 2.0 §6.9: the exclusion fence. Declared by live
+      // businesses long before this, and dropped here — `.strict()` with no
+      // field meant the indexer could not emit it even if it read it.
+      not_for: z.array(z.string()).optional(),
     }).strict(),
   ),
 }).strict()
@@ -745,8 +756,15 @@ export interface BusinessLoadContext {
   org_chart: z.infer<typeof OrgChartSchema>
 }
 
-export function validateBusinessIntegrity(ctx: BusinessLoadContext): { valid: boolean; errors: string[] } {
+/**
+ * Cross-artifact integrity. Returns warnings alongside errors since Business
+ * Protocol 2.0: `employee_count` is derived from disk (§6.12), so a stale
+ * declaration is an authoring smell the gate reports, never a load failure.
+ * Callers that only read `errors` keep their old behavior.
+ */
+export function validateBusinessIntegrity(ctx: BusinessLoadContext): { valid: boolean; errors: string[]; warnings: string[] } {
   const errors: string[] = []
+  const warnings: string[] = []
 
   // BP7: businesses with > 5 employees MUST have antagonist
   if (ctx.employees.length > 5) {
@@ -817,12 +835,15 @@ export function validateBusinessIntegrity(ctx: BusinessLoadContext): { valid: bo
     }
   }
 
-  // Manifest employee_count matches
+  // Manifest employee_count (Business Protocol 2.0 §6.12: derived, not authored).
+  // All 61 live businesses declared it, the registry recomputed it from disk
+  // anyway, and a stale number failed the load — the author owned a value the
+  // system already knew. Divergence is now a warning; the gate strips the field.
   if (ctx.manifest.employee_count && ctx.manifest.employee_count !== ctx.employees.length) {
-    errors.push(`Manifest employee_count (${ctx.manifest.employee_count}) doesn't match actual count (${ctx.employees.length})`)
+    warnings.push(`Manifest employee_count (${ctx.manifest.employee_count}) doesn't match actual count (${ctx.employees.length}) — employee_count is derived (v2 §6.12)`)
   }
 
-  return { valid: errors.length === 0, errors }
+  return { valid: errors.length === 0, errors, warnings }
 }
 
 // ──────────────────────────────────────────────────────────────────────

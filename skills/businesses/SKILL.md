@@ -1,6 +1,6 @@
 ---
 name: businesses
-description: "Business lifecycle skill (DOMAIN-AGNOSTIC). Creates, lists, inspects, validates, and migrates businesses — autonomous multi-agent organizations — following the Business Protocol v1. Works for ANY domain: marketing, healthcare, engineering, legal, real-estate, gaming, foodtech, trading, education, research, government, etc. Triggers: list businesses, inspect business, create business, validate business, migrate business, manage org chart, library/dna ops. For EXECUTION of production briefs ('use as empresas', 'produza X via empresa Y'), invoke the `harness` skill instead — it carries the maestro intelligence. Default: zero_human."
+description: "Business lifecycle skill (DOMAIN-AGNOSTIC). Creates, lists, inspects, validates, and migrates businesses — autonomous multi-agent organizations — following the Business Protocol v2 (v1 businesses still load unchanged). Works for ANY domain: marketing, healthcare, engineering, legal, real-estate, gaming, foodtech, trading, education, research, government, etc. Triggers: list businesses, inspect business, create business, validate business, migrate business, manage org chart, library/dna ops. For EXECUTION of production briefs ('use as empresas', 'produza X via empresa Y'), invoke the `harness` skill instead — it carries the maestro intelligence. Default: zero_human."
 compatibility: "Requires the Nirvana-OS engine: the `nrv` CLI and Bun on PATH. Install: npx @nirvana-os/cli. Runtime-agnostic — no dependency on any specific agent CLI. Creation flows need an interactive question primitive; without one, use the non-interactive list/inspect/validate paths."
 tools: [Read, Write, Edit, Glob, Grep, Bash, AgentTool, TaskCreate, AskUserQuestion]
 maxTurns: 100
@@ -12,9 +12,9 @@ metadata:
       bins: ["bun"]
 ---
 
-# Business Protocol Engine v1.0
+# Business Protocol Engine v2.0
 
-Multi-agent business orchestrator following `BUSINESS_PROTOCOL_V1.md`. Runtime-agnostic (Claude Code, Codex, Gemini-CLI). Zero external dependencies beyond the runtime and the centralized validators in `~/.nirvana/skills/_shared/`.
+Multi-agent business orchestrator following `BUSINESS_PROTOCOL_V2.md` (the delta) over `BUSINESS_PROTOCOL_V1.md` (everything the delta does not change). Runtime-agnostic (Claude Code, Codex, Gemini-CLI). Zero external dependencies beyond the runtime and the centralized validators in `~/.nirvana/skills/_shared/`.
 
 ---
 
@@ -58,7 +58,7 @@ When an employee is spawned via subagent (using `buildEmployeePrompt()` from `li
    b. **Shortlist the top 5** best-matching squads.
    c. **Analyze those 5 deeply** — read each one's full capability block (`description`, `examples`, `produces`, `not_for`, `domains`, `fidelity`, `score_boost`), judge fit against the brief and your role, then **pick the single best**. Tiebreak: higher `produces`/capability coverage → `fidelity: validated` → `score_boost`. Record in the audit why it beat the other four.
    d. Only if **none** of the 5 genuinely fit, produce it directly (and say so).
-   Businesses no longer whitelist squads — `squads_authorized` is empty, so **all squads are permitted** and this **top-5 agentic choice is THE gate** that keeps routing sharp. (`squads_authorized`, if ever set non-empty, still acts as a hard restriction; per-employee lists narrow further.) Don't pass the raw brief down: build a **brief-context** shaped by your role and (if `type: mind_clone`) your incorporated persona, hand that to the squad, then integrate its output. Executing directly what a squad already covers breaks the audit chain.
+   Businesses do not whitelist squads by default: `squads_authorized` empty **and** absent both mean **all squads are permitted** (v2 §6.10), so this **top-5 agentic choice is THE gate** that keeps routing sharp. A non-empty `squads_authorized` is a hard restriction, and a per-employee list narrows it further; `squads_preferred` only reorders — listed squads come first, nothing is excluded. Don't pass the raw brief down: build a **brief-context** shaped by your role and (if `type: mind_clone`) your incorporated persona, hand that to the squad, then integrate its output. Executing directly what a squad already covers breaks the audit chain.
 5. **Verify before declaring done.** Run `verify-deliverable.ts` and `quality-gate.ts` from the harness; **write `outputs/_SUMMARY.md`** (1 page max — your public API for downstream phases); only emit `delivered` audit event after gates PASS.
 6. **Scope isolation.** Write only under your own target directory. Coordination with siblings is audit-only (`plan_change_request`, `mention`, `notify_human`) — never modify other targets' outputs.
 
@@ -84,15 +84,9 @@ When invoked from inside a project tree with `<project>/.env` containing `NIRVAN
 
 ## Protocol source
 
-Source of truth: `BUSINESS_PROTOCOL_V1.md` in this directory.
+Source of truth, in this directory: `BUSINESS_PROTOCOL_V2.md` (the v2 delta) plus `BUSINESS_PROTOCOL_V1.md` for every section v2 leaves untouched. A v1 business loads, routes and dispatches exactly as before; v2 fields are optional.
 
-Centralized schemas in `~/.nirvana/skills/_shared/schemas/`:
-- `business.schema.json` (manifest)
-- `core-schemas.json` (employee, org_chart, ticket, mention, routing, approval_chain, etc.)
-
-Validators in `~/.nirvana/skills/_shared/validators/validators.{py,ts}`. Always delegate validation here instead of re-implementing it.
-
-Runtime-neutral adapters in `~/.nirvana/skills/_shared/adapters/{claude-code,codex,gemini-cli}.md`.
+**The validator that runs is Zod**, in `~/.nirvana/skills/_shared/validators/validators.ts`. `validators.py` is the canonical mirror for hosts with Python. `~/.nirvana/skills/_shared/schemas/business.schema.json` and `core-schemas.json` are **documentation mirrors** — they describe the contract, they do not execute it, and a divergence between them and the Zod schema is a defect in the JSON. Always delegate validation to the validators instead of re-implementing it.
 
 DNA library of mind-clones in `~/businesses/_library/dna/` (61 categories, 393 validated canonical mind-clones).
 
@@ -102,16 +96,16 @@ Read on demand. NEVER preemptively load the full protocol into context.
 
 ## Principles (BP1-BP13 + inherited Squad P1-P11)
 
-- BP1 Zero-human is the default. Human escalation is opt-in via explicit triggers.
+- BP1 Zero-human is the default. A run that needs a human says so explicitly; nothing pauses on its own.
 - BP2 Hierarchy is real, not decorative.
-- BP3 Handoffs are structured. 5 mechanisms: mention, ticket, escalation, delegation, auto-routing.
-- BP4 Self-score before each handoff (per-employee contract).
+- BP3 Handoffs are structured. 3 mechanisms in v2: delegation, escalation, auto-routing.
+- BP4 Acceptance is declared per seat (`acceptance[]`), judged by the gate — not self-scored by the author (v2 §11).
 - BP5 3-tier memory with isolation by construction (Permanent, Project, Session).
 - BP6 Brief is the unit of entry. Routing via `routing.yaml`.
-- BP7 Antagonist mandatory when employee_count > 5.
+- BP7 Antagonist mandatory above 5 employees.
 - BP8 Default `functional_specialist`, not `mind_clone`.
-- BP9 Approval chain mandatory for client-facing output.
-- BP10 Heartbeats are bounded.
+- BP9 Retired in v2 (approval chains were never implemented; adversarial review is BP7).
+- BP10 Retired in v2 (heartbeats were never scheduled; recurring work belongs to the host scheduler).
 - BP11 Project outputs are source-of-truth, memory is cache.
 - BP12 Audit trail is non-negotiable.
 - BP13 Writing contract — every prose deliverable follows the contract appended to `AGENTS.md` / `CLAUDE.md` / `GEMINI.md` (prevention-by-injection, no post-hoc rewrite).
@@ -124,12 +118,13 @@ Read on demand. NEVER preemptively load the full protocol into context.
 │   ├── dna/                               # canonical mind-clones (symlinks to disk)
 │   └── frameworks/                        # reusable frameworks
 └── <business-slug>/
-    ├── business.yaml                      # v1 manifest
+    ├── business.yaml                      # manifest (protocol 1.0 or 2.0)
     ├── employees/<slug>.md                # employee frontmatter + body
-    ├── org-chart.yaml                     # hierarchy + reporting
-    ├── routing.yaml                       # brief intake + auto-routes (optional)
-    ├── escalation-triggers.yaml           # triggers (optional, default empty)
-    ├── memory/permanent.md                # cross-session memory
+    ├── org-chart.yaml                     # hierarchy + reporting + escalation_path
+    ├── routing.yaml                       # brief intake + auto_routes (the only place auto_routes live)
+    ├── .nirvana-surface.json              # contract surface — engine-owned, never hand-edited
+    ├── memory/permanent.md                # curated, replaced on pack update
+    ├── memory/learned.md                  # promoted by a human, survives pack updates
     └── projects/                          # per-project state (created on-demand)
 
 ~/.businesses-registry.json                # index generated by `*business index`
@@ -150,15 +145,15 @@ When the user invokes this skill, map the input to one of the actions below. Use
 
 | Intent (keywords) | Action | Reference |
 |---|---|---|
-| **CREATE**: create, new business, scaffold, init | `*business init <name>` | §Wizard flow (in this file — `references/01-creation.md` does not exist) |
-| **LIST**: list, view all, which businesses | `*business list` | `references/02-listing.md` |
-| **INSPECT**: view, show, inspect, detail | `*business inspect <slug>` | `references/02-listing.md` |
-| **VALIDATE**: validate, check, verify | `*business validate <slug>` | `scripts/validate-business.ts` (BP1-BP12) |
-| **INDEX**: index, rebuild, refresh registry | `*business index` | `references/02-listing.md` |
-| **BRIEF**: brief, process, execute, run | `*business brief <slug> "<text>"` | `references/06-invocation.md` |
-| **EMPLOYEES**: add employee, new employee, hire | guide via `references/03-employees.md` |
-| **ORG**: org chart, hierarchy, reporting | `references/04-org-chart.md` |
-| **HANDOFFS**: mention, ticket, escalate | `references/05-handoffs.md` |
+| **CREATE**: create, new business, scaffold, init | `*business init <name>` | §Wizard flow (in this file) |
+| **LIST**: list, view all, which businesses | `*business list` | `scripts/list-businesses.ts` |
+| **INSPECT**: view, show, inspect, detail | `*business inspect <slug>` | `scripts/inspect-business.ts` |
+| **VALIDATE**: validate, check, verify | `nrv validate business <slug>` | `scripts/validate-business.ts` |
+| **INDEX**: index, rebuild, refresh registry | `*business index` | `scripts/index-businesses.ts` |
+| **BRIEF**: brief, process, execute, run | `*business brief <slug> "<text>"` | `scripts/brief-business.ts` |
+| **EMPLOYEES**: add employee, new employee, hire | `BUSINESS_PROTOCOL_V2.md` §7 + `BUSINESS_PROTOCOL_V1.md` §7 |
+| **ORG**: org chart, hierarchy, reporting | `BUSINESS_PROTOCOL_V1.md` §8 |
+| **HANDOFFS**: delegate, escalate, route | `BUSINESS_PROTOCOL_V2.md` §13 |
 | **MEMORY**: edit memory, maintenance | `*business memory edit <slug>` |
 
 Multi-intent: process in dependency order. Always lazy-load (never load the full protocol).
@@ -178,7 +173,7 @@ Multi-intent: process in dependency order. Always lazy-load (never load the full
 | Command | Implementation | Description |
 |---|---|---|
 | `*business init <name>` | `bun ~/.nirvana/skills/businesses/scripts/init-business.ts <name>` + wizard via AskUserQuestion | Scaffold new business in `~/businesses/<slug>/` |
-| `*business validate <slug>` | `bun ~/.nirvana/skills/businesses/scripts/validate-business.ts <slug>` | Runs v1 validators (manifest + employees + org-chart + integrity) |
+| `nrv validate business <slug>` | `bun ~/.nirvana/skills/businesses/scripts/validate-business.ts <slug>` | Admission gate: manifest + employees + org-chart + integrity (`--strict` also fails on warnings) |
 | `*business index` | `bun ~/.nirvana/skills/businesses/scripts/index-businesses.ts` | Regenerates `~/.businesses-registry.json` |
 | `*business list` | `bun ~/.nirvana/skills/businesses/scripts/list-businesses.ts` | Table of businesses from the registry |
 | `*business inspect <slug>` | `bun ~/.nirvana/skills/businesses/scripts/inspect-business.ts <slug>` | Manifest + employees + org-chart formatted |
@@ -186,13 +181,7 @@ Multi-intent: process in dependency order. Always lazy-load (never load the full
 | `*business memory edit <slug>` | opens `~/businesses/<slug>/memory/permanent.md` in write mode | Maintenance mode |
 | `*business audit <project> --business <slug>` | tail `~/.businesses-logs/.../audit.jsonl` filtered | Audit trail |
 
-Interactive wizards follow a 4-round pattern via AskUserQuestion:
-1. Name + description + primary domains
-2. Template (solo, council, agency, custom)
-3. Initial employees (CEO + roles)
-4. Final review of generated manifest
-
-Full wizard detail in `references/01-creation.md`.
+Interactive wizards follow the round pattern below (§Wizard flow), which is the full detail — there is no separate reference file.
 
 ## Wizard flow (executed by the skill when intent = CREATE)
 
@@ -240,6 +229,9 @@ When intent = CREATE, follow this sequence without skipping steps.
 - If approved, move to `~/businesses/<slug>/` and update the registry.
 
 **Round 5 — Readiness gate (MANDATORY, after the registry update — creation is NOT done until it passes)**
+- **Admission gate (blocking).** Run and require exit 0:
+  `nrv validate business <slug> --strict`
+  It is the single verb that carries the criteria catalog of `BUSINESS_PROTOCOL_V2.md` §16 — manifest, employees, org chart, routing metadata, acceptance, surface. `--fix` repairs the mechanical findings; authorship (fences, acceptance, thin seats) stays with you.
 - Optimization pass: reread each employee as a hostile reviewer — a generic
   persona, a role without a clear deliverable, or knowledge Round 0 researched
   that the employee does not use are defects; fix them before declaring ready.
@@ -286,40 +278,27 @@ Permanent memory (`~/businesses/<slug>/memory/permanent.md`) is writable ONLY in
 
 A violation emits `audit_event: isolation_violation` and aborts.
 
-## 5 handoff mechanisms (§10)
+## Handoff mechanisms (v2 §22)
 
-When emitting work between employees, choose one:
+Three of the v1 five survive, and they are the three the engine implements:
 
-1. **Mention** (`@employee`): lightweight, in-line. Notifies + handoff. Always produces a handoff artifact.
-2. **Ticket** (JSON in `tickets/`): heavy, tracked. For reviews, approvals, significant requests.
-3. **Escalation** (upward): scope/budget exceeds authority. Trigger via `escalation_triggers` in employee frontmatter.
-4. **Delegation** (downward): manager → direct report. Restricted to `manages:`.
-5. **Auto-routing** (in `routing.yaml`): pattern-match sends a brief directly to an employee.
+1. **Delegation** (downward): manager → direct report, restricted to `manages:`.
+2. **Escalation** (upward): direct report → manager, along `reports_to` and `org-chart.yaml` `routing_rules.escalation_path`.
+3. **Auto-routing** (`routing.yaml` only): the first `auto_routes` pattern that fires on the brief selects the seat that receives it (v2 §13.2).
 
-Every handoff produces a `handoff_artifact` (Squad v4 §9 + Business v1 extensions). Size ≤ 800 tokens.
+Mentions and tickets are retired (v2 §22): no business ever had a `tickets/` directory and no code read a mention. Every handoff still produces a `handoff_artifact` (Squad v4 §9 + Business extensions), ≤ 800 tokens.
 
-## Self-scoring (BP4)
+## Acceptance per seat (BP4, v2 §11)
 
-Before any handoff, the employee MUST self-score against `self_score_contract`. If any criterion is below threshold:
-- `revise`: 1 extra turn to correct (bounded by `max_revise_iterations`)
-- `escalate`: send to manager
-- `annotate`: send with `passes_threshold: false`
+Each seat declares `acceptance[]` in its frontmatter: `{id, description, blocking, minimum_score, capability?, path?, min_bytes?}`. Every entry maps 1:1 onto a `SuccessRequirement`, the same shape squad capabilities use, so the judge and `verify-deliverable.ts` evaluate a seat's output against what the seat itself declared. Ids are unique within the business.
 
-The self-score is part of the handoff_artifact.
+`self_score_contract` is retired (v2 §0): the loader still accepts it, the gate warns, and `nrv validate business <slug> --fix` converts `criteria[].{id, description, threshold}` into `acceptance[]`. An author's own score was never evidence, and nothing read it.
 
-## Zero-human escalation (BP1, §12)
+## Zero-human operation (BP1)
 
-Default `operation_mode: zero_human`. Triggers in `escalation-triggers.yaml`:
-- Budget exceeded (monthly or per-brief)
-- N consecutive self-score failures
-- Client complaint detected
-- Legal/regulatory keyword
-- Unproductive heartbeat (≥ 5 cycles)
-- Ticket SLA breached
-- Scope creep
-- Antagonist red flag
+Default `operation_mode: zero_human`, and it is the only mode honored this cycle — `hybrid` and `human_in_loop` parse and warn.
 
-When a trigger fires with `notify: human`, the business pauses, the harness emits a notification (Harness §12 bridge), and waits for resume.
+Escalation inside the business is the org chart: `reports_to` / `manages` and `org-chart.yaml` `routing_rules.escalation_path`. `escalation_triggers` in employee frontmatter and the `escalation-triggers.yaml` file are retired (v2 §22): 234 seats declared triggers and nothing ever fired one. A run that genuinely needs a human emits `notify_human` to the audit and the harness surfaces it.
 
 ## Writing contract (BP13)
 
@@ -332,57 +311,54 @@ Employees that produce only technical artifacts (JSON, schemas, code) ignore the
 ```
 ~/.nirvana/skills/businesses/
 ├── SKILL.md                                # this file
-├── BUSINESS_PROTOCOL_V1.md                 # source of truth
+├── BUSINESS_PROTOCOL_V2.md                 # the v2 delta (source of truth)
+├── BUSINESS_PROTOCOL_V1.md                 # everything v2 leaves untouched
 ├── templates/
-│   ├── business-types/<type>/employees/    # role-true employee scaffolds per type
-│   ├── org-chart.yaml.tmpl
-│   ├── routing.yaml.tmpl
-│   ├── escalation-triggers.yaml.tmpl
+│   ├── business-types/<type>/              # solo · council · agency · conglomerate
 │   └── example-business/                   # runnable solo template (validation passes)
 ├── lib/
-│   ├── loader.js                           # loads + validates entire business
-│   └── registry.js                         # generates ~/.businesses-registry.json
+│   ├── loader.ts                           # loads + validates an entire business
+│   ├── registry.ts                         # generates ~/.businesses-registry.json
+│   ├── employee-prompt.ts                  # builds the seat's prompt
+│   └── business-audit-criteria.js          # audit scoring
 ├── scripts/
 │   ├── init-business.ts                    # scaffold + wizard kickoff
-│   ├── validate-business.ts                # centralized validators
+│   ├── validate-business.ts                # admission gate entry point
 │   ├── index-businesses.ts                 # rebuild registry
 │   ├── list-businesses.ts                  # table
 │   ├── inspect-business.ts                 # formatted tree
-│   └── brief-business.ts                   # prepare invocation plan
-├── references/
-│   ├── 01-creation.md                      # detailed wizard + validation
-│   ├── 02-listing.md                       # registry + list/inspect
-│   ├── 03-employees.md                     # types, mind-clones, frontmatter
-│   ├── 04-org-chart.md                     # hierarchical structure
-│   ├── 05-handoffs.md                      # 5 mechanisms
-│   └── 06-invocation.md                    # how a business processes a brief
+│   ├── brief-business.ts                   # prepare invocation plan
+│   └── verify-deliverable.ts               # artifact existence + acceptance paths
 └── tests/
-    └── smoke.ts                            # E2E: init → validate → index → list
+    ├── smoke.test.ts                       # E2E: init → validate → index → list
+    ├── registry-description.test.ts        # what the registry emits to the router
+    ├── protocol-v2-spec-parity.test.ts     # §16 table == gate catalog
+    └── employee-clone-choice.test.ts       # clone ladder in the seat prompt
 ```
 
 ## Invocation pipeline (when intent = BRIEF)
 
-1. Load business via `lib/loader.js` (manifest + employees + org-chart).
+1. Load business via `lib/loader.ts` (manifest + employees + org-chart + routing).
 2. Run `validateBusinessIntegrity` (BP7 antagonist, exactly 1 brief_intake, no cycles, etc.).
 3. Resolve the `brief_intake` employee (typically the CEO).
 4. Create `${PROJECTS_OUTPUT_DIR}/<project-id>/businesses/<biz-slug>/` with `brief.md`, `audit.jsonl`, empty dirs.
 5. Spawn AgentTool with `subagent_type` = brief_intake employee. The prompt includes brief + culture + permanent memory (read-only) + isolation guard rules. This is **in-process** (the native Agent tool / runtime subagent), not a child `claude -p`; the `--exec` headless path (`runHeadless`) is reserved for the standalone dispatch script and sub-process-only runtimes (legacy gemini-cli, hermes).
-6. Wait for the handoff_artifact JSON. It does NOT come back as the spawn's tool result — that is a launch receipt. It arrives in the `<task-notification>` the runtime delivers when the employee finishes, inside `<result>`. Read it there: no handoff, no `self_score` to validate and no `business_extensions.type` to decide step 7 on. Waiting does not mean blocking; the session stays free while the employee works.
+6. Wait for the handoff_artifact JSON. It does NOT come back as the spawn's tool result — that is a launch receipt. It arrives in the `<task-notification>` the runtime delivers when the employee finishes, inside `<result>`. Read it there: no handoff, nothing to judge against the seat's `acceptance[]` and no `business_extensions.type` to decide step 7 on. Waiting does not mean blocking; the session stays free while the employee works.
 7. If `business_extensions.type == "delegation"` or `"mention"`, spawn the next employee. Repeat until the CEO returns `next_action: deliver_to_user`.
 8. Emit `audit_event: invocation_end` with cost summary.
 9. Return the deliverable to the user.
 
-For each handoff: validate self_score, log to audit, persist to `handoffs/<n>.json`.
+For each handoff: judge the seat's `acceptance[]`, log to audit, persist to `handoffs/<n>.json`.
 
 ## Anti-patterns (DO NOT)
 
 - DO NOT process briefs in `human_in_loop` mode without explicit config.
-- DO NOT skip self-score before a handoff.
+- DO NOT ship a seat's deliverable without its declared `acceptance[]` being judged.
 - DO NOT allow filesystem access outside the project root + own business scope.
 - DO NOT use `mind_clone` without `disclosure_required: true`.
 - DO NOT create businesses with >5 employees without an antagonist (BP7).
-- DO NOT bypass approval chains for client-facing output.
-- DO NOT load the full BUSINESS_PROTOCOL_V1.md — use TOC + read on demand.
+- DO NOT bypass the antagonist (BP7) on client-facing output.
+- DO NOT load the full BUSINESS_PROTOCOL_V1.md — read the v2 delta, then the v1 TOC on demand.
 - DO NOT emit prose output that violates the writing contract in `AGENTS.md` / `CLAUDE.md` / `GEMINI.md` (BP13).
 
 ## Backward compat
@@ -391,4 +367,4 @@ For each handoff: validate self_score, log to audit, persist to `handoffs/<n>.js
 
 ---
 
-*Protocol: 1.0 · Status: operational · Spec: BUSINESS_PROTOCOL_V1.md*
+*Protocol: 2.0 (1.0 still loads) · Status: operational · Spec: BUSINESS_PROTOCOL_V2.md + BUSINESS_PROTOCOL_V1.md*
