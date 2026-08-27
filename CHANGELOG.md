@@ -44,6 +44,14 @@ newline of an argument, so there the directive travels as
 driver's own `runClaudeCode` still passes its multi-line directive inline
 under that shell (a latent defect, recorded here, not changed).
 
+The runtime probe that decides between the two is fixed as well: Windows
+`where` takes its options with a slash, so the `-v` the driver passed was read
+as a second pattern rather than a flag, and `where` prints CRLF with one line
+per match, which left a trailing carriage return on the chosen path — a `.cmd`
+then failed the extension test and was spawned with no shell, the very split
+the driver exists to prevent (`whichProbe`, `firstExecutablePath`; proof in
+`windows-spawn.test.ts`).
+
 ### The Message receipt is immediate again, and a question never becomes a Gauntlet
 
 Since #113 `AgentXCanaryQueue.submit()` awaited the agentic router before

@@ -102,6 +102,10 @@ export function turnEnvironment(projectRoot: string, base: NodeJS.ProcessEnv = p
   return env;
 }
 
+/** How a CLI is started on this platform (`resolveExecutable`'s shape). Injected in tests so the
+ * shell branch below is exercised deterministically, without depending on the runner's PATH probe. */
+export type ExecutableResolver = (cli: string) => { command: string; args: (a: string[]) => string[]; shell: boolean };
+
 export interface TurnCommand {
   command: string; args: string[]; shell: boolean; sessionId: string;
   /** Files written for delivery (the directive under a shell); removed when the child closes. */
@@ -118,9 +122,10 @@ export interface TurnCommand {
  * argument: everything after `--append-system-prompt` (the autonomy flag, the budget) was lost.
  * Under a shell the directive therefore travels as `--append-system-prompt-file <temp file>`;
  * without one it stays inline, as before. */
-export function claudeTurnCommand(input: { sessionId: string | null; directive: string; model?: string | null; skipPermissions: boolean; maxBudgetUsd: number }): TurnCommand {
+export function claudeTurnCommand(input: { sessionId: string | null; directive: string; model?: string | null; skipPermissions: boolean; maxBudgetUsd: number },
+  resolve: ExecutableResolver = resolveExecutable): TurnCommand {
   const sessionId = input.sessionId ?? randomUUID();
-  const executable = resolveExecutable("claude");
+  const executable = resolve("claude");
   const tmpFiles: string[] = [];
   const args = ["-p", "--output-format", "stream-json", "--include-partial-messages", "--verbose",
     input.sessionId ? "--resume" : "--session-id", sessionId];

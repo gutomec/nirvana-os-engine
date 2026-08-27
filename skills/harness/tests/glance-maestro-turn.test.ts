@@ -8,7 +8,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { MAESTRO_DIRECTIVE, ProjectService, claudeTurnCommand, continuityRecap, maestroDirective } from "../lib/control-plane/index.ts";
+import { quoteForCmd } from "../../_shared/lib/host-agent-driver.ts";
+import { MAESTRO_DIRECTIVE, ProjectService, claudeTurnCommand, continuityRecap, maestroDirective, type ExecutableResolver } from "../lib/control-plane/index.ts";
 import { FAKE_CLAUDE_COST_USD, FAKE_CLAUDE_TOOL_COMMAND, installFakeClaudeStream } from "./helpers/fake-claude-stream.ts";
 import { pidAlive, waitUntil } from "./helpers/fake-glance-child.ts";
 import { removeDir } from "./helpers/temp-dirs.ts";
@@ -120,31 +121,31 @@ describe("the maestro directive", () => {
   });
 
   test("under a shell (a Windows .cmd) the directive travels by file and the flags after it survive", () => {
-    // The win32 branch faked as windows-spawn.test.ts does: a `claude.cmd` at the head of PATH makes
-    // resolveExecutable choose the shell, and cmd.exe cannot carry a newline in an argument.
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-maestro-cmd-"));
-    fs.writeFileSync(path.join(dir, "claude.cmd"), "@echo off\r\n");
-    const platform = process.platform;
-    const previousPath = process.env.PATH;
-    Object.defineProperty(process, "platform", { value: "win32", configurable: true });
-    process.env.PATH = `${dir}${path.delimiter}${previousPath ?? ""}`;
-    try {
-      const command = claudeTurnCommand({ sessionId: null, directive: "linha 1\nlinha 2", skipPermissions: true, maxBudgetUsd: 5 });
-      expect(command.shell).toBe(true);
-      expect(command.args).not.toContain("--append-system-prompt");
-      const flag = command.args.indexOf("--append-system-prompt-file");
-      expect(flag).toBeGreaterThan(0);
-      const file = command.args[flag + 1].replace(/^"|"$/g, "");
-      expect(fs.readFileSync(file, "utf8")).toBe("linha 1\nlinha 2");
-      expect(command.tmpFiles).toEqual([file]);
-      expect(command.args.indexOf("--dangerously-skip-permissions")).toBeGreaterThan(flag);
-      expect(command.args[command.args.indexOf("--max-budget-usd") + 1]).toBe("5");
-      fs.rmSync(path.dirname(file), { recursive: true, force: true });
-    } finally {
-      Object.defineProperty(process, "platform", { value: platform, configurable: true });
-      process.env.PATH = previousPath;
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+    // The unit here is the branch on `executable.shell`, so the resolver is INJECTED: whether the
+    // runner's own `where`/PATH maps a shim to a shell is `resolveExecutable`'s contract, proven in
+    // windows-spawn.test.ts. Faking the platform and shimming PATH made this assertion fail on the
+    // Windows runner for a reason that was never about this function.
+    const shellResolver: ExecutableResolver = cli => ({ command: `C:\\bin\\${cli}.cmd`, args: a => a.map(quoteForCmd), shell: true });
+    const command = claudeTurnCommand({ sessionId: null, directive: "linha 1\nlinha 2", skipPermissions: true, maxBudgetUsd: 5 }, shellResolver);
+    expect(command.shell).toBe(true);
+    expect(command.args).not.toContain("--append-system-prompt");
+    const flag = command.args.indexOf("--append-system-prompt-file");
+    expect(flag).toBeGreaterThan(0);
+    const file = command.args[flag + 1].replace(/^"|"$/g, "");
+    expect(fs.readFileSync(file, "utf8")).toBe("linha 1\nlinha 2");
+    expect(command.tmpFiles).toEqual([file]);
+    expect(command.args.indexOf("--dangerously-skip-permissions")).toBeGreaterThan(flag);
+    expect(command.args[command.args.indexOf("--max-budget-usd") + 1]).toBe("5");
+    fs.rmSync(path.dirname(file), { recursive: true, force: true });
+  });
+
+  test("the POSIX line keeps the directive inline, as it always did", () => {
+    const posixResolver: ExecutableResolver = cli => ({ command: cli, args: a => a, shell: false });
+    const command = claudeTurnCommand({ sessionId: null, directive: "linha 1\nlinha 2", skipPermissions: true, maxBudgetUsd: 0 }, posixResolver);
+    expect(command.shell).toBe(false);
+    expect(command.args).not.toContain("--append-system-prompt-file");
+    expect(command.args[command.args.indexOf("--append-system-prompt") + 1]).toBe("linha 1\nlinha 2");
+    expect(command.tmpFiles).toBeUndefined();
   });
 
   test("the continuity recap carries the last visible messages, labelled, without the current one", () => {

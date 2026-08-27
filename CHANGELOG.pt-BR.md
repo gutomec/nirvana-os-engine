@@ -45,6 +45,14 @@ temporário>` e as flags depois dela sobrevivem. O `runClaudeCode` do driver
 ainda passa a própria diretiva de várias linhas inline sob esse shell (defeito
 latente, registrado aqui, não alterado).
 
+A sondagem de runtime que decide entre os dois caminhos também foi corrigida: o
+`where` do Windows recebe opções com barra, então o `-v` que o driver passava
+era lido como um segundo padrão, e o `where` imprime CRLF com uma linha por
+correspondência, o que deixava um retorno de carro no fim do caminho escolhido —
+um `.cmd` falhava no teste de extensão e era iniciado sem shell, exatamente a
+divisão que o driver existe para evitar (`whichProbe`, `firstExecutablePath`;
+prova em `windows-spawn.test.ts`).
+
 ### O recibo da Message volta a ser imediato, e uma pergunta nunca vira um Gauntlet
 
 Desde o #113 o `AgentXCanaryQueue.submit()` esperava o roteador agêntico antes
