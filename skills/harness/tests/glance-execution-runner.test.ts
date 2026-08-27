@@ -33,8 +33,9 @@ const capture = (root: string, runId: string) =>
   JSON.parse(fs.readFileSync(path.join(glanceRunDir(root, runId), "outputs", "dispatch-capture.json"), "utf8")) as { argv: string[]; cwd: string; env: Record<string, string>; brief: string };
 
 describe("parseMessageTarget", () => {
-  test("`use business <slug>:` and `use squad <slug>:` prepare typed targets, case-insensitive on the keyword", () => {
+  test("`use business <slug>:` and `use squad <slug>[:<cap>]:` prepare typed targets, case-insensitive on the keyword", () => {
     expect(parseMessageTarget("use squad brandcraft: produza o manifesto")).toEqual({ kind: "squad", slug: "brandcraft", capabilityId: "squad.execute" });
+    expect(parseMessageTarget("use squad brandcraft:branding.brand.audit: audite")).toEqual({ kind: "squad", slug: "brandcraft", capabilityId: "branding.brand.audit" });
     expect(parseMessageTarget("  Use Business web-studio:\nlanding page")).toEqual({ kind: "business", slug: "web-studio" });
     expect(parseMessageTarget("USE SQUAD Doc-Factory: relatório")).toEqual({ kind: "squad", slug: "doc-factory", capabilityId: "squad.execute" });
   });
@@ -76,6 +77,15 @@ describe("createDispatchExecutionRunner", () => {
     expect(seenBusiness.argv.some(part => part.startsWith("--execution-mode"))).toBe(false);
     expect(seenBusiness.env.NIRVANA_EXECUTION_MODE).toBe("gauntlet");
     expect(capture(root, "run_squad").argv.slice(0, 2)).toEqual(["--squad", "brandcraft"]);
+  });
+
+  test("a resolved capability rides on --squad as <slug>:<capabilityId>; the legacy id stays a bare slug", async () => {
+    const { root, briefFile, fake } = fixture();
+    const runner = createDispatchExecutionRunner({ dispatchScriptPath: fake });
+    const named = runner.start({ projectRoot: root, projectId: "prj_cap", runId: "run_cap", briefFile,
+      target: { kind: "squad", slug: "brandcraft", capabilityId: "branding.brand.audit" }, intensity: "light" });
+    await named.done;
+    expect(capture(root, "run_cap").argv.slice(0, 2)).toEqual(["--squad", "brandcraft:branding.brand.audit"]);
   });
 
   test("the child audits where the cockpit reads: HARNESS_LOGS_DIR is pinned to the project's harness log unless the caller set it", async () => {

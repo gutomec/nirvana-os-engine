@@ -53,6 +53,7 @@ import { loadHarnessConfig } from "../lib/harness-config.ts";
 import { describeSettingSource, resolveSetting, settingsEnvForChild } from "../../_shared/lib/settings.ts";
 import { planRouteWithFallback, resolveDispatchPlan, runAgentX, type DispatchPlan } from "../lib/dispatch-cascade.ts";
 import { runSquadHeadless } from "../lib/squad-exec.ts";
+import { parseSquadTarget, resolveSquadCapability } from "../lib/capability-resolver.ts";
 import { runDelivery, deliverAfterRuntimeError, gateableFiles, runGateOnce, type DeliveryArgs, type DeliveryResult, type RuntimeErrorOutcome } from "../lib/delivery-pipeline.ts";
 import { runBusinessPostGate } from "../lib/business-post-gate.ts";
 import { parseExecutionOptions } from "../lib/gauntlet/execution-options.ts";
@@ -116,12 +117,14 @@ function extractPositional(argv: string[]): string[] {
 }
 
 // ── explicit target selection ──────────────────────────────────────────────
-// --business <slug> · --squad <slug> · --agent-x name the target directly and
-// never consult the router. They are mutually exclusive with each other and
-// with --auto. --judge-x is the engine's Gauntlet judge (lib/gauntlet/judge-x.ts):
-// the evaluator adapter spawns it on an evaluation brief; it never enters the
-// cascade. Pure: the CLI flow turns an error into exit 4.
-export type ExplicitTarget = { kind: "business" | "squad"; slug: string } | { kind: "agent-x" } | { kind: "judge-x" };
+// --business <slug> · --squad <slug>[:<capabilityId>] · --agent-x name the
+// target directly and never consult the router. They are mutually exclusive
+// with each other and with --auto. --judge-x is the engine's Gauntlet judge
+// (lib/gauntlet/judge-x.ts): the evaluator adapter spawns it on an evaluation
+// brief; it never enters the cascade. Pure: the CLI flow turns an error into
+// exit 4. The squad grammar is the one `evaluator-selection.ts` already parses
+// out of NIRVANA_GAUNTLET_EVALUATOR=squad:<slug>[:<capabilityId>].
+export type ExplicitTarget = { kind: "business" | "squad"; slug: string; capabilityId?: string } | { kind: "agent-x" } | { kind: "judge-x" };
 export function parseExplicitTarget(argv: string[]): { target: ExplicitTarget | null; error: string | null } {
   // undefined = flag absent · null = flag given without a slug · string = slug
   const value = (name: string): string | null | undefined => {
@@ -141,7 +144,11 @@ export function parseExplicitTarget(argv: string[]): { target: ExplicitTarget | 
   if (business === null) return { target: null, error: "--business requires a slug" };
   if (squad === null) return { target: null, error: "--squad requires a slug" };
   if (business) return { target: { kind: "business", slug: business }, error: null };
-  if (squad) return { target: { kind: "squad", slug: squad }, error: null };
+  if (squad) {
+    const parsed = parseSquadTarget(squad);
+    if (!parsed) return { target: null, error: `--squad expects <slug>[:<capabilityId>], got '${squad}'` };
+    return { target: { kind: "squad", slug: parsed.slug, ...(parsed.capabilityId ? { capabilityId: parsed.capabilityId } : {}) }, error: null };
+  }
   if (agentX) return { target: { kind: "agent-x" }, error: null };
   if (judgeX) return { target: { kind: "judge-x" }, error: null };
   return { target: null, error: null };
@@ -1007,7 +1014,18 @@ if (pendingCascade?.kind === "squad-only") {
   }
   const oroot = outputsRoot || path.join(projectRoot, "deliverables");
   fs.mkdirSync(oroot, { recursive: true });
-  const capabilityId = pendingCascade.plan.steps.find(step => step.kind === "squad" && step.slug === squads[0])?.capability || "squad.execute";
+  // The capability each squad of the chain actually runs (lib/capability-resolver.ts):
+  // the id the user named, the squad's only capability, the best one for this brief
+  // inside the squad, or `squad.execute` for a v4 squad that declares none. Before
+  // this the literal `squad.execute` was stamped on the Run, on every artifact ref
+  // and on the prompt-less squad — provenance for an entry point nothing declared.
+  const capabilityFor = (sq: string) => resolveSquadCapability({
+    slug: sq, brief,
+    explicit: pendingCascade.plan.steps.find(step => step.kind === "squad" && step.slug === sq)?.capability ?? null,
+    audit: emit, auditContext: { trace_id: pid, project_id: pid },
+  }).capabilityId;
+  const capabilityById = new Map(squads.map(sq => [sq, capabilityFor(sq)]));
+  const capabilityId = capabilityById.get(squads[0])!;
   if (shouldRunSquadGauntlet({ squadCount: squads.length, wantExec, resolvedMode: executionOptions.resolvedMode })) {
     const squad = squads[0];
     const producerTarget = { kind: "squad" as const, slug: squad, capabilityId };
@@ -1020,7 +1038,7 @@ if (pendingCascade?.kind === "squad-only") {
     // One producer for the first candidate and for every revision: same squad, same runtime.
     const produce = (candidateRoot: string, candidateBrief: string) => {
       const candidate = runSquadHeadless({ squadSlug: squad, brief: candidateBrief, projectId: pid, projectDir: projDir, projectRoot,
-        outputsDir: candidateRoot, runtime: rt, businessSlug: null, mode: "squad-only",
+        outputsDir: candidateRoot, runtime: rt, businessSlug: null, mode: "squad-only", capabilityId,
         maxBudgetUsd: budget.candidateBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
         rulesDirective, autonomousDirective: AUTONOMOUS_DIRECTIVE,
         ledger: { runId: canonicalRunId, watchDir: candidateRoot } });
@@ -1080,6 +1098,7 @@ if (pendingCascade?.kind === "squad-only") {
     const r = runSquadHeadless({
       squadSlug: sq, brief, projectId: pid, projectDir: projDir, projectRoot,
       outputsDir: outDir, runtime: rt, businessSlug: null, mode: "squad-only",
+      capabilityId: capabilityById.get(sq),
       maxBudgetUsd: effectiveBudgetUsd(),
       timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
       rulesDirective, autonomousDirective: AUTONOMOUS_DIRECTIVE,

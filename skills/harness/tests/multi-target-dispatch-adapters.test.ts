@@ -495,5 +495,23 @@ describe("multi-target dispatch adapters with agent nodes", () => {
     expect(sum(costMatcher({ kind: "synthesis", id: "final-output", nodeId: "final-output" }))).toBe(2);
     expect(sum(costMatcher({ kind: "agent-x", id: "agent-x" }))).toBe(7);
     expect(sum(costMatcher({ kind: "squad", id: "squad-design", nodeId: "squad-design" }))).toBe(8);
+    // A node that named a capability still matches its squad's audit events, which
+    // only ever carry the slug.
+    expect(sum(costMatcher({ kind: "squad", id: "squad-design:design.tokens.extract", nodeId: "squad-design" }))).toBe(8);
   });
+
+  test("a squad node that names a capability passes <slug>:<capabilityId> to --squad", async () => {
+    const setup = fixture();
+    const { plan } = compile();
+    const ports = adapters(setup, plan, { FAKE_DISPATCH_COST_USD: "0.1" });
+    const node = nodeInput(plan, "squad-c", { upstreamPaths: ["briefs/brief-main/outputs/"], idempotencyKey: "squad-c-capability" });
+    const withCapability = { ...node, target: { ...node.target, id: "squad-c:design.tokens.extract" } };
+    const result = await ports.standard.run(withCapability);
+    expect(result.state).toBe("delivered");
+    const captured = capture(setup, "squads/squad-c/outputs/");
+    expect(flag(captured, "--squad")).toBe("squad-c:design.tokens.extract");
+    // The instruction still names the squad, not the CLI token.
+    const instruction = readFileSync(join(setup.workspaceRoot, "squads", "squad-c", "DISPATCH-INSTRUCTION.md"), "utf8");
+    expect(instruction).toContain("You are **squad-c**");
+  }, spawnBudgetMs(1));
 });

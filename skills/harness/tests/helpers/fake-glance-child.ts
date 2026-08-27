@@ -39,6 +39,11 @@ const value = (name) => {
   if (index < 0) return undefined;
   return argv[index].includes("=") ? argv[index].slice(name.length + 1) : argv[index + 1];
 };
+// --squad <slug>[:<capabilityId>], the same grammar the real dispatch parses.
+const squadTargetFrom = (raw) => {
+  const [slug, capabilityId] = raw.split(":");
+  return { kind: "squad", slug, capabilityId: capabilityId || "squad.execute" };
+};
 const projectId = value("--project");
 const runId = value("--run-id");
 const outputsRoot = value("--outputs-root");
@@ -58,7 +63,7 @@ const kernel = openKernel(path.join(process.cwd(), ".nirvana", "run-kernel.sqlit
 if (!argv.some((item) => item.startsWith("--execution-mode=gauntlet"))) {
   // Standard mode: the publication module the real dispatch uses, around a deterministic executor.
   const target = value("--business") ? { kind: "business", slug: value("--business") }
-    : value("--squad") ? { kind: "squad", slug: value("--squad"), capabilityId: "squad.execute" } : { kind: "agent-x", slug: "agent-x" };
+    : value("--squad") ? squadTargetFrom(value("--squad")!) : { kind: "agent-x", slug: "agent-x" };
   const publication = openStandardPublication({ kernelPath: kernel.path, projectId, runId, traceId: "trace_fake_child", target,
     snapshot: { runtime: { id: "claude-code", source: "default" }, provider: { selection: "runtime-provider", resolved: false },
       model: { selection: "runtime-default", resolved: false }, reason: "no provider descriptor for runtime" },

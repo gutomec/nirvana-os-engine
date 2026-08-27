@@ -257,14 +257,17 @@ describe("Glance child-process execution", () => {
     expect(seen.at(-1).payload).toMatchObject({ from: "running", to: "failed", reason: "child_exited_without_terminal_state", exitCode: 0 });
   }, 30000);
 
-  test("`use squad <slug>:` and `use business <slug>:` prepare typed Runs; the standard child adopts them and reaches a real terminal state over SSE", async () => {
+  test("`use squad <slug>:<cap>:` and `use business <slug>:` prepare typed Runs; the standard child adopts them and reaches a real terminal state over SSE", async () => {
     const { project, base, state } = await startWithChild();
     const projectId = project.project_id;
     const cnv = await conversation(base, projectId, "c-target");
     const streaming = readStream(base, projectId, 0, seen => seen.some(event => event.type === "glance.child_exited"));
-    const squad = await send(base, projectId, cnv, "m-squad", "use squad brandcraft: produza o manifesto");
+    // The Message names the capability, so the Run's provenance does not depend on
+    // which squads this machine has installed; the resolver's other rungs are proved
+    // in capability-resolver.test.ts and glance-message-route.test.ts.
+    const squad = await send(base, projectId, cnv, "m-squad", "use squad brandcraft:branding.pdf_document.create: produza o manifesto");
     expect(squad.status).toBe(202);
-    expect(squad.receipt.run.target).toEqual({ kind: "squad", slug: "brandcraft", capabilityId: "squad.execute" });
+    expect(squad.receipt.run.target).toEqual({ kind: "squad", slug: "brandcraft", capabilityId: "branding.pdf_document.create" });
     expect(squad.receipt.run.policySnapshotRef).toBe("gauntlet-light-canary");
     expect(squad.receipt.capability).toBe("squad.dispatch");
     // Without --execution-mode=gauntlet the child runs the standard path, which publishes through
@@ -280,7 +283,7 @@ describe("Glance child-process execution", () => {
     const squadRun = await waitFor(base, projectId, squad.receipt.run.runId, "completed");
     expect(squadRun.policySnapshotRef).toBe("gauntlet-light-canary");
     const squadArgv = state(squad.receipt.run.runId).argv().argv;
-    expect(squadArgv.slice(0, 2)).toEqual(["--squad", "brandcraft"]);
+    expect(squadArgv.slice(0, 2)).toEqual(["--squad", "brandcraft:branding.pdf_document.create"]);
     expect(squadArgv.some(part => part.startsWith("--execution-mode"))).toBe(false);
     expect(state(squad.receipt.run.runId).count("producer")).toBe(1);
     expect(fs.existsSync(path.join(process.env.NIRVANA_PROJECT_ROOT!, ".nirvana", "glance", "runs", squad.receipt.run.runId, "outputs", "result.md"))).toBe(true);
@@ -295,7 +298,7 @@ describe("Glance child-process execution", () => {
     const all = await events(base, projectId);
     expect(all.filter(event => event.runId === business.receipt.run.runId).map(typeOf)).toEqual(standardTimeline);
     expect(all.find(event => event.type === "runtime.selection_snapshot" && event.runId === squad.receipt.run.runId).idempotencyKey).toBe(`standard:${squad.receipt.run.runId}:execution-snapshot`);
-    expect(all.find(event => event.type === "glance.child_started" && event.runId === squad.receipt.run.runId).payload.argv).toEqual(expect.arrayContaining(["--squad", "brandcraft"]));
+    expect(all.find(event => event.type === "glance.child_started" && event.runId === squad.receipt.run.runId).payload.argv).toEqual(expect.arrayContaining(["--squad", "brandcraft:branding.pdf_document.create"]));
     expect(all.find(event => event.type === "glance.child_started" && event.runId === business.receipt.run.runId).payload.argv).toEqual(expect.arrayContaining(["--business", "web-studio"]));
     expect(all.filter(event => event.type === "run.prepared").map(event => event.payload.target.kind)).toEqual(["squad", "business"]);
   }, 30000);

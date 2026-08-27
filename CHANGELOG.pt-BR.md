@@ -8,6 +8,46 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### A capability pela qual o squad foi escolhido chega ao prompt, ao Run e à proveniência
+
+Um squad não é um único ponto de entrada. A biblioteca instalada declara 657
+capabilities em 204 squads, cada uma com seu workflow, seu `produces` e seu
+contrato de aceitação. O engine despachava todas por um único literal. O
+`dispatch.ts` carimbava `squad.execute` no Run, em toda referência de artefato e
+no alvo do Glance, e o `squad-exec.ts` nunca recebia capability alguma: mandava o
+`squad.yaml` inteiro mais os três primeiros `agents/*.md` e as três primeiras
+`tasks/*.md` em ordem alfabética, e nunca abria `workflows/`.
+
+O `skills/harness/lib/capability-resolver.ts` responde a pergunta que o engine
+nunca fazia. Dado um squad e um brief, devolve um id de capability e o degrau que
+decidiu:
+
+| Degrau | Quando responde |
+|---|---|
+| `explicit` | quem chamou nomeou: `--squad <slug>:<capabilityId>`, `use squad <slug>:<cap>:` no início de uma Message do Glance, um nó de plano multi-alvo |
+| `single` | o squad declara exatamente uma capability, então nem precisa de brief |
+| `bm25` | o squad declara várias: pontuadas contra o brief sobre os mesmos documentos que o roteador indexa, restritas àquele squad |
+| `legacy` | o squad não declara nenhuma (manifesto v4): `squad.execute`, que é o que de fato vai rodar |
+
+Toda resolução emite `x_capability_resolved` com o degrau, o score quando o BM25
+decidiu e quantos ids o squad declara. Um id que quem chamou nomeou e o squad não
+declara é despachado assim mesmo, nomeado num aviso do evento: quem chama manda.
+
+Com uma capability resolvida, o prompt do squad muda de forma. `## SUA
+CAPABILITY` leva o id, a descrição, o `produces` e os critérios de aceitação.
+`## SEU WORKFLOW` leva a tabela de passos do grafo canônico, lido pelo leitor de
+workflow da v6 para que todo dialeto legado normalize igual, mais o corpo em
+prosa de um workflow em Markdown. `## SEUS AGENTES` e `## SUAS TASKS` levam só os
+componentes que aquele workflow referencia, na ordem dos passos, limitados por
+`LIMITS.squad_prompt_components_bytes_max` (64 KB), com marcador de truncamento
+quando um documento não cabe.
+
+Sem capability resolvida nada se move. O prompt é byte a byte o que o engine
+sempre mandou, e o `squad-exec.test.ts` agora fixa a string inteira em vez de um
+punhado de trechos. `squad.execute`, um manifesto ilegível e um id que o
+manifesto não declara caem todos nesse mesmo caminho, que é o que mantém os 204
+squads instalados despachando exatamente como despacham hoje.
+
 ### O registro para de descartar o que a capability declara
 
 Uma capability pode declarar `estimated_cost_usd` há duas versões do protocolo,
