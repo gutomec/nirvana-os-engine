@@ -150,12 +150,33 @@ export interface RunRow {
 
 const PROJECT_MARKERS = [".env", ".nirvana", ".git", "package.json", "pyproject.toml"];
 
-/** Resolve through symlinks so the same directory always compares equal —
- *  macOS hands out /var/folders/… for a /private/var/folders/… path. */
-function normalizeRoot(dir: string): string {
+export type RealpathFn = (p: string) => string;
+
+/** The OS's own resolver. `realpathSync.native` is the one that expands a
+ *  Windows 8.3 SHORT path; the JS `realpathSync` resolves symlinks but can hand
+ *  the 8.3 form straight back. Named so a test can substitute it. */
+const osRealpath: RealpathFn = (p) =>
+  (fs.realpathSync.native ? fs.realpathSync.native(p) : fs.realpathSync(p));
+
+/**
+ * The one form of a path that every process on this machine agrees on.
+ *
+ * Two processes serving the SAME project must produce the same root string, or
+ * the scope filter silently splits one project in two. Two aliases break that,
+ * and the OS resolver collapses both:
+ *   - macOS hands out /var/folders/… for a /private/var/folders/… directory;
+ *   - Windows hands out the 8.3 short form (C:\Users\RUNNER~1\…) for a profile
+ *     or temp path whose long form is C:\Users\runneradmin\… . `mkdtemp` under
+ *     %TEMP% returns the short form on a GitHub runner, which is how this was
+ *     caught: the row carried the long root and the fixture compared the short.
+ *
+ * `realpath` is injectable because the alias table lives in the OS, not in code
+ * — it is how the Windows rule is proven on a platform that has no 8.3 paths.
+ */
+export function normalizeRoot(dir: string, realpath: RealpathFn = osRealpath): string {
   const resolved = path.resolve(dir);
   try {
-    return fs.realpathSync.native ? fs.realpathSync.native(resolved) : fs.realpathSync(resolved);
+    return realpath(resolved);
   } catch {
     return resolved;   // not on disk (yet): the resolved form is all we can honestly compare
   }
@@ -171,7 +192,7 @@ export function findProjectRootFrom(start: string): string | null {
   const home = normalizeRoot(process.env.HOME || os.homedir());
   for (let i = 0; i < 40; i++) {
     const norm = normalizeRoot(cur);
-    if (norm !== path.parse(norm).root && !sameProjectRoot(norm, home)) {
+    if (norm !== path.parse(norm).root && !sameNormalizedRoot(norm, home)) {
       for (const m of PROJECT_MARKERS) {
         if (fs.existsSync(path.join(cur, m))) return norm;
       }
@@ -183,15 +204,20 @@ export function findProjectRootFrom(start: string): string | null {
   return null;
 }
 
-/** Two roots are the same project. Windows paths compare case-insensitively;
- *  a trailing separator never makes a different project. */
-export function sameProjectRoot(a: string | null, b: string | null): boolean {
+/** Compare two roots that ALREADY went through `normalizeRoot` — the marker
+ *  walk normalizes each level once and must not pay the syscall twice. */
+function sameNormalizedRoot(a: string, b: string): boolean {
+  return process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
+}
+
+/** Two roots are the same project. BOTH sides go through `normalizeRoot`, so a
+ *  Windows 8.3 short path and its long form are one project, and so are /var
+ *  and /private/var — comparing the raw strings is exactly how one project
+ *  splits in two. Windows compares case-insensitively; a trailing separator
+ *  never makes a different project. */
+export function sameProjectRoot(a: string | null, b: string | null, realpath: RealpathFn = osRealpath): boolean {
   if (a == null || b == null) return a == null && b == null;
-  const strip = (s: string) => {
-    const r = path.resolve(s);
-    return process.platform === "win32" ? r.toLowerCase() : r;
-  };
-  return strip(a) === strip(b);
+  return sameNormalizedRoot(normalizeRoot(a, realpath), normalizeRoot(b, realpath));
 }
 
 let _rootMemo: { key: string; root: string | null } | null = null;
@@ -202,7 +228,7 @@ let _rootMemo: { key: string; root: string | null } | null = null;
 export function resolveProjectRoot(cwd?: string): string | null {
   const base = cwd ?? process.cwd();
   const env = process.env.NIRVANA_PROJECT_ROOT || "";
-  const key = `${env} ${base}`;
+  const key = `${env}\0${base}`;
   if (_rootMemo && _rootMemo.key === key) return _rootMemo.root;
   const root = env ? normalizeRoot(env) : findProjectRootFrom(base);
   _rootMemo = { key, root };

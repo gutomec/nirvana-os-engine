@@ -20,8 +20,12 @@ O arquivo continua global. A visibilidade, não. Cada linha passa a guardar o
 `project_root` a que pertence, e toda leitura e toda escrita filtram pela raiz
 que o processo chamador está servindo — `NIRVANA_PROJECT_ROOT`, senão o primeiro
 ancestral do cwd que carrega um marcador de projeto. `HOME` e a raiz do sistema
-de arquivos nunca contam como projeto, e o caminho é normalizado por `realpath`,
-para que o mesmo diretório sempre compare igual.
+de arquivos nunca contam como projeto, e o caminho é normalizado pelo resolvedor
+do sistema (`realpathSync.native`), para que dois nomes do mesmo diretório sempre
+comparem igual: no macOS `/var/folders/…` contra `/private/var/folders/…`, e no
+Windows um caminho curto 8.3 (`C:\Users\RUNNER~1\…`) contra a forma longa
+(`C:\Users\runneradmin\…`). Comparar as strings cruas é exatamente como um
+projeto se parte em dois.
 
 | Chamador | O que enxerga agora |
 |---|---|

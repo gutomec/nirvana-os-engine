@@ -43,7 +43,7 @@ import { Database } from "bun:sqlite";
 import {
   openLedger, openRun, openAgenticRun, getRun, markState, beatAgenticRuns,
   findNonTerminal, countNonTerminal, findExpired, findRelatedRuns,
-  resolveProjectRoot, findProjectRootFrom, sameProjectRoot,
+  resolveProjectRoot, findProjectRootFrom, sameProjectRoot, normalizeRoot,
   type LedgerHandle, type RunRow,
 } from "../lib/run-ledger.ts";
 
@@ -51,9 +51,12 @@ import {
 function makeProject(name: string): string {
   const dir = path.join(TMP, name);
   fs.mkdirSync(path.join(dir, ".git"), { recursive: true });
-  // realpath: macOS hands out /var/folders/… for a /private/var/folders/… dir,
-  // and the ledger normalizes, so the fixture must compare against the same form.
-  return fs.realpathSync(dir);
+  // The ledger's OWN normalizer, never a hand-rolled realpath: macOS hands out
+  // /var/folders/… for a /private/var/folders/… dir, and a Windows runner hands
+  // out C:\Users\RUNNER~1\… for C:\Users\runneradmin\… . `fs.realpathSync` collapses
+  // the first alias and NOT the second, which is exactly how this fixture
+  // disagreed with the stored root on Windows.
+  return normalizeRoot(dir);
 }
 
 const PROJ_A = makeProject("projeto-a");
@@ -106,7 +109,32 @@ describe("the root a process is serving", () => {
   });
 
   test("HOME is never a project root", () => {
-    expect(findProjectRootFrom(os.homedir())).not.toBe(fs.realpathSync(os.homedir()));
+    expect(findProjectRootFrom(os.homedir())).not.toBe(normalizeRoot(os.homedir()));
+  });
+
+  test("an OS path alias resolves to one root, on this platform, for real", () => {
+    // macOS: os.tmpdir() is /var/folders/…, whose real form is
+    // /private/var/folders/… . Linux has no alias here and the assertion holds
+    // trivially; Windows exercises the 8.3 form. No platform is skipped.
+    const raw = path.join(os.tmpdir(), path.basename(TMP));
+    expect(sameProjectRoot(raw, normalizeRoot(raw))).toBe(true);
+  });
+
+  test("a Windows 8.3 short path is the same root as its long form", () => {
+    // The alias table lives in the OS, so the resolver is injected and the rule
+    // is proven on any platform — this is the GitHub Windows runner's exact
+    // pair, where `mkdtemp` under %TEMP% returns the short form.
+    const short = "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\nrv-ledger-scope-x\\projeto-a";
+    const long = "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\nrv-ledger-scope-x\\projeto-a";
+    const win83 = (p: string) => p.replace("RUNNER~1", "runneradmin");
+
+    // The two raw strings really are different, so nothing here passes vacuously.
+    expect(short).not.toBe(long);
+    expect(normalizeRoot(short, win83)).toBe(normalizeRoot(long, win83));
+    expect(sameProjectRoot(short, long, win83)).toBe(true);
+    // And a comparison that skips the resolver — what this code used to do —
+    // splits the one project in two.
+    expect(sameProjectRoot(short, long, (p) => p)).toBe(false);
   });
 
   test("sameProjectRoot compares roots, not strings-with-slashes", () => {

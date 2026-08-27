@@ -20,8 +20,12 @@ The file stays global. Visibility does not. Every row now records the
 `project_root` it belongs to, and every read and every write filters by the root
 the calling process is serving — `NIRVANA_PROJECT_ROOT`, else the first ancestor
 of the cwd carrying a project marker. `HOME` and the filesystem root never count
-as projects, and the path is normalized through `realpath`, so the same
-directory always compares equal.
+as projects, and the path is normalized through the OS resolver
+(`realpathSync.native`), so two names for one directory always compare equal:
+macOS `/var/folders/…` against `/private/var/folders/…`, and a Windows 8.3
+short path (`C:\Users\RUNNER~1\…`) against its long form
+(`C:\Users\runneradmin\…`). Comparing the raw strings is exactly how one
+project splits in two.
 
 | Caller | What it sees now |
 |---|---|

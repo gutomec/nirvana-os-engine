@@ -28,7 +28,7 @@ process.env.NIRVANA_RUN_LEDGER_DB = path.join(TMP, "default.sqlite");
 process.env.NIRVANA_NO_DESKTOP_NOTIFY = "1";
 
 import { sweep, type RecoveryResult, type SalvageVerdict } from "../scripts/supervisor.ts";
-import { openLedger, openAgenticRun, openRun, getRun, markState, findNonTerminal, type LedgerHandle, type RunRow } from "../lib/run-ledger.ts";
+import { openLedger, openAgenticRun, openRun, getRun, markState, findNonTerminal, normalizeRoot, type LedgerHandle, type RunRow } from "../lib/run-ledger.ts";
 import { SCOPE_GUARD_PT_BR } from "../../_shared/lib/scope-guard.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
@@ -131,7 +131,9 @@ describe("brief-squad opens the ledger run by itself", () => {
     // ledger file is shared, the visibility is not.
     const rows = findNonTerminal(openLedger(ledger), { projectRoot });
     expect(rows.length).toBe(1);
-    expect(rows[0].project_root).toBe(fs.realpathSync(projectRoot));
+    // normalizeRoot, not fs.realpathSync: the latter leaves a Windows 8.3 short
+    // path short, and the stored root is the long form.
+    expect(rows[0].project_root).toBe(normalizeRoot(projectRoot));
     const row = rows[0];
     expect(row.state).toBe("running");
     expect(row.target_kind).toBe("squad");
