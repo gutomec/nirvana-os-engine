@@ -51,6 +51,10 @@ function fixtureInput(): DigestInput {
     squads: {
       "squad-a": {
         description: "Delivers landing pages end to end and runs SEO audits on existing pages.",
+        // 11 domains and 7 produces: the digest caps them at 10 and 6, the same
+        // way the business line does.
+        domains: ["design", "engineering", "seo", "copywriting", "analytics", "conversion", "frontend", "content", "research", "accessibility", "extra-domain"],
+        produces: ["landing-page", "seo-report", "copy-deck", "style-guide", "analytics-setup", "sitemap", "extra-artifact"],
         capabilities: ["web.landing.build", "seo.audit.run"],
         example_briefs: ["Preciso de uma landing page premium", "Audit my page for SEO issues"],
       },
@@ -163,6 +167,32 @@ describe("routing digest — format grammar", () => {
     expect(acme).not.toContain("extra-artifact"); // 7 declared, 6 kept
   });
 
+  // The router's own prompt says the OBJECT of a brief — what the entry
+  // produces — decides most of the call, and businesses had been carrying both
+  // segments since Phase 3.1 while squads carried neither. The registry has
+  // aggregated them at squad level all along.
+  test("squad domains are capped at top 10", () => {
+    const squadA = sectionLines(r.text, "squads").find((l) => l.startsWith("squad-a"))!;
+    expect(squadA).toContain("domains: design,engineering,seo,copywriting,analytics,conversion,frontend,content,research,accessibility");
+    expect(squadA).not.toContain("extra-domain"); // 11 declared, 10 kept
+  });
+
+  test("squad produces are capped at top 6", () => {
+    const squadA = sectionLines(r.text, "squads").find((l) => l.startsWith("squad-a"))!;
+    expect(squadA).toContain("produces: landing-page,seo-report,copy-deck,style-guide,analytics-setup,sitemap");
+    expect(squadA).not.toContain("extra-artifact"); // 7 declared, 6 kept
+  });
+
+  test("a squad declaring neither gains no empty segment", () => {
+    const squadB = sectionLines(r.text, "squads").find((l) => l.startsWith("squad-b"))!;
+    expect(squadB).not.toContain("domains:");
+    expect(squadB).not.toContain("produces:");
+  });
+
+  test("the squads section header announces both new segments", () => {
+    expect(r.text).toContain("## squads (slug | description | domains: | produces: top 6 | caps: id — one-liner | ex: briefs | not:)");
+  });
+
   test("token estimate is chars/4 and reported", () => {
     expect(r.tokens).toBe(estimateTokens(r.text));
     expect(r.tokens).toBe(Math.ceil(r.text.length / 4));
@@ -242,6 +272,30 @@ describe("routing digest — budget degradation ladder", () => {
     }
     const jane = sectionLines(r.text, "mind-clones").find((l) => l.startsWith("jane-doe"))!;
     expect(jane.split(" | ")[1].length).toBeLessThanOrEqual(100);
+  });
+
+  test("L3 additionally cuts squad produces from 6 to 3 (domains stay)", () => {
+    const l1 = buildDigest(input, { budgetTokens: l0.tokens });
+    const l2 = buildDigest(input, { budgetTokens: l1.tokens });
+    const r = buildDigest(input, { budgetTokens: l2.tokens });
+    expect(r.degradationLevel).toBe(3);
+    const squadA = sectionLines(r.text, "squads").find((l) => l.startsWith("squad-a"))!;
+    expect(squadA).toContain("produces: landing-page,seo-report,copy-deck");
+    expect(squadA).not.toContain("style-guide");
+    expect(squadA).toContain("domains: design,engineering,seo");
+  });
+
+  // The two squad segments cost more than the last rung had left on the
+  // owner's library, so one of them yields there: `produces` is the OBJECT of
+  // the brief and stays, `domains` averages 3.5 labels the description already
+  // implies and goes, the same trade the rung already makes for clones.
+  test("L4 drops squad domains and keeps produces — the entry is never dropped", () => {
+    const r = buildDigest(input, { budgetTokens: 1 });
+    expect(r.degradationLevel).toBe(4);
+    const squadA = sectionLines(r.text, "squads").find((l) => l.startsWith("squad-a"))!;
+    expect(squadA).not.toContain("domains:");
+    expect(squadA).toContain("produces: landing-page,seo-report,copy-deck");
+    expect(squadA).toContain("caps: web.landing.build; seo.audit.run");
   });
 
   test("entries are NEVER dropped, even hopelessly over budget", () => {

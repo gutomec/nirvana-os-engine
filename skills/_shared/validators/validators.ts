@@ -707,6 +707,32 @@ export const RegistrySquadsSchema = z.object({
       fidelity_status: FidelityStatus.optional(),
       invoke: z.record(z.string(), z.unknown()).optional(),
       score_boost: z.number().default(1.0),
+      // Discovery metadata the indexer has emitted since routing-360 Phase 2 —
+      // declared here so the strict write-schema describes the live registry.
+      produces: CapabilitySchema.shape.produces,
+      example_briefs: CapabilitySchema.shape.example_briefs,
+      keywords: CapabilitySchema.shape.keywords,
+      /** Body the capability executes, resolved through invoke.ref at index time. */
+      body_text: z.string().optional(),
+      // Contract, scheduling, overlay and v6 fields the registry stopped
+      // dropping. Shapes are borrowed from CapabilitySchema so the index can
+      // never accept something the manifest could not have declared; all
+      // optional, because the registry emits only what a capability declares.
+      inputs: CapabilitySchema.shape.inputs,
+      outputs: CapabilitySchema.shape.outputs,
+      tools_required: CapabilitySchema.shape.tools_required,
+      writes_paths: CapabilitySchema.shape.writes_paths,
+      contributions: CapabilitySchema.shape.contributions,
+      acceptance: CapabilitySchema.shape.acceptance,
+      evaluator: CapabilitySchema.shape.evaluator,
+      requires: CapabilitySchema.shape.requires,
+      consumes: CapabilitySchema.shape.consumes,
+      estimated_cost_usd: CapabilitySchema.shape.estimated_cost_usd,
+      fidelity: CapabilitySchema.shape.fidelity,
+      // Optional rather than defaulted: in a manifest these carry a default,
+      // in the registry their absence is the fact that nothing was declared.
+      model_hint: Model.optional(),
+      parallel_safe: z.boolean().optional(),
     }).strict()),
   ),
   domains: z.record(z.string().regex(SNAKE_CASE), z.array(z.string())).optional(),

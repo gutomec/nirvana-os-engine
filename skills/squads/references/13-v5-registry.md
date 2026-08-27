@@ -68,6 +68,20 @@ The registry is **cache, not source of truth**. The source remains the
 }
 ```
 
+Those seven keys are the ones every capability entry carries. Anything else a
+capability declares is emitted **only when it is declared**, so an entry is
+never padded with keys the manifest left out:
+
+| Also carried, when declared | Read by |
+|---|---|
+| `produces`, `example_briefs`, `keywords`, `body_text` | BM25 corpus, routing digest, agentic shortlist |
+| `estimated_cost_usd` | `harness/lib/budget.js` — the pre-flight cost estimate |
+| `parallel_safe`, `writes_paths` | multi-target DAG planner and race detector |
+| `model_hint`, `tools_required`, `inputs`, `outputs` | execution and the invocation plan |
+| `contributions` | the prompt-assembly overlay |
+| `fidelity` (whole block; `fidelity_status` stays for its readers) | evaluator selection, Gauntlet thresholds |
+| `acceptance`, `evaluator`, `requires`, `consumes` (v6) | success requirements, evaluator contract, composition graph |
+
 ---
 
 ## How it is generated
