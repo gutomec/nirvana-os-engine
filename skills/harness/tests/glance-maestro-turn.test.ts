@@ -10,6 +10,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { MAESTRO_DIRECTIVE, ProjectService, claudeTurnCommand, continuityRecap, maestroDirective } from "../lib/control-plane/index.ts";
 import { FAKE_CLAUDE_COST_USD, FAKE_CLAUDE_TOOL_COMMAND, installFakeClaudeStream } from "./helpers/fake-claude-stream.ts";
+import { pidAlive, waitUntil } from "./helpers/fake-glance-child.ts";
 import { removeDir } from "./helpers/temp-dirs.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
@@ -118,6 +119,34 @@ describe("the maestro directive", () => {
     expect(resumed.args).not.toContain("--max-budget-usd");
   });
 
+  test("under a shell (a Windows .cmd) the directive travels by file and the flags after it survive", () => {
+    // The win32 branch faked as windows-spawn.test.ts does: a `claude.cmd` at the head of PATH makes
+    // resolveExecutable choose the shell, and cmd.exe cannot carry a newline in an argument.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-maestro-cmd-"));
+    fs.writeFileSync(path.join(dir, "claude.cmd"), "@echo off\r\n");
+    const platform = process.platform;
+    const previousPath = process.env.PATH;
+    Object.defineProperty(process, "platform", { value: "win32", configurable: true });
+    process.env.PATH = `${dir}${path.delimiter}${previousPath ?? ""}`;
+    try {
+      const command = claudeTurnCommand({ sessionId: null, directive: "linha 1\nlinha 2", skipPermissions: true, maxBudgetUsd: 5 });
+      expect(command.shell).toBe(true);
+      expect(command.args).not.toContain("--append-system-prompt");
+      const flag = command.args.indexOf("--append-system-prompt-file");
+      expect(flag).toBeGreaterThan(0);
+      const file = command.args[flag + 1].replace(/^"|"$/g, "");
+      expect(fs.readFileSync(file, "utf8")).toBe("linha 1\nlinha 2");
+      expect(command.tmpFiles).toEqual([file]);
+      expect(command.args.indexOf("--dangerously-skip-permissions")).toBeGreaterThan(flag);
+      expect(command.args[command.args.indexOf("--max-budget-usd") + 1]).toBe("5");
+      fs.rmSync(path.dirname(file), { recursive: true, force: true });
+    } finally {
+      Object.defineProperty(process, "platform", { value: platform, configurable: true });
+      process.env.PATH = previousPath;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("the continuity recap carries the last visible messages, labelled, without the current one", () => {
     const recap = continuityRecap([
       { message_id: "m1", role: "user", content: "Quais empresas eu tenho?" }, { message_id: "m2", role: "assistant", content: "Três: a, b e c." },
@@ -150,7 +179,9 @@ describe("a Message is a turn of the project's runtime session", () => {
     expect(call.argv[call.argv.indexOf("--session-id") + 1]).toBe(receipt.turn.session_id);
     expect(call.argv).not.toContain("--resume");
     expect(call.argv).toContain("--dangerously-skip-permissions");
-    expect(call.argv[call.argv.indexOf("--append-system-prompt") + 1]).toStartWith(MAESTRO_DIRECTIVE);
+    expect(call.argv[call.argv.indexOf("--max-budget-usd") + 1]).toBe("5");
+    // Inline on POSIX; by file under the Windows shell (the fake read it at call time).
+    expect(call.directive).toStartWith(MAESTRO_DIRECTIVE);
     expect(call.prompt).toBe("Quais empresas eu tenho para marketing?");
     expect(fs.realpathSync(call.cwd)).toBe(fs.realpathSync(root));
     expect(call.env.NIRVANA_PROJECT_ROOT).toBe(root);
@@ -212,11 +243,16 @@ describe("a Message is a turn of the project's runtime session", () => {
     const id = await newConversation();
     const { receipt } = await send(id, "Demorado");
     await fake.waitFor("holding");
+    const pid = fake.heldPid();
+    expect(pidAlive(pid)).toBe(true);
     expect((await conversation(id)).active_turn.turn_id).toBe(receipt.turn.turn_id);
     const cancelled = await fetch(`${base}/api/v1/conversations/${id}/turns/${receipt.turn.turn_id}:cancel`, { method: "POST", headers: headers(), body: JSON.stringify({ project_id: projectId }) });
     expect(cancelled.status).toBe(202);
     expect(((await cancelled.json()) as any).state).toBe("cancelling");
-    await fake.waitFor("killed");
+    // Windows has no catchable SIGTERM: taskkill /F ends the fake before any handler runs, so the
+    // `killed` marker is POSIX proof of the group signal; the dead pid is the proof everywhere.
+    if (process.platform !== "win32") await fake.waitFor("killed");
+    await waitUntil(() => !pidAlive(pid), "the fake claude to die");
     const turn = await waitForState(id, receipt.turn.turn_id, ["cancelled"]);
     expect(turn.reason).toBe("cancelled_by_user");
     const events = await collect(receipt.events_url);

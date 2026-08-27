@@ -9,9 +9,13 @@
 //
 // Knobs live in the state directory (FAKE_CLAUDE_STATE_DIR), so a test can flip them between two
 // turns of one server without touching the server's environment:
-//   <state>/calls.jsonl   one line per invocation: { argv, cwd, prompt, env (NIRVANA_*, HARNESS_LOGS_DIR) }
-//   <state>/hold          while present, the fake stops after the tool event, writes <state>/holding
-//                         and waits for <state>/go; SIGTERM meanwhile writes <state>/killed and exits 143
+//   <state>/calls.jsonl   one line per invocation: { argv, cwd, prompt, directive, env (NIRVANA_*, HARNESS_LOGS_DIR) };
+//                         `directive` is the --append-system-prompt value, or the content of
+//                         --append-system-prompt-file read at call time (the turn removes it on close)
+//   <state>/hold          while present, the fake stops after the tool event, writes <state>/pid and
+//                         <state>/holding and waits for <state>/go; SIGTERM meanwhile writes
+//                         <state>/killed and exits 143 (never on Windows: taskkill /F ends it before
+//                         any handler runs, so a test there checks the pid instead)
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { writeFakeCli } from "./fake-cli.ts";
@@ -32,7 +36,9 @@ const resumed = value("--resume") ?? null;
 const sessionId = resumed ?? value("--session-id") ?? "fake-" + crypto.randomUUID();
 if (state) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => key.startsWith("NIRVANA_") || key === "HARNESS_LOGS_DIR"));
-  fs.appendFileSync(path.join(state, "calls.jsonl"), JSON.stringify({ argv, cwd: process.cwd(), prompt, env }) + "\n");
+  const directiveFile = value("--append-system-prompt-file");
+  const directive = value("--append-system-prompt") ?? (directiveFile ? fs.readFileSync(directiveFile, "utf8") : null);
+  fs.appendFileSync(path.join(state, "calls.jsonl"), JSON.stringify({ argv, cwd: process.cwd(), prompt, directive, env }) + "\n");
 }
 const emit = (event) => process.stdout.write(JSON.stringify(event) + "\n");
 emit({ type: "system", subtype: "init", session_id: sessionId, cwd: process.cwd() });
@@ -43,6 +49,7 @@ for (const word of reply.split(" ")) {
 emit({ type: "assistant", session_id: sessionId, message: { role: "assistant", content: [{ type: "tool_use", id: "toolu_fake", name: "Bash", input: { command: ${JSON.stringify(FAKE_CLAUDE_TOOL_COMMAND)}, description: "Busca no catálogo" } }] } });
 if (state && fs.existsSync(path.join(state, "hold"))) {
   process.on("SIGTERM", () => { mark("killed"); process.exit(143); });
+  fs.writeFileSync(path.join(state, "pid"), String(process.pid));
   mark("holding");
   const deadline = Date.now() + Number(process.env.FAKE_CLAUDE_WAIT_MAX_MS ?? 30000);
   while (!fs.existsSync(path.join(state, "go"))) {
@@ -53,7 +60,7 @@ if (state && fs.existsSync(path.join(state, "hold"))) {
 emit({ type: "result", subtype: "success", is_error: false, duration_ms: 42, num_turns: 1, result: reply.trim(), session_id: sessionId, total_cost_usd: ${FAKE_CLAUDE_COST_USD} });
 `;
 
-export interface FakeClaudeCall { argv: string[]; cwd: string; prompt: string; env: Record<string, string> }
+export interface FakeClaudeCall { argv: string[]; cwd: string; prompt: string; directive: string | null; env: Record<string, string> }
 
 /** Puts the fake `claude` at the head of PATH and points it at `<dir>/state`; `restore` undoes both. */
 export function installFakeClaudeStream(dir: string) {
@@ -75,7 +82,9 @@ export function installFakeClaudeStream(dir: string) {
     hold() { fs.writeFileSync(marker("hold"), "hold"); },
     release() { try { fs.unlinkSync(marker("hold")); } catch { /* not holding */ } fs.writeFileSync(marker("go"), "go"); },
     /** Clears the hold knobs and markers between tests; the call log is kept. */
-    reset() { for (const name of ["hold", "go", "holding", "killed", "wait-timeout"]) { try { fs.unlinkSync(marker(name)); } catch { /* absent */ } } },
+    reset() { for (const name of ["hold", "go", "holding", "pid", "killed", "wait-timeout"]) { try { fs.unlinkSync(marker(name)); } catch { /* absent */ } } },
+    /** The pid of the fake that is holding (written next to `holding`). */
+    heldPid: () => Number(fs.readFileSync(marker("pid"), "utf8")),
     async waitFor(name: string, timeoutMs = 15000) {
       const deadline = Date.now() + timeoutMs;
       while (!fs.existsSync(marker(name))) {

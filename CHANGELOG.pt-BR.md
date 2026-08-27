@@ -38,7 +38,12 @@ turnos (`capability_unavailable`). Chave nova `glance.maestro_max_budget_usd`
 compartilhado com a ação legada `chat-agent` (`chat-concierge.ts` virou um
 invólucro fino). Prova: `glance-maestro-turn.test.ts`, com um `claude` falso
 que fala stream-json; nota de design em
-`docs/architecture/maestro-sessions.md`.
+`docs/architecture/maestro-sessions.md`. No Windows o `claude.cmd` roda pelo
+interpretador de comandos, que corta a linha na primeira quebra de linha de um
+argumento, então ali a diretiva vai como `--append-system-prompt-file <arquivo
+temporário>` e as flags depois dela sobrevivem. O `runClaudeCode` do driver
+ainda passa a própria diretiva de várias linhas inline sob esse shell (defeito
+latente, registrado aqui, não alterado).
 
 ### O recibo da Message volta a ser imediato, e uma pergunta nunca vira um Gauntlet
 

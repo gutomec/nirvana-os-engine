@@ -44,7 +44,7 @@ Como a sessão é nativa e fica por diretório, a mesma conversa continua no ter
 
 ## Autonomia por turno
 
-Sessões `-p` não restauram o modo de permissão, então as flags de autonomia vão em TODO turno: `claude --dangerously-skip-permissions` e, pelos adapters do driver, `codex --dangerously-bypass-approvals-and-sandbox`, `gemini --approval-mode yolo`, `agy --dangerously-skip-permissions`, `grok --always-approve`. `execution.headless_skip_permissions=false` troca todas pelo caminho restrito de cada runtime (no claude, `--permission-mode acceptEdits` com a allowlist de ferramentas do driver). O teto por turno é `glance.maestro_max_budget_usd` (padrão 5; só o claude aplica no próprio CLI, os outros recebem o aviso do driver).
+Sessões `-p` não restauram o modo de permissão, então as flags de autonomia vão em TODO turno: `claude --dangerously-skip-permissions` e, pelos adapters do driver, `codex --dangerously-bypass-approvals-and-sandbox`, `gemini --approval-mode yolo`, `agy --dangerously-skip-permissions`, `grok --always-approve`. `execution.headless_skip_permissions=false` troca todas pelo caminho restrito de cada runtime (no claude, `--permission-mode acceptEdits` com a allowlist de ferramentas do driver). No Windows o `claude.cmd` roda pelo interpretador de comandos, que corta a linha na primeira quebra de linha de um argumento; a diretiva vai então como `--append-system-prompt-file <arquivo temporário>`, para que as flags depois dela sobrevivam. O teto por turno é `glance.maestro_max_budget_usd` (padrão 5; só o claude aplica no próprio CLI, os outros recebem o aviso do driver).
 
 ## SIGTERM = cancelado
 

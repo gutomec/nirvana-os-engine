@@ -37,7 +37,12 @@ session with a short recap of the visible transcript and records
 caps one turn. The module is `lib/control-plane/maestro-turn.ts`, shared with
 the legacy `chat-agent` action (`chat-concierge.ts` is now a thin wrapper).
 Proof: `glance-maestro-turn.test.ts`, with a fake stream-json `claude`; design
-note in `docs/architecture/maestro-sessions.md`.
+note in `docs/architecture/maestro-sessions.md`. On Windows the `claude.cmd`
+runs through the command interpreter, which ends the command line at the first
+newline of an argument, so there the directive travels as
+`--append-system-prompt-file <temp file>` and the flags after it survive. The
+driver's own `runClaudeCode` still passes its multi-line directive inline
+under that shell (a latent defect, recorded here, not changed).
 
 ### The Message receipt is immediate again, and a question never becomes a Gauntlet
 

@@ -23,6 +23,7 @@ import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import { createRequire } from "node:module";
+import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { paths as nrvPaths } from "../../../_shared/lib/bun-helpers.ts";
@@ -101,22 +102,41 @@ export function turnEnvironment(projectRoot: string, base: NodeJS.ProcessEnv = p
   return env;
 }
 
-export interface TurnCommand { command: string; args: string[]; shell: boolean; sessionId: string }
+export interface TurnCommand {
+  command: string; args: string[]; shell: boolean; sessionId: string;
+  /** Files written for delivery (the directive under a shell); removed when the child closes. */
+  tmpFiles?: string[];
+}
 
 /** The `claude -p` command line of a turn. A conversation without a session gets a fresh
  * `--session-id`, so the id is known before the child answers; one with a session resumes it.
  * The autonomy flag follows the driver's rule: the bypass, or the restricted path (`acceptEdits`
- * plus the driver's tool allowlist) when execution.headless_skip_permissions is off. */
+ * plus the driver's tool allowlist) when execution.headless_skip_permissions is off.
+ *
+ * The directive spans several lines. On Windows the CLI is a `.cmd` started through the command
+ * interpreter (`resolveExecutable`), and cmd.exe ends the command line at the first newline of an
+ * argument: everything after `--append-system-prompt` (the autonomy flag, the budget) was lost.
+ * Under a shell the directive therefore travels as `--append-system-prompt-file <temp file>`;
+ * without one it stays inline, as before. */
 export function claudeTurnCommand(input: { sessionId: string | null; directive: string; model?: string | null; skipPermissions: boolean; maxBudgetUsd: number }): TurnCommand {
   const sessionId = input.sessionId ?? randomUUID();
+  const executable = resolveExecutable("claude");
+  const tmpFiles: string[] = [];
   const args = ["-p", "--output-format", "stream-json", "--include-partial-messages", "--verbose",
-    input.sessionId ? "--resume" : "--session-id", sessionId, "--append-system-prompt", input.directive];
+    input.sessionId ? "--resume" : "--session-id", sessionId];
+  if (executable.shell) {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "nrv-maestro-")), "directive.md");
+    fs.writeFileSync(file, input.directive, "utf8");
+    tmpFiles.push(file);
+    args.push("--append-system-prompt-file", file);
+  } else {
+    args.push("--append-system-prompt", input.directive);
+  }
   if (input.model) args.push("--model", input.model);
   if (input.skipPermissions) args.push("--dangerously-skip-permissions");
   else args.push("--allowedTools", DEFAULT_ALLOWED_TOOLS.join(" "), "--permission-mode", "acceptEdits");
   if (input.maxBudgetUsd > 0) args.push("--max-budget-usd", String(input.maxBudgetUsd));
-  const executable = resolveExecutable("claude");
-  return { command: executable.command, args: executable.args(args), shell: executable.shell, sessionId };
+  return { command: executable.command, args: executable.args(args), shell: executable.shell, sessionId, ...(tmpFiles.length ? { tmpFiles } : {}) };
 }
 
 export type TurnStreamEvent = { t: "tok"; v: string } | { t: "tool"; name: string; cmd: string };
@@ -235,6 +255,7 @@ export function startMaestroTurn(input: StartTurnInput): StartedTurn {
       if (settled) return;
       settled = true;
       parser.end();
+      for (const file of command.tmpFiles ?? []) { try { fs.rmSync(path.dirname(file), { recursive: true, force: true }); } catch { /* already gone */ } }
       const base = streaming
         ? { ok: exitCode === 0 && !parser.isError, result: parser.result, sessionId: parser.sessionId ?? command.sessionId, costUsd: parser.costUsd, subtype: parser.subtype }
         : { ok: childDone?.ok === true && exitCode === 0, result: childDone?.result ?? "", sessionId: childDone?.sessionId ?? null, costUsd: childDone?.costUsd ?? null };
