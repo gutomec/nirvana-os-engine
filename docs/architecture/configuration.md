@@ -66,6 +66,7 @@ Gerada a partir do schema. `nrv config explain <chave>` mostra a descrição de 
 | `routing.on_router_failure` | nenhuma | `cascade` | global, projeto | cascade / fail |
 | `supervisor.progress_ping_sec` | `NIRVANA_PROGRESS_PING_SEC` | `1800` | global, projeto | inteiro >= 0 (segundos) |
 | `supervisor.stall_threshold_ms` | `NIRVANA_STALL_THRESHOLD_MS` | `300000` | global, projeto | inteiro > 0 (milissegundos) |
+| `supervisor.touch_events_max` | `NIRVANA_TOUCH_EVENTS_MAX` | `500` | global, projeto | inteiro >= 0 (eventos); 0 = não relata arquivos |
 | `updates.check` | `NIRVANA_NO_UPDATE_CHECK` (opt-out: `1` = não verificar) | `true` | global | true / false |
 | `budget.default_max_cost_usd` | nenhuma | `0` | global, projeto | número >= 0 (USD); 0 = ilimitado |
 | `budget.default_max_tokens` | nenhuma | `0` | global, projeto | inteiro >= 0 |
@@ -107,6 +108,7 @@ Cada interruptor do schema tem exatamente um caminho de leitura, `resolveSetting
 | `routing.mode` | `_shared/lib/routing-mode.ts` |
 | `routing.dense`, `on_router_failure`, `quality_gate.*` | `harness/lib/harness-config.ts` (`loadHarnessConfig`, `denseRoutingMode`, `setRoutingDense`) e, por ele, `router.js`, `dispatch.ts`, `revise.ts`, `supervisor.ts`, `embeddings.ts` |
 | `supervisor.progress_ping_sec`, `stall_threshold_ms` | `harness/scripts/supervisor.ts`; o limiar também é o `stallBudgetMs` padrão do heartbeat em `host-agent-driver.ts` |
+| `supervisor.touch_events_max` | `_shared/lib/host-agent-driver.ts`, que passa o teto ao sidecar como `--touch-max` |
 | `updates.check` | `harness/scripts/update-check.ts` |
 | `budget.*`, `baselines.*` | `harness/lib/budget.js` |
 

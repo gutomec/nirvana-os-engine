@@ -406,11 +406,52 @@ export function pidAlive(pid: number): boolean {
   catch (e) { return (e as NodeJS.ErrnoException)?.code === "EPERM"; }
 }
 
-/** Newest mtime (ms) under dir, recursive, capped so a sweep never crawls a
- *  runaway tree. 0 when the dir is missing/empty. */
-export function latestMtimeMs(dir: string, cap = 5000): number {
+/** One file the sweep found newer than the mark it was given. */
+export interface TouchedFile { path: string; mtimeMs: number; sizeBytes: number }
+
+export interface DirScan {
+  /** Newest mtime (ms) anywhere under dir, noise included. 0 when missing/empty. */
+  latestMs: number;
+  /** Files newer than `sinceMs`, noise excluded, oldest first, at most `limit`. */
+  changed: TouchedFile[];
+  /** Files that qualified and were dropped by `limit`. */
+  omitted: number;
+}
+
+// Names that are never a deliverable. Same rules as scripts/watch-fs.ts, kept
+// here as a copy on purpose: this list decides what gets REPORTED, and the
+// walk still descends into every one of them, because pruning the traversal
+// would change `latestMs` and with it the liveness signal the supervisor
+// reads. Noise counts as "the run is alive"; it never counts as progress.
+const NOISE_DIR_SEGMENTS: readonly string[] = [".git", "node_modules", "__pycache__", ".idea", ".vscode", ".harness-logs", ".bun", "dist", "build"];
+const NOISE_FILE_PATTERNS: readonly RegExp[] = [/\.swp$/, /~$/, /^\.#/, /\.tmp$/, /\.pyc$/, /^\.DS_Store$/];
+
+function isNoise(root: string, full: string): boolean {
+  const base = path.basename(full);
+  for (const re of NOISE_FILE_PATTERNS) if (re.test(base)) return true;
+  const rel = path.relative(root, full);
+  const segments = rel.split(/[\\/]/).slice(0, -1);
+  if (segments.some(s => NOISE_DIR_SEGMENTS.includes(s))) return true;
+  // .nirvana/ under the outputs root is the harness's own scaffolding (state,
+  // briefs, logs) — written by the dispatcher, not by the agent being watched.
+  return segments.includes(".nirvana");
+}
+
+/**
+ * One recursive sweep of `dir`, capped so it never crawls a runaway tree.
+ *
+ * Returns both answers the heartbeat needs from a single walk: the newest
+ * mtime (is anything happening at all?) and WHICH files moved (what is
+ * happening). The second answer is the whole reason this exists — the sidecar
+ * used to compute the first and throw the rest away, so seven minutes of a run
+ * writing 113 files reported "still alive", eleven times, and nothing else.
+ */
+export function scanDir(dir: string, sinceMs: number, opts: { cap?: number; limit?: number } = {}): DirScan {
+  const cap = opts.cap ?? 5000;
+  const limit = Math.max(0, opts.limit ?? 0);
   let latest = 0;
   let seen = 0;
+  const qualified: TouchedFile[] = [];
   const stack = [dir];
   while (stack.length && seen < cap) {
     const d = stack.pop()!;
@@ -422,11 +463,23 @@ export function latestMtimeMs(dir: string, cap = 5000): number {
       try {
         const st = fs.statSync(full);
         if (st.mtimeMs > latest) latest = st.mtimeMs;
-        if (e.isDirectory()) stack.push(full);
+        if (e.isDirectory()) { stack.push(full); continue; }
+        if (limit > 0 && st.mtimeMs > sinceMs && !isNoise(dir, full)) {
+          qualified.push({ path: full, mtimeMs: st.mtimeMs, sizeBytes: st.size });
+        }
       } catch { /* raced deletion */ }
     }
   }
-  return latest;
+  // Oldest first: the order the files appeared IS the progress, and when the
+  // tick overflows the cap it is the FIRST touches that survive the slice.
+  qualified.sort((a, b) => a.mtimeMs - b.mtimeMs);
+  return { latestMs: latest, changed: qualified.slice(0, limit), omitted: Math.max(0, qualified.length - limit) };
+}
+
+/** Newest mtime (ms) under dir, recursive, capped so a sweep never crawls a
+ *  runaway tree. 0 when the dir is missing/empty. */
+export function latestMtimeMs(dir: string, cap = 5000): number {
+  return scanDir(dir, Number.POSITIVE_INFINITY, { cap }).latestMs;
 }
 
 // ── mutations ───────────────────────────────────────────────────────────
@@ -924,8 +977,21 @@ export function setSupervisorMeta(handle: LedgerHandle, key: string, value: stri
 // over) and record the heartbeat gap once per stall episode. If activity
 // resumes, renewal resumes.
 //
+// It also NAMES what it saw. The same sweep that answers "is anything
+// happening" already knows which files moved, so every tick with activity
+// emits one `artifact_touched` per new file (--touch-max caps the run; 0 turns
+// the reporting off). Before this, a squad writing 113 files over 418s left
+// sixteen audit events, eleven of them a content-free "still alive", and the
+// Glance — which has read `artifact_touched` all along — had nothing to show
+// for seven minutes.
+//
 // Exit conditions (no dangling process, ever): done-sentinel written by the
 // parent, parent pid gone, run row missing, or run reached a terminal state.
+
+/** Ceiling per tick. The poll interval is the coalescing window; this is the
+ *  ceiling INSIDE one window, so a step that unpacks a tarball cannot turn a
+ *  single sweep into ten thousand audit lines. */
+const TOUCH_EVENTS_PER_TICK = 25;
 
 function heartbeatArg(name: string): string | undefined {
   const i = process.argv.indexOf(name);
@@ -948,6 +1014,9 @@ export function heartbeatMain(): void {
   const stallMs = Math.max(500, parseInt(heartbeatArg("--stall") || String(5 * 60_000), 10));
   const leaseSec = Math.max(5, parseInt(heartbeatArg("--lease") || "600", 10));
   const parentPid = parseInt(heartbeatArg("--parent") || "0", 10);
+  // Absent flag = 0 = report nothing, so a caller that never asked for file
+  // reporting keeps the old event stream byte for byte.
+  let touchBudget = Math.max(0, parseInt(heartbeatArg("--touch-max") || "0", 10));
 
   const handle = openLedger(dbPath);
   let lastBytes = fileSize(outFile) + fileSize(errFile);
@@ -963,7 +1032,12 @@ export function heartbeatMain(): void {
     if (!row || isTerminal(row.state)) break;
 
     const bytes = fileSize(outFile) + fileSize(errFile);
-    const mtime = watchDir ? latestMtimeMs(watchDir) : 0;
+    // `sinceMs` is the PREVIOUS high-water mark, so the sweep reports only what
+    // moved since the last tick and never re-reports a file it already named.
+    const scan = watchDir
+      ? scanDir(watchDir, lastMtime, { limit: Math.min(TOUCH_EVENTS_PER_TICK, touchBudget) })
+      : { latestMs: 0, changed: [], omitted: 0 };
+    const mtime = scan.latestMs;
     const activity = bytes !== lastBytes || mtime > lastMtime;
     lastBytes = bytes;
     if (mtime > lastMtime) lastMtime = mtime;
@@ -973,6 +1047,20 @@ export function heartbeatMain(): void {
       lastActivityAt = now;
       stallRecorded = false;
       renewLease(handle, runId, leaseSec);
+      for (let i = 0; i < scan.changed.length; i++) {
+        const f = scan.changed[i];
+        // Always "modify": a poller sees that a file moved, never that it was
+        // born. Claiming "create" from an mtime would be exactly the kind of
+        // assertion-without-evidence this signal exists to replace.
+        emitLedgerAudit("artifact_touched", {
+          run_id: runId, action: "modify", file_path: f.path, size_bytes: f.sizeBytes,
+          cwd: watchDir, source: "ledger-heartbeat",
+          // The overflow rides on the last event of the tick rather than
+          // disappearing: a truncated sweep says so.
+          ...(i === scan.changed.length - 1 && scan.omitted > 0 ? { omitted: scan.omitted } : {}),
+        }, row);
+        touchBudget--;
+      }
     } else if (now - lastActivityAt >= stallMs && !stallRecorded) {
       stallRecorded = true;
       emitLedgerAudit("x_ledger_stall_observed", {

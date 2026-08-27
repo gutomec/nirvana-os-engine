@@ -789,8 +789,13 @@ export interface LedgerHeartbeatOpts {
   /** Ledger run id (run-ledger.ts openRun). */
   runId: string;
   /** Directory watched for activity (the run's output dir). Activity = newest
-   * mtime under it advanced — activity-based, not existence-based. */
+   * mtime under it advanced — activity-based, not existence-based. Every file
+   * the sweep finds is also NAMED in an `artifact_touched` audit event, which
+   * is what the Glance reads to say where a run is. */
   watchDir?: string;
+  /** Ceiling on those `artifact_touched` events for this child; 0 reports none.
+   * Default: the supervisor.touch_events_max setting. */
+  touchEventsMax?: number;
   /** Ledger DB path override (tests). Default: resolveLedgerDbPath(). */
   dbPath?: string;
   /** Heartbeat check interval in ms (default 15s; tests shrink it). */
@@ -924,7 +929,10 @@ function runWithLedgerHeartbeat(opts: RunHeadlessOpts, runner: (o: RunHeadlessOp
     "--lease", String(led.leaseSec ?? 600),
     "--parent", String(process.pid),
   ];
-  if (led.watchDir) sidecarArgs.push("--watch", led.watchDir);
+  if (led.watchDir) {
+    sidecarArgs.push("--watch", led.watchDir);
+    sidecarArgs.push("--touch-max", String(led.touchEventsMax ?? resolveSetting("supervisor.touch_events_max").value));
+  }
   if (led.dbPath) sidecarArgs.push("--db", led.dbPath);
 
   let sidecarPid: number | null = null;

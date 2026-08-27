@@ -94,6 +94,55 @@ Arabic. Abstention is not approval. It is a skipped rubric, and a file left with
 no unskipped rubric still lands on INDETERMINATE, which withholds delivery.
 Portuguese, Spanish and every other Latin-script language stay under judgement;
 separating those needs language detection, not a script check.
+### The watcher that was already running learns to say what it saw
+
+A squad ran 418 seconds on Codex on 2026-08-27 and wrote 113 files. The day's
+audit held sixteen events, eleven of them `x_ledger_lease_renewed` — "still
+alive", eleven times, over seven minutes in which the Glance could say nothing
+about where the run was. The disk knew: the files of each pipeline step landed
+in order, each with a timestamp.
+
+A daemon was already sweeping that directory. `runWithLedgerHeartbeat` spawns
+the ledger heartbeat next to every headless child, and it walks the whole
+`--watch` tree on every tick to answer one question, "is anything happening",
+and throws away the answer to the more useful one, "what is happening". The
+sweep now returns both, through the new `scanDir`: the newest mtime, which
+decides the lease, and which files moved since the previous tick. Each new file
+becomes one `artifact_touched` carrying `file_path`, `size_bytes`, `cwd`,
+`source: "ledger-heartbeat"` and the run's `trace_id`. The Glance has been
+reading that event all along, in four places.
+
+No new process joins the run, and that is the point. The obvious move was to
+have the dispatch spawn `nrv watch-fs`, which does exactly this reporting and is
+lit today only by a person who knows the subcommand. It closes on `SIGINT` or
+`SIGTERM` and on nothing else, so a dispatch killed with `SIGKILL` leaves it
+writing to a log forever, and it watches through recursive `fs.watch`, whose
+behavior has never been the same on the three systems. The heartbeat sidecar has
+four independent exits already (the `--done` sentinel, a dead parent pid, a
+missing run row, a run in a terminal state), and it polls rather than subscribes,
+so a run that ends normally and one that dies abruptly close the observer the
+same way. `nrv watch-fs` stays for what never passes through a dispatch: a
+project touched by Cursor, Aider, or any agent without hooks.
+
+Deriving the same progress from the `creates[]` that every v6 workflow step
+declares was the other candidate, and it loses on both coverage and timing. The
+parent is blocked inside one `spawnSync` for the whole run, so nothing evaluates
+that cross while the work is in flight — the answer would arrive when the run
+ends, which is the blind window itself. And `creates[]` exists only for workflow
+squads: the agent-x branch and the business branch would stay dark. Matching the
+reported files against `creates[]` is a good later step, on top of this one.
+
+Volume is bounded by construction. The tick interval is the coalescing window,
+and inside it a ceiling of 25 events applies, plus the per-child ceiling of the
+new `supervisor.touch_events_max` setting (500 by default; `0` turns the
+reporting off without touching the lease). A truncated tick carries `omitted` on
+its last event rather than losing the difference silently. The action is always
+`modify`: a poller sees that a file moved, never that it was born, and claiming
+`create` from an mtime would be the evidence-free assertion this signal exists to
+replace. Noise (`.git`, `node_modules`, `.nirvana`, `dist`, `build`, editor
+tempfiles) is filtered out of the REPORT only — the sweep still descends into
+those directories, because pruning them would change `latestMs` and with it the
+liveness proof the supervisor reads.
 
 ## 0.10.1 — 2026-08-27
 
