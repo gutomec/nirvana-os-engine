@@ -1,7 +1,7 @@
 /**
  * Nirvana Protocol Validators (TypeScript / Zod)
  *
- * Fail-closed validators for Squad Protocol v5, Business Protocol v1, and Harness Protocol v1.
+ * Fail-closed validators for Squad Protocol v5/v6, Business Protocol v1/v2, and Harness Protocol v1.
  *
  * Used by:
  * - skills/squads (squad.yaml validation, capability validation)
@@ -35,6 +35,9 @@ const TICKET_ID = /^TKT-\d{4}-\d{2}-\d{2}-\d+$/
 const SHA256 = /^sha256:[a-f0-9]{64}$/
 const ENV_VAR = /^[A-Z][A-Z0-9_]*$/
 const MENTION = /^@[a-z][a-z0-9-]+$/
+const ACCEPTANCE_ID = /^[a-z][a-z0-9_-]*$/
+/** A capability id, optionally qualified by the providing squad: `slug:ns.cap.verb`. */
+const REQUIRES_REF = /^(?:[a-z][a-z0-9-]{1,63}:)?[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2,}$/
 
 const Runtime = z.enum([
   'claude-code', 'codex', 'gemini-cli', 'cursor', 'antigravity', 'antigravity-cli',
@@ -126,12 +129,29 @@ export const CapabilitySchema = z.object({
     produces: z.array(z.string()).max(8).optional(),
     consumes: z.array(z.string()).max(8).optional(),
   }).strict()).max(8).optional(),
+  // Squad Protocol v6 (accepted, not yet read). Optional, so a v5 manifest
+  // parses to the same object as before; bounded, so the shapes the next cuts
+  // author are the shapes the validator already knows. No reader consumes them.
+  acceptance: z.array(z.object({
+    id: z.string().regex(ACCEPTANCE_ID),
+    description: z.string().min(1),
+    blocking: z.boolean().optional(),
+    minimumScore: z.number().min(0).max(1).optional(),
+  }).strict()).max(12).optional(),
+  evaluator: z.object({
+    scorecard: z.string().min(1),
+    rubric: z.string().min(1),
+    dimensions: z.array(z.string()).optional(),
+    max_cost_usd: z.number().min(0).optional(),
+  }).strict().optional(),
+  requires: z.array(z.string().regex(REQUIRES_REF)).max(8).optional(),
+  consumes: z.array(z.string().min(3).max(80)).max(20).optional(),
 }).strict()
 
 export const SquadManifestSchema = z.object({
   name: z.string().regex(KEBAB_CASE),
   version: z.string().regex(SEMVER),
-  protocol: z.enum(['4.0', '4.1', '5.0']),
+  protocol: z.enum(['4.0', '4.1', '5.0', '6.0']),
   description: z.string().min(20).optional(),
   author: z.string().optional(),
   license: z.string().default('MIT'),
@@ -234,6 +254,19 @@ export const EmployeeFrontmatterSchema = z.object({
   is_brief_intake: z.boolean().default(false),
   antagonizes: z.array(z.string()).optional(),
   squads_authorized: z.array(z.string().regex(KEBAB_CASE)).optional().nullable(),
+  // Business Protocol v2 (accepted, not yet read): pinned clones (max 2 — the
+  // prompt injects three at most), open squad preference, acceptance per role.
+  pinned_mind_clones: z.array(z.string()).max(2).optional(),
+  squads_preferred: z.array(z.string().regex(KEBAB_CASE)).optional(),
+  acceptance: z.array(z.object({
+    id: z.string().regex(ACCEPTANCE_ID),
+    description: z.string().min(1),
+    blocking: z.boolean().optional(),
+    minimum_score: z.number().min(0).max(1).optional(),
+    capability: z.string().optional(),
+    path: z.string().optional(),
+    min_bytes: z.number().int().min(0).optional(),
+  }).strict()).optional(),
   draws_from: z.array(z.object({
     source: z.string(),
     weight: z.number().min(0).max(1).optional(),
@@ -273,7 +306,7 @@ export const EmployeeFrontmatterSchema = z.object({
 export const BusinessManifestSchema = z.object({
   name: z.string().regex(KEBAB_CASE),
   version: z.string().regex(SEMVER),
-  protocol: z.literal('1.0'),
+  protocol: z.enum(['1.0', '2.0']),
   description: z.string().min(20).max(LIMITS.business_description_max!),
   author: z.string().optional(),
   license: z.string().default('MIT'),
@@ -285,6 +318,12 @@ export const BusinessManifestSchema = z.object({
   example_briefs: z.array(z.string().min(20).max(LIMITS.business_example_briefs_item_max!)).max(LIMITS.business_example_briefs_max!).optional(),
   keywords: z.array(z.string().min(2).max(60)).max(LIMITS.business_keywords_max!).optional(),
   squads_authorized: z.array(z.string().regex(KEBAB_CASE)).optional().nullable(),
+  // Business Protocol v2 (accepted, not yet read): open preference list, routing
+  // fences and a per-run budget. The manifest is passthrough, so `not_for`
+  // stays as loose as it already was; the others are new keys.
+  squads_preferred: z.array(z.string().regex(KEBAB_CASE)).optional(),
+  not_for: z.array(z.string()).optional(),
+  run_budget_usd: z.number().min(0).optional(),
   operation_mode: z.enum(['zero_human', 'hybrid', 'human_in_loop']).default('zero_human'),
   output: z.object({
     base_dir: z.string().default('default'),
@@ -587,7 +626,7 @@ export const ApprovalChainSchema = z.object({
 export const RegistrySquadsSchema = z.object({
   schema_version: z.string().default('1.0.0'),
   generated_at: z.string().datetime(),
-  host_protocol_version: z.enum(['5.0', '4.0']),
+  host_protocol_version: z.enum(['6.0', '5.0', '4.0']),
   squads_root_dirs: z.array(z.string()),
   squads: z.record(
     z.string().regex(/^[a-z][a-z0-9-]+$/),
@@ -635,7 +674,7 @@ export const RegistryBusinessesSchema = z.object({
     z.string().regex(/^[a-z][a-z0-9-]+$/),
     z.object({
       version: z.string(),
-      protocol: z.literal('1.0'),
+      protocol: z.enum(['1.0', '2.0']),
       manifest_path: z.string(),
       manifest_hash: z.string().regex(SHA256),
       // Routing signal (routing-360 Phase 2.1): manifest name + description are

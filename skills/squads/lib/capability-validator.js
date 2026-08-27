@@ -201,7 +201,7 @@ function validateSquadV5Manifest(manifest) {
   const errors = [];
   const warnings = [];
 
-  if (manifest.protocol === '5.0') {
+  if (manifest.protocol === '5.0' || manifest.protocol === '6.0') {
     if (!Array.isArray(manifest.capabilities) || manifest.capabilities.length === 0) {
       errors.push("v5 squads must declare capabilities[] (else they are invisible to discovery)");
     } else {
@@ -281,9 +281,10 @@ function validateAll(squadDir) {
 
   // Component file existence (relative to squad dir).
   // Accepts: full relative path, bare filename with extension, or bare filename
-  // without extension (default: .md for agents/tasks, .yaml or .yml for workflows).
+  // without extension (default: .md for agents/tasks; .md, .yaml or .yml for
+  // workflows — the .md wins a bare ref, as it does in the contract surface).
   const components = manifest.components || {};
-  const defaultExt = (bucket) => bucket === 'workflows' ? ['.yaml', '.yml'] : ['.md'];
+  const defaultExt = (bucket) => bucket === 'workflows' ? ['.md', '.yaml', '.yml'] : ['.md'];
   const checkBucket = (bucket, subdir) => {
     if (!Array.isArray(components[bucket])) return;
     for (const file of components[bucket]) {

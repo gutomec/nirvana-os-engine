@@ -49,7 +49,7 @@ const SEMVER_RE = /^\d+\.\d+\.\d+([+\-].*)?$/;
 const CAP_ID_RE = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2,}$/;
 
 // ─────────────────────────────────────────────────────────────────────
-// Criterion 1 — protocol "5.0" + valid semver version  (8 pts)
+// Criterion 1 — protocol "5.0" or "6.0" + valid semver version  (8 pts)
 // ─────────────────────────────────────────────────────────────────────
 function c1_protocol_version({ manifest }) {
   const max = 8;
@@ -58,14 +58,17 @@ function c1_protocol_version({ manifest }) {
   const ver = String(manifest.version || '').trim();
   let score = 0;
   const ev = [];
-  if (proto === '5.0') { score += 4; ev.push('protocol=5.0'); }
+  // 6.0 scores as 5.0: the capabilities contract is the same, and the fixer
+  // must never downgrade a v6 manifest to 5.0.
+  const protoOk = proto === '5.0' || proto === '6.0';
+  if (protoOk) { score += 4; ev.push(`protocol=${proto}`); }
   else { ev.push(`protocol=${proto || '(missing)'}`); }
   if (SEMVER_RE.test(ver)) { score += 4; ev.push(`version=${ver}`); }
   else { ev.push(`version=${ver || '(missing)'} (not semver)`); }
   let fix = null;
-  if (proto !== '5.0' || !SEMVER_RE.test(ver)) {
+  if (!protoOk || !SEMVER_RE.test(ver)) {
     fix = { kind: 'manifest_patch', patches: [] };
-    if (proto !== '5.0') fix.patches.push({ op: 'set', path: 'protocol', value: '5.0' });
+    if (!protoOk) fix.patches.push({ op: 'set', path: 'protocol', value: '5.0' });
     if (!SEMVER_RE.test(ver)) fix.patches.push({ op: 'set', path: 'version', value: '5.0.0' });
   }
   return { score, max, evidence: ev.join(' · '), fixable_diff: fix };
@@ -210,20 +213,30 @@ function c6_tasks({ squadDir }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Criterion 7 — workflows/*.yaml DAG-valid, refs resolve  (8 pts)
+// Criterion 7 — workflows/*.{yaml,md} DAG-valid, refs resolve  (8 pts)
 // ─────────────────────────────────────────────────────────────────────
+/** A workflow document: the whole file for YAML, the frontmatter for Markdown
+ *  (v6: frontmatter graph + prose body). CRLF tolerant. */
+function readWorkflowDoc(p) {
+  if (!/\.md$/i.test(p)) return readYaml(p);
+  if (!exists(p) || !YAML) return null;
+  try {
+    const m = /^\uFEFF?---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(fs.readFileSync(p, 'utf8'));
+    return m ? YAML.parse(m[1]) : null;
+  } catch { return null; }
+}
 function c7_workflows({ squadDir, manifest }) {
   const max = 8;
   const dir = path.join(squadDir, 'workflows');
   if (!exists(dir)) return { score: 0, max, evidence: 'workflows/ missing', fixable_diff: { kind: 'create_workflows_dir' } };
-  const files = listDir(dir).filter(f => /\.ya?ml$/.test(f));
+  const files = listDir(dir).filter(f => /\.(ya?ml|md)$/.test(f));
   if (files.length === 0) return { score: 0, max, evidence: 'no workflow files', fixable_diff: null };
   const knownAgents = new Set(listDir(path.join(squadDir, 'agents')).filter(f => f.endsWith('.md')).map(f => f.replace(/\.md$/, '')));
   const knownTasks = new Set(listDir(path.join(squadDir, 'tasks')).filter(f => f.endsWith('.md')).map(f => f.replace(/\.md$/, '')));
   let valid = 0;
   const issues = [];
   for (const f of files) {
-    const wf = readYaml(path.join(dir, f));
+    const wf = readWorkflowDoc(path.join(dir, f));
     if (!wf || typeof wf !== 'object') { issues.push(`${f}: parse-fail`); continue; }
     // v5 protocol allows multiple workflow shapes (real-world variance):
     //   top-level `steps:`            (Squad Protocol V5 canonical DAG)

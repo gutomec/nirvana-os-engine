@@ -63,19 +63,35 @@ function readIfFile(p) {
   } catch { return ''; }
 }
 
-/** `ref` may carry an extension or not, and may name a dir-relative file. */
-function resolveRef(squadDir, ref, kind) {
+/** `ref` may carry an extension or not, and may name a dir-relative file.
+ *  Returns the path of the first readable candidate, or ''. A workflow lives
+ *  in `.md` (v6: frontmatter graph + prose body) or in `.yaml`/`.yml` (v5);
+ *  for a bare ref the `.md` wins, as it does in the contract surface. */
+function resolveRefPath(squadDir, ref, kind) {
   if (typeof ref !== 'string' || !ref) return '';
-  const exts = kind === 'workflow' ? ['', '.yaml', '.yml'] : ['', '.md'];
+  const exts = kind === 'workflow' ? ['', '.md', '.yaml', '.yml'] : ['', '.md'];
   const bases = [ref, path.join(kind === 'agent' ? 'agents' : kind === 'workflow' ? 'workflows' : 'tasks', ref)];
   for (const b of bases) {
     for (const e of exts) {
       const p = path.join(squadDir, b + e);
-      const t = readIfFile(p);
-      if (t) return t;
+      if (readIfFile(p)) return p;
     }
   }
   return '';
+}
+
+function resolveRef(squadDir, ref, kind) {
+  const p = resolveRefPath(squadDir, ref, kind);
+  return p ? readIfFile(p) : '';
+}
+
+/** A Markdown workflow is its frontmatter (the graph) plus its body (the
+ *  prose), and both are body text: only the delimiters go. That is what makes
+ *  one graph yield one text whether it sits in `.yaml` or in `.md` — `clean()`
+ *  would otherwise strip the frontmatter as noise. CRLF tolerant. */
+function unwrapFrontmatter(text) {
+  const m = /^\uFEFF?---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)([\s\S]*)$/.exec(text);
+  return m ? `${m[1]}\n${m[2]}` : text;
 }
 
 /** A workflow expands to the union of what it runs — that is the material that
@@ -107,8 +123,9 @@ function bodyTextFor(manifestPath, invoke) {
     const ref = invoke.ref;
     let raw = '';
     if (type === 'workflow') {
-      const wf = resolveRef(squadDir, ref, 'workflow');
-      raw = wf ? expandWorkflow(squadDir, wf) : '';
+      const wfPath = resolveRefPath(squadDir, ref, 'workflow');
+      const wf = wfPath ? readIfFile(wfPath) : '';
+      raw = wf ? expandWorkflow(squadDir, /\.md$/i.test(wfPath) ? unwrapFrontmatter(wf) : wf) : '';
     } else if (type === 'agent') {
       raw = resolveRef(squadDir, ref, 'agent');
     } else {

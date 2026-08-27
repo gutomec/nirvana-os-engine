@@ -148,7 +148,7 @@ console.log("");
 console.log("Next steps:");
 console.log(`  1. Fill in agents/${state.AGENT_1}.md and agents/${state.AGENT_2}.md (use templates/agent.md.tmpl)`);
 console.log(`  2. Fill in tasks/${state.TASK_1}.md and tasks/${state.TASK_2}.md`);
-console.log(`  3. Fill in workflows/${state.WORKFLOW_REF}.yaml`);
+console.log(`  3. Fill in workflows/${state.WORKFLOW_REF}.(yaml|md)`);
 console.log(`  4. Validate: bun ${path.join(skillDir, "scripts", "validate-squad.ts")} ${targetDir}`);
 console.log(`  5. Index:    bun ${path.join(skillDir, "scripts", "index-squads.ts")}`);
 

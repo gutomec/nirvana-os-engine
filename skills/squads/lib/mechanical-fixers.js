@@ -596,8 +596,11 @@ function fix_components_files_stub(squadDir) {
     // Strip any extension already present in the ref so we don't end up
     // with foo.md.md or foo.yaml.yaml.
     const baseName = name.replace(/\.(md|ya?ml)$/i, '');
+    // A workflow already on disk in any encoding (.md for v6, .yaml/.yml for
+    // v5) is not missing; the stub itself is only ever a .yaml in this cut.
+    const present = sub === 'workflows' ? ['.md', '.yaml', '.yml'] : [ext];
+    if (present.some(e => fs.existsSync(path.join(dir, `${baseName}${e}`)))) return;
     const fp = path.join(dir, `${baseName}${ext}`);
-    if (fs.existsSync(fp)) return;
     fs.writeFileSync(fp, body, 'utf8');
     created.push(`${sub}/${baseName}${ext}`);
   };

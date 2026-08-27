@@ -30,7 +30,9 @@ export const SURFACE_FILE = ".nirvana-surface.json";
  *  mind-clone surface walks the whole directory, so the defect was exclusive
  *  to it. */
 export const GENERATED_FILES = [SURFACE_FILE, "CHANGES.json", "CHANGELOG.md", ".nirvana-behavior.md"];
-export const SURFACE_SCHEMA = 2;
+/** 3: workflow keys and bindings drop the file extension (`workflow:workflows/x`),
+ *  `.md` workflows are listed, stem collisions are flagged. See `normalizeSurface`. */
+export const SURFACE_SCHEMA = 3;
 
 export type ArtifactKind = "squad" | "business" | "mind-clone";
 
@@ -48,9 +50,14 @@ export type EntryType =
 
 export interface SurfaceEntry {
   type: EntryType;
-  /** Binding target: `workflow:workflows/x.yaml`, `task:tasks/y.md`. Changing
-   *  this breaks invokers, even with the id intact. */
+  /** Binding target: `workflow:workflows/x` (no extension: the encoding of a
+   *  workflow is not contract), `task:tasks/y.md`. Changing this breaks
+   *  invokers, even with the id intact. */
   binding?: string;
+  /** Workflow entries only: other files in `workflows/` sharing this stem
+   *  (`x.md` + `x.yaml`). The `.md` wins the entry; the rest are listed here
+   *  for the lint to fail on. Metadata, never part of the surface hash. */
+  collision?: string[];
   /** Routing labels (the capability's domains/produces). */
   routing?: string[];
   /** Hash of the entry's own body (YAML node or file). */
@@ -104,6 +111,15 @@ function fileHash(file: string): string {
   try { return sha(fs.readFileSync(file)); } catch { return "missing"; }
 }
 
+/** Workflow encodings, in precedence order: the `.md` wins a stem collision. */
+const WORKFLOW_EXTS = [".md", ".yaml", ".yml"];
+const WORKFLOW_EXT_RE = /\.(ya?ml|md)$/i;
+function stripWorkflowExt(name: string): string { return name.replace(WORKFLOW_EXT_RE, ""); }
+function workflowRank(file: string): number {
+  const i = WORKFLOW_EXTS.findIndex((e) => file.toLowerCase().endsWith(e));
+  return i === -1 ? WORKFLOW_EXTS.length : i;
+}
+
 /** Discovery prose: changes semantic routing, never the binding. */
 const PROSE_KEYS = ["description", "examples", "example_briefs", "keywords", "not_for"];
 
@@ -145,7 +161,9 @@ function squadSurface(dir: string, slug: string): { entries: Record<string, Surf
     const invoke = cap?.invoke ?? {};
     entries[`capability:${id}`] = {
       type: "capability",
-      binding: invoke?.type && invoke?.ref ? `${invoke.type}:${invoke.ref}` : undefined,
+      binding: invoke?.type && invoke?.ref
+        ? `${invoke.type}:${invoke.type === "workflow" ? stripWorkflowExt(String(invoke.ref)) : invoke.ref}`
+        : undefined,
       routing: [
         ...((cap?.domains ?? []) as string[]).map((d) => `domain:${d}`),
         ...((cap?.produces ?? []) as string[]).map((d) => `produces:${d}`),
@@ -160,15 +178,30 @@ function squadSurface(dir: string, slug: string): { entries: Record<string, Surf
 
   // File components: the name is the identifier workflows and capabilities
   // reference, so renaming is a break even with identical content.
-  for (const [sub, type, exts] of [
-    ["tasks", "task", [".md"]],
-    ["workflows", "workflow", [".yaml", ".yml"]],
-    ["agents", "agent", [".md"]],
-  ] as const) {
+  for (const [sub, type] of [["tasks", "task"], ["agents", "agent"]] as const) {
     const subdir = path.join(dir, sub);
-    for (const f of listFiles(subdir, exts as unknown as string[])) {
+    for (const f of listFiles(subdir, [".md"])) {
       entries[`${type}:${sub}/${f}`] = { type, hash: fileHash(path.join(subdir, f)) };
     }
+  }
+
+  // Workflows are keyed by STEM, never by file name: `.yaml` and `.md` are two
+  // encodings of one graph, and an invoker does not bind to the encoding.
+  // Keys use a literal `/` (never path.join) so they are identical on Windows;
+  // stems are lowercased because the file systems that matter are
+  // case-insensitive. When two files share a stem, the `.md` wins the entry
+  // and the others are flagged in `collision` for the lint to reject.
+  const wfDir = path.join(dir, "workflows");
+  const byStem = new Map<string, string[]>();
+  for (const f of listFiles(wfDir, WORKFLOW_EXTS)) {
+    const stem = stripWorkflowExt(f).toLowerCase();
+    byStem.set(stem, [...(byStem.get(stem) ?? []), f]);
+  }
+  for (const [stem, files] of byStem) {
+    const ranked = [...files].sort((a, b) => workflowRank(a) - workflowRank(b) || a.localeCompare(b));
+    const entry: SurfaceEntry = { type: "workflow", hash: fileHash(path.join(wfDir, ranked[0])) };
+    if (ranked.length > 1) entry.collision = ranked.slice(1);
+    entries[`workflow:workflows/${stem}`] = entry;
   }
   return { entries, prose };
 }
@@ -232,11 +265,42 @@ function declaredVersion(dir: string, kind: ArtifactKind): string {
   return /^\d+\.\d+\.\d+$/.test(v) ? v : "1.0.0";
 }
 
+/**
+ * Brings a surface written under schema ≤ 2 to the schema-3 key form: workflow
+ * keys and `workflow:` bindings lose their extension, stems are lowercased.
+ * The schema number is NOT touched: `diffSurfaces` must still see the
+ * transition and re-establish the baseline (surface-diff.ts). What this buys
+ * is that whoever reads an old file sees the identifiers a fresh extraction
+ * produces, so a `.yaml → .md` migration compared under one schema is
+ * `content_changed`, never `removed + added + rebound`.
+ */
+export function normalizeSurface(s: Surface): Surface {
+  if (typeof s.schema !== "number" || s.schema > 2) return s;
+  const entries: Record<string, SurfaceEntry> = {};
+  for (const k of Object.keys(s.entries).sort()) {
+    const e: SurfaceEntry = { ...s.entries[k] };
+    if (e.binding?.startsWith("workflow:")) e.binding = `workflow:${stripWorkflowExt(e.binding.slice("workflow:".length))}`;
+    let key = k;
+    if (e.type === "workflow" && k.startsWith("workflow:workflows/")) {
+      const file = k.slice("workflow:workflows/".length);
+      key = `workflow:workflows/${stripWorkflowExt(file).toLowerCase()}`;
+      if (key in entries) {
+        entries[key].collision = [...(entries[key].collision ?? []), file].sort();
+        continue;
+      }
+    }
+    entries[key] = e;
+  }
+  const ordered: Record<string, SurfaceEntry> = {};
+  for (const k of Object.keys(entries).sort()) ordered[k] = entries[k];
+  return { ...s, entries: ordered };
+}
+
 export function readSurface(dir: string): Surface | null {
   const file = path.join(dir, SURFACE_FILE);
   try {
     const s = JSON.parse(fs.readFileSync(file, "utf8")) as Surface;
-    return s && typeof s === "object" && s.entries ? s : null;
+    return s && typeof s === "object" && s.entries ? normalizeSurface(s) : null;
   } catch { return null; }
 }
 
