@@ -11,8 +11,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { AgenticRouteDecision } from "../lib/agentic-router.ts";
 import {
-  AgentXCanaryQueue, ConversationService, MESSAGE_ROUTE_TIMEOUT_MS, createAgenticMessageRouter, createDispatchExecutionRunner, resolveMessageTarget,
-  type ExecutionStartInput, type GlanceExecutionRunner, type MessageRouteInput, type MessageRouter, type MessageRoutingSettings,
+  AgentXCanaryQueue, ConversationService, MESSAGE_ROUTE_TIMEOUT_MS, createAgenticMessageRouter, createDispatchExecutionRunner,
+  parseMessageTarget, parseMessageTargetSpec, resolveMessageTarget,
+  type ExecutionStartInput, type GlanceExecutionRunner, type MessageCapabilityResolver, type MessageRouteInput, type MessageRouter, type MessageRoutingSettings,
 } from "../lib/control-plane/index.ts";
 import { getRun, listEvents, openKernel, type RunProjection } from "../lib/run-kernel/index.ts";
 import { childState, shimRuntimeOnPath, waitUntil, writeFakeGlanceChild } from "./helpers/fake-glance-child.ts";
@@ -61,8 +62,16 @@ function auditSink() {
     named: (event: string) => events.filter(item => item.event === event) };
 }
 
-function deps(router: MessageRouter | undefined, audit: ReturnType<typeof auditSink>, settings: MessageRoutingSettings = AGENTIC, timeoutMs?: number) {
-  return { router, settings, audit: audit.sink, timeoutMs, projectId: "prj_route", projectRoot: "/tmp/prj_route", traceId: "run_trace", messageId: "msg_route" };
+/** The capability resolution seam, pinned: the real resolver reads the installed squads
+ *  registry, and these tests must say the same thing on a laptop with 204 squads and on a
+ *  CI box with none. It answers what the Message named, else the legacy id — which is what
+ *  the queue stamped on every squad Run before the resolver existed. Its own ladder is
+ *  proved in capability-resolver.test.ts. */
+const CAPABILITY_SEAM: MessageCapabilityResolver = ({ explicit }) => explicit ?? "squad.execute";
+
+function deps(router: MessageRouter | undefined, audit: ReturnType<typeof auditSink>, settings: MessageRoutingSettings = AGENTIC, timeoutMs?: number,
+  resolveCapability: MessageCapabilityResolver = CAPABILITY_SEAM) {
+  return { router, settings, audit: audit.sink, timeoutMs, resolveCapability, projectId: "prj_route", projectRoot: "/tmp/prj_route", traceId: "run_trace", messageId: "msg_route" };
 }
 
 /** A runner whose child exits at once without touching the Run: the queue then rolls the Run
@@ -86,7 +95,7 @@ function fixture() {
   const message = conversations.append({ conversationId: conversation.conversation_id, projectId: "prj_route", role: "user", content: "Produza a landing page da clínica", messageId: "msg_route" });
   const { runner, starts } = fakeRunner();
   const queue = (router: MessageRouter | undefined, audit: ReturnType<typeof auditSink>, settings: MessageRoutingSettings = AGENTIC) => {
-    const instance = new AgentXCanaryQueue(kernel, conversations, undefined, runner, { router, audit: audit.sink, settingsFor: () => settings });
+    const instance = new AgentXCanaryQueue(kernel, conversations, undefined, runner, { router, audit: audit.sink, resolveCapability: CAPABILITY_SEAM, settingsFor: () => settings });
     queues.push(instance);
     return instance;
   };
@@ -298,6 +307,49 @@ describe("resolveMessageTarget", () => {
     queue.shutdown();
     expect(calls).toHaveLength(1);
     expect(fx.events(first.run.runId).filter(event => event.type === "x_run_route_resolved")).toHaveLength(1);
+  }, KERNEL_BUDGET_MS);
+});
+
+describe("the Message names a capability", () => {
+  test("`use squad <slug>:<capabilityId>:` parses to slug and capability; a bare slug parses to neither", () => {
+    expect(parseMessageTargetSpec("use squad brandcraft:branding.brand.audit: audite a marca"))
+      .toEqual({ target: { kind: "squad", slug: "brandcraft", capabilityId: "branding.brand.audit" }, capabilityId: "branding.brand.audit" });
+    expect(parseMessageTargetSpec("USE SQUAD Doc-Factory:Docs.Report.Create: relatório"))
+      .toEqual({ target: { kind: "squad", slug: "doc-factory", capabilityId: "docs.report.create" }, capabilityId: "docs.report.create" });
+    // Without a capability the parse is exactly what it always was.
+    expect(parseMessageTargetSpec("use squad brandcraft: manifesto"))
+      .toEqual({ target: { kind: "squad", slug: "brandcraft", capabilityId: "squad.execute" }, capabilityId: null });
+    expect(parseMessageTarget("use squad brandcraft:branding.brand.audit: audite")).toEqual({ kind: "squad", slug: "brandcraft", capabilityId: "branding.brand.audit" });
+    // A business prefix takes no capability, and a colon inside the brief is not a grammar.
+    expect(parseMessageTargetSpec("use business web-studio: landing").capabilityId).toBeNull();
+    expect(parseMessageTarget("faça o seguinte: um relatório")).toEqual(AGENT_X);
+  });
+
+  test("the named capability reaches the Run, and the router path resolves one instead of the literal", async () => {
+    const audit = auditSink();
+    const { router, calls } = fakeRouter(decision({ mandatory_squads: ["brandcraft"] }));
+    const named = await resolveMessageTarget("use squad brandcraft:branding.brand.audit: audite a marca", deps(router, audit));
+    expect(named.target).toEqual({ kind: "squad", slug: "brandcraft", capabilityId: "branding.brand.audit" });
+    expect(named.route.source).toBe("explicit");
+    expect(calls).toHaveLength(0);
+
+    // The router names a squad, not a capability: the resolver picks one from the brief.
+    const seen: Array<{ slug: string; explicit: string | null }> = [];
+    const routed = await resolveMessageTarget("Produza o PDF da marca", deps(router, audit, AGENTIC, undefined,
+      ({ slug, explicit }) => { seen.push({ slug, explicit }); return "branding.pdf_document.create"; }));
+    expect(routed.target).toEqual({ kind: "squad", slug: "brandcraft", capabilityId: "branding.pdf_document.create" });
+    expect(routed.route.source).toBe("router");
+    expect(seen).toEqual([{ slug: "brandcraft", explicit: null }]);
+  });
+
+  test("the child is started on the capability the Message named", async () => {
+    const fx = fixture();
+    const queue = fx.queue(fakeRouter(decision()).router, auditSink());
+    const receipt = await fx.submit(queue, "use squad brandcraft:branding.brand.audit: audite a marca", "named-capability");
+    expect(receipt.run.target).toEqual({ kind: "squad", slug: "brandcraft", capabilityId: "branding.brand.audit" });
+    await waitUntil(() => fx.starts.length === 1, "the squad child to start");
+    queue.shutdown();
+    expect(fx.starts[0].target).toEqual({ kind: "squad", slug: "brandcraft", capabilityId: "branding.brand.audit" });
   }, KERNEL_BUDGET_MS);
 });
 

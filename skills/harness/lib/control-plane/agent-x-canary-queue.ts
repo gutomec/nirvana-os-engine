@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import * as path from "node:path";
 import { resolveSetting } from "../../../_shared/lib/settings.ts";
 import type { AgenticRouteDecision } from "../agentic-router.ts";
+import { LEGACY_CAPABILITY_ID, resolveSquadCapability } from "../capability-resolver.ts";
 import { resolveDispatchPlan, type DispatchPlan } from "../dispatch-cascade.ts";
 import { runAgentXGauntlet, type AgentXCandidateResult, type AgentXGauntletEvaluator } from "../gauntlet/agent-x-cutover.ts";
 import {
@@ -37,14 +38,24 @@ const EXECUTING_STATES: ReadonlySet<CanonicalRunState> = new Set(["running", "wa
 const CANCELLABLE_STATES: ReadonlySet<CanonicalRunState> = new Set(["running", "waiting", "revising"]);
 const REATTACH_POLL_MS = 200;
 
-/** Explicit target at the head of a Message: `use business <slug>:` or `use squad <slug>:`
- * (keyword case-insensitive, slug `[a-z0-9-]+`). Any other text names no target: agent-x here,
- * and the queue asks the router (`resolveMessageTarget`) after the Run is prepared, before any child. */
-export function parseMessageTarget(content: string): TargetRef {
-  const match = content.match(/^\s*use\s+(business|squad)\s+([a-z0-9-]+)\s*:/i);
-  if (!match) return AGENT_X_TARGET;
+/** Explicit target at the head of a Message: `use business <slug>:`, `use squad <slug>:` or
+ * `use squad <slug>:<capabilityId>:` (keyword case-insensitive, slug `[a-z0-9-]+`, capability id
+ * `[a-z0-9._-]+` — the same `<slug>[:<capabilityId>]` grammar `--squad` takes). Any other text
+ * names no target: agent-x here, and the queue asks the router (`resolveMessageTarget`) after the
+ * Run is prepared, before any child. Pure — the capability the Message did NOT name is resolved
+ * by `resolveMessageTarget`, which reads the registry. */
+export function parseMessageTargetSpec(content: string): { target: TargetRef; capabilityId: string | null } {
+  const match = content.match(/^\s*use\s+(business|squad)\s+([a-z0-9-]+)(?::([a-z0-9._-]+))?\s*:/i);
+  if (!match) return { target: AGENT_X_TARGET, capabilityId: null };
   const slug = match[2].toLowerCase();
-  return match[1].toLowerCase() === "business" ? { kind: "business", slug } : { kind: "squad", slug, capabilityId: "squad.execute" };
+  if (match[1].toLowerCase() === "business") return { target: { kind: "business", slug }, capabilityId: null };
+  const capabilityId = match[3] ? match[3].toLowerCase() : null;
+  return { target: { kind: "squad", slug, capabilityId: capabilityId ?? LEGACY_CAPABILITY_ID }, capabilityId };
+}
+
+/** The target alone — what the queue reads to tell an explicit Message from a routed one. */
+export function parseMessageTarget(content: string): TargetRef {
+  return parseMessageTargetSpec(content).target;
 }
 
 export function canaryCapabilityFor(target: TargetRef): CanaryCapability {
@@ -63,12 +74,16 @@ export interface MessageRouteInput {
 export interface MessageRouter { route(input: MessageRouteInput): Promise<AgenticRouteDecision> }
 export interface MessageRoutingSettings { mode: "agentic" | "fast"; onRouterFailure: "cascade" | "fail" }
 export type MessageRouteAudit = (event: string, payload: Record<string, unknown>) => void;
+/** Which capability of a squad the Message runs; default lib/capability-resolver.ts. */
+export type MessageCapabilityResolver = (input: { slug: string; brief: string; explicit: string | null; audit: MessageRouteAudit }) => string;
 export interface MessageRoutingOptions {
   router?: MessageRouter;
   /** Ceiling of one routing call; default MESSAGE_ROUTE_TIMEOUT_MS. */
   timeoutMs?: number;
   /** Audit sink; default lib/audit.js with the Message's trace and project. */
   audit?: MessageRouteAudit;
+  /** Capability resolution seam; default reads the squads registry. */
+  resolveCapability?: MessageCapabilityResolver;
   /** `routing.mode` and `routing.on_router_failure` for a project; default resolveSetting. */
   settingsFor?: (projectRoot: string) => MessageRoutingSettings;
 }
@@ -95,7 +110,11 @@ export interface MessageTargetResolution {
 /** Ceiling of one routing call from a Message. No settings key configures the router's timeout
  * yet; the dispatch waits five minutes, the Glance answers a chat and waits two. */
 export const MESSAGE_ROUTE_TIMEOUT_MS = 120_000;
+
 const AGENT_X_TARGET: TargetRef = { kind: "agent-x", slug: "agent-x" };
+
+const defaultCapabilityResolver: MessageCapabilityResolver = ({ slug, brief, explicit, audit }) =>
+  resolveSquadCapability({ slug, brief, explicit, audit }).capabilityId;
 
 export function routingSettingsFor(projectRoot: string): MessageRoutingSettings {
   return { mode: resolveSetting("routing.mode", { projectRoot }).value, onRouterFailure: resolveSetting("routing.on_router_failure", { projectRoot }).value };
@@ -148,8 +167,18 @@ export async function resolveMessageTarget(content: string, deps: MessageRouting
     return resolution;
   };
   const fallback = (rationale: string): MessageTargetResolution => ({ target: AGENT_X_TARGET, route: { source: "fallback", rationale } });
+  // The capability a squad Message runs: the one it named, or the one the resolver
+  // picks for this brief inside that squad. Before this every Glance squad Run was
+  // stamped `squad.execute`, whatever the squad declared.
+  const resolveCapability = deps.resolveCapability ?? defaultCapabilityResolver;
+  const squadTarget = (slug: string, explicit: string | null): TargetRef =>
+    ({ kind: "squad", slug, capabilityId: resolveCapability({ slug, brief: content, explicit, audit }) });
 
-  const explicit = parseMessageTarget(content);
+  const spec = parseMessageTargetSpec(content);
+  const explicit = spec.target;
+  if (explicit.kind === "squad") {
+    return record({ target: squadTarget(explicit.slug, spec.capabilityId), route: { source: "explicit", rationale: `the Message names squad ${explicit.slug}` } });
+  }
   if (explicit.kind !== "agent-x") return record({ target: explicit, route: { source: "explicit", rationale: `the Message names ${explicit.kind} ${explicit.slug}` } });
   if (deps.settings.mode === "fast") return record(fallback("routing.mode=fast: the Glance composes only the agentic router, so the Message stays on agent-x"));
   if (!deps.router) return record(fallback("no router configured on this server; the Message stays on agent-x"));
@@ -171,7 +200,7 @@ export async function resolveMessageTarget(content: string, deps: MessageRouting
   const step = plan.steps[0];
   const squads = plan.steps.filter(item => item.kind === "squad").map(item => item.slug!);
   if (step?.kind === "business" && step.slug) return record({ target: { kind: "business", slug: step.slug }, route: { source: "router", rationale: step.reason } }, plan, decision);
-  if (step?.kind === "squad" && squads.length === 1) return record({ target: { kind: "squad", slug: squads[0], capabilityId: "squad.execute" }, route: { source: "router", rationale: step.reason } }, plan, decision);
+  if (step?.kind === "squad" && squads.length === 1) return record({ target: squadTarget(squads[0], step.capability ?? null), route: { source: "router", rationale: step.reason } }, plan, decision);
   if (step?.kind === "squad") return record(fallback(`the router named ${squads.length} squads (${squads.join(", ")}); one Glance Run executes one target, so the Message stays on agent-x`), plan, decision);
   if (decision.kind === "no_match") return record({ ...fallback(step?.reason ?? "router no_match"), refused: "no_dispatchable_target", answer: decision.rationale }, plan, decision);
   return record(fallback(step?.reason ?? plan.error ?? "the router named no dispatchable target"), plan, decision);
@@ -253,6 +282,7 @@ export class AgentXCanaryQueue {
 
   private routingDeps(scope: { projectId: string; projectRoot: string }, traceId: string, messageId: string | undefined, signal?: AbortSignal): MessageRoutingDeps {
     return { router: this.routing.router, timeoutMs: this.routing.timeoutMs, audit: this.routing.audit,
+      resolveCapability: this.routing.resolveCapability,
       settings: (this.routing.settingsFor ?? routingSettingsFor)(scope.projectRoot),
       projectId: scope.projectId, projectRoot: scope.projectRoot, traceId, messageId, signal };
   }

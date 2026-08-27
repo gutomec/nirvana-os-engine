@@ -59,8 +59,9 @@ Event names have two tiers:
    instead of crashing the caller; a name already starting with `x_` passes
    through silently. Extension events SHOULD be spelled with the explicit
    `x_` prefix at the call site so the source literal matches the log
-   (`x_route_ambiguous_autopicked`, `x_delivery_withheld`,
-   `x_runtime_errored_with_artifacts`, `x_research_completed`, ...). Set
+   (`x_route_ambiguous_autopicked`, `x_capability_resolved`,
+   `x_delivery_withheld`, `x_runtime_errored_with_artifacts`,
+   `x_research_completed`, ...). Set
    `NIRVANA_AUDIT_STRICT=1` to make unknown
    names throw (used by the schema tests).
 

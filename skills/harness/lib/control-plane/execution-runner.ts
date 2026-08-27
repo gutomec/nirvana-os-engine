@@ -22,6 +22,7 @@ import { fileURLToPath } from "node:url";
 import { listRuntimes, runtimeAvailable } from "../../../_shared/lib/host-agent-driver.ts";
 import { harnessLogsDir } from "../../../_shared/lib/log-paths.ts";
 import { resolveSetting, settingsEnvForChild } from "../../../_shared/lib/settings.ts";
+import { formatSquadTarget } from "../capability-resolver.ts";
 import type { Runtime } from "../host-agent-driver.ts";
 import { canonicalRuntimeName, detectCurrentHost, resolveDefaultRuntime } from "../runtime-rules.ts";
 import type { TargetRef } from "../run-kernel/index.ts";
@@ -109,7 +110,9 @@ export function createDispatchExecutionRunner(options: DispatchExecutionRunnerOp
       fs.mkdirSync(runDir, { recursive: true });
       const argv = ["bun", dispatchScript];
       if (input.target.kind === "business") argv.push("--business", input.target.slug);
-      else if (input.target.kind === "squad") argv.push("--squad", input.target.slug);
+      // `<slug>:<capabilityId>` so the capability the Message resolved reaches the child;
+      // the legacy id stays a bare slug, byte-for-byte the argv Glance always spawned.
+      else if (input.target.kind === "squad") argv.push("--squad", formatSquadTarget(input.target.slug, input.target.capabilityId));
       else argv.push("--agent-x");
       argv.push("--brief-file", input.briefFile, "--exec", "--project", input.projectId, "--run-id", input.runId,
         "--outputs-root", path.join(runDir, "outputs"));
