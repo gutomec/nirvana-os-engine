@@ -8,6 +8,8 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+## 0.10.1 — 2026-08-27
+
 ### A field that reads as data stops being able to run a command
 
 `dependencies.yaml` carries two kinds of field, and the activator ran both as a
@@ -119,6 +121,21 @@ mentioned the two headline commands of that release. The status line reads
 0.10.0, and the command table gained a row for `nrv validate`, the admission
 gate for a squad, a business or a mind-clone, and one for `nrv migrate`, the
 conversion to Squad Protocol 6.0.
+
+### The status line gets a gate, and `nrv migrate` gets a reference
+
+"currently 0.8.1" survived two releases in a repository with fifteen gates
+because not one of them read the README status line. `check-version-parity` now
+reads it in all six languages, alongside `package.json`, `skills/VERSION` and the
+newest changelog entry. It matches the version by pattern rather than by line
+number, so the first paragraph anyone adds above the line does not break it, and
+it treats a README that declares no version as a failure rather than as a file
+with nothing to check.
+
+`nrv migrate` had reached the command table of all six READMEs and nowhere in
+`docs/CLI.md`, which is where those tables send the reader for the full
+reference. It has a row there now, next to `nrv validate-chain`, with the dry-run
+default, the backup and the rollback spelled out.
 
 ## 0.10.0 — 2026-08-27
 

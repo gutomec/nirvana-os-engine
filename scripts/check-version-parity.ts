@@ -17,6 +17,10 @@
  * The version also has to match the newest entry in the changelog, because a
  * release whose changelog does not mention it is a release nobody can read about.
  *
+ * And it has to match the status line the six READMEs close with — the version a
+ * reader believes BEFORE they install anything. Nothing checked that line, so
+ * "currently 0.8.1" survived two releases in a repository with fifteen gates.
+ *
  * Usage:
  *   bun scripts/check-version-parity.ts
  *   bun scripts/check-version-parity.ts --strict   # exit 1 on any divergence
@@ -36,11 +40,32 @@ const versionFile = read("skills/VERSION").trim();
 /** The first `## X.Y.Z` heading in the changelog is the release being shipped. */
 const changelog = read("CHANGELOG.md").match(/^## (\d+\.\d+\.\d+)/m)?.[1] ?? "(none)";
 
+/**
+ * The status line every README closes with: "Status: beta (0.x, currently
+ * 0.10.0)" and its five translations.
+ *
+ * Matched by PATTERN, never by line number — pinning "line 179" breaks on the
+ * first paragraph anyone adds above it. And matched by the NUMBER, not the
+ * sentence: the six sentences share no words, only the shape `0.x`, a separator,
+ * the semver, then a closing paren (ASCII `)` or full-width `）` in zh). The
+ * `0.x` anchor is also what keeps the historical "engines up to 0.8.0" line out
+ * of the match — that one is correct context, not a stale version.
+ *
+ * A README with no match is a FAILURE, not a free pass: a README that stopped
+ * declaring its version is exactly the drift this check exists to catch.
+ */
+const READMES = ["README.md", "README.pt-BR.md", "README.es.md", "README.zh.md", "README.hi.md", "README.ar.md"];
+const STATUS_RE = /0\.x[^\n)）]{0,40}?(\d+\.\d+\.\d+)/;
+const NO_STATUS_LINE = "(none)";
+
 const sources: Array<[string, string, string]> = [
   ["package.json", pkg, "what the tag and the release workflow track"],
   ["skills/VERSION", versionFile, "what `nrv --version` prints to the user"],
   ["CHANGELOG.md", changelog, "the newest entry a user can read"],
 ];
+for (const file of READMES) {
+  sources.push([file, read(file).match(STATUS_RE)?.[1] ?? NO_STATUS_LINE, "the status line a reader sees before installing"]);
+}
 
 console.log(`\n${BOLD}VERSION PARITY${RST}`);
 const distinct = new Set(sources.map(([, v]) => v));
@@ -51,11 +76,15 @@ for (const [where, value, why] of sources) {
 console.log();
 
 if (distinct.size === 1) {
-  console.log(`${GRN}  All three agree on ${pkg}.${RST}\n`);
+  console.log(`${GRN}  All ${sources.length} agree on ${pkg}.${RST}\n`);
   process.exitCode = 0;
 } else {
+  for (const [where, value] of sources) {
+    if (value === NO_STATUS_LINE) console.log(`${RED}  ${where} declares no version at all.${RST} ${DIM}Expected a status line naming ${pkg}.${RST}`);
+  }
   console.log(`${RED}  They disagree.${RST} ${DIM}A user who runs \`nrv --version\` reads skills/VERSION,`);
   console.log(`  not package.json — so a stale one tells every user the wrong number`);
-  console.log(`  while every check stays green.${RST}\n`);
+  console.log(`  while every check stays green. The README status line fails the same`);
+  console.log(`  way one step earlier, to a reader who has not installed anything yet.${RST}\n`);
   process.exitCode = strict ? 1 : 0;
 }

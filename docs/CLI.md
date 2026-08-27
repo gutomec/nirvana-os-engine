@@ -90,11 +90,15 @@ Useful flags on `run` / `auto`: `--team` (real multi-employee orchestration), `-
 | `nrv validate <kind> --all [--record [--allow-regression]]` | Verify every installed entity of a kind; `--record` writes the debt baseline. |
 | `nrv validate --pack <content-dir> [--json]` | Verify a pack's content before it ships. |
 | `nrv validate-chain <project> [--strict\|--all]` | Audit-chain integrity check. |
+| `nrv migrate <slug\|path> --to 6 [--apply] [--all] [--map-refs]` | Convert a squad to Squad Protocol 6.0: canonical workflow documents, extension-less refs, acceptance from `success_indicators` (`nrv migrate-squad` is an alias). |
+| `nrv migrate <slug\|path> --rollback <ts>` | Undo a conversion from its backup, while the squad has not changed since. |
 | `nrv baseline [--days=N] [--save]` | Snapshot system KPIs from the audit log. |
 | `nrv improver run [--days=N]` | Meta-Nirvana: mine the audit log and propose improvements. |
 | `nrv update [--check\|--force]` | Self-update: pull + re-run installer + re-index. |
 
 > `nrv validate` exits `0` admitted · `1` an error the debt baseline does not cover · `2` only warnings, under `--strict` · `64` usage error or unknown entity. The system doctor moved to `nrv doctor`; `nrv validate` with no arguments still runs it, with a deprecation notice, for one release. Kind aliases: `biz`, `clone`, `mc`. Full contract: [docs/architecture/validate-gate.md](architecture/validate-gate.md).
+>
+> `nrv migrate` is dry run by default: it prints the report and writes nothing until `--apply`, and every applied run leaves a timestamped backup that `--rollback <ts>` restores. `--all` walks the whole squad library. Full contract: [SQUAD_PROTOCOL_V6.md](../skills/squads/SQUAD_PROTOCOL_V6.md) §35.
 
 ---
 
