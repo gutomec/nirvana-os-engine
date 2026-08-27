@@ -8,6 +8,50 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### The Glance agent is a conversational maestro: one Message, one turn of the project's runtime session
+
+A Message of an adopted project no longer prepares a Run by default. With
+`mode: "turn"` (the default, and what the chat sends) the server starts the
+host runtime headless in the project root, with the Message as the prompt, the
+conversation's native session resumed (`claude -p --session-id <uuid>` on the
+first turn, `--resume <uuid>` after it; the other runtimes through the driver's
+`runHeadless`, `codex exec resume <sid>` included) and a short PT-BR maestro
+directive appended to the system prompt. The child reads the project's
+`CLAUDE.md` and has the harness skill, so it answers questions directly and,
+when asked for work, follows the harness protocol and opens Runs through the
+ordinary scripts. `mode: "run"` keeps the Run path for API clients.
+
+The output is normalized (`tok`, `tool`, `run`, `done`) and streamed by SSE at
+`GET /api/v1/conversations/{cnv}/turns/{trn}/events`; the reply is written once
+as the assistant; the conversation persists `session_id`, `session_runtime`,
+`session_started_at`, `last_turn_at` and `session_history` (idempotent
+migration), so a reload loses nothing and the next turn resumes; the cost
+(`total_cost_usd`) goes to the project's audit as `cost_emission` and to the
+bubble; the header shows the short session id with the terminal command that
+continues it. One turn per conversation at a time (a second Message queues);
+`POST …/turns/{trn}:cancel` sends SIGTERM to the process group and the turn
+ends `cancelled`, never `failed`. A resume the runtime pruned starts a new
+session with a short recap of the visible transcript and records
+`x_session_recreated`. `glance.execution=false` and `--read-only` disable turns
+(`capability_unavailable`). New key `glance.maestro_max_budget_usd` (default 5)
+caps one turn. The module is `lib/control-plane/maestro-turn.ts`, shared with
+the legacy `chat-agent` action (`chat-concierge.ts` is now a thin wrapper).
+Proof: `glance-maestro-turn.test.ts`, with a fake stream-json `claude`; design
+note in `docs/architecture/maestro-sessions.md`. On Windows the `claude.cmd`
+runs through the command interpreter, which ends the command line at the first
+newline of an argument, so there the directive travels as
+`--append-system-prompt-file <temp file>` and the flags after it survive. The
+driver's own `runClaudeCode` still passes its multi-line directive inline
+under that shell (a latent defect, recorded here, not changed).
+
+The runtime probe that decides between the two is fixed as well: Windows
+`where` takes its options with a slash, so the `-v` the driver passed was read
+as a second pattern rather than a flag, and `where` prints CRLF with one line
+per match, which left a trailing carriage return on the chosen path — a `.cmd`
+then failed the extension test and was spawned with no shell, the very split
+the driver exists to prevent (`whichProbe`, `firstExecutablePath`; proof in
+`windows-spawn.test.ts`).
+
 ### The contract surface stops depending on the workflow file extension
 
 Squad Protocol v6 moves workflows to Markdown: a frontmatter graph plus a prose

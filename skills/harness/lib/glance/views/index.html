@@ -1757,7 +1757,12 @@
         <span class="chat-head-dot"></span>
         <div>
           <div class="chat-head-name">Nirvana chat</div>
-          <div class="chat-head-sub text-caption" x-text="chatMode === 'run' ? 'concierge · pergunte ou peça um trabalho' : (chatMode === 'revise' ? 'continuando session' : 'retomando projeto')"></div>
+          <div class="chat-head-sub text-caption" x-show="!chatSession" x-text="chatMode === 'run' ? (canonicalProjectId ? 'maestro · pergunte ou peça um trabalho' : 'concierge · pergunte ou peça um trabalho') : (chatMode === 'revise' ? 'continuando session' : 'retomando projeto')"></div>
+          <!-- A sessão nativa do runtime desta conversa (guardada por diretório de trabalho): continua no terminal -->
+          <div class="chat-head-sub text-caption chat-session" x-show="chatSession" x-cloak :title="chatResumeCommand ? 'Continue a mesma sessão no terminal, na raiz do projeto: ' + chatResumeCommand : ''">
+            <span>maestro · sessão </span><code class="chat-session-id" x-text="(chatSession || '').slice(0, 8)"></code>
+            <button type="button" class="chat-session-copy" x-show="chatResumeCommand" @click="navigator.clipboard?.writeText(chatResumeCommand); flash('Comando copiado: ' + chatResumeCommand, 2500)" title="Copiar o comando para continuar no terminal">copiar comando</button>
+          </div>
         </div>
       </div>
       <div class="flex items-center gap-2">
@@ -1881,8 +1886,21 @@
                 </template>
               </div>
             </template>
+            <!-- Runs que o maestro abriu durante o turno (brief-*, nrv dispatch --exec): link para a aba Runs -->
+            <template x-if="m.role === 'assistant' && m.runs?.length">
+              <div class="chat-runs">
+                <template x-for="(r, ri) in m.runs" :key="ri">
+                  <button type="button" class="chat-run-link" @click="openRunFromChat(r)"><i data-lucide="play" class="icon-inline"></i><span x-text="'Run ' + (r.target_kind ? r.target_kind + ' ' : '') + (r.target_slug || r.run_id)"></span></button>
+                </template>
+              </div>
+            </template>
             <div class="chat-text" x-show="m.text" x-html="m.role === 'assistant' ? renderMd(m.text) : escapeHtml(m.text)"></div>
             <span x-show="m.streaming && !m.text && !(m.tools?.length)" class="chat-thinking">orquestrando<span class="chat-dots">…</span></span>
+            <!-- Estado e custo do turno do maestro (total_cost_usd do result) -->
+            <div class="chat-turn-meta text-caption" x-show="m.role === 'assistant' && !m.streaming && (m.cost != null || (m.turnState && m.turnState !== 'completed'))">
+              <span x-show="m.turnState && m.turnState !== 'completed'" x-text="m.turnState === 'cancelled' ? 'turno cancelado' : 'turno falhou'"></span>
+              <span x-show="m.cost != null" x-text="'custo $' + Number(m.cost || 0).toFixed(3)"></span>
+            </div>
           </div>
         </div>
       </template>
@@ -1909,6 +1927,9 @@
       <textarea x-model="chatInput" @keydown.enter.prevent="if(!$event.shiftKey) sendChat()"
                 :disabled="chatBusy" placeholder="Pergunte algo ou descreva um trabalho… (Enter envia)"
                 class="chat-input" rows="1"></textarea>
+      <button type="button" class="chat-cancel" x-show="chatBusy && chatTurnId" x-cloak @click="cancelTurn()" title="Cancelar o turno (SIGTERM no runtime)" aria-label="Cancelar o turno">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+      </button>
       <button class="chat-send" @click="sendChat()" :disabled="chatBusy || !chatInput.trim()">
         <!-- SVG inline (não lucide): o lucide troca o <i> por <svg> uma vez e não
              re-renderiza quando :data-lucide muda, deixando o ícone preso no

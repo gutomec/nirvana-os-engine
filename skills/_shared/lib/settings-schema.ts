@@ -206,6 +206,9 @@ export const SETTINGS = {
   "glance.execution": booleanSetting("glance.execution",
     "O Glance executa Messages por processo filho; false = cockpit sem execução.",
     { default: true, env: "NIRVANA_GLANCE_EXECUTION", fromEnv: offWordDisables }),
+  "glance.maestro_max_budget_usd": numberSetting("glance.maestro_max_budget_usd",
+    "Teto de gasto em USD de um turno do maestro no chat do Glance (claude --max-budget-usd); 0 = sem teto.",
+    { default: 5, type: nonNegative, expects: "número >= 0 (USD); 0 = sem teto" }),
 
   "runtime.provider_catalog_dir": stringSetting("runtime.provider_catalog_dir",
     "Diretórios de catálogo de providers (separados por : ou ; no Windows); vazio = ~/.nirvana/providers e <projeto>/.nirvana/providers.",

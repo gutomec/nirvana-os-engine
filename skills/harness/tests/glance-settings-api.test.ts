@@ -265,7 +265,7 @@ describe("Glance settings take effect on the next child dispatch", () => {
     const projectId = project.project_id;
     const conversation = (await fetch(`${base}/api/v1/projects/${projectId}/conversations`, { method: "POST", headers: headersFor(base, "c-settings"), body: "{}" }).then((response) => response.json()) as any).conversation_id as string;
     const dispatch = async (key: string, content: string) => {
-      const response = await fetch(`${base}/api/v1/conversations/${conversation}/messages`, { method: "POST", headers: headersFor(base, key), body: JSON.stringify({ project_id: projectId, role: "user", content }) });
+      const response = await fetch(`${base}/api/v1/conversations/${conversation}/messages`, { method: "POST", headers: headersFor(base, key), body: JSON.stringify({ project_id: projectId, role: "user", content, mode: "run" }) });
       expect(response.status).toBe(202);
       const runId = ((await response.json()) as any).run.runId as string;
       await waitFor(base, projectId, runId, "completed");

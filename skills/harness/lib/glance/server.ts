@@ -47,7 +47,7 @@ import {
 } from "../../../_shared/lib/settings.ts";
 import { validateMindCloneFile, type ValidationResult } from "../../../_shared/lib/mindclone-validator.ts";
 import { handleObservabilityRoute } from "./views/observability-handler.ts";
-import { AgentXCanaryQueue, ConversationService, ProjectService, type GlanceAgentXCanaryAdapter, type GlanceExecutionRunner, type MessageRouter } from "../control-plane/index.ts";
+import { AgentXCanaryQueue, ConversationService, MaestroTurnQueue, ProjectService, resumeCommand, type Conversation, type GlanceAgentXCanaryAdapter, type GlanceExecutionRunner, type MessageRouter, type TurnView } from "../control-plane/index.ts";
 import { createRun as createKernelRun, getRun as getKernelRun, listEvents as listKernelEvents, openKernel } from "../run-kernel/index.ts";
 import { getGauntlet, listCandidateRevisions, listScorecards, projectMultiTargetRun } from "../gauntlet/index.ts";
 
@@ -258,6 +258,35 @@ export async function startServer(opts: ServerOptions) {
   let canaryQueue: AgentXCanaryQueue | null = null;
   const agentXQueue = () => canaryQueue ||= new AgentXCanaryQueue(kernelService(), conversationService(), opts.agentXCanaryAdapter, opts.executionRunner, { router: opts.messageRouter });
   const projectInspection = () => projectService.inspect(projectRoot);
+  // The maestro turns of the canonical chat (control-plane/maestro-turn.ts): a Message with
+  // `mode: "turn"` (the default) is one turn of the project's runtime session, not a Run.
+  let turnQueue: MaestroTurnQueue | null = null;
+  const maestroTurns = () => turnQueue ||= new MaestroTurnQueue(conversationService(), { projectRoot });
+  const turnPayload = (turn: TurnView) => ({ ...turn, events_url: `/api/v1/conversations/${encodeURIComponent(turn.conversation_id)}/turns/${encodeURIComponent(turn.turn_id)}/events` });
+  const sessionPayload = (conversation: Pick<Conversation, "session_id" | "session_runtime">) => ({
+    session_id: conversation.session_id ?? null, session_runtime: conversation.session_runtime ?? null,
+    resume_command: conversation.session_id && conversation.session_runtime ? resumeCommand(conversation.session_runtime as any, conversation.session_id) : null,
+  });
+  // The turn's events as SSE (`id: <sequence>`, `data: {t: tok|tool|run|done}`): a reconnection with
+  // Last-Event-ID replays from there; the stream closes after `done`.
+  const streamTurnEvents = (req: Request, turnId: string): Response => {
+    const after = Math.max(0, Number(req.headers.get("last-event-id") || "0"));
+    let unsubscribe: (() => void) | null = null;
+    let heartbeat: ReturnType<typeof setInterval> | null = null;
+    const stream = new ReadableStream({
+      start(controller) {
+        const encoder = new TextEncoder();
+        const close = () => { if (heartbeat) clearInterval(heartbeat); heartbeat = null; unsubscribe?.(); try { controller.close(); } catch {} };
+        heartbeat = setInterval(() => { try { controller.enqueue(encoder.encode(": heartbeat\n\n")); } catch { close(); } }, 5_000);
+        unsubscribe = maestroTurns().subscribe(turnId, after, (sequence, event) => {
+          try { controller.enqueue(encoder.encode(`id: ${sequence}\ndata: ${JSON.stringify(event)}\n\n`)); } catch {}
+          if (event.t === "done") close();
+        });
+      },
+      cancel() { if (heartbeat) clearInterval(heartbeat); unsubscribe?.(); },
+    });
+    return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" } });
+  };
 
   const problem = (status: number, title: string, detail: string) => new Response(JSON.stringify({
     type: "about:blank", title, status, detail, correlation_id: `cor_${crypto.randomUUID()}`,
@@ -397,7 +426,22 @@ export async function startServer(opts: ServerOptions) {
         const conversationMatch = p.match(/^\/api\/v1\/conversations\/(cnv_[A-Za-z0-9-]+)$/);
         if (conversationMatch && req.method === "GET") {
           const conversation = conversationService().get(conversationMatch[1]);
-          return conversation ? json({ ...conversation, messages: conversationService().messages(conversationMatch[1]) }) : notFound("conversation not found");
+          if (!conversation) return notFound("conversation not found");
+          const active = maestroTurns().activeFor(conversationMatch[1]);
+          return json({ ...conversation, session: sessionPayload(conversation), active_turn: active ? turnPayload(active) : null, messages: conversationService().messages(conversationMatch[1]) });
+        }
+        const turnMatch = p.match(/^\/api\/v1\/conversations\/(cnv_[A-Za-z0-9-]+)\/turns\/(trn_[A-Za-z0-9-]+)(\/events|:cancel)?$/);
+        if (turnMatch) {
+          const turn = maestroTurns().get(turnMatch[2]);
+          if (!turn || turn.conversation_id !== turnMatch[1]) return notFound("turn not found");
+          if (turnMatch[3] === ":cancel" && req.method === "POST") {
+            const body = await req.json().catch(() => ({})) as any;
+            if (body.project_id !== turn.project_id) return problem(400, "Invalid project", "project_id must name the turn's project");
+            const result = maestroTurns().cancel(turn.project_id, turn.turn_id);
+            return result.accepted ? json(result, 202) : problem(409, "Cancellation not accepted", `Turn state is ${result.state}`);
+          }
+          if (turnMatch[3] === "/events" && req.method === "GET") return streamTurnEvents(req, turn.turn_id);
+          if (!turnMatch[3] && req.method === "GET") return json(turnPayload(turn));
         }
         const messagesMatch = p.match(/^\/api\/v1\/conversations\/(cnv_[A-Za-z0-9-]+)\/messages$/);
         if (messagesMatch && req.method === "POST") {
@@ -410,9 +454,17 @@ export async function startServer(opts: ServerOptions) {
             if ((body.role || "user") === "user" && body.prepare_run !== false) {
               const inspection = projectInspection();
               if (inspection.kind !== "project" || inspection.project?.project_id !== body.project_id) return problem(409, "Project not adopted", "Canonical dispatch requires an adopted project");
-              const receipt = await agentXQueue().submit({ projectId: body.project_id, conversationId: messagesMatch[1], messageId: message.message_id,
-                brief: message.content, projectRoot, idempotencyKey });
-              return json({ message: receipt.message, run: receipt.run, queued: receipt.queued, capability: receipt.capability }, receipt.queued ? 202 : 200);
+              // `mode: "run"` keeps the Run path (API clients); `"turn"`, the default and what the UI
+              // sends, makes the Message one turn of the project's runtime session.
+              if (body.mode === "run") {
+                const receipt = await agentXQueue().submit({ projectId: body.project_id, conversationId: messagesMatch[1], messageId: message.message_id,
+                  brief: message.content, projectRoot, idempotencyKey });
+                return json({ message: receipt.message, run: receipt.run, queued: receipt.queued, capability: receipt.capability }, receipt.queued ? 202 : 200);
+              }
+              const receipt = maestroTurns().submit({ projectId: body.project_id, conversationId: messagesMatch[1], messageId: message.message_id, prompt: message.content });
+              const queued = receipt.turn.state !== "unavailable";
+              return json({ message, turn: turnPayload(receipt.turn), session: { ...receipt.session, resume_command: sessionPayload(receipt.session).resume_command },
+                queued, events_url: queued ? turnPayload(receipt.turn).events_url : null }, queued ? 202 : 200);
             }
             return json({ message }, 201);
           }
@@ -1812,11 +1864,12 @@ export async function startServer(opts: ServerOptions) {
   // Detaches the queue from its children (tests stop servers without exiting the process;
   // shutdown() runs it before the server stops, so a child still running is left to the next
   // server's recovery instead of being settled by a dying one).
-  const detach = () => canaryQueue?.shutdown();
+  // The maestro turns have no recovery: a dying server signals them (Ctrl+C in a terminal session).
+  const detach = () => { canaryQueue?.shutdown(); turnQueue?.shutdown(); };
 
-  // Idle watchdog
+  // Idle watchdog (a running maestro turn keeps the server up; the tab may be closed meanwhile)
   const watchdog = setInterval(() => {
-    if (Date.now() - lastActivity > opts.idleMin * 60_000) {
+    if (Date.now() - lastActivity > opts.idleMin * 60_000 && !turnQueue?.hasActive()) {
       console.error(`[glance] idle ${opts.idleMin}min — shutting down`);
       shutdown(server, watchdog, detach);
     }

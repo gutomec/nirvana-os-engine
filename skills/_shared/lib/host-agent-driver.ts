@@ -141,10 +141,36 @@ function removeTmpFiles(files: string[] | undefined): void {
   }
 }
 
+/** The "where does this CLI live" probe, per platform. Windows `where` takes its options with a
+ * slash (`WHERE [/R dir] [/Q] ... pattern...`), so the `-v` this used to pass was read as a SECOND
+ * PATTERN, not a flag: the probe asked for a file named `-v` as well and answered about both. On
+ * POSIX the probe stays the `command -v` builtin, which is shell-only and therefore normally fails
+ * here — the manual PATH scan below is its real path. */
+export function whichProbe(cli: string, platform: NodeJS.Platform = process.platform): { command: string; args: string[] } {
+  return platform === "win32" ? { command: "where", args: [cli] } : { command: "command", args: ["-v", cli] };
+}
+
+/** The first real path in a probe's stdout. `where` ends every line with CRLF and prints ONE LINE
+ * PER MATCH, so splitting on "\n" alone left a trailing "\r" on the chosen line whenever there was
+ * more than one match. `/\.(cmd|bat)$/i` then failed on a path that plainly ends in `.cmd`, and
+ * resolveExecutable spawned it without a shell — the exact "probe says yes, invocation dies" split
+ * this module exists to prevent. */
+export function firstExecutablePath(stdout: string): string | null {
+  for (const line of (stdout || "").split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed) return trimmed;
+  }
+  return null;
+}
+
 function whichSync(cli: string): string | null {
-  const r = spawnSync(process.platform === "win32" ? "where" : "command", ["-v", cli], { encoding: "utf8", env: process.env });
+  const probe = whichProbe(cli);
+  const r = spawnSync(probe.command, probe.args, { encoding: "utf8", env: process.env });
   // bash builtin `command` is shell-only; fallback to PATH scan
-  if (r.status === 0 && r.stdout.trim()) return r.stdout.trim().split("\n")[0];
+  if (r.status === 0) {
+    const found = firstExecutablePath(r.stdout);
+    if (found) return found;
+  }
   // Manual PATH scan. The Windows extension list is not decoration: an agent CLI
   // installed by npm is `<name>.cmd`, never a bare file, so a scan that only
   // tried `.exe` reported "not installed" for a runtime sitting right there.
