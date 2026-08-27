@@ -142,13 +142,19 @@ function readMarker(file: string): MultiTargetResultMarker | null {
   try { return JSON.parse(fs.readFileSync(file, "utf8")) as MultiTargetResultMarker; } catch { return null; }
 }
 
+/** A squad node's id may carry the capability the plan chose (`<slug>:<capabilityId>`,
+ *  the grammar `--squad` takes). The slug is what the audit and the allowlist speak. */
+export function squadSlugOf(id: string): string {
+  return id.split(":", 1)[0];
+}
+
 /** Exported with `observedCostUsd`: the Gauntlet evaluator adapter reads the cost of its
  * subprocess from the same source, with the same discriminators. With `nodeId`, an agent-x
  * target only matches the events its own child stamped with that node id (an `agent` node and
  * the synthesis of one plan share the trace); without it, every agent-x event of the trace. */
 export function costMatcher(target: Pick<MultiTargetAdapterInput["target"], "kind" | "id"> & { nodeId?: string }): (event: Record<string, unknown>) => boolean {
   if (target.kind === "business") return (event) => event.business_slug === target.id;
-  if (target.kind === "squad") return (event) => event.squad_slug === target.id && !event.business_slug;
+  if (target.kind === "squad") return (event) => event.squad_slug === squadSlugOf(target.id) && !event.business_slug;
   if (target.nodeId !== undefined) return (event) => event.employee === "agent-x" && event.node_id === target.nodeId;
   return (event) => event.employee === "agent-x";
 }
@@ -207,7 +213,7 @@ export function renderInstruction(args: {
   // An `agent` node is a role no squad covers: the generalist takes it under the role's name.
   const identity = input.target.kind === "agent-x"
     ? `You are **agent-x**, the runtime's generalist, acting in the role **${input.target.id}** within project \`${args.projectId}\`. No squad covers this role; you execute it end to end.`
-    : `You are **${input.target.id}** within project \`${args.projectId}\`.`;
+    : `You are **${input.target.kind === "squad" ? squadSlugOf(input.target.id) : input.target.id}** within project \`${args.projectId}\`.`;
   return `---
 target: ${phase.target}
 phase_id: ${phase.id}
@@ -324,6 +330,8 @@ Read ${instructionFile} before producing anything: it names the upstream summari
 
     const command = ["bun", dispatchScript];
     if (adapterInput.target.kind === "business") command.push("--business", adapterInput.target.id);
+    // The node id carries `<slug>:<capabilityId>` when the plan named a capability;
+    // the dispatch parses that grammar, so the id travels verbatim.
     else if (adapterInput.target.kind === "squad") command.push("--squad", adapterInput.target.id);
     else command.push("--agent-x");
     command.push("--brief-file", briefFile, "--exec", "--project", input.projectId,

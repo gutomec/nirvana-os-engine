@@ -37,7 +37,9 @@ export interface DispatchStep {
   kind: DispatchStepKind;
   /** business/squad slug; absent for agent-x. */
   slug?: string;
-  /** capability entry point, when the router names one (future surface). */
+  /** Capability entry point of a squad step: the id the user named
+   * (`--squad <slug>:<capabilityId>`). Absent when nobody named one — the
+   * dispatch then resolves it from the brief (lib/capability-resolver.ts). */
   capability?: string;
   /** Why this step is in the plan — goes into logs and the audit trail. */
   reason: string;
@@ -65,8 +67,9 @@ export interface DispatchPlan {
 }
 
 export interface ResolvePlanOpts {
-  /** User named the target directly — skips every other layer. */
-  explicitTarget?: { kind: "business" | "squad"; slug: string };
+  /** User named the target directly — skips every other layer. A squad may
+   * carry the capability the user named (`--squad <slug>:<capabilityId>`). */
+  explicitTarget?: { kind: "business" | "squad"; slug: string; capabilityId?: string };
   /** --strict-route: an ambiguous route FAILS instead of auto-picking. */
   strictRoute?: boolean;
   /** Interactive terminal available for the numbered-choice prompt. */
@@ -122,7 +125,7 @@ export async function resolveDispatchPlan(decision: AgenticRouteDecision, opts: 
     const t = opts.explicitTarget;
     return {
       ok: true,
-      steps: [{ kind: t.kind, slug: t.slug, reason: "explicit user target" }],
+      steps: [{ kind: t.kind, slug: t.slug, ...(t.capabilityId ? { capability: t.capabilityId } : {}), reason: "explicit user target" }],
       ...planBase("explicit", decision),
     };
   }

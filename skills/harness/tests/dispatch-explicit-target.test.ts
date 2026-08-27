@@ -46,6 +46,18 @@ describe("parseExplicitTarget", () => {
     expect(parseExplicitTarget(["--business", "--exec", "brief"]).error).toContain("--business requires a slug");
   });
 
+  test("--squad accepts <slug>:<capabilityId>, the grammar the evaluator spec already uses", () => {
+    expect(parseExplicitTarget(["--squad", "brandcraft:branding.pdf_document.create", "brief"]))
+      .toEqual({ target: { kind: "squad", slug: "brandcraft", capabilityId: "branding.pdf_document.create" }, error: null });
+    expect(parseExplicitTarget(["--squad=brandcraft:branding.brand.audit", "brief"]))
+      .toEqual({ target: { kind: "squad", slug: "brandcraft", capabilityId: "branding.brand.audit" }, error: null });
+    // A bare slug still carries no capability: the dispatch resolves one from the brief.
+    expect(parseExplicitTarget(["--squad", "brandcraft"]).target).toEqual({ kind: "squad", slug: "brandcraft" });
+    // A value that names no slug is an error, not a squad called "".
+    expect(parseExplicitTarget(["--squad", ":branding.pdf_document.create"]).error).toContain("<slug>[:<capabilityId>]");
+    expect(parseExplicitTarget(["--squad", "brandcraft:"]).error).toContain("<slug>[:<capabilityId>]");
+  });
+
   test("without the flags nothing changes: no target, no error", () => {
     expect(parseExplicitTarget(["web-studio", "brief", "--exec", "--project", "p"])).toEqual({ target: null, error: null });
     expect(parseExplicitTarget(["--auto", "brief", "--exec"])).toEqual({ target: null, error: null });
@@ -58,6 +70,11 @@ describe("explicitTargetPlan resolves the route without the router", () => {
     const plan = await explicitTargetPlan({ kind: "squad", slug: "brandcraft" });
     expect(plan.ok).toBe(true);
     expect(plan.steps).toEqual([{ kind: "squad", slug: "brandcraft", reason: "explicit user target" }]);
+
+    // The named capability rides on the step, where the dispatch reads it as the
+    // explicit rung of the resolver.
+    const withCapability = await explicitTargetPlan({ kind: "squad", slug: "brandcraft", capabilityId: "branding.brand.audit" });
+    expect(withCapability.steps).toEqual([{ kind: "squad", slug: "brandcraft", capability: "branding.brand.audit", reason: "explicit user target" }]);
     expect(plan.source).toBe("explicit");
     expect(plan.mandatorySquads).toEqual([]);
     expect(plan.optionalSquads).toEqual([]);

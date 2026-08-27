@@ -81,6 +81,47 @@ goes back to that cut's own session rather than to a new agent. Two things becam
 cut's final report, because they are what turns attribution into a lookup: the list of files it
 touched, as paths, and what it did not verify and why.
 
+### The capability a squad was chosen for reaches the prompt, the Run and the provenance
+
+A squad is not one entry point. The installed library declares 657 capabilities
+across 204 squads, each with its own workflow, its own `produces` and its own
+acceptance contract. The engine dispatched all of them through a single literal.
+`dispatch.ts` stamped `squad.execute` on the Run, on every artifact ref and on
+the Glance target, and `squad-exec.ts` never received a capability at all: it
+sent the whole `squad.yaml` plus the first three `agents/*.md` and the first
+three `tasks/*.md` in alphabetical order, and never opened `workflows/`.
+
+`skills/harness/lib/capability-resolver.ts` answers the question the engine
+never asked. Given a squad and a brief it returns one capability id and the rung
+that decided it:
+
+| Rung | When it answers |
+|---|---|
+| `explicit` | the caller named it: `--squad <slug>:<capabilityId>`, `use squad <slug>:<cap>:` at the head of a Glance Message, a multi-target plan node |
+| `single` | the squad declares exactly one capability, so no brief is needed |
+| `bm25` | the squad declares several: scored against the brief over the same documents the router indexes, restricted to that squad |
+| `legacy` | the squad declares none (a v4 manifest): `squad.execute`, which is what will actually run |
+
+Every resolution emits `x_capability_resolved` with the rung, the score when
+BM25 decided, and how many ids the squad declares. An id the caller named that
+the squad does not declare is dispatched anyway and named in a warning on the
+event: the caller is in command.
+
+With a capability resolved the squad prompt changes shape. `## SUA CAPABILITY`
+carries the id, the description, `produces` and the acceptance criteria.
+`## SEU WORKFLOW` carries the step table of the canonical graph, read through
+the v6 workflow reader so every legacy dialect normalizes the same way, plus the
+prose body of a Markdown workflow. `## SEUS AGENTES` and `## SUAS TASKS` carry
+only the components that workflow references, in step order, bounded by
+`LIMITS.squad_prompt_components_bytes_max` (64 KB) with a truncation marker when
+a document does not fit.
+
+Without a resolved capability nothing moves. The prompt is byte for byte the one
+the engine always sent, and `squad-exec.test.ts` now pins the whole string
+instead of a handful of substrings. `squad.execute`, an unreadable manifest and
+an id the manifest does not declare all land on that same path, which is what
+keeps the 204 installed squads dispatching exactly as they do today.
+
 ### The registry stops dropping what a capability declares
 
 A capability has been allowed to declare `estimated_cost_usd` for two protocol

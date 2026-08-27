@@ -4,6 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { GauntletController, compileGauntletPlan } from "../lib/gauntlet/index.ts";
 import { createRun, listEvents, openKernel, type KernelHandle } from "../lib/run-kernel/index.ts";
+import { KERNEL_BUDGET_MS } from "./helpers/test-budgets.ts";
 
 const roots: string[] = [];
 const handles: KernelHandle[] = [];
@@ -43,19 +44,19 @@ describe("bounded gauntlet controller", () => {
     expect(() => controller.evaluateRound([score(1, 1, { evaluatorSelf: true })])).toThrow(/cannot evaluate its own/);
     const result = controller.evaluateRound([score(1, 1)]);
     expect(result).toMatchObject({ decision: "delivered", stopReason: "success", selectedRevisionId: "crv_1" });
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("does not dispatch a round without budget", () => {
     const { controller } = setup({ brief: "Build it", budget: { maxCostUsd: 1 } });
     expect(controller.beginRound(2, "2026-08-25T12:00:01.000Z").stopReason).toBe("max_cost");
     expect(controller.resume().round).toBe(0);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("stops after stable metrics show no progress", () => {
     const { controller } = setup({ brief: "Build it", intensity: "balanced", stop: { noProgressPatience: 1, minimumDelta: 0.6 } });
     controller.beginRound(1, "2026-08-25T12:00:01.000Z"); controller.addCandidate(candidate());
     expect(controller.evaluateRound([score(1, 0.5)]).stopReason).toBe("no_progress");
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("blocks selection when a revision regresses a previously passed hard gate", () => {
     const { controller } = setup({ brief: "Build it", stop: { minimumScore: 1, noProgressPatience: 3 } });
@@ -65,7 +66,7 @@ describe("bounded gauntlet controller", () => {
     const result = controller.evaluateRound([score(2, 0.8, { blockingPassed: false })]);
     expect(result.stopReason).toBe("critical_regression");
     expect(result.decision).toBe("withheld");
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("resumes after crash and replays round commands idempotently", () => {
     const { handle, controller } = setup({ brief: "Build it" });
@@ -74,14 +75,14 @@ describe("bounded gauntlet controller", () => {
     expect(resumed.resume()).toEqual(first);
     expect(resumed.beginRound(1)).toEqual(first);
     expect(listEvents(handle, "prj_1").filter(event => event.type === "gauntlet.round_started")).toHaveLength(1);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("stops at max rounds before another fan-out", () => {
     const { controller } = setup({ brief: "Build it", stop: { maxRounds: 1, noProgressPatience: 3 } });
     controller.beginRound(1, "2026-08-25T12:00:01.000Z"); controller.addCandidate(candidate());
     expect(controller.evaluateRound([score(1, 0.6)]).stopReason).toBe("max_rounds");
     expect(controller.resume().round).toBe(1);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("delivers with explicit reservations for non-blocking failures", () => {
     const { controller } = setup({ brief: "Build it", stop: { minimumScore: 0.9 } });
@@ -92,7 +93,7 @@ describe("bounded gauntlet controller", () => {
     ] }]);
     expect(result.decision).toBe("reservations");
     expect(result.reservations).toEqual(["style"]);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("ranks sibling candidates independently and selects the best evidence", () => {
     const { controller } = setup({ brief: "Build it", intensity: "balanced" });
@@ -103,7 +104,7 @@ describe("bounded gauntlet controller", () => {
       { ...score(1, 1), evaluationId: "evl_can_2_1", candidateId: "can_2", revisionId: "crv_can_2_1" },
     ]);
     expect(result).toMatchObject({ stopReason: "success", decision: "delivered", selectedRevisionId: "crv_can_2_1", bestScore: 1 });
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("does not read a sibling's pass as a regression of another candidate", () => {
     const { controller } = setup({ brief: "Build it", stop: { minimumScore: 1, noProgressPatience: 3 } });
@@ -115,7 +116,7 @@ describe("bounded gauntlet controller", () => {
     const result = controller.evaluateRound([{ ...score(2, 0.6), evaluationId: "evl_can_2_2", candidateId: "can_2", revisionId: "crv_can_2_2" }]);
     expect(result.stopReason).not.toBe("critical_regression");
     expect(result.state).toBe("revising");
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("keeps a round evaluation atomic so an interrupted decision replays from producing", () => {
     const { handle, controller } = setup({ brief: "Build it", stop: { minimumScore: 1, noProgressPatience: 3 } });
@@ -134,5 +135,5 @@ describe("bounded gauntlet controller", () => {
     expect(listEvents(handle, "prj_1").filter(event => event.type === "gauntlet.round_evaluated")).toHaveLength(0);
     expect(controller.evaluateRound([score(1, 0.95)]).state).toBe("revising");
     expect(listEvents(handle, "prj_1").filter(event => event.type === "gauntlet.round_evaluated")).toHaveLength(1);
-  });
+  }, KERNEL_BUDGET_MS);
 });
