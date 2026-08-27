@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { runSquadHeadless, buildSquadPrompt, capabilityContext } from "../lib/squad-exec.ts";
+import { runSquadHeadless, buildSquadPrompt, capabilityContext, promptPath } from "../lib/squad-exec.ts";
 import { sessionKey, putSession } from "../lib/session-store.ts";
 import { SCOPE_GUARD_PT_BR } from "../../_shared/lib/scope-guard.ts";
 import { LIMITS } from "../../_shared/validators/limits.ts";
@@ -206,6 +206,26 @@ steps:
 `);
   return dir;
 }
+
+describe("promptPath — the workflow reference reads the same on every platform", () => {
+  // The Windows runner failed both capability cases of this file: `path.relative`
+  // answers `workflows\guided-analysis.md` there, and the prompt then showed a
+  // reference no `invoke.ref` ever declared. Forcing a literal backslash proves
+  // the normalization off Windows too, instead of trusting the runner to catch it.
+  test("a Windows separator becomes the POSIX one; a POSIX path is untouched", () => {
+    expect(promptPath("workflows\\guided-analysis.md")).toBe("workflows/guided-analysis.md");
+    expect(promptPath("workflows/guided-analysis.md")).toBe("workflows/guided-analysis.md");
+    expect(promptPath(["workflows", "extract-only.yaml"].join(path.sep))).toBe("workflows/extract-only.yaml");
+    expect(promptPath(promptPath("a\\b/c"))).toBe("a/b/c");
+  });
+
+  test("the context carries the reference the capability declares, never a native path", () => {
+    const squadDir = scaffoldCapabilitySquad(path.join(tmp, "squads"));
+    const ctx = capabilityContext(squadDir, "analysis.report.produce")!;
+    expect(ctx.workflow!.file).toBe("workflows/guided-analysis.md");
+    expect(ctx.workflow!.file).not.toContain("\\");
+  });
+});
 
 describe("buildSquadPrompt — with a resolved capability", () => {
   test("the capability, its workflow and only the referenced components reach the prompt", () => {

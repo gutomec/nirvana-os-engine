@@ -174,7 +174,8 @@ export interface SquadCapabilityPromptContext {
   produces: string[];
   acceptance: SquadCapabilityAcceptance[];
   /** The capability's `invoke.ref`, resolved and normalized; null when the ref
-   *  names no readable workflow (the manifest still describes the capability). */
+   *  names no readable workflow (the manifest still describes the capability).
+   *  `file` is squad-relative with POSIX separators on every platform. */
   workflow: { ref: string; file: string; steps: CanonicalStep[]; body: string } | null;
   /** Agent and task documents the workflow runs, in step order, under the byte
    *  ceiling. Null when the workflow named none — the caller keeps the top-3 blocks. */
@@ -182,6 +183,18 @@ export interface SquadCapabilityPromptContext {
 }
 
 const componentsBytesMax = (): number => Number(LIMITS.squad_prompt_components_bytes_max ?? 65536);
+
+/**
+ * A path as the prompt shows it: POSIX separators on every platform, so the
+ * workflow reference the squad reads is the one its `invoke.ref` declares
+ * (`workflows/guided-analysis.md`) and not a Windows `path.relative` result
+ * (`workflows\guided-analysis.md`). Same idiom as `verify/kinds/squad.ts`,
+ * plus the literal backslash, which makes the normalization provable off
+ * Windows instead of only on it.
+ */
+export function promptPath(p: string): string {
+  return p.split(path.sep).join("/").replace(/\\/g, "/");
+}
 
 /** Slice a string to at most `bytes` UTF-8 bytes, never splitting a code point. */
 function sliceBytes(text: string, bytes: number): string {
@@ -253,7 +266,7 @@ export function capabilityContext(squadDir: string, capabilityId: string): Squad
   let workflow: SquadCapabilityPromptContext["workflow"] = null;
   let components: SquadCapabilityPromptContext["components"] = null;
   if (normalized && file && raw) {
-    workflow = { ref, file: path.relative(squadDir, file), steps: normalized.canonical.steps, body: raw.body.trim() };
+    workflow = { ref, file: promptPath(path.relative(squadDir, file)), steps: normalized.canonical.steps, body: raw.body.trim() };
     const referenced = referencedComponents(normalized.canonical);
     const stem = (name: string) => name.replace(/^(?:agents|tasks)\//, "").replace(/\.(md|markdown)$/i, "");
     const agents = referenced.agents.map(stem).filter(Boolean);
