@@ -36,6 +36,38 @@ alternativos lidos e o que foi aproveitado vão no raciocínio do
 matriz de pontuação. Empilhar procedimento no agente é o que faz ele parar de
 pensar.
 
+### O portão julga o produto do trabalho, não o estado do run
+
+Um dispatch de 27/08 escreveu `backup-before/` dentro do próprio outputs root:
+uma cópia inteira do squad que ele estava auditando, 276 arquivos. O pipeline de
+entrega listava tudo sob aquele root e filtrava só por tamanho, então os 276
+foram ao portão de qualidade ao lado dos nove arquivos que o run tinha de fato
+escrito. As duas rodadas de revisão foram gastas reescrevendo prosa do README de
+outro squad, e a entrega saiu com ressalvas sobre arquivos que ninguém tocou.
+
+A superfície do portão agora descarta o que o run não escreveu. O estado de
+execução vem de `skills/_shared/lib/run-state.ts`, a lista que o instalador, o
+desinstalador e o construtor de packs já leem, consultada um kind por vez para
+que `memory/projects` nunca desabe em `memory/`, mais qualquer segmento de
+diretório que comece com `.` ou `_`. O `_SUMMARY.md` e o `_QA-RESERVATIONS.md`
+do próprio engine são arquivos, não diretórios, e seguem sendo julgados. Uma
+entidade capturada é reconhecida por identidade, nunca por nome: um diretório com
+`squad.yaml`, `business.yaml` ou `MANIFEST.yaml` é um componente que este run
+copiou, qualquer que fosse o nome da pasta. Um prefixo reservado teria passado
+longe de `backup-before`, porque depende de o agente que escreveu o diretório
+conhecer a convenção, e esse agente não conhecia. Quando a entidade capturada é
+tudo o que existe, ela é julgada normalmente, então o filtro consegue estreitar
+ruído e nunca calar o único sinal em disco.
+
+O `wiki-lint` implementa os sinais do guia "Signs of AI writing" da Wikipédia,
+todos eles ingleses, e o mesmo run o fez reprovar `README.hi.md` e `README.ar.md`
+por excesso de travessão e por hifenização. Ele agora se abstém quando mais de um
+quinto das letras está fora da escrita latina. Medido nos arquivos daquele trace:
+0% nos READMEs em inglês e espanhol, 42% no chinês, 59% no híndi, 70% no árabe.
+Abster-se não é aprovar. É uma rubrica pulada, e um arquivo sem nenhuma rubrica
+não pulada continua caindo em INDETERMINATE, o que retém a entrega. Português,
+espanhol e toda língua de escrita latina seguem sendo julgados; separar esses
+casos exige detecção de idioma, não uma checagem de escrita.
 
 ## 0.10.1 — 2026-08-27
 

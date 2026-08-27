@@ -117,6 +117,60 @@ describe("gateableFiles — the Phase 4 gate surface", () => {
     expect(decideGateOutcome([], true)).toBe("indeterminate");
     expect(decideGateOutcome(["/tmp/a.md"], false)).toBe("fail");
   });
+
+  // Reproduction of trace 70341260-ff80-4c9b-9dd4-6925a36c6b99 (27/08/2026): an
+  // audit squad copied the entity it was auditing into its own outputs root as
+  // `backup-before/`, and the pipeline sent all 276 files of that copy to the
+  // gate — including the audited squad's README.*.md. Two revision rounds were
+  // spent on prose nobody had written.
+  test("a captured entity under the outputs root is NOT gated (backup-before)", () => {
+    const oroot = path.join(tmp, "surface-backup");
+    fs.mkdirSync(path.join(oroot, "backup-before", "agents"), { recursive: true });
+    fs.mkdirSync(path.join(oroot, "backup-before", ".squad-state"), { recursive: true });
+    // what the run actually wrote
+    fs.writeFileSync(path.join(oroot, "changes.md"), PASSING_MD);
+    // what the run only COPIED: a squad root, its prose, and its run state
+    fs.writeFileSync(path.join(oroot, "backup-before", "squad.yaml"), "name: audited-squad\nversion: 1.0.0\n");
+    fs.writeFileSync(path.join(oroot, "backup-before", "README.hi.md"), FAILING_MD);
+    fs.writeFileSync(path.join(oroot, "backup-before", "agents", "writer.md"), FAILING_MD);
+    fs.writeFileSync(path.join(oroot, "backup-before", ".squad-state", "runs.json"), JSON.stringify({ runs: [] }) + " ".repeat(300));
+
+    const gated = gateableFiles(oroot, new Set()).map(f => path.relative(oroot, f)).sort();
+    expect(gated).toEqual(["changes.md"]);
+  });
+
+  test("canonical run state under the outputs root is NOT gated (run-state.ts list)", () => {
+    const oroot = path.join(tmp, "surface-runstate");
+    fs.mkdirSync(path.join(oroot, ".squad-state"), { recursive: true });
+    fs.mkdirSync(path.join(oroot, "projects", "old"), { recursive: true });
+    fs.mkdirSync(path.join(oroot, "_internal"), { recursive: true });
+    fs.writeFileSync(path.join(oroot, "relatorio.md"), PASSING_MD);
+    fs.writeFileSync(path.join(oroot, "_SUMMARY.md"), PASSING_MD);
+    fs.writeFileSync(path.join(oroot, ".squad-state", "state.md"), FAILING_MD);
+    fs.writeFileSync(path.join(oroot, "projects", "old", "draft.md"), FAILING_MD);
+    fs.writeFileSync(path.join(oroot, "_internal", "notes.md"), FAILING_MD);
+    // `memory/projects` is run state; bare `memory/` is a business's permanent
+    // knowledge, and run-state.ts documents what collapsing the two once cost.
+    fs.mkdirSync(path.join(oroot, "memory", "projects"), { recursive: true });
+    fs.writeFileSync(path.join(oroot, "memory", "permanent.md"), PASSING_MD);
+    fs.writeFileSync(path.join(oroot, "memory", "projects", "old.md"), FAILING_MD);
+
+    const gated = gateableFiles(oroot, new Set()).map(f => path.relative(oroot, f)).sort();
+    // `_SUMMARY.md` is a FILE the run authored — the reserved prefix marks
+    // directories, never the engine's own root-level handoff files.
+    expect(gated).toEqual(["_SUMMARY.md", path.join("memory", "permanent.md"), "relatorio.md"]);
+  });
+
+  test("when the captured entity is ALL there is, it IS gated (never silence the only signal)", () => {
+    const oroot = path.join(tmp, "surface-only-entity");
+    fs.mkdirSync(path.join(oroot, "novo-squad", "agents"), { recursive: true });
+    fs.writeFileSync(path.join(oroot, "novo-squad", "squad.yaml"), "name: novo-squad\nversion: 1.0.0\n");
+    fs.writeFileSync(path.join(oroot, "novo-squad", "README.md"), PASSING_MD);
+    fs.writeFileSync(path.join(oroot, "novo-squad", "agents", "writer.md"), PASSING_MD);
+
+    const gated = gateableFiles(oroot, new Set()).map(f => path.relative(oroot, f)).sort();
+    expect(gated).toEqual([path.join("novo-squad", "README.md"), path.join("novo-squad", "agents", "writer.md")]);
+  });
 });
 
 describe("runDelivery — outcomes", () => {

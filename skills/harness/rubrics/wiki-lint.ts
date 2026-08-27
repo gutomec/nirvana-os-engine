@@ -14,8 +14,52 @@ const PROBLEMATIC_PATTERNS: { regex: RegExp; label: string; severity: number }[]
   { regex: /\bIt'?s (?:worth (?:noting|mentioning)|important to (?:note|remember|understand))\b/gi, label: "hedging filler", severity: 0.4 },
 ];
 
+// Every signal above is a signal of ENGLISH prose: English filler openers,
+// English passive attribution, and dash/hyphen densities calibrated on Latin
+// punctuation. Run over Devanagari or Arabic they measure nothing — in trace
+// 70341260 (27/08/2026) this rubric failed README.hi.md and README.ar.md for
+// "em-dash overuse" and "hyphen-as-clause-stitching", and the delivery spent
+// its whole revision budget on the complaint.
+//
+// The rubric therefore abstains when the writing is predominantly non-Latin.
+// Script, not filename: a locale suffix (`.hi.md`) is a stronger signal when
+// it is there, and absent from every Hindi document not named that way.
+// Measured on the files from that trace: en/es READMEs score 0% non-Latin
+// letters, zh 42%, hi 59%, ar 70% — the two clusters are far apart, so the
+// threshold sits between them with room on both sides.
+//
+// WHAT THIS DOES NOT COVER: Portuguese, Spanish, French and every other
+// Latin-script language stay under judgement, and the English-specific
+// patterns still do not apply to them. Narrowing that needs real language
+// detection, not a script check; this cut buys the gross case only.
+const NON_LATIN_ABSTAIN_SHARE = 0.2;
+
+function nonLatinLetterShare(content: string): number {
+  const letters = content.match(/\p{L}/gu) ?? [];
+  if (letters.length === 0) return 0;
+  let nonLatin = 0;
+  for (const ch of letters) if (!/\p{Script=Latin}/u.test(ch)) nonLatin++;
+  return nonLatin / letters.length;
+}
+
 export async function evaluate(args: { artifact: string; content: string; offline?: boolean }) {
   const { content } = args;
+
+  const share = nonLatinLetterShare(content);
+  if (share > NON_LATIN_ABSTAIN_SHARE) {
+    // `skipped` — not a pass. quality-gate.ts drops skipped rubrics from the
+    // verdict on both sides: they never carry a PASS, and a file left with no
+    // unskipped rubric lands on INDETERMINATE (exit 1), never on a silent 0.
+    return {
+      name: "wiki-lint",
+      passed: false,
+      score: 0,
+      skipped: true,
+      reasoning: `Not applicable: ${(share * 100).toFixed(0)}% of the letters are outside the Latin script, and these signals describe English prose.`,
+      fix_list: [],
+    };
+  }
+
   const findings: { label: string; count: number; severity: number; sample?: string }[] = [];
   let severityTotal = 0;
 

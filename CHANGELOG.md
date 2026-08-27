@@ -35,6 +35,37 @@ alternatives read and what was harvested go in the reasoning of
 `target_plan_committed`, a field that already exists; no new event, no schema,
 no scoring matrix. Piling procedure on the agent is what makes it stop thinking.
 
+### The gate judges the work product, not the state of the run
+
+A dispatch on 27/08 wrote `backup-before/` inside its own outputs root: a whole
+copy of the squad it was auditing, 276 files. The delivery pipeline listed
+everything under that root and filtered it by size alone, so all 276 went to the
+quality gate next to the nine files the run had really written. Both revision
+rounds were then spent rewriting prose out of another squad's README, and the
+delivery shipped with reservations about files nobody had touched.
+
+The gate surface now drops what the run did not write. Run state comes from
+`skills/_shared/lib/run-state.ts`, the list the installer, the uninstaller and
+the pack builder already read, asked one kind at a time so that `memory/projects`
+never collapses into `memory/`, plus any directory segment opening with `.` or
+`_`. The engine's own `_SUMMARY.md` and `_QA-RESERVATIONS.md` are files rather
+than directories, so they stay under judgement. A captured entity is recognized
+by identity, never by name: a directory holding `squad.yaml`, `business.yaml` or
+`MANIFEST.yaml` is a component this run copied, whatever the folder was called.
+A reserved prefix would have missed `backup-before` completely, because it needs
+the agent that wrote the directory to have known the convention, and that agent
+did not. When the captured entity is all there is, it is judged as usual, so the
+filter can narrow noise and never silence the only signal on disk.
+
+`wiki-lint` implements the Wikipedia "Signs of AI writing" tells, every one of
+them English, and the same run had it fail `README.hi.md` and `README.ar.md` for
+em-dash overuse and hyphen stitching. It now abstains when more than a fifth of
+the letters sit outside the Latin script. Measured on the files from that trace:
+0% for the English and Spanish READMEs, 42% for Chinese, 59% for Hindi, 70% for
+Arabic. Abstention is not approval. It is a skipped rubric, and a file left with
+no unskipped rubric still lands on INDETERMINATE, which withholds delivery.
+Portuguese, Spanish and every other Latin-script language stay under judgement;
+separating those needs language detection, not a script check.
 
 ## 0.10.1 — 2026-08-27
 

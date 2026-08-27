@@ -42,6 +42,8 @@ import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import { runHeadless, runtimeAvailable, AUTONOMOUS_DIRECTIVE, type Runtime } from "./host-agent-driver.ts";
 import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
+import { isRunStatePath } from "../../_shared/lib/run-state.ts";
+import { detectKind } from "../../_shared/lib/surface.ts";
 import { GATEABLE_EXTS } from "../scripts/quality-gate.ts";
 import type { HarnessConfig } from "./harness-config.ts";
 import * as runLedger from "./run-ledger.ts";
@@ -85,12 +87,71 @@ export function nonStubText(dir: string, named: Set<string>): string[] {
   return listFiles(dir).filter(f => /\.(md|txt|json)$/i.test(f) && isDeliverable(f, named));
 }
 
+/**
+ * True when a path under an outputs root holds RUN STATE rather than work
+ * product. Two sources, neither of them a name list invented here:
+ *
+ *  - `isRunStatePath` (skills/_shared/lib/run-state.ts) — the canonical list
+ *    the installer, the uninstaller and the pack builder already read. An
+ *    outputs root may belong to a squad or to a business, so every kind is
+ *    asked. Asked ONE KIND AT A TIME, never kindless: the kindless branch
+ *    matches bare first segments, and run-state.ts documents what that cost
+ *    the last time — `memory/projects` collapsing to `memory` took
+ *    `memory/permanent.md` out of forty-six businesses.
+ *  - a DIRECTORY segment opening with `.` or `_` — the two namespaces the
+ *    engine reserves for itself. Only directories: the basename is never
+ *    tested, so `_SUMMARY.md` and `_QA-RESERVATIONS.md`, which the run really
+ *    does author, stay under judgement.
+ */
+const RUN_STATE_KINDS = ["squads", "businesses", "mind-clones"] as const;
+
+function isRunStateUnderOutputs(rel: string): boolean {
+  if (RUN_STATE_KINDS.some(kind => isRunStatePath(rel, kind))) return true;
+  const segs = rel.split(/[\\/]/).filter(Boolean);
+  return segs.slice(0, -1).some(s => s.startsWith(".") || s.startsWith("_"));
+}
+
+/**
+ * True when a path sits inside a CAPTURED ENTITY — a squad, business or
+ * mind-clone copied whole into the outputs root (`detectKind` finds its
+ * manifest there). The run put those bytes on disk; it did not write them.
+ *
+ * Why identity and not the name: in trace 70341260 the directory was called
+ * `backup-before`, so a reserved-prefix convention would have missed it — a
+ * rule that needs the offending agent's cooperation is a request, not a rule.
+ * A copied squad carries `squad.yaml` whatever the directory is called.
+ */
+function insideCapturedEntity(root: string, rel: string, memo: Map<string, boolean>): boolean {
+  const dirs = rel.split(/[\\/]/).filter(Boolean).slice(0, -1);
+  let acc = "";
+  for (const seg of dirs) {
+    acc = acc ? `${acc}/${seg}` : seg;
+    let hit = memo.get(acc);
+    if (hit === undefined) {
+      hit = detectKind(path.join(root, acc)) !== null;
+      memo.set(acc, hit);
+    }
+    if (hit) return true;
+  }
+  return false;
+}
+
 /** The Phase 4 gate surface: every non-stub artifact whose extension the
  * quality gate knows how to judge (quality-gate.ts GATEABLE_EXTS — includes
- * .html, .yaml/.yml, code and images). */
+ * .html, .yaml/.yml, code and images), minus what the run did not write.
+ *
+ * Run state is dropped outright — it is never a deliverable, and if dropping
+ * it empties the surface the outcome is INDETERMINATE, which is the honest
+ * answer. A captured entity is dropped only while the run has work of its own
+ * left to judge: when the entity IS the deliverable (a run asked to build a
+ * squad) it stays, so this filter can narrow noise and never silence signal. */
 export function gateableFiles(dir: string, named: Set<string>): string[] {
-  return listFiles(dir).filter(f =>
+  const all = listFiles(dir).filter(f =>
     GATEABLE_EXTS.has(path.extname(f).toLowerCase()) && isDeliverable(f, named));
+  const own = all.filter(f => !isRunStateUnderOutputs(path.relative(dir, f)));
+  const memo = new Map<string, boolean>();
+  const authored = own.filter(f => !insideCapturedEntity(dir, path.relative(dir, f), memo));
+  return authored.length > 0 ? authored : own;
 }
 
 /** Non-stub artifacts under `outputsRoot` — the SAME discovery runDelivery
