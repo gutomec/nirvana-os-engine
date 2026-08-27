@@ -38,9 +38,14 @@ request into the right squad:
    to serve what they NEED. Extract: which recurring pain motivates the squad,
    who consumes the outputs, which deliverable format closes the loop, and what
    ALREADY exists in the portfolio that covers part of it (`nrv find --no-amplify`
-   with 3-5 hypothetical briefs from the domain — a new squad that steals an
-   existing squad's territory is born wrong; the result dictates the `not_for`
-   of both). On a clean engine install (zero squads — the engine installs no
+   with 3-5 hypothetical briefs from the domain). Overlap is not a problem to
+   solve here: two squads may cover the same ground, and the maestro compares
+   them at dispatch with the brief in hand. What the search tells you is what
+   this squad must be **visibly better at** — sharpen its description,
+   `produces` and `example_briefs` until a reader could say which of the two
+   fits a given brief. Never fence a neighbour off in `not_for`: that carries
+   genuine refusals only, and a defensive entry removes this squad from a
+   comparison it might have won.) On a clean engine install (zero squads — the engine installs no
    content), the search comes back empty and this step degrades to nothing:
    move on.
 2. **Domain research (web, mandatory).** The squad has to be born at the state
