@@ -7,6 +7,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { businessFixture, cloneFixture, rmrf, runCli, squadFixture, tempRoot } from "./helpers/verify-fixture.ts";
+import { spawnBudgetMs } from "../../harness/tests/helpers/test-budgets.ts";
 
 const ROOTS: string[] = [];
 afterAll(() => { for (const r of ROOTS) rmrf(r); });
@@ -23,7 +24,7 @@ describe("exit codes", () => {
     const bySlug = runCli(r, ["mind-clone", "jane-doe", "--no-retrieval"]);
     expect(bySlug.code).toBe(0);
     for (const alias of ["clone", "mc"]) expect(runCli(r, [alias, "jane-doe", "--no-retrieval"]).code).toBe(0);
-  });
+  }, spawnBudgetMs(2));
 
   test("an error rejects (1)", () => {
     const r = root();
@@ -33,7 +34,7 @@ describe("exit codes", () => {
     expect(out.code).toBe(1);
     expect(out.stdout).toContain("artifact_missing:agent/SOUL.md");
     expect(out.stdout).toContain("REJECTED");
-  });
+  }, spawnBudgetMs(2));
 
   test("warnings only: 0 by default, 2 under --strict", () => {
     const r = root();
@@ -42,7 +43,7 @@ describe("exit codes", () => {
     const strict = runCli(r, ["mind-clone", "jane-doe", "--no-retrieval", "--strict"]);
     expect(strict.code).toBe(2);
     expect(strict.stdout).toContain("one_liner_too_long");
-  });
+  }, spawnBudgetMs(2));
 
   test("usage errors and unknown entities exit 64", () => {
     const r = root();
@@ -55,7 +56,7 @@ describe("exit codes", () => {
     expect(agentic.code).toBe(64);
     expect(agentic.stderr).toContain("not available yet");
     expect(runCli(r, ["--help"]).code).toBe(0);
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("--json", () => {
@@ -81,7 +82,7 @@ describe("--json", () => {
     expect(j.fix_outcome).toBeNull();
     expect(j.baseline).toEqual({ present: false, debt: 0 });
     expect(j.exit_code).toBe(1);
-  });
+  }, spawnBudgetMs(2));
 
   test("registry_absent is an info finding that never changes the verdict", () => {
     const r = root();
@@ -91,7 +92,7 @@ describe("--json", () => {
     const info = out.json.findings.find((x: any) => x.id === "registry_absent");
     expect(info?.severity).toBe("info");
     expect(out.json.summary.warnings).toBe(0);
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("--all and --pack", () => {
@@ -111,7 +112,7 @@ describe("--all and --pack", () => {
     const text = runCli(r, ["mind-clone", "--all", "--root", path.join(r, "dna"), "--no-retrieval", "--quiet"]);
     expect(text.stdout).toContain("beta");
     expect(text.stdout).not.toContain("alpha");
-  });
+  }, spawnBudgetMs(2));
 
   test("--all uses the installed root when no --root is given", () => {
     const r = root();
@@ -119,7 +120,7 @@ describe("--all and --pack", () => {
     const out = runCli(r, ["mind-clone", "--all", "--json", "--no-retrieval"]);
     expect(out.code).toBe(0);
     expect(out.json.entities).toBe(1);
-  });
+  }, spawnBudgetMs(2));
 
   test("--pack walks <dir>/{squads,businesses,mind-clones}", () => {
     const r = root();
@@ -138,7 +139,7 @@ describe("--all and --pack", () => {
     expect(out.json.reports.find((x: any) => x.slug === "one-squad").findings.map((f: any) => f.id)).toContain("surface_missing");
     expect(runCli(r, ["--pack", pack, "mind-clone", "--json"]).json.entities).toBe(1);
     expect(fs.existsSync(path.join(r, "state", "gamma"))).toBe(false); // pack entities are not installed: no state
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("kinds", () => {
@@ -158,7 +159,7 @@ describe("kinds", () => {
     expect(runCli(r, ["squad", "one-squad", "--json"]).json.verdict).toBe("ADMITTED");
     expect(runCli(r, ["biz", "one-biz"]).code).toBe(0);
     expect(runCli(r, ["business", "one-biz", "--strict"]).code).toBe(0);
-  });
+  }, spawnBudgetMs(2));
 
   test("a manifest that does not parse is manifest_parse", () => {
     const r = root();
@@ -168,7 +169,7 @@ describe("kinds", () => {
     expect(out.json.findings.map((f: any) => f.id)).toContain("manifest_parse");
     // a squad path the kind does not own is unknown, not a crash
     expect(runCli(r, ["business", squad]).code).toBe(64);
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("side effects", () => {
@@ -183,5 +184,5 @@ describe("side effects", () => {
     const log = fs.readFileSync(path.join(r, "logs", day, "audit.jsonl"), "utf8");
     const ev = log.split("\n").filter(Boolean).map((l) => JSON.parse(l)).find((e) => e.event === "x_verify_mind_clone");
     expect(ev).toMatchObject({ slug: "jane-doe", verdict: "ADMITTED", exit_code: 0 });
-  });
+  }, spawnBudgetMs(2));
 });
