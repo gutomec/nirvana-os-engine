@@ -18,6 +18,7 @@ import {
   toDagNodes,
   validateGraph,
   type DependencyGraph,
+  type GraphEdge,
   type GraphIssue,
   type GraphNode,
 } from "../../_shared/lib/dependency-graph.ts";
@@ -195,9 +196,10 @@ function dependentCounts(manifest: CompiledManifest): Map<string, number> {
  */
 export function compileMultiTargetGauntletPolicy(
   graph: DependencyGraph,
-  policy?: MultiTargetGauntletPolicy
+  policy?: MultiTargetGauntletPolicy,
+  opts: CompileManifestOptions = {}
 ): { plan: CompiledMultiTargetPlan | null; issues: MultiTargetPolicyIssue[] } {
-  const compiled = compileManifest(graph);
+  const compiled = compileManifest(graph, opts);
   if (!compiled.manifest) return { plan: null, issues: compiled.issues };
   const manifest = compiled.manifest;
   const issues: MultiTargetPolicyIssue[] = [];
@@ -340,6 +342,54 @@ export function compileMultiTargetGauntletPolicy(
   return { plan: { ...snapshot, digest }, issues: [] };
 }
 
+export interface CompileManifestOptions {
+  parallelSafe?: (n: GraphNode) => boolean;
+  /**
+   * The derived entity graph (skills/_shared/lib/entity-graph.ts). Supplying
+   * it lets the plan read the composition the squads already declare instead
+   * of demanding the author restate it. Omitted — which is every caller
+   * today — the compilation is bit-for-bit the one that shipped before.
+   */
+  composition?: DependencyGraph;
+}
+
+/** A plan node's squad slug: what its payload says, else its id unprefixed. */
+function squadSlug(nodes: GraphNode[], id: string): string {
+  const node = nodes.find((n) => n.id === id);
+  return String(node?.payload?.slug ?? id.replace(/^squad:/, ""));
+}
+
+/**
+ * Squad Protocol v6 §31 order, inherited. When two `squad` nodes of the plan
+ * are the endpoints of a `depends_on` edge of the composition graph, the plan
+ * gets that order without the author writing it. Two rules keep it honest:
+ * the author always wins (a pair already joined by an edge, in EITHER
+ * direction, is left exactly as declared), and nothing is inherited for a
+ * squad the plan does not name.
+ */
+function inheritedCompositionEdges(graph: DependencyGraph, composition: DependencyGraph): GraphEdge[] {
+  const planned = new Map<string, string>();
+  for (const node of graph.nodes) {
+    if (node.type === "squad") planned.set(squadSlug(graph.nodes, node.id), node.id);
+  }
+  if (planned.size < 2) return [];
+  const authored = new Set(graph.edges.flatMap((e) => [`${e.source} ${e.target}`, `${e.target} ${e.source}`]));
+  const inherited: GraphEdge[] = [];
+  const seen = new Set<string>();
+  for (const edge of composition.edges) {
+    if (edge.type !== "depends_on") continue;
+    const consumer = planned.get(squadSlug(composition.nodes, edge.source));
+    const provider = planned.get(squadSlug(composition.nodes, edge.target));
+    if (!consumer || !provider || consumer === provider) continue;
+    if (authored.has(`${consumer} ${provider}`)) continue;
+    const id = `inherited:depends_on:${consumer}->${provider}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    inherited.push({ id, source: consumer, target: provider, type: "depends_on", meta: { inherited_from: edge.id } });
+  }
+  return inherited;
+}
+
 /**
  * One phase per graph node, dependencies from the effective dependency
  * direction (dependencyPair — `employee embodies mind_clone` compiles to the
@@ -349,8 +399,11 @@ export function compileMultiTargetGauntletPolicy(
  */
 export function compileManifest(
   graph: DependencyGraph,
-  opts: { parallelSafe?: (n: GraphNode) => boolean } = {}
+  opts: CompileManifestOptions = {}
 ): { manifest: CompiledManifest | null; issues: GraphIssue[] } {
+  const inherited = opts.composition ? inheritedCompositionEdges(graph, opts.composition) : [];
+  if (inherited.length) graph = { nodes: graph.nodes, edges: [...graph.edges, ...inherited] };
+
   const issues = validateGraph(graph);
   if (issues.length) return { manifest: null, issues };
 
