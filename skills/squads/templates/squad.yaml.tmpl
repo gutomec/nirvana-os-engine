@@ -1,13 +1,13 @@
 # ─────────────────────────────────────────────────────────────────────
-# Squad Manifest — Squad Protocol v5.0 (capabilities-aware)
+# Squad Manifest — Squad Protocol v6.0 (capabilities-aware, Markdown workflows)
 # Substitua todos os {{PLACEHOLDERS}} antes de fazer commit.
-# Validador: python3 ~/.claude/skills/_shared/validators/validators.py test
-# Schema:    ~/.claude/skills/_shared/schemas/capability.schema.json
+# Portão:  nrv validate squad <dir>          (admissão; --fix aplica os reparos mecânicos)
+# Schema:  ~/.nirvana/skills/_shared/schemas/capability.schema.json  (gerado de validators.ts)
 # ─────────────────────────────────────────────────────────────────────
 
 name: {{SQUAD_NAME}}                      # kebab-case, ^[a-z][a-z0-9-]+$
 version: "1.0.0"                          # semver MAJOR.MINOR.PATCH
-protocol: "5.0"                           # 5.0 = capabilities-aware. Use 4.0 se for legacy.
+protocol: "6.0"                           # 6.0 = workflow em Markdown (§28). 5.0 continua válido.
 description: "{{DESCRIPTION}}"            # ≥20 caracteres, descreva o que a squad entrega
 author: "{{AUTHOR}}"
 license: SUL-1.0
@@ -15,7 +15,7 @@ slashPrefix: {{PREFIX}}                   # 2-4 chars, ex: sfm, ig, mk
 tags: [{{TAG_1}}, {{TAG_2}}]              # busca livre
 
 # ─────────────────────────────────────────────────────────────────────
-# Capabilities (Squad v5 §22) — OBRIGATÓRIO em v5
+# Capabilities (Squad v5 §22, v6 §29-§33) — OBRIGATÓRIO em v5 e v6
 # Cada capability mapeia uma intenção do usuário (NL) para um workflow,
 # task ou agent dentro desta squad. Sem capabilities[], a squad fica
 # invisível à descoberta do harness.
@@ -28,7 +28,8 @@ capabilities:
     domains: [{{CAPABILITY_DOMAINS}}]     # 1-5 domains from CAPABILITY_CATALOG_V1.yaml
     invoke:
       type: workflow                      # workflow | task | agent
-      ref: workflows/{{WORKFLOW_REF}}.yaml
+      ref: workflows/{{WORKFLOW_REF}}     # v6 §28.6: sem extensão — a ref nomeia o workflow,
+                                          # não a codificação. Com `.md`/`.yaml` é erro em 6.0.
     examples:
       - "{{EXAMPLE_INTENT_1}}"            # NL phrases that must match (>=1 mandatory)
       - "{{EXAMPLE_INTENT_2}}"
@@ -48,13 +49,21 @@ capabilities:
       - "TODO: brief PT como o dono escreveria em pânico, verbo conjugado"
       - "TODO: brief cobrindo a forma no infinitivo (quero escrever... / write...)"
     not_for:
-      - "todo refused territory"          # short token lists, 2-4 content words each (§6).
-      # NEVER sentences, no "(use X)" suffixes — the penalty is a substring match.
+      - "todo refused"                    # v6 §33: <=25 chars, 2-4 content words, no id suffix.
+      # NEVER sentences, no "(use X)" suffixes — the penalty is a substring match,
+      # and above 25 chars BM25 needs 60% token overlap, so the fence stops firing.
       # EN and PT are separate entries; accented and unaccented are separate entries.
     outputs:
       - name: {{OUTPUT_NAME}}             # snake_case
         type: markdown                    # file|string|json|array|markdown|html|binary
         description: "{{OUTPUT_DESCRIPTION}}"
+    # ── Aceitação (v6 §29) — o que o juiz cobra desta capability. Deriva de
+    #    `success_indicators` do workflow com `nrv migrate --to 6`; escrever à
+    #    mão é igualmente válido. Máx 12; `brief-conformance` vem sempre antes.
+    acceptance:
+      - id: todo_acceptance_id            # ^[a-z][a-z0-9_-]*$, único na squad
+        description: "TODO: critério binário e verificável do entregável"
+        blocking: true
     fidelity:
       status: experimental                # experimental | validated | drifted | retired
       threshold: 0.85
@@ -76,7 +85,7 @@ components:
     - {{TASK_1}}.md
     - {{TASK_2}}.md
   workflows:
-    - {{WORKFLOW_REF}}.yaml
+    - {{WORKFLOW_REF}}                    # §28.6: sem extensão, como o `invoke.ref`
 
 # ─────────────────────────────────────────────────────────────────────
 # Runtime Requirements (Squad v4 §6 + v5 App-D)

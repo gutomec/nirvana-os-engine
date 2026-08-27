@@ -83,7 +83,7 @@ Q3.2  Capability id? (dotted, ≥3 segments)
        → example: marketing.funnel.create
        → pattern: <domain>.<feature>.<action>
 
-Q3.3  Capability description? (20-500 chars)
+Q3.3  Capability description? (20-1500 chars)
        → will be indexed by BM25. Concrete > generic.
 
 Q3.4  Domains? (1-5 from CAPABILITY_CATALOG_V1)
@@ -106,7 +106,7 @@ Q3.8  How is this capability's output judged?
 
 Validation:
 - id matches `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2,}$`
-- description 20-500 chars
+- description 20-1500 chars
 - domains non-empty, ≤5
 - invoke.ref points to a workflow declared in Round 2
 - examples[] ≥1

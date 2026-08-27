@@ -22,7 +22,7 @@ language intent ("criar funil de vendas completo") to an invocation point
 inside the squad — workflow, task, or agent.
 
 Without `capabilities[]` in `squad.yaml`, the squad remains manually
-executable (`*squad run`) but is **invisible to the harness**. The harness
+executable (`nrv run --squad <slug>`) but is **invisible to the harness**. The harness
 only routes to squads whose capabilities have well-declared descriptions,
 examples, and domains (BM25 indexes that metadata).
 
@@ -31,7 +31,7 @@ examples, and domains (BM25 indexes that metadata).
 ```yaml
 capabilities:
   - id: marketing.funnel.create        # dotted, ≥3 segments
-    description: >                      # 20-500 chars, indexed by BM25
+    description: >                      # 20-1500 chars, indexed by BM25
       Criação de funil de vendas completo, da awareness ao closing.
     domains: [marketing, sales]         # 1-5 from CAPABILITY_CATALOG_V1
     invoke:
@@ -232,7 +232,7 @@ Define success before coding:
    Paste into `not_for[]`.
 3. Run the local BM25 search (once the registry is populated):
    ```bash
-   bun ~/.nirvana/skills/squads/tests/smoke-v5.ts
+   nrv find "<one of your example_briefs>"
    ```
    Verify your capability is the top hit for its own examples.
 4. Run the validator:
@@ -252,7 +252,7 @@ of them pass.
 ## Final checklist (P5)
 
 - [ ] `id` follows regex `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2,}$`
-- [ ] `description` ≥20 and ≤500 chars, concrete
+- [ ] `description` ≥20 and ≤1500 chars (`LIMITS.capability_description_max`), concrete
 - [ ] `domains[]` 1-5 from the catalog (or `experimental_domains: true`)
 - [ ] `invoke` points to an existing file in the squad
 - [ ] `examples[]` ≥1, all ≥5 chars

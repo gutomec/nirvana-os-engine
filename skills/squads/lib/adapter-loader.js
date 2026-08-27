@@ -3,7 +3,7 @@
  *
  * Adapters live at {skill-root}/adapters/{runtime_id}.yaml
  * Each adapter declares features_supported, concept_mapping, numeric_values.
- * Validated against schemas/adapter-schema.json.
+ * This loader IS the adapter manifest's validator (the JSON mirror was removed in v6).
  */
 
 const fs = require('fs');

@@ -57,6 +57,43 @@ squad como já derruba as dos clones. Na biblioteca do dono o digest fica em L4 
 foi de 44.664 para 48.618 tokens contra o orçamento de 50.000, com 203 dos 205
 squads declarando um objeto. Entradas continuam nunca sendo descartadas.
 
+### A composição de squads vira aresta, e ordem de plano
+
+`capabilities[].requires[]` e `capabilities[].consumes[]` parseavam desde que os
+campos v6 entraram, e nenhum leitor os tocava. Agora são arestas.
+`readSquadComposition()`, em `skills/_shared/lib/entity-graph.ts`, lê cada
+`squad.yaml` instalado: uma entrada de `requires` resolve para o squad que
+declara aquele id de capability e vira `depends_on` do consumidor para o
+provedor; uma entrada de `consumes` resolve pelo `produces` e vira `feeds` do
+provedor para o consumidor. As duas passam pelo `dependencyPair()` como "o
+provedor existe primeiro", então `nrv graph order` e a ordem de instalação
+absorvem a composição sem uma segunda regra.
+
+A aresta só existe onde o provedor é inequívoco. Compartilhar um id de
+capability é o desenho, não um defeito: dez squads carregam `media.video.compose`
+e o roteador deve escolher entre eles pelo briefing. Escolher um deles aqui
+inventaria uma ordem de execução que ninguém declarou, então dois provedores não
+geram aresta e sim uma linha de reporte. Um prefixo `slug:` na referência
+(`brand-forge:design.brand.identity`) nomeia o provedor e resolve a questão.
+
+| Achado | `nrv graph check` |
+|---|---|
+| `requires` que ninguém provê | `x_requires_unresolved`, reprova no `--strict` |
+| `requires` que dois squads provêem | `x_requires_ambiguous`, reportado |
+| `consumes` que ninguém produz | `x_consumes_unresolved`, reportado |
+| `consumes` que dois squads produzem | `x_consumes_ambiguous`, reportado |
+
+A ambiguidade fica aquém do erro de propósito. A capability existe, duas vezes, e
+reprovar a biblioteca por um id repetido puniria justamente a forma para a qual o
+roteador foi feito. Um `requires` não resolvido é outro caso: a biblioteca não
+tem aquela capability, e nenhuma ordenação a fabrica.
+
+`compileManifest()` aceita o grafo derivado em `opts.composition` e herda a ordem
+entre dois nós `squad` de um mesmo plano quando o autor não declarou nenhuma. O
+autor continua vencendo, sempre: um par já ligado por uma aresta, em qualquer
+direção, fica exatamente como foi escrito. Sem a opção, a compilação é bit a bit
+a que já era publicada, e um teste de regressão a mantém assim.
+
 ### O leitor de workflow: um grafo canônico, todo dialeto legado normalizado
 
 O workflow de um squad era o único artefato do protocolo sem forma única.
@@ -125,6 +162,58 @@ por `_`↔`-` quando exatamente um componente casa e **nunca** escreve stub. Um
 `.yaml` também nunca vira `.md` num fixer: trocar a codificação é migração, com
 backup e relatório, e o fixer diz isso em vez de agir.
 
+### O Squad Protocol 6.0 está escrito, e um comando leva uma squad até lá
+
+`skills/squads/SQUAD_PROTOCOL_V6.md` diz o que o leitor e o portão já fazem,
+como delta sobre a v5 do mesmo jeito que a v5 foi delta sobre a v4: §28 o
+documento de workflow (`.md` = grafo no frontmatter mais corpo em prosa, corpo
+dividido em `## <step.id>`, o teto de palavras, a tabela de lint com uma
+severidade por protocolo, a regra do gêmeo, referências sem a codificação), §29
+o contrato de aceitação, §30 o contrato do avaliador, §31 composição, §32 o
+vínculo de execução, §33 `not_for` em 25 caracteres, §34 admissão, §35 migração,
+App-G os schemas gerados e App-H o que a v6 deprecia.
+
+Três desses contratos são declarativos hoje: o schema aceita, o portão valida, e
+nenhum leitor de execução consome ainda. Cada um está marcado como **limite** no
+texto, com o que falta, porque uma spec que descreve um engine inexistente é
+pior do que uma que admite a lacuna.
+`skills/squads/tests/protocol-v6-spec-parity.test.ts` quebra o build quando um id
+de critério, um id de lint, um fixer ou uma flag do `nrv migrate` deixa de ser
+nomeado na spec.
+
+`nrv migrate <slug|path> --to 6` é a conversão, e **dry run é o padrão**: sem
+`--apply` nada é escrito, nem a squad, nem o backup, nem o relatório. Por
+workflow:
+
+| Legado | v6 |
+|---|---|
+| `workflows/<nome>.yaml` em um de oito dialetos | `workflows/<nome>.md`, o grafo canônico |
+| `depends_on` / `deps` / `after` | `requires` |
+| um prompt inline em `task: \|` (>= 40 palavras) | `tasks/<workflow>-<step>.md`, e o passo ganha a referência `task:` |
+| um recado curto inline | o corpo, sob `## <step.id>` |
+| gêmeos `x.md` + `x.yaml` | um arquivo só: o grafo do YAML, o corpo do Markdown |
+| `invoke.ref: workflows/main.yaml` | `invoke.ref: workflows/main` |
+| `success_indicators` que ninguém lia | `capabilities[].acceptance[]`, `blocking: false` |
+| um `name` que não é o stem do arquivo | `extensions.title`, realocado, nunca descartado |
+
+Ela nunca inventa prosa: toda frase de um corpo convertido já existia na fonte, e
+o teste afirma isso por substring. E recusa três documentos em vez de adivinhar —
+`event_routes` (roteador, não DAG), um documento do qual nenhum passo pode ser
+derivado, e um stem fora de `^[a-z][a-z0-9_-]*$`. Sem `--force` a squad inteira é
+recusada; com ela, aquele documento fica intocado e o resto migra. O `.yaml` só é
+apagado depois de o `.md` ser relido e casar com `WorkflowSchema`.
+
+Em volta da conversão: backup em `~/squads-legacy-v5/<slug>.<ts>/` escrito com
+`fs.cpSync` e nunca rsync, relatório `nirvana.squad-migrate/v1` no state dir das
+squads e nunca dentro da squad, `--rollback <ts>` que restaura e recusa quando a
+squad mudou depois da migração, idempotência decidida em bytes, e uma chamada ao
+`nrv validate squad` no fim que imprime o veredito.
+
+Squads novas já nascem lá. O `templates/workflow.md.tmpl` é o documento
+canônico, o `squad.yaml.tmpl` traz `protocol: "6.0"` com referências sem
+extensão, e o `init-squad.ts` grava `workflows/<ref>.md` e aponta o passo 4 para
+`nrv validate squad <dir>`.
+
 ### Removido
 
 O `humanize` saiu da superfície do protocolo de squads. Era a contradição que o
@@ -145,6 +234,19 @@ bloco YAML inválido.
 
 Limites novos: `workflow_body_words_max` (2500) e
 `squad_prompt_components_bytes_max` (65536).
+
+Os espelhos de JSON Schema por squad saíram: `skills/squads/schemas/`
+(`squad-schema.json`, `agent-schema.json`, `task-schema.json`,
+`adapter-schema.json`, `handoff-schema.json`). Nenhum caminho de código os lia, e
+o `squad-schema.json` descrevia um manifesto v4 que ninguém autorava havia um
+ano. O que substituiu cada um está tabulado em `references/05-schemas.md`. Os
+três que restam são GERADOS dos schemas Zod que executam:
+`bun scripts/gen-json-schemas.ts` grava
+`_shared/schemas/{capability,squad,workflow}.schema.json`, e o `--check` roda no
+`check:all`, então o espelho não pode mais discordar da fonte. Isso fecha um
+desvio documentado: o `capability.schema.json` limitava `description` a 500
+caracteres meses depois de o `LIMITS` ter subido para 1500, e o mesmo 500 estava
+repetido em quatro documentos de referência e num template.
 
 ### Business Protocol 2.0: metadados de roteamento, clones fixados, squads preferidos, aceitação por cargo, um campo de orçamento e a superfície morta deprecada
 

@@ -11,7 +11,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildEntityGraph, readCloneBindings, refToSlug, slugOf } from "../lib/entity-graph.ts";
+import { buildEntityGraph, readCloneBindings, readSquadComposition, refToSlug, slugOf } from "../lib/entity-graph.ts";
 import { buildOrderOrThrow, closure } from "../lib/dependency-graph.ts";
 
 const roots: string[] = [];
@@ -141,5 +141,142 @@ describe("buildEntityGraph", () => {
     });
     expect(g.nodes.map((n) => n.id)).toEqual(["squad:my-squad"]);
     expect(g.edges).toEqual([]);
+  });
+});
+
+// ── squad composition (Squad Protocol v6 §31) ────────────────────────────────
+// `requires[]` names capability ids, `consumes[]` names `produces` slugs. Both
+// become edges only when the provider is UNAMBIGUOUS: with 3.024 capability
+// entries across 204 installed squads, guessing a provider would silently
+// invent an execution order nobody declared.
+
+function squad(dir: string, slug: string, capabilities: unknown[]) {
+  const s = join(dir, "squads", slug);
+  mkdirSync(s, { recursive: true });
+  const caps = capabilities
+    .map((c) => {
+      const cap = c as Record<string, string[] | string>;
+      const list = (key: string) =>
+        Array.isArray(cap[key]) ? `\n    ${key}:\n${(cap[key] as string[]).map((v) => `      - ${v}`).join("\n")}` : "";
+      return `  - id: ${cap.id}${list("produces")}${list("requires")}${list("consumes")}`;
+    })
+    .join("\n");
+  writeFileSync(join(s, "squad.yaml"), `name: ${slug}\nversion: 1.0.0\nprotocol: "6.0"\ncapabilities:\n${caps}\n`);
+  return s;
+}
+const squadRoots = (pack: string) => ({
+  businessesDir: join(pack, "businesses"),
+  clonesDir: join(pack, "mind-clones"),
+  squadsDir: join(pack, "squads"),
+});
+
+describe("readSquadComposition", () => {
+  test("a single provider becomes a depends_on edge, provider first", () => {
+    const pack = packFixture();
+    squad(pack, "provider", [{ id: "design.brand.identity", produces: ["brand_kit"] }]);
+    squad(pack, "consumer", [{ id: "content.social.plan", requires: ["design.brand.identity"] }]);
+
+    const scan = readSquadComposition(squadRoots(pack));
+    expect(scan.issues).toEqual([]);
+    expect(scan.edges.map((e) => [e.type, e.source, e.target])).toEqual([
+      ["depends_on", "squad:consumer", "squad:provider"],
+    ]);
+
+    const g = buildEntityGraph(squadRoots(pack));
+    expect(g.edges.length).toBe(1);
+    const order = buildOrderOrThrow(g).map((n) => n.id);
+    expect(order.indexOf("squad:provider")).toBeLessThan(order.indexOf("squad:consumer"));
+  });
+
+  test("two providers of the same capability id yield no edge and x_requires_ambiguous", () => {
+    const pack = packFixture();
+    squad(pack, "zeta-provider", [{ id: "design.brand.identity" }]);
+    squad(pack, "alpha-provider", [{ id: "design.brand.identity" }]);
+    squad(pack, "consumer", [{ id: "content.social.plan", requires: ["design.brand.identity"] }]);
+
+    const scan = readSquadComposition(squadRoots(pack));
+    expect(scan.edges).toEqual([]);
+    expect(scan.issues).toEqual([{
+      code: "x_requires_ambiguous",
+      kind: "requires",
+      reason: "ambiguous",
+      squad: "consumer",
+      capability: "content.social.plan",
+      ref: "design.brand.identity",
+      candidates: ["alpha-provider", "zeta-provider"],
+    }]);
+  });
+
+  test("an explicit slug: prefix picks the provider the ambiguity hid", () => {
+    const pack = packFixture();
+    squad(pack, "zeta-provider", [{ id: "design.brand.identity" }]);
+    squad(pack, "alpha-provider", [{ id: "design.brand.identity" }]);
+    squad(pack, "consumer", [{ id: "content.social.plan", requires: ["zeta-provider:design.brand.identity"] }]);
+
+    const scan = readSquadComposition(squadRoots(pack));
+    expect(scan.issues).toEqual([]);
+    expect(scan.edges.map((e) => [e.source, e.target])).toEqual([["squad:consumer", "squad:zeta-provider"]]);
+  });
+
+  test("an explicit prefix naming a squad that is not installed is unresolved", () => {
+    const pack = packFixture();
+    squad(pack, "consumer", [{ id: "content.social.plan", requires: ["ghost-squad:design.brand.identity"] }]);
+    const scan = readSquadComposition(squadRoots(pack));
+    expect(scan.edges).toEqual([]);
+    expect(scan.issues.map((i) => [i.code, i.ref])).toEqual([["x_requires_unresolved", "ghost-squad:design.brand.identity"]]);
+    expect(scan.issues[0].candidates).toEqual([]);
+  });
+
+  test("a requires nobody provides is unresolved; a squad's own capability is not", () => {
+    const pack = packFixture();
+    squad(pack, "lonely", [
+      { id: "content.social.plan", requires: ["design.brand.identity", "content.social.audit"] },
+      { id: "content.social.audit" },
+    ]);
+    const scan = readSquadComposition(squadRoots(pack));
+    expect(scan.edges).toEqual([]);
+    expect(scan.issues.map((i) => [i.code, i.ref])).toEqual([["x_requires_unresolved", "design.brand.identity"]]);
+  });
+
+  test("consumes becomes feeds with one provider of the slug, nothing with two", () => {
+    const pack = packFixture();
+    squad(pack, "maker", [{ id: "design.brand.identity", produces: ["brand_kit"] }]);
+    squad(pack, "rival", [{ id: "design.brand.rebuild", produces: ["style_guide"] }]);
+    squad(pack, "twin", [{ id: "design.brand.copy", produces: ["style_guide"] }]);
+    squad(pack, "consumer", [{ id: "content.social.plan", consumes: ["brand_kit", "style_guide"] }]);
+
+    const scan = readSquadComposition(squadRoots(pack));
+    expect(scan.edges.map((e) => [e.type, e.source, e.target])).toEqual([
+      ["feeds", "squad:maker", "squad:consumer"],
+    ]);
+    expect(scan.issues.map((i) => [i.code, i.ref, i.candidates])).toEqual([
+      ["x_consumes_ambiguous", "style_guide", ["rival", "twin"]],
+    ]);
+  });
+
+  test("two capabilities of one squad requiring the same provider yield one edge", () => {
+    const pack = packFixture();
+    squad(pack, "provider", [{ id: "design.brand.identity", produces: ["brand_kit"] }]);
+    squad(pack, "consumer", [
+      { id: "content.social.plan", requires: ["design.brand.identity"] },
+      { id: "content.social.audit", requires: ["design.brand.identity"], consumes: ["brand_kit"] },
+    ]);
+    const scan = readSquadComposition(squadRoots(pack));
+    expect(scan.edges.map((e) => e.id)).toEqual([
+      "depends_on:consumer->provider",
+      "feeds:provider->consumer",
+    ]);
+  });
+
+  test("a squad.yaml that does not parse costs the graph nothing", () => {
+    const pack = packFixture();
+    mkdirSync(join(pack, "squads", "broken"), { recursive: true });
+    writeFileSync(join(pack, "squads", "broken", "squad.yaml"), "name: broken\ncapabilities: [ unterminated\n");
+    squad(pack, "provider", [{ id: "design.brand.identity" }]);
+    squad(pack, "consumer", [{ id: "content.social.plan", requires: ["design.brand.identity"] }]);
+
+    const g = buildEntityGraph(squadRoots(pack));
+    expect(g.nodes.map((n) => n.id).sort()).toEqual(["squad:broken", "squad:consumer", "squad:provider"]);
+    expect(g.edges.length).toBe(1);
   });
 });
