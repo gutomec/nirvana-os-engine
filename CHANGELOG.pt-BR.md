@@ -8,6 +8,55 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### O registro para de descartar o que a capability declara
+
+Uma capability pode declarar `estimated_cost_usd` há duas versões do protocolo,
+e o `budget.js` estima custo a partir desse campo desde o dia em que foi
+escrito. Nunca encontrou um. Vinte linhas do `squads/lib/registry.js` projetavam
+cada capability em sete chaves na hora de indexar, então nove campos declarados
+morriam entre o manifesto e todo leitor que os queria. O planejador de DAG e o
+detector de corrida tinham o mesmo buraco, em `parallel_safe` e `writes_paths`.
+
+O índice passa a carregar o que o manifesto declara, e só o que ele declara: um
+campo não declarado não emite chave, então uma biblioteca que não usa nada disso
+produz o registro que produzia antes, byte a byte.
+
+| Agora carregado, quando declarado | Leitor que esperava por ele |
+|---|---|
+| `estimated_cost_usd` | `harness/lib/budget.js`, a estimativa de custo do pré-voo |
+| `parallel_safe`, `writes_paths` | o planejador de DAG multi-target e o detector de corrida |
+| `model_hint`, `tools_required`, `inputs`, `outputs` | a execução e o plano de invocação |
+| `contributions` | o overlay de montagem de prompt |
+| `fidelity` (o bloco inteiro) | seleção de avaliador e limiares do Gauntlet |
+| `acceptance`, `evaluator`, `requires`, `consumes` | os contratos da v6, à frente dos seus leitores |
+
+O `fidelity_status` fica exatamente onde estava, para quem já o lê. O
+`RegistrySquadsSchema` em `validators.ts` passa enfim a declarar a projeção que
+o indexador escreve, tomando cada forma emprestada do `CapabilitySchema` para
+que o índice nunca aceite algo que um manifesto não poderia ter declarado.
+
+Quatro desses campos andam um passo a mais: o `router.js` põe
+`estimated_cost_usd`, `parallel_safe`, `writes_paths` e `model_hint` no `meta`
+do documento de casamento e no plano de invocação do estágio 5. Nenhum deles
+entra no texto indexado, e a prova é por caso, não agregada. Nos 3.449 briefs do
+conjunto dourado o destino de top-1 é idêntico em todos, antes e depois, e os 40
+negativos e sondas de ambiguidade mantêm o sinal que tinham.
+
+### A seção de squads do digest de roteamento diz o que o squad produz
+
+As linhas de empresa do digest carregam `domains:` e `produces:` desde que o
+arquivo foi escrito. As linhas de squad não carregavam nenhum dos dois, enquanto
+o próprio prompt do roteador diz ao modelo que o OBJETO de um brief decide a
+maior parte da escolha. O registro vinha agregando os dois em nível de squad
+esse tempo todo.
+
+Os dois segmentos passam a aparecer na linha de squad, com teto de 10 domains e
+6 produces, os mesmos tetos da linha de empresa. A escada de degradação absorve
+o custo: L3 corta produces de squad para 3, e L4 derruba as listas de domains de
+squad como já derruba as dos clones. Na biblioteca do dono o digest fica em L4 e
+foi de 44.664 para 48.618 tokens contra o orçamento de 50.000, com 203 dos 205
+squads declarando um objeto. Entradas continuam nunca sendo descartadas.
+
 ### A composição de squads vira aresta, e ordem de plano
 
 `capabilities[].requires[]` e `capabilities[].consumes[]` parseavam desde que os

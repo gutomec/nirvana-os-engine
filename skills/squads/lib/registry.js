@@ -55,6 +55,14 @@ const REGISTRY_PATH = PATHS.SQUADS_REGISTRY_PATH;
 // dependency-light CommonJS and must not pull in the TS limits module.
 const SQUAD_DESCRIPTION_MAX = 1500;
 
+// Capability fields that are arrays and travel verbatim from squad.yaml into
+// the registry entry. Bounded by CapabilitySchema at validation time, so the
+// index inherits those ceilings instead of restating them.
+const PASSTHROUGH_ARRAY_FIELDS = [
+  'inputs', 'outputs', 'tools_required', 'writes_paths',
+  'contributions', 'acceptance', 'requires', 'consumes',
+];
+
 // Ordered by priority: later roots override earlier ones on collision.
 // Scope-aware: in project mode, only walk .nirvana/squads. In merge, walk
 // both (project last, so its slugs override globals). In global, walk only
@@ -267,6 +275,22 @@ function build(roots) {
         if (Array.isArray(cap.produces) && cap.produces.length > 0) capEntry.produces = cap.produces;
         if (Array.isArray(cap.example_briefs) && cap.example_briefs.length > 0) capEntry.example_briefs = cap.example_briefs;
         if (Array.isArray(cap.keywords) && cap.keywords.length > 0) capEntry.keywords = cap.keywords;
+        // Contract, scheduling, overlay and v6 fields. The manifest has been
+        // allowed to declare all of these for several protocol versions and the
+        // index dropped every one, so the consumers on the other side read
+        // nothing: budget.js estimates from `estimated_cost_usd`, the DAG
+        // planner and the race detector schedule from `parallel_safe` /
+        // `writes_paths`, and the v6 contract fields had no carrier at all.
+        // Emitted ONLY when declared — an absent field adds no key, so the
+        // registry of a library that declares none of this is unchanged.
+        for (const key of PASSTHROUGH_ARRAY_FIELDS) {
+          if (Array.isArray(cap[key]) && cap[key].length > 0) capEntry[key] = cap[key];
+        }
+        if (cap.fidelity && typeof cap.fidelity === 'object') capEntry.fidelity = cap.fidelity;
+        if (cap.evaluator && typeof cap.evaluator === 'object') capEntry.evaluator = cap.evaluator;
+        if (typeof cap.model_hint === 'string') capEntry.model_hint = cap.model_hint;
+        if (typeof cap.estimated_cost_usd === 'number') capEntry.estimated_cost_usd = cap.estimated_cost_usd;
+        if (typeof cap.parallel_safe === 'boolean') capEntry.parallel_safe = cap.parallel_safe;
         // The body this capability actually executes, resolved through
         // invoke.ref and cleaned. Extracted here, once, because route() runs
         // thousands of times per eval and must never touch the filesystem.
