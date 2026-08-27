@@ -22,7 +22,16 @@ if (-not $bun) {
   $bun = Find-Bun
 }
 if (-not $bun) {
-  Write-Host "Nao consegui instalar o Bun. Instale manualmente: https://bun.sh e rode de novo."
+  # Console strings stay unaccented on purpose: PowerShell 5.1 reads a BOM-less
+  # .ps1 as ANSI, so a "nao" written with the tilde reaches the buyer as mojibake.
+  # The comments above keep their accents; only what Write-Host prints is ASCII.
+  Write-Host "Nao consegui instalar o Bun automaticamente."
+  Write-Host "  Instale manualmente e rode de novo:"
+  Write-Host '    powershell -c "irm bun.sh/install.ps1 | iex"'
+  Write-Host "    powershell -ExecutionPolicy Bypass -File setup.ps1"
+  Write-Host "  Se a politica de execucao bloquear o irm, instale pelo winget:"
+  Write-Host "    winget install Oven-sh.Bun"
+  Write-Host "  Instalou e o Bun continua sumido? Abra um terminal novo antes de rodar de novo."
   exit 1
 }
 

@@ -414,7 +414,18 @@ function windowsLauncherNrv(): string {
     'if not exist "%BUN%" (',
     "  where /q bun",
     "  if errorlevel 1 (",
-    "    echo nrv requires Bun. Install: https://bun.sh",
+    // The same answer bin/nrv gives on POSIX, in the dialect of the shell that
+    // prints it. A bare "Install: https://bun.sh" made the buyer go look up a
+    // command this launcher already knows, and it named no fallback for the
+    // machine where the PowerShell one-liner is blocked by execution policy.
+    // Inside a parenthesized block cmd.exe needs `^|` and `^(` escaped or the
+    // block ends early — the .cmd wrappers under skills/ escape them the same way.
+    "    echo nrv requires Bun. Nirvana-OS runs on it.",
+    "    echo   Install it, then run nrv again:",
+    '    echo     powershell -c "irm bun.sh/install.ps1 ^| iex"',
+    "    echo   If the execution policy blocks that, install it with winget:",
+    "    echo     winget install Oven-sh.Bun",
+    "    echo   Already installed? Open a new terminal so the PATH picks it up.",
     "    exit /b 1",
     "  )",
     '  set "BUN=bun"',

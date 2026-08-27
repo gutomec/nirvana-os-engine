@@ -23,6 +23,12 @@ bin/nrv-hermes  text eol=lf
 bin/*.cmd            text eol=crlf
 skills/**/*.cmd      text eol=crlf
 
+# PowerShell scripts, same native convention. With no rule here, setup.ps1 was
+# checked out LF on macOS/Linux and CRLF on Windows, so what the buyer ran and
+# what check-published-packs hashed both depended on who cloned the repo — and an
+# assertion over its lines passed on two systems and failed on the third.
+*.ps1                text eol=crlf
+
 # Binary assets — never touch.
 *.png   binary
 *.jpg   binary
