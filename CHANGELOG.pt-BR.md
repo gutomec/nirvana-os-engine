@@ -8,6 +8,57 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Um teste que reprovava por sorteio, e o fsync que decidia o sorteio
+
+O `gauntlet-revision-loop.e2e.test.ts` vinha ficando vermelho no
+`smoke (windows-latest)` a partir de branches cujo diff não encostava em nada
+perto dele. Três dessas falhas caíram na `main`, que só recebe código já aprovado
+nos três sistemas, então eram intermitência por definição. O caso que o CI nomeou
+foi "a typed agent-x producer crosses the revision loop to completed", estourando
+em 8.415 ms contra o padrão de 5 s do Bun.
+
+A distância é a história inteira. Aquele caso é dos mais baratos do arquivo: 14 ms
+numa máquina ociosa. Na mesma execução em que reprovou, os vizinhos terminaram
+entre 195 e 490 ms, e a perna gêmea do próprio `test.each`, que percorre o código
+idêntico, terminou em 688 ms. Nada no trabalho explica a diferença. O lugar onde o
+trabalho acontecia explica. Todo caso do arquivo abria o Run Kernel como um banco
+SQLite real num diretório temporário, e o kernel abre com `synchronous = FULL`,
+então cada um dos 17 eventos que o laço registra custa um fsync. O relógio do
+teste media o disco do runner, e o Windows é o mais lento dos três.
+
+O diário agora vive em memória. Nenhum caso do arquivo lia aquele banco de volta;
+eles verificam projeções, payloads de evento e os arquivos que os produtores
+escrevem. O disco não comprava cobertura nenhuma e cobrava por uma durabilidade
+que o `afterEach` apagava milissegundos depois. O comportamento em disco do kernel
+segue coberto onde ele é o assunto, no `run-kernel.test.ts` e nos arquivos e2e
+entre processos que compartilham um arquivo de banco com um filho executado.
+
+Um achado fica fora do teste. O `openKernel` criava o diretório pai de qualquer
+caminho que recebesse, de modo que `:memory:` só funcionava porque
+`path.dirname(":memory:")` é `"."` nas duas plataformas e criar `"."` não faz
+nada. Agora é um argumento suportado, com guarda e documentado. Funcionar por
+acidente é como se escreve a próxima falha exclusiva do Windows.
+
+A prova é estatística. Sob 40 cópias simultâneas do arquivo numa máquina de 10
+núcleos, com quatro laços de fsync disputando o disco, 640 execuções antes da
+mudança produziram 100 estouros espalhados por nove casos diferentes, inclusive
+aquela perna gêmea; 640 execuções depois, sob a mesma carga, produziram 5, todos
+num caso só. O caso nomeado saiu de 1.356 ms de média e 4.518 ms na cauda para
+573 ms e 2.212 ms. Duzentas execuções seguidas sem carga passaram então sem uma
+falha.
+
+Sem `retry`, sem aumentar orçamento, sem `skip`. Cada um deles esconde o sorteio e
+mantém o treinamento de re-rodar sem ler, que é o que torna invisível a próxima
+falha verdadeira naquele arquivo. Vale registrar contra isso: o caso que o CI
+nomeou nunca teve orçamento declarado. Os dois `KERNEL_BUDGET_MS` do arquivo
+pertencem aos dois casos que executam processos.
+
+Um caso fica de fora. O "a typed Business crosses the revision loop, the real
+offline gate and the post-gate" é o único que ainda cruzou os 5 s sob aquela
+carga, 7 amostras em 400 contra 65 antes, porque roda o pipeline de entrega e o
+pós-gate em cima do kernel. Esse custo não é o que esta mudança remove, e ele
+também não tem orçamento. É um corte próprio.
+
 ## 0.10.2 — 2026-08-27
 
 ### Uma quebra de linha num argumento cortava todas as flags atrás dela, no Windows

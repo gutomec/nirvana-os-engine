@@ -8,6 +8,57 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### A test that failed by lottery, and the fsync that decided the draw
+
+`gauntlet-revision-loop.e2e.test.ts` kept going red on `smoke (windows-latest)`
+from branches whose diff touched nothing near it. Three of those failures landed
+on `main`, which only takes code that already passed all three systems, so they
+were intermittency by definition. The case CI named was "a typed agent-x producer
+crosses the revision loop to completed", timing out at 8,415 ms against Bun's 5 s
+default.
+
+The gap is the whole story. That case is one of the cheapest in the file: 14 ms
+on an idle machine. On the very run where it failed, its neighbours finished in
+195 to 490 ms, and the twin leg of its own `test.each`, which executes the
+identical code path, finished in 688 ms. Nothing about the work explains the
+spread. Where the work happened does. Every case in the file opened the Run
+Kernel as a real SQLite database under a temp directory, and the kernel opens
+with `synchronous = FULL`, so each of the 17 events the loop journals costs one
+fsync. The test's wall clock was a measurement of the runner's disk, and Windows
+is the slowest of the three.
+
+The journal now lives in memory. No case in the file ever read that database
+back; they assert projections, event payloads and the files the producers write.
+The disk bought no coverage and charged for durability that `afterEach` deleted
+milliseconds later. The kernel's own on-disk behaviour stays covered where it is
+the subject, in `run-kernel.test.ts` and the cross-process e2e files that share a
+database file with a spawned child.
+
+One finding sits outside the test. `openKernel` used to create the parent
+directory of whatever path it was handed, so `:memory:` worked only because
+`path.dirname(":memory:")` is `"."` on both platforms and creating `"."` is a
+no-op. It is a supported argument now, guarded and documented. Working by
+accident is how the next Windows-only failure gets written.
+
+The proof is statistical. Under 40 concurrent copies of the file on a 10-core
+machine with four fsync loops competing for the disk, 640 runs before the change
+produced 100 timeouts spread over nine different cases, including that twin leg;
+640 runs after, under the same load, produced 5, all in one case. The named case
+went from 1,356 ms mean and 4,518 ms at the tail to 573 ms and 2,212 ms. Two
+hundred consecutive unloaded runs then passed without a failure.
+
+No `retry`, no raised budget, no skip. Each of those hides the draw and keeps
+teaching everyone to re-run without reading, which is what makes the next real
+failure in that file invisible. Worth recording against that: the case CI named
+never had a declared budget at all. The two `KERNEL_BUDGET_MS` budgets in the
+file belong to the two cases that spawn processes.
+
+One case is left alone. "a typed Business crosses the revision loop, the real
+offline gate and the post-gate" is the only one that still crossed 5 s under that
+load, 7 samples in 400 against 65 before, because it runs the delivery pipeline
+and the post-gate on top of the kernel. That cost is not the one this change
+removes, and it carries no budget either. It is a cut of its own.
+
 ## 0.10.2 — 2026-08-27
 
 ### A newline in one argument cut every flag behind it, on Windows
