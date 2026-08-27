@@ -8,6 +8,8 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+## 0.10.2 — 2026-08-27
+
 ### Uma quebra de linha num argumento cortava todas as flags atrás dela, no Windows
 
 Achado enquanto eu perseguia uma falha de CI exclusiva do Windows no corte de

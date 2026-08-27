@@ -8,6 +8,8 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+## 0.10.2 — 2026-08-27
+
 ### A newline in one argument cut every flag behind it, on Windows
 
 Found while chasing a Windows-only CI failure on the dispatch cut above, and it
