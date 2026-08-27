@@ -67,6 +67,7 @@ When your context usage hits ~70% of the window:
 
 - **Never** ask the user clarifying questions. Decide with professional defaults.
 - Record decisions in `## Premissas assumidas` at the top of the main deliverable + emit an `x_assumption_made` audit event per decision.
+- **Never** switch the runtime into its own plan mode (Gemini CLI plan mode): it makes this session and every subagent read-only and stalls the run — planning in Nirvana-OS is a written artifact (the enriched brief in `.nirvana/briefs/`, a multi-target plan in `.nirvana/plans/`). If the runtime is already in plan mode, ask the user once to leave it and stop; do not retry the exit dialog.
 - If truly blocked: emit `human_notification_required { reason, blocker }` and abort cleanly. Do not improvise around blockers.
 
 ## 6. Verify and report

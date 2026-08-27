@@ -46,10 +46,26 @@ import {
   type ResolveOptions, type ResolvedSetting, type SettingScope, type SettingsAudit, type SettingsErrorCode,
 } from "../../../_shared/lib/settings.ts";
 import { validateMindCloneFile, type ValidationResult } from "../../../_shared/lib/mindclone-validator.ts";
+import { mindCloneModule, verifyAll, verifyEntity, type VerifyReport } from "../../../_shared/lib/verify/index.ts";
 import { handleObservabilityRoute } from "./views/observability-handler.ts";
 import { AgentXCanaryQueue, ConversationService, MaestroTurnQueue, ProjectService, resumeCommand, type Conversation, type GlanceAgentXCanaryAdapter, type GlanceExecutionRunner, type MessageRouter, type TurnView } from "../control-plane/index.ts";
 import { createRun as createKernelRun, getRun as getKernelRun, listEvents as listKernelEvents, openKernel } from "../run-kernel/index.ts";
 import { getGauntlet, listCandidateRevisions, listScorecards, projectMultiTargetRun } from "../gauntlet/index.ts";
+
+/**
+ * A gate report in the shape the mind-clone validation routes have always
+ * answered in (`ok` / `errors` / `warnings`, each issue `{code, message,
+ * path?}`). Baselined findings are recorded debt, not a failure of this run.
+ */
+function gateIssues(r: VerifyReport): { ok: boolean; errors: ValidationResult["errors"]; warnings: ValidationResult["warnings"] } {
+  const issue = (f: VerifyReport["findings"][number]) => ({ code: f.id, message: f.message, ...(f.where ? { path: f.where } : {}) });
+  const live = r.findings.filter(f => !f.baselined);
+  return {
+    ok: r.exit_code === 0,
+    errors: live.filter(f => f.severity === "error").map(issue),
+    warnings: live.filter(f => f.severity === "warning").map(issue),
+  };
+}
 
 const VIEWS_DIR = path.dirname(import.meta.path) + "/views";
 // Runtime state lives in the engine's own home, never in a runtime's dir.
@@ -682,47 +698,59 @@ export async function startServer(opts: ServerOptions) {
         }
       }
 
-      // Validate one or all mind-clones against dna.schema.json + 10-section body rule.
-      // GET /api/mind-clones/validate?cat=01-marketing-copy-vendas&slug=alex-hormozi
-      //   → single-file validation
+      // Validate one or all mind-clones through the admission gate
+      // (skills/_shared/lib/verify — the same criteria `nrv validate
+      // mind-clone` applies). The response keeps `ok`, `errors` and
+      // `warnings` and gains `findings`; a clone the gate cannot resolve as a
+      // directory falls back to the legacy flat persona file.
+      //
+      // GET /api/mind-clones/validate?slug=alex-hormozi[&cat=01-marketing-copy-vendas]
+      //   → one clone
       // GET /api/mind-clones/validate-all
-      //   → batch audit; returns {total, ok, failed, results: [{cat, slug, ok, errors, warnings}]}
+      //   → batch audit; {total, ok, failed, results: [{cat, slug, ok, errors, warnings, findings}]}
       if (p === "/api/mind-clones/validate" && req.method === "GET") {
         const cat = u.searchParams.get("cat") || "";
         const slug = u.searchParams.get("slug") || "";
-        if (!cat || !slug) return json({ error: "cat and slug query params are required" }, 400);
-        const filePath = path.join(paths.DNA_LIBRARY, cat, `${slug}.md`);
-        const v = validateMindCloneFile(filePath);
-        return json({ cat, slug, path: filePath, ...v });
+        if (!slug) return json({ error: "the slug query param is required" }, 400);
+        const dir = mindCloneModule.resolveDir(cat ? path.join(paths.DNA_LIBRARY, cat, slug) : slug)
+          ?? mindCloneModule.resolveDir(path.join(paths.DNA_LIBRARY, slug));
+        if (!dir) {
+          // legacy flat persona file, the only shape the old route knew
+          const filePath = path.join(paths.DNA_LIBRARY, cat, `${slug}.md`);
+          if (!fs.existsSync(filePath)) return json({ error: `unknown mind-clone: ${slug}` }, 404);
+          const v = validateMindCloneFile(filePath);
+          return json({ cat, slug, path: filePath, ...v, findings: [] });
+        }
+        try {
+          const r = await verifyEntity("mind-clone", dir, { retrieval: false, stateDir: null });
+          return json({ cat: cat || path.basename(path.dirname(dir)), slug, path: dir, ...gateIssues(r), findings: r.findings, verdict: r.verdict, debt: r.summary.debt });
+        } catch (e: any) {
+          return json({ error: e?.message ?? String(e) }, 500);
+        }
       }
       if (p === "/api/mind-clones/validate-all" && req.method === "GET") {
         const root = paths.DNA_LIBRARY;
-        const results: any[] = [];
         if (!fs.existsSync(root)) return json({ total: 0, ok: 0, failed: 0, results: [] });
-        for (const cat of fs.readdirSync(root).filter(x => !x.startsWith("."))) {
-          const catDir = path.join(root, cat);
-          try { if (!fs.statSync(catDir).isDirectory()) continue; } catch { continue; }
-          try {
-            for (const f of fs.readdirSync(catDir)) {
-              if (!f.endsWith(".md") || f.startsWith(".")) continue;
-              if (/\.[a-z]{2}(?:-[A-Z]{2})?\.md$/.test(f)) continue;
-              const slug = f.replace(/\.md$/, "");
-              const v = validateMindCloneFile(path.join(catDir, f));
-              results.push({
-                cat, slug,
-                ok: v.ok,
-                error_count: v.errors.length,
-                warning_count: v.warnings.length,
-                errors: v.errors.slice(0, 3),  // truncate for response size
-              });
-            }
-          } catch {}
-        }
-        const okCount = results.filter(r => r.ok).length;
+        // Self-retrieval is off: it would build a BM25 index over the whole
+        // library inside one request. `nrv validate mind-clone --all` covers it.
+        const batch = await verifyAll("mind-clone", { roots: [root], retrieval: false, stateDir: null, emit: null });
+        const results = batch.reports.map((r) => {
+          const g = gateIssues(r);
+          return {
+            cat: path.dirname(r.dir) === root ? "" : path.basename(path.dirname(r.dir)),
+            slug: r.slug,
+            ok: g.ok,
+            error_count: g.errors.length,
+            warning_count: g.warnings.length,
+            errors: g.errors.slice(0, 3),  // truncate for response size
+            findings: r.findings.filter(f => !f.baselined && f.severity !== "info").slice(0, 8),
+          };
+        });
         return json({
           total: results.length,
-          ok: okCount,
-          failed: results.length - okCount,
+          ok: batch.summary.admitted,
+          failed: batch.summary.rejected,
+          debt: batch.summary.debt,
           results,
         });
       }

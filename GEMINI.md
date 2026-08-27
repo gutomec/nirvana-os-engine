@@ -73,7 +73,8 @@ These do not orchestrate; they only inspect:
 nrv glance --allow-actions       # web cockpit: browse businesses, squads, mind-clones, audit, costs
 nrv find "<keyword>"             # peek at what the keyword router would suggest (diagnostic only)
 nrv index                        # re-index the registries after manual changes
-nrv validate                     # self-test (registries, validators, BM25, audit)
+nrv doctor                       # self-test (registries, validators, BM25, audit)
+nrv validate <kind> <slug>       # admission gate for one squad / business / mind-clone (--fix, --strict, --json)
 ```
 
 `nrv route` / `nrv use-businesses` / `nrv use-squads` still exist but emit signals from the **legacy BM25/keyword router**, which is known to be lossy. Use them to *diagnose* routing decisions, not to *make* them. The harness skill is the source of truth.

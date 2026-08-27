@@ -86,11 +86,15 @@ Useful flags on `run` / `auto`: `--team` (real multi-employee orchestration), `-
 
 | Command | What it does |
 |---|---|
-| `nrv validate` | Self-test (registries, validators, audit). |
+| `nrv validate <kind> <slug\|path> [--fix] [--strict] [--json]` | Admission gate for one squad, business or mind-clone (`nrv verify` is an alias). |
+| `nrv validate <kind> --all [--record [--allow-regression]]` | Verify every installed entity of a kind; `--record` writes the debt baseline. |
+| `nrv validate --pack <content-dir> [--json]` | Verify a pack's content before it ships. |
 | `nrv validate-chain <project> [--strict\|--all]` | Audit-chain integrity check. |
 | `nrv baseline [--days=N] [--save]` | Snapshot system KPIs from the audit log. |
 | `nrv improver run [--days=N]` | Meta-Nirvana: mine the audit log and propose improvements. |
 | `nrv update [--check\|--force]` | Self-update: pull + re-run installer + re-index. |
+
+> `nrv validate` exits `0` admitted · `1` an error the debt baseline does not cover · `2` only warnings, under `--strict` · `64` usage error or unknown entity. The system doctor moved to `nrv doctor`; `nrv validate` with no arguments still runs it, with a deprecation notice, for one release. Kind aliases: `biz`, `clone`, `mc`. Full contract: [docs/architecture/validate-gate.md](architecture/validate-gate.md).
 
 ---
 
