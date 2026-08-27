@@ -74,7 +74,7 @@ async function conversation(base: string, projectId: string, key: string) {
   return (await fetch(`${base}/api/v1/projects/${projectId}/conversations`, { method: "POST", headers: headers(base, key), body: "{}" }).then(r => r.json()) as any).conversation_id as string;
 }
 async function send(base: string, projectId: string, conversationId: string, key: string, content: string) {
-  const response = await fetch(`${base}/api/v1/conversations/${conversationId}/messages`, { method: "POST", headers: headers(base, key), body: JSON.stringify({ project_id: projectId, role: "user", content }) });
+  const response = await fetch(`${base}/api/v1/conversations/${conversationId}/messages`, { method: "POST", headers: headers(base, key), body: JSON.stringify({ project_id: projectId, role: "user", content, mode: "run" }) });
   return { status: response.status, receipt: await response.json() as any };
 }
 const events = async (base: string, projectId: string) => ((await fetch(`${base}/api/v1/projects/${projectId}/events?limit=500`).then(r => r.json())) as any).events as any[];
@@ -122,13 +122,13 @@ describe("Glance agent-x light canary", () => {
   test("message prepares one linked run, executes through adapter and survives restart", async () => {
     const { root, project, base } = await start(adapter());
     const conversation = await fetch(`${base}/api/v1/projects/${project.project_id}/conversations`, { method: "POST", headers: headers(base, "conversation"), body: "{}" }).then(r => r.json()) as any;
-    const response = await fetch(`${base}/api/v1/conversations/${conversation.conversation_id}/messages`, { method: "POST", headers: headers(base, "message-one"), body: JSON.stringify({ project_id: project.project_id, role: "user", content: "Produza o artifact" }) });
+    const response = await fetch(`${base}/api/v1/conversations/${conversation.conversation_id}/messages`, { method: "POST", headers: headers(base, "message-one"), body: JSON.stringify({ project_id: project.project_id, role: "user", content: "Produza o artifact", mode: "run" }) });
     expect(response.status).toBe(202);
     const receipt = await response.json() as any;
     expect(receipt.run.target).toEqual({ kind: "agent-x", slug: "agent-x" });
     expect(receipt.run.policySnapshotRef).toBe("gauntlet-light-canary");
     expect(receipt.message.run_id).toBe(receipt.run.runId);
-    const retry = await fetch(`${base}/api/v1/conversations/${conversation.conversation_id}/messages`, { method: "POST", headers: headers(base, "message-one"), body: JSON.stringify({ project_id: project.project_id, role: "user", content: "Produza o artifact" }) }).then(r => r.json()) as any;
+    const retry = await fetch(`${base}/api/v1/conversations/${conversation.conversation_id}/messages`, { method: "POST", headers: headers(base, "message-one"), body: JSON.stringify({ project_id: project.project_id, role: "user", content: "Produza o artifact", mode: "run" }) }).then(r => r.json()) as any;
     expect(retry.run.runId).toBe(receipt.run.runId);
     const transcript = await fetch(`${base}/api/v1/conversations/${conversation.conversation_id}`).then(r => r.json()) as any;
     expect(transcript.messages).toHaveLength(1);
@@ -150,7 +150,7 @@ describe("Glance agent-x light canary", () => {
   test("missing capability records an honest terminal run", async () => {
     const { project, base } = await start();
     const conversation = await fetch(`${base}/api/v1/projects/${project.project_id}/conversations`, { method: "POST", headers: headers(base, "c2"), body: "{}" }).then(r => r.json()) as any;
-    const receipt = await fetch(`${base}/api/v1/conversations/${conversation.conversation_id}/messages`, { method: "POST", headers: headers(base, "missing"), body: JSON.stringify({ project_id: project.project_id, content: "Brief" }) }).then(r => r.json()) as any;
+    const receipt = await fetch(`${base}/api/v1/conversations/${conversation.conversation_id}/messages`, { method: "POST", headers: headers(base, "missing"), body: JSON.stringify({ project_id: project.project_id, content: "Brief", mode: "run" }) }).then(r => r.json()) as any;
     expect(receipt.queued).toBe(false);
     expect(receipt.run.state).toBe("rolled_back");
     const events = await fetch(`${base}/api/v1/projects/${project.project_id}/events`).then(r => r.json()) as any;
@@ -160,7 +160,7 @@ describe("Glance agent-x light canary", () => {
   test("queued run can be cancelled without invoking the adapter", async () => {
     const { project, base } = await start(adapter());
     const conversation = await fetch(`${base}/api/v1/projects/${project.project_id}/conversations`, { method: "POST", headers: headers(base, "c3"), body: "{}" }).then(r => r.json()) as any;
-    const receipt = await fetch(`${base}/api/v1/conversations/${conversation.conversation_id}/messages`, { method: "POST", headers: headers(base, "cancel-me"), body: JSON.stringify({ project_id: project.project_id, content: "Brief cancelável" }) }).then(r => r.json()) as any;
+    const receipt = await fetch(`${base}/api/v1/conversations/${conversation.conversation_id}/messages`, { method: "POST", headers: headers(base, "cancel-me"), body: JSON.stringify({ project_id: project.project_id, content: "Brief cancelável", mode: "run" }) }).then(r => r.json()) as any;
     const cancelled = await fetch(`${base}/api/v1/runs/${receipt.run.runId}:cancel`, { method: "POST", headers: headers(base, "cancel-command"), body: JSON.stringify({ project_id: project.project_id }) });
     expect(cancelled.status).toBe(202);
     expect(((await cancelled.json()) as any).state).toBe("rolled_back");

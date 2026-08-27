@@ -56,6 +56,7 @@ Gerada a partir do schema. `nrv config explain <chave>` mostra a descrição de 
 | `execution.dna_injection` | `NIRVANA_DNA_INJECTION` | `full` | global, projeto | full / fragments |
 | `execution.headless_skip_permissions` | `NIRVANA_HEADLESS_SKIP_PERMISSIONS` | `true` | global, projeto | true / false |
 | `glance.execution` | `NIRVANA_GLANCE_EXECUTION` | `true` | global, projeto | true / false |
+| `glance.maestro_max_budget_usd` | nenhuma | `5` | global, projeto | número >= 0 (USD); 0 = sem teto |
 | `runtime.provider_catalog_dir` | `NIRVANA_PROVIDER_CATALOG_DIR` | `""` | global, projeto | lista de caminhos separados pelo delimitador do sistema, ou vazio |
 | `runtime.allow_stale_catalog` | `NIRVANA_ALLOW_STALE_CATALOG` | `false` | global, projeto | true / false |
 | `routing.mode` | `NIRVANA_ROUTING_MODE` | `agentic` | global, projeto | agentic / fast |

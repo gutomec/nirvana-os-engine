@@ -93,6 +93,52 @@ execução. Planejar no Nirvana-OS é um artefato escrito — o brief enriquecid
 `.nirvana/briefs/`, um plano multi-target em `.nirvana/plans/`. Quando o runtime
 já está em plan mode, o agente pede uma vez para o usuário sair e para, em vez
 de repetir o diálogo de saída contra uma sessão somente leitura.
+
+### O agente do Glance é um maestro conversacional: uma Message, um turno da sessão do runtime do projeto
+
+Uma Message de projeto adotado não prepara mais um Run por padrão. Com
+`mode: "turn"` (o padrão, e o que o chat envia) o servidor inicia o runtime do
+host em modo headless na raiz do projeto, com a Message como prompt, a sessão
+nativa da conversa retomada (`claude -p --session-id <uuid>` no primeiro turno,
+`--resume <uuid>` nos seguintes; os outros runtimes pelo `runHeadless` do
+driver, `codex exec resume <sid>` incluído) e uma diretiva curta do maestro,
+em PT-BR, como sufixo do system prompt. O filho lê o `CLAUDE.md` do projeto e
+tem o skill `harness`, então responde perguntas diretamente e, num pedido de
+trabalho, segue o protocolo do harness e abre Runs pelos scripts normais.
+`mode: "run"` mantém o caminho do Run para clientes de API.
+
+A saída é normalizada (`tok`, `tool`, `run`, `done`) e servida por SSE em
+`GET /api/v1/conversations/{cnv}/turns/{trn}/events`; a resposta é gravada uma
+vez como `assistant`; a conversa persiste `session_id`, `session_runtime`,
+`session_started_at`, `last_turn_at` e `session_history` (migração
+idempotente), então um reload não perde nada e o turno seguinte retoma; o
+custo (`total_cost_usd`) vai ao audit do projeto como `cost_emission` e à
+bolha; o cabeçalho mostra o id curto da sessão com o comando de terminal que a
+continua. Um turno por conversa por vez (a segunda Message entra na fila);
+`POST …/turns/{trn}:cancel` manda SIGTERM ao grupo de processos e o turno
+termina `cancelled`, nunca `failed`. Um resume que o runtime podou abre sessão
+nova com uma recapitulação curta da transcrição visível e registra
+`x_session_recreated`. `glance.execution=false` e `--read-only` desligam os
+turnos (`capability_unavailable`). Chave nova `glance.maestro_max_budget_usd`
+(padrão 5) limita um turno. O módulo é `lib/control-plane/maestro-turn.ts`,
+compartilhado com a ação legada `chat-agent` (`chat-concierge.ts` virou um
+invólucro fino). Prova: `glance-maestro-turn.test.ts`, com um `claude` falso
+que fala stream-json; nota de design em
+`docs/architecture/maestro-sessions.md`. No Windows o `claude.cmd` roda pelo
+interpretador de comandos, que corta a linha na primeira quebra de linha de um
+argumento, então ali a diretiva vai como `--append-system-prompt-file <arquivo
+temporário>` e as flags depois dela sobrevivem. O `runClaudeCode` do driver
+ainda passa a própria diretiva de várias linhas inline sob esse shell (defeito
+latente, registrado aqui, não alterado).
+
+A sondagem de runtime que decide entre os dois caminhos também foi corrigida: o
+`where` do Windows recebe opções com barra, então o `-v` que o driver passava
+era lido como um segundo padrão, e o `where` imprime CRLF com uma linha por
+correspondência, o que deixava um retorno de carro no fim do caminho escolhido —
+um `.cmd` falhava no teste de extensão e era iniciado sem shell, exatamente a
+divisão que o driver existe para evitar (`whichProbe`, `firstExecutablePath`;
+prova em `windows-spawn.test.ts`).
+
 ### A superfície de contrato deixa de depender da extensão do arquivo de workflow
 
 O Squad Protocol v6 leva os workflows para Markdown: um grafo no frontmatter e

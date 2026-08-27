@@ -423,7 +423,7 @@ describe("Glance server", () => {
     const headers = (key: string) => ({ "content-type": "application/json", origin: base, "idempotency-key": key });
     const conversation = await fetch(`${base}/api/v1/projects/${project.project_id}/conversations`, { method: "POST", headers: headers("conversation"), body: "{}" }).then(r => r.json()) as any;
     const response = await fetch(`${base}/api/v1/conversations/${conversation.conversation_id}/messages`, { method: "POST", headers: headers("routed"),
-      body: JSON.stringify({ project_id: project.project_id, role: "user", content: "Produza a landing page da clínica" }) });
+      body: JSON.stringify({ project_id: project.project_id, role: "user", content: "Produza a landing page da clínica", mode: "run" }) });
     expect(response.status).toBe(202);
     const receipt = await response.json() as any;
     // The 202 comes back before the router is asked; the projection gains target and route once the queue resolved them.

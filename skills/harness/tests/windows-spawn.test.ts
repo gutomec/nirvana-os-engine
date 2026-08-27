@@ -19,7 +19,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { resolveExecutable, quoteForCmd } from "../../_shared/lib/host-agent-driver.ts";
+import { firstExecutablePath, resolveExecutable, quoteForCmd, whichProbe } from "../../_shared/lib/host-agent-driver.ts";
 
 const REAL_PLATFORM = process.platform;
 const REAL_PATH = process.env.PATH;
@@ -31,6 +31,34 @@ function asPlatform(p: NodeJS.Platform): void {
 afterEach(() => {
   Object.defineProperty(process, "platform", { value: REAL_PLATFORM, configurable: true });
   process.env.PATH = REAL_PATH;
+});
+
+describe("whichProbe", () => {
+  test("on Windows the probe is `where <cli>`: Windows options take a slash, so a `-v` is a SECOND pattern", () => {
+    expect(whichProbe("claude", "win32")).toEqual({ command: "where", args: ["claude"] });
+  });
+
+  test("on POSIX it stays the `command -v` builtin the PATH scan falls back from", () => {
+    expect(whichProbe("claude", "linux")).toEqual({ command: "command", args: ["-v", "claude"] });
+    expect(whichProbe("gemini", "darwin")).toEqual({ command: "command", args: ["-v", "gemini"] });
+  });
+});
+
+describe("firstExecutablePath", () => {
+  test("`where` prints CRLF, one line per match: the chosen path keeps no trailing carriage return", () => {
+    const stdout = "C:\\Users\\a\\AppData\\Roaming\\npm\\claude.cmd\r\nC:\\Program Files\\claude\\claude.exe\r\n";
+    const found = firstExecutablePath(stdout)!;
+    expect(found).toBe("C:\\Users\\a\\AppData\\Roaming\\npm\\claude.cmd");
+    // The defect this pins: with the "\r" still attached, the extension test below fails and
+    // resolveExecutable spawns a .cmd with no shell — probe says yes, invocation dies.
+    expect(/\.(cmd|bat)$/i.test(found)).toBe(true);
+  });
+
+  test("blank lines are skipped and no output is null", () => {
+    expect(firstExecutablePath("\r\n\r\nC:\\bin\\claude.cmd\r\n")).toBe("C:\\bin\\claude.cmd");
+    expect(firstExecutablePath("   \r\n")).toBeNull();
+    expect(firstExecutablePath("")).toBeNull();
+  });
 });
 
 describe("resolveExecutable", () => {

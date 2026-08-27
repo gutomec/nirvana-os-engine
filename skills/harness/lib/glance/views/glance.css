@@ -3149,6 +3149,15 @@ svg.icon-inline.lucide {
 .chat-tools { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
 .chat-tool-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-family: var(--font-mono, monospace); color: var(--text-secondary); background: var(--surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 2px 8px; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .chat-tool-chip .icon-inline { width: 12px; height: 12px; flex: none; opacity: 0.7; }
+/* Maestro turn: the Runs it opened, its state and cost, the session in the header, the cancel button */
+.chat-runs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.chat-run-link { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--accent); background: var(--surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 2px 8px; cursor: pointer; }
+.chat-run-link .icon-inline { width: 12px; height: 12px; flex: none; }
+.chat-turn-meta { display: flex; gap: 10px; margin-top: 6px; color: var(--text-tertiary); }
+.chat-session { display: flex; align-items: center; gap: 4px; }
+.chat-session-id { font-family: var(--font-mono, monospace); font-size: 11px; }
+.chat-session-copy { font-size: 11px; color: var(--accent); background: none; border: none; padding: 0 0 0 4px; cursor: pointer; }
+.chat-cancel { flex: none; width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; background: var(--surface-2); border: 1px solid var(--border-default); color: var(--text-secondary); cursor: pointer; }
 .chat-dots { animation: chat-blink 1.2s steps(4) infinite; }
 @keyframes chat-blink { 0%,100% { opacity: 0.3; } 50% { opacity: 1; } }
 .chat-composer { display: flex; gap: var(--space-2); align-items: flex-end; padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border-default); }

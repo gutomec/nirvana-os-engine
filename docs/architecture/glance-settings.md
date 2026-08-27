@@ -20,7 +20,7 @@ Não há segundo lugar para a mesma coisa. As variáveis que viraram chave do sc
 | Multi-target | `multi_target.enabled` |
 | Gauntlet | `gauntlet.default_mode`, `default_intensity`, `evaluator`, `business_allowlist`, `business_kill_switch`, `auto_allowed` |
 | Execução | `execution.default_runtime`, `model`, `dna_injection`, `headless_skip_permissions` |
-| Glance | `glance.execution` |
+| Glance | `glance.execution`, `maestro_max_budget_usd` |
 | Runtime | `runtime.provider_catalog_dir`, `allow_stale_catalog` |
 | Roteamento | `routing.mode`, `dense`, `on_router_failure` |
 | Supervisor | `supervisor.progress_ping_sec`, `stall_threshold_ms` |
