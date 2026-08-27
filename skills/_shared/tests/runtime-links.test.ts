@@ -41,7 +41,7 @@ function buildFakeRepo(dir: string): void {
   // Every lib the real installer imports. Miss one and the installer dies at
   // import time, which is what happened when run-state.ts was added: the whole
   // suite went red on all three platforms with `install(home).code` non-zero.
-  for (const lib of ["runtime-dirs.ts", "run-state.ts"]) {
+  for (const lib of ["runtime-dirs.ts", "run-state.ts", "update-safety.ts"]) {
     fs.copyFileSync(
       path.join(REPO, "skills", "_shared", "lib", lib),
       path.join(dir, "skills", "_shared", "lib", lib),
