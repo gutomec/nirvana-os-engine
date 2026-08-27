@@ -117,11 +117,11 @@ export interface TurnCommand {
  * The autonomy flag follows the driver's rule: the bypass, or the restricted path (`acceptEdits`
  * plus the driver's tool allowlist) when execution.headless_skip_permissions is off.
  *
- * The directive spans several lines. On Windows the CLI is a `.cmd` started through the command
- * interpreter (`resolveExecutable`), and cmd.exe ends the command line at the first newline of an
- * argument: everything after `--append-system-prompt` (the autonomy flag, the budget) was lost.
- * Under a shell the directive therefore travels as `--append-system-prompt-file <temp file>`;
- * without one it stays inline, as before. */
+ * The directive spans several lines. On Windows a `.cmd` whose shape `resolveExecutable` cannot
+ * read is still started through the command interpreter, and cmd.exe ends the command line at the
+ * first newline of an argument: everything after `--append-system-prompt` (the autonomy flag, the
+ * budget) was lost. Under a shell the directive therefore travels as
+ * `--append-system-prompt-file <temp file>`; without one it stays inline, as before. */
 export function claudeTurnCommand(input: { sessionId: string | null; directive: string; model?: string | null; skipPermissions: boolean; maxBudgetUsd: number },
   resolve: ExecutableResolver = resolveExecutable): TurnCommand {
   const sessionId = input.sessionId ?? randomUUID();

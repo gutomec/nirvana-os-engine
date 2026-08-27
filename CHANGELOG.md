@@ -58,6 +58,55 @@ offline gate and the post-gate" is the only one that still crossed 5 s under tha
 load, 7 samples in 400 against 65 before, because it runs the delivery pipeline
 and the post-gate on top of the kernel. That cost is not the one this change
 removes, and it carries no budget either. It is a cut of its own.
+### The shim is not the program: Windows spawns what it names
+
+A `.cmd` written by npm is not the CLI. It is a five-line batch file whose only
+job is to run `node <script> %*`. The driver had been starting the batch file,
+which means starting `cmd.exe`, and `cmd.exe` ends the command line at the first
+CR/LF of any argument. Version 0.10.2 cured that for `claude` by moving the
+directive into a file. Eight adapters and the light layer still carried the same
+shape, and a cure replicated ten times is a design that has not been fixed.
+
+`resolveExecutable` now reads the shim, takes the interpreter and script it
+names, and spawns that pair directly. No shell, no re-parsing, no command line
+for anything to cut: the child starts exactly the way a real `.exe` already
+starts on this platform.
+
+Measured over the argv the squad dispatch built, with the directive in the
+position it had on the day it broke (5,875 characters, first newline at 183).
+Through `cmd.exe`: 6,031 characters of arguments sent, 231 delivered, 5,800
+discarded at the newline (96.2%), taking both `--add-dir` grants and
+`--dangerously-skip-permissions` with them. Direct: 11 argv elements, 6,016
+characters, nothing discarded.
+
+Reading is literal-minded and refuses rather than guesses. A shim that
+rearranges what it forwards (`%1`, `SHIFT`), sets an environment variable the
+direct spawn would not reproduce, leaves a variable unexpanded, puts `%*`
+anywhere but last, or names an interpreter or script that is not on disk
+produces no candidate at all, and the caller keeps the old route through the
+interpreter with `quoteForCmd` on every argument. An interpreter that is itself
+a `.cmd` is refused as well, since resolving one only re-enters the trap. Both
+npm shim generations are read, local `node.exe` first and the bare name on PATH
+second, which is the order the shim's own `IF EXIST` uses.
+
+The `--append-system-prompt-file` cure from 0.10.2 stays exactly where it is. It
+now protects the fallback instead of the normal path.
+
+A Windows runner then took the direct path for real, and it holds. All nine
+adapters spawn through it, including the 300 KB prompt-delivery matrix; a
+maestro turn runs end to end on it, with the prompt piped to stdin, the
+stream-json parsed and `--resume` honored; and the multi-line directive reaches
+the child's own argv byte for byte, with both `--add-dir` grants in front of it.
+That last one is the link a machine without Windows cannot check: an argument
+carrying a newline crosses `CreateProcess` and the child's command-line parser
+whole. It is now checked on every run.
+
+Still unverified: the shim the runner reads is a plain `@echo off` launcher, not
+one npm's `cmd-shim` wrote, so the `_prog` branch and the older two-branch form
+are covered by fixtures rather than by an installed CLI. A shim from a generator
+outside npm, pnpm and yarn has never been seen by this parser at all — by
+construction it produces no candidate and keeps the old route, which is the
+behavior the fallback tests pin.
 
 ## 0.10.2 — 2026-08-27
 
