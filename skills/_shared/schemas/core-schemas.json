@@ -429,7 +429,7 @@
       "properties": {
         "schema_version": { "type": "string", "default": "1.0.0" },
         "generated_at": { "type": "string", "format": "date-time" },
-        "host_protocol_version": { "type": "string", "enum": ["5.0", "4.0"] },
+        "host_protocol_version": { "type": "string", "enum": ["6.0", "5.0", "4.0"] },
         "squads_root_dirs": { "type": "array", "items": { "type": "string" } },
         "squads": {
           "type": "object",
@@ -498,7 +498,7 @@
               "required": ["version", "protocol", "manifest_path", "manifest_hash", "domains", "capabilities"],
               "properties": {
                 "version": { "type": "string" },
-                "protocol": { "type": "string", "enum": ["1.0"] },
+                "protocol": { "type": "string", "enum": ["1.0", "2.0"] },
                 "manifest_path": { "type": "string" },
                 "manifest_hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
                 "domains": { "type": "array", "items": { "type": "string" } },

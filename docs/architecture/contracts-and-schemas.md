@@ -209,3 +209,14 @@ Conversation guarda mensagens visíveis e referências a Runs. Provider session 
 - Duas versões anteriores permanecem legíveis.
 - Breaking changes exigem major version, migrator e rollback.
 - Descriptors e snapshots são imutáveis durante um Run.
+
+## 10. Superfície de contrato (`.nirvana-surface.json`)
+
+Gerada por `skills/_shared/lib/surface.ts` e comparada por `surface-diff.ts`. É o conjunto de identificadores estáveis a que um consumidor se vincula (id de capability, ref de invocação, nome de task, workflow e agente, slug de funcionário) mais o hash do corpo de cada um. Determinística: sem data de geração, chaves ordenadas, arquivo excluído da própria medição.
+
+- `schema: 3`. Chaves usam `/` literal, nunca `path.join`, para serem idênticas no Windows.
+- Workflow chaveado pelo stem, não pelo nome do arquivo: `workflow:workflows/<stem>`, stem em minúsculas, para `.md`, `.yaml` e `.yml`. A codificação não é contrato: um invocador não se vincula à extensão.
+- Binding de capability para workflow sem extensão: `workflow:workflows/<ref sem .md|.yaml|.yml>`. Tasks e agentes mantêm as chaves de sempre (`task:tasks/x.md`, `agent:agents/y.md`).
+- Colisão de stem (`x.md` + `x.yaml`): uma única entrada; o `.md` vence o hash, os demais entram em `collision: ["x.yaml"]`. A flag é metadado para o lint da v6 recusar; não entra no `surface_hash`.
+- `readSurface` normaliza um arquivo de schema ≤ 2 para a forma de chave do schema 3 (`normalizeSurface`) sem mudar o número do schema. Assim `diffSurfaces` continua reestabelecendo a base quando os schemas diferem (zero mudanças) e, sob um mesmo schema, um rename `.yaml → .md` com grafo idêntico é `content_changed` (patch), nunca `removed + added + rebound`.
+- O bump 2 → 3 é único no programa v6; uma republicação de packs só com superfícies regeneradas fica invisível ao diff, e a partir dela a migração de conteúdo para Markdown aparece como patch.

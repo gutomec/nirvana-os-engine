@@ -121,10 +121,12 @@ function inferType(filePath, raw) {
   if (/\/research\//i.test(lower)) return 'research';
   if (/\/decisions\.md$/i.test(lower)) return 'decision';
   if (/\/brief\.md$/i.test(lower)) return 'brief';
+  // A workflow is `.yaml`/`.yml` (v5) or `.md` with frontmatter (v6). Checked
+  // before the `.md` rules so the encoding never turns a workflow into a task.
+  if (/\/workflows\/[^/]+\.(ya?ml|md)$/i.test(lower)) return 'workflow';
   if (/\/tasks\/[^/]+\.md$/i.test(lower)) return 'task';
   if (/\/agents\/[^/]+\.md$/i.test(lower)) return 'agent';
   if (/\/employees\/[^/]+\.md$/i.test(lower)) return 'employee';
-  if (/\/workflows\/[^/]+\.ya?ml$/i.test(lower)) return 'workflow';
   return null;
 }
 

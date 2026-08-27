@@ -18,7 +18,7 @@
  *     description: workflow.description ∪ workflow_name + squad summary (≥20 chars)
  *     domains:     heuristic match of squad.name + workflow.name vs catalog
  *     examples:    derived from workflow_name + squad.description chunks
- *     invoke:      {type: "workflow", ref: "workflows/<file>.yaml"}
+ *     invoke:      {type: "workflow", ref: "workflows/<file>.(yaml|yml|md)"}
  *     score_boost: 1.2 for premium-marker squads (awwwards, nirvana, master, elite, premium)
  */
 
@@ -109,7 +109,7 @@ const KEYWORD_DOMAINS = [
 function slugifyWorkflowId(name) {
   if (typeof name !== 'string') return 'execute';
   return name
-    .replace(/\.ya?ml$/i, '')
+    .replace(/\.(ya?ml|md)$/i, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/_+/g, '_')
@@ -246,8 +246,13 @@ function inferCapabilities(manifest, manifestDir) {
   // Strategy A: 1 capability per workflow file.
   for (const wfRef of workflows) {
     if (typeof wfRef !== 'string') continue;
-    const wfFile = wfRef.endsWith('.yaml') || wfRef.endsWith('.yml') ? wfRef : `${wfRef}.yaml`;
-    const wfBaseName = path.basename(wfFile).replace(/\.ya?ml$/i, '');
+    // A bare ref resolves to whatever encoding exists — .yaml first, so a v4
+    // squad keeps emitting exactly what it emitted; then .yml; then .md for a
+    // v6 workflow. Nothing on disk keeps the historical `.yaml` emission.
+    const wfFile = /\.(ya?ml|md)$/i.test(wfRef)
+      ? wfRef
+      : (['.yaml', '.yml', '.md'].map((e) => `${wfRef}${e}`).find((f) => fs.existsSync(path.join(manifestDir, 'workflows', f))) || `${wfRef}.yaml`);
+    const wfBaseName = path.basename(wfFile).replace(/\.(ya?ml|md)$/i, '');
     const wfPath = path.join(manifestDir, 'workflows', wfFile);
     const summary = readWorkflowSummary(wfPath);
     const wfName = summary.workflowName || wfBaseName;

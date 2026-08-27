@@ -80,7 +80,10 @@ export function checkPortability(squadDir: string): Finding[] {
     const dir = path.join(squadDir, sub);
     if (!fs.existsSync(dir)) continue;
     let names: string[] = [];
-    try { names = fs.readdirSync(dir).filter((n) => n.endsWith(".md")); } catch { continue; }
+    // Workflows live in .yaml/.yml (v5) or .md (v6); agents and tasks in .md.
+    // Filtering every dir on .md made the workflow scan a no-op.
+    const isDoc = sub === "workflows" ? (n: string) => /\.(md|ya?ml)$/i.test(n) : (n: string) => n.endsWith(".md");
+    try { names = fs.readdirSync(dir).filter(isDoc); } catch { continue; }
     for (const f of names) {
       let txt = "";
       try { txt = fs.readFileSync(path.join(dir, f), "utf8"); } catch { continue; }

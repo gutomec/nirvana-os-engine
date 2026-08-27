@@ -8,6 +8,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { extractSurface, serializeSurface, writeSurface, readSurface } from "../lib/surface.ts";
 import { diffSurfaces, mergeBehaviorNotes } from "../lib/surface-diff.ts";
+import { collisionSquad, migratedToMarkdown, schema2Surface, tmpRoot, v5StepsSquad } from "./fixtures/protocol-entities.ts";
 
 function tmpSquad(capabilities: string, extra?: { tasks?: string[]; workflows?: string[] }): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-surface-"));
@@ -189,4 +190,76 @@ test("saídas do gerador não entram na medição (senão o gen nunca converge)"
   fs.writeFileSync(path.join(dir, "CHANGELOG.md"), "# Changelog\n");
   const depois = extractSurface(dir);
   expect(diffSurfaces(antes, depois).changes).toHaveLength(0);
+});
+
+// ── schema 3: the workflow key stops carrying the file extension ─────────────
+//
+// Under schema 2 the key was `workflow:workflows/x.yaml` and the binding
+// `workflow:workflows/x.yaml`, so converting one workflow to Markdown produced
+// `removed` + `added` + `rebound`: two breaks per file, six hundred phantom
+// breaks across the library for a change no invoker can observe. These cases
+// pin the schema-3 behavior: same graph in another encoding is a patch.
+
+test("renomear workflow .yaml → .md com grafo idêntico é patch, nunca removed + added + rebound", () => {
+  const before = extractSurface(v5StepsSquad(tmpRoot()));
+  const after = extractSurface(migratedToMarkdown(tmpRoot()));
+  const r = diffSurfaces(before, after);
+  const types = r.changes.map((c) => c.type);
+  expect(types).not.toContain("removed");
+  expect(types).not.toContain("added");
+  expect(types).not.toContain("rebound");
+  expect(r.changes.some((c) => c.type === "content_changed" && c.id === "workflow:workflows/alpha")).toBe(true);
+  expect(r.breaking).toBe(0);
+  expect(r.bump).toBe("patch");
+  // The binding is the ref without its extension, in both encodings.
+  expect(before.entries["capability:fixture.alpha.run"].binding).toBe("workflow:workflows/alpha");
+  expect(after.entries["capability:fixture.alpha.run"].binding).toBe("workflow:workflows/alpha");
+});
+
+test("colisão de stem: x.md + x.yaml viram uma entrada, .md vence e a colisão fica sinalizada", () => {
+  const dir = collisionSquad(tmpRoot());
+  const s = extractSurface(dir);
+  const workflowKeys = Object.keys(s.entries).filter((k) => k.startsWith("workflow:"));
+  // Stems are lowercased: `Beta.yaml` lists as `beta`.
+  expect(workflowKeys).toEqual(["workflow:workflows/beta", "workflow:workflows/x"]);
+  const twin = s.entries["workflow:workflows/x"];
+  expect(twin.collision).toEqual(["x.yaml"]);
+  expect(s.entries["workflow:workflows/beta"].collision).toBeUndefined();
+  // The hash is the winner's: the `.md` body, not the `.yaml`.
+  const mdOnly = extractSurface((() => {
+    const d = collisionSquad(tmpRoot(), "fixture-md-only");
+    fs.rmSync(path.join(d, "workflows", "x.yaml"));
+    return d;
+  })());
+  expect(twin.hash).toBe(mdOnly.entries["workflow:workflows/x"].hash);
+  // The flag is lint metadata, not contract: it never enters the surface hash.
+  expect(s.surface_hash).toBe(mdOnly.surface_hash);
+  // Determinism holds with twins on disk.
+  expect(serializeSurface(extractSurface(dir))).toBe(serializeSurface(s));
+});
+
+test("arquivo em disco schema 2 × extração schema 3 = zero mudanças, e a leitura normaliza chaves e bindings", () => {
+  const dir = v5StepsSquad(tmpRoot());
+  writeSurface(dir, schema2Surface(dir));
+  const raw = JSON.parse(fs.readFileSync(path.join(dir, ".nirvana-surface.json"), "utf8"));
+  expect(Object.keys(raw.entries)).toContain("workflow:workflows/alpha.yaml");
+
+  const read = readSurface(dir)!;
+  // The schema number is kept: the diff must still see the transition.
+  expect(read.schema).toBe(2);
+  expect(Object.keys(read.entries)).toContain("workflow:workflows/alpha");
+  expect(Object.keys(read.entries)).not.toContain("workflow:workflows/alpha.yaml");
+  expect(read.entries["capability:fixture.alpha.run"].binding).toBe("workflow:workflows/alpha");
+
+  // Across schemas the baseline is re-established: nothing is invented.
+  const cross = diffSurfaces(read, extractSurface(dir));
+  expect(cross.changes).toHaveLength(0);
+  expect(cross.bump).toBe("none");
+
+  // Once comparable, the normalized old surface meets its Markdown twin as a
+  // patch — which is what the normalization exists for.
+  const migrated = extractSurface(migratedToMarkdown(tmpRoot()));
+  const r = diffSurfaces({ ...read, schema: migrated.schema }, migrated);
+  expect(r.breaking).toBe(0);
+  expect(r.bump).toBe("patch");
 });
