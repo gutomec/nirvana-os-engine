@@ -116,7 +116,10 @@ function initialize(db: Database): void {
 }
 
 export function openKernel(dbPath: string): KernelHandle {
-  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  // `:memory:` is a supported argument rather than a path: a journal that never outlives the
+  // process has no directory to create. Hermetic tests pass it to keep their wall clock off the
+  // disk, so the guard is the contract, not a convenience.
+  if (dbPath !== ":memory:") fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   const db = new Database(dbPath);
   try {
     initialize(db);

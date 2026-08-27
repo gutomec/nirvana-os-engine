@@ -53,7 +53,16 @@ function writeReport(candidateRoot: string, marker: string): void {
 /** Hermetic loop: deterministic producers write markers, the evaluator grades by (candidate, revision). */
 function scenario(options: Scenario) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-gauntlet-revision-")); roots.push(root);
-  const handle = openKernel(path.join(root, ".nirvana", "run-kernel.sqlite")); handles.push(handle);
+  // The journal stays in memory. Every case here asserts projections, event payloads and the files
+  // the producers write; none of them reads the database the kernel keeps. On disk that database
+  // bought no coverage and cost one fsync per journalled event, 17 per case, because
+  // `synchronous = FULL` makes every append durable. That is what tied the wall clock of this whole
+  // file to the runner's disk: measured on a busy disk, 1.4 s per case on average and 6.0 s at the
+  // tail, against Bun's 5 s default. A red build decided that way lands on an arbitrary case. The
+  // two `test.each` legs below measured 1356 ms and 1366 ms, and only one of them ever failed CI.
+  // The kernel's own on-disk behaviour is covered where it is the subject: run-kernel.test.ts and
+  // the cross-process e2e files, which share a real database file with a spawned child.
+  const handle = openKernel(":memory:"); handles.push(handle);
   const outputsRoot = path.join(root, "deliverables");
   const calls = { executions: 0, revisions: [] as AgentXRevisionRequest[], finalGates: 0, holdouts: [] as boolean[] };
   const write = options.write ?? writeReport;
