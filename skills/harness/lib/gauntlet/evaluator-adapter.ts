@@ -72,8 +72,12 @@ export interface DispatchEvaluatorInput {
   plan: GauntletPlan;
   /** The original brief, reproduced in the evaluation brief. */
   brief: string;
-  /** Root of the Run: evaluations live under `.nirvana/gauntlet/<runId>/evaluations/<revisionId>/`. */
+  /** The project the Run belongs to: the evaluator dispatch runs here (cwd + NIRVANA_PROJECT_ROOT),
+   *  and its audit joins the parent's chain under this root's harness logs. */
   projectRoot: string;
+  /** Where evaluations live — `<workspaceRoot>/.nirvana/gauntlet/<runId>/evaluations/<revisionId>/`,
+   *  beside the candidates they judge. Absent = the project root (the pre-split behaviour). */
+  workspaceRoot?: string;
   projectId: string;
   runtime?: string;
   /** Defaults to NIRVANA_DISPATCH_SCRIPT, then the repository's dispatch.ts. */
@@ -145,6 +149,7 @@ export function createDispatchEvaluator(input: DispatchEvaluatorInput): AgentXGa
       + "the evaluator must be a different target (evaluator-registry.ts targetsAreIndependent)");
   }
   const projectRoot = path.resolve(input.projectRoot);
+  const workspaceRoot = path.resolve(input.workspaceRoot ?? input.projectRoot);
   const dispatchScript = path.resolve(input.dispatchScriptPath ?? process.env.NIRVANA_DISPATCH_SCRIPT ?? DEFAULT_DISPATCH_SCRIPT);
   const spawn = input.spawn ?? defaultSpawn;
   const now = input.now ?? (() => new Date().toISOString());
@@ -153,7 +158,7 @@ export function createDispatchEvaluator(input: DispatchEvaluatorInput): AgentXGa
   const gauntletId = scorecardGauntletId(plan);
 
   const evaluate = (evaluation: AgentXGauntletEvaluationInput): EvaluationScorecard[] => {
-    const evaluationDir = evaluationDirFor(projectRoot, evaluation.runId, evaluation.revisionId);
+    const evaluationDir = evaluationDirFor(workspaceRoot, evaluation.runId, evaluation.revisionId);
     // The subprocess gets its own outputs root under the evaluation directory, empty before the
     // spawn. The request and the brief stay one level up, so the child dispatch never counts the
     // adapter's files as artifacts, and a scorecard left by an earlier attempt is never read as
@@ -205,6 +210,9 @@ export function createDispatchEvaluator(input: DispatchEvaluatorInput): AgentXGa
     for (const [key, value] of Object.entries({ ...process.env, ...input.env })) if (value !== undefined) env[key] = value;
     // The effective settings, as the variables the child reads (settings.ts settingsEnvForChild).
     Object.assign(env, settingsEnvForChild({ env, projectRoot }));
+    // The evaluator is a dispatch like any other: it runs INSIDE the project, and it is told so
+    // rather than left to infer it from a cwd that may sit under the scaffold.
+    env.NIRVANA_PROJECT_ROOT = projectRoot;
     // The child writes its audit where this adapter reads the cost from.
     const logsDir = env.HARNESS_LOGS_DIR ? path.resolve(env.HARNESS_LOGS_DIR) : harnessLogsDir({ projectRoot });
     env.HARNESS_LOGS_DIR = logsDir;

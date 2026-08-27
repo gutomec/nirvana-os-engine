@@ -132,8 +132,8 @@ export function runJudgeX(args: RunJudgeXArgs): JudgeXResult {
   emit("x_dispatch_judge_x", { trace_id: args.projectId, project_id: args.projectId, runtime: args.runtime, persona_file: promptPath,
     outputs_root: args.outputsRoot, scorecard_path: args.scorecardPath, prompt_chars: prompt.length, max_budget_usd: args.maxBudgetUsd ?? null });
   const res = (args.runWithCascadeImpl ?? runWithCascade)({
-    runtime: args.runtime, prompt, cwd: args.projectDir,
-    addDirs: [args.projectRoot, ...(args.candidateRoot ? [args.candidateRoot] : [])],
+    runtime: args.runtime, prompt, cwd: args.projectRoot,
+    addDirs: [args.projectDir, args.outputsRoot, ...(args.candidateRoot ? [args.candidateRoot] : [])],
     maxBudgetUsd: args.maxBudgetUsd, timeoutMs: args.timeoutMs, yolo: args.yolo,
     brief: args.brief, projectRoot: args.projectRoot, outputsRoot: args.outputsRoot,
     taskHint: "judge-x (Gauntlet evaluation)", projectId: args.projectId,

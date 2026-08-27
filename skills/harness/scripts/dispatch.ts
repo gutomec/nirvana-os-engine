@@ -180,6 +180,24 @@ export async function explicitTargetPlan(target: Exclude<ExplicitTarget, { kind:
   return resolveDispatchPlan(NO_ROUTER_DECISION, { explicitTarget: target });
 }
 
+// ── the one answer to "which project is this?" ────────────────────────────
+// NIRVANA_PROJECT_ROOT when the caller named it, else the invocation cwd walked
+// up to its marker — the rule _shared/lib/paths.js gives every other consumer
+// (supervisor, config, multi-target, runtime-snapshot). run-ledger owns the TS
+// half of it and memoizes the walk.
+//
+// It is NEVER derived from the outputs root. This file used to answer twice:
+// from the environment on one line and by `resolve(projDir, "..", "..")` on two
+// others. With an outputs root outside the project tree the arithmetic climbed
+// out of the project (as far as $HOME), so ONE trace wrote its dispatch events
+// under the project, its scaffold events under `<outputs>/<pid>` and its
+// `gate_passed` under `~/.harness-logs` — three files, an unauditable chain, and
+// a child runtime told its project was the user's home directory.
+//
+// Where a path still has to be scaffold-shaped (brief.md, the dispatch kernel,
+// the Gauntlet workspace) the variable is called `scaffoldRoot` and says so.
+const PROJECT_ROOT = runLedger.resolveProjectRoot() ?? path.resolve(process.cwd());
+
 const positional = extractPositional(process.argv.slice(2));
 // --auto: no business is named; the router picks the best one for the brief.
 // In that mode the first positional is the brief itself, as it is when an
@@ -201,9 +219,8 @@ const projectId = arg("--project");
 // canaries open that kernel; without it each dispatch keeps its own under
 // outputs/<pid>, byte-for-byte the previous behaviour.
 const runIdFlag = arg("--run-id");
-function canaryKernelPath(dispatchRoot: string): string {
-  const root = runIdFlag ? path.resolve(process.env.NIRVANA_PROJECT_ROOT || process.cwd()) : dispatchRoot;
-  return path.join(root, ".nirvana", "run-kernel.sqlite");
+function canaryKernelPath(scaffoldRoot: string): string {
+  return path.join(runIdFlag ? PROJECT_ROOT : scaffoldRoot, ".nirvana", "run-kernel.sqlite");
 }
 const runtime = arg("--runtime", "claude-code");
 // Was the --runtime flag GIVEN by the user? (arg() can't tell flag from default;
@@ -765,8 +782,7 @@ const prepScriptEnv = { ...process.env, ...settingsEnvForChild(), NIRVANA_DISPAT
 // explained here and end the Run before the producer inside runAgentXGauntlet
 // (RT-002): no silent switch, no legacy fallback.
 function frozenExecutionSnapshot(pid: string, rt: Runtime, targetKind: "business" | "squad" | "agent-x") {
-  const snapshot = freezeExecutionSnapshot({ runtimeId: rt, runtimeSource: runtimeDecision.source,
-    projectRoot: path.resolve(process.env.NIRVANA_PROJECT_ROOT || process.cwd()) });
+  const snapshot = freezeExecutionSnapshot({ runtimeId: rt, runtimeSource: runtimeDecision.source, projectRoot: PROJECT_ROOT });
   if (snapshot.errors?.length) {
     console.error(c("red", `✗ runtime '${rt}' is incompatible with the provider catalog; the Run ends before the producer:`));
     for (const error of snapshot.errors) console.error(c("red", `    ${error}`));
@@ -788,7 +804,12 @@ function heuristicGauntletEvaluator(env: Record<string, string>): AgentXGauntlet
     target,
     evaluate({ candidateId, revisionId, candidateRoot, artifactRefs }) {
       const files = gateableFiles(candidateRoot, new Set());
-      const gate = files.length ? runGateOnce(files, { gateScript: gateScriptPath, offline: true, env }) : { pass: false, fails: [] };
+      const gate = files.length
+        ? runGateOnce(files, { gateScript: gateScriptPath, offline: true,
+            // Same reason as the delivery pipeline's gateEnv: the gate child must not
+            // re-derive the project from the candidate it is judging.
+            env: { HARNESS_LOGS_DIR: harnessLogsDir({ cwd: PROJECT_ROOT }), ...env } })
+        : { pass: false, fails: [] };
       return [{ evaluationId: `evl_${revisionId}`, candidateId, revisionId,
         gauntletId: "brief-conformance", rubricVersion: "harness-quality-gate/v1", verdict: gate.pass ? "pass" : "revise",
         dimensions: [{ id: "brief-conformance", score: files.length ? (files.length - gate.fails.length) / files.length : 0,
@@ -881,7 +902,7 @@ function producesForDelivery(read: () => string[]): string[] | undefined {
 // the Run rolled back as `evaluator_unavailable` and exit 4. A real evaluator runs through
 // lib/gauntlet/evaluator-adapter.ts with the evaluation budget (share or floor) as its cap; a
 // slice the floor consumes entirely rolls the Run back as `max_cost` before the producer.
-function gauntletEvaluatorFor(args: { pid: string; producer: TargetRef; plan: GauntletPlan; projectRoot: string; rt: Runtime;
+function gauntletEvaluatorFor(args: { pid: string; producer: TargetRef; plan: GauntletPlan; projectRoot: string; workspaceRoot: string; rt: Runtime;
   kernelPath: string; runId: string; heuristicEnv: Record<string, string> }): { evaluator: AgentXGauntletEvaluator; budget: GauntletRoundBudget } {
   const judge = judgeXAvailability(args.rt);
   // The gauntlet.evaluator setting: the variable, else the project or global config.
@@ -941,7 +962,7 @@ function gauntletEvaluatorFor(args: { pid: string; producer: TargetRef; plan: Ga
     process.exit(1);
   }
   const evaluator = createDispatchEvaluator({ target: selection.target, producer: args.producer, plan: args.plan, brief: brief!,
-    projectRoot: args.projectRoot, projectId: args.pid, runtime: args.rt, budgetUsd: budget.evaluationBudgetUsd,
+    projectRoot: args.projectRoot, workspaceRoot: args.workspaceRoot, projectId: args.pid, runtime: args.rt, budgetUsd: budget.evaluationBudgetUsd,
     timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined, audit: emit });
   return { evaluator, budget };
 }
@@ -981,7 +1002,7 @@ function deliveryArgs(opts: DeliverOpts): DeliveryArgs {
     runtime: opts.rt,
     projectDir: opts.projDir,
     projectRoot: opts.projectRoot,
-    workingDir: process.cwd(),
+    workingDir: PROJECT_ROOT,
     sessionId: opts.sessionId,
     maxRevisions,
     maxBudgetUsd: effectiveBudgetUsd(),
@@ -1071,8 +1092,12 @@ if (pendingCascade?.kind === "squad-only") {
     console.error(c("red", "✗ could not parse the Project dir from brief-squad"));
     process.exit(1);
   }
-  const projectRoot = path.resolve(projDir, "..", "..");   // <outputs>/<pid>
-  dispatchAudit.bindProjectRoot(projDir);
+  // brief-squad scaffolds at <outputs>/<pid>/squads/<slug>; its two parents are the
+  // run's WORKSPACE (brief.md, the dispatch kernel, the Gauntlet scratch), never the
+  // project — deriving one from the other is the defect this cut closed.
+  const scaffoldRoot = path.resolve(projDir, "..", "..");
+  const projectRoot = PROJECT_ROOT;
+  dispatchAudit.bindProjectRoot(projectRoot);
 
   if (!wantExec) {
     console.log("");
@@ -1090,7 +1115,7 @@ if (pendingCascade?.kind === "squad-only") {
     emit("agent_exec_failed", { trace_id: pid, project_id: pid, squad_slug: squads[0], runtime: rt, reason: "runtime not on PATH" });
     process.exit(1);
   }
-  const oroot = outputsRoot || path.join(projectRoot, "deliverables");
+  const oroot = outputsRoot || path.join(scaffoldRoot, "deliverables");
   fs.mkdirSync(oroot, { recursive: true });
   // The capability each squad of the chain actually runs (lib/capability-resolver.ts):
   // the id the user named, the squad's only capability, the best one for this brief
@@ -1115,8 +1140,9 @@ if (pendingCascade?.kind === "squad-only") {
     const requirements = gauntletRequirements(pid, producerTarget, squadContract);
     const { evaluator, budget } = gauntletEvaluatorFor({ pid, producer: producerTarget,
       plan: compileGauntletPlan({ brief, intensity: executionOptions.intensity, requirements }),
-      projectRoot, rt, kernelPath: canaryKernelPath(projectRoot), runId: canonicalRunId, heuristicEnv: { NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid } });
-    const kernel = openKernel(canaryKernelPath(projectRoot));
+      projectRoot, workspaceRoot: scaffoldRoot, rt, kernelPath: canaryKernelPath(scaffoldRoot), runId: canonicalRunId,
+      heuristicEnv: { NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid } });
+    const kernel = openKernel(canaryKernelPath(scaffoldRoot));
     const legacy = runLedger.openLedger();
     let finalDelivery: DeliveryResult | null = null;
     // One producer for the first candidate and for every revision: same squad, same runtime.
@@ -1132,8 +1158,8 @@ if (pendingCascade?.kind === "squad-only") {
     const executionSnapshot = frozenExecutionSnapshot(pid, rt, "squad");
     try {
       const result = runAgentXGauntlet({
-        kernel, legacy: createHarnessLegacyAdapter({ ledger: legacy, auditCwd: projDir }), producerTarget,
-        projectId: pid, runId: canonicalRunId, traceId: pid, brief, projectRoot, outputsRoot: oroot,
+        kernel, legacy: createHarnessLegacyAdapter({ ledger: legacy, auditCwd: projectRoot }), producerTarget,
+        projectId: pid, runId: canonicalRunId, traceId: pid, brief, projectRoot, workspaceRoot: scaffoldRoot, outputsRoot: oroot,
         intensity: executionOptions.intensity, requirements, executionSnapshot, audit: emit,
         expectedCostUsd: budget.roundBudgetUsd,
         executeCandidate: candidateRoot => produce(candidateRoot, brief),
@@ -1157,7 +1183,7 @@ if (pendingCascade?.kind === "squad-only") {
   }
   // Standard mode publishes the same canonical Run the Gauntlet canary would (dual-write through
   // lib/run-kernel/standard-publication.ts, fail-open); a chain of squads publishes under its first squad.
-  const publication = openStandardPublication({ kernelPath: canaryKernelPath(projectRoot), projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag),
+  const publication = openStandardPublication({ kernelPath: canaryKernelPath(scaffoldRoot), projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag),
     traceId: pid, target: { kind: "squad", slug: squads[0], capabilityId }, snapshot: frozenExecutionSnapshot(pid, rt, "squad"),
     audit: emit, warn: line => console.error(c("yellow", line)) });
   if (publication.incompatible || publication.collided) process.exit(1);
@@ -1166,7 +1192,8 @@ if (pendingCascade?.kind === "squad-only") {
     const row = runLedger.openRun(ledgerHandle, {
       traceId: pid, projectId: pid, targetSlug: squads.join(","), targetKind: "squad",
       runtime: rt, childPid: process.pid,
-      meta: { project_dir: projDir, project_root: projectRoot, outputs_root: oroot, mode: "squad-only" },
+      meta: { project_dir: projDir, project_root: projectRoot, scaffold_root: scaffoldRoot,
+        brief_path: path.join(scaffoldRoot, "brief.md"), outputs_root: oroot, mode: "squad-only" },
     });
     ledgerRunId = row.run_id;
   });
@@ -1234,10 +1261,10 @@ if (pendingCascade?.kind === "judge-x") {
   const rt = runtimeDecision.runtime;
   const ts = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "");
   const pid = projectId || `proj-${ts}-judge-x`;
-  const base = path.join(process.cwd(), "outputs", pid);
-  const projDir = path.join(base, "judge-x");
+  const scaffoldRoot = path.join(PROJECT_ROOT, "outputs", pid);
+  const projDir = path.join(scaffoldRoot, "judge-x");
   fs.mkdirSync(projDir, { recursive: true });
-  dispatchAudit.bindProjectRoot(projDir);
+  dispatchAudit.bindProjectRoot(PROJECT_ROOT);
   emit("brief_received", { trace_id: pid, project_id: pid, target: "judge-x", brief_chars: brief.length });
 
   if (!wantExec) {
@@ -1246,7 +1273,7 @@ if (pendingCascade?.kind === "judge-x") {
     console.log(c("dim", "  (exit 3 — nothing dispatched, nothing judged)"));
     process.exit(3);
   }
-  const oroot = outputsRoot || path.join(base, "deliverables");
+  const oroot = outputsRoot || path.join(scaffoldRoot, "deliverables");
   fs.mkdirSync(oroot, { recursive: true });
   const requestFile = path.join(path.dirname(oroot), EVALUATION_REQUEST_FILE);
   let request: EvaluationRequest;
@@ -1263,7 +1290,7 @@ if (pendingCascade?.kind === "judge-x") {
     process.exit(1);
   }
   const scorecardPath = path.join(oroot, SCORECARD_FILE);
-  const publication = openStandardPublication({ kernelPath: canaryKernelPath(base), projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag),
+  const publication = openStandardPublication({ kernelPath: canaryKernelPath(scaffoldRoot), projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag),
     traceId: pid, target: JUDGE_X_TARGET, snapshot: frozenExecutionSnapshot(pid, rt, "agent-x"),
     audit: emit, warn: line => console.error(c("yellow", line)) });
   if (publication.incompatible) process.exit(1);
@@ -1271,7 +1298,7 @@ if (pendingCascade?.kind === "judge-x") {
   console.log(c("lime", "▶") + c("bold", ` Judge-x — exec headless (${rt})`));
   publication.start();
   const maxBudgetUsd = effectiveBudgetUsd();
-  const r = runJudgeX({ brief, runtime: rt, projectId: pid, projectDir: projDir, projectRoot: base, outputsRoot: oroot, scorecardPath,
+  const r = runJudgeX({ brief, runtime: rt, projectId: pid, projectDir: projDir, projectRoot: PROJECT_ROOT, outputsRoot: oroot, scorecardPath,
     candidateRoot: request.candidateRoot, maxBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined, yolo, audit: emit });
   console.log(c("dim", `  session: ${r.sessionId || "(none)"} · ${r.durationMs}ms${r.costUsd != null ? ` · $${r.costUsd.toFixed(4)}` : ""} · prompt ${r.promptChars} chars`));
   publication.verify();
@@ -1298,12 +1325,12 @@ if (pendingCascade?.kind === "agent-x") {
   const rt = runtimeDecision.runtime;
   const ts = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "");
   const pid = projectId || `proj-${ts}-agent-x`;
-  const base = path.join(process.cwd(), "outputs", pid);
-  const projDir = path.join(base, "agent-x");
+  const scaffoldRoot = path.join(PROJECT_ROOT, "outputs", pid);
+  const projDir = path.join(scaffoldRoot, "agent-x");
   fs.mkdirSync(projDir, { recursive: true });
-  const briefPath = path.join(base, "brief-enriched.md");
+  const briefPath = path.join(scaffoldRoot, "brief-enriched.md");
   fs.writeFileSync(briefPath, brief, "utf8");
-  dispatchAudit.bindProjectRoot(projDir);
+  dispatchAudit.bindProjectRoot(PROJECT_ROOT);
   emit("brief_received", { trace_id: pid, project_id: pid, target: "agent-x", brief_chars: brief.length });
 
   if (!wantExec) {
@@ -1323,7 +1350,7 @@ if (pendingCascade?.kind === "agent-x") {
     emit("agent_exec_failed", { trace_id: pid, project_id: pid, employee: "agent-x", runtime: rt, reason: "runtime not on PATH" });
     process.exit(1);
   }
-  const oroot = outputsRoot || path.join(base, "deliverables");
+  const oroot = outputsRoot || path.join(scaffoldRoot, "deliverables");
   fs.mkdirSync(oroot, { recursive: true });
   if (shouldRunAgentXGauntlet({ targetKind: "agent-x", wantExec, resolvedMode: executionOptions.resolvedMode })) {
     const canonicalRunId = canonicalRunIdFor(pid, runIdFlag);
@@ -1331,15 +1358,16 @@ if (pendingCascade?.kind === "agent-x") {
     // setting — the array still travels to both compile sites, which is what keeps them equal.
     const requirements = gauntletRequirements(pid, { kind: "agent-x", slug: "agent-x" });
     const { evaluator, budget } = gauntletEvaluatorFor({ pid, producer: { kind: "agent-x", slug: "agent-x" },
-      plan: compileGauntletPlan({ brief, intensity: executionOptions.intensity, requirements }), projectRoot: base, rt,
-      kernelPath: canaryKernelPath(base), runId: canonicalRunId, heuristicEnv: { NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid } });
-    const kernel = openKernel(canaryKernelPath(base));
+      plan: compileGauntletPlan({ brief, intensity: executionOptions.intensity, requirements }),
+      projectRoot: PROJECT_ROOT, workspaceRoot: scaffoldRoot, rt,
+      kernelPath: canaryKernelPath(scaffoldRoot), runId: canonicalRunId, heuristicEnv: { NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid } });
+    const kernel = openKernel(canaryKernelPath(scaffoldRoot));
     const legacy = runLedger.openLedger();
     let finalDelivery: DeliveryResult | null = null;
     // One producer for the first candidate and for every revision: same persona, same runtime.
     const produce = (candidateRoot: string, candidateBrief: string, candidateBriefPath: string) => {
       const candidate = runAgentX({ brief: candidateBrief, briefPath: candidateBriefPath, runtime: rt, projectId: pid, projectDir: projDir,
-        projectRoot: base, outputsRoot: candidateRoot, reason: pendingCascade.reason, appendSystemPrompt: AUTONOMOUS_DIRECTIVE + rulesDirective,
+        projectRoot: PROJECT_ROOT, outputsRoot: candidateRoot, reason: pendingCascade.reason, appendSystemPrompt: AUTONOMOUS_DIRECTIVE + rulesDirective,
         maxBudgetUsd: budget.candidateBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
         yolo, ledger: { runId: canonicalRunId, watchDir: candidateRoot }, audit: emit });
       if (candidate.sessionId) runLedger.recordSession(legacy, canonicalRunId, candidate.sessionId);
@@ -1351,8 +1379,8 @@ if (pendingCascade?.kind === "agent-x") {
     const executionSnapshot = frozenExecutionSnapshot(pid, rt, "agent-x");
     try {
       const result = runAgentXGauntlet({
-        kernel, legacy: createHarnessLegacyAdapter({ ledger: legacy, auditCwd: projDir }),
-        projectId: pid, runId: canonicalRunId, traceId: pid, brief, projectRoot: base, outputsRoot: oroot,
+        kernel, legacy: createHarnessLegacyAdapter({ ledger: legacy, auditCwd: PROJECT_ROOT }),
+        projectId: pid, runId: canonicalRunId, traceId: pid, brief, projectRoot: PROJECT_ROOT, workspaceRoot: scaffoldRoot, outputsRoot: oroot,
         intensity: executionOptions.intensity, requirements, executionSnapshot, audit: emit,
         expectedCostUsd: budget.roundBudgetUsd,
         executeCandidate: candidateRoot => produce(candidateRoot, brief, briefPath),
@@ -1363,7 +1391,7 @@ if (pendingCascade?.kind === "agent-x") {
         evaluator,
         finalGate({ sessionId }) {
           finalDelivery = runDelivery({ ...deliveryArgs({ pid, slugOrNull: null, targetKind: "agent-x", rt, oroot,
-            projDir, projectRoot: base, sessionId, withManifest: false }), ledger: null, maxRevisions: 0 });
+            projDir, projectRoot: PROJECT_ROOT, sessionId, withManifest: false }), ledger: null, maxRevisions: 0 });
           return { exitCode: finalDelivery.exitCode, gateOutcome: finalDelivery.gateOutcome };
         },
       });
@@ -1378,7 +1406,7 @@ if (pendingCascade?.kind === "agent-x") {
     }
   }
   // Standard mode publishes the same canonical Run the Gauntlet canary would (dual-write, fail-open).
-  const publication = openStandardPublication({ kernelPath: canaryKernelPath(base), projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag),
+  const publication = openStandardPublication({ kernelPath: canaryKernelPath(scaffoldRoot), projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag),
     traceId: pid, target: { kind: "agent-x", slug: "agent-x" }, snapshot: frozenExecutionSnapshot(pid, rt, "agent-x"),
     audit: emit, warn: line => console.error(c("yellow", line)) });
   if (publication.incompatible || publication.collided) process.exit(1);
@@ -1387,7 +1415,8 @@ if (pendingCascade?.kind === "agent-x") {
     const row = runLedger.openRun(ledgerHandle, {
       traceId: pid, projectId: pid, targetSlug: "agent-x", targetKind: "agent-x",
       runtime: rt, childPid: process.pid,
-      meta: { project_dir: projDir, project_root: base, outputs_root: oroot, mode: "agent-x" },
+      meta: { project_dir: projDir, project_root: PROJECT_ROOT, scaffold_root: scaffoldRoot,
+        brief_path: briefPath, outputs_root: oroot, mode: "agent-x" },
     });
     ledgerRunId = row.run_id;
   });
@@ -1397,7 +1426,7 @@ if (pendingCascade?.kind === "agent-x") {
   publication.start();
   const r = runAgentX({
     brief, briefPath, runtime: rt, projectId: pid,
-    projectDir: projDir, projectRoot: base, outputsRoot: oroot,
+    projectDir: projDir, projectRoot: PROJECT_ROOT, outputsRoot: oroot,
     reason: pendingCascade.reason,
     appendSystemPrompt: AUTONOMOUS_DIRECTIVE + rulesDirective,
     maxBudgetUsd: effectiveBudgetUsd(),
@@ -1409,7 +1438,7 @@ if (pendingCascade?.kind === "agent-x") {
   if (ledgerRunId) ledgerTry(() => runLedger.recordSession(ledgerHandle!, ledgerRunId!, r.sessionId));
   const agentXDeliverOpts = {
     pid, slugOrNull: null, targetKind: "agent-x" as const, rt, oroot,
-    projDir, projectRoot: base, sessionId: r.sessionId, withManifest: false,
+    projDir, projectRoot: PROJECT_ROOT, sessionId: r.sessionId, withManifest: false,
   };
   publication.verify();
   if (!r.ok) {
@@ -1474,8 +1503,10 @@ const businessProduces = producesForDelivery(() => businessEntry.produces);
 
 // Step 2 — build employee prompt
 console.log(c("lime", "▶") + c("bold", ` Step 2/4 — buildEmployeePrompt (${intake}@${slug})`));
-// brief-business writes brief.md at the project root (parent of businesses/<slug>/), not inside the business subdir
-const projectRoot = path.resolve(projDir, "..", "..");
+// brief-business writes brief.md at the WORKSPACE root (parent of businesses/<slug>/), not
+// inside the business subdir. That root is the scaffold's, never the project's — see PROJECT_ROOT.
+const scaffoldRoot = path.resolve(projDir, "..", "..");
+const projectRoot = PROJECT_ROOT;
 // In exec mode the agent writes deliverables here (a clean subfolder export
 // includes but the scaffold dirs handoffs/tickets/employees are excluded).
 const execOutputsRoot = outputsRoot || (wantExec ? path.join(projDir, "deliverables") : undefined);
@@ -1485,7 +1516,7 @@ const businessCanaryDecision = decideBusinessCanary({ businessSlug: slug, wantEx
   // The gauntlet.business_allowlist and gauntlet.business_kill_switch settings (variables, else config).
   intensity: executionOptions.intensity, allowlist: resolveSetting("gauntlet.business_allowlist").value,
   killSwitch: resolveSetting("gauntlet.business_kill_switch").value ? "1" : undefined });
-const tmpBriefFile = path.join(projectRoot, "brief.md");
+const tmpBriefFile = path.join(scaffoldRoot, "brief.md");
 if (!fs.existsSync(tmpBriefFile)) {
   console.error(c("red", `✗ brief.md not found at ${tmpBriefFile}`));
   process.exit(1);
@@ -1507,10 +1538,12 @@ const dnaCount = (r2.stdout.match(/^--- MIND-CLONE:/gm) || []).length;
 console.log(c("dim", `  Prompt: ${promptSize.toLocaleString()} chars · ${dnaCount} mind-clones injected`));
 console.log(c("dim", `  Saved to: ${outputPath}`));
 
-// Step 3 — dispatch_business audit event. From here on we know projDir:
-// bind the audit facade to the project root (pre-projDir events are replayed
-// there, flagged replayed_from_global — the split-root fix).
-dispatchAudit.bindProjectRoot(projDir);
+// Step 3 — dispatch_business audit event. Bind the audit facade to the project
+// (pre-scaffold events are replayed there, flagged replayed_from_global — the
+// split-root fix). The bind takes the PROJECT, never the scaffold: the scaffold
+// grows its own `.nirvana/` for the dispatch kernel, so a walk-up anchored there
+// reads it as a project of its own and the trace ends up in two files.
+dispatchAudit.bindProjectRoot(projectRoot);
 // Dispatch ledger — open the run BEFORE exec, so a crash anywhere between
 // here and delivery leaves a non-terminal row the supervisor can recover.
 // Scaffold-only mode opens nothing (there is no execution to supervise).
@@ -1526,7 +1559,7 @@ if (wantExec && !businessCanaryDecision.enabled) {
         ? Math.floor(((timeoutMin ? parseInt(timeoutMin, 10) * 60_000 : LEDGER_DEFAULT_TIMEOUT_MS) + 5 * 60_000) / 1000)
         : 900,
       meta: {
-        project_dir: projDir, project_root: projectRoot,
+        project_dir: projDir, project_root: projectRoot, scaffold_root: scaffoldRoot,
         outputs_root: execOutputsRoot ?? null,
         prompt_path: outputPath, brief_path: tmpBriefFile,
         mode: wantTeam ? "team" : "single",
@@ -1558,7 +1591,7 @@ if (executionOptions.requestedMode === "gauntlet") {
     requested_mode: executionOptions.requestedMode, intensity: executionOptions.intensity,
   });
 }
-console.log(c("dim", `  ✓ dispatch_business written to ${path.join(harnessLogsDir({ cwd: projDir }), new Date().toISOString().slice(0, 10))}/audit.jsonl`));
+console.log(c("dim", `  ✓ dispatch_business written to ${path.join(harnessLogsDir({ cwd: projectRoot }), new Date().toISOString().slice(0, 10))}/audit.jsonl`));
 
 // ── EXEC MODE — actually run the runtime headless, then verify+gate+deliver ─
 if (wantExec) {
@@ -1578,9 +1611,9 @@ if (wantExec) {
     const canonicalRunId = canonicalRunIdFor(pid, runIdFlag);
       const requirements = gauntletRequirements(pid, { kind: "business", slug }, { requirements: businessAcceptance.requirements });
     const { evaluator, budget } = gauntletEvaluatorFor({ pid, producer: { kind: "business", slug },
-      plan: compileGauntletPlan({ brief, intensity: executionOptions.intensity, requirements }), projectRoot, rt,
-      kernelPath: canaryKernelPath(projectRoot), runId: canonicalRunId, heuristicEnv: { NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid, NIRVANA_BUSINESS_SLUG: slug } });
-    const kernel = openKernel(canaryKernelPath(projectRoot));
+      plan: compileGauntletPlan({ brief, intensity: executionOptions.intensity, requirements }), projectRoot, workspaceRoot: scaffoldRoot, rt,
+      kernelPath: canaryKernelPath(scaffoldRoot), runId: canonicalRunId, heuristicEnv: { NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid, NIRVANA_BUSINESS_SLUG: slug } });
+    const kernel = openKernel(canaryKernelPath(scaffoldRoot));
     const canaryLedger = runLedger.openLedger();
     let finalDelivery: DeliveryResult | null = null;
     let canarySessionId: string | null = null;
@@ -1595,8 +1628,8 @@ if (wantExec) {
     const produce = (candidateRoot: string, briefFile: string, candidateBrief: string) => {
       const prompt = employeePromptFor(briefFile, candidateRoot);
       attempt.markProductionStarted();
-      const candidate = runWithCascade({ runtime: rt, prompt, cwd: projDir,
-        addDirs: [projectRoot], appendSystemPrompt: AUTONOMOUS_DIRECTIVE + rulesDirective,
+      const candidate = runWithCascade({ runtime: rt, prompt, cwd: projectRoot,
+        addDirs: [projDir, candidateRoot], appendSystemPrompt: AUTONOMOUS_DIRECTIVE + rulesDirective,
         maxBudgetUsd: budget.candidateBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
         yolo, brief: candidateBrief, projectRoot, outputsRoot: candidateRoot, taskHint: `business Gauntlet canary · ${slug}/${intake}`,
         projectId: pid, ledger: { runId: canonicalRunId, watchDir: candidateRoot } });
@@ -1610,9 +1643,9 @@ if (wantExec) {
       markProductionStarted() {},
       run() {
         return runAgentXGauntlet({
-          kernel, legacy: createHarnessLegacyAdapter({ ledger: canaryLedger, auditCwd: projDir }),
+          kernel, legacy: createHarnessLegacyAdapter({ ledger: canaryLedger, auditCwd: projectRoot }),
           producerTarget: { kind: "business", slug }, projectId: pid, runId: canonicalRunId, traceId: pid,
-          brief, projectRoot, outputsRoot: oroot, expectedCostUsd: budget.roundBudgetUsd, intensity: executionOptions.intensity,
+          brief, projectRoot, workspaceRoot: scaffoldRoot, outputsRoot: oroot, expectedCostUsd: budget.roundBudgetUsd, intensity: executionOptions.intensity,
           requirements, executionSnapshot, audit: emit,
           executeCandidate: candidateRoot => produce(candidateRoot, tmpBriefFile, brief),
           reviseCandidate(request) {
@@ -1658,7 +1691,7 @@ if (wantExec) {
       ledgerTry(() => {
         ledgerHandle = runLedger.openLedger();
         const row = runLedger.openRun(ledgerHandle, { traceId: pid, projectId: pid, targetSlug: slug, targetKind: "business",
-          runtime: rt, childPid: process.pid, meta: { project_dir: projDir, project_root: projectRoot,
+          runtime: rt, childPid: process.pid, meta: { project_dir: projDir, project_root: projectRoot, scaffold_root: scaffoldRoot,
             outputs_root: oroot, prompt_path: outputPath, brief_path: tmpBriefFile, mode: "single" } });
         ledgerRunId = row.run_id;
       });
@@ -1673,7 +1706,7 @@ if (wantExec) {
   // Standard mode publishes the canonical Run (dual-write, fail-open). After a canary rollback the
   // kernel already holds this Run's terminal state, so the legacy fallback publishes nothing new.
   const publication = businessCanaryDecision.enabled ? inertStandardPublication(canonicalRunIdFor(pid, runIdFlag))
-    : openStandardPublication({ kernelPath: canaryKernelPath(projectRoot), projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag), traceId: pid,
+    : openStandardPublication({ kernelPath: canaryKernelPath(scaffoldRoot), projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag), traceId: pid,
       target: { kind: "business", slug }, snapshot: frozenExecutionSnapshot(pid, rt, "business"), audit: emit, warn: line => console.error(c("yellow", line)) });
   if (publication.incompatible || publication.collided) {
     const error = publication.collided ? `run ${publication.runId} is already terminal` : "runtime incompatible with the provider catalog";
@@ -1719,8 +1752,8 @@ if (wantExec) {
     res = runWithCascade({
       runtime: rt,
       prompt: agentPrompt,
-      cwd: projDir,
-      addDirs: [projectRoot],
+      cwd: projectRoot,
+      addDirs: [projDir, oroot],
       appendSystemPrompt: AUTONOMOUS_DIRECTIVE + rulesDirective,
       maxBudgetUsd: effectiveBudgetUsd(),
       timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,

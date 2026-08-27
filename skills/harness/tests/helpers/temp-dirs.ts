@@ -8,6 +8,8 @@
 // departing child the moment it needs to release its handles; a leak that
 // never resolves still throws, so nothing is masked.
 import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 
 const RETRYABLE = new Set(["EBUSY", "EPERM", "EACCES", "ENOTEMPTY"]);
 
@@ -20,4 +22,27 @@ export function removeDir(dir: string, attempts = 10, delayMs = 100): void {
       Bun.sleepSync(delayMs);
     }
   }
+}
+
+/**
+ * Create a temporary root and return it in the OS's CANONICAL form — the same
+ * form the engine answers with.
+ *
+ * `fs.realpathSync` is NOT enough, and the difference is invisible on macOS and
+ * Ubuntu. On Windows `os.tmpdir()` answers with an 8.3 SHORT path
+ * (`C:\Users\RUNNER~1\...` on the CI runner) and the JS resolver hands it
+ * straight back, while every project root inside the engine goes through
+ * `realpathSync.native` (run-ledger.ts `normalizeRoot`, paths.js `canonical`) —
+ * which is the resolver that expands 8.3. A fixture built on the short form then
+ * compares `C:\Users\RUNNER~1\…` against the engine's
+ * `C:\Users\runneradmin\…`: one directory, two strings, and an assertion that
+ * is green on two systems and red on the third.
+ *
+ * The macOS analogue is `/var` vs `/private/var`, which is why the fixtures
+ * already resolved at all — they just used the resolver that stops short of
+ * Windows. Both sides go through the same function here.
+ */
+export function makeTempRoot(prefix: string): string {
+  const created = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  return fs.realpathSync.native ? fs.realpathSync.native(created) : fs.realpathSync(created);
 }

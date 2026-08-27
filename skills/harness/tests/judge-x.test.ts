@@ -143,7 +143,9 @@ describe("runJudgeX", () => {
     });
     expect(result).toMatchObject({ ok: true, sessionId: "s-judge", costUsd: 0.8, budgetExhausted: false, promptPath: path.join(AGENTS_DIR, "judge-x.claude-code.md"), finalRuntime: "claude-code" });
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({ runtime: "claude-code", cwd: "/tmp/e/judge-x", addDirs: ["/tmp/e", "/tmp/cand"], maxBudgetUsd: 1.5, timeoutMs: 1000, yolo: true, projectId: "prj-evl", taskHint: "judge-x (Gauntlet evaluation)" });
+    // The judge runs INSIDE the project, with its scaffold, its outputs root and the
+    // candidate it reads granted as additional directories.
+    expect(calls[0]).toMatchObject({ runtime: "claude-code", cwd: "/tmp/e", addDirs: ["/tmp/e/judge-x", "/tmp/e/outputs", "/tmp/cand"], maxBudgetUsd: 1.5, timeoutMs: 1000, yolo: true, projectId: "prj-evl", taskHint: "judge-x (Gauntlet evaluation)" });
     expect(calls[0].appendSystemPrompt).toBeUndefined();
     expect(calls[0].ledger).toBeUndefined();
     expect(calls[0].prompt).toContain("# JUDGE-X DISPATCH");

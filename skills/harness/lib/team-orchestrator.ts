@@ -226,7 +226,7 @@ function runStep(step: ChainStep, idx: number, total: number, args: TeamRunArgs,
   appendAudit({ event: "dispatch_business", trace_id: args.projectId, project_id: args.projectId, business_slug: args.slug, employee: step.employee, mode: "team-step", step: idx + 1, total }, args.projectRoot);
 
   const res = runWithSession("employee", step.employee, args, {
-    runtime: args.runtime, prompt: ep.stdout, cwd: args.projectDir, addDirs: [args.projectRoot],
+    runtime: args.runtime, prompt: ep.stdout, cwd: args.projectRoot, addDirs: [args.projectDir, employeeOutDir],
     appendSystemPrompt: AUTONOMOUS_DIRECTIVE + (args.rulesDirective ?? ""),
     maxBudgetUsd: args.maxBudgetUsd, timeoutMs: args.timeoutMs,
     brief: args.brief, projectRoot: args.projectRoot, outputsRoot: employeeOutDir,

@@ -388,7 +388,7 @@ export function runAgentX(args: RunAgentXArgs): AgentXResult {
 
   const cascadeImpl = args.runWithCascadeImpl ?? runWithCascade;
   const res = cascadeImpl({
-    runtime: args.runtime, prompt, cwd: args.projectDir, addDirs: [args.projectRoot],
+    runtime: args.runtime, prompt, cwd: args.projectRoot, addDirs: [args.projectDir, args.outputsRoot],
     appendSystemPrompt: args.appendSystemPrompt,
     maxBudgetUsd: args.maxBudgetUsd, timeoutMs: args.timeoutMs, yolo: args.yolo,
     brief: args.brief, projectRoot: args.projectRoot, outputsRoot: args.outputsRoot,

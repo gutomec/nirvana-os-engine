@@ -8,13 +8,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { createDispatchExecutionRunner, glanceRunDir } from "../lib/control-plane/index.ts";
 import { createRun, getRun, listEvents, openKernel, type RunEvent, type TargetRef } from "../lib/run-kernel/index.ts";
 import { openLedger } from "../lib/run-ledger.ts";
 import { canonicalRunIdFor } from "../scripts/dispatch.ts";
 import { writeFakeCli } from "./helpers/fake-cli.ts";
+import { makeTempRoot } from "./helpers/temp-dirs.ts";
 import { pidAlive, waitUntil } from "./helpers/fake-glance-child.ts";
 
 const REPO = path.resolve(import.meta.dir, "..", "..", "..");
@@ -69,7 +69,7 @@ function writeSquad(dir: string): void {
 }
 
 function fixture() {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "nrv-standard-kernel-"))); roots.push(root);
+  const root = makeTempRoot("nrv-standard-kernel-"); roots.push(root);
   const home = path.join(root, "home");
   const projectRoot = path.join(root, "project");
   const bin = path.join(root, "bin");

@@ -11,7 +11,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { compileGauntletPlan } from "../lib/gauntlet/compiler.ts";
 import { EVALUATION_OUTPUTS_DIR, EVALUATION_RUBRIC_VERSION } from "../lib/gauntlet/evaluation-contract.ts";
@@ -23,7 +22,7 @@ import type { TargetRef } from "../lib/run-kernel/types.ts";
 import { canonicalRunIdFor } from "../scripts/dispatch.ts";
 import { writeFakeCli } from "./helpers/fake-cli.ts";
 import { writeFakeDispatch } from "./helpers/fake-dispatch.ts";
-import { removeDir } from "./helpers/temp-dirs.ts";
+import { makeTempRoot, removeDir } from "./helpers/temp-dirs.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const REPO = path.resolve(import.meta.dir, "..", "..", "..");
@@ -73,7 +72,7 @@ const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) removeDir(root); });
 
 function fixture(installed: Record<string, string[]>) {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "nrv-gauntlet-evaluator-e2e-"))); roots.push(root);
+  const root = makeTempRoot("nrv-gauntlet-evaluator-e2e-"); roots.push(root);
   const home = path.join(root, "home");
   const projectRoot = path.join(root, "project");
   const bin = path.join(root, "bin");
@@ -134,15 +133,17 @@ describe("dispatch.ts selects and runs the Gauntlet evaluator", () => {
     expect(cards).toHaveLength(1);
     expect(cards[0]).toMatchObject({ verdict: "pass", costUsd: 0.2, gauntletId: "brief-conformance", rubricVersion: EVALUATION_RUBRIC_VERSION,
       evaluator: { kind: "squad", slug: "fixture-evaluator", capabilityId: CONFORMANCE } });
-    const projectRoot = path.join(fx.projectRoot, "outputs", "proj-env");
-    const evaluationDir = evaluationDirFor(projectRoot, canonicalRunIdFor("proj-env"), "crv_run_proj-env_can_1_1");
+    // Evaluations stay beside the candidates they judge, in the Run's WORKSPACE…
+    const workspaceRoot = path.join(fx.projectRoot, "outputs", "proj-env");
+    const evaluationDir = evaluationDirFor(workspaceRoot, canonicalRunIdFor("proj-env"), "crv_run_proj-env_can_1_1");
     expect(fs.existsSync(path.join(evaluationDir, EVALUATION_OUTPUTS_DIR, "scorecard.json"))).toBeTrue();
     expect(fs.readFileSync(path.join(evaluationDir, "evaluation-brief.md"), "utf8")).toContain("Produza o relatório final em report.html");
     const captured = JSON.parse(fs.readFileSync(path.join(evaluationDir, EVALUATION_OUTPUTS_DIR, "dispatch-capture.json"), "utf8")) as { argv: string[]; cwd: string };
     expect(captured.argv.slice(0, 2)).toEqual(["--squad", "fixture-evaluator"]);
     expect(captured.argv).toContain("--execution-mode=standard");
     expect(captured.argv[captured.argv.indexOf("--project") + 1]).toBe("proj-env-evl-crv_run_proj-env_can_1_1");
-    expect(captured.cwd).toBe(projectRoot);
+    // …while the evaluator dispatch itself runs in the PROJECT, like every other dispatch.
+    expect(captured.cwd).toBe(fx.projectRoot);
     const audit = fx.audit();
     expect(audit.filter(entry => entry.event === "x_gauntlet_evaluator_fallback")).toEqual([]);
     expect(audit.find(entry => entry.event === "x_gauntlet_evaluator_selected")).toMatchObject({ trace_id: "proj-env", source: "env",

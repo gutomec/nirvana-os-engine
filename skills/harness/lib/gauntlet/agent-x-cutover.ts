@@ -62,7 +62,12 @@ export interface AgentXGauntletInput {
   runId: string;
   traceId: string;
   brief: string;
+  /** The project this Run belongs to. One answer, never derived from the outputs root. */
   projectRoot: string;
+  /** Where the Run's scratch lives — `<workspaceRoot>/.nirvana/gauntlet/<runId>/candidates/`.
+   *  The dispatch scaffold (`<outputs>/<pid>`), so `nrv clean <pid>` still takes it with it.
+   *  Absent = the project root, which is what every caller passed before the split. */
+  workspaceRoot?: string;
   outputsRoot: string;
   /** Cost reserved per round: the per-candidate estimate times `candidateStrategy.count`. */
   expectedCostUsd: number;
@@ -194,7 +199,7 @@ function mediaType(filePath: string): string {
 }
 
 function candidateRootFor(input: AgentXGauntletInput, candidateId: string, revision: number): string {
-  return path.join(input.projectRoot, ".nirvana", "gauntlet", input.runId, "candidates", candidateId, `rev_${revision}`);
+  return path.join(input.workspaceRoot ?? input.projectRoot, ".nirvana", "gauntlet", input.runId, "candidates", candidateId, `rev_${revision}`);
 }
 
 function revisionIdFor(runId: string, candidateId: string, revision: number): string {

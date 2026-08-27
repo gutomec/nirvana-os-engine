@@ -446,7 +446,10 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
 
   const cascadeImpl = args.runWithCascadeImpl ?? runWithCascade;
   const cascadeArgs: Parameters<typeof runWithCascade>[0] = {
-    runtime: args.runtime, prompt, cwd: args.projectDir, addDirs: [args.projectRoot],
+    // The dispatched runtime runs INSIDE the project — it needs the project's .nirvana/,
+    // its config, its logs and its code-base — with the scaffold and the outputs dir handed
+    // to it as additional directories so both stay writable.
+    runtime: args.runtime, prompt, cwd: args.projectRoot, addDirs: [args.projectDir, outDir],
     appendSystemPrompt: args.autonomousDirective + (args.rulesDirective ?? ""),
     maxBudgetUsd: args.maxBudgetUsd, timeoutMs: args.timeoutMs,
     brief: args.brief, projectRoot: args.projectRoot, outputsRoot: outDir,
