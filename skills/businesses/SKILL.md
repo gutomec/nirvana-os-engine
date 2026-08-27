@@ -194,9 +194,11 @@ When intent = CREATE, follow this sequence without skipping steps.
 **Round 0 — Archaeology + research (before asking anything)**
 - Intent archaeology: which recurring pain the business serves, who consumes
   the outputs, and what already exists in the portfolio that covers part of it
-  (`nrv find --no-amplify` with 3-5 hypothetical briefs — a new business that
-  steals an existing business's territory is born wrong; the result dictates
-  `auto_routes` and boundaries).
+  (`nrv find --no-amplify` with 3-5 hypothetical briefs). Overlap is legitimate
+  — the owner may want two organisations covering the same sector, to name one
+  when they want it and let the maestro choose when they do not. What the
+  search tells you is what this business must be visibly better at. Never fence
+  a neighbour off; boundaries carry genuine refusals only.
 - Domain research (web, mandatory): CURRENT practices, tools, and services of
   the sector, with date and source — they become the employees' knowledge and
   the real vocabulary of `domains`/`example_briefs`/keywords (PT and EN).

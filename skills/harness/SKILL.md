@@ -253,6 +253,10 @@ For **mind-clones**, search by NEED, never by name: `nrv find-clone` runs BM25 o
 
 Pick a **shortlist of 5–10 candidates** across all three pillars with rough rationale.
 
+**Two candidates covering the same ground is normal, and it is an opportunity, not a tie to break.** Read both. Decide which one executes — then take what the other does better and put it into the brief you hand the winner. A step the loser's workflow had and the winner's lacks, a check only one of them makes, a sharper way of framing the output: none of that is lost when you pick, because you are writing the brief. The dispatch that follows is better than either candidate would have been alone.
+
+That is the whole method. Do not run a scoring procedure, do not fill in a matrix: read the code of the ones that overlap, judge which fits **this** brief, and carry the rest forward. When you commit the plan, say in the reasoning which alternatives you read and what you harvested — the field already exists, and one sentence there is worth more than a schema.
+
 **Pass 2 — deep confirmation (~10–20k tokens).** Read the full content of each shortlisted candidate: businesses (`business.yaml` + `org-chart.yaml` + selected `employees/<name>.md`), squads (`squad.yaml` + selected `agents/` + `workflows/`), mind-clones (`agent/AGENT.md` + relevant `dna/`). The deep read confirms or rules out.
 
 **Closure check (optional, multi-entity dispatches).** Before dispatching a business, `nrv graph closure --business <slug> --json` returns the exact entity closure the execution needs — employees, the mind-clones they embody, squads — with missing dependencies named instead of silently absent. The graph is derived from the prose declarations on disk, never a second source of truth. Opt-in by construction: single-target dispatch never needs it and pays no graph cost.

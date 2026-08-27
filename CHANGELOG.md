@@ -8,6 +8,34 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Overlap between entities is normal, and the loser's work is harvested rather than discarded
+
+The creation pipelines told an author that a new squad or business "that steals
+an existing one's territory is born wrong", and that the finding "dictates the
+`not_for` of both". That doctrine predates agentic routing being the default,
+and under it the instruction is backwards: the maestro reads the registries and
+compares candidates against the brief it is actually holding, which is more
+information than either author had when writing their manifest. A defensive
+`not_for` removes an entity from a comparison it might have won, permanently and
+invisibly — and it is a ×0.4 penalty in the router, so it reads as a demotion
+while working as removal.
+
+Both texts now say the opposite: overlap is legitimate, an owner may keep two
+entities covering the same ground on purpose — to name one when they want it and
+let the system choose when they do not — and what a new entity must earn is not
+exclusivity but being **visibly better at** something nameable. `not_for` carries
+genuine refusals only.
+
+The maestro's contract gains the method, in three sentences rather than a
+procedure: read the candidates that overlap, decide which one executes, and put
+what the others do better into the brief the winner receives. A step one
+workflow had and the other lacks is not lost when you pick — you are writing the
+brief. The dispatch that follows is better than either candidate alone. The
+alternatives read and what was harvested go in the reasoning of
+`target_plan_committed`, a field that already exists; no new event, no schema,
+no scoring matrix. Piling procedure on the agent is what makes it stop thinking.
+
+
 ## 0.10.1 — 2026-08-27
 
 ### A field that reads as data stops being able to run a command

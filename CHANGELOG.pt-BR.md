@@ -8,6 +8,35 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Sobreposição entre entidades é normal, e o que o perdedor tem de bom é aproveitado
+
+Os pipelines de criação diziam ao autor que um squad ou empresa "que rouba o
+território de outro nasce errado", e que o achado "dita o `not_for` dos dois".
+Essa doutrina é anterior ao roteamento agêntico ser o padrão, e sob ele a
+instrução está invertida: o maestro lê os registries e compara os candidatos
+contra o brief que tem na mão — mais informação do que qualquer um dos dois
+autores tinha ao escrever o manifesto. Uma cerca defensiva tira a entidade de
+uma comparação que ela poderia ganhar, de forma permanente e invisível — e como
+é penalidade de ×0,4 no roteador, ela se lê como rebaixamento e funciona como
+remoção.
+
+Os dois textos agora dizem o contrário: sobreposição é legítima, o dono pode
+querer duas entidades cobrindo o mesmo terreno de propósito — para nomear uma
+quando quiser e deixar o sistema escolher quando não quiser — e o que uma
+entidade nova precisa ganhar não é exclusividade, e sim ser **visivelmente
+melhor** em algo que se possa nomear. `not_for` carrega só recusa genuína.
+
+O contrato do maestro ganha o método, em três frases em vez de um procedimento:
+leia os candidatos que se sobrepõem, decida qual executa, e ponha no briefing do
+escolhido aquilo que os outros fazem melhor. Um passo que um workflow tinha e o
+outro não tem não se perde na escolha — quem escreve o briefing é você. O
+despacho que sai daí é melhor do que qualquer um dos candidatos sozinho. Os
+alternativos lidos e o que foi aproveitado vão no raciocínio do
+`target_plan_committed`, campo que já existe; sem evento novo, sem schema, sem
+matriz de pontuação. Empilhar procedimento no agente é o que faz ele parar de
+pensar.
+
+
 ## 0.10.1 — 2026-08-27
 
 ### Um campo que se lê como dado deixa de poder rodar um comando
