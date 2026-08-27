@@ -8,6 +8,8 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+## 0.10.0 — 2026-08-27
+
 ### Um projeto para de enxergar os runs dos outros
 
 Em 27/08/2026 uma sessão trabalhando em `~/nirvana-os` rodou `nrv run-track
@@ -359,7 +361,7 @@ squad como já derruba as dos clones. Na biblioteca do dono o digest fica em L4 
 foi de 44.664 para 48.618 tokens contra o orçamento de 50.000, com 203 dos 205
 squads declarando um objeto. Entradas continuam nunca sendo descartadas.
 
-### A composição de squads vira aresta, e ordem de plano
+### A composição de squads vira aresta no grafo de entidades
 
 `capabilities[].requires[]` e `capabilities[].consumes[]` parseavam desde que os
 campos v6 entraram, e nenhum leitor os tocava. Agora são arestas.

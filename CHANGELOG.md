@@ -8,6 +8,8 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+## 0.10.0 — 2026-08-27
+
 ### A project stops seeing other projects' runs
 
 On 2026-08-27 a session working in `~/nirvana-os` ran `nrv run-track list`, saw
@@ -356,7 +358,7 @@ already drops the clone ones. On the owner's library the digest sits at L4 and
 went from 44,664 to 48,618 tokens against the 50,000 budget, with 203 of 205
 squads now stating an object. Entries are still never dropped.
 
-### Squad composition becomes an edge, and a plan's order
+### Squad composition becomes an edge in the entity graph
 
 `capabilities[].requires[]` and `capabilities[].consumes[]` have parsed since the
 v6 fields landed, and no reader touched them. They are edges now.

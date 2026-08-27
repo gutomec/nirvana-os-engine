@@ -23,7 +23,7 @@ A v6 acrescenta:
 - §29 Contrato de aceitação (`capabilities[].acceptance[]`)
 - §30 Contrato do avaliador (`capabilities[].evaluator{}`)
 - §31 Composição (`requires[]` e `consumes[]`)
-- §32 Vínculo de execução (o que o engine consome, e o que ainda não)
+- §32 Vínculo de execução (o que o engine consome, e o que a capability resolvida leva à execução)
 - §33 `not_for` com teto de 25 caracteres
 - §34 Admissão (`nrv validate squad`)
 - §35 Migração (`nrv migrate --to 6`)
@@ -36,7 +36,7 @@ Squads v4 e v5 continuam carregando sem alteração. O leitor aceita as duas cod
 
 ### Limites desta versão
 
-Um contrato desta spec continua **declarativo hoje**: o schema o aceita, o portão o valida, e nenhum leitor de execução ainda o consome. Está marcado no texto como **limite**, com o que falta: as arestas de composição no grafo de entidades (§31.4). A ordem de fallback da aceitação (§29.3) e a ordem de seleção do avaliador (§30.3) eram limites e passaram a ser encanamento — as duas atrás de interruptor, com o comportamento de hoje como padrão.
+Um contrato desta spec pode chegar **ligado pela metade**: o schema o aceita, o portão o valida, um leitor já o consome, e o caminho que fecharia o ciclo ainda não tem chamador. Está marcado no texto como **limite**, com o que falta: `requires` e `consumes` viram aresta no grafo de entidades, mas a herança dessa ordem no plano multi-target continua sem chamador de produção, porque `compileManifest()` aceita `opts.composition` e ninguém passa a opção (§31.4). A ordem de fallback da aceitação (§29.3) e a ordem de seleção do avaliador (§30.3) eram limites e passaram a ser encanamento — as duas atrás de interruptor, com o comportamento de hoje como padrão.
 
 ---
 
@@ -280,9 +280,22 @@ Slugs de `produces` que esta capability consome como insumo. Strings de 3 a 80 c
 
 `requires_no_provider` (aviso): uma entrada de `requires` sem prefixo tem que casar com uma capability da própria squad; com prefixo, tem que casar com uma capability declarada no `squad.yaml` da squad irmã, no mesmo diretório pai. Uma entrada de `consumes` tem que casar com algum `produces` da própria squad.
 
-### 31.4 O grafo — **limite**
+### 31.4 O grafo
 
-`requires` deve virar aresta `depends_on` squad→squad e `consumes` deve virar aresta `feeds` no grafo de entidades, com provedor ambíguo produzindo nenhuma aresta e um evento em `nrv graph check`. **Ainda não existe.** Hoje as duas listas são declarativas e checadas pelo portão dentro do escopo do diretório de squads.
+`readSquadComposition()`, em `skills/_shared/lib/entity-graph.ts`, lê o `squad.yaml` de cada squad instalada e transforma as duas listas em arestas. Uma entrada de `requires` resolve para a squad que declara aquele id de capability e vira `depends_on` consumidor → provedor; uma entrada de `consumes` resolve por `produces` e vira `feeds` provedor → consumidor. As duas passam por `dependencyPair()`, que inverte a direção desenhada do `depends_on`, de modo que o provedor existe primeiro. `buildEntityGraph()` junta essas arestas às demais, e por isso `nrv graph order` e a ordem de instalação leem a composição sem precisar de uma segunda regra.
+
+A aresta só nasce com provedor inequívoco. Repetir um id de capability é o desenho, não defeito: dez squads carregam `media.video.compose` e é o roteador que escolhe entre elas pelo brief. Escolher uma aqui inventaria uma ordem de execução que ninguém declarou, então dois provedores rendem nenhuma aresta e uma linha de relatório. Um prefixo `slug:` na referência (`brand-forge:design.brand.identity`) nomeia o provedor e encerra a dúvida. Uma referência que a própria squad satisfaz não é nem aresta nem achado, porque a auto-aresta seria ciclo e uma referência interna não é lacuna.
+
+| Achado | `nrv graph check` |
+|---|---|
+| `requires` que nada provê | `x_requires_unresolved`, reprova sob `--strict` |
+| `requires` que duas squads provêm | `x_requires_ambiguous`, reportado |
+| `consumes` que nada produz | `x_consumes_unresolved`, reportado |
+| `consumes` que duas squads produzem | `x_consumes_ambiguous`, reportado |
+
+A ambiguidade para antes do erro de propósito. A capability existe, duas vezes, e reprovar a biblioteca por um id duplicado puniria a forma para a qual o roteador foi feito. Um `requires` sem resolução é o outro caso: a biblioteca não carrega aquela capability, e nenhuma ordenação a supre.
+
+**O limite que sobra.** No plano a composição é costura, ainda não comportamento. `compileManifest()`, em `skills/harness/lib/plan-compiler.ts`, aceita o grafo derivado em `opts.composition`, e `inheritedCompositionEdges()` herda a ordem entre dois nós `squad` do mesmo plano quando o autor não a declarou. O autor sempre vence: um par já ligado por aresta, em qualquer direção, fica exatamente como escrito, e nada se herda para uma squad que o plano não nomeia. Só que nenhum chamador de produção passa a opção — `compileManifest()` é invocado hoje apenas por `plan-compiler.test.ts`. Sem ela a compilação é bit a bit a que já existia, e é essa que roda.
 
 ---
 
@@ -297,11 +310,30 @@ Esta seção existe para separar o que a v6 promete do que o engine faz hoje, po
 - **`components`** alimenta a superfície de contrato, que é o que um comprador vê mudar entre duas versões da squad.
 - **`produces`, `domains`, `keywords`, `example_briefs`, `not_for`** alimentam o roteador.
 
-### 32.2 O que ainda não chega à execução — **limite**
+### 32.2 O que a capability resolvida leva à execução
 
-O prompt que uma squad recebe é montado por `buildSquadPrompt` em `skills/harness/lib/squad-exec.ts`, e hoje ele contém: o `squad.yaml` inteiro, os **três primeiros** agentes de `agents/` em ordem alfabética e as **três primeiras** tasks de `tasks/`. Sem capability, sem workflow, sem escolher os componentes que aquele workflow de fato roda. O dispatch, por sua vez, ainda passa o literal `squad.execute` como capability.
+Até a 0.9.0 o engine despachava as 657 capabilities das 204 squads instaladas por um literal só. `dispatch.ts` carimbava `squad.execute` no Run, em cada ref de artefato e no alvo do Glance, e `buildSquadPrompt` não recebia capability nenhuma: o prompt era o `squad.yaml` inteiro mais os três primeiros `agents/*.md` e as três primeiras `tasks/*.md` em ordem alfabética, e `workflows/` nunca era aberto.
 
-O desenho é que `buildSquadPrompt` receba a capability resolvida e monte `## SUA CAPABILITY`, `## SEU WORKFLOW` (a tabela de passos mais o corpo) e só os agentes e tasks referenciados, em ordem de passo, com teto em `LIMITS.squad_prompt_components_bytes_max` (65.536 bytes). Enquanto isso não existe, **escrever um workflow melhor não muda o prompt que a squad recebe** — muda o que o portão aceita, o que o roteador indexa e o que a migração consegue derivar.
+**A resolução.** `skills/harness/lib/capability-resolver.ts` responde, para uma squad e um brief, qual capability roda, e diz qual degrau respondeu:
+
+| Degrau | Quando responde |
+|---|---|
+| `explicit` | quem chamou nomeou: `--squad <slug>:<capabilityId>`, `use squad <slug>:<cap>:` na cabeça de uma Message do Glance, um nó de plano com vários alvos |
+| `single` | a squad declara exatamente uma capability, e nenhum brief é preciso |
+| `bm25` | a squad declara várias: pontuadas contra o brief sobre os mesmos documentos que o roteador indexa, restritos a essa squad |
+| `legacy` | a squad não declara nenhuma (manifesto v4): `squad.execute`, que é o que de fato vai rodar |
+
+Toda resolução emite `x_capability_resolved` com o degrau, quantos ids a squad declara e, quando o BM25 decidiu, a nota, inclusive `0` quando nenhum termo do brief casou. A ausência de sinal aparece em vez de se disfarçar de acerto. Um id que quem chamou nomeou e a squad não declara é despachado assim mesmo, com `warning` no evento: quem chama manda.
+
+**O prompt.** Com uma capability resolvida, `buildSquadPrompt` (`skills/harness/lib/squad-exec.ts`) monta quatro seções:
+
+- `## SUA CAPABILITY` carrega o id, a descrição, `produces` e os critérios de aceitação, cada um marcado como bloqueante e com nota mínima quando os declara.
+- `## SEU WORKFLOW (<arquivo>)` carrega a tabela de passos do grafo canônico (`#`, passo, agente, task, requer, cria), lida pelo leitor de workflow da v6, mais o corpo em prosa quando o workflow é `.md`. O caminho sai com separador POSIX em qualquer sistema, para que a squad leia a mesma referência que o `invoke.ref` declara.
+- `## SEUS AGENTES` e `## SUAS TASKS` carregam só os componentes que aquele workflow referencia, em ordem de passo, sob um orçamento de bytes compartilhado pelas duas seções: `LIMITS.squad_prompt_components_bytes_max`, 65.536 bytes. Um documento que não cabe é omitido inteiro e contado numa nota; o primeiro que estoura um orçamento ainda intacto é fatiado em fronteira de code point e ganha marcador de truncamento, para que uma persona enorme chegue mesmo assim.
+
+**A compatibilidade.** Sem capability resolvida nada disso acontece e o prompt é byte-idêntico ao anterior: a seção de capability fica vazia e os dois blocos voltam para a coleta histórica dos três primeiros, com o cabeçalho `(top 3)`. Caem nesse caminho o `squad.execute` legado, um `squad.yaml` ilegível e um id que o manifesto não declara. É o que mantém as 204 squads instaladas despachando exatamente como despachavam, e `squad-exec.test.ts` fixa a string inteira nesse caso. Uma capability cujo `invoke.ref` não aponta para workflow legível mantém `## SUA CAPABILITY`, diz isso numa linha e deixa os componentes na coleta histórica; o mesmo vale quando toda referência de agente do workflow está pendurada, para que a squad nunca fique sem persona.
+
+**O limite que sobra.** O grafo continua sem executor tipado. A tabela de passos é instrução para o agente que lê o prompt, não entrada de um engine: nada verifica que um passo só começou depois do que a coluna `requer` nomeia, nada guarda estado por passo e nada tenta de novo um passo que falhou. Escrever um workflow melhor muda o que a squad lê, o que o portão aceita, o que o roteador indexa e o que a migração deriva. Não muda quem executa.
 
 ---
 
