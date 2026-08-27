@@ -12,6 +12,18 @@ applies_to_produces:
   - dossie
   - market-research-report
   - board-memo
+# PT/EN synonyms of the slugs above (rubric-selector.ts): the same artifact
+# spelled the other way selects this rubric instead of the generic fallback.
+aliases:
+  - livro
+  - relatorio
+  - relatório
+  - ebook
+  - dossier
+  - whitepaper
+  - long-form-report
+  - memorando
+  - report
 description: |
   Critérios de qualidade para deliverables de prosa longa (≥ 1500 palavras).
   Foco em estrutura, coerência argumentativa, precisão factual e ausência

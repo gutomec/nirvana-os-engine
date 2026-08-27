@@ -8,7 +8,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-  CONFORMANCE_CAPABILITY, loadInstalledSquads, parseEvaluatorSpec, selectGauntletEvaluator, type InstalledSquad, type JudgeAvailability,
+  CONFORMANCE_CAPABILITY, describeRanking, loadInstalledSquads, parseEvaluatorSpec, rankConformanceEvaluators, selectGauntletEvaluator,
+  type InstalledSquad, type JudgeAvailability,
 } from "../lib/gauntlet/evaluator-selection.ts";
 import { JUDGE_X_TARGET } from "../lib/gauntlet/judge-x.ts";
 import type { TargetRef } from "../lib/run-kernel/types.ts";
@@ -68,14 +69,17 @@ describe("NIRVANA_GAUNTLET_EVALUATOR", () => {
 });
 
 describe("selection without the variable", () => {
-  test("picks the first installed squad declaring quality.specification_conformance, skipping the producer", () => {
+  test("ranks the installed squads declaring quality.specification_conformance, skipping the producer", () => {
+    // A library that declares no v6 evaluator metadata ranks on the slug alone — the
+    // alphabetical answer of before, now as the LAST key instead of the only one.
     expect(selectGauntletEvaluator({ producer: AGENT_X, installed, judge: judgeReady })).toEqual({
-      kind: "dispatch", target: { kind: "squad", slug: "spec-judge", capabilityId: CONFORMANCE_CAPABILITY }, source: "registry",
-      fallbacks: [{ from: "env", reason: "unset" }] });
-    const alphabetical = [...installed].sort((a, b) => a.slug.localeCompare(b.slug));
-    expect(selectGauntletEvaluator({ producer: AGENT_X, installed: alphabetical, judge: judgeReady })).toMatchObject({ target: { slug: "document-factory" } });
+      kind: "dispatch", target: { kind: "squad", slug: "document-factory", capabilityId: CONFORMANCE_CAPABILITY }, source: "registry",
+      fallbacks: [{ from: "env", reason: "unset" }],
+      ranking: { slug: "document-factory", capabilityId: CONFORMANCE_CAPABILITY, fidelity: "experimental", maxCostUsd: null, considered: 2, retired: 0 } });
+    const shuffled = [...installed].reverse();
+    expect(selectGauntletEvaluator({ producer: AGENT_X, installed: shuffled, judge: judgeReady })).toMatchObject({ target: { slug: "document-factory" } });
     const documentFactoryProducer: TargetRef = { kind: "squad", slug: "document-factory", capabilityId: CONFORMANCE_CAPABILITY };
-    expect(selectGauntletEvaluator({ producer: documentFactoryProducer, installed: alphabetical, judge: judgeReady })).toMatchObject({ target: { slug: "spec-judge" }, source: "registry" });
+    expect(selectGauntletEvaluator({ producer: documentFactoryProducer, installed: shuffled, judge: judgeReady })).toMatchObject({ target: { slug: "spec-judge" }, source: "registry" });
     expect(selectGauntletEvaluator({ producer: AGENT_X, installed, envValue: "   ", judge: judgeReady })).toMatchObject({ source: "registry" });
     // The registry squad wins over judge-x even when the judge is available: a user's own judge is preferred.
     expect(selectGauntletEvaluator({ producer: BUSINESS, installed: [JUDGE], judge: judgeReady })).toMatchObject({ target: { slug: "spec-judge" }, source: "registry" });
@@ -95,6 +99,67 @@ describe("selection without the variable", () => {
         kind: "unavailable", reason: judgeMissing.reason,
         fallbacks: [{ from: "env", reason: "unset" }, { from: "registry", reason: "registry_no_match" }, { from: "judge-x", reason: "judge_unavailable", detail: judgeMissing.reason }] });
     }
+  });
+});
+
+describe("evaluator ranking (Squad Protocol v6 §30)", () => {
+  const contract = (slug: string, fidelity: string, maxCostUsd: number | null): InstalledSquad => ({
+    slug, capabilities: [CONFORMANCE_CAPABILITY],
+    evaluators: [{ capabilityId: CONFORMANCE_CAPABILITY, fidelity: fidelity as never, maxCostUsd }],
+  });
+
+  test("fidelity first, then the declared cost ceiling, then the slug", () => {
+    const installed = [
+      contract("z-cheap-drifted", "drifted", 0.5),
+      contract("a-expensive-validated", "validated", 9),
+      contract("b-cheap-validated", "validated", 1),
+      contract("m-experimental", "experimental", 0.1),
+    ];
+    expect(rankConformanceEvaluators(installed, AGENT_X).ranked.map(entry => entry.slug))
+      .toEqual(["b-cheap-validated", "a-expensive-validated", "m-experimental", "z-cheap-drifted"]);
+  });
+
+  test("a capability without an evaluator block sorts behind every one that declares a ceiling, inside its fidelity tier", () => {
+    const installed = [
+      { slug: "a-no-contract", capabilities: [CONFORMANCE_CAPABILITY] },
+      contract("z-declares-cost", "experimental", 3),
+      contract("y-validated-no-cost", "validated", null),
+    ];
+    expect(rankConformanceEvaluators(installed, AGENT_X).ranked.map(entry => entry.slug))
+      .toEqual(["y-validated-no-cost", "z-declares-cost", "a-no-contract"]);
+  });
+
+  test("a retired contract is not a candidate, and its exclusion is counted", () => {
+    const installed = [contract("retired-judge", "retired", 0.1), contract("live-judge", "drifted", 8)];
+    const ranked = rankConformanceEvaluators(installed, AGENT_X);
+    expect(ranked.ranked.map(entry => entry.slug)).toEqual(["live-judge"]);
+    expect(ranked.retired).toBe(1);
+    expect(selectGauntletEvaluator({ producer: AGENT_X, installed: [contract("retired-judge", "retired", 0.1)], judge: judgeReady }))
+      .toMatchObject({ target: JUDGE_X_TARGET, source: "default" });
+  });
+
+  test("the selection carries the reason, which is what nrv doctor prints", () => {
+    const selection = selectGauntletEvaluator({ producer: AGENT_X, judge: judgeReady,
+      installed: [contract("chosen", "validated", 2), contract("other", "experimental", 1), contract("gone", "retired", 0)] });
+    expect(selection).toMatchObject({ target: { slug: "chosen" }, ranking: { fidelity: "validated", maxCostUsd: 2, considered: 2, retired: 1 } });
+    expect(describeRanking((selection as { ranking: NonNullable<ReturnType<typeof rankConformanceEvaluators>["ranked"][number]> }).ranking))
+      .toBe("fidelity validated, max_cost_usd USD 2, ahead of 1 other candidate(s); 1 retired excluded");
+  });
+
+  test("reads the evaluator contract out of the registry's capability records", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-evaluator-contract-")); roots.push(root);
+    const file = path.join(root, ".squads-registry.json");
+    fs.writeFileSync(file, JSON.stringify({
+      squads: { "judge-a": { capabilities: [CONFORMANCE_CAPABILITY] }, "judge-b": { capabilities: [CONFORMANCE_CAPABILITY] } },
+      capabilities: { [CONFORMANCE_CAPABILITY]: [
+        { squad: "judge-a", fidelity: { status: "drifted" }, evaluator: { scorecard: "s", rubric: "r", max_cost_usd: 0.2 } },
+        { squad: "judge-b", fidelity_status: "validated" },
+      ] },
+    }), "utf8");
+    const installed = loadInstalledSquads(file);
+    expect(installed.find(entry => entry.slug === "judge-a")?.evaluators)
+      .toEqual([{ capabilityId: CONFORMANCE_CAPABILITY, fidelity: "drifted", maxCostUsd: 0.2 }]);
+    expect(rankConformanceEvaluators(installed, AGENT_X).ranked.map(entry => entry.slug)).toEqual(["judge-b", "judge-a"]);
   });
 });
 

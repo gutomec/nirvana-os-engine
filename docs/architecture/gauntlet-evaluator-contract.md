@@ -96,7 +96,15 @@ O que envolve o brief cai de ~12.500 para ~4.000 caracteres (um terço); o turno
 A função compartilhada pelos três canários (`gauntletEvaluatorFor` em `dispatch.ts`, sobre `evaluator-selection.ts`) decide o avaliador antes de qualquer produtor, nesta ordem:
 
 1. `NIRVANA_GAUNTLET_EVALUATOR`, quando definida, é honrada ou recusada, nunca reinterpretada. Formas aceitas: `squad:<slug>[:<capabilityId>]`, `judge-x`, `agent-x` e `heuristic`. Um squad tem que estar no registro instalado (`.squads-registry.json`, mantido por `nrv index`); sem capability explícita, usa `quality.specification_conformance` quando o squad a declara, senão a primeira capability declarada. `agent-x` só é aceito quando o produtor não é agent-x. Valor ilegível, squad não instalado, capability não declarada, alvo não independente do produtor ou `judge-x` sem persona para o runtime encerram o dispatch com exit 4 e a explicação, antes do produtor.
-2. Sem a variável, o registro instalado é percorrido em ordem alfabética de slug em busca de um squad que declare exatamente a capability `quality.specification_conformance` e seja independente do produtor. A regra é o id exato, não um domínio: os squads de domínio `qa` da biblioteca (`data-quality-guardian`, `code-review`, `automated-code-review-squad`) julgam datasets, código TypeScript ou PRs, não um entregável qualquer contra o seu brief. Quem quiser um juiz próprio cria um squad com essa capability na própria biblioteca e a seleção o prefere ao judge-x.
+2. Sem a variável, o registro instalado é percorrido em busca dos squads que declaram exatamente a capability `quality.specification_conformance` e são independentes do produtor. A regra é o id exato, não um domínio: os squads de domínio `qa` da biblioteca (`data-quality-guardian`, `code-review`, `automated-code-review-squad`) julgam datasets, código TypeScript ou PRs, não um entregável qualquer contra o seu brief. Quem quiser um juiz próprio cria um squad com essa capability na própria biblioteca e a seleção o prefere ao judge-x. Entre os que se qualificam, o vencedor é **ranqueado** (Squad Protocol v6 §30), não o primeiro do alfabeto:
+
+   | Chave | Ordem | Origem |
+   |---|---|---|
+   | `fidelity.status` | `validated` > `experimental` > `drifted`; `retired` não concorre | `capabilities[].fidelity.status`, `experimental` quando ausente |
+   | `evaluator.max_cost_usd` | crescente; sem bloco `evaluator` fica atrás de quem declara | `capabilities[].evaluator.max_cost_usd` |
+   | slug | alfabética | nome do squad |
+
+   Uma biblioteca que não declara nada de v6 tem só a terceira chave, então a resposta continua sendo a alfabética de antes. A linha escolhida viaja na seleção (`ranking`) e é o que `nrv doctor` imprime como razão. O `max_cost_usd` do vencedor também limita o gasto da avaliação: o `--max-budget` do subprocesso é o **menor** entre a parcela do plano e o teto declarado.
 3. Senão, `judge-x`, para qualquer produtor: agent-x, squad ou business.
 4. Senão, nada. Sem persona do judge para o runtime, ou com o CLI fora do PATH, a seleção é `unavailable`: o dispatch grava `x_gauntlet_evaluator_unavailable`, explica, encerra com exit 4 antes de qualquer produtor e transiciona o Run (criado ali, ou adotado por `--run-id`) para `rolled_back` com `reason: evaluator_unavailable`, o mesmo desenho de `runtime_incompatible`.
 
@@ -158,6 +166,6 @@ Para um Business, some `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST=<slug>` e use `nrv d
 - Um scorecard por avaliação cobre todos os requisitos do contrato; não há um scorecard por gauntlet nem arbitragem entre vários avaliadores.
 - O custo observado depende do `agent_executed` que cada caminho do dispatch grava; um avaliador cujo caminho não grava o evento aparece com custo zero.
 - O isolamento do candidate é por instrução e por diretório separado, não por sistema de arquivos somente leitura.
-- `GAUNTLET_EVALUATION_SHARE` e `GAUNTLET_EVALUATION_FLOOR_USD` são constantes; o `estimated_cost_usd` declarado por um squad ainda não entra na estimativa.
+- `GAUNTLET_EVALUATION_SHARE` e `GAUNTLET_EVALUATION_FLOOR_USD` são constantes; o `estimated_cost_usd` declarado por um squad ainda não entra na estimativa. O `evaluator.max_cost_usd`, sim: ele limita o `--max-budget` da avaliação, nunca o aumenta.
 - O subtipo `error_max_budget_usd` é do `claude`; nos outros runtimes não há teto de gasto no CLI (`runHeadless` avisa), então um estouro do juiz aparece como scorecard ausente, sem o nome `budget_exhausted`.
 - O engine não materializa um squad avaliador em `~/squads`: os registros começam vazios por desenho e `~/squads` é camada do usuário. O judge-x cobre toda máquina; um juiz próprio é um squad da biblioteca do usuário com `quality.specification_conformance`.

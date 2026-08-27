@@ -2,7 +2,11 @@ import { createHash } from "node:crypto";
 import { canonicalJson } from "../run-kernel/canonical-json.ts";
 import type { ExecutionConfig, GauntletIntensity, GauntletPlan, SuccessRequirement } from "./types.ts";
 
-const PROFILES = {
+// Exported for lib/gauntlet/success-requirements.ts: a requirement that declares
+// no `minimumScore` and whose capability declares no `fidelity.threshold` falls
+// back to the intensity profile's score — the same number this compiler puts on
+// its own `brief-conformance` line.
+export const PROFILES = {
   // `light` was USD 5: one candidate, two rounds, a USD 2.50 slice per candidate that the
   // evaluation floor (GAUNTLET_EVALUATION_FLOOR_USD, USD 1.50) would leave the producer USD 1.00
   // of, below what one real candidate costs (USD 1.65 in the first smoke). USD 8 gives each

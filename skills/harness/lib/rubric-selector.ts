@@ -25,6 +25,16 @@ export interface RubricMeta {
   target_model: "haiku" | "sonnet" | "opus" | "inherit";
   pass_threshold: number;
   applies_to_produces: string[];
+  /**
+   * PT/EN synonyms of the slugs above. The library declares ~3.024 distinct
+   * `produces` slugs and the rubrics name ~45 of them, half in English and half
+   * in Portuguese: `landing-page` and `pagina-de-vendas` are the same artifact
+   * and used to select different rubrics (in practice, none — the fallback).
+   * An alias matches exactly like an entry of `applies_to_produces`; it exists
+   * so a rubric can accept both spellings without pretending the second one is
+   * a different deliverable.
+   */
+  aliases: string[];
   description: string;
   body: string;
   version: string;
@@ -105,6 +115,7 @@ function loadAll(): RubricMeta[] {
     const applies = Array.isArray(meta.applies_to_produces)
       ? (meta.applies_to_produces as string[])
       : [];
+    const aliases = Array.isArray(meta.aliases) ? (meta.aliases as string[]) : [];
     out.push({
       name: String(meta.name ?? basename(f, ".md")),
       display_name: String(meta.display_name ?? meta.name ?? f),
@@ -112,6 +123,7 @@ function loadAll(): RubricMeta[] {
       target_model: ((meta.target_model as string) ?? "inherit") as RubricMeta["target_model"],
       pass_threshold: Number(meta.pass_threshold ?? 70),
       applies_to_produces: applies,
+      aliases,
       description: String(meta.description ?? ""),
       body,
       version: String(meta.version ?? "1.0.0"),
@@ -152,12 +164,11 @@ export function selectRubricsForProduces(
     };
   }
   const matched = new Map<string, RubricMeta>();
+  const matchedAlias: string[] = [];
   for (const r of all) {
     for (const slug of produces) {
-      if (r.applies_to_produces.includes(slug)) {
-        matched.set(r.name, r);
-        break;
-      }
+      if (r.applies_to_produces.includes(slug)) { matched.set(r.name, r); break; }
+      if (r.aliases.includes(slug)) { matched.set(r.name, r); matchedAlias.push(`${slug}→${r.name}`); break; }
     }
   }
   if (matched.size > 0) {
@@ -169,7 +180,8 @@ export function selectRubricsForProduces(
     return {
       rubrics: [...matched.values()],
       fallback_used: false,
-      reason: `matched ${matched.size} rubric(s) on produces: ${[...matched.keys()].join(", ")}`,
+      reason: `matched ${matched.size} rubric(s) on produces: ${[...matched.keys()].join(", ")}`
+        + (matchedAlias.length ? ` (by alias: ${matchedAlias.join(", ")})` : ""),
     };
   }
   // No match — best-effort fallback.

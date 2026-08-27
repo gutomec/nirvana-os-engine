@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import { GauntletController } from "./controller.ts";
 import { compileGauntletPlan } from "./compiler.ts";
 import { listCandidateRevisions, listScorecards } from "./store.ts";
-import type { CandidateRevision, EvaluationScorecard, GauntletIntensity, GauntletPlan, GauntletProjection } from "./types.ts";
+import type { CandidateRevision, EvaluationScorecard, GauntletIntensity, GauntletPlan, GauntletProjection, SuccessRequirement } from "./types.ts";
 import {
   RunAlreadyTerminalError, RunKernelCompatibilityFacade, TERMINAL_RUN_STATES, appendEvent, getRun, saveArtifactRef, verifyArtifactRef,
   type ArtifactRef, type CanonicalRunState, type KernelHandle, type LegacyCompatibilityAdapter, type RunProjection, type TargetRef,
@@ -67,6 +67,13 @@ export interface AgentXGauntletInput {
   /** Cost reserved per round: the per-candidate estimate times `candidateStrategy.count`. */
   expectedCostUsd: number;
   intensity?: GauntletIntensity;
+  /** The judge's contract (lib/gauntlet/success-requirements.ts). `compileGauntletPlan`
+   *  runs twice per Gauntlet — once in scripts/dispatch.ts to size the evaluator's budget
+   *  and once here — so the two must receive the SAME array: the scorecard is validated
+   *  against this plan's requirements, and a contract the evaluator never saw would make
+   *  `validateScorecardFile` reject every dimension. Absent = the compiler's own
+   *  `brief-conformance`, which is what every caller passed before v6. */
+  requirements?: SuccessRequirement[];
   producerTarget?: TargetRef;
   executionSnapshot?: Record<string, unknown>;
   /** Legacy audit emitter: `x_run_id_collision` when the Run under `runId` already ended. */
@@ -312,7 +319,7 @@ export function runAgentXGauntlet(input: AgentXGauntletInput): AgentXGauntletRes
   let sessionId: string | null = null;
   try {
     const controller = new GauntletController(input.kernel, { projectId: input.projectId, runId: input.runId, traceId, actor, correlationId });
-    const plan = compileGauntletPlan({ brief: input.brief, intensity: input.intensity ?? "light" });
+    const plan = compileGauntletPlan({ brief: input.brief, intensity: input.intensity ?? "light", requirements: input.requirements });
     const candidateIds = Array.from({ length: plan.candidateStrategy.count }, (_, index) => `can_${index + 1}`);
     const holdout = plan.gauntlets.some(gauntlet => gauntlet.holdout.enabled);
     let gauntlet = controller.begin(plan);

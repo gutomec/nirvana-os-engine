@@ -54,7 +54,7 @@ import { describeSettingSource, resolveSetting, settingsEnvForChild } from "../.
 import { planRouteWithFallback, resolveDispatchPlan, runAgentX, type DispatchPlan } from "../lib/dispatch-cascade.ts";
 import { runSquadHeadless } from "../lib/squad-exec.ts";
 import { parseSquadTarget, resolveSquadCapability } from "../lib/capability-resolver.ts";
-import { runDelivery, deliverAfterRuntimeError, gateableFiles, runGateOnce, type DeliveryArgs, type DeliveryResult, type RuntimeErrorOutcome } from "../lib/delivery-pipeline.ts";
+import { runDelivery, deliverAfterRuntimeError, gateableFiles, producesForRubric, runGateOnce, type DeliveryArgs, type DeliveryResult, type RuntimeErrorOutcome } from "../lib/delivery-pipeline.ts";
 import { runBusinessPostGate } from "../lib/business-post-gate.ts";
 import { parseExecutionOptions } from "../lib/gauntlet/execution-options.ts";
 import { decideBusinessCanary, runBusinessCanaryWithRollback } from "../lib/gauntlet/business-canary.ts";
@@ -66,8 +66,10 @@ import {
 import { EVALUATION_REQUEST_FILE, SCORECARD_FILE, type EvaluationRequest } from "../lib/gauntlet/evaluation-contract.ts";
 import { createDispatchEvaluator, describeTarget } from "../lib/gauntlet/evaluator-adapter.ts";
 import { CONFORMANCE_CAPABILITY, GAUNTLET_EVALUATOR_ENV, loadInstalledSquads, selectGauntletEvaluator } from "../lib/gauntlet/evaluator-selection.ts";
+import { REQUIREMENTS_MAX, briefConformance, profileScore, requirementsFor, type CapabilityContract } from "../lib/gauntlet/success-requirements.ts";
+import { readAcceptance } from "../../businesses/lib/acceptance.ts";
 import { JUDGE_X_TARGET, judgeXAvailability, judgeXOutcome, runJudgeX } from "../lib/gauntlet/judge-x.ts";
-import type { GauntletPlan } from "../lib/gauntlet/types.ts";
+import type { GauntletPlan, SuccessRequirement } from "../lib/gauntlet/types.ts";
 import { RunAlreadyTerminalError, createHarnessLegacyAdapter, openKernel, type TargetRef } from "../lib/run-kernel/index.ts";
 import { inertStandardPublication, openStandardPublication } from "../lib/run-kernel/standard-publication.ts";
 import { freezeExecutionSnapshot } from "../lib/runtime-snapshot.ts";
@@ -798,6 +800,76 @@ function heuristicGauntletEvaluator(env: Record<string, string>): AgentXGauntlet
   };
 }
 
+// ── The judge's contract ────────────────────────────────────────────────────
+//
+// `compileGauntletPlan` runs TWICE per Gauntlet — here, to size the evaluator's
+// budget, and inside `runAgentXGauntlet` — and the scorecard is validated against
+// the plan the second one built. The two must therefore receive the SAME array,
+// or `validateScorecardFile` rejects every dimension as "not in the success
+// contract". `gauntletRequirements()` is computed once per canary and handed to
+// both; the tests pin the resulting `planId` on both sides.
+//
+// `gauntlet.requirements_source` gates where the array comes from:
+//   brief       (default) exactly the single `brief-conformance` the compiler
+//               builds on its own — the same array, so the same plan id.
+//   capability  `brief-conformance` + the target's declared acceptance contract
+//               (lib/gauntlet/success-requirements.ts), with the workflow's
+//               `success_indicators` and the invoked task's `## Acceptance
+//               Criteria` as the fallbacks below it.
+const requirementsSourceSetting = resolveSetting("gauntlet.requirements_source");
+
+/** The capability record the registry kept for `<slug>:<capabilityId>`, and the squad's directory. */
+function squadCapabilityRecord(slug: string, capabilityId: string): { squadDir: string | null; capability: (CapabilityContract & { produces?: string[] }) | null } {
+  try {
+    const registry = require("../lib/registry-loader.js").loadSquads().registry;
+    const manifestPath = registry?.squads?.[slug]?.manifest_path;
+    const squadDir = typeof manifestPath === "string" && manifestPath ? path.dirname(manifestPath) : null;
+    const providers = registry?.capabilities?.[capabilityId];
+    const capability = (Array.isArray(providers) ? providers : []).find((entry: any) => entry?.squad === slug) ?? null;
+    return { squadDir, capability: capability ? { id: capabilityId, ...capability } : null };
+  } catch { return { squadDir: null, capability: null }; }
+}
+
+/** The judge's contract for one dispatch, audited so the scorecard's dimensions can be traced to what declared them. */
+function gauntletRequirements(projectId: string, producer: TargetRef,
+  contract: { squadDir?: string | null; capability?: CapabilityContract | null; requirements?: SuccessRequirement[] } = {}): SuccessRequirement[] {
+  const intensity = executionOptions.intensity;
+  if (requirementsSourceSetting.value !== "capability") return [briefConformance(intensity)];
+  // A business declares its contract per role (businesses/lib/acceptance.ts), so its
+  // requirements arrive already built; a squad's come from the resolved capability.
+  const resolved = contract.requirements?.length
+    ? { requirements: [briefConformance(intensity), ...contract.requirements].slice(0, REQUIREMENTS_MAX), origin: "acceptance" as const,
+        truncated: Math.max(0, contract.requirements.length + 1 - REQUIREMENTS_MAX) }
+    : requirementsFor({ squadDir: contract.squadDir, capability: contract.capability, intensity });
+  emit("x_gauntlet_requirements_resolved", { trace_id: projectId, project_id: projectId, producer: describeTarget(producer),
+    origin: resolved.origin, requirements: resolved.requirements.map(item => item.id), truncated: resolved.truncated,
+    source: describeSettingSource(requirementsSourceSetting) });
+  return resolved.requirements;
+}
+
+/** The business's directory and `produces[]`, from the registry `nrv index` maintains. */
+function businessRecord(slug: string): { bizDir: string | null; produces: string[] } {
+  try {
+    const registry = require("../lib/registry-loader.js").loadBusinesses().registry;
+    const entry = registry?.businesses?.[slug];
+    const manifestPath = entry?.manifest_path;
+    return {
+      bizDir: typeof manifestPath === "string" && manifestPath ? path.dirname(manifestPath) : null,
+      produces: Array.isArray(entry?.produces) ? entry.produces : [],
+    };
+  } catch { return { bizDir: null, produces: [] }; }
+}
+
+/** `produces[]` the judge's rubric selector receives, behind `delivery.produces_to_rubric`
+ *  (lib/delivery-pipeline.ts owns the rule; here we only read the target's declaration). */
+function producesForDelivery(read: () => string[]): string[] | undefined {
+  const enabled = resolveSetting("delivery.produces_to_rubric").value === true;
+  let declared: string[] = [];
+  try { declared = read(); } catch { declared = []; }
+  const slugs = producesForRubric(declared, enabled);
+  return slugs.length ? slugs : undefined;
+}
+
 // Gauntlet evaluator and round budget shared by the three canaries. The target comes from
 // lib/gauntlet/evaluator-selection.ts (NIRVANA_GAUNTLET_EVALUATOR, else an installed squad
 // declaring quality.specification_conformance, else judge-x for any producer); every fallback
@@ -888,6 +960,10 @@ interface DeliverOpts {
   pid: string; slugOrNull: string | null; targetKind: "business" | "squad" | "agent-x";
   rt: Runtime; oroot: string; projDir: string; projectRoot: string;
   sessionId: string | null; withManifest: boolean;
+  /** `produces[]` of the dispatched target, for the judge's rubric selector; see producesForRubric. */
+  produces?: string[];
+  /** The business's roles promise files through `acceptance[]` — a completeness proof like a manifest. */
+  acceptancePromisesPaths?: boolean;
   afterGate?: Parameters<typeof runDelivery>[0]["afterGate"];
   onSession?: (sid: string) => void;
 }
@@ -900,6 +976,8 @@ function deliveryArgs(opts: DeliverOpts): DeliveryArgs {
     pid: opts.pid,
     slug: opts.slugOrNull,
     targetKind: opts.targetKind,
+    produces: opts.produces,
+    acceptancePromisesPaths: opts.acceptancePromisesPaths,
     runtime: opts.rt,
     projectDir: opts.projDir,
     projectRoot: opts.projectRoot,
@@ -1026,11 +1104,17 @@ if (pendingCascade?.kind === "squad-only") {
   }).capabilityId;
   const capabilityById = new Map(squads.map(sq => [sq, capabilityFor(sq)]));
   const capabilityId = capabilityById.get(squads[0])!;
+  // The capability the resolver chose is what declares the acceptance contract the judge
+  // reads and the `produces` slugs its rubric selector matches on.
+  const squadContract = squadCapabilityRecord(squads[0], capabilityId);
+  const squadProduces = producesForDelivery(() => squadContract.capability?.produces ?? []);
   if (shouldRunSquadGauntlet({ squadCount: squads.length, wantExec, resolvedMode: executionOptions.resolvedMode })) {
     const squad = squads[0];
     const producerTarget = { kind: "squad" as const, slug: squad, capabilityId };
     const canonicalRunId = canonicalRunIdFor(pid, runIdFlag);
-    const { evaluator, budget } = gauntletEvaluatorFor({ pid, producer: producerTarget, plan: compileGauntletPlan({ brief, intensity: executionOptions.intensity }),
+    const requirements = gauntletRequirements(pid, producerTarget, squadContract);
+    const { evaluator, budget } = gauntletEvaluatorFor({ pid, producer: producerTarget,
+      plan: compileGauntletPlan({ brief, intensity: executionOptions.intensity, requirements }),
       projectRoot, rt, kernelPath: canaryKernelPath(projectRoot), runId: canonicalRunId, heuristicEnv: { NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid } });
     const kernel = openKernel(canaryKernelPath(projectRoot));
     const legacy = runLedger.openLedger();
@@ -1050,14 +1134,14 @@ if (pendingCascade?.kind === "squad-only") {
       const result = runAgentXGauntlet({
         kernel, legacy: createHarnessLegacyAdapter({ ledger: legacy, auditCwd: projDir }), producerTarget,
         projectId: pid, runId: canonicalRunId, traceId: pid, brief, projectRoot, outputsRoot: oroot,
-        intensity: executionOptions.intensity, executionSnapshot, audit: emit,
+        intensity: executionOptions.intensity, requirements, executionSnapshot, audit: emit,
         expectedCostUsd: budget.roundBudgetUsd,
         executeCandidate: candidateRoot => produce(candidateRoot, brief),
         reviseCandidate: request => produce(request.candidateRoot, writeRevisionBrief(brief, request).text),
         evaluator,
         finalGate({ sessionId }) {
           finalDelivery = runDelivery({ ...deliveryArgs({ pid, slugOrNull: null, targetKind: "squad", rt, oroot,
-            projDir, projectRoot, sessionId, withManifest: false }), ledger: null, maxRevisions: 0 });
+            projDir, projectRoot, sessionId, withManifest: false, produces: squadProduces }), ledger: null, maxRevisions: 0 });
           return { exitCode: finalDelivery.exitCode, gateOutcome: finalDelivery.gateOutcome };
         },
       });
@@ -1120,7 +1204,7 @@ if (pendingCascade?.kind === "squad-only") {
 
   const squadDeliverOpts = {
     pid, slugOrNull: null, targetKind: "squad" as const, rt, oroot,
-    projDir, projectRoot, sessionId: lastSession, withManifest: false,
+    projDir, projectRoot, sessionId: lastSession, withManifest: false, produces: squadProduces,
   };
   publication.verify();
   if (squadError) {
@@ -1243,8 +1327,11 @@ if (pendingCascade?.kind === "agent-x") {
   fs.mkdirSync(oroot, { recursive: true });
   if (shouldRunAgentXGauntlet({ targetKind: "agent-x", wantExec, resolvedMode: executionOptions.resolvedMode })) {
     const canonicalRunId = canonicalRunIdFor(pid, runIdFlag);
+    // agent-x declares no capability, so its contract is `brief-conformance` under either
+    // setting — the array still travels to both compile sites, which is what keeps them equal.
+    const requirements = gauntletRequirements(pid, { kind: "agent-x", slug: "agent-x" });
     const { evaluator, budget } = gauntletEvaluatorFor({ pid, producer: { kind: "agent-x", slug: "agent-x" },
-      plan: compileGauntletPlan({ brief, intensity: executionOptions.intensity }), projectRoot: base, rt,
+      plan: compileGauntletPlan({ brief, intensity: executionOptions.intensity, requirements }), projectRoot: base, rt,
       kernelPath: canaryKernelPath(base), runId: canonicalRunId, heuristicEnv: { NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid } });
     const kernel = openKernel(canaryKernelPath(base));
     const legacy = runLedger.openLedger();
@@ -1266,7 +1353,7 @@ if (pendingCascade?.kind === "agent-x") {
       const result = runAgentXGauntlet({
         kernel, legacy: createHarnessLegacyAdapter({ ledger: legacy, auditCwd: projDir }),
         projectId: pid, runId: canonicalRunId, traceId: pid, brief, projectRoot: base, outputsRoot: oroot,
-        intensity: executionOptions.intensity, executionSnapshot, audit: emit,
+        intensity: executionOptions.intensity, requirements, executionSnapshot, audit: emit,
         expectedCostUsd: budget.roundBudgetUsd,
         executeCandidate: candidateRoot => produce(candidateRoot, brief, briefPath),
         reviseCandidate(request) {
@@ -1376,6 +1463,15 @@ if (!pid || !intake || !projDir) {
   process.exit(1);
 }
 
+// The business's own contract: the intake role's `acceptance[]` (Business Protocol 2.0 §11)
+// becomes the judge's requirements, and the manifest's `produces[]` the rubric selector's
+// input. Both are gated — `gauntlet.requirements_source` and `delivery.produces_to_rubric`.
+const businessEntry = businessRecord(slug);
+const businessAcceptance = businessEntry.bizDir
+  ? readAcceptance(businessEntry.bizDir, [intake], { minimumScore: profileScore(executionOptions.intensity) })
+  : { requirements: [], entries: [], paths: [] };
+const businessProduces = producesForDelivery(() => businessEntry.produces);
+
 // Step 2 — build employee prompt
 console.log(c("lime", "▶") + c("bold", ` Step 2/4 — buildEmployeePrompt (${intake}@${slug})`));
 // brief-business writes brief.md at the project root (parent of businesses/<slug>/), not inside the business subdir
@@ -1480,8 +1576,9 @@ if (wantExec) {
   }
   if (businessCanaryDecision.enabled) {
     const canonicalRunId = canonicalRunIdFor(pid, runIdFlag);
+      const requirements = gauntletRequirements(pid, { kind: "business", slug }, { requirements: businessAcceptance.requirements });
     const { evaluator, budget } = gauntletEvaluatorFor({ pid, producer: { kind: "business", slug },
-      plan: compileGauntletPlan({ brief, intensity: executionOptions.intensity }), projectRoot, rt,
+      plan: compileGauntletPlan({ brief, intensity: executionOptions.intensity, requirements }), projectRoot, rt,
       kernelPath: canaryKernelPath(projectRoot), runId: canonicalRunId, heuristicEnv: { NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid, NIRVANA_BUSINESS_SLUG: slug } });
     const kernel = openKernel(canaryKernelPath(projectRoot));
     const canaryLedger = runLedger.openLedger();
@@ -1516,7 +1613,7 @@ if (wantExec) {
           kernel, legacy: createHarnessLegacyAdapter({ ledger: canaryLedger, auditCwd: projDir }),
           producerTarget: { kind: "business", slug }, projectId: pid, runId: canonicalRunId, traceId: pid,
           brief, projectRoot, outputsRoot: oroot, expectedCostUsd: budget.roundBudgetUsd, intensity: executionOptions.intensity,
-          executionSnapshot, audit: emit,
+          requirements, executionSnapshot, audit: emit,
           executeCandidate: candidateRoot => produce(candidateRoot, tmpBriefFile, brief),
           reviseCandidate(request) {
             const revision = writeRevisionBrief(brief, request);
@@ -1536,7 +1633,8 @@ if (wantExec) {
               offlineSnapshot: process.argv.includes("--offline-snapshot"), routingMode, wantZip, emit,
               log: message => console.log(c("lime", message)), warn: message => console.error(c("yellow", message)) });
             finalDelivery = runDelivery({ ...deliveryArgs({ pid, slugOrNull: slug, targetKind: "business", rt, oroot,
-              projDir, projectRoot, sessionId, withManifest: true, afterGate }), ledger: null, maxRevisions: 0 });
+              projDir, projectRoot, sessionId, withManifest: true, afterGate, produces: businessProduces,
+              acceptancePromisesPaths: businessAcceptance.paths.length > 0 }), ledger: null, maxRevisions: 0 });
             return { exitCode: finalDelivery.exitCode, gateOutcome: finalDelivery.gateOutcome };
           },
         });
@@ -1703,7 +1801,7 @@ if (wantExec) {
   const bizDeliverOpts = {
     pid, slugOrNull: slug, targetKind: "business" as const, rt, oroot,
     projDir, projectRoot, sessionId: res.sessionId, withManifest: true,
-    afterGate,
+    afterGate, produces: businessProduces, acceptancePromisesPaths: businessAcceptance.paths.length > 0,
     onSession: (sid: string) => {
       res.sessionId = sid;
       sessionData.session_id = sid;

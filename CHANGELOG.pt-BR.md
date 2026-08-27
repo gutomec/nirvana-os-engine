@@ -63,6 +63,87 @@ quando o trabalho pedir; o scope guard e as permissões de diretório ficam
 intactos. O Glance também fica: ele nunca leu o ledger, e as suas visões de
 consumo já abrem no escopo do projeto.
 
+### O Gauntlet julga o contrato que o alvo declarou, não uma linha fixa
+
+`compiler.ts` sempre soube compilar N requisitos em N gauntlets. Nunca recebeu mais de um: nenhum
+chamador passava `requirements`, então todo Gauntlet do sistema julgava a mesma pergunta
+`brief-conformance` com um limiar lido do perfil de intensidade, enquanto os manifestos carregavam
+`capabilities[].acceptance[]` e `fidelity.threshold` que ninguém lia.
+
+`skills/harness/lib/gauntlet/success-requirements.ts` monta o contrato. `brief-conformance` primeiro,
+sempre, e depois o primeiro degrau desta escada que responder:
+
+| Degrau | Origem | Bloqueia |
+|---|---|---|
+| `acceptance` | `capabilities[].acceptance[]` | sim, salvo `blocking: false` |
+| `success_indicators` | `success_indicators[]` do workflow invocado, pelo leitor v6 | não |
+| `task_acceptance_criteria` | `## Acceptance Criteria` da task invocada | não |
+| `brief-conformance` | nada declarado | sim |
+
+Os degraus derivados não bloqueiam. Um indicador que alguém escreveu em prosa nunca foi prometido
+como portão, e transformá-lo em um retém entregas que ninguém combinou reter. Os ids são namespaced
+(`acceptance.<id>`, `indicator.<n>`, `criterion.<n>`), então uma capability que declare literalmente
+`brief-conformance` não consegue sombrear o brief, e uma dimensão do scorecard diz de qual degrau
+veio. `minimumScore` sem valor cai no `fidelity.threshold` e, na falta dele, no score do perfil. O
+teto é de doze requisitos, `brief-conformance` incluído, e o que o teto corta é contado.
+
+O array chega aos DOIS sítios de compilação. `compileGauntletPlan` roda duas vezes por Gauntlet —
+uma em `dispatch.ts`, para dimensionar o orçamento do avaliador, e outra dentro de
+`runAgentXGauntlet` — e o scorecard é validado contra o plano que o segundo montou, então um
+contrato que só o primeiro viu faria o `validateScorecardFile` rejeitar toda dimensão como "fora do
+contrato de sucesso". Os três canários calculam o array uma vez e o entregam aos dois; os testes
+fixam os dois num mesmo `planId`.
+
+Uma empresa declara o contrato por cargo, não por capability. `skills/businesses/lib/acceptance.ts`
+lê o `acceptance[]` do cargo de intake (Business Protocol 2.0 §11) para o mesmo
+`SuccessRequirement[]`, deduplicado por id, então dois cargos que copiam a mesma regra da casa
+contribuem com uma dimensão só.
+
+`gauntlet.requirements_source` (`brief` | `capability`, padrão `brief`) governa tudo isso. No padrão,
+o contrato é o único `brief-conformance` de antes e o plano compilado é bit a bit o de hoje — o mesmo
+`planId`, que um teste afirma nos dois sítios de compilação.
+
+### Uma entrada de aceitação que nomeia um caminho é prova de completude
+
+O portão julga QUALIDADE, nunca completude: ele lê os arquivos que existem e diz se são bons, nunca
+se são todos. A única prova de completude que o sistema tinha era um `deliverables.json` escrito por
+run, e uma empresa que nunca escreveu um caía na varredura de saída, que só sabe que ALGO foi
+escrito.
+
+Uma entrada de `acceptance[]` com `path` é a mesma promessa, declarada pelo cargo em vez de escrita
+por run. O `verify-deliverable.ts` lê essas entradas quando não há manifesto (`manifest_source:
+"acceptance"`, com `min_bytes` por entrada quando declarado), e o pipeline de entrega roda a
+verificação para elas como roda para um manifesto.
+
+### O avaliador do Gauntlet é ranqueado, não alfabético
+
+Declarar o id `quality.specification_conformance` era o contrato inteiro do avaliador, e entre os
+squads que o declaravam vencia o primeiro slug em ordem alfabética. O Squad Protocol v6 §30 deu à
+capability um bloco `evaluator`; ninguém o lia.
+
+Agora a seleção ranqueia: `fidelity.status` (`validated` > `experimental` > `drifted`, com `retired`
+fora da disputa), depois `evaluator.max_cost_usd` crescente — uma capability sem bloco `evaluator`
+declara custo nenhum, então fica atrás de qualquer uma que declare — e o slug por último. Uma
+biblioteca que não declara metadado de v6 tem só a terceira chave, então continua recebendo a
+resposta alfabética de hoje. A linha vencedora viaja na seleção e é o que o `nrv doctor` imprime como
+razão, em vez de "o primeiro". O `max_cost_usd` também limita o gasto: o subprocesso da avaliação
+roda com `min(fatia do plano, max_cost_usd)` — um teto declarado limita o orçamento, nunca o aumenta.
+
+### O `produces` chega ao seletor de rubricas do juiz
+
+O `deliveryArgs()` nunca passava `produces`, então o `selectRubricsForProduces` era sempre chamado
+com `[]` e todo entregável — uma landing page, um dataset, um roteiro de vídeo — era julgado pelo
+`prose_shortform`. Os dois lados da declaração existiam: o `produces` de uma capability de squad e o
+do manifesto de uma empresa.
+
+O dispatch passa a encaminhá-lo, da capability resolvida no caso do squad e do manifesto no caso da
+empresa. As rubricas ganharam `aliases:` no frontmatter para os sinônimos PT/EN dos slugs que
+cobrem, então `pagina-de-vendas` seleciona a mesma rubrica que `landing-page` em vez de cair na
+genérica; um alias não pode ser um slug que outra rubrica já declara, e um teste segura isso.
+`delivery.produces_to_rubric` (padrão `false`) governa o encaminhamento, porque as rubricas cobrem
+cerca de 45 dos 3.024 slugs que a biblioteca declara e um slug sem rubrica tem que degradar para o
+fallback, nunca para uma recusa. Desligado, o juiz recebe `[]` — bit a bit o que ele recebia antes.
+
 ### O laço de desenvolvimento para de pagar o repositório inteiro a cada verificação
 
 `bun test skills` era a única coisa que alguém podia digitar, e ele roda 176 arquivos em 135-180 s.

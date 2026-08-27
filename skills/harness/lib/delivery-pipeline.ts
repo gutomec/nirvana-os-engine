@@ -114,6 +114,25 @@ export interface GateRunOpts {
   env?: Record<string, string | undefined>;
 }
 
+/**
+ * The `produces[]` slugs the judge's rubric selector receives.
+ *
+ * `deliveryArgs()` never passed `produces`, so `selectRubricsForProduces` was
+ * always called with `[]` and every deliverable — a landing page, a dataset, a
+ * video script — was judged by `prose_shortform`. The declaration exists on both
+ * sides (a squad capability's `produces`, a business manifest's), so the fix is
+ * to forward it; `delivery.produces_to_rubric` gates the forwarding because the
+ * rubrics cover roughly 45 of the 3.024 slugs the library declares, and a slug
+ * with no rubric must degrade to the fallback, never to a refusal.
+ *
+ * Off (the default) returns `[]` — bit for bit what the judge received before.
+ */
+export function producesForRubric(produces: readonly string[] | null | undefined, enabled: boolean): string[] {
+  if (!enabled) return [];
+  const slugs = (produces ?? []).map(slug => String(slug ?? "").trim()).filter(Boolean);
+  return [...new Set(slugs)];
+}
+
 /** Run the quality gate over each artifact; collect fix lists for failures.
  * Accepts a bare script path (legacy signature, offline heuristics) or full
  * GateRunOpts. Parses the normalized verdict {status, mode, results[]}. */
@@ -172,6 +191,14 @@ export interface DeliveryArgs {
    * business slug exists), verification runs through verify-deliverable.ts
    * and its exit code is honored; otherwise the homegrown scan applies. */
   manifest?: string | null;
+  /**
+   * The business promised files through its roles' `acceptance[]` (Business Protocol
+   * 2.0 §11, businesses/lib/acceptance.ts). Those entries are a completeness proof the
+   * same way a manifest is, so verification runs through verify-deliverable.ts for them
+   * too — a business that never wrote a `deliverables.json` stops falling back to the
+   * output scan, which only knows whether SOMETHING was written.
+   */
+  acceptancePromisesPaths?: boolean;
   pid: string;
   /** Business slug; null for squad-only / agent-x paths. */
   slug: string | null;
@@ -239,7 +266,7 @@ export interface DeliveryResult {
   revisionsUsed: number;
   sessionId: string | null;
   zipPath: string | null;
-  verifySource: "manifest" | "scan";
+  verifySource: "manifest" | "acceptance" | "scan";
   /** Reason string when the completeness ceiling downgraded an otherwise
    * deliverable outcome to `withheld`; null when no cap bound the result. */
   ceilingApplied: string | null;
@@ -292,27 +319,29 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
   let verifySource: DeliveryResult["verifySource"] = "scan";
   let manifestVerified = false;
 
-  if (args.manifest && args.slug) {
-    // Manifest path: verify-deliverable.ts owns the disk-truth check and its
+  const promisedSource: "manifest" | "acceptance" | null = args.slug ? (args.manifest ? "manifest" : args.acceptancePromisesPaths ? "acceptance" : null) : null;
+  if (promisedSource) {
+    // Promised-paths path: verify-deliverable.ts owns the disk-truth check and its
     // exit code is honored (0 pass · 1 fail · 2 indeterminate → fall back to
-    // the scan below). It emits verify_passed/verify_failed itself.
+    // the scan below). It emits verify_passed/verify_failed itself. The promise comes
+    // from the run's manifest, or — with no manifest — from the roles' acceptance[].
     const v = spawnSync("bun", [verifyScript, args.pid, args.slug, "--outputs-root", args.outputsRoot], {
       encoding: "utf8",
       cwd: args.workingDir ?? process.cwd(),
       env: { ...process.env, ...gateEnv },
     });
     if (v.status === 0) {
-      verifySource = "manifest";
+      verifySource = promisedSource;
       manifestVerified = true;
-      log(`  verify (manifest): PASS`);
+      log(`  verify (${promisedSource}): PASS`);
     } else if (v.status === 1) {
-      warn(`  verify (manifest): FAIL — deliverables missing or stubbed`);
+      warn(`  verify (${promisedSource}): FAIL — deliverables missing or stubbed`);
       warn((v.stdout || v.stderr || "").trim().slice(0, 800));
       mark("failed", { error: "verify-deliverable: FAIL" });
-      return fail(1, "indeterminate", { verifySource: "manifest" });
+      return fail(1, "indeterminate", { verifySource: promisedSource });
     } else {
-      // exit 2 (indeterminate: no manifest markers) or spawn error → scan.
-      warn(`  verify (manifest): indeterminate (rc=${v.status}) — falling back to output scan`);
+      // exit 2 (indeterminate: no promised paths on either side) or spawn error → scan.
+      warn(`  verify (${promisedSource}): indeterminate (rc=${v.status}) — falling back to output scan`);
     }
   }
 

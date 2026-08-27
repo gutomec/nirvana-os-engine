@@ -36,7 +36,7 @@ Squads v4 e v5 continuam carregando sem alteração. O leitor aceita as duas cod
 
 ### Limites desta versão
 
-Três contratos desta spec são **declarativos hoje**: o schema os aceita, o portão os valida, e nenhum leitor de execução ainda os consome. Cada um está marcado no texto como **limite**, com o que falta. Documentá-los agora é o que permite que o conteúdo seja escrito antes do encanamento, em vez de depois. São eles: a ordem de fallback da aceitação (§29.3), a ordem de seleção do avaliador (§30.3) e as arestas de composição no grafo de entidades (§31.4).
+Um contrato desta spec continua **declarativo hoje**: o schema o aceita, o portão o valida, e nenhum leitor de execução ainda o consome. Está marcado no texto como **limite**, com o que falta: as arestas de composição no grafo de entidades (§31.4). A ordem de fallback da aceitação (§29.3) e a ordem de seleção do avaliador (§30.3) eram limites e passaram a ser encanamento — as duas atrás de interruptor, com o comportamento de hoje como padrão.
 
 ---
 
@@ -212,11 +212,20 @@ Schema (`CapabilitySchema.acceptance`, `.strict()`, **máximo 12 entradas**):
 
 Cada requisito de aceitação vira um gauntlet sequencial, uma linha no brief do juiz e uma dimensão exigida no scorecard. `validateScorecardFile` exige **exatamente N** dimensões: com N requisitos e N−1 dimensões o scorecard vira `indeterminate` e o entregável fica retido. Doze é o teto em que o custo do julgamento ainda cabe no orçamento de um run.
 
-### 29.3 Ordem de fallback — **limite**
+### 29.3 Ordem de fallback
 
-A ordem projetada, quando o encanamento existir, é: `acceptance[]` → `success_indicators` do workflow invocado → `## Acceptance Criteria` da task invocada → `brief-conformance`. `brief-conformance` sempre vem antes de tudo, e `minimumScore` sem valor cai no `fidelity.threshold` da capability e, na falta dele, no score do perfil de intensidade.
+`skills/harness/lib/gauntlet/success-requirements.ts` (`requirementsFor`) resolve o contrato do juiz nesta ordem, e o primeiro degrau que responde vence:
 
-**Hoje nada disso é lido.** `acceptance[]` é aceito pelo schema, derivado por `nrv migrate --to 6` (§35) e reportado pelo portão; nenhum caminho de execução o consome. O que falta é `skills/harness/lib/gauntlet/success-requirements.ts` e a passagem de `requirements` nos dois sítios que compilam o plano do gauntlet. Até lá, toda execução de squad é julgada por `brief-conformance` sozinho, exatamente como antes da v6.
+| Degrau | Origem | Bloqueia |
+|---|---|---|
+| `acceptance` | `capabilities[].acceptance[]` | sim, salvo `blocking: false` |
+| `success_indicators` | `success_indicators[]` do workflow invocado, pelo leitor v6 (§28) | não |
+| `task_acceptance_criteria` | `## Acceptance Criteria` da task invocada | não |
+| `brief-conformance` | nada declarado | sim |
+
+`brief-conformance` sempre vem antes de tudo, os ids derivados são namespaced (`acceptance.<id>`, `indicator.<n>`, `criterion.<n>`) para que nenhuma capability consiga sombrear o brief, e `minimumScore` sem valor cai no `fidelity.threshold` da capability e, na falta dele, no score do perfil de intensidade. Os dois últimos degraus não bloqueiam: um indicador que alguém escreveu em prosa nunca foi prometido como portão, e transformá-lo em um retém entregas que ninguém combinou reter.
+
+**Interruptor.** `gauntlet.requirements_source` (`brief` | `capability`, padrão `brief`). No padrão, o contrato é o único `brief-conformance` de sempre e o plano compilado é bit a bit o de antes — o mesmo `planId`. Em `capability`, o contrato é o desta seção, e o `x_gauntlet_requirements_resolved` do audit diz de qual degrau ele veio.
 
 ---
 
@@ -241,11 +250,11 @@ Schema (`CapabilitySchema.evaluator`, `.strict()`): `scorecard` (string, obrigat
 
 O critério `evaluator_missing` dispara para a capability de id `quality.specification_conformance` que não declara o bloco. É **erro sob 6.0** e aviso sob 5.0, e o reparo é agêntico: só quem escreveu a squad sabe qual é o scorecard dela.
 
-### 30.3 Ordem de seleção — **limite**
+### 30.3 Ordem de seleção
 
-A ordem projetada, entre vários avaliadores instalados: `fidelity.status` `validated` antes de `experimental` antes de `drifted`, com `retired` fora; empate resolvido por `max_cost_usd` crescente; empate restante resolvido por slug. `max_cost_usd` também vira o teto do orçamento passado ao avaliador (`min(fatia do run, max_cost_usd)`).
+Entre vários avaliadores instalados e independentes do produtor (`evaluator-selection.ts`, `rankConformanceEvaluators`): `fidelity.status` `validated` antes de `experimental` antes de `drifted`, com `retired` fora da disputa; empate resolvido por `max_cost_usd` crescente, e uma capability sem bloco `evaluator` declara custo nenhum, então fica atrás de qualquer uma que declare; empate restante resolvido por slug. Uma biblioteca sem metadado de v6 tem só a terceira chave, então continua recebendo a resposta alfabética da v5.
 
-**Hoje a seleção ainda é a da v5** (`evaluator-selection.ts`, ordem alfabética com override por variável de ambiente). O bloco `evaluator` é validado e reportado, e não é lido por quem escolhe.
+`max_cost_usd` também vira o teto do orçamento passado ao avaliador: o `--max-budget` do subprocesso é `min(fatia do run, max_cost_usd)` — o teto declarado limita o gasto, nunca o aumenta. A linha vencedora viaja na seleção e é a razão que `nrv doctor` imprime. O override por `NIRVANA_GAUNTLET_EVALUATOR` continua acima de tudo isso, honrado ou recusado, nunca reinterpretado.
 
 ---
 
