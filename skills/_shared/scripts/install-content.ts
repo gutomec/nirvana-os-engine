@@ -31,11 +31,18 @@ function auditEmit(event: string, payload: Record<string, unknown>): void {
   } catch { /* audit unavailable (partial install) — installing still wins */ }
 }
 
-const HOME = homedir();
-const SQUADS_DIR = join(HOME, "squads");
-const BUSINESSES_DIR = join(HOME, "businesses");
-const DNA_DIR = join(BUSINESSES_DIR, "_library/dna");
-const PACKS_DIR = join(HOME, ".nirvana", "packs");
+// Lazy, env-aware roots — the same resolution `installer.ts` and `paths.js` use.
+// These used to be `homedir()` joins fixed at module scope, so a machine with
+// NIRVANA_HOME or SQUADS_DIR set got the engine in one place and the paid
+// content in another. It also made the overlay untestable by environment:
+// `os.homedir()` follows `$HOME` on macOS and Linux but `%USERPROFILE%` on
+// Windows, which is why a test that redirected only `HOME` passed on two
+// platforms and wrote into the real profile on the third (PR #133).
+function nirvanaHome(): string { return process.env.NIRVANA_HOME ?? homedir(); }
+function squadsDir(): string { return process.env.SQUADS_DIR ?? join(nirvanaHome(), "squads"); }
+function businessesDir(): string { return process.env.BUSINESSES_DIR ?? join(nirvanaHome(), "businesses"); }
+function dnaDir(): string { return process.env.DNA_LIBRARY ?? join(businessesDir(), "_library", "dna"); }
+function packsDir(): string { return join(nirvanaHome(), ".nirvana", "packs"); }
 
 const argv = process.argv.slice(2);
 const DRY = argv.includes("--dry");
@@ -79,7 +86,7 @@ function requiresEngine(): string | null {
 }
 function engineVersion(): string | null {
   // This script lives at <skills>/_shared/scripts/; the engine VERSION at <skills>/VERSION.
-  for (const p of [join(import.meta.dir, "..", "..", "VERSION"), join(HOME, ".nirvana", "skills", "VERSION")]) {
+  for (const p of [join(import.meta.dir, "..", "..", "VERSION"), join(homedir(), ".nirvana", "skills", "VERSION")]) {
     try { const v = readFileSync(p, "utf8").trim(); if (v) return v; } catch { /* next */ }
   }
   return null;
@@ -157,7 +164,7 @@ function recordInstall(m: Manifest): void {
     const items = ([["squad", m.squads], ["business", m.businesses], ["mind-clone", m["mind-clones"]]] as const)
       .flatMap(([kind, hashes]) => Object.keys(hashes ?? {}).map((slug) => ({
         kind, name: slug, slug,
-        path: join(kind === "squad" ? SQUADS_DIR : kind === "business" ? BUSINESSES_DIR : DNA_DIR, slug),
+        path: join(kind === "squad" ? squadsDir() : kind === "business" ? businessesDir() : dnaDir(), slug),
       })));
     new InstallManifest().append({
       ts: new Date().toISOString(),
@@ -180,7 +187,7 @@ function recordInstall(m: Manifest): void {
   }
 }
 
-const manifestPath = join(PACKS_DIR, `${SLUG}.json`);
+const manifestPath = join(packsDir(), `${SLUG}.json`);
 const man: Manifest = (() => { try { return JSON.parse(readFileSync(manifestPath, "utf8")); } catch { return {}; } })();
 
 const availableIn = (dir: string, marker: string): string[] =>
@@ -237,9 +244,9 @@ auditEmit("x_install_order_resolved", {
 });
 
 const KIND_SOURCES: Record<string, { src: string; dst: string; marker: string; entity: "squad" | "business" | "mind-clone"; recorded: Record<string, string> }> = {
-  "squads": { src: squadsSrc, dst: SQUADS_DIR, marker: "squad.yaml", entity: "squad", recorded: man.squads ?? {} },
-  "businesses": { src: bizSrc, dst: BUSINESSES_DIR, marker: "business.yaml", entity: "business", recorded: man.businesses ?? {} },
-  "mind-clones": { src: cloneSrc, dst: DNA_DIR, marker: "MANIFEST.yaml", entity: "mind-clone", recorded: man["mind-clones"] ?? {} },
+  "squads": { src: squadsSrc, dst: squadsDir(), marker: "squad.yaml", entity: "squad", recorded: man.squads ?? {} },
+  "businesses": { src: bizSrc, dst: businessesDir(), marker: "business.yaml", entity: "business", recorded: man.businesses ?? {} },
+  "mind-clones": { src: cloneSrc, dst: dnaDir(), marker: "MANIFEST.yaml", entity: "mind-clone", recorded: man["mind-clones"] ?? {} },
 };
 
 // ── The admission gate, per entity, BEFORE anything is mirrored ─────────────
@@ -288,9 +295,9 @@ if (entering.length) {
 }
 
 const kindRuns: Record<string, () => SyncRes> = {
-  "squads": () => syncKind("squads", squadsSrc, SQUADS_DIR, availableIn(squadsSrc, "squad.yaml"), man.squads ?? {}, srcHashes["squads"]),
-  "businesses": () => syncKind("businesses", bizSrc, BUSINESSES_DIR, availableIn(bizSrc, "business.yaml"), man.businesses ?? {}, srcHashes["businesses"]),
-  "mind-clones": () => syncKind("mind-clones", cloneSrc, DNA_DIR, availableIn(cloneSrc, "MANIFEST.yaml"), man["mind-clones"] ?? {}, srcHashes["mind-clones"]),
+  "squads": () => syncKind("squads", squadsSrc, squadsDir(), availableIn(squadsSrc, "squad.yaml"), man.squads ?? {}, srcHashes["squads"]),
+  "businesses": () => syncKind("businesses", bizSrc, businessesDir(), availableIn(bizSrc, "business.yaml"), man.businesses ?? {}, srcHashes["businesses"]),
+  "mind-clones": () => syncKind("mind-clones", cloneSrc, dnaDir(), availableIn(cloneSrc, "MANIFEST.yaml"), man["mind-clones"] ?? {}, srcHashes["mind-clones"]),
 };
 const runs: Record<string, SyncRes> = {};
 for (const kind of kindOrder.order) runs[kind] = kindRuns[kind]();
@@ -305,7 +312,7 @@ const sq = runs["squads"], bz = runs["businesses"], cl = runs["mind-clones"];
   for (const bind of scan.bindings) {
     if (bind.dangling) continue;
     if (scan.availableClones.has(bind.clone)) continue;
-    if (existsSync(join(DNA_DIR, bind.clone))) continue;
+    if (existsSync(join(dnaDir(), bind.clone))) continue;
     const key = `${bind.clone}|${bind.business}/${bind.employee}`;
     if (reported.has(key)) continue;
     reported.add(key);
@@ -337,7 +344,7 @@ if (collisions.length > 0) {
 }
 
 if (!DRY) {
-  mkdirSync(PACKS_DIR, { recursive: true });
+  mkdirSync(packsDir(), { recursive: true });
   const out: Manifest = { slug: SLUG, version: VERSION, updated_at: new Date().toISOString(), squads: sq.hashes, businesses: bz.hashes, "mind-clones": cl.hashes };
   writeFileSync(manifestPath, JSON.stringify(out, null, 2) + "\n");
   recordInstall(out);
@@ -349,7 +356,7 @@ if (!DRY) {
   // where it always is: whoever gets here already has the engine, because this
   // script lives inside it.
   console.log("  re-indexing registries...");
-  const nrvBin = join(HOME, ".local", "bin", "nrv");
+  const nrvBin = join(homedir(), ".local", "bin", "nrv");
   const indexer = join(import.meta.dir, "..", "..", "harness", "scripts", "index.ts");
   const reindex = existsSync(nrvBin)
     ? spawnSync(nrvBin, ["index"], { stdio: "inherit" })

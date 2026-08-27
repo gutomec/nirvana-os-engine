@@ -37,14 +37,16 @@ function home(): string {
 /**
  * A home the child actually believes in, on every platform.
  *
- * `installer.ts` resolves its roots lazily from `NIRVANA_HOME` / `SQUADS_DIR`,
- * so redirecting those is enough for it. `install-content.ts` does not: it
- * reads `os.homedir()` once, at module scope, and joins `squads`,
- * `businesses` and `.nirvana/packs` onto it. `os.homedir()` follows `$HOME` on
- * macOS and Linux and `%USERPROFILE%` on Windows — so a test that sets only
- * `HOME` redirects the overlay on two platforms out of three and silently
- * writes into the real profile on the third. That is what turned this file red
- * on the Windows runner and nowhere else.
+ * `installer.ts` and `install-content.ts` both resolve their roots lazily from
+ * `NIRVANA_HOME` / `SQUADS_DIR` / `BUSINESSES_DIR` / `DNA_LIBRARY`, so
+ * redirecting those is enough. The overlay did NOT, until 0.10.x: it read
+ * `os.homedir()` once, at module scope, and joined `squads`, `businesses` and
+ * `.nirvana/packs` onto it. `os.homedir()` follows `$HOME` on macOS and Linux
+ * and `%USERPROFILE%` on Windows — so a test that sets only `HOME` redirected
+ * the overlay on two platforms out of three and silently wrote into the real
+ * profile on the third. That is what turned this file red on the Windows runner
+ * and nowhere else. Both halves are still set here: a child that falls back to
+ * `homedir()` for anything must land in this root too, never in the real one.
  */
 function homeEnv(root: string): Record<string, string> {
   const drive = /^([A-Za-z]:)(.*)$/.exec(root);

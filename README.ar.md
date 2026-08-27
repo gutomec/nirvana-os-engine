@@ -151,6 +151,8 @@ and a competitive teardown.
 | `nrv dispatch --business <slug> \| --squad <slug> \| --agent-x "<brief>" --exec` | تشغيل موجز على هدف تسمّيه أنت؛ لا يُستشار الموجّه أبداً |
 | `nrv run <business> "<brief>" --execution-mode=gauntlet --gauntlet-intensity=light\|balanced\|exhaustive` | الانضمام إلى Gauntlet: مرشحون وتقييمات وجولات مراجعة بثلاث شدّات (أهداف Business تحتاج `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST`) |
 | `nrv multi-target plan\|run\|status <plan.json>` | تجميع خطة متعددة الأهداف أو تنفيذها أو فحصها فوق Run Kernel (`NIRVANA_MULTI_TARGET_KILL_SWITCH=1` يعطّل `run`) |
+| `nrv validate <squad\|business\|clone> <slug> [--fix]` | بوابة قبول لكيان واحد، أو `--all` لكل الكيانات المثبّتة؛ و`--fix` يصلح ما يمكن إصلاحه دون اختلاق شيء |
+| `nrv migrate <slug> --to 6 [--apply]` | يحوّل squad إلى Squad Protocol 6.0؛ التشغيل التجريبي هو الافتراضي، و`--apply` يكتب مع نسخة احتياطية |
 | `nrv update <pack>` | تحديث حزمة مثبّتة |
 | `nrv doctor` | فحص التثبيت؛ على Windows، ينظّف `nrv install --repair-path` مدخلات PATH الخاصة بالمستخدم التي يحذّر منها |
 
@@ -174,4 +176,4 @@ and a competitive teardown.
 
 الترخيص: Nirvana-OS Sustainable Use License (SUL) v1.0. المصدر منشور ومقروء علناً، والمحرك مجاني الاستخدام. إنه متاح المصدر، لا ترخيص مفتوح المصدر معتمداً من OSI، وبعض الاستخدامات التجارية تتطلب ترخيصاً تجارياً منفصلاً. اقرأ [LICENSE](./LICENSE) قبل الاعتماد على أي ملخص، بما في ذلك هذا.
 
-الحالة: بيتا (0.x، حالياً 0.8.1). المحرك يعمل اليوم ويُثبَّت في دقائق. توقّع أن تستمر الواجهة في التغيّر حتى الإصدار 1.0.
+الحالة: بيتا (0.x، حالياً 0.10.0). المحرك يعمل اليوم ويُثبَّت في دقائق. توقّع أن تستمر الواجهة في التغيّر حتى الإصدار 1.0.
