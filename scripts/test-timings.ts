@@ -29,7 +29,7 @@
 //   bun scripts/test-timings.ts --list-fast         # print that file list, one per line
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -42,12 +42,29 @@ const threshold = thresholdIdx === -1 ? 1 : Number(argv[thresholdIdx + 1]);
 const roots = argv.filter((a, i) => !a.startsWith("--") && i !== thresholdIdx + 1);
 const scope = roots.length ? roots : ["skills"];
 
+/**
+ * A repo-relative path the way package.json and the manifest spell it: POSIX
+ * separators on every platform.
+ *
+ * `path.relative` hands back `skills\harness\tests\x.test.ts` on Windows while
+ * the `bun test <dir>` arguments in package.json and every entry in
+ * scripts/slow-tests.json hold `/`. Unnormalized, no path ever matches a root
+ * and the whole suite reads as uncovered: the Windows runner of PR #131
+ * reported every file on disk as orphaned, and the fast and slow halves as
+ * two sets with nothing in common. Same idiom as
+ * `squad-exec.ts`'s `promptPath`, literal backslash included, which is what
+ * makes the normalization provable off Windows instead of only on it.
+ */
+export function posixPath(p: string): string {
+  return p.split(sep).join("/").replace(/\\/g, "/");
+}
+
 /** Every `*.test.ts` under the given repo-relative roots, repo-relative, sorted. */
 export function testFiles(dirs: string[] = ["skills"]): string[] {
   const out: string[] = [];
   for (const dir of dirs) {
     const glob = new Bun.Glob("**/*.test.ts");
-    for (const hit of glob.scanSync({ cwd: resolve(ROOT, dir), absolute: true })) out.push(relative(ROOT, hit));
+    for (const hit of glob.scanSync({ cwd: resolve(ROOT, dir), absolute: true })) out.push(posixPath(relative(ROOT, hit)));
   }
   return out.sort();
 }
@@ -56,7 +73,9 @@ export function testFiles(dirs: string[] = ["skills"]): string[] {
 export function slowTests(): string[] {
   if (!existsSync(SLOW_MANIFEST)) return [];
   const m = JSON.parse(readFileSync(SLOW_MANIFEST, "utf8"));
-  return (m.files ?? []).map((f: any) => f.path).sort();
+  // Normalized on read as well as on write: a manifest regenerated on Windows
+  // before this fix landed would otherwise stay unmatchable for everyone else.
+  return (m.files ?? []).map((f: any) => posixPath(String(f.path))).sort();
 }
 
 /** The fast half: every test file minus the measured-slow set. A test file added
@@ -96,7 +115,7 @@ if (import.meta.main) {
   const startedAll = Date.now();
 
   for (const [i, file] of files.entries()) {
-    const rel = relative(ROOT, file);
+    const rel = posixPath(relative(ROOT, file));
     if (!asJson) process.stderr.write(`[${i + 1}/${files.length}] ${rel}\r`);
     const t0 = Date.now();
     // Cold cache on purpose. `routing-eval.test.ts` memoizes its verdict on a

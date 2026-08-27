@@ -40,7 +40,10 @@ would have thrown them out.
 
 `test-script-coverage.test.ts` keeps the split from rotting: the four area scripts have to cover
 every file on disk exactly once, `test:fast` and the slow manifest have to partition the same set,
-and the three measured heavyweights may not drift back into the fast half.
+and the three measured heavyweights may not drift back into the fast half. Every path is walked,
+stored and compared in POSIX form on all three platforms, because `path.relative` returns
+`skills\harness\tests\x.test.ts` on Windows while package.json and `slow-tests.json` hold `/`, and
+an unnormalized comparison reads the entire suite as uncovered.
 
 ### The routing eval remembers a verdict it already reached
 

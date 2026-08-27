@@ -41,7 +41,9 @@ padrão de nome os teria tirado.
 O `test-script-coverage.test.ts` impede que a divisão apodreça: os quatro scripts de área precisam
 cobrir todo arquivo em disco exatamente uma vez, o `test:fast` e o manifesto dos lentos precisam
 particionar o mesmo conjunto, e os três pesos-pesados medidos não podem voltar para a metade
-rápida.
+rápida. Todo caminho é percorrido, gravado e comparado em forma POSIX nos três sistemas, porque o
+`path.relative` devolve `skills\harness\tests\x.test.ts` no Windows enquanto o package.json e o
+`slow-tests.json` guardam `/`, e uma comparação sem normalizar lê a suíte inteira como descoberta.
 
 ### A avaliação de roteamento lembra do veredito a que já chegou
 

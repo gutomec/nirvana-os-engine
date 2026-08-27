@@ -10,7 +10,13 @@
  *     nothing but `test:full` ever runs it. Nobody notices, because every
  *     command anyone types still exits 0;
  *   - a file named in the slow manifest is renamed, so `test:fast` starts
- *     paying for a heavy file while excluding one that no longer exists.
+ *     paying for a heavy file while excluding one that no longer exists;
+ *   - the walk returns native separators. On Windows `path.relative` hands back
+ *     `skills\harness\tests\x.test.ts` while package.json and the manifest
+ *     hold `/`, nothing matches anything, and the split reads as total. That is
+ *     what the Windows runner of PR #131 reported, and the reason the cases
+ *     below feed a literal backslash: the normalization has to be provable on
+ *     macOS and Linux, where `path.sep` alone would hide it.
  *
  * These checks read package.json and the disk. They never keep a second copy
  * of either list, so they fail on the drift itself and not on a stale mirror.
@@ -18,7 +24,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { fastTests, slowTests, testFiles } from "../../../scripts/test-timings.ts";
+import { fastTests, posixPath, slowTests, testFiles } from "../../../scripts/test-timings.ts";
 
 const REPO = join(import.meta.dir, "..", "..", "..");
 const pkg = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8"));
@@ -40,6 +46,16 @@ describe("the area scripts still add up to the whole suite", () => {
     const doubled = onDisk.filter((f) => roots.filter((r) => f.startsWith(r + "/")).length > 1);
     // Reported together so a failure names the file, not just a count.
     expect({ orphans, doubled }).toEqual({ orphans: [], doubled: [] });
+  });
+
+  test("a native-separator path lands on the same entry as the walk", () => {
+    const sample = onDisk[0];
+    expect(posixPath("skills\\harness\\tests\\x.test.ts")).toBe("skills/harness/tests/x.test.ts");
+    expect(posixPath(sample)).toBe(sample);
+    // The predicate the coverage check runs, fed the Windows spelling of a real file.
+    const roots = AREA_SCRIPTS.flatMap(pathsOf);
+    const windowsSpelling = sample.split("/").join("\\");
+    expect(roots.some((r) => posixPath(windowsSpelling).startsWith(r + "/"))).toBe(true);
   });
 
   test("test:full is the whole tree, and `bun test` still means the same thing", () => {
@@ -68,6 +84,15 @@ describe("the fast/slow split is a partition of the same set", () => {
   test("every file the manifest calls slow still exists", () => {
     const disk = new Set(onDisk);
     expect(slowTests().filter((f) => !disk.has(f))).toEqual([]);
+  });
+
+  test("both halves, and the manifest on disk, are spelled in POSIX separators", () => {
+    // Normalizing on read would still leave a Windows regeneration of
+    // slow-tests.json checked in with backslashes, unreadable to a human diff
+    // and to any reader that does not normalize. The file itself must be POSIX.
+    expect([...fastTests(), ...slowTests()].filter((f) => f.includes("\\"))).toEqual([]);
+    const manifest = JSON.parse(readFileSync(join(REPO, "scripts", "slow-tests.json"), "utf8"));
+    expect(manifest.files.map((f: any) => f.path).filter((p: string) => p.includes("\\"))).toEqual([]);
   });
 
   test("the measured heavyweights stay out of test:fast", () => {
