@@ -8,6 +8,58 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### A superfície de contrato deixa de depender da extensão do arquivo de workflow
+
+O Squad Protocol v6 leva os workflows para Markdown: um grafo no frontmatter e
+um corpo em prosa. No schema 2 da superfície a chave do workflow era
+`workflow:workflows/x.yaml` e o binding da capability carregava a mesma
+extensão, então converter um arquivo para `.md` produzia `removed` + `added` +
+`rebound`: duas quebras por workflow, cerca de seiscentas quebras fantasmas na
+biblioteca por uma mudança que nenhum invocador consegue observar. O
+`SURFACE_SCHEMA` agora é 3. Os workflows são chaveados pelo stem
+(`workflow:workflows/x`, em minúsculas, `/` literal), os arquivos `.md` entram
+na lista ao lado de `.yaml`/`.yml`, e um binding `workflow:` perde a extensão.
+Quando dois arquivos dividem o mesmo stem, o `.md` vence a entrada e os demais
+ficam sinalizados em `collision` (metadado, nunca parte do hash da superfície)
+para o lint da v6 recusar. O `readSurface` normaliza um arquivo de schema 2
+para a mesma forma de chave sem mexer no número do schema, então o
+`diffSurfaces` continua reestabelecendo a base na transição (zero mudanças),
+enquanto um rename `.yaml → .md` com grafo idêntico, comparado sob um único
+schema, é `content_changed`, um patch. `contractBreaks(v5 instalado, gêmeo em
+Markdown chegando)` é `[]`; a prova está em `surface.test.ts` e em
+`workflow-readers-v6.test.ts`.
+
+Todo leitor que assumia `workflows/*.yaml` passa a aceitar `.md` e devolve
+para YAML exatamente o que devolvia antes. O `body-index.js` resolve uma
+referência sem extensão por `['', '.md', '.yaml', '.yml']` e desembrulha o
+frontmatter, de modo que `bodyTextFor(yaml) === bodyTextFor(md)` para um mesmo
+grafo sem prosa nova; o `asset-meta.js` tipa `workflows/*.md` como workflow; o
+`capability-validator.js` resolve um componente sem extensão para `.md`,
+`.yaml` ou `.yml`; o c7 da auditoria lista workflows `.md` e parseia o
+frontmatter; o `components_files_stub` deixa em paz um `.md` ou `.yml`
+existente e só cria `.yaml`; o inferidor v4 aceita as três codificações e
+continua emitindo `.yaml` onde é isso que existe; o `squad-doctor` varre
+`.yaml` e `.md` em `workflows/` (o filtro em `.md` tinha transformado essa
+varredura num no-op); o `init-squad` aponta para `workflows/<ref>.(yaml|md)`.
+Frontmatter com CRLF parseia em todo lugar.
+
+Os validadores executados aceitam as versões seguintes antes de qualquer
+conteúdo declará-las. `protocol: "6.0"` num squad segue o ramo de capabilities
+da v5 no `validate-squad`, no validador de capabilities, no critério c1 da
+auditoria e no registro, sem aviso de "unknown protocol"; `protocol: "2.0"`
+numa empresa passa nos schemas do manifesto e do registro. Os campos que os
+cortes seguintes vão autorar são aceitos como opcionais e limitados, e nada os
+lê ainda: capability `acceptance[]` (máx. 12), `evaluator{}`, `requires[]`
+(máx. 8, prefixo `slug:` opcional) e `consumes[]` (máx. 20); empresa
+`squads_preferred[]`, `not_for[]` e `run_budget_usd`; funcionário
+`pinned_mind_clones[]` (máx. 2), `squads_preferred[]` e `acceptance[]`.
+Nenhum squad ou empresa muda de comportamento: um manifesto v5 parseia para o
+mesmo objeto de antes (`validators-protocol-versions.test.ts`), os 47 squads
+do genesis continuam imprimindo `[PASS]`, e as fixtures (v5 `steps`, v5
+`agent_sequence`, v6 mínimo, colisão de stem, empresa v1 e v2, um mind-clone)
+são geradas em `mkdtemp` por `tests/fixtures/protocol-entities.ts`, nunca
+gravadas como arquivos.
+
 ### O recibo da Message volta a ser imediato, e uma pergunta nunca vira um Gauntlet
 
 Desde o #113 o `AgentXCanaryQueue.submit()` esperava o roteador agêntico antes

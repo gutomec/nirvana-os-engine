@@ -8,6 +8,54 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### The contract surface stops depending on the workflow file extension
+
+Squad Protocol v6 moves workflows to Markdown: a frontmatter graph plus a prose
+body. Under surface schema 2 the workflow key was `workflow:workflows/x.yaml`
+and the capability binding carried the same extension, so converting one file
+to `.md` produced `removed` + `added` + `rebound`: two breaks per workflow,
+about six hundred phantom breaks across the library for a change no invoker
+can observe. `SURFACE_SCHEMA` is now 3. Workflows are keyed by stem
+(`workflow:workflows/x`, lowercased, literal `/`), `.md` files are listed next
+to `.yaml`/`.yml`, and a `workflow:` binding drops its extension. When two
+files share a stem the `.md` wins the entry and the others are flagged in
+`collision` (metadata, never part of the surface hash) for the v6 lint to
+reject. `readSurface` normalizes a schema-2 file to the same key form without
+touching its schema number, so `diffSurfaces` still re-establishes the
+baseline across the transition (zero changes) while a `.yaml → .md` rename
+with an identical graph, compared under one schema, is `content_changed`, a
+patch. `contractBreaks(installed v5, incoming Markdown twin)` is `[]`; proof in
+`surface.test.ts` and `workflow-readers-v6.test.ts`.
+
+Every reader that assumed `workflows/*.yaml` now accepts `.md` and returns for
+YAML exactly what it returned before. `body-index.js` resolves a bare ref
+through `['', '.md', '.yaml', '.yml']` and unwraps the frontmatter, so
+`bodyTextFor(yaml) === bodyTextFor(md)` for one graph with no new prose;
+`asset-meta.js` types `workflows/*.md` as a workflow; `capability-validator.js`
+resolves a bare component to `.md`, `.yaml` or `.yml`; the audit's c7 lists
+`.md` workflows and parses their frontmatter; `components_files_stub` leaves an
+existing `.md` or `.yml` alone and only ever creates `.yaml`; the v4 inferrer
+accepts the three encodings and keeps emitting `.yaml` where that is what
+exists; `squad-doctor` scans `.yaml` and `.md` under `workflows/` (its filter
+on `.md` had made that scan a no-op); `init-squad` points at
+`workflows/<ref>.(yaml|md)`. Frontmatter with CRLF parses everywhere.
+
+The executed validators accept the next versions before any content declares
+them. `protocol: "6.0"` on a squad takes the v5 capabilities branch in
+`validate-squad`, the capability validator, audit criterion c1 and the
+registry, with no "unknown protocol" warning; `protocol: "2.0"` on a business
+passes the manifest and registry schemas. The fields the following cuts will
+author are accepted as optional and bounded, and nothing reads them yet:
+capability `acceptance[]` (max 12), `evaluator{}`, `requires[]` (max 8,
+optional `slug:` prefix) and `consumes[]` (max 20); business
+`squads_preferred[]`, `not_for[]` and `run_budget_usd`; employee
+`pinned_mind_clones[]` (max 2), `squads_preferred[]` and `acceptance[]`. No
+squad or business changes behavior: a v5 manifest parses to the same object as
+before (`validators-protocol-versions.test.ts`), the 47 genesis squads still
+print `[PASS]`, and the fixtures (v5 `steps`, v5 `agent_sequence`, minimal v6,
+stem collision, business v1 and v2, a mind-clone) are generated in `mkdtemp`
+by `tests/fixtures/protocol-entities.ts`, never committed as files.
+
 ### The Message receipt is immediate again, and a question never becomes a Gauntlet
 
 Since #113 `AgentXCanaryQueue.submit()` awaited the agentic router before
