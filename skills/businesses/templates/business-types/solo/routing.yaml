@@ -8,10 +8,4 @@ brief_intake:
 # auto_routes:
 #   - pattern: '\b(escrev\w*|redig\w*|write|writing)\b.*\b(ebook|e-?book|livro)\b'
 #     route_to: ceo
-#     confidence_threshold: 0.75
 auto_routes: []
-
-mention_routing: []
-
-ticket_intake:
-  default_assignee: ceo

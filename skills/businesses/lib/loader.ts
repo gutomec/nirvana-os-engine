@@ -60,6 +60,9 @@ export interface LoadedBusiness {
   org_chart: OrgChart;
   routing: Routing | null;
   permanent_memory_path: string | null;
+  /** Non-blocking findings (Business Protocol 2.0 §0): a deprecated or derived
+   *  field the loader tolerates and the admission gate reports. */
+  warnings: string[];
 }
 
 function expand(p: string): string {
@@ -150,6 +153,9 @@ export function loadBusiness(inputPath: string, opts: { strict?: boolean } = {})
     if (strict) throw new ValidationError(`Integrity check falhou em ${bizPath}`, result.errors);
     errors.push(...result.errors);
   }
+  // Warnings never fail a load, in strict mode either: v2 tolerates what it
+  // deprecates and lets `nrv validate business` be the place that says so (§0).
+  const warnings = [...result.warnings];
 
   if (errors.length > 0 && strict) throw new ValidationError(`Business ${manifest.name} tem erros`, errors);
 
@@ -160,6 +166,7 @@ export function loadBusiness(inputPath: string, opts: { strict?: boolean } = {})
     org_chart: orgChart,
     routing,
     permanent_memory_path: permanentMemoryPath,
+    warnings,
   };
 }
 
@@ -216,6 +223,7 @@ function main(argv: string[]): number {
   console.log(`  org_chart nodes: ${orgChartNodes}`);
   console.log(`  routing: ${biz.routing ? "present" : "absent"}`);
   console.log(`  permanent_memory: ${biz.permanent_memory_path || "<none>"}`);
+  for (const w of biz.warnings) console.log(`  WARN: ${w}`);
   return 0;
 }
 

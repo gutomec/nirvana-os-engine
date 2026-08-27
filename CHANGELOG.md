@@ -8,6 +8,65 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Business Protocol 2.0: routing metadata, pinned clones, preferred squads, acceptance per seat, one budget field, and the dead surface deprecated
+
+`skills/businesses/BUSINESS_PROTOCOL_V2.md` is the v2 delta over v1, in the same
+form the Squad Protocol v5 was a delta over v4: it documents only what changes.
+It was written against a measurement of the installed library, not against
+intent. On 61 businesses and 581 employees: 475 seats declared `heartbeat` and
+nothing ever scheduled one, 566 declared `self_score_contract` and nothing ever
+read one, 234 declared `escalation_triggers` and nothing ever fired one, no
+business had the `tickets/` directory the spec called mandatory, and none of the
+61 declared `run_budget_usd`, the only budget field dispatch actually reads.
+
+What the protocol gains: routing metadata is part of the contract at last
+(`produces`, `keywords`, `example_briefs`, and `not_for`, which is new to the
+schema); `auto_routes` has one home, `routing.yaml`, and a defined meaning —
+BM25 candidate first, then selection of the seat that receives the brief;
+`pinned_mind_clones` (max 2) is the first rung of the clone ladder PINNED →
+REQUESTED → SEARCH → AGENT, so a seat whose identity is a voice gets a binding
+instead of a hint; `squads_preferred` orders without closing while
+`squads_authorized` closes only when non-empty, and empty finally means the same
+as absent — open — which is what v1 §6.2 always said and the seat prompt did the
+opposite of, across 30 manifests and 201 seats; `acceptance[]` per seat replaces
+`self_score_contract` with a requirement the judge evaluates, converting
+mechanically from the 566 dead declarations; `run_budget_usd` is the single
+budget field and `budget_monthly_usd` retires, because nothing in the system
+accumulates a month. §16 is the admission gate's criteria catalog, id for id,
+held to it by a parity test.
+
+Deprecation is one policy, written once and referenced everywhere: the loader
+tolerates, the gate warns, only `--fix` converts or removes, and the loader stops
+accepting in a v3. Nineteen surfaces retire under it. Nothing about a v1 business
+changes: it loads, routes and dispatches exactly as before.
+
+The engine side of this cut is deliberately small, because reading these fields
+is a later cut. `not_for` now reaches the registry (`ScanItem`, `buildRegistry`),
+the router's business doc meta, and the routing digest's `not:` segment — five
+businesses had declared a fence for months and the router had never seen one,
+because a `.strict()` schema with no field cannot carry what the indexer does not
+emit. `RegistryBusinessesSchema` accepts it. `validateBusinessIntegrity` returns
+warnings next to errors and stops failing a load over `employee_count`, which is
+derived from disk (§6.12) — every one of the 61 authored the number the registry
+already counted, and paid with a failed load when it drifted.
+`check-not-for-fires` covers businesses in both paths, keyed `business:<slug>`,
+where the per-capability loop used to read nothing at all.
+
+The four business-type templates and `example-business` are Protocol 2.0:
+`acceptance` on the intake seat, no `heartbeat`, no `self_score_contract`, no
+authored `employee_count`, `run_budget_usd: 0`, a `not_for` block to fill, and no
+`escalation-triggers.yaml` / `mention_routing` / `ticket_intake` scaffolding for
+surfaces the protocol just retired. `skills/businesses/SKILL.md` stops pointing
+at six reference files, a `tests/smoke.ts` and an `adapters/` directory that
+never existed, names Zod as the validator that runs, and puts
+`nrv validate business <slug> --strict` in Round 5 of the wizard.
+
+Proof: `smoke.test.ts` (init → validate → index → list against a temp home, with
+the repo's own templates), `protocol-v2-spec-parity.test.ts`,
+`registry-description.test.ts` (a v1 and a v2 business indexing side by side,
+`not_for` reaching the router meta and staying out of the indexed text),
+`routing-digest.test.ts`, `not-for-fires.test.ts`.
+
 ### The Glance agent is a conversational maestro: one Message, one turn of the project's runtime session
 
 A Message of an adopted project no longer prepares a Run by default. With

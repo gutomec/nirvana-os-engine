@@ -50,6 +50,8 @@ DEFAULTS: dict[str, Any] = {
     "business_example_briefs_item_max": 1000,
     "business_keywords_max": 100,
     "business_capabilities_max": 100,
+    # Business Protocol 2.0 §6.9: routing fences.
+    "business_not_for_max": 40,
 
     # ── employee frontmatter ──
     # None = sem teto (comportamento histórico). Pode receber um inteiro.
@@ -102,6 +104,7 @@ SAFETY_BOUNDS: dict[str, tuple[Optional[float], Optional[float]]] = {
     "business_example_briefs_item_max": (200, 2000),
     "business_keywords_max": (15, 300),
     "business_capabilities_max": (20, 500),
+    "business_not_for_max": (5, 200),
 
     "employee_description_max": (200, 8000),  # se definido (None ignora)
     "employee_max_turns_max": (50, 1000),     # >1000 é risco de runaway

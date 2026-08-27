@@ -1,6 +1,6 @@
 name: example-solo
 version: 1.0.0
-protocol: "1.0"
+protocol: "2.0"
 description: >
   Business solo de exemplo. Single-employee setup que funciona como prova de
   conceito mínima. Use como base para criar businesses customizadas via wizard
@@ -26,9 +26,12 @@ example_briefs:             # >=3; >=1 EN and >=1 PT; symptom-phrased; conjugate
   - "TODO: EN brief phrased as a real user ask, conjugated verb form"
   - "TODO: brief PT como o dono escreveria em pânico, verbo conjugado"
   - "TODO: brief cobrindo a forma no infinitivo (quero lançar... / launch...)"
+not_for:                    # exclusion fences (§6): 2-4 content words, 5-80 chars, no parentheses
+  - "TODO: two-word fence"
+  - "TODO: cerca curta"
 
-employee_count: 1
 authority_level: tier-3
+run_budget_usd: 0            # per-run ceiling in USD; 0 = unlimited (v2 §6.11)
 operation_mode: zero_human
 
 runtime_requirements:
