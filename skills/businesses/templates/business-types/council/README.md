@@ -6,12 +6,11 @@ Este diretório é um template rodável de business mínima válida (1 employee 
 
 ```
 example-business/
-├── business.yaml                 # manifest v1
+├── business.yaml                 # manifest protocol 2.0
 ├── org-chart.yaml                # hierarquia (CEO sem reports)
 ├── routing.yaml                  # brief_intake → ceo
-├── escalation-triggers.yaml      # 3 triggers default (budget, scope creep, legal)
 ├── employees/
-│   └── ceo.md                    # CEO com self_score_contract + brief_intake=true
+│   └── ceo.md                    # CEO com acceptance + brief_intake=true
 ├── memory/
 │   └── permanent.md              # memória cross-session (skeleton)
 └── README.md                     # este arquivo
@@ -28,20 +27,20 @@ Não modifique este diretório. Use como referência ou ponto de partida:
 # Ou copy manual:
 cp -R ~/.nirvana/skills/businesses/templates/example-business ~/businesses/minha-empresa
 # Editar ~/businesses/minha-empresa/business.yaml e ajustar nome, domínios, descrição.
-# Editar ~/businesses/minha-empresa/employees/ceo.md (description, criteria do self_score).
+# Editar ~/businesses/minha-empresa/employees/ceo.md (description, entradas de acceptance).
 # Validar:
-*business validate minha-empresa
+nrv validate business minha-empresa --strict
 ```
 
 ## Validação
 
-Este template passa em todas as checks do `validateBusinessIntegrity`:
+Este template passa no portão de admissão (`nrv validate business <slug>`):
 
-- Manifest válido contra `business.schema.json`.
+- Manifest válido contra o schema Zod executado (`_shared/validators/validators.ts`).
 - Exatamente 1 brief_intake (ceo).
-- BP7 não-aplicável (employee_count = 1, antagonist desnecessário).
+- BP7 não-aplicável (1 funcionário, antagonista desnecessário).
 - Org chart sem ciclos, exatamente 1 CEO (`reports: []`).
-- Self-score contract com 3 criteria.
+- Bloco `acceptance` com 3 critérios no cargo de intake (v2 §11).
 
 ## Outros templates
 
@@ -49,4 +48,4 @@ Este template passa em todas as checks do `validateBusinessIntegrity`:
 - `template agency`: CEO + 4-7 specialists + 1 antagonist (agency model com BP7 atendido)
 - `template custom`: wizard pergunta tudo
 
-Veja `references/01-creation.md` para detalhes de cada template.
+O fluxo completo do wizard está em `SKILL.md` (§Wizard flow).

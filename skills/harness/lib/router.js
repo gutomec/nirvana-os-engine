@@ -354,6 +354,12 @@ function buildMatchDocs(squadsRegistry, businessesRegistry) {
           description: b.description || '',
           domains: b.domains || [],
           capabilities: b.capabilities || [],
+          // Business Protocol 2.0 §6.9. The not_for penalty in applyAdjustments
+          // reads meta.not_for and has since routing-360 Phase 2; a business
+          // never had one to read, because the registry dropped the field.
+          // Deliberately NOT part of `text`: a fence is an exclusion signal,
+          // and indexing it would make the brief it excludes match better.
+          not_for: b.not_for || [],
           operation_mode: b.operation_mode || null,
           authority_level: b.authority_level || null,
           manifest_path: b.manifest_path || null,

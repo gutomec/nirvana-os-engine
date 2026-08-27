@@ -34,6 +34,9 @@ function fixtureInput(): DigestInput {
           "Quero uma página de vendas para meu curso de fotografia",
         ],
         keywords: ["landing page", "página de destino", "pagina de destino", "sales page", "página de vendas"],
+        // Business-level not_for (Business Protocol 2.0 §6.9). The registry now
+        // carries it, so the digest's `not:` segment finally has an input.
+        not_for: ["fiction ghostwriting", "video promocional"],
       },
       "acme-books": {
         name: "Acme Books",
@@ -144,6 +147,14 @@ describe("routing digest — format grammar", () => {
     const jane = sectionLines(r.text, "mind-clones").find((l) => l.startsWith("jane-doe"))!;
     expect(jane).toContain("grids");
     expect(jane).not.toContain("extra-domain"); // 8 declared, 6 kept
+  });
+
+  test("business not_for renders as the not: segment (Business Protocol 2.0)", () => {
+    const acme = sectionLines(r.text, "businesses").find((l) => l.startsWith("acme-web"))!;
+    expect(acme).toContain("not: fiction ghostwriting; video promocional");
+    // A business without fences gains no empty segment.
+    const books = sectionLines(r.text, "businesses").find((l) => l.startsWith("acme-books"))!;
+    expect(books).not.toContain("not:");
   });
 
   test("business produces are capped at top 6", () => {

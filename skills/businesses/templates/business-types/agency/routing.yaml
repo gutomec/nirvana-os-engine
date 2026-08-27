@@ -9,6 +9,3 @@ auto_routes:
   route_to: director-ops
 - pattern: type:devils_advocate_review
   route_to: antagonist
-mention_routing: []
-ticket_intake:
-  default_assignee: ceo

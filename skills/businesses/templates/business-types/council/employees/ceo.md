@@ -17,31 +17,21 @@ tools:
   - WebSearch
   - WebFetch
 model: inherit
-budget_monthly_usd: 100.0
 is_antagonist: false
 is_brief_intake: true
-self_score_contract:
-  required_before_handoff: true
-  criteria:
-    - id: brief_understood
-      description: "O brief foi compreendido corretamente, com escopo e constraints claros."
-      threshold: 0.8
-      weight: 1.0
-    - id: deliverable_actionable
-      description: "O deliverable é executável e tem próximos passos claros."
-      threshold: 0.8
-      weight: 1.0
-    - id: tone_appropriate
-      description: "Tom e linguagem coerentes com o contexto do brief."
-      threshold: 0.7
-      weight: 0.5
-  on_below_threshold: revise
-  max_revise_iterations: 2
-heartbeat:
-  cadence: weekly
-  enabled: false   # opt-in — a scaffold must not switch behavior on by itself
-mentions:
-  notification_priority: normal
+acceptance:                  # v2 §11 — what the judge checks before this seat delivers
+  - id: brief_understood
+    description: "O brief foi compreendido corretamente, com escopo e constraints claros."
+    blocking: true
+    minimum_score: 0.8
+  - id: deliverable_actionable
+    description: "O deliverable é executável e tem próximos passos claros."
+    blocking: true
+    minimum_score: 0.8
+  - id: tone_appropriate
+    description: "Tom e linguagem coerentes com o contexto do brief."
+    blocking: true
+    minimum_score: 0.7
 ---
 
 # CEO — Council
