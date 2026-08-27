@@ -151,6 +151,8 @@ and a competitive teardown.
 | `nrv dispatch --business <slug> \| --squad <slug> \| --agent-x "<brief>" --exec` | 针对你指定的目标运行一份简报；从不咨询路由器 |
 | `nrv run <business> "<brief>" --execution-mode=gauntlet --gauntlet-intensity=light\|balanced\|exhaustive` | 选择进入 Gauntlet：候选、评估和修订轮次，分三档强度（Business 目标需要 `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST`） |
 | `nrv multi-target plan\|run\|status <plan.json>` | 在 Run Kernel 之上编译、执行或检视一份多目标计划（`NIRVANA_MULTI_TARGET_KILL_SWITCH=1` 关闭 `run`） |
+| `nrv validate <squad\|business\|clone> <slug> [--fix]` | 单个实体的准入门；`--all` 检查已安装的全部，`--fix` 修好能修的部分，不凭空编造 |
+| `nrv migrate <slug> --to 6 [--apply]` | 把一个 squad 转换到 Squad Protocol 6.0；默认只做 dry run，`--apply` 才写入并留下备份 |
 | `nrv update <pack>` | 更新一个已安装的 pack |
 | `nrv doctor` | 检查安装；在 Windows 上，`nrv install --repair-path` 会清理它警告过的用户 PATH 条目 |
 
@@ -174,4 +176,4 @@ and a competitive teardown.
 
 许可：Nirvana-OS Sustainable Use License (SUL) v1.0。源码公开发布、可公开阅读，引擎可免费使用。它是 source-available，而非 OSI 批准的开源许可，某些商业用途需要单独的商业许可。在依赖任何摘要（包括这一段）之前，请先阅读 [LICENSE](./LICENSE)。
 
-状态：beta（0.x，当前为 0.8.1）。引擎今天就能用，几分钟内即可安装。在 1.0 之前，预计接口表面会持续变动。
+状态：beta（0.x，当前为 0.10.0）。引擎今天就能用，几分钟内即可安装。在 1.0 之前，预计接口表面会持续变动。

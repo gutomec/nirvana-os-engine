@@ -151,6 +151,8 @@ and a competitive teardown.
 | `nrv dispatch --business <slug> \| --squad <slug> \| --agent-x "<brief>" --exec` | आपके नामित लक्ष्य के विरुद्ध एक ब्रीफ़ चलाता है; राउटर से कभी नहीं पूछा जाता |
 | `nrv run <business> "<brief>" --execution-mode=gauntlet --gauntlet-intensity=light\|balanced\|exhaustive` | Gauntlet में opt-in करता है: तीन तीव्रताओं में उम्मीदवार, मूल्यांकन और संशोधन दौर (Business लक्ष्यों को `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST` चाहिए) |
 | `nrv multi-target plan\|run\|status <plan.json>` | Run Kernel के ऊपर एक multi-target प्लान को कंपाइल, निष्पादित या निरीक्षण करता है (`NIRVANA_MULTI_TARGET_KILL_SWITCH=1` `run` को बंद करता है) |
+| `nrv validate <squad\|business\|clone> <slug> [--fix]` | एक एंटिटी का प्रवेश द्वार, या `--all` से हर इंस्टॉल की हुई एंटिटी; `--fix` जो ठीक हो सकता है उसे ठीक करता है, कुछ गढ़ता नहीं |
+| `nrv migrate <slug> --to 6 [--apply]` | एक squad को Squad Protocol 6.0 में बदलता है; डिफ़ॉल्ट dry run है, `--apply` बैकअप के साथ लिखता है |
 | `nrv update <pack>` | एक इंस्टॉल किया हुआ pack अपडेट करता है |
 | `nrv doctor` | इंस्टॉलेशन जाँचता है; Windows पर, `nrv install --repair-path` उन यूज़र PATH एंट्रीज़ को साफ़ करता है जिनके बारे में यह चेतावनी देता है |
 
@@ -174,4 +176,4 @@ and a competitive teardown.
 
 लाइसेंस: Nirvana-OS Sustainable Use License (SUL) v1.0। स्रोत प्रकाशित और खुले तौर पर पठनीय है, और इंजन उपयोग के लिए मुफ़्त है। यह source-available है, OSI-अनुमोदित ओपन-सोर्स लाइसेंस नहीं, और कुछ व्यावसायिक उपयोगों के लिए अलग व्यावसायिक लाइसेंस चाहिए। किसी भी सारांश पर, इस पर भी, भरोसा करने से पहले [LICENSE](./LICENSE) पढ़ें।
 
-स्थिति: beta (0.x, अभी 0.8.1)। इंजन आज काम करता है और मिनटों में इंस्टॉल होता है। 1.0 तक सतह के बदलते रहने की उम्मीद रखें।
+स्थिति: beta (0.x, अभी 0.10.0)। इंजन आज काम करता है और मिनटों में इंस्टॉल होता है। 1.0 तक सतह के बदलते रहने की उम्मीद रखें।

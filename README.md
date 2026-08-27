@@ -151,6 +151,8 @@ The paid layer is **content, not capability**: curated, ready-to-run collections
 | `nrv dispatch --business <slug> \| --squad <slug> \| --agent-x "<brief>" --exec` | Run a brief against a target you name; the router is never consulted |
 | `nrv run <business> "<brief>" --execution-mode=gauntlet --gauntlet-intensity=light\|balanced\|exhaustive` | Opt into the Gauntlet: candidates, evaluations, and revision rounds at three intensities (Business targets need `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST`) |
 | `nrv multi-target plan\|run\|status <plan.json>` | Compile, execute, or inspect a multi-target plan over the Run Kernel (`NIRVANA_MULTI_TARGET_KILL_SWITCH=1` turns `run` off) |
+| `nrv validate <squad\|business\|clone> <slug> [--fix]` | Admission gate for one entity, or `--all` for every installed one; `--fix` repairs what can be repaired without inventing anything |
+| `nrv migrate <slug> --to 6 [--apply]` | Convert a squad to Squad Protocol 6.0; dry run by default, `--apply` writes with a backup |
 | `nrv update <pack>` | Update an installed pack |
 | `nrv doctor` | Check the installation; on Windows, `nrv install --repair-path` cleans the user PATH entries it warns about |
 
@@ -174,4 +176,4 @@ Author: **Luiz Gustavo Vieira Rodrigues (gutomec / Prospecteezy)**. No co-author
 
 License: the Nirvana-OS Sustainable Use License (SUL) v1.0. The source is published and openly readable, and the engine is free to use. It is source-available, not an OSI-approved open-source license, and certain commercial uses require a separate commercial license. Read [LICENSE](./LICENSE) before relying on any summary, including this one.
 
-Status: beta (0.x, currently 0.8.1). The engine works today and installs in minutes. Expect the surface to keep moving until 1.0.
+Status: beta (0.x, currently 0.10.0). The engine works today and installs in minutes. Expect the surface to keep moving until 1.0.

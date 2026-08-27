@@ -176,9 +176,19 @@ try {
       process.stdout.write(`no open runs${root ? ` em ${root}` : ""}\n`);
       process.exit(0);
     }
+    // The `run_id` column is the point of the listing: `beat` and `close` take
+    // that id and nothing else. It used to print `project_id` alone — a
+    // directory basename — so the one command that discovers open runs handed
+    // over an identifier the two commands that act on them answer `not found`
+    // to, and the id had to be read out of the SQLite file by hand. Both are
+    // here now, labelled, because they are different things and neither
+    // substitutes for the other.
+    process.stdout.write(
+      `${"state".padEnd(10)} ${"run_id".padEnd(24)} ${"project".padEnd(24)} target  lease→\n`,
+    );
     for (const r of rows) {
       process.stdout.write(
-        `${r.state.padEnd(10)} ${String(r.project_id ?? "?").padEnd(28)} ${String(r.target_kind ?? "?")}/${String(r.target_slug ?? "?")}  lease→${String(r.lease_expires_at ?? "").slice(11, 19)}\n`,
+        `${r.state.padEnd(10)} ${r.run_id.padEnd(24)} ${String(r.project_id ?? "?").padEnd(24)} ${String(r.target_kind ?? "?")}/${String(r.target_slug ?? "?")}  lease→${String(r.lease_expires_at ?? "").slice(11, 19)}\n`,
       );
     }
     process.exit(0);

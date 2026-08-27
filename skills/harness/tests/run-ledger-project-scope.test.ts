@@ -376,6 +376,32 @@ describe("nrv run-track — the door a session actually touches", () => {
     expect(b.stdout).not.toContain("squad/brand");
   });
 
+  test("list prints the id that close takes, and the round trip works", () => {
+    // The discovery command has to hand over the identifier the acting commands
+    // consume. It printed `project_id` — a directory basename — and
+    // `nrv run-track close <what list showed>` answered `not found`, so the
+    // run_id had to be read out of the SQLite file by hand to close two runs.
+    const outputs = path.join(TMP, "rt-list-outputs");
+    fs.mkdirSync(outputs, { recursive: true });
+    const opened = runTrack(PROJ_A, ["open", "--target", "listable", "--kind", "squad", "--outputs", outputs]);
+    expect(opened.status).toBe(0);
+    const runId = opened.stdout.trim();
+    expect(runId).toMatch(/^run-/);
+
+    const listed = runTrack(PROJ_A, ["list"]);
+    expect(listed.status).toBe(0);
+    const line = listed.stdout.split("\n").find(l => l.includes("squad/listable"));
+    expect(line).toBeDefined();
+    const columns = line!.trim().split(/\s+/);
+    expect(columns[1]).toBe(runId);
+    // project_id did not go away — it is a second, labelled column.
+    expect(listed.stdout).toContain("project");
+
+    const closed = runTrack(PROJ_A, ["close", columns[1], "--state", "delivered"]);
+    expect(closed.status).toBe(0);
+    expect(getRun(openLedger(db), runId)!.state).toBe("delivered");
+  });
+
   test("closing another project's run is refused, and names the owner", () => {
     const before = getRun(openLedger(db), "ct-b")!;
     const r = runTrack(PROJ_A, ["close", "ct-b", "--state", "delivered"]);

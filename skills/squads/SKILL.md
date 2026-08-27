@@ -193,7 +193,7 @@ Activation is end-to-end: validate, install everything declared in `<squad>/depe
 
 - `*squad activate {name}` — full activation (delegates to `agents/squad-activator.md` persona)
 - `*squad activate {name} --dry-run` — preview only, no installs run
-- `*squad activate {name} --confirm-heavy` — auto-accept downloads >1 GB
+- `*squad activate {name} --confirm-heavy` — auto-accept downloads >1 GB, sudo installs, and installers that fetch a remote script and execute it
 - `*squad status {name}` — show activation state from `~/.claude/squads-state/<name>/activated.json`
 - `*squad deactivate {name}` — clear state file (does NOT uninstall packages)
 
@@ -206,7 +206,8 @@ steps below are the AUTHORING flow, run from inside a squad being built. A
 user who just installed a pack activates through the CLI instead:
 `nrv activate <slug>`, or `nrv activate --all --only-declared` to walk the
 whole library one squad at a time (add `--dry-run` to see the plan,
-`--confirm-heavy` to accept large downloads and sudo installs). Activation is
+`--confirm-heavy` to accept large downloads, sudo installs, and installers
+that pipe a remote script into a shell). Activation is
 advisory — nothing blocks a dispatch — but a squad whose task shells out to
 ffmpeg or epubcheck fails MID-RUN when the tool is absent, after the dispatch
 is already paid for. `nrv doctor` warns when a declared tool is missing.
