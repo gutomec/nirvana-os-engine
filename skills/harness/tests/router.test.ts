@@ -5,7 +5,7 @@
 // stage2Match, stage3Decide) over an in-memory registry, plus the sentinel cases
 // of findings E2/E6/E7. Sentinels depending on the calibration fixes are marked
 // `test.todo` — they become `test` when the fix lands (see plan, Phase 2).
-import { describe, expect, test, afterAll } from "bun:test";
+import { describe, expect, test, beforeAll, afterAll } from "bun:test";
 import { createRequire } from "node:module";
 
 // Router tests are deterministic and zero-token: force the dense arm OFF,
@@ -351,5 +351,144 @@ describe("stage2MatchHybrid — fallback sem neural", () => {
   test("mesmo topo que o BM25 quando o denso está inativo", async () => {
     const hybrid = await router.stage2MatchHybrid(intent, REG, { brief: "background check do fornecedor", topK: 5 });
     expect(hybrid[0].meta.squad).toBe("sherlock-holmes-nirvana");
+  });
+});
+
+// ── Execution fields on the way out (PR4) ────────────────────────────────
+// The squads registry stopped dropping what a capability declares; the router
+// is the pipe that carries it to the consumers waiting on the other side.
+// budget.js has read `estimated_cost_usd` off the target since it was written
+// and never once found one, because the field died at index time and the match
+// doc had no slot for it. Nothing here touches scoring: the fields ride in
+// `meta` and in the stage-5 plan, never in the indexed `text`.
+describe("buildMatchDocs — declared execution fields reach meta", () => {
+  const EMPTY_BIZ = { businesses: {}, _business_routing: {} };
+  const REG_WITH_FIELDS = {
+    domains: {},
+    capabilities: {
+      "fixture.rich.execute": [{
+        squad: "rich-squad",
+        description: "Builds the fixture artifact end to end",
+        domains: ["testing"],
+        examples: ["build the fixture artifact"],
+        estimated_cost_usd: 4.25,
+        parallel_safe: true,
+        writes_paths: ["outputs/fixture/**"],
+        model_hint: "opus",
+      }],
+      "fixture.bare.execute": [{
+        squad: "bare-squad",
+        description: "Declares nothing optional",
+        domains: ["testing"],
+        examples: ["do the bare thing"],
+      }],
+    },
+  };
+  const docFor = (capId: string) => router
+    .buildMatchDocs(REG_WITH_FIELDS, EMPTY_BIZ)
+    .find((d: any) => d.meta?.capability_id === capId && !d.meta?.via_body);
+
+  test("meta carries estimated_cost_usd, parallel_safe, writes_paths and model_hint", () => {
+    const meta = docFor("fixture.rich.execute").meta;
+    expect(meta.estimated_cost_usd).toBe(4.25);
+    expect(meta.parallel_safe).toBe(true);
+    expect(meta.writes_paths).toEqual(["outputs/fixture/**"]);
+    expect(meta.model_hint).toBe("opus");
+  });
+
+  test("a capability that declares none of them gains no keys", () => {
+    const meta = docFor("fixture.bare.execute").meta;
+    for (const key of ["estimated_cost_usd", "parallel_safe", "writes_paths", "model_hint"]) {
+      expect(meta).not.toHaveProperty(key);
+    }
+  });
+
+  test("the indexed text is untouched — these fields never enter scoring", () => {
+    const doc = docFor("fixture.rich.execute");
+    expect(doc.text).not.toContain("4.25");
+    expect(doc.text).not.toContain("outputs/fixture");
+    expect(doc.text).not.toContain("opus");
+  });
+
+  test("stage4BudgetCheck finally estimates from the declared cost", () => {
+    const doc = docFor("fixture.rich.execute");
+    const check = router.stage4BudgetCheck({ id: doc.id, meta: doc.meta }, { max_cost_usd: 10 });
+    expect(check.estimated_usd).toBe(4.25);
+    expect(check.breakdown.source).toBe("target.estimated_cost_usd");
+    expect(check.ok).toBe(true);
+  });
+
+  test("without a declared cost the estimate still falls back to the baseline", () => {
+    const doc = docFor("fixture.bare.execute");
+    const check = router.stage4BudgetCheck({ id: doc.id, meta: doc.meta }, { max_cost_usd: 10 });
+    expect(check.breakdown.source).toBeUndefined();
+    expect(check.breakdown.type).toBe("squad_capability");
+  });
+
+  test("stage5Invoke puts the four fields in the invocation plan", () => {
+    const doc = docFor("fixture.rich.execute");
+    const plan = router.stage5Invoke({ id: doc.id, meta: doc.meta }, "build the fixture artifact", {});
+    expect(plan.estimated_cost_usd).toBe(4.25);
+    expect(plan.parallel_safe).toBe(true);
+    expect(plan.writes_paths).toEqual(["outputs/fixture/**"]);
+    expect(plan.model_hint).toBe("opus");
+  });
+
+  test("the plan of a capability that declares none of them carries nulls, not junk", () => {
+    const doc = docFor("fixture.bare.execute");
+    const plan = router.stage5Invoke({ id: doc.id, meta: doc.meta }, "do the bare thing", {});
+    expect(plan.estimated_cost_usd).toBeNull();
+    expect(plan.parallel_safe).toBeNull();
+    expect(plan.writes_paths).toBeNull();
+    expect(plan.model_hint).toBeNull();
+  });
+});
+
+// The chain the acceptance criterion actually asks about: a squad.yaml that
+// declares a cost, indexed by the real indexer, routed by the real router, and
+// priced by the real budget module. The two halves above each prove their own
+// side; this one fails if either end renames the field.
+describe("declared cost, end to end: squad.yaml → registry → router → budget", () => {
+  const squadsRegistry = require("../../squads/lib/registry.js");
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const nodePath = require("node:path");
+
+  let tmp = "";
+  let root = "";
+
+  beforeAll(() => {
+    tmp = fs.mkdtempSync(nodePath.join(os.tmpdir(), "nrv-router-cost-"));
+    root = nodePath.join(tmp, "squads");
+    fs.mkdirSync(nodePath.join(root, "priced-squad"), { recursive: true });
+    fs.writeFileSync(nodePath.join(root, "priced-squad", "squad.yaml"), `name: priced-squad
+version: 1.0.0
+protocol: "5.0"
+description: A fixture squad that prices its own capability in the manifest.
+capabilities:
+  - id: fixture.priced.execute
+    description: Renders the priced fixture artifact from a brief, start to finish.
+    domains: [testing]
+    examples: ["render the priced fixture artifact"]
+    estimated_cost_usd: 7.5
+    invoke:
+      type: task
+      ref: tasks/render
+`);
+  });
+
+  afterAll(() => {
+    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* best effort */ }
+  });
+
+  test("the 7.50 USD the manifest declares is the 7.50 USD the pre-flight estimates", () => {
+    const reg = squadsRegistry.build([root]);
+    const doc = router
+      .buildMatchDocs(reg, { businesses: {}, _business_routing: {} })
+      .find((d: any) => d.meta?.capability_id === "fixture.priced.execute" && !d.meta?.via_body);
+    const check = router.stage4BudgetCheck({ id: doc.id, meta: doc.meta }, { max_cost_usd: 10 });
+    expect(check.estimated_usd).toBe(7.5);
+    expect(check.breakdown.source).toBe("target.estimated_cost_usd");
+    expect(router.stage5Invoke({ id: doc.id, meta: doc.meta }, "render it", {}).estimated_cost_usd).toBe(7.5);
   });
 });

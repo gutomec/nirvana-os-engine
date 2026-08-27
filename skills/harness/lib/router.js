@@ -169,6 +169,19 @@ function buildMatchDocs(squadsRegistry, businessesRegistry) {
           exampleBriefs, exampleBriefs,
           produces,
         ].filter(Boolean).join(' ');
+        // Execution fields the registry now carries (PR4). They ride in `meta`
+        // and never in `text`: budget.js estimates from `estimated_cost_usd`
+        // (via stage4BudgetCheck, which reads target.meta), the DAG planner and
+        // the race detector schedule from `parallel_safe` / `writes_paths`, and
+        // the runtime picks a model from `model_hint`. Spread, so a capability
+        // that declares none of them produces the meta it produced before —
+        // scoring reads none of these keys either way.
+        const execMeta = {};
+        if (typeof p.estimated_cost_usd === 'number') execMeta.estimated_cost_usd = p.estimated_cost_usd;
+        if (typeof p.parallel_safe === 'boolean') execMeta.parallel_safe = p.parallel_safe;
+        if (Array.isArray(p.writes_paths) && p.writes_paths.length > 0) execMeta.writes_paths = p.writes_paths;
+        if (typeof p.model_hint === 'string') execMeta.model_hint = p.model_hint;
+
         docs.push({
           id: `squad_capability:${p.squad}:${capId}`,
           text,
@@ -183,6 +196,7 @@ function buildMatchDocs(squadsRegistry, businessesRegistry) {
             score_boost: typeof p.score_boost === 'number' ? p.score_boost : 1.0,
             invoke: p.invoke || null,
             examples: p.examples || [],
+            ...execMeta,
           },
         });
 
@@ -215,6 +229,7 @@ function buildMatchDocs(squadsRegistry, businessesRegistry) {
               score_boost: typeof p.score_boost === 'number' ? p.score_boost : 1.0,
               invoke: p.invoke || null,
               examples: p.examples || [],
+              ...execMeta,
             },
           });
         }
@@ -1155,6 +1170,14 @@ function stage5Invoke(target, brief, ctx) {
     invoke: meta.invoke || null,
     fidelity_status: meta.fidelity_status || null,
     operation_mode: meta.operation_mode || null,
+    // Declared execution facts, carried so the adapter that dispatches this
+    // plan can act on them: cost for the budget pre-flight, parallel_safe and
+    // writes_paths for scheduling, model_hint for the runtime. `null` when the
+    // capability declared nothing — the same convention as the fields above.
+    estimated_cost_usd: typeof meta.estimated_cost_usd === 'number' ? meta.estimated_cost_usd : null,
+    parallel_safe: typeof meta.parallel_safe === 'boolean' ? meta.parallel_safe : null,
+    writes_paths: Array.isArray(meta.writes_paths) ? meta.writes_paths : null,
+    model_hint: meta.model_hint || null,
     adapter_hint: ctx && ctx.runtime ? ctx.runtime : 'claude-code',
     loader,
     inherit_context: true,

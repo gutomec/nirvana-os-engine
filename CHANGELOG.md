@@ -8,6 +8,56 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### The registry stops dropping what a capability declares
+
+A capability has been allowed to declare `estimated_cost_usd` for two protocol
+versions, and `budget.js` has estimated cost from that field since the day it
+was written. It never once found one. Twenty lines of `squads/lib/registry.js`
+projected every capability down to seven keys at index time, so nine declared
+fields died between the manifest and every reader that wanted them. The DAG
+planner and the race detector had the same hole, on `parallel_safe` and
+`writes_paths`.
+
+The index now carries what the manifest declares, and only what it declares: an
+undeclared field emits no key, so a library that uses none of this produces the
+registry it produced before, byte for byte.
+
+| Now carried, when declared | Reader waiting for it |
+|---|---|
+| `estimated_cost_usd` | `harness/lib/budget.js`, the pre-flight cost estimate |
+| `parallel_safe`, `writes_paths` | the multi-target DAG planner and race detector |
+| `model_hint`, `tools_required`, `inputs`, `outputs` | execution and the invocation plan |
+| `contributions` | the prompt-assembly overlay |
+| `fidelity` (the whole block) | evaluator selection and Gauntlet thresholds |
+| `acceptance`, `evaluator`, `requires`, `consumes` | the v6 contracts, ahead of their readers |
+
+`fidelity_status` stays exactly where it was for the readers that already use
+it. `RegistrySquadsSchema` in `validators.ts` finally declares the projection
+the indexer writes, borrowing each shape from `CapabilitySchema` so the index
+can never accept something a manifest could not have declared.
+
+Four of those fields travel one hop further: `router.js` puts
+`estimated_cost_usd`, `parallel_safe`, `writes_paths` and `model_hint` in the
+match document's `meta` and in the stage-5 invocation plan. None of them enters
+the indexed text, and the proof is per case rather than aggregate. Across the
+3,449 golden briefs the top-1 destination is identical for every single one
+before and after, and the 40 negatives and ambiguity probes keep the signal they
+had.
+
+### The squads section of the routing digest states what a squad produces
+
+The digest's business lines have carried `domains:` and `produces:` since the
+file was written. The squad lines carried neither, while the router's own prompt
+tells the model that the OBJECT of a brief decides most of the call. The
+registry had been aggregating both at squad level the whole time.
+
+Both segments now render on the squad line, capped at 10 domains and 6 produces,
+the same caps the business line uses. The degradation ladder absorbs the cost:
+L3 cuts squad produces to 3, and L4 drops the squad domain lists the way it
+already drops the clone ones. On the owner's library the digest sits at L4 and
+went from 44,664 to 48,618 tokens against the 50,000 budget, with 203 of 205
+squads now stating an object. Entries are still never dropped.
+
 ### The workflow reader: one canonical graph, every legacy dialect normalized
 
 A squad's workflow was the only artifact of the protocol with no single shape.
