@@ -263,11 +263,159 @@ export function squadFixture(root: string, slug: string, o: SquadOpts = {}): str
   return dir;
 }
 
-export function businessFixture(root: string, slug: string, o: { surface?: boolean; manifest?: string } = {}): string {
+export interface BusinessOpts {
+  surface?: boolean;
+  /** Replaces business.yaml wholesale (the malformed-manifest cases). */
+  manifest?: string;
+  /** Extra YAML appended to business.yaml, already at column 0. */
+  manifestExtra?: string;
+  protocol?: string;
+  /** Seat file name → content. Default: one intake seat, `ceo.md`. */
+  employees?: Record<string, string>;
+  /** Written when given; a business needs no routing.yaml to be admitted. */
+  routing?: string;
+  /** Replaces the derived org-chart.yaml; `null` leaves the file out. */
+  orgChart?: string | null;
+  readme?: string | null;
+  memory?: boolean;
+}
+
+/**
+ * A seat body the sufficiency scorer accepts: headings plus decision lines.
+ * `seat_thin` fires on a body without them, which is a different test.
+ */
+export const SEAT_BODY = [
+  "## Method",
+  "",
+  "- Read the brief twice before writing anything, and name what is missing.",
+  "- Decide the artifact type first; the format follows the decision, never leads it.",
+  "- When two readings of the brief are possible, state both and pick one out loud.",
+  "",
+  "## Thresholds",
+  "",
+  "- Reject a draft whose sources are not named and dated in the text itself.",
+  "- Escalate when the run would cost more than the budget the brief declared.",
+  "- Hand off only when every acceptance criterion of this seat is satisfied.",
+  "",
+].join("\n");
+
+/** The intake seat of the fixture: acceptance, a real body, protocol 2.0 shape. */
+export const INTAKE_SEAT = [
+  "---",
+  "name: ceo",
+  "role: Chief executive of the fixture business",
+  "description: Receives every brief, decides the artifact and hands the work to the seat that owns it.",
+  "type: orchestrator",
+  "is_brief_intake: true",
+  "acceptance:",
+  "  - id: brief_understood",
+  "    description: the deliverable answers the brief that was actually written",
+  "    blocking: true",
+  "    minimum_score: 0.8",
+  "---",
+  "",
+  `# CEO`,
+  "",
+  SEAT_BODY,
+].join("\n");
+
+/** A complete, admitted business at <root>/businesses/<slug>. */
+export function businessFixture(root: string, slug: string, o: BusinessOpts = {}): string {
   const dir = path.join(root, "businesses", slug);
   fs.mkdirSync(path.join(dir, "employees"), { recursive: true });
-  fs.writeFileSync(path.join(dir, "business.yaml"), o.manifest ?? `name: ${slug}\nversion: 1.0.0\nprotocol: "1.0"\n`, "utf8");
-  fs.writeFileSync(path.join(dir, "employees", "ceo.md"), "---\nname: ceo\nrole: CEO\n---\n\n# CEO\n", "utf8");
+  const employees = o.employees ?? { "ceo.md": INTAKE_SEAT };
+  for (const [file, content] of Object.entries(employees)) fs.writeFileSync(path.join(dir, "employees", file), content, "utf8");
+
+  fs.writeFileSync(path.join(dir, "business.yaml"), o.manifest ?? [
+    `name: ${slug}`,
+    "version: 1.0.0",
+    `protocol: "${o.protocol ?? "2.0"}"`,
+    "description: Fixture business that turns a written brief into one artifact, decides the format from the brief and hands it back reviewed.",
+    "domains: [fixture_domain]",
+    "produces: [fixture-report]",
+    "keywords: [fixture, report, relatorio, relatório, brief]",
+    "example_briefs:",
+    '  - "turn this brief into the fixture report our team can read"',
+    '  - "preciso do relatório de fixture a partir deste brief"',
+    '  - "write the fixture report and review it before delivery"',
+    'not_for: ["logo design", "tax filing"]',
+    "run_budget_usd: 0",
+    "operation_mode: zero_human",
+    "runtime_requirements:",
+    "  policy: active",
+    ...(o.manifestExtra ? [o.manifestExtra] : []),
+    "",
+  ].join("\n"), "utf8");
+
+  if (o.orgChart !== null) {
+    fs.writeFileSync(path.join(dir, "org-chart.yaml"), o.orgChart ?? [
+      "chart:",
+      ...Object.keys(employees).flatMap((f, i) => {
+        const name = /^name:\s*(\S+)/m.exec(employees[f])?.[1] ?? f.replace(/\.md$/, "");
+        const root_ = i === 0;
+        const children = Object.keys(employees).slice(1).map((c) => /^name:\s*(\S+)/m.exec(employees[c])?.[1] ?? c.replace(/\.md$/, ""));
+        return [
+          `  - employee: ${name}`,
+          `    reports: [${root_ ? "" : (/^name:\s*(\S+)/m.exec(employees[Object.keys(employees)[0]])?.[1] ?? "ceo")}]`,
+          `    direct_reports: [${root_ ? children.join(", ") : ""}]`,
+          "    is_antagonist: false",
+        ];
+      }),
+      "",
+    ].join("\n"), "utf8");
+  }
+  if (o.routing) fs.writeFileSync(path.join(dir, "routing.yaml"), o.routing, "utf8");
+  if (o.readme !== null) {
+    fs.writeFileSync(path.join(dir, "README.md"), o.readme ?? [
+      `# ${slug}`,
+      "",
+      "Fixture business. It exists so the admission gate has something complete to",
+      "compare a broken business against.",
+      "",
+      "## Description",
+      "",
+      "Turns a written brief into one artifact and hands it back reviewed.",
+      "",
+      "## Employees",
+      "",
+      ...Object.keys(employees).map((f) => `- \`${f.replace(/\.md$/, "")}\``),
+      "",
+      "## Usage",
+      "",
+      "```bash",
+      `nrv validate business ${slug} --strict`,
+      "```",
+      "",
+      "## Domain",
+      "",
+      "One fixture domain, one produces slug, three example briefs.",
+      "",
+      "## Memory",
+      "",
+      "`memory/permanent.md` holds the curated facts every seat reads.",
+      "",
+      "## Notes",
+      "",
+      "Everything here is deliberately boring: the tests break one thing at a time.",
+      "",
+      "## History",
+      "",
+      "Created by the fixture builder, never by hand.",
+      "",
+      "## Contact",
+      "",
+      "Nobody: this business has no owner outside the test run.",
+      "",
+      "## License",
+      "",
+      "MIT, like the engine.",
+      "",
+    ].join("\n"), "utf8");
+  }
+  if (o.memory !== false) {
+    fs.mkdirSync(path.join(dir, "memory"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "memory", "permanent.md"), "# Permanent memory\n\n- The fixture business delivers one artifact per brief.\n", "utf8");
+  }
   if (o.surface !== false) writeSurfaceFor(dir, "business");
   return dir;
 }

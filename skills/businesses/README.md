@@ -214,7 +214,7 @@ Validators in `~/.nirvana/skills/_shared/validators/validators.{ts,py}` (Zod + P
 | Script | Purpose |
 |---|---|
 | `init-business.ts <name> [--template solo\|council\|agency]` | Interactive wizard |
-| `validate-business.ts <path>` | Manifest + integrity validation |
+| `validate-business.ts <slug\|path>\|--all [--fix] [--strict] [--json] [--report]` | Admission gate (Protocol 2.0 §16) |
 | `index-businesses.ts [--roots <dir>...]` | Rebuild registry |
 | `list-businesses.ts [--format json\|table]` | Enumerate registry |
 | `inspect-business.ts <slug>` | Detailed view |
