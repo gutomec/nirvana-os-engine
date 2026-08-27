@@ -23,7 +23,7 @@ Não há segundo lugar para a mesma coisa. As variáveis que viraram chave do sc
 | Glance | `glance.execution`, `maestro_max_budget_usd` |
 | Runtime | `runtime.provider_catalog_dir`, `allow_stale_catalog` |
 | Roteamento | `routing.mode`, `dense`, `on_router_failure` |
-| Supervisor | `supervisor.progress_ping_sec`, `stall_threshold_ms` |
+| Supervisor | `supervisor.progress_ping_sec`, `stall_threshold_ms`, `touch_events_max` |
 | Atualizações | `updates.check` |
 | Orçamento | `budget.default_max_cost_usd`, `default_max_tokens`, `default_max_handoffs`, `default_max_duration_seconds`, `on_budget_exceeded`, `auto_invoke_budget_usd` |
 | Baselines de custo | `baselines.squad_capability_usd`, `business_usd`, `per_handoff_usd` |

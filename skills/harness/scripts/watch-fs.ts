@@ -20,6 +20,18 @@
  * Ignores: .git/, node_modules/, .nirvana/state/, *.swp, .DS_Store, ~ tempfiles.
  *
  * Failure mode: log to stderr, don't crash. Survives single-file errors.
+ *
+ * WHY A DISPATCH DOES NOT SPAWN THIS. It would be the obvious way to give the
+ * Glance file-level progress, and it is the wrong one twice over: this daemon
+ * exits on SIGINT/SIGTERM and on nothing else, so a dispatch killed with
+ * SIGKILL leaves it appending to a log forever, and recursive fs.watch is not
+ * the same feature on the three systems (see the comment on the watcher
+ * below). A ledgered run gets that progress from the heartbeat sidecar
+ * instead, which already sweeps the outputs root every tick, already has four
+ * independent exits, and now emits the same `artifact_touched` from what the
+ * sweep found (run-ledger.ts heartbeatMain). This command stays for what never
+ * passes through a dispatch: a project being worked on by Cursor, Aider, or
+ * any agent with no hooks and no ledger row.
  */
 
 import * as fs from "node:fs";

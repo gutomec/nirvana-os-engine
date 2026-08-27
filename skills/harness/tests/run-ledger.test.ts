@@ -23,7 +23,7 @@ process.env.NIRVANA_RUN_LEDGER_DB = path.join(TMP, "default-ledger.sqlite");
 import {
   openLedger, openRun, getRun, markState, renewLease, abandon, incrementRetries,
   findExpired, findNonTerminal, countNonTerminal, resumeInfo, canTransition,
-  isTerminal, resolveLedgerDbPath, patchMeta, TERMINAL_STATES,
+  isTerminal, resolveLedgerDbPath, patchMeta, scanDir, latestMtimeMs, TERMINAL_STATES,
   type LedgerHandle,
 } from "../lib/run-ledger.ts";
 
@@ -243,5 +243,74 @@ describe("run-ledger — abandon and resume info", () => {
     expect(info.maxRetries).toBe(5);
     expect(info.meta.outputs_root).toBe("/tmp/x");
     expect(resumeInfo(h, "nope")).toBeNull();
+  });
+});
+
+describe("run-ledger — scanDir (what the heartbeat reports)", () => {
+  let dirSeq = 0;
+  /** A tree whose files are written with EXPLICIT mtimes, so the assertions
+   *  never depend on how fast the filesystem's clock ticks. */
+  function tree(files: Record<string, number>): string {
+    const dir = path.join(TMP, `scan-${dirSeq++}`);
+    for (const [rel, mtimeMs] of Object.entries(files)) {
+      const full = path.join(dir, rel);
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      fs.writeFileSync(full, rel, "utf8");
+      const when = new Date(mtimeMs);
+      fs.utimesSync(full, when, when);
+    }
+    return dir;
+  }
+  const rel = (dir: string, scan: ReturnType<typeof scanDir>) => scan.changed.map(f => path.relative(dir, f.path).split(path.sep).join("/"));
+
+  test("reports only what moved after the mark, oldest first, with size", () => {
+    const dir = tree({ "old.md": 1_000_000, "a/first.md": 2_000_000, "b/second.md": 3_000_000 });
+    const scan = scanDir(dir, 1_500_000, { limit: 10 });
+    expect(rel(dir, scan)).toEqual(["a/first.md", "b/second.md"]);
+    expect(scan.omitted).toBe(0);
+    expect(scan.changed[0].sizeBytes).toBe("a/first.md".length);
+    expect(scan.latestMs).toBeGreaterThanOrEqual(3_000_000);
+  });
+
+  test("noise is never progress: .git, node_modules, .nirvana, dist and editor tempfiles are excluded", () => {
+    const dir = tree({
+      "report.md": 3_000_000,
+      ".git/index": 3_000_000,
+      "node_modules/pkg/index.js": 3_000_000,
+      ".nirvana/state/run.json": 3_000_000,
+      "dist/bundle.js": 3_000_000,
+      "notes.md.swp": 3_000_000,
+      ".DS_Store": 3_000_000,
+    });
+    expect(rel(dir, scanDir(dir, 1_000_000, { limit: 50 }))).toEqual(["report.md"]);
+  });
+
+  test("noise still counts as liveness: latestMtimeMs sees what the report hides", () => {
+    const dir = tree({ "node_modules/pkg/index.js": 4_000_000 });
+    // Nothing to report, but the supervisor must still read the tree as alive —
+    // pruning the traversal would have silently changed that signal.
+    expect(scanDir(dir, 1_000_000, { limit: 50 }).changed).toEqual([]);
+    expect(latestMtimeMs(dir)).toBeGreaterThanOrEqual(4_000_000);
+  });
+
+  test("the limit keeps the FIRST touches and names how many it dropped", () => {
+    const dir = tree({ "s1.md": 2_000_000, "s2.md": 3_000_000, "s3.md": 4_000_000, "s4.md": 5_000_000 });
+    const scan = scanDir(dir, 1_000_000, { limit: 2 });
+    expect(rel(dir, scan)).toEqual(["s1.md", "s2.md"]);
+    expect(scan.omitted).toBe(2);
+  });
+
+  test("limit 0 reports nothing and still answers the liveness question", () => {
+    const dir = tree({ "x.md": 2_000_000 });
+    const scan = scanDir(dir, 1_000_000, { limit: 0 });
+    expect(scan.changed).toEqual([]);
+    expect(scan.omitted).toBe(0);
+    expect(scan.latestMs).toBeGreaterThanOrEqual(2_000_000);
+  });
+
+  test("a missing directory is empty, never a throw", () => {
+    const scan = scanDir(path.join(TMP, "nope-not-here"), 0, { limit: 10 });
+    expect(scan).toEqual({ latestMs: 0, changed: [], omitted: 0 });
+    expect(latestMtimeMs(path.join(TMP, "nope-not-here"))).toBe(0);
   });
 });

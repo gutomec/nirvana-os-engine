@@ -249,6 +249,9 @@ export const SETTINGS = {
   "supervisor.stall_threshold_ms": numberSetting("supervisor.stall_threshold_ms",
     "Milissegundos sem atividade até um run ser tratado como travado (supervisor e heartbeat do driver).",
     { default: 300_000, env: "NIRVANA_STALL_THRESHOLD_MS", type: z.number().int().positive(), expects: "inteiro > 0 (milissegundos)" }),
+  "supervisor.touch_events_max": numberSetting("supervisor.touch_events_max",
+    "Teto de eventos artifact_touched que o heartbeat emite por execução headless; 0 desliga o relato de arquivos.",
+    { default: 500, env: "NIRVANA_TOUCH_EVENTS_MAX", type: nonNegativeInt, expects: "inteiro >= 0 (eventos)" }),
 
   "updates.check": booleanSetting("updates.check",
     "Verifica se há release nova do engine (cache diário); false desliga.",

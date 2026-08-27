@@ -98,6 +98,54 @@ Abster-se não é aprovar. É uma rubrica pulada, e um arquivo sem nenhuma rubri
 não pulada continua caindo em INDETERMINATE, o que retém a entrega. Português,
 espanhol e toda língua de escrita latina seguem sendo julgados; separar esses
 casos exige detecção de idioma, não uma checagem de escrita.
+### O observador que já estava rodando aprende a dizer o que viu
+
+Um squad rodou 418 segundos no Codex em 27/08/2026 e escreveu 113 arquivos. O
+audit do dia guardou dezesseis eventos, onze deles `x_ledger_lease_renewed` —
+"ainda estou vivo", onze vezes, ao longo de sete minutos em que a Glance não
+conseguia dizer nada sobre onde o run estava. O disco sabia: os arquivos de cada
+passo do pipeline apareceram em ordem, cada um com carimbo de hora.
+
+Um daemon já varria aquele diretório. O `runWithLedgerHeartbeat` lança o
+heartbeat do ledger ao lado de todo filho headless, e ele percorre a árvore
+inteira de `--watch` a cada tick para responder a uma pergunta, "há atividade?",
+e jogava fora a resposta da mais útil, "qual atividade?". A varredura agora
+devolve as duas, pelo novo `scanDir`: a mtime mais nova, que decide o lease, e
+quais arquivos se moveram desde o tick anterior. Cada arquivo novo vira um
+`artifact_touched` com `file_path`, `size_bytes`, `cwd`,
+`source: "ledger-heartbeat"` e o `trace_id` do run. A Glance lê esse evento
+desde sempre, em quatro lugares.
+
+Nenhum processo novo entra no run, e esse é o ponto. O movimento óbvio era o
+despacho lançar o `nrv watch-fs`, que faz exatamente esse relato e hoje só é
+ligado por quem conhece o subcomando. Ele fecha em `SIGINT` ou `SIGTERM` e em
+mais nada, então um despacho morto por `SIGKILL` o deixa escrevendo num log para
+sempre, e ele observa por `fs.watch` recursivo, cujo comportamento nunca foi o
+mesmo nos três sistemas. O sidecar de heartbeat já tem quatro saídas
+independentes (a sentinela `--done`, o pid do pai morto, a linha do run ausente,
+o run em estado terminal), e ele consulta em vez de assinar, então um run que
+termina normalmente e um que morre de repente fecham o observador do mesmo
+jeito. O `nrv watch-fs` fica para o que nunca passa por despacho: um projeto
+tocado por Cursor, Aider ou qualquer agente sem hooks.
+
+Derivar o mesmo progresso do `creates[]` que todo passo de workflow v6 declara
+era o outro candidato, e perde em cobertura e em tempo. O pai fica bloqueado
+dentro de um `spawnSync` durante o run inteiro, então nada avalia esse cruzamento
+enquanto o trabalho acontece — a resposta chegaria quando o run terminasse, que é
+a própria janela cega. E `creates[]` só existe para squads com workflow: a
+branch do agent-x e a de business continuariam no escuro. Casar os arquivos
+relatados com o `creates[]` é um bom passo depois deste, em cima dele.
+
+O volume é limitado por construção. O intervalo do tick é a janela de
+coalescência, e dentro dela vale um teto de 25 eventos, mais o teto por filho da
+nova chave `supervisor.touch_events_max` (500 por padrão; `0` desliga o relato
+sem tocar no lease). Um tick truncado carrega `omitted` no último evento em vez
+de perder a diferença em silêncio. A ação é sempre `modify`: uma varredura vê
+que o arquivo se moveu, nunca que ele nasceu, e afirmar `create` a partir de uma
+mtime seria a alegação sem evidência que esse sinal existe para substituir. O
+ruído (`.git`, `node_modules`, `.nirvana`, `dist`, `build`, tempfiles de editor)
+sai só do RELATO — a varredura continua descendo nesses diretórios, porque
+podá-los mudaria a `latestMs` e com ela a prova de vida que o supervisor lê.
 
 ## 0.10.1 — 2026-08-27
 

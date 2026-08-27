@@ -119,6 +119,16 @@ Com vida, a linha ganha mais um lease e o audit recebe `x_ledger_grace_extended`
 
 A medição que motivou a regra (26/08/2026, `~/.nirvana/run-ledger.sqlite`): de 39 runs de empresa retidos desde 01/08, 35 tinham esse `last_error`, em 15 empresas e 10 dias, sem falha de gate. A empresa delegava a um squad e escrevia fora do próprio `outputs_root`. O limiar `supervisor.stall_threshold_ms` e o `AGENTIC_LEASE_SEC` não mudaram.
 
+## O que o heartbeat relata
+
+O sidecar de heartbeat (`heartbeatMain` em `skills/harness/lib/run-ledger.ts`, lançado desanexado por `runWithLedgerHeartbeat` em `skills/_shared/lib/host-agent-driver.ts`) já varria o diretório de `--watch` a cada tick para responder "há atividade?". A varredura agora devolve as duas respostas de uma vez, por `scanDir`: a mtime mais nova, que decide o lease, e **quais** arquivos se moveram desde o tick anterior. Cada arquivo novo vira um `artifact_touched` com `file_path`, `size_bytes`, `cwd`, `source: "ledger-heartbeat"` e o `trace_id` da linha do run, que é o que a Glance lê para dizer onde o run está.
+
+A medição que motivou isso (27/08/2026, trace `70341260-ff80-4c9b-9dd4-6925a36c6b99`): um squad rodou 418 s no Codex escrevendo 113 arquivos e o audit do dia guardou dezesseis eventos, onze deles `x_ledger_lease_renewed`. O disco sabia a ordem exata dos passos; o log dizia "vivo", onze vezes.
+
+Três limites nascem com a regra. O intervalo do tick (15 s por padrão) é a janela de coalescência, e dentro dela valem um teto de 25 eventos e o teto por execução de `supervisor.touch_events_max` (500; `0` desliga o relato sem tocar no lease). Um tick truncado carrega `omitted` no último evento em vez de sumir com a diferença. A ação é sempre `modify`: uma varredura por mtime vê que o arquivo se moveu, nunca que ele nasceu, e afirmar `create` a partir disso seria a alegação sem evidência que o sinal existe para substituir. E a lista de ruído (`.git`, `node_modules`, `.nirvana`, `dist`, `build`, tempfiles de editor) filtra só o **relato**: a varredura continua descendo nesses diretórios, porque podá-los mudaria a `latestMs` e com ela a prova de vida da seção anterior.
+
+Nenhum processo novo entra em cena, e é o ponto: o ciclo de vida do sidecar já tem quatro saídas independentes (sentinela `--done`, pid do pai morto, linha do run ausente, run em estado terminal), então um despacho que termina normalmente e um que morre de `SIGKILL` fecham o observador do mesmo jeito. `nrv watch-fs` continua existindo para o que não passa por despacho: um projeto tocado por Cursor, Aider ou qualquer agente sem hooks.
+
 ## Limites conhecidos
 
 Esta fundação não altera Gauntlet, runtime providers nem supervisor; o dispatch escreve no kernel apenas pela publicação do modo `standard` descrita acima. A outbox oferece entrega pelo menos uma vez, com identidade estável para deduplicação, porque exatamente uma vez entre SQLite e um side effect externo exige cooperação do consumer. A publicação atômica de artifacts além da verificação de `ArtifactRef` fica para o marco próprio previsto no plano incremental.
