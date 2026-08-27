@@ -107,17 +107,30 @@ describe("the maestro directive", () => {
   });
 
   test("the claude command line follows the driver's autonomy rule and names the session up front", () => {
-    const fresh = claudeTurnCommand({ sessionId: null, directive: "d", skipPermissions: true, maxBudgetUsd: 5 });
+    // The unit here is the argv this function BUILDS, so the resolver is INJECTED, for the same
+    // reason the shell test below injects one: with the default resolver the argv also depends on
+    // how the runner starts `claude`. On Windows the fake CLI on PATH is a `.cmd`, resolveExecutable
+    // reads it and prepends the script its launcher names (`bun <fake>\claude.ts`), and a slice
+    // counted from zero then measured the runner instead of this function.
+    const direct: ExecutableResolver = cli => ({ command: cli, args: a => a, shell: false });
+    const fresh = claudeTurnCommand({ sessionId: null, directive: "d", skipPermissions: true, maxBudgetUsd: 5 }, direct);
     expect(fresh.args.slice(0, 5)).toEqual(["-p", "--output-format", "stream-json", "--include-partial-messages", "--verbose"]);
     expect(fresh.args[fresh.args.indexOf("--session-id") + 1]).toBe(fresh.sessionId);
     expect(fresh.args).toContain("--dangerously-skip-permissions");
     expect(fresh.args[fresh.args.indexOf("--max-budget-usd") + 1]).toBe("5");
-    const resumed = claudeTurnCommand({ sessionId: "sid-1", directive: "d", skipPermissions: false, maxBudgetUsd: 0 });
+    const resumed = claudeTurnCommand({ sessionId: "sid-1", directive: "d", skipPermissions: false, maxBudgetUsd: 0 }, direct);
     expect(resumed.args[resumed.args.indexOf("--resume") + 1]).toBe("sid-1");
     expect(resumed.args).not.toContain("--session-id");
     expect(resumed.args).not.toContain("--dangerously-skip-permissions");
     expect(resumed.args[resumed.args.indexOf("--permission-mode") + 1]).toBe("acceptEdits");
     expect(resumed.args).not.toContain("--max-budget-usd");
+
+    // And the contract the Windows runner exercises for real: whatever the resolver puts in front
+    // of the flags travels with them, because command and args are spawned as one pair.
+    const prepending: ExecutableResolver = cli => ({ command: "bun", args: a => [`C:\\fake\\${cli}.ts`, ...a], shell: false });
+    const shimmed = claudeTurnCommand({ sessionId: null, directive: "d", skipPermissions: true, maxBudgetUsd: 0 }, prepending);
+    expect(shimmed.command).toBe("bun");
+    expect(shimmed.args.slice(0, 2)).toEqual(["C:\\fake\\claude.ts", "-p"]);
   });
 
   test("under a shell (a Windows .cmd) the directive travels by file and the flags after it survive", () => {

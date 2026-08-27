@@ -58,6 +58,57 @@ offline gate and the post-gate" é o único que ainda cruzou os 5 s sob aquela
 carga, 7 amostras em 400 contra 65 antes, porque roda o pipeline de entrega e o
 pós-gate em cima do kernel. Esse custo não é o que esta mudança remove, e ele
 também não tem orçamento. É um corte próprio.
+### O shim não é o programa: no Windows sobe o que ele nomeia
+
+Um `.cmd` escrito pelo npm não é a CLI. É um arquivo de lote de cinco linhas cuja
+única função é rodar `node <script> %*`. O driver vinha iniciando o arquivo de
+lote, o que significa iniciar o `cmd.exe`, e o `cmd.exe` encerra a linha de
+comando na primeira CR/LF de qualquer argumento. A versão 0.10.2 curou isso para
+o `claude` levando a diretiva para um arquivo. Oito adaptadores e a camada leve
+continuavam com a mesma forma, e uma cura replicada dez vezes é um desenho que
+não foi consertado.
+
+O `resolveExecutable` agora lê o shim, pega o interpretador e o script que ele
+nomeia, e sobe esse par direto. Sem shell, sem reinterpretação, sem linha de
+comando para ninguém cortar: o filho inicia exatamente como um `.exe` de verdade
+já inicia nessa plataforma.
+
+Medido sobre o argv que o despacho de squad montava, com a diretiva na posição
+que ela tinha no dia da quebra (5.875 caracteres, primeira quebra de linha no
+183). Pelo `cmd.exe`: 6.031 caracteres de argumentos enviados, 231 entregues,
+5.800 descartados na quebra (96,2%), levando junto as duas concessões
+`--add-dir` e o `--dangerously-skip-permissions`. Direto: 11 elementos de argv,
+6.016 caracteres, nada descartado.
+
+A leitura é literal e recusa em vez de adivinhar. Um shim que rearranja o que
+repassa (`%1`, `SHIFT`), define uma variável de ambiente que o spawn direto não
+reproduziria, deixa uma variável sem expandir, põe o `%*` em qualquer lugar que
+não seja o fim, ou nomeia um interpretador ou script que não está em disco não
+produz candidato nenhum, e quem chamou fica com o caminho antigo pelo
+interpretador, com `quoteForCmd` em cada argumento. Um interpretador que é ele
+mesmo um `.cmd` também é recusado, porque resolvê-lo só recai na mesma
+armadilha. As duas gerações de shim do npm são lidas, primeiro o `node.exe`
+local e depois o nome puro no PATH, que é a ordem do próprio `IF EXIST` do shim.
+
+A cura do `--append-system-prompt-file` de 0.10.2 continua exatamente onde está.
+Agora ela protege o fallback, e não o caminho normal.
+
+Depois disso um runner Windows pegou o caminho direto de verdade, e ele se
+sustenta. Os nove adaptadores sobem por ele, incluindo a matriz de entrega de
+prompt de 300 KB; um turno do maestro roda de ponta a ponta nele, com o prompt
+pelo stdin, o stream-json interpretado e o `--resume` honrado; e a diretiva
+multilinha chega ao argv do próprio filho byte a byte, com as duas concessões
+`--add-dir` na frente dela. Esse último é o elo que uma máquina sem Windows não
+consegue checar: um argumento que carrega uma quebra de linha atravessa inteiro o
+`CreateProcess` e o parser de linha de comando do filho. Agora ele é checado a
+cada execução.
+
+Ainda não verificado: o shim que o runner lê é um lançador `@echo off` simples,
+não um escrito pelo `cmd-shim` do npm, então o ramo `_prog` e a forma antiga de
+dois ramos estão cobertos por fixtures, não por uma CLI instalada. Um shim de
+gerador fora de npm, pnpm e yarn nunca passou por este parser — por construção
+ele não produz candidato e mantém o caminho antigo, que é o comportamento fixado
+pelos testes de fallback.
 
 ## 0.10.2 — 2026-08-27
 
