@@ -8,6 +8,8 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+## 0.10.3 — 2026-08-27
+
 ### Ten more tests were measuring the disk, and nobody had chosen it
 
 The entry below fixed one file and left a list of ten. What those ten have in

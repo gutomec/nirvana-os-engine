@@ -1,6 +1,6 @@
 {
   "name": "nirvana-os",
-  "version": "0.10.2",
+  "version": "0.10.3",
   "private": true,
   "description": "The Operating System for agentic work — runtime-agnostic, local-first agent control plane.",
   "license": "SEE LICENSE IN LICENSE",
