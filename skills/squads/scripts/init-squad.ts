@@ -1,11 +1,16 @@
 #!/usr/bin/env bun
 /**
- * init-squad.ts — Squad Protocol Engine v5 scaffolder (pure Bun port).
+ * init-squad.ts — Squad Protocol Engine v6 scaffolder (pure Bun port).
  *
- * Replaces init-squad.sh. Scaffolds a fresh v5 squad directory from
- * templates/squad.yaml.tmpl, substituting placeholders with values supplied
- * via flags or environment variables. Idempotent: refuses to overwrite an
- * existing squad.yaml unless --force.
+ * Replaces init-squad.sh. Scaffolds a fresh v6 squad directory from
+ * templates/squad.yaml.tmpl and templates/workflow.md.tmpl, substituting
+ * placeholders with values supplied via flags or environment variables.
+ * Idempotent: refuses to overwrite an existing squad.yaml unless --force.
+ *
+ * A v6 squad's workflow is ONE Markdown document (frontmatter graph, prose
+ * body) at `workflows/<ref>.md`, referenced without its extension (§28.6) —
+ * so the scaffold writes that file instead of leaving the author to guess
+ * the shape from a `.yaml` example that no longer matches the protocol.
  *
  * Usage:
  *   SQUAD_NAME=my-squad SQUAD_DESCRIPTION="..." \
@@ -47,6 +52,9 @@ const state: Record<string, string> = {
   EXAMPLE_INTENT_3: env.SQUAD_EXAMPLE_3 || "",
   ANTI_PATTERN_1: env.SQUAD_ANTI_1 || "",
   OUTPUT_NAME: env.SQUAD_OUTPUT_NAME || "deliverable",
+  WORKFLOW_DESCRIPTION: env.SQUAD_WORKFLOW_DESCRIPTION || "",
+  SUCCESS_INDICATOR_1: env.SQUAD_SUCCESS_1 || "",
+  SUCCESS_INDICATOR_2: env.SQUAD_SUCCESS_2 || "",
   OUTPUT_DESCRIPTION: env.SQUAD_OUTPUT_DESCRIPTION || "Squad output deliverable",
   AGENT_1: env.SQUAD_AGENT_1 || "orchestrator",
   AGENT_2: env.SQUAD_AGENT_2 || "specialist",
@@ -95,13 +103,19 @@ if (!state.CAPABILITY_DESCRIPTION) state.CAPABILITY_DESCRIPTION = state.DESCRIPT
 if (!state.EXAMPLE_INTENT_1) state.EXAMPLE_INTENT_1 = `run ${state.NAME}`;
 if (!state.EXAMPLE_INTENT_2) state.EXAMPLE_INTENT_2 = `execute ${state.NAME} pipeline`;
 if (!state.EXAMPLE_INTENT_3) state.EXAMPLE_INTENT_3 = `kickoff ${state.NAME} for project`;
-if (!state.ANTI_PATTERN_1) state.ANTI_PATTERN_1 = "single-step task (use a more focused capability)";
+if (!state.ANTI_PATTERN_1) state.ANTI_PATTERN_1 = "single-step task";
+if (!state.WORKFLOW_DESCRIPTION) state.WORKFLOW_DESCRIPTION = `${state.TASK_1}, then ${state.TASK_2}, for ${state.NAME}`;
+if (!state.SUCCESS_INDICATOR_1) state.SUCCESS_INDICATOR_1 = `TODO: the ${state.OUTPUT_NAME} exists at the declared path`;
+if (!state.SUCCESS_INDICATOR_2) state.SUCCESS_INDICATOR_2 = "TODO: a second binary check a judge can verify";
 
 const skillDir = path.join(paths.CLAUDE_SKILLS_DIR, "squads");
 const template = path.join(skillDir, "templates", "squad.yaml.tmpl");
-if (!fs.existsSync(template)) {
-  console.error(`[init-squad] FAIL: template not found at ${template}`);
-  process.exit(2);
+const workflowTemplate = path.join(skillDir, "templates", "workflow.md.tmpl");
+for (const t of [template, workflowTemplate]) {
+  if (!fs.existsSync(t)) {
+    console.error(`[init-squad] FAIL: template not found at ${t}`);
+    process.exit(2);
+  }
 }
 
 for (const sub of ["agents", "tasks", "workflows", "schemas"]) {
@@ -131,25 +145,40 @@ const subs: Record<string, string> = {
   "{{EXAMPLE_INTENT_3}}": state.EXAMPLE_INTENT_3,
   "{{ANTI_PATTERN_1}}": state.ANTI_PATTERN_1,
   "{{OUTPUT_NAME}}": state.OUTPUT_NAME,
+  "{{WORKFLOW_DESCRIPTION}}": state.WORKFLOW_DESCRIPTION,
+  "{{SUCCESS_INDICATOR_1}}": state.SUCCESS_INDICATOR_1,
+  "{{SUCCESS_INDICATOR_2}}": state.SUCCESS_INDICATOR_2,
   "{{OUTPUT_DESCRIPTION}}": state.OUTPUT_DESCRIPTION,
   "{{AGENT_1}}": state.AGENT_1,
   "{{AGENT_2}}": state.AGENT_2,
   "{{TASK_1}}": state.TASK_1,
   "{{TASK_2}}": state.TASK_2,
 };
-for (const [k, v] of Object.entries(subs)) {
-  body = body.split(k).join(v);
+const substitute = (text: string): string => {
+  let out = text;
+  for (const [k, v] of Object.entries(subs)) out = out.split(k).join(v);
+  return out;
+};
+
+fs.writeFileSync(manifestPath, substitute(body), "utf8");
+
+// The workflow document (§28): frontmatter graph + prose body, one file.
+const workflowPath = path.join(targetDir, "workflows", `${state.WORKFLOW_REF}.md`);
+if (fs.existsSync(workflowPath) && !force) {
+  console.error(`[init-squad] ${path.relative(targetDir, workflowPath)} already exists (use --force to overwrite)`);
+  process.exit(EXIT.FAILURES);
 }
-fs.writeFileSync(manifestPath, body, "utf8");
+fs.writeFileSync(workflowPath, substitute(fs.readFileSync(workflowTemplate, "utf8")), "utf8");
 
 console.log(`[init-squad] Wrote ${manifestPath}`);
+console.log(`[init-squad] Wrote ${workflowPath}`);
 console.log("[init-squad] Created skeleton dirs: agents/ tasks/ workflows/ schemas/");
 console.log("");
 console.log("Next steps:");
 console.log(`  1. Fill in agents/${state.AGENT_1}.md and agents/${state.AGENT_2}.md (use templates/agent.md.tmpl)`);
 console.log(`  2. Fill in tasks/${state.TASK_1}.md and tasks/${state.TASK_2}.md`);
-console.log(`  3. Fill in workflows/${state.WORKFLOW_REF}.(yaml|md)`);
-console.log(`  4. Validate: bun ${path.join(skillDir, "scripts", "validate-squad.ts")} ${targetDir}`);
-console.log(`  5. Index:    bun ${path.join(skillDir, "scripts", "index-squads.ts")}`);
+console.log(`  3. Fill in workflows/${state.WORKFLOW_REF}.md (the graph is scaffolded; the body is yours)`);
+console.log(`  4. Validate: nrv validate squad ${targetDir}   (--fix applies the mechanical repairs)`);
+console.log(`  5. Index:    nrv index`);
 
 process.exit(EXIT.OK);

@@ -58,6 +58,7 @@ P11 Output Humanization — human-facing outputs pass through humanization befor
 
 Sources of truth, in resolution order:
 
+- `SQUAD_PROTOCOL_V6.md` (v6.0 delta over v5, PT-BR): §28 workflow document, §29 acceptance, §30 evaluator, §31 composition, §32 execution binding, §33 `not_for` ≤25, §34 admission, §35 migration, App-G/H.
 - `SQUAD_PROTOCOL_V5.md` (v5.0 delta over v4): §22 capabilities, §23 registry, §24 discovery, §25 routing, §26 telemetry, §27 humanization, App-C/D/E/F/Z.
 - `SQUAD_PROTOCOL_V4.md` (21 sections, runtime-agnostic) — unchanged base that v5 extends.
 - `SQUAD_PROTOCOL.md` (v2.0, deprecated, kept for legacy squads).
@@ -116,7 +117,7 @@ All squad outputs write to a **standard workspace** inside the project:
 
 **Path examples:**
 - `*squad create my-app` → `.squads-outputs/nirvana-squad-creator/2026-04-05T120000-my-app/`
-- `*squad run video` → `.squads-outputs/nirvana-video-creator/2026-04-05T185600-video-run/`
+- `nrv run --squad nirvana-video-creator` → `.squads-outputs/nirvana-video-creator/2026-04-05T185600-video-run/`
 
 **Lifecycle:** Outputs are intermediate. User moves final deliverables to their project structure. Old runs can be cleaned: `rm -rf .squads-outputs/{squad}/{old-run}/`
 
@@ -129,6 +130,7 @@ All squad outputs write to a **standard workspace** inside the project:
 ```
 ~/.nirvana/skills/squads/
 ├── SKILL.md                    ← this file
+├── SQUAD_PROTOCOL_V6.md        ← v6 delta (§28-35 + App-G/H), PT-BR
 ├── SQUAD_PROTOCOL_V5.md        ← v5 delta (§22-27 + appendices)
 ├── SQUAD_PROTOCOL_V4.md        ← v4 base (§1-21) that v5 extends
 ├── SQUAD_PROTOCOL.md           ← v2 deprecated (kept for legacy squads)
@@ -146,10 +148,10 @@ All squad outputs write to a **standard workspace** inside the project:
 
 ## First Invocation
 
-1. Verify `SQUAD_PROTOCOL_V5.md` exists alongside this SKILL.md.
+1. Verify `SQUAD_PROTOCOL_V6.md` and `SQUAD_PROTOCOL_V5.md` exist alongside this SKILL.md.
 2. Check node>=18, python3>=3.8 (validators).
 3. Create `${SQUADS_DIR}/` if missing: `mkdir -p ${SQUADS_DIR}`. Default `${SQUADS_DIR}` resolves to `~/squads`.
-4. Report: `Squad Protocol Engine v5.0.0 ready. Default protocol for new squads: 5.0. Roots: ${SQUADS_DIR} (N), ./squads (M).`
+4. Report: `Squad Protocol Engine v6.0.0 ready. Default protocol for new squads: 6.0. Roots: ${SQUADS_DIR} (N), ./squads (M).`
 
 ## Intent Classification
 
@@ -177,7 +179,7 @@ Classify user input → load ONLY the relevant reference files → execute.
 - `*squad inspect {name}` — detailed squad view
 
 ### Creation
-- `*squad create {name}` — interactive creation wizard. **Default in v5**: `protocol: "5.0"`, `capabilities[]` declared, `runtime_requirements`, `maxTurns` mandatory. Use `--legacy-v4` to create a v4 squad when needed.
+- `*squad create {name}` — interactive creation wizard. **Default in v6**: `protocol: "6.0"`, `capabilities[]` declared, one Markdown workflow at `workflows/<ref>.md` (§28), refs without their extension (§28.6), `runtime_requirements`, `maxTurns` mandatory. Use `--legacy-v4` to create a v4 squad when needed.
 
 ### Validation
 - `*squad validate {name}` — 18 blocking checks (Core + adapter)
@@ -241,9 +243,8 @@ Template: `templates/dependencies.template.yaml`. Reference impl: `lib/activator
 - `*squad remove {squad} {component}` — remove component
 
 ### Execution
-- `*squad run {name}` — execute default workflow
-- `*squad run {name} --workflow {wf}` — execute specific workflow
-- `*squad run {name} --runtime {id}` — force specific runtime
+- `nrv run --squad {slug}` — execute the squad's capability the router picks
+- `nrv run --squad {slug}:{capability}` — execute a named capability (its workflow is the one that runs)
 - `*squad resume {name}` — resume from checkpoint
 
 ### Adapters
@@ -253,8 +254,8 @@ Template: `templates/dependencies.template.yaml`. Reference impl: `lib/activator
 - `*squad compat {squad}` — check squad compatibility with current runtime
 
 ### Migration
-- `*squad migrate {name}` — migrate v2/v3.1/v4 squad to v5 (default target).
-- `*squad migrate {name} --from {v2|v3.1|v4} --to {v4|v5}` — explicit migration.
+- `nrv migrate {slug} --to 6` — preview the v5 → v6 conversion (dry run; `--apply` writes, `--rollback <ts>` undoes). See `SQUAD_PROTOCOL_V6.md` §35.
+- `*squad migrate {name} --from {v2|v3.1|v4} --to {v4|v5}` — the older, in-place upgrades.
 
 ### Observation
 - `*squad status {name}` — current execution state
@@ -268,7 +269,7 @@ Template: `templates/dependencies.template.yaml`. Reference impl: `lib/activator
 
 When creating a NEW squad, ALWAYS:
 
-1. Set `protocol: "5.0"` in squad.yaml.
+1. Set `protocol: "6.0"` in squad.yaml (`"5.0"` stays valid; the gate judges each squad by what it declares).
 2. Ask for target runtimes → set `runtime_requirements.minimum` (`claude-code`, `codex`, `gemini-cli`, etc., per `~/.nirvana/skills/_shared/adapters/`).
 3. Set `features_required` (whitelist in `business.schema.json`) and `features_optional`.
 4. Every agent MUST have `maxTurns` (default 25 for simple, 50 for complex).
@@ -281,7 +282,7 @@ When creating a NEW squad, ALWAYS:
 10. Declare output schemas in `contracts:` for chained tasks.
 11. Declare how the output is judged: `acceptance[]` on the capability (v6 §29), or a `## Acceptance Criteria` section in the task it invokes. There is no `humanize` field — the writing contract lives in the runtime memory files and reaches every dispatched agent.
 12. Set memory GC policy if persistent memory is used.
-13. Validate via `python3 -m pytest ~/.nirvana/skills/_shared/validators/validators.py` or `bun ~/.nirvana/skills/_shared/validators/validators.ts test`.
+13. Validate with the admission gate: `nrv validate squad <slug|path>` (add `--fix` for the mechanical repairs). The validator it runs is Zod, in `~/.nirvana/skills/_shared/validators/validators.ts`.
 14. **Routing metadata, contract-complete** — every capability MUST carry the discovery fields per `~/.nirvana/skills/_shared/ROUTING_METADATA_CONTRACT.md`: `description` in canonical English, concrete and front-loaded (§1); `produces` as artifact-type slugs (§3); `keywords` as multilingual synonym groups — EN + PT (+ES where natural), accented AND unaccented forms (§4); `example_briefs` ≥3 with at least one EN and one PT, symptom-phrased, covering conjugated and infinitive verb forms (§5); `not_for` as short token lists of 2-4 content words, never sentences (§6). Empty or truncated metadata is a creation defect, not a stylistic choice.
 15. **Self-retrieval gate (blocking) — creation is NOT done until it passes.** After indexing, run:
     ```bash

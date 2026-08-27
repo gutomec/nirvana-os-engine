@@ -74,6 +74,59 @@ by `_`↔`-` when exactly one component matches and **never** writes a stub. A
 `.yaml` never becomes a `.md` in a fixer either: changing the encoding is a
 migration, with a backup and a report, and the fixer says so instead of acting.
 
+### Squad Protocol 6.0 is written down, and one command takes a squad there
+
+`skills/squads/SQUAD_PROTOCOL_V6.md` states what the reader and the gate already
+do, as a delta over v5 the way v5 was a delta over v4: §28 the workflow document
+(`.md` = frontmatter graph plus prose body, the body split by `## <step.id>`,
+the word ceiling, the lint table with one severity per protocol, the twin rule,
+references without their encoding), §29 the acceptance contract, §30 the
+evaluator contract, §31 composition, §32 the execution binding, §33 `not_for` at
+25 characters, §34 admission, §35 migration, App-G the generated schemas and
+App-H what v6 deprecates.
+
+Three of those contracts are declarative today: the schema accepts them, the
+gate validates them, and no execution reader consumes them yet. Each is marked
+**limite** in the text with what is still missing, because a spec that describes
+an engine which does not exist is worse than one that admits the gap.
+`skills/squads/tests/protocol-v6-spec-parity.test.ts` fails the build when a
+criterion id, a lint id, a fixer or a `nrv migrate` flag stops being named in
+the spec.
+
+`nrv migrate <slug|path> --to 6` is the conversion, and **dry run is the
+default**: without `--apply` nothing is written, not the squad, not the backup,
+not the report. Per workflow:
+
+| Legacy | v6 |
+|---|---|
+| `workflows/<name>.yaml` in one of eight dialects | `workflows/<name>.md`, the canonical graph |
+| `depends_on` / `deps` / `after` | `requires` |
+| a prompt inline in `task: \|` (>= 40 words) | `tasks/<workflow>-<step>.md`, and the step gets a `task:` reference |
+| a short note inline | the body, under `## <step.id>` |
+| `x.md` + `x.yaml` twins | one file: the YAML's graph, the Markdown's body |
+| `invoke.ref: workflows/main.yaml` | `invoke.ref: workflows/main` |
+| `success_indicators` nobody read | `capabilities[].acceptance[]`, `blocking: false` |
+| a `name` that is not the file stem | `extensions.title`, relocated, never dropped |
+
+It never invents prose: every sentence in a converted body already existed in
+the source, and the test asserts it by substring. It refuses three documents
+rather than guess — `event_routes` (a router, not a DAG), a document from which
+no step can be derived, and a stem outside `^[a-z][a-z0-9_-]*$`. Without
+`--force` the squad is refused whole; with it, that one document is left alone
+and the rest migrates. The `.yaml` is deleted only after the `.md` has been read
+back and matched against `WorkflowSchema`.
+
+Around the conversion: a backup in `~/squads-legacy-v5/<slug>.<ts>/` written
+with `fs.cpSync` and never rsync, a `nirvana.squad-migrate/v1` report in the
+squad state dir and never inside the squad, `--rollback <ts>` that restores it
+and refuses when the squad changed after the migration, byte-level idempotence,
+and a call to `nrv validate squad` at the end that prints the verdict.
+
+New squads are scaffolded there directly. `templates/workflow.md.tmpl` is the
+canonical document, `squad.yaml.tmpl` ships `protocol: "6.0"` with extension-less
+references, and `init-squad.ts` writes `workflows/<ref>.md` and points step 4 at
+`nrv validate squad <dir>`.
+
 ### Removed
 
 `humanize` is gone from the squad protocol's surface. It was a contradiction the
@@ -94,6 +147,19 @@ block into invalid YAML.
 
 New limits: `workflow_body_words_max` (2500) and
 `squad_prompt_components_bytes_max` (65536).
+
+The per-squad JSON Schema mirrors are gone: `skills/squads/schemas/`
+(`squad-schema.json`, `agent-schema.json`, `task-schema.json`,
+`adapter-schema.json`, `handoff-schema.json`). No code path read them, and
+`squad-schema.json` described a v4 manifest nobody had authored in a year. What
+replaced each of them is tabulated in `references/05-schemas.md`. The three that
+remain are GENERATED from the Zod schemas that execute:
+`bun scripts/gen-json-schemas.ts` writes
+`_shared/schemas/{capability,squad,workflow}.schema.json`, and `--check` runs in
+`check:all`, so the mirror can no longer disagree with the source. That closes a
+documented drift: `capability.schema.json` capped `description` at 500 chars for
+months after `LIMITS` raised it to 1500, and the same 500 was repeated across
+four reference documents and a template.
 
 ### Business Protocol 2.0: routing metadata, pinned clones, preferred squads, acceptance per seat, one budget field, and the dead surface deprecated
 

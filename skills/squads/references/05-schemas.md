@@ -4,17 +4,32 @@
 Intent: CREATE, VALIDATE, MODIFY
 
 ## Protocol Reference
-SQUAD_PROTOCOL_V4.md §5.1, §6.2, §7.1
+SQUAD_PROTOCOL_V4.md §5.1, §6.2, §7.1 · SQUAD_PROTOCOL_V6.md §28.1, App-G
 
 ## Schemas Available
 
+**The validator that runs is Zod**, in `~/.nirvana/skills/_shared/validators/validators.ts`.
+The JSON Schemas below are GENERATED from it by `bun scripts/gen-json-schemas.ts`
+(`--check` runs in `check:all`), so a divergence between the JSON and the Zod
+schema cannot survive a build. Never edit them by hand.
+
 | Schema | Validates | Path |
 |--------|-----------|------|
-| `squad-schema.json` | `squad.yaml` manifest | `schemas/squad-schema.json` |
-| `agent-schema.json` | Agent frontmatter | `schemas/agent-schema.json` |
-| `task-schema.json` | Task frontmatter | `schemas/task-schema.json` |
-| `adapter-schema.json` | `adapters/{runtime}.yaml` | `schemas/adapter-schema.json` |
-| `handoff-schema.json` | Handoff artifacts | `schemas/handoff-schema.json` |
+| `squad.schema.json` | `squad.yaml` manifest | `_shared/schemas/squad.schema.json` |
+| `capability.schema.json` | one entry of `capabilities[]` | `_shared/schemas/capability.schema.json` |
+| `workflow.schema.json` | the canonical workflow graph (§28.1) | `_shared/schemas/workflow.schema.json` |
+
+The per-squad `schemas/*.json` mirrors (`squad-schema.json`, `agent-schema.json`,
+`task-schema.json`, `adapter-schema.json`, `handoff-schema.json`) were removed in
+v6: they described a v4 manifest nobody authored any more, and no code path read
+them. What replaced each of them:
+
+| Was | Now |
+|-----|-----|
+| `agent-schema.json` | `nrv validate squad` criterion `agent_frontmatter_incomplete` (frontmatter with `maxTurns` and `tools`) |
+| `task-schema.json` | `nrv validate squad` criterion `task_acceptance_missing` (`## Acceptance Criteria` or `outputs:`) |
+| `adapter-schema.json` | `skills/squads/lib/adapter-loader.js`, the loader that actually reads `adapters/{runtime}.yaml` |
+| `handoff-schema.json` | `HandoffArtifactSchema` in `validators.ts` |
 
 ## Two Frontmatter Formats (Both Accepted)
 
@@ -87,10 +102,10 @@ SQUAD_PROTOCOL_V4.md §5.1, §6.2, §7.1
 ## Validation Commands
 
 ```bash
-squads validate ./my-squad              # Full validation
-squads validate ./my-squad --json       # JSON output
-squads validate ./my-squad --report     # AI-friendly fix report
-squads validate ./my-squad --fix        # Auto-fix safe issues
+nrv validate squad ./my-squad           # the admission gate
+nrv validate squad ./my-squad --json    # nirvana.verify-report/v1
+nrv validate squad ./my-squad --fix     # apply the mechanical repairs (backup + rollback)
+nrv validate squad ./my-squad --strict  # warnings reject too (exit 2)
 ```
 
 ---
