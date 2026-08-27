@@ -29,15 +29,68 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { createHash } from "node:crypto";
+import { registryFingerprint } from "./build-golden-set.ts";
 
 const router = require(path.join(import.meta.dir, "..", "lib", "router.js"));
 const registryLoader = require(path.join(import.meta.dir, "..", "lib", "registry-loader.js"));
 
 export const GOLDEN_PATH = path.join(import.meta.dir, "..", "baselines", "golden-routing.json");
 export const NEGATIVES_PATH = path.join(import.meta.dir, "..", "baselines", "golden-negatives.json");
+export const EVAL_CACHE_PATH = path.join(import.meta.dir, "..", "baselines", ".routing-eval-cache.json");
 
 // Env flags that change router behavior — flagged as warnings, never mutated.
 const ROUTER_ENV_FLAGS = ["NIRVANA_ROUTER_DENSE", "NIRVANA_ROUTER_FUSION", "NIRVANA_ROUTER_INTENT_FILTER"];
+
+// ── content fingerprints ────────────────────────────────────────────────────
+
+const sha = (s: string): string => createHash("sha256").update(s).digest("hex");
+
+/**
+ * Fingerprint of the routing engine — every top-level `.js`/`.ts` under
+ * skills/harness/lib and skills/_shared/lib, not just router.js + bm25.js.
+ * The require graph moves (router.js already reaches into `_shared/lib` for
+ * paths, the host driver and the dense index), and an under-broad key would
+ * hand back a cached gate verdict for an engine that changed. Over-invalidating
+ * costs one 30s re-run; under-invalidating costs a green gate on a broken
+ * router, so the key errs wide on purpose.
+ */
+export function engineFingerprint(): string {
+  const dirs = [
+    path.join(import.meta.dir, "..", "lib"),
+    path.join(import.meta.dir, "..", "..", "_shared", "lib"),
+  ];
+  const parts: string[] = [];
+  for (const dir of dirs) {
+    if (!fs.existsSync(dir)) continue;
+    for (const name of fs.readdirSync(dir).sort()) {
+      if (!/\.(js|ts)$/.test(name)) continue;
+      const full = path.join(dir, name);
+      if (!fs.statSync(full).isFile()) continue;
+      parts.push(`${path.basename(dir)}/${name}:${sha(fs.readFileSync(full, "utf8"))}`);
+    }
+  }
+  parts.push(`eval-routing.ts:${sha(fs.readFileSync(path.join(import.meta.dir, "eval-routing.ts"), "utf8"))}`);
+  return sha(parts.join("\n"));
+}
+
+/**
+ * The cache key: everything that can change the numbers. Registries (what the
+ * router indexes), golden cases (what is asked), negatives (the safety axis),
+ * engine sources, and the env flags that switch router arms on.
+ */
+export function evalCacheKey(registries: any, goldenCases: any, negatives: any): string {
+  const reg = registryFingerprint(registries);
+  const env = ROUTER_ENV_FLAGS.map((f) => `${f}=${process.env[f] ?? ""}`).join(";");
+  return sha([
+    `squads:${reg.squads}`,
+    `businesses:${reg.businesses}`,
+    `golden:${sha(JSON.stringify(goldenCases ?? null))}`,
+    `negatives:${sha(JSON.stringify(negatives ?? null))}`,
+    `engine:${engineFingerprint()}`,
+    `env:${env}`,
+  ].join("\n"));
+}
 
 // ── candidate resolution ────────────────────────────────────────────────────
 
@@ -262,6 +315,57 @@ export async function runEval(opts: RunEvalOptions = {}) {
       },
     },
   };
+}
+
+/**
+ * runEval, memoized on content. The eval is a pure function of the registries,
+ * the golden cases, the negatives and the engine sources — none of which the
+ * act of running it changes — so a second run over the same inputs can read
+ * its verdict back instead of routing ~3.4k briefs again.
+ *
+ * This is a dev-loop cache, not a weaker gate: any edit to a registry, a case
+ * file or an engine source changes the key and the eval runs for real. CI
+ * starts from a clean checkout with no cache file, so it always measures.
+ */
+export async function runEvalCached(opts: RunEvalOptions & { cachePath?: string } = {}) {
+  const cachePath = opts.cachePath || EVAL_CACHE_PATH;
+  const goldenPath = opts.goldenPath || GOLDEN_PATH;
+  const negativesPath = opts.negativesPath || NEGATIVES_PATH;
+  const registries = opts.registries || registryLoader.loadAll();
+
+  // One escape hatch, for measurement and for a run that must not trust disk
+  // state: `NIRVANA_EVAL_NO_CACHE=1` skips both the read and the write.
+  // scripts/test-timings.ts sets it so the recorded per-file cost is the cold
+  // one, which is the cost the fast/slow split has to be decided on.
+  const bypass = process.env.NIRVANA_EVAL_NO_CACHE === "1";
+  if (bypass) return { ...(await runEval({ ...opts, registries })), from_cache: false };
+
+  let key: string | null = null;
+  try {
+    const golden = JSON.parse(fs.readFileSync(goldenPath, "utf8"));
+    const negatives = fs.existsSync(negativesPath)
+      ? JSON.parse(fs.readFileSync(negativesPath, "utf8"))
+      : { cases: [] };
+    key = evalCacheKey(registries, golden.cases, negatives.cases);
+  } catch {
+    key = null; // unreadable inputs: let runEval raise the real error
+  }
+
+  if (key && fs.existsSync(cachePath)) {
+    try {
+      const hit = JSON.parse(fs.readFileSync(cachePath, "utf8"));
+      if (hit.key === key && hit.result) return { ...hit.result, from_cache: true };
+    } catch { /* corrupt cache: measure again and overwrite */ }
+  }
+
+  const result = await runEval({ ...opts, registries });
+  if (key) {
+    try {
+      fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+      fs.writeFileSync(cachePath, JSON.stringify({ key, cached_at: new Date().toISOString(), result }) + "\n", "utf8");
+    } catch { /* a read-only checkout still gets a correct (uncached) result */ }
+  }
+  return { ...result, from_cache: false };
 }
 
 // ── CLI ─────────────────────────────────────────────────────────────────────

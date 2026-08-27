@@ -69,6 +69,11 @@ skills/harness/tests/reports/
 # golden-negatives.json is committed.
 skills/harness/baselines/golden-routing.json
 
+# Routing eval memo — the eval's own verdict, keyed on a content hash of the
+# registries, the cases and the engine sources. Local dev-loop state: CI starts
+# from a clean checkout, finds no file, and always measures for real.
+skills/harness/baselines/.routing-eval-cache.json
+
 # The project-skeleton TEMPLATES are product files, not local state. The plain
 # `.env` / `.nirvana/` patterns above swallowed them silently: they existed on
 # the author's machine, never reached the repo, and every install shipped
