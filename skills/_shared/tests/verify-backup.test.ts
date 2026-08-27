@@ -130,4 +130,21 @@ describe("idempotence and retention", () => {
     expect(kept).toEqual(made.slice(-BACKUP_KEEP));
     expect(fs.existsSync(made[0])).toBe(false);
   });
+
+  test("a same-millisecond collision keeps listing order equal to creation order", () => {
+    // The retention rule is "the newest BACKUP_KEEP", and it reads that order off
+    // the sorted names. A run fast enough to mint two backups in one millisecond
+    // used to invert them, so this pins the invariant with the collision forced:
+    // the directory is pre-seeded with the plain stamp, so the next call must
+    // take the `-1` suffix, and the two must still list in the order they were made.
+    const r = root();
+    const dir = cloneFixture(r, "jane-doe");
+    const parent = path.join(r, "backups", "mind-clone");
+    const first = createBackup(dir, "mind-clone", "jane-doe", path.join(r, "backups"));
+    const second = createBackup(dir, "mind-clone", "jane-doe", path.join(r, "backups"));
+    const listed = listBackups("mind-clone", "jane-doe", path.join(r, "backups"));
+    expect(listed.length).toBe(2);
+    expect(listed).toEqual([first, second]);
+    expect(fs.existsSync(parent)).toBe(true);
+  });
 });

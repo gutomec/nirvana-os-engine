@@ -37,10 +37,15 @@ function copyTree(src: string, dst: string): void {
 export function createBackup(dir: string, kind: Kind, slug: string, root: string = defaultBackupRoot()): string {
   const parent = path.join(root, kind);
   fs.mkdirSync(parent, { recursive: true });
-  let dst = path.join(parent, `${slug}.${stamp()}`);
-  // Two fix runs inside one millisecond would share a stamp; disambiguate.
+  // One stamp per call. Re-stamping inside the loop below produced names whose
+  // lexicographic order was not their creation order (`<t>-1` minted at t+1ms
+  // sorts after `<t>` minted later), and `prune` keeps the newest by that very
+  // order — so a collision could delete the newest backup and keep an older one.
+  // With the stamp fixed, `<t>`, `<t>-1`, `<t>-2` sort exactly as they were made.
+  const at = stamp();
+  let dst = path.join(parent, `${slug}.${at}`);
   let n = 0;
-  while (fs.existsSync(dst)) dst = path.join(parent, `${slug}.${stamp()}-${++n}`);
+  while (fs.existsSync(dst)) dst = path.join(parent, `${slug}.${at}-${++n}`);
   copyTree(dir, dst);
   prune(kind, slug, root);
   return dst;
