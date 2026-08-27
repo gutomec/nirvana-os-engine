@@ -1,0 +1,84 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Squads / tools / workflows exibidos na coluna "AGENT ENTITIES"
+model Entity {
+  id          Int      @id @default(autoincrement())
+  slug        String   @unique
+  name        String
+  kind        String // AGENT | TOOL | WORKFLOW
+  icon        String // lucide icon name
+  status      String   @default("OPERATIONAL") // OPERATIONAL | IDLE | DEGRADED | OFFLINE
+  runsToday   Int      @default(0)
+  successRate Float    @default(99.9)
+  lastSeenAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+}
+
+// Businesses do escopo Maestro (contam para o stat "AGENTS")
+model Business {
+  id         Int      @id @default(autoincrement())
+  slug       String   @unique
+  name       String
+  active     Boolean  @default(true)
+  runsToday  Int      @default(0)
+  lastSeenAt DateTime @default(now())
+}
+
+// Eventos canônicos do Run Kernel (timeline + /api/logs)
+model Event {
+  id         Int      @id @default(autoincrement())
+  seq        Int      @unique // id incremental usado como SSE Last-Event-ID
+  ts         DateTime @default(now())
+  kind       String // RUN | GATE | SYSTEM | ENTITY
+  status     String // SUCCESS | INFO | WARNING | FAILED
+  title      String
+  detail     String?
+  entitySlug String?
+  durationMs Int?
+  cancelled  Boolean  @default(false)
+  actor      String   @default("kernel")
+
+  @@index([ts])
+  @@index([kind, ts])
+  @@index([entitySlug, ts])
+}
+
+// Saúde dos subsistemas do engine (tier 3)
+model Subsystem {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  status      String   @default("OK") // OK | IDLE | OFF | CHECKED
+  value       String   @default("—")
+  lastCheckAt DateTime @default(now())
+  sortOrder   Int      @default(0)
+}
+
+// Turnos do maestro disparados pela Ask bar (v2: thread + agentic forms)
+model Turn {
+  id         Int       @id @default(autoincrement())
+  message    String
+  target     String? // "squad:data-hunter" | "business:acme-retail"
+  state      String    @default("RUNNING") // RUNNING | COMPLETED | ROLLED_BACK | FAILED | NO_MATCH
+  detail     String?
+  budgetPct  Int       @default(94)
+  createdAt  DateTime  @default(now())
+  resolveAt  DateTime
+  resolvedAt DateTime?
+  durationMs Int?
+  meta       String? // JSON: { locale, intent, formToken, answers, reply }
+
+  @@index([state, resolveAt])
+}
+
+// Configurações core do Glance (scope, allowActions, métricas seed...)
+model Setting {
+  key   String @id
+  value String
+}

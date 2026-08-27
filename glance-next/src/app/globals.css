@@ -1,0 +1,224 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *, .apple-dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-jbmono), ui-monospace, "JetBrains Mono", "SFMono-Regular", monospace;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-surface: var(--surface);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-ink-3: var(--ink-3);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+/* ─── Tema default: clean-light (PRD v2.0 §4 — imagem canônica) ─── */
+:root,
+.clean-light {
+  --radius: 0.5rem;
+  --background: #fafaf9; /* --bg */
+  --foreground: #1c1917; /* --ink */
+  --card: #ffffff; /* --surface */
+  --card-foreground: #1c1917;
+  --popover: #ffffff;
+  --popover-foreground: #1c1917;
+  --primary: #16a34a; /* --accent verde */
+  --primary-foreground: #f0fdf4;
+  --secondary: #f5f5f4;
+  --secondary-foreground: #1c1917;
+  --muted: #f5f5f4;
+  --muted-foreground: #78716c; /* --ink-2 */
+  --accent: #f5f5f4;
+  --accent-foreground: #1c1917;
+  --destructive: #dc2626;
+  --border: #e7e5e4; /* hairline */
+  --input: #e7e5e4;
+  --ring: #16a34a;
+  --chart-1: #16a34a;
+  --chart-2: #d97706;
+  --chart-3: #78716c;
+  --chart-4: #dc2626;
+  --chart-5: #a8a29e;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #1c1917;
+  --sidebar-primary: #16a34a;
+  --sidebar-primary-foreground: #f0fdf4;
+  --sidebar-accent: #f5f5f4;
+  --sidebar-accent-foreground: #1c1917;
+  --sidebar-border: #e7e5e4;
+  --sidebar-ring: #16a34a;
+  /* tokens extras do design system */
+  --surface: #ffffff;
+  --success: #16a34a;
+  --warning: #d97706;
+  --danger: #dc2626;
+  --ink-3: #a8a29e; /* --info cinza */
+  --shadow-hairline: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+/* ─── Tema apple-dark: mesmo layout, tokens escuros (RF-10) ─── */
+.apple-dark,
+.dark {
+  --radius: 0.5rem;
+  --background: #0a0a0b;
+  --foreground: #f5f5f7;
+  --card: #141416;
+  --card-foreground: #f5f5f7;
+  --popover: #17171a;
+  --popover-foreground: #f5f5f7;
+  --primary: #30d158;
+  --primary-foreground: #05230f;
+  --secondary: #1d1d20;
+  --secondary-foreground: #f5f5f7;
+  --muted: #1d1d20;
+  --muted-foreground: #9e9ea6;
+  --accent: #1d1d20;
+  --accent-foreground: #f5f5f7;
+  --destructive: #ff453a;
+  --border: #26262a;
+  --input: #2c2c30;
+  --ring: #30d158;
+  --chart-1: #30d158;
+  --chart-2: #ff9f0a;
+  --chart-3: #9e9ea6;
+  --chart-4: #ff453a;
+  --chart-5: #6e6e76;
+  --sidebar: #141416;
+  --sidebar-foreground: #f5f5f7;
+  --sidebar-primary: #30d158;
+  --sidebar-primary-foreground: #05230f;
+  --sidebar-accent: #1d1d20;
+  --sidebar-accent-foreground: #f5f5f7;
+  --sidebar-border: #26262a;
+  --sidebar-ring: #30d158;
+  --surface: #141416;
+  --success: #30d158;
+  --warning: #ff9f0a;
+  --danger: #ff453a;
+  --ink-3: #6e6e76;
+  --shadow-hairline: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    font-feature-settings: "cv05", "cv11";
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: "tnum" 0;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--primary) 18%, transparent);
+  }
+}
+
+@layer utilities {
+  /* Labels small-caps do design system: 11px, tracking 0.08em */
+  .label-caps {
+    font-size: 11px;
+    line-height: 1.2;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+  /* Números display: Inter light, tabular */
+  .num-display {
+    font-weight: 300;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+  }
+  .shadow-hairline {
+    box-shadow: var(--shadow-hairline);
+  }
+  .scroll-slim {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--muted-foreground) 35%, transparent) transparent;
+  }
+  .scroll-slim::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scroll-slim::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, var(--muted-foreground) 35%, transparent);
+    border-radius: 999px;
+  }
+  .scroll-slim::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+/* Entrada de evento na timeline: 200ms slide+fade (RF-1 / §4 motion) */
+@keyframes ev-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.ev-enter {
+  animation: ev-in 0.2s ease-out;
+}
+
+/* Dots pulsantes (só animação contínua do tema light) */
+@keyframes dot-pulse-kf {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, currentColor 35%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 4px transparent;
+  }
+}
+.dot-pulse {
+  animation: dot-pulse-kf 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ev-enter,
+  .dot-pulse {
+    animation: none;
+  }
+}
