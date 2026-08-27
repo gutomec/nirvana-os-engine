@@ -81,12 +81,25 @@ export interface DispatchEvaluatorInput {
   spawn?: EvaluatorSpawn;
   /** `--max-budget` of the evaluator subprocess; omitted when absent or zero. */
   budgetUsd?: number;
+  /** `evaluator.max_cost_usd` the chosen capability declares (Squad Protocol v6 §30).
+   *  The spend cap is the LOWER of the two: the plan's slice never buys more than the
+   *  evaluator says one judgement costs, and a declared ceiling never raises the slice. */
+  maxCostUsd?: number | null;
   /** Wall-clock cap of one evaluation; defaults to the plan's `maxDurationSeconds`. */
   timeoutMs?: number;
   signal?: AbortSignal;
   env?: Record<string, string>;
   audit?: (event: string, payload: Record<string, unknown>) => void;
   now?: () => string;
+}
+
+/** The `--max-budget` an evaluation runs under: the plan's slice capped by the
+ *  capability's declared `max_cost_usd`. Null when neither is a positive number. */
+export function evaluatorSpendCapUsd(budgetUsd?: number, maxCostUsd?: number | null): number | null {
+  const slice = Number.isFinite(budgetUsd) && (budgetUsd as number) > 0 ? budgetUsd as number : null;
+  const declared = typeof maxCostUsd === "number" && Number.isFinite(maxCostUsd) && maxCostUsd > 0 ? maxCostUsd : null;
+  if (slice === null) return declared;
+  return declared === null ? slice : Math.min(slice, declared);
 }
 
 const DEFAULT_DISPATCH_SCRIPT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "scripts", "dispatch.ts");
@@ -186,7 +199,8 @@ export function createDispatchEvaluator(input: DispatchEvaluatorInput): AgentXGa
     command.push("--brief-file", briefFile, "--exec", "--project", projectId, "--outputs-root", outputsRoot,
       "--execution-mode=standard", "--max-revisions", "0");
     if (input.runtime) command.push("--runtime", input.runtime);
-    if (Number.isFinite(input.budgetUsd) && (input.budgetUsd as number) > 0) command.push("--max-budget", String(input.budgetUsd));
+    const spendCap = evaluatorSpendCapUsd(input.budgetUsd, input.maxCostUsd);
+    if (spendCap !== null) command.push("--max-budget", String(spendCap));
     const env: Record<string, string> = {};
     for (const [key, value] of Object.entries({ ...process.env, ...input.env })) if (value !== undefined) env[key] = value;
     // The effective settings, as the variables the child reads (settings.ts settingsEnvForChild).
@@ -202,8 +216,9 @@ export function createDispatchEvaluator(input: DispatchEvaluatorInput): AgentXGa
     if (input.signal?.aborted) return indeterminate(`aborted while the evaluator ran: ${String(input.signal.reason)}`, detail);
     if (!fs.existsSync(scorecardPath)) {
       if (budgetExhausted(spawned)) {
-        return indeterminate(`budget_exhausted: the evaluator's spend cap of USD ${input.budgetUsd} ended the run before ${SCORECARD_FILE} was written `
-          + `(dispatch exit ${spawned.exitCode ?? "signal"}: ${summarizeStderr(spawned.stderr)})`, { ...detail, reason_code: "budget_exhausted", budget_usd: input.budgetUsd ?? null });
+        return indeterminate(`budget_exhausted: the evaluator's spend cap of USD ${spendCap} ended the run before ${SCORECARD_FILE} was written `
+          + `(dispatch exit ${spawned.exitCode ?? "signal"}: ${summarizeStderr(spawned.stderr)})`,
+          { ...detail, reason_code: "budget_exhausted", budget_usd: spendCap, plan_slice_usd: input.budgetUsd ?? null, max_cost_usd: input.maxCostUsd ?? null });
       }
       return indeterminate(`${SCORECARD_FILE} not found at ${scorecardPath} (dispatch exit ${spawned.exitCode ?? "signal"}: ${summarizeStderr(spawned.stderr)})`, detail);
     }

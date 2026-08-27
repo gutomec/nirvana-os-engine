@@ -11,6 +11,19 @@ applies_to_produces:
   - design-system
   - ui-component
   - figma-frame
+# PT/EN synonyms of the slugs above (rubric-selector.ts): the same artifact
+# spelled the other way selects this rubric instead of the generic fallback.
+aliases:
+  - design
+  - pagina-de-vendas
+  - página-de-vendas
+  - landing
+  - wireframe
+  - prototipo
+  - protótipo
+  - identidade-visual
+  - brand-kit
+  - site
 description: |
   Avalia design (assumindo HTML/CSS gerado ou descrição estruturada do
   Figma). WCAG 2.2 AA é hard gate de acessibilidade.

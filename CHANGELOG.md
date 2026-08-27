@@ -8,6 +8,85 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### The Gauntlet judges the contract the target declared, not one hard-coded line
+
+`compiler.ts` has always been able to compile N requirements into N gauntlets. It never received
+more than one: no caller passed `requirements`, so every Gauntlet in the system judged the same
+`brief-conformance` question with a threshold read off the intensity profile, while the manifests
+carried `capabilities[].acceptance[]` and `fidelity.threshold` that nothing read.
+
+`skills/harness/lib/gauntlet/success-requirements.ts` builds the contract. `brief-conformance`
+first, always, and then the first rung of this ladder that answers:
+
+| Rung | Source | Blocks |
+|---|---|---|
+| `acceptance` | `capabilities[].acceptance[]` | yes, unless `blocking: false` |
+| `success_indicators` | the invoked workflow's `success_indicators[]`, through the v6 reader | no |
+| `task_acceptance_criteria` | the invoked task's `## Acceptance Criteria` | no |
+| `brief-conformance` | nothing declared | yes |
+
+The derived rungs do not block. An indicator someone wrote as prose was never promised as a gate,
+and turning it into one withholds deliveries nobody agreed to withhold. Ids are namespaced
+(`acceptance.<id>`, `indicator.<n>`, `criterion.<n>`), so a capability that literally declares
+`brief-conformance` cannot shadow the brief, and a scorecard dimension says which rung it came
+from. `minimumScore` falls back to `fidelity.threshold`, then to the profile score. The ceiling is
+twelve requirements, `brief-conformance` included, and what the ceiling drops is counted.
+
+The array reaches BOTH compile sites. `compileGauntletPlan` runs twice per Gauntlet — once in
+`dispatch.ts` to size the evaluator's budget, once inside `runAgentXGauntlet` — and the scorecard is
+validated against the plan the second one built, so a contract only the first site saw would make
+`validateScorecardFile` reject every dimension as "not in the success contract". The three canaries
+compute the array once and hand it to both; the tests pin the two on one `planId`.
+
+A business declares its contract per role instead of per capability. `skills/businesses/lib/acceptance.ts`
+reads the intake employee's `acceptance[]` (Business Protocol 2.0 §11) into the same
+`SuccessRequirement[]`, deduped by id, so two roles copying one house rule contribute one dimension.
+
+`gauntlet.requirements_source` (`brief` | `capability`, default `brief`) gates all of it. At the
+default the contract is the single `brief-conformance` of before and the compiled plan is bit for
+bit today's — the same `planId`, which a test asserts on both compile sites.
+
+### An acceptance entry that names a path is a completeness proof
+
+The gate judges QUALITY, never completeness: it reads the files that exist and says whether they
+are good, never whether they are all of them. The one completeness proof the system had was a
+`deliverables.json` written per run, and a business that never wrote one fell back to the output
+scan, which only knows that SOMETHING was written.
+
+An `acceptance[]` entry with a `path` is the same promise, declared by the role instead of written
+per run. `verify-deliverable.ts` reads those entries when there is no manifest (`manifest_source:
+"acceptance"`, `min_bytes` per entry when declared), and the delivery pipeline runs verification for
+them the way it does for a manifest.
+
+### The Gauntlet's evaluator is ranked, not alphabetical
+
+Declaring the id `quality.specification_conformance` was the whole evaluator contract, and among the
+squads that declared it the first slug in alphabetical order won. Squad Protocol v6 §30 gave the
+capability an `evaluator` block; nothing read it.
+
+Selection ranks now: `fidelity.status` (`validated` > `experimental` > `drifted`, with `retired` not
+a candidate at all), then `evaluator.max_cost_usd` ascending — a capability with no `evaluator` block
+declares no cost, so it sorts behind every one that does — then the slug. A library that declares no
+v6 metadata has only the third key, so today's alphabetical answer is what it still gets. The winning
+row travels on the selection and is what `nrv doctor` prints as the reason, instead of "the first
+one". `max_cost_usd` also caps the spend: the evaluation subprocess runs under
+`min(plan slice, max_cost_usd)` — a declared ceiling limits the budget, never raises it.
+
+### `produces` reaches the judge's rubric selector
+
+`deliveryArgs()` never passed `produces`, so `selectRubricsForProduces` was always called with `[]`
+and every deliverable — a landing page, a dataset, a video script — was judged by `prose_shortform`.
+Both sides of the declaration existed: a squad capability's `produces` and a business manifest's.
+
+The dispatch now forwards it, from the resolved capability for a squad and from the manifest for a
+business. The rubrics gained `aliases:` in their frontmatter for the PT/EN synonyms of the slugs
+they cover, so `pagina-de-vendas` selects the same rubric `landing-page` does instead of falling
+through to the generic one; an alias may not be a slug another rubric already declares, and a test
+holds that. `delivery.produces_to_rubric` (default `false`) gates the forwarding, because the
+rubrics cover roughly 45 of the 3.024 slugs the library declares and a slug with no rubric has to
+degrade to the fallback, never to a refusal. Off, the judge receives `[]` — bit for bit what it
+received before.
+
 ### The dev loop stops paying for the whole repository on every check
 
 `bun test skills` was the only thing anyone could type, and it runs 176 files in 135-180 s. A

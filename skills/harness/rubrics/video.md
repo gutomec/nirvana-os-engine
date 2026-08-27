@@ -10,6 +10,15 @@ applies_to_produces:
   - reel
   - explainer
   - ad-video
+# PT/EN synonyms of the slugs above (rubric-selector.ts): the same artifact
+# spelled the other way selects this rubric instead of the generic fallback.
+aliases:
+  - vídeo
+  - reels
+  - anuncio-em-video
+  - roteiro-de-video
+  - motion-graphic
+  - shorts
 description: |
   Avalia vídeo (assumindo que o judge recebe descrição estruturada ou
   storyboard + frames-chave). Hook nos primeiros 3s é decisivo.

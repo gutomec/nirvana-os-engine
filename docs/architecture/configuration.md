@@ -51,6 +51,8 @@ Gerada a partir do schema. `nrv config explain <chave>` mostra a descrição de 
 | `gauntlet.business_allowlist` | `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST` | `""` | global, projeto | slugs separados por vírgula (ou vazio) |
 | `gauntlet.business_kill_switch` | `NIRVANA_BUSINESS_GAUNTLET_KILL_SWITCH` | `false` | global, projeto | true / false |
 | `gauntlet.auto_allowed` | `NIRVANA_ALLOW_AUTO_GAUNTLET` | `false` | global, projeto | true / false |
+| `gauntlet.requirements_source` | `NIRVANA_GAUNTLET_REQUIREMENTS_SOURCE` | `brief` | global, projeto | brief / capability |
+| `delivery.produces_to_rubric` | `NIRVANA_PRODUCES_TO_RUBRIC` | `false` | global, projeto | true / false |
 | `execution.default_runtime` | `NIRVANA_DEFAULT_RUNTIME` | `""` | global, projeto | nome de runtime (claude-code, codex, gemini-cli, ...) ou vazio |
 | `execution.model` | `NIRVANA_MODEL` | `""` | global, projeto | id ou alias de modelo (opus, sonnet, haiku, fable, ...) ou vazio |
 | `execution.dna_injection` | `NIRVANA_DNA_INJECTION` | `full` | global, projeto | full / fragments |
@@ -94,6 +96,8 @@ Cada interruptor do schema tem exatamente um caminho de leitura, `resolveSetting
 | `gauntlet.default_mode`, `default_intensity`, `auto_allowed` | `harness/lib/gauntlet/execution-options.ts` |
 | `gauntlet.evaluator` | `harness/scripts/dispatch.ts`, `harness/scripts/doctor-system.ts` |
 | `gauntlet.business_allowlist`, `business_kill_switch` | `harness/scripts/dispatch.ts` (canário de business), `multi-target-dispatch-adapters.ts` (merge da allowlist) |
+| `gauntlet.requirements_source` | `harness/scripts/dispatch.ts` (os três canários, via `lib/gauntlet/success-requirements.ts`) |
+| `delivery.produces_to_rubric` | `harness/scripts/dispatch.ts` (`deliveryArgs`) |
 | `execution.default_runtime` | `harness/scripts/dispatch.ts`, `control-plane/execution-runner.ts` |
 | `execution.model` | `_shared/lib/system-model.ts` |
 | `execution.dna_injection` | `harness/lib/dispatch.ts`, `harness/lib/squad-exec.ts`, `businesses/lib/employee-prompt.ts` |

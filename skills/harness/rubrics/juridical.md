@@ -12,6 +12,16 @@ applies_to_produces:
   - jurisprudencia
   - juridical-research
   - analise-contratual
+# PT/EN synonyms of the slugs above (rubric-selector.ts): the same artifact
+# spelled the other way selects this rubric instead of the generic fallback.
+aliases:
+  - parecer-juridico
+  - parecer-jurídico
+  - petição
+  - peça-processual
+  - contract
+  - legal-opinion
+  - legal-research
 description: |
   Threshold alto (80) porque erros jurídicos têm custo alto. Opus por padrão.
   Cita legislação e jurisprudência só quando verificável; sem alucinar

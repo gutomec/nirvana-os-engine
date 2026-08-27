@@ -134,7 +134,7 @@ add(
 // that has a persona and is on PATH. The offline heuristic only by explicit
 // opt-in, and no agentic evaluator at all means the Gauntlet will not start.
 try {
-  const { CONFORMANCE_CAPABILITY, loadInstalledSquads, selectGauntletEvaluator } = await import("../lib/gauntlet/evaluator-selection.ts");
+  const { CONFORMANCE_CAPABILITY, describeRanking, loadInstalledSquads, selectGauntletEvaluator } = await import("../lib/gauntlet/evaluator-selection.ts");
   const { resolveJudgeXPromptPath } = await import("../lib/gauntlet/judge-x.ts");
   const agentsDir = path.join(SKILLS, "_shared", "agents");
   const judgeRuntimes = listRuntimes().filter((rt) => which(rt.cli) && resolveJudgeXPromptPath(rt.name, agentsDir)).map((rt) => rt.name);
@@ -156,7 +156,11 @@ try {
     add("gauntlet: evaluator", "WARN",
       `none — a Gauntlet will not start (${selection.reason}); install a squad declaring ${CONFORMANCE_CAPABILITY} and run nrv index, or a runtime with a judge-x persona (nrv update refreshes the engine's personas)`);
   } else if (selection.target.kind === "squad") {
-    add("gauntlet: evaluator", "PASS", `squad:${selection.target.slug}:${selection.target.capabilityId} (${selection.source === "env" ? chosenBy : `registry, declares ${CONFORMANCE_CAPABILITY}`})`);
+    // The registry rung ranks (Squad Protocol v6 §30) — print WHY this squad won, not just that it did.
+    const why = selection.source === "env" ? chosenBy
+      : selection.ranking ? `registry, declares ${CONFORMANCE_CAPABILITY}; ${describeRanking(selection.ranking)}`
+      : `registry, declares ${CONFORMANCE_CAPABILITY}`;
+    add("gauntlet: evaluator", "PASS", `squad:${selection.target.slug}:${selection.target.capabilityId} (${why})`);
   } else {
     add("gauntlet: evaluator", "PASS", `${selection.target.slug} (${selection.source === "env" ? chosenBy : "engine default: no installed squad declares " + CONFORMANCE_CAPABILITY}; runtimes with a persona on PATH: ${judgeRuntimes.join(", ")})`);
   }
