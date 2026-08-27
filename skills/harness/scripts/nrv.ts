@@ -84,6 +84,7 @@ switch (cmd) {
   case "validate-trace": case "trace-validate": runScript(join(H, "validate-trace.ts"), rest);
   case "guard": runScript(join(H, "guard.ts"), rest);
   case "fix-squad": case "doctor-squad": runScript(join(SKILLS, "squads", "scripts", "fix-squad.ts"), rest);
+  case "migrate": case "migrate-squad": runScript(join(SKILLS, "squads", "scripts", "migrate-squad.ts"), rest);
   case "memory": case "mem": runScript(join(H, "memory.ts"), rest);
   case "baseline": runScript(join(H, "baseline.ts"), rest);
   case "improver": runScript(join(H, "improver.ts"), rest);

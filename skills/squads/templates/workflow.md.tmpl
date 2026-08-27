@@ -1,0 +1,44 @@
+---
+# Workflow document — Squad Protocol 6.0 §28. ONE file: this frontmatter is the
+# graph, everything below the closing `---` is the prose, per step, under
+# `## <step.id>`. Replace every {{PLACEHOLDER}}; the comments may stay.
+#
+# What `nrv validate squad <dir>` enforces here:
+#   - `name` equals the file stem, lowercase, `^[a-z][a-z0-9_-]*$`
+#   - `id` is unique; every `requires` entry names another step's id
+#   - `agent` is mandatory and names `agents/<agent>.md`
+#   - `task` is a REFERENCE to `tasks/<task>.md`, never a paragraph
+#   - the graph is acyclic; the body stays under LIMITS.workflow_body_words_max
+#
+# Schema: skills/_shared/schemas/workflow.schema.json (generated from Zod).
+name: {{WORKFLOW_REF}}
+description: "{{WORKFLOW_DESCRIPTION}}"
+version: "1.0.0"
+steps:
+  - id: {{TASK_1}}
+    agent: {{AGENT_1}}
+    task: {{TASK_1}}
+    creates: [{{TASK_1}}-output]
+  - id: {{TASK_2}}
+    agent: {{AGENT_2}}
+    task: {{TASK_2}}
+    requires: [{{TASK_1}}]
+    creates: [{{OUTPUT_NAME}}]
+    on_failure: abort
+# The author's checklist. `nrv migrate --to 6` turns these into
+# `capabilities[].acceptance[]`, which is what the judge grades a run on.
+success_indicators:
+  - "{{SUCCESS_INDICATOR_1}}"
+  - "{{SUCCESS_INDICATOR_2}}"
+---
+
+## {{TASK_1}}
+
+TODO: what this step reads, what it decides, and what it hands to the next one.
+Write it for the model that will run it — concrete inputs, concrete output, no
+restating what `tasks/{{TASK_1}}.md` already says.
+
+## {{TASK_2}}
+
+TODO: what this step assembles from the previous one, and what "done" looks
+like here. Keep the body about method; the graph above is about order.

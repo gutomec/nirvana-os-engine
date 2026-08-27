@@ -128,11 +128,12 @@ if (protocol === "5.0" || protocol === "6.0") {
   if (REPORT) {
     console.log("");
     console.log("── Fix guidance ─────────────────────────────");
-    console.log("  schema:    ~/.nirvana/skills/_shared/schemas/capability.schema.json");
-    console.log("  validator: python3 ~/.nirvana/skills/_shared/validators/validators.py test");
+    console.log("  schema:    ~/.nirvana/skills/_shared/schemas/capability.schema.json   (generated)");
+    console.log("  validator: bun ~/.nirvana/skills/_shared/validators/validators.ts test   (the one that runs)");
     console.log("  template:  ~/.nirvana/skills/squads/templates/capability-block.tmpl");
     console.log("  catalog:   ~/.nirvana/skills/_shared/catalogs/CAPABILITY_CATALOG_V1.yaml");
     console.log("  reference: ~/.nirvana/skills/squads/references/12-v5-capabilities.md");
+    console.log("  gate:      nrv validate squad <slug|path> [--fix]");
   }
 
   process.exit(result.valid ? EXIT.OK : EXIT.FAILURES);

@@ -41,6 +41,14 @@ bar is the same as its gates: mandatory domain research, routing ground truth
 (`example_briefs` routing back to the entry in 1st place) and an optimization
 pass before declaring done.
 
+Raising an existing squad to Squad Protocol 6.0 is one command, not an
+agentic rewrite: `nrv migrate <slug> --to 6` previews the conversion (dry-run
+is the default) and `--apply` performs it — the workflows become canonical
+Markdown documents, inline prompts move into `tasks/` verbatim, refs lose
+their encoding, and `acceptance[]` is derived from the workflow's
+`success_indicators`. It backs the squad up first and `--rollback <ts>` puts
+it back. Verify the result with `nrv validate squad <slug>`.
+
 ### Rule 2 — Audit-first, fiction-never
 Every dispatch MUST emit a real `dispatch_business` or `dispatch_squad` event into `${HARNESS_LOGS_DIR}/$(date +%Y-%m-%d)/audit.jsonl`. Every gate verdict MUST emit `gate_passed` or `gate_failed`. Without those events, **no completion message is honest.** The user can verify with `tail` + `jq`.
 

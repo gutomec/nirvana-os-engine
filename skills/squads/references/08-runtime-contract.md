@@ -46,7 +46,7 @@ invocation:
   # CLI flags, env vars, sample commands
 ```
 
-The manifest validates against `schemas/adapter-schema.json`.
+The manifest is read and validated by `skills/squads/lib/adapter-loader.js`.
 
 ## Required Documentation Sections
 
@@ -127,13 +127,13 @@ Citations live in each adapter's §14 Source References. This discipline keeps t
 
 1. Copy `adapters/_template-adapter.md`.
 2. Fill in all required sections.
-3. Create the YAML manifest conforming to `schemas/adapter-schema.json`.
+3. Create the YAML manifest in the shape `skills/squads/lib/adapter-loader.js` reads.
 4. Declare `features_supported` and `features_unsupported` honestly.
 5. Populate `concept_mapping` for every Core concept your runtime supports.
 6. Document `numeric_values` with actual verified values.
 7. Add validators for runtime-specific rules.
 8. List Known Limitations honestly.
-9. Validate the manifest: `ajv validate -s schemas/adapter-schema.json -d adapters/{runtime_id}.yaml`.
+9. Validate the manifest: `nrv validate squad <dir>` (the loader rejects an adapter it cannot read).
 10. Test with a known squad: `squads run ./examples/cc-code-review --runtime {runtime_id}`.
 
 See `references/11-adapters-guide.md` for the complete authoring guide.
