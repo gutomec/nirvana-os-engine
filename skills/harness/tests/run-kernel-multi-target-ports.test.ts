@@ -6,6 +6,7 @@ import type { DependencyGraph } from "../../_shared/lib/dependency-graph.ts";
 import { reserveAggregateGauntletBudget } from "../lib/gauntlet/aggregate-budget.ts";
 import { coordinateMultiTargetPlan, type MultiTargetAdapterInput, type MultiTargetAdapterResult } from "../lib/gauntlet/multi-target-coordinator.ts";
 import { createRunKernelMultiTargetPorts } from "../lib/gauntlet/run-kernel-multi-target-ports.ts";
+import { KERNEL_BUDGET_MS } from "./helpers/test-budgets.ts";
 import { compileMultiTargetGauntletPolicy } from "../lib/plan-compiler.ts";
 import { createRun, listEvents, openKernel, type KernelHandle } from "../lib/run-kernel/store.ts";
 
@@ -113,7 +114,7 @@ describe("Run Kernel multi-target ports", () => {
     for (let index = 1; index < events.length; index++) expect(events[index].causationId).toBe(events[index - 1].eventId);
     expect(events.map((event) => event.sequence)).toEqual([...events.map((event) => event.sequence)].sort((a, b) => a - b));
     setup.kernel.close();
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("restarts after the first execution wave without repeating completed nodes", async () => {
     const setup = fixture();
@@ -143,7 +144,7 @@ describe("Run Kernel multi-target ports", () => {
     expect(resumed.state).toBe("delivered");
     expect(resumedCalls.map((call) => call.nodeId)).toEqual(["squad-c", "final-output"]);
     setup.kernel.close();
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("a valid same-owner lease resumes a running node after crash", async () => {
     const setup = fixture();
@@ -168,7 +169,7 @@ describe("Run Kernel multi-target ports", () => {
     expect(result.state).toBe("delivered");
     expect(resumedCalls.filter((call) => call.nodeId.startsWith("business-")).every((call) => call.resume)).toBeTrue();
     setup.kernel.close();
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("expired or foreign-owner leases cannot resume automatically", async () => {
     let clock = 1_000;
@@ -198,7 +199,7 @@ describe("Run Kernel multi-target ports", () => {
     const stalled = await coordinateMultiTargetPlan({ ...compiled, ports: owner });
     expect(stalled.nodes.find((node) => node.nodeId === "business-a")!.state).toBe("stalled");
     setup.kernel.close();
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("claim is atomic, owner-bound, renewable and idempotent", () => {
     let clock = 5_000;
@@ -217,7 +218,7 @@ describe("Run Kernel multi-target ports", () => {
     const claims = listEvents(setup.kernel, setup.projectId).filter((event) => event.type === "multi_target.lease_claimed");
     expect(claims).toHaveLength(2);
     setup.kernel.close();
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("replay does not duplicate events and projects remain isolated", () => {
     const first = fixture("project-a", "shared-run");
@@ -239,7 +240,7 @@ describe("Run Kernel multi-target ports", () => {
     expect(secondPorts.state.load()!.planDigest).toBe("other-plan");
     first.kernel.close();
     second.kernel.close();
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("persisted plan or reservation divergence fails closed", async () => {
     const setup = fixture();
@@ -252,7 +253,7 @@ describe("Run Kernel multi-target ports", () => {
     });
     await expect(coordinateMultiTargetPlan({ ...compiled, ports })).rejects.toThrow("persisted snapshot does not match");
     setup.kernel.close();
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("heartbeat renews the lease while the adapter is pending and stops on completion", async () => {
     let clock = 10_000;
@@ -285,7 +286,7 @@ describe("Run Kernel multi-target ports", () => {
     expect(renewals()).toHaveLength(3);
     expect(ports.lease.canResume("business-a")).toBeTrue();
     setup.kernel.close();
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("a lost lease aborts the running adapter, journals lease_lost and never delivers the node", async () => {
     let clock = 20_000;
@@ -331,7 +332,7 @@ describe("Run Kernel multi-target ports", () => {
     expect(events.some((event) => event.type === "multi_target.node_delivered"
       && (event.payload as { node: { nodeId: string } }).node.nodeId === "business-a")).toBeFalse();
     setup.kernel.close();
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("an adapter that finishes after its lease expired fails closed and heartbeat bounds are validated", async () => {
     let clock = 30_000;
@@ -349,5 +350,5 @@ describe("Run Kernel multi-target ports", () => {
     expect(() => concrete({ ...setup, heartbeatMs: 1_000 })).toThrow("heartbeatMs");
     expect(() => concrete({ ...setup, heartbeatMs: 0 })).toThrow("heartbeatMs");
     setup.kernel.close();
-  });
+  }, KERNEL_BUDGET_MS);
 });
