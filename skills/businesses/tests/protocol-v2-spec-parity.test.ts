@@ -6,13 +6,11 @@
 // files that never existed. So the table is parsed here and compared, id by id,
 // against the module the gate executes.
 //
-// The business kind module (`_shared/lib/verify/kinds/business.ts`) lands in a
-// later cut. Until it exists, the comparison has nothing to run against — and a
-// silent `skip` would let the spec rot unnoticed for as long as that takes. So
-// the tests below always run: they assert the table is well-formed on its own,
-// and the parity test states out loud that the module is absent and flips to a
-// real comparison the moment the file appears. Nothing has to be re-enabled by
-// hand.
+// The comparison used to run in one direction only (module ⊆ spec), because the
+// module carried three structural criteria and the catalog had not landed yet.
+// It is an equality now: same ids, same severity, same autofix class, same
+// baselineable flag. Adding a criterion to one side without the other is a red
+// test, which is the point.
 //
 // Runs with: bun test skills/businesses/tests
 import { describe, expect, test } from "bun:test";
@@ -93,20 +91,45 @@ describe("Business Protocol 2.0 §16.2 — the table is a catalog", () => {
 });
 
 describe("Business Protocol 2.0 §16.2 — parity with the gate module", () => {
-  test("every criterion the module carries is declared by the spec", async () => {
-    // The gate module grows one cut at a time: PR2 landed the three structural
-    // criteria, the full catalog arrives with the business cut. The direction
-    // asserted here is the one that must hold at every point in between — the
-    // module never checks something §16 does not declare. The other direction
-    // (spec ⊆ module) becomes true when the catalog lands, and the count below
-    // is what tells us how far the module still is.
+  /** The spec writes the autofix class in Portuguese; the module in English. */
+  const AUTOFIX: Record<string, string> = { "mecânico": "mechanical", "agêntico": "agentic", "nenhum": "none" };
+
+  test("the module exists and exports a catalog", () => {
     expect(existsSync(KIND_MODULE)).toBe(true);
+  });
+
+  test("the two id sets are equal, in both directions", async () => {
     const mod = await import(KIND_MODULE);
-    const moduleIds = new Set<string>(
-      (mod.criteria ?? mod.default?.criteria ?? []).map((c: { id: string }) => c.id.split(":")[0]),
-    );
-    const specIds = new Set(spec.map((c) => c.id));
-    expect([...moduleIds].filter((id) => !specIds.has(id))).toEqual([]);
-    expect(moduleIds.size).toBeGreaterThan(0);
+    const moduleIds = (mod.criteria as Array<{ id: string }>).map((c) => c.id);
+    expect(new Set(moduleIds).size).toBe(moduleIds.length);
+    const specIds = spec.map((c) => c.id);
+    expect(moduleIds.filter((id) => !specIds.includes(id))).toEqual([]);   // module ⊆ spec
+    expect(specIds.filter((id) => !moduleIds.includes(id))).toEqual([]);   // spec ⊆ module
+    expect(moduleIds.length).toBe(specIds.length);
+  });
+
+  test("severity, autofix class and baselineable agree row by row", async () => {
+    const mod = await import(KIND_MODULE);
+    const byId = new Map((mod.criteria as Array<Record<string, unknown>>).map((c) => [c.id as string, c]));
+    const drift: string[] = [];
+    for (const row of spec) {
+      const c = byId.get(row.id);
+      if (!c) continue;                                    // the id test above owns this
+      if (c.severity !== row.severity) drift.push(`${row.id}: severity ${String(c.severity)} vs ${row.severity}`);
+      if (c.autofix !== AUTOFIX[row.autofix]) drift.push(`${row.id}: autofix ${String(c.autofix)} vs ${AUTOFIX[row.autofix]}`);
+      if (c.baselineable !== row.baselineable) drift.push(`${row.id}: baselineable ${String(c.baselineable)} vs ${row.baselineable}`);
+    }
+    expect(drift).toEqual([]);
+  });
+
+  test("every mechanical row names a fixer the module can actually run", async () => {
+    const mod = await import(KIND_MODULE);
+    const fixers = new Set(Object.keys(mod.businessModule.fixers));
+    const missing: string[] = [];
+    for (const c of mod.criteria as Array<{ id: string; autofix: string; fixer?: string }>) {
+      if (c.autofix !== "mechanical") continue;
+      if (!c.fixer || !fixers.has(c.fixer)) missing.push(c.id);
+    }
+    expect(missing).toEqual([]);
   });
 });

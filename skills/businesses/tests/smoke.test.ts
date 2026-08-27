@@ -58,10 +58,32 @@ describe("business lifecycle — init → validate → index → list", () => {
     expect(existsSync(join(home, "businesses", "smoke-solo", "business.yaml"))).toBe(true);
   });
 
-  test("validate exits 0 on the freshly created business", () => {
-    const r = nrv("validate-business.ts", "smoke-solo");
-    expect(`${r.stdout}${r.stderr}`).not.toContain("[FAIL]");
+  // The wizard writes no `.nirvana-surface.json` (§5.3 puts it in the layout and
+  // gives it to the engine), so the gate rejects a scaffold on exactly that one
+  // error and `--fix` clears it. The wizard hook that closes the gap is PR11 of
+  // the program plan; until then this test states the gap instead of hiding it.
+  test("validate names the one error a scaffold carries, and --fix clears it", () => {
+    const first = nrv("validate-business.ts", "smoke-solo", "--json", "--no-retrieval");
+    const report = JSON.parse(first.stdout);
+    expect(report.findings.filter((f: any) => f.severity === "error").map((f: any) => f.id)).toEqual(["surface_missing"]);
+    expect(first.status).toBe(1);
+
+    const fixed = nrv("validate-business.ts", "smoke-solo", "--fix", "--no-retrieval");
+    expect(`${fixed.stdout}${fixed.stderr}`).not.toContain("ROLLED BACK");
+    expect(fixed.status).toBe(0);
+    expect(existsSync(join(home, "businesses", "smoke-solo", ".nirvana-surface.json"))).toBe(true);
+  });
+
+  test("--report writes the JSON under the project's own .audit-state", () => {
+    // Pinned project root: a report belongs to the project that asked for it,
+    // never to the global skills tree (the split audit-businesses-score made).
+    const r = spawnSync(process.execPath, [join(SCRIPTS, "validate-business.ts"), "smoke-solo", "--report", "--no-retrieval"], {
+      cwd: home, env: { ...env, NIRVANA_PROJECT_ROOT: home, NIRVANA_SCOPE: "project" }, encoding: "utf8",
+    });
     expect(r.status).toBe(0);
+    const file = join(home, ".nirvana", ".audit-state", "smoke-solo", "verify.json");
+    expect(r.stdout).toContain(file);
+    expect(JSON.parse(readFileSync(file, "utf8")).schema).toBe("nirvana.verify-report/v1");
   });
 
   test("index writes the registry with the new business", () => {

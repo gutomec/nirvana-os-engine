@@ -61,7 +61,7 @@ O relatório de cada entidade também é gravado em `SQUADS_STATE_DIR/<slug>/ver
 
 Três severidades. **Erro** é o que uma edição de texto conserta em um minuto: o manifesto não parseia, um artefato canônico falta, a superfície de contrato não existe. **Aviso** é o que degrada a entidade sem inviabilizá-la. **Info** nunca muda o veredito; existe para dizer que uma checagem não pôde rodar — `registry_absent` é o caso: sem registro indexado, o eixo de auto-recuperação é pulado em vez de reprovar.
 
-Um subconjunto dos critérios é `baselineable`: os fatos que o pipeline de validação produz e que nenhum fixer pode inventar — `validation_verdict_missing`, `source_material_missing`, `fonte_density_low`, `dna_layers_missing`, `routing_block_missing`, `self_retrieval_miss`. Um finding baselineável que o baseline já registra conta como **débito**: aparece no relatório como `DEBT` e não reprova. Erro duro nunca vira débito.
+Um subconjunto dos critérios é `baselineable`: os fatos que o pipeline de validação produz e que nenhum fixer pode inventar — `validation_verdict_missing`, `source_material_missing`, `fonte_density_low`, `dna_layers_missing`, `routing_block_missing`, `self_retrieval_miss` e, do lado de empresa, `seat_thin`. Um finding baselineável que o baseline já registra conta como **débito**: aparece no relatório como `DEBT` e não reprova. Erro duro nunca vira débito.
 
 O arquivo é `$NIRVANA_HOME/.nirvana/.verify-baseline.json`:
 
@@ -84,7 +84,7 @@ Porte de `skills/squads/scripts/improve-squad.ts:98-134` sem a etapa de consenso
 
 1. `check` → os findings com `autofix: "mechanical"` e fixer declarado são os alvos.
 2. Backup com `fs.cpSync` para `$NIRVANA_HOME/.nirvana/verify-backups/<kind>/<slug>.<ts>/`; os cinco mais recentes por entidade ficam. Nunca `rsync`: a matriz de CI roda Windows, onde ele não existe.
-3. Os fixers rodam na ordem fixa do módulo — estrutura, manifesto, routing, arquivos — e `surface_regen` sempre por último, porque qualquer reescrita de manifesto muda a superfície.
+3. Os fixers rodam na ordem fixa do módulo — estrutura, manifesto, routing, arquivos — e `surface_regen` por último, porque qualquer reescrita de manifesto muda a superfície. Empresa tem um passo depois dele: `protocol_bump_2`, que declara `2.0` só quando não resta erro (§18.4) e não altera a superfície, porque `protocol` não entra nem nas entradas nem na prosa extraída.
 4. `check` de novo.
 5. **Rollback** — `rm` + `cpSync`, byte a byte — quando um fixer lançou, quando o manifesto parou de parsear, ou quando surgiu um erro que não existia antes. O motivo entra em `fix_outcome.rollback_reason`.
 6. O relatório mostra `before` e `after`.
@@ -188,9 +188,21 @@ Quem for estender o catálogo precisa de quatro detalhes:
 
 O `humanize` saiu junto. Era a contradição documentada no inventário: os docs mandavam declarar, o schema estrito rejeitava, e o fixer **escrevia** o campo — de modo que `fix-squad --apply` podia transformar um manifesto válido em inválido. Os seis pontos do critério 9 da auditoria passam a medir o contrato que o juiz de fato lê (`c9_acceptance`: parcela de capabilities com `acceptance[]` ou com task invocada declarando `## Acceptance Criteria`), o total continua 100, e a metade útil do fixer virou `outputs_shape_repair`.
 
-## Empresas
+## Catálogo de empresa
 
-Neste corte o módulo de empresa existe com os critérios triviais — o manifesto parseia, `.nirvana-surface.json` existe e bate com os arquivos em disco. O catálogo do Business Protocol v2 entra no corte próprio do programa.
+A tabela da §16.2 do `skills/businesses/BUSINESS_PROTOCOL_V2.md` **é** este catálogo: 16 erros e 23 avisos, mesmos ids, mesma severidade, mesma classe de autofix, mesma marca de baselinável. O `skills/businesses/tests/protocol-v2-spec-parity.test.ts` compara os dois conjuntos linha a linha, nas duas direções — a spec é o documento, o módulo é a execução, e um critério só de um lado é teste vermelho. Por isso o módulo de empresa não declara nenhum critério `info`: a §16.2 só tem erro e aviso, então o eixo de auto-recuperação é pulado em silêncio quando a empresa não está no registro, em vez de emitir `registry_absent` como o módulo de clone faz.
+
+Os números que moldaram os critérios (61 empresas, 581 cargos, 26/08/2026): nenhum manifesto e nenhum cargo falha no Zod, então nada aqui é sobre YAML malformado. 566 cargos declaram um `self_score_contract` que código nenhum lê, 475 um `heartbeat` que agendador nenhum rodou, 30 manifestos e 201 cargos uma `squads_authorized` vazia que a spec lia como "todos" e o prompt lia como "nenhum", 61 um `employee_count` que o registro recomputa, 7 manifestos guardam `auto_routes` no arquivo errado e 38 empresas não trazem README.
+
+**Erros**: `manifest_parse`, `manifest_schema` (`manifest_schema_repair`), `protocol_unsupported`, `employees_present`, `employee_frontmatter_invalid` (`employee_frontmatter_repair`, só quando o bloco falta inteiro — reescrever um cabeçalho que um humano escreveu é autoria), `intake_exactly_one` (`intake_from_chart_root`, só com zero intakes), `org_chart_missing` e `org_chart_inconsistent` (`org_chart_repair`), `antagonist_bp7`, `auto_route_unknown_employee`, `auto_route_in_manifest` (`auto_routes_relocate`), `pinned_clone_unresolved`, `acceptance_invalid` (`acceptance_normalize`), `surface_missing` (`surface_regen`), `dna_symlink_dangling`, `outputs_pollution`.
+
+**Avisos**: `protocol_v1` (`protocol_bump_2`), `employee_count_authored` (`employee_count_strip`), `deprecated_field:<campo>` (o fixer varia por campo: `heartbeat_strip`, `acceptance_from_self_score`, `draws_from_to_assigned`, `dna_reference_to_pin` ou `deprecated_field_strip`), `deprecated_file:<arquivo>` (relatado, nunca apagado), `squads_authorized_empty` (`squads_authorized_empty_strip`), `squads_ref_unknown`, `acceptance_missing` (agêntico), `routing_metadata_incomplete` (agêntico), `description_short` (agêntico), `auto_route_never_fires`, `auto_route_catch_all` (`catch_all_to_default_employee`), `seat_thin` (débito), `self_retrieval_miss` (débito), `readme_missing` (`readme_business_scaffold`), `readme_thin` (agêntico), `memory_missing` (`memory_seed`), `runtime_requirements_default` (`runtime_requirements_business_default`), `type_mind_clone_without_pin`, `type_flag_mismatch` (`type_flag_sync`), `dna_dir_present` (`dna_dir_to_bindings`), `surface_stale` (`surface_regen`), `operation_mode_unsupported`, `legacy_partial`.
+
+Os fixers moram em `skills/businesses/lib/business-fixers.js` — CJS com tabela de despacho, como o `mechanical-fixers.js` dos squads — e o scorer de auditoria (`business-audit-criteria.js`) emite os mesmos nomes em `fixable_diff.kind`, mais `fixable_diff.class` dizendo quem pode aplicar (`mechanical`, `agentic`, `none`). Um `fixable_diff` que nomeia um reparo sem aplicador era o defeito anterior; agora as duas superfícies chamam a mesma tabela.
+
+O frontmatter de cargo é editado por `skills/_shared/lib/frontmatter-edit.ts`, que reescreve **só** o bloco `---` e remonta o arquivo em volta da fatia original do corpo. `business.yaml`, `org-chart.yaml` e `routing.yaml` são reescritos inteiros pela API de documento da `yaml`: comentários e ordem de chaves sobrevivem, exceto o comentário grudado numa chave que o fixer remove, que sai com ela.
+
+Medição de `nrv validate business --all` sobre uma cópia da biblioteca instalada (26/08/2026, 61 empresas, 0,8 s sem auto-recuperação e 4,3 s com ela): 53 admitidas, 8 reprovadas, 31 erros (7 `auto_route_in_manifest` e 24 `auto_route_unknown_employee`), 1.262 avisos, 15 empresas com `self_retrieval_miss`. Um `--fix` sobre a mesma cópia aplicou 578 reparos em 3,2 s, sem rollback, com as 61 ainda carregando pelo loader, e a segunda rodada mudou zero bytes.
 
 ## Tudo em processo
 
