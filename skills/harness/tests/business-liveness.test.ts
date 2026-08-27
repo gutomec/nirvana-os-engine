@@ -77,11 +77,11 @@ function ageDir(dir: string): void {
 
 /** A business row exactly as brief-business opens it (agentic, no pid), then
  *  aged past its lease with nothing written under its outputs root. */
-function silentBusiness(h: LedgerHandle, projectId: string): RunRow {
+function silentBusiness(h: LedgerHandle, projectId: string, projectRoot?: string): RunRow {
   const { briefPath, outputsRoot } = projectLayout(projectId);
   ageDir(outputsRoot);
   const row = openRun(h, {
-    projectId, traceId: projectId, targetSlug: "acme", targetKind: "business", childPid: null,
+    projectId, traceId: projectId, targetSlug: "acme", targetKind: "business", childPid: null, projectRoot,
     meta: { path: "agentic", opened_by: "brief-business", outputs_root: outputsRoot, project_dir: outputsRoot, project_root: outputsRoot, brief_path: briefPath },
   });
   markState(h, row.run_id, "running");
@@ -302,7 +302,9 @@ describe("heartbeat as a side effect", () => {
 
     test("delegating to a squad beats the business row of the same project", () => {
       const h = openLedger(ledger);
-      const biz = silentBusiness(h, "p-delegates");
+      // Same project root as the child below: the beat is project-scoped, and
+      // "the business row of the same project" is exactly what that means now.
+      const biz = silentBusiness(h, "p-delegates", projectRoot);
       const r = spawnSync(process.execPath, [
         path.join(SKILLS, "squads", "scripts", "brief-squad.ts"),
         "fixture-squad", "Uma landing page para uma clínica veterinária", "--project", "p-delegates",

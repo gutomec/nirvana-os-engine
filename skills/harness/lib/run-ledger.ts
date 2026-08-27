@@ -9,10 +9,27 @@
 // code — an illegal transition throws instead of silently corrupting history.
 //
 // DB location: ONE GLOBAL DB at <NIRVANA_HOME>/.nirvana/run-ledger.sqlite
-// (alongside the global state.db fallback of _shared/lib/state-db.js). Unlike
-// state-db, the ledger is deliberately NOT project-scoped: the launchd
-// supervisor runs with no project context and must see every run on the
-// machine in one indexed query. Override with NIRVANA_RUN_LEDGER_DB (tests).
+// (alongside the global state.db fallback of _shared/lib/state-db.js). The FILE
+// is global because the launchd supervisor runs with no project context and
+// must reach every run on the machine in one indexed query. Override with
+// NIRVANA_RUN_LEDGER_DB (tests).
+//
+// VISIBILITY is not global, and that distinction is the whole point. Every row
+// records the `project_root` it belongs to, and every read and every write here
+// filters by the root the calling process is serving (resolveProjectRoot:
+// NIRVANA_PROJECT_ROOT, else the first marker-bearing ancestor of cwd). The
+// supervisor is the one documented exception — it asks for the machine-wide
+// scope explicitly (`--all-projects`, how launchd invokes it).
+//
+// Why: on 2026-08-27 a session working in ~/nirvana-os listed the open runs,
+// saw rows belonging to ~/venda-mundial-pro and consultorio-dr-paulo, and
+// closed one of them. One project could pollute — and terminate — another's
+// work. Rows written before the column exists carry `project_root = NULL`,
+// which reads as "legacy": visible only in the machine-wide scope, never lost.
+//
+// This is about SEEING other projects' runs. Reading and writing FILES outside
+// the project stays allowed — a dispatched job may need any directory, and
+// nothing here touches file permissions or the scope guard.
 //
 // This file is also the heartbeat sidecar entry point:
 //   bun run-ledger.ts heartbeat --run-id <id> --out <f> --err <f> ...
@@ -101,6 +118,9 @@ export interface RunRow {
   run_id: string;
   trace_id: string | null;
   project_id: string | null;
+  /** Normalized root of the project this run belongs to. NULL = legacy row,
+   *  written before the column existed and with nothing to derive it from. */
+  project_root: string | null;
   target_slug: string | null;
   target_kind: string | null;
   state: RunState;
@@ -116,6 +136,161 @@ export interface RunRow {
   terminal_at: string | null;
   last_error: string | null;
   meta: Record<string, unknown>;
+}
+
+// ── project scope ───────────────────────────────────────────────────────
+// The scope of a ledger operation is the project root the process is serving.
+// It is resolved exactly as the rest of the engine resolves it —
+// NIRVANA_PROJECT_ROOT, else the first ancestor of cwd carrying a project
+// marker — but the walk is repeated here instead of imported from
+// _shared/lib/scope.ts on purpose: run-ledger.ts is `require()`d from CJS
+// callers (handoff.js, brief-squad.ts, brief-business.ts), scope.ts's
+// dependency chain contains a top-level await, and Bun refuses to `require()`
+// an async module. Keep the two walks in step if the marker list changes.
+
+const PROJECT_MARKERS = [".env", ".nirvana", ".git", "package.json", "pyproject.toml"];
+
+export type RealpathFn = (p: string) => string;
+
+/** The OS's own resolver. `realpathSync.native` is the one that expands a
+ *  Windows 8.3 SHORT path; the JS `realpathSync` resolves symlinks but can hand
+ *  the 8.3 form straight back. Named so a test can substitute it. */
+const osRealpath: RealpathFn = (p) =>
+  (fs.realpathSync.native ? fs.realpathSync.native(p) : fs.realpathSync(p));
+
+/**
+ * The one form of a path that every process on this machine agrees on.
+ *
+ * Two processes serving the SAME project must produce the same root string, or
+ * the scope filter silently splits one project in two. Two aliases break that,
+ * and the OS resolver collapses both:
+ *   - macOS hands out /var/folders/… for a /private/var/folders/… directory;
+ *   - Windows hands out the 8.3 short form (C:\Users\RUNNER~1\…) for a profile
+ *     or temp path whose long form is C:\Users\runneradmin\… . `mkdtemp` under
+ *     %TEMP% returns the short form on a GitHub runner, which is how this was
+ *     caught: the row carried the long root and the fixture compared the short.
+ *
+ * `realpath` is injectable because the alias table lives in the OS, not in code
+ * — it is how the Windows rule is proven on a platform that has no 8.3 paths.
+ */
+export function normalizeRoot(dir: string, realpath: RealpathFn = osRealpath): string {
+  const resolved = path.resolve(dir);
+  try {
+    return realpath(resolved);
+  } catch {
+    return resolved;   // not on disk (yet): the resolved form is all we can honestly compare
+  }
+}
+
+/** Walk up from `start` to the first directory carrying a project marker.
+ *  HOME and the filesystem root are never projects — a stray marker in either
+ *  would collapse every project into one scope. Missing directories are walked
+ *  THROUGH, not stopped at: an outputs dir that was deleted still names the
+ *  project it lived under. */
+export function findProjectRootFrom(start: string): string | null {
+  let cur = path.resolve(start);
+  const home = normalizeRoot(process.env.HOME || os.homedir());
+  for (let i = 0; i < 40; i++) {
+    const norm = normalizeRoot(cur);
+    if (norm !== path.parse(norm).root && !sameNormalizedRoot(norm, home)) {
+      for (const m of PROJECT_MARKERS) {
+        if (fs.existsSync(path.join(cur, m))) return norm;
+      }
+    }
+    const parent = path.dirname(cur);
+    if (parent === cur) return null;
+    cur = parent;
+  }
+  return null;
+}
+
+/** Compare two roots that ALREADY went through `normalizeRoot` — the marker
+ *  walk normalizes each level once and must not pay the syscall twice. */
+function sameNormalizedRoot(a: string, b: string): boolean {
+  return process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
+}
+
+/** Two roots are the same project. BOTH sides go through `normalizeRoot`, so a
+ *  Windows 8.3 short path and its long form are one project, and so are /var
+ *  and /private/var — comparing the raw strings is exactly how one project
+ *  splits in two. Windows compares case-insensitively; a trailing separator
+ *  never makes a different project. */
+export function sameProjectRoot(a: string | null, b: string | null, realpath: RealpathFn = osRealpath): boolean {
+  if (a == null || b == null) return a == null && b == null;
+  return sameNormalizedRoot(normalizeRoot(a, realpath), normalizeRoot(b, realpath));
+}
+
+let _rootMemo: { key: string; root: string | null } | null = null;
+
+/** The project root THIS process is serving, or null when it is not inside any
+ *  project. Memoized per (env, cwd) so the marker walk runs once per process
+ *  without ever going stale for a test that moves the root. */
+export function resolveProjectRoot(cwd?: string): string | null {
+  const base = cwd ?? process.cwd();
+  const env = process.env.NIRVANA_PROJECT_ROOT || "";
+  const key = `${env}\0${base}`;
+  if (_rootMemo && _rootMemo.key === key) return _rootMemo.root;
+  const root = env ? normalizeRoot(env) : findProjectRootFrom(base);
+  _rootMemo = { key, root };
+  return root;
+}
+
+export interface ScopeOpts {
+  /** See every project's runs. The supervisor's exception, nobody else's. */
+  allProjects?: boolean;
+  /** Scope to this root instead of the process's own (tests, supervisor). */
+  projectRoot?: string | null;
+}
+
+/** The `AND …` fragment that confines a query to one project.
+ *  - allProjects → no fragment at all;
+ *  - a root      → rows of that root;
+ *  - no root     → rows that have none either, so a process outside any project
+ *                  sees the legacy/rootless runs and never a stranger's work. */
+function scopeClause(opts?: ScopeOpts): { sql: string; params: unknown[] } {
+  if (opts?.allProjects) return { sql: "", params: [] };
+  const root = opts?.projectRoot !== undefined
+    ? (opts.projectRoot ? normalizeRoot(opts.projectRoot) : null)
+    : resolveProjectRoot();
+  return root
+    ? { sql: " AND project_root = ?", params: [root] }
+    : { sql: " AND project_root IS NULL", params: [] };
+}
+
+/** The project root of a pre-migration row, from what the row already carries.
+ *  On the agentic path `meta.project_root` / `meta.project_dir` hold an OUTPUTS
+ *  dir (openAgenticRun fills them from outputsRoot) and may be relative to
+ *  `meta.cwd` — so each candidate is anchored, then walked up to its project,
+ *  the same resolution a live process does for itself. Nothing usable → null. */
+function projectRootFromMeta(meta: Record<string, unknown>): string | null {
+  const cwd = typeof meta.cwd === "string" && meta.cwd ? meta.cwd : null;
+  for (const key of ["project_root", "project_dir", "cwd"]) {
+    const v = meta[key];
+    if (typeof v !== "string" || !v) continue;
+    const anchored = path.isAbsolute(v) ? v : (cwd ? path.resolve(cwd, v) : null);
+    if (!anchored) continue;
+    const root = findProjectRootFrom(anchored);
+    if (root) return root;
+  }
+  return null;
+}
+
+/** One-shot backfill, run only when the column is added. Rows we cannot place
+ *  keep NULL: a wrong project is worse than an honest "legacy". */
+function backfillProjectRoots(db: Database): void {
+  const rows = db.query("SELECT run_id, meta FROM runs WHERE project_root IS NULL").all() as { run_id: string; meta: string }[];
+  const placed: { runId: string; root: string }[] = [];
+  for (const r of rows) {
+    let meta: Record<string, unknown> = {};
+    try { meta = JSON.parse(String(r.meta ?? "{}")); } catch { continue; }
+    const root = projectRootFromMeta(meta);
+    if (root) placed.push({ runId: r.run_id, root });
+  }
+  if (!placed.length) return;
+  const update = db.prepare("UPDATE runs SET project_root = ? WHERE run_id = ?");
+  db.transaction((items: { runId: string; root: string }[]) => {
+    for (const it of items) update.run(it.root, it.runId);
+  })(placed);
 }
 
 export function resolveLedgerDbPath(): string {
@@ -139,6 +314,7 @@ export function openLedger(dbPath?: string): LedgerHandle {
     run_id TEXT PRIMARY KEY,
     trace_id TEXT,
     project_id TEXT,
+    project_root TEXT,
     target_slug TEXT,
     target_kind TEXT,
     state TEXT NOT NULL,
@@ -155,8 +331,18 @@ export function openLedger(dbPath?: string): LedgerHandle {
     last_error TEXT,
     meta TEXT NOT NULL DEFAULT '{}'
   )`);
+  // project_root arrived after the table did. The migration is idempotent by
+  // PRAGMA table_info, and the backfill runs exactly once — on the open that
+  // adds the column — because every later row is stamped at INSERT.
+  const columns = db.query("PRAGMA table_info(runs)").all() as { name: string }[];
+  if (!columns.some(c => c.name === "project_root")) {
+    db.exec("ALTER TABLE runs ADD COLUMN project_root TEXT");
+    try { backfillProjectRoots(db); }
+    catch (e) { console.error(`[run-ledger] project_root backfill failed (${(e as Error)?.message ?? e}); those rows stay legacy`); }
+  }
   db.exec("CREATE INDEX IF NOT EXISTS idx_runs_state ON runs(state)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_runs_lease ON runs(state, lease_expires_at)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_runs_project ON runs(project_root, state)");
   // supervisor bookkeeping (e.g. last-sweep timestamp for the lazy sweep)
   db.exec("CREATE TABLE IF NOT EXISTS supervisor_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
   const handle: LedgerHandle = {
@@ -249,6 +435,8 @@ export interface OpenRunOpts {
   runId?: string;
   traceId?: string | null;
   projectId?: string | null;
+  /** Project this run belongs to. Default: the root this process is serving. */
+  projectRoot?: string | null;
   targetSlug?: string | null;
   targetKind?: string | null;  // business | squad | agent-x | clone …
   runtime?: string | null;
@@ -266,12 +454,15 @@ export function openRun(handle: LedgerHandle, opts: OpenRunOpts): RunRow {
   const now = nowIso();
   const leaseSec = opts.initialLeaseSec ?? 900;
   const lease = nowIso(Date.now() + leaseSec * 1000);
+  const projectRoot = opts.projectRoot !== undefined
+    ? (opts.projectRoot ? normalizeRoot(opts.projectRoot) : null)
+    : resolveProjectRoot();
   handle.db.run(
-    `INSERT INTO runs (run_id, trace_id, project_id, target_slug, target_kind, state, child_pid, session_id,
+    `INSERT INTO runs (run_id, trace_id, project_id, project_root, target_slug, target_kind, state, child_pid, session_id,
       runtime, lease_expires_at, heartbeat_at, retries, max_retries, created_at, updated_at, meta)
-     VALUES (?, ?, ?, ?, ?, 'dispatched', ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, 'dispatched', ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
     [
-      runId, opts.traceId ?? null, opts.projectId ?? null, opts.targetSlug ?? null, opts.targetKind ?? null,
+      runId, opts.traceId ?? null, opts.projectId ?? null, projectRoot, opts.targetSlug ?? null, opts.targetKind ?? null,
       opts.childPid ?? null, opts.sessionId ?? null, opts.runtime ?? null,
       lease, now, opts.maxRetries ?? 2, now, now, JSON.stringify(opts.meta ?? {}),
     ],
@@ -479,28 +670,33 @@ export function abandon(handle: LedgerHandle, runId: string, reason: string): Ru
 
 const ACTIVE_IN = ACTIVE_STATES.map(() => "?").join(", ");
 
-export function findNonTerminal(handle: LedgerHandle): RunRow[] {
+/** Active runs OF THIS PROJECT. `scope.allProjects` is the supervisor's door
+ *  to the whole machine; every other caller gets its own project. */
+export function findNonTerminal(handle: LedgerHandle, scope?: ScopeOpts): RunRow[] {
+  const s = scopeClause(scope);
   const rows = handle.db
-    .query(`SELECT * FROM runs WHERE state IN (${ACTIVE_IN}) ORDER BY created_at ASC`)
-    .all(...ACTIVE_STATES) as Record<string, unknown>[];
+    .query(`SELECT * FROM runs WHERE state IN (${ACTIVE_IN})${s.sql} ORDER BY created_at ASC`)
+    .all(...ACTIVE_STATES, ...s.params) as Record<string, unknown>[];
   return rows.map(r => parseRow(r)!);
 }
 
-export function countNonTerminal(handle: LedgerHandle): number {
+export function countNonTerminal(handle: LedgerHandle, scope?: ScopeOpts): number {
+  const s = scopeClause(scope);
   const r = handle.db
-    .query(`SELECT COUNT(*) AS n FROM runs WHERE state IN (${ACTIVE_IN})`)
-    .get(...ACTIVE_STATES) as { n: number };
+    .query(`SELECT COUNT(*) AS n FROM runs WHERE state IN (${ACTIVE_IN})${s.sql}`)
+    .get(...ACTIVE_STATES, ...s.params) as { n: number };
   return r?.n ?? 0;
 }
 
-/** Non-terminal runs whose lease has expired at `now` (default: real now).
- *  A NULL lease counts as expired — a run that never got a lease is exactly
- *  the kind of forgotten run this ledger exists to catch. */
-export function findExpired(handle: LedgerHandle, now?: Date | number): RunRow[] {
+/** Non-terminal runs of this project whose lease has expired at `now`
+ *  (default: real now). A NULL lease counts as expired — a run that never got
+ *  a lease is exactly the kind of forgotten run this ledger exists to catch. */
+export function findExpired(handle: LedgerHandle, now?: Date | number, scope?: ScopeOpts): RunRow[] {
   const cutoff = nowIso(typeof now === "number" ? now : now?.getTime());
+  const s = scopeClause(scope);
   const rows = handle.db
-    .query(`SELECT * FROM runs WHERE state IN (${ACTIVE_IN}) AND (lease_expires_at IS NULL OR lease_expires_at < ?) ORDER BY created_at ASC`)
-    .all(...ACTIVE_STATES, cutoff) as Record<string, unknown>[];
+    .query(`SELECT * FROM runs WHERE state IN (${ACTIVE_IN}) AND (lease_expires_at IS NULL OR lease_expires_at < ?)${s.sql} ORDER BY created_at ASC`)
+    .all(...ACTIVE_STATES, cutoff, ...s.params) as Record<string, unknown>[];
   return rows.map(r => parseRow(r)!);
 }
 
@@ -556,12 +752,23 @@ function metaString(meta: Record<string, unknown>, key: string): string | null {
 
 /** Runs of the same project or trace, other than `row` — the squads and
  *  employees the run dispatched (a `dispatch --exec` or brief-squad under the
- *  same --project opens one). Newest first. */
+ *  same --project opens one). Newest first.
+ *
+ *  Scoped to `row`'s OWN project root, not the caller's: this answers "what
+ *  else is this run's project doing", and the supervisor asks it while sweeping
+ *  rows of many projects. project_id is a directory basename, so two projects
+ *  can genuinely collide on it — the root is what separates them.
+ *
+ *  A LEGACY row (project_root NULL, nothing to derive it from) keeps the
+ *  pre-migration match by id alone, so an upgrade never blinds the liveness
+ *  check to a run's own children. The tolerance is one-way on purpose: a row
+ *  that knows its project never accepts a rootless sibling. */
 export function findRelatedRuns(handle: LedgerHandle, row: RunRow): RunRow[] {
   if (!row.project_id && !row.trace_id) return [];
   const rows = handle.db
-    .query("SELECT * FROM runs WHERE run_id != ? AND (project_id = ? OR trace_id = ?) ORDER BY updated_at DESC")
-    .all(row.run_id, row.project_id ?? "", row.trace_id ?? "") as Record<string, unknown>[];
+    .query(`SELECT * FROM runs WHERE run_id != ? AND (project_id = ? OR trace_id = ?)
+            AND (? IS NULL OR project_root = ?) ORDER BY updated_at DESC`)
+    .all(row.run_id, row.project_id ?? "", row.trace_id ?? "", row.project_root, row.project_root) as Record<string, unknown>[];
   return rows.map(r => parseRow(r)!);
 }
 
@@ -666,13 +873,18 @@ export interface BeatAgenticRunsOpts {
  * brief-squad). The employee never has to remember a heartbeat: delegating,
  * or advancing a phase, IS the heartbeat. Fail-soft by contract: never throws,
  * returns how many rows were beaten (0 when the ledger is unavailable).
+ *
+ * Confined to the caller's project, `runId` included: keeping another project's
+ * run alive is as much a cross-project write as closing it, and a handoff that
+ * names a foreign id names it by mistake.
  */
 export function beatAgenticRuns(opts: BeatAgenticRunsOpts): number {
   try {
     const handle = openLedger();
+    const s = scopeClause();
     const rows = handle.db
-      .query(`SELECT * FROM runs WHERE state IN (${ACTIVE_IN}) AND (run_id = ? OR (target_kind = 'business' AND (project_id = ? OR trace_id = ?)))`)
-      .all(...ACTIVE_STATES, opts.runId ?? "", opts.projectId ?? "", opts.traceId ?? opts.projectId ?? "") as Record<string, unknown>[];
+      .query(`SELECT * FROM runs WHERE state IN (${ACTIVE_IN}) AND (run_id = ? OR (target_kind = 'business' AND (project_id = ? OR trace_id = ?)))${s.sql}`)
+      .all(...ACTIVE_STATES, opts.runId ?? "", opts.projectId ?? "", opts.traceId ?? opts.projectId ?? "", ...s.params) as Record<string, unknown>[];
     let beaten = 0;
     for (const row of rows.map(r => parseRow(r)!)) {
       if (row.meta?.path !== "agentic") continue;
