@@ -91,3 +91,78 @@ describe("compileManifest with agent nodes", () => {
     expect(manifest!.parallel_waves).toEqual([["brief-1"], ["squad-a"], ["role-writer"], ["squad-b"], ["deliv-1"]]);
   });
 });
+
+// ── inherited squad composition (Squad Protocol v6 §31) ──────────────────────
+// The plan reads the protocol instead of demanding manual authorship: when the
+// entity graph already says squad A requires a capability squad B provides, a
+// plan naming both gets that order for free. It never overrides the author, and
+// a plan whose squads declare no composition compiles exactly as before.
+
+const composition = (...pairs: [string, string][]): DependencyGraph => ({
+  nodes: [...new Set(pairs.flat())].map((slug) => ({ id: `squad:${slug}`, type: "squad" as const, payload: { slug } })),
+  edges: pairs.map(([consumer, provider]) => ({
+    id: `depends_on:${consumer}->${provider}`,
+    source: `squad:${consumer}`,
+    target: `squad:${provider}`,
+    type: "depends_on" as const,
+  })),
+});
+
+describe("compileManifest inherits squad→squad composition", () => {
+  const plan: DependencyGraph = {
+    nodes: [n("brief-1", "brief"), n("squad:consumer", "squad"), n("squad:provider", "squad")],
+    edges: [e("e1", "brief-1", "squad:consumer", "briefs"), e("e2", "brief-1", "squad:provider", "briefs")],
+  };
+
+  test("an undeclared pair inherits the order the protocol already knows", () => {
+    const { manifest, issues } = compileManifest(plan, { composition: composition(["consumer", "provider"]) });
+    expect(issues).toEqual([]);
+    const byId = Object.fromEntries(manifest!.phases.map((p) => [p.id, p]));
+    expect(byId["squad:consumer"].depends_on).toEqual(["brief-1", "squad:provider"]);
+    expect(byId["squad:provider"].consumed_by).toEqual(["squad:consumer"]);
+    expect(manifest!.parallel_waves).toEqual([["brief-1"], ["squad:provider"], ["squad:consumer"]]);
+  });
+
+  test("a node id without the squad: prefix matches by payload slug", () => {
+    const bySlug: DependencyGraph = {
+      nodes: [
+        { id: "phase-a", type: "squad", payload: { slug: "consumer" } },
+        { id: "phase-b", type: "squad", payload: { slug: "provider" } },
+      ],
+      edges: [],
+    };
+    const { manifest } = compileManifest(bySlug, { composition: composition(["consumer", "provider"]) });
+    expect(manifest!.phases.map((p) => p.id)).toEqual(["phase-b", "phase-a"]);
+  });
+
+  test("the author wins: a declared edge is never duplicated nor reversed", () => {
+    const authored: DependencyGraph = {
+      nodes: plan.nodes,
+      edges: [...plan.edges, e("e3", "squad:provider", "squad:consumer", "depends_on")],
+    };
+    // the composition says the opposite direction; the plan keeps its own.
+    const { manifest, issues } = compileManifest(authored, { composition: composition(["consumer", "provider"]) });
+    expect(issues).toEqual([]);
+    const byId = Object.fromEntries(manifest!.phases.map((p) => [p.id, p]));
+    expect(byId["squad:provider"].depends_on).toEqual(["brief-1", "squad:consumer"]);
+    expect(byId["squad:consumer"].depends_on).toEqual(["brief-1"]);
+  });
+
+  test("a plan whose squads declare no composition compiles byte-identically", () => {
+    const before = compileManifest(plan);
+    const withGraph = compileManifest(plan, { composition: composition(["other-a", "other-b"]) });
+    expect(withGraph.issues).toEqual(before.issues);
+    expect(JSON.stringify(withGraph.manifest)).toBe(JSON.stringify(before.manifest));
+    // and with no composition option at all, which is every caller today
+    expect(JSON.stringify(compileManifest(plan, {}).manifest)).toBe(JSON.stringify(before.manifest));
+  });
+
+  test("only squad nodes inherit: a company pair with the same slugs is untouched", () => {
+    const companies: DependencyGraph = {
+      nodes: [n("squad:consumer", "company"), n("squad:provider", "company")],
+      edges: [],
+    };
+    const { manifest } = compileManifest(companies, { composition: composition(["consumer", "provider"]) });
+    expect(manifest!.phases.every((p) => p.depends_on.length === 0)).toBeTrue();
+  });
+});

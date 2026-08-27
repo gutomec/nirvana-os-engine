@@ -8,6 +8,42 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Squad composition becomes an edge, and a plan's order
+
+`capabilities[].requires[]` and `capabilities[].consumes[]` have parsed since the
+v6 fields landed, and no reader touched them. They are edges now.
+`readSquadComposition()` in `skills/_shared/lib/entity-graph.ts` reads every
+installed `squad.yaml`: a `requires` entry resolves to the squad declaring that
+capability id and becomes `depends_on` consumer to provider, a `consumes` entry
+resolves through `produces` and becomes `feeds` provider to consumer. Both pass
+through `dependencyPair()` as "the provider exists first", so `nrv graph order`
+and the install order pick the composition up without a second rule.
+
+An edge exists only where the provider is unambiguous. Sharing a capability id
+is the design, not a defect: ten squads carry `media.video.compose` and the
+router is meant to choose among them by brief. Choosing one of them here would
+invent an execution order nobody declared, so two providers yield no edge and a
+report row. A `slug:` prefix on the reference (`brand-forge:design.brand.identity`)
+names the provider and settles it.
+
+| Finding | `nrv graph check` |
+|---|---|
+| `requires` nothing provides | `x_requires_unresolved`, fails `--strict` |
+| `requires` two squads provide | `x_requires_ambiguous`, reported |
+| `consumes` nothing produces | `x_consumes_unresolved`, reported |
+| `consumes` two squads produce | `x_consumes_ambiguous`, reported |
+
+Ambiguity stops short of an error deliberately. The capability exists, twice, and
+failing the library over a duplicate id would punish the shape the router was
+built for. An unresolved `requires` is the other case: the library does not carry
+that capability, and no ordering can supply it.
+
+`compileManifest()` accepts the derived graph as `opts.composition` and inherits
+the order between two `squad` nodes of one plan when the author declared none.
+The author still wins, always: a pair already joined by an edge, in either
+direction, stays exactly as written. Without the option the compilation is
+bit-for-bit the one that shipped before, and a regression test holds it there.
+
 ### The workflow reader: one canonical graph, every legacy dialect normalized
 
 A squad's workflow was the only artifact of the protocol with no single shape.

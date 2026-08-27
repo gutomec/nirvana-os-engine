@@ -8,6 +8,43 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### A composição de squads vira aresta, e ordem de plano
+
+`capabilities[].requires[]` e `capabilities[].consumes[]` parseavam desde que os
+campos v6 entraram, e nenhum leitor os tocava. Agora são arestas.
+`readSquadComposition()`, em `skills/_shared/lib/entity-graph.ts`, lê cada
+`squad.yaml` instalado: uma entrada de `requires` resolve para o squad que
+declara aquele id de capability e vira `depends_on` do consumidor para o
+provedor; uma entrada de `consumes` resolve pelo `produces` e vira `feeds` do
+provedor para o consumidor. As duas passam pelo `dependencyPair()` como "o
+provedor existe primeiro", então `nrv graph order` e a ordem de instalação
+absorvem a composição sem uma segunda regra.
+
+A aresta só existe onde o provedor é inequívoco. Compartilhar um id de
+capability é o desenho, não um defeito: dez squads carregam `media.video.compose`
+e o roteador deve escolher entre eles pelo briefing. Escolher um deles aqui
+inventaria uma ordem de execução que ninguém declarou, então dois provedores não
+geram aresta e sim uma linha de reporte. Um prefixo `slug:` na referência
+(`brand-forge:design.brand.identity`) nomeia o provedor e resolve a questão.
+
+| Achado | `nrv graph check` |
+|---|---|
+| `requires` que ninguém provê | `x_requires_unresolved`, reprova no `--strict` |
+| `requires` que dois squads provêem | `x_requires_ambiguous`, reportado |
+| `consumes` que ninguém produz | `x_consumes_unresolved`, reportado |
+| `consumes` que dois squads produzem | `x_consumes_ambiguous`, reportado |
+
+A ambiguidade fica aquém do erro de propósito. A capability existe, duas vezes, e
+reprovar a biblioteca por um id repetido puniria justamente a forma para a qual o
+roteador foi feito. Um `requires` não resolvido é outro caso: a biblioteca não
+tem aquela capability, e nenhuma ordenação a fabrica.
+
+`compileManifest()` aceita o grafo derivado em `opts.composition` e herda a ordem
+entre dois nós `squad` de um mesmo plano quando o autor não declarou nenhuma. O
+autor continua vencendo, sempre: um par já ligado por uma aresta, em qualquer
+direção, fica exatamente como foi escrito. Sem a opção, a compilação é bit a bit
+a que já era publicada, e um teste de regressão a mantém assim.
+
 ### O leitor de workflow: um grafo canônico, todo dialeto legado normalizado
 
 O workflow de um squad era o único artefato do protocolo sem forma única.

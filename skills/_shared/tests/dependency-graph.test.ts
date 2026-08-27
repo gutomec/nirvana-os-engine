@@ -299,3 +299,28 @@ describe("agent nodes", () => {
     expect(issues.map((i) => i.message)).toEqual(['edge type "owns" is not allowed from company to agent']);
   });
 });
+
+describe("squad composition edges", () => {
+  // `consumes` compiles to `feeds`, and its provider is a squad, not a
+  // material: the compatibility table has to admit squad → squad or the
+  // derived edge would be rejected by validateGraph before anyone saw it.
+  test("feeds accepts a squad provider without losing the material one", () => {
+    expect(isCompatibleEdge("feeds", "squad", "squad")).toBeTrue();
+    expect(isCompatibleEdge("feeds", "material", "squad")).toBeTrue();
+    expect(isCompatibleEdge("feeds", "material", "company")).toBeTrue();
+    expect(isCompatibleEdge("feeds", "squad", "employee")).toBeFalse();
+    expect(isCompatibleEdge("feeds", "company", "squad")).toBeFalse();
+  });
+
+  test("both composition edges order the provider before the consumer", () => {
+    const g: DependencyGraph = {
+      nodes: [node("squad:consumer", "squad"), node("squad:provider", "squad")],
+      edges: [
+        edge("depends_on:consumer->provider", "squad:consumer", "squad:provider", "depends_on"),
+        edge("feeds:provider->consumer", "squad:provider", "squad:consumer", "feeds"),
+      ],
+    };
+    expect(validateGraph(g)).toEqual([]);
+    expect(buildOrder(g).order.map((n) => n.id)).toEqual(["squad:provider", "squad:consumer"]);
+  });
+});

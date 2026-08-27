@@ -21,7 +21,7 @@ import {
   validateGraph,
   type GraphNode,
 } from "../../_shared/lib/dependency-graph.ts";
-import { buildEntityGraph, installKindOrder, readCloneBindings, resolveRoots } from "../../_shared/lib/entity-graph.ts";
+import { buildEntityGraph, installKindOrder, readCloneBindings, readSquadComposition, resolveRoots } from "../../_shared/lib/entity-graph.ts";
 
 const RED = "\x1b[31m", GRN = "\x1b[32m", YEL = "\x1b[33m", DIM = "\x1b[2m", BOLD = "\x1b[1m", RST = "\x1b[0m";
 
@@ -92,14 +92,26 @@ if (sub === "closure") {
   const issues = validateGraph(graph);
   const scan = readCloneBindings(roots);
   const missing = scan.bindings.filter((b) => !b.dangling && !scan.availableClones.has(b.clone));
+  // Composition (Squad Protocol v6 §31). A `requires` that resolves to nothing
+  // is a broken declaration — the capability is not in the library and no
+  // ordering can supply it — so --strict fails on it. Ambiguity is a different
+  // finding: the capability exists, twice, and the library already carries
+  // duplicate ids, so it is reported and never fatal.
+  const composition = readSquadComposition(roots).issues;
+  const orphans = composition.filter((c) => c.kind === "requires" && c.reason === "unresolved");
   if (asJson) {
-    console.log(JSON.stringify({ issues, missing }, null, 2));
+    console.log(JSON.stringify({ issues, missing, composition }, null, 2));
   } else {
     console.log(`\n${BOLD}GRAPH CHECK${RST}`);
-    console.log(`  ${graph.nodes.length} nodes · ${graph.edges.length} edges · ${issues.length} structural issue(s) · ${missing.length} unresolved binding(s)`);
+    console.log(`  ${graph.nodes.length} nodes · ${graph.edges.length} edges · ${issues.length} structural issue(s) · ${missing.length} unresolved binding(s) · ${composition.length} composition finding(s)`);
     for (const i of issues.slice(0, 12)) console.log(`  ${RED}✗${RST} ${i.path} — ${i.message}`);
     for (const m of missing.slice(0, 12)) console.log(`  ${YEL}?${RST} ${m.clone} ${DIM}← ${m.business}/${m.employee}${RST}`);
+    for (const c of composition.slice(0, 12)) {
+      const where = `${DIM}← ${c.squad}/${c.capability}${RST}`;
+      const hint = c.candidates.length ? ` ${DIM}(${c.candidates.join(", ")})${RST}` : "";
+      console.log(`  ${c.reason === "unresolved" && c.kind === "requires" ? `${RED}✗${RST}` : `${YEL}?${RST}`} ${c.code} ${c.ref} ${where}${hint}`);
+    }
     console.log("");
   }
-  process.exitCode = strict && (issues.length || missing.length) ? 1 : 0;
+  process.exitCode = strict && (issues.length || missing.length || orphans.length) ? 1 : 0;
 }
