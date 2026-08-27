@@ -8,6 +8,36 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### A retenção de backups ordena por tempo, não pelo formato do nome
+
+O `prune` mantém os cinco backups mais novos de uma entidade e os encontra
+ordenando os nomes dos diretórios como string. Essa suposição não estava
+declarada em lugar nenhum, e nada obriga um escritor externo a respeitá-la. Ela
+quebrou pela segunda vez em 27/08: um agente gravou o próprio backup de
+`nirvana-crypto-trading` ao lado do backup do engine, carimbando hora local em
+ISO básico (`.20260827T152722`) onde o engine carimba UTC em ISO estendido
+(`.2026-08-27T18-27-22-440Z`). Mesmo segundo, ordem invertida, porque `-` (0x2D)
+vem antes de `0` (0x30) no quarto caractere do carimbo. A cópia mais nova, a do
+engine, foi lida como a mais antiga e entrou primeiro na fila de exclusão — a
+falha que o comentário de colisão do `backup.ts` existe para evitar, chegando
+por outra porta.
+
+O `listBackups` passa a ordenar pelo mtime do diretório e usa o nome só para
+desempatar. O mtime é o único relógio que todo escritor grava, inclusive os
+escritores cujo formato de carimbo ainda não existe; parsear o nome só cobre os
+formatos que já conhecemos, que é justamente o formato das duas falhas, e ainda
+deixaria o diretório inparseável num balde sem política boa — apagá-lo é
+destrutivo, mantê-lo para sempre vaza disco, contá-lo no teto sem saber a idade
+traz o defeito de volta. O que o mtime não cobre está escrito no arquivo: mtime
+é gravável, então um `touch`, ou uma cópia que não preserva horários, compra
+para um backup velho a vaga que o mais novo perde. O restore não muda. Ele usa o
+caminho que o `createBackup` devolveu, nunca um caminho escolhido por essa
+ordem.
+
+O teste de regressão carrega os dois nomes reais de diretório e foi rodado antes
+contra o código antigo, onde o `prune` apaga o backup do engine e mantém o do
+agente. `createBackup`, `restoreBackup` e `BACKUP_KEEP` não mudam.
+
 ### Sobreposição entre entidades é normal, e o que o perdedor tem de bom é aproveitado
 
 Os pipelines de criação diziam ao autor que um squad ou empresa "que rouba o

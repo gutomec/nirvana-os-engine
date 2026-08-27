@@ -8,6 +8,34 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Backup retention orders by time, not by the shape of the name
+
+`prune` keeps the five newest backups of an entity and finds them by sorting the
+directory names as strings. Nothing declared that assumption, and nothing forces
+an outside writer to honor it. It broke a second time on 27/08: an agent wrote
+its own backup of `nirvana-crypto-trading` next to the engine's, stamping local
+time in basic ISO (`.20260827T152722`) where the engine stamps UTC in extended
+ISO (`.2026-08-27T18-27-22-440Z`). Same second, opposite sort, because `-`
+(0x2D) comes before `0` (0x30) at the fourth character of the stamp. The
+engine's newer copy read as the oldest and went first in the deletion queue,
+which is the failure the collision comment in `backup.ts` was written to
+prevent, arriving through a different door.
+
+`listBackups` now orders by the directory's mtime and uses the name only to
+break ties. mtime is the one clock every writer sets, including writers whose
+stamp format does not exist yet; parsing the name can only cover formats already
+known, which is the shape of both failures, and it would leave an unparseable
+directory in a bucket with no good policy — deleting it is destructive, keeping
+it forever leaks disk, counting it against the cap without knowing its age
+brings the bug back. What mtime does not cover is now written in the file: mtime
+is writable, so a `touch`, or a copy that does not preserve times, can buy an
+old backup a slot the newest one then loses. Restore is unaffected. It takes the
+path `createBackup` returned, never a path this order picked.
+
+The regression test carries both real directory names and was run against the
+old code first, where `prune` deletes the engine's backup and keeps the agent's.
+`createBackup`, `restoreBackup` and `BACKUP_KEEP` are unchanged.
+
 ### Overlap between entities is normal, and the loser's work is harvested rather than discarded
 
 The creation pipelines told an author that a new squad or business "that steals
