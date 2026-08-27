@@ -16,7 +16,13 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { parse as parseYaml } from "yaml";
 import { type Runtime } from "./host-agent-driver.ts";
+import { LEGACY_CAPABILITY_ID } from "./capability-resolver.ts";
+import {
+  normalizeWorkflow, readWorkflow, referencedComponents, resolveWorkflowRef, type CanonicalStep,
+} from "../../squads/lib/workflow-reader.ts";
+import { LIMITS } from "../../_shared/validators/limits.ts";
 import { runWithCascade } from "./cascade-runner.ts";
 import { sessionKey, getSession, putSession, dropSession } from "./session-store.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
@@ -41,6 +47,9 @@ export interface SquadExecArgs {
   /** Business the squad serves (team mode); null for squad-only dispatch. */
   businessSlug?: string | null;
   mode: SquadExecMode;
+  /** Capability this dispatch runs (capability-resolver.ts). It builds the
+   *  prompt and travels on `dispatch_squad`; absent keeps the historical prompt. */
+  capabilityId?: string | null;
   maxBudgetUsd?: number;
   timeoutMs?: number;
   /** User USE_* rules block, appended to the AUTONOMOUS_DIRECTIVE. */
@@ -155,9 +164,158 @@ export function squadCloneInjection(brief: string, cwd?: string): { block: strin
   return { block: parts.join("\n\n"), decision, missingClones };
 }
 
-/** Build the self-contained squad prompt — its manifest, primary agent(s),
- * primary task(s), mind-clone injection and the brief. The team-mandatory
- * framing is byte-identical to the pre-extraction team-orchestrator prompt. */
+// ── the capability a dispatch runs, as prompt sections ──────────────────────
+
+export interface SquadCapabilityAcceptance { id: string; description: string; blocking?: boolean; minimumScore?: number }
+
+export interface SquadCapabilityPromptContext {
+  capabilityId: string;
+  description: string;
+  produces: string[];
+  acceptance: SquadCapabilityAcceptance[];
+  /** The capability's `invoke.ref`, resolved and normalized; null when the ref
+   *  names no readable workflow (the manifest still describes the capability). */
+  workflow: { ref: string; file: string; steps: CanonicalStep[]; body: string } | null;
+  /** Agent and task documents the workflow runs, in step order, under the byte
+   *  ceiling. Null when the workflow named none — the caller keeps the top-3 blocks. */
+  components: { agents: string; tasks: string } | null;
+}
+
+const componentsBytesMax = (): number => Number(LIMITS.squad_prompt_components_bytes_max ?? 65536);
+
+/** Slice a string to at most `bytes` UTF-8 bytes, never splitting a code point. */
+function sliceBytes(text: string, bytes: number): string {
+  const buf = Buffer.from(text, "utf8");
+  if (buf.length <= bytes) return text;
+  return new TextDecoder("utf8", { fatal: false }).decode(buf.subarray(0, bytes)).replace(/�$/, "");
+}
+
+/** Headroom kept aside for the truncation note, so the note itself can never
+ *  push the section past the ceiling it is reporting. */
+const COMPONENTS_NOTE_RESERVE = 192;
+
+/** Component documents in step order, under a budget shared by agents and tasks.
+ *  A document that does not fit is dropped whole and counted; the first one that
+ *  overflows an empty budget is sliced, so a single huge persona still arrives. */
+function renderComponents(squadDir: string, sub: "agents" | "tasks", stems: string[], budget: { left: number }): string {
+  const parts: string[] = [];
+  let dropped = 0;
+  let missing = 0;
+  const marker = `\n[…truncado no teto de ${componentsBytesMax()} bytes de componentes]`;
+  const spend = (text: string) => { budget.left -= Buffer.byteLength(text, "utf8") + (parts.length ? 2 : 0); parts.push(text); };
+  for (const stem of stems) {
+    const file = path.join(squadDir, sub, `${stem}.md`);
+    let text: string;
+    try { text = fs.readFileSync(file, "utf8"); } catch { missing++; continue; }
+    const doc = `--- ${stem}.md ---\n${text}`;
+    const join = parts.length ? 2 : 0;
+    if (Buffer.byteLength(doc, "utf8") + join <= budget.left - COMPONENTS_NOTE_RESERVE) { spend(doc); continue; }
+    const room = budget.left - COMPONENTS_NOTE_RESERVE - join - Buffer.byteLength(marker, "utf8");
+    if (parts.length === 0 && room > 512) { spend(sliceBytes(doc, room) + marker); continue; }
+    dropped++;
+  }
+  const notes: string[] = [];
+  if (dropped) notes.push(`${dropped} documento(s) omitido(s) pelo teto de ${componentsBytesMax()} bytes de componentes`);
+  if (missing) notes.push(`${missing} referência(s) sem arquivo em ${sub}/`);
+  if (notes.length) spend(`[${notes.join("; ")}]`);
+  return parts.join("\n\n");
+}
+
+/**
+ * The capability's own context, read from the squad on disk: its manifest entry,
+ * the workflow its `invoke.ref` names (through the v6 reader, so every legacy
+ * dialect normalizes to the same graph) and the components that graph runs.
+ *
+ * Returns null when there is nothing better than the historical prompt: the
+ * legacy `squad.execute`, an unreadable manifest, or an id the squad does not
+ * declare. That null is what keeps the no-capability path byte-identical.
+ */
+export function capabilityContext(squadDir: string, capabilityId: string): SquadCapabilityPromptContext | null {
+  if (!capabilityId || capabilityId === LEGACY_CAPABILITY_ID) return null;
+  let manifest: any;
+  try { manifest = parseYaml(fs.readFileSync(path.join(squadDir, "squad.yaml"), "utf8")); } catch { return null; }
+  const entry = Array.isArray(manifest?.capabilities)
+    ? manifest.capabilities.find((c: any) => c && typeof c === "object" && c.id === capabilityId)
+    : null;
+  if (!entry) return null;
+
+  const asStrings = (v: unknown): string[] => Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  const acceptance: SquadCapabilityAcceptance[] = Array.isArray(entry.acceptance)
+    ? entry.acceptance.filter((a: any) => a && typeof a.id === "string" && typeof a.description === "string")
+      .map((a: any) => ({ id: a.id, description: a.description, blocking: a.blocking, minimumScore: a.minimumScore }))
+    : [];
+
+  const ref = typeof entry.invoke?.ref === "string" ? entry.invoke.ref : "";
+  const file = ref ? resolveWorkflowRef(squadDir, ref) : null;
+  const raw = file ? readWorkflow(file) : null;
+  const normalized = raw?.doc ? normalizeWorkflow(raw.doc, { stem: raw.stem }) : null;
+
+  let workflow: SquadCapabilityPromptContext["workflow"] = null;
+  let components: SquadCapabilityPromptContext["components"] = null;
+  if (normalized && file && raw) {
+    workflow = { ref, file: path.relative(squadDir, file), steps: normalized.canonical.steps, body: raw.body.trim() };
+    const referenced = referencedComponents(normalized.canonical);
+    const stem = (name: string) => name.replace(/^(?:agents|tasks)\//, "").replace(/\.(md|markdown)$/i, "");
+    const agents = referenced.agents.map(stem).filter(Boolean);
+    const tasks = referenced.tasks.map(stem).filter(Boolean);
+    if (agents.length || tasks.length) {
+      const budget = { left: componentsBytesMax() };
+      const agentDocs = renderComponents(squadDir, "agents", agents, budget);
+      const taskDocs = renderComponents(squadDir, "tasks", tasks, budget);
+      // Only take over the blocks when at least the agents resolved: a workflow
+      // whose every reference is dangling must not leave the squad with nothing.
+      if (agentDocs) components = { agents: agentDocs, tasks: taskDocs || "(o workflow não referencia nenhuma task)" };
+    }
+  }
+
+  return {
+    capabilityId,
+    description: typeof entry.description === "string" ? entry.description.trim() : "",
+    produces: asStrings(entry.produces),
+    acceptance,
+    workflow,
+    components,
+  };
+}
+
+const EM_DASH_CELL = "—";
+
+/** The capability block, plus the workflow block when the graph resolved. */
+function renderCapabilityBlock(ctx: SquadCapabilityPromptContext): string {
+  const lines = ["## SUA CAPABILITY", `- **id**: \`${ctx.capabilityId}\``];
+  if (ctx.description) lines.push(`- **descrição**: ${ctx.description}`);
+  if (ctx.produces.length) lines.push(`- **produces**: ${ctx.produces.join(", ")}`);
+  if (ctx.acceptance.length) {
+    lines.push("- **critérios de aceitação**:");
+    for (const a of ctx.acceptance) {
+      const marks = [a.blocking ? "bloqueante" : "", a.minimumScore !== undefined ? `nota mínima ${a.minimumScore}` : ""].filter(Boolean);
+      lines.push(`  - \`${a.id}\`${marks.length ? ` (${marks.join(", ")})` : ""} — ${a.description}`);
+    }
+  }
+  if (!ctx.workflow) {
+    lines.push("", "> Esta capability não aponta para um workflow legível; siga o manifesto e os documentos abaixo.");
+    return lines.join("\n");
+  }
+
+  const table = [
+    `## SEU WORKFLOW (\`${ctx.workflow.file}\`)`,
+    "| # | passo | agente | task | requer | cria |",
+    "| --- | --- | --- | --- | --- | --- |",
+    ...ctx.workflow.steps.map((s, i) => `| ${i + 1} | \`${s.id}\` | \`${s.agent}\` | ${s.task ? `\`${s.task}\`` : EM_DASH_CELL} | ${s.requires.length ? s.requires.map(r => `\`${r}\``).join(", ") : EM_DASH_CELL} | ${s.creates.length ? s.creates.join(", ") : EM_DASH_CELL} |`),
+    "",
+    "Execute os passos nessa ordem, respeitando as dependências da coluna `requer`.",
+  ];
+  if (ctx.workflow.body) table.push("", ctx.workflow.body);
+  return `${lines.join("\n")}\n\n${table.join("\n")}`;
+}
+
+/** Build the self-contained squad prompt — its manifest, the capability it was
+ * dispatched for (when one was resolved) with that capability's workflow and
+ * exactly the agents and tasks the workflow runs, mind-clone injection and the
+ * brief. WITHOUT a resolved capability the string is byte-identical to the
+ * pre-extraction team-orchestrator prompt: the capability section is empty and
+ * the component blocks fall back to the historical top-3 collection, headings
+ * included. `squad-exec.test.ts` pins the whole string on that path. */
 export function buildSquadPrompt(args: {
   squadSlug: string;
   squadDir: string;
@@ -165,6 +323,9 @@ export function buildSquadPrompt(args: {
   outDir: string;
   mode: SquadExecMode;
   cloneInjection: { block: string; decision: string };
+  /** The capability this dispatch runs (capability-resolver.ts). Absent, or the
+   *  legacy `squad.execute`, keeps the historical prompt. */
+  capabilityId?: string | null;
 }): string {
   const { squadSlug, squadDir, brief, outDir, mode, cloneInjection: cloneInj } = args;
   const readIfExists = (p: string) => fs.existsSync(p) ? fs.readFileSync(p, "utf8") : "";
@@ -177,6 +338,13 @@ export function buildSquadPrompt(args: {
     : "";
   const agentsBlock = collect(agentsDir, 3) || "(no agents/ dir)";
   const tasksBlock = collect(tasksDir, 3) || "(no tasks/ dir)";
+
+  // The capability sections, or "" — the whole compatibility surface of this cut.
+  const capability = args.capabilityId ? capabilityContext(squadDir, args.capabilityId) : null;
+  const capabilitySection = capability ? `${renderCapabilityBlock(capability)}\n\n` : "";
+  const componentsHeading = capability?.components ? "" : " (top 3)";
+  const agentsSection = capability?.components?.agents ?? agentsBlock;
+  const tasksSection = capability?.components?.tasks ?? tasksBlock;
 
   const roleLine = mode === "team-mandatory"
     ? `Você É o squad "${squadSlug}" executando uma sub-tarefa de um business maior. Sua saída é input do synthesizer do business.`
@@ -192,11 +360,11 @@ export function buildSquadPrompt(args: {
 ${manifest}
 \`\`\`
 
-## SEUS AGENTES (top 3)
-${agentsBlock}
+${capabilitySection}## SEUS AGENTES${componentsHeading}
+${agentsSection}
 
-## SUAS TASKS (top 3)
-${tasksBlock}
+## SUAS TASKS${componentsHeading}
+${tasksSection}
 
 ## MIND-CLONES QUE VOCÊ INCORPORA (decisão: ${cloneInj.decision})
 > Incorpore por inteiro; entregue COMO SE o clone tivesse produzido, sob a especialidade do squad.
@@ -248,7 +416,7 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
 
   const prompt = buildSquadPrompt({
     squadSlug: args.squadSlug, squadDir, brief: args.brief, outDir,
-    mode: args.mode, cloneInjection: cloneInj,
+    mode: args.mode, cloneInjection: cloneInj, capabilityId: args.capabilityId,
   });
 
   appendAudit({
@@ -258,6 +426,7 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
     ...bizCtx,
     squad_slug: args.squadSlug,
     squad_name: args.squadSlug,
+    ...(args.capabilityId ? { capability_id: args.capabilityId } : {}),
     mode: args.mode,
     outputs_dir: outDir,
   }, args.projectRoot);

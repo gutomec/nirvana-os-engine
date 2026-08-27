@@ -11,9 +11,10 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { runSquadHeadless, buildSquadPrompt } from "../lib/squad-exec.ts";
+import { runSquadHeadless, buildSquadPrompt, capabilityContext } from "../lib/squad-exec.ts";
 import { sessionKey, putSession } from "../lib/session-store.ts";
 import { SCOPE_GUARD_PT_BR } from "../../_shared/lib/scope-guard.ts";
+import { LIMITS } from "../../_shared/validators/limits.ts";
 
 let tmp: string;
 const savedLogsDir = process.env.HARNESS_LOGS_DIR;
@@ -90,6 +91,200 @@ describe("buildSquadPrompt — framing per mode", () => {
       const subTask = p.slice(p.indexOf("## SUA SUB-TAREFA"), p.indexOf("## SAÍDA"));
       expect(subTask).toContain(SCOPE_GUARD_PT_BR);
     }
+  });
+
+  // The compatibility invariant of the capability cut, stated as the whole
+  // string and not as a set of substrings: without a resolved capability the
+  // prompt is the one the engine has always sent, byte for byte. Every squad
+  // in the library is dispatched through this path until a capability resolves.
+  test("no capability: the prompt is byte-identical to the historical one", () => {
+    const squadDir = scaffoldSquad(path.join(tmp, "squads"), "brandcraft");
+    const expected = `Você É o squad "brandcraft" executando o brief do cliente de ponta a ponta. Sua saída é o ENTREGÁVEL FINAL para o usuário.
+
+## SUA IDENTIDADE (squad.yaml)
+\`\`\`yaml
+name: brandcraft
+MANIFEST-MARKER: yes
+
+\`\`\`
+
+## SEUS AGENTES (top 3)
+--- lead.md ---
+# Lead agent AGENT-MARKER
+
+## SUAS TASKS (top 3)
+--- do-it.md ---
+# Do it TASK-MARKER
+
+## MIND-CLONES QUE VOCÊ INCORPORA (decisão: PADRÃO)
+> Incorpore por inteiro; entregue COMO SE o clone tivesse produzido, sob a especialidade do squad.
+(sem clone para esta tarefa — opere com a especialidade padrão do squad)
+
+## BRIEF ORIGINAL DO CLIENTE
+the brief
+
+## SUA SUB-TAREFA
+Execute a SUA especialidade aplicada ao brief acima. Escreva arquivos sob \`/out/dir\` (HTML, CSS, JS, MD, PNG/JPG via skills de imagem, o que for da sua expertise). Não invoque a skill harness, não rode \`nrv run\`/\`nrv dispatch\` para este mesmo brief (anti-loop). Pode usar Bash, Read, Write, Edit, geração de imagem (nano-banana-pro), e qualquer ferramenta disponível para entregar o melhor possível.
+
+Se o brief mencionar você por nome (ex.: "use o squad brandcraft"), priorize fazer EXATAMENTE o que o usuário pediu nesse parágrafo. O usuário manda.
+
+${SCOPE_GUARD_PT_BR} Escopo é o brief acima e os critérios de aceitação da sua sub-tarefa.
+
+## SAÍDA
+Arquivos no diretório acima. Não printe sumário — entregue arquivos. Termine quando o trabalho estiver pronto para entrega ao usuário.`;
+    const args = { squadSlug: "brandcraft", squadDir, brief: "the brief", outDir: "/out/dir", mode: "squad-only" as const, cloneInjection: { block: "", decision: "PADRÃO" } };
+    expect(buildSquadPrompt(args)).toBe(expected);
+    // The three ways of saying "no capability" all land on the same bytes.
+    expect(buildSquadPrompt({ ...args, capabilityId: null })).toBe(expected);
+    expect(buildSquadPrompt({ ...args, capabilityId: "squad.execute" })).toBe(expected);
+    // As does a capability id the manifest does not declare.
+    expect(buildSquadPrompt({ ...args, capabilityId: "branding.nothing.here" })).toBe(expected);
+  });
+});
+
+// ── the capability sections (Squad Protocol v6 §32) ─────────────────────────
+
+/** A squad whose capability names a workflow, with two agents and two tasks on
+ *  disk of which the workflow runs one each. */
+function scaffoldCapabilitySquad(root: string, slug = "guided", opts: { workflow?: string; body?: string } = {}): string {
+  const dir = path.join(root, slug);
+  fs.mkdirSync(path.join(dir, "agents"), { recursive: true });
+  fs.mkdirSync(path.join(dir, "tasks"), { recursive: true });
+  fs.mkdirSync(path.join(dir, "workflows"), { recursive: true });
+  fs.writeFileSync(path.join(dir, "squad.yaml"), `name: ${slug}
+version: 1.0.0
+protocol: "6.0"
+capabilities:
+  - id: analysis.report.produce
+    description: Produce the guided analysis report for one account.
+    produces:
+      - report.md
+      - dataset.json
+    acceptance:
+      - id: ac-sources
+        description: Every claim cites a dated source.
+        blocking: true
+        minimumScore: 0.9
+      - id: ac-length
+        description: The report stays under twelve pages.
+    invoke:
+      type: workflow
+      ref: workflows/guided-analysis
+  - id: analysis.dataset.extract
+    description: Extract the raw dataset only.
+    invoke:
+      type: workflow
+      ref: workflows/extract-only
+`);
+  fs.writeFileSync(path.join(dir, "agents", "analyst.md"), "# Analyst ANALYST-MARKER");
+  fs.writeFileSync(path.join(dir, "agents", "aardvark.md"), "# Aardvark AARDVARK-MARKER");
+  fs.writeFileSync(path.join(dir, "agents", "writer.md"), "# Writer WRITER-MARKER");
+  fs.writeFileSync(path.join(dir, "tasks", "collect.md"), "# Collect COLLECT-MARKER");
+  fs.writeFileSync(path.join(dir, "tasks", "aaa-first.md"), "# Alphabetically first AAA-MARKER");
+  fs.writeFileSync(path.join(dir, "workflows", "guided-analysis.md"), opts.workflow ?? `---
+name: guided-analysis
+steps:
+  - id: collect
+    agent: analyst
+    task: collect
+    creates: [dataset.json]
+  - id: write
+    agent: writer
+    requires: [collect]
+    creates: [report.md]
+---
+
+## collect
+
+BODY-COLLECT-MARKER: read the account and write the dataset.
+`);
+  fs.writeFileSync(path.join(dir, "workflows", "extract-only.yaml"), `name: extract-only
+steps:
+  - id: extract
+    agent: analyst
+    task: collect
+`);
+  return dir;
+}
+
+describe("buildSquadPrompt — with a resolved capability", () => {
+  test("the capability, its workflow and only the referenced components reach the prompt", () => {
+    const squadDir = scaffoldCapabilitySquad(path.join(tmp, "squads"));
+    const p = buildSquadPrompt({
+      squadSlug: "guided", squadDir, brief: "analise a conta", outDir: "/out/dir",
+      mode: "squad-only", cloneInjection: { block: "", decision: "PADRÃO" },
+      capabilityId: "analysis.report.produce",
+    });
+    expect(p).toContain("## SUA CAPABILITY");
+    expect(p).toContain("- **id**: `analysis.report.produce`");
+    expect(p).toContain("- **descrição**: Produce the guided analysis report for one account.");
+    expect(p).toContain("- **produces**: report.md, dataset.json");
+    expect(p).toContain("- `ac-sources` (bloqueante, nota mínima 0.9) — Every claim cites a dated source.");
+    expect(p).toContain("- `ac-length` — The report stays under twelve pages.");
+
+    expect(p).toContain("## SEU WORKFLOW (`workflows/guided-analysis.md`)");
+    expect(p).toContain("| 1 | `collect` | `analyst` | `collect` | — | dataset.json |");
+    expect(p).toContain("| 2 | `write` | `writer` | — | `collect` | report.md |");
+    // The prose body of a Markdown workflow travels with the graph.
+    expect(p).toContain("BODY-COLLECT-MARKER");
+
+    // Referenced components only, in step order — never the alphabetical top 3.
+    expect(p).toContain("## SEUS AGENTES\n");
+    expect(p).not.toContain("(top 3)");
+    expect(p).toContain("ANALYST-MARKER");
+    expect(p).toContain("WRITER-MARKER");
+    expect(p).not.toContain("AARDVARK-MARKER");
+    expect(p).toContain("COLLECT-MARKER");
+    expect(p).not.toContain("AAA-MARKER");
+    expect(p.indexOf("ANALYST-MARKER")).toBeLessThan(p.indexOf("WRITER-MARKER"));
+  });
+
+  test("a legacy YAML workflow normalizes through the same reader", () => {
+    const squadDir = scaffoldCapabilitySquad(path.join(tmp, "squads"));
+    const p = buildSquadPrompt({
+      squadSlug: "guided", squadDir, brief: "b", outDir: "/o", mode: "team-mandatory",
+      cloneInjection: { block: "", decision: "PADRÃO" }, capabilityId: "analysis.dataset.extract",
+    });
+    expect(p).toContain("## SEU WORKFLOW (`workflows/extract-only.yaml`)");
+    expect(p).toContain("| 1 | `extract` | `analyst` | `collect` | — | — |");
+    expect(p).toContain("ANALYST-MARKER");
+    expect(p).not.toContain("WRITER-MARKER");
+    // The team framing is untouched by the capability sections.
+    expect(p).toContain("Sua saída é input do synthesizer do business.");
+  });
+
+  test("a capability whose invoke.ref resolves to nothing keeps the top-3 blocks and says so", () => {
+    const squadDir = scaffoldCapabilitySquad(path.join(tmp, "squads"));
+    fs.rmSync(path.join(squadDir, "workflows", "extract-only.yaml"));
+    const p = buildSquadPrompt({
+      squadSlug: "guided", squadDir, brief: "b", outDir: "/o", mode: "squad-only",
+      cloneInjection: { block: "", decision: "PADRÃO" }, capabilityId: "analysis.dataset.extract",
+    });
+    expect(p).toContain("- **id**: `analysis.dataset.extract`");
+    expect(p).toContain("não aponta para um workflow legível");
+    expect(p).toContain("## SEUS AGENTES (top 3)");
+    expect(p).toContain("AARDVARK-MARKER");
+  });
+
+  test("the components ceiling truncates instead of sending an unbounded prompt", () => {
+    const max = Number(LIMITS.squad_prompt_components_bytes_max);
+    const squadDir = scaffoldCapabilitySquad(path.join(tmp, "squads"));
+    fs.writeFileSync(path.join(squadDir, "agents", "analyst.md"), "A".repeat(max + 4096));
+    fs.writeFileSync(path.join(squadDir, "agents", "writer.md"), "WRITER-MARKER");
+    const ctx = capabilityContext(squadDir, "analysis.report.produce")!;
+    expect(ctx.components).not.toBeNull();
+    expect(Buffer.byteLength(ctx.components!.agents, "utf8")).toBeLessThanOrEqual(max);
+    expect(ctx.components!.agents).toContain("truncado no teto");
+    // The second agent no longer fits: it is dropped and counted, not silently lost.
+    expect(ctx.components!.agents).not.toContain("WRITER-MARKER");
+    expect(ctx.components!.agents).toContain("documento(s) omitido(s)");
+  });
+
+  test("capabilityContext returns null on every path that must keep the historical prompt", () => {
+    const squadDir = scaffoldCapabilitySquad(path.join(tmp, "squads"));
+    expect(capabilityContext(squadDir, "squad.execute")).toBeNull();
+    expect(capabilityContext(squadDir, "analysis.nothing.here")).toBeNull();
+    expect(capabilityContext(path.join(tmp, "squads", "no-such-squad"), "analysis.report.produce")).toBeNull();
   });
 });
 
