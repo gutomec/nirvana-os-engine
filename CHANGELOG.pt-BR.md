@@ -8,6 +8,8 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+## 0.10.3 — 2026-08-27
+
 ### Mais dez testes mediam o disco, e ninguém tinha escolhido isso
 
 A entrada abaixo consertou um arquivo e deixou uma lista de dez. O que esses dez
