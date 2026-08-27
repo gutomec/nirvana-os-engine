@@ -175,6 +175,42 @@ are covered by fixtures rather than by an installed CLI. A shim from a generator
 outside npm, pnpm and yarn has never been seen by this parser at all — by
 construction it produces no candidate and keeps the old route, which is the
 behavior the fallback tests pin.
+### When Bun goes missing, only one of three places said what to do
+
+Bun is the whole runtime, so its absence is a hard stop, and three different
+places can be the first to notice. Only one of them handled it.
+
+`packaging/pack/setup.sh` was already right: the exact command, chained with the
+step that follows, plus the warning against `npm install -g bun` and the EACCES
+it earns in `/usr/local`. `packaging/pack/setup.ps1` answered the same failure in
+one line, pointing at `https://bun.sh` while holding the command it had tried
+three lines earlier. It now prints that command, the re-run after it, and
+`winget install Oven-sh.Bun`. The winget line matters because execution policy is
+the likeliest thing to have blocked the PowerShell one-liner on a managed Windows
+machine, and someone blocked once is blocked again by the same advice.
+
+The third case belonged to neither installer. Bun can disappear *after* a
+successful install: new machine, cleaned PATH, `~/.bun` deleted. What fails then
+is `nrv`, and it printed `nrv: bun not found` and quit. Both launchers now answer
+for the system they are running on. `bin/nrv` reads `uname -s` and gives the curl
+installer on a Unix kernel, the PowerShell one plus winget under Git Bash
+(MINGW/MSYS/CYGWIN); the `nrv.cmd` that `scripts/install.ts` generates carries the
+same text in cmd.exe's dialect, escaped so a `|` does not redirect and a `)` does
+not close the `if` block around it. One system gets one command. A list of three
+options makes the reader choose, and the wrong choice is a second failure.
+
+`setup.ps1` had no line-ending rule of its own, which is why the assertion over
+its lines passed on macOS and Ubuntu and failed on Windows: Git handed it LF to
+two runners and CRLF to the third. `.gitattributes` now pins `*.ps1` to
+`eol=crlf`, the file's native convention and the one `bin/*.cmd` already carried.
+What the buyer runs stops depending on who cloned the repo, and so does the hash
+that `check-published-packs` compares against the published bases.
+
+The test executes `bin/nrv` with a PATH holding no bun and a HOME with no
+`~/.bun`, faking `uname` per case, so the Git Bash branch is proved from macOS.
+`nrv doctor` still reports Bun's version without comparing it to the `>=1.0.0`
+`package.json` declares. That gap is about version rather than absence, and it is
+left where it is.
 
 ## 0.10.2 — 2026-08-27
 
