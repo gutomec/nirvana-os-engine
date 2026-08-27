@@ -655,6 +655,64 @@ if (fs.existsSync(dnaLib)) {
   add("library: mind-clones", "WARN", "no mind-clone library — run with --starter");
 }
 
+// SECTION 6.2: PROTOCOL
+//
+// What the library DECLARES, counted, so a rollout is visible before it is
+// enforced: how many squads are still on v5 while the engine reads v6, and how
+// many businesses still carry fields v2 retired. Never a FAIL — this is a
+// migration dashboard, and CI treats a doctor exit >= 2 as a broken machine.
+// Blocking is `nrv validate`'s job, behind its own flags.
+{
+  const RETIRED_SEAT_FIELDS = /^(heartbeat|self_score_contract|draws_from|dna_reference|budget_monthly_usd|mentions|escalation_triggers|disclosure_template|default_tools|project_tool_overrides):/m;
+  const declared = (file: string): string | null => {
+    try { return /^protocol:\s*["']?([\d.]+)/m.exec(fs.readFileSync(file, "utf8").slice(0, 4096))?.[1] ?? null; }
+    catch { return null; }
+  };
+  const dirsOf = (root: string): string[] => {
+    try { return fs.readdirSync(root).filter((d) => !d.startsWith("_") && !d.startsWith(".")); } catch { return []; }
+  };
+
+  if (fs.existsSync(homeSquads)) {
+    const byProtocol = new Map<string, number>();
+    for (const slug of dirsOf(homeSquads)) {
+      const manifest = path.join(homeSquads, slug, "squad.yaml");
+      if (!fs.existsSync(manifest)) continue;
+      const v = declared(manifest) ?? "unset";
+      byProtocol.set(v, (byProtocol.get(v) ?? 0) + 1);
+    }
+    const total = [...byProtocol.values()].reduce((a, b) => a + b, 0);
+    const spread = [...byProtocol.entries()].sort((a, b) => b[1] - a[1]).map(([v, n]) => `${n}×${v}`).join(" · ");
+    const belowSix = total - (byProtocol.get("6.0") ?? 0);
+    add("protocol: squads", belowSix > 0 ? "WARN" : "PASS",
+      belowSix > 0
+        ? `${spread} — ${belowSix} below 6.0; migrate one with \`nrv migrate <slug> --to 6\``
+        : `${total} squads, all on 6.0`);
+  }
+
+  if (fs.existsSync(homeBiz)) {
+    let v1 = 0, withRetired = 0, total = 0;
+    for (const slug of dirsOf(homeBiz)) {
+      const manifest = path.join(homeBiz, slug, "business.yaml");
+      if (!fs.existsSync(manifest)) continue;
+      total++;
+      if ((declared(manifest) ?? "1.0") !== "2.0") v1++;
+      const empDir = path.join(homeBiz, slug, "employees");
+      let hit = false;
+      try {
+        for (const f of fs.readdirSync(empDir)) {
+          if (!f.endsWith(".md")) continue;
+          if (RETIRED_SEAT_FIELDS.test(fs.readFileSync(path.join(empDir, f), "utf8").slice(0, 4096))) { hit = true; break; }
+        }
+      } catch { /* no employees/ is a different check's problem */ }
+      if (hit) withRetired++;
+    }
+    add("protocol: businesses", v1 > 0 || withRetired > 0 ? "WARN" : "PASS",
+      v1 > 0 || withRetired > 0
+        ? `${v1} of ${total} still on protocol 1.0 · ${withRetired} carry fields v2 retired — \`nrv validate business <slug> --fix\``
+        : `${total} businesses on protocol 2.0, no retired fields`);
+  }
+}
+
 // SECTION 6.5: PAID INSTALL
 //
 // The doctor had nothing here. On a machine where a paid pack installed its

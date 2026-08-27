@@ -11,6 +11,12 @@
  * content, calibrated against the whole library (488 rich → 0 thin, 28 real
  * thin seats found, every verdict on the short side verified by reading).
  *
+ * SINCE THE ADMISSION GATE, THIS FILE IS A WRAPPER over `verifyAll("business")`
+ * and its `seat_thin` criterion — the same measure, asked once, in the place
+ * every other admission question is asked. Flags, output and exit codes are
+ * FROZEN: this gate's tests are untouched and its callers (`SKILL.md` Round 5,
+ * the pack build) need no edit.
+ *
  * Same debt pattern as the admission gate and the fence ceiling:
  *
  *   a seat the baseline has never seen  →  enters SUFFICIENT or not at all
@@ -34,7 +40,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { parseArgs, paths as nrvPaths } from "../lib/bun-helpers.ts";
-import { resolveScope, enumerate } from "../lib/scope.ts";
+import { verifyAll } from "../lib/verify/index.ts";
 
 const require_ = createRequire(import.meta.url);
 const { sufficiencyOfFile } = require_("../lib/seat-sufficiency.js");
@@ -50,33 +56,27 @@ const BASELINE = typeof flags.baseline === "string"
 /** Businesses root override for tests; default is the resolved scope. */
 const rootsFlag = typeof flags.businesses === "string" ? flags.businesses : null;
 
-function businessDirs(): Array<{ slug: string; dir: string }> {
-  if (rootsFlag) {
-    return readdirSync(rootsFlag)
-      .filter((s) => !s.startsWith(".") && s !== "_library")
-      .map((slug) => ({ slug, dir: join(rootsFlag, slug) }))
-      .filter((e) => existsSync(join(e.dir, "business.yaml")));
-  }
-  try {
-    return enumerate(resolveScope(), "businesses").filter((e: { overridden?: boolean }) => !e.overridden);
-  } catch { return []; }
-}
-
 interface Seat { key: string; business: string; employee: string; signals: Record<string, number>; }
 const thin: Seat[] = [];
 let seats = 0;
 
-for (const { slug, dir } of businessDirs()) {
-  if (only && slug !== only) continue;
-  const empDir = join(dir, "employees");
-  if (!existsSync(empDir)) continue;
-  for (const f of readdirSync(empDir)) {
-    if (!f.endsWith(".md")) continue;
-    seats++;
-    const r = sufficiencyOfFile(readFileSync(join(empDir, f), "utf8"));
-    if (r.verdict === "thin") {
-      thin.push({ key: `${slug}/${f}`, business: slug, employee: f, signals: r.signals });
-    }
+// The gate answers "is this seat thin"; the signals below are read straight
+// from the file only to PRINT them (`h=… decisions=… chars=…`), which is what
+// the single-business listing has always shown.
+const batch = await verifyAll("business", {
+  roots: rootsFlag ? [rootsFlag] : undefined,
+  baselinePath: null, retrieval: false, stateDir: null, emit: null,
+});
+for (const report of batch.reports) {
+  if (only && report.slug !== only) continue;
+  const empDir = join(report.dir, "employees");
+  if (existsSync(empDir)) seats += readdirSync(empDir).filter((f) => f.endsWith(".md")).length;
+  for (const f of report.findings) {
+    if (f.id !== "seat_thin") continue;
+    const employee = (f.where ?? "").replace(/^employees\//, "");
+    let signals: Record<string, number> = {};
+    try { signals = sufficiencyOfFile(readFileSync(join(empDir, employee), "utf8")).signals; } catch { /* printed only */ }
+    thin.push({ key: `${report.slug}/${employee}`, business: report.slug, employee, signals });
   }
 }
 

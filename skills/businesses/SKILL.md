@@ -231,7 +231,7 @@ When intent = CREATE, follow this sequence without skipping steps.
 **Round 5 — Readiness gate (MANDATORY, after the registry update — creation is NOT done until it passes)**
 - **Admission gate (blocking).** Run and require exit 0:
   `nrv validate business <slug> --strict`
-  It is the single verb that carries the criteria catalog of `BUSINESS_PROTOCOL_V2.md` §16 — manifest, employees, org chart, routing metadata, acceptance, surface. `--fix` repairs the mechanical findings; authorship (fences, acceptance, thin seats) stays with you.
+  It is the single verb that carries the criteria catalog of `BUSINESS_PROTOCOL_V2.md` §16 — manifest, employees, org chart, routing metadata, acceptance, surface. `--fix` repairs the mechanical findings; authorship (fences, acceptance, thin seats) stays with you. `init-business.ts` already ran it in `--fix` mode over the scaffold, so the engine-owned `.nirvana-surface.json` is on disk before you start writing.
 - Optimization pass: reread each employee as a hostile reviewer — a generic
   persona, a role without a clear deliverable, or knowledge Round 0 researched
   that the employee does not use are defects; fix them before declaring ready.

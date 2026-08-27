@@ -210,9 +210,41 @@ Medição de `nrv validate business --all` sobre uma cópia da biblioteca instal
 
 O Glance chama o mesmo módulo: `GET /api/mind-clones/validate?slug=…` responde um clone e `GET /api/mind-clones/validate-all` a biblioteca, mantendo `ok`, `errors` e `warnings` e ganhando `findings`. As duas rotas rodam sem auto-recuperação e sem gravar estado.
 
+## Os quatro ganchos
+
+Uma entidade entra no sistema em quatro momentos, e agora os quatro passam pela mesma porta: `verifyHook` (`skills/_shared/lib/verify/hooks.ts`).
+
+| Momento | Onde | Com a flag desligada | Com a flag ligada |
+|---|---|---|---|
+| Criação | `init-squad.ts`, `init-business.ts` | reparo mecânico e o veredito impresso | erro que sobra apaga o scaffold |
+| Instalação | `installer.ts` (na cópia de staging), `install-content.ts` (por entidade, antes do primeiro espelhamento) | avisa e instala | recusa; nada é escrito |
+| Ativação | `nrv activate` (antes de instalar dependências) | avisa e ativa | recusa antes de tocar em qualquer dependência |
+| Build de packs | `check-entity-admission.ts`, `check-seat-sufficiency.ts` | invólucros de `verifyPack`/`verifyAll` com flags, saída e exit codes congelados | — |
+
+Três regras impedem que um gancho quebre a máquina de um comprador:
+
+1. **Desligado por padrão.** `verify.mode` sai em `report` e `verify.enforce_on_install` / `verify.enforce_on_activate` saem em `false`. Com os padrões, todo gancho imprime e segue. `verify.mode: block` liga os três de uma vez.
+2. **Grandfathering.** Em `mode: "hook"`, uma máquina sem baseline **grava** a dívida que encontra (`x_verify_baseline_recorded`, `reason: hook_grandfathering`) em vez de reprovar o que já estava instalado. Só critérios `baselineable` viram dívida; um erro HARD nunca.
+3. **Escape documentado.** `--skip-validate` na instalação, `--skip-verify` na ativação e na criação. Um gancho também nunca lança: falha interna vira `ran: false` com o motivo, e o chamador segue.
+
+A criação é o único gancho que reprova por padrão, e por dois motivos: `init-business.ts` já apagava o scaffold quando o loader falhava, e o gancho roda `fix: "mechanical"` **antes** de julgar. Um scaffold é conteúdo autoral menos o que o **engine** possui — os componentes que o manifesto declara e o `.nirvana-surface.json`, que é um hash de arquivos que só existem depois que o wizard escreve. Reparar isso é o que transforma um squad recém-criado de REPROVADO em ADMITIDO; o que os fixers não consertam é um scaffold quebrado, e um scaffold quebrado é apagado.
+
+## `--fix=agentic`
+
+`skills/_shared/lib/verify/agentic.ts`. Os fixers mecânicos consertam **forma**; o que eles não sabem escrever é **sentido** — uma descrição que carrega sinal de roteamento, `example_briefs` que alguém digitaria, o bloco `routing:` de um clone. Esses achados são `autofix: "agentic"`.
+
+O laço: passe mecânica primeiro (nunca peça ao modelo o que um fixer escreve de graça) → cópia de staging da entidade → `runHeadless` do `host-agent-driver` com o `scope-guard` no prompt → re-check **na cópia** → aceita só se os erros não cresceram **e** ao menos um achado alvo sumiu → backup da entidade real e cópia por cima. Quando o alvo era metadado de roteamento (`one_liner`, `domains`, `serves`, `description`), o `self-retrieval-gate` roda depois da cópia e uma reprovação restaura o backup.
+
+Teto de gasto em `--budget-usd` (padrão 3) e relógio em `--timeout-min` (padrão 15). **Nada roda sem `--yes`**: sem ele o comando sai com **exit 2** citando o teto — a confirmação é propriedade do pedido, não da máquina, então a resposta é a mesma em todo lugar. Uma linha no ledger (`openAgenticRun({ targetKind: "verify-fix" })`) e o par `x_verify_fix_started` / `x_verify_fix_finished` tornam o gasto visível. Desligado em `--pack` e sem runtime no PATH.
+
+## No Glance
+
+`GET /api/v1/verify/<kind>/<slug>` responde um `nirvana.verify-report/v1`. Roda em **processo filho** com teto de relógio (`NIRVANA_GLANCE_VERIFY_TIMEOUT_MS`, padrão 20 s), nunca no laço de eventos: o cockpit é uma thread só, e uma entidade lenta congelaria todos os outros painéis. Estouro do teto = `504`; entidade desconhecida = `404`; método diferente de GET = `405`. Sem `--fix`, sem `--record`, sem auto-recuperação.
+
+O reparo é uma ação à parte: `POST /api/actions/verify-fix` (`mutating: true`), com confirmação no painel antes de sair do navegador. Os painéis de squad, empresa e mind-clone ganharam um botão **Verificar** e, quando há achado com fixer mecânico, **Corrigir (--fix)**.
+
+`nrv doctor` ganhou uma seção **Protocol** com as contagens da biblioteca (squads por protocolo, empresas em 1.0 e com campos aposentados). É **WARN, nunca FAIL** — o CI lê `doctor >= 2` como máquina quebrada, e uma biblioteca em migração é o estado normal de todo mundo durante o rollout. Bloquear é papel do `nrv validate`.
+
 ## O que ainda não existe
 
-- **`--fix=agentic`**: recusado com uma mensagem clara. O laço agêntico (cópia de staging, `runHeadless`, orçamento, linha no ledger) é um corte próprio.
-- **Ganchos**: os wizards, `nrv activate`, a instalação e o build de packs ainda não chamam o módulo. `check-entity-admission.ts` e `check-seat-sufficiency.ts` continuam como estão.
-- **Rota versionada do Glance** (`GET /api/v1/verify/<kind>/<slug>`) e a ação `verify-fix`.
-- **Flags de rollout** (`verify.mode`, `verify.enforce_on_install`, `verify.enforce_on_activate`).
+- **Ledger de reparo agêntico por lote**: `--fix=agentic` roda uma entidade por vez; `--all --fix=agentic` pede confirmação na primeira e pára.

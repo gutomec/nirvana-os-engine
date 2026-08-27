@@ -9,8 +9,9 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as YAML from "yaml";
-import { exec, ensureDir, paths, EXIT, parseArgs, BUN_BIN } from "../../_shared/lib/bun-helpers.ts";
+import { ensureDir, paths, EXIT, parseArgs } from "../../_shared/lib/bun-helpers.ts";
 import { resolveScope, writeDir } from "../../_shared/lib/scope.ts";
+import { verifyHook } from "../../_shared/lib/verify/index.ts";
 
 const SKILL_DIR = path.join(paths.CLAUDE_SKILLS_DIR, "businesses");
 const TYPES_DIR = path.join(SKILL_DIR, "templates", "business-types");
@@ -26,6 +27,7 @@ const template = String(flags.template || flags.type || "");
 const fromJson = flags["from-json"] ? String(flags["from-json"]) : "";
 const force = Boolean(flags.force);
 const nonInteractive = Boolean(flags["non-interactive"]);
+const skipVerify = Boolean(flags["skip-verify"]);
 const domains = flags.domains ? String(flags.domains) : "";
 const description = flags.description ? String(flags.description) : "";
 
@@ -37,7 +39,7 @@ function listTypes(): string[] {
 }
 
 function usage(): void {
-  console.error(`usage: init-business <slug> [--template <type>|--type <type>] [--from-json <path>] [--non-interactive] [--domains a,b] [--description <s>] [--force]
+  console.error(`usage: init-business <slug> [--template <type>|--type <type>] [--from-json <path>] [--non-interactive] [--domains a,b] [--description <s>] [--force] [--skip-verify]
 
 Available types: ${listTypes().join(", ") || "(none)"}`);
 }
@@ -112,12 +114,24 @@ try {
   process.exit(EXIT.FAILURES);
 }
 
-const validation = exec(`${JSON.stringify(BUN_BIN)} ${JSON.stringify(path.join(SKILL_DIR, "lib", "loader.ts"))} ${JSON.stringify(target)}`, { silent: true });
-if (!validation.ok) {
+// The admission gate, at the first moment the entity exists (§34). It replaces
+// the spawned loader: the loader answered "does this parse", the gate answers
+// the whole catalog, in-process, and repairs first.
+//
+// `fix: "mechanical"` is what makes the hook safe to run on a scaffold. The
+// template is authored content minus the parts the ENGINE owns —
+// `.nirvana-surface.json` above all, which no template can carry because it is
+// a hash of the files that only exist once the overlay above has run. Without
+// the repair pass a brand-new business is REJECTED on that single error, which
+// is precisely the wizard bug this hook closes. What the fixers cannot repair
+// is a broken scaffold, and a broken scaffold is deleted, exactly as the
+// loader's failure deleted it before.
+const gate = await verifyHook({ kind: "business", target, gate: "create", fix: "mechanical", skip: skipVerify });
+for (const line of gate.lines) console.error(line);
+if (gate.blocked) {
   console.error(`ERROR: validation failed for '${slug}' after scaffold.`);
-  console.error(validation.stdout || validation.stderr);
   fs.rmSync(target, { recursive: true, force: true });
-  process.exit(validation.code ?? EXIT.FAILURES);
+  process.exit(EXIT.FAILURES);
 }
 
 console.log(`OK: business '${slug}' (type=${selectedTemplate}) created at ${target}`);

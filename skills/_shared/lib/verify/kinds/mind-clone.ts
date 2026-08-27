@@ -197,6 +197,15 @@ export async function check(ctx: CheckContext): Promise<Finding[]> {
       }
       if (generic.length) out.push(mk("manifest_schema", `MANIFEST.yaml violates the schema (${generic.length} issue${generic.length === 1 ? "" : "s"})`, generic.slice(0, 6).join(" · ")));
     }
+    // `category` is authored in two places across the live library: under
+    // `manifest:` (canonical, and the only one the schema sees) and at the top
+    // level (older compilations). The numbered legacy form has to be caught in
+    // both — `category_bare` has always repaired both — otherwise a clone that
+    // writes it at the top level walks past a bar the fixer would have fixed.
+    const topCategory = String((doc as Record<string, unknown>).category ?? "");
+    if (/^\d\d-/.test(topCategory) && !out.some((f) => f.id === "category_numbered")) {
+      out.push(mk("category_numbered", `numbered legacy category "${topCategory}" — the library is bare-form`, "category"));
+    }
     if (typeof man.name === "string" && man.name !== slug) {
       out.push(mk("manifest_name_mismatch", `manifest.name "${man.name}" differs from the directory slug "${slug}"`, "manifest.name"));
     }
@@ -244,7 +253,11 @@ export async function check(ctx: CheckContext): Promise<Finding[]> {
     const verdict = doc.validation_verdict ?? man.validation_verdict;
     if (!verdict) out.push(mk("validation_verdict_missing", "no validation_verdict — produced by the validation pipeline, never by a text edit", "validation_verdict"));
     const src = doc.source_material ?? man.source_material;
-    const primary = src && typeof src === "object" ? (src as any).primary : undefined;
+    // `primary_works` is the same list under an older name (3 of 527 live
+    // clones write it). The bar is that the sources are DECLARED; refusing a
+    // clone that declares them under the older key would invent a failure the
+    // pack build has never had, and no source is fabricated either way.
+    const primary = src && typeof src === "object" ? ((src as any).primary ?? (src as any).primary_works) : undefined;
     if (!src || !Array.isArray(primary) || primary.length === 0) out.push(mk("source_material_missing", "no source_material.primary — the gate never fabricates a source", "source_material.primary"));
 
     // dna_layers vs the schema file

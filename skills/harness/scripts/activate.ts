@@ -14,8 +14,8 @@
  * that door, with the batch the library-sized case always needed.
  *
  * Usage:
- *   nrv activate <slug> [--dry-run] [--confirm-heavy] [--verbose]
- *   nrv activate --all [--dry-run] [--confirm-heavy] [--only-declared]
+ *   nrv activate <slug> [--dry-run] [--confirm-heavy] [--verbose] [--skip-verify]
+ *   nrv activate --all [--dry-run] [--confirm-heavy] [--only-declared] [--skip-verify]
  *   nrv activate status <slug>
  *
  * Exit codes mirror the per-squad contract, aggregated over the batch:
@@ -27,6 +27,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import { resolveScope, enumerate } from "../../_shared/lib/scope.ts";
+import { verifyHook } from "../../_shared/lib/verify/index.ts";
 
 const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
   || (fs.existsSync(path.join(process.env.HOME || "", ".nirvana", "skills"))
@@ -42,12 +43,13 @@ const flags = argv.filter((a) => a.startsWith("--"));
 const positional = argv.filter((a) => !a.startsWith("--"));
 const all = flags.includes("--all");
 const onlyDeclared = flags.includes("--only-declared");
+const skipVerify = flags.includes("--skip-verify");
 const passthrough = flags.filter((f) => ["--dry-run", "--confirm-heavy", "--verbose", "-v"].includes(f));
 
 if (flags.includes("--help") || flags.includes("-h") || (!all && positional.length === 0)) {
   console.error(`usage:
-  nrv activate <slug> [--dry-run] [--confirm-heavy] [--verbose]
-  nrv activate --all [--dry-run] [--confirm-heavy] [--only-declared]
+  nrv activate <slug> [--dry-run] [--confirm-heavy] [--verbose] [--skip-verify]
+  nrv activate --all [--dry-run] [--confirm-heavy] [--only-declared] [--skip-verify]
   nrv activate status <slug>
 
 Installs what a squad's dependencies.yaml declares: system tools, Python and
@@ -58,7 +60,12 @@ squad is re-verified, not reinstalled.
 --all walks the library ONE SQUAD AT A TIME and never stops on a failure;
 the summary at the end says what is ready, what needs confirmation and what
 broke. --only-declared skips squads with no dependencies.yaml (they need no
-activation at all).`);
+activation at all).
+
+Each squad passes the admission gate before its dependencies are installed.
+The gate reports by default; with verify.enforce_on_activate on, a squad
+carrying an error the debt baseline does not cover is refused instead of
+activated. --skip-verify is the documented escape.`);
   process.exit(flags.includes("--help") || flags.includes("-h") ? 0 : 4);
 }
 
@@ -68,13 +75,27 @@ if (positional[0] === "status" || positional[0] === "deactivate") {
   process.exit(r.status ?? 1);
 }
 
-function runOne(slug: string): number {
+/**
+ * Activation is where a squad stops being prose and starts touching the real
+ * world — it installs tools, downloads models, runs verification commands. So
+ * it is the last honest moment to ask whether the squad is admissible at all,
+ * and it asks BEFORE the first dependency is installed: a refusal leaves the
+ * machine untouched. Report-only until `verify.enforce_on_activate` is on.
+ */
+async function gateOne(slug: string): Promise<boolean> {
+  const gate = await verifyHook({ kind: "squad", target: slug, gate: "activate", skip: skipVerify });
+  for (const line of gate.lines) console.error(`  ${line}`);
+  return !gate.blocked;
+}
+
+async function runOne(slug: string): Promise<number> {
+  if (!(await gateOne(slug))) return 1;
   const r = spawnSync(BUN, [ACTIVATOR, "activate", slug, ...passthrough], { stdio: "inherit" });
   return r.status ?? 1;
 }
 
 if (!all) {
-  process.exit(runOne(positional[0]));
+  process.exit(await runOne(positional[0]));
 }
 
 // ── batch ──────────────────────────────────────────────────────────────────
@@ -108,7 +129,7 @@ for (const s of squads) {
   }
   // A failure never stops the walk: the point of --all is to leave the
   // library as ready as it can be, then report what still needs a human.
-  const code = runOne(s.slug);
+  const code = await runOne(s.slug);
   if (code === 0) ready.push(s.slug);
   else if (code === 2) needsConfirm.push(s.slug);
   else failed.push(s.slug);

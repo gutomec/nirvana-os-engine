@@ -296,12 +296,27 @@
               </div>
             </div>
             <!-- Per-squad actions (only when --allow-actions) -->
+            <div class="detail-actions">
+              <button @click="verifyEntity('squad', detail?.slug || selected.slug)" class="action-btn">Verificar</button>
+            </div>
             <div class="detail-actions" x-cloak x-show="health.allow_actions">
               <button @click="runAction('activate-dry-run', { slug: detail.slug })" class="action-btn">Activate (dry-run)</button>
               <button @click="runAction('audit-improve', { slug: detail.slug, dry_run: true })" class="action-btn">Audit (dry-run)</button>
               <button @click="confirmAction('audit-improve', { slug: detail.slug, dry_run: false }, `Improve ${detail.slug} with backup + auto-rollback?`)" class="action-btn warning">Improve (apply)</button>
             </div>
           </header>
+          <div class="verify-panel" x-cloak x-show="verifyShown('squad', detail?.slug || selected.slug)">
+            <div class="verify-verdict" :class="verifyReport?.verdict === 'ADMITTED' ? 'ok' : 'bad'"
+                 x-text="`${verifyReport?.verdict} · ${verifyReport?.summary?.errors || 0} erro(s) · ${verifyReport?.summary?.warnings || 0} aviso(s) · ${verifyReport?.summary?.debt || 0} baselinado(s)`"></div>
+            <template x-for="f in (verifyReport?.findings || [])" :key="f.id + (f.where || '')">
+              <div class="verify-finding" :class="f.severity"
+                   x-text="`${f.severity === 'error' ? '✗' : f.severity === 'warning' ? '⚠' : 'ℹ'} ${f.id}${f.where ? ':' + f.where : ''} — ${f.message}`"></div>
+            </template>
+            <div class="detail-actions" x-show="health.allow_actions && verifyFixable()">
+              <button @click="confirmAction('verify-fix', { kind: 'squad', slug: detail?.slug || selected.slug }, `Aplicar os reparos mecânicos em ${detail?.slug || selected.slug}? Há backup e rollback automático se algo piorar.`)"
+                      class="action-btn warning">Corrigir (--fix)</button>
+            </div>
+          </div>
           <nav class="tabs">
             <template x-for="t in squadTabs"><button @click="tab = t" :class="tab === t ? 'tab active' : 'tab'" x-text="t"></button></template>
           </nav>
@@ -382,7 +397,22 @@
                 <template x-for="d in detail?.meta?.domains || []"><span class="domain-pill" x-text="d"></span></template>
               </div>
             </div>
+            <div class="detail-actions">
+              <button @click="verifyEntity('business', detail?.slug || selected.slug)" class="action-btn">Verificar</button>
+            </div>
           </header>
+          <div class="verify-panel" x-cloak x-show="verifyShown('business', detail?.slug || selected.slug)">
+            <div class="verify-verdict" :class="verifyReport?.verdict === 'ADMITTED' ? 'ok' : 'bad'"
+                 x-text="`${verifyReport?.verdict} · ${verifyReport?.summary?.errors || 0} erro(s) · ${verifyReport?.summary?.warnings || 0} aviso(s) · ${verifyReport?.summary?.debt || 0} baselinado(s)`"></div>
+            <template x-for="f in (verifyReport?.findings || [])" :key="f.id + (f.where || '')">
+              <div class="verify-finding" :class="f.severity"
+                   x-text="`${f.severity === 'error' ? '✗' : f.severity === 'warning' ? '⚠' : 'ℹ'} ${f.id}${f.where ? ':' + f.where : ''} — ${f.message}`"></div>
+            </template>
+            <div class="detail-actions" x-show="health.allow_actions && verifyFixable()">
+              <button @click="confirmAction('verify-fix', { kind: 'business', slug: detail?.slug || selected.slug }, `Aplicar os reparos mecânicos em ${detail?.slug || selected.slug}? Há backup e rollback automático se algo piorar.`)"
+                      class="action-btn warning">Corrigir (--fix)</button>
+            </div>
+          </div>
           <nav class="tabs">
             <template x-for="t in businessTabs"><button @click="tab = t" :class="tab === t ? 'tab active' : 'tab'" x-text="t"></button></template>
           </nav>
@@ -491,7 +521,22 @@
                 <span class="meta-pill" x-show="mindCloneDetail?.total_bytes" x-text="formatBytes(mindCloneDetail?.total_bytes || 0)"></span>
               </div>
             </div>
+            <div class="detail-actions">
+              <button @click="verifyEntity('mind-clone', selected.slug)" class="action-btn">Verificar</button>
+            </div>
           </header>
+          <div class="verify-panel" x-cloak x-show="verifyShown('mind-clone', selected.slug)">
+            <div class="verify-verdict" :class="verifyReport?.verdict === 'ADMITTED' ? 'ok' : 'bad'"
+                 x-text="`${verifyReport?.verdict} · ${verifyReport?.summary?.errors || 0} erro(s) · ${verifyReport?.summary?.warnings || 0} aviso(s) · ${verifyReport?.summary?.debt || 0} baselinado(s)`"></div>
+            <template x-for="f in (verifyReport?.findings || [])" :key="f.id + (f.where || '')">
+              <div class="verify-finding" :class="f.severity"
+                   x-text="`${f.severity === 'error' ? '✗' : f.severity === 'warning' ? '⚠' : 'ℹ'} ${f.id}${f.where ? ':' + f.where : ''} — ${f.message}`"></div>
+            </template>
+            <div class="detail-actions" x-show="health.allow_actions && verifyFixable()">
+              <button @click="confirmAction('verify-fix', { kind: 'mind-clone', slug: selected.slug }, `Aplicar os reparos mecânicos em ${selected.slug}? Há backup e rollback automático se algo piorar.`)"
+                      class="action-btn warning">Corrigir (--fix)</button>
+            </div>
+          </div>
 
           <div class="mind-clone-body" x-show="mindCloneDetail">
             <!-- Sidebar: file tree grouped by category -->

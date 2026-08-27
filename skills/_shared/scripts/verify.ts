@@ -3,7 +3,7 @@
  * verify.ts — `nrv validate`, the admission gate for squads, businesses and
  * mind-clones (`nrv verify` is an alias).
  *
- *   nrv validate <squad|business|mind-clone> <slug|path> [--fix] [--strict] [--json] [--no-retrieval] [--baseline <file>]
+ *   nrv validate <squad|business|mind-clone> <slug|path> [--fix[=agentic]] [--strict] [--json] [--no-retrieval] [--baseline <file>]
  *   nrv validate <path>                               kind detected from the manifest on disk
  *   nrv validate <kind> --all [--fix] [--strict] [--json] [--record [--allow-regression]] [--root <dir>]
  *   nrv validate --pack <content-dir> [<kind>|--all-kinds] [--json] [--record]
@@ -20,12 +20,13 @@
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import {
-  KINDS, VERIFY_EXIT, VerifyUsageError, kindFromAlias, renderBatch, renderReport, verifyAll, verifyEntity, verifyPack,
-  type Kind,
+  AgenticConfirmationRequired, DEFAULT_BUDGET_USD, KINDS, VERIFY_EXIT, VerifyUsageError,
+  kindFromAlias, renderBatch, renderReport, verifyAll, verifyEntity, verifyPack,
+  type AgenticOptions, type Kind,
 } from "../lib/verify/index.ts";
 
-const BOOL_FLAGS = new Set(["fix", "strict", "json", "all", "record", "allow-regression", "no-retrieval", "all-kinds", "quiet", "q", "help", "h"]);
-const VALUE_FLAGS = new Set(["baseline", "pack", "root"]);
+const BOOL_FLAGS = new Set(["fix", "strict", "json", "all", "record", "allow-regression", "no-retrieval", "all-kinds", "quiet", "q", "yes", "y", "help", "h"]);
+const VALUE_FLAGS = new Set(["baseline", "pack", "root", "runtime", "budget-usd", "timeout-min"]);
 
 interface Args { positional: string[]; flags: Record<string, string | boolean>; roots: string[]; }
 
@@ -64,7 +65,12 @@ USAGE
 
 OPTIONS
   --fix              apply the mechanical fixers (backup, re-check, rollback on a new error)
-  --fix=agentic      not available yet
+  --fix=agentic      mechanical first, then an agent repairs what only meaning can fix,
+                     in a staging copy; needs --yes (exit 2 without it)
+  --yes              authorize the spend of --fix=agentic
+  --budget-usd <n>   ceiling of an agentic run (default ${DEFAULT_BUDGET_USD})
+  --timeout-min <n>  wall clock of an agentic run (default 15)
+  --runtime <name>   runtime for --fix=agentic (default: the first one on PATH)
   --strict           warnings also reject (exit 2)
   --json             nirvana.verify-report/v1 (one entity) or nirvana.verify-batch/v1
   --record           --all/--pack: record the current debt as the baseline (merge; refuses growth)
@@ -106,8 +112,20 @@ async function main(): Promise<number> {
   const json = !!flags.json;
   const strict = !!flags.strict;
   const fix: false | "mechanical" | "agentic" = flags.fix === true ? "mechanical" : flags.fix === "mechanical" ? "mechanical" : flags.fix === "agentic" ? "agentic" : flags.fix ? (() => { throw new VerifyUsageError(`--fix accepts mechanical or agentic, not ${flags.fix}`); })() : false;
+  const num = (name: string, fallback: number): number => {
+    if (flags[name] === undefined) return fallback;
+    const n = Number(flags[name]);
+    if (!Number.isFinite(n) || n < 0) throw new VerifyUsageError(`--${name} needs a number >= 0, not ${flags[name]}`);
+    return n;
+  };
+  const agentic: AgenticOptions = {
+    confirmed: !!(flags.yes || flags.y),
+    budgetUsd: num("budget-usd", DEFAULT_BUDGET_USD),
+    ...(flags["timeout-min"] !== undefined ? { timeoutMs: num("timeout-min", 15) * 60_000 } : {}),
+    ...(typeof flags.runtime === "string" ? { runtime: flags.runtime as AgenticOptions["runtime"] } : {}),
+  };
   const common = {
-    fix, strict,
+    fix, strict, agentic,
     retrieval: !flags["no-retrieval"],
     baselinePath: typeof flags.baseline === "string" ? flags.baseline : undefined,
   };
@@ -116,7 +134,7 @@ async function main(): Promise<number> {
     const packDir = String(flags.pack);
     const kindArg = positional[0] ? kindFromAlias(positional[0]) : null;
     if (positional[0] && !kindArg) throw new VerifyUsageError(`unknown kind: ${positional[0]} (squad|business|mind-clone)`);
-    const b = await verifyPack(packDir, { ...common, kinds: kindArg ? [kindArg] : [...KINDS], record: !!flags.record, allowRegression: !!flags["allow-regression"] });
+    const b = await verifyPack(packDir, { ...common, agentic: { ...agentic, pack: true }, kinds: kindArg ? [kindArg] : [...KINDS], record: !!flags.record, allowRegression: !!flags["allow-regression"] });
     console.log(json ? JSON.stringify(b, null, 2) : renderBatch(b, { quiet: !!(flags.quiet || flags.q) }));
     return b.exit_code;
   }
@@ -138,6 +156,7 @@ async function main(): Promise<number> {
 }
 
 main().then((code) => process.exit(code)).catch((e) => {
+  if (e instanceof AgenticConfirmationRequired) { console.error(`nrv validate: ${e.message}`); process.exit(e.exit); }
   if (e instanceof VerifyUsageError) { console.error(`nrv validate: ${e.message}`); process.exit(e.exit); }
   console.error(`nrv validate: ${e?.stack ?? e}`);
   process.exit(1);

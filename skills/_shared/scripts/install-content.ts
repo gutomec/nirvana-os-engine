@@ -11,7 +11,7 @@
  * squads/businesses/clones or another pack's components.
  *
  * Usage:
- *   bun install-content.ts <contentDir> --slug <slug> [--dry]
+ *   bun install-content.ts <contentDir> --slug <slug> [--dry] [--skip-validate]
  *
  * <contentDir> = the pack's `starter-pack` dir (squads/ businesses/ mind-clones/).
  */
@@ -39,6 +39,7 @@ const PACKS_DIR = join(HOME, ".nirvana", "packs");
 
 const argv = process.argv.slice(2);
 const DRY = argv.includes("--dry");
+const SKIP_VALIDATE = argv.includes("--skip-validate");
 const slugIdx = argv.indexOf("--slug");
 const SLUG = slugIdx >= 0 ? (argv[slugIdx + 1] ?? "") : "";
 const verIdx = argv.indexOf("--version");
@@ -186,13 +187,13 @@ const availableIn = (dir: string, marker: string): string[] =>
   existsSync(dir) ? readdirSync(dir).filter((e) => !e.startsWith(".") && e !== "README.md" && existsSync(join(dir, e, marker))) : [];
 
 interface SyncRes { added: string[]; updated: string[]; unchanged: string[]; removed: string[]; overwritten: string[]; hashes: Record<string, string>; breaking: BreakingChange[]; }
-function syncKind(kind: string, srcRoot: string, dstRoot: string, available: string[], old: Record<string, string>): SyncRes {
+function syncKind(kind: string, srcRoot: string, dstRoot: string, available: string[], old: Record<string, string>, precomputed?: Record<string, string>): SyncRes {
   const ex = RUNSTATE_EXCLUDES[kind] ?? [];
   const res: SyncRes = { added: [], updated: [], unchanged: [], removed: [], overwritten: [], hashes: {}, breaking: [] };
   if (available.length) mkdirSync(dstRoot, { recursive: true });
   for (const slug of available) {
     const src = join(srcRoot, slug), dst = join(dstRoot, slug);
-    const h = hashDir(src, ex); res.hashes[slug] = h;
+    const h = precomputed?.[slug] ?? hashDir(src, ex); res.hashes[slug] = h;
     if (!existsSync(dst)) { res.added.push(slug); if (!DRY) mirror(src, dst, ex); }
     // Collision: it exists on disk but the pack never owned it (outside the
     // manifest) — a user creation with the same slug. The pack wins (it is the
@@ -235,10 +236,61 @@ auditEmit("x_install_order_resolved", {
   edges: packGraph.edges.length,
 });
 
+const KIND_SOURCES: Record<string, { src: string; dst: string; marker: string; entity: "squad" | "business" | "mind-clone"; recorded: Record<string, string> }> = {
+  "squads": { src: squadsSrc, dst: SQUADS_DIR, marker: "squad.yaml", entity: "squad", recorded: man.squads ?? {} },
+  "businesses": { src: bizSrc, dst: BUSINESSES_DIR, marker: "business.yaml", entity: "business", recorded: man.businesses ?? {} },
+  "mind-clones": { src: cloneSrc, dst: DNA_DIR, marker: "MANIFEST.yaml", entity: "mind-clone", recorded: man["mind-clones"] ?? {} },
+};
+
+// ── The admission gate, per entity, BEFORE anything is mirrored ─────────────
+//
+// Only what is actually ENTERING is checked: a slug whose source hash equals
+// the one this pack recorded last time is already installed and unchanged, and
+// re-judging it every update would make an install pay for the whole library.
+// The hashes computed here are handed to syncKind so nothing is hashed twice.
+//
+// A refusal aborts the WHOLE overlay before the first file moves — a pack that
+// half-installs is worse than one that does not install. And it only ever
+// refuses when the buyer turned `verify.enforce_on_install` on: with the
+// shipped defaults this block prints and proceeds.
+const srcHashes: Record<string, Record<string, string>> = {};
+const entering: Array<{ kind: string; entity: "squad" | "business" | "mind-clone"; slug: string; dir: string }> = [];
+for (const [kind, k] of Object.entries(KIND_SOURCES)) {
+  const ex = RUNSTATE_EXCLUDES[kind] ?? [];
+  srcHashes[kind] = {};
+  for (const slug of availableIn(k.src, k.marker)) {
+    const dir = join(k.src, slug);
+    const h = hashDir(dir, ex);
+    srcHashes[kind][slug] = h;
+    if (!existsSync(join(k.dst, slug)) || k.recorded[slug] !== h) entering.push({ kind, entity: k.entity, slug, dir });
+  }
+}
+if (entering.length) {
+  // Loaded lazily and defensively: a gate that cannot even be imported (a
+  // partially updated engine, a skills tree mid-copy) must not be the reason
+  // a paid pack fails to install.
+  const verifyHook = await import("../lib/verify/index.ts")
+    .then((m) => m.verifyHook)
+    .catch((e) => { console.warn(`  verify: the admission gate is unavailable (${(e as Error).message}) — installing without it`); return null; });
+  const refused: string[] = [];
+  for (const e of verifyHook ? entering : []) {
+    const gate = await verifyHook!({ kind: e.entity, target: e.dir, gate: "install", skip: SKIP_VALIDATE, stateDir: null });
+    for (const line of gate.lines) console.warn(`  ${line}`);
+    if (gate.blocked) refused.push(`${e.kind}/${e.slug}`);
+  }
+  if (refused.length) {
+    console.error(`\ninstall-content: ${refused.length} component(s) were refused by the admission gate (verify.enforce_on_install):`);
+    for (const r of refused) console.error(`    ✗ ${r}`);
+    console.error("  Nothing was installed. Fix them with `nrv validate <kind> <slug> --fix`, or re-run with --skip-validate.\n");
+    auditEmit("x_verify_install_refused", { pack: SLUG, refused });
+    process.exit(1);
+  }
+}
+
 const kindRuns: Record<string, () => SyncRes> = {
-  "squads": () => syncKind("squads", squadsSrc, SQUADS_DIR, availableIn(squadsSrc, "squad.yaml"), man.squads ?? {}),
-  "businesses": () => syncKind("businesses", bizSrc, BUSINESSES_DIR, availableIn(bizSrc, "business.yaml"), man.businesses ?? {}),
-  "mind-clones": () => syncKind("mind-clones", cloneSrc, DNA_DIR, availableIn(cloneSrc, "MANIFEST.yaml"), man["mind-clones"] ?? {}),
+  "squads": () => syncKind("squads", squadsSrc, SQUADS_DIR, availableIn(squadsSrc, "squad.yaml"), man.squads ?? {}, srcHashes["squads"]),
+  "businesses": () => syncKind("businesses", bizSrc, BUSINESSES_DIR, availableIn(bizSrc, "business.yaml"), man.businesses ?? {}, srcHashes["businesses"]),
+  "mind-clones": () => syncKind("mind-clones", cloneSrc, DNA_DIR, availableIn(cloneSrc, "MANIFEST.yaml"), man["mind-clones"] ?? {}, srcHashes["mind-clones"]),
 };
 const runs: Record<string, SyncRes> = {};
 for (const kind of kindOrder.order) runs[kind] = kindRuns[kind]();

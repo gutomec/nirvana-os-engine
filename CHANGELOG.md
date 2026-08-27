@@ -141,6 +141,56 @@ holds that. `delivery.produces_to_rubric` (default `false`) gates the forwarding
 rubrics cover roughly 45 of the 3.024 slugs the library declares and a slug with no rubric has to
 degrade to the fallback, never to a refusal. Off, the judge receives `[]` — bit for bit what it
 received before.
+### The gate runs at creation, install, activation and pack build
+
+`nrv validate` shipped as a verb nobody called. The criteria catalogs, the debt baseline, the
+`--fix` loop with backup and rollback — all of it existed, and an entity could still enter the
+system through four other doors without any of it being asked. This wires the four doors to one
+module, `skills/_shared/lib/verify/hooks.ts`, and the whole design answers to a single constraint:
+turning a gate on must not be the reason a paid pack stops installing on the day it ships.
+
+| Moment | Flag off (shipped default) | Flag on |
+|---|---|---|
+| Creation (`init-squad`, `init-business`) | mechanical repair, then the verdict is printed | a remaining error deletes the scaffold |
+| Install (`installer.ts`, `install-content.ts`) | warns per entity and installs | refuses; nothing is written |
+| Activation (`nrv activate`) | warns and activates | refuses before touching a dependency |
+| Pack build (`check-entity-admission`, `check-seat-sufficiency`) | wrappers over `verifyPack` / `verifyAll`, flags and exit codes frozen | — |
+
+Three rules keep a buyer's machine safe. `verify.mode` ships `report` and
+`verify.enforce_on_install` / `verify.enforce_on_activate` ship `false`, so with the shipped
+defaults every hook prints and proceeds. A machine with no debt baseline gets one RECORDED
+(`x_verify_baseline_recorded`, `reason: hook_grandfathering`) instead of a refusal of the library it
+already had — only `baselineable` criteria become debt, never a HARD error. And `--skip-validate` /
+`--skip-verify` always walk past.
+
+Creation is the one hook that refuses by default, for two reasons: `init-business.ts` already
+deleted the scaffold when the loader failed, and the hook repairs before it judges. A scaffold is
+authored content minus what the ENGINE owns — the component files the manifest declares and
+`.nirvana-surface.json`, a hash of files that do not exist until the wizard has written them. A
+fresh business was REJECTED on that single error; now the surface is generated in the scaffold and
+a brand-new squad and business are both born ADMITTED.
+
+The two pack gates became wrappers with their flags, output and exit codes untouched, and their
+tests were not edited. Proof beyond the tests: run against all 17 pack content dirs (231 entities in
+genesis alone), the old implementation and the wrapper produce the same violations, the same debt
+map and the same counts — after two real gaps in the clone catalog were closed, a numbered legacy
+`category` written at the top level instead of under `manifest:`, and `source_material.primary_works`,
+the older spelling three of 527 live clones use.
+
+`--fix=agentic` is real now (`skills/_shared/lib/verify/agentic.ts`): mechanical pass first, then a
+staging copy, `runHeadless` with the scope guard, and a result accepted only when errors did not
+grow AND a targeted finding is gone. Routing metadata additionally has to survive the self-retrieval
+gate or the backup is restored. Nothing runs without `--yes` — exit 2 quotes the ceiling
+(`--budget-usd`, default 3) — and the spend leaves a ledger row plus
+`x_verify_fix_started` / `x_verify_fix_finished`.
+
+In the cockpit, `GET /api/v1/verify/<kind>/<slug>` answers a full report from a CHILD process with a
+wall clock (504 on overrun), because the server is single-threaded and one slow entity would freeze
+every other panel. Repair is a separate mutating action, `POST /api/actions/verify-fix`, confirmed
+before it leaves the browser; squad, business and mind-clone panels gained a "Verificar" button.
+`nrv doctor` gained a Protocol section counting squads by protocol and businesses still on 1.0 or
+carrying retired fields — WARN, never FAIL, because CI reads `doctor >= 2` as a broken machine and a
+library mid-migration is everyone's normal state.
 
 ### The dev loop stops paying for the whole repository on every check
 

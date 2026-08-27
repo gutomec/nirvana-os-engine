@@ -52,10 +52,32 @@ describe("exit codes", () => {
     expect(runCli(r, ["dragon", "jane-doe"]).code).toBe(64);
     expect(runCli(r, ["mind-clone", "jane-doe", "--bogus"]).code).toBe(64);
     expect(runCli(r, ["mind-clone"]).code).toBe(64);
-    const agentic = runCli(r, ["mind-clone", "jane-doe", "--fix=agentic", "--no-retrieval"]);
-    expect(agentic.code).toBe(64);
-    expect(agentic.stderr).toContain("not available yet");
+    expect(runCli(r, ["mind-clone", "jane-doe", "--fix=agentic", "--budget-usd", "nope"]).code).toBe(64);
     expect(runCli(r, ["--help"]).code).toBe(0);
+  }, spawnBudgetMs(2));
+});
+
+describe("--fix=agentic", () => {
+  test("a spend is never silent: no --yes, exit 2, and nothing was touched", () => {
+    const r = root();
+    // `not_for` absent is an `autofix: "agentic"` finding — the mode has
+    // something to do, so the confirmation is the only thing standing in the
+    // way. With the fixture complete there would be nothing to confirm.
+    const dir = cloneFixture(r, "jane-doe", { routing: { not_for: undefined } });
+    const before = fs.readFileSync(path.join(dir, "MANIFEST.yaml"), "utf8");
+    const out = runCli(r, ["mind-clone", "jane-doe", "--fix=agentic", "--no-retrieval"]);
+    expect(out.code).toBe(2);
+    expect(out.stderr).toContain("Re-run with --yes");
+    expect(out.stderr).toContain("$3.00");
+    expect(fs.readFileSync(path.join(dir, "MANIFEST.yaml"), "utf8")).toBe(before);
+  }, spawnBudgetMs(2));
+
+  test("--budget-usd names the ceiling the confirmation quotes", () => {
+    const r = root();
+    cloneFixture(r, "jane-doe", { routing: { not_for: undefined } });
+    const out = runCli(r, ["mind-clone", "jane-doe", "--fix=agentic", "--budget-usd", "0.5", "--no-retrieval"]);
+    expect(out.code).toBe(2);
+    expect(out.stderr).toContain("$0.50");
   }, spawnBudgetMs(2));
 });
 

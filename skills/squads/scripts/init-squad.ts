@@ -25,10 +25,11 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { paths, EXIT } from "../../_shared/lib/bun-helpers.ts";
+import { verifyHook } from "../../_shared/lib/verify/index.ts";
 
 const argv = process.argv.slice(2);
 if (argv.length < 1 || argv[0] === "-h" || argv[0] === "--help") {
-  console.error("Usage: init-squad <target-dir> [--name N] [--description D] ...");
+  console.error("Usage: init-squad <target-dir> [--name N] [--description D] [--skip-verify] ...");
   process.exit(argv.length === 0 ? EXIT.INVALID_ARGS : EXIT.OK);
 }
 
@@ -62,6 +63,7 @@ const state: Record<string, string> = {
   TASK_2: env.SQUAD_TASK_2 || "execute",
 };
 let force = false;
+let skipVerify = false;
 
 const flagToKey: Record<string, string> = {
   "--name": "NAME",
@@ -78,6 +80,7 @@ let i = 1;
 while (i < argv.length) {
   const a = argv[i];
   if (a === "--force") { force = true; i++; continue; }
+  if (a === "--skip-verify") { skipVerify = true; i++; continue; }
   if (a === "--example") {
     const v = argv[i + 1];
     if (!state.EXAMPLE_INTENT_1) state.EXAMPLE_INTENT_1 = v;
@@ -170,13 +173,28 @@ if (fs.existsSync(workflowPath) && !force) {
 }
 fs.writeFileSync(workflowPath, substitute(fs.readFileSync(workflowTemplate, "utf8")), "utf8");
 
+// The admission gate at creation (§34). `fix: "mechanical"` first, because a
+// scaffold is authored content minus what the ENGINE owns: the component files
+// the manifest declares and `.nirvana-surface.json`, which is a hash of files
+// that do not exist until this script has written them. Repairing those turns
+// a freshly scaffolded squad from REJECTED into ADMITTED; anything the fixers
+// cannot repair is a broken scaffold, and a broken scaffold is deleted rather
+// than left on disk pretending to be a squad.
+const gate = await verifyHook({ kind: "squad", target: targetDir, gate: "create", fix: "mechanical", skip: skipVerify });
+for (const line of gate.lines) console.error(line);
+if (gate.blocked) {
+  console.error(`[init-squad] FAIL: the scaffold does not pass the admission gate; removing ${targetDir}`);
+  fs.rmSync(targetDir, { recursive: true, force: true });
+  process.exit(EXIT.FAILURES);
+}
+
 console.log(`[init-squad] Wrote ${manifestPath}`);
 console.log(`[init-squad] Wrote ${workflowPath}`);
 console.log("[init-squad] Created skeleton dirs: agents/ tasks/ workflows/ schemas/");
 console.log("");
 console.log("Next steps:");
-console.log(`  1. Fill in agents/${state.AGENT_1}.md and agents/${state.AGENT_2}.md (use templates/agent.md.tmpl)`);
-console.log(`  2. Fill in tasks/${state.TASK_1}.md and tasks/${state.TASK_2}.md`);
+console.log(`  1. Fill in agents/${state.AGENT_1}.md and agents/${state.AGENT_2}.md (stubs written; templates/agent.md.tmpl has the full shape)`);
+console.log(`  2. Fill in tasks/${state.TASK_1}.md and tasks/${state.TASK_2}.md (stubs written)`);
 console.log(`  3. Fill in workflows/${state.WORKFLOW_REF}.md (the graph is scaffolded; the body is yours)`);
 console.log(`  4. Validate: nrv validate squad ${targetDir}   (--fix applies the mechanical repairs)`);
 console.log(`  5. Index:    nrv index`);
