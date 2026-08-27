@@ -8,6 +8,77 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Mais dez testes mediam o disco, e ninguém tinha escolhido isso
+
+A entrada abaixo consertou um arquivo e deixou uma lista de dez. O que esses dez
+têm em comum não é erro de ninguém. Um teste novo abre o Run Kernel como o
+vizinho abre, o vizinho abriu um arquivo SQLite de verdade num diretório
+temporário, e o `PRAGMA synchronous = FULL` transforma cada evento registrado num
+fsync. O disco chega por herança, nunca por decisão.
+
+Agora a decisão tem onde morar. O `tests/helpers/test-kernels.ts` fica ao lado do
+`temp-dirs.ts` e do `test-budgets.ts` e oferece duas portas: `openTestKernel()`,
+hermético, o padrão; e `openTestKernelFile(path)`, a exceção nomeada, para o teste
+que merece o disco. O `closeTestKernels()` solta qualquer uma das duas no
+`afterEach`, que é o que impede um handle vazado de virar EBUSY na limpeza do
+Windows.
+
+Uma pergunta separou os dez. Este teste lê o banco de volta por uma conexão que
+não é a mesma com que escreve? O `:memory:` pertence a quem o abriu, então
+qualquer outro leitor — um filho executado, um servidor HTTP, um segundo handle
+que o código sob teste abre a partir de um caminho recebido — encontra um banco
+vazio e toda asserção passa em cima do nada. Mentira verde custa mais que um
+fsync honesto.
+
+Três respostas foram não, e esses diários foram para a memória: o
+`gauntlet-store`, cujos três casos escrevem e leem pelo mesmo handle; o caso do
+coordenador no `multi-target-dispatch-adapters`, onde os filhos de dispatch falsos
+respondem por arquivos e nunca abrem o kernel; e o caso de replay pós-crash no
+`glance-multi-target-projection`, o único daquele arquivo que não passa pelo
+servidor.
+
+Duas respostas foram sim, e nenhuma das duas tinha orçamento. O
+`standard-publication` é o arquivo que derrubou a `main` na execução
+`33098410397`. O `openStandardPublication` recebe um caminho e abre o próprio
+handle, então as leituras do teste chegam ao diário por fora; o caso de colisão
+então percorre os sete estados terminais, e cada um custa um `prepare` mais três
+leituras, vinte e oito aberturas do mesmo arquivo com a inicialização do esquema
+refeita em cada uma delas. O `glance-control-plane` dirige um servidor vivo que
+segura as próprias conexões com dois bancos, os dois abertos com
+`synchronous = FULL`. Nos dois o disco é a cobertura, então os dois ficam com ele
+e os dois ganham `KERNEL_BUDGET_MS`.
+
+Cinco ficaram exatamente como estavam. O `dispatch-gauntlet-ledger`, o
+`dispatch-standard-kernel`, o `gauntlet-evaluator-dispatch`, o `judge-x-dispatch`
+e o `multi-target-cli` executam um dispatch de verdade e leem o que o filho
+escreveu. Um banco na memória deste processo é invisível para um processo filho, o
+que faz deles o caso mais claro de leitura de volta, e eles já carregam orçamentos
+`spawnBudgetMs` maiores que o do kernel.
+
+A prova é estatística, numa máquina de 10 núcleos com quatro laços de fsync
+disputando o disco. Quarenta cópias concorrentes dos três arquivos sem servidor,
+640 execuções antes da mudança e 640 depois: 18 timeouts viraram 0. Os 18 eram o
+mesmo caso, "a Run that already ended under the same id is refused before any
+producer", com média de 5.943 ms contra o padrão de 5 s do Bun. O relógio do grupo
+caiu de 18,2 s de média e 23,4 s na cauda para 15,8 s e 19,9 s. Medidos sozinhos,
+os dois arquivos cujos diários mudaram foram de 9,0 s de média e 9,9 s de máximo
+para 8,0 s e 9,0 s, em 240 execuções de cada lado, sem nenhum timeout dos dois
+lados: no macOS eles são baratos demais para cruzar os 5 s, e a exposição que
+carregavam tinha formato de Windows.
+
+Os dois arquivos do Glance rodaram sequencialmente, sessenta vezes de cada lado,
+contra a mesma disputa. Nenhum dos lados estourou, a média caiu de 3,0 s para
+2,5 s, e uma amostra em sessenta chegou a 6,9 s contra um pior caso anterior de
+5,4 s. Essa cauda é argumento a favor do orçamento, não contra: sob o padrão do
+Bun ela é um build vermelho, e nada nela é culpa do teste.
+
+Um achado pertence ao arreio de carga, não ao CI. O `startServer` resolve
+`port: 0` sondando com um `Bun.serve` descartável, parando-o e deixando o chamador
+ligar o mesmo número, então duas cópias iniciadas no mesmo instante escolhem 3737
+e uma morre com EADDRINUSE. No CI roda uma cópia só de cada arquivo, então isso
+nunca dispara lá. É por isso que os arquivos do Glance foram medidos
+sequencialmente.
+
 ### Um teste que reprovava por sorteio, e o fsync que decidia o sorteio
 
 O `gauntlet-revision-loop.e2e.test.ts` vinha ficando vermelho no

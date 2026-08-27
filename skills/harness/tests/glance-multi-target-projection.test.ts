@@ -8,8 +8,9 @@ import { projectMultiTargetRun } from "../lib/gauntlet/index.ts";
 import { coordinateMultiTargetPlan, type MultiTargetAdapterInput, type MultiTargetCoordinatorSnapshot } from "../lib/gauntlet/multi-target-coordinator.ts";
 import { createRunKernelMultiTargetPorts } from "../lib/gauntlet/run-kernel-multi-target-ports.ts";
 import { compileMultiTargetGauntletPolicy } from "../lib/plan-compiler.ts";
-import { createRun, listEvents, openKernel, type KernelHandle } from "../lib/run-kernel/store.ts";
+import { createRun, listEvents, type KernelHandle } from "../lib/run-kernel/store.ts";
 import { removeDir } from "./helpers/temp-dirs.ts";
+import { closeTestKernels, openTestKernel, openTestKernelFile } from "./helpers/test-kernels.ts";
 
 const roots: string[] = [];
 const projectId = "prj_multi-target";
@@ -69,7 +70,11 @@ beforeAll(async () => {
   const root = tempRoot();
   process.env.NIRVANA_PROJECT_ROOT = root;
   fs.mkdirSync(path.join(root, ".nirvana"), { recursive: true });
-  const kernel = openKernel(path.join(root, ".nirvana", "run-kernel.sqlite"));
+  // On disk by necessity: the four cases below read this journal back through the Glance server,
+  // which opens its own connection to <NIRVANA_PROJECT_ROOT>/.nirvana/run-kernel.sqlite. A
+  // `:memory:` database belongs to one connection, so the server would answer from an empty one and
+  // every assertion here would pass on nothing.
+  const kernel = openTestKernelFile(path.join(root, ".nirvana", "run-kernel.sqlite"));
   seedRun(kernel, multiRunId);
   seedRun(kernel, plainRunId);
   completed = await coordinateMultiTargetPlan({ ...plan(), ports: ports(kernel, multiRunId) });
@@ -81,6 +86,7 @@ beforeAll(async () => {
 afterAll(() => {
   try { instance?.close(); } catch {}
   delete process.env.NIRVANA_PROJECT_ROOT;
+  closeTestKernels();
   while (roots.length) removeDir(roots.pop()!);
 });
 
@@ -117,7 +123,11 @@ describe("Glance multi-target projection", () => {
   });
 
   test("projectMultiTargetRun replays node events recorded after the last snapshot", async () => {
-    const kernel = openKernel(path.join(tempRoot(), "kernel.sqlite"));
+    // Hermetic: this case never goes through the server. It crashes the coordinator, then reads the
+    // journal back through this same handle (listEvents, projectMultiTargetRun, state.load) to prove
+    // the replay. It is also the only case here that drives a full plan, so it journalled the most
+    // events and paid the most fsyncs.
+    const kernel = openTestKernel();
     const runId = "run_crash";
     seedRun(kernel, runId);
     const kernelPorts = ports(kernel, runId);

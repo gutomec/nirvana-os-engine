@@ -8,6 +8,74 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Ten more tests were measuring the disk, and nobody had chosen it
+
+The entry below fixed one file and left a list of ten. What those ten have in
+common is not a mistake anyone made. A new test opens the Run Kernel the way its
+neighbour does, the neighbour opened a real SQLite file under a temp directory,
+and `PRAGMA synchronous = FULL` turns every journalled event into an fsync. The
+disk arrives as an inheritance, never as a decision.
+
+The decision now has somewhere to live. `tests/helpers/test-kernels.ts` sits
+beside `temp-dirs.ts` and `test-budgets.ts` and offers two doors:
+`openTestKernel()`, hermetic, the default; and `openTestKernelFile(path)`, the
+named exception for a test that earns the disk. `closeTestKernels()` releases
+either one in `afterEach`, which is what keeps a leaked handle from turning a
+Windows teardown into EBUSY.
+
+One question sorted the ten. Does this test read the database back through a
+connection that is not the one it writes with? `:memory:` belongs to whichever
+connection opened it, so any other reader — a spawned child, an HTTP server, a
+second handle the code under test opens from a path it was handed — finds an
+empty database and every assertion passes on nothing. A green lie costs more
+than an honest fsync.
+
+Three answers were no, and those journals moved into memory: `gauntlet-store`,
+whose three cases write and read through one handle; the coordinator case in
+`multi-target-dispatch-adapters`, where the fake dispatch children answer through
+files and never open the kernel; and the crash-replay case in
+`glance-multi-target-projection`, the only one in that file that never goes
+through the server.
+
+Two answers were yes, and neither had a budget. `standard-publication` is the
+file that took `main` down in run `33098410397`. `openStandardPublication` is
+handed a path and opens its own handle, so the test's reads reach the journal
+from outside; the collision case then walks all seven terminal states, and each
+one costs a `prepare` plus three reads, twenty-eight openings of the same file
+with the schema initialization re-run on every one of them. `glance-control-plane`
+drives a live server holding its own connections to two databases, both opened
+with `synchronous = FULL`. The disk is the coverage in both, so both keep it and
+both get `KERNEL_BUDGET_MS`.
+
+Five were left exactly as they were. `dispatch-gauntlet-ledger`,
+`dispatch-standard-kernel`, `gauntlet-evaluator-dispatch`, `judge-x-dispatch` and
+`multi-target-cli` spawn a real dispatch and read what the child wrote. A
+database in this process's memory is invisible to a child process, which makes
+them the clearest read-back of all, and they already carry `spawnBudgetMs`
+budgets larger than the kernel one.
+
+The proof is statistical, on a 10-core machine with four fsync loops competing
+for the disk. Forty concurrent copies of the three server-free files, 640 runs
+before the change and 640 after: 18 timeouts became 0. All 18 were the same case,
+"a Run that already ended under the same id is refused before any producer", at
+5,943 ms mean against Bun's 5 s default. The group's wall clock fell from 18.2 s
+mean and 23.4 s at the tail to 15.8 s and 19.9 s. Measured on their own, the two
+files whose journals moved went from 9.0 s mean and 9.9 s max to 8.0 s and 9.0 s
+over 240 runs a side, with no timeout on either side: on macOS they are too cheap
+to cross 5 s, and the exposure they carried was Windows-shaped.
+
+The two Glance files ran sequentially, sixty times a side, against that same
+contention. Neither side timed out, the mean fell from 3.0 s to 2.5 s, and one
+sample in sixty reached 6.9 s against a previous worst of 5.4 s. That tail argues
+for the budget rather than against it: under Bun's default it is a red build, and
+nothing about it is the test's fault.
+
+One finding belongs to the load harness rather than to CI. `startServer` resolves
+`port: 0` by probing with a throwaway `Bun.serve`, stopping it, and letting the
+caller bind the same number, so two copies started in the same instant both pick
+3737 and one dies with EADDRINUSE. Only one copy of a file runs in CI, so it
+never fires there. It is why the Glance files were measured sequentially.
+
 ### A test that failed by lottery, and the fsync that decided the draw
 
 `gauntlet-revision-loop.e2e.test.ts` kept going red on `smoke (windows-latest)`
