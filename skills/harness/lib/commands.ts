@@ -61,7 +61,7 @@ export const COMMANDS: Command[] = [
   { name: "doctor", aliases: ["capability-doctor"], custom: true, category: "core", args: "[--system|--capability]", summary: "Full system diagnostic", visibility: "user" },
   { name: "route", target: "harness/scripts/route.ts", category: "core", args: '"<brief>"', summary: "Route a brief (HIGH/AMBIGUOUS/NO_MATCH)", visibility: "user" },
   { name: "find", target: "harness/scripts/find.ts", category: "core", args: '"<query>"', summary: "Dry-run capability discovery", visibility: "user" },
-  { name: "validate", target: "harness/scripts/validate.ts", category: "core", summary: "Self-test (delegates to doctor: binaries, skills, registries, hooks)", visibility: "user" },
+  { name: "validate", aliases: ["verify"], target: "_shared/scripts/verify.ts", category: "core", args: "<squad|business|mind-clone> <slug|path> [--fix] [--strict] [--json] | <kind> --all [--record] | --pack <dir>", summary: "Admission gate: verify an entity, --fix it, record debt (exit 0/1/2/64; bare = deprecated doctor alias)", visibility: "user" },
   { name: "index", target: "harness/scripts/index.ts", category: "core", summary: "Re-index squads + businesses", visibility: "user" },
   { name: "config", target: "harness/scripts/config.ts", category: "core", args: "list|get|set|unset|explain [<key> [<value>]] [--global|--project]", summary: "Operational settings: effective value + origin per key; set/unset write the project or the global config.yaml", visibility: "user" },
 
@@ -119,7 +119,7 @@ export const COMMANDS: Command[] = [
   { name: "graph", aliases: ["entity-graph"], target: "harness/scripts/graph.ts", category: "dev", args: "<closure|order|check> [--business <slug>] [--pack <dir>] [--strict] [--json]", summary: "Typed dependency graph: entity closure for a business, install order, integrity check", visibility: "dev" },
   { name: "validate-chain", aliases: ["chain-validate", "chain"], target: "harness/scripts/validate-chain.ts", category: "dev", args: "<project> [--strict|--all]", summary: "Audit-chain integrity check", visibility: "dev" },
   { name: "validate-trace", aliases: ["trace-validate"], target: "harness/scripts/validate-trace.ts", category: "dev", summary: "Validate a single audit trace", visibility: "dev" },
-  { name: "validate-mind-clones", aliases: ["mc-validate"], target: "_shared/scripts/validate-mind-clones.ts", category: "dev", summary: "Audit mind-clone canonical files", visibility: "dev" },
+  { name: "validate-mind-clones", aliases: ["mc-validate"], target: "_shared/scripts/validate-mind-clones.ts", category: "dev", summary: "Audit the mind-clone library (alias of validate mind-clone --all; legacy JSON keys kept)", visibility: "dev" },
   { name: "pack-manifest", aliases: ["gen-pack-manifest"], target: "_shared/scripts/gen-pack-manifest.ts", category: "dev", summary: "Generate a pack manifest", visibility: "dev" },
   { name: "validate-starter", aliases: ["starter-validate"], custom: true, category: "dev", summary: "Dev-only: validate a starter/content pack (needs the packs repo)", visibility: "dev" },
 ];

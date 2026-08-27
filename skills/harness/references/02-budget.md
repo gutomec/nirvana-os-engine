@@ -136,7 +136,7 @@ nrv dispatch <business> "<brief>" --exec --max-budget=5.00
 nrv route "manage marketing for client X"
 
 # self-test covers budget.check
-nrv validate
+nrv doctor
 ```
 
 ## Good practice

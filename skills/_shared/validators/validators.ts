@@ -786,6 +786,132 @@ export function validateBusinessIntegrity(ctx: BusinessLoadContext): { valid: bo
 }
 
 // ──────────────────────────────────────────────────────────────────────
+// Mind-Clone Manifest (MANIFEST.yaml) — Zod mirror of
+// _shared/schemas/mind-clone.schema.json, reconciled against the library
+// (555 clones, 2026-08-26). Consumed by the admission gate
+// (_shared/lib/verify/kinds/mind-clone.ts). Shape and identity are strict;
+// what the validation pipeline produces (verdict, scores, dna_layers,
+// source_material) is optional here and reported by the gate as debt.
+// skills/_shared/tests/mind-clone-schema-parity.test.ts keeps keys and enums
+// of the JSON and this schema identical.
+// ──────────────────────────────────────────────────────────────────────
+
+export const MIND_CLONE_CATEGORY = /^[a-z][a-z0-9-]+$/
+
+export const MIND_CLONE_VALIDATION_VERDICTS = [
+  'APPROVED',
+  'APPROVED_LIMITED_CORPUS',
+  'COMPILED_FROM_CANONICAL_KNOWLEDGE',
+  'NEEDS_REVISION',
+  'REJECTED',
+  // Live in the library (11, 8 and 3 clones): admitted rather than rejected.
+  'ARCHETYPE_PERSONA',
+  'EXTRACTED_FROM_PUBLIC_CORPUS',
+  'PACKAGED_FROM_EXISTING_DOSSIER',
+] as const
+
+export const MIND_CLONE_ARTIFACT_STATUS = ['present', 'missing', 'pending'] as const
+
+export const MIND_CLONE_DNA_LAYER_KEYS = [
+  'L1_philosophies', 'L2_mental_models', 'L3_heuristics', 'L4_frameworks', 'L5_methodologies',
+] as const
+
+// The routing block per _shared/MIND_CLONE_ROUTING_CONTRACT.md. `when_to_use`
+// is the pre-split legacy of `serves`; `delegates_to` was retired on
+// 2026-08-18 and is tolerated (ignored) — the gate reports it, never rejects it.
+export const MindCloneRoutingSchema = z.object({
+  one_liner: z.string().optional(),
+  domains: z.array(z.string()).optional(),
+  serves: z.string().optional(),
+  when_to_use: z.string().optional(),
+  not_for: z.string().optional(),
+  refuses: z.array(z.string()).optional(),
+  delegates_to: z.array(z.string()).optional(),
+}).loose()
+
+export const MindCloneArtifactSchema = z.object({
+  path: z.string().min(1),
+  status: z.enum(MIND_CLONE_ARTIFACT_STATUS).optional(),
+  size_bytes: z.number().int().min(0).optional(),
+  sha256: z.string().optional(),
+}).loose()
+
+const layerCount = z.coerce.number().int().min(0).optional()
+export const MindCloneDnaLayersSchema = z.object({
+  L1_philosophies: layerCount,
+  L2_mental_models: layerCount,
+  L3_heuristics: layerCount,
+  L4_frameworks: layerCount,
+  L5_methodologies: layerCount,
+}).loose()
+
+const score = z.coerce.number().min(0).max(1).optional()
+export const MindCloneScoresSchema = z.object({
+  template_compliance: score,
+  source_coverage: score,
+  coherence: score,
+  completeness: score,
+}).loose()
+
+export const MindCloneManifestSchema = z.object({
+  manifest: z.object({
+    name: z.string().regex(KEBAB_CASE),
+    display_name: z.string().min(2).max(80),
+    version: z.string().regex(/^\d+\.\d+\.\d+$/),
+    category: z.string().regex(MIND_CLONE_CATEGORY).optional(),
+    tags: z.array(z.string().min(2).max(60)).optional(),
+    compiled_at: z.string().optional(),
+    compiled_by: z.string().optional(),
+    compilation_method: z.string().optional(),
+    source: z.string().optional(),
+  }).loose(),
+  routing: MindCloneRoutingSchema.optional(),
+  artifacts: z.union([
+    z.array(MindCloneArtifactSchema),
+    z.object({
+      required: z.object({
+        agent_md: z.object({ path: z.string() }).loose(),
+        soul_md: z.object({ path: z.string() }).loose(),
+        dna_config: z.object({ path: z.string() }).loose(),
+        dna_schema: z.object({ path: z.string() }).loose(),
+      }).loose(),
+      optional: z.record(z.string(), z.unknown()).optional(),
+    }).loose(),
+    // keyed map: { agent: "agent/AGENT.md" } or { agent: { path, status } }
+    z.record(z.string(), z.union([z.string(), z.object({ path: z.string() }).loose()])),
+  ]),
+  // Items are usually strings; a few clones write structured sources
+  // ({ name, type, ... }). Both are sources, neither is fabricated.
+  source_material: z.object({
+    primary: z.array(z.union([z.string(), z.record(z.string(), z.unknown())])).optional(),
+    secondary: z.array(z.union([z.string(), z.record(z.string(), z.unknown())])).optional(),
+  }).loose().optional(),
+  sources_detailed: z.union([
+    z.array(z.object({
+      name: z.string(),
+      type: z.string().optional(),
+      pages_read: z.number().int().min(0).optional(),
+      contribution: z.string().optional(),
+    }).loose()),
+    z.record(z.string(), z.unknown()),
+  ]).optional(),
+  scores: MindCloneScoresSchema.optional(),
+  validation_verdict: z.enum(MIND_CLONE_VALIDATION_VERDICTS).optional(),
+  validated_at: z.string().optional(),
+  validator: z.string().optional(),
+  caveat: z.string().optional(),
+  commercial_use_caveat: z.string().optional(),
+  dna_layers: MindCloneDnaLayersSchema.optional(),
+  warnings: z.array(z.string()).optional(),
+  broken_references: z.array(z.string()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+  quality: z.record(z.string(), z.unknown()).optional(),
+  mind_clone: z.record(z.string(), z.unknown()).optional(),
+}).loose()
+
+export type MindCloneManifest = z.infer<typeof MindCloneManifestSchema>
+
+// ──────────────────────────────────────────────────────────────────────
 // Self-test
 // ──────────────────────────────────────────────────────────────────────
 

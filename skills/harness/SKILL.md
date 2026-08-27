@@ -124,6 +124,14 @@ A mind-clone is not invoked like a squad — it is **injected** as "act as". Sel
 
 The point of rule 4 is the difference between degrading and lying. Working without the DNA is acceptable; letting the user believe the DNA was there is not.
 
+A finished clone is checkable: `nrv validate mind-clone <slug> --strict` runs the admission gate (manifest schema, the four canonical artifacts, the `routing:` block, DNA layers, `^[FONTE]` density, self-retrieval) and exits non-zero when something is missing. `--fix` applies the mechanical repairs with a backup and rolls back on a new error. See `docs/architecture/validate-gate.md`.
+
+---
+
+### Rule 10 — Never enter the runtime's plan mode
+
+Never switch the runtime into its own plan mode (Claude Code plan mode, Codex plan, or equivalents) while orchestrating or executing a dispatch: it makes the session and every subagent read-only and stalls the run. Planning in Nirvana-OS is a written artifact: the enriched brief in `.nirvana/briefs/` or a multi-target plan in `.nirvana/plans/`. If the runtime is already in plan mode, ask the user once to leave it and stop; do not retry the exit dialog.
+
 ---
 
 ---

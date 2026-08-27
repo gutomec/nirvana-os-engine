@@ -44,6 +44,8 @@ Este diretório é a fonte canônica para a evolução integrada do Run Kernel, 
 24. [Configuração pelo Glance](glance-settings.md)
 25. [Sessões do maestro](maestro-sessions.md)
 
+26. [Portão de admissão `nrv validate`](validate-gate.md)
+
 ## ADRs
 
 - [ADR-001: lifecycle canônico do run](adrs/ADR-001-canonical-run-lifecycle.md)

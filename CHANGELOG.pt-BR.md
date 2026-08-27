@@ -8,6 +8,92 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### `nrv validate` é o portão de admissão de squads, empresas e mind-clones
+
+Todo squad, empresa e mind-clone que entra na biblioteca passa a ter um comando
+que o admite ou o reprova. `nrv validate <squad|business|mind-clone>
+<slug|path>` roda os critérios do tipo, imprime uma tabela PASS/WARN/FAIL e um
+`Verdict: ADMITTED | REJECTED`, e `--fix` aplica os reparos mecânicos.
+`nrv verify` é alias; `biz`, `clone` e `mc` são apelidos de tipo; um diretório
+como argumento tem o tipo detectado pelo manifesto em disco. `--all` varre toda
+entidade instalada de um tipo, `--pack <content-dir>` varre um pack antes de ele
+sair, e `--json` responde `nirvana.verify-report/v1` (um lote responde
+`nirvana.verify-batch/v1`).
+
+| Saída | Significado |
+|---|---|
+| 0 | Admitido |
+| 1 | Um erro que o baseline de débito não cobre |
+| 2 | Só avisos, com `--strict` |
+| 64 | Erro de uso, tipo desconhecido, ou entidade que não resolve |
+
+O verbo mudou de dono. `nrv validate` era um alias de 20 linhas para o doctor da
+máquina; o doctor fica em `nrv doctor`, inalterado, e o `nrv validate` sem
+argumento continua rodando ele com aviso de deprecação por uma release.
+`nrv validate-mind-clones` (e `mc-validate`) passa a delegar ao módulo e mantém
+todas as chaves JSON que já imprimia — `target`, `total`, `ok`, `failed`,
+`results[].{file, ok, errors, warnings}` — acrescentando `findings`. As rotas do
+Glance `GET /api/mind-clones/validate` e `/validate-all` chamam o mesmo módulo,
+mantêm `ok` / `errors` / `warnings` e ganham `findings`.
+
+O débito registrado só pode encolher. Os critérios que o pipeline de validação
+produz e que nenhuma edição de texto conserta com honestidade — `validation_verdict`
+ausente, `source_material` ausente, densidade baixa de `^[FONTE:]`, bloco
+`routing:` ausente — são baselineáveis: o
+`$NIRVANA_HOME/.nirvana/.verify-baseline.json` os registra, eles aparecem como
+`DEBT` e deixam de reprovar. `--record` funde por entidade (gravar do pack A
+nunca apaga o que só o pack B enxerga), recusa adicionar débito sem
+`--allow-regression`, e importa `.admission-baseline.json` e
+`.seat-sufficiency-baseline.json` uma vez. Erro duro nunca é baselineável. Um
+chamador em modo hook que não encontra baseline nenhum registra o que vê em vez
+de reprovar a biblioteca instalada inteira no dia um; a CLI explícita continua
+honesta.
+
+O `--fix` é o laço do improve-squad sem o LLM: checa, faz backup com
+`fs.cpSync` (nunca rsync — a matriz de CI roda Windows) em
+`$NIRVANA_HOME/.nirvana/verify-backups/<kind>/<slug>.<ts>/` guardando os cinco
+últimos, aplica os fixers em ordem fixa com `surface_regen` por último, checa de
+novo, e reverte byte a byte quando um fixer lançou, o manifesto parou de
+parsear, ou surgiu um erro novo. Uma segunda rodada é no-op: todo fixer compara
+antes de escrever, e o YAML é editado pela API de documento, então comentários e
+ordem das chaves sobrevivem. Nenhum fixer apaga conteúdo autoral, e nenhum
+fabrica fonte ou citação.
+
+O catálogo de mind-clone é o primeiro completo: 10 erros (manifesto que parseia e
+o schema, nome divergente, os quatro artefatos canônicos, o validador de persona,
+categoria numerada, item de domínio malformado, verdict desconhecido, menos de
+três camadas de DNA, superfície de contrato ausente) e 17 avisos (status dos
+artefatos, o bloco de routing e o `one_liner`, contagem de domínios, negações,
+barras e conflito com `refuses`, `serves`, `not_for`, `delegates_to`
+aposentado, verdict, fontes, contagem das camadas, densidade de `^[FONTE:]`,
+`source_coverage` sem lastro, superfície defasada, auto-recuperação). Seis
+fixers mecânicos os acompanham: `manifest_name_sync`, `category_bare`,
+`delegates_to_strip`, `artifacts_status_sync`, `dna_layers_sync`,
+`surface_regen`. `category` é kebab-case nu, a forma viva da biblioteca, e o
+prefixo numerado legado é o erro. O `MindCloneManifestSchema` (Zod) passa a ser
+o espelho executado do `mind-clone.schema.json`, que nenhum código lia, com os
+três verdicts que a biblioteca já carrega; o `mind-clone-schema-parity.test.ts`
+compara os dois chave a chave. Squads e empresas entram com os critérios comuns
+aos três tipos (o manifesto parseia, `.nirvana-surface.json` existe e bate com o
+disco) para a CLI funcionar de ponta a ponta; os catálogos completos vêm depois.
+
+Tudo roda em processo — sem spawn de loader, sem LLM — então `--all` sobre 555
+clones custa segundos, e o índice BM25 do eixo de auto-recuperação é construído
+uma vez por lote. Contrato e critérios:
+`docs/architecture/validate-gate.md`. Prova: `verify-runner.test.ts`,
+`verify-backup.test.ts`, `verify-baseline.test.ts`, `verify-mind-clone.test.ts`,
+`mind-clone-schema-parity.test.ts`, `validate-cli-alias.test.ts`.
+
+### O plan mode está proibido enquanto um dispatch corre
+
+O orquestrador e as sete personas de `agent-x` passam a carregar uma regra:
+nunca colocar o runtime no plan mode dele enquanto orquestra ou executa um
+dispatch. Isso deixa a sessão e todo subagente em somente leitura e trava a
+execução. Planejar no Nirvana-OS é um artefato escrito — o brief enriquecido em
+`.nirvana/briefs/`, um plano multi-target em `.nirvana/plans/`. Quando o runtime
+já está em plan mode, o agente pede uma vez para o usuário sair e para, em vez
+de repetir o diálogo de saída contra uma sessão somente leitura.
+
 ### O agente do Glance é um maestro conversacional: uma Message, um turno da sessão do runtime do projeto
 
 Uma Message de projeto adotado não prepara mais um Run por padrão. Com
