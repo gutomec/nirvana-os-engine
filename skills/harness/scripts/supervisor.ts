@@ -37,8 +37,26 @@
 //   - it never touches itself or its parent (process.pid / process.ppid);
 //   - `sweep` ALWAYS exits 0 — a supervisor crash must never fail a caller.
 //
-// Subcommands: sweep [--quiet] · status · watch [--interval=120] ·
-//              install [--print] · uninstall
+// Subcommands: sweep [--quiet] [--all-projects] · status [--all-projects] ·
+//              watch [--interval=120] [--all-projects] · install [--print] ·
+//              uninstall
+//
+// PROJECT SCOPE — the supervisor is the exception, and the only one.
+// Every other reader of the ledger sees just the project it is serving, because
+// a session working in one project must not see (or close) another project's
+// runs. Recovery cannot work that way: a run whose session died has nobody left
+// in its project to sweep it. So:
+//
+//   --all-projects            the whole machine. How launchd invokes it
+//                             (renderLaunchdPlist writes the flag), and how an
+//                             operator asks for the machine-wide picture.
+//   no flag, project found    only the project this process stands in — the
+//                             lazy sweep piggybacking on a user's nrv command.
+//   no flag, no project       the whole machine, with a note on stderr saying
+//                             why. This is launchd's own shape (cwd `/`, no
+//                             NIRVANA_PROJECT_ROOT): the never-stall guarantee
+//                             must not depend on an operator remembering to
+//                             re-run `nrv supervisor install` after upgrading.
 //
 // Env: NRV_SUPERVISOR=0 disables maybeSweep; NRV_IN_SWEEP=1 is the recursion
 // guard (set for every child the sweep spawns).
@@ -68,6 +86,7 @@ import {
   getSupervisorMeta,
   setSupervisorMeta,
   patchMeta,
+  resolveProjectRoot,
   type LedgerHandle,
   type RunRow,
   type RunState,
@@ -154,6 +173,9 @@ export interface SalvageVerdict {
 
 export interface SweepDeps {
   handle?: LedgerHandle;
+  /** Sweep every project instead of the one this process is serving. The
+   *  supervisor's exception — see the PROJECT SCOPE block at the top. */
+  allProjects?: boolean;
   /** Injectable clock (ms) so tests can fast-forward leases/heartbeats. */
   now?: number;
   resumeImpl?: (row: RunRow) => RecoveryResult;
@@ -633,6 +655,25 @@ function salvageFields(v: SalvageVerdict): Record<string, unknown> {
  */
 const SWEEP_LOCK_STALE_MS = 30 * 60_000;
 
+/**
+ * How wide this supervisor invocation looks — the one place that decides it.
+ * See the PROJECT SCOPE block at the top of the file: the flag wins, a
+ * resolvable project scopes to itself, and a supervisor with no project at all
+ * (launchd) stays machine-wide rather than quietly recovering nothing.
+ */
+export function resolveSweepScope(flagged: boolean, quiet = false): { allProjects: boolean; projectRoot: string | null } {
+  if (flagged) return { allProjects: true, projectRoot: null };
+  const projectRoot = resolveProjectRoot();
+  if (projectRoot) return { allProjects: false, projectRoot };
+  if (!quiet) {
+    console.error(
+      "[supervisor] no project root here (no NIRVANA_PROJECT_ROOT, no marker above the cwd) — " +
+      "sweeping ALL projects. Pass --all-projects to say so explicitly, or run from inside a project to scope it.",
+    );
+  }
+  return { allProjects: true, projectRoot: null };
+}
+
 export function sweep(deps: SweepDeps = {}): SweepSummary {
   const summary: SweepSummary = { scanned: 0, skipped: 0, graced: 0, resumed: 0, redispatched: 0, recovered: 0, escalated: 0, salvaged: 0, errors: 0 };
   // deps.handle => a test drives its own ledger; skip the global lock so
@@ -658,7 +699,7 @@ function sweepLocked(deps: SweepDeps, summary: SweepSummary): SweepSummary {
   }
   const now = deps.now ?? Date.now();
   let rows: RunRow[] = [];
-  try { rows = findNonTerminal(h); } catch (e) {
+  try { rows = findNonTerminal(h, { allProjects: deps.allProjects }); } catch (e) {
     console.error(`[supervisor] ledger query failed: ${(e as Error)?.message ?? e}`);
     summary.errors++;
     return summary;
@@ -851,8 +892,11 @@ export function maybeSweep(): boolean {
     const last = getSupervisorMeta(h, "last_sweep_at");
     if (last && Date.now() - Number(last) < SWEEP_MIN_INTERVAL_MS) return false;
     setSupervisorMeta(h, "last_sweep_at", String(Date.now()));
-    if (countNonTerminal(h) === 0) return false;
-    const child = spawn(process.execPath, [SUPERVISOR_PATH, "sweep", "--quiet"], {
+    // Count what the child will actually sweep. Counting a different scope than
+    // the one it sweeps is how a pending run gets skipped forever.
+    const scope = resolveSweepScope(false, true);
+    if (countNonTerminal(h, { allProjects: scope.allProjects }) === 0) return false;
+    const child = spawn(process.execPath, [SUPERVISOR_PATH, "sweep", "--quiet", ...(scope.allProjects ? ["--all-projects"] : [])], {
       detached: true,
       stdio: "ignore",
       env: { ...process.env, NRV_IN_SWEEP: "1" },
@@ -886,6 +930,9 @@ export function renderLaunchdPlist(): string {
     `    <string>${SUPERVISOR_PATH}</string>`,
     `    <string>sweep</string>`,
     `    <string>--quiet</string>`,
+    // launchd has no project context; the flag says out loud that this is the
+    // machine-wide supervisor, the one exception to the ledger's project scope.
+    `    <string>--all-projects</string>`,
     `  </array>`,
     `  <key>RunAtLoad</key><true/>`,
     `  <key>StartInterval</key><integer>120</integer>`,
@@ -931,10 +978,13 @@ function uninstallLaunchd(): number {
 
 // ── CLI ───────────────────────────────────────────────────────────────────
 
-function cliStatus(): number {
+function cliStatus(allProjects: boolean): number {
   const h = openLedger();
-  const rows = findNonTerminal(h);
-  if (rows.length === 0) { console.log("supervisor: no non-terminal runs. Ledger is clean."); return 0; }
+  const scope = resolveSweepScope(allProjects);
+  const rows = findNonTerminal(h, { allProjects: scope.allProjects });
+  const where = scope.allProjects ? "all projects" : scope.projectRoot;
+  if (rows.length === 0) { console.log(`supervisor: no non-terminal runs in ${where}. Ledger is clean.`); return 0; }
+  console.log(`scope: ${where}`);
   const pad = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + "…" : s.padEnd(n));
   console.log(pad("RUN", 24) + pad("STATE", 11) + pad("TARGET", 26) + pad("PID", 8) + pad("RETRIES", 8) + pad("LEASE EXPIRES", 22) + "LAST HEARTBEAT");
   const now = Date.now();
@@ -962,12 +1012,13 @@ function argValue(name: string, fallback?: string): string | undefined {
 if (import.meta.main) {
   const sub = process.argv[2] ?? "status";
   const quiet = process.argv.includes("--quiet");
+  const allProjects = process.argv.includes("--all-projects");
   switch (sub) {
     case "sweep": {
       // Anything spawned below must not recursively trigger maybeSweep.
       process.env.NRV_IN_SWEEP = "1";
       try {
-        const s = sweep({ quiet });
+        const s = sweep({ quiet, allProjects: resolveSweepScope(allProjects, quiet).allProjects });
         if (!quiet) {
           console.log(`sweep: scanned=${s.scanned} skipped=${s.skipped} graced=${s.graced} resumed=${s.resumed} redispatched=${s.redispatched} recovered=${s.recovered} escalated=${s.escalated} salvaged=${s.salvaged} errors=${s.errors}`);
         }
@@ -977,14 +1028,15 @@ if (import.meta.main) {
       process.exit(0); // sweep ALWAYS exits 0 (anti-respawn guard)
     }
     case "status":
-      process.exit(cliStatus());
+      process.exit(cliStatus(allProjects));
     case "watch": {
       const intervalSec = Math.max(10, parseInt(argValue("--interval", "120") || "120", 10));
       process.env.NRV_IN_SWEEP = "1";
-      console.log(`supervisor watch — sweeping every ${intervalSec}s (Ctrl-C to stop)`);
+      const watchScope = resolveSweepScope(allProjects, quiet);
+      console.log(`supervisor watch — sweeping ${watchScope.allProjects ? "all projects" : watchScope.projectRoot} every ${intervalSec}s (Ctrl-C to stop)`);
       for (;;) {
         try {
-          const s = sweep({ quiet });
+          const s = sweep({ quiet, allProjects: watchScope.allProjects });
           if (!quiet) console.log(`[${new Date().toISOString()}] scanned=${s.scanned} graced=${s.graced} resumed=${s.resumed} redispatched=${s.redispatched} escalated=${s.escalated} salvaged=${s.salvaged}`);
         } catch (e) { console.error(`[supervisor] sweep crashed: ${(e as Error)?.message ?? e}`); }
         Bun.sleepSync(intervalSec * 1000);
@@ -996,13 +1048,18 @@ if (import.meta.main) {
       process.exit(uninstallLaunchd());
     default:
       console.log([
-        "usage: nrv supervisor <sweep|status|watch|install|uninstall>",
+        "usage: nrv supervisor <sweep|status|watch|install|uninstall> [--all-projects]",
         "",
         "  sweep [--quiet]        one recovery pass over the dispatch ledger (always exits 0)",
         "  status                 table of non-terminal runs",
         "  watch [--interval=120] loop sweep forever",
         "  install [--print]      write + load the launchd LaunchAgent (--print: show plist only)",
         "  uninstall              unload + remove the launchd LaunchAgent",
+        "",
+        "  --all-projects         every project on the machine. Without it, sweep/status/watch",
+        "                         see only the project of the cwd — the supervisor is the ONE",
+        "                         reader allowed the machine-wide view. With no project around",
+        "                         (launchd) it goes machine-wide anyway and says so.",
         "",
         "env: NRV_SUPERVISOR=0 disables the lazy sweep on nrv find/route/dispatch",
       ].join("\n"));

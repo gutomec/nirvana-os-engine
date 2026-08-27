@@ -127,8 +127,11 @@ describe("brief-squad opens the ledger run by itself", () => {
     expect(briefFile).toBeTruthy();
     expect(fs.readFileSync(briefFile!, "utf8")).toContain(SCOPE_GUARD_PT_BR);
 
-    const rows = findNonTerminal(openLedger(ledger));
+    // Scoped to the child's project, not to this test process's own: the
+    // ledger file is shared, the visibility is not.
+    const rows = findNonTerminal(openLedger(ledger), { projectRoot });
     expect(rows.length).toBe(1);
+    expect(rows[0].project_root).toBe(fs.realpathSync(projectRoot));
     const row = rows[0];
     expect(row.state).toBe("running");
     expect(row.target_kind).toBe("squad");

@@ -234,6 +234,10 @@ export function envelope(memo: RunMemo): RunEnvelope {
  * On boot, re-anchor runs the ledger still considers active: the in-memory
  * queue is a cache, the ledger is the truth (a serve restart must not
  * orphan work, and the supervisor sweeps whatever really died).
+ *
+ * Scoped to the project this server is serving — `findNonTerminal` defaults to
+ * it. Adopting another project's orphans would put runs this API can neither
+ * explain nor finish into its count; the supervisor is what reaches those.
  */
 export function adoptOrphans(): number {
   try {

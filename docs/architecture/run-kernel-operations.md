@@ -23,6 +23,50 @@ Cada instância usa um arquivo SQLite definido pelo caller. O schema inicial tem
 
 O journal e a outbox não devem ser apagados em rollback. Desativar o writer novo basta para retornar aos readers legados. A facade mantém o ledger atual no formato existente e adiciona somente eventos `x_run_kernel_projection` ao audit.
 
+## Escopo de projeto do ledger
+
+O arquivo do ledger é um só na máquina (`<NIRVANA_HOME>/.nirvana/run-ledger.sqlite`), e continua sendo. O que deixou de ser global é a **visibilidade**: cada linha guarda o `project_root` a que pertence, e toda leitura e toda escrita do `run-ledger.ts` filtram pela raiz que o processo chamador está servindo.
+
+A raiz é resolvida como o resto do engine resolve: `NIRVANA_PROJECT_ROOT` quando existe, senão o primeiro ancestral do cwd que carrega um marcador de projeto (`.env`, `.nirvana`, `.git`, `package.json`, `pyproject.toml`). `HOME` e a raiz do sistema de arquivos nunca contam como projeto — um marcador solto em qualquer um dos dois colapsaria a máquina inteira num escopo só. O caminho é normalizado por `realpath`, porque no macOS o mesmo diretório aparece como `/var/folders/…` e `/private/var/folders/…`.
+
+Por que a regra existe: em 27/08/2026 uma sessão trabalhando em `~/nirvana-os` rodou `nrv run-track list`, viu linhas de `~/venda-mundial-pro` e de `consultorio-dr-paulo` — o ledger mostrava a máquina toda — e **fechou uma delas**. Um run de outro projeto, encerrado por um estranho, recuperável só por `x_audit_correction`. O raciocínio que justificava o banco global valia apenas para o supervisor, e vazava para todos os leitores.
+
+### O que passa a filtrar
+
+| Ponto | Comportamento |
+|---|---|
+| `findNonTerminal`, `countNonTerminal`, `findExpired` | linhas do projeto do chamador; `{ allProjects: true }` é a porta do supervisor |
+| `findRelatedRuns` | linhas da raiz **da própria linha** consultada, não da do chamador — a pergunta é "o que mais este projeto está fazendo", e o supervisor a faz varrendo projetos alheios |
+| `beatAgenticRuns` | só bate no projeto do chamador, inclusive quando um `runId` de fora é nomeado explicitamente |
+| `nrv run-track list` | só os runs deste projeto |
+| `nrv run-track beat` e `close` | recusam uma linha de outro projeto com exit 4, nomeando o projeto dono |
+| varredura e salvage do supervisor | a lista de candidatos vem de `findNonTerminal`, então herda o escopo |
+| `adoptOrphans` (control plane do `serve`) | conta os órfãos do projeto que o servidor atende |
+
+O `project_id` sozinho não separava nada: ele é o *basename* de um diretório, e dois projetos colidem nele com facilidade (`cliente`, `site`, `landing`). É a raiz que distingue.
+
+### Linhas legadas
+
+A coluna `project_root` chegou depois da tabela. A migração é idempotente por `PRAGMA table_info`, e o backfill roda uma única vez, na abertura que adiciona a coluna: cada linha antiga é colocada a partir de `meta.project_root`, `meta.project_dir` ou `meta.cwd`, ancorando o valor relativo no `meta.cwd` e subindo dali até o projeto. Nesse caminho o `meta.project_root` guarda um diretório de *outputs*, não a raiz — por isso o valor é caminhado para cima, e um diretório de outputs já apagado ainda nomeia o projeto sob o qual viveu.
+
+O que não dá para colocar fica em `NULL`, que se lê como "legado": invisível para um projeto, presente no modo `--all-projects` e no histórico. Um projeto errado seria pior do que um "não sei" honesto. Uma linha legada consultada por `findRelatedRuns` mantém o casamento antigo, só por id, para que a atualização nunca cegue a prova de vida quanto aos próprios filhos de um run; a tolerância é de mão única, e uma linha que conhece o seu projeto nunca aceita um irmão sem raiz.
+
+### A exceção do supervisor
+
+Recuperação não funciona com escopo: um run cuja sessão morreu não tem mais ninguém no projeto dele para varrer. O supervisor é a única exceção, e ele passa a pedi-la em voz alta.
+
+- `--all-projects` varre a máquina inteira. É assim que o launchd o invoca, e `renderLaunchdPlist` escreve a flag no plist.
+- Sem a flag, com projeto resolvível, ele varre só o projeto em que está — o caso da varredura preguiçosa pendurada num `nrv` do usuário.
+- Sem a flag e sem projeto algum, ele fica global e diz por quê no stderr. Essa é a forma do próprio launchd (cwd `/`, sem `NIRVANA_PROJECT_ROOT`), e a garantia de nunca travar um run não pode depender de um operador lembrar de reinstalar o LaunchAgent depois de atualizar.
+
+`sweep`, `status` e `watch` aceitam a flag; `maybeSweep` conta no mesmo escopo que o filho vai varrer, porque contar um escopo e varrer outro é como um run pendente passa a ser pulado para sempre.
+
+### O que isto não é
+
+Não é controle de acesso a arquivos. Ler e escrever fora do projeto continua permitido quando o trabalho pedir, e nada aqui toca no `scope-guard` nem em permissão de diretório: a correção é sobre **enxergar runs de outros projetos**.
+
+O Glance também não muda. Ele nunca leu o ledger — o `/api/runs` dele é derivado do audit em `~/.harness-logs` — e as suas visões de consumo (Runs, Cost, Memory, Agents, Activity) já abrem no escopo do projeto por padrão, com "all" como escolha explícita do usuário.
+
 ## Recovery
 
 Um event e sua linha de outbox são gravados na mesma transação. Se a publicação falhar, a linha permanece pendente e uma chamada posterior a `publishOutbox` tenta novamente com o mesmo `eventId`. O consumer precisa deduplicar pelo `eventId`, pois uma falha após o side effect remoto e antes da confirmação local pode produzir nova entrega.

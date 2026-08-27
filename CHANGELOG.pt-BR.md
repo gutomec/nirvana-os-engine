@@ -8,6 +8,57 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Um projeto para de enxergar os runs dos outros
+
+Em 27/08/2026 uma sessão trabalhando em `~/nirvana-os` rodou `nrv run-track
+list`, viu linhas de `~/venda-mundial-pro` e de `consultorio-dr-paulo`, e fechou
+uma delas. Um run de outro projeto, encerrado por um estranho, recuperável só
+por um `x_audit_correction`. O ledger é um arquivo SQLite global, e até agora
+todo leitor dele via a máquina inteira.
+
+O arquivo continua global. A visibilidade, não. Cada linha passa a guardar o
+`project_root` a que pertence, e toda leitura e toda escrita filtram pela raiz
+que o processo chamador está servindo — `NIRVANA_PROJECT_ROOT`, senão o primeiro
+ancestral do cwd que carrega um marcador de projeto. `HOME` e a raiz do sistema
+de arquivos nunca contam como projeto, e o caminho é normalizado por `realpath`,
+para que o mesmo diretório sempre compare igual.
+
+| Chamador | O que enxerga agora |
+|---|---|
+| `findNonTerminal`, `countNonTerminal`, `findExpired` | as linhas deste projeto; `{ allProjects: true }` é a porta do supervisor |
+| `findRelatedRuns` | a raiz da linha consultada, não a do chamador |
+| `beatAgenticRuns` | só este projeto, mesmo quando um run id de fora é nomeado às claras |
+| `nrv run-track list` | os runs abertos deste projeto |
+| `nrv run-track beat` e `close` | recusam uma linha de fora com exit 4, nomeando o projeto dono |
+| varredura e salvage do supervisor | o que o `findNonTerminal` lhes entrega, então herdam o escopo |
+| `adoptOrphans` no control plane do `serve` | os órfãos do projeto que o servidor atende |
+
+O `project_id` nunca separou nada: ele é o basename de um diretório, e dois
+projetos colidem em `cliente` ou `landing` sem esforço nenhum. É a raiz que os
+distingue.
+
+A coluna chegou depois da tabela. A migração é idempotente por `PRAGMA
+table_info`, e o backfill roda uma vez só, na abertura que adiciona a coluna:
+cada linha antiga é colocada a partir de `meta.project_root`, `meta.project_dir`
+ou `meta.cwd`, ancorando o valor relativo no cwd e subindo dali até o projeto.
+As linhas que não dá para colocar ficam em `NULL`, que se lê como "legado":
+invisíveis para um projeto, presentes no `--all-projects` e no histórico. Um
+projeto errado seria pior do que um "não sei" honesto.
+
+Recuperação não funciona sob escopo — um run cuja sessão morreu não tem mais
+ninguém no projeto dele para varrer. Por isso o supervisor é a única exceção
+documentada, e passa a pedi-la em voz alta: `--all-projects` varre a máquina, e
+é assim que o launchd o invoca (o `renderLaunchdPlist` escreve a flag no plist).
+Sem a flag ele varre só o projeto em que está. Sem projeto algum ao redor, que é
+a forma do próprio launchd, ele fica global e diz por quê no stderr, porque a
+garantia de nunca travar um run não pode depender de o operador lembrar de
+reinstalar o LaunchAgent.
+
+Nada disso é acesso a arquivo. Ler e escrever fora do projeto continua permitido
+quando o trabalho pedir; o scope guard e as permissões de diretório ficam
+intactos. O Glance também fica: ele nunca leu o ledger, e as suas visões de
+consumo já abrem no escopo do projeto.
+
 ### O registro para de descartar o que a capability declara
 
 Uma capability pode declarar `estimated_cost_usd` há duas versões do protocolo,

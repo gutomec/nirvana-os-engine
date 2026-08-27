@@ -8,6 +8,57 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### A project stops seeing other projects' runs
+
+On 2026-08-27 a session working in `~/nirvana-os` ran `nrv run-track list`, saw
+rows belonging to `~/venda-mundial-pro` and `consultorio-dr-paulo`, and closed
+one of them. Another project's run, terminated by a stranger, recoverable only
+through an `x_audit_correction`. The ledger is one global SQLite file, and until
+now every reader of it saw the whole machine.
+
+The file stays global. Visibility does not. Every row now records the
+`project_root` it belongs to, and every read and every write filters by the root
+the calling process is serving — `NIRVANA_PROJECT_ROOT`, else the first ancestor
+of the cwd carrying a project marker. `HOME` and the filesystem root never count
+as projects, and the path is normalized through `realpath`, so the same
+directory always compares equal.
+
+| Caller | What it sees now |
+|---|---|
+| `findNonTerminal`, `countNonTerminal`, `findExpired` | this project's rows; `{ allProjects: true }` is the supervisor's door |
+| `findRelatedRuns` | the root of the row being asked about, not the caller's |
+| `beatAgenticRuns` | this project only, even when a foreign run id is named outright |
+| `nrv run-track list` | this project's open runs |
+| `nrv run-track beat` and `close` | refuse a foreign row with exit 4, naming the owning project |
+| the supervisor's sweep and salvage | whatever `findNonTerminal` hands them, so they inherit the scope |
+| `adoptOrphans` in the serve control plane | the orphans of the project the server serves |
+
+`project_id` never separated anything: it is a directory basename, and two
+projects collide on `cliente` or `landing` without trying. The root is what
+tells them apart.
+
+The column arrived after the table. The migration is idempotent by
+`PRAGMA table_info`, and the backfill runs once, on the open that adds the
+column: each old row is placed from `meta.project_root`, `meta.project_dir` or
+`meta.cwd`, anchoring a relative value on the cwd and walking up from there to
+the project. Rows that cannot be placed keep `NULL`, which reads as "legacy":
+invisible to a project, present under `--all-projects` and in the history. A
+wrong project would be worse than an honest "unknown".
+
+Recovery cannot work under a scope — a run whose session died has nobody left in
+its project to sweep it. So the supervisor is the one documented exception, and
+it now asks out loud: `--all-projects` sweeps the machine, and that is how
+launchd invokes it (`renderLaunchdPlist` writes the flag into the plist).
+Without the flag it sweeps only the project it is standing in. With no project
+around at all, which is launchd's own shape, it stays machine-wide and says why
+on stderr, because the never-stall guarantee must not depend on an operator
+remembering to reinstall the LaunchAgent.
+
+None of this is file access. Reading and writing outside the project stays
+allowed when the work calls for it; the scope guard and directory permissions
+are untouched. Glance is untouched too: it never read the ledger, and its
+consumption views already open in the project scope.
+
 ### The registry stops dropping what a capability declares
 
 A capability has been allowed to declare `estimated_cost_usd` for two protocol
