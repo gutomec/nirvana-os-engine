@@ -7,7 +7,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import { COMMANDS } from "../../harness/lib/commands.ts";
-import { REPO, VERIFY_CLI, cliEnv, cloneFixture, rmrf, tempRoot } from "./helpers/verify-fixture.ts";
+import { REPO, VERIFY_CLI, cliEnv, cloneFixture, crlf, lf, posixPath, rmrf, tempRoot } from "./helpers/verify-fixture.ts";
 
 const ROOTS: string[] = [];
 afterAll(() => { for (const r of ROOTS) rmrf(r); });
@@ -51,12 +51,21 @@ describe("command table and dispatchers", () => {
     expect(COMMANDS.find((c) => c.name === "doctor")).toBeDefined();
   });
 
+  // Both patterns are `\n`-anchored, and Git for Windows checks out CRLF by
+  // default (`bin/nrv` has no extension, so .gitattributes did not cover it
+  // until this cut). Every source read here goes through `lf()` first, and the
+  // same assertion is re-run against a CRLF copy so the normalization is what
+  // carries it, not the checkout this happens to run on.
+  const BASH_ROUTE = /^ {2}validate\|verify\)\n(?:\s*#.*\n)*\s*exec "\$BUN_BIN" "\$SKILLS\/_shared\/scripts\/verify\.ts" "\$@" ;;/m;
+  const TS_ROUTE = /case "validate": case "verify": runScript\(join\(S, "verify\.ts"\), rest\);/;
+
   test("bin/nrv and nrv.ts route validate|verify to the gate script", () => {
     const bash = fs.readFileSync(path.join(REPO, "bin", "nrv"), "utf8");
-    const m = bash.match(/^ {2}validate\|verify\)\n(?:\s*#.*\n)*\s*exec "\$BUN_BIN" "\$SKILLS\/_shared\/scripts\/verify\.ts" "\$@" ;;/m);
-    expect(m).not.toBeNull();
     const ts = fs.readFileSync(path.join(REPO, "skills", "harness", "scripts", "nrv.ts"), "utf8");
-    expect(ts).toMatch(/case "validate": case "verify": runScript\(join\(S, "verify\.ts"\), rest\);/);
+    for (const asCheckedOut of [lf, crlf]) {
+      expect(lf(asCheckedOut(bash))).toMatch(BASH_ROUTE);
+      expect(lf(asCheckedOut(ts))).toMatch(TS_ROUTE);
+    }
   });
 
   test("`nrv validate --help` documents the exit codes", () => {
@@ -79,7 +88,10 @@ describe("`nrv validate-mind-clones` delegates and keeps its JSON keys", () => {
     expect(j.total).toBe(2);
     expect(j.ok).toBe(1);
     expect(j.failed).toBe(1);
-    const beta = j.results.find((x: any) => x.file.endsWith("beta/MANIFEST.yaml"));
+    // `file` is a native path: on Windows its separator is a backslash, which
+    // no `/`-written suffix matches. Compare through posixPath, never raw.
+    expect(posixPath(String.raw`C:\tmp\dna\beta\MANIFEST.yaml`)).toEndWith("beta/MANIFEST.yaml");
+    const beta = j.results.find((x: any) => posixPath(x.file).endsWith("beta/MANIFEST.yaml"));
     expect(beta.ok).toBe(false);
     expect(beta.errors[0]).toMatchObject({ code: "artifact_missing", path: "agent/SOUL.md" });
     expect(typeof beta.errors[0].message).toBe("string");
@@ -108,6 +120,6 @@ describe("`nrv validate-mind-clones` delegates and keeps its JSON keys", () => {
     expect(md.code).toBe(0);
     const j = JSON.parse(md.stdout);
     expect(j.total).toBe(1);
-    expect(j.results[0].file.endsWith("AGENT.md")).toBe(true);
+    expect(posixPath(j.results[0].file)).toEndWith("agent/AGENT.md");
   });
 });

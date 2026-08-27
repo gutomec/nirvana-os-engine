@@ -11,6 +11,24 @@ import { extractSurface, writeSurface, type ArtifactKind } from "../../lib/surfa
 export const REPO = path.resolve(import.meta.dir, "..", "..", "..", "..");
 export const VERIFY_CLI = path.join(REPO, "skills", "_shared", "scripts", "verify.ts");
 
+/**
+ * A path as these tests compare it. Windows joins with a backslash, so a suffix
+ * written `<slug>/MANIFEST.yaml` never matches a native path there — the shape
+ * that failed on the Windows runner. Compare through this, never on raw
+ * `path.join` output.
+ */
+export const posixPath = (p: string): string => p.split(path.win32.sep).join(path.posix.sep);
+
+/**
+ * Source text with the line endings the matchers assume. Git for Windows
+ * checks out CRLF by default, and every `\n`-anchored pattern over a repo file
+ * has to survive that.
+ */
+export const lf = (s: string): string => s.replace(/\r\n/g, "\n");
+
+/** The same text as a Windows checkout would hold it. */
+export const crlf = (s: string): string => lf(s).replace(/\n/g, "\r\n");
+
 export function tempRoot(prefix = "nrv-verify-"): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   for (const d of ["home", "state", "logs", "dna", "squads", "businesses", "cwd"]) fs.mkdirSync(path.join(root, d), { recursive: true });

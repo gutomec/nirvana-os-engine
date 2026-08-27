@@ -11,6 +11,14 @@
 *.mjs   text eol=lf
 *.sh    text eol=lf
 
+# The extensionless bash launchers. No extension rule above matches them, so a
+# Windows checkout (Git for Windows defaults to core.autocrlf=true) handed them
+# CRLF: Git Bash then chokes on the shebang, and the `\n`-anchored dispatch
+# assertions over bin/nrv stopped matching.
+bin/nrv         text eol=lf
+bin/nrv-gemini  text eol=lf
+bin/nrv-hermes  text eol=lf
+
 # The Windows CLI launcher must stay CRLF so cmd.exe parses it.
 bin/*.cmd            text eol=crlf
 skills/**/*.cmd      text eol=crlf
