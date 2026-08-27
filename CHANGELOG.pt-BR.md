@@ -8,6 +8,8 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+## 0.10.1 — 2026-08-27
+
 ### Um campo que se lê como dado deixa de poder rodar um comando
 
 O `dependencies.yaml` tem dois tipos de campo, e o activator rodava os dois como
@@ -121,6 +123,21 @@ dois comandos de manchete daquela release. A linha de status passa a dizer
 0.10.0, e a tabela de comandos ganhou uma linha para o `nrv validate`, o portão
 de admissão de squad, empresa e mind-clone, e outra para o `nrv migrate`, a
 conversão para o Squad Protocol 6.0.
+
+### A linha de status ganha um portão, e o `nrv migrate` ganha referência
+
+"atualmente 0.8.1" atravessou duas releases num repositório com quinze portões
+porque nenhum deles lia a linha de status dos READMEs. O `check-version-parity`
+passa a lê-la nos seis idiomas, junto com o `package.json`, o `skills/VERSION` e a
+entrada mais recente do changelog. Ele casa a versão por padrão em vez de por
+número de linha, então o primeiro parágrafo que alguém acrescentar acima da linha
+não o quebra, e trata um README que não declara versão como falha em vez de
+arquivo sem nada a conferir.
+
+O `nrv migrate` tinha chegado à tabela de comandos dos seis READMEs e a lugar
+nenhum do `docs/CLI.md`, que é para onde essas tabelas mandam o leitor buscar a
+referência completa. Agora tem uma linha lá, ao lado do `nrv validate-chain`, com
+o dry run padrão, o backup e o rollback explicitados.
 
 ## 0.10.0 — 2026-08-27
 
