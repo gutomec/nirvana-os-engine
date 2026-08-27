@@ -99,9 +99,9 @@ Q3.6  Give 3 examples of NL phrases that should match this capability.
 Q3.7  Is there a nearby NL phrase that should NOT match? (optional)
        → goes into not_for[]. Cite the alternative capability when known.
 
-Q3.8  Is the output human-facing (text, copy, doc)?
-       → yes → humanize: true (default)
-       → no (json/binary/tech) → humanize: false
+Q3.8  How is this capability's output judged?
+       → each answer becomes one acceptance[] entry (id, description)
+       → skipped → the invoked task's "## Acceptance Criteria" is used
 ```
 
 Validation:

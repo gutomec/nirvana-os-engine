@@ -100,5 +100,7 @@
     estimated_cost_usd: 0.50
     # ^^^ self-reported, opcional. Harness usa p/ budget pre-flight.
 
-    # humanize: true                        # opcional, default true em capability humana-facing.
-                                            # Defina false p/ outputs técnicos (json/binary).
+    # acceptance:                          # opcional (v6 §29): como o output é julgado.
+    #   - id: offer_stated                  # Sem ele, o juiz cai nos "## Acceptance Criteria"
+    #     description: ...                  # da task invocada.
+    #     blocking: true

@@ -118,38 +118,37 @@ function fix_dependencies_synth(squadDir) {
   return { ok: true, kind: 'manifest_pointer' };
 }
 
-function fix_humanize_default_true(squadDir) {
-  // The strict v5 capability schema uses `outputs[]` (array). Humanize is
-  // a per-output property. Migrate any legacy singular `output` field to
-  // `outputs` and ensure humanize=true on human-facing outputs.
+function fix_outputs_shape_repair(squadDir) {
+  // What survives of the retired `humanize` fixer: the half that was actually
+  // repairing something. The strict v5/v6 capability schema knows `outputs[]`
+  // with `{name, type, format?, schema?, description?}` and rejects a singular
+  // `output`, a bare string entry, and the `humanize` / `kind` keys the old
+  // fixer used to WRITE — which is how `fix-squad --apply` could turn a valid
+  // manifest into an invalid one.
   const file = path.join(squadDir, 'squad.yaml');
   const m = readYaml(file);
   if (!m || !Array.isArray(m.capabilities)) return { ok: false };
-  const HUMAN_KINDS = new Set(['markdown', 'html', 'string', 'text']);
   let changed = 0;
   for (const c of m.capabilities) {
+    if (typeof c !== 'object' || !c) continue;
     if ('output' in c && !Array.isArray(c.outputs)) {
       const o = c.output;
-      const kind = typeof o === 'string' ? o : (o?.type || o?.kind);
-      c.outputs = [typeof o === 'string'
-        ? { type: o, humanize: HUMAN_KINDS.has(String(o).toLowerCase()) }
-        : { ...o, humanize: o?.humanize ?? HUMAN_KINDS.has(String(kind).toLowerCase()) }];
+      c.outputs = [typeof o === 'string' ? { type: o } : { ...o }];
       delete c.output;
       changed++;
-      continue;
     }
-    if (Array.isArray(c.outputs)) {
-      for (const o of c.outputs) {
-        const kind = typeof o === 'string' ? o : (o?.type || o?.kind);
-        if (kind && HUMAN_KINDS.has(String(kind).toLowerCase()) && typeof o === 'object' && !('humanize' in o)) {
-          o.humanize = true;
-          changed++;
-        }
-      }
-    }
+    if (!Array.isArray(c.outputs)) continue;
+    c.outputs = c.outputs.map((o) => {
+      if (typeof o === 'string') { changed++; return { type: o }; }
+      if (typeof o !== 'object' || !o) return o;
+      const n = { ...o };
+      if ('kind' in n) { if (!n.type) n.type = n.kind; delete n.kind; changed++; }
+      if ('humanize' in n) { delete n.humanize; changed++; }
+      return n;
+    });
   }
   if (changed > 0) writeYaml(file, m);
-  return { ok: true, capabilities_humanized: changed };
+  return { ok: true, outputs_repaired: changed };
 }
 
 function fix_caps_examples_not_for(squadDir) {
@@ -362,7 +361,9 @@ function fix_agents_frontmatter_repair(squadDir) {
     if (!hasMaxTurns) additions.push('maxTurns: 12');
     if (!hasTools) additions.push('tools: [Read, Write, Edit, Bash, Grep, Glob]');
     const newFm = fmText.trimEnd() + '\n' + additions.join('\n');
-    raw = raw.replace(fm[0], `---\n${newFm}\r?\n---\n`);
+    // `\r?\n` here used to be written LITERALLY into the file, leaving a `\r?`
+    // after the last frontmatter line and turning the block into invalid YAML.
+    raw = raw.replace(fm[0], `---\n${newFm}\n---\n`);
     fs.writeFileSync(fp, raw, 'utf8');
     patched++;
   }
@@ -687,7 +688,7 @@ function applyMechanicalFixes(squadDir, consensus_diff) {
         case 'runtime_requirements_default':         r = fix_runtime_requirements_default(squadDir, patch); break;
         case 'fidelity_status_default_experimental': r = fix_fidelity_status_default_experimental(squadDir); break;
         case 'dependencies_synth':                   r = fix_dependencies_synth(squadDir); break;
-        case 'humanize_default_true':                r = fix_humanize_default_true(squadDir); break;
+        case 'outputs_shape_repair':                 r = fix_outputs_shape_repair(squadDir); break;
         case 'caps_examples_not_for':                r = fix_caps_examples_not_for(squadDir); break;
         case 'caps_inference_required':              r = fix_caps_inference_required(squadDir); break;
         case 'domain_realign':                       r = fix_domain_realign(squadDir, patch); break;

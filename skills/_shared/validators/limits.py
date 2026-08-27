@@ -68,6 +68,15 @@ DEFAULTS: dict[str, Any] = {
     # ── squad.yaml ──
     "squad_capabilities_max": 50,
 
+    # ── workflow document (Squad Protocol v6) — PAYLOAD SIZE ──
+    # Corpo em prosa de um workflow Markdown, em palavras: é teto, nunca
+    # rejeição (o lint avisa sob qualquer protocolo). 2500 palavras é ~6x o
+    # maior corpo que a biblioteca tem hoje.
+    "workflow_body_words_max": 2500,
+    # Bytes de documentos de agente + task que o prompt de squad carrega antes
+    # de truncar.
+    "squad_prompt_components_bytes_max": 65536,
+
     # ── mind-clone DNA frontmatter ──
     "dna_max_turns_max": 1000,
 
@@ -116,6 +125,9 @@ SAFETY_BOUNDS: dict[str, tuple[Optional[float], Optional[float]]] = {
     "capability_keywords_max": (10, 200),
 
     "squad_capabilities_max": (10, 200),
+
+    "workflow_body_words_max": (200, 20_000),
+    "squad_prompt_components_bytes_max": (8_192, 1_048_576),
 
     "dna_max_turns_max": (40, 1000),
 

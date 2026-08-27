@@ -192,6 +192,46 @@ export const SquadManifestSchema = z.object({
 }).passthrough()
 
 // ──────────────────────────────────────────────────────────────────────
+// Squad Protocol v6 — the workflow document (§28.1)
+// ──────────────────────────────────────────────────────────────────────
+//
+// One shape for a graph the library writes in eight dialects. The schema is
+// strict on purpose: `skills/squads/lib/workflow-reader.ts normalizeWorkflow()`
+// is the only thing that produces it, and it parks every legacy key it does not
+// own in `step.meta` / `extensions` rather than dropping it. A shape that fails
+// here is a normalizer bug, never authored content — authored content is judged
+// by the lint, which reports by protocol instead of rejecting.
+
+const WORKFLOW_ID = /^[a-z][a-z0-9_-]*$/
+
+export const WorkflowStepSchema = z.object({
+  id: z.string().regex(WORKFLOW_ID),
+  /** Required: a step without an agent has nobody to run it. */
+  agent: z.string().min(1),
+  /** Always a reference (`tasks/<task>.md`), never prose. Prose lives in the body. */
+  task: z.string().min(1).optional(),
+  /** Step ids this step depends on. */
+  requires: z.array(z.string()).default([]),
+  creates: z.array(z.string()).default([]),
+  on_failure: z.enum(['abort', 'retry', 'escalate', 'continue']).optional(),
+  parallel_safe: z.boolean().optional(),
+  /** Legacy step keys kept verbatim: `validation`, `inputs`, `phase`, `gates`… */
+  meta: z.record(z.string(), z.unknown()).default({}),
+}).strict()
+
+export const WorkflowSchema = z.object({
+  /** Equal to the file stem, lowercase. */
+  name: z.string().regex(WORKFLOW_ID),
+  description: z.string().optional(),
+  version: z.string().optional(),
+  steps: z.array(WorkflowStepSchema).min(1),
+  success_indicators: z.array(z.string()).optional(),
+  on_failure: z.enum(['abort', 'retry', 'escalate', 'continue']).optional(),
+  /** Legacy top-level keys kept verbatim: `harness`, `retry_policy`, `triggers`… */
+  extensions: z.record(z.string(), z.unknown()).default({}),
+}).strict()
+
+// ──────────────────────────────────────────────────────────────────────
 // Business Protocol v1
 // ──────────────────────────────────────────────────────────────────────
 

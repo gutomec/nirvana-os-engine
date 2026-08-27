@@ -83,8 +83,8 @@ function buildMechanicalConsensus(scoreReport) {
       case 'dependencies_synth':
         patches.push({ kind: 'dependencies_synth', criterion: c.id });
         break;
-      case 'humanize_default_true':
-        patches.push({ kind: 'humanize_default_true', criterion: c.id });
+      case 'outputs_shape_repair':
+        patches.push({ kind: 'outputs_shape_repair', criterion: c.id });
         break;
       case 'caps_inference_required':
         // Defer to v4-capability-inferrer.js — needs caps to be inferred from

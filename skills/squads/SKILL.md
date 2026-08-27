@@ -177,7 +177,7 @@ Classify user input → load ONLY the relevant reference files → execute.
 - `*squad inspect {name}` — detailed squad view
 
 ### Creation
-- `*squad create {name}` — interactive creation wizard. **Default in v5**: `protocol: "5.0"`, `capabilities[]` declared, `runtime_requirements`, `maxTurns` mandatory, `humanize: true` on human-facing capabilities. Use `--legacy-v4` to create a v4 squad when needed.
+- `*squad create {name}` — interactive creation wizard. **Default in v5**: `protocol: "5.0"`, `capabilities[]` declared, `runtime_requirements`, `maxTurns` mandatory. Use `--legacy-v4` to create a v4 squad when needed.
 
 ### Validation
 - `*squad validate {name}` — 18 blocking checks (Core + adapter)
@@ -279,7 +279,7 @@ When creating a NEW squad, ALWAYS:
 9. Include `<protocol-context>` block in prompts for long-running subagents.
 10. A workflow is a DAG of phases that consume each other's output, so a phase starts only once the phase it depends on has REPORTED — and a phase reports through the `<task-notification>` carrying its `<result>`, never through the spawn's tool result (that is a launch receipt). Dispatching the next phase on a receipt leaves it reading a file that may still be half-written. Phases with no dependency between them go in ONE message as several calls, which is what makes them concurrent; phases that feed each other go one at a time, each dispatched once the previous one's notification landed.
 10. Declare output schemas in `contracts:` for chained tasks.
-11. Capability with human-facing output: `humanize: true` (default). Technical capability (json/binary/file): `humanize: false`.
+11. Declare how the output is judged: `acceptance[]` on the capability (v6 §29), or a `## Acceptance Criteria` section in the task it invokes. There is no `humanize` field — the writing contract lives in the runtime memory files and reaches every dispatched agent.
 12. Set memory GC policy if persistent memory is used.
 13. Validate via `python3 -m pytest ~/.nirvana/skills/_shared/validators/validators.py` or `bun ~/.nirvana/skills/_shared/validators/validators.ts test`.
 14. **Routing metadata, contract-complete** — every capability MUST carry the discovery fields per `~/.nirvana/skills/_shared/ROUTING_METADATA_CONTRACT.md`: `description` in canonical English, concrete and front-loaded (§1); `produces` as artifact-type slugs (§3); `keywords` as multilingual synonym groups — EN + PT (+ES where natural), accented AND unaccented forms (§4); `example_briefs` ≥3 with at least one EN and one PT, symptom-phrased, covering conjugated and infinitive verb forms (§5); `not_for` as short token lists of 2-4 content words, never sentences (§6). Empty or truncated metadata is a creation defect, not a stylistic choice.

@@ -8,6 +8,93 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### The workflow reader: one canonical graph, every legacy dialect normalized
+
+A squad's workflow was the only artifact of the protocol with no single shape.
+Measured on 204 installed squads: `steps[]` 51.5%, `workflow:` + `sequence[]`
+26.8%, `agent_sequence[]` 16.6%, plus `flow.steps`, `flow.phases`, a bare
+`sequence[]`, `pipeline.steps`, `event_routes` and three Markdown files — and
+only 40% of them express a dependency at all. Every reader in the engine had
+re-derived its own subset of those shapes, and each one derived a different
+subset.
+
+`skills/squads/lib/workflow-reader.ts` is now the single derivation.
+`readWorkflow` accepts both encodings (v5 YAML, v6 Markdown = frontmatter graph
+plus prose body, tolerant of BOM and CRLF), `normalizeWorkflow` maps every
+dialect onto the canonical `steps[]` shape, `resolveWorkflowRef` resolves a
+reference with or without its extension, `lintWorkflow` names what is broken,
+`renderCanonicalMarkdown` writes the canonical document back, and
+`referencedComponents` lists the agents and tasks a graph runs, in step order.
+`WorkflowSchema` in `validators.ts` is the strict shape it produces.
+
+| Legacy shape | Normalizes to |
+|---|---|
+| `steps[]` + `depends_on` / `deps` / `after` | `requires[]` |
+| `workflow:` header + `sequence[]` | header rises to the top, `task: x.md` → `x` |
+| `agent_sequence[]` | one step per agent, chained |
+| `flow.steps`, `pipeline.steps` | `steps[]`, `flow.type` → `extensions.flow_type` |
+| `flow.phases` / `phases` / `stages` | flattened, phase n requires the last ids of phase n−1 |
+| bare `sequence[]` | one step per entry, chained |
+| `workflow.agents[]` (la-bottega) | one step per agent, `all-as-needed` dropped |
+| `depends_on` naming another step's output | the step that creates it |
+| `task: \|` / `action:` prose | the body, under `## <step.id>`, verbatim |
+| `event_routes` | nothing: reported as unnormalizable |
+
+Two rules make it safe to run over content nobody has read. Nothing is dropped:
+an unknown top-level key lands in `extensions`, an unknown step key in
+`step.meta`, and a dialect round-trips back to the same canonical object — which
+is also why a second `--fix` does not change a byte. And nothing is invented:
+prose moves, it is never written, and a reference that resolves to nothing stays
+a finding.
+
+### `nrv validate squad` gets its catalog
+
+The trivial squad module (manifest parses, surface fresh) grew into 38 criteria.
+Severity follows the manifest's protocol: under `protocol: "6.0"` the workflow
+rules are errors, under `"5.0"` the same rules are warnings, so the 204
+installed squads keep the verdict they have today while a v6 squad enters clean.
+Three rules are deliberately outside that: the body ceiling and the orphan
+workflow are advice under either protocol, and per-buyer distribution artifacts
+(`PROVENANCE.json`, `LICENSE.txt`, a watermark) are always a warning, because an
+installed copy legitimately carries them.
+
+What it now names, from the library it was measured against: 160 `task:` and 180
+`agent:` references that point at no file, 56 steps carrying the prompt inline,
+15 orphan workflows, the `x.md` + `x.yaml` twins, duplicate step ids, cycles,
+dangling `requires`, capitalised stems, `not_for` fences past 25 characters,
+`fidelity: validated` with no ground truth on disk, `produces` slugs no rubric
+covers, and routing metadata below the contract.
+
+Seven mechanical fixers land with it: `outputs_shape_repair`,
+`invoke_ref_extension`, `twin_merge` (only when the YAML holds the graph and the
+Markdown holds the body — two real graphs are not a mechanical choice),
+`workflow_inline_prose_to_body`, `requires_by_output_name`,
+`workflow_normalize_shape`, and a `workflow_refs_repair` that renames by case or
+by `_`↔`-` when exactly one component matches and **never** writes a stub. A
+`.yaml` never becomes a `.md` in a fixer either: changing the encoding is a
+migration, with a backup and a report, and the fixer says so instead of acting.
+
+### Removed
+
+`humanize` is gone from the squad protocol's surface. It was a contradiction the
+inventory caught: the docs told an author to declare it, the strict capability
+schema rejected it, and the mechanical fixer **wrote** it — so `fix-squad
+--apply` could turn a valid manifest into an invalid one. The writing contract
+lives in the runtime memory files and reaches every dispatched agent; there was
+never anything per-capability to declare.
+
+Audit criterion 9 now measures the contract the judge actually reads
+(`c9_acceptance`: the share of capabilities with `acceptance[]`, or invoking a
+task that declares `## Acceptance Criteria`). The audit still totals 100. The
+half of the retired fixer that was repairing something real — a singular
+`output` promoted to `outputs[]` — became `outputs_shape_repair`; the
+`humanize_default_true` patch kind no longer exists. `agents_frontmatter_repair`
+also stopped writing a literal `\r?` into agent frontmatter, which turned the
+block into invalid YAML.
+
+New limits: `workflow_body_words_max` (2500) and
+`squad_prompt_components_bytes_max` (65536).
+
 ### Business Protocol 2.0: routing metadata, pinned clones, preferred squads, acceptance per seat, one budget field, and the dead surface deprecated
 
 `skills/businesses/BUSINESS_PROTOCOL_V2.md` is the v2 delta over v1, in the same
