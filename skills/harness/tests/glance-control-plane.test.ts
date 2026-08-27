@@ -3,8 +3,9 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { GauntletController, compileGauntletPlan } from "../lib/gauntlet/index.ts";
-import { openKernel } from "../lib/run-kernel/index.ts";
 import { removeDir } from "./helpers/temp-dirs.ts";
+import { KERNEL_BUDGET_MS } from "./helpers/test-budgets.ts";
+import { closeTestKernels, openTestKernelFile } from "./helpers/test-kernels.ts";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-glance-control-"));
 let instance: any;
@@ -22,8 +23,17 @@ beforeAll(async () => {
 afterAll(() => {
   try { instance?.close(); } catch {}
   delete process.env.NIRVANA_PROJECT_ROOT;
+  closeTestKernels();
   removeDir(root);
 });
+
+// Every case here goes through the running server, so both of its databases stay on disk and both
+// open with `PRAGMA synchronous = FULL`: the control plane's (projects, conversations, messages)
+// and the Run Kernel's. That is the read-back the file exists to prove — the last case writes a
+// Gauntlet through a second connection and asks the server to project it, which a `:memory:`
+// database cannot do, since it belongs to whichever connection opened it. The cost is legitimate,
+// so it gets the budget instead: an fsync-bound case measured up to 5.5 s on the slowest runner
+// against Bun's 5 s default, which is a red build decided by the disk, not by the code.
 
 describe("Glance project control plane", () => {
   test("legacy discovery is read-only and adoption is explicit", async () => {
@@ -35,7 +45,7 @@ describe("Glance project control plane", () => {
     expect(response.status).toBe(201);
     projectId = ((await response.json()) as any).project_id;
     expect(projectId).toStartWith("prj_");
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("requires idempotency and rejects foreign origins and traversal", async () => {
     expect((await fetch(`${base}/api/v1/projects`, { method: "POST", headers: { "content-type": "application/json", origin: base }, body: "{}" })).status).toBe(400);
@@ -44,7 +54,7 @@ describe("Glance project control plane", () => {
     expect((await fetch(`${base}/api/actions/chat-shell`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ command: "pwd" }) })).status).toBe(404);
     const capabilities = await fetch(`${base}/api/v1/capabilities`).then(r => r.json()) as any;
     expect(capabilities.permissions["tool.execute.shell"]).toBe(false);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("persists conversation messages and keeps entities separate", async () => {
     const conversation = await fetch(`${base}/api/v1/projects/${projectId}/conversations`, { method: "POST", headers: headers(), body: JSON.stringify({ title: "Workspace" }) }).then(r => r.json()) as any;
@@ -53,7 +63,7 @@ describe("Glance project control plane", () => {
     expect(message.message.sequence).toBe(1);
     const opened = await fetch(`${base}/api/v1/conversations/${conversation.conversation_id}`).then(r => r.json()) as any;
     expect(opened.messages.map((item: any) => item.content)).toEqual(["Brief persistente"]);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("returns journal events in sequence and resumes SSE after cursor", async () => {
     const target = { kind: "squad", slug: "systems-atelier", capabilityId: "software.project-control-plane.implement" };
@@ -70,7 +80,7 @@ describe("Glance project control plane", () => {
     expect(chunk).toContain("id: 2");
     expect(chunk).not.toContain(`id: 1\n`);
     expect((await fetch(`${base}/api/v1/runs/${first.runId}?project_id=${projectId}`).then(r => r.json()) as any).target.kind).toBe("squad");
-    const kernel = openKernel(path.join(root, ".nirvana", "run-kernel.sqlite"));
+    const kernel = openTestKernelFile(path.join(root, ".nirvana", "run-kernel.sqlite"));
     const gauntlet = new GauntletController(kernel, { projectId, runId: first.runId, traceId: first.traceId,
       actor: { kind: "test", id: "glance" }, correlationId: "cor_glance" });
     gauntlet.begin(compileGauntletPlan({ brief: "Test Glance projection", intensity: "light" }));
@@ -79,5 +89,5 @@ describe("Glance project control plane", () => {
     expect(gauntletView.projection.plan.intensity).toBe("light");
     expect(gauntletView.candidates).toEqual([]);
     expect(gauntletView.scorecards).toEqual([]);
-  });
+  }, KERNEL_BUDGET_MS);
 });

@@ -8,16 +8,16 @@ import { coordinateMultiTargetPlan, type MultiTargetAdapterInput } from "../lib/
 import { costMatcher, createDispatchMultiTargetAdapters, MULTI_TARGET_RESULT_MARKER, nodeRunId, type DispatchSpawn } from "../lib/gauntlet/multi-target-dispatch-adapters.ts";
 import { createRunKernelMultiTargetPorts } from "../lib/gauntlet/run-kernel-multi-target-ports.ts";
 import { compileMultiTargetGauntletPolicy, type CompiledMultiTargetPlan } from "../lib/plan-compiler.ts";
-import { createRun, listEvents, openKernel, type KernelHandle } from "../lib/run-kernel/store.ts";
+import { createRun, listEvents } from "../lib/run-kernel/store.ts";
 import { writeFakeDispatch } from "./helpers/fake-dispatch.ts";
 import { removeDir } from "./helpers/temp-dirs.ts";
 import { SCOPE_GUARD_EN } from "../../_shared/lib/scope-guard.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
+import { closeTestKernels, openTestKernel } from "./helpers/test-kernels.ts";
 
 const roots: string[] = [];
-const handles: KernelHandle[] = [];
 afterEach(() => {
-  while (handles.length) handles.pop()!.close();
+  closeTestKernels();
   for (const root of roots.splice(0)) removeDir(root);
 });
 
@@ -338,8 +338,11 @@ describe("multi-target dispatch adapters", () => {
     const setup = fixture();
     const { plan, reservation } = compile();
     const ws = setup.workspaceRoot;
-    const kernel = openKernel(join(setup.root, "kernel.sqlite"));
-    handles.push(kernel);
+    // Hermetic journal. The subprocesses this case spawns are fake dispatches that answer through
+    // files (the spawn log, dispatch-capture.json, _SUMMARY.md); none of them opens the kernel, and
+    // the leases and lease_released events are read back below through this same handle. The disk
+    // only bought fsyncs — this is the wave-and-resume case, the heaviest journal in the file.
+    const kernel = openTestKernel();
     createRun(kernel, {
       projectId: setup.projectId, runId: "run-multi", traceId: setup.projectId, planId: "plan-multi",
       target: { kind: "agent-x", slug: "agent-x" }, policySnapshotRef: "pending", actor: { kind: "test", id: "fixture" },
