@@ -302,31 +302,50 @@ function c8_runtime_requirements({ manifest }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Criterion 9 — humanize: true wired (P11)  (6 pts)
+// Criterion 9 — the acceptance contract (v6 §29)  (6 pts)
 // ─────────────────────────────────────────────────────────────────────
-function c9_humanize({ manifest }) {
+/**
+ * `humanize` used to live here, and it was a contradiction: the docs told an
+ * author to declare it, the strict schema rejected it, and the fixer WROTE it —
+ * so `fix-squad --apply` could turn a valid manifest into an invalid one. The
+ * writing contract lives in the runtime memory files and applies to every
+ * dispatched agent; there is nothing per-capability to declare.
+ *
+ * What the six points buy now is the contract the judge actually reads: the
+ * share of capabilities that say how their output is judged, either through
+ * `acceptance[]` (v6 §29) or through the `## Acceptance Criteria` of the task
+ * they invoke. The fallback order the Gauntlet will use is the same one scored
+ * here: `acceptance[]` → the invoked task's acceptance criteria.
+ */
+function c9_acceptance({ squadDir, manifest }) {
   const max = 6;
   const caps = manifest?.capabilities;
   if (!Array.isArray(caps) || caps.length === 0) return { score: 0, max, evidence: 'no caps', fixable_diff: null };
-  // Check capabilities producing human-facing output
-  const HUMAN_KINDS = new Set(['markdown', 'html', 'string', 'text']);
-  let needs = 0, satisfied = 0;
+  const AC_RE = /^##+\s+(Acceptance Criteria|Crit[ée]rios? de Aceita[çc][ãa]o|Success Criteria)/im;
+  let satisfied = 0;
+  let legacyOutput = false;
   for (const c of caps) {
-    const out = c.output || c.output_kind;
-    const kind = typeof out === 'string' ? out : (out?.type || out?.kind);
-    const looksHuman = kind && HUMAN_KINDS.has(String(kind).toLowerCase());
-    if (looksHuman) {
-      needs++;
-      const hum = (out && typeof out === 'object' && 'humanize' in out) ? !!out.humanize : true;
-      if (hum) satisfied++;
+    if (typeof c !== 'object' || !c) continue;
+    if ('output' in c && !Array.isArray(c.outputs)) legacyOutput = true;
+    if (Array.isArray(c.acceptance) && c.acceptance.length > 0) { satisfied++; continue; }
+    const invoke = c.invoke;
+    if (!invoke || invoke.type !== 'task' || typeof invoke.ref !== 'string') continue;
+    const bare = invoke.ref.replace(/\.md$/i, '');
+    const tries = [bare + '.md', path.join('tasks', path.basename(bare) + '.md')];
+    for (const t of tries) {
+      const p = path.join(squadDir, t);
+      if (!isFile(p)) continue;
+      try { if (AC_RE.test(fs.readFileSync(p, 'utf8'))) satisfied++; } catch {}
+      break;
     }
   }
-  if (needs === 0) return { score: max, max, evidence: 'no human-facing outputs', fixable_diff: null };
-  const score = Math.round((satisfied / needs) * max);
+  const score = Math.round((satisfied / caps.length) * max);
   return {
     score, max,
-    evidence: `${satisfied}/${needs} human outputs humanized`,
-    fixable_diff: satisfied < needs ? { kind: 'humanize_default_true' } : null,
+    evidence: `${satisfied}/${caps.length} capabilities declare acceptance[] or invoke a task with acceptance criteria`,
+    // The only mechanical repair reachable from here: a manifest still carrying
+    // the singular `output` the strict schema rejects.
+    fixable_diff: legacyOutput ? { kind: 'outputs_shape_repair' } : null,
   };
 }
 
@@ -448,7 +467,7 @@ const CRITERIA = [
   { id: 6, name: 'tasks', fn: c6_tasks, max: 6 },
   { id: 7, name: 'workflows', fn: c7_workflows, max: 8 },
   { id: 8, name: 'runtime_requirements', fn: c8_runtime_requirements, max: 6 },
-  { id: 9, name: 'humanize', fn: c9_humanize, max: 6 },
+  { id: 9, name: 'acceptance', fn: c9_acceptance, max: 6 },
   { id: 10, name: 'dependencies', fn: c10_dependencies, max: 6 },
   { id: 11, name: 'readme', fn: c11_readme, max: 8 },
   { id: 12, name: 'shebangs', fn: c12_shebangs, max: 4 },

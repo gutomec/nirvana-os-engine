@@ -194,7 +194,7 @@ in `templates/capability-block.tmpl`.
 - `description` is the strong signal for BM25. Be concrete.
 - `examples[]` ≥1, ideally 3-5. Cover linguistic variations.
 - `not_for[]` reduces ambiguity when there is a neighboring capability.
-- `humanize: true` (default) for textual outputs; `false` for JSON/binary.
+- `acceptance[]` (v6 §29) states how the output is judged; without it the judge falls back to the acceptance criteria of the invoked task.
 
 Operational details in `references/12-v5-capabilities.md`.
 

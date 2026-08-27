@@ -53,6 +53,14 @@ export const DEFAULTS: Record<string, number | null> = {
   // squad.yaml
   squad_capabilities_max: 50,
 
+  // workflow document (Squad Protocol v6) — PAYLOAD SIZE
+  // Prose body of a Markdown workflow, in words: a ceiling, never a rejection
+  // (the lint warns under either protocol). 2500 words is ~6x the largest body
+  // the library holds today.
+  workflow_body_words_max: 2500,
+  // Bytes of agent + task documents a squad prompt carries before truncation.
+  squad_prompt_components_bytes_max: 65536,
+
   // mind-clone DNA frontmatter
   dna_max_turns_max: 1000,
 
@@ -93,6 +101,9 @@ const SAFETY_BOUNDS: Record<string, [number | null, number | null]> = {
   capability_keywords_max: [10, 200],
 
   squad_capabilities_max: [10, 200],
+
+  workflow_body_words_max: [200, 20_000],
+  squad_prompt_components_bytes_max: [8_192, 1_048_576],
 
   dna_max_turns_max: [40, 1000],
 
