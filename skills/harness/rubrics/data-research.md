@@ -12,6 +12,19 @@ applies_to_produces:
   - data-analysis
   - benchmark
   - audit-report
+# PT/EN synonyms of the slugs above (rubric-selector.ts): the same artifact
+# spelled the other way selects this rubric instead of the generic fallback.
+aliases:
+  - pesquisa
+  - pesquisa-de-mercado
+  - analise-de-dados
+  - análise-de-dados
+  - analise-competitiva
+  - análise-competitiva
+  - relatorio-de-pesquisa
+  - auditoria
+  - research
+  - planilha
 description: |
   Pesquisa rigorosa: fontes verificáveis, sem fabricação. Opus por padrão
   porque hallucinations são catastróficas aqui.

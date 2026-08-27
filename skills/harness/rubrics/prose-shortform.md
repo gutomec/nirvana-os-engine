@@ -13,6 +13,20 @@ applies_to_produces:
   - newsletter
   - copy
   - caption
+# PT/EN synonyms of the slugs above (rubric-selector.ts): the same artifact
+# spelled the other way selects this rubric instead of the generic fallback.
+aliases:
+  - post
+  - post-instagram
+  - post-blog
+  - artigo
+  - legenda
+  - copy-de-anuncio
+  - social-post
+  - ad-copy
+  - email
+  - email-marketing
+  - roteiro-de-post
 description: |
   Curto, denso, sem gordura. Critérios refletem que o falhas mais comuns
   em prose curta são genericidade, hook fraco e CTA ausente/genérico.

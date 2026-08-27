@@ -21,6 +21,7 @@ import {
   gateableFiles,
   nonStubText,
   decideGateOutcome,
+  producesForRubric,
   type DeliveryArgs,
   type RuntimeErrorOutcome,
 } from "../lib/delivery-pipeline.ts";
@@ -629,5 +630,17 @@ describe("runDelivery — gate exhausted: accepted with reservations", () => {
     expect(res.exitCode).toBe(2);
     expect(res.delivered).toBe(false);
     expect(calls.map(x => x.event)).toContain("x_delivery_withheld");
+  });
+});
+
+describe("producesForRubric — delivery.produces_to_rubric", () => {
+  test("off (the default) hands the judge [], which is what it received before v6", () => {
+    expect(producesForRubric(["landing-page", "copy"], false)).toEqual([]);
+    expect(producesForRubric(undefined, false)).toEqual([]);
+  });
+
+  test("on, the target's declaration reaches the rubric selector, trimmed and deduped", () => {
+    expect(producesForRubric([" landing-page ", "copy", "landing-page", "", "  "], true)).toEqual(["landing-page", "copy"]);
+    expect(producesForRubric(null, true)).toEqual([]);
   });
 });

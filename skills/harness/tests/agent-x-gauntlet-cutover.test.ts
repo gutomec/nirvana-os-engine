@@ -7,6 +7,7 @@ import {
   shouldRunAgentXGauntlet, shouldRunSquadGauntlet, type AgentXGauntletEvaluator,
 } from "../lib/gauntlet/agent-x-cutover.ts";
 import { compileGauntletPlan } from "../lib/gauntlet/compiler.ts";
+import { briefConformance, requirementsFor } from "../lib/gauntlet/success-requirements.ts";
 import {
   RunAlreadyTerminalError, TERMINAL_RUN_STATES, createHarnessLegacyAdapter, createRun, getRun, listEvents, openKernel, transitionRun, type KernelHandle,
 } from "../lib/run-kernel/index.ts";
@@ -69,6 +70,47 @@ function run(overrides: Partial<Parameters<typeof runAgentXGauntlet>[0]> = {}) {
   });
   return { ...fixture, result, executions, finalGates };
 }
+
+// The judge's contract reaches BOTH compile sites. `compileGauntletPlan` runs once in
+// scripts/dispatch.ts (to size the evaluator's budget) and once here; the scorecard is
+// validated against the plan compiled HERE, so a contract only the first site saw would
+// make every dimension "not in the success contract". These pin the two on one plan id.
+describe("the judge's contract reaches the second compile site", () => {
+  const BRIEF = "Create report.md";
+  const contract = requirementsFor({ intensity: "light", capability: { acceptance: [
+    { id: "sources_cited", description: "Cada afirmação cita a fonte" },
+    { id: "one_page", description: "O resumo cabe em uma página", blocking: false },
+  ] } }).requirements;
+
+  function contractEvaluator(requirements: typeof contract): AgentXGauntletEvaluator {
+    const target = { kind: "squad" as const, slug: "quality-gate", capabilityId: "quality.specification_conformance" };
+    return {
+      target,
+      evaluate({ candidateId, revisionId, artifactRefs }) {
+        return [{ evaluationId: `evl_${revisionId}`, candidateId, revisionId, gauntletId: requirements[0].id,
+          rubricVersion: "test/v1", verdict: "pass",
+          dimensions: requirements.map(requirement => ({ id: requirement.id, score: 1, confidence: 1,
+            blocking: requirement.blocking, passed: true, evidenceRefs: artifactRefs.map(ref => ref.revisionId) })),
+          regressions: [], revisionRequests: [], evaluator: target, costUsd: 0, createdAt: "2026-08-25T12:00:02.000Z" }];
+      },
+    };
+  }
+
+  test("the plan the cutover compiles is the plan dispatch.ts compiled to size the budget", () => {
+    const { result } = run({ brief: BRIEF, intensity: "light", requirements: contract, evaluator: contractEvaluator(contract) });
+    // The literal expression scripts/dispatch.ts evaluates before calling runAgentXGauntlet.
+    expect(result.gauntlet.plan).toEqual(compileGauntletPlan({ brief: BRIEF, intensity: "light", requirements: contract }));
+    expect(result.gauntlet.plan.gauntlets.map(item => item.id)).toEqual(["brief-conformance", "acceptance.sources_cited", "acceptance.one_page"]);
+    expect(result.run.state).toBe("completed");
+  }, KERNEL_BUDGET_MS);
+
+  test("gauntlet.requirements_source at its default compiles the plan id it compiles today, bit for bit", () => {
+    const today = run({ brief: BRIEF, intensity: "light" }).result.gauntlet.plan;
+    const gated = run({ brief: BRIEF, intensity: "light", requirements: [briefConformance("light")] }).result.gauntlet.plan;
+    expect(gated).toEqual(today);
+    expect(gated.planId).toBe(compileGauntletPlan({ brief: BRIEF, intensity: "light" }).planId);
+  }, KERNEL_BUDGET_MS);
+});
 
 describe("agent-x Gauntlet cutover", () => {
   test("keeps standard, scaffold-only, business and squad execution outside the agent-x canary at every intensity", () => {

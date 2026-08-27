@@ -11,6 +11,18 @@ applies_to_produces:
   - banner
   - logo
   - infographic
+# PT/EN synonyms of the slugs above (rubric-selector.ts): the same artifact
+# spelled the other way selects this rubric instead of the generic fallback.
+aliases:
+  - imagem
+  - ilustracao
+  - ilustração
+  - logotipo
+  - capa
+  - thumbnail
+  - poster
+  - infografico
+  - infográfico
 description: |
   Avalia imagens descritivamente (assumindo que o judge pode ver a imagem
   via base64 ou recebe descrição estruturada do gerador). Foca em

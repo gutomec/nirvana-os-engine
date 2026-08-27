@@ -12,6 +12,18 @@ applies_to_produces:
   - api-endpoint
   - migration
   - refactor
+# PT/EN synonyms of the slugs above (rubric-selector.ts): the same artifact
+# spelled the other way selects this rubric instead of the generic fallback.
+aliases:
+  - codigo
+  - código
+  - script-python
+  - biblioteca
+  - componente
+  - patch
+  - cli
+  - test-suite
+  - sdk
 description: |
   Aplica-se a artefatos de código. Falhas pegáveis sem rodar: typos,
   imports faltando, security smells, padrões anti-canônicos.

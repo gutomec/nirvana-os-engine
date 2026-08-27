@@ -30,6 +30,29 @@ describe("selectRubricsForProduces", () => {
     expect(r.rubrics[0]?.name).toBe("code");
   });
 
+  test("a PT/EN alias selects the same rubric the English slug does, and says so", () => {
+    const alias = selectRubricsForProduces(["pagina-de-vendas"]);
+    expect(alias.fallback_used).toBe(false);
+    expect(alias.rubrics.map((r) => r.name)).toEqual(["design"]);
+    expect(alias.reason).toContain("by alias: pagina-de-vendas→design");
+    expect(selectRubricsForProduces(["landing-page"]).rubrics.map((r) => r.name)).toEqual(["design"]);
+    // A declared slug still wins on `applies_to_produces`, with no alias note.
+    expect(selectRubricsForProduces(["landing-page"]).reason).not.toContain("by alias");
+  });
+
+  test("every alias is a slug no rubric already declares, so a rubric never claims another's slug", () => {
+    const declared = new Set(listRubrics().flatMap((r) => r.applies_to_produces));
+    const seen = new Map<string, string>();
+    for (const rubric of listRubrics()) {
+      for (const alias of rubric.aliases) {
+        expect(declared.has(alias)).toBe(false);
+        expect(seen.has(alias)).toBe(false);
+        seen.set(alias, rubric.name);
+      }
+    }
+    expect(seen.size).toBeGreaterThan(0);
+  });
+
   test("a mind-clone hint adds the voice-fidelity rubric to a real match", () => {
     // Find a produces slug that some rubric actually declares, so this stays
     // valid as the rubric set evolves.

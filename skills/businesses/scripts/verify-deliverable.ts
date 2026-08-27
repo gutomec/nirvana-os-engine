@@ -25,6 +25,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import { businessDirFor, readAcceptance } from "../lib/acceptance.ts";
 
 const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
   || (fs.existsSync(path.join(os.homedir(), ".nirvana", "skills")) ? path.join(os.homedir(), ".nirvana", "skills") : path.join(os.homedir(), ".claude", "skills"));
@@ -49,7 +50,7 @@ export type DeliverableReport = {
 export function verifyDeliverableOnDisk(
   projectId: string,
   businessSlug: string,
-  opts: { outputsRoot?: string; minBytes?: number } = {}
+  opts: { outputsRoot?: string; minBytes?: number; businessDir?: string | null } = {}
 ): DeliverableReport {
   const minBytes = opts.minBytes ?? 200;
   const outputsRoot = opts.outputsRoot;
@@ -111,6 +112,22 @@ export function verifyDeliverableOnDisk(
     }
   }
 
+  // Business Protocol 2.0 §11: an `acceptance[]` entry that names a `path` is a
+  // promise the disk can be checked against — the same completeness proof a
+  // deliverables.json gives, declared by the role instead of written per run. Read
+  // only when there is no manifest: a manifest is the run's own list and wins.
+  let acceptanceMinBytes: Map<string, number> = new Map();
+  if (expectedPathsRaw.length === 0) {
+    const bizDir = opts.businessDir ?? businessDirFor(businessSlug);
+    const promised = bizDir ? readAcceptance(bizDir).paths : [];
+    if (promised.length > 0) {
+      const base = outputsRoot ?? path.join(projectsRoot, projectId);
+      expectedPathsRaw = promised.map(entry => path.isAbsolute(entry.path) ? entry.path : path.resolve(base, entry.path));
+      acceptanceMinBytes = new Map(promised.map((entry, index) => [expectedPathsRaw[index], entry.minBytes ?? minBytes]));
+      manifestSource = "acceptance";
+    }
+  }
+
   // Fallback: scan brief.md for explicit absolute paths
   if (expectedPathsRaw.length === 0) {
     const pathRegex = /\/(?:Users|home|tmp|opt)\/[^\s`'"\)\]]+\.(md|json|ya?ml|png|jpg|jpeg|html|txt|pdf|csv|tsv|svg|webp)/g;
@@ -129,14 +146,16 @@ export function verifyDeliverableOnDisk(
   if (expectedPathsRaw.length === 0) {
     return base("FAIL_INDETERMINATE", {
       manifest_source: manifestSource,
-      reason: "no deliverables.json and brief.md has no /path markers",
+      reason: "no deliverables.json, no acceptance[] entry with a path, and brief.md has no /path markers",
     });
   }
 
   const results = expectedPathsRaw.map(p => {
     const exists = fs.existsSync(p);
     const bytes = exists ? fs.statSync(p).size : 0;
-    return { path: p, exists, bytes, isStub: exists && bytes < minBytes };
+    // An acceptance entry may declare its own `min_bytes`; otherwise the run's threshold.
+    const threshold = acceptanceMinBytes.get(p) ?? minBytes;
+    return { path: p, exists, bytes, isStub: exists && bytes < threshold };
   });
 
   const found = results.filter(r => r.exists).length;

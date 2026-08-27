@@ -189,6 +189,13 @@ export const SETTINGS = {
   "gauntlet.auto_allowed": booleanSetting("gauntlet.auto_allowed",
     "Permite que o modo auto escolha gauntlet (senão auto resolve para standard).",
     { default: false, env: "NIRVANA_ALLOW_AUTO_GAUNTLET" }),
+  "gauntlet.requirements_source": enumSetting("gauntlet.requirements_source",
+    "De onde vem o contrato do juiz: brief = só brief-conformance (padrão de hoje); capability = brief-conformance + acceptance[] declarada.",
+    ["brief", "capability"], { default: "brief", env: "NIRVANA_GAUNTLET_REQUIREMENTS_SOURCE" }),
+
+  "delivery.produces_to_rubric": booleanSetting("delivery.produces_to_rubric",
+    "Passa o produces[] do alvo ao seletor de rubricas do quality gate; false = o juiz continua caindo na rubrica genérica.",
+    { default: false, env: "NIRVANA_PRODUCES_TO_RUBRIC" }),
 
   "execution.default_runtime": stringSetting("execution.default_runtime",
     "Runtime usado quando a sessão não é identificada; vazio = primeiro disponível no PATH.",

@@ -10,12 +10,13 @@ import * as path from "node:path";
 import { SCOPE_GUARD_SENTINEL_PT_BR } from "../../_shared/lib/scope-guard.ts";
 import { GAUNTLET_EVALUATION_SHARE, gauntletRoundBudget, runAgentXGauntlet, type AgentXGauntletEvaluationInput } from "../lib/gauntlet/agent-x-cutover.ts";
 import { compileGauntletPlan } from "../lib/gauntlet/compiler.ts";
+import { requirementsFor } from "../lib/gauntlet/success-requirements.ts";
 import {
   EVALUATION_BRIEF_FILE, EVALUATION_OUTPUTS_DIR, EVALUATION_REQUEST_FILE, EVALUATION_RUBRIC_VERSION, SCORECARD_FILE, SCORECARD_SCHEMA_VERSION,
   renderEvaluationBrief, validateScorecardFile, type EvaluationRequest,
 } from "../lib/gauntlet/evaluation-contract.ts";
 import {
-  createDispatchEvaluator, evaluationDirFor, evaluationProjectId, type DispatchEvaluatorTarget, type EvaluatorSpawnRequest,
+  createDispatchEvaluator, evaluationDirFor, evaluationProjectId, evaluatorSpendCapUsd, type DispatchEvaluatorTarget, type EvaluatorSpawnRequest,
 } from "../lib/gauntlet/evaluator-adapter.ts";
 import { JUDGE_X_BUDGET_EXHAUSTED_MARK, JUDGE_X_TARGET } from "../lib/gauntlet/judge-x.ts";
 import { listScorecards } from "../lib/gauntlet/store.ts";
@@ -83,6 +84,58 @@ const validFile = () => ({
   schemaVersion: SCORECARD_SCHEMA_VERSION, verdict: "pass",
   dimensions: [{ id: "brief-conformance", score: 0.95, confidence: 0.9, blocking: true, passed: true, evidenceRefs: ["report.md#L1"] }],
   revisionRequests: [], regressions: [],
+});
+
+// A real acceptance contract: three requirements, so the judge is scored on the
+// contract it was given instead of the single line every Gauntlet used to share.
+describe("a three-requirement contract", () => {
+  const threeRequirements = requirementsFor({ intensity: "light", capability: { acceptance: [
+    { id: "sources_cited", description: "Cada afirmação cita a fonte" },
+    { id: "one_page", description: "O resumo cabe em uma página", blocking: false },
+  ] } }).requirements;
+  const threePlan = compileGauntletPlan({ brief: BRIEF, intensity: "light", requirements: threeRequirements });
+  const dimension = (requirement: { id: string; blocking: boolean }) =>
+    ({ id: requirement.id, score: 0.97, confidence: 0.9, blocking: requirement.blocking, passed: true, evidenceRefs: ["report.md#L1"] });
+  const scorecardWith = (count: number) => ({
+    schemaVersion: SCORECARD_SCHEMA_VERSION, verdict: "pass",
+    dimensions: threeRequirements.slice(0, count).map(dimension), revisionRequests: [], regressions: [],
+  });
+
+  test("three requirements compile three gauntlets and the contract the judge is validated against", () => {
+    expect(threePlan.gauntlets.map(item => item.id)).toEqual(["brief-conformance", "acceptance.sources_cited", "acceptance.one_page"]);
+    expect(threePlan.successContract.requirements).toEqual(threeRequirements);
+  });
+
+  test("a scorecard with three dimensions is accepted; two or four are refused by name", () => {
+    expect(validateScorecardFile(scorecardWith(3), threeRequirements).ok).toBeTrue();
+    const short = validateScorecardFile(scorecardWith(2), threeRequirements);
+    expect(short.ok).toBeFalse();
+    expect((short as { reason: string }).reason).toContain("requirement 'acceptance.one_page' was not scored");
+    const four = scorecardWith(3);
+    four.dimensions.push({ id: "acceptance.invented", score: 1, confidence: 1, blocking: true, passed: true, evidenceRefs: [] });
+    const extra = validateScorecardFile(four, threeRequirements);
+    expect(extra.ok).toBeFalse();
+    expect((extra as { reason: string }).reason).toContain("dimension 'acceptance.invented' is not in the success contract");
+  });
+
+  test("an evaluator writing N dimensions passes and one writing N−1 comes back indeterminate, every requirement failed", () => {
+    const setup = fixture();
+    let count = 3;
+    const spawned = fakeSpawn((request) =>
+      fs.writeFileSync(path.join(flag(request.command, "--outputs-root")!, SCORECARD_FILE), JSON.stringify(scorecardWith(count))));
+    const judge = evaluator(setup, { plan: threePlan, spawn: spawned.spawn });
+
+    const [good] = judge.evaluate(setup.evaluation(1));
+    expect(good.verdict).toBe("pass");
+    expect(good.dimensions.map(item => item.id)).toEqual(threeRequirements.map(item => item.id));
+
+    count = 2;
+    const [short] = judge.evaluate(setup.evaluation(2));
+    expect(short.verdict).toBe("indeterminate");
+    expect(short.dimensions.map(item => item.id)).toEqual(threeRequirements.map(item => item.id));
+    expect(short.dimensions.every(item => !item.passed)).toBeTrue();
+    expect(short.dimensions[0].evidenceRefs[0]).toContain("acceptance.one_page' was not scored");
+  });
 });
 
 describe("scorecard contract", () => {
@@ -264,6 +317,19 @@ describe("dispatch evaluator adapter", () => {
     const [scorecard] = evaluator(setup, { signal: during.signal, spawn: late.spawn }).evaluate(setup.evaluation(2));
     expect(scorecard.verdict).toBe("indeterminate");
     expect(scorecard.dimensions[0].evidenceRefs[0]).toBe("indeterminate: aborted while the evaluator ran: stop");
+  });
+
+  test("the spend cap is the lower of the plan's slice and the capability's declared max_cost_usd", () => {
+    expect(evaluatorSpendCapUsd(1.5, 0.4)).toBe(0.4);
+    expect(evaluatorSpendCapUsd(0.4, 1.5)).toBe(0.4);
+    expect(evaluatorSpendCapUsd(1.5, null)).toBe(1.5);
+    expect(evaluatorSpendCapUsd(0, 0.9)).toBe(0.9);
+    expect(evaluatorSpendCapUsd(0, null)).toBeNull();
+    expect(evaluatorSpendCapUsd(undefined, 0)).toBeNull();
+    const setup = fixture();
+    const spawned = fakeSpawn((request) => fs.writeFileSync(path.join(flag(request.command, "--outputs-root")!, SCORECARD_FILE), JSON.stringify(validFile())));
+    evaluator(setup, { spawn: spawned.spawn, budgetUsd: 1.5, maxCostUsd: 0.4 }).evaluate(setup.evaluation());
+    expect(flag(spawned.calls[0].command, "--max-budget")).toBe("0.4");
   });
 
   test("the plan's duration is the default timeout and the budget flag is omitted when absent", () => {
