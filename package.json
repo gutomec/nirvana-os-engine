@@ -43,6 +43,14 @@
   "scripts": {
     "install:system": "bun scripts/install.ts",
     "test": "bun test skills",
+    "test:full": "bun test skills",
+    "test:fast": "bun scripts/test-timings.ts --run-fast",
+    "test:squads": "bun test skills/squads/tests",
+    "test:businesses": "bun test skills/businesses/tests",
+    "test:shared": "bun test skills/_shared/tests",
+    "test:harness": "bun test skills/harness/tests",
+    "test:gate": "bun test skills/_shared/tests/verify- skills/_shared/tests/validators- skills/_shared/tests/validate-cli-alias skills/harness/tests/entity-admission skills/harness/tests/quality-gate skills/harness/tests/gate-timing skills/harness/tests/gate-zero-files",
+    "test:timings": "bun scripts/test-timings.ts",
     "validate": "bun skills/_shared/scripts/validate-mind-clones.ts && bun skills/harness/scripts/validate.ts",
     "glance": "bun skills/harness/scripts/glance.ts",
     "check:dispatch": "bun scripts/check-dispatch-contract.ts",
@@ -60,6 +68,7 @@
     "check:schemas": "bun scripts/gen-json-schemas.ts --check",
     "check:organizational": "bun scripts/check-organizational-non-regression.ts --strict",
     "check:scope-guard": "bun scripts/check-scope-guard.ts --strict",
+    "check:quick": "bun scripts/check-english-source.ts --strict && bun scripts/check-changelog-parity.ts --strict && bun scripts/check-version-parity.ts --strict && bun scripts/check-dispatch-contract.ts && bun scripts/check-scope-guard.ts --strict && bun scripts/check-engine-purity.ts && bun scripts/check-audit-parity.ts --strict && bun scripts/check-skillmd-command-parity.ts --strict && bun scripts/sync-agent-docs.ts --check",
     "check:all": "bun scripts/check-skillmd-command-parity.ts --strict && bun scripts/check-audit-parity.ts --strict && bun scripts/check-english-source.ts --strict && bun scripts/check-changelog-parity.ts --strict && bun scripts/check-version-parity.ts --strict && bun scripts/gen-json-schemas.ts --check && bun skills/_shared/scripts/coverage-ratchet.ts --check --strict && bun scripts/check-not-for-fires.ts --strict && bun scripts/check-capability-clones.ts --strict && bun scripts/check-clone-bindings.ts --strict && bun scripts/check-engine-purity.ts && bun scripts/sync-agent-docs.ts --check && bun scripts/check-dispatch-contract.ts && bun scripts/check-organizational-non-regression.ts --strict && bun scripts/check-scope-guard.ts --strict"
   }
 }

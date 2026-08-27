@@ -114,7 +114,8 @@ import { describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
-import { runEval, GOLDEN_PATH } from "../scripts/eval-routing.ts";
+import { runEvalCached, GOLDEN_PATH } from "../scripts/eval-routing.ts";
+import { registryFingerprint } from "../scripts/build-golden-set.ts";
 import { corpusGate } from "../../_shared/lib/corpus-gate.ts";
 
 const registryLoader = require("../lib/registry-loader.js");
@@ -129,22 +130,33 @@ const HAVE_REGISTRIES = !!(all.squads.source_path && all.businesses.source_path)
 // library. A clean install / partial pack has fewer entries — skip.
 const FULL_LIBRARY = HAVE_REGISTRIES && providerCount >= 500 && businessCount >= 40;
 
+/**
+ * Staleness by CONTENT, not mtime. `nrv index` rewrites both registry files on
+ * every run — same library, new mtime, new `generated_at` — and the old check
+ * read mtime, so a re-index that changed nothing forced a golden set rebuild
+ * and the ~30s eval behind it. The fingerprint is taken over the loader's
+ * projection (what build-golden-set.ts reads and router.js indexes), which
+ * carries no timestamp: same library, same hash, no rebuild.
+ *
+ * A golden set built before the fingerprint existed has no `*_sha256` field
+ * and is treated as stale — one rebuild, then the content key holds.
+ */
 function goldenIsStale(): boolean {
   if (!fs.existsSync(GOLDEN_PATH)) return true;
   try {
     const g = JSON.parse(fs.readFileSync(GOLDEN_PATH, "utf8"));
-    const sm = fs.statSync(all.squads.source_path).mtime.toISOString();
-    const bm = fs.statSync(all.businesses.source_path).mtime.toISOString();
-    return g.source_registries?.squads_mtime !== sm
-      || g.source_registries?.businesses_mtime !== bm
-      || g.source_registries?.squads_path !== all.squads.source_path
-      || g.source_registries?.businesses_path !== all.businesses.source_path;
+    const fp = registryFingerprint(all);
+    const src = g.source_registries || {};
+    return src.squads_sha256 !== fp.squads
+      || src.businesses_sha256 !== fp.businesses
+      || src.squads_path !== all.squads.source_path
+      || src.businesses_path !== all.businesses.source_path;
   } catch {
     return true;
   }
 }
 
-let r: Awaited<ReturnType<typeof runEval>> | null = null;
+let r: Awaited<ReturnType<typeof runEvalCached>> | null = null;
 if (FULL_LIBRARY) {
   if (goldenIsStale()) {
     const build = spawnSync(
@@ -156,11 +168,11 @@ if (FULL_LIBRARY) {
       throw new Error(`build-golden-set.ts failed (exit ${build.status}): ${build.stderr}`);
     }
   }
-  r = await runEval({ quiet: true });
+  r = await runEvalCached({ quiet: true, registries: all });
   const o = r.golden.overall;
   const pctf = (f: number) => (f * 100).toFixed(1) + "%";
   console.log(
-    `[routing-eval] measured: n=${r.golden.total} · top1=${pctf(o.top1)} · top3=${pctf(o.top3)} · MRR=${o.mrr.toFixed(3)}` +
+    `[routing-eval] ${r.from_cache ? "cached (content key hit)" : "measured"}: n=${r.golden.total} · top1=${pctf(o.top1)} · top3=${pctf(o.top3)} · MRR=${o.mrr.toFixed(3)}` +
     ` · squad_capability top1=${pctf(r.golden.by_kind.squad_capability?.top1 ?? 0)}` +
     ` · business top1=${pctf(r.golden.by_kind.business?.top1 ?? 0)} fabric@1=${pctf(r.golden.by_kind.business?.fabric_top1 ?? 0)}` +
     ` · negatives NO_MATCH=${pctf(r.negatives.no_match.no_match_rate)} (n=${r.negatives.no_match.n})` +
