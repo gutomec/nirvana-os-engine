@@ -126,3 +126,19 @@ anyway — so the rules travel with the dispatch instead of with the directory.
 The test for every diff you produce: each changed line traces back to something
 in section 2. A reviewer who cannot make that trace will assume you went
 exploring, and they will be right.
+
+## 10. If your deliverable includes a rendered visual
+
+Validate the artifact that the user will actually see, after the final
+composition is rendered. Source tokens, foreground/background declarations and
+uncomposited layers are not evidence of the final result.
+
+- Measure or inspect contrast on the final composited pixels at the intended
+  delivery size and state. Overlays, gradients, opacity, blend modes, images and
+  effects can invalidate a contrast ratio that looked correct in source values.
+- Render with the intended fonts loaded and confirm every glyph remains inside
+  its visual container with safe padding. No clipping, truncation, unintended
+  overflow, overlap or loss of legibility is acceptable.
+- Repeat the check at every required viewport, aspect ratio, language, content
+  state and export size named in the brief. A source-only review cannot pass a
+  rendered-visual gate.

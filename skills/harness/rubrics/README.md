@@ -13,6 +13,8 @@ pass_threshold: 75                    # 0-100; abaixo disso → fail
 applies_to_produces:                  # lista de slugs de `produces` que disparam essa rubric
   - blog-post
   - instagram-post
+hard_gates:                           # invariantes booleanas que anulam a nota total
+  - source_grounding
 description: |
   Breve descrição do escopo da rubric.
 ---
@@ -21,7 +23,8 @@ description: |
 Após o frontmatter, o corpo Markdown contém:
 - `## Inputs` — schema JSON dos campos que o judge recebe
 - `## Criteria` — lista numerada de critérios com pesos (soma normalmente = 100)
-- `## Output schema` — schema da resposta JSON do judge
+- `## Output schema` — schema da resposta JSON do judge, incluindo
+  `hard_gate_results[]` quando o frontmatter declara hard gates
 
 ## Componentes que consomem rubrics
 
@@ -67,14 +70,23 @@ Quando um novo tipo de deliverable não casa com nenhuma das 8 existentes:
 - Para teste único / one-off — use `mock_judge` em vez disso.
 - Para mudança em critério existente — versionar a rubric existente, não criar nova.
 
-## Hard gates (falha individual = reprova sem revisão)
+## Hard gates (falha individual = reprova)
 
-Algumas rubrics declaram critérios com **HARD GATE** no body:
+Hard gates executáveis são declarados em `hard_gates` no frontmatter. O judge
+exige um `hard_gate_results[]` com o conjunto exato de nomes declarados, um
+booleano `passed` e um `rationale` textual não vazio para cada item. Nome
+desconhecido, duplicata, campo malformado, resultado ausente ou `passed: false`
+falha fechado. O loader também reconhece os marcadores numerados `[HARD GATE]`
+das rubrics antigas para preservar compatibilidade.
+
+Rubrics com hard gates:
 
 - `data-research.md`: `source_grounding` (sem fonte = re-geração total)
 - `juridical.md`: `citation_verifiability` (citação inventada = re-geração total)
-- `design.md`: `wcag_2_2_AA` (falha de acessibilidade)
-- `image.md`: tradicionalmente `no_artifacts` quando crítico
+- `design.md`: `final_composite_contrast`, `rendered_text_containment` e
+  `wcag_2_2_AA`
+- `image.md`: `final_composite_contrast`, `rendered_text_containment` e
+  `no_artifacts`
 
-O `judge.ts` deve sinalizar severity:"high" em qualquer item desses; o loop então
-decide se aceita revisão (severity high é fixable=true) ou aborta (fixable=false).
+O `judge.ts` adiciona uma crítica `severity:"high"` para orientar a revisão, mas
+o bloqueio não depende da severidade: o booleano do hard gate é a autoridade.

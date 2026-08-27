@@ -108,11 +108,18 @@ export interface CritiqueItem {
   suggested_fix: string;
 }
 
+export interface HardGateResult {
+  name: string;
+  passed: boolean;
+  rationale: string;
+}
+
 export interface JudgeOutput {
   verdict: "pass" | "fail";
   total_score: number;
   criteria_scores: CriteriaScore[];
   critique: CritiqueItem[];
+  hard_gate_results: HardGateResult[];
   rubric_name: string;
   judge_runtime: string;
   raw_response_chars?: number;
@@ -121,6 +128,17 @@ export interface JudgeOutput {
 }
 
 function buildPersona(rubric: RubricMeta): string {
+  const hardGates = rubric.hard_gates ?? [];
+  const hardGateContract = hardGates.length ? [
+    ``,
+    `The engine declares these non-negotiable hard gates:`,
+    ...hardGates.map((name) => `- ${name}`),
+    `Return a hard_gate_results array with exactly one object per declared name and no other names:`,
+    `{"name":"<exact name>","passed":true|false,"rationale":"<evidence>"}.`,
+    `rationale must be a non-empty string containing the evidence for that gate.`,
+    `Unknown names, duplicates and malformed entries invalidate the response.`,
+    `A missing or false hard gate means verdict: "fail", regardless of total score.`,
+  ] : [];
   return [
     `You are an impartial quality judge for an autonomous multi-agent system.`,
     `You apply ONE rubric strictly: "${rubric.display_name}".`,
@@ -132,12 +150,67 @@ function buildPersona(rubric: RubricMeta): string {
     `You are calibrated, not lenient. Avoid grade inflation. Pass threshold is`,
     `${rubric.pass_threshold}. Total score below the threshold → verdict: "fail".`,
     `When score is exactly at the threshold, prefer "fail" — the bar is the floor.`,
+    ...hardGateContract,
     ``,
     `========================`,
     `RUBRIC BODY:`,
     `========================`,
     rubric.body,
   ].join("\n");
+}
+
+function evaluateHardGateResults(raw: unknown, rubric: RubricMeta): {
+  results: HardGateResult[];
+  failed: HardGateResult[];
+  errors: string[];
+} {
+  const declared = rubric.hard_gates ?? [];
+  if (declared.length === 0) return { results: [], failed: [], errors: [] };
+  if (!Array.isArray(raw)) {
+    return { results: [], failed: [], errors: ["hard_gate_results_not_array"] };
+  }
+
+  const byName = new Map<string, HardGateResult>();
+  const errors: string[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    const item = raw[i];
+    if (!item || typeof item !== "object") {
+      errors.push(`hard_gate_result_invalid:${i}`);
+      continue;
+    }
+    const value = item as Record<string, unknown>;
+    if (typeof value.name !== "string" || value.name.trim().length === 0 || value.name !== value.name.trim()) {
+      errors.push(`hard_gate_result_name_invalid:${i}`);
+      continue;
+    }
+    const name = value.name;
+    if (!declared.includes(name)) {
+      errors.push(`hard_gate_result_unknown:${name}`);
+      continue;
+    }
+    if (byName.has(name)) {
+      errors.push(`hard_gate_result_duplicate:${name}`);
+      continue;
+    }
+    if (typeof value.passed !== "boolean") {
+      errors.push(`hard_gate_result_passed_not_boolean:${name}`);
+      continue;
+    }
+    if (typeof value.rationale !== "string" || value.rationale.trim().length === 0) {
+      errors.push(`hard_gate_result_rationale_invalid:${name}`);
+      continue;
+    }
+    byName.set(name, {
+      name,
+      passed: value.passed,
+      rationale: value.rationale.trim(),
+    });
+  }
+  for (const name of declared) {
+    if (!byName.has(name)) errors.push(`hard_gate_result_missing:${name}`);
+  }
+  const results = declared.flatMap((name) => byName.has(name) ? [byName.get(name)!] : []);
+  return { results, failed: results.filter((gate) => !gate.passed), errors };
 }
 
 function buildUserMessage(input: JudgeInput): string {
@@ -166,11 +239,27 @@ function validateJudgeOutput(parsed: unknown, rubric: RubricMeta): { ok: true; d
   if (typeof o.total_score !== "number" || o.total_score < 0 || o.total_score > 100) errors.push("total_score_out_of_range");
   if (!Array.isArray(o.criteria_scores)) errors.push("criteria_scores_not_array");
   if (!Array.isArray(o.critique)) errors.push("critique_not_array");
+  const hardGates = evaluateHardGateResults(o.hard_gate_results, rubric);
+  errors.push(...hardGates.errors);
   if (errors.length > 0) return { ok: false, errors };
+  const critique = (o.critique as CritiqueItem[]).map((it, i) => ({
+    id: String(it.id ?? `c${i + 1}`),
+    severity: ((it.severity ?? "medium") as CritiqueItem["severity"]),
+    issue: String(it.issue ?? ""),
+    suggested_fix: String(it.suggested_fix ?? ""),
+  }));
+  for (const gate of hardGates.failed) {
+    critique.push({
+      id: `hard_gate:${gate.name}`,
+      severity: "high",
+      issue: `Hard gate failed: ${gate.name}${gate.rationale ? ` — ${gate.rationale}` : ""}`,
+      suggested_fix: `Correct ${gate.name} in the final artifact and re-run the gate.`,
+    });
+  }
   return {
     ok: true,
     data: {
-      verdict: o.verdict as "pass" | "fail",
+      verdict: hardGates.failed.length ? "fail" : o.verdict as "pass" | "fail",
       total_score: o.total_score as number,
       criteria_scores: (o.criteria_scores as CriteriaScore[]).map((c) => ({
         name: String(c.name ?? ""),
@@ -180,12 +269,8 @@ function validateJudgeOutput(parsed: unknown, rubric: RubricMeta): { ok: true; d
         severity: ((c.severity ?? null) as CriteriaScore["severity"]),
         fixable: Boolean(c.fixable ?? false),
       })),
-      critique: (o.critique as CritiqueItem[]).map((it, i) => ({
-        id: String(it.id ?? `c${i + 1}`),
-        severity: ((it.severity ?? "medium") as CritiqueItem["severity"]),
-        issue: String(it.issue ?? ""),
-        suggested_fix: String(it.suggested_fix ?? ""),
-      })),
+      critique,
+      hard_gate_results: hardGates.results,
       rubric_name: rubric.name,
       judge_runtime: "",
       schema_valid: true,
@@ -225,16 +310,28 @@ export interface JudgeOpts {
  */
 export function mockJudge(input: JudgeInput, override?: Partial<JudgeOutput>): JudgeOutput {
   const score = override?.total_score ?? 85;
+  const hardGates = evaluateHardGateResults(override?.hard_gate_results, input.rubric);
+  const hardGateCritique: CritiqueItem[] = hardGates.failed.map((gate) => ({
+    id: `hard_gate:${gate.name}`,
+    severity: "high",
+    issue: `Hard gate failed: ${gate.name}${gate.rationale ? ` — ${gate.rationale}` : ""}`,
+    suggested_fix: `Correct ${gate.name} in the final artifact and re-run the gate.`,
+  }));
+  const schemaValid = hardGates.errors.length === 0;
   return {
-    verdict: override?.verdict ?? (score >= input.rubric.pass_threshold ? "pass" : "fail"),
+    verdict: !schemaValid || hardGates.failed.length
+      ? "fail"
+      : override?.verdict ?? (score >= input.rubric.pass_threshold ? "pass" : "fail"),
     total_score: score,
     criteria_scores: override?.criteria_scores ?? [
       { name: "mock", score: 8, weight: 10, rationale: "mocked", severity: null, fixable: true },
     ],
-    critique: override?.critique ?? [],
+    critique: [...(override?.critique ?? []), ...hardGateCritique],
+    hard_gate_results: hardGates.results,
     rubric_name: input.rubric.name,
     judge_runtime: "mock",
-    schema_valid: true,
+    schema_valid: schemaValid,
+    ...(schemaValid ? {} : { schema_errors: hardGates.errors }),
   };
 }
 
@@ -262,6 +359,7 @@ export async function judge(input: JudgeInput, opts: JudgeOpts = {}): Promise<Ju
       total_score: 0,
       criteria_scores: [],
       critique: [{ id: "infra", severity: "high", issue: "host-agent-driver unavailable", suggested_fix: "run judge in mock mode or install a supported host runtime" }],
+      hard_gate_results: [],
       rubric_name: input.rubric.name,
       judge_runtime: "none",
       schema_valid: false,
@@ -292,6 +390,7 @@ export async function judge(input: JudgeInput, opts: JudgeOpts = {}): Promise<Ju
       total_score: 0,
       criteria_scores: [],
       critique: [{ id: "judge_runtime_error", severity: "high", issue: `judge LLM call failed: ${call.error}`, suggested_fix: "retry with backoff or fall back to mock" }],
+      hard_gate_results: [],
       rubric_name: input.rubric.name,
       judge_runtime: "error",
       schema_valid: false,
@@ -312,6 +411,7 @@ export async function judge(input: JudgeInput, opts: JudgeOpts = {}): Promise<Ju
       total_score: 0,
       criteria_scores: [],
       critique: [{ id: "schema_invalid", severity: "high", issue: `judge response did not match schema: ${v.errors.join(", ")}`, suggested_fix: "judge output rejected; treat as fail and request fresh generation" }],
+      hard_gate_results: [],
       rubric_name: input.rubric.name,
       judge_runtime: call.host,
       schema_valid: false,
@@ -342,4 +442,4 @@ export async function judge(input: JudgeInput, opts: JudgeOpts = {}): Promise<Ju
   return result;
 }
 
-export const __internal__ = { buildPersona, buildUserMessage, validateJudgeOutput, extractJsonFromText };
+export const __internal__ = { buildPersona, buildUserMessage, validateJudgeOutput, extractJsonFromText, evaluateHardGateResults };

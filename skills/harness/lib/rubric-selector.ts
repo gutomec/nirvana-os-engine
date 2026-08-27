@@ -25,6 +25,9 @@ export interface RubricMeta {
   target_model: "haiku" | "sonnet" | "opus" | "inherit";
   pass_threshold: number;
   applies_to_produces: string[];
+  /** Non-negotiable criteria. The judge must return one boolean result for
+   * each name and the engine forces a fail when any result is false/missing. */
+  hard_gates: string[];
   description: string;
   body: string;
   version: string;
@@ -92,6 +95,17 @@ function parseFrontmatter(rawInput: string): { meta: Record<string, unknown>; bo
   return { meta, body: m[2] };
 }
 
+/** Backward compatibility for rubrics that predate the hard_gates frontmatter
+ * field but already mark a numbered criterion as [HARD GATE]. New or changed
+ * rubrics should declare the list explicitly in frontmatter. */
+function hardGatesFromBody(body: string): string[] {
+  const names: string[] = [];
+  for (const match of body.matchAll(/^\s*\d+\.\s+\*\*([A-Za-z0-9_]+)\*\*[^\n]*\[HARD GATE\b/gim)) {
+    if (!names.includes(match[1])) names.push(match[1]);
+  }
+  return names;
+}
+
 function loadAll(): RubricMeta[] {
   if (_cache) return _cache;
   if (!existsSync(RUBRICS_DIR)) return [];
@@ -105,6 +119,9 @@ function loadAll(): RubricMeta[] {
     const applies = Array.isArray(meta.applies_to_produces)
       ? (meta.applies_to_produces as string[])
       : [];
+    const hardGates = Array.isArray(meta.hard_gates)
+      ? (meta.hard_gates as string[])
+      : hardGatesFromBody(body);
     out.push({
       name: String(meta.name ?? basename(f, ".md")),
       display_name: String(meta.display_name ?? meta.name ?? f),
@@ -112,6 +129,7 @@ function loadAll(): RubricMeta[] {
       target_model: ((meta.target_model as string) ?? "inherit") as RubricMeta["target_model"],
       pass_threshold: Number(meta.pass_threshold ?? 70),
       applies_to_produces: applies,
+      hard_gates: hardGates,
       description: String(meta.description ?? ""),
       body,
       version: String(meta.version ?? "1.0.0"),
@@ -188,4 +206,4 @@ export function _invalidate(): void {
   _cache = null;
 }
 
-export const __internal__ = { parseFrontmatter };
+export const __internal__ = { parseFrontmatter, hardGatesFromBody };

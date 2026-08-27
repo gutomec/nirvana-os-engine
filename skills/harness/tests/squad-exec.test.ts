@@ -12,6 +12,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { runSquadHeadless, buildSquadPrompt } from "../lib/squad-exec.ts";
+import { AUTONOMOUS_DIRECTIVE } from "../lib/host-agent-driver.ts";
 import { sessionKey, putSession } from "../lib/session-store.ts";
 import { SCOPE_GUARD_PT_BR } from "../../_shared/lib/scope-guard.ts";
 
@@ -94,6 +95,25 @@ describe("buildSquadPrompt — framing per mode", () => {
 });
 
 describe("runSquadHeadless", () => {
+  test("a single-target producer receives the final-render visual invariants", () => {
+    const squadsRoot = path.join(tmp, "squads");
+    scaffoldSquad(squadsRoot, "brandcraft");
+    const seen: any[] = [];
+    runSquadHeadless({
+      squadSlug: "brandcraft", brief: "make a visual",
+      projectId: "proj-visual-contract", projectDir: tmp, projectRoot: tmp,
+      outputsDir: path.join(tmp, "visual-out"), runtime: "claude-code",
+      businessSlug: null, mode: "squad-only",
+      autonomousDirective: AUTONOMOUS_DIRECTIVE,
+      squadsRoot,
+      runWithCascadeImpl: ((opts: any) => { seen.push(opts); return okCascadeResult(opts); }) as any,
+    });
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0].appendSystemPrompt).toContain("final composited result");
+    expect(seen[0].appendSystemPrompt).toContain("fully inside its rendered container");
+  });
+
   test("dispatches through the cascade seam and emits dispatch_squad + agent_executed", () => {
     const squadsRoot = path.join(tmp, "squads");
     scaffoldSquad(squadsRoot, "brandcraft");
