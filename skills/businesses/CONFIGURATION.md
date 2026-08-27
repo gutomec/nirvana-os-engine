@@ -255,7 +255,7 @@ Schemas validated by `~/.nirvana/skills/_shared/validators/validators.{ts,py}` (
 - **SKILL.md** — skill entry in Claude Code
 - **README.md** — overview + tutorials
 - **TUTORIAL.md** — step-by-step tutorial
-- **BUSINESS_PROTOCOL_V1.md** — full spec (~1850 lines)
+- **BUSINESS_PROTOCOL_V2.md** — the v2 delta · **BUSINESS_PROTOCOL_V1.md** — everything it leaves untouched (~1850 lines)
 - **~/.nirvana/skills/_shared/CONFIGURATION.md** — central schemas + validators
 - **~/.nirvana/skills/harness/CONFIGURATION.md** — config of the router that consumes this registry
 - **~/.nirvana/skills/_shared/SCRIPT_CONTRACT.md** — the system-wide bash script contract (portable shebang, no stdin, structured exit codes, two-mode flags)

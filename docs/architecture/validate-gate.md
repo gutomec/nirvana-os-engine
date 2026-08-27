@@ -132,9 +132,65 @@ Quatro detalhes valem a leitura de quem for estender o catálogo:
 
 O schema em Zod, `MindCloneManifestSchema` (`skills/_shared/validators/validators.ts`), é espelho reconciliado de `skills/_shared/schemas/mind-clone.schema.json`: `category` em kebab-case nu, enum de `validation_verdict` com os três valores vivos que a biblioteca já usa (`ARCHETYPE_PERSONA`, `EXTRACTED_FROM_PUBLIC_CORPUS`, `PACKAGED_FROM_EXISTING_DOSSIER`), bloco `routing` conforme `MIND_CLONE_ROUTING_CONTRACT.md`, `delegates_to` tolerado. `mind-clone-schema-parity.test.ts` compara chave a chave e enum a enum os dois arquivos.
 
-## Squads e empresas
+## Catálogo de squad
 
-Neste corte os dois módulos existem com os critérios triviais — o manifesto parseia, `.nirvana-surface.json` existe e bate com os arquivos em disco — para a CLI funcionar de ponta a ponta nos três tipos. O catálogo de squad (v6) e o de empresa (BP v2) entram nos cortes próprios do programa.
+O manifesto da biblioteca é são; o workflow não é. Medido em 26/08/2026 sobre 204 squads: 0 de 5.774 componentes declarados faltam e 705 de 705 `invoke.ref` resolvem, mas **160 de 1.740 `task:` e 180 de 2.786 `agent:` apontam para nada**, 56 passos carregam o prompt inline em vez de referenciar uma task, 15 workflows são órfãos, e o grafo aparece em oito dialetos dos quais só `steps[]` está na spec. O catálogo existe para nomear isso.
+
+**A severidade segue o protocolo do manifesto.** Sob `protocol: "6.0"` as regras de workflow são erro; sob `"5.0"` as mesmas regras são aviso. É a promessa de compatibilidade inteira deste corte: os 204 squads instalados mantêm o veredito que já têm, e um squad que optou pela v6 entra limpo. Três regras fogem disso de propósito: o teto de corpo e o workflow órfão são conselho sob qualquer protocolo (são fatos sobre autoria, não sobre contrato), e `distribution_artifacts` é sempre aviso porque uma cópia instalada de pack legitimamente carrega `PROVENANCE.json`, `LICENSE.txt` e watermark — reprovar por isso impediria o comprador de validar a própria biblioteca. A tabela declara a severidade da v6 (o estado-alvo); cada finding carrega a que de fato se aplica.
+
+| Critério | Severidade | Fixer |
+|---|---|---|
+| `manifest_parse` | erro | — |
+| `manifest_schema` | erro | — |
+| `capabilities_missing` | erro | — |
+| `capability_outputs_shape` | erro | `outputs_shape_repair` |
+| `capability_examples_missing` | erro | `caps_examples_not_for` |
+| `not_for_too_long` | erro em 6.0 · aviso em 5.0 | agêntico |
+| `invoke_ref_unresolved` | erro | — |
+| `invoke_ref_extension` | erro (só 6.0) | `invoke_ref_extension` |
+| `components_missing` | erro | `components_files_stub` |
+| `workflow_parse` | erro | — |
+| `workflow_twin` | por protocolo | `twin_merge` |
+| `workflow_inline_prose` | por protocolo | `workflow_inline_prose_to_body` |
+| `workflow_ref_unresolved` | por protocolo | `workflow_refs_repair` |
+| `workflow_step_id_duplicate` | por protocolo | — |
+| `workflow_dangling_requires` | por protocolo | — |
+| `workflow_requires_by_output` | por protocolo | `requires_by_output_name` |
+| `workflow_cycle` | por protocolo | — |
+| `workflow_shape_legacy` | por protocolo | `workflow_normalize_shape` |
+| `workflow_stem_case` | por protocolo | — |
+| `surface_missing` | erro | `surface_regen` |
+| `outputs_pollution` | erro | — |
+| `evaluator_missing` | erro em 6.0 · aviso em 5.0 | agêntico |
+| `surface_stale` | aviso | `surface_regen` |
+| `workflow_unnormalizable` | aviso | — |
+| `workflow_orphan` | aviso | — |
+| `workflow_body_too_long` | aviso | — |
+| `produces_untyped` | aviso | — |
+| `fidelity_validated_unproven` | aviso | — |
+| `portability` | aviso | — |
+| `routing_metadata_incomplete` | aviso (débito) | agêntico |
+| `requires_no_provider` | aviso | — |
+| `agent_frontmatter_incomplete` | aviso | `agents_frontmatter_repair` |
+| `task_acceptance_missing` | aviso | `tasks_acceptance_criteria` |
+| `dependencies_missing` | aviso | `dependencies_synth` |
+| `readme_missing` | aviso | `readme_scaffold` |
+| `not_for_dead` | aviso (débito) | — |
+| `distribution_artifacts` | aviso | — |
+| `protocol_below_6` | aviso | — |
+
+Quem for estender o catálogo precisa de quatro detalhes:
+
+- **Um leitor só.** `skills/squads/lib/workflow-reader.ts` é a única derivação do grafo: `readWorkflow` aceita as duas codificações (YAML v5, Markdown v6 = frontmatter + corpo), `normalizeWorkflow` mapeia cada dialeto sobre a forma canônica da §28.1, `lintWorkflow` decide a severidade pelo protocolo. Validador, auditor, fixer e migração partem daqui para que nenhum deles discorde sobre o que é o grafo de um squad.
+- **Nada se perde.** Uma chave de topo desconhecida vai para `extensions`, uma chave de passo desconhecida vai para `step.meta`. Um dialeto atravessa `normalizeWorkflow` → `renderCanonicalMarkdown` → `normalizeWorkflow` e volta ao mesmo objeto, com todo campo ainda lá. Essa é também a razão de a segunda rodada de `--fix` não mexer num byte: a forma canônica é ponto fixo da normalização.
+- **Nada se inventa.** Os fixers renomeiam, movem e reformam o que já existe: uma extensão retirada de um ref, a prosa de `task: |` transportada verbatim para `## <step.id>` no corpo, um `depends_on` que nomeava um output reescrito para o passo que o cria, um `output` singular promovido a `outputs[]`. `workflow_refs_repair` **renomeia** quando exatamente um componente casa por caixa ou por `_`↔`-` (o caso `enterprise-dashboard`) e **nunca cria stub**: escrever a task que falta seria fabricar o método do squad. Um `.yaml` também nunca vira `.md` num fixer — trocar a codificação é migração, com backup e relatório (`nrv migrate --to 6`), e o fixer diz isso em vez de agir.
+- **`event_routes` não é um DAG.** É um roteador: nenhuma ordem de passos sai dele. O lint marca `unnormalizable` como aviso e para por aí; adivinhar a ordem seria pior que não ter nenhuma.
+
+O `humanize` saiu junto. Era a contradição documentada no inventário: os docs mandavam declarar, o schema estrito rejeitava, e o fixer **escrevia** o campo — de modo que `fix-squad --apply` podia transformar um manifesto válido em inválido. Os seis pontos do critério 9 da auditoria passam a medir o contrato que o juiz de fato lê (`c9_acceptance`: parcela de capabilities com `acceptance[]` ou com task invocada declarando `## Acceptance Criteria`), o total continua 100, e a metade útil do fixer virou `outputs_shape_repair`.
+
+## Empresas
+
+Neste corte o módulo de empresa existe com os critérios triviais — o manifesto parseia, `.nirvana-surface.json` existe e bate com os arquivos em disco. O catálogo do Business Protocol v2 entra no corte próprio do programa.
 
 ## Tudo em processo
 

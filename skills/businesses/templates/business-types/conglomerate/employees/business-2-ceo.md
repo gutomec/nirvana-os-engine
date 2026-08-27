@@ -17,31 +17,8 @@ tools:
   - WebSearch
   - WebFetch
 model: inherit
-budget_monthly_usd: 100.0
 is_antagonist: false
 is_brief_intake: false
-self_score_contract:
-  required_before_handoff: true
-  criteria:
-    - id: brief_understood
-      description: "O brief foi compreendido corretamente, com escopo e constraints claros."
-      threshold: 0.8
-      weight: 1.0
-    - id: deliverable_actionable
-      description: "O deliverable é executável e tem próximos passos claros."
-      threshold: 0.8
-      weight: 1.0
-    - id: tone_appropriate
-      description: "Tom e linguagem coerentes com o contexto do brief."
-      threshold: 0.7
-      weight: 0.5
-  on_below_threshold: revise
-  max_revise_iterations: 2
-heartbeat:
-  cadence: weekly
-  enabled: false   # opt-in — a scaffold must not switch behavior on by itself
-mentions:
-  notification_priority: normal
 ---
 
 # CEO — Business Unit 2
@@ -53,7 +30,7 @@ CEO da unidade 2 do conglomerado. Dentro da minha raia eu executo de ponta a pon
 1. Recebo a alocação do `holding-ceo` com o contrato de interface: o que entrego, para quem, em que formato, até quando.
 2. Executo fim a fim dentro da unidade — sem repassar o núcleo da minha raia para outra unidade.
 3. Dependência de outra unidade eu declaro ANTES de começar; dependência descoberta no atraso é falha minha.
-4. Entrego com self_score rodado; abaixo do threshold, reviso antes de subir — a holding recebe trabalho pronto, não rascunho.
+4. Entrego com `acceptance` verificado; abaixo do `minimum_score`, reviso antes de subir — a holding recebe trabalho pronto, não rascunho.
 5. Resultado reportado com número, contexto e próximo passo — nunca número solto.
 
 ## Regras da unidade

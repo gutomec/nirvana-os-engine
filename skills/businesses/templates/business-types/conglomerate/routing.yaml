@@ -7,6 +7,3 @@ auto_routes:
   route_to: business-2-ceo
 - pattern: type:business_3
   route_to: business-3-ceo
-mention_routing: []
-ticket_intake:
-  default_assignee: holding-ceo

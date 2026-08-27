@@ -178,11 +178,87 @@ export function cloneFixture(root: string, slug: string, o: CloneOpts = {}): str
   return dir;
 }
 
-export function squadFixture(root: string, slug: string, o: { surface?: boolean; manifest?: string } = {}): string {
+export interface SquadOpts {
+  surface?: boolean;
+  /** Replaces squad.yaml wholesale (the malformed-manifest cases). */
+  manifest?: string;
+  protocol?: string;
+  /** Workflow file name → content. Default: one canonical `main.yaml`. */
+  workflows?: Record<string, string>;
+  /** As authored in `components.workflows` and `invoke.ref`. */
+  workflowComponent?: string;
+  invokeRef?: string;
+  /** Extra YAML lines under the single capability, already indented by 4. */
+  capabilityExtra?: string[];
+}
+
+/** The canonical graph: `steps[]` with `requires`, both refs resolving. */
+export const CANONICAL_WORKFLOW = [
+  "name: main",
+  "description: Plan the artifact, then build it",
+  "steps:",
+  "  - id: plan",
+  "    agent: planner",
+  "    task: plan",
+  "    creates: [plan.md]",
+  "  - id: build",
+  "    agent: builder",
+  "    task: build",
+  "    requires: [plan]",
+  "    on_failure: abort",
+  "success_indicators:",
+  "  - the artifact exists and the build step reports success",
+  "",
+].join("\n");
+
+const squadAgent = (name: string) => [
+  "---", `name: ${name}`, `description: ${name} of the fixture squad`, "maxTurns: 12",
+  "tools: [Read, Write, Edit]", "---", "", `# ${name}`, "", `The ${name} owns one step.`, "",
+].join("\n");
+
+const squadTask = (name: string) => [
+  `# ${name}`, "", `Perform the ${name} step.`, "", "## Acceptance Criteria", "", `- [ ] the ${name} output exists`, "",
+].join("\n");
+
+/** A complete, admitted squad at <root>/squads/<slug>. */
+export function squadFixture(root: string, slug: string, o: SquadOpts = {}): string {
   const dir = path.join(root, "squads", slug);
-  fs.mkdirSync(path.join(dir, "tasks"), { recursive: true });
-  fs.writeFileSync(path.join(dir, "squad.yaml"), o.manifest ?? `name: ${slug}\nversion: 1.0.0\nprotocol: "5.0"\n`, "utf8");
-  fs.writeFileSync(path.join(dir, "tasks", "main.md"), "# main\n\nDo the thing.\n", "utf8");
+  for (const sub of ["agents", "tasks", "workflows"]) fs.mkdirSync(path.join(dir, sub), { recursive: true });
+  for (const a of ["planner", "builder"]) fs.writeFileSync(path.join(dir, "agents", `${a}.md`), squadAgent(a), "utf8");
+  for (const t of ["plan", "build"]) fs.writeFileSync(path.join(dir, "tasks", `${t}.md`), squadTask(t), "utf8");
+  for (const [file, content] of Object.entries(o.workflows ?? { "main.yaml": CANONICAL_WORKFLOW })) {
+    fs.writeFileSync(path.join(dir, "workflows", file), content, "utf8");
+  }
+  fs.writeFileSync(path.join(dir, "README.md"), `# ${slug}\n\nFixture squad that plans and builds one artifact.\n`, "utf8");
+  fs.writeFileSync(path.join(dir, "dependencies.yaml"), "self_contained: true\n", "utf8");
+  fs.writeFileSync(path.join(dir, "squad.yaml"), o.manifest ?? [
+    `name: ${slug}`,
+    "version: 1.0.0",
+    `protocol: "${o.protocol ?? "5.0"}"`,
+    "description: Fixture squad that plans and builds one artifact",
+    "experimental_domains: true",
+    "components:",
+    "  agents: [planner, builder]",
+    "  tasks: [plan, build]",
+    `  workflows: [${o.workflowComponent ?? "main.yaml"}]`,
+    "capabilities:",
+    "  - id: fixture.artifact.build",
+    "    description: Plans and builds the fixture artifact end to end",
+    "    domains: [fixture_domain]",
+    "    produces: [fixture_artifact]",
+    '    examples: ["build the fixture artifact from a brief"]',
+    '    keywords: [fixture, artifact, build, construir]',
+    "    example_briefs:",
+    '      - "build the fixture artifact from this brief"',
+    '      - "preciso construir o artefato de fixture a partir deste brief"',
+    '      - "make the fixture artifact for our team"',
+    '    not_for: ["logo design", "tax filing", "video editing"]',
+    "    invoke:",
+    "      type: workflow",
+    `      ref: ${o.invokeRef ?? "workflows/main.yaml"}`,
+    ...(o.capabilityExtra ?? []),
+    "",
+  ].join("\n"), "utf8");
   if (o.surface !== false) writeSurfaceFor(dir, "squad");
   return dir;
 }

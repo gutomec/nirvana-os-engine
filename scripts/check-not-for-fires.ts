@@ -47,6 +47,11 @@
  * joined the flagship with 79 entries and 79 of them dead, and every gate stayed
  * green because none of them had a "before" to compare it to.
  *
+ * **Scope: squads AND businesses.** A squad declares `not_for` per capability;
+ * a business declares one list for the whole entity (Business Protocol 2.0
+ * §6.9), which is why the business rows are keyed `business:<slug>` here. Until
+ * that field reached the registry, every business fence was outside this gate.
+ *
  * Usage:
  *   bun scripts/check-not-for-fires.ts             # report
  *   bun scripts/check-not-for-fires.ts --strict    # exit 1 on growth, or on new content with any dead entry
@@ -143,6 +148,14 @@ function capsFromPack(dir: string): Record<string, Array<Record<string, unknown>
       // directory made a squad that has a ceiling look like new content and
       // failed the pack for it.
       const entity = typeof doc.name === "string" && doc.name ? doc.name : slug;
+      if (kind === "businesses") {
+        // A business declares one fence list for the whole entity (Business
+        // Protocol 2.0 §6.9), not one per capability — `capabilities` there is
+        // a list of ids, so the loop below read nothing and every business fence
+        // was invisible to this gate.
+        out[`business:${entity}`] = [{ [key]: entity, not_for: doc.not_for, example_briefs: doc.example_briefs }];
+        continue;
+      }
       for (const c of ((doc.capabilities as Array<Record<string, unknown>>) ?? [])) {
         const id = String(c?.id ?? "");
         if (!id) continue;
@@ -153,11 +166,22 @@ function capsFromPack(dir: string): Record<string, Array<Record<string, unknown>
   return out;
 }
 
+/** The live library's business fences, one pseudo-entry per business, keyed the
+ *  same way `capsFromPack` keys them so both paths produce the same rows. */
+function capsFromBusinessRegistry(): Record<string, Array<Record<string, unknown>>> {
+  const out: Record<string, Array<Record<string, unknown>>> = {};
+  const businesses = registryLoader.loadAll()?.businesses?.businesses ?? {};
+  for (const [slug, b] of Object.entries(businesses as Record<string, Record<string, unknown>>)) {
+    out[`business:${slug}`] = [{ business: slug, not_for: b.not_for, example_briefs: b.example_briefs }];
+  }
+  return out;
+}
+
 const caps: Record<string, Array<Record<string, unknown>>> = fixture
   ? JSON.parse(readFileSync(fixture, "utf8"))
   : packDir
     ? capsFromPack(packDir)
-    : (registryLoader.loadAll()?.squads?.capabilities ?? {});
+    : { ...(registryLoader.loadAll()?.squads?.capabilities ?? {}), ...capsFromBusinessRegistry() };
 
 /** What a fence is judged AGAINST: the widest corpus of real user language we
  *  have. This is deliberately NOT the same set as `caps`.
@@ -174,6 +198,7 @@ const caps: Record<string, Array<Record<string, unknown>>> = fixture
 const corpusCaps: Array<Record<string, unknown>> = [
   ...Object.values(caps).flat(),
   ...(fixture ? [] : Object.values((registryLoader.loadAll()?.squads?.capabilities ?? {}) as Record<string, Array<Record<string, unknown>>>).flat()),
+  ...(fixture || packDir ? [] : Object.values(capsFromBusinessRegistry()).flat()),
 ];
 interface BriefView { lc: string; tokens: Set<string> }
 const briefView = (b: string): BriefView => ({ lc: b.toLowerCase(), tokens: new Set(bm25.tokenize(b)) });

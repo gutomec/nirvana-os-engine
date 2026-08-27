@@ -8,6 +8,152 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### The workflow reader: one canonical graph, every legacy dialect normalized
+
+A squad's workflow was the only artifact of the protocol with no single shape.
+Measured on 204 installed squads: `steps[]` 51.5%, `workflow:` + `sequence[]`
+26.8%, `agent_sequence[]` 16.6%, plus `flow.steps`, `flow.phases`, a bare
+`sequence[]`, `pipeline.steps`, `event_routes` and three Markdown files — and
+only 40% of them express a dependency at all. Every reader in the engine had
+re-derived its own subset of those shapes, and each one derived a different
+subset.
+
+`skills/squads/lib/workflow-reader.ts` is now the single derivation.
+`readWorkflow` accepts both encodings (v5 YAML, v6 Markdown = frontmatter graph
+plus prose body, tolerant of BOM and CRLF), `normalizeWorkflow` maps every
+dialect onto the canonical `steps[]` shape, `resolveWorkflowRef` resolves a
+reference with or without its extension, `lintWorkflow` names what is broken,
+`renderCanonicalMarkdown` writes the canonical document back, and
+`referencedComponents` lists the agents and tasks a graph runs, in step order.
+`WorkflowSchema` in `validators.ts` is the strict shape it produces.
+
+| Legacy shape | Normalizes to |
+|---|---|
+| `steps[]` + `depends_on` / `deps` / `after` | `requires[]` |
+| `workflow:` header + `sequence[]` | header rises to the top, `task: x.md` → `x` |
+| `agent_sequence[]` | one step per agent, chained |
+| `flow.steps`, `pipeline.steps` | `steps[]`, `flow.type` → `extensions.flow_type` |
+| `flow.phases` / `phases` / `stages` | flattened, phase n requires the last ids of phase n−1 |
+| bare `sequence[]` | one step per entry, chained |
+| `workflow.agents[]` (la-bottega) | one step per agent, `all-as-needed` dropped |
+| `depends_on` naming another step's output | the step that creates it |
+| `task: \|` / `action:` prose | the body, under `## <step.id>`, verbatim |
+| `event_routes` | nothing: reported as unnormalizable |
+
+Two rules make it safe to run over content nobody has read. Nothing is dropped:
+an unknown top-level key lands in `extensions`, an unknown step key in
+`step.meta`, and a dialect round-trips back to the same canonical object — which
+is also why a second `--fix` does not change a byte. And nothing is invented:
+prose moves, it is never written, and a reference that resolves to nothing stays
+a finding.
+
+### `nrv validate squad` gets its catalog
+
+The trivial squad module (manifest parses, surface fresh) grew into 38 criteria.
+Severity follows the manifest's protocol: under `protocol: "6.0"` the workflow
+rules are errors, under `"5.0"` the same rules are warnings, so the 204
+installed squads keep the verdict they have today while a v6 squad enters clean.
+Three rules are deliberately outside that: the body ceiling and the orphan
+workflow are advice under either protocol, and per-buyer distribution artifacts
+(`PROVENANCE.json`, `LICENSE.txt`, a watermark) are always a warning, because an
+installed copy legitimately carries them.
+
+What it now names, from the library it was measured against: 160 `task:` and 180
+`agent:` references that point at no file, 56 steps carrying the prompt inline,
+15 orphan workflows, the `x.md` + `x.yaml` twins, duplicate step ids, cycles,
+dangling `requires`, capitalised stems, `not_for` fences past 25 characters,
+`fidelity: validated` with no ground truth on disk, `produces` slugs no rubric
+covers, and routing metadata below the contract.
+
+Seven mechanical fixers land with it: `outputs_shape_repair`,
+`invoke_ref_extension`, `twin_merge` (only when the YAML holds the graph and the
+Markdown holds the body — two real graphs are not a mechanical choice),
+`workflow_inline_prose_to_body`, `requires_by_output_name`,
+`workflow_normalize_shape`, and a `workflow_refs_repair` that renames by case or
+by `_`↔`-` when exactly one component matches and **never** writes a stub. A
+`.yaml` never becomes a `.md` in a fixer either: changing the encoding is a
+migration, with a backup and a report, and the fixer says so instead of acting.
+
+### Removed
+
+`humanize` is gone from the squad protocol's surface. It was a contradiction the
+inventory caught: the docs told an author to declare it, the strict capability
+schema rejected it, and the mechanical fixer **wrote** it — so `fix-squad
+--apply` could turn a valid manifest into an invalid one. The writing contract
+lives in the runtime memory files and reaches every dispatched agent; there was
+never anything per-capability to declare.
+
+Audit criterion 9 now measures the contract the judge actually reads
+(`c9_acceptance`: the share of capabilities with `acceptance[]`, or invoking a
+task that declares `## Acceptance Criteria`). The audit still totals 100. The
+half of the retired fixer that was repairing something real — a singular
+`output` promoted to `outputs[]` — became `outputs_shape_repair`; the
+`humanize_default_true` patch kind no longer exists. `agents_frontmatter_repair`
+also stopped writing a literal `\r?` into agent frontmatter, which turned the
+block into invalid YAML.
+
+New limits: `workflow_body_words_max` (2500) and
+`squad_prompt_components_bytes_max` (65536).
+
+### Business Protocol 2.0: routing metadata, pinned clones, preferred squads, acceptance per seat, one budget field, and the dead surface deprecated
+
+`skills/businesses/BUSINESS_PROTOCOL_V2.md` is the v2 delta over v1, in the same
+form the Squad Protocol v5 was a delta over v4: it documents only what changes.
+It was written against a measurement of the installed library, not against
+intent. On 61 businesses and 581 employees: 475 seats declared `heartbeat` and
+nothing ever scheduled one, 566 declared `self_score_contract` and nothing ever
+read one, 234 declared `escalation_triggers` and nothing ever fired one, no
+business had the `tickets/` directory the spec called mandatory, and none of the
+61 declared `run_budget_usd`, the only budget field dispatch actually reads.
+
+What the protocol gains: routing metadata is part of the contract at last
+(`produces`, `keywords`, `example_briefs`, and `not_for`, which is new to the
+schema); `auto_routes` has one home, `routing.yaml`, and a defined meaning —
+BM25 candidate first, then selection of the seat that receives the brief;
+`pinned_mind_clones` (max 2) is the first rung of the clone ladder PINNED →
+REQUESTED → SEARCH → AGENT, so a seat whose identity is a voice gets a binding
+instead of a hint; `squads_preferred` orders without closing while
+`squads_authorized` closes only when non-empty, and empty finally means the same
+as absent — open — which is what v1 §6.2 always said and the seat prompt did the
+opposite of, across 30 manifests and 201 seats; `acceptance[]` per seat replaces
+`self_score_contract` with a requirement the judge evaluates, converting
+mechanically from the 566 dead declarations; `run_budget_usd` is the single
+budget field and `budget_monthly_usd` retires, because nothing in the system
+accumulates a month. §16 is the admission gate's criteria catalog, id for id,
+held to it by a parity test.
+
+Deprecation is one policy, written once and referenced everywhere: the loader
+tolerates, the gate warns, only `--fix` converts or removes, and the loader stops
+accepting in a v3. Nineteen surfaces retire under it. Nothing about a v1 business
+changes: it loads, routes and dispatches exactly as before.
+
+The engine side of this cut is deliberately small, because reading these fields
+is a later cut. `not_for` now reaches the registry (`ScanItem`, `buildRegistry`),
+the router's business doc meta, and the routing digest's `not:` segment — five
+businesses had declared a fence for months and the router had never seen one,
+because a `.strict()` schema with no field cannot carry what the indexer does not
+emit. `RegistryBusinessesSchema` accepts it. `validateBusinessIntegrity` returns
+warnings next to errors and stops failing a load over `employee_count`, which is
+derived from disk (§6.12) — every one of the 61 authored the number the registry
+already counted, and paid with a failed load when it drifted.
+`check-not-for-fires` covers businesses in both paths, keyed `business:<slug>`,
+where the per-capability loop used to read nothing at all.
+
+The four business-type templates and `example-business` are Protocol 2.0:
+`acceptance` on the intake seat, no `heartbeat`, no `self_score_contract`, no
+authored `employee_count`, `run_budget_usd: 0`, a `not_for` block to fill, and no
+`escalation-triggers.yaml` / `mention_routing` / `ticket_intake` scaffolding for
+surfaces the protocol just retired. `skills/businesses/SKILL.md` stops pointing
+at six reference files, a `tests/smoke.ts` and an `adapters/` directory that
+never existed, names Zod as the validator that runs, and puts
+`nrv validate business <slug> --strict` in Round 5 of the wizard.
+
+Proof: `smoke.test.ts` (init → validate → index → list against a temp home, with
+the repo's own templates), `protocol-v2-spec-parity.test.ts`,
+`registry-description.test.ts` (a v1 and a v2 business indexing side by side,
+`not_for` reaching the router meta and staying out of the indexed text),
+`routing-digest.test.ts`, `not-for-fires.test.ts`.
+
 ### `nrv validate` is the admission gate for squads, businesses and mind-clones
 
 Every squad, business and mind-clone that enters the library now has one

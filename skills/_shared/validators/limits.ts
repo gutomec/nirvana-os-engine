@@ -38,6 +38,10 @@ export const DEFAULTS: Record<string, number | null> = {
   business_example_briefs_item_max: 1000,
   business_keywords_max: 100,
   business_capabilities_max: 100,
+  // Business Protocol 2.0 §6.9: routing fences. Same ceiling the squad-side
+  // metadata contract uses — a fence list longer than this is a taxonomy, and a
+  // taxonomy does not fire.
+  business_not_for_max: 40,
 
   // employee frontmatter
   employee_description_max: null, // None = no ceiling (historical)
@@ -52,6 +56,14 @@ export const DEFAULTS: Record<string, number | null> = {
 
   // squad.yaml
   squad_capabilities_max: 50,
+
+  // workflow document (Squad Protocol v6) — PAYLOAD SIZE
+  // Prose body of a Markdown workflow, in words: a ceiling, never a rejection
+  // (the lint warns under either protocol). 2500 words is ~6x the largest body
+  // the library holds today.
+  workflow_body_words_max: 2500,
+  // Bytes of agent + task documents a squad prompt carries before truncation.
+  squad_prompt_components_bytes_max: 65536,
 
   // mind-clone DNA frontmatter
   dna_max_turns_max: 1000,
@@ -82,6 +94,7 @@ const SAFETY_BOUNDS: Record<string, [number | null, number | null]> = {
   business_example_briefs_item_max: [200, 2000],
   business_keywords_max: [15, 300],
   business_capabilities_max: [20, 500],
+  business_not_for_max: [5, 200],
 
   employee_description_max: [200, 8000],
   employee_max_turns_max: [50, 1000],
@@ -93,6 +106,9 @@ const SAFETY_BOUNDS: Record<string, [number | null, number | null]> = {
   capability_keywords_max: [10, 200],
 
   squad_capabilities_max: [10, 200],
+
+  workflow_body_words_max: [200, 20_000],
+  squad_prompt_components_bytes_max: [8_192, 1_048_576],
 
   dna_max_turns_max: [40, 1000],
 

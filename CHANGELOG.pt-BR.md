@@ -8,6 +8,155 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### O leitor de workflow: um grafo canônico, todo dialeto legado normalizado
+
+O workflow de um squad era o único artefato do protocolo sem forma única.
+Medido nos 204 squads instalados: `steps[]` 51,5%, `workflow:` + `sequence[]`
+26,8%, `agent_sequence[]` 16,6%, mais `flow.steps`, `flow.phases`, um
+`sequence[]` solto, `pipeline.steps`, `event_routes` e três arquivos Markdown —
+e só 40% deles expressam alguma dependência. Cada leitor do engine tinha
+re-derivado seu próprio subconjunto dessas formas, e cada um derivou um
+subconjunto diferente.
+
+`skills/squads/lib/workflow-reader.ts` passa a ser a derivação única.
+`readWorkflow` aceita as duas codificações (YAML v5, Markdown v6 = grafo no
+frontmatter mais corpo em prosa, tolerante a BOM e CRLF), `normalizeWorkflow`
+mapeia cada dialeto sobre a forma canônica `steps[]`, `resolveWorkflowRef`
+resolve uma referência com ou sem extensão, `lintWorkflow` nomeia o que está
+quebrado, `renderCanonicalMarkdown` grava o documento canônico de volta e
+`referencedComponents` lista os agentes e as tasks que um grafo roda, em ordem
+de passo. O `WorkflowSchema` em `validators.ts` é a forma estrita que ele
+produz.
+
+| Forma legada | Normaliza para |
+|---|---|
+| `steps[]` + `depends_on` / `deps` / `after` | `requires[]` |
+| cabeçalho `workflow:` + `sequence[]` | cabeçalho sobe para o topo, `task: x.md` → `x` |
+| `agent_sequence[]` | um passo por agente, encadeados |
+| `flow.steps`, `pipeline.steps` | `steps[]`, `flow.type` → `extensions.flow_type` |
+| `flow.phases` / `phases` / `stages` | achatados, fase n requer os últimos ids da fase n−1 |
+| `sequence[]` solto | um passo por entrada, encadeados |
+| `workflow.agents[]` (la-bottega) | um passo por agente, `all-as-needed` descartado |
+| `depends_on` nomeando o output de outro passo | o passo que o cria |
+| prosa em `task: \|` / `action:` | o corpo, sob `## <step.id>`, verbatim |
+| `event_routes` | nada: reportado como não normalizável |
+
+Duas regras tornam seguro rodar isso sobre conteúdo que ninguém leu. Nada se
+perde: uma chave de topo desconhecida vai para `extensions`, uma chave de passo
+desconhecida vai para `step.meta`, e um dialeto volta ao mesmo objeto canônico
+depois do round-trip — que é também a razão de a segunda rodada de `--fix` não
+mexer num byte. E nada se inventa: a prosa se move, nunca é escrita, e uma
+referência que não resolve continua sendo um finding.
+
+### `nrv validate squad` ganha o catálogo
+
+O módulo trivial de squad (o manifesto parseia, a superfície está fresca) virou
+38 critérios. A severidade segue o protocolo do manifesto: sob `protocol: "6.0"`
+as regras de workflow são erro, sob `"5.0"` as mesmas regras são aviso — os 204
+squads instalados mantêm o veredito que já têm e um squad v6 entra limpo. Três
+regras ficam de fora disso de propósito: o teto de corpo e o workflow órfão são
+conselho sob qualquer protocolo, e os artefatos de distribuição por comprador
+(`PROVENANCE.json`, `LICENSE.txt`, watermark) são sempre aviso, porque uma cópia
+instalada legitimamente os carrega.
+
+O que ele passa a nomear, na biblioteca em que foi medido: 160 referências
+`task:` e 180 `agent:` que apontam para nenhum arquivo, 56 passos com o prompt
+inline, 15 workflows órfãos, os gêmeos `x.md` + `x.yaml`, ids de passo
+duplicados, ciclos, `requires` pendentes, stems com maiúscula, cercas `not_for`
+acima de 25 caracteres, `fidelity: validated` sem prova em disco, slugs de
+`produces` que nenhuma rubrica cobre e metadados de roteamento abaixo do
+contrato.
+
+Sete fixers mecânicos entram junto: `outputs_shape_repair`,
+`invoke_ref_extension`, `twin_merge` (só quando o YAML tem o grafo e o Markdown
+tem o corpo — dois grafos de verdade não são escolha mecânica),
+`workflow_inline_prose_to_body`, `requires_by_output_name`,
+`workflow_normalize_shape` e um `workflow_refs_repair` que renomeia por caixa ou
+por `_`↔`-` quando exatamente um componente casa e **nunca** escreve stub. Um
+`.yaml` também nunca vira `.md` num fixer: trocar a codificação é migração, com
+backup e relatório, e o fixer diz isso em vez de agir.
+
+### Removido
+
+O `humanize` saiu da superfície do protocolo de squads. Era a contradição que o
+inventário pegou: os docs mandavam o autor declarar, o schema estrito de
+capability rejeitava, e o fixer mecânico **escrevia** o campo — de modo que
+`fix-squad --apply` podia transformar um manifesto válido em inválido. O
+contrato de escrita vive nos memory files do runtime e chega a todo agente
+despachado; nunca houve nada por capability para declarar.
+
+O critério 9 da auditoria passa a medir o contrato que o juiz de fato lê
+(`c9_acceptance`: parcela de capabilities com `acceptance[]`, ou que invocam uma
+task declarando `## Acceptance Criteria`). A auditoria continua somando 100. A
+metade do fixer aposentado que consertava algo real — um `output` singular
+promovido a `outputs[]` — virou `outputs_shape_repair`; a espécie de patch
+`humanize_default_true` deixou de existir. O `agents_frontmatter_repair` também
+parou de escrever um `\r?` literal no frontmatter dos agentes, o que tornava o
+bloco YAML inválido.
+
+Limites novos: `workflow_body_words_max` (2500) e
+`squad_prompt_components_bytes_max` (65536).
+
+### Business Protocol 2.0: metadados de roteamento, clones fixados, squads preferidos, aceitação por cargo, um campo de orçamento e a superfície morta deprecada
+
+`skills/businesses/BUSINESS_PROTOCOL_V2.md` é o delta da v2 sobre a v1, na mesma
+forma que a v5 do Squad Protocol foi delta sobre a v4: documenta só o que muda.
+Ele foi escrito contra uma medição da biblioteca instalada, não contra intenção.
+Em 61 empresas e 581 funcionários: 475 cargos declaravam `heartbeat` e nenhum
+agendador existiu, 566 declaravam `self_score_contract` e nada lia, 234
+declaravam `escalation_triggers` e nada disparava, nenhuma empresa tinha o
+diretório `tickets/` que a spec chamava de obrigatório, e nenhuma das 61
+declarava `run_budget_usd`, o único campo de orçamento que o despacho lê.
+
+O que o protocolo ganha: metadados de roteamento entram no contrato
+(`produces`, `keywords`, `example_briefs` e `not_for`, novo no schema);
+`auto_routes` passa a ter um lugar só, `routing.yaml`, e um significado definido
+— primeiro candidato do BM25, depois seleção do cargo que recebe o brief;
+`pinned_mind_clones` (máximo 2) é o primeiro degrau da escada PINNED →
+SOLICITADO → BUSCA → AGENTE, então um cargo cuja identidade é uma voz ganha
+vínculo em vez de dica; `squads_preferred` ordena sem fechar e
+`squads_authorized` fecha só quando não é vazio, e vazio finalmente significa o
+mesmo que ausente — aberto — que é o que a v1 §6.2 sempre disse e o prompt do
+funcionário fazia ao contrário, em 30 manifestos e 201 cargos; `acceptance[]`
+por cargo substitui `self_score_contract` por um requisito que o juiz avalia,
+com conversão mecânica das 566 declarações mortas; `run_budget_usd` é o campo
+único de orçamento e `budget_monthly_usd` se aposenta, porque nada no sistema
+acumula um mês. A §16 é o catálogo de critérios do portão de admissão, id a id,
+preso a ele por um teste de paridade.
+
+A deprecação é uma política só, escrita uma vez e referenciada em todo lugar: o
+loader tolera, o portão avisa, só `--fix` converte ou remove, e o loader deixa
+de aceitar numa v3. Dezenove superfícies se aposentam sob ela. Nada muda para
+uma empresa v1: ela carrega, roteia e despacha exatamente como antes.
+
+O lado de engine deste corte é pequeno de propósito, porque ler esses campos é
+um corte posterior. `not_for` agora chega ao registro (`ScanItem`,
+`buildRegistry`), ao meta do documento de empresa no roteador e ao segmento
+`not:` do digest — cinco empresas declaravam a cerca havia meses e o roteador
+nunca tinha visto uma, porque um schema `.strict()` sem o campo não carrega o
+que o indexador não emite. O `RegistryBusinessesSchema` aceita o campo.
+`validateBusinessIntegrity` devolve avisos ao lado dos erros e deixa de reprovar
+uma carga por `employee_count`, que é derivado do disco (§6.12) — todas as 61
+autoravam o número que o registro já contava, e pagavam com falha de carga
+quando ele divergia. O `check-not-for-fires` cobre empresas nos dois caminhos,
+com a chave `business:<slug>`, onde o laço por capability não lia nada.
+
+Os quatro templates de tipo e o `example-business` são Protocol 2.0:
+`acceptance` no cargo de intake, sem `heartbeat`, sem `self_score_contract`, sem
+`employee_count` autorado, `run_budget_usd: 0`, um bloco `not_for` para
+preencher e sem esqueleto de `escalation-triggers.yaml` / `mention_routing` /
+`ticket_intake` para superfícies que o protocolo acabou de aposentar. O
+`skills/businesses/SKILL.md` deixa de apontar para seis arquivos de referência,
+um `tests/smoke.ts` e um diretório `adapters/` que nunca existiram, nomeia o Zod
+como o validador que roda e põe `nrv validate business <slug> --strict` no
+Round 5 do wizard.
+
+Prova: `smoke.test.ts` (init → validate → index → list contra um home temporário,
+com os templates do próprio repositório), `protocol-v2-spec-parity.test.ts`,
+`registry-description.test.ts` (uma empresa v1 e uma v2 indexando lado a lado,
+`not_for` chegando ao meta do roteador e ficando fora do texto indexado),
+`routing-digest.test.ts`, `not-for-fires.test.ts`.
+
 ### `nrv validate` é o portão de admissão de squads, empresas e mind-clones
 
 Todo squad, empresa e mind-clone que entra na biblioteca passa a ter um comando
