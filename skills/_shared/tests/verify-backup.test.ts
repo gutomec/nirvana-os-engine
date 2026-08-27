@@ -5,7 +5,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { BACKUP_KEEP, createBackup, listBackups, mindCloneModule, verifyEntity, type KindModule } from "../lib/verify/index.ts";
+import { BACKUP_KEEP, createBackup, listBackups, prune, mindCloneModule, verifyEntity, type KindModule } from "../lib/verify/index.ts";
 import { cloneFixture, rmrf, runCli, tempRoot, treeDigest } from "./helpers/verify-fixture.ts";
 import { spawnBudgetMs } from "../../harness/tests/helpers/test-budgets.ts";
 
@@ -131,6 +131,46 @@ describe("idempotence and retention", () => {
     expect(kept).toEqual(made.slice(-BACKUP_KEEP));
     expect(fs.existsSync(made[0])).toBe(false);
   }, spawnBudgetMs(2));
+
+  test("a backup stamped by another writer, in another format, does not invert retention", () => {
+    // Both names are real. On 2026-08-27 an agent wrote its own backup of
+    // `nirvana-crypto-trading` next to the engine's: the engine stamps UTC in
+    // extended ISO, the agent stamped local time in basic ISO. The two are the
+    // same second — 15:27:22 local is 18:27:22Z — and the engine's copy is the
+    // newer of the pair by its own 440 ms. Sorted as strings the engine's name
+    // comes FIRST, because `-` (0x2D) < `0` (0x30) at the fourth character of
+    // the stamp, so a `prune` reading chronology off the names deletes the
+    // newest backup and keeps the oldest: the exact failure the collision
+    // comment in backup.ts exists to remember, arriving through a second door.
+    const r = root();
+    const parent = path.join(r, "backups", "squad");
+    fs.mkdirSync(parent, { recursive: true });
+    const seed = (name: string, at: string): string => {
+      const d = path.join(parent, name);
+      fs.mkdirSync(d);
+      fs.writeFileSync(path.join(d, "MANIFEST.yaml"), `name: ${name}\n`, "utf8");
+      fs.utimesSync(d, new Date(at), new Date(at));
+      return d;
+    };
+    const AGENT = seed("nirvana-crypto-trading.20260827T152722", "2026-08-27T18:27:22.000Z");
+    const ENGINE = seed("nirvana-crypto-trading.2026-08-27T18-27-22-440Z", "2026-08-27T18:27:22.440Z");
+    // Enough later backups to put the population one over the cap, so `prune`
+    // drops exactly one and the choice is unambiguous.
+    const later = [
+      seed("nirvana-crypto-trading.2026-08-27T18-30-22-878Z", "2026-08-27T18:30:22.878Z"),
+      seed("nirvana-crypto-trading.2026-08-27T18-33-41-102Z", "2026-08-27T18:33:41.102Z"),
+      seed("nirvana-crypto-trading.2026-08-27T18-36-05-517Z", "2026-08-27T18:36:05.517Z"),
+      seed("nirvana-crypto-trading.2026-08-27T18-39-58-004Z", "2026-08-27T18:39:58.004Z"),
+    ];
+    expect(listBackups("squad", "nirvana-crypto-trading", path.join(r, "backups")))
+      .toEqual([AGENT, ENGINE, ...later]);
+
+    const dropped = prune("squad", "nirvana-crypto-trading", path.join(r, "backups"));
+    expect(dropped).toEqual([AGENT]);
+    expect(fs.existsSync(ENGINE)).toBe(true);
+    expect(listBackups("squad", "nirvana-crypto-trading", path.join(r, "backups")))
+      .toEqual([ENGINE, ...later]);
+  });
 
   test("a same-millisecond collision keeps listing order equal to creation order", () => {
     // The retention rule is "the newest BACKUP_KEEP", and it reads that order off
