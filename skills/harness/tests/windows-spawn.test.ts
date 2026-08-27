@@ -126,6 +126,19 @@ describe("quoteForCmd", () => {
     expect(quoteForCmd("")).toBe('""');
   });
 
+  test("a newline survives the quoting — which is exactly why it cannot be passed through cmd.exe", () => {
+    // quoteForCmd solves spaces and metacharacters. It cannot solve a newline, and nothing
+    // can: cmd.exe ends the command line at the first CR/LF whether or not the argument is
+    // quoted, so the limit is the parser, not the quoting. That is why the driver keeps its
+    // one multi-line argument OFF the command line entirely on this path — the directive
+    // travels as `--append-system-prompt-file <temp file>` (claudeDirectiveArgs), the same
+    // cure control-plane/maestro-turn.ts already used. This test states the constraint that
+    // cure exists to obey; pushing the directive last is only the belt to its braces.
+    const quoted = quoteForCmd("line one\nline two");
+    expect(quoted.startsWith('"')).toBe(true);
+    expect(quoted).toContain("\n");
+  });
+
   test("escapes embedded quotes instead of ending the argument early", () => {
     expect(quoteForCmd('say "hi"')).toBe('"say \\"hi\\""');
   });

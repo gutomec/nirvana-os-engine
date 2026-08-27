@@ -15,7 +15,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-  HEADLESS_SKIP_PERMISSIONS_ENV, __testables, headlessSkipPermissions, runHeadless, type Runtime,
+  HEADLESS_SKIP_PERMISSIONS_ENV, __testables, claudeDirectiveArgs, headlessSkipPermissions, resolveExecutable,
+  runHeadless, type Runtime,
 } from "../../_shared/lib/host-agent-driver.ts";
 import { CAPTURE_PRELUDE, readCapturedArgs, writeFakeCli } from "./helpers/fake-cli.ts";
 
@@ -133,6 +134,52 @@ describe("headless layer — runHeadless argv per runtime", () => {
     expect(restricted).not.toContain("--dangerously-skip-permissions");
     expect(hasPair(restricted, ["--permission-mode", "acceptEdits"])).toBeTrue();
     expect(restricted).toContain("--allowedTools");
+  });
+
+  // A `.cmd`/`.bat` runtime — every npm-installed CLI — can only be started through cmd.exe
+  // (resolveExecutable), and cmd.exe ends the command line at the first CR/LF of an argument
+  // whatever the quoting. The directive is the only argument that spans lines, so everything
+  // pushed after it used to vanish: the squad dispatch lost both `--add-dir` grants AND
+  // `--dangerously-skip-permissions` from a 6251-character line, far under cmd.exe's 8191
+  // limit — a grant dropped in silence and a headless child with no permission mode.
+  // The cure is the one control-plane/maestro-turn.ts already used: under a shell the
+  // directive travels as a FILE, so the command line never contains a newline at all.
+  test("claude-code: the directive travels by file under a shell, inline without one — both branches", () => {
+    const directive = "line one\nline two";
+
+    const inline = claudeDirectiveArgs(directive, false);
+    expect(inline.args).toEqual(["--append-system-prompt", directive]);
+    expect(inline.tmpFiles).toBeUndefined();
+
+    const viaFile = claudeDirectiveArgs(directive, true);
+    expect(viaFile.args[0]).toBe("--append-system-prompt-file");
+    expect(viaFile.args).toHaveLength(2);
+    // The whole point: what reaches the command line carries no newline for cmd.exe to cut on.
+    expect(viaFile.args[1]).not.toContain("\n");
+    expect(fs.readFileSync(viaFile.args[1], "utf8")).toBe(directive);
+    expect(viaFile.tmpFiles).toEqual([viaFile.args[1]]);
+    fs.rmSync(viaFile.args[1], { force: true });
+
+    expect(claudeDirectiveArgs("", true).args).toEqual([]);
+  });
+
+  test("claude-code: no grant and no permission flag is ever pushed behind the directive", () => {
+    try { fs.rmSync(path.join(CAP, "claude-args.json"), { force: true }); } catch { /* ignore */ }
+    const result = runHeadless({
+      runtime: "claude-code", prompt: "do the task", cwd: TMP, timeoutMs: 20_000,
+      appendSystemPrompt: "line one\nline two", addDirs: ["/tmp/grant-a", "/tmp/grant-b"],
+    });
+    expect(result.ok, result.error ?? result.stderr).toBe(true);
+    const args = readCapturedArgs(CAP, "claude");
+    // Which channel carried it is the platform's decision, read from the same resolver the
+    // driver used — not guessed, and not skipped on the system where it differs.
+    const flag = resolveExecutable("claude").shell ? "--append-system-prompt-file" : "--append-system-prompt";
+    const at = args.indexOf(flag);
+    expect(at).toBeGreaterThanOrEqual(0);
+    expect(args).toHaveLength(at + 2);   // the directive pair is last: nothing behind it to lose
+    expect(args.lastIndexOf("--add-dir")).toBeLessThan(at);
+    expect(args.indexOf("--dangerously-skip-permissions")).toBeLessThan(at);
+    expect(hasPair(args, ["--add-dir", "/tmp/grant-b"])).toBeTrue();
   });
 
   test("codex: --dangerously-bypass-approvals-and-sandbox by default; the workspace-write sandbox under =0", () => {

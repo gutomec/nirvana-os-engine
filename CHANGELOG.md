@@ -8,6 +8,109 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### A newline in one argument cut every flag behind it, on Windows
+
+Found while chasing a Windows-only CI failure on the dispatch cut above, and it
+is the more serious half of what that failure was pointing at.
+
+An agent CLI installed through npm is a `.cmd` on Windows, and a `.cmd` can only
+be started through the command interpreter — Node has refused to spawn one
+without a shell since CVE-2024-27980, which is why `resolveExecutable` routes it
+through `cmd.exe`. What nothing accounted for: **cmd.exe ends the command line at
+the first CR/LF**, quoted or not. `quoteForCmd` solves spaces and metacharacters
+and can do nothing about this one, because the limit is the parser rather than
+the quoting.
+
+The claude runner pushed `--append-system-prompt` second, and the autonomy
+directive it carries is 5,875 characters of multi-line prose whose first newline
+lands at character 183. Everything after that was discarded before the child ever
+saw it. On the squad dispatch that meant both `--add-dir` grants and
+`--dangerously-skip-permissions` — a headless child left without its permission
+mode, and a directory grant dropped in silence — out of a 6,251-character command
+line, well under cmd.exe's 8,191 limit. This was never a length problem, which is
+why the existing ARG_MAX machinery never caught it.
+
+The cure already existed in this repository and the driver had not been told:
+`control-plane/maestro-turn.ts` diagnosed the same defect and fixed it by sending
+the directive as `--append-system-prompt-file <temp file>` whenever the CLI is
+started through a shell. The headless driver every dispatched child goes through
+had been left out of it. It now uses the same rule (`claudeDirectiveArgs`): under
+a shell the directive travels as a file, without one it stays inline, and the temp
+file is removed when the child closes. The command line for the squad dispatch
+goes from 6,251 characters with a cut at 183 to 407 characters with no newline in
+it at all — every flag delivered, and the whole 5,875-character directive
+delivered too, instead of its first line.
+
+Pushing the directive last is kept as well. It costs nothing, flag order being
+irrelevant to the CLI, and it means a runtime whose build predates the file flag
+can still only lose the tail of the directive rather than a directory grant or
+the permission mode. Three tests pin it: both delivery branches, the argv of a
+real child, and the constraint underneath — that quoting cannot neutralize a
+newline.
+
+Runtimes whose Windows install is a real `.exe` take the no-shell branch and were
+never affected, and the eight other adapters still carry the untreated shape;
+this is the pattern for them, and their fix is now a replication rather than a
+design. The light layer (`buildCall`) already happened to push its directive
+last, so it lost no flags; its own directive still truncates under a shell.
+
+### One answer to "which project is this?", and the dispatched runtime runs inside it
+
+`dispatch.ts` answered the question twice. Once from the environment
+(`NIRVANA_PROJECT_ROOT`, else the invocation cwd) and twice more by arithmetic —
+`resolve(projDir, "..", "..")` — climbing two levels out of the scaffold the run
+had just created. The arithmetic is only right when the layout is exactly
+`<project>/outputs/<pid>`, and the outputs root is a flag the user sets.
+
+A squad dispatch on 27/08 with `--outputs-root` outside the project tree split
+one trace's audit chain across three files: the routing events under the
+project, the scaffold events under `<outputs>/<pid>` (the dispatch kernel
+creates a `.nirvana/` there, so the walk-up reads the scaffold as its own
+project), and every `gate_passed` under `~/.harness-logs`, because
+`quality-gate.ts` anchors its audit on the artifact it was handed and an
+artifact outside any project has no root to find. `nrv validate-chain` reads one
+place. That chain could not be audited. The child had been handed `addDirs: [~]`
+— the user's whole home as "the project" — with its cwd inside the scaffold.
+
+Now the project is resolved once, by the rule `_shared/lib/paths.js` already
+gives the supervisor, the config, multi-target and the runtime snapshot:
+`NIRVANA_PROJECT_ROOT` when named, else the invocation cwd walked up to its
+marker. It is never derived from the outputs root. Where a path really is
+scaffold-shaped — `brief.md`, the dispatch kernel, the Gauntlet's candidate and
+evaluation directories — the variable is called `scaffoldRoot` and the Gauntlet
+inputs take it as `workspaceRoot`, so nothing moved on disk and `nrv clean
+<pid>` still takes the scratch with it.
+
+That answer is the OS's canonical form: `resolveProjectRoot` normalizes through
+`realpathSync.native`, which expands a Windows 8.3 short path
+(`C:\Users\RUNNER~1\…` into `C:\Users\runneradmin\…`) and resolves `/var` to
+`/private/var` on macOS. So `meta.project_root`, the ledger's `project_root`
+column, the audit anchor, the kernel path and the child's cwd are now one
+spelling of one directory. They were not before — the dispatch echoed whatever
+spelling the invocation happened to use while the ledger stored the canonical
+one, which is the same project splitting in two through a narrower door.
+
+The second half is the owner's decision: the dispatched runtime runs INSIDE the
+project, on every path — business single-shot and Gauntlet canary, squad, team
+step, agent-x, judge-x, the report publisher, the revision run, `nrv revise` and
+the supervisor's auto-redispatch. `cwd` is the project root; the scaffold and
+the outputs root are granted as additional directories, so the outputs root
+stays writable and the agent finally sees the project's `.nirvana/`, its local
+config, its own trace's logs and the code-base. The gate and verify children are
+told which project they belong to (`HARNESS_LOGS_DIR`, still overridable)
+instead of re-deriving it from the file they are judging.
+
+Two paths deliberately do NOT run in the project, and stayed as they were: the
+team director (`team-orchestrator.ts`, `cwd: os.tmpdir()`) is a text-only
+planning call with no file access, and the agentic verifier
+(`_shared/lib/verify/agentic.ts`) runs in an isolated staging directory on
+purpose — seeing the project would defeat the isolation.
+
+The regression test is the real run: a squad dispatch with the outputs root
+outside the project tree, asserting every event of the trace lands in one log
+and the child's cwd is the project root. Run against the old code it fails on
+all three counts.
+
 ### Backup retention orders by time, not by the shape of the name
 
 `prune` keeps the five newest backups of an entity and finds them by sorting the

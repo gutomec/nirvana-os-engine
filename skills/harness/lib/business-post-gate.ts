@@ -96,7 +96,7 @@ export function runBusinessPostGate(input: BusinessPostGateInput): { zipPath: st
         else input.warn("⚠ report-publisher prompt failed; using the generic publisher");
       }
       const publisher = deps.runPublisher({
-        runtime: input.runtime, prompt: publisherPrompt, cwd: input.projectDir, addDirs: [input.projectRoot],
+        runtime: input.runtime, prompt: publisherPrompt, cwd: input.projectRoot, addDirs: [input.projectDir, reportDir],
         appendSystemPrompt: AUTONOMOUS_DIRECTIVE + input.rulesDirective,
         maxBudgetUsd: input.maxBudgetUsd, timeoutMs: input.timeoutMs, yolo: input.yolo,
       });

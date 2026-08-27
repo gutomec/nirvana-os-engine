@@ -8,7 +8,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { compileGauntletPlan } from "../lib/gauntlet/compiler.ts";
 import { EVALUATION_BRIEF_FILE, EVALUATION_REQUEST_FILE, SCORECARD_FILE, renderEvaluationBrief, type EvaluationRequest } from "../lib/gauntlet/evaluation-contract.ts";
@@ -16,7 +15,7 @@ import { JUDGE_X_BUDGET_EXHAUSTED_MARK } from "../lib/gauntlet/judge-x.ts";
 import { getRun, openKernel } from "../lib/run-kernel/index.ts";
 import { canonicalRunIdFor } from "../scripts/dispatch.ts";
 import { writeFakeCli } from "./helpers/fake-cli.ts";
-import { removeDir } from "./helpers/temp-dirs.ts";
+import { makeTempRoot, removeDir } from "./helpers/temp-dirs.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const REPO = path.resolve(import.meta.dir, "..", "..", "..");
@@ -50,7 +49,7 @@ const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) removeDir(root); });
 
 function fixture() {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "nrv-judge-x-e2e-"))); roots.push(root);
+  const root = makeTempRoot("nrv-judge-x-e2e-"); roots.push(root);
   const home = path.join(root, "home");
   const projectRoot = path.join(root, "project");
   const bin = path.join(root, "bin");
@@ -123,8 +122,10 @@ describe("dispatch.ts --judge-x", () => {
     const args = fx.judgeArgs();
     expect(args).not.toContain("--append-system-prompt");
     expect(args[args.indexOf("--max-budget-usd") + 1]).toBe("1.5");
-    expect(args.filter(arg => arg === "--add-dir")).toHaveLength(2);
-    expect(args).toContain(fx.candidateRoot);
+    // The judge's cwd is the PROJECT; its scaffold, its outputs root and the candidate it
+    // reads are the three granted directories.
+    const addDirs = args.filter((_, index) => args[index - 1] === "--add-dir");
+    expect(addDirs).toEqual([path.join(fx.projectRoot, "outputs", fx.projectId, "judge-x"), fx.outputsRoot, fx.candidateRoot]);
     // The candidate was only read; the outputs root holds the scorecard alone.
     expect(fs.readdirSync(fx.candidateRoot)).toEqual(["report.md"]);
     expect(fs.readdirSync(fx.outputsRoot)).toEqual([SCORECARD_FILE]);

@@ -339,11 +339,16 @@ const CONTINUE_PROMPT = [
 function reviseCwdFor(meta: Record<string, unknown>): string {
   const pr = typeof meta.project_root === "string" ? (meta.project_root as string) : null;
   if (pr) {
+    // Rows written before the dispatch had one answer for "which project is this?" stored the
+    // SCAFFOLD here (`<project>/outputs/<pid>`, or `<project>/.nirvana/outputs/<pid>`), so those
+    // are still walked back. A row written since already names the project: take it as it is,
+    // instead of falling through to HOME because it does not look like an outputs path.
     let d = path.dirname(pr);                       // …/outputs
     if (path.basename(d) === "outputs") {
       d = path.dirname(d);                          // base or base/.nirvana
       return path.basename(d) === ".nirvana" ? path.dirname(d) : d;
     }
+    return pr;
   }
   return os.homedir();
 }
@@ -470,8 +475,8 @@ export function redispatchRun(h: LedgerHandle, row: RunRow, overrides: Redispatc
   const res = runCascade({
     runtime: (row.runtime as any) || "claude-code",
     prompt,
-    cwd: projectDir,
-    addDirs: [projectRoot],
+    cwd: projectRoot,
+    addDirs: [projectDir, outputsRoot],
     appendSystemPrompt: AUTONOMOUS_DIRECTIVE,
     yolo: true,
     brief: brief || prompt.slice(0, 4000),

@@ -45,6 +45,7 @@ import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { isRunStatePath } from "../../_shared/lib/run-state.ts";
 import { detectKind } from "../../_shared/lib/surface.ts";
 import { GATEABLE_EXTS } from "../scripts/quality-gate.ts";
+import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import type { HarnessConfig } from "./harness-config.ts";
 import * as runLedger from "./run-ledger.ts";
 
@@ -358,9 +359,17 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
   const mark = (state: runLedger.RunState, extra?: runLedger.MarkStateExtra) => {
     if (led) ledgerTry(() => runLedger.markState(led.handle, led.runId, state, extra ?? {}), warn);
   };
+  // quality-gate.ts and verify-deliverable.ts each anchor their audit on the artifact they
+  // were handed. With an outputs root outside the project tree that walk finds no project and
+  // lands in `~/.harness-logs`, which is how one trace's `gate_passed` ended up in a different
+  // file from its own `dispatch_squad`. The run already knows which project it belongs to, so
+  // it says so — an explicit HARNESS_LOGS_DIR the caller can still override.
   const gateEnv = {
     NIRVANA_TRACE_ID: args.pid,
     NIRVANA_PROJECT_ID: args.pid,
+    // Resolved from the project root the same way the dispatch resolves its own — walking up
+    // from it — so the two answers cannot disagree even when the root carries no marker.
+    HARNESS_LOGS_DIR: harnessLogsDir({ cwd: args.projectRoot }),
     ...(args.slug ? { NIRVANA_BUSINESS_SLUG: args.slug } : {}),
   };
   let sessionId: string | null = args.sessionId ?? null;
@@ -458,7 +467,7 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
       "Não imprima resumo: entregue os arquivos corrigidos.",
     ].join("\n");
     const rr = runHeadlessImpl({
-      runtime: args.runtime, prompt: fixPrompt, cwd: args.projectDir, addDirs: [args.projectRoot],
+      runtime: args.runtime, prompt: fixPrompt, cwd: args.projectRoot, addDirs: [args.projectDir, args.outputsRoot],
       sessionId: sessionId || undefined,
       appendSystemPrompt: AUTONOMOUS_DIRECTIVE + (args.rulesDirective ?? ""),
       maxBudgetUsd: args.maxBudgetUsd, timeoutMs: args.timeoutMs, yolo: args.yolo,

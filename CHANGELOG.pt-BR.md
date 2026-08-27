@@ -8,6 +8,111 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Uma quebra de linha num argumento cortava todas as flags atrás dela, no Windows
+
+Achado enquanto eu perseguia uma falha de CI exclusiva do Windows no corte de
+despacho acima, e é a metade mais séria do que aquela falha apontava.
+
+Uma CLI de agente instalada por npm é um `.cmd` no Windows, e um `.cmd` só pode
+ser iniciado pelo interpretador de comandos — o Node se recusa a executar um sem
+shell desde a CVE-2024-27980, por isso o `resolveExecutable` o encaminha pelo
+`cmd.exe`. O que ninguém tinha previsto: **o cmd.exe encerra a linha de comando na
+primeira CR/LF**, com ou sem aspas. O `quoteForCmd` resolve espaços e
+metacaracteres e não pode fazer nada quanto a isso, porque o limite é do parser,
+não do escape.
+
+O runner do claude empurrava o `--append-system-prompt` em segundo lugar, e a
+diretiva de autonomia que ele carrega tem 5.875 caracteres de prosa multilinha
+cuja primeira quebra cai no caractere 183. Tudo depois disso era descartado antes
+de o filho ver. No despacho de squad isso significava as duas concessões
+`--add-dir` e o `--dangerously-skip-permissions` — um filho headless sem o próprio
+modo de permissão, e uma concessão de diretório derrubada em silêncio — numa linha
+de 6.251 caracteres, bem abaixo do limite de 8.191 do cmd.exe. Nunca foi problema
+de tamanho, e é por isso que a maquinaria de ARG_MAX existente nunca pegou.
+
+A cura já existia neste repositório e ninguém tinha contado ao driver: o
+`control-plane/maestro-turn.ts` diagnosticou o mesmo defeito e o resolveu mandando
+a diretiva como `--append-system-prompt-file <arquivo temporário>` sempre que a CLI
+é iniciada por um shell. O driver headless por onde passa todo filho despachado
+ficou de fora. Agora ele usa a mesma regra (`claudeDirectiveArgs`): sob shell a
+diretiva viaja por arquivo, sem shell segue inline, e o temporário é removido
+quando o filho fecha. A linha de comando do despacho de squad cai de 6.251
+caracteres com corte no 183 para 407 caracteres sem nenhuma quebra de linha —
+todas as flags entregues, e a diretiva inteira de 5.875 caracteres entregue
+também, em vez da primeira linha dela.
+
+A diretiva continua sendo empurrada por último. Não custa nada, já que a ordem das
+flags é irrelevante para a CLI, e garante que um runtime cuja build seja anterior à
+flag de arquivo ainda só consiga perder a cauda da diretiva, nunca uma concessão de
+diretório nem o modo de permissão. Três testes fixam isso: os dois ramos de
+entrega, o argv de um filho real, e a restrição por baixo — que o escape não
+neutraliza uma quebra de linha.
+
+Runtimes cuja instalação no Windows é um `.exe` de verdade pegam o ramo sem shell e
+nunca foram afetados, e os outros oito adaptadores seguem com a forma não tratada;
+este é o padrão para eles, e a correção deles agora é replicação, não desenho. A
+camada leve (`buildCall`) já empurrava a diretiva por último por acaso, então não
+perdia flags; a diretiva dela ainda trunca sob shell.
+
+### Uma resposta só para "qual é o projeto?", e o runtime despachado roda dentro dele
+
+O `dispatch.ts` respondia à pergunta duas vezes. Uma pelo ambiente
+(`NIRVANA_PROJECT_ROOT`, senão o cwd da invocação) e outras duas por aritmética
+de caminho — `resolve(projDir, "..", "..")` — subindo dois níveis a partir do
+scaffold que a própria execução acabara de criar. A aritmética só acerta quando
+o layout é exatamente `<projeto>/outputs/<pid>`, e o outputs root é uma flag que
+o usuário escolhe.
+
+Um despacho de squad em 27/08 com `--outputs-root` fora da árvore do projeto
+partiu a cadeia de auditoria de um único trace em três arquivos: os eventos de
+roteamento sob o projeto, os eventos de scaffold sob `<outputs>/<pid>` (o kernel
+do despacho cria um `.nirvana/` ali, então a subida de diretórios lê o scaffold
+como se fosse um projeto) e todos os `gate_passed` sob `~/.harness-logs`, porque
+o `quality-gate.ts` ancora a auditoria no artefato que recebeu e um artefato fora
+de qualquer projeto não tem raiz para encontrar. O `nrv validate-chain` olha um
+lugar só. Aquela cadeia era inauditável. E o filho tinha recebido `addDirs: [~]`
+— a pasta pessoal inteira como "o projeto" — com o cwd dentro do scaffold.
+
+Agora o projeto é resolvido uma vez, pela regra que o `_shared/lib/paths.js` já
+dá ao supervisor, à configuração, ao multi-target e ao snapshot de runtime:
+`NIRVANA_PROJECT_ROOT` quando nomeado, senão o cwd da invocação subindo até o
+marcador. Nunca derivado do outputs root. Onde o caminho é mesmo do scaffold —
+`brief.md`, o kernel do despacho, os diretórios de candidates e evaluations do
+Gauntlet — a variável se chama `scaffoldRoot` e as entradas do Gauntlet a
+recebem como `workspaceRoot`, então nada mudou de lugar em disco e o `nrv clean
+<pid>` continua levando o rascunho junto.
+
+Essa resposta vem na forma canônica do sistema operacional: o
+`resolveProjectRoot` normaliza com `realpathSync.native`, que expande o caminho
+curto 8.3 do Windows (`C:\Users\RUNNER~1\…` vira `C:\Users\runneradmin\…`) e
+resolve `/var` para `/private/var` no macOS. Assim o `meta.project_root`, a
+coluna `project_root` do ledger, a âncora da auditoria, o caminho do kernel e o
+cwd do filho passam a ser uma grafia só de um diretório só. Não eram antes — o
+despacho repetia a grafia que a invocação usou enquanto o ledger guardava a
+canônica, que é o mesmo projeto se partindo em dois por uma porta mais estreita.
+
+A segunda metade é a decisão do dono: o runtime despachado roda DENTRO do
+projeto, em todo caminho — empresa em disparo único e canário do Gauntlet,
+squad, passo de time, agent-x, judge-x, o publicador do relatório, a rodada de
+revisão, o `nrv revise` e o redespacho automático do supervisor. O `cwd` é a
+raiz do projeto; o scaffold e o outputs root entram como diretórios adicionais,
+então o outputs root segue gravável e o agente enfim enxerga o `.nirvana/` do
+projeto, a configuração local, os logs do próprio trace e o código-base. Os
+filhos do gate e do verify são informados a que projeto pertencem
+(`HARNESS_LOGS_DIR`, ainda sobrescrevível) em vez de rededuzir isso do arquivo
+que estão julgando.
+
+Dois caminhos deliberadamente NÃO rodam no projeto, e ficaram como estavam: o
+diretor do time (`team-orchestrator.ts`, `cwd: os.tmpdir()`) é uma chamada de
+planejamento só de texto, sem acesso a arquivos, e o verificador agêntico
+(`_shared/lib/verify/agentic.ts`) roda de propósito num diretório de staging
+isolado — enxergar o projeto derrubaria o isolamento.
+
+O teste de regressão é a execução real: um despacho de squad com o outputs root
+fora da árvore do projeto, afirmando que todos os eventos do trace caem num log
+só e que o cwd do filho é a raiz do projeto. Contra o código antigo ele reprova
+nos três pontos.
+
 ### A retenção de backups ordena por tempo, não pelo formato do nome
 
 O `prune` mantém os cinco backups mais novos de uma entidade e os encontra

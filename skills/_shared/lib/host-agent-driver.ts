@@ -118,8 +118,8 @@ export function salientError(stderr: string, fallback: string, max = 500): strin
   return chosen.length <= max ? chosen : chosen.slice(0, max - 1) + "…";
 }
 
-function writePromptFile(prompt: string): string {
-  const f = path.join(os.tmpdir(), `nrv-prompt-${Date.now()}-${Math.random().toString(36).slice(2)}.md`);
+function writePromptFile(prompt: string, prefix = "nrv-prompt"): string {
+  const f = path.join(os.tmpdir(), `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}.md`);
   fs.writeFileSync(f, prompt, "utf8");
   return f;
 }
@@ -999,7 +999,6 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
   const args: string[] = ["-p", "--output-format", "json"];
 
   if (opts.sessionId) args.push("--resume", opts.sessionId);
-  if (opts.appendSystemPrompt) args.push("--append-system-prompt", opts.appendSystemPrompt);
   // Model: caller's explicit value > system model (what the user's session
   // runs) > CLI default. Without this, the child `claude -p` falls to the
   // default (sonnet) instead of inheriting the interactive session's fable/opus.
@@ -1033,13 +1032,26 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
   if (typeof opts.maxBudgetUsd === "number") args.push("--max-budget-usd", String(opts.maxBudgetUsd));
   for (const d of opts.addDirs ?? []) args.push("--add-dir", d);
 
-  const r = driverSpawnSync("claude", args, {
-    cwd: opts.cwd,
-    input: opts.prompt,
-    encoding: "utf8",
-    ...(typeof opts.timeoutMs === "number" ? { timeout: opts.timeoutMs } : {}),
-    maxBuffer: 64 * 1024 * 1024,
-  });
+  // The directive goes LAST, and under a shell it does not go through argv at all
+  // (claudeDirectiveArgs). Defence in depth: the file delivery is the cure, and last
+  // position means that even a runtime whose CLI lacks the file flag can only ever lose
+  // the tail of the directive — never an `--add-dir` grant or the permission mode, which
+  // is what a 6251-character command line silently dropped before this.
+  const directive = claudeDirectiveArgs(opts.appendSystemPrompt ?? "", resolveExecutable("claude").shell);
+  args.push(...directive.args);
+
+  let r!: SpawnSyncReturns<string>;
+  try {
+    r = driverSpawnSync("claude", args, {
+      cwd: opts.cwd,
+      input: opts.prompt,
+      encoding: "utf8",
+      ...(typeof opts.timeoutMs === "number" ? { timeout: opts.timeoutMs } : {}),
+      maxBuffer: 64 * 1024 * 1024,
+    });
+  } finally {
+    removeTmpFiles(directive.tmpFiles);
+  }
 
   const durationMs = Date.now() - started;
   const exitCode = r.status ?? (r.signal ? 124 : 1);
@@ -1771,6 +1783,26 @@ export function runtimeAvailable(runtime: Runtime): boolean {
   // perfectly invocable. Same reason in whichSync below.
   const r = spawnSync(probe, [bin], { encoding: "utf8", env: process.env });
   return r.status === 0;
+}
+
+/**
+ * How the multi-line system directive reaches `claude`, per start path.
+ *
+ * A `.cmd`/`.bat` runtime — every npm-installed CLI — can only be started through the
+ * command interpreter (resolveExecutable), and cmd.exe ends the command line at the first
+ * CR/LF of an argument however it is quoted: quoteForCmd cannot help, because the limit is
+ * the parser and not the escaping. The directive is the one argument here that spans lines,
+ * so under a shell it travels as `--append-system-prompt-file <temp file>` and the command
+ * line stays single-line. Without a shell it stays inline, exactly as before.
+ *
+ * The same defect and the same cure already live in control-plane/maestro-turn.ts; the
+ * headless driver every dispatched child goes through had been left out of it.
+ */
+export function claudeDirectiveArgs(directive: string, shell: boolean): { args: string[]; tmpFiles?: string[] } {
+  if (!directive) return { args: [] };
+  if (!shell) return { args: ["--append-system-prompt", directive] };
+  const file = writePromptFile(directive, "nrv-directive");
+  return { args: ["--append-system-prompt-file", file], tmpFiles: [file] };
 }
 
 /** TEST-ONLY seams. Not part of the public driver contract. */

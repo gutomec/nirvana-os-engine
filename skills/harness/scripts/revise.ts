@@ -144,8 +144,8 @@ appendAudit({ event: "revision_requested", trace_id: projectId, project_id: proj
 const res = runHeadless({
   runtime: rt,
   prompt: revisePrompt,
-  cwd: projDir,
-  addDirs: [projectRoot],
+  cwd: projectRoot,
+  addDirs: [projDir, oroot],
   sessionId,
   appendSystemPrompt: AUTONOMOUS_DIRECTIVE,
   maxBudgetUsd: maxBudget ? parseFloat(maxBudget) : undefined,
