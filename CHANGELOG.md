@@ -8,6 +8,90 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### `nrv validate` is the admission gate for squads, businesses and mind-clones
+
+Every squad, business and mind-clone that enters the library now has one
+command that admits or rejects it. `nrv validate <squad|business|mind-clone>
+<slug|path>` runs the criteria of its kind, prints a PASS/WARN/FAIL table and a
+`Verdict: ADMITTED | REJECTED`, and `--fix` applies the mechanical repairs.
+`nrv verify` is an alias; `biz`, `clone` and `mc` are kind aliases; a directory
+argument detects its own kind from the manifest on disk. `--all` walks every
+installed entity of a kind, `--pack <content-dir>` walks a pack before it
+ships, and `--json` answers `nirvana.verify-report/v1` (a batch answers
+`nirvana.verify-batch/v1`).
+
+| Exit | Meaning |
+|---|---|
+| 0 | Admitted |
+| 1 | An error the debt baseline does not cover |
+| 2 | Only warnings, under `--strict` |
+| 64 | Usage error, unknown kind, or an entity that does not resolve |
+
+The verb changed owner. `nrv validate` used to be a 20-line alias of the system
+doctor; the doctor keeps `nrv doctor`, unchanged, and bare `nrv validate` still
+runs it with a deprecation notice for one release. `nrv validate-mind-clones`
+(and `mc-validate`) now delegates to the module and keeps every JSON key it
+printed before — `target`, `total`, `ok`, `failed`, `results[].{file, ok,
+errors, warnings}` — adding `findings`. The Glance routes
+`GET /api/mind-clones/validate` and `/validate-all` call the same module, keep
+`ok` / `errors` / `warnings`, and gain `findings`.
+
+Recorded debt may only shrink. Criteria the validation pipeline produces and no
+text edit can honestly repair — a missing `validation_verdict`, missing
+`source_material`, low `^[FONTE:]` density, a missing `routing:` block — are
+baselineable: `$NIRVANA_HOME/.nirvana/.verify-baseline.json` records them, they
+show as `DEBT`, and they stop rejecting. `--record` merges per entity (recording
+pack A never erases what only pack B can see), refuses to add debt without
+`--allow-regression`, and imports `.admission-baseline.json` and
+`.seat-sufficiency-baseline.json` once. Hard errors are never baselineable. A
+caller in hook mode that finds no baseline at all grandfathers what it sees
+instead of failing the whole installed library on day one; the explicit CLI
+stays honest.
+
+`--fix` is the improve-squad loop without the LLM: check, back up with
+`fs.cpSync` (never rsync — the CI matrix runs Windows) under
+`$NIRVANA_HOME/.nirvana/verify-backups/<kind>/<slug>.<ts>/` keeping the last
+five, apply the fixers in a fixed order with `surface_regen` last, re-check, and
+roll back byte for byte when a fixer threw, the manifest stopped parsing, or a
+new error appeared. A second run is a no-op: every fixer compares before it
+writes, and YAML is edited through the document API so comments and key order
+survive. No fixer deletes authored content, and none fabricates a source or a
+citation.
+
+The mind-clone catalog is the first complete one: 10 errors (manifest parse and
+schema, name mismatch, the four canonical artifacts, the persona validator,
+numbered category, malformed domain item, unknown verdict, fewer than three DNA
+layers, missing contract surface) and 17 warnings (artifact status, the routing
+block and its `one_liner`, domain count, negations, slashes and conflicts with
+`refuses`, `serves`, `not_for`, retired `delegates_to`, verdict, sources, DNA
+layer counts, `^[FONTE:]` density, unsupported `source_coverage`, stale
+surface, self-retrieval). Six mechanical fixers back them:
+`manifest_name_sync`, `category_bare`, `delegates_to_strip`,
+`artifacts_status_sync`, `dna_layers_sync`, `surface_regen`. `category` is bare
+kebab-case, the live form of the library, and the numbered legacy prefix is the
+error. `MindCloneManifestSchema` (Zod) is now the executed mirror of
+`mind-clone.schema.json`, which nothing used to read, with the three verdicts
+the library already carries; `mind-clone-schema-parity.test.ts` compares the two
+key by key. Squads and businesses land with the criteria every kind shares (the
+manifest parses, `.nirvana-surface.json` exists and matches disk) so the CLI
+works end to end for all three kinds; their full catalogs follow.
+
+Everything runs in-process — no spawned loader, no LLM — so `--all` over 555
+clones costs seconds, and the BM25 index of the self-retrieval axis is built
+once per batch. Contract and criteria:
+`docs/architecture/validate-gate.md`. Proof: `verify-runner.test.ts`,
+`verify-backup.test.ts`, `verify-baseline.test.ts`, `verify-mind-clone.test.ts`,
+`mind-clone-schema-parity.test.ts`, `validate-cli-alias.test.ts`.
+
+### Plan mode is off-limits while a dispatch is running
+
+The orchestrator and the seven `agent-x` personas now carry one rule: never
+switch the runtime into its own plan mode while orchestrating or executing a
+dispatch. It makes the session and every subagent read-only and stalls the run.
+Planning in Nirvana-OS is a written artifact — the enriched brief in
+`.nirvana/briefs/`, a multi-target plan in `.nirvana/plans/`. When the runtime
+is already in plan mode, the agent asks the user once to leave it and stops,
+instead of retrying the exit dialog against a read-only session.
 ### The contract surface stops depending on the workflow file extension
 
 Squad Protocol v6 moves workflows to Markdown: a frontmatter graph plus a prose

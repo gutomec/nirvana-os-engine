@@ -42,6 +42,7 @@ Este diretório é a fonte canônica para a evolução integrada do Run Kernel, 
 22. [Estado da implementação](implementation-status.md)
 23. [Configuração](configuration.md)
 24. [Configuração pelo Glance](glance-settings.md)
+25. [Portão de admissão `nrv validate`](validate-gate.md)
 
 ## ADRs
 

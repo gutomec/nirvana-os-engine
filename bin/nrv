@@ -10,11 +10,11 @@
 #   nrv use-businesses "<brief>"          → route forcing business-first preference
 #   nrv use-squads "<brief>"              → route forcing squad-first preference
 #   nrv find "<query>"                    → dry-run capability discovery
-#   nrv validate                          → harness self-test
+#   nrv validate <kind> <slug|path>       → admission gate (squad|business|mind-clone); bare = deprecated doctor alias
 #   nrv index                             → re-index squads + businesses
 #   nrv config list|get|set|unset|explain → operational settings (value + origin per key)
 #   nrv init <target_dir> [--copy]        → bootstrap a new Nirvana project
-#   nrv validate-mind-clones              → audit canonical mind-clone library
+#   nrv validate-mind-clones              → audit the mind-clone library (alias of validate mind-clone --all)
 #   nrv help                              → list all sub-commands
 
 set -euo pipefail
@@ -118,8 +118,9 @@ case "$cmd" in
     exec "$BUN_BIN" "$SKILLS/harness/scripts/route.ts" "$@" --prefer squad ;;
   find)
     exec "$BUN_BIN" "$SKILLS/harness/scripts/find.ts" "$@" ;;
-  validate)
-    exec "$BUN_BIN" "$SKILLS/harness/scripts/validate.ts" "$@" ;;
+  validate|verify)
+    # the admission gate; bare `nrv validate` still runs the doctor with a deprecation notice
+    exec "$BUN_BIN" "$SKILLS/_shared/scripts/verify.ts" "$@" ;;
   watch|tail)
     exec "$BUN_BIN" "$SKILLS/harness/scripts/watch.ts" "$@" ;;
   watch-fs|fswatch)
