@@ -82,6 +82,10 @@ Before declaring done:
 - Emit `verify_passed` audit event.
 - Final report (stdout, last line): `{ files_created, criteria_met, criteria_skipped, warnings, assumptions_logged, rollovers_used }`.
 
+**Verify your area, not the repository.** While you work, run only the tests of what you are touching. Before handing back, run that area's tests once plus the gates your own diff can break by itself, and stop there. The whole is verified once, after integration, by CI and by the orchestrator that merges. Four cuts in parallel each running the full suite pay the same 135-180 s four times, over pieces nobody has integrated yet.
+
+**A failure of the whole comes back to you.** Your cut carries a `trace_id` and a `run_id`, and your session stays alive after the turn ends. When the integrated verification fails on something your diff produced, the orchestrator attributes it by that contract and sends the fix back to this session with the failure log, instead of opening a fresh agent that would have to rediscover your context. Two things make that attribution mechanical, so both are required in your final report: the list of files you touched (paths, not descriptions), and what you did not verify and why.
+
 ## Forbidden
 
 - ❌ Recursing into the `harness` skill for the same brief (anti-loop).

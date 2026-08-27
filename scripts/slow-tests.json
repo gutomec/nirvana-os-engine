@@ -1,0 +1,143 @@
+{
+  "threshold_seconds": 1,
+  "measured_at": "2026-08-27",
+  "note": "Files at or over threshold_seconds, measured one Bun process each by scripts/test-timings.ts. `bun run test:fast` runs the complement; `bun run test:full` runs everything.",
+  "files": [
+    {
+      "path": "skills/harness/tests/routing-eval.test.ts",
+      "seconds": 27.38
+    },
+    {
+      "path": "skills/_shared/tests/verify-squad.test.ts",
+      "seconds": 7.54
+    },
+    {
+      "path": "skills/harness/tests/driver-ledger-heartbeat.test.ts",
+      "seconds": 6.75
+    },
+    {
+      "path": "skills/harness/tests/routing-multilingual-probes.test.ts",
+      "seconds": 5.29
+    },
+    {
+      "path": "skills/_shared/tests/verify-business.test.ts",
+      "seconds": 4.75
+    },
+    {
+      "path": "skills/harness/tests/multi-target-cli.test.ts",
+      "seconds": 4.58
+    },
+    {
+      "path": "skills/harness/tests/project-contract-check.test.ts",
+      "seconds": 4.57
+    },
+    {
+      "path": "skills/squads/tests/migrate-squad.test.ts",
+      "seconds": 3.95
+    },
+    {
+      "path": "skills/harness/tests/driver-watchdog.test.ts",
+      "seconds": 3.29
+    },
+    {
+      "path": "skills/harness/tests/gauntlet-evaluator-dispatch.e2e.test.ts",
+      "seconds": 3.14
+    },
+    {
+      "path": "skills/harness/tests/activate-batch.test.ts",
+      "seconds": 2.88
+    },
+    {
+      "path": "skills/harness/tests/revise-delivery.test.ts",
+      "seconds": 2.8
+    },
+    {
+      "path": "skills/_shared/tests/verify-runner.test.ts",
+      "seconds": 2.56
+    },
+    {
+      "path": "skills/harness/tests/glance-agent-x-canary-e2e.test.ts",
+      "seconds": 2.55
+    },
+    {
+      "path": "skills/harness/tests/dispatch-gauntlet-ledger.e2e.test.ts",
+      "seconds": 2.53
+    },
+    {
+      "path": "skills/harness/tests/glance-message-route.test.ts",
+      "seconds": 2.38
+    },
+    {
+      "path": "skills/harness/tests/dispatch-standard-kernel.e2e.test.ts",
+      "seconds": 2.33
+    },
+    {
+      "path": "skills/harness/tests/serve-queue-sse.test.ts",
+      "seconds": 2.23
+    },
+    {
+      "path": "skills/harness/tests/bridge-cases.test.ts",
+      "seconds": 1.9
+    },
+    {
+      "path": "skills/harness/tests/driver-adapters.test.ts",
+      "seconds": 1.9
+    },
+    {
+      "path": "skills/harness/tests/gauntlet-evaluator-adapter.test.ts",
+      "seconds": 1.85
+    },
+    {
+      "path": "skills/harness/tests/run-kernel.test.ts",
+      "seconds": 1.73
+    },
+    {
+      "path": "skills/harness/tests/not-for-fires.test.ts",
+      "seconds": 1.67
+    },
+    {
+      "path": "skills/harness/tests/driver-autonomy-flags.test.ts",
+      "seconds": 1.55
+    },
+    {
+      "path": "skills/harness/tests/serve-api.test.ts",
+      "seconds": 1.52
+    },
+    {
+      "path": "skills/harness/tests/init-existing-project.test.ts",
+      "seconds": 1.35
+    },
+    {
+      "path": "skills/harness/tests/config-command.test.ts",
+      "seconds": 1.34
+    },
+    {
+      "path": "skills/harness/tests/judge-x-dispatch.e2e.test.ts",
+      "seconds": 1.32
+    },
+    {
+      "path": "skills/harness/tests/buyer-path.test.ts",
+      "seconds": 1.3
+    },
+    {
+      "path": "skills/_shared/tests/runtime-links.test.ts",
+      "seconds": 1.25
+    },
+    {
+      "path": "skills/businesses/tests/business-audit-criteria.test.ts",
+      "seconds": 1.17
+    },
+    {
+      "path": "skills/businesses/tests/business-fixers.test.ts",
+      "seconds": 1.16
+    },
+    {
+      "path": "skills/harness/tests/doctor-evaluator.test.ts",
+      "seconds": 1.04
+    },
+    {
+      "path": "skills/harness/tests/watermark-gate.test.ts",
+      "seconds": 1
+    }
+  ]
+}

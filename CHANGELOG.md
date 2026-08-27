@@ -63,6 +63,79 @@ allowed when the work calls for it; the scope guard and directory permissions
 are untouched. Glance is untouched too: it never read the ledger, and its
 consumption views already open in the project scope.
 
+### The dev loop stops paying for the whole repository on every check
+
+`bun test skills` was the only thing anyone could type, and it runs 176 files in 135-180 s. A
+two-line change bought the whole engine. Per-file measurement on 27/08/2026, one Bun process each,
+put the total at 138.3 s: 34 files account for 114.6 s of it, and one file, `routing-eval.test.ts`,
+accounts for 27.4 s on its own.
+
+`scripts/test-timings.ts` is where those numbers come from. It times one `bun test <file>` per file
+instead of reading Bun's reporter, because the reporter times test CASES while the expensive files
+spend their seconds at module scope, where no case is running. `routing-eval.test.ts` is the
+extreme: near zero case time, 27 s of wall clock. `--write` records every file at or over a second
+in `scripts/slow-tests.json`, and the split below is the output of that measurement rather than
+anyone's intuition.
+
+| Script | Runs | Measured |
+|---|---|---|
+| `test:fast` | the 144 files that measured under 1 s | 19 s |
+| `test:squads` | 8 files | 4 s |
+| `test:businesses` | 6 files | 3 s |
+| `test:shared` | 37 files | 20 s |
+| `test:harness` | 127 files | 81 s |
+| `test:gate` | the admission and quality suites | 18 s |
+| `test:full`, and `test` | everything, unchanged | 135-180 s |
+| `check:quick` | the nine gates that finish in milliseconds | 0.6 s |
+| `check:all` | all fourteen, unchanged | CI |
+
+Measurement beat the guess in one place worth naming. Four of the eight `*.e2e.test.ts` files
+finish under a second, so they stay in `test:fast`, where an exclusion written by filename pattern
+would have thrown them out.
+
+`test-script-coverage.test.ts` keeps the split from rotting: the four area scripts have to cover
+every file on disk exactly once, `test:fast` and the slow manifest have to partition the same set,
+and the three measured heavyweights may not drift back into the fast half. Every path is walked,
+stored and compared in POSIX form on all three platforms, because `path.relative` returns
+`skills\harness\tests\x.test.ts` on Windows while package.json and `slow-tests.json` hold `/`, and
+an unnormalized comparison reads the entire suite as uncovered.
+
+### The routing eval remembers a verdict it already reached
+
+`routing-eval.test.ts` rebuilt the golden set whenever the registry files' mtime moved, and
+`nrv index` rewrites those files on every run. Measured on 27/08/2026: mtime 1787814306 became
+1787814328, same 5,028,411 bytes, same SHA-256 once the `generated_at` stamp is dropped. A re-index
+that changed nothing bought a golden-set rebuild and the 27 s eval behind it.
+
+Staleness is decided by content now. `registryFingerprint()` hashes the registry loader's
+projection, which is exactly what `build-golden-set.ts` reads and what `router.js` indexes, and
+that projection carries no timestamp. The golden set stores the two hashes next to the paths it was
+built from; one built before the field existed carries no hash and is rebuilt once.
+
+The eval itself is memoized on the same principle. `runEvalCached()` keys on the registries, the
+golden cases, the negatives, every top-level source under `harness/lib` and `_shared/lib`, and the
+three router env flags. Back to back, same inputs: 29.7 s cold, 0.15 s warm, and all nine
+assertions read the same numbers (top1 98.5%, MRR 0.989, NO_MATCH 73.3% on 3,449 cases). The key
+errs wide deliberately, since over-invalidating costs one 27 s re-run while under-invalidating
+reports a green routing gate for an engine nobody measured. `NIRVANA_EVAL_NO_CACHE=1` turns it off,
+and `scripts/test-timings.ts` sets it so a warm cache can never make the heaviest file in the suite
+look cheap. CI starts from a clean checkout, finds no cache file and always measures.
+
+### Verification by area becomes the contract, and a failure knows whose it is
+
+The gate was being paid per slice. Four agents cutting four pieces of one change each ran the full
+suite and all fourteen checks over code nobody had integrated yet, and when the merged tree failed,
+no one could say which cut produced it, so the fix went to a fresh agent that had to rediscover the
+context first.
+
+Rule 11 of `skills/harness/SKILL.md` and a matching passage in all seven `agent-x.*.md` personas
+now say it plainly. A dispatched cut verifies its own area and stops there. The whole is verified
+once, after integration, by CI on the three systems and by the orchestrator that merges. A failure
+of the whole is attributed to the cut that produced it, by trace id, commit and diff, and the fix
+goes back to that cut's own session rather than to a new agent. Two things became required in a
+cut's final report, because they are what turns attribution into a lookup: the list of files it
+touched, as paths, and what it did not verify and why.
+
 ### The capability a squad was chosen for reaches the prompt, the Run and the provenance
 
 A squad is not one entry point. The installed library declares 657 capabilities

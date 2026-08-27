@@ -20,10 +20,29 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { createHash } from "node:crypto";
 
 const registryLoader = require(path.join(import.meta.dir, "..", "lib", "registry-loader.js"));
 
 const OUTPUT_PATH = path.join(import.meta.dir, "..", "baselines", "golden-routing.json");
+
+/**
+ * Fingerprint of the two registries AS THEIR READERS SEE THEM.
+ *
+ * registry-loader projects each file onto the fields this script and router.js
+ * read, and the projection leaves `generated_at` behind — so re-indexing an
+ * unchanged library yields the same fingerprint. mtime does not have that
+ * property, and the staleness check used to key on mtime: every `nrv index`
+ * declared the golden set stale and forced a rebuild of a file whose content
+ * was identical, followed by a ~30s eval.
+ *
+ * Lives here, not in eval-routing.ts, so the staleness check can be made
+ * without loading the router.
+ */
+export function registryFingerprint(registries: any): { squads: string; businesses: string } {
+  const sha = (v: any) => createHash("sha256").update(JSON.stringify(v ?? null)).digest("hex");
+  return { squads: sha(registries?.squads), businesses: sha(registries?.businesses) };
+}
 
 // ── language guess ──────────────────────────────────────────────────────────
 
@@ -168,11 +187,20 @@ if (import.meta.main) {
     byKind[c.kind] = (byKind[c.kind] || 0) + 1;
   }
 
+  const fingerprint = registryFingerprint({ squads, businesses });
+
   const golden = {
     generated_at: new Date().toISOString(),
     source_registries: {
       squads_path: squads.source_path,
       businesses_path: businesses.source_path,
+      // Content, not mtime: `nrv index` rewrites both files on every run and
+      // stamps a fresh `generated_at`, so an mtime key called the golden set
+      // stale after a re-index that changed nothing. The fingerprint covers
+      // the loader's projection — exactly what this script reads and what
+      // router.js indexes — and that projection carries no timestamp.
+      squads_sha256: fingerprint.squads,
+      businesses_sha256: fingerprint.businesses,
       squads_mtime: fs.statSync(squads.source_path).mtime.toISOString(),
       businesses_mtime: fs.statSync(businesses.source_path).mtime.toISOString(),
     },

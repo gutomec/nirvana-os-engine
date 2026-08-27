@@ -63,6 +63,82 @@ quando o trabalho pedir; o scope guard e as permissões de diretório ficam
 intactos. O Glance também fica: ele nunca leu o ledger, e as suas visões de
 consumo já abrem no escopo do projeto.
 
+### O laço de desenvolvimento para de pagar o repositório inteiro a cada verificação
+
+`bun test skills` era a única coisa que alguém podia digitar, e ele roda 176 arquivos em 135-180 s.
+Uma mudança de duas linhas comprava o engine inteiro. A medição por arquivo em 27/08/2026, um
+processo do Bun para cada um, deu 138,3 s no total: 34 arquivos respondem por 114,6 s disso, e um
+único arquivo, o `routing-eval.test.ts`, responde por 27,4 s sozinho.
+
+O `scripts/test-timings.ts` é de onde esses números vêm. Ele cronometra um `bun test <arquivo>` por
+arquivo em vez de ler o repórter do Bun, porque o repórter cronometra CASOS de teste enquanto os
+arquivos caros gastam seus segundos no escopo do módulo, onde nenhum caso está rodando. O
+`routing-eval.test.ts` é o extremo: tempo de caso perto de zero, 27 s de relógio. O `--write`
+registra todo arquivo com um segundo ou mais em `scripts/slow-tests.json`, e a divisão abaixo é a
+saída dessa medição, não a intuição de ninguém.
+
+| Script | Roda | Medido |
+|---|---|---|
+| `test:fast` | os 144 arquivos que mediram menos de 1 s | 19 s |
+| `test:squads` | 8 arquivos | 4 s |
+| `test:businesses` | 6 arquivos | 3 s |
+| `test:shared` | 37 arquivos | 20 s |
+| `test:harness` | 127 arquivos | 81 s |
+| `test:gate` | as suítes de admissão e de qualidade | 18 s |
+| `test:full`, e o `test` | tudo, sem mudança | 135-180 s |
+| `check:quick` | os nove gates que terminam em milissegundos | 0,6 s |
+| `check:all` | os catorze, sem mudança | CI |
+
+A medição venceu o chute em um ponto que vale nomear. Quatro dos oito arquivos `*.e2e.test.ts`
+terminam em menos de um segundo, então ficam no `test:fast`, de onde uma exclusão escrita por
+padrão de nome os teria tirado.
+
+O `test-script-coverage.test.ts` impede que a divisão apodreça: os quatro scripts de área precisam
+cobrir todo arquivo em disco exatamente uma vez, o `test:fast` e o manifesto dos lentos precisam
+particionar o mesmo conjunto, e os três pesos-pesados medidos não podem voltar para a metade
+rápida. Todo caminho é percorrido, gravado e comparado em forma POSIX nos três sistemas, porque o
+`path.relative` devolve `skills\harness\tests\x.test.ts` no Windows enquanto o package.json e o
+`slow-tests.json` guardam `/`, e uma comparação sem normalizar lê a suíte inteira como descoberta.
+
+### A avaliação de roteamento lembra do veredito a que já chegou
+
+O `routing-eval.test.ts` reconstruía o conjunto dourado sempre que o mtime dos arquivos de registro
+mudava, e o `nrv index` reescreve esses arquivos a cada execução. Medido em 27/08/2026: o mtime
+1787814306 virou 1787814328, os mesmos 5.028.411 bytes, o mesmo SHA-256 depois de tirar o carimbo
+`generated_at`. Uma reindexação que não mudou nada comprava uma reconstrução do conjunto dourado e
+os 27 s de avaliação atrás dela.
+
+A obsolescência passa a ser decidida por conteúdo. O `registryFingerprint()` faz o hash da projeção
+do carregador de registros, que é exatamente o que o `build-golden-set.ts` lê e o que o `router.js`
+indexa, e essa projeção não carrega carimbo de tempo. O conjunto dourado guarda os dois hashes ao
+lado dos caminhos de onde foi construído; um conjunto construído antes do campo existir não tem
+hash e é reconstruído uma vez.
+
+A avaliação em si é memorizada pelo mesmo princípio. O `runEvalCached()` chaveia nos registros, nos
+casos dourados, nos negativos, em todo fonte de primeiro nível sob `harness/lib` e `_shared/lib`, e
+nas três variáveis de ambiente do roteador. Uma execução atrás da outra, com as mesmas entradas:
+29,7 s a frio, 0,15 s a quente, e as nove asserções leem os mesmos números (top1 98,5%, MRR 0,989,
+NO_MATCH 73,3% em 3.449 casos). A chave erra para o lado largo de propósito, já que invalidar
+demais custa uma reexecução de 27 s enquanto invalidar de menos entrega um gate de roteamento verde
+para um engine que ninguém mediu. O `NIRVANA_EVAL_NO_CACHE=1` desliga tudo, e o
+`scripts/test-timings.ts` o define para que um cache quente nunca faça o arquivo mais pesado da
+suíte parecer barato. O CI parte de um checkout limpo, não acha arquivo de cache e sempre mede.
+
+### A verificação por área vira contrato, e uma falha sabe de quem é
+
+O gate estava sendo pago por pedaço. Quatro agentes cortando quatro pedaços de uma mesma mudança
+rodavam cada um a suíte inteira e os catorze checks sobre código que ninguém tinha integrado, e
+quando a árvore mesclada reprovava, ninguém sabia dizer qual corte produziu aquilo, então a
+correção ia para um agente novo que precisava redescobrir o contexto antes.
+
+A Regra 11 do `skills/harness/SKILL.md` e um trecho equivalente nas sete personas `agent-x.*.md`
+passam a dizer isso com todas as letras. Um corte despachado verifica a própria área e para por aí.
+O todo é verificado uma vez, depois da integração, pelo CI nos três sistemas e pelo orquestrador
+que mescla. Uma falha do todo é atribuída ao corte que a produziu, pelo trace id, pelo commit e
+pelo diff, e a correção volta para a sessão daquele corte em vez de ir para um agente novo. Duas
+coisas viraram obrigatórias no relatório final de um corte, porque são o que transforma atribuição
+em consulta: a lista de arquivos que ele tocou, em caminhos, e o que ele não verificou e por quê.
+
 ### A capability pela qual o squad foi escolhido chega ao prompt, ao Run e à proveniência
 
 Um squad não é um único ponto de entrada. A biblioteca instalada declara 657

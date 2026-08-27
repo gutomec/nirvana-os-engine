@@ -142,6 +142,21 @@ Never switch the runtime into its own plan mode (Claude Code plan mode, Codex pl
 
 ---
 
+### Rule 11 — A cut verifies its area; the whole is verified once, after integration
+
+A dispatched cut verifies **its own area**. While it works it runs only the tests of what it is touching. Before it hands back it runs that area's tests once, plus the gates its own diff can break by itself, and it stops there. It does not run the full suite and it does not run `check:all`.
+
+The whole is verified **once, after integration**: by CI on the three systems, and by you when you merge. That is not a weaker gate, it is the same gate charged once instead of once per slice. Measured on this engine on 27/08/2026, the full suite costs 135-180 s and `check:all` adds fourteen more checks, so four parallel cuts each running both spend twenty minutes proving things about code nobody has integrated yet. The same twenty minutes buy one honest verdict when they run on the merged tree.
+
+Two obligations make the arrangement safe, and both belong in the dispatch instruction you write:
+
+- **Every cut names what it touched and what it did not verify.** File paths, not descriptions, plus the areas outside its own that it suspects it may have broken, and why. That is what turns attribution into a lookup instead of a hunt.
+- **A failure of the whole is attributed to the cut that produced it, and the fix goes back to that cut's session.** Not to a fresh agent: the session that wrote the code still holds the context, and re-deriving it is the expensive part. Match the failing files against each cut's `trace_id`, commit and diff, then send the failure log back to that session.
+
+The loop the engine gives a cut: `bun test <dir>` while working, `bun run test:fast` for a whole-repo smell check (144 files, 19 s, everything the timing script measured under 1 s), `bun run test:<area>` once before handing back, `bun run check:quick` during (nine gates, 0.6 s), and `bun run test:full` plus `bun run check:all` once on the integrated tree. Write a large new file in blocks with the area's tests running between them: a single 700-line write measured 173 s, and three of them stalled one cut for eight minutes.
+
+---
+
 ---
 
 ## Pipeline — Agentic Mode
