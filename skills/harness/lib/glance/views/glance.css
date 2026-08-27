@@ -631,6 +631,26 @@ body {
 .action-btn.warning:hover { filter: brightness(0.95); }
 .action-btn.small { font-size: var(--text-xs); padding: var(--space-1) var(--space-2); }
 
+/* ─── Admission gate verdict (nrv validate, read-only) ─── */
+.verify-panel {
+  margin: 0 var(--space-4) var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  background: var(--surface-1);
+  display: flex; flex-direction: column; gap: 6px;
+  max-height: 280px; overflow-y: auto;
+}
+.verify-verdict { font-weight: var(--weight-medium); font-size: var(--text-sm); }
+.verify-verdict.ok { color: var(--status-success-fg); }
+.verify-verdict.bad { color: var(--status-danger-fg); }
+.verify-finding {
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  color: var(--text-secondary); line-height: 1.5;
+}
+.verify-finding.error { color: var(--status-danger-fg); }
+.verify-finding.warning { color: var(--status-warn-fg); }
+
 /* ─── Console drawer ─── */
 .console-drawer {
   position: fixed; bottom: 0; left: 0; right: 0;

@@ -307,6 +307,46 @@ export async function startServer(opts: ServerOptions) {
   const problem = (status: number, title: string, detail: string) => new Response(JSON.stringify({
     type: "about:blank", title, status, detail, correlation_id: `cor_${crypto.randomUUID()}`,
   }), { status, headers: { "content-type": "application/problem+json", "cache-control": "no-store" } });
+  /**
+   * `GET /api/v1/verify/<kind>/<slug>` — one entity's admission report.
+   *
+   * Read-only by construction: no `--fix`, no `--record`, and the self-
+   * retrieval axis is off (it needs the BM25 index and is the one axis that
+   * can take a second). Repair is a separate, mutating, confirmed action
+   * (`POST /api/actions/verify-fix`).
+   */
+  const verifyRead = async (kind: string, slug: string): Promise<Response> => {
+    const timeoutMs = Number(process.env.NIRVANA_GLANCE_VERIFY_TIMEOUT_MS || 20_000);
+    const script = path.join(SKILLS_ROOT, "_shared", "scripts", "verify.ts");
+    if (!fs.existsSync(script)) return problem(501, "Gate unavailable", `the admission gate is not installed at ${script}`);
+    let child: ReturnType<typeof Bun.spawn> | null = null;
+    try {
+      child = Bun.spawn([process.env.NIRVANA_BUN || "bun", script, kind, slug, "--json", "--no-retrieval"], {
+        env: { ...process.env, NO_COLOR: "1" }, stdout: "pipe", stderr: "pipe",
+      });
+      const proc = child;
+      const finished = (async () => ({ code: await proc.exited, out: await new Response(proc.stdout).text(), err: await new Response(proc.stderr).text() }))();
+      const timedOut = Symbol("timeout");
+      const timer = new Promise<typeof timedOut>((r) => setTimeout(() => r(timedOut), timeoutMs));
+      const outcome = await Promise.race([finished, timer]);
+      if (outcome === timedOut) {
+        try { proc.kill(); } catch { /* already gone */ }
+        return problem(504, "Verify timed out", `the admission gate did not finish in ${timeoutMs}ms for ${kind} ${slug}`);
+      }
+      const { code, out, err } = outcome as { code: number; out: string; err: string };
+      // 64 is the gate's EX_USAGE: an unknown entity, not a server fault.
+      if (code === 64) return problem(404, "Unknown entity", (err || out).trim().slice(0, 400) || `no ${kind} named ${slug}`);
+      try {
+        return json(JSON.parse(out));
+      } catch {
+        return problem(502, "Verify failed", (err || out).trim().slice(0, 400) || `the admission gate exited ${code} with no report`);
+      }
+    } catch (e) {
+      try { child?.kill(); } catch { /* already gone */ }
+      return problem(502, "Verify failed", (e as Error).message);
+    }
+  };
+
   const validId = (value: string, prefix: string) => new RegExp(`^${prefix}_[A-Za-z0-9-]+$`).test(value);
   const writeAuthorized = (req: Request): Response | null => {
     if (!opts.allowActions) return problem(403, "Forbidden", "Glance actions are disabled");
@@ -578,6 +618,16 @@ export async function startServer(opts: ServerOptions) {
             } catch (error) { return settingsProblem(error); }
           });
         }
+        // The admission gate, read-only. It runs in a CHILD PROCESS with a
+        // wall-clock timeout, never in this event loop: a verify over a squad
+        // with 600 workflow steps is tens of milliseconds of synchronous fs
+        // work, and the cockpit is single-threaded — one slow entity would
+        // freeze every other panel while it ran. The child also means a crash
+        // in a kind module is a 502, not a dead server.
+        const verifyMatch = p.match(/^\/api\/v1\/verify\/(squad|business|mind-clone)\/([A-Za-z0-9][A-Za-z0-9._-]*)$/);
+        if (verifyMatch && req.method === "GET") return await verifyRead(verifyMatch[1], verifyMatch[2]);
+        if (verifyMatch) return methodNotAllowed();
+
         return notFound("control-plane route not found");
       }
 
@@ -1979,6 +2029,20 @@ const ACTIONS: Record<string, ActionDef> = {
       return [`${SKILLS}/squads/scripts/activate-squad.ts`, "activate", slug, "--dry-run", "--verbose"];
     },
     mutating: false,
+  },
+  // The repair half of the gate. Mutating (it writes into the entity, with a
+  // backup and an automatic rollback when a fixer makes things worse), so the
+  // panel asks for confirmation before it is ever sent.
+  "verify-fix": {
+    command: "bun",
+    mutating: true,
+    argsBuilder: (b) => {
+      const kind = (b?.kind || "").toString();
+      const slug = (b?.slug || "").toString();
+      if (!["squad", "business", "mind-clone"].includes(kind)) throw new Error("kind must be squad, business or mind-clone");
+      if (!/^[a-z0-9][a-z0-9._-]*$/i.test(slug)) throw new Error("invalid or missing slug");
+      return [`${SKILLS}/_shared/scripts/verify.ts`, kind, slug, "--fix", "--no-retrieval"];
+    },
   },
   "index-squads": {
     command: "bun",

@@ -63,6 +63,7 @@ interface RuntimeProvider {
 | `GET /settings?project_id={id}` | Schema das configurações do engine com valor efetivo, origem e `locked` por chave |
 | `PUT /settings/{key}` | Grava `{ value, scope }` no arquivo do escopo (projeto ou global) |
 | `DELETE /settings/{key}?scope=` | Remove a chave do arquivo do escopo; a camada seguinte passa a valer |
+| `GET /verify/{kind}/{slug}` | Relatório de admissão da entidade (`nirvana.verify-report/v1`); leitura, em processo filho com teto de relógio |
 
 ## 4. Stream
 
@@ -90,6 +91,22 @@ As três rotas de `settings` são adapters do núcleo de configuração (`skills
 | mesma `Idempotency-Key` com outro corpo | `409` |
 
 Uma escrita bem-sucedida responde `{ key, scope, path, from, to, changed, effective }`, onde `effective` é a resolução da chave depois da gravação (o valor em vigor pode continuar vindo de uma camada acima). Cada gravação que muda um arquivo grava `x_settings_changed { key, scope, path, from, to, actor: "glance" }` no audit do projeto. O painel que consome estas rotas está em [Configuração pelo Glance](glance-settings.md).
+
+## 4.3. Portão de admissão
+
+`GET /api/v1/verify/{kind}/{slug}` responde o relatório de `nrv validate` para um squad, uma empresa ou um mind-clone. `kind` é `squad`, `business` ou `mind-clone`; qualquer outro valor não casa a rota e é `404`.
+
+A rota **não roda no laço de eventos**. Ela inicia um processo filho (`nrv validate <kind> <slug> --json --no-retrieval`) com teto de relógio (`NIRVANA_GLANCE_VERIFY_TIMEOUT_MS`, padrão 20 s). O cockpit responde todo painel de uma thread só, e um verify é dezenas de milissegundos de I/O síncrono por entidade: sem o filho, uma entidade lenta congelaria todos os outros painéis enquanto rodasse.
+
+| Situação | Código |
+|---|---|
+| relatório pronto | `200` com `nirvana.verify-report/v1` |
+| entidade que o portão não encontra (exit 64) | `404` |
+| método diferente de `GET` | `405` |
+| o filho não terminou dentro do teto | `504`, nomeando o teto; o servidor continua respondendo |
+| o portão morreu sem relatório | `502`, com a saída de erro no `detail` |
+
+É **leitura**: sem `--fix`, sem `--record`, e com o eixo de auto-recuperação desligado (é o único que precisa do índice BM25). O reparo é uma ação à parte, `POST /api/actions/verify-fix` com `{ kind, slug }`, declarada `mutating: true` e confirmada no painel antes de sair do navegador; ela roda `nrv validate <kind> <slug> --fix`, que tem backup e rollback automático. Um `kind` ou `slug` que a ação não reconhece é `400`, antes de qualquer spawn.
 
 ## 5. Segurança
 

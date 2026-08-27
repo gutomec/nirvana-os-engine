@@ -288,6 +288,21 @@ export const SETTINGS = {
     "Rubrica usada quando produces[] não casa com nenhuma.", { default: "prose_shortform", type: z.string().min(1), expects: "nome de rubrica" }),
   "quality_gate.default_judge_model": stringSetting("quality_gate.default_judge_model",
     "Modelo do juiz; inherit = o modelo configurado no runtime do usuário.", { default: "inherit", type: z.string().min(1), expects: "id de modelo ou inherit" }),
+
+  // The admission gate's rollout switches. `verify.mode` is what the HOOKS
+  // read (creation, install, activation, pack build); the explicit CLI
+  // (`nrv validate`) is never governed by it — a user who asks for a verdict
+  // gets the honest one. Defaults ship the gate in report-only so an existing
+  // machine keeps installing what it already has.
+  "verify.mode": enumSetting("verify.mode",
+    "Como os ganchos do portão de admissão tratam um achado: report = só relata; warn = avisa em destaque; block = recusa erro não baselinado.",
+    ["report", "warn", "block"], { default: "report", env: "NIRVANA_VERIFY_MODE" }),
+  "verify.enforce_on_install": booleanSetting("verify.enforce_on_install",
+    "Instalação recusa uma entidade com erro não baselinado (escape: --skip-validate).",
+    { default: false, env: "NIRVANA_VERIFY_ENFORCE_ON_INSTALL" }),
+  "verify.enforce_on_activate": booleanSetting("verify.enforce_on_activate",
+    "`nrv activate` recusa um squad com erro não baselinado antes de instalar dependências (escape: --skip-verify).",
+    { default: false, env: "NIRVANA_VERIFY_ENFORCE_ON_ACTIVATE" }),
 } as const;
 
 export type SettingKey = keyof typeof SETTINGS;

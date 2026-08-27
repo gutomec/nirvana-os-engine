@@ -169,18 +169,29 @@ After that the LLM:
 
 ---
 
-## Final validation (loop until it passes)
+## Final validation — the admission gate (BLOCKING, loop until it passes)
 
 ```bash
-bun ~/.nirvana/skills/squads/scripts/validate-squad.ts ${SQUADS_DIR}/<name>
+nrv validate squad ${SQUADS_DIR}/<name> --strict     # --fix applies the mechanical repairs
 ```
+
+This is the gate, not a linter: it carries the whole criteria catalog of
+`SQUAD_PROTOCOL_V6.md` §34 — manifest, capabilities, workflow graph, component
+refs, contract surface, routing metadata. Require exit 0 alongside the
+self-retrieval gate; a squad that does not pass is not created.
+
+`init-squad.ts` already ran it once, in `--fix` mode, over the scaffold it
+wrote, so the engine-owned files (`.nirvana-surface.json`, the component stubs)
+are on disk before you start filling them in. What is left after your edits is
+authorship, which is yours.
 
 If it fails, read the output and fix:
 - capability error → revisit Round 3
 - missing agent/task/workflow file → fill in the skeleton
 - domain outside the catalog → confirm experimental_domains
+- a finding marked `[agentic]` → write it yourself, or `--fix=agentic --yes`
 
-Do not declare the squad ready until validation passes.
+Do not declare the squad ready until the gate passes.
 
 ---
 

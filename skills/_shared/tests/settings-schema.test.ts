@@ -69,6 +69,9 @@ describe("the table", () => {
       "budget.default_max_cost_usd": null,
       "quality_gate.judge_enabled": null,
       "quality_gate.max_revisions": null,
+      "verify.mode": "NIRVANA_VERIFY_MODE",
+      "verify.enforce_on_install": "NIRVANA_VERIFY_ENFORCE_ON_INSTALL",
+      "verify.enforce_on_activate": "NIRVANA_VERIFY_ENFORCE_ON_ACTIVATE",
     };
     for (const [key, variable] of Object.entries(expected)) expect(getSettingSpec(key)?.env).toBe(variable);
   });

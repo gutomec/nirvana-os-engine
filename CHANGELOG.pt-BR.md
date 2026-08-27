@@ -143,6 +143,56 @@ genérica; um alias não pode ser um slug que outra rubrica já declara, e um te
 `delivery.produces_to_rubric` (padrão `false`) governa o encaminhamento, porque as rubricas cobrem
 cerca de 45 dos 3.024 slugs que a biblioteca declara e um slug sem rubrica tem que degradar para o
 fallback, nunca para uma recusa. Desligado, o juiz recebe `[]` — bit a bit o que ele recebia antes.
+### O portão roda na criação, na instalação, na ativação e no build de packs
+
+O `nrv validate` nasceu como um verbo que ninguém chamava. Os catálogos de critérios, a baseline de
+dívida, o laço `--fix` com backup e rollback — tudo já existia, e uma entidade ainda entrava no
+sistema por outras quatro portas sem que nada disso fosse perguntado. Este corte liga as quatro
+portas a um módulo só, `skills/_shared/lib/verify/hooks.ts`, e o desenho inteiro responde a uma
+restrição: ligar um portão não pode ser o motivo de um pack pago parar de instalar no dia em que sai.
+
+| Momento | Flag desligada (padrão de fábrica) | Flag ligada |
+|---|---|---|
+| Criação (`init-squad`, `init-business`) | reparo mecânico e o veredito impresso | erro que sobra apaga o scaffold |
+| Instalação (`installer.ts`, `install-content.ts`) | avisa por entidade e instala | recusa; nada é escrito |
+| Ativação (`nrv activate`) | avisa e ativa | recusa antes de tocar em qualquer dependência |
+| Build de packs (`check-entity-admission`, `check-seat-sufficiency`) | invólucros de `verifyPack` / `verifyAll`, flags e exit codes congelados | — |
+
+Três regras protegem a máquina do comprador. O `verify.mode` sai em `report` e o
+`verify.enforce_on_install` / `verify.enforce_on_activate` saem em `false`, então com os padrões de
+fábrica todo gancho imprime e segue. Uma máquina sem baseline de dívida GRAVA uma
+(`x_verify_baseline_recorded`, `reason: hook_grandfathering`) em vez de recusar a biblioteca que já
+estava lá — só critérios `baselineable` viram dívida, um erro HARD nunca. E o `--skip-validate` /
+`--skip-verify` sempre passa por cima.
+
+A criação é o único gancho que recusa por padrão, por dois motivos: o `init-business.ts` já apagava
+o scaffold quando o loader falhava, e o gancho repara antes de julgar. Um scaffold é conteúdo
+autoral menos o que o ENGINE possui — os arquivos de componente que o manifesto declara e o
+`.nirvana-surface.json`, que é um hash de arquivos que só existem depois que o wizard os escreve.
+Uma empresa nova era REPROVADA nesse único erro; agora a superfície é gerada no scaffold e tanto um
+squad quanto uma empresa recém-criados nascem ADMITIDOS.
+
+Os dois gates do build de packs viraram invólucros com flags, saída e exit codes intactos, e os
+testes deles não foram editados. Prova além dos testes: rodando contra os 17 diretórios de conteúdo
+de pack (231 entidades só no genesis), a implementação antiga e o invólucro produzem as mesmas
+violações, o mesmo mapa de dívida e as mesmas contagens — depois de fechar duas lacunas reais no
+catálogo de clone, uma `category` numerada legada escrita no topo em vez de sob `manifest:`, e
+`source_material.primary_works`, a grafia antiga que três de 527 clones vivos usam.
+
+O `--fix=agentic` existe de verdade (`skills/_shared/lib/verify/agentic.ts`): passe mecânica
+primeiro, depois cópia de staging, `runHeadless` com o scope-guard, e um resultado aceito só quando
+os erros não cresceram E um achado alvo sumiu. Metadado de roteamento ainda precisa sobreviver ao
+self-retrieval-gate, senão o backup é restaurado. Nada roda sem `--yes` — o exit 2 cita o teto
+(`--budget-usd`, padrão 3) — e o gasto deixa uma linha no ledger mais
+`x_verify_fix_started` / `x_verify_fix_finished`.
+
+No cockpit, `GET /api/v1/verify/<kind>/<slug>` responde o relatório inteiro de um processo FILHO com
+relógio (504 no estouro), porque o servidor é de uma thread só e uma entidade lenta congelaria todos
+os outros painéis. O reparo é uma ação mutante à parte, `POST /api/actions/verify-fix`, confirmada
+antes de sair do navegador; os painéis de squad, empresa e mind-clone ganharam um botão "Verificar".
+O `nrv doctor` ganhou uma seção Protocol contando squads por protocolo e empresas ainda em 1.0 ou
+carregando campos aposentados — WARN, nunca FAIL, porque o CI lê `doctor >= 2` como máquina quebrada
+e uma biblioteca em migração é o estado normal de todo mundo.
 
 ### O laço de desenvolvimento para de pagar o repositório inteiro a cada verificação
 

@@ -11,19 +11,24 @@
  * green. MRR for an unrouted clone is 0.05 against 1.00 routed — the clone
  * shipped, and was invisible.
  *
- * This is the entity-metadata slice of the admission bar. The full bar is the
- * ensemble the build already runs — validate-squad, check-not-for-fires --pack,
- * check-clone-bindings --pack, check-copy-drift — plus this file:
+ * SINCE THE ADMISSION GATE (`nrv validate`), THIS FILE IS A WRAPPER. The
+ * questions below are asked by `verifyPack` (skills/_shared/lib/verify/), one
+ * criterion each, and translated back into this gate's own vocabulary. Its
+ * flags, its output and its exit codes are FROZEN: `build-all-packs.sh:318`
+ * calls it unchanged and its tests are untouched. What changed is that there
+ * is now one implementation of "is this entity admissible" instead of two that
+ * could drift.
  *
  *   HARD (always fails — cheap to fix, zero debt in the source today):
- *     clone MANIFEST parses
- *     clone has routing.one_liner        (the definition of "enriched")
- *     clone category is bare             (not the numbered legacy `09-…` form)
- *     every entity has .nirvana-surface.json
+ *     clone MANIFEST parses                     manifest_parse
+ *     clone has routing.one_liner               routing_block_missing / one_liner_missing
+ *     clone category is bare                    category_numbered
+ *     every entity has .nirvana-surface.json    surface_missing
  *
  *   BASELINED (absolute for NEW entities; recorded debt for existing ones):
- *     clone has validation_verdict       (68 gaps in today's source)
- *     clone has source_material          (23 gaps in today's source)
+ *     clone has validation_verdict              validation_verdict_missing
+ *     clone has source_material                 source_material_missing
+ *     every seat stands without a clone         seat_thin
  *
  * The split follows the fence gate's lesson: verdict and source_material are
  * produced by the validation pipeline, not by a text edit — a bar that fails
@@ -34,7 +39,10 @@
  *
  * The baseline lives beside the machine's global state (like the fence
  * ceiling): it names library entities, which never belong in the engine repo,
- * and it must not move with the working directory.
+ * and it must not move with the working directory. It stays in ITS OWN legacy
+ * shape (`.admission-baseline.json`, `{entities: {slug: Gap[]}}`) — the gate's
+ * own `.verify-baseline.json` imports it once, and until every pack build has
+ * moved over, the two must both be readable.
  *
  * Usage:
  *   bun scripts/check-entity-admission.ts --pack <content-dir>     # the bar (exit 1 on any violation)
@@ -42,12 +50,10 @@
  *   bun scripts/check-entity-admission.ts --pack <dir> --json
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { parseArgs, paths as nrvPaths } from "../skills/_shared/lib/bun-helpers.ts";
-
-const require_ = createRequire(import.meta.url);
-const YAML = require_("yaml");
+import { verifyPack } from "../skills/_shared/lib/verify/index.ts";
+import type { Finding, VerifyReport } from "../skills/_shared/lib/verify/index.ts";
 
 const { flags } = parseArgs(process.argv.slice(2));
 const packDir = typeof flags.pack === "string" ? flags.pack : null;
@@ -73,70 +79,77 @@ const violations: Violation[] = [];
 const debtNow: Record<string, Gap[]> = {};
 const scanned = new Set<string>();
 
-// ── clones ─────────────────────────────────────────────────────────────────
-const clonesRoot = join(packDir, "mind-clones");
+/**
+ * The HARD half, by criterion id. `routing_block_missing` and
+ * `one_liner_missing` are one bar with two causes (no block at all, or a block
+ * without the line), so both carry the sentence this gate has always printed.
+ */
+const HARD_CLONE: Record<string, string | ((f: Finding) => string)> = {
+  manifest_parse: "MANIFEST.yaml does not parse",
+  routing_block_missing: "no routing.one_liner — invisible to semantic dispatch (MRR 0.05 vs 1.00)",
+  one_liner_missing: "no routing.one_liner — invisible to semantic dispatch (MRR 0.05 vs 1.00)",
+  category_numbered: (f) => f.message,
+};
+
+/** The BASELINED half: which criterion becomes which recorded gap. */
+const DEBT_CLONE: Record<string, Gap> = {
+  validation_verdict_missing: "no_verdict",
+  source_material_missing: "no_source",
+};
+
+const PLURAL = { squad: "squads", business: "businesses", "mind-clone": "mind-clones" } as const;
+
+const batch = await verifyPack(packDir, { baselinePath: null, retrieval: false, stateDir: null, emit: null });
+
 let clones = 0;
-if (existsSync(clonesRoot)) {
-  for (const slug of readdirSync(clonesRoot)) {
-    const mf = join(clonesRoot, slug, "MANIFEST.yaml");
-    if (!existsSync(mf)) continue;
-    clones++;
-    scanned.add(slug);
-    let doc: Record<string, unknown> = {};
-    try { doc = YAML.parse(readFileSync(mf, "utf8")) ?? {}; }
-    catch { violations.push({ entity: slug, kind: "hard", problem: "MANIFEST.yaml does not parse" }); continue; }
-    const man = (doc.manifest ?? doc) as Record<string, unknown>;
-    const routing = (doc.routing ?? {}) as Record<string, unknown>;
-
-    if (!routing.one_liner) {
-      violations.push({ entity: slug, kind: "hard", problem: "no routing.one_liner — invisible to semantic dispatch (MRR 0.05 vs 1.00)" });
-    }
-    const cat = String(doc.category ?? man.category ?? "");
-    if (/^\d\d-/.test(cat)) {
-      violations.push({ entity: slug, kind: "hard", problem: `numbered legacy category "${cat}" — the library is bare-form` });
-    }
-    const gaps: Gap[] = [];
-    if (!(doc.validation_verdict ?? man.validation_verdict)) gaps.push("no_verdict");
-    if (!(doc.source_material ?? man.source_material)) gaps.push("no_source");
-    if (gaps.length) debtNow[slug] = gaps;
-  }
-}
-
-// ── seats: every employee body must stand without a clone ──────────────────
-// Baselined, not hard: alientech-360 ships 9 thin seats in the flagship today,
-// and a hard bar with no immediate path out is the bar everyone learns to
-// skip. When enrichment zeroes the debt, the bar is absolute in practice.
-// Keyed by "business/employee.md" so two packs shipping the same business
-// share the debt entry (same rule as clone slugs).
-const { sufficiencyOfFile } = require_("../skills/_shared/lib/seat-sufficiency.js");
-const bizRoot = join(packDir, "businesses");
-if (existsSync(bizRoot)) {
-  for (const biz of readdirSync(bizRoot)) {
-    const empDir = join(bizRoot, biz, "employees");
-    if (!existsSync(empDir)) continue;
-    for (const f of readdirSync(empDir)) {
-      if (!f.endsWith(".md")) continue;
-      const key = `${biz}/${f}`;
-      scanned.add(key);
-      const r = sufficiencyOfFile(readFileSync(join(empDir, f), "utf8"));
-      if (r.verdict === "thin") (debtNow[key] ??= []).push("thin_seat");
-    }
-  }
-}
-
-// ── surface files, every kind ──────────────────────────────────────────────
 let entities = 0;
-for (const kind of ["squads", "businesses", "mind-clones"]) {
-  const root = join(packDir, kind);
-  if (!existsSync(root)) continue;
-  for (const slug of readdirSync(root)) {
-    const dir = join(root, slug);
-    const manifest = kind === "squads" ? "squad.yaml" : kind === "businesses" ? "business.yaml" : "MANIFEST.yaml";
-    if (!existsSync(join(dir, manifest))) continue;
-    entities++;
-    if (!existsSync(join(dir, ".nirvana-surface.json"))) {
-      violations.push({ entity: `${kind}/${slug}`, kind: "hard", problem: "no .nirvana-surface.json — outside the changes/drift mechanism" });
+for (const report of batch.reports as VerifyReport[]) {
+  entities++;
+  const byId = new Map<string, Finding>();
+  for (const f of report.findings) if (!byId.has(f.id)) byId.set(f.id, f);
+  const seen = new Set<string>();
+  const hard = (problem: string) => {
+    if (seen.has(problem)) return;
+    seen.add(problem);
+    violations.push({ entity: report.slug, kind: "hard", problem });
+  };
+
+  if (report.kind === "mind-clone") {
+    clones++;
+    scanned.add(report.slug);
+    for (const [id, problem] of Object.entries(HARD_CLONE)) {
+      const f = byId.get(id);
+      if (f) hard(typeof problem === "string" ? problem : problem(f));
     }
+    // A manifest that does not parse says nothing about the rest of itself.
+    if (!byId.has("manifest_parse")) {
+      const gaps: Gap[] = [];
+      for (const [id, gap] of Object.entries(DEBT_CLONE)) if (byId.has(id)) gaps.push(gap);
+      if (gaps.length) debtNow[report.slug] = gaps;
+    }
+  }
+
+  if (report.kind === "business") {
+    // Keyed by "business/employee.md" so two packs shipping the same business
+    // share the debt entry (same rule as clone slugs). Every seat is scanned,
+    // not only the thin ones: a seat that was enriched must be able to LEAVE
+    // the baseline when `--record` merges.
+    const empDir = join(report.dir, "employees");
+    if (existsSync(empDir)) {
+      for (const f of readdirSync(empDir)) if (f.endsWith(".md")) scanned.add(`${report.slug}/${f}`);
+    }
+    for (const f of report.findings) {
+      if (f.id !== "seat_thin") continue;
+      const key = `${report.slug}/${(f.where ?? "").replace(/^employees\//, "")}`;
+      (debtNow[key] ??= []).push("thin_seat");
+    }
+  }
+
+  if (byId.has("surface_missing")) {
+    violations.push({
+      entity: `${PLURAL[report.kind]}/${report.slug}`, kind: "hard",
+      problem: "no .nirvana-surface.json — outside the changes/drift mechanism",
+    });
   }
 }
 

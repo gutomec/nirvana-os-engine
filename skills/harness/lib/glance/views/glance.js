@@ -161,6 +161,11 @@ function glance() {
     jobStreams: {},
     // Per-kind audit scores: { squads: { slug: {tier, score} }, businesses: ..., 'mind-clones': ... }
     auditScores: { squads: {}, businesses: {}, 'mind-clones': {} },
+    // Admission gate (nrv validate) — one report at a time, keyed "<kind>:<slug>"
+    // so a stale verdict never shows under a different entity.
+    verifyKey: null,
+    verifyReport: null,
+    verifyBusy: false,
 
     // ─── Computed ───
     get currentList() {
@@ -2222,6 +2227,30 @@ function glance() {
         this.flash(`✗ ${e.message}`, 4000);
       }
     },
+    // ─── Admission gate ───
+    // Read-only: the server runs `nrv validate --json` in a child with a
+    // timeout, so a slow entity answers 504 instead of freezing the cockpit.
+    async verifyEntity(kind, slug) {
+      if (!slug || this.verifyBusy) return;
+      this.verifyBusy = true;
+      this.verifyKey = `${kind}:${slug}`;
+      this.verifyReport = null;
+      try {
+        const r = await fetch(`/api/v1/verify/${kind}/${encodeURIComponent(slug)}`);
+        const data = await r.json();
+        if (!r.ok) { this.flash(`✗ ${data.title || 'verify'}: ${data.detail || r.status}`, 5000); this.verifyKey = null; return; }
+        this.verifyReport = data;
+        const s = data.summary || {};
+        this.flash(`${data.verdict} · ${s.errors || 0} erro(s), ${s.warnings || 0} aviso(s)`, 3000);
+      } catch (e) {
+        this.flash(`✗ ${e.message}`, 4000);
+        this.verifyKey = null;
+      } finally {
+        this.verifyBusy = false;
+      }
+    },
+    verifyShown(kind, slug) { return !!this.verifyReport && this.verifyKey === `${kind}:${slug}`; },
+    verifyFixable() { return (this.verifyReport?.findings || []).some(f => f.autofix === 'mechanical'); },
     confirmAction(name, body, prompt) {
       if (!window.confirm(prompt)) return;
       this.runAction(name, body);

@@ -15,6 +15,7 @@ import { createRequire } from "node:module";
 import { paths } from "../bun-helpers.ts";
 import { detectKind } from "../surface.ts";
 import { applyBaseline, debtOf, defaultBaselinePath, loadBaseline, recordBaseline, type Baseline } from "./baseline.ts";
+import { agenticFix, type AgenticOptions } from "./agentic.ts";
 import { createBackup, restoreBackup } from "./backup.ts";
 import { businessModule } from "./kinds/business.ts";
 import { mindCloneModule } from "./kinds/mind-clone.ts";
@@ -58,6 +59,8 @@ export interface VerifyOptions {
   cloneRegistry?: Record<string, unknown>;
   /** test seam: a module standing in for the kind's */
   module?: KindModule;
+  /** `--fix=agentic`: runtime, budget, confirmation and the test seams. */
+  agentic?: AgenticOptions;
 }
 
 let _audit: Emitter | null = null;
@@ -142,7 +145,6 @@ async function runOne(
   baseline: Baseline | null, baselineFile: string | null, persist: boolean,
 ): Promise<VerifyReport> {
   const kind = module.kind;
-  if (opts.fix === "agentic") throw new VerifyUsageError("--fix=agentic is not available yet; use --fix (mechanical fixers)");
   const ctx: CheckContext = { kind, slug, dir, retrieval: opts.retrieval !== false, registries: opts.registries, cloneRegistry: opts.cloneRegistry };
   const emit: Emitter = opts.emit === null ? () => {} : (opts.emit ?? auditEmit());
 
@@ -152,6 +154,16 @@ async function runOne(
   if (opts.fix === "mechanical") {
     const r = await fixLoop(module, ctx, findings, opts.backupRoot);
     findings = r.findings; fixes = r.fixes; fix_outcome = r.outcome;
+  } else if (opts.fix === "agentic") {
+    // The mechanical pass runs first on purpose: shape before meaning, so the
+    // model is never asked to hand-write what a fixer writes for free — and
+    // never spends the budget on an entity a fixer would have admitted.
+    const mech = await fixLoop(module, ctx, findings, opts.backupRoot);
+    findings = mech.findings; fixes = mech.fixes;
+    const r = await agenticFix(module, ctx, findings, { emit, backupRoot: opts.backupRoot, ...(opts.agentic ?? {}) });
+    findings = r.findings;
+    fixes = [...fixes, ...r.fixes];
+    fix_outcome = { ...r.outcome, before: mech.outcome.before };
   }
 
   const baselineable = new Set(module.criteria.filter((c) => c.baselineable).map((c) => c.id));

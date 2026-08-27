@@ -63,7 +63,7 @@ OPTIONS
   --force                         replace existing install (auto-backs up to <path>.<version>.bak.<ts>/)
   --dry-run                       show what would happen, do not write
   --skip-reindex                  skip nrv index call (faster batch installs)
-  --skip-validate                 skip light validation (NOT recommended)
+  --skip-validate                 skip light validation AND the admission gate (NOT recommended)
   --quiet                         suppress stderr progress
   --json                          emit JSON result on stdout
 

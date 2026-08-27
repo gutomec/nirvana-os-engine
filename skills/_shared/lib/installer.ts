@@ -28,6 +28,7 @@ import { createHash, randomBytes } from "node:crypto";
 
 import { InstallManifest, type AssetKind, type InstallEvent, type InstalledItem } from "./install-manifest.ts";
 import { resolveScope } from "./scope.ts";
+import { verifyHook } from "./verify/index.ts";
 
 // Lazy path resolution — picks up env changes (useful for tests + project scope).
 function nirvanaHome(): string { return process.env.NIRVANA_HOME ?? homedir(); }
@@ -485,6 +486,22 @@ export async function install(opts: InstallOptions): Promise<InstallResult> {
         return failed();
       }
       warnings.push(...v.warnings);
+    }
+
+    // The admission gate, on the STAGED copy — before anything is written to
+    // the library, so a refusal leaves the machine exactly as it was. It is
+    // report-only until the buyer turns `verify.enforce_on_install` on: the
+    // whole point of a gate at install time is that it cannot be the reason a
+    // paid pack stops installing on the day it ships.
+    {
+      const gate = await verifyHook({ kind, target: resolved.workdir, gate: "install", skip: opts.skipValidate, stateDir: null });
+      if (!opts.quiet) for (const line of gate.lines) console.error(line);
+      if (gate.blocked) {
+        errors.push(...gate.errors.map((f) => `verify: ${f.id}${f.where ? `:${f.where}` : ""} — ${f.message}`));
+        errors.push(`verify: ${kind} ${meta.name} was refused by the admission gate (verify.enforce_on_install); re-run with --skip-validate to install it anyway`);
+        return failed();
+      }
+      warnings.push(...gate.warnings.map((f) => `verify: ${f.id}${f.where ? `:${f.where}` : ""} — ${f.message}`));
     }
 
     const checksum = checksumDir(resolved.workdir);

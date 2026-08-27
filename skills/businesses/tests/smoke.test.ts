@@ -58,20 +58,23 @@ describe("business lifecycle — init → validate → index → list", () => {
     expect(existsSync(join(home, "businesses", "smoke-solo", "business.yaml"))).toBe(true);
   });
 
-  // The wizard writes no `.nirvana-surface.json` (§5.3 puts it in the layout and
-  // gives it to the engine), so the gate rejects a scaffold on exactly that one
-  // error and `--fix` clears it. The wizard hook that closes the gap is PR11 of
-  // the program plan; until then this test states the gap instead of hiding it.
-  test("validate names the one error a scaffold carries, and --fix clears it", () => {
+  // A template cannot carry `.nirvana-surface.json` — it is a hash of files
+  // that exist only once the wizard has overlaid the manifest — so the
+  // scaffold used to be born REJECTED on exactly that one error. The creation
+  // hook repairs what the engine owns before judging, which is why the
+  // surface is on disk here without anyone running --fix.
+  test("the scaffold is born admitted, surface included", () => {
+    expect(existsSync(join(home, "businesses", "smoke-solo", ".nirvana-surface.json"))).toBe(true);
     const first = nrv("validate-business.ts", "smoke-solo", "--json", "--no-retrieval");
     const report = JSON.parse(first.stdout);
-    expect(report.findings.filter((f: any) => f.severity === "error").map((f: any) => f.id)).toEqual(["surface_missing"]);
-    expect(first.status).toBe(1);
+    expect(report.findings.filter((f: any) => f.severity === "error")).toEqual([]);
+    expect(report.verdict).toBe("ADMITTED");
+    expect(first.status).toBe(0);
 
+    // Idempotent: a --fix over an already-admitted scaffold changes nothing.
     const fixed = nrv("validate-business.ts", "smoke-solo", "--fix", "--no-retrieval");
     expect(`${fixed.stdout}${fixed.stderr}`).not.toContain("ROLLED BACK");
     expect(fixed.status).toBe(0);
-    expect(existsSync(join(home, "businesses", "smoke-solo", ".nirvana-surface.json"))).toBe(true);
   });
 
   test("--report writes the JSON under the project's own .audit-state", () => {
