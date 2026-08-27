@@ -173,7 +173,7 @@ Multi-intent: process in dependency order. Always lazy-load (never load the full
 | Command | Implementation | Description |
 |---|---|---|
 | `*business init <name>` | `bun ~/.nirvana/skills/businesses/scripts/init-business.ts <name>` + wizard via AskUserQuestion | Scaffold new business in `~/businesses/<slug>/` |
-| `nrv validate business <slug>` | `bun ~/.nirvana/skills/businesses/scripts/validate-business.ts <slug>` | Admission gate: manifest + employees + org-chart + integrity (`--strict` also fails on warnings) |
+| `nrv validate business <slug>` | `bun ~/.nirvana/skills/businesses/scripts/validate-business.ts <slug>` | Admission gate: the 39 criteria of `BUSINESS_PROTOCOL_V2.md` §16 (`--fix` applies the mechanical repairs, `--strict` also fails on warnings, `--all` walks the library, `--report` writes the JSON under `.audit-state/<slug>/`) |
 | `*business index` | `bun ~/.nirvana/skills/businesses/scripts/index-businesses.ts` | Regenerates `~/.businesses-registry.json` |
 | `*business list` | `bun ~/.nirvana/skills/businesses/scripts/list-businesses.ts` | Table of businesses from the registry |
 | `*business inspect <slug>` | `bun ~/.nirvana/skills/businesses/scripts/inspect-business.ts <slug>` | Manifest + employees + org-chart formatted |

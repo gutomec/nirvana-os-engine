@@ -49,6 +49,121 @@ instead of a handful of substrings. `squad.execute`, an unreadable manifest and
 an id the manifest does not declare all land on that same path, which is what
 keeps the 204 installed squads dispatching exactly as they do today.
 
+### Squad composition becomes an edge, and a plan's order
+
+`capabilities[].requires[]` and `capabilities[].consumes[]` have parsed since the
+v6 fields landed, and no reader touched them. They are edges now.
+`readSquadComposition()` in `skills/_shared/lib/entity-graph.ts` reads every
+installed `squad.yaml`: a `requires` entry resolves to the squad declaring that
+capability id and becomes `depends_on` consumer to provider, a `consumes` entry
+resolves through `produces` and becomes `feeds` provider to consumer. Both pass
+through `dependencyPair()` as "the provider exists first", so `nrv graph order`
+and the install order pick the composition up without a second rule.
+
+An edge exists only where the provider is unambiguous. Sharing a capability id
+is the design, not a defect: ten squads carry `media.video.compose` and the
+router is meant to choose among them by brief. Choosing one of them here would
+invent an execution order nobody declared, so two providers yield no edge and a
+report row. A `slug:` prefix on the reference (`brand-forge:design.brand.identity`)
+names the provider and settles it.
+
+| Finding | `nrv graph check` |
+|---|---|
+| `requires` nothing provides | `x_requires_unresolved`, fails `--strict` |
+| `requires` two squads provide | `x_requires_ambiguous`, reported |
+| `consumes` nothing produces | `x_consumes_unresolved`, reported |
+| `consumes` two squads produce | `x_consumes_ambiguous`, reported |
+
+Ambiguity stops short of an error deliberately. The capability exists, twice, and
+failing the library over a duplicate id would punish the shape the router was
+built for. An unresolved `requires` is the other case: the library does not carry
+that capability, and no ordering can supply it.
+
+`compileManifest()` accepts the derived graph as `opts.composition` and inherits
+the order between two `squad` nodes of one plan when the author declared none.
+The author still wins, always: a pair already joined by an edge, in either
+direction, stays exactly as written. Without the option the compilation is
+bit-for-bit the one that shipped before, and a regression test holds it there.
+
+### `nrv validate business` gets its catalog, and the business fixers exist
+
+The business half of the admission gate carried three structural criteria while
+§16.2 of `BUSINESS_PROTOCOL_V2.md` declared thirty-nine, and the thirteen
+`fixable_diff` kinds the audit scorer emitted named repairs no code performed.
+`skills/_shared/lib/verify/kinds/business.ts` is the whole catalog now, and
+`skills/businesses/lib/business-fixers.js` is the applier both the gate and the
+scorer call — the same twenty-one handlers, one dispatch table, no LLM.
+
+Measured over the 61 installed businesses (against a copy; the library was not
+written to): 0 errors of shape — every manifest and all 581 seats already pass
+Zod — and 31 errors of semantics, all of them routes: 7 businesses keep
+`auto_routes` in `business.yaml` and 5 route to a seat that does not exist. The
+1,262 warnings are the surface v2 retired: 61 businesses declare
+`employee_count`, 61 declare no `acceptance` on the intake seat, 302 fields are
+retired by §22, 562 patterns fire against none of the business's own example
+briefs, and 38 ship no README.
+
+`--fix` over that copy applied 578 repairs in 3.2 s, rolled back nothing, left
+all 61 loading, and cleared 537 warnings and the 7 misplaced route blocks.
+`protocol: "2.0"` rose on 56 of the 61 — the five with an open error keep 1.0,
+which is the rule §18.4 asks for. A second `--fix` run over the same 61
+businesses changed zero bytes.
+
+| Fixer | What it repairs |
+|---|---|
+| `employee_frontmatter_repair` | a seat with no `---` block gets one derived from its own heading and first paragraph |
+| `intake_from_chart_root` | zero intake seats and one org-chart root: the root receives the brief |
+| `type_flag_sync` | `type: antagonist_gate` gains the `is_antagonist: true` it implies (§7.8) |
+| `acceptance_from_self_score` | `self_score_contract.criteria[]` → `acceptance[]`, ids prefixed by seat on collision (§11) |
+| `acceptance_normalize` | acceptance ids to `^[a-z][a-z0-9_-]*$`, unique in the business, scores back into 0..1 |
+| `heartbeat_strip` | the block BP10 retired, removed from every seat |
+| `draws_from_to_assigned` | `draws_from` sources that resolve to an installed clone become `assigned_mind_clones` |
+| `dna_reference_to_pin` | `dna_reference` becomes `pinned_mind_clones` when the path resolves (§7.7) |
+| `deprecated_field_strip` | one retired field of §22, wherever it is declared, from an allowlist |
+| `squads_authorized_empty_strip` | `squads_authorized: []` removed: empty means every squad (§6.10) |
+| `employee_count_strip` | the count §6.12 derives from disk |
+| `manifest_schema_repair` | `name`, `version`, `protocol` and `license` when the directory already answers them |
+| `runtime_requirements_business_default` | a manifest with no runtime floor follows the active runtime |
+| `org_chart_repair` | the chart recomputed from `reports_to` / `manages`, bidirectional by construction |
+| `auto_routes_relocate` | `business.yaml.auto_routes` → `routing.yaml`, deduplicated, nothing dropped (§13.2) |
+| `routing_scaffold` | `brief_intake.default_employee` for a business that declares none |
+| `catch_all_to_default_employee` | a `.*` route becomes the default employee, and only when nothing is lost |
+| `dna_dir_to_bindings` | `dna/` symlinks become the intake seat's `assigned_mind_clones` (§5.3) |
+| `readme_business_scaffold` | a README derived from the manifest and the seats, never overwriting one |
+| `memory_seed` | `memory/permanent.md` |
+| `protocol_bump_2` | `protocol: "2.0"`, last, and only while no error is open (§18.4) |
+
+Three rules hold across all of them. **The seat's body is never touched**:
+`skills/_shared/lib/frontmatter-edit.ts` rewrites the `---` block through the
+`yaml` Document API and reassembles the file around the original body slice, so
+comments, key order, line endings and every byte below the header survive.
+**Nothing authored is deleted**: a retired *file* is reported and left where it
+is, and a route is converted into the field that implements it, never dropped.
+**Nothing is invented**: no fixer writes a `not_for`, an `example_brief`, a
+description or an acceptance criterion, and a `draws_from` source that resolves
+to no installed clone keeps its field instead of becoming a broken binding.
+
+`skills/businesses/scripts/validate-business.ts` stopped being forty lines that
+spawned the loader: it delegates to the runner, so the script and
+`nrv validate business` are one code path with the same exit codes, and
+`--report` writes `nirvana.verify-report/v1` under `.audit-state/<slug>/`.
+
+The audit scorer moved with the protocol. Criterion 2 stopped scoring the
+author's `employee_count` arithmetic (§6.12 derives it) and now asks whether the
+seats are there and their headers parse; criterion 3 redirects the six points it
+used to pay for declaring a `heartbeat` no scheduler ever ran to `acceptance`,
+the contract the judge reads; criterion 5 asks routing for a `brief_intake` and
+for patterns that fire against the business's own example briefs. The rubric now
+sums to exactly 100 — it had summed 104 since `seat_sufficiency` was added while
+the header still said 100 — and every `fixable_diff` names a handler that exists
+plus the class that can apply it (`mechanical`, `agentic`, `none`).
+
+The spec table and the module are now equal in both directions:
+`protocol-v2-spec-parity.test.ts` compares ids, severity, autofix class and the
+baselineable flag row by row, so a criterion added to one side without the other
+is a red test.
+
+
 ### The workflow reader: one canonical graph, every legacy dialect normalized
 
 A squad's workflow was the only artifact of the protocol with no single shape.
@@ -115,6 +230,59 @@ by `_`↔`-` when exactly one component matches and **never** writes a stub. A
 `.yaml` never becomes a `.md` in a fixer either: changing the encoding is a
 migration, with a backup and a report, and the fixer says so instead of acting.
 
+### Squad Protocol 6.0 is written down, and one command takes a squad there
+
+`skills/squads/SQUAD_PROTOCOL_V6.md` states what the reader and the gate already
+do, as a delta over v5 the way v5 was a delta over v4: §28 the workflow document
+(`.md` = frontmatter graph plus prose body, the body split by `## <step.id>`,
+the word ceiling, the lint table with one severity per protocol, the twin rule,
+references without their encoding), §29 the acceptance contract, §30 the
+evaluator contract, §31 composition, §32 the execution binding, §33 `not_for` at
+25 characters, §34 admission, §35 migration, App-G the generated schemas and
+App-H what v6 deprecates.
+
+Three of those contracts are declarative today: the schema accepts them, the
+gate validates them, and no execution reader consumes them yet. Each is marked
+**limite** in the text with what is still missing, because a spec that describes
+an engine which does not exist is worse than one that admits the gap.
+`skills/squads/tests/protocol-v6-spec-parity.test.ts` fails the build when a
+criterion id, a lint id, a fixer or a `nrv migrate` flag stops being named in
+the spec.
+
+`nrv migrate <slug|path> --to 6` is the conversion, and **dry run is the
+default**: without `--apply` nothing is written, not the squad, not the backup,
+not the report. Per workflow:
+
+| Legacy | v6 |
+|---|---|
+| `workflows/<name>.yaml` in one of eight dialects | `workflows/<name>.md`, the canonical graph |
+| `depends_on` / `deps` / `after` | `requires` |
+| a prompt inline in `task: \|` (>= 40 words) | `tasks/<workflow>-<step>.md`, and the step gets a `task:` reference |
+| a short note inline | the body, under `## <step.id>` |
+| `x.md` + `x.yaml` twins | one file: the YAML's graph, the Markdown's body |
+| `invoke.ref: workflows/main.yaml` | `invoke.ref: workflows/main` |
+| `success_indicators` nobody read | `capabilities[].acceptance[]`, `blocking: false` |
+| a `name` that is not the file stem | `extensions.title`, relocated, never dropped |
+
+It never invents prose: every sentence in a converted body already existed in
+the source, and the test asserts it by substring. It refuses three documents
+rather than guess — `event_routes` (a router, not a DAG), a document from which
+no step can be derived, and a stem outside `^[a-z][a-z0-9_-]*$`. Without
+`--force` the squad is refused whole; with it, that one document is left alone
+and the rest migrates. The `.yaml` is deleted only after the `.md` has been read
+back and matched against `WorkflowSchema`.
+
+Around the conversion: a backup in `~/squads-legacy-v5/<slug>.<ts>/` written
+with `fs.cpSync` and never rsync, a `nirvana.squad-migrate/v1` report in the
+squad state dir and never inside the squad, `--rollback <ts>` that restores it
+and refuses when the squad changed after the migration, byte-level idempotence,
+and a call to `nrv validate squad` at the end that prints the verdict.
+
+New squads are scaffolded there directly. `templates/workflow.md.tmpl` is the
+canonical document, `squad.yaml.tmpl` ships `protocol: "6.0"` with extension-less
+references, and `init-squad.ts` writes `workflows/<ref>.md` and points step 4 at
+`nrv validate squad <dir>`.
+
 ### Removed
 
 `humanize` is gone from the squad protocol's surface. It was a contradiction the
@@ -135,6 +303,19 @@ block into invalid YAML.
 
 New limits: `workflow_body_words_max` (2500) and
 `squad_prompt_components_bytes_max` (65536).
+
+The per-squad JSON Schema mirrors are gone: `skills/squads/schemas/`
+(`squad-schema.json`, `agent-schema.json`, `task-schema.json`,
+`adapter-schema.json`, `handoff-schema.json`). No code path read them, and
+`squad-schema.json` described a v4 manifest nobody had authored in a year. What
+replaced each of them is tabulated in `references/05-schemas.md`. The three that
+remain are GENERATED from the Zod schemas that execute:
+`bun scripts/gen-json-schemas.ts` writes
+`_shared/schemas/{capability,squad,workflow}.schema.json`, and `--check` runs in
+`check:all`, so the mirror can no longer disagree with the source. That closes a
+documented drift: `capability.schema.json` capped `description` at 500 chars for
+months after `LIMITS` raised it to 1500, and the same 500 was repeated across
+four reference documents and a template.
 
 ### Business Protocol 2.0: routing metadata, pinned clones, preferred squads, acceptance per seat, one budget field, and the dead surface deprecated
 

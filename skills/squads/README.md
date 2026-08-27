@@ -238,6 +238,7 @@ The harness handles dispatch, capability resolution, and handoff_artifact valida
 ```
 ~/.nirvana/skills/squads/
 ├── SKILL.md                      ← Claude-discoverable
+├── SQUAD_PROTOCOL_V6.md          ← v6 spec (workflow document, acceptance, evaluator)
 ├── SQUAD_PROTOCOL_V5.md          ← v5 spec (~1000 lines, capability-aware)
 ├── SQUAD_PROTOCOL_V4.md          ← v4 spec (legacy)
 ├── lib/
@@ -257,7 +258,7 @@ The harness handles dispatch, capability resolution, and handoff_artifact valida
 │   ├── 13-v5-registry.md         ← registry schema
 │   └── 15-creation-wizard.md     ← init flow
 └── tests/
-    └── smoke-v5.ts               ← T1-T5 (pilot + validate + registry + capability-validator + BM25)
+    └── *.test.ts                 ← `bun test skills` (validate, registry, capability-validator, BM25)
 ```
 
 Squad v5 manifest reference:
@@ -315,7 +316,7 @@ const ok = capabilityValidator.validateAll(`${process.env.SQUADS_DIR}/my-researc
 
 ## Spec & versioning
 
-- Protocol: **Squad Protocol v5.0** (`SQUAD_PROTOCOL_V5.md`) + v4 legacy (`SQUAD_PROTOCOL_V4.md`)
+- Protocol: **Squad Protocol v6.0** (`SQUAD_PROTOCOL_V6.md`) over v5 (`SQUAD_PROTOCOL_V5.md`) over v4 (`SQUAD_PROTOCOL_V4.md`)
 - Capability catalog: `~/.nirvana/skills/_shared/catalogs/CAPABILITY_CATALOG_V1.yaml` (57 domains, 6 categories)
 - 148 squads indexed at last count (134 v4 legacy + 14 v5 with capabilities)
 - Test coverage: 5/5 smoke (T1-T5) + 36/36 pytest validators

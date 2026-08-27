@@ -16,6 +16,7 @@ import * as path from "node:path";
 import { createRequire } from "node:module";
 import { parse as parseYaml } from "yaml";
 import { CANONICAL_WORKFLOW, rmrf, runCli, squadFixture, tempRoot, treeDigest, writeSurfaceFor } from "./helpers/verify-fixture.ts";
+import { spawnBudgetMs } from "../../harness/tests/helpers/test-budgets.ts";
 import { criteria as squadCriteria, squadModule } from "../lib/verify/kinds/squad.ts";
 import { WORKFLOW_LINT_IDS } from "../../squads/lib/workflow-reader.ts";
 
@@ -70,7 +71,7 @@ describe("catalog integrity", () => {
     // The surface is always regenerated last: a fixer that rewrote the
     // manifest after it would leave the entity reporting surface_stale.
     expect(squadModule.fixOrder[squadModule.fixOrder.length - 1]).toBe("surface_regen");
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("the dialect corpus, judged by protocol", () => {
@@ -92,7 +93,7 @@ describe("the dialect corpus, judged by protocol", () => {
         const code = runCli(r, ["squad", slug, "--no-retrieval"]).code;
         expect(code).toBe(protocol === "6.0" ? 1 : 0);
       }
-    });
+    }, spawnBudgetMs(2));
   }
 
   test("a v6 Markdown workflow with a canonical graph is admitted with no workflow finding", () => {
@@ -106,7 +107,7 @@ describe("the dialect corpus, judged by protocol", () => {
         "        description: the artifact exists after the build step",
         "        blocking: true",
       ],
-    });
+    }, spawnBudgetMs(2));
     const f = findings(r, "clean-v6");
     expect(idsOf(f).filter((id) => id.startsWith("workflow_"))).toEqual([]);
     expect(idsOf(f)).not.toContain("protocol_below_6");
@@ -123,7 +124,7 @@ describe("the dialect corpus, judged by protocol", () => {
       expect(severityOf(f, "workflow_unnormalizable")).toBe("warning");
       expect(runCli(r, ["squad", slug, "--no-retrieval"]).code).toBe(0);
     }
-  });
+  }, spawnBudgetMs(2));
 
   test("a twin, an orphan and an over-long body each get their own finding", () => {
     const r = root();
@@ -133,7 +134,7 @@ describe("the dialect corpus, judged by protocol", () => {
         "main.md": `---\nname: main\n---\n\n## plan\n\n${"word ".repeat(3000)}\n`,
         "spare.yaml": CANONICAL_WORKFLOW.replace("name: main", "name: spare"),
       },
-    });
+    }, spawnBudgetMs(2));
     const f = findings(r, "twins");
     expect(idsOf(f)).toContain("workflow_twin");
     expect(f.find((x) => x.id === "workflow_twin")!.where).toBe("main.md");
@@ -148,7 +149,7 @@ describe("the dialect corpus, judged by protocol", () => {
     expect(severityOf(findings(r, "case-v6"), "workflow_stem_case")).toBe("error");
     squadFixture(r, "case-v5", { workflows: { "Main.yaml": CANONICAL_WORKFLOW }, workflowComponent: "Main.yaml", invokeRef: "workflows/Main.yaml" });
     expect(severityOf(findings(r, "case-v5"), "workflow_stem_case")).toBe("warning");
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("exit codes", () => {
@@ -159,7 +160,7 @@ describe("exit codes", () => {
     const strict = runCli(r, ["squad", "clean", "--no-retrieval", "--strict"]);
     expect(strict.code).toBe(2);
     expect(strict.stdout).toContain("protocol_below_6");
-  });
+  }, spawnBudgetMs(2));
 
   test("an error rejects (1): a manifest the schema refuses", () => {
     const r = root();
@@ -167,14 +168,14 @@ describe("exit codes", () => {
     const out = runCli(r, ["squad", "no-components", "--no-retrieval"]);
     expect(out.code).toBe(1);
     expect(out.stdout).toContain("manifest_schema");
-  });
+  }, spawnBudgetMs(2));
 
   test("a capability invoking a workflow that is not on disk is an error under either protocol", () => {
     const r = root();
     squadFixture(r, "no-workflow", { invokeRef: "workflows/absent.yaml" });
     const f = findings(r, "no-workflow");
     expect(severityOf(f, "invoke_ref_unresolved")).toBe("error");
-  });
+  }, spawnBudgetMs(2));
 
   test("a declared component that is not on disk is an error", () => {
     const r = root();
@@ -182,7 +183,7 @@ describe("exit codes", () => {
     fs.writeFileSync(path.join(dir, "squad.yaml"), fs.readFileSync(path.join(dir, "squad.yaml"), "utf8").replace("tasks: [plan, build]", "tasks: [plan, build, ghost]"), "utf8");
     writeSurfaceFor(dir, "squad");
     expect(severityOf(findings(r, "ghost-component"), "components_missing")).toBe("error");
-  });
+  }, spawnBudgetMs(2));
 
   test("a run-output directory inside the squad is an error", () => {
     const r = root();
@@ -190,7 +191,7 @@ describe("exit codes", () => {
     fs.mkdirSync(path.join(dir, "outputs"));
     fs.writeFileSync(path.join(dir, "outputs", "run.md"), "leftover\n", "utf8");
     expect(severityOf(findings(r, "polluted"), "outputs_pollution")).toBe("error");
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("the advisory catalog", () => {
@@ -205,7 +206,7 @@ describe("the advisory catalog", () => {
     const f = findings(r, "thin-routing");
     expect(severityOf(f, "routing_metadata_incomplete")).toBe("warning");
     expect(f.find((x) => x.id === "routing_metadata_incomplete")!.where).toBe("fixture.artifact.build");
-  });
+  }, spawnBudgetMs(2));
 
   test("a not_for entry longer than 25 chars: warning under 5.0, error under 6.0", () => {
     const r = root();
@@ -220,13 +221,13 @@ describe("the advisory catalog", () => {
       expect(severityOf(f, "not_for_too_long")).toBe(protocol === "6.0" ? "error" : "warning");
       expect(idsOf(f)).toContain("not_for_dead");
     }
-  });
+  }, spawnBudgetMs(2));
 
   test("fidelity validated with no ground truth on disk", () => {
     const r = root();
     squadFixture(r, "unproven", { capabilityExtra: ["    fidelity:", "      status: validated", "      ground_truth_dir: eval/ground-truth"] });
     expect(severityOf(findings(r, "unproven"), "fidelity_validated_unproven")).toBe("warning");
-  });
+  }, spawnBudgetMs(2));
 
   test("requires and consumes with no provider in reach", () => {
     const r = root();
@@ -234,7 +235,7 @@ describe("the advisory catalog", () => {
     const f = findings(r, "composer").filter((x) => x.id === "requires_no_provider");
     expect(f).toHaveLength(2);
     expect(severityOf(f, "requires_no_provider")).toBe("warning");
-  });
+  }, spawnBudgetMs(2));
 
   test("component quality: a thin agent, a task with no acceptance criteria, no README, no dependency manifest", () => {
     const r = root();
@@ -249,7 +250,7 @@ describe("the advisory catalog", () => {
       expect(ids).toContain(id);
     }
     expect(runCli(r, ["squad", "thin-components", "--no-retrieval"]).code).toBe(0);
-  });
+  }, spawnBudgetMs(2));
 
   test("per-buyer distribution artifacts are reported, never rejected: an installed copy is legitimate", () => {
     const r = root();
@@ -260,7 +261,7 @@ describe("the advisory catalog", () => {
     const f = findings(r, "installed-copy").find((x) => x.id === "distribution_artifacts")!;
     expect(f.severity).toBe("warning");
     expect(runCli(r, ["squad", "installed-copy", "--no-retrieval"]).code).toBe(0);
-  });
+  }, spawnBudgetMs(2));
 
   test("the evaluator capability without its block: warning under 5.0, error under 6.0", () => {
     const r = root();
@@ -272,7 +273,7 @@ describe("the advisory catalog", () => {
       writeSurfaceFor(dir, "squad");
       expect(severityOf(findings(r, slug), "evaluator_missing")).toBe(protocol === "6.0" ? "error" : "warning");
     }
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("--fix", () => {
@@ -282,7 +283,7 @@ describe("--fix", () => {
       protocol: "6.0",
       workflows: { "main.md": `---\n${INLINE_PROSE}---\n\n## intro\n\nExisting prose.\n` },
       workflowComponent: "main.md", invokeRef: "workflows/main.md",
-    });
+    }, spawnBudgetMs(2));
     fs.writeFileSync(path.join(dir, "agents", "planner.md"), "---\nname: planner\ndescription: planner\n---\n\n# planner\n", "utf8");
     fs.writeFileSync(path.join(dir, "tasks", "plan.md"), "# plan\n\nJust prose.\n", "utf8");
     fs.rmSync(path.join(dir, "README.md"));
@@ -305,7 +306,7 @@ describe("--fix", () => {
       protocol: "6.0",
       workflows: { "main.md": `---\n${INLINE_PROSE}---\n\n## intro\n\nExisting prose.\n` },
       workflowComponent: "main.md", invokeRef: "workflows/main.md",
-    });
+    }, spawnBudgetMs(2));
     runCli(r, ["squad", "prose", "--no-retrieval", "--fix"]);
     const text = fs.readFileSync(path.join(dir, "workflows", "main.md"), "utf8");
     expect(text).toContain("## intro");
@@ -327,13 +328,13 @@ describe("--fix", () => {
     expect(manifest.capabilities[0].invoke.ref).toBe("workflows/main");
     expect(manifest.components.workflows).toEqual(["main"]);
     expect(idsOf(findings(r, "extension"))).not.toContain("invoke_ref_extension");
-  });
+  }, spawnBudgetMs(2));
 
   test("outputs_shape_repair promotes a singular `output` and drops the keys the schema refuses", () => {
     const r = root();
     const dir = squadFixture(r, "outputs", {
       capabilityExtra: ["    output:", "      name: report", "      type: markdown", "      humanize: true"],
-    });
+    }, spawnBudgetMs(2));
     writeSurfaceFor(dir, "squad");
     expect(idsOf(findings(r, "outputs"))).toContain("capability_outputs_shape");
     runCli(r, ["squad", "outputs", "--no-retrieval", "--fix"]);
@@ -347,7 +348,7 @@ describe("--fix", () => {
     const r = root();
     const dir = squadFixture(r, "merge", {
       workflows: { "main.yaml": CANONICAL_WORKFLOW, "main.md": "---\nname: main\n---\n\n## plan\n\nThe body that survives.\n" },
-    });
+    }, spawnBudgetMs(2));
     runCli(r, ["squad", "merge", "--no-retrieval", "--fix"]);
     expect(fs.existsSync(path.join(dir, "workflows", "main.yaml"))).toBe(false);
     const merged = fs.readFileSync(path.join(dir, "workflows", "main.md"), "utf8");
@@ -367,7 +368,7 @@ describe("--fix", () => {
     const r = root();
     const dir = squadFixture(r, "renames", {
       workflows: { "main.yaml": "name: main\nsteps:\n  - id: plan\n    agent: planner\n    task: PLAN\n  - id: build\n    agent: Builder\n    task: nowhere\n" },
-    });
+    }, spawnBudgetMs(2));
     runCli(r, ["squad", "renames", "--no-retrieval", "--fix"]);
     const text = fs.readFileSync(path.join(dir, "workflows", "main.yaml"), "utf8");
     expect(text).toContain("task: plan");
@@ -384,7 +385,7 @@ describe("--fix", () => {
     const dir = squadFixture(r, "byoutput", {
       protocol: "6.0", workflows: { "main.md": `---\n${graph}---\n` },
       workflowComponent: "main", invokeRef: "workflows/main",
-    });
+    }, spawnBudgetMs(2));
     expect(idsOf(findings(r, "byoutput"))).toContain("workflow_requires_by_output");
     runCli(r, ["squad", "byoutput", "--no-retrieval", "--fix"]);
     const graphAfter = parseYaml(fs.readFileSync(path.join(dir, "workflows", "main.md"), "utf8").split("---")[1]);
@@ -399,7 +400,7 @@ describe("--fix", () => {
     const note = out.json.fixes.find((x: any) => x.fixer === "workflow_normalize_shape").note;
     expect(note).toContain("nrv migrate --to 6");
     expect(fs.readFileSync(path.join(dir, "workflows", "main.yaml"), "utf8")).toBe(AGENT_SEQUENCE);
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("the audit scorer after `humanize`", () => {
@@ -408,7 +409,7 @@ describe("the audit scorer after `humanize`", () => {
     expect(criteria.CRITERIA).toHaveLength(13);
     expect(criteria.CRITERIA.find((c: any) => c.id === 9).name).toBe("acceptance");
     expect(criteria.CRITERIA.some((c: any) => c.name === "humanize")).toBe(false);
-  });
+  }, spawnBudgetMs(2));
 
   test("c9 scores acceptance[] and the acceptance criteria of an invoked task", () => {
     const r = root();
@@ -417,7 +418,7 @@ describe("the audit scorer after `humanize`", () => {
 
     const declared = squadFixture(r, "c9-acceptance", {
       capabilityExtra: ["    acceptance:", "      - id: built", "        description: the artifact exists"],
-    });
+    }, spawnBudgetMs(2));
     const c9 = criteria.scoreSquad(declared).breakdown.find((b: any) => b.id === 9);
     expect(c9.score).toBe(6);
     expect(c9.evidence).toContain("1/1");
@@ -432,7 +433,7 @@ describe("the audit scorer after `humanize`", () => {
     const r = root();
     const dir = squadFixture(r, "retired-fixer", {
       capabilityExtra: ["    output:", "      name: report", "      type: markdown", "      humanize: true"],
-    });
+    }, spawnBudgetMs(2));
     const results = fixers.applyMechanicalFixes(dir, { patches: [{ kind: "humanize_default_true" }, { kind: "outputs_shape_repair" }] });
     expect(results[0].result.ok).toBe(false);
     expect(results[0].result.reason).toBe("unknown patch kind");
@@ -452,5 +453,5 @@ describe("the audit scorer after `humanize`", () => {
     const front = /^---\n([\s\S]*?)\n---/.exec(text)![1];
     expect(parseYaml(front).tools).toEqual(["Read", "Write", "Edit", "Bash", "Grep", "Glob"]);
     expect(parseYaml(front).maxTurns).toBe(12);
-  });
+  }, spawnBudgetMs(2));
 });

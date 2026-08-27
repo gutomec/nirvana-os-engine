@@ -758,7 +758,9 @@ Checks:
 
 The catalog is a flat list of acceptable `domains` and a hierarchical tree of acceptable `id` prefixes. Squads MUST use entries from this catalog unless they declare `experimental_domains: true` (which excludes the squad from default discovery).
 
-### App-C.1 Canonical domains (59 entries, v1)
+**The authoritative catalog is `skills/_shared/catalogs/CAPABILITY_CATALOG_V1.yaml`** (v1.1.0: 60 domains, 57 namespaces, measured 2026-08-27). The blocks below reproduce it; when the two disagree, the YAML wins and the disagreement is a defect in this document.
+
+### App-C.1 Canonical domains (60 entries, catalog v1.1.0)
 
 ```
 Marketing & Sales:
@@ -781,10 +783,10 @@ Vertical Domains:
 
 Cross-cutting:
   research, knowledge_management, document_processing, automation, integration,
-  multi_agent_orchestration
+  multi_agent_orchestration, design
 ```
 
-### App-C.2 Canonical id namespaces (top-level segments, v1)
+### App-C.2 Canonical id namespaces (top-level segments, catalog v1.1.0 — 57 entries)
 
 ```
 marketing.*    branding.*     sales.*           growth.*
@@ -795,6 +797,20 @@ software.*     frontend.*     backend.*         data.*
 devops.*       security.*     ai.*              qa.*
 healthcare.*   education.*    real_estate.*     fintech.*
 crypto.*       gaming.*       ecommerce.*       hr.*
+```
+
+v1.1.0 added 25 namespaces the live registry was already writing — practice
+spells the domain out (`software_engineering`) where v1.0.0 abbreviated
+(`software`), and both forms stay canonical:
+
+```
+ai_engineering.*   audio.*        automation.*      business_operations.*
+copy.*             data_engineering.*               design.*
+document_processing.*             energy.*          fiscal.*
+image.*            integration.*  investigation.*   knowledge_management.*
+lifecycle.*        mobile.*       multi_agent_orchestration.*
+observability.*    podcasting.*   social_media.*    software_engineering.*
+tts.*              video.*        voice.*           whatsapp.*
 ```
 
 ### App-C.3 Sample capability ids per namespace (illustrative, not exhaustive)

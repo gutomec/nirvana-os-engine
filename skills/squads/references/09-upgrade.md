@@ -4,7 +4,45 @@
 Intent: UPGRADE, MIGRATE (keywords: upgrade, migrate, convert, v4)
 
 ## Protocol Reference
-SQUAD_PROTOCOL_V4.md §21
+SQUAD_PROTOCOL_V6.md §35 (v5 → v6) · SQUAD_PROTOCOL_V4.md §21 (everything older)
+
+## v5 → v6: one command
+
+```bash
+nrv migrate <slug|path> --to 6            # dry run — writes nothing
+nrv migrate <slug|path> --to 6 --apply    # converts, with a backup
+nrv validate squad <slug>                 # the admission gate on the result
+nrv migrate <slug|path> --rollback <ts>   # undo, when the squad has not changed since
+```
+
+What changes in the squad:
+
+| v5 | v6 |
+|----|----|
+| `workflows/<name>.yaml`, in one of eight graph dialects | `workflows/<name>.md` — frontmatter graph, prose body (§28.1) |
+| `steps[].depends_on` / `deps` / `after` | `steps[].requires` |
+| a prompt inline in `task: \|` or `action:` | `tasks/<workflow>-<step>.md` when it is a real prompt, the body under `## <step.id>` when it is a note |
+| `invoke.ref: workflows/main.yaml` | `invoke.ref: workflows/main` (§28.6) |
+| `components.workflows: [main.yaml]` | `components.workflows: [main]` |
+| `success_indicators` nobody read | `capabilities[].acceptance[]`, derived with `blocking: false` (§29) |
+| `not_for: ["long refusal sentence (use other-squad)"]` | `not_for: ["short refusal"]` — 25 chars max (§33) |
+| `protocol: "5.0"` | `protocol: "6.0"` |
+
+What it refuses to convert, and why: `event_routes` (a router, not a DAG), a
+document from which no step can be derived, and a file whose stem is not
+`^[a-z][a-z0-9_-]*$`. Without `--force` the squad is refused whole and nothing
+is written; with `--force` that one document is left alone and the rest
+migrates. **The migration never invents prose** — every sentence in a converted
+body already existed in the source.
+
+Three populations, three procedures (§35.5): never migrate an installed pack
+copy (migrate the pack source and let `nrv update` deliver it); unify an
+authored squad with its pack copies via `unify-squad.ts <slug> --authored
+<local>` BEFORE migrating, because `check-copy-drift --strict` compares the
+`squad.yaml` md5 across copies; migrate an orphan in place.
+
+Reading `.yaml` is permanent. A v5 squad nobody migrates keeps loading, keeps
+routing and keeps validating exactly as it does today.
 
 ## Supported Source Versions
 
@@ -12,7 +50,9 @@ The v4 harness accepts squads written against:
 
 | Source version | Loaded how | Action recommended |
 |---------------|-----------|-------------------|
-| **v4.0** | Native | No action |
+| **v6.0** | Native | No action |
+| **v5.0** | Native | `nrv migrate <slug> --to 6 --apply` (optional; v5 stays valid) |
+| **v4.0** | Native, treated as declaring no capabilities | `nrv migrate <slug> --to 6 --apply` after adding `capabilities[]` |
 | **v3.1** | Auto-upgrade at load with warning | `squads migrate --from v3.1 --to v4` |
 | **v2.0 CC flat** | Auto-upgrade via shim with warning | `squads migrate --from v2 --to v4` |
 | **v2.0 legacy nested** | Legacy shim + deprecation warning | `squads migrate --from v2 --to v4` (urgent) |
@@ -23,6 +63,8 @@ The validator inspects `squad.yaml` and agent files:
 
 | Indicator | Detected version |
 |-----------|-----------------|
+| `protocol: "6.0"` in manifest | v6.0 native |
+| `protocol: "5.0"` in manifest | v5.0 native |
 | `protocol: "4.0"` in manifest | v4.0 native |
 | `protocol` absent, all agents have `maxTurns` mandatory | v3.1 |
 | `protocol` absent, flat `name:`+`description:` in agents | v2.0 CC flat |
@@ -109,10 +151,12 @@ The migration tool:
 
 ## After Migration
 
-1. Run `squads validate ./my-squad` — should pass cleanly.
-2. Test with the target runtime: `squads run ./my-squad --runtime claude-code`.
-3. Review generated `MIGRATION.md` to confirm all changes are intended.
-4. Commit migrated squad.
+1. Run `nrv validate squad ./my-squad` — zero errors, or `--fix` and re-run.
+2. Re-index so routing sees the new text: `nrv index`.
+3. Review the migration report (`<state>/squads/<slug>/migrate-<ts>.json`) to
+   confirm every change was intended; `nrv migrate <slug> --rollback <ts>` puts
+   it back while the squad is untouched.
+4. Commit the migrated squad.
 
 ---
 

@@ -105,3 +105,69 @@ describe("the graph layer stays off the dispatch hot path", () => {
     }
   });
 });
+
+// ── squad composition reporting ─────────────────────────────────────────────
+// `requires` that resolves to nothing is a broken declaration: the squad says
+// it needs a capability the library does not carry, and no ordering can fix it,
+// so --strict fails. Ambiguity is a different animal — the capability EXISTS,
+// twice — and it stays a report: erroring would fail the whole library on the
+// duplicate ids it already carries.
+
+function squadFixture(capabilities: Record<string, string>): string {
+  const dir = mkdtempSync(join(tmpdir(), "graph-comp-"));
+  for (const [slug, body] of Object.entries(capabilities)) {
+    mkdirSync(join(dir, "squads", slug), { recursive: true });
+    writeFileSync(join(dir, "squads", slug, "squad.yaml"), `name: ${slug}\nversion: 1.0.0\nprotocol: "6.0"\n${body}`);
+  }
+  return dir;
+}
+
+describe("nrv graph check reports squad composition", () => {
+  test("an unresolved requires fails --strict and names the ref", () => {
+    const pack = squadFixture({
+      consumer: "capabilities:\n  - id: content.social.plan\n    requires:\n      - design.brand.identity\n",
+    });
+    try {
+      const { out, code } = run(["check", "--pack", pack, "--strict", "--json"]);
+      expect(code).toBe(1);
+      const j = JSON.parse(out);
+      expect(j.composition.map((c: { code: string; ref: string }) => [c.code, c.ref]))
+        .toEqual([["x_requires_unresolved", "design.brand.identity"]]);
+    } finally {
+      rmSync(pack, { recursive: true, force: true });
+    }
+  });
+
+  test("an ambiguous requires is reported, never fatal, and creates no edge", () => {
+    const pack = squadFixture({
+      "provider-a": "capabilities:\n  - id: design.brand.identity\n",
+      "provider-b": "capabilities:\n  - id: design.brand.identity\n",
+      consumer: "capabilities:\n  - id: content.social.plan\n    requires:\n      - design.brand.identity\n",
+    });
+    try {
+      const { out, code } = run(["check", "--pack", pack, "--strict", "--json"]);
+      expect(code).toBe(0);
+      const j = JSON.parse(out);
+      expect(j.issues).toEqual([]);
+      expect(j.composition.map((c: { code: string; candidates: string[] }) => [c.code, c.candidates]))
+        .toEqual([["x_requires_ambiguous", ["provider-a", "provider-b"]]]);
+    } finally {
+      rmSync(pack, { recursive: true, force: true });
+    }
+  });
+
+  test("a resolved composition is silent and shows up in the order", () => {
+    const pack = squadFixture({
+      provider: "capabilities:\n  - id: design.brand.identity\n    produces:\n      - brand_kit\n",
+      consumer: "capabilities:\n  - id: content.social.plan\n    consumes:\n      - brand_kit\n",
+    });
+    try {
+      expect(run(["check", "--pack", pack, "--strict", "--json"]).code).toBe(0);
+      expect(JSON.parse(run(["check", "--pack", pack, "--json"]).out).composition).toEqual([]);
+      const order = JSON.parse(run(["order", "--pack", pack, "--json"]).out);
+      expect(order.order).toEqual(["squad:provider", "squad:consumer"]);
+    } finally {
+      rmSync(pack, { recursive: true, force: true });
+    }
+  });
+});

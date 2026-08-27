@@ -53,7 +53,7 @@ Verification failures trigger the retry/escalation cascade (Core §14.5).
 
 ## Handoff Between Steps
 
-Each step produces a handoff artifact consumed by downstream steps. The artifact is a portable JSON structure (see Core §9 and `schemas/handoff-schema.json`). Squads that rely on passing raw conversation history fragment context and multiply token costs.
+Each step produces a handoff artifact consumed by downstream steps. The artifact is a portable JSON structure (see Core §9 and `HandoffArtifactSchema` in `_shared/validators/validators.ts`). Squads that rely on passing raw conversation history fragment context and multiply token costs.
 
 ## Surviving Compaction — Practices
 

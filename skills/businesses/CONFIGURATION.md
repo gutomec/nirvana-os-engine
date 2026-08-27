@@ -54,14 +54,24 @@ Creates a new business via interactive wizard.
 | `--domain <slug>,...` | (interactive) | Override domains (skips the user prompt) |
 | `--employee-count <n>` | (interactive) | Pre-sets the wizard's employee count |
 
-### `validate-business.ts <path-or-slug>`
+### `validate-business.ts <path-or-slug>|--all`
 
-Validates manifest + integrity.
+The admission gate. Delegates to the shared runner, so this script and
+`nrv validate business` are the same code path and the same catalog
+(`BUSINESS_PROTOCOL_V2.md` §16: 16 errors, 23 warnings).
 
 | Flag | Default | Purpose |
 |---|---|---|
-| `<path-or-slug>` (positional) | required | Absolute path or slug (resolved against `BUSINESSES_DIR`) |
-| `--strict` | (off) | Promotes warnings to errors (BP7 antagonist, intake unique, schema strict) |
+| `<path-or-slug>` (positional) | required unless `--all` | Absolute path or slug (resolved against the scope, then `BUSINESSES_DIR`) |
+| `--all` | (off) | Every business the scope resolves, one batch report |
+| `--fix` | (off) | Applies the mechanical fixers with backup, re-check and rollback |
+| `--strict` | (off) | Warnings reject too (exit 2) |
+| `--json` | (off) | `nirvana.verify-report/v1`, or `nirvana.verify-batch/v1` with `--all` |
+| `--report` | (off) | Also writes the JSON to `.audit-state/<slug>/verify.json` |
+| `--no-retrieval` | (off) | Skips the self-retrieval axis |
+
+Exit: `0` admitted · `1` an error the baseline does not cover · `2` only
+warnings, under `--strict` · `64` usage error or unknown business.
 
 ### `index-businesses.ts [options]`
 

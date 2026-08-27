@@ -67,7 +67,10 @@ export function isCompatibleEdge(type: EdgeType, from: NodeType, to: NodeType): 
     case "staffs": return from === "employee" && to === "squad";
     case "embodies": return ["employee", "company"].includes(from) && to === "mind_clone";
     case "covers": return from === "squad" && to === "company";
-    case "feeds": return from === "material" && ["mind_clone", "company", "squad"].includes(to);
+    // A squad is a legal `feeds` source since Squad Protocol v6 §31: a
+    // capability's `consumes[]` names a `produces` slug, and what produces it
+    // is another squad, not a material.
+    case "feeds": return ["material", "squad"].includes(from) && ["mind_clone", "company", "squad"].includes(to);
     case "depends_on": return true;
     case "yields": return ["company", "squad", "agent"].includes(from) && to === "deliverable";
   }

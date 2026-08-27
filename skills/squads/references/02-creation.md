@@ -159,7 +159,7 @@ in `templates/capability-block.tmpl`.
 ```yaml
   - id: <domain>.<feature>.<action>           # dotted, ≥3 segments
     description: >
-      <What it delivers, in 20-500 chars. Concrete.>
+      <What it delivers, in 20-1500 chars. Concrete.>
     domains: [<d1>, <d2>]                      # 1-5 from CAPABILITY_CATALOG_V1
     inputs:
       - name: <input_name>

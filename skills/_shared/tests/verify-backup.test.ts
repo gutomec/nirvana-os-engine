@@ -7,6 +7,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { BACKUP_KEEP, createBackup, listBackups, mindCloneModule, verifyEntity, type KindModule } from "../lib/verify/index.ts";
 import { cloneFixture, rmrf, runCli, tempRoot, treeDigest } from "./helpers/verify-fixture.ts";
+import { spawnBudgetMs } from "../../harness/tests/helpers/test-budgets.ts";
 
 const ROOTS: string[] = [];
 afterAll(() => { for (const r of ROOTS) rmrf(r); });
@@ -33,7 +34,7 @@ describe("backup", () => {
     expect(treeDigest(backups[0])).toEqual(before);
     expect(treeDigest(dir)).not.toEqual(before);
     expect(fs.readFileSync(path.join(dir, "MANIFEST.yaml"), "utf8")).not.toContain("delegates_to");
-  });
+  }, spawnBudgetMs(2));
 
   test("no fixer to run → no backup", async () => {
     const r = root();
@@ -41,7 +42,7 @@ describe("backup", () => {
     const report = await verifyEntity("mind-clone", dir, { ...quiet(r), fix: "mechanical" });
     expect(report.fix_outcome).toMatchObject({ mode: "mechanical", backup: null, rolled_back: false });
     expect(listBackups("mind-clone", "jane-doe", path.join(r, "backups"))).toEqual([]);
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("rollback", () => {
@@ -52,7 +53,7 @@ describe("rollback", () => {
     const module = sabotaged("delegates_to_strip", ({ dir: d }) => {
       fs.writeFileSync(path.join(d, "agent", "SOUL.md"), "", "utf8");
       throw new Error("boom");
-    });
+    }, spawnBudgetMs(2));
     const report = await verifyEntity("mind-clone", dir, { ...quiet(r), fix: "mechanical", module });
     expect(report.fix_outcome?.rolled_back).toBe(true);
     expect(report.fix_outcome?.rollback_reason).toContain("boom");
@@ -67,7 +68,7 @@ describe("rollback", () => {
     const module = sabotaged("delegates_to_strip", ({ dir: d, finding }) => {
       fs.writeFileSync(path.join(d, "MANIFEST.yaml"), "manifest: [unclosed\n", "utf8");
       return { fixer: "delegates_to_strip", finding: finding.id, applied: true, changed_files: ["MANIFEST.yaml"] };
-    });
+    }, spawnBudgetMs(2));
     const report = await verifyEntity("mind-clone", dir, { ...quiet(r), fix: "mechanical", module });
     expect(report.fix_outcome?.rolled_back).toBe(true);
     expect(report.fix_outcome?.rollback_reason).toContain("manifest");
@@ -82,7 +83,7 @@ describe("rollback", () => {
     const deletesSoul = sabotaged("delegates_to_strip", ({ dir: d, finding }) => {
       fs.rmSync(path.join(d, "agent", "SOUL.md"));
       return { fixer: "delegates_to_strip", finding: finding.id, applied: true, changed_files: ["agent/SOUL.md"] };
-    });
+    }, spawnBudgetMs(2));
     const rolled = await verifyEntity("mind-clone", dir, { ...quiet(r), fix: "mechanical", module: deletesSoul });
     expect(rolled.fix_outcome?.rolled_back).toBe(true);
     expect(rolled.fix_outcome?.rollback_reason).toContain("artifact_missing:agent/SOUL.md");
@@ -118,7 +119,7 @@ describe("idempotence and retention", () => {
     expect(second.json.fixes.filter((f: any) => f.applied)).toEqual([]);
     expect(second.json.fix_outcome.backup).toBeNull();
     expect(treeDigest(dir)).toEqual(after);
-  });
+  }, spawnBudgetMs(2));
 
   test(`only the newest ${BACKUP_KEEP} backups of an entity are kept`, () => {
     const r = root();
@@ -129,7 +130,7 @@ describe("idempotence and retention", () => {
     expect(kept.length).toBe(BACKUP_KEEP);
     expect(kept).toEqual(made.slice(-BACKUP_KEEP));
     expect(fs.existsSync(made[0])).toBe(false);
-  });
+  }, spawnBudgetMs(2));
 
   test("a same-millisecond collision keeps listing order equal to creation order", () => {
     // The retention rule is "the newest BACKUP_KEEP", and it reads that order off
@@ -146,5 +147,5 @@ describe("idempotence and retention", () => {
     expect(listed.length).toBe(2);
     expect(listed).toEqual([first, second]);
     expect(fs.existsSync(parent)).toBe(true);
-  });
+  }, spawnBudgetMs(2));
 });

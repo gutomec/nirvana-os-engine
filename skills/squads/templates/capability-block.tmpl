@@ -1,6 +1,6 @@
 # ─────────────────────────────────────────────────────────────────────
 # Capability Block — snippet para colar dentro de capabilities[] em squad.yaml
-# Squad Protocol v5 §22. Schema: capability.schema.json.
+# Squad Protocol v5 §22 / v6 §29-§33. Schema: capability.schema.json (generated).
 # ─────────────────────────────────────────────────────────────────────
 
   - id: {{CAPABILITY_ID}}
@@ -10,7 +10,7 @@
 
     description: >
       {{CAPABILITY_DESCRIPTION}}
-    # ^^^ 20-500 chars. Diga o que entrega em termos concretos. Esta string
+    # ^^^ 20-1500 chars (LIMITS.capability_description_max). Diga o que entrega em termos concretos. Esta string
     # alimenta o BM25 da discovery — escreva como se fosse buscar você mesmo.
 
     domains: [{{DOMAIN_1}}, {{DOMAIN_2}}]

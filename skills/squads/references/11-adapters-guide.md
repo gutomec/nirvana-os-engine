@@ -19,7 +19,7 @@ Every adapter consists of two files:
 ```
 adapters/
 ├── {runtime_id}.md     # Human-readable documentation (15 sections)
-└── {runtime_id}.yaml   # Machine-readable manifest (validated by adapter-schema.json)
+└── {runtime_id}.yaml   # Machine-readable manifest (read by lib/adapter-loader.js)
 ```
 
 Both must exist for the adapter to be usable by the harness.
@@ -89,7 +89,7 @@ invocation:
 Validate it:
 
 ```bash
-ajv validate -s schemas/adapter-schema.json -d adapters/my-runtime.yaml
+nrv validate squad .   # the adapter loader rejects a manifest it cannot read
 ```
 
 ### Step 4: Declare Features Honestly
@@ -192,7 +192,7 @@ This discipline keeps adapters honest. When a line changes, the citation becomes
 ## Submitting a New Adapter
 
 1. Draft adapter doc and YAML manifest.
-2. Validate manifest against `schemas/adapter-schema.json`.
+2. Validate the manifest by loading it with `skills/squads/lib/adapter-loader.js`.
 3. Test with one or more example squads.
 4. Verify all 6 required sections are populated.
 5. Open a PR with the adapter files and a short rationale.

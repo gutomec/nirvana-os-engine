@@ -16,9 +16,11 @@
 import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { parse as parseYaml } from "yaml";
 import {
   dependencyPair,
   type DependencyGraph,
+  type GraphEdge,
   type GraphNode,
 } from "./dependency-graph.ts";
 
@@ -150,14 +152,153 @@ export function readCloneBindings(roots: EntityRoots): CloneBindingScan {
   return { bindings, businesses, availableClones };
 }
 
+/** One capability's composition declarations, as read off a squad.yaml. */
+interface DeclaredCapability {
+  squad: string;
+  id: string;
+  produces: string[];
+  requires: string[];
+  consumes: string[];
+}
+
+export interface SquadCompositionIssue {
+  /** `x_requires_ambiguous`, `x_requires_unresolved`, `x_consumes_*`. */
+  code: string;
+  kind: "requires" | "consumes";
+  reason: "ambiguous" | "unresolved";
+  squad: string;
+  capability: string;
+  /** The declaration verbatim, prefix included. */
+  ref: string;
+  /** Provider slugs found, sorted; empty when nothing declares the ref. */
+  candidates: string[];
+}
+
+export interface SquadCompositionScan {
+  edges: GraphEdge[];
+  issues: SquadCompositionIssue[];
+}
+
+/** `produces` slugs are authored prose, so they match on case and padding. */
+const producesKey = (slug: string) => slug.trim().toLowerCase();
+
+function readDeclaredCapabilities(squadsDir: string): DeclaredCapability[] {
+  const out: DeclaredCapability[] = [];
+  for (const slug of readdirSync(squadsDir).sort()) {
+    const manifest = join(squadsDir, slug, "squad.yaml");
+    if (!existsSync(manifest)) continue;
+    let doc: unknown;
+    // A manifest that does not parse costs the graph nothing. Before v6 this
+    // reader only asked whether the file existed, and a squad nobody can read
+    // must not start breaking an install order it never took part in.
+    try { doc = parseYaml(readFileSync(manifest, "utf8")); } catch { continue; }
+    const caps = (doc as { capabilities?: unknown } | null)?.capabilities;
+    if (!Array.isArray(caps)) continue;
+    for (const cap of caps) {
+      if (!cap || typeof cap !== "object") continue;
+      const c = cap as Record<string, unknown>;
+      if (typeof c.id !== "string") continue;
+      const list = (key: string) =>
+        Array.isArray(c[key]) ? (c[key] as unknown[]).filter((v): v is string => typeof v === "string") : [];
+      out.push({
+        squad: slug,
+        id: c.id,
+        produces: list("produces"),
+        requires: list("requires"),
+        consumes: list("consumes"),
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Squad Protocol v6 §31, read off disk. `capabilities[].requires[]` names
+ * capability ids (optionally `slug:`-prefixed) and becomes a `depends_on`
+ * edge consumer → provider; `capabilities[].consumes[]` names `produces`
+ * slugs and becomes a `feeds` edge provider → consumer. Both go through
+ * dependencyPair() as "the provider exists first".
+ *
+ * An edge is created ONLY when the provider is unambiguous. Across the
+ * installed library a capability id and a `produces` slug are both free to
+ * repeat, and picking one of two providers would invent an execution order
+ * nobody declared — so two providers yield no edge and an
+ * `x_requires_ambiguous` / `x_consumes_ambiguous` row, while none at all
+ * yields `x_..._unresolved`. A reference the declaring squad satisfies itself
+ * is neither: a self-edge would be a cycle, and an intra-squad reference is
+ * not a gap.
+ */
+export function readSquadComposition(roots: EntityRoots): SquadCompositionScan {
+  const edges: GraphEdge[] = [];
+  const issues: SquadCompositionIssue[] = [];
+  if (!roots.squadsDir || !existsSync(roots.squadsDir)) return { edges, issues };
+
+  const declared = readDeclaredCapabilities(roots.squadsDir);
+  const byCapability = new Map<string, Set<string>>();
+  const byProduces = new Map<string, Set<string>>();
+  const index = (map: Map<string, Set<string>>, key: string, slug: string) => {
+    const set = map.get(key) ?? new Set<string>();
+    set.add(slug);
+    map.set(key, set);
+  };
+  for (const cap of declared) {
+    index(byCapability, cap.id, cap.squad);
+    for (const p of cap.produces) index(byProduces, producesKey(p), cap.squad);
+  }
+
+  const seen = new Set<string>();
+  const link = (type: "depends_on" | "feeds", consumer: string, provider: string) => {
+    const edge: GraphEdge = type === "depends_on"
+      ? { id: `depends_on:${consumer}->${provider}`, source: `squad:${consumer}`, target: `squad:${provider}`, type }
+      : { id: `feeds:${provider}->${consumer}`, source: `squad:${provider}`, target: `squad:${consumer}`, type };
+    if (seen.has(edge.id)) return;
+    seen.add(edge.id);
+    edges.push(edge);
+  };
+  const report = (
+    kind: SquadCompositionIssue["kind"],
+    reason: SquadCompositionIssue["reason"],
+    cap: DeclaredCapability,
+    ref: string,
+    candidates: string[]
+  ) => issues.push({ code: `x_${kind}_${reason}`, kind, reason, squad: cap.squad, capability: cap.id, ref, candidates });
+
+  const providesItself = (slug: string, id: string) => byCapability.get(id)?.has(slug) ?? false;
+
+  for (const cap of declared) {
+    for (const ref of cap.requires) {
+      const sep = ref.indexOf(":");
+      const explicit = sep === -1 ? null : ref.slice(0, sep);
+      const id = sep === -1 ? ref : ref.slice(sep + 1);
+      const providers = [...(byCapability.get(id) ?? [])].filter((s) => s !== cap.squad).sort();
+      const resolved = explicit
+        ? (providesItself(explicit, id) ? explicit : null)
+        : (providers.length === 1 ? providers[0] : null);
+      if (resolved && resolved !== cap.squad) link("depends_on", cap.squad, resolved);
+      else if (resolved) continue;
+      else if (!explicit && providers.length > 1) report("requires", "ambiguous", cap, ref, providers);
+      else if (!explicit && providesItself(cap.squad, id)) continue;
+      else report("requires", "unresolved", cap, ref, []);
+    }
+    for (const slug of cap.consumes) {
+      const key = producesKey(slug);
+      const providers = [...(byProduces.get(key) ?? [])].filter((s) => s !== cap.squad).sort();
+      if (providers.length === 1) link("feeds", cap.squad, providers[0]);
+      else if (providers.length > 1) report("consumes", "ambiguous", cap, slug, providers);
+      else if (!byProduces.get(key)?.has(cap.squad)) report("consumes", "unresolved", cap, slug, []);
+    }
+  }
+  return { edges, issues };
+}
+
 /**
  * The derived entity graph. Nodes: one `company` per business dir, one
  * `employee` per declaring employee, one `mind_clone` per referenced clone —
  * present or not (missing ones carry payload.missing = true) — and one
- * `squad` per squad dir (dependency-free until a declaration form exists).
- * Edges: `owns` (company → employee) and `embodies` (employee → mind_clone;
- * company → mind_clone for dna/ bindings). Dangling-symlink rows do not add
- * edges — the binding they duplicate is already in the graph.
+ * `squad` per squad dir. Edges: `owns` (company → employee), `embodies`
+ * (employee → mind_clone; company → mind_clone for dna/ bindings) and the
+ * squad → squad composition of readSquadComposition(). Dangling-symlink rows
+ * do not add edges — the binding they duplicate is already in the graph.
  */
 export function buildEntityGraph(roots: EntityRoots): DependencyGraph {
   const scan = readCloneBindings(roots);
@@ -207,6 +348,7 @@ export function buildEntityGraph(roots: EntityRoots): DependencyGraph {
         pushNode({ id: `squad:${s}`, type: "squad", payload: { slug: s } });
       }
     }
+    edges.push(...readSquadComposition(roots).edges);
   }
   return { nodes, edges };
 }

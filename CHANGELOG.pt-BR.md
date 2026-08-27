@@ -48,6 +48,125 @@ punhado de trechos. `squad.execute`, um manifesto ilegível e um id que o
 manifesto não declara caem todos nesse mesmo caminho, que é o que mantém os 204
 squads instalados despachando exatamente como despacham hoje.
 
+### A composição de squads vira aresta, e ordem de plano
+
+`capabilities[].requires[]` e `capabilities[].consumes[]` parseavam desde que os
+campos v6 entraram, e nenhum leitor os tocava. Agora são arestas.
+`readSquadComposition()`, em `skills/_shared/lib/entity-graph.ts`, lê cada
+`squad.yaml` instalado: uma entrada de `requires` resolve para o squad que
+declara aquele id de capability e vira `depends_on` do consumidor para o
+provedor; uma entrada de `consumes` resolve pelo `produces` e vira `feeds` do
+provedor para o consumidor. As duas passam pelo `dependencyPair()` como "o
+provedor existe primeiro", então `nrv graph order` e a ordem de instalação
+absorvem a composição sem uma segunda regra.
+
+A aresta só existe onde o provedor é inequívoco. Compartilhar um id de
+capability é o desenho, não um defeito: dez squads carregam `media.video.compose`
+e o roteador deve escolher entre eles pelo briefing. Escolher um deles aqui
+inventaria uma ordem de execução que ninguém declarou, então dois provedores não
+geram aresta e sim uma linha de reporte. Um prefixo `slug:` na referência
+(`brand-forge:design.brand.identity`) nomeia o provedor e resolve a questão.
+
+| Achado | `nrv graph check` |
+|---|---|
+| `requires` que ninguém provê | `x_requires_unresolved`, reprova no `--strict` |
+| `requires` que dois squads provêem | `x_requires_ambiguous`, reportado |
+| `consumes` que ninguém produz | `x_consumes_unresolved`, reportado |
+| `consumes` que dois squads produzem | `x_consumes_ambiguous`, reportado |
+
+A ambiguidade fica aquém do erro de propósito. A capability existe, duas vezes, e
+reprovar a biblioteca por um id repetido puniria justamente a forma para a qual o
+roteador foi feito. Um `requires` não resolvido é outro caso: a biblioteca não
+tem aquela capability, e nenhuma ordenação a fabrica.
+
+`compileManifest()` aceita o grafo derivado em `opts.composition` e herda a ordem
+entre dois nós `squad` de um mesmo plano quando o autor não declarou nenhuma. O
+autor continua vencendo, sempre: um par já ligado por uma aresta, em qualquer
+direção, fica exatamente como foi escrito. Sem a opção, a compilação é bit a bit
+a que já era publicada, e um teste de regressão a mantém assim.
+
+### `nrv validate business` ganha o catálogo, e os fixers de empresa existem
+
+A metade de empresa do portão de admissão carregava três critérios estruturais
+enquanto a §16.2 do `BUSINESS_PROTOCOL_V2.md` declarava trinta e nove, e os treze
+`fixable_diff` que o scorer de auditoria emitia nomeavam reparos que código
+nenhum executava. `skills/_shared/lib/verify/kinds/business.ts` é o catálogo
+inteiro agora, e `skills/businesses/lib/business-fixers.js` é o aplicador que o
+portão e o scorer chamam — os mesmos vinte e um handlers, uma tabela de
+despacho, nenhum LLM.
+
+Medido sobre as 61 empresas instaladas (contra uma cópia; a biblioteca não foi
+escrita): 0 erros de forma — todo manifesto e os 581 cargos já passam no Zod — e
+31 erros de semântica, todos de rota: 7 empresas mantêm `auto_routes` em
+`business.yaml` e 5 roteiam para um cargo que não existe. Os 1.262 avisos são a
+superfície que a v2 aposentou: 61 empresas declaram `employee_count`, 61 não
+declaram `acceptance` no cargo de intake, 302 campos estão aposentados pela §22,
+562 padrões não disparam em nenhum `example_brief` da própria empresa e 38 não
+trazem README.
+
+O `--fix` sobre essa cópia aplicou 578 reparos em 3,2 s, não fez rollback nenhum,
+deixou as 61 carregando e limpou 537 avisos e os 7 blocos de rota fora de lugar.
+`protocol: "2.0"` subiu em 56 das 61 — as cinco com erro aberto ficam em 1.0, que
+é a regra da §18.4. Uma segunda rodada de `--fix` sobre as mesmas 61 empresas
+mudou zero bytes.
+
+| Fixer | O que repara |
+|---|---|
+| `employee_frontmatter_repair` | um cargo sem bloco `---` ganha um derivado do próprio título e do primeiro parágrafo |
+| `intake_from_chart_root` | zero cargos de intake e uma raiz no org-chart: a raiz recebe o brief |
+| `type_flag_sync` | `type: antagonist_gate` ganha o `is_antagonist: true` que ele implica (§7.8) |
+| `acceptance_from_self_score` | `self_score_contract.criteria[]` → `acceptance[]`, ids prefixados pelo cargo quando colidem (§11) |
+| `acceptance_normalize` | ids de acceptance para `^[a-z][a-z0-9_-]*$`, únicos na empresa, notas de volta a 0..1 |
+| `heartbeat_strip` | o bloco que o BP10 aposentou, removido de todo cargo |
+| `draws_from_to_assigned` | fontes de `draws_from` que resolvem para um clone instalado viram `assigned_mind_clones` |
+| `dna_reference_to_pin` | `dna_reference` vira `pinned_mind_clones` quando o caminho resolve (§7.7) |
+| `deprecated_field_strip` | um campo aposentado da §22, onde quer que esteja declarado, a partir de uma allowlist |
+| `squads_authorized_empty_strip` | `squads_authorized: []` removido: vazio significa todos os squads (§6.10) |
+| `employee_count_strip` | a contagem que a §6.12 deriva do disco |
+| `manifest_schema_repair` | `name`, `version`, `protocol` e `license` quando o diretório já responde por eles |
+| `runtime_requirements_business_default` | um manifesto sem piso de runtime passa a seguir o runtime ativo |
+| `org_chart_repair` | o chart recomputado de `reports_to` / `manages`, bidirecional por construção |
+| `auto_routes_relocate` | `business.yaml.auto_routes` → `routing.yaml`, deduplicado, sem perder nenhuma (§13.2) |
+| `routing_scaffold` | `brief_intake.default_employee` para uma empresa que não declara nenhum |
+| `catch_all_to_default_employee` | uma rota `.*` vira o funcionário padrão, e só quando nada se perde |
+| `dna_dir_to_bindings` | symlinks de `dna/` viram `assigned_mind_clones` do cargo de intake (§5.3) |
+| `readme_business_scaffold` | um README derivado do manifesto e dos cargos, nunca sobrescrevendo um existente |
+| `memory_seed` | `memory/permanent.md` |
+| `protocol_bump_2` | `protocol: "2.0"`, por último, e só enquanto nenhum erro estiver aberto (§18.4) |
+
+Três regras valem para todos eles. **O corpo do cargo nunca é tocado**:
+`skills/_shared/lib/frontmatter-edit.ts` reescreve o bloco `---` pela API de
+documento da `yaml` e remonta o arquivo em volta da fatia original do corpo, de
+modo que comentários, ordem das chaves, fim de linha e todo byte abaixo do
+cabeçalho sobrevivem. **Nada autoral é apagado**: um *arquivo* aposentado é
+relatado e fica onde está, e uma rota é convertida no campo que a implementa,
+nunca descartada. **Nada é inventado**: nenhum fixer escreve um `not_for`, um
+`example_brief`, uma descrição ou um critério de aceitação, e uma fonte de
+`draws_from` que não resolve para um clone instalado mantém o campo em vez de
+virar um vínculo quebrado.
+
+`skills/businesses/scripts/validate-business.ts` deixou de ser quarenta linhas
+que davam spawn no loader: ele delega ao runner, então o script e o
+`nrv validate business` são um caminho de código só, com os mesmos códigos de
+saída, e `--report` grava `nirvana.verify-report/v1` em `.audit-state/<slug>/`.
+
+O scorer de auditoria andou junto com o protocolo. O critério 2 parou de pontuar
+a aritmética de `employee_count` do autor (a §6.12 a deriva) e passa a perguntar
+se os cargos estão lá e se os cabeçalhos parseiam; o critério 3 redireciona os
+seis pontos que pagava por declarar um `heartbeat` que agendador nenhum rodou
+para `acceptance`, o contrato que o juiz lê; o critério 5 pede à routing um
+`brief_intake` e padrões que disparem nos `example_briefs` da própria empresa. A
+rubrica soma exatamente 100 agora — somava 104 desde que `seat_sufficiency` foi
+acrescentado com o cabeçalho ainda dizendo 100 — e todo `fixable_diff` nomeia um
+handler que existe mais a classe que pode aplicá-lo (`mechanical`, `agentic`,
+`none`).
+
+A tabela da spec e o módulo agora são iguais nas duas direções: o
+`protocol-v2-spec-parity.test.ts` compara ids, severidade, classe de autofix e a
+marca de baselinável linha a linha, então um critério acrescentado de um lado
+sem o outro é teste vermelho.
+
+
 ### O leitor de workflow: um grafo canônico, todo dialeto legado normalizado
 
 O workflow de um squad era o único artefato do protocolo sem forma única.
@@ -116,6 +235,58 @@ por `_`↔`-` quando exatamente um componente casa e **nunca** escreve stub. Um
 `.yaml` também nunca vira `.md` num fixer: trocar a codificação é migração, com
 backup e relatório, e o fixer diz isso em vez de agir.
 
+### O Squad Protocol 6.0 está escrito, e um comando leva uma squad até lá
+
+`skills/squads/SQUAD_PROTOCOL_V6.md` diz o que o leitor e o portão já fazem,
+como delta sobre a v5 do mesmo jeito que a v5 foi delta sobre a v4: §28 o
+documento de workflow (`.md` = grafo no frontmatter mais corpo em prosa, corpo
+dividido em `## <step.id>`, o teto de palavras, a tabela de lint com uma
+severidade por protocolo, a regra do gêmeo, referências sem a codificação), §29
+o contrato de aceitação, §30 o contrato do avaliador, §31 composição, §32 o
+vínculo de execução, §33 `not_for` em 25 caracteres, §34 admissão, §35 migração,
+App-G os schemas gerados e App-H o que a v6 deprecia.
+
+Três desses contratos são declarativos hoje: o schema aceita, o portão valida, e
+nenhum leitor de execução consome ainda. Cada um está marcado como **limite** no
+texto, com o que falta, porque uma spec que descreve um engine inexistente é
+pior do que uma que admite a lacuna.
+`skills/squads/tests/protocol-v6-spec-parity.test.ts` quebra o build quando um id
+de critério, um id de lint, um fixer ou uma flag do `nrv migrate` deixa de ser
+nomeado na spec.
+
+`nrv migrate <slug|path> --to 6` é a conversão, e **dry run é o padrão**: sem
+`--apply` nada é escrito, nem a squad, nem o backup, nem o relatório. Por
+workflow:
+
+| Legado | v6 |
+|---|---|
+| `workflows/<nome>.yaml` em um de oito dialetos | `workflows/<nome>.md`, o grafo canônico |
+| `depends_on` / `deps` / `after` | `requires` |
+| um prompt inline em `task: \|` (>= 40 palavras) | `tasks/<workflow>-<step>.md`, e o passo ganha a referência `task:` |
+| um recado curto inline | o corpo, sob `## <step.id>` |
+| gêmeos `x.md` + `x.yaml` | um arquivo só: o grafo do YAML, o corpo do Markdown |
+| `invoke.ref: workflows/main.yaml` | `invoke.ref: workflows/main` |
+| `success_indicators` que ninguém lia | `capabilities[].acceptance[]`, `blocking: false` |
+| um `name` que não é o stem do arquivo | `extensions.title`, realocado, nunca descartado |
+
+Ela nunca inventa prosa: toda frase de um corpo convertido já existia na fonte, e
+o teste afirma isso por substring. E recusa três documentos em vez de adivinhar —
+`event_routes` (roteador, não DAG), um documento do qual nenhum passo pode ser
+derivado, e um stem fora de `^[a-z][a-z0-9_-]*$`. Sem `--force` a squad inteira é
+recusada; com ela, aquele documento fica intocado e o resto migra. O `.yaml` só é
+apagado depois de o `.md` ser relido e casar com `WorkflowSchema`.
+
+Em volta da conversão: backup em `~/squads-legacy-v5/<slug>.<ts>/` escrito com
+`fs.cpSync` e nunca rsync, relatório `nirvana.squad-migrate/v1` no state dir das
+squads e nunca dentro da squad, `--rollback <ts>` que restaura e recusa quando a
+squad mudou depois da migração, idempotência decidida em bytes, e uma chamada ao
+`nrv validate squad` no fim que imprime o veredito.
+
+Squads novas já nascem lá. O `templates/workflow.md.tmpl` é o documento
+canônico, o `squad.yaml.tmpl` traz `protocol: "6.0"` com referências sem
+extensão, e o `init-squad.ts` grava `workflows/<ref>.md` e aponta o passo 4 para
+`nrv validate squad <dir>`.
+
 ### Removido
 
 O `humanize` saiu da superfície do protocolo de squads. Era a contradição que o
@@ -136,6 +307,19 @@ bloco YAML inválido.
 
 Limites novos: `workflow_body_words_max` (2500) e
 `squad_prompt_components_bytes_max` (65536).
+
+Os espelhos de JSON Schema por squad saíram: `skills/squads/schemas/`
+(`squad-schema.json`, `agent-schema.json`, `task-schema.json`,
+`adapter-schema.json`, `handoff-schema.json`). Nenhum caminho de código os lia, e
+o `squad-schema.json` descrevia um manifesto v4 que ninguém autorava havia um
+ano. O que substituiu cada um está tabulado em `references/05-schemas.md`. Os
+três que restam são GERADOS dos schemas Zod que executam:
+`bun scripts/gen-json-schemas.ts` grava
+`_shared/schemas/{capability,squad,workflow}.schema.json`, e o `--check` roda no
+`check:all`, então o espelho não pode mais discordar da fonte. Isso fecha um
+desvio documentado: o `capability.schema.json` limitava `description` a 500
+caracteres meses depois de o `LIMITS` ter subido para 1500, e o mesmo 500 estava
+repetido em quatro documentos de referência e num template.
 
 ### Business Protocol 2.0: metadados de roteamento, clones fixados, squads preferidos, aceitação por cargo, um campo de orçamento e a superfície morta deprecada
 

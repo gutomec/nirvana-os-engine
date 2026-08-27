@@ -6,6 +6,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { applyBaseline, importLegacy, loadBaseline, recordBaseline, verifyEntity, type Finding } from "../lib/verify/index.ts";
 import { cloneFixture, rmrf, runCli, tempRoot } from "./helpers/verify-fixture.ts";
+import { spawnBudgetMs } from "../../harness/tests/helpers/test-budgets.ts";
 
 const ROOTS: string[] = [];
 afterAll(() => { for (const r of ROOTS) rmrf(r); });
@@ -26,7 +27,7 @@ describe("merge and regression", () => {
     expect(read(file).entities).toEqual({ "mind-clone:a": ["validation_verdict_missing"], "mind-clone:b": ["source_material_missing"] });
     expect(recordBaseline(file, [{ kind: "mind-clone", slug: "a", debt: [] }]).ok).toBe(true);
     expect(read(file).entities).toEqual({ "mind-clone:b": ["source_material_missing"] });
-  });
+  }, spawnBudgetMs(2));
 
   test("growth is refused without allowRegression, and named", () => {
     const r = root();
@@ -39,12 +40,12 @@ describe("merge and regression", () => {
     const allowed = recordBaseline(file, [{ kind: "mind-clone", slug: "a", debt: ["validation_verdict_missing", "source_material_missing"] }], { allowRegression: true });
     expect(allowed.ok).toBe(true);
     expect(read(file).entities["mind-clone:a"]).toEqual(["source_material_missing", "validation_verdict_missing"]);
-  });
+  }, spawnBudgetMs(2));
 
   test("a first record with no baseline is never a regression", () => {
     const r = root();
     expect(recordBaseline(bl(r), [{ kind: "business", slug: "x", debt: ["seat_thin:employees/ceo.md"] }]).ok).toBe(true);
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("applyBaseline", () => {
@@ -54,7 +55,7 @@ describe("applyBaseline", () => {
     const baseline = { recorded_at: "t", entities: { "business:acme": ["validation_verdict_missing", "seat_thin:employees/ceo.md", "one_liner_too_long"] } };
     applyBaseline("business", "acme", findings, new Set(["validation_verdict_missing", "seat_thin"]), baseline);
     expect(findings.map((f) => f.baselined)).toEqual([true, true, false, false]);
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("legacy import", () => {
@@ -71,7 +72,7 @@ describe("legacy import", () => {
       "business:acme": ["seat_thin:employees/ceo.md", "seat_thin:employees/cto.md"],
       "business:beta": ["seat_thin:employees/ops.md"],
       "mind-clone:jane": ["source_material_missing", "validation_verdict_missing"],
-    });
+    }, spawnBudgetMs(2));
     expect(b?.imported_from?.length).toBe(2);
     expect(fs.existsSync(bl(r))).toBe(true);
     // second load reads the written file: the legacy files are not consulted again
@@ -84,7 +85,7 @@ describe("legacy import", () => {
     const r = root();
     expect(loadBaseline(bl(r))).toBeNull();
     expect(fs.existsSync(bl(r))).toBe(false);
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("grandfathering", () => {
@@ -109,7 +110,7 @@ describe("grandfathering", () => {
     cloneFixture(r2, "jane-doe", { verdict: null });
     expect(runCli(r2, ["mind-clone", "jane-doe", "--strict", "--no-retrieval"]).code).toBe(2);
     expect(fs.existsSync(bl(r2))).toBe(false);
-  });
+  }, spawnBudgetMs(2));
 
   test("--all --record then --all --strict: recorded debt no longer rejects; growth is refused", () => {
     const r = root();
@@ -134,5 +135,5 @@ describe("grandfathering", () => {
     const other = path.join(r, "other-baseline.json");
     expect(runCli(r, ["mind-clone", "--all", "--record", "--baseline", other, ...rootArg]).code).toBe(0);
     expect(fs.existsSync(other)).toBe(true);
-  });
+  }, spawnBudgetMs(2));
 });
