@@ -291,42 +291,62 @@ function fix_domain_realign(squadDir, patch) {
 
 // ─── structural fixers (tasks, agents, readme, workflows) ───
 
+/**
+ * Headings the library writes acceptance criteria under when it does not write
+ * `## Acceptance Criteria`. Measured over the 206 installed squads on
+ * 27/08/2026: `Quality criteria` (37 task files), `Critérios de Qualidade` (22),
+ * `Acceptance` / `Acceptance (binário)` (14), `Postconditions` (9 — the
+ * brandcraft case). Nothing here is invented: a heading nobody writes only
+ * widens what a rename can damage.
+ *
+ * `Checklist` is deliberately absent. In the library it opens `### Pre` and
+ * `### Post` subsections, so renaming it would promote preconditions into the
+ * contract the judge scores against — the same lie by a different route.
+ */
+const AC_ALIAS_RE = /^(#{2,6})[ \t]+(?:Postconditions|P[óo]s[- ]?condi[çc][õo]es|Quality criteria|Crit[ée]rios? de Qualidade|Acceptance(?:[ \t]*\([^)\n]*\))?)[ \t]*$/im;
+
+/**
+ * Rename first, and never fabricate.
+ *
+ * The parser the judge reads (`acceptanceCriteriaOf`) matches
+ * `## Acceptance Criteria` and nothing else. A task whose real contract sits
+ * under another heading is therefore invisible to the judge — and appending a
+ * generic block, as this fixer used to, left the true criterion under one
+ * heading and a placebo under the one that is scored. That is worse than the
+ * finding it closed, because it closes silently.
+ *
+ * So: move the author's criteria under the heading the judge reads. When there
+ * is nothing to move, decline and name the tasks. v6 §28.3 — "os fixers nunca
+ * inventam" — and §35.2 both draw the line here: writing the criterion would
+ * be writing the squad's method.
+ */
 function fix_tasks_acceptance_criteria(squadDir) {
   const dir = path.join(squadDir, 'tasks');
   if (!fs.existsSync(dir)) return { ok: false, reason: 'tasks/ missing' };
   const files = fs.readdirSync(dir).filter(f => f.endsWith('.md'));
-  let patched = 0;
+  let renamed = 0;
+  const unwritten = [];
   for (const f of files) {
     const fp = path.join(dir, f);
-    let body = fs.readFileSync(fp, 'utf8');
+    const body = fs.readFileSync(fp, 'utf8');
     const hasACHeader = /^##+\s+(Acceptance Criteria|Critérios de Aceita[çc]ão|Success Criteria)/im.test(body);
     const hasOutputs = /^outputs\s*:/m.test(body);
     const hasACField = /^acceptance_criteria\s*:/m.test(body);
     if (hasACHeader || hasOutputs || hasACField) continue;
-    const slug = f.replace(/\.md$/, '');
-    const block = [
-      '',
-      '## Acceptance Criteria',
-      '',
-      `- [ ] Output produced for task \`${slug}\` is non-empty and matches the declared schema.`,
-      '- [ ] All inputs referenced in the task body are consumed; no orphan placeholders remain.',
-      '- [ ] Resulting handoff artifact is valid against \`_shared/schemas/handoff.schema.json\`.',
-      '',
-      '## Output Schema',
-      '',
-      '```yaml',
-      'outputs:',
-      `  - name: ${slug}_result`,
-      '    type: object',
-      `    description: Deliverable produced by the ${slug} task.`,
-      '```',
-      '',
-    ].join('\n');
-    if (!body.endsWith('\n')) body += '\n';
-    fs.writeFileSync(fp, body + block, 'utf8');
-    patched++;
+    const alias = AC_ALIAS_RE.exec(body);
+    if (!alias) { unwritten.push(f.replace(/\.md$/, '')); continue; }
+    const head = `${alias[1]} Acceptance Criteria`;
+    fs.writeFileSync(fp, body.slice(0, alias.index) + head + body.slice(alias.index + alias[0].length), 'utf8');
+    renamed++;
   }
-  return { ok: true, patched, total: files.length };
+  if (renamed === 0) {
+    if (unwritten.length === 0) return { ok: false, reason: 'every task already declares acceptance criteria or outputs' };
+    return {
+      ok: false,
+      reason: `${unwritten.length} task(s) declare no criteria under any heading (${unwritten.slice(0, 5).join(', ')}) — the author writes them; a fabricated one would be scored as a contract`,
+    };
+  }
+  return { ok: true, renamed, unwritten: unwritten.length, total: files.length };
 }
 
 function fix_agents_frontmatter_repair(squadDir) {

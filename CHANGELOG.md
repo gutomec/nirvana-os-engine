@@ -8,6 +8,51 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Two mechanical fixers were lying: one fabricated a criterion, the other repaired nothing
+
+Both turned up in a real audit of `brandcraft` on 27/08/2026, and the first would
+have made that squad worse if anyone had run `--fix` before reading it.
+
+`fix_tasks_acceptance_criteria` tested whether a task carried an acceptance
+heading and, finding none, appended a generic block. The thirty-two tasks of that
+squad wrote the true criterion under `## Postconditions`. The judge's parser,
+`acceptanceCriteriaOf`, matches `## Acceptance Criteria` and nothing else, so the
+fixer would have left every task with the author's contract under one heading and
+a placebo under the heading that is actually scored. It also appended an
+`## Output Schema` block declaring outputs the task never had, which flipped the
+detector's `outputs:` test true and left the finding unable to fire again. A fixer
+that silences its own finding by inventing the answer is worse than the gap it
+closed, because the gap was at least visible.
+
+It renames now, and fabricates nothing. The alias list is measured, not guessed:
+across the 206 installed squads the criteria that are not under
+`## Acceptance Criteria` sit under `Quality criteria` (37 task files),
+`Critérios de Qualidade` (22), `Acceptance` and `Acceptance (binário)` (14), and
+`Postconditions` (9). `Checklist` is deliberately excluded — in this library it
+opens `### Pre` and `### Post` subsections, and renaming it would promote
+preconditions into the contract the judge scores. Of the 291 task files that
+trigger the finding today, 121 carry real criteria that now move under the
+heading the judge reads, in 19 squads. The other 170 stay a finding. v6 §28.3
+already settled that question for the sibling fixer: writing the criterion is
+writing the squad's method, and the author writes it.
+
+`workflow_refs_repair` matched a reference by case and separator alone, never
+stripping the directory an author writes into the path. Nine workflows of
+brandcraft wrote `task: tasks/inspect-quality.md` with every file present; the
+lint compares the value against the stem on disk, so present read as absent and
+twelve of the thirteen pending references survived `--fix` untouched. The
+executor had been reading that shape correctly all along, since `squad-exec.ts`
+strips `^(agents|tasks)/` before loading a component: the gate and the runtime
+disagreed about a file both could open.
+
+Step-reference normalization now strips the component directory the way it
+already stripped the encoding, and the repair strips it before matching, then
+writes the bare stem back. Accepting the written form is not adopting it as
+canonical: §28.6 keeps a reference free of directory and extension, and that is
+what `--fix` writes. Measured over the installed library, unresolved step
+references fall from 1021 to 829, and the squads carrying the finding from 78
+to 62.
+
 ### The cockpit read `0 running` while two dispatches were writing to disk
 
 On 27/08/2026 the owner opened Glance with two dispatches alive and the Runs

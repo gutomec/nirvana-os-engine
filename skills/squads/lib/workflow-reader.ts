@@ -44,6 +44,9 @@ export const WORKFLOW_EXTS = [".md", ".yaml", ".yml"] as const;
 const WORKFLOW_EXT_RE = /\.(ya?ml|md)$/i;
 const COMPONENT_EXT_RE = /\.(ya?ml|md|markdown)$/i;
 
+/** The component directory an author writes into a step reference. */
+const COMPONENT_DIR_RE = /^(?:agents|tasks)\//i;
+
 /** `^[a-z][a-z0-9_-]*$` — the canonical form of a workflow name and a step id. */
 export const CANONICAL_ID = /^[a-z][a-z0-9_-]*$/;
 
@@ -266,7 +269,7 @@ function normalizeStep(raw: unknown, index: number, out: NormalizeResult): Canon
   // task: a reference, never a paragraph. Prose moves to the body verbatim.
   const proseParts: string[] = [];
   if (typeof src.task === "string") {
-    if (isRefShaped(src.task)) step.task = stripComponentExt(src.task.trim());
+    if (isRefShaped(src.task)) step.task = componentStem(src.task.trim());
     else { proseParts.push(src.task); out.inlineProse.push(id); }
   } else if (src.task !== undefined) {
     step.meta.task = src.task;
@@ -274,7 +277,7 @@ function normalizeStep(raw: unknown, index: number, out: NormalizeResult): Canon
   for (const key of ["action", "prompt"] as const) {
     const v = src[key];
     if (typeof v === "string" && v.trim()) {
-      if (key === "action" && isRefShaped(v) && !step.task) { step.task = stripComponentExt(v.trim()); continue; }
+      if (key === "action" && isRefShaped(v) && !step.task) { step.task = componentStem(v.trim()); continue; }
       proseParts.push(v);
       if (v.includes("\n")) out.inlineProse.push(id);
     } else if (v !== undefined) {
@@ -305,8 +308,23 @@ function normalizeStep(raw: unknown, index: number, out: NormalizeResult): Canon
   return step;
 }
 
-function stripComponentExt(s: string): string {
-  return s.replace(COMPONENT_EXT_RE, "");
+/**
+ * A component reference → the stem the graph names.
+ *
+ * The directory and the encoding are how an author writes a path; the step
+ * names the component, the same way §28.6 has a capability name the workflow
+ * and not its file. The executor already reads a reference this way —
+ * `squad-exec.ts` strips `^(agents|tasks)/` and the extension before loading
+ * the document — so a lint that compared the raw value against the stems on
+ * disk reported a file it could open as missing. Nine workflows of brandcraft
+ * wrote `task: tasks/inspect-quality.md`, every file present, and the gate
+ * called thirteen references dangling.
+ *
+ * Accepting the written form is not making it canonical: `workflow_refs_repair`
+ * still writes the bare stem back whenever it renames.
+ */
+function componentStem(s: string): string {
+  return s.replace(COMPONENT_DIR_RE, "").replace(COMPONENT_EXT_RE, "");
 }
 
 /**

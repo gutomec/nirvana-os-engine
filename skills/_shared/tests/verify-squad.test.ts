@@ -19,6 +19,7 @@ import { CANONICAL_WORKFLOW, rmrf, runCli, squadFixture, tempRoot, treeDigest, w
 import { spawnBudgetMs } from "../../harness/tests/helpers/test-budgets.ts";
 import { criteria as squadCriteria, squadModule } from "../lib/verify/kinds/squad.ts";
 import { WORKFLOW_LINT_IDS } from "../../squads/lib/workflow-reader.ts";
+import { acceptanceCriteriaOf } from "../../harness/lib/gauntlet/success-requirements.ts";
 
 const require_ = createRequire(import.meta.url);
 const REPO = path.resolve(import.meta.dir, "..", "..", "..");
@@ -379,6 +380,33 @@ describe("--fix", () => {
     expect(idsOf(findings(r, "renames"))).toContain("workflow_ref_unresolved");
   });
 
+  test("a step reference written `tasks/<stem>.md` resolves: the file is on disk", () => {
+    const r = root();
+    // brandcraft, 27/08/2026: nine workflows wrote the directory into the ref,
+    // every file present, and the gate reported thirteen dangling references.
+    // The executor already reads this shape (`squad-exec.ts` strips
+    // `^(agents|tasks)/` before loading the document); only the lint disagreed.
+    const graph = [
+      "name: main", "steps:",
+      "  - id: plan", "    agent: planner", "    task: tasks/plan.md",
+      "  - id: build", "    agent: builder", "    task: tasks/build", "    requires: [plan]",
+      "",
+    ].join("\n");
+    squadFixture(r, "dir-prefixed-refs", { workflows: { "main.yaml": graph } });
+    expect(idsOf(findings(r, "dir-prefixed-refs"))).not.toContain("workflow_ref_unresolved");
+  }, spawnBudgetMs(2));
+
+  test("workflow_refs_repair strips the directory prefix before matching, and writes the bare stem", () => {
+    const r = root();
+    const graph = "name: main\nsteps:\n  - id: plan\n    agent: planner\n    task: tasks/PLAN.md\n";
+    const dir = squadFixture(r, "prefixed-rename", { workflows: { "main.yaml": graph } });
+    expect(idsOf(findings(r, "prefixed-rename"))).toContain("workflow_ref_unresolved");
+    runCli(r, ["squad", "prefixed-rename", "--no-retrieval", "--fix"]);
+    // §28.6: the canonical reference carries neither directory nor extension.
+    expect(fs.readFileSync(path.join(dir, "workflows", "main.yaml"), "utf8")).toContain("task: plan\n");
+    expect(idsOf(findings(r, "prefixed-rename"))).not.toContain("workflow_ref_unresolved");
+  }, spawnBudgetMs(3));
+
   test("requires_by_output_name rewrites a dependency that named an output", () => {
     const r = root();
     const graph = "name: main\nsteps:\n  - id: plan\n    agent: planner\n    task: plan\n    creates: [plan.md]\n  - id: build\n    agent: builder\n    task: build\n    requires: [plan.md]\n";
@@ -453,5 +481,38 @@ describe("the audit scorer after `humanize`", () => {
     const front = /^---\n([\s\S]*?)\n---/.exec(text)![1];
     expect(parseYaml(front).tools).toEqual(["Read", "Write", "Edit", "Bash", "Grep", "Glob"]);
     expect(parseYaml(front).maxTurns).toBe(12);
+  }, spawnBudgetMs(2));
+
+  test("tasks_acceptance_criteria renames the criteria the author wrote, and fabricates none", () => {
+    const r = root();
+    const dir = squadFixture(r, "ac-postconditions");
+    // brandcraft, 27/08/2026: thirty-two tasks carried the real contract under
+    // `## Postconditions`, which neither the gate's detector nor the judge's
+    // parser reads. Appending a generic block would have left the true
+    // criterion under one heading and a placebo under the heading the judge
+    // scores against.
+    fs.writeFileSync(path.join(dir, "tasks", "plan.md"), [
+      "# plan", "", "Plan the artifact.", "",
+      "## Postconditions", "",
+      "- `plan.md` exists and names every section the brief asked for.",
+      "- Every open question of the brief is answered or listed as a risk.",
+      "",
+    ].join("\n"), "utf8");
+    // Nothing to rename. Writing a criterion here would hand the judge a
+    // contract the author never agreed to (v6 §28.3: fixers never invent).
+    const barren = "# build\n\nBuild it.\n";
+    fs.writeFileSync(path.join(dir, "tasks", "build.md"), barren, "utf8");
+
+    const [res] = fixers.applyMechanicalFixes(dir, { patches: [{ kind: "tasks_acceptance_criteria" }] });
+    expect(res.result.ok).toBe(true);
+
+    const plan = fs.readFileSync(path.join(dir, "tasks", "plan.md"), "utf8");
+    expect(acceptanceCriteriaOf(plan)).toEqual([
+      "`plan.md` exists and names every section the brief asked for.",
+      "Every open question of the brief is answered or listed as a risk.",
+    ]);
+    expect(plan).not.toContain("## Postconditions");
+    expect(plan).not.toContain("matches the declared schema");
+    expect(fs.readFileSync(path.join(dir, "tasks", "build.md"), "utf8")).toBe(barren);
   }, spawnBudgetMs(2));
 });
