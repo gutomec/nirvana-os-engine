@@ -221,9 +221,22 @@ still wins when a caller pins it, `NIRVANA_PROJECT_ROOT` when a caller names
 it, and the project found by walking up from cwd otherwise — the same order,
 the same fallback to `~/.harness-logs` for a dispatch with no project in reach,
 so `nrv dispatch` run from an arbitrary directory keeps logging somewhere sane.
-No history moves: 117 days of existing files stay where they are, and a reader
-built for one trace across both roots is still cut 6's to build, now that the
-roots agree on which trace goes where.
+
+Searching for every path that opens an audit log turned up the same defect a
+second time: `gemini-session-start.ts`, the SessionStart hook Gemini-CLI runs,
+had its own hand-rolled `HARNESS_LOGS_DIR`-or-home resolver with no project
+lookup either, so a Gemini-CLI dispatch split `session_started` and
+`brief_received` away from the project log the same way the Claude Code hook
+did. It already carried the session's `cwd` for finding the chat transcript;
+that same value now feeds `harnessLogsDir()` too. `host-agent-driver.ts`
+spawns each runtime with its project directory as `cwd` and does not pin
+`HARNESS_LOGS_DIR`, so both hooks resolve the project by the same walk-up
+rather than a value pinned at spawn time — the two spawn paths that already
+pin it (`evaluator-adapter.ts`, `multi-target-dispatch-adapters.ts`) were
+verified unaffected, since a pinned value only ever narrows where a child
+looks, never widens it. No history moves: 117 days of existing files stay
+where they are, and a reader built for one trace across both roots is still
+cut 6's to build, now that the roots agree on which trace goes where.
 
 ## 0.11.0 — 2026-08-28
 

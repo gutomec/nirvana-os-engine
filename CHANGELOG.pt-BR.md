@@ -230,10 +230,24 @@ continua ganhando quando um chamador o fixa, `NIRVANA_PROJECT_ROOT` quando um
 chamador o nomeia, e o projeto encontrado subindo a partir do cwd nos demais
 casos — a mesma ordem, a mesma queda para `~/.harness-logs` quando um despacho
 não tem projeto ao alcance, então o `nrv dispatch` rodado de um diretório
-qualquer continua registrando em algum lugar sensato. Nenhum histórico se move:
-117 dias de arquivos existentes ficam onde estão, e um leitor construído para
-um trace através das duas raízes ainda é tarefa do corte 6, agora que as raízes
-concordam sobre de quem é cada trace.
+qualquer continua registrando em algum lugar sensato.
+
+Procurar todo caminho que abre um log de auditoria achou o mesmo defeito uma
+segunda vez: `gemini-session-start.ts`, o hook de SessionStart que o
+Gemini-CLI roda, tinha seu próprio resolvedor artesanal de
+`HARNESS_LOGS_DIR`-ou-home, também sem busca por projeto, então um despacho
+via Gemini-CLI dividia `session_started` e `brief_received` para fora do log
+do projeto do mesmo jeito que o hook do Claude Code fazia. Ele já carregava o
+`cwd` da sessão para achar a transcrição do chat; esse mesmo valor agora
+alimenta `harnessLogsDir()` também. O `host-agent-driver.ts` sobe cada runtime
+com o diretório do projeto como `cwd` e não fixa `HARNESS_LOGS_DIR`, então os
+dois hooks resolvem o projeto pela mesma subida em vez de um valor fixado no
+disparo — os dois caminhos de disparo que já fixam esse valor
+(`evaluator-adapter.ts`, `multi-target-dispatch-adapters.ts`) foram verificados
+como não afetados, já que um valor fixado só estreita onde um filho procura,
+nunca alarga. Nenhum histórico se move: 117 dias de arquivos existentes ficam
+onde estão, e um leitor construído para um trace através das duas raízes ainda
+é tarefa do corte 6, agora que as raízes concordam sobre de quem é cada trace.
 
 ## 0.11.0 — 2026-08-28
 
