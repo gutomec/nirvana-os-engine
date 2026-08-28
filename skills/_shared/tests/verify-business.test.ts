@@ -154,6 +154,63 @@ describe("errors", () => {
     expect(f.find((x) => x.id === "auto_route_unknown_employee")!.where).toBe("ghost");
   }, spawnBudgetMs(2));
 
+  // The `investigation-bureau` shape (28/08/2026): nine routes named a real
+  // seat under the key `employee:`, and the gate answered `route_to (empty)
+  // names no seat` — blaming a seat name nobody had written. There is no alias
+  // normalizer: the gate reads `r.route_to` and `router.js` skips any entry
+  // whose `route_to` is not a string, so the route is dead on both sides. The
+  // finding has to say that, because a message that hides it costs the reader
+  // the whole search.
+  test("auto_route_unknown_employee: the seat sits under another key", () => {
+    const f = check("misplaced-key", { routing: 'auto_routes:\n  - pattern: "(?i)fixture report"\n    employee: ceo\n' }).findings;
+    const hit = f.find((x) => x.id === "auto_route_unknown_employee");
+    expect(hit).toBeDefined();
+    expect(hit!.message).toContain("employee");
+    expect(hit!.message).toContain("ceo");
+    expect(hit!.message).toMatch(/route_to is absent/);
+    expect(hit!.message).toMatch(/router/);
+    expect(hit!.message).not.toContain("(empty)");
+  }, spawnBudgetMs(2));
+
+  test("auto_route_unknown_employee: two keys hold a seat, and the gate picks neither", () => {
+    const employees = { "ceo.md": INTAKE_SEAT, "second.md": SEAT("second") };
+    const routing = 'auto_routes:\n  - pattern: "(?i)fixture report"\n    employee: ceo\n    owner: second\n';
+    const hit = check("two-keys", { employees, routing }).findings.find((x) => x.id === "auto_route_unknown_employee");
+    expect(hit).toBeDefined();
+    expect(hit!.message).toContain("employee: ceo");
+    expect(hit!.message).toContain("owner: second");
+    expect(hit!.message).not.toContain("(empty)");
+  }, spawnBudgetMs(2));
+
+  // §13.2 defines `requires_escalation_to`, and it is not a routing target.
+  // A seat name under it is a fact, never a rename candidate.
+  test("auto_route_unknown_employee: a retired route field is never read as a misspelled route_to", () => {
+    const routing = 'auto_routes:\n  - pattern: "(?i)fixture report"\n    requires_escalation_to: ceo\n';
+    const hit = check("retired-key", { routing }).findings.find((x) => x.id === "auto_route_unknown_employee");
+    expect(hit).toBeDefined();
+    expect(hit!.message).toMatch(/route_to is absent/);
+    expect(hit!.message).not.toMatch(/requires_escalation_to/);
+    expect(hit!.message).not.toContain("(empty)");
+  }, spawnBudgetMs(2));
+
+  // `router.js` skips any entry whose route_to is not a string, so a YAML scalar
+  // that parses as a number is dropped there while `String()` hid it here.
+  test("auto_route_unknown_employee: route_to that is not a string says which type it is", () => {
+    const f = check("typed-route", { routing: 'auto_routes:\n  - pattern: "(?i)fixture report"\n    route_to: 42\n' }).findings;
+    const hit = f.find((x) => x.id === "auto_route_unknown_employee");
+    expect(hit).toBeDefined();
+    expect(hit!.message).toMatch(/route_to is a number, not a string/);
+    expect(hit!.message).not.toContain("(empty)");
+  }, spawnBudgetMs(2));
+
+  test("auto_route_unknown_employee: route_to genuinely empty is not a seat named (empty)", () => {
+    const f = check("empty-route", { routing: 'auto_routes:\n  - pattern: "(?i)fixture report"\n    route_to: ""\n' }).findings;
+    const hit = f.find((x) => x.id === "auto_route_unknown_employee");
+    expect(hit).toBeDefined();
+    expect(hit!.message).toMatch(/route_to is empty/);
+    expect(hit!.message).not.toContain("(empty)");
+  }, spawnBudgetMs(2));
+
   test("auto_route_in_manifest: the routes are in the wrong file", () => {
     const f = check("manifest-routes", { manifestExtra: 'auto_routes:\n  - pattern: "(?i)fixture report"\n    route_to: ceo\n' }).findings;
     expect(idsOf(f)).toContain("auto_route_in_manifest");
