@@ -11,6 +11,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const REPO = join(import.meta.dir, "..", "..", "..");
 const GATE = join(REPO, "scripts", "check-organizational-non-regression.ts");
@@ -56,7 +57,7 @@ test("reads an installed business", () => {
     expect(out).toContain("1 pass");
     expect(out).toContain("difference ...... 0 path(s)");
     expect(out).toContain("ORGANIZATIONAL NON-REGRESSION: OK");
-  });
+  }, spawnBudgetMs(2));
 
   test("a suite that writes into a root fails and lists the added, changed and removed paths", () => {
     const f = fixture("writes", ({ businesses, squads }) => `
@@ -76,7 +77,7 @@ test("migrates the installed entities in place", () => {
     expect(out).toContain(`removed ${short(join(f.businesses, "acme", "employees", "intake.md"))}`);
     expect(out).toContain("3 path(s) differ under the installed roots");
     expect(out).not.toContain("ORGANIZATIONAL NON-REGRESSION: OK");
-  });
+  }, spawnBudgetMs(2));
 
   test("a failing suite fails the gate even when the roots are untouched", () => {
     const f = fixture("fails", () => `
@@ -87,11 +88,11 @@ test("breaks", () => { expect(1).toBe(2); });
     expect(status).toBe(1);
     expect(out).toContain("difference ...... 0 path(s)");
     expect(out).toContain("suites exited 1");
-  });
+  }, spawnBudgetMs(2));
 
   test("no installed roots means nothing to protect", () => {
     const { status, out } = gate([join(ROOT, "absent", "businesses")], [join(ROOT, "absent", "suite")]);
     expect(status).toBe(0);
     expect(out).toContain("nothing to protect");
-  });
+  }, spawnBudgetMs(2));
 });

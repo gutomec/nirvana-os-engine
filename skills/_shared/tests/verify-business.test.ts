@@ -458,7 +458,7 @@ describe("the self-retrieval axis", () => {
         '  - "create the brand identity, logo and visual system"',
         'not_for: ["logo design"]', "runtime_requirements:", "  policy: active", "",
       ].join("\n"),
-    }, spawnBudgetMs(2));
+    });
     const registries = {
       squads: { squads: {}, domains: {}, _v4_inferred_capabilities: {}, capabilities: {} },
       businesses: {

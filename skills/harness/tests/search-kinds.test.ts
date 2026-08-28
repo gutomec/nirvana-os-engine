@@ -16,6 +16,7 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const SCRIPT = path.resolve(import.meta.dir, "../scripts/search.ts");
 
@@ -125,5 +126,5 @@ describe("nrv search — keyed-object registries", () => {
     });
     expect(r.status).toBe(0); // non-fatal
     expect(r.stderr).toMatch(/warn: squads registry/);
-  });
+  }, spawnBudgetMs(2));
 });

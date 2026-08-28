@@ -72,7 +72,7 @@ describe("legacy import", () => {
       "business:acme": ["seat_thin:employees/ceo.md", "seat_thin:employees/cto.md"],
       "business:beta": ["seat_thin:employees/ops.md"],
       "mind-clone:jane": ["source_material_missing", "validation_verdict_missing"],
-    }, spawnBudgetMs(2));
+    });
     expect(b?.imported_from?.length).toBe(2);
     expect(fs.existsSync(bl(r))).toBe(true);
     // second load reads the written file: the legacy files are not consulted again

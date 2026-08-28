@@ -7,6 +7,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { runGate, resolveEntity } from "../scripts/self-retrieval-gate.ts";
+import { spawnBudgetMs } from "../../harness/tests/helpers/test-budgets.ts";
 
 // ── fixture registries ──────────────────────────────────────────────────────
 
@@ -149,20 +150,20 @@ describe("runGate hits", () => {
       expect(b.hit).toBe(true);
     }
     expect(r.passed).toBe(true);
-  });
+  }, spawnBudgetMs(2));
 
   test("capability id passes with exact squad+capability matching", async () => {
     const r = await runGate("media.promo.render", base);
     expect(r.kind).toBe("capability");
     expect(r.passed).toBe(true);
-  });
+  }, spawnBudgetMs(2));
 
   test("business briefs route back to the business", async () => {
     const r = await runGate("aurum-books", base);
     expect(r.kind).toBe("business");
     expect(r.passed).toBe(true);
     for (const b of r.briefs) expect(b.rank).toBe(1);
-  });
+  }, spawnBudgetMs(2));
 
   test("clone one_liner self-retrieves top-1", async () => {
     const r = await runGate("ada-editrix", base);
@@ -170,7 +171,7 @@ describe("runGate hits", () => {
     expect(r.briefs.length).toBe(1);
     expect(r.briefs[0].signal).toBe("CLONE_BM25");
     expect(r.passed).toBe(true);
-  });
+  }, spawnBudgetMs(2));
 });
 
 // ── miss paths ──────────────────────────────────────────────────────────────
@@ -185,7 +186,7 @@ describe("runGate misses", () => {
     expect(miss!.rank === null || miss!.rank > 1).toBe(true);
     // The report carries the actual top-3 for diagnosis.
     expect(miss!.top3.length).toBeGreaterThan(0);
-  });
+  }, spawnBudgetMs(2));
 
   test("--lenient accepts a top-3 rank the strict gate rejects", async () => {
     const strict = await runGate("misdeclared-squad", base);
@@ -194,7 +195,7 @@ describe("runGate misses", () => {
     // The misdeclared brief still lands in top-3 of this tiny corpus.
     expect(lenient.briefs.every((b) => b.rank !== null && b.rank <= 3)).toBe(true);
     expect(lenient.passed).toBe(true);
-  });
+  }, spawnBudgetMs(2));
 
   test("entity without example_briefs fails with an explicit reason", async () => {
     const bare = {
@@ -214,17 +215,17 @@ describe("runGate misses", () => {
     expect(r.passed).toBe(false);
     expect(r.reason).toContain("example_briefs");
     expect(r.briefs.length).toBe(0);
-  });
+  }, spawnBudgetMs(2));
 
   test("clone without one_liner fails with an explicit reason", async () => {
     const r = await runGate("no-block-clone", base);
     expect(r.passed).toBe(false);
     expect(r.reason).toContain("one_liner");
-  });
+  }, spawnBudgetMs(2));
 
   test("unknown entity fails with a not-found reason", async () => {
     const r = await runGate("ghost-entity", base);
     expect(r.passed).toBe(false);
     expect(r.reason).toContain("not found");
-  });
+  }, spawnBudgetMs(2));
 });

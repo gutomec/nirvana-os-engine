@@ -298,7 +298,7 @@ describe("Gauntlet causal revision loop", () => {
     expect(loop.calls.revisions).toHaveLength(1);
     expect(fs.readFileSync(path.join(loop.outputsRoot, "report.html"), "utf8")).toContain("Revision 2 of can_1");
     expect(fs.existsSync(path.join(loop.outputsRoot, "relatorio-final.pdf"))).toBeTrue();
-  });
+  }, spawnBudgetMs(2));
 
   test("the dispatch evaluator drives the causal revision from the scorecard's revisionRequests and reaches the final gate", () => {
     const loop = scenario({ grade: () => PASS });

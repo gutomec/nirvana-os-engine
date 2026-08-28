@@ -23,6 +23,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const REPO = join(import.meta.dir, "..", "..", "..");
 const GATE = join(REPO, "scripts", "check-clone-bindings.ts");
@@ -60,7 +61,7 @@ describe("a named clone that is not shipped is caught", () => {
     expect(r.code).toBe(1);
     expect(r.out).toContain("david-vallejo-tracking");
     expect(r.out).not.toContain("simo-ahava-tracking\x1b");  // the present one is not flagged
-  });
+  }, spawnBudgetMs(2));
 
   test("a complete pack passes", () => {
     const dir = pack("complete", {
@@ -70,7 +71,7 @@ describe("a named clone that is not shipped is caught", () => {
     const r = run(dir, ["--strict"]);
     expect(r.code).toBe(0);
     expect(r.out).toContain("Every clone an employee names is present");
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("the two reference forms", () => {
@@ -92,7 +93,7 @@ describe("the two reference forms", () => {
     const r = run(dir, ["--strict"]);
     expect(r.code).toBe(0);
     expect(r.out).not.toContain("AGENT");
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("the business dna/ directory", () => {
@@ -107,7 +108,7 @@ describe("the business dna/ directory", () => {
     expect(r.code).toBe(0);
     expect(r.out).not.toContain("README");
     expect(r.out).toContain("0 bindings");
-  });
+  }, spawnBudgetMs(2));
 
   test("a dangling symlink is a binding that already broke", () => {
     const dir = pack("dangling", { clones: ["present-one"], employees: {} });
@@ -117,7 +118,7 @@ describe("the business dna/ directory", () => {
     const r = run(dir, ["--strict"]);
     expect(r.code).toBe(1);
     expect(r.out).toContain("gone-clone");
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("it reports what it inspected", () => {
@@ -135,5 +136,5 @@ describe("it reports what it inspected", () => {
     expect(d.bindings).toBe(1);
     expect(d.missing[0].clone).toBe("absent");
     expect(d.missing[0].employee).toBe("one");
-  });
+  }, spawnBudgetMs(2));
 });

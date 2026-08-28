@@ -29,6 +29,7 @@ import {
   editFrontmatter, joinFrontmatter, prependFrontmatter, readFrontmatter, splitFrontmatter,
 } from "../../_shared/lib/frontmatter-edit.ts";
 import { businessModule, verifyEntity, type KindModule } from "../../_shared/lib/verify/index.ts";
+import { spawnBudgetMs } from "../../harness/tests/helpers/test-budgets.ts";
 
 const require_ = createRequire(import.meta.url);
 const REPO = path.resolve(import.meta.dir, "..", "..", "..");
@@ -457,7 +458,7 @@ describe("nrv validate business --fix", () => {
     const again = runCli(r, ["business", "broken-biz", "--no-retrieval", "--fix", "--json"]);
     expect(again.json.summary.errors).toBe(0);
     expect(treeDigest(dir)).toEqual(digest);
-  });
+  }, spawnBudgetMs(3));
 
   test("the backup holds the business as it was before the fixers ran", () => {
     const r = root();
@@ -467,7 +468,7 @@ describe("nrv validate business --fix", () => {
     const backup = out.json.fix_outcome.backup as string;
     expect(fs.existsSync(backup)).toBe(true);
     expect(treeDigest(backup)).toEqual(before);
-  });
+  }, spawnBudgetMs(2));
 
   test("protocol rises only once nothing is an error any more", () => {
     const r = root();
@@ -486,7 +487,7 @@ describe("nrv validate business --fix", () => {
     businessFixture(clean, "clean-v1", { protocol: "1.0" });
     runCli(clean, ["business", "clean-v1", "--no-retrieval", "--fix"]);
     expect(manifestOf(path.join(clean, "businesses", "clean-v1")).protocol).toBe("2.0");
-  });
+  }, spawnBudgetMs(2));
 
   test("--fix never deletes an authored file and never drops a route", () => {
     const r = root();
@@ -501,7 +502,7 @@ describe("nrv validate business --fix", () => {
     expect(fs.readFileSync(path.join(dir, "culture.md"), "utf8")).toContain("Written by a human.");
     expect(fs.existsSync(path.join(dir, "escalation-triggers.yaml"))).toBe(true);
     expect(routingOf(dir).auto_routes).toHaveLength(1);
-  });
+  }, spawnBudgetMs(2));
 
   test("a seat's body survives the whole loop byte for byte", () => {
     const r = root();
@@ -509,7 +510,7 @@ describe("nrv validate business --fix", () => {
     const before = bodyOf(seatFile(dir));
     runCli(r, ["business", "body-biz", "--no-retrieval", "--fix"]);
     expect(bodyOf(seatFile(dir))).toBe(before);
-  });
+  }, spawnBudgetMs(2));
 
   test("a fixer that breaks the manifest rolls the whole business back", async () => {
     const r = root();
@@ -544,7 +545,7 @@ describe("nrv validate business --fix", () => {
     expect(out.json.entities).toBe(2);
     expect(out.json.summary.errors).toBe(0);
     expect(out.code).toBe(0);
-  });
+  }, spawnBudgetMs(2));
 });
 
 // ── the environment contract ────────────────────────────────────────────────
@@ -558,5 +559,5 @@ describe("the fixers stay inside the directory they were given", () => {
     runCli(r, ["business", "scoped-biz", "--no-retrieval", "--fix"]);
     expect(fs.existsSync(path.join(dir, "README.md"))).toBe(true);
     expect(path.resolve(dir).startsWith(path.resolve(r))).toBe(true);
-  });
+  }, spawnBudgetMs(2));
 });
