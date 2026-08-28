@@ -8,6 +8,8 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+## 0.12.0 — 2026-08-28
+
 ### Um schema gerado para de depender da máquina que o gerou
 
 O `bun run check:all` saiu 0 na máquina do autor enquanto o job `gates` reprovava
