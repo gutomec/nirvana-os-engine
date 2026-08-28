@@ -8,6 +8,8 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+## 0.12.0 — 2026-08-28
+
 ### A generated schema stops depending on the machine that generated it
 
 `bun run check:all` exited 0 on the author's machine while the `gates` job failed
