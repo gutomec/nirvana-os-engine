@@ -42,6 +42,7 @@ import { scopeGuard } from "../../../_shared/lib/scope-guard.ts";
 import { settingsEnvForChild } from "../../../_shared/lib/settings.ts";
 import type { CompiledMultiTargetPlan, ManifestPhase } from "../plan-compiler.ts";
 import type { MultiTargetAdapterInput, MultiTargetAdapterResult, MultiTargetCoordinatorPorts } from "./multi-target-coordinator.ts";
+import { parseAuditLine } from "../../../_shared/lib/cloudevents.js";
 
 export const MULTI_TARGET_RESULT_MARKER = ".multi-target-result.json";
 export const MULTI_TARGET_INSTRUCTION_FILE = "DISPATCH-INSTRUCTION.md";
@@ -173,7 +174,7 @@ export function observeCost(logsDir: string, projectId: string, matches: (event:
     for (const line of text.split("\n")) {
       if (!line.trim()) continue;
       let event: Record<string, unknown>;
-      try { event = JSON.parse(line) as Record<string, unknown>; } catch { continue; }
+      try { event = parseAuditLine(line) as Record<string, unknown>; } catch { continue; }
       if (event.event !== "agent_executed" || event.trace_id !== projectId || !matches(event)) continue;
       const cost = Number(event.cost_usd);
       if (!Number.isFinite(cost)) continue;

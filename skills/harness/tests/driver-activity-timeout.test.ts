@@ -13,6 +13,7 @@
 // Hermetic: no runtime, no network. The "agent" is a Bun script and the driver
 // is pointed straight at `bun` (the driver-watchdog.test.ts convention — nothing
 // stands between the driver and the process it signals).
+import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import { describe, expect, test, afterAll } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -72,7 +73,7 @@ function auditEvents(logsDir: string): Array<Record<string, unknown>> {
     if (!fs.existsSync(f)) continue;
     for (const line of fs.readFileSync(f, "utf8").split("\n")) {
       if (!line.trim()) continue;
-      try { out.push(JSON.parse(line)); } catch { /* skip */ }
+      try { out.push(parseAuditLine(line)); } catch { /* skip */ }
     }
   }
   return out;

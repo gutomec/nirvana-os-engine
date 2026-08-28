@@ -16,6 +16,7 @@
 // LLM and no network. HARNESS_LOGS_DIR is deliberately NOT set — pinning it
 // would force one root and hide the very defect this suite exists to catch.
 // Runs with: bun test skills/harness/tests
+import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
@@ -82,7 +83,7 @@ function harnessAuditFiles(dir: string): string[] {
 }
 
 function readEvents(file: string): Array<Record<string, unknown>> {
-  return fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map(line => JSON.parse(line) as Record<string, unknown>);
+  return fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map(line => parseAuditLine(line) as Record<string, unknown>);
 }
 
 function fixture() {

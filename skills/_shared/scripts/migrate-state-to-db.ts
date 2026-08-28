@@ -24,6 +24,7 @@ import * as os from "node:os";
 import * as crypto from "node:crypto";
 import { parseArgs, EXIT } from "../lib/bun-helpers.ts";
 import { resolveScope } from "../lib/scope.ts";
+import { parseAuditLine } from "../lib/cloudevents.js";
 
 const sdb = require("../lib/state-db.js");
 
@@ -91,7 +92,7 @@ for (const root of candidateRoots) {
     for (const ln of lines) {
       scanned++;
       let ev: any;
-      try { ev = JSON.parse(ln); }
+      try { ev = parseAuditLine(ln); }
       catch { errored++; continue; }
       if (!ev.event || !ev.ts) { errored++; continue; }
       const key = hashEvent(ev.trace_id ?? null, ev.ts, ev.event);

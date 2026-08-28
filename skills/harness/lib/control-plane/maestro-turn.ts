@@ -34,6 +34,7 @@ import { resolveSystemModel } from "../../../_shared/lib/system-model.ts";
 import { canonicalRuntimeName } from "../runtime-rules.ts";
 import type { ConversationService } from "./conversation-service.ts";
 import { detectExecutionRuntime, signalProcessGroup } from "./execution-runner.ts";
+import { parseAuditLine } from "../../../_shared/lib/cloudevents.js";
 
 /** Wall-clock ceiling of one turn. A turn that dispatches work waits for the dispatch, so the
  * ceiling is the dispatch's order of magnitude, not the concierge's five minutes. */
@@ -584,7 +585,7 @@ export class MaestroTurnQueue {
       carry = lines.pop() ?? "";
       for (const line of lines) {
         let event: any;
-        try { event = JSON.parse(line); } catch { continue; }
+        try { event = parseAuditLine(line); } catch { continue; }
         if (event?.event !== "x_ledger_run_opened" || typeof event.run_id !== "string" || item.runs.some(run => run.run_id === event.run_id)) continue;
         const run: TurnRunLink = { run_id: event.run_id, trace_id: event.trace_id ?? null, target_slug: event.target_slug ?? null, target_kind: event.target_kind ?? null, runtime: event.runtime ?? null };
         item.runs.push(run);

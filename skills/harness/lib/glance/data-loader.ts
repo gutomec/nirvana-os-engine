@@ -11,6 +11,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { paths } from "../../../_shared/lib/bun-helpers.ts";
 import { resolveScope, enumerate } from "../../../_shared/lib/scope.ts";
+import { parseAuditLine } from "../../../_shared/lib/cloudevents.js";
 
 // Neutral skills-tree root. Resolves to ~/.nirvana/skills when present so the
 // tree survives ~/.claude removal; falls back to the legacy ~/.claude/skills.
@@ -314,7 +315,9 @@ export function buildRuns(opts: { since?: string; limit?: number; days?: number 
     const lines = fs.readFileSync(f, "utf8").split("\n").filter(Boolean);
     for (const line of lines) {
       let ev: any;
-      try { ev = JSON.parse(line); } catch { continue; }
+      // Both forms: a CloudEvents envelope comes back flat, a legacy line
+      // comes back by identity. See _shared/lib/cloudevents.js.
+      try { ev = parseAuditLine(line); } catch { continue; }
       const tid = ev.trace_id || "no-trace";
       if (opts.since && ev.ts < opts.since) continue;
 
@@ -512,7 +515,7 @@ export function tailJsonlEvents(limit = 50): Array<any> {
     // the actual append order (Pre fires before Post, etc.).
     for (let i = lines.length - 1; i >= 0 && out.length < limit; i--) {
       try {
-        const ev = JSON.parse(lines[i]);
+        const ev = parseAuditLine(lines[i]);
         out.push({ ...ev, id: new Date(ev.ts).getTime(), _ord: i });
       } catch {}
     }
@@ -539,7 +542,7 @@ export function tailLogs(opts: { type: "harness" | "maestro"; date?: string; lim
   for (const f of files) {
     const lines = fs.readFileSync(path.join(dayDir, f), "utf8").split("\n").filter(Boolean);
     for (const line of lines) {
-      try { events.push({ ...JSON.parse(line), _file: f }); } catch {}
+      try { events.push({ ...parseAuditLine(line), _file: f }); } catch {}
     }
   }
   return {

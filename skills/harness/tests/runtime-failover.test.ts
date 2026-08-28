@@ -15,6 +15,7 @@
 //
 // The three tests below pin, in order: the cause survives the chatter; the EOL
 // surface classifies as auth; a dead runtime hands off instead of ending the run.
+import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import { describe, expect, test, beforeAll, afterAll } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -165,7 +166,7 @@ describe("cascade — a dead runtime hands off instead of ending the run", () =>
   test("handing off does not hide the broken credential — the audit still says so", () => {
     const dir = path.join(TMP, "logs", new Date().toISOString().slice(0, 10));
     const events = fs.readFileSync(path.join(dir, "audit.jsonl"), "utf8")
-      .split("\n").filter(Boolean).map(l => JSON.parse(l));
+      .split("\n").filter(Boolean).map(l => parseAuditLine(l));
     const auth = events.find(e => e.event === "runtime_auth_failed");
     expect(auth).toBeDefined();
     expect(auth.runtime).toBe("gemini-cli");

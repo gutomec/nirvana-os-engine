@@ -4,6 +4,13 @@
  * Writes events to ~/.harness-logs/<YYYY-MM-DD>/audit.jsonl.
  * Schema: ~/.nirvana/skills/_shared/schemas/core-schemas.json#/definitions/audit_event
  *
+ * On-disk form: a CloudEvents 1.0 structured-mode envelope, one per line, built
+ * by _shared/lib/cloudevents.js. The ~187k events written before that cut are
+ * flat and stay flat — nothing is rewritten. Every reader passes its parsed
+ * line through `toLegacyEvent()`, which returns the flat shape for an envelope
+ * and the object itself, by identity, for anything else. If you add a reader,
+ * read through `parseAuditLine()` and it handles both.
+ *
  * Events: the closed enum is ALLOWED_EVENTS below — the single source of
  * truth. The event table in references/03-audit.md is GENERATED from it
  * (scripts/gen-audit-events-doc.ts) and a test asserts the doc matches, so
@@ -24,6 +31,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const ce = require('../../_shared/lib/cloudevents.js');
 
 const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
   || (fs.existsSync(path.join(os.homedir(), '.nirvana', 'skills')) ? path.join(os.homedir(), '.nirvana', 'skills') : path.join(os.homedir(), '.claude', 'skills'));
@@ -210,7 +218,11 @@ function emit(event, payload, ctx) {
     } catch { /* non-fatal: JSONL still writes */ }
   }
   const file = ensureLogDir(undefined, cwd);
-  fs.appendFileSync(file, JSON.stringify(ev) + '\n', 'utf8');
+  // The line on disk is a CloudEvents 1.0 structured-mode envelope; every
+  // reader accepts both forms (cloudevents.js `toLegacyEvent`). The SQLite
+  // side above keeps the flat shape on purpose: its own columns already give
+  // the filter-without-parsing property the envelope buys for the file.
+  fs.appendFileSync(file, JSON.stringify(ce.toEnvelope(ev, ctx)) + '\n', 'utf8');
   return { path: file, event: ev };
 }
 
@@ -232,7 +244,7 @@ function readAuditEvents(filters = {}, limit = 200) {
     const lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean);
     for (const ln of lines) {
       try {
-        const ev = JSON.parse(ln);
+        const ev = ce.parseAuditLine(ln);
         if (filters.event && ev.event !== filters.event) continue;
         if (filters.trace_id && ev.trace_id !== filters.trace_id) continue;
         if (filters.project_id && ev.project_id !== filters.project_id) continue;
@@ -296,7 +308,7 @@ function readRecent(limit = 100, dateStr, cwd) {
   const lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean);
   const tail = lines.slice(-limit);
   return tail.map((l) => {
-    try { return JSON.parse(l); } catch { return { _parse_error: true, line: l }; }
+    try { return ce.parseAuditLine(l); } catch { return { _parse_error: true, line: l }; }
   }).reverse();
 }
 

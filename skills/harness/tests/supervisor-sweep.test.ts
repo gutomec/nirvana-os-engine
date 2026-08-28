@@ -3,6 +3,7 @@
 // retries exhausted → stalled + notify; guards (self-pid, recursion, opt-out);
 // nothing-pending maybeSweep <20ms; launchd plist content via --print.
 // Hermetic: one temp SQLite per case, injectable seams, fake children.
+import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import { describe, expect, test, afterAll } from "bun:test";
 import { acquireLockSync } from "../../_shared/lib/file-lock.ts";
 import * as fs from "node:fs";
@@ -242,7 +243,7 @@ function auditLines(): any[] {
   const day = new Date().toISOString().slice(0, 10);
   const p = path.join(process.env.HARNESS_LOGS_DIR!, day, "audit.jsonl");
   if (!fs.existsSync(p)) return [];
-  return fs.readFileSync(p, "utf8").split("\n").filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return {}; } });
+  return fs.readFileSync(p, "utf8").split("\n").filter(Boolean).map(l => { try { return parseAuditLine(l); } catch { return {}; } });
 }
 // audit.js flattens the payload onto the record (Object.assign(base, payload)).
 function auditFor(runId: string, event: string): any[] {

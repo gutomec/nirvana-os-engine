@@ -8,6 +8,40 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### A generated schema stops depending on the machine that generated it
+
+`bun run check:all` exited 0 on the author's machine while the `gates` job failed
+on `capability.schema.json` and `squad.schema.json`, deterministically, against a
+tree no checkout could reproduce. Neither job in `smoke.yml` ran `bun install`, so
+Bun auto-installed each dependency from the package.json range at import time.
+`zod: ^4.4.0` resolved to 4.5.1 on the day it was published, and 4.5.0 had made
+the seconds group of `z.string().datetime()` mandatory. Exactly one field moved,
+`fidelity.last_eval`, in the capability schema and again nested inside the squad
+manifest; `workflow.schema.json` holds no `datetime()` and passed. Both jobs now
+install the pinned tree with `bun install --frozen-lockfile`. The `smoke` job had
+been green by accident: `scripts/install.ts` runs `bun install` as a side effect
+when `node_modules` is absent, so the tests it runs were pinned while the gate
+that compares committed bytes was not.
+
+The hunt exposed a second defect in the same file, worse than the red check that
+led to it. `LIMITS` reaches the `maxLength` and `maxItems` of `CapabilitySchema`
+and `SquadManifestSchema` through a cascade of three inputs that live outside the
+commit: `NIRVANA_LIMIT_*` env vars, `<project>/.nirvana-limits.yaml` and
+`~/.claude/nirvana-limits.yaml`. Anyone holding an override who ran the generator
+would commit their own ceilings as everyone's contract.
+
+The limits stay in the schema, at their declared defaults. Dropping the
+constraint would publish a document that accepts a manifest the reference
+validator rejects, and a schema that under-constrains lies more loudly than one
+whose numbers are merely strict. `NIRVANA_LIMITS_DEFAULTS_ONLY=1` skips all three
+override layers, and the generator sets it before `validators.ts` ever loads,
+because `LIMITS` is a singleton frozen at first import. Two tests generate under
+hostile configurations, env overrides and then two different
+`~/.claude/nirvana-limits.yaml` files, and require identical bytes. A consumer
+validating against the published schema reads the defaults; an operator who
+raises a limit locally accepts manifests the published schema rejects, which is a
+local relaxation and not a change to the contract.
+
 ### The run card can say what the run is
 
 The cockpit read `(no brief captured)` on 56 of 57 cards while the briefs sat in
@@ -91,6 +125,72 @@ outside the rule, spread over 7 installed copies of 3 distinct squads —
 Not one carries the `x_` prefix. The log holds 285 rogue types; the files hold 3
 squads' worth. The gap is the finding — the contract never reached the author,
 which is cut 3.
+
+### The audit log gets a CloudEvents envelope, and both forms stay readable
+
+The engine is about to serve events to software it does not own. The owner's
+case is a law-practice app that posts a case to `nrv serve` on a VPS, waits
+hours and reads the analysis back, which turns an internal convention into a
+published contract. Cut 1 had already measured what the convention became: 286
+invented event names, 880 occurrences carrying no attribution at all.
+
+`audit.emit` now writes a CloudEvents 1.0 structured-mode envelope, built by
+`_shared/lib/cloudevents.js`. `type` is `sh.squads.nirvana.<domain>.<event>`,
+`source` is `/squad/<slug>`, `/business/<slug>` or `/engine/<component>`,
+`subject` is the run's `trace_id`, `id` is an idempotency key, `projectid`
+carries the project, and the payload sits under `data`. Context attributes
+serialize apart from `data`, so a consumer filters on any of them without
+deserializing the payload.
+
+Structured mode, rather than merging the attributes into the flat object,
+because the collision is measured: `source` already exists as a PAYLOAD key on
+713 lines, meaning "user", "work/assets", an agent's file path. A merge would
+have overwritten it. `specversion`, `time`, `type`, `data` and `id` appear on 0
+of the 186,990 existing lines, which is what makes `specversion` the
+discriminator — one property lookup on an already-parsed object, and it decides
+correctly for every line in the history.
+
+**Nothing was rewritten and nothing has to be.** Every reader now parses through
+`parseAuditLine()`, which projects an envelope to the flat shape and returns a
+legacy line by identity, so the ~187k events on disk cost one `typeof` and stay
+exactly as they were. Twenty-two parse sites across fifteen production
+files were converted, plus twenty-five in the tests; the raw appenders that bypass `emit()` keep writing the flat
+form, which is why dual-read is permanent rather than a migration window. The
+whole history was replayed through `buildRuns` and `trace-builder` in three
+forms — all legacy, all envelope, and alternating line by line — and the three
+answers are identical: 187,049 lines, 186,939 readable events, 373 distinct
+event names with an identical histogram, 9,746 traces, 867 distinct briefs,
+9,716 trace trees, 9,745 runs, 291 of them with a brief and 375 with a target.
+
+`data` is capped at 4 KiB serialized, about six times the measured p99.9 of 682
+bytes and crossed by 5 lines in 186,892 — every one of them a whole brief pasted
+onto an event. Over the cap the longest strings are cut to the same 300-character
+excerpt a brief already gets, and `data._truncated` names what was cut with
+`data._bytes` giving its original size.
+
+`id` hashes the line's own content rather than being random, because the
+duplicate this log actually produces is a replay: `dispatch.ts` copies
+pre-project events into the project root carrying the original `ts`. 252 of
+186,990 lines are byte-identical to another line today and every reader that
+dedupes already collapses them by content; hashing makes that collapse
+mechanical for an external consumer too. The cost is stated in the source: two
+distinct events with the same time, type, source, subject and payload get one
+id, and they were already indistinguishable on disk.
+
+Attribution is derived, never renamed. `source` reads `squad_name`,
+`squad_slug`, `squad`, then `business_slug`, `business`, then `host`, because
+the canonical spelling is not the one authors use: over all 186,926 parseable
+events, `business_slug` runs 1,395 against `business` 390, while `squad` runs
+358 against `squad_name` 76. Every legacy key stays inside `data` untouched.
+That is the additive-only rule `references/03-audit.md` now states for the next
+author: new fields optional with defaults, old fields deprecated rather than
+renamed or removed, a new meaning always gets a new `type`, and the extension
+vocabulary stays open.
+
+The `x_` names cut 1 enforces keep working unchanged: an extension event becomes
+`sh.squads.nirvana.ext.<name>` with the prefix verbatim, so the mapping is
+lossless in both directions and cut 4 can migrate names without this cut having
+lost any.
 
 ## 0.11.0 — 2026-08-28
 

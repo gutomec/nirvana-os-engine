@@ -16,6 +16,7 @@
 //      the business alive (the reproduction, inverted by the fix);
 //   2. a business with no signal at all is still escalated (the control: the
 //      gate must never go blind).
+import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import { describe, expect, test, beforeAll, afterAll } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -116,7 +117,7 @@ function hookEvent(event: string, fields: Record<string, unknown>): void {
 
 function auditEvents(event: string): Record<string, any>[] {
   if (!fs.existsSync(auditFile())) return [];
-  return fs.readFileSync(auditFile(), "utf8").split("\n").filter(Boolean).map(l => JSON.parse(l)).filter(e => e.event === event);
+  return fs.readFileSync(auditFile(), "utf8").split("\n").filter(Boolean).map(l => parseAuditLine(l)).filter(e => e.event === event);
 }
 
 const noSalvage = (): SalvageVerdict => ({

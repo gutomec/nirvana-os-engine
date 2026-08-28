@@ -8,6 +8,7 @@
 // judges it; the fake dispatch of helpers/fake-dispatch.ts is the evaluator when the test
 // says so (NIRVANA_DISPATCH_SCRIPT); a registry fixture under a temporary HOME names the
 // installed squads. No LLM, no network.
+import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
@@ -106,7 +107,7 @@ function fixture(installed: Record<string, string[]>) {
     if (!fs.existsSync(dir)) return [] as Array<Record<string, unknown>>;
     return fs.readdirSync(dir).sort().flatMap(day => {
       const file = path.join(dir, day, "audit.jsonl");
-      return fs.existsSync(file) ? fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map(line => JSON.parse(line) as Record<string, unknown>) : [];
+      return fs.existsSync(file) ? fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map(line => parseAuditLine(line) as Record<string, unknown>) : [];
     });
   };
   const producerRuns = () => { try { return fs.readFileSync(path.join(capture, "pids"), "utf8").split("\n").filter(Boolean).length; } catch { return 0; } };

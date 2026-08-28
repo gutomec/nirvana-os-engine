@@ -18,6 +18,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 
 const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
   || (fs.existsSync(path.join(os.homedir(), ".nirvana", "skills")) ? path.join(os.homedir(), ".nirvana", "skills") : path.join(os.homedir(), ".claude", "skills"));
@@ -72,7 +73,7 @@ function loadAllEvents(): Event[] {
   if (fs.existsSync(globalPath)) {
     const lines = fs.readFileSync(globalPath, "utf8").split("\n").filter(l => l.trim());
     for (const l of lines) {
-      try { addEvent(JSON.parse(l)); } catch { unreadableLines++; }
+      try { addEvent(parseAuditLine(l)); } catch { unreadableLines++; }
     }
   }
 
@@ -93,7 +94,7 @@ function loadAllEvents(): Event[] {
         const lines = fs.readFileSync(auditPath, "utf8").split("\n").filter(l => l.trim());
         for (const l of lines) {
           try {
-            const e = JSON.parse(l);
+            const e = parseAuditLine(l);
             // tag project_id if missing
             if (!e.project_id) e.project_id = proj;
             addEvent(e);

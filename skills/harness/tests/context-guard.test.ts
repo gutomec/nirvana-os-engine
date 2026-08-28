@@ -11,6 +11,7 @@
 // step the protocol tells the orchestrator to run, whose exit code carries the
 // verdict and whose state lands in the HANDOFF so the decision is auditable
 // rather than merely claimed.
+import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import { describe, expect, test, beforeEach, afterAll } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -52,7 +53,7 @@ function auditEvents(): any[] {
       if (e.isDirectory()) walk(p);
       else if (e.name === "audit.jsonl") {
         for (const l of fs.readFileSync(p, "utf8").split("\n")) {
-          if (l.trim()) { try { out.push(JSON.parse(l)); } catch { /* partial line */ } }
+          if (l.trim()) { try { out.push(parseAuditLine(l)); } catch { /* partial line */ } }
         }
       }
     }

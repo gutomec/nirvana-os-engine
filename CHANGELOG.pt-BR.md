@@ -8,6 +8,42 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Um schema gerado para de depender da máquina que o gerou
+
+O `bun run check:all` saiu 0 na máquina do autor enquanto o job `gates` reprovava
+em `capability.schema.json` e `squad.schema.json`, de forma determinística, contra
+uma árvore que nenhum checkout reproduzia. Nenhum dos dois jobs do `smoke.yml`
+rodava `bun install`, então o Bun auto-instalava cada dependência a partir da
+faixa do package.json na hora do import. O `zod: ^4.4.0` resolveu para 4.5.1 no
+dia em que a versão saiu, e a 4.5.0 tinha tornado obrigatório o grupo de segundos
+de `z.string().datetime()`. Exatamente um campo se mexeu, `fidelity.last_eval`, no
+schema de capability e de novo aninhado dentro do manifesto de squad; o
+`workflow.schema.json` não tem `datetime()` e passou. Os dois jobs agora instalam
+a árvore fixada com `bun install --frozen-lockfile`. O job `smoke` estava verde
+por acidente: o `scripts/install.ts` roda `bun install` como efeito colateral
+quando não há `node_modules`, então os testes que ele executa estavam fixados
+enquanto o portão que compara bytes commitados não estava.
+
+A caçada expôs um segundo defeito no mesmo arquivo, pior que o check vermelho que
+levou até ele. O `LIMITS` chega ao `maxLength` e ao `maxItems` do
+`CapabilitySchema` e do `SquadManifestSchema` por uma cascata de três entradas que
+vivem fora do commit: variáveis de ambiente `NIRVANA_LIMIT_*`,
+`<projeto>/.nirvana-limits.yaml` e `~/.claude/nirvana-limits.yaml`. Quem tivesse
+um override e rodasse o gerador commitaria os próprios tetos como contrato de
+todo mundo.
+
+Os limites continuam no schema, nos valores declarados como default. Tirar a
+restrição publicaria um documento que aceita um manifesto que o validador de
+referência rejeita, e um schema que restringe de menos mente mais alto que um
+cujos números são apenas estritos. O `NIRVANA_LIMITS_DEFAULTS_ONLY=1` pula as três
+camadas de override, e o gerador o define antes de o `validators.ts` sequer
+carregar, porque o `LIMITS` é um singleton congelado no primeiro import. Dois
+testes geram sob configurações hostis, overrides de ambiente e depois dois
+arquivos `~/.claude/nirvana-limits.yaml` diferentes, e exigem bytes idênticos.
+Quem valida contra o schema publicado lê os defaults; quem sobe um limite
+localmente aceita manifestos que o schema publicado rejeita, o que é uma
+flexibilização local e não uma mudança de contrato.
+
 ### O card do run consegue dizer o que o run é
 
 O cockpit lia `(no brief captured)` em 56 de 57 cards enquanto os briefs estavam
@@ -94,6 +130,75 @@ deles fora da regra, espalhados por 7 cópias instaladas de 3 squads distintas �
 Nenhum carrega o prefixo `x_`. O log guarda 285 tipos irregulares; os arquivos
 guardam o equivalente a 3 squads. A diferença é o achado — o contrato nunca
 chegou ao autor, que é o corte 3.
+
+### O log de auditoria ganha um envelope CloudEvents, e as duas formas seguem legíveis
+
+O engine está prestes a servir eventos para software que ele não controla. O
+caso do dono é um app de escritório de advocacia que envia um caso para o `nrv
+serve` numa VPS, espera horas e lê a análise de volta, o que transforma uma
+convenção interna em contrato publicado. O corte 1 já tinha medido no que a
+convenção virou: 286 nomes de evento inventados, 880 ocorrências sem nenhuma
+atribuição.
+
+O `audit.emit` agora escreve um envelope CloudEvents 1.0 em modo estruturado,
+montado por `_shared/lib/cloudevents.js`. `type` é
+`sh.squads.nirvana.<domínio>.<evento>`, `source` é `/squad/<slug>`,
+`/business/<slug>` ou `/engine/<componente>`, `subject` é o `trace_id` do run,
+`id` é a chave de idempotência, `projectid` carrega o projeto, e o payload fica
+sob `data`. Os atributos de contexto serializam separados do `data`, então um
+consumidor filtra por qualquer um deles sem desserializar o payload.
+
+Modo estruturado, em vez de fundir os atributos no objeto plano, porque a
+colisão é medida: `source` já existe como chave de PAYLOAD em 713 linhas,
+significando "user", "work/assets", o caminho do arquivo de um agente. A fusão
+teria sobrescrito esse campo. `specversion`, `time`, `type`, `data` e `id`
+aparecem em 0 das 186.990 linhas existentes, e é isso que faz do `specversion` o
+discriminador: uma consulta de propriedade num objeto já parseado, e ela decide
+certo para toda linha da história.
+
+**Nada foi reescrito e nada precisa ser.** Todo leitor agora parseia por
+`parseAuditLine()`, que projeta um envelope para a forma plana e devolve uma
+linha legada por identidade, então os cerca de 187 mil eventos em disco custam
+um `typeof` e continuam exatamente como estavam. Vinte e dois pontos de parse em quinze arquivos de
+produção foram convertidos, mais vinte e cinco nos testes; os appenders
+diretos que não passam pelo `emit()` seguem escrevendo a forma plana, e é por
+isso que a leitura dupla é permanente, não uma janela de migração. A história
+inteira foi reprocessada por `buildRuns` e `trace-builder` em três formas — toda
+legada, toda envelope, e alternada linha a linha — e as três respostas são
+idênticas: 187.049 linhas, 186.939 eventos legíveis, 373 nomes distintos de
+evento com histograma idêntico, 9.746 traces, 867 briefs distintos, 9.716
+árvores de trace, 9.745 runs, 291 deles com brief e 375 com alvo.
+
+O `data` tem teto de 4 KiB serializados, cerca de seis vezes o p99,9 medido de
+682 bytes e ultrapassado por 5 linhas em 186.892 — todas elas um brief inteiro
+colado num evento. Acima do teto, as strings mais longas são cortadas no mesmo
+resumo de 300 caracteres que um brief já recebe, e `data._truncated` nomeia o
+que foi cortado com `data._bytes` dando o tamanho original.
+
+O `id` é hash do próprio conteúdo da linha em vez de aleatório, porque a
+duplicata que este log de fato produz é um replay: o `dispatch.ts` copia eventos
+anteriores ao projeto para a raiz do projeto carregando o `ts` original. 252 das
+186.990 linhas são byte a byte idênticas a outra linha hoje, e todo leitor que
+deduplica já as colapsa por conteúdo; o hash torna esse colapso mecânico também
+para um consumidor externo. O custo está declarado no código: dois eventos
+distintos com mesmo tempo, tipo, origem, sujeito e payload recebem um id só, e
+eles já eram indistinguíveis em disco.
+
+A atribuição é derivada, nunca renomeada. O `source` lê `squad_name`,
+`squad_slug`, `squad`, depois `business_slug`, `business`, depois `host`, porque
+a grafia canônica não é a que os autores usam: sobre os 186.926 eventos
+parseáveis, `business_slug` aparece 1.395 vezes contra 390 de `business`,
+enquanto `squad` aparece 358 contra 76 de `squad_name`. Toda chave legada
+continua dentro do `data`, intacta. Essa é a regra de evolução aditiva que o
+`references/03-audit.md` agora escreve para o próximo autor: campos novos
+opcionais com padrão, campos antigos depreciados em vez de renomeados ou
+removidos, todo significado novo ganha um `type` novo, e o vocabulário de
+extensão continua aberto.
+
+Os nomes `x_` que o corte 1 fiscaliza seguem funcionando sem mudança: um evento
+de extensão vira `sh.squads.nirvana.ext.<nome>` com o prefixo literal, então o
+mapeamento não perde nada nas duas direções e o corte 4 pode migrar nomes sem
+que este corte tenha perdido nenhum.
 
 ## 0.11.0 — 2026-08-28
 

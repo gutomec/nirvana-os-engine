@@ -38,6 +38,7 @@ import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { resolveClonePersona } from "../../_shared/lib/clone-resolver.ts";
 import { layersForPhase } from "../../_shared/lib/dna-layer-policy.ts";
 import { resolveSetting } from "../../_shared/lib/settings.ts";
+import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 
 // ───────────────────── types ─────────────────────
 
@@ -246,7 +247,7 @@ function readAuditEvents(traceId: string): any[] {
     const lines = fs.readFileSync(f, "utf8").split("\n").filter(Boolean);
     for (const line of lines) {
       try {
-        const ev = JSON.parse(line);
+        const ev = parseAuditLine(line);
         if (ev.trace_id === traceId) out.push(ev);
       } catch { /* skip malformed */ }
     }
