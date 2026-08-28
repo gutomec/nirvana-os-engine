@@ -8,6 +8,49 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### The run card can say what the run is
+
+The cockpit read `(no brief captured)` on 56 of 57 cards while the briefs sat in
+the log, because `brief_received` came out of three emitters in three shapes and
+no shape was complete. The router CLI sent the whole brief and no `trace_id`;
+`brief-squad.ts` and `brief-business.ts` sent a `trace_id`-less `brief_chars`;
+`dispatch.ts` sent a `trace_id` and `brief_chars`. `buildRuns` groups by
+`ev.trace_id || "no-trace"` and reads the text from `ev.brief`, so the only event
+carrying text was the only one that could never reach a run: on the live cockpit
+the single card with a brief was `no-trace`, holding 53 events from unrelated
+runs at once.
+
+Every emitter now carries both halves. `brief_excerpt` is a bounded, single-line
+form of the brief (`_shared/lib/brief-excerpt.ts`), capped at 300 characters —
+measured, not guessed: across both audit roots over 2026-08-22..28, 163
+`brief_received` events ran p50 83 chars, p90 176, p99 221, max 357. `brief_chars`
+stays beside it carrying the true length, so a reader can always tell an excerpt
+from a whole brief. The router CLI stops writing the unbounded field into a file
+appended thousands of times a day, and carries `NIRVANA_TRACE_ID` when it runs
+inside a dispatch; typed by hand it is a lookup, not a run, and still carries no
+trace rather than inventing a phantom card.
+
+`dispatch_squad` and `dispatch_agent_x` carry the excerpt too, so a run whose
+`brief_received` landed in another log still shows what it was asked to do.
+
+### The card counts orchestration apart from hook noise
+
+"2039 EVENTS" measured how long an agent ran, not how much the run did: the hook
+fires one `tool_invoked` and one `bash_completed` per tool call, and on
+2026-08-28 those two names alone were 4702 of 5250 events. The card now reads
+`N signal / M events`, where signal excludes `tool_invoked`, `bash_completed`,
+`x_ledger_lease_renewed` and `x_ledger_progress_ping`. It is a deny list on
+purpose: a new event name counts as signal until someone measures otherwise.
+Nothing is removed from the log — the swimlane, the fabrication detector and the
+cost aggregator still read every event.
+
+### The card names what the run was dispatched to
+
+`target` and `outputs_dir` come off the dispatch events themselves, never
+inferred from context, and render `—` when no dispatch event carries them
+(`views/absence.js`). Measured on the same 7-day log: 0 of 182 runs could name a
+target before, 81 can now, and cards showing a brief went from 20 to 59.
+
 ## 0.11.0 — 2026-08-28
 
 ### The clock stops deciding whether a run is alive

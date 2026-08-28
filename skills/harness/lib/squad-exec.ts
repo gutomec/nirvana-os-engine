@@ -26,6 +26,7 @@ import { LIMITS } from "../../_shared/validators/limits.ts";
 import { runWithCascade } from "./cascade-runner.ts";
 import { sessionKey, getSession, putSession, dropSession } from "./session-store.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
+import { briefExcerpt } from "../../_shared/lib/brief-excerpt.ts";
 import { resolveClonePersona, loadCloneRegistry } from "../../_shared/lib/clone-resolver.ts";
 import { layersForPhase } from "../../_shared/lib/dna-layer-policy.ts";
 import { findCloneForTask } from "../../_shared/lib/clone-search.ts";
@@ -442,6 +443,10 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
     ...(args.capabilityId ? { capability_id: args.capabilityId } : {}),
     mode: args.mode,
     outputs_dir: outDir,
+    // The proof-of-dispatch event says which squad, and now also what it was
+    // asked to do. Bounded — see brief-excerpt.ts for the measured cap.
+    brief_excerpt: briefExcerpt(args.brief),
+    brief_chars: args.brief.length,
   }, args.projectRoot);
 
   const cascadeImpl = args.runWithCascadeImpl ?? runWithCascade;

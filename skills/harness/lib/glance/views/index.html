@@ -883,8 +883,17 @@
                 <span class="badge badge-neutral badge-sm" x-show="run.squad_name" x-text="`squad: ${run.squad_name}`"></span>
                 <span class="badge badge-neutral badge-sm" x-show="run.project_id" x-text="`proj: ${run.project_id}`"></span>
                 <span class="badge badge-neutral badge-mono badge-sm" x-text="`#${run.trace_id.slice(0, 8)}`"></span>
-                <span class="badge badge-neutral badge-sm" x-text="`${run.event_count} events`"></span>
-                <span class="badge badge-neutral badge-sm" x-show="run.artifact_paths.length" x-text="`${run.artifact_paths.length} artifact${run.artifact_paths.length === 1 ? '' : 's'}`"></span>
+                <!-- What the run was dispatched to, read from the dispatch event itself.
+                     `—` when no dispatch event carries it: an inferred target would be a
+                     guess on the one card whose job is to say what actually happened. -->
+                <span class="badge badge-neutral badge-sm" x-text="`→ ${countText(run.target)}`"></span>
+                <!-- Signal first. The total is still there, labelled for what it is: the
+                     hook fires two events per tool call, so it measures how long an agent
+                     ran, not how much the run did. -->
+                <span class="badge badge-neutral badge-sm"
+                      :title="`${run.event_count} events on this trace · ${run.noise_event_count} of them tool calls and heartbeats`"
+                      x-text="`${countText(run.signal_event_count)} signal / ${countText(run.event_count)} events`"></span>
+                <span class="badge badge-neutral badge-sm" x-text="`${countText(run.artifact_paths.length)} artifact${run.artifact_paths.length === 1 ? '' : 's'}`"></span>
                 <span class="badge badge-neutral badge-sm" x-show="run.hosts && run.hosts.length" x-text="run.hosts.join(' · ')"></span>
               </div>
             </button>
@@ -921,6 +930,12 @@
                   <template x-if="selectedRun.project_id"><dd class="text-mono-sm" x-text="selectedRun.project_id"></dd></template>
                   <template x-if="selectedRun.cwd"><dt>cwd</dt></template>
                   <template x-if="selectedRun.cwd"><dd class="text-mono-sm" x-text="selectedRun.cwd"></dd></template>
+                  <dt>dispatched to</dt>
+                  <dd x-text="countText(selectedRun.target)"></dd>
+                  <dt>outputs</dt>
+                  <dd class="text-mono-sm" x-text="countText(selectedRun.outputs_dir)"></dd>
+                  <dt>events</dt>
+                  <dd x-text="`${countText(selectedRun.signal_event_count)} signal · ${countText(selectedRun.noise_event_count)} tool calls and heartbeats`"></dd>
                   <dt>started</dt>
                   <dd x-text="new Date(selectedRun.started_at).toLocaleString()"></dd>
                   <dt>last</dt>
@@ -956,7 +971,7 @@
                             <span class="timeline-event-name" x-text="ev.event"></span>
                             <span class="timeline-event-time" x-text="ev.ts ? ev.ts.slice(11, 19) : ''"></span>
                           </div>
-                          <div class="timeline-event-detail" x-show="ev.event === 'brief_received' && ev.brief" x-text="ev.brief"></div>
+                          <div class="timeline-event-detail" x-show="(ev.event === 'brief_received' || ev.event === 'dispatch_squad' || ev.event === 'dispatch_agent_x') && (ev.brief_excerpt || ev.brief)" x-text="ev.brief_excerpt || ev.brief"></div>
                           <div class="timeline-event-detail" x-show="ev.event === 'tool_invoked'" x-text="`${ev.action || ''} ${ev.file_path || ev.command || ''}`"></div>
                           <div class="timeline-event-detail" x-show="ev.event === 'artifact_touched' || ev.event === 'delivered'" x-text="ev.artifact_path || ev.file_path"></div>
                           <div class="timeline-event-detail" x-show="ev.event === 'cost_emission' && ev.usage" x-text="`tokens in=${ev.usage?.input_tokens || 0} out=${ev.usage?.output_tokens || 0} usd=${(ev.total_cost_usd || 0).toFixed(4)}`"></div>

@@ -40,6 +40,7 @@ import { proxyEnrichBrief } from "../lib/brief-proxy.ts";
 import { resolveRoutingMode } from "../../_shared/lib/routing-mode.ts";
 import { runTeam } from "../lib/team-orchestrator.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
+import { briefExcerpt } from "../../_shared/lib/brief-excerpt.ts";
 import { agenticRoute, type AgenticRouteDecision } from "../lib/agentic-router.ts";
 import { runWithCascade } from "../lib/cascade-runner.ts";
 import { resolveCascadeRoot, loadCascade, nextAfter } from "../lib/cascade.ts";
@@ -1072,9 +1073,12 @@ function printDeliverySummary(res: DeliveryResult, pid: string, oroot: string, z
 
 // ── SQUAD-ONLY ROUTE — dispatch the squad(s) for real (Phase 4.1) ─────────
 // Pre-Phase-4 this printed shell instructions and exited 0 WITHOUT
-// dispatching. Now: scaffold via brief-squad.ts (validates the manifest,
-// emits brief_received + dispatch_squad), then — in exec mode — run each
-// squad through squad-exec and the shared delivery pipeline.
+// dispatching. Now: scaffold via brief-squad.ts (validates the manifest, and
+// emits brief_received + dispatch_squad ITSELF — grep this file for
+// `dispatch_squad` and you find only this comment, which is why it says whose
+// event it is), then — in exec mode — run each squad through squad-exec, which
+// emits the richer dispatch_squad (capability_id, mode, outputs_dir), and the
+// shared delivery pipeline.
 if (pendingCascade?.kind === "squad-only") {
   const squads = pendingCascade.squads;
   const rt = runtimeDecision.runtime;
@@ -1272,7 +1276,7 @@ if (pendingCascade?.kind === "judge-x") {
   const projDir = path.join(scaffoldRoot, "judge-x");
   fs.mkdirSync(projDir, { recursive: true });
   dispatchAudit.bindProjectRoot(PROJECT_ROOT);
-  emit("brief_received", { trace_id: pid, project_id: pid, target: "judge-x", brief_chars: brief.length });
+  emit("brief_received", { trace_id: pid, project_id: pid, target: "judge-x", brief_excerpt: briefExcerpt(brief), brief_chars: brief.length });
 
   if (!wantExec) {
     console.log(c("cyan", "  judge-x runs only with --exec: nothing was judged."));
@@ -1338,7 +1342,7 @@ if (pendingCascade?.kind === "agent-x") {
   const briefPath = path.join(scaffoldRoot, "brief-enriched.md");
   fs.writeFileSync(briefPath, brief, "utf8");
   dispatchAudit.bindProjectRoot(PROJECT_ROOT);
-  emit("brief_received", { trace_id: pid, project_id: pid, target: "agent-x", brief_chars: brief.length });
+  emit("brief_received", { trace_id: pid, project_id: pid, target: "agent-x", brief_excerpt: briefExcerpt(brief), brief_chars: brief.length });
 
   if (!wantExec) {
     console.log("");

@@ -8,6 +8,51 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### O card do run consegue dizer o que o run é
+
+O cockpit lia `(no brief captured)` em 56 de 57 cards enquanto os briefs estavam
+no log, porque `brief_received` saía de três emissores em três formatos e nenhum
+formato era completo. O CLI do router mandava o brief inteiro e nenhum
+`trace_id`; `brief-squad.ts` e `brief-business.ts` mandavam um `brief_chars` sem
+`trace_id`; `dispatch.ts` mandava `trace_id` e `brief_chars`. O `buildRuns`
+agrupa por `ev.trace_id || "no-trace"` e lê o texto de `ev.brief`, então o único
+evento que carregava texto era o único que jamais chegaria a um run: no cockpit
+vivo, o único card com brief era o `no-trace`, segurando 53 eventos de runs sem
+relação entre si.
+
+Agora todo emissor carrega as duas metades. `brief_excerpt` é a forma limitada e
+de uma linha do brief (`_shared/lib/brief-excerpt.ts`), com teto de 300
+caracteres — medido, não chutado: nas duas raízes de auditoria entre 22 e
+28/08/2026, 163 eventos `brief_received` deram p50 de 83 caracteres, p90 de 176,
+p99 de 221 e máximo de 357. O `brief_chars` fica ao lado carregando o tamanho
+verdadeiro, então quem lê sempre distingue um trecho de um brief inteiro. O CLI
+do router para de escrever o campo sem teto num arquivo que recebe milhares de
+linhas por dia, e passa a carregar `NIRVANA_TRACE_ID` quando roda dentro de um
+despacho; digitado à mão ele é uma consulta, não um run, e continua sem trace em
+vez de inventar um card fantasma.
+
+`dispatch_squad` e `dispatch_agent_x` também carregam o trecho, então um run cujo
+`brief_received` caiu em outro log ainda mostra o que foi pedido a ele.
+
+### O card conta orquestração separada do ruído de hook
+
+"2039 EVENTS" media quanto tempo um agente ficou rodando, não quanto o run fez: o
+hook dispara um `tool_invoked` e um `bash_completed` por chamada de ferramenta, e
+em 28/08/2026 só esses dois nomes foram 4702 de 5250 eventos. O card agora lê
+`N signal / M events`, onde o sinal exclui `tool_invoked`, `bash_completed`,
+`x_ledger_lease_renewed` e `x_ledger_progress_ping`. É uma lista de exclusão de
+propósito: um nome de evento novo conta como sinal até alguém medir o contrário.
+Nada sai do log — a swimlane, o detector de fabricação e o agregador de custo
+continuam lendo todos os eventos.
+
+### O card nomeia para onde o run foi despachado
+
+`target` e `outputs_dir` vêm dos próprios eventos de despacho, nunca inferidos do
+contexto, e renderizam `—` quando nenhum evento de despacho os carrega
+(`views/absence.js`). Medido no mesmo log de 7 dias: 0 de 182 runs conseguiam
+nomear um alvo antes, 81 conseguem agora, e os cards que mostram um brief foram
+de 20 para 59.
+
 ## 0.11.0 — 2026-08-28
 
 ### O relógio para de decidir se um run está vivo

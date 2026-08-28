@@ -122,7 +122,7 @@ function fmtEvent(ev: any): string {
 
   let body = "";
   if (ev.event === "brief_received") {
-    body = ev.brief || ev.user_input || ev.payload?.brief || "";
+    body = ev.brief_excerpt || ev.brief || ev.user_input || ev.payload?.brief || "";
     body = body.slice(0, 120);
   } else if (ev.event === "routing_decision") {
     body = `signal=${ev.signal || "?"} target=${ev.target || ev.target_id || "?"}`;

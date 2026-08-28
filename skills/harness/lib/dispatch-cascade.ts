@@ -30,6 +30,7 @@ import type { Runtime } from "./host-agent-driver.ts";
 import { runWithCascade } from "./cascade-runner.ts";
 import type { RouterFailurePolicy } from "./harness-config.ts";
 import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
+import { briefExcerpt } from "../../_shared/lib/brief-excerpt.ts";
 
 export type DispatchStepKind = "business" | "squad" | "agent-x";
 
@@ -384,6 +385,9 @@ export function runAgentX(args: RunAgentXArgs): AgentXResult {
     trace_id: args.projectId, project_id: args.projectId,
     runtime: args.runtime, persona_file: promptPath,
     reason: args.reason, outputs_root: args.outputsRoot,
+    // Parity with dispatch_squad: the proof-of-dispatch event carries what the
+    // generalist was asked to do, bounded — see brief-excerpt.ts for the cap.
+    brief_excerpt: briefExcerpt(args.brief), brief_chars: args.brief.length,
   });
 
   const cascadeImpl = args.runWithCascadeImpl ?? runWithCascade;

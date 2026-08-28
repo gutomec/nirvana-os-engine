@@ -239,7 +239,9 @@ export function deriveAgentStates(events: Array<any>): AgentState[] {
       if (ev.caller_id) callerIds.add(ev.caller_id);
 
       if (ev.event === "brief_received" && !brief) {
-        brief = (ev.brief || ev.user_input || ev.payload?.brief || "").toString().slice(0, 80) || null;
+        // brief_excerpt is the bounded field the emitters write today; `brief`
+        // is the router CLI's old unbounded one, still present in logs on disk.
+        brief = (ev.brief_excerpt || ev.brief || ev.user_input || ev.payload?.brief || "").toString().slice(0, 80) || null;
       }
 
       if (ev.event === "cost_emission") {

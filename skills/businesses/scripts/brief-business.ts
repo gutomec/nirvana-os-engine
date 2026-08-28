@@ -14,6 +14,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { exec, paths, EXIT, BUN_BIN } from "../../_shared/lib/bun-helpers.ts";
 import { resolveScope, enumerate, outputsDir } from "../../_shared/lib/scope.ts";
+import { briefExcerpt } from "../../_shared/lib/brief-excerpt.ts";
 
 const skillDir = path.join(paths.CLAUDE_SKILLS_DIR, "businesses");
 // Single scope, reused for the business lookup AND outputsDir (don't resolve twice).
@@ -91,12 +92,18 @@ fs.writeFileSync(briefFile, `# Brief
 ${brief}
 `);
 
+// The event carries the trace AND a bounded excerpt of the brief. Without the
+// trace it landed in buildRuns' "no-trace" bucket and the business's own run card
+// read "(no brief captured)"; with only `brief_chars` there was nothing to show
+// even once it arrived. `brief_chars` stays as the TRUE length beside the excerpt.
 const auditFile = path.join(projectDir, "audit.jsonl");
 const auditEntry = JSON.stringify({
   ts: submitted,
   event: "brief_received",
+  trace_id: projectId,
   project_id: projectId,
   business_slug: slug,
+  brief_excerpt: briefExcerpt(brief),
   brief_chars: brief.length,
 });
 fs.appendFileSync(auditFile, auditEntry + "\n");
