@@ -343,7 +343,7 @@ Read ${instructionFile} before producing anything: it names the upstream summari
     const env: Record<string, string> = {};
     for (const [key, value] of Object.entries({ ...process.env, ...input.env })) if (value !== undefined) env[key] = value;
     env[MULTI_TARGET_NODE_ID_ENV] = adapterInput.nodeId;
-    // With --run-id the dispatch opens `<NIRVANA_PROJECT_ROOT || cwd>/.nirvana/run-kernel.sqlite`: the node's
+    // The dispatch opens `<NIRVANA_PROJECT_ROOT || cwd>/.nirvana/run-kernel.sqlite`: the node's
     // Run lands beside the plan's `run_mt_<project>` whatever the caller's shell carries.
     env.NIRVANA_PROJECT_ROOT = projectRoot;
     // The effective settings, as the variables the child reads (settings.ts settingsEnvForChild):
