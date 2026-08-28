@@ -217,7 +217,7 @@ function sourceFor(flat, ctx) {
   return `/engine/${encodeURIComponent(component)}`;
 }
 
-const { BRIEF_EXCERPT_MAX, briefExcerpt } = require('./brief-excerpt.ts');
+const { BRIEF_EXCERPT_MAX, briefExcerpt } = require('./brief-excerpt.js');
 
 /**
  * Ceiling for the serialized `data`, in bytes.
