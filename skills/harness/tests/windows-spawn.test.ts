@@ -27,6 +27,7 @@ import * as path from "node:path";
 
 import { firstExecutablePath, parseCmdShim, resolveExecutable, resolveShimTarget, quoteForCmd, whichProbe } from "../../_shared/lib/host-agent-driver.ts";
 import { makeTempRoot, removeDir } from "./helpers/temp-dirs.ts";
+import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const REAL_PLATFORM = process.platform;
 const REAL_PATH = process.env.PATH;
@@ -239,7 +240,7 @@ describe("quoteForCmd", () => {
     const quoted = quoteForCmd("line one\nline two");
     expect(quoted.startsWith('"')).toBe(true);
     expect(quoted).toContain("\n");
-  });
+  }, spawnBudgetMs(2));
 
   test("escapes embedded quotes instead of ending the argument early", () => {
     expect(quoteForCmd('say "hi"')).toBe('"say \\"hi\\""');

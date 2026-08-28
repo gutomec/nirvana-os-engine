@@ -20,6 +20,7 @@ import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const REPO = join(import.meta.dir, "..", "..", "..");
 const GATE = join(REPO, "scripts", "check-version-parity.ts");
@@ -56,7 +57,7 @@ describe("one version, told the same way everywhere", () => {
     const r = spawnSync(process.execPath, [GATE, "--strict"], { cwd: REPO, encoding: "utf8" });
     expect(r.status).toBe(0);
     expect(`${r.stdout ?? ""}`).toMatch(/All \d+ agree on/);
-  });
+  }, spawnBudgetMs(2));
 
   test("`nrv --version` reads skills/VERSION first", () => {
     // The gate's whole premise. If the CLI ever stops preferring that file, the

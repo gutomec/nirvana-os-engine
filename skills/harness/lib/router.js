@@ -130,6 +130,245 @@ function stage1IntentClassify(brief, ctx) {
   return { intent, domains, verbs, confidence };
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// Business auto_route patterns -> indexable literals
+// ─────────────────────────────────────────────────────────────────────
+// A business `auto_route.pattern` is written as an activation REGEX. The
+// document that has to retrieve it is a bag of words. Handing the regex
+// source to the tokenizer looks like it works — the tokenizer already drops
+// punctuation — and it does not, in three ways measured over the 686 routes
+// of the live library:
+//
+//   `seguran[çc]a`  -> ["seguran","cc"]   a brief says "seguranca"; neither is it
+//   `\bLCP\b`       -> ["blcp"]           the guard glues onto the acronym
+//   `.{0,24}?`      -> ["0","24"]         a gap width becomes vocabulary
+//
+// The first is the one that matters: PT-BR routes spell every accented word
+// as a character class, so the class sits INSIDE the word and splits it. 101
+// of the 400 regex-shaped routes carry at least one such wound.
+//
+// So we read the pattern as a regex and emit the literal phrases it can match.
+// The tokenizer then folds `segurança` and `seguranca` onto the same token,
+// which is why expanding `[çc]` into both spellings costs one token, not two:
+// the class exists because the author wanted both, and folding makes them one.
+//
+// Scope of the parser: alternation, groups (`(...)`, `(?:...)`), character
+// classes, escapes, and quantifiers. Measured on the live library: zero
+// lookarounds, zero backreferences, zero named groups, one negated class, two
+// ranges — all four of those degrade to a separator rather than a guess.
+const ROUTE_LITERAL_VARIANT_CAP = 24;
+
+// `\s` is a separator; `\b` `\w` `\d` and friends carry no literal at all.
+// Both become a space: the tokenizer splits there, and a phrase that loses a
+// boundary loses nothing a bag of words was going to use.
+const REGEX_CLASS_ESCAPES = new Set(['s', 'S', 'w', 'W', 'd', 'D', 'b', 'B', 'A', 'Z', 'z', 'n', 't', 'r', 'f', 'v']);
+// Members that a character class uses as glue rather than as a letter.
+const CLASS_SEPARATOR_MEMBERS = new Set([' ', '-', '_', '/', '\\s', '\\/', '\\-', '\\.']);
+
+/**
+ * Literal phrases a business auto_route pattern can match.
+ *
+ * @param {string} pattern raw `auto_routes[].pattern`
+ * @param {{multiply?: boolean}} [opts] `multiply` crosses a group's branches
+ *   with the prefix that precedes them (`security (review|audit)` ->
+ *   "security review", "security audit") instead of listing them side by side.
+ *   Default ON — see the measurement in routePatternIndexText.
+ * @returns {string[]} deduped, non-empty literal phrases
+ */
+function extractRoutePatternLiterals(pattern, opts) {
+  // `type:` is a routing-kind prefix, not vocabulary, and 139 live patterns
+  // carry it in FRONT of an alternation (`type:conciliacao_bancaria|...`) —
+  // half regex, half the old shape. Strip it once, here, for both halves.
+  const src = String(pattern == null ? '' : pattern).replace(/^\(\?i\)/, '').replace(/^type:/, '');
+  const multiply = !opts || opts.multiply !== false;
+  let i = 0;
+
+  const cross = (a, b) => {
+    const out = [];
+    for (const x of a) for (const y of b) out.push(x + y);
+    return out;
+  };
+
+  const isWordChar = (ch) => !!ch && /[\p{L}\p{N}]/u.test(ch);
+
+  /** The next literal character after any quantifier attached to the atom. */
+  function peekAfterQuantifier() {
+    let j = i;
+    if (src[j] === '{') {
+      const close = src.indexOf('}', j);
+      if (close !== -1 && /^\{\d*,?\d*\}$/.test(src.slice(j, close + 1))) j = close + 1;
+    }
+    while (src[j] === '?' || src[j] === '*' || src[j] === '+') j++;
+    return src[j];
+  }
+
+  function parseClass() {
+    i++; // consume '['
+    const start = i;
+    let negated = false;
+    if (src[i] === '^') { negated = true; i++; }
+    const members = [];
+    while (i < src.length && src[i] !== ']') {
+      if (src[i] === '\\' && i + 1 < src.length) { members.push(src.slice(i, i + 2)); i += 2; continue; }
+      members.push(src[i]); i++;
+    }
+    if (src[i] === ']') i++;
+    const body = src.slice(start, i - 1);
+    // A range (`[a-d]`, `[1-4]`) enumerates without naming; a negation names
+    // what it excludes. Neither is a keyword, so both become a boundary.
+    if (negated || /[^\\]-[^\]]/.test(body)) return [' '];
+    const letters = members.filter((m) => !CLASS_SEPARATOR_MEMBERS.has(m));
+    // `[- ]`, `[\s-]`, `[\/ ]` — glue holding two words apart.
+    if (letters.length === 0) return [' '];
+    // A class inside a word is an accent variant: emit each spelling, let the
+    // tokenizer fold them. Always multiplies with its prefix, `multiply` or
+    // not: `seguran` and `a` are not two keywords, they are one word cut open.
+    return letters.map((m) => (m.length === 2 ? m[1] : m));
+  }
+
+  // `inline: true` means the atom lives INSIDE a word and always crosses with
+  // the prefix — a single character, or a class standing in for one letter.
+  // Only a group's branches are ever laid side by side, and only when
+  // `multiply` is off.
+  function parseAtom(depth) {
+    const c = src[i];
+    if (c === '(') {
+      i++;
+      if (src[i] === '?') {
+        // `(?:` groups for real; any other `(?…` (flags, lookaround) has no
+        // literal of its own. The live library has neither, and a wrong guess
+        // about one would be indexed forever.
+        if (src[i + 1] === ':') i += 2;
+        else { skipGroup(); return { variants: [' '], inline: true }; }
+      }
+      const inner = depth < 8 ? parseAlt(depth + 1) : [' '];
+      if (src[i] === ')') i++;
+      return { variants: inner, inline: inner.length <= 1 };
+    }
+    if (c === '[') return { variants: parseClass(), inline: true };
+    if (c === '\\') {
+      const e = src[i + 1];
+      i += 2;
+      if (e === undefined) return { variants: [' '], inline: true };
+      return { variants: [REGEX_CLASS_ESCAPES.has(e) ? ' ' : e], inline: true };
+    }
+    if (c === '.') {
+      // `.` between two word characters is a JOINER, not a gap: the author
+      // writes `stress.?test` to accept "stress test", "stress-test" and
+      // "stresstest" in one atom. A space only buys the first. A hyphen buys
+      // all three, because the tokenizer already emits the joined form and the
+      // parts for a hyphenated word ("stress-test" -> stresstest, stress,
+      // test). Found by measurement: on "Stress-test our 2027 product
+      // roadmap", the route that literally spells `stress-test` was ranking
+      // ABOVE the one that spells `stress.?test` and means the same thing.
+      // Everywhere else — `.{0,24}` gaps, `display . video 360` — it stays a
+      // separator.
+      i++;
+      return { variants: [isWordChar(src[i - 2]) && isWordChar(peekAfterQuantifier()) ? '-' : ' '], inline: true };
+    }
+    if (c === '^' || c === '$') { i++; return { variants: [' '], inline: true }; }
+    i++;
+    // `_` and `:` join words the tokenizer will not split: `efd_icms_ipi` is
+    // ONE token, and no brief writes it. The old `[-_:]` scrub is why 159
+    // patterns had matchable vocabulary at all — keep that, drop the `-`,
+    // which the tokenizer already repairs into both the joined and the split
+    // forms (`e-?book` -> "ebook" AND "book").
+    return { variants: [c === '_' || c === ':' ? ' ' : c], inline: true };
+  }
+
+  function skipGroup() {
+    let open = 1;
+    while (i < src.length && open > 0) {
+      if (src[i] === '\\') { i += 2; continue; }
+      if (src[i] === '(') open++;
+      else if (src[i] === ')') open--;
+      i++;
+    }
+  }
+
+  // A quantifier repeats the atom we just read. Bag of words does not count,
+  // so every quantifier is consumed and the atom is kept exactly once —
+  // including `?`, whose optional letter is kept (`rights?` -> "rights",
+  // `e-?book` -> "e-book", which the tokenizer already repairs to "ebook").
+  function skipQuantifier() {
+    if (src[i] === '{') {
+      const close = src.indexOf('}', i);
+      if (close !== -1 && /^\{\d*,?\d*\}$/.test(src.slice(i, close + 1))) i = close + 1;
+    }
+    while (src[i] === '?' || src[i] === '*' || src[i] === '+') i++;
+  }
+
+  function parseSeq(depth) {
+    const done = [];
+    let variants = [''];
+    while (i < src.length && src[i] !== '|' && src[i] !== ')') {
+      const atom = parseAtom(depth);
+      skipQuantifier();
+      // The cap is not cosmetic: a route with five two-branch groups is 32
+      // phrases, and the library has patterns with nine groups.
+      if (atom.inline || (multiply && variants.length * atom.variants.length <= ROUTE_LITERAL_VARIANT_CAP)) {
+        variants = cross(variants, atom.variants);
+      } else {
+        done.push(...variants);
+        variants = atom.variants.slice();
+      }
+    }
+    return done.concat(variants);
+  }
+
+  function parseAlt(depth) {
+    const branches = parseSeq(depth).slice();
+    while (i < src.length && src[i] === '|') {
+      i++;
+      branches.push(...parseSeq(depth));
+    }
+    return branches;
+  }
+
+  const out = [];
+  const seen = new Set();
+  for (const v of parseAlt(0)) {
+    const s = v.replace(/\s+/g, ' ').trim();
+    if (!s || seen.has(s)) continue;
+    seen.add(s);
+    out.push(s);
+  }
+  return out;
+}
+
+/**
+ * The text a business auto_route is indexed under.
+ *
+ * A pattern with no regex metacharacter keeps the `type:X-Y_Z` treatment it
+ * has always had (286 of the 686 live routes are that shape) — the extractor
+ * would give the same tokens plus a glued `metaadscampaign`, which is doc
+ * length nobody queries.
+ *
+ * MEASURED, on the criterion brief plus the first `example_brief` of each of
+ * the twelve Genesis businesses, reading the best rank of any route of the
+ * expected business (lower is better; the whole live corpus in the index):
+ *
+ *   alternation flat, prefix not multiplied ... 4 cases in the top 4, 10 in the top 10
+ *   alternation MULTIPLIED with its prefix ... 5 cases in the top 4, 10 in the top 10
+ *
+ * Multiplied wins two cases and loses none. voicecraft's TTS route goes rank
+ * 7 -> 2 and tracking-360's rank 12 -> 10: both patterns are built from
+ * `ger(ar|e|ando) (o |um |este )?(áudio|voz)`-shaped groups, where the prefix
+ * is the word that carries the meaning and the branches are inflections. Flat
+ * indexes `ger` once and the inflections once each; multiplied repeats the
+ * prefix per branch, which is the term frequency the brief actually queries.
+ * The cost is +9.8% tokens over the 686 route documents, and only 7 of them
+ * have a DISTINCT token set that differs at all — the rest differ only in
+ * term frequency, which is exactly the axis being bought.
+ */
+function routePatternIndexText(pattern) {
+  const raw = String(pattern == null ? '' : pattern);
+  if (!/[(\[\\|?*+{^$.]/.test(raw)) {
+    return raw.replace(/^type:/, '').replace(/[-_:]/g, ' ').trim();
+  }
+  return extractRoutePatternLiterals(raw).join(' ');
+}
+
 /**
  * Build matchable documents from the squads + businesses registries.
  *
@@ -395,11 +634,25 @@ function buildMatchDocs(squadsRegistry, businessesRegistry) {
       const businessDomains = Array.isArray(businessEntry.domains) ? businessEntry.domains.join(' ') : '';
       for (const route of routes) {
         if (!route || typeof route.pattern !== 'string' || typeof route.route_to !== 'string') continue;
-        // Extract keywords from pattern. Patterns are typically `type:X-Y_Z`.
-        // Strip `type:` prefix and split on `[-_:]` to get matchable tokens.
-        const patternClean = route.pattern.replace(/^type:/, '').replace(/[-_:]/g, ' ').trim();
+        // The literals the activation regex can match — see
+        // routePatternIndexText. Before it, this line read the regex source
+        // itself, and the route was unreachable by any brief written in words.
+        const patternClean = routePatternIndexText(route.pattern);
         // Boost matchability: include slug, employee, and pattern keywords twice
         // so BM25 favors brief→pattern matches over generic descriptions.
+        //
+        // ×2 is measured, and ×3 and beyond were REJECTED. Sweeping the weight
+        // on the live corpus against the PT-BR criterion brief (the quoted
+        // brief is data, not prose: i18n-user-facing)
+        // "preciso de uma revisão de segurança no meu monorepo":
+        // ×1 puts sf-security-engineer at rank 32, ×2 at 25,
+        // ×3 at 24, and ×4, ×6 and ×8 all at 24-23. The term frequency
+        // saturates — BM25's k1 caps what repetition buys — while the document
+        // length keeps growing, so past ×2 the weight only lifts routes that
+        // ALREADY matched, and on that brief the one it lifted was sf-cto
+        // (rank 9 -> 2 at ×6), which matches "monorepo" and is the wrong
+        // employee for a security review. Raising the weight to promote the
+        // wrong route is tuning to the test.
         const text = [
           patternClean, patternClean,
           route.route_to.replace(/-/g, ' '),
@@ -2103,6 +2356,8 @@ module.exports = {
   stage4BudgetCheck,
   stage5Invoke,
   buildMatchDocs,
+  extractRoutePatternLiterals,
+  routePatternIndexText,
   prepareMatchIndex,
   buildAliasMap,
   loadKeywordAliases,

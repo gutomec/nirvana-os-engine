@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { evaluate } from "../rubrics/pdf-valid.ts";
 import { GATEABLE_EXTS, rubricsForExt } from "../scripts/quality-gate.ts";
+import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const tmp = mkdtempSync(join(tmpdir(), "pdf-valid-"));
 const PAD = "%".repeat(6000); // clears the stub floor without changing structure
@@ -39,7 +40,7 @@ describe("pdf-valid rubric", () => {
     writeFileSync(p, minimalPdf(), "latin1");
     const r = await evaluate({ artifact: p, content: "" });
     expect(r.passed).toBe(true);
-  });
+  }, spawnBudgetMs(2));
 
   test("a truncated PDF (no %%EOF) fails with a named fix", async () => {
     const p = join(tmp, "trunc.pdf");
@@ -47,7 +48,7 @@ describe("pdf-valid rubric", () => {
     const r = await evaluate({ artifact: p, content: "" });
     expect(r.passed).toBe(false);
     expect(r.fix_list.some((f) => f.includes("%%EOF"))).toBe(true);
-  });
+  }, spawnBudgetMs(2));
 
   test("a non-PDF byte blob fails on the header", async () => {
     const p = join(tmp, "fake.pdf");
@@ -55,7 +56,7 @@ describe("pdf-valid rubric", () => {
     const r = await evaluate({ artifact: p, content: "" });
     expect(r.passed).toBe(false);
     expect(r.fix_list.some((f) => f.includes("%PDF-"))).toBe(true);
-  });
+  }, spawnBudgetMs(2));
 
   test("object-stream PDFs with zero regex-visible pages still pass structurally", async () => {
     // /ObjStm present, no /Type /Page in clear text — the compressed-PDF trap.
@@ -70,7 +71,7 @@ describe("pdf-valid rubric", () => {
     } finally {
       process.env.PATH = prevPath;
     }
-  });
+  }, spawnBudgetMs(2));
 
   test("an empty-body PDF (no pages, no object streams) fails", async () => {
     const p = join(tmp, "empty.pdf");
@@ -83,7 +84,7 @@ describe("pdf-valid rubric", () => {
     } finally {
       process.env.PATH = prevPath;
     }
-  });
+  }, spawnBudgetMs(2));
 });
 
 // cleanup

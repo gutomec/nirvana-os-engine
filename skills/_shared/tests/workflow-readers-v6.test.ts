@@ -18,6 +18,7 @@ import { contractBreaks } from "../lib/contract-breaks.ts";
 import { extractSurface, writeSurface } from "../lib/surface.ts";
 import { diffSurfaces } from "../lib/surface-diff.ts";
 import { checkPortability } from "../../squads/lib/squad-doctor.ts";
+import { spawnBudgetMs } from "../../harness/tests/helpers/test-budgets.ts";
 import {
   collisionSquad, markdownWorkflow, ALPHA_GRAPH, migratedToMarkdown, schema2Surface, tmpRoot,
   v4Squad, v5AgentSequenceSquad, v5StepsSquad, v6MarkdownSquad,
@@ -140,14 +141,14 @@ describe("capability-validator: components and refs resolve to .md", () => {
     expect(out.referenced_files.workflows[0].exists).toBe(true);
     expect(out.referenced_files.workflows[0].path.endsWith("alpha.md")).toBe(true);
     expect(r.code).toBe(0);
-  });
+  }, spawnBudgetMs(2));
 
   test("the v5 squad validates as before, resolving to alpha.yaml", () => {
     const r = runBun(validator, ["squad", v5StepsSquad(root())]);
     const out = JSON.parse(r.stdout);
     expect(out.valid).toBe(true);
     expect(out.referenced_files.workflows[0].path.endsWith("alpha.yaml")).toBe(true);
-  });
+  }, spawnBudgetMs(2));
 
   test("a bare component with twins on disk resolves to the .md", () => {
     const dir = collisionSquad(root());
@@ -156,7 +157,7 @@ describe("capability-validator: components and refs resolve to .md", () => {
     const out = JSON.parse(runBun(validator, ["squad", dir]).stdout);
     expect(out.referenced_files.workflows[0].exists).toBe(true);
     expect(out.referenced_files.workflows[0].path.endsWith("x.md")).toBe(true);
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("squad-doctor: portability scans workflows in YAML and in Markdown", () => {
@@ -252,11 +253,11 @@ describe("validate-squad: protocol 6.0 takes the capabilities branch", () => {
     expect(r.stdout).toContain("Protocol: 6.0");
     expect(r.stdout).toContain("[PASS] v6 manifest valid");
     expect(r.code).toBe(0);
-  });
+  }, spawnBudgetMs(2));
 
   test("a v5 squad prints exactly what it printed before", () => {
     const r = runBun(script, [v5StepsSquad(root())], { NIRVANA_PROJECT_ROOT: root() });
     expect(r.stdout).toContain("[PASS] v5 manifest valid");
     expect(r.code).toBe(0);
-  });
+  }, spawnBudgetMs(2));
 });

@@ -14,6 +14,7 @@ import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import { z } from "zod";
 import { CapabilitySchema, SquadManifestSchema, WorkflowSchema } from "../validators/validators.ts";
+import { spawnBudgetMs } from "../../harness/tests/helpers/test-budgets.ts";
 
 const REPO = path.resolve(import.meta.dir, "..", "..", "..");
 const SCHEMAS = path.join(REPO, "skills", "_shared", "schemas");
@@ -24,7 +25,7 @@ describe("the generator is the source of the files", () => {
     const r = spawnSync(process.execPath, [path.join(REPO, "scripts", "gen-json-schemas.ts"), "--check"], { encoding: "utf8" });
     expect(r.stdout + r.stderr).toContain("JSON schema parity OK");
     expect(r.status).toBe(0);
-  });
+  }, spawnBudgetMs(2));
 
   for (const [file, schema] of [
     ["capability.schema.json", CapabilitySchema],

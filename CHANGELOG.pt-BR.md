@@ -8,6 +8,35 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Uma rota sob a chave errada diz isso, em vez de culpar um cargo
+
+O `investigation-bureau` foi auditado em 28/08/2026 e o portão respondeu nove
+vezes com `route_to (empty) names no seat of this business`. Cada uma dessas
+rotas nomeava um cargo real. Estavam escritas sob a chave `employee:`, então a
+mensagem imprimia um marcador onde vai um nome de cargo, e a auditoria gastou o
+esforço dela descobrindo que as rotas não estavam vazias coisa nenhuma.
+
+O `auto_route_unknown_employee` agora separa os dois casos. Quando `route_to`
+está ausente e outra chave da mesma rota carrega um cargo existente, a
+constatação nomeia essa chave, nomeia o cargo e afirma que a rota está morta dos
+dois lados: `route_to is absent: the key employee holds ib-chief-detective, a
+seat of this business.` Quando duas chaves carregam nome de cargo, ela lista as
+duas e não escolhe nenhuma. Quando `route_to` está mesmo vazio, ela diz
+`route_to is empty` e para de imprimir `(empty)` na posição onde vai o nome do
+cargo.
+
+Nenhum alias foi criado e nenhum fixer foi escrito. `employee:` não é uma segunda
+grafia de `route_to`: este módulo lê `r.route_to`, o `router.js` pula qualquer
+entrada cujo `route_to` não seja string, e uma segunda chave aceita seria mais
+uma coisa que todo leitor futuro teria de tratar. A reescrita mecânica perdeu nos
+números da própria biblioteca. Em 63 empresas e 691 rotas, em 28/08/2026, nenhuma
+rota carrega cargo sob outra chave, enquanto 66 rotas carregam nome de cargo sob
+`requires_escalation_to`, que a §13.2 define como alvo de escalonamento e nunca
+como destino. Essas 66 também declaram um `route_to` válido, então um fixer não
+tocaria nelas hoje; elas são a prova de que uma chave carregando nome de cargo
+não significa `route_to`, e reescrever com base nessa heurística é fixer
+inventando intenção (v6 §28.3). A mensagem é o conserto.
+
 ## 0.10.4 — 2026-08-28
 
 ### Um workflow escrito como roteador de eventos deixou de ser reportado como quebrado

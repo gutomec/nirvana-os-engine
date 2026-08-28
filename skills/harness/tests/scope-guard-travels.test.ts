@@ -13,6 +13,7 @@ import * as path from "node:path";
 import { buildStepBrief } from "../lib/team-orchestrator.ts";
 import { AUTONOMOUS_DIRECTIVE } from "../lib/host-agent-driver.ts";
 import { SCOPE_GUARD_EN, SCOPE_GUARD_PT_BR } from "../../_shared/lib/scope-guard.ts";
+import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const ROOT = path.resolve(import.meta.dir, "..", "..", "..");
 
@@ -55,5 +56,5 @@ describe("the gate", () => {
       "autonomous directive", "nrv revise", "fix prompt", "squad brief file", "Glance child", "agent-x persona", "judge-x persona",
       "DISPATCH-INSTRUCTION template", "SKILL.md", "04-multi-target.md",
     ]) expect(r.stdout).toContain(surface);
-  });
+  }, spawnBudgetMs(2));
 });

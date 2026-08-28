@@ -19,6 +19,7 @@ import {
   runHeadless, type Runtime,
 } from "../../_shared/lib/host-agent-driver.ts";
 import { CAPTURE_PRELUDE, readCapturedArgs, writeFakeCli } from "./helpers/fake-cli.ts";
+import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-driver-autonomy-"));
 const BIN = path.join(TMP, "bin");
@@ -187,7 +188,7 @@ describe("headless layer — runHeadless argv per runtime", () => {
     // link the shim reader could not check on the machine that wrote it.
     if (flag === "--append-system-prompt") expect(args[at + 1]).toBe("line one\nline two");
     else expect(fs.readFileSync(args[at + 1], "utf8")).toBe("line one\nline two");
-  });
+  }, spawnBudgetMs(2));
 
   test("codex: --dangerously-bypass-approvals-and-sandbox by default; the workspace-write sandbox under =0", () => {
     expect(argv("codex", "codex", undefined)).toContain("--dangerously-bypass-approvals-and-sandbox");

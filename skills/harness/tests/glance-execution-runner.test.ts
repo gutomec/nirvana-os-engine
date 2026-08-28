@@ -12,6 +12,7 @@ import { canonicalRunIdFor } from "../scripts/dispatch.ts";
 import { writeFakeDispatch } from "./helpers/fake-dispatch.ts";
 import { shimRuntimeOnPath } from "./helpers/fake-glance-child.ts";
 import { removeDir } from "./helpers/temp-dirs.ts";
+import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const DISPATCH = path.join(import.meta.dir, "..", "scripts", "dispatch.ts");
 const roots: string[] = [];
@@ -187,12 +188,12 @@ describe("--run-id in dispatch.ts", () => {
       expect(r.status).toBe(4);
       expect(r.stderr).toContain("pass an inline brief or --brief-file");
     }
-  });
+  }, spawnBudgetMs(2));
 
   test("the usage text documents the flag", () => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-run-id-help-")); roots.push(cwd);
     const r = spawnSync(process.execPath, [DISPATCH], { cwd, encoding: "utf8", env: { ...process.env, NIRVANA_NO_UPDATE_CHECK: "1", NIRVANA_SCOPE_QUIET: "1" } });
     expect(r.status).toBe(4);
     expect(r.stderr).toContain("--run-id=<runId>");
-  });
+  }, spawnBudgetMs(2));
 });

@@ -8,6 +8,7 @@ import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import { COMMANDS } from "../../harness/lib/commands.ts";
 import { REPO, VERIFY_CLI, cliEnv, cloneFixture, crlf, lf, posixPath, rmrf, tempRoot } from "./helpers/verify-fixture.ts";
+import { spawnBudgetMs } from "../../harness/tests/helpers/test-budgets.ts";
 
 const ROOTS: string[] = [];
 afterAll(() => { for (const r of ROOTS) rmrf(r); });
@@ -32,7 +33,7 @@ describe("bare `nrv validate` → doctor, deprecated", () => {
     const plain = run(VERIFY_CLI, [], r, { NIRVANA_VERIFY_DOCTOR_SCRIPT: fake });
     expect(plain.code).toBe(3);
     expect(plain.stdout).toContain("FAKE DOCTOR argv=[]");
-  });
+  }, spawnBudgetMs(2));
 
   test("the default doctor path exists", () => {
     expect(fs.existsSync(path.join(REPO, "skills", "harness", "scripts", "doctor-system.ts"))).toBe(true);
@@ -73,7 +74,7 @@ describe("command table and dispatchers", () => {
     expect(out.code).toBe(0);
     expect(out.stdout).toContain("64");
     expect(out.stdout).toContain("nrv doctor");
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("`nrv validate-mind-clones` delegates and keeps its JSON keys", () => {
@@ -100,7 +101,7 @@ describe("`nrv validate-mind-clones` delegates and keeps its JSON keys", () => {
     expect(beta.findings.find((f: any) => f.id === "artifact_missing").severity).toBe("error");
     const quiet = JSON.parse(run(LEGACY_CLI, [path.join(r, "dna"), "--json", "--quiet", "--no-retrieval"], r).stdout);
     expect(quiet.results[0].warnings).toBeUndefined();
-  });
+  }, spawnBudgetMs(2));
 
   test("text mode keeps the ✓/✗ lines and the Summary; default target is the DNA library", () => {
     const r = root();
@@ -110,7 +111,7 @@ describe("`nrv validate-mind-clones` delegates and keeps its JSON keys", () => {
     expect(out.stdout).toContain("✓ ");
     expect(out.stdout).toContain("Summary: 1 mind-clones · 1 ok · 0 failed");
     expect(run(LEGACY_CLI, [path.join(r, "nowhere")], r).code).toBe(2);
-  });
+  }, spawnBudgetMs(2));
 
   test("a single clone directory and a legacy .md persona file are still accepted", () => {
     const r = root();
@@ -121,5 +122,5 @@ describe("`nrv validate-mind-clones` delegates and keeps its JSON keys", () => {
     const j = JSON.parse(md.stdout);
     expect(j.total).toBe(1);
     expect(posixPath(j.results[0].file)).toEndWith("agent/AGENT.md");
-  });
+  }, spawnBudgetMs(2));
 });

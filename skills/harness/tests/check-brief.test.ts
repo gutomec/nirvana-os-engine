@@ -17,6 +17,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const REPO = join(import.meta.dir, "..", "..", "..");
 const CHECK = join(REPO, "scripts", "check-brief.ts");
@@ -54,19 +55,19 @@ describe("it catches what a stale brief gets wrong", () => {
     const r = run("Edit ~/nirvana-packs/genesis-content/squads/no-such-squad-here/squad.yaml");
     expect(r.out).toContain("does not exist");
     expect(r.out).toContain("no-such-squad-here");
-  });
+  }, spawnBudgetMs(2));
 
   test("a script on a branch this checkout does not have", () => {
     const r = run("Run `bun scripts/coverage-ratchet-that-moved.ts --check` first.");
     expect(r.out).toMatch(/no such script/);
-  });
+  }, spawnBudgetMs(2));
 
   test("a slug that is not in the registry", () => {
     // The real shape of this error: a plausible name for a squad that exists
     // under a different one.
     const r = run("Neighbour: `design-system-nirvana-pro`.");
     expect(r.out).toContain("not in the registry");
-  });
+  }, spawnBudgetMs(2));
 
   test("--strict is what a dispatch step would gate on", () => {
     const body = "Edit ~/definitely/not/a/real/path/squad.yaml";
@@ -84,7 +85,7 @@ describe("it stays quiet when the brief is right", () => {
     expect(r.code).toBe(0);
     expect(r.out).toContain("resolves");
     expect(r.out).toMatch(/checked 1 paths · 1 scripts · 1 slugs/);
-  });
+  }, spawnBudgetMs(2));
 
   test("a Windows path is seen, on any platform", () => {
     // The suite creates its fixtures under tmpdir, which on Windows is a
@@ -94,7 +95,7 @@ describe("it stays quiet when the brief is right", () => {
     expect(r.code).toBe(1);
     expect(r.out).toContain("does not exist");
     expect(r.out).toMatch(/checked 1 paths/);
-  });
+  }, spawnBudgetMs(2));
 
   test("a single-word name is not judged as a slug", () => {
     // 13 of the 255 entities are one word, and three of those words are
@@ -103,26 +104,26 @@ describe("it stays quiet when the brief is right", () => {
     const r = run("Read `testing` notes and the `monitoring` section.", ["--strict"]);
     expect(r.code).toBe(0);
     expect(r.out).toMatch(/· 0 slugs/);
-  });
+  }, spawnBudgetMs(2));
 
   test("a path the agent is told to CREATE is not an error", () => {
     // Briefs name their own outputs. Flagging those would make the checker
     // useless for exactly the briefs that produce something.
     const r = run("Write the report to ~/nirvana-os/.nirvana/outputs/run-01/report.md (new)", ["--strict"]);
     expect(r.code).toBe(0);
-  });
+  }, spawnBudgetMs(2));
 
   test("filenames in backticks are not judged as slugs", () => {
     const r = run("Read `router.js` and `squad.yaml`, then `build-all-packs.sh`.", ["--strict"]);
     expect(r.code).toBe(0);
-  });
+  }, spawnBudgetMs(2));
 
   test("a relative path is left alone rather than guessed at", () => {
     // Without a stated cwd, `skills/harness/lib` could resolve against the repo,
     // the pack, or the installed library. Guessing produces false alarms.
     const r = run("Look under skills/harness/lib and packaging/pack.", ["--strict"]);
     expect(r.code).toBe(0);
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("the checker reports what it inspected", () => {
@@ -130,7 +131,7 @@ describe("the checker reports what it inspected", () => {
     // A preflight that silently checks nothing reads exactly like a passing one.
     const r = run(`Target: the \`design-system-nirvana\` squad at ${REAL_FILE}`);
     expect(r.out).toMatch(/checked 1 paths · 0 scripts · 1 slugs/);
-  });
+  }, spawnBudgetMs(2));
 });
 
 process.on("exit", () => { try { rmSync(tmp, { recursive: true, force: true }); } catch {} });

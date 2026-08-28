@@ -15,6 +15,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
+import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 import {
   compareVersions, readNotice, ageMs, isStale, renderMessage, fetchLatestVersion, CHECK_TTL_MS,
@@ -176,20 +177,20 @@ describe("the CLI, as a subprocess against a stub API", () => {
     expect(lines[1]).toBe("0.3.0");
     expect(lines[2]).toContain("0.3.0");
     expect(lines[2]).toContain("nrv update");
-  });
+  }, spawnBudgetMs(2));
 
   test("--print emits the pending notice on STDERR, leaving stdout clean", () => {
     const r = run("--print", "0.2.0");
     expect(r.stderr).toContain("0.3.0");
     expect(r.stdout.trim()).toBe("");
-  });
+  }, spawnBudgetMs(2));
 
   test("being current empties the cache — checked, nothing to say", () => {
     const r = run("--refresh", "0.3.0");
     expect(r.status).toBe(0);
     expect(readNotice(NOTICE)).toBeNull();          // stamped, nothing pending
     expect(run("--print", "0.3.0").stderr.trim()).toBe("");
-  });
+  }, spawnBudgetMs(2));
 
   test("a stale notice is not printed to someone who already updated", () => {
     // The cache still says 0.3.0 is out; the user is now ON 0.3.0. Silence,
@@ -211,7 +212,7 @@ describe("the CLI, as a subprocess against a stub API", () => {
       env: { ...process.env, NIRVANA_HOME: TMP, NIRVANA_SKILLS_DIR: SKILLS, NIRVANA_NO_UPDATE_CHECK: "1" },
     });
     expect(printed.stderr.trim()).toBe("");
-  });
+  }, spawnBudgetMs(2));
 
   test("a failing API keeps the pending notice instead of dropping it", () => {
     fs.writeFileSync(NOTICE, `${Math.floor(Date.now() / 1000)}\n0.3.0\nNirvana-OS 0.3.0 is available\n`);
@@ -223,7 +224,7 @@ describe("the CLI, as a subprocess against a stub API", () => {
     });
     expect(r.status).toBe(0);                                  // offline is not a failure
     expect(readNotice(NOTICE)?.latest).toBe("0.3.0");           // and not a reason to forget
-  });
+  }, spawnBudgetMs(2));
 
   test("an unknown installed version says nothing at all", () => {
     fs.rmSync(path.join(SKILLS, "VERSION"), { force: true });
@@ -233,7 +234,7 @@ describe("the CLI, as a subprocess against a stub API", () => {
     });
     expect(r.status).toBe(0);
     expect(r.stderr.trim()).toBe("");
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("the bash wrapper", () => {
@@ -263,7 +264,7 @@ describe("the bash wrapper", () => {
     const r = nrv(["definitely-not-a-command"]);
     expect(r.stderr).toContain("Nirvana-OS 0.3.0 is available");
     expect(r.status).toBe(2);            // the unknown-subcommand path still works
-  });
+  }, spawnBudgetMs(2));
 
   test("says nothing once the installed version matches the cached one", () => {
     fs.writeFileSync(path.join(SKILLS, "VERSION"), "0.3.0\n");
@@ -281,12 +282,12 @@ describe("the bash wrapper", () => {
     // first line of stderr, which is where the wrapper would have put it.
     const r = nrv(["update", "--check"]);
     expect((r.stderr || "").split("\n")[0]).not.toContain("is available");
-  });
+  }, spawnBudgetMs(2));
 
   test("a missing cache never breaks the command", () => {
     fs.rmSync(NOTICE, { force: true });
     const r = nrv(["definitely-not-a-command"]);
     expect(r.status).toBe(2);
     expect(r.stderr).toContain("unknown subcommand");
-  });
+  }, spawnBudgetMs(2));
 });

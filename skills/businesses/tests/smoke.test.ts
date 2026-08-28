@@ -18,6 +18,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
+import { spawnBudgetMs } from "../../harness/tests/helpers/test-budgets.ts";
 
 const SKILLS = join(import.meta.dir, "..", "..");
 const SCRIPTS = join(SKILLS, "businesses", "scripts");
@@ -56,7 +57,7 @@ describe("business lifecycle — init → validate → index → list", () => {
     expect(`${r.stdout}${r.stderr}`).not.toContain("validation failed");
     expect(r.status).toBe(0);
     expect(existsSync(join(home, "businesses", "smoke-solo", "business.yaml"))).toBe(true);
-  });
+  }, spawnBudgetMs(2));
 
   // A template cannot carry `.nirvana-surface.json` — it is a hash of files
   // that exist only once the wizard has overlaid the manifest — so the
@@ -75,7 +76,7 @@ describe("business lifecycle — init → validate → index → list", () => {
     const fixed = nrv("validate-business.ts", "smoke-solo", "--fix", "--no-retrieval");
     expect(`${fixed.stdout}${fixed.stderr}`).not.toContain("ROLLED BACK");
     expect(fixed.status).toBe(0);
-  });
+  }, spawnBudgetMs(2));
 
   test("--report writes the JSON under the project's own .audit-state", () => {
     // Pinned project root: a report belongs to the project that asked for it,
@@ -87,7 +88,7 @@ describe("business lifecycle — init → validate → index → list", () => {
     const file = join(home, ".nirvana", ".audit-state", "smoke-solo", "verify.json");
     expect(r.stdout).toContain(file);
     expect(JSON.parse(readFileSync(file, "utf8")).schema).toBe("nirvana.verify-report/v1");
-  });
+  }, spawnBudgetMs(2));
 
   test("index writes the registry with the new business", () => {
     const r = nrv("index-businesses.ts", "--quiet");
@@ -96,13 +97,13 @@ describe("business lifecycle — init → validate → index → list", () => {
     expect(Object.keys(registry.businesses)).toContain("smoke-solo");
     // employee_count is derived from disk (§6.12), never from the manifest.
     expect(registry.businesses["smoke-solo"].employee_count).toBe(1);
-  });
+  }, spawnBudgetMs(2));
 
   test("list prints the business it just indexed", () => {
     const r = nrv("list-businesses.ts");
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("smoke-solo");
-  });
+  }, spawnBudgetMs(2));
 });
 
 /** Employee frontmatter retired by §22. A scaffold must not seed them. */

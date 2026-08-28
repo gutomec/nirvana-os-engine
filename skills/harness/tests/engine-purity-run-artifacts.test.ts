@@ -16,6 +16,7 @@ import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import { outputsDir } from "../../_shared/lib/scope.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
+import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const ROOT = path.resolve(import.meta.dir, "..", "..", "..");
 const GATE = path.join(ROOT, "scripts", "check-engine-purity.ts");
@@ -54,13 +55,13 @@ describe("run artifacts cannot be committed", () => {
   test("nothing under a write path is tracked right now", () => {
     const tracked = spawnSync("git", ["ls-files", "outputs", ".nirvana", ".harness-logs"], { cwd: ROOT, encoding: "utf8" });
     expect((tracked.stdout || "").trim()).toBe("");
-  });
+  }, spawnBudgetMs(2));
 
   test("the gate passes on the shipped tree", () => {
     const r = runGate();
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("OK");
-  });
+  }, spawnBudgetMs(2));
 
   test("every path the engine writes to is gitignored", () => {
     // Derived, not listed: if outputsDir() moves, this test follows it there and
@@ -88,7 +89,7 @@ describe("run artifacts cannot be committed", () => {
     } finally {
       fs.rmSync(p, { force: true });
     }
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("the guarded set follows the engine, not a memory of it", () => {

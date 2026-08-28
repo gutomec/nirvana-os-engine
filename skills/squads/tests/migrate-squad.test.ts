@@ -23,6 +23,7 @@ import { spawnSync } from "node:child_process";
 import { parse as parseYaml } from "yaml";
 import { cliEnv, rmrf, squadFixture, tempRoot, treeDigest, REPO } from "../../_shared/tests/helpers/verify-fixture.ts";
 import { runCli } from "../../_shared/tests/helpers/verify-fixture.ts";
+import { spawnBudgetMs } from "../../harness/tests/helpers/test-budgets.ts";
 
 const MIGRATE_CLI = path.join(REPO, "skills", "squads", "scripts", "migrate-squad.ts");
 
@@ -210,7 +211,7 @@ describe("one squad per dialect: dry run writes nothing, --apply admits, a secon
       // 4. the surface change a buyer sees is patch or minor, never breaking.
       expect(["patch", "minor", "none"]).toContain(applied.json.surface_diff.bump);
       expect(applied.json.surface_diff.breaking).toBe(0);
-    });
+    }, spawnBudgetMs(3));
   }
 });
 
@@ -246,7 +247,7 @@ describe("nothing is invented", () => {
     expect(md).not.toContain("## plan\n");
     const graph: any = parseYaml(md.split("---")[1]);
     expect(graph.steps.find((s: any) => s.id === "plan").task).toBe("main-plan");
-  });
+  }, spawnBudgetMs(2));
 
   test("--no-extract-tasks keeps the prompt in the body", () => {
     const r = root();
@@ -272,7 +273,7 @@ describe("the twin", () => {
     expect(md).toContain("The planner reads the brief and writes the outline.");  // the .md's body survived
     const graph: any = parseYaml(md.split("---")[1]);
     expect(graph.steps.map((s: any) => s.id)).toEqual(["plan", "build"]);         // the .yaml's graph won
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("event_routes", () => {
@@ -285,7 +286,7 @@ describe("event_routes", () => {
     expect(out.json.refusals.join(" ")).toContain("event_routes");
     expect(treeDigest(dir)).toEqual(before);
     expect(out.json.backup).toBeNull();
-  });
+  }, spawnBudgetMs(2));
 
   test("--force leaves that document alone and migrates the rest of the squad", () => {
     const r = root();
@@ -297,7 +298,7 @@ describe("event_routes", () => {
     expect(fs.existsSync(path.join(dir, "workflows", "main.yaml"))).toBe(true);
     expect(fs.existsSync(path.join(dir, "workflows", "second.md"))).toBe(true);
     expect(parseYaml(fs.readFileSync(path.join(dir, "squad.yaml"), "utf8")).protocol).toBe("6.0");
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("--map-refs", () => {
@@ -316,7 +317,7 @@ describe("--map-refs", () => {
     const graph: any = parseYaml(fs.readFileSync(path.join(dir, "workflows", "main.md"), "utf8").split("---")[1]);
     expect(graph.steps[0].agent).toBe("planner");
     expect(graph.steps[0].task).toBe("plan");
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("acceptance", () => {
@@ -355,7 +356,7 @@ describe("backup and rollback", () => {
     const back = runMigrate(r, ["rollback", "--rollback", applied.json.at]);
     expect(back.code).toBe(0);
     expect(treeDigest(dir)).toEqual(before);
-  });
+  }, spawnBudgetMs(2));
 
   test("--rollback refuses when the squad changed after the migration", () => {
     const r = root();
@@ -371,7 +372,7 @@ describe("backup and rollback", () => {
     expect(treeDigest(dir)).toEqual(migrated);
 
     expect(runMigrate(r, ["rollback-dirty", "--rollback", applied.json.at, "--force"]).code).toBe(0);
-  });
+  }, spawnBudgetMs(3));
 
   test("the report lands in the state dir, never inside the squad", () => {
     const r = root();
@@ -385,7 +386,7 @@ describe("backup and rollback", () => {
       expect(saved.files[0]).toHaveProperty(key);
     }
     expect(fs.readdirSync(dir).some((n) => n.startsWith("migrate-"))).toBe(false);
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("the gate agrees", () => {
@@ -400,7 +401,7 @@ describe("the gate agrees", () => {
     expect(after.json.summary.errors).toBe(0);
     expect(after.json.findings.map((f: any) => f.id)).not.toContain("protocol_below_6");
     expect(after.json.verdict).toBe("ADMITTED");
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("usage", () => {
@@ -421,5 +422,5 @@ describe("usage", () => {
     expect(out.code).toBe(0);
     expect(out.json.map((x: any) => x.slug).sort()).toEqual(["all-one", "all-two"]);
     expect(out.json.every((x: any) => x.mode === "dry-run")).toBe(true);
-  });
+  }, spawnBudgetMs(2));
 });

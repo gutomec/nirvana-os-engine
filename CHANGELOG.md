@@ -8,6 +8,34 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### A route under the wrong key says so, instead of blaming a seat
+
+`investigation-bureau` was audited on 28/08/2026 and the gate answered nine times
+with `route_to (empty) names no seat of this business`. Every one of those routes
+named a real seat. They were written under the key `employee:`, so the message
+printed a placeholder where a seat name belongs, and the audit spent its effort
+discovering that the routes were not empty at all.
+
+`auto_route_unknown_employee` now separates the two cases. When `route_to` is
+absent and another key of the same route holds an existing seat, the finding
+names that key, names the seat, and states that the route is dead on both sides:
+`route_to is absent: the key employee holds ib-chief-detective, a seat of this
+business.` When two keys hold a seat name, it lists both and picks neither. When
+`route_to` is genuinely empty, it says `route_to is empty` and stops printing
+`(empty)` in the position where a seat name goes.
+
+No alias was added and no fixer was written. `employee:` is not a second spelling
+of `route_to`: this module reads `r.route_to`, `router.js` skips any entry whose
+`route_to` is not a string, and a second accepted key would be one more thing
+every future reader has to handle. The mechanical rewrite lost on the library's
+own numbers. Across 63 businesses and 691 routes on 28/08/2026, no route carries
+a seat under another key, while 66 routes hold a seat name under
+`requires_escalation_to`, which §13.2 defines as an escalation target and never a
+destination. Those 66 declare a valid `route_to` as well, so a fixer would not
+touch them today; they are the evidence that a key holding a seat name does not
+mean `route_to`, and rewriting on that heuristic is a fixer inventing intent
+(v6 §28.3). The message is the fix.
+
 ## 0.10.4 — 2026-08-28
 
 ### A workflow written as an event router stopped being reported as broken

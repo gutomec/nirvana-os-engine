@@ -25,6 +25,7 @@ import {
   type Runtime,
 } from "../../_shared/lib/host-agent-driver.ts";
 import { writeFakeCli, readCapturedArgs, CAPTURE_PRELUDE } from "./helpers/fake-cli.ts";
+import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-driver-adapters-test-"));
 const BIN = path.join(TMP, "bin");
@@ -190,7 +191,7 @@ describe("driver adapters — 300KB prompt delivery + cost matrix", () => {
     expect(r.costUsd).toBe(0.42);
     expect(r.costUnavailable).toBeUndefined();
     assertArgvSafe("claude");
-  });
+  }, spawnBudgetMs(2));
 
   test("codex: STDIN; costUnavailable (tokens only, no USD)", () => {
     const r = run("codex");
@@ -200,7 +201,7 @@ describe("driver adapters — 300KB prompt delivery + cost matrix", () => {
     expect(r.costUsd).toBeNull();
     expect(r.costUnavailable).toBe(true);
     assertArgvSafe("codex");
-  });
+  }, spawnBudgetMs(2));
 
   test("gemini-cli: STDIN via -p ''; costUnavailable", () => {
     const r = run("gemini-cli");
@@ -214,7 +215,7 @@ describe("driver adapters — 300KB prompt delivery + cost matrix", () => {
     expect(p).toBeGreaterThanOrEqual(0);
     expect(args[p + 1]).toBe(""); // prompt rides stdin, not argv
     assertArgvSafe("gemini");
-  });
+  }, spawnBudgetMs(2));
 
   test("antigravity-cli: bootstrap prompt-file above threshold; costUnavailable", () => {
     const r = run("antigravity-cli");
@@ -223,7 +224,7 @@ describe("driver adapters — 300KB prompt delivery + cost matrix", () => {
     expect(r.costUsd).toBeNull();
     expect(r.costUnavailable).toBe(true);
     assertArgvSafe("agy");
-  });
+  }, spawnBudgetMs(2));
 
   test("kimi-cli: bootstrap prompt-file; native cost from result event", () => {
     const r = run("kimi-cli");
@@ -233,7 +234,7 @@ describe("driver adapters — 300KB prompt delivery + cost matrix", () => {
     expect(r.costUsd).toBe(0.07);
     expect(r.costUnavailable).toBeUndefined();
     assertArgvSafe("kimi");
-  });
+  }, spawnBudgetMs(2));
 
   test("grok-cli: native --prompt-file; native cost", () => {
     const r = run("grok-cli");
@@ -243,7 +244,7 @@ describe("driver adapters — 300KB prompt delivery + cost matrix", () => {
     expect(r.costUsd).toBe(0.11);
     expect(r.costUnavailable).toBeUndefined();
     assertArgvSafe("grok");
-  });
+  }, spawnBudgetMs(2));
 
   test("pi: native @file attachment; native summed cost", () => {
     const r = run("pi");
@@ -253,7 +254,7 @@ describe("driver adapters — 300KB prompt delivery + cost matrix", () => {
     expect(r.costUsd).toBe(0.05);
     expect(r.costUnavailable).toBeUndefined();
     assertArgvSafe("pi");
-  });
+  }, spawnBudgetMs(2));
 
   test("qwen-code: STDIN; costUnavailable", () => {
     const r = run("qwen-code");
@@ -262,7 +263,7 @@ describe("driver adapters — 300KB prompt delivery + cost matrix", () => {
     expect(r.costUsd).toBeNull();
     expect(r.costUnavailable).toBe(true);
     assertArgvSafe("qwen");
-  });
+  }, spawnBudgetMs(2));
 
   test("opencode: bootstrap prompt-file; costUnavailable", () => {
     const r = run("opencode");
@@ -271,7 +272,7 @@ describe("driver adapters — 300KB prompt delivery + cost matrix", () => {
     expect(r.costUsd).toBeNull();
     expect(r.costUnavailable).toBe(true);
     assertArgvSafe("opencode");
-  });
+  }, spawnBudgetMs(2));
 
   test("temp prompt files are cleaned up after the run", () => {
     run("antigravity-cli");
@@ -279,7 +280,7 @@ describe("driver adapters — 300KB prompt delivery + cost matrix", () => {
     run("pi");
     const leftovers = fs.readdirSync(os.tmpdir()).filter((f) => f.startsWith("nrv-prompt-"));
     expect(leftovers).toEqual([]);
-  });
+  }, spawnBudgetMs(3));
 });
 
 describe("driver adapters — failure contract (error envelope on exit 0 → ok:false)", () => {
@@ -288,63 +289,63 @@ describe("driver adapters — failure contract (error envelope on exit 0 → ok:
     expect(r.exitCode).toBe(0);
     expect(r.ok).toBe(false);
     expect(r.error).toBeTruthy();
-  });
+  }, spawnBudgetMs(2));
 
   test("codex: terminal error event", () => {
     const r = run("codex", "error");
     expect(r.exitCode).toBe(0);
     expect(r.ok).toBe(false);
     expect(r.error).toContain("upstream 500");
-  });
+  }, spawnBudgetMs(2));
 
   test("gemini-cli: error field in envelope", () => {
     const r = run("gemini-cli", "error");
     expect(r.exitCode).toBe(0);
     expect(r.ok).toBe(false);
     expect(r.error).toContain("quota exhausted");
-  });
+  }, spawnBudgetMs(2));
 
   test("antigravity-cli: is_error + error object", () => {
     const r = run("antigravity-cli", "error");
     expect(r.exitCode).toBe(0);
     expect(r.ok).toBe(false);
     expect(r.error).toContain("agy backend down");
-  });
+  }, spawnBudgetMs(2));
 
   test("kimi-cli: error event + result is_error", () => {
     const r = run("kimi-cli", "error");
     expect(r.exitCode).toBe(0);
     expect(r.ok).toBe(false);
     expect(r.error).toContain("provider exploded");
-  });
+  }, spawnBudgetMs(2));
 
   test("grok-cli: is_error + error string", () => {
     const r = run("grok-cli", "error");
     expect(r.exitCode).toBe(0);
     expect(r.ok).toBe(false);
     expect(r.error).toContain("xai upstream error");
-  });
+  }, spawnBudgetMs(2));
 
   test("pi: stopReason=error in stream (the original quirk)", () => {
     const r = run("pi", "error");
     expect(r.exitCode).toBe(0);
     expect(r.ok).toBe(false);
     expect(r.error).toContain("403");
-  });
+  }, spawnBudgetMs(2));
 
   test("qwen-code: error field in envelope", () => {
     const r = run("qwen-code", "error");
     expect(r.exitCode).toBe(0);
     expect(r.ok).toBe(false);
     expect(r.error).toContain("qwen quota");
-  });
+  }, spawnBudgetMs(2));
 
   test("opencode: non-zero exit (only signal it has)", () => {
     const r = run("opencode", "error");
     expect(r.ok).toBe(false);
     expect(r.exitCode).toBe(1);
     expect(r.error).toContain("boom");
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("light layer — callHostAgent / callHostAgentAsync", () => {
@@ -353,7 +354,7 @@ describe("light layer — callHostAgent / callHostAgentAsync", () => {
     expect("text" in r && r.text).toBe("len:300000");
     if ("host" in r) expect(r.host).toBe("claude-code");
     assertArgvSafe("claude");
-  });
+  }, spawnBudgetMs(2));
 
   test("callHostAgentAsync honors legacy __testRuntime shape (buildArgs only)", async () => {
     // Spawn the interpreter directly (see fake-cli.ts): the legacy shape carries
@@ -369,7 +370,7 @@ describe("light layer — callHostAgent / callHostAgentAsync", () => {
     };
     const r = await callHostAgentAsync("", "hi", { __testRuntime: legacy, timeoutMs: 10_000, heartbeatMs: 0 });
     expect("text" in r && r.text).toBe("legacy-ok");
-  });
+  }, spawnBudgetMs(2));
 
   test("persona truncation warns on stderr with sizes", () => {
     const seen: string[] = [];
