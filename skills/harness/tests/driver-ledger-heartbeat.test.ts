@@ -64,12 +64,14 @@ function readAuditEvents(): Array<Record<string, unknown>> {
 }
 
 describe("driver — ledger default timeout", () => {
-  test("explicit timeoutMs always wins; ledgered runs default to a 24h backstop; unledgered stay uncapped", () => {
+  test("explicit timeoutMs always wins; ledgered runs default to a 7-day backstop; unledgered stay uncapped", () => {
     expect(resolveLedgerTimeoutMs({ timeoutMs: 1234, ledger: { runId: "x" } })).toBe(1234);
     expect(resolveLedgerTimeoutMs({ ledger: { runId: "x" } })).toBe(LEDGER_DEFAULT_TIMEOUT_MS);
-    // 24h is a BACKSTOP: hangs are caught by the activity heartbeat (~5 min
-    // stall budget), not by the clock, so real long-form work is never killed.
-    expect(LEDGER_DEFAULT_TIMEOUT_MS).toBe(24 * 60 * 60_000);
+    // A BACKSTOP, above the work rather than inside it: hangs are caught by the
+    // lease expiring after the last sign of life, not by the clock. 24h used to
+    // sit BELOW this machine's longest ledgered run (25.5h) — a ceiling under
+    // the observed maximum kills finished work instead of catching a runaway.
+    expect(LEDGER_DEFAULT_TIMEOUT_MS).toBe(7 * 24 * 60 * 60_000);
     expect(resolveLedgerTimeoutMs({})).toBeUndefined();
   });
 });

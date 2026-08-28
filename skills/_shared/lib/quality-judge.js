@@ -189,9 +189,12 @@ async function runQualityJudge({ phase, artifact, rubric_path, context, timeoutM
   // Use retry wrapper so stalled judge calls get one automatic retry.
   let retry = null;
   try { retry = require(path.join(__dirname, 'host-agent-retry.js')); } catch {}
+  // No floors here. The driver's budget is a budget of SILENCE and the runtime
+  // this judge calls prints one JSON object at the END of the call, so the old
+  // pair (120s wall clock, 60s "stall") could only ever measure how long the
+  // model was allowed to think. A caller with a real deadline still passes one.
   const callOpts = {
-    timeoutMs: timeoutMs || 120_000,
-    heartbeatMs: 60_000,
+    ...(Number.isFinite(timeoutMs) && timeoutMs > 0 ? { timeoutMs } : {}),
     maxRetries: 1,
   };
   const r = retry && retry.callWithRetryOnStall

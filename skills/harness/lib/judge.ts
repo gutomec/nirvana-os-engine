@@ -282,7 +282,12 @@ export async function judge(input: JudgeInput, opts: JudgeOpts = {}): Promise<Ju
   const preferredHost = await resolveJudgePreferredRuntime(input, opts, available);
 
   const call = await driver.callHostAgentAsync(persona, userMsg, {
-    timeoutMs: opts.timeoutMs ?? 60_000,
+    // No floor of our own: the driver's budget is a budget of SILENCE, and a
+    // judge grading a long artifact against a seven-criterion rubric routinely
+    // thinks for more than the 60s this used to allow. `claude -p
+    // --output-format json` prints nothing until it is done, so those 60s were
+    // a wall clock, and the verdict they produced was a runtime error.
+    ...(typeof opts.timeoutMs === "number" ? { timeoutMs: opts.timeoutMs } : {}),
     ...(preferredHost ? { preferredHost } : {}),
   });
 

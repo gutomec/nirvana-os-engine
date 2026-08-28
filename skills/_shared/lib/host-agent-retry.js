@@ -77,7 +77,11 @@ async function callWithRetryOnStall(persona, userMessage, opts = {}) {
   let currentMsg = userMessage;
   while (true) {
     const r = await driver.callHostAgentAsync(persona, currentMsg, driverOpts);
-    const stalled = r && (r.error === 'stall' || r.error === 'stall_warning');
+    // `inactivity_timeout` is the same verdict at the wider window: the driver
+    // killed a child that had stopped producing bytes. A wrapper that retries
+    // one and not the other would silently stop retrying the moment a caller
+    // let the driver pick the budget.
+    const stalled = r && (r.error === 'stall' || r.error === 'stall_warning' || r.error === 'inactivity_timeout');
     if (!stalled) return r;
     emitSafe('stall_detected', {
       attempt,

@@ -685,6 +685,14 @@ export function detectHost(opts: { preferred?: string } = {}): RuntimeAdapter | 
  * callHostAgent — dispatches a single LLM call through the host runtime.
  * Persona is the role's persona text (loaded from the agent .md). User
  * message is the actual task prompt.
+ *
+ * `timeoutMs` here is WALL CLOCK, and it is the one place in this file where
+ * that is not a defect but a limit: spawnSync blocks the event loop, so no
+ * timer can run and nothing can observe the child working. Say it plainly
+ * rather than let a caller assume the async contract. Work that may legitimately
+ * take a long time belongs in callHostAgentAsync (silence budget) or runHeadless
+ * (heartbeat sidecar); the default here is only large enough that the blocking
+ * path stops being the thing that kills a thinking model.
  */
 export function callHostAgent(persona: string, userMessage: string, opts: CallOpts = {}): HostCall | HostError {
   const host = opts.__testRuntime ?? detectHost({ preferred: opts.preferredHost });
@@ -697,7 +705,7 @@ export function callHostAgent(persona: string, userMessage: string, opts: CallOp
     const exec = resolveExecutable(host.cli);
     r = spawnSync(exec.command, exec.args(call.args), {
       encoding: "utf8",
-      timeout: opts.timeoutMs ?? 120_000,
+      timeout: opts.timeoutMs ?? DEFAULT_INACTIVITY_BUDGET_MS,
       maxBuffer: 8 * 1024 * 1024,
       env: { ...process.env },
       ...(exec.shell ? { shell: true } : {}),
@@ -726,23 +734,58 @@ export function callHostAgent(persona: string, userMessage: string, opts: CallOp
  * run in parallel from the same process. Returns the same shape as
  * callHostAgent but as a Promise.
  *
- * Stall watchdog (opt-in): when `heartbeatMs > 0`, the driver tracks the
- * timestamp of the most recent stdout/stderr chunk. If no bytes arrive within
- * `heartbeatMs` (default 60_000), the driver classifies the call as stalled.
- * Behavior depends on `heartbeatMode`:
- *   - 'kill' (default): SIGTERM the child immediately, escalate to SIGKILL
- *     after 5s, resolve with `{ error: 'stall', stalled_after_ms, ... }`.
- *   - 'warn': resolve with stall signal but let the child keep running until
- *     timeout. Useful in tests or when caller wants to log without aborting.
+ * Two windows, one activity signal (`lastDataAt`, advanced by every
+ * stdout/stderr chunk):
+ *
+ *  - `timeoutMs` — the budget of SILENCE every call gets, default
+ *    DEFAULT_INACTIVITY_BUDGET_MS. Rearms on activity; resolves with
+ *    `{ error: 'inactivity_timeout', stalled_after_ms, ... }`.
+ *  - `heartbeatMs` — a TIGHTER opt-in window for callers whose adapter
+ *    streams. `heartbeatMode: 'kill'` (default) SIGTERMs and resolves with
+ *    `{ error: 'stall', ... }`; `'warn'` resolves early and lets the child run
+ *    on until the inactivity budget.
+ *
+ * `heartbeatMs` defaults to 0 — DISARMED — because most adapters here are not
+ * streaming: `claude -p --output-format json`, gemini, grok, kimi and
+ * antigravity all print one JSON object at the END of the call. For those,
+ * "no bytes yet" is not a stall signal, it is the normal shape of a call in
+ * progress, and the old 60 s default was a 60-second wall clock on an LLM
+ * wearing the name of an activity check. A caller that knows its child streams
+ * asks for the tighter window explicitly.
  *
  * The driver does not retry — that is the caller's job (see
- * `_shared/lib/host-agent-retry.js`). Audit events are emitted by callers,
- * not here, to keep the driver host-agnostic and free of cross-skill imports.
+ * `_shared/lib/host-agent-retry.js`). Cost telemetry is emitted by callers;
+ * the one event the driver emits itself is the kill (emitDriverAudit), because
+ * only the driver knows which rule fired.
  */
 export type HeartbeatMode = "kill" | "warn";
+
+/**
+ * Default budget of SILENCE for a light-layer call — 45 minutes.
+ *
+ * It replaced a 120 s WALL-CLOCK default, and both halves of that sentence
+ * were wrong. Measured on this machine's 557 Claude Code transcripts
+ * (123,318 gaps between two consecutive non-human entries, scoped to one
+ * sessionId and cut at compaction boundaries): p50 1.1 s, p95 28 s, p99 192 s.
+ * 1.8% of the pauses a model takes between two tool calls are longer than two
+ * minutes, 0.45% longer than ten, 0.089% longer than forty-five — and past an
+ * hour the count stops falling (90 → 77 → 71), which is the resumed-session
+ * floor rather than any real pause. 45 min is where the credible tail ends.
+ *
+ * It is a budget of silence, not of life: any byte on stdout/stderr rearms it,
+ * so a child that keeps working is never killed for working long. What it
+ * bounds is a child that has stopped saying anything at all.
+ */
+export const DEFAULT_INACTIVITY_BUDGET_MS = 45 * 60_000;
+
 export interface CallOpts {
+  /** Max ms of SILENCE before the child is killed (default
+   *  DEFAULT_INACTIVITY_BUDGET_MS). Rearmed by every stdout/stderr byte — this
+   *  is not a wall-clock lifetime. */
   timeoutMs?: number;
-  heartbeatMs?: number;            // 0 disables; default 60_000
+  /** Tighter opt-in stall window for callers whose adapter streams. Default 0
+   *  (disarmed) — see callHostAgentAsync's contract. */
+  heartbeatMs?: number;
   minBytesPerHeartbeat?: number;   // bytes counted toward "alive"; default 1
   heartbeatMode?: HeartbeatMode;   // default 'kill'
   /** Preferred runtime slug (e.g. from runtime-rules decideRuntime). Must
@@ -766,6 +809,32 @@ export interface CallOpts {
   __testRuntime?: any;
 }
 
+/** The audit module, or null when it cannot be loaded. Lazy for the same
+ *  reason emitCostAudit is: the driver must not depend on a sibling skill at
+ *  module init. */
+function loadAudit(): { emit?: (e: string, p: unknown, c?: unknown) => void } | null {
+  try { return require(path.join(SKILLS_ROOT, "harness", "lib", "audit.js")); }
+  catch { return null; }
+}
+
+/**
+ * A child the driver kills says WHY, in the audit, before it dies.
+ *
+ * Until this existed, a run killed by the global timeout reached its caller as
+ * `"<cli> exited null"` — the same message a crash produces, with nothing about
+ * the rule that fired or how long the child had been silent. Telemetry is
+ * fire-and-forget; the kill never waits on it.
+ */
+function emitDriverAudit(event: string, payload: Record<string, unknown>, opts: CallOpts): void {
+  const audit = loadAudit();
+  if (!audit?.emit) return;
+  try {
+    audit.emit(event, { caller_id: opts.caller_id || null, ...payload }, {
+      project_id: opts.project_id || process.env.NIRVANA_PROJECT_ID || null,
+    });
+  } catch { /* non-fatal */ }
+}
+
 /**
  * Fire-and-forget audit emission. Loaded lazily so the driver stays free of
  * cross-skill dependencies at module init.
@@ -775,10 +844,7 @@ function emitCostAudit(host: any, stdoutRaw: string, opts: CallOpts) {
   if (!host?.parseUsage) return;
   const usage = host.parseUsage(stdoutRaw);
   if (!usage) return;
-  let audit: any = null;
-  try {
-    audit = require(path.join(SKILLS_ROOT, "harness", "lib", "audit.js"));
-  } catch { return; }
+  const audit = loadAudit();
   if (!audit?.emit) return;
   try {
     audit.emit("cost_emission", {
@@ -802,7 +868,7 @@ export function callHostAgentAsync(persona: string, userMessage: string, opts: C
       resolve({ error: "no host agent CLI found on PATH (tried: " + RUNTIMES.map(r => r.cli).join(", ") + ")" });
       return;
     }
-    const heartbeatMs = opts.heartbeatMs ?? 60_000;
+    const heartbeatMs = opts.heartbeatMs ?? 0;
     const minBytes = opts.minBytesPerHeartbeat ?? 1;
     const mode: HeartbeatMode = opts.heartbeatMode ?? "kill";
 
@@ -839,10 +905,8 @@ export function callHostAgentAsync(persona: string, userMessage: string, opts: C
     //   - keep.escalation: the SIGKILL escalation must outlive a stall-kill
     //     settle so a SIGTERM-ignoring child still dies; close clears it.
     //   - keep.timeout: in 'warn' mode the child keeps running after the
-    //     early resolve, so the global timeout stays armed; close clears it.
-    let globalTimeout: ReturnType<typeof setTimeout> | null = setTimeout(() => {
-      try { child.kill("SIGTERM"); } catch {}
-    }, opts.timeoutMs ?? 120_000);
+    //     early resolve, so the inactivity timer stays armed; close clears it.
+    let globalTimeout: ReturnType<typeof setTimeout> | null = null;
     let watchdog: ReturnType<typeof setInterval> | null = null;
     let killEscalation: ReturnType<typeof setTimeout> | null = null;
     let settled = false;
@@ -860,6 +924,47 @@ export function callHostAgentAsync(persona: string, userMessage: string, opts: C
       settled = true;
       resolve(payload);
     };
+
+    // ── inactivity budget ──────────────────────────────────────────────────
+    // `timeoutMs` used to arm ONE setTimeout at spawn, so it fired on elapsed
+    // time and could not tell a model thinking from a dead socket. It now
+    // measures from the last byte: the timer rearms for whatever is left of the
+    // budget whenever the child has spoken since it was set, so a child that
+    // keeps writing outlives any elapsed time and only silence is fatal.
+    //
+    // It reads the same `lastDataAt` the stall watchdog reads — one activity
+    // signal, two windows, never two notions of "alive".
+    const inactivityBudgetMs = opts.timeoutMs ?? DEFAULT_INACTIVITY_BUDGET_MS;
+    const armInactivity = (ms: number) => {
+      globalTimeout = setTimeout(() => {
+        const silentMs = Date.now() - lastDataAt;
+        if (silentMs < inactivityBudgetMs) { armInactivity(inactivityBudgetMs - silentMs); return; }
+        globalTimeout = null;
+        stallSignaled = true;   // the watchdog must not fire a second verdict
+        emitDriverAudit("x_driver_child_killed", {
+          rule: "inactivity",
+          host: host.name,
+          budget_ms: inactivityBudgetMs,
+          silent_ms: silentMs,
+          bytes_received: bytesReceived,
+        }, opts);
+        try { child.kill("SIGTERM"); } catch {}
+        // Same escalation the stall path uses: a SIGTERM-ignoring child still
+        // dies, and `keep.escalation` lets that timer outlive this settle.
+        killEscalation = setTimeout(() => {
+          killEscalation = null;
+          try { child.kill("SIGKILL"); } catch {}
+        }, 5000);
+        settle({
+          error: "inactivity_timeout",
+          host: host.name,
+          exit_code: -1,
+          stalled_after_ms: silentMs,
+          bytes_received_before_stall: bytesReceived,
+        }, { escalation: true });
+      }, ms);
+    };
+    armInactivity(inactivityBudgetMs);
 
     if (heartbeatMs > 0) {
       const tickMs = Math.max(500, Math.floor(heartbeatMs / 2));
@@ -966,14 +1071,15 @@ export interface RunHeadlessOpts {
    * CLIs that don't have this concept. */
   providerHint?: string;
   /** Dispatch-ledger heartbeat (routing-360 Phase 4). When present the run is
-   * SUPERVISED: a detached sidecar renews the run's lease while the child
-   * shows activity, and the global timeout DEFAULTS to 45 min (the old NONE
-   * default let a hung child run forever unobserved — pass timeoutMs
-   * explicitly for long book/PDF workloads). */
+   * SUPERVISED: a detached sidecar renews the run's lease while the child shows
+   * activity, and the wall clock falls back to LEDGER_DEFAULT_TIMEOUT_MS — a
+   * backstop above any real run, not a hang detector. What ends a hung run is
+   * the lease expiring DEFAULT_LEASE_SEC after the last sign of life. */
   ledger?: LedgerHeartbeatOpts;
-  /** Max ms without observed activity before the heartbeat STOPS renewing the
-   * lease (default: the supervisor.stall_threshold_ms setting, 5 min). Only
-   * meaningful together with opts.ledger. */
+  /** Max ms without observed activity before the sidecar RECORDS the gap
+   * (`x_ledger_stall_observed`, the supervisor.stall_threshold_ms setting,
+   * 5 min). This is an early warning and kills nothing: the lease is what
+   * decides. Only meaningful together with opts.ledger. */
   stallBudgetMs?: number;
 }
 
@@ -992,27 +1098,54 @@ export interface LedgerHeartbeatOpts {
   dbPath?: string;
   /** Heartbeat check interval in ms (default 15s; tests shrink it). */
   intervalMs?: number;
-  /** Seconds each renewal extends the lease from now (default 600). */
+  /** Seconds each renewal extends the lease from now (default
+   * DEFAULT_LEASE_SEC). This is the window that decides a run is dead. */
   leaseSec?: number;
 }
 
 /**
- * Default wall-clock timeout for LEDGERED runs: 24h — a BACKSTOP, not the
- * hang detector. Real work legitimately runs for hours (a book, a season of
- * video, a large migration), and killing it on the clock destroys finished
- * work for no reason.
+ * Wall-clock backstop for LEDGERED runs: 7 days.
  *
- * What actually catches a hang is the activity-based heartbeat: the sidecar
- * renews the lease only while stdout/stderr bytes or output-dir mtimes
- * advance, and stops after `stallBudgetMs` (default 5 min) of silence. The
- * lease then expires and the supervisor sweeps the run — minutes after the
- * process really stalled, regardless of how long it was allowed to live. The
- * wall-clock ceiling exists only for the pathological case where a child
- * keeps emitting output forever without converging.
+ * The ceiling survives, and it moved. It survives because the activity signal
+ * cannot catch one failure by construction — a child that keeps emitting
+ * output forever without converging is indistinguishable from a child that is
+ * working, so something has to bound it. It moved because 24h was not above
+ * the work: this machine's ledger holds 371 runs, whose longest is 25.5h and
+ * whose longest DELIVERED one is 4.9h (p50 21min, p90 62min, p99 5.7h). A
+ * ceiling below the observed maximum is not a backstop, it is a second hang
+ * detector — a worse one, that kills finished work at the clock.
+ *
+ * 7 days sits ~7x above anything this system has produced, which is the whole
+ * point: it can never be the rule that ends real work, and a runaway is still
+ * noticed within a week instead of never.
+ *
+ * What actually catches a hang is the heartbeat sidecar: it renews the lease
+ * only while stdout/stderr bytes or output-dir mtimes advance, and stops when
+ * they do not. The lease then expires and the supervisor sweeps the run,
+ * DEFAULT_LEASE_SEC after the last sign of life, regardless of how long the
+ * run was allowed to live.
  *
  * Unledgered calls keep the historical no-timeout behavior (see timeoutMs).
  */
-export const LEDGER_DEFAULT_TIMEOUT_MS = 24 * 60 * 60_000;
+export const LEDGER_DEFAULT_TIMEOUT_MS = 7 * 24 * 60 * 60_000;
+
+/**
+ * How long a ledgered run stays leased after its last observed activity — the
+ * window that actually decides whether a run is alive, and therefore the one
+ * the measurement has to size.
+ *
+ * It was 600s. Ten minutes of silence is inside the normal behaviour of a
+ * working agent: of the 123,318 intra-turn gaps measured across this machine's
+ * transcripts, 0.45% exceed ten minutes, and the code that supervises the
+ * AGENTIC path already says so in its own comment ("a squad legitimately
+ * thinks for ten minutes between writes", AGENTIC_LEASE_SEC = 1800). The
+ * scripted path was left on the tighter window, so a long-thinking child had
+ * its lease expire while it worked and the supervisor read it as orphaned.
+ *
+ * Now the same 45 minutes the light layer tolerates: one number for "how long
+ * silence is allowed to mean nothing", whichever layer is asking.
+ */
+export const DEFAULT_LEASE_SEC = DEFAULT_INACTIVITY_BUDGET_MS / 1000;
 
 /** Effective timeout for a run: explicit timeoutMs always wins; a ledgered
  * run without one gets LEDGER_DEFAULT_TIMEOUT_MS; otherwise none. Exported
@@ -1118,7 +1251,7 @@ function runWithLedgerHeartbeat(opts: RunHeadlessOpts, runner: (o: RunHeadlessOp
     "--out", outFile, "--err", errFile, "--done", doneFile,
     "--interval", String(led.intervalMs ?? 15_000),
     "--stall", String(opts.stallBudgetMs ?? resolveSetting("supervisor.stall_threshold_ms").value),
-    "--lease", String(led.leaseSec ?? 600),
+    "--lease", String(led.leaseSec ?? DEFAULT_LEASE_SEC),
     "--parent", String(process.pid),
   ];
   if (led.watchDir) {
@@ -1902,7 +2035,7 @@ export function runHeadless(opts: RunHeadlessOpts): RunHeadlessResult {
       );
     }
   }
-  // Ledgered runs get the heartbeat sidecar + the 45-min default timeout;
+  // Ledgered runs get the heartbeat sidecar + the 7-day wall-clock backstop;
   // unledgered calls are byte-for-byte the historical behavior.
   if (opts.ledger?.runId) return runWithLedgerHeartbeat(opts, dispatchToRunner);
   return dispatchToRunner(opts);

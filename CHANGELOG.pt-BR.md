@@ -8,6 +8,58 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### O relógio para de decidir se um run está vivo
+
+Um runtime despachado era morto por um cronômetro que não conseguia vê-lo
+trabalhando. O `callHostAgentAsync` armava um único `setTimeout(kill, timeoutMs)`
+no spawn, então ele disparava só por tempo decorrido, e o padrão era 120
+segundos. O `judge.ts` passava 60. O runtime que essas chamadas sobem é o
+`claude -p --output-format json`, que imprime um único objeto JSON no FIM da
+chamada: um modelo que pensasse mais que o orçamento levava SIGTERM com a
+resposta ainda em voo, e o chamador lia `"claude exited null"` — a mesma mensagem
+que um crash produz.
+
+O `timeoutMs` agora é um orçamento de SILÊNCIO. O cronômetro mede a partir do
+último byte e se rearma pelo que sobrou do orçamento sempre que o filho falou,
+então um filho que continua escrevendo sobrevive a qualquer tempo decorrido e só
+o silêncio é fatal. Um filho morto por silêncio resolve como `inactivity_timeout`
+carregando há quanto tempo estava calado e quantos bytes tinha produzido, e o
+driver emite `x_driver_child_killed` nomeando a regra, o orçamento e a última
+atividade.
+
+Os números vieram de medição, não de gosto. Em 557 transcrições do Claude Code
+na máquina do dono, 123.318 intervalos entre duas entradas não humanas
+consecutivas (no escopo de um mesmo sessionId, cortados nas fronteiras de
+compactação): p50 1,1s, p95 28s, p99 192s. 1,8% das pausas que um modelo tira
+entre duas chamadas de ferramenta passam de dois minutos, 0,45% passam de dez,
+0,089% passam de quarenta e cinco. Depois de uma hora a contagem para de cair, o
+que é sessão retomada e não pausa real. O orçamento padrão é 45 minutos, onde a
+cauda crível termina.
+
+Três janelas se moveram junto. O vigia de stall agora nasce DESARMADO
+(`heartbeatMs: 0`) em vez de 60 segundos: para um adaptador que não faz streaming,
+"nenhum byte ainda" é a forma normal de uma chamada em andamento, não um stall, e
+quem sabe que o filho dele faz streaming pede a janela mais apertada
+explicitamente. O relógio de parede dos runs com ledger foi de 24h para 7 dias —
+o ledger desta máquina tem 371 runs cujo mais longo é 25,5h e cujo mais longo
+entregue é 4,9h, então 24h ficava abaixo do máximo observado e era um segundo
+detector de travamento em vez de um limite de segurança. E o lease de um run com
+ledger, a janela que de fato decide que um run morreu, foi de 600s para os
+mesmos 45 minutos; dez minutos de silêncio estão dentro do comportamento normal
+de um agente trabalhando, coisa que o supervisor já sabia para o caminho agêntico
+(`AGENTIC_LEASE_SEC = 1800`) e não para o roteirizado.
+
+O `quality-judge.js` e o `judge.ts` largaram os pisos próprios (120s/60s de
+relógio de parede, 60s de stall) e deixam o driver decidir; o
+`squad-audit-consensus.js` largou o heartbeat de 90s que mantinha na frente do
+próprio orçamento de 240s, que num runtime que não imprime nada até o fim era um
+relógio de parede de 90 segundos produzindo o congelamento que ele existia para
+evitar; o `host-agent-retry.js` repete `inactivity_timeout` nos mesmos termos de
+`stall`. O
+`callHostAgent` mantém relógio de parede porque o `spawnSync` bloqueia o event
+loop e nenhum cronômetro consegue observar o filho — agora ele diz isso, e o
+padrão dele é os mesmos 45 minutos em vez de dois.
+
 ### Uma rota sob a chave errada diz isso, em vez de culpar um cargo
 
 O `investigation-bureau` foi auditado em 28/08/2026 e o portão respondeu nove
