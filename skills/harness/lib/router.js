@@ -2421,8 +2421,24 @@ if (require.main === module) {
       process.exit(4);
     }
     try {
-      // Audit: brief received (always written when CLI is invoked)
-      try { audit.emit('brief_received', { brief, command: cmd }); } catch {}
+      // Audit: brief received (always written when CLI is invoked).
+      //
+      // This was the ONLY brief_received carrying the brief text, and the only
+      // one with no trace — so buildRuns filed it under "no-trace" and no run
+      // card ever saw it. It also sent the WHOLE brief, unbounded, into a file
+      // appended thousands of times a day. Both halves fixed: a bounded excerpt
+      // (brief-excerpt.ts) with the true length beside it, and the trace when
+      // the CLI runs inside a dispatch. `nrv find` typed by hand is a lookup and
+      // not a run, so it still carries no trace — an invented one would put a
+      // phantom card in the cockpit.
+      try {
+        const { briefExcerpt } = require(path.join(__dirname, '..', '..', '_shared', 'lib', 'brief-excerpt.ts'));
+        const traceId = process.env.NIRVANA_TRACE_ID || null;
+        audit.emit('brief_received', {
+          ...(traceId ? { trace_id: traceId } : {}),
+          brief_excerpt: briefExcerpt(brief), brief_chars: brief.length, command: cmd,
+        });
+      } catch {}
       const result = await route(brief, {
         prefer,
         amplify: !noAmplify,

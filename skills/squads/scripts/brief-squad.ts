@@ -25,6 +25,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { exec, paths, EXIT, BUN_BIN } from "../../_shared/lib/bun-helpers.ts";
 import { resolveScope, enumerate, outputsDir } from "../../_shared/lib/scope.ts";
+import { briefExcerpt } from "../../_shared/lib/brief-excerpt.ts";
 import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 
 const skillDir = path.join(paths.CLAUDE_SKILLS_DIR, "squads");
@@ -97,9 +98,20 @@ ${scopeGuard("pt-BR")}
 // normalized `squad_name` field (the improver/learning loop reads squad_name).
 // Dual-write: project-local audit.jsonl + the harness daily log (so nrv glance,
 // nrv doctor and validate-chain see it). This runs regardless of runtime.
+//
+// Both events carry `trace_id` and both carry the brief excerpt. Neither used to:
+// brief_received had no trace, so buildRuns filed it under "no-trace" and the run
+// that asked for the work never got its own brief; and the only emitter that did
+// carry the text was the router CLI, which has no trace at all. Half the record in
+// each of two events reached nobody. `brief_chars` stays: it is the TRUE length,
+// which the bounded excerpt can no longer tell you.
 const auditFile = path.join(projectDir, "audit.jsonl");
+const excerpt = briefExcerpt(brief);
 function emit(event: string, extra: Record<string, unknown> = {}): void {
-  const line = JSON.stringify({ ts: submitted, event, project_id: projectId, squad_name: slug, ...extra });
+  const line = JSON.stringify({
+    ts: submitted, event, trace_id: projectId, project_id: projectId, squad_name: slug,
+    brief_excerpt: excerpt, brief_chars: brief.length, ...extra,
+  });
   fs.appendFileSync(auditFile, line + "\n");
   try {
     const { harnessLogsDir } = require(path.join(skillDir, "..", "_shared", "lib", "log-paths.ts"));
@@ -108,8 +120,8 @@ function emit(event: string, extra: Record<string, unknown> = {}): void {
     fs.appendFileSync(path.join(auditDir, "audit.jsonl"), line + "\n");
   } catch { /* non-fatal */ }
 }
-emit("brief_received", { brief_chars: brief.length });
-emit("dispatch_squad", { trace_id: projectId });
+emit("brief_received");
+emit("dispatch_squad");
 
 // Open the dispatch run-ledger row for this agentic dispatch. Same reasoning as
 // the audit events above, one layer up: the supervisor's never-forgotten

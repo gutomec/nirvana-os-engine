@@ -24,7 +24,7 @@ authoritative for legacy readers, SQLite is the race-safe substrate.
 Append-only, one JSON object per line, UTF-8.
 
 ```jsonl
-{"ts":"2026-08-05T17:30:11.241Z","event":"brief_received","trace_id":"01HZ...","brief":"...","command":"route"}
+{"ts":"2026-08-05T17:30:11.241Z","event":"brief_received","trace_id":"01HZ...","brief_excerpt":"...","brief_chars":142,"command":"route"}
 {"ts":"2026-08-05T17:30:11.342Z","event":"routing_decision","signal":"HIGH","target_id":"squad_capability:audio-suite:audio_video.transcribe","route_tier":"stage2_squad"}
 {"ts":"2026-08-05T17:30:12.001Z","event":"dispatch_business","trace_id":"01HZ...","business_slug":"ars-libri"}
 {"ts":"2026-08-05T17:31:14.901Z","event":"cost_emission","agent":"transcriber","model":"sonnet","tokens_input":1200,"tokens_output":340,"cost_usd":0.0228}
@@ -266,9 +266,12 @@ cutoff; call it periodically (cron / runtime hook).
 
 ## Privacy
 
-- Prefer `brief_length` / `brief_excerpt` over the full brief in events; some
-  writers do log the full brief (`brief_received` from the router CLI) — keep
-  that in mind when sharing logs.
+- Never put a full brief on an event. `brief_excerpt`
+  (`_shared/lib/brief-excerpt.ts`) is the only sanctioned form: bounded at 300
+  characters, single line, with `brief_chars` beside it carrying the true length.
+  The router CLI used to send the whole brief; it no longer does. A field that
+  grows without a ceiling on a file appended thousands of times a day is a
+  defect, not a feature.
 - Hash custom fields containing PII before `emit`.
 - The isolation guard keeps other projects' audit logs out of the current
   session.

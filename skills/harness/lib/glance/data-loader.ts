@@ -214,17 +214,39 @@ export function getBusinessDetail(slug: string) {
 // Gemini-CLI, Codex, the auto-emit hook, anything. This is what powers
 // the Projects/Runs tab in Glance with paperclip-style command-center UX.
 
+/** Event names that say only "an agent was running" — which the run's status
+ *  already says. The hook fires one `tool_invoked` and one `bash_completed` per
+ *  tool call, and the ledger renews a lease on a timer; measured on 2026-08-28,
+ *  those four names were 4702 of 5250 events in ~/.harness-logs and 323 of 1940
+ *  in the project's log. Counting them made a run that did one thing and a run
+ *  that did fifty look equally busy.
+ *
+ *  Deliberately a DENY list, not an allow list: a new event name is signal until
+ *  someone measures that it is not, so a future emitter is never silently
+ *  dropped from the count. The events stay in the log — they have other readers
+ *  (the swimlane, the fabrication detector, cost). Only the count changes. */
+const NOISE_EVENTS = new Set([
+  "tool_invoked",
+  "bash_completed",
+  "x_ledger_lease_renewed",
+  "x_ledger_progress_ping",
+]);
+
 interface Run {
   trace_id: string;
   project_id: string | null;
   cwd: string | null;
-  brief: string | null;             // first brief_received text
+  brief: string | null;             // first brief_received excerpt
   business_slug: string | null;
   squad_name: string | null;
+  target: string | null;            // "<kind>:<slug>" of what the run was dispatched to
+  outputs_dir: string | null;       // where the dispatched target was told to write
   status: "running" | "delivered" | "gate_failed" | "no_match" | "unknown";
   started_at: string;               // ISO of first event
   last_event_at: string;             // ISO of last event
-  event_count: number;
+  event_count: number;              // every event on the trace
+  noise_event_count: number;        // the NOISE_EVENTS share of event_count
+  signal_event_count: number;       // event_count - noise_event_count
   artifact_paths: string[];          // unique artifacts touched
   events: any[];                    // full timeline (truncated to last 200)
   suspicious: boolean;              // fabrication detector verdict
@@ -305,10 +327,14 @@ export function buildRuns(opts: { since?: string; limit?: number; days?: number 
           brief: null,
           business_slug: null,
           squad_name: null,
+          target: null,
+          outputs_dir: null,
           status: "unknown",
           started_at: ev.ts,
           last_event_at: ev.ts,
           event_count: 0,
+          noise_event_count: 0,
+          signal_event_count: 0,
           artifact_paths: [],
           events: [],
           suspicious: false,
@@ -327,6 +353,8 @@ export function buildRuns(opts: { since?: string; limit?: number; days?: number 
       // Track distinct hosts (for fabrication detector + UI hint)
       if (ev.host && !r.hosts.includes(ev.host)) r.hosts.push(ev.host);
       r.event_count++;
+      if (NOISE_EVENTS.has(ev.event)) r.noise_event_count++;
+      else r.signal_event_count++;
       if (ev.ts < r.started_at) r.started_at = ev.ts;
       if (ev.ts > r.last_event_at) r.last_event_at = ev.ts;
       if (!r.project_id && ev.project_id) r.project_id = ev.project_id;
@@ -335,9 +363,26 @@ export function buildRuns(opts: { since?: string; limit?: number; days?: number 
       const evSquad = ev.squad_name ?? (ev as any).squad;
       if (!r.business_slug && evBiz) r.business_slug = evBiz;
       if (!r.squad_name && evSquad) r.squad_name = evSquad;
-      // Capture brief from first brief_received
-      if (ev.event === "brief_received" && !r.brief) {
-        r.brief = ev.brief || ev.user_input || ev.payload?.brief || null;
+      // Capture brief from the first event that carries one. `brief_excerpt` is
+      // the bounded field every emitter writes today (see brief-excerpt.ts);
+      // `brief` is the router CLI's old unbounded one, still in logs on disk.
+      // dispatch_squad / dispatch_agent_x carry it too, so a run whose
+      // brief_received landed elsewhere still shows what it was asked to do.
+      if (!r.brief) {
+        r.brief = ev.brief_excerpt || ev.brief || ev.user_input || ev.payload?.brief || null;
+      }
+      // What the run was dispatched TO. Only ever read from the dispatch events
+      // — the ones whose whole purpose is to record the decision. Nothing is
+      // inferred: a run with no dispatch event keeps `target: null`, which the
+      // view renders as `—` (views/absence.js).
+      if (!r.target) {
+        if (ev.event === "dispatch_squad") r.target = `squad:${ev.squad_name ?? ev.squad_slug ?? "?"}`;
+        else if (ev.event === "dispatch_business") r.target = `business:${ev.business_slug ?? "?"}`;
+        else if (ev.event === "dispatch_agent_x") r.target = "agent-x";
+        else if (ev.event === "brief_received" && ev.target) r.target = String(ev.target);
+      }
+      if (!r.outputs_dir && (ev.outputs_dir || ev.outputs_root)) {
+        r.outputs_dir = ev.outputs_dir || ev.outputs_root;
       }
       // Status precedence: gate_failed > delivered > no_match > running
       if (ev.event === "delivered") r.status = "delivered";
