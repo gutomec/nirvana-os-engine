@@ -202,6 +202,48 @@ snapshots per RFC 8785, which is the standard answer to the byte-determinism
 problem that broke this repository's schema parity the same week. Neither PR had
 a gate telling him to.
 
+### The event vocabulary reaches the agent that names the event
+
+Cut 1 measured the gap this closes: scanning 523 entities found emission sites
+in 3 of them, against 285 rogue types and 961 occurrences in the log. Almost
+nothing that reaches the log has a literal on disk, because an agent invents
+an event name mid-run, not while a squad is being authored — documentation
+read once at creation time never reaches that moment.
+
+`buildSquadPrompt` (`squad-exec.ts`) now injects a "COMO REPORTAR EVENTOS"
+block whenever a dispatch resolves a declared capability: emit through
+`nrv audit emit <name> --squad=<slug> --trace=<trace>`, prefix an unlisted
+name with `x_` so the log matches what was typed, and keep the payload to a
+short summary, never a full brief, output or secret. The block rides the same
+gate as the rest of the capability section: a squad without a resolved
+capability, the legacy `squad.execute` fallback, keeps the historical prompt
+byte for byte, which `squad-exec.test.ts` pinned before this cut and still
+does after it. `capabilities[]` has been mandatory for a squad to be
+discoverable since v5, so every squad on that path already carries the
+contract; only the pre-v5 legacy fallback does not, and migrating it is cut
+4's job, not this one's.
+
+Measured on a real squad (`adaptive-tutor-k12`, capability
+`education.tutoring.adaptive_cycle`): the prompt grew from 36,652 to 37,225
+bytes, 573 for the whole block including its worked example. Running the
+exact command the block tells the agent to run,
+`nrv audit emit x_pagina_altura_acima_orcamento --squad=demo-squad --trace=... --json='{...}'`,
+produces `source: "/squad/demo-squad"` and
+`type: "sh.squads.nirvana.ext.x_pagina_altura_acima_orcamento"` — one sample,
+not a rate, but the first correctly-prefixed, correctly-attributed site where
+there were zero before.
+
+Businesses got no new prompt bytes. `employee-prompt.ts` already carries the
+identical pattern at the point an employee records its mind-clone choice
+(`nrv audit emit x_clone_choice --business=<slug> ...`), and cut 1 measured
+zero rogue event names across 61 businesses — the block squads needed already
+existed there, so adding a second one would have been cost without benefit.
+The squad template was left untouched for the matching reason from the other
+side: every squad created from it declares `capabilities[]` by Creation Rule
+5, so it inherits the runtime-injected contract for free, and a literal
+example event stamped into the template risks becoming exactly the kind of
+unedited, never-emitted copy cut 1 found on disk elsewhere.
+
 ### A dispatched agent's hook events land next to the run that produced them
 
 The run-card cut reported this without fixing it: one run wrote to two audit
