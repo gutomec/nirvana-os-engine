@@ -42,7 +42,7 @@ import {
 import { checkPortability } from "../../../../squads/lib/squad-doctor.ts";
 import { classify } from "../../../lib/corpus-language.ts";
 import { editYaml, fixResult, listEntities, resolveEntityDir, surfaceFindings, surfaceRegenFixer } from "../common.ts";
-import type { CheckContext, Criterion, Finding, FixResult, Fixer, KindModule } from "../types.ts";
+import type { CheckContext, Criterion, Finding, FixResult, Fixer, KindModule, Severity } from "../types.ts";
 
 const require_ = createRequire(import.meta.url);
 const SQUAD_LIB = path.join(import.meta.dir, "..", "..", "..", "..", "squads", "lib");
@@ -94,7 +94,9 @@ export const criteria: Criterion[] = [
   // ── S13 + W01–W13: advice ─────────────────────────────────────────────────
   { id: "evaluator_missing", severity: "error", autofix: "agentic", baselineable: false, title: "an evaluator capability declares its `evaluator` block (v6 §30)" },
   { id: "surface_stale", severity: "warning", autofix: "mechanical", baselineable: false, title: ".nirvana-surface.json matches the files on disk", fixer: "surface_regen" },
-  { id: "workflow_unnormalizable", severity: "warning", autofix: "none", baselineable: false, title: "a step order can be derived from every workflow" },
+  // Never counted: a router is a shape, not a defect. See ALWAYS_INFO in
+  // squads/lib/workflow-reader.ts for why this one is `info` and not advice.
+  { id: "workflow_event_router", severity: "info", autofix: "none", baselineable: false, title: "an `event_routes` document is read as a router, and its empty graph is explained" },
   { id: "workflow_orphan", severity: "warning", autofix: "none", baselineable: false, title: "every workflow is invoked by a capability" },
   { id: "workflow_body_too_long", severity: "warning", autofix: "none", baselineable: false, title: "the workflow body stays under the word ceiling" },
   { id: "produces_untyped", severity: "warning", autofix: "none", baselineable: false, title: "produces reaches a rubric or the capability types its outputs" },
@@ -113,7 +115,7 @@ export const criteria: Criterion[] = [
 
 const BY_ID = new Map(criteria.map((c) => [c.id, c]));
 
-function mk(id: string, message: string, evidence: string, where?: string, severity?: "error" | "warning"): Finding {
+function mk(id: string, message: string, evidence: string, where?: string, severity?: Severity): Finding {
   const c = BY_ID.get(id);
   if (!c) throw new Error(`unknown squad criterion: ${id}`);
   return {

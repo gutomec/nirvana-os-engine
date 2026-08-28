@@ -9,7 +9,12 @@
 export type Kind = "squad" | "business" | "mind-clone";
 export const KINDS: readonly Kind[] = ["squad", "business", "mind-clone"] as const;
 
-/** `info` never counts: it reports a check that could not run (no registry). */
+/**
+ * `info` never counts, toward the verdict or toward `passed`. Two things wear
+ * it: a check that could not run (a clone outside the registry), and a fact
+ * about a correct entity that the report would be poorer without (a workflow
+ * written as an event router, whose graph is empty on purpose).
+ */
 export type Severity = "error" | "warning" | "info";
 export type Autofix = "mechanical" | "agentic" | "none";
 

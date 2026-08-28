@@ -163,7 +163,7 @@ O manifesto da biblioteca é são; o workflow não é. Medido em 26/08/2026 sobr
 | `outputs_pollution` | erro | — |
 | `evaluator_missing` | erro em 6.0 · aviso em 5.0 | agêntico |
 | `surface_stale` | aviso | `surface_regen` |
-| `workflow_unnormalizable` | aviso | — |
+| `workflow_event_router` | informativo | — |
 | `workflow_orphan` | aviso | — |
 | `workflow_body_too_long` | aviso | — |
 | `produces_untyped` | aviso | — |
@@ -184,7 +184,7 @@ Quem for estender o catálogo precisa de quatro detalhes:
 - **Um leitor só.** `skills/squads/lib/workflow-reader.ts` é a única derivação do grafo: `readWorkflow` aceita as duas codificações (YAML v5, Markdown v6 = frontmatter + corpo), `normalizeWorkflow` mapeia cada dialeto sobre a forma canônica da §28.1, `lintWorkflow` decide a severidade pelo protocolo. Validador, auditor, fixer e migração partem daqui para que nenhum deles discorde sobre o que é o grafo de um squad.
 - **Nada se perde.** Uma chave de topo desconhecida vai para `extensions`, uma chave de passo desconhecida vai para `step.meta`. Um dialeto atravessa `normalizeWorkflow` → `renderCanonicalMarkdown` → `normalizeWorkflow` e volta ao mesmo objeto, com todo campo ainda lá. Essa é também a razão de a segunda rodada de `--fix` não mexer num byte: a forma canônica é ponto fixo da normalização.
 - **Nada se inventa.** Os fixers renomeiam, movem e reformam o que já existe: uma extensão retirada de um ref, a prosa de `task: |` transportada verbatim para `## <step.id>` no corpo, um `depends_on` que nomeava um output reescrito para o passo que o cria, um `output` singular promovido a `outputs[]`. `workflow_refs_repair` **renomeia** quando exatamente um componente casa por caixa ou por `_`↔`-` (o caso `enterprise-dashboard`) e **nunca cria stub**: escrever a task que falta seria fabricar o método do squad. Um `.yaml` também nunca vira `.md` num fixer — trocar a codificação é migração, com backup e relatório (`nrv migrate --to 6`), e o fixer diz isso em vez de agir.
-- **`event_routes` não é um DAG.** É um roteador: nenhuma ordem de passos sai dele. O lint marca `unnormalizable` como aviso e para por aí; adivinhar a ordem seria pior que não ter nenhuma.
+- **`event_routes` não é um DAG.** É um roteador: nenhuma ordem de passos sai dele. O lint emite `workflow_event_router` como **informativo** — conta as rotas, explica o `steps[]` vazio, e não entra em veredito nem em `passed`. Era aviso até 27/08/2026, o que dava constatação permanente e REJECTED sob `--strict` a duas squads corretas. Adivinhar a ordem continua pior que não ter nenhuma, e a migração continua recusando o arquivo sem `--force`.
 
 O `humanize` saiu junto. Era a contradição documentada no inventário: os docs mandavam declarar, o schema estrito rejeitava, e o fixer **escrevia** o campo — de modo que `fix-squad --apply` podia transformar um manifesto válido em inválido. Os seis pontos do critério 9 da auditoria passam a medir o contrato que o juiz de fato lê (`c9_acceptance`: parcela de capabilities com `acceptance[]` ou com task invocada declarando `## Acceptance Criteria`), o total continua 100, e a metade útil do fixer virou `outputs_shape_repair`.
 

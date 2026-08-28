@@ -411,12 +411,17 @@ describe("lint: severity follows the protocol", () => {
     }
   });
 
-  test("`event_routes` is advice too: the gate reports it, the migration decides", () => {
+  test("`event_routes` is not advice and not a defect: it is information, and it counts the routes", () => {
     const r = norm(EVENT_ROUTES, "router");
-    const f = lintWorkflow(r.canonical, lintCtx({ stem: "router", file: "router.yaml", unnormalizable: true, dialects: r.dialects }));
-    expect(f.find((x) => x.id === "workflow_unnormalizable")!.severity).toBe("warning");
-    // Unnormalizable replaces the shape finding: there is no shape to fix.
-    expect(f.map((x) => x.id)).not.toContain("workflow_shape_legacy");
+    for (const protocol of ["5.0", "6.0"]) {
+      const f = lintWorkflow(r.canonical, lintCtx({ protocol, stem: "router", file: "router.yaml", unnormalizable: true, dialects: r.dialects }));
+      const router = f.find((x) => x.id === "workflow_event_router")!;
+      expect(router.severity).toBe("info");
+      // It says what the document IS, not what could not be done to it.
+      expect(router.message).toContain("2 `event_routes` entries");
+      // The router replaces the shape finding: there is no shape to fix.
+      expect(f.map((x) => x.id)).not.toContain("workflow_shape_legacy");
+    }
   });
 });
 
