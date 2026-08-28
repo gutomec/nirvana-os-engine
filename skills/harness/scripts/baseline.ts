@@ -24,6 +24,7 @@ import { readdirSync, existsSync, statSync, mkdirSync, writeFileSync, createRead
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { createInterface } from "node:readline";
+import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import { spawnSync } from "node:child_process";
 
 const SCHEMA_VERSION = "1.0.0";
@@ -136,7 +137,7 @@ async function streamFile(
     const line = raw.trim();
     if (!line) continue;
     try {
-      const obj = JSON.parse(line) as Record<string, unknown>;
+      const obj = parseAuditLine(line) as Record<string, unknown>;
       onLine(n, obj, null);
     } catch (err) {
       onLine(n, null, err as Error);

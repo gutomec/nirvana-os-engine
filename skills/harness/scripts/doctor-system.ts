@@ -30,6 +30,7 @@ import { RUNTIME_TARGETS, RUNTIME_SKILL_DIRS, PROJECT_CONTRACT_FILES } from "../
 import { scanLibrary, authorsPacks, STRIP_HINT } from "../../_shared/lib/watermark-scan.ts";
 import { listRuntimes } from "../../_shared/lib/host-agent-driver.ts";
 import { expandEnv, findTempNrvEntries, readUserPath, tempRoots } from "../../_shared/lib/windows-user-path.ts";
+import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import {
   describeSettingSource, discoverProjectRoot, engineConfigPath, globalConfigPath, projectConfigPath, resolveAllSettings, resolveSetting,
 } from "../../_shared/lib/settings.ts";
@@ -610,7 +611,7 @@ if (todayLines.length) {
   // report must not smooth over data it could not read.
   let unreadable = 0;
   for (const l of todayLines) {
-    try { const e = JSON.parse(l); counts[e.event] = (counts[e.event] || 0) + 1; }
+    try { const e = parseAuditLine(l); counts[e.event] = (counts[e.event] || 0) + 1; }
     catch { unreadable++; }
   }
   const summary = Object.entries(counts).map(([k, v]) => `${k}:${v}`).slice(0, 6).join(" ");

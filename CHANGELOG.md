@@ -8,6 +8,40 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### A generated schema stops depending on the machine that generated it
+
+`bun run check:all` exited 0 on the author's machine while the `gates` job failed
+on `capability.schema.json` and `squad.schema.json`, deterministically, against a
+tree no checkout could reproduce. Neither job in `smoke.yml` ran `bun install`, so
+Bun auto-installed each dependency from the package.json range at import time.
+`zod: ^4.4.0` resolved to 4.5.1 on the day it was published, and 4.5.0 had made
+the seconds group of `z.string().datetime()` mandatory. Exactly one field moved,
+`fidelity.last_eval`, in the capability schema and again nested inside the squad
+manifest; `workflow.schema.json` holds no `datetime()` and passed. Both jobs now
+install the pinned tree with `bun install --frozen-lockfile`. The `smoke` job had
+been green by accident: `scripts/install.ts` runs `bun install` as a side effect
+when `node_modules` is absent, so the tests it runs were pinned while the gate
+that compares committed bytes was not.
+
+The hunt exposed a second defect in the same file, worse than the red check that
+led to it. `LIMITS` reaches the `maxLength` and `maxItems` of `CapabilitySchema`
+and `SquadManifestSchema` through a cascade of three inputs that live outside the
+commit: `NIRVANA_LIMIT_*` env vars, `<project>/.nirvana-limits.yaml` and
+`~/.claude/nirvana-limits.yaml`. Anyone holding an override who ran the generator
+would commit their own ceilings as everyone's contract.
+
+The limits stay in the schema, at their declared defaults. Dropping the
+constraint would publish a document that accepts a manifest the reference
+validator rejects, and a schema that under-constrains lies more loudly than one
+whose numbers are merely strict. `NIRVANA_LIMITS_DEFAULTS_ONLY=1` skips all three
+override layers, and the generator sets it before `validators.ts` ever loads,
+because `LIMITS` is a singleton frozen at first import. Two tests generate under
+hostile configurations, env overrides and then two different
+`~/.claude/nirvana-limits.yaml` files, and require identical bytes. A consumer
+validating against the published schema reads the defaults; an operator who
+raises a limit locally accepts manifests the published schema rejects, which is a
+local relaxation and not a change to the contract.
+
 ### The run card can say what the run is
 
 The cockpit read `(no brief captured)` on 56 of 57 cards while the briefs sat in
@@ -91,6 +125,128 @@ outside the rule, spread over 7 installed copies of 3 distinct squads —
 Not one carries the `x_` prefix. The log holds 285 rogue types; the files hold 3
 squads' worth. The gap is the finding — the contract never reached the author,
 which is cut 3.
+
+### The audit log gets a CloudEvents envelope, and both forms stay readable
+
+The engine is about to serve events to software it does not own. The owner's
+case is a law-practice app that posts a case to `nrv serve` on a VPS, waits
+hours and reads the analysis back, which turns an internal convention into a
+published contract. Cut 1 had already measured what the convention became: 286
+invented event names, 880 occurrences carrying no attribution at all.
+
+`audit.emit` now writes a CloudEvents 1.0 structured-mode envelope, built by
+`_shared/lib/cloudevents.js`. `type` is `sh.squads.nirvana.<domain>.<event>`,
+`source` is `/squad/<slug>`, `/business/<slug>` or `/engine/<component>`,
+`subject` is the run's `trace_id`, `id` is an idempotency key, `projectid`
+carries the project, and the payload sits under `data`. Context attributes
+serialize apart from `data`, so a consumer filters on any of them without
+deserializing the payload.
+
+Structured mode, rather than merging the attributes into the flat object,
+because the collision is measured: `source` already exists as a PAYLOAD key on
+713 lines, meaning "user", "work/assets", an agent's file path. A merge would
+have overwritten it. `specversion`, `time`, `type`, `data` and `id` appear on 0
+of the 186,990 existing lines, which is what makes `specversion` the
+discriminator — one property lookup on an already-parsed object, and it decides
+correctly for every line in the history.
+
+**Nothing was rewritten and nothing has to be.** Every reader now parses through
+`parseAuditLine()`, which projects an envelope to the flat shape and returns a
+legacy line by identity, so the ~187k events on disk cost one `typeof` and stay
+exactly as they were. Twenty-two parse sites across fifteen production
+files were converted, plus twenty-five in the tests; the raw appenders that bypass `emit()` keep writing the flat
+form, which is why dual-read is permanent rather than a migration window. The
+whole history was replayed through `buildRuns` and `trace-builder` in three
+forms — all legacy, all envelope, and alternating line by line — and the three
+answers are identical: 187,049 lines, 186,939 readable events, 373 distinct
+event names with an identical histogram, 9,746 traces, 867 distinct briefs,
+9,716 trace trees, 9,745 runs, 291 of them with a brief and 375 with a target.
+
+`data` is capped at 4 KiB serialized, about six times the measured p99.9 of 682
+bytes and crossed by 5 lines in 186,892 — every one of them a whole brief pasted
+onto an event. Over the cap the longest strings are cut to the same 300-character
+excerpt a brief already gets, and `data._truncated` names what was cut with
+`data._bytes` giving its original size.
+
+`id` hashes the line's own content rather than being random, because the
+duplicate this log actually produces is a replay: `dispatch.ts` copies
+pre-project events into the project root carrying the original `ts`. 252 of
+186,990 lines are byte-identical to another line today and every reader that
+dedupes already collapses them by content; hashing makes that collapse
+mechanical for an external consumer too. The cost is stated in the source: two
+distinct events with the same time, type, source, subject and payload get one
+id, and they were already indistinguishable on disk.
+
+Attribution is derived, never renamed. `source` reads `squad_name`,
+`squad_slug`, `squad`, then `business_slug`, `business`, then `host`, because
+the canonical spelling is not the one authors use: over all 186,926 parseable
+events, `business_slug` runs 1,395 against `business` 390, while `squad` runs
+358 against `squad_name` 76. Every legacy key stays inside `data` untouched.
+That is the additive-only rule `references/03-audit.md` now states for the next
+author: new fields optional with defaults, old fields deprecated rather than
+renamed or removed, a new meaning always gets a new `type`, and the extension
+vocabulary stays open.
+
+The `x_` names cut 1 enforces keep working unchanged: an extension event becomes
+`sh.squads.nirvana.ext.<name>` with the prefix verbatim, so the mapping is
+lossless in both directions and cut 4 can migrate names without this cut having
+lost any.
+
+Two of this entry's principles were applied in this repository before we adopted
+them, by @AndreAlmeidaDC. PR #82 (23 August) registered its events in the
+canonical enum and regenerated the audit reference by hand, and stated as a rule
+that events carry no input, output or secrets — the metadata-from-content
+separation this envelope enforces by bounding `data`. PR #88 (25 August) declared
+five closed audit event types with redacted projections and canonicalized its
+snapshots per RFC 8785, which is the standard answer to the byte-determinism
+problem that broke this repository's schema parity the same week. Neither PR had
+a gate telling him to.
+
+### A dispatched agent's hook events land next to the run that produced them
+
+The run-card cut reported this without fixing it: one run wrote to two audit
+roots, 5250 events in `~/.harness-logs` against 1940 in
+`<project>/.nirvana/logs/harness`, and nothing joined them. `nrv doctor` had
+already been fooled by the split once, reading zero `dispatch_squad` events
+from the wrong file and filing it as a defect that a later measurement found
+emitted 36 times the same day.
+
+The cause was a third resolver. Every other writer and reader asks
+`log-paths.ts::harnessLogsDir()`, which walks up from cwd to find a project
+before falling back to `~/.harness-logs`. `audit-emit-from-hook.ts` — the
+bridge that turns every Write, Edit and Bash the agent runs into
+`tool_invoked`, `artifact_touched` and `bash_completed` — computed its own
+root by hand: `HARNESS_LOGS_DIR` or straight to `~/.harness-logs`, with no
+project lookup at all. Those three event names are the busiest in the log (4702
+of the 5250 measured for the run-card cut), so a dispatched agent whose hooks
+fired inside a real project, with `HARNESS_LOGS_DIR` unset because nothing in
+`host-agent-driver.ts` pins it, wrote its busiest events past the project every
+time. Reproduced live while writing this fix, same day: the dispatch carrying
+this brief had 5 orchestrator events (`brief_received`, `dispatch_agent_x`, the
+ledger's) in the project log and 3 hook events in `~/.harness-logs`, one run
+split exactly as reported.
+
+The hook now calls `harnessLogsDir()` like everyone else. `HARNESS_LOGS_DIR`
+still wins when a caller pins it, `NIRVANA_PROJECT_ROOT` when a caller names
+it, and the project found by walking up from cwd otherwise — the same order,
+the same fallback to `~/.harness-logs` for a dispatch with no project in reach,
+so `nrv dispatch` run from an arbitrary directory keeps logging somewhere sane.
+
+Searching for every path that opens an audit log turned up the same defect a
+second time: `gemini-session-start.ts`, the SessionStart hook Gemini-CLI runs,
+had its own hand-rolled `HARNESS_LOGS_DIR`-or-home resolver with no project
+lookup either, so a Gemini-CLI dispatch split `session_started` and
+`brief_received` away from the project log the same way the Claude Code hook
+did. It already carried the session's `cwd` for finding the chat transcript;
+that same value now feeds `harnessLogsDir()` too. `host-agent-driver.ts`
+spawns each runtime with its project directory as `cwd` and does not pin
+`HARNESS_LOGS_DIR`, so both hooks resolve the project by the same walk-up
+rather than a value pinned at spawn time — the two spawn paths that already
+pin it (`evaluator-adapter.ts`, `multi-target-dispatch-adapters.ts`) were
+verified unaffected, since a pinned value only ever narrows where a child
+looks, never widens it. No history moves: 117 days of existing files stay
+where they are, and a reader built for one trace across both roots is still
+cut 6's to build, now that the roots agree on which trace goes where.
 
 ## 0.11.0 — 2026-08-28
 

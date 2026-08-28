@@ -20,6 +20,7 @@
 //   3. a run built from a real-shaped log shows its brief, its target, and counts
 //      orchestration apart from hook noise (2450 tool_invoked + 2252 bash_completed
 //      out of 5250 events made a one-step run and a fifty-step run look equally busy).
+import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -111,7 +112,7 @@ describe("a squad dispatch carries its trace AND its brief", () => {
     if (r.status !== 0) throw new Error(`brief-squad failed (${r.status}): ${r.stdout}\n${r.stderr}`);
     const today = new Date().toISOString().slice(0, 10);
     events = fs.readFileSync(path.join(logs, today, "audit.jsonl"), "utf8")
-      .split("\n").filter(Boolean).map(l => JSON.parse(l));
+      .split("\n").filter(Boolean).map(l => parseAuditLine(l));
   }, spawnBudgetMs(1));
 
   test("dispatch_squad names the squad and carries the trace", () => {

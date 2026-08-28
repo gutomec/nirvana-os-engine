@@ -7,6 +7,7 @@
 // retry fallback, and the missing-squad failure. Zero-token via the
 // runWithCascade seam.
 // Runs with: bun test skills/harness/tests
+import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -50,7 +51,7 @@ function readAudit(): any[] {
   const day = new Date().toISOString().slice(0, 10);
   const p = path.join(tmp, "logs", day, "audit.jsonl");
   if (!fs.existsSync(p)) return [];
-  return fs.readFileSync(p, "utf8").split("\n").filter(Boolean).map(l => JSON.parse(l));
+  return fs.readFileSync(p, "utf8").split("\n").filter(Boolean).map(l => parseAuditLine(l));
 }
 
 describe("buildSquadPrompt — framing per mode", () => {

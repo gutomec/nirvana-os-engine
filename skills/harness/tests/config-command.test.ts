@@ -5,6 +5,7 @@
 // every write, and a config file the resolver cannot read. Hermetic: a temp
 // HOME (HOME and NIRVANA_HOME), a temp project, a temp harness log; every
 // schema variable scrubbed from the inherited environment. Runs with: bun test skills/harness/tests
+import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
@@ -53,7 +54,7 @@ function auditEvents(setup: Fixture): Array<Record<string, unknown>> {
   let days: string[] = [];
   try { days = fs.readdirSync(setup.logs); } catch { return []; }
   return days.flatMap((day) => {
-    try { return fs.readFileSync(path.join(setup.logs, day, "audit.jsonl"), "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line)); }
+    try { return fs.readFileSync(path.join(setup.logs, day, "audit.jsonl"), "utf8").trim().split("\n").filter(Boolean).map((line) => parseAuditLine(line)); }
     catch { return []; }
   });
 }

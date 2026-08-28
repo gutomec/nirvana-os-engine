@@ -2,6 +2,7 @@
 // The AGENTS.md §8 rule: a run without a receipt is a bug. These guard the
 // event schema the whole learning loop and `nrv doctor` depend on.
 // Runs with: bun test skills/harness/tests
+import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { createRequire } from "node:module";
 import * as fs from "node:fs";
@@ -32,7 +33,7 @@ function todayLines(): any[] {
   const day = new Date().toISOString().slice(0, 10);
   const p = path.join(tmp, day, "audit.jsonl");
   if (!fs.existsSync(p)) return [];
-  return fs.readFileSync(p, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  return fs.readFileSync(p, "utf8").split("\n").filter(Boolean).map((l) => parseAuditLine(l));
 }
 
 describe("audit.emit — event contract", () => {

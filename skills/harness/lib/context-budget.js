@@ -18,6 +18,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const ce = require('../../_shared/lib/cloudevents.js');
 const os = require('os');
 
 const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
@@ -94,11 +95,16 @@ function estimateContextBudget(opts) {
     const lines = fs.readFileSync(logPath, 'utf8').split('\n');
     for (const line of lines) {
       if (!line) continue;
-      if (filterTrace) {
-        let parsed; try { parsed = JSON.parse(line); } catch { continue; }
-        if (parsed.trace_id !== filterTrace) continue;
-      }
-      totalChars += line.length;
+      // What this counts is what an event costs in an agent's context, and the
+      // envelope's context attributes are not that — they add ~150 bytes a line
+      // that no agent ever reads. Measuring the flat projection keeps the
+      // estimate comparable across the format change: for a legacy line it is
+      // the same bytes as before, because parse and re-serialize preserve key
+      // order and the log carries no whitespace.
+      let parsed; try { parsed = ce.parseAuditLine(line); } catch { continue; }
+      if (filterTrace && parsed.trace_id !== filterTrace) continue;
+      const { _ce, ...payload } = parsed;
+      totalChars += JSON.stringify(payload).length;
       count++;
     }
   } catch { /* zeros */ }

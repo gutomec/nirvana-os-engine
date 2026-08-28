@@ -4,6 +4,7 @@
 // reply is written once as the assistant, and the conversation keeps the session for the next
 // turn. The runtime is a fake `claude` that speaks stream-json (helpers/fake-claude-stream.ts),
 // so nothing here calls an LLM or the network. Runs with: bun test skills/harness/tests
+import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -93,7 +94,7 @@ async function waitForState(conversationId: string, turnId: string, states: stri
 }
 const auditLines = () => {
   const file = path.join(root, ".nirvana", "logs", "harness", new Date().toISOString().slice(0, 10), "audit.jsonl");
-  return fs.existsSync(file) ? fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map(line => JSON.parse(line)) : [];
+  return fs.existsSync(file) ? fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map(line => parseAuditLine(line)) : [];
 };
 
 describe("the maestro directive", () => {

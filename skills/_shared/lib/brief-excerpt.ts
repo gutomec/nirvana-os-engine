@@ -1,25 +1,17 @@
-// brief-excerpt.ts — the one bounded form of a brief that is allowed onto an
-// audit event.
+// brief-excerpt.ts — typed ESM face of brief-excerpt.js.
 //
-// Two defects meet here. The audit log is appended thousands of times a day
-// (measured 2026-08-28: 5250 events / 2.05 MB in ~/.harness-logs alone, 390
-// bytes per event on average), so a field carrying a whole brief — sometimes
-// thousands of characters — grows the file without a ceiling. The answer used
-// on most emitters was to send `brief_chars` instead, a number, and the run
-// card that reads it has nothing to show. Neither is right: the card needs
-// text, the log needs a bound.
-//
-// The cap is measured, not guessed. Across both audit roots over 2026-08-22..28,
-// 163 `brief_received` events: p50 83 chars, p90 176, p99 221, max 357. At 300
-// the excerpt carries better than 99% of real briefs whole, bounds the worst
-// case at roughly 0.8× the average event, and still overflows one card line —
-// which truncates in CSS anyway.
-//
-// `brief_chars` stays beside it and keeps carrying the TRUE length, so a reader
-// can always tell an excerpt from a whole brief.
+// The implementation moved to the CJS sibling so cloudevents.js can
+// `require()` it without crossing the ESM boundary that only Windows'
+// Bun enforces as a hard error (require() of an ESM module throws
+// "require() async module" there, and tolerates it on macOS/ubuntu). This
+// file re-exports the same two values, typed, for the many ESM importers
+// that already reference `brief-excerpt.ts` by that path — an ESM `import`
+// of a CJS module never crosses the broken boundary, on any platform.
+
+import * as impl from "./brief-excerpt.js";
 
 /** Hard ceiling, in characters, for any brief text on an audit event. */
-export const BRIEF_EXCERPT_MAX = 300;
+export const BRIEF_EXCERPT_MAX: number = impl.BRIEF_EXCERPT_MAX;
 
 /**
  * The bounded, single-line form of a brief.
@@ -27,13 +19,4 @@ export const BRIEF_EXCERPT_MAX = 300;
  * Returns `null` when there is nothing to show — absence, which a reader renders
  * as `—`, is not the same as an empty string it would render as blank.
  */
-export function briefExcerpt(brief: unknown, max: number = BRIEF_EXCERPT_MAX): string | null {
-  if (typeof brief !== "string") return null;
-  // A brief is markdown: newlines, indentation, run-on spacing. The card shows
-  // one line, so collapse here rather than in every reader.
-  const flat = brief.replace(/\s+/g, " ").trim();
-  if (!flat) return null;
-  if (flat.length <= max) return flat;
-  // The ellipsis counts against the cap: the field is never longer than `max`.
-  return flat.slice(0, max - 1) + "…";
-}
+export const briefExcerpt: (brief: unknown, max?: number) => string | null = impl.briefExcerpt;

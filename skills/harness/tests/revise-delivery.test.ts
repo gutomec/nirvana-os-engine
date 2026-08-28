@@ -14,6 +14,7 @@
 // a FAKE `claude` on PATH (exits 0, prints the runtime's JSON envelope, writes
 // nothing) over a pre-seeded outputs dir. What the artifacts are decides the
 // outcome — nothing is stubbed inside the pipeline.
+import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import { describe, expect, test, afterAll } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -141,7 +142,7 @@ function runRevise(files: Record<string, string | Buffer>, opts: { env?: Record<
   const day = new Date().toISOString().slice(0, 10);
   const auditFile = path.join(logs, day, "audit.jsonl");
   const audit = fs.existsSync(auditFile)
-    ? fs.readFileSync(auditFile, "utf8").split("\n").filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return {}; } })
+    ? fs.readFileSync(auditFile, "utf8").split("\n").filter(Boolean).map(l => { try { return parseAuditLine(l); } catch { return {}; } })
     : [];
   const runtimeCalls = fs.existsSync(callsFile) ? fs.readFileSync(callsFile, "utf8").split("\n").filter(Boolean).length : 0;
   const prompt = fs.existsSync(promptFile) ? fs.readFileSync(promptFile, "utf8") : "";

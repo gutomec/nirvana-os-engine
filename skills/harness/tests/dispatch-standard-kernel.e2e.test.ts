@@ -5,6 +5,7 @@
 // the runtime grandchild. Hermetic: a fake `claude` CLI on PATH, a squad fixture under a
 // temporary HOME, the repository skills, no LLM and no network.
 // Runs with: bun test skills/harness/tests
+import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
@@ -123,7 +124,7 @@ function fixture() {
     if (!fs.existsSync(dir)) return [] as Array<Record<string, unknown>>;
     return fs.readdirSync(dir).sort().flatMap(day => {
       const file = path.join(dir, day, "audit.jsonl");
-      return fs.existsSync(file) ? fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map(line => JSON.parse(line) as Record<string, unknown>) : [];
+      return fs.existsSync(file) ? fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map(line => parseAuditLine(line) as Record<string, unknown>) : [];
     });
   };
   return { root, projectRoot, briefFile, capture, env, dispatch, dispatchAsync, projectKernel, dispatchKernel, prepare, audit };

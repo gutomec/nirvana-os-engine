@@ -5,6 +5,7 @@
 // of its item, and a `no_match` answers the chat instead of running agent-x. The
 // router is injected, so nothing here calls an LLM or the network.
 // Runs with: bun test skills/harness/tests
+import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -500,7 +501,7 @@ describe("Glance server", () => {
     expect(types.slice(0, 3)).toEqual(["run.prepared", "x_run_route_resolved", "glance.child_started"]);
     // The decision is in the project's audit with the Message's trace, where the cockpit reads.
     const today = new Date().toISOString().slice(0, 10);
-    const audit = fs.readFileSync(path.join(root, ".nirvana", "logs", "harness", today, "audit.jsonl"), "utf8").split("\n").filter(Boolean).map(line => JSON.parse(line));
+    const audit = fs.readFileSync(path.join(root, ".nirvana", "logs", "harness", today, "audit.jsonl"), "utf8").split("\n").filter(Boolean).map(line => parseAuditLine(line));
     const selected = audit.filter(event => event.event === "auto_route_selected");
     expect(selected).toHaveLength(1);
     expect(selected[0]).toMatchObject({ actor: "glance", trace_id: receipt.run.runId, project_id: project.project_id, source: "router", business_slug: "web-studio", target_kind: "business" });

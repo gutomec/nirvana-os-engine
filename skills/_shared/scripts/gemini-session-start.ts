@@ -25,19 +25,22 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import { harnessLogsDir } from "../lib/log-paths.ts";
 
-const HARNESS_LOGS_ROOT = process.env.HARNESS_LOGS_DIR
-  ? path.resolve(process.env.HARNESS_LOGS_DIR)
-  : path.join(os.homedir(), ".harness-logs");
+const NIRVANA_PROJECT_ROOT = process.env.NIRVANA_PROJECT_ROOT || "";
 
 function todayDir(): string {
   const d = new Date();
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
 }
 
-function appendEvent(ev: Record<string, any>): void {
+// Same resolver as audit-emit-from-hook.ts: HARNESS_LOGS_DIR wins if pinned,
+// else the project found from NIRVANA_PROJECT_ROOT or by walking up from the
+// session's cwd, else ~/.harness-logs. This hook used to hardcode the last
+// branch only — the same split-audit-root defect, in the Gemini-CLI path.
+function appendEvent(root: string, ev: Record<string, any>): void {
   try {
-    const dir = path.join(HARNESS_LOGS_ROOT, todayDir());
+    const dir = path.join(root, todayDir());
     fs.mkdirSync(dir, { recursive: true });
     fs.appendFileSync(path.join(dir, "audit.jsonl"), JSON.stringify(ev) + "\n", "utf8");
   } catch { /* never block */ }
@@ -101,8 +104,9 @@ async function main() {
   const sessionId = payload.session_id || process.env.GEMINI_SESSION_ID || null;
   const cwd = payload.cwd || process.env.PWD || process.cwd();
   const traceId = sessionId ? sessionId.slice(0, 36) : `gemini-${Date.now()}`;
+  const logsRoot = harnessLogsDir({ cwd, projectRoot: NIRVANA_PROJECT_ROOT || undefined });
 
-  appendEvent({
+  appendEvent(logsRoot, {
     ts: new Date().toISOString(),
     trace_id: traceId,
     host: "gemini-cli-hook",
@@ -118,7 +122,7 @@ async function main() {
   if (sessionFile) {
     const prompt = extractFirstUserPrompt(sessionFile);
     if (prompt) {
-      appendEvent({
+      appendEvent(logsRoot, {
         ts: new Date().toISOString(),
         trace_id: traceId,
         host: "gemini-cli-hook",

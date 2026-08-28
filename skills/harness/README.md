@@ -154,10 +154,22 @@ Every event is one JSON line appended to `${HARNESS_LOGS_DIR}/<YYYY-MM-DD>/audit
 {"ts":"2026-05-02T22:21:34Z","event":"gate_passed","trace_id":"...","artifact":".../board-memo.md"}
 ```
 
-Query:
-```bash
-cat ${HARNESS_LOGS_DIR}/$(date +%F)/audit.jsonl | jq -s 'group_by(.event) | map({event: .[0].event, count: length})'
+Since 2026-08-28 `audit.emit` writes a CloudEvents envelope instead, and both
+forms live in the same file:
+
+```json
+{"specversion":"1.0","id":"3bca1f48354d5d27b8c9028e42383bf4","source":"/business/strategy-consulting","type":"sh.squads.nirvana.dispatch.dispatch_business","subject":"...","time":"2026-08-28T22:21:34Z","datacontenttype":"application/json","data":{"business":"strategy-consulting"}}
 ```
+
+Query (reads both):
+```bash
+cat ${HARNESS_LOGS_DIR}/$(date +%F)/audit.jsonl \
+  | jq -s 'map(if .specversion then (.data + {ts: .time, event: (.type | sub("^sh\\.squads\\.nirvana\\.[^.]+\\.";"")), trace_id: .subject}) else . end)
+           | group_by(.event) | map({event: .[0].event, count: length})'
+```
+
+In code, never parse a line by hand: `parseAuditLine()` from
+`_shared/lib/cloudevents.js` returns the flat shape for either form.
 
 Event taxonomy: `references/03-audit.md`. Schema: `~/.nirvana/skills/_shared/schemas/core-schemas.json#audit_event`.
 

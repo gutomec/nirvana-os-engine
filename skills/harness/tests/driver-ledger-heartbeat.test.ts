@@ -2,6 +2,7 @@
 // renews on activity, stops on stall, default 45-min timeout for ledgered
 // runs, and no dangling sidecar after every exit path. The "child" is a fake
 // `claude` executable (bash) that prints then sleeps — no real runtime spawned.
+import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import { describe, expect, test, afterAll } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -57,7 +58,7 @@ function readAuditEvents(): Array<Record<string, unknown>> {
     if (!fs.existsSync(f)) continue;
     for (const line of fs.readFileSync(f, "utf8").split("\n")) {
       if (!line.trim()) continue;
-      try { out.push(JSON.parse(line)); } catch { /* skip */ }
+      try { out.push(parseAuditLine(line)); } catch { /* skip */ }
     }
   }
   return out;

@@ -20,6 +20,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { parseArgs, EXIT } from "../../_shared/lib/bun-helpers.ts";
+import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 
 // Resolves per-project when run inside a project, else fallback ~/.harness-logs.
 // $HARNESS_LOGS_DIR (handled inside harnessLogsDir) still wins for explicit override.
@@ -151,7 +152,7 @@ function printSnapshot(files: string[], filter: any, sinceMs: number | null): nu
     for (const line of lines) {
       totalLines++;
       try {
-        const ev = JSON.parse(line);
+        const ev = parseAuditLine(line);
         if (cutoffIso && ev.ts < cutoffIso) continue;
         if (!eventMatchesProject(ev, filter)) continue;
         console.log(fmtEvent(ev));
@@ -193,7 +194,7 @@ async function follow(filter: any) {
     const lines = buf.toString("utf8").split("\n").filter(Boolean);
     for (const line of lines) {
       try {
-        const ev = JSON.parse(line);
+        const ev = parseAuditLine(line);
         if (!eventMatchesProject(ev, filter)) continue;
         console.log(fmtEvent(ev));
       } catch { /* skip */ }

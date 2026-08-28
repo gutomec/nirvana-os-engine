@@ -7,6 +7,7 @@
 // comment-preserving setRoutingDense edit (only the dense line moves; every
 // comment byte survives; without a path it writes the user's global config).
 // Runs with: bun test skills/harness/tests
+import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -191,7 +192,7 @@ describe("setRoutingDense — comment-preserving edit", () => {
     expect(fs.readFileSync(globalFile, "utf8")).toContain('dense: "fallback"');
     expect(denseRoutingMode()).toBe("fallback");
     const day = fs.readdirSync(logs).find((name) => /^\d{4}-\d{2}-\d{2}$/.test(name))!;
-    const events = fs.readFileSync(path.join(logs, day, "audit.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    const events = fs.readFileSync(path.join(logs, day, "audit.jsonl"), "utf8").trim().split("\n").map((line) => parseAuditLine(line));
     expect(events).toContainEqual(expect.objectContaining({ event: "x_settings_changed", key: "routing.dense", scope: "global", from: null, to: "fallback" }));
   });
 });
