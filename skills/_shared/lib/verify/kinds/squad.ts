@@ -719,7 +719,10 @@ const workflowRefsRepair: Fixer = ({ dir, finding }) => withDigest(dir, "workflo
   const text = fs.readFileSync(file, "utf8");
   const rewritten = text.replace(/^(\s*-?\s*)(agent|task)(:\s*["']?)([\w./-]+)(["']?\s*)$/gim, (whole, lead, key, sep, value, tail) => {
     const kind = key as "agent" | "task";
-    const bare = value.replace(/\.(md|markdown)$/i, "");
+    // The directory and the extension are how the path is written; the step
+    // names the component. Strip both before matching, and write the bare stem
+    // back — §28.6's canonical form, and the fixed point of a second `--fix`.
+    const bare = value.replace(/^(?:agents|tasks)\//i, "").replace(/\.(md|markdown)$/i, "");
     if (known[kind].has(bare)) return whole;
     const candidates = byKey[kind].get(bare.toLowerCase().replace(/_/g, "-")) ?? [];
     if (candidates.length !== 1) return whole;

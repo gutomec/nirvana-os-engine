@@ -8,6 +8,52 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Dois reparos mecânicos mentiam: um fabricava critério, o outro não reparava nada
+
+Os dois apareceram numa auditoria real do `brandcraft` em 27/08/2026, e o
+primeiro teria piorado aquela squad se alguém tivesse rodado `--fix` antes de
+olhar.
+
+O `fix_tasks_acceptance_criteria` testava se a task tinha cabeçalho de aceitação
+e, não tendo, acrescentava um bloco genérico. As trinta e duas tasks daquela
+squad escreviam o critério verdadeiro sob `## Postconditions`. O parser que o
+juiz lê, `acceptanceCriteriaOf`, casa `## Acceptance Criteria` e mais nada, então
+o fixer teria deixado cada task com o contrato do autor sob um cabeçalho e um
+placebo sob o cabeçalho que de fato é cobrado. Ele ainda acrescentava um bloco
+`## Output Schema` declarando outputs que a task nunca teve, o que virava o teste
+de `outputs:` do detector para verdadeiro e deixava a constatação sem poder
+disparar de novo. Um fixer que cala a própria constatação inventando a resposta é
+pior que a lacuna que ele fechou, porque a lacuna pelo menos era visível.
+
+Agora ele renomeia, e não fabrica nada. A lista de sinônimos foi medida, não
+chutada: nas 206 squads instaladas, os critérios que não estão sob
+`## Acceptance Criteria` vivem sob `Quality criteria` (37 arquivos de task),
+`Critérios de Qualidade` (22), `Acceptance` e `Acceptance (binário)` (14) e
+`Postconditions` (9). O `Checklist` ficou de fora de propósito — nesta biblioteca
+ele abre subseções `### Pre` e `### Post`, e renomeá-lo promoveria pré-condições
+ao contrato que o juiz cobra. Dos 291 arquivos de task que hoje disparam a
+constatação, 121 carregam critério real que passa a ficar sob o cabeçalho que o
+juiz lê, em 19 squads. Os outros 170 continuam constatação. A v6 §28.3 já tinha
+resolvido essa pergunta para o fixer irmão: escrever o critério é escrever o
+método da squad, e quem escreve isso é o autor.
+
+O `workflow_refs_repair` casava a referência só por caixa e separador, sem nunca
+tirar o diretório que o autor escreve no caminho. Nove workflows do brandcraft
+escreviam `task: tasks/inspect-quality.md` com todos os arquivos presentes; o
+lint compara o valor com o stem em disco, então presente virava ausente e doze
+das treze referências pendentes sobreviveram intactas ao `--fix`. O executor
+sempre leu essa forma corretamente, porque o `squad-exec.ts` tira
+`^(agents|tasks)/` antes de carregar um componente: o portão e o runtime
+discordavam sobre um arquivo que os dois conseguiam abrir.
+
+A normalização da referência de passo passa a tirar o diretório do componente do
+mesmo jeito que já tirava a codificação, e o reparo tira o diretório antes de
+casar e escreve o stem puro de volta. Aceitar a forma escrita não é adotá-la como
+canônica: a §28.6 mantém a referência sem diretório e sem extensão, e é isso que
+o `--fix` grava. Medido sobre a biblioteca instalada, as referências de passo
+pendentes caem de 1021 para 829, e as squads que carregam a constatação, de 78
+para 62.
+
 ### O cockpit lia `0 running` enquanto dois despachos escreviam no disco
 
 Em 27/08/2026 o dono abriu o Glance com dois despachos vivos e o painel de Runs
