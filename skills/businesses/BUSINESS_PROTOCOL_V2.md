@@ -281,6 +281,8 @@ A tabela abaixo **é** o catálogo de critérios de `nrv validate business <slug
 
 Colunas: **id** · **severidade** (erro reprova; aviso reprova só com `--strict`) · **autofix** (mecânico = aplicado por `--fix`; agêntico = `--fix=agentic`; nenhum = autoria humana) · **baselinável** (pode virar débito registrado em vez de reprovar).
 
+Até 2026-08-28 nenhum erro era baselinável: débito era reservado a fato de pipeline (`seat_thin`, `self_retrieval_miss`), e violação de contrato reprovava na hora. Os dois critérios de auditoria abrem a exceção, e o motivo é a ordem do plano em `.nirvana/plans/event-contract.md`: este corte torna a violação **visível**, e é o corte 4 que renomeia os eventos preservando o payload. Sem baseline, as 4 entidades que já violam a regra — duas delas dentro de packs publicados — seriam reprovadas antes de existir para onde migrar. Com baseline, elas viram débito registrado, que só encolhe, e qualquer violação **nova** reprova.
+
 #### Erros
 
 | id | autofix | baselinável | o que verifica |
@@ -301,6 +303,8 @@ Colunas: **id** · **severidade** (erro reprova; aviso reprova só com `--strict
 | `surface_missing` | mecânico | não | `.nirvana-surface.json` existe |
 | `dna_symlink_dangling` | nenhum | não | Nenhum symlink de `dna/` aponta para um alvo inexistente |
 | `outputs_pollution` | nenhum | não | Nenhum diretório de saída de execução dentro da empresa |
+| `audit_event_unprefixed` | nenhum | sim | Todo evento de auditoria que um arquivo nomeia está no enum fechado ou carrega o prefixo `x_` |
+| `audit_event_unattributed` | nenhum | sim | Todo evento `x_` que a empresa emite nomeia a empresa (`business_slug` ou `--business=`) |
 
 #### Avisos
 

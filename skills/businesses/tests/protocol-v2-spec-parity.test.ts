@@ -83,10 +83,20 @@ describe("Business Protocol 2.0 §16.2 — the table is a catalog", () => {
     ]) expect(ids).toContain(id);
   });
 
-  test("only the two facts the pipeline produces are baselineable", () => {
+  /**
+   * Debt used to be reserved for pipeline facts, and no error carried it. The
+   * two audit criteria are the deliberate exception, stated in §16.2 above the
+   * table: this cut makes an event-contract violation VISIBLE and cut 4 of
+   * `.nirvana/plans/event-contract.md` migrates the names. Rejecting the 4
+   * entities that already violate it — two of them inside published packs —
+   * before there is anywhere to migrate to is the failure the baseline exists
+   * to prevent. Any error added outside that pair must still be unbaselineable.
+   */
+  test("debt is for pipeline facts and for the audit contract, nothing else", () => {
     expect(spec.filter((c) => c.baselineable).map((c) => c.id).sort())
-      .toEqual(["seat_thin", "self_retrieval_miss"]);
-    for (const c of spec) if (c.severity === "error") expect(c.baselineable).toBe(false);
+      .toEqual(["audit_event_unattributed", "audit_event_unprefixed", "seat_thin", "self_retrieval_miss"]);
+    const AUDIT = new Set(["audit_event_unprefixed", "audit_event_unattributed"]);
+    for (const c of spec) if (c.severity === "error" && !AUDIT.has(c.id)) expect(c.baselineable).toBe(false);
   });
 });
 

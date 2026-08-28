@@ -56,9 +56,17 @@ describe("catalog integrity", () => {
     expect(businessModule.fixOrder).toContain("surface_regen");
   }, spawnBudgetMs(2));
 
-  test("only seat_thin and self_retrieval_miss are baselineable, and no error is", () => {
-    expect(businessCriteria.filter((c) => c.baselineable).map((c) => c.id).sort()).toEqual(["seat_thin", "self_retrieval_miss"]);
-    for (const c of businessCriteria) if (c.severity === "error") expect(c.baselineable).toBe(false);
+  // The two audit criteria are the one exception to "no error carries debt",
+  // stated in §16.2 above the table: this cut makes an event-contract violation
+  // visible and cut 4 of `.nirvana/plans/event-contract.md` migrates the names.
+  // Rejecting the entities that already violate it — two of them inside
+  // published packs — before there is anywhere to migrate to is the failure the
+  // baseline exists to prevent. Any OTHER error must still be unbaselineable.
+  test("debt is for the two pipeline facts and the two audit criteria, nothing else", () => {
+    expect(businessCriteria.filter((c) => c.baselineable).map((c) => c.id).sort())
+      .toEqual(["audit_event_unattributed", "audit_event_unprefixed", "seat_thin", "self_retrieval_miss"]);
+    const AUDIT = new Set(["audit_event_unprefixed", "audit_event_unattributed"]);
+    for (const c of businessCriteria) if (c.severity === "error" && !AUDIT.has(c.id)) expect(c.baselineable).toBe(false);
   }, spawnBudgetMs(2));
 
   test("every criterion declares error or warning — §16.2 has no third severity", () => {

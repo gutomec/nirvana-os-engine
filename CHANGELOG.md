@@ -51,6 +51,47 @@ inferred from context, and render `—` when no dispatch event carries them
 (`views/absence.js`). Measured on the same 7-day log: 0 of 182 runs could name a
 target before, 81 can now, and cards showing a brief went from 20 to 59.
 
+### The audit gate looks where the violations are
+
+`check-audit-parity` compared three sources — the closed enum, the harness docs
+and `emit()` literals across `skills/**/{lib,scripts}` — and all three are
+engine code. Squads and businesses are content, so the gate ran green in
+`check:all` while 285 event types (961 occurrences, 877 of them carrying neither
+`squad_name` nor `business_slug`) were emitted outside every rule. The rule was
+never missing: `references/03-audit.md` declares the `x_` namespace open by
+design, on the condition that the name carries the prefix and the event carries
+its author. What was missing is enforcement.
+
+The gate now reads a fourth source: squad and business files, across the
+templates this repo ships, the installed library and the pack sources. Content
+is Markdown and YAML, so the literal scan that works on `emit()` does not
+transfer; `_shared/lib/audit-events.ts` finds the five forms a file names an
+event in — the `nrv audit emit` command, an `audit.emit()` call in a shipped
+script, an `event=` field, a `"event"` JSON key, and a backticked name on a line
+that says "audit event". A field or JSON literal only counts when its window
+names the harness audit sink, so an agro calendar writing `event=veranico`, a
+WhatsApp library writing `"event": "qr"` and a squad's own `render_audit.jsonl`
+stay out of the contract. The report states what it scanned, what was absent,
+and what it cannot see.
+
+Two criteria join `nrv validate` for squad and business: `audit_event_unprefixed`
+and `audit_event_unattributed`, both errors so a new violation cannot enter, both
+baselineable so the entities that already violate the rule become recorded debt
+that may only shrink. This is the first error in the business catalog that
+carries debt, and §16.2 says why: cut 1 of `.nirvana/plans/event-contract.md`
+makes the violation visible, cut 4 migrates the names, and rejecting two
+published packs before there is anywhere to migrate to is the failure the
+baseline exists to prevent. Only content the repository owns fails `check:all` —
+CI has neither a library nor a pack source, and each entity is gated where it
+lives.
+
+Measured 2026-08-28: scanning 523 entities finds 101 emission sites, 66 of them
+outside the rule, spread over 7 installed copies of 3 distinct squads —
+`agentic-whatsapp-nirvana`, `ebook-maestro-nirvana`, `tracking-360-operator`.
+Not one carries the `x_` prefix. The log holds 285 rogue types; the files hold 3
+squads' worth. The gap is the finding — the contract never reached the author,
+which is cut 3.
+
 ## 0.11.0 — 2026-08-28
 
 ### The clock stops deciding whether a run is alive
