@@ -8,6 +8,57 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### A workflow written as an event router stopped being reported as broken
+
+`nirvana-crypto-trading` carried a permanent warning. Its
+`event-driven-reactive.yaml` declares 23 event routes, each with its own channel,
+condition, priority and agent chain, and a capability invokes it for real. The
+gate answered `workflow_unnormalizable` on every run, saying no step order could
+be derived from the document, and under `--strict` that one warning was enough to
+print REJECTED against a squad that had done nothing wrong.
+
+A document whose graph cannot be derived because it is not a graph is not a
+malformed workflow. It is a workflow of another kind. The finding is now
+`workflow_event_router` at severity `info`, and it counts toward nothing: not the
+verdict, not the warning total, not the number of criteria passed. Every squad's
+`PASS n criteria` line drops by one for that reason, because an `info` criterion
+is not one an entity can pass or fail. It still appears, because the empty `steps[]` it produces would otherwise go unexplained,
+and it now says what the document is instead of what could not be done to it:
+`an event router: 23 event_routes entries, each with its own channel and chain`.
+
+No canonical shape for routers was added, and that was the decision rather than
+an omission. Two files in 629 carry `event_routes`, both named
+`event-driven-reactive.yaml`, in `nirvana-crypto-trading` and
+`nirvana-ai-trading`. Two instances do not pay for a second form that the reader,
+the lint, the migration, the prompt builder, the graph and the catalog would each
+have to learn. `nrv migrate` still refuses those two without `--force`, and the
+refusal is the honest half: forcing `steps[]` would invent an order between
+events that arrive independently.
+
+### The doctor names the invocation keys that nothing reads
+
+`triggers:` and `trigger_threshold:` name a command (`*full-tutoring`, `*wiki`,
+`*followup {jid}`) and how many must match before a workflow fires. Measured on
+the installed library on 27/08/2026: 302 of 629 workflows, across 101 of 206
+squads, declare one of them. `trigger_threshold` appears in 256, `triggers` in 46.
+
+No version of the protocol ever defined either key. v4 does not, v5 mentions them
+zero times, and v6 mentions them once, in the line that preserves legacy
+top-level keys verbatim inside `extensions`. No code reads them either. Routing is
+decided by `produces`, `keywords` and `example_briefs`, weighed by a maestro
+comparing candidates, which makes those commands a convention from before the
+agentic router.
+
+`nrv doctor` now reports the count as a warning, beside the protocol dashboard it
+already prints. Nothing deletes them, and nothing will. That is authored text, the
+normalizer keeps it on purpose, and erasing an author's content to clear a
+diagnostic line is the opposite of what a fixer does. The point is for dead
+surface to stop being invisible, not to stop existing.
+
+The count comes from the normalizer, not from a grep, which is why it exceeds
+what a search for a top-level key finds: 24 of those workflows are already on v6
+and carry the key inside their `extensions:` block.
+
 ### Two mechanical fixers were lying: one fabricated a criterion, the other repaired nothing
 
 Both turned up in a real audit of `brandcraft` on 27/08/2026, and the first would

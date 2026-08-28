@@ -8,6 +8,60 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Um workflow escrito como roteador de eventos deixou de ser reportado como quebrado
+
+O `nirvana-crypto-trading` carregava um aviso permanente. O
+`event-driven-reactive.yaml` dele declara 23 rotas de evento, cada uma com canal,
+condição, prioridade e cadeia de agentes própria, e uma capability o invoca de
+verdade. O portão respondia `workflow_unnormalizable` a cada rodada, dizendo que
+nenhuma ordem de passos podia ser derivada do documento, e sob `--strict` aquele
+único aviso bastava para imprimir REJECTED contra uma squad que não tinha feito
+nada de errado.
+
+Um documento cujo grafo não se deriva porque ele não é um grafo não é um workflow
+malformado. É um workflow de outra natureza. A constatação agora é
+`workflow_event_router`, severidade `info`, e não conta para nada: nem para o
+veredito, nem para o total de avisos, nem para o número de critérios passados. A
+linha `PASS n criteria` de toda squad cai em um por causa disso, porque um
+critério `info` não é critério que uma entidade passe ou reprove. Ela continua
+aparecendo, porque o `steps[]` vazio que o documento produz ficaria
+sem explicação, e agora diz o que o documento é em vez de dizer o que não deu
+para fazer com ele: `an event router: 23 event_routes entries, each with its own
+channel and chain`.
+
+Nenhuma forma canônica de roteador foi criada, e isso foi decisão, não
+esquecimento. São dois arquivos em 629 com `event_routes`, os dois chamados
+`event-driven-reactive.yaml`, no `nirvana-crypto-trading` e no
+`nirvana-ai-trading`. Duas instâncias não pagam uma segunda forma que leitor,
+lint, migração, construtor de prompt, grafo e catálogo teriam cada um de
+aprender. O `nrv migrate` continua recusando os dois sem `--force`, e a recusa é a
+metade honesta: forçar `steps[]` inventaria uma ordem entre eventos que chegam
+independentes.
+
+### O doctor passa a nomear as chaves de invocação que ninguém lê
+
+`triggers:` e `trigger_threshold:` nomeiam um comando (`*full-tutoring`, `*wiki`,
+`*followup {jid}`) e quantos precisam casar para o workflow disparar. Medido na
+biblioteca instalada em 27/08/2026: 302 de 629 workflows, em 101 das 206 squads,
+declaram uma das duas. `trigger_threshold` aparece em 256, `triggers` em 46.
+
+Nenhuma versão do protocolo jamais definiu qualquer uma delas. A v4 não define, a
+v5 tem zero menções e a v6 tem uma, na linha que preserva chaves de topo legadas
+verbatim dentro de `extensions`. Código nenhum lê as duas. O roteamento é decidido
+por `produces`, `keywords` e `example_briefs`, pesados por um maestro que compara
+candidatos, o que faz daqueles comandos uma convenção anterior ao roteador
+agêntico.
+
+O `nrv doctor` passa a reportar a contagem como aviso, ao lado do painel de
+protocolo que ele já imprime. Nada apaga aquilo, e nada vai apagar. É texto
+autoral, o normalizador o preserva de propósito, e destruir conteúdo do autor
+para limpar uma linha de diagnóstico é o oposto do que um fixer faz. O objetivo é
+a superfície morta parar de ser invisível, não parar de existir.
+
+A contagem sai do normalizador, não de um grep, e é por isso que ela passa do que
+uma busca por chave de topo encontra: 24 daqueles workflows já estão em v6 e
+carregam a chave dentro do bloco `extensions:` deles.
+
 ### Dois reparos mecânicos mentiam: um fabricava critério, o outro não reparava nada
 
 Os dois apareceram numa auditoria real do `brandcraft` em 27/08/2026, e o

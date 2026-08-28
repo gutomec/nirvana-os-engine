@@ -115,15 +115,24 @@ describe("the dialect corpus, judged by protocol", () => {
     expect(runCli(r, ["squad", "clean-v6", "--no-retrieval"]).code).toBe(0);
   });
 
-  test("`event_routes` is advice under either protocol: reported, never guessed at", () => {
+  // A router is a correct file. Reporting it as a defect cost two squads a
+  // permanent warning and, under --strict, a REJECTED verdict they had done
+  // nothing to earn. It is still reported — the empty graph needs explaining —
+  // but as `info`, which counts toward nothing.
+  test("`event_routes` is reported as information under either protocol, never as a defect", () => {
     const r = root();
     for (const protocol of ["5.0", "6.0"]) {
       const slug = `router-${protocol.replace(".", "")}`;
       const ref = protocol === "6.0" ? "main" : "main.yaml";
       squadFixture(r, slug, { protocol, workflows: { "main.yaml": "name: main\nevent_routes:\n  on_push: rebuild\n" }, workflowComponent: ref, invokeRef: `workflows/${ref}` });
       const f = findings(r, slug);
-      expect(severityOf(f, "workflow_unnormalizable")).toBe("warning");
+      expect(severityOf(f, "workflow_event_router")).toBe("info");
+      expect(idsOf(f)).not.toContain("workflow_unnormalizable");
+      expect(idsOf(f)).not.toContain("workflow_shape_legacy");
       expect(runCli(r, ["squad", slug, "--no-retrieval"]).code).toBe(0);
+      // The whole point: the router contributes no error and no warning, so it
+      // cannot reject the squad and cannot strict-fail it either.
+      expect(f.filter((x) => x.severity !== "info" && x.id.startsWith("workflow_")).map((x) => x.id)).toEqual([]);
     }
   }, spawnBudgetMs(2));
 
