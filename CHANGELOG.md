@@ -8,6 +8,54 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### The clock stops deciding whether a run is alive
+
+A dispatched runtime was killed by a timer that could not see it working.
+`callHostAgentAsync` armed one `setTimeout(kill, timeoutMs)` at spawn, so it
+fired on elapsed time alone, and the default was 120 seconds. `judge.ts` passed
+60. The runtime those calls spawn is `claude -p --output-format json`, which
+prints one JSON object at the END of the call: a model that thought for longer
+than the budget was SIGTERMed with its answer still in flight, and the caller
+read `"claude exited null"` — the same message a crash produces.
+
+`timeoutMs` is now a budget of SILENCE. The timer measures from the last byte
+and rearms for whatever is left of the budget whenever the child has spoken, so
+a child that keeps writing outlives any elapsed time and only silence is fatal.
+A child killed for silence resolves as `inactivity_timeout` carrying how long it
+had been quiet and how many bytes it had produced, and the driver emits
+`x_driver_child_killed` naming the rule, the budget and the last activity.
+
+The numbers came from measurement, not from taste. Across 557 Claude Code
+transcripts on the owner's machine, 123,318 gaps between two consecutive
+non-human entries (scoped to one sessionId, cut at compaction boundaries): p50
+1.1s, p95 28s, p99 192s. 1.8% of the pauses a model takes between two tool calls
+run longer than two minutes, 0.45% longer than ten, 0.089% longer than
+forty-five. Past an hour the count stops falling, which is resumed sessions
+rather than any real pause. The default budget is 45 minutes, where the credible
+tail ends.
+
+Three windows moved with it. The stall watchdog now defaults to DISARMED
+(`heartbeatMs: 0`) instead of 60 seconds: for a non-streaming adapter "no bytes
+yet" is the normal shape of a call in progress, not a stall, and a caller whose
+child streams asks for the tighter window explicitly. The ledgered wall clock
+went from 24h to 7 days — this machine's ledger holds 371 runs whose longest is
+25.5h and whose longest delivered one is 4.9h, so 24h sat below the observed
+maximum and was a second hang detector rather than a backstop. And a ledgered
+run's lease, the window that actually decides a run is dead, went from 600s to
+the same 45 minutes; ten minutes of silence is inside the normal behaviour of a
+working agent, which the supervisor already knew for the agentic path
+(`AGENTIC_LEASE_SEC = 1800`) and not for the scripted one.
+
+`quality-judge.js` and `judge.ts` dropped their own floors (120s/60s wall clock,
+60s stall) and let the driver decide; `squad-audit-consensus.js` dropped the 90s
+heartbeat it kept in front of its own 240s budget, which on a runtime that
+prints nothing until the end was a 90-second wall clock producing the freeze it
+was added to prevent; `host-agent-retry.js` retries `inactivity_timeout` on the
+same terms as `stall`. `callHostAgent` keeps a wall
+clock because `spawnSync` blocks the event loop and no timer can observe the
+child at all — it now says so, and its default is the same 45 minutes instead of
+two.
+
 ### A route under the wrong key says so, instead of blaming a seat
 
 `investigation-bureau` was audited on 28/08/2026 and the gate answered nine times

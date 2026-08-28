@@ -172,13 +172,16 @@ async function callAgent(_client, role, userMessage) {
   const driver = loadHostDriver();
   if (!driver) return { role, text: '', error: 'host-agent-driver not loadable' };
   const persona = readPersona(role) || `You are the ${role} agent in a squad audit consensus loop.`;
-  // Async path with stall watchdog: 90s heartbeat + 1 retry on stall. Avoids
-  // 600s freezes when the agent reads heavy + writes heavy in one call.
+  // Async path with a 240s budget of SILENCE + 1 retry on it. Still guards the
+  // 600s freeze when the agent reads heavy and writes heavy in one call, but
+  // without the 90s heartbeat that used to fire first: the runtimes this calls
+  // print one JSON object at the END, so "no bytes for 90s" was a model
+  // thinking, and killing it produced the freeze it was meant to prevent.
   let retry = null;
   try {
     retry = require(path.join(SKILLS_ROOT, '_shared', 'lib', 'host-agent-retry.js'));
   } catch {}
-  const callOpts = { heartbeatMs: 90_000, timeoutMs: 240_000, maxRetries: 1 };
+  const callOpts = { timeoutMs: 240_000, maxRetries: 1 };
   const r = retry && retry.callWithRetryOnStall
     ? await retry.callWithRetryOnStall(persona, userMessage, callOpts)
     : await driver.callHostAgentAsync(persona, userMessage, callOpts);
