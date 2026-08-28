@@ -294,6 +294,25 @@ export function capabilityContext(squadDir: string, capabilityId: string): Squad
 
 const EM_DASH_CELL = "—";
 
+/**
+ * The event vocabulary a dispatched squad needs at the moment it writes an
+ * event: the CLI, the attribution flag, and the `x_` escape hatch. Inlined
+ * instead of a pointer to `references/03-audit.md` — that path is inside the
+ * engine skill tree, and a squad's `addDirs` never guarantees it is readable;
+ * the whole premise of this cut (Cut 1, #157) is that a doc read once at
+ * authoring time does not reach the agent naming an event mid-run.
+ *
+ * Mirrors the pattern `employee-prompt.ts` already ships for businesses
+ * (`nrv audit emit x_clone_choice --business=<slug> --trace=<trace> --json=...`),
+ * which Cut 1 measured at zero rogue events — the working precedent, not a
+ * new invention.
+ */
+function renderEventContractBlock(squadSlug: string, traceId?: string): string {
+  const trace = traceId || "<trace_id>";
+  return `## COMO REPORTAR EVENTOS
+Emita marcos do seu trabalho com \`nrv audit emit <nome> --squad=${squadSlug} --trace=${trace}\`. Sempre passe \`--squad=${squadSlug}\`: é o que atribui o evento a você no cockpit. O nome não precisa estar na lista fechada do motor — se não estiver, escreva-o já com o prefixo \`x_\` (ex.: \`x_pagina_altura_acima_orcamento\`), assim o nome que chega ao log é o mesmo que você digitou. Payload vai em \`--json='{...}'\`, curto: nunca o brief inteiro, um output completo ou um segredo, só o resumo que o evento precisa carregar.`;
+}
+
 /** The capability block, plus the workflow block when the graph resolved. */
 function renderCapabilityBlock(ctx: SquadCapabilityPromptContext): string {
   const lines = ["## SUA CAPABILITY", `- **id**: \`${ctx.capabilityId}\``];
@@ -340,6 +359,9 @@ export function buildSquadPrompt(args: {
   /** The capability this dispatch runs (capability-resolver.ts). Absent, or the
    *  legacy `squad.execute`, keeps the historical prompt. */
   capabilityId?: string | null;
+  /** The run's trace_id, shown in the event-contract block's example command.
+   *  Absent falls back to a `<trace_id>` placeholder — never omits the block. */
+  traceId?: string;
 }): string {
   const { squadSlug, squadDir, brief, outDir, mode, cloneInjection: cloneInj } = args;
   const readIfExists = (p: string) => fs.existsSync(p) ? fs.readFileSync(p, "utf8") : "";
@@ -354,8 +376,14 @@ export function buildSquadPrompt(args: {
   const tasksBlock = collect(tasksDir, 3) || "(no tasks/ dir)";
 
   // The capability sections, or "" — the whole compatibility surface of this cut.
+  // The event-contract block rides the same gate: a squad without a resolved
+  // capability (legacy, undeclared) keeps the historical prompt byte for byte —
+  // squad-exec.test.ts pins that path. Every squad with `capabilities[]`
+  // declared (mandatory since Creation Rule 5) gets the contract for free.
   const capability = args.capabilityId ? capabilityContext(squadDir, args.capabilityId) : null;
-  const capabilitySection = capability ? `${renderCapabilityBlock(capability)}\n\n` : "";
+  const capabilitySection = capability
+    ? `${renderCapabilityBlock(capability)}\n\n${renderEventContractBlock(squadSlug, args.traceId)}\n\n`
+    : "";
   const componentsHeading = capability?.components ? "" : " (top 3)";
   const agentsSection = capability?.components?.agents ?? agentsBlock;
   const tasksSection = capability?.components?.tasks ?? tasksBlock;
@@ -431,6 +459,7 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
   const prompt = buildSquadPrompt({
     squadSlug: args.squadSlug, squadDir, brief: args.brief, outDir,
     mode: args.mode, cloneInjection: cloneInj, capabilityId: args.capabilityId,
+    traceId: args.projectId,
   });
 
   appendAudit({

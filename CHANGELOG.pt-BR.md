@@ -212,6 +212,48 @@ seus snapshots conforme a RFC 8785, que é a resposta padrão para o problema de
 determinismo de bytes que quebrou a paridade de schema deste repositório na mesma
 semana. Nenhuma das duas tinha um portão exigindo isso dele.
 
+### O vocabulário de eventos chega ao agente que nomeia o evento
+
+O corte 1 mediu a lacuna que este corte fecha: escanear 523 entidades achou
+sítios de emissão em 3 delas, contra 285 tipos vadios e 961 ocorrências no log.
+Quase nada do que chega ao log tem um literal em disco, porque um agente
+inventa o nome do evento no meio do run, não enquanto o squad está sendo
+autorado — documentação lida uma vez, na criação, nunca alcança esse momento.
+
+`buildSquadPrompt` (`squad-exec.ts`) agora injeta um bloco "COMO REPORTAR
+EVENTOS" sempre que um despacho resolve uma capability declarada: emita por
+`nrv audit emit <nome> --squad=<slug> --trace=<trace>`, prefixe um nome fora
+da lista com `x_` para que o log combine com o que foi digitado, e mantenha o
+payload num resumo curto, nunca um brief inteiro, um output completo ou um
+segredo. O bloco anda no mesmo portão do resto da seção de capability: um
+squad sem capability resolvida, o fallback legado `squad.execute`, mantém o
+prompt histórico byte a byte, o que `squad-exec.test.ts` já fixava antes deste
+corte e continua fixando depois dele. `capabilities[]` é obrigatório para um
+squad ser descoberto desde a v5, então todo squad nesse caminho já carrega o
+contrato; só o fallback legado pré-v5 não carrega, e migrá-lo é trabalho do
+corte 4, não deste.
+
+Medido num squad real (`adaptive-tutor-k12`, capability
+`education.tutoring.adaptive_cycle`): o prompt cresceu de 36.652 para 37.225
+bytes, 573 para o bloco inteiro incluindo seu exemplo trabalhado. Rodar o
+comando exato que o bloco manda o agente rodar,
+`nrv audit emit x_pagina_altura_acima_orcamento --squad=demo-squad --trace=... --json='{...}'`,
+produz `source: "/squad/demo-squad"` e
+`type: "sh.squads.nirvana.ext.x_pagina_altura_acima_orcamento"` — uma amostra,
+não uma taxa, mas o primeiro sítio corretamente prefixado e atribuído onde
+antes havia zero.
+
+Empresas não ganharam nenhum byte novo de prompt. `employee-prompt.ts` já
+carrega o mesmo padrão no ponto em que um funcionário registra sua escolha de
+mind-clone (`nrv audit emit x_clone_choice --business=<slug> ...`), e o corte
+1 mediu zero nomes de evento vadios em 61 empresas — o bloco que os squads
+precisavam já existia ali, então adicionar um segundo seria custo sem
+benefício. O template de squad ficou intocado pela razão simétrica: todo
+squad criado a partir dele declara `capabilities[]` pela Regra de Criação 5,
+então herda o contrato injetado em runtime de graça, e um evento de exemplo
+estampado literalmente no template arrisca virar exatamente o tipo de cópia
+nunca editada e nunca emitida que o corte 1 achou espalhada em disco.
+
 ### Os eventos de hook de um agente despachado passam a cair ao lado do run que os produziu
 
 O corte do run-card relatou isso sem consertar: um run escrevia em duas raízes
