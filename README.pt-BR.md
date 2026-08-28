@@ -176,4 +176,4 @@ Autor: **Luiz Gustavo Vieira Rodrigues (gutomec / Prospecteezy)**. Sem coautores
 
 Licença: a Nirvana-OS Sustainable Use License (SUL) v1.0. O código-fonte é publicado e abertamente legível, e o engine é grátis para usar. É source-available, não uma licença open-source aprovada pela OSI, e certos usos comerciais exigem uma licença comercial separada. Leia [LICENSE](./LICENSE) antes de confiar em qualquer resumo, incluindo este.
 
-Status: beta (0.x, atualmente 0.10.3). O engine funciona hoje e instala em minutos. Espere a superfície continuar mudando até o 1.0.
+Status: beta (0.x, atualmente 0.10.4). O engine funciona hoje e instala em minutos. Espere a superfície continuar mudando até o 1.0.

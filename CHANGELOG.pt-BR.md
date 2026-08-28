@@ -8,6 +8,8 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+## 0.10.4 — 2026-08-28
+
 ### Um workflow escrito como roteador de eventos deixou de ser reportado como quebrado
 
 O `nirvana-crypto-trading` carregava um aviso permanente. O

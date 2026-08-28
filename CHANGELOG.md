@@ -8,6 +8,8 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+## 0.10.4 — 2026-08-28
+
 ### A workflow written as an event router stopped being reported as broken
 
 `nirvana-crypto-trading` carried a permanent warning. Its
