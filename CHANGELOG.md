@@ -192,6 +192,39 @@ The `x_` names cut 1 enforces keep working unchanged: an extension event becomes
 lossless in both directions and cut 4 can migrate names without this cut having
 lost any.
 
+### A dispatched agent's hook events land next to the run that produced them
+
+The run-card cut reported this without fixing it: one run wrote to two audit
+roots, 5250 events in `~/.harness-logs` against 1940 in
+`<project>/.nirvana/logs/harness`, and nothing joined them. `nrv doctor` had
+already been fooled by the split once, reading zero `dispatch_squad` events
+from the wrong file and filing it as a defect that a later measurement found
+emitted 36 times the same day.
+
+The cause was a third resolver. Every other writer and reader asks
+`log-paths.ts::harnessLogsDir()`, which walks up from cwd to find a project
+before falling back to `~/.harness-logs`. `audit-emit-from-hook.ts` — the
+bridge that turns every Write, Edit and Bash the agent runs into
+`tool_invoked`, `artifact_touched` and `bash_completed` — computed its own
+root by hand: `HARNESS_LOGS_DIR` or straight to `~/.harness-logs`, with no
+project lookup at all. Those three event names are the busiest in the log (4702
+of the 5250 measured for the run-card cut), so a dispatched agent whose hooks
+fired inside a real project, with `HARNESS_LOGS_DIR` unset because nothing in
+`host-agent-driver.ts` pins it, wrote its busiest events past the project every
+time. Reproduced live while writing this fix, same day: the dispatch carrying
+this brief had 5 orchestrator events (`brief_received`, `dispatch_agent_x`, the
+ledger's) in the project log and 3 hook events in `~/.harness-logs`, one run
+split exactly as reported.
+
+The hook now calls `harnessLogsDir()` like everyone else. `HARNESS_LOGS_DIR`
+still wins when a caller pins it, `NIRVANA_PROJECT_ROOT` when a caller names
+it, and the project found by walking up from cwd otherwise — the same order,
+the same fallback to `~/.harness-logs` for a dispatch with no project in reach,
+so `nrv dispatch` run from an arbitrary directory keeps logging somewhere sane.
+No history moves: 117 days of existing files stay where they are, and a reader
+built for one trace across both roots is still cut 6's to build, now that the
+roots agree on which trace goes where.
+
 ## 0.11.0 — 2026-08-28
 
 ### The clock stops deciding whether a run is alive

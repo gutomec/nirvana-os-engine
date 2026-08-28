@@ -200,6 +200,41 @@ de extensão vira `sh.squads.nirvana.ext.<nome>` com o prefixo literal, então o
 mapeamento não perde nada nas duas direções e o corte 4 pode migrar nomes sem
 que este corte tenha perdido nenhum.
 
+### Os eventos de hook de um agente despachado passam a cair ao lado do run que os produziu
+
+O corte do run-card relatou isso sem consertar: um run escrevia em duas raízes
+de auditoria, 5250 eventos em `~/.harness-logs` contra 1940 em
+`<projeto>/.nirvana/logs/harness`, e nada juntava as duas. O `nrv doctor` já
+tinha sido enganado pela divisão uma vez, lendo zero eventos `dispatch_squad`
+no arquivo errado e registrando isso como defeito até uma medição posterior
+achar 36 emissões no mesmo dia.
+
+A causa era um terceiro resolvedor. Todo outro escritor e leitor pergunta a
+`log-paths.ts::harnessLogsDir()`, que sobe a partir do cwd procurando um
+projeto antes de cair para `~/.harness-logs`. O `audit-emit-from-hook.ts` — a
+ponte que transforma cada Write, Edit e Bash do agente em `tool_invoked`,
+`artifact_touched` e `bash_completed` — calculava sua própria raiz na mão:
+`HARNESS_LOGS_DIR` ou direto para `~/.harness-logs`, sem nenhuma busca por
+projeto. Esses três nomes de evento são os mais numerosos do log (4702 dos 5250
+medidos no corte do run-card), então um agente despachado cujos hooks disparam
+dentro de um projeto real, com `HARNESS_LOGS_DIR` vazio porque nada em
+`host-agent-driver.ts` o fixa, escrevia seus eventos mais numerosos para fora
+do projeto o tempo todo. Reproduzido ao vivo enquanto este conserto era
+escrito, no mesmo dia: o despacho que carrega este brief teve 5 eventos do
+orquestrador (`brief_received`, `dispatch_agent_x`, os do ledger) no log do
+projeto e 3 eventos de hook em `~/.harness-logs`, um run dividido exatamente
+como relatado.
+
+O hook agora chama `harnessLogsDir()` como todo mundo. `HARNESS_LOGS_DIR`
+continua ganhando quando um chamador o fixa, `NIRVANA_PROJECT_ROOT` quando um
+chamador o nomeia, e o projeto encontrado subindo a partir do cwd nos demais
+casos — a mesma ordem, a mesma queda para `~/.harness-logs` quando um despacho
+não tem projeto ao alcance, então o `nrv dispatch` rodado de um diretório
+qualquer continua registrando em algum lugar sensato. Nenhum histórico se move:
+117 dias de arquivos existentes ficam onde estão, e um leitor construído para
+um trace através das duas raízes ainda é tarefa do corte 6, agora que as raízes
+concordam sobre de quem é cada trace.
+
 ## 0.11.0 — 2026-08-28
 
 ### O relógio para de decidir se um run está vivo
