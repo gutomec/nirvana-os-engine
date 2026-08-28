@@ -8,6 +8,8 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+## 0.11.0 — 2026-08-28
+
 ### The clock stops deciding whether a run is alive
 
 A dispatched runtime was killed by a timer that could not see it working.

@@ -8,6 +8,8 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+## 0.11.0 — 2026-08-28
+
 ### O relógio para de decidir se um run está vivo
 
 Um runtime despachado era morto por um cronômetro que não conseguia vê-lo
