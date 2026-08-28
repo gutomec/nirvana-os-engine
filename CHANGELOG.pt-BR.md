@@ -200,6 +200,16 @@ de extensão vira `sh.squads.nirvana.ext.<nome>` com o prefixo literal, então o
 mapeamento não perde nada nas duas direções e o corte 4 pode migrar nomes sem
 que este corte tenha perdido nenhum.
 
+Dois princípios desta entrada já haviam sido aplicados neste repositório antes de
+nós os adotarmos, por @AndreAlmeidaDC. A PR #82 (23/08) registrou seus eventos no
+enum canônico e regerou a referência de auditoria à mão, e declarou como regra que
+eventos não carregam entrada, saída nem segredos — a separação entre metadado e
+conteúdo que este envelope impõe ao limitar o `data`. A PR #88 (25/08) declarou
+cinco tipos de evento de auditoria fechados com projeções redigidas e canonicalizou
+seus snapshots conforme a RFC 8785, que é a resposta padrão para o problema de
+determinismo de bytes que quebrou a paridade de schema deste repositório na mesma
+semana. Nenhuma das duas tinha um portão exigindo isso dele.
+
 ### Os eventos de hook de um agente despachado passam a cair ao lado do run que os produziu
 
 O corte do run-card relatou isso sem consertar: um run escrevia em duas raízes

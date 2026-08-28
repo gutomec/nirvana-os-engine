@@ -192,6 +192,16 @@ The `x_` names cut 1 enforces keep working unchanged: an extension event becomes
 lossless in both directions and cut 4 can migrate names without this cut having
 lost any.
 
+Two of this entry's principles were applied in this repository before we adopted
+them, by @AndreAlmeidaDC. PR #82 (23 August) registered its events in the
+canonical enum and regenerated the audit reference by hand, and stated as a rule
+that events carry no input, output or secrets — the metadata-from-content
+separation this envelope enforces by bounding `data`. PR #88 (25 August) declared
+five closed audit event types with redacted projections and canonicalized its
+snapshots per RFC 8785, which is the standard answer to the byte-determinism
+problem that broke this repository's schema parity the same week. Neither PR had
+a gate telling him to.
+
 ### A dispatched agent's hook events land next to the run that produced them
 
 The run-card cut reported this without fixing it: one run wrote to two audit
