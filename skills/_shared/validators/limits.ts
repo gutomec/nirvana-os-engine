@@ -13,6 +13,10 @@
  * Backward-compatible: with no .yaml and no env vars, the DEFAULTS are
  * identical to the original hard-coded limits.
  *
+ * NIRVANA_LIMITS_DEFAULTS_ONLY=1 skips the three override layers entirely and
+ * answers with DEFAULTS. A process writing a distributable artifact sets it —
+ * see DEFAULTS_ONLY_ENV below.
+ *
  * All configuration goes through SAFETY_BOUNDS: absurd values are
  * clamped to the safe floor/ceiling, with a warning on stderr.
  *
@@ -128,6 +132,27 @@ const USER_CONFIG = path.join(os.homedir(), '.claude', 'nirvana-limits.yaml')
 const PROJECT_CONFIG_NAME = '.nirvana-limits.yaml'
 const ENV_PREFIX = 'NIRVANA_LIMIT_'
 
+/**
+ * Opt out of the whole cascade and answer with DEFAULTS.
+ *
+ * A process that writes a DISTRIBUTABLE artifact sets this. The cascade is a
+ * local operator affordance: it lets one machine accept a longer capability
+ * description than the protocol declares. A generated JSON Schema is the
+ * opposite — every consumer must read the same numbers, so the only source it
+ * may embed is DEFAULTS, which is committed and identical everywhere.
+ *
+ * Set it BEFORE the first import of this module: LIMITS is a singleton
+ * evaluated at module load, and validators.ts freezes those numbers into the
+ * Zod objects on the same tick. See scripts/gen-json-schemas.ts.
+ */
+export const DEFAULTS_ONLY_ENV = 'NIRVANA_LIMITS_DEFAULTS_ONLY'
+
+function defaultsOnly(): boolean {
+  const v = process.env[DEFAULTS_ONLY_ENV]
+  if (v === undefined) return false
+  return !['', '0', 'false', 'no', 'off'].includes(v.trim().toLowerCase())
+}
+
 function log(msg: string): void {
   process.stderr.write(`[nirvana-limits] ${msg}\n`)
 }
@@ -215,8 +240,13 @@ export function loadLimits(): Record<string, number | null> {
   const sources: Record<string, string> = {}
   for (const k of Object.keys(limits)) sources[k] = 'default'
 
+  // A distributable artifact reads DEFAULTS and nothing else. Safety bounds
+  // below still run: DEFAULTS sit inside them by construction, and one exit
+  // path keeps the two modes from drifting apart.
+  const pinned = defaultsOnly()
+
   // 1. User-level
-  const userCfg = loadConfigFile(USER_CONFIG)
+  const userCfg = pinned ? {} : loadConfigFile(USER_CONFIG)
   for (const [k, v] of Object.entries(userCfg)) {
     if (k in limits) {
       limits[k] = coerceToDefaultType(v, DEFAULTS[k])
@@ -227,7 +257,7 @@ export function loadLimits(): Record<string, number | null> {
   }
 
   // 2. Project-level (overrides user)
-  const projectPath = findProjectConfig()
+  const projectPath = pinned ? null : findProjectConfig()
   if (projectPath) {
     const projectCfg = loadConfigFile(projectPath)
     for (const [k, v] of Object.entries(projectCfg)) {
@@ -243,7 +273,7 @@ export function loadLimits(): Record<string, number | null> {
   // 3. Env vars (highest precedence)
   for (const k of Object.keys(limits)) {
     const envKey = ENV_PREFIX + k.toUpperCase()
-    if (process.env[envKey] !== undefined) {
+    if (!pinned && process.env[envKey] !== undefined) {
       const coerced = coerceScalar(process.env[envKey]!)
       limits[k] = coerceToDefaultType(coerced, DEFAULTS[k])
       sources[k] = `env:${envKey}`

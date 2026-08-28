@@ -15,6 +15,7 @@ import { spawnSync } from "node:child_process";
 import { z } from "zod";
 import { CapabilitySchema, SquadManifestSchema, WorkflowSchema } from "../validators/validators.ts";
 import { spawnBudgetMs } from "../../harness/tests/helpers/test-budgets.ts";
+import { makeTempRoot, removeDir } from "../../harness/tests/helpers/temp-dirs.ts";
 
 const REPO = path.resolve(import.meta.dir, "..", "..", "..");
 const SCHEMAS = path.join(REPO, "skills", "_shared", "schemas");
@@ -62,4 +63,52 @@ describe("the contract the files state", () => {
   test("the hand-maintained per-squad mirrors are gone", () => {
     expect(fs.existsSync(path.join(REPO, "skills", "squads", "schemas"))).toBe(false);
   });
+});
+
+// The generated file is a distributable contract, and a contract may not carry
+// the configuration of whoever ran the generator. `LIMITS` reaches
+// CapabilitySchema and SquadManifestSchema through a cascade that reads
+// NIRVANA_LIMIT_* env vars, <project>/.nirvana-limits.yaml and
+// ~/.claude/nirvana-limits.yaml — three inputs that live outside the commit.
+// Generating under two hostile configurations must land on the same bytes, and
+// those bytes must be the committed ones.
+describe("the generator does not read the generating machine", () => {
+  const generate = (env: Record<string, string>) =>
+    spawnSync(process.execPath, [path.join(REPO, "scripts", "gen-json-schemas.ts"), "--check"], {
+      encoding: "utf8",
+      env: { ...process.env, ...env },
+    });
+
+  test("an env override of a limit the schemas embed does not move the bytes", () => {
+    const r = generate({
+      NIRVANA_LIMIT_CAPABILITY_DESCRIPTION_MAX: "900",
+      NIRVANA_LIMIT_CAPABILITY_KEYWORDS_MAX: "11",
+      NIRVANA_LIMIT_SQUAD_CAPABILITIES_MAX: "13",
+    });
+    expect(r.stdout + r.stderr).toContain("JSON schema parity OK");
+    expect(r.status).toBe(0);
+  }, spawnBudgetMs(2));
+
+  test("two different user override files produce the same bytes", () => {
+    const roots = [
+      { root: makeTempRoot("gen-limits-a-"), description: "700", capabilities: "17" },
+      { root: makeTempRoot("gen-limits-b-"), description: "4000", capabilities: "37" },
+    ];
+    try {
+      for (const { root, description, capabilities } of roots) {
+        fs.mkdirSync(path.join(root, ".claude"), { recursive: true });
+        fs.writeFileSync(
+          path.join(root, ".claude", "nirvana-limits.yaml"),
+          `capability_description_max: ${description}\nsquad_capabilities_max: ${capabilities}\n`,
+          "utf8",
+        );
+        // os.homedir() reads HOME on POSIX and USERPROFILE on Windows.
+        const r = generate({ HOME: root, USERPROFILE: root });
+        expect(r.stdout + r.stderr).toContain("JSON schema parity OK");
+        expect(r.status).toBe(0);
+      }
+    } finally {
+      for (const { root } of roots) removeDir(root);
+    }
+  }, spawnBudgetMs(4));
 });

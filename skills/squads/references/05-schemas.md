@@ -19,6 +19,16 @@ schema cannot survive a build. Never edit them by hand.
 | `capability.schema.json` | one entry of `capabilities[]` | `_shared/schemas/capability.schema.json` |
 | `workflow.schema.json` | the canonical workflow graph (§28.1) | `_shared/schemas/workflow.schema.json` |
 
+**The size ceilings in these files are the DEFAULTS of `limits.ts`, never your
+machine's.** `LIMITS` normally comes from a cascade (`NIRVANA_LIMIT_*` env vars,
+`<project>/.nirvana-limits.yaml`, `~/.claude/nirvana-limits.yaml`), and those
+numbers reach `maxLength` and `maxItems`. A published contract cannot carry one
+operator's overrides, so the generator sets `NIRVANA_LIMITS_DEFAULTS_ONLY=1`
+before `validators.ts` loads. Raising a limit locally still relaxes what `nrv
+validate` accepts on your machine; it does not move the schema, so a manifest
+that passes locally can fail against the published document. That direction is
+deliberate: the schema is the floor every consumer agrees on.
+
 The per-squad `schemas/*.json` mirrors (`squad-schema.json`, `agent-schema.json`,
 `task-schema.json`, `adapter-schema.json`, `handoff-schema.json`) were removed in
 v6: they described a v4 manifest nobody authored any more, and no code path read

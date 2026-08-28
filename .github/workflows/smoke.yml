@@ -39,6 +39,17 @@ jobs:
         with:
           bun-version: latest
 
+      # `bun.lock` or nothing. With no node_modules Bun auto-installs each
+      # dependency from the package.json RANGE at import time, so `zod: ^4.4.0`
+      # resolved to 4.5.1 on the day it was published — and 4.5.0 had made the
+      # seconds group of `z.string().datetime()` mandatory, which moved the
+      # `pattern` inside two generated JSON Schemas without a line of
+      # validators.ts changing. The parity gate compares committed bytes, so it
+      # went red deterministically against a tree nobody could reproduce: every
+      # checkout that installs from the lockfile gets 4.4.3 and passes.
+      - name: Install the pinned dependency tree
+        run: bun install --frozen-lockfile
+
       - name: Instalar o engine da fonte (fresh HOME, não-interativo)
         run: bun scripts/install.ts
 
@@ -88,6 +99,17 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+
+      # `bun.lock` or nothing. With no node_modules Bun auto-installs each
+      # dependency from the package.json RANGE at import time, so `zod: ^4.4.0`
+      # resolved to 4.5.1 on the day it was published — and 4.5.0 had made the
+      # seconds group of `z.string().datetime()` mandatory, which moved the
+      # `pattern` inside two generated JSON Schemas without a line of
+      # validators.ts changing. The parity gate compares committed bytes, so it
+      # went red deterministically against a tree nobody could reproduce: every
+      # checkout that installs from the lockfile gets 4.4.3 and passes.
+      - name: Install the pinned dependency tree
+        run: bun install --frozen-lockfile
 
       - name: Gates de contrato (comandos, auditoria, inglês, changelog, pureza)
         run: |
