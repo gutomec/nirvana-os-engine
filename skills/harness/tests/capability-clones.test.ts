@@ -21,6 +21,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const REPO = join(import.meta.dir, "..", "..", "..");
 const GATE = join(REPO, "scripts", "check-capability-clones.ts");
@@ -43,7 +44,7 @@ describe("what counts as a clone", () => {
     const r = run({ "x.y.z": [cap("alpha"), cap("beta")] }, ["--strict"]);
     expect(r.code).toBe(1);
     expect(r.out).toContain("alpha, beta");
-  });
+  }, spawnBudgetMs(2));
 
   test("different keywords make them distinguishable", () => {
     // The actual fix applied to the library: same work, each squad's own words.
@@ -52,7 +53,7 @@ describe("what counts as a clone", () => {
     }, ["--strict"]);
     expect(r.code).toBe(0);
     expect(r.out).toContain("describes itself differently");
-  });
+  }, spawnBudgetMs(2));
 
   test("different example_briefs alone are enough", () => {
     const a = { ...cap("alpha"), example_briefs: ["build me a dashboard"] };
@@ -72,7 +73,7 @@ describe("what counts as a clone", () => {
     });
     expect(r.out).toContain("1 capability ids have more than one provider (3 instances)");
     expect(r.out).toContain("describes itself differently");
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("partial cloning is reported precisely", () => {
@@ -87,7 +88,7 @@ describe("partial cloning is reported precisely", () => {
     expect(r.out).toContain("alpha, beta, gamma");
     expect(r.out).toContain("delta");
     expect(r.out).toMatch(/3 of 4 providers/);
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("the gate is usable from a build step", () => {
@@ -97,7 +98,7 @@ describe("the gate is usable from a build step", () => {
     expect(d.provider_instances).toBe(2);
     expect(d.cloned_instances).toBe(2);
     expect(d.affected[0].camps[0]).toEqual(["alpha", "beta"]);
-  });
+  }, spawnBudgetMs(2));
 
   test("without --strict it reports rather than fails", () => {
     expect(run({ "x.y.z": [cap("alpha"), cap("beta")] }).code).toBe(0);
@@ -107,7 +108,7 @@ describe("the gate is usable from a build step", () => {
     const r = run({ "x.y.z": [cap("alpha"), cap("beta")], "p.q.r": [cap("c"), cap("d")] }, ["x.y.z"]);
     expect(r.out).toContain("alpha, beta");
     expect(r.out).not.toContain("p.q.r");
-  });
+  }, spawnBudgetMs(2));
 });
 
 process.on("exit", () => { try { rmSync(tmp, { recursive: true, force: true }); } catch {} });

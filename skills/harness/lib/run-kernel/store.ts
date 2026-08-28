@@ -55,9 +55,49 @@ export interface AppendEventInput {
   payload?: Record<string, unknown>;
 }
 
+/** How long an opener waits for whoever is converting the file to WAL (see `enableWal`). */
+const WAL_CONVERSION_TIMEOUT_MS = 5000;
+
+function journalMode(db: Database): string {
+  return String((db.query("PRAGMA journal_mode").get() as { journal_mode?: string } | null)?.journal_mode ?? "").toLowerCase();
+}
+
+/**
+ * Switch the file to WAL, tolerating another process doing it at the same instant.
+ *
+ * `journal_mode = WAL` is not an ordinary write: it takes an EXCLUSIVE lock and, when it cannot get
+ * one, returns SQLITE_BUSY WITHOUT consulting the busy handler — so `busy_timeout` does not cover
+ * this one statement, and only this one. The mode is a property of the FILE and survives every
+ * close, so exactly one opener ever has to convert; the rest only have to wait for it. Retry until
+ * the mode reads `wal`, whoever set it.
+ *
+ * `:memory:` answers `memory` and stays there: an in-memory database has no file to write a WAL
+ * beside, and no second process to race. That is a settled mode, not a conversion still pending.
+ */
+function enableWal(db: Database): void {
+  const settled = () => ["wal", "memory"].includes(journalMode(db));
+  const deadline = Date.now() + WAL_CONVERSION_TIMEOUT_MS;
+  let lastError: unknown = null;
+  for (;;) {
+    if (settled()) return;
+    try { db.exec("PRAGMA journal_mode = WAL"); } catch (error) { lastError = error; }
+    if (settled()) return;
+    if (Date.now() >= deadline) break;
+    Bun.sleepSync(15);
+  }
+  throw lastError ?? new Error("run-kernel: the journal never switched to WAL");
+}
+
 function initialize(db: Database): void {
-  db.exec("PRAGMA journal_mode = WAL");
+  // busy_timeout FIRST, and it is not a style choice. Every statement below needs the write lock,
+  // and a connection with no busy handler yet gets SQLITE_BUSY from the schema block the instant a
+  // second process is inside it. Two dispatches of one project open this file at the same time —
+  // the normal case, not the exotic one — and there the throw was silent: standard-publication
+  // treats a kernel it cannot open as `x_run_kernel_unavailable` and publishes nothing, so the Run
+  // disappeared from the cockpit exactly as if it had been written to the wrong path. Measured on
+  // macOS before this: 18 of 20 concurrent open pairs died with "database is locked"; after, 0 of 200.
   db.exec("PRAGMA busy_timeout = 5000");
+  enableWal(db);
   db.exec("PRAGMA synchronous = FULL");
   db.exec("PRAGMA foreign_keys = ON");
   db.exec(`CREATE TABLE IF NOT EXISTS kernel_schema (version INTEGER NOT NULL);
@@ -116,7 +156,10 @@ function initialize(db: Database): void {
 }
 
 export function openKernel(dbPath: string): KernelHandle {
-  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  // `:memory:` is a supported argument rather than a path: a journal that never outlives the
+  // process has no directory to create. Hermetic tests pass it to keep their wall clock off the
+  // disk, so the guard is the contract, not a convenience.
+  if (dbPath !== ":memory:") fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   const db = new Database(dbPath);
   try {
     initialize(db);

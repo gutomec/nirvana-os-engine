@@ -98,7 +98,7 @@ function fixture() {
     });
   };
   const run = () => {
-    const kernel = openKernel(path.join(projectRoot, "outputs", projectId, ".nirvana", "run-kernel.sqlite"));
+    const kernel = openKernel(path.join(projectRoot, ".nirvana", "run-kernel.sqlite"));
     try { return getRun(kernel, projectId, canonicalRunIdFor(projectId)); } finally { kernel.close(); }
   };
   const judgePrompt = () => fs.readFileSync(path.join(capture, "judge-prompt.md"), "utf8");

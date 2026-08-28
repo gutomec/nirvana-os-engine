@@ -11,6 +11,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawnBudgetMs } from "../../harness/tests/helpers/test-budgets.ts";
 
 const GATE = join(import.meta.dir, "..", "scripts", "check-seat-sufficiency.ts");
 const ROOTS: string[] = [];
@@ -53,39 +54,39 @@ describe("the ratchet refuses new thinness and tolerates recorded debt", () => {
     expect(r.code).toBe(1);
     expect(r.out).toContain("NEW thinness");
     expect(r.out).toContain("alpha-co/weak.md");
-  });
+  }, spawnBudgetMs(2));
 
   test("the same thin seat, baselined, passes — recorded debt", () => {
     const root = library([["alpha-co", "weak.md", THIN_BODY]]);
     const r = run(root, { baseline: ["alpha-co/weak.md"], args: ["--strict"] });
     expect(r.code).toBe(0);
     expect(r.out).toContain("No seat is new thinness");
-  });
+  }, spawnBudgetMs(2));
 
   test("an enriched seat shows the debt shrinking", () => {
     const root = library([["alpha-co", "fixed.md", SUFFICIENT_BODY]]);
     const r = run(root, { baseline: ["alpha-co/fixed.md"], args: ["--strict"] });
     expect(r.code).toBe(0);
     expect(r.out).toContain("1 enriched");
-  });
+  }, spawnBudgetMs(2));
 
   test("--record refuses to add debt without --allow-regression", () => {
     const root = library([["alpha-co", "weak.md", THIN_BODY]]);
     const r = run(root, { baseline: [], args: ["--record"] });
     expect(r.code).toBe(1);
     expect(r.out).toContain("NEW debt");
-  });
+  }, spawnBudgetMs(2));
 
   test("no baseline at all refuses under --strict rather than approving", () => {
     const root = library([["alpha-co", "good.md", SUFFICIENT_BODY]]);
     const r = run(root, { args: ["--strict"] });
     expect(r.code).toBe(1);
     expect(r.out).toContain("No debt baseline recorded");
-  });
+  }, spawnBudgetMs(2));
 
   test("a fully sufficient library with a baseline passes clean", () => {
     const root = library([["alpha-co", "good.md", SUFFICIENT_BODY]]);
     const r = run(root, { baseline: [], args: ["--strict"] });
     expect(r.code).toBe(0);
-  });
+  }, spawnBudgetMs(2));
 });

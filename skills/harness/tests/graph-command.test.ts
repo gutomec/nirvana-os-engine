@@ -12,6 +12,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const REPO = join(import.meta.dir, "..", "..", "..");
 const SCRIPT = join(REPO, "skills", "harness", "scripts", "graph.ts");
@@ -58,7 +59,7 @@ describe("nrv graph closure", () => {
     } finally {
       rmSync(pack, { recursive: true, force: true });
     }
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("nrv graph order and check", () => {

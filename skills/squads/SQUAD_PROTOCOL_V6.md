@@ -122,11 +122,13 @@ O lint vive em `skills/squads/lib/workflow-reader.ts` (`lintWorkflow`) e o port�
 | `workflow_cycle` | o grafo de passos tem ciclo | erro | aviso | — |
 | `workflow_shape_legacy` | o grafo está em dialeto legado (§28.4) | erro | aviso | `workflow_normalize_shape` |
 | `workflow_stem_case` | o stem não é `^[a-z][a-z0-9_-]*$` | erro | aviso | — |
-| `workflow_unnormalizable` | nenhuma ordem de passos pode ser derivada (`event_routes`) | aviso | aviso | — |
+| `workflow_event_router` | o documento é um roteador `event_routes`, e roteador não tem ordem de passos | informativo | informativo | — |
 | `workflow_body_too_long` | o corpo passou do teto de §28.2 | aviso | aviso | — |
 | `workflow_orphan` | nenhuma capability invoca este workflow | aviso | aviso | — |
 
-As três últimas são conselho sob qualquer protocolo. Um corpo longo e um workflow sem dono são fatos sobre autoria; um documento que não vira DAG é um fato sobre o documento, e transformá-lo em erro obrigaria alguém a inventar uma ordem que o autor não escreveu.
+As duas últimas são conselho sob qualquer protocolo: um corpo longo e um workflow sem dono são fatos sobre autoria, não sobre o contrato.
+
+`workflow_event_router` não é nem conselho. Um documento com `event_routes` declara rotas que chegam independentes — canal, condição, prioridade e cadeia própria em cada uma —, então não existe ordem entre elas para derivar, e não derivar nenhuma é a leitura certa de um arquivo certo. Ele continua no relatório porque o `steps[]` vazio que ele produz ficaria sem explicação, e sai como `info`, que não conta para veredito nem para o número de critérios passados. Antes era aviso, e o custo apareceu na biblioteca: duas squads corretas carregavam uma constatação permanente e, sob `--strict`, um veredito REJECTED que não tinham feito nada para merecer. São **dois arquivos em 629** (`nirvana-crypto-trading` e `nirvana-ai-trading`, ambos `event-driven-reactive.yaml`, medido em 27/08/2026) — poucos demais para pagar uma segunda forma canônica que leitor, lint, migração, construtor de prompt, grafo e catálogo passariam a tratar. Por isso a resposta é reconhecer a forma no relatório, não canonizá-la no protocolo.
 
 Os fixers **nunca inventam**. Eles renomeiam, movem e reformatam o que já está lá: uma extensão que sobrou numa ref, prosa saindo de `task: |` para o corpo verbatim, um `depends_on` que nomeava um output virando o passo que o cria. Uma referência que não resolve para nada continua sendo constatação: escrever a task faltante seria fabricar o método da squad.
 

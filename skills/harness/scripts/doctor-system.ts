@@ -800,6 +800,54 @@ try {
   add("routing: aliases", "WARN", `cannot read alias groups: ${(e as Error).message}`);
 }
 
+// Invocation keys nothing reads. `triggers:` and `trigger_threshold:` name a
+// command (`*full-tutoring`, `*wiki`) and how many must match before a workflow
+// fires — a convention from before the agentic router, and one NO version of
+// the protocol ever defined: v4 does not, v5 mentions it zero times, and v6
+// mentions it once, in the line that preserves it verbatim in `extensions`.
+// No code reads either key. Routing is decided by produces, keywords and
+// example_briefs, weighed by a maestro comparing candidates.
+//
+// So this reports and stops. There is no fixer, and there will not be one:
+// those commands are text the author wrote, the normalizer keeps them on
+// purpose, and deleting an author's content to clear a diagnostic line is the
+// opposite of what the fixers do. The goal is for dead surface to stop being
+// INVISIBLE, not to stop existing. WARN, never FAIL — same contract as the
+// Protocol section above.
+if (fs.existsSync(homeSquads)) {
+  try {
+    const { readSquadWorkflows } = await import("../../squads/lib/workflow-reader.ts");
+    const VESTIGIAL = ["triggers", "trigger_threshold"] as const;
+    const perKey = new Map<string, number>(VESTIGIAL.map((k) => [k, 0]));
+    let files = 0, squads = 0, workflows = 0;
+    for (const slug of fs.readdirSync(homeSquads)) {
+      if (slug.startsWith(".")) continue;
+      let hit = false;
+      for (const w of readSquadWorkflows(path.join(homeSquads, slug))) {
+        if (!w.normalized) continue;
+        workflows++;
+        const ext = w.normalized.canonical.extensions;
+        const found = VESTIGIAL.filter((k) => ext[k] !== undefined);
+        if (!found.length) continue;
+        files++; hit = true;
+        for (const k of found) perKey.set(k, (perKey.get(k) ?? 0) + 1);
+      }
+      if (hit) squads++;
+    }
+    const spread = VESTIGIAL.filter((k) => (perKey.get(k) ?? 0) > 0).map((k) => `${perKey.get(k)}× \`${k}\``).join(" · ");
+    if (files === 0) {
+      add("routing: vestigial triggers", "PASS", `${workflows} workflow(s) read, none declares an invocation key the router ignores`);
+    } else {
+      add("routing: vestigial triggers", "WARN",
+        `${files} of ${workflows} workflow(s) in ${squads} squad(s) declare ${spread} — decorative. `
+        + `No protocol version defines those keys and no code reads them; routing goes by produces, keywords and example_briefs. `
+        + `They are preserved verbatim in \`extensions\` and no fixer removes them: this line exists so the dead surface is visible, not so it gets deleted.`);
+    }
+  } catch (e) {
+    add("routing: vestigial triggers", "WARN", `could not read the workflow library: ${(e as Error).message}`);
+  }
+}
+
 // Corpus language, because it decides how good `fast` mode can be.
 //
 // The agentic router (the default) reads the digest and reasons, so it routes a

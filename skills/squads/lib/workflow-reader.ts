@@ -28,8 +28,9 @@
  * Severity is decided by the manifest's protocol, not by the shape: what is an
  * error under `protocol: "6.0"` is a warning under `"5.0"`, so the 204 installed
  * squads keep validating exactly as they do today while a v6 squad enters
- * clean. The exceptions are the body ceiling, the orphan workflow and the
- * unnormalizable document, which are advice under either protocol.
+ * clean. The body ceiling and the orphan workflow are advice under either
+ * protocol, and an `event_routes` document is not a finding against the squad
+ * at all: it is a router, and a router has no step order to withhold.
  */
 
 import * as fs from "node:fs";
@@ -43,6 +44,9 @@ import { LIMITS } from "../../_shared/validators/limits.ts";
 export const WORKFLOW_EXTS = [".md", ".yaml", ".yml"] as const;
 const WORKFLOW_EXT_RE = /\.(ya?ml|md)$/i;
 const COMPONENT_EXT_RE = /\.(ya?ml|md|markdown)$/i;
+
+/** The component directory an author writes into a step reference. */
+const COMPONENT_DIR_RE = /^(?:agents|tasks)\//i;
 
 /** `^[a-z][a-z0-9_-]*$` — the canonical form of a workflow name and a step id. */
 export const CANONICAL_ID = /^[a-z][a-z0-9_-]*$/;
@@ -266,7 +270,7 @@ function normalizeStep(raw: unknown, index: number, out: NormalizeResult): Canon
   // task: a reference, never a paragraph. Prose moves to the body verbatim.
   const proseParts: string[] = [];
   if (typeof src.task === "string") {
-    if (isRefShaped(src.task)) step.task = stripComponentExt(src.task.trim());
+    if (isRefShaped(src.task)) step.task = componentStem(src.task.trim());
     else { proseParts.push(src.task); out.inlineProse.push(id); }
   } else if (src.task !== undefined) {
     step.meta.task = src.task;
@@ -274,7 +278,7 @@ function normalizeStep(raw: unknown, index: number, out: NormalizeResult): Canon
   for (const key of ["action", "prompt"] as const) {
     const v = src[key];
     if (typeof v === "string" && v.trim()) {
-      if (key === "action" && isRefShaped(v) && !step.task) { step.task = stripComponentExt(v.trim()); continue; }
+      if (key === "action" && isRefShaped(v) && !step.task) { step.task = componentStem(v.trim()); continue; }
       proseParts.push(v);
       if (v.includes("\n")) out.inlineProse.push(id);
     } else if (v !== undefined) {
@@ -305,8 +309,23 @@ function normalizeStep(raw: unknown, index: number, out: NormalizeResult): Canon
   return step;
 }
 
-function stripComponentExt(s: string): string {
-  return s.replace(COMPONENT_EXT_RE, "");
+/**
+ * A component reference → the stem the graph names.
+ *
+ * The directory and the encoding are how an author writes a path; the step
+ * names the component, the same way §28.6 has a capability name the workflow
+ * and not its file. The executor already reads a reference this way —
+ * `squad-exec.ts` strips `^(agents|tasks)/` and the extension before loading
+ * the document — so a lint that compared the raw value against the stems on
+ * disk reported a file it could open as missing. Nine workflows of brandcraft
+ * wrote `task: tasks/inspect-quality.md`, every file present, and the gate
+ * called thirteen references dangling.
+ *
+ * Accepting the written form is not making it canonical: `workflow_refs_repair`
+ * still writes the bare stem back whenever it renames.
+ */
+function componentStem(s: string): string {
+  return s.replace(COMPONENT_DIR_RE, "").replace(COMPONENT_EXT_RE, "");
 }
 
 /**
@@ -547,7 +566,7 @@ export function renderProseBody(result: NormalizeResult): string {
 
 // ── lint ────────────────────────────────────────────────────────────────────
 
-export type LintSeverity = "error" | "warning";
+export type LintSeverity = "error" | "warning" | "info";
 
 export interface LintFinding {
   id: string;
@@ -590,7 +609,7 @@ export const WORKFLOW_LINT_IDS = [
   "workflow_cycle",
   "workflow_shape_legacy",
   "workflow_stem_case",
-  "workflow_unnormalizable",
+  "workflow_event_router",
   "workflow_body_too_long",
   "workflow_orphan",
 ] as const;
@@ -598,7 +617,18 @@ export type WorkflowLintId = (typeof WORKFLOW_LINT_IDS)[number];
 
 /** Advice under either protocol: a long body and an unused workflow are facts
  *  about authorship, not about the contract. */
-const ALWAYS_WARNING = new Set<string>(["workflow_body_too_long", "workflow_orphan", "workflow_unnormalizable"]);
+const ALWAYS_WARNING = new Set<string>(["workflow_body_too_long", "workflow_orphan"]);
+
+/**
+ * Never counted, under any protocol. A document that declares `event_routes`
+ * is a router: each route names a channel, a condition and its own chain, and
+ * the routes arrive independently. There is no order between them to derive,
+ * so deriving none is the correct reading of a correct file — not a defect.
+ * It stays in the report because the empty `steps[]` it produces would
+ * otherwise be unexplained, and it is `info` because the alternative was a
+ * permanent warning against two squads that are right.
+ */
+const ALWAYS_INFO = new Set<string>(["workflow_event_router"]);
 
 export function bodyWordCount(body: string): number {
   const t = body.trim();
@@ -614,7 +644,9 @@ export function lintWorkflow(canonical: CanonicalWorkflow, ctx: LintContext): Li
   const v6 = String(ctx.protocol).trim() === "6.0";
   const findings: LintFinding[] = [];
   const add = (id: WorkflowLintId, message: string, evidence: string) => {
-    findings.push({ id, severity: ALWAYS_WARNING.has(id) || !v6 ? "warning" : "error", message, evidence, where: ctx.file });
+    const severity: LintSeverity = ALWAYS_INFO.has(id) ? "info"
+      : ALWAYS_WARNING.has(id) || !v6 ? "warning" : "error";
+    findings.push({ id, severity, message, evidence, where: ctx.file });
   };
 
   if (ctx.inlineProse.length) {
@@ -667,7 +699,9 @@ export function lintWorkflow(canonical: CanonicalWorkflow, ctx: LintContext): Li
   }
 
   if (ctx.unnormalizable) {
-    add("workflow_unnormalizable", "no step order can be derived from this document (`event_routes` is a router, not a DAG)", ctx.file);
+    const routes = canonical.extensions.event_routes;
+    const n = isMapping(routes) ? Object.keys(routes).length : Array.isArray(routes) ? routes.length : 0;
+    add("workflow_event_router", `an event router: ${n} \`event_routes\` entr${n === 1 ? "y" : "ies"}, each with its own channel and chain — there is no step order between them, so none is derived`, ctx.file);
   } else if (ctx.dialects.length) {
     add("workflow_shape_legacy", `${ctx.dialects.length} legacy dialect(s) — the canonical shape is \`steps[]\` with \`requires\``,
       ctx.dialects.join(", "));

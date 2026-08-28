@@ -8,6 +8,395 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Uma rota sob a chave errada diz isso, em vez de culpar um cargo
+
+O `investigation-bureau` foi auditado em 28/08/2026 e o portão respondeu nove
+vezes com `route_to (empty) names no seat of this business`. Cada uma dessas
+rotas nomeava um cargo real. Estavam escritas sob a chave `employee:`, então a
+mensagem imprimia um marcador onde vai um nome de cargo, e a auditoria gastou o
+esforço dela descobrindo que as rotas não estavam vazias coisa nenhuma.
+
+O `auto_route_unknown_employee` agora separa os dois casos. Quando `route_to`
+está ausente e outra chave da mesma rota carrega um cargo existente, a
+constatação nomeia essa chave, nomeia o cargo e afirma que a rota está morta dos
+dois lados: `route_to is absent: the key employee holds ib-chief-detective, a
+seat of this business.` Quando duas chaves carregam nome de cargo, ela lista as
+duas e não escolhe nenhuma. Quando `route_to` está mesmo vazio, ela diz
+`route_to is empty` e para de imprimir `(empty)` na posição onde vai o nome do
+cargo.
+
+Nenhum alias foi criado e nenhum fixer foi escrito. `employee:` não é uma segunda
+grafia de `route_to`: este módulo lê `r.route_to`, o `router.js` pula qualquer
+entrada cujo `route_to` não seja string, e uma segunda chave aceita seria mais
+uma coisa que todo leitor futuro teria de tratar. A reescrita mecânica perdeu nos
+números da própria biblioteca. Em 63 empresas e 691 rotas, em 28/08/2026, nenhuma
+rota carrega cargo sob outra chave, enquanto 66 rotas carregam nome de cargo sob
+`requires_escalation_to`, que a §13.2 define como alvo de escalonamento e nunca
+como destino. Essas 66 também declaram um `route_to` válido, então um fixer não
+tocaria nelas hoje; elas são a prova de que uma chave carregando nome de cargo
+não significa `route_to`, e reescrever com base nessa heurística é fixer
+inventando intenção (v6 §28.3). A mensagem é o conserto.
+
+## 0.10.4 — 2026-08-28
+
+### Um workflow escrito como roteador de eventos deixou de ser reportado como quebrado
+
+O `nirvana-crypto-trading` carregava um aviso permanente. O
+`event-driven-reactive.yaml` dele declara 23 rotas de evento, cada uma com canal,
+condição, prioridade e cadeia de agentes própria, e uma capability o invoca de
+verdade. O portão respondia `workflow_unnormalizable` a cada rodada, dizendo que
+nenhuma ordem de passos podia ser derivada do documento, e sob `--strict` aquele
+único aviso bastava para imprimir REJECTED contra uma squad que não tinha feito
+nada de errado.
+
+Um documento cujo grafo não se deriva porque ele não é um grafo não é um workflow
+malformado. É um workflow de outra natureza. A constatação agora é
+`workflow_event_router`, severidade `info`, e não conta para nada: nem para o
+veredito, nem para o total de avisos, nem para o número de critérios passados. A
+linha `PASS n criteria` de toda squad cai em um por causa disso, porque um
+critério `info` não é critério que uma entidade passe ou reprove. Ela continua
+aparecendo, porque o `steps[]` vazio que o documento produz ficaria
+sem explicação, e agora diz o que o documento é em vez de dizer o que não deu
+para fazer com ele: `an event router: 23 event_routes entries, each with its own
+channel and chain`.
+
+Nenhuma forma canônica de roteador foi criada, e isso foi decisão, não
+esquecimento. São dois arquivos em 629 com `event_routes`, os dois chamados
+`event-driven-reactive.yaml`, no `nirvana-crypto-trading` e no
+`nirvana-ai-trading`. Duas instâncias não pagam uma segunda forma que leitor,
+lint, migração, construtor de prompt, grafo e catálogo teriam cada um de
+aprender. O `nrv migrate` continua recusando os dois sem `--force`, e a recusa é a
+metade honesta: forçar `steps[]` inventaria uma ordem entre eventos que chegam
+independentes.
+
+### O doctor passa a nomear as chaves de invocação que ninguém lê
+
+`triggers:` e `trigger_threshold:` nomeiam um comando (`*full-tutoring`, `*wiki`,
+`*followup {jid}`) e quantos precisam casar para o workflow disparar. Medido na
+biblioteca instalada em 27/08/2026: 302 de 629 workflows, em 101 das 206 squads,
+declaram uma das duas. `trigger_threshold` aparece em 256, `triggers` em 46.
+
+Nenhuma versão do protocolo jamais definiu qualquer uma delas. A v4 não define, a
+v5 tem zero menções e a v6 tem uma, na linha que preserva chaves de topo legadas
+verbatim dentro de `extensions`. Código nenhum lê as duas. O roteamento é decidido
+por `produces`, `keywords` e `example_briefs`, pesados por um maestro que compara
+candidatos, o que faz daqueles comandos uma convenção anterior ao roteador
+agêntico.
+
+O `nrv doctor` passa a reportar a contagem como aviso, ao lado do painel de
+protocolo que ele já imprime. Nada apaga aquilo, e nada vai apagar. É texto
+autoral, o normalizador o preserva de propósito, e destruir conteúdo do autor
+para limpar uma linha de diagnóstico é o oposto do que um fixer faz. O objetivo é
+a superfície morta parar de ser invisível, não parar de existir.
+
+A contagem sai do normalizador, não de um grep, e é por isso que ela passa do que
+uma busca por chave de topo encontra: 24 daqueles workflows já estão em v6 e
+carregam a chave dentro do bloco `extensions:` deles.
+
+### Dois reparos mecânicos mentiam: um fabricava critério, o outro não reparava nada
+
+Os dois apareceram numa auditoria real do `brandcraft` em 27/08/2026, e o
+primeiro teria piorado aquela squad se alguém tivesse rodado `--fix` antes de
+olhar.
+
+O `fix_tasks_acceptance_criteria` testava se a task tinha cabeçalho de aceitação
+e, não tendo, acrescentava um bloco genérico. As trinta e duas tasks daquela
+squad escreviam o critério verdadeiro sob `## Postconditions`. O parser que o
+juiz lê, `acceptanceCriteriaOf`, casa `## Acceptance Criteria` e mais nada, então
+o fixer teria deixado cada task com o contrato do autor sob um cabeçalho e um
+placebo sob o cabeçalho que de fato é cobrado. Ele ainda acrescentava um bloco
+`## Output Schema` declarando outputs que a task nunca teve, o que virava o teste
+de `outputs:` do detector para verdadeiro e deixava a constatação sem poder
+disparar de novo. Um fixer que cala a própria constatação inventando a resposta é
+pior que a lacuna que ele fechou, porque a lacuna pelo menos era visível.
+
+Agora ele renomeia, e não fabrica nada. A lista de sinônimos foi medida, não
+chutada: nas 206 squads instaladas, os critérios que não estão sob
+`## Acceptance Criteria` vivem sob `Quality criteria` (37 arquivos de task),
+`Critérios de Qualidade` (22), `Acceptance` e `Acceptance (binário)` (14) e
+`Postconditions` (9). O `Checklist` ficou de fora de propósito — nesta biblioteca
+ele abre subseções `### Pre` e `### Post`, e renomeá-lo promoveria pré-condições
+ao contrato que o juiz cobra. Dos 291 arquivos de task que hoje disparam a
+constatação, 121 carregam critério real que passa a ficar sob o cabeçalho que o
+juiz lê, em 19 squads. Os outros 170 continuam constatação. A v6 §28.3 já tinha
+resolvido essa pergunta para o fixer irmão: escrever o critério é escrever o
+método da squad, e quem escreve isso é o autor.
+
+O `workflow_refs_repair` casava a referência só por caixa e separador, sem nunca
+tirar o diretório que o autor escreve no caminho. Nove workflows do brandcraft
+escreviam `task: tasks/inspect-quality.md` com todos os arquivos presentes; o
+lint compara o valor com o stem em disco, então presente virava ausente e doze
+das treze referências pendentes sobreviveram intactas ao `--fix`. O executor
+sempre leu essa forma corretamente, porque o `squad-exec.ts` tira
+`^(agents|tasks)/` antes de carregar um componente: o portão e o runtime
+discordavam sobre um arquivo que os dois conseguiam abrir.
+
+A normalização da referência de passo passa a tirar o diretório do componente do
+mesmo jeito que já tirava a codificação, e o reparo tira o diretório antes de
+casar e escreve o stem puro de volta. Aceitar a forma escrita não é adotá-la como
+canônica: a §28.6 mantém a referência sem diretório e sem extensão, e é isso que
+o `--fix` grava. Medido sobre a biblioteca instalada, as referências de passo
+pendentes caem de 1021 para 829, e as squads que carregam a constatação, de 78
+para 62.
+
+### O cockpit lia `0 running` enquanto dois despachos escreviam no disco
+
+Em 27/08/2026 o dono abriu o Glance com dois despachos vivos e o painel de Runs
+mostrou três cards parados de cinco dias antes e nada rodando. O painel de logs
+da mesma tela, naquele mesmo segundo, transmitia `ARTIFACT_TOUCHED` desses dois
+traces. Uma tela, duas fontes, uma delas certa.
+
+As duas liam um arquivo chamado `run-kernel.sqlite`. Não era o mesmo arquivo. O
+Glance abre `<projeto>/.nirvana/run-kernel.sqlite`, e o multi-target e o execution
+runner do control plane também; o `dispatch.ts` só abria esse quando recebia
+`--run-id`, e sem a flag escrevia em
+`<projeto>/outputs/<pid>/.nirvana/run-kernel.sqlite`, dentro do scaffold. A flag
+é o que o Glance passa quando foi ele que começou o run. Todo despacho que uma
+pessoa inicia vai sem ela, então o caso normal publicava o Run num banco que mais
+ninguém abre.
+
+Aquilo era deliberado, e o comentário dizia: sem a flag cada despacho mantinha o
+próprio kernel, byte a byte o comportamento anterior ao kernel. A compatibilidade
+era real e o preço dela era o cockpit inteiro.
+
+Agora é um kernel por projeto, com a flag ou sem ela. O Run é registro de
+projeto e pertence a onde o projeto o lê; o scaffold é diretório de rascunho que
+o `nrv clean <pid>` apaga, e registro não mora dentro de rascunho. O `nrv clean`
+deixa de levar o Run junto com o scaffold, que é a mesma regra que a linha do
+run-ledger e o audit já seguiam. Uma consequência vale saber: o id do Run é
+derivado do id do projeto, então redespachar sob um id de projeto cujo Run já
+terminou é recusado com `x_run_id_collision` mesmo depois de um clean. Passe um
+`--project` novo.
+
+Dois despachos de um projeto agora escrevem num banco só, e o teste que reproduz
+a tela do dono segura os dois runtimes numa barreira para que os dois processos
+estejam comprovadamente vivos no mesmo instante. Ele achou um segundo defeito na
+hora: o `openKernel` definia `PRAGMA busy_timeout` depois de `PRAGMA journal_mode
+= WAL`, e a conversão para WAL pega lock exclusivo e devolve `SQLITE_BUSY` sem
+nunca consultar o busy handler. Dezoito de vinte pares de abertura concorrente
+morreram com "database is locked". A publicação trata kernel que não abre como
+`x_run_kernel_unavailable` e não publica nada, então o Run sumiria do cockpit de
+novo, por outro caminho, com o path já corrigido. O timeout agora é o primeiro
+pragma e a conversão para WAL tem retry até o modo do arquivo ler `wal`, tenha
+sido qual processo for a convertê-lo: 200 de 200 limpos.
+
+A fronteira entre projetos não muda. O kernel fica sob o root do projeto, então
+um projeto continua sem enxergar os Runs do outro, e agora um teste fixa isso
+também.
+
+## 0.10.3 — 2026-08-27
+
+### Mais dez testes mediam o disco, e ninguém tinha escolhido isso
+
+A entrada abaixo consertou um arquivo e deixou uma lista de dez. O que esses dez
+têm em comum não é erro de ninguém. Um teste novo abre o Run Kernel como o
+vizinho abre, o vizinho abriu um arquivo SQLite de verdade num diretório
+temporário, e o `PRAGMA synchronous = FULL` transforma cada evento registrado num
+fsync. O disco chega por herança, nunca por decisão.
+
+Agora a decisão tem onde morar. O `tests/helpers/test-kernels.ts` fica ao lado do
+`temp-dirs.ts` e do `test-budgets.ts` e oferece duas portas: `openTestKernel()`,
+hermético, o padrão; e `openTestKernelFile(path)`, a exceção nomeada, para o teste
+que merece o disco. O `closeTestKernels()` solta qualquer uma das duas no
+`afterEach`, que é o que impede um handle vazado de virar EBUSY na limpeza do
+Windows.
+
+Uma pergunta separou os dez. Este teste lê o banco de volta por uma conexão que
+não é a mesma com que escreve? O `:memory:` pertence a quem o abriu, então
+qualquer outro leitor — um filho executado, um servidor HTTP, um segundo handle
+que o código sob teste abre a partir de um caminho recebido — encontra um banco
+vazio e toda asserção passa em cima do nada. Mentira verde custa mais que um
+fsync honesto.
+
+Três respostas foram não, e esses diários foram para a memória: o
+`gauntlet-store`, cujos três casos escrevem e leem pelo mesmo handle; o caso do
+coordenador no `multi-target-dispatch-adapters`, onde os filhos de dispatch falsos
+respondem por arquivos e nunca abrem o kernel; e o caso de replay pós-crash no
+`glance-multi-target-projection`, o único daquele arquivo que não passa pelo
+servidor.
+
+Duas respostas foram sim, e nenhuma das duas tinha orçamento. O
+`standard-publication` é o arquivo que derrubou a `main` na execução
+`33098410397`. O `openStandardPublication` recebe um caminho e abre o próprio
+handle, então as leituras do teste chegam ao diário por fora; o caso de colisão
+então percorre os sete estados terminais, e cada um custa um `prepare` mais três
+leituras, vinte e oito aberturas do mesmo arquivo com a inicialização do esquema
+refeita em cada uma delas. O `glance-control-plane` dirige um servidor vivo que
+segura as próprias conexões com dois bancos, os dois abertos com
+`synchronous = FULL`. Nos dois o disco é a cobertura, então os dois ficam com ele
+e os dois ganham `KERNEL_BUDGET_MS`.
+
+Cinco ficaram exatamente como estavam. O `dispatch-gauntlet-ledger`, o
+`dispatch-standard-kernel`, o `gauntlet-evaluator-dispatch`, o `judge-x-dispatch`
+e o `multi-target-cli` executam um dispatch de verdade e leem o que o filho
+escreveu. Um banco na memória deste processo é invisível para um processo filho, o
+que faz deles o caso mais claro de leitura de volta, e eles já carregam orçamentos
+`spawnBudgetMs` maiores que o do kernel.
+
+A prova é estatística, numa máquina de 10 núcleos com quatro laços de fsync
+disputando o disco. Quarenta cópias concorrentes dos três arquivos sem servidor,
+640 execuções antes da mudança e 640 depois: 18 timeouts viraram 0. Os 18 eram o
+mesmo caso, "a Run that already ended under the same id is refused before any
+producer", com média de 5.943 ms contra o padrão de 5 s do Bun. O relógio do grupo
+caiu de 18,2 s de média e 23,4 s na cauda para 15,8 s e 19,9 s. Medidos sozinhos,
+os dois arquivos cujos diários mudaram foram de 9,0 s de média e 9,9 s de máximo
+para 8,0 s e 9,0 s, em 240 execuções de cada lado, sem nenhum timeout dos dois
+lados: no macOS eles são baratos demais para cruzar os 5 s, e a exposição que
+carregavam tinha formato de Windows.
+
+Os dois arquivos do Glance rodaram sequencialmente, sessenta vezes de cada lado,
+contra a mesma disputa. Nenhum dos lados estourou, a média caiu de 3,0 s para
+2,5 s, e uma amostra em sessenta chegou a 6,9 s contra um pior caso anterior de
+5,4 s. Essa cauda é argumento a favor do orçamento, não contra: sob o padrão do
+Bun ela é um build vermelho, e nada nela é culpa do teste.
+
+Um achado pertence ao arreio de carga, não ao CI. O `startServer` resolve
+`port: 0` sondando com um `Bun.serve` descartável, parando-o e deixando o chamador
+ligar o mesmo número, então duas cópias iniciadas no mesmo instante escolhem 3737
+e uma morre com EADDRINUSE. No CI roda uma cópia só de cada arquivo, então isso
+nunca dispara lá. É por isso que os arquivos do Glance foram medidos
+sequencialmente.
+
+### Um teste que reprovava por sorteio, e o fsync que decidia o sorteio
+
+O `gauntlet-revision-loop.e2e.test.ts` vinha ficando vermelho no
+`smoke (windows-latest)` a partir de branches cujo diff não encostava em nada
+perto dele. Três dessas falhas caíram na `main`, que só recebe código já aprovado
+nos três sistemas, então eram intermitência por definição. O caso que o CI nomeou
+foi "a typed agent-x producer crosses the revision loop to completed", estourando
+em 8.415 ms contra o padrão de 5 s do Bun.
+
+A distância é a história inteira. Aquele caso é dos mais baratos do arquivo: 14 ms
+numa máquina ociosa. Na mesma execução em que reprovou, os vizinhos terminaram
+entre 195 e 490 ms, e a perna gêmea do próprio `test.each`, que percorre o código
+idêntico, terminou em 688 ms. Nada no trabalho explica a diferença. O lugar onde o
+trabalho acontecia explica. Todo caso do arquivo abria o Run Kernel como um banco
+SQLite real num diretório temporário, e o kernel abre com `synchronous = FULL`,
+então cada um dos 17 eventos que o laço registra custa um fsync. O relógio do
+teste media o disco do runner, e o Windows é o mais lento dos três.
+
+O diário agora vive em memória. Nenhum caso do arquivo lia aquele banco de volta;
+eles verificam projeções, payloads de evento e os arquivos que os produtores
+escrevem. O disco não comprava cobertura nenhuma e cobrava por uma durabilidade
+que o `afterEach` apagava milissegundos depois. O comportamento em disco do kernel
+segue coberto onde ele é o assunto, no `run-kernel.test.ts` e nos arquivos e2e
+entre processos que compartilham um arquivo de banco com um filho executado.
+
+Um achado fica fora do teste. O `openKernel` criava o diretório pai de qualquer
+caminho que recebesse, de modo que `:memory:` só funcionava porque
+`path.dirname(":memory:")` é `"."` nas duas plataformas e criar `"."` não faz
+nada. Agora é um argumento suportado, com guarda e documentado. Funcionar por
+acidente é como se escreve a próxima falha exclusiva do Windows.
+
+A prova é estatística. Sob 40 cópias simultâneas do arquivo numa máquina de 10
+núcleos, com quatro laços de fsync disputando o disco, 640 execuções antes da
+mudança produziram 100 estouros espalhados por nove casos diferentes, inclusive
+aquela perna gêmea; 640 execuções depois, sob a mesma carga, produziram 5, todos
+num caso só. O caso nomeado saiu de 1.356 ms de média e 4.518 ms na cauda para
+573 ms e 2.212 ms. Duzentas execuções seguidas sem carga passaram então sem uma
+falha.
+
+Sem `retry`, sem aumentar orçamento, sem `skip`. Cada um deles esconde o sorteio e
+mantém o treinamento de re-rodar sem ler, que é o que torna invisível a próxima
+falha verdadeira naquele arquivo. Vale registrar contra isso: o caso que o CI
+nomeou nunca teve orçamento declarado. Os dois `KERNEL_BUDGET_MS` do arquivo
+pertencem aos dois casos que executam processos.
+
+Um caso fica de fora. O "a typed Business crosses the revision loop, the real
+offline gate and the post-gate" é o único que ainda cruzou os 5 s sob aquela
+carga, 7 amostras em 400 contra 65 antes, porque roda o pipeline de entrega e o
+pós-gate em cima do kernel. Esse custo não é o que esta mudança remove, e ele
+também não tem orçamento. É um corte próprio.
+### O shim não é o programa: no Windows sobe o que ele nomeia
+
+Um `.cmd` escrito pelo npm não é a CLI. É um arquivo de lote de cinco linhas cuja
+única função é rodar `node <script> %*`. O driver vinha iniciando o arquivo de
+lote, o que significa iniciar o `cmd.exe`, e o `cmd.exe` encerra a linha de
+comando na primeira CR/LF de qualquer argumento. A versão 0.10.2 curou isso para
+o `claude` levando a diretiva para um arquivo. Oito adaptadores e a camada leve
+continuavam com a mesma forma, e uma cura replicada dez vezes é um desenho que
+não foi consertado.
+
+O `resolveExecutable` agora lê o shim, pega o interpretador e o script que ele
+nomeia, e sobe esse par direto. Sem shell, sem reinterpretação, sem linha de
+comando para ninguém cortar: o filho inicia exatamente como um `.exe` de verdade
+já inicia nessa plataforma.
+
+Medido sobre o argv que o despacho de squad montava, com a diretiva na posição
+que ela tinha no dia da quebra (5.875 caracteres, primeira quebra de linha no
+183). Pelo `cmd.exe`: 6.031 caracteres de argumentos enviados, 231 entregues,
+5.800 descartados na quebra (96,2%), levando junto as duas concessões
+`--add-dir` e o `--dangerously-skip-permissions`. Direto: 11 elementos de argv,
+6.016 caracteres, nada descartado.
+
+A leitura é literal e recusa em vez de adivinhar. Um shim que rearranja o que
+repassa (`%1`, `SHIFT`), define uma variável de ambiente que o spawn direto não
+reproduziria, deixa uma variável sem expandir, põe o `%*` em qualquer lugar que
+não seja o fim, ou nomeia um interpretador ou script que não está em disco não
+produz candidato nenhum, e quem chamou fica com o caminho antigo pelo
+interpretador, com `quoteForCmd` em cada argumento. Um interpretador que é ele
+mesmo um `.cmd` também é recusado, porque resolvê-lo só recai na mesma
+armadilha. As duas gerações de shim do npm são lidas, primeiro o `node.exe`
+local e depois o nome puro no PATH, que é a ordem do próprio `IF EXIST` do shim.
+
+A cura do `--append-system-prompt-file` de 0.10.2 continua exatamente onde está.
+Agora ela protege o fallback, e não o caminho normal.
+
+Depois disso um runner Windows pegou o caminho direto de verdade, e ele se
+sustenta. Os nove adaptadores sobem por ele, incluindo a matriz de entrega de
+prompt de 300 KB; um turno do maestro roda de ponta a ponta nele, com o prompt
+pelo stdin, o stream-json interpretado e o `--resume` honrado; e a diretiva
+multilinha chega ao argv do próprio filho byte a byte, com as duas concessões
+`--add-dir` na frente dela. Esse último é o elo que uma máquina sem Windows não
+consegue checar: um argumento que carrega uma quebra de linha atravessa inteiro o
+`CreateProcess` e o parser de linha de comando do filho. Agora ele é checado a
+cada execução.
+
+Ainda não verificado: o shim que o runner lê é um lançador `@echo off` simples,
+não um escrito pelo `cmd-shim` do npm, então o ramo `_prog` e a forma antiga de
+dois ramos estão cobertos por fixtures, não por uma CLI instalada. Um shim de
+gerador fora de npm, pnpm e yarn nunca passou por este parser — por construção
+ele não produz candidato e mantém o caminho antigo, que é o comportamento fixado
+pelos testes de fallback.
+### Quando o Bun some, só um de três lugares dizia o que fazer
+
+O Bun é o runtime inteiro, então a ausência dele trava tudo, e três lugares
+diferentes podem ser o primeiro a notar. Só um deles resolvia.
+
+O `packaging/pack/setup.sh` já estava certo: o comando exato, encadeado com o
+passo seguinte, mais o alerta contra `npm install -g bun` e o EACCES que ele rende
+em `/usr/local`. O `packaging/pack/setup.ps1` respondia à mesma falha em uma
+linha, apontando para `https://bun.sh` enquanto segurava o comando que tinha
+tentado três linhas antes. Agora ele imprime esse comando, o passo de rodar de
+novo e o `winget install Oven-sh.Bun`. A linha do winget importa porque política
+de execução é o mais provável que bloqueou o one-liner do PowerShell numa máquina
+Windows corporativa, e quem foi bloqueado uma vez é bloqueado de novo pelo mesmo
+conselho.
+
+O terceiro caso não era de nenhum instalador. O Bun pode sumir *depois* de uma
+instalação bem-sucedida: máquina nova, PATH limpo, `~/.bun` apagado. Quem falha aí
+é o `nrv`, e ele imprimia `nrv: bun not found` e parava. Os dois lançadores agora
+respondem pelo sistema em que estão rodando. O `bin/nrv` lê o `uname -s` e dá o
+instalador por curl num kernel Unix, o do PowerShell mais o winget sob Git Bash
+(MINGW/MSYS/CYGWIN); o `nrv.cmd` que o `scripts/install.ts` gera leva o mesmo texto
+no dialeto do cmd.exe, escapado para que um `|` não redirecione e um `)` não feche
+o bloco `if` em volta. Um sistema recebe um comando. Uma lista de três opções faz
+o leitor escolher, e a escolha errada é uma segunda falha.
+
+O `setup.ps1` não tinha regra própria de fim de linha, e é por isso que a asserção
+sobre as linhas dele passava no macOS e no Ubuntu e falhava no Windows: o Git
+entregava LF para dois runners e CRLF para o terceiro. O `.gitattributes` agora
+fixa `*.ps1` em `eol=crlf`, a convenção nativa do arquivo e a mesma que o
+`bin/*.cmd` já carregava. O que o comprador roda deixa de depender de quem clonou
+o repositório, e o hash que o `check-published-packs` compara com as bases
+publicadas também.
+
+O teste executa o `bin/nrv` com um PATH sem bun e um HOME sem `~/.bun`,
+falsificando o `uname` a cada caso, então o ramo do Git Bash fica provado a partir
+do macOS. O `nrv doctor` continua relatando a versão do Bun sem compará-la ao
+`>=1.0.0` que o `package.json` declara. Essa lacuna é sobre versão, não sobre
+ausência, e fica onde está.
+
 ## 0.10.2 — 2026-08-27
 
 ### Uma quebra de linha num argumento cortava todas as flags atrás dela, no Windows

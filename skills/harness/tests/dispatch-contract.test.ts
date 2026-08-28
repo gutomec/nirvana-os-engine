@@ -16,6 +16,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
+import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const ROOT = path.resolve(import.meta.dir, "..", "..", "..");
 const GATE = path.join(ROOT, "scripts", "check-dispatch-contract.ts");
@@ -136,7 +137,7 @@ describe("check-dispatch-contract — the gate itself", () => {
     const r = spawnSync(process.execPath, [GATE], { encoding: "utf8", cwd: ROOT });
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("clean");
-  });
+  }, spawnBudgetMs(2));
 
   test("fails when an example goes back to blocking", () => {
     expect(sandbox((dir) => {
@@ -163,5 +164,5 @@ describe("check-dispatch-contract — the gate itself", () => {
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, spawnBudgetMs(2));
 });

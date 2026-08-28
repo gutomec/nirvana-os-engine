@@ -28,6 +28,7 @@ import {
 import { loadHarnessConfig } from "../lib/harness-config.ts";
 import * as runLedger from "../lib/run-ledger.ts";
 import { SCOPE_GUARD_PT_BR } from "../../_shared/lib/scope-guard.ts";
+import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const GATE = path.join(import.meta.dir, "..", "scripts", "quality-gate.ts");
 
@@ -188,7 +189,7 @@ describe("runDelivery — outcomes", () => {
     expect(calls.map(x => x.event)).toContain("gate_passed");
     const delivered = calls.find(x => x.event === "delivered");
     expect(delivered?.payload.gate).toBe("pass");
-  });
+  }, spawnBudgetMs(2));
 
   test("zero gateable artifacts → exit 3, NO gate_passed, NO delivered", () => {
     const oroot = path.join(tmp, "out-zip");
@@ -203,7 +204,7 @@ describe("runDelivery — outcomes", () => {
     expect(events).toContain("x_gate_skipped_no_files");
     expect(events).not.toContain("gate_passed");
     expect(events).not.toContain("delivered");
-  });
+  }, spawnBudgetMs(2));
 
   test("gate fail with revisions exhausted → exit 2, x_delivery_withheld, NO delivered", () => {
     const oroot = path.join(tmp, "out-fail");
@@ -218,7 +219,7 @@ describe("runDelivery — outcomes", () => {
     expect(events).toContain("gate_failed");
     expect(events).toContain("x_delivery_withheld");
     expect(events).not.toContain("delivered");
-  });
+  }, spawnBudgetMs(2));
 
   test("--force-deliver escape → delivered with gate:'fail-forced', exit 0", () => {
     const oroot = path.join(tmp, "out-force");
@@ -233,7 +234,7 @@ describe("runDelivery — outcomes", () => {
     expect(events).toContain("gate_failed"); // the failure stays on the record
     const delivered = calls.find(x => x.event === "delivered");
     expect(delivered?.payload.gate).toBe("fail-forced");
-  });
+  }, spawnBudgetMs(2));
 
   test("no deliverables at all → exit 1, verify_failed, gate never runs", () => {
     const oroot = path.join(tmp, "out-empty");
@@ -245,7 +246,7 @@ describe("runDelivery — outcomes", () => {
     expect(events).toContain("verify_failed");
     expect(events).not.toContain("gate_passed");
     expect(events).not.toContain("delivered");
-  });
+  }, spawnBudgetMs(2));
 
   test("revision seam: a failing artifact fixed by the revision run passes on re-gate", () => {
     const oroot = path.join(tmp, "out-revise");
@@ -272,7 +273,7 @@ describe("runDelivery — outcomes", () => {
     expect(events).toContain("revision_auto");
     const gp = calls.find(x => x.event === "gate_passed");
     expect(gp?.payload.revisions).toBe(1);
-  });
+  }, spawnBudgetMs(2));
 
   test("afterGate hook runs ONLY on deliverable outcomes and its zip lands in delivered", () => {
     const orootPass = path.join(tmp, "out-hook-pass");
@@ -292,7 +293,7 @@ describe("runDelivery — outcomes", () => {
     const resFail = runDelivery(failCase.args);
     expect(resFail.exitCode).toBe(2);
     expect(hookRuns).toBe(1); // hook did NOT run for the withheld delivery
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("runDelivery — manifest verify (stub verify-deliverable seam)", () => {
@@ -311,7 +312,7 @@ describe("runDelivery — manifest verify (stub verify-deliverable seam)", () =>
     expect(res.exitCode).toBe(1);
     expect(res.verifySource).toBe("manifest");
     expect(calls.map(x => x.event)).not.toContain("gate_passed");
-  });
+  }, spawnBudgetMs(2));
 
   test("verify script exit 0 (PASS) proceeds to the gate with verifySource manifest", () => {
     const oroot = path.join(tmp, "out-mv-pass");
@@ -321,7 +322,7 @@ describe("runDelivery — manifest verify (stub verify-deliverable seam)", () =>
     const res = runDelivery(args);
     expect(res.exitCode).toBe(0);
     expect(res.verifySource).toBe("manifest");
-  });
+  }, spawnBudgetMs(2));
 
   test("verify script exit 2 (indeterminate) falls back to the output scan", () => {
     const oroot = path.join(tmp, "out-mv-ind");
@@ -332,7 +333,7 @@ describe("runDelivery — manifest verify (stub verify-deliverable seam)", () =>
     expect(res.exitCode).toBe(0);
     expect(res.verifySource).toBe("scan");
     expect(calls.map(x => x.event)).toContain("verify_passed"); // scan emitted it
-  });
+  }, spawnBudgetMs(2));
 
   test("no manifest → homegrown scan (verify-deliverable never spawned)", () => {
     const oroot = path.join(tmp, "out-mv-none");
@@ -344,7 +345,7 @@ describe("runDelivery — manifest verify (stub verify-deliverable seam)", () =>
     const res = runDelivery(args);
     expect(res.exitCode).toBe(0);
     expect(res.verifySource).toBe("scan");
-  });
+  }, spawnBudgetMs(2));
 });
 
 // ── completeness ceiling ─────────────────────────────────────────────────
@@ -386,7 +387,7 @@ describe("runDelivery — completenessCeiling", () => {
     expect(row.state).toBe("withheld");
     expect(row.meta.ceiling).toBe("completeness");
     expect(row.meta.ceiling_reason).toBe(CEILING_REASON);
-  });
+  }, spawnBudgetMs(2));
 
   test("ceiling + gate PASS + manifest verify PASS → delivered (the ONE door to `delivered`)", () => {
     const oroot = path.join(tmp, "out-ceil-manifest");
@@ -405,7 +406,7 @@ describe("runDelivery — completenessCeiling", () => {
     expect(res.ceilingApplied).toBeNull();
     expect(calls.map(x => x.event)).toContain("delivered");
     expect(runLedger.getRun(led.handle, led.runId)!.state).toBe("delivered");
-  });
+  }, spawnBudgetMs(2));
 
   test("ceiling + manifest INDETERMINATE (rc=2 → scan fallback) still caps at withheld", () => {
     const oroot = path.join(tmp, "out-ceil-ind-manifest");
@@ -419,7 +420,7 @@ describe("runDelivery — completenessCeiling", () => {
     expect(res.verifySource).toBe("scan");   // the manifest proved nothing
     expect(res.exitCode).toBe(2);
     expect(res.ceilingApplied).toBe(CEILING_REASON);
-  });
+  }, spawnBudgetMs(2));
 
   test("ceiling + gate FAIL → withheld for QUALITY; ceiling is not the binding reason", () => {
     const oroot = path.join(tmp, "out-ceil-gatefail");
@@ -433,7 +434,7 @@ describe("runDelivery — completenessCeiling", () => {
     const withheld = calls.find(x => x.event === "x_delivery_withheld")!;
     expect(withheld.payload.gate).toBe("fail");
     expect(withheld.payload.ceiling).toBeNull();
-  });
+  }, spawnBudgetMs(2));
 
   test("ceiling outranks --force-deliver (that flag overrides a QUALITY verdict, not completeness)", () => {
     const oroot = path.join(tmp, "out-ceil-force");
@@ -445,7 +446,7 @@ describe("runDelivery — completenessCeiling", () => {
     expect(res.delivered).toBe(false);
     expect(res.ceilingApplied).toBe(CEILING_REASON);
     expect(calls.map(x => x.event)).not.toContain("delivered");
-  });
+  }, spawnBudgetMs(2));
 
   test("no ceiling → behavior identical to before (gate pass delivers)", () => {
     const oroot = path.join(tmp, "out-ceil-absent");
@@ -456,7 +457,7 @@ describe("runDelivery — completenessCeiling", () => {
     expect(res.exitCode).toBe(0);
     expect(res.delivered).toBe(true);
     expect(res.ceilingApplied).toBeNull();
-  });
+  }, spawnBudgetMs(2));
 });
 
 function openTestRun(): { handle: runLedger.LedgerHandle; runId: string } {
@@ -613,7 +614,7 @@ describe("runDelivery — ledger terminal states (never-stall guarantee)", () =>
     const row = runLedger.getRun(led.handle, led.runId)!;
     expect(row.state).toBe("delivered");
     expect(row.meta.gate).toBe("pass");
-  });
+  }, spawnBudgetMs(2));
 
   test("gate fail → ledger withheld (terminal), NOT delivered", () => {
     const oroot = path.join(tmp, "out-led-fail");
@@ -626,7 +627,7 @@ describe("runDelivery — ledger terminal states (never-stall guarantee)", () =>
     const row = runLedger.getRun(led.handle, led.runId)!;
     expect(row.state).toBe("withheld");
     expect(row.meta.gate).toBe("fail");
-  });
+  }, spawnBudgetMs(2));
 
   test("zero gateable → ledger withheld with gate:'indeterminate' (terminal, supervisor never re-dispatches)", () => {
     const oroot = path.join(tmp, "out-led-ind");
@@ -639,7 +640,7 @@ describe("runDelivery — ledger terminal states (never-stall guarantee)", () =>
     const row = runLedger.getRun(led.handle, led.runId)!;
     expect(row.state).toBe("withheld");
     expect(row.meta.gate).toBe("indeterminate");
-  });
+  }, spawnBudgetMs(2));
 });
 
 // ── gate retry ceiling → accepted with reservations (owner policy 2026-08-21) ─
@@ -662,7 +663,7 @@ describe("runDelivery — gate exhausted: accepted with reservations", () => {
     expect(events).toContain("delivered");
     expect(events).not.toContain("x_delivery_withheld");
     expect(calls.find(x => x.event === "delivered")!.payload.gate).toBe("fail-accepted");
-  });
+  }, spawnBudgetMs(2));
 
   test("the completeness ceiling outranks the acceptance (reservations never cover a missing deliverable)", () => {
     const oroot = path.join(tmp, "out-reservations-ceiling");
@@ -673,7 +674,7 @@ describe("runDelivery — gate exhausted: accepted with reservations", () => {
     expect(res.delivered).toBe(false);
     expect(res.exitCode).toBe(2);
     expect(res.ceilingApplied).toBe(CEILING_REASON);
-  });
+  }, spawnBudgetMs(2));
 
   test("explicit withhold policy keeps the strict exit 2", () => {
     const oroot = path.join(tmp, "out-reservations-strict");
@@ -684,7 +685,7 @@ describe("runDelivery — gate exhausted: accepted with reservations", () => {
     expect(res.exitCode).toBe(2);
     expect(res.delivered).toBe(false);
     expect(calls.map(x => x.event)).toContain("x_delivery_withheld");
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("producesForRubric — delivery.produces_to_rubric", () => {

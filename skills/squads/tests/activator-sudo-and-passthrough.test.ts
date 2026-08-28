@@ -14,6 +14,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawnBudgetMs } from "../../harness/tests/helpers/test-budgets.ts";
 
 const REPO = join(import.meta.dir, "..", "..", "..");
 const ACTIVATOR = join(REPO, "skills", "squads", "lib", "activator.js");
@@ -53,7 +54,7 @@ describe("activator honors the sudo half of the exit-code contract", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("activate-squad.ts surfaces the activator JSON", () => {
@@ -73,5 +74,5 @@ describe("activate-squad.ts surfaces the activator JSON", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }, spawnBudgetMs(2));
 });

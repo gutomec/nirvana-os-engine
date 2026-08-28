@@ -76,6 +76,13 @@ const RETIRED_EMPLOYEE_FIELDS: Record<string, string | null> = {
 const RETIRED_MANIFEST_FIELDS = ["capabilities_required", "default_tools", "project_tool_overrides", "tickets", "ticket_intake", "disclosure_template"];
 const RETIRED_ROUTING_FIELDS = ["mention_routing", "ticket_intake"];
 const RETIRED_ROUTE_FIELDS = ["confidence_threshold", "requires_escalation_to"];
+/**
+ * The keys §13.2 gives a route. A seat name under one of these is that field
+ * doing its own job — `requires_escalation_to` holds a seat in 66 routes of the
+ * installed library and means escalation, never destination — so none of them
+ * is ever read as a misspelled `route_to`.
+ */
+const KNOWN_ROUTE_FIELDS = new Set(["pattern", "patterns", "route_to", ...RETIRED_ROUTE_FIELDS]);
 /** §5.3 / §22: reported, never deleted. */
 const RETIRED_FILES = ["culture.md", "budgets.yaml", "secrets-manifest.yaml", "escalation-triggers.yaml", "approval-chains.yaml", "tickets", "processes"];
 
@@ -469,6 +476,39 @@ function chartFindings(b: BusinessRead): Finding[] {
   return out;
 }
 
+/**
+ * Why a route names no seat, in the reader's terms. Two cases the old message
+ * collapsed into one, at the cost of an audit: `investigation-bureau` carried a
+ * whole route table whose seats sat under the key `employee:`, and the gate
+ * answered `route_to (empty) names no seat` on every one of them, printing a
+ * placeholder where a seat name belongs and blaming a name nobody had written.
+ *
+ * The engine has no alias normalizer, by decision: this module reads
+ * `r.route_to`, and `router.js` skips any entry whose `route_to` is not a
+ * string. A route under another key is dropped on both sides, silently, and the
+ * message is the only place that fact can reach the person fixing it. No second
+ * spelling of the field is accepted anywhere; naming the key is the whole fix.
+ */
+function unusableRouteTo(raw: Record<string, unknown>, coerced: string, names: Set<string>): string {
+  const declared = raw.route_to;
+  if (typeof declared === "string" && declared.trim() !== "") return `route_to ${coerced} names no seat of this business`;
+  if (declared !== undefined && typeof declared !== "string") {
+    return `route_to is a ${Array.isArray(declared) ? "list" : typeof declared}, not a string — the router skips every route whose route_to is not a string`;
+  }
+  const state = "route_to" in raw ? "route_to is empty" : "route_to is absent";
+  const misplaced = Object.entries(raw).filter(([k, v]) => !KNOWN_ROUTE_FIELDS.has(k) && typeof v === "string" && names.has(v)) as Array<[string, string]>;
+  const dead = "Both the gate and the router read route_to only, so this route is dead in both";
+  if (misplaced.length === 1) {
+    const [key, seat] = misplaced[0];
+    return `${state}: the key ${key} holds ${seat}, a seat of this business. ${dead} — rename the key to route_to.`;
+  }
+  if (misplaced.length > 1) {
+    const pairs = misplaced.map(([k, v]) => `${k}: ${v}`).join(", ");
+    return `${state}: ${misplaced.length} keys hold a seat name (${pairs}). ${dead} — which key was meant is the author's call.`;
+  }
+  return `${state} — both the gate and the router drop a route that does not name a seat.`;
+}
+
 /** §13.2: routes name a seat, fire against a real brief, and never match all. */
 function routeFindings(b: BusinessRead, names: Set<string>): Finding[] {
   const out: Finding[] = [];
@@ -478,7 +518,7 @@ function routeFindings(b: BusinessRead, names: Set<string>): Finding[] {
   for (const r of routes) {
     const label = r.pattern.slice(0, 48) || "(empty)";
     if (!names.has(r.route_to)) {
-      out.push(mk("auto_route_unknown_employee", `route_to ${r.route_to || "(empty)"} names no seat of this business`, `${r.source}: ${label}`, r.route_to || label));
+      out.push(mk("auto_route_unknown_employee", unusableRouteTo(r.raw, r.route_to, names), `${r.source}: ${label}`, r.route_to || label));
       continue;
     }
     if (CATCH_ALL.has(r.pattern.trim())) {

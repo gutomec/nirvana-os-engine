@@ -25,6 +25,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { fakeHomeEnv } from "./helpers/fake-home.ts";
+import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const SLUG = "buyer-path-fixture";
@@ -164,7 +165,7 @@ describe("what the buyer has after running setup.ts", () => {
     expect(reg.length).toBeGreaterThan(0);
     expect(fs.existsSync(reg)).toBe(true);
     expect(fs.readFileSync(reg, "utf8")).toContain("fixture-squad");
-  });
+  }, spawnBudgetMs(2));
 
   test("the pack manifest records the version", () => {
     const p = path.join(home, ".nirvana", "packs", `${SLUG}.json`);

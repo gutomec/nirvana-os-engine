@@ -19,6 +19,7 @@ import {
   runHeadless, type Runtime,
 } from "../../_shared/lib/host-agent-driver.ts";
 import { CAPTURE_PRELUDE, readCapturedArgs, writeFakeCli } from "./helpers/fake-cli.ts";
+import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-driver-autonomy-"));
 const BIN = path.join(TMP, "bin");
@@ -180,7 +181,14 @@ describe("headless layer — runHeadless argv per runtime", () => {
     expect(args.lastIndexOf("--add-dir")).toBeLessThan(at);
     expect(args.indexOf("--dangerously-skip-permissions")).toBeLessThan(at);
     expect(hasPair(args, ["--add-dir", "/tmp/grant-b"])).toBeTrue();
-  });
+    // What the CHILD received, read from its own argv. Inline (the direct-spawn path, and every
+    // POSIX run) this is the multi-line directive itself, so the run proves what no simulation
+    // here can: an argument carrying a newline crosses the process boundary whole. On the Windows
+    // runner it crosses CreateProcess and the child's own command-line parser, which is the one
+    // link the shim reader could not check on the machine that wrote it.
+    if (flag === "--append-system-prompt") expect(args[at + 1]).toBe("line one\nline two");
+    else expect(fs.readFileSync(args[at + 1], "utf8")).toBe("line one\nline two");
+  }, spawnBudgetMs(2));
 
   test("codex: --dangerously-bypass-approvals-and-sandbox by default; the workspace-write sandbox under =0", () => {
     expect(argv("codex", "codex", undefined)).toContain("--dangerously-bypass-approvals-and-sandbox");

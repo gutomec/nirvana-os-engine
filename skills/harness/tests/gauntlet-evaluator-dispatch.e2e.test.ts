@@ -111,7 +111,8 @@ function fixture(installed: Record<string, string[]>) {
   };
   const producerRuns = () => { try { return fs.readFileSync(path.join(capture, "pids"), "utf8").split("\n").filter(Boolean).length; } catch { return 0; } };
   const judgeRuns = () => { try { return fs.readFileSync(path.join(capture, "judge-prompts"), "utf8").split("\n").filter(Boolean).length; } catch { return 0; } };
-  const kernel = (projectId: string) => path.join(projectRoot, "outputs", projectId, ".nirvana", "run-kernel.sqlite");
+  // One kernel per project: every dispatch under this root publishes into this one file.
+  const kernel = path.join(projectRoot, ".nirvana", "run-kernel.sqlite");
   return { root, projectRoot, outputs, env, bin, capture, dispatch, audit, producerRuns, judgeRuns, kernel };
 }
 
@@ -128,7 +129,7 @@ describe("dispatch.ts selects and runs the Gauntlet evaluator", () => {
     expect(result.status, result.stdout + result.stderr).toBe(0);
     expect(fs.existsSync(path.join(fx.outputs, "report.html"))).toBeTrue();
     expect(fx.producerRuns()).toBe(1);
-    const { run, scorecards: cards } = scorecards(fx.kernel("proj-env"), "proj-env");
+    const { run, scorecards: cards } = scorecards(fx.kernel, "proj-env");
     expect(run?.state).toBe("completed");
     expect(cards).toHaveLength(1);
     expect(cards[0]).toMatchObject({ verdict: "pass", costUsd: 0.2, gauntletId: "brief-conformance", rubricVersion: EVALUATION_RUBRIC_VERSION,
@@ -156,7 +157,7 @@ describe("dispatch.ts selects and runs the Gauntlet evaluator", () => {
     const registry = fixture({ "spec-judge": [CONFORMANCE] });
     const viaRegistry = registry.dispatch("proj-registry", { FAKE_DISPATCH_SCORECARD: "pass" });
     expect(viaRegistry.status, viaRegistry.stdout + viaRegistry.stderr).toBe(0);
-    expect(scorecards(registry.kernel("proj-registry"), "proj-registry").scorecards[0]).toMatchObject({ evaluator: { kind: "squad", slug: "spec-judge", capabilityId: CONFORMANCE }, rubricVersion: EVALUATION_RUBRIC_VERSION });
+    expect(scorecards(registry.kernel, "proj-registry").scorecards[0]).toMatchObject({ evaluator: { kind: "squad", slug: "spec-judge", capabilityId: CONFORMANCE }, rubricVersion: EVALUATION_RUBRIC_VERSION });
     expect(registry.audit().filter(entry => entry.event === "x_gauntlet_evaluator_fallback").map(entry => entry.reason)).toEqual(["unset"]);
     expect(registry.audit().find(entry => entry.event === "x_gauntlet_evaluator_selected")).toMatchObject({ source: "registry", evaluator: `squad:spec-judge:${CONFORMANCE}` });
     expect(registry.judgeRuns()).toBe(0);
@@ -168,7 +169,7 @@ describe("dispatch.ts selects and runs the Gauntlet evaluator", () => {
     expect(judged.status, judged.stdout + judged.stderr).toBe(0);
     expect(bare.producerRuns()).toBe(1);
     expect(bare.judgeRuns()).toBe(1);
-    const { run, scorecards: cards } = scorecards(bare.kernel("proj-judge"), "proj-judge");
+    const { run, scorecards: cards } = scorecards(bare.kernel, "proj-judge");
     expect(run?.state).toBe("completed");
     expect(cards[0]).toMatchObject({ verdict: "pass", costUsd: 0.02, rubricVersion: EVALUATION_RUBRIC_VERSION, evaluator: JUDGE_X_TARGET });
     expect(bare.audit().filter(entry => entry.event === "x_gauntlet_evaluator_fallback").map(entry => [entry.from, entry.reason]))
@@ -191,7 +192,7 @@ describe("dispatch.ts selects and runs the Gauntlet evaluator", () => {
     const fx = fixture({});
     const result = fx.dispatch("proj-heuristic", { NIRVANA_GAUNTLET_EVALUATOR: "heuristic" });
     expect(result.status, result.stdout + result.stderr).toBe(0);
-    const card = scorecards(fx.kernel("proj-heuristic"), "proj-heuristic").scorecards[0];
+    const card = scorecards(fx.kernel, "proj-heuristic").scorecards[0];
     expect(card).toMatchObject({ verdict: "pass", costUsd: 0, rubricVersion: "harness-quality-gate/v1", evaluator: { kind: "squad", slug: "harness-quality-gate" } });
     expect(fx.audit().filter(entry => entry.event === "x_gauntlet_evaluator_fallback")).toEqual([]);
     expect(fx.audit().find(entry => entry.event === "x_gauntlet_evaluator_selected")).toMatchObject({ source: "env", evaluator: "heuristic", target: null, evaluation_share: 0 });
@@ -211,9 +212,9 @@ describe("dispatch.ts selects and runs the Gauntlet evaluator", () => {
     expect(result.stderr).toContain("NIRVANA_GAUNTLET_EVALUATOR=heuristic");
     expect(fx.producerRuns()).toBe(0);
     expect(fx.judgeRuns()).toBe(0);
-    const { run } = scorecards(fx.kernel("proj-nojudge"), "proj-nojudge");
+    const { run } = scorecards(fx.kernel, "proj-nojudge");
     expect(run?.state).toBe("rolled_back");
-    const handle = openKernel(fx.kernel("proj-nojudge"));
+    const handle = openKernel(fx.kernel);
     try {
       const rolledBack = listEvents(handle, "proj-nojudge").find(event => event.type === "run.transitioned" && (event.payload as { to?: string }).to === "rolled_back");
       expect(rolledBack?.payload).toMatchObject({ reason: "evaluator_unavailable", errors: ["no judge-x persona for runtime 'qwen-code' (judge-x.qwen-code.md)"] });
@@ -231,7 +232,7 @@ describe("dispatch.ts selects and runs the Gauntlet evaluator", () => {
     expect(result.stderr).toContain("leaves the producer nothing");
     expect(result.stderr).toContain("max_cost before the producer");
     expect(fx.producerRuns()).toBe(0);
-    expect(scorecards(fx.kernel("proj-nobudget"), "proj-nobudget").run?.state).toBe("rolled_back");
+    expect(scorecards(fx.kernel, "proj-nobudget").run?.state).toBe("rolled_back");
     expect(fx.audit().find(entry => entry.event === "x_gauntlet_budget_insufficient")).toMatchObject({ trace_id: "proj-nobudget", evaluator: "agent-x:judge-x",
       plan_max_cost_usd: 8, max_budget_usd: 1.5, candidate_budget_usd: 0, evaluation_budget_usd: 1.5, evaluation_floor_usd: 1.5 });
   }, spawnBudgetMs(2) + 30_000);
@@ -249,7 +250,7 @@ describe("dispatch.ts selects and runs the Gauntlet evaluator", () => {
     expect(noJudge.status).toBe(4);
     expect(noJudge.stderr).toContain("names judge-x, which is not available: no judge-x persona for runtime 'qwen-code'");
     expect(fx.producerRuns()).toBe(0);
-    expect(fs.existsSync(fx.kernel("proj-self"))).toBeFalse();
+    expect(fs.existsSync(fx.kernel)).toBeFalse();
     expect(fx.audit().some(entry => entry.event === "x_gauntlet_evaluator_selected")).toBeFalse();
   }, spawnBudgetMs(3) + 30_000);
 });
@@ -303,7 +304,7 @@ describe("a real dispatch.ts as the evaluator child", () => {
       candidateRoot, artifactRefs: [], holdout: false });
     const evaluationDir = evaluationDirFor(projectRoot, RUN, REVISION);
     const childProject = evaluationProjectId(PROJECT, REVISION);
-    const kernel = openKernel(path.join(projectRoot, "outputs", childProject, ".nirvana", "run-kernel.sqlite"));
+    const kernel = openKernel(path.join(projectRoot, ".nirvana", "run-kernel.sqlite"));
     let childRun: ReturnType<typeof getRun>;
     try { childRun = getRun(kernel, childProject, canonicalRunIdFor(childProject)); } finally { kernel.close(); }
     const seenFile = path.join(fx.root, "capture", "evaluator-output-paths");

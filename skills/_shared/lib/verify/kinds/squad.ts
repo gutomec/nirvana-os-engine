@@ -42,7 +42,7 @@ import {
 import { checkPortability } from "../../../../squads/lib/squad-doctor.ts";
 import { classify } from "../../../lib/corpus-language.ts";
 import { editYaml, fixResult, listEntities, resolveEntityDir, surfaceFindings, surfaceRegenFixer } from "../common.ts";
-import type { CheckContext, Criterion, Finding, FixResult, Fixer, KindModule } from "../types.ts";
+import type { CheckContext, Criterion, Finding, FixResult, Fixer, KindModule, Severity } from "../types.ts";
 
 const require_ = createRequire(import.meta.url);
 const SQUAD_LIB = path.join(import.meta.dir, "..", "..", "..", "..", "squads", "lib");
@@ -94,7 +94,9 @@ export const criteria: Criterion[] = [
   // ── S13 + W01–W13: advice ─────────────────────────────────────────────────
   { id: "evaluator_missing", severity: "error", autofix: "agentic", baselineable: false, title: "an evaluator capability declares its `evaluator` block (v6 §30)" },
   { id: "surface_stale", severity: "warning", autofix: "mechanical", baselineable: false, title: ".nirvana-surface.json matches the files on disk", fixer: "surface_regen" },
-  { id: "workflow_unnormalizable", severity: "warning", autofix: "none", baselineable: false, title: "a step order can be derived from every workflow" },
+  // Never counted: a router is a shape, not a defect. See ALWAYS_INFO in
+  // squads/lib/workflow-reader.ts for why this one is `info` and not advice.
+  { id: "workflow_event_router", severity: "info", autofix: "none", baselineable: false, title: "an `event_routes` document is read as a router, and its empty graph is explained" },
   { id: "workflow_orphan", severity: "warning", autofix: "none", baselineable: false, title: "every workflow is invoked by a capability" },
   { id: "workflow_body_too_long", severity: "warning", autofix: "none", baselineable: false, title: "the workflow body stays under the word ceiling" },
   { id: "produces_untyped", severity: "warning", autofix: "none", baselineable: false, title: "produces reaches a rubric or the capability types its outputs" },
@@ -113,7 +115,7 @@ export const criteria: Criterion[] = [
 
 const BY_ID = new Map(criteria.map((c) => [c.id, c]));
 
-function mk(id: string, message: string, evidence: string, where?: string, severity?: "error" | "warning"): Finding {
+function mk(id: string, message: string, evidence: string, where?: string, severity?: Severity): Finding {
   const c = BY_ID.get(id);
   if (!c) throw new Error(`unknown squad criterion: ${id}`);
   return {
@@ -719,7 +721,10 @@ const workflowRefsRepair: Fixer = ({ dir, finding }) => withDigest(dir, "workflo
   const text = fs.readFileSync(file, "utf8");
   const rewritten = text.replace(/^(\s*-?\s*)(agent|task)(:\s*["']?)([\w./-]+)(["']?\s*)$/gim, (whole, lead, key, sep, value, tail) => {
     const kind = key as "agent" | "task";
-    const bare = value.replace(/\.(md|markdown)$/i, "");
+    // The directory and the extension are how the path is written; the step
+    // names the component. Strip both before matching, and write the bare stem
+    // back — §28.6's canonical form, and the fixed point of a second `--fix`.
+    const bare = value.replace(/^(?:agents|tasks)\//i, "").replace(/\.(md|markdown)$/i, "");
     if (known[kind].has(bare)) return whole;
     const candidates = byKey[kind].get(bare.toLowerCase().replace(/_/g, "-")) ?? [];
     if (candidates.length !== 1) return whole;

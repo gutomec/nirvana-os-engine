@@ -1,20 +1,16 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
 import { beginGauntlet, compileGauntletPlan, getGauntlet, listCandidateRevisions, saveCandidateRevision, saveScorecard } from "../lib/gauntlet/index.ts";
-import { createRun, listEvents, openKernel, type KernelHandle } from "../lib/run-kernel/index.ts";
+import { createRun, listEvents } from "../lib/run-kernel/index.ts";
+import { closeTestKernels, openTestKernel } from "./helpers/test-kernels.ts";
 
-const roots: string[] = [];
-const handles: KernelHandle[] = [];
-afterEach(() => {
-  while (handles.length) handles.pop()!.close();
-  while (roots.length) fs.rmSync(roots.pop()!, { recursive: true, force: true });
-});
+afterEach(closeTestKernels);
 
 function fresh() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-gauntlet-")); roots.push(root);
-  const handle = openKernel(path.join(root, "kernel.sqlite")); handles.push(handle);
+  // Hermetic journal. The three cases below write and read through this one handle
+  // (getGauntlet, listCandidateRevisions, listEvents); nothing else opens the database, no child
+  // process sees it and no assertion mentions the file. On disk it cost one fsync per event, for
+  // durability the teardown discarded, and the temp directory existed only to hold it.
+  const handle = openTestKernel();
   createRun(handle, { projectId: "prj_1", runId: "run_1", traceId: "trace_1", planId: "plan_1",
     target: { kind: "business", slug: "builder" }, policySnapshotRef: "policy", actor: { kind: "kernel", id: "test" }, correlationId: "cor" });
   return { handle, context: { projectId: "prj_1", runId: "run_1", traceId: "trace_1", actor: { kind: "kernel", id: "test" }, correlationId: "cor" } };

@@ -53,7 +53,7 @@ describe("rollback", () => {
     const module = sabotaged("delegates_to_strip", ({ dir: d }) => {
       fs.writeFileSync(path.join(d, "agent", "SOUL.md"), "", "utf8");
       throw new Error("boom");
-    }, spawnBudgetMs(2));
+    });
     const report = await verifyEntity("mind-clone", dir, { ...quiet(r), fix: "mechanical", module });
     expect(report.fix_outcome?.rolled_back).toBe(true);
     expect(report.fix_outcome?.rollback_reason).toContain("boom");
@@ -68,7 +68,7 @@ describe("rollback", () => {
     const module = sabotaged("delegates_to_strip", ({ dir: d, finding }) => {
       fs.writeFileSync(path.join(d, "MANIFEST.yaml"), "manifest: [unclosed\n", "utf8");
       return { fixer: "delegates_to_strip", finding: finding.id, applied: true, changed_files: ["MANIFEST.yaml"] };
-    }, spawnBudgetMs(2));
+    });
     const report = await verifyEntity("mind-clone", dir, { ...quiet(r), fix: "mechanical", module });
     expect(report.fix_outcome?.rolled_back).toBe(true);
     expect(report.fix_outcome?.rollback_reason).toContain("manifest");
@@ -83,7 +83,7 @@ describe("rollback", () => {
     const deletesSoul = sabotaged("delegates_to_strip", ({ dir: d, finding }) => {
       fs.rmSync(path.join(d, "agent", "SOUL.md"));
       return { fixer: "delegates_to_strip", finding: finding.id, applied: true, changed_files: ["agent/SOUL.md"] };
-    }, spawnBudgetMs(2));
+    });
     const rolled = await verifyEntity("mind-clone", dir, { ...quiet(r), fix: "mechanical", module: deletesSoul });
     expect(rolled.fix_outcome?.rolled_back).toBe(true);
     expect(rolled.fix_outcome?.rollback_reason).toContain("artifact_missing:agent/SOUL.md");

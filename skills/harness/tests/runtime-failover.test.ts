@@ -25,6 +25,7 @@ import { classify } from "../lib/quota-detector.ts";
 import { runWithCascade } from "../lib/cascade-runner.ts";
 import { isInCooldown } from "../lib/cooldown-registry.ts";
 import { writeFakeCli } from "./helpers/fake-cli.ts";
+import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 // Verbatim stderr from the failed gemini-cli run of the 2026-08-05 matrix.
 const REAL_GEMINI_STDERR = [
@@ -136,7 +137,7 @@ describe("cascade — a dead runtime hands off instead of ending the run", () =>
     } finally {
       process.env.PATH = process.env.PATH!.replace(`${probeDir}${path.delimiter}`, "");
     }
-  });
+  }, spawnBudgetMs(4));
 
   test("auth failure rotates to the next runtime and the work completes", () => {
     const res = runWithCascade({

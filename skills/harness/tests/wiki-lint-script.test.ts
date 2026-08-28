@@ -10,6 +10,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { evaluate } from "../rubrics/wiki-lint.ts";
+import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const GATE = path.join(import.meta.dir, "..", "scripts", "quality-gate.ts");
 const SKILLS_DIR = path.join(import.meta.dir, "..", "..");
@@ -69,5 +70,5 @@ describe("quality-gate — an abstaining rubric never becomes a silent PASS", ()
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, spawnBudgetMs(2));
 });

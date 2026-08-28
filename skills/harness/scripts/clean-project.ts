@@ -6,6 +6,14 @@
 // An append-only `project_purged` event is written to the audit log (the log
 // itself is never rewritten).
 //
+// What this does NOT remove, deliberately: the project's Run in
+// <project>/.nirvana/run-kernel.sqlite, the run-ledger row and the audit log.
+// Those are the record of what ran; the scaffold is the draft it ran on, and a
+// draft going away is not the run un-happening. Same rule the ledger and the
+// audit already follow. One consequence to know: the Run id is derived from the
+// project id, so re-dispatching with a project id whose Run has ended is refused
+// with `x_run_id_collision` even after a clean. Pass a fresh --project.
+//
 // Usage:
 //   nrv clean <project_id>           # move to trash (reversible)
 //   nrv clean <project_id> --hard    # delete permanently

@@ -14,6 +14,7 @@ import {
 } from "../lib/run-kernel/standard-publication.ts";
 import { transitionsTo } from "./helpers/run-states.ts";
 import { removeDir } from "./helpers/temp-dirs.ts";
+import { KERNEL_BUDGET_MS } from "./helpers/test-budgets.ts";
 
 const roots: string[] = [];
 afterEach(() => { while (roots.length) removeDir(roots.pop()!); });
@@ -24,6 +25,16 @@ const TARGET = { kind: "squad" as const, slug: "brandcraft", capabilityId: "squa
 type AuditEntry = { event: string; payload: Record<string, any> };
 const typeOf = (event: RunEvent) => event.type === "run.transitioned" ? `run.transitioned:${(event.payload as { to: string }).to}` : event.type;
 
+// On disk by necessity, and this is the file where that costs the most. `openStandardPublication`
+// is given a PATH and opens its own handle, so `read` and `prepare` below reach the journal through
+// connections that are not the writer's — the exact thing a `:memory:` database cannot serve, since
+// it belongs to whichever connection opened it. One case even asserts the file was never created.
+// The kernel opens with `PRAGMA synchronous = FULL`, so every event is an fsync, and the collision
+// case walks all seven terminal states: each costs a `prepare` plus three reads, twenty-eight
+// openings of one file with the schema initialization re-run on every one, on top of the events.
+// That is why it timed out: 18 times in 640 runs under a busy disk, always that one case, at 5.9 s
+// mean against Bun's 5 s default, while the cheap cases beside it finished in milliseconds. The
+// cost is real coverage, so it is budgeted rather than moved.
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-standard-publication-")); roots.push(root);
   const kernelPath = path.join(root, ".nirvana", "run-kernel.sqlite");
@@ -91,7 +102,7 @@ describe("openStandardPublication", () => {
     expect(events.at(-1)!.payload).toEqual({ from: "verifying", to: "completed", exitCode: 0, gateOutcome: "pass", outputsRoot: "/out/deliverables" });
     expect(fx.audit).toEqual([]);
     expect(fx.warnings).toEqual([]);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("every delivery result lands as its own terminal state, with the error on a failed Run", () => {
     const fx = fixture();
@@ -110,7 +121,7 @@ describe("openStandardPublication", () => {
         ...(verdict.error ? { error: verdict.error } : {}) });
     }
     expect((fx.read("run_withheld").events.at(-1)!.payload as { error?: string }).error).toBeUndefined();
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("adopts a Run prepared with --run-id: no second run.prepared, the prepared trace and reference are kept", () => {
     const fx = fixture();
@@ -125,7 +136,7 @@ describe("openStandardPublication", () => {
     expect(events.map(typeOf)).toEqual(["run.prepared", "runtime.selection_snapshot", "run.transitioned:running", "run.transitioned:verifying", "run.transitioned:completed"]);
     expect(events[1].payload).toEqual({ ref: policySnapshotRefFor(SNAPSHOT), snapshot: SNAPSHOT });
     expect(fx.audit).toEqual([]);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("re-opening the same Run adds no duplicate events", () => {
     const fx = fixture();
@@ -140,7 +151,7 @@ describe("openStandardPublication", () => {
     expect(fx.read().events.map(typeOf)).toEqual(["run.prepared", "runtime.selection_snapshot",
       "run.transitioned:running", "run.transitioned:verifying", "run.transitioned:completed"]);
     expect(fx.audit).toEqual([]);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("an unavailable kernel is fail-open: x_run_kernel_unavailable, no exception, every later call a no-op", () => {
     const fx = fixture();
@@ -159,7 +170,7 @@ describe("openStandardPublication", () => {
     expect(() => { publication.start(); publication.verify(); publication.finish({ exitCode: 0, gateOutcome: "pass" }, "/out"); }).not.toThrow();
     expect(fx.audit).toHaveLength(1);
     expect(fs.existsSync(fx.kernelPath)).toBe(false);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("a transition the kernel refuses turns the publication inert without touching the legacy flow", () => {
     const fx = fixture();
@@ -171,7 +182,7 @@ describe("openStandardPublication", () => {
     expect(fx.audit[0].payload).toMatchObject({ run_id: "run_live", stage: "running" });
     expect(fx.audit[0].payload.error).toContain("illegal transition running -> running");
     expect(fx.read("run_live").run?.state).toBe("running");
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("a Run that already ended under the same id is refused before any producer: x_run_id_collision, collided, nothing appended", () => {
     const fx = fixture();
@@ -192,7 +203,7 @@ describe("openStandardPublication", () => {
     expect(fx.audit[0].payload).toEqual({ trace_id: "trace_std", project_id: "prj_std", run_id: "run_abandoned", state: "abandoned",
       kernel_path: fx.kernelPath, target_kind: "squad", run_target: { kind: "agent-x", slug: "agent-x" }, mode: "standard" });
     expect(fx.audit.some(entry => entry.event === "x_run_kernel_unavailable")).toBe(false);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("broker errors in the frozen snapshot end the Run rolled_back before any producer (RT-002)", () => {
     const fx = fixture();
@@ -208,5 +219,5 @@ describe("openStandardPublication", () => {
     publication.start();
     expect(fx.read().events).toHaveLength(3);
     expect(fx.audit).toEqual([]);
-  });
+  }, KERNEL_BUDGET_MS);
 });

@@ -29,7 +29,29 @@ if command -v bun >/dev/null 2>&1; then
 elif [ -x "$HOME/.bun/bin/bun" ]; then
   BUN_BIN="$HOME/.bun/bin/bun"
 else
-  echo "nrv: bun not found" >&2
+  # Bun IS the runtime: every subcommand below ends in `exec "$BUN_BIN"`, so a
+  # missing binary is the end of the road. "bun not found" was the whole message,
+  # which left anyone whose ~/.bun was wiped (new machine, cleaned PATH) with the
+  # bare fact and no way out. setup.sh already answers this well; the launcher is
+  # where the same person lands AFTER the install, and it said nothing.
+  #
+  # Name the command for THIS system rather than listing every platform: a reader
+  # who has to pick can pick wrong, and a wrong pick is a second failure. Git Bash
+  # reports MINGW/MSYS/CYGWIN from `uname -s` and needs the PowerShell installer,
+  # not the curl one.
+  echo "nrv: bun not found. Nirvana-OS runs on Bun." >&2
+  case "$(uname -s 2>/dev/null || echo unknown)" in
+    MINGW*|MSYS*|CYGWIN*)
+      echo "  Install it, then run nrv again:" >&2
+      echo '    powershell -c "irm bun.sh/install.ps1 | iex"' >&2
+      echo "  If the execution policy blocks that, install it with winget:" >&2
+      echo "    winget install Oven-sh.Bun" >&2 ;;
+    *)
+      echo "  Install it, then run nrv again:" >&2
+      echo "    curl -fsSL https://bun.sh/install | bash" >&2
+      echo "  NEVER use 'npm install -g bun' (EACCES in /usr/local)." >&2 ;;
+  esac
+  echo "  Already installed? Open a new terminal, or put ~/.bun/bin on your PATH." >&2
   exit 1
 fi
 

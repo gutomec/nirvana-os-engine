@@ -218,7 +218,7 @@ describe("supervisor — agentic runs", () => {
     // clock exists only to age the row) — so the check is simply that the lease
     // is no longer expired.
     expect(Date.parse(after.lease_expires_at!)).toBeGreaterThan(Date.now());
-  });
+  }, spawnBudgetMs(2));
 
   test("expired lease and nothing moving → escalates on the FIRST sweep, human notified", () => {
     const h = freshLedger();
@@ -249,7 +249,7 @@ describe("supervisor — agentic runs", () => {
     expect(after.state).toBe("stalled");
     // Escalation is immediate: retries are for recoveries that could work.
     expect(after.retries).toBe(0);
-  });
+  }, spawnBudgetMs(2));
 
   test("a scripted run is untouched by the agentic door", () => {
     const h = freshLedger();
@@ -270,7 +270,7 @@ describe("supervisor — agentic runs", () => {
 
     expect(resumed.length).toBe(1);
     expect(getRun(h, row.run_id)!.state).toBe("delivered");
-  });
+  }, spawnBudgetMs(2));
 });
 
 // ── 3. periodic status ────────────────────────────────────────────────────
@@ -299,7 +299,7 @@ describe("supervisor — progress ping", () => {
 
     // The run is not disturbed by being reported on.
     expect(getRun(h, row.run_id)!.state).toBe("running");
-  });
+  }, spawnBudgetMs(2));
 
   test("a run younger than the interval stays quiet", () => {
     const h = freshLedger();
@@ -310,7 +310,7 @@ describe("supervisor — progress ping", () => {
     const pings: number[] = [];
     sweep({ handle: h, pingImpl: (_r, m) => pings.push(m), notifyImpl: noNotify, salvageImpl: noSalvage });
     expect(pings.length).toBe(0);
-  });
+  }, spawnBudgetMs(2));
 });
 
 // ── 4. the close door ─────────────────────────────────────────────────────

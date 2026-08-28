@@ -8,6 +8,7 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import { spawnBudgetMs } from "../../harness/tests/helpers/test-budgets.ts";
 
 const DOCTOR = path.resolve(import.meta.dir, "..", "scripts", "capability-doctor.ts");
 
@@ -122,7 +123,7 @@ test("capability-doctor --json reports the three catalog checks + collisions + s
 
   // 1 violation + 2 unknown-ns + 2 unknown-domain + 1 score_boost = 6.
   expect(cr.summary.strict_findings).toBe(6);
-});
+}, spawnBudgetMs(2));
 
 test("exit-code contract: 0 by default, 1 with --strict when findings exist", () => {
   const dirs = writeFixtures();
@@ -147,4 +148,4 @@ test("--strict passes on a clean tree", () => {
   fs.mkdirSync(businessesDir, { recursive: true });
   const r = runDoctor(["--strict", "--quiet"], { squadsDir, businessesDir });
   expect(r.status).toBe(0);
-});
+}, spawnBudgetMs(2));

@@ -12,6 +12,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
+import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 import {
   buildDigest, buildKeywordAliases, splitKeywordGroups, foldKey, detectLang,
   estimateTokens, trunc, TOKEN_BUDGET, loadDigestInput,
@@ -403,7 +404,7 @@ describe("routing digest — CLI against fixture registry files", () => {
       BUILDER, "--businesses", biz, "--squads", sq, "--clones", cl, "--out", out, "--check-budget", "--quiet",
     ], { encoding: "utf8" });
     expect(check.status).toBe(0);
-  });
+  }, spawnBudgetMs(2));
 
   test("fails loudly when no registry is readable", () => {
     const r = spawnSync(process.execPath, [
@@ -414,7 +415,7 @@ describe("routing digest — CLI against fixture registry files", () => {
       "--out", path.join(tmp, "digest.md"),
     ], { encoding: "utf8" });
     expect(r.status).toBe(1);
-  });
+  }, spawnBudgetMs(2));
 });
 
 describe("trunc", () => {
@@ -454,7 +455,7 @@ describe("empty library vs unreadable registry", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("library is empty");
     expect(fs.existsSync(out)).toBe(true);
-  });
+  }, spawnBudgetMs(2));
 
   test("registries that cannot be read still fail, exit 1", () => {
     const r = run([
@@ -465,7 +466,7 @@ describe("empty library vs unreadable registry", () => {
     ]);
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("no registry could be read");
-  });
+  }, spawnBudgetMs(2));
 
   test("loadDigestInput reports WHICH registries parsed", () => {
     const input = loadDigestInput({

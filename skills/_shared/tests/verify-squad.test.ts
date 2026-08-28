@@ -19,6 +19,7 @@ import { CANONICAL_WORKFLOW, rmrf, runCli, squadFixture, tempRoot, treeDigest, w
 import { spawnBudgetMs } from "../../harness/tests/helpers/test-budgets.ts";
 import { criteria as squadCriteria, squadModule } from "../lib/verify/kinds/squad.ts";
 import { WORKFLOW_LINT_IDS } from "../../squads/lib/workflow-reader.ts";
+import { acceptanceCriteriaOf } from "../../harness/lib/gauntlet/success-requirements.ts";
 
 const require_ = createRequire(import.meta.url);
 const REPO = path.resolve(import.meta.dir, "..", "..", "..");
@@ -107,22 +108,31 @@ describe("the dialect corpus, judged by protocol", () => {
         "        description: the artifact exists after the build step",
         "        blocking: true",
       ],
-    }, spawnBudgetMs(2));
+    });
     const f = findings(r, "clean-v6");
     expect(idsOf(f).filter((id) => id.startsWith("workflow_"))).toEqual([]);
     expect(idsOf(f)).not.toContain("protocol_below_6");
     expect(runCli(r, ["squad", "clean-v6", "--no-retrieval"]).code).toBe(0);
-  });
+  }, spawnBudgetMs(2));
 
-  test("`event_routes` is advice under either protocol: reported, never guessed at", () => {
+  // A router is a correct file. Reporting it as a defect cost two squads a
+  // permanent warning and, under --strict, a REJECTED verdict they had done
+  // nothing to earn. It is still reported — the empty graph needs explaining —
+  // but as `info`, which counts toward nothing.
+  test("`event_routes` is reported as information under either protocol, never as a defect", () => {
     const r = root();
     for (const protocol of ["5.0", "6.0"]) {
       const slug = `router-${protocol.replace(".", "")}`;
       const ref = protocol === "6.0" ? "main" : "main.yaml";
       squadFixture(r, slug, { protocol, workflows: { "main.yaml": "name: main\nevent_routes:\n  on_push: rebuild\n" }, workflowComponent: ref, invokeRef: `workflows/${ref}` });
       const f = findings(r, slug);
-      expect(severityOf(f, "workflow_unnormalizable")).toBe("warning");
+      expect(severityOf(f, "workflow_event_router")).toBe("info");
+      expect(idsOf(f)).not.toContain("workflow_unnormalizable");
+      expect(idsOf(f)).not.toContain("workflow_shape_legacy");
       expect(runCli(r, ["squad", slug, "--no-retrieval"]).code).toBe(0);
+      // The whole point: the router contributes no error and no warning, so it
+      // cannot reject the squad and cannot strict-fail it either.
+      expect(f.filter((x) => x.severity !== "info" && x.id.startsWith("workflow_")).map((x) => x.id)).toEqual([]);
     }
   }, spawnBudgetMs(2));
 
@@ -134,14 +144,14 @@ describe("the dialect corpus, judged by protocol", () => {
         "main.md": `---\nname: main\n---\n\n## plan\n\n${"word ".repeat(3000)}\n`,
         "spare.yaml": CANONICAL_WORKFLOW.replace("name: main", "name: spare"),
       },
-    }, spawnBudgetMs(2));
+    });
     const f = findings(r, "twins");
     expect(idsOf(f)).toContain("workflow_twin");
     expect(f.find((x) => x.id === "workflow_twin")!.where).toBe("main.md");
     expect(idsOf(f)).toContain("workflow_orphan");
     expect(f.find((x) => x.id === "workflow_orphan")!.where).toBe("spare.yaml");
     expect(severityOf(f, "workflow_body_too_long")).toBe("warning");
-  });
+  }, spawnBudgetMs(2));
 
   test("a capitalised stem is named, and only under 6.0 does it reject", () => {
     const r = root();
@@ -283,7 +293,7 @@ describe("--fix", () => {
       protocol: "6.0",
       workflows: { "main.md": `---\n${INLINE_PROSE}---\n\n## intro\n\nExisting prose.\n` },
       workflowComponent: "main.md", invokeRef: "workflows/main.md",
-    }, spawnBudgetMs(2));
+    });
     fs.writeFileSync(path.join(dir, "agents", "planner.md"), "---\nname: planner\ndescription: planner\n---\n\n# planner\n", "utf8");
     fs.writeFileSync(path.join(dir, "tasks", "plan.md"), "# plan\n\nJust prose.\n", "utf8");
     fs.rmSync(path.join(dir, "README.md"));
@@ -298,7 +308,7 @@ describe("--fix", () => {
     expect(second.json.fix_outcome.rolled_back).toBe(false);
     expect(treeDigest(dir)).toEqual(after);
     expect(second.json.fixes.filter((x: any) => x.applied)).toEqual([]);
-  });
+  }, spawnBudgetMs(2));
 
   test("workflow_inline_prose_to_body moves the prose to `## <step.id>` verbatim and keeps what was there", () => {
     const r = root();
@@ -306,7 +316,7 @@ describe("--fix", () => {
       protocol: "6.0",
       workflows: { "main.md": `---\n${INLINE_PROSE}---\n\n## intro\n\nExisting prose.\n` },
       workflowComponent: "main.md", invokeRef: "workflows/main.md",
-    }, spawnBudgetMs(2));
+    });
     runCli(r, ["squad", "prose", "--no-retrieval", "--fix"]);
     const text = fs.readFileSync(path.join(dir, "workflows", "main.md"), "utf8");
     expect(text).toContain("## intro");
@@ -317,7 +327,7 @@ describe("--fix", () => {
     const graph = parseYaml(text.split("---")[1]);
     expect(graph.steps[0].task).toBeUndefined();
     expect(idsOf(findings(r, "prose"))).not.toContain("workflow_inline_prose");
-  });
+  }, spawnBudgetMs(2));
 
   test("invoke_ref_extension strips the encoding from a v6 ref and from components", () => {
     const r = root();
@@ -334,7 +344,7 @@ describe("--fix", () => {
     const r = root();
     const dir = squadFixture(r, "outputs", {
       capabilityExtra: ["    output:", "      name: report", "      type: markdown", "      humanize: true"],
-    }, spawnBudgetMs(2));
+    });
     writeSurfaceFor(dir, "squad");
     expect(idsOf(findings(r, "outputs"))).toContain("capability_outputs_shape");
     runCli(r, ["squad", "outputs", "--no-retrieval", "--fix"]);
@@ -342,13 +352,13 @@ describe("--fix", () => {
     expect(cap.output).toBeUndefined();
     expect(cap.outputs).toEqual([{ name: "report", type: "markdown" }]);
     expect(idsOf(findings(r, "outputs"))).not.toContain("capability_outputs_shape");
-  });
+  }, spawnBudgetMs(3));
 
   test("twin_merge keeps the YAML graph and the Markdown body, and only when it is a merge", () => {
     const r = root();
     const dir = squadFixture(r, "merge", {
       workflows: { "main.yaml": CANONICAL_WORKFLOW, "main.md": "---\nname: main\n---\n\n## plan\n\nThe body that survives.\n" },
-    }, spawnBudgetMs(2));
+    });
     runCli(r, ["squad", "merge", "--no-retrieval", "--fix"]);
     expect(fs.existsSync(path.join(dir, "workflows", "main.yaml"))).toBe(false);
     const merged = fs.readFileSync(path.join(dir, "workflows", "main.md"), "utf8");
@@ -362,13 +372,13 @@ describe("--fix", () => {
     const out = runCli(r, ["squad", "two-graphs", "--no-retrieval", "--fix", "--json"]);
     expect(fs.existsSync(path.join(other, "workflows", "main.yaml"))).toBe(true);
     expect(out.json.fixes.find((x: any) => x.fixer === "twin_merge").note).toContain("not mechanical");
-  });
+  }, spawnBudgetMs(2));
 
   test("workflow_refs_repair renames by case and separator, and never stubs a missing file", () => {
     const r = root();
     const dir = squadFixture(r, "renames", {
       workflows: { "main.yaml": "name: main\nsteps:\n  - id: plan\n    agent: planner\n    task: PLAN\n  - id: build\n    agent: Builder\n    task: nowhere\n" },
-    }, spawnBudgetMs(2));
+    });
     runCli(r, ["squad", "renames", "--no-retrieval", "--fix"]);
     const text = fs.readFileSync(path.join(dir, "workflows", "main.yaml"), "utf8");
     expect(text).toContain("task: plan");
@@ -377,7 +387,34 @@ describe("--fix", () => {
     expect(text).toContain("task: nowhere");
     expect(fs.existsSync(path.join(dir, "tasks", "nowhere.md"))).toBe(false);
     expect(idsOf(findings(r, "renames"))).toContain("workflow_ref_unresolved");
-  });
+  }, spawnBudgetMs(2));
+
+  test("a step reference written `tasks/<stem>.md` resolves: the file is on disk", () => {
+    const r = root();
+    // brandcraft, 27/08/2026: nine workflows wrote the directory into the ref,
+    // every file present, and the gate reported thirteen dangling references.
+    // The executor already reads this shape (`squad-exec.ts` strips
+    // `^(agents|tasks)/` before loading the document); only the lint disagreed.
+    const graph = [
+      "name: main", "steps:",
+      "  - id: plan", "    agent: planner", "    task: tasks/plan.md",
+      "  - id: build", "    agent: builder", "    task: tasks/build", "    requires: [plan]",
+      "",
+    ].join("\n");
+    squadFixture(r, "dir-prefixed-refs", { workflows: { "main.yaml": graph } });
+    expect(idsOf(findings(r, "dir-prefixed-refs"))).not.toContain("workflow_ref_unresolved");
+  }, spawnBudgetMs(2));
+
+  test("workflow_refs_repair strips the directory prefix before matching, and writes the bare stem", () => {
+    const r = root();
+    const graph = "name: main\nsteps:\n  - id: plan\n    agent: planner\n    task: tasks/PLAN.md\n";
+    const dir = squadFixture(r, "prefixed-rename", { workflows: { "main.yaml": graph } });
+    expect(idsOf(findings(r, "prefixed-rename"))).toContain("workflow_ref_unresolved");
+    runCli(r, ["squad", "prefixed-rename", "--no-retrieval", "--fix"]);
+    // §28.6: the canonical reference carries neither directory nor extension.
+    expect(fs.readFileSync(path.join(dir, "workflows", "main.yaml"), "utf8")).toContain("task: plan\n");
+    expect(idsOf(findings(r, "prefixed-rename"))).not.toContain("workflow_ref_unresolved");
+  }, spawnBudgetMs(3));
 
   test("requires_by_output_name rewrites a dependency that named an output", () => {
     const r = root();
@@ -385,13 +422,13 @@ describe("--fix", () => {
     const dir = squadFixture(r, "byoutput", {
       protocol: "6.0", workflows: { "main.md": `---\n${graph}---\n` },
       workflowComponent: "main", invokeRef: "workflows/main",
-    }, spawnBudgetMs(2));
+    });
     expect(idsOf(findings(r, "byoutput"))).toContain("workflow_requires_by_output");
     runCli(r, ["squad", "byoutput", "--no-retrieval", "--fix"]);
     const graphAfter = parseYaml(fs.readFileSync(path.join(dir, "workflows", "main.md"), "utf8").split("---")[1]);
     expect(graphAfter.steps[1].requires).toEqual(["plan"]);
     expect(idsOf(findings(r, "byoutput"))).not.toContain("workflow_requires_by_output");
-  });
+  }, spawnBudgetMs(3));
 
   test("a YAML workflow keeps its encoding: the fixer declines and names the migration", () => {
     const r = root();
@@ -418,7 +455,7 @@ describe("the audit scorer after `humanize`", () => {
 
     const declared = squadFixture(r, "c9-acceptance", {
       capabilityExtra: ["    acceptance:", "      - id: built", "        description: the artifact exists"],
-    }, spawnBudgetMs(2));
+    });
     const c9 = criteria.scoreSquad(declared).breakdown.find((b: any) => b.id === 9);
     expect(c9.score).toBe(6);
     expect(c9.evidence).toContain("1/1");
@@ -433,7 +470,7 @@ describe("the audit scorer after `humanize`", () => {
     const r = root();
     const dir = squadFixture(r, "retired-fixer", {
       capabilityExtra: ["    output:", "      name: report", "      type: markdown", "      humanize: true"],
-    }, spawnBudgetMs(2));
+    });
     const results = fixers.applyMechanicalFixes(dir, { patches: [{ kind: "humanize_default_true" }, { kind: "outputs_shape_repair" }] });
     expect(results[0].result.ok).toBe(false);
     expect(results[0].result.reason).toBe("unknown patch kind");
@@ -453,5 +490,38 @@ describe("the audit scorer after `humanize`", () => {
     const front = /^---\n([\s\S]*?)\n---/.exec(text)![1];
     expect(parseYaml(front).tools).toEqual(["Read", "Write", "Edit", "Bash", "Grep", "Glob"]);
     expect(parseYaml(front).maxTurns).toBe(12);
+  }, spawnBudgetMs(2));
+
+  test("tasks_acceptance_criteria renames the criteria the author wrote, and fabricates none", () => {
+    const r = root();
+    const dir = squadFixture(r, "ac-postconditions");
+    // brandcraft, 27/08/2026: thirty-two tasks carried the real contract under
+    // `## Postconditions`, which neither the gate's detector nor the judge's
+    // parser reads. Appending a generic block would have left the true
+    // criterion under one heading and a placebo under the heading the judge
+    // scores against.
+    fs.writeFileSync(path.join(dir, "tasks", "plan.md"), [
+      "# plan", "", "Plan the artifact.", "",
+      "## Postconditions", "",
+      "- `plan.md` exists and names every section the brief asked for.",
+      "- Every open question of the brief is answered or listed as a risk.",
+      "",
+    ].join("\n"), "utf8");
+    // Nothing to rename. Writing a criterion here would hand the judge a
+    // contract the author never agreed to (v6 §28.3: fixers never invent).
+    const barren = "# build\n\nBuild it.\n";
+    fs.writeFileSync(path.join(dir, "tasks", "build.md"), barren, "utf8");
+
+    const [res] = fixers.applyMechanicalFixes(dir, { patches: [{ kind: "tasks_acceptance_criteria" }] });
+    expect(res.result.ok).toBe(true);
+
+    const plan = fs.readFileSync(path.join(dir, "tasks", "plan.md"), "utf8");
+    expect(acceptanceCriteriaOf(plan)).toEqual([
+      "`plan.md` exists and names every section the brief asked for.",
+      "Every open question of the brief is answered or listed as a risk.",
+    ]);
+    expect(plan).not.toContain("## Postconditions");
+    expect(plan).not.toContain("matches the declared schema");
+    expect(fs.readFileSync(path.join(dir, "tasks", "build.md"), "utf8")).toBe(barren);
   }, spawnBudgetMs(2));
 });

@@ -8,6 +8,382 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### A route under the wrong key says so, instead of blaming a seat
+
+`investigation-bureau` was audited on 28/08/2026 and the gate answered nine times
+with `route_to (empty) names no seat of this business`. Every one of those routes
+named a real seat. They were written under the key `employee:`, so the message
+printed a placeholder where a seat name belongs, and the audit spent its effort
+discovering that the routes were not empty at all.
+
+`auto_route_unknown_employee` now separates the two cases. When `route_to` is
+absent and another key of the same route holds an existing seat, the finding
+names that key, names the seat, and states that the route is dead on both sides:
+`route_to is absent: the key employee holds ib-chief-detective, a seat of this
+business.` When two keys hold a seat name, it lists both and picks neither. When
+`route_to` is genuinely empty, it says `route_to is empty` and stops printing
+`(empty)` in the position where a seat name goes.
+
+No alias was added and no fixer was written. `employee:` is not a second spelling
+of `route_to`: this module reads `r.route_to`, `router.js` skips any entry whose
+`route_to` is not a string, and a second accepted key would be one more thing
+every future reader has to handle. The mechanical rewrite lost on the library's
+own numbers. Across 63 businesses and 691 routes on 28/08/2026, no route carries
+a seat under another key, while 66 routes hold a seat name under
+`requires_escalation_to`, which §13.2 defines as an escalation target and never a
+destination. Those 66 declare a valid `route_to` as well, so a fixer would not
+touch them today; they are the evidence that a key holding a seat name does not
+mean `route_to`, and rewriting on that heuristic is a fixer inventing intent
+(v6 §28.3). The message is the fix.
+
+## 0.10.4 — 2026-08-28
+
+### A workflow written as an event router stopped being reported as broken
+
+`nirvana-crypto-trading` carried a permanent warning. Its
+`event-driven-reactive.yaml` declares 23 event routes, each with its own channel,
+condition, priority and agent chain, and a capability invokes it for real. The
+gate answered `workflow_unnormalizable` on every run, saying no step order could
+be derived from the document, and under `--strict` that one warning was enough to
+print REJECTED against a squad that had done nothing wrong.
+
+A document whose graph cannot be derived because it is not a graph is not a
+malformed workflow. It is a workflow of another kind. The finding is now
+`workflow_event_router` at severity `info`, and it counts toward nothing: not the
+verdict, not the warning total, not the number of criteria passed. Every squad's
+`PASS n criteria` line drops by one for that reason, because an `info` criterion
+is not one an entity can pass or fail. It still appears, because the empty `steps[]` it produces would otherwise go unexplained,
+and it now says what the document is instead of what could not be done to it:
+`an event router: 23 event_routes entries, each with its own channel and chain`.
+
+No canonical shape for routers was added, and that was the decision rather than
+an omission. Two files in 629 carry `event_routes`, both named
+`event-driven-reactive.yaml`, in `nirvana-crypto-trading` and
+`nirvana-ai-trading`. Two instances do not pay for a second form that the reader,
+the lint, the migration, the prompt builder, the graph and the catalog would each
+have to learn. `nrv migrate` still refuses those two without `--force`, and the
+refusal is the honest half: forcing `steps[]` would invent an order between
+events that arrive independently.
+
+### The doctor names the invocation keys that nothing reads
+
+`triggers:` and `trigger_threshold:` name a command (`*full-tutoring`, `*wiki`,
+`*followup {jid}`) and how many must match before a workflow fires. Measured on
+the installed library on 27/08/2026: 302 of 629 workflows, across 101 of 206
+squads, declare one of them. `trigger_threshold` appears in 256, `triggers` in 46.
+
+No version of the protocol ever defined either key. v4 does not, v5 mentions them
+zero times, and v6 mentions them once, in the line that preserves legacy
+top-level keys verbatim inside `extensions`. No code reads them either. Routing is
+decided by `produces`, `keywords` and `example_briefs`, weighed by a maestro
+comparing candidates, which makes those commands a convention from before the
+agentic router.
+
+`nrv doctor` now reports the count as a warning, beside the protocol dashboard it
+already prints. Nothing deletes them, and nothing will. That is authored text, the
+normalizer keeps it on purpose, and erasing an author's content to clear a
+diagnostic line is the opposite of what a fixer does. The point is for dead
+surface to stop being invisible, not to stop existing.
+
+The count comes from the normalizer, not from a grep, which is why it exceeds
+what a search for a top-level key finds: 24 of those workflows are already on v6
+and carry the key inside their `extensions:` block.
+
+### Two mechanical fixers were lying: one fabricated a criterion, the other repaired nothing
+
+Both turned up in a real audit of `brandcraft` on 27/08/2026, and the first would
+have made that squad worse if anyone had run `--fix` before reading it.
+
+`fix_tasks_acceptance_criteria` tested whether a task carried an acceptance
+heading and, finding none, appended a generic block. The thirty-two tasks of that
+squad wrote the true criterion under `## Postconditions`. The judge's parser,
+`acceptanceCriteriaOf`, matches `## Acceptance Criteria` and nothing else, so the
+fixer would have left every task with the author's contract under one heading and
+a placebo under the heading that is actually scored. It also appended an
+`## Output Schema` block declaring outputs the task never had, which flipped the
+detector's `outputs:` test true and left the finding unable to fire again. A fixer
+that silences its own finding by inventing the answer is worse than the gap it
+closed, because the gap was at least visible.
+
+It renames now, and fabricates nothing. The alias list is measured, not guessed:
+across the 206 installed squads the criteria that are not under
+`## Acceptance Criteria` sit under `Quality criteria` (37 task files),
+`Critérios de Qualidade` (22), `Acceptance` and `Acceptance (binário)` (14), and
+`Postconditions` (9). `Checklist` is deliberately excluded — in this library it
+opens `### Pre` and `### Post` subsections, and renaming it would promote
+preconditions into the contract the judge scores. Of the 291 task files that
+trigger the finding today, 121 carry real criteria that now move under the
+heading the judge reads, in 19 squads. The other 170 stay a finding. v6 §28.3
+already settled that question for the sibling fixer: writing the criterion is
+writing the squad's method, and the author writes it.
+
+`workflow_refs_repair` matched a reference by case and separator alone, never
+stripping the directory an author writes into the path. Nine workflows of
+brandcraft wrote `task: tasks/inspect-quality.md` with every file present; the
+lint compares the value against the stem on disk, so present read as absent and
+twelve of the thirteen pending references survived `--fix` untouched. The
+executor had been reading that shape correctly all along, since `squad-exec.ts`
+strips `^(agents|tasks)/` before loading a component: the gate and the runtime
+disagreed about a file both could open.
+
+Step-reference normalization now strips the component directory the way it
+already stripped the encoding, and the repair strips it before matching, then
+writes the bare stem back. Accepting the written form is not adopting it as
+canonical: §28.6 keeps a reference free of directory and extension, and that is
+what `--fix` writes. Measured over the installed library, unresolved step
+references fall from 1021 to 829, and the squads carrying the finding from 78
+to 62.
+
+### The cockpit read `0 running` while two dispatches were writing to disk
+
+On 27/08/2026 the owner opened Glance with two dispatches alive and the Runs
+panel showed three stale cards from five days earlier and nothing running. The
+log panel of the same screen, that same second, was streaming `ARTIFACT_TOUCHED`
+for both of those traces. One screen, two sources, one of them right.
+
+Both were reading a file called `run-kernel.sqlite`. They were not the same file.
+Glance opens `<project>/.nirvana/run-kernel.sqlite`, and so do multi-target and
+the control plane's execution runner; `dispatch.ts` opened that one only when it
+was given `--run-id`, and without the flag it wrote to
+`<project>/outputs/<pid>/.nirvana/run-kernel.sqlite`, inside the scaffold. The
+flag is what Glance passes when Glance itself started the run. Every dispatch a
+person starts goes without it, so the normal case published its Run into a
+database that nothing else opens.
+
+That was deliberate, and the comment said so: without the flag each dispatch kept
+its own kernel, byte for byte the behaviour from before the kernel existed. The
+compatibility was real and the price was the whole cockpit.
+
+Now there is one kernel per project, with the flag or without it. The Run is a
+project-level record and belongs where the project reads it; the scaffold is a
+draft directory that `nrv clean <pid>` deletes, and a record does not live inside
+a draft. `nrv clean` no longer takes the Run with the scaffold, which is the same
+rule the run-ledger row and the audit log already followed. One consequence is
+worth knowing: the Run id is derived from the project id, so re-dispatching under
+a project id whose Run has already ended is refused with `x_run_id_collision`
+even after a clean. Pass a fresh `--project`.
+
+Two dispatches of one project now write to one database, and the test that
+reproduces the owner's screen holds both runtimes at a barrier so the two
+processes are provably alive at the same instant. It found a second defect
+immediately: `openKernel` set `PRAGMA busy_timeout` after `PRAGMA journal_mode =
+WAL`, and the WAL conversion takes an exclusive lock and returns `SQLITE_BUSY`
+without ever consulting the busy handler. Eighteen of twenty concurrent open
+pairs died with "database is locked". The publication treats a kernel it cannot
+open as `x_run_kernel_unavailable` and publishes nothing, so the Run would have
+disappeared from the cockpit again, by a different route, with the path already
+fixed. The timeout is now the first pragma and the WAL conversion retries until
+the file's mode reads `wal`, whichever process converted it: 200 of 200 clean.
+
+The project boundary is unchanged. The kernel lives under the project root, so
+one project still cannot see another's Runs, and a test now pins that too.
+
+## 0.10.3 — 2026-08-27
+
+### Ten more tests were measuring the disk, and nobody had chosen it
+
+The entry below fixed one file and left a list of ten. What those ten have in
+common is not a mistake anyone made. A new test opens the Run Kernel the way its
+neighbour does, the neighbour opened a real SQLite file under a temp directory,
+and `PRAGMA synchronous = FULL` turns every journalled event into an fsync. The
+disk arrives as an inheritance, never as a decision.
+
+The decision now has somewhere to live. `tests/helpers/test-kernels.ts` sits
+beside `temp-dirs.ts` and `test-budgets.ts` and offers two doors:
+`openTestKernel()`, hermetic, the default; and `openTestKernelFile(path)`, the
+named exception for a test that earns the disk. `closeTestKernels()` releases
+either one in `afterEach`, which is what keeps a leaked handle from turning a
+Windows teardown into EBUSY.
+
+One question sorted the ten. Does this test read the database back through a
+connection that is not the one it writes with? `:memory:` belongs to whichever
+connection opened it, so any other reader — a spawned child, an HTTP server, a
+second handle the code under test opens from a path it was handed — finds an
+empty database and every assertion passes on nothing. A green lie costs more
+than an honest fsync.
+
+Three answers were no, and those journals moved into memory: `gauntlet-store`,
+whose three cases write and read through one handle; the coordinator case in
+`multi-target-dispatch-adapters`, where the fake dispatch children answer through
+files and never open the kernel; and the crash-replay case in
+`glance-multi-target-projection`, the only one in that file that never goes
+through the server.
+
+Two answers were yes, and neither had a budget. `standard-publication` is the
+file that took `main` down in run `33098410397`. `openStandardPublication` is
+handed a path and opens its own handle, so the test's reads reach the journal
+from outside; the collision case then walks all seven terminal states, and each
+one costs a `prepare` plus three reads, twenty-eight openings of the same file
+with the schema initialization re-run on every one of them. `glance-control-plane`
+drives a live server holding its own connections to two databases, both opened
+with `synchronous = FULL`. The disk is the coverage in both, so both keep it and
+both get `KERNEL_BUDGET_MS`.
+
+Five were left exactly as they were. `dispatch-gauntlet-ledger`,
+`dispatch-standard-kernel`, `gauntlet-evaluator-dispatch`, `judge-x-dispatch` and
+`multi-target-cli` spawn a real dispatch and read what the child wrote. A
+database in this process's memory is invisible to a child process, which makes
+them the clearest read-back of all, and they already carry `spawnBudgetMs`
+budgets larger than the kernel one.
+
+The proof is statistical, on a 10-core machine with four fsync loops competing
+for the disk. Forty concurrent copies of the three server-free files, 640 runs
+before the change and 640 after: 18 timeouts became 0. All 18 were the same case,
+"a Run that already ended under the same id is refused before any producer", at
+5,943 ms mean against Bun's 5 s default. The group's wall clock fell from 18.2 s
+mean and 23.4 s at the tail to 15.8 s and 19.9 s. Measured on their own, the two
+files whose journals moved went from 9.0 s mean and 9.9 s max to 8.0 s and 9.0 s
+over 240 runs a side, with no timeout on either side: on macOS they are too cheap
+to cross 5 s, and the exposure they carried was Windows-shaped.
+
+The two Glance files ran sequentially, sixty times a side, against that same
+contention. Neither side timed out, the mean fell from 3.0 s to 2.5 s, and one
+sample in sixty reached 6.9 s against a previous worst of 5.4 s. That tail argues
+for the budget rather than against it: under Bun's default it is a red build, and
+nothing about it is the test's fault.
+
+One finding belongs to the load harness rather than to CI. `startServer` resolves
+`port: 0` by probing with a throwaway `Bun.serve`, stopping it, and letting the
+caller bind the same number, so two copies started in the same instant both pick
+3737 and one dies with EADDRINUSE. Only one copy of a file runs in CI, so it
+never fires there. It is why the Glance files were measured sequentially.
+
+### A test that failed by lottery, and the fsync that decided the draw
+
+`gauntlet-revision-loop.e2e.test.ts` kept going red on `smoke (windows-latest)`
+from branches whose diff touched nothing near it. Three of those failures landed
+on `main`, which only takes code that already passed all three systems, so they
+were intermittency by definition. The case CI named was "a typed agent-x producer
+crosses the revision loop to completed", timing out at 8,415 ms against Bun's 5 s
+default.
+
+The gap is the whole story. That case is one of the cheapest in the file: 14 ms
+on an idle machine. On the very run where it failed, its neighbours finished in
+195 to 490 ms, and the twin leg of its own `test.each`, which executes the
+identical code path, finished in 688 ms. Nothing about the work explains the
+spread. Where the work happened does. Every case in the file opened the Run
+Kernel as a real SQLite database under a temp directory, and the kernel opens
+with `synchronous = FULL`, so each of the 17 events the loop journals costs one
+fsync. The test's wall clock was a measurement of the runner's disk, and Windows
+is the slowest of the three.
+
+The journal now lives in memory. No case in the file ever read that database
+back; they assert projections, event payloads and the files the producers write.
+The disk bought no coverage and charged for durability that `afterEach` deleted
+milliseconds later. The kernel's own on-disk behaviour stays covered where it is
+the subject, in `run-kernel.test.ts` and the cross-process e2e files that share a
+database file with a spawned child.
+
+One finding sits outside the test. `openKernel` used to create the parent
+directory of whatever path it was handed, so `:memory:` worked only because
+`path.dirname(":memory:")` is `"."` on both platforms and creating `"."` is a
+no-op. It is a supported argument now, guarded and documented. Working by
+accident is how the next Windows-only failure gets written.
+
+The proof is statistical. Under 40 concurrent copies of the file on a 10-core
+machine with four fsync loops competing for the disk, 640 runs before the change
+produced 100 timeouts spread over nine different cases, including that twin leg;
+640 runs after, under the same load, produced 5, all in one case. The named case
+went from 1,356 ms mean and 4,518 ms at the tail to 573 ms and 2,212 ms. Two
+hundred consecutive unloaded runs then passed without a failure.
+
+No `retry`, no raised budget, no skip. Each of those hides the draw and keeps
+teaching everyone to re-run without reading, which is what makes the next real
+failure in that file invisible. Worth recording against that: the case CI named
+never had a declared budget at all. The two `KERNEL_BUDGET_MS` budgets in the
+file belong to the two cases that spawn processes.
+
+One case is left alone. "a typed Business crosses the revision loop, the real
+offline gate and the post-gate" is the only one that still crossed 5 s under that
+load, 7 samples in 400 against 65 before, because it runs the delivery pipeline
+and the post-gate on top of the kernel. That cost is not the one this change
+removes, and it carries no budget either. It is a cut of its own.
+### The shim is not the program: Windows spawns what it names
+
+A `.cmd` written by npm is not the CLI. It is a five-line batch file whose only
+job is to run `node <script> %*`. The driver had been starting the batch file,
+which means starting `cmd.exe`, and `cmd.exe` ends the command line at the first
+CR/LF of any argument. Version 0.10.2 cured that for `claude` by moving the
+directive into a file. Eight adapters and the light layer still carried the same
+shape, and a cure replicated ten times is a design that has not been fixed.
+
+`resolveExecutable` now reads the shim, takes the interpreter and script it
+names, and spawns that pair directly. No shell, no re-parsing, no command line
+for anything to cut: the child starts exactly the way a real `.exe` already
+starts on this platform.
+
+Measured over the argv the squad dispatch built, with the directive in the
+position it had on the day it broke (5,875 characters, first newline at 183).
+Through `cmd.exe`: 6,031 characters of arguments sent, 231 delivered, 5,800
+discarded at the newline (96.2%), taking both `--add-dir` grants and
+`--dangerously-skip-permissions` with them. Direct: 11 argv elements, 6,016
+characters, nothing discarded.
+
+Reading is literal-minded and refuses rather than guesses. A shim that
+rearranges what it forwards (`%1`, `SHIFT`), sets an environment variable the
+direct spawn would not reproduce, leaves a variable unexpanded, puts `%*`
+anywhere but last, or names an interpreter or script that is not on disk
+produces no candidate at all, and the caller keeps the old route through the
+interpreter with `quoteForCmd` on every argument. An interpreter that is itself
+a `.cmd` is refused as well, since resolving one only re-enters the trap. Both
+npm shim generations are read, local `node.exe` first and the bare name on PATH
+second, which is the order the shim's own `IF EXIST` uses.
+
+The `--append-system-prompt-file` cure from 0.10.2 stays exactly where it is. It
+now protects the fallback instead of the normal path.
+
+A Windows runner then took the direct path for real, and it holds. All nine
+adapters spawn through it, including the 300 KB prompt-delivery matrix; a
+maestro turn runs end to end on it, with the prompt piped to stdin, the
+stream-json parsed and `--resume` honored; and the multi-line directive reaches
+the child's own argv byte for byte, with both `--add-dir` grants in front of it.
+That last one is the link a machine without Windows cannot check: an argument
+carrying a newline crosses `CreateProcess` and the child's command-line parser
+whole. It is now checked on every run.
+
+Still unverified: the shim the runner reads is a plain `@echo off` launcher, not
+one npm's `cmd-shim` wrote, so the `_prog` branch and the older two-branch form
+are covered by fixtures rather than by an installed CLI. A shim from a generator
+outside npm, pnpm and yarn has never been seen by this parser at all — by
+construction it produces no candidate and keeps the old route, which is the
+behavior the fallback tests pin.
+### When Bun goes missing, only one of three places said what to do
+
+Bun is the whole runtime, so its absence is a hard stop, and three different
+places can be the first to notice. Only one of them handled it.
+
+`packaging/pack/setup.sh` was already right: the exact command, chained with the
+step that follows, plus the warning against `npm install -g bun` and the EACCES
+it earns in `/usr/local`. `packaging/pack/setup.ps1` answered the same failure in
+one line, pointing at `https://bun.sh` while holding the command it had tried
+three lines earlier. It now prints that command, the re-run after it, and
+`winget install Oven-sh.Bun`. The winget line matters because execution policy is
+the likeliest thing to have blocked the PowerShell one-liner on a managed Windows
+machine, and someone blocked once is blocked again by the same advice.
+
+The third case belonged to neither installer. Bun can disappear *after* a
+successful install: new machine, cleaned PATH, `~/.bun` deleted. What fails then
+is `nrv`, and it printed `nrv: bun not found` and quit. Both launchers now answer
+for the system they are running on. `bin/nrv` reads `uname -s` and gives the curl
+installer on a Unix kernel, the PowerShell one plus winget under Git Bash
+(MINGW/MSYS/CYGWIN); the `nrv.cmd` that `scripts/install.ts` generates carries the
+same text in cmd.exe's dialect, escaped so a `|` does not redirect and a `)` does
+not close the `if` block around it. One system gets one command. A list of three
+options makes the reader choose, and the wrong choice is a second failure.
+
+`setup.ps1` had no line-ending rule of its own, which is why the assertion over
+its lines passed on macOS and Ubuntu and failed on Windows: Git handed it LF to
+two runners and CRLF to the third. `.gitattributes` now pins `*.ps1` to
+`eol=crlf`, the file's native convention and the one `bin/*.cmd` already carried.
+What the buyer runs stops depending on who cloned the repo, and so does the hash
+that `check-published-packs` compares against the published bases.
+
+The test executes `bin/nrv` with a PATH holding no bun and a HOME with no
+`~/.bun`, faking `uname` per case, so the Git Bash branch is proved from macOS.
+`nrv doctor` still reports Bun's version without comparing it to the `>=1.0.0`
+`package.json` declares. That gap is about version rather than absence, and it is
+left where it is.
+
 ## 0.10.2 — 2026-08-27
 
 ### A newline in one argument cut every flag behind it, on Windows

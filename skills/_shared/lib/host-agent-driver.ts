@@ -185,6 +185,192 @@ function whichSync(cli: string): string | null {
   return null;
 }
 
+// ── Windows: spawn what the shim names, not the shim ──────────────────────
+//
+// An agent CLI installed through npm is a `.cmd` on Windows, and every `.cmd`
+// had been started through `cmd.exe`, which ends the command line at the first
+// CR/LF of any argument, quoted or not (the parser's limit, not the quoting's).
+// That cost the claude runner both `--add-dir` grants and its permission flag,
+// and the eight other adapters carry the same shape.
+//
+// The shim itself is not the program. It is a five-line batch file whose only
+// job is to run `node <script> %*`. Reading it, taking the pair it names and
+// spawning THAT removes the interpreter from the chain entirely: the child
+// starts the same way a real `.exe` already does on this platform, with nothing
+// left to cut anything.
+//
+// Reading is deliberately literal-minded. A shim whose shape does not match
+// what these functions can name with certainty produces no candidate, and the
+// caller falls back to the `cmd.exe` path. Degrading is acceptable; guessing is
+// not, so every guard below refuses rather than assumes:
+//
+//   - positional arguments (`%1`, `%~2`) or `SHIFT`: the wrapper rearranges
+//     what it forwards, so `%*` no longer proves the arguments pass intact;
+//   - a `SET` of anything but the three variables npm/pnpm/yarn shims use, an
+//     environment the direct spawn would not reproduce;
+//   - a variable that survives expansion, since we cannot name what would run;
+//   - `%*` anywhere but as the last token, so arguments land somewhere we did
+//     not read;
+//   - an interpreter or script that is not on disk, or an interpreter that is
+//     itself a `.cmd`, which would only re-enter the trap.
+
+/** A shim is a few hundred bytes. Anything bigger is a batch program doing work
+ * of its own, and reading it as a launcher would be a guess. */
+const MAX_SHIM_BYTES = 16 * 1024;
+
+/** `%1`, `%~2`, `%0` — argument reshuffling. `%~dp0` and `%*` do not match. */
+const SHIM_POSITIONAL = /%~?[0-9]/;
+const SHIM_SHIFT = /^[\s@]*shift\b/im;
+const SHIM_SET = /^[\s@]*set\s+"?([A-Za-z_][A-Za-z0-9_]*)\s*=/gim;
+const SHIM_PROG_SET = /^[\s@]*set\s+(?:"_prog=([^"\r\n]*)"|_prog=([^\r\n]*))/gim;
+/** `dp0` and `_prog` are the shim's own two variables; `PATHEXT` is the tweak
+ * that keeps its `node` from resolving to a `.js`, which is program resolution
+ * we do ourselves below. Any other assignment is an environment we would drop. */
+const SHIM_SET_ALLOWED = new Set(["dp0", "_prog", "pathext"]);
+
+/** Split one command fragment into arguments the way the interpreter would:
+ * double quotes group, unquoted whitespace separates, `""` stays an argument. */
+function tokenizeCmdFragment(fragment: string): string[] {
+  const tokens: string[] = [];
+  let current = "";
+  let started = false;
+  let quoted = false;
+  for (const ch of fragment) {
+    if (ch === '"') { quoted = !quoted; started = true; continue; }
+    if (!quoted && /\s/.test(ch)) {
+      if (started) { tokens.push(current); current = ""; started = false; }
+      continue;
+    }
+    current += ch;
+    started = true;
+  }
+  if (started) tokens.push(current);
+  return tokens;
+}
+
+/** Index of the last `&` or `|` outside quotes. The modern npm shim hides its
+ * real invocation behind both:
+ * `endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%" "…" %*`. */
+function lastCommandSeparator(line: string): number {
+  let quoted = false;
+  let at = -1;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') { quoted = !quoted; continue; }
+    if (!quoted && (ch === "&" || ch === "|")) at = i;
+  }
+  return at;
+}
+
+/** Shims are written with `\`; this module has to compare against real paths.
+ * On Windows the swap is the identity (`path.sep` IS `\`), which is also what
+ * lets the win32 branch be exercised on a POSIX runner. Only tokens that carry
+ * a separator are touched, so a flag survives byte for byte. */
+function normalizeShimPath(value: string): string {
+  if (!/[\\/]/.test(value)) return value;
+  return path.normalize(path.sep === "/" ? value.replace(/\\/g, "/") : value);
+}
+
+/** Expand the three variables a shim uses, or null when anything else survives:
+ * an unexpanded `%VAR%` means we cannot name what the shim would run. */
+function expandShimToken(token: string, dp0: string, prog: string | null): string | null {
+  let out = token.replace(/%~dp0/gi, () => dp0).replace(/%dp0%/gi, () => dp0);
+  if (prog !== null) out = out.replace(/%_prog%/gi, () => prog);
+  if (out.includes("%")) return null;
+  return normalizeShimPath(out);
+}
+
+/**
+ * Every invocation a shim names, best first — nothing is checked against the
+ * filesystem here, which keeps this half testable as pure text.
+ *
+ * Order mirrors the shim's own `IF EXIST`: the interpreter sitting beside the
+ * shim (`%~dp0\node.exe`) is offered before the bare name it falls back to, in
+ * both the modern `_prog` form and the older two-branch one.
+ */
+export function parseCmdShim(text: string, shimPath: string): Array<{ program: string; args: string[] }> {
+  if (SHIM_POSITIONAL.test(text) || SHIM_SHIFT.test(text)) return [];
+  SHIM_SET.lastIndex = 0;
+  for (let m = SHIM_SET.exec(text); m; m = SHIM_SET.exec(text)) {
+    if (!SHIM_SET_ALLOWED.has(m[1].toLowerCase())) { SHIM_SET.lastIndex = 0; return []; }
+  }
+  const dp0 = path.dirname(shimPath) + path.sep;
+  const progs: string[] = [];
+  SHIM_PROG_SET.lastIndex = 0;
+  for (let m = SHIM_PROG_SET.exec(text); m; m = SHIM_PROG_SET.exec(text)) {
+    const raw = (m[1] ?? m[2] ?? "").trim();
+    const expanded = raw ? expandShimToken(raw, dp0, null) : null;
+    if (expanded) progs.push(expanded);
+  }
+
+  const candidates: Array<{ program: string; args: string[] }> = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.includes("%*")) continue;
+    const cut = lastCommandSeparator(line);
+    const tokens = tokenizeCmdFragment((cut >= 0 ? line.slice(cut + 1) : line).replace(/^[\s@]+/, ""));
+    // `%*` last and alone is the whole proof that the arguments pass through
+    // untouched. Anything else is a wrapper we did not read.
+    if (tokens.length < 2 || tokens[tokens.length - 1] !== "%*") continue;
+    if (tokens.slice(0, -1).some(t => t.includes("%*"))) continue;
+    const usesProg = /%_prog%/i.test(tokens[0]);
+    for (const prog of usesProg ? progs : [null]) {
+      const program = expandShimToken(tokens[0], dp0, prog);
+      if (!program) continue;
+      const args = tokens.slice(1, -1).map(t => expandShimToken(t, dp0, prog));
+      if (args.some(a => a === null)) continue;
+      candidates.push({ program, args: args as string[] });
+    }
+  }
+  return candidates;
+}
+
+function isFile(candidate: string): boolean {
+  try { return fs.statSync(candidate).isFile(); } catch { return false; }
+}
+
+/** A flag passes through untouched; anything carrying a separator is a path the
+ * shim expects to exist, and if it does not we did not read the shim right. */
+function shimArgPresent(arg: string): boolean {
+  return !/[\\/]/.test(arg) || isFile(arg);
+}
+
+/** The named interpreter as a real executable. A path is taken as given — this
+ * is the `%~dp0` case, where node sits beside the shim and need not be on PATH
+ * at all. A bare name is looked up on PATH, which is what the shim's own ELSE
+ * branch asks `cmd.exe` for. Another `.cmd` is refused: resolving one would
+ * only re-enter the trap this whole path exists to leave. */
+function resolveShimProgram(program: string): string | null {
+  const bases = /[\\/]/.test(program) || /^[A-Za-z]:/.test(program)
+    ? [program]
+    : (process.env.PATH || "").split(path.delimiter).filter(Boolean).map(dir => path.join(dir, program));
+  for (const base of bases) {
+    for (const full of [base, base + ".exe", base + ".com"]) {
+      if (/\.(cmd|bat)$/i.test(full)) continue;
+      if (isFile(full)) return full;
+    }
+  }
+  return null;
+}
+
+/** The interpreter and leading arguments a `.cmd`/`.bat` names, or null when its
+ * shape is not one we can read with certainty — in which case the caller keeps
+ * the `cmd.exe` path it has always used. */
+export function resolveShimTarget(shimPath: string): { program: string; args: string[] } | null {
+  let text: string;
+  try {
+    const stat = fs.statSync(shimPath);
+    if (!stat.isFile() || stat.size > MAX_SHIM_BYTES) return null;
+    text = fs.readFileSync(shimPath, "utf8");
+  } catch { return null; }
+  for (const candidate of parseCmdShim(text, shimPath)) {
+    const program = resolveShimProgram(candidate.program);
+    if (!program) continue;
+    if (!candidate.args.every(shimArgPresent)) continue;
+    return { program, args: candidate.args };
+  }
+  return null;
+}
+
 /**
  * How to actually START a CLI on this platform.
  *
@@ -194,15 +380,21 @@ function whichSync(cli: string): string | null {
  * yes and the invocation dies, which is the worst possible split. (Recent Node
  * makes it explicit, refusing to spawn a `.cmd` without a shell at all.)
  *
- * A batch file has to be started through the command interpreter, so `shell` is
- * required — and with a shell the arguments are re-parsed, which is why
- * `quoteForCmd` exists below. On POSIX this is the identity: same command, same
- * args, no shell, nothing to re-parse.
+ * A `.cmd` is not the program, though — it is a launcher naming one. When the
+ * shim can be read (`resolveShimTarget`), the interpreter and script it names
+ * are spawned directly and the command interpreter never enters the chain: no
+ * shell, nothing re-parsed, and no command line for `cmd.exe` to cut at a
+ * newline. A shim of an unrecognized shape keeps the old route — through the
+ * interpreter, with `quoteForCmd` on every argument.
+ *
+ * On POSIX this is the identity: same command, same args, no shell.
  */
 export function resolveExecutable(cli: string): { command: string; args: (a: string[]) => string[]; shell: boolean } {
   if (process.platform !== "win32") return { command: cli, args: a => a, shell: false };
   const resolved = whichSync(cli);
   if (resolved && /\.(cmd|bat)$/i.test(resolved)) {
+    const target = resolveShimTarget(resolved);
+    if (target) return { command: target.program, args: a => [...target.args, ...a], shell: false };
     return { command: quoteForCmd(resolved), args: a => a.map(quoteForCmd), shell: true };
   }
   // A real .exe (or nothing found — let the spawn report the honest ENOENT).
@@ -1788,15 +1980,15 @@ export function runtimeAvailable(runtime: Runtime): boolean {
 /**
  * How the multi-line system directive reaches `claude`, per start path.
  *
- * A `.cmd`/`.bat` runtime — every npm-installed CLI — can only be started through the
+ * When a `.cmd`/`.bat` runtime cannot be read as a launcher, it is still started through the
  * command interpreter (resolveExecutable), and cmd.exe ends the command line at the first
  * CR/LF of an argument however it is quoted: quoteForCmd cannot help, because the limit is
  * the parser and not the escaping. The directive is the one argument here that spans lines,
  * so under a shell it travels as `--append-system-prompt-file <temp file>` and the command
  * line stays single-line. Without a shell it stays inline, exactly as before.
  *
- * The same defect and the same cure already live in control-plane/maestro-turn.ts; the
- * headless driver every dispatched child goes through had been left out of it.
+ * resolveExecutable now spawns the pair a readable shim names, so the shell branch is the
+ * exception rather than the rule. This stays as the defense for whatever falls into it.
  */
 export function claudeDirectiveArgs(directive: string, shell: boolean): { args: string[]; tmpFiles?: string[] } {
   if (!directive) return { args: [] };
