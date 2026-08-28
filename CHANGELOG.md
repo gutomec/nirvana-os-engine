@@ -8,6 +8,50 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### The cockpit read `0 running` while two dispatches were writing to disk
+
+On 27/08/2026 the owner opened Glance with two dispatches alive and the Runs
+panel showed three stale cards from five days earlier and nothing running. The
+log panel of the same screen, that same second, was streaming `ARTIFACT_TOUCHED`
+for both of those traces. One screen, two sources, one of them right.
+
+Both were reading a file called `run-kernel.sqlite`. They were not the same file.
+Glance opens `<project>/.nirvana/run-kernel.sqlite`, and so do multi-target and
+the control plane's execution runner; `dispatch.ts` opened that one only when it
+was given `--run-id`, and without the flag it wrote to
+`<project>/outputs/<pid>/.nirvana/run-kernel.sqlite`, inside the scaffold. The
+flag is what Glance passes when Glance itself started the run. Every dispatch a
+person starts goes without it, so the normal case published its Run into a
+database that nothing else opens.
+
+That was deliberate, and the comment said so: without the flag each dispatch kept
+its own kernel, byte for byte the behaviour from before the kernel existed. The
+compatibility was real and the price was the whole cockpit.
+
+Now there is one kernel per project, with the flag or without it. The Run is a
+project-level record and belongs where the project reads it; the scaffold is a
+draft directory that `nrv clean <pid>` deletes, and a record does not live inside
+a draft. `nrv clean` no longer takes the Run with the scaffold, which is the same
+rule the run-ledger row and the audit log already followed. One consequence is
+worth knowing: the Run id is derived from the project id, so re-dispatching under
+a project id whose Run has already ended is refused with `x_run_id_collision`
+even after a clean. Pass a fresh `--project`.
+
+Two dispatches of one project now write to one database, and the test that
+reproduces the owner's screen holds both runtimes at a barrier so the two
+processes are provably alive at the same instant. It found a second defect
+immediately: `openKernel` set `PRAGMA busy_timeout` after `PRAGMA journal_mode =
+WAL`, and the WAL conversion takes an exclusive lock and returns `SQLITE_BUSY`
+without ever consulting the busy handler. Eighteen of twenty concurrent open
+pairs died with "database is locked". The publication treats a kernel it cannot
+open as `x_run_kernel_unavailable` and publishes nothing, so the Run would have
+disappeared from the cockpit again, by a different route, with the path already
+fixed. The timeout is now the first pragma and the WAL conversion retries until
+the file's mode reads `wal`, whichever process converted it: 200 of 200 clean.
+
+The project boundary is unchanged. The kernel lives under the project root, so
+one project still cannot see another's Runs, and a test now pins that too.
+
 ## 0.10.3 — 2026-08-27
 
 ### Ten more tests were measuring the disk, and nobody had chosen it

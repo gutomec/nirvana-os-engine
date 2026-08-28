@@ -214,14 +214,21 @@ const manifest = arg("--manifest");
 const projectId = arg("--project");
 // --run-id: the Run's id instead of the derived run_<project>: adopted when a
 // control plane prepared it (Glance), created when it does not exist yet (one
-// per multi-target node attempt). The Run lives in the project root's kernel (the
-// root Glance serves: NIRVANA_PROJECT_ROOT, else the cwd), so with the flag the
-// canaries open that kernel; without it each dispatch keeps its own under
-// outputs/<pid>, byte-for-byte the previous behaviour.
+// per multi-target node attempt).
 const runIdFlag = arg("--run-id");
-function canaryKernelPath(scaffoldRoot: string): string {
-  return path.join(runIdFlag ? PROJECT_ROOT : scaffoldRoot, ".nirvana", "run-kernel.sqlite");
-}
+// ONE kernel per project, with the flag or without it: the project root's, the
+// same file Glance serves (glance/server.ts), multi-target compiles into and the
+// canary queue sweeps for orphans.
+//
+// This used to answer `<scaffold>/.nirvana/run-kernel.sqlite` when --run-id was
+// absent, to keep the pre-kernel behaviour byte-for-byte. The price was the whole
+// normal case: every dispatch without the flag published its Run into a database
+// nothing else opens. On 27/08/2026 the owner had two dispatches alive and the
+// cockpit read `0 running` over three STALE cards while the log panel of the same
+// screen streamed their events — one screen, two paths, and the list read the
+// empty one. The Run is a project-level record; the scaffold is a draft directory
+// (`nrv clean <pid>` deletes it), and a record does not belong inside a draft.
+const KERNEL_PATH = path.join(PROJECT_ROOT, ".nirvana", "run-kernel.sqlite");
 const runtime = arg("--runtime", "claude-code");
 // Was the --runtime flag GIVEN by the user? (arg() can't tell flag from default;
 // an explicit flag ALWAYS beats the USE_* rules — a rule only beats the default.)
@@ -1140,9 +1147,9 @@ if (pendingCascade?.kind === "squad-only") {
     const requirements = gauntletRequirements(pid, producerTarget, squadContract);
     const { evaluator, budget } = gauntletEvaluatorFor({ pid, producer: producerTarget,
       plan: compileGauntletPlan({ brief, intensity: executionOptions.intensity, requirements }),
-      projectRoot, workspaceRoot: scaffoldRoot, rt, kernelPath: canaryKernelPath(scaffoldRoot), runId: canonicalRunId,
+      projectRoot, workspaceRoot: scaffoldRoot, rt, kernelPath: KERNEL_PATH, runId: canonicalRunId,
       heuristicEnv: { NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid } });
-    const kernel = openKernel(canaryKernelPath(scaffoldRoot));
+    const kernel = openKernel(KERNEL_PATH);
     const legacy = runLedger.openLedger();
     let finalDelivery: DeliveryResult | null = null;
     // One producer for the first candidate and for every revision: same squad, same runtime.
@@ -1183,7 +1190,7 @@ if (pendingCascade?.kind === "squad-only") {
   }
   // Standard mode publishes the same canonical Run the Gauntlet canary would (dual-write through
   // lib/run-kernel/standard-publication.ts, fail-open); a chain of squads publishes under its first squad.
-  const publication = openStandardPublication({ kernelPath: canaryKernelPath(scaffoldRoot), projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag),
+  const publication = openStandardPublication({ kernelPath: KERNEL_PATH, projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag),
     traceId: pid, target: { kind: "squad", slug: squads[0], capabilityId }, snapshot: frozenExecutionSnapshot(pid, rt, "squad"),
     audit: emit, warn: line => console.error(c("yellow", line)) });
   if (publication.incompatible || publication.collided) process.exit(1);
@@ -1290,7 +1297,7 @@ if (pendingCascade?.kind === "judge-x") {
     process.exit(1);
   }
   const scorecardPath = path.join(oroot, SCORECARD_FILE);
-  const publication = openStandardPublication({ kernelPath: canaryKernelPath(scaffoldRoot), projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag),
+  const publication = openStandardPublication({ kernelPath: KERNEL_PATH, projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag),
     traceId: pid, target: JUDGE_X_TARGET, snapshot: frozenExecutionSnapshot(pid, rt, "agent-x"),
     audit: emit, warn: line => console.error(c("yellow", line)) });
   if (publication.incompatible) process.exit(1);
@@ -1360,8 +1367,8 @@ if (pendingCascade?.kind === "agent-x") {
     const { evaluator, budget } = gauntletEvaluatorFor({ pid, producer: { kind: "agent-x", slug: "agent-x" },
       plan: compileGauntletPlan({ brief, intensity: executionOptions.intensity, requirements }),
       projectRoot: PROJECT_ROOT, workspaceRoot: scaffoldRoot, rt,
-      kernelPath: canaryKernelPath(scaffoldRoot), runId: canonicalRunId, heuristicEnv: { NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid } });
-    const kernel = openKernel(canaryKernelPath(scaffoldRoot));
+      kernelPath: KERNEL_PATH, runId: canonicalRunId, heuristicEnv: { NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid } });
+    const kernel = openKernel(KERNEL_PATH);
     const legacy = runLedger.openLedger();
     let finalDelivery: DeliveryResult | null = null;
     // One producer for the first candidate and for every revision: same persona, same runtime.
@@ -1406,7 +1413,7 @@ if (pendingCascade?.kind === "agent-x") {
     }
   }
   // Standard mode publishes the same canonical Run the Gauntlet canary would (dual-write, fail-open).
-  const publication = openStandardPublication({ kernelPath: canaryKernelPath(scaffoldRoot), projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag),
+  const publication = openStandardPublication({ kernelPath: KERNEL_PATH, projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag),
     traceId: pid, target: { kind: "agent-x", slug: "agent-x" }, snapshot: frozenExecutionSnapshot(pid, rt, "agent-x"),
     audit: emit, warn: line => console.error(c("yellow", line)) });
   if (publication.incompatible || publication.collided) process.exit(1);
@@ -1612,8 +1619,8 @@ if (wantExec) {
       const requirements = gauntletRequirements(pid, { kind: "business", slug }, { requirements: businessAcceptance.requirements });
     const { evaluator, budget } = gauntletEvaluatorFor({ pid, producer: { kind: "business", slug },
       plan: compileGauntletPlan({ brief, intensity: executionOptions.intensity, requirements }), projectRoot, workspaceRoot: scaffoldRoot, rt,
-      kernelPath: canaryKernelPath(scaffoldRoot), runId: canonicalRunId, heuristicEnv: { NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid, NIRVANA_BUSINESS_SLUG: slug } });
-    const kernel = openKernel(canaryKernelPath(scaffoldRoot));
+      kernelPath: KERNEL_PATH, runId: canonicalRunId, heuristicEnv: { NIRVANA_TRACE_ID: pid, NIRVANA_PROJECT_ID: pid, NIRVANA_BUSINESS_SLUG: slug } });
+    const kernel = openKernel(KERNEL_PATH);
     const canaryLedger = runLedger.openLedger();
     let finalDelivery: DeliveryResult | null = null;
     let canarySessionId: string | null = null;
@@ -1706,7 +1713,7 @@ if (wantExec) {
   // Standard mode publishes the canonical Run (dual-write, fail-open). After a canary rollback the
   // kernel already holds this Run's terminal state, so the legacy fallback publishes nothing new.
   const publication = businessCanaryDecision.enabled ? inertStandardPublication(canonicalRunIdFor(pid, runIdFlag))
-    : openStandardPublication({ kernelPath: canaryKernelPath(scaffoldRoot), projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag), traceId: pid,
+    : openStandardPublication({ kernelPath: KERNEL_PATH, projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag), traceId: pid,
       target: { kind: "business", slug }, snapshot: frozenExecutionSnapshot(pid, rt, "business"), audit: emit, warn: line => console.error(c("yellow", line)) });
   if (publication.incompatible || publication.collided) {
     const error = publication.collided ? `run ${publication.runId} is already terminal` : "runtime incompatible with the provider catalog";

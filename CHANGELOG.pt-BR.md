@@ -8,6 +8,51 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### O cockpit lia `0 running` enquanto dois despachos escreviam no disco
+
+Em 27/08/2026 o dono abriu o Glance com dois despachos vivos e o painel de Runs
+mostrou três cards parados de cinco dias antes e nada rodando. O painel de logs
+da mesma tela, naquele mesmo segundo, transmitia `ARTIFACT_TOUCHED` desses dois
+traces. Uma tela, duas fontes, uma delas certa.
+
+As duas liam um arquivo chamado `run-kernel.sqlite`. Não era o mesmo arquivo. O
+Glance abre `<projeto>/.nirvana/run-kernel.sqlite`, e o multi-target e o execution
+runner do control plane também; o `dispatch.ts` só abria esse quando recebia
+`--run-id`, e sem a flag escrevia em
+`<projeto>/outputs/<pid>/.nirvana/run-kernel.sqlite`, dentro do scaffold. A flag
+é o que o Glance passa quando foi ele que começou o run. Todo despacho que uma
+pessoa inicia vai sem ela, então o caso normal publicava o Run num banco que mais
+ninguém abre.
+
+Aquilo era deliberado, e o comentário dizia: sem a flag cada despacho mantinha o
+próprio kernel, byte a byte o comportamento anterior ao kernel. A compatibilidade
+era real e o preço dela era o cockpit inteiro.
+
+Agora é um kernel por projeto, com a flag ou sem ela. O Run é registro de
+projeto e pertence a onde o projeto o lê; o scaffold é diretório de rascunho que
+o `nrv clean <pid>` apaga, e registro não mora dentro de rascunho. O `nrv clean`
+deixa de levar o Run junto com o scaffold, que é a mesma regra que a linha do
+run-ledger e o audit já seguiam. Uma consequência vale saber: o id do Run é
+derivado do id do projeto, então redespachar sob um id de projeto cujo Run já
+terminou é recusado com `x_run_id_collision` mesmo depois de um clean. Passe um
+`--project` novo.
+
+Dois despachos de um projeto agora escrevem num banco só, e o teste que reproduz
+a tela do dono segura os dois runtimes numa barreira para que os dois processos
+estejam comprovadamente vivos no mesmo instante. Ele achou um segundo defeito na
+hora: o `openKernel` definia `PRAGMA busy_timeout` depois de `PRAGMA journal_mode
+= WAL`, e a conversão para WAL pega lock exclusivo e devolve `SQLITE_BUSY` sem
+nunca consultar o busy handler. Dezoito de vinte pares de abertura concorrente
+morreram com "database is locked". A publicação trata kernel que não abre como
+`x_run_kernel_unavailable` e não publica nada, então o Run sumiria do cockpit de
+novo, por outro caminho, com o path já corrigido. O timeout agora é o primeiro
+pragma e a conversão para WAL tem retry até o modo do arquivo ler `wal`, tenha
+sido qual processo for a convertê-lo: 200 de 200 limpos.
+
+A fronteira entre projetos não muda. O kernel fica sob o root do projeto, então
+um projeto continua sem enxergar os Runs do outro, e agora um teste fixa isso
+também.
+
 ## 0.10.3 — 2026-08-27
 
 ### Mais dez testes mediam o disco, e ninguém tinha escolhido isso

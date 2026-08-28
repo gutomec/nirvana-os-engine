@@ -10,7 +10,7 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { createDispatchExecutionRunner, glanceRunDir } from "../lib/control-plane/index.ts";
-import { createRun, getRun, listEvents, openKernel, type RunEvent, type TargetRef } from "../lib/run-kernel/index.ts";
+import { createRun, getRun, listEvents, listRuns, openKernel, type RunEvent, type TargetRef } from "../lib/run-kernel/index.ts";
 import { openLedger } from "../lib/run-ledger.ts";
 import { canonicalRunIdFor } from "../scripts/dispatch.ts";
 import { writeFakeCli } from "./helpers/fake-cli.ts";
@@ -34,6 +34,8 @@ const PASSING_HTML = [
 // The fake runtime reads the prompt from STDIN as the driver delivers it, records its pid, then
 // acts per FAKE_CLAUDE_MODE: `deliver` writes report.html under FAKE_CLAUDE_OUTPUTS_ROOT and prints
 // the claude-code JSON envelope; `fail` exits 1 with nothing on disk; `sleep` blocks until a signal.
+// FAKE_BARRIER_DIR (unset for every other test) holds `deliver` until FAKE_BARRIER_SIZE runtimes
+// have arrived and exits 9 if they never do: that is what makes "concurrent" a fact and not a hope.
 const FAKE_CLAUDE = String.raw`
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -48,6 +50,15 @@ if (mode === "sleep") {
   process.exit(0);
 }
 if (mode === "fail") { console.error("fake runtime: provider failure"); process.exit(1); }
+const barrier = process.env.FAKE_BARRIER_DIR;
+if (barrier) {
+  const wanted = Number(process.env.FAKE_BARRIER_SIZE ?? "2");
+  fs.mkdirSync(barrier, { recursive: true });
+  fs.writeFileSync(path.join(barrier, String(process.pid)), "1");
+  const deadline = Date.now() + 60000;
+  while (fs.readdirSync(barrier).length < wanted && Date.now() < deadline) await Bun.sleep(20);
+  if (fs.readdirSync(barrier).length < wanted) { console.error("fake runtime: barrier never filled"); process.exit(9); }
+}
 const outputsRoot = process.env.FAKE_CLAUDE_OUTPUTS_ROOT;
 fs.mkdirSync(outputsRoot, { recursive: true });
 fs.writeFileSync(path.join(outputsRoot, "report.html"), ${JSON.stringify(PASSING_HTML)}, "utf8");
@@ -93,6 +104,12 @@ function fixture() {
   });
   const dispatch = (args: string[], extra: Record<string, string> = {}) =>
     spawnSync(process.execPath, [DISPATCH, ...args], { cwd: projectRoot, encoding: "utf8", env: { ...env, ...extra } });
+  // The concurrency proof needs both dispatches ALIVE at once, which spawnSync cannot give.
+  const dispatchAsync = async (args: string[], extra: Record<string, string> = {}) => {
+    const child = Bun.spawn([process.execPath, DISPATCH, ...args], { cwd: projectRoot, env: { ...env, ...extra }, stdout: "pipe", stderr: "pipe" });
+    const [status, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
+    return { status, stdout, stderr };
+  };
   const projectKernel = path.join(projectRoot, ".nirvana", "run-kernel.sqlite");
   const dispatchKernel = (projectId: string) => path.join(projectRoot, "outputs", projectId, ".nirvana", "run-kernel.sqlite");
   const prepare = (runId: string, target: TargetRef) => {
@@ -109,7 +126,7 @@ function fixture() {
       return fs.existsSync(file) ? fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map(line => JSON.parse(line) as Record<string, unknown>) : [];
     });
   };
-  return { root, projectRoot, briefFile, capture, env, dispatch, projectKernel, dispatchKernel, prepare, audit };
+  return { root, projectRoot, briefFile, capture, env, dispatch, dispatchAsync, projectKernel, dispatchKernel, prepare, audit };
 }
 
 function readKernel(kernelPath: string, projectId: string, runId: string): { run: ReturnType<typeof getRun>; events: RunEvent[] } {
@@ -121,7 +138,7 @@ function readKernel(kernelPath: string, projectId: string, runId: string): { run
 const timeline = (events: RunEvent[]) => events.map(event => event.type === "run.transitioned" ? `run.transitioned:${(event.payload as { to: string }).to}` : event.type);
 
 describe("standard dispatch publishes a canonical Run", () => {
-  test("agent-x --exec leaves run_<project> completed in the dispatch kernel; exit code, artifacts and legacy audit unchanged", () => {
+  test("agent-x --exec leaves run_<project> completed in the project kernel; exit code, artifacts and legacy audit unchanged", () => {
     const fx = fixture();
     const outputs = path.join(fx.root, "deliverables-agent-x");
     const result = fx.dispatch(["--agent-x", "--brief-file", fx.briefFile, "--exec", "--project", "proj-ax", "--outputs-root", outputs, "--max-revisions", "0"],
@@ -129,7 +146,7 @@ describe("standard dispatch publishes a canonical Run", () => {
     expect(result.status, result.stdout + result.stderr).toBe(0);
     expect(fs.existsSync(path.join(outputs, "report.html"))).toBe(true);
     const runId = canonicalRunIdFor("proj-ax");
-    const { run, events } = readKernel(fx.dispatchKernel("proj-ax"), "proj-ax", runId);
+    const { run, events } = readKernel(fx.projectKernel, "proj-ax", runId);
     expect(run).toMatchObject({ state: "completed", target: { kind: "agent-x", slug: "agent-x" }, traceId: "proj-ax", planId: `plan_${runId}` });
     expect(run!.policySnapshotRef).toStartWith("snapshot_");
     expect(timeline(events)).toEqual([...STANDARD_TIMELINE, "run.transitioned:completed"]);
@@ -141,7 +158,7 @@ describe("standard dispatch publishes a canonical Run", () => {
       expect(audit.some(entry => entry.event === event), event).toBe(true);
     }
     expect(audit.some(entry => entry.event === "x_run_kernel_unavailable")).toBe(false);
-    expect(fs.existsSync(fx.projectKernel)).toBe(false);
+    expect(fs.existsSync(fx.dispatchKernel("proj-ax"))).toBe(false);
   }, 90000);
 
   test("--squad --run-id adopts the Run Glance prepared in the project kernel: one run.prepared, the prepared trace, a real terminal state", () => {
@@ -175,7 +192,7 @@ describe("standard dispatch publishes a canonical Run", () => {
     const result = fx.dispatch(["--agent-x", "--brief-file", fx.briefFile, "--exec", "--project", "proj-fail", "--outputs-root", outputs],
       { FAKE_CLAUDE_MODE: "fail", FAKE_CLAUDE_OUTPUTS_ROOT: outputs });
     expect(result.status, result.stdout + result.stderr).toBe(1);
-    const { run, events } = readKernel(fx.dispatchKernel("proj-fail"), "proj-fail", canonicalRunIdFor("proj-fail"));
+    const { run, events } = readKernel(fx.projectKernel, "proj-fail", canonicalRunIdFor("proj-fail"));
     expect(run?.state).toBe("failed");
     expect(timeline(events)).toEqual([...STANDARD_TIMELINE, "run.transitioned:failed"]);
     const terminal = events.at(-1)!.payload as { exitCode: number; gateOutcome: string; error?: string };
@@ -248,5 +265,94 @@ describe("a Run that already ended under --run-id is refused before the runtime 
       .toEqual([[runId, "completed", "squad", "standard"], [runId, "completed", "agent-x", "gauntlet"]]);
     expect(collisions[0]).toMatchObject({ trace_id: "prj_glance", project_id: "prj_glance", kernel_path: fx.projectKernel, run_target: SQUAD });
     expect(collisions[1]).toMatchObject({ trace_id: "prj_glance", project_id: "prj_glance", run_target: SQUAD });
+  }, 120000);
+});
+
+// The owner's case, 27/08/2026: two dispatches alive, the cockpit reading `0 running` over three
+// STALE cards while the log panel of the same screen streamed ARTIFACT_TOUCHED for both traces.
+// The Glance opens `<project>/.nirvana/run-kernel.sqlite`; a dispatch without --run-id wrote to
+// `<scaffold>/.nirvana/run-kernel.sqlite`. One screen, two paths, and the list read the empty one.
+describe("the kernel Glance opens holds every dispatch of the project", () => {
+  test("two dispatches without --run-id leave both Runs in the project kernel and nothing under the scaffolds", () => {
+    const fx = fixture();
+    const ids = ["proj-one", "proj-two"];
+    for (const id of ids) {
+      const outputs = path.join(fx.root, `deliverables-${id}`);
+      const result = fx.dispatch(["--agent-x", "--brief-file", fx.briefFile, "--exec", "--project", id, "--outputs-root", outputs, "--max-revisions", "0"],
+        { FAKE_CLAUDE_OUTPUTS_ROOT: outputs });
+      expect(result.status, result.stdout + result.stderr).toBe(0);
+    }
+    const handle = openKernel(fx.projectKernel);
+    try {
+      expect(listRuns(handle).map(run => [run.projectId, run.runId, run.state]))
+        .toEqual(ids.map(id => [id, canonicalRunIdFor(id), "completed"]));
+    } finally { handle.close(); }
+    for (const id of ids) expect(fs.existsSync(fx.dispatchKernel(id)), id).toBe(false);
+  }, 120000);
+
+  test("two concurrent dispatches share that kernel in WAL: both complete, both timelines intact, no gap in either sequence", async () => {
+    const fx = fixture();
+    const ids = ["proj-conc-a", "proj-conc-b"];
+    // The barrier holds both runtimes until both have arrived, so the two dispatches are provably
+    // alive at the same instant and their `verifying` and terminal writes race for the same lock.
+    // Neither reaches exit 0 without the other: a serialised pair exits 9.
+    const barrier = path.join(fx.root, "barrier");
+    const results = await Promise.all(ids.map(id => {
+      const outputs = path.join(fx.root, `deliverables-${id}`);
+      const capture = path.join(fx.root, `capture-${id}`);
+      fs.mkdirSync(capture, { recursive: true });
+      return fx.dispatchAsync(["--agent-x", "--brief-file", fx.briefFile, "--exec", "--project", id, "--outputs-root", outputs, "--max-revisions", "0"],
+        { FAKE_CLAUDE_OUTPUTS_ROOT: outputs, FAKE_CAPTURE_DIR: capture, FAKE_BARRIER_DIR: barrier, FAKE_BARRIER_SIZE: String(ids.length) });
+    }));
+    for (const result of results) expect(result.status, result.stdout + result.stderr).toBe(0);
+    const handle = openKernel(fx.projectKernel);
+    try {
+      for (const id of ids) {
+        const events = listEvents(handle, id);
+        expect(getRun(handle, id, canonicalRunIdFor(id))?.state, id).toBe("completed");
+        expect(timeline(events), id).toEqual([...STANDARD_TIMELINE, "run.transitioned:completed"]);
+        // `project_sequences` is keyed by project, so two interleaved writers each keep a gapless run.
+        expect(events.map(event => event.sequence), id).toEqual([1, 2, 3, 4, 5]);
+      }
+    } finally { handle.close(); }
+    const audit = fx.audit();
+    expect(audit.filter(entry => entry.event === "x_run_kernel_unavailable")).toEqual([]);
+    expect(audit.filter(entry => entry.event === "x_run_id_collision")).toEqual([]);
+  }, 180000);
+
+  test("another project root keeps its own kernel: neither lists the other's Run", () => {
+    const fx = fixture();
+    const otherRoot = path.join(fx.root, "project-two");
+    fs.mkdirSync(path.join(otherRoot, ".nirvana"), { recursive: true });
+    for (const [id, root] of [["proj-here", fx.projectRoot], ["proj-there", otherRoot]] as const) {
+      const outputs = path.join(fx.root, `deliverables-${id}`);
+      const result = fx.dispatch(["--agent-x", "--brief-file", fx.briefFile, "--exec", "--project", id, "--outputs-root", outputs, "--max-revisions", "0"],
+        { NIRVANA_PROJECT_ROOT: root, FAKE_CLAUDE_OUTPUTS_ROOT: outputs });
+      expect(result.status, result.stdout + result.stderr).toBe(0);
+    }
+    for (const [root, mine] of [[fx.projectRoot, "proj-here"], [otherRoot, "proj-there"]] as const) {
+      const handle = openKernel(path.join(root, ".nirvana", "run-kernel.sqlite"));
+      try { expect(listRuns(handle).map(run => run.projectId), root).toEqual([mine]); } finally { handle.close(); }
+    }
+  }, 120000);
+
+  test("the Run outlives its scaffold, and reusing the project id is still refused once it has ended", () => {
+    const fx = fixture();
+    const outputs = path.join(fx.root, "deliverables-clean");
+    const args = ["--agent-x", "--brief-file", fx.briefFile, "--exec", "--project", "proj-clean", "--outputs-root", outputs, "--max-revisions", "0"];
+    const first = fx.dispatch(args, { FAKE_CLAUDE_OUTPUTS_ROOT: outputs });
+    expect(first.status, first.stdout + first.stderr).toBe(0);
+    // What `nrv clean proj-clean` removes. The scaffold is a draft; the Run is the project's record
+    // of what ran, so it stays where Glance reads it.
+    fs.rmSync(path.join(fx.projectRoot, "outputs", "proj-clean"), { recursive: true, force: true });
+    const runId = canonicalRunIdFor("proj-clean");
+    expect(readKernel(fx.projectKernel, "proj-clean", runId).run?.state).toBe("completed");
+    // And the id is derived from the project id, so a second dispatch under it meets the terminal
+    // Run and stops before any producer — the guard that used to vanish with the scaffold.
+    const second = fx.dispatch(args, { FAKE_CLAUDE_OUTPUTS_ROOT: outputs });
+    expect(second.status, second.stdout + second.stderr).toBe(1);
+    expect(second.stderr).toContain(`run '${runId}' is already terminal (completed); pass a fresh --run-id`);
+    expect(fx.audit().filter(entry => entry.event === "x_run_id_collision").map(entry => [entry.project_id, entry.run_id]))
+      .toEqual([["proj-clean", runId]]);
   }, 120000);
 });
