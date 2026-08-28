@@ -2,6 +2,7 @@
 // hermetic: a temporary project, the fake dispatch injected through
 // NIRVANA_DISPATCH_SCRIPT, a real SQLite Run Kernel, no LLM and no network.
 // Runs with: bun test skills/harness/tests
+import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
@@ -136,7 +137,7 @@ function auditEvents(setup: Fixture): Array<Record<string, any>> {
   for (const day of fs.readdirSync(dir).sort()) {
     const file = path.join(dir, day, "audit.jsonl");
     if (!fs.existsSync(file)) continue;
-    for (const line of fs.readFileSync(file, "utf8").split("\n")) if (line.trim()) out.push(JSON.parse(line));
+    for (const line of fs.readFileSync(file, "utf8").split("\n")) if (line.trim()) out.push(parseAuditLine(line));
   }
   return out;
 }

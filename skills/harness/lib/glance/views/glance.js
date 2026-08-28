@@ -2205,7 +2205,7 @@ function glance() {
       if (e.message) return e.message.slice(0, 80);
       if (e.target) return `→ ${e.target}`;
       if (e.target_business || e.target_squad) return `→ ${e.target_business || e.target_squad}`;
-      const keys = Object.keys(e).filter(k => !['timestamp','ts','event_type','event','classification','stage','_file'].includes(k));
+      const keys = Object.keys(e).filter(k => !['timestamp','ts','event_type','event','classification','stage','_file','_ce'].includes(k));
       if (keys.length) return keys.slice(0,2).map(k => `${k}=${JSON.stringify(e[k]).slice(0,30)}`).join(' ');
       return '';
     },

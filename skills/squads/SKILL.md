@@ -290,6 +290,7 @@ When creating a NEW squad, ALWAYS:
     bun ~/.nirvana/skills/_shared/scripts/self-retrieval-gate.ts <squad-slug>
     ```
     Every declared `example_brief` must route back to this squad top-1 (exit 0). On a miss, the defect is in the capability metadata — never "the router"; iterate keywords / example_briefs / not_for per the contract and rerun. Also confirm neighboring squads' home briefs still route to their owners. **Do not report the squad as created while this gate is red.**
+16. **Event vocabulary — nothing to add by hand.** Declaring `capabilities[]` (rule 5) is what makes a dispatch carry the event contract: `squad-exec.ts` injects a "COMO REPORTAR EVENTOS" block into the prompt of any squad whose capability resolves, telling the agent to emit via `nrv audit emit <nome> --squad=<slug> --trace=<trace>`, to prefix an unlisted name with `x_` so the log matches what it wrote, and to keep payloads short (no brief, no full output, no secret). The closed enum and the CloudEvents envelope are `references/03-audit.md`; the `x_` namespace stays open by design — the gate is on shape, never on what an event reports.
 
 ## Agent Template (v5)
 

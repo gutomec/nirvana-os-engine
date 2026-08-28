@@ -8,6 +8,7 @@
 // Glance queue spawns, without a restart. Hermetic: a temp NIRVANA_HOME, a temp
 // project, a temp harness log and state db; every schema variable scrubbed from
 // the inherited environment. No LLM, no network. Runs with: bun test skills/harness/tests
+import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -69,7 +70,7 @@ function auditEvents(setup: Fixture): Array<Record<string, unknown>> {
   let days: string[] = [];
   try { days = fs.readdirSync(setup.logs); } catch { return []; }
   return days.flatMap((day) => {
-    try { return fs.readFileSync(path.join(setup.logs, day, "audit.jsonl"), "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line)); }
+    try { return fs.readFileSync(path.join(setup.logs, day, "audit.jsonl"), "utf8").trim().split("\n").filter(Boolean).map((line) => parseAuditLine(line)); }
     catch { return []; }
   }).filter((event) => event.event === "x_settings_changed");
 }

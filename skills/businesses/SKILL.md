@@ -64,6 +64,8 @@ When an employee is spawned via subagent (using `buildEmployeePrompt()` from `li
 
 These rules turn employees from "general-purpose subagents with persona text" into real Nirvana-OS citizens with auditable, resumable state.
 
+**Event vocabulary.** `buildEmployeePrompt()` already shows the working example (`nrv audit emit x_clone_choice --business=<slug> --trace=<trace> --json='{...}'`) at the point an employee records its mind-clone choice — measured at zero rogue event names across 61 businesses (event-contract cut, 2026-08-28), so no separate block was added here the way squads got one. Same rule as squads: an event outside the closed enum (`references/03-audit.md` in the harness skill) gets the explicit `x_` prefix at the call site, never a bare invented name.
+
 ---
 
 ## First invocation (auto-bootstrap)

@@ -21,7 +21,10 @@ authoritative for legacy readers, SQLite is the race-safe substrate.
 
 ## JSONL format
 
-Append-only, one JSON object per line, UTF-8.
+Append-only, one JSON object per line, UTF-8. Two forms live in the same file
+and both are readable, forever: the flat form below, which is what the ~187k
+events written before 2026-08-28 look like, and the CloudEvents envelope
+`audit.emit` writes from that date on.
 
 ```jsonl
 {"ts":"2026-08-05T17:30:11.241Z","event":"brief_received","trace_id":"01HZ...","brief_excerpt":"...","brief_chars":142,"command":"route"}
@@ -30,6 +33,65 @@ Append-only, one JSON object per line, UTF-8.
 {"ts":"2026-08-05T17:31:14.901Z","event":"cost_emission","agent":"transcriber","model":"sonnet","tokens_input":1200,"tokens_output":340,"cost_usd":0.0228}
 {"ts":"2026-08-05T17:31:20.000Z","event":"gate_passed","trace_id":"01HZ...","score":0.91}
 ```
+
+## The CloudEvents envelope
+
+`audit.emit` writes a [CloudEvents 1.0](https://github.com/cloudevents/spec)
+structured-mode envelope, built by `_shared/lib/cloudevents.js`. Context
+attributes serialize apart from `data`, so a consumer filters on type, source
+or subject without deserializing the payload.
+
+```jsonl
+{"specversion":"1.0","id":"3bca1f48354d5d27b8c9028e42383bf4","source":"/squad/seo-geo-aeo","type":"sh.squads.nirvana.dispatch.dispatch_squad","subject":"01HZ...","time":"2026-08-28T17:30:12.001Z","datacontenttype":"application/json","projectid":"proj-...","data":{"squad_name":"seo-geo-aeo","brief_excerpt":"...","brief_chars":142}}
+```
+
+| attribute | value | derived from |
+|---|---|---|
+| `type` | `sh.squads.nirvana.<domain>.<event>` | the legacy event name, verbatim after the domain |
+| `source` | `/squad/<slug>` · `/business/<slug>` · `/engine/<component>` | `squad_name` / `squad_slug` / `squad`, then `business_slug` / `business`, then `host` |
+| `subject` | the run's `trace_id` | `ctx.trace_id` |
+| `id` | idempotency key: sha256 of the line's own content, 32 hex | computed |
+| `projectid` | extension attribute | `ctx.project_id` |
+| `dataschema` | URI of the `data` schema, optional | only when a caller supplies one |
+| `data` | the payload, everything that is not an attribute | the `payload` argument plus the rest of `ctx` |
+
+### Reading it
+
+**Never `JSON.parse` an audit line by hand.** Use `parseAuditLine(line)` from
+`_shared/lib/cloudevents.js`: it returns the flat shape for an envelope and the
+parsed object itself, by identity, for a legacy line, and it throws on
+malformed JSON exactly like `JSON.parse` so a caller counting unreadable lines
+keeps counting them. `toLegacyEvent(obj)` does the same for an object you
+already parsed. The envelope's own attributes arrive on `_ce`
+(`{specversion, id, source, type}`) — `source` in particular, because the flat
+shape has no room for it: `source` is already a payload key on 713 lines.
+
+Raw appenders — `brief-squad.ts`, `brief-business.ts`, `squad-exec.ts`,
+`quality-gate.ts` and the rest that call `fs.appendFileSync` directly — still
+write the flat form. That is why dual-read is permanent, not a migration
+window.
+
+### `data` is bounded
+
+`data` is capped at 4 KiB serialized. Over the cap, the longest strings are cut
+to `BRIEF_EXCERPT_MAX` (300 chars, `_shared/lib/brief-excerpt.ts`) longest
+first, and `data._truncated` lists the keys that were cut with `data._bytes`
+giving their original size. Content travels by reference with an excerpt; a
+whole brief, a whole output or a whole transcript does not belong on an event.
+
+### Schema evolution: additive only
+
+This is a published contract from the moment `nrv serve` answers a request, and
+the consumer is software you do not control. So:
+
+- new fields arrive **optional, with a default** — never required;
+- old fields are **deprecated in a comment**, never renamed and never removed;
+- a `type` never changes meaning; a new meaning gets a **new** `type`;
+- the extension vocabulary stays open. Limit the shape, never the *what*.
+
+The first case that tests the rule is already here: `source` now carries the
+attribution, and `business_slug`, `squad_name`, `squad` and `business` all stay
+inside `data` anyway, because readers read them today.
 
 ## Canonical fields
 
@@ -221,14 +283,26 @@ TODAY=$(date -u +%Y-%m-%d)
 wc -l < ~/.harness-logs/$TODAY/audit.jsonl
 ```
 
+### Reading both forms from the shell
+
+The file holds flat lines and envelopes. This `jq` filter flattens either into
+the shape the recipes below expect, so put it first:
+
+```bash
+FLATTEN='if .specversion then (.data + {ts: .time, event: (.type | sub("^sh\\.squads\\.nirvana\\.[^.]+\\.";"")), trace_id: .subject, project_id: .projectid}) else . end'
+```
+
 ### Signal distribution
 
 ```bash
 TODAY=$(date -u +%Y-%m-%d)
-jq -r 'select(.event=="routing_decision") | .signal' ~/.harness-logs/$TODAY/audit.jsonl | sort | uniq -c
+jq -r "$FLATTEN"' | select(.event=="routing_decision") | .signal' ~/.harness-logs/$TODAY/audit.jsonl | sort | uniq -c
 ```
 
 ### NO_MATCH of the last 7 days (input for planning new capabilities)
+
+`signal` lives in `data` on an envelope, so match the key rather than the whole
+`"key":"value"` pair — `grep` sees the same bytes in both forms that way.
 
 ```bash
 for i in 0 1 2 3 4 5 6; do

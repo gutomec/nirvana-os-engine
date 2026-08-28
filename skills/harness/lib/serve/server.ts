@@ -16,6 +16,7 @@ import { RunQueue } from "./queue.ts";
 import { listArtifacts, resolveArtifact, contentTypeFor } from "./artifacts.ts";
 import { todayAuditFile } from "../../../_shared/lib/log-paths.ts";
 import { listRuntimes } from "../../../_shared/lib/host-agent-driver.ts";
+import { parseAuditLine } from "../../../_shared/lib/cloudevents.js";
 
 export interface ServeOpts {
   port: number;
@@ -225,7 +226,9 @@ function sseAuditStream(memo: ReturnType<typeof runsLib.get> & {}, extraHeaders:
             for (const line of buf.toString("utf8").split("\n")) {
               if (!line.trim()) continue;
               try {
-                const ev = JSON.parse(line);
+                // Flat shape on the wire, whichever form the line was
+                // written in — the envelope reaches this feed in cut 7.
+                const ev = parseAuditLine(line);
                 // ONLY this run's events. The audit file can be shared —
                 // HARNESS_LOGS_DIR may point elsewhere, and CI proved it:
                 // the stream carried another test's judge events. A client

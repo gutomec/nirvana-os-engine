@@ -13,12 +13,44 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as fs from "node:fs";
 
-/** Walk up from `start` looking for a Nirvana project root marker. */
+function canonicalDir(dir: string): string {
+  try {
+    return fs.realpathSync.native ? fs.realpathSync.native(dir) : fs.realpathSync(dir);
+  } catch {
+    return path.resolve(dir);
+  }
+}
+
+const sameDir = (a: string, b: string): boolean =>
+  process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
+
+// Is `descendant` strictly inside `ancestor`?
+const isStrictlyUnder = (ancestor: string, descendant: string): boolean => {
+  const prefix = ancestor.endsWith(path.sep) ? ancestor : ancestor + path.sep;
+  return process.platform === "win32"
+    ? descendant.toLowerCase().startsWith(prefix.toLowerCase())
+    : descendant.startsWith(prefix);
+};
+
+/**
+ * Walk up from `start` looking for a Nirvana project root marker.
+ *
+ * HOME — and every directory between `start` and HOME — is never a valid
+ * root, even carrying a marker: a stray ~/.nirvana (the engine's own
+ * install) sitting in HOME, or on the way up to it, must never be mistaken
+ * for a project. On Windows os.tmpdir() resolves *inside* the real HOME, so
+ * a walk that starts in a temp dir passes through HOME's own ancestry before
+ * it reaches the filesystem root — this is the branch that guards it.
+ *
+ * Comparison goes through the canonical path (Windows can hand back an 8.3
+ * short form for one side and the long form for the other) and is
+ * case-insensitive on Windows.
+ */
 function findProjectRoot(start: string): string | null {
-  let dir = path.resolve(start);
-  const home = os.homedir();
+  let dir = canonicalDir(path.resolve(start));
+  const home = canonicalDir(os.homedir());
   const root = path.parse(dir).root;
-  while (dir !== root && dir !== home) {
+  while (dir !== root && !sameDir(dir, home) && !isStrictlyUnder(dir, home)) {
     for (const marker of [".nirvana", ".env", ".git", "package.json", "pyproject.toml"]) {
       if (fs.existsSync(path.join(dir, marker))) return dir;
     }

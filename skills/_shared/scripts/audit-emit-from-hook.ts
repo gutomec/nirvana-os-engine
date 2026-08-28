@@ -4,7 +4,9 @@
  * hooks and the harness audit log.
  *
  * Reads a JSON envelope on stdin (the hook payload Claude Code sends), maps
- * it to a harness audit event, and appends to ~/.harness-logs/<today>/audit.jsonl.
+ * it to a harness audit event, and appends to <today>/audit.jsonl under
+ * harnessLogsDir() — the project's `.nirvana/logs/harness` when the hook's cwd
+ * (or NIRVANA_PROJECT_ROOT) is inside one, ~/.harness-logs otherwise.
  *
  * The goal: every Write/Edit/Bash the agent performs leaves a trail in the
  * audit log so `nrv watch` and the Glance Projects view can see what's
@@ -38,12 +40,18 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-
-const HARNESS_LOGS_ROOT = process.env.HARNESS_LOGS_DIR
-  ? path.resolve(process.env.HARNESS_LOGS_DIR)
-  : path.join(os.homedir(), ".harness-logs");
+import { harnessLogsDir } from "../lib/log-paths.ts";
 
 const NIRVANA_PROJECT_ROOT = process.env.NIRVANA_PROJECT_ROOT || "";
+
+// The same resolver every other audit writer/reader uses: explicit
+// HARNESS_LOGS_DIR wins, then <project>/.nirvana/logs/harness found from
+// NIRVANA_PROJECT_ROOT or by walking up from cwd, then ~/.harness-logs only
+// when neither applies. Before this the hook had its own third resolver that
+// skipped the project lookup entirely and always fell through to
+// ~/.harness-logs, splitting every hook-sourced event away from the
+// orchestrator's <project>/.nirvana/logs/harness writes for the same run.
+const HARNESS_LOGS_ROOT = harnessLogsDir({ projectRoot: NIRVANA_PROJECT_ROOT || undefined });
 
 function todayDir(): string {
   const d = new Date();

@@ -3,6 +3,7 @@
 // path, state and audit side effects. Every fixture lives under mkdtemp and
 // the CLI env points every root, the state dir, the logs and the baseline at
 // it — the installed library is never read or written.
+import { parseAuditLine } from "../lib/cloudevents.js";
 import { afterAll, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -204,7 +205,7 @@ describe("side effects", () => {
     expect(state.kind).toBe("mind-clone");
     const day = new Date().toISOString().slice(0, 10);
     const log = fs.readFileSync(path.join(r, "logs", day, "audit.jsonl"), "utf8");
-    const ev = log.split("\n").filter(Boolean).map((l) => JSON.parse(l)).find((e) => e.event === "x_verify_mind_clone");
+    const ev = log.split("\n").filter(Boolean).map((l) => parseAuditLine(l)).find((e) => e.event === "x_verify_mind_clone");
     expect(ev).toMatchObject({ slug: "jane-doe", verdict: "ADMITTED", exit_code: 0 });
   }, spawnBudgetMs(2));
 });

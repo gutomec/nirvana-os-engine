@@ -27,6 +27,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 
 const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR || (fs.existsSync(path.join(os.homedir(), ".nirvana", "skills")) ? path.join(os.homedir(), ".nirvana", "skills") : path.join(os.homedir(), ".claude", "skills"));
 
@@ -66,7 +67,7 @@ function loadEvents(projectId: string): { events: AuditEvent[]; sources: string[
           const lines = fs.readFileSync(auditPath, "utf8").split("\n").filter(l => l.trim());
           let bad = 0;
           for (const l of lines) {
-            try { addEvent(JSON.parse(l)); } catch { bad++; }
+            try { addEvent(parseAuditLine(l)); } catch { bad++; }
           }
           if (bad) unreadable.push({ file: auditPath, count: bad });
           sources.push(auditPath);
@@ -87,7 +88,7 @@ function loadEvents(projectId: string): { events: AuditEvent[]; sources: string[
       let bad = 0;
       for (const l of lines) {
         try {
-          const e = JSON.parse(l);
+          const e = parseAuditLine(l);
           if (e.project_id === projectId || e.trace_id === projectId) {
             addEvent(e);
           }

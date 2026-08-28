@@ -6,6 +6,7 @@
 // extraction, unknown-slug filtering, the strict ok-vs-kind separation, and
 // the digest staleness guard (fixture registries + the real builder script).
 // Runs with: bun test skills/harness/tests
+import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -206,7 +207,7 @@ describe("agentic router — digest staleness + injected runner", () => {
     const day = new Date().toISOString().slice(0, 10);
     const p = path.join(tmp, "logs", day, "audit.jsonl");
     if (!fs.existsSync(p)) return [];
-    return fs.readFileSync(p, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+    return fs.readFileSync(p, "utf8").split("\n").filter(Boolean).map((l) => parseAuditLine(l));
   }
 
   test("digestIsStale: missing digest is stale; fresh digest is not; a newer registry re-stales it", () => {

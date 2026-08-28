@@ -7,6 +7,7 @@
 // retry fallback, and the missing-squad failure. Zero-token via the
 // runWithCascade seam.
 // Runs with: bun test skills/harness/tests
+import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -50,7 +51,7 @@ function readAudit(): any[] {
   const day = new Date().toISOString().slice(0, 10);
   const p = path.join(tmp, "logs", day, "audit.jsonl");
   if (!fs.existsSync(p)) return [];
-  return fs.readFileSync(p, "utf8").split("\n").filter(Boolean).map(l => JSON.parse(l));
+  return fs.readFileSync(p, "utf8").split("\n").filter(Boolean).map(l => parseAuditLine(l));
 }
 
 describe("buildSquadPrompt — framing per mode", () => {
@@ -224,6 +225,50 @@ describe("promptPath — the workflow reference reads the same on every platform
     const ctx = capabilityContext(squadDir, "analysis.report.produce")!;
     expect(ctx.workflow!.file).toBe("workflows/guided-analysis.md");
     expect(ctx.workflow!.file).not.toContain("\\");
+  });
+});
+
+describe("buildSquadPrompt — the event-contract block (event-contract cut)", () => {
+  // Cut 1 (#157) measured the gap this closes: 286 rogue event types across
+  // 964 occurrences, and zero correctly `x_`-prefixed sites in the library —
+  // because nothing the dispatched agent reads told it the vocabulary exists.
+  test("a prompt built for a squad with a resolved capability contains the contract", () => {
+    const squadDir = scaffoldCapabilitySquad(path.join(tmp, "squads"));
+    const p = buildSquadPrompt({
+      squadSlug: "guided", squadDir, brief: "analise a conta", outDir: "/out/dir",
+      mode: "squad-only", cloneInjection: { block: "", decision: "PADRÃO" },
+      capabilityId: "analysis.report.produce", traceId: "01HZ-trace-x",
+    });
+    expect(p).toContain("## COMO REPORTAR EVENTOS");
+    expect(p).toContain("nrv audit emit");
+    expect(p).toContain("--squad=guided");
+    expect(p).toContain("--trace=01HZ-trace-x");
+    expect(p).toContain("prefixo `x_`");
+    // No payload/secret guidance, stated explicitly rather than implied.
+    expect(p).toContain("nunca o brief inteiro, um output completo ou um segredo");
+    // Rides right after the capability block, before the agents/tasks sections.
+    expect(p.indexOf("## SUA CAPABILITY")).toBeLessThan(p.indexOf("## COMO REPORTAR EVENTOS"));
+    expect(p.indexOf("## COMO REPORTAR EVENTOS")).toBeLessThan(p.indexOf("## SEUS AGENTES"));
+  });
+
+  test("without a trace id, the example command falls back to a placeholder instead of dropping the block", () => {
+    const squadDir = scaffoldCapabilitySquad(path.join(tmp, "squads"));
+    const p = buildSquadPrompt({
+      squadSlug: "guided", squadDir, brief: "b", outDir: "/o",
+      mode: "squad-only", cloneInjection: { block: "", decision: "PADRÃO" },
+      capabilityId: "analysis.report.produce",
+    });
+    expect(p).toContain("## COMO REPORTAR EVENTOS");
+    expect(p).toContain("--trace=<trace_id>");
+  });
+
+  test("a squad with no resolved capability gets no contract block — the historical prompt is untouched", () => {
+    const squadDir = scaffoldSquad(path.join(tmp, "squads"), "brandcraft");
+    const p = buildSquadPrompt({
+      squadSlug: "brandcraft", squadDir, brief: "the brief", outDir: "/out/dir",
+      mode: "squad-only", cloneInjection: { block: "", decision: "PADRÃO" },
+    });
+    expect(p).not.toContain("## COMO REPORTAR EVENTOS");
   });
 });
 
