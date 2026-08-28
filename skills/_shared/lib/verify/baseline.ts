@@ -8,7 +8,9 @@
 //   { recorded_at, imported_from?: [...], entities: { "<kind>:<slug>": ["<id>[:<where>]", ...] } }
 //
 // Rules, inherited from scripts/check-entity-admission.ts:
-//   - only `baselineable` criteria become debt; hard errors never do;
+//   - only `baselineable` criteria become debt; an error not marked
+//     `baselineable` never does (the two audit-contract errors are marked, and
+//     §16.2 of BUSINESS_PROTOCOL_V2.md records why);
 //   - `--record` MERGES per entity (recording from pack A must not erase what
 //     only pack B can see); an entity scanned and clean is cleared;
 //   - recording refuses to ADD debt unless `--allow-regression`;

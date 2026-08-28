@@ -53,6 +53,48 @@ contexto, e renderizam `—` quando nenhum evento de despacho os carrega
 nomear um alvo antes, 81 conseguem agora, e os cards que mostram um brief foram
 de 20 para 59.
 
+### O portão de auditoria olha para onde as violações estão
+
+O `check-audit-parity` comparava três fontes — o enum fechado, a documentação do
+harness e os literais de `emit()` em `skills/**/{lib,scripts}` — e as três são
+código do engine. Squads e empresas são conteúdo, então o portão passava verde no
+`check:all` enquanto 285 tipos de evento (961 ocorrências, 877 delas sem
+`squad_name` nem `business_slug`) eram emitidos fora de qualquer regra. A regra
+nunca faltou: `references/03-audit.md` declara o namespace `x_` aberto por
+projeto, com a condição de o nome carregar o prefixo e o evento carregar o autor.
+O que faltava era a fiscalização.
+
+O portão passa a ler uma quarta fonte: os arquivos de squad e de empresa, nos
+templates que este repositório publica, na biblioteca instalada e nas fontes dos
+packs. Conteúdo é Markdown e YAML, então a varredura literal que funciona sobre
+`emit()` não se transfere; `_shared/lib/audit-events.ts` encontra as cinco formas
+com que um arquivo nomeia um evento — o comando `nrv audit emit`, uma chamada
+`audit.emit()` num script embarcado, um campo `event=`, uma chave JSON `"event"`
+e um nome entre crases numa linha que diz "audit event". Um literal de campo ou
+de JSON só conta quando a janela ao redor nomeia o destino de auditoria do
+harness, e assim um calendário do agro escrevendo `event=veranico`, uma
+biblioteca de WhatsApp escrevendo `"event": "qr"` e o `render_audit.jsonl` do
+próprio squad ficam fora do contrato. O relatório declara o que varreu, o que
+estava ausente e o que não consegue enxergar.
+
+Dois critérios entram no `nrv validate` de squad e de empresa:
+`audit_event_unprefixed` e `audit_event_unattributed`, os dois como erro para que
+uma violação nova não entre, os dois baselináveis para que as entidades que já
+violam a regra virem débito registrado, que só encolhe. É o primeiro erro
+baselinável do catálogo de empresa, e a §16.2 diz por quê: o corte 1 de
+`.nirvana/plans/event-contract.md` torna a violação visível, o corte 4 migra os
+nomes, e reprovar dois packs publicados antes de existir para onde migrar é
+exatamente a falha que a baseline existe para evitar. Só o conteúdo que o
+repositório possui reprova o `check:all` — o CI não tem biblioteca nem fonte de
+pack, e cada entidade é fiscalizada onde ela vive.
+
+Medido em 28/08/2026: varrer 523 entidades encontra 101 pontos de emissão, 66
+deles fora da regra, espalhados por 7 cópias instaladas de 3 squads distintas —
+`agentic-whatsapp-nirvana`, `ebook-maestro-nirvana`, `tracking-360-operator`.
+Nenhum carrega o prefixo `x_`. O log guarda 285 tipos irregulares; os arquivos
+guardam o equivalente a 3 squads. A diferença é o achado — o contrato nunca
+chegou ao autor, que é o corte 3.
+
 ## 0.11.0 — 2026-08-28
 
 ### O relógio para de decidir se um run está vivo

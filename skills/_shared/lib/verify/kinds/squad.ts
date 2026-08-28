@@ -41,6 +41,7 @@ import {
 } from "../../../../squads/lib/workflow-reader.ts";
 import { checkPortability } from "../../../../squads/lib/squad-doctor.ts";
 import { classify } from "../../../lib/corpus-language.ts";
+import { eventFindings } from "../../audit-events.ts";
 import { editYaml, fixResult, listEntities, resolveEntityDir, surfaceFindings, surfaceRegenFixer } from "../common.ts";
 import type { CheckContext, Criterion, Finding, FixResult, Fixer, KindModule, Severity } from "../types.ts";
 
@@ -90,6 +91,16 @@ export const criteria: Criterion[] = [
   // ── S10–S12 ───────────────────────────────────────────────────────────────
   { id: "surface_missing", severity: "error", autofix: "mechanical", baselineable: false, title: ".nirvana-surface.json present", fixer: "surface_regen" },
   { id: "outputs_pollution", severity: "error", autofix: "none", baselineable: false, title: "no run-output directory inside the squad" },
+  // The audit contract, on the half of it that lives in content. Error, so a
+  // new violation cannot enter; baselineable, so what already violates it keeps
+  // its verdict as recorded debt instead of turning the library red on day one.
+  // Measured 2026-08-28: 3 squads violate it — `agentic-whatsapp-nirvana`,
+  // `ebook-maestro-nirvana`, `tracking-360-operator` — across 7 installed
+  // copies, because two pack sources ship the same slugs. Run
+  // `bun scripts/check-audit-parity.ts` for the live count; do not retype it
+  // here. See the header of `_shared/lib/audit-events.ts`.
+  { id: "audit_event_unprefixed", severity: "error", autofix: "none", baselineable: true, title: "every audit event a file names is in the closed enum or carries the `x_` prefix" },
+  { id: "audit_event_unattributed", severity: "error", autofix: "none", baselineable: true, title: "every `x_` event the squad emits names the squad" },
 
   // ── S13 + W01–W13: advice ─────────────────────────────────────────────────
   { id: "evaluator_missing", severity: "error", autofix: "agentic", baselineable: false, title: "an evaluator capability declares its `evaluator` block (v6 §30)" },
@@ -324,6 +335,9 @@ export async function check(ctx: CheckContext): Promise<Finding[]> {
   // ── S10 / S11 ─────────────────────────────────────────────────────────────
   out.push(...surfaceFindings(dir, "squad", mk));
   for (const e of outputsLint.lintDir(dir).errors) out.push(mk("outputs_pollution", e, dir));
+
+  // ── S11.5: the audit contract, as the files express it ────────────────────
+  for (const f of eventFindings(dir, "squad")) out.push(mk(f.id, f.message, f.evidence, f.where));
 
   // ── S12: per-buyer artifacts ──────────────────────────────────────────────
   const distribution: string[] = [];

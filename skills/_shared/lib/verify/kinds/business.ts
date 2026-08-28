@@ -35,6 +35,7 @@ import { BusinessManifestSchema, EmployeeFrontmatterSchema, OrgChartSchema } fro
 import { readFrontmatter, employeeFiles } from "../../frontmatter-edit.ts";
 import { refToSlug, slugOf } from "../../entity-graph.ts";
 import { classify } from "../../corpus-language.ts";
+import { eventFindings } from "../../audit-events.ts";
 import { fixResult, listEntities, resolveEntityDir, surfaceFindings, surfaceRegenFixer } from "../common.ts";
 import type { CheckContext, Criterion, Finding, FixResult, Fixer, KindModule } from "../types.ts";
 
@@ -104,6 +105,12 @@ export const criteria: Criterion[] = [
   { id: "surface_missing", severity: "error", autofix: "mechanical", baselineable: false, title: ".nirvana-surface.json present", fixer: "surface_regen" },
   { id: "dna_symlink_dangling", severity: "error", autofix: "none", baselineable: false, title: "no dna/ symlink points at a target that is gone" },
   { id: "outputs_pollution", severity: "error", autofix: "none", baselineable: false, title: "no run-output directory inside the business" },
+  // The audit contract, on the half of it that lives in content. Error so a
+  // new violation cannot enter; baselineable so what already violates it
+  // becomes recorded debt. Header of `_shared/lib/audit-events.ts` for why a
+  // file scan sees a fraction of what the log holds.
+  { id: "audit_event_unprefixed", severity: "error", autofix: "none", baselineable: true, title: "every audit event a file names is in the closed enum or carries the `x_` prefix" },
+  { id: "audit_event_unattributed", severity: "error", autofix: "none", baselineable: true, title: "every `x_` event the business emits names the business" },
 
   // ── warnings ──────────────────────────────────────────────────────────────
   { id: "protocol_v1", severity: "warning", autofix: "mechanical", baselineable: false, title: "the business still declares protocol 1.0", fixer: "protocol_bump_2" },
@@ -356,6 +363,7 @@ export function checkSync(dir: string): Finding[] {
 
   out.push(...surfaceFindings(dir, "business", (id, message, evidence) => mk(id, message, evidence)));
   for (const e of outputsLint.lintDir(dir).errors) out.push(mk("outputs_pollution", e, dir));
+  for (const f of eventFindings(dir, "business")) out.push(mk(f.id, f.message, f.evidence, f.where));
   return out;
 }
 

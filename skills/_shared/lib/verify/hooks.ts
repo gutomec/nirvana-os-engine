@@ -17,8 +17,10 @@
 //   2. **Grandfathering.** `mode: "hook"` in the runner records a debt
 //      baseline the first time it meets an entity on a machine that has none,
 //      instead of rejecting a library that was installed before the gate
-//      existed. Only `baselineable` criteria — facts the pipeline produces —
-//      ever become debt; a HARD error never does.
+//      existed. Only `baselineable` criteria ever become debt — the facts the
+//      pipeline produces, plus the two audit-contract errors, which are debt
+//      by the same reasoning (see §16.2 of BUSINESS_PROTOCOL_V2.md). A
+//      criterion not marked `baselineable` never becomes debt.
 //   3. **A documented escape.** `--skip-validate` (install) and
 //      `--skip-verify` (activate, creation) return `ran: false` without
 //      touching disk, so a buyer is never stuck behind a gate.
