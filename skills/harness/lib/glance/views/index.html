@@ -125,6 +125,24 @@
     </div>
   </nav>
 
+  <!-- ─── Subsystems — o que está de pé (não o que rodou) ───
+       Cada célula é uma leitura real do disco. Uma que não pôde ser
+       determinada mostra — em vez de acender um verde que ninguém mediu. -->
+  <div class="subsystem-row" role="status" aria-label="Subsistemas do engine">
+    <span class="subsystem-row-title">ENGINE</span>
+    <template x-for="cell in subsystemRow.cells" :key="cell.key">
+      <span class="subsystem-cell" :title="cell.title">
+        <span class="subsystem-dot" :class="cell.statusClass" x-text="cell.glyph" aria-hidden="true"></span>
+        <span class="subsystem-label" x-text="cell.label"></span>
+        <span class="sr-only" x-text="cell.word"></span>
+      </span>
+    </template>
+    <span class="subsystem-row-summary" x-text="subsystemSummary"></span>
+    <button class="subsystem-row-refresh" @click="fetchSubsystems()" title="Reler os subsistemas" aria-label="Reler os subsistemas">
+      <i data-lucide="rotate-cw"></i>
+    </button>
+  </div>
+
   <!-- ─── Main columns ─── -->
   <div class="flex-1 flex min-h-0">
 
@@ -163,7 +181,7 @@
                   <span class="tier-dot tier-red"    x-show="auditSummary(k.id).red > 0"    x-text="auditSummary(k.id).red"></span>
                 </span>
               </template>
-              <span class="kind-card-count" x-text="counts[k.id] ?? ''"></span>
+              <span class="kind-card-count" x-text="countText(counts[k.id])"></span>
               <i data-lucide="chevron-right" class="kind-card-chevron" x-show="LIST_KINDS.includes(k.id)"></i>
             </span>
           </button>
@@ -181,7 +199,7 @@
           <div class="nav-title-wrap" @click.outside="kindMenuOpen = false">
             <button class="nav-title-btn" @click="kindMenuOpen = !kindMenuOpen" :aria-expanded="kindMenuOpen ? 'true' : 'false'" title="Trocar de tipo">
               <span class="nav-title" x-text="kindLabel"></span>
-              <span class="nav-title-count" x-text="counts[kind] ?? ''"></span>
+              <span class="nav-title-count" x-text="countText(counts[kind])"></span>
               <i data-lucide="chevron-down" class="nav-title-caret"></i>
             </button>
             <!-- Popover de troca rápida -->
@@ -191,7 +209,7 @@
                         @click="enterKind(k.id); kindMenuOpen = false">
                   <i :data-lucide="k.icon" class="icon-inline"></i>
                   <span x-text="k.label"></span>
-                  <span class="nav-kind-menu-count" x-text="counts[k.id] ?? ''"></span>
+                  <span class="nav-kind-menu-count" x-text="countText(counts[k.id])"></span>
                 </button>
               </template>
             </div>
@@ -277,7 +295,7 @@
         <div class="empty-detail">
           <div class="empty-glyph">⊚</div>
           <div class="empty-msg">Select a <span x-text="kindLabel"></span> from the left</div>
-          <div class="empty-stats" x-text="`${squads.length} squads · ${businesses.length} businesses · ${projects.length} projects · ${mindClones.length} mind-clones`"></div>
+          <div class="empty-stats" x-text="`${countText(counts.squads)} squads · ${countText(counts.businesses)} businesses · ${countText(counts.projects)} projects · ${countText(counts['mind-clones'])} mind-clones`"></div>
         </div>
       </template>
 
@@ -2049,6 +2067,17 @@
   // settings modal, shared with bun test the same way.
   import * as settingsPanel from '/settings-panel.js?v=__ASSET_VER__';
   window.NirvanaSettingsPanel = settingsPanel;
+</script>
+<script type="module">
+  // absence.js decides how an undetermined value is shown (`—`), as opposed to a
+  // measured zero. Same adapter pattern; glance.js reads it through this.absence.
+  import * as absence from '/absence.js?v=__ASSET_VER__';
+  window.NirvanaAbsence = absence;
+</script>
+<script type="module">
+  // subsystem-row.js turns /api/subsystems into the engine row under the header.
+  import * as subsystemRow from '/subsystem-row.js?v=__ASSET_VER__';
+  window.NirvanaSubsystemRow = subsystemRow;
 </script>
 <script src="/dag-renderer.js?v=__ASSET_VER__"></script>
 <script src="/org-chart-renderer.js?v=__ASSET_VER__"></script>

@@ -21,7 +21,32 @@ function glance() {
     LIST_KINDS: ['squads', 'businesses', 'projects', 'mind-clones'],
     kindEntered: false,   // true = Level 2 (list) for a LIST_KIND
     kindMenuOpen: false,  // quick type-switch popover in the Level 2 header
+    // A count is `null` when the API could not determine it, and the view renders
+    // `—`. It is a number only when something was actually measured. The rule and
+    // the helpers live in absence.js, exposed by the index.html module adapter.
     counts: {},
+    get absence() {
+      return window.NirvanaAbsence || {
+        UNKNOWN_LABEL: '—',
+        isUnknown: (v) => v === null || v === undefined,
+        countLabel: (v) => (v === null || v === undefined ? '—' : String(v)),
+        listLength: (v) => (v === null || v === undefined ? null : v.length),
+        listItems: (v) => (v === null || v === undefined ? [] : v),
+      };
+    },
+    /** The text a count cell shows: the number, or `—` when it was never measured. */
+    countText(value) { return this.absence.countLabel(value); },
+    // The engine subsystem strip. `null` until /api/subsystems answers.
+    subsystems: null,
+    get subsystemRow() {
+      const row = window.NirvanaSubsystemRow;
+      if (!row || !this.subsystems) return { cells: [], up: 0, down: 0, unknown: 0 };
+      return row.buildSubsystemRow({ subsystems: this.subsystems });
+    },
+    get subsystemSummary() {
+      const row = window.NirvanaSubsystemRow;
+      return row ? row.rowSummary(this.subsystemRow) : '';
+    },
     // Per-list loading/error state — distinguishes "carregando" from "vazio"
     // from "falhou" (the catch used to be silent and everything became empty-state).
     listLoading: { squads: false, businesses: false, projects: false, 'mind-clones': false },
@@ -342,6 +367,7 @@ function glance() {
         this.fetchAuditScores(),
         this.fetchSetupSources(),
         this.fetchSetupStatus(),
+        this.fetchSubsystems(),
       ]);
       this.flash(`refreshed · ${this.squads.length} squads, ${this.businesses.length} bus`);
     },
@@ -413,14 +439,24 @@ function glance() {
       } catch(e) {}
     },
     async fetchHealth()   { try { const h = await api('/api/health'); this.health = { ...h, ok: h.ok, uptime: humanizeMs(h.uptime_ms) }; } catch(e) {} },
+    // ─── Engine subsystems (what is standing) ───
+    // A failed read does NOT become a row of red: the payload stays empty and the
+    // strip says nothing, rather than claiming eight subsystems fell because one
+    // fetch did.
+    async fetchSubsystems() {
+      try { this.subsystems = (await api('/api/subsystems')).subsystems; }
+      catch (e) { this.subsystems = null; }
+    },
     async fetchSquads()   { this.listLoading.squads = true; this.listError.squads = null; try { const r = await api('/api/squads'); this.squads = r.squads; this.counts.squads = r.squads.length; } catch(e) { this.listError.squads = e.message || 'failed'; this.flash(`✗ squads: ${e.message || 'load failed'}`, 3000); } finally { this.listLoading.squads = false; } },
     async fetchBusinesses(){ this.listLoading.businesses = true; this.listError.businesses = null; try { const r = await api('/api/businesses'); this.businesses = r.businesses; this.counts.businesses = r.businesses.length; } catch(e) { this.listError.businesses = e.message || 'failed'; this.flash(`✗ businesses: ${e.message || 'load failed'}`, 3000); } finally { this.listLoading.businesses = false; } },
-    async fetchProjects() { this.listLoading.projects = true; this.listError.projects = null; try { const r = await api(`/api/projects${this.projectQuery('?')}`); this.projects = r.projects; this.counts.projects = r.projects.length; } catch(e) { this.listError.projects = e.message || 'failed'; this.flash(`✗ projects: ${e.message || 'load failed'}`, 3000); } finally { this.listLoading.projects = false; } },
+    async fetchProjects() { this.listLoading.projects = true; this.listError.projects = null; try { const r = await api(`/api/projects${this.projectQuery('?')}`); this.projects = this.absence.listItems(r.projects); this.counts.projects = this.absence.listLength(r.projects); } catch(e) { this.listError.projects = e.message || 'failed'; this.flash(`✗ projects: ${e.message || 'load failed'}`, 3000); } finally { this.listLoading.projects = false; } },
     async fetchRuns(opts = {}) {
       try {
         const r = await api(`/api/runs?days=7&limit=200${this.projectQuery()}`);
-        this.runs = r.runs || [];
-        this.counts.runs = r.total || this.runs.length;
+        this.runs = this.absence.listItems(r.runs);
+        // `r.total` may be null (the logs root does not exist): the count stays
+        // undetermined instead of borrowing the length of an empty list.
+        this.counts.runs = this.absence.isUnknown(r.total) ? this.absence.listLength(r.runs) : r.total;
         // If a run is selected, refresh its detail
         if (this.selectedRun?.trace_id && opts.refreshDetail !== false) {
           const updated = this.runs.find(x => x.trace_id === this.selectedRun.trace_id);
@@ -752,7 +788,9 @@ function glance() {
     startAgentsStream() {
       if (this.agentsES) { try { this.agentsES.close(); } catch {} }
       this.agentsES = new EventSource('/api/agents/live' + this.projectQuery('?'));
-      this.agentsES.addEventListener('snapshot', (e) => {
+      // `snapshot` is the opening state, `pulse` the periodic aggregate; both
+      // carry the same payload, so one handler serves the two names.
+      const applyAgentAggregate = (e) => {
         try {
           const d = JSON.parse(e.data);
           this.agents = d.agents || [];
@@ -764,11 +802,13 @@ function glance() {
             window.__agentWorkspace.syncAgents(this.agents);
           }
         } catch {}
-      });
+      };
+      this.agentsES.addEventListener('snapshot', applyAgentAggregate);
+      this.agentsES.addEventListener('pulse', applyAgentAggregate);
       this.agentsES.addEventListener('status_change', (e) => {
         try {
           const d = JSON.parse(e.data);
-          // optional: brief flash animation; for now just rely on snapshot to redraw
+          // optional: brief flash animation; for now just rely on the pulse to redraw
           console.debug('[agents] status change:', d.trace_id, d.from, '→', d.to);
         } catch {}
       });
@@ -1053,7 +1093,7 @@ function glance() {
       this.activityStream.addEventListener('snapshot', (e) => {
         try { const d = JSON.parse(e.data); this.activityEvents = d.events || []; } catch {}
       });
-      this.activityStream.addEventListener('event', (e) => {
+      this.activityStream.addEventListener('timeline', (e) => {
         try {
           const ev = JSON.parse(e.data);
           this.activityEvents.unshift(ev);
@@ -1562,7 +1602,7 @@ function glance() {
       const es = new EventSource(`/api/runs/${encodeURIComponent(traceId)}/stream`);
       const paint = () => this.$nextTick(() => { try { window.lucide?.createIcons(); } catch {} this.scrollChatBottom(); });
       es.addEventListener('snapshot', (e) => { try { this.chatRunEvents = JSON.parse(e.data).events || []; paint(); } catch {} });
-      es.addEventListener('event', (e) => { try { this.chatRunEvents.push(JSON.parse(e.data)); paint(); } catch {} });
+      es.addEventListener('timeline', (e) => { try { this.chatRunEvents.push(JSON.parse(e.data)); paint(); } catch {} });
       es.addEventListener('done', () => { es.close(); });
       es.onerror = () => { /* keep — reopens on the next turn */ };
       this.chatRunES = es;
@@ -1727,7 +1767,7 @@ function glance() {
       this.chatMultiTarget = null;
       const es = new EventSource(`/api/v1/projects/${encodeURIComponent(projectId)}/stream?after=${Number(after) || 0}`);
       this.chatRunES = es;
-      es.addEventListener('event', async (event) => {
+      es.addEventListener('timeline', async (event) => {
         try {
           const item = JSON.parse(event.data);
           if (item.runId !== runId) return;

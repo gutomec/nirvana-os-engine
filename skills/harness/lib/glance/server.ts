@@ -37,6 +37,7 @@ import {
 } from "./data-loader.ts";
 import { startJob, getJob, listJobs, streamJob, cancelJob, isMutatingActive } from "./action-runner.ts";
 import { deriveAgentStates, summarizeStates } from "./agent-state.ts";
+import { readSubsystems } from "./subsystems.ts";
 import { paths, invalidatePathsCache } from "../../../_shared/lib/bun-helpers.ts";
 import { readEnvFile, writeEnvFile, setVar, deleteVar, getVar, toMap } from "../../../_shared/lib/env-file.ts";
 import { CONFIG_SCHEMA, getField, isEditableKey, maskSecret } from "./config-schema.ts";
@@ -438,6 +439,11 @@ export async function startServer(opts: ServerOptions) {
         }
         if (p === "/api/v1/projects" && req.method === "GET") {
           const inspection = projectInspection();
+          // `missing` means the root this Glance serves is not on disk: nothing was
+          // inspected, so neither list was measured and both answer `null`. A
+          // `directory` or a `legacy` root WAS inspected and holds no canonical
+          // project, which is a real zero and stays `[]`.
+          if (inspection.kind === "missing") return json({ projects: null, legacy: null });
           return json({ projects: inspection.kind === "project" ? [inspection.project] : [], legacy: inspection.kind === "legacy" ? [inspection.plan] : [] });
         }
         if (p === "/api/v1/capabilities" && req.method === "GET") {
@@ -580,7 +586,7 @@ export async function startServer(opts: ServerOptions) {
               const encoder = new TextEncoder();
               const pump = () => {
                 for (const event of listKernelEvents(kernelService(), streamMatch[1], cursor)) {
-                  controller.enqueue(encoder.encode(`id: ${event.sequence}\nevent: event\ndata: ${JSON.stringify(event)}\n\n`));
+                  controller.enqueue(encoder.encode(`id: ${event.sequence}\nevent: timeline\ndata: ${JSON.stringify(event)}\n\n`));
                   cursor = event.sequence;
                 }
                 controller.enqueue(encoder.encode(": heartbeat\n\n"));
@@ -1413,6 +1419,8 @@ export async function startServer(opts: ServerOptions) {
         "/glance.js": "application/javascript",
         "/run-event-labels.js": "application/javascript",
         "/settings-panel.js": "application/javascript",
+        "/absence.js": "application/javascript",
+        "/subsystem-row.js": "application/javascript",
         "/dag-renderer.js": "application/javascript",
         "/org-chart-renderer.js": "application/javascript",
         "/graph-renderer.js": "application/javascript",
@@ -1438,6 +1446,11 @@ export async function startServer(opts: ServerOptions) {
         });
       }
       if (p === "/api/scope") return json(getScope());
+
+      // Which engine subsystems are standing. Read-only, no spawn, no network;
+      // a subsystem whose health cannot be determined answers `status: null` and
+      // the view renders `—` rather than a green light nobody measured.
+      if (p === "/api/subsystems") return json({ subsystems: readSubsystems(projectRoot) });
 
       if (p === "/api/audit/report") {
         const sc = getScope();
@@ -1499,7 +1512,10 @@ export async function startServer(opts: ServerOptions) {
 
       if (p === "/api/projects") {
         let projects = listProjects();
-        if (projectRootN) {
+        // `null` travels: a list that could not be determined cannot be filtered
+        // into an empty one. Filtering it would recreate the very "Projects 0"
+        // this route used to report while runs were executing.
+        if (projects && projectRootN) {
           const lastSeg = (s: string) => (s || "").split("/").filter(Boolean).slice(-1)[0] || s;
           const projectBasename = lastSeg(projectParam).toLowerCase();
           projects = (projects || []).filter((p: any) => {
@@ -1525,8 +1541,8 @@ export async function startServer(opts: ServerOptions) {
         const days = Number(u.searchParams.get("days") || "7");
         const limit = Number(u.searchParams.get("limit") || "100");
         const result = buildRuns({ days, limit });
-        if (projectRootN) {
-          const runs = (result.runs || []).filter((r: any) => eventMatchesProject(r));
+        if (result.runs && projectRootN) {
+          const runs = result.runs.filter((r: any) => eventMatchesProject(r));
           return json({ runs, total: runs.length });
         }
         return json(result);
@@ -1557,7 +1573,7 @@ export async function startServer(opts: ServerOptions) {
                   const events = readTrace(50);
                   const fresh = events.filter((e: any) => (e.id || 0) > lastId).sort((a: any, b: any) => (a.id || 0) - (b.id || 0));
                   for (const ev of fresh) {
-                    controller.enqueue(encoder.encode(`event: event\ndata: ${JSON.stringify(ev)}\n\n`));
+                    controller.enqueue(encoder.encode(`event: timeline\ndata: ${JSON.stringify(ev)}\n\n`));
                     if ((ev.id || 0) > lastId) lastId = ev.id;
                     if (ev.event === "delivered" || ev.event === "cascade_exhausted") {
                       controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify({ final: ev.event })}\n\n`));
@@ -1659,7 +1675,7 @@ export async function startServer(opts: ServerOptions) {
                 const events = readEvents(50);
                 const fresh = events.filter((e: any) => e.id > lastId).reverse();
                 for (const ev of fresh) {
-                  controller.enqueue(encoder.encode(`event: event\ndata: ${JSON.stringify(ev)}\n\n`));
+                  controller.enqueue(encoder.encode(`event: timeline\ndata: ${JSON.stringify(ev)}\n\n`));
                   if (ev.id > lastId) lastId = ev.id;
                 }
                 // heartbeat to keep connection alive
@@ -1715,9 +1731,11 @@ export async function startServer(opts: ServerOptions) {
                 const events = filterEventsByProject(tailJsonlEvents(500));
                 const states = deriveAgentStates(events);
                 const summary = summarizeStates(states);
-                // emit full snapshot every tick (UI re-syncs from this)
+                // The periodic aggregate, not the opening state: `pulse` says which
+                // one this is, so a client can take the first picture without
+                // subscribing to the beat. The UI re-syncs from every pulse.
                 controller.enqueue(encoder.encode(
-                  `event: snapshot\ndata: ${JSON.stringify({ agents: states, summary })}\n\n`
+                  `event: pulse\ndata: ${JSON.stringify({ agents: states, summary })}\n\n`
                 ));
                 // emit delta events for status flips
                 for (const s of states) {

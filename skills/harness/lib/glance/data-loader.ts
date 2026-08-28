@@ -273,7 +273,8 @@ export function buildRuns(opts: { since?: string; limit?: number; days?: number 
 
   const { harnessLogsDir } = require(path.join(SKILLS_ROOT, "_shared", "lib", "log-paths.ts"));
   const HARNESS_LOGS_ROOT = harnessLogsDir();
-  if (!fs.existsSync(HARNESS_LOGS_ROOT)) return { runs: [], total: 0 };
+  // No logs root ⇒ undetermined, not zero runs. See listProjects above.
+  if (!fs.existsSync(HARNESS_LOGS_ROOT)) return { runs: null, total: null };
 
   // Walk last N days of audit logs (default 7)
   const days = opts.days ?? 7;
@@ -388,12 +389,20 @@ export function buildRuns(opts: { since?: string; limit?: number; days?: number 
 
 export function getRun(trace_id: string): Run | null {
   const { runs } = buildRuns({ days: 30 });
-  return runs.find(r => r.trace_id === trace_id) || null;
+  return runs?.find(r => r.trace_id === trace_id) || null;
 }
 
+/**
+ * The projects the maestro has logged, or `null` when that cannot be determined.
+ *
+ * The directory's absence is not a measurement of zero projects: it means nothing
+ * has ever written there, or the logs live somewhere this process cannot see. The
+ * old `return []` turned that into "Projects 0" in the panel while runs were
+ * executing. `[]` is now reserved for a directory that exists and holds nothing.
+ */
 export function listProjects() {
   const dir = paths.MAESTRO_LOGS_DIR;
-  if (!fs.existsSync(dir)) return [];
+  if (!fs.existsSync(dir)) return null;
   return fs.readdirSync(dir)
     .filter(f => !f.startsWith(".") && fs.statSync(path.join(dir, f)).isDirectory())
     .map(id => {
@@ -472,11 +481,13 @@ export function tailJsonlEvents(limit = 50): Array<any> {
 export function tailLogs(opts: { type: "harness" | "maestro"; date?: string; limit?: number }) {
   const limit = opts.limit ?? 200;
   const baseDir = opts.type === "harness" ? paths.HARNESS_LOGS_DIR : paths.MAESTRO_LOGS_DIR;
-  if (!fs.existsSync(baseDir)) return { events: [], source: baseDir, type: opts.type };
+  // The log root's absence is undetermined; a day directory that exists without
+  // events is a real, measured zero for that day.
+  if (!fs.existsSync(baseDir)) return { events: null, source: baseDir, type: opts.type };
 
   const date = opts.date ?? new Date().toISOString().slice(0, 10);
   const dayDir = path.join(baseDir, date);
-  if (!fs.existsSync(dayDir)) return { events: [], source: dayDir, type: opts.type };
+  if (!fs.existsSync(dayDir)) return { events: [], total_in_day: 0, source: dayDir, date, type: opts.type };
 
   const files = fs.readdirSync(dayDir).filter(f => f.endsWith(".jsonl")).sort();
   const events: any[] = [];
@@ -495,9 +506,10 @@ export function tailLogs(opts: { type: "harness" | "maestro"; date?: string; lim
   };
 }
 
-export function listAvailableLogDates(type: "harness" | "maestro"): string[] {
+export function listAvailableLogDates(type: "harness" | "maestro"): string[] | null {
   const baseDir = type === "harness" ? paths.HARNESS_LOGS_DIR : paths.MAESTRO_LOGS_DIR;
-  if (!fs.existsSync(baseDir)) return [];
+  // No log root ⇒ undetermined; an existing root with no day directories ⇒ [].
+  if (!fs.existsSync(baseDir)) return null;
   return fs.readdirSync(baseDir)
     .filter(f => /^\d{4}-\d{2}-\d{2}$/.test(f))
     .sort()
