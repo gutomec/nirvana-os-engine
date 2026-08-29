@@ -38,7 +38,7 @@ import {
 import { startJob, getJob, listJobs, streamJob, cancelJob, isMutatingActive } from "./action-runner.ts";
 import { deriveAgentStates, summarizeStates } from "./agent-state.ts";
 import { readSubsystems } from "./subsystems.ts";
-import { paths, invalidatePathsCache } from "../../../_shared/lib/bun-helpers.ts";
+import { paths, invalidatePathsCache, overridePath } from "../../../_shared/lib/bun-helpers.ts";
 import { readEnvFile, writeEnvFile, setVar, deleteVar, getVar, toMap } from "../../../_shared/lib/env-file.ts";
 import { CONFIG_SCHEMA, getField, isEditableKey, maskSecret } from "./config-schema.ts";
 import {
@@ -52,6 +52,10 @@ import { handleObservabilityRoute } from "./views/observability-handler.ts";
 import { AgentXCanaryQueue, ConversationService, MaestroTurnQueue, ProjectService, resumeCommand, type Conversation, type GlanceAgentXCanaryAdapter, type GlanceExecutionRunner, type MessageRouter, type TurnView } from "../control-plane/index.ts";
 import { createRun as createKernelRun, getRun as getKernelRun, listEvents as listKernelEvents, openKernel } from "../run-kernel/index.ts";
 import { getGauntlet, listCandidateRevisions, listScorecards, projectMultiTargetRun } from "../gauntlet/index.ts";
+// The same Bearer-token store `nrv serve` already ships (sha256-at-rest, timing-safe compare,
+// `nrv serve keygen`/`keys`) — one credential system for both HTTP surfaces of the engine,
+// never a second one invented here for the cockpit.
+import { authenticate as authenticateApiKey } from "../serve/auth.ts";
 
 /**
  * A gate report in the shape the mind-clone validation routes have always
@@ -93,6 +97,11 @@ export interface ServerOptions {
   // The agentic router a Message without an explicit target goes through before its Run is
   // prepared (business, then squad, then agent-x); absent, such a Message stays on agent-x.
   messageRouter?: MessageRouter;
+  // Bind address. Default (or any loopback spelling) keeps today's local, unauthenticated
+  // cockpit. Anything else is a served instance: every request needs a Bearer credential
+  // (`nrv serve keygen --glance`) and the process becomes bound to one tenant — see
+  // `isLoopback` below.
+  host?: string;
 }
 
 // ─── Setup copy helper (used by /api/setup/copy-batch and /api/setup/copy-stream) ───
@@ -261,9 +270,18 @@ function findFreePort(start = 3737, attempts = 50): number {
   return Math.floor(Math.random() * (65535 - 49152)) + 49152;
 }
 
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
+
 export async function startServer(opts: ServerOptions) {
   const port = opts.port === "auto" || opts.port === 0 ? findFreePort() : opts.port;
-  const url = `http://localhost:${port}`;
+  const host = opts.host || "127.0.0.1";
+  // Loopback (the default) is the local, unauthenticated cockpit — unchanged from before this
+  // flag existed. Any other bind address is a *served* instance: the machine's local case must
+  // never become hostile, so the boundary that turns on authentication and tenant-scoped logs
+  // is exactly the boundary that already turns on network exposure, never a second flag to
+  // remember to set.
+  const isLoopback = LOOPBACK_HOSTS.has(host);
+  const url = `http://${isLoopback ? "localhost" : host}:${port}`;
   const projectRoot = path.resolve(process.env.NIRVANA_PROJECT_ROOT || process.cwd());
   const controlPlaneDb = path.join(projectRoot, ".nirvana", "control-plane.sqlite");
   const kernelDb = path.join(projectRoot, ".nirvana", "run-kernel.sqlite");
@@ -414,6 +432,49 @@ export async function startServer(opts: ServerOptions) {
   };
   const settingScope = (value: unknown): SettingScope | null => (value === "project" || value === "global" ? value : null);
 
+  // ─── Tenancy + retention (served instances only) ───────────────────────
+  // Tenant = the projectRoot this process is bound to (resolved once, above — already true
+  // structurally for controlPlaneDb/kernelDb). paths.js already project-scopes
+  // HARNESS_LOGS_DIR/MAESTRO_LOGS_DIR on its own WHEN a project root is present at the moment
+  // it first resolves (module load, before startServer runs) — but that resolution is a plain
+  // object computed ONCE at require time (paths.js's own comment says so) and never
+  // re-evaluated; a later process.env write plus invalidatePathsCache() does not reach it,
+  // because require() hands back the same frozen object out of the module cache (the trap
+  // skills/harness/tests/helpers/engine-log-dirs.ts documents and works around for tests).
+  // `overridePath()` is that same in-place-mutation technique, for a production caller: it pins
+  // this tenant's own project directory as the log root regardless of what was resolved before
+  // (covers the case where startServer's own projectRoot — process.env.NIRVANA_PROJECT_ROOT
+  // verbatim, no marker walk — disagrees with paths.js's cwd-walked one, e.g. launched from a
+  // project subdirectory). The env var is pinned too, for log-paths.ts/audit.js's readers,
+  // which DO re-check process.env on every call. Both restored on `close()` so a host starting
+  // several servers in one process never leaks one tenant's pin into the next.
+  const previousHarnessLogsDir = process.env.HARNESS_LOGS_DIR;
+  const previousMaestroLogsDir = process.env.MAESTRO_LOGS_DIR;
+  const previousPathsHarnessLogsDir = paths.HARNESS_LOGS_DIR;
+  const previousPathsMaestroLogsDir = paths.MAESTRO_LOGS_DIR;
+  if (!isLoopback) {
+    const tenantHarnessLogsDir = path.join(projectRoot, ".nirvana", "logs", "harness");
+    const tenantMaestroLogsDir = path.join(projectRoot, ".nirvana", "logs", "maestro");
+    process.env.HARNESS_LOGS_DIR = tenantHarnessLogsDir;
+    process.env.MAESTRO_LOGS_DIR = tenantMaestroLogsDir;
+    overridePath("HARNESS_LOGS_DIR", tenantHarnessLogsDir);
+    overridePath("MAESTRO_LOGS_DIR", tenantMaestroLogsDir);
+    // Retention: configurable (`audit.project_retention_days`, settings-schema.ts), default 365
+    // carried over from the declared-but-never-wired HarnessConfigSchema.audit default — not a
+    // new policy. Only the served case is auto-rotated here: deleting a laptop owner's own
+    // history as a side effect of an unrelated cut is exactly what "do not break the local
+    // case" warns against, and the brief's LGPD/filing-deadline scenario is about the served
+    // deployment. The owner sets the real value for their obligation via
+    // `nrv config set audit.project_retention_days <n> --scope project`; this default is a
+    // personal-use number, not a compliance recommendation.
+    try {
+      const days = resolveSetting("audit.project_retention_days", settingsResolveOptions()).value as number;
+      const { rotate } = createRequire(import.meta.url)("../audit.js");
+      const { deleted } = rotate(days);
+      if (deleted.length) settingsAudit("x_retention_rotated", { retention_days: days, deleted_count: deleted.length });
+    } catch (error) { console.error(`[glance] retention rotation skipped (${(error as Error).message})`); }
+  }
+
   // Write PID file (auto-cleanup on exit)
   try {
     fs.mkdirSync(path.dirname(PID_FILE), { recursive: true });
@@ -422,11 +483,27 @@ export async function startServer(opts: ServerOptions) {
 
   const server = Bun.serve({
     port,
-    // Bind to loopback only: the cockpit (with actions) stays restricted to this
-    // machine, never exposed to the LAN by default.
-    hostname: "127.0.0.1",
+    // Loopback by default: the cockpit (with actions) stays restricted to this machine, never
+    // exposed to the LAN unless `--host` says so explicitly (see `isLoopback` above).
+    hostname: host,
     async fetch(req) {
       bumpActivity();
+      // Authentication boundary = the bind host, not a separate flag: a served instance (any
+      // non-loopback host) refuses every request — API, static assets, SSE, everything — until
+      // it carries a valid credential. `authenticate()` is the exact function `nrv serve`'s job
+      // API already gates on; a key only clears this check when minted with `--glance`
+      // (`ApiKeyRecord.glance`, additive field in serve/auth.ts) — a job-API key does not
+      // silently become a cockpit key. Read vs. write inside Glance stays governed by the
+      // existing per-process `allowActions` (`--read-only`) flag, not per-key: Glance is one
+      // operator's own cockpit, not a multi-caller API, so a single access bit plus the
+      // existing process-level flag is enough; per-key read/write scoping is cut 7's problem,
+      // where many distinct external callers actually need different grants.
+      if (!isLoopback) {
+        const key = authenticateApiKey(req);
+        if (!key || !key.glance) {
+          return problem(401, "Unauthorized", "this Glance instance is bound beyond localhost; Authorization: Bearer <token from `nrv serve keygen --glance`> is required");
+        }
+      }
       const u = new URL(req.url);
       const p = u.pathname;
 
@@ -1955,7 +2032,11 @@ export async function startServer(opts: ServerOptions) {
 
   console.error(`[glance] up on ${url}  (scope=${getScope().mode}, allow_actions=${opts.allowActions}, theme=${opts.theme})`);
   console.error(`[glance] auto-shutdown after ${opts.idleMin}min idle  ·  Ctrl+C to exit`);
-  if (opts.open) openBrowser(url);
+  if (!isLoopback) console.error(`[glance] served on ${host} — authentication required (Authorization: Bearer <token from \`nrv serve keygen --glance\`>); tenant = ${projectRoot}`);
+  // A served instance is a VPS process with no display attached to it, most of the time; even
+  // when one exists, opening a browser aimed at a bare non-TLS network address is not this
+  // cut's call to make. Loopback keeps today's behavior unchanged.
+  if (opts.open && isLoopback) openBrowser(url);
 
   // Detaches the queue from its children (tests stop servers without exiting the process;
   // shutdown() runs it before the server stops, so a child still running is left to the next
@@ -1990,6 +2071,12 @@ export async function startServer(opts: ServerOptions) {
     try { kernel?.close(); } catch {}
     try { conversations?.close(); } catch {}
     kernel = null; conversations = null;
+    if (!isLoopback) {
+      if (previousHarnessLogsDir === undefined) delete process.env.HARNESS_LOGS_DIR; else process.env.HARNESS_LOGS_DIR = previousHarnessLogsDir;
+      if (previousMaestroLogsDir === undefined) delete process.env.MAESTRO_LOGS_DIR; else process.env.MAESTRO_LOGS_DIR = previousMaestroLogsDir;
+      overridePath("HARNESS_LOGS_DIR", previousPathsHarnessLogsDir);
+      overridePath("MAESTRO_LOGS_DIR", previousPathsMaestroLogsDir);
+    }
   };
 
   return { server, url, port, recovery, detach, close };

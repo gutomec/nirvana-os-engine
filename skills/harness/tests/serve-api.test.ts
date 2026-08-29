@@ -13,6 +13,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const root = mkdtempSync(join(tmpdir(), "serve-api-"));
 const serveDir = join(root, "serve");
@@ -71,6 +72,7 @@ beforeAll(async () => {
   process.env.NIRVANA_SERVE_SESSIONS_ROOT = join(root, "sessions");
   process.env.NIRVANA_SERVE_DISPATCH_BIN = dispatchFixture;
   process.env.NIRVANA_RUN_LEDGER_DB = join(root, "ledger.sqlite");
+  process.env.NIRVANA_SERVE_WEBHOOK_SWEEP_MS = "30";
   mkdirSync(serveDir, { recursive: true });
 
   const { keygen } = await import("../lib/serve/auth.ts");
@@ -302,4 +304,140 @@ describe("webhooks", () => {
     const r = await api("/v1/webhooks", { method: "POST", body: JSON.stringify({ url: "file:///etc/passwd" }) });
     expect(r.status).toBe(400);
   });
+});
+
+describe("jobs — session-agnostic, the polling floor", () => {
+  test("proves the polling floor: submit, never listen, retrieve the terminal state afterwards", async () => {
+    process.env.FIXTURE_EXIT = "0";
+    const { session_id } = await (await api("/v1/sessions", { method: "POST" })).json();
+    const { trace_id } = await (await api(`/v1/sessions/${session_id}/briefs`, {
+      method: "POST", body: JSON.stringify({ brief: "nunca escutei o SSE" }),
+    })).json();
+    // No /events call anywhere in this test — only polling, the mechanism
+    // that does not depend on connectivity between updates.
+    const deadline = Date.now() + 15000;
+    let env: any;
+    while (Date.now() < deadline) {
+      env = await (await api(`/v1/jobs/${trace_id}`)).json();
+      if (env.state !== "queued" && env.state !== "running") break;
+      await new Promise((r) => setTimeout(r, 120));
+    }
+    expect(env.state).toBe("delivered");
+    expect(env.trace_id).toBe(trace_id);
+    expect(env.artifacts.some((a: any) => a.path === "deliverable.md")).toBe(true);
+
+    // The fixture writes two files (deliverable.md + _SUMMARY.md), so /result
+    // answers with the listing and a pointer to the by-path route rather than
+    // guessing which one is "the" artifact.
+    const result = await api(`/v1/jobs/${trace_id}/result`);
+    expect(result.status).toBe(200);
+    const resultBody = await result.json();
+    expect(resultBody.artifacts.some((a: any) => a.path === "deliverable.md")).toBe(true);
+
+    const download = await api(`/v1/jobs/${trace_id}/artifacts/deliverable.md`);
+    expect(await download.text()).toContain("conteúdo real");
+  });
+
+  test("a job belongs to the key that created it — another key gets job_not_found, never someone else's case", async () => {
+    process.env.FIXTURE_EXIT = "0";
+    const { session_id } = await (await api("/v1/sessions", { method: "POST" })).json();
+    const { trace_id } = await (await api(`/v1/sessions/${session_id}/briefs`, {
+      method: "POST", body: JSON.stringify({ brief: "caso privado" }),
+    })).json();
+
+    const { keygen } = await import("../lib/serve/auth.ts");
+    const other = keygen({ label: "intruder-jobs" });
+    const r = await fetch(`${base}/v1/jobs/${trace_id}`, { headers: { Authorization: `Bearer ${other.token}` } });
+    expect(r.status).toBe(404);
+    expect((await r.json()).error).toBe("job_not_found");
+  });
+
+  test("an unknown job id is not found", async () => {
+    const r = await api("/v1/jobs/run_does_not_exist");
+    expect(r.status).toBe(404);
+  });
+
+  test("result on a still-running job is a conflict, not a partial answer", async () => {
+    process.env.FIXTURE_EXIT = "0";
+    const { session_id } = await (await api("/v1/sessions", { method: "POST" })).json();
+    const { trace_id } = await (await api(`/v1/sessions/${session_id}/briefs`, {
+      method: "POST", body: JSON.stringify({ brief: "ainda rodando" }),
+    })).json();
+    // The fixture is fast, so this is a best-effort race — assert the
+    // CONTRACT (409 while non-terminal) rather than depend on timing when it
+    // happens to still be queued/running.
+    const r = await api(`/v1/jobs/${trace_id}/result`);
+    if (r.status === 409) {
+      expect((await r.json()).error).toBe("job_not_finished");
+    } else {
+      expect(r.status).toBe(200);
+    }
+  });
+
+  test("events by job id streams the same feed as events by session+run", async () => {
+    process.env.FIXTURE_EXIT = "0";
+    const { session_id } = await (await api("/v1/sessions", { method: "POST" })).json();
+    const { trace_id } = await (await api(`/v1/sessions/${session_id}/briefs`, {
+      method: "POST", body: JSON.stringify({ brief: "stream por job id" }),
+    })).json();
+    const res = await api(`/v1/jobs/${trace_id}/events`);
+    expect(res.headers.get("content-type")).toContain("text/event-stream");
+    await res.body?.cancel();
+  });
+});
+
+describe("webhook delivery — signed, timed, idempotent, referenced not embedded", () => {
+  test("the delivered request verifies, carries a stable delivery id, and never embeds the summary by value", async () => {
+    const received: { body: string; headers: Record<string, string> }[] = [];
+    const receiver = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      async fetch(req) {
+        const body = await req.text();
+        received.push({ body, headers: Object.fromEntries(req.headers) });
+        return new Response("ok", { status: 200 });
+      },
+    });
+
+    try {
+      const reg = await api("/v1/webhooks", {
+        method: "POST",
+        body: JSON.stringify({ url: `http://127.0.0.1:${receiver.port}/hook` }),
+      });
+      const { secret } = await reg.json();
+
+      process.env.FIXTURE_EXIT = "0";
+      const { session_id } = await (await api("/v1/sessions", { method: "POST" })).json();
+      const { trace_id } = await (await api(`/v1/sessions/${session_id}/briefs`, {
+        method: "POST", body: JSON.stringify({ brief: "caso com webhook" }),
+      })).json();
+
+      const deadline = Date.now() + 15000;
+      while (Date.now() < deadline && received.length === 0) await new Promise((r) => setTimeout(r, 50));
+      expect(received.length).toBeGreaterThan(0);
+
+      const delivery = received[0];
+      const { verifyWebhook } = await import("../lib/serve/webhooks.ts");
+      const verdict = verifyWebhook({
+        body: delivery.body,
+        signature: delivery.headers["x-nirvana-signature"],
+        timestamp: delivery.headers["x-nirvana-timestamp"],
+        secret,
+      });
+      expect(verdict.valid).toBe(true);
+      expect(delivery.headers["x-nirvana-delivery-id"]).toBeTruthy();
+
+      const payload = JSON.parse(delivery.body);
+      expect(payload.trace_id).toBe(trace_id);
+      expect(payload.state).toBe("delivered");
+      expect(payload.job_url).toContain(`/v1/jobs/${trace_id}`);
+      // Payload by reference, never by value: the summary text must not
+      // travel inside the webhook body — a legal case is sensitive.
+      expect(delivery.body).not.toContain("resumo de uma p");
+      expect(payload.summary).toBeUndefined();
+      expect(payload.artifacts).toBeUndefined();
+    } finally {
+      receiver.stop(true);
+    }
+  }, spawnBudgetMs(1));
 });

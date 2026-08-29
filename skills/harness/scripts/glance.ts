@@ -9,6 +9,9 @@
  *   bun glance.ts --idle-min 60            # 60min idle timeout (default 30)
  *   bun glance.ts --theme awwwards         # awwwards-style hero
  *   bun glance.ts --allow-actions          # enables write endpoints (Phase 5)
+ *   bun glance.ts --host 0.0.0.0           # served instance: requires a Bearer credential
+ *                                          # (nrv serve keygen --glance) and pins this
+ *                                          # process's logs to its own project (tenancy)
  */
 
 import { parseArgs } from "../../_shared/lib/bun-helpers.ts";
@@ -16,6 +19,7 @@ import { describeSettingSource, resolveSetting } from "../../_shared/lib/setting
 import { createDispatchExecutionRunner, detectExecutionRuntime } from "../lib/control-plane/execution-runner.ts";
 import { createAgenticMessageRouter } from "../lib/control-plane/message-router.ts";
 import { startServer } from "../lib/glance/server.ts";
+import { listKeys } from "../lib/serve/auth.ts";
 
 const { flags } = parseArgs();
 
@@ -29,6 +33,7 @@ USAGE
   glance --no-open                    don't auto-open the browser
   glance --idle-min 60                idle timeout in minutes (default 30)
   glance --theme apple|apple-dark|awwwards    visual theme (default apple)
+  glance --host 0.0.0.0               served instance — see SERVED below
   glance -h | --help                  this message
 
 WRITE ACTIONS (ON by default)
@@ -37,6 +42,16 @@ WRITE ACTIONS (ON by default)
   the actions menu (index, audit-batch, run-smoke, …). The server binds to
   127.0.0.1 only, so it stays private to this machine.
   Use --read-only for a safe, look-but-don't-touch session.
+
+SERVED (--host beyond loopback)
+  Every request needs Authorization: Bearer <token>, minted with
+  \`nrv serve keygen --glance\` (a key without --glance does not unlock the
+  cockpit, even if it is valid for the job API). This process's audit/run
+  logs are pinned to its own project for the life of the process — one
+  served process is one tenant. Retention of that project's log is
+  \`nrv config set audit.project_retention_days <n> --scope project\`
+  (default 365; the value that fits a legal/LGPD obligation is your call).
+  The engine ships no TLS: put a reverse proxy in front for a public host.
 
 EXECUTION
   A Message in an adopted project runs in a child dispatch process (the server
@@ -57,6 +72,13 @@ The cockpit auto-detects the project root from \$cwd (walks up looking for
 const port = flags.port ? Number(flags.port) : "auto";
 const open = !flags["no-open"];
 const idleMin = flags["idle-min"] ? Number(flags["idle-min"]) : 30;
+const host = (flags.host as string) || "127.0.0.1";
+if (host !== "127.0.0.1" && host !== "localhost" && host !== "::1") {
+  const glanceKeys = listKeys().filter((k) => k.glance && !k.revoked).length;
+  if (glanceKeys === 0) {
+    console.error(`[glance] WARNING: bound to ${host} with zero --glance keys — every request will be refused until you run \`nrv serve keygen --glance\`.`);
+  }
+}
 // Glance is the Nirvana-OS control cockpit: write actions (setup, saving .env,
 // chat, running actions) come ENABLED by default. The server binds only to
 // 127.0.0.1, so it stays restricted to this machine. --read-only returns to
@@ -83,4 +105,4 @@ if (executionEnabled) {
   console.error(`[glance] execution OFF (${allowActions ? `glance.execution=false via ${describeSettingSource(execution)}` : "--read-only"})`);
 }
 
-await startServer({ port, open, idleMin, allowActions, theme, executionRunner, messageRouter });
+await startServer({ port, open, idleMin, allowActions, theme, executionRunner, messageRouter, host });

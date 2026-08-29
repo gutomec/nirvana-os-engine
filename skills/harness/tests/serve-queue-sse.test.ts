@@ -165,4 +165,26 @@ describe("SSE", () => {
       expect(ev.trace_id ?? ev.project_id).toBe(r.trace_id);
     }
   }, spawnBudgetMs(1));
+
+  test("a client that disconnects mid-run does not take the server down with it", async () => {
+    process.env.FIXTURE_MS = "600";
+    const { session_id } = await (await api("/v1/sessions", { method: "POST" })).json();
+    const r = await (await api(`/v1/sessions/${session_id}/briefs`, { method: "POST", body: JSON.stringify({ brief: "desconecta cedo" }) })).json();
+
+    const res = await api(`/v1/sessions/${session_id}/runs/${r.trace_id}/events`);
+    // Cancel while the run is still in flight — this is exactly what left
+    // the polling interval's next `enqueue()` throwing uncaught against a
+    // dead controller before `cancel()` was wired up.
+    await res.body!.cancel();
+
+    // Several 150ms poll ticks fire against the cancelled stream before the
+    // fixture even finishes (FIXTURE_MS=600 above).
+    await new Promise((res2) => setTimeout(res2, 500));
+
+    // If that throw had gone uncaught, the process would be gone and this
+    // would time out or the connection would reset instead of answering.
+    const health = await api("/v1/health");
+    expect(health.status).toBe(200);
+    delete process.env.FIXTURE_MS;
+  }, spawnBudgetMs(1));
 });

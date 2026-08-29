@@ -60,6 +60,19 @@ let _paths: Record<string, string> | null = null;
 /** Invalidate the cached paths object so the next access re-reads process.env.
  *  Used by Glance Settings panel after live-reloading .env vars. */
 export function invalidatePathsCache(): void { _paths = null; }
+/**
+ * Overrides one resolved path for the life of the process, or until restored with another call.
+ * paths.js exports a plain object resolved ONCE at require time (its own comment says so); a
+ * process.env write plus invalidatePathsCache() alone does NOT pick it up, because require()
+ * hands back that same frozen object out of the module cache on the next load — the trap
+ * skills/harness/tests/helpers/engine-log-dirs.ts documents and works around by mutating the
+ * cached object's properties directly, in place, rather than trying to force a re-resolution.
+ * This is that same technique, exposed for a production caller (a served Glance instance
+ * pinning its own tenant's log directory) instead of only a test fixture.
+ */
+export function overridePath(key: string, value: string): void {
+  loadPaths()[key] = value;
+}
 function loadPaths(): Record<string, string> {
   if (_paths) return _paths;
   for (const p of PATHS_JS_CANDIDATES) {

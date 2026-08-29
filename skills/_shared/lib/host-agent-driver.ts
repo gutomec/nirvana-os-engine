@@ -141,6 +141,53 @@ function removeTmpFiles(files: string[] | undefined): void {
   }
 }
 
+/** Every prefix writePromptFile is ever called with (default "nrv-prompt",
+ * plus claudeDirectiveArgs' "nrv-directive"). One place, so the reaper below
+ * can never drift from what this module actually creates. */
+const TMP_FILE_PREFIXES = ["nrv-prompt-", "nrv-directive-"];
+
+/**
+ * Process-wide safety net for the one gap a `finally`/`settle()` cannot close:
+ * a process killed by an external signal while blocked inside spawnSync never
+ * runs its own cleanup. Verified on this machine (Bun 2026-08-29): a
+ * `process.on('SIGTERM', ...)` handler does not help either — the callback is
+ * deferred until the blocking spawnSync call itself returns, so it cannot fire
+ * while the process is stuck waiting on a hung child, which is exactly the
+ * case the supervisor's kill exists for. SIGKILL cannot be caught at all, by
+ * either mechanism.
+ *
+ * This is why every adapter's own try/finally stays as-is (correct for normal
+ * exit, error, and spawnSync's own timeout-to-CHILD) and the file it cannot
+ * reach is instead swept by a SEPARATE, later-running process that never
+ * shares the killed process's fate. Call this from that other process (the
+ * supervisor sweep), never from the same run that might leak — a self-reap
+ * would need the very JS execution the leak scenario denies it.
+ *
+ * `maxAgeMs` defaults to 24h: comfortably longer than any lease-driven kill
+ * or retry cycle (minutes), so it can never race a legitimately slow but
+ * still-live run's file, while reliably reclaiming anything orphaned by a
+ * kill.
+ */
+export function reapOrphanedPromptFiles(opts: { dir?: string; maxAgeMs?: number } = {}): string[] {
+  const dir = opts.dir ?? os.tmpdir();
+  const maxAgeMs = opts.maxAgeMs ?? 24 * 60 * 60_000;
+  const now = Date.now();
+  const removed: string[] = [];
+  let entries: string[];
+  try { entries = fs.readdirSync(dir); } catch { return removed; }
+  for (const name of entries) {
+    if (!TMP_FILE_PREFIXES.some((p) => name.startsWith(p))) continue;
+    const full = path.join(dir, name);
+    try {
+      const st = fs.statSync(full);
+      if (!st.isFile() || now - st.mtimeMs < maxAgeMs) continue;
+      fs.rmSync(full, { force: true });
+      removed.push(full);
+    } catch { /* raced with its own creator/consumer — not our problem */ }
+  }
+  return removed;
+}
+
 /** The "where does this CLI live" probe, per platform. Windows `where` takes its options with a
  * slash (`WHERE [/R dir] [/Q] ... pattern...`), so the `-v` this used to pass was read as a SECOND
  * PATTERN, not a flag: the probe asked for a file named `-v` as well and answered about both. On
@@ -2137,6 +2184,7 @@ export const __testables = {
   argvOrPromptFile,
   promptFileBootstrap,
   envelopeErrorMessage,
+  TMP_FILE_PREFIXES,
 };
 
 if (import.meta.main) {
