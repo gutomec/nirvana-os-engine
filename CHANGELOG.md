@@ -202,6 +202,70 @@ this cut). `bun scripts/check-english-source.ts --strict`, `bun
 scripts/check-changelog-parity.ts --strict` and `git diff --check` — all
 clean.
 
+### The session is the supervisor now, the same way on macOS, Linux and Windows, and the launchd path it replaces is gone
+
+The owner's requirement, verbatim: *"O sistema deve funcionar da mesma forma
+em qualquer sistema operacional, mac, linux e windows, sem poluir o sistema
+operacional dos usuários."* `nrv supervisor install` registered a launchd
+`LaunchAgent` as the outer recovery layer — macOS-only, and it needed a human
+to run `install` in the first place. Measured on the machine this change
+shipped from: the LaunchAgent it wrote in an earlier session was still
+sitting there, `launchctl load`ed, and had swept nothing productive — the
+automatic recovery it promised had never actually done its job. Claude Code
+runs subagents inside the session, as side tasks, with no OS service anywhere
+in that design; Codex's own open issues (a background-process leak with no
+job control, a sandbox that blocks `pgrep` outright) are the warning against
+depending on a process table or an external daemon for this guarantee.
+
+The recovery mechanism itself was never the defect. `run-ledger.ts`'s
+activity-based lease and `supervisor.ts sweep` are portable already, and the
+sweep has handled "no `ps` on this platform" since before this cut. What was
+missing was anyone to trigger it reliably. The session is that trigger now,
+in three places, none of which registers anything with the operating system.
+`maybeSweep()` already piggybacked on every `nrv find/route/dispatch`;
+`dispatch.ts` now calls it again on the way out (`process.on("exit")`), so a
+dispatch that ran for tens of minutes reconciles whatever else went stale
+while it was busy, with no timer involved — still rate-limited by
+`maybeSweep`'s own 5-minute floor, so a short dispatch pays nothing extra.
+`nrv supervisor watch` stays the foreground loop for the unattended case: the
+user starts it, the user kills it, it lives in their terminal and nowhere
+else. The gap that remains is named rather than hidden: if a session
+dispatches once and nobody runs another `nrv` command or `watch` afterward,
+nobody sweeps until one of them does — "recovered eventually, next time
+someone returns," not "recovered within N seconds of stalling."
+
+`installLaunchd`, `launchdPlistPath`, `renderLaunchdPlist` and the
+`install`/`uninstall` subcommands are gone from `supervisor.ts`, along with
+every mention in its help text and in `commands.ts`'s command table. A
+LaunchAgent from before this change is not touched by any of it: `nrv
+doctor` already carried a report-only check for `sh.nirvana.*`/`com.nirvana.*`
+labels, loaded or on disk, and it stays the one place that names the manual
+cleanup (`launchctl bootout gui/$(id -u)/<label>`, then remove the plist) —
+never a fixer, automated or otherwise, because deleting someone else's
+registration is worse than leaving it. On the machine this shipped from, four
+such labels were loaded; only one (`sh.nirvana.supervisor`) ever came from
+this codebase, which is the whole reason the check reports every label
+instead of guessing which ones are safe to touch.
+
+**Verified.** A scratch ledger (temp SQLite, `NIRVANA_RUN_LEDGER_DB`
+override) seeded with two stalled rows (expired lease, dead pid), recovered
+end to end through the real CLI: `nrv supervisor sweep --all-projects`
+scanned, attempted resume, and transitioned state with zero OS service
+involved; a plain `nrv supervisor watch --all-projects` spawned in the
+background, left running for one pass, then killed by the calling shell —
+exactly the foreground lifecycle the design intends — recovered the second
+row the same way. `nrv supervisor install` now falls through to the usage
+text (exit 2). A new hermetic test
+(`supervisor-sweep.test.ts`, "dispatch-return trigger") rewinds
+`last_sweep_at` past the 5-minute floor to prove the exit-hook's second
+`maybeSweep()` call fires once the window reopens, without a real 5-minute
+wait. `bun test skills/harness` — 1528 pass, 2 skip, 0 fail, across 149
+files. `bun scripts/check-cli-parity.ts`, `bun
+scripts/check-skillmd-command-parity.ts --strict`, `bun
+scripts/check-english-source.ts --strict`, `bun
+scripts/check-changelog-parity.ts --strict` and `git diff --check` — all
+clean. No CI workflow changes.
+
 ## 0.12.0 — 2026-08-28
 
 ### A generated schema stops depending on the machine that generated it

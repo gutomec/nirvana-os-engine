@@ -216,6 +216,73 @@ scripts/check-english-source.ts --strict`, `bun
 scripts/check-changelog-parity.ts --strict` e `git diff --check` — todos
 limpos.
 
+### A sessão agora é o supervisor, do mesmo jeito no macOS, no Linux e no Windows, e o caminho do launchd que ela substitui saiu do código
+
+A exigência do dono, na íntegra: *"O sistema deve funcionar da mesma forma
+em qualquer sistema operacional, mac, linux e windows, sem poluir o sistema
+operacional dos usuários."* O `nrv supervisor install` registrava um
+`LaunchAgent` do launchd como a camada externa de recuperação — só para
+macOS, e exigia que um humano rodasse `install` antes de qualquer coisa
+acontecer. Medido na máquina de onde esta mudança saiu: o LaunchAgent escrito
+numa sessão anterior ainda estava lá, carregado pelo `launchctl`, e não tinha
+varrido nada de produtivo — a recuperação automática que ele prometia nunca
+tinha de fato feito o trabalho. O Claude Code roda subagentes dentro da
+própria sessão, como tarefas laterais, sem nenhum serviço de sistema operacional
+nesse desenho; os próprios issues abertos do Codex (vazamento de processo em
+segundo plano sem controle de job, um sandbox que bloqueia o `pgrep` de
+saída) são o aviso contra depender de tabela de processos ou de um daemon
+externo para esta garantia.
+
+O mecanismo de recuperação em si nunca foi o defeito. O lease baseado em
+atividade do `run-ledger.ts` e o `supervisor.ts sweep` já são portáveis, e a
+varredura já tratava "sem `ps` nesta plataforma" antes deste corte. O que
+faltava era alguém para disparar isso de forma confiável. Agora a sessão é
+esse gatilho, em três lugares, nenhum dos quais registra qualquer coisa no
+sistema operacional. O `maybeSweep()` já andava pendurado em todo `nrv
+find/route/dispatch`; o `dispatch.ts` agora o chama de novo na saída
+(`process.on("exit")`), então um despacho que rodou por dezenas de minutos
+reconcilia o que mais tiver ficado obsoleto enquanto ele estava ocupado, sem
+nenhum timer envolvido — ainda limitado pelo piso de 5 minutos do próprio
+`maybeSweep`, então um despacho curto não paga nada a mais por isso. O `nrv
+supervisor watch` continua sendo o loop de primeiro plano para o caso
+desatendido: o usuário o inicia, o usuário o mata, ele vive no terminal dele
+e em lugar nenhum mais. A lacuna que resta é nomeada em vez de escondida: se
+uma sessão despacha uma vez e ninguém roda outro comando `nrv` ou `watch`
+depois, ninguém varre até que um dos dois aconteça — "recuperado eventualmente,
+na próxima vez que alguém voltar", não "recuperado em N segundos após travar".
+
+`installLaunchd`, `launchdPlistPath`, `renderLaunchdPlist` e os subcomandos
+`install`/`uninstall` saíram do `supervisor.ts`, junto com toda menção no seu
+texto de ajuda e na tabela de comandos do `commands.ts`. Um LaunchAgent de
+antes desta mudança não é tocado por nada disso: o `nrv doctor` já carregava
+uma checagem só de relatório para labels `sh.nirvana.*`/`com.nirvana.*`,
+carregados ou em disco, e continua sendo o único lugar que nomeia a limpeza
+manual (`launchctl bootout gui/$(id -u)/<label>`, depois remover o plist) —
+nunca um reparador automático, porque apagar o registro de outra pessoa é
+pior do que deixá-lo. Na máquina de onde isto saiu, quatro desses labels
+estavam carregados; só um (`sh.nirvana.supervisor`) veio deste código-fonte
+algum dia, e é exatamente por isso que a checagem reporta todo label em vez
+de adivinhar quais são seguros de tocar.
+
+**Verificado.** Um ledger descartável (SQLite temporário, override de
+`NIRVANA_RUN_LEDGER_DB`) semeado com duas linhas travadas (lease expirado,
+pid morto), recuperado de ponta a ponta pela CLI real: `nrv supervisor sweep
+--all-projects` varreu, tentou resumir e transicionou o estado sem nenhum
+serviço de sistema operacional envolvido; um `nrv supervisor watch
+--all-projects` simples, disparado em segundo plano, deixado rodando por uma
+passada e então morto pelo shell que o chamou — exatamente o ciclo de vida
+de primeiro plano que o desenho pretende — recuperou a segunda linha do mesmo
+jeito. O `nrv supervisor install` agora cai no texto de uso (saída 2). Um
+novo teste hermético (`supervisor-sweep.test.ts`, "dispatch-return trigger")
+rebobina o `last_sweep_at` para além do piso de 5 minutos para provar que a
+segunda chamada de `maybeSweep()` do exit-hook dispara quando a janela reabre,
+sem esperar 5 minutos de verdade. `bun test skills/harness` — 1528 passam, 2
+pulados, 0 falhas, em 149 arquivos. `bun scripts/check-cli-parity.ts`, `bun
+scripts/check-skillmd-command-parity.ts --strict`, `bun
+scripts/check-english-source.ts --strict`, `bun
+scripts/check-changelog-parity.ts --strict` e `git diff --check` — todos
+limpos. Nenhuma mudança de workflow de CI.
+
 ## 0.12.0 — 2026-08-28
 
 ### Um schema gerado para de depender da máquina que o gerou

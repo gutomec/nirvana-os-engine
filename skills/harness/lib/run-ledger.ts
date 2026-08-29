@@ -10,16 +10,16 @@
 //
 // DB location: ONE GLOBAL DB at <NIRVANA_HOME>/.nirvana/run-ledger.sqlite
 // (alongside the global state.db fallback of _shared/lib/state-db.js). The FILE
-// is global because the launchd supervisor runs with no project context and
-// must reach every run on the machine in one indexed query. Override with
-// NIRVANA_RUN_LEDGER_DB (tests).
+// is global because a machine-wide supervisor invocation (`watch` with no
+// project context, or an explicit `--all-projects`) must reach every run on
+// the machine in one indexed query. Override with NIRVANA_RUN_LEDGER_DB (tests).
 //
 // VISIBILITY is not global, and that distinction is the whole point. Every row
 // records the `project_root` it belongs to, and every read and every write here
 // filters by the root the calling process is serving (resolveProjectRoot:
 // NIRVANA_PROJECT_ROOT, else the first marker-bearing ancestor of cwd). The
 // supervisor is the one documented exception — it asks for the machine-wide
-// scope explicitly (`--all-projects`, how launchd invokes it).
+// scope explicitly (`--all-projects`, or no project found at all).
 //
 // Why: on 2026-08-27 a session working in ~/nirvana-os listed the open runs,
 // saw rows belonging to ~/venda-mundial-pro and consultorio-dr-paulo, and

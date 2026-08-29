@@ -204,7 +204,7 @@ describe("nrv revise — the outcome goes through the delivery pipeline", () => 
   }, 30_000);
 
   test("spawned BY THE SUPERVISOR (NRV_IN_SWEEP=1): zero revision runs, verdict handed back", () => {
-    // Budget rule: an unattended launchd sweep must not spend LLM money in a
+    // Budget rule: an unattended sweep must not spend LLM money in a
     // revision loop nobody is watching. Same artifacts as the case above.
     const c = runRevise({ "nota.md": FAILING_MD }, { env: { NRV_IN_SWEEP: "1" } });
     expect(c.status).toBe(2);

@@ -427,6 +427,12 @@ preflightReindex();
 // Never-stall guarantee (routing-360 Phase 4): recover forgotten runs lazily.
 // <20ms when nothing pending; spawns a DETACHED background sweep otherwise.
 maybeSweep();
+// Second trigger: the session that ran this dispatch and waited on it is the
+// supervisor too. A dispatch can run for tens of minutes; reconciling again
+// on the way out — no timer, just "control is about to return" — catches
+// whatever else went stale while this one was busy. Still rate-limited by
+// maybeSweep's own 5-minute floor, so a short dispatch pays nothing extra.
+process.on("exit", () => { try { maybeSweep(); } catch { /* never block exit */ } });
 
 // ── dispatch-ledger wiring (never-stall guarantee) ────────────────────────
 // Ledger failures must never break a dispatch: every call goes through

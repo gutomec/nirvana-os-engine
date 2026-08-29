@@ -6,11 +6,12 @@
 // consultorio-dr-paulo, and CLOSED one of them — a run of another project,
 // terminated by a stranger, recoverable only through an x_audit_correction.
 //
-// The reasoning behind the global DB ("the launchd supervisor runs with no
-// project context and must see every run on the machine") was only ever true
-// for the supervisor. These tests pin the scope on everyone else: the row
-// carries its project root, every read and write filters by the root the
-// process is serving, and the supervisor is the single documented exception.
+// The reasoning behind the global DB ("a machine-wide supervisor invocation
+// runs with no project context and must see every run on the machine") was
+// only ever true for the supervisor. These tests pin the scope on everyone
+// else: the row carries its project root, every read and write filters by
+// the root the process is serving, and the supervisor is the single
+// documented exception.
 //
 // Reading and WRITING FILES outside the project stays allowed — a dispatched
 // job may need any directory. This is about seeing other projects' RUNS.
@@ -504,18 +505,14 @@ describe("supervisor — the documented exception", () => {
   });
 
   test("with no project to scope to, it stays machine-wide and says why", () => {
-    // This is launchd: cwd `/`, no NIRVANA_PROJECT_ROOT. The never-stall
-    // guarantee cannot depend on the operator re-installing the LaunchAgent.
+    // cwd `/`, no NIRVANA_PROJECT_ROOT — e.g. `watch` started from outside any
+    // project. The never-stall guarantee cannot depend on an operator having
+    // started it from the right directory.
     const r = supervisor(null, ["status"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("sv-a");
     expect(r.stdout).toContain("sv-b");
     expect(r.stderr).toMatch(/all-projects|projeto/i);
-  });
-
-  test("the LaunchAgent it writes asks for the machine-wide scope explicitly", async () => {
-    const { renderLaunchdPlist } = await import("../scripts/supervisor.ts");
-    expect(renderLaunchdPlist()).toContain("<string>--all-projects</string>");
   });
 });
 

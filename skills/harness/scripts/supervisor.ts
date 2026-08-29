@@ -25,11 +25,35 @@
 //                                  + loud stderr block + macOS notification,
 //                                  all three now carrying the salvage verdict
 //
-// Layered supervision (launchd-style): the lazy maybeSweep() piggybacks on
-// every nrv find/route/dispatch (mirrors preflight-index.ts), and
-// `nrv supervisor install` adds a launchd LaunchAgent (RunAtLoad +
-// StartInterval 120) as the outer layer, so recovery happens even when the
-// user never runs another nrv command.
+// The session IS the supervisor — no OS service is ever registered, on any
+// platform. Three triggers, all inside a session that is already running:
+//
+//   1. dispatch start    maybeSweep() piggybacks on every nrv find/route/
+//                         dispatch (mirrors preflight-index.ts): a run
+//                         abandoned by a session that died is recovered by
+//                         the next dispatch on the same project — exactly
+//                         when someone starts caring about it again.
+//   2. dispatch return    dispatch.ts calls maybeSweep() again on the way
+//                         out (process.on("exit")). A dispatch can run for
+//                         tens of minutes; reconciling once more when it
+//                         hands control back catches whatever else went
+//                         stale while it was busy, with no timer involved.
+//   3. `nrv supervisor watch`   a foreground loop for the unattended case:
+//                         the user starts it, the user kills it, it lives in
+//                         their terminal and nowhere else.
+//
+// The honest gap: if a session dispatches once and nobody runs another nrv
+// command or `watch` afterward, nobody sweeps until one of them does. That
+// is a deliberate answer, not an oversight — this engine registers nothing
+// with launchd/systemd/schtasks on any platform, so "recovered eventually,
+// next time someone returns" is the guarantee, not "recovered within N
+// seconds of stalling". A previous version relied on a launchd LaunchAgent
+// as a fourth, OS-registered layer (`nrv supervisor install`, macOS-only);
+// it was removed because it needed a human to run `install` in the first
+// place and, measured on the machine this change shipped from, was never
+// once loaded — the automatic recovery it promised had never run. A stray
+// LaunchAgent from before the removal is reported (never touched) by
+// `nrv doctor` — see doctor-system.ts.
 //
 // Anti-respawn guards (hard rules):
 //   - the supervisor NEVER signals a pid that is not row.child_pid of a
@@ -38,8 +62,7 @@
 //   - `sweep` ALWAYS exits 0 — a supervisor crash must never fail a caller.
 //
 // Subcommands: sweep [--quiet] [--all-projects] · status [--all-projects] ·
-//              watch [--interval=120] [--all-projects] · install [--print] ·
-//              uninstall
+//              watch [--interval=120] [--all-projects]
 //
 // PROJECT SCOPE — the supervisor is the exception, and the only one.
 // Every other reader of the ledger sees just the project it is serving, because
@@ -47,16 +70,16 @@
 // runs. Recovery cannot work that way: a run whose session died has nobody left
 // in its project to sweep it. So:
 //
-//   --all-projects            the whole machine. How launchd invokes it
-//                             (renderLaunchdPlist writes the flag), and how an
-//                             operator asks for the machine-wide picture.
+//   --all-projects            the whole machine. How an operator running
+//                             `watch` or a manual `sweep` asks for the
+//                             machine-wide picture instead of one project.
 //   no flag, project found    only the project this process stands in — the
 //                             lazy sweep piggybacking on a user's nrv command.
 //   no flag, no project       the whole machine, with a note on stderr saying
-//                             why. This is launchd's own shape (cwd `/`, no
-//                             NIRVANA_PROJECT_ROOT): the never-stall guarantee
-//                             must not depend on an operator remembering to
-//                             re-run `nrv supervisor install` after upgrading.
+//                             why: `sweep`/`watch` started from a directory
+//                             with no project marker (HOME, `/`, a bare temp
+//                             dir) still has to recover SOMETHING rather than
+//                             silently scoping itself to nothing.
 //
 // Env: NRV_SUPERVISOR=0 disables maybeSweep; NRV_IN_SWEEP=1 is the recursion
 // guard (set for every child the sweep spawns).
@@ -111,7 +134,6 @@ const PID_EXIT_WAIT_MS = 2000;        // bounded wait for a SIGTERMed child befo
  *  0 disables it (the supervisor.progress_ping_sec setting: env
  *  NIRVANA_PROGRESS_PING_SEC, else the project or global config). */
 const PROGRESS_PING_SEC = resolveSetting("supervisor.progress_ping_sec").value;
-const LAUNCHD_LABEL = "sh.nirvana.supervisor";
 
 /** Why an escalated run's artifacts can never be called complete: the run was
  *  interrupted, so the file set on disk is whatever it managed to write. */
@@ -471,10 +493,11 @@ function recoveryFromDelivery(res: DeliveryResult): RecoveryResult {
  *     by the pipeline itself, not by the cap: no gateable artifact → exit 3 →
  *     withheld; gate FAIL → exit 2 → withheld.
  *   - `maxRevisions: 0`, for BUDGET — not for the read-only reason the salvage
- *     has. The sweep runs unattended every 120s under launchd; a revision loop
- *     there spends LLM money with nobody watching, and re-triggers on the next
- *     sweep. The supervisor's job is recovery, not iterative improvement: a
- *     failing gate is WITHHELD and escalated, and the human then runs
+ *     has. The sweep runs unattended, whether from `watch`'s loop or a lazy
+ *     background trigger; a revision loop there spends LLM money with nobody
+ *     watching, and re-triggers on the next sweep. The supervisor's job is
+ *     recovery, not iterative improvement: a failing gate is WITHHELD and
+ *     escalated, and the human then runs
  *     `nrv revise` deliberately. Do NOT raise this number to "make recovery
  *     work" — that is the unattended spend this zero exists to prevent.
  */
@@ -670,12 +693,13 @@ function salvageFields(v: SalvageVerdict): Record<string, unknown> {
 // ── the sweep ─────────────────────────────────────────────────────────────
 
 /**
- * Cross-process sweep lock. TWO triggers can fire at once: the LaunchAgent
- * (StartInterval 120) and the lazy maybeSweep() a user command spawns. Without
- * a lock both sweeps see the same row and both act on it — two re-dispatches of
- * the same work, paid twice, writing into the SAME outputs dir concurrently,
- * which corrupts the artifacts the recovery exists to save. `last_sweep_at`
- * only throttles the lazy trigger; it cannot bind launchd.
+ * Cross-process sweep lock. TWO triggers can fire at once: an `nrv supervisor
+ * watch` loop running in one terminal and the lazy maybeSweep() a user
+ * command spawns in another. Without a lock both sweeps see the same row and
+ * both act on it — two re-dispatches of the same work, paid twice, writing
+ * into the SAME outputs dir concurrently, which corrupts the artifacts the
+ * recovery exists to save. `last_sweep_at` only throttles the lazy trigger;
+ * it cannot bind a `watch` loop running as a separate process.
  *
  * Try-lock semantics, not wait: a sweeper that finds the lock held returns
  * immediately, because the holder is already doing this exact work. Stale locks
@@ -687,8 +711,8 @@ const SWEEP_LOCK_STALE_MS = 30 * 60_000;
 /**
  * How wide this supervisor invocation looks — the one place that decides it.
  * See the PROJECT SCOPE block at the top of the file: the flag wins, a
- * resolvable project scopes to itself, and a supervisor with no project at all
- * (launchd) stays machine-wide rather than quietly recovering nothing.
+ * resolvable project scopes to itself, and a supervisor with no project at
+ * all stays machine-wide rather than quietly recovering nothing.
  */
 export function resolveSweepScope(flagged: boolean, quiet = false): { allProjects: boolean; projectRoot: string | null } {
   if (flagged) return { allProjects: true, projectRoot: null };
@@ -949,73 +973,6 @@ export function maybeSweep(): boolean {
   }
 }
 
-// ── launchd (outer supervision layer) ─────────────────────────────────────
-
-export function launchdPlistPath(): string {
-  return path.join(os.homedir(), "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`);
-}
-
-export function renderLaunchdPlist(): string {
-  const logDir = path.join(os.homedir(), ".nirvana", "logs");
-  const logFile = path.join(logDir, "supervisor.log");
-  return [
-    `<?xml version="1.0" encoding="UTF-8"?>`,
-    `<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">`,
-    `<plist version="1.0">`,
-    `<dict>`,
-    `  <key>Label</key><string>${LAUNCHD_LABEL}</string>`,
-    `  <key>ProgramArguments</key>`,
-    `  <array>`,
-    `    <string>${process.execPath}</string>`,
-    `    <string>${SUPERVISOR_PATH}</string>`,
-    `    <string>sweep</string>`,
-    `    <string>--quiet</string>`,
-    // launchd has no project context; the flag says out loud that this is the
-    // machine-wide supervisor, the one exception to the ledger's project scope.
-    `    <string>--all-projects</string>`,
-    `  </array>`,
-    `  <key>RunAtLoad</key><true/>`,
-    `  <key>StartInterval</key><integer>120</integer>`,
-    `  <key>EnvironmentVariables</key>`,
-    `  <dict>`,
-    `    <key>PATH</key><string>${process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin"}</string>`,
-    `  </dict>`,
-    `  <key>StandardOutPath</key><string>${logFile}</string>`,
-    `  <key>StandardErrorPath</key><string>${logFile}</string>`,
-    `</dict>`,
-    `</plist>`,
-    ``,
-  ].join("\n");
-}
-
-function installLaunchd(printOnly: boolean): number {
-  const content = renderLaunchdPlist();
-  if (printOnly) { process.stdout.write(content); return 0; }
-  if (process.platform !== "darwin") {
-    console.error("supervisor install: launchd is macOS-only. On other platforms use `nrv supervisor watch` (or a cron/systemd timer running `nrv supervisor sweep --quiet`).");
-    return 1;
-  }
-  const plist = launchdPlistPath();
-  fs.mkdirSync(path.dirname(plist), { recursive: true });
-  fs.mkdirSync(path.join(os.homedir(), ".nirvana", "logs"), { recursive: true });
-  fs.writeFileSync(plist, content);
-  try { spawnSync("launchctl", ["unload", plist], { stdio: "ignore", timeout: 10_000 }); } catch { /* not loaded */ }
-  try {
-    const r = spawnSync("launchctl", ["load", "-w", plist], { encoding: "utf8", timeout: 10_000 });
-    if (r.status !== 0) console.error(`supervisor install: launchctl load exited ${r.status}: ${(r.stderr || "").trim()}`);
-  } catch (e) { console.error(`supervisor install: launchctl failed: ${(e as Error)?.message ?? e}`); }
-  console.log(`✓ launchd agent installed: ${plist} (sweep every 120s + at load)`);
-  return 0;
-}
-
-function uninstallLaunchd(): number {
-  const plist = launchdPlistPath();
-  try { spawnSync("launchctl", ["unload", plist], { stdio: "ignore", timeout: 10_000 }); } catch { /* not loaded */ }
-  if (fs.existsSync(plist)) { fs.rmSync(plist, { force: true }); console.log(`✓ removed ${plist}`); }
-  else console.log("supervisor uninstall: no launchd agent installed.");
-  return 0;
-}
-
 // ── CLI ───────────────────────────────────────────────────────────────────
 
 function cliStatus(allProjects: boolean): number {
@@ -1082,24 +1039,22 @@ if (import.meta.main) {
         Bun.sleepSync(intervalSec * 1000);
       }
     }
-    case "install":
-      process.exit(installLaunchd(process.argv.includes("--print")));
-    case "uninstall":
-      process.exit(uninstallLaunchd());
     default:
       console.log([
-        "usage: nrv supervisor <sweep|status|watch|install|uninstall> [--all-projects]",
+        "usage: nrv supervisor <sweep|status|watch> [--all-projects]",
         "",
         "  sweep [--quiet]        one recovery pass over the dispatch ledger (always exits 0)",
         "  status                 table of non-terminal runs",
-        "  watch [--interval=120] loop sweep forever",
-        "  install [--print]      write + load the launchd LaunchAgent (--print: show plist only)",
-        "  uninstall              unload + remove the launchd LaunchAgent",
+        "  watch [--interval=120] loop sweep forever, in the foreground (Ctrl-C to stop)",
         "",
         "  --all-projects         every project on the machine. Without it, sweep/status/watch",
         "                         see only the project of the cwd — the supervisor is the ONE",
         "                         reader allowed the machine-wide view. With no project around",
-        "                         (launchd) it goes machine-wide anyway and says so.",
+        "                         it goes machine-wide anyway and says so.",
+        "",
+        "No OS service is ever registered — the session is the supervisor. Recovery",
+        "triggers lazily on every nrv find/route/dispatch and again when a dispatch",
+        "returns; `watch` covers the unattended case as long as it keeps running.",
         "",
         "env: NRV_SUPERVISOR=0 disables the lazy sweep on nrv find/route/dispatch",
       ].join("\n"));

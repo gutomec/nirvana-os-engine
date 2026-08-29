@@ -55,9 +55,11 @@ O que não dá para colocar fica em `NULL`, que se lê como "legado": invisível
 
 Recuperação não funciona com escopo: um run cuja sessão morreu não tem mais ninguém no projeto dele para varrer. O supervisor é a única exceção, e ele passa a pedi-la em voz alta.
 
-- `--all-projects` varre a máquina inteira. É assim que o launchd o invoca, e `renderLaunchdPlist` escreve a flag no plist.
+- `--all-projects` varre a máquina inteira. É assim que um operador roda `watch` ou um `sweep` manual pedindo a visão da máquina toda em vez de um projeto só.
 - Sem a flag, com projeto resolvível, ele varre só o projeto em que está — o caso da varredura preguiçosa pendurada num `nrv` do usuário.
-- Sem a flag e sem projeto algum, ele fica global e diz por quê no stderr. Essa é a forma do próprio launchd (cwd `/`, sem `NIRVANA_PROJECT_ROOT`), e a garantia de nunca travar um run não pode depender de um operador lembrar de reinstalar o LaunchAgent depois de atualizar.
+- Sem a flag e sem projeto algum, ele fica global e diz por quê no stderr — o caso de `sweep`/`watch` iniciado de um diretório sem marcador de projeto (`HOME`, `/`, um diretório temporário qualquer).
+
+Nenhuma dessas engatilha um serviço do sistema operacional: o próprio engine não registra nada em launchd, systemd ou Agendador de Tarefas em nenhuma plataforma. "A sessão é o supervisor" — três gatilhos, todos dentro de uma sessão já em execução: o `maybeSweep()` pendurado em todo `nrv find/route/dispatch`, o mesmo `maybeSweep()` disparado de novo quando um dispatch retorna (`dispatch.ts`, `process.on("exit")`), e `nrv supervisor watch`, o loop de primeiro plano para o caso desatendido.
 
 `sweep`, `status` e `watch` aceitam a flag; `maybeSweep` conta no mesmo escopo que o filho vai varrer, porque contar um escopo e varrer outro é como um run pendente passa a ser pulado para sempre.
 
