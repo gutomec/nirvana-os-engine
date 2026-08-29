@@ -565,8 +565,15 @@ describe("supervisor status — DOING column and --follow", () => {
   });
 
   test("status --follow renders at least once, then exits cleanly on SIGINT — nothing left behind", async () => {
+    // `detached: true` matters on Windows specifically: a signal-emulated
+    // SIGINT is delivered via GenerateConsoleCtrlEvent, which targets a
+    // console PROCESS GROUP, not an arbitrary pid. Without its own group
+    // (created by `detached`), the child shares the test runner's group and
+    // `process.kill(pid, "SIGINT")` below has no reliable target — the child
+    // never sees the signal it is supposed to shut down on. POSIX targets a
+    // pid directly either way, so this is a no-op there.
     const child = spawn(process.execPath, [script, "status", "--follow", "--interval=1"], {
-      cwd: PROJ_A, env: env(), stdio: ["ignore", "pipe", "pipe"],
+      cwd: PROJ_A, env: env(), stdio: ["ignore", "pipe", "pipe"], detached: true,
     });
     let out = "";
     child.stdout!.on("data", (b: Buffer) => { out += b.toString(); });

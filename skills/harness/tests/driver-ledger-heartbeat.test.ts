@@ -252,12 +252,19 @@ describe("driver — the heartbeat reports files, not just liveness", () => {
     const watch = path.join(TMP, "watch-fail");
     fs.mkdirSync(watch, { recursive: true });
 
+    // The gap between the write and the exit is the ONLY window a poll can
+    // land in — the parent SIGTERMs the sidecar the instant this process
+    // exits (see host-agent-driver.ts's runWithLedgerHeartbeat), with no
+    // grace period. 400ms left room for at most one 250ms tick, which a
+    // loaded Windows runner (slower process scheduling, occasionally a
+    // stretched sleepSync) can miss outright. A wide window turns "exactly
+    // one poll must land just right" into "several get the chance to".
     const res = withWritingFake("fail", `
       import * as fs from "node:fs";
       import * as path from "node:path";
       await Bun.sleep(400);
       fs.writeFileSync(path.join(${JSON.stringify(watch)}, "half-written.md"), "the run dies here");
-      await Bun.sleep(400);
+      await Bun.sleep(2000);
       process.stderr.write("boom\\n");
       process.exit(1);
     `, () => runHeadless({
