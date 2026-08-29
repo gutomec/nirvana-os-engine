@@ -8,6 +8,8 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+## 0.12.1 — 2026-08-29
+
 ### Reverted: Durable Work Continuity (DWC)
 
 DWC (`skills/harness/lib/run-kernel/durable-work.ts`, 2,446 lines, plus 4,399
