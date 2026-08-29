@@ -16,32 +16,29 @@
 // DWC is a durable record of work units — coverage, evidence, compensation,
 // advisory claims, Track B import. What it records about a retry is that one
 // HAPPENED (`Attempt.outcome`); it never decides when the next one is DUE.
-// `durable-work.ts` contains no backoff, no jitter, no next-attempt time and
-// no sweep, and its own architecture doc names retry and dead-letter
+// `durable-work.ts` contained no backoff, no jitter, no next-attempt time and
+// no sweep, and its own architecture doc named retry and dead-letter
 // telemetry as "projeção futura de observabilidade", with the catalogue
-// explicitly "não está pronto para produção"
-// (docs/architecture/durable-work-continuity.md).
+// explicitly "não está pronto para produção" (archived at
+// ~/nirvana-archive/dwc-2026-08-29/durable-work-continuity.md; DWC itself
+// was removed after this review, on the same measurement).
 //
-// Scheduling is this module's entire job. Rebuilding it on DWC would keep
-// `backoffMs`/`isDue`/`sweepOnce`/`MAX_ATTEMPTS` on top regardless, trade a
-// used 205-line module for a dependency on a 2,446-line one that currently
-// has no other caller in the tree, and break the discovery model: pending
+// Scheduling is this module's entire job. Rebuilding it on DWC would have
+// kept `backoffMs`/`isDue`/`sweepOnce`/`MAX_ATTEMPTS` on top regardless, traded a
+// used 205-line module for a dependency on a 2,446-line one that had no
+// other caller in the tree, and broken the discovery model: pending
 // deliveries are found by scanning session dirs for this file beside the
 // run's outputs (`adoptPending`), which a run-keyed SQLite table does not
-// answer. It would also file "the notification we owe an endpoint" as a unit
-// of the run's own work — a delivery stays pending while a receiver is down,
-// long after the run itself is terminal.
+// answer. It would also have filed "the notification we owe an endpoint" as
+// a unit of the run's own work — a delivery stays pending while a receiver
+// is down, long after the run itself is terminal.
 //
-// So: not a migration deferred, a migration declined, on measurement. If DWC
-// later grows a scheduler with a real consumer, revisit — the three-function
-// surface (`enqueue` / `sweepOnce` / `readState`) still makes that a storage
-// swap that does not move the wire contract.
+// So: not a migration deferred, a migration declined, on measurement — and
+// the measurement held: DWC never gained a consumer and was removed.
 //
 // One boundary note that survives from that review: the idempotency key a
 // consumer sees (`X-Nirvana-Delivery-Id`) is the CloudEvents `id` of the
-// terminal envelope — the engine's identity space, not a DWC `operation_id`.
-// Nothing here reads or writes DWC, so no sibling-authority boundary is
-// crossed.
+// terminal envelope — the engine's identity space, never a DWC `operation_id`.
 
 import * as fs from "node:fs";
 import * as path from "node:path";
