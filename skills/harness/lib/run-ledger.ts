@@ -45,6 +45,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
+import { spawnSync } from "node:child_process";
 
 // ── states ──────────────────────────────────────────────────────────────
 
@@ -424,8 +425,14 @@ export function getRun(handle: LedgerHandle, runId: string): RunRow | null {
  *  like getRun: the caller decides what to do about a foreign project's row
  *  (see run-track.ts's refuseForeignRun). */
 export function findByTraceId(handle: LedgerHandle, traceId: string): RunRow | null {
+  // created_at has millisecond resolution (Date.now()), so two rows opened in
+  // the same millisecond (a resumed run right after its predecessor failed)
+  // tie on it — ORDER BY created_at DESC alone then returns whichever the
+  // scan happens to visit first, not the actual newer row. rowid is SQLite's
+  // own monotonically-increasing insertion order (this table has no INTEGER
+  // PRIMARY KEY, so run_id never aliases it) and breaks the tie correctly.
   const r = handle.db
-    .query("SELECT * FROM runs WHERE trace_id = ? ORDER BY created_at DESC LIMIT 1")
+    .query("SELECT * FROM runs WHERE trace_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1")
     .get(traceId) as Record<string, unknown> | null;
   return parseRow(r);
 }
@@ -435,6 +442,44 @@ export function pidAlive(pid: number): boolean {
   if (!Number.isFinite(pid) || pid <= 0) return false;
   try { process.kill(pid, 0); return true; }
   catch (e) { return (e as NodeJS.ErrnoException)?.code === "EPERM"; }
+}
+
+/** The OS's own process-start timestamp for `pid` (`ps -o lstart=`), as the
+ *  raw string `ps` prints — opaque and exact, never reparsed into a Date, so
+ *  two calls agree byte-for-byte or don't agree at all. POSIX only (macOS +
+ *  Linux, both of which this codebase already targets for the supervisor);
+ *  null on any failure, INCLUDING "no ps binary" (Windows) — callers must
+ *  treat null as "cannot verify", never as "does not exist". */
+export function processStartedAt(pid: number): string | null {
+  if (!Number.isFinite(pid) || pid <= 0) return null;
+  try {
+    const r = spawnSync("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8" });
+    if (r.status !== 0) return null;
+    const line = (r.stdout || "").trim();
+    return line || null;
+  } catch { return null; }
+}
+
+/** The pid of the one live direct child of `parentPid`, `excludePid` skipped
+ *  (the heartbeat sidecar is itself a child of the dispatcher it watches, so
+ *  without the exclusion it can find itself instead of the CLI runtime it
+ *  exists to observe). POSIX only, same caveat as `processStartedAt`: null
+ *  means "nothing found or can't ask", not "no child exists". Picks the
+ *  first match — this architecture runs at most one spawnSync child under a
+ *  ledgered dispatcher at a time. */
+export function findChildPid(parentPid: number, excludePid?: number): number | null {
+  if (!Number.isFinite(parentPid) || parentPid <= 0) return null;
+  try {
+    const r = spawnSync("ps", ["-A", "-o", "pid=,ppid="], { encoding: "utf8" });
+    if (r.status !== 0) return null;
+    for (const line of (r.stdout || "").trim().split("\n")) {
+      const [pidStr, ppidStr] = line.trim().split(/\s+/);
+      const pid = parseInt(pidStr, 10);
+      const ppid = parseInt(ppidStr, 10);
+      if (ppid === parentPid && Number.isFinite(pid) && pid !== excludePid) return pid;
+    }
+    return null;
+  } catch { return null; }
 }
 
 /** One file the sweep found newer than the mark it was given. */
@@ -776,6 +821,25 @@ export function recordSession(handle: LedgerHandle, runId: string, sessionId: st
     [sessionId ?? null, childPid ?? null, nowIso(), runId],
   );
   emitLedgerAudit("x_ledger_session_recorded", { run_id: runId, session_id: sessionId, child_pid: childPid ?? null }, row);
+}
+
+/**
+ * Record the REAL worker's pid — the CLI runtime process a ledgered
+ * `spawnSync` launches, discovered by the heartbeat sidecar (see
+ * heartbeatMain) walking the process table for a live child of the
+ * dispatcher — never the dispatcher's own pid. `startedAt` (processStartedAt
+ * at discovery time) rides along so a later reader (the supervisor) can tell
+ * a still-live pid from one the OS has since handed to an unrelated process:
+ * see `child_pid_started_at` in RunRow['meta'].
+ */
+export function recordChildPid(handle: LedgerHandle, runId: string, pid: number, startedAt: string | null): void {
+  const row = getRun(handle, runId);
+  if (!row) { console.error(`[run-ledger] recordChildPid: run '${runId}' not found`); return; }
+  handle.db.run(
+    "UPDATE runs SET child_pid = ?, meta = ?, updated_at = ? WHERE run_id = ?",
+    [pid, JSON.stringify({ ...row.meta, child_pid_started_at: startedAt }), nowIso(), runId],
+  );
+  emitLedgerAudit("x_ledger_child_pid_recorded", { run_id: runId, child_pid: pid, started_at: startedAt }, row);
 }
 
 /** Merge `patch` into the run's meta WITHOUT a state transition. The
@@ -1122,6 +1186,35 @@ export function heartbeatMain(): void {
   let lastMtime = watchDir ? latestMtimeMs(watchDir) : 0;
   let lastActivityAt = Date.now();
   let stallRecorded = false;
+
+  // Identity discovery: the dispatcher recorded no child_pid (it can't know
+  // one — it's about to block inside spawnSync, and spawnSync exposes the
+  // real pid only once the child has already exited). This sidecar is the
+  // one process that is both alive concurrently with that child AND started
+  // async (so its OWN pid is known immediately) — it looks up the live
+  // direct child of --parent and hands the ledger the pid the supervisor is
+  // actually allowed to signal. Bounded poll: the dispatcher calls spawnSync
+  // right after spawning this sidecar, but "right after" still races module
+  // load and any prep work on the dispatcher's side.
+  if (parentPid > 0) {
+    const discoveryBudgetMs = 5000;
+    const discoveryStepMs = 100;
+    // Bounded by Date.now(), not a step count: each iteration shells out to
+    // `ps` (findChildPid scans the WHOLE process table, processStartedAt adds
+    // a second `ps` call on a match), and under real system load a single
+    // `ps -A` can run well past 100ms. A `waited += discoveryStepMs` counter
+    // assumes every iteration costs exactly its nominal step, so it silently
+    // stretches this "5 second" budget to however long N slow syscalls
+    // actually take — observed ballooning past 8s under full-suite load,
+    // which is what a caller polling for the sidecar's exit actually sees.
+    const discoveryDeadline = Date.now() + discoveryBudgetMs;
+    while (Date.now() < discoveryDeadline) {
+      const childPid = findChildPid(parentPid, process.pid);
+      if (childPid) { recordChildPid(handle, runId, childPid, processStartedAt(childPid)); break; }
+      if (!pidAlive(parentPid)) break; // dispatcher already gone; nothing to discover
+      Bun.sleepSync(discoveryStepMs);
+    }
+  }
 
   for (;;) {
     Bun.sleepSync(intervalMs);

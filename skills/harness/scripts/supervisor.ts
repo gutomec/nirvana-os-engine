@@ -78,6 +78,7 @@ import {
   countNonTerminal,
   resumeInfo,
   pidAlive,
+  processStartedAt,
   latestMtimeMs,
   isTerminal,
   AGENTIC_LEASE_SEC,
@@ -310,6 +311,29 @@ function hasRecentActivity(row: RunRow, now: number, budgetMs: number = STALL_BU
  *  run-track), as opposed to one this supervisor's scripted dispatch spawned. */
 function isAgentic(row: RunRow): boolean {
   return row.meta?.path === "agentic";
+}
+
+/**
+ * True when the live process AT `row.child_pid` is provably NOT the one the
+ * ledger recorded — the OS has reused the pid for an unrelated process since.
+ * `pidAlive` alone cannot see this: it only asks "does something answer at
+ * this number", and a recycled pid always does.
+ *
+ * `child_pid_started_at` (written by run-ledger's recordChildPid, next to the
+ * pid itself, at discovery time) is the fingerprint: two `ps -o lstart=`
+ * reads of a process that never died agree byte for byte; a different
+ * process born later almost never lands on the same start second. No
+ * fingerprint on the row (recorded before this cut, or the sidecar never
+ * discovered a child) or no ps on this platform → `processStartedAt` returns
+ * null on one or both sides → treated as "cannot prove recycling", not as
+ * "recycled": an unverifiable pid keeps today's behavior instead of gaining
+ * a new way to be skipped.
+ */
+function pidRecycled(row: RunRow, pid: number): boolean {
+  const recorded = typeof row.meta?.child_pid_started_at === "string" ? (row.meta.child_pid_started_at as string) : null;
+  if (!recorded) return false;
+  const current = processStartedAt(pid);
+  return current !== null && current !== recorded;
 }
 
 /** Tell the owner a long run is still alive, at most once per PROGRESS_PING_SEC.
@@ -781,7 +805,18 @@ function sweepOne(h: LedgerHandle, row: RunRow, now: number, deps: SweepDeps, su
     return;
   }
 
-  const alive = pid > 0 && pidAlive(pid);
+  const rawAlive = pid > 0 && pidAlive(pid);
+  // A pid that answers is not proof it is OUR pid: the process that used to
+  // live there can have exited between the last observation and this sweep,
+  // and the OS is free to hand the same number to anything spawned since.
+  // Signaling it then would SIGTERM a stranger. A recycled pid is treated as
+  // the dead-pid case below (orphaned → auto-resume), never as "alive, kill
+  // it" — the class of failure the owner asked to be named explicitly.
+  const recycled = rawAlive && pidRecycled(row, pid);
+  if (recycled) {
+    emitAudit("x_ledger_pid_recycled_skip", { run_id: row.run_id, pid, recorded_started_at: row.meta?.child_pid_started_at ?? null }, row);
+  }
+  const alive = rawAlive && !recycled;
 
   if (alive) {
     // One more activity check before any signal — a healthy long-thinking run
