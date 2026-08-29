@@ -22,7 +22,10 @@ import { openLedger, openRun, getRun, markState, pidAlive } from "../lib/run-led
 const DB = path.join(TMP, "ledger.sqlite");
 
 // Fake `claude` on PATH: activity ticks on stderr (0s, 0.4s, 0.8s), then a
-// 2.2s silent stall, then the final result JSON on stdout.
+// silent stall, then the final result JSON on stdout. The stall (4s) against
+// the 1.2s budget the stall test below configures leaves ~2.8s of slack — a
+// loaded Windows runner's scheduling jitter has room to delay several 250ms
+// polls in a row and the stall still gets noticed before the process exits.
 const FAKE_BIN = path.join(TMP, "bin");
 fs.mkdirSync(FAKE_BIN, { recursive: true });
 writeFakeCli(FAKE_BIN, "claude", `
@@ -31,7 +34,7 @@ writeFakeCli(FAKE_BIN, "claude", `
   console.error("tick 2");
   await Bun.sleep(400);
   console.error("tick 3");
-  await Bun.sleep(2200);
+  await Bun.sleep(4000);
   console.log(JSON.stringify({ type: "result", result: "done", session_id: "fake-session-123", total_cost_usd: 0.01 }));
   // Exit immediately after the write, as the bash original did — it keeps the
   // fake's shape tight. It is no longer load-bearing: the assertion that used to

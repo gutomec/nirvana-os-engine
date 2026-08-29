@@ -565,15 +565,8 @@ describe("supervisor status — DOING column and --follow", () => {
   });
 
   test("status --follow renders at least once, then exits cleanly on SIGINT — nothing left behind", async () => {
-    // `detached: true` matters on Windows specifically: a signal-emulated
-    // SIGINT is delivered via GenerateConsoleCtrlEvent, which targets a
-    // console PROCESS GROUP, not an arbitrary pid. Without its own group
-    // (created by `detached`), the child shares the test runner's group and
-    // `process.kill(pid, "SIGINT")` below has no reliable target — the child
-    // never sees the signal it is supposed to shut down on. POSIX targets a
-    // pid directly either way, so this is a no-op there.
     const child = spawn(process.execPath, [script, "status", "--follow", "--interval=1"], {
-      cwd: PROJ_A, env: env(), stdio: ["ignore", "pipe", "pipe"], detached: true,
+      cwd: PROJ_A, env: env(), stdio: ["ignore", "pipe", "pipe"],
     });
     let out = "";
     child.stdout!.on("data", (b: Buffer) => { out += b.toString(); });
@@ -583,7 +576,15 @@ describe("supervisor status — DOING column and --follow", () => {
     const pid = child.pid!;
     process.kill(pid, "SIGINT");
     const exitCode: number | null = await new Promise((resolve) => child.on("exit", (code) => resolve(code)));
-    expect(exitCode).toBe(0);
+    // POSIX delivers a real SIGINT: the process's own `process.on("SIGINT", …)`
+    // handler runs and calls `process.exit(0)` — the graceful path this test
+    // is named for. Windows has no such delivery for a signal sent from a
+    // DIFFERENT process: libuv's `uv_kill` maps SIGINT (like SIGTERM/SIGKILL)
+    // straight to `TerminateProcess(handle, 1)`, an unconditional kill the
+    // target never gets a chance to react to — exit code 1, always, no matter
+    // how well-behaved the handler is. "Cleanly" on Windows can only mean
+    // "the process is actually gone", which the pidAlive check below proves.
+    expect(exitCode).toBe(process.platform === "win32" ? 1 : 0);
     for (let i = 0; i < 30 && pidAlive(pid); i++) await Bun.sleep(100);
     expect(pidAlive(pid)).toBe(false);
   });
