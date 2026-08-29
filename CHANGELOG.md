@@ -139,6 +139,69 @@ dispatch suites, `agent-x-gauntlet-cutover.test.ts`,
 green. `bun scripts/check-english-source.ts --strict` and `bun
 scripts/check-changelog-parity.ts --strict` — both clean.
 
+### The supervisor's kill signal reaches the CLI child it meant, not the dispatcher blocked in front of it
+
+`dispatch.ts` opened every ledger row with `childPid: process.pid` — its own
+pid, the process about to block inside `spawnSync` — because that call
+cannot report the CLI runtime's real pid until the child has already exited.
+`supervisor.ts`'s stalled-run recovery signaled exactly that pid
+(`process.kill(pid, "SIGTERM")`), and since nothing in this codebase
+registers `process.on("SIGTERM", …)`, the OS default applied: the dispatcher
+was torn down mid-syscall, before any `finally` unwound. Every runtime
+adapter wraps its `spawnSync` in `try { … } finally { removeTmpFiles(…) }`;
+killing the dispatcher instead of its child skipped that cleanup every time
+and orphaned the real CLI process instead of stopping it. Three
+`nrv-prompt-*` temp files were found leaked from runs the ledger read as
+`delivered` — the supervisor believed it was killing a stalled agent and was
+actually killing the orchestrator's own dispatch.
+
+The fix separates "the orchestrator" from "the pid a supervisor may signal."
+`dispatch.ts` no longer writes a pid at all when it opens a row: an honest
+`null` beats a wrong one, and every `pid > 0` guard downstream already treats
+it as a no-op. The heartbeat sidecar (`run-ledger.ts heartbeat`, spawned
+asynchronously alongside the blocking `spawnSync` so its own pid is known
+immediately) now walks the process table for the one live child of the
+dispatcher it watches, its own pid excluded, and records that pid
+(`recordChildPid`) together with the OS's own process-start timestamp
+(`ps -o lstart=`). The supervisor re-checks that fingerprint before it ever
+signals: a pid whose live start time no longer matches the one recorded means
+the OS has handed the number to someone else since, and the run is routed
+through the same door a genuinely dead pid uses — auto-resume — instead of
+being signaled. A recycled pid now reads as "gone," never as "a stranger to
+SIGTERM." A row with no fingerprint (written before this cut, or a runtime
+the sidecar's `ps` probe can't reach) keeps today's behavior rather than
+gaining a new way to be skipped.
+
+Separately, `findByTraceId` — the query "is trace X finished?" the
+completion signal exists to answer — resolved the wrong row for a trace with
+two attempts opened in the same millisecond (`ORDER BY created_at DESC`
+alone, and `created_at` has millisecond resolution): a resumed run right
+after its predecessor failed. `rowid`, SQLite's own strictly increasing
+insertion order on a table with no `INTEGER PRIMARY KEY` to alias it, breaks
+the tie the same way every time.
+
+**Verified.** A new suite, `dispatch-child-identity.test.ts`: a real detached
+dispatcher process opens a ledger row, then runs the actual `runHeadless` →
+heartbeat-sidecar → `spawnSync` path against a fake `grok` CLI (this
+runtime's adapter always writes a `nrv-prompt-*` bootstrap file, no size gate
+to route around) that ticks once then hangs. The row's recorded `child_pid`
+is asserted to be neither `null` nor the dispatcher's own pid; a real
+`sweep()` on the expired lease kills that pid; the fake CLI dies while the
+dispatcher — never signaled — runs to completion on its own and writes its
+own "done" marker, and the `nrv-prompt-*` file it created is gone afterward,
+proving the `finally` an abrupt SIGTERM would have skipped actually ran. Two
+more cases cover the pid-recycle guard directly: a live process whose
+recorded start time doesn't match is never signaled and is instead routed
+through auto-resume, and a row with no recorded fingerprint keeps the prior
+signal-on-live-pid behavior. `run-completion-signal.test.ts`'s previously
+failing case (`findByTraceId resolves the most recent row for a trace`) now
+passes. `bun test skills/harness` — 1529 pass, 2 skip, 0 fail, across 149
+files (this suite's own baseline flakiness — two `glance` cases racing on a
+shared port — was confirmed pre-existing on unmodified `main`, not caused by
+this cut). `bun scripts/check-english-source.ts --strict`, `bun
+scripts/check-changelog-parity.ts --strict` and `git diff --check` — all
+clean.
+
 ## 0.12.0 — 2026-08-28
 
 ### A generated schema stops depending on the machine that generated it

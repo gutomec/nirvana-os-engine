@@ -148,6 +148,74 @@ arquivo, nunca timer. Mais a superfície inteira já existente do ledger
 todos verdes. `bun scripts/check-english-source.ts --strict` e `bun
 scripts/check-changelog-parity.ts --strict` — ambos limpos.
 
+### O sinal de encerramento do supervisor agora alcança o filho CLI que era o alvo, não o dispatcher parado na frente dele
+
+O `dispatch.ts` abria toda linha do ledger com `childPid: process.pid` — o
+próprio pid, o processo prestes a bloquear dentro do `spawnSync` — porque
+essa chamada não consegue informar o pid real do runtime CLI antes de o
+filho já ter saído. A recuperação de runs travados do `supervisor.ts`
+sinalizava exatamente esse pid (`process.kill(pid, "SIGTERM")`), e como nada
+neste código registra `process.on("SIGTERM", …)`, valia o padrão do SO: o
+dispatcher era derrubado no meio da chamada de sistema, antes de qualquer
+`finally` desenrolar. Todo adaptador de runtime envolve seu `spawnSync` num
+`try { … } finally { removeTmpFiles(…) }`; matar o dispatcher em vez do seu
+filho pulava essa limpeza sempre, e orfanava o processo CLI real em vez de
+pará-lo. Três arquivos temporários `nrv-prompt-*` foram encontrados vazados
+de runs que o ledger lia como `delivered` — o supervisor acreditava estar
+matando um agente travado e na verdade matava o próprio despacho do
+orquestrador.
+
+A correção separa "o orquestrador" de "o pid que um supervisor pode
+sinalizar." O `dispatch.ts` não escreve mais pid nenhum ao abrir uma linha:
+um `null` honesto vale mais que um errado, e toda guarda `pid > 0` mais
+adiante já trata isso como no-op. O sidecar de heartbeat (`run-ledger.ts
+heartbeat`, disparado de forma assíncrona junto do `spawnSync` bloqueante,
+então seu próprio pid é conhecido de imediato) agora percorre a tabela de
+processos atrás do único filho vivo do dispatcher que observa, excluindo a
+si mesmo, e registra esse pid (`recordChildPid`) junto com o timestamp de
+início de processo do próprio SO (`ps -o lstart=`). O supervisor reconfere
+essa impressão digital antes de sinalizar qualquer coisa: um pid cujo
+horário de início ao vivo não bate mais com o registrado significa que o SO
+já entregou esse número para outro processo, e o run é roteado pela mesma
+porta que um pid genuinamente morto usa — auto-resume — em vez de ser
+sinalizado. Um pid reciclado agora lê como "já era," nunca como "um
+estranho para SIGTERM." Uma linha sem impressão digital (escrita antes deste
+corte, ou um runtime que a sondagem `ps` do sidecar não alcança) mantém o
+comportamento de hoje em vez de ganhar uma nova forma de ser pulada.
+
+Separadamente, o `findByTraceId` — a pergunta "o trace X terminou?" que o
+sinal de encerramento existe para responder — resolvia a linha errada para
+um trace com duas tentativas abertas no mesmo milissegundo (`ORDER BY
+created_at DESC` sozinho, e `created_at` tem resolução de milissegundo): um
+run retomado logo depois de seu antecessor falhar. O `rowid`, a ordem de
+inserção estritamente crescente da própria SQLite numa tabela sem
+`INTEGER PRIMARY KEY` para apelidar, desempata sempre da mesma forma.
+
+**Verificado.** Uma suíte nova, `dispatch-child-identity.test.ts`: um
+processo dispatcher realmente desacoplado abre uma linha no ledger, depois
+roda o caminho de verdade `runHeadless` → sidecar de heartbeat → `spawnSync`
+contra um CLI `grok` falso (o adaptador desse runtime sempre escreve um
+arquivo de bootstrap `nrv-prompt-*`, sem porta de tamanho para desviar) que
+pulsa uma vez e trava. O `child_pid` registrado na linha é verificado como
+não sendo nem `null` nem o próprio pid do dispatcher; um `sweep()` real sobre
+o lease vencido mata esse pid; o CLI falso morre enquanto o dispatcher —
+nunca sinalizado — roda até o fim por conta própria e escreve seu próprio
+marcador de "concluído," e o arquivo `nrv-prompt-*` que ele criou desaparece
+depois, provando que o `finally` que um SIGTERM abrupto teria pulado
+realmente rodou. Mais dois casos cobrem a guarda de pid reciclado
+diretamente: um processo vivo cujo horário de início registrado não bate
+nunca é sinalizado e é roteado por auto-resume, e uma linha sem impressão
+digital registrada mantém o comportamento anterior de sinalizar um pid vivo.
+O caso antes falhando de `run-completion-signal.test.ts`
+(`findByTraceId resolves the most recent row for a trace`) agora passa. `bun
+test skills/harness` — 1529 passam, 2 pulados, 0 falhas, em 149 arquivos
+(a instabilidade de base desta suíte — dois casos do `glance` disputando
+uma porta compartilhada — foi confirmada preexistente na `main` sem
+modificação, não causada por este corte). `bun
+scripts/check-english-source.ts --strict`, `bun
+scripts/check-changelog-parity.ts --strict` e `git diff --check` — todos
+limpos.
+
 ## 0.12.0 — 2026-08-28
 
 ### Um schema gerado para de depender da máquina que o gerou
