@@ -444,14 +444,65 @@ export function pidAlive(pid: number): boolean {
   catch (e) { return (e as NodeJS.ErrnoException)?.code === "EPERM"; }
 }
 
-/** The OS's own process-start timestamp for `pid` (`ps -o lstart=`), as the
- *  raw string `ps` prints — opaque and exact, never reparsed into a Date, so
- *  two calls agree byte-for-byte or don't agree at all. POSIX only (macOS +
- *  Linux, both of which this codebase already targets for the supervisor);
- *  null on any failure, INCLUDING "no ps binary" (Windows) — callers must
- *  treat null as "cannot verify", never as "does not exist". */
+// Windows has no `ps`. `tasklist` and `wmic` were the other candidates:
+// `wmic` is deprecated and already absent from recent Windows images;
+// `tasklist`'s human-readable output is locale-dependent, and even its `/FO
+// CSV` form has no parent-pid column, so a caller would still be one syscall
+// short. `Get-CimInstance Win32_Process` gives pid, parent pid and creation
+// time in one structured, server-side-filterable query — at the cost of a
+// slower spawn (PowerShell startup, not a bare `ps`), which is fine here:
+// this runs a handful of times per dispatch (discovery, recycle checks),
+// never in the heartbeat's per-tick loop. Same degradation contract as POSIX
+// on any failure (PowerShell missing, WMI unavailable, non-zero exit): null,
+// meaning "cannot verify" — never "does not exist".
+const WINDOWS_PS_TIMEOUT_MS = 4000;
+
+/** `.Ticks` (.NET, 100ns since 0001-01-01) as a decimal string stands in for
+ *  `lstart`'s raw text: both are opaque, exact-or-nothing fingerprints,
+ *  compared only against a value recorded by this same function on this same
+ *  OS — never across platforms — so the two formats never need to agree with
+ *  each other, only with themselves. Ticks is exact where `lstart`'s
+ *  one-second resolution is not. */
+function processStartedAtWindows(pid: number): string | null {
+  try {
+    const r = spawnSync("powershell", [
+      "-NoProfile", "-NonInteractive", "-Command",
+      `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}" -ErrorAction SilentlyContinue).CreationDate.Ticks`,
+    ], { encoding: "utf8", timeout: WINDOWS_PS_TIMEOUT_MS });
+    if (r.status !== 0) return null;
+    const line = (r.stdout || "").trim();
+    return line || null;
+  } catch { return null; }
+}
+
+/** Same provider, filtered by `ParentProcessId` so Windows does the search
+ *  server-side instead of shipping the whole process table over stdout for
+ *  this process to re-filter, the way the POSIX branch does with `ps -A`. */
+function findChildPidWindows(parentPid: number, excludePid?: number): number | null {
+  try {
+    const r = spawnSync("powershell", [
+      "-NoProfile", "-NonInteractive", "-Command",
+      `(Get-CimInstance Win32_Process -Filter "ParentProcessId=${parentPid}" -ErrorAction SilentlyContinue).ProcessId`,
+    ], { encoding: "utf8", timeout: WINDOWS_PS_TIMEOUT_MS });
+    if (r.status !== 0) return null;
+    for (const line of (r.stdout || "").trim().split(/\r?\n/)) {
+      const pid = parseInt(line.trim(), 10);
+      if (Number.isFinite(pid) && pid !== excludePid) return pid;
+    }
+    return null;
+  } catch { return null; }
+}
+
+/** The OS's own process-start timestamp for `pid` — `ps -o lstart=` on POSIX,
+ *  `Get-CimInstance Win32_Process` on Windows — as an opaque, exact-or-nothing
+ *  fingerprint: two calls on the same live process agree byte-for-byte or
+ *  don't agree at all. Never reparsed into a Date, and never compared across
+ *  platforms. Null on any failure, including "no process table access at
+ *  all" — callers must treat null as "cannot verify", never as "does not
+ *  exist". */
 export function processStartedAt(pid: number): string | null {
   if (!Number.isFinite(pid) || pid <= 0) return null;
+  if (process.platform === "win32") return processStartedAtWindows(pid);
   try {
     const r = spawnSync("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8" });
     if (r.status !== 0) return null;
@@ -463,12 +514,13 @@ export function processStartedAt(pid: number): string | null {
 /** The pid of the one live direct child of `parentPid`, `excludePid` skipped
  *  (the heartbeat sidecar is itself a child of the dispatcher it watches, so
  *  without the exclusion it can find itself instead of the CLI runtime it
- *  exists to observe). POSIX only, same caveat as `processStartedAt`: null
- *  means "nothing found or can't ask", not "no child exists". Picks the
- *  first match — this architecture runs at most one spawnSync child under a
+ *  exists to observe). Same caveat as `processStartedAt`: null means
+ *  "nothing found or can't ask", not "no child exists". Picks the first
+ *  match — this architecture runs at most one spawnSync child under a
  *  ledgered dispatcher at a time. */
 export function findChildPid(parentPid: number, excludePid?: number): number | null {
   if (!Number.isFinite(parentPid) || parentPid <= 0) return null;
+  if (process.platform === "win32") return findChildPidWindows(parentPid, excludePid);
   try {
     const r = spawnSync("ps", ["-A", "-o", "pid=,ppid="], { encoding: "utf8" });
     if (r.status !== 0) return null;

@@ -15,7 +15,7 @@ import { createRun, getRun, listEvents, listRuns, openKernel, type RunEvent, typ
 import { openLedger } from "../lib/run-ledger.ts";
 import { canonicalRunIdFor } from "../scripts/dispatch.ts";
 import { writeFakeCli } from "./helpers/fake-cli.ts";
-import { makeTempRoot } from "./helpers/temp-dirs.ts";
+import { makeTempRoot, removeDir } from "./helpers/temp-dirs.ts";
 import { pidAlive, waitUntil } from "./helpers/fake-glance-child.ts";
 
 const REPO = path.resolve(import.meta.dir, "..", "..", "..");
@@ -67,7 +67,11 @@ console.log(JSON.stringify({ type: "result", subtype: "success", is_error: false
 `;
 
 const roots: string[] = [];
-afterEach(() => { while (roots.length) fs.rmSync(roots.pop()!, { recursive: true, force: true }); });
+// Each dispatch's heartbeat sidecar is a DETACHED process: the parent SIGTERMs it
+// on exit, but on Windows that release of its open ledger-db handle can trail the
+// parent's own exit by a beat, and a plain rmSync hits EBUSY on whatever it still
+// holds. removeDir() is the existing retry-on-EBUSY teardown (see its doc comment).
+afterEach(() => { while (roots.length) removeDir(roots.pop()!); });
 
 function writeSquad(dir: string): void {
   fs.mkdirSync(path.join(dir, "agents"), { recursive: true });
