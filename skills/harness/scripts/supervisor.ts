@@ -61,7 +61,8 @@
 //   - it never touches itself or its parent (process.pid / process.ppid);
 //   - `sweep` ALWAYS exits 0 — a supervisor crash must never fail a caller.
 //
-// Subcommands: sweep [--quiet] [--all-projects] · status [--all-projects] ·
+// Subcommands: sweep [--quiet] [--all-projects] ·
+//              status [--all-projects] [--follow [--interval=5]] ·
 //              watch [--interval=120] [--all-projects]
 //
 // PROJECT SCOPE — the supervisor is the exception, and the only one.
@@ -111,6 +112,7 @@ import {
   setSupervisorMeta,
   patchMeta,
   resolveProjectRoot,
+  latestTraceActivity,
   type LedgerHandle,
   type RunRow,
   type RunState,
@@ -975,15 +977,77 @@ export function maybeSweep(): boolean {
 
 // ── CLI ───────────────────────────────────────────────────────────────────
 
-function cliStatus(allProjects: boolean): number {
-  const h = openLedger();
-  const scope = resolveSweepScope(allProjects);
-  const rows = findNonTerminal(h, { allProjects: scope.allProjects });
-  const where = scope.allProjects ? "all projects" : scope.projectRoot;
+// How far back "what is it doing" is allowed to reach. Generous on purpose:
+// a STALLED row is exactly the case where the last real action is old, and
+// the honest answer to "what was it doing" is that action, not a blank —
+// only a row with no matching event AT ALL renders UNKNOWN_DOING. This is a
+// different budget from resolveAgenticLiveness's AGENTIC_LEASE_SEC window,
+// which answers a different question ("is it alive right now").
+const DOING_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/** Event families that answer "what is this run doing" — hook-level activity
+ *  (tool/file/bash, keyed by the Claude Code session, matched via
+ *  run-ledger's hookEventOfRun) plus the coarser harness-level milestones a
+ *  hook never emits (dispatch_*, gate_*, delivered, …), which DO carry the
+ *  ledger's own trace_id. Both are ACTIVITY_EVENTS_HOOK ∪ the milestones,
+ *  because latestTraceActivity's matcher (hookEventOfRun) already knows how
+ *  to find either kind — the ID match handles the milestones, the path-prefix
+ *  fallback handles the hook events a session tags with its own id. */
+const DOING_EVENTS: ReadonlySet<string> = new Set([
+  "tool_invoked", "artifact_touched", "bash_completed",
+  "dispatch_squad", "dispatch_business", "routing_decision",
+  "gate_passed", "gate_failed", "verify_passed", "delivered",
+]);
+
+function shortPath(p: unknown): string {
+  const s = typeof p === "string" ? p : "";
+  return s.split(/[\\/]/).pop() || s;
+}
+
+/** One honest line for an activity event. Exported so a test can pin the
+ *  wording without spinning up a ledger or an audit log. */
+export function describeActivity(ev: Record<string, any>): string {
+  switch (ev.event) {
+    case "artifact_touched": return `${ev.action || "edit"}: ${shortPath(ev.file_path)}`;
+    case "tool_invoked": return `tool: ${ev.action || ev.tool_name || "?"}${ev.file_path ? " " + shortPath(ev.file_path) : ""}`;
+    case "bash_completed": return `bash: ${String(ev.command || "").slice(0, 40)}`;
+    case "dispatch_squad": return `dispatched squad ${ev.squad_slug || ev.target?.squad || ""}`.trim();
+    case "dispatch_business": return `dispatched business ${ev.business_slug || ev.target?.business || ""}`.trim();
+    case "routing_decision": return `routing: ${ev.target_id || ev.target?.squad || ev.target?.business || "?"}`;
+    case "gate_passed": return "gate passed";
+    case "gate_failed": return "gate failed, revising";
+    case "verify_passed": return "verifying";
+    case "delivered": return "delivered";
+    default: return String(ev.event || "").replace(/_/g, " ");
+  }
+}
+
+/** The label this codebase already agreed on for "we could not determine
+ *  this" (lib/glance/views/absence.js's UNKNOWN_LABEL) — a measured absence
+ *  reads differently from an unmeasured one, and inventing progress is worse
+ *  than admitting we don't know. */
+const UNKNOWN_DOING = "—";
+
+/** Last activity for this row, or UNKNOWN_DOING when the audit trail has
+ *  nothing to say. Thin wrapper around run-ledger's latestTraceActivity —
+ *  the same scan resolveAgenticLiveness already trusts for "is this run
+ *  alive", reused here for "what did it last do" instead of reinvented. */
+function doingFor(row: RunRow, now: number): string {
+  const found = latestTraceActivity(row, now, DOING_WINDOW_MS, DOING_EVENTS);
+  return found ? describeActivity(found.event) : UNKNOWN_DOING;
+}
+
+/** Table body shared by the one-shot and `--follow` renders. Prints nothing
+ *  and returns 0 when the ledger is clean — the caller decides what a "empty"
+ *  render means (exit vs. keep polling). */
+function printStatusTable(where: string, rows: RunRow[]): number {
   if (rows.length === 0) { console.log(`supervisor: no non-terminal runs in ${where}. Ledger is clean.`); return 0; }
   console.log(`scope: ${where}`);
   const pad = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + "…" : s.padEnd(n));
-  console.log(pad("RUN", 24) + pad("STATE", 11) + pad("TARGET", 26) + pad("PID", 8) + pad("RETRIES", 8) + pad("LEASE EXPIRES", 22) + "LAST HEARTBEAT");
+  console.log(
+    pad("RUN", 24) + pad("STATE", 11) + pad("TARGET", 26) + pad("DOING", 34) + pad("PID", 8)
+    + pad("RETRIES", 8) + pad("LEASE EXPIRES", 22) + "LAST HEARTBEAT",
+  );
   const now = Date.now();
   for (const r of rows) {
     const leaseMs = r.lease_expires_at ? Date.parse(r.lease_expires_at) : 0;
@@ -991,10 +1055,53 @@ function cliStatus(allProjects: boolean): number {
     const alive = r.child_pid && pidAlive(r.child_pid) ? "" : r.child_pid ? " dead" : "";
     console.log(
       pad(r.run_id, 24) + pad(r.state, 11) + pad(`${r.target_kind ?? "?"}/${r.target_slug ?? "?"}`, 26)
-      + pad(`${r.child_pid ?? "-"}${alive}`, 8) + pad(`${r.retries}/${r.max_retries}`, 8)
-      + pad(lease, 22) + (r.heartbeat_at ? `${r.heartbeat_at.slice(11, 19)}Z` : "(never)"),
+      + pad(doingFor(r, now), 34) + pad(`${r.child_pid ?? "-"}${alive}`, 8)
+      + pad(`${r.retries}/${r.max_retries}`, 8) + pad(lease, 22)
+      + (r.heartbeat_at ? `${r.heartbeat_at.slice(11, 19)}Z` : "(never)"),
     );
   }
+  return rows.length;
+}
+
+/** `status` and `status --follow` share this: open the ledger (cheap — cached
+ *  by path, see run-ledger's openLedger), read the non-terminal rows for this
+ *  scope, print the table. */
+function renderStatusOnce(allProjects: boolean): number {
+  const h = openLedger();
+  const scope = resolveSweepScope(allProjects);
+  const rows = findNonTerminal(h, { allProjects: scope.allProjects });
+  const where = scope.allProjects ? "all projects" : scope.projectRoot;
+  return printStatusTable(where, rows);
+}
+
+/** `nrv supervisor status --follow` — a plain re-render loop, no daemon and no
+ *  spawned process: same read-only table as the one-shot render, on a timer.
+ *
+ *  `await Bun.sleep`, never `Bun.sleepSync`, and that choice is load-bearing:
+ *  `sleepSync` blocks the event loop, so a `process.on("SIGINT", …)` handler
+ *  registered anywhere in this process cannot run until the blocking call
+ *  returns — Ctrl-C stops being instant and starts being "whenever the
+ *  current tick ends", which is exactly the class of Ctrl-C defect this
+ *  engine has already spent a cut chasing. An async sleep keeps the loop
+ *  cooperative, so the handler below fires within the same tick it arrives
+ *  in, and the process holds nothing across it (no lock, no open file, no
+ *  child) — the exit is instant and there is nothing left to clean up. */
+async function followStatus(allProjects: boolean, intervalSec: number): Promise<never> {
+  console.log(`supervisor status --follow — refreshing every ${intervalSec}s (Ctrl-C to stop)\n`);
+  const stop = () => { console.log("\nsupervisor status --follow: stopped."); process.exit(0); };
+  process.on("SIGINT", stop);
+  process.on("SIGTERM", stop);
+  for (;;) {
+    console.log(`---- ${new Date().toISOString()} ----`);
+    renderStatusOnce(allProjects);
+    console.log("");
+    await Bun.sleep(intervalSec * 1000);
+  }
+}
+
+function cliStatus(allProjects: boolean): number {
+  renderStatusOnce(allProjects);
+  console.log("\nfollow live:  nrv supervisor status --follow   ·   watch one run's raw events:  nrv watch --trace <run>");
   return 0;
 }
 
@@ -1024,8 +1131,19 @@ if (import.meta.main) {
       }
       process.exit(0); // sweep ALWAYS exits 0 (anti-respawn guard)
     }
-    case "status":
-      process.exit(cliStatus(allProjects));
+    case "status": {
+      if (process.argv.includes("--follow")) {
+        const intervalSec = Math.max(2, parseInt(argValue("--interval", "5") || "5", 10));
+        // Fire-and-forget: followStatus is async (it awaits between ticks so
+        // Ctrl-C stays responsive — see its own comment), so without this
+        // `else` execution would fall straight through to the one-shot
+        // `cliStatus` call below and exit after a single tick.
+        followStatus(allProjects, intervalSec);
+      } else {
+        process.exit(cliStatus(allProjects));
+      }
+      break;
+    }
     case "watch": {
       const intervalSec = Math.max(10, parseInt(argValue("--interval", "120") || "120", 10));
       process.env.NRV_IN_SWEEP = "1";
@@ -1044,7 +1162,10 @@ if (import.meta.main) {
         "usage: nrv supervisor <sweep|status|watch> [--all-projects]",
         "",
         "  sweep [--quiet]        one recovery pass over the dispatch ledger (always exits 0)",
-        "  status                 table of non-terminal runs",
+        "  status                 table of non-terminal runs, with the last activity the audit",
+        "                         trail recorded for each (— when nothing was recorded)",
+        "  status --follow [--interval=5]   re-render the table on a timer (Ctrl-C to stop);",
+        "                         read-only — never sweeps, never recovers, never spawns anything",
         "  watch [--interval=120] loop sweep forever, in the foreground (Ctrl-C to stop)",
         "",
         "  --all-projects         every project on the machine. Without it, sweep/status/watch",

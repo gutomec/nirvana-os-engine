@@ -1001,12 +1001,29 @@ function hookEventOfRun(ev: Record<string, unknown>, row: RunRow, prefix: string
   return under(ev.file_path) || under(ev.cwd);
 }
 
-/** Newest hook event of the run's trace (ms epoch) since `now - windowMs`, 0
- *  when none. Hooks write to the daily audit of the HOME root
- *  (audit-emit-from-hook.ts), so that root is read first; the project's own
- *  root is read too when it differs. Same reader as every other consumer of
- *  the audit (audit.readRecent) — no parser of its own. */
-export function latestHookActivityMs(row: RunRow, now: number, windowMs: number): number {
+export interface TraceActivity { ts: number; event: Record<string, unknown>; }
+
+/**
+ * Newest event of the run's trace since `now - windowMs` whose `event` name is
+ * in `eventTypes`, or `null` when none — the event itself, not only its
+ * timestamp, so a caller can say WHAT happened, not only THAT something did.
+ * Hooks write to the daily audit of the HOME root (audit-emit-from-hook.ts),
+ * so that root is read first; the project's own root is read too when it
+ * differs. Same reader as every other consumer of the audit
+ * (audit.readRecent) — no parser of its own.
+ *
+ * `eventTypes` is a parameter, not a hardcoded set, because two callers need
+ * two different slices of the same scan: resolveAgenticLiveness only cares
+ * whether HOOK_EVENTS fired (liveness, below); supervisor.ts's `status` DOING
+ * column also wants the coarser trace-tagged milestones (dispatch_*, gate_*,
+ * delivered, …) hook events never carry. One scan, one match
+ * (hookEventOfRun), because that matcher is the part worth not re-deriving:
+ * a hook event's `trace_id` is the Claude Code SESSION id
+ * (audit-emit-from-hook.ts's own doc comment says so), not the ledger row's
+ * trace_id, so a caller that matched on `trace_id` alone would silently find
+ * nothing for the exact runs — agentic ones — this exists to cover.
+ */
+export function latestTraceActivity(row: RunRow, now: number, windowMs: number, eventTypes: ReadonlySet<string>): TraceActivity | null {
   const since = now - windowMs;
   const dayOf = (ms: number) => new Date(ms).toISOString().slice(0, 10);
   const days = [dayOf(now)];
@@ -1016,9 +1033,9 @@ export function latestHookActivityMs(row: RunRow, now: number, windowMs: number)
     : metaString(row.meta, "outputs_root") ? path.resolve(metaString(row.meta, "outputs_root")!) + path.sep : null;
   const anchors = [os.homedir(), metaString(row.meta, "project_dir")].filter((a): a is string => !!a);
   let audit: AuditLib;
-  try { audit = auditLib(); } catch { return 0; }
+  try { audit = auditLib(); } catch { return null; }
   const seen = new Set<string>();
-  let latest = 0;
+  let best: TraceActivity | null = null;
   for (const anchor of anchors) {
     for (const day of days) {
       let file: string;
@@ -1028,14 +1045,20 @@ export function latestHookActivityMs(row: RunRow, now: number, windowMs: number)
       let events: Record<string, unknown>[] = [];
       try { events = audit.readRecent(HOOK_SCAN_LIMIT, day, anchor); } catch { continue; }
       for (const ev of events) {
-        if (!HOOK_EVENTS.has(String(ev.event))) continue;
+        if (!eventTypes.has(String(ev.event))) continue;
         const t = Date.parse(String(ev.ts ?? ""));
-        if (!(t > since) || t <= latest) continue;
-        if (hookEventOfRun(ev, row, prefix)) latest = t;
+        if (!(t > since) || (best && t <= best.ts)) continue;
+        if (hookEventOfRun(ev, row, prefix)) best = { ts: t, event: ev };
       }
     }
   }
-  return latest;
+  return best;
+}
+
+/** Newest HOOK_EVENTS activity of the run's trace (ms epoch), 0 when none —
+ *  the ms-only view resolveAgenticLiveness needs. */
+export function latestHookActivityMs(row: RunRow, now: number, windowMs: number): number {
+  return latestTraceActivity(row, now, windowMs, HOOK_EVENTS)?.ts ?? 0;
 }
 
 /**
