@@ -8,6 +8,8 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+## 0.12.1 — 2026-08-29
+
 ### Revertido: Durable Work Continuity (DWC)
 
 O DWC (`skills/harness/lib/run-kernel/durable-work.ts`, 2.446 linhas, mais
