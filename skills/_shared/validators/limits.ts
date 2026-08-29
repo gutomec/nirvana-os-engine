@@ -26,6 +26,7 @@
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
+import { findProjectRoot } from '../lib/project-root.js'
 
 // ──────────────────────────────────────────────────────────────────────
 // DEFAULTS — the system's historical values (backward-compatible)
@@ -196,20 +197,15 @@ function loadConfigFile(p: string): Record<string, number | null | boolean | str
   }
 }
 
+// Delegates the climb to project-root.js (the one implementation shared with
+// paths.js, scope.ts, log-paths.ts, handoff.js, wiki-lint.js, cascade.ts and
+// output-resolver.js): this used to climb with no HOME exclusion at all and
+// no canonicalization, unbounded (`while (true)`, stopped only by
+// `parent === dir`) — the same shape that let a stray marker above the real
+// project be picked up on a Windows runner whose temp dir resolves inside HOME.
 function findProjectConfig(): string | null {
-  let dir = process.cwd()
-  while (true) {
-    const candidate = path.join(dir, PROJECT_CONFIG_NAME)
-    try {
-      if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate
-    } catch {
-      /* ignore */
-    }
-    const parent = path.dirname(dir)
-    if (parent === dir) break
-    dir = parent
-  }
-  return null
+  const dir = findProjectRoot(process.cwd(), { markers: [PROJECT_CONFIG_NAME] })
+  return dir ? path.join(dir, PROJECT_CONFIG_NAME) : null
 }
 
 function coerceToDefaultType(value: unknown, dft: number | null): number | null {

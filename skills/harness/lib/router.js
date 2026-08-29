@@ -32,15 +32,16 @@ const nrvPaths = require('../../_shared/lib/paths.js');
 const contextBudget = require('./context-budget');
 
 // Lazy-loaded host-agent-driver (used only by Stage -2 amplifier when WEAK).
+// host-agent-driver.js already delegates to the canonical .ts under Bun and
+// falls back to its own inline legacy implementation otherwise (see that
+// file's header) — requiring the .ts directly from here duplicated that
+// fallback AND was itself a `.js` requiring a `.ts`, which can throw
+// `TypeError: require() async module` under Bun on Windows.
 let _hostDriver = null;
 function getHostDriver() {
   if (_hostDriver) return _hostDriver;
-  try {
-    _hostDriver = require(path.join(__dirname, '..', '..', '_shared', 'lib', 'host-agent-driver.ts'));
-  } catch {
-    try { _hostDriver = require(path.join(__dirname, '..', '..', '_shared', 'lib', 'host-agent-driver.js')); }
-    catch { _hostDriver = null; }
-  }
+  try { _hostDriver = require(path.join(__dirname, '..', '..', '_shared', 'lib', 'host-agent-driver.js')); }
+  catch { _hostDriver = null; }
   return _hostDriver;
 }
 
@@ -1276,16 +1277,21 @@ const BODY_DOC_MAX_NORMALIZED = Number(process.env.NIRVANA_BODY_DOC_MAX) || 0.85
 const DENSE_FALLBACK_MIN_COSINE = 0.55;
 
 /** Effective mode of the fallback slot: 'off' | 'fallback'.
- *  context.denseMode is the test hook; the routing.dense setting otherwise. */
-function denseFallbackMode(context) {
+ *  context.denseMode is the test hook; the routing.dense setting otherwise.
+ * @returns {Promise<'off'|'fallback'>}
+ */
+async function denseFallbackMode(context) {
   if (context && (context.denseMode === 'off' || context.denseMode === 'fallback')) {
     return context.denseMode;
   }
   try {
     // harness-config.ts resolves the setting (env > project > global > engine
-    // default); requiring .ts works under Bun (same pattern as
-    // host-agent-driver.ts). Failure → off, never a crash.
-    const cfg = require(path.join(__dirname, 'harness-config.ts'));
+    // default). Dynamic import(), not require(): a `.js` requiring a `.ts`
+    // can throw `TypeError: require() async module` under Bun on Windows
+    // (see budget.js's loadSettings() for the same pattern), while
+    // Bun's dynamic import() is always safe for an ESM module regardless of
+    // platform. Failure → off, never a crash. The one caller already awaits.
+    const cfg = await import(path.join(__dirname, 'harness-config.ts'));
     return cfg.denseRoutingMode();
   } catch {
     return 'off';
@@ -1302,11 +1308,12 @@ function denseFallbackMode(context) {
  * async (brief, [{id, text}]) → [{id, score}] | null).
  */
 async function denseNoMatchFallback(brief, registries, context) {
-  if (denseFallbackMode(context) !== 'fallback') return null;
+  if (await denseFallbackMode(context) !== 'fallback') return null;
   let rank = context && typeof context.denseRank === 'function' ? context.denseRank : null;
   if (!rank) {
     try {
-      const denseIndex = require(path.join(__dirname, '..', '..', '_shared', 'lib', 'dense-index.ts'));
+      // Dynamic import(), not require() — see denseFallbackMode above for why.
+      const denseIndex = await import(path.join(__dirname, '..', '..', '_shared', 'lib', 'dense-index.ts'));
       rank = denseIndex.denseRank;
     } catch { return null; } // dense machinery absent → clean no-op
   }
@@ -1361,9 +1368,13 @@ async function denseNoMatchFallback(brief, registries, context) {
 /**
  * Stage 4 — Budget pre-flight. Delegates to lib/budget.js.
  *
+ * Async because budget.js resolves settings.ts via dynamic import() (a
+ * synchronous `require()` of that `.ts` crashes on Windows — see budget.js's
+ * own header). Every call site here is already inside `route()`.
+ *
  * @param {object} target match meta from Stage 3 (or null)
  * @param {object} ctx optional cap overrides
- * @returns {{ok: boolean, estimated_usd: number, max_cost_usd: number, breakdown: object}}
+ * @returns {Promise<{ok: boolean, estimated_usd: number, max_cost_usd: number, breakdown: object}>}
  */
 function stage4BudgetCheck(target, ctx) {
   const t = target || {};
@@ -2105,7 +2116,7 @@ async function route(brief, ctx) {
           stage_explicit_mention: { matched: true, slug: mention.slug, type: mention.type },
           stage2: { skipped: true, reason: 'explicit_target_mention_short_circuit' },
           stage3: decision,
-          stage4: stage4BudgetCheck(targetMatch, context.budget),
+          stage4: await stage4BudgetCheck(targetMatch, context.budget),
           stage5: stage5Invoke(targetMatch, brief, context),
           context_budget: contextBudget.estimateContextBudget(),
           warnings: registries.warnings || [],
@@ -2139,7 +2150,7 @@ async function route(brief, ctx) {
         stage_minus_1: { matched: true, signals: metaMatch.meta.stage_minus_1_signals },
         stage2: { skipped: true, reason: 'stage_minus_1_meta_orchestrator_short_circuit' },
         stage3: decision,
-        stage4: stage4BudgetCheck(metaMatch, context.budget),
+        stage4: await stage4BudgetCheck(metaMatch, context.budget),
         stage5: stage5Invoke(metaMatch, brief, context),
         context_budget: contextBudget.estimateContextBudget(),
         warnings: registries.warnings || [],
@@ -2319,11 +2330,11 @@ async function route(brief, ctx) {
   let budgetCheck = null;
   let invocationPlan = null;
   if (decision.signal === 'HIGH' && decision.target) {
-    budgetCheck = stage4BudgetCheck(decision.target, context.budget);
+    budgetCheck = await stage4BudgetCheck(decision.target, context.budget);
     invocationPlan = stage5Invoke(decision.target, brief, context);
   } else if (decision.signal === 'AMBIGUOUS' && decision.alternatives && decision.alternatives.length > 0) {
     // Use the leading alternative for a tentative budget estimate
-    budgetCheck = stage4BudgetCheck(decision.alternatives[0], context.budget);
+    budgetCheck = await stage4BudgetCheck(decision.alternatives[0], context.budget);
   }
 
   return {
@@ -2432,7 +2443,10 @@ if (require.main === module) {
       // not a run, so it still carries no trace — an invented one would put a
       // phantom card in the cockpit.
       try {
-        const { briefExcerpt } = require(path.join(__dirname, '..', '..', '_shared', 'lib', 'brief-excerpt.ts'));
+        // brief-excerpt.js, not the .ts: a `.js` requiring a `.ts` sibling can
+        // throw `TypeError: require() async module` under Bun on Windows (see
+        // that file's own header) — the .js is the canonical CJS implementation.
+        const { briefExcerpt } = require(path.join(__dirname, '..', '..', '_shared', 'lib', 'brief-excerpt.js'));
         const traceId = process.env.NIRVANA_TRACE_ID || null;
         audit.emit('brief_received', {
           ...(traceId ? { trace_id: traceId } : {}),

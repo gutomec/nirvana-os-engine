@@ -69,7 +69,10 @@ function estimateContextBudget(opts) {
   let logPath = opts && opts.audit_log_path;
   if (!logPath) {
     const today = new Date().toISOString().slice(0, 10);
-    const root = process.env.HARNESS_LOGS_DIR || require(path.join(SKILLS_ROOT, '_shared', 'lib', 'log-paths.ts')).harnessLogsDir();
+    // log-paths.js, not the .ts: a `.js` requiring the `.js` sibling never
+    // crosses the CJS/ESM boundary Windows' Bun enforces for a `.ts` whose
+    // chain carries a top-level await (see log-paths.ts's own header).
+    const root = process.env.HARNESS_LOGS_DIR || require(path.join(SKILLS_ROOT, '_shared', 'lib', 'log-paths.js')).harnessLogsDir();
     logPath = path.join(root, today, 'audit.jsonl');
   }
   if (!fs.existsSync(logPath)) {

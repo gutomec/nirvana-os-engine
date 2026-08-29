@@ -40,8 +40,8 @@ const path = require('path');
 const YAML = require('yaml');
 
 const SHARED_LIB = path.join(__dirname, '..', '..', '_shared', 'lib');
-const { editFrontmatter, employeeFiles, prependFrontmatter, readFrontmatter } = require(path.join(SHARED_LIB, 'frontmatter-edit.ts'));
-const { refToSlug, slugOf } = require(path.join(SHARED_LIB, 'entity-graph.ts'));
+const { editFrontmatter, employeeFiles, prependFrontmatter, readFrontmatter } = require(path.join(SHARED_LIB, 'frontmatter-edit.js'));
+const { refToSlug, slugOf } = require(path.join(SHARED_LIB, 'entity-graph.js'));
 
 // ─── file helpers ───────────────────────────────────────────────────────────
 

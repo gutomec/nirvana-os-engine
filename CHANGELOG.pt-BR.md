@@ -8,6 +8,84 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### O vocabulário migra sem reescrever as 187 mil linhas que já discordam dele, e cinco nomes que nunca foram reais saem do enum
+
+Cortes 4 e 5 de `.nirvana/plans/event-contract.md`, despachados juntos porque
+os dois fazem a mesma pergunta ao enum: o que é o vocabulário, de verdade?
+
+**Corte 4.** O corte 1 mediu 286 tipos de evento vadios, 964 ocorrências, com
+sítios de emissão em disco em apenas 3 entidades — quase nada do que chega ao
+log está escrito num arquivo; um agente inventa o nome no meio do run. Renomear
+os literais dessas 3 entidades seria um rename puro, como disse o corte 2, mas
+isso fecha 3 entidades, não 285: o resto não tem literal para renomear nem
+histórico para reescrever. `migrate` é uma regra de leitura, não uma tabela e
+não uma reescrita. Uma linha legada cujo nome não está no enum fechado nem já
+carrega o prefixo `x_` recebe sua identidade canônica sintetizada em
+`_ce.type` — o mesmo `sh.squads.nirvana.ext.x_<nome>` que uma emissão `x_`
+compatível do mesmo evento produz hoje — no momento em que um leitor chama
+`parseAuditLine`. O `.event` em si nunca é tocado: `audit-miner.ts` e
+`observability-handler.ts` filtram o log bruto pela string literal
+`event === "revision"`, e uma tabela ou um rename genérico teriam zerado as
+duas contagens silenciosamente. Uma linha legada compatível, do enum fechado
+ou já com `x_`, continua voltando por identidade, byte a byte, exatamente como
+o corte 2 deixou.
+
+**Corte 5.** Remedido em vez de aceito de olhos fechados: os 38 "permitidos
+mas nunca emitidos" do plano já tinham encolhido para 21 com os cortes 2 e 3
+convertendo vários appenders brutos para o escritor canônico. Desses 21, três
+estavam mal classificados pelo próprio scanner do `check-audit-parity.ts`, não
+pelo enum: `human_notification_required` (`supervisor.ts`), `stall_detected`
+e `stall_retry` (`host-agent-retry.js`) são emitidos de verdade, através de
+funções wrapper `emitAudit()` / `emitSafe()` que a regex literal `emit(` do
+scanner não conseguia casar — ela precisa de dois caracteres antes do literal
+`mit`, e um wrapper em camelCase põe `emit` bem no início do nome. O scanner
+agora reconhece um conjunto fixo de wrappers de encaminhamento conhecidos, e
+deliberadamente não um teste genérico de "nome contém emit": `emitProjection(kind,
+run, state)` em `compatibility-facade.ts` fixa o próprio nome do evento
+internamente e recebe um *kind* "open"/"transition" como primeiro argumento,
+que um teste só de nome leria como dois tipos de evento inventados, e teria
+reprovado o `--strict` deste mesmo corte.
+
+Dos 13 restantes, o corte 5 manteve todos os que têm um produtor real ou um
+desenho real e citado: `budget_violation` (documentado nos 8 adaptadores de
+runtime e em `references/02-budget.md`; o caminho de código do estouro de
+orçamento hoje devolve um status, ainda não este evento), `clarification_received`
+/ `escalation_trigger_fired` / `target_plan_committed` (prescritos em
+`harness/SKILL.md`, o próprio protocolo do modelo), `dispatch_blocked` (lido
+por `dispatch.ts`, `trace-builder.ts` e o Glance; uma baseline histórica
+mostra que disparou), `dispatch_audit_revision` (o auditor de qualidade de
+despacho da Layer 2 — arquivo de agente, tipo de veredito e helper de emissão
+existem; a fiação da revisão ainda não), `handoff` / `human_response_received`
+(formatos de evento documentados em `HARNESS_PROTOCOL_V1.md` /
+`BUSINESS_PROTOCOL_V1.md`), `isolation_violation` (BP5, prescrito de forma
+idêntica em todo adaptador), `humanization_applied` / `humanization_skipped`
+(citado como um diferencial do tier de negócio em `references/01-routing.md`;
+o Glance já carrega um ícone para `humanization_applied`), e
+`invocation_start` / `invocation_end` (uma baseline histórica mostra emissão
+real no passado; `trace-builder.ts` e a rubrica `pre-ship.md` ainda leem o par
+como sinal — o escritor regrediu numa refatoração do control-plane, os
+leitores não).
+
+Cinco não tinham nada disso: nenhum produtor, nenhuma doc, nenhum leitor, em
+lugar nenhum. `chunk_gate_passed` / `chunk_gate_failed` — a Fase 7 só embarcou
+a metade escritora (`chunk-writer.ts`, `chunk_emitted`), nunca um gate por
+chunk. `memory_write` e `ticket_opened` / `ticket_resolved` — presentes desde
+o enum original (engine 0.1.20) e nunca mais mencionados em doc, adaptador ou
+leitor nenhum. Removidos de `ALLOWED_EVENTS`, do mapa de domínio em
+`cloudevents.js`, e da tabela gerada em `references/03-audit.md`
+(`bun scripts/gen-audit-events-doc.ts --write`).
+
+**Verificado.** O histórico real de ~187 mil linhas (`~/.harness-logs`,
+`<project>/.nirvana/logs/harness`), congelado numa cópia para que um log vivo
+e crescente não fosse comparado contra si mesmo, foi reproduzido por
+`buildRuns` e `trace-builder` uma vez contra o repositório no HEAD e uma vez
+contra este diff: 188.568 eventos, 9.763 traces, 868 briefs distintos, 333
+runs, 17.512 eventos de run — idênticos dos dois lados, veredito `PARITY`. A
+contagem de vadios citada pelo plano, 285 tipos fora da regra, se reproduz
+exatamente tanto contra o enum de 96 entradas quanto contra o de 91, porque
+nenhum dos cinco nomes removidos jamais apareceu no log real. `bun test skills`
+— 2307 passam, 3 pulados, 0 falhas. `bun run check:all` — saída 0.
+
 ## 0.12.0 — 2026-08-28
 
 ### Um schema gerado para de depender da máquina que o gerou

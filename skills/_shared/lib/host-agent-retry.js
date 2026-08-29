@@ -41,14 +41,15 @@ function loadAudit() {
   return _audit;
 }
 
+// host-agent-driver.js already delegates to the canonical .ts under Bun and
+// falls back to its own inline legacy implementation otherwise — the .ts
+// fallback that used to live here was dead code that only a `.js` requiring
+// a `.ts` (a Windows landmine, see that file's header) could ever reach.
 let _driver = null;
 function loadDriver() {
   if (_driver) return _driver;
   try { _driver = require(path.join(__dirname, 'host-agent-driver.js')); }
-  catch {
-    try { _driver = require(path.join(__dirname, 'host-agent-driver.ts')); }
-    catch { _driver = null; }
-  }
+  catch { _driver = null; }
   return _driver;
 }
 

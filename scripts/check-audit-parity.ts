@@ -132,14 +132,49 @@ function emittedEvents(): Map<string, string[]> {
       for (const file of walk(dir)) {
         const src = readFileSync(file, "utf8");
         const short = file.slice(ROOT.length + 1);
-        const patterns = [
-          /\bemit\(\s*['"]([a-z][a-z0-9_]*)['"]/g,   // audit.emit('x') / emit("x")
+        // Call patterns capture the callee NAME in group 1 and are only
+        // counted when that name is a KNOWN forwarding wrapper around the
+        // real `audit.emit()` — not the literal `emit(` alone, and not a bare
+        // "name contains emit" test either. `\bemit\(` cannot match
+        // "emitAudit(" (it needs 2+ characters before the literal "mit", and
+        // a camelCase wrapper name puts "emit" at the very start of the
+        // identifier, leaving no room), so these forwarders were invisible
+        // here before. Measured cause of 3 of the 21 "never emitted by code"
+        // false negatives plan cut 5 found: `human_notification_required`
+        // (`supervisor.ts`), `stall_detected` / `stall_retry`
+        // (`host-agent-retry.js`).
+        //
+        // The allowlist, not a blanket `/emit/i` test, is deliberate: this
+        // codebase also has helpers whose NAME contains "emit" but whose
+        // first argument is not an event name at all — `emitProjection(kind,
+        // run, state)` in `compatibility-facade.ts` hardcodes its own event
+        // name internally and takes an "open"/"transition" KIND as its first
+        // argument. A name-only test misread that kind as two invented event
+        // types and would have failed `--strict` on this cut's own fix.
+        const EMIT_WRAPPER_NAMES = new Set(["emit", "emitSafe", "emitAudit", "emitLedgerAudit", "emitDriverAudit", "auditEmit"]);
+        const callPatterns = [
+          /\b([A-Za-z_][A-Za-z0-9_]*)\(\s*['"]([a-z][a-z0-9_]*)['"]/g,
+          // Ternary verdicts: emitAudit(ok ? 'a' : 'b', ...)
+          /\b([A-Za-z_][A-Za-z0-9_]*)\(\s*[^,()\n]*?\?\s*['"]([a-z][a-z0-9_]*)['"]\s*:\s*['"]([a-z][a-z0-9_]*)['"]/g,
+        ];
+        for (const re of callPatterns) {
+          for (const m of src.matchAll(re)) {
+            if (!EMIT_WRAPPER_NAMES.has(m[1])) continue;
+            for (const token of [m[2], m[3]]) {
+              if (!token) continue;
+              const list = found.get(token) || [];
+              if (!list.includes(short)) list.push(short);
+              found.set(token, list);
+            }
+          }
+        }
+        // Field/literal patterns: not a call, so no name to check.
+        const fieldPatterns = [
           /\bevent:\s*['"]([a-z][a-z0-9_]*)['"]/g,   // { event: 'x' } literals
-          // Ternary verdicts: emit(ok ? 'a' : 'b') / event: ok ? "a" : "b"
-          /\bemit\(\s*[^,()\n]*?\?\s*['"]([a-z][a-z0-9_]*)['"]\s*:\s*['"]([a-z][a-z0-9_]*)['"]/g,
+          // Ternary verdicts: event: ok ? "a" : "b"
           /\bevent:\s*[^,\n]*?\?\s*['"]([a-z][a-z0-9_]*)['"]\s*:\s*['"]([a-z][a-z0-9_]*)['"]/g,
         ];
-        for (const re of patterns) {
+        for (const re of fieldPatterns) {
           for (const m of src.matchAll(re)) {
             for (const token of [m[1], m[2]]) {
               if (!token) continue;

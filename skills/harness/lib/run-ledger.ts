@@ -182,20 +182,40 @@ export function normalizeRoot(dir: string, realpath: RealpathFn = osRealpath): s
   }
 }
 
+/** Is `descendant` strictly inside `ancestor`? Both must already be
+ *  normalized. Mirrors project-root.js's `isUnder` — case-insensitive on
+ *  win32, where a path can arrive in 8.3 short form on one side. */
+function isStrictlyUnder(descendant: string, ancestor: string): boolean {
+  const prefix = ancestor.endsWith(path.sep) ? ancestor : ancestor + path.sep;
+  return process.platform === "win32"
+    ? descendant.toLowerCase().startsWith(prefix.toLowerCase())
+    : descendant.startsWith(prefix);
+}
+
 /** Walk up from `start` to the first directory carrying a project marker.
  *  HOME and the filesystem root are never projects — a stray marker in either
  *  would collapse every project into one scope. Missing directories are walked
  *  THROUGH, not stopped at: an outputs dir that was deleted still names the
- *  project it lived under. */
+ *  project it lived under.
+ *
+ * The walk STOPS as soon as it reaches HOME, or as soon as HOME becomes
+ * strictly nested under the current directory: climbing further would leave
+ * the boundary that contains HOME and enter real, unrelated ancestry above
+ * it. On `os.tmpdir()` resolving *inside* HOME (the Windows CI runner shape),
+ * a walk that starts in a temp fixture directory climbs through HOME's own
+ * ancestry before it would reach the filesystem root — without this check it
+ * keeps going and can match a marker up there instead of correctly reporting
+ * "no project in reach" (see log-paths.ts's own history for the same fix). */
 export function findProjectRootFrom(start: string): string | null {
   let cur = path.resolve(start);
   const home = normalizeRoot(process.env.HOME || os.homedir());
   for (let i = 0; i < 40; i++) {
     const norm = normalizeRoot(cur);
-    if (norm !== path.parse(norm).root && !sameNormalizedRoot(norm, home)) {
-      for (const m of PROJECT_MARKERS) {
-        if (fs.existsSync(path.join(cur, m))) return norm;
-      }
+    if (norm === path.parse(norm).root) return null;
+    if (sameNormalizedRoot(norm, home)) return null;
+    if (isStrictlyUnder(home, norm)) return null;
+    for (const m of PROJECT_MARKERS) {
+      if (fs.existsSync(path.join(cur, m))) return norm;
     }
     const parent = path.dirname(cur);
     if (parent === cur) return null;

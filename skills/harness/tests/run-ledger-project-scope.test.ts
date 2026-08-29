@@ -112,6 +112,36 @@ describe("the root a process is serving", () => {
     expect(findProjectRootFrom(os.homedir())).not.toBe(normalizeRoot(os.homedir()));
   });
 
+  test("the walk stops at HOME and never climbs into HOME's own ancestry", () => {
+    // The exact mechanism log-paths.ts was fixed for (see git history, "the
+    // hook's project-root walk stops at HOME, even on Windows"): on the
+    // Windows CI runner, os.tmpdir() resolves INSIDE the real HOME, so a walk
+    // that starts in a temp fixture directory climbs through HOME's own
+    // ancestry before it would reach the filesystem root. A marker that
+    // happens to sit ABOVE HOME (an ancestor directory neither the fixture
+    // nor the caller owns) must never be mistaken for the fixture's project.
+    //
+    // findProjectRootFrom has no injectable `home` param, so HOME is
+    // overridden via process.env.HOME directly — the same variable the
+    // function itself reads (`process.env.HOME || os.homedir()`).
+    const fakeHome = path.join(TMP, "fake-home");
+    const start = path.join(fakeHome, "AppData", "Local", "Temp", "some-fixture");
+    fs.mkdirSync(start, { recursive: true });
+    // A marker one level ABOVE fakeHome — real, unrelated ancestry the walk
+    // must never reach once it has climbed through HOME.
+    fs.writeFileSync(path.join(TMP, "package.json"), "{}");
+
+    const before = process.env.HOME;
+    process.env.HOME = fakeHome;
+    try {
+      expect(findProjectRootFrom(start)).toBeNull();
+    } finally {
+      fs.rmSync(path.join(TMP, "package.json"), { force: true });
+      if (before === undefined) delete process.env.HOME;
+      else process.env.HOME = before;
+    }
+  });
+
   test("an OS path alias resolves to one root, on this platform, for real", () => {
     // macOS: os.tmpdir() is /var/folders/…, whose real form is
     // /private/var/folders/… . Linux has no alias here and the assertion holds

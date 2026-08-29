@@ -15,6 +15,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const projectRootLib = require('../../_shared/lib/project-root.js');
 
 const OUTPUT_DIR_NAME = '.squads-outputs';
 
@@ -59,30 +60,22 @@ class OutputResolver {
       return path.resolve(envRoot);
     }
 
-    // HOME and the filesystem root are never valid project roots — even if a
-    // marker happens to exist there. Otherwise outputs land in the user's HOME.
-    const home = process.env.HOME ? path.resolve(process.env.HOME) : null;
-
-    // 2. Walk up from startDir until finding a project marker
-    let current = path.resolve(startDir || process.cwd());
-    const root = path.parse(current).root;
-
-    while (current !== root) {
-      if (current !== home) {
-        for (const marker of PROJECT_ROOT_MARKERS) {
-          if (fs.existsSync(path.join(current, marker))) {
-            return current;
-          }
-        }
-      }
-      current = path.dirname(current);
-    }
+    // 2. Walk up from startDir until finding a project marker. Delegates to
+    // project-root.js (the one implementation — shared with scope.ts,
+    // paths.js, log-paths.ts, handoff.js, wiki-lint.js): HOME/root exclusion
+    // through a canonical realpath compare, not the raw `current !== home`
+    // string compare this resolver used to do — which never recognized HOME
+    // on a Windows 8.3 short path, and read only `$HOME`, unset on a native
+    // Windows shell (PowerShell/cmd.exe use `%USERPROFILE%`), silently
+    // disabling the guard there.
+    const start = path.resolve(startDir || process.cwd());
+    const found = projectRootLib.findProjectRoot(start, { markers: PROJECT_ROOT_MARKERS });
+    if (found) return found;
 
     // 3. Fallback to startDir, but never HOME or fs root — fall through to cwd.
-    const fallback = path.resolve(startDir || process.cwd());
-    if (fallback !== home && fallback !== root) return fallback;
+    if (!projectRootLib.isInvalidProjectRoot(start)) return start;
     const cwd = path.resolve(process.cwd());
-    return cwd !== home && cwd !== root ? cwd : fallback;
+    return !projectRootLib.isInvalidProjectRoot(cwd) ? cwd : start;
   }
 
   /**
