@@ -166,6 +166,48 @@ function touchEvents(runId: string): Array<Record<string, unknown>> {
 }
 
 /**
+ * The child's own wait-for-the-fact, in place of a guessed sleep.
+ *
+ * These fakes used to write a file and then sleep a fixed interval, betting
+ * that one of the sidecar's 250ms polls would land inside the window before
+ * the parent tore the sidecar down. The bet was raised three times (600 ->
+ * 2000 -> 4500ms) and still lost on a loaded Windows runner, because a fixed
+ * sleep cannot tell "the poll was slow" from "the poll never happened" - the
+ * only move it offers is to get longer. So wait on the fact itself: the audit
+ * line the sidecar writes. Returns on the first tick when the machine is fast,
+ * waits out a first tick spent on a slow PowerShell pid discovery when it is
+ * not, and still lets the assertion downstream fail when the line never comes.
+ *
+ * Within this test's own HARNESS_LOGS_DIR the needles are unambiguous: a
+ * filename is written by exactly one fake, and `x_ledger_lease_renewed` for a
+ * given run_id has exactly one producer (run-ledger.ts:1354, the sidecar's
+ * activity tick - the reaper at :1198 is the only other caller and never runs
+ * here).
+ */
+function awaitAuditLine(...needles: string[]): string {
+  return `
+      {
+        const auditRoot = ${JSON.stringify(process.env.HARNESS_LOGS_DIR)};
+        const needles = ${JSON.stringify(needles)};
+        const seen = () => {
+          try {
+            for (const day of fs.readdirSync(auditRoot)) {
+              const f = path.join(auditRoot, day, "audit.jsonl");
+              if (!fs.existsSync(f)) continue;
+              for (const line of fs.readFileSync(f, "utf8").split("\\n")) {
+                if (needles.every(n => line.includes(n))) return true;
+              }
+            }
+          } catch { /* the log directory may not exist yet */ }
+          return false;
+        };
+        const deadline = Date.now() + 20_000;
+        while (!seen() && Date.now() < deadline) await Bun.sleep(50);
+      }
+  `;
+}
+
+/**
  * The orphan probe. Poke the watched directory AFTER the dispatch returned and
  * prove nobody answers: a live sidecar would renew the lease and append an
  * `artifact_touched`; a dead one leaves both exactly where they were. The run
@@ -202,7 +244,7 @@ describe("driver — the heartbeat reports files, not just liveness", () => {
         fs.writeFileSync(path.join(dir, name), "content of " + name);
         fs.writeFileSync(path.join(dir, "node_modules", "pkg", name + ".js"), "vendored noise");
       }
-      await Bun.sleep(900);
+${awaitAuditLine("artifact_touched", "step-3.md")}
       console.log(JSON.stringify({ type: "result", result: "done", session_id: "touch-session", total_cost_usd: 0 }));
       process.exit(0);
     `, () => runHeadless({
@@ -232,14 +274,11 @@ describe("driver — the heartbeat reports files, not just liveness", () => {
     fs.mkdirSync(watch, { recursive: true });
     const lease = Date.parse(row.lease_expires_at!);
 
-    // Widened for the same reason as the other short-lived-child tests in
-    // this file (see "a run that FAILS…" below): a tight window leaves too
-    // few 250ms polls a shot at landing inside it on a loaded Windows runner.
     const res = withWritingFake("off", `
       import * as fs from "node:fs";
       import * as path from "node:path";
       for (const name of ["a.md", "b.md"]) { await Bun.sleep(400); fs.writeFileSync(path.join(${JSON.stringify(watch)}, name), name); }
-      await Bun.sleep(2000);
+${awaitAuditLine("x_ledger_lease_renewed", row.run_id)}
       console.log(JSON.stringify({ type: "result", result: "done", session_id: "off-session", total_cost_usd: 0 }));
       process.exit(0);
     `, () => runHeadless({
@@ -261,22 +300,17 @@ describe("driver — the heartbeat reports files, not just liveness", () => {
     // The gap between the write and the exit is the ONLY window a poll can
     // land in — the parent SIGTERMs the sidecar the instant this process
     // exits (see host-agent-driver.ts's runWithLedgerHeartbeat), with no
-    // grace period. 400ms left room for at most one 250ms tick, which a
-    // loaded Windows runner (slower process scheduling, occasionally a
-    // stretched sleepSync) can miss outright. On top of that, the sidecar's
-    // own first tick makes an unconditional child-pid discovery attempt
-    // (run-ledger.ts heartbeatMain) — a PowerShell spawn on Windows that can
-    // itself cost up to ~3s in the worst case (findChildPid + processStartedAt,
-    // each individually timeout-bounded) before the tick that actually scans
-    // for this write ever runs. A wide window turns "exactly one poll must
-    // land just right, faster than a worst-case discovery attempt" into
-    // "several get the chance to, with room to spare".
+    // grace period. So the child holds the window open until the sidecar has
+    // actually reported the write, rather than guessing how wide it needs to
+    // be: on Windows the sidecar's first tick makes an unconditional
+    // child-pid discovery attempt (run-ledger.ts heartbeatMain) that can cost
+    // seconds before the tick that scans for this write ever runs.
     const res = withWritingFake("fail", `
       import * as fs from "node:fs";
       import * as path from "node:path";
       await Bun.sleep(400);
       fs.writeFileSync(path.join(${JSON.stringify(watch)}, "half-written.md"), "the run dies here");
-      await Bun.sleep(4500);
+${awaitAuditLine("artifact_touched", "half-written.md")}
       process.stderr.write("boom\\n");
       process.exit(1);
     `, () => runHeadless({
