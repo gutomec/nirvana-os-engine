@@ -21,11 +21,13 @@ import {
   callHostAgent,
   callHostAgentAsync,
   MAX_ARGV_PROMPT_BYTES,
+  reapOrphanedPromptFiles,
   __testables,
   type Runtime,
 } from "../../_shared/lib/host-agent-driver.ts";
 import { writeFakeCli, readCapturedArgs, CAPTURE_PRELUDE } from "./helpers/fake-cli.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
+import { makeTempRoot, removeDir } from "./helpers/temp-dirs.ts";
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-driver-adapters-test-"));
 const BIN = path.join(TMP, "bin");
@@ -275,12 +277,44 @@ describe("driver adapters — 300KB prompt delivery + cost matrix", () => {
   }, spawnBudgetMs(2));
 
   test("temp prompt files are cleaned up after the run", () => {
+    // Scoped to what THIS test creates: os.tmpdir() is shared with every other
+    // process on the machine, so asserting on its full listing turns any
+    // foreign nrv-prompt-* leftover (a dead session, another dispatch) into a
+    // failure of this run. Snapshot before, diff after.
+    const before = new Set(fs.readdirSync(os.tmpdir()).filter((f) => f.startsWith("nrv-prompt-")));
     run("antigravity-cli");
     run("grok-cli");
     run("pi");
-    const leftovers = fs.readdirSync(os.tmpdir()).filter((f) => f.startsWith("nrv-prompt-"));
-    expect(leftovers).toEqual([]);
+    const after = fs.readdirSync(os.tmpdir()).filter((f) => f.startsWith("nrv-prompt-"));
+    const leftoversFromThisRun = after.filter((f) => !before.has(f));
+    expect(leftoversFromThisRun).toEqual([]);
   }, spawnBudgetMs(3));
+
+  test("reapOrphanedPromptFiles: process-wide cleanup for what a killed process's own finally could never reach", () => {
+    // Its own scoped directory, not os.tmpdir() — the reaper is a machine-wide
+    // sweep by design (see host-agent-driver.ts), so it must be pointed at a
+    // private root here or it would also judge every real leftover on this box.
+    const scratch = makeTempRoot("nrv-reap-test-");
+    try {
+      const stale = path.join(scratch, "nrv-prompt-old-123.md");
+      const fresh = path.join(scratch, "nrv-prompt-fresh-456.md");
+      const unrelated = path.join(scratch, "not-ours-789.md");
+      fs.writeFileSync(stale, "stale");
+      fs.writeFileSync(fresh, "fresh");
+      fs.writeFileSync(unrelated, "unrelated");
+      const old = new Date(Date.now() - 25 * 60 * 60_000); // 25h ago > the 24h default
+      fs.utimesSync(stale, old, old);
+
+      const removed = reapOrphanedPromptFiles({ dir: scratch });
+
+      expect(removed).toEqual([stale]);
+      expect(fs.existsSync(stale)).toBe(false);
+      expect(fs.existsSync(fresh)).toBe(true);      // too young — still a live run's file, by all evidence available
+      expect(fs.existsSync(unrelated)).toBe(true);  // wrong prefix — not this driver's file at all
+    } finally {
+      removeDir(scratch);
+    }
+  }, spawnBudgetMs(1));
 });
 
 describe("driver adapters — failure contract (error envelope on exit 0 → ok:false)", () => {

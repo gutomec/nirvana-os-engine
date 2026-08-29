@@ -9,8 +9,11 @@
  * Usage:
  *   nrv serve [start] [--port 7777] [--host 127.0.0.1] [--max-concurrent 2]
  *             [--cors https://app.example.com]
- *   nrv serve keygen [--label name] [--budget-usd 5] [--daily-runs 50]
+ *   nrv serve keygen [--label name] [--budget-usd 5] [--daily-runs 50] [--glance]
  *   nrv serve keys [list|revoke <key_id>]
+ *
+ * `--glance` also authenticates a served `nrv glance --host` cockpit with this key — off by
+ * default, so a key minted for job submission does not silently unlock the interactive cockpit.
  */
 import { startServer } from "../lib/serve/server.ts";
 import { keygen, listKeys, revokeKey, serveDir } from "../lib/serve/auth.ts";
@@ -27,11 +30,13 @@ if (sub === "keygen") {
     label: flag("label", "default"),
     budgetUsd: flag("budget-usd") ? parseFloat(flag("budget-usd")!) : undefined,
     dailyRuns: flag("daily-runs") ? parseInt(flag("daily-runs")!, 10) : undefined,
+    glance: argv.includes("--glance"),
   });
   console.log(`\n  key id:  ${record.id}`);
   console.log(`  label:   ${record.label}`);
   if (record.budget_usd) console.log(`  budget:  US$ ${record.budget_usd} per run`);
   if (record.daily_runs) console.log(`  quota:   ${record.daily_runs} runs/day`);
+  if (record.glance) console.log(`  glance:  yes — this key also authenticates a served \`nrv glance --host\` cockpit`);
   console.log(`\n  TOKEN (shown once — store it now):\n\n    ${token}\n`);
   console.log(`  Use it as: Authorization: Bearer ${token.slice(0, 12)}…\n`);
   process.exit(0);
@@ -48,7 +53,7 @@ if (sub === "keys") {
   const keys = listKeys();
   if (!keys.length) console.log("no keys yet — create one with: nrv serve keygen");
   for (const k of keys) {
-    console.log(`  ${k.id}  ${k.label}${k.revoked ? "  (revoked)" : ""}${k.budget_usd ? `  budget $${k.budget_usd}` : ""}${k.daily_runs ? `  ${k.daily_runs}/day` : ""}`);
+    console.log(`  ${k.id}  ${k.label}${k.revoked ? "  (revoked)" : ""}${k.budget_usd ? `  budget $${k.budget_usd}` : ""}${k.daily_runs ? `  ${k.daily_runs}/day` : ""}${k.glance ? "  glance" : ""}`);
   }
   process.exit(0);
 }

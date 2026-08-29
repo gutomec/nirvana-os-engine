@@ -81,6 +81,56 @@ outside the rule, reproduces exactly against both the 96-entry and the
 real log. `bun test skills` — 2307 pass, 3 skip, 0 fail. `bun run check:all` —
 exit 0.
 
+### The served cockpit gets a lock, and the engine learns whose data it is holding
+
+Cut 6 of `.nirvana/plans/event-contract.md`. The Glance cockpit's `server.ts`
+had zero occurrences of `authorization`, `bearer`, `api_key` or `authenticate`
+across 2,253 lines; the entire security model was the loopback bind. Right for
+a laptop, wrong for what the plan describes next: `nrv glance --host` on a
+VPS, holding a law-practice app's case for hours.
+
+**Boundary.** The bind host decides both authentication and tenancy, so there
+is one flag to remember, not two. Loopback (`127.0.0.1` / `localhost` / `::1`,
+still the default) is unchanged — no token, byte for byte the cockpit that
+shipped before this cut. Any other host refuses every request, API and static
+assets alike, before routing runs, until it carries a Bearer credential.
+
+**Credential.** Reused, not reinvented: `nrv serve keygen`'s existing key
+store (`lib/serve/auth.ts`, sha256-at-rest, timing-safe compare) now also
+gates a served Glance, through one additive field, `ApiKeyRecord.glance`. A
+key minted for the job API does not silently unlock the interactive cockpit —
+`nrv serve keygen --glance` opts in. Read versus write inside Glance stays the
+existing per-process `--read-only` flag, not a second per-key axis: Glance is
+one operator's own cockpit, not cut 7's multi-caller job API.
+
+**Tenant.** A served process is bound to exactly one project root, already
+true structurally for its control-plane and run-kernel databases. The one
+place that was not already true: `HARNESS_LOGS_DIR` / `MAESTRO_LOGS_DIR`,
+which `paths.js` resolves once at require time and never re-resolves from a
+later `process.env` write — the trap `tests/helpers/engine-log-dirs.ts`
+already named and worked around for tests. `overridePath()` (`bun-helpers.ts`)
+mutates that frozen object in place, the same technique, now exposed for a
+production caller: a served instance pins both the variable and the object to
+its own project on boot and restores both on close.
+
+**Retention.** `audit.project_retention_days` (default 365, the number
+`HarnessConfigSchema` already declared and never wired to anything) rotates a
+served instance's own project log at boot, through `audit.js`'s `rotate()` —
+also already declared, also never called by anything until now. The local
+case is not auto-rotated by this cut: a filing deadline is the served
+scenario's problem, and deleting a laptop's own history as a side effect of
+an unrelated change is the opposite of "the local default must not become
+hostile." The owner sets the real number for their LGPD obligation with
+`nrv config set audit.project_retention_days <n> --scope project`.
+
+**Verified.** A new test, `glance-auth-tenancy.test.ts`, pins an
+unauthenticated served request refused (401) and the same request served
+(200) with a `--glance` key — watched failing before the boundary existed.
+Local startup measured before and after (`--no-open --port 0`, three runs
+each): ~60ms baseline, ~64-71ms after, inside run-to-run noise — no new code
+runs on the loopback path. `bun test skills/harness` — 1518 pass, 2 skip, 0
+fail. `bun test skills/_shared/tests` — 615 pass, 1 skip, 0 fail.
+
 ## 0.12.0 — 2026-08-28
 
 ### A generated schema stops depending on the machine that generated it

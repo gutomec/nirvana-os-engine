@@ -24,6 +24,10 @@ export interface ApiKeyRecord {
   daily_runs?: number;
   /** Webhook registered for this key (terminal-state callback). */
   webhook?: { url: string; secret: string };
+  /** Grants access to the Glance cockpit (`nrv glance --host`), separate from the job API this
+   *  file otherwise governs — off by default, so a key minted for job submission does not
+   *  silently also unlock the interactive cockpit (chat, settings, setup actions). */
+  glance?: boolean;
 }
 
 interface KeysFile { keys: ApiKeyRecord[]; usage: Record<string, { day: string; runs: number }> }
@@ -46,7 +50,7 @@ function save(f: KeysFile): void {
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
 /** Generates a key, stores its hash, RETURNS THE TOKEN ONCE. */
-export function keygen(opts: { label?: string; budgetUsd?: number; dailyRuns?: number } = {}): { token: string; record: ApiKeyRecord } {
+export function keygen(opts: { label?: string; budgetUsd?: number; dailyRuns?: number; glance?: boolean } = {}): { token: string; record: ApiKeyRecord } {
   const token = "nrv_" + randomBytes(24).toString("base64url");
   const record: ApiKeyRecord = {
     id: "key_" + randomBytes(6).toString("hex"),
@@ -55,6 +59,7 @@ export function keygen(opts: { label?: string; budgetUsd?: number; dailyRuns?: n
     created_at: new Date().toISOString(),
     ...(opts.budgetUsd ? { budget_usd: opts.budgetUsd } : {}),
     ...(opts.dailyRuns ? { daily_runs: opts.dailyRuns } : {}),
+    ...(opts.glance ? { glance: true } : {}),
   };
   const f = load();
   f.keys.push(record);

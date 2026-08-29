@@ -217,6 +217,16 @@ export const SETTINGS = {
     "Teto de gasto em USD de um turno do maestro no chat do Glance (claude --max-budget-usd); 0 = sem teto.",
     { default: 5, type: nonNegative, expects: "número >= 0 (USD); 0 = sem teto" }),
 
+  // Enforced today only by a served Glance instance (`glance --host` beyond loopback), against
+  // the log already pinned to the project (the tenant). The default (365) is the same number
+  // already declared, and never wired to anything, in
+  // HarnessConfigSchema.audit.project_retention_days — not a new policy. A legal document has a
+  // filing deadline and an LGPD obligation: the real value is the project owner's call, made
+  // via `nrv config set audit.project_retention_days <n> --scope project`.
+  "audit.project_retention_days": numberSetting("audit.project_retention_days",
+    "Dias de retenção do log de auditoria de um projeto servido antes da rotação apagar o diretório do dia; o valor certo para uma obrigação legal (ex.: LGPD) é decisão do dono, não um padrão do engine.",
+    { default: 365, type: z.number().int().positive(), expects: "inteiro > 0 (dias)" }),
+
   "runtime.provider_catalog_dir": stringSetting("runtime.provider_catalog_dir",
     "Diretórios de catálogo de providers (separados por : ou ; no Windows); vazio = ~/.nirvana/providers e <projeto>/.nirvana/providers.",
     { env: "NIRVANA_PROVIDER_CATALOG_DIR", expects: "lista de caminhos separados pelo delimitador do sistema, ou vazio" }),
