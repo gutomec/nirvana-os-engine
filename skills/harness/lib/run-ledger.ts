@@ -1268,28 +1268,21 @@ export function heartbeatMain(): void {
   // one process that is both alive concurrently with that child AND started
   // async (so its OWN pid is known immediately) — it looks up the live
   // direct child of --parent and hands the ledger the pid the supervisor is
-  // actually allowed to signal. Bounded poll: the dispatcher calls spawnSync
-  // right after spawning this sidecar, but "right after" still races module
-  // load and any prep work on the dispatcher's side.
-  if (parentPid > 0) {
-    const discoveryBudgetMs = 5000;
-    const discoveryStepMs = 100;
-    // Bounded by Date.now(), not a step count: each iteration shells out to
-    // `ps` (findChildPid scans the WHOLE process table, processStartedAt adds
-    // a second `ps` call on a match), and under real system load a single
-    // `ps -A` can run well past 100ms. A `waited += discoveryStepMs` counter
-    // assumes every iteration costs exactly its nominal step, so it silently
-    // stretches this "5 second" budget to however long N slow syscalls
-    // actually take — observed ballooning past 8s under full-suite load,
-    // which is what a caller polling for the sidecar's exit actually sees.
-    const discoveryDeadline = Date.now() + discoveryBudgetMs;
-    while (Date.now() < discoveryDeadline) {
-      const childPid = findChildPid(parentPid, process.pid);
-      if (childPid) { recordChildPid(handle, runId, childPid, processStartedAt(childPid)); break; }
-      if (!pidAlive(parentPid)) break; // dispatcher already gone; nothing to discover
-      Bun.sleepSync(discoveryStepMs);
-    }
-  }
+  // actually allowed to signal.
+  //
+  // Attempted once per tick, bounded by discoveryDeadline, and — this is the
+  // part that matters — AFTER this tick's own activity scan and renewLease
+  // below, never before. `findChildPid`/`processStartedAt` are a `ps` call on
+  // POSIX (single-digit ms) but a PowerShell spawn on Windows (hundreds of
+  // ms, sometimes much more under load — observed ballooning past 8s under
+  // full-suite load). Attempting discovery FIRST used to mean a slow attempt
+  // could eat a short-lived child's entire remaining lifetime before this
+  // tick ever got to renew its lease — the child exits, the parent SIGTERMs
+  // this sidecar, and the run never sees a single renewal. Discovery can be
+  // arbitrarily slow now because it only ever delays the NEXT tick, never
+  // steals from the one already in progress.
+  const discoveryDeadline = parentPid > 0 ? Date.now() + 5000 : 0;
+  let childDiscovered = false;
 
   for (;;) {
     Bun.sleepSync(intervalMs);
@@ -1334,6 +1327,11 @@ export function heartbeatMain(): void {
         run_id: runId, gap_ms: now - lastActivityAt, stall_budget_ms: stallMs,
         heartbeat_at: row.heartbeat_at,
       }, row);
+    }
+
+    if (!childDiscovered && parentPid > 0 && now < discoveryDeadline) {
+      const childPid = findChildPid(parentPid, process.pid);
+      if (childPid) { recordChildPid(handle, runId, childPid, processStartedAt(childPid)); childDiscovered = true; }
     }
   }
   process.exit(0);
