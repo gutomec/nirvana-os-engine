@@ -273,10 +273,21 @@ function sseAuditStream(memo: ReturnType<typeof runsLib.get> & {}, extraHeaders:
     todayAuditFile({ projectRoot: memo.session.dir }),
   ])];
   const offsets = new Map<string, number>(candidates.map((f) => [f, 0]));
+  let timer: ReturnType<typeof setInterval> | undefined;
   const stream = new ReadableStream({
     start(controller) {
       const enc = new TextEncoder();
-      const send = (obj: unknown) => controller.enqueue(enc.encode(`data: ${JSON.stringify(obj)}\n\n`));
+      // A client that disconnects mid-stream (abort, or `.cancel()` on the
+      // body reader) leaves the controller in a non-writable state without
+      // `cancel()` below ever firing — the CI crash this comment replaces
+      // was exactly that: the interval kept polling, `enqueue()` threw on
+      // the dead controller, and an uncaught exception inside a bare
+      // `setInterval` callback took down the whole test process, not just
+      // this one request.
+      const send = (obj: unknown) => {
+        try { controller.enqueue(enc.encode(`data: ${JSON.stringify(obj)}\n\n`)); }
+        catch { if (timer) clearInterval(timer); }
+      };
       const pump = () => {
         for (const file of candidates) {
         try {
@@ -313,7 +324,7 @@ function sseAuditStream(memo: ReturnType<typeof runsLib.get> & {}, extraHeaders:
       // inside the first second). One final pump AFTER the run is terminal
       // also matters: the child writes its last audit lines as it exits.
       let sawTerminal = false;
-      const timer = setInterval(() => {
+      timer = setInterval(() => {
         pump();
         const m = runsLib.get(memo.trace_id);
         const terminal = m && m.state !== "queued" && m.state !== "running";
@@ -326,8 +337,14 @@ function sseAuditStream(memo: ReturnType<typeof runsLib.get> & {}, extraHeaders:
         pump();
         send({ event: "run.finished", state: m!.state, exit_code: m!.exit_code });
         clearInterval(timer);
-        controller.close();
+        try { controller.close(); } catch { /* the client may have closed it first */ }
       }, 150);
+    },
+    // A client that disconnects (abort, or `.cancel()` on the body reader)
+    // must stop the polling immediately rather than waiting for the next
+    // `enqueue()` to fail and clean up reactively.
+    cancel() {
+      if (timer) clearInterval(timer);
     },
   });
   return new Response(stream, {

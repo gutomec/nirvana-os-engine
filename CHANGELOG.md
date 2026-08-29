@@ -171,6 +171,17 @@ credential, from the job route above. This was not something the brief got
 wrong — it was a gap the brief's own "payload by reference" constraint
 existed to close, in code the brief did not know about yet.
 
+**A second bug, found by this cut's own tests.** The new `/v1/jobs/{id}/
+events` route reuses `sseAuditStream`, unchanged since before this cut —
+and the first test anywhere to cancel that stream early (rather than
+draining it to `run.finished`) took down the whole CI process on ubuntu and
+macOS: the stream's polling `setInterval` had no `cancel()` handler, so a
+disconnected client left it running, and its next `controller.enqueue()`
+threw uncaught inside a bare timer callback. Fixed: `cancel()` clears the
+interval immediately, `send()` catches a stale `enqueue()` defensively, and
+`controller.close()` no longer throws on a client that closed first. Latent
+before this cut — nothing prior ever disconnected early enough to hit it.
+
 **Durable Work Continuity, and the situation this cut was actually in.**
 PR #159 (`feat/durable-work-continuity-core-pr-v9`, 2,446 lines + 4,399 of
 tests, "provisional, aguardando revisão independente") was OPEN, not merged,
@@ -192,12 +203,17 @@ delivery recognized by its stable id, a replayed old request refused by
 10-attempt ceiling stops it — all asserted by driving the outbox's own state
 machine directly, no real waiting through backoff. Plus one live HTTP
 delivery end to end against a local receiver (real signature, real
-`X-Nirvana-Timestamp`, real verify) and one polling-floor test: submit,
-never call `/events`, retrieve the terminal state and the artifact through
-`/v1/jobs/{id}` alone. `bun test skills/harness/tests/serve-api.test.ts
-skills/harness/tests/serve-queue-sse.test.ts skills/harness/tests/
-serve-webhook-delivery.test.ts` — 44 pass, 0 fail. `bun test skills/harness`
-— 1558 pass, 2 skip, 0 fail, across 151 files. `bun
+`X-Nirvana-Timestamp`, real verify), one polling-floor test — submit, never
+call `/events`, retrieve the terminal state and the artifact through
+`/v1/jobs/{id}` alone — and, after `gh workflow run smoke.yml` caught the SSE
+crash above on ubuntu and macOS, a regression test that disconnects mid-run
+and asserts the server still answers `/v1/health` afterward (not
+deterministic locally — the race needs CI's scheduling pressure — but
+structurally exercises the exact `cancel()` path that was missing). `bun
+test skills/harness/tests/serve-api.test.ts skills/harness/tests/
+serve-queue-sse.test.ts skills/harness/tests/serve-webhook-delivery.test.ts`
+— 45 pass, 0 fail. `bun test skills/harness` — 1542 pass, 2 skip, 0 fail,
+across 148 files (run twice, consistent). `bun
 scripts/check-english-source.ts --strict`, `bun
 scripts/check-changelog-parity.ts --strict` and `git diff --check` — all
 clean. `supervisor.ts`, `dispatch.ts` and the uninstall work on

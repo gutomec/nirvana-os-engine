@@ -181,6 +181,18 @@ era algo que o brief tinha errado — era uma lacuna que a própria restrição 
 "payload por referência" do brief existia para fechar, em código que o brief
 ainda não conhecia.
 
+**Um segundo bug, encontrado pelos próprios testes deste corte.** A nova
+rota `/v1/jobs/{id}/events` reusa o `sseAuditStream`, sem mudanças desde
+antes deste corte — e o primeiro teste em qualquer lugar a cancelar esse
+stream cedo (em vez de drená-lo até `run.finished`) derrubou o processo
+inteiro de CI no ubuntu e no macOS: o `setInterval` de polling do stream não
+tinha um handler `cancel()`, então um cliente desconectado o deixava
+rodando, e o próximo `controller.enqueue()` estourava sem captura dentro de
+um callback de timer solto. Corrigido: `cancel()` limpa o intervalo na hora,
+`send()` captura um `enqueue()` obsoleto defensivamente, e `controller.close()`
+não estoura mais num cliente que fechou primeiro. Latente antes deste corte
+— nada anterior desconectava cedo o bastante para acertá-lo.
+
 **Durable Work Continuity, e a situação real deste corte.** A PR #159
 (`feat/durable-work-continuity-core-pr-v9`, 2.446 linhas + 4.399 de testes,
 "provisional, aguardando revisão independente") estava ABERTA, não
@@ -204,14 +216,20 @@ retentado com atraso crescente até o teto de 10 tentativas parar — tudo
 verificado dirigindo a própria máquina de estados do outbox diretamente, sem
 espera real de backoff. Mais uma entrega HTTP de verdade, de ponta a ponta,
 contra um receptor local (assinatura real, `X-Nirvana-Timestamp` real,
-verificação real) e um teste do piso de polling: submeter, nunca chamar
-`/events`, recuperar o estado terminal e o artefato só pela `/v1/jobs/{id}`.
-`bun test skills/harness/tests/serve-api.test.ts skills/harness/tests/
+verificação real), um teste do piso de polling — submeter, nunca chamar
+`/events`, recuperar o estado terminal e o artefato só pela `/v1/jobs/{id}` —
+e, depois que o `gh workflow run smoke.yml` pegou o crash de SSE acima no
+ubuntu e no macOS, um teste de regressão que desconecta no meio da execução e
+confirma que o servidor ainda responde `/v1/health` depois (não determinístico
+localmente — a corrida precisa da pressão de escalonamento do CI — mas
+exercita estruturalmente o caminho `cancel()` que faltava). `bun test
+skills/harness/tests/serve-api.test.ts skills/harness/tests/
 serve-queue-sse.test.ts skills/harness/tests/serve-webhook-delivery.test.ts`
-— 44 passam, 0 falhas. `bun test skills/harness` — 1558 passam, 2 pulados, 0
-falhas, em 151 arquivos. `bun scripts/check-english-source.ts --strict`,
-`bun scripts/check-changelog-parity.ts --strict` e `git diff --check` —
-todos limpos. `supervisor.ts`, `dispatch.ts` e o trabalho de desinstalação em
+— 45 passam, 0 falhas. `bun test skills/harness` — 1542 passam, 2 pulados, 0
+falhas, em 148 arquivos (rodado duas vezes, consistente). `bun
+scripts/check-english-source.ts --strict`, `bun
+scripts/check-changelog-parity.ts --strict` e `git diff --check` — todos
+limpos. `supervisor.ts`, `dispatch.ts` e o trabalho de desinstalação em
 `fix/dispatch-completion-signal` (PR #164) não foram tocados.
 
 ## 0.12.0 — 2026-08-28
