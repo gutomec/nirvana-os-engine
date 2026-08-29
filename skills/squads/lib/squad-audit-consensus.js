@@ -149,17 +149,16 @@ function buildMechanicalConsensus(scoreReport) {
 // Agentic mode — host-runtime-agnostic via host-agent-driver
 // ─────────────────────────────────────────────────────────────────────
 
-// host-agent-driver is a TS module; load lazily via dynamic require if Bun
-// resolved it at startup. CommonJS fallback path supports node --experimental-strip-types.
+// host-agent-driver.js already delegates to the canonical .ts under Bun and
+// falls back to its own inline legacy implementation otherwise (see that
+// file's header) — requiring the .ts directly from here duplicated that
+// fallback AND was itself a `.js` requiring a `.ts`, which can throw
+// `TypeError: require() async module` under Bun on Windows.
 let _hostDriver = null;
 function loadHostDriver() {
   if (_hostDriver) return _hostDriver;
-  try {
-    _hostDriver = require(path.join(__dirname, '..', '..', '_shared', 'lib', 'host-agent-driver.ts'));
-  } catch {
-    try { _hostDriver = require(path.join(__dirname, '..', '..', '_shared', 'lib', 'host-agent-driver.js')); }
-    catch { _hostDriver = null; }
-  }
+  try { _hostDriver = require(path.join(__dirname, '..', '..', '_shared', 'lib', 'host-agent-driver.js')); }
+  catch { _hostDriver = null; }
   return _hostDriver;
 }
 

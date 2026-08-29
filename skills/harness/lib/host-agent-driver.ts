@@ -20,6 +20,7 @@ export {
   LEDGER_DEFAULT_TIMEOUT_MS,
   DEFAULT_ALLOWED_TOOLS,
   MAX_ARGV_PROMPT_BYTES,
+  reapOrphanedPromptFiles,
 } from "../../_shared/lib/host-agent-driver.ts";
 export type {
   Runtime,

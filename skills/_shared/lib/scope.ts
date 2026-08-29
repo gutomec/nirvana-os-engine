@@ -27,6 +27,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { paths } from "./bun-helpers.ts";
+import { findProjectRoot as sharedFindProjectRoot } from "./project-root.js";
 
 export type ScopeMode = "global" | "project" | "merge";
 
@@ -49,77 +50,15 @@ interface SlugLocation {
 
 const SCOPE_MARKERS = [".env", ".nirvana", ".git", "package.json", "pyproject.toml"];
 
-// HOME, the filesystem root and OS-owned directories are never valid
-// projectRoots — even when .env, .git or package.json happen to exist there.
-// Otherwise the resolver treats one of them as a project, which collapses
-// every scope-aware lookup and, on Windows, points writes at a place the
-// process may not own (an elevated PowerShell starts in C:\Windows\System32).
-//
-// Comparison goes through the REAL path, not the string: on Windows a path
-// can arrive in 8.3 short form (C:\Users\RUNNER~1) while homedir() reports
-// the long one (C:\Users\runneradmin), and a string compare then fails to
-// recognise HOME. CI caught exactly that.
-function canonical(dir: string): string {
-  const resolved = path.resolve(dir);
-  try {
-    // realpathSync.native expands 8.3 short names and resolves links; it
-    // throws for a path that does not exist, where the resolved form is all
-    // we can honestly compare.
-    return (fs.realpathSync.native ? fs.realpathSync.native(resolved) : fs.realpathSync(resolved));
-  } catch {
-    return resolved;
-  }
-}
-
-const sameDir = (a: string, b: string): boolean =>
-  process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
-
-const isUnder = (child: string, parent: string): boolean => {
-  const p = parent.endsWith(path.sep) ? parent : parent + path.sep;
-  return process.platform === "win32"
-    ? child.toLowerCase().startsWith(p.toLowerCase())
-    : child.startsWith(p);
-};
-
-function isInvalidProjectRoot(dir: string): boolean {
-  if (!dir || dir === "/" || dir === "") return true;
-  try {
-    const resolved = canonical(dir);
-
-    // The filesystem root, on any platform: "/" on POSIX, "C:\\" (or any
-    // drive/UNC root) on Windows, which path.parse reports as `root`.
-    if (resolved === path.parse(resolved).root) return true;
-
-    if (sameDir(resolved, canonical(process.env.HOME || os.homedir()))) return true;
-
-    if (process.platform === "win32") {
-      // %SystemRoot% and everything under it, plus the Program Files trees:
-      // directories the OS owns, where a stray marker must never turn a
-      // system folder into somebody's project.
-      const systemDirs = [process.env.SystemRoot, process.env.ProgramFiles, process.env["ProgramFiles(x86)"]]
-        .filter((d): d is string => Boolean(d))
-        .map(canonical);
-      for (const sd of systemDirs) {
-        if (sameDir(resolved, sd) || isUnder(resolved, sd)) return true;
-      }
-    }
-  } catch { /* unreadable path — treat as usable and let the caller fail loudly */ }
-  return false;
-}
-
+// The walk itself (HOME/root/Windows-system-dir hardening, canonicalization
+// via realpathSync.native for the Windows 8.3-short-path case) lives in
+// project-root.js — the one implementation shared with paths.js, log-paths.ts,
+// handoff.js and wiki-lint.js. Imported as CJS (`.js`, not a local `.ts`
+// reimplementation) so this file's own dependency chain (bun-helpers.ts's
+// top-level `await import("bun")`) never has to be duplicated into the walk
+// to keep it in one place.
 function findProjectRoot(start: string): string | null {
-  let cur = path.resolve(start);
-  for (let i = 0; i < 30; i++) {
-    if (!isInvalidProjectRoot(cur)) {
-      for (const m of SCOPE_MARKERS) {
-        if (fs.existsSync(path.join(cur, m))) return cur;
-      }
-    }
-    const parent = path.dirname(cur);
-    if (parent === cur) return null;
-    cur = parent;
-  }
-  return null;
+  return sharedFindProjectRoot(start, { markers: SCOPE_MARKERS });
 }
 
 // Expand $VAR / ${VAR} using process.env + previously seen keys in the file.

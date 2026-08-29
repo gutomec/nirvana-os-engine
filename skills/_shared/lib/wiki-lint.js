@@ -23,6 +23,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { findProjectRoot } = require('./project-root.js');
 
 const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
   || (fs.existsSync(path.join(os.homedir(), ".nirvana", "skills")) ? path.join(os.homedir(), ".nirvana", "skills") : path.join(os.homedir(), ".claude", "skills"));
@@ -36,19 +37,11 @@ function loadJudge() {
 }
 
 // Walk up from cwd looking for .nirvana/ or .git/ — mirrors handoff.js's
-// findProjectRootFromCwd so the wiki_lint quality_gate row lands in the
-// PROJECT state.db (<root>/.nirvana/state.db) instead of always the global one.
+// findProjectRootFromCwd (both delegate to project-root.js, the one
+// implementation) so the wiki_lint quality_gate row lands in the PROJECT
+// state.db (<root>/.nirvana/state.db) instead of always the global one.
 function findProjectRootFromCwd() {
-  let cur = process.cwd();
-  for (let i = 0; i < 30; i++) {
-    if (fs.existsSync(path.join(cur, '.nirvana')) || fs.existsSync(path.join(cur, '.git'))) {
-      return cur;
-    }
-    const parent = path.dirname(cur);
-    if (parent === cur) return null;
-    cur = parent;
-  }
-  return null;
+  return findProjectRoot(process.cwd(), { markers: ['.nirvana', '.git'] });
 }
 
 let _stateDb = null;

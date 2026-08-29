@@ -33,79 +33,25 @@
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
+const projectRootLib = require('./project-root.js');
 
 const HOME = os.homedir();
 const NIRVANA_HOME = process.env.NIRVANA_HOME || HOME;
 const join = (...parts) => path.join(...parts);
 
 // ─────────────────────────────────────────────────────────────────────
-// Project root + .env detection (mirrors scope.ts logic, keeps this file
-// dependency-free so it stays loadable from CommonJS callers like
-// activator.js / registry.js without TS).
+// Project root + .env detection. The walk itself lives in project-root.js
+// (the one implementation shared with scope.ts, log-paths.ts, handoff.js and
+// wiki-lint.js) — this file only supplies its own default marker list, kept
+// dependency-free otherwise so it stays loadable from CommonJS callers like
+// activator.js / registry.js without TS.
 // ─────────────────────────────────────────────────────────────────────
 
-const SCOPE_MARKERS = ['.env', '.nirvana', '.git', 'package.json', 'pyproject.toml'];
-
-// HOME and the OS root are never valid projectRoots — even if .env or .nirvana
-// happen to exist there. Otherwise the resolver treats the user's HOME as a
-// project, which collapses every scope-aware lookup. (Encountered when our own
-// state-db created ~/.nirvana/state.db while running outside any project.)
-// Mirror of scope.ts isInvalidProjectRoot — see the reasoning there. Kept in
-// sync deliberately: this is the CJS half that hooks and the audit driver
-// require() at runtime.
-function canonical(dir) {
-  const resolved = path.resolve(dir);
-  try {
-    return (fs.realpathSync.native ? fs.realpathSync.native(resolved) : fs.realpathSync(resolved));
-  } catch {
-    return resolved;
-  }
-}
-
-function sameDir(a, b) {
-  return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
-}
-
-function isUnder(child, parent) {
-  const p = parent.endsWith(path.sep) ? parent : parent + path.sep;
-  return process.platform === 'win32'
-    ? child.toLowerCase().startsWith(p.toLowerCase())
-    : child.startsWith(p);
-}
-
-function isInvalidProjectRoot(dir) {
-  if (!dir) return true;
-  if (dir === '/' || dir === '') return true;
-  try {
-    const resolved = canonical(dir);
-    if (resolved === path.parse(resolved).root) return true;
-    if (sameDir(resolved, canonical(process.env.HOME || os.homedir()))) return true;
-    if (process.platform === 'win32') {
-      const systemDirs = [process.env.SystemRoot, process.env.ProgramFiles, process.env['ProgramFiles(x86)']]
-        .filter(Boolean)
-        .map(canonical);
-      for (const sd of systemDirs) {
-        if (sameDir(resolved, sd) || isUnder(resolved, sd)) return true;
-      }
-    }
-  } catch {}
-  return false;
-}
-
+const SCOPE_MARKERS = projectRootLib.DEFAULT_MARKERS;
+const isInvalidProjectRoot = projectRootLib.isInvalidProjectRoot;
 
 function findProjectRoot(start) {
-  let cur = path.resolve(start);
-  for (let i = 0; i < 30; i++) {
-    if (!isInvalidProjectRoot(cur)) {
-      for (const m of SCOPE_MARKERS) {
-        if (fs.existsSync(path.join(cur, m))) return cur;
-      }
-    }
-    const parent = path.dirname(cur);
-    if (parent === cur) return null;
-    cur = parent;
-  }
-  return null;
+  return projectRootLib.findProjectRoot(start, { markers: SCOPE_MARKERS });
 }
 
 // Expand $VAR and ${VAR} references using process.env + values seen earlier in

@@ -147,6 +147,49 @@ describe("the discriminator is specversion, and only specversion", () => {
   });
 });
 
+describe("cut 4 — a rogue legacy name migrates to its extension identity at read time", () => {
+  // `audit-miner.ts` and `observability-handler.ts` both filter on the exact
+  // historical string `event === "revision"` over the raw log — measured
+  // before choosing this design. Renaming `.event` itself would have made
+  // both readers silently stop counting revisions on every pre-envelope line.
+  test("a name nobody declared gets a canonical x_-prefixed type, without touching `.event`", () => {
+    const legacy = { ts: "2026-05-29T10:00:00.000Z", event: "phase_completed", trace_id: "t", squad: "ebook-maestro-nirvana" };
+    const back = ce.toLegacyEvent(legacy);
+    expect(back.event).toBe("phase_completed");
+    expect(back._ce.type).toBe("sh.squads.nirvana.ext.x_phase_completed");
+    expect(ce.eventNameFor(back._ce.type)).toBe("x_phase_completed");
+  });
+
+  test("the migrated type matches what a compliant x_ emission of the same name produces", () => {
+    expect(ce.typeFor("x_phase_completed")).toBe(ce.toLegacyEvent({ event: "phase_completed" })._ce.type);
+  });
+
+  test("a closed-enum legacy line is not decorated at all — untouched stays untouched", () => {
+    const legacy = { ts: "2026-05-29T10:00:00.000Z", event: "brief_received", trace_id: "t" };
+    const back = ce.toLegacyEvent(legacy);
+    expect(back._ce).toBeUndefined();
+    expect(back).toBe(legacy);
+  });
+
+  test("an already x_-prefixed legacy line is not re-decorated", () => {
+    const legacy = { ts: "2026-05-29T10:00:00.000Z", event: "x_capability_resolved", trace_id: "t" };
+    const back = ce.toLegacyEvent(legacy);
+    expect(back._ce).toBeUndefined();
+  });
+
+  test("a reader keying on the literal rogue name keeps matching after migration", () => {
+    const legacy = { ts: "2026-05-29T10:00:00.000Z", event: "revision", trace_id: "t" };
+    const back = ce.parseAuditLine(JSON.stringify(legacy));
+    expect(back.event).toBe("revision");
+  });
+
+  test("canonicalEventName: enum and x_ names pass through, a rogue name gets prefixed", () => {
+    expect(ce.canonicalEventName("brief_received")).toBe("brief_received");
+    expect(ce.canonicalEventName("x_capability_resolved")).toBe("x_capability_resolved");
+    expect(ce.canonicalEventName("phase_completed")).toBe("x_phase_completed");
+  });
+});
+
 describe("data stays bounded", () => {
   test("a payload under the ceiling is passed through untouched", () => {
     const data = { rubric: "wiki-lint", score: 0.94 };

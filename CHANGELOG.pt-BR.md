@@ -47,6 +47,137 @@ Lacunas honestas: claims consultivos sem evento granular de claim; reconstruçã
 projeção futura de observabilidade; refs de policy profile,
 tenancy/retention/legal-hold e todo campo de correlação canônica permanecem
 contratos aditivos onde o Run Kernel os fornece. Status: provisório, não pronto para produção até que revisão independente aprove.
+### O vocabulário migra sem reescrever as 187 mil linhas que já discordam dele, e cinco nomes que nunca foram reais saem do enum
+
+Cortes 4 e 5 de `.nirvana/plans/event-contract.md`, despachados juntos porque
+os dois fazem a mesma pergunta ao enum: o que é o vocabulário, de verdade?
+
+**Corte 4.** O corte 1 mediu 286 tipos de evento vadios, 964 ocorrências, com
+sítios de emissão em disco em apenas 3 entidades — quase nada do que chega ao
+log está escrito num arquivo; um agente inventa o nome no meio do run. Renomear
+os literais dessas 3 entidades seria um rename puro, como disse o corte 2, mas
+isso fecha 3 entidades, não 285: o resto não tem literal para renomear nem
+histórico para reescrever. `migrate` é uma regra de leitura, não uma tabela e
+não uma reescrita. Uma linha legada cujo nome não está no enum fechado nem já
+carrega o prefixo `x_` recebe sua identidade canônica sintetizada em
+`_ce.type` — o mesmo `sh.squads.nirvana.ext.x_<nome>` que uma emissão `x_`
+compatível do mesmo evento produz hoje — no momento em que um leitor chama
+`parseAuditLine`. O `.event` em si nunca é tocado: `audit-miner.ts` e
+`observability-handler.ts` filtram o log bruto pela string literal
+`event === "revision"`, e uma tabela ou um rename genérico teriam zerado as
+duas contagens silenciosamente. Uma linha legada compatível, do enum fechado
+ou já com `x_`, continua voltando por identidade, byte a byte, exatamente como
+o corte 2 deixou.
+
+**Corte 5.** Remedido em vez de aceito de olhos fechados: os 38 "permitidos
+mas nunca emitidos" do plano já tinham encolhido para 21 com os cortes 2 e 3
+convertendo vários appenders brutos para o escritor canônico. Desses 21, três
+estavam mal classificados pelo próprio scanner do `check-audit-parity.ts`, não
+pelo enum: `human_notification_required` (`supervisor.ts`), `stall_detected`
+e `stall_retry` (`host-agent-retry.js`) são emitidos de verdade, através de
+funções wrapper `emitAudit()` / `emitSafe()` que a regex literal `emit(` do
+scanner não conseguia casar — ela precisa de dois caracteres antes do literal
+`mit`, e um wrapper em camelCase põe `emit` bem no início do nome. O scanner
+agora reconhece um conjunto fixo de wrappers de encaminhamento conhecidos, e
+deliberadamente não um teste genérico de "nome contém emit": `emitProjection(kind,
+run, state)` em `compatibility-facade.ts` fixa o próprio nome do evento
+internamente e recebe um *kind* "open"/"transition" como primeiro argumento,
+que um teste só de nome leria como dois tipos de evento inventados, e teria
+reprovado o `--strict` deste mesmo corte.
+
+Dos 13 restantes, o corte 5 manteve todos os que têm um produtor real ou um
+desenho real e citado: `budget_violation` (documentado nos 8 adaptadores de
+runtime e em `references/02-budget.md`; o caminho de código do estouro de
+orçamento hoje devolve um status, ainda não este evento), `clarification_received`
+/ `escalation_trigger_fired` / `target_plan_committed` (prescritos em
+`harness/SKILL.md`, o próprio protocolo do modelo), `dispatch_blocked` (lido
+por `dispatch.ts`, `trace-builder.ts` e o Glance; uma baseline histórica
+mostra que disparou), `dispatch_audit_revision` (o auditor de qualidade de
+despacho da Layer 2 — arquivo de agente, tipo de veredito e helper de emissão
+existem; a fiação da revisão ainda não), `handoff` / `human_response_received`
+(formatos de evento documentados em `HARNESS_PROTOCOL_V1.md` /
+`BUSINESS_PROTOCOL_V1.md`), `isolation_violation` (BP5, prescrito de forma
+idêntica em todo adaptador), `humanization_applied` / `humanization_skipped`
+(citado como um diferencial do tier de negócio em `references/01-routing.md`;
+o Glance já carrega um ícone para `humanization_applied`), e
+`invocation_start` / `invocation_end` (uma baseline histórica mostra emissão
+real no passado; `trace-builder.ts` e a rubrica `pre-ship.md` ainda leem o par
+como sinal — o escritor regrediu numa refatoração do control-plane, os
+leitores não).
+
+Cinco não tinham nada disso: nenhum produtor, nenhuma doc, nenhum leitor, em
+lugar nenhum. `chunk_gate_passed` / `chunk_gate_failed` — a Fase 7 só embarcou
+a metade escritora (`chunk-writer.ts`, `chunk_emitted`), nunca um gate por
+chunk. `memory_write` e `ticket_opened` / `ticket_resolved` — presentes desde
+o enum original (engine 0.1.20) e nunca mais mencionados em doc, adaptador ou
+leitor nenhum. Removidos de `ALLOWED_EVENTS`, do mapa de domínio em
+`cloudevents.js`, e da tabela gerada em `references/03-audit.md`
+(`bun scripts/gen-audit-events-doc.ts --write`).
+
+**Verificado.** O histórico real de ~187 mil linhas (`~/.harness-logs`,
+`<project>/.nirvana/logs/harness`), congelado numa cópia para que um log vivo
+e crescente não fosse comparado contra si mesmo, foi reproduzido por
+`buildRuns` e `trace-builder` uma vez contra o repositório no HEAD e uma vez
+contra este diff: 188.568 eventos, 9.763 traces, 868 briefs distintos, 333
+runs, 17.512 eventos de run — idênticos dos dois lados, veredito `PARITY`. A
+contagem de vadios citada pelo plano, 285 tipos fora da regra, se reproduz
+exatamente tanto contra o enum de 96 entradas quanto contra o de 91, porque
+nenhum dos cinco nomes removidos jamais apareceu no log real. `bun test skills`
+— 2307 passam, 3 pulados, 0 falhas. `bun run check:all` — saída 0.
+
+### O cockpit servido ganha uma trava, e o engine aprende de quem são os dados que está guardando
+
+Corte 6 de `.nirvana/plans/event-contract.md`. O `server.ts` do cockpit Glance
+tinha zero ocorrências de `authorization`, `bearer`, `api_key` ou `authenticate`
+em 2.253 linhas; todo o modelo de segurança era o bind em loopback. Certo para
+um laptop, errado para o que o plano descreve a seguir: `nrv glance --host`
+numa VPS, segurando o caso de um app de escritório de advocacia por horas.
+
+**Fronteira.** O host do bind decide autenticação e tenancy ao mesmo tempo,
+então existe uma flag para lembrar, não duas. Loopback (`127.0.0.1` /
+`localhost` / `::1`, ainda o padrão) fica inalterado — sem token, byte a byte
+o mesmo cockpit que existia antes deste corte. Qualquer outro host recusa toda
+requisição, API e arquivos estáticos igualmente, antes de qualquer
+roteamento, até carregar uma credencial Bearer.
+
+**Credencial.** Reaproveitada, não reinventada: o armazém de chaves que
+`nrv serve keygen` já tinha (`lib/serve/auth.ts`, sha256 em repouso,
+comparação em tempo constante) agora também trava um Glance servido, por um
+campo aditivo, `ApiKeyRecord.glance`. Uma chave gerada para a API de jobs não
+libera silenciosamente o cockpit interativo — `nrv serve keygen --glance` é
+opt-in explícito. Leitura versus escrita dentro do Glance continua a flag
+`--read-only` por processo já existente, não um segundo eixo por chave: o
+Glance é o cockpit de um único operador, não a API multi-chamador do corte 7.
+
+**Tenant.** Um processo servido fica preso a exatamente um projeto, já
+verdade estruturalmente para seu control-plane e seu run-kernel. O único
+lugar onde isso ainda não era verdade: `HARNESS_LOGS_DIR` / `MAESTRO_LOGS_DIR`,
+que `paths.js` resolve uma vez, no require, e nunca mais reavalia a partir de
+uma escrita posterior em `process.env` — a armadilha que
+`tests/helpers/engine-log-dirs.ts` já nomeava e contornava para os testes.
+`overridePath()` (`bun-helpers.ts`) muta esse objeto congelado no lugar, a
+mesma técnica, agora exposta para um chamador de produção: uma instância
+servida prende a variável e o objeto ao seu próprio projeto na subida e
+restaura os dois ao fechar.
+
+**Retenção.** `audit.project_retention_days` (padrão 365, o número que o
+`HarnessConfigSchema` já declarava e nunca ligou a nada) gira o log do
+próprio projeto de uma instância servida na subida, através do `rotate()` de
+`audit.js` — também já declarado, também nunca chamado por nada até agora. O
+caso local não é auto-rotacionado por este corte: um prazo de protocolo é
+problema do cenário servido, e apagar o histórico do próprio laptop como
+efeito colateral de uma mudança sem relação é o oposto de "o padrão local não
+pode virar hostil". O dono define o número real para a sua obrigação de LGPD
+com `nrv config set audit.project_retention_days <n> --scope project`.
+
+**Verificado.** Um teste novo, `glance-auth-tenancy.test.ts`, prende uma
+requisição servida sem autenticação recusada (401) e a mesma requisição
+servida (200) com uma chave `--glance` — observado falhando antes de a
+fronteira existir. Startup local medido antes e depois (`--no-open --port 0`,
+três rodadas cada): ~60ms de base, ~64-71ms depois, dentro do ruído normal de
+execução — nenhum código novo roda no caminho de loopback. `bun test
+skills/harness` — 1518 passam, 2 pulados, 0 falhas. `bun test
+skills/_shared/tests` — 615 passam, 1 pulado, 0 falhas.
 
 ## 0.12.0 — 2026-08-28
 

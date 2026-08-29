@@ -42,6 +42,7 @@ import * as os from "node:os";
 import type { Runtime } from "./host-agent-driver.ts";
 import { isInCooldown, getCooldown } from "./cooldown-registry.ts";
 import { getSpend } from "./spend-tracker.ts";
+import { findProjectRoot } from "../../_shared/lib/project-root.js";
 
 export interface CascadeEntry {
   runtime: Runtime;
@@ -99,22 +100,18 @@ export function readEnvFile(envPath: string): Record<string, string> {
  * .nirvana/outputs/<id>/ for per-run logs/state) with the actual root.
  *  Pass 1: prefer .env or .git (distinctive root markers).
  *  Pass 2: fall back to .nirvana/ if pass 1 found nothing.
- *  Returns the original start if nothing matches. */
+ *  Returns the original start if nothing matches.
+ *
+ * The walk itself delegates to project-root.js (the one implementation):
+ * this used to compare `dir !== home` as a raw string against `os.homedir()`
+ * with no canonicalization — the exact shape that broke log-paths.ts on
+ * Windows (an 8.3 short path on one side, the long form on the other, never
+ * string-equal at the same physical directory). */
 export function resolveCascadeRoot(start: string): string {
-  const home = os.homedir();
   const startAbs = path.resolve(start);
-  const fsRoot = path.parse(startAbs).root;
-  const walk = (markers: string[]): string | null => {
-    let dir = startAbs;
-    while (dir !== fsRoot && dir !== home) {
-      for (const m of markers) if (fs.existsSync(path.join(dir, m))) return dir;
-      const parent = path.dirname(dir);
-      if (parent === dir) break;
-      dir = parent;
-    }
-    return null;
-  };
-  return walk([".env", ".git"]) ?? walk([".nirvana"]) ?? startAbs;
+  return findProjectRoot(startAbs, { markers: [".env", ".git"] })
+    ?? findProjectRoot(startAbs, { markers: [".nirvana"] })
+    ?? startAbs;
 }
 
 /** Read LLM_CASCADE from disk. CRITICAL: we deliberately ignore

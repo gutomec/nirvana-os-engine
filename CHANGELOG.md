@@ -45,6 +45,128 @@ Honest gaps: advisory claims with no granular claim event; projection-only journ
 observability projection; policy profile, tenancy/retention/legal-hold refs
 and every canonical correlation field remain additive contracts where the
 Run Kernel supplies them. Status: provisional, not production-ready until independent review approves.
+### The vocabulary migrates without rewriting the 187,000 lines that already disagree with it, and five names that were never real leave the enum
+
+Cuts 4 and 5 of `.nirvana/plans/event-contract.md`, dispatched together because
+both ask the same question of the enum: what is the vocabulary, really?
+
+**Cut 4.** Cut 1 measured 286 rogue event types, 964 occurrences, with emission
+sites on disk in only 3 entities — almost nothing that reaches the log is
+written in a file; an agent invents a name mid-run. Renaming those 3 entities'
+literals would be a pure rename, as cut 2 said, but it closes 3 entities, not
+285: the rest have no literal to rename and no history to rewrite. `migrate`
+is a read-time rule, not a table and not a rewrite. A legacy line whose name is
+neither in the closed enum nor already `x_`-prefixed gets its canonical
+identity synthesized onto `_ce.type` — the same `sh.squads.nirvana.ext.x_<name>`
+a compliant `x_` emission of the same event produces today — the moment a
+reader calls `parseAuditLine`. `.event` itself is never touched: `audit-miner.ts`
+and `observability-handler.ts` both filter the raw log on the literal string
+`event === "revision"`, and a table or a blanket rename would have silently
+zeroed both counts. A compliant legacy line, closed-enum or already `x_`, is
+still returned by identity, byte for byte, exactly as cut 2 left it.
+
+**Cut 5.** Re-measured rather than trusted: the plan's 38 "allowed but never
+emitted" had already shrunk to 21 by cuts 2 and 3 converting several raw
+appenders to the canonical writer. Of those 21, three were misclassified by
+`check-audit-parity.ts`'s own scanner, not by the enum: `human_notification_required`
+(`supervisor.ts`), `stall_detected` and `stall_retry` (`host-agent-retry.js`)
+are emitted for real, through `emitAudit()` / `emitSafe()` wrapper functions
+the scanner's `emit(` literal regex cannot match — it needs two characters
+before the literal `mit`, and a camelCase wrapper puts `emit` at the very
+start of its name. The scanner now recognizes a fixed set of known forwarding
+wrappers instead, and deliberately not a blanket "name contains emit" test:
+`emitProjection(kind, run, state)` in `compatibility-facade.ts` hardcodes its
+own event name internally and takes an "open"/"transition" *kind* as its first
+argument, which a name-only test misreads as two invented event types and
+would have failed `--strict` on this cut's own fix.
+
+Of the remaining 13, cut 5 kept every one with a real producer or a real,
+cited design: `budget_violation` (documented across all 8 runtime adapters and
+`references/02-budget.md`; the cap-overage code path returns a status today,
+not yet this event), `clarification_received` / `escalation_trigger_fired` /
+`target_plan_committed` (prescribed in `harness/SKILL.md`, the model's own
+protocol), `dispatch_blocked` (read by `dispatch.ts`, `trace-builder.ts` and
+the Glance; a historical baseline shows it fired), `dispatch_audit_revision`
+(the Layer 2 dispatch-quality auditor — agent file, verdict type and emit
+helper exist; the retry wiring does not yet), `handoff` / `human_response_received`
+(documented event shapes in `HARNESS_PROTOCOL_V1.md` / `BUSINESS_PROTOCOL_V1.md`),
+`isolation_violation` (BP5, prescribed identically across every adapter),
+`humanization_applied` / `humanization_skipped` (named as a business-tier
+differentiator in `references/01-routing.md`; the Glance already carries an
+icon for `humanization_applied`), and `invocation_start` / `invocation_end`
+(a historical baseline shows real past emission; `trace-builder.ts` and the
+`pre-ship.md` rubric still read the pair as a signal — the writer regressed in
+a control-plane refactor, the readers did not).
+
+Five had none of that: no producer, no doc, no reader, anywhere. `chunk_gate_passed`
+/ `chunk_gate_failed` — Phase 7 shipped only the writer half
+(`chunk-writer.ts`, `chunk_emitted`), never a per-chunk gate. `memory_write`
+and `ticket_opened` / `ticket_resolved` — present since the original enum
+(engine 0.1.20) and never mentioned again in any doc, adapter or reader.
+Removed from `ALLOWED_EVENTS`, from the domain map in `cloudevents.js`, and
+from the generated table in `references/03-audit.md`
+(`bun scripts/gen-audit-events-doc.ts --write`).
+
+**Verified.** The real ~187k-line history (`~/.harness-logs`,
+`<project>/.nirvana/logs/harness`), frozen into a copy so a live, growing log
+could not diff against itself, replayed through `buildRuns` and `trace-builder`
+once against the repo at HEAD and once against this diff: 188,568 events,
+9,763 traces, 868 distinct briefs, 333 runs, 17,512 run events — identical on
+both sides, verdict `PARITY`. The rogue count the plan cited, 285 types
+outside the rule, reproduces exactly against both the 96-entry and the
+91-entry enum, because none of the five removed names ever appeared in the
+real log. `bun test skills` — 2307 pass, 3 skip, 0 fail. `bun run check:all` —
+exit 0.
+
+### The served cockpit gets a lock, and the engine learns whose data it is holding
+
+Cut 6 of `.nirvana/plans/event-contract.md`. The Glance cockpit's `server.ts`
+had zero occurrences of `authorization`, `bearer`, `api_key` or `authenticate`
+across 2,253 lines; the entire security model was the loopback bind. Right for
+a laptop, wrong for what the plan describes next: `nrv glance --host` on a
+VPS, holding a law-practice app's case for hours.
+
+**Boundary.** The bind host decides both authentication and tenancy, so there
+is one flag to remember, not two. Loopback (`127.0.0.1` / `localhost` / `::1`,
+still the default) is unchanged — no token, byte for byte the cockpit that
+shipped before this cut. Any other host refuses every request, API and static
+assets alike, before routing runs, until it carries a Bearer credential.
+
+**Credential.** Reused, not reinvented: `nrv serve keygen`'s existing key
+store (`lib/serve/auth.ts`, sha256-at-rest, timing-safe compare) now also
+gates a served Glance, through one additive field, `ApiKeyRecord.glance`. A
+key minted for the job API does not silently unlock the interactive cockpit —
+`nrv serve keygen --glance` opts in. Read versus write inside Glance stays the
+existing per-process `--read-only` flag, not a second per-key axis: Glance is
+one operator's own cockpit, not cut 7's multi-caller job API.
+
+**Tenant.** A served process is bound to exactly one project root, already
+true structurally for its control-plane and run-kernel databases. The one
+place that was not already true: `HARNESS_LOGS_DIR` / `MAESTRO_LOGS_DIR`,
+which `paths.js` resolves once at require time and never re-resolves from a
+later `process.env` write — the trap `tests/helpers/engine-log-dirs.ts`
+already named and worked around for tests. `overridePath()` (`bun-helpers.ts`)
+mutates that frozen object in place, the same technique, now exposed for a
+production caller: a served instance pins both the variable and the object to
+its own project on boot and restores both on close.
+
+**Retention.** `audit.project_retention_days` (default 365, the number
+`HarnessConfigSchema` already declared and never wired to anything) rotates a
+served instance's own project log at boot, through `audit.js`'s `rotate()` —
+also already declared, also never called by anything until now. The local
+case is not auto-rotated by this cut: a filing deadline is the served
+scenario's problem, and deleting a laptop's own history as a side effect of
+an unrelated change is the opposite of "the local default must not become
+hostile." The owner sets the real number for their LGPD obligation with
+`nrv config set audit.project_retention_days <n> --scope project`.
+
+**Verified.** A new test, `glance-auth-tenancy.test.ts`, pins an
+unauthenticated served request refused (401) and the same request served
+(200) with a `--glance` key — watched failing before the boundary existed.
+Local startup measured before and after (`--no-open --port 0`, three runs
+each): ~60ms baseline, ~64-71ms after, inside run-to-run noise — no new code
+runs on the loopback path. `bun test skills/harness` — 1518 pass, 2 skip, 0
+fail. `bun test skills/_shared/tests` — 615 pass, 1 skip, 0 fail.
 
 ## 0.12.0 — 2026-08-28
 

@@ -38,6 +38,20 @@
  * identity. No history is rewritten and no reader has to learn the envelope to
  * keep working. Readers that want the new attributes find them on `_ce`.
  *
+ * ── The migration (plan cut 4) ─────────────────────────────────────────────
+ *
+ * A legacy line whose name is neither in the closed enum nor already `x_`-
+ * prefixed — one of the ~285 rogue types cut 1 measured, invented mid-run with
+ * no literal anywhere to rename — gets `_ce.type` synthesized to its canonical
+ * `x_`-prefixed extension identity: the SAME `type` a compliant `x_` emission
+ * of the same event produces today, so a consumer reading `_ce.type` sees one
+ * vocabulary instead of a historical name and its post-cut-3 replacement as
+ * two. `.event` itself is never touched — `audit-miner.ts` and
+ * `observability-handler.ts` both filter the raw log on `event === "revision"`
+ * literally, and renaming it would have silently broken both counts. A
+ * compliant legacy line (closed enum, or already `x_`) is still returned by
+ * identity, untouched, exactly as before this cut.
+ *
  * ── Schema evolution: additive only ────────────────────────────────────────
  *
  * New fields arrive OPTIONAL with a default. Old fields are DEPRECATED in a
@@ -106,7 +120,6 @@ const EVENT_DOMAINS = Object.freeze({
   revision_dispatched: 'gate', revision_requested: 'gate', revision_failed: 'gate',
   revision_auto: 'gate', revision_loop_exhausted: 'gate',
   validation_failed: 'gate', verify_passed: 'gate', verify_failed: 'gate',
-  chunk_gate_passed: 'gate', chunk_gate_failed: 'gate',
   humanization_applied: 'gate', humanization_skipped: 'gate',
 
   // Giving it back.
@@ -130,7 +143,7 @@ const EVENT_DOMAINS = Object.freeze({
   cost_emission: 'cost', dispatch_cost_recorded: 'cost', budget_violation: 'cost',
 
   // Where a person is needed.
-  ticket_opened: 'human', ticket_resolved: 'human', escalation_trigger_fired: 'human',
+  escalation_trigger_fired: 'human',
   human_notification_required: 'human', human_response_received: 'human',
   approval_checkpoint: 'human', approval_granted: 'human', approval_rejected: 'human',
   ask_invoked: 'human',
@@ -139,7 +152,7 @@ const EVENT_DOMAINS = Object.freeze({
   tool_invoked: 'tool', bash_completed: 'tool', artifact_touched: 'tool',
 
   // The engine operating on itself.
-  memory_write: 'system', isolation_violation: 'system',
+  isolation_violation: 'system',
   nirvana_updated: 'system', pack_created: 'system',
   project_exported: 'system', project_purged: 'system',
 });
@@ -147,6 +160,21 @@ const EVENT_DOMAINS = Object.freeze({
 /** The domain a legacy event name belongs to. Unknown names are extensions. */
 function domainOf(eventName) {
   return EVENT_DOMAINS[eventName] || EXTENSION_DOMAIN;
+}
+
+/**
+ * Plan cut 4 — the migration. A name is CANONICAL when it is either in the
+ * closed enum (`EVENT_DOMAINS` is exhaustive over it, so a hit here IS enum
+ * membership, with no separate import of `audit.js` and no risk of the two
+ * drifting) or already carries the `x_` prefix. Anything else is one of the
+ * ~285 rogue types cut 1 measured — invented mid-run, no literal on disk to
+ * rename — and its canonical identity is what it always should have been.
+ */
+function canonicalEventName(name) {
+  if (typeof name !== 'string') return name;
+  if (name.startsWith('x_')) return name;
+  if (Object.prototype.hasOwnProperty.call(EVENT_DOMAINS, name)) return name;
+  return `x_${name}`;
 }
 
 /**
@@ -345,7 +373,24 @@ function toEnvelope(flat, ctx) {
  * already on disk pay one `typeof` and nothing else.
  */
 function toLegacyEvent(obj) {
-  if (!isEnvelope(obj)) return obj;
+  if (!isEnvelope(obj)) {
+    // The migration (plan cut 4): a legacy line whose name is rogue — neither
+    // the closed enum nor already `x_`-prefixed — gets its canonical identity
+    // synthesized onto `_ce`, so a consumer of `_ce.type` sees the same
+    // extension identity a compliant emission of the same event produces
+    // today. `.event` is left byte-for-byte alone: `audit-miner.ts` and
+    // `observability-handler.ts` both filter the raw log on the literal
+    // string `event === "revision"`, and renaming it would have silently
+    // broken both. A compliant line (enum or already `x_`) is returned by
+    // identity, exactly as before this cut.
+    if (obj && typeof obj === 'object' && typeof obj.event === 'string') {
+      const canonical = canonicalEventName(obj.event);
+      if (canonical !== obj.event) {
+        obj._ce = { type: typeFor(canonical), source: sourceFor(obj, undefined) };
+      }
+    }
+    return obj;
+  }
   const data = obj.data && typeof obj.data === 'object' && !Array.isArray(obj.data) ? obj.data : {};
   const flat = {};
   if (typeof obj.time === 'string') flat.ts = obj.time;
@@ -376,5 +421,6 @@ module.exports = {
   SPEC_VERSION, TYPE_PREFIX, EXTENSION_DOMAIN, EVENT_DOMAINS, MAX_DATA_BYTES,
   SQUAD_KEYS, BUSINESS_KEYS,
   domainOf, typeFor, eventNameFor, sourceFor, boundData, eventId,
+  canonicalEventName,
   isEnvelope, toEnvelope, toLegacyEvent, parseAuditLine,
 };
