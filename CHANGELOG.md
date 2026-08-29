@@ -8,6 +8,43 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Durable Work Continuity (DWC): provisional event catalog, Track B migration and rollback
+
+The Run Kernel gains a sibling module that types durable work units
+(`skills/harness/lib/run-kernel/durable-work.ts`). DWC owns only durable unit
+state; the Run Kernel, run ledger, audit, quality gate and HANDOFF keep
+run-level authority. Each unit mutation is one immediate SQLite transaction
+that writes the unit row, the operation record, the operation snapshot and the
+canonical `x_durable_work_*` event into the `run_events` journal, so the outbox
+carries the unit context with at-least-once delivery and stable event
+identity. DWC does not create a second supervisor, does not validate the
+connector lifecycle owner and operates offline.
+
+The provisional event catalog (`nirvana.durable-work/v1alpha1`) documents every
+`x_durable_work_*` event emitted by the implementation: `units_defined`,
+`unit_started`, `unit_progressed`, `unit_completed`, `unit_failed`,
+`unit_compensating`, `unit_compensated`, `unit_compensation_failed` for the
+unit lifecycle, plus `unit_imported`, `units_defined` (reused with a distinct
+actor), `track_b_imported` and `track_b_rollback` for the Track B migration.
+Consumers must ignore unknown additive fields; breaking changes require a new
+event or schema version. The catalog is **provisional, not production-ready
+pending independent review**.
+
+Track B migration imports upstream Holdfast state (`schemaVersion: "2.0.0"`)
+into the canonical DWC tables, with deterministic injective stage identity and reuse,
+safe failure cleanup, backup-first, dry-run aware, fail-closed retained replay,
+injective public correlation/idempotency keys (`encodeDwcTuple`), and deterministic
+replay. Rollback removes the imported DWC state and emits `x_durable_work_track_b_rollback`,
+with provenance verification, five-table rollback replay validation, and state-drift
+detection. Track B coexists with core until six retirement gates hold; no automatic
+deletion or disablement. Attribution to Holdfast by André Almeida (MIT, upstream `1.1.0`,
+adaptation `1.1.0-nirvana.1`) is recorded in `NOTICE` and `docs/architecture/durable-work-continuity.md`.
+
+Honest gaps: advisory claims with no granular claim event; projection-only journal rebuild; evidence stateRoot and source root validation; dryRun backup staging; provisional storage migrations; no new validate or supervisor; no distinct `track_b_refused` or
+`track_b_failed` events; backlog/lag/retry/dead-letter telemetry is a future
+observability projection; policy profile, tenancy/retention/legal-hold refs
+and every canonical correlation field remain additive contracts where the
+Run Kernel supplies them. Status: provisional, not production-ready until independent review approves.
 ### The vocabulary migrates without rewriting the 187,000 lines that already disagree with it, and five names that were never real leave the enum
 
 Cuts 4 and 5 of `.nirvana/plans/event-contract.md`, dispatched together because

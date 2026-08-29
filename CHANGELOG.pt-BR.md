@@ -8,6 +8,45 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Durable Work Continuity (DWC): catálogo de eventos provisional, migração e rollback da Track B
+
+O Run Kernel ganha um módulo irmão que tipa unidades duráveis de trabalho
+(`skills/harness/lib/run-kernel/durable-work.ts`). O DWC é dono apenas do
+estado durável das unidades; o Run Kernel, o run ledger, o audit, o quality gate
+e o HANDOFF mantêm autoridade sobre o run. Cada mutação de unidade é uma única
+transação SQLite imediata que grava a linha da unidade, o registro de operação,
+o snapshot de operação e o evento canônico `x_durable_work_*` no diário
+`run_events`, de modo que a outbox carrega o contexto da unidade com entrega
+at-least-once e identidade estável de evento. O DWC não cria um segundo
+supervisor, não valida o dono do lifecycle de conectores e opera offline.
+
+O catálogo de eventos provisório (`nirvana.durable-work/v1alpha1`) documenta cada
+evento `x_durable_work_*` emitido pela implementação: `units_defined`,
+`unit_started`, `unit_progressed`, `unit_completed`, `unit_failed`,
+`unit_compensating`, `unit_compensated`, `unit_compensation_failed` para o ciclo
+de vida de unidades, além de `unit_imported`, `units_defined` (reutilizado com
+um ator distinto), `track_b_imported` e `track_b_rollback` para a migração da
+Trilha B. Consumidores devem ignorar campos aditivos desconhecidos; mudanças
+quebrantes exigem um novo evento ou versão de esquema. O catálogo é
+**provisório, não pronto para produção até passar por revisão independente**.
+
+A migração da Trilha B importa o estado upstream do Holdfast (`schemaVersion:
+"2.0.0"`) para as tabelas canônicas do DWC, com identidade e reutilização determinística
+e injetiva de stage, limpeza segura em falha transacional, backup primeiro, consciência
+de dry-run, replay retido fail-closed, chaves públicas de correlação e idempotência
+injetivas (`encodeDwcTuple`) e replay determinístico. O rollback remove o estado importado
+do DWC e emite `x_durable_work_track_b_rollback`, com verificação de procedência, validação
+de replay de rollback sobre as cinco tabelas e detecção de desvio de estado. A Trilha B coexiste
+com o core até que seis portões de aposentadoria sejam cumpridos; sem deleção ou
+desativação automática. A atribuição ao Holdfast por André Almeida (MIT,
+upstream `1.1.0`, adaptação `1.1.0-nirvana.1`) está registrada no `NOTICE` e em
+`docs/architecture/durable-work-continuity.md`.
+
+Lacunas honestas: claims consultivos sem evento granular de claim; reconstrução de journal baseada em projeções; validação de evidência por stateRoot e source root; staging de backup em dryRun; migrações de armazenamento provisórias; nenhum novo comando validate ou supervisor; sem eventos `track_b_refused` ou
+`track_b_failed` distintos; telemetria de backlog/lag/retry/dead-letter é
+projeção futura de observabilidade; refs de policy profile,
+tenancy/retention/legal-hold e todo campo de correlação canônica permanecem
+contratos aditivos onde o Run Kernel os fornece. Status: provisório, não pronto para produção até que revisão independente aprove.
 ### O vocabulário migra sem reescrever as 187 mil linhas que já discordam dele, e cinco nomes que nunca foram reais saem do enum
 
 Cortes 4 e 5 de `.nirvana/plans/event-contract.md`, despachados juntos porque
