@@ -122,7 +122,7 @@ const SALVAGE_CEILING_REASON =
 function lazyCascade(): { runWithCascade: (args: any) => any } {
   return requireCjs("../lib/cascade-runner.ts");
 }
-function lazyDriver(): { AUTONOMOUS_DIRECTIVE: string } {
+function lazyDriver(): { AUTONOMOUS_DIRECTIVE: string; reapOrphanedPromptFiles: (opts?: { dir?: string; maxAgeMs?: number }) => string[] } {
   return requireCjs("../lib/host-agent-driver.ts");
 }
 function lazyDelivery(): typeof import("../lib/delivery-pipeline.ts") {
@@ -716,6 +716,18 @@ function sweepLocked(deps: SweepDeps, summary: SweepSummary): SweepSummary {
       summary.errors++;
       console.error(`[supervisor] sweep of ${row.run_id} failed: ${(e as Error)?.message ?? e}`);
     }
+  }
+  // Process-wide cleanup for prompt/directive temp files a killed dispatch
+  // process never got to remove itself (see reapOrphanedPromptFiles): a
+  // process.on('SIGTERM') handler cannot preempt a blocking spawnSync, so the
+  // creator's own finally is structurally unable to run when the supervisor's
+  // kill above lands mid-call. This sweeper is a different, later-running
+  // process, so it reaps what that one could not.
+  try {
+    const reaped = lazyDriver().reapOrphanedPromptFiles();
+    if (reaped.length) emitAudit("x_ledger_tmp_reaped", { count: reaped.length, files: reaped });
+  } catch (e) {
+    console.error(`[supervisor] tmp-file reap failed: ${(e as Error)?.message ?? e}`);
   }
   try { setSupervisorMeta(h, "last_sweep_at", String(Date.now())); } catch { /* bookkeeping only */ }
   return summary;
