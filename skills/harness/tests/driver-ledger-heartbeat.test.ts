@@ -263,14 +263,20 @@ describe("driver — the heartbeat reports files, not just liveness", () => {
     // exits (see host-agent-driver.ts's runWithLedgerHeartbeat), with no
     // grace period. 400ms left room for at most one 250ms tick, which a
     // loaded Windows runner (slower process scheduling, occasionally a
-    // stretched sleepSync) can miss outright. A wide window turns "exactly
-    // one poll must land just right" into "several get the chance to".
+    // stretched sleepSync) can miss outright. On top of that, the sidecar's
+    // own first tick makes an unconditional child-pid discovery attempt
+    // (run-ledger.ts heartbeatMain) — a PowerShell spawn on Windows that can
+    // itself cost up to ~3s in the worst case (findChildPid + processStartedAt,
+    // each individually timeout-bounded) before the tick that actually scans
+    // for this write ever runs. A wide window turns "exactly one poll must
+    // land just right, faster than a worst-case discovery attempt" into
+    // "several get the chance to, with room to spare".
     const res = withWritingFake("fail", `
       import * as fs from "node:fs";
       import * as path from "node:path";
       await Bun.sleep(400);
       fs.writeFileSync(path.join(${JSON.stringify(watch)}, "half-written.md"), "the run dies here");
-      await Bun.sleep(2000);
+      await Bun.sleep(4500);
       process.stderr.write("boom\\n");
       process.exit(1);
     `, () => runHeadless({
