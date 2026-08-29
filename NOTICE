@@ -11,18 +11,3 @@ does not grant any trademark rights except for reasonable and customary attribut
 
 This repository includes third-party components that remain subject to their own
 licenses. Those licenses are not superseded by the SUL.
-
-## Holdfast
-
-The Durable Work Continuity (DWC) capability adapts concepts from Holdfast, by
-André Almeida.
-
-- Source: https://github.com/AndreAlmeidaDC/holdfast
-- Upstream version: 1.1.0
-- Assessed commit: 6e4f09dbad22bca93918aeb6efcbb0c0aaddd494
-- Adaptation version: 1.1.0-nirvana.1
-- License: MIT
-
-The upstream repository is not modified. The adaptation does not embed Holdfast
-as a rigid product or copy the skill wholesale; DWC is an engine capability that
-extends the canonical Run Kernel.
