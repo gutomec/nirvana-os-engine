@@ -17,12 +17,12 @@
  * future agents (Cursor, …) plug in by adding entries to AGENTS_TO_INSTALL.
  *
  * Usage:
- *   nrv install            # install / repair hooks + verify toolchain
- *   nrv install --dry      # show what would change, don't write
- *   nrv install --uninstall  # remove our hooks (keeps user's other settings)
- *   nrv install --check    # report installation status, exit 0/1
- *   nrv install --repair-path [--apply]  # Windows: drop temporary nrv-* entries from the user PATH
- *   nrv install -h         # this message
+ *   nrv setup              # install / repair hooks + verify toolchain
+ *   nrv setup --dry        # show what would change, don't write
+ *   nrv setup --uninstall  # remove our hooks (keeps user's other settings)
+ *   nrv setup --check      # report installation status, exit 0/1
+ *   nrv setup --repair-path [--apply]  # Windows: drop temporary nrv-* entries from the user PATH
+ *   nrv setup -h           # this message
  */
 
 import * as fs from "node:fs";
@@ -512,17 +512,21 @@ function repairUserPath(apply: boolean): number {
 function main() {
   const { flags } = parseArgs();
   if (flags.h || flags.help) {
-    console.log(`nrv install — one-shot Nirvana setup
+    console.log(`nrv setup — one-shot Nirvana setup
 
 USAGE
-  nrv install              install / repair hooks across all agents
-  nrv install --dry        show what would change, don't write anything
-  nrv install --check      report status (exit 0 = ready, 1 = needs setup)
-  nrv install --uninstall  remove our hooks and PATH block (keeps user's other settings)
-  nrv install --repair-path          Windows: list temporary nrv-* entries left on the
+  nrv setup                        install / repair hooks across all agents
+  nrv setup --dry                  show what would change, don't write anything
+  nrv setup --check                report status (exit 0 = ready, 1 = needs setup)
+  nrv setup --uninstall            remove our hooks and PATH block (keeps user's other settings)
+  nrv setup --repair-path          Windows: list temporary nrv-* entries left on the
                                      user PATH by earlier test runs (nothing written)
-  nrv install --repair-path --apply  remove exactly those entries, keep the rest as is
-  nrv install -h           this help
+  nrv setup --repair-path --apply  remove exactly those entries, keep the rest as is
+  nrv setup -h                     this help
+
+COMPATIBILITY
+  nrv install --bootstrap runs the same setup. Existing install flags such as
+  --check and --repair-path remain supported.
 
 WHAT IT DOES
   1. Verifies toolchain (bun installed, PATH includes ~/.local/bin)
