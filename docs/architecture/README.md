@@ -46,6 +46,8 @@ Este diretório é a fonte canônica para a evolução integrada do Run Kernel, 
 
 26. [Portão de admissão `nrv validate`](validate-gate.md)
 
+27. [Durable Work Continuity (DWC)](durable-work-continuity.md)
+
 ## ADRs
 
 - [ADR-001: lifecycle canônico do run](adrs/ADR-001-canonical-run-lifecycle.md)
