@@ -38,12 +38,22 @@ const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
 
 const ALLOWED_EVENTS = new Set([
   'brief_received', 'brief_amplified', 'routing_decision', 'invocation_start', 'invocation_end',
-  'cost_emission', 'handoff', 'ticket_opened', 'ticket_resolved',
+  'cost_emission', 'handoff',
   'escalation_trigger_fired', 'human_notification_required', 'human_response_received',
   'resume', 'approval_checkpoint', 'approval_granted', 'approval_rejected',
-  'budget_violation', 'memory_write', 'isolation_violation', 'validation_failed',
+  'budget_violation', 'isolation_violation', 'validation_failed',
   'humanization_applied', 'humanization_skipped', 'loop_detected', 'context_budget_warning',
   'stall_detected', 'stall_retry', 'gate_failed', 'gate_passed',
+  // Plan cut 5 (.nirvana/plans/event-contract.md) re-measured every "allowed
+  // but never emitted by code" entry in this original batch. Kept — a real
+  // producer or a real, cited design, never a guess (CHANGELOG.md carries the
+  // reasoning per name): handoff, escalation_trigger_fired,
+  // human_notification_required (emitted for real — `supervisor.ts` calls it
+  // through the `emitAudit()` wrapper, which is why the gate's `emit(` literal
+  // regex missed it), human_response_received, budget_violation,
+  // isolation_violation, humanization_applied/skipped, invocation_start/end.
+  // Removed, same measurement, no producer, no doc, no reader found anywhere:
+  // chunk_gate_passed/failed (below), memory_write, ticket_opened, ticket_resolved.
   // Phase A — dispatch quality invariants (see docs/plans/dispatch-quality-gate-and-mind-clone-injection.md)
   'dispatch_business',         // maestro dispatched a business (agentic path) — canonical business_slug
   'dispatch_squad',            // maestro dispatched a squad (agentic path) — canonical squad_name
@@ -64,8 +74,9 @@ const ALLOWED_EVENTS = new Set([
   'clarification_received',    // user answered the questions
   // Phase 7 — streaming outputs (nirvana-evolution)
   'chunk_emitted',             // a streaming chunk was written by chunk-writer
-  'chunk_gate_passed',         // per-chunk partial gate passed
-  'chunk_gate_failed',         // per-chunk partial gate failed (warning, non-blocking)
+  // chunk_gate_passed / chunk_gate_failed — planned here, never built: only
+  // the writer half of Phase 7 (chunk-writer.ts, chunk_emitted) shipped, no
+  // caller ever implemented a per-chunk gate. Removed, plan cut 5.
   // routing-360 Phase 4 — dispatch-side lifecycle events. These were already
   // emitted for real by dispatch.ts / team-orchestrator.ts / squad-exec.ts /
   // delivery-pipeline.ts via raw appenders; converting the dispatch side to

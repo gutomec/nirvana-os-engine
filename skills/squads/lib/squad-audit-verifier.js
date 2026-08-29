@@ -27,15 +27,16 @@ const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
   || (fs.existsSync(path.join(os.homedir(), '.nirvana', 'skills')) ? path.join(os.homedir(), '.nirvana', 'skills') : path.join(os.homedir(), '.claude', 'skills'));
 const self_audit_DIR = path.join(HOME, 'squads', 'synthetic-reasoning');
 
+// host-agent-driver.js already delegates to the canonical .ts under Bun and
+// falls back to its own inline legacy implementation otherwise (see that
+// file's header) — requiring the .ts directly from here duplicated that
+// fallback AND was itself a `.js` requiring a `.ts`, which can throw
+// `TypeError: require() async module` under Bun on Windows.
 let _hostDriver = null;
 function loadHostDriver() {
   if (_hostDriver) return _hostDriver;
-  try {
-    _hostDriver = require(path.join(SKILLS_ROOT, '_shared', 'lib', 'host-agent-driver.ts'));
-  } catch {
-    try { _hostDriver = require(path.join(SKILLS_ROOT, '_shared', 'lib', 'host-agent-driver.js')); }
-    catch { _hostDriver = null; }
-  }
+  try { _hostDriver = require(path.join(SKILLS_ROOT, '_shared', 'lib', 'host-agent-driver.js')); }
+  catch { _hostDriver = null; }
   return _hostDriver;
 }
 

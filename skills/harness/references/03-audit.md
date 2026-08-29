@@ -132,7 +132,7 @@ when the docs prescribe a non-enum, non-`x_` event or when code emits one.
 
 <!-- BEGIN GENERATED: audit-events (scripts/gen-audit-events-doc.ts — do not edit by hand) -->
 
-96 events in the closed enum (declaration order of `ALLOWED_EVENTS` in `lib/audit.js`):
+91 events in the closed enum (declaration order of `ALLOWED_EVENTS` in `lib/audit.js`):
 
 ```
 brief_received
@@ -142,8 +142,6 @@ invocation_start
 invocation_end
 cost_emission
 handoff
-ticket_opened
-ticket_resolved
 escalation_trigger_fired
 human_notification_required
 human_response_received
@@ -152,7 +150,6 @@ approval_checkpoint
 approval_granted
 approval_rejected
 budget_violation
-memory_write
 isolation_violation
 validation_failed
 humanization_applied
@@ -179,8 +176,6 @@ brief_scored
 clarification_emitted
 clarification_received
 chunk_emitted
-chunk_gate_passed
-chunk_gate_failed
 delivered
 verify_passed
 verify_failed
@@ -238,11 +233,14 @@ Regenerate with `bun scripts/gen-audit-events-doc.ts --write`;
 `skills/harness/tests/audit-events-doc.test.ts` asserts this file matches the
 enum, so a stale table is a test failure, not a silent lie.
 
-Note: part of the enum is the **maestro-emitted surface** — events the
-orchestrating model writes via `nrv audit emit` during an agentic run
-(`target_plan_committed`, `human_notification_required`, `stall_detected`,
-`memory_write`, ...). No engine code path emits those; their presence in the
-enum is the contract that the maestro's writes validate cleanly.
+Note: part of the enum is the **maestro/adapter-emitted surface** — events the
+orchestrating model or an adapter wrapper writes via `nrv audit emit` during an
+agentic run (`target_plan_committed`, `escalation_trigger_fired`,
+`budget_violation`, ...). No engine code path emits those directly; their
+presence in the enum is the contract that those writes validate cleanly.
+`scripts/check-audit-parity.ts` prints this set as "ALLOWED but NEVER EMITTED
+BY CODE" — informational, not a discrepancy, and re-argued per name in plan
+cut 5 (`.nirvana/plans/event-contract.md`).
 
 ## Emitting
 

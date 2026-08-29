@@ -23,7 +23,7 @@ import { checkDisabled } from "../scripts/update-check.ts";
 import { removeDir } from "./helpers/temp-dirs.ts";
 
 const budget = createRequire(import.meta.url)("../lib/budget.js") as {
-  check(target: Record<string, unknown>, ctx?: Record<string, unknown>): { ok: boolean; max_cost_usd: number; estimated_usd: number };
+  check(target: Record<string, unknown>, ctx?: Record<string, unknown>): Promise<{ ok: boolean; max_cost_usd: number; estimated_usd: number }>;
   DEFAULTS: { budget: Record<string, unknown>; baselines: Record<string, unknown> };
 };
 
@@ -79,15 +79,15 @@ describe("each reader: global, project over global, variable over both", () => {
     expect(loadHarnessConfig().routing.dense).toBe("off");
   });
 
-  test("budget.* and baselines.* (budget.js), defaults from the schema", () => {
+  test("budget.* and baselines.* (budget.js), defaults from the schema", async () => {
     expect(budget.DEFAULTS.budget.default_max_cost_usd).toBe(0);
     expect(budget.DEFAULTS.baselines.squad_capability_usd).toBe(0.3);
-    expect(budget.check({ type: "squad_capability" }).ok).toBe(true); // unlimited
+    expect((await budget.check({ type: "squad_capability" })).ok).toBe(true); // unlimited
     globalConfig("budget:\n  default_max_cost_usd: 0.1\n");
-    const capped = budget.check({ type: "squad_capability" });
+    const capped = await budget.check({ type: "squad_capability" });
     expect(capped).toMatchObject({ ok: false, max_cost_usd: 0.1, estimated_usd: 0.3 });
     projectConfig("baselines:\n  squad_capability_usd: 0.05\n");
-    expect(budget.check({ type: "squad_capability" })).toMatchObject({ ok: true, max_cost_usd: 0.1, estimated_usd: 0.05 });
+    expect(await budget.check({ type: "squad_capability" })).toMatchObject({ ok: true, max_cost_usd: 0.1, estimated_usd: 0.05 });
   });
 
   test("gauntlet.default_mode, default_intensity and auto_allowed (execution-options.ts)", () => {

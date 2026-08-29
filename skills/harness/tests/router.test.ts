@@ -410,17 +410,17 @@ describe("buildMatchDocs — declared execution fields reach meta", () => {
     expect(doc.text).not.toContain("opus");
   });
 
-  test("stage4BudgetCheck finally estimates from the declared cost", () => {
+  test("stage4BudgetCheck finally estimates from the declared cost", async () => {
     const doc = docFor("fixture.rich.execute");
-    const check = router.stage4BudgetCheck({ id: doc.id, meta: doc.meta }, { max_cost_usd: 10 });
+    const check = await router.stage4BudgetCheck({ id: doc.id, meta: doc.meta }, { max_cost_usd: 10 });
     expect(check.estimated_usd).toBe(4.25);
     expect(check.breakdown.source).toBe("target.estimated_cost_usd");
     expect(check.ok).toBe(true);
   });
 
-  test("without a declared cost the estimate still falls back to the baseline", () => {
+  test("without a declared cost the estimate still falls back to the baseline", async () => {
     const doc = docFor("fixture.bare.execute");
-    const check = router.stage4BudgetCheck({ id: doc.id, meta: doc.meta }, { max_cost_usd: 10 });
+    const check = await router.stage4BudgetCheck({ id: doc.id, meta: doc.meta }, { max_cost_usd: 10 });
     expect(check.breakdown.source).toBeUndefined();
     expect(check.breakdown.type).toBe("squad_capability");
   });
@@ -481,12 +481,12 @@ capabilities:
     try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* best effort */ }
   });
 
-  test("the 7.50 USD the manifest declares is the 7.50 USD the pre-flight estimates", () => {
+  test("the 7.50 USD the manifest declares is the 7.50 USD the pre-flight estimates", async () => {
     const reg = squadsRegistry.build([root]);
     const doc = router
       .buildMatchDocs(reg, { businesses: {}, _business_routing: {} })
       .find((d: any) => d.meta?.capability_id === "fixture.priced.execute" && !d.meta?.via_body);
-    const check = router.stage4BudgetCheck({ id: doc.id, meta: doc.meta }, { max_cost_usd: 10 });
+    const check = await router.stage4BudgetCheck({ id: doc.id, meta: doc.meta }, { max_cost_usd: 10 });
     expect(check.estimated_usd).toBe(7.5);
     expect(check.breakdown.source).toBe("target.estimated_cost_usd");
     expect(router.stage5Invoke({ id: doc.id, meta: doc.meta }, "render it", {}).estimated_cost_usd).toBe(7.5);

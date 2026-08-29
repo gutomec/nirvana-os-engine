@@ -23,14 +23,15 @@
 const fs = require('fs');
 const path = require('path');
 
+// host-agent-driver.js already delegates to the canonical .ts under Bun and
+// falls back to its own inline legacy implementation otherwise — the .ts
+// fallback that used to live here was dead code that only a `.js` requiring
+// a `.ts` (a Windows landmine, see that file's header) could ever reach.
 let _hostDriver = null;
 function loadHostDriver() {
   if (_hostDriver) return _hostDriver;
   try { _hostDriver = require(path.join(__dirname, 'host-agent-driver.js')); }
-  catch {
-    try { _hostDriver = require(path.join(__dirname, 'host-agent-driver.ts')); }
-    catch { _hostDriver = null; }
-  }
+  catch { _hostDriver = null; }
   return _hostDriver;
 }
 

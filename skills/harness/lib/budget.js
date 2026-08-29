@@ -30,8 +30,22 @@ const HARNESS_ROOT = path.join(SKILLS_ROOT, 'harness');
 /** The engine-default layer; kept for callers that print where defaults live. */
 const CONFIG_PATH = path.join(HARNESS_ROOT, 'config.yaml');
 
-// Requiring the .ts works under Bun (same pattern as router.js → harness-config.ts).
-const settings = require(path.join(__dirname, '..', '..', '_shared', 'lib', 'settings.ts'));
+// settings.ts is the single resolver for every setting (see its own header:
+// "never a second resolver beside it") and there is no CJS sibling to give it
+// the brief-excerpt.js/.ts treatment without forking its YAML/zod-layered
+// resolution logic. A synchronous `require()` of it from this `.js` crashed
+// on Windows at module-load time — the worst shape, since it took down every
+// caller of router.js, not just a budget check — with the same
+// `TypeError: require() async module` PR #158 round 1 hit. Bun's dynamic
+// `import()` has no such restriction: it is always safe for an ESM module
+// regardless of what its dependency chain carries, on every platform. Loaded
+// once, lazily, and cached — every caller of this module (router.js's Stage 4,
+// already `async function route()`) already awaits its own call chain.
+let _settingsPromise = null;
+function loadSettings() {
+  if (!_settingsPromise) _settingsPromise = import(path.join(__dirname, '..', '..', '_shared', 'lib', 'settings.ts'));
+  return _settingsPromise;
+}
 
 /** `{ budget.x: v }` → `{ x: v }` for one section prefix. */
 function section(prefix, values) {
@@ -42,17 +56,35 @@ function section(prefix, values) {
   return out;
 }
 
-const SCHEMA_DEFAULTS = Object.fromEntries(settings.SETTINGS_SCHEMA.map((spec) => [spec.key, spec.default]));
-
+// Mirrors the `default:` values settings-schema.ts declares for the
+// `budget.*` / `baselines.*` keys. Copied rather than read from
+// SETTINGS_SCHEMA at module load: DEFAULTS must stay a synchronous constant
+// (settings-readers.test.ts reads it with no await, and it is meant to be
+// cheap to print — `nrv config`, docs), while resolving the schema itself
+// now goes through loadSettings()'s dynamic import (see above). Keep these
+// two literal in step with settings-schema.ts's SETTINGS table if either changes.
 const DEFAULTS = Object.freeze({
-  budget: Object.freeze(section('budget.', SCHEMA_DEFAULTS)),
-  baselines: Object.freeze(section('baselines.', SCHEMA_DEFAULTS)),
+  budget: Object.freeze({
+    default_max_cost_usd: 0,
+    default_max_tokens: 0,
+    default_max_handoffs: 0,
+    default_max_duration_seconds: 0,
+    on_budget_exceeded: 'warn',
+    auto_invoke_budget_usd: 0,
+  }),
+  baselines: Object.freeze({
+    squad_capability_usd: 0.3,
+    business_usd: 0.8,
+    per_handoff_usd: 0.05,
+  }),
 });
 
 /**
  * The effective budget and baselines (settings.ts resolution).
+ * @returns {Promise<{budget: object, baselines: object}>}
  */
-function getEffectiveConfig() {
+async function getEffectiveConfig() {
+  const settings = await loadSettings();
   const values = settings.resolveSettingsMap();
   return {
     budget: section('budget.', values),
@@ -65,10 +97,10 @@ function getEffectiveConfig() {
  *
  * @param {{type: string, id?: string, target?: object, expected_handoffs?: number, estimated_cost_usd?: number}} target
  * @param {object} ctx optional invocation context
- * @returns {{estimated_usd: number, breakdown: object}}
+ * @returns {Promise<{estimated_usd: number, breakdown: object}>}
  */
-function estimate(target, ctx) {
-  const cfg = getEffectiveConfig();
+async function estimate(target, ctx) {
+  const cfg = await getEffectiveConfig();
   const baselines = cfg.baselines;
 
   if (!target || typeof target !== 'object') {
@@ -110,7 +142,7 @@ function estimate(target, ctx) {
  *
  * @param {object} target same shape as estimate()
  * @param {{max_cost_usd?: number, max_tokens?: number, max_handoffs?: number, max_duration_seconds?: number}} ctx
- * @returns {{
+ * @returns {Promise<{
  *   ok: boolean,
  *   estimated_usd: number,
  *   max_cost_usd: number,
@@ -119,10 +151,10 @@ function estimate(target, ctx) {
  *   on_exceeded: string,
  *   breakdown: object,
  *   reason?: string,
- * }}
+ * }>}
  */
-function check(target, ctx) {
-  const cfg = getEffectiveConfig();
+async function check(target, ctx) {
+  const cfg = await getEffectiveConfig();
   const cap = (ctx && Number.isFinite(ctx.max_cost_usd))
     ? ctx.max_cost_usd
     : cfg.budget.default_max_cost_usd;
@@ -137,7 +169,7 @@ function check(target, ctx) {
 
   // A cap of 0 (or any value <= 0) means unlimited — the pre-flight is a no-op.
   const unlimited = !(cap > 0);
-  const est = estimate(target, ctx);
+  const est = await estimate(target, ctx);
   const ok = unlimited || est.estimated_usd <= cap;
 
   return {

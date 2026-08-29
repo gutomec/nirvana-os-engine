@@ -33,6 +33,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
+const { findProjectRoot } = require('./project-root.js');
 
 const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
   || (fs.existsSync(path.join(os.homedir(), ".nirvana", "skills")) ? path.join(os.homedir(), ".nirvana", "skills") : path.join(os.homedir(), ".claude", "skills"));
@@ -44,19 +45,14 @@ function handoffPath(projectDir) {
   return path.join(projectDir, FILENAME);
 }
 
-// Walk up from cwd looking for .nirvana/ or .git/ — same logic as scope.ts
-// but in plain JS so it's loadable from CommonJS callers.
+// Walk up from cwd looking for .nirvana/ or .git/. Delegates to
+// project-root.js (the one implementation shared with paths.js, scope.ts,
+// log-paths.ts and wiki-lint.js) for the HOME/root/Windows-system-dir
+// hardening this walk lacked: a stray ~/.nirvana (the engine's own install)
+// sitting in HOME was mistaken for a project, exactly the mechanism that
+// broke PR #158 round 2 for log-paths.ts before it got the same fix.
 function findProjectRootFromCwd() {
-  let cur = process.cwd();
-  for (let i = 0; i < 30; i++) {
-    if (fs.existsSync(path.join(cur, '.nirvana')) || fs.existsSync(path.join(cur, '.git'))) {
-      return cur;
-    }
-    const parent = path.dirname(cur);
-    if (parent === cur) return null;
-    cur = parent;
-  }
-  return null;
+  return findProjectRoot(process.cwd(), { markers: ['.nirvana', '.git'] });
 }
 
 function writeHandoff(projectDir, partial) {

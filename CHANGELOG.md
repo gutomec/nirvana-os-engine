@@ -8,6 +8,79 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### The vocabulary migrates without rewriting the 187,000 lines that already disagree with it, and five names that were never real leave the enum
+
+Cuts 4 and 5 of `.nirvana/plans/event-contract.md`, dispatched together because
+both ask the same question of the enum: what is the vocabulary, really?
+
+**Cut 4.** Cut 1 measured 286 rogue event types, 964 occurrences, with emission
+sites on disk in only 3 entities — almost nothing that reaches the log is
+written in a file; an agent invents a name mid-run. Renaming those 3 entities'
+literals would be a pure rename, as cut 2 said, but it closes 3 entities, not
+285: the rest have no literal to rename and no history to rewrite. `migrate`
+is a read-time rule, not a table and not a rewrite. A legacy line whose name is
+neither in the closed enum nor already `x_`-prefixed gets its canonical
+identity synthesized onto `_ce.type` — the same `sh.squads.nirvana.ext.x_<name>`
+a compliant `x_` emission of the same event produces today — the moment a
+reader calls `parseAuditLine`. `.event` itself is never touched: `audit-miner.ts`
+and `observability-handler.ts` both filter the raw log on the literal string
+`event === "revision"`, and a table or a blanket rename would have silently
+zeroed both counts. A compliant legacy line, closed-enum or already `x_`, is
+still returned by identity, byte for byte, exactly as cut 2 left it.
+
+**Cut 5.** Re-measured rather than trusted: the plan's 38 "allowed but never
+emitted" had already shrunk to 21 by cuts 2 and 3 converting several raw
+appenders to the canonical writer. Of those 21, three were misclassified by
+`check-audit-parity.ts`'s own scanner, not by the enum: `human_notification_required`
+(`supervisor.ts`), `stall_detected` and `stall_retry` (`host-agent-retry.js`)
+are emitted for real, through `emitAudit()` / `emitSafe()` wrapper functions
+the scanner's `emit(` literal regex cannot match — it needs two characters
+before the literal `mit`, and a camelCase wrapper puts `emit` at the very
+start of its name. The scanner now recognizes a fixed set of known forwarding
+wrappers instead, and deliberately not a blanket "name contains emit" test:
+`emitProjection(kind, run, state)` in `compatibility-facade.ts` hardcodes its
+own event name internally and takes an "open"/"transition" *kind* as its first
+argument, which a name-only test misreads as two invented event types and
+would have failed `--strict` on this cut's own fix.
+
+Of the remaining 13, cut 5 kept every one with a real producer or a real,
+cited design: `budget_violation` (documented across all 8 runtime adapters and
+`references/02-budget.md`; the cap-overage code path returns a status today,
+not yet this event), `clarification_received` / `escalation_trigger_fired` /
+`target_plan_committed` (prescribed in `harness/SKILL.md`, the model's own
+protocol), `dispatch_blocked` (read by `dispatch.ts`, `trace-builder.ts` and
+the Glance; a historical baseline shows it fired), `dispatch_audit_revision`
+(the Layer 2 dispatch-quality auditor — agent file, verdict type and emit
+helper exist; the retry wiring does not yet), `handoff` / `human_response_received`
+(documented event shapes in `HARNESS_PROTOCOL_V1.md` / `BUSINESS_PROTOCOL_V1.md`),
+`isolation_violation` (BP5, prescribed identically across every adapter),
+`humanization_applied` / `humanization_skipped` (named as a business-tier
+differentiator in `references/01-routing.md`; the Glance already carries an
+icon for `humanization_applied`), and `invocation_start` / `invocation_end`
+(a historical baseline shows real past emission; `trace-builder.ts` and the
+`pre-ship.md` rubric still read the pair as a signal — the writer regressed in
+a control-plane refactor, the readers did not).
+
+Five had none of that: no producer, no doc, no reader, anywhere. `chunk_gate_passed`
+/ `chunk_gate_failed` — Phase 7 shipped only the writer half
+(`chunk-writer.ts`, `chunk_emitted`), never a per-chunk gate. `memory_write`
+and `ticket_opened` / `ticket_resolved` — present since the original enum
+(engine 0.1.20) and never mentioned again in any doc, adapter or reader.
+Removed from `ALLOWED_EVENTS`, from the domain map in `cloudevents.js`, and
+from the generated table in `references/03-audit.md`
+(`bun scripts/gen-audit-events-doc.ts --write`).
+
+**Verified.** The real ~187k-line history (`~/.harness-logs`,
+`<project>/.nirvana/logs/harness`), frozen into a copy so a live, growing log
+could not diff against itself, replayed through `buildRuns` and `trace-builder`
+once against the repo at HEAD and once against this diff: 188,568 events,
+9,763 traces, 868 distinct briefs, 333 runs, 17,512 run events — identical on
+both sides, verdict `PARITY`. The rogue count the plan cited, 285 types
+outside the rule, reproduces exactly against both the 96-entry and the
+91-entry enum, because none of the five removed names ever appeared in the
+real log. `bun test skills` — 2307 pass, 3 skip, 0 fail. `bun run check:all` —
+exit 0.
+
 ## 0.12.0 — 2026-08-28
 
 ### A generated schema stops depending on the machine that generated it
