@@ -232,11 +232,14 @@ describe("driver — the heartbeat reports files, not just liveness", () => {
     fs.mkdirSync(watch, { recursive: true });
     const lease = Date.parse(row.lease_expires_at!);
 
+    // Widened for the same reason as the other short-lived-child tests in
+    // this file (see "a run that FAILS…" below): a tight window leaves too
+    // few 250ms polls a shot at landing inside it on a loaded Windows runner.
     const res = withWritingFake("off", `
       import * as fs from "node:fs";
       import * as path from "node:path";
       for (const name of ["a.md", "b.md"]) { await Bun.sleep(400); fs.writeFileSync(path.join(${JSON.stringify(watch)}, name), name); }
-      await Bun.sleep(600);
+      await Bun.sleep(2000);
       console.log(JSON.stringify({ type: "result", result: "done", session_id: "off-session", total_cost_usd: 0 }));
       process.exit(0);
     `, () => runHeadless({
