@@ -33,7 +33,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs, EXIT, log } from "../lib/bun-helpers.ts";
 import {
   SKIP_PATH_PERSIST_ENV, skipPathPersist, isUnderTempRoot, broadcastEnvironmentChange,
-  readUserPath, writeUserPath, removeTempNrvEntries, tempRoots, expandEnv, joinPath,
+  readUserPath, writeUserPath, removeTempNrvEntries, removeEntriesUnderRoot, tempRoots, expandEnv, joinPath,
 } from "../lib/windows-user-path.ts";
 
 // ─── Marker that identifies hooks added by this script ────────────────
@@ -317,6 +317,70 @@ function wireLocalBinOnPath(dry: boolean): string[] {
   return notes;
 }
 
+// ─── Reverse of wireLocalBinOnPath ─────────────────────────────────────
+// The install side above edits shell rc files and the Windows user PATH; this
+// undoes exactly that, and only that. A shell rc file is never truncated: the
+// marker block is removed by finding the EXACT bytes the installer appended
+// (`\n${marker}\n${pathLine}\n`) and cutting only that substring, wherever it
+// sits — everything else in the file, byte for byte, stays put. If the marker
+// line is present but the following line does not match what we wrote (a
+// human edited between them, or hand-removed just the PATH line), we say so
+// and leave the file alone rather than guess where our block ended.
+function unwireLocalBinFromPath(dry: boolean): string[] {
+  const notes: string[] = [];
+  const home = os.homedir();
+  const localBin = path.join(home, ".local", "bin");
+  const marker = "# nirvana-os: nrv on PATH";
+
+  if (process.platform === "win32") {
+    const reg = readUserPath();
+    if (!reg) { notes.push("could not read the user PATH from the registry — nothing to remove there."); return notes; }
+    const { after, removed } = removeEntriesUnderRoot(reg.value, localBin);
+    if (removed.length === 0) { notes.push(`${localBin} not on the user PATH — nothing to remove.`); return notes; }
+    if (dry) { notes.push(`would remove ${localBin} from the user PATH (Windows registry) — ${removed.length} entr${removed.length === 1 ? "y" : "ies"}.`); return notes; }
+    if (!writeUserPath({ value: joinPath(after), kind: reg.kind })) {
+      notes.push(`could not write the user PATH — ${localBin} left in place; remove it by hand via System Properties > Environment Variables.`);
+      return notes;
+    }
+    broadcastEnvironmentChange();
+    notes.push(`removed ${localBin} from the user PATH (Windows registry).`);
+    return notes;
+  }
+
+  const candidates = [
+    { file: path.join(home, ".zshrc"), pathLine: 'export PATH="$HOME/.local/bin:$PATH"' },
+    { file: path.join(home, ".bashrc"), pathLine: 'export PATH="$HOME/.local/bin:$PATH"' },
+    { file: path.join(home, ".bash_profile"), pathLine: 'export PATH="$HOME/.local/bin:$PATH"' },
+    { file: path.join(home, ".profile"), pathLine: 'export PATH="$HOME/.local/bin:$PATH"' },
+    { file: path.join(home, ".config", "fish", "config.fish"), pathLine: "set -gx PATH $HOME/.local/bin $PATH" },
+  ];
+  for (const { file, pathLine } of candidates) {
+    if (!fs.existsSync(file)) continue;
+    let cur: string;
+    try { cur = fs.readFileSync(file, "utf8"); } catch (e) { notes.push(`could not read ${file.replace(home, "~")}: ${(e as Error).message}`); continue; }
+    if (!cur.includes(marker)) continue; // nothing of ours in this file
+    const block = `\n${marker}\n${pathLine}\n`;
+    if (!cur.includes(block)) {
+      notes.push(`marker found in ${file.replace(home, "~")} but the line after it does not match what we wrote — leaving it untouched. Remove by hand if it is ours.`);
+      continue;
+    }
+    const rest = cur.replace(block, "");
+    if (dry) {
+      notes.push(rest === "" ? `would remove ${file.replace(home, "~")} (empty once our block is gone — we created it)` : `would remove the PATH block from ${file.replace(home, "~")}`);
+      continue;
+    }
+    try {
+      // The block was the only content: the file did not exist before install
+      // wrote it (appendFileSync creates on demand), so removing it entirely
+      // — rather than leaving a 0-byte file — is what actually restores the
+      // pre-install state.
+      if (rest === "") { fs.rmSync(file); notes.push(`removed ${file.replace(home, "~")} (was created solely by us)`); }
+      else { fs.writeFileSync(file, rest, "utf8"); notes.push(`removed the PATH block from ${file.replace(home, "~")}`); }
+    } catch (e) { notes.push(`could not update ${file.replace(home, "~")}: ${(e as Error).message}`); }
+  }
+  return notes;
+}
+
 // ─── Runtime dependency installer ─────────────────────────────────────
 // A fresh `git clone` has no node_modules (gitignored) and no Python deps.
 // The skill scripts hard-require them at runtime:
@@ -459,7 +523,7 @@ USAGE
   nrv install              install / repair hooks across all agents
   nrv install --dry        show what would change, don't write anything
   nrv install --check      report status (exit 0 = ready, 1 = needs setup)
-  nrv install --uninstall  remove our hooks (keeps user's other settings)
+  nrv install --uninstall  remove our hooks and PATH block (keeps user's other settings)
   nrv install --repair-path          Windows: list temporary nrv-* entries left on the
                                      user PATH by earlier test runs (nothing written)
   nrv install --repair-path --apply  remove exactly those entries, keep the rest as is
@@ -505,6 +569,9 @@ inline, with no dispatch, no quality gate and no audit trail.
   console.log(`  ${pth.ok ? "✓" : "⚠"} PATH includes ~/.local/bin`);
   if (!pth.ok && mode === "install" && !check) {
     for (const n of wireLocalBinOnPath(dryRun)) console.log(`     ${n}`);
+  }
+  if (mode === "uninstall" && !check) {
+    for (const n of unwireLocalBinFromPath(dryRun)) console.log(`     ${n}`);
   }
   const scripts = checkScripts();
   console.log(`  ${scripts.ok ? "✓" : "✗"} hook scripts present${scripts.ok ? "" : ` — missing: ${scripts.missing.join(", ")}`}`);
@@ -619,7 +686,7 @@ inline, with no dispatch, no quality gate and no audit trail.
       console.log(`Watch with: ${anyChange ? "(may need to restart your agent for hooks to load) " : ""}nrv watch`);
     }
   } else {
-    console.log("Done. Hooks removed. Other settings preserved.");
+    console.log("Done. Hooks and PATH block removed. Other settings preserved.");
   }
   process.exit(EXIT.OK);
 }
