@@ -122,6 +122,19 @@ export function removeTempNrvEntries(value: string, roots: string[], env: NodeJS
   return { before, after, removed };
 }
 
+/** Drop exactly the entries that resolve (after %NAME% expansion) under `root`.
+ *  Every other entry keeps its text and its position. This is the uninstall
+ *  side of `wireLocalBinOnPath`'s persist step: that step writes the already
+ *  expanded %USERPROFILE%\.local\bin, so removal has to match on the resolved
+ *  form too, not the literal string. */
+export function removeEntriesUnderRoot(value: string, root: string, env: NodeJS.ProcessEnv = process.env): PathRepair {
+  const before = splitPath(value);
+  const removed: string[] = [];
+  const after: string[] = [];
+  for (const entry of before) (isUnderRoot(expandEnv(entry, env), root) ? removed : after).push(entry);
+  return { before, after, removed };
+}
+
 // ─── Registry access (Windows only) ───────────────────────────────────
 
 export type UserPathKind = "String" | "ExpandString";

@@ -6,11 +6,12 @@
 // consultorio-dr-paulo, and CLOSED one of them — a run of another project,
 // terminated by a stranger, recoverable only through an x_audit_correction.
 //
-// The reasoning behind the global DB ("the launchd supervisor runs with no
-// project context and must see every run on the machine") was only ever true
-// for the supervisor. These tests pin the scope on everyone else: the row
-// carries its project root, every read and write filters by the root the
-// process is serving, and the supervisor is the single documented exception.
+// The reasoning behind the global DB ("a machine-wide supervisor invocation
+// runs with no project context and must see every run on the machine") was
+// only ever true for the supervisor. These tests pin the scope on everyone
+// else: the row carries its project root, every read and write filters by
+// the root the process is serving, and the supervisor is the single
+// documented exception.
 //
 // Reading and WRITING FILES outside the project stays allowed — a dispatched
 // job may need any directory. This is about seeing other projects' RUNS.
@@ -18,7 +19,7 @@ import { describe, expect, test, afterAll, beforeAll } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-ledger-scope-"));
 const SKILLS = path.resolve(import.meta.dir, "..", "..");
@@ -43,7 +44,7 @@ import { Database } from "bun:sqlite";
 import {
   openLedger, openRun, openAgenticRun, getRun, markState, beatAgenticRuns,
   findNonTerminal, countNonTerminal, findExpired, findRelatedRuns,
-  resolveProjectRoot, findProjectRootFrom, sameProjectRoot, normalizeRoot,
+  resolveProjectRoot, findProjectRootFrom, sameProjectRoot, normalizeRoot, pidAlive,
   type LedgerHandle, type RunRow,
 } from "../lib/run-ledger.ts";
 
@@ -504,18 +505,88 @@ describe("supervisor — the documented exception", () => {
   });
 
   test("with no project to scope to, it stays machine-wide and says why", () => {
-    // This is launchd: cwd `/`, no NIRVANA_PROJECT_ROOT. The never-stall
-    // guarantee cannot depend on the operator re-installing the LaunchAgent.
+    // cwd `/`, no NIRVANA_PROJECT_ROOT — e.g. `watch` started from outside any
+    // project. The never-stall guarantee cannot depend on an operator having
+    // started it from the right directory.
     const r = supervisor(null, ["status"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("sv-a");
     expect(r.stdout).toContain("sv-b");
     expect(r.stderr).toMatch(/all-projects|projeto/i);
   });
+});
 
-  test("the LaunchAgent it writes asks for the machine-wide scope explicitly", async () => {
-    const { renderLaunchdPlist } = await import("../scripts/supervisor.ts");
-    expect(renderLaunchdPlist()).toContain("<string>--all-projects</string>");
+// ── 6.5 — status says what a run is doing, honestly, and --follow behaves ──
+
+describe("supervisor status — DOING column and --follow", () => {
+  const db = path.join(TMP, "supervisor-doing.sqlite");
+  const logsDir = path.join(TMP, "supervisor-doing-logs");
+  const script = path.join(SKILLS, "harness", "scripts", "supervisor.ts");
+
+  function env(): Record<string, string> {
+    return {
+      ...process.env,
+      NIRVANA_RUN_LEDGER_DB: db,
+      NIRVANA_SKILLS_DIR: SKILLS,
+      NIRVANA_NO_DESKTOP_NOTIFY: "1",
+      NRV_SUPERVISOR: "0",
+      HARNESS_LOGS_DIR: logsDir,
+      NIRVANA_PROJECT_ROOT: PROJ_A,
+    } as Record<string, string>;
+  }
+
+  beforeAll(() => {
+    const h = openLedger(db);
+    asProject(PROJ_A, () => {
+      openRun(h, { runId: "doing-known", traceId: "trace-doing-known", projectId: "cliente", targetSlug: "brand", targetKind: "squad" });
+      openRun(h, { runId: "doing-unknown", traceId: "trace-doing-unknown", projectId: "cliente", targetSlug: "ads", targetKind: "squad" });
+    });
+    const dayDir = path.join(logsDir, new Date().toISOString().slice(0, 10));
+    fs.mkdirSync(dayDir, { recursive: true });
+    const line = JSON.stringify({
+      ts: new Date().toISOString(), event: "artifact_touched", trace_id: "trace-doing-known",
+      action: "modify", file_path: "/tmp/whatever/report.md",
+    });
+    fs.appendFileSync(path.join(dayDir, "audit.jsonl"), line + "\n");
+  });
+
+  test("DOING shows the last recorded activity for a run whose trace was logged", () => {
+    const r = spawnSync(process.execPath, [script, "status"], { encoding: "utf8", cwd: PROJ_A, env: env() });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("DOING");
+    expect(r.stdout).toContain("modify: report.md");
+  });
+
+  test("a run the audit trail has nothing on reads —, never a guess", () => {
+    const r = spawnSync(process.execPath, [script, "status"], { encoding: "utf8", cwd: PROJ_A, env: env() });
+    const unknownLine = r.stdout.split("\n").find(l => l.startsWith("doing-unknown"));
+    expect(unknownLine).toBeTruthy();
+    expect(unknownLine).toContain("—");
+  });
+
+  test("status --follow renders at least once, then exits cleanly on SIGINT — nothing left behind", async () => {
+    const child = spawn(process.execPath, [script, "status", "--follow", "--interval=1"], {
+      cwd: PROJ_A, env: env(), stdio: ["ignore", "pipe", "pipe"],
+    });
+    let out = "";
+    child.stdout!.on("data", (b: Buffer) => { out += b.toString(); });
+    for (let i = 0; i < 50 && !out.includes("doing-known"); i++) await Bun.sleep(100);
+    expect(out).toContain("doing-known");
+
+    const pid = child.pid!;
+    process.kill(pid, "SIGINT");
+    const exitCode: number | null = await new Promise((resolve) => child.on("exit", (code) => resolve(code)));
+    // POSIX delivers a real SIGINT: the process's own `process.on("SIGINT", …)`
+    // handler runs and calls `process.exit(0)` — the graceful path this test
+    // is named for. Windows has no such delivery for a signal sent from a
+    // DIFFERENT process: libuv's `uv_kill` maps SIGINT (like SIGTERM/SIGKILL)
+    // straight to `TerminateProcess(handle, 1)`, an unconditional kill the
+    // target never gets a chance to react to — exit code 1, always, no matter
+    // how well-behaved the handler is. "Cleanly" on Windows can only mean
+    // "the process is actually gone", which the pidAlive check below proves.
+    expect(exitCode).toBe(process.platform === "win32" ? 1 : 0);
+    for (let i = 0; i < 30 && pidAlive(pid); i++) await Bun.sleep(100);
+    expect(pidAlive(pid)).toBe(false);
   });
 });
 

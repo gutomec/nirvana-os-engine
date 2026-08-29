@@ -125,6 +125,202 @@ exatamente tanto contra o enum de 96 entradas quanto contra o de 91, porque
 nenhum dos cinco nomes removidos jamais apareceu no log real. `bun test skills`
 — 2307 passam, 3 pulados, 0 falhas. `bun run check:all` — saída 0.
 
+### Um despacho que termina agora avisa quem o iniciou, mesmo depois que o chamador se desconectou ou morreu
+
+O `nrv dispatch --exec` já leva todo run a uma linha no ledger —
+`delivered`, `withheld`, `failed`, `abandoned` — através do `markState()`.
+Nada fora dessa linha nunca soube da decisão: `dispatch.ts` e
+`delivery-pipeline.ts` juntos dão zero ocorrências para
+`notify|webhook|callback|on_complete|sentinel`, e o próprio comentário do
+sidecar de heartbeat cita um "done-sentinel escrito pelo pai" que nada
+realmente escrevia. Um chamador que inicia um despacho desacoplado
+(`( nohup nrv dispatch … & )`, exatamente como o orquestrador despacha um)
+não tinha porta para perguntar "o trace X terminou?" assim que o run saía da
+visão não-terminal do `run-track list` e do `supervisor status` — uma linha
+terminal simplesmente parava de aparecer em qualquer lugar, e o único
+recurso era sondar a tabela de processos, contar arquivos num diretório de
+saída, ou um timer.
+
+A correção estende o ledger em vez de inventar uma segunda fonte de verdade.
+O `markState()` agora espelha toda decisão delivered/withheld/failed/abandoned
+num pequeno arquivo JSON ao lado do banco do ledger
+(`run-signals/<run_id>.json`, `writeRunSignal`). `failed` conta como estado
+sentinela mesmo com o ledger mantendo-o recuperável, porque um chamador que
+espera por UMA tentativa está perguntando como AQUELA tentativa terminou, não
+se o supervisor eventualmente retoma o mesmo run_id. Dois novos subcomandos
+de `nrv run-track` leem esse sinal. `status <run-id|trace-id>` responde de
+uma vez, por run_id ou por trace_id — fechando a lacuna onde uma linha
+terminal ficava invisível para qualquer consulta existente, e onde
+`findByTraceId` é a porta nova para um chamador que só guardou o trace com
+que despachou. `wait <run-id|trace-id> [--timeout]` bloqueia um chamador até
+o sinal aparecer, acordado por um evento `fs.watch` no diretório do sinal em
+vez de um laço de sleep-e-sondagem, com uma reconferência no banco a cada 30s
+apenas como reforço para um evento de fs perdido, e uma folga curta de
+existência para que um `wait` chamado no instante seguinte ao desacoplamento
+não corra contra a própria criação da linha. Os dois distinguem `killed` —
+uma linha cujo pid filho registrado morreu sem nunca chegar a uma decisão —
+de um run ao vivo, lendo `pidAlive` e nunca mutando a linha (isso continua
+sendo decisão exclusiva do supervisor). Códigos de saída carregam o
+desfecho: 0 delivered, 2 withheld, 1 failed/abandoned/killed, 6 timeout
+esperando, 5 nenhum run encontrado.
+
+**Verificado.** Um teste falhando primeiro (`run-completion-signal.test.ts`,
+visto vermelho antes de `writeRunSignal`/`status`/`wait` existirem), depois
+verde: 14 casos cobrindo o sinal escrito em delivered/withheld/failed e NÃO
+escrito em estados intermediários, `findByTraceId`, `status`/`wait` por
+run_id e por trace_id, códigos de saída por desfecho, o caso de despacho que
+falha, timeout, e um id desconhecido. Uma segunda suíte
+(`dispatch-completion-signal.e2e.test.ts`) prova de verdade, não só em
+processo: o `scripts/dispatch.ts` real, apoiado por um CLI `claude` falso no
+PATH (sem LLM, sem rede), lançado por um shell realmente desacoplado —
+`( nohup … & )` — que retorna antes de o despacho em si poder ter terminado;
+um processo separado `nrv run-track wait <project-id>`, sem compartilhar
+estado com o lançador além do arquivo do ledger, observa o desfecho tanto de
+um run entregue quanto de um que falha — nunca `pgrep`, nunca contagem de
+arquivo, nunca timer. Mais a superfície inteira já existente do ledger
+(`run-ledger.test.ts`, `run-ledger-project-scope.test.ts`,
+`agentic-run-tracking.test.ts`, `delivery-pipeline.test.ts`,
+`supervisor-sweep.test.ts`, `driver-ledger-heartbeat.test.ts`,
+`business-liveness.test.ts`, `run-kernel.test.ts`, as suítes
+`*.e2e.test.ts` de dispatch, `agent-x-gauntlet-cutover.test.ts`,
+`glance-subsystems.test.ts`, `openclaw-support.test.ts`) — 248 testes,
+todos verdes. `bun scripts/check-english-source.ts --strict` e `bun
+scripts/check-changelog-parity.ts --strict` — ambos limpos.
+
+### O sinal de encerramento do supervisor agora alcança o filho CLI que era o alvo, não o dispatcher parado na frente dele
+
+O `dispatch.ts` abria toda linha do ledger com `childPid: process.pid` — o
+próprio pid, o processo prestes a bloquear dentro do `spawnSync` — porque
+essa chamada não consegue informar o pid real do runtime CLI antes de o
+filho já ter saído. A recuperação de runs travados do `supervisor.ts`
+sinalizava exatamente esse pid (`process.kill(pid, "SIGTERM")`), e como nada
+neste código registra `process.on("SIGTERM", …)`, valia o padrão do SO: o
+dispatcher era derrubado no meio da chamada de sistema, antes de qualquer
+`finally` desenrolar. Todo adaptador de runtime envolve seu `spawnSync` num
+`try { … } finally { removeTmpFiles(…) }`; matar o dispatcher em vez do seu
+filho pulava essa limpeza sempre, e orfanava o processo CLI real em vez de
+pará-lo. Três arquivos temporários `nrv-prompt-*` foram encontrados vazados
+de runs que o ledger lia como `delivered` — o supervisor acreditava estar
+matando um agente travado e na verdade matava o próprio despacho do
+orquestrador.
+
+A correção separa "o orquestrador" de "o pid que um supervisor pode
+sinalizar." O `dispatch.ts` não escreve mais pid nenhum ao abrir uma linha:
+um `null` honesto vale mais que um errado, e toda guarda `pid > 0` mais
+adiante já trata isso como no-op. O sidecar de heartbeat (`run-ledger.ts
+heartbeat`, disparado de forma assíncrona junto do `spawnSync` bloqueante,
+então seu próprio pid é conhecido de imediato) agora percorre a tabela de
+processos atrás do único filho vivo do dispatcher que observa, excluindo a
+si mesmo, e registra esse pid (`recordChildPid`) junto com o timestamp de
+início de processo do próprio SO (`ps -o lstart=`). O supervisor reconfere
+essa impressão digital antes de sinalizar qualquer coisa: um pid cujo
+horário de início ao vivo não bate mais com o registrado significa que o SO
+já entregou esse número para outro processo, e o run é roteado pela mesma
+porta que um pid genuinamente morto usa — auto-resume — em vez de ser
+sinalizado. Um pid reciclado agora lê como "já era," nunca como "um
+estranho para SIGTERM." Uma linha sem impressão digital (escrita antes deste
+corte, ou um runtime que a sondagem `ps` do sidecar não alcança) mantém o
+comportamento de hoje em vez de ganhar uma nova forma de ser pulada.
+
+Separadamente, o `findByTraceId` — a pergunta "o trace X terminou?" que o
+sinal de encerramento existe para responder — resolvia a linha errada para
+um trace com duas tentativas abertas no mesmo milissegundo (`ORDER BY
+created_at DESC` sozinho, e `created_at` tem resolução de milissegundo): um
+run retomado logo depois de seu antecessor falhar. O `rowid`, a ordem de
+inserção estritamente crescente da própria SQLite numa tabela sem
+`INTEGER PRIMARY KEY` para apelidar, desempata sempre da mesma forma.
+
+**Verificado.** Uma suíte nova, `dispatch-child-identity.test.ts`: um
+processo dispatcher realmente desacoplado abre uma linha no ledger, depois
+roda o caminho de verdade `runHeadless` → sidecar de heartbeat → `spawnSync`
+contra um CLI `grok` falso (o adaptador desse runtime sempre escreve um
+arquivo de bootstrap `nrv-prompt-*`, sem porta de tamanho para desviar) que
+pulsa uma vez e trava. O `child_pid` registrado na linha é verificado como
+não sendo nem `null` nem o próprio pid do dispatcher; um `sweep()` real sobre
+o lease vencido mata esse pid; o CLI falso morre enquanto o dispatcher —
+nunca sinalizado — roda até o fim por conta própria e escreve seu próprio
+marcador de "concluído," e o arquivo `nrv-prompt-*` que ele criou desaparece
+depois, provando que o `finally` que um SIGTERM abrupto teria pulado
+realmente rodou. Mais dois casos cobrem a guarda de pid reciclado
+diretamente: um processo vivo cujo horário de início registrado não bate
+nunca é sinalizado e é roteado por auto-resume, e uma linha sem impressão
+digital registrada mantém o comportamento anterior de sinalizar um pid vivo.
+O caso antes falhando de `run-completion-signal.test.ts`
+(`findByTraceId resolves the most recent row for a trace`) agora passa. `bun
+test skills/harness` — 1529 passam, 2 pulados, 0 falhas, em 149 arquivos
+(a instabilidade de base desta suíte — dois casos do `glance` disputando
+uma porta compartilhada — foi confirmada preexistente na `main` sem
+modificação, não causada por este corte). `bun
+scripts/check-english-source.ts --strict`, `bun
+scripts/check-changelog-parity.ts --strict` e `git diff --check` — todos
+limpos.
+
+### A sessão agora é o supervisor, do mesmo jeito no macOS, no Linux e no Windows, e o caminho do launchd que ela substitui saiu do código
+
+A exigência do dono, na íntegra: *"O sistema deve funcionar da mesma forma
+em qualquer sistema operacional, mac, linux e windows, sem poluir o sistema
+operacional dos usuários."* O `nrv supervisor install` registrava um
+`LaunchAgent` do launchd como a camada externa de recuperação — só para
+macOS, e exigia que um humano rodasse `install` antes de qualquer coisa
+acontecer. Medido na máquina de onde esta mudança saiu: o LaunchAgent escrito
+numa sessão anterior ainda estava lá, carregado pelo `launchctl`, e não tinha
+varrido nada de produtivo — a recuperação automática que ele prometia nunca
+tinha de fato feito o trabalho. O Claude Code roda subagentes dentro da
+própria sessão, como tarefas laterais, sem nenhum serviço de sistema operacional
+nesse desenho; os próprios issues abertos do Codex (vazamento de processo em
+segundo plano sem controle de job, um sandbox que bloqueia o `pgrep` de
+saída) são o aviso contra depender de tabela de processos ou de um daemon
+externo para esta garantia.
+
+O mecanismo de recuperação em si nunca foi o defeito. O lease baseado em
+atividade do `run-ledger.ts` e o `supervisor.ts sweep` já são portáveis, e a
+varredura já tratava "sem `ps` nesta plataforma" antes deste corte. O que
+faltava era alguém para disparar isso de forma confiável. Agora a sessão é
+esse gatilho, em três lugares, nenhum dos quais registra qualquer coisa no
+sistema operacional. O `maybeSweep()` já andava pendurado em todo `nrv
+find/route/dispatch`; o `dispatch.ts` agora o chama de novo na saída
+(`process.on("exit")`), então um despacho que rodou por dezenas de minutos
+reconcilia o que mais tiver ficado obsoleto enquanto ele estava ocupado, sem
+nenhum timer envolvido — ainda limitado pelo piso de 5 minutos do próprio
+`maybeSweep`, então um despacho curto não paga nada a mais por isso. O `nrv
+supervisor watch` continua sendo o loop de primeiro plano para o caso
+desatendido: o usuário o inicia, o usuário o mata, ele vive no terminal dele
+e em lugar nenhum mais. A lacuna que resta é nomeada em vez de escondida: se
+uma sessão despacha uma vez e ninguém roda outro comando `nrv` ou `watch`
+depois, ninguém varre até que um dos dois aconteça — "recuperado eventualmente,
+na próxima vez que alguém voltar", não "recuperado em N segundos após travar".
+
+`installLaunchd`, `launchdPlistPath`, `renderLaunchdPlist` e os subcomandos
+`install`/`uninstall` saíram do `supervisor.ts`, junto com toda menção no seu
+texto de ajuda e na tabela de comandos do `commands.ts`. Um LaunchAgent de
+antes desta mudança não é tocado por nada disso: o `nrv doctor` já carregava
+uma checagem só de relatório para labels `sh.nirvana.*`/`com.nirvana.*`,
+carregados ou em disco, e continua sendo o único lugar que nomeia a limpeza
+manual (`launchctl bootout gui/$(id -u)/<label>`, depois remover o plist) —
+nunca um reparador automático, porque apagar o registro de outra pessoa é
+pior do que deixá-lo. Na máquina de onde isto saiu, quatro desses labels
+estavam carregados; só um (`sh.nirvana.supervisor`) veio deste código-fonte
+algum dia, e é exatamente por isso que a checagem reporta todo label em vez
+de adivinhar quais são seguros de tocar.
+
+**Verificado.** Um ledger descartável (SQLite temporário, override de
+`NIRVANA_RUN_LEDGER_DB`) semeado com duas linhas travadas (lease expirado,
+pid morto), recuperado de ponta a ponta pela CLI real: `nrv supervisor sweep
+--all-projects` varreu, tentou resumir e transicionou o estado sem nenhum
+serviço de sistema operacional envolvido; um `nrv supervisor watch
+--all-projects` simples, disparado em segundo plano, deixado rodando por uma
+passada e então morto pelo shell que o chamou — exatamente o ciclo de vida
+de primeiro plano que o desenho pretende — recuperou a segunda linha do mesmo
+jeito. O `nrv supervisor install` agora cai no texto de uso (saída 2). Um
+novo teste hermético (`supervisor-sweep.test.ts`, "dispatch-return trigger")
+rebobina o `last_sweep_at` para além do piso de 5 minutos para provar que a
+segunda chamada de `maybeSweep()` do exit-hook dispara quando a janela reabre,
+sem esperar 5 minutos de verdade. `bun test skills/harness` — 1528 passam, 2
+pulados, 0 falhas, em 149 arquivos. `bun scripts/check-cli-parity.ts`, `bun
+scripts/check-skillmd-command-parity.ts --strict`, `bun
+scripts/check-english-source.ts --strict`, `bun
+scripts/check-changelog-parity.ts --strict` e `git diff --check` — todos
+limpos. Nenhuma mudança de workflow de CI.
 ### O cockpit servido ganha uma trava, e o engine aprende de quem são os dados que está guardando
 
 Corte 6 de `.nirvana/plans/event-contract.md`. O `server.ts` do cockpit Glance

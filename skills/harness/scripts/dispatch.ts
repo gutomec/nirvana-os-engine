@@ -427,6 +427,12 @@ preflightReindex();
 // Never-stall guarantee (routing-360 Phase 4): recover forgotten runs lazily.
 // <20ms when nothing pending; spawns a DETACHED background sweep otherwise.
 maybeSweep();
+// Second trigger: the session that ran this dispatch and waited on it is the
+// supervisor too. A dispatch can run for tens of minutes; reconciling again
+// on the way out — no timer, just "control is about to return" — catches
+// whatever else went stale while this one was busy. Still rate-limited by
+// maybeSweep's own 5-minute floor, so a short dispatch pays nothing extra.
+process.on("exit", () => { try { maybeSweep(); } catch { /* never block exit */ } });
 
 // ── dispatch-ledger wiring (never-stall guarantee) ────────────────────────
 // Ledger failures must never break a dispatch: every call goes through
@@ -1202,13 +1208,18 @@ if (pendingCascade?.kind === "squad-only") {
     ledgerHandle = runLedger.openLedger();
     const row = runLedger.openRun(ledgerHandle, {
       traceId: pid, projectId: pid, targetSlug: squads.join(","), targetKind: "squad",
-      runtime: rt, childPid: process.pid,
+      runtime: rt,
       meta: { project_dir: projDir, project_root: projectRoot, scaffold_root: scaffoldRoot,
         brief_path: path.join(scaffoldRoot, "brief.md"), outputs_root: oroot, mode: "squad-only" },
     });
     ledgerRunId = row.run_id;
   });
-  if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "running", { childPid: process.pid }));
+  // No childPid here: the heartbeat sidecar (spawned inside runHeadless, once
+  // the runner below actually calls spawnSync) discovers the real CLI child
+  // and records it — see run-ledger.ts recordChildPid. Writing process.pid
+  // (this dispatcher, about to block inside spawnSync) here is exactly the
+  // bug this cut fixes: the supervisor would SIGTERM the orchestrator itself.
+  if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "running"));
 
   console.log(c("lime", "▶") + c("bold", ` Squad-only — exec headless (${rt})`));
   publication.start();
@@ -1425,13 +1436,18 @@ if (pendingCascade?.kind === "agent-x") {
     ledgerHandle = runLedger.openLedger();
     const row = runLedger.openRun(ledgerHandle, {
       traceId: pid, projectId: pid, targetSlug: "agent-x", targetKind: "agent-x",
-      runtime: rt, childPid: process.pid,
+      runtime: rt,
       meta: { project_dir: projDir, project_root: PROJECT_ROOT, scaffold_root: scaffoldRoot,
         brief_path: briefPath, outputs_root: oroot, mode: "agent-x" },
     });
     ledgerRunId = row.run_id;
   });
-  if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "running", { childPid: process.pid }));
+  // No childPid here: the heartbeat sidecar (spawned inside runHeadless, once
+  // the runner below actually calls spawnSync) discovers the real CLI child
+  // and records it — see run-ledger.ts recordChildPid. Writing process.pid
+  // (this dispatcher, about to block inside spawnSync) here is exactly the
+  // bug this cut fixes: the supervisor would SIGTERM the orchestrator itself.
+  if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "running"));
 
   console.log(c("lime", "▶") + c("bold", ` Agent-x — exec headless (${rt})`));
   publication.start();
@@ -1563,7 +1579,7 @@ if (wantExec && !businessCanaryDecision.enabled) {
     ledgerHandle = runLedger.openLedger();
     const row = runLedger.openRun(ledgerHandle, {
       traceId: pid, projectId: pid, targetSlug: slug, targetKind: "business",
-      runtime: runtimeDecision.runtime, childPid: process.pid,
+      runtime: runtimeDecision.runtime,
       // Team runs have no heartbeat sidecar (steps run inside the
       // orchestrator), so their initial lease covers the whole run budget.
       initialLeaseSec: wantTeam
@@ -1702,7 +1718,7 @@ if (wantExec) {
       ledgerTry(() => {
         ledgerHandle = runLedger.openLedger();
         const row = runLedger.openRun(ledgerHandle, { traceId: pid, projectId: pid, targetSlug: slug, targetKind: "business",
-          runtime: rt, childPid: process.pid, meta: { project_dir: projDir, project_root: projectRoot, scaffold_root: scaffoldRoot,
+          runtime: rt, meta: { project_dir: projDir, project_root: projectRoot, scaffold_root: scaffoldRoot,
             outputs_root: oroot, prompt_path: outputPath, brief_path: tmpBriefFile, mode: "single" } });
         ledgerRunId = row.run_id;
       });
@@ -1724,7 +1740,12 @@ if (wantExec) {
     if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "failed", { error }));
     process.exit(1);
   }
-  if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "running", { childPid: process.pid }));
+  // No childPid here: the heartbeat sidecar (spawned inside runHeadless, once
+  // the runner below actually calls spawnSync) discovers the real CLI child
+  // and records it — see run-ledger.ts recordChildPid. Writing process.pid
+  // (this dispatcher, about to block inside spawnSync) here is exactly the
+  // bug this cut fixes: the supervisor would SIGTERM the orchestrator itself.
+  if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "running"));
   publication.start();
 
   // res = unified result shape consumed by the delivery pipeline below.

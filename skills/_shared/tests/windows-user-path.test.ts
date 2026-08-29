@@ -12,7 +12,7 @@ import { describe, expect, test } from "bun:test";
 import * as os from "node:os";
 import {
   expandEnv, findTempNrvEntries, isTempNrvEntry, isUnderRoot, isUnderTempRoot, joinPath,
-  removeTempNrvEntries, skipPathPersist, tempRoots,
+  removeEntriesUnderRoot, removeTempNrvEntries, skipPathPersist, tempRoots,
 } from "../lib/windows-user-path.ts";
 
 const TEMP = "C:\\Users\\andre\\AppData\\Local\\Temp";
@@ -135,5 +135,37 @@ describe("removeTempNrvEntries — the repair, on a PATH string", () => {
     const { after, removed } = removeTempNrvEntries(["C:\\keep", ...many, "C:\\also-keep"].join(";"), ROOTS, ENV);
     expect(removed).toHaveLength(22);
     expect(after).toEqual(["C:\\keep", "C:\\also-keep"]);
+  });
+});
+
+describe("removeEntriesUnderRoot — the uninstall side of wireLocalBinOnPath's persist step", () => {
+  const localBin = "C:\\Users\\andre\\.local\\bin";
+
+  test("removes the already-expanded entry the installer wrote", () => {
+    const value = ["C:\\Windows\\system32", localBin, "C:\\Program Files\\Git\\cmd"].join(";");
+    const { after, removed } = removeEntriesUnderRoot(value, localBin, ENV);
+    expect(removed).toEqual([localBin]);
+    expect(joinPath(after)).toBe("C:\\Windows\\system32;C:\\Program Files\\Git\\cmd");
+  });
+
+  test("also matches a %USERPROFILE%-style entry that expands to the same root", () => {
+    const value = ["C:\\Windows\\system32", "%USERPROFILE%\\.local\\bin"].join(";");
+    const { after, removed } = removeEntriesUnderRoot(value, localBin, ENV);
+    expect(removed).toEqual(["%USERPROFILE%\\.local\\bin"]);
+    expect(after).toEqual(["C:\\Windows\\system32"]);
+  });
+
+  test("a PATH without our entry comes back byte-identical", () => {
+    const clean = "C:\\Windows\\system32;C:\\Program Files\\Git\\cmd;";
+    const { after, removed } = removeEntriesUnderRoot(clean, localBin, ENV);
+    expect(removed).toEqual([]);
+    expect(joinPath(after)).toBe(clean);
+  });
+
+  test("a sibling that merely shares the prefix is kept", () => {
+    const value = [localBin + "2", "C:\\keep"].join(";");
+    const { after, removed } = removeEntriesUnderRoot(value, localBin, ENV);
+    expect(removed).toEqual([]);
+    expect(after).toEqual([localBin + "2", "C:\\keep"]);
   });
 });

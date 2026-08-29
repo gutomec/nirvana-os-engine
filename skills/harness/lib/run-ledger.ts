@@ -10,16 +10,16 @@
 //
 // DB location: ONE GLOBAL DB at <NIRVANA_HOME>/.nirvana/run-ledger.sqlite
 // (alongside the global state.db fallback of _shared/lib/state-db.js). The FILE
-// is global because the launchd supervisor runs with no project context and
-// must reach every run on the machine in one indexed query. Override with
-// NIRVANA_RUN_LEDGER_DB (tests).
+// is global because a machine-wide supervisor invocation (`watch` with no
+// project context, or an explicit `--all-projects`) must reach every run on
+// the machine in one indexed query. Override with NIRVANA_RUN_LEDGER_DB (tests).
 //
 // VISIBILITY is not global, and that distinction is the whole point. Every row
 // records the `project_root` it belongs to, and every read and every write here
 // filters by the root the calling process is serving (resolveProjectRoot:
 // NIRVANA_PROJECT_ROOT, else the first marker-bearing ancestor of cwd). The
 // supervisor is the one documented exception — it asks for the machine-wide
-// scope explicitly (`--all-projects`, how launchd invokes it).
+// scope explicitly (`--all-projects`, or no project found at all).
 //
 // Why: on 2026-08-27 a session working in ~/nirvana-os listed the open runs,
 // saw rows belonging to ~/venda-mundial-pro and consultorio-dr-paulo, and
@@ -45,6 +45,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
+import { spawnSync } from "node:child_process";
 
 // ── states ──────────────────────────────────────────────────────────────
 
@@ -419,11 +420,134 @@ export function getRun(handle: LedgerHandle, runId: string): RunRow | null {
   return parseRow(r);
 }
 
+/** Most recent run with this trace_id — the door for a caller that only kept
+ *  the trace it dispatched with, not the run_id the ledger generated. Unscoped
+ *  like getRun: the caller decides what to do about a foreign project's row
+ *  (see run-track.ts's refuseForeignRun). */
+export function findByTraceId(handle: LedgerHandle, traceId: string): RunRow | null {
+  // created_at has millisecond resolution (Date.now()), so two rows opened in
+  // the same millisecond (a resumed run right after its predecessor failed)
+  // tie on it — ORDER BY created_at DESC alone then returns whichever the
+  // scan happens to visit first, not the actual newer row. rowid is SQLite's
+  // own monotonically-increasing insertion order (this table has no INTEGER
+  // PRIMARY KEY, so run_id never aliases it) and breaks the tie correctly.
+  const r = handle.db
+    .query("SELECT * FROM runs WHERE trace_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1")
+    .get(traceId) as Record<string, unknown> | null;
+  return parseRow(r);
+}
+
 /** True when the pid exists (EPERM counts as alive: exists, not ours). */
 export function pidAlive(pid: number): boolean {
   if (!Number.isFinite(pid) || pid <= 0) return false;
   try { process.kill(pid, 0); return true; }
   catch (e) { return (e as NodeJS.ErrnoException)?.code === "EPERM"; }
+}
+
+// Windows has no `ps`. `tasklist` and `wmic` were the other candidates:
+// `wmic` is deprecated and already absent from recent Windows images;
+// `tasklist`'s human-readable output is locale-dependent, and even its `/FO
+// CSV` form has no parent-pid column, so a caller would still be one syscall
+// short. PowerShell fills the gap, but not with one provider for both asks:
+// `Get-Process -Id` is a thin wrapper over .NET's own Process class (no
+// WMI/CIM round trip) and exists in every PowerShell version, but Windows
+// PowerShell 5.1 — what `powershell.exe` actually is — never gave it a
+// parent-pid property. `Get-CimInstance Win32_Process` has ParentProcessId on
+// every version, at the cost of the WMI provider's own startup latency, so it
+// is used ONLY where `Get-Process` cannot answer at all. This default timeout
+// is the generous budget for a standalone caller (a supervisor recycle check,
+// a direct test call) with nothing else waiting on it; the heartbeat
+// sidecar's own discovery attempt uses a much tighter one instead (see
+// heartbeatMain). Same degradation contract as POSIX on any failure
+// (PowerShell missing, WMI unavailable, non-zero exit, or this timeout):
+// null, meaning "cannot verify" — never "does not exist".
+const WINDOWS_PS_TIMEOUT_MS = 4000;
+
+/** `.Ticks` (.NET, 100ns since 0001-01-01) as a decimal string stands in for
+ *  `lstart`'s raw text: both are opaque, exact-or-nothing fingerprints,
+ *  compared only against a value recorded by this same function on this same
+ *  OS — never across platforms — so the two formats never need to agree with
+ *  each other, only with themselves. Ticks is exact where `lstart`'s
+ *  one-second resolution is not. `Get-Process`, not `Get-CimInstance`: a
+ *  single-pid lookup needs no parent-pid column, so it gets the faster native
+ *  path — this is the call the heartbeat makes right after a successful
+ *  discovery, and every bit of latency shaved off it is latency the run's
+ *  OWN tick cadence gets back. `timeoutMs` defaults generously (the budget a
+ *  standalone caller with no surrounding time pressure gets); the heartbeat's
+ *  own discovery attempt passes a much tighter one — see heartbeatMain. */
+function processStartedAtWindows(pid: number, timeoutMs = WINDOWS_PS_TIMEOUT_MS): string | null {
+  try {
+    const r = spawnSync("powershell", [
+      "-NoProfile", "-NonInteractive", "-Command",
+      `(Get-Process -Id ${pid} -ErrorAction SilentlyContinue).StartTime.Ticks`,
+    ], { encoding: "utf8", timeout: timeoutMs });
+    if (r.status !== 0) return null;
+    const line = (r.stdout || "").trim();
+    return line || null;
+  } catch { return null; }
+}
+
+/** `Get-CimInstance`, not `Get-Process`: this is the ParentProcessId lookup
+ *  Windows PowerShell 5.1's `Get-Process` cannot do at all (see the module
+ *  comment above `WINDOWS_PS_TIMEOUT_MS`), filtered server-side so Windows
+ *  does the search instead of shipping the whole process table over stdout
+ *  for this process to re-filter, the way the POSIX branch does with `ps -A`. */
+function findChildPidWindows(parentPid: number, excludePid?: number, timeoutMs = WINDOWS_PS_TIMEOUT_MS): number | null {
+  try {
+    const r = spawnSync("powershell", [
+      "-NoProfile", "-NonInteractive", "-Command",
+      `(Get-CimInstance Win32_Process -Filter "ParentProcessId=${parentPid}" -ErrorAction SilentlyContinue).ProcessId`,
+    ], { encoding: "utf8", timeout: timeoutMs });
+    if (r.status !== 0) return null;
+    for (const line of (r.stdout || "").trim().split(/\r?\n/)) {
+      const pid = parseInt(line.trim(), 10);
+      if (Number.isFinite(pid) && pid !== excludePid) return pid;
+    }
+    return null;
+  } catch { return null; }
+}
+
+/** The OS's own process-start timestamp for `pid` — `ps -o lstart=` on POSIX,
+ *  `Get-CimInstance Win32_Process` on Windows — as an opaque, exact-or-nothing
+ *  fingerprint: two calls on the same live process agree byte-for-byte or
+ *  don't agree at all. Never reparsed into a Date, and never compared across
+ *  platforms. Null on any failure, including "no process table access at
+ *  all" — callers must treat null as "cannot verify", never as "does not
+ *  exist". `timeoutMs` (Windows only) lets a latency-sensitive caller trade
+ *  completeness for a bounded wait — see heartbeatMain. */
+export function processStartedAt(pid: number, timeoutMs?: number): string | null {
+  if (!Number.isFinite(pid) || pid <= 0) return null;
+  if (process.platform === "win32") return processStartedAtWindows(pid, timeoutMs);
+  try {
+    const r = spawnSync("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8" });
+    if (r.status !== 0) return null;
+    const line = (r.stdout || "").trim();
+    return line || null;
+  } catch { return null; }
+}
+
+/** The pid of the one live direct child of `parentPid`, `excludePid` skipped
+ *  (the heartbeat sidecar is itself a child of the dispatcher it watches, so
+ *  without the exclusion it can find itself instead of the CLI runtime it
+ *  exists to observe). Same caveat as `processStartedAt`: null means
+ *  "nothing found or can't ask", not "no child exists". Picks the first
+ *  match — this architecture runs at most one spawnSync child under a
+ *  ledgered dispatcher at a time. `timeoutMs` (Windows only), same purpose as
+ *  `processStartedAt`'s. */
+export function findChildPid(parentPid: number, excludePid?: number, timeoutMs?: number): number | null {
+  if (!Number.isFinite(parentPid) || parentPid <= 0) return null;
+  if (process.platform === "win32") return findChildPidWindows(parentPid, excludePid, timeoutMs);
+  try {
+    const r = spawnSync("ps", ["-A", "-o", "pid=,ppid="], { encoding: "utf8" });
+    if (r.status !== 0) return null;
+    for (const line of (r.stdout || "").trim().split("\n")) {
+      const [pidStr, ppidStr] = line.trim().split(/\s+/);
+      const pid = parseInt(pidStr, 10);
+      const ppid = parseInt(ppidStr, 10);
+      if (ppid === parentPid && Number.isFinite(pid) && pid !== excludePid) return pid;
+    }
+    return null;
+  } catch { return null; }
 }
 
 /** One file the sweep found newer than the mark it was given. */
@@ -500,6 +624,72 @@ export function scanDir(dir: string, sinceMs: number, opts: { cap?: number; limi
  *  runaway tree. 0 when the dir is missing/empty. */
 export function latestMtimeMs(dir: string, cap = 5000): number {
   return scanDir(dir, Number.POSITIVE_INFINITY, { cap }).latestMs;
+}
+
+// ── done-sentinel: a caller can wait on this without polling the process
+// table ─────────────────────────────────────────────────────────────────
+// markState() already lands every run on a decision; this mirrors that
+// decision into a small file on disk so a DIFFERENT process can learn it — a
+// caller that backgrounded the dispatch with `nohup … &` and returned, or a
+// session that reconnects after its own crash. The file is the notification;
+// the ledger row underneath stays the source of truth (a reconnecting caller
+// can always re-derive the same fact — see findByTraceId/getRun, and
+// scripts/run-track.ts's `status`/`wait`).
+//
+// `failed` counts as a sentinel state even though the ledger keeps it
+// recoverable (LEGAL.failed can still walk back to `running`): a caller
+// waiting on ONE dispatch attempt is asking "how did THIS run end", and by
+// the time markState reaches `failed` the process that was running it has
+// already decided it is done. If the supervisor later resumes the same
+// run_id, the resumed attempt overwrites this file again when IT reaches a
+// decision — same file, newest truth, exactly like the ledger row it mirrors.
+const SENTINEL_STATES: ReadonlySet<RunState> = new Set(["delivered", "withheld", "abandoned", "failed"]);
+
+/** Directory the sentinel files live in, next to the ledger DB they mirror —
+ *  so NIRVANA_RUN_LEDGER_DB alone isolates it in tests, no second env var. */
+export function runSignalDir(): string {
+  return path.join(path.dirname(resolveLedgerDbPath()), "run-signals");
+}
+
+/** The done-sentinel path for one run. `nrv run-track wait` watches this
+ *  directory (fs.watch — event-driven, no polling timer) for exactly this
+ *  file to appear. */
+export function runSignalPath(runId: string): string {
+  return path.join(runSignalDir(), `${runId}.json`);
+}
+
+export interface RunSignal {
+  run_id: string;
+  trace_id: string | null;
+  project_id: string | null;
+  state: string;
+  outputs_root: string | null;
+  ended_at: string;
+  error: string | null;
+}
+
+/** Best-effort, atomic (tmp + rename) so a reader never observes a
+ *  half-written file. A signal failure must never break the state transition
+ *  that triggered it — the ledger row is already the truth on disk. */
+function writeRunSignal(row: RunRow): void {
+  try {
+    const dir = runSignalDir();
+    fs.mkdirSync(dir, { recursive: true });
+    const signal: RunSignal = {
+      run_id: row.run_id,
+      trace_id: row.trace_id,
+      project_id: row.project_id,
+      state: row.state,
+      outputs_root: metaString(row.meta, "outputs_root") ?? metaString(row.meta, "project_dir"),
+      ended_at: row.terminal_at ?? row.updated_at,
+      error: row.last_error,
+    };
+    const tmp = path.join(dir, `.${row.run_id}.${process.pid}.tmp`);
+    fs.writeFileSync(tmp, JSON.stringify(signal));
+    fs.renameSync(tmp, runSignalPath(row.run_id));
+  } catch (e) {
+    console.error(`[run-ledger] could not write run-signal for '${row.run_id}' (${(e as Error)?.message ?? e})`);
+  }
 }
 
 // ── mutations ───────────────────────────────────────────────────────────
@@ -683,7 +873,9 @@ export function markState(handle: LedgerHandle, runId: string, next: RunState, e
   emitLedgerAudit("x_ledger_state_changed", {
     run_id: runId, from: row.state, to: next, error: extra.error ?? null, last_error: extra.error ?? row.last_error ?? null,
   }, row);
-  return getRun(handle, runId)!;
+  const updated = getRun(handle, runId)!;
+  if (SENTINEL_STATES.has(next)) writeRunSignal(updated);
+  return updated;
 }
 
 /** Record the runtime session id (revise/resume machinery) without a state
@@ -697,6 +889,25 @@ export function recordSession(handle: LedgerHandle, runId: string, sessionId: st
     [sessionId ?? null, childPid ?? null, nowIso(), runId],
   );
   emitLedgerAudit("x_ledger_session_recorded", { run_id: runId, session_id: sessionId, child_pid: childPid ?? null }, row);
+}
+
+/**
+ * Record the REAL worker's pid — the CLI runtime process a ledgered
+ * `spawnSync` launches, discovered by the heartbeat sidecar (see
+ * heartbeatMain) walking the process table for a live child of the
+ * dispatcher — never the dispatcher's own pid. `startedAt` (processStartedAt
+ * at discovery time) rides along so a later reader (the supervisor) can tell
+ * a still-live pid from one the OS has since handed to an unrelated process:
+ * see `child_pid_started_at` in RunRow['meta'].
+ */
+export function recordChildPid(handle: LedgerHandle, runId: string, pid: number, startedAt: string | null): void {
+  const row = getRun(handle, runId);
+  if (!row) { console.error(`[run-ledger] recordChildPid: run '${runId}' not found`); return; }
+  handle.db.run(
+    "UPDATE runs SET child_pid = ?, meta = ?, updated_at = ? WHERE run_id = ?",
+    [pid, JSON.stringify({ ...row.meta, child_pid_started_at: startedAt }), nowIso(), runId],
+  );
+  emitLedgerAudit("x_ledger_child_pid_recorded", { run_id: runId, child_pid: pid, started_at: startedAt }, row);
 }
 
 /** Merge `patch` into the run's meta WITHOUT a state transition. The
@@ -858,12 +1069,29 @@ function hookEventOfRun(ev: Record<string, unknown>, row: RunRow, prefix: string
   return under(ev.file_path) || under(ev.cwd);
 }
 
-/** Newest hook event of the run's trace (ms epoch) since `now - windowMs`, 0
- *  when none. Hooks write to the daily audit of the HOME root
- *  (audit-emit-from-hook.ts), so that root is read first; the project's own
- *  root is read too when it differs. Same reader as every other consumer of
- *  the audit (audit.readRecent) — no parser of its own. */
-export function latestHookActivityMs(row: RunRow, now: number, windowMs: number): number {
+export interface TraceActivity { ts: number; event: Record<string, unknown>; }
+
+/**
+ * Newest event of the run's trace since `now - windowMs` whose `event` name is
+ * in `eventTypes`, or `null` when none — the event itself, not only its
+ * timestamp, so a caller can say WHAT happened, not only THAT something did.
+ * Hooks write to the daily audit of the HOME root (audit-emit-from-hook.ts),
+ * so that root is read first; the project's own root is read too when it
+ * differs. Same reader as every other consumer of the audit
+ * (audit.readRecent) — no parser of its own.
+ *
+ * `eventTypes` is a parameter, not a hardcoded set, because two callers need
+ * two different slices of the same scan: resolveAgenticLiveness only cares
+ * whether HOOK_EVENTS fired (liveness, below); supervisor.ts's `status` DOING
+ * column also wants the coarser trace-tagged milestones (dispatch_*, gate_*,
+ * delivered, …) hook events never carry. One scan, one match
+ * (hookEventOfRun), because that matcher is the part worth not re-deriving:
+ * a hook event's `trace_id` is the Claude Code SESSION id
+ * (audit-emit-from-hook.ts's own doc comment says so), not the ledger row's
+ * trace_id, so a caller that matched on `trace_id` alone would silently find
+ * nothing for the exact runs — agentic ones — this exists to cover.
+ */
+export function latestTraceActivity(row: RunRow, now: number, windowMs: number, eventTypes: ReadonlySet<string>): TraceActivity | null {
   const since = now - windowMs;
   const dayOf = (ms: number) => new Date(ms).toISOString().slice(0, 10);
   const days = [dayOf(now)];
@@ -873,9 +1101,9 @@ export function latestHookActivityMs(row: RunRow, now: number, windowMs: number)
     : metaString(row.meta, "outputs_root") ? path.resolve(metaString(row.meta, "outputs_root")!) + path.sep : null;
   const anchors = [os.homedir(), metaString(row.meta, "project_dir")].filter((a): a is string => !!a);
   let audit: AuditLib;
-  try { audit = auditLib(); } catch { return 0; }
+  try { audit = auditLib(); } catch { return null; }
   const seen = new Set<string>();
-  let latest = 0;
+  let best: TraceActivity | null = null;
   for (const anchor of anchors) {
     for (const day of days) {
       let file: string;
@@ -885,14 +1113,20 @@ export function latestHookActivityMs(row: RunRow, now: number, windowMs: number)
       let events: Record<string, unknown>[] = [];
       try { events = audit.readRecent(HOOK_SCAN_LIMIT, day, anchor); } catch { continue; }
       for (const ev of events) {
-        if (!HOOK_EVENTS.has(String(ev.event))) continue;
+        if (!eventTypes.has(String(ev.event))) continue;
         const t = Date.parse(String(ev.ts ?? ""));
-        if (!(t > since) || t <= latest) continue;
-        if (hookEventOfRun(ev, row, prefix)) latest = t;
+        if (!(t > since) || (best && t <= best.ts)) continue;
+        if (hookEventOfRun(ev, row, prefix)) best = { ts: t, event: ev };
       }
     }
   }
-  return latest;
+  return best;
+}
+
+/** Newest HOOK_EVENTS activity of the run's trace (ms epoch), 0 when none —
+ *  the ms-only view resolveAgenticLiveness needs. */
+export function latestHookActivityMs(row: RunRow, now: number, windowMs: number): number {
+  return latestTraceActivity(row, now, windowMs, HOOK_EVENTS)?.ts ?? 0;
 }
 
 /**
@@ -1013,6 +1247,19 @@ export function setSupervisorMeta(handle: LedgerHandle, key: string, value: stri
  *  single sweep into ten thousand audit lines. */
 const TOUCH_EVENTS_PER_TICK = 25;
 
+/** Windows-only budget for one of the sidecar's child-pid discovery attempts
+ *  (see heartbeatMain) — tighter than a standalone caller's default, because
+ *  this one sits inside a liveness loop a short-lived child cannot afford to
+ *  have starved of its own tick. */
+const HEARTBEAT_DISCOVERY_TIMEOUT_MS = 1500;
+
+/** How many ticks get a discovery attempt before the sidecar stops trying —
+ *  more than one, because the real CLI child can still be mid-spawn on the
+ *  very first tick (see heartbeatMain); a small fixed number rather than a
+ *  wall-clock deadline, so the total cost stays bounded regardless of how
+ *  small --interval is. */
+const MAX_DISCOVERY_ATTEMPTS = 2;
+
 function heartbeatArg(name: string): string | undefined {
   const i = process.argv.indexOf(name);
   return i !== -1 ? process.argv[i + 1] : undefined;
@@ -1043,6 +1290,44 @@ export function heartbeatMain(): void {
   let lastMtime = watchDir ? latestMtimeMs(watchDir) : 0;
   let lastActivityAt = Date.now();
   let stallRecorded = false;
+
+  // Identity discovery: the dispatcher recorded no child_pid (it can't know
+  // one — it's about to block inside spawnSync, and spawnSync exposes the
+  // real pid only once the child has already exited). This sidecar is the
+  // one process that is both alive concurrently with that child AND started
+  // async (so its OWN pid is known immediately) — it looks up the live
+  // direct child of --parent and hands the ledger the pid the supervisor is
+  // actually allowed to signal.
+  //
+  // At most MAX_DISCOVERY_ATTEMPTS tries, and — this is the part that
+  // matters — only on a tick that ALREADY found activity (or is the very
+  // first tick, quiet or not — see below), after that tick's own
+  // renewLease, never on a LATER quiet tick. `findChildPid`/`processStartedAt`
+  // are a `ps` call on POSIX (single-digit ms) but a PowerShell spawn on
+  // Windows (hundreds of ms, sometimes several seconds under load).
+  // Attempting on every tick — quiet ones included — let that cost land on
+  // the EXACT ticks a quiet run depends on: each attempt still ran after that
+  // tick's own work, so no renewal was ever blocked, but a slow attempt
+  // sitting on what should have been a fast, empty tick could itself stand in
+  // for the very silence the stall detector is watching for, pushing the next
+  // real check late enough to miss the window — observed on a run whose child
+  // lived 3.4s: the first renewal landed, then attempts kept firing through
+  // the run's quiet stretch and the stall it was supposed to prove was never
+  // reached in time. Confining LATER attempts to activity ticks keeps every
+  // later quiet tick exactly as fast as it always was.
+  //
+  // The FIRST tick is exempt from that gate, activity or not: a child whose
+  // entire output is one line written at startup (a fake CLI's single tick,
+  // a real one's opening log line) can finish writing it before the sidecar —
+  // a separate, independently-started process — even captures its OWN
+  // `lastBytes` baseline, so `activity` reads false for that write on every
+  // tick for the rest of the run, forever, and a purely activity-gated
+  // sidecar would never get a SINGLE chance to discover the child. One
+  // unconditional try up front survives that; a small FIXED attempt count
+  // still bounds the cost, and every attempt after the first still needs
+  // genuine activity to earn one.
+  let discoveryAttempts = 0;
+  let childDiscovered = false;
 
   for (;;) {
     Bun.sleepSync(intervalMs);
@@ -1087,6 +1372,22 @@ export function heartbeatMain(): void {
         run_id: runId, gap_ms: now - lastActivityAt, stall_budget_ms: stallMs,
         heartbeat_at: row.heartbeat_at,
       }, row);
+    }
+
+    if (!childDiscovered && parentPid > 0 && discoveryAttempts < MAX_DISCOVERY_ATTEMPTS
+        && (activity || discoveryAttempts === 0)) {
+      discoveryAttempts++;
+      // A tight budget (vs. the generous standalone default): this is a
+      // best-effort attempt sitting inside a liveness loop, not a caller
+      // that can afford to wait out a slow PowerShell spawn. Timing out
+      // just means this attempt found nothing — degrades exactly like "no
+      // ps on this platform" always has, and the next activity tick gets
+      // another try.
+      const childPid = findChildPid(parentPid, process.pid, HEARTBEAT_DISCOVERY_TIMEOUT_MS);
+      if (childPid) {
+        recordChildPid(handle, runId, childPid, processStartedAt(childPid, HEARTBEAT_DISCOVERY_TIMEOUT_MS));
+        childDiscovered = true;
+      }
     }
   }
   process.exit(0);

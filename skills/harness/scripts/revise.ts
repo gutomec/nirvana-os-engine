@@ -173,11 +173,12 @@ console.log(c("dim", `  ${res.durationMs}ms${res.costUsd != null ? ` · $${res.c
 //
 // Revision budget: `nrv revise` is the human's own iteration loop, so the
 // config budget applies — EXCEPT when the SUPERVISOR spawned us (NRV_IN_SWEEP=1,
-// set by supervisor.ts defaultResume). An unattended launchd sweep runs every
-// 120s; a revision loop there spends LLM money with nobody watching and can
-// re-trigger on the next sweep. There the gate verdict goes straight back to
-// the supervisor, which withholds and escalates to a human. Do NOT raise this
-// number to "make recovery work": deliberate iteration is the human's call.
+// set by supervisor.ts defaultResume). An unattended sweep (`watch`'s loop or
+// a lazy background trigger) runs with nobody watching; a revision loop there
+// spends LLM money and can re-trigger on the next sweep. There the gate
+// verdict goes straight back to the supervisor, which withholds and escalates
+// to a human. Do NOT raise this number to "make recovery work": deliberate
+// iteration is the human's call.
 const inSweep = process.env.NRV_IN_SWEEP === "1";
 const config = loadHarnessConfig();
 const zipWanted = Boolean(session.zip_path) || wantZip;

@@ -9,36 +9,39 @@
 // state; earlier lines are the attempt history. No broker, no queue
 // infrastructure, no new dependency — the constraint this cut was given.
 //
-// Durability note (event-contract plan, cut 7): PR #159
-// (`feat/durable-work-continuity-core-pr-v9`, "Durable Work Continuity", 2,446
-// lines + 4,399 of tests) was OPEN, not merged, when this was written —
-// `durable-work.ts` exists only on that branch. Building on it was not
-// possible without depending on unmerged, "provisional, aguardando revisão
-// independente" code. This module is deliberately a narrow, three-function
-// surface (`enqueue` / `sweepOnce` / `readState`) so that landing DWC later
-// can become the storage underneath these same three functions — a
-// `durable_work` unit of kind `generic` per delivery, `startUnit` in place of
-// `enqueue`, `progressUnit`/`failUnit` in place of `recordAttempt` — without
-// moving the wire contract: the headers and body a consumer receives do not
-// change shape either way.
+// Why this is not built on Durable Work Continuity (DWC, PR #159, merged
+// 2026-08-28). The question was left open when this module was written,
+// because DWC was still an open PR then; it is answered now, by reading it.
 //
-// The two questions the plan left open for @AndreAlmeidaDC, answered
-// provisionally because this cut cannot block on them:
-//   1. Job state readable over HTTP does not read DWC today — this module
-//      does not touch `durable-work.ts` at all, so no sibling-authority
-//      boundary is crossed yet. If DWC lands and this module is rebuilt on
-//      it, the HTTP layer would only ever READ a projection (`status()` /
-//      `getUnit()`), never write run lifecycle — reading is not owning.
-//      If Andre decides a read still crosses the boundary, the fix is to
-//      route the read through a projection function DWC exports itself
-//      instead of the API querying its tables directly.
-//   2. The idempotency key a consumer sees (`X-Nirvana-Delivery-Id`) lives in
-//      the ENGINE's identity space today — it is the CloudEvents `id` of the
-//      terminal envelope, not a DWC `operation_id`. If DWC becomes the
-//      storage, the plan is to carry this SAME id in as the unit's
-//      `operation_id` so the external contract is unchanged; if Andre
-//      decides DWC must mint its own ids, the fix is a translation table at
-//      the boundary, not a change to what the consumer receives.
+// DWC is a durable record of work units — coverage, evidence, compensation,
+// advisory claims, Track B import. What it records about a retry is that one
+// HAPPENED (`Attempt.outcome`); it never decides when the next one is DUE.
+// `durable-work.ts` contains no backoff, no jitter, no next-attempt time and
+// no sweep, and its own architecture doc names retry and dead-letter
+// telemetry as "projeção futura de observabilidade", with the catalogue
+// explicitly "não está pronto para produção"
+// (docs/architecture/durable-work-continuity.md).
+//
+// Scheduling is this module's entire job. Rebuilding it on DWC would keep
+// `backoffMs`/`isDue`/`sweepOnce`/`MAX_ATTEMPTS` on top regardless, trade a
+// used 205-line module for a dependency on a 2,446-line one that currently
+// has no other caller in the tree, and break the discovery model: pending
+// deliveries are found by scanning session dirs for this file beside the
+// run's outputs (`adoptPending`), which a run-keyed SQLite table does not
+// answer. It would also file "the notification we owe an endpoint" as a unit
+// of the run's own work — a delivery stays pending while a receiver is down,
+// long after the run itself is terminal.
+//
+// So: not a migration deferred, a migration declined, on measurement. If DWC
+// later grows a scheduler with a real consumer, revisit — the three-function
+// surface (`enqueue` / `sweepOnce` / `readState`) still makes that a storage
+// swap that does not move the wire contract.
+//
+// One boundary note that survives from that review: the idempotency key a
+// consumer sees (`X-Nirvana-Delivery-Id`) is the CloudEvents `id` of the
+// terminal envelope — the engine's identity space, not a DWC `operation_id`.
+// Nothing here reads or writes DWC, so no sibling-authority boundary is
+// crossed.
 
 import * as fs from "node:fs";
 import * as path from "node:path";

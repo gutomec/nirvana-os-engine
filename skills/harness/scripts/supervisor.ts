@@ -25,11 +25,35 @@
 //                                  + loud stderr block + macOS notification,
 //                                  all three now carrying the salvage verdict
 //
-// Layered supervision (launchd-style): the lazy maybeSweep() piggybacks on
-// every nrv find/route/dispatch (mirrors preflight-index.ts), and
-// `nrv supervisor install` adds a launchd LaunchAgent (RunAtLoad +
-// StartInterval 120) as the outer layer, so recovery happens even when the
-// user never runs another nrv command.
+// The session IS the supervisor — no OS service is ever registered, on any
+// platform. Three triggers, all inside a session that is already running:
+//
+//   1. dispatch start    maybeSweep() piggybacks on every nrv find/route/
+//                         dispatch (mirrors preflight-index.ts): a run
+//                         abandoned by a session that died is recovered by
+//                         the next dispatch on the same project — exactly
+//                         when someone starts caring about it again.
+//   2. dispatch return    dispatch.ts calls maybeSweep() again on the way
+//                         out (process.on("exit")). A dispatch can run for
+//                         tens of minutes; reconciling once more when it
+//                         hands control back catches whatever else went
+//                         stale while it was busy, with no timer involved.
+//   3. `nrv supervisor watch`   a foreground loop for the unattended case:
+//                         the user starts it, the user kills it, it lives in
+//                         their terminal and nowhere else.
+//
+// The honest gap: if a session dispatches once and nobody runs another nrv
+// command or `watch` afterward, nobody sweeps until one of them does. That
+// is a deliberate answer, not an oversight — this engine registers nothing
+// with launchd/systemd/schtasks on any platform, so "recovered eventually,
+// next time someone returns" is the guarantee, not "recovered within N
+// seconds of stalling". A previous version relied on a launchd LaunchAgent
+// as a fourth, OS-registered layer (`nrv supervisor install`, macOS-only);
+// it was removed because it needed a human to run `install` in the first
+// place and, measured on the machine this change shipped from, was never
+// once loaded — the automatic recovery it promised had never run. A stray
+// LaunchAgent from before the removal is reported (never touched) by
+// `nrv doctor` — see doctor-system.ts.
 //
 // Anti-respawn guards (hard rules):
 //   - the supervisor NEVER signals a pid that is not row.child_pid of a
@@ -37,9 +61,9 @@
 //   - it never touches itself or its parent (process.pid / process.ppid);
 //   - `sweep` ALWAYS exits 0 — a supervisor crash must never fail a caller.
 //
-// Subcommands: sweep [--quiet] [--all-projects] · status [--all-projects] ·
-//              watch [--interval=120] [--all-projects] · install [--print] ·
-//              uninstall
+// Subcommands: sweep [--quiet] [--all-projects] ·
+//              status [--all-projects] [--follow [--interval=5]] ·
+//              watch [--interval=120] [--all-projects]
 //
 // PROJECT SCOPE — the supervisor is the exception, and the only one.
 // Every other reader of the ledger sees just the project it is serving, because
@@ -47,16 +71,16 @@
 // runs. Recovery cannot work that way: a run whose session died has nobody left
 // in its project to sweep it. So:
 //
-//   --all-projects            the whole machine. How launchd invokes it
-//                             (renderLaunchdPlist writes the flag), and how an
-//                             operator asks for the machine-wide picture.
+//   --all-projects            the whole machine. How an operator running
+//                             `watch` or a manual `sweep` asks for the
+//                             machine-wide picture instead of one project.
 //   no flag, project found    only the project this process stands in — the
 //                             lazy sweep piggybacking on a user's nrv command.
 //   no flag, no project       the whole machine, with a note on stderr saying
-//                             why. This is launchd's own shape (cwd `/`, no
-//                             NIRVANA_PROJECT_ROOT): the never-stall guarantee
-//                             must not depend on an operator remembering to
-//                             re-run `nrv supervisor install` after upgrading.
+//                             why: `sweep`/`watch` started from a directory
+//                             with no project marker (HOME, `/`, a bare temp
+//                             dir) still has to recover SOMETHING rather than
+//                             silently scoping itself to nothing.
 //
 // Env: NRV_SUPERVISOR=0 disables maybeSweep; NRV_IN_SWEEP=1 is the recursion
 // guard (set for every child the sweep spawns).
@@ -78,6 +102,7 @@ import {
   countNonTerminal,
   resumeInfo,
   pidAlive,
+  processStartedAt,
   latestMtimeMs,
   isTerminal,
   AGENTIC_LEASE_SEC,
@@ -87,6 +112,7 @@ import {
   setSupervisorMeta,
   patchMeta,
   resolveProjectRoot,
+  latestTraceActivity,
   type LedgerHandle,
   type RunRow,
   type RunState,
@@ -110,7 +136,6 @@ const PID_EXIT_WAIT_MS = 2000;        // bounded wait for a SIGTERMed child befo
  *  0 disables it (the supervisor.progress_ping_sec setting: env
  *  NIRVANA_PROGRESS_PING_SEC, else the project or global config). */
 const PROGRESS_PING_SEC = resolveSetting("supervisor.progress_ping_sec").value;
-const LAUNCHD_LABEL = "sh.nirvana.supervisor";
 
 /** Why an escalated run's artifacts can never be called complete: the run was
  *  interrupted, so the file set on disk is whatever it managed to write. */
@@ -312,6 +337,29 @@ function isAgentic(row: RunRow): boolean {
   return row.meta?.path === "agentic";
 }
 
+/**
+ * True when the live process AT `row.child_pid` is provably NOT the one the
+ * ledger recorded — the OS has reused the pid for an unrelated process since.
+ * `pidAlive` alone cannot see this: it only asks "does something answer at
+ * this number", and a recycled pid always does.
+ *
+ * `child_pid_started_at` (written by run-ledger's recordChildPid, next to the
+ * pid itself, at discovery time) is the fingerprint: two `ps -o lstart=`
+ * reads of a process that never died agree byte for byte; a different
+ * process born later almost never lands on the same start second. No
+ * fingerprint on the row (recorded before this cut, or the sidecar never
+ * discovered a child) or no ps on this platform → `processStartedAt` returns
+ * null on one or both sides → treated as "cannot prove recycling", not as
+ * "recycled": an unverifiable pid keeps today's behavior instead of gaining
+ * a new way to be skipped.
+ */
+function pidRecycled(row: RunRow, pid: number): boolean {
+  const recorded = typeof row.meta?.child_pid_started_at === "string" ? (row.meta.child_pid_started_at as string) : null;
+  if (!recorded) return false;
+  const current = processStartedAt(pid);
+  return current !== null && current !== recorded;
+}
+
 /** Tell the owner a long run is still alive, at most once per PROGRESS_PING_SEC.
  *  The stamp lives in meta so the interval survives across sweeps and restarts;
  *  created_at seeds it, so the first ping lands one interval after the start and
@@ -447,10 +495,11 @@ function recoveryFromDelivery(res: DeliveryResult): RecoveryResult {
  *     by the pipeline itself, not by the cap: no gateable artifact → exit 3 →
  *     withheld; gate FAIL → exit 2 → withheld.
  *   - `maxRevisions: 0`, for BUDGET — not for the read-only reason the salvage
- *     has. The sweep runs unattended every 120s under launchd; a revision loop
- *     there spends LLM money with nobody watching, and re-triggers on the next
- *     sweep. The supervisor's job is recovery, not iterative improvement: a
- *     failing gate is WITHHELD and escalated, and the human then runs
+ *     has. The sweep runs unattended, whether from `watch`'s loop or a lazy
+ *     background trigger; a revision loop there spends LLM money with nobody
+ *     watching, and re-triggers on the next sweep. The supervisor's job is
+ *     recovery, not iterative improvement: a failing gate is WITHHELD and
+ *     escalated, and the human then runs
  *     `nrv revise` deliberately. Do NOT raise this number to "make recovery
  *     work" — that is the unattended spend this zero exists to prevent.
  */
@@ -646,12 +695,13 @@ function salvageFields(v: SalvageVerdict): Record<string, unknown> {
 // ── the sweep ─────────────────────────────────────────────────────────────
 
 /**
- * Cross-process sweep lock. TWO triggers can fire at once: the LaunchAgent
- * (StartInterval 120) and the lazy maybeSweep() a user command spawns. Without
- * a lock both sweeps see the same row and both act on it — two re-dispatches of
- * the same work, paid twice, writing into the SAME outputs dir concurrently,
- * which corrupts the artifacts the recovery exists to save. `last_sweep_at`
- * only throttles the lazy trigger; it cannot bind launchd.
+ * Cross-process sweep lock. TWO triggers can fire at once: an `nrv supervisor
+ * watch` loop running in one terminal and the lazy maybeSweep() a user
+ * command spawns in another. Without a lock both sweeps see the same row and
+ * both act on it — two re-dispatches of the same work, paid twice, writing
+ * into the SAME outputs dir concurrently, which corrupts the artifacts the
+ * recovery exists to save. `last_sweep_at` only throttles the lazy trigger;
+ * it cannot bind a `watch` loop running as a separate process.
  *
  * Try-lock semantics, not wait: a sweeper that finds the lock held returns
  * immediately, because the holder is already doing this exact work. Stale locks
@@ -663,8 +713,8 @@ const SWEEP_LOCK_STALE_MS = 30 * 60_000;
 /**
  * How wide this supervisor invocation looks — the one place that decides it.
  * See the PROJECT SCOPE block at the top of the file: the flag wins, a
- * resolvable project scopes to itself, and a supervisor with no project at all
- * (launchd) stays machine-wide rather than quietly recovering nothing.
+ * resolvable project scopes to itself, and a supervisor with no project at
+ * all stays machine-wide rather than quietly recovering nothing.
  */
 export function resolveSweepScope(flagged: boolean, quiet = false): { allProjects: boolean; projectRoot: string | null } {
   if (flagged) return { allProjects: true, projectRoot: null };
@@ -793,7 +843,18 @@ function sweepOne(h: LedgerHandle, row: RunRow, now: number, deps: SweepDeps, su
     return;
   }
 
-  const alive = pid > 0 && pidAlive(pid);
+  const rawAlive = pid > 0 && pidAlive(pid);
+  // A pid that answers is not proof it is OUR pid: the process that used to
+  // live there can have exited between the last observation and this sweep,
+  // and the OS is free to hand the same number to anything spawned since.
+  // Signaling it then would SIGTERM a stranger. A recycled pid is treated as
+  // the dead-pid case below (orphaned → auto-resume), never as "alive, kill
+  // it" — the class of failure the owner asked to be named explicitly.
+  const recycled = rawAlive && pidRecycled(row, pid);
+  if (recycled) {
+    emitAudit("x_ledger_pid_recycled_skip", { run_id: row.run_id, pid, recorded_started_at: row.meta?.child_pid_started_at ?? null }, row);
+  }
+  const alive = rawAlive && !recycled;
 
   if (alive) {
     // One more activity check before any signal — a healthy long-thinking run
@@ -926,84 +987,79 @@ export function maybeSweep(): boolean {
   }
 }
 
-// ── launchd (outer supervision layer) ─────────────────────────────────────
-
-export function launchdPlistPath(): string {
-  return path.join(os.homedir(), "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`);
-}
-
-export function renderLaunchdPlist(): string {
-  const logDir = path.join(os.homedir(), ".nirvana", "logs");
-  const logFile = path.join(logDir, "supervisor.log");
-  return [
-    `<?xml version="1.0" encoding="UTF-8"?>`,
-    `<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">`,
-    `<plist version="1.0">`,
-    `<dict>`,
-    `  <key>Label</key><string>${LAUNCHD_LABEL}</string>`,
-    `  <key>ProgramArguments</key>`,
-    `  <array>`,
-    `    <string>${process.execPath}</string>`,
-    `    <string>${SUPERVISOR_PATH}</string>`,
-    `    <string>sweep</string>`,
-    `    <string>--quiet</string>`,
-    // launchd has no project context; the flag says out loud that this is the
-    // machine-wide supervisor, the one exception to the ledger's project scope.
-    `    <string>--all-projects</string>`,
-    `  </array>`,
-    `  <key>RunAtLoad</key><true/>`,
-    `  <key>StartInterval</key><integer>120</integer>`,
-    `  <key>EnvironmentVariables</key>`,
-    `  <dict>`,
-    `    <key>PATH</key><string>${process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin"}</string>`,
-    `  </dict>`,
-    `  <key>StandardOutPath</key><string>${logFile}</string>`,
-    `  <key>StandardErrorPath</key><string>${logFile}</string>`,
-    `</dict>`,
-    `</plist>`,
-    ``,
-  ].join("\n");
-}
-
-function installLaunchd(printOnly: boolean): number {
-  const content = renderLaunchdPlist();
-  if (printOnly) { process.stdout.write(content); return 0; }
-  if (process.platform !== "darwin") {
-    console.error("supervisor install: launchd is macOS-only. On other platforms use `nrv supervisor watch` (or a cron/systemd timer running `nrv supervisor sweep --quiet`).");
-    return 1;
-  }
-  const plist = launchdPlistPath();
-  fs.mkdirSync(path.dirname(plist), { recursive: true });
-  fs.mkdirSync(path.join(os.homedir(), ".nirvana", "logs"), { recursive: true });
-  fs.writeFileSync(plist, content);
-  try { spawnSync("launchctl", ["unload", plist], { stdio: "ignore", timeout: 10_000 }); } catch { /* not loaded */ }
-  try {
-    const r = spawnSync("launchctl", ["load", "-w", plist], { encoding: "utf8", timeout: 10_000 });
-    if (r.status !== 0) console.error(`supervisor install: launchctl load exited ${r.status}: ${(r.stderr || "").trim()}`);
-  } catch (e) { console.error(`supervisor install: launchctl failed: ${(e as Error)?.message ?? e}`); }
-  console.log(`✓ launchd agent installed: ${plist} (sweep every 120s + at load)`);
-  return 0;
-}
-
-function uninstallLaunchd(): number {
-  const plist = launchdPlistPath();
-  try { spawnSync("launchctl", ["unload", plist], { stdio: "ignore", timeout: 10_000 }); } catch { /* not loaded */ }
-  if (fs.existsSync(plist)) { fs.rmSync(plist, { force: true }); console.log(`✓ removed ${plist}`); }
-  else console.log("supervisor uninstall: no launchd agent installed.");
-  return 0;
-}
-
 // ── CLI ───────────────────────────────────────────────────────────────────
 
-function cliStatus(allProjects: boolean): number {
-  const h = openLedger();
-  const scope = resolveSweepScope(allProjects);
-  const rows = findNonTerminal(h, { allProjects: scope.allProjects });
-  const where = scope.allProjects ? "all projects" : scope.projectRoot;
+// How far back "what is it doing" is allowed to reach. Generous on purpose:
+// a STALLED row is exactly the case where the last real action is old, and
+// the honest answer to "what was it doing" is that action, not a blank —
+// only a row with no matching event AT ALL renders UNKNOWN_DOING. This is a
+// different budget from resolveAgenticLiveness's AGENTIC_LEASE_SEC window,
+// which answers a different question ("is it alive right now").
+const DOING_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/** Event families that answer "what is this run doing" — hook-level activity
+ *  (tool/file/bash, keyed by the Claude Code session, matched via
+ *  run-ledger's hookEventOfRun) plus the coarser harness-level milestones a
+ *  hook never emits (dispatch_*, gate_*, delivered, …), which DO carry the
+ *  ledger's own trace_id. Both are ACTIVITY_EVENTS_HOOK ∪ the milestones,
+ *  because latestTraceActivity's matcher (hookEventOfRun) already knows how
+ *  to find either kind — the ID match handles the milestones, the path-prefix
+ *  fallback handles the hook events a session tags with its own id. */
+const DOING_EVENTS: ReadonlySet<string> = new Set([
+  "tool_invoked", "artifact_touched", "bash_completed",
+  "dispatch_squad", "dispatch_business", "routing_decision",
+  "gate_passed", "gate_failed", "verify_passed", "delivered",
+]);
+
+function shortPath(p: unknown): string {
+  const s = typeof p === "string" ? p : "";
+  return s.split(/[\\/]/).pop() || s;
+}
+
+/** One honest line for an activity event. Exported so a test can pin the
+ *  wording without spinning up a ledger or an audit log. */
+export function describeActivity(ev: Record<string, any>): string {
+  switch (ev.event) {
+    case "artifact_touched": return `${ev.action || "edit"}: ${shortPath(ev.file_path)}`;
+    case "tool_invoked": return `tool: ${ev.action || ev.tool_name || "?"}${ev.file_path ? " " + shortPath(ev.file_path) : ""}`;
+    case "bash_completed": return `bash: ${String(ev.command || "").slice(0, 40)}`;
+    case "dispatch_squad": return `dispatched squad ${ev.squad_slug || ev.target?.squad || ""}`.trim();
+    case "dispatch_business": return `dispatched business ${ev.business_slug || ev.target?.business || ""}`.trim();
+    case "routing_decision": return `routing: ${ev.target_id || ev.target?.squad || ev.target?.business || "?"}`;
+    case "gate_passed": return "gate passed";
+    case "gate_failed": return "gate failed, revising";
+    case "verify_passed": return "verifying";
+    case "delivered": return "delivered";
+    default: return String(ev.event || "").replace(/_/g, " ");
+  }
+}
+
+/** The label this codebase already agreed on for "we could not determine
+ *  this" (lib/glance/views/absence.js's UNKNOWN_LABEL) — a measured absence
+ *  reads differently from an unmeasured one, and inventing progress is worse
+ *  than admitting we don't know. */
+const UNKNOWN_DOING = "—";
+
+/** Last activity for this row, or UNKNOWN_DOING when the audit trail has
+ *  nothing to say. Thin wrapper around run-ledger's latestTraceActivity —
+ *  the same scan resolveAgenticLiveness already trusts for "is this run
+ *  alive", reused here for "what did it last do" instead of reinvented. */
+function doingFor(row: RunRow, now: number): string {
+  const found = latestTraceActivity(row, now, DOING_WINDOW_MS, DOING_EVENTS);
+  return found ? describeActivity(found.event) : UNKNOWN_DOING;
+}
+
+/** Table body shared by the one-shot and `--follow` renders. Prints nothing
+ *  and returns 0 when the ledger is clean — the caller decides what a "empty"
+ *  render means (exit vs. keep polling). */
+function printStatusTable(where: string, rows: RunRow[]): number {
   if (rows.length === 0) { console.log(`supervisor: no non-terminal runs in ${where}. Ledger is clean.`); return 0; }
   console.log(`scope: ${where}`);
   const pad = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + "…" : s.padEnd(n));
-  console.log(pad("RUN", 24) + pad("STATE", 11) + pad("TARGET", 26) + pad("PID", 8) + pad("RETRIES", 8) + pad("LEASE EXPIRES", 22) + "LAST HEARTBEAT");
+  console.log(
+    pad("RUN", 24) + pad("STATE", 11) + pad("TARGET", 26) + pad("DOING", 34) + pad("PID", 8)
+    + pad("RETRIES", 8) + pad("LEASE EXPIRES", 22) + "LAST HEARTBEAT",
+  );
   const now = Date.now();
   for (const r of rows) {
     const leaseMs = r.lease_expires_at ? Date.parse(r.lease_expires_at) : 0;
@@ -1011,10 +1067,53 @@ function cliStatus(allProjects: boolean): number {
     const alive = r.child_pid && pidAlive(r.child_pid) ? "" : r.child_pid ? " dead" : "";
     console.log(
       pad(r.run_id, 24) + pad(r.state, 11) + pad(`${r.target_kind ?? "?"}/${r.target_slug ?? "?"}`, 26)
-      + pad(`${r.child_pid ?? "-"}${alive}`, 8) + pad(`${r.retries}/${r.max_retries}`, 8)
-      + pad(lease, 22) + (r.heartbeat_at ? `${r.heartbeat_at.slice(11, 19)}Z` : "(never)"),
+      + pad(doingFor(r, now), 34) + pad(`${r.child_pid ?? "-"}${alive}`, 8)
+      + pad(`${r.retries}/${r.max_retries}`, 8) + pad(lease, 22)
+      + (r.heartbeat_at ? `${r.heartbeat_at.slice(11, 19)}Z` : "(never)"),
     );
   }
+  return rows.length;
+}
+
+/** `status` and `status --follow` share this: open the ledger (cheap — cached
+ *  by path, see run-ledger's openLedger), read the non-terminal rows for this
+ *  scope, print the table. */
+function renderStatusOnce(allProjects: boolean): number {
+  const h = openLedger();
+  const scope = resolveSweepScope(allProjects);
+  const rows = findNonTerminal(h, { allProjects: scope.allProjects });
+  const where = scope.allProjects ? "all projects" : scope.projectRoot;
+  return printStatusTable(where, rows);
+}
+
+/** `nrv supervisor status --follow` — a plain re-render loop, no daemon and no
+ *  spawned process: same read-only table as the one-shot render, on a timer.
+ *
+ *  `await Bun.sleep`, never `Bun.sleepSync`, and that choice is load-bearing:
+ *  `sleepSync` blocks the event loop, so a `process.on("SIGINT", …)` handler
+ *  registered anywhere in this process cannot run until the blocking call
+ *  returns — Ctrl-C stops being instant and starts being "whenever the
+ *  current tick ends", which is exactly the class of Ctrl-C defect this
+ *  engine has already spent a cut chasing. An async sleep keeps the loop
+ *  cooperative, so the handler below fires within the same tick it arrives
+ *  in, and the process holds nothing across it (no lock, no open file, no
+ *  child) — the exit is instant and there is nothing left to clean up. */
+async function followStatus(allProjects: boolean, intervalSec: number): Promise<never> {
+  console.log(`supervisor status --follow — refreshing every ${intervalSec}s (Ctrl-C to stop)\n`);
+  const stop = () => { console.log("\nsupervisor status --follow: stopped."); process.exit(0); };
+  process.on("SIGINT", stop);
+  process.on("SIGTERM", stop);
+  for (;;) {
+    console.log(`---- ${new Date().toISOString()} ----`);
+    renderStatusOnce(allProjects);
+    console.log("");
+    await Bun.sleep(intervalSec * 1000);
+  }
+}
+
+function cliStatus(allProjects: boolean): number {
+  renderStatusOnce(allProjects);
+  console.log("\nfollow live:  nrv supervisor status --follow   ·   watch one run's raw events:  nrv watch --trace <run>");
   return 0;
 }
 
@@ -1044,8 +1143,19 @@ if (import.meta.main) {
       }
       process.exit(0); // sweep ALWAYS exits 0 (anti-respawn guard)
     }
-    case "status":
-      process.exit(cliStatus(allProjects));
+    case "status": {
+      if (process.argv.includes("--follow")) {
+        const intervalSec = Math.max(2, parseInt(argValue("--interval", "5") || "5", 10));
+        // Fire-and-forget: followStatus is async (it awaits between ticks so
+        // Ctrl-C stays responsive — see its own comment), so without this
+        // `else` execution would fall straight through to the one-shot
+        // `cliStatus` call below and exit after a single tick.
+        followStatus(allProjects, intervalSec);
+      } else {
+        process.exit(cliStatus(allProjects));
+      }
+      break;
+    }
     case "watch": {
       const intervalSec = Math.max(10, parseInt(argValue("--interval", "120") || "120", 10));
       process.env.NRV_IN_SWEEP = "1";
@@ -1059,24 +1169,25 @@ if (import.meta.main) {
         Bun.sleepSync(intervalSec * 1000);
       }
     }
-    case "install":
-      process.exit(installLaunchd(process.argv.includes("--print")));
-    case "uninstall":
-      process.exit(uninstallLaunchd());
     default:
       console.log([
-        "usage: nrv supervisor <sweep|status|watch|install|uninstall> [--all-projects]",
+        "usage: nrv supervisor <sweep|status|watch> [--all-projects]",
         "",
         "  sweep [--quiet]        one recovery pass over the dispatch ledger (always exits 0)",
-        "  status                 table of non-terminal runs",
-        "  watch [--interval=120] loop sweep forever",
-        "  install [--print]      write + load the launchd LaunchAgent (--print: show plist only)",
-        "  uninstall              unload + remove the launchd LaunchAgent",
+        "  status                 table of non-terminal runs, with the last activity the audit",
+        "                         trail recorded for each (— when nothing was recorded)",
+        "  status --follow [--interval=5]   re-render the table on a timer (Ctrl-C to stop);",
+        "                         read-only — never sweeps, never recovers, never spawns anything",
+        "  watch [--interval=120] loop sweep forever, in the foreground (Ctrl-C to stop)",
         "",
         "  --all-projects         every project on the machine. Without it, sweep/status/watch",
         "                         see only the project of the cwd — the supervisor is the ONE",
         "                         reader allowed the machine-wide view. With no project around",
-        "                         (launchd) it goes machine-wide anyway and says so.",
+        "                         it goes machine-wide anyway and says so.",
+        "",
+        "No OS service is ever registered — the session is the supervisor. Recovery",
+        "triggers lazily on every nrv find/route/dispatch and again when a dispatch",
+        "returns; `watch` covers the unattended case as long as it keeps running.",
         "",
         "env: NRV_SUPERVISOR=0 disables the lazy sweep on nrv find/route/dispatch",
       ].join("\n"));

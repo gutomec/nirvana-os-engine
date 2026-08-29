@@ -118,6 +118,190 @@ outside the rule, reproduces exactly against both the 96-entry and the
 real log. `bun test skills` — 2307 pass, 3 skip, 0 fail. `bun run check:all` —
 exit 0.
 
+### A dispatch that finishes now tells whoever started it, even after the caller detached or died
+
+`nrv dispatch --exec` already lands every run on a ledger row —
+`delivered`, `withheld`, `failed`, `abandoned` — through `markState()`.
+Nothing outside that row ever learned the decision: `dispatch.ts` and
+`delivery-pipeline.ts` together grep to zero hits for
+`notify|webhook|callback|on_complete|sentinel`, and the heartbeat sidecar's
+own comment names a "done-sentinel written by the parent" that nothing
+actually wrote. A caller that starts a dispatch detached
+(`( nohup nrv dispatch … & )`, exactly how the orchestrator launches one) had
+no door to ask "is trace X done?" once the run left `run-track list`'s and
+`supervisor status`'s non-terminal view — a terminal row simply stopped
+appearing anywhere, and the only recourse was polling the process table,
+counting files under an outputs directory, or a timer.
+
+The fix extends the ledger rather than inventing a second source of truth.
+`markState()` now mirrors every delivered/withheld/failed/abandoned decision
+into a small JSON file next to the ledger DB (`run-signals/<run_id>.json`,
+`writeRunSignal`). `failed` counts as a sentinel state even though the ledger
+keeps it recoverable, because a caller waiting on ONE attempt is asking how
+THAT attempt ended, not whether the supervisor eventually resumes the same
+run_id. Two new `nrv run-track` subcommands read it. `status <run-id|trace-id>`
+answers once, by run_id or by trace_id — closing the gap where a terminal row
+was invisible to every existing query, and where `findByTraceId` is the new
+door for a caller that only kept the trace it dispatched with. `wait
+<run-id|trace-id> [--timeout]` blocks a caller until the signal appears,
+woken by an `fs.watch` event on the signal directory rather than a
+sleep-and-poll loop, with a 30-second DB recheck only as a backstop for a
+missed fs event, and a short existence grace so a `wait` issued the instant
+after backgrounding does not race the row's own creation. Both distinguish
+`killed` — a row whose recorded child pid died without ever reaching a
+decision — from a live run, reading `pidAlive` and never mutating the row
+(that stays the supervisor's own call). Exit codes carry the outcome: 0
+delivered, 2 withheld, 1 failed/abandoned/killed, 6 timed out waiting, 5 no
+such run.
+
+**Verified.** A new failing test first (`run-completion-signal.test.ts`,
+watched red before `writeRunSignal`/`status`/`wait` existed), then green: 14
+cases covering the sentinel written on delivered/withheld/failed and NOT on
+intermediate states, `findByTraceId`, `status`/`wait` by run_id and by
+trace_id, exit codes per outcome, the failing-dispatch case, timeout, and an
+unknown id. A second suite (`dispatch-completion-signal.e2e.test.ts`) proves
+it for real rather than only in-process: the actual `scripts/dispatch.ts`,
+backed by a fake `claude` CLI on PATH (no LLM, no network), launched through
+a real detached shell — `( nohup … & )` — that returns before dispatch
+itself can be done; a separate `nrv run-track wait <project-id>` process,
+sharing no state with the launcher beyond the ledger file, observes the
+outcome for both a delivered run and a failed one — never `pgrep`, never a
+file count, never a timer. Plus the full existing ledger surface
+(`run-ledger.test.ts`, `run-ledger-project-scope.test.ts`,
+`agentic-run-tracking.test.ts`, `delivery-pipeline.test.ts`,
+`supervisor-sweep.test.ts`, `driver-ledger-heartbeat.test.ts`,
+`business-liveness.test.ts`, `run-kernel.test.ts`, the `*.e2e.test.ts`
+dispatch suites, `agent-x-gauntlet-cutover.test.ts`,
+`glance-subsystems.test.ts`, `openclaw-support.test.ts`) — 248 tests, all
+green. `bun scripts/check-english-source.ts --strict` and `bun
+scripts/check-changelog-parity.ts --strict` — both clean.
+
+### The supervisor's kill signal reaches the CLI child it meant, not the dispatcher blocked in front of it
+
+`dispatch.ts` opened every ledger row with `childPid: process.pid` — its own
+pid, the process about to block inside `spawnSync` — because that call
+cannot report the CLI runtime's real pid until the child has already exited.
+`supervisor.ts`'s stalled-run recovery signaled exactly that pid
+(`process.kill(pid, "SIGTERM")`), and since nothing in this codebase
+registers `process.on("SIGTERM", …)`, the OS default applied: the dispatcher
+was torn down mid-syscall, before any `finally` unwound. Every runtime
+adapter wraps its `spawnSync` in `try { … } finally { removeTmpFiles(…) }`;
+killing the dispatcher instead of its child skipped that cleanup every time
+and orphaned the real CLI process instead of stopping it. Three
+`nrv-prompt-*` temp files were found leaked from runs the ledger read as
+`delivered` — the supervisor believed it was killing a stalled agent and was
+actually killing the orchestrator's own dispatch.
+
+The fix separates "the orchestrator" from "the pid a supervisor may signal."
+`dispatch.ts` no longer writes a pid at all when it opens a row: an honest
+`null` beats a wrong one, and every `pid > 0` guard downstream already treats
+it as a no-op. The heartbeat sidecar (`run-ledger.ts heartbeat`, spawned
+asynchronously alongside the blocking `spawnSync` so its own pid is known
+immediately) now walks the process table for the one live child of the
+dispatcher it watches, its own pid excluded, and records that pid
+(`recordChildPid`) together with the OS's own process-start timestamp
+(`ps -o lstart=`). The supervisor re-checks that fingerprint before it ever
+signals: a pid whose live start time no longer matches the one recorded means
+the OS has handed the number to someone else since, and the run is routed
+through the same door a genuinely dead pid uses — auto-resume — instead of
+being signaled. A recycled pid now reads as "gone," never as "a stranger to
+SIGTERM." A row with no fingerprint (written before this cut, or a runtime
+the sidecar's `ps` probe can't reach) keeps today's behavior rather than
+gaining a new way to be skipped.
+
+Separately, `findByTraceId` — the query "is trace X finished?" the
+completion signal exists to answer — resolved the wrong row for a trace with
+two attempts opened in the same millisecond (`ORDER BY created_at DESC`
+alone, and `created_at` has millisecond resolution): a resumed run right
+after its predecessor failed. `rowid`, SQLite's own strictly increasing
+insertion order on a table with no `INTEGER PRIMARY KEY` to alias it, breaks
+the tie the same way every time.
+
+**Verified.** A new suite, `dispatch-child-identity.test.ts`: a real detached
+dispatcher process opens a ledger row, then runs the actual `runHeadless` →
+heartbeat-sidecar → `spawnSync` path against a fake `grok` CLI (this
+runtime's adapter always writes a `nrv-prompt-*` bootstrap file, no size gate
+to route around) that ticks once then hangs. The row's recorded `child_pid`
+is asserted to be neither `null` nor the dispatcher's own pid; a real
+`sweep()` on the expired lease kills that pid; the fake CLI dies while the
+dispatcher — never signaled — runs to completion on its own and writes its
+own "done" marker, and the `nrv-prompt-*` file it created is gone afterward,
+proving the `finally` an abrupt SIGTERM would have skipped actually ran. Two
+more cases cover the pid-recycle guard directly: a live process whose
+recorded start time doesn't match is never signaled and is instead routed
+through auto-resume, and a row with no recorded fingerprint keeps the prior
+signal-on-live-pid behavior. `run-completion-signal.test.ts`'s previously
+failing case (`findByTraceId resolves the most recent row for a trace`) now
+passes. `bun test skills/harness` — 1529 pass, 2 skip, 0 fail, across 149
+files (this suite's own baseline flakiness — two `glance` cases racing on a
+shared port — was confirmed pre-existing on unmodified `main`, not caused by
+this cut). `bun scripts/check-english-source.ts --strict`, `bun
+scripts/check-changelog-parity.ts --strict` and `git diff --check` — all
+clean.
+
+### The session is the supervisor now, the same way on macOS, Linux and Windows, and the launchd path it replaces is gone
+
+The owner's requirement, verbatim: *"O sistema deve funcionar da mesma forma
+em qualquer sistema operacional, mac, linux e windows, sem poluir o sistema
+operacional dos usuários."* `nrv supervisor install` registered a launchd
+`LaunchAgent` as the outer recovery layer — macOS-only, and it needed a human
+to run `install` in the first place. Measured on the machine this change
+shipped from: the LaunchAgent it wrote in an earlier session was still
+sitting there, `launchctl load`ed, and had swept nothing productive — the
+automatic recovery it promised had never actually done its job. Claude Code
+runs subagents inside the session, as side tasks, with no OS service anywhere
+in that design; Codex's own open issues (a background-process leak with no
+job control, a sandbox that blocks `pgrep` outright) are the warning against
+depending on a process table or an external daemon for this guarantee.
+
+The recovery mechanism itself was never the defect. `run-ledger.ts`'s
+activity-based lease and `supervisor.ts sweep` are portable already, and the
+sweep has handled "no `ps` on this platform" since before this cut. What was
+missing was anyone to trigger it reliably. The session is that trigger now,
+in three places, none of which registers anything with the operating system.
+`maybeSweep()` already piggybacked on every `nrv find/route/dispatch`;
+`dispatch.ts` now calls it again on the way out (`process.on("exit")`), so a
+dispatch that ran for tens of minutes reconciles whatever else went stale
+while it was busy, with no timer involved — still rate-limited by
+`maybeSweep`'s own 5-minute floor, so a short dispatch pays nothing extra.
+`nrv supervisor watch` stays the foreground loop for the unattended case: the
+user starts it, the user kills it, it lives in their terminal and nowhere
+else. The gap that remains is named rather than hidden: if a session
+dispatches once and nobody runs another `nrv` command or `watch` afterward,
+nobody sweeps until one of them does — "recovered eventually, next time
+someone returns," not "recovered within N seconds of stalling."
+
+`installLaunchd`, `launchdPlistPath`, `renderLaunchdPlist` and the
+`install`/`uninstall` subcommands are gone from `supervisor.ts`, along with
+every mention in its help text and in `commands.ts`'s command table. A
+LaunchAgent from before this change is not touched by any of it: `nrv
+doctor` already carried a report-only check for `sh.nirvana.*`/`com.nirvana.*`
+labels, loaded or on disk, and it stays the one place that names the manual
+cleanup (`launchctl bootout gui/$(id -u)/<label>`, then remove the plist) —
+never a fixer, automated or otherwise, because deleting someone else's
+registration is worse than leaving it. On the machine this shipped from, four
+such labels were loaded; only one (`sh.nirvana.supervisor`) ever came from
+this codebase, which is the whole reason the check reports every label
+instead of guessing which ones are safe to touch.
+
+**Verified.** A scratch ledger (temp SQLite, `NIRVANA_RUN_LEDGER_DB`
+override) seeded with two stalled rows (expired lease, dead pid), recovered
+end to end through the real CLI: `nrv supervisor sweep --all-projects`
+scanned, attempted resume, and transitioned state with zero OS service
+involved; a plain `nrv supervisor watch --all-projects` spawned in the
+background, left running for one pass, then killed by the calling shell —
+exactly the foreground lifecycle the design intends — recovered the second
+row the same way. `nrv supervisor install` now falls through to the usage
+text (exit 2). A new hermetic test
+(`supervisor-sweep.test.ts`, "dispatch-return trigger") rewinds
+`last_sweep_at` past the 5-minute floor to prove the exit-hook's second
+`maybeSweep()` call fires once the window reopens, without a real 5-minute
+wait. `bun test skills/harness` — 1528 pass, 2 skip, 0 fail, across 149
+files. `bun scripts/check-cli-parity.ts`, `bun
+scripts/check-skillmd-command-parity.ts --strict`, `bun
+scripts/check-english-source.ts --strict`, `bun
+scripts/check-changelog-parity.ts --strict` and `git diff --check` — all
+clean. No CI workflow changes.
 ### The served cockpit gets a lock, and the engine learns whose data it is holding
 
 Cut 6 of `.nirvana/plans/event-contract.md`. The Glance cockpit's `server.ts`

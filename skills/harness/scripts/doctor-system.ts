@@ -244,6 +244,47 @@ if (process.platform === "win32") {
   }
 }
 
+// SECTION 1a-quinquies-bis: STRAY LAUNCHD AGENTS (macOS) — this engine
+// registers nothing with launchd/systemd/schtasks on any platform: `nrv
+// supervisor install` was removed (see the top-of-file note in
+// supervisor.ts — "the session IS the supervisor"). A label still loaded
+// under launchctl, or a plist still sitting in ~/Library/LaunchAgents, is
+// residue from a previous engine version — possibly from a component that
+// no longer exists anywhere in this codebase. This only REPORTS: deleting
+// someone else's registration is worse than leaving it, so there is no
+// fixer here, automated or otherwise — verify each label by hand before
+// touching it.
+if (process.platform === "darwin") {
+  const NIRVANA_LABEL = /^(sh|com)\.nirvana\./;
+  let loaded: string[] = [];
+  try {
+    const r = spawnSync("launchctl", ["list"], { encoding: "utf8", timeout: 10_000 });
+    if (r.status === 0) {
+      loaded = (r.stdout || "").split("\n")
+        .map((l) => l.trim().split(/\s+/).pop() || "")
+        .filter((label) => NIRVANA_LABEL.test(label));
+    }
+  } catch { /* launchctl not on PATH — best-effort */ }
+
+  const agentsDir = path.join(HOME, "Library", "LaunchAgents");
+  let files: string[] = [];
+  try { files = fs.readdirSync(agentsDir).filter((f) => NIRVANA_LABEL.test(f)); } catch { /* dir absent — fine */ }
+
+  if (loaded.length === 0 && files.length === 0) {
+    add("launchd: stray agents", "PASS",
+      "no sh.nirvana.*/com.nirvana.* LaunchAgent loaded or on disk — this engine registers nothing with launchd");
+  } else {
+    const loadedNote = loaded.length ? `${loaded.length} loaded (${loaded.join(", ")})` : "none loaded";
+    const filesNote = files.length
+      ? `${files.length} file(s) in ~/Library/LaunchAgents (${files.slice(0, 6).join(", ")}${files.length > 6 ? ", …" : ""})`
+      : "none on disk";
+    add("launchd: stray agents", "WARN",
+      `${loadedNote}; ${filesNote} — residue from before this engine stopped registering with launchd. `
+      + "Verify each label first (it may not even be ours); remove by hand with: "
+      + "launchctl bootout gui/$(id -u)/<label>, then rm the plist.");
+  }
+}
+
 // SECTION 1a-bis: CLAUDE CODE AUTH — a persistent CLAUDE_CODE_OAUTH_TOKEN export
 // in a shell startup file (the pattern our own docs used to recommend) makes the
 // *interactive* Claude Code session authenticate as a setup-token. That profile
