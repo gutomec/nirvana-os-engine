@@ -86,6 +86,60 @@ exatamente tanto contra o enum de 96 entradas quanto contra o de 91, porque
 nenhum dos cinco nomes removidos jamais apareceu no log real. `bun test skills`
 — 2307 passam, 3 pulados, 0 falhas. `bun run check:all` — saída 0.
 
+### O cockpit servido ganha uma trava, e o engine aprende de quem são os dados que está guardando
+
+Corte 6 de `.nirvana/plans/event-contract.md`. O `server.ts` do cockpit Glance
+tinha zero ocorrências de `authorization`, `bearer`, `api_key` ou `authenticate`
+em 2.253 linhas; todo o modelo de segurança era o bind em loopback. Certo para
+um laptop, errado para o que o plano descreve a seguir: `nrv glance --host`
+numa VPS, segurando o caso de um app de escritório de advocacia por horas.
+
+**Fronteira.** O host do bind decide autenticação e tenancy ao mesmo tempo,
+então existe uma flag para lembrar, não duas. Loopback (`127.0.0.1` /
+`localhost` / `::1`, ainda o padrão) fica inalterado — sem token, byte a byte
+o mesmo cockpit que existia antes deste corte. Qualquer outro host recusa toda
+requisição, API e arquivos estáticos igualmente, antes de qualquer
+roteamento, até carregar uma credencial Bearer.
+
+**Credencial.** Reaproveitada, não reinventada: o armazém de chaves que
+`nrv serve keygen` já tinha (`lib/serve/auth.ts`, sha256 em repouso,
+comparação em tempo constante) agora também trava um Glance servido, por um
+campo aditivo, `ApiKeyRecord.glance`. Uma chave gerada para a API de jobs não
+libera silenciosamente o cockpit interativo — `nrv serve keygen --glance` é
+opt-in explícito. Leitura versus escrita dentro do Glance continua a flag
+`--read-only` por processo já existente, não um segundo eixo por chave: o
+Glance é o cockpit de um único operador, não a API multi-chamador do corte 7.
+
+**Tenant.** Um processo servido fica preso a exatamente um projeto, já
+verdade estruturalmente para seu control-plane e seu run-kernel. O único
+lugar onde isso ainda não era verdade: `HARNESS_LOGS_DIR` / `MAESTRO_LOGS_DIR`,
+que `paths.js` resolve uma vez, no require, e nunca mais reavalia a partir de
+uma escrita posterior em `process.env` — a armadilha que
+`tests/helpers/engine-log-dirs.ts` já nomeava e contornava para os testes.
+`overridePath()` (`bun-helpers.ts`) muta esse objeto congelado no lugar, a
+mesma técnica, agora exposta para um chamador de produção: uma instância
+servida prende a variável e o objeto ao seu próprio projeto na subida e
+restaura os dois ao fechar.
+
+**Retenção.** `audit.project_retention_days` (padrão 365, o número que o
+`HarnessConfigSchema` já declarava e nunca ligou a nada) gira o log do
+próprio projeto de uma instância servida na subida, através do `rotate()` de
+`audit.js` — também já declarado, também nunca chamado por nada até agora. O
+caso local não é auto-rotacionado por este corte: um prazo de protocolo é
+problema do cenário servido, e apagar o histórico do próprio laptop como
+efeito colateral de uma mudança sem relação é o oposto de "o padrão local não
+pode virar hostil". O dono define o número real para a sua obrigação de LGPD
+com `nrv config set audit.project_retention_days <n> --scope project`.
+
+**Verificado.** Um teste novo, `glance-auth-tenancy.test.ts`, prende uma
+requisição servida sem autenticação recusada (401) e a mesma requisição
+servida (200) com uma chave `--glance` — observado falhando antes de a
+fronteira existir. Startup local medido antes e depois (`--no-open --port 0`,
+três rodadas cada): ~60ms de base, ~64-71ms depois, dentro do ruído normal de
+execução — nenhum código novo roda no caminho de loopback. `bun test
+skills/harness` — 1518 passam, 2 pulados, 0 falhas. `bun test
+skills/_shared/tests` — 615 passam, 1 pulado, 0 falhas.
+
 ## 0.12.0 — 2026-08-28
 
 ### Um schema gerado para de depender da máquina que o gerou

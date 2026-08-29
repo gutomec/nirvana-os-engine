@@ -19,6 +19,7 @@ export const GROUP_LABELS = Object.freeze({
   multi_target: 'Multi-target', gauntlet: 'Gauntlet', execution: 'Execução', glance: 'Glance', runtime: 'Runtime',
   routing: 'Roteamento', supervisor: 'Supervisor', updates: 'Atualizações', budget: 'Orçamento',
   baselines: 'Baselines de custo', quality_gate: 'Quality gate', delivery: 'Entrega', verify: 'Portão de admissão',
+  audit: 'Auditoria',
 });
 
 export const SOURCE_LABELS = Object.freeze({
