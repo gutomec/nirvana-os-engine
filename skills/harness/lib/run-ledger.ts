@@ -419,6 +419,17 @@ export function getRun(handle: LedgerHandle, runId: string): RunRow | null {
   return parseRow(r);
 }
 
+/** Most recent run with this trace_id — the door for a caller that only kept
+ *  the trace it dispatched with, not the run_id the ledger generated. Unscoped
+ *  like getRun: the caller decides what to do about a foreign project's row
+ *  (see run-track.ts's refuseForeignRun). */
+export function findByTraceId(handle: LedgerHandle, traceId: string): RunRow | null {
+  const r = handle.db
+    .query("SELECT * FROM runs WHERE trace_id = ? ORDER BY created_at DESC LIMIT 1")
+    .get(traceId) as Record<string, unknown> | null;
+  return parseRow(r);
+}
+
 /** True when the pid exists (EPERM counts as alive: exists, not ours). */
 export function pidAlive(pid: number): boolean {
   if (!Number.isFinite(pid) || pid <= 0) return false;
@@ -500,6 +511,72 @@ export function scanDir(dir: string, sinceMs: number, opts: { cap?: number; limi
  *  runaway tree. 0 when the dir is missing/empty. */
 export function latestMtimeMs(dir: string, cap = 5000): number {
   return scanDir(dir, Number.POSITIVE_INFINITY, { cap }).latestMs;
+}
+
+// ── done-sentinel: a caller can wait on this without polling the process
+// table ─────────────────────────────────────────────────────────────────
+// markState() already lands every run on a decision; this mirrors that
+// decision into a small file on disk so a DIFFERENT process can learn it — a
+// caller that backgrounded the dispatch with `nohup … &` and returned, or a
+// session that reconnects after its own crash. The file is the notification;
+// the ledger row underneath stays the source of truth (a reconnecting caller
+// can always re-derive the same fact — see findByTraceId/getRun, and
+// scripts/run-track.ts's `status`/`wait`).
+//
+// `failed` counts as a sentinel state even though the ledger keeps it
+// recoverable (LEGAL.failed can still walk back to `running`): a caller
+// waiting on ONE dispatch attempt is asking "how did THIS run end", and by
+// the time markState reaches `failed` the process that was running it has
+// already decided it is done. If the supervisor later resumes the same
+// run_id, the resumed attempt overwrites this file again when IT reaches a
+// decision — same file, newest truth, exactly like the ledger row it mirrors.
+const SENTINEL_STATES: ReadonlySet<RunState> = new Set(["delivered", "withheld", "abandoned", "failed"]);
+
+/** Directory the sentinel files live in, next to the ledger DB they mirror —
+ *  so NIRVANA_RUN_LEDGER_DB alone isolates it in tests, no second env var. */
+export function runSignalDir(): string {
+  return path.join(path.dirname(resolveLedgerDbPath()), "run-signals");
+}
+
+/** The done-sentinel path for one run. `nrv run-track wait` watches this
+ *  directory (fs.watch — event-driven, no polling timer) for exactly this
+ *  file to appear. */
+export function runSignalPath(runId: string): string {
+  return path.join(runSignalDir(), `${runId}.json`);
+}
+
+export interface RunSignal {
+  run_id: string;
+  trace_id: string | null;
+  project_id: string | null;
+  state: string;
+  outputs_root: string | null;
+  ended_at: string;
+  error: string | null;
+}
+
+/** Best-effort, atomic (tmp + rename) so a reader never observes a
+ *  half-written file. A signal failure must never break the state transition
+ *  that triggered it — the ledger row is already the truth on disk. */
+function writeRunSignal(row: RunRow): void {
+  try {
+    const dir = runSignalDir();
+    fs.mkdirSync(dir, { recursive: true });
+    const signal: RunSignal = {
+      run_id: row.run_id,
+      trace_id: row.trace_id,
+      project_id: row.project_id,
+      state: row.state,
+      outputs_root: metaString(row.meta, "outputs_root") ?? metaString(row.meta, "project_dir"),
+      ended_at: row.terminal_at ?? row.updated_at,
+      error: row.last_error,
+    };
+    const tmp = path.join(dir, `.${row.run_id}.${process.pid}.tmp`);
+    fs.writeFileSync(tmp, JSON.stringify(signal));
+    fs.renameSync(tmp, runSignalPath(row.run_id));
+  } catch (e) {
+    console.error(`[run-ledger] could not write run-signal for '${row.run_id}' (${(e as Error)?.message ?? e})`);
+  }
 }
 
 // ── mutations ───────────────────────────────────────────────────────────
@@ -683,7 +760,9 @@ export function markState(handle: LedgerHandle, runId: string, next: RunState, e
   emitLedgerAudit("x_ledger_state_changed", {
     run_id: runId, from: row.state, to: next, error: extra.error ?? null, last_error: extra.error ?? row.last_error ?? null,
   }, row);
-  return getRun(handle, runId)!;
+  const updated = getRun(handle, runId)!;
+  if (SENTINEL_STATES.has(next)) writeRunSignal(updated);
+  return updated;
 }
 
 /** Record the runtime session id (revise/resume machinery) without a state

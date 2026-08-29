@@ -81,6 +81,64 @@ outside the rule, reproduces exactly against both the 96-entry and the
 real log. `bun test skills` — 2307 pass, 3 skip, 0 fail. `bun run check:all` —
 exit 0.
 
+### A dispatch that finishes now tells whoever started it, even after the caller detached or died
+
+`nrv dispatch --exec` already lands every run on a ledger row —
+`delivered`, `withheld`, `failed`, `abandoned` — through `markState()`.
+Nothing outside that row ever learned the decision: `dispatch.ts` and
+`delivery-pipeline.ts` together grep to zero hits for
+`notify|webhook|callback|on_complete|sentinel`, and the heartbeat sidecar's
+own comment names a "done-sentinel written by the parent" that nothing
+actually wrote. A caller that starts a dispatch detached
+(`( nohup nrv dispatch … & )`, exactly how the orchestrator launches one) had
+no door to ask "is trace X done?" once the run left `run-track list`'s and
+`supervisor status`'s non-terminal view — a terminal row simply stopped
+appearing anywhere, and the only recourse was polling the process table,
+counting files under an outputs directory, or a timer.
+
+The fix extends the ledger rather than inventing a second source of truth.
+`markState()` now mirrors every delivered/withheld/failed/abandoned decision
+into a small JSON file next to the ledger DB (`run-signals/<run_id>.json`,
+`writeRunSignal`). `failed` counts as a sentinel state even though the ledger
+keeps it recoverable, because a caller waiting on ONE attempt is asking how
+THAT attempt ended, not whether the supervisor eventually resumes the same
+run_id. Two new `nrv run-track` subcommands read it. `status <run-id|trace-id>`
+answers once, by run_id or by trace_id — closing the gap where a terminal row
+was invisible to every existing query, and where `findByTraceId` is the new
+door for a caller that only kept the trace it dispatched with. `wait
+<run-id|trace-id> [--timeout]` blocks a caller until the signal appears,
+woken by an `fs.watch` event on the signal directory rather than a
+sleep-and-poll loop, with a 30-second DB recheck only as a backstop for a
+missed fs event, and a short existence grace so a `wait` issued the instant
+after backgrounding does not race the row's own creation. Both distinguish
+`killed` — a row whose recorded child pid died without ever reaching a
+decision — from a live run, reading `pidAlive` and never mutating the row
+(that stays the supervisor's own call). Exit codes carry the outcome: 0
+delivered, 2 withheld, 1 failed/abandoned/killed, 6 timed out waiting, 5 no
+such run.
+
+**Verified.** A new failing test first (`run-completion-signal.test.ts`,
+watched red before `writeRunSignal`/`status`/`wait` existed), then green: 14
+cases covering the sentinel written on delivered/withheld/failed and NOT on
+intermediate states, `findByTraceId`, `status`/`wait` by run_id and by
+trace_id, exit codes per outcome, the failing-dispatch case, timeout, and an
+unknown id. A second suite (`dispatch-completion-signal.e2e.test.ts`) proves
+it for real rather than only in-process: the actual `scripts/dispatch.ts`,
+backed by a fake `claude` CLI on PATH (no LLM, no network), launched through
+a real detached shell — `( nohup … & )` — that returns before dispatch
+itself can be done; a separate `nrv run-track wait <project-id>` process,
+sharing no state with the launcher beyond the ledger file, observes the
+outcome for both a delivered run and a failed one — never `pgrep`, never a
+file count, never a timer. Plus the full existing ledger surface
+(`run-ledger.test.ts`, `run-ledger-project-scope.test.ts`,
+`agentic-run-tracking.test.ts`, `delivery-pipeline.test.ts`,
+`supervisor-sweep.test.ts`, `driver-ledger-heartbeat.test.ts`,
+`business-liveness.test.ts`, `run-kernel.test.ts`, the `*.e2e.test.ts`
+dispatch suites, `agent-x-gauntlet-cutover.test.ts`,
+`glance-subsystems.test.ts`, `openclaw-support.test.ts`) — 248 tests, all
+green. `bun scripts/check-english-source.ts --strict` and `bun
+scripts/check-changelog-parity.ts --strict` — both clean.
+
 ## 0.12.0 — 2026-08-28
 
 ### A generated schema stops depending on the machine that generated it

@@ -86,6 +86,68 @@ exatamente tanto contra o enum de 96 entradas quanto contra o de 91, porque
 nenhum dos cinco nomes removidos jamais apareceu no log real. `bun test skills`
 — 2307 passam, 3 pulados, 0 falhas. `bun run check:all` — saída 0.
 
+### Um despacho que termina agora avisa quem o iniciou, mesmo depois que o chamador se desconectou ou morreu
+
+O `nrv dispatch --exec` já leva todo run a uma linha no ledger —
+`delivered`, `withheld`, `failed`, `abandoned` — através do `markState()`.
+Nada fora dessa linha nunca soube da decisão: `dispatch.ts` e
+`delivery-pipeline.ts` juntos dão zero ocorrências para
+`notify|webhook|callback|on_complete|sentinel`, e o próprio comentário do
+sidecar de heartbeat cita um "done-sentinel escrito pelo pai" que nada
+realmente escrevia. Um chamador que inicia um despacho desacoplado
+(`( nohup nrv dispatch … & )`, exatamente como o orquestrador despacha um)
+não tinha porta para perguntar "o trace X terminou?" assim que o run saía da
+visão não-terminal do `run-track list` e do `supervisor status` — uma linha
+terminal simplesmente parava de aparecer em qualquer lugar, e o único
+recurso era sondar a tabela de processos, contar arquivos num diretório de
+saída, ou um timer.
+
+A correção estende o ledger em vez de inventar uma segunda fonte de verdade.
+O `markState()` agora espelha toda decisão delivered/withheld/failed/abandoned
+num pequeno arquivo JSON ao lado do banco do ledger
+(`run-signals/<run_id>.json`, `writeRunSignal`). `failed` conta como estado
+sentinela mesmo com o ledger mantendo-o recuperável, porque um chamador que
+espera por UMA tentativa está perguntando como AQUELA tentativa terminou, não
+se o supervisor eventualmente retoma o mesmo run_id. Dois novos subcomandos
+de `nrv run-track` leem esse sinal. `status <run-id|trace-id>` responde de
+uma vez, por run_id ou por trace_id — fechando a lacuna onde uma linha
+terminal ficava invisível para qualquer consulta existente, e onde
+`findByTraceId` é a porta nova para um chamador que só guardou o trace com
+que despachou. `wait <run-id|trace-id> [--timeout]` bloqueia um chamador até
+o sinal aparecer, acordado por um evento `fs.watch` no diretório do sinal em
+vez de um laço de sleep-e-sondagem, com uma reconferência no banco a cada 30s
+apenas como reforço para um evento de fs perdido, e uma folga curta de
+existência para que um `wait` chamado no instante seguinte ao desacoplamento
+não corra contra a própria criação da linha. Os dois distinguem `killed` —
+uma linha cujo pid filho registrado morreu sem nunca chegar a uma decisão —
+de um run ao vivo, lendo `pidAlive` e nunca mutando a linha (isso continua
+sendo decisão exclusiva do supervisor). Códigos de saída carregam o
+desfecho: 0 delivered, 2 withheld, 1 failed/abandoned/killed, 6 timeout
+esperando, 5 nenhum run encontrado.
+
+**Verificado.** Um teste falhando primeiro (`run-completion-signal.test.ts`,
+visto vermelho antes de `writeRunSignal`/`status`/`wait` existirem), depois
+verde: 14 casos cobrindo o sinal escrito em delivered/withheld/failed e NÃO
+escrito em estados intermediários, `findByTraceId`, `status`/`wait` por
+run_id e por trace_id, códigos de saída por desfecho, o caso de despacho que
+falha, timeout, e um id desconhecido. Uma segunda suíte
+(`dispatch-completion-signal.e2e.test.ts`) prova de verdade, não só em
+processo: o `scripts/dispatch.ts` real, apoiado por um CLI `claude` falso no
+PATH (sem LLM, sem rede), lançado por um shell realmente desacoplado —
+`( nohup … & )` — que retorna antes de o despacho em si poder ter terminado;
+um processo separado `nrv run-track wait <project-id>`, sem compartilhar
+estado com o lançador além do arquivo do ledger, observa o desfecho tanto de
+um run entregue quanto de um que falha — nunca `pgrep`, nunca contagem de
+arquivo, nunca timer. Mais a superfície inteira já existente do ledger
+(`run-ledger.test.ts`, `run-ledger-project-scope.test.ts`,
+`agentic-run-tracking.test.ts`, `delivery-pipeline.test.ts`,
+`supervisor-sweep.test.ts`, `driver-ledger-heartbeat.test.ts`,
+`business-liveness.test.ts`, `run-kernel.test.ts`, as suítes
+`*.e2e.test.ts` de dispatch, `agent-x-gauntlet-cutover.test.ts`,
+`glance-subsystems.test.ts`, `openclaw-support.test.ts`) — 248 testes,
+todos verdes. `bun scripts/check-english-source.ts --strict` e `bun
+scripts/check-changelog-parity.ts --strict` — ambos limpos.
+
 ## 0.12.0 — 2026-08-28
 
 ### Um schema gerado para de depender da máquina que o gerou
