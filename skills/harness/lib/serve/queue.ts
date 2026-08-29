@@ -7,7 +7,8 @@
 // reproduce that on a buyer's VPS.
 
 import * as runsLib from "./runs.ts";
-import { notifyTerminal } from "./webhooks.ts";
+import { deliveryId, referenceBody } from "./webhooks.ts";
+import { enqueue as enqueueDelivery } from "./webhook-outbox.ts";
 
 interface Pending {
   memo: ReturnType<typeof runsLib.register>;
@@ -55,7 +56,18 @@ export class RunQueue {
       .finally(() => {
         this.active--;
         this.activeBySession.delete(p.memo.session.id);
-        if (p.webhook) void notifyTerminal(p.webhook, runsLib.envelope(p.memo));
+        if (p.webhook) {
+          const env = runsLib.envelope(p.memo);
+          const body = JSON.stringify(referenceBody(env));
+          enqueueDelivery(p.memo.outputs_root, {
+            id: deliveryId(env),
+            trace_id: p.memo.trace_id,
+            session_dir: p.memo.session.dir,
+            url: p.webhook.url,
+            secret: p.webhook.secret,
+            body,
+          });
+        }
         this.pump();
       });
   }

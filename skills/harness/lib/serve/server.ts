@@ -17,6 +17,7 @@ import { listArtifacts, resolveArtifact, contentTypeFor } from "./artifacts.ts";
 import { todayAuditFile } from "../../../_shared/lib/log-paths.ts";
 import { listRuntimes } from "../../../_shared/lib/host-agent-driver.ts";
 import { parseAuditLine } from "../../../_shared/lib/cloudevents.js";
+import * as outbox from "./webhook-outbox.ts";
 
 export interface ServeOpts {
   port: number;
@@ -45,6 +46,12 @@ const ENGINE_VERSION = (() => {
 export function startServer(opts: ServeOpts) {
   const queue = new RunQueue({ maxConcurrent: opts.maxConcurrent });
   const adopted = runsLib.adoptOrphans();
+  outbox.adoptPending(sessionsRoot());
+  // The retry schedule for webhook deliveries. A sweep, not a timer per
+  // delivery: N pending deliveries must not become N setTimeout handles that
+  // vanish with the process exactly like the thing this cut replaced.
+  const sweepMs = Number(process.env.NIRVANA_SERVE_WEBHOOK_SWEEP_MS) || 5000;
+  const sweepTimer = setInterval(() => { void outbox.sweepOnce(); }, sweepMs);
 
   const cors = (req: Request): Record<string, string> => {
     const origin = req.headers.get("origin");
@@ -82,6 +89,7 @@ export function startServer(opts: ServeOpts) {
           runtimes,
           queue: queue.stats,
           adopted_runs: adopted,
+          webhook_outbox: { pending: outbox.pendingCount() },
           licensing: {
             model: "per-machine",
             seats_consumed_by_this_host: 1,
@@ -173,6 +181,54 @@ export function startServer(opts: ServeOpts) {
         });
       }
 
+      // ── jobs (session-agnostic — the polling floor) ──────────────────────
+      // A consumer that only kept the job id (the case one webhook told it
+      // about, or one it lost the webhook for) never needs to know which
+      // session produced it. `runsLib.get` already rehydrates from disk by
+      // trace_id alone; ownership is the same key check every session route
+      // already makes, just without the session_id in the path.
+      const mJob = /^\/v1\/jobs\/([^/]+)$/.exec(p);
+      if (mJob && req.method === "GET") {
+        const memo = runsLib.get(mJob[1], sessionsRoot());
+        if (!memo || memo.key_id !== key.id) return json({ error: "job_not_found" }, 404, h);
+        return json(runsLib.envelope(memo), 200, h);
+      }
+
+      const mJobEvents = /^\/v1\/jobs\/([^/]+)\/events$/.exec(p);
+      if (mJobEvents && req.method === "GET") {
+        const memo = runsLib.get(mJobEvents[1], sessionsRoot());
+        if (!memo || memo.key_id !== key.id) return json({ error: "job_not_found" }, 404, h);
+        return sseAuditStream(memo, h);
+      }
+
+      const mJobResult = /^\/v1\/jobs\/([^/]+)\/result$/.exec(p);
+      if (mJobResult && req.method === "GET") {
+        const memo = runsLib.get(mJobResult[1], sessionsRoot());
+        if (!memo || memo.key_id !== key.id) return json({ error: "job_not_found" }, 404, h);
+        if (memo.state === "queued" || memo.state === "running") return json({ error: "job_not_finished", state: memo.state }, 409, h);
+        const artifacts = listArtifacts(memo.outputs_root);
+        if (artifacts.length === 1) {
+          const abs = resolveArtifact(memo.outputs_root, artifacts[0].path);
+          if (abs) {
+            return new Response(Bun.file(abs), {
+              headers: { "Content-Type": artifacts[0].content_type, "Content-Disposition": `attachment; filename="${path.basename(abs)}"`, ...h },
+            });
+          }
+        }
+        return json({ artifacts, hint: artifacts.length ? `download one by path: GET /v1/jobs/${mJobResult[1]}/artifacts/{path}` : "no artifacts produced" }, 200, h);
+      }
+
+      const mJobArt = /^\/v1\/jobs\/([^/]+)\/artifacts\/(.+)$/.exec(p);
+      if (mJobArt && req.method === "GET") {
+        const memo = runsLib.get(mJobArt[1], sessionsRoot());
+        if (!memo || memo.key_id !== key.id) return json({ error: "job_not_found" }, 404, h);
+        const abs = resolveArtifact(memo.outputs_root, decodeURIComponent(mJobArt[2]));
+        if (!abs) return json({ error: "artifact_not_found" }, 404, h);
+        return new Response(Bun.file(abs), {
+          headers: { "Content-Type": contentTypeFor(abs), "Content-Disposition": `attachment; filename="${path.basename(abs)}"`, ...h },
+        });
+      }
+
       // ── webhook registration (per key) ──────────────────────────────────
       if (p === "/v1/webhooks" && req.method === "POST") {
         let body: { url?: string } = {};
@@ -187,6 +243,15 @@ export function startServer(opts: ServeOpts) {
       return json({ error: "not_found" }, 404, h);
     },
   });
+
+  // The sweep timer must not outlive the server it retries deliveries for —
+  // a test that stops one server and starts the next must not keep the
+  // previous sweep firing against a torn-down fixture.
+  const originalStop = server.stop.bind(server);
+  server.stop = ((...args: Parameters<typeof originalStop>) => {
+    clearInterval(sweepTimer);
+    return originalStop(...args);
+  }) as typeof server.stop;
 
   return server;
 }

@@ -140,6 +140,80 @@ execução — nenhum código novo roda no caminho de loopback. `bun test
 skills/harness` — 1518 passam, 2 pulados, 0 falhas. `bun test
 skills/_shared/tests` — 615 passam, 1 pulado, 0 falhas.
 
+### A API servida ganha garantias de entrega no webhook e uma rota de job que não precisa de session id
+
+Corte 7, o último, de `.nirvana/plans/event-contract.md`. Medido antes de
+construir, seguindo a própria instrução do brief: `skills/harness/lib/serve/`
+já tinha `server.ts`, `auth.ts`, `queue.ts`, `runs.ts`, `webhooks.ts`,
+`artifacts.ts`, `sessions.ts` — autenticação por bearer, registro de webhook
+por chave e uma assinatura HMAC. Contado em `webhooks.ts`: `retry` 1,
+`backoff` 0, `jitter` 0, `idempotency` 0, `timestamp` 0, `replay` 0. Não
+existia nenhuma rota de job — um consumidor que guardasse só o id do job, sem
+o session id que o produziu, não tinha como perguntar "como está o meu
+caso?" (`/v1/sessions/{sid}/runs/{tid}` respondia à mesma pergunta, mas só
+com o session id ainda em mãos).
+
+**A rota de job.** `GET /v1/jobs/{id}`, `/events` e `/result` — três leituras
+sem sessão, chaveadas só pelo trace_id e pela posse da API key, reusando a
+reidratação em disco que `runsLib.get` já fazia em vez de um segundo caminho
+de busca. `/result` transmite o artefato direto quando existe exatamente um;
+senão responde com a mesma lista que o envelope já carrega, mais um caminho
+para escolher um via a nova `/v1/jobs/{id}/artifacts/{path}`.
+
+**Garantias de entrega.** Dois cabeçalhos novos se juntam ao
+`X-Nirvana-Signature` que já existia:
+
+| Cabeçalho | Garantia que ele fecha |
+|---|---|
+| `X-Nirvana-Signature` (agora assina `${timestamp}.${body}`) | prende o timestamp DENTRO da assinatura, então uma requisição capturada não pode ser reproduzida com um timestamp novo forjado |
+| `X-Nirvana-Timestamp` | uma janela de replay de 5 minutos, com 60s de tolerância de relógio — `verifyWebhook()` em `webhooks.ts` é a referência do receptor, em vez de deixar cada consumidor reinventar |
+| `X-Nirvana-Delivery-Id` | reaproveitado, não reinventado — o `id` CloudEvents que o corte 2 já calcula para todo evento de auditoria, estável em toda retentativa do mesmo evento terminal |
+| (sem cabeçalho — persistência) | backoff exponencial com jitter cheio, uma linha JSON por tentativa ao lado do `.run.json` (`.webhook-delivery.jsonl`), sobrevivendo a um restart do servidor; 10 tentativas (~2h de pior caso acumulado) antes de a entrega ser marcada `abandoned` — uma retentativa que nunca desiste é um defeito diferente, e os artefatos da execução continuam alcançáveis pela rota de job de qualquer forma |
+
+**Um bug real, encontrado lendo o código, não o brief.** O corpo do webhook
+enviava o envelope de execução INTEIRO — `summary` e `reservations` por
+valor, o conteúdo markdown de verdade do entregável — para um consumidor cujo
+exemplo de trabalho é um escritório de advocacia submetendo um caso.
+Corrigido: o corpo entregue agora carrega só `trace_id`, `session_id`,
+`state`, `gate`, `job_url` e `result_url`; o consumidor busca o conteúdo de
+verdade sozinho, com a própria credencial, pela rota de job acima. Isso não
+era algo que o brief tinha errado — era uma lacuna que a própria restrição de
+"payload por referência" do brief existia para fechar, em código que o brief
+ainda não conhecia.
+
+**Durable Work Continuity, e a situação real deste corte.** A PR #159
+(`feat/durable-work-continuity-core-pr-v9`, 2.446 linhas + 4.399 de testes,
+"provisional, aguardando revisão independente") estava ABERTA, não
+mesclada, quando isto foi escrito — `durable-work.ts` só existe naquele
+branch. Construído sem depender dela: o outbox é uma superfície
+deliberadamente estreita de três funções (`enqueue` / `sweepOnce` /
+`readState`) para que o DWC, quando mesclado, possa virar o armazenamento por
+baixo dessas mesmas três funções sem mover o contrato de fio que um
+consumidor enxerga. As duas perguntas que o plano deixou em aberto para
+@AndreAlmeidaDC são respondidas provisoriamente, com o raciocínio no
+comentário de cabeçalho de `webhook-outbox.ts`: o estado do job lido via HTTP
+hoje toca só o run ledger, nunca o DWC, então nenhuma fronteira de autoridade
+irmã é cruzada ainda; o id de entrega que o consumidor vê vive no espaço de
+identidade do próprio engine (o `id` CloudEvents), não num `operation_id` do
+DWC, até que exista um DWC para mapear.
+
+**Verificado.** Três testes novos, falhando primeiro, um por garantia: uma
+entrega duplicada reconhecida pelo id estável, uma requisição antiga
+reproduzida recusada por `verifyWebhook()`, um endpoint que falha sendo
+retentado com atraso crescente até o teto de 10 tentativas parar — tudo
+verificado dirigindo a própria máquina de estados do outbox diretamente, sem
+espera real de backoff. Mais uma entrega HTTP de verdade, de ponta a ponta,
+contra um receptor local (assinatura real, `X-Nirvana-Timestamp` real,
+verificação real) e um teste do piso de polling: submeter, nunca chamar
+`/events`, recuperar o estado terminal e o artefato só pela `/v1/jobs/{id}`.
+`bun test skills/harness/tests/serve-api.test.ts skills/harness/tests/
+serve-queue-sse.test.ts skills/harness/tests/serve-webhook-delivery.test.ts`
+— 44 passam, 0 falhas. `bun test skills/harness` — 1558 passam, 2 pulados, 0
+falhas, em 151 arquivos. `bun scripts/check-english-source.ts --strict`,
+`bun scripts/check-changelog-parity.ts --strict` e `git diff --check` —
+todos limpos. `supervisor.ts`, `dispatch.ts` e o trabalho de desinstalação em
+`fix/dispatch-completion-signal` (PR #164) não foram tocados.
+
 ## 0.12.0 — 2026-08-28
 
 ### Um schema gerado para de depender da máquina que o gerou
