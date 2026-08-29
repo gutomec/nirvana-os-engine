@@ -98,11 +98,71 @@ NIRVANA_SERVE_SESSIONS_ROOT=/data/nirvana-sessions nrv serve --port 7777
 the last attempt was accepted WITH the reservations in the field beside it —
 the API never hides that from the caller.
 
+## Jobs — the polling floor
+
+A consumer that only kept the job id (it lost the webhook, or never listened
+for one) never needs the session id back:
+
+```
+GET  /v1/jobs/{trace_id}                  → the envelope (same shape as above)
+GET  /v1/jobs/{trace_id}/events           → SSE, same feed as the session route
+GET  /v1/jobs/{trace_id}/result           → the artifact, or the list + a path to pick one
+GET  /v1/jobs/{trace_id}/artifacts/{path} → one artifact by path
+```
+
+`/result` streams the file directly when the run produced exactly one
+artifact; otherwise it answers with the same `artifacts` list the envelope
+already carries, plus a pointer to `/artifacts/{path}`. Ownership is the same
+key check every session route makes — another key's token gets
+`job_not_found`, the same 404 a stranger's session id gets.
+
+This is the honest floor the plan calls for: it does not depend on
+connectivity at the moment an event fires, so it is what a consumer falls
+back to after a lost webhook, a missed SSE stream, or simply never having
+listened at all.
+
 ## Webhooks
 
-`POST /v1/webhooks {"url":"https://…"}` returns a secret; each terminal state
-POSTs `{event:"run.finished", run:<envelope>}` with an HMAC-SHA256 of the body
-in `X-Nirvana-Signature` (`sha256=…`). Verify it before trusting the payload.
+`POST /v1/webhooks {"url":"https://…"}` returns a secret. Each terminal state
+delivers ONE POST, retried on failure — see below — carrying:
+
+```json
+{ "event": "run.finished", "trace_id": "run_…", "session_id": "ses_…",
+  "state": "delivered", "gate": "pass",
+  "job_url": "/v1/jobs/run_…", "result_url": "/v1/jobs/run_…/result" }
+```
+
+**By reference, never by value**: the body never carries `summary`,
+`reservations` or artifact content — a legal case is sensitive, and the
+consumer already holds the credential needed to fetch the real thing from
+the URLs above. `job_url` / `result_url` are relative unless the operator set
+`NIRVANA_SERVE_PUBLIC_URL` (the bind address behind a reverse proxy is not
+the public one) — the consumer already knows its own host, since it is the
+one that called this API in the first place.
+
+**Headers**, all required to trust the delivery:
+
+| Header | Meaning |
+|---|---|
+| `X-Nirvana-Signature` | `sha256=<hmac>` over `${timestamp}.${body}` under the registered secret — the timestamp is bound INTO the signature, so a captured request cannot be replayed with a forged fresh timestamp. |
+| `X-Nirvana-Timestamp` | Unix seconds the request was signed. |
+| `X-Nirvana-Delivery-Id` | Idempotency key, stable across every retry of the SAME terminal event — reused from the CloudEvents `id` every audit event already carries (see `03-audit.md`). Dedupe on this before processing. |
+| `X-Nirvana-Event` | `run.finished`, today's only kind. |
+
+A receiver validates a delivery by recomputing the signature over
+`${timestamp}.${body}` and refusing anything outside a 5-minute window (60s
+of clock skew tolerated) — `verifyWebhook()` in `lib/serve/webhooks.ts` is
+the reference implementation; use it rather than reimplementing the
+timestamp math.
+
+**Retry**: exponential backoff with full jitter, persisted per run
+(`.webhook-delivery.jsonl` beside `.run.json`) so it survives this server
+restarting, not only the receiver being briefly unreachable. Delays climb
+1s → 2s → 4s → … capped at one hour; after 10 attempts (≈2h worst case
+cumulative) the delivery is marked `abandoned` and stops — a retry that never
+gives up is a different defect. An abandoned webhook is a degraded
+notification, never a lost result: the run's artifacts stay on disk and
+`GET /v1/jobs/{id}` never expires.
 
 ## Exposing it
 
@@ -125,6 +185,9 @@ wildcard.
 - **A restart does not lose runs**: each run persists `.run.json` beside its
   artifacts and is rehydrated on lookup. A run interrupted mid-flight is
   reported `failed` with the reason, never as eternally running.
+- **A restart does not lose pending webhook deliveries either**: the retry
+  schedule is re-discovered from `.webhook-delivery.jsonl` on startup, the
+  same way orphaned runs are.
 - **Concurrency**: one run per session, `--max-concurrent` across sessions.
 - **Seats**: each machine running the engine consumes a seat of the pack
   license. A fleet of API workers needs a licensing decision before it

@@ -131,6 +131,94 @@ each): ~60ms baseline, ~64-71ms after, inside run-to-run noise — no new code
 runs on the loopback path. `bun test skills/harness` — 1518 pass, 2 skip, 0
 fail. `bun test skills/_shared/tests` — 615 pass, 1 skip, 0 fail.
 
+### The served API gets delivery guarantees on its webhook and a job route that does not need a session id
+
+Cut 7 — the last one — of `.nirvana/plans/event-contract.md`. Measured
+before building, per the brief's own instruction: `skills/harness/lib/serve/`
+already had `server.ts`, `auth.ts`, `queue.ts`, `runs.ts`, `webhooks.ts`,
+`artifacts.ts`, `sessions.ts` — bearer auth, per-key webhook registration,
+an HMAC signature. Counted in `webhooks.ts`: `retry` 1, `backoff` 0,
+`jitter` 0, `idempotency` 0, `timestamp` 0, `replay` 0. No job route existed
+at all — a consumer that kept only a job id, not the session id that
+produced it, had no way to ask "how is my case doing?" (`/v1/sessions/{sid}/
+runs/{tid}` answered the same question, but only with the session id still
+in hand).
+
+**The job route.** `GET /v1/jobs/{id}`, `/events` and `/result` — three
+session-agnostic reads keyed by trace_id and API-key ownership alone, reusing
+`runsLib.get`'s existing disk rehydration rather than a second lookup path.
+`/result` streams the one artifact directly when there is exactly one, else
+answers with the same list the envelope already carries plus a path to pick
+one via the new `/v1/jobs/{id}/artifacts/{path}`.
+
+**Delivery guarantees.** Two new headers join the existing
+`X-Nirvana-Signature`:
+
+| Header | Guarantee it closes |
+|---|---|
+| `X-Nirvana-Signature` (now signs `${timestamp}.${body}`) | binds the timestamp INTO the signature, so a captured request cannot be replayed with a forged fresh one |
+| `X-Nirvana-Timestamp` | a 5-minute replay window, 60s clock skew tolerated — `verifyWebhook()` in `webhooks.ts` is the reference receiver, not left for every consumer to reinvent |
+| `X-Nirvana-Delivery-Id` | reused, not reinvented — the CloudEvents `id` cut 2 already computes for every audit event, stable across every retry of the same terminal event |
+| (no header — persistence) | exponential backoff with full jitter, one JSON line per attempt beside `.run.json` (`.webhook-delivery.jsonl`), surviving a server restart; 10 attempts (~2h worst-case cumulative) before the delivery is marked `abandoned` — a retry that never gives up is a different defect, and the run's artifacts stay reachable through the job route regardless |
+
+**A real bug, found reading the code rather than the brief.** The webhook
+body was sending the FULL run envelope — `summary` and `reservations` by
+value, the deliverable's actual markdown content — to a consumer whose
+worked example is a law practice submitting a case. Fixed: the delivered
+body now carries only `trace_id`, `session_id`, `state`, `gate`, `job_url`
+and `result_url`; the consumer fetches the real content itself, with its own
+credential, from the job route above. This was not something the brief got
+wrong — it was a gap the brief's own "payload by reference" constraint
+existed to close, in code the brief did not know about yet.
+
+**A second bug, found by this cut's own tests.** The new `/v1/jobs/{id}/
+events` route reuses `sseAuditStream`, unchanged since before this cut —
+and the first test anywhere to cancel that stream early (rather than
+draining it to `run.finished`) took down the whole CI process on ubuntu and
+macOS: the stream's polling `setInterval` had no `cancel()` handler, so a
+disconnected client left it running, and its next `controller.enqueue()`
+threw uncaught inside a bare timer callback. Fixed: `cancel()` clears the
+interval immediately, `send()` catches a stale `enqueue()` defensively, and
+`controller.close()` no longer throws on a client that closed first. Latent
+before this cut — nothing prior ever disconnected early enough to hit it.
+
+**Durable Work Continuity, and the situation this cut was actually in.**
+PR #159 (`feat/durable-work-continuity-core-pr-v9`, 2,446 lines + 4,399 of
+tests, "provisional, aguardando revisão independente") was OPEN, not merged,
+when this was written — `durable-work.ts` exists only on that branch. Built
+without depending on it: the outbox is a deliberately narrow three-function
+surface (`enqueue` / `sweepOnce` / `readState`) so that landing DWC later can
+become the storage underneath these same three functions without moving the
+wire contract a consumer sees. The two questions the plan left open for
+@AndreAlmeidaDC are answered provisionally, with the reasoning in
+`webhook-outbox.ts`'s header comment: job state read over HTTP touches only
+the run ledger today, never DWC, so no sibling-authority boundary is crossed
+yet; the delivery id a consumer sees lives in the engine's own identity space
+(the CloudEvents `id`) rather than a DWC `operation_id`, until there is a DWC
+to map it onto.
+
+**Verified.** Three new failing-first tests, one per guarantee: a duplicate
+delivery recognized by its stable id, a replayed old request refused by
+`verifyWebhook()`, a failing endpoint retried with growing delay until the
+10-attempt ceiling stops it — all asserted by driving the outbox's own state
+machine directly, no real waiting through backoff. Plus one live HTTP
+delivery end to end against a local receiver (real signature, real
+`X-Nirvana-Timestamp`, real verify), one polling-floor test — submit, never
+call `/events`, retrieve the terminal state and the artifact through
+`/v1/jobs/{id}` alone — and, after `gh workflow run smoke.yml` caught the SSE
+crash above on ubuntu and macOS, a regression test that disconnects mid-run
+and asserts the server still answers `/v1/health` afterward (not
+deterministic locally — the race needs CI's scheduling pressure — but
+structurally exercises the exact `cancel()` path that was missing). `bun
+test skills/harness/tests/serve-api.test.ts skills/harness/tests/
+serve-queue-sse.test.ts skills/harness/tests/serve-webhook-delivery.test.ts`
+— 45 pass, 0 fail. `bun test skills/harness` — 1542 pass, 2 skip, 0 fail,
+across 148 files (run twice, consistent). `bun
+scripts/check-english-source.ts --strict`, `bun
+scripts/check-changelog-parity.ts --strict` and `git diff --check` — all
+clean. `supervisor.ts`, `dispatch.ts` and the uninstall work on
+`fix/dispatch-completion-signal` (PR #164) were not touched.
+
 ## 0.12.0 — 2026-08-28
 
 ### A generated schema stops depending on the machine that generated it
