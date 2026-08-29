@@ -448,15 +448,19 @@ export function pidAlive(pid: number): boolean {
 // `wmic` is deprecated and already absent from recent Windows images;
 // `tasklist`'s human-readable output is locale-dependent, and even its `/FO
 // CSV` form has no parent-pid column, so a caller would still be one syscall
-// short. `Get-CimInstance Win32_Process` gives pid, parent pid and creation
-// time in one structured, server-side-filterable query — at the cost of a
-// slower spawn (PowerShell startup, not a bare `ps`). This default timeout is
-// the generous budget for a standalone caller (a supervisor recycle check, a
-// direct test call) with nothing else waiting on it; the heartbeat sidecar's
-// own discovery attempt uses a much tighter one instead (see heartbeatMain).
-// Same degradation contract as POSIX on any failure (PowerShell missing, WMI
-// unavailable, non-zero exit, or this timeout): null, meaning "cannot
-// verify" — never "does not exist".
+// short. PowerShell fills the gap, but not with one provider for both asks:
+// `Get-Process -Id` is a thin wrapper over .NET's own Process class (no
+// WMI/CIM round trip) and exists in every PowerShell version, but Windows
+// PowerShell 5.1 — what `powershell.exe` actually is — never gave it a
+// parent-pid property. `Get-CimInstance Win32_Process` has ParentProcessId on
+// every version, at the cost of the WMI provider's own startup latency, so it
+// is used ONLY where `Get-Process` cannot answer at all. This default timeout
+// is the generous budget for a standalone caller (a supervisor recycle check,
+// a direct test call) with nothing else waiting on it; the heartbeat
+// sidecar's own discovery attempt uses a much tighter one instead (see
+// heartbeatMain). Same degradation contract as POSIX on any failure
+// (PowerShell missing, WMI unavailable, non-zero exit, or this timeout):
+// null, meaning "cannot verify" — never "does not exist".
 const WINDOWS_PS_TIMEOUT_MS = 4000;
 
 /** `.Ticks` (.NET, 100ns since 0001-01-01) as a decimal string stands in for
@@ -464,15 +468,18 @@ const WINDOWS_PS_TIMEOUT_MS = 4000;
  *  compared only against a value recorded by this same function on this same
  *  OS — never across platforms — so the two formats never need to agree with
  *  each other, only with themselves. Ticks is exact where `lstart`'s
- *  one-second resolution is not. `timeoutMs` defaults generously (this is the
- *  budget a standalone caller with no surrounding time pressure gets); the
- *  heartbeat's own discovery attempt passes a much tighter one — see
- *  heartbeatMain. */
+ *  one-second resolution is not. `Get-Process`, not `Get-CimInstance`: a
+ *  single-pid lookup needs no parent-pid column, so it gets the faster native
+ *  path — this is the call the heartbeat makes right after a successful
+ *  discovery, and every bit of latency shaved off it is latency the run's
+ *  OWN tick cadence gets back. `timeoutMs` defaults generously (the budget a
+ *  standalone caller with no surrounding time pressure gets); the heartbeat's
+ *  own discovery attempt passes a much tighter one — see heartbeatMain. */
 function processStartedAtWindows(pid: number, timeoutMs = WINDOWS_PS_TIMEOUT_MS): string | null {
   try {
     const r = spawnSync("powershell", [
       "-NoProfile", "-NonInteractive", "-Command",
-      `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}" -ErrorAction SilentlyContinue).CreationDate.Ticks`,
+      `(Get-Process -Id ${pid} -ErrorAction SilentlyContinue).StartTime.Ticks`,
     ], { encoding: "utf8", timeout: timeoutMs });
     if (r.status !== 0) return null;
     const line = (r.stdout || "").trim();
@@ -480,9 +487,11 @@ function processStartedAtWindows(pid: number, timeoutMs = WINDOWS_PS_TIMEOUT_MS)
   } catch { return null; }
 }
 
-/** Same provider, filtered by `ParentProcessId` so Windows does the search
- *  server-side instead of shipping the whole process table over stdout for
- *  this process to re-filter, the way the POSIX branch does with `ps -A`. */
+/** `Get-CimInstance`, not `Get-Process`: this is the ParentProcessId lookup
+ *  Windows PowerShell 5.1's `Get-Process` cannot do at all (see the module
+ *  comment above `WINDOWS_PS_TIMEOUT_MS`), filtered server-side so Windows
+ *  does the search instead of shipping the whole process table over stdout
+ *  for this process to re-filter, the way the POSIX branch does with `ps -A`. */
 function findChildPidWindows(parentPid: number, excludePid?: number, timeoutMs = WINDOWS_PS_TIMEOUT_MS): number | null {
   try {
     const r = spawnSync("powershell", [
@@ -1238,11 +1247,18 @@ export function setSupervisorMeta(handle: LedgerHandle, key: string, value: stri
  *  single sweep into ten thousand audit lines. */
 const TOUCH_EVENTS_PER_TICK = 25;
 
-/** Windows-only budget for the sidecar's one child-pid discovery attempt
- *  (see heartbeatMain) — much tighter than a standalone caller's default,
- *  because this one sits inside a liveness loop a short-lived child cannot
- *  afford to have starved of its own tick. */
-const HEARTBEAT_DISCOVERY_TIMEOUT_MS = 1000;
+/** Windows-only budget for one of the sidecar's child-pid discovery attempts
+ *  (see heartbeatMain) — tighter than a standalone caller's default, because
+ *  this one sits inside a liveness loop a short-lived child cannot afford to
+ *  have starved of its own tick. */
+const HEARTBEAT_DISCOVERY_TIMEOUT_MS = 1500;
+
+/** How many ticks get a discovery attempt before the sidecar stops trying —
+ *  more than one, because the real CLI child can still be mid-spawn on the
+ *  very first tick (see heartbeatMain); a small fixed number rather than a
+ *  wall-clock deadline, so the total cost stays bounded regardless of how
+ *  small --interval is. */
+const MAX_DISCOVERY_ATTEMPTS = 2;
 
 function heartbeatArg(name: string): string | undefined {
   const i = process.argv.indexOf(name);
@@ -1283,25 +1299,25 @@ export function heartbeatMain(): void {
   // direct child of --parent and hands the ledger the pid the supervisor is
   // actually allowed to signal.
   //
-  // Exactly ONE attempt, on whichever tick first reaches it, and — this is
-  // the part that matters — AFTER that tick's own activity scan and
-  // renewLease below, never before. `findChildPid`/`processStartedAt` are a
-  // `ps` call on POSIX (single-digit ms) but a PowerShell spawn on Windows
-  // (hundreds of ms, sometimes several seconds under load). A RETRIED
-  // attempt — one per tick until found or a deadline — used to compound that
-  // cost across many ticks in a row: each retry still ran after the useful
-  // work, so no single tick's own renewLease was ever blocked, but enough
-  // slow retries in sequence could still push the sidecar's internal clock so
-  // far behind real time that it got SIGTERMed (the child finished, the
-  // parent tore down) before a LATER tick ever arrived at its own renewLease
-  // or stall check — observed on a run whose child lived 3.4s: the first
-  // renewal landed, then a chain of slow retries ran out the clock and the
-  // stall this run was supposed to prove was never reached. One attempt ever
-  // bounds the damage to exactly one tick's worth of extra latency, which is
-  // what a short-lived child's remaining lifetime actually has to spare; by
-  // the time a real CLI child's sidecar reaches its first tick the child has
-  // had at least one full `intervalMs` to appear in the process table.
-  let discoveryAttempted = false;
+  // At most MAX_DISCOVERY_ATTEMPTS tries, one per tick, and — this is the
+  // part that matters — AFTER that tick's own activity scan and renewLease
+  // below, never before. `findChildPid`/`processStartedAt` are a `ps` call on
+  // POSIX (single-digit ms) but a PowerShell spawn on Windows (hundreds of
+  // ms, sometimes several seconds under load). An UNBOUNDED retry — one per
+  // tick until found or a wall-clock deadline — let that cost compound across
+  // many ticks in a row: each retry still ran after the useful work, so no
+  // single tick's own renewLease was ever blocked, but enough slow retries
+  // back to back could still push the sidecar's internal clock so far behind
+  // real time that it got SIGTERMed (the child finished, the parent tore
+  // down) before a LATER tick ever arrived at its own renewLease or stall
+  // check — observed on a run whose child lived 3.4s: the first renewal
+  // landed, then a chain of slow retries ran out the clock and the stall this
+  // run was supposed to prove was never reached. A small FIXED attempt count
+  // bounds the worst case to a known multiple of one tick's extra latency,
+  // while still surviving the ordinary race where the real CLI child is still
+  // mid-spawn on the very first tick.
+  let discoveryAttempts = 0;
+  let childDiscovered = false;
 
   for (;;) {
     Bun.sleepSync(intervalMs);
@@ -1348,15 +1364,18 @@ export function heartbeatMain(): void {
       }, row);
     }
 
-    if (!discoveryAttempted && parentPid > 0) {
-      discoveryAttempted = true;
+    if (!childDiscovered && parentPid > 0 && discoveryAttempts < MAX_DISCOVERY_ATTEMPTS) {
+      discoveryAttempts++;
       // A tight budget (vs. the generous standalone default): this is a
       // best-effort attempt sitting inside a liveness loop, not a caller
       // that can afford to wait out a slow PowerShell spawn. Timing out
-      // just means this run never gets a child_pid — degrades exactly like
-      // "no ps on this platform" always has.
+      // just means this attempt found nothing — degrades exactly like "no
+      // ps on this platform" always has, and the next tick gets another try.
       const childPid = findChildPid(parentPid, process.pid, HEARTBEAT_DISCOVERY_TIMEOUT_MS);
-      if (childPid) recordChildPid(handle, runId, childPid, processStartedAt(childPid, HEARTBEAT_DISCOVERY_TIMEOUT_MS));
+      if (childPid) {
+        recordChildPid(handle, runId, childPid, processStartedAt(childPid, HEARTBEAT_DISCOVERY_TIMEOUT_MS));
+        childDiscovered = true;
+      }
     }
   }
   process.exit(0);
