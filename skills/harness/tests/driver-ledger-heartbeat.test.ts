@@ -129,10 +129,19 @@ describe("driver — heartbeat sidecar", () => {
     expect(typeof stallEvents[0].heartbeat_at).toBe("string");
 
     // No dangling sidecar (the managed equivalent of "all timers cleared"):
-    // give the SIGTERM/sentinel a moment, then look for the run id in ps.
-    Bun.sleepSync(400);
-    const pg = spawnSync("pgrep", ["-f", row.run_id], { encoding: "utf8" });
-    expect((pg.stdout || "").trim()).toBe("");
+    // the parent sends SIGTERM/writes the sentinel with no grace period, so a
+    // fixed delay before checking races the sidecar's own teardown exactly
+    // like the artifact-touch fakes used to (see awaitAuditLine above). Poll
+    // for the process to be gone instead — fast when the machine is fast,
+    // and it still fails if the process never actually goes away.
+    let pgOut = "";
+    const pgDeadline = Date.now() + 5_000;
+    for (;;) {
+      pgOut = (spawnSync("pgrep", ["-f", row.run_id], { encoding: "utf8" }).stdout || "").trim();
+      if (pgOut === "" || Date.now() >= pgDeadline) break;
+      Bun.sleepSync(50);
+    }
+    expect(pgOut).toBe("");
   }, 20_000);
 
   test("unledgered calls keep byte-for-byte legacy behavior (pipes, no sidecar)", () => {
