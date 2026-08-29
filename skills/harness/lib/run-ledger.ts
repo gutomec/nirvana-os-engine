@@ -1300,22 +1300,32 @@ export function heartbeatMain(): void {
   // actually allowed to signal.
   //
   // At most MAX_DISCOVERY_ATTEMPTS tries, and — this is the part that
-  // matters — only on a tick that ALREADY found activity, after that tick's
-  // own renewLease, never on a quiet tick and never before. `findChildPid`/
-  // `processStartedAt` are a `ps` call on POSIX (single-digit ms) but a
-  // PowerShell spawn on Windows (hundreds of ms, sometimes several seconds
-  // under load). Attempting on every tick — quiet ones included — let that
-  // cost land on the EXACT ticks a quiet run depends on: each attempt still
-  // ran after that tick's own work, so no renewal was ever blocked, but a
-  // slow attempt sitting on what should have been a fast, empty tick could
-  // itself stand in for the very silence the stall detector is watching for,
-  // pushing the next real check late enough to miss the window — observed on
-  // a run whose child lived 3.4s: the first renewal landed, then attempts
-  // kept firing through the run's quiet stretch and the stall it was
-  // supposed to prove was never reached in time. Confining attempts to
-  // activity ticks keeps every quiet tick exactly as fast as it always was,
-  // and a small FIXED attempt count still survives the ordinary race where
-  // the real CLI child is mid-spawn on the very first one.
+  // matters — only on a tick that ALREADY found activity (or is the very
+  // first tick, quiet or not — see below), after that tick's own
+  // renewLease, never on a LATER quiet tick. `findChildPid`/`processStartedAt`
+  // are a `ps` call on POSIX (single-digit ms) but a PowerShell spawn on
+  // Windows (hundreds of ms, sometimes several seconds under load).
+  // Attempting on every tick — quiet ones included — let that cost land on
+  // the EXACT ticks a quiet run depends on: each attempt still ran after that
+  // tick's own work, so no renewal was ever blocked, but a slow attempt
+  // sitting on what should have been a fast, empty tick could itself stand in
+  // for the very silence the stall detector is watching for, pushing the next
+  // real check late enough to miss the window — observed on a run whose child
+  // lived 3.4s: the first renewal landed, then attempts kept firing through
+  // the run's quiet stretch and the stall it was supposed to prove was never
+  // reached in time. Confining LATER attempts to activity ticks keeps every
+  // later quiet tick exactly as fast as it always was.
+  //
+  // The FIRST tick is exempt from that gate, activity or not: a child whose
+  // entire output is one line written at startup (a fake CLI's single tick,
+  // a real one's opening log line) can finish writing it before the sidecar —
+  // a separate, independently-started process — even captures its OWN
+  // `lastBytes` baseline, so `activity` reads false for that write on every
+  // tick for the rest of the run, forever, and a purely activity-gated
+  // sidecar would never get a SINGLE chance to discover the child. One
+  // unconditional try up front survives that; a small FIXED attempt count
+  // still bounds the cost, and every attempt after the first still needs
+  // genuine activity to earn one.
   let discoveryAttempts = 0;
   let childDiscovered = false;
 
@@ -1356,27 +1366,28 @@ export function heartbeatMain(): void {
         }, row);
         touchBudget--;
       }
-
-      if (!childDiscovered && parentPid > 0 && discoveryAttempts < MAX_DISCOVERY_ATTEMPTS) {
-        discoveryAttempts++;
-        // A tight budget (vs. the generous standalone default): this is a
-        // best-effort attempt sitting inside a liveness loop, not a caller
-        // that can afford to wait out a slow PowerShell spawn. Timing out
-        // just means this attempt found nothing — degrades exactly like "no
-        // ps on this platform" always has, and the next activity tick gets
-        // another try.
-        const childPid = findChildPid(parentPid, process.pid, HEARTBEAT_DISCOVERY_TIMEOUT_MS);
-        if (childPid) {
-          recordChildPid(handle, runId, childPid, processStartedAt(childPid, HEARTBEAT_DISCOVERY_TIMEOUT_MS));
-          childDiscovered = true;
-        }
-      }
     } else if (now - lastActivityAt >= stallMs && !stallRecorded) {
       stallRecorded = true;
       emitLedgerAudit("x_ledger_stall_observed", {
         run_id: runId, gap_ms: now - lastActivityAt, stall_budget_ms: stallMs,
         heartbeat_at: row.heartbeat_at,
       }, row);
+    }
+
+    if (!childDiscovered && parentPid > 0 && discoveryAttempts < MAX_DISCOVERY_ATTEMPTS
+        && (activity || discoveryAttempts === 0)) {
+      discoveryAttempts++;
+      // A tight budget (vs. the generous standalone default): this is a
+      // best-effort attempt sitting inside a liveness loop, not a caller
+      // that can afford to wait out a slow PowerShell spawn. Timing out
+      // just means this attempt found nothing — degrades exactly like "no
+      // ps on this platform" always has, and the next activity tick gets
+      // another try.
+      const childPid = findChildPid(parentPid, process.pid, HEARTBEAT_DISCOVERY_TIMEOUT_MS);
+      if (childPid) {
+        recordChildPid(handle, runId, childPid, processStartedAt(childPid, HEARTBEAT_DISCOVERY_TIMEOUT_MS));
+        childDiscovered = true;
+      }
     }
   }
   process.exit(0);
