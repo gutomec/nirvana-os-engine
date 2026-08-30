@@ -49,6 +49,7 @@ import {
 import { validateMindCloneFile, type ValidationResult } from "../../../_shared/lib/mindclone-validator.ts";
 import { mindCloneModule, verifyAll, verifyEntity, type VerifyReport } from "../../../_shared/lib/verify/index.ts";
 import { handleObservabilityRoute } from "./views/observability-handler.ts";
+import { discoverKnownProjects, validateProjectPath } from "./project-discovery.ts";
 import { AgentXCanaryQueue, ConversationService, MaestroTurnQueue, ProjectService, resumeCommand, type Conversation, type GlanceAgentXCanaryAdapter, type GlanceExecutionRunner, type MessageRouter, type TurnView } from "../control-plane/index.ts";
 import { createRun as createKernelRun, getRun as getKernelRun, listEvents as listKernelEvents, openKernel } from "../run-kernel/index.ts";
 import { getGauntlet, listCandidateRevisions, listScorecards, projectMultiTargetRun } from "../gauntlet/index.ts";
@@ -283,6 +284,16 @@ export async function startServer(opts: ServerOptions) {
   const isLoopback = LOOPBACK_HOSTS.has(host);
   const url = `http://${isLoopback ? "localhost" : host}:${port}`;
   const projectRoot = path.resolve(process.env.NIRVANA_PROJECT_ROOT || process.cwd());
+  // Live project root: reflects `POST /api/actions/switch-project` without a restart.
+  // `resolveScope()` (via `getScope()`) already re-reads `process.env.NIRVANA_PROJECT_ROOT`
+  // fresh on every call (scope.ts's own doc comment) — switching writes that env var, so this
+  // getter sees the new root on the very next call. The `projectRoot` const above stays frozen
+  // by closure at boot on purpose (it seeds controlPlaneDb/kernelDb/maestroTurns, which are NOT
+  // part of this cut — see the brief's explicit out-of-scope note); every request-handler call
+  // site that must reflect a live switch reads `currentProjectRoot()` instead. Falls back to the
+  // boot-time root on the same terms every other `scope.projectRoot || ...` site in this file
+  // already uses (global scope with no marker up the cwd tree).
+  const currentProjectRoot = (): string => getScope().projectRoot || projectRoot;
   const controlPlaneDb = path.join(projectRoot, ".nirvana", "control-plane.sqlite");
   const kernelDb = path.join(projectRoot, ".nirvana", "run-kernel.sqlite");
   const projectService = new ProjectService();
@@ -534,21 +545,22 @@ export async function startServer(opts: ServerOptions) {
         if (p === "/api/v1/projects/plan" && req.method === "POST") {
           const body = await req.json().catch(() => ({})) as any;
           if (body.relative_root && (path.isAbsolute(body.relative_root) || body.relative_root.includes(".."))) return problem(400, "Invalid path", "relative_root must be confined to the Glance workspace");
-          const target = path.resolve(projectRoot, body.relative_root || ".");
-          if (target !== projectRoot && !target.startsWith(projectRoot + path.sep)) return problem(400, "Invalid path", "project path escapes the workspace");
+          const root = currentProjectRoot();
+          const target = path.resolve(root, body.relative_root || ".");
+          if (target !== root && !target.startsWith(root + path.sep)) return problem(400, "Invalid path", "project path escapes the workspace");
           return json(projectService.planCreate({ projectRoot: target, displayName: body.display_name, scope: body.scope, orchestrationMode: body.orchestration_mode }));
         }
         if (p === "/api/v1/projects" && req.method === "POST") {
           const body = await req.json().catch(() => ({})) as any;
           const relative = body.relative_root || ".";
           if (path.isAbsolute(relative) || relative.includes("..")) return problem(400, "Invalid path", "relative_root must be confined to the Glance workspace");
-          const project = projectService.create({ projectRoot: path.resolve(projectRoot, relative), displayName: body.display_name, scope: body.scope, orchestrationMode: body.orchestration_mode }, body.plan_hash);
+          const project = projectService.create({ projectRoot: path.resolve(currentProjectRoot(), relative), displayName: body.display_name, scope: body.scope, orchestrationMode: body.orchestration_mode }, body.plan_hash);
           return json(project, 201);
         }
         if (p === "/api/v1/projects:adopt" && req.method === "POST") {
           const body = await req.json().catch(() => ({})) as any;
           if (!body.plan_hash) return problem(400, "Missing plan hash", "Adoption requires a preview plan_hash");
-          const project = projectService.adopt({ projectRoot, displayName: body.display_name, scope: body.scope, orchestrationMode: body.orchestration_mode }, body.plan_hash);
+          const project = projectService.adopt({ projectRoot: currentProjectRoot(), displayName: body.display_name, scope: body.scope, orchestrationMode: body.orchestration_mode }, body.plan_hash);
           return json(project, 201);
         }
         const projectMatch = p.match(/^\/api\/v1\/projects\/(prj_[A-Za-z0-9-]+)$/);
@@ -597,7 +609,7 @@ export async function startServer(opts: ServerOptions) {
               // sends, makes the Message one turn of the project's runtime session.
               if (body.mode === "run") {
                 const receipt = await agentXQueue().submit({ projectId: body.project_id, conversationId: messagesMatch[1], messageId: message.message_id,
-                  brief: message.content, projectRoot, idempotencyKey });
+                  brief: message.content, projectRoot: currentProjectRoot(), idempotencyKey });
                 return json({ message: receipt.message, run: receipt.run, queued: receipt.queued, capability: receipt.capability }, receipt.queued ? 202 : 200);
               }
               const receipt = maestroTurns().submit({ projectId: body.project_id, conversationId: messagesMatch[1], messageId: message.message_id, prompt: message.content });
@@ -781,6 +793,7 @@ export async function startServer(opts: ServerOptions) {
         if (!opts.allowActions) {
           return json({ error: "actions disabled; restart Glance with --allow-actions to enable", action: p }, 403);
         }
+        if (p === "/api/actions/switch-project") return await handleSwitchProject(req, isLoopback);
         return handleAction(req, p, opts);
       }
 
@@ -1542,10 +1555,15 @@ export async function startServer(opts: ServerOptions) {
       }
       if (p === "/api/scope") return json(getScope());
 
+      // Other Nirvana projects on this machine — for the topnav project switcher.
+      // Read-only (no allowActions gate; discovery has no side effects), same
+      // `.nirvana/`-marker bar `POST /api/actions/switch-project` validates against.
+      if (p === "/api/known-projects" && req.method === "GET") return json({ projects: discoverKnownProjects() });
+
       // Which engine subsystems are standing. Read-only, no spawn, no network;
       // a subsystem whose health cannot be determined answers `status: null` and
       // the view renders `—` rather than a green light nobody measured.
-      if (p === "/api/subsystems") return json({ subsystems: readSubsystems(projectRoot) });
+      if (p === "/api/subsystems") return json({ subsystems: readSubsystems(currentProjectRoot()) });
 
       if (p === "/api/audit/report") {
         const sc = getScope();
@@ -2050,7 +2068,7 @@ export async function startServer(opts: ServerOptions) {
 
   console.error(`[glance] up on ${url}  (scope=${getScope().mode}, allow_actions=${opts.allowActions}, theme=${opts.theme})`);
   console.error(`[glance] auto-shutdown after ${opts.idleMin}min idle  ·  Ctrl+C to exit`);
-  if (!isLoopback) console.error(`[glance] served on ${host} — authentication required (Authorization: Bearer <token from \`nrv serve keygen --glance\`>); tenant = ${projectRoot}`);
+  if (!isLoopback) console.error(`[glance] served on ${host} — authentication required (Authorization: Bearer <token from \`nrv serve keygen --glance\`>); tenant = ${currentProjectRoot()}`);
   // A served instance is a VPS process with no display attached to it, most of the time; even
   // when one exists, opening a browser aimed at a bare non-TLS network address is not this
   // cut's call to make. Loopback keeps today's behavior unchanged.
@@ -2077,7 +2095,7 @@ export async function startServer(opts: ServerOptions) {
 
   const inspection = projectInspection();
   const recovery = inspection.kind === "project" && inspection.project
-    ? agentXQueue().recover(inspection.project.project_id, projectRoot)
+    ? agentXQueue().recover(inspection.project.project_id, currentProjectRoot())
     : { enqueued: [], reattached: [], redispatched: [], skipped: [] };
 
   // Releases what an embedding host or a test holds through this instance: the queue detaches,
@@ -2275,6 +2293,55 @@ const ACTIONS: Record<string, ActionDef> = {
     },
   },
 };
+
+/**
+ * POST /api/actions/switch-project — live-rebinds this LOOPBACK Glance
+ * instance to a different Nirvana project, no restart required. Local case
+ * only: a served instance (`--host`, `isLoopback === false`) is pinned to
+ * one tenant for its whole life by the tenancy block near the top of
+ * `startServer` — that pin is the isolation guarantee a served,
+ * authenticated, potentially multi-caller instance relies on, so this
+ * action refuses outright when it isn't loopback.
+ *
+ * Mutates `NIRVANA_PROJECT_ROOT` and overrides `HARNESS_LOGS_DIR` /
+ * `MAESTRO_LOGS_DIR` via the exact same `overridePath()` technique the
+ * served-tenancy block already uses (skills/_shared/lib/bun-helpers.ts:73),
+ * just triggered by this user action instead of at boot. `getScope()` /
+ * `resolveScope()` re-read `process.env.NIRVANA_PROJECT_ROOT` fresh on
+ * every call, so the new root is live for every other endpoint starting
+ * with the very next request — no cache to invalidate.
+ */
+async function handleSwitchProject(req: Request, isLoopback: boolean): Promise<Response> {
+  if (!isLoopback) {
+    return json({ error: "switch-project is a local (loopback) action; a served instance is pinned to its tenant for its whole life" }, 403);
+  }
+  let body: any = {};
+  try { body = await req.json(); } catch { /* empty/invalid body — validateProjectPath rejects it below */ }
+
+  const validated = validateProjectPath(body?.project_root);
+  if (!validated.ok) return json({ error: validated.error }, 400);
+
+  const from = getScope().projectRoot;
+  const to = validated.path;
+  const tenantHarnessLogsDir = path.join(to, ".nirvana", "logs", "harness");
+  const tenantMaestroLogsDir = path.join(to, ".nirvana", "logs", "maestro");
+  process.env.NIRVANA_PROJECT_ROOT = to;
+  // Both the env var AND overridePath(), exactly like the served-tenancy block above (~455-461):
+  // audit.js/log-paths.ts re-check `process.env.HARNESS_LOGS_DIR` on every call, while everything
+  // else reads the frozen `paths.js` object overridePath() mutates in place.
+  process.env.HARNESS_LOGS_DIR = tenantHarnessLogsDir;
+  process.env.MAESTRO_LOGS_DIR = tenantMaestroLogsDir;
+  overridePath("HARNESS_LOGS_DIR", tenantHarnessLogsDir);
+  overridePath("MAESTRO_LOGS_DIR", tenantMaestroLogsDir);
+
+  try {
+    createRequire(import.meta.url)("../audit.js").emit("x_glance_project_switched", { from, to, actor: "glance" }, { cwd: to });
+  } catch (error) {
+    console.error(`[glance] audit not written (${(error as Error).message})`);
+  }
+
+  return json({ ok: true, from, to, scope: getScope() });
+}
 
 async function handleAction(req: Request, p: string, opts: any): Promise<Response> {
   const name = p.replace(/^\/api\/actions\//, "");
