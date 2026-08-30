@@ -8,6 +8,8 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+## 0.12.3 — 2026-08-30
+
 ### Glance: the glass material now covers the whole shell, not one accordion
 
 PR #172 shipped the `.gl` / `.gl--2` / `.gl--3` / `.gl--ink` glass recipe
