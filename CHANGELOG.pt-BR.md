@@ -8,6 +8,18 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Glance: o painel de detalhe de uma run volta a ser legível
+
+`.run-detail-head` não tinha `flex-direction`, então caía no padrão `row`:
+os três blocos que deveriam empilhar (barra de status, título do brief,
+grid de metadados) ficavam espremidos lado a lado, cada um com um terço da
+largura do painel, quebrando o texto em dezenas de linhas. O
+`align-items: stretch` padrão do flex então fazia cada irmão igualar o que
+mais quebrou — medido em 1816px para três linhas curtas numa run real,
+empurrando a timeline de eventos inteira para fora da tela, sem como rolar
+até ela. É anterior ao trabalho do Cartão de Trajetória (11/08/2026);
+achado ao vivo revisando aquela PR, não causado por ela.
+
 ## 0.12.2 — 2026-08-30
 
 ### Glance: o Cartão de Trajetória substitui duas timelines de run divergentes

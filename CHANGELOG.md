@@ -8,6 +8,17 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Glance: a run's detail panel is readable again
+
+`.run-detail-head` had no `flex-direction`, so it defaulted to `row`: the
+three blocks meant to stack (status bar, brief title, metadata grid) were
+squeezed side by side instead, each a third of the panel's width, wrapping
+their text onto dozens of lines. Flex's default `align-items: stretch` then
+made every sibling match whichever wrapped the most — measured at 1816px for
+three short lines on a real run, pushing the event timeline below it entirely
+off-screen with no way to scroll to it. Predates the Trajectory Card work
+(2026-08-11); found live while reviewing that PR, not caused by it.
+
 ## 0.12.2 — 2026-08-30
 
 ### Glance: the Trajectory Card replaces two divergent run timelines
