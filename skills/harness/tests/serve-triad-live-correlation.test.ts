@@ -21,11 +21,15 @@
 // trace_id, and the webhook's HMAC signature is verified with the shared
 // `verifyWebhook` from webhooks.ts (never reimplemented here).
 //
-// Out of scope, by design: the real Glance cockpit (the HTML view). Glance's
-// live feed consumes the exact same `/v1/.../events` SSE endpoint this test
-// exercises — proving the endpoint here is proving what Glance depends on;
-// replicating Glance's browser client would test a different consumer of the
-// same contract, not a gap in it.
+// Out of scope, by design: the real Glance cockpit (the HTML view). Glance
+// does NOT consume this endpoint — it runs a separate server with its own,
+// independently-implemented SSE stream (`GET /api/runs/:id/stream`, opened
+// client-side as `new EventSource('/api/runs/${traceId}/stream')`), and the
+// two never talk to each other today (confirmed by a full technical audit,
+// 2026-08-29; see ADR-007-glance-project-control-plane.md, status:
+// proposed, not implemented). This test proves the `nrv serve` contract on
+// its own terms; unifying it with Glance's separate stream is a real gap,
+// but a product/architecture decision, not something a test can paper over.
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
