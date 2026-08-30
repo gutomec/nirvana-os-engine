@@ -2,7 +2,7 @@
    Nirvana Glance — Page-specific layout and chrome.
    Tokens live in tokens.css. Components live in components.css.
    This file holds only:
-     · top-level layout (nav, sidebar, right-pane, activity-pane, panes)
+     · top-level layout (nav, sidebar, right-pane, activity-overlay, panes)
      · per-view layout (runs-grid, agents-grid, cost-charts, graph, …)
      · chart/d3/mermaid chrome
      · animations not bound to a single component
@@ -78,6 +78,37 @@ body {
   width: 300px; flex-shrink: 0;
   border-right: 1px solid var(--border-default);
   display: flex; flex-direction: column;
+  transition: width var(--dur-base) var(--ease-out);
+  overflow: hidden;
+}
+/* Auto-collapses to a 64px icon rail when a run is open in detail and the
+   operator has not pinned the full width (page-layout-redesign.md §1.3). */
+.sidebar.icon-rail { width: 64px; }
+.sidebar.icon-rail .kind-card-label,
+.sidebar.icon-rail .kind-card-meta,
+.sidebar.icon-rail .sidebar-pin-label { display: none; }
+.sidebar.icon-rail .kind-card { justify-content: center; padding: 10px 6px; gap: 0; }
+
+.sidebar-foot { flex: none; padding: var(--space-2); border-top: 1px solid var(--border-default); }
+.sidebar-pin-btn {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px;
+  border-radius: var(--radius-md); border: 1px solid var(--border-default); background: var(--surface-1);
+  cursor: pointer; font-size: 12px; color: var(--text-secondary); font-family: inherit;
+}
+.sidebar-pin-btn:hover { background: var(--accent-soft); color: var(--accent); }
+.sidebar-pin-btn:focus-visible { outline: none; box-shadow: var(--shadow-focus); }
+.sidebar.icon-rail .sidebar-pin-btn { justify-content: center; }
+.sidebar-pin-btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.sidebar-pin-btn.hint-pulse { animation: sidebar-pin-pulse 1.4s ease-in-out 2; }
+@keyframes sidebar-pin-pulse { 0%, 100% { box-shadow: none; } 50% { box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 35%, transparent); } }
+
+/* Nielsen H1 (visibility of system status): the sidebar shrinking on its own
+   needs to SAY so — a one-time toast the first time it fires, pointing at
+   the pin escape hatch (ux-qa finding, page-layout-redesign.md §3.1). */
+.sidebar-hint {
+  position: fixed; left: 12px; bottom: 64px; z-index: var(--z-toast); width: 220px;
+  background: var(--surface-2); border: 1px solid var(--border-default); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-1); padding: 10px 12px; font-size: 12px; color: var(--text-secondary);
 }
 .kind-tabs {
   display: flex; flex-direction: column;
@@ -1027,43 +1058,28 @@ body {
 .cost-table tbody tr:hover { background: var(--surface-2); }
 .cost-session-row { cursor: pointer; }
 
-/* Activity feed sidebar */
-.activity-pane {
-  width: 280px; min-width: 280px;
-  border-left: 1px solid var(--border-default);
-  background: var(--surface-0);
+/* Activity: on-demand overlay, not a permanently-reserved rail
+   (page-layout-redesign.md §1.3) — a bell in the topnav opens it. */
+.activity-trigger { position: relative; }
+.activity-badge {
+  position: absolute; top: -3px; right: -3px; background: var(--status-danger-solid); color: var(--text-inverse);
+  font-size: 9px; line-height: 1; padding: 2px 4px; border-radius: var(--radius-pill); font-variant-numeric: tabular-nums;
+}
+.activity-backdrop {
+  position: fixed; inset: 0; z-index: var(--z-modal);
+  background: color-mix(in oklab, var(--text-inverse) 55%, transparent);
+}
+.activity-overlay {
+  position: fixed; top: 0; right: 0; bottom: 0; width: 320px; max-width: 90vw; z-index: var(--z-modal);
+  background: var(--surface-1); border-left: 1px solid var(--border-default); box-shadow: -12px 0 32px rgba(0,0,0,0.18);
   display: flex; flex-direction: column;
-  transition: width var(--dur-base), min-width var(--dur-base);
 }
-.activity-pane.collapsed {
-  width: 18px; min-width: 18px;
-  background: var(--surface-1);
-  border-left: 1px solid var(--border-default);
-}
-.activity-pane.collapsed .activity-header {
-  padding: 0;
-  border-bottom: 0;
-  height: 100%;
-  align-items: center;
-  justify-content: center;
-}
-.activity-pane.collapsed .activity-header .icon-btn {
-  width: 100%;
-  height: 100%;
-  border-radius: 0;
-  background: transparent;
-  border: 0;
-  color: var(--text-secondary);
-}
-.activity-pane.collapsed .activity-header .icon-btn:hover {
-  background: color-mix(in oklab, var(--accent) 14%, transparent);
-  color: var(--accent);
-}
-.activity-header {
-  display: flex; align-items: center; justify-content: space-between;
+.activity-overlay-head {
+  display: flex; align-items: center; gap: 8px;
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--border-default);
 }
+.activity-overlay-head .icon-btn { margin-left: auto; }
 .activity-title { font-size: var(--text-md); font-weight: var(--weight-semibold); letter-spacing: var(--tracking-tight); }
 .activity-counter {
   font-size: var(--text-xs); padding: 2px var(--space-2); border-radius: var(--radius-pill);
@@ -1107,15 +1123,57 @@ body {
 
 /* ─── Runs pane (audit-derived runs grouped by trace_id) ─── */
 .runs-pane { display: flex; flex-direction: column; gap: var(--space-2); }
+/* Runs rail dominant over the detail (page-layout-redesign.md §1.3): flex,
+   not a fixed grid track ratio — the rail is 280px full / 56px collapsed,
+   the detail takes whatever is left. */
 .runs-grid {
-  display: grid; grid-template-columns: minmax(360px, 1fr) 2fr;
+  display: flex;
   gap: var(--space-3); flex: 1; min-height: 0;
 }
 .runs-list {
-  display: flex; flex-direction: column; gap: 6px;
-  overflow-y: auto; padding-right: var(--space-1);
+  flex: none; width: 280px;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  transition: width var(--dur-base) var(--ease-out);
   min-height: 0;
+  border: 1px solid var(--border-default); border-radius: var(--radius-md);
 }
+.runs-list.collapsed { width: 56px; }
+.runs-list-head {
+  flex: none; display: flex; align-items: center; gap: 6px;
+  padding: var(--space-2); border-bottom: 1px solid var(--border-default);
+}
+.runs-list-search {
+  flex: 1; min-width: 0; padding: 6px 9px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default); background: var(--surface-0);
+  color: var(--text-primary); font-size: 12.5px; font-family: inherit;
+}
+.runs-list-collapse-btn {
+  flex: none; width: 28px; height: 28px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default); background: var(--surface-1);
+  color: var(--text-secondary); cursor: pointer; display: grid; place-items: center;
+}
+.runs-list-collapse-btn:hover { background: var(--accent-soft); color: var(--accent); }
+.runs-list-collapse-btn:focus-visible { outline: none; box-shadow: var(--shadow-focus); }
+.runs-list-scroll {
+  flex: 1; min-height: 0; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 6px;
+  padding: var(--space-2);
+}
+.runs-list.collapsed .runs-list-scroll { align-items: center; }
+/* Collapsed rail: icon-strip mode — every run stays a real, labelled button. */
+.runs-list.collapsed .run-row { flex-direction: row; align-items: center; justify-content: center; padding: 8px; gap: 0; width: 40px; }
+.runs-list.collapsed .run-row .card-head,
+.runs-list.collapsed .run-row .card-title,
+.runs-list.collapsed .run-row .card-meta { display: none; }
+/* WCAG 2.2 AA 1.4.1 (Use of color): status carries a SHAPE too, not hue
+   alone — the sighted-but-colorblind case a colored dot alone fails,
+   independent of the aria-label already on the button (ux-qa finding §3.1). */
+.run-row-dot { width: 10px; height: 10px; flex: none; display: inline-block; }
+.run-row-dot-success { background: var(--status-success-solid); border-radius: 50%; }
+.run-row-dot-warn     { background: var(--status-warn-solid); border-radius: 2px; transform: rotate(45deg); }
+.run-row-dot-danger   { background: var(--status-danger-solid); border-radius: 0; clip-path: polygon(50% 0%, 0% 100%, 100% 100%); }
+.run-row-dot-neutral  { background: var(--status-neutral-solid); border-radius: 2px; }
 /* Run cards carry the shared .gl recipe (components.css), but .card's own
    background there is declared after .gl in that same file and wins at
    equal specificity. This file loads after components.css, so scoping the
@@ -1134,6 +1192,24 @@ body {
 .run-meta { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 .run-meta-mono { font-family: var(--font-mono); }
 
+/* "Atividade relacionada" — compact, collapsible strip inside run-detail,
+   before the Trajectory Card (page-layout-redesign.md §1.3). */
+.related-activity { border: 1px solid var(--border-default); border-radius: var(--radius-md); margin-bottom: var(--space-4); overflow: hidden; }
+.related-activity-head {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 12px; border: none;
+  background: var(--surface-1); cursor: pointer; font: inherit; text-align: left; color: var(--text-primary);
+}
+.related-activity-head:focus-visible { outline: none; box-shadow: var(--shadow-focus); }
+.related-activity-chev { margin-left: auto; width: 15px; height: 15px; transition: transform var(--dur-fast); }
+.related-activity-head[aria-expanded="true"] .related-activity-chev { transform: rotate(180deg); }
+.related-activity-body { padding: 6px 12px 10px; display: flex; flex-direction: column; gap: 6px; }
+.related-activity-row { display: flex; gap: 8px; font-size: 12px; color: var(--text-secondary); }
+.related-activity-time { font-family: var(--font-mono); flex: none; }
+.related-activity-empty { padding: 2px 0; }
+
+.run-detail, .run-detail-empty {
+  flex: 1; min-width: 0;
+}
 .run-detail {
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
@@ -3132,15 +3208,31 @@ html[data-theme="awwwards"] .icon-btn .theme-icon-awwwards { display: inline-blo
 .chat-panel {
   position: fixed; top: 0; right: 0; bottom: 0;
   width: 460px; max-width: 92vw; z-index: 60;
-  display: flex; flex-direction: column;
+  display: flex; flex-direction: row;
   border-left: 1px solid var(--border-default);
   box-shadow: -12px 0 40px rgba(0,0,0,0.16);
   transform: translateX(100%);
   transition: transform var(--dur-base) var(--ease-out);
 }
 .chat-panel.open { transform: translateX(0); }
+/* Resize handle: real drag AND ArrowLeft/ArrowRight keyboard, 460↔920px
+   (page-layout-redesign.md §2.2). The clickable hit area stays 24px even
+   though the visible bar is a slim 3px (WCAG 2.2 AA 2.5.8 — ux-qa finding
+   §3.1: the previous 8px-wide handle failed the target-size floor). */
+.chat-resize-handle {
+  flex: none; width: 24px; cursor: col-resize; background: transparent; border: none; padding: 0;
+  display: flex; align-items: center; justify-content: center; position: relative;
+}
+.chat-resize-handle::before { content: ''; width: 3px; height: 36px; border-radius: 3px; background: var(--border-strong); }
+.chat-resize-handle:hover::before, .chat-resize-handle:focus-visible::before { background: var(--accent); }
+.chat-resize-handle:focus-visible { outline: none; box-shadow: var(--shadow-focus); }
+.chat-body { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; }
+.chat-width-toggle { display: flex; border: 1px solid var(--border-default); border-radius: 8px; overflow: hidden; }
+.chat-width-toggle button { padding: 5px 10px; font-size: 11.5px; border: none; background: var(--surface-1); color: var(--text-secondary); cursor: pointer; font-family: inherit; }
+.chat-width-toggle button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); }
+.chat-width-toggle button:focus-visible { outline: none; box-shadow: var(--shadow-focus); position: relative; z-index: 1; }
 .chat-head {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--border-default);
 }

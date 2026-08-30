@@ -1515,6 +1515,7 @@ export async function startServer(opts: ServerOptions) {
         "/settings-panel.js": "application/javascript",
         "/absence.js": "application/javascript",
         "/subsystem-row.js": "application/javascript",
+        "/panel-layout.js": "application/javascript",
         "/dag-renderer.js": "application/javascript",
         "/org-chart-renderer.js": "application/javascript",
         "/graph-renderer.js": "application/javascript",
