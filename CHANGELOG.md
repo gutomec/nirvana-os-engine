@@ -8,6 +8,51 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Glance: real structural page-layout redesign for Runs + Chat, not a visual skin
+
+An earlier round (PR #172/#175) shipped real atom/molecule/organism
+component work — event labels, the judgement strip, the Trajectory Card —
+but never touched the page-level layout: the sidebar, the runs list, the
+Activity pane and the chat panel kept the exact same fixed-width, always-
+visible regions before and after. The owner, looking at the shipped result,
+correctly called this out: a glass treatment on an unchanged skeleton is not
+a redesign.
+
+Six structural changes to `skills/harness/lib/glance/views/`:
+
+1. Sidebar auto-collapses 300px → 64px icon rail when a run is open in
+   detail (pin button persists full width). First auto-collapse fires a
+   one-time hint toast + `aria-live` region (Nielsen H1 — visibility of
+   system status).
+2. Activity: permanent 280px rail → on-demand overlay (`role="dialog"
+   aria-modal`, Esc closes, focus returns to the opening bell). Four
+   sibling containers go `inert` while open (WCAG 2.4.3), not just visually
+   hidden — a real focus-containment guarantee, verified by attempting a
+   programmatic focus into the inert subtree and confirming it fails.
+3. New collapsible "Atividade relacionada" strip inside `run-detail`,
+   scoped to the open run's `business_slug`/`project_id`.
+4. Runs list → searchable, collapsible rail (280px ↔ 56px); every collapsed
+   run stays a real `<button>` with an accessible name, never a mute
+   avatar.
+5. Chat panel resizes 460px ↔ 920px via a real `role="separator"` handle
+   (mouse drag + `ArrowLeft`/`ArrowRight`), a 24px hit area over a 3px
+   visible bar (WCAG 2.5.8 — an 8px handle failed the target-size floor in
+   an earlier draft, caught by an independent ux-qa pass).
+6. Status dots in the collapsed runs rail gain shape (circle/diamond/
+   triangle/square), never color alone (WCAG 1.4.1).
+
+New pure module `panel-layout.js` (`clampChatWidth`, `shouldCollapseSidebar`,
+`filterRunsByQuery`, `filterRelatedActivity`) makes the layout decisions
+unit-testable outside the Alpine app, which is a classic script and can't be
+imported directly by `bun:test`. No token, color, blur, icon or typography
+changed; `.right-pane` and every page besides Runs/Chat are untouched.
+
+Verified live in a real browser, not just against the mockup: sidebar
+measured at a genuine 64px via `getComputedStyle`, a real `ArrowRight`
+keydown moved the chat panel from 460px to 500px, and a direct programmatic
+focus attempt into an `inert` sibling of the open Activity overlay failed as
+expected.
+
 ### Quality gate: `.css` was invisible to the gate entirely
 
 An independent review of the field-bg incident (PR #175, this engine,

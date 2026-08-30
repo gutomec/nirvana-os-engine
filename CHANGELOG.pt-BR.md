@@ -8,6 +8,54 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Glance: redesign estrutural real de layout de página para Runs + Chat, não uma casca visual
+
+Uma rodada anterior (PR #172/#175) entregou trabalho real de átomo/molécula/
+organismo — labels de evento, a faixa de julgamento, o Cartão de Trajetória
+— mas nunca tocou o layout no nível de página: a sidebar, a lista de runs,
+o painel de Activity e o painel de chat mantiveram exatamente as mesmas
+regiões de largura fixa e sempre visíveis antes e depois. O dono, olhando o
+resultado entregue, apontou isso corretamente: um tratamento de vidro sobre
+um esqueleto inalterado não é um redesign.
+
+Seis mudanças estruturais em `skills/harness/lib/glance/views/`:
+
+1. Sidebar colapsa automaticamente de 300px para um rail de ícones de 64px
+   quando uma run está aberta em detalhe (botão de fixar mantém a largura
+   cheia). O primeiro auto-colapso dispara um toast único + região
+   `aria-live` (Nielsen H1 — visibilidade do status do sistema).
+2. Activity: rail permanente de 280px vira overlay sob demanda
+   (`role="dialog" aria-modal`, Esc fecha, foco volta pro sino que abriu).
+   Quatro containers irmãos ficam `inert` enquanto aberto (WCAG 2.4.3), não
+   só escondidos visualmente — uma garantia real de contenção de foco,
+   verificada tentando um foco programático dentro da subárvore inert e
+   confirmando que falha.
+3. Nova faixa colapsável "Atividade relacionada" dentro do `run-detail`,
+   escopada ao `business_slug`/`project_id` da run aberta.
+4. Lista de runs vira rail buscável e colapsável (280px ↔ 56px); cada run
+   colapsada continua um `<button>` real com nome acessível, nunca um
+   avatar mudo.
+5. Painel de chat redimensiona 460px ↔ 920px via uma alça `role="separator"`
+   real (arrasto de mouse + `ArrowLeft`/`ArrowRight`), área de toque de
+   24px sobre uma barra visível de 3px (WCAG 2.5.8 — uma alça de 8px falhou
+   o piso de tamanho de alvo numa versão anterior, achado por uma avaliação
+   independente do ux-qa).
+6. Pontos de status na lista colapsada de runs ganham forma (círculo/
+   losango/triângulo/quadrado), nunca só cor (WCAG 1.4.1).
+
+Novo módulo puro `panel-layout.js` (`clampChatWidth`, `shouldCollapseSidebar`,
+`filterRunsByQuery`, `filterRelatedActivity`) torna as decisões de layout
+testáveis fora do app Alpine, que é um script clássico e não pode ser
+importado diretamente pelo `bun:test`. Nenhum token, cor, blur, ícone ou
+tipografia mudou; `.right-pane` e toda página além de Runs/Chat continuam
+intocadas.
+
+Verificado ao vivo num browser real, não só contra o mockup: sidebar medida
+em 64px de verdade via `getComputedStyle`, um `ArrowRight` real moveu o
+painel de chat de 460px pra 500px, e uma tentativa direta de foco
+programático num irmão `inert` do overlay de Activity aberto falhou como
+esperado.
+
 ### Gate de qualidade: `.css` era invisível pro gate por completo
 
 Uma revisão independente do incidente do field-bg (PR #175, este engine,
