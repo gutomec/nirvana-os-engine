@@ -8,6 +8,32 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Quality gate: `.css` was invisible to the gate entirely
+
+An independent review of the field-bg incident (PR #175, this engine,
+2026-08-30 — a decorative gradient composited to ~12% effective alpha under
+a glass sheet, invisible in practice, though the producing agent's own
+`_SUMMARY.md` claimed to have verified it visually in Chrome) found the root
+cause upstream of the bug itself: `.css` was absent from `GATEABLE_EXTS`
+outright, so the file that shipped the regression was never something the
+quality gate could evaluate, pass or fail — not a rubric that missed the
+bug, a file type the gate never looked at. Added `.css` to `GATEABLE_EXTS`
+and a new `css-composite-alpha` rubric that computes the actual compounded
+alpha of a gradient wash rendered behind a declared glass-sheet alpha
+(`decorative_alpha × (1 − sheet_alpha)`) and flags it below a visibility
+floor. It is a lexical smoke test, not a renderer — it cannot confirm a
+gradient actually renders behind a given sheet in the real cascade, so a
+flag is evidence for a human or a browser-capable auditor, not a final
+verdict on its own. Verified against a fixture reproducing the exact field-bg
+percentages (fails) and this branch's actual fix (passes), end to end
+through the real `quality-gate.ts` subprocess, not just the rubric function
+in isolation — and against this engine's own real `tokens.css` to rule out
+false positives against unrelated, correctly-subtle status-tint tokens.
+
+This is the first, narrowest fix from that review; a mandatory return-audit
+stage (separating what a producer *claims* from what an independent auditor
+*observes*) is a larger, separate change still in progress.
+
 ## 0.12.3 — 2026-08-30
 
 ### Glance: the glass material now covers the whole shell, not one accordion

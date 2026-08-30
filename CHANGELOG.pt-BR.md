@@ -8,6 +8,36 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Gate de qualidade: `.css` era invisível pro gate por completo
+
+Uma revisão independente do incidente do field-bg (PR #175, este engine,
+30/08/2026 — um gradiente decorativo compondo a ~12% de alpha efetivo sob
+uma folha de vidro, invisível na prática, embora o próprio `_SUMMARY.md` do
+agente produtor afirmasse ter verificado visualmente no Chrome) encontrou a
+causa raiz a montante do próprio bug: `.css` estava ausente de
+`GATEABLE_EXTS` por completo, então o arquivo que carregava a regressão
+nunca foi algo que o gate de qualidade pudesse avaliar, passar ou reprovar —
+não uma rúbrica que deixou passar o bug, um tipo de arquivo que o gate nunca
+olhava. Adicionei `.css` ao `GATEABLE_EXTS` e uma nova rúbrica
+`css-composite-alpha` que calcula o alpha composto real de um gradiente
+decorativo renderizado atrás de um alpha de folha de vidro declarado
+(`decorative_alpha × (1 − sheet_alpha)`) e sinaliza quando fica abaixo de um
+piso de visibilidade. É um teste léxico de fumaça, não um renderizador —
+não confirma que um gradiente realmente renderiza atrás de uma folha
+específica na cascata real, então uma sinalização é evidência para um
+humano ou um auditor com acesso a browser, não um veredito final por si só.
+Verificado contra um fixture reproduzindo os percentuais exatos do
+field-bg (reprova) e a correção real desta branch (passa), ponta a ponta
+através do subprocesso real do `quality-gate.ts`, não só a função da rúbrica
+isolada — e contra o `tokens.css` real deste próprio engine para descartar
+falsos positivos contra tokens de tinta de status corretamente sutis e sem
+relação com o bug.
+
+Esta é a correção mais estreita e imediata dessa revisão; um estágio
+obrigatório de auditoria de volta (separando o que um produtor *afirma* do
+que um auditor independente *observa*) é uma mudança maior, separada, ainda
+em andamento.
+
 ## 0.12.3 — 2026-08-30
 
 ### Glance: o material de vidro agora cobre a casca inteira, não um acordeão
