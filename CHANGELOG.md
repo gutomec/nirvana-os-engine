@@ -8,6 +8,27 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Glance: the glass material now covers the whole shell, not one accordion
+
+PR #172 shipped the `.gl` / `.gl--2` / `.gl--3` / `.gl--ink` glass recipe
+(alpha and blur derived from stacking translucent sheets, floor-checked
+against WCAG 2.2 AA) but applied it to a single component: the judgement
+strip inside a run's trajectory. Opening Glance afterward showed no visible
+change — nav, the ENGINE subsystem row, the sidebar, run cards, the run
+detail panel and the chat panel were still opaque. This finishes the job:
+those six surfaces now carry the same recipe, unmodified (`--sheet-a`,
+`--sheet-b` and `--floor-field` are untouched), plus a new fixed `.field-bg`
+layer of soft radial gradients in the theme's own accent/status tones —
+without it, a translucent sheet over a flat color reads as `opacity`, not
+glass. `.card` itself (shared by agent, memory and cost views) was left
+alone; a scoped `.runs-list .card.gl` override carries the effect to run
+cards without touching those other views.
+
+The theme toggle also moved from one static icon to three permanent ones
+(`sun` / `moon` / `sparkles`, one per `apple` / `apple-dark` / `awwwards`)
+shown or hidden by a `[data-theme]` CSS rule instead of a script reassigning
+`data-lucide` after Lucide has already replaced the tag with an `<svg>`.
+
 ### Glance: a run's detail panel is readable again
 
 `.run-detail-head` had no `flex-direction`, so it defaulted to `row`: the
