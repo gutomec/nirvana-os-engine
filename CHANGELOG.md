@@ -34,6 +34,38 @@ This is the first, narrowest fix from that review; a mandatory return-audit
 stage (separating what a producer *claims* from what an independent auditor
 *observes*) is a larger, separate change still in progress.
 
+### Judge-X: the independent judge was forbidden from checking whether the candidate actually works
+
+The same review that found `.css` invisible to the quality gate (field-bg
+incident, PR #175) also found the judge that is supposed to catch exactly
+that kind of bug structurally unable to: `judge-x.*.md` (all seven runtimes)
+had `tools: [read, write]`, no shell, and an explicit prohibition —
+`"Producing or improving the deliverable, even a little, even to 'check
+whether it works'"` — that read as banning verification itself, not just
+fixing. The evaluation brief every Gauntlet run generates
+(`evaluation-contract.ts`) reinforced this on every single invocation:
+`"A tarefa não exige shell nem execução de comandos: ler os arquivos do
+candidate com a ferramenta de leitura basta"` ("the task doesn't need shell:
+reading the files is enough"). For a UI/behavioral claim, reading the source
+never was, and never will be, equivalent to running it. `gauntlet-evaluator-
+contract.md` documented the same "read files is enough, no shell" framing.
+
+Revoked the observation ban, kept the ban on fixing: each persona now says
+independence means never improving the candidate, not never seeing whether
+it works, and gets a shell tool (plus guidance to use browser automation
+when the runtime has it, e.g. Claude Code with claude-in-chrome) to run the
+candidate's own tests and read the real exit code — a producer's claim that
+tests pass is not evidence until the judge runs them independently. The
+generated evaluation brief and the architecture doc were updated to match;
+the persona edits were trimmed to keep the judge's own prompt overhead under
+the existing budget (judge wrap ≤ ⅓ of agent-x's wrap on the same brief — an
+existing cost-discipline test this change would otherwise have broken).
+
+This is the second fix from that review (the first: `.css` added to
+`GATEABLE_EXTS`, a separate PR); a mandatory return-audit stage wiring this
+observation into every dispatch path (not just Gauntlet-mode evaluations)
+is a larger, separate change still in progress.
+
 ## 0.12.3 — 2026-08-30
 
 ### Glance: the glass material now covers the whole shell, not one accordion

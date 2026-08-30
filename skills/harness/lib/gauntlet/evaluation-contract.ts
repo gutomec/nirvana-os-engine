@@ -189,7 +189,7 @@ export function renderEvaluationBrief(request: EvaluationRequest, originalBrief:
     "Você não produz nem edita o entregável. Sua única saída é o scorecard descrito abaixo.",
     `O diretório do candidate é somente leitura: \`${request.candidateRoot}\`. Não crie, altere nem remova arquivos nele.`,
     "Não escreva em nenhum outro lugar além do arquivo de scorecard.",
-    "A tarefa não exige shell nem execução de comandos: ler os arquivos do candidate com a ferramenta de leitura basta.",
+    "Você tem shell disponível para OBSERVAR o candidate — rodar os testes dele, medir o comportamento real, abrir um browser quando seu ambiente tiver um — nunca para criar, alterar, remover ou produzir qualquer coisa nele. Uma afirmação de comportamento (\"os testes passam\", \"a UI renderiza X\") não é evidência até você mesmo rodar ou ver o que ela alega; ler os arquivos sozinho não basta quando a afirmação é verificável rodando algo.",
     scopeGuard("pt-BR"),
     "",
     "## Brief original (o que o candidate deveria entregar)",

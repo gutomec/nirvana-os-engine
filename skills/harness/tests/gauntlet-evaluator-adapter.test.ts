@@ -225,7 +225,7 @@ describe("dispatch evaluator adapter", () => {
     expect(fs.readdirSync(evaluationDir).sort()).toEqual([EVALUATION_BRIEF_FILE, EVALUATION_REQUEST_FILE, EVALUATION_OUTPUTS_DIR].sort());
     expect(fs.readdirSync(outputsRoot).sort()).toEqual(["_SUMMARY.md", "dispatch-capture.json", SCORECARD_FILE]);
     expect(captured.brief).toContain(`\`${SCORECARD_FILE}\`, no seu output_path (caminho absoluto: \`${path.join(outputsRoot, SCORECARD_FILE)}\`)`);
-    expect(captured.brief).toContain("A tarefa não exige shell nem execução de comandos");
+    expect(captured.brief).toContain("Você tem shell disponível para OBSERVAR o candidate");
     expect(fs.readdirSync(setup.candidateRoot)).toEqual(["report.md"]);
     expect(setup.audit).toEqual([{ event: "x_gauntlet_evaluation_completed", payload: expect.objectContaining({
       trace_id: "prj_1", run_id: "run_1", candidate_id: "can_1", revision_id: "crv_run_1_can_1_1", evaluator: "squad:fixture-evaluator:quality.specification_conformance",
