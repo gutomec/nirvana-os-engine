@@ -38,6 +38,41 @@ obrigatório de auditoria de volta (separando o que um produtor *afirma* do
 que um auditor independente *observa*) é uma mudança maior, separada, ainda
 em andamento.
 
+### Judge-X: o juiz independente era proibido de checar se o candidate de fato funciona
+
+A mesma revisão que achou o `.css` invisível pro gate de qualidade
+(incidente do field-bg, PR #175) também achou o juiz que deveria pegar
+exatamente esse tipo de bug estruturalmente incapaz disso: `judge-x.*.md`
+(as sete personas de runtime) tinham `tools: [read, write]`, sem shell, e
+uma proibição explícita — `"Producing or improving the deliverable, even a
+little, even to 'check whether it works'"` — que lia como banir a própria
+verificação, não só o conserto. O brief de avaliação que todo Run do
+Gauntlet gera (`evaluation-contract.ts`) reforçava isso em toda invocação:
+`"A tarefa não exige shell nem execução de comandos: ler os arquivos do
+candidate com a ferramenta de leitura basta"`. Para uma alegação de
+UI/comportamento, ler o código-fonte nunca foi, e nunca vai ser, equivalente
+a rodar de fato. `gauntlet-evaluator-contract.md` documentava o mesmo
+enquadramento de "ler arquivos basta, sem shell".
+
+Revoguei a proibição de observar, mantendo a proibição de consertar: cada
+persona agora diz que independência significa nunca melhorar o candidate,
+não nunca ver se ele funciona, e ganha uma ferramenta de shell (mais
+orientação para usar automação de browser quando o runtime tiver uma, ex.
+Claude Code com claude-in-chrome) pra rodar os próprios testes do candidate
+e ler o exit code real — a alegação de um produtor de que os testes passam
+não é evidência até o juiz rodá-los de forma independente. O brief de
+avaliação gerado e o documento de arquitetura foram atualizados junto; as
+edições nas personas foram enxutas pra manter a sobrecarga do próprio
+prompt do juiz dentro do orçamento existente (wrap do juiz ≤ ⅓ do wrap do
+agent-x no mesmo brief — um teste de disciplina de custo já existente que
+essa mudança teria quebrado sem o corte).
+
+Esta é a segunda correção dessa revisão (a primeira: `.css` adicionado ao
+`GATEABLE_EXTS`, um PR separado); um estágio obrigatório de auditoria de
+volta cabeando essa observação em todo caminho de dispatch (não só
+avaliações em modo Gauntlet) é uma mudança maior, separada, ainda em
+andamento.
+
 ## 0.12.3 — 2026-08-30
 
 ### Glance: o material de vidro agora cobre a casca inteira, não um acordeão

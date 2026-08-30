@@ -60,7 +60,7 @@ describe("identity", () => {
 });
 
 describe("personas", () => {
-  test.each(RUNTIMES)("judge-x.$flavor.md exists for $runtime, is closed, read-only and carries the scope guard", ({ runtime, flavor }) => {
+  test.each(RUNTIMES)("judge-x.$flavor.md exists for $runtime, is closed, never edits the candidate, and carries the scope guard", ({ runtime, flavor }) => {
     const file = path.join(AGENTS_DIR, `judge-x.${flavor}.md`);
     expect(fs.existsSync(file), file).toBeTrue();
     const text = fs.readFileSync(file, "utf8");
@@ -76,6 +76,20 @@ describe("personas", () => {
     }
     expect(resolveJudgeXPromptPath(runtime, AGENTS_DIR)).toBe(file);
     expect(resolveJudgeXPromptPath(runtime)).toBe(file);
+  });
+
+  // 2026-08-30 review: the persona used to forbid verifying the candidate at
+  // all ("even to check whether it works") and the evaluation brief told the
+  // judge "reading is enough, no shell needed" — so a UI/behavior claim was
+  // never independently checkable, only re-read. The prohibition on FIXING
+  // the candidate must survive; the prohibition on OBSERVING it must not.
+  test.each(RUNTIMES)("judge-x.$flavor.md may observe the candidate (its tests, a browser) but never fix it", ({ flavor }) => {
+    const text = fs.readFileSync(path.join(AGENTS_DIR, `judge-x.${flavor}.md`), "utf8");
+    expect(text, `${flavor} still carries the old observation ban`).not.toContain('even to "check whether it works"');
+    expect(text.toLowerCase()).toContain("run its own tests");
+    expect(text.toLowerCase()).toContain("browser");
+    // The ban on FIXING the candidate is a different sentence and must remain.
+    expect(text.toLowerCase()).toMatch(/(fixing|editing|improving).{0,40}(never|not).{0,20}(your job|editing it)/);
   });
 
   test("resolution is strict: a runtime without judge-x.<flavor>.md has no judge, never another runtime's persona", () => {
