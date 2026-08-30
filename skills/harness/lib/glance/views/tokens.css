@@ -134,8 +134,15 @@
   --glass-b-3: hypot(var(--glass-b), var(--glass-b), var(--glass-b));
   --glass-sat: calc(1 + (var(--sheet-sat) - 1) * var(--glass));
 
-  /* Resolved, not chosen — see floor.ts in the PR description for the
-     contrast computation this number comes from. */
+  /* Resolved, not chosen: the minimum --sheet-a at which --text-primary on
+     a .gl--ink plate still clears WCAG 2.2 AA (4.5:1) against this theme's
+     most saturated token a plate could plausibly sit on (--accent,
+     --status-danger-solid), composited the way a browser actually paints a
+     translucent background-color layer (alpha-blended in gamma-encoded
+     sRGB, not linear light) then measured via the standard WCAG relative-
+     luminance formula. --sheet-a (0.6) clears this floor with ~9-10:1 to
+     spare — the floor is a backstop against the dial being turned down,
+     not a sign the default is close to the edge. */
   --floor-field: 0.18;
   --glass-a-ink: max(var(--sheet-a), var(--floor-field), var(--glass-off));
   --glass-tint: var(--surface-1);
@@ -199,8 +206,9 @@
   --shadow-modal: 0 24px 60px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.05);
   --shadow-popover: 0 8px 24px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.05);
 
-  /* Floor re-solved for the dark palette's own worst-case backdrop (same
-     method as :root — see floor.ts in the PR description). */
+  /* Floor re-solved for this theme's own colors (same method as :root's
+     --floor-field comment above). --sheet-a (0.6) clears it with ~9-10:1
+     to spare here too. */
   --floor-field: 0.22;
   --glass-tint: var(--surface-1);
 }
