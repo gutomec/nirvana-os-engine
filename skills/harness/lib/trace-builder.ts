@@ -29,7 +29,7 @@ import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 
 const TERMINAL_EVENTS = new Set(["gate_passed", "gate_failed", "validation_failed", "delivered", "dispatch_blocked"]);
-const DISPATCH_EVENTS = new Set(["dispatch_business", "dispatch_squad", "dispatch_skill"]);
+const DISPATCH_EVENTS = new Set(["dispatch_business", "dispatch_squad"]);
 
 export interface TraceSpan {
   event: string;

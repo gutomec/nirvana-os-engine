@@ -1495,6 +1495,7 @@ export async function startServer(opts: ServerOptions) {
         "/glance.css": "text/css",
         "/glance.js": "application/javascript",
         "/run-event-labels.js": "application/javascript",
+        "/trajectory-card.js": "application/javascript",
         "/settings-panel.js": "application/javascript",
         "/absence.js": "application/javascript",
         "/subsystem-row.js": "application/javascript",

@@ -847,7 +847,7 @@
           <span class="memory-stat"><b x-text="visibleRuns.length"></b> total</span>
           <span class="memory-stat"><b x-text="(visibleRuns.filter(r => r.status === 'running').length)"></b> running</span>
           <span class="memory-stat"><b x-text="(visibleRuns.filter(r => r.status === 'delivered').length)"></b> delivered</span>
-          <span class="memory-stat"><b x-text="(visibleRuns.filter(r => r.status === 'gate_failed' || r.status === 'no_match').length)"></b> issues</span>
+          <span class="memory-stat"><b x-text="(visibleRuns.filter(r => r.status === 'gate_failed').length)"></b> issues</span>
           <span class="memory-stat memory-stat-warn" x-show="visibleRuns.filter(r => r.suspicious).length"><b x-text="(visibleRuns.filter(r => r.suspicious).length)"></b> ⚠ suspicious</span>
         </div>
         <button @click="fetchRuns()" class="icon-btn" title="Refresh"><i data-lucide="rotate-cw"></i></button>
@@ -962,25 +962,89 @@
                 </section>
                 <section>
                   <div class="text-label">Timeline · <span x-text="selectedRun.events.length"></span> events</div>
-                  <ol class="timeline">
-                    <template x-for="(ev, i) in selectedRun.events" :key="i">
-                      <li class="timeline-event">
-                        <span class="dot dot-sm timeline-event-dot" :style="`--dot-color: ${runEventColor(ev.event)}`"></span>
-                        <div class="timeline-event-body">
-                          <div class="timeline-event-head">
-                            <span class="timeline-event-name" x-text="ev.event"></span>
-                            <span class="timeline-event-time" x-text="ev.ts ? ev.ts.slice(11, 19) : ''"></span>
+                  <!-- Trajectory Card (trajectory-card.js) — the SAME organism as the
+                       Chat panel's timeline above; kept in sync by design: both call
+                       trajectoryRows(), never a bespoke per-event x-show chain. -->
+                  <div class="trajectory-card">
+                    <template x-for="row in trajectoryRows(selectedRun.events).rows" :key="row._seq">
+                      <div class="trajectory-row">
+                        <template x-if="row.kind === 'judgement'">
+                          <div class="trajectory-judgement gl gl--ink" :class="isTrajectoryRowExpanded(row._seq) ? 'is-expanded' : ''">
+                            <button type="button" class="trajectory-judgement-head"
+                                    :aria-expanded="isTrajectoryRowExpanded(row._seq) ? 'true' : 'false'" @click="toggleTrajectoryRow(row._seq)">
+                              <i data-lucide="gavel" class="icon-inline"></i>
+                              <span class="trajectory-judgement-title">Faixa de julgamento</span>
+                              <span class="text-caption" x-text="`${row.items.length} evento${row.items.length === 1 ? '' : 's'}${row.terminal ? ' · ' + row.terminal.view.title : ''}`"></span>
+                              <i data-lucide="chevron-down" class="trajectory-chevron icon-inline"></i>
+                            </button>
+                            <div class="trajectory-judgement-body" x-show="isTrajectoryRowExpanded(row._seq)" x-cloak>
+                              <template x-for="item in row.items" :key="item._seq">
+                                <div class="run-step" :class="'tone-' + (item.view.tone || 'none')">
+                                  <span class="run-step-icon"><i :data-lucide="item.view.icon"></i></span>
+                                  <div class="run-step-body">
+                                    <span class="run-step-title" x-text="item.view.title"></span>
+                                    <span class="run-step-sub text-caption" x-show="item.view.sub" x-text="item.view.sub"></span>
+                                  </div>
+                                </div>
+                              </template>
+                              <template x-if="row.terminal">
+                                <div class="run-step" :class="'tone-' + (row.terminal.view.tone || 'none')">
+                                  <span class="run-step-icon"><i :data-lucide="row.terminal.view.icon"></i></span>
+                                  <div class="run-step-body">
+                                    <span class="run-step-title" x-text="row.terminal.view.title"></span>
+                                    <span class="run-step-sub text-caption" x-show="row.terminal.view.sub" x-text="row.terminal.view.sub"></span>
+                                  </div>
+                                </div>
+                              </template>
+                            </div>
                           </div>
-                          <div class="timeline-event-detail" x-show="(ev.event === 'brief_received' || ev.event === 'dispatch_squad' || ev.event === 'dispatch_agent_x') && (ev.brief_excerpt || ev.brief)" x-text="ev.brief_excerpt || ev.brief"></div>
-                          <div class="timeline-event-detail" x-show="ev.event === 'tool_invoked'" x-text="`${ev.action || ''} ${ev.file_path || ev.command || ''}`"></div>
-                          <div class="timeline-event-detail" x-show="ev.event === 'artifact_touched' || ev.event === 'delivered'" x-text="ev.artifact_path || ev.file_path"></div>
-                          <div class="timeline-event-detail" x-show="ev.event === 'cost_emission' && ev.usage" x-text="`tokens in=${ev.usage?.input_tokens || 0} out=${ev.usage?.output_tokens || 0} usd=${(ev.total_cost_usd || 0).toFixed(4)}`"></div>
-                          <div class="timeline-event-detail" x-show="ev.event === 'gate_failed' || ev.event === 'gate_passed'" x-text="`${ev.rubric || ''} ${ev.score != null ? 'score=' + ev.score : ''}`"></div>
-                          <div class="timeline-event-detail" x-show="ev.event === 'routing_decision'" x-text="`signal=${ev.signal || '?'} target=${ev.target || ev.target_id || '?'}`"></div>
-                        </div>
-                      </li>
+                        </template>
+                        <template x-if="row.kind === 'event'">
+                          <div class="run-step" :class="'tone-' + (row.view.tone || 'none')">
+                            <span class="run-step-icon"><i :data-lucide="row.view.icon"></i></span>
+                            <div class="run-step-body">
+                              <span class="run-step-title" x-text="row.view.title"></span>
+                              <span class="run-step-sub text-caption" x-show="row.view.sub" x-text="row.view.sub"></span>
+                              <!-- Delivery-nuance badge: variant + text label always together (WCAG 2.2 AA 1.4.1) -->
+                              <template x-if="row.nuance">
+                                <button type="button" class="delivery-badge" :class="'delivery-badge-' + row.nuance.variant"
+                                        :aria-expanded="isTrajectoryRowExpanded(row._seq) ? 'true' : 'false'" @click="toggleTrajectoryRow(row._seq)">
+                                  <i :data-lucide="row.view.icon" class="icon-inline"></i>
+                                  <span x-text="row.nuance.label"></span>
+                                </button>
+                              </template>
+                              <dl class="kv-grid delivery-badge-detail" x-show="row.nuance && isTrajectoryRowExpanded(row._seq)" x-cloak>
+                                <template x-if="row.nuance?.detail?.ceiling"><dt>teto</dt></template>
+                                <template x-if="row.nuance?.detail?.ceiling"><dd x-text="row.nuance.detail.ceiling"></dd></template>
+                                <template x-if="row.nuance?.detail?.ceiling_reason"><dt>motivo</dt></template>
+                                <template x-if="row.nuance?.detail?.ceiling_reason"><dd x-text="row.nuance.detail.ceiling_reason"></dd></template>
+                                <template x-if="row.nuance?.detail?.gate"><dt>gate</dt></template>
+                                <template x-if="row.nuance?.detail?.gate"><dd x-text="row.nuance.detail.gate"></dd></template>
+                                <template x-if="row.nuance?.detail?.gated_files != null"><dt>arquivos no gate</dt></template>
+                                <template x-if="row.nuance?.detail?.gated_files != null"><dd x-text="row.nuance.detail.gated_files"></dd></template>
+                                <template x-if="row.nuance?.detail?.revisions != null"><dt>revisões</dt></template>
+                                <template x-if="row.nuance?.detail?.revisions != null"><dd x-text="row.nuance.detail.revisions"></dd></template>
+                                <template x-if="row.nuance?.detail?.files != null"><dt>arquivos</dt></template>
+                                <template x-if="row.nuance?.detail?.files != null"><dd x-text="row.nuance.detail.files"></dd></template>
+                              </dl>
+                              <!-- Runtime-health chip: the hint is visible inline, no extra click -->
+                              <template x-if="row.runtimeChip">
+                                <div class="runtime-health-chip">
+                                  <i data-lucide="alert-octagon" class="icon-inline"></i>
+                                  <span x-show="row.runtimeChip.runtime" x-text="row.runtimeChip.runtime"></span>
+                                  <span class="text-caption" x-show="row.runtimeChip.hint" x-text="row.runtimeChip.hint"></span>
+                                </div>
+                              </template>
+                            </div>
+                          </div>
+                        </template>
+                      </div>
                     </template>
-                  </ol>
+                  </div>
+                  <!-- Infrastructure events (coordinator snapshots, lease renewals) stay in the stream, hidden until toggled -->
+                  <button type="button" class="run-infra-toggle text-caption" x-show="infraEventsVisible || trajectoryRows(selectedRun.events).hidden > 0"
+                          :aria-expanded="infraEventsVisible ? 'true' : 'false'" @click="infraEventsVisible = !infraEventsVisible"
+                          x-text="infraEventsVisible ? 'Ocultar eventos de infraestrutura' : `Mostrar ${trajectoryRows(selectedRun.events).hidden} eventos de infraestrutura`"></button>
                 </section>
                 <template x-if="selectedRun.artifact_paths.length">
                   <section>
@@ -1904,21 +1968,89 @@
                     <span class="run-head-cost" x-show="runSummary.cost > 0" x-text="'$' + runSummary.cost.toFixed(2)"></span>
                   </div>
                 </template>
-                <div class="run-steps">
-                  <template x-for="(ev, ei) in runTimeline(m.streaming ? chatRunEvents : m.events).visible" :key="ei">
-                    <div class="run-step" :class="'tone-' + (runEventView(ev).tone || 'none')">
-                      <span class="run-step-icon"><i :data-lucide="runEventView(ev).icon"></i></span>
-                      <div class="run-step-body">
-                        <span class="run-step-title" x-text="runEventView(ev).title"></span>
-                        <span class="run-step-sub text-caption" x-show="runEventView(ev).sub" x-text="runEventView(ev).sub"></span>
-                      </div>
+                <!-- Trajectory Card (trajectory-card.js) — the SAME organism as the
+                     Runs tab's timeline below; kept in sync by design: both call
+                     trajectoryRows(), never a bespoke per-event x-show chain. -->
+                <div class="trajectory-card">
+                  <template x-for="row in trajectoryRows(m.streaming ? chatRunEvents : m.events).rows" :key="row._seq">
+                    <div class="trajectory-row">
+                      <template x-if="row.kind === 'judgement'">
+                        <div class="trajectory-judgement gl gl--ink" :class="isTrajectoryRowExpanded(row._seq) ? 'is-expanded' : ''">
+                          <button type="button" class="trajectory-judgement-head"
+                                  :aria-expanded="isTrajectoryRowExpanded(row._seq) ? 'true' : 'false'" @click="toggleTrajectoryRow(row._seq)">
+                            <i data-lucide="gavel" class="icon-inline"></i>
+                            <span class="trajectory-judgement-title">Faixa de julgamento</span>
+                            <span class="text-caption" x-text="`${row.items.length} evento${row.items.length === 1 ? '' : 's'}${row.terminal ? ' · ' + row.terminal.view.title : ''}`"></span>
+                            <i data-lucide="chevron-down" class="trajectory-chevron icon-inline"></i>
+                          </button>
+                          <div class="trajectory-judgement-body" x-show="isTrajectoryRowExpanded(row._seq)" x-cloak>
+                            <template x-for="item in row.items" :key="item._seq">
+                              <div class="run-step" :class="'tone-' + (item.view.tone || 'none')">
+                                <span class="run-step-icon"><i :data-lucide="item.view.icon"></i></span>
+                                <div class="run-step-body">
+                                  <span class="run-step-title" x-text="item.view.title"></span>
+                                  <span class="run-step-sub text-caption" x-show="item.view.sub" x-text="item.view.sub"></span>
+                                </div>
+                              </div>
+                            </template>
+                            <template x-if="row.terminal">
+                              <div class="run-step" :class="'tone-' + (row.terminal.view.tone || 'none')">
+                                <span class="run-step-icon"><i :data-lucide="row.terminal.view.icon"></i></span>
+                                <div class="run-step-body">
+                                  <span class="run-step-title" x-text="row.terminal.view.title"></span>
+                                  <span class="run-step-sub text-caption" x-show="row.terminal.view.sub" x-text="row.terminal.view.sub"></span>
+                                </div>
+                              </div>
+                            </template>
+                          </div>
+                        </div>
+                      </template>
+                      <template x-if="row.kind === 'event'">
+                        <div class="run-step" :class="'tone-' + (row.view.tone || 'none')">
+                          <span class="run-step-icon"><i :data-lucide="row.view.icon"></i></span>
+                          <div class="run-step-body">
+                            <span class="run-step-title" x-text="row.view.title"></span>
+                            <span class="run-step-sub text-caption" x-show="row.view.sub" x-text="row.view.sub"></span>
+                            <!-- Delivery-nuance badge: variant + text label always together (WCAG 2.2 AA 1.4.1) -->
+                            <template x-if="row.nuance">
+                              <button type="button" class="delivery-badge" :class="'delivery-badge-' + row.nuance.variant"
+                                      :aria-expanded="isTrajectoryRowExpanded(row._seq) ? 'true' : 'false'" @click="toggleTrajectoryRow(row._seq)">
+                                <i :data-lucide="row.view.icon" class="icon-inline"></i>
+                                <span x-text="row.nuance.label"></span>
+                              </button>
+                            </template>
+                            <dl class="kv-grid delivery-badge-detail" x-show="row.nuance && isTrajectoryRowExpanded(row._seq)" x-cloak>
+                              <template x-if="row.nuance?.detail?.ceiling"><dt>teto</dt></template>
+                              <template x-if="row.nuance?.detail?.ceiling"><dd x-text="row.nuance.detail.ceiling"></dd></template>
+                              <template x-if="row.nuance?.detail?.ceiling_reason"><dt>motivo</dt></template>
+                              <template x-if="row.nuance?.detail?.ceiling_reason"><dd x-text="row.nuance.detail.ceiling_reason"></dd></template>
+                              <template x-if="row.nuance?.detail?.gate"><dt>gate</dt></template>
+                              <template x-if="row.nuance?.detail?.gate"><dd x-text="row.nuance.detail.gate"></dd></template>
+                              <template x-if="row.nuance?.detail?.gated_files != null"><dt>arquivos no gate</dt></template>
+                              <template x-if="row.nuance?.detail?.gated_files != null"><dd x-text="row.nuance.detail.gated_files"></dd></template>
+                              <template x-if="row.nuance?.detail?.revisions != null"><dt>revisões</dt></template>
+                              <template x-if="row.nuance?.detail?.revisions != null"><dd x-text="row.nuance.detail.revisions"></dd></template>
+                              <template x-if="row.nuance?.detail?.files != null"><dt>arquivos</dt></template>
+                              <template x-if="row.nuance?.detail?.files != null"><dd x-text="row.nuance.detail.files"></dd></template>
+                            </dl>
+                            <!-- Runtime-health chip: the hint is visible inline, no extra click -->
+                            <template x-if="row.runtimeChip">
+                              <div class="runtime-health-chip">
+                                <i data-lucide="alert-octagon" class="icon-inline"></i>
+                                <span x-show="row.runtimeChip.runtime" x-text="row.runtimeChip.runtime"></span>
+                                <span class="text-caption" x-show="row.runtimeChip.hint" x-text="row.runtimeChip.hint"></span>
+                              </div>
+                            </template>
+                          </div>
+                        </div>
+                      </template>
                     </div>
                   </template>
                 </div>
                 <!-- Infrastructure events (coordinator snapshots, lease renewals) stay in the stream, hidden until toggled -->
-                <button type="button" class="run-infra-toggle text-caption" x-show="chatInfraVisible || runTimeline(m.streaming ? chatRunEvents : m.events).hidden > 0"
-                        :aria-expanded="chatInfraVisible ? 'true' : 'false'" @click="chatInfraVisible = !chatInfraVisible"
-                        x-text="chatInfraVisible ? 'Ocultar eventos de infraestrutura' : `Mostrar ${runTimeline(m.streaming ? chatRunEvents : m.events).hidden} eventos de infraestrutura`"></button>
+                <button type="button" class="run-infra-toggle text-caption" x-show="infraEventsVisible || trajectoryRows(m.streaming ? chatRunEvents : m.events).hidden > 0"
+                        :aria-expanded="infraEventsVisible ? 'true' : 'false'" @click="infraEventsVisible = !infraEventsVisible"
+                        x-text="infraEventsVisible ? 'Ocultar eventos de infraestrutura' : `Mostrar ${trajectoryRows(m.streaming ? chatRunEvents : m.events).hidden} eventos de infraestrutura`"></button>
                 <!-- Multi-target projection of the Run (GET /api/v1/runs/:run/multi-target); rendered only once the coordinator saved a snapshot -->
                 <template x-if="runMultiTarget(m)">
                   <div class="run-mt">
@@ -2076,6 +2208,13 @@
   // a classic script, so the exports are exposed on window for the Alpine app.
   import * as runEventLabels from '/run-event-labels.js?v=__ASSET_VER__';
   window.NirvanaRunEventLabels = runEventLabels;
+</script>
+<script type="module">
+  // trajectory-card.js groups a run's events into the Trajectory Card
+  // rows (judgement strip, delivery nuance, runtime chip) shared by the Runs
+  // tab and the Chat panel. Same adapter pattern as run-event-labels.js.
+  import * as trajectoryCard from '/trajectory-card.js?v=__ASSET_VER__';
+  window.NirvanaTrajectoryCard = trajectoryCard;
 </script>
 <script type="module">
   // settings-panel.js is the pure module behind the engine section of the

@@ -9,7 +9,6 @@
  * Status semantics (precedence top-down):
  *   completed      → trace emitted `delivered`
  *   failed         → trace emitted `gate_failed`
- *   no_match       → trace emitted `no_match`
  *   stale          → no event in `STALE_THRESHOLD_MS`
  *   tool_in_flight → last action event was `tool_invoked` and no matching post-event after
  *   waiting        → has `brief_received` but no dispatch yet
@@ -41,10 +40,7 @@ const ACTION_EVENTS = new Set<string>([
   "gate_passed",
   "gate_failed",
   "delivered",
-  "humanize_completed",
   "target_plan_committed",
-  "local_execution_started",
-  "local_execution_completed",
   "session_started",
 ]);
 
@@ -57,8 +53,7 @@ export type AgentStatus =
   | "waiting"
   | "stale"
   | "completed"
-  | "failed"
-  | "no_match";
+  | "failed";
 
 export interface AgentState {
   trace_id: string;
@@ -346,10 +341,6 @@ export function deriveAgentStates(events: Array<any>): AgentState[] {
       status = "failed";
       const ft = evs.filter(e => e.event === "gate_failed").pop()!;
       statusSinceMs = nowMs - new Date(ft.ts).getTime();
-    } else if (evs.some(e => e.event === "no_match")) {
-      status = "no_match";
-      const nt = evs.filter(e => e.event === "no_match").pop()!;
-      statusSinceMs = nowMs - new Date(nt.ts).getTime();
     }
     // 2. Stale: no event for STALE_MS
     else if (lastAge > T.STALE_MS) {
@@ -447,7 +438,7 @@ export function deriveAgentStates(events: Array<any>): AgentState[] {
   // Sort: active (tool_in_flight, running) first, then waiting, idle, stale, terminal
   const order: Record<AgentStatus, number> = {
     tool_in_flight: 0, running: 1, waiting: 2, idle: 3, stale: 4,
-    completed: 5, failed: 5, no_match: 5,
+    completed: 5, failed: 5,
   };
   states.sort((a, b) => {
     const oa = order[a.status] ?? 9;
@@ -462,7 +453,7 @@ export function deriveAgentStates(events: Array<any>): AgentState[] {
 export function summarizeStates(states: AgentState[]): Record<AgentStatus, number> & { total: number } {
   const out: any = {
     tool_in_flight: 0, running: 0, idle: 0, waiting: 0, stale: 0,
-    completed: 0, failed: 0, no_match: 0, total: 0,
+    completed: 0, failed: 0, total: 0,
   };
   for (const s of states) {
     out[s.status] = (out[s.status] || 0) + 1;

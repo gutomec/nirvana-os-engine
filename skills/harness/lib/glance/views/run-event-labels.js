@@ -29,8 +29,10 @@ const GAUNTLET_STOP_REASON_LABELS = {
   no_progress: 'sem progresso', critical_regression: 'regressão crítica', judge_disagreement: 'juízes divergiram',
   human_required: 'humano necessário', execution_failure: 'falha de execução',
 };
-const VERDICT_LABELS = { pass: 'aprovado', revise: 'revisar', reject: 'rejeitado', indeterminate: 'indeterminado' };
-const VERDICT_TONES = { pass: 'ok', revise: 'active', reject: 'fail' };
+// judge.ts's own verdict is the narrower {pass, fail} — shares this map with
+// the canonical Gauntlet evaluation verdict (superset), which never emits 'fail'.
+const VERDICT_LABELS = { pass: 'aprovado', revise: 'revisar', reject: 'rejeitado', indeterminate: 'indeterminado', fail: 'reprovado' };
+const VERDICT_TONES = { pass: 'ok', revise: 'active', reject: 'fail', fail: 'fail' };
 const PLAN_STATE_LABELS = { ready: 'pronto', running: 'em execução', delivered: 'entregue', withheld: 'retido', failed: 'falhou' };
 const PLAN_STATE_TONES = { delivered: 'ok', running: 'active', withheld: 'fail', failed: 'fail' };
 // How the target of a Run was decided (`payload.route` of `run.prepared`, or of
@@ -165,15 +167,38 @@ function legacyRunEventView(ev) {
     gate_passed:          { icon: 'shield-check', title: 'Gate passou', sub: (ev.rubrics || []).join(', '), tone: 'ok' },
     report_html_generated:{ icon: 'file-text', title: 'HTML gerado', tone: '' },
     report_pdf_generated: { icon: 'file-text', title: 'PDF gerado', tone: '' },
-    artifact_published:    { icon: 'package-check', title: `Artifact: ${ev.artifact_id || ev.path || 'publicado'}`, sub: ev.media_type || '', tone: 'ok' },
-    model_selected:        { icon: 'cpu', title: `Modelo: ${ev.model || ev.model_id || 'selecionado'}`, sub: rt, tone: '' },
-    approval_required:     { icon: 'badge-help', title: 'Aprovação necessária', sub: ev.reason || '', tone: 'active' },
     delivered:            { icon: 'party-popper', title: 'Entregue', tone: 'ok' },
+    // Judgement strip: judge_invoked → critique_generated → revision_* (0..N) → gate_*/revision_loop_exhausted.
+    judge_invoked:        { icon: 'gavel', title: `Julgando: ${ev.rubric_name || 'rubrica'}`, sub: sub(ev.target_model, ev.pass_threshold != null ? `piso ${ev.pass_threshold}` : ''), tone: 'active' },
+    critique_generated:   { icon: 'gavel', title: `Veredito: ${ev.schema_valid === false ? 'schema inválido' : label(VERDICT_LABELS, ev.verdict, 'gerado')}`, sub: sub(ev.total_score != null ? `nota ${ev.total_score}` : '', ev.critique_count != null ? `${ev.critique_count} apontamentos` : ''), tone: ev.schema_valid === false ? 'fail' : (VERDICT_TONES[ev.verdict] || 'active') },
+    revision_dispatched:  { icon: 'rotate-ccw', title: `Revisão despachada · tentativa ${ev.attempt_index ?? '?'}`, sub: sub(ev.previous_score != null ? `nota anterior ${ev.previous_score}` : '', ev.priority_items ? `${ev.priority_items} itens prioritários` : ''), tone: 'active' },
+    revision_auto:        { icon: 'refresh-cw', title: `Auto-revisão${ev.attempt != null ? ' ' + ev.attempt : ''}`, sub: ev.ok === false ? 'falhou' : '', tone: ev.ok === false ? 'fail' : 'active' },
+    revision_loop_exhausted: { icon: 'flag', title: 'Loop de revisão esgotado', sub: sub(ev.total_revisions != null ? `${ev.total_revisions} revisões` : '', ev.final_score != null ? `nota final ${ev.final_score}` : '', ev.reason), tone: 'fail' },
+    // Runtime cascade: unavailable/error/transient are why the system handed off (runtime_handoff already labelled).
     runtime_handoff:      { icon: 'refresh-cw', title: `Trocou runtime → ${ev.to || ev.runtime || ''}`, tone: '' },
     runtime_quota_exhausted: { icon: 'ban', title: 'Cota esgotada', tone: 'fail' },
+    runtime_auth_failed:  { icon: 'key-round', title: `Autenticação falhou: ${ev.runtime || ''}`, sub: ev.hint || '', tone: 'fail' },
+    runtime_unavailable:  { icon: 'power-off', title: `Runtime indisponível: ${ev.runtime || ''}`, tone: 'fail' },
+    runtime_error:        { icon: 'alert-triangle', title: `Erro de runtime: ${ev.runtime || ''}`, sub: ev.hint || '', tone: 'fail' },
+    runtime_transient_retry: { icon: 'refresh-cw', title: `Retentando: ${ev.runtime || ''}`, sub: sub(ev.sleep_ms != null ? `${Math.round(ev.sleep_ms / 1000)}s` : '', ev.hint), tone: 'active' },
     cascade_exhausted:    { icon: 'ban', title: 'Cascata esgotada', tone: 'fail' },
+    x_router_failure_retry:       { icon: 'refresh-cw', title: 'Roteador: retentando', sub: ev.error || '', tone: 'active' },
+    x_router_failure_fail_policy: { icon: 'ban', title: 'Roteador: política de falha acionada', sub: ev.error || '', tone: 'fail' },
+    x_router_failure_cascade:     { icon: 'alert-triangle', title: `Roteador recorreu a ${ev.stage || '?'}`, sub: sub(ev.picked, ev.error), tone: 'fail' },
+    // Delivery nuance: withheld/reservations carry the WHY that a plain `delivered` badge hides.
+    x_delivery_withheld:  { icon: 'pause-circle', title: 'Entrega retida', sub: sub(ev.ceiling === 'completeness' ? ev.ceiling_reason : `gate: ${ev.gate || ''}`, ev.gated_files != null ? `${ev.gated_files} arquivo(s) no gate` : ''), tone: 'fail' },
+    x_delivered_with_reservations: { icon: 'shield-alert', title: 'Entregue com ressalvas', sub: sub(ev.revisions != null ? `${ev.revisions} revisões` : '', ev.ceiling != null ? `teto ${ev.ceiling}` : ''), tone: 'active' },
+    // Ledger terminal/live states not already covered by x_ledger_state_changed.
+    x_ledger_abandoned:   { icon: 'x-octagon', title: 'Ledger: run abandonada', sub: sub(ev.from, ev.reason), tone: 'fail' },
+    x_ledger_stall_observed: { icon: 'alert-triangle', title: 'Run travada (heartbeat)', sub: ev.gap_ms != null ? `sem atividade há ${Math.round(ev.gap_ms / 1000)}s` : '', tone: 'fail' },
     x_ledger_state_changed: { icon: LEDGER_STATE_ICONS[ev.to] || 'arrow-right-circle', title: `Ledger: ${label(LEDGER_STATE_LABELS, ev.to, 'transicionou')}`, sub: ledgerReason(ev), tone: LEDGER_STATE_TONES[ev.to] || '' },
     x_ledger_grace_extended: { icon: 'activity', title: `Prova de vida: ${label(LIVENESS_SOURCE_LABELS, ev.liveness_source, 'lease renovada')}`, sub: sub(ev.child_run_id), tone: 'active' },
+    // Team-mode orchestration.
+    team_director_called: { icon: 'users', title: 'Time: diretor chamado', sub: ev.employees_available != null ? `${ev.employees_available} funcionários disponíveis` : '', tone: '' },
+    team_director_failed: { icon: 'alert-triangle', title: 'Time: diretor falhou', sub: ev.error || '', tone: 'fail' },
+    team_step_failed:     { icon: 'x-circle', title: `Time: ${ev.employee || 'passo'} falhou`, sub: sub(ev.reason, ev.error), tone: 'fail' },
+    team_completed:       { icon: 'flag', title: `Time concluído · ${ev.steps ?? '?'} passo(s)`, sub: sub(usd(ev.total_cost_usd), ev.total_duration_ms != null ? `${Math.round(ev.total_duration_ms / 1000)}s` : ''), tone: 'ok' },
+    session_resume_failed:{ icon: 'unplug', title: `Sessão não retomou: ${ev.entity || ev.runtime || ''}`, sub: 'reiniciando a frio', tone: 'fail' },
   };
   return M[ev.event] || { icon: 'circle', title: chatEventLabel(ev), sub: '', tone: '' };
 }
@@ -205,8 +230,15 @@ export function isInfraEvent(ev) {
 
 // Timeline rows: infrastructure events are hidden by default and counted so
 // the UI can offer a toggle. Nothing is removed from the underlying stream.
+//
+// Stable per-event identity: `_seq` is assigned ONCE per event, from its
+// position in this full (unfiltered) stream, and kept on the object from
+// then on — it is never recomputed from the FILTERED `.visible` list, whose
+// membership (and therefore array index) shifts the instant the infra
+// toggle flips. `:key` bindings must use `ev._seq`, never the loop index.
 export function runTimeline(events, showInfra = false) {
   const all = Array.isArray(events) ? events : [];
+  all.forEach((ev, i) => { if (ev && ev._seq == null) ev._seq = i; });
   if (showInfra) return { visible: all, hidden: 0 };
   const visible = all.filter((ev) => !isInfraEvent(ev));
   return { visible, hidden: all.length - visible.length };

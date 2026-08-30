@@ -8,6 +8,67 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Glance: o Cartão de Trajetória substitui duas timelines de run divergentes
+
+A aba Runs e o painel de Chat renderizavam "o que aconteceu nesta run" cada
+um com sua própria implementação: a aba Runs checava o nome do evento contra
+uma cadeia `x-show` de 10 nomes, enquanto o painel de Chat já usava a
+cobertura completa de `run-event-labels.js`. O `trajectory-card.js` é a
+correção — um único organismo, `buildTrajectoryRows()`, que as duas
+superfícies agora chamam, então uma run aparece igual seja aberta pelo
+painel de Chat ou pela aba Runs.
+
+Três moléculas novas se apoiam em eventos que já carregavam esse dado e não
+tinham onde aparecer: a **Faixa de julgamento**, um grupo recolhível, aninha
+`judge_invoked → critique_generated → revision_dispatched/revision_auto
+(0..N) → gate_passed/gate_failed/revision_loop_exhausted` em vez de
+espalhá-los como linhas soltas; o **Selo de nuance de entrega** distingue
+uma `delivered` limpa de `x_delivered_with_reservations` e
+`x_delivery_withheld` — cada uma com ícone e texto próprios, nunca só a cor
+(WCAG 2.2 AA 1.4.1) — e expande para o detalhe de teto/gate/revisões; o
+**Chip de saúde de runtime** mostra `runtime_auth_failed` /
+`runtime_error` / `x_router_failure_cascade` inline, com o motivo visível
+sem clique extra. Mais catorze eventos antes invisíveis (as famílias de
+julgamento/runtime/time acima, mais `x_ledger_abandoned`,
+`x_ledger_stall_observed` e `session_resume_failed`) agora resolvem para um
+rótulo real em `run-event-labels.js` em vez de cair no nome bruto.
+
+As duas timelines também corrigiram o bug de identidade que a unificação
+expôs: as linhas eram chaveadas pela posição no array que o Alpine itera,
+que muda no instante em que o toggle "mostrar eventos de infraestrutura"
+muda o que fica visível. `runTimeline()` agora grava um `_seq` estável em
+cada evento uma única vez, a partir da posição dele no stream completo e não
+filtrado, então o estado de expandir/recolher de uma linha sobrevive a esse
+toggle e a novas renderizações.
+
+Duas correções menores por baixo: `artifact_touched` tinha dois produtores
+com payloads divergentes (o hook do Claude Code e a varredura de heartbeat
+do run-ledger); o hook agora também relata `size_bytes`, fechando a lacuna
+concreta entre eles (uma lacuna de `run_id` permanece, nomeada em vez de
+remendada em silêncio — o hook roda antes de qualquer linha do ledger
+existir). Um conjunto de código morto encontrado pelo inventário do Glance
+foi removido: o ramo de status `no_match` de agente/run (nenhum evento é
+literalmente chamado `no_match`), o contador `revisions.total`
+permanentemente zerado do dashboard de observabilidade (comparava um nome
+de evento que nunca é emitido), `dispatch_skill` e três entradas de
+`ACTION_EVENTS`/mapa de labels sem nenhum emissor no motor, e três entradas
+de mapa de ícone inalcançáveis.
+
+Visualmente, o Cartão de Trajetória e a Faixa de julgamento adotam um
+material de glassmorphism — tokens novos `--sheet-a`/`--sheet-b`/`--glass`
+em `tokens.css`, adaptados da referência `design-tests/glassmorphism`: toda
+profundidade extra é derivada por fórmula (`pow()` para alpha empilhado,
+`hypot()` para blur empilhado), nunca escolhida a olho, e `--floor-field` é
+um alpha mínimo real — verificado contra a própria paleta do Glance, não
+estimado — abaixo do qual o dial não consegue empurrar o texto de corpo
+para fora do contraste WCAG 2.2 AA.
+
+Esta é só a Fase A do redesign do Glance. As outras duas moléculas da Wave 2
+(detalhe de decisão de rota, prévia da corrente de equipe), a virtualização
+da lista de eventos, a decisão de arquitetura do ADR-007 e o destino do
+`observability.html` ficam explicitamente fora de escopo aqui, para fases
+seguintes.
+
 ### `nrv serve`: webhook, SSE e polling provados numa mesma run ao vivo
 
 Um teste de integração novo (`skills/harness/tests/serve-triad-live-correlation.test.ts`)

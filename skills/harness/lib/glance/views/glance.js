@@ -469,18 +469,9 @@ function glance() {
     },
     runStatusColor(status) {
       if (status === 'delivered') return 'meta-ok';
-      if (status === 'gate_failed' || status === 'no_match') return 'meta-bad';
+      if (status === 'gate_failed') return 'meta-bad';
       if (status === 'running') return 'meta-pending';
       return '';
-    },
-    runEventColor(event) {
-      if (event === 'brief_received' || event === 'brief_amplified') return '#3b82f6';
-      if (event === 'delivered' || event === 'gate_passed') return '#10b981';
-      if (event === 'gate_failed' || event.startsWith('validation_')) return '#ef4444';
-      if (event === 'tool_invoked' || event === 'artifact_touched' || event === 'bash_completed') return '#8b5cf6';
-      if (event.startsWith('dispatch_')) return '#a855f7';
-      if (event === 'cost_emission') return '#9ca3af';
-      return '#64748b';
     },
     runRelTime(iso) {
       if (!iso) return '';
@@ -913,7 +904,7 @@ function glance() {
     get visibleAgentsSummary() {
       if (this.projectFilter !== 'project' || !this.canFilterByProject()) return this.agentsSummary;
       const list = this.visibleAgents;
-      const out = { tool_in_flight: 0, running: 0, idle: 0, waiting: 0, stale: 0, completed: 0, failed: 0, no_match: 0, total: 0 };
+      const out = { tool_in_flight: 0, running: 0, idle: 0, waiting: 0, stale: 0, completed: 0, failed: 0, total: 0 };
       for (const s of list) { out[s.status] = (out[s.status] || 0) + 1; out.total++; }
       return out;
     },
@@ -958,7 +949,6 @@ function glance() {
         stale: '#f59e0b',            // amber-500
         completed: '#10b981',        // emerald-500
         failed: '#ef4444',           // red-500
-        no_match: '#a3a3a3',         // neutral-400
       };
       return colors[status] || '#64748b';
     },
@@ -972,7 +962,6 @@ function glance() {
         stale: 'warn',
         completed: 'success',
         failed: 'danger',
-        no_match: 'neutral',
       })[status] || 'neutral';
     },
     runStatusVariant(status) {
@@ -980,7 +969,6 @@ function glance() {
         running: 'warn',
         delivered: 'success',
         gate_failed: 'danger',
-        no_match: 'danger',
         stale: 'neutral',
         unknown: 'neutral',
       })[status] || 'neutral';
@@ -997,7 +985,6 @@ function glance() {
         stale: 'Stale',
         completed: 'Completed',
         failed: 'Failed',
-        no_match: 'No match',
       };
       return labels[status] || status;
     },
@@ -1106,7 +1093,6 @@ function glance() {
         stall_detected: '⚠', stall_retry: '↻', loop_detected: '∞',
         approval_granted: '✓', approval_rejected: '✗', approval_checkpoint: '◇',
         gate_failed: '✗', validation_failed: '✗', context_budget_warning: '⚡',
-        humanization_applied: '✨', invocation_start: '▶', invocation_end: '■',
         handoff: '↪', resume: '↶',
       };
       return icons[event] || '·';
@@ -1619,14 +1605,25 @@ function glance() {
       const labels = window.NirvanaRunEventLabels;
       return labels ? labels.runEventView(ev) : { icon: 'circle', title: ev.type || ev.event || 'evento', sub: '', tone: '' };
     },
-    // Timeline rows for one message. Infrastructure events (coordinator
-    // snapshots, lease renewals) stay in the stream but are hidden until the
-    // user toggles them; `hidden` feeds the toggle label.
-    chatInfraVisible: false,
+    // Timeline rows, shared by the Chat panel and the Runs tab. Infrastructure
+    // events (coordinator snapshots, lease renewals) stay in the stream but
+    // are hidden until the user toggles them; `hidden` feeds the toggle label.
+    infraEventsVisible: false,
     runTimeline(events) {
       const labels = window.NirvanaRunEventLabels;
-      return labels ? labels.runTimeline(events, this.chatInfraVisible) : { visible: events || [], hidden: 0 };
+      return labels ? labels.runTimeline(events, this.infraEventsVisible) : { visible: events || [], hidden: 0 };
     },
+    // Trajectory Card: the single grouping used by BOTH the Chat panel
+    // (mode 'live') and the Runs tab (mode 'historical') — see trajectory-card.js.
+    // `expandedTrajectoryRows` keys by the row's stable `_seq`, so an expanded
+    // judgement/delivery row survives the infra toggle and re-renders.
+    expandedTrajectoryRows: {},
+    trajectoryRows(events) {
+      const tc = window.NirvanaTrajectoryCard;
+      return tc ? tc.buildTrajectoryRows(events, { showInfra: this.infraEventsVisible }) : { rows: [], hidden: 0 };
+    },
+    isTrajectoryRowExpanded(seq) { return !!this.expandedTrajectoryRows[seq]; },
+    toggleTrajectoryRow(seq) { this.expandedTrajectoryRows[seq] = !this.expandedTrajectoryRows[seq]; },
     // Live header derived from the stream: business/squad/agent, canonical
     // state, Gauntlet decision and cost (see summarizeRunEvents).
     get runSummary() {
