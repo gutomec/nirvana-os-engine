@@ -8,6 +8,62 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Glance: the Trajectory Card replaces two divergent run timelines
+
+The Runs tab and the Chat panel each rendered "what happened in this run"
+through their own implementation: the Runs tab checked event names against a
+10-name `x-show` chain, the Chat panel already used the full label coverage
+in `run-event-labels.js`. `trajectory-card.js` is the fix — one organism,
+`buildTrajectoryRows()`, that both surfaces now call, so a run reads the same
+whether opened from the Chat panel or the Runs tab.
+
+Three new moleculed views ride on top of events that already carried this
+data and had nowhere to show it: a collapsible **judgement strip** nests
+`judge_invoked → critique_generated → revision_dispatched/revision_auto
+(0..N) → gate_passed/gate_failed/revision_loop_exhausted` instead of scattering
+them as flat rows; a **delivery-nuance badge** distinguishes a clean
+`delivered` from `x_delivered_with_reservations` and `x_delivery_withheld` —
+each with its own icon and text label, never color alone (WCAG 2.2 AA
+1.4.1) — and expands to the ceiling/gate/revisions detail; a **runtime-health
+chip** surfaces `runtime_auth_failed` / `runtime_error` /
+`x_router_failure_cascade` inline, with the hint visible without an extra
+click. Fourteen more previously-invisible events (the judgement/runtime/team
+families above, plus `x_ledger_abandoned`, `x_ledger_stall_observed` and
+`session_resume_failed`) now resolve to a real label in
+`run-event-labels.js` instead of falling back to their raw name.
+
+Both timelines also fixed the identity bug the unification exposed: rows
+were keyed by their position in the array Alpine iterates, which shifts the
+instant the "show infrastructure events" toggle changes what is visible.
+`runTimeline()` now stamps a stable `_seq` on every event once, from its
+position in the full, unfiltered stream, so a row's expand/collapse state
+survives that toggle and future re-renders.
+
+Two smaller fixes underneath: `artifact_touched` had two producers with
+diverging payloads (the Claude Code hook and the run-ledger heartbeat sweep);
+the hook now also reports `size_bytes`, closing the concrete gap between
+them (a `run_id` gap remains, named rather than silently patched — the hook
+runs before any ledger row may exist). A cluster of dead code found by the
+Glance inventory is gone: the `no_match` agent/run status branch (no event
+is ever literally named `no_match`), the permanently-zero `revisions.total`
+counter in the observability dashboard (it was matching an event name that
+was never emitted), `dispatch_skill` and three `ACTION_EVENTS` /
+label-map entries with no emitter anywhere in the engine, and three
+unreachable icon-map entries.
+
+Visually, the Trajectory Card and its judgement strip adopt a glassmorphism
+material — new `--sheet-a`/`--sheet-b`/`--glass` tokens in `tokens.css`,
+adapted from the `design-tests/glassmorphism` reference: every extra layer
+of depth is derived by formula (`pow()` for stacked alpha, `hypot()` for
+stacked blur), never chosen by eye, and `--floor-field` is a real minimum
+alpha — verified against Glance's own palette, not guessed — below which
+the dial cannot push body text under WCAG 2.2 AA contrast.
+
+This is Phase A of the Glance redesign only. The other two Wave 2 molecules
+(route-decision detail, team-chain preview), event-list virtualization, the
+ADR-007 control-plane decision and `observability.html`'s fate are explicitly
+out of scope here and remain for later phases.
+
 ### `nrv serve`: webhook, SSE and polling proved on one live run
 
 A new integration test (`skills/harness/tests/serve-triad-live-correlation.test.ts`)

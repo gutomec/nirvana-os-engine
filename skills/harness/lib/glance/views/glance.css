@@ -3156,6 +3156,53 @@ svg.icon-inline.lucide {
 .run-step.tone-fail .run-step-icon i, .run-step.tone-fail .run-step-icon svg { color: oklch(55% 0.2 25); opacity: 1; }
 .run-infra-toggle { display: inline-block; margin: 4px 0 0 30px; padding: 0; border: none; background: none; color: var(--text-tertiary); font-size: 11px; cursor: pointer; text-decoration: underline dotted; }
 .run-infra-toggle:hover, .run-infra-toggle:focus-visible { color: var(--text-secondary); }
+
+/* ─── Cartão de Trajetória (trajectory-card.js) ───
+   Single organism shared by the Chat panel and the Runs tab. A plain `event`
+   row reuses `.run-step`/`.tone-*` above unchanged; this block only adds the
+   three molecules layered on top: the judgement strip, the delivery-nuance
+   badge and the runtime-health chip. */
+.trajectory-card { display: flex; flex-direction: column; gap: 2px; position: relative; }
+.trajectory-card::before { content: ''; position: absolute; left: 10px; top: 12px; bottom: 12px; width: 1px; background: var(--border-default); }
+.trajectory-row { position: relative; }
+
+.trajectory-judgement { margin: 4px 0 4px 30px; border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-1); }
+.trajectory-judgement-head {
+  display: flex; align-items: center; gap: 7px; width: 100%; padding: 6px 10px;
+  border: none; background: none; color: var(--text-primary); font: inherit; text-align: left; cursor: pointer;
+}
+.trajectory-judgement-head:hover { background: color-mix(in oklab, var(--text-primary) 5%, transparent); }
+.trajectory-judgement-head:focus-visible { outline: none; box-shadow: var(--shadow-focus); }
+.trajectory-judgement-head .icon-inline { width: 14px; height: 14px; opacity: 0.8; }
+.trajectory-judgement-title { font-size: 12.5px; font-weight: 600; }
+.trajectory-judgement-head .text-caption { margin-left: auto; }
+.trajectory-chevron { width: 14px; height: 14px; flex: none; transition: transform var(--dur-fast) var(--ease-out); }
+.trajectory-judgement.is-expanded .trajectory-chevron { transform: rotate(180deg); }
+.trajectory-judgement-body { padding: 2px 10px 8px 10px; }
+
+/* Selo de nuance de entrega: a clickable badge, tone AND text/icon together
+   (WCAG 2.2 AA 1.4.1 — never color alone), expanding a .kv-grid of detail. */
+.delivery-badge {
+  display: inline-flex; align-items: center; gap: 5px; margin-top: 3px; padding: 2px var(--space-2);
+  border-radius: var(--radius-pill); border: 1px solid transparent; font-size: var(--text-xs); font-weight: var(--weight-semibold);
+  cursor: pointer;
+}
+.delivery-badge .icon-inline { width: 12px; height: 12px; }
+.delivery-badge:focus-visible { outline: none; box-shadow: var(--shadow-focus); }
+.delivery-badge-ok             { background: var(--status-success-bg); color: var(--status-success-fg); border-color: var(--status-success-border); }
+.delivery-badge-warn-detail    { background: var(--status-warn-bg);    color: var(--status-warn-fg);    border-color: var(--status-warn-border); }
+.delivery-badge-fail-reversible{ background: var(--status-danger-bg);  color: var(--status-danger-fg);  border-color: var(--status-danger-border); }
+.delivery-badge-detail { margin-top: 4px; }
+
+/* Chip de saúde de runtime: inline, not a separate banner — the hint is
+   visible without a click (runtime_auth_failed is the most actionable
+   event in the whole taxonomy per the Wave 1 inventory; it does not hide). */
+.runtime-health-chip {
+  display: flex; align-items: center; gap: 6px; margin-top: 4px; padding: 4px var(--space-2);
+  border-radius: var(--radius-sm); background: var(--status-danger-bg); border: 1px solid var(--status-danger-border);
+  color: var(--status-danger-fg); font-size: 11px;
+}
+.runtime-health-chip .icon-inline { width: 13px; height: 13px; flex: none; }
 .run-mt { margin-top: 8px; padding: 8px 10px; border-radius: var(--radius-md); border: 1px solid var(--border-subtle); background: var(--surface-0); }
 .run-mt-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
 .run-mt-title { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; font-size: 12.5px; }

@@ -118,6 +118,41 @@ describe("Glance run event labels", () => {
     expect(runTimeline(undefined)).toEqual({ visible: [], hidden: 0 });
   });
 
+  test("runTimeline assigns a stable _seq from position in the FULL stream, once, never from the filtered list", () => {
+    const seqEvents = [
+      { type: "multi_target.lease_renewed", payload: {} }, { event: "brief_received" }, { event: "delivered" },
+    ];
+    runTimeline(seqEvents); // filters out event 0; brief_received/delivered must still read 1/2, not 0/1
+    expect(seqEvents.map((e: any) => e._seq)).toEqual([0, 1, 2]);
+    // Calling again (e.g. a re-render after the infra toggle flips) must not reassign.
+    runTimeline(seqEvents, true);
+    expect(seqEvents.map((e: any) => e._seq)).toEqual([0, 1, 2]);
+  });
+
+  test("atom-level events added for the judgement strip, runtime cascade and delivery nuance all resolve to a real label", () => {
+    expect(runEventView({ event: "judge_invoked", rubric_name: "prose-structure", pass_threshold: 0.8 }))
+      .toMatchObject({ icon: "gavel", title: "Julgando: prose-structure", tone: "active" });
+    expect(runEventView({ event: "critique_generated", verdict: "pass", total_score: 0.9, schema_valid: true }))
+      .toMatchObject({ title: "Veredito: aprovado", tone: "ok" });
+    expect(runEventView({ event: "revision_loop_exhausted", total_revisions: 2, final_score: 0.6 }))
+      .toMatchObject({ icon: "flag", tone: "fail" });
+    expect(runEventView({ event: "runtime_auth_failed", runtime: "codex", hint: "token expired" }))
+      .toMatchObject({ title: "Autenticação falhou: codex", sub: "token expired", tone: "fail" });
+    expect(runEventView({ event: "x_router_failure_cascade", stage: "agent-x", error: "no route" }))
+      .toMatchObject({ title: "Roteador recorreu a agent-x", tone: "fail" });
+    expect(runEventView({ event: "x_delivery_withheld", gate: "fail", gated_files: 2 }))
+      .toMatchObject({ icon: "pause-circle", title: "Entrega retida", tone: "fail" });
+    expect(runEventView({ event: "x_delivered_with_reservations", revisions: 1, ceiling: 2 }))
+      .toMatchObject({ icon: "shield-alert", title: "Entregue com ressalvas", tone: "active" });
+    expect(runEventView({ event: "team_completed", steps: 3, total_cost_usd: 1.2, total_duration_ms: 5000 }))
+      .toMatchObject({ title: "Time concluído · 3 passo(s)", sub: "$1.20 · 5s", tone: "ok" });
+    expect(runEventView({ event: "session_resume_failed", entity: "squad:copywriter" }))
+      .toMatchObject({ icon: "unplug", title: "Sessão não retomou: squad:copywriter", tone: "fail" });
+    // Removed from the label map as dead (no emitter anywhere — see the Wave 1/2
+    // inventory): falls back to the generic circle + raw event name.
+    expect(runEventView({ event: "artifact_published" })).toMatchObject({ icon: "circle", title: "artifact_published" });
+  });
+
   test("summary reads canonical state, target, cost and decision", () => {
     const canonical = [
       { type: "run.prepared", payload: { target: { kind: "business", slug: "proof" } } },

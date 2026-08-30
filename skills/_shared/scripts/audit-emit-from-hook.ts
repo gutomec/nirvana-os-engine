@@ -26,8 +26,17 @@
  *   Bash command        → tool_invoked  (hint: "bash")  // command truncated to 200 chars
  *
  * Mapping (PostToolUse):
- *   Write/Edit success  → artifact_touched  (path = filePath / file_path)
+ *   Write/Edit success  → artifact_touched  (path = filePath / file_path, size_bytes when readable)
  *   Bash success        → bash_completed   (exit_code if available)
+ *
+ * `artifact_touched` has a second producer: the run-ledger.ts heartbeat sweep
+ * (a poller, not a hook), which always carries `run_id`/`size_bytes` but only
+ * ever reports `action: "modify"` (an mtime scan cannot tell create from edit).
+ * This hook now carries `size_bytes` too so both payloads converge on it; it
+ * does NOT carry `run_id` — this process is keyed by Claude Code's session
+ * `trace_id`, born before any ledger row may exist, and resolving one would
+ * mean a per-tool-call SQLite lookup that is almost always a miss. Left as a
+ * named gap rather than silently patched.
  *
  * Filtering: only emit when the touched path is inside a Nirvana project
  * (heuristic: cwd contains "/projects/" OR file_path starts with NIRVANA_PROJECT_ROOT).
@@ -188,7 +197,16 @@ async function main() {
     if (stage === "pre") {
       appendEvent({ ...base, event: "tool_invoked", action, file_path: filePath });
     } else {
-      appendEvent({ ...base, event: "artifact_touched", action, file_path: filePath, success: response.success !== false });
+      // size_bytes: unifies this payload with the other artifact_touched producer
+      // (run-ledger.ts heartbeat sweep, which always carries it). Best-effort —
+      // the file can be gone or unreadable by the time the hook runs.
+      let sizeBytes: number | undefined;
+      try { sizeBytes = filePath ? fs.statSync(filePath).size : undefined; } catch { /* file unreadable/gone — omit */ }
+      appendEvent({
+        ...base, event: "artifact_touched", action, file_path: filePath,
+        success: response.success !== false,
+        ...(sizeBytes != null ? { size_bytes: sizeBytes } : {}),
+      });
     }
   } else if (bashTools.has(tool)) {
     const cmdShort = (command || "").slice(0, 200);

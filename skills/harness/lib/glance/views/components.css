@@ -11,6 +11,22 @@
    Layer 1 — Atoms
    ════════════════════════════════════════════════════════════════════ */
 
+/* ─── Glass sheet (glassmorphism material) ───
+   One class. `--a`/`--b` are the two knobs a modifier turns; both come from
+   the derived scale in tokens.css, never a literal. Adapted from
+   design-tests/glassmorphism ("Pilha") — the recipe, not the markup. */
+.gl {
+  --a: var(--glass-a-1);
+  --b: var(--glass-b-1);
+  background: color-mix(in oklab, var(--glass-tint) calc(var(--a) * 100%), transparent);
+  -webkit-backdrop-filter: blur(var(--b)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--b)) saturate(var(--glass-sat));
+}
+.gl--2 { --a: var(--glass-a-2); --b: var(--glass-b-2); }
+.gl--3 { --a: var(--glass-a-3); --b: var(--glass-b-3); }
+/* the plate: the density that buys body text its WCAG 2.2 AA floor */
+.gl--ink { --a: var(--glass-a-ink); }
+
 /* ─── Badge ─── */
 .badge {
   display: inline-flex;

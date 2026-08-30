@@ -30,12 +30,8 @@
     brief_received: '#94a3b8',       // slate-400
     brief_amplified: '#94a3b8',
     session_started: '#64748b',      // slate-500
-    local_execution_started: '#0ea5e9',  // sky-500
-    local_execution_completed: '#0284c7',  // sky-600
     target_plan_committed: '#7c3aed',
-    humanize_completed: '#a78bfa',
     context_budget_warning: '#f97316',  // orange-500
-    no_match: '#6b7280',             // gray-500
   };
 
   function colorFor(event) {

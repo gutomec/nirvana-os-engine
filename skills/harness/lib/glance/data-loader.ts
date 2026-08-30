@@ -242,7 +242,7 @@ interface Run {
   squad_name: string | null;
   target: string | null;            // "<kind>:<slug>" of what the run was dispatched to
   outputs_dir: string | null;       // where the dispatched target was told to write
-  status: "running" | "delivered" | "gate_failed" | "no_match" | "unknown";
+  status: "running" | "delivered" | "gate_failed" | "unknown";
   started_at: string;               // ISO of first event
   last_event_at: string;             // ISO of last event
   event_count: number;              // every event on the trace
@@ -387,10 +387,9 @@ export function buildRuns(opts: { since?: string; limit?: number; days?: number 
       if (!r.outputs_dir && (ev.outputs_dir || ev.outputs_root)) {
         r.outputs_dir = ev.outputs_dir || ev.outputs_root;
       }
-      // Status precedence: gate_failed > delivered > no_match > running
+      // Status precedence: gate_failed > delivered > running
       if (ev.event === "delivered") r.status = "delivered";
       else if (ev.event === "gate_failed" && r.status !== "delivered") r.status = "gate_failed";
-      else if (ev.event === "no_match" && r.status === "unknown") r.status = "no_match";
       else if (r.status === "unknown") r.status = "running";
       // Track artifact paths
       const artifact = ev.artifact_path || (ev.event === "artifact_touched" ? ev.file_path : null);

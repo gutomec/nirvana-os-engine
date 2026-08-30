@@ -20,6 +20,10 @@ import { detect, type Anomaly } from "../../anomaly-detector.ts";
 
 const HTML_PATH = join(import.meta.dir, "observability.html");
 
+// The real revision events (see skills/harness/lib/revision-dispatch.ts and
+// delivery-pipeline.ts) — the literal event name "revision" is never emitted.
+const REVISION_EVENTS = new Set(["revision_dispatched", "revision_auto", "revision_requested", "revision_loop_exhausted"]);
+
 interface ParsedQuery {
   days: number;
   limit: number;
@@ -88,7 +92,7 @@ function dashboardForBusiness(traces: TraceTree[], slug: string) {
       sparkline: sparkline(matched.map((t) => t.duration_ms / 1000)),
     },
     revisions: {
-      total: matched.reduce((acc, t) => acc + t.spans.filter((s) => s.event === "revision").length, 0),
+      total: matched.reduce((acc, t) => acc + t.spans.filter((s) => REVISION_EVENTS.has(s.event)).length, 0),
     },
     top_employees: topEmployees(matched),
     recent_traces: matched.slice(0, 10).map((t) => ({

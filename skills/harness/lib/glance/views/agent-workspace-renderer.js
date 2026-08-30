@@ -24,7 +24,6 @@
     stale: 0xf59e0b,
     completed: 0x10b981,
     failed: 0xef4444,
-    no_match: 0xa3a3a3,
   };
 
   const HOST_LABELS = {
