@@ -67,6 +67,16 @@ function glance() {
     runsFilter: 'recent',          // recent | running | delivered | failed
     runsAutoRefresh: null,         // setInterval handle
     selectedRun: null,             // full run detail (events timeline)
+    // Runs rail: searchable, collapsible 280px ⇄ 56px (page-layout-redesign.md
+    // §1.3). Named runsListQuery (not runsFilter, above) to keep the two apart —
+    // runsFilter is an existing recent|running|delivered|failed status enum,
+    // this is free-text search against brief/business/squad.
+    runsRailCollapsed: (typeof localStorage !== 'undefined' && localStorage.getItem('glance.runsRailCollapsed') === '1'),
+    runsListQuery: '',
+    // "Atividade relacionada" strip inside run-detail — one collapsible flag
+    // shared by whichever run is open, same pattern as the Trajectory Card's
+    // own judgement-strip toggle.
+    relatedActivityOpen: true,
     mindClones: [],
     // Memory layer (state.db) — populated lazily when kind === 'memory'
     memorySubTab: 'decisions',  // decisions | gates | audit
@@ -115,13 +125,24 @@ function glance() {
     // Cost dashboard
     cost: null,
     costPeriod: '7d',          // 7d | 30d | all
-    // Activity feed (right sidebar)
-    activityOpen: true,
+    // Activity feed — on-demand overlay (bell in topnav), not a permanent
+    // rail (page-layout-redesign.md §1.3). activityUnseenCount resets to 0
+    // whenever the overlay opens.
+    activityOverlayOpen: false,
+    activityUnseenCount: 0,
     activityEvents: [],
     activityStream: null,
     // Layout chrome — collapsible sidebars + agents fullscreen
     sidebarOpen: (typeof localStorage !== 'undefined' && localStorage.getItem('glance.sidebarOpen') !== '0'),
     rightPaneOpen: (typeof localStorage !== 'undefined' && localStorage.getItem('glance.rightPaneOpen') !== '0'),
+    // Sidebar auto-collapses to a 64px icon rail whenever a run is open in
+    // detail, unless pinned full (page-layout-redesign.md §1.3). The hint
+    // toast is intentionally session-only (not persisted) — it fires once
+    // per page load, the first time the auto-collapse actually happens.
+    sidebarPinnedFull: (typeof localStorage !== 'undefined' && localStorage.getItem('glance.sidebarPinnedFull') === '1'),
+    sidebarHintShown: false,
+    showSidebarHint: false,
+    sidebarLiveMessage: '',
     agentsFullscreen: false,
     // Scope filter: 'all' = entire machine, 'project' = only events whose cwd
     // starts with scope.projectRoot. Disabled when no projectRoot is detected.
@@ -465,7 +486,45 @@ function glance() {
       } catch (e) {}
     },
     selectRun(run) {
+      const wasCollapsed = this.sidebarCollapsed;
       this.selectedRun = run;
+      // Nielsen H1 (visibility of system status): the sidebar auto-collapsing
+      // needs to announce itself the first time it happens, not just silently
+      // change width (ux-qa finding, page-layout-redesign.md §3.1).
+      if (!wasCollapsed && this.sidebarCollapsed && !this.sidebarHintShown) {
+        this.sidebarHintShown = true;
+        this.showSidebarHint = true;
+        this.sidebarLiveMessage = 'Sidebar recolhida para ícones — uma run está aberta em detalhe. Use o botão fixar para mantê-la cheia.';
+        setTimeout(() => { this.showSidebarHint = false; }, 4000);
+      }
+    },
+    // Sidebar auto-collapse to the 64px icon rail (page-layout-redesign.md
+    // §1.3) — driven by whether a run is open in detail, never by `kind`.
+    get sidebarCollapsed() {
+      const pl = window.NirvanaPanelLayout;
+      return pl
+        ? pl.shouldCollapseSidebar({ pinnedFull: this.sidebarPinnedFull, hasSelectedRun: !!this.selectedRun })
+        : (!this.sidebarPinnedFull && !!this.selectedRun);
+    },
+    toggleSidebarPin() {
+      this.showSidebarHint = false;
+      this.sidebarPinnedFull = !this.sidebarPinnedFull;
+      try { localStorage.setItem('glance.sidebarPinnedFull', this.sidebarPinnedFull ? '1' : '0'); } catch {}
+    },
+    // Runs rail: search filter + collapse toggle (page-layout-redesign.md §1.3).
+    get filteredRunsList() {
+      const pl = window.NirvanaPanelLayout;
+      return pl ? pl.filterRunsByQuery(this.visibleRuns, this.runsListQuery) : this.visibleRuns;
+    },
+    toggleRunsRail() {
+      this.runsRailCollapsed = !this.runsRailCollapsed;
+      try { localStorage.setItem('glance.runsRailCollapsed', this.runsRailCollapsed ? '1' : '0'); } catch {}
+    },
+    // "Atividade relacionada" — activity events scoped to this run's
+    // business/project, excluding events already on its own trace.
+    relatedActivity(run) {
+      const pl = window.NirvanaPanelLayout;
+      return pl ? pl.filterRelatedActivity(this.activityEvents, run) : [];
     },
     runStatusColor(status) {
       if (status === 'delivered') return 'meta-ok';
@@ -825,6 +884,18 @@ function glance() {
       try { localStorage.setItem('glance.rightPaneOpen', this.rightPaneOpen ? '1' : '0'); } catch {}
       this.$nextTick(() => { try { window.lucide?.createIcons(); } catch {} });
     },
+    // Activity: on-demand overlay (page-layout-redesign.md §1.3). Opening
+    // moves focus into the panel; closing returns it to the bell that opened
+    // it, so focus is never dropped on <body> (WCAG 2.4.3).
+    openActivity() {
+      this.activityOverlayOpen = true;
+      this.activityUnseenCount = 0;
+      this.$nextTick(() => { this.$refs.activityCloseBtn?.focus(); try { window.lucide?.createIcons(); } catch {} });
+    },
+    closeActivity() {
+      this.activityOverlayOpen = false;
+      this.$nextTick(() => { this.$refs.activityTrigger?.focus(); });
+    },
     // ── Project scope filter ──
     canFilterByProject() {
       return !!(this.scope && this.scope.projectRoot);
@@ -1102,6 +1173,7 @@ function glance() {
           const ev = JSON.parse(e.data);
           this.activityEvents.unshift(ev);
           if (this.activityEvents.length > 50) this.activityEvents.length = 50;
+          if (!this.activityOverlayOpen) this.activityUnseenCount++;
         } catch {}
       });
     },
@@ -1269,6 +1341,15 @@ function glance() {
     chatMode: 'run',           // 'run' (new dispatch) | 'revise' | 'resume'
     chatHistory: [],           // [{id, title, mode, updatedAt}] persisted in localStorage
     chatHistoryOpen: false,    // history drawer inside the panel
+    // Chat panel width — 460..920px, resizable via drag handle or
+    // ArrowLeft/ArrowRight (page-layout-redesign.md §2.2), persisted like the
+    // other Glance layout preferences. chat-history above is unrelated and
+    // unchanged — it stays the on-demand drawer it already was in production.
+    chatWidth: (() => {
+      let saved = null;
+      try { saved = parseInt(localStorage.getItem('glance.chatWidth'), 10); } catch {}
+      return (Number.isFinite(saved) && saved >= 460 && saved <= 920) ? saved : 460;
+    })(),
     canonicalProjectId: null,
 
     // The control plane is canonical when this workspace has been adopted.
@@ -1597,6 +1678,33 @@ function glance() {
     closeChat() {
       this.chatOpen = false;
       if (this.chatRunES) { this.chatRunES.close(); this.chatRunES = null; }
+    },
+    // Chat panel resize — drag handle AND ArrowLeft/ArrowRight keyboard,
+    // clamped to 460..920px (page-layout-redesign.md §2.2), persisted.
+    startChatResize(e) {
+      e.preventDefault();
+      // preventDefault() on mousedown also suppresses the browser's default
+      // click-to-focus behavior — restore it explicitly so the separator
+      // stays keyboard-operable (ArrowLeft/ArrowRight) right after a drag.
+      e.currentTarget.focus();
+      const startX = e.clientX;
+      const startW = this.chatWidth;
+      const pl = window.NirvanaPanelLayout;
+      const clamp = (w) => (pl ? pl.clampChatWidth(w) : Math.min(920, Math.max(460, w)));
+      const onMove = (ev) => { this.chatWidth = clamp(startW - (ev.clientX - startX)); };
+      const onUp = () => {
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        try { localStorage.setItem('glance.chatWidth', String(this.chatWidth)); } catch {}
+      };
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    },
+    stepChatWidth(delta) { this.setChatWidthPreset(this.chatWidth + delta); },
+    setChatWidthPreset(w) {
+      const pl = window.NirvanaPanelLayout;
+      this.chatWidth = pl ? pl.clampChatWidth(w) : Math.min(920, Math.max(460, w));
+      try { localStorage.setItem('glance.chatWidth', String(this.chatWidth)); } catch {}
     },
     // Subscribe to a trace's audit event stream (live timeline).
     subscribeRun(traceId) {

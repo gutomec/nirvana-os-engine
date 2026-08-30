@@ -44,7 +44,7 @@
   </template>
 
   <!-- ─── Top nav ─── -->
-  <nav class="glance-nav gl gl--2">
+  <nav class="glance-nav gl gl--2" :inert="activityOverlayOpen">
     <div class="flex items-center gap-3">
       <span class="text-lg">⊚</span>
       <div class="leading-tight">
@@ -119,6 +119,10 @@
         </div>
       </div>
       <button @click="toggleSetupMode()" :class="setupMode ? 'icon-btn icon-btn-active' : 'icon-btn'" x-cloak x-show="health.allow_actions" title="Setup mode — pick squads/businesses/mind-clones to copy to a project"><i data-lucide="package"></i></button>
+      <button @click="openActivity()" x-ref="activityTrigger" :class="activityOverlayOpen ? 'icon-btn icon-btn-active activity-trigger' : 'icon-btn activity-trigger'" :aria-pressed="activityOverlayOpen ? 'true' : 'false'" title="Activity — feed de eventos do sistema">
+        <i data-lucide="bell"></i>
+        <span class="activity-badge" x-show="activityUnseenCount > 0" x-text="activityUnseenCount > 99 ? '99+' : activityUnseenCount"></span>
+      </button>
       <button @click="chatOpen ? closeChat() : openChat()" :class="chatOpen ? 'icon-btn icon-btn-active' : 'icon-btn'" title="Chat — converse com o Nirvana e opere o sistema"><i data-lucide="message-square"></i></button>
       <button @click="openSettings()" :class="settingsOpen ? 'icon-btn icon-btn-active' : 'icon-btn'" title="Configuração" aria-label="Configuração"><i data-lucide="settings"></i></button>
       <button @click="consoleOpen = !consoleOpen" title="Console" class="icon-btn" :class="jobs.some(j => j.status==='running') ? 'icon-btn-pulse' : ''"><i data-lucide="terminal"></i></button>
@@ -134,7 +138,7 @@
   <!-- ─── Subsystems — o que está de pé (não o que rodou) ───
        Cada célula é uma leitura real do disco. Uma que não pôde ser
        determinada mostra — em vez de acender um verde que ninguém mediu. -->
-  <div class="subsystem-row gl" role="status" aria-label="Subsistemas do engine">
+  <div class="subsystem-row gl" role="status" aria-label="Subsistemas do engine" :inert="activityOverlayOpen">
     <span class="subsystem-row-title">ENGINE</span>
     <template x-for="cell in subsystemRow.cells" :key="cell.key">
       <span class="subsystem-cell" :title="cell.title">
@@ -150,7 +154,7 @@
   </div>
 
   <!-- ─── Main columns ─── -->
-  <div class="flex-1 flex min-h-0">
+  <div class="flex-1 flex min-h-0" :inert="activityOverlayOpen">
 
     <!-- Floating handle to expand the left sidebar when collapsed -->
     <button class="sidebar-handle sidebar-handle-left" x-show="!sidebarOpen" @click="toggleSidebar()" title="Expand sidebar (⌘\)">
@@ -159,7 +163,7 @@
 
     <!-- Sidebar — always visible so kind-tabs (Squads/Businesses/…/Memory/Graph/Cost)
          remain reachable. Filter/list/setup chrome inside is gated to per-asset kinds. -->
-    <aside class="sidebar gl gl--2" x-show="sidebarOpen">
+    <aside class="sidebar gl gl--2" :class="sidebarCollapsed ? 'icon-rail' : ''" x-show="sidebarOpen">
       <div class="sidebar-collapse-row">
         <button class="sidebar-collapse-btn" @click="toggleSidebar()" title="Collapse sidebar (⌘\)">
           <i data-lucide="chevron-left"></i>
@@ -174,6 +178,7 @@
             :class="kind === k.id ? 'kind-card active' : 'kind-card'"
             role="tab"
             :aria-selected="kind === k.id ? 'true' : 'false'"
+            :aria-label="k.label"
             :title="auditSummary(k.id) ? `${auditSummary(k.id).total} total · ${auditSummary(k.id).green}g/${auditSummary(k.id).yellow}y/${auditSummary(k.id).red}r · avg ${auditSummary(k.id).avg}` : k.label">
             <i :data-lucide="k.icon" class="kind-card-icon"></i>
             <span class="kind-card-label" x-text="k.label"></span>
@@ -295,7 +300,25 @@
           </div>
         </div>
       </div>
+      <!-- Pin: keeps the sidebar full-width even while a run is open in
+           detail (page-layout-redesign.md §1.3) — persisted like the other
+           Glance layout preferences (glance.sidebarOpen, glance.rightPaneOpen). -->
+      <div class="sidebar-foot">
+        <button type="button" class="sidebar-pin-btn" :class="showSidebarHint ? 'hint-pulse' : ''" @click="toggleSidebarPin()" :aria-pressed="sidebarPinnedFull ? 'true' : 'false'" title="Fixar sidebar cheia mesmo com uma run aberta">
+          <i data-lucide="pin"></i>
+          <span class="sidebar-pin-label" x-text="sidebarPinnedFull ? 'fixada cheia' : 'auto-colapsa'"></span>
+        </button>
+      </div>
     </aside>
+
+    <!-- One-time toast the first time the sidebar auto-collapses, pointing at
+         the pin escape hatch (Nielsen H1 — visibility of system status; ux-qa
+         finding, page-layout-redesign.md §3.1). An aria-live region announces
+         the same change for screen-reader users, independent of the toast. -->
+    <div class="sidebar-hint" x-show="showSidebarHint" x-cloak role="status">
+      Sidebar recolhida para ícones — uma run está aberta em detalhe. Clique <i data-lucide="pin" style="width:12px;height:12px;display:inline;vertical-align:-2px;"></i> para fixá-la cheia.
+    </div>
+    <div class="sr-only" aria-live="polite" x-text="sidebarLiveMessage"></div>
 
     <!-- Detail panel (only when kind is a per-asset view) -->
     <main class="detail-pane" x-show="['squads','businesses','projects','mind-clones'].includes(kind)">
@@ -861,51 +884,67 @@
         <button @click="fetchRuns()" class="icon-btn" title="Refresh"><i data-lucide="rotate-cw"></i></button>
       </header>
       <div class="runs-grid">
-        <!-- LEFT: list of runs -->
-        <aside class="runs-list" :class="selectedRun ? 'has-selection' : ''">
-          <template x-if="runs.length === 0">
-            <div class="runs-empty">
-              <i data-lucide="inbox" class="runs-empty-icon"></i>
-              <p>No runs in the last 7 days.</p>
-              <p class="runs-empty-hint">Runs appear here automatically as agents emit audit events. If you're sure something ran but nothing shows, check that the auto-emit hook is enabled in <code>~/.claude/settings.json</code> (PreToolUse / PostToolUse).</p>
-            </div>
-          </template>
-          <template x-for="run in visibleRuns" :key="run.trace_id">
-            <button class="card card-interactive gl gl--ink"
-                    :class="[
-                      selectedRun?.trace_id === run.trace_id ? 'card-active' : '',
-                      run.suspicious ? 'card-status-warn' : '',
-                      `card-status-${runStatusVariant(run.status)}`
-                    ]"
-                    @click="selectRun(run)">
-              <div class="card-head">
-                <div class="card-head-left">
-                  <span class="badge" :class="`badge-${runStatusVariant(run.status)}`" x-text="run.status"></span>
-                  <span class="badge badge-warn badge-sm" x-show="run.suspicious" :title="`Suspicion score ${run.suspicion_score} — ${run.suspicion_evidence.join('; ')}`">⚠ suspicious</span>
-                </div>
-                <span class="text-caption" x-text="runRelTime(run.last_event_at)"></span>
-              </div>
-              <div class="card-title text-truncate" x-text="run.brief || '(no brief captured)'"></div>
-              <div class="card-meta">
-                <span class="badge badge-neutral badge-sm" x-show="run.business_slug" x-text="`biz: ${run.business_slug}`"></span>
-                <span class="badge badge-neutral badge-sm" x-show="run.squad_name" x-text="`squad: ${run.squad_name}`"></span>
-                <span class="badge badge-neutral badge-sm" x-show="run.project_id" x-text="`proj: ${run.project_id}`"></span>
-                <span class="badge badge-neutral badge-mono badge-sm" x-text="`#${run.trace_id.slice(0, 8)}`"></span>
-                <!-- What the run was dispatched to, read from the dispatch event itself.
-                     `—` when no dispatch event carries it: an inferred target would be a
-                     guess on the one card whose job is to say what actually happened. -->
-                <span class="badge badge-neutral badge-sm" x-text="`→ ${countText(run.target)}`"></span>
-                <!-- Signal first. The total is still there, labelled for what it is: the
-                     hook fires two events per tool call, so it measures how long an agent
-                     ran, not how much the run did. -->
-                <span class="badge badge-neutral badge-sm"
-                      :title="`${run.event_count} events on this trace · ${run.noise_event_count} of them tool calls and heartbeats`"
-                      x-text="`${countText(run.signal_event_count)} signal / ${countText(run.event_count)} events`"></span>
-                <span class="badge badge-neutral badge-sm" x-text="`${countText(run.artifact_paths.length)} artifact${run.artifact_paths.length === 1 ? '' : 's'}`"></span>
-                <span class="badge badge-neutral badge-sm" x-show="run.hosts && run.hosts.length" x-text="run.hosts.join(' · ')"></span>
-              </div>
+        <!-- LEFT: searchable, collapsible rail of runs (280px full ⇄ 56px
+             icon strip — page-layout-redesign.md §1.3, "lista de runs vira
+             rail fino e buscável"). -->
+        <aside class="runs-list" :class="[selectedRun ? 'has-selection' : '', runsRailCollapsed ? 'collapsed' : '']">
+          <div class="runs-list-head">
+            <input type="text" x-model="runsListQuery" x-show="!runsRailCollapsed" class="runs-list-search" placeholder="Filtrar runs…" aria-label="Filtrar runs">
+            <button type="button" class="runs-list-collapse-btn" @click="toggleRunsRail()" :aria-expanded="(!runsRailCollapsed).toString()" :title="runsRailCollapsed ? 'Expandir a lista de runs' : 'Colapsar a lista de runs'">
+              <i :data-lucide="runsRailCollapsed ? 'chevron-right' : 'chevron-left'"></i>
             </button>
-          </template>
+          </div>
+          <div class="runs-list-scroll">
+            <template x-if="runs.length === 0">
+              <div class="runs-empty">
+                <i data-lucide="inbox" class="runs-empty-icon"></i>
+                <p>No runs in the last 7 days.</p>
+                <p class="runs-empty-hint">Runs appear here automatically as agents emit audit events. If you're sure something ran but nothing shows, check that the auto-emit hook is enabled in <code>~/.claude/settings.json</code> (PreToolUse / PostToolUse).</p>
+              </div>
+            </template>
+            <template x-for="run in filteredRunsList" :key="run.trace_id">
+              <button class="card card-interactive gl gl--ink run-row"
+                      :class="[
+                        selectedRun?.trace_id === run.trace_id ? 'card-active' : '',
+                        run.suspicious ? 'card-status-warn' : '',
+                        `card-status-${runStatusVariant(run.status)}`
+                      ]"
+                      :aria-label="`${run.status} · ${run.brief || '(no brief captured)'}`"
+                      :title="`${run.status} · ${run.brief || '(no brief captured)'}`"
+                      @click="selectRun(run)">
+                <!-- Collapsed rail: still a real, labelled button — never a
+                     mute avatar. The dot carries a SHAPE per status too, not
+                     hue alone (WCAG 2.2 AA 1.4.1, ux-qa finding §3.1). -->
+                <span class="run-row-dot" :class="`run-row-dot-${runStatusVariant(run.status)}`" x-show="runsRailCollapsed" aria-hidden="true"></span>
+                <div class="card-head">
+                  <div class="card-head-left">
+                    <span class="badge" :class="`badge-${runStatusVariant(run.status)}`" x-text="run.status"></span>
+                    <span class="badge badge-warn badge-sm" x-show="run.suspicious" :title="`Suspicion score ${run.suspicion_score} — ${run.suspicion_evidence.join('; ')}`">⚠ suspicious</span>
+                  </div>
+                  <span class="text-caption" x-text="runRelTime(run.last_event_at)"></span>
+                </div>
+                <div class="card-title text-truncate" x-text="run.brief || '(no brief captured)'"></div>
+                <div class="card-meta">
+                  <span class="badge badge-neutral badge-sm" x-show="run.business_slug" x-text="`biz: ${run.business_slug}`"></span>
+                  <span class="badge badge-neutral badge-sm" x-show="run.squad_name" x-text="`squad: ${run.squad_name}`"></span>
+                  <span class="badge badge-neutral badge-sm" x-show="run.project_id" x-text="`proj: ${run.project_id}`"></span>
+                  <span class="badge badge-neutral badge-mono badge-sm" x-text="`#${run.trace_id.slice(0, 8)}`"></span>
+                  <!-- What the run was dispatched to, read from the dispatch event itself.
+                       `—` when no dispatch event carries it: an inferred target would be a
+                       guess on the one card whose job is to say what actually happened. -->
+                  <span class="badge badge-neutral badge-sm" x-text="`→ ${countText(run.target)}`"></span>
+                  <!-- Signal first. The total is still there, labelled for what it is: the
+                       hook fires two events per tool call, so it measures how long an agent
+                       ran, not how much the run did. -->
+                  <span class="badge badge-neutral badge-sm"
+                        :title="`${run.event_count} events on this trace · ${run.noise_event_count} of them tool calls and heartbeats`"
+                        x-text="`${countText(run.signal_event_count)} signal / ${countText(run.event_count)} events`"></span>
+                  <span class="badge badge-neutral badge-sm" x-text="`${countText(run.artifact_paths.length)} artifact${run.artifact_paths.length === 1 ? '' : 's'}`"></span>
+                  <span class="badge badge-neutral badge-sm" x-show="run.hosts && run.hosts.length" x-text="run.hosts.join(' · ')"></span>
+                </div>
+              </button>
+            </template>
+          </div>
         </aside>
         <!-- RIGHT: selected run detail (timeline + artifacts) -->
         <section class="run-detail gl gl--2" x-show="selectedRun" x-cloak>
@@ -967,6 +1006,27 @@
                     a real hook (events outside the canonical enum, artificial timestamps, or no host attribution).
                     Don't trust the artifacts from this run without manual verification.
                   </p>
+                </section>
+                <!-- "Atividade relacionada": compact, collapsible, scoped to
+                     THIS run's business/project — replaces the old always-on
+                     global Activity rail (page-layout-redesign.md §1.3). -->
+                <section class="related-activity">
+                  <button type="button" class="related-activity-head" :aria-expanded="relatedActivityOpen ? 'true' : 'false'" @click="relatedActivityOpen = !relatedActivityOpen">
+                    <i data-lucide="activity" class="icon-inline"></i>
+                    <span>Atividade relacionada · <b x-text="relatedActivity(selectedRun).length"></b> evento<span x-show="relatedActivity(selectedRun).length !== 1">s</span><template x-if="selectedRun.business_slug"><span> de <span x-text="selectedRun.business_slug"></span></span></template></span>
+                    <i data-lucide="chevron-down" class="related-activity-chev"></i>
+                  </button>
+                  <div class="related-activity-body" x-show="relatedActivityOpen" x-cloak>
+                    <template x-if="relatedActivity(selectedRun).length === 0">
+                      <div class="text-caption related-activity-empty">Nenhum outro evento recente deste business/projeto — o Cartão de Trajetória abaixo já conta a história inteira.</div>
+                    </template>
+                    <template x-for="a in relatedActivity(selectedRun)" :key="(a.id || a.ts || '') + '-' + a.event">
+                      <div class="related-activity-row">
+                        <span class="text-caption related-activity-time" x-text="activityRelative(a.ts)"></span>
+                        <span x-text="a.event"></span>
+                      </div>
+                    </template>
+                  </div>
                 </section>
                 <section>
                   <div class="text-label">Timeline · <span x-text="selectedRun.events.length"></span> events</div>
@@ -1592,32 +1652,37 @@
         </div>
       </div>
     </aside>
+  </div>
 
-    <!-- ─── Activity feed (live SSE from audit_events) ─── -->
-    <aside class="activity-pane" :class="{ collapsed: !activityOpen }">
-      <header class="activity-header">
-        <span class="activity-title" x-show="activityOpen">Activity</span>
-        <span class="activity-counter" x-show="activityOpen && activityEvents.length > 0" x-text="`${activityEvents.length}`"></span>
-        <button @click="activityOpen = !activityOpen" class="icon-btn" :title="activityOpen ? 'Collapse activity' : 'Expand activity'">
-          <i :data-lucide="activityOpen ? 'chevron-right' : 'chevron-left'"></i>
-        </button>
-      </header>
-      <div class="activity-list" x-show="activityOpen">
-        <template x-for="(e, idx) in visibleActivityEvents" :key="idx + '-' + (e.id || '') + '-' + (e.ts || '')">
-          <div class="activity-card" :class="{ fresh: idx === 0 }" @click="navigateFromActivity(e)">
-            <span class="activity-icon" x-text="activityIcon(e.event)"></span>
-            <div class="activity-body">
-              <div class="activity-event" x-text="e.event"></div>
-              <div class="activity-meta">
-                <span class="activity-time" x-text="activityRelative(e.ts)"></span>
-                <span x-show="e.project_id" x-text="e.project_id"></span>
-              </div>
+  <!-- ─── Activity: on-demand overlay (bell in topnav opens it) — replaces the
+       old always-reserved 280px rail (page-layout-redesign.md §1.3). Lives
+       OUTSIDE the ":inert"-bound main-columns div above (and outside topnav/
+       chat-panel, also :inert while this is open) so it is the one region
+       still reachable — a real focus trap, not just a visual overlay
+       (WCAG 2.4.3, ux-qa finding §3.1: Tab must never escape this dialog). -->
+  <div class="activity-backdrop" x-show="activityOverlayOpen" x-cloak @click="closeActivity()"></div>
+  <div class="activity-overlay" x-show="activityOverlayOpen" x-cloak role="dialog" aria-modal="true" aria-label="Activity"
+       @keydown.escape.window="activityOverlayOpen && closeActivity()">
+    <header class="activity-overlay-head">
+      <span class="activity-title">Activity</span>
+      <span class="activity-counter" x-show="activityEvents.length > 0" x-text="`${activityEvents.length}`"></span>
+      <button type="button" class="icon-btn" x-ref="activityCloseBtn" @click="closeActivity()" title="Fechar (Esc)"><i data-lucide="x"></i></button>
+    </header>
+    <div class="activity-list">
+      <template x-for="(e, idx) in visibleActivityEvents" :key="idx + '-' + (e.id || '') + '-' + (e.ts || '')">
+        <div class="activity-card" :class="{ fresh: idx === 0 }" @click="navigateFromActivity(e)">
+          <span class="activity-icon" x-text="activityIcon(e.event)"></span>
+          <div class="activity-body">
+            <div class="activity-event" x-text="e.event"></div>
+            <div class="activity-meta">
+              <span class="activity-time" x-text="activityRelative(e.ts)"></span>
+              <span x-show="e.project_id" x-text="e.project_id"></span>
             </div>
           </div>
-        </template>
-        <div x-show="activityEvents.length === 0" class="activity-empty">no recent activity</div>
-      </div>
-    </aside>
+        </div>
+      </template>
+      <div x-show="activityEvents.length === 0" class="activity-empty">no recent activity</div>
+    </div>
   </div>
 
   <!-- Setup-mode bottom bar (visible only when setupMode is on) -->
@@ -1901,7 +1966,17 @@
   </div>
 
   <!-- ══════════════ CHAT PANEL (Fase 3) ══════════════ -->
-  <aside class="chat-panel gl gl--2" :class="chatOpen ? 'open' : ''" x-cloak>
+  <aside class="chat-panel gl gl--2" :class="chatOpen ? 'open' : ''" :style="`width:${chatWidth}px`" :inert="activityOverlayOpen" x-cloak>
+    <!-- Resize handle: real drag AND ArrowLeft/ArrowRight keyboard, 460↔920px
+         (page-layout-redesign.md §2.2). The clickable hit area is 24px even
+         though the visible bar is a slim 3px (WCAG 2.2 AA 2.5.8 target size —
+         ux-qa finding §3.1: the previous 8px-wide handle failed the floor). -->
+    <div class="chat-resize-handle"
+         role="separator" aria-orientation="vertical" aria-label="Redimensionar o painel de chat"
+         :aria-valuemin="460" :aria-valuemax="920" :aria-valuenow="chatWidth" tabindex="0"
+         @mousedown="startChatResize($event)"
+         @keydown.left="stepChatWidth(-40)" @keydown.right="stepChatWidth(40)"></div>
+    <div class="chat-body">
     <header class="chat-head">
       <div class="chat-head-title">
         <span class="chat-head-dot"></span>
@@ -1914,6 +1989,10 @@
             <button type="button" class="chat-session-copy" x-show="chatResumeCommand" @click="navigator.clipboard?.writeText(chatResumeCommand); flash('Comando copiado: ' + chatResumeCommand, 2500)" title="Copiar o comando para continuar no terminal">copiar comando</button>
           </div>
         </div>
+      </div>
+      <div class="chat-width-toggle" role="group" aria-label="Largura do painel">
+        <button type="button" :aria-pressed="chatWidth <= 460 ? 'true' : 'false'" @click="setChatWidthPreset(460)">compacto</button>
+        <button type="button" :aria-pressed="chatWidth >= 880 ? 'true' : 'false'" @click="setChatWidthPreset(880)">amplo</button>
       </div>
       <div class="flex items-center gap-2">
         <button @click="openChat()" class="icon-btn" title="Nova conversa"><i data-lucide="plus"></i></button>
@@ -2159,6 +2238,7 @@
     <div class="chat-foot text-caption" x-show="!health.allow_actions">
       Somente leitura — reinicie o Glance com <code>--allow-actions</code> para o chat operar o sistema.
     </div>
+    </div>
   </aside>
 
   <!-- Bottom toast -->
@@ -2240,6 +2320,13 @@
   // subsystem-row.js turns /api/subsystems into the engine row under the header.
   import * as subsystemRow from '/subsystem-row.js?v=__ASSET_VER__';
   window.NirvanaSubsystemRow = subsystemRow;
+</script>
+<script type="module">
+  // panel-layout.js is the pure module behind the Runs+Chat layout redesign
+  // (sidebar auto-collapse, chat resize bounds, runs-rail search, related-
+  // activity filter). Same adapter pattern as the other pure modules here.
+  import * as panelLayout from '/panel-layout.js?v=__ASSET_VER__';
+  window.NirvanaPanelLayout = panelLayout;
 </script>
 <script src="/dag-renderer.js?v=__ASSET_VER__"></script>
 <script src="/org-chart-renderer.js?v=__ASSET_VER__"></script>
