@@ -8,6 +8,8 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+## 0.12.2 — 2026-08-30
+
 ### Glance: o Cartão de Trajetória substitui duas timelines de run divergentes
 
 A aba Runs e o painel de Chat renderizavam "o que aconteceu nesta run" cada

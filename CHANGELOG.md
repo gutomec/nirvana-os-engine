@@ -8,6 +8,8 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+## 0.12.2 — 2026-08-30
+
 ### Glance: the Trajectory Card replaces two divergent run timelines
 
 The Runs tab and the Chat panel each rendered "what happened in this run"
