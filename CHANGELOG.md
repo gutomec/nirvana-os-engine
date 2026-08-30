@@ -8,6 +8,19 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### `nrv serve`: webhook, SSE and polling proved on one live run
+
+A new integration test (`skills/harness/tests/serve-triad-live-correlation.test.ts`)
+closes a coverage gap: the three event transports the API exposes — webhook
+delivery, the SSE audit stream, and polling by trace_id — only ever had
+isolated proof. The test drives all three against a single real run: the
+webhook receiver is a real local HTTP server, the SSE subscription opens
+while the run is still in flight and captures an intermediate audit event
+before the terminal one, and the webhook's HMAC signature and idempotency key
+are checked against the same trace_id the SSE stream and the polled envelope
+report. Glance's live cockpit is not re-tested here — it consumes the same
+SSE endpoint this test exercises.
+
 ## 0.12.1 — 2026-08-29
 
 ### Reverted: Durable Work Continuity (DWC)

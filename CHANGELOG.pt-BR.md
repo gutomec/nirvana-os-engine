@@ -8,6 +8,20 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### `nrv serve`: webhook, SSE e polling provados numa mesma run ao vivo
+
+Um teste de integração novo (`skills/harness/tests/serve-triad-live-correlation.test.ts`)
+fecha uma lacuna de cobertura: os três transportes de evento que a API expõe
+— entrega de webhook, o stream SSE de audit e o polling por trace_id — só
+tinham prova isolada. O teste aciona os três contra uma única run real: o
+receptor de webhook é um servidor HTTP local real, a inscrição no SSE abre
+enquanto a run ainda está em andamento e captura um evento de audit
+intermediário antes do terminal, e a assinatura HMAC e a chave de
+idempotência do webhook são conferidas contra o mesmo trace_id que o stream
+SSE e o envelope consultado por polling relatam. O cockpit ao vivo do Glance
+não é retestado aqui — ele consome o mesmo endpoint SSE que este teste
+exercita.
+
 ## 0.12.1 — 2026-08-29
 
 ### Revertido: Durable Work Continuity (DWC)
