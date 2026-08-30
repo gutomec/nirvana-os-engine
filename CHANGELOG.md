@@ -17,8 +17,8 @@ in `run-event-labels.js`. `trajectory-card.js` is the fix — one organism,
 `buildTrajectoryRows()`, that both surfaces now call, so a run reads the same
 whether opened from the Chat panel or the Runs tab.
 
-Three new moleculed views ride on top of events that already carried this
-data and had nowhere to show it: a collapsible **judgement strip** nests
+Three new molecule-level views ride on top of events that already carried
+this data and had nowhere to show it: a collapsible **judgement strip** nests
 `judge_invoked → critique_generated → revision_dispatched/revision_auto
 (0..N) → gate_passed/gate_failed/revision_loop_exhausted` instead of scattering
 them as flat rows; a **delivery-nuance badge** distinguishes a clean
