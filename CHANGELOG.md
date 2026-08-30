@@ -66,6 +66,61 @@ This is the second fix from that review (the first: `.css` added to
 observation into every dispatch path (not just Gauntlet-mode evaluations)
 is a larger, separate change still in progress.
 
+### Glance: the field background was invisible in practice, not just subtle
+
+`.field-bg`'s radial gradients (#175) pass through two dilutions before
+reaching the eye: their own transparency, then the glass sheet on top
+(`--sheet-a: 0.6` — only ~40% of what's behind shows through). A 30% accent
+mix ended up around 12% in the final composite — invisible in the light
+theme, where the surrounding surfaces are already near-white. Whole shell
+had the correct glass recipe applied (per #175) but read as unchanged to
+the eye. Raised the gradient mix (30-65%) and saturation boost (1.05→1.35)
+to compensate for the double dilution on purpose, verified live against a
+running instance: the color wash is now clearly visible behind the nav,
+sidebar, and detail panels in every theme, not just dark.
+
+### Glance: business/squad dispatches were invisible in their own project's Runs tab
+
+The Project filter's `eventMatchesProject` (server.ts) only recognized a
+`cwd` or a filesystem-shaped `project_id` — signals an interactive coding
+session carries, but a `brief-business.ts`/`brief-squad.ts` dispatch never
+does: its `project_id` IS the trace ID, not a path. Every business/squad run
+this project ever dispatched silently dropped out of its own Runs tab the
+moment the Project pill was on, even though `/api/runs` returned them
+correctly with no filter at all. Fixed on both sides: the server now trusts
+its own project binding (the audit log it reads is already
+`<projectRoot>/.nirvana/logs/harness/` when one is bound, so a request for
+that same project needs no further per-event guessing) with the per-event
+checks kept as a fallback for genuine cross-project aggregation; the client's
+`matchesCurrentProject` now also trusts a run the server already returned
+when it carries `business_slug`, `squad_name`, or `target` — the fields only
+a dispatch (never an unrelated session) sets. Verified live: a project that
+showed 2 of 10 runs now shows all of the ones that actually belong to it,
+each rendering the same atom/molecule/organism trajectory timeline as any
+other run.
+
+### Glance: the fabrication detector flagged legitimate dispatches as fabricated
+
+`audit-fabrication.ts` scores a run "suspicious" for events outside a closed
+`ALLOWED_EVENTS` enum and for events with no `host` from a known coding-session
+hook. Two miscalibrations made it fire on nearly every harness dispatch: it
+didn't know about the `x_` open namespace SKILL.md itself sanctions (Rule 2),
+so `run-ledger.ts`'s own `x_ledger_run_opened` / `x_ledger_state_changed`
+scored as unknown events on every single ledger-tracked run; and it assumed
+every legitimate event carries a hook host, when `brief_received`,
+`dispatch_business`, `dispatch_squad`, `gate_passed` and `delivered` are
+emitted directly by CLI scripts and never go through a hook at all — so a
+fully-audited, honest dispatch already scored above the suspicious threshold
+on its own non-hook shape, before heuristic 1 even ran. Also found and fixed
+in passing: `dispatch_agent_x` was missing from `ALLOWED_EVENTS` entirely,
+flagging every agent-x dispatch as an unknown event name. Fixed by exempting
+the `x_` namespace and the harness's own non-hook dispatch/gate events from
+both checks, and adding the missing enum entry. Verified live: a project
+that showed 6 of 8 runs as suspicious now shows 0, with genuine fabrication
+(an unknown event name outside `x_`, or hook-shaped activity claiming a host
+it never had) still caught by a new regression suite
+(`audit-fabrication.test.ts`).
+
 ## 0.12.3 — 2026-08-30
 
 ### Glance: the glass material now covers the whole shell, not one accordion

@@ -736,6 +736,22 @@ export async function startServer(opts: ServerOptions) {
           const pidN = normalizePath(String(ev.project_id));
           if (pidN === projectRootN || pidN.startsWith(projectRootN + "/")) return true;
         }
+        // Business/squad/agent-x dispatches (brief-business.ts / brief-squad.ts /
+        // dispatch.ts) have no "cwd" and their project_id IS the trace_id, not a
+        // filesystem path — so neither check above ever matches them, and every
+        // dispatch this project ever ran disappeared from its own Runs tab.
+        // outputs_dir/outputs_root would be the ideal filesystem signal, but in
+        // practice the emitters don't stamp it on every event. business_slug /
+        // squad_name / target are the fields ONLY a dispatch sets (a plain
+        // interactive-session event never has them) — trusting those is narrow
+        // enough to still exclude a genuinely different project's session (e.g.
+        // one the importer misfiled into this project's own log by running from
+        // the wrong cwd), which carries none of these fields either.
+        if (ev.outputs_dir || ev.outputs_root) {
+          const outN = normalizePath(String(ev.outputs_dir || ev.outputs_root));
+          if (outN === projectRootN || outN.startsWith(projectRootN + "/")) return true;
+        }
+        if (ev.business_slug || ev.squad_name || ev.target) return true;
         return false;
       };
       const filterEventsByProject = (events: any[]): any[] => {

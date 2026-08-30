@@ -30,7 +30,7 @@ const ALLOWED_EVENTS = new Set<string>([
   "humanization_applied", "humanization_skipped", "loop_detected", "context_budget_warning",
   "stall_detected", "stall_retry", "gate_failed",
   // Agentic-mode events the new SKILL.md emits
-  "target_plan_committed", "dispatch_business", "dispatch_squad",
+  "target_plan_committed", "dispatch_business", "dispatch_squad", "dispatch_agent_x",
   "research_completed", "briefing_completed", "no_match",
   "local_execution_started", "local_execution_completed",
   "delivered", "gate_passed",
@@ -42,6 +42,25 @@ const ALLOWED_EVENTS = new Set<string>([
 ]);
 
 const KNOWN_HOOK_HOSTS = new Set<string>(["claude-code-hook", "gemini-cli-hook", "codex-hook", "fs-watch"]);
+
+// Events the harness protocol itself emits directly (nrv audit emit,
+// brief-business.ts/brief-squad.ts, run-ledger.ts) rather than through a
+// coding-session hook — SKILL.md's own dispatch cascade runs entirely on
+// these. Having no `host` is normal for them, not a fabrication signal;
+// heuristics 3 and 5 exist to catch an agent writing tool/bash activity
+// straight to audit.jsonl to fake hook coverage, not to penalize the
+// dispatch chain for never having had a hook to go through in the first
+// place.
+const HOST_EXEMPT_EVENTS = new Set<string>([
+  "brief_received", "brief_amplified", "routing_decision", "target_plan_committed",
+  "dispatch_business", "dispatch_squad", "dispatch_agent_x", "no_match",
+  "research_completed", "briefing_completed",
+  "gate_passed", "gate_failed", "delivered", "cost_emission", "handoff",
+]);
+function isHostExempt(ev: any): boolean {
+  const name = ev?.event;
+  return typeof name === "string" && (name.startsWith("x_") || HOST_EXEMPT_EVENTS.has(name));
+}
 
 export interface FabricationVerdict {
   suspicious: boolean;
@@ -56,10 +75,12 @@ export function detectFabrication(events: any[]): FabricationVerdict {
   const evidence: string[] = [];
   let score = 0;
 
-  // 1. Events out of ALLOWED_EVENTS
+  // 1. Events out of ALLOWED_EVENTS — the sanctioned "x_" open namespace
+  //    (SKILL.md §Rule 2: "outside the closed enum belong to the open x_
+  //    namespace") is never unknown, no matter what follows the prefix.
   const unknownEvents: string[] = [];
   for (const ev of events) {
-    if (ev?.event && !ALLOWED_EVENTS.has(ev.event)) {
+    if (ev?.event && !String(ev.event).startsWith("x_") && !ALLOWED_EVENTS.has(ev.event)) {
       if (!unknownEvents.includes(ev.event)) unknownEvents.push(ev.event);
     }
   }
@@ -86,10 +107,12 @@ export function detectFabrication(events: any[]): FabricationVerdict {
     }
   }
 
-  // 3. Consecutive null host
+  // 3. Consecutive null host (skip host-exempt events — they don't carry a
+  //    host by design, so they neither extend nor break a real streak)
   let nullHostStreak = 0;
   let maxNullStreak = 0;
   for (const ev of events) {
+    if (isHostExempt(ev)) continue;
     if (ev?.host === null || ev?.host === undefined || ev?.host === "") {
       nullHostStreak++;
       maxNullStreak = Math.max(maxNullStreak, nullHostStreak);
@@ -104,15 +127,20 @@ export function detectFabrication(events: any[]): FabricationVerdict {
 
   // 4. delivered without any tool evidence
   const hasDelivered = events.some((e: any) => e.event === "delivered");
-  const hasToolEvidence = events.some((e: any) => ["tool_invoked", "artifact_touched", "bash_completed", "dispatch_business", "dispatch_squad"].includes(e.event));
+  const hasToolEvidence = events.some((e: any) => ["tool_invoked", "artifact_touched", "bash_completed", "dispatch_business", "dispatch_squad", "dispatch_agent_x"].includes(e.event));
   if (hasDelivered && !hasToolEvidence) {
     score += 1;
     evidence.push(`'delivered' event without any tool_invoked / artifact_touched evidence (claims delivery, no proof of work)`);
   }
 
-  // 5. Zero hook events in a multi-event run
-  if (events.length >= 4) {
-    const hostsSeen = new Set(events.map((e: any) => e.host).filter(Boolean));
+  // 5. Zero hook events in a multi-event run — only meaningful when the run
+  //    actually contains events that WOULD carry a hook host if genuine
+  //    (tool/bash/artifact activity). A run built entirely of host-exempt
+  //    dispatch/gate events was never going to have a hook host; that is
+  //    the harness protocol working as designed, not a red flag.
+  const nonExemptEvents = events.filter((e: any) => !isHostExempt(e));
+  if (nonExemptEvents.length >= 4) {
+    const hostsSeen = new Set(nonExemptEvents.map((e: any) => e.host).filter(Boolean));
     const anyHookHost = [...hostsSeen].some(h => KNOWN_HOOK_HOSTS.has(h));
     if (!anyHookHost) {
       score += 2;
