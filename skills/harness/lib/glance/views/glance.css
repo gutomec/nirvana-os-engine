@@ -28,13 +28,19 @@ body {
    behind the whole shell. ─── */
 .field-bg {
   position: fixed; inset: 0; z-index: -1;
+  /* A cor aqui atravessa DUAS diluições antes de chegar ao olho: a do
+     próprio gradiente e depois a da folha de vidro (--sheet-a: 0.6, ou
+     seja, só ~40% do que está atrás passa). Um mix de 30% vira ~12%
+     visível no resultado final — invisível na prática, sobretudo no tema
+     claro. Os percentuais abaixo já compensam essa dupla diluição de
+     propósito; não são o valor "estético" de um único gradiente isolado. */
   background:
-    radial-gradient(700px 500px at 8% 6%, color-mix(in oklab, var(--accent) 30%, transparent), transparent 60%),
-    radial-gradient(640px 520px at 92% 14%, color-mix(in oklab, var(--status-info-solid) 26%, transparent), transparent 62%),
-    radial-gradient(760px 620px at 20% 96%, color-mix(in oklab, var(--status-success-solid) 20%, transparent), transparent 60%),
-    radial-gradient(600px 520px at 84% 92%, color-mix(in oklab, var(--status-warn-solid) 22%, transparent), transparent 60%),
+    radial-gradient(900px 650px at 8% 4%, color-mix(in oklab, var(--accent) 65%, transparent), transparent 70%),
+    radial-gradient(820px 680px at 94% 10%, color-mix(in oklab, var(--status-info-solid) 58%, transparent), transparent 72%),
+    radial-gradient(950px 780px at 16% 98%, color-mix(in oklab, var(--status-success-solid) 50%, transparent), transparent 70%),
+    radial-gradient(780px 660px at 88% 94%, color-mix(in oklab, var(--status-warn-solid) 52%, transparent), transparent 70%),
     var(--surface-0);
-  filter: saturate(1.05);
+  filter: saturate(1.35);
 }
 
 .font-inter { font-family: var(--font-sans); }

@@ -878,6 +878,23 @@ function glance() {
         const pidN = norm(item.project_id);
         if (pidN === rootN || pidN.startsWith(rootN + '/')) return true;
       }
+
+      // 3. Business/squad dispatches (via brief-business.ts / brief-squad.ts)
+      //    have no notion of "cwd" at all — their project_id IS the trace_id
+      //    ("glance-visual-impl-2026...", not a filesystem path), so both
+      //    checks above always miss them, and every dispatch this project
+      //    ever ran disappeared from its own Runs tab. outputs_dir/outputs_root
+      //    would be the real filesystem signal, but in practice brief-business.ts
+      //    doesn't stamp it on every event — so fall back to trusting the
+      //    backend: projectQuery() above already sent ?project=<root> on this
+      //    fetch, and the server's own eventMatchesProject (server.ts) already
+      //    scopes business/squad dispatches by project before this item ever
+      //    reaches the client. A run carrying business_slug/squad_name only
+      //    got here because the server already decided it belongs.
+      const out = item.outputs_dir || item.outputs_root;
+      if (out && (out === root || out.startsWith(root + '/'))) return true;
+      if (item.business_slug || item.squad_name || item.target) return true;
+
       return false;
     },
     get visibleAgents() {

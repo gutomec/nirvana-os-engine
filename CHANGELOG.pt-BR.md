@@ -73,6 +73,67 @@ volta cabeando essa observação em todo caminho de dispatch (não só
 avaliações em modo Gauntlet) é uma mudança maior, separada, ainda em
 andamento.
 
+### Glance: o fundo de campo era invisível na prática, não só sutil
+
+Os gradientes radiais do `.field-bg` (#175) passam por duas diluições antes
+de chegar ao olho: a própria transparência deles, depois a folha de vidro
+por cima (`--sheet-a: 0.6` — só ~40% do que está atrás aparece). Uma mistura
+de 30% de accent terminava em cerca de 12% no composto final — invisível no
+tema claro, onde as superfícies ao redor já são quase brancas. A casca
+inteira tinha a receita de vidro correta aplicada (conforme a #175), mas lia
+como inalterada aos olhos. Aumentei a mistura dos gradientes (30-65%) e o
+reforço de saturação (1.05→1.35) para compensar a diluição dupla de
+propósito, verificado ao vivo contra uma instância rodando: o banho de cor
+agora é claramente visível atrás da nav, da sidebar e dos painéis de
+detalhe em todos os temas, não só no escuro.
+
+### Glance: dispatches de empresa/squad ficavam invisíveis na própria aba Runs do projeto
+
+O filtro de projeto `eventMatchesProject` (server.ts) só reconhecia `cwd`
+ou um `project_id` em formato de caminho de arquivo — sinais que uma sessão
+de código interativa carrega, mas que um dispatch de
+`brief-business.ts`/`brief-squad.ts` nunca tem: o `project_id` dele É o
+trace ID, não um caminho. Toda run de empresa/squad que este projeto já
+despachou sumia da própria aba Runs assim que o pill "Project" era ligado,
+mesmo o `/api/runs` retornando todas corretamente sem filtro nenhum.
+Corrigido nos dois lados: o servidor agora confia na própria vinculação de
+projeto (o log de auditoria que ele lê já é
+`<projectRoot>/.nirvana/logs/harness/` quando há um projeto vinculado, então
+uma requisição para esse mesmo projeto não precisa de mais nenhuma
+adivinhação por evento), mantendo as checagens por evento como reserva para
+agregação genuína entre projetos; o `matchesCurrentProject` do cliente
+também passou a confiar numa run que o servidor já retornou quando ela
+carrega `business_slug`, `squad_name` ou `target` — campos que só um
+dispatch (nunca uma sessão qualquer) define. Verificado ao vivo: um projeto
+que mostrava 2 de 10 runs agora mostra todas as que de fato pertencem a
+ele, cada uma renderizando a mesma linha do tempo átomo/molécula/organismo
+de qualquer outra run.
+
+### Glance: o detector de fabricação sinalizava dispatches legítimos como fabricados
+
+O `audit-fabrication.ts` marca uma run como "suspeita" para eventos fora de
+um enum fechado `ALLOWED_EVENTS` e para eventos sem `host` de um hook de
+sessão de código conhecido. Duas descalibrações faziam isso disparar em
+quase todo dispatch da harness: ele não conhecia o namespace aberto `x_` que
+o próprio SKILL.md sanciona (Rule 2), então os próprios
+`x_ledger_run_opened` / `x_ledger_state_changed` do `run-ledger.ts`
+pontuavam como eventos desconhecidos em toda run rastreada pelo ledger; e
+assumia que todo evento legítimo carrega um host de hook, quando
+`brief_received`, `dispatch_business`, `dispatch_squad`, `gate_passed` e
+`delivered` são emitidos diretamente por scripts de CLI e nunca passam por
+um hook — então um dispatch honesto e totalmente auditado já pontuava acima
+do limiar de suspeita só pela própria forma sem hook, antes mesmo da
+heurística 1 rodar. Também encontrado e corrigido de passagem:
+`dispatch_agent_x` estava faltando inteiramente do `ALLOWED_EVENTS`,
+sinalizando todo dispatch de agent-x como nome de evento desconhecido.
+Corrigido isentando o namespace `x_` e os eventos de dispatch/gate próprios
+da harness (sem hook) das duas checagens, e adicionando a entrada que
+faltava no enum. Verificado ao vivo: um projeto que mostrava 6 de 8 runs
+como suspeitas agora mostra 0, com fabricação genuína (um nome de evento
+desconhecido fora de `x_`, ou atividade em formato de hook alegando um host
+que nunca teve) ainda capturada por uma nova suíte de regressão
+(`audit-fabrication.test.ts`).
+
 ## 0.12.3 — 2026-08-30
 
 ### Glance: o material de vidro agora cobre a casca inteira, não um acordeão
