@@ -2303,13 +2303,28 @@ const ACTIONS: Record<string, ActionDef> = {
  * authenticated, potentially multi-caller instance relies on, so this
  * action refuses outright when it isn't loopback.
  *
- * Mutates `NIRVANA_PROJECT_ROOT` and overrides `HARNESS_LOGS_DIR` /
- * `MAESTRO_LOGS_DIR` via the exact same `overridePath()` technique the
- * served-tenancy block already uses (skills/_shared/lib/bun-helpers.ts:73),
- * just triggered by this user action instead of at boot. `getScope()` /
- * `resolveScope()` re-read `process.env.NIRVANA_PROJECT_ROOT` fresh on
- * every call, so the new root is live for every other endpoint starting
- * with the very next request — no cache to invalidate.
+ * Mutates `NIRVANA_PROJECT_ROOT` and overrides every `paths.js` key that
+ * resolves under `<project>/.nirvana/` via the exact same `overridePath()`
+ * technique the served-tenancy block already uses
+ * (skills/_shared/lib/bun-helpers.ts:73), just triggered by this user
+ * action instead of at boot. `getScope()`/`resolveScope()` re-read
+ * `process.env.NIRVANA_PROJECT_ROOT` fresh on every call, so `scope.
+ * projectRoot`/`squadDirs`/`businessDirs` (the GLOBAL capability
+ * libraries, e.g. `~/squads`) are live immediately with no extra work —
+ * but `paths.js` resolves its OWN properties once at require time (its own
+ * comment says so) and hands back that frozen object forever after, so
+ * every key `paths.js` derives from `projectPath(sub)` — the registries/
+ * state/logs that live INSIDE a project's own `.nirvana/`, a different
+ * thing from the global capability directories — needs its own
+ * `overridePath()` call or it silently keeps pointing at the OLD project.
+ * This list must stay in sync with every `projectPath(...)` call in
+ * `skills/_shared/lib/paths.js` — verified against it directly while
+ * writing this (2026-08-30): HARNESS_LOGS_DIR, MAESTRO_LOGS_DIR,
+ * BUSINESSES_REGISTRY_PATH, SQUADS_REGISTRY_PATH, ROUTING_DIGEST_PATH,
+ * KEYWORD_ALIASES_PATH, SQUADS_STATE_DIR, STATE_DB, PROJECTS_OUTPUT_DIR.
+ * An earlier version of this fix only overrode the first two — found live,
+ * by switching for real and reading `/api/scope`'s `registries`/`state`
+ * fields back, not by re-reading the diff.
  */
 async function handleSwitchProject(req: Request, isLoopback: boolean): Promise<Response> {
   if (!isLoopback) {
@@ -2323,16 +2338,28 @@ async function handleSwitchProject(req: Request, isLoopback: boolean): Promise<R
 
   const from = getScope().projectRoot;
   const to = validated.path;
-  const tenantHarnessLogsDir = path.join(to, ".nirvana", "logs", "harness");
-  const tenantMaestroLogsDir = path.join(to, ".nirvana", "logs", "maestro");
+  const dotNirvana = path.join(to, ".nirvana");
+  // sub-path per key, mirroring paths.js's own `projectPath(sub)` calls exactly.
+  const PROJECT_SCOPED_PATHS: Record<string, string> = {
+    HARNESS_LOGS_DIR: "logs/harness",
+    MAESTRO_LOGS_DIR: "logs/maestro",
+    BUSINESSES_REGISTRY_PATH: ".businesses-registry.json",
+    SQUADS_REGISTRY_PATH: ".squads-registry.json",
+    ROUTING_DIGEST_PATH: ".routing-digest.md",
+    KEYWORD_ALIASES_PATH: ".keyword-aliases.json",
+    SQUADS_STATE_DIR: "state/squads",
+    STATE_DB: "state.db",
+    PROJECTS_OUTPUT_DIR: "outputs",
+  };
   process.env.NIRVANA_PROJECT_ROOT = to;
-  // Both the env var AND overridePath(), exactly like the served-tenancy block above (~455-461):
-  // audit.js/log-paths.ts re-check `process.env.HARNESS_LOGS_DIR` on every call, while everything
-  // else reads the frozen `paths.js` object overridePath() mutates in place.
-  process.env.HARNESS_LOGS_DIR = tenantHarnessLogsDir;
-  process.env.MAESTRO_LOGS_DIR = tenantMaestroLogsDir;
-  overridePath("HARNESS_LOGS_DIR", tenantHarnessLogsDir);
-  overridePath("MAESTRO_LOGS_DIR", tenantMaestroLogsDir);
+  for (const [key, sub] of Object.entries(PROJECT_SCOPED_PATHS)) {
+    const value = path.join(dotNirvana, sub);
+    // audit.js/log-paths.ts re-check these two specific env vars on every call; everything
+    // else (including these same two, for OTHER readers) reads the frozen `paths.js` object
+    // overridePath() mutates in place — set both so no reader is left on the old project.
+    if (key === "HARNESS_LOGS_DIR" || key === "MAESTRO_LOGS_DIR") process.env[key] = value;
+    overridePath(key, value);
+  }
 
   try {
     createRequire(import.meta.url)("../audit.js").emit("x_glance_project_switched", { from, to, actor: "glance" }, { cwd: to });

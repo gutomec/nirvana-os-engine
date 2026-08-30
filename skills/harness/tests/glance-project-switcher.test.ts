@@ -153,6 +153,15 @@ describe("POST /api/actions/switch-project", () => {
     // Previously-frozen endpoint #2.
     const planAfter = await (await post(server, "/api/v1/projects/plan", {})).json() as any;
     expect(planAfter.project_root).toBe(setup.projectB);
+
+    // Every OTHER paths.js key that resolves under <project>/.nirvana/ (registries, squad
+    // activation state) — not just the two logs dirs. An earlier version of this fix only
+    // called overridePath() for HARNESS_LOGS_DIR/MAESTRO_LOGS_DIR; scope.registries/scope.state
+    // silently kept pointing at project A until this was caught by live verification, reading
+    // /api/scope's own response back, not by re-reading the diff.
+    expect(scopeAfter.registries.squads).toBe(path.join(setup.projectB, ".nirvana", ".squads-registry.json"));
+    expect(scopeAfter.registries.businesses).toBe(path.join(setup.projectB, ".nirvana", ".businesses-registry.json"));
+    expect(scopeAfter.state.squads).toBe(path.join(setup.projectB, ".nirvana", "state", "squads"));
   });
 
   // Brief's explicit out-of-scope note, verified rather than assumed: squads/businesses/

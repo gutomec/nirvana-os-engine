@@ -182,6 +182,45 @@ desconhecido fora de `x_`, ou atividade em formato de hook alegando um host
 que nunca teve) ainda capturada por uma nova suíte de regressão
 (`audit-fabrication.test.ts`).
 
+### Glance: troca de projeto vinculado, ao vivo, sem reiniciar
+
+Um processo `nrv glance` ficava permanentemente vinculado ao diretório de
+onde foi iniciado, sem nenhuma indicação na UI de qual projeto era esse. Um
+dono rodando vários projetos Nirvana diferentes, cada um com agentes
+despachando, tinha que matar e reabrir o Glance de outro `cwd` só pra olhar
+outro projeto — e não tinha como saber, olhando o cockpit, qual projeto
+estava vendo.
+
+Adiciona um seletor de projeto no topnav: um rótulo sempre visível mostrando
+o projeto vinculado agora (antes não existia nada), um dropdown com outros
+projetos Nirvana descobertos na máquina, e um campo de texto livre para
+qualquer um não descoberto. A descoberta decodifica a convenção de
+nomenclatura de diretório de transcrição do próprio Claude Code
+(`~/.claude/projects/-Users-guto-nirvana-os`, separadores de caminho
+codificados como "-") caminhando pelo sistema de arquivos real e preferindo
+o maior trecho real a cada passo — uma substituição cega de "-" por "/" lê
+errado um nome com hífen como `nirvana-os` como `nirvana/os`; isso não
+acontece aqui, porque só desce em segmentos que realmente existem no disco.
+Só entram na lista candidatos que resolvem pra um diretório real, com
+marcador `.nirvana/`.
+
+A troca (`POST /api/actions/switch-project`, protegida por
+`--allow-actions`, só loopback — uma instância served/`--host` continua
+fixada no seu tenant, que é a garantia de isolamento da qual esse modo
+depende) reescreve `NIRVANA_PROJECT_ROOT` e sobrescreve toda chave do
+`paths.js` que resolve dentro do `.nirvana/` de um projeto (registries,
+estado de ativação de squad, `state.db`, logs — nove chaves no total), ao
+vivo, pela mesma técnica de `overridePath()` em-place que o código de
+tenancy served já usava pra duas delas. Uma versão anterior desta correção
+só sobrescrevia os dois diretórios de logs; achado ao vivo, trocando de
+verdade e lendo os próprios campos `registries`/`state` de `/api/scope` de
+volta em vez de reler o diff, que os caminhos de registry de squad/business
+e o diretório de estado de ativação continuavam apontando pro projeto
+antigo em silêncio. Verificado ponta a ponta num browser real depois:
+rótulo do topnav, lista do dropdown (56 projetos reais achados na máquina
+de teste, decodificando nomes com hífen corretamente), e uma troca real via
+clique na UI — não só a API isolada.
+
 ## 0.12.3 — 2026-08-30
 
 ### Glance: o material de vidro agora cobre a casca inteira, não um acordeão

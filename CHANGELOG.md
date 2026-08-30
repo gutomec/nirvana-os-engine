@@ -166,6 +166,42 @@ that showed 6 of 8 runs as suspicious now shows 0, with genuine fabrication
 it never had) still caught by a new regression suite
 (`audit-fabrication.test.ts`).
 
+### Glance: switch which project is bound, live, without restarting
+
+One `nrv glance` process was permanently bound to whatever directory it was
+launched from, with no indication anywhere in the UI of which project that
+even was. An owner running several different Nirvana projects, each with
+its own agents dispatching, had to kill and relaunch Glance from a
+different `cwd` just to look at a different project's runs — and had no
+way to tell, looking at the cockpit, which one he was even looking at.
+
+Adds a project switcher to the topnav: an always-visible label showing the
+currently bound project (previously nothing), a dropdown of other Nirvana
+projects discovered on the machine, and a free-text path field for anything
+not discovered. Discovery decodes Claude Code's own transcript-directory
+naming convention (`~/.claude/projects/-Users-guto-nirvana-os`, path
+separators encoded as `-`) by walking the real filesystem and preferring
+the longest real match at each step — a blind `-` → `/` replace misreads a
+hyphenated name like `nirvana-os` as `nirvana/os`; this doesn't, because it
+only descends into segments that actually exist on disk. Only entries that
+resolve to a real, `.nirvana/`-marked directory make the list.
+
+Switching (`POST /api/actions/switch-project`, gated by `--allow-actions`,
+loopback only — a served/`--host` instance stays pinned to its tenant, which
+is the isolation guarantee that mode depends on) rewrites
+`NIRVANA_PROJECT_ROOT` and overrides every `paths.js` key that resolves
+under a project's own `.nirvana/` (registries, squad activation state,
+`state.db`, logs — nine keys in total), live, via the same in-place
+`overridePath()` technique the served-tenancy code already used for two of
+them. An earlier version of this fix only overrode the two logs
+directories; found live, by switching for real and reading `/api/scope`'s
+own `registries`/`state` fields back rather than re-reading the diff, that
+the squad/business registry paths and the activation-state directory kept
+pointing at the old project silently. Verified end to end in a real
+browser afterward: topnav label, dropdown list (56 real projects found on
+the test machine, correctly decoding hyphenated names), and a real switch
+via a UI click — not just the API in isolation.
+
 ## 0.12.3 — 2026-08-30
 
 ### Glance: the glass material now covers the whole shell, not one accordion
