@@ -15,19 +15,29 @@
 html, body { height: 100%; }
 body {
   margin: 0;
-  background: var(--surface-0);
+  background: transparent;
   color: var(--text-primary);
   font-family: var(--font-sans);
   font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   -webkit-font-smoothing: antialiased;
 }
 
-.font-inter { font-family: var(--font-sans); }
-.glass {
-  background: var(--surface-glass);
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
+/* ─── Field background — the glass sheets (.gl in components.css) need a
+   backdrop with something to refract, or they read as a flat opacity, not
+   glass. Soft radial blobs in the theme's own accent/status tones, fixed
+   behind the whole shell. ─── */
+.field-bg {
+  position: fixed; inset: 0; z-index: -1;
+  background:
+    radial-gradient(700px 500px at 8% 6%, color-mix(in oklab, var(--accent) 30%, transparent), transparent 60%),
+    radial-gradient(640px 520px at 92% 14%, color-mix(in oklab, var(--status-info-solid) 26%, transparent), transparent 62%),
+    radial-gradient(760px 620px at 20% 96%, color-mix(in oklab, var(--status-success-solid) 20%, transparent), transparent 60%),
+    radial-gradient(600px 520px at 84% 92%, color-mix(in oklab, var(--status-warn-solid) 22%, transparent), transparent 60%),
+    var(--surface-0);
+  filter: saturate(1.05);
 }
+
+.font-inter { font-family: var(--font-sans); }
 
 /* ─── Top nav ─── */
 .glance-nav {
@@ -62,7 +72,6 @@ body {
   width: 300px; flex-shrink: 0;
   border-right: 1px solid var(--border-default);
   display: flex; flex-direction: column;
-  background: var(--surface-1);
 }
 .kind-tabs {
   display: flex; flex-direction: column;
@@ -127,7 +136,6 @@ body {
   padding: 10px var(--space-3);
   border-radius: 10px;
   text-align: left;
-  background: var(--surface-0);
   border: 1px solid var(--border-default);
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease-out),
@@ -1102,6 +1110,16 @@ body {
   overflow-y: auto; padding-right: var(--space-1);
   min-height: 0;
 }
+/* Run cards carry the shared .gl recipe (components.css), but .card's own
+   background there is declared after .gl in that same file and wins at
+   equal specificity. This file loads after components.css, so scoping the
+   override to .runs-list wins without touching the shared .card rule used
+   by agent/memory/cost cards elsewhere. */
+.runs-list .card.gl {
+  background: color-mix(in oklab, var(--glass-tint) calc(var(--a) * 100%), transparent);
+  -webkit-backdrop-filter: blur(var(--b)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--b)) saturate(var(--glass-sat));
+}
 .run-time { font-size: var(--text-sm); color: var(--text-tertiary); }
 .run-brief {
   font-size: var(--text-md); line-height: var(--leading-snug);
@@ -1111,7 +1129,6 @@ body {
 .run-meta-mono { font-family: var(--font-mono); }
 
 .run-detail {
-  background: var(--surface-1);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   padding: var(--space-4);
@@ -1820,6 +1837,21 @@ svg.icon-inline.lucide {
   vertical-align: -2px;
   margin-right: var(--space-1);
 }
+
+/* ─── Theme toggle icon — three permanent icons, one per [data-theme] value,
+   visibility alternated by CSS. Never re-set data-lucide via JS after Lucide
+   has already replaced the <i> with an <svg> — that swap silently stops
+   working once the element is no longer an <i>.
+   Selectors are qualified with .icon-btn (not just the bare .theme-icon-*
+   class) so they out-specify svg.lucide { display: inline-block } above,
+   which would otherwise win post-conversion and show all three at once. */
+.icon-btn .theme-icon-apple-dark, .icon-btn .theme-icon-awwwards { display: none; }
+html[data-theme="apple-dark"] .icon-btn .theme-icon-apple,
+html[data-theme="apple-dark"] .icon-btn .theme-icon-awwwards { display: none; }
+html[data-theme="apple-dark"] .icon-btn .theme-icon-apple-dark { display: inline-block; }
+html[data-theme="awwwards"] .icon-btn .theme-icon-apple,
+html[data-theme="awwwards"] .icon-btn .theme-icon-apple-dark { display: none; }
+html[data-theme="awwwards"] .icon-btn .theme-icon-awwwards { display: inline-block; }
 
 /* ═════════════ Setup view (kind=setup) ═════════════ */
 .setup-view {
@@ -2978,7 +3010,6 @@ svg.icon-inline.lucide {
   width: 100%;
   padding: 12px var(--space-3);
   border-radius: var(--radius-lg);
-  background: var(--surface-0);
   border: 1px solid var(--border-default);
   color: var(--text-primary);
   cursor: pointer; text-align: left;
@@ -3096,7 +3127,6 @@ svg.icon-inline.lucide {
   position: fixed; top: 0; right: 0; bottom: 0;
   width: 460px; max-width: 92vw; z-index: 60;
   display: flex; flex-direction: column;
-  background: var(--surface-1);
   border-left: 1px solid var(--border-default);
   box-shadow: -12px 0 40px rgba(0,0,0,0.16);
   transform: translateX(100%);

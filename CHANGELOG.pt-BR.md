@@ -8,6 +8,29 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Glance: o material de vidro agora cobre a casca inteira, não um acordeão
+
+A PR #172 lançou a receita de vidro `.gl` / `.gl--2` / `.gl--3` / `.gl--ink`
+(alpha e blur derivados do empilhamento de folhas translúcidas, com piso
+verificado contra WCAG 2.2 AA), mas a aplicou a um único componente: a faixa
+de julgamento dentro da trajetória de uma run. Abrir o Glance depois disso
+não mostrava nenhuma mudança visível — nav, a faixa de subsistemas ENGINE,
+a sidebar, os cards de run, o painel de detalhe da run e o painel de chat
+continuavam opacos. Isto termina o trabalho: essas seis superfícies agora
+carregam a mesma receita, sem alterações (`--sheet-a`, `--sheet-b` e
+`--floor-field` continuam intocados), mais uma nova camada fixa `.field-bg`
+de gradientes radiais suaves nos tons de accent/status do próprio tema —
+sem ela, uma folha translúcida sobre uma cor lisa lê como `opacity`, não
+como vidro. O `.card` em si (compartilhado pelas views de agente, memória
+e custo) ficou intocado; um override específico `.runs-list .card.gl` leva
+o efeito aos cards de run sem tocar nessas outras views.
+
+O alternador de tema também deixou de usar um ícone estático único e passou
+a usar três ícones permanentes (`sun` / `moon` / `sparkles`, um por tema
+`apple` / `apple-dark` / `awwwards`), mostrados ou ocultados por uma regra
+CSS de `[data-theme]` em vez de um script reatribuindo `data-lucide` depois
+que o Lucide já substituiu a tag por um `<svg>`.
+
 ### Glance: o painel de detalhe de uma run volta a ser legível
 
 `.run-detail-head` não tinha `flex-direction`, então caía no padrão `row`:

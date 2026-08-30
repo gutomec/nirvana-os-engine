@@ -26,6 +26,8 @@
 </head>
 <body class="font-inter antialiased">
 
+<div class="field-bg" aria-hidden="true"></div>
+
 <div x-data="glance()" x-init="boot()" class="h-screen flex flex-col">
 
   <!-- Awwwards-style hero (only when theme=awwwards, dismissed after 1.8s) -->
@@ -42,7 +44,7 @@
   </template>
 
   <!-- ─── Top nav ─── -->
-  <nav class="glance-nav glass">
+  <nav class="glance-nav gl gl--2">
     <div class="flex items-center gap-3">
       <span class="text-lg">⊚</span>
       <div class="leading-tight">
@@ -120,7 +122,11 @@
       <button @click="chatOpen ? closeChat() : openChat()" :class="chatOpen ? 'icon-btn icon-btn-active' : 'icon-btn'" title="Chat — converse com o Nirvana e opere o sistema"><i data-lucide="message-square"></i></button>
       <button @click="openSettings()" :class="settingsOpen ? 'icon-btn icon-btn-active' : 'icon-btn'" title="Configuração" aria-label="Configuração"><i data-lucide="settings"></i></button>
       <button @click="consoleOpen = !consoleOpen" title="Console" class="icon-btn" :class="jobs.some(j => j.status==='running') ? 'icon-btn-pulse' : ''"><i data-lucide="terminal"></i></button>
-      <button @click="cycleTheme()" title="Toggle theme" class="icon-btn"><i data-lucide="palette"></i></button>
+      <button @click="cycleTheme()" title="Toggle theme" class="icon-btn">
+        <i data-lucide="sun" class="theme-icon-apple"></i>
+        <i data-lucide="moon" class="theme-icon-apple-dark"></i>
+        <i data-lucide="sparkles" class="theme-icon-awwwards"></i>
+      </button>
       <button @click="refreshAll()" title="Refresh" class="icon-btn"><i data-lucide="rotate-cw"></i></button>
     </div>
   </nav>
@@ -128,7 +134,7 @@
   <!-- ─── Subsystems — o que está de pé (não o que rodou) ───
        Cada célula é uma leitura real do disco. Uma que não pôde ser
        determinada mostra — em vez de acender um verde que ninguém mediu. -->
-  <div class="subsystem-row" role="status" aria-label="Subsistemas do engine">
+  <div class="subsystem-row gl" role="status" aria-label="Subsistemas do engine">
     <span class="subsystem-row-title">ENGINE</span>
     <template x-for="cell in subsystemRow.cells" :key="cell.key">
       <span class="subsystem-cell" :title="cell.title">
@@ -153,7 +159,7 @@
 
     <!-- Sidebar — always visible so kind-tabs (Squads/Businesses/…/Memory/Graph/Cost)
          remain reachable. Filter/list/setup chrome inside is gated to per-asset kinds. -->
-    <aside class="sidebar" x-show="sidebarOpen">
+    <aside class="sidebar gl gl--2" x-show="sidebarOpen">
       <div class="sidebar-collapse-row">
         <button class="sidebar-collapse-btn" @click="toggleSidebar()" title="Collapse sidebar (⌘\)">
           <i data-lucide="chevron-left"></i>
@@ -163,6 +169,7 @@
       <div class="kind-cards" x-show="navLevel === 'kinds'" role="tablist" aria-label="Sections">
         <template x-for="k in kinds" :key="k.id">
           <button
+            class="gl gl--ink"
             @click="enterKind(k.id)"
             :class="kind === k.id ? 'kind-card active' : 'kind-card'"
             role="tab"
@@ -265,6 +272,7 @@
           <!-- Rows -->
           <template x-for="item in filteredList" :key="item.id || item.slug">
             <button
+              class="gl gl--ink"
               @click="setupMode ? toggleSetupSelection(kind, item.slug) : select(item)"
               :class="(setupMode ? (isItemPicked(kind, item.slug) ? 'list-row picked' : 'list-row') : (isSelected(item) ? 'list-row active' : 'list-row'))">
               <span x-show="setupMode" class="setup-checkbox" :class="isItemPicked(kind, item.slug) ? 'checked' : ''"></span>
@@ -863,7 +871,7 @@
             </div>
           </template>
           <template x-for="run in visibleRuns" :key="run.trace_id">
-            <button class="card card-interactive"
+            <button class="card card-interactive gl gl--ink"
                     :class="[
                       selectedRun?.trace_id === run.trace_id ? 'card-active' : '',
                       run.suspicious ? 'card-status-warn' : '',
@@ -900,7 +908,7 @@
           </template>
         </aside>
         <!-- RIGHT: selected run detail (timeline + artifacts) -->
-        <section class="run-detail" x-show="selectedRun" x-cloak>
+        <section class="run-detail gl gl--2" x-show="selectedRun" x-cloak>
           <template x-if="selectedRun">
             <div>
               <header class="run-detail-head">
@@ -1060,7 +1068,7 @@
             </div>
           </template>
         </section>
-        <section class="run-detail run-detail-empty" x-show="!selectedRun" x-cloak>
+        <section class="run-detail run-detail-empty gl gl--2" x-show="!selectedRun" x-cloak>
           <div class="empty-state">
             <i data-lucide="mouse-pointer-click" class="empty-state-icon"></i>
             <p>Click a run to see its full timeline.</p>
@@ -1893,7 +1901,7 @@
   </div>
 
   <!-- ══════════════ CHAT PANEL (Fase 3) ══════════════ -->
-  <aside class="chat-panel" :class="chatOpen ? 'open' : ''" x-cloak>
+  <aside class="chat-panel gl gl--2" :class="chatOpen ? 'open' : ''" x-cloak>
     <header class="chat-head">
       <div class="chat-head-title">
         <span class="chat-head-dot"></span>

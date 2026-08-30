@@ -1509,7 +1509,6 @@
   display: flex; align-items: center; gap: var(--space-3);
   flex-wrap: wrap;
   padding: var(--space-1) var(--space-4);
-  background: var(--surface-2);
   border-bottom: 1px solid var(--border-subtle);
   font-size: var(--text-xs);
   font-family: var(--font-mono);
