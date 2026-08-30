@@ -8,6 +8,8 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+## 0.12.3 — 2026-08-30
+
 ### Glance: o material de vidro agora cobre a casca inteira, não um acordeão
 
 A PR #172 lançou a receita de vidro `.gl` / `.gl--2` / `.gl--3` / `.gl--ink`

@@ -176,4 +176,4 @@ Autor: **Luiz Gustavo Vieira Rodrigues (gutomec / Prospecteezy)**. Sin coautores
 
 Licencia: la Nirvana-OS Sustainable Use License (SUL) v1.0. El código fuente está publicado y es abiertamente legible, y el motor es gratis para usar. Es source-available, no una licencia open-source aprobada por la OSI, y ciertos usos comerciales requieren una licencia comercial aparte. Lee [LICENSE](./LICENSE) antes de confiar en cualquier resumen, incluido este.
 
-Estado: beta (0.x, actualmente 0.12.2). El motor funciona hoy y se instala en minutos. Espera que la superficie siga moviéndose hasta la 1.0.
+Estado: beta (0.x, actualmente 0.12.3). El motor funciona hoy y se instala en minutos. Espera que la superficie siga moviéndose hasta la 1.0.
