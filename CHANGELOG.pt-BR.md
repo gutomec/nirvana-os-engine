@@ -8,6 +8,8 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+## 0.12.4 — 2026-08-30
+
 ### Glance: redesign estrutural real de layout de página para Runs + Chat, não uma casca visual
 
 Uma rodada anterior (PR #172/#175) entregou trabalho real de átomo/molécula/

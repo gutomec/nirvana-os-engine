@@ -8,6 +8,8 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+## 0.12.4 — 2026-08-30
+
 ### Glance: real structural page-layout redesign for Runs + Chat, not a visual skin
 
 An earlier round (PR #172/#175) shipped real atom/molecule/organism
