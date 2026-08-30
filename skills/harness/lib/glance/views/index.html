@@ -98,10 +98,39 @@
           <i data-lucide="folder-open"></i><span>Project</span>
         </button>
       </div>
-      <div class="scope-pill" :class="`scope-${scope?.mode || 'global'}`">
+      <!-- Always-visible: which project THIS Glance instance is bound to right now.
+           There used to be no indication of this at all — the mode dot alone (global/
+           project/merge) doesn't say WHICH project, which is what confused the owner. -->
+      <div class="scope-pill" :class="`scope-${scope?.mode || 'global'}`" :title="scope?.projectRoot || 'No project bound — Glance is scoped globally'">
         <span class="scope-dot"></span>
         <span x-text="scope?.mode || '…'"></span>
-        <span class="text-zinc-500 text-[11px] ml-1" x-show="scope?.projectRoot" x-text="scope?.projectRoot ? `· ${scope.projectRoot.split('/').slice(-2).join('/')}` : ''"></span>
+        <span class="text-zinc-500 text-[11px] ml-1" x-text="scope?.projectRoot ? `· ${scope.projectRoot.split('/').slice(-1)[0]}` : '· no project bound'"></span>
+      </div>
+      <!-- Project switcher — rebinds this Glance INSTANCE to a DIFFERENT project, live,
+           no restart (POST /api/actions/switch-project). Distinct from the All/Project
+           toggle above, which only filters WITHIN the one project already bound.
+           Mutating, so it needs --allow-actions like the rest of the actions menu. -->
+      <div x-cloak class="relative" x-data="{ open: false, otherPath: '' }" @click.outside="open = false" x-show="health.allow_actions">
+        <button @click="open = !open; if (open) fetchKnownProjects()" title="Switch project" :class="open ? 'icon-btn icon-btn-active' : 'icon-btn'">
+          <i data-lucide="folder-symlink"></i>
+        </button>
+        <div x-show="open" x-transition class="actions-menu project-switcher-menu">
+          <div class="actions-menu-section">Switch project</div>
+          <template x-for="p in knownProjects" :key="p.path">
+            <button @click="switchProject(p.path); open = false" class="actions-menu-item project-switcher-item" :disabled="projectSwitching" :title="p.path">
+              <span x-text="p.name"></span>
+              <span class="text-zinc-500 text-[11px]" x-text="p.path"></span>
+            </button>
+          </template>
+          <div x-show="knownProjects.length === 0" class="actions-menu-item text-zinc-500">No other .nirvana/ projects found</div>
+          <div class="actions-menu-section">Other path…</div>
+          <div class="project-switcher-other">
+            <input type="text" x-model="otherPath" placeholder="/absolute/path/to/project"
+                   class="glance-search-input" @keydown.enter="switchProject(otherPath); open = false; otherPath = ''">
+            <button @click="switchProject(otherPath); open = false; otherPath = ''" class="btn btn-ghost btn-xs"
+                    :disabled="!otherPath.trim() || projectSwitching">Go</button>
+          </div>
+        </div>
       </div>
       <!-- Actions menu (only when --allow-actions) -->
       <div x-cloak class="relative" x-data="{ open: false }" @click.outside="open = false" x-show="health.allow_actions">

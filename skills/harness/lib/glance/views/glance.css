@@ -646,6 +646,13 @@ body {
 .actions-menu-item.warning { color: var(--status-warn-fg); }
 .actions-menu-item.warning:hover { background: var(--status-warn-bg); }
 
+/* ─── Project switcher (topnav) ─── */
+.project-switcher-menu { width: 320px; }
+.project-switcher-item { display: flex; flex-direction: column; gap: 2px; }
+.project-switcher-item span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-switcher-other { display: flex; gap: var(--space-2); padding: var(--space-1) 10px var(--space-2); }
+.project-switcher-other .glance-search-input { flex: 1; }
+
 /* ─── Per-squad action buttons ─── */
 .detail-actions {
   display: flex; flex-wrap: wrap; gap: var(--space-1);

@@ -147,6 +147,13 @@ function glance() {
     // Scope filter: 'all' = entire machine, 'project' = only events whose cwd
     // starts with scope.projectRoot. Disabled when no projectRoot is detected.
     projectFilter: (typeof localStorage !== 'undefined' && localStorage.getItem('glance.projectFilter')) || '',  // '' = not decided yet; fetchScope picks project-first
+    // ── Project switcher (topnav) — rebinds this Glance instance to a DIFFERENT
+    // project (distinct from projectFilter above, which only filters WITHIN the
+    // one bound project). Requires --allow-actions: it's a mutating action.
+    // Dropdown open/close and the free-text path live in the control's own
+    // local x-data (index.html), same convention as the existing actions menu.
+    knownProjects: [],
+    projectSwitching: false,
     // Setup mode (project scaffolding via Glance)
     // Setup mode (project scaffolding via Glance)
     setupMode: false,
@@ -389,6 +396,7 @@ function glance() {
         this.fetchSetupSources(),
         this.fetchSetupStatus(),
         this.fetchSubsystems(),
+        this.fetchKnownProjects(),
       ]);
       this.flash(`refreshed · ${this.squads.length} squads, ${this.businesses.length} bus`);
     },
@@ -467,6 +475,13 @@ function glance() {
     async fetchSubsystems() {
       try { this.subsystems = (await api('/api/subsystems')).subsystems; }
       catch (e) { this.subsystems = null; }
+    },
+    // ─── Project switcher (topnav) — OTHER Nirvana projects on this machine,
+    // distinct from projectFilter above (which only filters within the ONE
+    // project this instance is bound to). Read-only; always available.
+    async fetchKnownProjects() {
+      try { this.knownProjects = (await api('/api/known-projects')).projects || []; }
+      catch (e) { this.knownProjects = []; }
     },
     async fetchSquads()   { this.listLoading.squads = true; this.listError.squads = null; try { const r = await api('/api/squads'); this.squads = r.squads; this.counts.squads = r.squads.length; } catch(e) { this.listError.squads = e.message || 'failed'; this.flash(`✗ squads: ${e.message || 'load failed'}`, 3000); } finally { this.listLoading.squads = false; } },
     async fetchBusinesses(){ this.listLoading.businesses = true; this.listError.businesses = null; try { const r = await api('/api/businesses'); this.businesses = r.businesses; this.counts.businesses = r.businesses.length; } catch(e) { this.listError.businesses = e.message || 'failed'; this.flash(`✗ businesses: ${e.message || 'load failed'}`, 3000); } finally { this.listLoading.businesses = false; } },
@@ -907,6 +922,20 @@ function glance() {
       if (this.projectFilter !== 'project' || !this.canFilterByProject()) return '';
       return `${prefix}project=${encodeURIComponent(this.scope.projectRoot)}`;
     },
+    // Refetch every backend-aggregated view so Cost / Runs / Memory match what's
+    // shown for Agents / Activity. Squads/businesses/mind-clones intentionally
+    // NOT refetched — those stay global. Shared by setProjectFilter (All↔Project
+    // MODE change, within one bound project) and switchProject (rebinding to a
+    // DIFFERENT project) — same list either way, so it lives in one place.
+    refetchProjectScopedViews() {
+      try { this.fetchRuns && this.fetchRuns(); } catch {}
+      try { this.fetchCost && this.fetchCost(); } catch {}
+      try { this.fetchMemory && this.fetchMemory(); } catch {}
+      try { this.fetchProjects && this.fetchProjects(); } catch {}
+      try { this.fetchGraph && this.fetchGraph(); } catch {}
+      try { this.restartAgentsStream && this.restartAgentsStream(); } catch {}
+      try { this.restartActivityStream && this.restartActivityStream(); } catch {}
+    },
     setProjectFilter(mode, persist = true) {
       // 'all' | 'project' — silently ignore 'project' if no root detected
       if (mode === 'project' && !this.canFilterByProject()) return;
@@ -915,19 +944,35 @@ function glance() {
       // persist=false for the AUTOMATIC (project-first) choice: it doesn't become
       // a stored preference, so it re-evaluates by projectRoot on every session.
       if (persist) { try { localStorage.setItem('glance.projectFilter', mode); } catch {} }
-      if (changed) {
-        // Refetch every backend-aggregated view so Cost / Runs / Memory match
-        // what's shown for Agents / Activity. Squads/businesses/mind-clones
-        // intentionally NOT refetched — those stay global.
-        try { this.fetchRuns && this.fetchRuns(); } catch {}
-        try { this.fetchCost && this.fetchCost(); } catch {}
-        try { this.fetchMemory && this.fetchMemory(); } catch {}
-        try { this.fetchProjects && this.fetchProjects(); } catch {}
-        try { this.fetchGraph && this.fetchGraph(); } catch {}
-        try { this.restartAgentsStream && this.restartAgentsStream(); } catch {}
-        try { this.restartActivityStream && this.restartActivityStream(); } catch {}
-      }
+      if (changed) this.refetchProjectScopedViews();
       this.$nextTick(() => this.renderAllSwimlanes && this.renderAllSwimlanes());
+    },
+    // ── Project switcher: rebinds this Glance INSTANCE to a different project
+    // (POST /api/actions/switch-project), unlike setProjectFilter above which only
+    // filters within the one project already bound. Requires --allow-actions.
+    async switchProject(targetPath) {
+      const path = (targetPath || '').trim();
+      if (!path || this.projectSwitching) return;
+      this.projectSwitching = true;
+      try {
+        const r = await fetch('/api/actions/switch-project', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ project_root: path }),
+        });
+        const data = await r.json();
+        if (!r.ok) { this.flash(`✗ switch project: ${data.error || r.status}`, 4000); return; }
+        this.scope = data.scope;
+        this.flash(`▶ switched to ${(data.to || '').split('/').slice(-1)[0] || data.to}`, 2000);
+        this.refetchProjectScopedViews();
+        try { this.fetchSubsystems && this.fetchSubsystems(); } catch {}
+        try { this.fetchSetupStatus && this.fetchSetupStatus(); } catch {}
+        try { this.fetchKnownProjects && this.fetchKnownProjects(); } catch {}
+      } catch (e) {
+        this.flash(`✗ ${e.message}`, 4000);
+      } finally {
+        this.projectSwitching = false;
+      }
     },
     matchesCurrentProject(item) {
       if (this.projectFilter !== 'project' || !this.canFilterByProject()) return true;
