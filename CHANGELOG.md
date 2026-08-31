@@ -8,6 +8,8 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+## 0.12.6 — 2026-08-31
+
 ### Glance: the org-chart tab is now editable, and two real bugs in it are fixed
 
 The D3 org-chart shipped in 0.12.5 opened third, had no working pan or zoom despite the hint text claiming both, and showed a `role:` value straight out of frontmatter (`technical_accounting_director`) as the card's title, overflowing into the neighboring card when it was long. All three are fixed: org-chart is now the first tab and the one a business opens on; a real `d3.zoom()` drives drag-to-pan and scroll/pinch-to-zoom, starting at the same fit-to-width view as before; and every card title runs through `titleCase()`, the same helper already used for DNA names, so `bookkeeping_coordinator` reads as `Bookkeeping Coordinator`.
