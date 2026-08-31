@@ -505,16 +505,54 @@
               <pre class="code-block" x-text="detail?.manifest_raw || '(no manifest)'"></pre>
             </template>
             <template x-if="tab === 'org-chart'">
-              <div>
+              <div class="org-chart-tab-body">
                 <div class="toolbar-row">
                   <div class="toolbar toolbar-sm">
                     <button @click="orgView='tree'" :class="orgView==='tree' ? 'toolbar-btn active' : 'toolbar-btn'">▾ tree</button>
                     <button @click="orgView='yaml'" :class="orgView==='yaml' ? 'toolbar-btn active' : 'toolbar-btn'">{} yaml</button>
                   </div>
-                  <span class="text-caption">scroll to pan · scales to fit width</span>
+                  <span class="text-caption" x-text="health.allow_actions ? 'drag to pan · scroll to zoom · hover a card to edit' : 'drag to pan · scroll to zoom'"></span>
                 </div>
                 <div x-show="orgView==='tree'" id="org-chart-canvas" class="org-canvas"></div>
                 <pre x-show="orgView==='yaml'" class="code-block" x-text="detail?.org_chart_raw || '(no org-chart.yaml)'"></pre>
+
+                <!-- Org-chart card editor — floats over the canvas, same popover
+                     pattern as the knowledge-graph settings panel. Gated by
+                     health.allow_actions one layer up (the hover buttons that open
+                     it only render at all when actions are enabled). -->
+                <aside class="org-edit-panel" x-show="orgEditOpen" x-transition x-cloak>
+                  <header class="org-edit-head">
+                    <span class="text-label" x-text="orgEditMode === 'add' ? 'Novo funcionário' : 'Editar posição'"></span>
+                    <button @click="closeOrgEdit()" class="icon-btn" title="Fechar"><i data-lucide="x"></i></button>
+                  </header>
+                  <section class="org-edit-body">
+                    <div class="org-edit-field">
+                      <label class="text-caption">Título</label>
+                      <input type="text" x-model="orgEditDraft.role" class="memory-input" placeholder="ex: Coordenador de Escrituração">
+                    </div>
+                    <div class="org-edit-field">
+                      <label class="text-caption">Descrição</label>
+                      <textarea x-model="orgEditDraft.description" class="memory-textarea" rows="3" placeholder="O que essa posição faz"></textarea>
+                    </div>
+                    <div class="org-edit-field" x-show="orgEditMode === 'edit'">
+                      <label class="text-caption">Reporta para (slug do funcionário)</label>
+                      <input type="text" x-model="orgEditDraft.reportsTo" class="memory-input" placeholder="ex: ac-tech-director">
+                    </div>
+                    <div class="org-edit-field" x-show="orgEditMode === 'edit'">
+                      <label class="text-caption">DNA — mind-clones (separados por vírgula)</label>
+                      <input type="text" x-model="orgEditDraft.assignedMindClones" class="memory-input" placeholder="ex: eliseu-martins, seth-godin">
+                    </div>
+                    <div class="org-edit-field" x-show="orgEditMode === 'edit'">
+                      <label class="text-caption">Squads (separados por vírgula)</label>
+                      <input type="text" x-model="orgEditDraft.squadsAuthorized" class="memory-input" placeholder="ex: nirvana-contabilidade">
+                    </div>
+                    <div class="org-edit-error" x-show="orgEditError" x-text="orgEditError"></div>
+                  </section>
+                  <footer class="org-edit-buttons">
+                    <button @click="saveOrgEdit()" class="btn-primary" :disabled="orgEditSaving" x-text="orgEditSaving ? 'Salvando…' : 'Salvar'"></button>
+                    <button @click="closeOrgEdit()" class="btn-secondary">Cancelar</button>
+                  </footer>
+                </aside>
               </div>
             </template>
             <template x-if="tab === 'routing'">

@@ -63,7 +63,7 @@ Gerada a partir do schema. `nrv config explain <chave>` mostra a descrição de 
 | `runtime.allow_stale_catalog` | `NIRVANA_ALLOW_STALE_CATALOG` | `false` | global, projeto | true / false |
 | `routing.mode` | `NIRVANA_ROUTING_MODE` | `agentic` | global, projeto | agentic / fast |
 | `routing.dense` | `NIRVANA_ROUTER_DENSE` (`1` = fallback, `0` = off) | `off` | global, projeto | off / fallback |
-| `routing.on_router_failure` | nenhuma | `cascade` | global, projeto | cascade / fail |
+| `routing.on_router_failure` | nenhuma | `agent-x-only` | global, projeto | cascade / agent-x-only / fail |
 | `supervisor.progress_ping_sec` | `NIRVANA_PROGRESS_PING_SEC` | `1800` | global, projeto | inteiro >= 0 (segundos) |
 | `supervisor.stall_threshold_ms` | `NIRVANA_STALL_THRESHOLD_MS` | `300000` | global, projeto | inteiro > 0 (milissegundos) |
 | `supervisor.touch_events_max` | `NIRVANA_TOUCH_EVENTS_MAX` | `500` | global, projeto | inteiro >= 0 (eventos); 0 = não relata arquivos |

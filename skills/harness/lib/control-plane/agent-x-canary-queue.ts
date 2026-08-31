@@ -6,6 +6,7 @@ import { resolveSetting } from "../../../_shared/lib/settings.ts";
 import type { AgenticRouteDecision } from "../agentic-router.ts";
 import { LEGACY_CAPABILITY_ID, resolveSquadCapability } from "../capability-resolver.ts";
 import { resolveDispatchPlan, type DispatchPlan } from "../dispatch-cascade.ts";
+import type { RouterFailurePolicy } from "../harness-config.ts";
 import { runAgentXGauntlet, type AgentXCandidateResult, type AgentXGauntletEvaluator } from "../gauntlet/agent-x-cutover.ts";
 import {
   TERMINAL_RUN_STATES, appendEvent, createRun, getRun, listEvents, listRuns, transitionRun,
@@ -72,7 +73,7 @@ export interface MessageRouteInput {
 /** The agentic router as the queue sees it: `agenticRoute` composed by the server
  * (`createAgenticMessageRouter`), a fake in tests. Nothing else ranks a Message. */
 export interface MessageRouter { route(input: MessageRouteInput): Promise<AgenticRouteDecision> }
-export interface MessageRoutingSettings { mode: "agentic" | "fast"; onRouterFailure: "cascade" | "fail" }
+export interface MessageRoutingSettings { mode: "agentic" | "fast"; onRouterFailure: RouterFailurePolicy }
 export type MessageRouteAudit = (event: string, payload: Record<string, unknown>) => void;
 /** Which capability of a squad the Message runs; default lib/capability-resolver.ts. */
 export type MessageCapabilityResolver = (input: { slug: string; brief: string; explicit: string | null; audit: MessageRouteAudit }) => string;
@@ -192,7 +193,10 @@ export async function resolveMessageTarget(content: string, deps: MessageRouting
   if (!outcome.decision || !outcome.decision.ok) {
     const error = outcome.error ?? outcome.decision?.error ?? "router run failed";
     if (deps.settings.onRouterFailure === "fail") return record({ ...fallback(`router failed (${error}); routing.on_router_failure=fail refuses the Run`), refused: "router_failed" }, undefined, outcome.decision);
-    return record(fallback(`router failed (${error}); routing.on_router_failure=cascade keeps the Message on agent-x`), undefined, outcome.decision);
+    // A Glance Message never falls to BM25 regardless of policy — one Run, one
+    // target, so "no confident agentic decision" always means agent-x, never
+    // a guessed business.
+    return record(fallback(`router failed (${error}); the Message stays on agent-x (never BM25)`), undefined, outcome.decision);
   }
 
   const decision = outcome.decision;

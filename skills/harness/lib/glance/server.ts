@@ -34,6 +34,8 @@ import {
   buildRuns,
   getRun,
   diagnoseMindClones,
+  updateEmployeePosition,
+  createEmployeeBelow,
 } from "./data-loader.ts";
 import { startJob, getJob, listJobs, streamJob, cancelJob, isMutatingActive } from "./action-runner.ts";
 import { deriveAgentStates, summarizeStates } from "./agent-state.ts";
@@ -1490,6 +1492,49 @@ export async function startServer(opts: ServerOptions) {
           return json({ error: e.message }, 400);
         }
       }
+
+      // POST /api/businesses/:slug/employees — add a new position below reportsTo (gated).
+      // Must live above the blanket "non-GET/HEAD -> 405" gate a few lines down, same as
+      // every other mutating route on this page.
+      if (req.method === "POST") {
+        const m = /^\/api\/businesses\/([^/]+)\/employees$/.exec(p);
+        if (m) {
+          if (!opts.allowActions) return json({ error: "actions disabled; restart Glance with --allow-actions to enable" }, 403);
+          try {
+            const body = await req.json() as any;
+            if (!body || typeof body !== "object" || !body.role || !body.reportsTo) {
+              return json({ error: "POST .../employees requires {role, reportsTo, description?}" }, 400);
+            }
+            const r = createEmployeeBelow(decodeURIComponent(m[1]), {
+              role: String(body.role),
+              description: body.description != null ? String(body.description) : undefined,
+              reportsTo: String(body.reportsTo),
+            });
+            return json(r, 201);
+          } catch (e: any) { return json({ error: e.message }, 400); }
+        }
+      }
+      // PUT /api/businesses/:slug/employees/:employeeSlug — edit an existing position's
+      // title/description/DNA/squads, and reparent (reportsTo) when it names a new manager.
+      if (req.method === "PUT") {
+        const m = /^\/api\/businesses\/([^/]+)\/employees\/([^/]+)$/.exec(p);
+        if (m) {
+          if (!opts.allowActions) return json({ error: "actions disabled; restart Glance with --allow-actions to enable" }, 403);
+          try {
+            const body = await req.json() as any;
+            if (!body || typeof body !== "object") return json({ error: "PUT .../employees/:slug requires a JSON body" }, 400);
+            const patch: any = {};
+            if (body.role !== undefined) patch.role = String(body.role);
+            if (body.description !== undefined) patch.description = String(body.description);
+            if (body.reportsTo !== undefined) patch.reportsTo = String(body.reportsTo);
+            if (body.assignedMindClones !== undefined) patch.assignedMindClones = (Array.isArray(body.assignedMindClones) ? body.assignedMindClones : []).map(String);
+            if (body.squadsAuthorized !== undefined) patch.squadsAuthorized = (Array.isArray(body.squadsAuthorized) ? body.squadsAuthorized : []).map(String);
+            const r = updateEmployeePosition(decodeURIComponent(m[1]), decodeURIComponent(m[2]), patch);
+            return json(r);
+          } catch (e: any) { return json({ error: e.message }, 400); }
+        }
+      }
+
       // GET on action endpoints (SSE stream + listing)
       if (req.method === "GET" && p.startsWith("/api/actions/")) {
         if (p === "/api/actions/jobs") return json({ jobs: listJobs(), allow_actions: opts.allowActions, mutating_active: isMutatingActive() });

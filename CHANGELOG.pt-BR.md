@@ -8,6 +8,20 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Glance: a aba de organograma agora é editável, e dois bugs reais nela foram corrigidos
+
+O organograma em D3 lançado na 0.12.5 abria em terceiro lugar, não tinha pan nem zoom de verdade apesar do texto de dica afirmar os dois, e mostrava o valor de `role:` cru do frontmatter (`technical_accounting_director`) como título do cartão, estourando pro cartão vizinho quando era longo. Os três estão corrigidos: organograma agora é a primeira aba e a que abre ao entrar numa empresa; um `d3.zoom()` de verdade comanda arrastar-para-mover e rolar/pinçar-para-zoom, começando na mesma visão de encaixar-na-largura de antes; e todo título de cartão passa por `titleCase()`, o mesmo auxiliar já usado nos nomes de DNA, então `bookkeeping_coordinator` vira `Bookkeeping Coordinator`.
+
+A adição maior: passar o mouse sobre um cartão agora revela um botão de editar e um de "adicionar funcionário abaixo", e os dois escrevem de verdade em `~/businesses/<slug>/` quando as ações do Glance estão ligadas (`--allow-actions`). Editar uma posição muda título, descrição, a quem reporta (um reparent de verdade), DNA e squads; adicionar uma cria um arquivo de funcionário mínimo mas válido e o linka no `org-chart.yaml`. Reparentar tem checagem de ciclo, e toda referência de DNA/squad é validada contra os registros reais antes de qualquer escrita.
+
+Acertar as escritas exigiu dois editores de linha sob medida (`org-chart-editor.ts` para `org-chart.yaml`, `employee-frontmatter-editor.ts` para o cabeçalho de um funcionário) em vez do editor de YAML que preserva comentários que o engine já tem: testado contra arquivos reais, esse editor reflui todo outro parágrafo quebrado em várias linhas no documento a cada edição, um diff grande e sem relação para uma mudança pequena. Os novos editores tocam só as linhas que de fato mudaram — verificado contra as 61 empresas reais desta biblioteca, e um bug de corrupção de verdade (um item de lista duplicado e órfão) foi pego assim antes de ir pro ar. 31 testes novos em `org-chart-editor.test.ts` e `employee-frontmatter-editor.test.ts` fixam os dois editores contra fixtures inline, incluindo esse bug exato como regressão nomeada.
+
+### Padrão de falha do roteador: agent-x, nunca BM25, a menos que o modo fast tenha sido pedido
+
+`routing.on_router_failure` governava uma coisa desde o routing-360 Phase 4: o que acontece quando o roteador agêntico (uma chamada real de LLM headless) falha no transporte, mesmo depois de uma nova tentativa. Só existiam dois valores: `cascade` (tenta uma escolha rápida de empresa via BM25, depois agent-x) e `fail` (desiste). `cascade` era o padrão, então um runtime fora do ar, um token de autenticação vencido ou um tier de CLI descontinuado podiam entregar uma decisão de empresa ao BM25 em silêncio, sem que ninguém tivesse pedido `--mode=fast`. Auditar os despachos históricos deste próprio projeto revelou quatro rotas reais escolhidas exatamente assim, todas ligadas ao mesmo brief que motivou construir o roteador agêntico.
+
+Um novo valor, `agent-x-only`, agora é o padrão. Numa falha de transporte, ele pula direto para o agent-x generalista e nunca chama o BM25; `cascade` continua existindo para quem quiser essa rede de segurança de volta, e `fail` não mudou. Corrigido na mesma passada: o roteador de Message do próprio Glance (`agent-x-canary-queue.ts`) já nunca chamava o BM25 numa falha do roteador, mas sua linha de log dizia "on_router_failure=cascade" independentemente da política configurada, o que já era enganoso por si só.
+
 ## 0.12.5 — 2026-08-31
 
 ### Glance: reforma visual "prime", organograma em D3 e um grafo de conhecimento que finalmente mostra conexões reais

@@ -45,7 +45,7 @@ Trabalho despachado pelo maestro (`brief-*`, `nrv dispatch --exec`) abre Runs pe
 | decisão `ambiguous` | o primeiro candidato despachável (empresa ou squad), com `x_route_ambiguous_autopicked` no audit | `router` |
 | decisão com dois ou mais squads e sem empresa | `agent-x`; um Run do Glance executa um alvo | `fallback` |
 | `no_match` | nenhum: a fila reverte o Run (`rolled_back`, `reason: no_dispatchable_target`) sem filho e responde no chat com a razão do roteador | `fallback`, com a razão do roteador |
-| roteador lança, devolve falha de transporte ou estoura o teto | `agent-x` com `routing.on_router_failure=cascade` (padrão); com `fail`, a fila reverte o Run (`rolled_back`, `reason: router_failed`) sem executar, depois do recibo | `fallback` |
+| roteador lança, devolve falha de transporte ou estoura o teto | `agent-x` — nunca BM25, qualquer que seja `routing.on_router_failure` (`agent-x-only` é o padrão; `cascade` também cai em `agent-x` aqui, porque uma Message do Glance executa um alvo só); com `fail`, a fila reverte o Run (`rolled_back`, `reason: router_failed`) sem executar, depois do recibo | `fallback` |
 | `routing.mode=fast` | `agent-x`, sem chamar o roteador; o Glance compõe só o roteador agêntico, e o BM25 do modo `fast` continua sendo do dispatch | `fallback` |
 | servidor sem roteador (`--read-only`, `glance.execution=false`, testes sem injeção) | `agent-x` | `fallback` |
 

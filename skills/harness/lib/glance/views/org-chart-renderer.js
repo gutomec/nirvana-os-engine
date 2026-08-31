@@ -40,9 +40,10 @@
       '  background:var(--surface-1);border-radius:var(--radius-lg);position:relative;overflow:hidden;',
       '  font-family:var(--font-sans);',
       '}',
-      '.orgd3-scroll{overflow:auto;padding:20px 16px;max-height:640px}',
-      '.orgd3-fit{position:relative;width:100%}',
-      '.orgd3-canvas{position:absolute;left:50%;top:0;transform-origin:top center}',
+      '.orgd3-scroll{overflow:hidden;height:640px;position:relative;touch-action:none;cursor:grab}',
+      '.orgd3-scroll:active{cursor:grabbing}',
+      '.orgd3-fit{position:absolute;inset:0;overflow:hidden}',
+      '.orgd3-canvas{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}',
       '.orgd3-links{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}',
       '.orgd3-links path{fill:none;stroke:var(--border-strong);stroke-width:1.5;stroke-linejoin:miter;stroke-linecap:butt}',
       '.orgd3-nodes{position:relative;width:100%;height:100%}',
@@ -70,6 +71,22 @@
       '.orgd3-node-director{border-color:var(--accent)}',
       '.orgd3-node-qa{border:1px dashed var(--status-danger-border);background:var(--surface-2)}',
       '.orgd3-node-qa:hover{border-color:var(--status-danger-fg)}',
+      // Hover-reveal actions (owner request, 2026-08-31): an edit pencil on the
+      // card itself, an add-employee "+" hanging just below it. Hidden until
+      // hover so the chart stays clean at a glance; pointer-events off while
+      // hidden so they never intercept a drag-to-pan.
+      '.orgd3-edit-btn{position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:50%;',
+      '  border:1px solid var(--border-default);background:var(--surface-1);color:var(--text-secondary);',
+      '  font-size:.7rem;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;',
+      '  opacity:0;pointer-events:none;transition:opacity .15s ease,border-color .15s ease,color .15s ease}',
+      '.orgd3-node:hover .orgd3-edit-btn{opacity:1;pointer-events:auto}',
+      '.orgd3-edit-btn:hover{border-color:var(--accent);color:var(--accent)}',
+      '.orgd3-add-btn{position:absolute;left:50%;bottom:-13px;transform:translateX(-50%);width:24px;height:24px;',
+      '  border-radius:50%;border:1px solid var(--border-default);background:var(--surface-1);color:var(--text-secondary);',
+      '  font-size:.9rem;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;',
+      '  opacity:0;pointer-events:none;transition:opacity .15s ease,border-color .15s ease,color .15s ease;z-index:2}',
+      '.orgd3-node:hover .orgd3-add-btn{opacity:1;pointer-events:auto}',
+      '.orgd3-add-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}',
     ].join('\n');
     document.head.appendChild(style);
   }
@@ -126,7 +143,11 @@
     var role = (emp && emp.role) || (orgNode && orgNode.orgRole) || '';
     var roleNorm = String(role).trim();
     var key = roleNorm.toLowerCase().replace(/\s+/g, '_');
-    if (roleNorm && !GENERIC_ROLE[key]) return roleNorm;
+    // Business `role:` values are often snake_case identifiers (e.g.
+    // "technical_accounting_director"), not prose — titleCase() turns those
+    // into words instead of one long unbroken card-busting token (owner
+    // report, 2026-08-31: "estourando tudo").
+    if (roleNorm && !GENERIC_ROLE[key]) return titleCase(roleNorm);
     var desc = (emp && emp.description) || '';
     var bold = /\*\*([^*]{2,80})\*\*/.exec(desc);
     if (bold) return bold[1];
@@ -237,7 +258,7 @@
     var names = d.squads.map(function (s) { return '<b>' + esc(s) + '</b>'; }).join(' · ');
     return label + names;
   }
-  function createCard(d) {
+  function createCard(d, opts) {
     var art = document.createElement('article');
     art.className = 'orgd3-node' + (d.kind ? ' ' + d.kind : '');
     art.setAttribute('data-employee', d.id);
@@ -248,7 +269,32 @@
     if (d.dna) html += '<div class="dna">DNA: ' + esc(d.dna) + '</div>';
     var sq = squadHtml(d);
     if (sq) html += '<div class="sq">' + sq + '</div>';
+    if (opts && opts.allowActions) {
+      html += '<button type="button" class="orgd3-edit-btn" title="Editar posição">✎</button>';
+      html += '<button type="button" class="orgd3-add-btn" title="Adicionar funcionário abaixo">+</button>';
+    }
     art.innerHTML = html;
+    if (opts && opts.allowActions) {
+      // Stop these buttons from ever starting a d3.zoom pan-drag on the
+      // ancestor .orgd3-scroll — mousedown is what the drag behavior watches,
+      // click alone isn't enough to prevent it.
+      var editBtn = art.querySelector('.orgd3-edit-btn');
+      var addBtn = art.querySelector('.orgd3-add-btn');
+      if (editBtn) {
+        editBtn.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+        editBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          if (opts.onEdit) opts.onEdit(d.id);
+        });
+      }
+      if (addBtn) {
+        addBtn.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+        addBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          if (opts.onAddBelow) opts.onAddBelow(d.id);
+        });
+      }
+    }
     return art;
   }
   function elbow(source, target) {
@@ -257,25 +303,24 @@
     return 'M' + x1 + ' ' + y1 + ' V' + mid + ' H' + x2 + ' V' + y2;
   }
 
-  function renderTree(refs, tree) {
+  // Renders the tree into refs.canvas and returns {canvasW, canvasH} for the
+  // caller to fit/center via d3.zoom — or null when there is nothing to lay
+  // out (caller shows the empty state and skips zoom setup entirely).
+  function renderTree(refs, tree, opts) {
     refs.nodesLayer.innerHTML = '';
     refs.svg.selectAll('*').remove();
 
     if (!tree) {
-      refs.canvas.style.width = '100%';
-      refs.canvas.style.height = 'auto';
       refs.canvas.style.transform = 'none';
-      refs.canvas.style.marginLeft = '0';
-      refs.canvas.style.left = '0';
-      refs.fitEl.style.height = 'auto';
+      refs.canvas.style.width = '100%';
+      refs.canvas.style.height = '100%';
       var empty = document.createElement('p');
       empty.className = 'orgd3-empty';
       empty.textContent = 'Sem organograma para esta empresa.';
       refs.nodesLayer.appendChild(empty);
-      return;
+      return null;
     }
 
-    refs.canvas.style.left = '50%';
     var root = d3.hierarchy(tree);
     var dx = CARD_W + H_GAP;
     var dy = 240;
@@ -285,7 +330,7 @@
     var links = root.links();
 
     nodes.forEach(function (n) {
-      var el = createCard(n.data);
+      var el = createCard(n.data, opts);
       var w = n.depth === 0 ? CEO_W : CARD_W;
       el.style.width = w + 'px';
       el.style.left = '0px';
@@ -327,23 +372,43 @@
 
     refs.canvas.style.width = canvasW + 'px';
     refs.canvas.style.height = canvasH + 'px';
-    refs.canvas.style.marginLeft = (-canvasW / 2) + 'px';
 
     refs.svg.attr('width', canvasW).attr('height', canvasH).attr('viewBox', '0 0 ' + canvasW + ' ' + canvasH);
     refs.svg.selectAll('path').data(links).join('path').attr('d', function (d) { return elbow(d.source, d.target); });
 
-    var fitW = Math.max(refs.fitEl.clientWidth || refs.scrollEl.clientWidth || 0, 320);
-    var scale = canvasW > fitW ? (fitW / canvasW) : 1;
-    refs.canvas.style.transform = 'scale(' + scale + ')';
-    refs.fitEl.style.height = Math.ceil(canvasH * scale) + 'px';
+    return { canvasW: canvasW, canvasH: canvasH };
   }
 
-  /** window.renderOrgChart(selector, detail) — `detail` is the object
+  // d3.zoom on the fixed-size viewport (refs.scrollEl): real drag-to-pan +
+  // wheel/pinch-to-zoom, replacing the old "shrink to fit, no interaction"
+  // transform (owner report, 2026-08-31: "não dá pan nem zoom"). Starting
+  // transform reproduces the old fit-to-width look; from there the user is
+  // free to zoom in on a card or pan to a cut-off branch.
+  function initZoom(refs, layout) {
+    if (!layout) return;
+    var zoom = d3.zoom().scaleExtent([0.2, 2.5]).on('zoom', function (event) {
+      refs.canvas.style.transform =
+        'translate(' + event.transform.x + 'px,' + event.transform.y + 'px) scale(' + event.transform.k + ')';
+    });
+    var scrollSel = d3.select(refs.scrollEl);
+    scrollSel.call(zoom);
+    var viewportW = refs.scrollEl.clientWidth || 320;
+    var fitScale = Math.min(viewportW / layout.canvasW, 1);
+    var initialX = (viewportW - layout.canvasW * fitScale) / 2;
+    scrollSel.call(zoom.transform, d3.zoomIdentity.translate(initialX, 16).scale(fitScale));
+  }
+
+  /** window.renderOrgChart(selector, detail, opts) — `detail` is the object
    *  GET /api/businesses/:slug returns (org_chart_raw, employees_md,
    *  manifest_raw...). Kept as the SAME global function name/call site
    *  glance.js already uses; only the second argument's shape changed
-   *  (used to be the bare org_chart_raw string). */
-  window.renderOrgChart = function (selector, detail) {
+   *  (used to be the bare org_chart_raw string).
+   *
+   *  opts (all optional): { allowActions, onEdit(employeeSlug), onAddBelow(parentSlug) } —
+   *  hover-reveal edit/add-employee buttons on each card, shown only when
+   *  allowActions is true (owner request, 2026-08-31: real edits, gated the
+   *  same way every other Glance mutation is). */
+  window.renderOrgChart = function (selector, detail, opts) {
     var container = document.querySelector(selector);
     if (!container) return;
     container.innerHTML = '';
@@ -354,7 +419,7 @@
     }
     if (typeof d3 === 'undefined' || !window.jsyaml) {
       container.innerHTML = '<div class="org-empty">Loading d3/js-yaml… (refresh if persists)</div>';
-      setTimeout(function () { window.renderOrgChart(selector, detail); }, 400);
+      setTimeout(function () { window.renderOrgChart(selector, detail, opts); }, 400);
       return;
     }
 
@@ -395,12 +460,12 @@
       return;
     }
     var tree = buildHierarchy(entries, empMap);
-    renderTree(refs, tree);
+    initZoom(refs, renderTree(refs, tree, opts));
 
     var resizeTimer = null;
     var onResize = function () {
       clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(function () { renderTree(refs, tree); }, 150);
+      resizeTimer = setTimeout(function () { initZoom(refs, renderTree(refs, tree, opts)); }, 150);
     };
     if (container._orgd3Resize) window.removeEventListener('resize', container._orgd3Resize);
     container._orgd3Resize = onResize;

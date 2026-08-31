@@ -250,8 +250,8 @@ export const SETTINGS = {
       toEnv: (value) => (value === "fallback" ? "1" : "0"),
     }),
   "routing.on_router_failure": enumSetting("routing.on_router_failure",
-    "Quando o roteador agêntico falha no transporte: cascade = BM25 e depois agent-x; fail = encerra.",
-    ["cascade", "fail"], { default: "cascade" }),
+    "Quando o roteador agêntico falha no transporte (após 1 retry): agent-x-only = pula direto pro agent-x, BM25 nunca dispara sem --fast explícito (padrão); cascade = tenta BM25 antes do agent-x; fail = encerra sem despachar nada.",
+    ["cascade", "agent-x-only", "fail"], { default: "agent-x-only" }),
 
   "supervisor.progress_ping_sec": numberSetting("supervisor.progress_ping_sec",
     "Intervalo em segundos do aviso de progresso de um run longo; 0 silencia.",

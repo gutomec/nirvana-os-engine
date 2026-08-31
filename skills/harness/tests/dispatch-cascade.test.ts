@@ -2,8 +2,9 @@
 //
 // Pins the Business → Squad → agent-x mapping over every agentic-router
 // decision kind, the --strict-route behavior, the router-failure ladder
-// (retry once → BM25 → agent-x, governed by routing.on_router_failure), and
-// the agent-x rung (persona resolution + injected runWithCascade seam).
+// (retry once → agent-x by default, never BM25 unless routing.on_router_failure
+// is explicitly set to "cascade"), and the agent-x rung (persona resolution +
+// injected runWithCascade seam).
 // Zero-token: every LLM surface is a seam.
 // Runs with: bun test skills/harness/tests
 import { describe, expect, test } from "bun:test";
@@ -170,11 +171,30 @@ describe("planRouteWithFallback — router-failure ladder", () => {
     expect(plan.steps[0].slug).toBe("recovered-biz");
   });
 
-  test("retry also fails → BM25 fallback business step (router-failure-bm25)", async () => {
+  test('default policy (agent-x-only): retry fails → straight to agent-x, BM25 never even called', async () => {
+    const spy = auditSpy();
+    const warns: string[] = [];
+    let fastRouteCalls = 0;
+    const plan = await planRouteWithFallback(failed, {
+      routeOnce: () => failed,
+      fastRoute: () => { fastRouteCalls++; return "should-never-be-picked"; },
+      audit: spy.fn, warn: m => warns.push(m),
+      // onRouterFailure intentionally omitted — exercising the DEFAULT.
+    });
+    expect(fastRouteCalls).toBe(0);
+    expect(plan.ok).toBe(true);
+    expect(plan.steps[0].kind).toBe("agent-x");
+    expect(plan.source).toBe("router-failure-agent-x");
+    expect(spy.calls.some(x => x.event === "x_router_failure_cascade" && x.payload.stage === "agent-x" && x.payload.policy === "agent-x-only")).toBe(true);
+    expect(warns.join(" ")).toContain("never BM25");
+  });
+
+  test('routing.on_router_failure: "cascade" (opt-in) → BM25 fallback business step (router-failure-bm25)', async () => {
     const spy = auditSpy();
     const plan = await planRouteWithFallback(failed, {
       routeOnce: () => failed,
       fastRoute: () => "bm25-biz",
+      onRouterFailure: "cascade",
       audit: spy.fn, warn: () => {},
     });
     expect(plan.ok).toBe(true);
@@ -183,12 +203,13 @@ describe("planRouteWithFallback — router-failure ladder", () => {
     expect(spy.calls.some(x => x.event === "x_router_failure_cascade" && x.payload.stage === "bm25")).toBe(true);
   });
 
-  test("retry fails AND BM25 undecided → agent-x, loudly (router-failure-agent-x)", async () => {
+  test('routing.on_router_failure: "cascade" with BM25 undecided → agent-x, loudly (router-failure-agent-x)', async () => {
     const spy = auditSpy();
     const warns: string[] = [];
     const plan = await planRouteWithFallback(failed, {
       routeOnce: () => failed,
       fastRoute: () => null,
+      onRouterFailure: "cascade",
       audit: spy.fn, warn: m => warns.push(m),
     });
     expect(plan.ok).toBe(true);
