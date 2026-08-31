@@ -122,7 +122,13 @@
   --sheet-a: 0.6;      /* tint opacity: ~40% of the backdrop shows through */
   --sheet-b: 8px;
   --sheet-sat: 1.2;    /* saturation boost — backdrop-filter blur washes colour out */
-  --glass: 1;          /* 0 turns the whole material opaque; --glass-off enforces it */
+  /* Prime/clean pass (2026-08-31, owner request): glassmorphism read as
+     unnecessary decoration, not the "prime" look this cockpit needs.
+     Default OFF — opaque surfaces, no blur, no saturation boost — using
+     the same dial the reduced-transparency media query already drove to 0.
+     The math below (pow()/hypot() stacking) stays; it just resolves to
+     opaque now. Set to 1 (or add [data-glass="on"] below) to bring it back. */
+  --glass: 0;
 
   --glass-off: calc(1 - var(--glass));
   --glass-b: calc(var(--sheet-b) * var(--glass));
@@ -161,11 +167,16 @@
 :root[data-glass="off"] { --glass: 0; }
 
 [data-theme="apple-dark"] {
-  --surface-0: oklch(15% 0.015 260);
-  --surface-1: oklch(19% 0.015 260);
-  --surface-2: oklch(22% 0.018 260);
-  --surface-3: oklch(26% 0.02 260);
-  --surface-glass: color-mix(in oklab, oklch(15% 0.015 260) 80%, transparent);
+  /* Prime/clean pass (2026-08-31, owner reference: a near-black "Romer"
+     dashboard mockup — #070708 body / #0a0a0b card / #0d0e0f sidebar /
+     #121315 panel, hairline borders, no color wash). Same 4-step surface
+     ladder as before, re-anchored much darker and far less saturated —
+     chroma barely above 0 instead of a visible navy tint. */
+  --surface-0: oklch(13.5% 0.006 260);
+  --surface-1: oklch(17% 0.006 260);
+  --surface-2: oklch(20% 0.007 260);
+  --surface-3: oklch(24.5% 0.008 260);
+  --surface-glass: color-mix(in oklab, oklch(13.5% 0.006 260) 80%, transparent);
 
   --text-primary: oklch(95% 0.005 260);
   --text-secondary: oklch(72% 0.012 260);
@@ -173,9 +184,12 @@
   --text-disabled: oklch(40% 0.01 260);
   --text-inverse: oklch(15% 0.015 260);
 
-  --border-subtle: oklch(24% 0.01 260);
-  --border-default: oklch(28% 0.01 260);
-  --border-strong: oklch(38% 0.014 260);
+  /* Hairlines, not solid grays: a flat white-alpha overlay composites onto
+     any surface it sits on, matching the reference's border-white/[0.05]
+     convention, instead of a separately-tuned gray per surface level. */
+  --border-subtle: color-mix(in oklab, white 4%, transparent);
+  --border-default: color-mix(in oklab, white 7%, transparent);
+  --border-strong: color-mix(in oklab, white 14%, transparent);
 
   --accent-soft: oklch(28% 0.08 250);
 

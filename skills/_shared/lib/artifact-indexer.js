@@ -239,6 +239,31 @@ function dedupe(artifacts) {
 }
 
 const FS_INTERESTING_EXTS = new Set(['.md', '.html', '.htm', '.json', '.yaml', '.yml', '.csv', '.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.txt', '.tsv']);
+
+// Repo-hygiene / scaffold files: present in virtually every repo (or written
+// by `nrv init` itself), never produced by a dispatch. Without this filter
+// indexFsActivity() treats a README touched by `git checkout` as an "output"
+// artifact, flooding the knowledge graph with boilerplate that has no real
+// producer edge (see owner report, 2026-08-31: "graph do nirvana-os não faz
+// o menor sentido").
+const FS_HYGIENE_PATTERNS = [
+  /^readme(\..+)?\.md$/i,
+  /^changelog(\..+)?\.md$/i,
+  /^(license|licence)(\..+)?$/i,
+  /^contributing\.md$/i,
+  /^code_of_conduct\.md$/i,
+  /^cla\.md$/i,
+  /^install\.md$/i,
+  /^agent-quickstart\.md$/i,
+  /^(claude|agents|gemini)\.md$/i,
+  /^package(-lock)?\.json$/i,
+  /^tsconfig.*\.json$/i,
+  /^requirements(-.*)?\.txt$/i,
+  /\.example\.ya?ml$/i,
+];
+function isHygieneFile(name) {
+  return FS_HYGIENE_PATTERNS.some((re) => re.test(name));
+}
 const FS_EXCLUDE_DIRS = new Set([
   'node_modules', '.git', '.nirvana', '.maestro-logs', '.harness-logs',
   'dist', 'build', 'out', 'coverage', '.next', '.turbo', '.cache', '__pycache__',
@@ -280,6 +305,7 @@ function indexFsActivity(projectRoot, opts = {}) {
       if (!e.isFile()) continue;
       const ext = path.extname(e.name).toLowerCase();
       if (!FS_INTERESTING_EXTS.has(ext)) continue;
+      if (isHygieneFile(e.name)) continue;
       const stat = safeStat(full);
       if (!stat || stat.mtimeMs < sinceMs) continue;
       const rel = path.relative(projectRoot, full);

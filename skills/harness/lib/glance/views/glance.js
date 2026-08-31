@@ -90,7 +90,8 @@ function glance() {
     memoryAddDraft: { decision_id: '', text: '', source: 'manual', rationale: '' },
     // Graph view
     graph: null,
-    graphFilter: 'all',        // all | capabilities | created | squads | businesses | mind-clones | red-yellow
+    graphScope: 'topology',    // topology (global capability map, ignores the All/Project toggle) | activity (per-project artifact/decision trail)
+    graphFilter: 'capabilities', // all | capabilities | created | squads | businesses | mind-clones | red-yellow — default matches graphScope: 'topology'
     graphTimeline: null,       // { range: [iso,iso], minMs, maxMs }
     graphTimeMs: null,         // current slider value (epoch ms)
     graphTimeISO: null,
@@ -375,7 +376,7 @@ function glance() {
       if (!tab) tab = this.tab;
       this.$nextTick(() => {
         if (this.kind === 'businesses' && tab === 'org-chart' && this.detail?.org_chart_raw && window.renderOrgChart) {
-          window.renderOrgChart('#org-chart-canvas', this.detail.org_chart_raw);
+          window.renderOrgChart('#org-chart-canvas', this.detail);
         }
         if (this.kind === 'projects' && tab === 'dag' && this.detail?.dag && window.renderDag) {
           window.renderDag('#dag-canvas', this.detail.dag);
@@ -666,8 +667,13 @@ function glance() {
     },
 
     // ─── Graph view (knowledge graph) ───
+    // 'topology' is global engine data (businesses/squads/capabilities/mind-clones) —
+    // it deliberately ignores the top-nav All/Project toggle, since that data has no
+    // notion of "which project". 'activity' is the per-project artifact/decision
+    // trail, so it respects the toggle exactly like Runs/Cost/Memory do.
     async fetchGraph() {
-      try { this.graph = await api(`/api/graph${this.projectQuery('?')}`); }
+      const q = this.graphScope === 'activity' ? this.projectQuery('?') : '';
+      try { this.graph = await api(`/api/graph${q}`); }
       catch (e) { this.graph = { nodes: [], edges: [] }; }
       // Compute temporal range from nodes with created_at
       const stamps = (this.graph?.nodes || [])
@@ -714,6 +720,13 @@ function glance() {
       this.graphFilter = filter;
       this.clearGraphSelection();
       this.renderGraphNow({ autoFit: true });
+    },
+    setGraphScope(scope) {
+      if (this.graphScope === scope) return;
+      this.graphScope = scope;
+      this.graphFilter = scope === 'activity' ? 'created' : 'capabilities';
+      this.clearGraphSelection();
+      this.fetchGraph(); // different data per scope (project-filtered or not) — refetch, not just re-render
     },
     graphFitView() {
       this.graphCtrl?.fitToExtent?.(80);
