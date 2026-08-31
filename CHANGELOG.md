@@ -8,6 +8,14 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Glance: prime visual pass, D3 org-chart, and a knowledge graph that finally shows real connections
+
+Three changes to `skills/harness/lib/glance/views/` and its data layer, developed as a live local prototype against the owner's own Glance install before landing here.
+
+1. **Prime theme.** The colorful gradient wash behind every page (`.field-bg`) is gone; a flat surface color replaces it. Glass and blur are now off by default (`--glass: 0`) instead of on, and the apple-dark theme's surfaces and borders were recalibrated from a navy-tinted `oklch(15-26% ... 260)` range to near-black, near-achromatic values with white-alpha hairline borders, closer to the owner's reference dashboard than the previous glassy skin.
+2. **D3 org-chart, replacing Mermaid.** The Businesses tab's org-chart renders with D3's hierarchy and tree layout instead of Mermaid: role-tagged cards (CEO, Diretoria, QA antagonist, Worker), orthogonal elbow connectors, DNA and squad lines pulled from each employee's own frontmatter. It reads Glance's own theme tokens (`--accent`, `--status-danger-*`, `--surface-*`) instead of a fixed palette, so it follows whichever theme is active.
+3. **Knowledge graph: topology and activity, split and fixed.** The graph view used to mix two unrelated concerns in one force-directed hairball: the engine's global capability map (business to squad to capability, business to mind-clone) and a project's own artifact history. Worse, the project filter silently zeroed out the first whenever a project was selected. The view is now two tabs, "System topology" (global, ignores the All/Project toggle) and "Project activity" (per-project). Two real data bugs surfaced in the process. `routes-via` edges were built from a `routing.yaml` shape, `routes: { <capability>: { squad } }`, that has never existed in any of the 57 real files; all of them use `auto_routes`, which targets an employee, not a squad. The real business-to-squad link lives in each employee's own frontmatter, under `squads_authorized` or `squad_dispatched`. `uses-mc` edges failed for a different reason: mind-clone nodes were built after businesses already tried to link to them, and most employees reference a mind-clone through frontmatter (`assigned_mind_clones`) rather than the `[[wikilink]]` syntax the code looked for. A repo-hygiene filter also went into the artifact indexer, so a README, CHANGELOG, package.json or LICENSE no longer masquerades as an "output" artifact just because it was touched recently.
+
 ## 0.12.4 — 2026-08-30
 
 ### Glance: real structural page-layout redesign for Runs + Chat, not a visual skin

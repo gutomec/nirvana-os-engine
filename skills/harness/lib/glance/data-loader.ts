@@ -11,6 +11,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { paths } from "../../../_shared/lib/bun-helpers.ts";
 import { resolveScope, enumerate } from "../../../_shared/lib/scope.ts";
+import { readFrontmatter } from "../../../_shared/lib/frontmatter-edit.ts";
 import { parseAuditLine } from "../../../_shared/lib/cloudevents.js";
 
 // Neutral skills-tree root. Resolves to ~/.nirvana/skills when present so the
@@ -194,6 +195,16 @@ export function getBusinessDetail(slug: string) {
     ? fs.readdirSync(employeesDir).filter(f => f.endsWith(".md")).map(f => f.replace(/\.md$/, "")).sort()
     : [];
 
+  // Full employee markdown (frontmatter + body), keyed by slug — the org
+  // chart renderer (org-chart-renderer.js) reads role/description/dna/
+  // squads_authorized out of each employee's own frontmatter. org_chart_raw
+  // alone only carries the reports-to/manages edges, not who anyone is.
+  const employeesMd: Record<string, string> = {};
+  for (const slug2 of employees) {
+    const p = path.join(employeesDir, `${slug2}.md`);
+    try { employeesMd[slug2] = fs.readFileSync(p, "utf8"); } catch { /* skip unreadable */ }
+  }
+
   return {
     slug,
     source: match.source,
@@ -205,6 +216,7 @@ export function getBusinessDetail(slug: string) {
     routing_raw: routingRaw,
     memory_preview: memoryPreview,
     employees,
+    employees_md: employeesMd,
   };
 }
 
@@ -930,10 +942,6 @@ export function getMemoryStats() {
 // source: routing.yaml, squad.yaml capabilities, dna refs, mind-clones.
 
 export function buildGraph(opts: { include_decisions?: boolean } = {}) {
-  const yaml = (() => {
-    try { return require("yaml"); }
-    catch { return { parse: (s: string) => ({}) }; }
-  })();
   const linkExtractor = require(path.join(SKILLS_ROOT, "_shared", "lib", "link-extractor.js"));
 
   const nodes: any[] = [];
@@ -978,6 +986,34 @@ export function buildGraph(opts: { include_decisions?: boolean } = {}) {
     }
   }
 
+  // Mind-clones → nodes (top-level only — categories not duplicated). Built
+  // BEFORE businesses: the uses-mc edges added in that loop target these ids,
+  // and addEdge() silently drops an edge whose target isn't in `seen` yet.
+  // mcSlugIndex is a fallback for employee frontmatter that cites a category
+  // path (e.g. `21-media-moguls/jane-friedman`) which no longer matches the
+  // clone's real, current category (this library is flat — jane-friedman is
+  // `_root/jane-friedman` on disk) — resolve by bare slug when the exact
+  // "category/slug" the employee cites isn't a real node id.
+  const mcSlugIndex = new Map<string, string>();
+  for (const mc of listMindClones()) {
+    const id = `mind-clone:${mc.category}/${mc.slug}`;
+    addNode({
+      id,
+      type: "mind-clone",
+      slug: `${mc.category}/${mc.slug}`,
+      label: mc.slug,
+      category: mc.category,
+      source: mc.source,
+    });
+    if (!mcSlugIndex.has(mc.slug.toLowerCase())) mcSlugIndex.set(mc.slug.toLowerCase(), id);
+  }
+  const resolveMindCloneId = (ref: string): string | null => {
+    const direct = `mind-clone:${ref}`;
+    if (seen.has(direct)) return direct;
+    const bareSlug = ref.split("/").pop()!.toLowerCase();
+    return mcSlugIndex.get(bareSlug) || null;
+  };
+
   // Businesses → nodes + routing edges to squads
   for (const biz of listBusinesses()) {
     addNode({
@@ -989,53 +1025,45 @@ export function buildGraph(opts: { include_decisions?: boolean } = {}) {
       employees: biz.employee_count,
       source: biz.source,
     });
-    // routing.yaml → business → squad
-    const routingPath = path.join(biz.dir, "routing.yaml");
-    if (fs.existsSync(routingPath)) {
-      try {
-        const r = yaml.parse(fs.readFileSync(routingPath, "utf8")) || {};
-        if (r.routes && typeof r.routes === "object") {
-          for (const [capId, route] of Object.entries(r.routes)) {
-            if (route && typeof route === "object" && (route as any).squad) {
-              addEdge({
-                source: `business:${biz.slug}`,
-                target: `squad:${(route as any).squad}`,
-                kind: "routes-via",
-                via: capId,
-              });
-            }
-          }
-        }
-      } catch {}
-    }
-    // dna refs (mind-clones used by employees)
+    // business → squad ("routes-via"): NOT in routing.yaml — verified against
+    // all 57 real routing.yaml files, every one uses `auto_routes: [{pattern,
+    // route_to}]` (route_to is an EMPLOYEE slug, for brief intake), never the
+    // `routes: { <cap>: { squad } }` shape this edge used to look for. That
+    // shape doesn't exist anywhere in the registry, so this edge was always
+    // empty (owner report, 2026-08-31: "Businesses não aparece no gráfico").
+    // The real link lives one level down, in each employee's own frontmatter
+    // (`squads_authorized` / `squad_dispatched`) — the same fields
+    // org-chart-renderer.js already reads to draw a card's "Squad →" line.
     const employeesDir = path.join(biz.dir, "employees");
     if (fs.existsSync(employeesDir)) {
+      const toList = (v: unknown): string[] => Array.isArray(v) ? v.filter(Boolean).map(String) : (v ? [String(v)] : []);
       for (const f of fs.readdirSync(employeesDir).filter(x => x.endsWith(".md"))) {
+        const empPath = path.join(employeesDir, f);
+        // uses-mc: mostly frontmatter (assigned_mind_clones / mind_clones_used —
+        // 108 of the real employee files), a small minority still use [[wikilink]]
+        // prose refs (13 files) — a Set merges both sources without duplicating
+        // the edge when a file happens to use both.
+        const mcTargets = new Set<string>();
         try {
-          const content = fs.readFileSync(path.join(employeesDir, f), "utf8");
-          const links = linkExtractor.extractFromContent(content);
-          for (const l of links) {
-            if (l.kind === "wikilink" || l.kind === "mdlink") {
-              addEdge({ source: `business:${biz.slug}`, target: `mind-clone:${l.target}`, kind: "uses-mc" });
-            }
+          const content = fs.readFileSync(empPath, "utf8");
+          for (const l of linkExtractor.extractFromContent(content)) {
+            if (l.kind === "wikilink" || l.kind === "mdlink") mcTargets.add(l.target);
           }
         } catch {}
+        try {
+          const fm = readFrontmatter(empPath)?.data || {};
+          for (const mc of [...toList((fm as any).assigned_mind_clones), ...toList((fm as any).mind_clones_used)]) mcTargets.add(mc);
+          const squadSlugs = new Set<string>([...toList((fm as any).squads_authorized), ...toList((fm as any).squad_dispatched)]);
+          for (const sq of squadSlugs) {
+            addEdge({ source: `business:${biz.slug}`, target: `squad:${sq}`, kind: "routes-via", via: f.replace(/\.md$/, "") });
+          }
+        } catch {}
+        for (const mc of mcTargets) {
+          const targetId = resolveMindCloneId(mc);
+          if (targetId) addEdge({ source: `business:${biz.slug}`, target: targetId, kind: "uses-mc" });
+        }
       }
     }
-  }
-
-  // Mind-clones → nodes (top-level only — categories not duplicated)
-  for (const mc of listMindClones()) {
-    const id = `mind-clone:${mc.category}/${mc.slug}`;
-    addNode({
-      id,
-      type: "mind-clone",
-      slug: `${mc.category}/${mc.slug}`,
-      label: mc.slug,
-      category: mc.category,
-      source: mc.source,
-    });
   }
 
   // Artifacts (briefs/handoffs/plans/dags/outputs) — "what was CREATED".

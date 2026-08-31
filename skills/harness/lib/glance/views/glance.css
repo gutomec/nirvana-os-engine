@@ -28,19 +28,11 @@ body {
    behind the whole shell. ─── */
 .field-bg {
   position: fixed; inset: 0; z-index: -1;
-  /* A cor aqui atravessa DUAS diluições antes de chegar ao olho: a do
-     próprio gradiente e depois a da folha de vidro (--sheet-a: 0.6, ou
-     seja, só ~40% do que está atrás passa). Um mix de 30% vira ~12%
-     visível no resultado final — invisível na prática, sobretudo no tema
-     claro. Os percentuais abaixo já compensam essa dupla diluição de
-     propósito; não são o valor "estético" de um único gradiente isolado. */
-  background:
-    radial-gradient(900px 650px at 8% 4%, color-mix(in oklab, var(--accent) 65%, transparent), transparent 70%),
-    radial-gradient(820px 680px at 94% 10%, color-mix(in oklab, var(--status-info-solid) 58%, transparent), transparent 72%),
-    radial-gradient(950px 780px at 16% 98%, color-mix(in oklab, var(--status-success-solid) 50%, transparent), transparent 70%),
-    radial-gradient(780px 660px at 88% 94%, color-mix(in oklab, var(--status-warn-solid) 52%, transparent), transparent 70%),
-    var(--surface-0);
-  filter: saturate(1.35);
+  /* Prime/clean pass (2026-08-31, owner request): the multi-color radial
+     wash read as loud and unprofessional. Flat surface color, no gradient,
+     no saturation boost — the glass sheets on top get their depth from
+     blur/alpha stacking on real content, not from a colored backdrop. */
+  background: var(--surface-0);
 }
 
 .font-inter { font-family: var(--font-sans); }
@@ -441,20 +433,16 @@ body {
 }
 .tab-mini:hover:not(.active) { background: var(--accent-soft); color: var(--text-primary); }
 
+/* .org-canvas is the frame; the D3 renderer (org-chart-renderer.js) fills it
+   with .orgd3-root, which owns its own background/scroll — deliberately
+   theme-independent (always near-black/gold), so no background/flex-center
+   here that would fight it. min-height only, no forced centering: the
+   chart's own scroll container manages its content. */
 .org-canvas {
   width: 100%; min-height: 480px;
-  background: var(--surface-0);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   position: relative; overflow: hidden;
-  display: flex; align-items: center; justify-content: center;
-}
-.org-canvas svg { width: 100% !important; height: 480px !important; cursor: grab; max-width: 100%; }
-.org-canvas svg:active { cursor: grabbing; }
-.org-canvas svg .nodeLabel,
-.org-canvas svg foreignObject div {
-  font-family: 'Inter', sans-serif !important;
-  font-size: var(--text-md) !important;
 }
 .org-empty {
   padding: 60px var(--space-4);
