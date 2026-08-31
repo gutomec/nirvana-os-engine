@@ -8,6 +8,20 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Glance: the org-chart tab is now editable, and two real bugs in it are fixed
+
+The D3 org-chart shipped in 0.12.5 opened third, had no working pan or zoom despite the hint text claiming both, and showed a `role:` value straight out of frontmatter (`technical_accounting_director`) as the card's title, overflowing into the neighboring card when it was long. All three are fixed: org-chart is now the first tab and the one a business opens on; a real `d3.zoom()` drives drag-to-pan and scroll/pinch-to-zoom, starting at the same fit-to-width view as before; and every card title runs through `titleCase()`, the same helper already used for DNA names, so `bookkeeping_coordinator` reads as `Bookkeeping Coordinator`.
+
+The bigger addition: hovering a card now reveals an edit button and an "add employee below" button, and both write for real to `~/businesses/<slug>/` when Glance actions are enabled (`--allow-actions`). Editing a position changes its title, description, reports-to (a real reparent), DNA and squads; adding one creates a minimal-but-valid employee file and links it into `org-chart.yaml`. Reparenting is cycle-checked, and every DNA/squad reference is validated against the real registries before anything is written.
+
+Getting the writes right took two purpose-built line-level editors (`org-chart-editor.ts` for `org-chart.yaml`, `employee-frontmatter-editor.ts` for an employee's own header) instead of the engine's existing comment-preserving YAML editor: tested against real files, that editor reflows every other wrapped paragraph in the document on any edit, which is a large unrelated diff for a small change. The new editors touch only the exact lines that logically changed — verified against all 61 real businesses in this library, and a real corruption bug (a duplicated, orphaned list item) was caught this way before it shipped. 31 new tests in `org-chart-editor.test.ts` and `employee-frontmatter-editor.test.ts` pin both editors against inline fixtures, including that exact bug as a named regression.
+
+### Router-failure default: agent-x, never BM25, unless you asked for fast mode
+
+`routing.on_router_failure` governed one thing since routing-360 Phase 4: what happens when the agentic router (a real headless LLM call) fails at the transport level, even after one retry. The only two values were `cascade` (try a fast BM25 business pick, then agent-x) and `fail` (give up). `cascade` was the default, so a dead runtime, an expired auth token, or a discontinued CLI tier could quietly hand a business decision to BM25 without anyone asking for `--mode=fast`. Auditing this project's own historical dispatches turned up four real routes picked exactly that way, all tied to the same brief that motivated building the agentic router in the first place.
+
+A new value, `agent-x-only`, is now the default. On a transport failure it skips straight to the agent-x generalist and never calls BM25 at all; `cascade` still exists for anyone who wants that safety net back, and `fail` is unchanged. Fixed in the same pass: `agent-x-canary-queue.ts` (Glance's own Message router) already never called BM25 on a router failure, but its log line still said "on_router_failure=cascade" regardless of the configured policy, which was misleading on its own.
+
 ## 0.12.5 — 2026-08-31
 
 ### Glance: prime visual pass, D3 org-chart, and a knowledge graph that finally shows real connections

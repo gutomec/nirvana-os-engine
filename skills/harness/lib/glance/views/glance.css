@@ -434,10 +434,11 @@ body {
 .tab-mini:hover:not(.active) { background: var(--accent-soft); color: var(--text-primary); }
 
 /* .org-canvas is the frame; the D3 renderer (org-chart-renderer.js) fills it
-   with .orgd3-root, which owns its own background/scroll — deliberately
-   theme-independent (always near-black/gold), so no background/flex-center
-   here that would fight it. min-height only, no forced centering: the
-   chart's own scroll container manages its content. */
+   with .orgd3-root, which reads Glance's own theme tokens (--accent,
+   --surface-*, --status-danger-*) so it follows whichever theme is active
+   instead of a fixed palette — so no background/flex-center here that would
+   fight it. min-height only, no forced centering: the chart's own scroll
+   container manages its content. */
 .org-canvas {
   width: 100%; min-height: 480px;
   border: 1px solid var(--border-default);
@@ -449,6 +450,44 @@ body {
   text-align: center;
   color: var(--text-tertiary);
   font-size: var(--text-md);
+}
+
+/* Org-chart tab body needs to be a positioning context for .org-edit-panel,
+   which floats over the canvas the same way .graph-settings floats over the
+   knowledge graph. */
+.org-chart-tab-body { position: relative; }
+.org-edit-panel {
+  position: absolute;
+  top: 44px; right: 0;
+  z-index: var(--z-popover, 50);
+  width: 320px;
+  max-height: calc(100% - 44px);
+  background: var(--surface-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-popover);
+  overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.org-edit-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-default);
+  background: var(--surface-0);
+}
+.org-edit-body {
+  padding: var(--space-3) var(--space-4);
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: var(--space-3);
+}
+.org-edit-field { display: flex; flex-direction: column; gap: 4px; }
+.org-edit-field .memory-input, .org-edit-field .memory-textarea { width: 100%; }
+.org-edit-error { font-size: var(--text-sm); color: var(--status-danger-fg); }
+.org-edit-buttons {
+  display: flex; gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border-default);
 }
 
 .org-node rect {

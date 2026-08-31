@@ -193,8 +193,15 @@ function glance() {
     mindCloneActiveFile: null,     // path string of file currently shown
     tab: 'overview',
     orgView: 'tree',
+    // Org-chart card editor (Glance actions — gated by health.allow_actions)
+    orgEditOpen: false,
+    orgEditMode: 'edit',       // 'edit' | 'add'
+    orgEditTargetSlug: null,   // edit: the employee being edited. add: the parent it reports to.
+    orgEditDraft: { role: '', description: '', reportsTo: '', assignedMindClones: '', squadsAuthorized: '' },
+    orgEditSaving: false,
+    orgEditError: null,
     squadTabs: ['overview', 'manifest', 'capabilities', 'state', 'files'],
-    businessTabs: ['overview', 'manifest', 'org-chart', 'routing', 'memory'],
+    businessTabs: ['org-chart', 'overview', 'manifest', 'routing', 'memory'],
     filterQuery: '',
     filterSource: '',
     searchQuery: '',
@@ -376,12 +383,87 @@ function glance() {
       if (!tab) tab = this.tab;
       this.$nextTick(() => {
         if (this.kind === 'businesses' && tab === 'org-chart' && this.detail?.org_chart_raw && window.renderOrgChart) {
-          window.renderOrgChart('#org-chart-canvas', this.detail);
+          window.renderOrgChart('#org-chart-canvas', this.detail, {
+            allowActions: !!this.health.allow_actions,
+            onEdit: (slug) => this.openEmployeeEdit(slug),
+            onAddBelow: (parentSlug) => this.openAddEmployeeBelow(parentSlug),
+          });
         }
         if (this.kind === 'projects' && tab === 'dag' && this.detail?.dag && window.renderDag) {
           window.renderDag('#dag-canvas', this.detail.dag);
         }
       });
+    },
+
+    // ─── Org-chart card editor ───
+    openEmployeeEdit(slug) {
+      const raw = this.detail?.employees_md?.[slug] || '';
+      const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(raw);
+      let fm = {};
+      try { fm = (m && window.jsyaml?.load(m[1])) || {}; } catch { fm = {}; }
+      this.orgEditMode = 'edit';
+      this.orgEditTargetSlug = slug;
+      this.orgEditDraft = {
+        role: fm.role || '',
+        description: fm.description || '',
+        reportsTo: fm.reports_to || '',
+        assignedMindClones: (fm.assigned_mind_clones || []).join(', '),
+        squadsAuthorized: (fm.squads_authorized || []).join(', '),
+      };
+      this.orgEditError = null;
+      this.orgEditOpen = true;
+    },
+    openAddEmployeeBelow(parentSlug) {
+      this.orgEditMode = 'add';
+      this.orgEditTargetSlug = parentSlug;
+      this.orgEditDraft = { role: '', description: '', reportsTo: '', assignedMindClones: '', squadsAuthorized: '' };
+      this.orgEditError = null;
+      this.orgEditOpen = true;
+    },
+    closeOrgEdit() {
+      this.orgEditOpen = false;
+      this.orgEditError = null;
+    },
+    async saveOrgEdit() {
+      const bizSlug = this.selected?.slug;
+      if (!bizSlug) return;
+      const toList = (s) => String(s || '').split(',').map((x) => x.trim()).filter(Boolean);
+      this.orgEditSaving = true;
+      this.orgEditError = null;
+      try {
+        const url = this.orgEditMode === 'add'
+          ? `/api/businesses/${encodeURIComponent(bizSlug)}/employees`
+          : `/api/businesses/${encodeURIComponent(bizSlug)}/employees/${encodeURIComponent(this.orgEditTargetSlug)}`;
+        const body = this.orgEditMode === 'add'
+          ? {
+              role: this.orgEditDraft.role.trim(),
+              description: this.orgEditDraft.description.trim() || undefined,
+              reportsTo: this.orgEditTargetSlug,
+            }
+          : {
+              role: this.orgEditDraft.role.trim(),
+              description: this.orgEditDraft.description.trim(),
+              reportsTo: this.orgEditDraft.reportsTo.trim() || undefined,
+              assignedMindClones: toList(this.orgEditDraft.assignedMindClones),
+              squadsAuthorized: toList(this.orgEditDraft.squadsAuthorized),
+            };
+        if (this.orgEditMode === 'add' && !body.role) { this.orgEditError = 'título é obrigatório'; return; }
+        const res = await fetch(url, {
+          method: this.orgEditMode === 'add' ? 'POST' : 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) { this.orgEditError = data.error || `erro ${res.status}`; return; }
+        this.orgEditOpen = false;
+        this.detail = await api(`/api/businesses/${encodeURIComponent(bizSlug)}`);
+        this.renderActiveChart('org-chart');
+        this.flash('✓ organograma atualizado', 2000);
+      } catch (e) {
+        this.orgEditError = e.message || String(e);
+      } finally {
+        this.orgEditSaving = false;
+      }
     },
 
     async refreshAll() {
@@ -2244,7 +2326,7 @@ function glance() {
     // ─── Selection ───
     async select(item) {
       this.selected = item;
-      this.tab = this.kind === 'projects' ? 'dag' : (this.kind === 'businesses' ? 'overview' : 'overview');
+      this.tab = this.kind === 'projects' ? 'dag' : (this.kind === 'businesses' ? 'org-chart' : 'overview');
       this.detail = null;
       this.mindCloneContent = null;
       try {

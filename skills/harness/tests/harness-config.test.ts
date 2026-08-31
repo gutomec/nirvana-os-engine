@@ -86,15 +86,17 @@ describe("loadHarnessConfig", () => {
   });
 
   // routing.on_router_failure — Phase 4 router-failure ladder policy.
-  test('on_router_failure defaults to "cascade" and accepts "fail"', () => {
-    expect(loadHarnessConfig(path.join(tmp, "missing2.yaml")).routing.on_router_failure).toBe("cascade");
+  test('on_router_failure defaults to "agent-x-only" (never BM25 without --fast) and accepts "cascade"/"fail"', () => {
+    expect(loadHarnessConfig(path.join(tmp, "missing2.yaml")).routing.on_router_failure).toBe("agent-x-only");
     const p = write("orf.yaml", 'routing:\n  on_router_failure: "fail"\n');
     expect(loadHarnessConfig(p).routing.on_router_failure).toBe("fail");
+    const p2 = write("orf2.yaml", 'routing:\n  on_router_failure: "cascade"\n');
+    expect(loadHarnessConfig(p2).routing.on_router_failure).toBe("cascade");
   });
 
   test("an unknown on_router_failure is a clear error", () => {
     const p = write("orf-bad.yaml", "routing:\n  on_router_failure: explode\n");
-    expect(() => loadHarnessConfig(p)).toThrow(/orf-bad\.yaml.*routing\.on_router_failure.*cascade \| fail/);
+    expect(() => loadHarnessConfig(p)).toThrow(/orf-bad\.yaml.*routing\.on_router_failure.*cascade \| agent-x-only \| fail/);
   });
 
   test("without an explicit path the project and the global config apply over the engine file", () => {

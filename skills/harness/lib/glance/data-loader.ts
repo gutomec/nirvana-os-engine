@@ -1,17 +1,22 @@
 /**
  * data-loader.ts — scope-aware data access for Nirvana Glance.
  *
- * All reads are derived from the scope-aware paths.js + scope.ts. The
- * visualizer never writes anything outside the OS temp dir (and not even
- * that, in read-only mode).
+ * Most reads are derived from the scope-aware paths.js + scope.ts, and the
+ * visualizer writes nothing outside the OS temp dir on its own. The org-chart
+ * card editor (updateEmployeePosition / createEmployeeBelow, below) is the
+ * one deliberate exception: real writes to a business's employees/*.md and
+ * org-chart.yaml, gated one layer up by server.ts's --allow-actions check.
  */
 
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import yaml from "yaml";
 import { paths } from "../../../_shared/lib/bun-helpers.ts";
 import { resolveScope, enumerate } from "../../../_shared/lib/scope.ts";
 import { readFrontmatter } from "../../../_shared/lib/frontmatter-edit.ts";
+import * as orgChartEditor from "./org-chart-editor.ts";
+import * as employeeFrontmatterEditor from "./employee-frontmatter-editor.ts";
 import { parseAuditLine } from "../../../_shared/lib/cloudevents.js";
 
 // Neutral skills-tree root. Resolves to ~/.nirvana/skills when present so the
@@ -218,6 +223,189 @@ export function getBusinessDetail(slug: string) {
     employees,
     employees_md: employeesMd,
   };
+}
+
+// ──────────────────── Org-chart card editing (Glance actions) ────────────────────
+// Edit an existing position or add a new one below it, from the org-chart tab.
+// Two files move together: the employee's own .md frontmatter (identity/description/
+// DNA/squads, plus a reports_to mirror) and the business's org-chart.yaml (the real
+// hierarchy edges) — org-chart-editor.ts does the line-surgical org-chart.yaml part,
+// employee-frontmatter-editor.ts the frontmatter part. Both preserve every byte they
+// don't need to touch; see those files' header comments for why that matters here.
+
+function resolveBusinessDir(slug: string): string {
+  const biz = listBusinesses().find(b => b.slug === slug);
+  if (!biz) throw new Error(`business "${slug}" not found`);
+  return biz.dir;
+}
+
+function slugify(s: string): string {
+  return String(s || "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // strip accents (á -> a + combining acute)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+}
+
+/** This business's employee-slug prefix (e.g. "ac" for ac-bookkeeping-coord),
+ *  taken from whichever prefix the majority of existing employees share —
+ *  a fresh business with zero employees has nothing to derive from, so
+ *  callers get "" (no prefix) rather than a guess. */
+function employeeSlugPrefix(employeeSlugs: string[]): string {
+  const counts = new Map<string, number>();
+  for (const s of employeeSlugs) {
+    const m = /^([a-z0-9]{2,5})-/.exec(s);
+    if (m) counts.set(m[1], (counts.get(m[1]) || 0) + 1);
+  }
+  let best = "", bestCount = 0;
+  for (const [prefix, count] of counts) if (count > bestCount) { best = prefix; bestCount = count; }
+  return best;
+}
+
+function uniqueEmployeeSlug(businessDir: string, base: string): string {
+  const employeesDir = path.join(businessDir, "employees");
+  const existing = new Set(
+    fs.existsSync(employeesDir) ? fs.readdirSync(employeesDir).filter(f => f.endsWith(".md")).map(f => f.replace(/\.md$/, "")) : []
+  );
+  if (!existing.has(base)) return base;
+  for (let i = 2; ; i++) { const c = `${base}-${i}`; if (!existing.has(c)) return c; }
+}
+
+function chartUsesSupportedShape(orgChartRaw: string): boolean {
+  return /^chart:\s*$/m.test(orgChartRaw);
+}
+
+/** Employee's current parent per org-chart.yaml (not the frontmatter mirror,
+ *  which can drift) — null for the root. */
+function currentParentOf(chartRaw: string, employeeSlug: string): string | null {
+  const parsed = yaml.parse(chartRaw) || {};
+  const entry = (parsed.chart || []).find((e: any) => e.employee === employeeSlug);
+  return entry?.reports?.[0] ?? null;
+}
+
+export interface EmployeeEditPatch {
+  role?: string;
+  description?: string;
+  reportsTo?: string;
+  assignedMindClones?: string[];
+  squadsAuthorized?: string[];
+}
+
+/** Validates DNA/squad references against the real registries; throws
+ *  listing exactly which slugs don't resolve, so a typo is rejected
+ *  loudly instead of silently written into a business's org chart. */
+function validateReferences(patch: EmployeeEditPatch) {
+  if (patch.assignedMindClones?.length) {
+    const clones = listMindClones();
+    const bad = patch.assignedMindClones.filter(ref => {
+      const bareSlug = ref.split("/").pop();
+      return !clones.some(mc => ref === `${mc.category}/${mc.slug}` || bareSlug === mc.slug);
+    });
+    if (bad.length) throw new Error(`unknown mind-clone(s): ${bad.join(", ")}`);
+  }
+  if (patch.squadsAuthorized?.length) {
+    const squads = listSquads();
+    const bad = patch.squadsAuthorized.filter(ref => !squads.some(sq => sq.slug === ref));
+    if (bad.length) throw new Error(`unknown squad(s): ${bad.join(", ")}`);
+  }
+}
+
+/** Edits one employee's card: frontmatter fields, and — when reportsTo names
+ *  a different manager — a real reparent in org-chart.yaml (cycle-checked). */
+export function updateEmployeePosition(businessSlug: string, employeeSlug: string, patch: EmployeeEditPatch): { ok: true } {
+  const bizDir = resolveBusinessDir(businessSlug);
+  const empPath = path.join(bizDir, "employees", `${employeeSlug}.md`);
+  if (!fs.existsSync(empPath)) throw new Error(`employee "${employeeSlug}" not found in ${businessSlug}`);
+  validateReferences(patch);
+
+  const orgChartPath = path.join(bizDir, "org-chart.yaml");
+  const orgChartRaw = fs.existsSync(orgChartPath) ? fs.readFileSync(orgChartPath, "utf8") : "";
+
+  const fmPatch: employeeFrontmatterEditor.EmployeePatch = {
+    role: patch.role, description: patch.description,
+    assignedMindClones: patch.assignedMindClones, squadsAuthorized: patch.squadsAuthorized,
+  };
+
+  if (patch.reportsTo !== undefined) {
+    if (!chartUsesSupportedShape(orgChartRaw)) {
+      throw new Error("this business's org-chart.yaml uses a legacy format Glance can't reparent yet — edit reports_to by hand");
+    }
+    const oldParent = currentParentOf(orgChartRaw, employeeSlug);
+    if (patch.reportsTo !== oldParent) {
+      const employees = fs.readdirSync(path.join(bizDir, "employees")).map(f => f.replace(/\.md$/, ""));
+      if (!employees.includes(patch.reportsTo)) throw new Error(`"${patch.reportsTo}" is not an employee of ${businessSlug}`);
+      if (orgChartEditor.wouldCreateCycle(orgChartRaw, yaml.parse, employeeSlug, patch.reportsTo)) {
+        throw new Error(`moving "${employeeSlug}" under "${patch.reportsTo}" would create a reporting cycle`);
+      }
+      const newChartRaw = orgChartEditor.reparentEmployee(orgChartRaw, employeeSlug, oldParent, patch.reportsTo);
+      fs.writeFileSync(orgChartPath, newChartRaw, "utf8");
+      fmPatch.reportsTo = patch.reportsTo;
+    }
+  }
+
+  const empRaw = fs.readFileSync(empPath, "utf8");
+  const newEmpRaw = employeeFrontmatterEditor.applyEmployeePatch(empRaw, fmPatch);
+  if (newEmpRaw !== empRaw) fs.writeFileSync(empPath, newEmpRaw, "utf8");
+  return { ok: true };
+}
+
+export interface NewEmployeeInput {
+  role: string;
+  description?: string;
+  reportsTo: string;
+}
+
+/** Creates a new employee reporting to `reportsTo`: a minimal-but-valid .md
+ *  skeleton plus a real chart:[] entry + parent direct_reports link. Not a
+ *  substitute for the businesses skill's full creation pipeline (no
+ *  acceptance criteria, no DNA assignment) — a deliberately small seed the
+ *  owner can flesh out afterward, either by hand or via that skill. */
+export function createEmployeeBelow(businessSlug: string, input: NewEmployeeInput): { ok: true; slug: string } {
+  const bizDir = resolveBusinessDir(businessSlug);
+  const employeesDir = path.join(bizDir, "employees");
+  const existingSlugs = fs.existsSync(employeesDir)
+    ? fs.readdirSync(employeesDir).filter(f => f.endsWith(".md")).map(f => f.replace(/\.md$/, ""))
+    : [];
+  if (!existingSlugs.includes(input.reportsTo)) throw new Error(`"${input.reportsTo}" is not an employee of ${businessSlug}`);
+
+  const orgChartPath = path.join(bizDir, "org-chart.yaml");
+  const orgChartRaw = fs.existsSync(orgChartPath) ? fs.readFileSync(orgChartPath, "utf8") : "";
+  if (!chartUsesSupportedShape(orgChartRaw)) {
+    throw new Error("this business's org-chart.yaml uses a legacy format Glance can't extend yet — add the employee by hand");
+  }
+
+  const prefix = employeeSlugPrefix(existingSlugs);
+  const base = [prefix, slugify(input.role)].filter(Boolean).join("-") || "new-employee";
+  const slug = uniqueEmployeeSlug(bizDir, base);
+  const description = input.description?.trim() || `${input.role} at ${businessSlug}.`;
+
+  const skeleton = [
+    "---",
+    `name: ${slug}`,
+    `role: ${slugify(input.role).replace(/-/g, "_")}`,
+    `description: "${description.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`,
+    `reports_to: ${input.reportsTo}`,
+    "manages: []",
+    "authority_level: tier-3",
+    "effort: medium",
+    "operation_mode: zero_human",
+    "---",
+    "",
+    `# ${input.role}`,
+    "",
+    "## Role",
+    "",
+    `Adicionado via Glance. ${description}`,
+    "",
+  ].join("\n");
+  fs.writeFileSync(path.join(employeesDir, `${slug}.md`), skeleton, "utf8");
+
+  let newChartRaw = orgChartEditor.appendChartEntry(orgChartRaw, slug, input.reportsTo);
+  newChartRaw = orgChartEditor.addDirectReport(newChartRaw, input.reportsTo, slug);
+  fs.writeFileSync(orgChartPath, newChartRaw, "utf8");
+
+  return { ok: true, slug };
 }
 
 // ──────────────────────── Runs (audit-derived) ────────────────────────
