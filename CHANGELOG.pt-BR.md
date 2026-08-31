@@ -8,6 +8,8 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+## 0.12.6 — 2026-08-31
+
 ### Glance: a aba de organograma agora é editável, e dois bugs reais nela foram corrigidos
 
 O organograma em D3 lançado na 0.12.5 abria em terceiro lugar, não tinha pan nem zoom de verdade apesar do texto de dica afirmar os dois, e mostrava o valor de `role:` cru do frontmatter (`technical_accounting_director`) como título do cartão, estourando pro cartão vizinho quando era longo. Os três estão corrigidos: organograma agora é a primeira aba e a que abre ao entrar numa empresa; um `d3.zoom()` de verdade comanda arrastar-para-mover e rolar/pinçar-para-zoom, começando na mesma visão de encaixar-na-largura de antes; e todo título de cartão passa por `titleCase()`, o mesmo auxiliar já usado nos nomes de DNA, então `bookkeeping_coordinator` vira `Bookkeeping Coordinator`.
