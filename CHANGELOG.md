@@ -8,6 +8,8 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+## 0.12.5 — 2026-08-31
+
 ### Glance: prime visual pass, D3 org-chart, and a knowledge graph that finally shows real connections
 
 Three changes to `skills/harness/lib/glance/views/` and its data layer, developed as a live local prototype against the owner's own Glance install before landing here.

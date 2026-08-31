@@ -8,6 +8,8 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+## 0.12.5 — 2026-08-31
+
 ### Glance: reforma visual "prime", organograma em D3 e um grafo de conhecimento que finalmente mostra conexões reais
 
 Três mudanças em `skills/harness/lib/glance/views/` e na camada de dados, desenvolvidas como protótipo local ao vivo na instalação do próprio Glance do dono antes de chegar aqui.
