@@ -50,6 +50,7 @@ export const COMMANDS: Command[] = [
 
   // install & lifecycle
   { name: "install", custom: true, category: "install", args: "<source> | --bootstrap | --check | --repair-path", summary: "Install an asset (squad/business/clone/pack); --bootstrap wires audit hooks; --repair-path cleans the Windows user PATH", visibility: "user" },
+  { name: "setup", target: "_shared/scripts/install.ts", category: "install", summary: "Install or repair audit hooks across supported agents", visibility: "user" },
   { name: "uninstall", custom: true, category: "install", args: "<name> | --engine | --hooks", summary: "Remove an asset, the engine (keeps content), or just the hooks", visibility: "user" },
   { name: "installed", aliases: ["list-installed"], target: "_shared/scripts/list-installed.ts", category: "install", summary: "List active installations", visibility: "user" },
   { name: "update", aliases: ["self-update", "upgrade"], target: "harness/scripts/update.ts", category: "install", args: "[--check]", summary: "Update the engine: git pull (dev) or re-fetch the latest release (npx)", visibility: "user" },
@@ -100,7 +101,6 @@ export const COMMANDS: Command[] = [
   { name: "license", aliases: ["verify-license", "whoami"], target: "_shared/scripts/license.ts", category: "license", args: "[status|check|install [<path>]|activate]", summary: "Show your copy's provenance, install a PROVENANCE.json, activate (offline-safe)", visibility: "user" },
 
   // advanced / dev
-  { name: "setup", target: "_shared/scripts/install.ts", category: "dev", summary: "Re-wire audit hooks (= install --bootstrap)", visibility: "dev" },
   { name: "install-content", target: "_shared/scripts/install-content.ts", category: "dev", args: "<dir> --slug <slug>", summary: "Overlay a content pack onto the engine (used by a pack's setup.ts)", visibility: "dev" },
   { name: "use-businesses", aliases: ["business", "businesses"], target: "harness/scripts/route.ts", category: "dev", summary: "Route forcing business-first preference", visibility: "dev" },
   { name: "use-squads", aliases: ["squad", "squads"], target: "harness/scripts/route.ts", category: "dev", summary: "Route forcing squad-first preference", visibility: "dev" },

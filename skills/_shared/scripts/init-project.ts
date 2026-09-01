@@ -571,7 +571,7 @@ async function main() {
   try {
     const result = require("node:child_process").spawnSync("bun", [path.join(SKILLS_ROOT, "_shared", "scripts", "install.ts"), "--check"], { encoding: "utf8" });
     if (result.status !== 0) {
-      log.warn(`Audit hooks are NOT yet wired into your agents. Run: nrv install`);
+      log.warn(`Audit hooks are NOT yet wired into your agents. Run: nrv setup`);
       log.info(`(this configures Claude Code + Gemini-CLI to emit audit events automatically)`);
     } else {
       log.ok(`Audit hooks active across installed agents — runs auto-track in 'nrv glance'.`);
