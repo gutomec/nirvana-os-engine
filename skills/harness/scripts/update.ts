@@ -26,8 +26,6 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { spawnSync } from "node:child_process";
-import { scanLibrary, authorsPacks, STRIP_HINT } from "../../_shared/lib/watermark-scan.ts";
-import { paths as nrvPaths } from "../../_shared/lib/bun-helpers.ts";
 
 const ANSI = {
   reset: "\x1b[0m", bold: "\x1b[1m", dim: "\x1b[2m",
@@ -62,32 +60,6 @@ const ENGINE_REPO = process.env.NIRVANA_ENGINE_REPO || "gutomec/nirvana-os-engin
 const ENGINE_URL = process.env.NIRVANA_ENGINE_URL
   || `https://github.com/${ENGINE_REPO}/releases/latest/download/nirvana-os-engine.tar.gz`;
 const ENGINE_TARBALL = (process.env.NIRVANA_ENGINE_TARBALL || "").replace(/^file:\/\//, "");
-
-/**
- * An update pulls per-buyer content into ~/squads and ~/businesses. On a buyer's
- * machine that is exactly right. On a machine that AUTHORS packs it is contamination:
- * those directories are what packs are built from, and a marker that ships makes every
- * buyer's leak attribute to the author.
- *
- * Reported HERE, seconds after it lands, because the alternative already happened —
- * it sat unnoticed for a day and was found by accident during unrelated work.
- */
-function warnIfLibrariesWatermarked(): void {
-  try {
-    if (!authorsPacks(HOME)) return;   // a buyer's library is supposed to carry tags
-    const dirty: string[] = [];
-    let total = 0;
-    for (const lib of [nrvPaths.SQUADS_DIR, nrvPaths.BUSINESSES_DIR]) {
-      const r = scanLibrary(lib);
-      if (r.hits.length) { dirty.push(`${lib.replace(HOME, "~")} (${r.hits.length})`); total += r.hits.length; }
-    }
-    if (!total) return;
-    console.log("");
-    console.log(c("red", `⚠ ${total} per-buyer watermark(s) landed in your content library: ${dirty.join(", ")}`));
-    console.log(c("dim", "  This machine authors packs. Strip before building anything, or the markers ship:"));
-    console.log("  " + c("yellow", STRIP_HINT));
-  } catch { /* never let a diagnostic fail an update */ }
-}
 
 // Installed paid packs: after updating the engine (or on --check), run each
 // pack's --check with PROVENANCE — the buyer sees engine AND pack in a single
@@ -352,7 +324,6 @@ console.log("  " + c("yellow", "nrv doctor") + c("dim", "         # verify every
 console.log("  " + c("yellow", "nrv tui") + c("dim", "            # live cockpit"));
 console.log("");
 checkInstalledPacks();
-warnIfLibrariesWatermarked();
 console.log("");
 console.log(c("dim", "If something broke, the owner can roll back with (do not run unasked):"));
 console.log("  " + c("yellow", `rm -rf ${skillsDir} && mv ${backupDir} ${skillsDir}`));

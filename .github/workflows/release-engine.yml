@@ -22,7 +22,7 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Build engine tarball (fails on content leak or watermark)
+      - name: Build engine tarball (fails on content leak)
         run: bun scripts/build-engine-tarball.ts
 
       - name: Attach engine asset to the release

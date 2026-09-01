@@ -134,10 +134,6 @@
     {
       "path": "skills/harness/tests/doctor-evaluator.test.ts",
       "seconds": 1.04
-    },
-    {
-      "path": "skills/harness/tests/watermark-gate.test.ts",
-      "seconds": 1
     }
   ]
 }
