@@ -14,8 +14,12 @@
  *   package.json (engine deps + version)  +  bun.lock
  *
  * Invariants (build fails otherwise): 5 skills, ZERO deliverable content
- * (squad.yaml / business.yaml / MANIFEST.yaml outside any templates/ dir),
- * ZERO watermark.
+ * (squad.yaml / business.yaml / MANIFEST.yaml outside any templates/ dir).
+ *
+ * A per-buyer attribution self-check also runs on this same staged tree, but
+ * lives in the private nirvana-packs repo (never in a public GitHub repo)
+ * and is run by hand before a release tag is ever pushed — see that repo's
+ * scripts/verify-engine-tarball-clean.ts.
  *
  * Usage: bun scripts/build-engine-tarball.ts [outDir]
  */
@@ -47,19 +51,6 @@ function findContentLeaks(root: string): string[] {
     }
   })(root);
   return leaks;
-}
-
-const WM_RE = /^\/\/[A-Za-z0-9_-]{22}$|^\[\/\/\]: # \([A-Za-z0-9_-]{22}\)$|^#[A-Za-z0-9_-]{22}$/m;
-function findWatermarks(root: string): string[] {
-  const hits: string[] = [];
-  (function walk(dir: string) {
-    for (const e of readdirSync(dir, { withFileTypes: true })) {
-      const abs = join(dir, e.name);
-      if (e.isDirectory()) { if (e.name !== "node_modules") walk(abs); }
-      else { try { if (WM_RE.test(readFileSync(abs, "utf8"))) hits.push(abs.slice(root.length + 1)); } catch { /* binary */ } }
-    }
-  })(root);
-  return hits;
 }
 
 console.log("Building Nirvana-OS engine tarball");
@@ -100,7 +91,6 @@ if (existsSync(join(SRC, "bun.lock"))) cpSync(join(SRC, "bun.lock"), join(STAGE,
 // invariants
 const skillCount = readdirSync(join(STAGE, "skills")).filter((e) => SKILLS.includes(e)).length;
 const leaks = findContentLeaks(STAGE);
-const wms = findWatermarks(STAGE);
 // .env gate: NO .env may ship, EXCEPT the generic project-skeleton
 // template — and even that one may not contain anything that looks like a secret.
 // The owner's personal .env is never publishable (owner's rule, 2026-07-02).
@@ -121,11 +111,9 @@ walkEnv(STAGE);
 console.log(`  version:      ${version}`);
 console.log(`  skills:       ${skillCount}/5`);
 console.log(`  content leak: ${leaks.length === 0 ? "none (correct)" : `${leaks.length} — ERROR`}`);
-console.log(`  watermark:    ${wms.length === 0 ? "clean (correct)" : `${wms.length} — ERROR`}`);
 console.log(`  .env gate:    ${envLeaks.length === 0 ? "clean (only the skeleton template)" : `${envLeaks.length} — ERROR`}`);
-if (skillCount !== 5 || leaks.length > 0 || wms.length > 0 || envLeaks.length > 0) {
+if (skillCount !== 5 || leaks.length > 0 || envLeaks.length > 0) {
   for (const l of leaks) console.error(`  content: ${l}`);
-  for (const w of wms) console.error(`  watermark: ${w}`);
   for (const ev of envLeaks) console.error(`  .env: ${ev}`);
   console.error("\nBuild FAILED invariants.");
   process.exit(1);

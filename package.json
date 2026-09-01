@@ -60,7 +60,6 @@
     "check:notfor": "bun scripts/check-not-for-fires.ts",
     "check:clones": "bun scripts/check-capability-clones.ts --strict",
     "check:bindings": "bun scripts/check-clone-bindings.ts --strict",
-    "check:packs": "bun scripts/check-published-packs.ts --strict",
     "check:audit-parity": "bun scripts/check-audit-parity.ts --strict",
     "check:command-parity": "bun scripts/check-skillmd-command-parity.ts --strict",
     "check:changelog": "bun scripts/check-changelog-parity.ts --strict",

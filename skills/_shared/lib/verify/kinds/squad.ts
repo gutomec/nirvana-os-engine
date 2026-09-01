@@ -60,7 +60,6 @@ const MIN_CONTENT_TOKENS = 2;
 const TOKEN_OVERLAP_MIN = 0.6;
 /** Files a per-buyer copy carries and a source never does. */
 const DISTRIBUTION_FILES = ["SQUAD-DOCTOR-REPORT.md", "PROVENANCE.json", "LICENSE.txt"];
-const WATERMARK_RE = /^(\/\/[A-Za-z0-9_-]{22}|\[\/\/\]: # \([A-Za-z0-9_-]{22}\)|#[A-Za-z0-9_-]{22})$/;
 /** Contract-surface paths a fixer touches; the digest that decides `changed_files`. */
 const TRACKED = ["squad.yaml", "agents", "tasks", "workflows", "README.md", "dependencies.yaml"];
 
@@ -342,8 +341,6 @@ export async function check(ctx: CheckContext): Promise<Finding[]> {
   // ── S12: per-buyer artifacts ──────────────────────────────────────────────
   const distribution: string[] = [];
   for (const f of DISTRIBUTION_FILES) { try { if (fs.statSync(path.join(dir, f)).isFile()) distribution.push(f); } catch { /* absent */ } }
-  const marked = watermarkedFiles(dir);
-  if (marked.length) distribution.push(`${marked.length} watermarked file(s): ${marked.slice(0, 2).join(", ")}`);
   if (distribution.length) {
     out.push(mk("distribution_artifacts", "per-buyer distribution artifacts are present — correct in an installed copy, never in a pack source", distribution.join(" · ")));
   }
@@ -381,28 +378,6 @@ export async function check(ctx: CheckContext): Promise<Finding[]> {
   if (squad.protocol !== "6.0") {
     out.push(mk("protocol_below_6", `protocol ${squad.protocol || "(missing)"} — migrate with \`nrv migrate ${path.basename(dir)} --to 6\``, "squad.yaml#protocol"));
   }
-  return out;
-}
-
-function watermarkedFiles(dir: string): string[] {
-  const out: string[] = [];
-  const walk = (rel: string, depth: number) => {
-    if (depth > 2 || out.length >= 5) return;
-    let entries: fs.Dirent[];
-    try { entries = fs.readdirSync(path.join(dir, rel), { withFileTypes: true }); } catch { return; }
-    for (const e of entries) {
-      if (e.name.startsWith(".") || e.name === "node_modules") continue;
-      const r = rel ? `${rel}/${e.name}` : e.name;
-      if (e.isDirectory()) { walk(r, depth + 1); continue; }
-      if (!/\.(ts|js|md|markdown|ya?ml)$/i.test(e.name)) continue;
-      try {
-        const lines = fs.readFileSync(path.join(dir, r), "utf8").trimEnd().split("\n");
-        if (WATERMARK_RE.test(lines[lines.length - 1]?.trim() ?? "")) out.push(r);
-      } catch { /* unreadable */ }
-      if (out.length >= 5) return;
-    }
-  };
-  walk("", 0);
   return out;
 }
 

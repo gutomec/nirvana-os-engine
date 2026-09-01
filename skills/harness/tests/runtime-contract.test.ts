@@ -17,24 +17,8 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { STRIP_HINT } from "../../_shared/lib/watermark-scan.ts";
 
 const REPO = join(import.meta.dir, "..", "..", "..");
-
-describe("diagnostics describe a fix, they do not order one", () => {
-  test("the strip hint carries no runnable command", () => {
-    // No copy-pasteable invocation: no interpreter, no script path, no flags.
-    expect(STRIP_HINT).not.toMatch(/\bnode\s+\S+\.mjs/);
-    expect(STRIP_HINT).not.toMatch(/\bbun\s+\S+\.(ts|js)/);
-    expect(STRIP_HINT).not.toContain("strip-base-watermarks");
-  });
-
-  test("it names the safe target and the destructive one", () => {
-    expect(STRIP_HINT.toLowerCase()).toContain("dist");
-    expect(STRIP_HINT).toContain("~/squads");
-    expect(STRIP_HINT.toLowerCase()).toContain("never");
-  });
-});
 
 describe("an unidentified host is declared, never assumed", () => {
   const dispatch = readFileSync(join(REPO, "skills", "harness", "scripts", "dispatch.ts"), "utf8");

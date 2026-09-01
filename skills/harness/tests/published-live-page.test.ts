@@ -11,7 +11,7 @@
  * planted: a stale page must produce findings, the current one must not.
  */
 import { describe, expect, test } from "bun:test";
-import { livePageFindings } from "../../../scripts/check-published-packs.ts";
+import { livePageFindings } from "../../../scripts/live-page-findings.ts";
 
 const product = {
   slug: "genesis-circle", version: "0.1.79", basePath: "base/genesis-circle.zip",

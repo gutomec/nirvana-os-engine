@@ -8,6 +8,10 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Menos ruído de diagnóstico no `nrv doctor`, `nrv update` e `nrv validate squad`
+
+Algumas checagens no `nrv doctor`, no fim do `nrv update` e no `nrv validate squad` eram destinadas só à ferramentaria própria de release do dono, nunca a uma instalação comum — mas rodavam incondicionalmente, então todo usuário via e não tinha como agir sobre o que era reportado. Removidas da saída visível ao usuário; a ferramentaria interna que de fato precisa delas foi para uma infraestrutura interna que não faz parte deste repositório.
+
 ## 0.12.6 — 2026-08-31
 
 ### Glance: a aba de organograma agora é editável, e dois bugs reais nela foram corrigidos

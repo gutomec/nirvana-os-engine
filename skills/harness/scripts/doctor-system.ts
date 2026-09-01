@@ -27,7 +27,6 @@ import { execSync, spawnSync } from "node:child_process";
 import { paths as nrvPaths } from "../../_shared/lib/bun-helpers.ts";
 import { resolveScope, enumerate } from "../../_shared/lib/scope.ts";
 import { RUNTIME_TARGETS, RUNTIME_SKILL_DIRS, PROJECT_CONTRACT_FILES } from "../../_shared/lib/runtime-dirs.ts";
-import { scanLibrary, authorsPacks, STRIP_HINT } from "../../_shared/lib/watermark-scan.ts";
 import { listRuntimes } from "../../_shared/lib/host-agent-driver.ts";
 import { expandEnv, findTempNrvEntries, readUserPath, tempRoots } from "../../_shared/lib/windows-user-path.ts";
 import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
@@ -916,32 +915,6 @@ try {
   }
 } catch (e) {
   add("corpus: language", "WARN", `could not weigh the corpus: ${(e as Error).message}`);
-}
-
-// Per-buyer watermarks in a library that AUTHORS packs. Rationale and mechanics
-// live in _shared/lib/watermark-scan.ts, shared with the end of `nrv update` — the
-// command that introduces them.
-{
-  const isAuthor = authorsPacks(HOME);
-  const libs = [nrvPaths.SQUADS_DIR, nrvPaths.BUSINESSES_DIR].filter(d => fs.existsSync(d));
-  let hits = 0, scanned = 0;
-  const dirty: string[] = [];
-  for (const lib of libs) {
-    const r = scanLibrary(lib);
-    hits += r.hits.length; scanned += r.scanned;
-    if (r.hits.length) dirty.push(`${lib.replace(HOME, "~")} (${r.hits.length})`);
-  }
-  if (!libs.length) {
-    add("library: watermarks", "PASS", "no content library on this machine");
-  } else if (!hits) {
-    add("library: watermarks", "PASS", `clean — ${scanned} files checked in ${libs.length} librar${libs.length > 1 ? "ies" : "y"}`);
-  } else if (isAuthor) {
-    add("library: watermarks", "FAIL",
-      `${hits} per-buyer marker(s) in ${dirty.join(", ")} — this machine authors packs, so they would ship and misattribute every buyer's copy. ${STRIP_HINT}`);
-  } else {
-    add("library: watermarks", "WARN",
-      `${hits} per-buyer marker(s) in ${dirty.join(", ")} — normal for installed paid content; only a problem if this machine builds packs`);
-  }
 }
 
 // SECTION 7: RECENT DISPATCHES
