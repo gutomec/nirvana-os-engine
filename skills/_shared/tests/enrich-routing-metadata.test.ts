@@ -302,6 +302,19 @@ describe("pure helpers", () => {
     expect(extractJson("no json at all")).toBeNull();
   });
 
+  test("extractJson: a string value carrying fenced code does not truncate the object", () => {
+    // Measured 2026-09-02: a generated README with a ```bash block inside the
+    // JSON made fence-first extraction cut at the README's own fence — two
+    // attempts, $6.51, "no JSON object in the model output" while the object
+    // was complete. Bare and fenced envelopes both have to survive it.
+    const obj = { not_for: ["a"], readme: "# x\n\n```bash\nnrv run x\n```\n" };
+    const bare = JSON.stringify(obj);
+    expect(extractJson(bare)).toEqual(obj);
+    expect(extractJson("```json\n" + bare + "\n```")).toEqual(obj);
+    // Prose with braces before a fenced object still resolves through the fence.
+    expect(extractJson('Note {this} first.\n```json\n{"a": 2}\n```')).toEqual({ a: 2 });
+  });
+
   test("hasUsableRoutingBlock", () => {
     expect(hasUsableRoutingBlock({ routing: { one_liner: "x", domains: ["a"], serves: "y" } })).toBe(true);
     expect(hasUsableRoutingBlock({ routing: { one_liner: "x", domains: [] } })).toBe(false);

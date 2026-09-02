@@ -561,13 +561,21 @@ export function restoreBackup(entry: BackupEntry): void {
 // ── LLM plumbing ────────────────────────────────────────────────────────────
 
 export function extractJson(raw: string): any | null {
-  let t = (raw || "").trim();
+  const t = (raw || "").trim();
+  const span = (s: string): any | null => {
+    const start = s.indexOf("{");
+    const end = s.lastIndexOf("}");
+    if (start === -1 || end <= start) return null;
+    try { return JSON.parse(s.slice(start, end + 1)); } catch { return null; }
+  };
+  // The whole text first. Fence-first cut a JSON object at the FIRST ``` it
+  // contained — and a string value that carries fenced code (a README with a
+  // ```bash block) contains one, so the object came back as a truncated
+  // fragment and the parse failed even when the model answered bare JSON.
+  const whole = span(t);
+  if (whole !== null) return whole;
   const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fence) t = fence[1].trim();
-  const start = t.indexOf("{");
-  const end = t.lastIndexOf("}");
-  if (start === -1 || end <= start) return null;
-  try { return JSON.parse(t.slice(start, end + 1)); } catch { return null; }
+  return fence ? span(fence[1].trim()) : null;
 }
 
 interface GenOptions {

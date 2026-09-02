@@ -6,6 +6,20 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Não lançado
+
+### `enrich-business-admission.ts` — os achados agênticos do gate de empresa, reparados e provados
+
+Os fixers mecânicos elevam uma empresa ao protocolo 2.0 e param onde começa o significado: `routing_metadata_incomplete` (sem `not_for`, briefs numa língua só), `auto_route_never_fires`, `readme_thin`. Medido nas fontes de pack depois de uma passada mecânica completa: 27 empresas, 0 erros, 407 warnings, e 391 deles eram exatamente esses três — 341 rotas no dialeto de tickets do v1 (`type:strategy|approval-gate|…`) que nenhum brief em língua humana dispara. O script novo escreve esse significado com um LLM headless e mantém as regras do próprio gate como barra, perguntadas ao candidato ANTES de qualquer escrita: `not_for` como tokens de 3-25 chars (acima de 25 a penalidade por substring do router para de disparar), briefs classificados nas duas línguas pelo `classify` do gate, toda rota com prefixo `(?i)` (a única forma que o gate e o router de runtime compilam igual), compilando, nomeando um seat real e disparando em ≥1 brief, todo brief disparando ≥1 rota, README com ≥40 linhas, as seções que o gate procura e nenhum caminho para a home de ninguém. As escritas são cirúrgicas (`not_for` / `example_briefs` substituem seus próprios blocos com a indentação do arquivo; `auto_routes` é substituído inteiro e `brief_intake` sobrevive verbatim), o surface é regenerado e o gate roda de novo no disco: erros não podem crescer e todo achado alvo tem que sumir, ou todos os arquivos são restaurados. `--dir` e `--pack` alcançam fontes de pack, que vivem fora do escopo e não têm registro. Verificado numa empresa real de pack: 13 warnings → 0, 11 rotas mortas → 0, uma tentativa.
+
+### `extractJson` não trunca mais um objeto que carrega código cercado
+
+A extração fence-first cortava um objeto JSON no PRIMEIRO ``` que ele contivesse — e um valor string com um bloco cercado (um README gerado com um exemplo em ```bash) contém um, então uma resposta JSON completa e sem envelope voltava como fragmento inparseável. Agora o texto inteiro é tentado primeiro; o fence é o fallback.
+
+### Um run cortado por teto diz qual teto
+
+Quando um teto de orçamento ou de turnos para o claude CLI antes de qualquer texto, `result` e stderr ficam vazios e a única causa disponível é o `subtype`. O driver agora o leva para `error` (`runtime returned an error verdict (error_max_budget_usd)`) em vez de um veredito nu — e não reporta mais um result vazio stringificado como causa.
+
 ## 0.12.8 — 2026-09-02
 
 ### O `enrich-employee-method.ts` agora existe — o enriquecedor de seat anunciado

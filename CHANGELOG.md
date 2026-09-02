@@ -6,6 +6,20 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### `enrich-business-admission.ts` — the agentic findings of the business gate, repaired and proven
+
+The mechanical fixers raise a business to protocol 2.0 and stop where meaning starts: `routing_metadata_incomplete` (no `not_for`, briefs in one language), `auto_route_never_fires`, `readme_thin`. Measured on the pack sources after a full mechanical pass: 27 businesses, 0 errors, 407 warnings, and 391 of them were exactly those three — 341 routes in the v1 ticket dialect (`type:strategy|approval-gate|…`) that no brief in a human language ever fires. The new script writes that meaning with a headless LLM and keeps the gate's own rules as the bar, asked on the candidate BEFORE any write: `not_for` as 3-25 char tokens (past 25 the router's substring penalty stops firing), briefs classified in both languages by the gate's `classify`, every route `(?i)`-prefixed (the one form the gate and the runtime router compile alike), compiling, naming a real seat and firing on ≥1 brief, every brief firing ≥1 route, README ≥40 lines with the sections the gate looks for and no path into anyone's home. Writes are surgical (`not_for` / `example_briefs` replace their own blocks with the file's indent; `auto_routes` is replaced whole and `brief_intake` survives verbatim), the surface is regenerated, and the gate runs again on disk: errors may not grow and every targeted finding must be gone, or every file is restored. `--dir` and `--pack` reach pack sources, which live outside the scope and have no registry. Verified on a real pack business: 13 warnings → 0, 11 dead routes → 0, one attempt.
+
+### `extractJson` no longer truncates an object that carries fenced code
+
+Fence-first extraction cut a JSON object at the FIRST ``` it contained — and a string value holding a fenced block (a generated README with a ```bash example) contains one, so a complete, bare JSON answer came back as an unparseable fragment. The whole text is tried first now; the fence is the fallback.
+
+### A capped run names its cap
+
+When a budget or turn cap stops the claude CLI before any text, `result` and stderr are both empty and the only cause on offer is the `subtype`. The driver now carries it into `error` (`runtime returned an error verdict (error_max_budget_usd)`) instead of a bare verdict — and no longer reports a stringified empty result as the cause.
+
 ## 0.12.8 — 2026-09-02
 
 ### `enrich-employee-method.ts` exists now — the announced seat enricher
