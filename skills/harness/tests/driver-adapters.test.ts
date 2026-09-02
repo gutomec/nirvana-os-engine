@@ -318,11 +318,16 @@ describe("driver adapters — 300KB prompt delivery + cost matrix", () => {
 });
 
 describe("driver adapters — failure contract (error envelope on exit 0 → ok:false)", () => {
-  test("claude-code: is_error:true", () => {
+  test("claude-code: is_error:true — and the CAUSE surfaces in error", () => {
     const r = run("claude-code", "error");
     expect(r.exitCode).toBe(0);
     expect(r.ok).toBe(false);
-    expect(r.error).toBeTruthy();
+    // The claude CLI puts the cause in `result` and leaves stderr empty on an
+    // error verdict ("Failed to authenticate. API Error: 401 …" arrived exactly
+    // that way, 2026-09-01). A truthy-only assertion let the generic fallback
+    // pass while the real cause sat unread — the caller then retried 3 times
+    // against a stale OAuth token with no idea why.
+    expect(r.error).toContain("boom");
   }, spawnBudgetMs(2));
 
   test("codex: terminal error event", () => {
