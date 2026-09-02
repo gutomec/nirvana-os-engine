@@ -29,7 +29,7 @@ When the mode is `agentic`, **routing is your job, not the script's** — the BM
 ### Rule 1 — You orchestrate; you don't delegate to a router
 For any production brief (build/create/write/generate verbs — in the user's language too: "criar/produzir/escrever/gerar" — applied to any artifact: book, video, PDF, post, copy, design, code, report, brand, illustration, page, app), enter **Agentic Mode** (§Pipeline). Do NOT shell out to `find.ts` and blindly follow its output — that script has known mis-routing failures (see `references/05-subsystems.md`). Reason over the registries.
 
-The only briefs that bypass Agentic Mode are pure utility lookups, served by the CLI: `nrv list-squads` / `nrv list-businesses` / `nrv list-clones`, `nrv inspect-clone <slug>`, `nrv audit <project>`, `nrv glance` (the cockpit's cost tab is the cost summary), `nrv config list|get|set|unset|explain <key>` (the operational settings: effective value and origin per key; `docs/architecture/configuration.md`).
+The only briefs that bypass Agentic Mode are pure utility lookups, served by the CLI: `nrv list-squads` / `nrv list-businesses` / `nrv list-clones`, `nrv inspect-clone <slug>`, `nrv audit <project>`, `nrv glance` (the cockpit's cost tab is the cost summary), `nrv config list|get|set|unset|explain <key>` (the operational settings: effective value and origin per key; `docs/architecture/configuration.md`), `nrv deps status|scan` (where dependencies live and what escaped the shared home).
 
 **Creating system entities is ENGINE work, never squad work.** A brief asking
 to create/improve a squad, a business or a mind-clone routes to the matching
@@ -156,6 +156,24 @@ Two obligations make the arrangement safe, and both belong in the dispatch instr
 The loop the engine gives a cut: `bun test <dir>` while working, `bun run test:fast` for a whole-repo smell check (144 files, 19 s, everything the timing script measured under 1 s), `bun run test:<area>` once before handing back, `bun run check:quick` during (nine gates, 0.6 s), and `bun run test:full` plus `bun run check:all` once on the integrated tree. Write a large new file in blocks with the area's tests running between them: a single 700-line write measured 173 s, and three of them stalled one cut for eight minutes.
 
 ---
+
+---
+
+### Rule 12 — Dependencies install to `~/.nirvana`, never where you are standing
+
+Node packages go to `~/.nirvana/node_modules`, Python packages to
+`~/.nirvana/python`, tool-downloaded runtimes (Chromium, browsers, model
+weights) to `~/.nirvana/cache/<tool>`. One copy on disk for the whole system.
+
+Never run `bun install`, `bun add`, `npm install`, `pnpm add` or `pip install`
+inside a squad, a business, a pack, or the project you are working in — a single
+one of those writes hundreds of megabytes into that directory and duplicates it
+for every other consumer of the same package. Reach for the command instead:
+`nrv deps install <pkg>`, `nrv deps link <dir>`, `nrv activate <squad>` (which
+installs what the squad declares, centrally). A script that cannot resolve a
+package needs `nrv deps link <dir>`, not a local install. Real system programs
+(`ffmpeg`, `pandoc`) are the exception and belong to `brew`/`apt` through the
+squad's `dependencies.yaml`.
 
 ---
 

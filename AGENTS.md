@@ -50,6 +50,45 @@ curl -fsSL https://bun.sh/install | bash            # macOS / Linux
 powershell -c "irm bun.sh/install.ps1 | iex"        # Windows
 ```
 
+<!-- nirvana:deps-rule:v1 -->
+## Dependencies — one home, `~/.nirvana`, never anywhere else
+
+Every dependency this system installs lives in ONE place. Node packages in
+`~/.nirvana/node_modules`, Python packages in `~/.nirvana/python`, and the
+runtimes tools download for themselves (Chromium for Puppeteer, browsers for
+Playwright, model weights) in `~/.nirvana/cache/<tool>`. One copy on disk,
+shared by every squad and every project.
+
+**Never run `bun install`, `bun add`, `npm install`, `pnpm add` or `pip install`
+inside a squad, a business, a pack or the project you are working in.** Doing it
+writes a full dependency tree into that directory — hundreds of megabytes,
+duplicated for every squad that needs the same package, scattered across the
+user's disk. It is the single most expensive mistake available in this system.
+
+Use the command instead:
+
+```
+nrv deps install <pkg>[@version] …   # add to the shared store
+nrv deps link <squad-slug|dir>       # point a directory at the store
+nrv deps status                      # where things are, and what escaped
+nrv activate <squad>                 # installs what a squad DECLARES, centrally
+```
+
+If a script cannot resolve a package, the fix is `nrv deps link <dir>` (which
+symlinks `node_modules` to the store) or running under `nrv deps env`. It is
+never a local install.
+
+`npm install` is the worst offender: run inside a linked directory it deletes
+the link without asking ("Removing non-directory node_modules") and rebuilds a
+private copy, so the scatter returns silently. `nrv deps status` and
+`nrv doctor` report any tree that reappears; `nrv deps adopt --apply` folds it
+back in.
+
+The one exception is a real system program — `ffmpeg`, `git`, `pandoc`,
+`epubcheck` — which belongs to the machine's package manager (`brew`, `apt`) and
+is installed once, globally, on purpose. Declare those in the squad's
+`dependencies.yaml` under `system:` and let `nrv activate` handle them.
+
 ## 1. The Nirvana protocol — invoke the harness skill
 
 When the user asks for **any concrete artifact** — book, video, PDF, post, copy, design, illustration, brand, code, page, app, report, analysis, research, dataset, audit, anything — invoke the **`harness` skill**. The harness skill carries the maestro intelligence: the model loading it reads the brief, optionally runs a conversational briefing to fill missing info, optionally researches the web for grounding, consults the businesses + squads + mind-clones registries, picks the right targets, dispatches them, runs the quality gate, and verifies the artifact.

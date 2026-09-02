@@ -223,8 +223,8 @@ is already paid for. `nrv doctor` warns when a declared tool is missing.
 | Category | Purpose |
 |---|---|
 | `system` | CLIs (ffmpeg, git, uv) — checked then installed via brew/apt/choco per OS |
-| `python` | pip / uv packages |
-| `node` | npm / pnpm / yarn packages |
+| `python` | pip / uv packages → shared Python home `~/.nirvana/python` |
+| `node` | packages → shared store `~/.nirvana/node_modules`, squad dir symlinked to it (`global: true` = a command on PATH, installed by npm) |
 | `services` | Long-lived daemons cloned from git (Pixelle, ComfyUI, Ollama) — installed but NOT started |
 | `custom_nodes` | ComfyUI custom node repos cloned to `~/comfyui/custom_nodes/` |
 | `models` | HuggingFace / URL downloads. Items with `size_gb > 1` require explicit consent |

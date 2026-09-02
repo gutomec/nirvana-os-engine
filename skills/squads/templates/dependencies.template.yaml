@@ -32,7 +32,12 @@ system:
       linux: "sudo apt install -y git"
 
 # ─────────────────────────────────────────────────────────────
-# Python packages (in the squad's runtime, not a venv)
+# Python packages.
+#
+# They install into the SHARED Python home (~/.nirvana/python) — never into the
+# squad, never into ~/Library/Python. Declare the packages and nothing else;
+# `target_dir` is ignored. Add `use_squad_venv: true` only when the squad
+# genuinely needs isolation from the shared home.
 # ─────────────────────────────────────────────────────────────
 python:
   manager: pip      # uv | pip
@@ -41,11 +46,18 @@ python:
     - "pydantic>=2.0.0"
 
 # ─────────────────────────────────────────────────────────────
-# Node packages (uncommon at squad level — usually skill-level)
+# Node packages.
+#
+# They install into the SHARED store (~/.nirvana/node_modules) and the squad
+# directory is symlinked to it, so `import "yaml"` resolves without a copy of
+# the tree living here. Declare packages only: `cwd` is ignored (it used to
+# point installs at the squad's own directory, which cost 276 MB per squad for
+# the same packages).
+#
+# `global: true` is the exception, for a package that must be a COMMAND on the
+# machine's PATH (`wrangler`, `lighthouse`). Those go through npm as before.
 # ─────────────────────────────────────────────────────────────
 # node:
-#   manager: npm
-#   cwd: "${SQUADS_DIR}/<slug>"
 #   packages:
 #     - "yaml@^2"
 
@@ -56,14 +68,14 @@ python:
 services:
   - name: comfyui
     repo: "https://github.com/comfyanonymous/ComfyUI.git"
-    install_dir: "~/comfyui"
+    install_dir: "~/.nirvana/services/comfyui"
     install_cmd: "pip install -r requirements.txt"
     start_cmd: "python main.py"
     health_check: "curl -fsS http://localhost:8188/"
 
   - name: comfyui
     repo: "https://github.com/comfyanonymous/ComfyUI.git"
-    install_dir: "~/comfyui"
+    install_dir: "~/.nirvana/services/comfyui"
     install_cmd: "pip install -r requirements.txt"
     start_cmd: "python main.py"
     health_check: "curl -fsS http://127.0.0.1:8188/system_stats"
@@ -74,7 +86,7 @@ services:
 custom_nodes:
   - name: ComfyUI-WanVideoWrapper
     repo: "https://github.com/kijai/ComfyUI-WanVideoWrapper.git"
-    install_to: "~/comfyui/custom_nodes"
+    install_to: "~/.nirvana/services/comfyui/custom_nodes"
 
 # ─────────────────────────────────────────────────────────────
 # Model downloads (require user confirmation if >1GB)
@@ -83,7 +95,7 @@ models:
   - name: WAN2.1-T2V-14B
     source: huggingface
     repo: "Wan-AI/Wan2.1-T2V-14B"
-    install_to: "~/comfyui/models/checkpoints"
+    install_to: "~/.nirvana/services/comfyui/models/checkpoints"
     size_gb: 28
 
 # ─────────────────────────────────────────────────────────────

@@ -17,8 +17,8 @@ Template: `~/.nirvana/skills/squads/templates/dependencies.template.yaml`. Refer
 | Category | Purpose | Example item |
 |---|---|---|
 | `system` | OS-level CLIs that must be on PATH | `ffmpeg`, `git`, `uv` — checked then installed via brew/apt/choco per-platform |
-| `python` | Python packages | `pip` or `uv` packages (with optional `target_dir`) |
-| `node` | Node packages | `npm` / `pnpm` / `yarn` packages (with optional `cwd`) |
+| `python` | Python packages | installed into the SHARED Python home `~/.nirvana/python`; `target_dir` is ignored (`use_squad_venv: true` opts into an isolated venv) |
+| `node` | Node packages | installed into the SHARED store `~/.nirvana/node_modules`, then the squad dir is symlinked to it; `cwd` is ignored. `global: true` still goes through npm for packages that must be a command on PATH |
 | `services` | Long-lived daemons (cloned + installed, NOT started) | Pixelle-Video, ComfyUI, Ollama |
 | `custom_nodes` | ComfyUI-specific custom node repos | `kijai/ComfyUI-WanVideoWrapper`, etc. |
 | `models` | HuggingFace / URL downloads | `Wan-AI/Wan2.1-T2V-14B`. Items with `size_gb > 1` require user consent |
