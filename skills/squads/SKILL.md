@@ -12,9 +12,9 @@ metadata:
       bins: ["bun"]
 ---
 
-# Squad Protocol Engine v5.0.0
+# Squad Protocol Engine v6.0.0
 
-You orchestrate multi-agent squads following the **Squad Protocol v5.0**. You are runtime-agnostic: squads you create work on Claude Code, Codex, Gemini CLI, Cursor, Antigravity, and any runtime with an adapter declared in `~/.nirvana/skills/_shared/adapters/`.
+You orchestrate multi-agent squads following the **Squad Protocol v6.0**. You are runtime-agnostic: squads you create work on Claude Code, Codex, Gemini CLI, Cursor, Antigravity, and any runtime with an adapter declared in `~/.nirvana/skills/_shared/adapters/`.
 
 ---
 
@@ -26,7 +26,7 @@ This skill is for **squad lifecycle operations**: create / validate / inspect / 
 
 - "Create a new squad called X" → here (lifecycle)
 - "Validate squad X" / "Inspect squad X" / "List my squads" → here
-- "Migrate squad from v4 to v5" → here
+- "Migrate squad to v6" → here
 - "Run squad X to produce Y" → **NOT here** — invoke the `harness` skill.
 
 ### Verifying real dispatch (when execution does happen via harness)
@@ -266,7 +266,7 @@ Template: `templates/dependencies.template.yaml`. Reference impl: `lib/activator
 ### Meta
 - `*squad help` — show this command list
 
-## Creation Rules (v5)
+## Creation Rules (v6)
 
 When creating a NEW squad, ALWAYS:
 
@@ -280,19 +280,19 @@ When creating a NEW squad, ALWAYS:
 8. Task acceptance criteria MUST be binary and verifiable.
 9. Include `<protocol-context>` block in prompts for long-running subagents.
 10. A workflow is a DAG of phases that consume each other's output, so a phase starts only once the phase it depends on has REPORTED — and a phase reports through the `<task-notification>` carrying its `<result>`, never through the spawn's tool result (that is a launch receipt). Dispatching the next phase on a receipt leaves it reading a file that may still be half-written. Phases with no dependency between them go in ONE message as several calls, which is what makes them concurrent; phases that feed each other go one at a time, each dispatched once the previous one's notification landed.
-10. Declare output schemas in `contracts:` for chained tasks.
-11. Declare how the output is judged: `acceptance[]` on the capability (v6 §29), or a `## Acceptance Criteria` section in the task it invokes. There is no `humanize` field — the writing contract lives in the runtime memory files and reaches every dispatched agent.
-12. Set memory GC policy if persistent memory is used.
-13. Validate with the admission gate: `nrv validate squad <slug|path>` (add `--fix` for the mechanical repairs). The validator it runs is Zod, in `~/.nirvana/skills/_shared/validators/validators.ts`.
-14. **Routing metadata, contract-complete** — every capability MUST carry the discovery fields per `~/.nirvana/skills/_shared/ROUTING_METADATA_CONTRACT.md`: `description` in canonical English, concrete and front-loaded (§1); `produces` as artifact-type slugs (§3); `keywords` as multilingual synonym groups — EN + PT (+ES where natural), accented AND unaccented forms (§4); `example_briefs` ≥3 with at least one EN and one PT, symptom-phrased, covering conjugated and infinitive verb forms (§5); `not_for` as short token lists of 2-4 content words, never sentences (§6). Empty or truncated metadata is a creation defect, not a stylistic choice.
-15. **Self-retrieval gate (blocking) — creation is NOT done until it passes.** After indexing, run:
+11. Declare output schemas in `contracts:` for chained tasks.
+12. Declare how the output is judged: `acceptance[]` on the capability (v6 §29), or a `## Acceptance Criteria` section in the task it invokes. There is no `humanize` field — the writing contract lives in the runtime memory files and reaches every dispatched agent.
+13. Set memory GC policy if persistent memory is used.
+14. Validate with the admission gate: `nrv validate squad <slug|path>` (add `--fix` for the mechanical repairs). The validator it runs is Zod, in `~/.nirvana/skills/_shared/validators/validators.ts`.
+15. **Routing metadata, contract-complete** — every capability MUST carry the discovery fields per `~/.nirvana/skills/_shared/ROUTING_METADATA_CONTRACT.md`: `description` in canonical English, concrete and front-loaded (§1); `produces` as artifact-type slugs (§3); `keywords` as multilingual synonym groups — EN + PT (+ES where natural), accented AND unaccented forms (§4); `example_briefs` ≥3 with at least one EN and one PT, symptom-phrased, covering conjugated and infinitive verb forms (§5); `not_for` as short token lists of 2-4 content words, never sentences (§6). Empty or truncated metadata is a creation defect, not a stylistic choice.
+16. **Self-retrieval gate (blocking) — creation is NOT done until it passes.** After indexing, run:
     ```bash
     bun ~/.nirvana/skills/_shared/scripts/self-retrieval-gate.ts <squad-slug>
     ```
     Every declared `example_brief` must route back to this squad top-1 (exit 0). On a miss, the defect is in the capability metadata — never "the router"; iterate keywords / example_briefs / not_for per the contract and rerun. Also confirm neighboring squads' home briefs still route to their owners. **Do not report the squad as created while this gate is red.**
-16. **Event vocabulary — nothing to add by hand.** Declaring `capabilities[]` (rule 5) is what makes a dispatch carry the event contract: `squad-exec.ts` injects a "COMO REPORTAR EVENTOS" block into the prompt of any squad whose capability resolves, telling the agent to emit via `nrv audit emit <nome> --squad=<slug> --trace=<trace>`, to prefix an unlisted name with `x_` so the log matches what it wrote, and to keep payloads short (no brief, no full output, no secret). The closed enum and the CloudEvents envelope are `references/03-audit.md`; the `x_` namespace stays open by design — the gate is on shape, never on what an event reports.
+17. **Event vocabulary — nothing to add by hand.** Declaring `capabilities[]` (rule 5) is what makes a dispatch carry the event contract: `squad-exec.ts` injects a "COMO REPORTAR EVENTOS" block into the prompt of any squad whose capability resolves, telling the agent to emit via `nrv audit emit <nome> --squad=<slug> --trace=<trace>`, to prefix an unlisted name with `x_` so the log matches what it wrote, and to keep payloads short (no brief, no full output, no secret). The closed enum and the CloudEvents envelope are `references/03-audit.md`; the `x_` namespace stays open by design — the gate is on shape, never on what an event reports.
 
-## Agent Template (v5)
+## Agent Template
 
 ```yaml
 ---
@@ -349,7 +349,7 @@ NEVER:
 - Claim enforcement that doesn't exist (P8 Technical Honesty).
 - Skip output humanization on a human-facing capability (P11) — it breaks the zero-human perception.
 - Create a v5 squad without capabilities[] — the squad becomes invisible to harness discovery.
-- Declare a squad "created" while the self-retrieval gate is red (rule 15) — example_briefs that don't route back top-1 mean the squad is invisible or hijacking a neighbor.
+- Declare a squad "created" while the self-retrieval gate is red (rule 16) — example_briefs that don't route back top-1 mean the squad is invisible or hijacking a neighbor.
 
 ## Backward Compatibility
 
@@ -358,5 +358,5 @@ NEVER:
 - v3 harness features (doom loop, ralph loop, traces) remain opt-in.
 - v4 adds: mandatory maxTurns, runtime_requirements, adapters, portable tool names.
 - v5 adds: capability manifest (§22), registry (§23), discovery BM25 (§24), three-signal routing (§25), OTel telemetry (§26), output humanization (§27).
-- Run `*squad migrate` to persist the upgrade to disk (default target in 2026-05+: v5).
+- Run `*squad migrate` to persist the upgrade to disk (default target: v6 — `nrv migrate <slug> --to 6`).
 - v4 squads remain valid — the harness treats them as `experimental_domains: true` by default during coexistence.
