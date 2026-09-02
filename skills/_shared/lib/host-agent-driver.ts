@@ -1461,9 +1461,8 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
     stderr,
     durationMs,
     // On an error verdict the claude CLI puts the cause in `result` and leaves
-    // stderr empty ("Failed to authenticate. API Error: 401 …" arrived exactly
-    // that way, 2026-09-01) — so a caller reading `error` saw only the generic
-    // fallback while the real cause sat unread in the result field.
+    // stderr empty — so a caller reading `error` saw only the generic fallback
+    // while the real cause sat unread in the result field.
     error: isError ? salientError(stderr || result, "runtime returned an error verdict") : undefined,
   };
 }

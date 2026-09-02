@@ -18,7 +18,7 @@ O `references/02-creation.md` ainda ensinava a era v5: `protocol: "5.0"` como ob
 
 ### Um veredito de erro agora diz o porquê
 
-Num veredito de erro o claude CLI põe a causa em `result` e deixa o stderr vazio, e o driver só lia o stderr — então todo chamador via o genérico "runtime returned an error verdict" enquanto a causa real ("Failed to authenticate. API Error: 401 …") ficava sem leitura. Os chamadores tentavam de novo às cegas contra a mesma credencial quebrada. O driver agora expõe o texto do result quando o stderr está em silêncio.
+Num veredito de erro o claude CLI põe a causa em `result` e deixa o stderr vazio, e o driver só lia o stderr — então todo chamador via o genérico "runtime returned an error verdict" enquanto a causa real ficava sem leitura no campo result, e tentava de novo às cegas contra tentativas condenadas pelo mesmo motivo não reportado. O driver agora expõe o texto do result quando o stderr está em silêncio.
 
 ## 0.12.7 — 2026-09-01
 
