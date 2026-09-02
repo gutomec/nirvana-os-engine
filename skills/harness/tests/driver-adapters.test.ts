@@ -60,6 +60,11 @@ beforeAll(() => {
       process.stdout.write(JSON.stringify({ type: "result", subtype: "error_during_execution", is_error: true, result: "boom", session_id: "s1", total_cost_usd: 0.01 }));
       process.exit(0);
     }
+    if (process.env.FAKE_MODE === "budget") {
+      // A cap stops the run before any text: no result, no stderr, only the subtype says why.
+      process.stdout.write(JSON.stringify({ type: "result", subtype: "error_max_budget_usd", is_error: true, session_id: "s1", total_cost_usd: 3.0 }));
+      process.exit(0);
+    }
     process.stdout.write(JSON.stringify({ type: "result", is_error: false, result: "len:" + len, session_id: "s1", total_cost_usd: 0.42 }));
   `);
 
@@ -174,7 +179,7 @@ function assertArgvSafe(cli: string): void {
   }
 }
 
-function run(runtime: Runtime, mode?: "error") {
+function run(runtime: Runtime, mode?: "error" | "budget") {
   if (mode) process.env.FAKE_MODE = mode;
   else delete process.env.FAKE_MODE;
   try {
@@ -327,6 +332,15 @@ describe("driver adapters — failure contract (error envelope on exit 0 → ok:
     // while the real cause sat unread — callers then retried blind, paying for
     // attempts that were doomed for the same unreported reason.
     expect(r.error).toContain("boom");
+  }, spawnBudgetMs(2));
+
+  test("claude-code: a cap that stops the run before any text names itself through the subtype", () => {
+    const r = run("claude-code", "budget");
+    expect(r.ok).toBe(false);
+    // No result and no stderr: the subtype is the only cause on offer, and a
+    // caller retrying blind against a budget cap pays the cap again each time.
+    expect(r.error).toContain("error_max_budget_usd");
+    expect(r.error).not.toContain('""');
   }, spawnBudgetMs(2));
 
   test("codex: terminal error event", () => {

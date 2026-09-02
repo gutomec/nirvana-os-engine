@@ -1462,8 +1462,12 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
     durationMs,
     // On an error verdict the claude CLI puts the cause in `result` and leaves
     // stderr empty — so a caller reading `error` saw only the generic fallback
-    // while the real cause sat unread in the result field.
-    error: isError ? salientError(stderr || result, "runtime returned an error verdict") : undefined,
+    // while the real cause sat unread in the result field. When result is empty
+    // too (a budget or turn cap stops the run before any text), the subtype is
+    // the only thing that says why: `error_max_budget_usd` beats a bare verdict.
+    error: isError
+      ? salientError(stderr || (result === '""' ? "" : result), `runtime returned an error verdict${resultSubtype && resultSubtype !== "success" ? ` (${resultSubtype})` : ""}`)
+      : undefined,
   };
 }
 
