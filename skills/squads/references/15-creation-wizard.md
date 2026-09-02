@@ -1,4 +1,4 @@
-# Squad Creation Wizard (v5)
+# Squad Creation Wizard (v6)
 
 ## When to load
 
@@ -9,7 +9,7 @@ Intent: CREATE with keyword "create squad", "scaffold squad", "new squad",
 
 ## Overview
 
-Squad v5 creation is a flow of **4 rounds of questions** followed by a
+Squad v6 creation is a flow of **4 rounds of questions** followed by a
 deterministic scaffold via `scripts/init-squad.ts`. The LLM runs each
 round with the `AskUserQuestion` tool (on runtimes that support it).
 On runtimes without a prompt UI, the LLM presents the questions inline and
@@ -58,7 +58,7 @@ Q2.3  How many workflows? (default 1)
 
 Q2.4  What are the workflow names?
        → example: ["main-pipeline", "quick-review"]
-       → becomes workflows/main-pipeline.yaml
+       → becomes workflows/main-pipeline.md (the §28 workflow document)
 ```
 
 Validation:
@@ -91,7 +91,7 @@ Q3.4  Domains? (1-5 from CAPABILITY_CATALOG_V1)
          confirm experimental_domains: true.
 
 Q3.5  Which workflow of this squad implements this capability?
-       → invoke.ref points to workflows/<name>.yaml.
+       → invoke.ref points to workflows/<name> — no extension (§28.6).
 
 Q3.6  Give 3 examples of NL phrases that should match this capability.
        → they go into examples[]. Cover PT-BR / EN variation / synonyms.
@@ -155,8 +155,10 @@ bun ~/.nirvana/skills/squads/scripts/init-squad.ts ${SQUADS_DIR}/<name> \
 ```
 
 `init-squad.ts` replaces placeholders in `templates/squad.yaml.tmpl`,
-creates the `agents/`, `tasks/`, `workflows/`, `schemas/` subdirs, and
-writes `squad.yaml`.
+creates the `agents/`, `tasks/`, `workflows/`, `schemas/` subdirs, writes
+`squad.yaml` AND the §28 workflow document (from `templates/workflow.md.tmpl`)
+at `workflows/<ref>.md`, then runs the admission gate over the scaffold —
+deleting the directory if the gate rejects it.
 
 After that the LLM:
 
@@ -164,8 +166,10 @@ After that the LLM:
    `agents/<name>.md` and fills in the frontmatter (`maxTurns: 25`,
    `tools: [read, write]`, `model: sonnet`).
 2. For each implicit task, copies `templates/task.md.tmpl`.
-3. For each workflow, copies `templates/workflow.yaml.tmpl` and fills in
-   `steps[]` with agent+task pairs.
+3. For each workflow, fills in the scaffolded `workflows/<ref>.md`: the
+   frontmatter graph (`steps[]` with agent+task pairs, `requires`, `creates`)
+   and the prose body — one `## <step.id>` section per step. An extra
+   workflow beyond the scaffolded one starts from `templates/workflow.md.tmpl`.
 
 ---
 
@@ -199,7 +203,7 @@ Do not declare the squad ready until the gate passes.
 
 ```bash
 bun ~/.nirvana/skills/squads/scripts/index-squads.ts
-bun ~/.nirvana/skills/squads/scripts/list-squads.ts --proto 5.0
+bun ~/.nirvana/skills/squads/scripts/list-squads.ts --proto 6.0
 ```
 
 The newly created squad must appear with `caps=N` matching the declared

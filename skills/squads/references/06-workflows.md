@@ -46,30 +46,34 @@ Sequential with skippable phases:
 **Complexity classes:** SIMPLE (≤ 8), STANDARD (9–15), COMPLEX (≥ 16).
 
 ### DAG Workflows
-Steps declare `depends_on`; harness computes parallel execution waves:
+Steps declare `requires` (v6 §28); harness computes parallel execution waves.
+In a v6 workflow document this graph is the frontmatter of `workflows/<ref>.md`:
 
 ```yaml
 steps:
   - id: analyze
     agent: architect
     task: analyze-requirements
-    depends_on: []
 
   - id: design-db
     agent: data-engineer
     task: design-schema
-    depends_on: [analyze]
+    requires: [analyze]
 
   - id: design-api
     agent: architect
     task: design-api
-    depends_on: [analyze]
+    requires: [analyze]
 
   - id: implement
     agent: dev
     task: implement
-    depends_on: [design-db, design-api]
+    requires: [design-db, design-api]
 ```
+
+Legacy v5 YAML dialects (`depends_on` / `deps` / `after`) still LOAD — reading
+`.yaml` is permanent — but are never written into a new squad; `nrv migrate
+<slug> --to 6` converts them (see `references/09-upgrade.md`).
 
 ## Wave Execution
 
@@ -85,7 +89,7 @@ Steps at the same dependency level form a wave. Waves execute sequentially; step
 | Hub-and-Spoke | Leader delegates to parallel workers | Coordinated parallel work |
 | Review Loop | Worker → Reviewer → [PASS/FAIL] | QA iterations |
 | Parallel | Split → Workers A/B/C → Merge | Independent parallel tasks |
-| DAG | Topological order with depends_on | Complex dependencies |
+| DAG | Topological order with requires | Complex dependencies |
 
 ## Execution Modes
 
@@ -113,8 +117,8 @@ Adapters resolve family hints (`haiku`, `sonnet`, `opus`) to concrete model iden
 ## Running a Workflow
 
 1. Resolve squad path.
-2. Read `squad.yaml`, find the workflow file.
-3. Read workflow YAML.
+2. Read `squad.yaml`, find the workflow: the capability's `invoke.ref` names it without extension (§28.6).
+3. Read the workflow document (v6: `workflows/<ref>.md`, frontmatter graph + prose body; legacy v5 `.yaml` dialects still load).
 4. Verify all referenced agents and tasks exist.
 5. Determine execution waves (or sequential if `subagent_spawning` unavailable).
 6. Execute steps per wave.
