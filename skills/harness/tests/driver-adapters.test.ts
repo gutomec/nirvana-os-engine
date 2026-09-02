@@ -68,6 +68,10 @@ beforeAll(() => {
     const len = await stdinLen();
     const oi = argv.indexOf("-o");
     const out = oi >= 0 ? argv[oi + 1] : "";
+    if (process.env.FAKE_MODE === "no-model") {
+      console.log(JSON.stringify({ type: "turn.failed", error: { message: "No compatible default model is configured for this runtime." } }));
+      process.exit(1);
+    }
     if (process.env.FAKE_MODE === "error") {
       console.log(JSON.stringify({ type: "error", message: "upstream 500" }));
       process.exit(0);
@@ -203,6 +207,110 @@ describe("driver adapters — 300KB prompt delivery + cost matrix", () => {
     expect(r.costUsd).toBeNull();
     expect(r.costUnavailable).toBe(true);
     assertArgvSafe("codex");
+  }, spawnBudgetMs(2));
+
+  test("codex does not receive a Claude-only configured model", () => {
+    const before = process.env.NIRVANA_MODEL;
+    process.env.NIRVANA_MODEL = "fable-5";
+    try {
+      const r = run("codex");
+      expect(r.ok).toBe(true);
+      expect(r.modelSelection).toMatchObject({
+        requestedModel: "fable-5",
+        effectiveModel: null,
+        fallback: true,
+        reason: "incompatible_model_family",
+      });
+      const args = capturedArgs("codex");
+      expect(args).not.toContain("--model");
+      expect(args).not.toContain("fable-5");
+    } finally {
+      if (before === undefined) delete process.env.NIRVANA_MODEL;
+      else process.env.NIRVANA_MODEL = before;
+    }
+  }, spawnBudgetMs(2));
+
+  test("compatible explicit runtime models are preserved", () => {
+    const codex = runHeadless({ runtime: "codex", model: "gpt-5.5", prompt: "hi", cwd: TMP, yolo: true, timeoutMs: 20_000 });
+    expect(codex.ok).toBe(true);
+    const codexArgs = capturedArgs("codex");
+    expect(codexArgs[codexArgs.indexOf("--model") + 1]).toBe("gpt-5.5");
+
+    const claude = runHeadless({ runtime: "claude-code", model: "fable-5", prompt: "hi", cwd: TMP, yolo: true, timeoutMs: 20_000 });
+    expect(claude.ok).toBe(true);
+    const claudeArgs = capturedArgs("claude");
+    expect(claudeArgs[claudeArgs.indexOf("--model") + 1]).toBe("fable-5");
+
+    const providerModel = runHeadless({ runtime: "codex", model: "glm-4.7", providerHint: "custom-provider", prompt: "hi", cwd: TMP, yolo: true, timeoutMs: 20_000 });
+    expect(providerModel.ok).toBe(true);
+    const providerArgs = capturedArgs("codex");
+    expect(providerArgs[providerArgs.indexOf("--provider") + 1]).toBe("custom-provider");
+    expect(providerArgs[providerArgs.indexOf("--model") + 1]).toBe("glm-4.7");
+  }, spawnBudgetMs(4));
+
+  test("OpenCode forwards the effective qualified model recorded in its selection", () => {
+    const result = runHeadless({ runtime: "opencode", model: "anthropic/claude-sonnet-4-6", prompt: "hi", cwd: TMP, timeoutMs: 20_000 });
+    expect(result.ok).toBe(true);
+    const args = capturedArgs("opencode");
+    expect(args[args.indexOf("--model") + 1]).toBe(result.modelSelection?.effectiveModel!);
+  }, spawnBudgetMs(2));
+
+  test("OpenCode keeps its local default when an inherited model lacks a provider", () => {
+    const before = process.env.NIRVANA_MODEL;
+    process.env.NIRVANA_MODEL = "gpt-5.5";
+    try {
+      const result = runHeadless({ runtime: "opencode", prompt: "hi", cwd: TMP, timeoutMs: 20_000 });
+      expect(result.ok).toBe(true);
+      expect(result.modelSelection?.effectiveModel).toBeNull();
+      expect(result.modelSelection?.warning).toContain("provider/model");
+      expect(capturedArgs("opencode")).not.toContain("--model");
+    } finally {
+      if (before === undefined) delete process.env.NIRVANA_MODEL; else process.env.NIRVANA_MODEL = before;
+    }
+  }, spawnBudgetMs(2));
+
+  test("a rejected model is not re-resolved with a different configured provider", () => {
+    const before = { CODEX_HOME: process.env.CODEX_HOME, NIRVANA_MODEL: process.env.NIRVANA_MODEL };
+    const configDir = fs.mkdtempSync(path.join(TMP, "codex-provider-"));
+    fs.writeFileSync(path.join(configDir, "config.toml"), 'model_provider = "custom"\n');
+    process.env.CODEX_HOME = configDir;
+    process.env.NIRVANA_MODEL = "fable-5";
+    try {
+      const result = runHeadless({ runtime: "codex", providerHint: "openai", prompt: "hi", cwd: TMP, timeoutMs: 20_000 });
+      expect(result.modelSelection?.effectiveModel).toBeNull();
+      expect(capturedArgs("codex")).not.toContain("--model");
+    } finally {
+      for (const [key, value] of Object.entries(before)) {
+        if (value === undefined) delete process.env[key]; else process.env[key] = value;
+      }
+    }
+  }, spawnBudgetMs(2));
+
+  test("an incompatible explicit model uses a compatible configured fallback", () => {
+    const before = process.env.NIRVANA_MODEL;
+    process.env.NIRVANA_MODEL = "gpt-5.5";
+    try {
+      const result = runHeadless({ runtime: "codex", model: "fable-5", prompt: "hi", cwd: TMP, timeoutMs: 20_000 });
+      expect(result.ok).toBe(true);
+      expect(result.modelSelection).toMatchObject({ requestedModel: "fable-5", effectiveModel: "gpt-5.5", fallback: true });
+      const args = capturedArgs("codex");
+      expect(args[args.indexOf("--model") + 1]).toBe("gpt-5.5");
+    } finally {
+      if (before === undefined) delete process.env.NIRVANA_MODEL;
+      else process.env.NIRVANA_MODEL = before;
+    }
+  }, spawnBudgetMs(2));
+
+  test("a runtime with no compatible default still reports its precise failure", () => {
+    process.env.FAKE_MODE = "no-model";
+    try {
+      const result = runHeadless({ runtime: "codex", model: "fable-5", prompt: "hi", cwd: TMP, timeoutMs: 20_000 });
+      expect(result.ok).toBe(false);
+      expect(result.modelSelection?.fallback).toBe(true);
+      expect(result.error).toBe("No compatible default model is configured for this runtime.");
+    } finally {
+      delete process.env.FAKE_MODE;
+    }
   }, spawnBudgetMs(2));
 
   test("gemini-cli: STDIN via -p ''; costUnavailable", () => {

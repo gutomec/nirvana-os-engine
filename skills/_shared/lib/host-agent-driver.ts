@@ -49,7 +49,7 @@ import * as os from "node:os";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
-import { resolveSystemModel } from "./system-model.ts";
+import { resolveSystemModel, resolveSystemModelSelection, type RuntimeModelSelection } from "./system-model.ts";
 import { resolveSetting } from "./settings.ts";
 
 const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
@@ -1223,6 +1223,8 @@ export interface RunHeadlessResult {
   stderr: string;
   durationMs: number;
   error?: string;
+  /** Requested and effective model decision. Prompts and credentials are never included. */
+  modelSelection?: RuntimeModelSelection;
 }
 
 /** Conservative allowlist used only when the caller asks for safe mode
@@ -1374,7 +1376,7 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
   // Model: caller's explicit value > system model (what the user's session
   // runs) > CLI default. Without this, the child `claude -p` falls to the
   // default (sonnet) instead of inheriting the interactive session's fable/opus.
-  const ccModel = opts.model ?? resolveSystemModel("claude-code");
+  const ccModel = opts.model;
   if (ccModel) args.push("--model", ccModel);
 
   // Trust by default. EXPLICIT caller settings (allowedTools / permissionMode)
@@ -1484,7 +1486,7 @@ function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
     ? ["exec", "resume", opts.sessionId]
     : ["exec"];
   const args = [...base, "--json", "--skip-git-repo-check", "-C", opts.cwd, "-o", lastMsg];
-  const cxModel = opts.model ?? resolveSystemModel("codex");
+  const cxModel = opts.model;
   if (cxModel) args.push("--model", cxModel);
   if (opts.providerHint) args.push("--provider", opts.providerHint);
   // Trust by default; --safe (opts.yolo===false) → workspace-write sandbox.
@@ -1554,7 +1556,7 @@ function runGemini(opts: RunHeadlessOpts): RunHeadlessResult {
   const args = ["-p", "", "-o", "json", "--skip-trust"];
   if (opts.sessionId) args.push("-r", opts.sessionId);
   else args.push("--session-id", sid);
-  const gmModel = opts.model ?? resolveSystemModel("gemini-cli");
+  const gmModel = opts.model;
   if (gmModel) args.push("--model", gmModel);
   // Trust by default (--yolo); --safe (opts.yolo===false) → auto_edit.
   args.push("--approval-mode", opts.yolo === false ? "auto_edit" : "yolo");
@@ -1622,7 +1624,7 @@ function runAntigravity(opts: RunHeadlessOpts): RunHeadlessResult {
   const delivery = argvOrPromptFile(withPreamble(opts), (p) => ["-p", p]);
   const args = [...delivery.args, "--output-format", "json"];
   if (opts.sessionId) args.push("--continue");
-  const agyModel = opts.model ?? resolveSystemModel("antigravity-cli");
+  const agyModel = opts.model;
   if (agyModel) args.push("--model", agyModel);
   if (opts.yolo !== false) args.push("--dangerously-skip-permissions");
   for (const d of opts.addDirs ?? []) args.push("--add-dir", d);
@@ -1696,7 +1698,7 @@ function runKimi(opts: RunHeadlessOpts): RunHeadlessResult {
   const sid = opts.sessionId || randomUUID();
   const delivery = argvOrPromptFile(withPreamble(opts), (p) => ["-p", p]);
   const args = [...delivery.args, "--output-format", "stream-json"];
-  const kmModel = opts.model ?? resolveSystemModel("kimi-cli");
+  const kmModel = opts.model;
   if (kmModel) args.push("-m", kmModel);
 
   const spawnOpts = {
@@ -1791,7 +1793,7 @@ function runGrok(opts: RunHeadlessOpts): RunHeadlessResult {
   const buildArgs = (delivery: string[], withFormat: boolean): string[] => {
     const a = [...delivery, ...(withFormat ? ["--output-format", "json"] : []), "--cwd", opts.cwd];
     if (opts.yolo !== false) a.push("--always-approve");
-    const gkModel = opts.model ?? resolveSystemModel("grok-cli");
+    const gkModel = opts.model;
     if (gkModel) a.push("-m", gkModel);
     return a;
   };
@@ -1892,7 +1894,7 @@ function runPi(opts: RunHeadlessOpts): RunHeadlessResult {
   const sid = opts.sessionId || randomUUID();
   const flags: string[] = ["--session-id", sid];
   if (opts.appendSystemPrompt) flags.push("--append-system-prompt", opts.appendSystemPrompt);
-  const piModel = opts.model ?? resolveSystemModel("pi");
+  const piModel = opts.model;
   if (piModel) flags.push("--model", piModel);
   if (opts.providerHint) flags.push("--provider", opts.providerHint);
   flags.push(opts.yolo === false ? "--no-approve" : "--approve");
@@ -1982,7 +1984,7 @@ function runPi(opts: RunHeadlessOpts): RunHeadlessResult {
 function runQwen(opts: RunHeadlessOpts): RunHeadlessResult {
   const started = Date.now();
   const args = ["-p", ""];
-  const qwModel = opts.model ?? resolveSystemModel("qwen-code");
+  const qwModel = opts.model;
   if (qwModel) args.push("--model", qwModel);
   if (opts.yolo !== false) args.push("--approval-mode", "yolo");
 
@@ -2027,6 +2029,8 @@ function runQwen(opts: RunHeadlessOpts): RunHeadlessResult {
 function runOpencode(opts: RunHeadlessOpts): RunHeadlessResult {
   const started = Date.now();
   const delivery = argvOrPromptFile(withPreamble(opts), (p) => ["run", p]);
+  // https://opencode.ai/docs/cli/#run — model ids use provider/model form.
+  if (opts.model) delivery.args.push("--model", opts.model);
 
   let r!: SpawnSyncReturns<string>;
   try {
@@ -2063,6 +2067,9 @@ const BUDGET_CAPABLE: ReadonlySet<Runtime> = new Set<Runtime>(["claude-code"]);
 const _warnedUncappable = new Set<string>();
 
 export function runHeadless(opts: RunHeadlessOpts): RunHeadlessResult {
+  const modelSelection = resolveSystemModelSelection(opts.runtime, opts.model, opts.providerHint);
+  if (modelSelection.warning) console.error(`[driver] AVISO: ${modelSelection.warning}`);
+  opts = { ...opts, model: modelSelection.effectiveModel ?? undefined };
   // The operator's switch outranks the caller: with the bypass disabled every
   // runner takes its restricted path, the same one `--safe` selects.
   if (!headlessSkipPermissions() && opts.yolo !== false) opts = { ...opts, yolo: false };
@@ -2084,8 +2091,10 @@ export function runHeadless(opts: RunHeadlessOpts): RunHeadlessResult {
   }
   // Ledgered runs get the heartbeat sidecar + the 7-day wall-clock backstop;
   // unledgered calls are byte-for-byte the historical behavior.
-  if (opts.ledger?.runId) return runWithLedgerHeartbeat(opts, dispatchToRunner);
-  return dispatchToRunner(opts);
+  const result = opts.ledger?.runId
+    ? runWithLedgerHeartbeat(opts, dispatchToRunner)
+    : dispatchToRunner(opts);
+  return { ...result, modelSelection };
 }
 
 function dispatchToRunner(opts: RunHeadlessOpts): RunHeadlessResult {

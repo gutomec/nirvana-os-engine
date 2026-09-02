@@ -87,11 +87,13 @@ describe("cascade — a dead runtime hands off instead of ending the run", () =>
   const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-failover-test-"));
   const BIN = path.join(TMP, "bin");
   const PROJ = path.join(TMP, "project");
+  const MODEL_PROJ = path.join(TMP, "model-project");
   const ENV_BEFORE = { PATH: process.env.PATH, HARNESS_LOGS_DIR: process.env.HARNESS_LOGS_DIR };
 
   beforeAll(() => {
     fs.mkdirSync(BIN, { recursive: true });
     fs.mkdirSync(path.join(PROJ, "outputs"), { recursive: true });
+    fs.mkdirSync(path.join(MODEL_PROJ, "outputs"), { recursive: true });
     // `gemini` reproduces the retired tier: the real stderr, exit 1. On Windows
     // these land as `.cmd` launchers — the same shape npm installs a real agent
     // CLI as — so the driver's own .cmd handling is exercised, not assumed.
@@ -106,7 +108,17 @@ describe("cascade — a dead runtime hands off instead of ending the run", () =>
       console.log(JSON.stringify({ response: "guide written" }));
       process.exit(0);
     `);
+    writeFakeCli(BIN, "codex", `
+      import * as fs from "node:fs";
+      try { await Bun.stdin.text(); } catch {}
+      const argv = Bun.argv.slice(2);
+      const out = argv[argv.indexOf("-o") + 1];
+      if (out) fs.writeFileSync(out, "completed with runtime default");
+      console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, output_tokens: 1 } }));
+      process.exit(0);
+    `);
     fs.writeFileSync(path.join(PROJ, ".env"), "LLM_CASCADE=gemini-cli,antigravity-cli\n");
+    fs.writeFileSync(path.join(MODEL_PROJ, ".env"), "LLM_CASCADE=codex:haiku\n");
     process.env.PATH = `${BIN}${path.delimiter}${process.env.PATH}`;
     process.env.HARNESS_LOGS_DIR = path.join(TMP, "logs");
   });
@@ -172,5 +184,31 @@ describe("cascade — a dead runtime hands off instead of ending the run", () =>
     expect(auth.runtime).toBe("gemini-cli");
     expect(auth.hint).toContain("antigravity-cli");
     expect(events.some(e => e.event === "runtime_handoff" && e.to === "antigravity-cli")).toBe(true);
+  });
+
+  test("an incompatible model fallback records requested and effective selection", () => {
+    const res = runWithCascade({
+      runtime: "codex",
+      prompt: "write the artifact",
+      brief: "write the artifact",
+      cwd: MODEL_PROJ,
+      projectRoot: MODEL_PROJ,
+      outputsRoot: path.join(MODEL_PROJ, "outputs"),
+      projectId: "runtime-model-fallback-test",
+    });
+
+    expect(res.ok).toBe(true);
+    const dir = path.join(TMP, "logs", new Date().toISOString().slice(0, 10));
+    const events = fs.readFileSync(path.join(dir, "audit.jsonl"), "utf8")
+      .split("\n").filter(Boolean).map(l => parseAuditLine(l));
+    expect(events).toContainEqual(expect.objectContaining({
+      event: "x_runtime_model_selection",
+      project_id: "runtime-model-fallback-test",
+      runtime: "codex",
+      requested_model: "haiku",
+      effective_model: null,
+      fallback_reason: "incompatible_model_family",
+    }));
+    expect(events.some(e => e.event === "dispatch_cost_recorded" && e.project_id === "runtime-model-fallback-test")).toBe(false);
   });
 });
