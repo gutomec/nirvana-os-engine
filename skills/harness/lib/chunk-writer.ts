@@ -6,7 +6,7 @@
  * Phase 7 da nirvana-evolution.
  *
  * Layout: <chunks_root>/<trace_id>/<NNN-seq>.<ext>
- *   ex: ~/Projects/myproj/.nirvana/outputs/<trace>/chunks/0001.md
+ *   ex: ~/Projects/myproj/outputs/<trace>/chunks/0001.md
  *
  * Aggregation: finalize(trace_id) concatenates all chunks (sorted by seq)
  * into one file `<trace_id>.final.<ext>` and optionally deletes the chunk

@@ -22,7 +22,7 @@ When you (the LLM) read this file, you are the **orchestrator**, not the executo
 Your output is **dispatches**, never artifacts. You:
 
 - ✅ Read the brief, refine and clarify it, pick targets via the dispatch cascade, dispatch them, verify.
-- ✅ Write to: `~/.harness-logs/`, `.nirvana/briefs/`, `.nirvana/plans/`, `.nirvana/outputs/<trace>/audit.jsonl`, and `HANDOFF.json`.
+- ✅ Write to: `~/.harness-logs/`, `.nirvana/briefs/`, `.nirvana/plans/`, `outputs/<trace>/audit.jsonl`, and `HANDOFF.json`.
 - ❌ Never write the deliverable yourself: no code, no prose, no HTML, no markdown content, no images, no PDFs.
 - ❌ Never create files in the `output_path` / `outputs_root` of the brief — that path belongs to the dispatched agent.
 

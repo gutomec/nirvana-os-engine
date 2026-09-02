@@ -8,6 +8,14 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### No more empty directories under `outputs/`
+
+Every brief used to pre-create directories on the chance something would land in them. `brief-business.ts` made `handoffs/`, `tickets/` and `employees/`; `brief-squad.ts` made `handoffs/`. Most runs write to none of them, so each brief left empty folders behind: 13 of the 15 empties measured in one real project came from here. `tickets/` was the worst of them, because the protocol retired it and `nrv validate` rejects a business that ships one, while the brief script created it on every single run. Each script now creates only the directory it actually writes into.
+
+A second and larger source is fixed with it. The outputs root moved from `<project>/.nirvana/outputs` to `<project>/outputs` in 0.3.3, and the contract files never followed. For three weeks the orchestrator read `.nirvana/outputs/` from its own instructions and built a mirror tree there while every script wrote to `outputs/`. In one project that mirror held five files, all of them `.DS_Store`, beside a real tree of 6,101 files and 265 MB. The five contract copies and the template `nrv init` writes into new projects now name the real root.
+
+Output trees written before 0.3.3 are untouched, and the compatibility fallbacks that read them stay in place.
+
 ### Less diagnostic noise in `nrv doctor`, `nrv update` and `nrv validate squad`
 
 A few checks in `nrv doctor`, the end of `nrv update`, and `nrv validate squad` were meant only for the owner's own release tooling, never for a regular install — but they ran unconditionally, so every user saw them and had no way to act on what they reported. Removed from user-facing output; the internal tooling that actually needs them moved to internal infrastructure that isn't part of this repository.

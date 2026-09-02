@@ -8,6 +8,14 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Chega de diretórios vazios em `outputs/`
+
+Todo brief criava diretórios de antemão, na hipótese de algo vir a cair neles. O `brief-business.ts` criava `handoffs/`, `tickets/` e `employees/`; o `brief-squad.ts` criava `handoffs/`. A maioria das runs não escreve em nenhum, então cada brief deixava pastas vazias para trás: 13 dos 15 vazios medidos num projeto real vinham daqui. O `tickets/` era o pior deles, porque o protocolo o aposentou e o `nrv validate` reprova uma empresa que traga um, enquanto o script de brief o criava em toda run. Agora cada script cria apenas o diretório em que de fato escreve.
+
+Junto com isso, some uma segunda fonte, maior. A raiz de output mudou de `<projeto>/.nirvana/outputs` para `<projeto>/outputs` na 0.3.3, e os arquivos de contrato não acompanharam. Por três semanas o orquestrador leu `.nirvana/outputs/` das próprias instruções e montou uma árvore espelho ali, enquanto todos os scripts escreviam em `outputs/`. Num projeto esse espelho guardava cinco arquivos, todos `.DS_Store`, ao lado de uma árvore real de 6.101 arquivos e 265 MB. As cinco cópias do contrato e o template que o `nrv init` escreve em projetos novos agora apontam para a raiz real.
+
+Árvores de output escritas antes da 0.3.3 ficam intactas, e os fallbacks de compatibilidade que as leem continuam no lugar.
+
 ### Menos ruído de diagnóstico no `nrv doctor`, `nrv update` e `nrv validate squad`
 
 Algumas checagens no `nrv doctor`, no fim do `nrv update` e no `nrv validate squad` eram destinadas só à ferramentaria própria de release do dono, nunca a uma instalação comum — mas rodavam incondicionalmente, então todo usuário via e não tinha como agir sobre o que era reportado. Removidas da saída visível ao usuário; a ferramentaria interna que de fato precisa delas foi para uma infraestrutura interna que não faz parte deste repositório.

@@ -75,8 +75,12 @@ if (!projectId) {
 }
 
 const outputsRoot = outputsDir(scope);
+// Only the dir we are about to write into: `handoffs/` was pre-created on the
+// chance a handoff landed there, and most runs write none, so every brief left
+// an empty directory behind. Whoever writes one creates it then, and the only
+// reader (artifact-indexer) already guards with existsSync.
 const projectDir = path.join(outputsRoot, projectId, "squads", slug);
-fs.mkdirSync(path.join(projectDir, "handoffs"), { recursive: true });
+fs.mkdirSync(projectDir, { recursive: true });
 
 const briefFile = path.join(outputsRoot, projectId, "brief.md");
 fs.mkdirSync(path.dirname(briefFile), { recursive: true });
