@@ -176,4 +176,4 @@ and a competitive teardown.
 
 许可：Nirvana-OS Sustainable Use License (SUL) v1.0。源码公开发布、可公开阅读，引擎可免费使用。它是 source-available，而非 OSI 批准的开源许可，某些商业用途需要单独的商业许可。在依赖任何摘要（包括这一段）之前，请先阅读 [LICENSE](./LICENSE)。
 
-状态：beta（0.x，当前为 0.12.6）。引擎今天就能用，几分钟内即可安装。在 1.0 之前，预计接口表面会持续变动。
+状态：beta（0.x，当前为 0.12.7）。引擎今天就能用，几分钟内即可安装。在 1.0 之前，预计接口表面会持续变动。
