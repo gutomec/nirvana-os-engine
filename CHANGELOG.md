@@ -6,6 +6,16 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### `enrich-employee-method.ts` exists now — the announced seat enricher
+
+`check-seat-sufficiency.ts` has printed `Enrich with: bun …/enrich-employee-method.ts` since the admission gate shipped, and no such file existed: a thin seat's `autofix: "agentic"` pointed at nothing, which is one measured reason created businesses read generic — the seat with a 2-line body stayed a 2-line body. The script now exists and follows the proven `enrich-routing-metadata.ts` contract: a headless LLM writes method sections grounded only in what the seat and its business already declare, shape validation rejects heading collisions, placeholders, language mismatches and frontmatter-fence injection, and the SAME deterministic measure the admission gate runs (`seat-sufficiency.js`) gates every candidate BEFORE it touches disk. The original file — frontmatter and existing body — survives byte-identical as a prefix; a business whose loader rejects the result gets every seat reverted. Verified end to end on a real thin seat of the live library.
+
+### An error verdict now says why
+
+On an error verdict the claude CLI puts the cause in `result` and leaves stderr empty, and the driver only read stderr — so every caller saw the generic "runtime returned an error verdict" while the real cause ("Failed to authenticate. API Error: 401 …") sat unread. Callers retried blind against the same broken credential. The driver now surfaces the result text when stderr is silent.
+
 ## 0.12.7 — 2026-09-01
 
 ### No more empty directories under `outputs/`

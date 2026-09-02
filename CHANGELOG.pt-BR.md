@@ -6,6 +6,16 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Não lançado
+
+### O `enrich-employee-method.ts` agora existe — o enriquecedor de seat anunciado
+
+O `check-seat-sufficiency.ts` imprime `Enrich with: bun …/enrich-employee-method.ts` desde que o gate de admissão entrou, e esse arquivo não existia: o `autofix: "agentic"` de um seat fino apontava para o nada, uma das razões medidas para empresas criadas soarem genéricas — o seat de corpo de 2 linhas continuava com 2 linhas. O script existe agora e segue o contrato comprovado do `enrich-routing-metadata.ts`: um LLM headless escreve seções de método ancoradas só no que o seat e a empresa já declaram, a validação de forma rejeita colisão de heading, placeholder, língua trocada e injeção de cerca de frontmatter, e a MESMA medida determinística do gate de admissão (`seat-sufficiency.js`) julga cada candidato ANTES de tocar o disco. O arquivo original — frontmatter e corpo existente — sobrevive byte a byte como prefixo; uma empresa cujo loader rejeite o resultado tem todos os seats revertidos. Verificado de ponta a ponta num seat fino real da biblioteca viva.
+
+### Um veredito de erro agora diz o porquê
+
+Num veredito de erro o claude CLI põe a causa em `result` e deixa o stderr vazio, e o driver só lia o stderr — então todo chamador via o genérico "runtime returned an error verdict" enquanto a causa real ("Failed to authenticate. API Error: 401 …") ficava sem leitura. Os chamadores tentavam de novo às cegas contra a mesma credencial quebrada. O driver agora expõe o texto do result quando o stderr está em silêncio.
+
 ## 0.12.7 — 2026-09-01
 
 ### Chega de diretórios vazios em `outputs/`
