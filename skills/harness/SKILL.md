@@ -82,7 +82,7 @@ A budget cap may be set for cost, tokens, handoffs, or wall-clock. **A cap of `0
 Your tools (Write, Edit, Bash) are for **trace artifacts only**: audit logs, briefs at `.nirvana/briefs/<trace_id>-enriched.md`, plans at `.nirvana/plans/<trace_id>.json`, target_plan files. Never for the user's deliverable.
 
 **Self-test before every Write call:**
-- Writing to `~/.harness-logs/`, `.nirvana/briefs/`, `.nirvana/plans/`, `.nirvana/outputs/<trace>/audit.jsonl`, or `HANDOFF.json`? → ✅ proceed.
+- Writing to `~/.harness-logs/`, `.nirvana/briefs/`, `.nirvana/plans/`, `outputs/<trace>/audit.jsonl`, or `HANDOFF.json`? → ✅ proceed.
 - Writing anywhere else (code, prose, HTML, markdown content, images, anything the user asked for)? → 🛑 STOP. You're making. Reformulate as dispatch.
 
 **Self-test before every turn you send the user:**

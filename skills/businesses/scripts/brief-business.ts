@@ -69,14 +69,21 @@ if (!projectId) {
 }
 
 // Resolve outputs root via canonical scope helper. Defaults to
-// <projectRoot>/.nirvana/outputs (or HOME fallback when not in a project).
+// <projectRoot>/outputs (or HOME fallback when not in a project).
 // Honors NIRVANA_OUTPUTS_DIR override. Reuses the single `scope` resolved above.
 const outputsRoot = outputsDir(scope);
 
+// Only the dir we are about to write into. `handoffs/`, `tickets/` and
+// `employees/` used to be pre-created here on the chance something landed in
+// them; most runs write to none of the three, so every brief left empty
+// directories behind — 13 of the 15 empties measured in one real project.
+// Whoever writes a handoff creates it then, with `recursive: true`, and the
+// only reader (artifact-indexer) already guards with existsSync. `tickets`
+// was the worst of the three: the protocol retired it (RETIRED_MANIFEST_FIELDS
+// and RETIRED_FILES in verify/kinds/business.ts), so the brief was creating a
+// directory the validator rejects.
 const projectDir = path.join(outputsRoot, projectId, "businesses", slug);
-fs.mkdirSync(path.join(projectDir, "handoffs"), { recursive: true });
-fs.mkdirSync(path.join(projectDir, "tickets"), { recursive: true });
-fs.mkdirSync(path.join(projectDir, "employees"), { recursive: true });
+fs.mkdirSync(projectDir, { recursive: true });
 
 const briefFile = path.join(outputsRoot, projectId, "brief.md");
 fs.mkdirSync(path.dirname(briefFile), { recursive: true });
