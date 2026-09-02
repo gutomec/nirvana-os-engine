@@ -323,10 +323,9 @@ describe("driver adapters — failure contract (error envelope on exit 0 → ok:
     expect(r.exitCode).toBe(0);
     expect(r.ok).toBe(false);
     // The claude CLI puts the cause in `result` and leaves stderr empty on an
-    // error verdict ("Failed to authenticate. API Error: 401 …" arrived exactly
-    // that way, 2026-09-01). A truthy-only assertion let the generic fallback
-    // pass while the real cause sat unread — the caller then retried 3 times
-    // against a stale OAuth token with no idea why.
+    // error verdict. A truthy-only assertion let the generic fallback pass
+    // while the real cause sat unread — callers then retried blind, paying for
+    // attempts that were doomed for the same unreported reason.
     expect(r.error).toContain("boom");
   }, spawnBudgetMs(2));
 

@@ -14,7 +14,7 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ### An error verdict now says why
 
-On an error verdict the claude CLI puts the cause in `result` and leaves stderr empty, and the driver only read stderr — so every caller saw the generic "runtime returned an error verdict" while the real cause ("Failed to authenticate. API Error: 401 …") sat unread. Callers retried blind against the same broken credential. The driver now surfaces the result text when stderr is silent.
+On an error verdict the claude CLI puts the cause in `result` and leaves stderr empty, and the driver only read stderr — so every caller saw the generic "runtime returned an error verdict" while the real cause sat unread in the result field, and retried blind against attempts doomed for the same unreported reason. The driver now surfaces the result text when stderr is silent.
 
 ## 0.12.7 — 2026-09-01
 
