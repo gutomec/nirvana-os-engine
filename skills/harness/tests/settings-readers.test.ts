@@ -113,14 +113,16 @@ describe("each reader: global, project over global, variable over both", () => {
     expect(headlessSkipPermissions()).toBe(false);
   });
 
-  test("execution.model (system-model.ts), always as the family alias", () => {
+  test("execution.model (system-model.ts), aliases compatible models and rejects cross-runtime families", () => {
     expect(resolveSystemModel("claude-code")).toBeNull();
     globalConfig("execution:\n  model: claude-opus-4-7\n");
     expect(resolveSystemModel("claude-code")).toBe("opus");
     projectConfig('execution:\n  model: "sonnet"\n');
-    expect(resolveSystemModel("codex")).toBe("sonnet");
+    expect(resolveSystemModel("codex")).toBeNull();
     process.env.NIRVANA_MODEL = "haiku";
-    expect(resolveSystemModel("codex")).toBe("haiku");
+    expect(resolveSystemModel("codex")).toBeNull();
+    process.env.NIRVANA_MODEL = "gpt-5.5";
+    expect(resolveSystemModel("codex")).toBe("gpt-5.5");
   });
 
   test("updates.check (update-check.ts): global only, the opt-out variable wins", () => {

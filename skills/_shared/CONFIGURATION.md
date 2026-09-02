@@ -448,6 +448,16 @@ isso é seguro (rejeita a mais, nunca a menos).
 
 ---
 
+## Seleção de modelo na execução headless
+
+`execution.model` (variável `NIRVANA_MODEL`) é um pin para os subprocessos. Um modelo explícito compatível de `LLM_CASCADE` tem precedência. Se a família conhecida não for compatível com o runtime ativo, o driver avisa e tenta o modelo configurado compatível; caso não exista, omite a opção de modelo para preservar o padrão do próprio runtime. `ANTHROPIC_MODEL` e `~/.claude/settings.json` só são herdados por Claude Code.
+
+O engine não fixa um modelo alternativo. As regras reconhecem famílias nativas, mas não bloqueiam famílias futuras desconhecidas. Runtimes multiprovider (`pi`, `opencode`, `kimi-cli`, `qwen-code`) e providers customizados do Codex mantêm o modelo solicitado. O Codex considera o provider explícito ou `model_provider` do perfil ativo/configuração em `CODEX_HOME/config.toml`; os providers nativos `openai` e `azure` não desativam a validação. Ids qualificados como `provider/model` e sufixos como `:high` são preservados. Disponibilidade real, credenciais, modelos customizados e o padrão local continuam sendo validados pelo CLI; se não houver modelo utilizável, o diagnóstico do runtime é mantido.
+
+Cada tentativa via cascata registra `x_runtime_model_selection` na trilha existente: runtime, modelo solicitado, modelo efetivo encaminhado (nulo significa padrão do CLI), fontes e motivo do fallback. Não são registrados prompts nem credenciais nesse evento. A estimativa de custo usa o modelo encaminhado, nunca o rejeitado; sem modelo conhecido, o custo permanece desconhecido, salvo quando o CLI informa o valor nativo.
+
+No OpenCode, ids sem `provider/model` geram aviso e usam o padrão local, pois o CLI exige o prefixo. Claude Code preserva modelos de outras famílias quando `ANTHROPIC_BASE_URL` no ambiente ou em `settings.json.env` aponta para endpoint customizado. Isso reconhece capacidade configurada, sem consultar catálogos remotos nem garantir disponibilidade do modelo.
+
 ## Referências
 
 - **README.md** — overview de _shared + sample usage

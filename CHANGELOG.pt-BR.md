@@ -8,6 +8,10 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Fallback de modelo compatível com o runtime
+
+A execução headless não envia mais uma família de modelo sabidamente incompatível de `execution.model` ou de uma dica da cascata para um runtime nativo. Ela avisa e usa um modelo configurado compatível ou o padrão do próprio runtime, preservando ids explícitos compatíveis e seleções com provider customizado. A trilha de auditoria existente registra os modelos solicitado/efetivo e o motivo do fallback. Famílias desconhecidas continuam sob responsabilidade do runtime; o engine não prescreve modelo de fornecedor algum.
+
 ### Menos ruído de diagnóstico no `nrv doctor`, `nrv update` e `nrv validate squad`
 
 Algumas checagens no `nrv doctor`, no fim do `nrv update` e no `nrv validate squad` eram destinadas só à ferramentaria própria de release do dono, nunca a uma instalação comum — mas rodavam incondicionalmente, então todo usuário via e não tinha como agir sobre o que era reportado. Removidas da saída visível ao usuário; a ferramentaria interna que de fato precisa delas foi para uma infraestrutura interna que não faz parte deste repositório.

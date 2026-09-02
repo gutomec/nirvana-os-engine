@@ -8,6 +8,10 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Runtime-compatible model fallback
+
+Headless execution no longer sends a known foreign model family from `execution.model` or a cascade hint to a native runtime. It warns and uses a compatible configured model or the runtime's own default, while preserving compatible explicit ids and custom-provider selections. The existing audit trail records requested/effective models and the fallback reason. Unknown model families remain delegated to the runtime; no provider model is prescribed by the engine.
+
 ### Less diagnostic noise in `nrv doctor`, `nrv update` and `nrv validate squad`
 
 A few checks in `nrv doctor`, the end of `nrv update`, and `nrv validate squad` were meant only for the owner's own release tooling, never for a regular install — but they ran unconditionally, so every user saw them and had no way to act on what they reported. Removed from user-facing output; the internal tooling that actually needs them moved to internal infrastructure that isn't part of this repository.

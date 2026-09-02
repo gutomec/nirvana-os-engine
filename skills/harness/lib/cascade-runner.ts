@@ -36,6 +36,26 @@ function emitAudit(payload: Record<string, any>, projectRoot: string): void {
   } catch { /* non-fatal */ }
 }
 
+function runSelected(opts: RunHeadlessOpts, args: Pick<CascadeRunArgs, "projectRoot" | "projectId">): RunHeadlessResult {
+  const result = runHeadless(opts);
+  const selection = result.modelSelection;
+  if (selection) {
+    emitAudit({
+      event: "x_runtime_model_selection",
+      project_id: args.projectId ?? null,
+      runtime: opts.runtime,
+      requested_model: selection.requestedModel,
+      effective_model: selection.effectiveModel,
+      model_source: selection.source,
+      effective_model_source: selection.effectiveSource,
+      requested_family: selection.family,
+      fallback_reason: selection.fallback ? selection.reason : null,
+      warning: selection.warning,
+    }, args.projectRoot);
+  }
+  return result;
+}
+
 export interface CascadeRunArgs extends RunHeadlessOpts {
   /** The user's brief — needed to rebuild the handoff prompt for the next runtime. */
   brief: string;
@@ -74,7 +94,7 @@ export function runWithCascade(args: CascadeRunArgs): CascadeRunResult {
 
   // No cascade configured → behave like plain runHeadless.
   if (!cascade.length) {
-    const r = runHeadless(args);
+    const r = runSelected(args, args);
     return { ...r, handoffs: [], finalRuntime: args.runtime };
   }
 
@@ -93,7 +113,7 @@ export function runWithCascade(args: CascadeRunArgs): CascadeRunResult {
       event: "cascade_no_entry_available", project_id: args.projectId ?? null,
       cascade_explained: explainCascade(args.projectRoot, cascade),
     }, args.projectRoot);
-    return { ...runHeadless(args), handoffs, finalRuntime: args.runtime };
+    return { ...runSelected(args, args), handoffs, finalRuntime: args.runtime };
   }
   if (currentEntry.runtime !== args.runtime) {
     // Diagnose WHY the requested runtime was skipped — budget? cooldown? not in cascade?
@@ -159,12 +179,12 @@ export function runWithCascade(args: CascadeRunArgs): CascadeRunResult {
       continue;
     }
 
-    const r = runHeadless(currentOpts);
+    const r = runSelected(currentOpts, args);
     const verdict = classify(chosen, r);
 
     if (verdict.kind === "ok") {
       // Estimate spend and accumulate. Null cost = unknown → no enforcement.
-      const cost = estimateCostUsd(chosen, chosenModel, r);
+      const cost = estimateCostUsd(chosen, r.modelSelection?.effectiveModel ?? null, r);
       if (cost != null) {
         const key = entryKey(currentEntry!);
         addSpend(args.projectRoot, key, cost);

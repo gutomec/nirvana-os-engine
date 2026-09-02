@@ -3,7 +3,7 @@ import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { sanitizeModelId, resolveSystemModel, toAlias } from "../../_shared/lib/system-model.ts";
+import { sanitizeModelId, resolveSystemModel, selectRuntimeModel, toAlias } from "../../_shared/lib/system-model.ts";
 
 describe("toAlias (sempre o alias para família Claude)", () => {
   test("ids completos → alias", () => {
@@ -34,10 +34,36 @@ describe("sanitizeModelId", () => {
     expect(sanitizeModelId("opus")).toBe("opus");
     expect(sanitizeModelId("gpt-5.3-codex")).toBe("gpt-5.3-codex");
   });
+  test("provider-qualified ids and runtime model suffixes stay intact", () => {
+    expect(sanitizeModelId("openrouter/z-ai/glm-4.7")).toBe("openrouter/z-ai/glm-4.7");
+    expect(sanitizeModelId("provider/model:high")).toBe("provider/model:high");
+  });
   test("vazio/nulo → string vazia", () => {
     expect(sanitizeModelId("")).toBe("");
     expect(sanitizeModelId(null)).toBe("");
     expect(sanitizeModelId(undefined)).toBe("");
+  });
+});
+
+describe("explicit runtime model selections", () => {
+  test("native provider hints do not bypass known family mismatches", () => {
+    expect(selectRuntimeModel("codex", "fable-5", "explicit", "openai").fallback).toBe(true);
+  });
+  test("qualified models still receive family validation", () => {
+    expect(selectRuntimeModel("codex", "anthropic/claude-sonnet-4-6").fallback).toBe(true);
+  });
+  test("OpenCode does not replace its local default with an unqualified model", () => {
+    expect(selectRuntimeModel("opencode", "fable-5", "setting")).toMatchObject({
+      effectiveModel: null, fallback: true, reason: "incompatible_model_format",
+    });
+  });
+  test("configured multi-provider runtimes accept non-native families", () => {
+    expect(selectRuntimeModel("kimi-cli", "gpt-5.5").effectiveModel).toBe("gpt-5.5");
+  });
+  test("keeps compatible full ids and multi-provider model families unchanged", () => {
+    expect(selectRuntimeModel("claude-code", "claude-opus-4-7").effectiveModel).toBe("claude-opus-4-7");
+    expect(selectRuntimeModel("pi", "claude-opus-4-7").effectiveModel).toBe("claude-opus-4-7");
+    expect(selectRuntimeModel("pi", "glm-4.7").effectiveModel).toBe("glm-4.7");
   });
 });
 
@@ -47,8 +73,38 @@ describe("resolveSystemModel", () => {
     delete process.env.NIRVANA_MODEL;
     delete process.env.ANTHROPIC_MODEL;
     delete process.env.CLAUDE_CONFIG_DIR;
+    process.env.CODEX_HOME = mkdtempSync(join(tmpdir(), "codex-model-"));
   });
   afterEach(() => { process.env = { ...saved }; });
+
+  test("a configured custom Codex provider keeps its model without a provider hint", () => {
+    writeFileSync(join(process.env.CODEX_HOME!, "config.toml"), 'model_provider = "custom"\n[model_providers.custom]\nbase_url = "https://example.invalid/v1"\n');
+    process.env.NIRVANA_MODEL = "glm-4.7";
+    expect(resolveSystemModel("codex")).toBe("glm-4.7");
+  });
+
+  test("Codex provider config works without the newer TOML API and refreshes changes", () => {
+    const savedToml = Bun.TOML;
+    const configPath = join(process.env.CODEX_HOME!, "config.toml");
+    process.env.NIRVANA_MODEL = "glm-4.7";
+    try {
+      Object.assign(Bun, { TOML: undefined });
+      writeFileSync(configPath, 'model_provider = "custom"\n');
+      expect(resolveSystemModel("codex")).toBe("glm-4.7");
+      writeFileSync(configPath, 'model_provider = "openai"\n');
+      expect(resolveSystemModel("codex")).toBeNull();
+    } finally { Object.assign(Bun, { TOML: savedToml }); }
+  });
+
+  test("Claude custom endpoints preserve an explicit non-native model", () => {
+    process.env.ANTHROPIC_BASE_URL = "https://router.huggingface.co";
+    expect(selectRuntimeModel("claude-code", "zai-org/GLM-5.1").effectiveModel).toBe("zai-org/GLM-5.1");
+    delete process.env.ANTHROPIC_BASE_URL;
+    const cfg = mkdtempSync(join(tmpdir(), "claude-provider-"));
+    process.env.CLAUDE_CONFIG_DIR = cfg;
+    writeFileSync(join(cfg, "settings.json"), JSON.stringify({ env: { ANTHROPIC_BASE_URL: "https://router.huggingface.co" } }));
+    expect(selectRuntimeModel("claude-code", "zai-org/GLM-5.1").effectiveModel).toBe("zai-org/GLM-5.1");
+  });
 
   test("NIRVANA_MODEL tem prioridade máxima (aliasado)", () => {
     process.env.NIRVANA_MODEL = "claude-opus-4-8";
@@ -79,9 +135,28 @@ describe("resolveSystemModel", () => {
     expect(resolveSystemModel("codex")).toBeNull();
     expect(resolveSystemModel("gemini-cli")).toBeNull();
   });
-  test("mas NIRVANA_MODEL vale para qualquer runtime", () => {
-    process.env.NIRVANA_MODEL = "opus";
-    expect(resolveSystemModel("codex")).toBe("opus");
+  test("a model configured for Claude falls back to the active Codex default", () => {
+    process.env.NIRVANA_MODEL = "fable-5";
+    expect(resolveSystemModel("codex")).toBeNull();
+  });
+  test("compatible configured models stay attached to their active runtime", () => {
+    const cases = [
+      ["codex", "gpt-5.5"],
+      ["gemini-cli", "gemini-3-pro"],
+      ["grok-cli", "grok-4"],
+      ["kimi-cli", "kimi-k2.5"],
+      ["qwen-code", "qwen3-coder"],
+    ] as const;
+    for (const [runtime, model] of cases) {
+      process.env.NIRVANA_MODEL = model;
+      expect(resolveSystemModel(runtime)).toBe(model);
+    }
+  });
+  test("known cross-provider models fall back without blocking unknown future families", () => {
+    process.env.NIRVANA_MODEL = "glm-4.7";
+    expect(resolveSystemModel("codex")).toBeNull();
+    process.env.NIRVANA_MODEL = "future-provider-model-v1";
+    expect(resolveSystemModel("codex")).toBe("future-provider-model-v1");
   });
   test("sem env e sem settings → null (não força model, comportamento inalterado)", () => {
     const cfg = mkdtempSync(join(tmpdir(), "cc-empty-"));
