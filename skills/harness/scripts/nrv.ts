@@ -58,6 +58,7 @@ switch (cmd) {
   case "watch-fs": case "fswatch": runScript(join(H, "watch-fs.ts"), rest);
   case "index": runScript(join(H, "index.ts"), rest);
   case "config": runScript(join(H, "config.ts"), rest);
+  case "deps": runScript(join(S, "deps.ts"), rest);
   case "pack-manifest": case "gen-pack-manifest": runScript(join(S, "gen-pack-manifest.ts"), rest);
   case "init": case "init-project": runScript(join(S, "init-project.ts"), rest);
   case "install": {
