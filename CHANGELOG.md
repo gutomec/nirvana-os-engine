@@ -8,6 +8,14 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### A squad prompt's component budget is a target, never a cut
+
+`buildSquadPrompt` renders the agent and task documents a workflow references under `LIMITS.squad_prompt_components_bytes_max` (65,536 bytes by default). Past this ceiling, the code dropped every document that no longer fit — counted in a footer note — and sliced the first oversized one at a code-point boundary with a `[…truncado…]` marker. Measured against a real workflow (`instagram-intelligence-nirvana`'s `product-launch.md`, 54,948 of 65,536 bytes after a scope addition): the mechanism sits at 83% of ceiling with no way to grow the workflow further without a step silently losing its own task file mid-run. The dispatched runtime never sees that the step existed with instructions — only a count of how many were "omitted".
+
+The ceiling was never a technical constraint. It bounds one section of the prompt (the raw agent/task markdown), not the whole prompt sent to the runtime; the manifest, capability block, workflow table and brief are unbounded already. And 65,536 is a tunable default (`squad_prompt_components_bytes_max`, safety range `[8_192, 1_048_576]`), overridable via `NIRVANA_LIMIT_SQUAD_PROMPT_COMPONENTS_BYTES_MAX`, `.nirvana-limits.yaml` or `~/.claude/nirvana-limits.yaml` — introduced 2026-08-27 alongside the v6 workflow reader as a bounded default, not derived from any model context window or transport limit. Every runtime this engine dispatches to (Claude Code, Codex, Gemini CLI) carries a context window several orders of magnitude past 64 KB.
+
+`renderComponents` now ships every referenced document in full, always — no slice, no drop. The shared budget still tallies the running total across the agents and tasks sections; the first section whose cumulative bytes cross the ceiling gets a one-line note naming how far over it is, so the gap stays visible to whoever reads the prompt or revises the workflow, without ever costing a step its instructions.
+
 ### `.nirvana` inside an entity is run state, and never ships
 
 Running any `nrv` command with the cwd inside a squad materializes a `.nirvana/` there — the registries, the routing digest, the verify state — and those files carry absolute paths into the author's home. `RUN_STATE_EXCLUDES` did not name `.nirvana`, so the pack build would have copied them into every buyer's artifact. Measured 2026-09-03: three squads in the live library had picked one up during an audit campaign; the published packs were clean only because the state was created after the last build.

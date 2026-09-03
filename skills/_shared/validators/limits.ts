@@ -67,7 +67,9 @@ export const DEFAULTS: Record<string, number | null> = {
   // (the lint warns under either protocol). 2500 words is ~6x the largest body
   // the library holds today.
   workflow_body_words_max: 2500,
-  // Bytes of agent + task documents a squad prompt carries before truncation.
+  // Target for the bytes of agent + task documents a squad prompt carries.
+  // Every referenced document ships in full regardless — this is a soft
+  // ceiling flagged in a trailing note when crossed, never a cut (squad-exec.ts).
   squad_prompt_components_bytes_max: 65536,
 
   // mind-clone DNA frontmatter

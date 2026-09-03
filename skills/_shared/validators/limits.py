@@ -73,8 +73,10 @@ DEFAULTS: dict[str, Any] = {
     # rejeição (o lint avisa sob qualquer protocolo). 2500 palavras é ~6x o
     # maior corpo que a biblioteca tem hoje.
     "workflow_body_words_max": 2500,
-    # Bytes de documentos de agente + task que o prompt de squad carrega antes
-    # de truncar.
+    # Alvo de bytes de documentos de agente + task que o prompt de squad
+    # carrega. Todo documento referenciado viaja por inteiro de qualquer jeito
+    # — é um teto flexível sinalizado numa nota ao ser cruzado, nunca um corte
+    # (squad-exec.ts).
     "squad_prompt_components_bytes_max": 65536,
 
     # ── mind-clone DNA frontmatter ──

@@ -8,6 +8,14 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### O orçamento de componentes do prompt de squad é um alvo, nunca um corte
+
+O `buildSquadPrompt` renderiza os documentos de agente e task que um workflow referencia sob `LIMITS.squad_prompt_components_bytes_max` (65.536 bytes por padrão). Acima desse teto, o código descartava todo documento que não coubesse mais — contado numa nota de rodapé — e fatiava o primeiro que estourasse em fronteira de code point, com marcador `[…truncado…]`. Medido num workflow real (`product-launch.md` do `instagram-intelligence-nirvana`, 54.948 de 65.536 bytes depois de uma adição de escopo): o mecanismo já estava em 83% do teto, sem espaço para o workflow crescer mais sem que um passo perdesse silenciosamente o próprio arquivo de task no meio da execução. O runtime despachado nunca sabia que o passo existia com instruções — só via a contagem de quantos foram "omitidos".
+
+O teto nunca foi uma restrição técnica. Ele limita uma única seção do prompt (o markdown bruto de agente/task), não o prompt inteiro que chega ao runtime — o manifesto, o bloco de capability, a tabela de workflow e o brief já não têm teto. E 65.536 é um padrão configurável (`squad_prompt_components_bytes_max`, faixa de segurança `[8_192, 1_048_576]`), sobrescrevível via `NIRVANA_LIMIT_SQUAD_PROMPT_COMPONENTS_BYTES_MAX`, `.nirvana-limits.yaml` ou `~/.claude/nirvana-limits.yaml` — introduzido em 27/08/2026 junto com o leitor de workflow v6 como um padrão limitado, não derivado de nenhuma janela de contexto de modelo ou limite de transporte. Todo runtime que este engine despacha (Claude Code, Codex, Gemini CLI) carrega uma janela de contexto várias ordens de grandeza acima de 64 KB.
+
+O `renderComponents` agora entrega todo documento referenciado por inteiro, sempre — sem fatiar, sem descartar. O orçamento compartilhado continua somando o total corrido entre as seções de agentes e tasks; a primeira seção cujo total cruza o teto ganha uma nota de uma linha dizendo quanto passou do limite, para que a folga fique visível a quem ler o prompt ou revisar o workflow, sem que isso jamais custe a um passo as suas próprias instruções.
+
 ### `.nirvana` dentro de uma entidade é estado de execução, e nunca viaja
 
 Rodar qualquer comando `nrv` com o cwd dentro de um squad materializa um `.nirvana/` ali — os registries, o digest de roteamento, o estado do verify — e esses arquivos carregam caminhos absolutos para a home do autor. O `RUN_STATE_EXCLUDES` não nomeava `.nirvana`, então o build de pack os teria copiado para o artefato de todo comprador. Medido em 03/09/2026: três squads da biblioteca viva tinham pegado um durante uma campanha de auditoria; os packs publicados só estavam limpos porque o estado nasceu depois do último build.
