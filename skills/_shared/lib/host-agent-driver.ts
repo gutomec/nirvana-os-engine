@@ -239,7 +239,7 @@ export function firstExecutablePath(stdout: string): string | null {
   return null;
 }
 
-function whichSync(cli: string): string | null {
+export function whichSync(cli: string): string | null {
   const probe = whichProbe(cli);
   const r = spawnSync(probe.command, probe.args, { encoding: "utf8", env: process.env });
   // bash builtin `command` is shell-only; fallback to PATH scan

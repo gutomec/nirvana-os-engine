@@ -5,13 +5,13 @@ REM Cross-platform: this file is for Windows native (cmd.exe / PowerShell).
 where /q bun
 if %ERRORLEVEL% EQU 0 (
   bun "%~dp0list-businesses.ts" %*
-  exit /b %ERRORLEVEL%
+  exit /b
 )
 
 where /q node
 if %ERRORLEVEL% EQU 0 (
   node --experimental-strip-types --no-warnings "%~dp0list-businesses.ts" %*
-  exit /b %ERRORLEVEL%
+  exit /b
 )
 
 echo [list-businesses] FAIL: neither 'bun' nor 'node' found on PATH. >&2

@@ -8,6 +8,28 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### A requested mind-clone that does not fit is named, not dropped
+
+`MAX_INJECT` caps how many personas one run carries. A brief naming four experts got three, chosen in `Set` insertion order — arbitrary with respect to which one the brief leaned on — and the fourth returned `false` from `push()` in silence. The deliverable then spoke as if it carried every voice requested, the audit showed fewer `mind_clone_injected` events than the brief named, and nothing connected the two.
+
+The loud-degradation machinery for a MISSING clone was already right there, and its own comment said it covered absence only. Being crowded out is the worse case: the DNA is installed, and the user asked for it by name. The prompt now names who was left out, says which slots were spent instead, forbids claiming those voices, and emits `mind_clone_missing_degraded` per clone — so the owner can re-run with a narrower cast or raise the ceiling instead of reading a deliverable that quietly spoke in fewer voices than it was asked for.
+
+### Windows told the truth, Linux stopped being case-blind, and two gates read what they judge
+
+Six defects the platform sweep found, none of them new, all of them silent.
+
+**`nrv doctor` reported a correct install as broken on Windows.** It probed binaries with `which`, which is not a Windows program — `where.exe` is, and Git for Windows keeps its `which` in a directory that is not on the Windows PATH. So `bun` came back "not found in PATH" while the doctor was running under Bun, `git` failed beside it, all nine runtimes warned, and `runtimesOnPath === 0` produced the critical "nothing can dispatch" verdict. The engine already had the right resolver — `whichSync`, `where` on win32 and `command -v` elsewhere, with a PATH scan that knows about `.cmd` shims — used by five other callers. The doctor was the one place with a private copy.
+
+**Every `.cmd` wrapper always exited 0.** cmd.exe percent-expands a parenthesized block at parse time, so `%ERRORLEVEL%` written inside `if ... ( ... )` carried what the `where /q` probe left, not what the command in the block returned: `exit /b %ERRORLEVEL%` parse-expanded to `exit /b 0`. A failed dispatch, a failed activation and the `confirmation_required` consent gate — the sudo prompt, exit 2 — all reported success. Seventeen wrappers, now `exit /b`, which leaves the errorlevel untouched. A source-level gate covers it, because the Windows CI job runs under Git Bash and never invokes a `.cmd`.
+
+**The audit hook captured the whole C: drive, or nothing at all.** `NIRVANA_AUDIT_PREFIXES` split on a literal `":"` — the mistake `install.ts` already records having fixed once, where "splitting on ':' shredded Windows entries at the drive-letter colon". Here it was worse than data loss: a Windows path became `["c", "/users/…"]`, and the bare `"c"` then matched every path on the drive, so the hook would have logged every Write, Edit and Bash anywhere on the machine — a privacy leak, not noise. Its own test passed *because* of the bug. Meanwhile the built-in scope heuristics tested for `/`-shaped paths against a payload that arrives with backslashes, so with no env var set the hook emitted no event at all on Windows and `nrv watch` was simply empty. Split on `path.delimiter`, compare on POSIX-normalized copies.
+
+**A squad slug was lowercased before being joined to a path.** A slug is a directory name and Linux is case-sensitive, so `~/squads/Doc-Factory` died there with "squad dir not found". macOS and Windows failed worse: the case-insensitive filesystem found the directory, but `registry.squads["doc-factory"]` is an object-key lookup and is case-sensitive everywhere, so the capability contract came back empty and the Gauntlet fell back to generic requirements without saying so. The slug keeps its case now; the capability id, which the schema forces lowercase and which is not a path, still folds.
+
+**The judge certified what it had not read.** It sliced the artifact at 30,000 characters with a `[…truncated…]` marker while `quality-gate.ts` handed it a file's full content, so a 300 KB report was graded on its first ten percent and `gate_passed` was emitted for the whole file. A 120-page opinion could pass on its introduction. The artifact now travels whole; past 30,000 characters the prompt says so and asks the judge to weigh the whole, and `judge_invoked` carries `artifact_large` so a verdict on a very long artifact can be told apart afterwards.
+
+**The handoff hid finished work from the runtime told not to redo it.** The file list stopped at 60 entries in silence, under hard rules that say "não duplique arquivos já entregues". A rotation mid-book after 140 chapters handed the next runtime 60 of them and an instruction to avoid duplicating what it could not see. The cap stays — the index is recoverable — but it now names the count it withheld and says to list the directory first, so "not listed" can never read as "not written". `safeRead`, in the same file, had always announced its own truncation.
+
 ### Memory left the entity, and the scope became a judgement
 
 A business kept its curated memory in `memory/permanent.md`, inside its own directory. That directory is the product: a pack update, `nrv migrate` or a reinstall replaces it whole, so the knowledge an owner accumulated was written on a surface built to be overwritten. The seeder the gate pointed at said so in the file it created — "A pack update replaces this file" — and the gate still awarded six points for having one. Measured on a real library: 60 businesses carried one, 56 with real content, the largest 29 KB.

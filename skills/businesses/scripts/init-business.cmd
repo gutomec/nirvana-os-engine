@@ -4,13 +4,13 @@ REM init-business.cmd — Windows wrapper. Runs the .ts via Bun (or Node 22+ as 
 where /q bun
 if %ERRORLEVEL% EQU 0 (
   bun "%~dp0init-business.ts" %*
-  exit /b %ERRORLEVEL%
+  exit /b
 )
 
 where /q node
 if %ERRORLEVEL% EQU 0 (
   node --experimental-strip-types --no-warnings "%~dp0init-business.ts" %*
-  exit /b %ERRORLEVEL%
+  exit /b
 )
 
 echo [init-business] FAIL: neither 'bun' nor 'node' found on PATH. >&2
