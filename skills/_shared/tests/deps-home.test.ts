@@ -13,7 +13,7 @@
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync, lstatSync, symlinkSync, readFileSync } from "node:fs";
-import { join, resolve, dirname } from "node:path";
+import { join, resolve, dirname, delimiter } from "node:path";
 import { tmpdir } from "node:os";
 
 const REPO = resolve(import.meta.dir, "..", "..", "..");
@@ -69,7 +69,9 @@ describe("there is exactly one dependency home", () => {
   test("an existing NODE_PATH is prepended to, never replaced", async () => {
     const D = await load();
     const env = D.depsEnv({ NODE_PATH: "/somewhere/else" });
-    expect(env.NODE_PATH.split(":")[0]).toBe(join(home, ".nirvana", "node_modules"));
+    // `delimiter`, not ":" — it is ";" on Windows, which is what the
+    // implementation uses and what this test hardcoded until CI said otherwise.
+    expect(env.NODE_PATH.split(delimiter)[0]).toBe(join(home, ".nirvana", "node_modules"));
     expect(env.NODE_PATH).toContain("/somewhere/else");
   });
 });
