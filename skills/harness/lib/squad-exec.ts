@@ -358,7 +358,18 @@ const MAP_EXCLUDED_DIRS = new Set([
  * The map is a map, not an instruction. What a step MUST obey stays inlined:
  * a path is a request, and inlined text is a fact. `runSquadHeadless` grants the
  * squad directory alongside it, so the door the map names actually opens.
+ *
+ * MAP_ENTRIES_PER_DIR is a real cap, and it is NOT the mistake this file just
+ * finished undoing. That one dropped the agent and task documents a step depends
+ * on: content the run cannot proceed without and cannot get any other way. This
+ * caps a directory INDEX — the names are recoverable with one `ls` against a
+ * directory the dispatch has already granted, and the overflow line says exactly
+ * that. Without a cap the map inherits the failure it replaced from the other
+ * side: a squad with a `data/` of fifty thousand files would push megabytes of
+ * filenames into every prompt it ever runs. A budget belongs where the content
+ * is reproducible; it does not belong where the content is the instruction.
  */
+const MAP_ENTRIES_PER_DIR = 50;
 function renderResourceMap(squadDir: string): string {
   let entries: fs.Dirent[];
   try { entries = fs.readdirSync(squadDir, { withFileTypes: true }); } catch { return ""; }
@@ -372,11 +383,14 @@ function renderResourceMap(squadDir: string): string {
       .filter(e => !e.name.startsWith("."))
       .map(e => e.isDirectory() ? `${e.name}/` : e.name)
       .sort();
-    if (names.length) lines.push(`- \`${dir.name}/\` — ${names.map(n => `\`${n}\``).join(", ")}`);
+    if (!names.length) continue;
+    const shown = names.slice(0, MAP_ENTRIES_PER_DIR).map(n => `\`${n}\``).join(", ");
+    const rest = names.length - MAP_ENTRIES_PER_DIR;
+    lines.push(`- \`${dir.name}/\` — ${shown}${rest > 0 ? ` … e mais ${rest}: rode \`ls\` nesse diretório para a lista inteira` : ""}`);
   }
   if (!lines.length) return "";
   return `## O QUE MAIS ESTE SQUAD CARREGA
-Tudo abaixo existe em \`${squadDir}\` e **não** está neste prompt. Você tem acesso de leitura a esse diretório: abra o que precisar, quando precisar, em cascata. Um nome terminado em \`/\` é subdiretório — desça nele.
+Tudo abaixo existe em \`${squadDir}\` e **não** está neste prompt. Abra o que precisar, quando precisar, em cascata — nada aqui é obrigatório, e nada aqui foi resumido: o arquivo em disco é o conteúdo. Um nome terminado em \`/\` é subdiretório, desça nele.
 
 ${lines.join("\n")}`;
 }

@@ -484,6 +484,30 @@ describe("buildSquadPrompt — the resource map", () => {
     expect(p).not.toContain("O QUE MAIS ESTE SQUAD CARREGA");
   });
 
+  // The cap the map DOES have, and why it is not the mistake this file just
+  // undid: a directory index is recoverable with one `ls`, so capping it costs
+  // nothing, while an uncapped one would push a `data/` of fifty thousand files
+  // into every prompt the squad ever runs.
+  test("a huge directory is capped, and the overflow says how to see the rest", () => {
+    const squadDir = scaffoldSquad(path.join(tmp, "squads"), "bulky");
+    fs.mkdirSync(path.join(squadDir, "data"), { recursive: true });
+    for (let i = 0; i < 400; i++) {
+      fs.writeFileSync(path.join(squadDir, "data", `row-${String(i).padStart(4, "0")}.csv`), "x");
+    }
+    const p = buildSquadPrompt({
+      squadSlug: "bulky", squadDir, brief: "b", outDir: "/o", mode: "squad-only",
+      cloneInjection: { block: "", decision: "PADRÃO" },
+    });
+    const map = p.slice(p.indexOf("## O QUE MAIS ESTE SQUAD CARREGA"));
+    expect(map).toContain("`row-0000.csv`");
+    expect(map).toContain("e mais 350");
+    expect(map).toContain("`ls`");
+    // Bounded: the index cannot grow without limit with the directory.
+    expect(Buffer.byteLength(map, "utf8")).toBeLessThan(4_096);
+    // And it never claims the listing is the content.
+    expect(map).toContain("o arquivo em disco é o conteúdo");
+  });
+
   // An empty directory is a directory with nothing to open.
   test("an empty authored directory is not advertised", () => {
     const squadDir = scaffoldSquad(path.join(tmp, "squads"), "hollow");
