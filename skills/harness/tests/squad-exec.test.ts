@@ -364,9 +364,8 @@ describe("buildSquadPrompt — with a resolved capability", () => {
   // The regression this test exists for: the note used to be emitted from
   // inside the per-section renderer, which sees half the total. When the agents
   // section crossed the ceiling on its own, it reported ITS overage and silenced
-  // the tasks section that would have counted the rest. Measured on the
-  // installed library, 8 of the 34 over-ceiling capabilities got a wrong number
-  // that way — worst case 50,712 reported against a real 162,692.
+  // the tasks section that would have counted the rest — understating by more
+  // than 3x wherever the agents half was the large one.
   test("the overage counts BOTH sections, even when agents alone already crossed", () => {
     const max = Number(LIMITS.squad_prompt_components_bytes_max);
     const squadDir = scaffoldCapabilitySquad(path.join(tmp, "squads"));
@@ -399,9 +398,10 @@ describe("buildSquadPrompt — with a resolved capability", () => {
 });
 
 // Everything a squad ships beyond agents/ and tasks/ used to be invisible to the
-// agent running it. Measured on the installed library: schemas/ on 152 squads,
-// config/ on 139, references/ on 62, checklists/ on 57, templates/ on 51 — none
-// of it named in the prompt, and the directory itself never granted.
+// agent running it: references/, checklists/, templates/, standards/, schemas/,
+// config/, scripts/, data/, tools/ and lib/ are all common in real squads, and
+// none of it was named in the prompt or reachable — the directory itself was
+// never granted.
 describe("buildSquadPrompt — the resource map", () => {
   /** Add authored directories to a scaffolded squad. */
   function withResources(squadDir: string): string {

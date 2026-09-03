@@ -219,13 +219,12 @@ function renderComponents(squadDir: string, sub: "agents" | "tasks", stems: stri
 /** The ceiling note, measured on BOTH rendered sections.
  *
  *  It has to live here, not inside `renderComponents`: that function sees one
- *  section, so a note emitted from it reports a partial total. Measured on the
- *  installed library — 34 of 664 capabilities carry components over the ceiling
- *  — a running tally shared between the two calls got the number wrong on 8 of
- *  them, worst case reporting 50,712 bytes over when the real overage was
- *  162,692, because the agents call crossed the line first and silenced the
- *  tasks call that would have counted the rest. Nothing is ever omitted either
- *  way; a diagnostic that understates by 3x is still a diagnostic that lies. */
+ *  section, so a note emitted from it reports a partial total. A running tally
+ *  shared between the two calls got the number wrong on every squad whose agents
+ *  crossed the ceiling on their own — that call reported its own overage and
+ *  silenced the tasks call that would have counted the rest, understating by
+ *  more than 3x where the agents half was large. Nothing is ever omitted either
+ *  way; a diagnostic that understates is still a diagnostic that lies. */
 function ceilingNote(agentDocs: string, taskSection: string): string {
   const max = componentsBytesMax();
   const total = Buffer.byteLength(agentDocs, "utf8") + Buffer.byteLength(taskSection, "utf8");
@@ -329,12 +328,12 @@ Emita marcos do seu trabalho com \`nrv audit emit <nome> --squad=${squadSlug} --
  *  path that should never travel starts travelling again.
  *
  *  This is a DENYLIST on purpose. The first cut of this map was an allowlist of
- *  five directories chosen by hand, and measuring the library showed what that
- *  costs: it would have hidden `config/` from 139 squads, `schemas/` from 152,
- *  `scripts/` from 43, `data/` from 36, `tools/` from 32, `lib/` from 26 — and
- *  `reference/`, the singular spelling five squads use, from all five. A curated
- *  list of what an agent may see is a list of what one person happened to think
- *  of. Everything the squad ships, the agent is told about. */
+ *  five directory names chosen by hand, and surveying real squads showed what
+ *  that costs: it would have hidden `config/`, `schemas/`, `scripts/`, `data/`,
+ *  `tools/` and `lib/` outright, and `reference/` — the singular spelling some
+ *  squads use — from every squad that spells it that way. A curated list of what
+ *  an agent may see is a list of what one person happened to think of.
+ *  Everything the squad ships, the agent is told about. */
 const MAP_EXCLUDED_DIRS = new Set([
   "agents", "tasks", "workflows",
   "node_modules", "dist", "build", "__pycache__", ".venv", "venv",
@@ -344,11 +343,11 @@ const MAP_EXCLUDED_DIRS = new Set([
  * Everything else the squad carries, as a map rather than as content.
  *
  * The prompt inlines exactly the agents and tasks the workflow names, so the
- * rest of the squad has been invisible to the agent executing it. Measured on
- * the installed library, by directory and by how many squads ship one:
- * `schemas/` 152, `config/` 139, `references/` 62, `checklists/` 57,
- * `templates/` 51, `scripts/` 43, `data/` 36, `tools/` 32, `lib/` 26 — content
- * the author wrote and the run never saw.
+ * rest of the squad has been invisible to the agent executing it. Most squads
+ * ship well beyond those three directories — `references/`, `checklists/`,
+ * `templates/`, `standards/`, `schemas/`, `config/`, `scripts/`, `data/`,
+ * `tools/`, `lib/` are all common — and every one of those files is content the
+ * author wrote and the run never saw.
  *
  * This is the skill pattern applied to squads: the names travel in the prompt,
  * the bytes stay on disk, and the agent loads in cascade only what its execution
@@ -577,8 +576,9 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
     // sign: `references/`, `checklists/`, `templates/`, `schemas/`, `config/` and
     // the rest live under it, and on claude-code and agy an ungranted path is
     // simply refused. Read access to the squad the run IS — the same tree the
-    // prompt already quotes from — is not a widening of scope; withholding it was
-    // what made 324 authored files in `references/` alone unreachable.
+    // prompt already quotes from — is not a widening of scope; withholding it is
+    // what made everything the author wrote outside agents/ and tasks/
+    // unreachable to the run.
     runtime: args.runtime, prompt, cwd: args.projectRoot, addDirs: [args.projectDir, outDir, squadDir],
     appendSystemPrompt: args.autonomousDirective + (args.rulesDirective ?? ""),
     maxBudgetUsd: args.maxBudgetUsd, timeoutMs: args.timeoutMs,
