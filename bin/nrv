@@ -13,6 +13,7 @@
 #   nrv validate <kind> <slug|path>       → admission gate (squad|business|mind-clone); bare = deprecated doctor alias
 #   nrv migrate <slug> --to 6 [--apply]   → convert a squad to Squad Protocol 6.0 (dry-run by default)
 #   nrv index                             → re-index squads + businesses
+#   nrv deps [scan|adopt|link|install|env] → the one home every dependency installs into (~/.nirvana)
 #   nrv config list|get|set|unset|explain → operational settings (value + origin per key)
 #   nrv init <target_dir> [--copy]        → bootstrap a new Nirvana project
 #   nrv validate-mind-clones              → audit the mind-clone library (alias of validate mind-clone --all)
@@ -219,6 +220,9 @@ case "$cmd" in
         echo "available rubrics: voice-fidelity"
         exit 2 ;;
     esac ;;
+  deps)
+    # nrv deps [status|scan|adopt|link|install|env] — the single dependency home
+    exec "$BUN_BIN" "$SKILLS/_shared/scripts/deps.ts" "$@" ;;
   doctor|capability-doctor)
     # nrv doctor [--system|--capability]
     case "${1:-system}" in

@@ -28,6 +28,24 @@ const PLATFORM = process.platform; // 'darwin' | 'linux' | 'win32'
 const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
   || (fs.existsSync(path.join(os.homedir(), '.nirvana', 'skills')) ? path.join(os.homedir(), '.nirvana', 'skills') : path.join(os.homedir(), '.claude', 'skills'));
 const PATHS = require(path.join(SKILLS_ROOT, '_shared', 'lib', 'paths.js'));
+// Every dependency this file installs goes to ONE place: ~/.nirvana. deps-home
+// owns that policy — the store, the per-tool caches, and the environment that
+// makes a package manager honour them. See its header for the measurements
+// that forced the change.
+//
+// Resolved the same way PATHS is, plus a repo-relative fallback: this file runs
+// both from the deployed tree (~/.nirvana/skills) and straight out of the
+// checkout during tests, and only one of those two paths exists at a time.
+const DEPS = (() => {
+  const candidates = [
+    path.join(SKILLS_ROOT, '_shared', 'lib', 'deps-home.ts'),
+    path.resolve(__dirname, '..', '..', '_shared', 'lib', 'deps-home.ts'),
+  ];
+  for (const c of candidates) {
+    try { if (fs.existsSync(c)) return require(c); } catch { /* next */ }
+  }
+  throw new Error(`deps-home not found (looked in: ${candidates.join(', ')})`);
+})();
 const SQUADS_DIR = process.env.SQUADS_DIR || PATHS.SQUADS_DIR;
 const STATE_DIR = process.env.NIRVANA_STATE_DIR || PATHS.SQUADS_STATE_DIR;
 // When the caller (activate-squad.ts) resolved a project-scoped squad,
@@ -66,7 +84,11 @@ function runCmd(cmd, opts = {}) {
       stdio,
       timeout: opts.timeoutMs || 600000,
       cwd: opts.cwd || undefined,
-      env: { ...process.env, ...(opts.env || {}) },
+      // depsEnv FIRST, then the caller's overrides: a shell line from
+      // `system[].install` or `post_install` inherits the pinned caches, so a
+      // `npx puppeteer browsers install chrome` buried in a squad's hook lands
+      // in ~/.nirvana/cache/puppeteer like everything else.
+      env: { ...DEPS.depsEnv(process.env), ...(opts.env || {}) },
     });
     return { ok: true, output: out ? out.toString() : '' };
   } catch (e) {
@@ -135,7 +157,7 @@ function runArgv(argv, opts = {}) {
     stdio: verbose ? 'inherit' : 'pipe',
     timeout: opts.timeoutMs || 600000,
     cwd: opts.cwd || undefined,
-    env: { ...process.env, ...(opts.env || {}) },
+    env: { ...DEPS.depsEnv(process.env), ...(opts.env || {}) },
     windowsHide: true,
   };
   let r;
@@ -176,6 +198,19 @@ function expandPath(p) {
   if (!p) return p;
   if (p.startsWith('~')) return path.join(HOME, p.slice(1));
   return p;
+}
+
+// Is this destination inside the one directory the engine is allowed to fill?
+// Model weights and cloned services are dependencies too — they just arrive as
+// files instead of packages — so an absolute path outside ~/.nirvana is
+// reported rather than silently obeyed. It is not blocked: a squad that
+// installs a real application (ComfyUI) at a path its own scripts expect has a
+// reason, and the operator can see the exception in the activation record.
+function outsideNirvana(dir) {
+  if (!dir) return false;
+  const root = path.resolve(DEPS.nirvanaHome());
+  const target = path.resolve(dir);
+  return target !== root && !target.startsWith(root + path.sep);
 }
 
 function getStatePath(slug) {
@@ -396,19 +431,25 @@ function installPython(spec, dryRun) {
   if (tokens.length === 0) return { status: 'no_python_deps' };
   if (allChecksPass(norm)) return { status: 'already_present', kind: 'python', packages: tokens };
   const manager = norm.manager === 'uv' ? 'uv' : 'pip';
-  const target = expandPath((!Array.isArray(spec) && (spec.target_dir || (spec.use_squad_venv ? '.venv' : null))) || null);
+  // An explicit venv (`use_squad_venv`) is a deliberate isolation choice by the
+  // squad author and is honoured. Everything else goes to the shared Python
+  // home: `--user` with PYTHONUSERBASE=~/.nirvana/python (set by depsEnv), which
+  // both installs and imports from there. Left alone, `pip install --user` wrote
+  // to ~/Library/Python — 2.3 GB there on the owner's machine — and a
+  // `target_dir` synthesized from a squad's requirements.txt wrote INTO the
+  // squad, which is the same scatter as the node case.
+  const venv = expandPath((!Array.isArray(spec) && spec.use_squad_venv) ? '.venv' : null);
 
   let argv;
   if (manager === 'uv') {
-    argv = ['uv', 'pip', 'install', ...tokens];
+    argv = ['uv', 'pip', 'install', ...(venv ? [] : ['--target', DEPS.pythonHome()]), ...tokens];
   } else {
-    // pip vs pip3 fallback (macOS system python often only ships pip3); --user
-    // when there is no explicit target dir/venv so it works on managed pythons.
+    // pip vs pip3 fallback (macOS system python often only ships pip3).
     const pipBin = checkCmd('pip --version').ok ? 'pip' : (checkCmd('pip3 --version').ok ? 'pip3' : 'pip');
-    argv = [pipBin, 'install', ...(target ? [] : ['--user']), ...tokens];
+    argv = [pipBin, 'install', ...(venv ? [] : ['--user']), ...tokens];
   }
-  if (dryRun) return { status: 'would_install', kind: 'python', manager, cmd: displayCmd(argv), argv };
-  const r = runArgv(argv, { cwd: target });
+  if (dryRun) return { status: 'would_install', kind: 'python', manager, home: venv || DEPS.pythonHome(), cmd: displayCmd(argv), argv };
+  const r = runArgv(argv, { cwd: venv || undefined });
   return {
     status: r.ok ? 'installed' : 'install_failed',
     kind: 'python',
@@ -424,17 +465,51 @@ function installNode(spec, dryRun, squadDir) {
   const tokens = norm.raw.map(x => depToToken(x, 'npm')).filter(Boolean);
   if (tokens.length === 0) return { status: 'no_node_deps' };
   if (allChecksPass(norm)) return { status: 'already_present', kind: 'node', manager: norm.manager, global: norm.global, packages: tokens };
-  const manager = norm.manager || 'npm';
   const g = norm.global;
-  const argv = manager === 'pnpm' ? ['pnpm', 'add', ...(g ? ['-g'] : []), ...tokens]
-             : manager === 'yarn' ? ['yarn', ...(g ? ['global', 'add'] : ['add']), ...tokens]
-             : ['npm', 'install', ...(g ? ['-g'] : []), ...tokens];
-  if (dryRun) return { status: 'would_install', kind: 'node', manager, global: g, cmd: displayCmd(argv), argv };
-  // Local installs default to the squad's OWN dir, so npm never pollutes the
-  // ~/squads root with a stray node_modules/package-lock. An explicit spec.cwd
-  // (object form) still wins; global installs (-g) ignore cwd.
-  const r = runArgv(argv, { windowsShim: true, cwd: g ? undefined : (expandPath(!Array.isArray(spec) ? spec.cwd : null) || squadDir) });
-  return { status: r.ok ? 'installed' : 'install_failed', kind: 'node', manager, global: g, packages: tokens, error: r.ok ? null : r.error };
+
+  // GLOBAL installs are the carve-out and stay as they are: `npm i -g wrangler`
+  // asks for a command on the machine's PATH, which is the same class as
+  // `brew install ffmpeg`. Redirecting those would put binaries somewhere
+  // nothing looks, and setting npm_config_prefix to fix that breaks nvm.
+  if (g) {
+    const manager = norm.manager || 'npm';
+    const argv = manager === 'pnpm' ? ['pnpm', 'add', '-g', ...tokens]
+               : manager === 'yarn' ? ['yarn', 'global', 'add', ...tokens]
+               : ['npm', 'install', '-g', ...tokens];
+    if (dryRun) return { status: 'would_install', kind: 'node', manager, global: true, cmd: displayCmd(argv), argv };
+    const r = runArgv(argv, { windowsShim: true });
+    return { status: r.ok ? 'installed' : 'install_failed', kind: 'node', manager, global: true, packages: tokens, error: r.ok ? null : r.error };
+  }
+
+  // LOCAL installs go to the shared store at ~/.nirvana/node_modules, never to
+  // the squad. This used to run the package manager inside the squad dir on the
+  // reasoning that it kept the ~/squads ROOT clean — which it did, by writing
+  // one full tree per squad instead. brandcraft alone cost 276 MB there, and
+  // its byte-identical twin in the pack source cost another 276 MB.
+  //
+  // `spec.cwd` is now advisory: a squad that declares
+  // `cwd: "${SQUADS_DIR}/<slug>"` (the shape the old template taught) gets the
+  // store anyway, and the ignored value is reported so the author can drop it.
+  const declaredCwd = expandPath(!Array.isArray(spec) ? spec.cwd : null);
+  if (dryRun) {
+    const plan = DEPS.install(tokens, { dryRun: true });
+    return { status: 'would_install', kind: 'node', manager: 'bun', global: false, store: DEPS.depsStore(), cmd: plan.cmd, argv: plan.argv, packages: tokens, ignored_cwd: declaredCwd || null };
+  }
+  const res = DEPS.install(tokens);
+  // The squad still has to RESOLVE what was installed. One symlink does that
+  // for every runtime and loader, and keeps a single physical copy on disk.
+  const linked = squadDir ? DEPS.link(squadDir) : { status: 'skipped' };
+  return {
+    status: res.status === 'failed' ? 'install_failed' : (res.status === 'already_present' ? 'already_present' : 'installed'),
+    kind: 'node',
+    manager: 'bun',
+    global: false,
+    store: DEPS.depsStore(),
+    packages: tokens,
+    linked: linked.status,
+    ignored_cwd: declaredCwd || null,
+    error: res.error || null,
+  };
 }
 
 // Sub-app installer: some squads ship self-contained sub-projects with their
@@ -451,21 +526,47 @@ function installSubApps(squadDir, dryRun) {
   for (const e of entries) {
     if (!e.isDirectory() || e.name.startsWith('.') || SUBAPP_SKIP.has(e.name)) continue;
     const sub = path.join(squadDir, e.name);
-    if (!fs.existsSync(path.join(sub, 'package.json'))) continue;
-    if (fs.existsSync(path.join(sub, 'node_modules'))) { out.push({ dir: e.name, status: 'already_present', kind: 'subapp' }); continue; }
-    const mgr = (fs.existsSync(path.join(sub, 'bun.lock')) || fs.existsSync(path.join(sub, 'bun.lockb'))) ? 'bun'
-              : fs.existsSync(path.join(sub, 'pnpm-lock.yaml')) ? 'pnpm'
-              : fs.existsSync(path.join(sub, 'yarn.lock')) ? 'yarn' : 'npm';
-    const cmd = `${mgr} install`;
-    if (dryRun) { out.push({ dir: e.name, status: 'would_install', kind: 'subapp', cmd }); continue; }
-    const r = runCmd(cmd, { cwd: sub });
-    out.push({ dir: e.name, status: r.ok ? 'installed' : 'install_failed', kind: 'subapp', manager: mgr, error: r.ok ? null : r.error });
+    const pkgPath = path.join(sub, 'package.json');
+    if (!fs.existsSync(pkgPath)) continue;
+
+    // A pre-existing REAL node_modules is somebody's installed tree; leave it
+    // and let `nrv deps adopt` fold it into the store. A symlink means this
+    // sub-app is already pointed at the store.
+    let existing = null;
+    try { existing = fs.lstatSync(path.join(sub, 'node_modules')); } catch { /* absent */ }
+    if (existing && !existing.isSymbolicLink()) { out.push({ dir: e.name, status: 'stray_tree', kind: 'subapp', hint: 'nrv deps adopt' }); continue; }
+
+    let tokens = [];
+    try {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+      const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+      tokens = Object.entries(deps).map(([n, v]) => `${n}@${v}`);
+    } catch { out.push({ dir: e.name, status: 'unreadable_manifest', kind: 'subapp' }); continue; }
+    if (tokens.length === 0) { out.push({ dir: e.name, status: 'no_deps', kind: 'subapp' }); continue; }
+
+    // Same rule as the squad root: install ONCE into the shared store, then
+    // link. Previously this ran a package manager inside every sub-app dir, so
+    // one squad could produce three separate node_modules trees
+    // (instagram-intelligence-nirvana: dashboard/ + scripts/).
+    if (dryRun) {
+      const plan = DEPS.install(tokens, { dryRun: true });
+      out.push({ dir: e.name, status: 'would_install', kind: 'subapp', cmd: plan.cmd, packages: tokens });
+      continue;
+    }
+    const res = DEPS.install(tokens);
+    const linked = DEPS.link(sub);
+    out.push({
+      dir: e.name,
+      status: res.status === 'failed' ? 'install_failed' : (res.status === 'already_present' ? 'already_present' : 'installed'),
+      kind: 'subapp', manager: 'bun', store: DEPS.depsStore(), linked: linked.status,
+      error: res.error || null,
+    });
   }
   return out;
 }
 
 function installService(svc, dryRun) {
-  const installDir = expandPath(svc.install_dir);
+  const installDir = expandPath(svc.install_dir) || path.join(DEPS.nirvanaHome(), 'services', String(svc.name || 'unnamed'));
   const alreadyCloned = installDir && fs.existsSync(installDir);
 
   // 1. Health check first — service may already be running
@@ -528,7 +629,9 @@ function installModels(models, dryRun, opts = {}) {
   if (!Array.isArray(models) || models.length === 0) return { status: 'no_models' };
   const results = [];
   for (const m of models) {
-    const dst = expandPath(m.install_to);
+    // Unspecified destination now defaults INSIDE ~/.nirvana instead of
+    // wherever the caller happened to be.
+    const dst = expandPath(m.install_to) || path.join(DEPS.nirvanaHome(), 'models', String(m.name || 'unnamed'));
     const fileTarget = m.filename ? path.join(dst, m.filename) : dst;
     if (m.filename && fs.existsSync(fileTarget)) {
       results.push({ name: m.name, status: 'already_present', kind: 'model' });
@@ -568,7 +671,7 @@ function installModels(models, dryRun, opts = {}) {
     }
     ensureDir(dst);
     const r = runArgv(argv, { timeoutMs: 7200000 });
-    results.push({ name: m.name, status: r.ok ? 'downloaded' : 'download_failed', kind: 'model', error: r.ok ? null : r.error });
+    results.push({ name: m.name, status: r.ok ? 'downloaded' : 'download_failed', kind: 'model', install_to: dst, outside_nirvana: outsideNirvana(dst) || undefined, error: r.ok ? null : r.error });
   }
   return { status: 'done', kind: 'models', items: results };
 }
@@ -628,7 +731,11 @@ function _synthesizeFromManifests(squadDir, slug) {
       const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
       const packages = Object.entries(deps).map(([name, ver]) => `${name}@${ver}`);
       if (packages.length > 0) {
-        synth.node = { manager: pkg.packageManager?.startsWith('pnpm') ? 'pnpm' : 'npm', cwd: squadDir, packages };
+        // No `cwd`: the store is the only destination. The manager field is
+        // vestigial for local installs (deps-home always uses `bun add --cwd
+        // <store>`, the one primitive that merges instead of pruning) and is
+        // kept only so `status` output still names what the squad declared.
+        synth.node = { manager: pkg.packageManager?.startsWith('pnpm') ? 'pnpm' : 'npm', packages };
         synth._sources.push('package.json');
       }
     } catch (e) { /* malformed package.json — skip */ }
@@ -646,7 +753,8 @@ function _synthesizeFromManifests(squadDir, slug) {
           .map(s => s.replace(/^[\s"']+|[\s"']+$/g, ''))
           .filter(s => s.length > 0 && !s.startsWith('#'));
         if (packages.length > 0) {
-          synth.python = { manager: 'uv', target_dir: squadDir, packages };
+          // No target_dir: pip/uv install into the shared Python home.
+          synth.python = { manager: 'uv', packages };
           synth._sources.push('pyproject.toml');
         }
       }
@@ -662,7 +770,7 @@ function _synthesizeFromManifests(squadDir, slug) {
         .map(l => l.replace(/#.*$/, '').trim())
         .filter(l => l.length > 0);
       if (packages.length > 0) {
-        synth.python = { manager: 'pip', target_dir: squadDir, packages };
+        synth.python = { manager: 'pip', packages };
         synth._sources.push('requirements.txt');
       }
     } catch (e) { /* skip */ }

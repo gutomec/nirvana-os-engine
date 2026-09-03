@@ -185,6 +185,40 @@ for (const t of RUNTIME_TARGETS) {
   }
 }
 
+// SECTION 1a-sexies: DEPENDENCY HOME — everything the engine installs belongs
+// in ~/.nirvana, and until this check existed nothing noticed when it didn't.
+// Two failure modes, both silent: the shared store missing its own libraries
+// (bare `require('yaml')` then throws at runtime, in whichever script gets
+// there first), and dependency trees installed OUTSIDE the store, which is how
+// one squad activation cost 276 MB in ~/squads and another 276 MB in the pack
+// source. Cheap: a readdir on the store and a bounded walk of the content roots.
+try {
+  const DEPS = await import("../../_shared/lib/deps-home.ts");
+  const store = DEPS.depsStore();
+  if (!fs.existsSync(store)) {
+    add("deps: store", "FAIL", `${store} missing — run: bun scripts/install.ts`);
+  } else {
+    const core = ["yaml", "zod", "marked"].filter((m) => !fs.existsSync(path.join(store, m)));
+    if (core.length) {
+      add("deps: store", "FAIL", `${store} is missing ${core.join(", ")} — bare require() will throw at runtime; re-run: bun scripts/install.ts`);
+    } else {
+      add("deps: store", "PASS", `${store} (yaml, zod, marked resolve)`);
+    }
+  }
+
+  const strays = DEPS.findStrays(DEPS.defaultScanRoots());
+  if (strays.length === 0) {
+    add("deps: scatter", "PASS", "no dependency tree installed outside the store");
+  } else {
+    const total = strays.reduce((a, s) => a + s.bytes, 0);
+    const worst = strays.slice(0, 3).map((s) => `${s.dir.replace(HOME, "~")} (${DEPS.human(s.bytes)})`).join(", ");
+    add("deps: scatter", "WARN",
+      `${strays.length} tree(s) outside ${store.replace(HOME, "~")} · ${DEPS.human(total)} duplicated — ${worst}${strays.length > 3 ? ", …" : ""}; fold in with: nrv deps adopt --apply`);
+  }
+} catch (e) {
+  add("deps: store", "WARN", `could not be checked: ${(e as Error).message.slice(0, 80)}`);
+}
+
 // SECTION 1a-quinquies: SQUAD DEPENDENCIES — a squad that calls ffmpeg,
 // epubcheck or a Python library fails MID-RUN when the tool is absent: the
 // dispatch is spent, the gate withholds, and the error reads as a broken

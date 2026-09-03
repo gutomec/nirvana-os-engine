@@ -64,6 +64,7 @@ export const COMMANDS: Command[] = [
   { name: "validate", aliases: ["verify"], target: "_shared/scripts/verify.ts", category: "core", args: "<squad|business|mind-clone> <slug|path> [--fix] [--strict] [--json] | <kind> --all [--record] | --pack <dir>", summary: "Admission gate: verify an entity, --fix it, record debt (exit 0/1/2/64; bare = deprecated doctor alias)", visibility: "user" },
   { name: "index", target: "harness/scripts/index.ts", category: "core", summary: "Re-index squads + businesses", visibility: "user" },
   { name: "config", target: "harness/scripts/config.ts", category: "core", args: "list|get|set|unset|explain [<key> [<value>]] [--global|--project]", summary: "Operational settings: effective value + origin per key; set/unset write the project or the global config.yaml", visibility: "user" },
+  { name: "deps", target: "_shared/scripts/deps.ts", category: "core", args: "[status|scan|adopt|link|install|env] [--apply] [--json]", summary: "The one dependency home (~/.nirvana): where packages live, what escaped it, and how to fold it back in", visibility: "user" },
 
   // dispatch & execute
   { name: "dispatch", target: "harness/scripts/dispatch.ts", category: "dispatch", args: '<business> "<brief>"', summary: "Scaffold a run (brief + DNA injection + audit; no exec)", visibility: "user" },

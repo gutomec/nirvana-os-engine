@@ -83,6 +83,10 @@ function activate(f: Fixture, flags: string[] = []): { status: number | null; st
       NIRVANA_SKILLS_DIR: join(REPO, "skills"),
       NIRVANA_RESOLVED_SQUAD_PATH: f.squadDir,
       NIRVANA_STATE_DIR: join(f.root, "state"),
+      // Local node deps now install into the SHARED store under
+      // ~/.nirvana. Point NIRVANA_HOME at the fixture so the assertion is
+      // about argv and nothing touches the real store.
+      NIRVANA_HOME: f.root,
       PATH: `${f.binDir}${delimiter}${process.env.PATH ?? ""}`,
     },
   });
@@ -90,13 +94,16 @@ function activate(f: Fixture, flags: string[] = []): { status: number | null; st
 }
 
 describe("a node package token cannot become a second command", () => {
-  test.skipIf(!POSIX)("`;` inside a token stays inside the argument npm receives", () => {
+  test.skipIf(!POSIX)("`;` inside a token stays inside the argument the installer receives", () => {
     const f = fixture("");
     const sentinel = join(f.root, "pwned");
-    const log = join(f.root, "npm-calls.log");
+    const log = join(f.root, "bun-calls.log");
     const token = `left-pad; touch ${sentinel}`;
     writeFileSync(join(f.squadDir, "dependencies.yaml"), `node:\n  - ${JSON.stringify(token)}\n`);
-    fakeManager(f, "npm", log);
+    // A LOCAL node dep is installed into the shared store with `bun add --cwd`,
+    // so bun is the binary whose argv carries the token now. The property under
+    // test is unchanged: one argument, no shell, no second command.
+    fakeManager(f, "bun", log);
     try {
       const r = activate(f);
       expect(r.status).toBe(0);
@@ -104,10 +111,10 @@ describe("a node package token cannot become a second command", () => {
       // The second command never ran: `touch` was never a command at all.
       expect(existsSync(sentinel)).toBe(false);
 
-      // And npm was called once, with the whole token as ONE argument. Under
-      // the old shell string this reads ["install", "left-pad"], with `touch`
-      // executed separately by the shell.
-      expect(calls(log)).toEqual([["install", token]]);
+      // And the installer was called once, with the whole token as ONE
+      // argument. Under a shell string this reads ["add", …, "left-pad"], with
+      // `touch` executed separately by the shell.
+      expect(calls(log)).toEqual([["add", "--cwd", join(f.root, ".nirvana"), token]]);
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }
@@ -169,8 +176,8 @@ describe("the plan says which fields are argv and which are a shell line", () =>
       expect(r.status).toBe(0);
       const j = JSON.parse(r.stdout);
 
-      expect(j.steps.node.argv).toEqual(["npm", "install", nodeToken]);
-      expect(j.steps.python.argv).toEqual(["uv", "pip", "install", pyToken]);
+      expect(j.steps.node.argv).toEqual(["bun", "add", "--cwd", join(f.root, ".nirvana"), nodeToken]);
+      expect(j.steps.python.argv).toEqual(["uv", "pip", "install", "--target", join(f.root, ".nirvana", "python"), pyToken]);
 
       // The system entry is the deliberate exception: the author wrote a shell
       // line, the consent gate reads it, and it keeps being one. A future
@@ -278,9 +285,14 @@ describe("the Windows command line, built here instead of left to the runtime", 
     // their paths never build a command line at all. The difference is a
     // decision made before any spawn: only the node path passes `windowsShim`.
     const src = readFileSync(ACTIVATOR, "utf8");
-    expect(src).toContain("runArgv(argv, { windowsShim: true, cwd: g ?");
-    expect(src).toContain("runArgv(argv, { cwd: target })");
+    // The node path is the only one that spawns a `.cmd` shim, and after local
+    // installs moved to the shared store it is the GLOBAL branch that still
+    // does: `npm install -g <tool>` is the machine-level carve-out.
+    expect(src).toContain("runArgv(argv, { windowsShim: true })");
+    expect(src).toContain("runArgv(argv, { cwd: venv || undefined })");
     expect(src).toContain("runArgv(argv, { timeoutMs: 7200000 })");
+    // And the local branch spawns bun directly, never through a shell.
+    expect(src).toContain("DEPS.install(tokens)");
   });
 });
 
