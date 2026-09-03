@@ -8,6 +8,14 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Uma squad despachada finalmente consegue se ler
+
+O prompt inlina exatamente os agentes e as tasks que o workflow nomeia. Todo o resto que a squad carrega era invisível ao agente que a executava — e o diretório da própria squad nunca era concedido, então um caminho seria recusado de qualquer forma no claude-code e no agy, os dois runtimes que honram `addDirs`. Contado na biblioteca instalada, por quantas squads carregam cada um: `schemas/` 152, `config/` 139, `references/` 62, `checklists/` 57, `templates/` 51, `scripts/` 43, `data/` 36, `tools/` 32, `lib/` 26. Conteúdo autoral, embarcado em todo pack, que nenhuma execução jamais conseguiu abrir.
+
+O `## O QUE MAIS ESTE SQUAD CARREGA` passa a listar esses diretórios com um nível de profundidade — cada arquivo pelo nome, subdiretório com `/` no fim — e o `runSquadHeadless` concede o `squadDir` ao lado do `projectDir` e do diretório de saída, para que o mapa seja uma porta e não uma placa. É o padrão das skills aplicado às squads: nomes no prompt, bytes em disco, carregados em cascata só quando a execução pedir. Custa de 1,8 a 2,7 KB numa squad real. O que um passo precisa obedecer continua inline — um caminho é um pedido, texto inline é um fato.
+
+Duas decisões que merecem registro. O mapa **não** passa pelo portão de capability resolvida por onde passam as outras seções: o prompt de uma squad legada carrega uma amostra alfabética arbitrária dos três primeiros agentes e tasks, ou seja, é a que está com mais de si mesma faltando — barrar o mapa ali o negaria justamente onde ele é mais necessário. Uma squad que não carrega nada fora dos três diretórios inlinados continua sem seção alguma, e é isso que mantém o byte-a-byte honesto em vez de apenas verde. E o que o mapa esconde é decidido pelo `isRunStatePath`, não por uma segunda lista morando aqui: o primeiro rascunho era uma allowlist de cinco nomes escolhidos a dedo, que a medição mostrou que teria escondido `config/` de 139 squads e `reference/` — a grafia no singular — das cinco que a usam.
+
 ### O orçamento de componentes do prompt de squad é um alvo, nunca um corte
 
 O `buildSquadPrompt` renderiza os documentos de agente e task que um workflow referencia sob `LIMITS.squad_prompt_components_bytes_max` (65.536 bytes por padrão). Acima desse teto, o código descartava todo documento que não coubesse mais — contado numa nota de rodapé — e fatiava o primeiro que estourasse em fronteira de code point, com marcador `[…truncado…]`. O runtime despachado nunca sabia que um passo tinha instruções, só via a contagem de quantos foram "omitidos".

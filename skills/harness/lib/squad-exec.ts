@@ -32,6 +32,7 @@ import { layersForPhase } from "../../_shared/lib/dna-layer-policy.ts";
 import { findCloneForTask } from "../../_shared/lib/clone-search.ts";
 import { paths } from "../../_shared/lib/bun-helpers.ts";
 import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
+import { isRunStatePath } from "../../_shared/lib/run-state.ts";
 import { resolveSetting } from "../../_shared/lib/settings.ts";
 
 export type SquadExecMode = "team-mandatory" | "squad-only";
@@ -318,6 +319,69 @@ function renderEventContractBlock(squadSlug: string, traceId?: string): string {
 Emita marcos do seu trabalho com \`nrv audit emit <nome> --squad=${squadSlug} --trace=${trace}\`. Sempre passe \`--squad=${squadSlug}\`: é o que atribui o evento a você no cockpit. O nome não precisa estar na lista fechada do motor — se não estiver, escreva-o já com o prefixo \`x_\` (ex.: \`x_pagina_altura_acima_orcamento\`), assim o nome que chega ao log é o mesmo que você digitou. Payload vai em \`--json='{...}'\`, curto: nunca o brief inteiro, um output completo ou um segredo, só o resumo que o evento precisa carregar.`;
 }
 
+/** Directories the map never names, on top of run state.
+ *
+ *  `agents`, `tasks` and `workflows` are the three the prompt already carries.
+ *  The rest is build and dependency output — never authored content, and
+ *  `node_modules` alone would bury the map it is listed in. Run state is NOT
+ *  listed here: `isRunStatePath` owns that list (`.runs`, `outputs`, `projects`,
+ *  `.nirvana`, …), and keeping a private second copy of it is precisely how a
+ *  path that should never travel starts travelling again.
+ *
+ *  This is a DENYLIST on purpose. The first cut of this map was an allowlist of
+ *  five directories chosen by hand, and measuring the library showed what that
+ *  costs: it would have hidden `config/` from 139 squads, `schemas/` from 152,
+ *  `scripts/` from 43, `data/` from 36, `tools/` from 32, `lib/` from 26 — and
+ *  `reference/`, the singular spelling five squads use, from all five. A curated
+ *  list of what an agent may see is a list of what one person happened to think
+ *  of. Everything the squad ships, the agent is told about. */
+const MAP_EXCLUDED_DIRS = new Set([
+  "agents", "tasks", "workflows",
+  "node_modules", "dist", "build", "__pycache__", ".venv", "venv",
+]);
+
+/**
+ * Everything else the squad carries, as a map rather than as content.
+ *
+ * The prompt inlines exactly the agents and tasks the workflow names, so the
+ * rest of the squad has been invisible to the agent executing it. Measured on
+ * the installed library, by directory and by how many squads ship one:
+ * `schemas/` 152, `config/` 139, `references/` 62, `checklists/` 57,
+ * `templates/` 51, `scripts/` 43, `data/` 36, `tools/` 32, `lib/` 26 — content
+ * the author wrote and the run never saw.
+ *
+ * This is the skill pattern applied to squads: the names travel in the prompt,
+ * the bytes stay on disk, and the agent loads in cascade only what its execution
+ * turns out to need. The map is one level deep — files by name, subdirectories
+ * with a trailing slash — because the point is to prove the tree exists and give
+ * a door into it, not to serialize it.
+ *
+ * The map is a map, not an instruction. What a step MUST obey stays inlined:
+ * a path is a request, and inlined text is a fact. `runSquadHeadless` grants the
+ * squad directory alongside it, so the door the map names actually opens.
+ */
+function renderResourceMap(squadDir: string): string {
+  let entries: fs.Dirent[];
+  try { entries = fs.readdirSync(squadDir, { withFileTypes: true }); } catch { return ""; }
+  const lines: string[] = [];
+  const authored = entries.filter(e =>
+    e.isDirectory() && !MAP_EXCLUDED_DIRS.has(e.name) && !isRunStatePath(e.name, "squads"));
+  for (const dir of authored.sort((a, b) => a.name.localeCompare(b.name))) {
+    let inner: fs.Dirent[];
+    try { inner = fs.readdirSync(path.join(squadDir, dir.name), { withFileTypes: true }); } catch { continue; }
+    const names = inner
+      .filter(e => !e.name.startsWith("."))
+      .map(e => e.isDirectory() ? `${e.name}/` : e.name)
+      .sort();
+    if (names.length) lines.push(`- \`${dir.name}/\` — ${names.map(n => `\`${n}\``).join(", ")}`);
+  }
+  if (!lines.length) return "";
+  return `## O QUE MAIS ESTE SQUAD CARREGA
+Tudo abaixo existe em \`${squadDir}\` e **não** está neste prompt. Você tem acesso de leitura a esse diretório: abra o que precisar, quando precisar, em cascata. Um nome terminado em \`/\` é subdiretório — desça nele.
+
+${lines.join("\n")}`;
+}
+
 /** The capability block, plus the workflow block when the graph resolved. */
 function renderCapabilityBlock(ctx: SquadCapabilityPromptContext): string {
   const lines = ["## SUA CAPABILITY", `- **id**: \`${ctx.capabilityId}\``];
@@ -392,6 +456,16 @@ export function buildSquadPrompt(args: {
   const componentsHeading = capability?.components ? "" : " (top 3)";
   const agentsSection = capability?.components?.agents ?? agentsBlock;
   const tasksSection = capability?.components?.tasks ?? tasksBlock;
+  // The resource map does NOT ride that gate, and it is the one addition here
+  // that does not. The byte-identical guarantee protects a legacy squad from
+  // behaving differently — but a legacy squad is exactly the one whose prompt
+  // carries an arbitrary alphabetical "top 3" of its agents and tasks, so it is
+  // the one with most of itself missing. Gating the map behind a resolved
+  // capability would withhold it precisely where it is needed most. A squad that
+  // ships nothing outside agents/, tasks/ and workflows/ still gets no section,
+  // which is what keeps the pin meaningful for the fixtures that have none.
+  const resourceMap = renderResourceMap(squadDir);
+  const resourceSection = resourceMap ? `\n${resourceMap}\n` : "";
 
   const roleLine = mode === "team-mandatory"
     ? `Você É o squad "${squadSlug}" executando uma sub-tarefa de um business maior. Sua saída é input do synthesizer do business.`
@@ -412,7 +486,7 @@ ${agentsSection}
 
 ## SUAS TASKS${componentsHeading}
 ${tasksSection}
-
+${resourceSection}
 ## MIND-CLONES QUE VOCÊ INCORPORA (decisão: ${cloneInj.decision})
 > Incorpore por inteiro; entregue COMO SE o clone tivesse produzido, sob a especialidade do squad.
 ${cloneInj.block || "(sem clone para esta tarefa — opere com a especialidade padrão do squad)"}
@@ -499,7 +573,13 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
     // The dispatched runtime runs INSIDE the project — it needs the project's .nirvana/,
     // its config, its logs and its code-base — with the scaffold and the outputs dir handed
     // to it as additional directories so both stay writable.
-    runtime: args.runtime, prompt, cwd: args.projectRoot, addDirs: [args.projectDir, outDir],
+    // squadDir is granted so the resource map in the prompt is a door and not a
+    // sign: `references/`, `checklists/`, `templates/`, `schemas/`, `config/` and
+    // the rest live under it, and on claude-code and agy an ungranted path is
+    // simply refused. Read access to the squad the run IS — the same tree the
+    // prompt already quotes from — is not a widening of scope; withholding it was
+    // what made 324 authored files in `references/` alone unreachable.
+    runtime: args.runtime, prompt, cwd: args.projectRoot, addDirs: [args.projectDir, outDir, squadDir],
     appendSystemPrompt: args.autonomousDirective + (args.rulesDirective ?? ""),
     maxBudgetUsd: args.maxBudgetUsd, timeoutMs: args.timeoutMs,
     brief: args.brief, projectRoot: args.projectRoot, outputsRoot: outDir,

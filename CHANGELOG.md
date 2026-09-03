@@ -8,6 +8,14 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### A dispatched squad can finally read itself
+
+The prompt inlines exactly the agents and tasks the workflow names. Everything else the squad ships was invisible to the agent executing it, and the squad's own directory was never granted, so a path would have been refused anyway on claude-code and agy — the two runtimes that honour `addDirs`. Counted across the installed library, by how many squads ship one: `schemas/` 152, `config/` 139, `references/` 62, `checklists/` 57, `templates/` 51, `scripts/` 43, `data/` 36, `tools/` 32, `lib/` 26. Authored content, shipped in every pack, that no run has ever been able to open.
+
+`## O QUE MAIS ESTE SQUAD CARREGA` now lists those directories one level deep — each file by name, subdirectories with a trailing slash — and `runSquadHeadless` grants `squadDir` beside `projectDir` and the outputs dir, so the map is a door rather than a sign. This is the skill pattern applied to squads: names in the prompt, bytes on disk, loaded in cascade only when the execution asks. It costs 1.8–2.7 KB on a real squad. What a step must obey stays inlined — a path is a request, inlined text is a fact.
+
+Two decisions worth stating. The map does **not** ride the resolved-capability gate the other sections ride: a legacy squad's prompt carries an arbitrary alphabetical top-3 of its agents and tasks, so it is the one with most of itself missing, and gating the map would withhold it exactly where it is needed most. A squad shipping nothing outside the three inlined directories still gets no section, which is what keeps the byte-identical pin honest rather than merely passing. And what the map hides is decided by `isRunStatePath`, not by a second list living here: the first draft was an allowlist of five directory names chosen by hand, which measurement showed would have hidden `config/` from 139 squads and `reference/` — the singular spelling — from the five that use it.
+
 ### A squad prompt's component budget is a target, never a cut
 
 `buildSquadPrompt` renders the agent and task documents a workflow references under `LIMITS.squad_prompt_components_bytes_max` (65,536 bytes by default). Past this ceiling, the code dropped every document that no longer fit — counted in a footer note — and sliced the first oversized one at a code-point boundary with a `[…truncado…]` marker. The dispatched runtime never saw that a step had instructions at all, only a count of how many were "omitted".

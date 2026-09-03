@@ -398,6 +398,104 @@ describe("buildSquadPrompt — with a resolved capability", () => {
   });
 });
 
+// Everything a squad ships beyond agents/ and tasks/ used to be invisible to the
+// agent running it. Measured on the installed library: schemas/ on 152 squads,
+// config/ on 139, references/ on 62, checklists/ on 57, templates/ on 51 — none
+// of it named in the prompt, and the directory itself never granted.
+describe("buildSquadPrompt — the resource map", () => {
+  /** Add authored directories to a scaffolded squad. */
+  function withResources(squadDir: string): string {
+    fs.mkdirSync(path.join(squadDir, "references"), { recursive: true });
+    fs.mkdirSync(path.join(squadDir, "checklists"), { recursive: true });
+    fs.mkdirSync(path.join(squadDir, "references", "deep"), { recursive: true });
+    fs.mkdirSync(path.join(squadDir, "node_modules", "left-pad"), { recursive: true });
+    fs.writeFileSync(path.join(squadDir, "references", "state-of-the-art.md"), "x");
+    fs.writeFileSync(path.join(squadDir, "references", ".hidden"), "x");
+    fs.writeFileSync(path.join(squadDir, "checklists", "pre-flight.md"), "x");
+    fs.writeFileSync(path.join(squadDir, "node_modules", "left-pad", "index.js"), "x");
+    // Run state, which a squad materializes by being run in and which must never
+    // be advertised as content.
+    fs.mkdirSync(path.join(squadDir, ".runs", "demo"), { recursive: true });
+    fs.writeFileSync(path.join(squadDir, ".runs", "demo", "out.md"), "x");
+    fs.mkdirSync(path.join(squadDir, "outputs"), { recursive: true });
+    fs.writeFileSync(path.join(squadDir, "outputs", "leftover.md"), "x");
+    return squadDir;
+  }
+
+  // The exclusion list for run state has one owner, `isRunStatePath`. A private
+  // second copy here is how a path that must never travel starts travelling.
+  test("run state is never advertised, and the list that decides is the shared one", () => {
+    const squadDir = withResources(scaffoldCapabilitySquad(path.join(tmp, "squads")));
+    const p = buildSquadPrompt({
+      squadSlug: "guided", squadDir, brief: "b", outDir: "/o", mode: "squad-only",
+      cloneInjection: { block: "", decision: "PADRÃO" }, capabilityId: "analysis.report.produce",
+    });
+    const map = p.slice(p.indexOf("## O QUE MAIS ESTE SQUAD CARREGA"));
+    expect(map).not.toContain(".runs");
+    expect(map).not.toContain("outputs/");
+    expect(map).not.toContain("leftover.md");
+    // Authored content beside it is untouched.
+    expect(map).toContain("`references/`");
+  });
+
+  test("names every authored directory, one level deep, and never node_modules", () => {
+    const squadDir = withResources(scaffoldCapabilitySquad(path.join(tmp, "squads")));
+    const p = buildSquadPrompt({
+      squadSlug: "guided", squadDir, brief: "b", outDir: "/o", mode: "squad-only",
+      cloneInjection: { block: "", decision: "PADRÃO" }, capabilityId: "analysis.report.produce",
+    });
+    expect(p).toContain("## O QUE MAIS ESTE SQUAD CARREGA");
+    expect(p).toContain("`references/` — `deep/`, `state-of-the-art.md`");
+    expect(p).toContain("`checklists/` — `pre-flight.md`");
+    // A subdirectory is named with a trailing slash so the agent knows to descend.
+    expect(p).toContain("`deep/`");
+    // Dependency output would bury the map it is listed in.
+    expect(p).not.toContain("node_modules");
+    // Dotfiles are not authored content.
+    expect(p).not.toContain(".hidden");
+    // The three the prompt already carries are never repeated as a path.
+    expect(p).not.toContain("`agents/` —");
+    expect(p).not.toContain("`tasks/` —");
+    expect(p).not.toContain("`workflows/` —");
+  });
+
+  // The gate the map deliberately does NOT ride: a legacy squad's prompt carries
+  // an arbitrary alphabetical top-3 of its agents and tasks, so it is the one
+  // with most of itself missing.
+  test("a squad with no resolved capability gets the map too", () => {
+    const squadDir = withResources(scaffoldSquad(path.join(tmp, "squads"), "legacy"));
+    const p = buildSquadPrompt({
+      squadSlug: "legacy", squadDir, brief: "b", outDir: "/o", mode: "squad-only",
+      cloneInjection: { block: "", decision: "PADRÃO" },
+    });
+    expect(p).toContain("## SEUS AGENTES (top 3)");
+    expect(p).toContain("## O QUE MAIS ESTE SQUAD CARREGA");
+    expect(p).toContain("`references/`");
+  });
+
+  // What keeps the byte-identical pin honest rather than merely passing: a squad
+  // that ships nothing outside the three inlined directories gets no section.
+  test("a squad that ships nothing extra gets no section at all", () => {
+    const squadDir = scaffoldSquad(path.join(tmp, "squads"), "bare");
+    const p = buildSquadPrompt({
+      squadSlug: "bare", squadDir, brief: "b", outDir: "/o", mode: "squad-only",
+      cloneInjection: { block: "", decision: "PADRÃO" },
+    });
+    expect(p).not.toContain("O QUE MAIS ESTE SQUAD CARREGA");
+  });
+
+  // An empty directory is a directory with nothing to open.
+  test("an empty authored directory is not advertised", () => {
+    const squadDir = scaffoldSquad(path.join(tmp, "squads"), "hollow");
+    fs.mkdirSync(path.join(squadDir, "references"), { recursive: true });
+    const p = buildSquadPrompt({
+      squadSlug: "hollow", squadDir, brief: "b", outDir: "/o", mode: "squad-only",
+      cloneInjection: { block: "", decision: "PADRÃO" },
+    });
+    expect(p).not.toContain("O QUE MAIS ESTE SQUAD CARREGA");
+  });
+});
+
 describe("runSquadHeadless", () => {
   test("dispatches through the cascade seam and emits dispatch_squad + agent_executed", () => {
     const squadsRoot = path.join(tmp, "squads");
@@ -427,6 +525,31 @@ describe("runSquadHeadless", () => {
     expect(ax).toBeTruthy();
     expect(ax.mode).toBe("squad-only");
     expect(ax.employee).toBe("squad:brandcraft");
+    // The size of what we just built, on the event where runs are inspected —
+    // and the number that decides whether the run crossed the argv threshold.
+    expect(ds.prompt_bytes).toBe(Buffer.byteLength(seen[0].prompt, "utf8"));
+  });
+
+  // The resource map names paths under the squad; on claude-code and agy an
+  // ungranted path is refused, so without this the map would be a sign on a
+  // locked door.
+  test("the squad's own directory is granted, so the map it advertises can be opened", () => {
+    const squadsRoot = path.join(tmp, "squads");
+    const squadDir = scaffoldSquad(squadsRoot, "brandcraft");
+    const seen: any[] = [];
+    runSquadHeadless({
+      squadSlug: "brandcraft", brief: "make a brand",
+      projectId: "proj-sq-grant", projectDir: tmp, projectRoot: tmp,
+      outputsDir: path.join(tmp, "out"), runtime: "claude-code",
+      businessSlug: null, mode: "squad-only",
+      autonomousDirective: "D ",
+      squadsRoot,
+      runWithCascadeImpl: ((opts: any) => { seen.push(opts); return okCascadeResult(opts); }) as any,
+    });
+    expect(seen[0].addDirs).toContain(squadDir);
+    // Without displacing the two it already granted.
+    expect(seen[0].addDirs).toContain(tmp);
+    expect(seen[0].addDirs).toContain(path.join(tmp, "out"));
   });
 
   test("team-mandatory mode keeps the team audit contract (business_slug + squad-mandatory)", () => {
