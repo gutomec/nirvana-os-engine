@@ -33,17 +33,35 @@ function safeRead(p: string, max = 16000): string {
   } catch { return ""; }
 }
 
+/**
+ * What the previous runtime already produced.
+ *
+ * This stopped at 60 entries and said nothing, under a prompt whose hard rules
+ * tell the incoming runtime "não duplique arquivos já entregues". Not redoing
+ * finished work is the entire job of a handoff, and the list it was given could
+ * be a fraction of what exists: a rotation mid-book, after 140 chapter files,
+ * handed the next runtime 60 of them, no `capitulo-08.md` among the rest, and
+ * an instruction to avoid duplicating what it could not see. `safeRead` in this
+ * same file has always announced its own truncation; this one did not.
+ *
+ * The cap stays, because a directory index is recoverable — the handoff prompt
+ * already tells the runtime where the project is — but it now states the count
+ * it withheld and how to get the rest, so "not listed" can never read as
+ * "not written".
+ */
 function listFiles(dir: string, max = 60): string {
   if (!fs.existsSync(dir)) return "(directory does not exist yet)";
   try {
     const out: string[] = [];
+    let total = 0;
     const walk = (d: string, depth = 0) => {
-      if (depth > 3 || out.length >= max) return;
+      if (depth > 3) return;
       for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-        if (out.length >= max) return;
         if (e.name.startsWith(".") || e.name === "node_modules") continue;
         const full = path.join(d, e.name);
         if (e.isDirectory()) { walk(full, depth + 1); continue; }
+        total++;
+        if (out.length >= max) continue;
         try {
           const st = fs.statSync(full);
           out.push(`  ${path.relative(dir, full)}  (${st.size}B)`);
@@ -51,7 +69,11 @@ function listFiles(dir: string, max = 60): string {
       }
     };
     walk(dir);
-    return out.length ? out.join("\n") : "(no files written yet)";
+    if (!out.length) return "(no files written yet)";
+    const hidden = total - out.length;
+    return hidden > 0
+      ? `${out.join("\n")}\n  … e mais ${hidden} arquivo(s) NÃO listados aqui (total ${total}). Liste o diretório antes de escrever: um arquivo ausente desta lista pode já existir.`
+      : out.join("\n");
   } catch { return "(unable to list)"; }
 }
 

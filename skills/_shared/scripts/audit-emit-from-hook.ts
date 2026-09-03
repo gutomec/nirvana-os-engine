@@ -96,24 +96,45 @@ function deriveTargetProject(filePath: string): string | undefined {
     if (parent === dir) break;
     dir = parent;
   }
-  // Fallback: 1st level under HOME
-  const home = os.homedir();
-  if (filePath.startsWith(home + "/")) {
-    const rel = filePath.slice(home.length + 1);
+  // Fallback: 1st level under HOME.
+  //
+  // Compared on POSIX-normalized copies. The hook payload delivers a native
+  // path, so on Windows this arrives as `C:\\Users\\me\\projects\\acme` and every
+  // `/`-shaped test below it missed — no project inferred, `inNirvanaScope`
+  // false, and NOT ONE audit event emitted on the whole platform unless
+  // NIRVANA_PROJECT_ROOT happened to be set. `nrv watch` and the Glance projects
+  // view were simply empty there, with nothing reporting why.
+  const home = posix(os.homedir());
+  const posixPath = posix(filePath);
+  if (posixPath.startsWith(home + "/")) {
+    const rel = posixPath.slice(home.length + 1);
     const firstSeg = rel.split("/")[0];
     if (firstSeg) return firstSeg;
   }
   return undefined;
 }
 
+/** Backslashes to forward slashes, so one set of `/`-shaped tests serves every
+ *  platform. Same idiom `_shared/lib/asset-meta.js` already uses. */
+function posix(p: string): string { return (p || "").replace(/\\/g, "/"); }
+
 function inNirvanaScope(p: string | undefined): boolean {
   if (!p) return false;
-  const lower = p.toLowerCase();
+  const lower = posix(p).toLowerCase();
   // 1. Explicit override — user-defined project root always wins
-  if (NIRVANA_PROJECT_ROOT && lower.startsWith(NIRVANA_PROJECT_ROOT.toLowerCase())) return true;
-  // 2. Extra prefixes from env (colon-separated, like PATH)
+  if (NIRVANA_PROJECT_ROOT && lower.startsWith(posix(NIRVANA_PROJECT_ROOT).toLowerCase())) return true;
+  // 2. Extra prefixes from env, split on the platform's OWN list separator.
+  //
+  // This said "colon-separated, like PATH" and split on a literal ":" — the very
+  // mistake `_shared/scripts/install.ts` records having already fixed, where
+  // "splitting on ':' shredded Windows entries at the drive-letter colon". Here
+  // it was worse than data loss: `C:\\Users\\me\\proj` became ["c", "/users/..."],
+  // and the bare "c" then matched EVERY path on the C: drive through the
+  // `includes` test below. The hook would have logged every Write, Edit and Bash
+  // anywhere on the machine into audit.jsonl — the flooding this file exists to
+  // prevent, and a privacy leak rather than mere noise.
   const extras = (process.env.NIRVANA_AUDIT_PREFIXES || "")
-    .split(":").map(s => s.trim().toLowerCase()).filter(Boolean);
+    .split(path.delimiter).map(s => posix(s).trim().toLowerCase()).filter(Boolean);
   for (const pre of extras) if (lower.startsWith(pre) || lower.includes(pre)) return true;
   // 3. Built-in heuristics: anything that smells like Nirvana work
   if (lower.includes("/projects/")) return true;

@@ -56,3 +56,38 @@ describe("Windows wrappers never redirect to nul", () => {
     expect(entrypointCheck).toBeGreaterThan(pathFallback);
   });
 });
+
+// The second thing CI cannot see, for the same reason: cmd.exe percent-expands a
+// parenthesized block at PARSE time, so `%ERRORLEVEL%` written on a line INSIDE
+// `if ... ( ... )` carries whatever the condition left, not what the command in
+// the block returned. Every wrapper had `exit /b %ERRORLEVEL%` after a
+// `where /q` probe, which parse-expands to `exit /b 0` — so a failed dispatch, a
+// failed activation and the `confirmation_required` consent gate (exit 2, the
+// sudo prompt in activator.js) all reported success to whoever called the .cmd.
+// `SCRIPT_CONTRACT.md` defines exit codes 0/1/2/4 and names `activate-squad.cmd`
+// as the Windows entry point, so the contract was unobservable there.
+//
+// Bare `exit /b` leaves the current errorlevel untouched, which is exactly what
+// the block needs and needs no delayed expansion.
+describe("Windows wrappers propagate the real exit code", () => {
+  const files = walkCmdFiles(REPO);
+
+  test("there are wrappers to check", () => {
+    expect(files.length).toBeGreaterThan(0);
+  });
+
+  test("no wrapper reads %ERRORLEVEL% inside a parenthesized block", () => {
+    const offenders: string[] = [];
+    for (const f of files) {
+      const lines = readFileSync(f, "utf8").split(/\r?\n/);
+      let depth = 0;
+      for (const line of lines) {
+        const inBlock = depth > 0;
+        if (inBlock && /%ERRORLEVEL%/i.test(line)) offenders.push(`${f}: ${line.trim()}`);
+        depth += (line.match(/\(/g) || []).length - (line.match(/\)/g) || []).length;
+        if (depth < 0) depth = 0;
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});

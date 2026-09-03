@@ -4,13 +4,13 @@ REM validate-squad.cmd — Windows wrapper. Runs the .ts via Bun (or Node 22+ as
 where /q bun
 if %ERRORLEVEL% EQU 0 (
   bun "%~dp0validate-squad.ts" %*
-  exit /b %ERRORLEVEL%
+  exit /b
 )
 
 where /q node
 if %ERRORLEVEL% EQU 0 (
   node --experimental-strip-types --no-warnings "%~dp0validate-squad.ts" %*
-  exit /b %ERRORLEVEL%
+  exit /b
 )
 
 echo [validate-squad] FAIL: neither 'bun' nor 'node' found on PATH. >&2

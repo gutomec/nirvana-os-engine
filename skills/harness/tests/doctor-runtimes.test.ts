@@ -48,7 +48,11 @@ describe("the doctor consumes the roster instead of copying it", () => {
   const src = readFileSync(DOCTOR, "utf8");
 
   test("it imports and iterates listRuntimes", () => {
-    expect(src).toContain('import { listRuntimes }');
+    // Matched as a named import rather than as an exact line: the doctor also
+    // pulls `whichSync` from the same module (its own `which` used the POSIX-only
+    // binary and reported every runtime missing on Windows), and pinning the
+    // literal made an unrelated import look like roster drift.
+    expect(src).toMatch(/import \{[^}]*\blistRuntimes\b[^}]*\} from "\.\.\/\.\.\/_shared\/lib\/host-agent-driver\.ts"/);
     expect(src).toContain("for (const rt of listRuntimes())");
   });
 

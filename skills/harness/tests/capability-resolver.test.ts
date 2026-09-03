@@ -55,8 +55,12 @@ describe("parseSquadTarget — the `<slug>[:<capabilityId>]` grammar", () => {
     expect(parseSquadTarget("  brandcraft:branding.brand.audit  ")).toEqual({ slug: "brandcraft", capabilityId: "branding.brand.audit" });
   });
 
-  test("a slug is lowercased; a value with no slug is not a target", () => {
-    expect(parseSquadTarget("Doc-Factory:Docs.Report.Create")).toEqual({ slug: "doc-factory", capabilityId: "docs.report.create" });
+  // The slug is a directory name and Linux is case-sensitive, so folding it made
+  // `~/squads/Doc-Factory` unreachable there — and on a case-insensitive
+  // filesystem it found the directory while the case-sensitive registry lookup
+  // missed, which is a degraded run rather than an honest failure.
+  test("a slug keeps its case, the capability id does not; a value with no slug is not a target", () => {
+    expect(parseSquadTarget("Doc-Factory:Docs.Report.Create")).toEqual({ slug: "Doc-Factory", capabilityId: "docs.report.create" });
     expect(parseSquadTarget(":branding.pdf_document.create")).toBeNull();
     expect(parseSquadTarget("")).toBeNull();
     expect(parseSquadTarget("brandcraft:")).toBeNull();

@@ -27,7 +27,7 @@ import { execSync, spawnSync } from "node:child_process";
 import { paths as nrvPaths } from "../../_shared/lib/bun-helpers.ts";
 import { resolveScope, enumerate } from "../../_shared/lib/scope.ts";
 import { RUNTIME_TARGETS, RUNTIME_SKILL_DIRS, PROJECT_CONTRACT_FILES } from "../../_shared/lib/runtime-dirs.ts";
-import { listRuntimes } from "../../_shared/lib/host-agent-driver.ts";
+import { listRuntimes, whichSync } from "../../_shared/lib/host-agent-driver.ts";
 import { expandEnv, findTempNrvEntries, readUserPath, tempRoots } from "../../_shared/lib/windows-user-path.ts";
 import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import {
@@ -63,11 +63,20 @@ const HOME = process.env.NIRVANA_HOME || os.homedir();
 const SKILLS = process.env.NIRVANA_SKILLS_DIR || (fs.existsSync(path.join(HOME, ".nirvana", "skills")) ? path.join(HOME, ".nirvana", "skills") : path.join(HOME, ".claude", "skills"));
 
 // SECTION 1: BINARIES
+//
+// `which` is not a Windows program — `where.exe` is, and Git for Windows keeps
+// its `which` in `\\Git\\usr\\bin`, which is not on the Windows PATH. So on a real
+// Windows desktop this probe returned null for everything: `bun` reported "not
+// found in PATH" while the doctor was running under Bun, `git` failed beside it,
+// all nine agent runtimes warned, and `runtimesOnPath === 0` produced the
+// critical "nothing can dispatch" verdict on a correct install. CI never caught
+// it because the Windows job runs under Git Bash, where `which` exists.
+//
+// `whichSync` is the resolver every other caller in the engine already uses:
+// `where` on win32, `command -v` elsewhere, plus a manual PATH scan that knows
+// about `.cmd` shims. The doctor was the one place that had its own copy.
 function which(bin: string): string | null {
-  try {
-    const r = spawnSync("which", [bin], { encoding: "utf8" });
-    return r.status === 0 ? r.stdout.trim() : null;
-  } catch { return null; }
+  try { return whichSync(bin); } catch { return null; }
 }
 
 const bins = [

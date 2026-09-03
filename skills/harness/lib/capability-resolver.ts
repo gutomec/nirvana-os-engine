@@ -83,7 +83,20 @@ export interface ResolveSquadCapabilityInput {
 export function parseSquadTarget(value: string): { slug: string; capabilityId: string | null } | null {
   const match = /^([^:\s]+)(?::([^:\s]+))?$/.exec(String(value ?? "").trim());
   if (!match) return null;
-  return { slug: match[1].toLowerCase(), capabilityId: match[2] ? match[2].toLowerCase() : null };
+  // The slug keeps its case; the capability id does not.
+  //
+  // A slug is a DIRECTORY NAME — `squad-exec.ts` joins it straight onto the
+  // squads root — and Linux filesystems are case-sensitive. Lowercasing it meant
+  // a squad at `~/squads/Doc-Factory` died there with "squad dir not found",
+  // while macOS and Windows "worked" in a worse way: the case-insensitive
+  // filesystem found the directory, but `registry.squads["doc-factory"]` is an
+  // object-key lookup and is case-sensitive on every platform, so the capability
+  // contract came back empty and the Gauntlet silently fell back to generic
+  // requirements. Preserving the case makes the two lookups agree everywhere.
+  //
+  // A capability id is not a path: the schema forces it lowercase, so folding it
+  // here only makes the CLI forgiving about how it was typed.
+  return { slug: match[1], capabilityId: match[2] ? match[2].toLowerCase() : null };
 }
 
 /** The reverse: the CLI/plan token for a resolved target. */
