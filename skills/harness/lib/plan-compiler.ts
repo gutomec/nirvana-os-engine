@@ -373,7 +373,7 @@ function inheritedCompositionEdges(graph: DependencyGraph, composition: Dependen
     if (node.type === "squad") planned.set(squadSlug(graph.nodes, node.id), node.id);
   }
   if (planned.size < 2) return [];
-  const authored = new Set(graph.edges.flatMap((e) => [`${e.source} ${e.target}`, `${e.target} ${e.source}`]));
+  const authored = new Set(graph.edges.flatMap((e) => [`${e.source}\u0000${e.target}`, `${e.target}\u0000${e.source}`]));
   const inherited: GraphEdge[] = [];
   const seen = new Set<string>();
   for (const edge of composition.edges) {
@@ -381,7 +381,7 @@ function inheritedCompositionEdges(graph: DependencyGraph, composition: Dependen
     const consumer = planned.get(squadSlug(composition.nodes, edge.source));
     const provider = planned.get(squadSlug(composition.nodes, edge.target));
     if (!consumer || !provider || consumer === provider) continue;
-    if (authored.has(`${consumer} ${provider}`)) continue;
+    if (authored.has(`${consumer}\u0000${provider}`)) continue;
     const id = `inherited:depends_on:${consumer}->${provider}`;
     if (seen.has(id)) continue;
     seen.add(id);

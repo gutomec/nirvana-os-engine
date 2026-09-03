@@ -8,6 +8,22 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Memory left the entity, and the scope became a judgement
+
+A business kept its curated memory in `memory/permanent.md`, inside its own directory. That directory is the product: a pack update, `nrv migrate` or a reinstall replaces it whole, so the knowledge an owner accumulated was written on a surface built to be overwritten. The seeder the gate pointed at said so in the file it created — "A pack update replaces this file" — and the gate still awarded six points for having one. Measured on a real library: 60 businesses carried one, 56 with real content, the largest 29 KB.
+
+Curated memory now lives in `.nirvana/memory/<kind>/<slug>/`, beside the temporal rows `state-db.js` has always kept there. `nrv memory relocate [--apply]` moves what earlier versions left behind; a shipped `memory/*.md` is treated as a seed, copied into the home once and never read again, so an update refreshes the seed without touching what the owner wrote.
+
+**Which home is a judgement about the fact, never an inference from the directory.** Project scope answers one question and only one — do this run's businesses and squads come from `~/businesses` and `~/squads` or from the project's own copies. It does not decide where knowledge belongs. A fact true of the entity everywhere goes to `~/.nirvana`; a fact true only of this project's application of it goes to `./.nirvana`. Deriving that from cwd would file "this client approves by WhatsApp" under whichever project happened to be open and hide it from every other one — the same loss as keeping it inside the entity, one level up. So `nrv memory add` now requires `--scope global|project` and refuses to guess, reads return both scopes labelled, and the employee prompt carries both instead of whichever database the dispatch directory happened to select.
+
+Two silent losses end with it. `learned.md` had a reader in the docs — the businesses and harness SKILL.md both say "both are read at dispatch" — and no reader in the code; it is read now. And the 8,000-character clamp on permanent memory is gone: memory arrives whole, and says its size when it is large, instead of being cut behind a four-word marker that named neither the size nor the path.
+
+The audit criterion inverted with it. `memory_missing` rewarded having memory inside the business; `memory_inside_entity` now flags accumulated memory (`learned.md`, `memory/projects/`) sitting where an update discards it, and the seeder declines rather than creating one.
+
+### A source file that no grep could see
+
+`business-fixers.js` and `plan-compiler.ts` each embedded a literal NUL as a key separator (`${a}\x00${b}`). Valid JavaScript, and enough to make `file` report the source as binary and every `grep` skip it silently — 40 KB of mechanical fixers invisible to the repo's own searches, which is how the memory seeder stayed unexamined. Escaped as `\u0000`; same string, same behavior, greppable again.
+
 ### A dispatched squad can finally read itself
 
 The prompt inlines exactly the agents and tasks the workflow names. Everything else the squad ships was invisible to the agent executing it, and the squad's own directory was never granted, so a path would have been refused anyway on claude-code and agy — the two runtimes that honour `addDirs`. `references/`, `checklists/`, `templates/`, `standards/`, `schemas/`, `config/`, `scripts/`, `data/`, `tools/` and `lib/` are all common in real squads. Authored content, shipped in every pack, that no run has ever been able to open.

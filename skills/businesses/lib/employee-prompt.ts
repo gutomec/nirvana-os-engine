@@ -63,6 +63,7 @@ import { listMindClones } from "../../harness/lib/glance/data-loader.ts";
 import { resolveClonePersona, loadCloneRegistry } from "../../_shared/lib/clone-resolver.ts";
 import { layersForPhase } from "../../_shared/lib/dna-layer-policy.ts";
 import { hookForPhase } from "../../_shared/lib/hooks.ts";
+import { readEntityMemory } from "../../_shared/lib/entity-memory.ts";
 import { collectContributions, orderContributions, renderHookBlock, cloneContributionSource } from "../../_shared/lib/contributions.ts";
 
 // Untrusted-input boundary (P0-1 / Batch 3 item 7): security preamble injected
@@ -480,34 +481,53 @@ export function buildEmployeePrompt(args: BuildArgs): string {
   const bizYamlPath = path.join(bizDir, "business.yaml");
   const bizYaml = fs.existsSync(bizYamlPath) ? fs.readFileSync(bizYamlPath, "utf8") : "(business.yaml missing)";
 
-  // Cross-session recall: inject the business's permanent memory (clamped)
-  // into the prompt. It used to be written and NEVER read back by the agent —
-  // this closes the loop.
+  // Cross-session recall. The memory itself lives in `.nirvana` — the project's
+  // when inside one, the machine's otherwise — and NOT inside the business: the
+  // business directory is replaced whole by a pack update, a migration or a
+  // reinstall, so memory kept there is written on a surface built to be
+  // overwritten. `entityDir` is passed only so a shipped `memory/*.md` can seed
+  // the canonical home once; after that the seed is never read again.
+  //
+  // Two defects die here. `learned.md` had a reader in the docs and none in the
+  // code, so what a human promoted was never injected. And the old 8,000-char
+  // clamp cut curated memory with a four-word marker naming neither the size nor
+  // the path — a business past the ceiling honored a fraction of its own record
+  // and nothing said which fraction.
   let memoryBlock = "";
   try {
-    const memPath = path.join(bizDir, "memory", "permanent.md");
-    if (fs.existsSync(memPath)) {
-      let mem = fs.readFileSync(memPath, "utf8").trim();
-      const head = mem.slice(0, 120).toLowerCase();
-      const isStub = !mem || /^#?\s*permanent memory\s*$/i.test(mem) || /\(\s*(empty|vazio)/.test(head) || /_vazio_/.test(head);
-      if (!isStub) {
-        const MEM_BUDGET = 8000;
-        if (mem.length > MEM_BUDGET) mem = mem.slice(0, MEM_BUDGET) + "\n\n…(memory truncated)";
-        memoryBlock = `## PERMANENT BUSINESS MEMORY (cross-session)\n\n> Lessons, decisions and principles persisted from previous runs. Honor them.\n\n${mem}\n\n---\n\n`;
-      }
-    }
+    const mem = readEntityMemory("businesses", args.business_slug, {
+      projectRoot: resolveScope().projectRoot || undefined,
+      entityDir: bizDir,
+    });
+    memoryBlock = mem.block;
   } catch { /* unreadable — skip */ }
 
   // Temporal recall (Batch 3 / 6-temporal): the business's active facts in the
   // state-db (supersede-never-delete). Best-effort — proceeds without it when
   // sqlite is unavailable.
+  // Both scopes, labelled. `openDb` answers with the project's database inside a
+  // project and the machine's outside one, so reading a single handle showed the
+  // employee only half of what the business knows — and which half depended on
+  // the directory the dispatch ran from, not on what the facts meant.
   try {
     const sdb = requireCjs("../../_shared/lib/state-db.js");
-    const h = sdb.openDb(resolveScope().projectRoot || undefined);
-    const recs = sdb.activeMemories(h, args.business_slug, 20);
-    if (recs.length) {
+    const projectRoot = resolveScope().projectRoot || undefined;
+    const scopes: Array<["global" | "project", string | undefined]> = projectRoot
+      ? [["global", undefined], ["project", projectRoot]]
+      : [["global", undefined]];
+    const seenDb = new Set<string>();
+    for (const [scope, root] of scopes) {
+      const h = sdb.openDb(root);
+      if (!h?.available || seenDb.has(h.path)) continue;
+      seenDb.add(h.path);
+      const recs = sdb.activeMemories(h, args.business_slug, 20);
+      if (!recs.length) continue;
       const lines = recs.map((r: any) => `- ${r.statement}${r.source ? ` _(${r.source})_` : ""}`).join("\n");
-      memoryBlock += `## ACTIVE TEMPORAL MEMORY — ${args.business_slug}\n\n> Facts/decisions in force (supersede-never-delete). Honor the active ones.\n\n${lines}\n\n---\n\n`;
+      const what = scope === "global"
+        ? "vale para esta empresa em qualquer projeto"
+        : "vale só neste projeto, e prevalece quando contradiz a global";
+      memoryBlock += `## FATOS VIGENTES — ${args.business_slug} · ${scope.toUpperCase()} (${what})\n\n`
+        + `> Supersede-never-delete. Honre os ativos.\n\n${lines}\n\n---\n\n`;
     }
   } catch { /* state-db unavailable — proceed without temporal recall */ }
 

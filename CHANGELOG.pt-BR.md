@@ -8,6 +8,22 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### A memória saiu da entidade, e o escopo virou julgamento
+
+Uma empresa guardava a memória curada em `memory/permanent.md`, dentro do próprio diretório. Esse diretório é o produto: uma atualização de pack, o `nrv migrate` ou uma reinstalação o substituem inteiro, então o conhecimento acumulado pelo dono era escrito numa superfície feita para ser sobrescrita. O seeder para onde o portão apontava dizia isso no arquivo que criava — "A pack update replaces this file" — e o portão ainda dava seis pontos por ter um. Medido numa biblioteca real: 60 empresas carregavam um, 56 com conteúdo de verdade, o maior com 29 KB.
+
+A memória curada passa a morar em `.nirvana/memory/<kind>/<slug>/`, ao lado das linhas temporais que o `state-db.js` sempre guardou ali. O `nrv memory relocate [--apply]` move o que versões anteriores deixaram para trás; um `memory/*.md` embarcado vira semente, copiada para o lar uma única vez e nunca mais lida, para que uma atualização renove a semente sem tocar no que o dono escreveu.
+
+**Qual dos dois lares é um julgamento sobre o fato, nunca uma inferência do diretório.** O escopo de projeto responde a uma pergunta e só a ela — as empresas e squads desta execução vêm de `~/businesses` e `~/squads` ou das cópias do projeto. Ele não decide onde o conhecimento mora. Um fato verdadeiro sobre a entidade em qualquer lugar vai para `~/.nirvana`; um fato verdadeiro só sobre a aplicação dela naquele projeto vai para `./.nirvana`. Derivar isso do cwd arquivaria "este cliente aprova por WhatsApp" sob qualquer projeto que estivesse aberto na hora e o esconderia de todos os outros — a mesma perda de manter a memória dentro da entidade, um nível acima. Então o `nrv memory add` passa a exigir `--scope global|project` e recusa adivinhar, as leituras devolvem os dois escopos rotulados, e o prompt do employee carrega ambos em vez de qualquer banco que o diretório do despacho tenha selecionado.
+
+Duas perdas silenciosas terminam junto. O `learned.md` tinha leitor na documentação — as SKILL.md de businesses e do harness dizem "both are read at dispatch" — e nenhum leitor no código; agora é lido. E o corte de 8.000 caracteres na memória permanente acabou: a memória chega inteira, e diz o próprio tamanho quando é grande, em vez de ser cortada atrás de um marcador de quatro palavras que não nomeava nem o tamanho nem o caminho.
+
+O critério de auditoria inverteu junto. O `memory_missing` premiava ter memória dentro da empresa; o `memory_inside_entity` passa a sinalizar memória acumulada (`learned.md`, `memory/projects/`) onde uma atualização a descarta, e o seeder recusa criar uma.
+
+### Um arquivo-fonte que nenhum grep enxergava
+
+O `business-fixers.js` e o `plan-compiler.ts` embutiam um NUL literal como separador de chave (`${a}\x00${b}`). JavaScript válido, e o bastante para o `file` reportar o fonte como binário e todo `grep` pulá-lo em silêncio — 40 KB de fixers mecânicos invisíveis às buscas do próprio repositório, que foi como o seeder de memória passou tanto tempo sem exame. Escapado como `\u0000`; mesma string, mesmo comportamento, e de novo pesquisável.
+
 ### Uma squad despachada finalmente consegue se ler
 
 O prompt inlina exatamente os agentes e as tasks que o workflow nomeia. Todo o resto que a squad carrega era invisível ao agente que a executava — e o diretório da própria squad nunca era concedido, então um caminho seria recusado de qualquer forma no claude-code e no agy, os dois runtimes que honram `addDirs`. `references/`, `checklists/`, `templates/`, `standards/`, `schemas/`, `config/`, `scripts/`, `data/`, `tools/` e `lib/` são todos comuns em squads reais. Conteúdo autoral, embarcado em todo pack, que nenhuma execução jamais conseguiu abrir.

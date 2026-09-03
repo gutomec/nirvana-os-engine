@@ -128,7 +128,7 @@ export const criteria: Criterion[] = [
   { id: "self_retrieval_miss", severity: "warning", autofix: "agentic", baselineable: true, title: "an example_brief does not return the business in top-1" },
   { id: "readme_missing", severity: "warning", autofix: "mechanical", baselineable: false, title: "README.md absent", fixer: "readme_business_scaffold" },
   { id: "readme_thin", severity: "warning", autofix: "agentic", baselineable: false, title: "README.md holds nothing beyond the skeleton" },
-  { id: "memory_missing", severity: "warning", autofix: "mechanical", baselineable: false, title: "memory/permanent.md absent", fixer: "memory_seed" },
+  { id: "memory_inside_entity", severity: "warning", autofix: "none", baselineable: false, title: "memory accumulated inside the business instead of .nirvana" },
   { id: "runtime_requirements_default", severity: "warning", autofix: "mechanical", baselineable: false, title: "runtime_requirements is still the template skeleton", fixer: "runtime_requirements_business_default" },
   { id: "type_mind_clone_without_pin", severity: "warning", autofix: "none", baselineable: false, title: "type: mind_clone without pinned_mind_clones (§7.8)" },
   { id: "type_flag_mismatch", severity: "warning", autofix: "mechanical", baselineable: false, title: "type: antagonist_gate without is_antagonist: true (§7.8)", fixer: "type_flag_sync" },
@@ -605,8 +605,12 @@ function fileFindings(dir: string, b: BusinessRead): Finding[] {
       out.push(mk("readme_thin", `${path.basename(readme)} is ${lines} line(s) and covers ${covered}/4 of the sections a reader looks for`, path.basename(readme)));
     }
   }
-  if (!fs.existsSync(path.join(dir, "memory", "permanent.md"))) {
-    out.push(mk("memory_missing", "memory/permanent.md is absent — every seat starts each run with no curated facts", path.join(dir, "memory", "permanent.md")));
+  // Accumulated memory inside the entity is the defect, not its absence: the
+  // directory is replaced whole on update, so `learned.md` and `memory/projects`
+  // are written where they cannot survive. They belong in `.nirvana`.
+  const strayMemory = ["learned.md", "projects"].filter((n) => fs.existsSync(path.join(dir, "memory", n)));
+  if (strayMemory.length) {
+    out.push(mk("memory_inside_entity", `memory/${strayMemory.join(", memory/")} sits inside the business, where a pack update discards it — move it with \`nrv memory relocate --apply\``, path.join(dir, "memory")));
   }
   return out;
 }

@@ -390,10 +390,21 @@ describe("warnings", () => {
     expect(after.code).toBe(0);
   }, spawnBudgetMs(2));
 
-  test("readme_missing / readme_thin / memory_missing", () => {
+  test("readme_missing / readme_thin", () => {
     expect(idsOf(check("no-readme", { readme: null }).findings)).toContain("readme_missing");
     expect(idsOf(check("thin-readme", { readme: "# thin\n\nNothing here.\n" }).findings)).toContain("readme_thin");
-    expect(idsOf(check("no-memory", { memory: false }).findings)).toContain("memory_missing");
+  }, spawnBudgetMs(2));
+
+  // Inverted on purpose. A business WITHOUT memory inside it is correct: memory
+  // lives in `.nirvana`, because the business directory is replaced whole by a
+  // pack update and anything accumulated there is discarded with it.
+  test("memory_inside_entity fires on accumulated memory, never on its absence", () => {
+    expect(idsOf(check("no-memory", { memory: false }).findings)).not.toContain("memory_inside_entity");
+    const r = root();
+    const dir = businessFixture(r, "stray-memory", {});
+    fs.mkdirSync(path.join(dir, "memory"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "memory", "learned.md"), "- promovido numa execução anterior\n");
+    expect(idsOf(findings(r, "stray-memory"))).toContain("memory_inside_entity");
   }, spawnBudgetMs(2));
 
   test("runtime_requirements_default: the template skeleton never got a floor", () => {

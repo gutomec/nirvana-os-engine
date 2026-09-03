@@ -325,7 +325,7 @@ Até 2026-08-28 nenhum erro era baselinável: débito era reservado a fato de pi
 | `self_retrieval_miss` | agêntico | sim | Um `example_brief` não volta para a própria empresa em top-1 |
 | `readme_missing` | mecânico | não | `README.md` ausente |
 | `readme_thin` | agêntico | não | `README.md` sem conteúdo além do esqueleto |
-| `memory_missing` | mecânico | não | `memory/permanent.md` ausente |
+| `memory_inside_entity` | nenhum | não | memória acumulada dentro da empresa (`memory/learned.md`, `memory/projects/`) em vez de `.nirvana` — um update descarta |
 | `runtime_requirements_default` | mecânico | não | `runtime_requirements` no esqueleto do template |
 | `type_mind_clone_without_pin` | nenhum | não | `type: mind_clone` sem `pinned_mind_clones` (§7.8) |
 | `type_flag_mismatch` | mecânico | não | `type: antagonist_gate` sem `is_antagonist: true` (§7.8) |

@@ -258,14 +258,30 @@ function c9_readme({ businessDir }) {
   };
 }
 
-// ─── Criterion 10 — memory/ directory non-empty — 6 pts ─────────────────
+// ─── Criterion 10 — memory is NOT accumulated inside the business — 6 pts ──
+//
+// This used to award points for HAVING `memory/` inside the business, and the
+// seeder it pointed at created one. Both were backwards: the business directory
+// is the product, replaced whole by a pack update, a migration or a reinstall,
+// so memory kept there is written on a surface built to be overwritten. It lives
+// in `.nirvana/memory/businesses/<slug>/` — the project's or the machine's —
+// alongside the temporal rows `state-db.js` has always kept there.
+//
+// A shipped `permanent.md` is tolerated: packs seed one, and the engine reads it
+// once to populate the canonical home. What costs points is ACCUMULATED state —
+// `learned.md` and `memory/projects/`, the two the pack build already refuses to
+// ship, sitting where an update will silently discard them.
 function c10_memory({ businessDir }) {
   const max = 6;
-  const dir = path.join(businessDir, 'memory');
-  if (!exists(dir)) return { score: 0, max, evidence: 'memory/ missing', fixable_diff: { kind: 'memory_seed', class: 'mechanical' } };
-  const files = listDir(dir).filter(f => !f.startsWith('.'));
-  if (files.length === 0) return { score: 2, max, evidence: 'memory/ empty', fixable_diff: { kind: 'memory_seed', class: 'mechanical' } };
-  return { score: max, max, evidence: `${files.length} memory file(s)` };
+  const stray = ['learned.md', 'projects']
+    .filter(n => exists(path.join(businessDir, 'memory', n)));
+  if (stray.length) {
+    return {
+      score: 2, max,
+      evidence: `memory/${stray.join(', memory/')} accumulated inside the business — an update discards it; run \`nrv memory relocate --apply\``,
+    };
+  }
+  return { score: max, max, evidence: 'memory lives in .nirvana/memory/businesses/<slug>/, outside the replaceable entity' };
 }
 
 // ─── Criterion 11 — legacy migration tagged or N/A — 6 pts ──────────────
