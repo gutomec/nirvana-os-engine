@@ -336,17 +336,29 @@ describe("buildSquadPrompt — with a resolved capability", () => {
     const squadDir = scaffoldCapabilitySquad(path.join(tmp, "squads"));
     fs.writeFileSync(path.join(squadDir, "agents", "analyst.md"), "A".repeat(max + 4096));
     fs.writeFileSync(path.join(squadDir, "agents", "writer.md"), "WRITER-MARKER");
+    // A task big enough that the TASKS half would also have been cut by the old
+    // ceiling: asserting only the agents half let a task-side regression pass.
+    fs.writeFileSync(path.join(squadDir, "tasks", "collect.md"), "C".repeat(20_000) + "COLLECT-TAIL");
     const ctx = capabilityContext(squadDir, "analysis.report.produce")!;
     expect(ctx.components).not.toBeNull();
-    // Over the ceiling, on purpose: neither document is cut or dropped.
+    // Over the ceiling, on purpose: no document on EITHER side is cut or dropped.
     expect(Buffer.byteLength(ctx.components!.agents, "utf8")).toBeGreaterThan(max);
     expect(ctx.components!.agents).toContain("A".repeat(max + 4096));
     expect(ctx.components!.agents).toContain("WRITER-MARKER");
-    expect(ctx.components!.agents).not.toContain("truncado no teto");
-    expect(ctx.components!.agents).not.toContain("omitido(s)");
+    expect(ctx.components!.tasks).toContain("C".repeat(20_000));
+    expect(ctx.components!.tasks).toContain("COLLECT-TAIL");
+    for (const section of [ctx.components!.agents, ctx.components!.tasks]) {
+      expect(section).not.toContain("truncado no teto");
+      expect(section).not.toContain("documento(s) omitido(s)");
+    }
     // The crossing is flagged, not hidden — on the LAST section shown, so the
-    // reader meets it after the content it measures.
+    // reader meets it after the content it measures, and exactly once across
+    // the pair (a note emitted per section is the bug the sibling test pins).
+    const both = `${ctx.components!.agents}\n${ctx.components!.tasks}`;
+    expect(both.match(/acima do teto de/g)).toHaveLength(1);
     expect(ctx.components!.tasks).toContain(`acima do teto de ${max}`);
+    // It answers for the ceiling only, so it never contradicts a missing-file note.
+    expect(both).not.toContain("nada foi omitido");
   });
 
   // The regression this test exists for: the note used to be emitted from

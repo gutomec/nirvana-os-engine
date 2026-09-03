@@ -229,7 +229,11 @@ function ceilingNote(agentDocs: string, taskSection: string): string {
   const max = componentsBytesMax();
   const total = Buffer.byteLength(agentDocs, "utf8") + Buffer.byteLength(taskSection, "utf8");
   if (total <= max) return "";
-  return `\n\n[componentes (agentes + tasks) somam ${total} bytes, ${total - max} acima do teto de ${max} — nada foi omitido]`;
+  // "nada foi cortado pelo teto", not "nada foi omitido": the sibling note from
+  // renderComponents can be reporting a reference with no file on disk, and an
+  // absolute about omission would read as contradicting it. This note answers
+  // for the ceiling only — the one thing it measures.
+  return `\n\n[componentes (agentes + tasks) somam ${total} bytes, ${total - max} acima do teto de ${max} — nada foi cortado pelo teto]`;
 }
 
 /**
@@ -473,6 +477,17 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
     ...(args.capabilityId ? { capability_id: args.capabilityId } : {}),
     mode: args.mode,
     outputs_dir: outDir,
+    // How big the thing we just built actually is. The components ceiling stopped
+    // cutting documents, so the prompt is now bounded only by what the workflow
+    // references — and no instrument in the engine measured it: the prompt is on
+    // no event, the ledger stores a path and not content, and the cost table is
+    // flat per target. One integer closes that, and it is the integer that
+    // matters operationally: past MAX_ARGV_PROMPT_BYTES (100_000) the driver
+    // silently switches delivery — stdin and grok's --prompt-file carry the
+    // prompt itself, but agy, kimi and opencode fall back to a bootstrap pointer
+    // the child has to go read. A number nobody logs is a fallback nobody can
+    // correlate with a bad run.
+    prompt_bytes: Buffer.byteLength(prompt, "utf8"),
     // The proof-of-dispatch event says which squad, and now also what it was
     // asked to do. Bounded — see brief-excerpt.ts for the measured cap.
     brief_excerpt: briefExcerpt(args.brief),

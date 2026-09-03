@@ -190,6 +190,26 @@ function run(runtime: Runtime, mode?: "error" | "budget") {
 }
 
 describe("driver adapters — 300KB prompt delivery + cost matrix", () => {
+  // The guard used to be one POSIX-sized number on all three systems. Linux and
+  // macOS measure a per-argument limit in the hundreds of KB, but Windows caps
+  // the WHOLE command line — 32,767 chars through CreateProcess, 8,191 through
+  // the command interpreter, which resolveExecutable still takes for a .cmd shim
+  // it cannot read. At 100,000 the argv adapters (agy, kimi, opencode, pi) would
+  // build a Windows command line they believed safe and watch the interpreter cut
+  // it. This runs on all three CI systems, so each branch is exercised where it
+  // is true rather than asserted from the other side.
+  test("the argv guard respects the platform's real command-line limit", () => {
+    if (process.platform === "win32") {
+      // Under the interpreter's 8,191, with room for the flags, the model name,
+      // every --add-dir and the interpreter's own path.
+      expect(MAX_ARGV_PROMPT_BYTES).toBeLessThan(8_191);
+      // Still large enough that an ordinary prompt stays on argv.
+      expect(MAX_ARGV_PROMPT_BYTES).toBeGreaterThanOrEqual(4_096);
+    } else {
+      expect(MAX_ARGV_PROMPT_BYTES).toBe(100_000);
+    }
+  });
+
   test("claude-code: STDIN; native cost", () => {
     const r = run("claude-code");
     expect(r.ok).toBe(true);
