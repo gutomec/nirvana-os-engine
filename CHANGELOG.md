@@ -6,6 +6,14 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### `.nirvana` inside an entity is run state, and never ships
+
+Running any `nrv` command with the cwd inside a squad materializes a `.nirvana/` there — the registries, the routing digest, the verify state — and those files carry absolute paths into the author's home. `RUN_STATE_EXCLUDES` did not name `.nirvana`, so the pack build would have copied them into every buyer's artifact. Measured 2026-09-03: three squads in the live library had picked one up during an audit campaign; the published packs were clean only because the state was created after the last build.
+
+`.nirvana` now joins the exclusion list for squads and for businesses, which is what the installer, the uninstaller, the migrator and the pack build all consult. `.nirvana-surface.json` is deliberately not covered — it is the contract surface and has to travel.
+
 ## 0.12.9 — 2026-09-03
 
 ### Every dependency installs into `~/.nirvana`, and nowhere else

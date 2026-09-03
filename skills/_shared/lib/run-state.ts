@@ -33,8 +33,14 @@
  * `.nirvana/state/squads/<slug>/`; this entry stops the old ones travelling.
  */
 export const RUN_STATE_EXCLUDES: Record<string, string[]> = {
-  squads: ["projects", "outputs", ".runs", ".squad-state", ".squads-outputs", ".wiki-brain-state", ".vercel", ".omc", "_internal", "SQUAD-DOCTOR-REPORT.md"],
-  businesses: ["memory/projects", "memory/learned.md", ".squad-state", ".squads-outputs", ".vercel"],
+  // `.nirvana` is project state, never squad content: running any `nrv` command
+  // with the cwd inside a squad materializes one there, carrying the machine's
+  // registries and routing digest — which hold absolute paths into the author's
+  // home. Measured 2026-09-03: 3 squads in the live library had picked one up
+  // during an audit campaign, and the list did not exclude it, so the next build
+  // would have shipped the author's paths to every buyer.
+  squads: ["projects", "outputs", ".runs", ".nirvana", ".squad-state", ".squads-outputs", ".wiki-brain-state", ".vercel", ".omc", "_internal", "SQUAD-DOCTOR-REPORT.md"],
+  businesses: ["memory/projects", "memory/learned.md", ".nirvana", ".squad-state", ".squads-outputs", ".vercel"],
   "mind-clones": [],
 };
 
