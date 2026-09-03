@@ -8,6 +8,12 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### `.nirvana` dentro de uma entidade é estado de execução, e nunca viaja
+
+Rodar qualquer comando `nrv` com o cwd dentro de um squad materializa um `.nirvana/` ali — os registries, o digest de roteamento, o estado do verify — e esses arquivos carregam caminhos absolutos para a home do autor. O `RUN_STATE_EXCLUDES` não nomeava `.nirvana`, então o build de pack os teria copiado para o artefato de todo comprador. Medido em 03/09/2026: três squads da biblioteca viva tinham pegado um durante uma campanha de auditoria; os packs publicados só estavam limpos porque o estado nasceu depois do último build.
+
+O `.nirvana` entra na lista de exclusão de squads e de businesses, que é o que o instalador, o desinstalador, o migrador e o build de pack consultam. O `.nirvana-surface.json` fica de fora de propósito — ele é a superfície de contrato e precisa viajar.
+
 ### Uma raiz temporária compartilhada nunca é raiz de projeto
 
 O `resolveProjectRoot()` sobe procurando um marcador (`.env`, `.nirvana`, `.git`, `package.json`, `pyproject.toml`) e se protege contra `/`, o HOME e os diretórios de sistema do Windows — mas não contra as raízes temporárias. Medido em 03/09/2026 numa máquina real: `/private/tmp` tinha um `.nirvana` e um `package.json` deixados ali por ferramentas sem relação, então toda resolução de escopo a partir de um caminho abaixo dele adotava `/private/tmp` como projeto. Um despacho lançado de um diretório de rascunho escrevia brief, kernel e cadeia de auditoria numa árvore sem contrato e sem `.nirvana/` próprio — e reportava sucesso. O comentário sobre o `PROJECT_ROOT` do `dispatch.ts` já registra a versão anterior desse bug ("um runtime filho foi informado de que seu projeto era o diretório home do usuário"); a regra de temp que faltava é o que o mantinha alcançável.

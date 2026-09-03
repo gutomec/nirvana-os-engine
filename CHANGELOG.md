@@ -8,6 +8,12 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### `.nirvana` inside an entity is run state, and never ships
+
+Running any `nrv` command with the cwd inside a squad materializes a `.nirvana/` there — the registries, the routing digest, the verify state — and those files carry absolute paths into the author's home. `RUN_STATE_EXCLUDES` did not name `.nirvana`, so the pack build would have copied them into every buyer's artifact. Measured 2026-09-03: three squads in the live library had picked one up during an audit campaign; the published packs were clean only because the state was created after the last build.
+
+`.nirvana` now joins the exclusion list for squads and for businesses, which is what the installer, the uninstaller, the migrator and the pack build all consult. `.nirvana-surface.json` is deliberately not covered — it is the contract surface and has to travel.
+
 ### A shared temp root is never a project root
 
 `resolveProjectRoot()` walks up looking for a marker (`.env`, `.nirvana`, `.git`, `package.json`, `pyproject.toml`) and hardens against `/`, HOME and the Windows system directories — but not against the temp roots. Measured 2026-09-03 on a real machine: `/private/tmp` held a `.nirvana` and a `package.json` left there by unrelated tools, so every scope resolution from a path under it adopted `/private/tmp` as the project. A dispatch launched from a scratch directory then wrote its brief, its kernel and its audit chain into a tree with no contract and no `.nirvana/` of its own, and reported success. The comment above `dispatch.ts`'s `PROJECT_ROOT` already records the earlier version of this bug ("a child runtime told its project was the user's home directory"); the missing temp rule is what kept it reachable.
