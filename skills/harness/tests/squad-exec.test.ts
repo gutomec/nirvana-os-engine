@@ -331,18 +331,21 @@ describe("buildSquadPrompt — with a resolved capability", () => {
     expect(p).toContain("AARDVARK-MARKER");
   });
 
-  test("the components ceiling truncates instead of sending an unbounded prompt", () => {
+  test("the components ceiling is a target, not a cut: every document ships in full", () => {
     const max = Number(LIMITS.squad_prompt_components_bytes_max);
     const squadDir = scaffoldCapabilitySquad(path.join(tmp, "squads"));
     fs.writeFileSync(path.join(squadDir, "agents", "analyst.md"), "A".repeat(max + 4096));
     fs.writeFileSync(path.join(squadDir, "agents", "writer.md"), "WRITER-MARKER");
     const ctx = capabilityContext(squadDir, "analysis.report.produce")!;
     expect(ctx.components).not.toBeNull();
-    expect(Buffer.byteLength(ctx.components!.agents, "utf8")).toBeLessThanOrEqual(max);
-    expect(ctx.components!.agents).toContain("truncado no teto");
-    // The second agent no longer fits: it is dropped and counted, not silently lost.
-    expect(ctx.components!.agents).not.toContain("WRITER-MARKER");
-    expect(ctx.components!.agents).toContain("documento(s) omitido(s)");
+    // Over the ceiling, on purpose: neither document is cut or dropped.
+    expect(Buffer.byteLength(ctx.components!.agents, "utf8")).toBeGreaterThan(max);
+    expect(ctx.components!.agents).toContain("A".repeat(max + 4096));
+    expect(ctx.components!.agents).toContain("WRITER-MARKER");
+    expect(ctx.components!.agents).not.toContain("truncado no teto");
+    expect(ctx.components!.agents).not.toContain("omitido(s)");
+    // The crossing is flagged, not hidden.
+    expect(ctx.components!.agents).toContain(`acima do teto de ${max}`);
   });
 
   test("capabilityContext returns null on every path that must keep the historical prompt", () => {

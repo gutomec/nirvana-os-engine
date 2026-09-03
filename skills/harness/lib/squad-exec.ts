@@ -178,8 +178,10 @@ export interface SquadCapabilityPromptContext {
    *  names no readable workflow (the manifest still describes the capability).
    *  `file` is squad-relative with POSIX separators on every platform. */
   workflow: { ref: string; file: string; steps: CanonicalStep[]; body: string } | null;
-  /** Agent and task documents the workflow runs, in step order, under the byte
-   *  ceiling. Null when the workflow named none — the caller keeps the top-3 blocks. */
+  /** Agent and task documents the workflow runs, in step order, in full — the
+   *  byte ceiling is a target flagged in a trailing note, never a reason to
+   *  drop one. Null when the workflow named none — the caller keeps the top-3
+   *  blocks. */
   components: { agents: string; tasks: string } | null;
 }
 
@@ -197,41 +199,31 @@ export function promptPath(p: string): string {
   return p.split(path.sep).join("/").replace(/\\/g, "/");
 }
 
-/** Slice a string to at most `bytes` UTF-8 bytes, never splitting a code point. */
-function sliceBytes(text: string, bytes: number): string {
-  const buf = Buffer.from(text, "utf8");
-  if (buf.length <= bytes) return text;
-  return new TextDecoder("utf8", { fatal: false }).decode(buf.subarray(0, bytes)).replace(/�$/, "");
-}
-
-/** Headroom kept aside for the truncation note, so the note itself can never
- *  push the section past the ceiling it is reporting. */
-const COMPONENTS_NOTE_RESERVE = 192;
-
-/** Component documents in step order, under a budget shared by agents and tasks.
- *  A document that does not fit is dropped whole and counted; the first one that
- *  overflows an empty budget is sliced, so a single huge persona still arrives. */
-function renderComponents(squadDir: string, sub: "agents" | "tasks", stems: string[], budget: { left: number }): string {
+/** Component documents in step order, tallied against a byte budget shared by
+ *  agents and tasks. The ceiling is a target, never a reason to lose content:
+ *  every referenced document is included in full, whole. When the running
+ *  total crosses the ceiling, the call that crossed it says so once — how many
+ *  bytes over, next to the ceiling — so the gap is visible without silently
+ *  discarding the persona or task a step depends on. */
+function renderComponents(squadDir: string, sub: "agents" | "tasks", stems: string[], budget: { spent: number }): string {
   const parts: string[] = [];
-  let dropped = 0;
   let missing = 0;
-  const marker = `\n[…truncado no teto de ${componentsBytesMax()} bytes de componentes]`;
-  const spend = (text: string) => { budget.left -= Buffer.byteLength(text, "utf8") + (parts.length ? 2 : 0); parts.push(text); };
+  const max = componentsBytesMax();
+  const wasOverBefore = budget.spent > max;
   for (const stem of stems) {
     const file = path.join(squadDir, sub, `${stem}.md`);
     let text: string;
     try { text = fs.readFileSync(file, "utf8"); } catch { missing++; continue; }
     const doc = `--- ${stem}.md ---\n${text}`;
-    const join = parts.length ? 2 : 0;
-    if (Buffer.byteLength(doc, "utf8") + join <= budget.left - COMPONENTS_NOTE_RESERVE) { spend(doc); continue; }
-    const room = budget.left - COMPONENTS_NOTE_RESERVE - join - Buffer.byteLength(marker, "utf8");
-    if (parts.length === 0 && room > 512) { spend(sliceBytes(doc, room) + marker); continue; }
-    dropped++;
+    budget.spent += Buffer.byteLength(doc, "utf8") + (parts.length ? 2 : 0);
+    parts.push(doc);
   }
   const notes: string[] = [];
-  if (dropped) notes.push(`${dropped} documento(s) omitido(s) pelo teto de ${componentsBytesMax()} bytes de componentes`);
   if (missing) notes.push(`${missing} referência(s) sem arquivo em ${sub}/`);
-  if (notes.length) spend(`[${notes.join("; ")}]`);
+  if (budget.spent > max && !wasOverBefore) {
+    notes.push(`componentes (agentes + tasks) somam ${budget.spent} bytes, ${budget.spent - max} acima do teto de ${max} — nada foi omitido`);
+  }
+  if (notes.length) parts.push(`[${notes.join("; ")}]`);
   return parts.join("\n\n");
 }
 
@@ -273,7 +265,7 @@ export function capabilityContext(squadDir: string, capabilityId: string): Squad
     const agents = referenced.agents.map(stem).filter(Boolean);
     const tasks = referenced.tasks.map(stem).filter(Boolean);
     if (agents.length || tasks.length) {
-      const budget = { left: componentsBytesMax() };
+      const budget = { spent: 0 };
       const agentDocs = renderComponents(squadDir, "agents", agents, budget);
       const taskDocs = renderComponents(squadDir, "tasks", tasks, budget);
       // Only take over the blocks when at least the agents resolved: a workflow
