@@ -199,32 +199,37 @@ export function promptPath(p: string): string {
   return p.split(path.sep).join("/").replace(/\\/g, "/");
 }
 
-/** Component documents in step order, tallied against a byte budget shared by
- *  agents and tasks. The ceiling is a target, never a reason to lose content:
- *  every referenced document is included in full, whole. When the running
- *  total crosses the ceiling, the call that crossed it says so once — how many
- *  bytes over, next to the ceiling — so the gap is visible without silently
- *  discarding the persona or task a step depends on. */
-function renderComponents(squadDir: string, sub: "agents" | "tasks", stems: string[], budget: { spent: number }): string {
+/** Component documents in step order, every one of them whole: the byte ceiling
+ *  is a target reported by the caller, never a reason to lose content. The only
+ *  note this adds is per-section and knowable here — a reference with no file. */
+function renderComponents(squadDir: string, sub: "agents" | "tasks", stems: string[]): string {
   const parts: string[] = [];
   let missing = 0;
-  const max = componentsBytesMax();
-  const wasOverBefore = budget.spent > max;
   for (const stem of stems) {
     const file = path.join(squadDir, sub, `${stem}.md`);
     let text: string;
     try { text = fs.readFileSync(file, "utf8"); } catch { missing++; continue; }
-    const doc = `--- ${stem}.md ---\n${text}`;
-    budget.spent += Buffer.byteLength(doc, "utf8") + (parts.length ? 2 : 0);
-    parts.push(doc);
+    parts.push(`--- ${stem}.md ---\n${text}`);
   }
-  const notes: string[] = [];
-  if (missing) notes.push(`${missing} referência(s) sem arquivo em ${sub}/`);
-  if (budget.spent > max && !wasOverBefore) {
-    notes.push(`componentes (agentes + tasks) somam ${budget.spent} bytes, ${budget.spent - max} acima do teto de ${max} — nada foi omitido`);
-  }
-  if (notes.length) parts.push(`[${notes.join("; ")}]`);
+  if (missing) parts.push(`[${missing} referência(s) sem arquivo em ${sub}/]`);
   return parts.join("\n\n");
+}
+
+/** The ceiling note, measured on BOTH rendered sections.
+ *
+ *  It has to live here, not inside `renderComponents`: that function sees one
+ *  section, so a note emitted from it reports a partial total. Measured on the
+ *  installed library — 34 of 664 capabilities carry components over the ceiling
+ *  — a running tally shared between the two calls got the number wrong on 8 of
+ *  them, worst case reporting 50,712 bytes over when the real overage was
+ *  162,692, because the agents call crossed the line first and silenced the
+ *  tasks call that would have counted the rest. Nothing is ever omitted either
+ *  way; a diagnostic that understates by 3x is still a diagnostic that lies. */
+function ceilingNote(agentDocs: string, taskSection: string): string {
+  const max = componentsBytesMax();
+  const total = Buffer.byteLength(agentDocs, "utf8") + Buffer.byteLength(taskSection, "utf8");
+  if (total <= max) return "";
+  return `\n\n[componentes (agentes + tasks) somam ${total} bytes, ${total - max} acima do teto de ${max} — nada foi omitido]`;
 }
 
 /**
@@ -265,12 +270,16 @@ export function capabilityContext(squadDir: string, capabilityId: string): Squad
     const agents = referenced.agents.map(stem).filter(Boolean);
     const tasks = referenced.tasks.map(stem).filter(Boolean);
     if (agents.length || tasks.length) {
-      const budget = { spent: 0 };
-      const agentDocs = renderComponents(squadDir, "agents", agents, budget);
-      const taskDocs = renderComponents(squadDir, "tasks", tasks, budget);
+      const agentDocs = renderComponents(squadDir, "agents", agents);
+      const taskDocs = renderComponents(squadDir, "tasks", tasks);
       // Only take over the blocks when at least the agents resolved: a workflow
       // whose every reference is dangling must not leave the squad with nothing.
-      if (agentDocs) components = { agents: agentDocs, tasks: taskDocs || "(o workflow não referencia nenhuma task)" };
+      if (agentDocs) {
+        const taskSection = taskDocs || "(o workflow não referencia nenhuma task)";
+        // The note rides the LAST section the prompt shows, so the reader meets
+        // it after the content it is measuring.
+        components = { agents: agentDocs, tasks: taskSection + ceilingNote(agentDocs, taskSection) };
+      }
     }
   }
 

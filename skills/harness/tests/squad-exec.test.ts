@@ -344,8 +344,38 @@ describe("buildSquadPrompt — with a resolved capability", () => {
     expect(ctx.components!.agents).toContain("WRITER-MARKER");
     expect(ctx.components!.agents).not.toContain("truncado no teto");
     expect(ctx.components!.agents).not.toContain("omitido(s)");
-    // The crossing is flagged, not hidden.
-    expect(ctx.components!.agents).toContain(`acima do teto de ${max}`);
+    // The crossing is flagged, not hidden — on the LAST section shown, so the
+    // reader meets it after the content it measures.
+    expect(ctx.components!.tasks).toContain(`acima do teto de ${max}`);
+  });
+
+  // The regression this test exists for: the note used to be emitted from
+  // inside the per-section renderer, which sees half the total. When the agents
+  // section crossed the ceiling on its own, it reported ITS overage and silenced
+  // the tasks section that would have counted the rest. Measured on the
+  // installed library, 8 of the 34 over-ceiling capabilities got a wrong number
+  // that way — worst case 50,712 reported against a real 162,692.
+  test("the overage counts BOTH sections, even when agents alone already crossed", () => {
+    const max = Number(LIMITS.squad_prompt_components_bytes_max);
+    const squadDir = scaffoldCapabilitySquad(path.join(tmp, "squads"));
+    fs.writeFileSync(path.join(squadDir, "agents", "analyst.md"), "A".repeat(max + 1_000));
+    fs.writeFileSync(path.join(squadDir, "agents", "writer.md"), "W");
+    fs.writeFileSync(path.join(squadDir, "tasks", "collect.md"), "C".repeat(50_000));
+    const ctx = capabilityContext(squadDir, "analysis.report.produce")!;
+
+    const real = Buffer.byteLength(ctx.components!.agents, "utf8")
+      + Buffer.byteLength(ctx.components!.tasks, "utf8");
+    const m = ctx.components!.tasks.match(/somam (\d+) bytes, (\d+) acima do teto de (\d+)/);
+    expect(m).not.toBeNull();
+    expect(Number(m![3])).toBe(max);
+    // The reported total is the measured content; only the note's own bytes,
+    // appended after the measurement, separate it from the rendered length.
+    expect(Number(m![1])).toBeGreaterThan(max + 50_000);
+    expect(real - Number(m![1])).toBeLessThan(256);
+    expect(Number(m![2])).toBe(Number(m![1]) - max);
+    // And the whole reason the note exists: nothing was lost to say it.
+    expect(ctx.components!.agents).toContain("A".repeat(max + 1_000));
+    expect(ctx.components!.tasks).toContain("C".repeat(50_000));
   });
 
   test("capabilityContext returns null on every path that must keep the historical prompt", () => {
