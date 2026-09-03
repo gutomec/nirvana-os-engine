@@ -94,11 +94,17 @@ describe("buildSquadPrompt — framing per mode", () => {
     }
   });
 
-  // The compatibility invariant of the capability cut, stated as the whole
-  // string and not as a set of substrings: without a resolved capability the
-  // prompt is the one the engine has always sent, byte for byte. Every squad
-  // in the library is dispatched through this path until a capability resolves.
-  test("no capability: the prompt is byte-identical to the historical one", () => {
+  // The whole string, not a set of substrings: without a resolved capability the
+  // prompt is the one the engine has always sent — plus the resource map, which
+  // is the ONE deliberate departure from that invariant.
+  //
+  // This path is the fallback, and the fallback is the worst one: it carries an
+  // alphabetical first-three of the squad's agents and tasks under a "(top 3)"
+  // heading that never says three OF HOW MANY. A squad with eight agents showed
+  // three and named none of the rest, and it is the path every hand-written
+  // squad without `capabilities[]` lands on. Withholding the map here to keep
+  // the pin green would have kept the invariant by keeping the defect.
+  test("no capability: the prompt is the historical one plus the resource map", () => {
     const squadDir = scaffoldSquad(path.join(tmp, "squads"), "brandcraft");
     const expected = `Você É o squad "brandcraft" executando o brief do cliente de ponta a ponta. Sua saída é o ENTREGÁVEL FINAL para o usuário.
 
@@ -116,6 +122,14 @@ MANIFEST-MARKER: yes
 ## SUAS TASKS (top 3)
 --- do-it.md ---
 # Do it TASK-MARKER
+
+## O QUE MAIS ESTE SQUAD CARREGA
+Tudo abaixo existe em \`${squadDir}\` e **não** está neste prompt. Abra o que precisar, quando precisar, em cascata — nada aqui é obrigatório, e nada aqui foi resumido: o arquivo em disco é o conteúdo. Um nome terminado em \`/\` é subdiretório, desça nele.
+
+Este diretório é a fonte do squad, compartilhada por todo projeto desta máquina e lida por toda execução futura: **é somente leitura para você**. Não edite, crie nem apague nada aqui, nem para "corrigir" um template ou anotar um resultado. Todo arquivo que você produzir vai para o diretório de saída indicado na sua sub-tarefa.
+
+- \`agents/\` — \`lead.md\`
+- \`tasks/\` — \`do-it.md\`
 
 ## MIND-CLONES QUE VOCÊ INCORPORA (decisão: PADRÃO)
 > Incorpore por inteiro; entregue COMO SE o clone tivesse produzido, sob a especialidade do squad.
@@ -476,10 +490,10 @@ describe("buildSquadPrompt — the resource map", () => {
   // What keeps the byte-identical pin honest rather than merely passing: a squad
   // that ships nothing outside the three inlined directories gets no section.
   test("a squad that ships nothing extra gets no section at all", () => {
-    const squadDir = scaffoldSquad(path.join(tmp, "squads"), "bare");
+    const squadDir = scaffoldCapabilitySquad(path.join(tmp, "squads"), "bare");
     const p = buildSquadPrompt({
       squadSlug: "bare", squadDir, brief: "b", outDir: "/o", mode: "squad-only",
-      cloneInjection: { block: "", decision: "PADRÃO" },
+      cloneInjection: { block: "", decision: "PADRÃO" }, capabilityId: "analysis.report.produce",
     });
     expect(p).not.toContain("O QUE MAIS ESTE SQUAD CARREGA");
   });
@@ -510,11 +524,11 @@ describe("buildSquadPrompt — the resource map", () => {
 
   // An empty directory is a directory with nothing to open.
   test("an empty authored directory is not advertised", () => {
-    const squadDir = scaffoldSquad(path.join(tmp, "squads"), "hollow");
+    const squadDir = scaffoldCapabilitySquad(path.join(tmp, "squads"), "hollow");
     fs.mkdirSync(path.join(squadDir, "references"), { recursive: true });
     const p = buildSquadPrompt({
       squadSlug: "hollow", squadDir, brief: "b", outDir: "/o", mode: "squad-only",
-      cloneInjection: { block: "", decision: "PADRÃO" },
+      cloneInjection: { block: "", decision: "PADRÃO" }, capabilityId: "analysis.report.produce",
     });
     expect(p).not.toContain("O QUE MAIS ESTE SQUAD CARREGA");
   });
@@ -641,5 +655,53 @@ describe("runSquadHeadless", () => {
     expect(r.ok).toBe(true);
     expect(r.sessionId).toBe("fresh-session");
     expect(readAudit().some(e => e.event === "session_resume_failed")).toBe(true);
+  });
+});
+
+// A squad slug reaches runSquadHeadless unvalidated: the explicit-target layer
+// of the dispatch cascade returns what the caller named with no registry lookup,
+// and the target pattern admits dots and separators. `--squad=..` resolved to the
+// parent of the squads root — the user's home on a default install — and both the
+// resource map and the addDirs grant then treated it as the squad.
+describe("runSquadHeadless — the slug cannot leave the squads root", () => {
+  test("a traversing slug is refused before anything reads or grants it", () => {
+    const squadsRoot = path.join(tmp, "squads");
+    scaffoldSquad(squadsRoot, "brandcraft");
+    // A sibling of the squads root, standing in for the user's home.
+    fs.mkdirSync(path.join(tmp, "private"), { recursive: true });
+    fs.writeFileSync(path.join(tmp, "private", "id_rsa"), "SECRET-MARKER");
+
+    const seen: any[] = [];
+    const r = runSquadHeadless({
+      squadSlug: path.join("..", "private"), brief: "b",
+      projectId: "proj-esc", projectDir: tmp, projectRoot: tmp,
+      outputsDir: path.join(tmp, "out"), runtime: "claude-code",
+      businessSlug: null, mode: "squad-only", autonomousDirective: "D ",
+      squadsRoot,
+      runWithCascadeImpl: ((opts: any) => { seen.push(opts); return okCascadeResult(opts); }) as any,
+    });
+
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain("escapes the squads root");
+    // Never dispatched: nothing was granted and no prompt was built from it.
+    expect(seen).toHaveLength(0);
+    const failed = readAudit().find(e => e.event === "squad_run_failed");
+    expect(failed?.reason).toBe("squad slug escapes the squads root");
+  });
+
+  test("an ordinary slug still resolves", () => {
+    const squadsRoot = path.join(tmp, "squads");
+    scaffoldSquad(squadsRoot, "brandcraft");
+    const seen: any[] = [];
+    const r = runSquadHeadless({
+      squadSlug: "brandcraft", brief: "b",
+      projectId: "proj-ok", projectDir: tmp, projectRoot: tmp,
+      outputsDir: path.join(tmp, "out"), runtime: "claude-code",
+      businessSlug: null, mode: "squad-only", autonomousDirective: "D ",
+      squadsRoot,
+      runWithCascadeImpl: ((opts: any) => { seen.push(opts); return okCascadeResult(opts); }) as any,
+    });
+    expect(r.ok).toBe(true);
+    expect(seen).toHaveLength(1);
   });
 });

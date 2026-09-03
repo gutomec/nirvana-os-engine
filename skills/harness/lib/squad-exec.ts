@@ -335,9 +335,13 @@ Emita marcos do seu trabalho com \`nrv audit emit <nome> --squad=${squadSlug} --
  *  an agent may see is a list of what one person happened to think of.
  *  Everything the squad ships, the agent is told about. */
 const MAP_EXCLUDED_DIRS = new Set([
-  "agents", "tasks", "workflows",
   "node_modules", "dist", "build", "__pycache__", ".venv", "venv",
 ]);
+
+/** The three the prompt carries in full — but only when a capability resolved
+ *  and the workflow named them. On the legacy fallback it carries three files
+ *  in alphabetical order, which is not the same thing at all. */
+const INLINED_DIRS = new Set(["agents", "tasks", "workflows"]);
 
 /**
  * Everything else the squad carries, as a map rather than as content.
@@ -370,12 +374,18 @@ const MAP_EXCLUDED_DIRS = new Set([
  * is reproducible; it does not belong where the content is the instruction.
  */
 const MAP_ENTRIES_PER_DIR = 50;
-function renderResourceMap(squadDir: string): string {
+function renderResourceMap(squadDir: string, opts: { componentsInlined: boolean }): string {
   let entries: fs.Dirent[];
   try { entries = fs.readdirSync(squadDir, { withFileTypes: true }); } catch { return ""; }
   const lines: string[] = [];
+  // `agents`, `tasks` and `workflows` are hidden ONLY when the workflow actually
+  // put them in the prompt. On the legacy fallback the prompt carries an
+  // alphabetical first-three under a "(top 3)" heading, so hiding them here
+  // switched the map off for the one path that has most of itself missing —
+  // a squad with eight agents showed three and named none of the rest.
+  const inlined = opts.componentsInlined ? INLINED_DIRS : new Set<string>();
   const authored = entries.filter(e =>
-    e.isDirectory() && !MAP_EXCLUDED_DIRS.has(e.name) && !isRunStatePath(e.name, "squads"));
+    e.isDirectory() && !inlined.has(e.name) && !MAP_EXCLUDED_DIRS.has(e.name) && !isRunStatePath(e.name, "squads"));
   for (const dir of authored.sort((a, b) => a.name.localeCompare(b.name))) {
     let inner: fs.Dirent[];
     try { inner = fs.readdirSync(path.join(squadDir, dir.name), { withFileTypes: true }); } catch { continue; }
@@ -391,6 +401,8 @@ function renderResourceMap(squadDir: string): string {
   if (!lines.length) return "";
   return `## O QUE MAIS ESTE SQUAD CARREGA
 Tudo abaixo existe em \`${squadDir}\` e **não** está neste prompt. Abra o que precisar, quando precisar, em cascata — nada aqui é obrigatório, e nada aqui foi resumido: o arquivo em disco é o conteúdo. Um nome terminado em \`/\` é subdiretório, desça nele.
+
+Este diretório é a fonte do squad, compartilhada por todo projeto desta máquina e lida por toda execução futura: **é somente leitura para você**. Não edite, crie nem apague nada aqui, nem para "corrigir" um template ou anotar um resultado. Todo arquivo que você produzir vai para o diretório de saída indicado na sua sub-tarefa.
 
 ${lines.join("\n")}`;
 }
@@ -477,7 +489,7 @@ export function buildSquadPrompt(args: {
   // capability would withhold it precisely where it is needed most. A squad that
   // ships nothing outside agents/, tasks/ and workflows/ still gets no section,
   // which is what keeps the pin meaningful for the fixtures that have none.
-  const resourceMap = renderResourceMap(squadDir);
+  const resourceMap = renderResourceMap(squadDir, { componentsInlined: !!capability?.components });
   const resourceSection = resourceMap ? `\n${resourceMap}\n` : "";
 
   const roleLine = mode === "team-mandatory"
@@ -535,6 +547,21 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
   fs.mkdirSync(outDir, { recursive: true });
   const bizCtx = args.businessSlug ? { business_slug: args.businessSlug } : {};
 
+  // The slug reaches here unvalidated: the explicit-target layer of the dispatch
+  // cascade returns what the caller named without a registry lookup, and the
+  // target pattern admits dots and separators. `--squad=..` therefore resolved
+  // to the parent of the squads root — the user's home on a default install —
+  // and everything downstream treats that as the squad: the resource map would
+  // enumerate it into the prompt, and `addDirs` would hand it to the agent as a
+  // workspace root. Containment is checked on the RESOLVED path, so `..`,
+  // an absolute slug and a symlink out of the tree all fail the same way.
+  const rootReal = fs.existsSync(squadsRoot) ? fs.realpathSync(squadsRoot) : path.resolve(squadsRoot);
+  const dirResolved = fs.existsSync(squadDir) ? fs.realpathSync(squadDir) : path.resolve(squadDir);
+  if (dirResolved !== rootReal && !dirResolved.startsWith(rootReal + path.sep)) {
+    appendAudit({ event: "squad_run_failed", project_id: args.projectId, ...bizCtx, squad_slug: args.squadSlug, reason: "squad slug escapes the squads root" }, args.projectRoot);
+    return { ok: false, squadSlug: args.squadSlug, sessionId: null, costUsd: null, durationMs: 0, outputsDir: outDir, error: "squad slug escapes the squads root" };
+  }
+
   if (!fs.existsSync(squadDir)) {
     appendAudit({ event: "squad_run_failed", project_id: args.projectId, ...bizCtx, squad_slug: args.squadSlug, reason: "squad dir not found" }, args.projectRoot);
     return { ok: false, squadSlug: args.squadSlug, sessionId: null, costUsd: null, durationMs: 0, outputsDir: outDir, error: "squad dir not found" };
@@ -569,7 +596,7 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
     // references — and no instrument in the engine measured it: the prompt is on
     // no event, the ledger stores a path and not content, and the cost table is
     // flat per target. One integer closes that, and it is the integer that
-    // matters operationally: past MAX_ARGV_PROMPT_BYTES (100_000) the driver
+    // matters operationally: past MAX_ARGV_PROMPT_BYTES the driver
     // silently switches delivery — stdin and grok's --prompt-file carry the
     // prompt itself, but agy, kimi and opencode fall back to a bootstrap pointer
     // the child has to go read. A number nobody logs is a fallback nobody can
@@ -589,10 +616,17 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
     // squadDir is granted so the resource map in the prompt is a door and not a
     // sign: `references/`, `checklists/`, `templates/`, `schemas/`, `config/` and
     // the rest live under it, and on claude-code and agy an ungranted path is
-    // simply refused. Read access to the squad the run IS — the same tree the
-    // prompt already quotes from — is not a widening of scope; withholding it is
-    // what made everything the author wrote outside agents/ and tasks/
-    // unreachable to the run.
+    // simply refused.
+    //
+    // Be precise about what this grants. `--add-dir` adds a WORKSPACE ROOT, and
+    // this call path runs with the permission bypass, so the directory is
+    // writable, not merely readable. Seven of the nine runtimes already ran with
+    // no path sandbox at all, so for them this only tells the agent where the
+    // tree is; for claude-code and agy it is a real new grant. The squads root is
+    // global and shared by every project, so a run that writes into it changes
+    // what every later dispatch reads. Nothing here enforces read-only — the
+    // prompt says so in words (renderResourceMap), which is the same instrument
+    // the engine uses everywhere else to keep deliverables under outputs_root.
     runtime: args.runtime, prompt, cwd: args.projectRoot, addDirs: [args.projectDir, outDir, squadDir],
     appendSystemPrompt: args.autonomousDirective + (args.rulesDirective ?? ""),
     maxBudgetUsd: args.maxBudgetUsd, timeoutMs: args.timeoutMs,

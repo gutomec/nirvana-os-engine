@@ -75,7 +75,20 @@ const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
  *
  * A single POSIX-sized number here was not a theoretical gap: the argv adapters
  * (agy, kimi, opencode, pi) would hand Windows a command line between 32 KB and
- * 100 KB believing it safe, and the interpreter route would cut it at 8 KB. */
+ * 100 KB believing it safe, and the interpreter route would cut it at 8 KB.
+ *
+ * KNOWN TRADE-OFF, measured: AUTONOMOUS_DIRECTIVE is 5,942 bytes and
+ * `withPreamble` merges it ahead of every prompt, so on Windows the argv branch
+ * is effectively unreachable for those four adapters — every dispatch takes the
+ * temp-file route. That is deliberate rather than accidental, because no number
+ * fixes it: the interpreter's whole budget is 8,191, so directive plus any real
+ * prompt cannot fit there regardless. The file channel is the lossless one —
+ * grok-cli prefers it unconditionally on every platform for exactly that reason.
+ * What it costs is a dependency on the child obeying "read this file", which
+ * argv does not have. Making the budget depend on which route `resolveExecutable`
+ * will actually take (32,767 direct, 8,191 under the interpreter) is the fix that
+ * would restore argv for the direct route; it needs the cli name here, which this
+ * helper does not currently receive. */
 export const MAX_ARGV_PROMPT_BYTES = process.platform === "win32" ? 6_000 : 100_000;
 
 /** The one switch for headless autonomy: the `execution.headless_skip_permissions`
