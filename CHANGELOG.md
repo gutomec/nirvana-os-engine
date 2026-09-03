@@ -6,6 +6,16 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### A shared temp root is never a project root
+
+`resolveProjectRoot()` walks up looking for a marker (`.env`, `.nirvana`, `.git`, `package.json`, `pyproject.toml`) and hardens against `/`, HOME and the Windows system directories — but not against the temp roots. Measured 2026-09-03 on a real machine: `/private/tmp` held a `.nirvana` and a `package.json` left there by unrelated tools, so every scope resolution from a path under it adopted `/private/tmp` as the project. A dispatch launched from a scratch directory then wrote its brief, its kernel and its audit chain into a tree with no contract and no `.nirvana/` of its own, and reported success. The comment above `dispatch.ts`'s `PROJECT_ROOT` already records the earlier version of this bug ("a child runtime told its project was the user's home directory"); the missing temp rule is what kept it reachable.
+
+The rule is `sameDir`, not `isUnder`, exactly like the HOME rule beside it: a directory *created* under temp with its own marker — every fixture in this suite — is still a legitimate project root. It is the shared root itself that cannot be one.
+
+The walk was also duplicated: `harness/lib/run-ledger.ts` carried its own copy with the same HOME hardening, and hardening `_shared/lib/project-root.js` alone left the copy that `dispatch.ts` actually calls still adopting `/private/tmp`. It now imports the shared `isInvalidProjectRoot` instead of reimplementing the predicate.
+
 ## 0.12.9 — 2026-09-03
 
 ### Every dependency installs into `~/.nirvana`, and nowhere else

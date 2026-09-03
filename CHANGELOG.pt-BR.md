@@ -6,6 +6,16 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Não lançado
+
+### Uma raiz temporária compartilhada nunca é raiz de projeto
+
+O `resolveProjectRoot()` sobe procurando um marcador (`.env`, `.nirvana`, `.git`, `package.json`, `pyproject.toml`) e se protege contra `/`, o HOME e os diretórios de sistema do Windows — mas não contra as raízes temporárias. Medido em 03/09/2026 numa máquina real: `/private/tmp` tinha um `.nirvana` e um `package.json` deixados ali por ferramentas sem relação, então toda resolução de escopo a partir de um caminho abaixo dele adotava `/private/tmp` como projeto. Um despacho lançado de um diretório de rascunho escrevia brief, kernel e cadeia de auditoria numa árvore sem contrato e sem `.nirvana/` próprio — e reportava sucesso. O comentário sobre o `PROJECT_ROOT` do `dispatch.ts` já registra a versão anterior desse bug ("um runtime filho foi informado de que seu projeto era o diretório home do usuário"); a regra de temp que faltava é o que o mantinha alcançável.
+
+A regra é `sameDir`, não `isUnder`, igual à regra de HOME ao lado: um diretório *criado* dentro de temp com marcador próprio — toda fixture desta suíte — continua sendo raiz de projeto legítima. É a raiz compartilhada que não pode ser uma.
+
+O walk também estava duplicado: o `harness/lib/run-ledger.ts` carregava uma cópia própria com o mesmo hardening de HOME, e endurecer só o `_shared/lib/project-root.js` deixava a cópia que o `dispatch.ts` de fato chama ainda adotando `/private/tmp`. Ela passa a importar o `isInvalidProjectRoot` compartilhado em vez de reimplementar o predicado.
+
 ## 0.12.9 — 2026-09-03
 
 ### Toda dependência instala em `~/.nirvana`, e em nenhum outro lugar

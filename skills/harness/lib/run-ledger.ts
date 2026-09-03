@@ -207,6 +207,10 @@ function isStrictlyUnder(descendant: string, ancestor: string): boolean {
  * ancestry before it would reach the filesystem root — without this check it
  * keeps going and can match a marker up there instead of correctly reporting
  * "no project in reach" (see log-paths.ts's own history for the same fix). */
+const { isInvalidProjectRoot } = createRequire(import.meta.url)(
+  path.join(import.meta.dir, "..", "..", "_shared", "lib", "project-root.js"),
+) as { isInvalidProjectRoot: (dir: string) => boolean };
+
 export function findProjectRootFrom(start: string): string | null {
   let cur = path.resolve(start);
   const home = normalizeRoot(process.env.HOME || os.homedir());
@@ -215,6 +219,12 @@ export function findProjectRootFrom(start: string): string | null {
     if (norm === path.parse(norm).root) return null;
     if (sameNormalizedRoot(norm, home)) return null;
     if (isStrictlyUnder(home, norm)) return null;
+    // A shared temp ROOT is not a project, for the same reason HOME is not.
+    // The rule comes from project-root.js so the two walks cannot disagree:
+    // this file reimplemented the walk (see the note above findProjectRootFrom)
+    // and hardening only the shared copy left this one adopting `/private/tmp`
+    // as a project the moment an unrelated tool dropped a marker there.
+    if (isInvalidProjectRoot(norm)) return null;
     for (const m of PROJECT_MARKERS) {
       if (fs.existsSync(path.join(cur, m))) return norm;
     }

@@ -88,6 +88,19 @@ function homeDir(opts) {
  * @param {string} dir
  * @param {{home?: string}} [opts] `home` overrides the resolved HOME, for tests.
  */
+/**
+ * The shared scratch roots on this platform. `os.tmpdir()` is the per-user one
+ * (on macOS a path under /var/folders); the literals cover the system-wide ones
+ * that tools write to directly.
+ * @returns {string[]}
+ */
+function tempRootDirs() {
+  const out = [];
+  try { out.push(os.tmpdir()); } catch { /* no tmpdir — nothing to exclude */ }
+  for (const p of ['/tmp', '/private/tmp', '/var/tmp', '/private/var/tmp']) out.push(p);
+  return out.map((d) => { try { return canonical(d); } catch { return d; } });
+}
+
 function isInvalidProjectRoot(dir, opts) {
   if (!dir) return true;
   if (dir === '/' || dir === '') return true;
@@ -95,6 +108,21 @@ function isInvalidProjectRoot(dir, opts) {
     const resolved = canonical(dir);
     if (resolved === path.parse(resolved).root) return true;
     if (sameDir(resolved, homeDir(opts))) return true;
+    // A temp ROOT is never a project, for the same reason HOME is not: it is
+    // shared scratch space, and anything on the machine may drop a marker in
+    // it. Measured 2026-09-03: `/private/tmp` held a `.nirvana` and a
+    // `package.json` left by unrelated tools, so every scope resolution from a
+    // path under /tmp adopted `/private/tmp` as the project — and a dispatch
+    // launched from a scratch directory wrote its brief, kernel and audit chain
+    // there, believing it was inside a project.
+    //
+    // The rule is `sameDir`, not `isUnder`, exactly like the HOME rule above: a
+    // directory CREATED under temp with its own marker (every test fixture in
+    // this repo) is still a legitimate project root. It is the shared root
+    // itself that cannot be one.
+    for (const t of tempRootDirs()) {
+      if (sameDir(resolved, t)) return true;
+    }
     if (process.platform === 'win32') {
       const systemDirs = [process.env.SystemRoot, process.env.ProgramFiles, process.env['ProgramFiles(x86)']]
         .filter(Boolean)
