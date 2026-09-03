@@ -32,6 +32,7 @@ import { layersForPhase } from "../../_shared/lib/dna-layer-policy.ts";
 import { findCloneForTask } from "../../_shared/lib/clone-search.ts";
 import { paths } from "../../_shared/lib/bun-helpers.ts";
 import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
+import { isRunStatePath } from "../../_shared/lib/run-state.ts";
 import { resolveSetting } from "../../_shared/lib/settings.ts";
 
 export type SquadExecMode = "team-mandatory" | "squad-only";
@@ -199,32 +200,40 @@ export function promptPath(p: string): string {
   return p.split(path.sep).join("/").replace(/\\/g, "/");
 }
 
-/** Component documents in step order, tallied against a byte budget shared by
- *  agents and tasks. The ceiling is a target, never a reason to lose content:
- *  every referenced document is included in full, whole. When the running
- *  total crosses the ceiling, the call that crossed it says so once — how many
- *  bytes over, next to the ceiling — so the gap is visible without silently
- *  discarding the persona or task a step depends on. */
-function renderComponents(squadDir: string, sub: "agents" | "tasks", stems: string[], budget: { spent: number }): string {
+/** Component documents in step order, every one of them whole: the byte ceiling
+ *  is a target reported by the caller, never a reason to lose content. The only
+ *  note this adds is per-section and knowable here — a reference with no file. */
+function renderComponents(squadDir: string, sub: "agents" | "tasks", stems: string[]): string {
   const parts: string[] = [];
   let missing = 0;
-  const max = componentsBytesMax();
-  const wasOverBefore = budget.spent > max;
   for (const stem of stems) {
     const file = path.join(squadDir, sub, `${stem}.md`);
     let text: string;
     try { text = fs.readFileSync(file, "utf8"); } catch { missing++; continue; }
-    const doc = `--- ${stem}.md ---\n${text}`;
-    budget.spent += Buffer.byteLength(doc, "utf8") + (parts.length ? 2 : 0);
-    parts.push(doc);
+    parts.push(`--- ${stem}.md ---\n${text}`);
   }
-  const notes: string[] = [];
-  if (missing) notes.push(`${missing} referência(s) sem arquivo em ${sub}/`);
-  if (budget.spent > max && !wasOverBefore) {
-    notes.push(`componentes (agentes + tasks) somam ${budget.spent} bytes, ${budget.spent - max} acima do teto de ${max} — nada foi omitido`);
-  }
-  if (notes.length) parts.push(`[${notes.join("; ")}]`);
+  if (missing) parts.push(`[${missing} referência(s) sem arquivo em ${sub}/]`);
   return parts.join("\n\n");
+}
+
+/** The ceiling note, measured on BOTH rendered sections.
+ *
+ *  It has to live here, not inside `renderComponents`: that function sees one
+ *  section, so a note emitted from it reports a partial total. A running tally
+ *  shared between the two calls got the number wrong on every squad whose agents
+ *  crossed the ceiling on their own — that call reported its own overage and
+ *  silenced the tasks call that would have counted the rest, understating by
+ *  more than 3x where the agents half was large. Nothing is ever omitted either
+ *  way; a diagnostic that understates is still a diagnostic that lies. */
+function ceilingNote(agentDocs: string, taskSection: string): string {
+  const max = componentsBytesMax();
+  const total = Buffer.byteLength(agentDocs, "utf8") + Buffer.byteLength(taskSection, "utf8");
+  if (total <= max) return "";
+  // "nada foi cortado pelo teto", not "nada foi omitido": the sibling note from
+  // renderComponents can be reporting a reference with no file on disk, and an
+  // absolute about omission would read as contradicting it. This note answers
+  // for the ceiling only — the one thing it measures.
+  return `\n\n[componentes (agentes + tasks) somam ${total} bytes, ${total - max} acima do teto de ${max} — nada foi cortado pelo teto]`;
 }
 
 /**
@@ -265,12 +274,16 @@ export function capabilityContext(squadDir: string, capabilityId: string): Squad
     const agents = referenced.agents.map(stem).filter(Boolean);
     const tasks = referenced.tasks.map(stem).filter(Boolean);
     if (agents.length || tasks.length) {
-      const budget = { spent: 0 };
-      const agentDocs = renderComponents(squadDir, "agents", agents, budget);
-      const taskDocs = renderComponents(squadDir, "tasks", tasks, budget);
+      const agentDocs = renderComponents(squadDir, "agents", agents);
+      const taskDocs = renderComponents(squadDir, "tasks", tasks);
       // Only take over the blocks when at least the agents resolved: a workflow
       // whose every reference is dangling must not leave the squad with nothing.
-      if (agentDocs) components = { agents: agentDocs, tasks: taskDocs || "(o workflow não referencia nenhuma task)" };
+      if (agentDocs) {
+        const taskSection = taskDocs || "(o workflow não referencia nenhuma task)";
+        // The note rides the LAST section the prompt shows, so the reader meets
+        // it after the content it is measuring.
+        components = { agents: agentDocs, tasks: taskSection + ceilingNote(agentDocs, taskSection) };
+      }
     }
   }
 
@@ -303,6 +316,95 @@ function renderEventContractBlock(squadSlug: string, traceId?: string): string {
   const trace = traceId || "<trace_id>";
   return `## COMO REPORTAR EVENTOS
 Emita marcos do seu trabalho com \`nrv audit emit <nome> --squad=${squadSlug} --trace=${trace}\`. Sempre passe \`--squad=${squadSlug}\`: é o que atribui o evento a você no cockpit. O nome não precisa estar na lista fechada do motor — se não estiver, escreva-o já com o prefixo \`x_\` (ex.: \`x_pagina_altura_acima_orcamento\`), assim o nome que chega ao log é o mesmo que você digitou. Payload vai em \`--json='{...}'\`, curto: nunca o brief inteiro, um output completo ou um segredo, só o resumo que o evento precisa carregar.`;
+}
+
+/** Directories the map never names, on top of run state.
+ *
+ *  `agents`, `tasks` and `workflows` are the three the prompt already carries.
+ *  The rest is build and dependency output — never authored content, and
+ *  `node_modules` alone would bury the map it is listed in. Run state is NOT
+ *  listed here: `isRunStatePath` owns that list (`.runs`, `outputs`, `projects`,
+ *  `.nirvana`, …), and keeping a private second copy of it is precisely how a
+ *  path that should never travel starts travelling again.
+ *
+ *  This is a DENYLIST on purpose. The first cut of this map was an allowlist of
+ *  five directory names chosen by hand, and surveying real squads showed what
+ *  that costs: it would have hidden `config/`, `schemas/`, `scripts/`, `data/`,
+ *  `tools/` and `lib/` outright, and `reference/` — the singular spelling some
+ *  squads use — from every squad that spells it that way. A curated list of what
+ *  an agent may see is a list of what one person happened to think of.
+ *  Everything the squad ships, the agent is told about. */
+const MAP_EXCLUDED_DIRS = new Set([
+  "node_modules", "dist", "build", "__pycache__", ".venv", "venv",
+]);
+
+/** The three the prompt carries in full — but only when a capability resolved
+ *  and the workflow named them. On the legacy fallback it carries three files
+ *  in alphabetical order, which is not the same thing at all. */
+const INLINED_DIRS = new Set(["agents", "tasks", "workflows"]);
+
+/**
+ * Everything else the squad carries, as a map rather than as content.
+ *
+ * The prompt inlines exactly the agents and tasks the workflow names, so the
+ * rest of the squad has been invisible to the agent executing it. Most squads
+ * ship well beyond those three directories — `references/`, `checklists/`,
+ * `templates/`, `standards/`, `schemas/`, `config/`, `scripts/`, `data/`,
+ * `tools/`, `lib/` are all common — and every one of those files is content the
+ * author wrote and the run never saw.
+ *
+ * This is the skill pattern applied to squads: the names travel in the prompt,
+ * the bytes stay on disk, and the agent loads in cascade only what its execution
+ * turns out to need. The map is one level deep — files by name, subdirectories
+ * with a trailing slash — because the point is to prove the tree exists and give
+ * a door into it, not to serialize it.
+ *
+ * The map is a map, not an instruction. What a step MUST obey stays inlined:
+ * a path is a request, and inlined text is a fact. `runSquadHeadless` grants the
+ * squad directory alongside it, so the door the map names actually opens.
+ *
+ * MAP_ENTRIES_PER_DIR is a real cap, and it is NOT the mistake this file just
+ * finished undoing. That one dropped the agent and task documents a step depends
+ * on: content the run cannot proceed without and cannot get any other way. This
+ * caps a directory INDEX — the names are recoverable with one `ls` against a
+ * directory the dispatch has already granted, and the overflow line says exactly
+ * that. Without a cap the map inherits the failure it replaced from the other
+ * side: a squad with a `data/` of fifty thousand files would push megabytes of
+ * filenames into every prompt it ever runs. A budget belongs where the content
+ * is reproducible; it does not belong where the content is the instruction.
+ */
+const MAP_ENTRIES_PER_DIR = 50;
+function renderResourceMap(squadDir: string, opts: { componentsInlined: boolean }): string {
+  let entries: fs.Dirent[];
+  try { entries = fs.readdirSync(squadDir, { withFileTypes: true }); } catch { return ""; }
+  const lines: string[] = [];
+  // `agents`, `tasks` and `workflows` are hidden ONLY when the workflow actually
+  // put them in the prompt. On the legacy fallback the prompt carries an
+  // alphabetical first-three under a "(top 3)" heading, so hiding them here
+  // switched the map off for the one path that has most of itself missing —
+  // a squad with eight agents showed three and named none of the rest.
+  const inlined = opts.componentsInlined ? INLINED_DIRS : new Set<string>();
+  const authored = entries.filter(e =>
+    e.isDirectory() && !inlined.has(e.name) && !MAP_EXCLUDED_DIRS.has(e.name) && !isRunStatePath(e.name, "squads"));
+  for (const dir of authored.sort((a, b) => a.name.localeCompare(b.name))) {
+    let inner: fs.Dirent[];
+    try { inner = fs.readdirSync(path.join(squadDir, dir.name), { withFileTypes: true }); } catch { continue; }
+    const names = inner
+      .filter(e => !e.name.startsWith("."))
+      .map(e => e.isDirectory() ? `${e.name}/` : e.name)
+      .sort();
+    if (!names.length) continue;
+    const shown = names.slice(0, MAP_ENTRIES_PER_DIR).map(n => `\`${n}\``).join(", ");
+    const rest = names.length - MAP_ENTRIES_PER_DIR;
+    lines.push(`- \`${dir.name}/\` — ${shown}${rest > 0 ? ` … e mais ${rest}: rode \`ls\` nesse diretório para a lista inteira` : ""}`);
+  }
+  if (!lines.length) return "";
+  return `## O QUE MAIS ESTE SQUAD CARREGA
+Tudo abaixo existe em \`${squadDir}\` e **não** está neste prompt. Abra o que precisar, quando precisar, em cascata — nada aqui é obrigatório, e nada aqui foi resumido: o arquivo em disco é o conteúdo. Um nome terminado em \`/\` é subdiretório, desça nele.
+
+Este diretório é a fonte do squad, compartilhada por todo projeto desta máquina e lida por toda execução futura: **é somente leitura para você**. Não edite, crie nem apague nada aqui, nem para "corrigir" um template ou anotar um resultado. Todo arquivo que você produzir vai para o diretório de saída indicado na sua sub-tarefa.
+
+${lines.join("\n")}`;
 }
 
 /** The capability block, plus the workflow block when the graph resolved. */
@@ -379,6 +481,16 @@ export function buildSquadPrompt(args: {
   const componentsHeading = capability?.components ? "" : " (top 3)";
   const agentsSection = capability?.components?.agents ?? agentsBlock;
   const tasksSection = capability?.components?.tasks ?? tasksBlock;
+  // The resource map does NOT ride that gate, and it is the one addition here
+  // that does not. The byte-identical guarantee protects a legacy squad from
+  // behaving differently — but a legacy squad is exactly the one whose prompt
+  // carries an arbitrary alphabetical "top 3" of its agents and tasks, so it is
+  // the one with most of itself missing. Gating the map behind a resolved
+  // capability would withhold it precisely where it is needed most. A squad that
+  // ships nothing outside agents/, tasks/ and workflows/ still gets no section,
+  // which is what keeps the pin meaningful for the fixtures that have none.
+  const resourceMap = renderResourceMap(squadDir, { componentsInlined: !!capability?.components });
+  const resourceSection = resourceMap ? `\n${resourceMap}\n` : "";
 
   const roleLine = mode === "team-mandatory"
     ? `Você É o squad "${squadSlug}" executando uma sub-tarefa de um business maior. Sua saída é input do synthesizer do business.`
@@ -399,7 +511,7 @@ ${agentsSection}
 
 ## SUAS TASKS${componentsHeading}
 ${tasksSection}
-
+${resourceSection}
 ## MIND-CLONES QUE VOCÊ INCORPORA (decisão: ${cloneInj.decision})
 > Incorpore por inteiro; entregue COMO SE o clone tivesse produzido, sob a especialidade do squad.
 ${cloneInj.block || "(sem clone para esta tarefa — opere com a especialidade padrão do squad)"}
@@ -435,6 +547,21 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
   fs.mkdirSync(outDir, { recursive: true });
   const bizCtx = args.businessSlug ? { business_slug: args.businessSlug } : {};
 
+  // The slug reaches here unvalidated: the explicit-target layer of the dispatch
+  // cascade returns what the caller named without a registry lookup, and the
+  // target pattern admits dots and separators. `--squad=..` therefore resolved
+  // to the parent of the squads root — the user's home on a default install —
+  // and everything downstream treats that as the squad: the resource map would
+  // enumerate it into the prompt, and `addDirs` would hand it to the agent as a
+  // workspace root. Containment is checked on the RESOLVED path, so `..`,
+  // an absolute slug and a symlink out of the tree all fail the same way.
+  const rootReal = fs.existsSync(squadsRoot) ? fs.realpathSync(squadsRoot) : path.resolve(squadsRoot);
+  const dirResolved = fs.existsSync(squadDir) ? fs.realpathSync(squadDir) : path.resolve(squadDir);
+  if (dirResolved !== rootReal && !dirResolved.startsWith(rootReal + path.sep)) {
+    appendAudit({ event: "squad_run_failed", project_id: args.projectId, ...bizCtx, squad_slug: args.squadSlug, reason: "squad slug escapes the squads root" }, args.projectRoot);
+    return { ok: false, squadSlug: args.squadSlug, sessionId: null, costUsd: null, durationMs: 0, outputsDir: outDir, error: "squad slug escapes the squads root" };
+  }
+
   if (!fs.existsSync(squadDir)) {
     appendAudit({ event: "squad_run_failed", project_id: args.projectId, ...bizCtx, squad_slug: args.squadSlug, reason: "squad dir not found" }, args.projectRoot);
     return { ok: false, squadSlug: args.squadSlug, sessionId: null, costUsd: null, durationMs: 0, outputsDir: outDir, error: "squad dir not found" };
@@ -464,6 +591,17 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
     ...(args.capabilityId ? { capability_id: args.capabilityId } : {}),
     mode: args.mode,
     outputs_dir: outDir,
+    // How big the thing we just built actually is. The components ceiling stopped
+    // cutting documents, so the prompt is now bounded only by what the workflow
+    // references — and no instrument in the engine measured it: the prompt is on
+    // no event, the ledger stores a path and not content, and the cost table is
+    // flat per target. One integer closes that, and it is the integer that
+    // matters operationally: past MAX_ARGV_PROMPT_BYTES the driver
+    // silently switches delivery — stdin and grok's --prompt-file carry the
+    // prompt itself, but agy, kimi and opencode fall back to a bootstrap pointer
+    // the child has to go read. A number nobody logs is a fallback nobody can
+    // correlate with a bad run.
+    prompt_bytes: Buffer.byteLength(prompt, "utf8"),
     // The proof-of-dispatch event says which squad, and now also what it was
     // asked to do. Bounded — see brief-excerpt.ts for the measured cap.
     brief_excerpt: briefExcerpt(args.brief),
@@ -475,7 +613,21 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
     // The dispatched runtime runs INSIDE the project — it needs the project's .nirvana/,
     // its config, its logs and its code-base — with the scaffold and the outputs dir handed
     // to it as additional directories so both stay writable.
-    runtime: args.runtime, prompt, cwd: args.projectRoot, addDirs: [args.projectDir, outDir],
+    // squadDir is granted so the resource map in the prompt is a door and not a
+    // sign: `references/`, `checklists/`, `templates/`, `schemas/`, `config/` and
+    // the rest live under it, and on claude-code and agy an ungranted path is
+    // simply refused.
+    //
+    // Be precise about what this grants. `--add-dir` adds a WORKSPACE ROOT, and
+    // this call path runs with the permission bypass, so the directory is
+    // writable, not merely readable. Seven of the nine runtimes already ran with
+    // no path sandbox at all, so for them this only tells the agent where the
+    // tree is; for claude-code and agy it is a real new grant. The squads root is
+    // global and shared by every project, so a run that writes into it changes
+    // what every later dispatch reads. Nothing here enforces read-only — the
+    // prompt says so in words (renderResourceMap), which is the same instrument
+    // the engine uses everywhere else to keep deliverables under outputs_root.
+    runtime: args.runtime, prompt, cwd: args.projectRoot, addDirs: [args.projectDir, outDir, squadDir],
     appendSystemPrompt: args.autonomousDirective + (args.rulesDirective ?? ""),
     maxBudgetUsd: args.maxBudgetUsd, timeoutMs: args.timeoutMs,
     brief: args.brief, projectRoot: args.projectRoot, outputsRoot: outDir,

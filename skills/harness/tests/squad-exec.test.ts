@@ -94,11 +94,17 @@ describe("buildSquadPrompt — framing per mode", () => {
     }
   });
 
-  // The compatibility invariant of the capability cut, stated as the whole
-  // string and not as a set of substrings: without a resolved capability the
-  // prompt is the one the engine has always sent, byte for byte. Every squad
-  // in the library is dispatched through this path until a capability resolves.
-  test("no capability: the prompt is byte-identical to the historical one", () => {
+  // The whole string, not a set of substrings: without a resolved capability the
+  // prompt is the one the engine has always sent — plus the resource map, which
+  // is the ONE deliberate departure from that invariant.
+  //
+  // This path is the fallback, and the fallback is the worst one: it carries an
+  // alphabetical first-three of the squad's agents and tasks under a "(top 3)"
+  // heading that never says three OF HOW MANY. A squad with eight agents showed
+  // three and named none of the rest, and it is the path every hand-written
+  // squad without `capabilities[]` lands on. Withholding the map here to keep
+  // the pin green would have kept the invariant by keeping the defect.
+  test("no capability: the prompt is the historical one plus the resource map", () => {
     const squadDir = scaffoldSquad(path.join(tmp, "squads"), "brandcraft");
     const expected = `Você É o squad "brandcraft" executando o brief do cliente de ponta a ponta. Sua saída é o ENTREGÁVEL FINAL para o usuário.
 
@@ -116,6 +122,14 @@ MANIFEST-MARKER: yes
 ## SUAS TASKS (top 3)
 --- do-it.md ---
 # Do it TASK-MARKER
+
+## O QUE MAIS ESTE SQUAD CARREGA
+Tudo abaixo existe em \`${squadDir}\` e **não** está neste prompt. Abra o que precisar, quando precisar, em cascata — nada aqui é obrigatório, e nada aqui foi resumido: o arquivo em disco é o conteúdo. Um nome terminado em \`/\` é subdiretório, desça nele.
+
+Este diretório é a fonte do squad, compartilhada por todo projeto desta máquina e lida por toda execução futura: **é somente leitura para você**. Não edite, crie nem apague nada aqui, nem para "corrigir" um template ou anotar um resultado. Todo arquivo que você produzir vai para o diretório de saída indicado na sua sub-tarefa.
+
+- \`agents/\` — \`lead.md\`
+- \`tasks/\` — \`do-it.md\`
 
 ## MIND-CLONES QUE VOCÊ INCORPORA (decisão: PADRÃO)
 > Incorpore por inteiro; entregue COMO SE o clone tivesse produzido, sob a especialidade do squad.
@@ -336,16 +350,57 @@ describe("buildSquadPrompt — with a resolved capability", () => {
     const squadDir = scaffoldCapabilitySquad(path.join(tmp, "squads"));
     fs.writeFileSync(path.join(squadDir, "agents", "analyst.md"), "A".repeat(max + 4096));
     fs.writeFileSync(path.join(squadDir, "agents", "writer.md"), "WRITER-MARKER");
+    // A task big enough that the TASKS half would also have been cut by the old
+    // ceiling: asserting only the agents half let a task-side regression pass.
+    fs.writeFileSync(path.join(squadDir, "tasks", "collect.md"), "C".repeat(20_000) + "COLLECT-TAIL");
     const ctx = capabilityContext(squadDir, "analysis.report.produce")!;
     expect(ctx.components).not.toBeNull();
-    // Over the ceiling, on purpose: neither document is cut or dropped.
+    // Over the ceiling, on purpose: no document on EITHER side is cut or dropped.
     expect(Buffer.byteLength(ctx.components!.agents, "utf8")).toBeGreaterThan(max);
     expect(ctx.components!.agents).toContain("A".repeat(max + 4096));
     expect(ctx.components!.agents).toContain("WRITER-MARKER");
-    expect(ctx.components!.agents).not.toContain("truncado no teto");
-    expect(ctx.components!.agents).not.toContain("omitido(s)");
-    // The crossing is flagged, not hidden.
-    expect(ctx.components!.agents).toContain(`acima do teto de ${max}`);
+    expect(ctx.components!.tasks).toContain("C".repeat(20_000));
+    expect(ctx.components!.tasks).toContain("COLLECT-TAIL");
+    for (const section of [ctx.components!.agents, ctx.components!.tasks]) {
+      expect(section).not.toContain("truncado no teto");
+      expect(section).not.toContain("documento(s) omitido(s)");
+    }
+    // The crossing is flagged, not hidden — on the LAST section shown, so the
+    // reader meets it after the content it measures, and exactly once across
+    // the pair (a note emitted per section is the bug the sibling test pins).
+    const both = `${ctx.components!.agents}\n${ctx.components!.tasks}`;
+    expect(both.match(/acima do teto de/g)).toHaveLength(1);
+    expect(ctx.components!.tasks).toContain(`acima do teto de ${max}`);
+    // It answers for the ceiling only, so it never contradicts a missing-file note.
+    expect(both).not.toContain("nada foi omitido");
+  });
+
+  // The regression this test exists for: the note used to be emitted from
+  // inside the per-section renderer, which sees half the total. When the agents
+  // section crossed the ceiling on its own, it reported ITS overage and silenced
+  // the tasks section that would have counted the rest — understating by more
+  // than 3x wherever the agents half was the large one.
+  test("the overage counts BOTH sections, even when agents alone already crossed", () => {
+    const max = Number(LIMITS.squad_prompt_components_bytes_max);
+    const squadDir = scaffoldCapabilitySquad(path.join(tmp, "squads"));
+    fs.writeFileSync(path.join(squadDir, "agents", "analyst.md"), "A".repeat(max + 1_000));
+    fs.writeFileSync(path.join(squadDir, "agents", "writer.md"), "W");
+    fs.writeFileSync(path.join(squadDir, "tasks", "collect.md"), "C".repeat(50_000));
+    const ctx = capabilityContext(squadDir, "analysis.report.produce")!;
+
+    const real = Buffer.byteLength(ctx.components!.agents, "utf8")
+      + Buffer.byteLength(ctx.components!.tasks, "utf8");
+    const m = ctx.components!.tasks.match(/somam (\d+) bytes, (\d+) acima do teto de (\d+)/);
+    expect(m).not.toBeNull();
+    expect(Number(m![3])).toBe(max);
+    // The reported total is the measured content; only the note's own bytes,
+    // appended after the measurement, separate it from the rendered length.
+    expect(Number(m![1])).toBeGreaterThan(max + 50_000);
+    expect(real - Number(m![1])).toBeLessThan(256);
+    expect(Number(m![2])).toBe(Number(m![1]) - max);
+    // And the whole reason the note exists: nothing was lost to say it.
+    expect(ctx.components!.agents).toContain("A".repeat(max + 1_000));
+    expect(ctx.components!.tasks).toContain("C".repeat(50_000));
   });
 
   test("capabilityContext returns null on every path that must keep the historical prompt", () => {
@@ -353,6 +408,129 @@ describe("buildSquadPrompt — with a resolved capability", () => {
     expect(capabilityContext(squadDir, "squad.execute")).toBeNull();
     expect(capabilityContext(squadDir, "analysis.nothing.here")).toBeNull();
     expect(capabilityContext(path.join(tmp, "squads", "no-such-squad"), "analysis.report.produce")).toBeNull();
+  });
+});
+
+// Everything a squad ships beyond agents/ and tasks/ used to be invisible to the
+// agent running it: references/, checklists/, templates/, standards/, schemas/,
+// config/, scripts/, data/, tools/ and lib/ are all common in real squads, and
+// none of it was named in the prompt or reachable — the directory itself was
+// never granted.
+describe("buildSquadPrompt — the resource map", () => {
+  /** Add authored directories to a scaffolded squad. */
+  function withResources(squadDir: string): string {
+    fs.mkdirSync(path.join(squadDir, "references"), { recursive: true });
+    fs.mkdirSync(path.join(squadDir, "checklists"), { recursive: true });
+    fs.mkdirSync(path.join(squadDir, "references", "deep"), { recursive: true });
+    fs.mkdirSync(path.join(squadDir, "node_modules", "left-pad"), { recursive: true });
+    fs.writeFileSync(path.join(squadDir, "references", "state-of-the-art.md"), "x");
+    fs.writeFileSync(path.join(squadDir, "references", ".hidden"), "x");
+    fs.writeFileSync(path.join(squadDir, "checklists", "pre-flight.md"), "x");
+    fs.writeFileSync(path.join(squadDir, "node_modules", "left-pad", "index.js"), "x");
+    // Run state, which a squad materializes by being run in and which must never
+    // be advertised as content.
+    fs.mkdirSync(path.join(squadDir, ".runs", "demo"), { recursive: true });
+    fs.writeFileSync(path.join(squadDir, ".runs", "demo", "out.md"), "x");
+    fs.mkdirSync(path.join(squadDir, "outputs"), { recursive: true });
+    fs.writeFileSync(path.join(squadDir, "outputs", "leftover.md"), "x");
+    return squadDir;
+  }
+
+  // The exclusion list for run state has one owner, `isRunStatePath`. A private
+  // second copy here is how a path that must never travel starts travelling.
+  test("run state is never advertised, and the list that decides is the shared one", () => {
+    const squadDir = withResources(scaffoldCapabilitySquad(path.join(tmp, "squads")));
+    const p = buildSquadPrompt({
+      squadSlug: "guided", squadDir, brief: "b", outDir: "/o", mode: "squad-only",
+      cloneInjection: { block: "", decision: "PADRÃO" }, capabilityId: "analysis.report.produce",
+    });
+    const map = p.slice(p.indexOf("## O QUE MAIS ESTE SQUAD CARREGA"));
+    expect(map).not.toContain(".runs");
+    expect(map).not.toContain("outputs/");
+    expect(map).not.toContain("leftover.md");
+    // Authored content beside it is untouched.
+    expect(map).toContain("`references/`");
+  });
+
+  test("names every authored directory, one level deep, and never node_modules", () => {
+    const squadDir = withResources(scaffoldCapabilitySquad(path.join(tmp, "squads")));
+    const p = buildSquadPrompt({
+      squadSlug: "guided", squadDir, brief: "b", outDir: "/o", mode: "squad-only",
+      cloneInjection: { block: "", decision: "PADRÃO" }, capabilityId: "analysis.report.produce",
+    });
+    expect(p).toContain("## O QUE MAIS ESTE SQUAD CARREGA");
+    expect(p).toContain("`references/` — `deep/`, `state-of-the-art.md`");
+    expect(p).toContain("`checklists/` — `pre-flight.md`");
+    // A subdirectory is named with a trailing slash so the agent knows to descend.
+    expect(p).toContain("`deep/`");
+    // Dependency output would bury the map it is listed in.
+    expect(p).not.toContain("node_modules");
+    // Dotfiles are not authored content.
+    expect(p).not.toContain(".hidden");
+    // The three the prompt already carries are never repeated as a path.
+    expect(p).not.toContain("`agents/` —");
+    expect(p).not.toContain("`tasks/` —");
+    expect(p).not.toContain("`workflows/` —");
+  });
+
+  // The gate the map deliberately does NOT ride: a legacy squad's prompt carries
+  // an arbitrary alphabetical top-3 of its agents and tasks, so it is the one
+  // with most of itself missing.
+  test("a squad with no resolved capability gets the map too", () => {
+    const squadDir = withResources(scaffoldSquad(path.join(tmp, "squads"), "legacy"));
+    const p = buildSquadPrompt({
+      squadSlug: "legacy", squadDir, brief: "b", outDir: "/o", mode: "squad-only",
+      cloneInjection: { block: "", decision: "PADRÃO" },
+    });
+    expect(p).toContain("## SEUS AGENTES (top 3)");
+    expect(p).toContain("## O QUE MAIS ESTE SQUAD CARREGA");
+    expect(p).toContain("`references/`");
+  });
+
+  // What keeps the byte-identical pin honest rather than merely passing: a squad
+  // that ships nothing outside the three inlined directories gets no section.
+  test("a squad that ships nothing extra gets no section at all", () => {
+    const squadDir = scaffoldCapabilitySquad(path.join(tmp, "squads"), "bare");
+    const p = buildSquadPrompt({
+      squadSlug: "bare", squadDir, brief: "b", outDir: "/o", mode: "squad-only",
+      cloneInjection: { block: "", decision: "PADRÃO" }, capabilityId: "analysis.report.produce",
+    });
+    expect(p).not.toContain("O QUE MAIS ESTE SQUAD CARREGA");
+  });
+
+  // The cap the map DOES have, and why it is not the mistake this file just
+  // undid: a directory index is recoverable with one `ls`, so capping it costs
+  // nothing, while an uncapped one would push a `data/` of fifty thousand files
+  // into every prompt the squad ever runs.
+  test("a huge directory is capped, and the overflow says how to see the rest", () => {
+    const squadDir = scaffoldSquad(path.join(tmp, "squads"), "bulky");
+    fs.mkdirSync(path.join(squadDir, "data"), { recursive: true });
+    for (let i = 0; i < 400; i++) {
+      fs.writeFileSync(path.join(squadDir, "data", `row-${String(i).padStart(4, "0")}.csv`), "x");
+    }
+    const p = buildSquadPrompt({
+      squadSlug: "bulky", squadDir, brief: "b", outDir: "/o", mode: "squad-only",
+      cloneInjection: { block: "", decision: "PADRÃO" },
+    });
+    const map = p.slice(p.indexOf("## O QUE MAIS ESTE SQUAD CARREGA"));
+    expect(map).toContain("`row-0000.csv`");
+    expect(map).toContain("e mais 350");
+    expect(map).toContain("`ls`");
+    // Bounded: the index cannot grow without limit with the directory.
+    expect(Buffer.byteLength(map, "utf8")).toBeLessThan(4_096);
+    // And it never claims the listing is the content.
+    expect(map).toContain("o arquivo em disco é o conteúdo");
+  });
+
+  // An empty directory is a directory with nothing to open.
+  test("an empty authored directory is not advertised", () => {
+    const squadDir = scaffoldCapabilitySquad(path.join(tmp, "squads"), "hollow");
+    fs.mkdirSync(path.join(squadDir, "references"), { recursive: true });
+    const p = buildSquadPrompt({
+      squadSlug: "hollow", squadDir, brief: "b", outDir: "/o", mode: "squad-only",
+      cloneInjection: { block: "", decision: "PADRÃO" }, capabilityId: "analysis.report.produce",
+    });
+    expect(p).not.toContain("O QUE MAIS ESTE SQUAD CARREGA");
   });
 });
 
@@ -385,6 +563,31 @@ describe("runSquadHeadless", () => {
     expect(ax).toBeTruthy();
     expect(ax.mode).toBe("squad-only");
     expect(ax.employee).toBe("squad:brandcraft");
+    // The size of what we just built, on the event where runs are inspected —
+    // and the number that decides whether the run crossed the argv threshold.
+    expect(ds.prompt_bytes).toBe(Buffer.byteLength(seen[0].prompt, "utf8"));
+  });
+
+  // The resource map names paths under the squad; on claude-code and agy an
+  // ungranted path is refused, so without this the map would be a sign on a
+  // locked door.
+  test("the squad's own directory is granted, so the map it advertises can be opened", () => {
+    const squadsRoot = path.join(tmp, "squads");
+    const squadDir = scaffoldSquad(squadsRoot, "brandcraft");
+    const seen: any[] = [];
+    runSquadHeadless({
+      squadSlug: "brandcraft", brief: "make a brand",
+      projectId: "proj-sq-grant", projectDir: tmp, projectRoot: tmp,
+      outputsDir: path.join(tmp, "out"), runtime: "claude-code",
+      businessSlug: null, mode: "squad-only",
+      autonomousDirective: "D ",
+      squadsRoot,
+      runWithCascadeImpl: ((opts: any) => { seen.push(opts); return okCascadeResult(opts); }) as any,
+    });
+    expect(seen[0].addDirs).toContain(squadDir);
+    // Without displacing the two it already granted.
+    expect(seen[0].addDirs).toContain(tmp);
+    expect(seen[0].addDirs).toContain(path.join(tmp, "out"));
   });
 
   test("team-mandatory mode keeps the team audit contract (business_slug + squad-mandatory)", () => {
@@ -452,5 +655,53 @@ describe("runSquadHeadless", () => {
     expect(r.ok).toBe(true);
     expect(r.sessionId).toBe("fresh-session");
     expect(readAudit().some(e => e.event === "session_resume_failed")).toBe(true);
+  });
+});
+
+// A squad slug reaches runSquadHeadless unvalidated: the explicit-target layer
+// of the dispatch cascade returns what the caller named with no registry lookup,
+// and the target pattern admits dots and separators. `--squad=..` resolved to the
+// parent of the squads root — the user's home on a default install — and both the
+// resource map and the addDirs grant then treated it as the squad.
+describe("runSquadHeadless — the slug cannot leave the squads root", () => {
+  test("a traversing slug is refused before anything reads or grants it", () => {
+    const squadsRoot = path.join(tmp, "squads");
+    scaffoldSquad(squadsRoot, "brandcraft");
+    // A sibling of the squads root, standing in for the user's home.
+    fs.mkdirSync(path.join(tmp, "private"), { recursive: true });
+    fs.writeFileSync(path.join(tmp, "private", "id_rsa"), "SECRET-MARKER");
+
+    const seen: any[] = [];
+    const r = runSquadHeadless({
+      squadSlug: path.join("..", "private"), brief: "b",
+      projectId: "proj-esc", projectDir: tmp, projectRoot: tmp,
+      outputsDir: path.join(tmp, "out"), runtime: "claude-code",
+      businessSlug: null, mode: "squad-only", autonomousDirective: "D ",
+      squadsRoot,
+      runWithCascadeImpl: ((opts: any) => { seen.push(opts); return okCascadeResult(opts); }) as any,
+    });
+
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain("escapes the squads root");
+    // Never dispatched: nothing was granted and no prompt was built from it.
+    expect(seen).toHaveLength(0);
+    const failed = readAudit().find(e => e.event === "squad_run_failed");
+    expect(failed?.reason).toBe("squad slug escapes the squads root");
+  });
+
+  test("an ordinary slug still resolves", () => {
+    const squadsRoot = path.join(tmp, "squads");
+    scaffoldSquad(squadsRoot, "brandcraft");
+    const seen: any[] = [];
+    const r = runSquadHeadless({
+      squadSlug: "brandcraft", brief: "b",
+      projectId: "proj-ok", projectDir: tmp, projectRoot: tmp,
+      outputsDir: path.join(tmp, "out"), runtime: "claude-code",
+      businessSlug: null, mode: "squad-only", autonomousDirective: "D ",
+      squadsRoot,
+      runWithCascadeImpl: ((opts: any) => { seen.push(opts); return okCascadeResult(opts); }) as any,
+    });
+    expect(r.ok).toBe(true);
+    expect(seen).toHaveLength(1);
   });
 });

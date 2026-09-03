@@ -400,16 +400,26 @@ describe("manifest and routing fixers", () => {
     expect(first.note).toMatch(/README\.md/);
   });
 
-  test("readme_business_scaffold and memory_seed create, never overwrite", () => {
+  test("readme_business_scaffold creates, never overwrites", () => {
     const r = root();
     const dir = businessFixture(r, "files-biz", { readme: null, memory: false });
     twice(dir, "readme_business_scaffold");
-    twice(dir, "memory_seed");
     expect(fs.readFileSync(path.join(dir, "README.md"), "utf8")).toContain("Fixture business that turns a written brief");
-    expect(fs.readFileSync(path.join(dir, "memory", "permanent.md"), "utf8")).toContain("Permanent memory");
     fs.writeFileSync(path.join(dir, "README.md"), "# mine\n", "utf8");
     apply(dir, "readme_business_scaffold");
     expect(fs.readFileSync(path.join(dir, "README.md"), "utf8")).toBe("# mine\n");
+  });
+
+  // The seeder is retired, not deleted: it declines so an old finding or a
+  // cached catalog cannot quietly recreate memory inside the entity, which is
+  // the surface a pack update replaces.
+  test("memory_seed refuses to write memory inside a business", () => {
+    const r = root();
+    const dir = businessFixture(r, "files-biz", { readme: null, memory: false });
+    const res = apply(dir, "memory_seed");
+    expect(res.ok).toBe(false);
+    expect(res.reason).toContain(".nirvana/memory/businesses");
+    expect(fs.existsSync(path.join(dir, "memory", "permanent.md"))).toBe(false);
   });
 
   test("an unknown patch kind is refused, an exception is caught", () => {

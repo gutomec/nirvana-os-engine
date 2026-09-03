@@ -515,7 +515,7 @@ function fix_protocol_bump_2(dir) {
 
 // ─── §13 · routing ──────────────────────────────────────────────────────────
 
-const routeKey = (r) => `${String(r && r.pattern)} ${String(r && r.route_to)}`;
+const routeKey = (r) => `${String(r && r.pattern)}\u0000${String(r && r.route_to)}`;
 
 /** §13.2: `auto_routes` lives in `routing.yaml`. The manifest copy moves there. */
 function fix_auto_routes_relocate(dir) {
@@ -672,19 +672,22 @@ function fix_readme_business_scaffold(dir) {
   return { ok: true, created: 'README.md' };
 }
 
+// Retired, deliberately kept as a declining handler rather than deleted so an
+// old finding or a cached catalog cannot resurrect the behavior silently.
+//
+// This used to create `memory/permanent.md` INSIDE the business, and its own
+// seed text admitted the flaw: "A pack update replaces this file." Memory does
+// not belong to the entity, because the entity is the product — replaced whole
+// by a pack update, a migration or a reinstall. It belongs to `.nirvana`, the
+// project's or the machine's, keyed by kind and slug (`_shared/lib/entity-memory.ts`),
+// which is where every read now comes from and where `nrv memory relocate` moves
+// what earlier versions left behind.
 function fix_memory_seed(dir) {
-  const file = path.join(dir, 'memory', 'permanent.md');
-  if (exists(file)) return { ok: true, changed: false, reason: 'memory/permanent.md is already present' };
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, [
-    `# Permanent memory — ${path.basename(dir)}`,
-    '',
-    'Curated facts every employee of this business reads before working. One fact',
-    'per line, each one true across runs. A pack update replaces this file;',
-    '`memory/learned.md` is the one that survives it.',
-    '',
-  ].join('\n'), 'utf8');
-  return { ok: true, created: 'memory/permanent.md' };
+  return {
+    ok: false,
+    reason: 'memory is not stored inside a business — it lives in .nirvana/memory/businesses/<slug>/ '
+      + '(see `nrv memory relocate`). Nothing to seed here.',
+  };
 }
 
 /**
