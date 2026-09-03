@@ -370,6 +370,10 @@ type CloneInjection = {
    *  normal case. Before this they were dropped silently: the employee ran
    *  without the DNA and neither it nor the owner ever knew. */
   missingClones: string[];
+  /** Requested clones the MAX_INJECT ceiling turned away. Absence was already
+   *  loud; the ceiling was not, and it is the worse case: the person EXISTS and
+   *  the user asked for them by name. */
+  crowdedOutClones: string[];
 };
 
 /** Resolve which mind-clones to channel, in the canonical priority order:
@@ -412,9 +416,20 @@ function resolveClonesByPriority(args: BuildArgs): CloneInjection {
   const layers = layersForPhase(phase);
   const personas: CloneInjection["personas"] = [];
   const missingClones: string[] = [];
+  const crowdedOutClones: string[] = [];
   const seen = new Set<string>();
   const push = (slug: string, reason: string): boolean => {
-    if (!slug || seen.has(slug) || personas.length >= MAX_INJECT) return false;
+    if (!slug || seen.has(slug)) return false;
+    // The ceiling used to return silently here. A brief naming four experts got
+    // three, in Set insertion order — arbitrary with respect to which one the
+    // brief leaned on — and the deliverable claimed four voices while the audit
+    // showed three injections and zero degradation events. Absence was already
+    // reported loudly; being crowded out was not, and it is the worse case,
+    // because the DNA is installed and the user asked for it by name.
+    if (personas.length >= MAX_INJECT) {
+      if (reason === "requested" && !crowdedOutClones.includes(slug)) crowdedOutClones.push(slug);
+      return false;
+    }
     const p = dnaMode === "fragments"
       ? resolveClonePersona(slug, { depth: "fragments", layers, byteBudget: PER_CLONE_BUDGET, cwd: args.project_dir })
       : resolveClonePersona(slug, { depth: "full", cwd: args.project_dir });
@@ -458,7 +473,7 @@ function resolveClonesByPriority(args: BuildArgs): CloneInjection {
     : personas.length ? "found by SEARCH for the task"
     : "YOURS — none auto-injected, pick from the ranked candidates";
 
-  return { personas, suggestions, decision, missingClones };
+  return { personas, suggestions, decision, missingClones, crowdedOutClones };
 }
 
 export function buildEmployeePrompt(args: BuildArgs): string {
@@ -572,6 +587,32 @@ export function buildEmployeePrompt(args: BuildArgs): string {
         `can decide whether to create the mind-clone (the \`fabrica-de-genios\` squad does ` +
         `that via the capability \`knowledge_management.mind_clone_generation_pipeline.execute\`).\n`;
       for (const slug of inj.missingClones) {
+        emitMindCloneMissingDegraded({
+          trace_id: args.trace_id,
+          project_dir: args.project_dir,
+          business_slug: args.business_slug,
+          employee: args.employee,
+          slug,
+        });
+      }
+    }
+    // Same policy, the other cause: these exist and were asked for, and the
+    // ceiling is what kept them out. Saying which ones is what lets the owner
+    // re-run with fewer experts, or raise the ceiling, instead of reading a
+    // deliverable that silently spoke in fewer voices than it was asked for.
+    if (inj.crowdedOutClones.length) {
+      const list = inj.crowdedOutClones.join(", ");
+      const loaded = inj.personas.map((p) => p.slug).join(", ");
+      dnaContent += `\n\n--- REQUESTED MIND-CLONE NOT LOADED (ceiling): ${list} ---\n\n` +
+        `# Asked for, installed, and left out\n\n` +
+        `You requested **${list}**, and those clones DO exist in the library. They were ` +
+        `not injected because this run carries a limited number of personas, and ` +
+        `those slots went to: ${loaded}.\n\n` +
+        `Two obligations:\n` +
+        `1. **Do not claim** the deliverable carries ${list}'s voice. It does not.\n` +
+        `2. **Record in the deliverable** which requested experts were left out, so the ` +
+        `owner can re-run with a narrower cast or raise the ceiling.\n`;
+      for (const slug of inj.crowdedOutClones) {
         emitMindCloneMissingDegraded({
           trace_id: args.trace_id,
           project_dir: args.project_dir,

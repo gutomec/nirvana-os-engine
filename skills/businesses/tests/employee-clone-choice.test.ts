@@ -195,3 +195,24 @@ describe("the scope guard rides the employee prompt", () => {
     expect(rules).toContain(SCOPE_GUARD_EN);
   });
 });
+
+// A requested clone that EXISTS and is turned away by the MAX_INJECT ceiling used
+// to vanish in silence: the deliverable claimed every voice the brief named, the
+// audit showed fewer injections, and nothing connected the two. Absence was
+// already reported loudly; being crowded out was not — and it is the worse case,
+// because the DNA is installed and the user asked for it by name.
+//
+// COVERAGE GAP, stated rather than faked: the positive case needs more resolvable
+// clones than the ceiling admits, and `resolveClonePersona` does not resolve the
+// throwaway fixtures this suite builds — the prompt comes back "none
+// auto-injected", so the ceiling is never reached and the assertion would pass
+// vacuously. Writing it against the real installed library instead would be a
+// test that only passes on one machine. What is pinned here is the negative half,
+// which is cheap and real; the positive half is verified by reading
+// `employee-prompt.ts` and by the `x_clone_choice` events a live dispatch emits.
+describe("the ceiling notice for a requested clone", () => {
+  test("a single requested clone triggers no ceiling notice", () => {
+    const p = prompt("solo-co", "canalize ogilvy nesta peça");
+    expect(p).not.toContain("REQUESTED MIND-CLONE NOT LOADED");
+  });
+});

@@ -8,6 +8,12 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### A requested mind-clone that does not fit is named, not dropped
+
+`MAX_INJECT` caps how many personas one run carries. A brief naming four experts got three, chosen in `Set` insertion order — arbitrary with respect to which one the brief leaned on — and the fourth returned `false` from `push()` in silence. The deliverable then spoke as if it carried every voice requested, the audit showed fewer `mind_clone_injected` events than the brief named, and nothing connected the two.
+
+The loud-degradation machinery for a MISSING clone was already right there, and its own comment said it covered absence only. Being crowded out is the worse case: the DNA is installed, and the user asked for it by name. The prompt now names who was left out, says which slots were spent instead, forbids claiming those voices, and emits `mind_clone_missing_degraded` per clone — so the owner can re-run with a narrower cast or raise the ceiling instead of reading a deliverable that quietly spoke in fewer voices than it was asked for.
+
 ### Windows told the truth, Linux stopped being case-blind, and two gates read what they judge
 
 Six defects the platform sweep found, none of them new, all of them silent.

@@ -8,6 +8,12 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Um mind-clone pedido que não cabe é nomeado, não descartado
+
+O `MAX_INJECT` limita quantas personas uma execução carrega. Um brief nomeando quatro especialistas recebia três, escolhidos na ordem de inserção do `Set` — arbitrária em relação a qual deles o brief enfatizava — e o quarto voltava `false` do `push()` em silêncio. O entregável então falava como se carregasse todas as vozes pedidas, a auditoria mostrava menos eventos `mind_clone_injected` do que o brief nomeava, e nada ligava uma coisa à outra.
+
+A maquinaria de degradação ruidosa para um clone AUSENTE já estava ali, e o comentário dela mesma dizia que cobria só a ausência. Ser espremido para fora é o caso pior: o DNA está instalado, e o usuário pediu por nome. O prompt agora nomeia quem ficou de fora, diz quais vagas foram gastas no lugar, proíbe reivindicar aquelas vozes e emite `mind_clone_missing_degraded` por clone — para que o dono possa reexecutar com um elenco menor ou subir o teto, em vez de ler um entregável que falou em menos vozes do que lhe foi pedido.
+
 ### O Windows passou a dizer a verdade, o Linux deixou de ser cego a caixa, e dois portões leem o que julgam
 
 Seis defeitos que a varredura de plataforma achou, nenhum novo, todos silenciosos.
