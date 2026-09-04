@@ -166,14 +166,18 @@ function pickChain(args: TeamRunArgs): { chain: ChainStep[]; reason: string } {
     `- "${args.intakeEmployee}" is the intake/synthesizer and MUST be LAST in the chain (it consolidates the colleagues' outputs into the final deliverables).`,
     args.forceChain
       ? "- Include 3 to 6 employees in the chain (the synthesizer counts). Skip employees irrelevant to the brief."
-      : "- HOW MANY seats is your call, and it is the most important decision here. A brief one seat can carry whole should get ONE — a chain of a single step, the synthesizer alone — because every extra step costs money and one more handoff of context. Call a colleague when the brief needs a specialty the synthesizer does not have, not to look thorough. Six at most.",
+      : "- THE ORG CHART IS THE CONTRACT, not a suggestion. If a seat's declared role covers part of this brief, THAT SEAT does that part. You are not judging who is capable: the same model sits in every chair, so \"the synthesizer could do this\" is always true and is never the question. Ask instead whose JOB it is. The synthesizer works alone only when NO seat's role covers the work.",
+    args.forceChain ? "" : "- A seat is also how a mind-clone reaches the work: personas are ranked against the SEAT'S task, not against the company. Skip the seat and the persona the brief needed is never injected — a comedy screenplay written by the CEO because it could is a screenplay with no screenwriter's voice in it.",
+    args.forceChain ? "" : "- Six seats at most, and skip any whose role the brief does not touch. Cost is the tie-breaker between two defensible chains, never the test for whether to delegate.",
     "- Order by logical dependency: whoever produces an input comes before whoever needs it.",
     "- Each sub-task: the expected result and what is mandatory about it. The path belongs to whoever executes.",
     "- The DELIVERABLE follows the language of the client brief above. These instructions are in English; what the business ships is not.",
     "",
     'Answer with ONE valid JSON object only: {"reason":"<one sentence: why THIS number of steps>","chain":[{"employee":"<exact-name>","task":"<1-2 sentences: what has to exist at the end, and what is non-negotiable>"}, ...]}',
     "No markdown, no fences, no comment before or after.",
-  ].join("\n");
+    // The two mandate rules above are chain-only, so they render as "" under
+    // --team; dropping the empties keeps the rule list from growing blank lines.
+  ].filter(line => line !== "").join("\n");
 
   appendAudit({ event: "team_director_called", project_id: args.projectId, business_slug: args.slug, employees_available: employees.length }, args.projectRoot);
   // The director makes the most consequential call of the run — who works, and

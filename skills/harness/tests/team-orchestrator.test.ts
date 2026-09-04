@@ -207,7 +207,13 @@ describe("runTeam — the director decides how many seats", () => {
 
     runTeam(args("acme", { runHeadlessImpl: spy, runWithCascadeImpl: cascade([]) }));
     expect(prompts[1]).not.toContain("Include 3 to 6 employees");
-    expect(prompts[1]).toContain("a chain of a single step");
+    // The default asks WHOSE JOB it is, not who is capable. The distinction is
+    // the whole rule: the same model sits in every chair, so "the synthesizer
+    // could do this" is always true and collapsed every chain to one seat.
+    expect(prompts[1]).toContain("THE ORG CHART IS THE CONTRACT");
+    expect(prompts[1]).toContain("whose JOB it is");
+    // And why skipping a seat is not merely a shortcut: it deletes the persona.
+    expect(prompts[1]).toContain("personas are ranked against the SEAT'S task");
   });
 });
 
