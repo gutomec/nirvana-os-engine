@@ -35,7 +35,15 @@ import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { renderResourceMap } from "../../_shared/lib/entity-resource-map.ts";
 import { resolveSetting } from "../../_shared/lib/settings.ts";
 
-export type SquadExecMode = "team-mandatory" | "squad-only";
+/** Why a squad is running.
+ *
+ *  `team-mandatory` and `single-mandatory` are the same job — a specialist the
+ *  router chose, run before the seat that consumes it — and differ only in what
+ *  consumes it: the synthesizer at the end of a chain, or the one seat of a
+ *  `--single` run. They stay distinct in the audit because "the router's pick
+ *  ran, and the run was still one seat" is a sentence the owner needs to be able
+ *  to read back. Both collapse to `squad-mandatory` on `agent_executed`. */
+export type SquadExecMode = "team-mandatory" | "single-mandatory" | "squad-only";
 
 export interface SquadExecArgs {
   squadSlug: string;
@@ -584,7 +592,7 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
     squad_slug: args.squadSlug, employee: `squad:${args.squadSlug}`,
     runtime: res.finalRuntime, session_id: res.sessionId,
     cost_usd: res.costUsd, duration_ms: res.durationMs,
-    mode: args.mode === "team-mandatory" ? "squad-mandatory" : "squad-only",
+    mode: args.mode === "squad-only" ? "squad-only" : "squad-mandatory",
     handoffs: res.handoffs.length ? res.handoffs : undefined,
   }, args.projectRoot);
 

@@ -8,6 +8,18 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Most businesses ran as one person, behind a flag nobody passed
+
+`--team` turned on the multi-employee chain. It appeared in no caller, in `bin/nrv` or in the skill protocol, so a business with a full org chart answered every brief through its intake employee alone. The specialists the router had already chosen made it worse: `autoMandatorySquads` was consumed only inside `runTeam`, so outside it `auto_route_selected` announced squads that never ran. The log asserted work nobody did.
+
+The chain is now the default, and how many seats it uses is a decision instead of a flag. The director reads the brief against the org chart and answers with a count and a reason, free to answer "one seat" — `x_chain_shape_decided` carries both, so five dispatches on a brief one seat could have carried is a bill the owner can read back. `--single` skips the director; `--team` asks for three to six; an explicit `--execution-mode=gauntlet` still takes the single-seat path the business canary was built on. Mandatory squads now run in both modes, before the seat that consumes them.
+
+**The director had no tools.** It made the most consequential call of the run — who works, and what it costs — from a temp directory with `allowedTools: []`, seeing one line of description per seat. Every other decision-maker here reads before deciding; the router gets Read, Glob, Grep and Bash. The director now runs like the agents it dispatches: full trust, in the project, with the business granted, so it can open a seat's method before deciding that seat is unnecessary. `--safe` still wins, and now reaches the employees too — the chain never forwarded it, so every seat inside a business ran in full trust regardless of what the user asked for.
+
+**A dispatch says what must exist, not how to build it.** The director's prompt did the opposite: it told each sub-task to name the tool (an image generator by slug, a library by CDN) and forbade techniques. Whoever executes knows the tools of their own craft better than the director does, and a step-by-step written upstream only removes the freedom to do it better. Requirements on the result stay ("the images have to be real generated images, not placeholders"); recipes for the method go.
+
+**The router prefers the business.** Its rule for an unnamed target ended with the opposite bias — never force a business just because the slot exists — which pushed toward a squad exactly where the org chart was the point. A squad is one team running one workflow: it produces, and nothing in it steps back to check the result against the brief. Going straight to one now requires all three: a single-specialty object, exactly one capability delivering the whole of it, and no judgment needed across specialties. Any doubt resolves to the business. An explicit order from the user still wins ahead of all of it, unchanged.
+
 ### The chain read the roster from one tree and dispatched into another
 
 `listEmployees` resolved the business as `~/businesses/<slug>`, hardcoded. Nothing else in the run does: the dispatch grants what `resolveEntityDir` returns, which honours the project scope, `BUSINESSES_DIR` and `NIRVANA_HOME`. So a business installed under a redirected home, or living in the project rather than the global library, listed zero seats — and `pickChain` reads zero seats as a one-seat company and hands the whole brief to the intake employee. The company ran as one person and said nothing about it, which is indistinguishable from a company that only has one seat.

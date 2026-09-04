@@ -265,9 +265,23 @@ const wantPdf = process.argv.includes("--pdf");
 // HTML report is the DEFAULT (skipped only in fast mode or with --no-html). --html
 // stays as a no-op alias for compat. --offline-snapshot inlines the CDN assets.
 const skipHtml = routingMode === "fast" || process.argv.includes("--no-html");
-// --team: harness-driven multi-employee orchestration (director + chain) instead
-// of single-shot. Each employee runs as its own audited claude -p with DNA.
-const wantTeam = process.argv.includes("--team");
+// Who decides the shape of a business run: the chain of employees, or a single
+// seat carrying the whole brief.
+//
+// It used to be `--team`, a flag no caller passed and neither `bin/nrv` nor the
+// SKILL.md documented — so every business ran as one person. Measured on the
+// installed library, most of them have more than one seat, and the mandatory
+// squads the router had already chosen were only consumed inside `runTeam`:
+// outside it, `auto_route_selected` announced specialists that never ran.
+//
+// The default is now the director's call, made per brief with the seats in front
+// of it (`pickChain`), and it is free to answer "one seat" — that is a decision
+// with a reason in the audit, not a flag nobody knew to pass. The flags stay as
+// overrides for the two cases where the user already knows the answer.
+const forceSingle = process.argv.includes("--single");
+const forceTeam = process.argv.includes("--team");
+// `wantTeam` is settled below, once `executionOptions` is parsed: an explicit
+// gauntlet request has to be able to outrank this default.
 const autoBriefEq = process.argv.find(a => a.startsWith("--auto-brief="));
 const autoBriefMode = autoBriefEq ? autoBriefEq.split("=")[1] : (process.argv.includes("--auto-brief") ? "inferred" : null);
 const wantAutoBrief = autoBriefMode !== null;
@@ -291,6 +305,15 @@ try {
   if (import.meta.main) process.exit(4);
   throw error;
 }
+
+// The chain is the default (see the flags above), with one thing allowed to
+// outrank it: an explicit `--execution-mode=gauntlet`. `decideBusinessCanary`
+// refuses to arm under team mode, so a default that always said "team" would
+// have switched the business gauntlet canary off for everyone while looking
+// like a change about orchestration. Asking for the canary is asking for the
+// single-seat path it was built on; `--team` on top of it still wins, because
+// then the user has said both things and the later one is the specific one.
+const wantTeam = forceTeam || (!forceSingle && executionOptions.requestedMode !== "gauntlet");
 
 // ── audit facade (routing-360 Phase 4.3, dispatch side) ───────────────────
 // lib/audit.js emit() is the canonical writer (closed enum + open x_
@@ -1760,6 +1783,8 @@ if (wantExec) {
     const tr = runTeam({
       slug, brief, projectId: pid, projectDir: projDir, projectRoot, outputsRoot: oroot,
       runtime: rt, intakeEmployee: intake,
+      forceChain: forceTeam,
+      yolo,
       mandatorySquads: autoMandatorySquads,
       maxBudgetUsd: effectiveBudgetUsd(),
       timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
@@ -1778,7 +1803,30 @@ if (wantExec) {
     }
     res = { ok: tr.ok, sessionId: tr.lastSessionId, durationMs: tr.totalDurationMs, costUsd: tr.totalCostUsd };
   } else {
-    const agentPrompt = fs.readFileSync(outputPath, "utf8");
+    // The specialists the router already picked, run before the seat that needs
+    // them. They used to execute only inside `runTeam`, so a single-seat run
+    // emitted `auto_route_selected` naming squads that never ran — the log
+    // asserting work nobody did. Failure is non-fatal here, exactly as in the
+    // chain: the seat continues with whatever landed, and `agent_exec_failed`
+    // carries the rest.
+    const priorSquadDirs: { slug: string; dir: string }[] = [];
+    for (const sq of autoMandatorySquads) {
+      const sqDir = path.join(oroot, "_squads", sq);
+      const sr = runSquadHeadless({
+        squadSlug: sq, brief, projectId: pid, projectDir: projDir, projectRoot,
+        outputsDir: sqDir, runtime: rt, businessSlug: slug, mode: "single-mandatory",
+        maxBudgetUsd: effectiveBudgetUsd(),
+        timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
+        rulesDirective, autonomousDirective: AUTONOMOUS_DIRECTIVE,
+      });
+      if (sr.ok) priorSquadDirs.push({ slug: sq, dir: sr.outputsDir });
+      else console.error(c("yellow", `  ⚠ mandatory squad '${sq}' failed: ${sr.error}`));
+    }
+
+    let agentPrompt = fs.readFileSync(outputPath, "utf8");
+    if (priorSquadDirs.length) {
+      agentPrompt += `\n\n## O QUE OS ESPECIALISTAS JÁ ENTREGARAM\nEstes squads rodaram antes de você, sobre o mesmo brief. Leia o que produziram e construa em cima — não refaça, não ignore.\n\n${priorSquadDirs.map(s => `- **${s.slug}** → \`${s.dir}\``).join("\n")}`;
+    }
     // runWithCascade falls through to plain runHeadless when LLM_CASCADE is not set
     // in the project .env, so non-cascade users see no behavioral change.
     res = runWithCascade({

@@ -50,9 +50,10 @@ function business(slug: string, seats: string[]): string {
 }
 
 /** A canned director that returns exactly this chain. */
-function director(chain: Array<{ employee: string; task: string }>) {
+function director(chain: Array<{ employee: string; task: string }>, reason?: string) {
   return ((opts: any) => ({
-    ok: true, runtime: opts.runtime, sessionId: null, result: JSON.stringify({ chain }),
+    ok: true, runtime: opts.runtime, sessionId: null,
+    result: JSON.stringify(reason ? { reason, chain } : { chain }),
     costUsd: 0, exitCode: 0, stderr: "", durationMs: 1,
   })) as any;
 }
@@ -157,6 +158,56 @@ describe("runTeam — the chain the director chose", () => {
     expect(r.ok).toBe(true);
     expect(r.chain).toHaveLength(1);
     expect(seen).toHaveLength(1);
+  });
+});
+
+describe("runTeam — the director decides how many seats", () => {
+  test("one step is a valid answer, and it runs as one step", () => {
+    business("acme", ["researcher", "writer", "synth"]);
+    const seen: any[] = [];
+    const a = args("acme", {
+      runHeadlessImpl: director([{ employee: "synth", task: "faça inteiro" }], "o brief é uma página, não precisa de repasse"),
+      runWithCascadeImpl: cascade(seen),
+    });
+    const r = runTeam(a);
+
+    expect(r.ok).toBe(true);
+    expect(r.chain).toHaveLength(1);
+    expect(seen).toHaveLength(1);
+    // A three-seat company that ran as one because the brief did not need more
+    // is a decision. It owes a reason, and the reason is in the log.
+    const shape = readAudit(a.projectId).find(e => e.event === "x_chain_shape_decided");
+    expect(shape?.steps).toBe(1);
+    expect(shape?.reason).toBe("o brief é uma página, não precisa de repasse");
+    expect(shape?.forced).toBe("auto");
+  });
+
+  test("a one-seat business says so, rather than leaving the cost unexplained", () => {
+    business("solo", ["synth"]);
+    const a = args("solo", {
+      runHeadlessImpl: (() => { throw new Error("director must not run for a one-seat business"); }) as any,
+      runWithCascadeImpl: cascade([]),
+    });
+    runTeam(a);
+    const shape = readAudit(a.projectId).find(e => e.event === "x_chain_shape_decided");
+    expect(shape?.steps).toBe(1);
+    expect(shape?.reason).toMatch(/uma cadeira/);
+  });
+
+  test("--team asks for a chain; without it the count is the director's call", () => {
+    business("acme", ["researcher", "writer", "synth"]);
+    const prompts: string[] = [];
+    const spy = ((opts: any) => {
+      prompts.push(String(opts.prompt));
+      return { ok: true, result: JSON.stringify({ chain: [{ employee: "synth", task: "t" }] }), costUsd: 0, exitCode: 0, stderr: "", durationMs: 1, sessionId: null };
+    }) as any;
+
+    runTeam(args("acme", { forceChain: true, runHeadlessImpl: spy, runWithCascadeImpl: cascade([]) }));
+    expect(prompts[0]).toContain("Inclua de 3 a 6 employees");
+
+    runTeam(args("acme", { runHeadlessImpl: spy, runWithCascadeImpl: cascade([]) }));
+    expect(prompts[1]).not.toContain("Inclua de 3 a 6 employees");
+    expect(prompts[1]).toContain("cadeia de 1 passo");
   });
 });
 

@@ -58,6 +58,18 @@ export interface TeamRunArgs {
    *  leak into every other file sharing the runner. An argument is honest where
    *  a process-wide mutation is a race. */
   businessesRoot?: string;
+  /** `--team`: the user already decided there is a chain, so the director is
+   *  asked for 3 to 6 seats instead of being free to answer "one". Without it
+   *  the number of steps is the director's call, which is the point — a flag
+   *  nobody passes is not a decision, it is a default wearing a disguise. */
+  forceChain?: boolean;
+  /** Full trust (the engine default) unless the user asked for `--safe`. The
+   *  director and every step run with the tools of their runtime and no
+   *  permission prompts, because a decision-maker with no tools decides on
+   *  hearsay. `--safe` is the user saying otherwise, and the user's order wins
+   *  over the default — which is the only reason this is a field and not a
+   *  constant. */
+  yolo?: boolean;
   /** Test seam: canned cascade runner (zero-token tests). Same shape
    *  `SquadExecArgs.runWithCascadeImpl` already uses, so one idiom covers both
    *  executors. The chain had no test file at all before this — only
@@ -118,15 +130,20 @@ function listEmployees(args: TeamRunArgs): { name: string; role: string; descrip
   return out;
 }
 
-function pickChain(args: TeamRunArgs): ChainStep[] {
+function pickChain(args: TeamRunArgs): { chain: ChainStep[]; reason: string } {
   const employees = listEmployees(args);
-  if (employees.length <= 1) return [{ employee: args.intakeEmployee, task: "Execute o brief de ponta a ponta. Você é o único employee deste business." }];
+  if (employees.length <= 1) {
+    return {
+      chain: [{ employee: args.intakeEmployee, task: "Execute o brief de ponta a ponta. Você é o único employee deste business." }],
+      reason: "a empresa tem uma cadeira só",
+    };
+  }
 
   const list = employees.map(e => `- ${e.name} (${e.role}): ${e.description}`).join("\n");
   const prompt = [
     `Você é o diretor de orquestração do business "${args.slug}". Sua única função é decidir a cadeia ideal de employees para executar o brief abaixo com QUALIDADE NIRVANA — o melhor que existe.`,
     "",
-    "PREMISSA FUNDAMENTAL: nada nas coxas. A cadeia deve ativar os especialistas certos e cada sub-tarefa deve mandar o employee USAR o que há de melhor disponível (geradores de imagem reais como `nano-banana-pro` ou `image2-virtuoso`, bibliotecas modernas de primeiríssima via CDN confiável, dispatchar outros squads do registry quando fizer sentido). Nunca peça SVG genérico para visual, nunca improvise no que um especialista faz melhor.",
+    "COMO ESCREVER UMA SUB-TAREFA: diga o que tem que EXISTIR quando o employee terminar, e o que é inegociável nesse resultado. Não diga como chegar lá. Quem executa é especialista, conhece as ferramentas do próprio ofício melhor que você, e um passo a passo escrito por você só tira dele a liberdade de fazer melhor. Exigência de resultado é legítima (\"as imagens têm que ser imagens geradas de verdade, não placeholder\", \"o HTML tem que abrir sem build\"); receita de método não é (\"use tal biblioteca\", \"primeiro faça X, depois Y\").",
     "",
     "BRIEF DO CLIENTE:",
     args.brief,
@@ -136,18 +153,31 @@ function pickChain(args: TeamRunArgs): ChainStep[] {
     "",
     `REGRAS:`,
     `- "${args.intakeEmployee}" é o intake/synthesizer e DEVE ser o ÚLTIMO da cadeia (consolida os outputs dos colegas em entregáveis finais).`,
-    `- Inclua de 3 a 6 employees na cadeia (incluindo o synthesizer). Pule employees irrelevantes ao brief.`,
+    args.forceChain
+      ? `- Inclua de 3 a 6 employees na cadeia (incluindo o synthesizer). Pule employees irrelevantes ao brief.`
+      : `- QUANTAS cadeiras é decisão sua, e é a decisão mais importante aqui. Um brief que uma cadeira resolve inteiro deve receber UMA — cadeia de 1 passo, só o synthesizer — porque cada passo a mais custa dinheiro e um repasse de contexto. Chame um colega quando o brief precisa de uma especialidade que o synthesizer não tem, não para parecer completo. Máximo de 6.`,
     `- Ordene pela dependência lógica: quem dá o input vem antes de quem precisa dele.`,
-    `- Cada sub-tarefa deve mandar o employee usar os melhores recursos disponíveis para o seu tipo de output (imagens reais, bibliotecas atuais, especialistas externos quando aplicável).`,
+    `- Cada sub-tarefa: o resultado esperado e o que é obrigatório nele. O caminho é de quem executa.`,
     "",
-    'Responda APENAS um JSON válido: {"chain":[{"employee":"<nome-exato>","task":"<sub-tarefa em 1-2 frases, citando que ferramentas/recursos top usar quando aplicável>"}, ...]}',
+    'Responda APENAS um JSON válido: {"reason":"<1 frase: por que ESTA quantidade de passos>","chain":[{"employee":"<nome-exato>","task":"<em 1-2 frases: o que tem que existir no fim, e o que é inegociável>"}, ...]}',
     "Sem markdown, sem cercas, sem comentário antes ou depois.",
   ].join("\n");
 
   appendAudit({ event: "team_director_called", project_id: args.projectId, business_slug: args.slug, employees_available: employees.length }, args.projectRoot);
+  // The director makes the most consequential call of the run — who works, and
+  // how much the run costs — and it used to make it blindfolded: no tools, and a
+  // temp directory for a working directory. All it could see was the one-line
+  // description of each seat, pasted above. Every other decision-maker in this
+  // system reads before deciding (the router gets Read/Glob/Grep/Bash), and this
+  // one had less to go on than any of them.
+  //
+  // It now runs like the agents it dispatches: full trust, in the project, with
+  // the business granted. If it wants to open a seat's method file before
+  // deciding the seat is unnecessary, it can.
   const res = (args.runHeadlessImpl ?? runHeadless)({
-    runtime: args.runtime, prompt, cwd: os.tmpdir(),
-    allowedTools: [], permissionMode: "default",
+    runtime: args.runtime, prompt, cwd: args.projectRoot,
+    addDirs: [businessDir(args), args.projectDir],
+    yolo: args.yolo ?? true,
     timeoutMs: 5 * 60 * 1000,
   });
   const txt = (res.result || "").trim();
@@ -165,7 +195,9 @@ function pickChain(args: TeamRunArgs): ChainStep[] {
   if (chain[chain.length - 1].employee !== args.intakeEmployee) {
     chain.push({ employee: args.intakeEmployee, task: `Síntese final: leia os outputs dos colegas em _team/* e consolide os ENTREGÁVEIS FINAIS sob ${args.outputsRoot}. Cite premissas em "## Premissas assumidas".` });
   }
-  return chain;
+  const reason = String(parsed.reason || "").replace(/\s+/g, " ").trim().slice(0, 300)
+    || "o diretor não declarou o motivo";
+  return { chain, reason };
 }
 
 /**
@@ -281,6 +313,9 @@ function runStep(step: ChainStep, idx: number, total: number, args: TeamRunArgs,
     // The prompt says in words that it is read-only, which is the instrument the
     // rest of the engine uses to keep deliverables where they belong.
     runtime: args.runtime, prompt: ep.stdout, cwd: args.projectRoot, addDirs: [args.projectDir, employeeOutDir, bizDir],
+    // The chain never passed this, so `--safe` stopped at the business door and
+    // every employee inside ran in full trust regardless.
+    yolo: args.yolo ?? true,
     appendSystemPrompt: AUTONOMOUS_DIRECTIVE + (args.rulesDirective ?? ""),
     maxBudgetUsd: args.maxBudgetUsd, timeoutMs: args.timeoutMs,
     brief: args.brief, projectRoot: args.projectRoot, outputsRoot: employeeOutDir,
@@ -329,11 +364,20 @@ function runMandatorySquad(squadSlug: string, args: TeamRunArgs): StepResult {
 
 export function runTeam(args: TeamRunArgs): TeamResult {
   let chain: ChainStep[];
-  try { chain = pickChain(args); }
+  let shapeReason: string;
+  try { ({ chain, reason: shapeReason } = pickChain(args)); }
   catch (e: any) {
     appendAudit({ event: "team_director_failed", project_id: args.projectId, business_slug: args.slug, error: e?.message || String(e) }, args.projectRoot);
     return { ok: false, steps: [], chain: [], lastSessionId: null, totalCostUsd: 0, totalDurationMs: 0, error: `director: ${e?.message || e}` };
   }
+  // Why this run costs what it costs. The chain length is now a decision rather
+  // than a flag, so it owes the owner a reason: five dispatches on a brief one
+  // seat could have carried is a bill, and reading it back from the audit is how
+  // the director's judgement gets checked instead of assumed.
+  appendAudit({
+    event: "x_chain_shape_decided", project_id: args.projectId, business_slug: args.slug,
+    steps: chain.length, reason: shapeReason, forced: args.forceChain ? "team" : "auto",
+  }, args.projectRoot);
   appendAudit({ event: "team_chain_selected", project_id: args.projectId, business_slug: args.slug, chain: chain.map(s => ({ employee: s.employee, task: s.task.slice(0, 120) })) }, args.projectRoot);
 
   const steps: StepResult[] = [];
