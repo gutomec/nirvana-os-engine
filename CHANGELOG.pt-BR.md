@@ -8,6 +8,27 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### O superior imediato revisa o trabalho, e o silêncio reprova
+
+Uma empresa declara quem se reporta a quem, e até agora nada lia isso. Agora lê: o trabalho de cada cadeira é revisado pela cadeira acima dela no `org-chart.yaml`, contra os critérios que a própria cadeira declarou.
+
+O `nrv team review` monta o prompt do superior — a persona e o mind-clone dele, o brief do cliente, o que foi pedido ao subordinado, onde está o trabalho, e o `acceptance[]` do subordinado na íntegra, com os bloqueantes marcados. O `nrv team verdict` julga a resposta e sai com 0 para aprovado e 3 para reprovado, então quem chama decide pelo código de saída.
+
+O problema de desenho é que um revisor perguntado "o trabalho do seu subordinado está bom?" responde que sim — mesmo modelo, nenhum incentivo para objetar. Então aprovação nunca é pedida. O revisor reporta só o que **confirmou**, cada item com evidência, e quatro regras fazem o resto:
+
+- O que não for mencionado conta como não confirmado. **Silêncio reprova.** Um revisor que responde `{"confirmed":[]}` tira zero e reprova — o caminho preguiçoso passa a ser o que rejeita.
+- Evidência com menos de doze caracteres é um dar de ombros, não evidência, e o critério continua não confirmado.
+- Id que a cadeira nunca declarou é descartado e nomeado no log — revisão de critério inventado não é revisão.
+- O engine calcula a nota; o revisor só observa. Revisor que se dá a própria nota se dá uma nota generosa.
+
+O piso é 0,90, não 1,0: um micro-check impossível de confirmar não deve afundar uma entrega boa. Critério que o autor marcou como `blocking` precisa ser confirmado independentemente da nota — é assim que uma empresa diz "esse é absoluto".
+
+Todo veredito emite `x_review_approved` ou `x_review_rejected` com o trace, o par revisor/revisado, a nota, o piso, o que foi confirmado e cada lacuna com o motivo. Isso é de propósito: os vereditos de gate hoje não carregam trace nenhum, então "esta execução passou?" não tem como ser respondido por join. Estes têm.
+
+O gate do engine não foi tocado e continua rodando por último. O superior responde se o trabalho é bom e bate com o que foi pedido; o pipeline responde se existe entregável, se não é stub e se bate com o manifesto — de forma determinística, fail-closed, de graça. Um modelo perguntado "isso é stub?" erra aberto; o `isDeliverable` erra fechado.
+
+Medido antes de construir: 65 das 65 empresas instaladas têm rota de revisão utilizável, e 611 de 611 cadeiras já declaram `acceptance[]`. Nenhuma empresa precisou mudar. Desenho e teste de falseamento: `docs/architecture/hierarchical-review.md`.
+
 ### O passo de preparação mandava o maestro rodar um employee só
 
 O `brief-business.ts` é o passo que todo despacho de empresa executa primeiro, e a saída dele terminava com `Next step: Spawn employee '<intake>' with the brief above as context.` Uma cadeira. Uma empresa com catorze fez exatamente isso, creditou seis no entregável e deixou um único `dispatch_business`, medido em 04/09/2026 numa empresa instalada.

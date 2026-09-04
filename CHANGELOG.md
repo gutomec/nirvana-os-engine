@@ -8,6 +8,27 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### The immediate superior reviews the work, and silence rejects
+
+A business declares who reports to whom, and until now nothing read it. It does now: each seat's work is reviewed by the seat above it in `org-chart.yaml`, against the criteria that seat declared for itself.
+
+`nrv team review` builds the superior's prompt — its own persona and mind-clone, the client's brief, what the subordinate was asked, where the work is, and the subordinate's `acceptance[]` verbatim with the blocking ones marked. `nrv team verdict` judges the answer and exits 0 for approved, 3 for rejected, so the caller branches on the code.
+
+The design problem is that a reviewer asked "is your subordinate's work good?" says yes — same model, no incentive to object. So approval is never asked for. The reviewer reports only what it **confirmed**, each with evidence, and four rules do the rest:
+
+- Anything unmentioned counts as unconfirmed. **Silence rejects.** A reviewer that answers `{"confirmed":[]}` scores zero and fails, so the lazy path is the rejecting path.
+- Evidence under twelve characters is a shrug, not evidence, and the criterion stays unconfirmed.
+- An id the seat never declared is dropped and named in the log — a review of invented criteria is not a review.
+- The engine computes the score; the reviewer only observes. A reviewer that grades itself grades generously.
+
+The floor is 0.90, not 1.0: one unconfirmable micro-check should not sink a good delivery. A criterion the author marked `blocking` must be confirmed regardless of score, which is how a business says "this one is absolute".
+
+Every verdict emits `x_review_approved` or `x_review_rejected` carrying the trace, the pair, the score, the floor, what was confirmed and every gap with its reason. That is deliberate: gate verdicts today carry no trace at all, so "did this run pass" cannot be answered by a join. These can.
+
+The engine's own gate is untouched and still runs last. The superior answers whether the work is good and matches what was asked; the pipeline answers whether a deliverable exists, is not a stub and matches the manifest — deterministically, fail-closed, for free. A model asked "is this a stub?" fails open; `isDeliverable` fails closed.
+
+Measured before building: 65 of 65 installed businesses carry a usable review route, and 611 of 611 seats already declare `acceptance[]`. No business needed changing. Design and falsification test: `docs/architecture/hierarchical-review.md`.
+
 ### The prep step told the maestro to spawn one employee
 
 `brief-business.ts` is the step every business dispatch runs first, and its output ended with `Next step: Spawn employee '<intake>' with the brief above as context.` One seat. A business with fourteen of them did exactly that, credited six in the deliverable, and left a single `dispatch_business` behind, measured 2026-09-04 on an installed business.
