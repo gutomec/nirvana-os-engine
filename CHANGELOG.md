@@ -8,6 +8,18 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### The canonical emitter was the one that did not stamp
+
+`nrv audit emit` — the path the protocol tells agents to use — writes through `harness/lib/audit.js`, and that was the one emitter left unstamped. So the internal emitters were signed and the one agents actually call was not, which meant a legitimate agent-emitted event was indistinguishable from a line somebody typed: the exact confusion the stamp exists to end, preserved at the only place it mattered. It stamps the envelope now.
+
+The implementation moved to a CJS sibling (`audit-provenance.js`, with the `.ts` as its typed face) because `audit.js` is CommonJS and a `.js` requiring a `.ts` is the ESM boundary Windows enforces as a hard error. The repo's own gate caught that within a minute of the mistake.
+
+### A persona loaded by hand now leaves a trace
+
+Seats are handed a ranked list of mind-clones and told to choose; nothing is auto-injected. A seat that loads one by hand was doing the right thing invisibly — three seats embodied someone in a live run with zero `mind_clone_injected` in the audit. `nrv inspect-clone` now emits `x_clone_loaded` when it runs inside a trace, and stays silent otherwise: a person looking is not a run loading.
+
+The instruction that sends a seat there was also wrong. It said `nrv inspect-clone <slug> --dna`, and that flag prints layer COUNTS, not the DNA. It now points at the default output, which prints `Path:` and the artifacts, and names the three files to read.
+
 ### Five things the first real org-chart run exposed
 
 The run worked — three seats dispatched by name, two reviews approved against declared criteria, a computed receipt that closed. Watching it closely turned up five defects, four of them introduced the same day.

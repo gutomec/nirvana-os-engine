@@ -271,6 +271,27 @@ if (commands.length > 0) {
 }
 console.log("");
 console.log(`Path: ${cloneDir}`);
+
+// A seat that loads a persona by hand leaves no trace, and on 2026-09-04 that
+// produced a run where three seats each embodied someone with zero
+// `mind_clone_injected` in the audit — functionally right, unaccountable. This
+// is the one place that knows a persona was handed over, so it says so. Silent
+// when there is no project context: a bare `nrv inspect-clone` from a terminal
+// is a person looking, not a run loading.
+try {
+  if (process.env.NIRVANA_TRACE_ID || process.env.NIRVANA_PROJECT_ID) {
+    const { emitAudit } = require(join(import.meta.dir, "..", "lib", "audit-emit.ts"));
+    emitAudit({
+      event: "x_clone_loaded",
+      trace_id: process.env.NIRVANA_TRACE_ID || null,
+      project_id: process.env.NIRVANA_PROJECT_ID || null,
+      business_slug: process.env.NIRVANA_BUSINESS_SLUG || null,
+      mind_clone: slug,
+      mind_clone_path: cloneDir,
+      via: "inspect-clone",
+    });
+  }
+} catch { /* never break an inspection over its own bookkeeping */ }
 console.log("");
 console.log(`Tip: bun inspect-clone.ts ${slug} --commands  # see all commands`);
 console.log(`Tip: bun inspect-clone.ts ${slug} --format=json  # full machine-readable output`);

@@ -8,6 +8,18 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### O emissor canônico era justamente o que não carimbava
+
+O `nrv audit emit` — o caminho que o protocolo manda os agentes usarem — escreve pelo `harness/lib/audit.js`, e era o único emissor que faltava carimbar. Ou seja: os emissores internos assinados e o que os agentes de fato chamam, não. Um evento legítimo emitido por agente ficava indistinguível de uma linha digitada — exatamente a confusão que o carimbo existe para acabar, preservada no único lugar que importava. Agora ele carimba o envelope.
+
+A implementação foi para um irmão CJS (`audit-provenance.js`, com o `.ts` como face tipada) porque o `audit.js` é CommonJS e um `.js` fazendo require de `.ts` é a fronteira ESM que o Windows trata como erro duro. O gate do próprio repo pegou isso um minuto depois do erro.
+
+### Persona carregada na mão agora deixa rastro
+
+As cadeiras recebem uma lista rankeada de mind-clones e escolhem; nada é injetado automaticamente. Uma cadeira que carrega na mão estava fazendo a coisa certa de forma invisível — três cadeiras encarnaram alguém numa execução real com zero `mind_clone_injected` no log. O `nrv inspect-clone` passa a emitir `x_clone_loaded` quando roda dentro de um trace, e fica calado fora dele: pessoa olhando não é execução carregando.
+
+A instrução que manda a cadeira até lá também estava errada. Dizia `nrv inspect-clone <slug> --dna`, e essa flag imprime CONTAGEM de camadas, não o DNA. Agora aponta a saída padrão, que imprime `Path:` e os artefatos, e nomeia os três arquivos a ler.
+
 ### Cinco coisas que a primeira execução real do organograma expôs
 
 A execução funcionou — três cadeiras despachadas com nome, duas revisões aprovadas contra critério declarado, um recibo calculado que fechou. Observá-la de perto revelou cinco defeitos, quatro deles introduzidos no mesmo dia.
