@@ -10,7 +10,7 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ### The prep step told the maestro to spawn one employee
 
-`brief-business.ts` is the step every business dispatch runs first, and its output ended with `Next step: Spawn employee '<intake>' with the brief above as context.` One seat. A business with fourteen of them did exactly that, credited six in the deliverable, and left a single `dispatch_business` behind — measured 2026-09-04 on `software-forge`.
+`brief-business.ts` is the step every business dispatch runs first, and its output ended with `Next step: Spawn employee '<intake>' with the brief above as context.` One seat. A business with fourteen of them did exactly that, credited six in the deliverable, and left a single `dispatch_business` behind, measured 2026-09-04 on an installed business.
 
 The procedure for running an org chart lived in `SKILL.md`, which only reaches a session that re-read it. The session that produced that run had been open since before the file changed. So the instruction was in the right document and the wrong place: the caller was reading the command's output, not the protocol.
 

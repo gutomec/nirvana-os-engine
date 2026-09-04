@@ -10,7 +10,7 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ### O passo de preparação mandava o maestro rodar um employee só
 
-O `brief-business.ts` é o passo que todo despacho de empresa executa primeiro, e a saída dele terminava com `Next step: Spawn employee '<intake>' with the brief above as context.` Uma cadeira. Uma empresa com catorze fez exatamente isso, creditou seis no entregável e deixou um único `dispatch_business` — medido em 04/09/2026 no `software-forge`.
+O `brief-business.ts` é o passo que todo despacho de empresa executa primeiro, e a saída dele terminava com `Next step: Spawn employee '<intake>' with the brief above as context.` Uma cadeira. Uma empresa com catorze fez exatamente isso, creditou seis no entregável e deixou um único `dispatch_business`, medido em 04/09/2026 numa empresa instalada.
 
 O procedimento para percorrer o organograma morava no `SKILL.md`, que só alcança sessão que releu o arquivo. A sessão daquela execução estava aberta desde antes de o arquivo mudar. A instrução estava no documento certo e no lugar errado: quem chamava estava lendo a saída do comando, não o protocolo.
 
