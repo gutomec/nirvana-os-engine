@@ -388,23 +388,46 @@ function runMandatorySquad(squadSlug: string, args: TeamRunArgs): StepResult {
   return { employee: `squad:${squadSlug}`, ok: r.ok, sessionId: r.sessionId, costUsd: r.costUsd, durationMs: r.durationMs, outputsDir: r.outputsDir };
 }
 
-export function runTeam(args: TeamRunArgs): TeamResult {
+/**
+ * The chain, decided and audited — with no opinion about who executes it.
+ *
+ * Exported because there are TWO executors and only one of them was ever
+ * getting a chain. `runTeam` (below) spawns a child runtime per step; the
+ * interactive maestro spawns an in-process subagent per step and reaches this
+ * through `nrv chain plan`. Both must decide the same way and leave the same
+ * three events behind, or a reader cannot tell one path's silence from the
+ * other's absence — measured on a live run 2026-09-04, where a business with 14
+ * seats ran as one agent and the deliverable still named six of them.
+ *
+ * Throws on a director that returns nothing usable; the caller decides what a
+ * failed decision means for it.
+ */
+export function planChain(args: TeamRunArgs): { chain: ChainStep[]; reason: string } {
   let chain: ChainStep[];
-  let shapeReason: string;
-  try { ({ chain, reason: shapeReason } = pickChain(args)); }
+  let reason: string;
+  try { ({ chain, reason } = pickChain(args)); }
   catch (e: any) {
     appendAudit({ event: "team_director_failed", project_id: args.projectId, business_slug: args.slug, error: e?.message || String(e) }, args.projectRoot);
-    return { ok: false, steps: [], chain: [], gaps: [], lastSessionId: null, totalCostUsd: 0, totalDurationMs: 0, error: `director: ${e?.message || e}` };
+    throw e;
   }
-  // Why this run costs what it costs. The chain length is now a decision rather
+  // Why this run costs what it costs. The chain length is a decision rather
   // than a flag, so it owes the owner a reason: five dispatches on a brief one
   // seat could have carried is a bill, and reading it back from the audit is how
   // the director's judgement gets checked instead of assumed.
   appendAudit({
     event: "x_chain_shape_decided", project_id: args.projectId, business_slug: args.slug,
-    steps: chain.length, reason: shapeReason, forced: args.forceChain ? "team" : "auto",
+    steps: chain.length, reason, forced: args.forceChain ? "team" : "auto",
   }, args.projectRoot);
   appendAudit({ event: "team_chain_selected", project_id: args.projectId, business_slug: args.slug, chain: chain.map(s => ({ employee: s.employee, task: s.task.slice(0, 120) })) }, args.projectRoot);
+  return { chain, reason };
+}
+
+export function runTeam(args: TeamRunArgs): TeamResult {
+  let chain: ChainStep[];
+  try { ({ chain } = planChain(args)); }
+  catch (e: any) {
+    return { ok: false, steps: [], chain: [], gaps: [], lastSessionId: null, totalCostUsd: 0, totalDurationMs: 0, error: `director: ${e?.message || e}` };
+  }
 
   const steps: StepResult[] = [];
   const priorOutputs: { employee: string; dir: string }[] = [];

@@ -8,6 +8,22 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### A business dispatched from an interactive session ran as one person
+
+Two businesses, 23 seats between them, one `dispatch_business` — and deliverables crediting six named seats that never ran as audited agents. Measured on a live run, 2026-09-04.
+
+It was not a bug in anyone's code. `runTeam` walks the org chart, but it spawns a child runtime per seat and the protocol forbids that on claude-code, codex and antigravity: a child is killed at 20 minutes, and one seat in that run worked for 33. So the interactive maestro is told to dispatch through its own in-process subagents — and had no procedure for walking an org chart with them. It did the only thing available and handed the whole company to a single subagent, which then wrote as if the seats had contributed.
+
+`nrv team` splits the run where it should have been split all along: the engine decides and audits, the runtime executes.
+
+`nrv team plan` runs the same director `runTeam` uses and leaves the same `x_chain_shape_decided` and `team_chain_selected` behind — a chain, and a reason for its length. `nrv team step --index <n>` prints that seat's full prompt, built by the same `employee-prompt.ts` the scripted path uses (persona, mind-clone DNA, resource map, colleagues' output paths, scope guard) and emits `dispatch_business` with the employee on it. The maestro runs each prompt in its own subagent, in order, with no wall-clock kill.
+
+Both paths therefore decide the same way, speak the same vocabulary and leave the same proof. That last part is the point: a reader previously could not tell one path's silence from the other's absence, and the missing event is the one the contract treats as evidence — so the default failure mode of a partial reader was to accuse a healthy run of fraud.
+
+`planChain` is extracted from `runTeam` so there is one director, not two. Phase 4 of the harness protocol carries the procedure, including the rule that closes the hole: never credit a seat with no matching `dispatch_business`.
+
+A business that does not validate is refused before any of this, and the refusal now carries the loader's own words plus `nrv validate business <slug> --fix`, instead of blaming a missing intake seat for whatever the manifest actually got wrong.
+
 ### One seat failing threw away everything the others had finished
 
 A step that failed ended the chain. The seats before it had already produced their work, it was sitting in `_team/`, and the one employee whose entire job is to consolidate it never ran — so the run failed with a full directory and nothing assembled. A transport hiccup on the first breath of a first-ever step cost the whole thing, because `runWithSession` only retried when there was a session to resume.
