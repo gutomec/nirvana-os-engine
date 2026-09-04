@@ -25,6 +25,8 @@ The floor is 0.90, not 1.0: one unconfirmable micro-check should not sink a good
 
 Every verdict emits `x_review_approved` or `x_review_rejected` carrying the trace, the pair, the score, the floor, what was confirmed and every gap with its reason. That is deliberate: gate verdicts today carry no trace at all, so "did this run pass" cannot be answered by a join. These can.
 
+The business signs off with a receipt the engine **computes**: `nrv team receipt` reads the run's own events and reports, per seat, whether it was dispatched, who reviewed it, the verdict and where its files are. Exit 3 when a planned seat never ran or a review is unresolved, with the instruction not to report the business as delivered. A receipt assembled from the audit cannot credit a seat that has no `dispatch_business` behind it — which is the exact failure this whole path exists to prevent, and the reason the head does not write it.
+
 The engine's own gate is untouched and still runs last. The superior answers whether the work is good and matches what was asked; the pipeline answers whether a deliverable exists, is not a stub and matches the manifest — deterministically, fail-closed, for free. A model asked "is this a stub?" fails open; `isDeliverable` fails closed.
 
 Measured before building: 65 of 65 installed businesses carry a usable review route, and 611 of 611 seats already declare `acceptance[]`. No business needed changing. Design and falsification test: `docs/architecture/hierarchical-review.md`.

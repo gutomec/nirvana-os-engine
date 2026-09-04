@@ -474,6 +474,86 @@ function cmdVerdict(argv: string[]): void {
   console.error(`[verdict] approved — score ${score.toFixed(2)} ≥ ${floor}`);
 }
 
+
+/** The receipt the head hands back to the orchestrator — COMPUTED, not narrated.
+ *
+ *  Asking the head to write "everyone did their part" is asking for the failure
+ *  this whole line of work started from: a deliverable crediting six seats with
+ *  one dispatch event behind them. A receipt built from the audit cannot credit a
+ *  seat that has no `dispatch_business`, because there is nothing to read.
+ *
+ *  Exit 0 when every planned seat dispatched and every reviewed seat was
+ *  approved; exit 3 otherwise, with the gaps named. */
+function cmdReceipt(argv: string[]): void {
+  const planFile = arg(argv, "--plan");
+  if (!planFile) die("receipt needs --plan.", EXIT_ARGS);
+  if (!fs.existsSync(planFile!)) die(`plan file not found: ${planFile}`, EXIT_ARGS);
+  const plan: ChainPlan = JSON.parse(fs.readFileSync(planFile!, "utf8"));
+
+  // Read the run's own events. Same resolution the writers use, so a reader can
+  // never be looking at a different file than the one being written.
+  const day = new Date().toISOString().slice(0, 10);
+  const auditFile = path.join(harnessLogsDir({ cwd: plan.project_root }), day, "audit.jsonl");
+  let events: any[] = [];
+  try {
+    events = fs.readFileSync(auditFile, "utf8").split("\n").filter(Boolean)
+      .map(l => { try { return JSON.parse(l); } catch { return null; } })
+      .filter(e => e && (e.trace_id === plan.project_id || e.project_id === plan.project_id));
+  } catch { /* no events yet — every seat reads as not dispatched, which is true */ }
+
+  const seatOf = (e: any) => e?.employee;
+  const dispatched = new Set(events.filter(e => e.event === "dispatch_business").map(seatOf).filter(Boolean));
+  const approved = new Map(events.filter(e => e.event === "x_review_approved").map(e => [seatOf(e), e]));
+  const rejected = new Map(events.filter(e => e.event === "x_review_rejected").map(e => [seatOf(e), e]));
+
+  const rows = plan.chain.map((step, i) => {
+    const isLast = i === plan.chain.length - 1;
+    const dir = isLast ? plan.outputs_root : path.join(plan.outputs_root, "_team", step.employee);
+    let files: string[] = [];
+    try { files = fs.readdirSync(dir).filter(f => !f.startsWith(".")); } catch { /* nothing written */ }
+    const ok = approved.get(step.employee);
+    const no = rejected.get(step.employee);
+    return {
+      seat: step.employee,
+      dispatched: dispatched.has(step.employee),
+      reviewer: step.reviewer ?? null,
+      review: ok ? "approved" : no ? "rejected" : step.reviewer ? "not reviewed" : "signs (no superior)",
+      score: (ok ?? no)?.score ?? null,
+      files: files.length,
+      output_dir: dir,
+    };
+  });
+
+  const missing = rows.filter(r => !r.dispatched).map(r => r.seat);
+  const unresolved = rows.filter(r => r.reviewer && r.review !== "approved").map(r => r.seat);
+  const complete = missing.length === 0 && unresolved.length === 0;
+
+  console.log(JSON.stringify({
+    business: plan.business, trace_id: plan.project_id, outputs_root: plan.outputs_root,
+    chain_reason: plan.reason, seats: rows,
+    complete,
+    ...(missing.length ? { never_dispatched: missing } : {}),
+    ...(unresolved.length ? { review_unresolved: unresolved } : {}),
+  }, null, 2));
+
+  emitAudit({
+    event: complete ? "x_business_signed_off" : "x_business_incomplete",
+    trace_id: plan.project_id, project_id: plan.project_id, business_slug: plan.business,
+    seats: rows.length, dispatched: rows.filter(r => r.dispatched).length,
+    approved: rows.filter(r => r.review === "approved").length,
+    ...(missing.length ? { never_dispatched: missing } : {}),
+    ...(unresolved.length ? { review_unresolved: unresolved } : {}),
+  }, plan.project_root);
+
+  if (!complete) {
+    if (missing.length) console.error(`[receipt] ${missing.length} seat(s) in the plan never ran: ${missing.join(", ")}`);
+    if (unresolved.length) console.error(`[receipt] ${unresolved.length} seat(s) not approved by their superior: ${unresolved.join(", ")}`);
+    console.error("[receipt] do NOT report this business as delivered, and do not credit a seat listed above.");
+    process.exit(3);
+  }
+  console.error(`[receipt] ${plan.business}: ${rows.length} seat(s), all dispatched, all reviews resolved.`);
+}
+
 const argv = process.argv.slice(2);
 const sub = argv[0];
 if (!sub || sub === "-h" || sub === "--help") {
@@ -520,4 +600,5 @@ if (sub === "plan") cmdPlan(argv.slice(1));
 else if (sub === "step") cmdStep(argv.slice(1));
 else if (sub === "review") cmdReview(argv.slice(1));
 else if (sub === "verdict") cmdVerdict(argv.slice(1));
-else die(`unknown subcommand '${sub}'. Try: plan, step, review, verdict.`, EXIT_ARGS);
+else if (sub === "receipt") cmdReceipt(argv.slice(1));
+else die(`unknown subcommand '${sub}'. Try: plan, step, review, verdict, receipt.`, EXIT_ARGS);

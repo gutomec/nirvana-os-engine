@@ -214,3 +214,52 @@ describe("the audit can answer who reviewed what, and why it failed", () => {
     expect(e?.confirmed).toEqual(["has_three_items", "names_a_source"]);
   }, spawnBudgetMs(2));
 });
+
+describe("nrv team receipt — computed, never narrated", () => {
+  // The failure this whole line of work started from was a deliverable crediting
+  // six seats with one dispatch event behind them. A receipt assembled from the
+  // audit cannot make that mistake: there is nothing to read for a seat that
+  // never ran. So the head does not write the receipt — the engine does.
+  test("a plan whose seats never ran is refused, and names who is missing", () => {
+    const p = plan();
+    const r = run(["receipt", "--plan", p]);
+    expect(r.code).toBe(3);
+    const out = JSON.parse(r.out);
+    expect(out.complete).toBe(false);
+    expect(out.never_dispatched).toEqual(["worker", "boss"]);
+    expect(r.err).toMatch(/do NOT report this business as delivered/);
+  }, spawnBudgetMs(2));
+
+  test("dispatched and approved seats sign off; the root needs no superior", () => {
+    const p = plan();
+    // The two events a real run would leave behind, written straight into the
+    // audit the receipt reads — no agent needs to run to test the arithmetic.
+    run(["step", "--plan", p, "--index", "0"]);
+    run(["step", "--plan", p, "--index", "1"]);
+    verdict(p, 0, { confirmed: [
+      { id: "has_three_items", evidence: "01-worker.md:3-5 — three full lines" },
+      { id: "names_a_source", evidence: "01-worker.md:3 — citations inline" },
+    ] });
+
+    const r = run(["receipt", "--plan", p]);
+    expect(r.code).toBe(0);
+    const out = JSON.parse(r.out);
+    expect(out.complete).toBe(true);
+    expect(out.seats.find((x: any) => x.seat === "worker").review).toBe("approved");
+    // The head of the house signs; nobody reviews it, and that is not a gap.
+    expect(out.seats.find((x: any) => x.seat === "boss").review).toBe("signs (no superior)");
+    expect(audit().some(e => e.event === "x_business_signed_off")).toBe(true);
+  }, spawnBudgetMs(4));
+
+  test("a seat that ran but was rejected keeps the business unsigned", () => {
+    const p = plan();
+    run(["step", "--plan", p, "--index", "0"]);
+    run(["step", "--plan", p, "--index", "1"]);
+    verdict(p, 0, { confirmed: [] });
+
+    const r = run(["receipt", "--plan", p]);
+    expect(r.code).toBe(3);
+    expect(JSON.parse(r.out).review_unresolved).toEqual(["worker"]);
+    expect(audit().some(e => e.event === "x_business_incomplete")).toBe(true);
+  }, spawnBudgetMs(4));
+});

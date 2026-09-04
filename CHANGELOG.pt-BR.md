@@ -25,6 +25,8 @@ O piso é 0,90, não 1,0: um micro-check impossível de confirmar não deve afun
 
 Todo veredito emite `x_review_approved` ou `x_review_rejected` com o trace, o par revisor/revisado, a nota, o piso, o que foi confirmado e cada lacuna com o motivo. Isso é de propósito: os vereditos de gate hoje não carregam trace nenhum, então "esta execução passou?" não tem como ser respondido por join. Estes têm.
 
+A empresa assina com um recibo que o engine **calcula**: o `nrv team receipt` lê os eventos da própria execução e reporta, por cadeira, se foi despachada, quem revisou, o veredito e onde estão os arquivos. Sai com 3 quando uma cadeira planejada não rodou ou uma revisão ficou em aberto, com a instrução de não reportar a empresa como entregue. Recibo montado a partir da auditoria não consegue creditar cadeira sem `dispatch_business` — que é exatamente a falha que esta linha de trabalho existe para impedir, e a razão de o chefe não escrevê-lo.
+
 O gate do engine não foi tocado e continua rodando por último. O superior responde se o trabalho é bom e bate com o que foi pedido; o pipeline responde se existe entregável, se não é stub e se bate com o manifesto — de forma determinística, fail-closed, de graça. Um modelo perguntado "isso é stub?" erra aberto; o `isDeliverable` erra fechado.
 
 Medido antes de construir: 65 das 65 empresas instaladas têm rota de revisão utilizável, e 611 de 611 cadeiras já declaram `acceptance[]`. Nenhuma empresa precisou mudar. Desenho e teste de falseamento: `docs/architecture/hierarchical-review.md`.
