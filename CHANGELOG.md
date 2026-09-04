@@ -8,6 +8,22 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### The prep step told the maestro to spawn one employee
+
+`brief-business.ts` is the step every business dispatch runs first, and its output ended with `Next step: Spawn employee '<intake>' with the brief above as context.` One seat. A business with fourteen of them did exactly that, credited six in the deliverable, and left a single `dispatch_business` behind — measured 2026-09-04 on `software-forge`.
+
+The procedure for running an org chart lived in `SKILL.md`, which only reaches a session that re-read it. The session that produced that run had been open since before the file changed. So the instruction was in the right document and the wrong place: the caller was reading the command's output, not the protocol.
+
+The prep step now names the seats and prints the two commands that walk the chart, fully formed and ready to run, plus the one rule that closes the hole — spawning the intake alone is correct only when `team plan` says so, and a seat credited with no `dispatch_business` behind it is the fiction the audit exists to prevent. The `Intake:` line keeps its format; `dispatch.ts` parses it.
+
+### The director asked who was capable instead of whose job it was
+
+The rule read: call a colleague when the brief needs a specialty the synthesizer does not have. The same model sits in every chair, so "the synthesizer could do this" is always true — and every chain collapsed to one seat. A studio with a screenwriter had its head write the screenplay, because it could.
+
+It now asks whose JOB it is: the org chart is the contract, and the synthesizer works alone only when no seat's role covers the work. Cost is the tie-breaker between two defensible chains, never the test for whether to delegate.
+
+The second half matters as much: a seat is how a mind-clone reaches the work, because personas are ranked against the SEAT'S task, not against the company. Skipping the seat deletes the persona the brief needed — a comedy scene written by the head of the studio has no screenwriter's voice in it, and no `mind_clone_injected` in the log to show what was lost.
+
 ### A business dispatched from an interactive session ran as one person
 
 Two businesses, 23 seats between them, one `dispatch_business` — and deliverables crediting six named seats that never ran as audited agents. Measured on a live run, 2026-09-04.

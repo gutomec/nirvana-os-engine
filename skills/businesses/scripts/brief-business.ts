@@ -234,6 +234,21 @@ if (!intake) {
   process.exit(EXIT.FAILURES);
 }
 
+// The org chart, named in the output the caller is already reading. Until
+// 2026-09-04 this block told the caller to "spawn employee '<intake>'" — one
+// seat — and a business with fourteen of them did exactly that, crediting six
+// in the deliverable with a single dispatch event behind them. An instruction
+// in SKILL.md only reaches a session that re-read it; this reaches the session
+// that ran the command.
+let seatSummary = "(no employees/ directory)";
+try {
+  const names = fs.readdirSync(path.join(target, "employees"))
+    .filter(f => f.endsWith(".md")).map(f => path.basename(f, ".md")).sort();
+  seatSummary = names.length
+    ? `${names.length} seat(s) — ${names.join(", ")}`
+    : "(no seats declared)";
+} catch { /* keep the fallback */ }
+
 console.log(`OK: brief registered.
 
   Project ID:    ${projectId}
@@ -244,9 +259,22 @@ console.log(`OK: brief registered.
   Audit log:     ${auditFile}
   Run ID:        ${runId ?? (trackedByDispatch ? "(tracked by the dispatch that spawned this step)" : "(not tracked — see the warning above)")}
 
-Next step (run by the skill via the Agent tool):
-  Spawn employee '${intake}' with the brief above as context. Wait for the handoff
-  artifact in ${projectDir}/handoffs/.
+Org chart:     ${seatSummary}
+
+Next step — a business runs its ORG CHART, not one agent:
+  nrv team plan --business ${slug} --brief ${briefFile} \\
+                --project ${projectDir} --outputs ${projectDir}/outputs \\
+                --project-id ${projectId} --save ${projectDir}/chain.json
+
+  Then, for each step it returns, in order:
+  nrv team step --plan ${projectDir}/chain.json --index <n>
+  → run the printed prompt in your own subagent, verbatim. Each step emits
+    dispatch_business with the seat on it, and injects that seat's mind-clone.
+
+  Spawning '${intake}' alone is correct ONLY when \`team plan\` returns a
+  one-step chain — and then it says why. Do not decide that yourself: a seat
+  credited in a deliverable with no dispatch_business behind it is the fiction
+  the audit exists to prevent.
 ${runId ? `
 REQUIRED when you finish (this is what tells the owner it is done):
   nrv run-track close ${runId} --state delivered|withheld|failed [--error "<reason>"]` : ""}`);

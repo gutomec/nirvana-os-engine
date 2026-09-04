@@ -8,6 +8,22 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### O passo de preparação mandava o maestro rodar um employee só
+
+O `brief-business.ts` é o passo que todo despacho de empresa executa primeiro, e a saída dele terminava com `Next step: Spawn employee '<intake>' with the brief above as context.` Uma cadeira. Uma empresa com catorze fez exatamente isso, creditou seis no entregável e deixou um único `dispatch_business` — medido em 04/09/2026 no `software-forge`.
+
+O procedimento para percorrer o organograma morava no `SKILL.md`, que só alcança sessão que releu o arquivo. A sessão daquela execução estava aberta desde antes de o arquivo mudar. A instrução estava no documento certo e no lugar errado: quem chamava estava lendo a saída do comando, não o protocolo.
+
+O passo agora nomeia as cadeiras e imprime os dois comandos que percorrem o organograma, prontos para rodar, mais a regra que fecha o buraco — rodar o intake sozinho só é correto quando o `team plan` disser, e cadeira creditada sem `dispatch_business` é a ficção que a auditoria existe para impedir. A linha `Intake:` mantém o formato; o `dispatch.ts` faz parse dela.
+
+### O diretor perguntava quem era capaz, e não de quem era o trabalho
+
+A regra dizia: chame um colega quando o brief precisar de uma especialidade que o synthesizer não tem. O mesmo modelo senta em todas as cadeiras, então "o synthesizer daria conta" é sempre verdade — e toda cadeia desabava para uma cadeira. Um estúdio com roteirista tinha o roteiro escrito pelo chefe da casa, porque ele conseguiria.
+
+Agora ele pergunta de quem é o TRABALHO: o organograma é contrato, e o synthesizer roda sozinho só quando nenhum papel cobre a obra. Custo é critério de desempate entre duas cadeias defensáveis, nunca o teste para decidir se delega.
+
+A segunda metade importa tanto quanto: a cadeira é o caminho pelo qual um mind-clone chega ao trabalho, porque personas são rankeadas contra a tarefa DA CADEIRA, não contra a empresa. Pular a cadeira apaga a persona que o brief pedia — uma cena de comédia escrita pelo chefe do estúdio não tem a voz de roteirista nenhum, e não deixa `mind_clone_injected` no log para mostrar o que se perdeu.
+
 ### Uma empresa despachada de sessão interativa rodava como uma pessoa só
 
 Duas empresas, 23 cadeiras entre elas, um `dispatch_business` — e entregáveis creditando seis cadeiras nomeadas que nunca rodaram como agentes auditados. Medido numa execução real, 04/09/2026.
