@@ -8,6 +8,14 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### A cadeia lia o quadro de uma árvore e despachava em outra
+
+O `listEmployees` resolvia a empresa como `~/businesses/<slug>`, na unha. Nada mais na execução faz isso: o despacho concede o que o `resolveEntityDir` devolve, que respeita o escopo do projeto, o `BUSINESSES_DIR` e o `NIRVANA_HOME`. Uma empresa instalada sob um home redirecionado, ou morando no projeto em vez da biblioteca global, listava zero cadeiras — e o `pickChain` lê zero cadeiras como empresa de uma cadeira só e entrega o brief inteiro ao employee de intake. A empresa rodava como uma pessoa e não dizia nada, o que é indistinguível de uma empresa que de fato só tem uma cadeira.
+
+Os dois chamadores passam a resolver por uma função só, e o subprocesso do `employee-prompt` recebe a raiz da biblioteca que a execução já escolheu, em vez de refazer a resolução por conta própria. Duas respostas independentes para "onde mora esta empresa" é como o prompt acaba descrevendo um diretório enquanto a concessão abre outro.
+
+Isso apareceu porque o `team-orchestrator` não tinha arquivo de teste. A cadeia — diretor, ordem dos passos, continuidade de sessão, squads obrigatórios, o aborto no primeiro erro — só era coberta através do `buildStepBrief`. Agora tem, e as costuras de que precisou (`businessesRoot`, mais diretor e cascade encenados) estão no `TeamRunArgs`.
+
 ### Uma empresa também consegue se ler
 
 Os squads ganharam um mapa de recursos e a concessão do diretório, e com isso `references/`, `checklists/` e `templates/` deixaram de ser peso morto. As empresas não ganharam — e são 63. O prompt do employee lê exatamente UM diretório da empresa, `employees/`, então `playbooks/`, `standards/`, `rubrics/`, `schemas/`, `scripts/`, `templates/` e `lib/` não chegavam a execução nenhuma, e o diretório da empresa nunca esteve no `addDirs`, de modo que nomear um caminho também não resolveria.

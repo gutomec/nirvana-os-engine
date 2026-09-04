@@ -8,6 +8,14 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### The chain read the roster from one tree and dispatched into another
+
+`listEmployees` resolved the business as `~/businesses/<slug>`, hardcoded. Nothing else in the run does: the dispatch grants what `resolveEntityDir` returns, which honours the project scope, `BUSINESSES_DIR` and `NIRVANA_HOME`. So a business installed under a redirected home, or living in the project rather than the global library, listed zero seats — and `pickChain` reads zero seats as a one-seat company and hands the whole brief to the intake employee. The company ran as one person and said nothing about it, which is indistinguishable from a company that only has one seat.
+
+Both callers now resolve through one function, and the `employee-prompt` subprocess is handed the library root the run already settled on instead of walking its own resolution. Two independent answers to "where does this business live" is how the prompt ends up describing one directory while the grant opens another.
+
+This surfaced because `team-orchestrator` had no test file. The chain — director, step order, session threading, mandatory squads, the fail-fast abort — was covered only through `buildStepBrief`. It has one now, and the seams it needed (`businessesRoot`, and canned director and cascade runners) are on `TeamRunArgs`.
+
 ### A business can read itself too
 
 Squads got a resource map and a grant so `references/`, `checklists/` and `templates/` stopped being dead weight. Businesses did not, and there are 63 of them. The employee prompt reads exactly ONE directory of a business — `employees/` — so `playbooks/`, `standards/`, `rubrics/`, `schemas/`, `scripts/`, `templates/` and `lib/` reached no run at all, and the business directory was never in `addDirs`, so naming a path would not have helped either.

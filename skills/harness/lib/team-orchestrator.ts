@@ -30,7 +30,6 @@ import { resolveEntityDir } from "../../_shared/lib/entity-resource-map.ts";
 
 const SKILLS = process.env.NIRVANA_SKILLS_DIR
   || (fs.existsSync(path.join(os.homedir(), ".nirvana", "skills")) ? path.join(os.homedir(), ".nirvana", "skills") : path.join(os.homedir(), ".claude", "skills"));
-const BUSINESSES = path.join(os.homedir(), "businesses");
 
 export interface TeamRunArgs {
   slug: string;
@@ -51,6 +50,23 @@ export interface TeamRunArgs {
   /** The user's USE_* rules block (formatRulesForDirective) — appended to each
    * step's AUTONOMOUS_DIRECTIVE so the maestro honors it when delegating. */
   rulesDirective?: string;
+  /** Where the businesses library lives, overriding scope resolution. Mirrors
+   *  `SquadExecArgs.squadsRoot`, and exists for the same reason: `paths` is
+   *  memoized on first access, so a test that points `BUSINESSES_DIR` at a
+   *  fixture only wins if it is the first thing in the process to touch it —
+   *  which makes the outcome depend on test file order, and makes the env write
+   *  leak into every other file sharing the runner. An argument is honest where
+   *  a process-wide mutation is a race. */
+  businessesRoot?: string;
+  /** Test seam: canned cascade runner (zero-token tests). Same shape
+   *  `SquadExecArgs.runWithCascadeImpl` already uses, so one idiom covers both
+   *  executors. The chain had no test file at all before this — only
+   *  `buildStepBrief` was pinned — so every behaviour of the loop itself was
+   *  unprotected. */
+  runWithCascadeImpl?: typeof runWithCascade;
+  /** Test seam: canned director. Without it `pickChain` reaches a real runtime,
+   *  which is why the chain could not be tested at all. */
+  runHeadlessImpl?: typeof runHeadless;
 }
 
 export interface ChainStep { employee: string; task: string; }
@@ -66,8 +82,27 @@ function appendAudit(payload: Record<string, any>, projectRoot?: string): void {
   } catch { /* non-fatal */ }
 }
 
-function listEmployees(slug: string): { name: string; role: string; description: string }[] {
-  const dir = path.join(BUSINESSES, slug, "employees");
+/** The one place this module decides where the business lives.
+ *
+ *  Both callers must agree: `pickChain` lists the seats from it and `runStep`
+ *  grants it to the dispatch. Resolving separately is how a run gets the roster
+ *  of one tree and the key to another — the failure `entity-resource-map` names
+ *  in its own header. */
+function businessDir(args: TeamRunArgs): string {
+  return args.businessesRoot
+    ? path.join(args.businessesRoot, args.slug)
+    : resolveEntityDir("businesses", args.slug, args.projectDir);
+}
+
+/** The seats the director gets to choose from.
+ *
+ *  The old `path.join(os.homedir(), "businesses")` ignored `BUSINESSES_DIR`,
+ *  `NIRVANA_HOME` and the project scope alike: a business installed under a
+ *  redirected home, or living in the project, listed zero seats — and
+ *  `pickChain` then silently degraded the whole company to its single intake
+ *  employee, which reads like a product decision rather than a missing path. */
+function listEmployees(args: TeamRunArgs): { name: string; role: string; description: string }[] {
+  const dir = path.join(businessDir(args), "employees");
   if (!fs.existsSync(dir)) return [];
   const out: { name: string; role: string; description: string }[] = [];
   for (const f of fs.readdirSync(dir).sort()) {
@@ -84,7 +119,7 @@ function listEmployees(slug: string): { name: string; role: string; description:
 }
 
 function pickChain(args: TeamRunArgs): ChainStep[] {
-  const employees = listEmployees(args.slug);
+  const employees = listEmployees(args);
   if (employees.length <= 1) return [{ employee: args.intakeEmployee, task: "Execute o brief de ponta a ponta. Você é o único employee deste business." }];
 
   const list = employees.map(e => `- ${e.name} (${e.role}): ${e.description}`).join("\n");
@@ -110,7 +145,7 @@ function pickChain(args: TeamRunArgs): ChainStep[] {
   ].join("\n");
 
   appendAudit({ event: "team_director_called", project_id: args.projectId, business_slug: args.slug, employees_available: employees.length }, args.projectRoot);
-  const res = runHeadless({
+  const res = (args.runHeadlessImpl ?? runHeadless)({
     runtime: args.runtime, prompt, cwd: os.tmpdir(),
     allowedTools: [], permissionMode: "default",
     timeoutMs: 5 * 60 * 1000,
@@ -152,10 +187,11 @@ function runWithSession(
   args: TeamRunArgs,
   cascadeArgs: Parameters<typeof runWithCascade>[0],
 ): ReturnType<typeof runWithCascade> {
+  const cascade = args.runWithCascadeImpl ?? runWithCascade;
   const key = sessionKey(args.runtime, kind, slug);
   const prior = getSession(args.projectDir, key);
 
-  let res = runWithCascade(prior ? { ...cascadeArgs, sessionId: prior } : cascadeArgs);
+  let res = cascade(prior ? { ...cascadeArgs, sessionId: prior } : cascadeArgs);
 
   if (!res.ok && prior) {
     // The session may have died outside our control. There is no reliable way
@@ -167,7 +203,7 @@ function runWithSession(
       business_slug: args.slug, entity: `${kind}:${slug}`, runtime: args.runtime, session_id: prior,
     }, args.projectRoot);
     dropSession(args.projectDir, key);
-    res = runWithCascade(cascadeArgs);
+    res = cascade(cascadeArgs);
   } else if (prior && res.ok) {
     appendAudit({
       event: "session_resumed", trace_id: args.projectId, project_id: args.projectId,
@@ -215,10 +251,20 @@ function runStep(step: ChainStep, idx: number, total: number, args: TeamRunArgs,
   const stepBriefFile = path.join(employeeOutDir, ".step-brief.md");
   fs.writeFileSync(stepBriefFile, stepBrief);
 
+  const bizDir = businessDir(args);
+
+  // The child resolves the business independently, and independently is how the
+  // two disagree: this process may have resolved a project-scoped copy while the
+  // subprocess, walking its own resolution, lands on the global one — then the
+  // prompt describes one tree and the grant below opens another. Handing it the
+  // library root this run already settled on removes the second opinion.
   const ep = spawnSync("bun", [
     path.join(SKILLS, "businesses/lib/employee-prompt.ts"),
     args.slug, step.employee, args.projectDir, stepBriefFile, employeeOutDir,
-  ], { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+  ], {
+    encoding: "utf8", maxBuffer: 32 * 1024 * 1024,
+    env: { ...process.env, BUSINESSES_DIR: path.dirname(bizDir) },
+  });
   if (ep.status !== 0) {
     appendAudit({ event: "team_step_failed", project_id: args.projectId, business_slug: args.slug, employee: step.employee, reason: "employee-prompt build failed", error: ep.stderr?.slice(0, 500) }, args.projectRoot);
     return { employee: step.employee, ok: false, sessionId: null, costUsd: null, durationMs: 0, outputsDir: employeeOutDir };
@@ -226,7 +272,6 @@ function runStep(step: ChainStep, idx: number, total: number, args: TeamRunArgs,
 
   appendAudit({ event: "dispatch_business", trace_id: args.projectId, project_id: args.projectId, business_slug: args.slug, employee: step.employee, mode: "team-step", step: idx + 1, total }, args.projectRoot);
 
-  const bizDir = resolveEntityDir("businesses", args.slug, args.projectDir);
   const res = runWithSession("employee", step.employee, args, {
     // bizDir is granted so the employee prompt's resource map is a door and not a
     // sign: `playbooks/`, `standards/`, `rubrics/` and `templates/` live under it,
@@ -275,6 +320,9 @@ function runMandatorySquad(squadSlug: string, args: TeamRunArgs): StepResult {
     timeoutMs: args.timeoutMs,
     rulesDirective: args.rulesDirective,
     autonomousDirective: AUTONOMOUS_DIRECTIVE,
+    // The seam travels down: a mandatory squad dispatched from a chain must be
+    // testable from the same fixture that tests the chain.
+    ...(args.runWithCascadeImpl ? { runWithCascadeImpl: args.runWithCascadeImpl } : {}),
   });
   return { employee: `squad:${squadSlug}`, ok: r.ok, sessionId: r.sessionId, costUsd: r.costUsd, durationMs: r.durationMs, outputsDir: r.outputsDir };
 }
