@@ -8,6 +8,20 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### O cockpit lê toda auditoria que a execução escreveu, e diz quem escreveu cada linha
+
+O Glance lia um arquivo de auditoria. Uma execução escreve em até quatro — o log diário do orquestrador, o log do próprio projeto, um por alvo despachado dentro da árvore de saída, e o fallback global — então o cockpit mostrava execuções sem despacho nenhum enquanto os arquivos estavam em disco. Medido nesta máquina depois da mudança: nove execuções cujos despachos eram invisíveis, e cadeiras (`ds-creative-director`, `t360-ceo`, `al-publisher`) que nunca tinham aparecido.
+
+Todo evento que o Glance serve passa a carregar `_provenance`: `engine` quando o engine assinou, `unsigned` quando ninguém assinou, `tampered` quando a assinatura não bate mais com o conteúdo. O cockpit é onde alguém decide se uma execução aconteceu, e até agora uma linha digitada por um agente aparecia igual a uma emitida pelo engine.
+
+`unsigned` num evento antigo significa "escrito antes de o carimbo existir", não "forjado". A distinção só vale para frente.
+
+Duas guardas, ambas acrescentadas porque os testes pegaram a falta delas: um `HARNESS_LOGS_DIR` fixado significa ler aquela raiz e não o mundo (um fixture tinha começado a vagar pelos projetos reais da máquina), e raiz ausente continua **indeterminada** em vez de virar zero medido — distinção que este cockpit já tinha teste.
+
+### O fluxo de handoff escrevia num caminho hardcoded
+
+O `handoff.js` acrescentava direto em `~/.harness-logs/` em vez de resolver a raiz do log, que é exatamente o split brain que o `log-paths.js` avisa no próprio cabeçalho: escritas vão por projeto, leituras continuam no `$HOME`, a cadeia quebra. E quebrou — uma execução real deixou seis eventos de handoff na auditoria do projeto e zero no log diário que o `validate-chain` lê, e o validador da própria execução reportou a lacuna antes de qualquer um aqui notar. Agora ele resolve a raiz, e seus eventos são carimbados como toda escrita do engine.
+
 ### O emissor canônico era justamente o que não carimbava
 
 O `nrv audit emit` — o caminho que o protocolo manda os agentes usarem — escreve pelo `harness/lib/audit.js`, e era o único emissor que faltava carimbar. Ou seja: os emissores internos assinados e o que os agentes de fato chamam, não. Um evento legítimo emitido por agente ficava indistinguível de uma linha digitada — exatamente a confusão que o carimbo existe para acabar, preservada no único lugar que importava. Agora ele carimba o envelope.

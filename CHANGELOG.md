@@ -8,6 +8,20 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### The cockpit reads every audit a run wrote, and says who wrote each line
+
+Glance read one audit file. A run writes to up to four — the orchestrator's daily log, the project's own log, one per dispatched target under its outputs tree, and the global fallback — so the cockpit showed runs with no dispatches while their files sat on disk. Measured on this machine after the change: nine runs whose dispatches were invisible, and seats (`ds-creative-director`, `t360-ceo`, `al-publisher`) that had never appeared at all.
+
+Every event Glance serves now carries `_provenance`: `engine` when the engine signed it, `unsigned` when nothing did, `tampered` when the signature no longer matches its content. The cockpit is where somebody decides whether a run happened, and until now a line an agent typed rendered identically to one the engine emitted.
+
+`unsigned` on an old event means "written before stamping existed", not "forged". The distinction only runs forward.
+
+Two guards, both added because the tests caught their absence: a pinned `HARNESS_LOGS_DIR` means read that root and not the world (a fixture had started wandering through the machine's real projects), and an absent root stays **undetermined** rather than becoming a measured zero — a distinction this cockpit already had a test for.
+
+### The handoff stream wrote to a hardcoded path
+
+`handoff.js` appended to `~/.harness-logs/` directly instead of resolving the log root, which is the exact split brain `log-paths.js` warns about in its own header: writes go per-project, reads still hit `$HOME`, the chain breaks. It did — a live run left six handoff events in the project's audit and zero in the daily log `validate-chain` reads, and the run's own validator reported the gap before anyone here noticed it. It resolves the root now, and its events are stamped like every other engine write.
+
 ### The canonical emitter was the one that did not stamp
 
 `nrv audit emit` — the path the protocol tells agents to use — writes through `harness/lib/audit.js`, and that was the one emitter left unstamped. So the internal emitters were signed and the one agents actually call was not, which meant a legitimate agent-emitted event was indistinguishable from a line somebody typed: the exact confusion the stamp exists to end, preserved at the only place it mattered. It stamps the envelope now.

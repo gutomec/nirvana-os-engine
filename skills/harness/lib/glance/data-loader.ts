@@ -18,6 +18,7 @@ import { readFrontmatter } from "../../../_shared/lib/frontmatter-edit.ts";
 import * as orgChartEditor from "./org-chart-editor.ts";
 import * as employeeFrontmatterEditor from "./employee-frontmatter-editor.ts";
 import { parseAuditLine } from "../../../_shared/lib/cloudevents.js";
+import { provenanceOf } from "../../../_shared/lib/audit-provenance.js";
 
 // Neutral skills-tree root. Resolves to ~/.nirvana/skills when present so the
 // tree survives ~/.claude removal; falls back to the legacy ~/.claude/skills.
@@ -509,8 +510,54 @@ export function buildRuns(opts: { since?: string; limit?: number; days?: number 
 
   const runs = new Map<string, Run>();
 
-  for (const d of dirs) {
-    const f = path.join(HARNESS_LOGS_ROOT, d, "audit.jsonl");
+  // One run writes its audit to up to FOUR files: the orchestrator's daily log,
+  // one per dispatched target under its outputs tree, and the global fallback.
+  // Reading a subset is how a reader concludes a healthy run never dispatched —
+  // measured 2026-09-04, when a viewer looking only here saw gate_passed with no
+  // dispatch anywhere and was one sentence from reporting fraud. `validate-chain`
+  // disagreed, and the disagreement is what saved it. The cockpit reads them all.
+  // Two guards, both learned from breaking the tests that caught them:
+  //
+  //  - A caller that PINNED a log root (HARNESS_LOGS_DIR) means "read this, not
+  //    the world". Without this, a fixture with its own root went wandering
+  //    through the machine's real projects and reported the owner's runs.
+  //  - An absent root is UNDETERMINED, not zero, and that distinction has its
+  //    own test. Widening the search would have answered "zero runs" for a
+  //    question whose honest answer is "I cannot tell".
+  const perTargetLogs: string[] = [];
+  const rootIsPinned = !!process.env.HARNESS_LOGS_DIR;
+  try {
+    for (const projRoot of (rootIsPinned || !fs.existsSync(HARNESS_LOGS_ROOT) ? [] : listProjectRootsForAudit())) {
+      // The project's own daily log: where the orchestrator's phases land when
+      // the run happened inside a project. Missing it is why a chain run showed
+      // no seats here while its files sat on disk.
+      const projLogRoot = path.join(projRoot, ".nirvana", "logs", "harness");
+      try {
+        for (const d of fs.readdirSync(projLogRoot)) {
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
+          const f = path.join(projLogRoot, d, "audit.jsonl");
+          if (fs.existsSync(f)) perTargetLogs.push(f);
+        }
+      } catch { /* no project log yet */ }
+
+      const outs = path.join(projRoot, "outputs");
+      if (!fs.existsSync(outs)) continue;
+      const stack = [outs];
+      while (stack.length) {
+        const dir = stack.pop()!;
+        let entries: fs.Dirent[];
+        try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+        for (const e of entries) {
+          const full = path.join(dir, e.name);
+          if (e.isDirectory()) { if (stack.length < 512) stack.push(full); }
+          else if (e.name === "audit.jsonl") perTargetLogs.push(full);
+        }
+      }
+    }
+  } catch { /* a project tree we cannot walk contributes nothing, not an error */ }
+
+  for (const d of [...dirs, ...perTargetLogs]) {
+    const f = perTargetLogs.includes(d) ? d : path.join(HARNESS_LOGS_ROOT, d, "audit.jsonl");
     if (!fs.existsSync(f)) continue;
     const lines = fs.readFileSync(f, "utf8").split("\n").filter(Boolean);
     for (const line of lines) {
@@ -518,6 +565,9 @@ export function buildRuns(opts: { since?: string; limit?: number; days?: number 
       // Both forms: a CloudEvents envelope comes back flat, a legacy line
       // comes back by identity. See _shared/lib/cloudevents.js.
       try { ev = parseAuditLine(line); } catch { continue; }
+      // Who wrote it, on the run view as on the tail. Without this the cockpit
+      // shows a typed dispatch and an emitted one identically.
+      try { ev._provenance = provenanceOf(JSON.parse(line)); } catch { ev._provenance = "unsigned"; }
       const tid = ev.trace_id || "no-trace";
       if (opts.since && ev.ts < opts.since) continue;
 
@@ -697,6 +747,18 @@ export function getProjectDag(id: string) {
  * Returns events in newest-first order with synthetic numeric `id` so
  * the SSE delta logic upstream can de-duplicate.
  */
+/** Project roots whose outputs trees may hold per-target audit logs. Derived
+ *  from the projects Glance already knows about, so this walks what the cockpit
+ *  already lists and nothing else. */
+function listProjectRootsForAudit(): string[] {
+  // `discoverKnownProjects` — the name matters, and a silent catch is why it
+  // took a manual check to notice the first attempt called something that does
+  // not exist. A helper that swallows its own wiring error reports zero and
+  // looks healthy.
+  const { discoverKnownProjects } = require(path.join(SKILLS_ROOT, "harness", "lib", "glance", "project-discovery.ts"));
+  return (discoverKnownProjects() || []).map((p: any) => p.path).filter(Boolean).slice(0, 60);
+}
+
 export function tailJsonlEvents(limit = 50): Array<any> {
   const baseDir = paths.HARNESS_LOGS_DIR;
   if (!fs.existsSync(baseDir)) return [];
@@ -714,8 +776,15 @@ export function tailJsonlEvents(limit = 50): Array<any> {
     // the actual append order (Pre fires before Post, etc.).
     for (let i = lines.length - 1; i >= 0 && out.length < limit; i--) {
       try {
+        // Provenance travels with the event, because the cockpit is where
+        // somebody decides whether a run happened. An event an agent typed
+        // renders identically to one the engine emitted unless the reader is
+        // told — measured 2026-09-04, when a maestro wrote its own
+        // dispatch_business and gate_passed into a live run's audit and
+        // nothing in their shape distinguished them.
+        const raw = JSON.parse(lines[i]);
         const ev = parseAuditLine(lines[i]);
-        out.push({ ...ev, id: new Date(ev.ts).getTime(), _ord: i });
+        out.push({ ...ev, id: new Date(ev.ts).getTime(), _ord: i, _provenance: provenanceOf(raw) });
       } catch {}
     }
     if (out.length >= limit) break;
@@ -741,7 +810,7 @@ export function tailLogs(opts: { type: "harness" | "maestro"; date?: string; lim
   for (const f of files) {
     const lines = fs.readFileSync(path.join(dayDir, f), "utf8").split("\n").filter(Boolean);
     for (const line of lines) {
-      try { events.push({ ...parseAuditLine(line), _file: f }); } catch {}
+      try { events.push({ ...parseAuditLine(line), _file: f, _provenance: provenanceOf(JSON.parse(line)) }); } catch {}
     }
   }
   return {
