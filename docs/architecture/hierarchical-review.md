@@ -240,6 +240,30 @@ Measured, not argued:
 
 Written down first, so the answer is not decided after the fact.
 
+### Result of the falsification test — run 2026-09-04
+
+It was run before this document was merged, exactly as written below, and the
+review held.
+
+A real `studio-head` was handed a deliberately weak artifact: six lines, a
+slugline and one sentence of description, `usou_referencia: none`. It returned
+`confirmed: []` and an `unconfirmed` entry citing the criterion by id, with:
+the line count and byte size, a quote of the offending line, the observation
+that "algo engraçado" is *the promise of a joke, not the joke*, and — the part
+that matters — **the criterion's own words turned back on the artifact**: *"o
+próprio critério declarado diz que 'a summary or an outline instead of a scene
+fails'; é exatamente esse o caso."* Its note caught that `usou_referencia: none`
+means the researcher's file was never read: a placeholder, not a weak draft.
+
+Thirty seconds. Fed through `team verdict`: score 0.00, blocking unconfirmed,
+exit 3, and the instruction to return it to the seat in the same session.
+
+So the risk the design was built against — a boss who waves work through — did
+not materialise on the first honest attempt. What remains unproven is the
+opposite failure: a reviewer so strict that a good artifact never converges
+within the ceiling. That is what the ceiling and the reservations path are for,
+and it is the next thing worth measuring.
+
 **The falsification test.** Give `studio-probe` a brief, then hand the reviewer a
 deliberately weak artifact — a scene that is an outline, with no joke, ignoring
 the reference. The superior must reject it, and the rejection must cite the
