@@ -13,6 +13,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
+import { TEARDOWN_BUDGET_MS } from "./helpers/test-budgets.ts";
 
 const REPO_SKILLS = path.join(import.meta.dir, "..", "..");
 const INDEX_TS = path.join(import.meta.dir, "..", "scripts", "index.ts");
@@ -103,7 +104,7 @@ afterAll(() => {
   for (const d of [home, work]) {
     try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* best effort */ }
   }
-});
+}, TEARDOWN_BUDGET_MS);
 
 describe("route-entrypoint pre-flight (routing-360 Phase 2.5)", () => {
   test("fresh registries: no reindex, check under the 50ms budget", () => {

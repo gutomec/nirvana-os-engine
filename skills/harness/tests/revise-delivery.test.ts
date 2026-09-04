@@ -22,13 +22,13 @@ import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import { writeFakeCli } from "./helpers/fake-cli.ts";
 import { SCOPE_GUARD_PT_BR } from "../../_shared/lib/scope-guard.ts";
-import { spawnBudgetMs } from "./helpers/test-budgets.ts";
+import { spawnBudgetMs, TEARDOWN_BUDGET_MS } from "./helpers/test-budgets.ts";
 
 const SKILLS = path.resolve(import.meta.dir, "..", "..");
 const REVISE = path.join(SKILLS, "harness", "scripts", "revise.ts");
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-revise-test-"));
 
-afterAll(() => { try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* best-effort */ } });
+afterAll(() => { try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* best-effort */ } }, TEARDOWN_BUDGET_MS);
 
 const PASSING_MD = [
   "# Relatório revisado",
