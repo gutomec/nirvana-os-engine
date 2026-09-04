@@ -39,6 +39,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { createRequire } from "node:module";
+import { stamp } from "../../_shared/lib/audit-provenance.ts";
 const requireCjs = createRequire(import.meta.url);
 import { resolveScope, enumerate } from "../../_shared/lib/scope.ts";
 
@@ -94,7 +95,7 @@ function appendAuditEvent(project_dir: string, event: Record<string, unknown>): 
     fs.mkdirSync(dir, { recursive: true });
     fs.appendFileSync(
       path.join(dir, "audit.jsonl"),
-      JSON.stringify({ ts: new Date().toISOString(), ...event }) + "\n"
+      JSON.stringify(stamp({ ts: new Date().toISOString(), ...event })) + "\\n"
     );
   } catch {
     // non-fatal

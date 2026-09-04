@@ -30,6 +30,7 @@ import { runDelivery, deliverAfterRuntimeError, type DeliveryResult } from "../l
 import { loadHarnessConfig } from "../lib/harness-config.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
+import { stamp } from "../../_shared/lib/audit-provenance.ts";
 
 const ANSI = { reset: "\x1b[0m", bold: "\x1b[1m", dim: "\x1b[2m", green: "\x1b[32m", red: "\x1b[31m", yellow: "\x1b[33m", cyan: "\x1b[36m", lime: "\x1b[38;5;154m" };
 const noColor = process.argv.includes("--no-color") || !process.stdout.isTTY;
@@ -73,7 +74,7 @@ function appendAudit(payload: Record<string, any>, projectRoot?: string): void {
     const today = new Date().toISOString().slice(0, 10);
     const dir = path.join(harnessLogsDir({ cwd: projectRoot }), today);
     fs.mkdirSync(dir, { recursive: true });
-    fs.appendFileSync(path.join(dir, "audit.jsonl"), JSON.stringify({ ts: new Date().toISOString(), ...payload }) + "\n");
+    fs.appendFileSync(path.join(dir, "audit.jsonl"), JSON.stringify(stamp({ ts: new Date().toISOString(), ...payload })) + "\n");
   } catch { /* non-fatal */ }
 }
 

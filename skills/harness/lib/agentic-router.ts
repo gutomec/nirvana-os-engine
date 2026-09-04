@@ -33,6 +33,7 @@ import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { BUN_BIN } from "../../_shared/lib/bun-helpers.ts";
 import { resolveRoutingArtifactPaths } from "../scripts/build-routing-digest.ts";
 import { formatRulesForRouterPrompt, type RuntimeRule } from "./runtime-rules.ts";
+import { stamp } from "../../_shared/lib/audit-provenance.ts";
 
 const EXEC_RUNTIMES: ReadonlyArray<string> = ["claude-code", "codex", "gemini-cli", "antigravity-cli", "kimi-cli", "grok-cli", "pi"];
 
@@ -71,7 +72,7 @@ function emitAudit(payload: Record<string, any>, cwd?: string): void {
     const today = new Date().toISOString().slice(0, 10);
     const dir = path.join(harnessLogsDir({ cwd }), today);
     fs.mkdirSync(dir, { recursive: true });
-    fs.appendFileSync(path.join(dir, "audit.jsonl"), JSON.stringify({ ts: new Date().toISOString(), ...payload }) + "\n");
+    fs.appendFileSync(path.join(dir, "audit.jsonl"), JSON.stringify(stamp({ ts: new Date().toISOString(), ...payload })) + "\n");
   } catch { /* non-fatal */ }
 }
 

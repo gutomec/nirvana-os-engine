@@ -1586,6 +1586,29 @@ export async function startServer(opts: ServerOptions) {
         return new Response(readView(p.slice(1)), { headers: { "content-type": STATIC_ASSETS[p], "cache-control": "no-store" } });
       }
 
+      // ─── Prototype sandbox (owner request, 2026-09-01) ───
+      // Preact + Signals + htm, via an import map, no build step — testing
+      // whether that stack organizes better than the monolithic glance.js
+      // while staying zero-build. Purely additive: never linked from the
+      // real index.html, not part of any shipped release. Same-origin, so
+      // its fetch()/EventSource calls hit the real /api/* routes below with
+      // no CORS setup — this doubles as the answer to "would Bun work fine
+      // as a pure API for a different frontend": yes, unchanged.
+      if (p === "/prototype" || p === "/prototype/" || p === "/prototype/index.html") {
+        const html = readView("prototype/index.html").replaceAll("__ASSET_VER__", assetVersion());
+        return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+      }
+      const PROTOTYPE_ASSETS: Record<string, string> = {
+        "/prototype/app.js": "application/javascript",
+        "/prototype/panel.js": "application/javascript",
+        "/prototype/businesses-panel.js": "application/javascript",
+        "/prototype/agents-panel.js": "application/javascript",
+        "/prototype/debug-hud.js": "application/javascript",
+      };
+      if (PROTOTYPE_ASSETS[p]) {
+        return new Response(readView(p.slice(1)), { headers: { "content-type": PROTOTYPE_ASSETS[p], "cache-control": "no-store" } });
+      }
+
       // ─── API ───
       if (p === "/api/health") {
         return json({

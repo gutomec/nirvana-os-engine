@@ -8,6 +8,20 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Cinco coisas que a primeira execução real do organograma expôs
+
+A execução funcionou — três cadeiras despachadas com nome, duas revisões aprovadas contra critério declarado, um recibo calculado que fechou. Observá-la de perto revelou cinco defeitos, quatro deles introduzidos no mesmo dia.
+
+**O carimbo de procedência cobria 2 emissores de 23.** Publicar assim produziu um sinal pior que nenhum: em minutos, três eventos legítimos do engine apareceram como não assinados, e quem seguisse o rótulo concluiria que o orquestrador estava fabricando eventos. Agora todo emissor carimba, e o `_shared/lib/audit-emit.ts` existe para o próximo não precisar lembrar — as dezoito cópias privadas daquela função de quatro linhas são a razão de isto ter sido 2 de 23 em vez de uma linha.
+
+**O `dispatch_business` contava prompt, não despacho.** Ele disparava quando o prompt da cadeira era montado, então quem pedisse o mesmo prompt duas vezes registrava dois despachos para o trabalho de uma cadeira. A repetição agora emite `x_seat_prompt_reissued`: repetir é informação, não um segundo despacho.
+
+**Consultar um recibo alterava o log que ele lia.** O `nrv team receipt` emitia o evento de assinatura toda vez, então olhar uma execução a modificava. Assinar virou `--sign`; sem isso, o recibo só relata.
+
+**Veredito de gate sem trace passa a dizer isso.** O pipeline de entrega exporta `NIRVANA_TRACE_ID` e companhia, mas um agente chamando o gate na mão não exporta — e dez de doze vereditos de uma execução real vieram com `trace_id: null`, impossíveis de juntar à execução que julgaram. O gate agora avisa no stderr nomeando as variáveis, para a lacuna ficar visível em vez de silenciosa.
+
+**Um mind-clone escolhido nunca era carregado.** As cadeiras recebem uma lista rankeada e escolhem; nada é injetado a menos que o brief nomeie. Três cadeiras escolheram, registraram um motivo pensado, e trabalharam com o que o modelo já sabia sobre aquela pessoa — um nome no log, não uma voz no trabalho. A Regra 9 do protocolo chama isso de alegar fidelidade que não se carregou. O brief do passo agora diz com todas as letras: carregue com `nrv inspect-clone <slug> --dna`, ou decida que nenhum serve e trabalhe como você mesmo, o que é honesto e permitido.
+
 ### Evento que o engine escreveu agora se distingue de evento que um agente digitou
 
 A auditoria é a evidência do engine e é um arquivo de texto em que qualquer agente com Write acrescenta linha. Em 04/09/2026 um acrescentou: um maestro escreveu `dispatch_business`, `gate_passed` e um nome de evento que o engine nunca emitiu (`business_completed`) dentro da auditoria de uma execução, com horários cravados no minuto. O pipeline real também rodou, minutos depois — então o arquivo ficou com um veredito auto-emitido e um real, e **nada no formato deles os distinguia**.
