@@ -232,6 +232,8 @@ case "$cmd" in
     esac ;;
   dispatch)
     exec "$BUN_BIN" "$SKILLS/harness/scripts/dispatch.ts" "$@" ;;
+  team)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/chain.ts" "$@" ;;
   run|autopilot)
     exec "$BUN_BIN" "$SKILLS/harness/scripts/dispatch.ts" "$@" --exec ;;
   auto)

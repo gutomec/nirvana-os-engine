@@ -100,6 +100,7 @@ switch (cmd) {
     if (["--capability", "capability"].includes(sub)) runScript(join(S, "capability-doctor.ts"), rest.slice(1));
     runScript(join(H, "doctor-system.ts"), (sub === "--system" || sub === "system") ? rest.slice(1) : rest);
   }
+  case "team": runScript(join(H, "chain.ts"), rest);
   case "dispatch": runScript(join(H, "dispatch.ts"), rest);
   case "run": case "autopilot": runScript(join(H, "dispatch.ts"), [...rest, "--exec"]);
   case "auto": runScript(join(H, "dispatch.ts"), [...rest, "--exec", "--auto"]);

@@ -297,6 +297,32 @@ With that settled, pick the targets:
 2. **Squad(s)** — if no business covers the brief, dispatch directly. Match against `~/squads/*/squad.yaml` `capabilities[].domains` / `produces` / `example_briefs`.
 3. **`agent-x`** — if no squad covers either, dispatch to the runtime's `agent-x` at `~/.nirvana/skills/_shared/agents/agent-x.<runtime>.md`. The autonomous generalist fallback; executes end-to-end. **Never produce inline.**
 
+**Dispatching a business means running its ORG CHART — not handing the company to one subagent.**
+
+A business is not a single executor. It is seats with different specialties plus one that consolidates, and the whole point of choosing a business over a squad is that somebody answers for the result. Handing the brief to one subagent and letting it *write as if* the seats had contributed produces a deliverable that names people who never ran. Measured on a live run (2026-09-04): `nexus-council` (9 seats) and `systems-atelier` (14 seats) each emitted ONE `dispatch_business` between them and zero per-employee events, while the artifacts credited six named seats. Work attributed to a seat with no dispatch event is the fiction §Rule 2 exists to prevent.
+
+The engine decides and audits; **you** execute. Two commands:
+
+```bash
+# 1. The director reads the brief against the org chart and answers with a chain
+#    and a reason. Emits x_chain_shape_decided + team_chain_selected.
+nrv team plan --business <slug> --brief .nirvana/briefs/<trace>-enriched.md \
+              --project <projectDir> --outputs <outputsRoot> \
+              --project-id <trace> --save .nirvana/<trace>-chain.json
+
+# 2. For each step, in order: get that seat's full prompt and run it in YOUR OWN
+#    in-process subagent, verbatim. Emits dispatch_business with the employee.
+nrv team step --plan .nirvana/<trace>-chain.json --index 0
+```
+
+`step` prints the seat's prompt on stdout — persona, mind-clone DNA, the resource map, the colleagues' output paths, the scope guard — and the destination on stderr. Run it as-is; paraphrasing it drops the DNA injection, which is the whole reason the seat is not just you with a different label. Steps run **in order**: each one reads what the earlier seats wrote under `_team/<employee>/`, and the last one writes the final deliverables to the outputs root.
+
+The director decides how many seats, and it is free to answer one — a brief that one seat carries whole should cost one dispatch, and `x_chain_shape_decided.reason` is where that judgement gets checked. `--single` skips the director when you already know; `--team` asks for three to six.
+
+**Do NOT use `nrv dispatch --exec` for this.** That path runs the same chain, but it spawns a child runtime per seat and a child is killed at 20 minutes — the run measured above had a seat that worked for 33. Reserve `--exec` for headless and sub-process-only runtimes (see the note further down).
+
+Two seats' worth of honesty: never write, or let a seat write, a deliverable crediting a colleague that has no matching `dispatch_business` in the audit. If you skipped a seat, say the brief did not need it.
+
 **User override:** "use squad X" / "via squad" / "skip empresas" / "use agent-x directly" → honor it, skip earlier cascade steps.
 
 **Every dispatch passes:** (1) a path to `.nirvana/briefs/<trace_id>-enriched.md` — the brief refined, with acceptance criteria, constraints, references; **no code, no prose snippets, no example outputs** — just description + criteria; (2) `output_path`, `trace_id`, `project_dir`.

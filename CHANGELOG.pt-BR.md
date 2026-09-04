@@ -8,6 +8,22 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Uma empresa despachada de sessão interativa rodava como uma pessoa só
+
+Duas empresas, 23 cadeiras entre elas, um `dispatch_business` — e entregáveis creditando seis cadeiras nomeadas que nunca rodaram como agentes auditados. Medido numa execução real, 04/09/2026.
+
+Não era bug de código de ninguém. O `runTeam` percorre o organograma, mas gera um runtime filho por cadeira, e o protocolo proíbe esse caminho no claude-code, no codex e no antigravity: um filho é morto aos 20 minutos, e uma cadeira daquela execução trabalhou 33. Então o maestro interativo despacha pelos próprios subagentes in-process — e não tinha procedimento nenhum para percorrer um organograma com eles. Fez a única coisa disponível: entregou a empresa inteira a um subagente só, que então escreveu como se as cadeiras tivessem contribuído.
+
+O `nrv team` divide a execução onde ela sempre deveria ter sido dividida: o engine decide e audita, o runtime executa.
+
+O `nrv team plan` roda o mesmo diretor que o `runTeam` usa e deixa os mesmos `x_chain_shape_decided` e `team_chain_selected` — uma cadeia, e um motivo para o tamanho dela. O `nrv team step --index <n>` imprime o prompt completo daquela cadeira, montado pelo mesmo `employee-prompt.ts` do caminho scriptado (persona, DNA do mind-clone, mapa de recursos, caminhos dos colegas, scope guard) e emite `dispatch_business` com o employee. O maestro roda cada prompt no próprio subagente, em ordem, sem limite de relógio.
+
+Os dois caminhos passam a decidir do mesmo jeito, falar o mesmo vocabulário e deixar a mesma prova. É essa última parte que importa: antes, quem lia não distinguia o silêncio de um caminho da ausência do outro — e o evento que falta é justamente o que o contrato trata como evidência, então o modo de falha padrão de um leitor parcial era acusar de fraude uma execução saudável.
+
+O `planChain` foi extraído do `runTeam` para que haja um diretor, não dois. A Fase 4 do protocolo do harness passa a carregar o procedimento, incluindo a regra que fecha o buraco: nunca creditar cadeira sem `dispatch_business` correspondente.
+
+Empresa que não valida é recusada antes de tudo isso, e a recusa agora traz as palavras do próprio loader mais o `nrv validate business <slug> --fix`, em vez de culpar falta de cadeira de intake pelo que o manifesto de fato errou.
+
 ### Uma cadeira falhando jogava fora tudo o que as outras tinham terminado
 
 Um passo que falhava encerrava a cadeia. As cadeiras anteriores já tinham produzido, o trabalho estava em `_team/`, e o employee cuja função inteira é consolidar nunca rodava — a execução falhava com o diretório cheio e nada montado. Um soluço de transporte no primeiro fôlego de um passo inédito custava a coisa toda, porque o `runWithSession` só retentava quando havia sessão para retomar.
