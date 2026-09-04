@@ -8,6 +8,20 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Evento que o engine escreveu agora se distingue de evento que um agente digitou
+
+A auditoria é a evidência do engine e é um arquivo de texto em que qualquer agente com Write acrescenta linha. Em 04/09/2026 um acrescentou: um maestro escreveu `dispatch_business`, `gate_passed` e um nome de evento que o engine nunca emitiu (`business_completed`) dentro da auditoria de uma execução, com horários cravados no minuto. O pipeline real também rodou, minutos depois — então o arquivo ficou com um veredito auto-emitido e um real, e **nada no formato deles os distinguia**.
+
+O defeito é esse, e não é "um agente consegue escrever no arquivo". Consegue, e proibir quebraria o namespace aberto `x_` de que o protocolo depende. O defeito é que a linha digitada era indistinguível da emitida, o que tornava toda contagem a jusante — `validate-chain`, o recibo, o improver, o `nrv baseline` — contagem de afirmações em vez de eventos.
+
+Os eventos emitidos passam a carregar um HMAC sobre os próprios bytes, com segredo por instalação em `~/.nirvana/audit-key` (sobrescrevível por `NIRVANA_AUDIT_KEY`, criado no primeiro uso, nunca dentro de um pack). Quem lê recebe três respostas: `engine` (assinado e conferindo), `unsigned` (sem carimbo — um narrador, ou um engine que não alcançou a chave), `tampered` (assinado e editado depois, o que é pior que falsificado). O `nrv team receipt` conta só o que o engine assinou e lista o resto em `not_counted`.
+
+**O que isso compra, exatamente:** derrota a narração casual — um agente escrevendo linhas plausíveis porque acha que deve, que é a falha que aconteceu e a comum. **Não** derrota um falsificador decidido: qualquer coisa rodando como o usuário lê a chave. Dizer o contrário seria a mesma espécie de desonestidade que isto fecha. O que muda é que falsificar vira ato deliberado em vez de efeito colateral de um agente prestativo.
+
+### Um fixture do Windows estourou o tempo e chamou isso de falha
+
+O `preflight-index.test.ts` semeia três registries com os indexadores reais sob 120 s cravados. Um runner lento do windows-latest passou disso, e o `spawnSync` devolve `status: null` quando mata o filho — então o erro dizia `fixture seed index failed (exit null)` com stderr vazio, o que descreve índice quebrado em vez de máquina lenta. Agora tem budget dimensionado como os outros da suíte, e timeout diz que foi timeout.
+
 ### O superior imediato revisa o trabalho, e o silêncio reprova
 
 Uma empresa declara quem se reporta a quem, e até agora nada lia isso. Agora lê: o trabalho de cada cadeira é revisado pela cadeira acima dela no `org-chart.yaml`, contra os critérios que a própria cadeira declarou.

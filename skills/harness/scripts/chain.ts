@@ -48,6 +48,7 @@ import { spawnSync } from "node:child_process";
 import { planChain, buildStepBrief, type ChainStep, type TeamRunArgs } from "../lib/team-orchestrator.ts";
 import { resolveEntityDir } from "../../_shared/lib/entity-resource-map.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
+import { stamp, provenanceOf } from "../../_shared/lib/audit-provenance.ts";
 import type { Runtime } from "../lib/host-agent-driver.ts";
 import * as YAML from "yaml";
 import { readAcceptance } from "../../businesses/lib/acceptance.ts";
@@ -62,7 +63,7 @@ function emitAudit(payload: Record<string, any>, projectRoot?: string): void {
     const today = new Date().toISOString().slice(0, 10);
     const dir = path.join(harnessLogsDir({ cwd: projectRoot }), today);
     fs.mkdirSync(dir, { recursive: true });
-    fs.appendFileSync(path.join(dir, "audit.jsonl"), JSON.stringify({ ts: new Date().toISOString(), ...payload }) + "\n");
+    fs.appendFileSync(path.join(dir, "audit.jsonl"), JSON.stringify(stamp({ ts: new Date().toISOString(), ...payload })) + "\n");
   } catch { /* non-fatal */ }
 }
 
@@ -495,10 +496,21 @@ function cmdReceipt(argv: string[]): void {
   const day = new Date().toISOString().slice(0, 10);
   const auditFile = path.join(harnessLogsDir({ cwd: plan.project_root }), day, "audit.jsonl");
   let events: any[] = [];
+  let narrated: Array<{ event: string; why: string }> = [];
   try {
-    events = fs.readFileSync(auditFile, "utf8").split("\n").filter(Boolean)
+    const all = fs.readFileSync(auditFile, "utf8").split("\n").filter(Boolean)
       .map(l => { try { return JSON.parse(l); } catch { return null; } })
       .filter(e => e && (e.trace_id === plan.project_id || e.project_id === plan.project_id));
+    // Only what the ENGINE signed counts. An unsigned or altered line is a claim
+    // someone typed, and a receipt that counts claims is the thing this receipt
+    // exists to replace: on 2026-09-04 an agent wrote its own dispatch_business
+    // and its own gate_passed into a run's audit, minutes before the real
+    // pipeline emitted the same names. Nothing in their shape told them apart.
+    for (const e of all) {
+      const p = provenanceOf(e);
+      if (p === "engine") events.push(e);
+      else narrated.push({ event: String(e.event ?? "(unnamed)"), why: p });
+    }
   } catch { /* no events yet — every seat reads as not dispatched, which is true */ }
 
   const seatOf = (e: any) => e?.employee;
@@ -534,6 +546,7 @@ function cmdReceipt(argv: string[]): void {
     complete,
     ...(missing.length ? { never_dispatched: missing } : {}),
     ...(unresolved.length ? { review_unresolved: unresolved } : {}),
+    ...(narrated.length ? { not_counted: narrated } : {}),
   }, null, 2));
 
   emitAudit({
@@ -545,6 +558,10 @@ function cmdReceipt(argv: string[]): void {
     ...(unresolved.length ? { review_unresolved: unresolved } : {}),
   }, plan.project_root);
 
+  if (narrated.length) {
+    console.error(`[receipt] ${narrated.length} event(s) in this trace were NOT written by the engine and were not counted: `
+      + narrated.map(n => `${n.event} (${n.why})`).join(", "));
+  }
   if (!complete) {
     if (missing.length) console.error(`[receipt] ${missing.length} seat(s) in the plan never ran: ${missing.join(", ")}`);
     if (unresolved.length) console.error(`[receipt] ${unresolved.length} seat(s) not approved by their superior: ${unresolved.join(", ")}`);

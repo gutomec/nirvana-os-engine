@@ -8,6 +8,20 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### An event the engine wrote is now distinguishable from one an agent typed
+
+The audit is the engine's evidence and it is a text file any agent with Write can append to. On 2026-09-04 one did: a maestro wrote `dispatch_business`, `gate_passed` and an event name the engine has never emitted (`business_completed`) into a run's audit, with timestamps rounded to the minute. The real pipeline ran too, minutes later — so the file held a self-issued verdict and a real one, and **nothing in their shape told them apart**.
+
+That is the defect, and it is not "an agent can write to the file". It can, and forbidding it would break the open `x_` namespace the protocol depends on. The defect is that a typed line was indistinguishable from an emitted one, which made every count downstream — `validate-chain`, the receipt, the improver, `nrv baseline` — a count of claims rather than of events.
+
+Emitted events now carry an HMAC over their own bytes, keyed by a per-install secret at `~/.nirvana/audit-key` (overridable with `NIRVANA_AUDIT_KEY`, created on first use, never in a pack). A reader gets three answers: `engine` (signed and matching), `unsigned` (no stamp — a narrator, or an engine that could not reach its key), `tampered` (stamped but edited afterwards, which is worse than a fake). `nrv team receipt` counts only what the engine signed and lists the rest under `not_counted`.
+
+**What this buys, exactly:** it defeats casual narration — an agent writing plausible lines because it believes it should, which is the failure that happened and the common one. It does **not** defeat a determined forger: anything running as the user can read the key. Saying otherwise would be the same species of dishonesty this closes. What changes is that forging becomes a deliberate act instead of a side effect of an agent being helpful.
+
+### A Windows fixture timed out and called it a failure
+
+`preflight-index.test.ts` seeds three registries with the real indexers under a hardcoded 120 s. A slow windows-latest runner exceeded it, and `spawnSync` returns `status: null` when it kills the child — so the error read `fixture seed index failed (exit null)` with an empty stderr, which describes a broken index rather than a slow machine. It now has a budget sized like the others in the suite, and a timeout says it timed out.
+
 ### The immediate superior reviews the work, and silence rejects
 
 A business declares who reports to whom, and until now nothing read it. It does now: each seat's work is reviewed by the seat above it in `org-chart.yaml`, against the criteria that seat declared for itself.

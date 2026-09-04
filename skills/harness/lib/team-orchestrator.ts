@@ -24,6 +24,7 @@ import { runHeadless, AUTONOMOUS_DIRECTIVE, type Runtime } from "./host-agent-dr
 import { runWithCascade } from "./cascade-runner.ts";
 import { sessionKey, getSession, putSession, dropSession, type EntityKind } from "./session-store.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
+import { stamp } from "../../_shared/lib/audit-provenance.ts";
 import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { runSquadHeadless } from "./squad-exec.ts";
 import { resolveEntityDir } from "../../_shared/lib/entity-resource-map.ts";
@@ -101,7 +102,7 @@ function appendAudit(payload: Record<string, any>, projectRoot?: string): void {
     const today = new Date().toISOString().slice(0, 10);
     const dir = path.join(harnessLogsDir({ cwd: projectRoot }), today);
     fs.mkdirSync(dir, { recursive: true });
-    fs.appendFileSync(path.join(dir, "audit.jsonl"), JSON.stringify({ ts: new Date().toISOString(), ...payload }) + "\n");
+    fs.appendFileSync(path.join(dir, "audit.jsonl"), JSON.stringify(stamp({ ts: new Date().toISOString(), ...payload })) + "\n");
   } catch { /* non-fatal */ }
 }
 
