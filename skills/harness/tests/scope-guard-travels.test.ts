@@ -20,22 +20,27 @@ const ROOT = path.resolve(import.meta.dir, "..", "..", "..");
 describe("the team step brief", () => {
   const args = { brief: "Uma landing page para a clínica.", outputsRoot: "/out/final" };
 
-  test("a middle step writes to its own dir, lists the colleagues and carries the guard in PT-BR", () => {
+  // The instruction is English and the DELIVERABLE is not — the brief here is
+  // Portuguese on purpose, and the step brief has to say which of the two the
+  // employee should follow. Without that sentence, switching the prompt language
+  // silently switches the language of the work.
+  test("a middle step writes to its own dir, lists the colleagues and carries the guard", () => {
     const text = buildStepBrief({ employee: "copywriter", task: "Escreva o copy." }, 1, 3, args,
       [{ employee: "strategist", dir: "/out/final/_team/strategist" }], "/out/final/_team/copywriter");
-    expect(text).toContain("# Tarefa para copywriter — step 2 de 3");
+    expect(text).toContain("# Task for copywriter — step 2 of 3");
     expect(text).toContain("Escreva o copy.");
     expect(text).toContain("- **strategist** → /out/final/_team/strategist");
-    expect(text).toContain("sob: `/out/final/_team/copywriter`");
-    expect(text).toContain(SCOPE_GUARD_PT_BR);
-    expect(text).not.toContain(SCOPE_GUARD_EN);
+    expect(text).toContain("under: `/out/final/_team/copywriter`");
+    expect(text).toContain("What you DELIVER follows the language of the client brief");
+    expect(text).toContain(SCOPE_GUARD_EN);
+    expect(text).not.toContain(SCOPE_GUARD_PT_BR);
   });
 
   test("the last step synthesizes into the outputs root and still carries it", () => {
     const text = buildStepBrief({ employee: "ceo", task: "Consolide." }, 2, 3, args, [], "/out/final");
-    expect(text).toContain("ENTREGÁVEIS FINAIS como arquivos sob: `/out/final`");
-    expect(text).not.toContain("## Outputs dos colegas");
-    expect(text.trim().endsWith(SCOPE_GUARD_PT_BR)).toBe(true);
+    expect(text).toContain("FINAL DELIVERABLES as files under: `/out/final`");
+    expect(text).not.toContain("## What your colleagues produced");
+    expect(text.trim().endsWith(SCOPE_GUARD_EN)).toBe(true);
   });
 });
 

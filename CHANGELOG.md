@@ -8,6 +8,20 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### One seat failing threw away everything the others had finished
+
+A step that failed ended the chain. The seats before it had already produced their work, it was sitting in `_team/`, and the one employee whose entire job is to consolidate it never ran — so the run failed with a full directory and nothing assembled. A transport hiccup on the first breath of a first-ever step cost the whole thing, because `runWithSession` only retried when there was a session to resume.
+
+Every step now gets one retry from a cold session. If it fails twice the chain carries on, and what is missing travels with it: the seats after it are told plainly which colleague did not deliver and what it was responsible for, so none of them writes as if the material existed. The synthesizer always runs, and when there is a gap it is told to record it in `_QA-RESERVATIONS.md` — what is missing and what it practically costs whoever uses the delivery. `x_chain_step_retried` and `x_chain_gap` carry it in the audit, `team_completed` lists the gaps, and the run reports `ok: false` only when the synthesizer itself fails, because nothing downstream can cover for that one.
+
+The delivery pipeline no longer overwrites `_QA-RESERVATIONS.md` when the gate exhausts its retries; it appends below what is already there. Both notes belong — one says the quality verdict is unresolved, the other says a piece of the work never arrived — and a reader handed only the second concludes the first never happened.
+
+### The instructions are English; the deliverable is not
+
+The chain's prompts were written in Portuguese, which put the engine's own instructions in the same language as the work it ships. Code, console output, audit fields and the prompts the engine builds are English. What a dispatched agent DELIVERS follows the brief's language, and the prompt now says so in as many words — without that sentence, translating a prompt silently translates the deliverable with it.
+
+`team-orchestrator.ts` is converted, `scopeGuard("en")` included. The rest is not: 20 source files outside tests still carry Portuguese instruction text, and `check-english-source` does not catch them — it reads comments and identifiers, not prompt strings.
+
 ### Most businesses ran as one person, behind a flag nobody passed
 
 `--team` turned on the multi-employee chain. It appeared in no caller, in `bin/nrv` or in the skill protocol, so a business with a full org chart answered every brief through its intake employee alone. The specialists the router had already chosen made it worse: `autoMandatorySquads` was consumed only inside `runTeam`, so outside it `auto_route_selected` announced squads that never ran. The log asserted work nobody did.

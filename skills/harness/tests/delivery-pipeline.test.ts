@@ -665,6 +665,21 @@ describe("runDelivery — gate exhausted: accepted with reservations", () => {
     expect(calls.find(x => x.event === "delivered")!.payload.gate).toBe("fail-accepted");
   }, spawnBudgetMs(2));
 
+  test("a reservation the producer already wrote survives the gate's own", () => {
+    const oroot = path.join(tmp, "out-reservations-merge");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "nota.md"), FAILING_MD);
+    // What a chain writes when a seat failed twice and the run went on without
+    // it. Overwriting this told the reader the gate was unresolved and nothing
+    // else — the missing seat vanished from the only file that mentioned it.
+    fs.writeFileSync(path.join(oroot, "_QA-RESERVATIONS.md"), "# Lacunas da cadeia\n\n- **writer** não entregou (2 tentativas).");
+    const { args } = baseArgs(oroot);
+    runDelivery(args);
+    const note = fs.readFileSync(path.join(oroot, "_QA-RESERVATIONS.md"), "utf8");
+    expect(note).toContain("writer");
+    expect(note).toContain("retry ceiling");
+  }, spawnBudgetMs(2));
+
   test("the completeness ceiling outranks the acceptance (reservations never cover a missing deliverable)", () => {
     const oroot = path.join(tmp, "out-reservations-ceiling");
     fs.mkdirSync(oroot);

@@ -8,6 +8,20 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Uma cadeira falhando jogava fora tudo o que as outras tinham terminado
+
+Um passo que falhava encerrava a cadeia. As cadeiras anteriores já tinham produzido, o trabalho estava em `_team/`, e o employee cuja função inteira é consolidar nunca rodava — a execução falhava com o diretório cheio e nada montado. Um soluço de transporte no primeiro fôlego de um passo inédito custava a coisa toda, porque o `runWithSession` só retentava quando havia sessão para retomar.
+
+Todo passo agora tem uma retentativa, de sessão fria. Falhando duas vezes, a cadeia segue, e o que falta viaja junto: as cadeiras seguintes são avisadas de qual colega não entregou e do que ele era responsável, para que nenhuma escreva como se o material existisse. O synthesizer sempre roda e, havendo lacuna, é instruído a registrá-la em `_QA-RESERVATIONS.md` — o que ficou faltando e o que isso custa na prática para quem vai usar a entrega. O `x_chain_step_retried` e o `x_chain_gap` carregam isso no log, o `team_completed` lista as lacunas, e a execução só reporta `ok: false` quando o próprio synthesizer falha, porque para esse não há quem cubra.
+
+O pipeline de entrega deixa de sobrescrever o `_QA-RESERVATIONS.md` quando o gate esgota as retentativas; ele acrescenta abaixo do que já está lá. As duas notas importam — uma diz que o veredito de qualidade ficou em aberto, a outra diz que um pedaço do trabalho nunca chegou — e quem recebe só a segunda conclui que a primeira nunca aconteceu.
+
+### A instrução é em inglês; a entrega não é
+
+Os prompts da cadeia eram escritos em português, o que punha a instrução do próprio engine no mesmo idioma do trabalho que ele entrega. Código, saída de console, campos de log e os prompts que o engine monta são inglês. O que o agente despachado ENTREGA segue o idioma do brief, e o prompt agora diz isso com todas as letras — sem essa frase, traduzir um prompt traduz o entregável junto, em silêncio.
+
+O `team-orchestrator.ts` está convertido, `scopeGuard("en")` incluído. O resto não: 20 arquivos-fonte fora de testes ainda carregam instrução em português, e o `check-english-source` não pega — ele lê comentários e identificadores, não strings de prompt.
+
 ### A maioria das empresas rodava como uma pessoa só, atrás de uma flag que ninguém passava
 
 O `--team` ligava a cadeia de vários employees. Não aparecia em chamador nenhum, nem no `bin/nrv`, nem no protocolo da skill, então uma empresa com organograma inteiro respondia todo brief pelo employee de intake sozinho. Os especialistas que o roteador já tinha escolhido pioravam o quadro: o `autoMandatorySquads` só era consumido dentro do `runTeam`, e fora dele o `auto_route_selected` anunciava squads que nunca rodaram. O log afirmava um trabalho que ninguém fez.

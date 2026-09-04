@@ -82,8 +82,19 @@ export interface TeamRunArgs {
 }
 
 export interface ChainStep { employee: string; task: string; }
-export interface StepResult { employee: string; ok: boolean; sessionId: string | null; costUsd: number | null; durationMs: number; outputsDir: string; }
-export interface TeamResult { ok: boolean; steps: StepResult[]; chain: ChainStep[]; lastSessionId: string | null; totalCostUsd: number; totalDurationMs: number; error?: string; }
+export interface StepResult {
+  employee: string; ok: boolean; sessionId: string | null; costUsd: number | null;
+  durationMs: number; outputsDir: string;
+  /** 1 normally, 2 when the step was retried. */
+  attempts?: number;
+  /** Set when the step failed BOTH times and the chain went on without it. The
+   *  string is what the colleagues downstream are told is missing. */
+  failed?: string;
+}
+/** A seat that was asked and did not deliver. Named, never swallowed. */
+export interface ChainGap { employee: string; task: string; }
+
+export interface TeamResult { ok: boolean; steps: StepResult[]; chain: ChainStep[]; gaps: ChainGap[]; lastSessionId: string | null; totalCostUsd: number; totalDurationMs: number; error?: string; }
 
 function appendAudit(payload: Record<string, any>, projectRoot?: string): void {
   try {
@@ -134,33 +145,34 @@ function pickChain(args: TeamRunArgs): { chain: ChainStep[]; reason: string } {
   const employees = listEmployees(args);
   if (employees.length <= 1) {
     return {
-      chain: [{ employee: args.intakeEmployee, task: "Execute o brief de ponta a ponta. Você é o único employee deste business." }],
-      reason: "a empresa tem uma cadeira só",
+      chain: [{ employee: args.intakeEmployee, task: "Carry the brief end to end. You are the only employee of this business." }],
+      reason: "the business has a single seat",
     };
   }
 
   const list = employees.map(e => `- ${e.name} (${e.role}): ${e.description}`).join("\n");
   const prompt = [
-    `Você é o diretor de orquestração do business "${args.slug}". Sua única função é decidir a cadeia ideal de employees para executar o brief abaixo com QUALIDADE NIRVANA — o melhor que existe.`,
+    `You are the orchestration director of the business "${args.slug}". Your only job is to decide the chain of employees that executes the brief below at the highest quality this system can reach.`,
     "",
-    "COMO ESCREVER UMA SUB-TAREFA: diga o que tem que EXISTIR quando o employee terminar, e o que é inegociável nesse resultado. Não diga como chegar lá. Quem executa é especialista, conhece as ferramentas do próprio ofício melhor que você, e um passo a passo escrito por você só tira dele a liberdade de fazer melhor. Exigência de resultado é legítima (\"as imagens têm que ser imagens geradas de verdade, não placeholder\", \"o HTML tem que abrir sem build\"); receita de método não é (\"use tal biblioteca\", \"primeiro faça X, depois Y\").",
+    "HOW TO WRITE A SUB-TASK: say what has to EXIST when the employee is done, and what is non-negotiable about it. Do not say how to get there. Whoever executes is the specialist — they know the tools of their own craft better than you do, and a step-by-step written upstream only takes away their freedom to do it better. A requirement on the RESULT is legitimate (\"the images have to be real generated images, not placeholders\", \"the HTML has to open without a build step\"); a recipe for the METHOD is not (\"use library X\", \"first do A, then B\").",
     "",
-    "BRIEF DO CLIENTE:",
+    "CLIENT BRIEF:",
     args.brief,
     "",
-    "EMPLOYEES DISPONÍVEIS:",
+    "AVAILABLE EMPLOYEES:",
     list,
     "",
-    `REGRAS:`,
-    `- "${args.intakeEmployee}" é o intake/synthesizer e DEVE ser o ÚLTIMO da cadeia (consolida os outputs dos colegas em entregáveis finais).`,
+    "RULES:",
+    `- "${args.intakeEmployee}" is the intake/synthesizer and MUST be LAST in the chain (it consolidates the colleagues' outputs into the final deliverables).`,
     args.forceChain
-      ? `- Inclua de 3 a 6 employees na cadeia (incluindo o synthesizer). Pule employees irrelevantes ao brief.`
-      : `- QUANTAS cadeiras é decisão sua, e é a decisão mais importante aqui. Um brief que uma cadeira resolve inteiro deve receber UMA — cadeia de 1 passo, só o synthesizer — porque cada passo a mais custa dinheiro e um repasse de contexto. Chame um colega quando o brief precisa de uma especialidade que o synthesizer não tem, não para parecer completo. Máximo de 6.`,
-    `- Ordene pela dependência lógica: quem dá o input vem antes de quem precisa dele.`,
-    `- Cada sub-tarefa: o resultado esperado e o que é obrigatório nele. O caminho é de quem executa.`,
+      ? "- Include 3 to 6 employees in the chain (the synthesizer counts). Skip employees irrelevant to the brief."
+      : "- HOW MANY seats is your call, and it is the most important decision here. A brief one seat can carry whole should get ONE — a chain of a single step, the synthesizer alone — because every extra step costs money and one more handoff of context. Call a colleague when the brief needs a specialty the synthesizer does not have, not to look thorough. Six at most.",
+    "- Order by logical dependency: whoever produces an input comes before whoever needs it.",
+    "- Each sub-task: the expected result and what is mandatory about it. The path belongs to whoever executes.",
+    "- The DELIVERABLE follows the language of the client brief above. These instructions are in English; what the business ships is not.",
     "",
-    'Responda APENAS um JSON válido: {"reason":"<1 frase: por que ESTA quantidade de passos>","chain":[{"employee":"<nome-exato>","task":"<em 1-2 frases: o que tem que existir no fim, e o que é inegociável>"}, ...]}',
-    "Sem markdown, sem cercas, sem comentário antes ou depois.",
+    'Answer with ONE valid JSON object only: {"reason":"<one sentence: why THIS number of steps>","chain":[{"employee":"<exact-name>","task":"<1-2 sentences: what has to exist at the end, and what is non-negotiable>"}, ...]}',
+    "No markdown, no fences, no comment before or after.",
   ].join("\n");
 
   appendAudit({ event: "team_director_called", project_id: args.projectId, business_slug: args.slug, employees_available: employees.length }, args.projectRoot);
@@ -193,10 +205,10 @@ function pickChain(args: TeamRunArgs): { chain: ChainStep[]; reason: string } {
     .map((s: any) => ({ employee: s.employee, task: String(s.task || "Execute sua especialidade aplicada ao brief.").trim() }));
   if (!chain.length) throw new Error("director picked no valid employee");
   if (chain[chain.length - 1].employee !== args.intakeEmployee) {
-    chain.push({ employee: args.intakeEmployee, task: `Síntese final: leia os outputs dos colegas em _team/* e consolide os ENTREGÁVEIS FINAIS sob ${args.outputsRoot}. Cite premissas em "## Premissas assumidas".` });
+    chain.push({ employee: args.intakeEmployee, task: `Final synthesis: read the colleagues' outputs under _team/* and consolidate the FINAL DELIVERABLES under ${args.outputsRoot}. State any assumptions under a "## Assumptions" heading.` });
   }
   const reason = String(parsed.reason || "").replace(/\s+/g, " ").trim().slice(0, 300)
-    || "o diretor não declarou o motivo";
+    || "the director stated no reason";
   return { chain, reason };
 }
 
@@ -250,35 +262,49 @@ function runWithSession(
 /** The step brief handed to one employee of the chain: its sub-task, the client's
  * brief, the colleagues' outputs so far and where to write. Exported so the
  * scope-guard gate and the tests render it without running the chain. */
-export function buildStepBrief(step: ChainStep, idx: number, total: number, args: Pick<TeamRunArgs, "brief" | "outputsRoot">, priorOutputs: { employee: string; dir: string }[], employeeOutDir: string): string {
+export function buildStepBrief(step: ChainStep, idx: number, total: number, args: Pick<TeamRunArgs, "brief" | "outputsRoot">, priorOutputs: { employee: string; dir: string }[], employeeOutDir: string, gaps: ChainGap[] = []): string {
   const isLast = idx === total - 1;
   const priorBlock = priorOutputs.length
-    ? "## Outputs dos colegas (leia antes de produzir o seu)\n" + priorOutputs.map(p => `- **${p.employee}** → ${p.dir}`).join("\n") + "\n\n"
+    ? "## What your colleagues produced (read it before writing yours)\n" + priorOutputs.map(p => `- **${p.employee}** → ${p.dir}`).join("\n") + "\n\n"
+    : "";
+  // A colleague that was asked and did not deliver. The next seats are told
+  // plainly, because the alternative is one of them assuming the material
+  // exists and quietly building on nothing.
+  const gapBlock = gaps.length
+    ? "## What never arrived\nThese seats were dispatched and did not deliver. None of it exists on disk — do not go looking, and do not write as if you had read it:\n"
+      + gaps.map(g => `- **${g.employee}** — was responsible for: ${g.task}`).join("\n")
+      + "\nCarry on with what does exist. If the absence blocks part of your work, do all the rest and say which part was left out and why.\n\n"
     : "";
   const outputInstr = isLast
-    ? `## Saída\nEscreva os ENTREGÁVEIS FINAIS como arquivos sob: \`${args.outputsRoot}\`\nLeia tudo que os colegas produziram em \`_team/*\` e consolide. Cite as premissas em "## Premissas assumidas" no entregável principal. NÃO duplique trabalho dos colegas — sintetize, refine, complete.`
-    : `## Saída\nEscreva o SEU trabalho como arquivos Markdown bem nomeados sob: \`${employeeOutDir}\`\nUm ou mais arquivos com sua análise + entregável da sua especialidade. Os colegas seguintes vão ler para continuar — escreva pensando neles.`;
+    ? `## Output\nWrite the FINAL DELIVERABLES as files under: \`${args.outputsRoot}\`\nRead everything the colleagues produced under \`_team/*\` and consolidate it. State your assumptions under "## Assumptions" in the main deliverable. Do NOT duplicate a colleague's work — synthesize, refine, complete.`
+      + (gaps.length ? `\n\nAlso write \`${args.outputsRoot}/_QA-RESERVATIONS.md\`: what is missing from this delivery because of the seats that did not deliver, and what that practically costs whoever uses the material. If the file already exists, add to it instead of overwriting.` : "")
+    : `## Output\nWrite YOUR work as well-named Markdown files under: \`${employeeOutDir}\`\nOne or more files with your analysis and the deliverable of your specialty. The colleagues after you will read it to continue — write with them in mind.`;
 
   return [
-    `# Tarefa para ${step.employee} — step ${idx + 1} de ${total}`,
+    `# Task for ${step.employee} — step ${idx + 1} of ${total}`,
     "",
-    "## Sua sub-tarefa nesta cadeia",
+    "## Your sub-task in this chain",
     step.task,
     "",
-    "## Brief original do cliente",
+    "## The client's original brief",
     args.brief,
     "",
-    priorBlock + outputInstr,
-    scopeGuard("pt-BR"),
+    // These instructions are English; the deliverable is not. Without saying so,
+    // an English prompt quietly turns a Portuguese brief into an English
+    // delivery — the language of the instruction leaking into the work.
+    "## Language\nThese instructions are in English. What you DELIVER follows the language of the client brief above.",
+    "",
+    priorBlock + gapBlock + outputInstr,
+    scopeGuard("en"),
   ].join("\n");
 }
 
-function runStep(step: ChainStep, idx: number, total: number, args: TeamRunArgs, priorOutputs: { employee: string; dir: string }[]): StepResult {
+function runStep(step: ChainStep, idx: number, total: number, args: TeamRunArgs, priorOutputs: { employee: string; dir: string }[], gaps: ChainGap[] = []): StepResult {
   const isLast = idx === total - 1;
   const employeeOutDir = isLast ? args.outputsRoot : path.join(args.outputsRoot, "_team", step.employee);
   fs.mkdirSync(employeeOutDir, { recursive: true });
 
-  const stepBrief = buildStepBrief(step, idx, total, args, priorOutputs, employeeOutDir);
+  const stepBrief = buildStepBrief(step, idx, total, args, priorOutputs, employeeOutDir, gaps);
 
   const stepBriefFile = path.join(employeeOutDir, ".step-brief.md");
   fs.writeFileSync(stepBriefFile, stepBrief);
@@ -368,7 +394,7 @@ export function runTeam(args: TeamRunArgs): TeamResult {
   try { ({ chain, reason: shapeReason } = pickChain(args)); }
   catch (e: any) {
     appendAudit({ event: "team_director_failed", project_id: args.projectId, business_slug: args.slug, error: e?.message || String(e) }, args.projectRoot);
-    return { ok: false, steps: [], chain: [], lastSessionId: null, totalCostUsd: 0, totalDurationMs: 0, error: `director: ${e?.message || e}` };
+    return { ok: false, steps: [], chain: [], gaps: [], lastSessionId: null, totalCostUsd: 0, totalDurationMs: 0, error: `director: ${e?.message || e}` };
   }
   // Why this run costs what it costs. The chain length is now a decision rather
   // than a flag, so it owes the owner a reason: five dispatches on a brief one
@@ -382,6 +408,7 @@ export function runTeam(args: TeamRunArgs): TeamResult {
 
   const steps: StepResult[] = [];
   const priorOutputs: { employee: string; dir: string }[] = [];
+  const gaps: ChainGap[] = [];
   const mandatorySquads = args.mandatorySquads ?? [];
   for (let i = 0; i < chain.length; i++) {
     // Right before the synthesizer (last step), dispatch each mandatory squad
@@ -395,18 +422,61 @@ export function runTeam(args: TeamRunArgs): TeamResult {
         // it already has. The squad_run_failed event is in the audit.
       }
     }
-    const r = runStep(chain[i], i, chain.length, args, priorOutputs);
-    steps.push(r);
+    const isLast = i === chain.length - 1;
+    let r = runStep(chain[i], i, chain.length, args, priorOutputs, gaps);
+    let attempts = 1;
+
+    // One retry, from a cold session. `runWithSession` already does this when a
+    // session existed to resume; a first-ever step had no such second chance, so
+    // a transport hiccup killed the whole chain on its first breath.
     if (!r.ok) {
+      dropSession(args.projectDir, sessionKey(args.runtime, "employee", chain[i].employee));
+      appendAudit({
+        event: "x_chain_step_retried", trace_id: args.projectId, project_id: args.projectId,
+        business_slug: args.slug, employee: chain[i].employee, step: i + 1, total: chain.length,
+      }, args.projectRoot);
+      r = runStep(chain[i], i, chain.length, args, priorOutputs, gaps);
+      attempts = 2;
+    }
+    r.attempts = attempts;
+    steps.push(r);
+
+    if (r.ok) {
+      priorOutputs.push({ employee: chain[i].employee, dir: r.outputsDir });
+      continue;
+    }
+
+    // Twice failed. The chain used to stop here, which threw away every
+    // colleague's finished work and never ran the seat whose whole job is to
+    // consolidate it — the run ended with a full `_team/` on disk and nothing
+    // assembled. It goes on instead, and what is missing travels with it: the
+    // next steps are told, the synthesizer is told to record it in the
+    // delivery, and the audit carries it.
+    r.failed = `${chain[i].employee} did not deliver (2 attempts)`;
+    gaps.push({ employee: chain[i].employee, task: chain[i].task });
+    appendAudit({
+      event: "x_chain_gap", trace_id: args.projectId, project_id: args.projectId,
+      business_slug: args.slug, employee: chain[i].employee, step: i + 1, total: chain.length,
+      attempts, task: chain[i].task.slice(0, 200),
+    }, args.projectRoot);
+
+    // The synthesizer is the exception: nothing downstream can cover for it, so
+    // its failure is the run's failure.
+    if (isLast) {
       const totalCost = steps.reduce((s, x) => s + (x.costUsd || 0), 0);
       const totalDur = steps.reduce((s, x) => s + x.durationMs, 0);
-      return { ok: false, steps, chain, lastSessionId: r.sessionId, totalCostUsd: totalCost, totalDurationMs: totalDur, error: `step ${i + 1} (${chain[i].employee}) falhou` };
+      return { ok: false, steps, chain, gaps, lastSessionId: r.sessionId, totalCostUsd: totalCost, totalDurationMs: totalDur, error: `step ${i + 1} (${chain[i].employee}) falhou` };
     }
-    priorOutputs.push({ employee: chain[i].employee, dir: r.outputsDir });
   }
 
   const totalCost = steps.reduce((s, x) => s + (x.costUsd || 0), 0);
   const totalDur = steps.reduce((s, x) => s + x.durationMs, 0);
-  appendAudit({ event: "team_completed", project_id: args.projectId, business_slug: args.slug, steps: chain.length, total_cost_usd: totalCost, total_duration_ms: totalDur }, args.projectRoot);
-  return { ok: true, steps, chain, lastSessionId: steps[steps.length - 1].sessionId, totalCostUsd: totalCost, totalDurationMs: totalDur };
+  // `gaps` rides on completion so "the chain finished" and "the chain finished
+  // whole" stay two different statements in the log.
+  appendAudit({
+    event: "team_completed", project_id: args.projectId, business_slug: args.slug,
+    steps: chain.length, total_cost_usd: totalCost, total_duration_ms: totalDur,
+    ...(gaps.length ? { gaps: gaps.map(g => g.employee) } : {}),
+  }, args.projectRoot);
+  return { ok: true, steps, chain, gaps, lastSessionId: steps[steps.length - 1].sessionId, totalCostUsd: totalCost, totalDurationMs: totalDur };
 }

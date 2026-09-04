@@ -1797,7 +1797,14 @@ if (wantExec) {
     } else {
       console.log(c("green", `  ✓ team orchestrated: ${tr.chain.length} steps`));
       for (const s of tr.steps) {
-        console.log(c("dim", `    · ${s.employee}: ${s.durationMs}ms${s.costUsd != null ? ` · $${s.costUsd.toFixed(4)}` : ""}`));
+        const mark = s.failed ? c("yellow", " ⚠ did not deliver") : "";
+        const tries = (s.attempts ?? 1) > 1 ? c("dim", ` · ${s.attempts} attempts`) : "";
+        console.log(c("dim", `    · ${s.employee}: ${s.durationMs}ms${s.costUsd != null ? ` · $${s.costUsd.toFixed(4)}` : ""}`) + tries + mark);
+      }
+      // "It finished" and "it finished whole" are different sentences, and the
+      // second one is the one worth saying out loud.
+      if (tr.gaps.length) {
+        console.log(c("yellow", `  ⚠ delivered with a gap: ${tr.gaps.map(g => g.employee).join(", ")} — the synthesizer was told to record it in _QA-RESERVATIONS.md`));
       }
       console.log(c("dim", `  total: ${tr.totalDurationMs}ms · $${tr.totalCostUsd.toFixed(4)}`));
     }

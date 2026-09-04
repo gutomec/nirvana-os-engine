@@ -191,7 +191,7 @@ describe("runTeam — the director decides how many seats", () => {
     runTeam(a);
     const shape = readAudit(a.projectId).find(e => e.event === "x_chain_shape_decided");
     expect(shape?.steps).toBe(1);
-    expect(shape?.reason).toMatch(/uma cadeira/);
+    expect(shape?.reason).toMatch(/single seat/);
   });
 
   test("--team asks for a chain; without it the count is the director's call", () => {
@@ -203,11 +203,11 @@ describe("runTeam — the director decides how many seats", () => {
     }) as any;
 
     runTeam(args("acme", { forceChain: true, runHeadlessImpl: spy, runWithCascadeImpl: cascade([]) }));
-    expect(prompts[0]).toContain("Inclua de 3 a 6 employees");
+    expect(prompts[0]).toContain("Include 3 to 6 employees");
 
     runTeam(args("acme", { runHeadlessImpl: spy, runWithCascadeImpl: cascade([]) }));
-    expect(prompts[1]).not.toContain("Inclua de 3 a 6 employees");
-    expect(prompts[1]).toContain("cadeia de 1 passo");
+    expect(prompts[1]).not.toContain("Include 3 to 6 employees");
+    expect(prompts[1]).toContain("a chain of a single step");
   });
 });
 
@@ -281,26 +281,66 @@ describe("runTeam — the audit chain", () => {
   });
 });
 
-// The behaviour this suite exists to change next. Pinned as it is TODAY so the
-// change is deliberate and visible in the diff, not accidental.
-describe("runTeam — failure, as it behaves today", () => {
-  test("a failed step aborts the chain and the synthesizer never runs", () => {
+describe("runTeam — a step that fails does not take the chain with it", () => {
+  const threeStep = () => director([
+    { employee: "researcher", task: "pesquise" },
+    { employee: "writer", task: "escreva" },
+    { employee: "synth", task: "consolide" },
+  ]);
+
+  test("it is retried once, then the chain goes on and the synthesizer still runs", () => {
     business("acme", ["researcher", "writer", "synth"]);
+    const seen: any[] = [];
+    const a = args("acme", { runHeadlessImpl: threeStep(), runWithCascadeImpl: cascade(seen, new Set(["writer"])) });
+    const r = runTeam(a);
+
+    // Four dispatches: researcher, writer twice, synthesizer. The chain used to
+    // stop at the second, stranding the researcher's work with nothing to
+    // consolidate it.
+    expect(seen).toHaveLength(4);
+    expect(seen.filter(o => String(o.taskHint).includes("writer"))).toHaveLength(2);
+    expect(seen.some(o => String(o.taskHint).includes("synth"))).toBe(true);
+
+    expect(r.ok).toBe(true);
+    expect(r.steps.find(s => s.employee === "writer")?.attempts).toBe(2);
+    expect(r.steps.find(s => s.employee === "writer")?.failed).toMatch(/2 attempts/);
+    expect(r.gaps.map(g => g.employee)).toEqual(["writer"]);
+
+    const ev = readAudit(a.projectId);
+    expect(ev.find(e => e.event === "x_chain_step_retried")?.employee).toBe("writer");
+    expect(ev.find(e => e.event === "x_chain_gap")?.attempts).toBe(2);
+    expect(ev.find(e => e.event === "team_completed")?.gaps).toEqual(["writer"]);
+  });
+
+  test("the synthesizer is told what never arrived, and told to record it", () => {
+    business("acme", ["researcher", "writer", "synth"]);
+    const seen: any[] = [];
+    runTeam(args("acme", { runHeadlessImpl: threeStep(), runWithCascadeImpl: cascade(seen, new Set(["writer"])) }));
+
+    const synthPrompt = String(seen[seen.length - 1].prompt);
+    expect(synthPrompt).toContain("## What never arrived");
+    expect(synthPrompt).toContain("writer");
+    expect(synthPrompt).toContain("escreva");
+    // Naming the gap is half of it; the delivery has to carry it too, or the
+    // person reading the outputs never learns a seat went missing.
+    expect(synthPrompt).toContain("_QA-RESERVATIONS.md");
+    // And the colleague that DID deliver is still handed over as before.
+    expect(synthPrompt).toContain(path.join("_team", "researcher"));
+  });
+
+  test("nothing downstream can cover for the synthesizer, so its failure is the run's", () => {
+    business("acme", ["researcher", "synth"]);
     const seen: any[] = [];
     const r = runTeam(args("acme", {
       runHeadlessImpl: director([
         { employee: "researcher", task: "pesquise" },
-        { employee: "writer", task: "escreva" },
         { employee: "synth", task: "consolide" },
       ]),
-      runWithCascadeImpl: cascade(seen, new Set(["writer"])),
+      runWithCascadeImpl: cascade(seen, new Set(["synth"])),
     }));
 
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/step 2/);
-    // Only two of three ran: the synthesizer was never reached, and the
-    // researcher's work is stranded on disk with nothing to consolidate it.
-    expect(seen).toHaveLength(2);
-    expect(seen.some(o => String(o.taskHint).includes("synth"))).toBe(false);
+    expect(seen.filter(o => String(o.taskHint).includes("synth"))).toHaveLength(2);
   });
 });
