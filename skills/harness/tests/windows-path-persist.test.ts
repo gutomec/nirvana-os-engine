@@ -23,6 +23,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fakeHomeEnv } from "./helpers/fake-home.ts";
 import { removeDir } from "./helpers/temp-dirs.ts";
+import { TEARDOWN_BUDGET_MS } from "./helpers/test-budgets.ts";
 
 const IS_WINDOWS = process.platform === "win32";
 const SKIP_REASON = "Windows only: the registry value HKCU\\Environment\\Path is the thing under test";
@@ -37,7 +38,7 @@ beforeAll(() => {
   home = path.join(root, "home");
   fs.mkdirSync(home, { recursive: true });
 });
-afterAll(() => { if (root) removeDir(root); });
+afterAll(() => { if (root) removeDir(root); }, TEARDOWN_BUDGET_MS);
 
 /** The user PATH as Windows stores it, read without the module under test. */
 function userPath(): string {
