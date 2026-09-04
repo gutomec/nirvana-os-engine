@@ -6,6 +6,18 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### A business can read itself too
+
+Squads got a resource map and a grant so `references/`, `checklists/` and `templates/` stopped being dead weight. Businesses did not, and there are 63 of them. The employee prompt reads exactly ONE directory of a business — `employees/` — so `playbooks/`, `standards/`, `rubrics/`, `schemas/`, `scripts/`, `templates/` and `lib/` reached no run at all, and the business directory was never in `addDirs`, so naming a path would not have helped either.
+
+`renderResourceMap` moved to `_shared/lib/entity-resource-map.ts` and now serves both, because a second copy is how the two would drift. Each kind declares what it already inlines — a squad its agents, tasks and workflows; a business its seat and its memory — and the run state each one hides comes from `isRunStatePath`, never a local list. `team-orchestrator` grants the business directory alongside the project and the outputs dir, and `resolveEntityDir` is shared with `employee-prompt` so the tree granted is the tree the map describes: handing an agent the map of one and the key to another is worse than granting nothing.
+
+Measured on the installed library: `business-creator` alone was hiding eight directories — eleven tasks, five schemas, two checklists and its own validation scripts — and `serial-showrunner-nirvana` four playbooks plus its scaffolding.
+
+`RUN_STATE_EXCLUDES.businesses` gains root-level `projects` and `outputs`. Same concept as `memory/projects` one level up, already excluded on the squads side, and four businesses carry an empty scaffolded `projects/`. That list is consulted by the installer, the uninstaller, the migrator, the pack build and now the map, so the day one of them accumulates there, all five agree it is not authored content.
+
 ## 0.12.10 — 2026-09-03
 
 ### A requested mind-clone that does not fit is named, not dropped

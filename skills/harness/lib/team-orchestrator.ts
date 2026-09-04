@@ -26,6 +26,7 @@ import { sessionKey, getSession, putSession, dropSession, type EntityKind } from
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { runSquadHeadless } from "./squad-exec.ts";
+import { resolveEntityDir } from "../../_shared/lib/entity-resource-map.ts";
 
 const SKILLS = process.env.NIRVANA_SKILLS_DIR
   || (fs.existsSync(path.join(os.homedir(), ".nirvana", "skills")) ? path.join(os.homedir(), ".nirvana", "skills") : path.join(os.homedir(), ".claude", "skills"));
@@ -225,8 +226,16 @@ function runStep(step: ChainStep, idx: number, total: number, args: TeamRunArgs,
 
   appendAudit({ event: "dispatch_business", trace_id: args.projectId, project_id: args.projectId, business_slug: args.slug, employee: step.employee, mode: "team-step", step: idx + 1, total }, args.projectRoot);
 
+  const bizDir = resolveEntityDir("businesses", args.slug, args.projectDir);
   const res = runWithSession("employee", step.employee, args, {
-    runtime: args.runtime, prompt: ep.stdout, cwd: args.projectRoot, addDirs: [args.projectDir, employeeOutDir],
+    // bizDir is granted so the employee prompt's resource map is a door and not a
+    // sign: `playbooks/`, `standards/`, `rubrics/` and `templates/` live under it,
+    // and on claude-code and agy an ungranted path is simply refused. Same grant
+    // squads already have, with the same caveat: `--add-dir` adds a WORKSPACE root
+    // and this path runs with the permission bypass, so the directory is writable.
+    // The prompt says in words that it is read-only, which is the instrument the
+    // rest of the engine uses to keep deliverables where they belong.
+    runtime: args.runtime, prompt: ep.stdout, cwd: args.projectRoot, addDirs: [args.projectDir, employeeOutDir, bizDir],
     appendSystemPrompt: AUTONOMOUS_DIRECTIVE + (args.rulesDirective ?? ""),
     maxBudgetUsd: args.maxBudgetUsd, timeoutMs: args.timeoutMs,
     brief: args.brief, projectRoot: args.projectRoot, outputsRoot: employeeOutDir,

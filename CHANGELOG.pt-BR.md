@@ -6,6 +6,18 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Não lançado
+
+### Uma empresa também consegue se ler
+
+Os squads ganharam um mapa de recursos e a concessão do diretório, e com isso `references/`, `checklists/` e `templates/` deixaram de ser peso morto. As empresas não ganharam — e são 63. O prompt do employee lê exatamente UM diretório da empresa, `employees/`, então `playbooks/`, `standards/`, `rubrics/`, `schemas/`, `scripts/`, `templates/` e `lib/` não chegavam a execução nenhuma, e o diretório da empresa nunca esteve no `addDirs`, de modo que nomear um caminho também não resolveria.
+
+O `renderResourceMap` foi para `_shared/lib/entity-resource-map.ts` e passa a servir os dois, porque uma segunda cópia é como eles divergiriam. Cada tipo declara o que já traz inline — o squad seus agentes, tasks e workflows; a empresa sua cadeira e sua memória — e o estado de execução que cada um esconde vem do `isRunStatePath`, nunca de uma lista local. O `team-orchestrator` concede o diretório da empresa ao lado do projeto e do diretório de saída, e o `resolveEntityDir` é compartilhado com o `employee-prompt` para que a árvore concedida seja a árvore que o mapa descreve: entregar ao agente o mapa de uma e a chave de outra é pior que não conceder nada.
+
+Medido na biblioteca instalada: só o `business-creator` escondia oito diretórios — onze tasks, cinco schemas, dois checklists e os próprios scripts de validação — e o `serial-showrunner-nirvana`, quatro playbooks mais o scaffolding.
+
+O `RUN_STATE_EXCLUDES.businesses` ganha `projects` e `outputs` na raiz. Mesmo conceito do `memory/projects` um nível acima, já excluído no lado dos squads, e quatro empresas carregam um `projects/` escafoldado vazio. Essa lista é consultada pelo instalador, pelo desinstalador, pelo migrador, pelo build de pack e agora pelo mapa — então, no dia em que uma delas acumular ali, os cinco concordam que aquilo não é conteúdo autoral.
+
 ## 0.12.10 — 2026-09-03
 
 ### Um mind-clone pedido que não cabe é nomeado, não descartado

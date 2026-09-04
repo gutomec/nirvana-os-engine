@@ -64,6 +64,7 @@ import { resolveClonePersona, loadCloneRegistry } from "../../_shared/lib/clone-
 import { layersForPhase } from "../../_shared/lib/dna-layer-policy.ts";
 import { hookForPhase } from "../../_shared/lib/hooks.ts";
 import { readEntityMemory } from "../../_shared/lib/entity-memory.ts";
+import { renderResourceMap, resolveEntityDir } from "../../_shared/lib/entity-resource-map.ts";
 import { collectContributions, orderContributions, renderHookBlock, cloneContributionSource } from "../../_shared/lib/contributions.ts";
 
 // Untrusted-input boundary (P0-1 / Batch 3 item 7): security preamble injected
@@ -80,16 +81,11 @@ const BUSINESSES_ROOT = path.join(os.homedir(), "businesses");
  *  project-local business overrides the global same-slug one; the global join
  *  is only the fallback when no scoped hit is found. Walks up from project_dir
  *  to find the project root (same strategy as the squad catalog resolution). */
-function resolveBusinessDir(business_slug: string, project_dir: string): string {
-  try {
-    const hit = enumerate(resolveScope({ cwd: project_dir }), "businesses")
-      .find(e => e.slug === business_slug && !e.overridden);
-    if (hit) return hit.dir;
-  } catch {
-    // fall through to global join
-  }
-  return path.join(BUSINESSES_ROOT, business_slug);
-}
+// Delegated to the shared resolver: `team-orchestrator` needs the SAME path to
+// grant the directory in the dispatch, and granting a different tree than this
+// prompt describes hands the agent the map of one and the key to another.
+const resolveBusinessDir = (business_slug: string, project_dir: string): string =>
+  resolveEntityDir("businesses", business_slug, project_dir);
 
 function appendAuditEvent(project_dir: string, event: Record<string, unknown>): void {
   const today = new Date().toISOString().slice(0, 10);
@@ -493,6 +489,26 @@ export function buildEmployeePrompt(args: BuildArgs): string {
   const squadsBlock = squadCatalogBlock(employeeContent, args.project_dir);
   const mindCloneCatalog = mindCloneCatalogBlock(employeeContent);
 
+  // What the business carries beyond the manifest and the seat that is running.
+  //
+  // The prompt reads ONE directory of the business: `employees/`. Everything else
+  // the author wrote — `playbooks/`, `standards/`, `rubrics/`, `templates/`,
+  // `lib/`, `scripts/` — reached no run at all, and the business directory was
+  // never granted, so naming a path would not have helped either. Squads got this
+  // channel; businesses did not, and there are 63 of them.
+  //
+  // `employees/` stays out of the map because the seat is inlined in full.
+  // `memory/` too: since the architecture change it lives in `.nirvana`, and what
+  // remains inside the business is a seed already consumed — advertising it would
+  // invite the agent to read the stale copy instead of what the owner accumulated.
+  const resourceMap = renderResourceMap(bizDir, {
+    kind: "businesses",
+    inlined: ["employees", "memory"],
+    label: "ESTA EMPRESA",
+    sourceNoun: "da empresa",
+    outputsHint: "o `outputs_root` declarado nos caminhos do projeto",
+  });
+
   const bizYamlPath = path.join(bizDir, "business.yaml");
   const bizYaml = fs.existsSync(bizYamlPath) ? fs.readFileSync(bizYamlPath, "utf8") : "(business.yaml missing)";
 
@@ -721,6 +737,7 @@ ${bizYaml}
 
 ---
 
+${resourceMap ? resourceMap + "\n\n---\n\n" : ""}
 ${memoryBlock}## CURRENT HANDOFF STATE
 
 \`\`\`json
