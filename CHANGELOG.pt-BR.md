@@ -8,6 +8,32 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Uma cadeira falhando jogava fora tudo o que as outras tinham terminado
+
+Um passo que falhava encerrava a cadeia. As cadeiras anteriores já tinham produzido, o trabalho estava em `_team/`, e o employee cuja função inteira é consolidar nunca rodava — a execução falhava com o diretório cheio e nada montado. Um soluço de transporte no primeiro fôlego de um passo inédito custava a coisa toda, porque o `runWithSession` só retentava quando havia sessão para retomar.
+
+Todo passo agora tem uma retentativa, de sessão fria. Falhando duas vezes, a cadeia segue, e o que falta viaja junto: as cadeiras seguintes são avisadas de qual colega não entregou e do que ele era responsável, para que nenhuma escreva como se o material existisse. O synthesizer sempre roda e, havendo lacuna, é instruído a registrá-la em `_QA-RESERVATIONS.md` — o que ficou faltando e o que isso custa na prática para quem vai usar a entrega. O `x_chain_step_retried` e o `x_chain_gap` carregam isso no log, o `team_completed` lista as lacunas, e a execução só reporta `ok: false` quando o próprio synthesizer falha, porque para esse não há quem cubra.
+
+O pipeline de entrega deixa de sobrescrever o `_QA-RESERVATIONS.md` quando o gate esgota as retentativas; ele acrescenta abaixo do que já está lá. As duas notas importam — uma diz que o veredito de qualidade ficou em aberto, a outra diz que um pedaço do trabalho nunca chegou — e quem recebe só a segunda conclui que a primeira nunca aconteceu.
+
+### A instrução é em inglês; a entrega não é
+
+Os prompts da cadeia eram escritos em português, o que punha a instrução do próprio engine no mesmo idioma do trabalho que ele entrega. Código, saída de console, campos de log e os prompts que o engine monta são inglês. O que o agente despachado ENTREGA segue o idioma do brief, e o prompt agora diz isso com todas as letras — sem essa frase, traduzir um prompt traduz o entregável junto, em silêncio.
+
+O `team-orchestrator.ts` está convertido, `scopeGuard("en")` incluído. O resto não: 20 arquivos-fonte fora de testes ainda carregam instrução em português, e o `check-english-source` não pega — ele lê comentários e identificadores, não strings de prompt.
+
+### A maioria das empresas rodava como uma pessoa só, atrás de uma flag que ninguém passava
+
+O `--team` ligava a cadeia de vários employees. Não aparecia em chamador nenhum, nem no `bin/nrv`, nem no protocolo da skill, então uma empresa com organograma inteiro respondia todo brief pelo employee de intake sozinho. Os especialistas que o roteador já tinha escolhido pioravam o quadro: o `autoMandatorySquads` só era consumido dentro do `runTeam`, e fora dele o `auto_route_selected` anunciava squads que nunca rodaram. O log afirmava um trabalho que ninguém fez.
+
+A cadeia passa a ser o padrão, e quantas cadeiras ela usa vira decisão em vez de flag. O diretor lê o brief contra o organograma e responde com uma quantidade e um motivo, livre para responder "uma cadeira" — o `x_chain_shape_decided` carrega os dois, então cinco despachos num brief que uma cadeira resolveria é uma conta que o dono consegue reler. O `--single` pula o diretor; o `--team` pede de três a seis; um `--execution-mode=gauntlet` explícito continua indo pelo caminho de cadeira única sobre o qual o canary foi construído. Os squads obrigatórios agora rodam nos dois modos, antes da cadeira que os consome.
+
+**O diretor não tinha ferramentas.** Tomava a decisão mais cara da execução — quem trabalha, e quanto custa — de um diretório temporário, com `allowedTools: []`, vendo uma linha de descrição por cadeira. Todo o resto que decide aqui lê antes: o roteador tem Read, Glob, Grep e Bash. Agora o diretor roda como os agentes que despacha — confiança total, dentro do projeto, com a empresa concedida — e pode abrir o método de uma cadeira antes de decidir que ela é dispensável. O `--safe` continua vencendo, e agora chega aos employees: a cadeia nunca o repassava, então toda cadeira dentro de uma empresa rodava em confiança total independentemente do que o usuário tinha pedido.
+
+**Um despacho diz o que precisa existir, não como construir.** O prompt do diretor fazia o contrário: mandava cada sub-tarefa nomear a ferramenta (um gerador de imagem pelo slug, uma biblioteca por CDN) e proibir técnicas. Quem executa conhece as ferramentas do próprio ofício melhor que o diretor, e um passo a passo escrito lá em cima só tira a liberdade de fazer melhor. Exigência sobre o resultado fica ("as imagens têm que ser imagens geradas de verdade, não placeholder"); receita de método sai.
+
+**O roteador prefere a empresa.** A regra para alvo não nomeado terminava com o viés oposto — nunca force uma empresa só porque o campo existe — o que empurrava para o squad justamente onde o organograma era o ponto. Um squad é um time só rodando um workflow: ele produz, e nada dentro dele recua para conferir o resultado contra o brief. Ir direto a um agora exige as três condições: objeto de uma especialidade só, exatamente uma capability entregando ele inteiro, e nenhum julgamento atravessando especialidades. Qualquer dúvida resolve para a empresa. Ordem explícita do usuário continua vencendo antes de tudo isso, sem mudança.
+
 ### A cadeia lia o quadro de uma árvore e despachava em outra
 
 O `listEmployees` resolvia a empresa como `~/businesses/<slug>`, na unha. Nada mais na execução faz isso: o despacho concede o que o `resolveEntityDir` devolve, que respeita o escopo do projeto, o `BUSINESSES_DIR` e o `NIRVANA_HOME`. Uma empresa instalada sob um home redirecionado, ou morando no projeto em vez da biblioteca global, listava zero cadeiras — e o `pickChain` lê zero cadeiras como empresa de uma cadeira só e entrega o brief inteiro ao employee de intake. A empresa rodava como uma pessoa e não dizia nada, o que é indistinguível de uma empresa que de fato só tem uma cadeira.

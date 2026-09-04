@@ -558,7 +558,16 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
       `Iterate deliberately: nrv revise ${args.pid} "<fix instruction>" · strict mode: NIRVANA_GATE_EXHAUSTED=withhold`,
       "",
     ].join("\n");
-    try { fs.writeFileSync(path.join(args.outputsRoot, "_QA-RESERVATIONS.md"), reservations); }
+    // Preserve what is already there. The producer writes into this same file
+    // when it delivers with something missing — a chain seat that failed twice,
+    // for instance — and a plain `writeFileSync` erased that note in favour of
+    // the gate's. Both belong: one says the quality verdict is unresolved, the
+    // other says a piece of the work never arrived, and a reader who is handed
+    // only the second one concludes the first never happened.
+    const reservationsFile = path.join(args.outputsRoot, "_QA-RESERVATIONS.md");
+    let existing = "";
+    try { existing = fs.readFileSync(reservationsFile, "utf8").trim(); } catch { /* none yet */ }
+    try { fs.writeFileSync(reservationsFile, existing ? `${existing}\n\n---\n\n${reservations}` : reservations); }
     catch { /* outputs dir unwritable — the warn below still tells the story */ }
     warn(`  gate still FAIL after ${revUsed} revision(s) — ACCEPTED WITH RESERVATIONS (_QA-RESERVATIONS.md; NIRVANA_GATE_EXHAUSTED=withhold for strict mode)`);
     emit("x_delivered_with_reservations", {
