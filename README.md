@@ -153,7 +153,7 @@ The paid layer is **content, not capability**: curated, ready-to-run collections
 | `nrv multi-target plan\|run\|status <plan.json>` | Compile, execute, or inspect a multi-target plan over the Run Kernel (`NIRVANA_MULTI_TARGET_KILL_SWITCH=1` turns `run` off) |
 | `nrv validate <squad\|business\|clone> <slug> [--fix]` | Admission gate for one entity, or `--all` for every installed one; `--fix` repairs what can be repaired without inventing anything |
 | `nrv migrate <slug> --to 6 [--apply]` | Convert a squad to Squad Protocol 6.0; dry run by default, `--apply` writes with a backup |
-| `nrv update <pack>` | Update an installed pack |
+| `nrv update <pack> [--keep-clones]` | Update an installed pack; your edited components are backed up first, or kept in place with `--keep-<kind>` |
 | `nrv doctor` | Check the installation; on Windows, `nrv install --repair-path` cleans the user PATH entries it warns about |
 
 Everything else, your agent runs. Full reference: [docs/CLI.md](./docs/CLI.md).
