@@ -135,7 +135,7 @@ describe("verify-deliverable reads the acceptance promise", () => {
       process.chdir(cwd);
       const r = verifyDeliverableOnDisk("prj_1", "brandcraft", { businessDir: null, minBytes: 10 });
       expect(r).toMatchObject({ status: "PASS", expected: 1, found: 1 });
-      expect(r.manifest_source).toContain("squads/brandcraft/deliverables.json");
+      expect(r.manifest_source).toMatch(/squads[\\/]brandcraft[\\/]deliverables\.json$/); // Windows reports backslashes
     } finally { process.chdir(saved); }
   });
 
