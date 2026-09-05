@@ -8,6 +8,22 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## 0.13.3 — 2026-09-05
 
+### A ativação de squads reporta ferramentas do Windows e falhas de hooks com honestidade
+
+Os nomes de dependências de sistema agora são verificados sem colocar o valor
+do manifesto em um comando de shell. O Windows usa `where.exe`, o POSIX mantém
+`command -v` com o nome passado como dado, e entradas em objeto sem um `check`
+próprio usam um nome de executável validado. Uma ferramenta ausente sem receita
+para Windows é reportada como ausente, sem sugerir que o programa inteiro é
+incompatível com a plataforma.
+
+Hooks pós-instalação aceitam strings legadas e objetos com `command`, `name` e
+`optional`. Hooks obrigatórios inválidos ou que falham agora derrubam a
+ativação, produzem código de saída 1 e impedem que um novo estado de sucesso
+substitua o estado anterior. Falhas opcionais continuam como avisos. A mudança
+não traduz hooks de shell POSIX para Windows; autores de packs ainda precisam
+fornecer comandos portáveis quando os hooks usam sintaxe específica de shell.
+
 ### Um Codex mais antigo perde uma flag, não a execução inteira
 
 O adapter foi auditado contra o Codex 0.153.4, e as flags que ele ganhou em 05/09/2026 são mais novas que muitos CLIs instalados: `--approve-for-me` chegou na 0.147 (07/08/2026), `--ephemeral` na 0.134, `--output-schema` na 0.132. O clap responde a uma flag desconhecida com exit 2 e `unexpected argument '<flag>' found` antes de qualquer coisa rodar, então numa máquina dessas todo despacho morreria no argv. Agora o adapter descarta a flag que o Codex nomeia, registra um aviso no resultado (`codex: this version does not know --add-dir; retried without it (extra directories were not granted)`) e roda com o que aquela versão tem; `--approve-for-me` cai para `-s workspace-write`, o caminho restrito anterior à 0.147. Uma flag que não é opcional (`--json`) não é repetida. Achado ao perguntar se os clientes estavam prontos para atualizar, e ao responder instalando o tarball publicado num home limpo antes de dizer sim.

@@ -74,6 +74,30 @@ function checkCmd(cmd, opts = {}) {
   }
 }
 
+const EXECUTABLE_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/;
+
+function checkExecutable(tool) {
+  if (typeof tool !== 'string' || !EXECUTABLE_TOKEN.test(tool)) {
+    return { ok: false, invalid: true, error: 'Executable name must be a single safe token.' };
+  }
+  const probe = PLATFORM === 'win32'
+    ? spawnSync('where.exe', [tool], { stdio: 'pipe', windowsHide: true, encoding: 'utf8' })
+    : spawnSync('/bin/sh', ['-c', 'command -v "$1" >/dev/null 2>&1', 'sh', tool], { stdio: 'pipe' });
+  const found = PLATFORM !== 'win32' || String(probe.stdout || '')
+    .split(/\r?\n/)
+    .map(candidate => candidate.trim())
+    .filter(Boolean)
+    .some(candidate => {
+      const allowed = new Set(String(process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD')
+        .split(';').map(ext => ext.toLowerCase()).filter(Boolean));
+      try { return allowed.has(path.extname(candidate).toLowerCase()) && fs.statSync(candidate).isFile(); }
+      catch { return false; }
+    });
+  return probe.status === 0 && found
+    ? { ok: true }
+    : { ok: false, error: probe.error ? probe.error.message : `Executable '${tool}' was not found on PATH.` };
+}
+
 function runCmd(cmd, opts = {}) {
   // Verbose mode (set by CLI via env) overrides silent: stream output live so
   // an automation agent can see brew/git/pip progress in real time.
@@ -352,19 +376,29 @@ function installSystem(dep, dryRun, confirmHeavy) {
   if (typeof dep === 'string') {
     const tool = dep.trim().split(/[\s<>=!~]/)[0];
     if (!tool) return { name: dep, status: 'skipped', kind: 'system' };
-    const present = checkCmd(`command -v ${tool}`).ok;
-    return present
+    const presence = checkExecutable(tool);
+    if (presence.invalid) {
+      return { name: tool, status: 'invalid_system_tool', kind: 'system', spec: dep, error: presence.error };
+    }
+    return presence.ok
       ? { name: tool, status: 'already_present', kind: 'system' }
       : { name: tool, status: 'missing_system_tool', kind: 'system', spec: dep,
           note: `Prereq '${tool}' not found on PATH. Install it (brew/apt/winget) and re-activate.` };
   }
-  const checkResult = checkCmd(dep.check);
+  const hasCheck = typeof dep.check === 'string' && dep.check.trim().length > 0;
+  const checkResult = hasCheck ? checkCmd(dep.check) : checkExecutable(dep.name);
+  if (!hasCheck && checkResult.invalid) {
+    return { name: dep.name, status: 'invalid_system_tool', kind: 'system', error: checkResult.error };
+  }
   if (checkResult.ok) {
     return { name: dep.name, status: 'already_present', kind: 'system' };
   }
   const installCmd = (dep.install || {})[PLATFORM];
   if (!installCmd) {
-    return { name: dep.name, status: 'install_unsupported_platform', kind: 'system', platform: PLATFORM };
+    return hasCheck
+      ? { name: dep.name, status: 'install_unsupported_platform', kind: 'system', platform: PLATFORM }
+      : { name: dep.name, status: 'missing_system_tool', kind: 'system', platform: PLATFORM,
+          note: `Prereq '${dep.name}' not found on PATH and no ${PLATFORM} install recipe is declared.` };
   }
   if (dryRun) {
     return { name: dep.name, status: 'would_install', kind: 'system', cmd: installCmd };
@@ -416,7 +450,7 @@ function installSystem(dep, dryRun, confirmHeavy) {
   if (!installResult.ok) {
     return { name: dep.name, status: 'install_failed', kind: 'system', error: installResult.error };
   }
-  const recheck = checkCmd(dep.check);
+  const recheck = hasCheck ? checkCmd(dep.check) : checkExecutable(dep.name);
   return {
     name: dep.name,
     status: recheck.ok ? 'installed' : 'install_completed_but_check_failed',
@@ -704,10 +738,19 @@ function checkEnvVars(vars) {
 function runPostInstall(commands, dryRun) {
   if (!Array.isArray(commands) || commands.length === 0) return { status: 'no_post_install' };
   const results = [];
-  for (const cmd of commands) {
-    if (dryRun) { results.push({ cmd, status: 'would_run' }); continue; }
+  for (const hook of commands) {
+    const objectHook = hook && typeof hook === 'object' && !Array.isArray(hook);
+    const cmd = typeof hook === 'string' ? hook : (objectHook ? hook.command : null);
+    const name = objectHook && typeof hook.name === 'string' ? hook.name : undefined;
+    const optional = objectHook && hook.optional === true;
+    const details = { ...(name ? { name } : {}), cmd, ...(optional ? { optional: true } : {}) };
+    if (typeof cmd !== 'string' || cmd.trim().length === 0) {
+      results.push({ ...details, status: 'failed', error: 'Post-install hook command must be a non-empty string.' });
+      continue;
+    }
+    if (dryRun) { results.push({ ...details, status: 'would_run' }); continue; }
     const r = runCmd(cmd, { timeoutMs: 120000 });
-    results.push({ cmd, status: r.ok ? 'ok' : 'failed', error: r.ok ? null : r.error });
+    results.push({ ...details, status: r.ok ? 'ok' : 'failed', error: r.ok ? null : r.error });
   }
   return { status: 'done', kind: 'post_install', items: results };
 }
@@ -910,12 +953,15 @@ function activate(slug, opts = {}) {
     const items = Array.isArray(step) ? step : (step.items || [step]);
     for (const item of items) {
       if (!item || !item.status) continue;
-      if (/_failed$/.test(item.status)) failures.push({ step: stepName, ...item });
+      if (item.status === 'failed' || /_failed$/.test(item.status)) {
+        if (item.optional === true) warnings.push({ step: stepName, ...item });
+        else failures.push({ step: stepName, ...item });
+      }
       else if (item.status === 'confirmation_required') confirmations.push({ step: stepName, ...item });
       // Missing API keys / system prereqs do NOT block activation — the squad
       // installs its code deps and runs in degraded mode until the user supplies
       // them. Surfaced as warnings so the caller can prompt the user.
-      else if (item.status === 'missing_required' || item.status === 'missing_system_tool') warnings.push({ step: stepName, ...item });
+      else if (item.status === 'missing_required' || item.status === 'missing_system_tool' || item.status === 'invalid_system_tool') warnings.push({ step: stepName, ...item });
     }
   }
 
@@ -961,7 +1007,7 @@ module.exports = { activate, status, deactivate, _windowsShellPlan: windowsShell
 
 // CLI — exit codes follow the contract documented in scripts/activate-squad.sh:
 //   0 = ok / activated
-//   1 = failures present (one or more steps reported _failed)
+//   1 = failures present (one or more steps reported failed / *_failed)
 //   2 = confirmations required (heavy downloads / sudo)
 //   4 = invalid args / squad not found
 if (require.main === module) {
