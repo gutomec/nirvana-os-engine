@@ -267,6 +267,12 @@ case "$cmd" in
     if [ "${1:-}" = "emit" ]; then
       shift; exec "$BUN_BIN" "$SKILLS/harness/scripts/audit-emit.ts" "$@"
     fi
+    if [ "${1:-}" = "where" ]; then
+      shift; exec "$BUN_BIN" "$SKILLS/harness/scripts/audit-where.ts" "$@"
+    fi
+    if [ "${1:-}" = "tail" ]; then
+      shift; exec "$BUN_BIN" "$SKILLS/harness/scripts/audit-tail.ts" "$@"
+    fi
     exec "$BUN_BIN" "$SKILLS/harness/scripts/audit-view.ts" "$@" ;;
   search)
     exec "$BUN_BIN" "$SKILLS/harness/scripts/search.ts" "$@" ;;

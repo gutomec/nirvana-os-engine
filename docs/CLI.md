@@ -72,6 +72,8 @@ Useful flags on `run` / `auto`: `--single` / `--team` (how many seats of the bus
 | `nrv export <project> [--format=zip\|tgz]` | Bundle a project's outputs to share. |
 | `nrv clean <project> [--hard]` | Remove a project scaffold (trash by default). |
 
+A project is where a run's audit, briefs and deliverables live, for every runtime — including OpenClaw, whose agent must have the project as its workspace. How each one enters it: [docs/architecture/project-directory-and-runtimes.md](architecture/project-directory-and-runtimes.md).
+
 ## Libraries & distribution
 
 | Command | What it does |

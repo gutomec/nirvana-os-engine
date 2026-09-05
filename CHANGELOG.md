@@ -8,6 +8,14 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### A project is where a claw lives too
+
+Claude, Codex, Gemini and Hermes work in the directory they were started in, so "open it inside the project" was the whole recipe and every `nrv` call logged under `<project>/.nirvana/logs/harness/`. OpenClaw does not: an agent works in its **workspace**, reads `AGENTS.md` from there, and ignores where the person typed. Nothing in the engine said so, and the installer note called OpenClaw a runtime that reads no contract at all.
+
+The binding is one command — `openclaw agents add <name> --workspace <project> --non-interactive` — and it makes the `AGENTS.md` that `nrv init` wrote the agent's operating instructions. Measured on a fresh project: the agent summarised the contract, `pwd` was the project, and `nrv audit emit` landed signed in the project's log with nothing in the global one. `nrv init` prints the command when `openclaw` is on PATH (and the Hermes recipe when `hermes` is), `nrv doctor` lists the agents bound this way, the project skeleton git-ignores the `memory/` OpenClaw writes into its workspace, and the installer note says what is true now. `docs/architecture/project-directory-and-runtimes.md` holds the rule and the recipe per runtime; OpenClaw's tool hooks are documented as not wired, with the upstream issues that say why.
+
+Found by the same probe: the 0.13.0 notes promised `nrv audit where` and `nrv audit tail`; the CLI only knew `audit-where` and `audit-tail`, and `nrv audit where` answered "No events found for project 'where'". Both spellings reach the same scripts now.
+
 ### Codex runs with the flags Codex has now, and every runtime gets its directories
 
 The Codex adapter was audited on 2026-08-26 and used three flags. Against 0.153.4 it now passes the directory grants (`--add-dir` for the project dir, the outputs root and the business or squad dir — the same grants Claude already received, which Codex never did, so under a sandbox a seat could not reach its playbooks), a real restricted path (`--approve-for-me`, which by itself means the workspace-write sandbox — 0.153 rejects it combined with `-s`: the sandbox stays and approvals go to Codex's reviewer agent instead of stalling a run nobody is watching — `-s workspace-write` alone inherited the user's `approval_policy` and blocked at the first escalation), and the provider as `-c model_provider=…`, because `--provider` was removed from `codex exec` and every dispatch with a provider hint was failing before it ran. Three opt-in flags for callers that want them: `--ephemeral` (never when a session will be resumed), `--output-schema`, `-i` images, and `web_search` per run.

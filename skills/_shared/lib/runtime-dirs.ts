@@ -59,7 +59,7 @@ export const RUNTIME_TARGETS: RuntimeTarget[] = [
     name: "openclaw",
     bin: "openclaw",
     skillsDir: join(homedir(), ".agents/skills"),
-    note: "OpenClaw reads no project contract (AGENTS.md/CLAUDE.md have no effect there); invoke skills explicitly: /harness <brief>. Dispatch is the scripted path (nrv dispatch --exec).",
+    note: "OpenClaw works in an agent's WORKSPACE, not in cwd: a project meets it when the project IS the workspace — `openclaw agents add <name> --workspace <project> --non-interactive` — and then AGENTS.md is the agent's operating instructions and every nrv call logs in the project. Dispatch is the scripted path (nrv dispatch --exec).",
   },
 ];
 

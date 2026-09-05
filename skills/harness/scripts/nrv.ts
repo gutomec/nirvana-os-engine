@@ -119,6 +119,10 @@ switch (cmd) {
   case "pack": runScript(join(H, "pack.ts"), rest);
   case "audit-view": case "audit": {
     if (rest[0] === "emit") runScript(join(H, "audit-emit.ts"), rest.slice(1));
+    // The 0.13.0 notes said `nrv audit where` / `nrv audit tail`; the CLI only
+    // knew the hyphenated names. Both spellings now reach the same script.
+    if (rest[0] === "where") runScript(join(H, "audit-where.ts"), rest.slice(1));
+    if (rest[0] === "tail") runScript(join(H, "audit-tail.ts"), rest.slice(1));
     runScript(join(H, "audit-view.ts"), rest);
   }
   case "search": runScript(join(H, "search.ts"), rest);
