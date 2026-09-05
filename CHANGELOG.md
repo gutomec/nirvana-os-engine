@@ -8,6 +8,16 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Codex runs with the flags Codex has now, and every runtime gets its directories
+
+The Codex adapter was audited on 2026-08-26 and used three flags. Against 0.153.4 it now passes the directory grants (`--add-dir` for the project dir, the outputs root and the business or squad dir — the same grants Claude already received, which Codex never did, so under a sandbox a seat could not reach its playbooks), a real restricted path (`-s workspace-write --approve-for-me`: the sandbox stays and approvals go to Codex's reviewer agent instead of stalling a run nobody is watching — `-s workspace-write` alone inherited the user's `approval_policy` and blocked at the first escalation), and the provider as `-c model_provider=…`, because `--provider` was removed from `codex exec` and every dispatch with a provider hint was failing before it ran. Three opt-in flags for callers that want them: `--ephemeral` (never when a session will be resumed), `--output-schema`, `-i` images, and `web_search` per run.
+
+Two things the adapter used to drop: `turn.completed.usage` now comes back whole (`cachedInputTokens` is the cached subset of the input), and an item of type `error` that did not fail the turn — the skills budget notice, an MCP server that did not start — is a `warnings[]` entry on the result rather than nothing. A Claude alias never reaches `--model` on codex: `resolveSystemModel` returns the session's alias when `NIRVANA_MODEL` is set, and `--model opus` is a hard error there.
+
+Directory grants across the board: gemini-cli and qwen-code take `--include-directories` (qwen retried without it on a build that rejects it); grok-cli, pi, kimi-cli and opencode have no flag and now say so on the result instead of silently running without the grant. `RUNTIME_DIR_GRANT_FLAG` is the table, and the driver tests check every runtime against it.
+
+The price table gained the OpenAI models Codex offers today (gpt-6-astra, gpt-5.6-sol/terra/luna, gpt-5.5, gpt-5.4, gpt-5.4-mini, gpt-5.2, gpt-5.1) with cached-input rates, and corrected gpt-5.3-codex from 5/30 to 1.75/14. The estimator prices the cached subset at the cached rate when the CLI reported usage, and scrapes the text as before when it did not.
+
 ### The dependency link moved out of the skills roots
 
 Every skill copied into a runtime directory carried a `node_modules -> ~/.nirvana/node_modules` symlink, so a script run from the copy could resolve its imports. Codex's skill scanner follows directory symlinks, prunes only hidden directories, and stops after 20,000 entries per root — so on every run it walked from `~/.codex/skills` into the whole dependency store, logged `skills scan reached its traversal limit`, and shortened skill descriptions to fit its budget. Measured on one machine: 191,524 entries under the Codex skills root, a few thousand of them the engine's own.

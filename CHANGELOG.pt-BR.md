@@ -8,6 +8,16 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### O Codex roda com as flags que o Codex tem agora, e todo runtime recebe seus diretórios
+
+O adapter do Codex tinha sido auditado em 26/08/2026 e usava três flags. Contra a 0.153.4 ele agora passa as concessões de diretório (`--add-dir` para o diretório do projeto, a raiz de saídas e o diretório da empresa ou do squad — as mesmas que o Claude já recebia e o Codex nunca recebeu, então sob sandbox um seat não alcançava seus playbooks), um caminho restrito de verdade (`-s workspace-write --approve-for-me`: o sandbox fica e as aprovações vão ao agente revisor do Codex em vez de travar uma execução que ninguém está olhando — `-s workspace-write` sozinho herdava o `approval_policy` do usuário e bloqueava na primeira escalada), e o provedor como `-c model_provider=…`, porque `--provider` foi removida do `codex exec` e todo despacho com dica de provedor falhava antes de rodar. Três flags opcionais para quem quiser: `--ephemeral` (nunca quando a sessão vai ser retomada), `--output-schema`, `-i` para imagens, e `web_search` por execução.
+
+Duas coisas que o adapter descartava: `turn.completed.usage` agora volta inteiro (`cachedInputTokens` é o subconjunto em cache da entrada), e um item do tipo `error` que não derrubou o turno — o aviso de orçamento de skills, um servidor MCP que não subiu — vira entrada em `warnings[]` no resultado em vez de nada. Um alias do Claude nunca chega ao `--model` do codex: `resolveSystemModel` devolve o alias da sessão quando `NIRVANA_MODEL` está setado, e `--model opus` é erro duro ali.
+
+Concessões de diretório em todos: gemini-cli e qwen-code recebem `--include-directories` (o qwen é repetido sem a flag num build que a rejeita); grok-cli, pi, kimi-cli e opencode não têm flag e agora dizem isso no resultado em vez de rodar em silêncio sem a concessão. `RUNTIME_DIR_GRANT_FLAG` é a tabela, e os testes do driver conferem todo runtime contra ela.
+
+A tabela de preços ganhou os modelos OpenAI que o Codex oferece hoje (gpt-6-astra, gpt-5.6-sol/terra/luna, gpt-5.5, gpt-5.4, gpt-5.4-mini, gpt-5.2, gpt-5.1) com taxa de entrada em cache, e corrigiu gpt-5.3-codex de 5/30 para 1,75/14. O estimador cobra o subconjunto em cache pela taxa de cache quando o CLI reportou o uso, e raspa o texto como antes quando não reportou.
+
 ### O link de dependências saiu das raízes de skills
 
 Toda skill copiada para o diretório de um runtime carregava um symlink `node_modules -> ~/.nirvana/node_modules`, para que um script rodado da cópia resolvesse seus imports. O scanner de skills do Codex segue symlinks de diretório, poda só diretórios ocultos e para depois de 20.000 entradas por raiz — então a cada execução ele caminhava de `~/.codex/skills` para dentro da loja de dependências inteira, registrava `skills scan reached its traversal limit` e encurtava descrições de skills para caber no orçamento. Medido numa máquina: 191.524 entradas sob a raiz de skills do Codex, poucos milhares delas do próprio engine.
