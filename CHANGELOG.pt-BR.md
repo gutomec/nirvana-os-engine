@@ -8,6 +8,16 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Os validadores aprenderam o layout de cadeia
+
+Uma execução despachada pelo `nrv team` escreve numa raiz de saída PLANA — `outputs/` com `outputs/_team/<cadeira>/` ao lado dos finais — enquanto o caminho scriptado aninha tudo sob `outputs/<project_id>/`. Os dois são legítimos; os validadores conheciam um. Então o `validate-chain --verify-disk` não lia auditoria por-alvo nenhuma numa execução de cadeia, e o `verify-deliverable` respondia "project not found" para trabalho que estava em disco na frente dele.
+
+O maestro da própria execução reportou isso antes de qualquer um aqui notar, com o diagnóstico certo — defeito de convenção de caminho, não trabalho faltando — num evento `x_validator_layout_mismatch` que ele emitiu depois de entregar.
+
+Os dois validadores leem os dois layouts agora, e o `validate-chain` também lê o `audit.jsonl` do próprio projeto, que o `handoff.js` escreve e nada lia: seis eventos de handoff podiam estar num projeto enquanto o validador reportava zero e chamava a cadeia de violação. Numa execução de cadeia real ele agora enxerga tudo — três despachos por cadeira, duas revisões aprovadas, a entrega — e a única lacuna que reporta (`verify_passed` ausente) é verdadeira.
+
+Em vez de ensinar uma segunda convenção a todo verificador futuro, o `nrv team plan` passa a escrever `brief.md` na raiz de saída, que é o arquivo que a convenção existente pede. Uma linha, e uma execução de cadeia fica legível para ferramentas que não sabem que ela é uma.
+
 ### O cockpit lê toda auditoria que a execução escreveu, e diz quem escreveu cada linha
 
 O Glance lia um arquivo de auditoria. Uma execução escreve em até quatro — o log diário do orquestrador, o log do próprio projeto, um por alvo despachado dentro da árvore de saída, e o fallback global — então o cockpit mostrava execuções sem despacho nenhum enquanto os arquivos estavam em disco. Medido nesta máquina depois da mudança: nove execuções cujos despachos eram invisíveis, e cadeiras (`ds-creative-director`, `t360-ceo`, `al-publisher`) que nunca tinham aparecido.

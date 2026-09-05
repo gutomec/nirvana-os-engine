@@ -8,6 +8,16 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### The validators learned the chain layout
+
+A run dispatched through `nrv team` writes a FLAT outputs root — `outputs/` with `outputs/_team/<seat>/` beside the finals — while the scripted path nests everything under `outputs/<project_id>/`. Both are legitimate; the validators knew one. So `validate-chain --verify-disk` read no per-target audits for a chain run and `verify-deliverable` answered "project not found" for work sitting on disk in front of it.
+
+The run's own maestro reported this before anyone here noticed, with the right diagnosis — a path-convention defect, not missing work — in an `x_validator_layout_mismatch` event it emitted after delivering.
+
+Both validators read both layouts now, and `validate-chain` also reads the project's own `audit.jsonl`, which `handoff.js` writes and nothing read: six handoff events could sit in a project while the validator reported zero and called the chain a violation. On a real chain run it now sees the whole thing — three per-seat dispatches, two approved reviews, the delivery — and the one gap it reports (`verify_passed` absent) is true.
+
+Rather than teach every future checker a second convention, `nrv team plan` now writes `brief.md` at the outputs root, which is the file the existing convention asks for. One line, and a chain run becomes legible to tools that do not know it is one.
+
 ### The cockpit reads every audit a run wrote, and says who wrote each line
 
 Glance read one audit file. A run writes to up to four — the orchestrator's daily log, the project's own log, one per dispatched target under its outputs tree, and the global fallback — so the cockpit showed runs with no dispatches while their files sat on disk. Measured on this machine after the change: nine runs whose dispatches were invisible, and seats (`ds-creative-director`, `t360-ceo`, `al-publisher`) that had never appeared at all.

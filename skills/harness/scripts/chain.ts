@@ -213,6 +213,17 @@ function cmdPlan(argv: string[]): void {
     intake, reason, chain: chainWithReviewers,
   };
 
+  // The convention every verifier already expects: `brief.md` at the outputs
+  // root. Teaching each checker a second layout is how a convention becomes two
+  // conventions; writing the file the existing one asks for costs a line and
+  // makes `verify-deliverable` and the completeness ceiling work on a chain run
+  // without knowing it is one.
+  try {
+    fs.mkdirSync(outputsRoot, { recursive: true });
+    const dest = path.join(outputsRoot, "brief.md");
+    if (!fs.existsSync(dest)) fs.writeFileSync(dest, brief);
+  } catch { /* an unwritable outputs root fails later, louder, on the first step */ }
+
   const save = arg(argv, "--save");
   if (save) {
     fs.mkdirSync(path.dirname(save), { recursive: true });
