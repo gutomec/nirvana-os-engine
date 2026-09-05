@@ -190,11 +190,14 @@ describe("headless layer — runHeadless argv per runtime", () => {
     else expect(fs.readFileSync(args[at + 1], "utf8")).toBe("line one\nline two");
   }, spawnBudgetMs(2));
 
-  test("codex: --dangerously-bypass-approvals-and-sandbox by default; the workspace-write sandbox under =0", () => {
+  test("codex: --dangerously-bypass-approvals-and-sandbox by default; --approve-for-me under =0", () => {
     expect(argv("codex", "codex", undefined)).toContain("--dangerously-bypass-approvals-and-sandbox");
     const restricted = argv("codex", "codex", "0", true);
     expect(restricted).not.toContain("--dangerously-bypass-approvals-and-sandbox");
-    expect(hasPair(restricted, ["-s", "workspace-write"])).toBeTrue();
+    // The flag alone means the workspace-write sandbox; 0.153.4 rejects it
+    // paired with -s ("cannot be used with '--approve-for-me'").
+    expect(restricted).toContain("--approve-for-me");
+    expect(restricted).not.toContain("-s");
   });
 
   test("gemini-cli: --approval-mode yolo by default; auto_edit under =0", () => {
