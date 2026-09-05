@@ -110,6 +110,17 @@ the probe above exercised) and from `nrv watch-fs <project>` as filesystem
 evidence. Wiring a plugin hook is a future cut, gated on a run where the hook is
 observed firing.
 
+## 4a. Which Codex
+
+The adapter is audited against Codex 0.153. The flags it uses arrived over the
+summer of 2026 (`--output-schema` 0.132, `--ephemeral` 0.134, `--approve-for-me`
+0.147 on 2026-08-07; hooks from 0.129). A client on an older Codex is not left
+with a dead dispatch: when Codex answers `unexpected argument '<flag>'`, the
+adapter drops that flag, records a warning on the result, and runs with what
+that version has — `--approve-for-me` falls back to `-s workspace-write`, which
+is the pre-0.147 restricted path and stalls on the first approval. Codex 0.147
+or newer gets the full set; `codex update` is the fix.
+
 ## 4b. Codex hooks are installed already trusted
 
 Codex runs a hook only after the user reviews it, and an unreviewed hook is

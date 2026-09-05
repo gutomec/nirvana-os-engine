@@ -11,7 +11,7 @@
 //      (the pi exit-0-on-provider-failure pattern, generalized).
 // Plus light-layer checks (callHostAgent stdin delivery, legacy __testRuntime
 // shape, persona-truncation warning).
-import { describe, expect, test, beforeAll, afterAll } from "bun:test";
+import { describe, expect, test, beforeAll, afterAll, afterEach } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -71,6 +71,9 @@ beforeAll(() => {
 
   // codex — STDIN delivery; JSONL events; error on exit 0; no USD.
   fake("codex", `
+    // An older Codex: clap rejects a flag it does not know, exit 2, before anything runs.
+    const rejects = (process.env.FAKE_CODEX_REJECT || "").split(",").filter(Boolean);
+    for (const f of rejects) if (argv.includes(f)) { process.stderr.write("error: unexpected argument '" + f + "' found\\n"); process.exit(2); }
     const len = await stdinLen();
     const oi = argv.indexOf("-o");
     const out = oi >= 0 ? argv[oi + 1] : "";
@@ -577,4 +580,38 @@ describe("codex — flags audited against 0.153.4, usage and notices", () => {
     expect(r.usage).toEqual({ inputTokens: 10, cachedInputTokens: 4, cacheWriteInputTokens: 0, outputTokens: 5, reasoningOutputTokens: 2 });
     expect(r.warnings).toEqual(["Skill descriptions were shortened to fit the skills context budget."]);
   }, spawnBudgetMs(2));
+});
+
+describe("codex — an older CLI that rejects a flag", () => {
+  afterEach(() => { delete process.env.FAKE_CODEX_REJECT; });
+
+  test("--add-dir unknown: retried without it, the run succeeds, the result says the grant did not happen", () => {
+    process.env.FAKE_CODEX_REJECT = "--add-dir";
+    const r = runWith("codex", { addDirs: [path.join(TMP, "a"), path.join(TMP, "b")] });
+    expect(r.ok).toBe(true);
+    expect(capturedArgs("codex")).not.toContain("--add-dir");
+    expect(r.warnings!.some((w) => w.includes("--add-dir"))).toBe(true);
+  }, spawnBudgetMs(3));
+
+  test("--approve-for-me unknown (pre-0.147): falls back to -s workspace-write and says so", () => {
+    process.env.FAKE_CODEX_REJECT = "--approve-for-me";
+    const r = runWith("codex", { yolo: false });
+    expect(r.ok).toBe(true);
+    const args = capturedArgs("codex");
+    expect(args).not.toContain("--approve-for-me");
+    expect(args[args.indexOf("-s") + 1]).toBe("workspace-write");
+    expect(r.warnings!.some((w) => w.includes("--approve-for-me"))).toBe(true);
+  }, spawnBudgetMs(3));
+
+  test("two unknown flags are dropped one after the other; a real failure is not retried forever", () => {
+    process.env.FAKE_CODEX_REJECT = "--ephemeral,--add-dir";
+    const r = runWith("codex", { ephemeral: true, addDirs: [path.join(TMP, "a")] });
+    expect(r.ok).toBe(true);
+    // Two drops; the fake's own skills-budget notice rides along and is not counted.
+    expect(r.warnings!.filter((w) => w.includes("does not know")).length).toBe(2);
+    process.env.FAKE_CODEX_REJECT = "--json"; // not droppable: the error stands
+    const bad = runWith("codex", {});
+    expect(bad.ok).toBe(false);
+    expect(bad.error).toContain("--json");
+  }, spawnBudgetMs(5));
 });

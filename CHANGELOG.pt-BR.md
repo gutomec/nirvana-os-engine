@@ -6,6 +6,12 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Não lançado
+
+### Um Codex mais antigo perde uma flag, não a execução inteira
+
+O adapter foi auditado contra o Codex 0.153.4, e as flags que ele ganhou em 05/09/2026 são mais novas que muitos CLIs instalados: `--approve-for-me` chegou na 0.147 (07/08/2026), `--ephemeral` na 0.134, `--output-schema` na 0.132. O clap responde a uma flag desconhecida com exit 2 e `unexpected argument '<flag>' found` antes de qualquer coisa rodar, então numa máquina dessas todo despacho morreria no argv. Agora o adapter descarta a flag que o Codex nomeia, registra um aviso no resultado (`codex: this version does not know --add-dir; retried without it (extra directories were not granted)`) e roda com o que aquela versão tem; `--approve-for-me` cai para `-s workspace-write`, o caminho restrito anterior à 0.147. Uma flag que não é opcional (`--json`) não é repetida. Achado ao perguntar se os clientes estavam prontos para atualizar, e ao responder instalando o tarball publicado num home limpo antes de dizer sim.
+
 ## 0.13.2 — 2026-09-05
 
 ### Atualizar um pack não custa mais as suas edições
