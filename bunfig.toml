@@ -3,3 +3,7 @@
 # their own tests with their own dependencies (installed in the buyer project,
 # not here) — scanning them made a bare `bun test` report 55 phantom failures.
 root = "skills"
+
+# Every test process gets its own log root and signing key, so a test can never
+# append to the owner's real audit. See skills/test-preload.ts.
+preload = ["./skills/test-preload.ts"]

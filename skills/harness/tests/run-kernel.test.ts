@@ -267,7 +267,7 @@ describe("ArtifactRef and compatibility facade", () => {
       expect(auditFiles.length).toBeGreaterThan(0);
     } finally {
       ledger.close();
-      if (previousLogs === undefined) delete process.env.HARNESS_LOGS_DIR; else process.env.HARNESS_LOGS_DIR = previousLogs;
+      process.env.HARNESS_LOGS_DIR = previousLogs ?? PRELOAD_LOGS_DIR;
       if (previousState === undefined) delete process.env.NIRVANA_STATE_DB; else process.env.NIRVANA_STATE_DB = previousState;
     }
   }, KERNEL_BUDGET_MS);
@@ -297,7 +297,7 @@ describe("ArtifactRef and compatibility facade", () => {
       expect(legacyErrorFor("failed", { error: "", reason: "runtime_incompatible", errors: ["model unknown", 42] })).toBe("runtime_incompatible: model unknown");
     } finally {
       ledger.close();
-      if (previousLogs === undefined) delete process.env.HARNESS_LOGS_DIR; else process.env.HARNESS_LOGS_DIR = previousLogs;
+      process.env.HARNESS_LOGS_DIR = previousLogs ?? PRELOAD_LOGS_DIR;
       if (previousState === undefined) delete process.env.NIRVANA_STATE_DB; else process.env.NIRVANA_STATE_DB = previousState;
     }
   }, KERNEL_BUDGET_MS);
@@ -317,6 +317,10 @@ describe("two processes writing one kernel", () => {
     const writer = path.join(root, "writer.ts");
     fs.writeFileSync(writer, `
 import { appendEvent, createRun, openKernel } from ${JSON.stringify(store)};
+
+/** The isolated root the test preload created. Captured before any test
+ *  mutates the env, so a teardown restores isolation instead of removing it. */
+const PRELOAD_LOGS_DIR = process.env.HARNESS_LOGS_DIR!;
 const kernel = openKernel(process.argv[2]);
 const actor = { kind: "test", id: "child" };
 createRun(kernel, { projectId: "prj_busy", runId: "run_child", traceId: "trace_child", planId: "plan_child",

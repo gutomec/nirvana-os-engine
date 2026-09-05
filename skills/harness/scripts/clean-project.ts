@@ -45,15 +45,28 @@ if (!projectId) {
 // A directory only qualifies as a Nirvana project if it carries one of these
 // markers — guards against nuking an unrelated folder that happens to match.
 function isNirvanaProject(dir: string): boolean {
-  return ["businesses", "brief.md", "HANDOFF.json", "squads"].some(m => fs.existsSync(path.join(dir, m)));
+  // `.nirvana/project.yaml` is what `nrv init` writes, and it was missing from
+  // this list — so the scaffold a user most often wants to undo was the one
+  // shape `nrv clean` refused to recognise.
+  const markers = ["businesses", "brief.md", "HANDOFF.json", "squads", path.join(".nirvana", "project.yaml")];
+  return markers.some(m => fs.existsSync(path.join(dir, m)));
 }
 
-const candidates = [
-  path.join(process.cwd(), "outputs", projectId),            // novo default visível
-  path.join(os.homedir(), ".nirvana/outputs", projectId),
-  path.join(process.cwd(), ".nirvana/outputs", projectId),
-  path.join(os.homedir(), projectId),
-];
+// An absolute path is the thing itself, not a name to look up. Joining one onto
+// an outputs root produced candidates like
+// `/Users/x/outputs/Users/x/my-project` — nonsense the user then had to read
+// past to learn that `nrv clean <path>` simply is not supported. It is now.
+const looksLikePath = path.isAbsolute(projectId) || projectId.startsWith("~") || projectId.includes(path.sep);
+const expanded = projectId.startsWith("~") ? path.join(os.homedir(), projectId.slice(1)) : projectId;
+
+const candidates = looksLikePath
+  ? [path.resolve(expanded)]
+  : [
+      path.join(process.cwd(), "outputs", projectId),            // novo default visível
+      path.join(os.homedir(), ".nirvana/outputs", projectId),
+      path.join(process.cwd(), ".nirvana/outputs", projectId),
+      path.join(os.homedir(), projectId),
+    ];
 
 const projectDirs = [...new Set(candidates)].filter(d => fs.existsSync(d) && fs.statSync(d).isDirectory() && isNirvanaProject(d));
 

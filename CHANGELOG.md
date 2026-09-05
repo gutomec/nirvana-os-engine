@@ -69,6 +69,19 @@ The run worked — three seats dispatched by name, two reviews approved against 
 **A gate verdict with no trace says so.** The delivery pipeline exports `NIRVANA_TRACE_ID` and friends, but an agent invoking the gate by hand does not — and ten of twelve verdicts in a live run carried `trace_id: null`, unjoinable to the run they judged. The gate now warns on stderr naming the variables, so the gap is visible instead of silent.
 
 **A chosen mind-clone was never loaded.** Seats are handed a ranked list and told to choose; nothing is auto-injected unless the brief names one. Three seats each picked a clone, logged a considered reason, and then worked from what the model already knew about that person — a name in a log, not a voice in the work. Rule 9 of the protocol calls that claiming fidelity you did not load. The step brief now says it plainly: load it with `nrv inspect-clone <slug> --dna`, or decide none fits and work as yourself, which is honest and allowed.
+### Tests stopped writing into the owner's audit
+
+The machine's global audit held 134 events for one day and not one was a real dispatch: `p-handoff`, `p-broken-ledger`, webhook deliveries with `subject: run_1`, sixteen `gate_passed` paired with sixteen `gate_failed`. All fixture data from `bun test`, all of it counted by `nrv doctor` as activity and mined by `nrv baseline` as signal.
+
+Every test process now gets its own log root and signing key (`skills/test-preload.ts`, wired through `bunfig.toml`), and `harnessLogsDir` gains one rung below the project and above the home: a test-isolation root that a test cannot lose by deleting `HARNESS_LOGS_DIR` — which some do deliberately, to exercise the "caller did not set it" branch, and which used to reopen the path to the real audit for whatever wrote next in the shared process.
+
+It took four attempts to reach zero, and the last one is the lesson: `handoff.js` carried **two** near-identical audit-writing blocks. The first was fixed hours earlier; the second still hardcoded `~/.harness-logs` and still wrote unstamped. A fix landing on one copy while the defect survives in the other produces a measurement that looks exactly like success.
+
+### `nrv clean` accepts a path, and the preflight stops mistaking $HOME for a project
+
+`nrv clean <path>` joined the argument onto outputs roots, producing candidates like `/Users/x/outputs/Users/x/my-project` and then reporting the project as not found. An absolute path is the thing itself. It also now recognises `.nirvana/project.yaml` — what `nrv init` writes, and the scaffold a user most often wants to undo.
+
+The harness preflight tested for the *existence* of `AGENTS.md`/`CLAUDE.md`/`GEMINI.md`. Every Claude Code user has a `~/CLAUDE.md`, so `$HOME` looked like an adopted project — while `project-root.js` refuses `$HOME` outright, leaving a session that believes it has a contract and has no project scope. It tests for the contract marker now, and refuses `$HOME` and `/` explicitly.
 
 ### An event the engine wrote is now distinguishable from one an agent typed
 
