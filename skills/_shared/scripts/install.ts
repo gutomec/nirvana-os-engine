@@ -11,10 +11,11 @@
  *   - Gemini-CLI    → ~/.gemini/settings.json       (BeforeTool + AfterTool + SessionStart)
  *   - Antigravity   → ~/.antigravity/settings.json  (BeforeTool + AfterTool + SessionStart)
  *
- * Codex is NOT wired here: it has no granular settings.json hook mechanism
- * (PreToolUse/BeforeTool, etc.) — its config is ~/.codex/config.toml and audit
- * comes from session transcripts + the ~/.harness-logs jsonl fallback. Other
- * future agents (Cursor, …) plug in by adding entries to AGENTS_TO_INSTALL.
+ *   - Codex         → ~/.codex/hooks.json           (PreToolUse + PostToolUse, matcher Bash|apply_patch)
+ *                     plus the trust record in ~/.codex/config.toml that lets a
+ *                     headless `codex exec` run them (see _shared/lib/codex-hooks.ts)
+ *
+ * Other future agents (Cursor, …) plug in by adding entries to AGENTS_TO_INSTALL.
  *
  * Usage:
  *   nrv install            # install / repair hooks + verify toolchain
@@ -40,6 +41,7 @@ import {
 // Any hook whose command contains one of these tokens is "ours" and is
 // safe to overwrite/remove. Keeps user-added hooks untouched.
 const NIRVANA_TOKENS = ["audit-emit-from-hook.ts", "gemini-session-start.ts"];
+import { codexConfigPath, codexHookHash, codexHookTrustEntries, codexHooksPath, readCodexHookState, removeCodexHookTrust, upsertCodexHookTrust } from "../lib/codex-hooks.ts";
 
 // Shared skills tree (Option B): prefer ~/.nirvana/skills so the audit-hook
 // command paths written into each runtime's settings.json survive removal of
@@ -116,6 +118,26 @@ const AGENTS_TO_INSTALL: AgentInstallSpec[] = [
           command: `bun "${SESSION_START_SCRIPT}"`,
           timeout: 5000,
         }],
+      }],
+    },
+  },
+  {
+    // Codex reads hooks.json with the same shape Claude's settings.json `hooks`
+    // block has; the payload it sends (`tool_name` "Bash" / "apply_patch",
+    // `tool_input`, `tool_response`, `session_id`, `cwd`) is what the bridge
+    // already parses. No `name` field: Codex ignores unknown handler keys
+    // today, and the bridge token is what identifies ours anyway. Trust is
+    // recorded separately (codexTrust below) — without it exec skips the hook.
+    name: "Codex",
+    settingsPath: codexHooksPath(),
+    groups: {
+      PreToolUse: [{
+        matcher: "Bash|apply_patch",
+        hooks: [{ type: "command", command: `bun "${HOOK_SCRIPT}" pre codex`, async: true, timeout: 5 }],
+      }],
+      PostToolUse: [{
+        matcher: "Bash|apply_patch",
+        hooks: [{ type: "command", command: `bun "${HOOK_SCRIPT}" post codex`, async: true, timeout: 5 }],
       }],
     },
   },
@@ -514,6 +536,62 @@ function repairUserPath(apply: boolean): number {
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────
+/**
+ * Codex skips a hook nobody reviewed, silently. Record trust for OUR handlers
+ * in ~/.codex/config.toml the way the TUI would (same key, same hash), remove
+ * it on uninstall, report it on --check. Never touches another hook's record.
+ */
+function codexTrust(mode: "install" | "uninstall" | "check"): string[] {
+  const notes: string[] = [];
+  const hooksFile = codexHooksPath();
+  const configFile = codexConfigPath();
+  let entries;
+  try { entries = codexHookTrustEntries(hooksFile, configFile, NIRVANA_TOKENS[0]); } catch (e) { return [`⚠ could not read ${hooksFile}: ${(e as Error).message}`]; }
+  if (mode === "uninstall") {
+    // The hooks are already gone from hooks.json by now; the keys to drop are
+    // whatever OUR records were. Read them by prefix + our known events.
+    const keys = [...readCodexTrustKeysForOurs(configFile, hooksFile)];
+    if (keys.length && removeCodexHookTrust(configFile, keys)) notes.push(`✓ trust records removed from ${configFile} (${keys.length})`);
+    return notes;
+  }
+  if (entries.length === 0) return notes;
+  const untrusted = entries.filter((e) => !e.trusted);
+  if (mode === "check") {
+    notes.push(untrusted.length ? `⚠ ${untrusted.length}/${entries.length} Codex hook(s) not trusted in ${configFile} — run: nrv install` : `✓ Codex hooks trusted (${entries.length})`);
+    return notes;
+  }
+  if (untrusted.length === 0) return notes;
+  let backedUp = false;
+  for (const e of untrusted) {
+    if (!backedUp) { backup(configFile); backedUp = true; }
+    upsertCodexHookTrust(configFile, e.key, e.hash);
+  }
+  notes.push(`✓ trust recorded in ${configFile} for ${untrusted.length} hook(s) — a headless \`codex exec\` runs them without a review prompt`);
+  return notes;
+}
+
+/** Keys of trust records that belong to our hooks: same file, our events, and a hash we would compute. */
+function readCodexTrustKeysForOurs(configFile: string, hooksFile: string): Set<string> {
+  // Ours are the ones whose hash matches a handler WE would install at that
+  // position. Recompute from the spec so a user's own Bash hook in the same
+  // file, trusted by hand, is never removed. Keys come back unescaped from the
+  // lib, so a Windows path compares as a plain string here.
+  const out = new Set<string>();
+  const spec = AGENTS_TO_INSTALL.find((a) => a.name === "Codex");
+  const ourHashes = new Set<string>();
+  if (spec) {
+    for (const [event, groups] of Object.entries(spec.groups)) {
+      for (const g of groups) for (const h of g.hooks) {
+        try { ourHashes.add(codexHookHash(event, g.matcher, h as any)); } catch { /* skip */ }
+      }
+    }
+  }
+  for (const [key, state] of readCodexHookState(configFile)) {
+    if (key.startsWith(`${hooksFile}:`) && state.trusted_hash && ourHashes.has(state.trusted_hash)) out.add(key);
+  }
+  return out;
+}
+
 function main() {
   const { flags } = parseArgs();
   if (flags.h || flags.help) {
@@ -622,6 +700,7 @@ inline, with no dispatch, no quality gate and no audit trail.
         const { after } = patchSettings(spec, "install");
         fs.writeFileSync(spec.settingsPath, JSON.stringify(after, null, 2) + "\n", "utf8");
         console.log(`     → created ${spec.settingsPath} with hooks`);
+        if (spec.name === "Codex") for (const n of codexTrust("install")) console.log(`     ${n}`);
         anyChange = true;
         installedCount++;
       }
@@ -630,6 +709,14 @@ inline, with no dispatch, no quality gate and no audit trail.
     const result = patchSettings(spec, mode);
     if (!result.changed) {
       console.log(`  ✓ ${spec.name} — already ${mode === "install" ? "installed" : "uninstalled"}`);
+      // The hooks were there; the trust record may not be (an install older
+      // than this step, or a config.toml the user rewrote). Same idempotence:
+      // record what is missing, say nothing when nothing is.
+      if (spec.name === "Codex" && !dryRun) {
+        const notes = codexTrust(check ? "check" : mode);
+        for (const n of notes) console.log(`     ${n}`);
+        if (check && notes.some((n) => n.startsWith("⚠"))) anyChange = true;
+      }
       if (mode === "install") installedCount++;
       continue;
     }
@@ -646,6 +733,7 @@ inline, with no dispatch, no quality gate and no audit trail.
     const bak = backup(spec.settingsPath);
     fs.writeFileSync(spec.settingsPath, JSON.stringify(result.after, null, 2) + "\n", "utf8");
     console.log(`  ✓ ${spec.name} — ${mode}ed${bak ? ` (backup: ${path.basename(bak)})` : ""}`);
+    if (spec.name === "Codex") for (const n of codexTrust(mode)) console.log(`     ${n}`);
     anyChange = true;
     if (mode === "install") installedCount++;
   }

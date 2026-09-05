@@ -50,6 +50,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { harnessLogsDir } from "../lib/log-paths.ts";
+import { findProjectRoot } from "../lib/project-root.js";
 
 const NIRVANA_PROJECT_ROOT = process.env.NIRVANA_PROJECT_ROOT || "";
 
@@ -75,7 +76,11 @@ function appendEvent(ev: Record<string, any>): void {
     const dir = path.join(HARNESS_LOGS_ROOT, todayDir());
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, "audit.jsonl");
-    fs.appendFileSync(file, JSON.stringify(ev) + "\n", "utf8");
+    // Stamped like every other engine write, so a hook-sourced event reads as
+    // `engine` in Glance and `nrv audit where` instead of `unsigned`.
+    let out: Record<string, any> = ev;
+    try { out = require("../lib/audit-provenance.js").stamp(ev); } catch { /* no key — still log */ }
+    fs.appendFileSync(file, JSON.stringify(out) + "\n", "utf8");
   } catch { /* never block */ }
 }
 
@@ -136,7 +141,16 @@ function inNirvanaScope(p: string | undefined): boolean {
   const extras = (process.env.NIRVANA_AUDIT_PREFIXES || "")
     .split(path.delimiter).map(s => posix(s).trim().toLowerCase()).filter(Boolean);
   for (const pre of extras) if (lower.startsWith(pre) || lower.includes(pre)) return true;
-  // 3. Built-in heuristics: anything that smells like Nirvana work
+  // 3. Inside a Nirvana project — the same walk log-paths uses to decide where
+  //    the event lands. Without this rung a project named anything that misses
+  //    the heuristics below (most projects) dropped every hook event: the
+  //    Claude/Gemini hooks had been wired for months and a `nrv init` project
+  //    called `acme-site` produced nothing.
+  try {
+    const start = fs.existsSync(p) && fs.statSync(p).isDirectory() ? p : path.dirname(p);
+    if (findProjectRoot(start)) return true;
+  } catch { /* unreadable path — fall through to the heuristics */ }
+  // 4. Built-in heuristics: anything that smells like Nirvana work
   if (lower.includes("/projects/")) return true;
   if (lower.includes("/businesses/") || lower.includes("/squads/")) return true;
   if (lower.includes("/mind-clones/") || lower.includes("/mind_clones/")) return true;
@@ -177,7 +191,14 @@ async function main() {
 
   const tool = payload.tool_name || "";
   const input = payload.tool_input || {};
-  const response = payload.tool_response || {};
+  // Codex hands tool_response as a STRING ("Exit code: 0\nWall time: …\nOutput:\n…"
+  // for apply_patch, the raw output for Bash); Claude hands an object with
+  // `success`. Read both.
+  const rawResponse = payload.tool_response;
+  const response: Record<string, any> = rawResponse && typeof rawResponse === "object" ? rawResponse : {};
+  const responseText = typeof rawResponse === "string" ? rawResponse : "";
+  const exitCodeMatch = responseText.match(/^Exit code:\s*(\d+)/m);
+  const succeeded = response.success !== false && (!exitCodeMatch || exitCodeMatch[1] === "0");
 
   const filePath: string | undefined = input.file_path || input.filePath || response.filePath || response.file_path;
   const command: string | undefined = input.command;
@@ -213,6 +234,24 @@ async function main() {
   const writeTools = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit", "write_file", "replace"]);
   const bashTools = new Set(["Bash", "run_shell_command", "shell"]);
 
+  // Codex edits files through `apply_patch`; the patch text names them:
+  //   *** Add File: <path> / *** Update File: <path> / *** Delete File: <path>
+  // One event per file, so an artifact_touched exists for a Codex edit exactly
+  // as it does for a Claude Write.
+  if (tool === "apply_patch") {
+    const patchText: string = typeof input.command === "string" ? input.command : typeof input.patch === "string" ? input.patch : "";
+    const files = [...patchText.matchAll(/^\*\*\* (Add|Update|Delete) File: (.+)$/gm)]
+      .map((m) => ({ action: m[1] === "Add" ? "write" : m[1] === "Update" ? "edit" : "delete", file_path: path.resolve(cwd, m[2].trim()) }));
+    for (const f of files) {
+      const ev: Record<string, any> = { ...base, action: f.action, file_path: f.file_path, target_project: deriveTargetProject(f.file_path) };
+      if (stage === "pre") { appendEvent({ ...ev, event: "tool_invoked" }); continue; }
+      let sizeBytes: number | undefined;
+      try { sizeBytes = fs.statSync(f.file_path).size; } catch { /* deleted or unreadable — omit */ }
+      appendEvent({ ...ev, event: "artifact_touched", success: succeeded, ...(sizeBytes != null ? { size_bytes: sizeBytes } : {}) });
+    }
+    process.exit(0);
+  }
+
   if (writeTools.has(tool)) {
     const action = (tool === "Write" || tool === "write_file") ? "write" : "edit";
     if (stage === "pre") {
@@ -225,7 +264,7 @@ async function main() {
       try { sizeBytes = filePath ? fs.statSync(filePath).size : undefined; } catch { /* file unreadable/gone — omit */ }
       appendEvent({
         ...base, event: "artifact_touched", action, file_path: filePath,
-        success: response.success !== false,
+        success: succeeded,
         ...(sizeBytes != null ? { size_bytes: sizeBytes } : {}),
       });
     }
@@ -234,7 +273,7 @@ async function main() {
     if (stage === "pre") {
       appendEvent({ ...base, event: "tool_invoked", action: "bash", command: cmdShort });
     } else {
-      appendEvent({ ...base, event: "bash_completed", command: cmdShort, success: response.success !== false });
+      appendEvent({ ...base, event: "bash_completed", command: cmdShort, success: succeeded });
     }
   }
   // Unknown tools: silent — we only care about ones that produce side effects.

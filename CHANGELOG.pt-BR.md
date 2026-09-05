@@ -8,6 +8,14 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Hooks do Codex, instalados já confiáveis
+
+O Codex só roda um hook depois que o usuário o revisa na TUI, e um hook não revisado é pulado em silêncio — o `codex exec` não imprime nada e o hook nunca dispara (medido: zero payloads sem confiança, cinco com ela). Então um instalador que só escrevesse o hooks.json não instalaria nada que uma execução headless pudesse usar, e é por isso que o Codex não tinha hooks de auditoria enquanto Claude, Gemini e Antigravity tinham há meses.
+
+O registro de confiança é um hash do hook normalizado em `[hooks.state."<arquivo>:<evento>:<grupo>:<handler>"]` no `config.toml`, e ele é reproduzível: `_shared/lib/codex-hooks.ts` calcula do jeito que o `codex-rs` calcula (JSON canônico de `{event_name, matcher, hooks:[…]}`, SHA-256), verificado contra um hash que o próprio Codex tinha gravado antes de este código existir. O `nrv install` agora escreve os hooks (`PreToolUse`/`PostToolUse` em `Bash|apply_patch`) e a confiança deles, `--check` reporta um hook que a perdeu, `--uninstall` remove os dois, e o `nrv doctor` mostra `codex: audit hooks`.
+
+O bridge aprendeu a forma do Codex no caminho: `apply_patch` nomeia os arquivos no texto do patch e ganha um `artifact_touched` por arquivo; um `tool_response` em string carrega o código de saída, então comando que falhou é `bash_completed` com falha; e os eventos de hook são carimbados como toda escrita do engine. Um defeito mais antigo caiu junto: o bridge decidia "isso é trabalho do Nirvana?" por heurísticas de caminho (`/projects/`, `-nirvana`, …) e descartava todo evento de hook num projeto cujo nome não casasse com nenhuma delas — a maioria dos projetos. Agora ele sobe até o marcador `.nirvana/`, do mesmo jeito que o resolvedor de logs já fazia.
+
 ### O projeto também é onde um claw mora
 
 Claude, Codex, Gemini e Hermes trabalham no diretório em que foram abertos, então "abra dentro do projeto" era a receita inteira e toda chamada `nrv` logava em `<projeto>/.nirvana/logs/harness/`. O OpenClaw não: um agente trabalha no seu **workspace**, lê o `AGENTS.md` de lá e ignora onde a pessoa digitou. Nada no engine dizia isso, e a nota do instalador chamava o OpenClaw de runtime que não lê contrato nenhum.
