@@ -81,9 +81,19 @@ function checkExecutable(tool) {
     return { ok: false, invalid: true, error: 'Executable name must be a single safe token.' };
   }
   const probe = PLATFORM === 'win32'
-    ? spawnSync('where.exe', [tool], { stdio: 'pipe', windowsHide: true })
+    ? spawnSync('where.exe', [tool], { stdio: 'pipe', windowsHide: true, encoding: 'utf8' })
     : spawnSync('/bin/sh', ['-c', 'command -v "$1" >/dev/null 2>&1', 'sh', tool], { stdio: 'pipe' });
-  return probe.status === 0
+  const found = PLATFORM !== 'win32' || String(probe.stdout || '')
+    .split(/\r?\n/)
+    .map(candidate => candidate.trim())
+    .filter(Boolean)
+    .some(candidate => {
+      const allowed = new Set(String(process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD')
+        .split(';').map(ext => ext.toLowerCase()).filter(Boolean));
+      try { return allowed.has(path.extname(candidate).toLowerCase()) && fs.statSync(candidate).isFile(); }
+      catch { return false; }
+    });
+  return probe.status === 0 && found
     ? { ok: true }
     : { ok: false, error: probe.error ? probe.error.message : `Executable '${tool}' was not found on PATH.` };
 }

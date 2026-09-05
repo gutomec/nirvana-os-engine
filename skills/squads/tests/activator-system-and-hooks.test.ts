@@ -95,6 +95,19 @@ describe("system executable presence", () => {
       rmSync(f.root, { recursive: true, force: true });
     }
   });
+
+  test.skipIf(process.platform !== "win32")("a plain LICENSE file found by where.exe is not an executable", () => {
+    const f = fixture("system:\n  - LICENSE\n");
+    writeFileSync(join(f.binDir, "LICENSE"), "not executable\n");
+    try {
+      const result = activate(f);
+      expect(result.status).toBe(0);
+      expect(result.json.steps.system[0].status).toBe("missing_system_tool");
+      expect(result.json.warnings).toHaveLength(1);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("post-install hook contracts", () => {
