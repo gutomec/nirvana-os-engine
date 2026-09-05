@@ -119,6 +119,26 @@ describe("verify-deliverable reads the acceptance promise", () => {
     } finally { process.chdir(saved); }
   });
 
+  // A squad run writes its manifest under `squads/<slug>/`, mirroring the
+  // `businesses/<slug>/` convention. On 2026-09-04 a live run had two of those
+  // on disk, every promised file present, and this check answered
+  // FAIL_INDETERMINATE "no deliverables.json" — it had never looked there.
+  test("a squad run's manifest under squads/<slug>/ is found and verified", () => {
+    const { cwd } = project({});
+    const squadOut = path.join(cwd, "outputs", "prj_1", "squads", "brandcraft", "outputs");
+    fs.mkdirSync(squadOut, { recursive: true });
+    const report = path.join(squadOut, "01-veredicto.md");
+    fs.writeFileSync(report, "Um veredicto com corpo suficiente para não ser stub.\n", "utf8");
+    fs.writeFileSync(path.join(cwd, "outputs", "prj_1", "squads", "brandcraft", "deliverables.json"), JSON.stringify({ deliverables: [report] }), "utf8");
+    const saved = process.cwd();
+    try {
+      process.chdir(cwd);
+      const r = verifyDeliverableOnDisk("prj_1", "brandcraft", { businessDir: null, minBytes: 10 });
+      expect(r).toMatchObject({ status: "PASS", expected: 1, found: 1 });
+      expect(r.manifest_source).toMatch(/squads[\\/]brandcraft[\\/]deliverables\.json$/); // Windows reports backslashes
+    } finally { process.chdir(saved); }
+  });
+
   test("a business that promises nothing keeps the brief-regex behavior", () => {
     const bizDir = business({ "brief-intake": "acceptance:\n  - id: quality\n    description: Sem path\n" });
     const { cwd, outputsRoot } = project({ "report.md": "conteúdo" });

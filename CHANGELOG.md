@@ -6,6 +6,14 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### The completeness check learned that squads have manifests too
+
+`verify-deliverable.ts` looked for a run's `deliverables.json` under `businesses/<slug>/` and at the run root. A squad run files its manifest under `squads/<slug>/`, mirroring the business convention, and the check had never looked there. On 2026-09-04 a live run had two such manifests on disk, every promised file present and above the size floor, and the check answered FAIL_INDETERMINATE "no deliverables.json" — a verdict about where the tool looked, not about the work. The maestro of that run diagnosed it correctly before anyone here did.
+
+It reads all three locations now, the indeterminate reason names the paths it tried, and the CLI hint stops telling a squad to run `brief-business.ts`. The protocol's verify step says `<slug>` instead of `<business_slug>`, because it always applied to both.
+
 ## 0.13.0 — 2026-09-04
 
 ### `nrv audit where` and `nrv audit tail`
