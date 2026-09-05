@@ -6,7 +6,7 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
-## Unreleased
+## 0.13.0 — 2026-09-04
 
 ### `nrv audit where` and `nrv audit tail`
 
@@ -16,7 +16,7 @@ Following a run meant knowing `harnessLogsDir`'s three-rung precedence by heart,
 
 ### Cost events were filed under a path that does not exist
 
-`import-claude-transcripts.ts` recovered a project path from Claude Code's encoded directory name by replacing every `-` with `/`. That encoding replaces `/` with `-`, so undoing it that way destroys the hyphens belonging to the name: `projeto-mini-apps-agroautonomia` became `Users/guto/projeto/mini/apps/agroautonomia`, and every cost event for that project was filed under a path with no directory behind it.
+`import-claude-transcripts.ts` recovered a project path from Claude Code's encoded directory name by replacing every `-` with `/`. That encoding replaces `/` with `-`, so undoing it that way destroys the hyphens belonging to the name: a project whose own name contains hyphens is shredded into a directory chain that does not exist, and every cost event for it is filed under a path with nothing behind it.
 
 `decodeClaudeProjectDirName` already solved this — it walks the disk, preferring the longest run of tokens that names a real directory — and was one import away. When a path cannot be recovered the encoded name is kept verbatim: an honest opaque id beats a confident wrong one.
 
@@ -32,7 +32,7 @@ Rather than teach every future checker a second convention, `nrv team plan` now 
 
 ### The cockpit reads every audit a run wrote, and says who wrote each line
 
-Glance read one audit file. A run writes to up to four — the orchestrator's daily log, the project's own log, one per dispatched target under its outputs tree, and the global fallback — so the cockpit showed runs with no dispatches while their files sat on disk. Measured on this machine after the change: nine runs whose dispatches were invisible, and seats (`ds-creative-director`, `t360-ceo`, `al-publisher`) that had never appeared at all.
+Glance read one audit file. A run writes to up to four — the orchestrator's daily log, the project's own log, one per dispatched target under its outputs tree, and the global fallback — so the cockpit showed runs with no dispatches while their files sat on disk. Measured on one installed library after the change: nine runs whose dispatches were invisible, and three seats that had never appeared at all.
 
 Every event Glance serves now carries `_provenance`: `engine` when the engine signed it, `unsigned` when nothing did, `tampered` when the signature no longer matches its content. The cockpit is where somebody decides whether a run happened, and until now a line an agent typed rendered identically to one the engine emitted.
 

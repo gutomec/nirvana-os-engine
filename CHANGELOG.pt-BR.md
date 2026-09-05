@@ -6,7 +6,7 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
-## Não lançado
+## 0.13.0 — 2026-09-04
 
 ### `nrv audit where` e `nrv audit tail`
 
@@ -16,7 +16,7 @@ O `nrv audit where` imprime a raiz de log resolvida **e o motivo**, depois cada 
 
 ### Eventos de custo eram arquivados sob um caminho que não existe
 
-O `import-claude-transcripts.ts` recuperava o caminho do projeto a partir do nome de diretório codificado pelo Claude Code trocando todo `-` por `/`. Essa codificação troca `/` por `-`, então desfazer assim destrói os hífens que pertencem ao nome: `projeto-mini-apps-agroautonomia` virava `Users/guto/projeto/mini/apps/agroautonomia`, e todo evento de custo daquele projeto ia para um caminho sem diretório atrás.
+O `import-claude-transcripts.ts` recuperava o caminho do projeto a partir do nome de diretório codificado pelo Claude Code trocando todo `-` por `/`. Essa codificação troca `/` por `-`, então desfazer assim destrói os hífens que pertencem ao nome: um projeto cujo próprio nome tem hífens é despedaçado numa cadeia de diretórios que não existe, e todo evento de custo dele vai para um caminho sem nada atrás.
 
 O `decodeClaudeProjectDirName` já resolvia isso — ele caminha o disco preferindo a maior sequência de tokens que nomeia um diretório real — e estava a um import de distância. Quando o caminho não é recuperável, o nome codificado fica como está: um id opaco honesto é melhor que um caminho errado com cara de certo.
 
@@ -32,7 +32,7 @@ Em vez de ensinar uma segunda convenção a todo verificador futuro, o `nrv team
 
 ### O cockpit lê toda auditoria que a execução escreveu, e diz quem escreveu cada linha
 
-O Glance lia um arquivo de auditoria. Uma execução escreve em até quatro — o log diário do orquestrador, o log do próprio projeto, um por alvo despachado dentro da árvore de saída, e o fallback global — então o cockpit mostrava execuções sem despacho nenhum enquanto os arquivos estavam em disco. Medido nesta máquina depois da mudança: nove execuções cujos despachos eram invisíveis, e cadeiras (`ds-creative-director`, `t360-ceo`, `al-publisher`) que nunca tinham aparecido.
+O Glance lia um arquivo de auditoria. Uma execução escreve em até quatro — o log diário do orquestrador, o log do próprio projeto, um por alvo despachado dentro da árvore de saída, e o fallback global — então o cockpit mostrava execuções sem despacho nenhum enquanto os arquivos estavam em disco. Medido em uma biblioteca instalada depois da mudança: nove execuções cujos despachos eram invisíveis, e três cadeiras que nunca tinham aparecido.
 
 Todo evento que o Glance serve passa a carregar `_provenance`: `engine` quando o engine assinou, `unsigned` quando ninguém assinou, `tampered` quando a assinatura não bate mais com o conteúdo. O cockpit é onde alguém decide se uma execução aconteceu, e até agora uma linha digitada por um agente aparecia igual a uma emitida pelo engine.
 

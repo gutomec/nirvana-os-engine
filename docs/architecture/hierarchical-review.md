@@ -85,8 +85,8 @@ entry exists only when it was confirmed with evidence.
 
 ```json
 {
-  "seat": "sf-backend-lead",
-  "reviewing": "sf-backend-engineer",
+  "seat": "backend-lead",
+  "reviewing": "backend-engineer",
   "confirmed": [
     {
       "id": "objections_specific_and_falsifiable",
@@ -245,8 +245,9 @@ Written down first, so the answer is not decided after the fact.
 It was run before this document was merged, exactly as written below, and the
 review held.
 
-A real `studio-head` was handed a deliberately weak artifact: six lines, a
-slugline and one sentence of description, `usou_referencia: none`. It returned
+A real reviewing seat — the head of a three-seat probe studio — was handed a
+deliberately weak artifact: six lines, a slugline and one sentence of
+description, `usou_referencia: none`. It returned
 `confirmed: []` and an `unconfirmed` entry citing the criterion by id, with:
 the line count and byte size, a quote of the offending line, the observation
 that "algo engraçado" is *the promise of a joke, not the joke*, and — the part
@@ -264,7 +265,7 @@ opposite failure: a reviewer so strict that a good artifact never converges
 within the ceiling. That is what the ceiling and the reservations path are for,
 and it is the next thing worth measuring.
 
-**The falsification test.** Give `studio-probe` a brief, then hand the reviewer a
+**The falsification test.** Give a probe business a brief, then hand the reviewer a
 deliberately weak artifact — a scene that is an outline, with no joke, ignoring
 the reference. The superior must reject it, and the rejection must cite the
 acceptance id and name what is missing.
@@ -282,9 +283,9 @@ acceptance id and name what is missing.
 If a three-seat chart costs more than ~5x the single-seat run, §3.3 is not being
 honored and the countersignatures are doing substantive reads.
 
-Both probes are installed and cost cents: `chain-probe` (4 seats, relay, proves
-the hierarchy from the artifact) and `studio-probe` (3 seats, separate mandates,
-proves delegation happens because the chart asked).
+Two probe businesses cover it and cost cents: a four-seat relay, which proves the
+hierarchy from the artifact itself, and a three-seat studio with separate
+mandates, which proves delegation happens because the chart asked.
 
 ## 8. Order
 
