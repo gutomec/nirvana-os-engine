@@ -6,6 +6,14 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Não lançado
+
+### O link de dependências saiu das raízes de skills
+
+Toda skill copiada para o diretório de um runtime carregava um symlink `node_modules -> ~/.nirvana/node_modules`, para que um script rodado da cópia resolvesse seus imports. O scanner de skills do Codex segue symlinks de diretório, poda só diretórios ocultos e para depois de 20.000 entradas por raiz — então a cada execução ele caminhava de `~/.codex/skills` para dentro da loja de dependências inteira, registrava `skills scan reached its traversal limit` e encurtava descrições de skills para caber no orçamento. Medido numa máquina: 191.524 entradas sob a raiz de skills do Codex, poucos milhares delas do próprio engine.
+
+Resolução de módulo só precisa de um `node_modules` em algum ponto da subida a partir do caminho real do script. O link agora fica um nível acima do diretório de skills de cada runtime (`~/.codex/node_modules`, nunca `~/.codex/skills/<skill>/node_modules`), e a árvore canônica mantém um link ao lado dela em vez de um dentro de cada skill. Skills por symlink resolvem pelo link canônico porque o Bun resolve a entrada para o caminho real antes de subir. `nrv update` reescreve o layout; `nrv doctor` reporta qualquer `node_modules` que ainda esteja sob um diretório de skills, e um diretório real instalado à mão fica para o dono remover. Dois instaladores escreviam esses links — o principal e o de hooks de auditoria que o `nrv init` roda — e a primeira correção alcançou só um deles: os links voltaram no `nrv init` seguinte. Os dois podam agora, e um teste lê as duas fontes procurando a forma antiga.
+
 ## 0.13.1 — 2026-09-05
 
 ### A checagem de completude aprendeu que squads também têm manifesto

@@ -6,6 +6,14 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### The dependency link moved out of the skills roots
+
+Every skill copied into a runtime directory carried a `node_modules -> ~/.nirvana/node_modules` symlink, so a script run from the copy could resolve its imports. Codex's skill scanner follows directory symlinks, prunes only hidden directories, and stops after 20,000 entries per root — so on every run it walked from `~/.codex/skills` into the whole dependency store, logged `skills scan reached its traversal limit`, and shortened skill descriptions to fit its budget. Measured on one machine: 191,524 entries under the Codex skills root, a few thousand of them the engine's own.
+
+Module resolution only needs a `node_modules` somewhere on the walk up from the script's real path. The link now sits one level above each runtime's skills directory (`~/.codex/node_modules`, never `~/.codex/skills/<skill>/node_modules`), and the canonical tree keeps one link beside it rather than one inside every skill. Symlinked skills resolve through the canonical link because Bun resolves the entry to its real path first. `nrv update` rewrites the layout; `nrv doctor` reports any `node_modules` still under a skills directory, and a real directory somebody installed by hand is left for them to remove. Two installers wrote those links — the main one and the audit-hooks one that `nrv init` runs — and the first fix reached only one of them: the links came back on the next `nrv init`. Both prune now, and a test reads both sources for the old form.
+
 ## 0.13.1 — 2026-09-05
 
 ### The completeness check learned that squads have manifests too

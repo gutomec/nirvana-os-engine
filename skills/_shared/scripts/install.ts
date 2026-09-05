@@ -413,27 +413,32 @@ function installDependencies(repoRoot: string, dry: boolean): { ok: boolean; not
     notes.push("no root package.json — skipping npm");
   }
 
-  // 2) Symlink each skill's node_modules → repo-root node_modules, so the
-  //    scripts' require('../node_modules/X') resolves. Done in BOTH places the
-  //    skills can run from:
-  //      - the source repo (<repo>/skills/*)        — running scripts directly
-  //      - the deployment   (~/.nirvana/skills/*)    — where Claude Code loads them
-  //    The deployment is the one that actually matters at runtime (the scripts
-  //    use paths.CLAUDE_SKILLS_DIR = ~/.nirvana/skills). Both kept in sync.
-  const linkInto = (dir: string, label: string) => {
-    if (!fs.existsSync(rootNodeModules) || !fs.existsSync(dir)) return;
+  // 2) NO node_modules inside a skill. Both trees resolve their imports by
+  //    walking UP: <repo>/skills/<s>/scripts → <repo>/node_modules, and
+  //    ~/.nirvana/skills/<s>/scripts → ~/.nirvana/node_modules (the store is
+  //    the parent's). This step used to link a node_modules into every skill
+  //    so `require('../node_modules/X')` would work — and Codex's skill scanner,
+  //    which follows symlinks and stops at 20,000 entries per root, walked
+  //    through those links into the whole store on every run. The main
+  //    installer had stopped writing them; this one kept putting them back on
+  //    every `nrv init` (which runs it for the audit hooks). Same defect in two
+  //    emitters, fixed in one and surviving in the other: the second copy is
+  //    what a measurement of the first cannot see. Now both prune.
+  const pruneInside = (dir: string, label: string) => {
+    if (!fs.existsSync(dir)) return;
     let n = 0;
     for (const skill of fs.readdirSync(dir, { withFileTypes: true })) {
       if (!skill.isDirectory() && !skill.isSymbolicLink()) continue;
-      const target = path.join(dir, skill.name, "node_modules");
-      if (fs.existsSync(target)) continue;
-      if (dry) { notes.push(`would link ${label}/${skill.name}/node_modules`); continue; }
-      try { fs.symlinkSync(rootNodeModules, target, process.platform === "win32" ? "junction" : "dir"); n++; } catch { /* best-effort */ }
+      const nm = path.join(dir, skill.name, "node_modules");
+      let st: fs.Stats; try { st = fs.lstatSync(nm); } catch { continue; }
+      if (!st.isSymbolicLink()) continue; // a real tree is not ours to delete
+      if (dry) { notes.push(`would remove ${label}/${skill.name}/node_modules (link)`); continue; }
+      try { fs.rmSync(nm, { force: true }); n++; } catch { /* best-effort */ }
     }
-    if (!dry && n > 0) notes.push(`${label}: linked node_modules in ${n} skills`);
+    if (!dry && n > 0) notes.push(`${label}: removed node_modules link from ${n} skill(s)`);
   };
-  linkInto(skillsDir, "repo");
-  linkInto(SKILLS_DIR, "deployment");  // shared skills tree (~/.nirvana/skills)
+  pruneInside(skillsDir, "repo");
+  pruneInside(SKILLS_DIR, "deployment");  // shared skills tree (~/.nirvana/skills)
 
   // 3) pip install Python deps (pydantic v2 + pyyaml) — ONLY if Python is
   //    present. The canonical validators run on Bun (validators.ts); the Python
