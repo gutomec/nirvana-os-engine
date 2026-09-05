@@ -116,3 +116,15 @@ describe("runtime-install — no node_modules inside a skills root", () => {
     expect(pruneDepsLinkInside(path.dirname(link))).toBe(false);
   });
 });
+
+describe("one rule, every installer", () => {
+  test("no installer links a node_modules INTO a skill directory", () => {
+    const repo = path.join(import.meta.dir, "..", "..", "..");
+    const main = fs.readFileSync(path.join(repo, "scripts", "install.ts"), "utf8");
+    const hooks = fs.readFileSync(path.join(repo, "skills", "_shared", "scripts", "install.ts"), "utf8");
+    // The per-skill forms both installers used to write.
+    expect(main).not.toMatch(/linkDeps\(join\(NIRVANA_SKILLS, s, "node_modules"\)\)/);
+    expect(main).not.toMatch(/join\(linkPath, "node_modules"\)/);
+    expect(hooks).not.toMatch(/symlinkSync\(rootNodeModules/);
+  });
+});
