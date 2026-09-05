@@ -8,6 +8,22 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## 0.13.3 — 2026-09-05
 
+### Squad activation reports Windows tools and hook failures honestly
+
+System dependency names are now checked without placing the manifest value in
+a shell command. Windows uses `where.exe`, POSIX keeps `command -v` with the
+name passed as data, and object entries without a custom `check` fall back to a
+validated executable name. A missing tool with no Windows recipe is reported
+as missing instead of implying that the program itself does not support
+Windows.
+
+Post-install hooks accept both legacy strings and objects with `command`,
+`name`, and `optional`. Invalid or failed required hooks now fail activation,
+produce exit code 1, and prevent a new success state from replacing the prior
+state. Optional failures remain warnings. This does not translate POSIX shell
+hooks for Windows; pack authors still need to provide portable commands where
+their hooks use shell-specific syntax.
+
 ### An older Codex drops a flag instead of the whole run
 
 The adapter is audited against Codex 0.153.4, and the flags it gained on 2026-09-05 are younger than many installed CLIs: `--approve-for-me` arrived in 0.147 (2026-08-07), `--ephemeral` in 0.134, `--output-schema` in 0.132. clap answers an unknown flag with exit 2 and `unexpected argument '<flag>' found` before anything runs, so on such a machine every dispatch would have died at argv. Now the adapter drops the flag Codex names, records a warning on the result (`codex: this version does not know --add-dir; retried without it (extra directories were not granted)`), and runs with what that version has; `--approve-for-me` falls back to `-s workspace-write`, the pre-0.147 restricted path. A flag that is not optional (`--json`) is not retried. Found by asking whether clients were ready to update, and answering by installing the published tarball into a clean home before saying yes.
