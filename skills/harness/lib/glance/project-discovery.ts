@@ -4,11 +4,11 @@
  * `POST /api/actions/switch-project`).
  *
  * Source: Claude Code's own transcript-storage convention. A session run
- * from `/Users/guto/nirvana-os` gets its transcripts stored under
- * `~/.claude/projects/-Users-guto-nirvana-os/` — every path separator
+ * from `/home/dev/nirvana-os` gets its transcripts stored under
+ * `~/.claude/projects/-home-dev-nirvana-os/` — every path separator
  * turned into "-", with a leading "-" for the leading "/". That encoding is
  * LOSSY: a real directory name can itself contain "-" (`nirvana-os`,
- * `systems-atelier`), so it is not reversible by a blind
+ * `mini-apps`), so it is not reversible by a blind
  * `replace(/-/g, "/")` — that would misread `nirvana-os` as `nirvana/os`.
  *
  * `decodeClaudeProjectDirName()` recovers the real path by walking the

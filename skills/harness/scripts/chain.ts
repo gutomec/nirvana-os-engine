@@ -10,10 +10,9 @@
  * the org chart at all, and the maestro did the only thing it could: hand the
  * whole business to a single subagent.
  *
- * Measured on a live run, 2026-09-04: `nexus-council` (9 seats) and
- * `systems-atelier` (14 seats) each emitted ONE `dispatch_business` and zero
- * per-employee events — while the deliverables named six of those seats as
- * contributors. Work attributed to seats that never ran as audited agents is the
+ * Measured on a live run, 2026-09-04: two businesses with 23 seats between them
+ * emitted ONE `dispatch_business` each and zero per-employee events — while the
+ * deliverables named six of those seats as contributors. Work attributed to seats that never ran as audited agents is the
  * exact fiction the audit protocol exists to prevent, and it was not a bug in
  * anyone's code: no procedure existed.
  *
