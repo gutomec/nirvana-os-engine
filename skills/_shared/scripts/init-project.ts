@@ -35,6 +35,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { parseArgs, EXIT, log, paths } from "../lib/bun-helpers.ts";
 import { ProjectService } from "../../harness/lib/control-plane/project-service.ts";
+import { openclawAgentFor, openclawBindCommand } from "../lib/openclaw.ts";
 
 const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
   || (fs.existsSync(path.join(os.homedir(), ".nirvana", "skills")) ? path.join(os.homedir(), ".nirvana", "skills") : path.join(os.homedir(), ".claude", "skills"));
@@ -577,7 +578,32 @@ async function main() {
       log.ok(`Audit hooks active across installed agents — runs auto-track in 'nrv glance'.`);
     }
   } catch { /* check is best-effort */ }
+  // The claws. Claude, Codex, Gemini and Hermes work where they are started, so
+  // "open it here" is the whole recipe. OpenClaw works in an agent's workspace,
+  // and the way this directory becomes that agent's home is one command — said
+  // here, once, because nothing in OpenClaw will ever say it.
+  try {
+    if (binOnPath("openclaw")) {
+      const bound = openclawAgentFor(target);
+      if (bound) {
+        log.ok(`OpenClaw: agent '${bound.id}' already has this project as its workspace.`);
+      } else {
+        log.info(`OpenClaw: to make this project an agent's workspace (AGENTS.md becomes its instructions; every nrv call logs here):`);
+        log.info(`  ${openclawBindCommand(target, path.basename(target))}`);
+        log.info(`  OpenClaw then scaffolds SOUL.md, IDENTITY.md, USER.md and memory/ in the project; memory/ is git-ignored.`);
+      }
+    }
+    if (binOnPath("hermes")) {
+      log.info(`Hermes: nrv-hermes from this directory (or hermes chat --in ${target}) — AGENTS.md is injected from cwd and the audit hooks already log here.`);
+    }
+  } catch { /* hints are best-effort */ }
   process.exit(EXIT.OK);
+}
+
+/** `where` on Windows, `which` elsewhere: is the CLI on PATH? */
+function binOnPath(bin: string): boolean {
+  const probe = process.platform === "win32" ? "where" : "which";
+  try { return require("node:child_process").spawnSync(probe, [bin], { stdio: "ignore" }).status === 0; } catch { return false; }
 }
 
 await main();

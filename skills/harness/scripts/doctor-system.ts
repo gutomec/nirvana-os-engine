@@ -28,6 +28,7 @@ import { paths as nrvPaths } from "../../_shared/lib/bun-helpers.ts";
 import { resolveScope, enumerate } from "../../_shared/lib/scope.ts";
 import { RUNTIME_TARGETS, RUNTIME_SKILL_DIRS, PROJECT_CONTRACT_FILES, SKILLS as SKILL_NAMES } from "../../_shared/lib/runtime-dirs.ts";
 import { listRuntimes, whichSync } from "../../_shared/lib/host-agent-driver.ts";
+import { openclawAgentsOnProjects } from "../../_shared/lib/openclaw.ts";
 import { expandEnv, findTempNrvEntries, readUserPath, tempRoots } from "../../_shared/lib/windows-user-path.ts";
 import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import {
@@ -134,6 +135,18 @@ add(
     ? `${runtimesOnPath}/${listRuntimes().length} agent runtime(s) on PATH`
     : `no agent runtime on PATH — dispatch cannot run; install one (claude, codex, gemini, …)${headlessCI ? " (CI environment: reported as warning)" : ""}`,
 );
+
+// SECTION 1a-ter: CLAWS ON PROJECTS — OpenClaw works in an agent's workspace,
+// not in cwd, so the only way a Nirvana project meets an OpenClaw agent is to
+// BE that agent's workspace. This line says which agents are bound that way.
+// Informational: a machine with no binding is not degraded.
+if (which("openclaw")) {
+  const bound = openclawAgentsOnProjects();
+  add("openclaw: agents on projects", "PASS",
+    bound.length
+      ? bound.map((a) => `${a.id} → ${a.workspace!.replace(HOME, "~")}`).join(", ")
+      : "none bound — `openclaw agents add <name> --workspace <project> --non-interactive` makes a project the agent's home");
+}
 
 // SECTION 1a-bis-judge: GAUNTLET EVALUATOR — which evaluator a Gauntlet started
 // today would get, by the same selection the three canaries use

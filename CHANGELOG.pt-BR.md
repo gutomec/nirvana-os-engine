@@ -8,6 +8,14 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### O projeto também é onde um claw mora
+
+Claude, Codex, Gemini e Hermes trabalham no diretório em que foram abertos, então "abra dentro do projeto" era a receita inteira e toda chamada `nrv` logava em `<projeto>/.nirvana/logs/harness/`. O OpenClaw não: um agente trabalha no seu **workspace**, lê o `AGENTS.md` de lá e ignora onde a pessoa digitou. Nada no engine dizia isso, e a nota do instalador chamava o OpenClaw de runtime que não lê contrato nenhum.
+
+O vínculo é um comando — `openclaw agents add <nome> --workspace <projeto> --non-interactive` — e ele faz do `AGENTS.md` que o `nrv init` escreveu a instrução operacional do agente. Medido num projeto recém-criado: o agente resumiu o contrato, o `pwd` era o projeto, e o `nrv audit emit` caiu assinado no log do projeto sem nada no global. O `nrv init` imprime o comando quando `openclaw` está no PATH (e a receita do Hermes quando `hermes` está), o `nrv doctor` lista os agentes vinculados assim, o esqueleto do projeto ignora no git o `memory/` que o OpenClaw escreve no workspace, e a nota do instalador diz o que é verdade agora. `docs/architecture/project-directory-and-runtimes.md` guarda a regra e a receita por runtime; os hooks de ferramenta do OpenClaw ficam documentados como não ligados, com as issues upstream que dizem por quê.
+
+Achado pela mesma sondagem: as notas da 0.13.0 prometiam `nrv audit where` e `nrv audit tail`; o CLI só conhecia `audit-where` e `audit-tail`, e `nrv audit where` respondia "No events found for project 'where'". As duas grafias chegam agora aos mesmos scripts.
+
 ### O Codex roda com as flags que o Codex tem agora, e todo runtime recebe seus diretórios
 
 O adapter do Codex tinha sido auditado em 26/08/2026 e usava três flags. Contra a 0.153.4 ele agora passa as concessões de diretório (`--add-dir` para o diretório do projeto, a raiz de saídas e o diretório da empresa ou do squad — as mesmas que o Claude já recebia e o Codex nunca recebeu, então sob sandbox um seat não alcançava seus playbooks), um caminho restrito de verdade (`--approve-for-me`, que sozinho já significa o sandbox workspace-write — a 0.153 rejeita a combinação com `-s`: o sandbox fica e as aprovações vão ao agente revisor do Codex em vez de travar uma execução que ninguém está olhando — `-s workspace-write` sozinho herdava o `approval_policy` do usuário e bloqueava na primeira escalada), e o provedor como `-c model_provider=…`, porque `--provider` foi removida do `codex exec` e todo despacho com dica de provedor falhava antes de rodar. Três flags opcionais para quem quiser: `--ephemeral` (nunca quando a sessão vai ser retomada), `--output-schema`, `-i` para imagens, e `web_search` por execução.
