@@ -1146,6 +1146,17 @@ export interface RunHeadlessOpts {
    * `--provider` — anthropic/openai/google/openrouter/ollama/…). Ignored by
    * CLIs that don't have this concept. */
   providerHint?: string;
+  /** Do not persist the session (codex `--ephemeral`). Off by default: the
+   * review loop and `nrv revise` resume sessions, and an ephemeral run leaves
+   * nothing to resume. A caller that will never come back opts in. */
+  ephemeral?: boolean;
+  /** JSON Schema file the final message must conform to (codex
+   * `--output-schema`). Runtimes without the flag ignore it. */
+  outputSchema?: string;
+  /** Image files attached to the prompt (codex `-i`). */
+  images?: string[];
+  /** Web search for this run (codex `-c web_search=…`). */
+  webSearch?: "live" | "indexed" | "cached" | "disabled";
   /** Dispatch-ledger heartbeat (routing-360 Phase 4). When present the run is
    * SUPERVISED: a detached sidecar renews the run's lease while the child shows
    * activity, and the wall clock falls back to LEDGER_DEFAULT_TIMEOUT_MS — a
@@ -1248,10 +1259,44 @@ export interface RunHeadlessResult {
    * (spend-tracker / cost-estimator) may still ESTIMATE from token counts;
    * this flag only states the CLI did not say. */
   costUnavailable?: boolean;
+  /** Token usage as the CLI itself reported it (codex `turn.completed.usage`).
+   * `cachedInputTokens` is the cached SUBSET of `inputTokens`, as OpenAI counts
+   * it; the cost estimator prices the two parts differently. */
+  usage?: { inputTokens: number; cachedInputTokens: number; cacheWriteInputTokens: number; outputTokens: number; reasoningOutputTokens: number };
+  /** Non-fatal notices the run produced: a CLI item of type `error` that did not
+   * fail the turn (codex: skills budget, an MCP server that did not start), or a
+   * grant this runtime's CLI has no flag for. Delivered, not swallowed. */
+  warnings?: string[];
   exitCode: number;
   stderr: string;
   durationMs: number;
   error?: string;
+}
+
+/**
+ * The flag each CLI takes to grant extra directories, or null when it has none.
+ * Nirvana hands every run the project dir, the outputs root and the business or
+ * squad dir on top of cwd; under a sandbox those grants are what lets a seat
+ * read its playbooks and write its deliverables. A runtime without a flag gets
+ * a warning on the result, never silence. Audited on the installed CLIs,
+ * 2026-09-05 (claude, codex 0.153, gemini, agy); qwen-code is a gemini-cli
+ * fork and takes the same flag, with a retry without it for older builds.
+ */
+export const RUNTIME_DIR_GRANT_FLAG: Record<Runtime, string | null> = {
+  "claude-code": "--add-dir",
+  codex: "--add-dir",
+  "gemini-cli": "--include-directories",
+  "antigravity-cli": "--add-dir",
+  "qwen-code": "--include-directories",
+  "kimi-cli": null,
+  "grok-cli": null,
+  pi: null,
+  opencode: null,
+};
+
+function noDirGrantWarning(runtime: Runtime, dirs: string[] | undefined): { warnings: string[] } | {} {
+  if (!dirs?.length) return {};
+  return { warnings: [`${runtime} has no directory-grant flag; not granted by the CLI: ${dirs.join(", ")}`] };
 }
 
 /** Conservative allowlist used only when the caller asks for safe mode
@@ -1506,13 +1551,24 @@ function withPreamble(opts: RunHeadlessOpts): string {
   return opts.appendSystemPrompt ? `${opts.appendSystemPrompt}\n\n---\n\n${opts.prompt}` : opts.prompt;
 }
 
-// Codex CLI (codex exec). Writes deliverables under cwd via the workspace-write
-// sandbox. Resume is a subcommand (`codex exec resume <id>`). Session id is
-// scraped best-effort from the --json event stream; if it can't be captured,
-// the run still completes but `nrv revise` for that project won't resume.
-// Prompt via STDIN (verified `codex exec --help`: no positional → stdin).
-// Cost: codex reports TOKEN COUNTS in turn.completed events, never a USD
-// figure → costUnavailable (the cost-estimator prices the tokens downstream).
+// Codex CLI (codex exec). Flags audited against codex 0.153.4 (`codex exec
+// --help`, 2026-09-05). Resume is a subcommand (`codex exec resume <id>`). The
+// session id comes from `thread.started.thread_id` in the --json stream; if it
+// cannot be captured the run still completes but `nrv revise` will not resume.
+// Prompt via STDIN (no positional → stdin). Cost: codex reports TOKEN COUNTS in
+// `turn.completed.usage`, never USD → costUnavailable, and the usage is handed
+// back whole so the cost-estimator prices cached input at the cached rate.
+//
+// Autonomy: trust (default) is `--dangerously-bypass-approvals-and-sandbox`.
+// --safe is `--approve-for-me`, which by itself means the workspace-write
+// sandbox (its own help says so, and 0.153.4 rejects it combined with `-s`:
+// "cannot be used with '--approve-for-me'", found by running it). The sandbox
+// stays, and every approval a human would answer goes to Codex's own reviewer
+// agent instead of blocking a run nobody is watching. `-s workspace-write`
+// alone used to be the safe path, and it stalled at the first escalation
+// because `exec` inherits `approval_policy` from the user's config.
+function isOpenAiModelId(m: string): boolean { return /^(gpt-|o[1-9]|codex)/i.test(m); }
+
 function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
   const started = Date.now();
   const lastMsg = path.join(os.tmpdir(), `codex-last-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`);
@@ -1520,11 +1576,23 @@ function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
     ? ["exec", "resume", opts.sessionId]
     : ["exec"];
   const args = [...base, "--json", "--skip-git-repo-check", "-C", opts.cwd, "-o", lastMsg];
+  // Only an OpenAI id reaches `--model`. resolveSystemModel returns the
+  // session's Claude alias when NIRVANA_MODEL is set — that is its contract —
+  // and `--model opus` is a hard error here, so anything that is not an OpenAI
+  // id is dropped and codex keeps its configured default.
   const cxModel = opts.model ?? resolveSystemModel("codex");
-  if (cxModel) args.push("--model", cxModel);
-  if (opts.providerHint) args.push("--provider", opts.providerHint);
-  // Trust by default; --safe (opts.yolo===false) → workspace-write sandbox.
-  if (opts.yolo === false) args.push("-s", "workspace-write");
+  if (cxModel && isOpenAiModelId(cxModel)) args.push("--model", cxModel);
+  // `--provider` no longer exists on `codex exec` ("unexpected argument" on
+  // 0.153); the provider is a config key, overridable per run with -c.
+  if (opts.providerHint) args.push("-c", `model_provider=${JSON.stringify(opts.providerHint)}`);
+  // Grants: under workspace-write only cwd is writable; the project dir, the
+  // outputs root and the business/squad dir come through --add-dir.
+  for (const d of opts.addDirs ?? []) args.push("--add-dir", d);
+  if (opts.ephemeral && !opts.sessionId) args.push("--ephemeral");
+  if (opts.outputSchema) args.push("--output-schema", opts.outputSchema);
+  for (const img of opts.images ?? []) args.push("-i", img);
+  if (opts.webSearch) args.push("-c", `web_search=${JSON.stringify(opts.webSearch)}`);
+  if (opts.yolo === false) args.push("--approve-for-me");
   else args.push("--dangerously-bypass-approvals-and-sandbox");
 
   const r = driverSpawnSync("codex", args, {
@@ -1541,6 +1609,8 @@ function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
 
   let sessionId: string | null = opts.sessionId ?? null;
   let streamError: string | null = null;
+  let usage: RunHeadlessResult["usage"];
+  const warnings: string[] = [];
   for (const line of (r.stdout || "").split("\n")) {
     const t = line.trim();
     if (!t.startsWith("{")) continue;
@@ -1549,7 +1619,8 @@ function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
       sessionId = j.session_id || j.thread_id || j.conversation_id || j?.session?.id || j?.msg?.session_id || sessionId;
       // Failure contract: exit 0 does not mean the turn succeeded. Terminal
       // `error` events / `turn.failed` mark failure; a LATER turn.completed
-      // (codex-internal retry) clears it.
+      // (codex-internal retry) clears it. An `item` of type `error` is a
+      // notice, not a failure — the turn goes on to completion after it.
       const evType = j.type ?? j?.msg?.type;
       if (evType === "error") {
         streamError = envelopeErrorMessage(j.message ?? j?.msg?.message ?? j) || "codex stream error event";
@@ -1557,6 +1628,18 @@ function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
         streamError = envelopeErrorMessage(j.error ?? j?.msg?.error) || "codex turn failed";
       } else if (evType === "turn.completed") {
         streamError = null;
+        const u = j.usage;
+        if (u && typeof u === "object") {
+          usage = {
+            inputTokens: Number(u.input_tokens) || 0,
+            cachedInputTokens: Number(u.cached_input_tokens) || 0,
+            cacheWriteInputTokens: Number(u.cache_write_input_tokens) || 0,
+            outputTokens: Number(u.output_tokens) || 0,
+            reasoningOutputTokens: Number(u.reasoning_output_tokens) || 0,
+          };
+        }
+      } else if (evType === "item.completed" && j.item?.type === "error" && j.item?.message) {
+        warnings.push(String(j.item.message));
       }
     } catch { /* not a json line */ }
   }
@@ -1575,6 +1658,8 @@ function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
   return {
     ok, runtime: "codex", sessionId, result,
     costUsd: null, costUnavailable: true, exitCode, stderr, durationMs,
+    ...(usage ? { usage } : {}),
+    ...(warnings.length ? { warnings } : {}),
     error: ok ? undefined : (streamError || salientError(stderr, "codex exec failed")),
   };
 }
@@ -1592,6 +1677,9 @@ function runGemini(opts: RunHeadlessOpts): RunHeadlessResult {
   else args.push("--session-id", sid);
   const gmModel = opts.model ?? resolveSystemModel("gemini-cli");
   if (gmModel) args.push("--model", gmModel);
+  // Workspace grants (`gemini --help`, audited 2026-09-05: "--include-directories
+  // Additional directories to include in the workspace", repeatable).
+  for (const d of opts.addDirs ?? []) args.push("--include-directories", d);
   // Trust by default (--yolo); --safe (opts.yolo===false) → auto_edit.
   args.push("--approval-mode", opts.yolo === false ? "auto_edit" : "yolo");
 
@@ -1797,6 +1885,7 @@ function runKimi(opts: RunHeadlessOpts): RunHeadlessResult {
   const ok = exitCode === 0 && streamError === null;
   return {
     ok, runtime: "kimi-cli", sessionId, result,
+    ...noDirGrantWarning("kimi-cli", opts.addDirs),
     costUsd, ...(costUsd === null ? { costUnavailable: true } : {}),
     exitCode, stderr, durationMs,
     error: ok ? undefined : (streamError || salientError(stderr, "kimi failed")),
@@ -1885,6 +1974,7 @@ function runGrok(opts: RunHeadlessOpts): RunHeadlessResult {
   const ok = exitCode === 0 && envelopeError === null;
   return {
     ok, runtime: "grok-cli", sessionId, result,
+    ...noDirGrantWarning("grok-cli", opts.addDirs),
     costUsd, ...(costUsd === null ? { costUnavailable: true } : {}),
     exitCode, stderr, durationMs,
     error: ok ? undefined : (envelopeError || salientError(stderr, "grok failed")),
@@ -2004,6 +2094,7 @@ function runPi(opts: RunHeadlessOpts): RunHeadlessResult {
 
   return {
     ok, runtime: "pi", sessionId, result,
+    ...noDirGrantWarning("pi", opts.addDirs),
     costUsd, ...(costUsd === null ? { costUnavailable: true } : {}),
     exitCode, stderr, durationMs,
     error: ok ? undefined : (streamError || salientError(stderr, "pi failed")),
@@ -2017,9 +2108,12 @@ function runPi(opts: RunHeadlessOpts): RunHeadlessResult {
 // resume). No native USD figure → costUnavailable.
 function runQwen(opts: RunHeadlessOpts): RunHeadlessResult {
   const started = Date.now();
-  const args = ["-p", ""];
+  let args = ["-p", ""];
   const qwModel = opts.model ?? resolveSystemModel("qwen-code");
   if (qwModel) args.push("--model", qwModel);
+  // qwen-code is a gemini-cli fork and takes the same workspace-grant flag; a
+  // build that does not know it is retried without it below.
+  for (const d of opts.addDirs ?? []) args.push("--include-directories", d);
   if (opts.yolo !== false) args.push("--approval-mode", "yolo");
 
   const spawnOpts = {
@@ -2030,6 +2124,10 @@ function runQwen(opts: RunHeadlessOpts): RunHeadlessResult {
     maxBuffer: 64 * 1024 * 1024,
   };
   let r = driverSpawnSync("qwen", args, spawnOpts);
+  if ((r.status ?? 1) !== 0 && /include[- ]directories/i.test(r.stderr || "")) {
+    args = args.filter((a, i, arr) => a !== "--include-directories" && arr[i - 1] !== "--include-directories");
+    r = driverSpawnSync("qwen", args, spawnOpts);
+  }
   if ((r.status ?? 1) !== 0 && /approval[- ]mode|unknown|unrecognized|invalid (option|flag|argument)/i.test(r.stderr || "")) {
     const i = args.indexOf("--approval-mode");
     if (i >= 0) r = driverSpawnSync("qwen", [...args.slice(0, i), ...args.slice(i + 2)], spawnOpts);
@@ -2082,6 +2180,7 @@ function runOpencode(opts: RunHeadlessOpts): RunHeadlessResult {
 
   return {
     ok: exitCode === 0, runtime: "opencode", sessionId: null,
+    ...noDirGrantWarning("opencode", opts.addDirs),
     result: (r.stdout || "").trim(),
     costUsd: null, costUnavailable: true, exitCode, stderr, durationMs,
     error: exitCode === 0 ? undefined : salientError(stderr, "opencode failed"),

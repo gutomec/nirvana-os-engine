@@ -24,6 +24,7 @@ import {
   reapOrphanedPromptFiles,
   __testables,
   type Runtime,
+  RUNTIME_DIR_GRANT_FLAG, type RunHeadlessOpts,
 } from "../../_shared/lib/host-agent-driver.ts";
 import { writeFakeCli, readCapturedArgs, CAPTURE_PRELUDE } from "./helpers/fake-cli.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
@@ -79,7 +80,12 @@ beforeAll(() => {
     }
     if (out) { try { fs.writeFileSync(out, "len:" + len); } catch {} }
     console.log(JSON.stringify({ type: "thread.started", thread_id: "t1" }));
-    console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 10, output_tokens: 5 } }));
+    console.log(JSON.stringify({ type: "turn.started" }));
+    // A notice, not a failure: codex reports skill-budget truncation and an MCP
+    // server that did not start as an item of type error and completes the turn.
+    console.log(JSON.stringify({ type: "item.completed", item: { id: "item_0", type: "error", message: "Skill descriptions were shortened to fit the skills context budget." } }));
+    console.log(JSON.stringify({ type: "item.completed", item: { id: "item_1", type: "agent_message", text: "len:" + len } }));
+    console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 10, cached_input_tokens: 4, cache_write_input_tokens: 0, output_tokens: 5, reasoning_output_tokens: 2 } }));
   `);
 
   // gemini — STDIN delivery (-p "" + stdin); error field in envelope; no USD.
@@ -141,6 +147,10 @@ beforeAll(() => {
   // qwen — STDIN delivery (gemini fork); plain text happy path; no USD.
   fake("qwen", `
     const len = await stdinLen();
+    if (process.env.FAKE_REJECT_INCLUDE && argv.includes("--include-directories")) {
+      process.stderr.write("error: unknown option '--include-directories'");
+      process.exit(2);
+    }
     if (process.env.FAKE_MODE === "error") {
       process.stdout.write(JSON.stringify({ error: { message: "qwen quota" } }));
       process.exit(0);
@@ -187,6 +197,11 @@ function run(runtime: Runtime, mode?: "error" | "budget") {
   } finally {
     delete process.env.FAKE_MODE;
   }
+}
+
+function runWith(runtime: Runtime, extra: Partial<RunHeadlessOpts>) {
+  delete process.env.FAKE_MODE;
+  return runHeadless({ runtime, prompt: "small prompt", cwd: TMP, yolo: true, timeoutMs: 20_000, ...extra });
 }
 
 describe("driver adapters — 300KB prompt delivery + cost matrix", () => {
@@ -462,4 +477,104 @@ describe("light layer — callHostAgent / callHostAgentAsync", () => {
     expect(call.args).toEqual(["-p", "small prompt"]);
     expect(call.tmpFiles).toBeUndefined();
   });
+});
+
+describe("directory grants — every runtime that has a flag passes it; the rest say so", () => {
+  const dirs = [path.join(TMP, "project"), path.join(TMP, "outputs")];
+
+  test("the grant table names a flag for the runtimes whose CLIs have one", () => {
+    expect(RUNTIME_DIR_GRANT_FLAG["claude-code"]).toBe("--add-dir");
+    expect(RUNTIME_DIR_GRANT_FLAG.codex).toBe("--add-dir");
+    expect(RUNTIME_DIR_GRANT_FLAG["gemini-cli"]).toBe("--include-directories");
+    expect(RUNTIME_DIR_GRANT_FLAG["antigravity-cli"]).toBe("--add-dir");
+    expect(RUNTIME_DIR_GRANT_FLAG["qwen-code"]).toBe("--include-directories");
+  });
+
+  for (const [runtime, cli] of [["claude-code", "claude"], ["codex", "codex"], ["gemini-cli", "gemini"], ["antigravity-cli", "agy"], ["qwen-code", "qwen"]] as const) {
+    test(`${runtime}: each extra directory rides argv behind ${RUNTIME_DIR_GRANT_FLAG[runtime]}`, () => {
+      const r = runWith(runtime, { addDirs: dirs });
+      expect(r.ok).toBe(true);
+      const args = capturedArgs(cli);
+      const flag = RUNTIME_DIR_GRANT_FLAG[runtime]!;
+      for (const d of dirs) {
+        const i = args.indexOf(d);
+        expect(i).toBeGreaterThan(0);
+        expect(args[i - 1]).toBe(flag);
+      }
+      // Other notices may ride along (the codex fake emits one); a grant notice may not.
+      expect((r.warnings ?? []).some(w => w.includes("no directory-grant flag"))).toBe(false);
+    }, spawnBudgetMs(2));
+  }
+
+  for (const runtime of ["grok-cli", "pi", "kimi-cli", "opencode"] as const) {
+    test(`${runtime}: no flag → the result says the grant did not happen`, () => {
+      const r = runWith(runtime, { addDirs: dirs });
+      expect(RUNTIME_DIR_GRANT_FLAG[runtime]).toBeNull();
+      expect(r.warnings?.length).toBe(1);
+      expect(r.warnings![0]).toContain("no directory-grant flag");
+      expect(r.warnings![0]).toContain(dirs[0]);
+    }, spawnBudgetMs(2));
+  }
+
+  test("qwen-code: a build that rejects --include-directories is retried without it", () => {
+    process.env.FAKE_REJECT_INCLUDE = "1";
+    try {
+      const r = runWith("qwen-code", { addDirs: dirs });
+      expect(r.ok).toBe(true);
+      expect(capturedArgs("qwen")).not.toContain("--include-directories");
+    } finally { delete process.env.FAKE_REJECT_INCLUDE; }
+  }, spawnBudgetMs(3));
+});
+
+describe("codex — flags audited against 0.153.4, usage and notices", () => {
+  test("trust: bypass flag; grants, model and provider as -c", () => {
+    const r = runWith("codex", { addDirs: [path.join(TMP, "biz")], model: "gpt-5.5", providerHint: "openai" });
+    expect(r.ok).toBe(true);
+    const args = capturedArgs("codex");
+    expect(args).toContain("--dangerously-bypass-approvals-and-sandbox");
+    expect(args).not.toContain("--provider");
+    expect(args).toContain('model_provider="openai"');
+    expect(args[args.indexOf("--model") + 1]).toBe("gpt-5.5");
+    expect(args).not.toContain("--ephemeral");
+    expect(args).not.toContain("-s");
+  }, spawnBudgetMs(2));
+
+  test("--safe: approvals go to the reviewer agent; the flag alone means workspace-write", () => {
+    runWith("codex", { yolo: false });
+    const args = capturedArgs("codex");
+    expect(args).toContain("--approve-for-me");
+    // 0.153.4 rejects the pair: "the argument '--sandbox' cannot be used with '--approve-for-me'".
+    expect(args).not.toContain("-s");
+    expect(args).not.toContain("--sandbox");
+    expect(args).not.toContain("--dangerously-bypass-approvals-and-sandbox");
+  }, spawnBudgetMs(2));
+
+  test("a Claude alias never reaches --model; an OpenAI id does", () => {
+    runWith("codex", { model: "opus" });
+    expect(capturedArgs("codex")).not.toContain("--model");
+    runWith("codex", { model: "gpt-6-astra" });
+    expect(capturedArgs("codex")).toContain("gpt-6-astra");
+  }, spawnBudgetMs(3));
+
+  test("ephemeral, output schema, images and web search ride argv; ephemeral yields to resume", () => {
+    const schema = path.join(TMP, "verdict.schema.json");
+    fs.writeFileSync(schema, "{}");
+    runWith("codex", { ephemeral: true, outputSchema: schema, images: [path.join(TMP, "a.png")], webSearch: "live" });
+    let args = capturedArgs("codex");
+    expect(args).toContain("--ephemeral");
+    expect(args[args.indexOf("--output-schema") + 1]).toBe(schema);
+    expect(args[args.indexOf("-i") + 1]).toBe(path.join(TMP, "a.png"));
+    expect(args).toContain('web_search="live"');
+    runWith("codex", { ephemeral: true, sessionId: "t1" });
+    args = capturedArgs("codex");
+    expect(args.slice(0, 3)).toEqual(["exec", "resume", "t1"]);
+    expect(args).not.toContain("--ephemeral");
+  }, spawnBudgetMs(3));
+
+  test("usage comes back whole and a notice item is a warning, not a failure", () => {
+    const r = runWith("codex", {});
+    expect(r.ok).toBe(true);
+    expect(r.usage).toEqual({ inputTokens: 10, cachedInputTokens: 4, cacheWriteInputTokens: 0, outputTokens: 5, reasoningOutputTokens: 2 });
+    expect(r.warnings).toEqual(["Skill descriptions were shortened to fit the skills context budget."]);
+  }, spawnBudgetMs(2));
 });
