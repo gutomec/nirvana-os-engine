@@ -78,12 +78,22 @@ export function verifyDeliverableOnDisk(
     path.join(process.cwd(), ".nirvana/outputs"),   // compat: runs antigos
     path.join(os.homedir(), ".nirvana/outputs"),
   ];
+  // Two layouts, both legitimate. The scripted path nests a run under
+  // `outputs/<project_id>/`; `nrv team` writes a chain into a FLAT outputs root
+  // with `_team/<seat>/` beside the finals. This checker knew only the first, so
+  // it answered FAIL_INDETERMINATE for a chain run whose files were on disk —
+  // "project not found" for work that was right there. `projectDir` is whichever
+  // one actually holds the run.
   const projectsRoot = projectRootCandidates.find(p => fs.existsSync(path.join(p, projectId)));
-  if (!projectsRoot) {
-    return base("FAIL_INDETERMINATE", { reason: `project not found in ${projectRootCandidates.join(" or ")}` });
+  const flatRoot = !projectsRoot
+    ? projectRootCandidates.find(p => fs.existsSync(path.join(p, "brief.md")) || fs.existsSync(path.join(p, "_team")))
+    : null;
+  if (!projectsRoot && !flatRoot) {
+    return base("FAIL_INDETERMINATE", { reason: `project not found in ${projectRootCandidates.join(" or ")} (neither nested nor flat layout)` });
   }
+  const projectDir = projectsRoot ? path.join(projectsRoot, projectId) : flatRoot!;
 
-  const briefPath = path.join(projectsRoot, projectId, "brief.md");
+  const briefPath = path.join(projectDir, "brief.md");
   if (!fs.existsSync(briefPath)) {
     return base("FAIL_INDETERMINATE", { reason: `brief not found: ${briefPath}` });
   }
@@ -93,8 +103,8 @@ export function verifyDeliverableOnDisk(
   // --manifest). It's authoritative; brief.md regex is best-effort fallback.
   let expectedPathsRaw: string[] = [];
   let manifestSource = "brief-regex";
-  const deliverablesPath = path.join(projectsRoot, projectId, "businesses", businessSlug, "deliverables.json");
-  const deliverablesPathAlt = path.join(projectsRoot, projectId, "deliverables.json"); // project-level fallback
+  const deliverablesPath = path.join(projectDir, "businesses", businessSlug, "deliverables.json");
+  const deliverablesPathAlt = path.join(projectDir, "deliverables.json"); // project-level fallback
 
   let manifestFile: string | null = null;
   if (fs.existsSync(deliverablesPath)) manifestFile = deliverablesPath;
@@ -121,7 +131,7 @@ export function verifyDeliverableOnDisk(
     const bizDir = opts.businessDir ?? businessDirFor(businessSlug);
     const promised = bizDir ? readAcceptance(bizDir).paths : [];
     if (promised.length > 0) {
-      const base = outputsRoot ?? path.join(projectsRoot, projectId);
+      const base = outputsRoot ?? projectDir;
       expectedPathsRaw = promised.map(entry => path.isAbsolute(entry.path) ? entry.path : path.resolve(base, entry.path));
       acceptanceMinBytes = new Map(promised.map((entry, index) => [expectedPathsRaw[index], entry.minBytes ?? minBytes]));
       manifestSource = "acceptance";
@@ -235,7 +245,7 @@ if (import.meta.main) {
         path.join(process.cwd(), ".nirvana/outputs"),
         path.join(os.homedir(), ".nirvana/outputs"),
       ].find(p => fs.existsSync(path.join(p, projectId)))!;
-      const projectDir = path.join(projectsRoot, projectId, "businesses", businessSlug);
+      const projectDir = path.join(projectDir, "businesses", businessSlug);
       fs.mkdirSync(projectDir, { recursive: true });
       const auditEntry = JSON.stringify({
         ts: report.timestamp,

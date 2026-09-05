@@ -8,6 +8,56 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### The validators learned the chain layout
+
+A run dispatched through `nrv team` writes a FLAT outputs root — `outputs/` with `outputs/_team/<seat>/` beside the finals — while the scripted path nests everything under `outputs/<project_id>/`. Both are legitimate; the validators knew one. So `validate-chain --verify-disk` read no per-target audits for a chain run and `verify-deliverable` answered "project not found" for work sitting on disk in front of it.
+
+The run's own maestro reported this before anyone here noticed, with the right diagnosis — a path-convention defect, not missing work — in an `x_validator_layout_mismatch` event it emitted after delivering.
+
+Both validators read both layouts now, and `validate-chain` also reads the project's own `audit.jsonl`, which `handoff.js` writes and nothing read: six handoff events could sit in a project while the validator reported zero and called the chain a violation. On a real chain run it now sees the whole thing — three per-seat dispatches, two approved reviews, the delivery — and the one gap it reports (`verify_passed` absent) is true.
+
+Rather than teach every future checker a second convention, `nrv team plan` now writes `brief.md` at the outputs root, which is the file the existing convention asks for. One line, and a chain run becomes legible to tools that do not know it is one.
+
+### The cockpit reads every audit a run wrote, and says who wrote each line
+
+Glance read one audit file. A run writes to up to four — the orchestrator's daily log, the project's own log, one per dispatched target under its outputs tree, and the global fallback — so the cockpit showed runs with no dispatches while their files sat on disk. Measured on this machine after the change: nine runs whose dispatches were invisible, and seats (`ds-creative-director`, `t360-ceo`, `al-publisher`) that had never appeared at all.
+
+Every event Glance serves now carries `_provenance`: `engine` when the engine signed it, `unsigned` when nothing did, `tampered` when the signature no longer matches its content. The cockpit is where somebody decides whether a run happened, and until now a line an agent typed rendered identically to one the engine emitted.
+
+`unsigned` on an old event means "written before stamping existed", not "forged". The distinction only runs forward.
+
+Two guards, both added because the tests caught their absence: a pinned `HARNESS_LOGS_DIR` means read that root and not the world (a fixture had started wandering through the machine's real projects), and an absent root stays **undetermined** rather than becoming a measured zero — a distinction this cockpit already had a test for.
+
+### The handoff stream wrote to a hardcoded path
+
+`handoff.js` appended to `~/.harness-logs/` directly instead of resolving the log root, which is the exact split brain `log-paths.js` warns about in its own header: writes go per-project, reads still hit `$HOME`, the chain breaks. It did — a live run left six handoff events in the project's audit and zero in the daily log `validate-chain` reads, and the run's own validator reported the gap before anyone here noticed it. It resolves the root now, and its events are stamped like every other engine write.
+
+### The canonical emitter was the one that did not stamp
+
+`nrv audit emit` — the path the protocol tells agents to use — writes through `harness/lib/audit.js`, and that was the one emitter left unstamped. So the internal emitters were signed and the one agents actually call was not, which meant a legitimate agent-emitted event was indistinguishable from a line somebody typed: the exact confusion the stamp exists to end, preserved at the only place it mattered. It stamps the envelope now.
+
+The implementation moved to a CJS sibling (`audit-provenance.js`, with the `.ts` as its typed face) because `audit.js` is CommonJS and a `.js` requiring a `.ts` is the ESM boundary Windows enforces as a hard error. The repo's own gate caught that within a minute of the mistake.
+
+### A persona loaded by hand now leaves a trace
+
+Seats are handed a ranked list of mind-clones and told to choose; nothing is auto-injected. A seat that loads one by hand was doing the right thing invisibly — three seats embodied someone in a live run with zero `mind_clone_injected` in the audit. `nrv inspect-clone` now emits `x_clone_loaded` when it runs inside a trace, and stays silent otherwise: a person looking is not a run loading.
+
+The instruction that sends a seat there was also wrong. It said `nrv inspect-clone <slug> --dna`, and that flag prints layer COUNTS, not the DNA. It now points at the default output, which prints `Path:` and the artifacts, and names the three files to read.
+
+### Five things the first real org-chart run exposed
+
+The run worked — three seats dispatched by name, two reviews approved against declared criteria, a computed receipt that closed. Watching it closely turned up five defects, four of them introduced the same day.
+
+**The provenance stamp covered 2 emitters out of 23.** Shipping it that way produced a signal worse than none: within minutes, three legitimate engine events read as unsigned, and a reader following the label would have concluded the orchestrator was fabricating them. Every emitter now stamps, and `_shared/lib/audit-emit.ts` exists so the next one does not have to remember — the eighteen private copies of that four-line function are why this was 2 of 23 rather than a one-line change.
+
+**`dispatch_business` counted prompts, not dispatches.** It fired when the seat's prompt was built, so a caller that asked for the same prompt twice logged two dispatches for one seat's work. A repeat now emits `x_seat_prompt_reissued`: the repetition is information, not a second dispatch.
+
+**Consulting a receipt changed the log it read.** `nrv team receipt` emitted its sign-off event every time, so looking at a run altered it. Signing is now `--sign`; without it the receipt only reports.
+
+**A gate verdict with no trace says so.** The delivery pipeline exports `NIRVANA_TRACE_ID` and friends, but an agent invoking the gate by hand does not — and ten of twelve verdicts in a live run carried `trace_id: null`, unjoinable to the run they judged. The gate now warns on stderr naming the variables, so the gap is visible instead of silent.
+
+**A chosen mind-clone was never loaded.** Seats are handed a ranked list and told to choose; nothing is auto-injected unless the brief names one. Three seats each picked a clone, logged a considered reason, and then worked from what the model already knew about that person — a name in a log, not a voice in the work. Rule 9 of the protocol calls that claiming fidelity you did not load. The step brief now says it plainly: load it with `nrv inspect-clone <slug> --dna`, or decide none fits and work as yourself, which is honest and allowed.
+
 ### An event the engine wrote is now distinguishable from one an agent typed
 
 The audit is the engine's evidence and it is a text file any agent with Write can append to. On 2026-09-04 one did: a maestro wrote `dispatch_business`, `gate_passed` and an event name the engine has never emitted (`business_completed`) into a run's audit, with timestamps rounded to the minute. The real pipeline ran too, minutes later — so the file held a self-issued verdict and a real one, and **nothing in their shape told them apart**.

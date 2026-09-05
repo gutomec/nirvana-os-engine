@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="apple-dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glance prototype — Preact + Tailwind, zero-build</title>
+<!--
+  ISOLATED SANDBOX (owner request, 2026-09-01) — never linked from the real
+  index.html/glance.js, never shipped in a release. Same Bun server, new
+  route (/prototype), so /api/* calls below are real, same-origin, no CORS
+  setup needed — this IS the "Bun as API + a different frontend" question
+  answered by running code instead of a diagram.
+
+  Tailwind's browser build (JIT-compiles in the browser, official CDN,
+  "not for production" per Tailwind's own docs because of the compile-time
+  cost at public-web scale — irrelevant for a single-user localhost cockpit)
+  reads tokens.css's own custom properties via arbitrary-value classes
+  (bg-[var(--surface-1)], etc.) instead of a separate palette, so this
+  prototype LOOKS like Glance rather than inventing a new design language.
+-->
+<link rel="stylesheet" href="/tokens.css?v=__ASSET_VER__">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<script type="importmap">
+{
+  "imports": {
+    "preact": "https://esm.sh/preact@10",
+    "preact/": "https://esm.sh/preact@10/",
+    "@preact/signals": "https://esm.sh/@preact/signals@1?external=preact",
+    "htm/preact": "https://esm.sh/htm@3/preact?external=preact"
+  }
+}
+</script>
+<style>
+  body { background: var(--surface-0); color: var(--text-primary); font-family: var(--font-sans); }
+</style>
+</head>
+<body>
+  <div id="root" class="p-6 max-w-5xl mx-auto flex flex-col gap-4"></div>
+  <script type="module" src="/prototype/app.js?v=__ASSET_VER__"></script>
+</body>
+</html>

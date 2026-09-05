@@ -241,7 +241,7 @@ describe("nrv team receipt — computed, never narrated", () => {
       { id: "names_a_source", evidence: "01-worker.md:3 — citations inline" },
     ] });
 
-    const r = run(["receipt", "--plan", p]);
+    const r = run(["receipt", "--plan", p, "--sign"]);
     expect(r.code).toBe(0);
     const out = JSON.parse(r.out);
     expect(out.complete).toBe(true);
@@ -257,9 +257,39 @@ describe("nrv team receipt — computed, never narrated", () => {
     run(["step", "--plan", p, "--index", "1"]);
     verdict(p, 0, { confirmed: [] });
 
-    const r = run(["receipt", "--plan", p]);
+    const r = run(["receipt", "--plan", p, "--sign"]);
     expect(r.code).toBe(3);
     expect(JSON.parse(r.out).review_unresolved).toEqual(["worker"]);
     expect(audit().some(e => e.event === "x_business_incomplete")).toBe(true);
+  }, spawnBudgetMs(4));
+});
+
+describe("consulting a receipt does not change the log it reads", () => {
+  // Found by using it: running `team receipt` to LOOK at a real run emitted a
+  // second x_business_signed_off next to the maestro's. An inspector that alters
+  // the evidence is not an inspector.
+  test("without --sign it reports and writes nothing", () => {
+    const p = plan();
+    run(["step", "--plan", p, "--index", "0"]);
+    run(["step", "--plan", p, "--index", "1"]);
+    verdict(p, 0, { confirmed: [
+      { id: "has_three_items", evidence: "01-worker.md:3-5 — three full lines" },
+      { id: "names_a_source", evidence: "01-worker.md:3 — citations inline" },
+    ] });
+    const before = audit().length;
+    const r = run(["receipt", "--plan", p]);
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.out).complete).toBe(true);
+    expect(audit().length).toBe(before);
+    expect(audit().some(e => e.event === "x_business_signed_off")).toBe(false);
+  }, spawnBudgetMs(4));
+
+  test("asking for the same prompt twice logs a reissue, not a second dispatch", () => {
+    const p = plan();
+    run(["step", "--plan", p, "--index", "0"]);
+    run(["step", "--plan", p, "--index", "0"]);
+    const ev = audit();
+    expect(ev.filter(e => e.event === "dispatch_business" && e.employee === "worker")).toHaveLength(1);
+    expect(ev.filter(e => e.event === "x_seat_prompt_reissued" && e.employee === "worker")).toHaveLength(1);
   }, spawnBudgetMs(4));
 });

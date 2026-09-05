@@ -19,6 +19,7 @@ import { buildHandoffPrompt } from "./handoff-prompt.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { estimateCostUsd } from "./cost-estimator.ts";
 import { addSpend, isBudgetExhausted, getSpend } from "./spend-tracker.ts";
+import { stamp } from "../../_shared/lib/audit-provenance.ts";
 
 /**
  * Cooldown applied to a runtime that failed to authenticate. Short on purpose:
@@ -32,7 +33,7 @@ function emitAudit(payload: Record<string, any>, projectRoot: string): void {
     const today = new Date().toISOString().slice(0, 10);
     const dir = path.join(harnessLogsDir({ cwd: projectRoot }), today);
     fs.mkdirSync(dir, { recursive: true });
-    fs.appendFileSync(path.join(dir, "audit.jsonl"), JSON.stringify({ ts: new Date().toISOString(), ...payload }) + "\n");
+    fs.appendFileSync(path.join(dir, "audit.jsonl"), JSON.stringify(stamp({ ts: new Date().toISOString(), ...payload })) + "\n");
   } catch { /* non-fatal */ }
 }
 

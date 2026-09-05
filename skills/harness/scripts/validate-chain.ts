@@ -52,10 +52,19 @@ function loadEvents(projectId: string): { events: AuditEvent[]; sources: string[
   };
 
   // 1. Project-local audits
+  //
+  // `nrv team` writes a chain run into a FLAT outputs root — `outputs/` with
+  // `outputs/_team/<seat>/` beside it — rather than `outputs/<project_id>/`.
+  // Both layouts are legitimate and this validator only knew one, so a chain
+  // run's per-target audits were invisible to it and the chain read as absent.
+  // The run's own maestro reported that gap (`x_validator_layout_mismatch`,
+  // 2026-09-04) with the right diagnosis: a path convention defect, not missing
+  // work. Both layouts are read now.
   const candidateRoots = [
     path.join(process.cwd(), "outputs", projectId),            // novo default visível
     path.join(process.cwd(), ".nirvana/outputs", projectId),
     path.join(os.homedir(), ".nirvana/outputs", projectId),
+    path.join(process.cwd(), "outputs"),                       // chain layout: flat root
   ];
   for (const root of candidateRoots) {
     if (!fs.existsSync(root)) continue;
@@ -74,6 +83,23 @@ function loadEvents(projectId: string): { events: AuditEvent[]; sources: string[
         }
       }
     }
+  }
+
+  // 1b. The project's own audit.jsonl — where `handoff.js` writes its local
+  // copy. Nothing read it, so six handoff events could sit in a project while
+  // this validator reported zero and called the chain a PROTOCOL_VIOLATION.
+  for (const local of [path.join(process.cwd(), "audit.jsonl")]) {
+    if (!fs.existsSync(local)) continue;
+    const lines = fs.readFileSync(local, "utf8").split("\n").filter(l => l.trim());
+    let bad = 0;
+    for (const l of lines) {
+      try {
+        const e = parseAuditLine(l);
+        if (!e.project_id || !e.trace_id || e.project_id === projectId || e.trace_id === projectId) addEvent(e);
+      } catch { bad++; }
+    }
+    if (bad) unreadable.push({ file: local, count: bad });
+    sources.push(local);
   }
 
   // 2. Global daily audits — filter by project_id or trace_id

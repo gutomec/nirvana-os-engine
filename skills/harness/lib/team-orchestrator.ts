@@ -299,6 +299,14 @@ export function buildStepBrief(step: ChainStep, idx: number, total: number, args
     // delivery — the language of the instruction leaking into the work.
     "## Language\nThese instructions are in English. What you DELIVER follows the language of the client brief above.",
     "",
+    // A seat is handed a RANKED LIST of mind-clones and told to choose; nothing
+    // is auto-injected unless the brief named one. On 2026-09-04 three seats
+    // each picked a clone, logged a good reason, and then worked without ever
+    // loading it — so the persona was a name in a log, not a voice in the work,
+    // and the run read as if it had clone fidelity it never had. Rule 9 of the
+    // protocol names that exact failure: never claim fidelity you did not load.
+    "## If you pick a mind-clone, LOAD IT\nYour prompt lists candidates; nothing was injected for you. Choosing one and working from what you already know about that person is NOT embodying them — it is the failure the protocol calls claiming fidelity you did not load. If you pick one, run `nrv inspect-clone <slug>` — it prints `Path:` and the artifacts it holds — then READ `agent/AGENT.md`, `agent/SOUL.md` and `dna/dna-schema.md` under that path, and work from what they say. (Not `--dna`: that flag prints layer COUNTS, not the DNA.) If you decide none fits, say so in your output and work as yourself; that is honest and allowed.",
+    "",
     priorBlock + gapBlock + outputInstr,
     scopeGuard("en"),
   ].join("\n");

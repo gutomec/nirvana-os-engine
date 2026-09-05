@@ -245,13 +245,24 @@ function updateHandoffPhase(projectDir, newPhase, opts) {
       last_task_completed: merged.last_task_completed || null,
       next_task_id: merged.next_task_id || null,
     };
-    const payload = JSON.stringify(event) + '\n';
+    // Stamped like every other engine write: an unstamped event reads as
+    // "somebody typed this", and the hook stream is the highest-volume writer
+    // in the system — leaving it unsigned would drown the signal in the very
+    // place a reader looks to decide whether a run is real.
+    let stamped = event;
+    try { stamped = require('./audit-provenance.js').stamp(event); } catch { /* no key, still log */ }
+    const payload = JSON.stringify(stamped) + '\n';
     // Local project audit
     const localAuditPath = path.join(projectDir, merged.audit_log_path || 'audit.jsonl');
     fs.appendFileSync(localAuditPath, payload);
-    // Global daily audit (so nrv glance and cross-trace tools can see it)
+    // The DAILY log — resolved, never hardcoded. log-paths.js says it in its own
+    // header: a hardcoded ~/.harness-logs creates split brain, because writes go
+    // per-project while reads still hit $HOME and the chain breaks. It did:
+    // 2026-09-04, a run left six handoff events in the project-root audit and
+    // ZERO in the daily log `validate-chain` reads, and the run's own validator
+    // reported the gap before anyone here noticed it.
     const today = new Date().toISOString().slice(0, 10);
-    const globalDir = path.join(require('os').homedir(), '.harness-logs', today);
+    const globalDir = path.join(require('./log-paths.js').harnessLogsDir({ cwd: projectDir }), today);
     fs.mkdirSync(globalDir, { recursive: true });
     fs.appendFileSync(path.join(globalDir, 'audit.jsonl'), payload);
   } catch (e) {

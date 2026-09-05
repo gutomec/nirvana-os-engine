@@ -8,6 +8,56 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Os validadores aprenderam o layout de cadeia
+
+Uma execução despachada pelo `nrv team` escreve numa raiz de saída PLANA — `outputs/` com `outputs/_team/<cadeira>/` ao lado dos finais — enquanto o caminho scriptado aninha tudo sob `outputs/<project_id>/`. Os dois são legítimos; os validadores conheciam um. Então o `validate-chain --verify-disk` não lia auditoria por-alvo nenhuma numa execução de cadeia, e o `verify-deliverable` respondia "project not found" para trabalho que estava em disco na frente dele.
+
+O maestro da própria execução reportou isso antes de qualquer um aqui notar, com o diagnóstico certo — defeito de convenção de caminho, não trabalho faltando — num evento `x_validator_layout_mismatch` que ele emitiu depois de entregar.
+
+Os dois validadores leem os dois layouts agora, e o `validate-chain` também lê o `audit.jsonl` do próprio projeto, que o `handoff.js` escreve e nada lia: seis eventos de handoff podiam estar num projeto enquanto o validador reportava zero e chamava a cadeia de violação. Numa execução de cadeia real ele agora enxerga tudo — três despachos por cadeira, duas revisões aprovadas, a entrega — e a única lacuna que reporta (`verify_passed` ausente) é verdadeira.
+
+Em vez de ensinar uma segunda convenção a todo verificador futuro, o `nrv team plan` passa a escrever `brief.md` na raiz de saída, que é o arquivo que a convenção existente pede. Uma linha, e uma execução de cadeia fica legível para ferramentas que não sabem que ela é uma.
+
+### O cockpit lê toda auditoria que a execução escreveu, e diz quem escreveu cada linha
+
+O Glance lia um arquivo de auditoria. Uma execução escreve em até quatro — o log diário do orquestrador, o log do próprio projeto, um por alvo despachado dentro da árvore de saída, e o fallback global — então o cockpit mostrava execuções sem despacho nenhum enquanto os arquivos estavam em disco. Medido nesta máquina depois da mudança: nove execuções cujos despachos eram invisíveis, e cadeiras (`ds-creative-director`, `t360-ceo`, `al-publisher`) que nunca tinham aparecido.
+
+Todo evento que o Glance serve passa a carregar `_provenance`: `engine` quando o engine assinou, `unsigned` quando ninguém assinou, `tampered` quando a assinatura não bate mais com o conteúdo. O cockpit é onde alguém decide se uma execução aconteceu, e até agora uma linha digitada por um agente aparecia igual a uma emitida pelo engine.
+
+`unsigned` num evento antigo significa "escrito antes de o carimbo existir", não "forjado". A distinção só vale para frente.
+
+Duas guardas, ambas acrescentadas porque os testes pegaram a falta delas: um `HARNESS_LOGS_DIR` fixado significa ler aquela raiz e não o mundo (um fixture tinha começado a vagar pelos projetos reais da máquina), e raiz ausente continua **indeterminada** em vez de virar zero medido — distinção que este cockpit já tinha teste.
+
+### O fluxo de handoff escrevia num caminho hardcoded
+
+O `handoff.js` acrescentava direto em `~/.harness-logs/` em vez de resolver a raiz do log, que é exatamente o split brain que o `log-paths.js` avisa no próprio cabeçalho: escritas vão por projeto, leituras continuam no `$HOME`, a cadeia quebra. E quebrou — uma execução real deixou seis eventos de handoff na auditoria do projeto e zero no log diário que o `validate-chain` lê, e o validador da própria execução reportou a lacuna antes de qualquer um aqui notar. Agora ele resolve a raiz, e seus eventos são carimbados como toda escrita do engine.
+
+### O emissor canônico era justamente o que não carimbava
+
+O `nrv audit emit` — o caminho que o protocolo manda os agentes usarem — escreve pelo `harness/lib/audit.js`, e era o único emissor que faltava carimbar. Ou seja: os emissores internos assinados e o que os agentes de fato chamam, não. Um evento legítimo emitido por agente ficava indistinguível de uma linha digitada — exatamente a confusão que o carimbo existe para acabar, preservada no único lugar que importava. Agora ele carimba o envelope.
+
+A implementação foi para um irmão CJS (`audit-provenance.js`, com o `.ts` como face tipada) porque o `audit.js` é CommonJS e um `.js` fazendo require de `.ts` é a fronteira ESM que o Windows trata como erro duro. O gate do próprio repo pegou isso um minuto depois do erro.
+
+### Persona carregada na mão agora deixa rastro
+
+As cadeiras recebem uma lista rankeada de mind-clones e escolhem; nada é injetado automaticamente. Uma cadeira que carrega na mão estava fazendo a coisa certa de forma invisível — três cadeiras encarnaram alguém numa execução real com zero `mind_clone_injected` no log. O `nrv inspect-clone` passa a emitir `x_clone_loaded` quando roda dentro de um trace, e fica calado fora dele: pessoa olhando não é execução carregando.
+
+A instrução que manda a cadeira até lá também estava errada. Dizia `nrv inspect-clone <slug> --dna`, e essa flag imprime CONTAGEM de camadas, não o DNA. Agora aponta a saída padrão, que imprime `Path:` e os artefatos, e nomeia os três arquivos a ler.
+
+### Cinco coisas que a primeira execução real do organograma expôs
+
+A execução funcionou — três cadeiras despachadas com nome, duas revisões aprovadas contra critério declarado, um recibo calculado que fechou. Observá-la de perto revelou cinco defeitos, quatro deles introduzidos no mesmo dia.
+
+**O carimbo de procedência cobria 2 emissores de 23.** Publicar assim produziu um sinal pior que nenhum: em minutos, três eventos legítimos do engine apareceram como não assinados, e quem seguisse o rótulo concluiria que o orquestrador estava fabricando eventos. Agora todo emissor carimba, e o `_shared/lib/audit-emit.ts` existe para o próximo não precisar lembrar — as dezoito cópias privadas daquela função de quatro linhas são a razão de isto ter sido 2 de 23 em vez de uma linha.
+
+**O `dispatch_business` contava prompt, não despacho.** Ele disparava quando o prompt da cadeira era montado, então quem pedisse o mesmo prompt duas vezes registrava dois despachos para o trabalho de uma cadeira. A repetição agora emite `x_seat_prompt_reissued`: repetir é informação, não um segundo despacho.
+
+**Consultar um recibo alterava o log que ele lia.** O `nrv team receipt` emitia o evento de assinatura toda vez, então olhar uma execução a modificava. Assinar virou `--sign`; sem isso, o recibo só relata.
+
+**Veredito de gate sem trace passa a dizer isso.** O pipeline de entrega exporta `NIRVANA_TRACE_ID` e companhia, mas um agente chamando o gate na mão não exporta — e dez de doze vereditos de uma execução real vieram com `trace_id: null`, impossíveis de juntar à execução que julgaram. O gate agora avisa no stderr nomeando as variáveis, para a lacuna ficar visível em vez de silenciosa.
+
+**Um mind-clone escolhido nunca era carregado.** As cadeiras recebem uma lista rankeada e escolhem; nada é injetado a menos que o brief nomeie. Três cadeiras escolheram, registraram um motivo pensado, e trabalharam com o que o modelo já sabia sobre aquela pessoa — um nome no log, não uma voz no trabalho. A Regra 9 do protocolo chama isso de alegar fidelidade que não se carregou. O brief do passo agora diz com todas as letras: carregue com `nrv inspect-clone <slug> --dna`, ou decida que nenhum serve e trabalhe como você mesmo, o que é honesto e permitido.
+
 ### Evento que o engine escreveu agora se distingue de evento que um agente digitou
 
 A auditoria é a evidência do engine e é um arquivo de texto em que qualquer agente com Write acrescenta linha. Em 04/09/2026 um acrescentou: um maestro escreveu `dispatch_business`, `gate_passed` e um nome de evento que o engine nunca emitiu (`business_completed`) dentro da auditoria de uma execução, com horários cravados no minuto. O pipeline real também rodou, minutos depois — então o arquivo ficou com um veredito auto-emitido e um real, e **nada no formato deles os distinguia**.

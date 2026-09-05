@@ -22,6 +22,7 @@ import { LEGACY_CAPABILITY_ID } from "./capability-resolver.ts";
 import {
   normalizeWorkflow, readWorkflow, referencedComponents, resolveWorkflowRef, type CanonicalStep,
 } from "../../squads/lib/workflow-reader.ts";
+import { stamp } from "../../_shared/lib/audit-provenance.ts";
 import { LIMITS } from "../../_shared/validators/limits.ts";
 import { runWithCascade } from "./cascade-runner.ts";
 import { sessionKey, getSession, putSession, dropSession } from "./session-store.ts";
@@ -90,7 +91,7 @@ function appendAudit(payload: Record<string, any>, projectRoot?: string): void {
     const today = new Date().toISOString().slice(0, 10);
     const dir = path.join(harnessLogsDir({ cwd: projectRoot }), today);
     fs.mkdirSync(dir, { recursive: true });
-    fs.appendFileSync(path.join(dir, "audit.jsonl"), JSON.stringify({ ts: new Date().toISOString(), ...payload }) + "\n");
+    fs.appendFileSync(path.join(dir, "audit.jsonl"), JSON.stringify(stamp({ ts: new Date().toISOString(), ...payload })) + "\n");
   } catch { /* non-fatal */ }
 }
 

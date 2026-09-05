@@ -213,6 +213,17 @@ function cmdPlan(argv: string[]): void {
     intake, reason, chain: chainWithReviewers,
   };
 
+  // The convention every verifier already expects: `brief.md` at the outputs
+  // root. Teaching each checker a second layout is how a convention becomes two
+  // conventions; writing the file the existing one asks for costs a line and
+  // makes `verify-deliverable` and the completeness ceiling work on a chain run
+  // without knowing it is one.
+  try {
+    fs.mkdirSync(outputsRoot, { recursive: true });
+    const dest = path.join(outputsRoot, "brief.md");
+    if (!fs.existsSync(dest)) fs.writeFileSync(dest, brief);
+  } catch { /* an unwritable outputs root fails later, louder, on the first step */ }
+
   const save = arg(argv, "--save");
   if (save) {
     fs.mkdirSync(path.dirname(save), { recursive: true });
@@ -277,11 +288,20 @@ function cmdStep(argv: string[]): void {
   // The proof. Emitted HERE rather than by the caller, because a caller that
   // must remember to audit is a caller that will eventually forget — which is
   // how two businesses and 23 seats produced one dispatch event between them.
+  // Asking for the prompt twice is not dispatching twice. Measured on the first
+  // real org-chart run (2026-09-04): the caller ran `team step --index 0` twice
+  // and the audit showed two dispatches for one seat's work, because the event
+  // fired when the PROMPT WAS BUILT. The repeat is still information — the
+  // caller asked again for a reason — so it is recorded as a repeat.
+  const marker = path.join(outDir, ".dispatched");
+  const reissue = fs.existsSync(marker);
   emitAudit({
-    event: "dispatch_business", trace_id: plan.project_id, project_id: plan.project_id,
+    event: reissue ? "x_seat_prompt_reissued" : "dispatch_business",
+    trace_id: plan.project_id, project_id: plan.project_id,
     business_slug: plan.business, employee: step.employee,
     mode: "chain-step", step: idx + 1, total,
   }, plan.project_root);
+  try { fs.writeFileSync(marker, new Date().toISOString()); } catch { /* best effort */ }
 
   process.stdout.write(ep.stdout);
   // Where to write, on stderr so it never contaminates the prompt on stdout.
@@ -489,6 +509,7 @@ function cmdReceipt(argv: string[]): void {
   const planFile = arg(argv, "--plan");
   if (!planFile) die("receipt needs --plan.", EXIT_ARGS);
   if (!fs.existsSync(planFile!)) die(`plan file not found: ${planFile}`, EXIT_ARGS);
+  const sign = argv.includes("--sign");
   const plan: ChainPlan = JSON.parse(fs.readFileSync(planFile!, "utf8"));
 
   // Read the run's own events. Same resolution the writers use, so a reader can
@@ -549,7 +570,11 @@ function cmdReceipt(argv: string[]): void {
     ...(narrated.length ? { not_counted: narrated } : {}),
   }, null, 2));
 
-  emitAudit({
+  // Consulting a receipt must not change the log it reads. Running `team
+  // receipt` to LOOK emitted a second x_business_signed_off into a real run on
+  // 2026-09-04 — mine, next to the maestro's — so an inspector was altering the
+  // evidence it inspected. `--sign` is the act; without it this only reports.
+  if (sign) emitAudit({
     event: complete ? "x_business_signed_off" : "x_business_incomplete",
     trace_id: plan.project_id, project_id: plan.project_id, business_slug: plan.business,
     seats: rows.length, dispatched: rows.filter(r => r.dispatched).length,

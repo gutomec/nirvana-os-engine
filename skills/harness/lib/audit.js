@@ -1,3 +1,9 @@
+/** Stamp an envelope, tolerating an engine that cannot reach its key. */
+function stampEvent(envelope) {
+  try { return require('../../_shared/lib/audit-provenance.js').stamp(envelope); }
+  catch { return envelope; }
+}
+
 /**
  * Audit logger (JSONL append-only) for the Harness Protocol v1.
  *
@@ -233,7 +239,17 @@ function emit(event, payload, ctx) {
   // reader accepts both forms (cloudevents.js `toLegacyEvent`). The SQLite
   // side above keeps the flat shape on purpose: its own columns already give
   // the filter-without-parsing property the envelope buys for the file.
-  fs.appendFileSync(file, JSON.stringify(ce.toEnvelope(ev, ctx)) + '\n', 'utf8');
+  //
+  // The stamp goes on the ENVELOPE, not the inner event, because that is what
+  // lands on disk and what a reader parses. This is the path `nrv audit emit`
+  // takes — the one the protocol tells agents to use — and leaving it unstamped
+  // was the hole that made the whole signal useless on 2026-09-04: the internal
+  // emitters were stamped and the canonical one was not, so a legitimate
+  // agent-emitted event was indistinguishable from a line somebody typed. The
+  // distinction being drawn is "went through engine code" versus "raw append",
+  // and an agent calling `nrv audit emit` is on the right side of it.
+  const envelope = stampEvent(ce.toEnvelope(ev, ctx));
+  fs.appendFileSync(file, JSON.stringify(envelope) + '\n', 'utf8');
   return { path: file, event: ev };
 }
 
