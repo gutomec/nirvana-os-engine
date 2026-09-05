@@ -539,11 +539,13 @@ describe("codex — flags audited against 0.153.4, usage and notices", () => {
     expect(args).not.toContain("-s");
   }, spawnBudgetMs(2));
 
-  test("--safe: the sandbox stays and approvals go to the reviewer agent", () => {
+  test("--safe: approvals go to the reviewer agent; the flag alone means workspace-write", () => {
     runWith("codex", { yolo: false });
     const args = capturedArgs("codex");
-    expect(args[args.indexOf("-s") + 1]).toBe("workspace-write");
     expect(args).toContain("--approve-for-me");
+    // 0.153.4 rejects the pair: "the argument '--sandbox' cannot be used with '--approve-for-me'".
+    expect(args).not.toContain("-s");
+    expect(args).not.toContain("--sandbox");
     expect(args).not.toContain("--dangerously-bypass-approvals-and-sandbox");
   }, spawnBudgetMs(2));
 

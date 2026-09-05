@@ -1560,11 +1560,13 @@ function withPreamble(opts: RunHeadlessOpts): string {
 // back whole so the cost-estimator prices cached input at the cached rate.
 //
 // Autonomy: trust (default) is `--dangerously-bypass-approvals-and-sandbox`.
-// --safe is `-s workspace-write --approve-for-me`: the sandbox stays, and every
-// approval a human would answer goes to Codex's own reviewer agent instead of
-// blocking a run nobody is watching. `-s workspace-write` alone used to be the
-// safe path, and it stalled at the first escalation because `exec` inherits
-// `approval_policy` from the user's config.
+// --safe is `--approve-for-me`, which by itself means the workspace-write
+// sandbox (its own help says so, and 0.153.4 rejects it combined with `-s`:
+// "cannot be used with '--approve-for-me'", found by running it). The sandbox
+// stays, and every approval a human would answer goes to Codex's own reviewer
+// agent instead of blocking a run nobody is watching. `-s workspace-write`
+// alone used to be the safe path, and it stalled at the first escalation
+// because `exec` inherits `approval_policy` from the user's config.
 function isOpenAiModelId(m: string): boolean { return /^(gpt-|o[1-9]|codex)/i.test(m); }
 
 function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
@@ -1590,7 +1592,7 @@ function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
   if (opts.outputSchema) args.push("--output-schema", opts.outputSchema);
   for (const img of opts.images ?? []) args.push("-i", img);
   if (opts.webSearch) args.push("-c", `web_search=${JSON.stringify(opts.webSearch)}`);
-  if (opts.yolo === false) args.push("-s", "workspace-write", "--approve-for-me");
+  if (opts.yolo === false) args.push("--approve-for-me");
   else args.push("--dangerously-bypass-approvals-and-sandbox");
 
   const r = driverSpawnSync("codex", args, {
