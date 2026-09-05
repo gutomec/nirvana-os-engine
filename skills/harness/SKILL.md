@@ -315,6 +315,22 @@ nrv team plan --business <slug> --brief .nirvana/briefs/<trace>-enriched.md \
 nrv team step --plan .nirvana/<trace>-chain.json --index 0
 ```
 
+**Each seat's work is reviewed by the seat above it**, and the business is signed off by a receipt the engine computes rather than one you write:
+
+```bash
+nrv team review  --plan <plan.json> --index <n>            # the superior's prompt
+nrv team verdict --plan <plan.json> --index <n> --verdict <file.json>
+#   exit 0 approved · exit 3 rejected → hand the gaps back to that seat IN ITS
+#   OWN SESSION, let it fix, then re-review. The ceiling is the loop guard.
+nrv team receipt --plan <plan.json>                        # the business signs off
+#   exit 0 complete · exit 3 → do NOT report it delivered, and do not credit a
+#   seat the receipt lists as never dispatched.
+```
+
+The reviewer is the seat's immediate superior in `org-chart.yaml`, and it arrives as itself — its own persona, its own mind-clone. It is given the client brief, what the seat was asked, where the work is, and the criteria that seat declared for itself. It reports only what it CONFIRMED, with evidence; the engine computes the score, because a reviewer that grades itself grades generously. Anything the reviewer does not mention counts as unconfirmed, so a lazy review rejects rather than waving work through.
+
+The receipt is built from the audit, not from a summary. That is deliberate: a receipt cannot credit a seat with no `dispatch_business` behind it, which is the exact failure this whole path exists to prevent. Report to the user what the receipt says, not what the seats claim.
+
 `step` prints the seat's prompt on stdout — persona, mind-clone DNA, the resource map, the colleagues' output paths, the scope guard — and the destination on stderr. Run it as-is; paraphrasing it drops the DNA injection, which is the whole reason the seat is not just you with a different label. Steps run **in order**: each one reads what the earlier seats wrote under `_team/<employee>/`, and the last one writes the final deliverables to the outputs root.
 
 The director decides how many seats, and it is free to answer one — a brief that one seat carries whole should cost one dispatch, and `x_chain_shape_decided.reason` is where that judgement gets checked. `--single` skips the director when you already know; `--team` asks for three to six.

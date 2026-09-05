@@ -70,7 +70,7 @@ export const COMMANDS: Command[] = [
   { name: "dispatch", target: "harness/scripts/dispatch.ts", category: "dispatch", args: '<business> "<brief>"', summary: "Scaffold a run (brief + DNA injection + audit; no exec)", visibility: "user" },
   { name: "run", aliases: ["autopilot"], custom: true, category: "dispatch", args: '<business> "<brief>" [--zip --pdf --html]', summary: "Autopilot: dispatch + execute + verify + gate", visibility: "user" },
   { name: "auto", custom: true, category: "dispatch", args: '"<brief>" [--zip --pdf --html]', summary: "Autopilot with auto-selected business (= run --auto)", visibility: "user" },
-  { name: "team", target: "harness/scripts/chain.ts", category: "dispatch", args: "plan|step ...", summary: "A business's org chart as data: plan the chain, get each seat's prompt", visibility: "user" },
+  { name: "team", target: "harness/scripts/chain.ts", category: "dispatch", args: "plan|step|review|verdict ...", summary: "A business's org chart: plan the chain, get each seat's prompt, review it", visibility: "user" },
   { name: "revise", target: "harness/scripts/revise.ts", category: "dispatch", args: '<project> "<change>"', summary: "Apply a change keeping the same runtime session", visibility: "user" },
   { name: "ask", target: "harness/scripts/ask.ts", category: "dispatch", args: "<clone> [question]", summary: "Talk to a single mind-clone (DNA injected)", visibility: "user" },
   { name: "launch", target: "harness/scripts/launch.ts", category: "dispatch", args: "<name> [--pillars=...]", summary: "Scaffold a multi-pillar 360 launch", visibility: "user" },

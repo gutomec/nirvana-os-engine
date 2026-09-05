@@ -8,6 +8,43 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Evento que o engine escreveu agora se distingue de evento que um agente digitou
+
+A auditoria é a evidência do engine e é um arquivo de texto em que qualquer agente com Write acrescenta linha. Em 04/09/2026 um acrescentou: um maestro escreveu `dispatch_business`, `gate_passed` e um nome de evento que o engine nunca emitiu (`business_completed`) dentro da auditoria de uma execução, com horários cravados no minuto. O pipeline real também rodou, minutos depois — então o arquivo ficou com um veredito auto-emitido e um real, e **nada no formato deles os distinguia**.
+
+O defeito é esse, e não é "um agente consegue escrever no arquivo". Consegue, e proibir quebraria o namespace aberto `x_` de que o protocolo depende. O defeito é que a linha digitada era indistinguível da emitida, o que tornava toda contagem a jusante — `validate-chain`, o recibo, o improver, o `nrv baseline` — contagem de afirmações em vez de eventos.
+
+Os eventos emitidos passam a carregar um HMAC sobre os próprios bytes, com segredo por instalação em `~/.nirvana/audit-key` (sobrescrevível por `NIRVANA_AUDIT_KEY`, criado no primeiro uso, nunca dentro de um pack). Quem lê recebe três respostas: `engine` (assinado e conferindo), `unsigned` (sem carimbo — um narrador, ou um engine que não alcançou a chave), `tampered` (assinado e editado depois, o que é pior que falsificado). O `nrv team receipt` conta só o que o engine assinou e lista o resto em `not_counted`.
+
+**O que isso compra, exatamente:** derrota a narração casual — um agente escrevendo linhas plausíveis porque acha que deve, que é a falha que aconteceu e a comum. **Não** derrota um falsificador decidido: qualquer coisa rodando como o usuário lê a chave. Dizer o contrário seria a mesma espécie de desonestidade que isto fecha. O que muda é que falsificar vira ato deliberado em vez de efeito colateral de um agente prestativo.
+
+### Um fixture do Windows estourou o tempo e chamou isso de falha
+
+O `preflight-index.test.ts` semeia três registries com os indexadores reais sob 120 s cravados. Um runner lento do windows-latest passou disso, e o `spawnSync` devolve `status: null` quando mata o filho — então o erro dizia `fixture seed index failed (exit null)` com stderr vazio, o que descreve índice quebrado em vez de máquina lenta. Agora tem budget dimensionado como os outros da suíte, e timeout diz que foi timeout.
+
+### O superior imediato revisa o trabalho, e o silêncio reprova
+
+Uma empresa declara quem se reporta a quem, e até agora nada lia isso. Agora lê: o trabalho de cada cadeira é revisado pela cadeira acima dela no `org-chart.yaml`, contra os critérios que a própria cadeira declarou.
+
+O `nrv team review` monta o prompt do superior — a persona e o mind-clone dele, o brief do cliente, o que foi pedido ao subordinado, onde está o trabalho, e o `acceptance[]` do subordinado na íntegra, com os bloqueantes marcados. O `nrv team verdict` julga a resposta e sai com 0 para aprovado e 3 para reprovado, então quem chama decide pelo código de saída.
+
+O problema de desenho é que um revisor perguntado "o trabalho do seu subordinado está bom?" responde que sim — mesmo modelo, nenhum incentivo para objetar. Então aprovação nunca é pedida. O revisor reporta só o que **confirmou**, cada item com evidência, e quatro regras fazem o resto:
+
+- O que não for mencionado conta como não confirmado. **Silêncio reprova.** Um revisor que responde `{"confirmed":[]}` tira zero e reprova — o caminho preguiçoso passa a ser o que rejeita.
+- Evidência com menos de doze caracteres é um dar de ombros, não evidência, e o critério continua não confirmado.
+- Id que a cadeira nunca declarou é descartado e nomeado no log — revisão de critério inventado não é revisão.
+- O engine calcula a nota; o revisor só observa. Revisor que se dá a própria nota se dá uma nota generosa.
+
+O piso é 0,90, não 1,0: um micro-check impossível de confirmar não deve afundar uma entrega boa. Critério que o autor marcou como `blocking` precisa ser confirmado independentemente da nota — é assim que uma empresa diz "esse é absoluto".
+
+Todo veredito emite `x_review_approved` ou `x_review_rejected` com o trace, o par revisor/revisado, a nota, o piso, o que foi confirmado e cada lacuna com o motivo. Isso é de propósito: os vereditos de gate hoje não carregam trace nenhum, então "esta execução passou?" não tem como ser respondido por join. Estes têm.
+
+A empresa assina com um recibo que o engine **calcula**: o `nrv team receipt` lê os eventos da própria execução e reporta, por cadeira, se foi despachada, quem revisou, o veredito e onde estão os arquivos. Sai com 3 quando uma cadeira planejada não rodou ou uma revisão ficou em aberto, com a instrução de não reportar a empresa como entregue. Recibo montado a partir da auditoria não consegue creditar cadeira sem `dispatch_business` — que é exatamente a falha que esta linha de trabalho existe para impedir, e a razão de o chefe não escrevê-lo.
+
+O gate do engine não foi tocado e continua rodando por último. O superior responde se o trabalho é bom e bate com o que foi pedido; o pipeline responde se existe entregável, se não é stub e se bate com o manifesto — de forma determinística, fail-closed, de graça. Um modelo perguntado "isso é stub?" erra aberto; o `isDeliverable` erra fechado.
+
+Medido antes de construir: 65 das 65 empresas instaladas têm rota de revisão utilizável, e 611 de 611 cadeiras já declaram `acceptance[]`. Nenhuma empresa precisou mudar. Desenho e teste de falseamento: `docs/architecture/hierarchical-review.md`.
+
 ### O passo de preparação mandava o maestro rodar um employee só
 
 O `brief-business.ts` é o passo que todo despacho de empresa executa primeiro, e a saída dele terminava com `Next step: Spawn employee '<intake>' with the brief above as context.` Uma cadeira. Uma empresa com catorze fez exatamente isso, creditou seis no entregável e deixou um único `dispatch_business`, medido em 04/09/2026 numa empresa instalada.
