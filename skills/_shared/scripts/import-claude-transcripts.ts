@@ -106,8 +106,8 @@ console.error(`[import] scanning ${dirs.length} project dir(s)…${dryRun ? " (d
 for (const dir of dirs) {
   // Claude Code encodes a project path by replacing `/` with `-`. Undoing that
   // by replacing every `-` with `/` destroys the hyphens that belong to the
-  // name: `projeto-mini-apps-agroautonomia` came out as
-  // `Users/guto/projeto/mini/apps/agroautonomia`, a path that does not exist,
+  // name: `my-mini-apps-project` came out as
+  // `Users/me/my/mini/apps/project`, a path that does not exist,
   // and every cost event for that project was filed under it.
   //
   // `decodeClaudeProjectDirName` recovers the real path by walking the disk —
