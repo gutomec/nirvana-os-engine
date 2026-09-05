@@ -191,10 +191,15 @@ a one-line repair you perform, because you are the one holding the shell.
 Before anything else, check whether this directory is a Nirvana project:
 
 ```bash
-ls AGENTS.md CLAUDE.md GEMINI.md 2>/dev/null | head -1
+# The MARKER, not the filename. Every Claude Code user has a ~/CLAUDE.md, so
+# testing for the file makes $HOME look like an adopted project — and it is not
+# one: project-root.js refuses $HOME outright, so the session gets a contract it
+# believes in and no project scope. Measured 2026-09-04: a session opened at
+# $HOME wrote its brief to the global fallback and dispatched nothing.
+grep -l "nirvana-os:invocation-contract" AGENTS.md CLAUDE.md GEMINI.md 2>/dev/null | head -1
 ```
 
-Nothing came back? Run `nrv init .` and continue. It writes the contract
+Nothing came back? Run `nrv init .` and continue — unless you are at `$HOME` or `/`, which are never project roots. There, stop and ask the user to open a project directory instead; scaffolding a project on top of somebody's home is not a cheap repair. It writes the contract
 (`AGENTS.md` + `CLAUDE.md` + `GEMINI.md`, one per runtime family) plus the
 `.nirvana/` scaffold. It never touches code, and it never overwrites: a contract
 file that already exists keeps the user's rules at the top and gets the Nirvana

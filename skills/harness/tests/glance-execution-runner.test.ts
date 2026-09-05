@@ -14,6 +14,10 @@ import { shimRuntimeOnPath } from "./helpers/fake-glance-child.ts";
 import { removeDir } from "./helpers/temp-dirs.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
+/** The isolated root the test preload created. Captured before any test
+ *  mutates the env, so a teardown restores isolation instead of removing it. */
+const PRELOAD_LOGS_DIR = process.env.HARNESS_LOGS_DIR!;
+
 const DISPATCH = path.join(import.meta.dir, "..", "scripts", "dispatch.ts");
 const roots: string[] = [];
 const restores: Array<() => void> = [];
@@ -92,8 +96,13 @@ describe("createDispatchExecutionRunner", () => {
   test("the child audits where the cockpit reads: HARNESS_LOGS_DIR is pinned to the project's harness log unless the caller set it", async () => {
     const { root, briefFile, fake } = fixture();
     const previous = process.env.HARNESS_LOGS_DIR;
+    // This test exercises the "caller did NOT set it" branch, so the delete is
+    // the point and has to stay. What must not stay is the unset state: the
+    // teardown restores the preload's isolated root rather than leaving the
+    // variable absent, because absent sends every writer that runs after this
+    // file — in the same process — to the owner's real audit.
     delete process.env.HARNESS_LOGS_DIR;
-    restores.push(() => { if (previous !== undefined) process.env.HARNESS_LOGS_DIR = previous; });
+    restores.push(() => { process.env.HARNESS_LOGS_DIR = previous ?? PRELOAD_LOGS_DIR; });
     // The fake writes its cost event where dispatch.ts does: under HARNESS_LOGS_DIR when set, else under the
     // scaffold it creates (outputs/<pid>/.nirvana/logs/harness), which nothing on the server side reads.
     const pinned = createDispatchExecutionRunner({ dispatchScriptPath: fake, env: { FAKE_DISPATCH_COST_USD: "0.3" } });

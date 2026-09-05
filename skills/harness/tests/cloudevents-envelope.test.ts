@@ -22,6 +22,10 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { makeTempRoot, removeDir } from "./helpers/temp-dirs.ts";
 
+/** The isolated root the test preload created. Captured before any test
+ *  mutates the env, so a teardown restores isolation instead of removing it. */
+const PRELOAD_LOGS_DIR = process.env.HARNESS_LOGS_DIR!;
+
 const ce = require("../../_shared/lib/cloudevents.js");
 const audit = require("../lib/audit.js");
 
@@ -29,7 +33,7 @@ const TMP = makeTempRoot("nrv-cloudevents-");
 const previousLogsDir = process.env.HARNESS_LOGS_DIR;
 
 afterAll(() => {
-  if (previousLogsDir === undefined) delete process.env.HARNESS_LOGS_DIR;
+  if (previousLogsDir === undefined) process.env.HARNESS_LOGS_DIR = PRELOAD_LOGS_DIR;
   else process.env.HARNESS_LOGS_DIR = previousLogsDir;
   removeDir(TMP);
 });

@@ -69,6 +69,19 @@ A execução funcionou — três cadeiras despachadas com nome, duas revisões a
 **Veredito de gate sem trace passa a dizer isso.** O pipeline de entrega exporta `NIRVANA_TRACE_ID` e companhia, mas um agente chamando o gate na mão não exporta — e dez de doze vereditos de uma execução real vieram com `trace_id: null`, impossíveis de juntar à execução que julgaram. O gate agora avisa no stderr nomeando as variáveis, para a lacuna ficar visível em vez de silenciosa.
 
 **Um mind-clone escolhido nunca era carregado.** As cadeiras recebem uma lista rankeada e escolhem; nada é injetado a menos que o brief nomeie. Três cadeiras escolheram, registraram um motivo pensado, e trabalharam com o que o modelo já sabia sobre aquela pessoa — um nome no log, não uma voz no trabalho. A Regra 9 do protocolo chama isso de alegar fidelidade que não se carregou. O brief do passo agora diz com todas as letras: carregue com `nrv inspect-clone <slug> --dna`, ou decida que nenhum serve e trabalhe como você mesmo, o que é honesto e permitido.
+### Os testes pararam de escrever na auditoria do dono
+
+A auditoria global da máquina tinha 134 eventos num dia e nenhum era despacho real: `p-handoff`, `p-broken-ledger`, entregas de webhook com `subject: run_1`, dezesseis `gate_passed` pareados com dezesseis `gate_failed`. Tudo dado de fixture do `bun test`, tudo contado pelo `nrv doctor` como atividade e minerado pelo `nrv baseline` como sinal.
+
+Todo processo de teste passa a ter raiz de log e chave de assinatura próprias (`skills/test-preload.ts`, ligado pelo `bunfig.toml`), e o `harnessLogsDir` ganha um degrau abaixo do projeto e acima do home: uma raiz de isolamento de teste que o teste não perde ao apagar `HARNESS_LOGS_DIR` — coisa que alguns fazem de propósito, para exercitar o ramo "o chamador não definiu", e que reabria o caminho para a auditoria real de quem escrevesse em seguida no processo compartilhado.
+
+Foram quatro tentativas até chegar a zero, e a última é a lição: o `handoff.js` tinha **duas** cópias quase idênticas do bloco que escreve auditoria. A primeira foi corrigida horas antes; a segunda continuava com `~/.harness-logs` hardcoded e continuava sem carimbo. Correção que acerta uma cópia enquanto o defeito sobrevive na outra produz uma medição idêntica à do sucesso.
+
+### O `nrv clean` aceita caminho, e o preflight para de confundir $HOME com projeto
+
+O `nrv clean <caminho>` juntava o argumento às raízes de saída, produzindo candidatos como `/Users/x/outputs/Users/x/meu-projeto` e então reportando o projeto como não encontrado. Um caminho absoluto é a própria coisa. Ele também passa a reconhecer `.nirvana/project.yaml` — o que o `nrv init` escreve, e o scaffold que o usuário mais quer desfazer.
+
+O preflight do harness testava a *existência* de `AGENTS.md`/`CLAUDE.md`/`GEMINI.md`. Todo usuário de Claude Code tem um `~/CLAUDE.md`, então o `$HOME` parecia projeto adotado — enquanto o `project-root.js` recusa o `$HOME` de saída, deixando uma sessão que acredita ter contrato e não tem escopo de projeto. Agora testa o marcador do contrato, e recusa `$HOME` e `/` explicitamente.
 
 ### Evento que o engine escreveu agora se distingue de evento que um agente digitou
 

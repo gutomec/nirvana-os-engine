@@ -249,6 +249,12 @@ function updateHandoffPhase(projectDir, newPhase, opts) {
     // "somebody typed this", and the hook stream is the highest-volume writer
     // in the system — leaving it unsigned would drown the signal in the very
     // place a reader looks to decide whether a run is real.
+    //
+    // This is the SECOND copy of this block in this file. The first was fixed
+    // hours earlier and this one was missed, which is the argument against
+    // near-duplicate emitters: the fix lands on one, the defect survives in the
+    // other, and the measurement that finds it looks identical to the one that
+    // said the fix worked.
     let stamped = event;
     try { stamped = require('./audit-provenance.js').stamp(event); } catch { /* no key, still log */ }
     const payload = JSON.stringify(stamped) + '\n';
