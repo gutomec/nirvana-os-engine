@@ -16,6 +16,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFil
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { removeDir } from "./helpers/temp-dirs.ts";
+import { codexHookHash, readCodexHookState } from "../../_shared/lib/codex-hooks.ts";
 
 const IS_WINDOWS = process.platform === "win32";
 const REPO = join(import.meta.dir, "..", "..", "..");
@@ -38,7 +39,8 @@ function run(args: string[], root: string) {
     NIRVANA_SKILLS_DIR: join(REPO, "skills"),
     SHELL: "/bin/zsh",
   };
-  delete env.NIRVANA_SKIP_PATH_PERSIST; // this test targets the write it exists to reverse
+  delete env.NIRVANA_SKIP_PATH_PERSIST;
+  delete env.CODEX_HOME; // ~/.codex under the fake HOME, never the real one // this test targets the write it exists to reverse
   const r = spawnSync(process.execPath, [INSTALL, ...args], { cwd: root, env, encoding: "utf8" });
   return { code: r.status ?? -1, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
 }
@@ -162,4 +164,46 @@ describe("nrv install --uninstall — settings.json (symmetric with install, now
     const files = existsSync(claudeDir) ? readdirSync(claudeDir) : [];
     expect(files.filter((f: string) => f.includes(".nirvana-backup."))).toHaveLength(0);
   }, 30_000);
+});
+
+
+describe("nrv install — Codex: hooks.json AND the trust record, symmetric on uninstall", () => {
+  test("writes our two handlers, records a trust hash Codex would compute, and --check sees it", () => {
+    const root = home();
+    const codexDir = join(root, ".codex");
+    mkdirSync(codexDir, { recursive: true });
+    const configBefore = 'model = "gpt-5.6-sol"\n\n[projects."/x"]\ntrust_level = "trusted"\n';
+    writeFileSync(join(codexDir, "config.toml"), configBefore, "utf8");
+    // A hook of the user's own, already there: it must survive and keep its slot.
+    writeFileSync(join(codexDir, "hooks.json"), JSON.stringify({ hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "echo mine" }] }] } }, null, 2) + "\n", "utf8");
+
+    const install = run([], root);
+    expect(install.code, install.out).toBe(0);
+    const hooks = JSON.parse(readFileSync(join(codexDir, "hooks.json"), "utf8"));
+    expect(hooks.hooks.PreToolUse[0].hooks[0].command).toBe("echo mine");
+    const ours = hooks.hooks.PreToolUse[1];
+    expect(ours.matcher).toBe("Bash|apply_patch");
+    expect(ours.hooks[0].command).toContain("audit-emit-from-hook.ts");
+    expect(ours.hooks[0].command).toContain(" pre codex");
+    expect(hooks.hooks.PostToolUse[0].hooks[0].command).toContain(" post codex");
+
+    const state = readCodexHookState(join(codexDir, "config.toml"));
+    const preKey = `${join(codexDir, "hooks.json")}:pre_tool_use:1:0`;
+    const postKey = `${join(codexDir, "hooks.json")}:post_tool_use:0:0`;
+    expect(state.get(preKey)?.trusted_hash).toBe(codexHookHash("PreToolUse", "Bash|apply_patch", ours.hooks[0]));
+    expect(state.get(postKey)?.trusted_hash).toBe(codexHookHash("PostToolUse", "Bash|apply_patch", hooks.hooks.PostToolUse[0].hooks[0]));
+    expect(readFileSync(join(codexDir, "config.toml"), "utf8").startsWith(configBefore.trimEnd())).toBe(true);
+
+    const check = run(["--check"], root);
+    expect(check.out).toContain("Codex hooks trusted");
+
+    const uninstall = run(["--uninstall"], root);
+    expect(uninstall.code, uninstall.out).toBe(0);
+    const after = JSON.parse(readFileSync(join(codexDir, "hooks.json"), "utf8"));
+    expect(after.hooks.PreToolUse.length).toBe(1);
+    expect(after.hooks.PreToolUse[0].hooks[0].command).toBe("echo mine");
+    expect(after.hooks.PostToolUse).toBeUndefined();
+    expect(readCodexHookState(join(codexDir, "config.toml")).size).toBe(0);
+    expect(readFileSync(join(codexDir, "config.toml"), "utf8").trim()).toBe(configBefore.trim());
+  }, 60_000);
 });

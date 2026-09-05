@@ -40,7 +40,7 @@ project relies on the machine's `~/.nirvana/skills`.
 | Runtime | Enter the project | Contract read from | Extra roots | Audit source |
 |---|---|---|---|---|
 | Claude Code | `cd <project> && claude` | `CLAUDE.md` in cwd | `--add-dir` | hooks (`PreToolUse`/`PostToolUse`) + `nrv audit emit` |
-| Codex | `cd <project> && codex`, or `codex exec -C <project>` | `AGENTS.md` in cwd (native) | `--add-dir` | `nrv audit emit` (hooks: pending) |
+| Codex | `cd <project> && codex`, or `codex exec -C <project>` | `AGENTS.md` in cwd (native) | `--add-dir` | hooks (`PreToolUse`/`PostToolUse` on `Bash\|apply_patch`, trusted by `nrv install`) + `nrv audit emit` |
 | Gemini CLI | `cd <project> && gemini` | `GEMINI.md` in cwd | `--include-directories` | hooks + `nrv audit emit` |
 | Antigravity | `cd <project> && agy` | `AGENTS.md` in cwd | `--add-dir` | hooks + `nrv audit emit` |
 | Hermes | `nrv-hermes`, or `hermes chat --in <project>` | `AGENTS.md` injected from cwd | n/a (works in cwd) | shell hooks (`pre/post_tool_call`) + fs-watch |
@@ -109,6 +109,25 @@ audit inside an OpenClaw agent comes from the contract (`nrv audit emit`, which
 the probe above exercised) and from `nrv watch-fs <project>` as filesystem
 evidence. Wiring a plugin hook is a future cut, gated on a run where the hook is
 observed firing.
+
+## 4b. Codex hooks are installed already trusted
+
+Codex runs a hook only after the user reviews it, and an unreviewed hook is
+skipped in silence: `codex exec` prints nothing and the hook never fires
+(measured: zero payloads without trust, five with it). The trust record is a
+hash of the normalized hook definition under `[hooks.state."<file>:<event>:<group>:<handler>"]`
+in `config.toml`, and it is reproducible — `_shared/lib/codex-hooks.ts`
+computes it the way `codex-rs` does (canonical JSON of the identity, SHA-256),
+verified against a hash Codex itself had recorded. `nrv install` therefore
+writes both the hooks and their trust, `--check` reports a hook that lost it,
+`--uninstall` removes both, and `nrv doctor` shows `codex: audit hooks`.
+
+The payload Codex sends is the shape the Claude bridge already reads
+(`tool_name` `Bash` / `apply_patch`, `tool_input`, `tool_response`, `session_id`,
+`cwd`). `apply_patch` names its files in the patch text
+(`*** Add|Update|Delete File: <path>`); the bridge emits one `artifact_touched`
+per file. Hook events are stamped like every other engine write, so they read as
+`engine` in Glance and `nrv audit where`.
 
 ## 5. Hermes
 

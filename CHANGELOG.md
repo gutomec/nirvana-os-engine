@@ -8,6 +8,14 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Codex hooks, installed already trusted
+
+Codex runs a hook only after the user reviews it in the TUI, and an unreviewed hook is skipped in silence — `codex exec` prints nothing and the hook never fires (measured: zero payloads without trust, five with it). So an installer that only wrote hooks.json would install nothing a headless run could use, which is why Codex had no audit hooks while Claude, Gemini and Antigravity had them for months.
+
+The trust record is a hash of the normalized hook under `[hooks.state."<file>:<event>:<group>:<handler>"]` in `config.toml`, and it is reproducible: `_shared/lib/codex-hooks.ts` computes it the way `codex-rs` does (canonical JSON of `{event_name, matcher, hooks:[…]}`, SHA-256), verified against a hash Codex itself had recorded before this code existed. `nrv install` now writes the hooks (`PreToolUse`/`PostToolUse` on `Bash|apply_patch`) and their trust, `--check` reports a hook that lost it, `--uninstall` removes both, and `nrv doctor` shows `codex: audit hooks`.
+
+The bridge learned the Codex shape while it was at it: `apply_patch` names its files in the patch text and gets one `artifact_touched` per file; a string `tool_response` carries the exit code, so a failed command is a failed `bash_completed`; and hook events are stamped like every other engine write. One older defect fell with it: the bridge decided "is this Nirvana work?" by path heuristics (`/projects/`, `-nirvana`, …) and dropped every hook event in a project whose name matched none of them — most projects. It now walks up to the `.nirvana/` marker, the same way the log resolver already did.
+
 ### A project is where a claw lives too
 
 Claude, Codex, Gemini and Hermes work in the directory they were started in, so "open it inside the project" was the whole recipe and every `nrv` call logged under `<project>/.nirvana/logs/harness/`. OpenClaw does not: an agent works in its **workspace**, reads `AGENTS.md` from there, and ignores where the person typed. Nothing in the engine said so, and the installer note called OpenClaw a runtime that reads no contract at all.

@@ -108,3 +108,53 @@ describe("audit-emit-from-hook.ts — where the hook's own events land", () => {
     expect(events.some(e => e.event === "bash_completed")).toBe(true);
   }, spawnBudgetMs(1));
 });
+
+describe("audit-emit-from-hook.ts — the Codex shape", () => {
+  test("apply_patch: one artifact_touched per file named in the patch, success from the exit code", () => {
+    const fx = fixture();
+    const today = new Date().toISOString().slice(0, 10);
+    const projectLog = path.join(fx.projectRoot, ".nirvana", "logs", "harness", today, "audit.jsonl");
+    const target = path.join(fx.projectRoot, "note.txt");
+    fs.writeFileSync(target, "bye\n");
+    const patch = `*** Begin Patch\n*** Update File: ${target}\n@@\n-hello\n+bye\n*** End Patch`;
+    const r = spawnSync(process.execPath, [SCRIPT, "post", "codex"], {
+      cwd: fx.projectRoot, env: fx.env, encoding: "utf8",
+      input: JSON.stringify({ session_id: "cx-1", tool_name: "apply_patch", tool_input: { command: patch }, tool_response: "Exit code: 0\nWall time: 0 seconds\nOutput:\nSuccess." }),
+    });
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    const ev = eventsIn(projectLog).find(e => e.event === "artifact_touched") as Record<string, unknown> | undefined;
+    expect(ev).toBeTruthy();
+    expect(ev!.file_path).toBe(target);
+    expect(ev!.action).toBe("edit");
+    expect(ev!.success).toBe(true);
+    expect(ev!.size_bytes).toBe(4);
+    expect(ev!.host).toBe("codex-hook");
+  }, spawnBudgetMs(1));
+
+  test("Bash with a string tool_response: a non-zero exit code is a failed bash_completed", () => {
+    const fx = fixture();
+    const today = new Date().toISOString().slice(0, 10);
+    const projectLog = path.join(fx.projectRoot, ".nirvana", "logs", "harness", today, "audit.jsonl");
+    const r = spawnSync(process.execPath, [SCRIPT, "post", "codex"], {
+      cwd: fx.projectRoot, env: fx.env, encoding: "utf8",
+      input: JSON.stringify({ session_id: "cx-2", tool_name: "Bash", tool_input: { command: "false" }, tool_response: "Exit code: 1\nWall time: 0 seconds\nOutput:\n" }),
+    });
+    expect(r.status).toBe(0);
+    const ev = eventsIn(projectLog).find(e => e.event === "bash_completed") as Record<string, unknown> | undefined;
+    expect(ev!.success).toBe(false);
+  }, spawnBudgetMs(1));
+
+  test("a project found by its .nirvana/ marker is in scope with no prefix hint at all", () => {
+    const fx = fixture();
+    fs.mkdirSync(path.join(fx.projectRoot, ".nirvana"), { recursive: true });
+    const env = { ...fx.env }; delete env.NIRVANA_AUDIT_PREFIXES;
+    const today = new Date().toISOString().slice(0, 10);
+    const projectLog = path.join(fx.projectRoot, ".nirvana", "logs", "harness", today, "audit.jsonl");
+    const r = spawnSync(process.execPath, [SCRIPT, "post", "claude-code"], {
+      cwd: fx.projectRoot, env, encoding: "utf8",
+      input: JSON.stringify({ session_id: "cc-3", tool_name: "Bash", tool_input: { command: "echo hi" }, tool_response: { success: true } }),
+    });
+    expect(r.status).toBe(0);
+    expect(eventsIn(projectLog).some(e => e.event === "bash_completed")).toBe(true);
+  }, spawnBudgetMs(1));
+});

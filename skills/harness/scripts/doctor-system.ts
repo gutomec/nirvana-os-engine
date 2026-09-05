@@ -29,6 +29,7 @@ import { resolveScope, enumerate } from "../../_shared/lib/scope.ts";
 import { RUNTIME_TARGETS, RUNTIME_SKILL_DIRS, PROJECT_CONTRACT_FILES, SKILLS as SKILL_NAMES } from "../../_shared/lib/runtime-dirs.ts";
 import { listRuntimes, whichSync } from "../../_shared/lib/host-agent-driver.ts";
 import { openclawAgentsOnProjects } from "../../_shared/lib/openclaw.ts";
+import { codexConfigPath, codexHookTrustEntries, codexHooksPath } from "../../_shared/lib/codex-hooks.ts";
 import { expandEnv, findTempNrvEntries, readUserPath, tempRoots } from "../../_shared/lib/windows-user-path.ts";
 import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import {
@@ -146,6 +147,17 @@ if (which("openclaw")) {
     bound.length
       ? bound.map((a) => `${a.id} → ${a.workspace!.replace(HOME, "~")}`).join(", ")
       : "none bound — `openclaw agents add <name> --workspace <project> --non-interactive` makes a project the agent's home");
+}
+
+// SECTION 1a-quater: CODEX AUDIT HOOKS — present is not enough; Codex skips a
+// hook nobody trusted, silently, so `codex exec` would audit nothing while the
+// file looked wired. `nrv install` writes both; this line checks both.
+if (which("codex")) {
+  const entries = codexHookTrustEntries(codexHooksPath(), codexConfigPath(), "audit-emit-from-hook.ts");
+  const untrusted = entries.filter((e) => !e.trusted);
+  if (entries.length === 0) add("codex: audit hooks", "WARN", `not wired in ${codexHooksPath().replace(HOME, "~")} — run: nrv install`);
+  else if (untrusted.length) add("codex: audit hooks", "WARN", `${untrusted.length}/${entries.length} present but not trusted — a headless run skips them; run: nrv install`);
+  else add("codex: audit hooks", "PASS", `${entries.length} hook(s) wired and trusted (PreToolUse/PostToolUse: Bash|apply_patch)`);
 }
 
 // SECTION 1a-bis-judge: GAUNTLET EVALUATOR — which evaluator a Gauntlet started
