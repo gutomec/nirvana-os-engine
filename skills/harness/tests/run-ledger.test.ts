@@ -4,6 +4,7 @@ import { describe, expect, test, afterAll } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { KERNEL_BUDGET_MS } from "./helpers/test-budgets.ts";
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-run-ledger-test-"));
 // Snapshot BEFORE mutating: these are process-wide, and bun runs test FILES in
@@ -43,7 +44,7 @@ afterAll(() => {
 describe("run-ledger — schema and open", () => {
   test("resolveLedgerDbPath honors NIRVANA_RUN_LEDGER_DB", () => {
     expect(resolveLedgerDbPath()).toBe(path.join(TMP, "default-ledger.sqlite"));
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("openRun creates a dispatched row with defaults", () => {
     const h = freshLedger();
@@ -54,7 +55,7 @@ describe("run-ledger — schema and open", () => {
     expect(row.meta).toEqual({ a: 1 });
     expect(Date.parse(row.lease_expires_at!)).toBeGreaterThan(Date.now());
     expect(row.heartbeat_at).toBeTruthy();
-  });
+  }, KERNEL_BUDGET_MS);
 });
 
 describe("run-ledger — state machine", () => {
@@ -69,7 +70,7 @@ describe("run-ledger — state machine", () => {
     expect(done.terminal_at).toBeTruthy();
     expect(done.child_pid).toBe(4242);
     expect(isTerminal(done.state)).toBe(true);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("withheld is terminal on the gate-fail path", () => {
     const h = freshLedger();
@@ -80,7 +81,7 @@ describe("run-ledger — state machine", () => {
     expect(w.state).toBe("withheld");
     expect(w.terminal_at).toBeTruthy();
     expect(w.last_error).toBe("gate fail");
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("illegal transitions throw", () => {
     const h = freshLedger();
@@ -91,7 +92,7 @@ describe("run-ledger — state machine", () => {
     expect(() => markState(h, run_id, "dispatched")).toThrow(/same-state/);
     // unknown state
     expect(() => markState(h, run_id, "flying" as any)).toThrow(/unknown state/);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("terminal states are final: no transition out, no lease renewal, no retries", () => {
     const h = freshLedger();
@@ -101,7 +102,7 @@ describe("run-ledger — state machine", () => {
     expect(() => markState(h, run_id, "failed")).toThrow(/terminal/);
     expect(renewLease(h, run_id, 60)).toBe(false);
     expect(() => incrementRetries(h, run_id)).toThrow(/terminal/);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("stalled and failed are recoverable", () => {
     const h = freshLedger();
@@ -114,7 +115,7 @@ describe("run-ledger — state machine", () => {
     const row = markState(h, run_id, "delivered");
     expect(row.state).toBe("delivered");
     expect(row.last_error).toBe("boom"); // COALESCE keeps the last real error
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("failed → verifying: the runtime-error salvage edge (artifacts on disk get judged)", () => {
     const h = freshLedger();
@@ -129,7 +130,7 @@ describe("run-ledger — state machine", () => {
     expect(row.last_error).toBe("runtime returned an error verdict");
     expect(row.meta.runtime_errored).toBe(true);
     expect(canTransition("failed", "verifying")).toBe(true);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("stalled → verifying: the supervisor salvage edge (an escalated run's artifacts get judged)", () => {
     const h = freshLedger();
@@ -142,7 +143,7 @@ describe("run-ledger — state machine", () => {
     expect(row.state).toBe("withheld");
     expect(row.last_error).toBe("supervisor: orphaned run; retries exhausted");
     expect(canTransition("stalled", "verifying")).toBe(true);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("patchMeta merges without a state transition", () => {
     const h = freshLedger();
@@ -153,13 +154,13 @@ describe("run-ledger — state machine", () => {
     expect(row.meta.outputs_root).toBe("/tmp/out");    // merged, not replaced
     expect(row.meta.salvaged).toBe(true);
     expect(patchMeta(h, "no-such-run", { salvaged: true })).toBeNull();
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("abandoned is unreachable via markState", () => {
     const h = freshLedger();
     const { run_id } = openRun(h, {});
     expect(() => markState(h, run_id, "abandoned")).toThrow(/abandon\(/);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("canTransition mirrors the table", () => {
     expect(canTransition("dispatched", "running")).toBe(true);
@@ -167,7 +168,7 @@ describe("run-ledger — state machine", () => {
     expect(canTransition("delivered", "running")).toBe(false);
     expect(canTransition("dispatched", "gated")).toBe(false);
     for (const t of TERMINAL_STATES) expect(canTransition(t as any, "running")).toBe(false);
-  });
+  }, KERNEL_BUDGET_MS);
 });
 
 describe("run-ledger — leases and expiry queries", () => {
@@ -180,7 +181,7 @@ describe("run-ledger — leases and expiry queries", () => {
     expect(Date.parse(after.lease_expires_at!)).toBeGreaterThan(Date.parse(before));
     expect(Date.parse(after.lease_expires_at!)).toBeGreaterThan(Date.now() + 3000_000);
     expect(Date.parse(after.heartbeat_at!)).toBeGreaterThanOrEqual(Date.parse(row.heartbeat_at!));
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("findExpired returns only non-terminal runs with expired leases", () => {
     const h = freshLedger();
@@ -193,14 +194,14 @@ describe("run-ledger — leases and expiry queries", () => {
     expect(ids).toContain(expired.run_id);
     expect(ids).not.toContain(fresh.run_id);
     expect(ids).not.toContain(doneButExpired.run_id);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("findExpired honors an injected clock", () => {
     const h = freshLedger();
     const row = openRun(h, { initialLeaseSec: 900 });
     expect(findExpired(h).map(r => r.run_id)).not.toContain(row.run_id);
     expect(findExpired(h, Date.now() + 3600_000).map(r => r.run_id)).toContain(row.run_id);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("findNonTerminal / countNonTerminal exclude terminal rows", () => {
     const h = freshLedger();
@@ -212,7 +213,7 @@ describe("run-ledger — leases and expiry queries", () => {
     expect(ids).toContain(a.run_id);
     expect(ids).not.toContain(b.run_id);
     expect(countNonTerminal(h)).toBe(1);
-  });
+  }, KERNEL_BUDGET_MS);
 });
 
 describe("run-ledger — abandon and resume info", () => {
@@ -226,7 +227,7 @@ describe("run-ledger — abandon and resume info", () => {
     expect(row.last_error).toBe("owner cancelled the brief");
     expect(row.terminal_at).toBeTruthy();
     expect(() => abandon(h, run_id, "again")).toThrow(/terminal/);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("resumeInfo exposes session, runtime, retries and meta", () => {
     const h = freshLedger();
@@ -243,7 +244,7 @@ describe("run-ledger — abandon and resume info", () => {
     expect(info.maxRetries).toBe(5);
     expect(info.meta.outputs_root).toBe("/tmp/x");
     expect(resumeInfo(h, "nope")).toBeNull();
-  });
+  }, KERNEL_BUDGET_MS);
 });
 
 describe("run-ledger — scanDir (what the heartbeat reports)", () => {
@@ -270,7 +271,7 @@ describe("run-ledger — scanDir (what the heartbeat reports)", () => {
     expect(scan.omitted).toBe(0);
     expect(scan.changed[0].sizeBytes).toBe("a/first.md".length);
     expect(scan.latestMs).toBeGreaterThanOrEqual(3_000_000);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("noise is never progress: .git, node_modules, .nirvana, dist and editor tempfiles are excluded", () => {
     const dir = tree({
@@ -283,7 +284,7 @@ describe("run-ledger — scanDir (what the heartbeat reports)", () => {
       ".DS_Store": 3_000_000,
     });
     expect(rel(dir, scanDir(dir, 1_000_000, { limit: 50 }))).toEqual(["report.md"]);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("noise still counts as liveness: latestMtimeMs sees what the report hides", () => {
     const dir = tree({ "node_modules/pkg/index.js": 4_000_000 });
@@ -291,14 +292,14 @@ describe("run-ledger — scanDir (what the heartbeat reports)", () => {
     // pruning the traversal would have silently changed that signal.
     expect(scanDir(dir, 1_000_000, { limit: 50 }).changed).toEqual([]);
     expect(latestMtimeMs(dir)).toBeGreaterThanOrEqual(4_000_000);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("the limit keeps the FIRST touches and names how many it dropped", () => {
     const dir = tree({ "s1.md": 2_000_000, "s2.md": 3_000_000, "s3.md": 4_000_000, "s4.md": 5_000_000 });
     const scan = scanDir(dir, 1_000_000, { limit: 2 });
     expect(rel(dir, scan)).toEqual(["s1.md", "s2.md"]);
     expect(scan.omitted).toBe(2);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("limit 0 reports nothing and still answers the liveness question", () => {
     const dir = tree({ "x.md": 2_000_000 });
@@ -306,11 +307,11 @@ describe("run-ledger — scanDir (what the heartbeat reports)", () => {
     expect(scan.changed).toEqual([]);
     expect(scan.omitted).toBe(0);
     expect(scan.latestMs).toBeGreaterThanOrEqual(2_000_000);
-  });
+  }, KERNEL_BUDGET_MS);
 
   test("a missing directory is empty, never a throw", () => {
     const scan = scanDir(path.join(TMP, "nope-not-here"), 0, { limit: 10 });
     expect(scan).toEqual({ latestMs: 0, changed: [], omitted: 0 });
     expect(latestMtimeMs(path.join(TMP, "nope-not-here"))).toBe(0);
-  });
+  }, KERNEL_BUDGET_MS);
 });
