@@ -47,6 +47,15 @@ function packsDir(): string { return join(nirvanaHome(), ".nirvana", "packs"); }
 const argv = process.argv.slice(2);
 const DRY = argv.includes("--dry");
 const SKIP_VALIDATE = argv.includes("--skip-validate");
+const NO_INDEX = argv.includes("--no-index");
+// --keep-clones (also --keep-squads / --keep-businesses): components of that
+// kind already on disk are neither replaced nor removed by this overlay; new
+// ones still arrive. For a buyer who edited a clone, this is how an update
+// stops being a choice between "new pack" and "my work".
+const KEEP = new Set<string>();
+if (argv.includes("--keep-clones") || argv.includes("--keep-mind-clones")) KEEP.add("mind-clones");
+if (argv.includes("--keep-squads")) KEEP.add("squads");
+if (argv.includes("--keep-businesses")) KEEP.add("businesses");
 const slugIdx = argv.indexOf("--slug");
 const SLUG = slugIdx >= 0 ? (argv[slugIdx + 1] ?? "") : "";
 const verIdx = argv.indexOf("--version");
@@ -193,31 +202,58 @@ const man: Manifest = (() => { try { return JSON.parse(readFileSync(manifestPath
 const availableIn = (dir: string, marker: string): string[] =>
   existsSync(dir) ? readdirSync(dir).filter((e) => !e.startsWith(".") && e !== "README.md" && existsSync(join(dir, e, marker))) : [];
 
-interface SyncRes { added: string[]; updated: string[]; unchanged: string[]; removed: string[]; overwritten: string[]; hashes: Record<string, string>; breaking: BreakingChange[]; }
+interface SyncRes { added: string[]; updated: string[]; unchanged: string[]; removed: string[]; overwritten: string[]; kept: string[]; backedUp: string[]; hashes: Record<string, string>; breaking: BreakingChange[]; }
+
+// Where a component goes before the overlay writes over it. One directory per
+// overlay run, created on first use so a run that backs nothing up leaves
+// nothing behind. Restoring is a copy back.
+const BACKUP_STAMP = new Date().toISOString().replace(/[:.]/g, "-");
+function backupRoot(): string { return join(nirvanaHome(), ".nirvana", "backups", "packs", SLUG, BACKUP_STAMP); }
+function backupComponent(kind: string, slug: string, dst: string, ex: string[]): void {
+  if (DRY) return;
+  const dest = join(backupRoot(), kind, slug);
+  mkdirSync(dest, { recursive: true });
+  cpSync(dst, dest, { recursive: true, force: true, filter: (p) => { const rel = relative(dst, p).split(sep).join("/"); return rel === "" || !isExcluded(rel, ex); } });
+}
+
 function syncKind(kind: string, srcRoot: string, dstRoot: string, available: string[], old: Record<string, string>, precomputed?: Record<string, string>): SyncRes {
   const ex = RUNSTATE_EXCLUDES[kind] ?? [];
-  const res: SyncRes = { added: [], updated: [], unchanged: [], removed: [], overwritten: [], hashes: {}, breaking: [] };
+  const keep = KEEP.has(kind);
+  const res: SyncRes = { added: [], updated: [], unchanged: [], removed: [], overwritten: [], kept: [], backedUp: [], hashes: {}, breaking: [] };
   if (available.length) mkdirSync(dstRoot, { recursive: true });
   for (const slug of available) {
     const src = join(srcRoot, slug), dst = join(dstRoot, slug);
     const h = precomputed?.[slug] ?? hashDir(src, ex); res.hashes[slug] = h;
-    if (!existsSync(dst)) { res.added.push(slug); if (!DRY) mirror(src, dst, ex); }
+    if (!existsSync(dst)) { res.added.push(slug); if (!DRY) mirror(src, dst, ex); continue; }
+    // --keep-<kind>: what is on disk stays, whatever the pack carries. The
+    // manifest keeps saying what the pack last INSTALLED here (the previous
+    // hash), so the next overlay without the flag treats it as an update again
+    // rather than as already current. A component the pack never owned stays
+    // outside the manifest.
+    if (keep) { res.kept.push(slug); if (slug in old) res.hashes[slug] = old[slug]; else delete res.hashes[slug]; continue; }
     // Collision: it exists on disk but the pack never owned it (outside the
     // manifest) — a user creation with the same slug. The pack wins (it is the
-    // source of truth) and there is no backup; warning only makes the loss
-    // visible, it does not prevent it.
-    else if (!(slug in old)) { res.overwritten.push(slug); if (!DRY) mirror(src, dst, ex); }
-    else {
-      const prev = old[slug] ?? hashDir(dst, ex);
-      if (prev !== h) {
-        res.updated.push(slug);
-        // BEFORE the mirror: the only window when installed and incoming coexist.
-        res.breaking.push(...contractBreaks(dst, src, `${kind}/${slug}`));
-        if (!DRY) mirror(src, dst, ex);
-      } else res.unchanged.push(slug);
-    }
+    // source of truth), and the user's version is backed up first.
+    if (!(slug in old)) { res.overwritten.push(slug); res.backedUp.push(slug); backupComponent(kind, slug, dst, ex); if (!DRY) mirror(src, dst, ex); continue; }
+    const prev = old[slug];
+    if (prev !== h) {
+      res.updated.push(slug);
+      // BEFORE the mirror: the only window when installed and incoming coexist.
+      res.breaking.push(...contractBreaks(dst, src, `${kind}/${slug}`));
+      // Changed on disk since the pack installed it — the buyer's edits. Backed
+      // up before the overlay replaces them; an untouched component is not,
+      // because the pack can always reproduce it.
+      if (hashDir(dst, ex) !== prev) { res.backedUp.push(slug); backupComponent(kind, slug, dst, ex); }
+      if (!DRY) mirror(src, dst, ex);
+    } else res.unchanged.push(slug);
   }
-  for (const slug of Object.keys(old)) { if (available.includes(slug)) continue; const dst = join(dstRoot, slug); if (existsSync(dst)) { res.removed.push(slug); if (!DRY) rmSync(dst, { recursive: true, force: true }); } }
+  for (const slug of Object.keys(old)) {
+    if (available.includes(slug)) continue;
+    const dst = join(dstRoot, slug);
+    if (!existsSync(dst)) continue;
+    if (keep) { res.kept.push(slug); res.hashes[slug] = old[slug]; continue; }
+    res.removed.push(slug); if (!DRY) rmSync(dst, { recursive: true, force: true });
+  }
   return res;
 }
 
@@ -321,7 +357,7 @@ const sq = runs["squads"], bz = runs["businesses"], cl = runs["mind-clones"];
   }
 }
 
-const line = (l: string, r: SyncRes) => console.log(`  ${l}: ${r.added.length} new · ${r.updated.length} updated · ${r.unchanged.length} unchanged · ${r.removed.length} removed${r.overwritten.length ? ` · ${r.overwritten.length} overwritten` : ""}`);
+const line = (l: string, r: SyncRes) => console.log(`  ${l}: ${r.added.length} new · ${r.updated.length} updated · ${r.unchanged.length} unchanged · ${r.removed.length} removed${r.kept.length ? ` · ${r.kept.length} kept (local)` : ""}${r.overwritten.length ? ` · ${r.overwritten.length} OVERWRITTEN` : ""}`);
 console.log(`${DRY ? "[DRY] " : ""}install-content '${SLUG}' ← ${CONTENT}`);
 line("squads", sq); line("businesses", bz); line("mind-clones", cl);
 
@@ -338,9 +374,21 @@ if (collisions.length > 0) {
   console.log();
   console.log(`  ${DRY ? "WOULD OVERWRITE" : "OVERWRITTEN"}: ${collisions.length} component(s) you created share a slug with a pack component.`);
   for (const c of collisions) console.log(`    ! ${c}`);
-  console.log("    The pack is the source of truth for its own components, so it wins — and there is no backup.");
-  console.log("    To keep your version, give it a different slug (your own components are never touched).");
+  console.log("    The pack is the source of truth for its own components, so it wins; your version was backed up first (below).");
+  console.log("    To keep your version in place, give it a different slug, or pass --keep-clones / --keep-squads / --keep-businesses.");
   console.log("    Your run-state (projects/, outputs/, memory/projects) was preserved.");
+}
+// What the overlay wrote over that the buyer had changed: named, and where it
+// went. The one loss this script can cause is edits made after install; a line
+// that says "backed up" and a directory that holds them is the difference
+// between an update and an accident.
+const backedUp = ([["squads", sq], ["businesses", bz], ["mind-clones", cl]] as const)
+  .flatMap(([l, r]) => r.backedUp.map((s) => `${l}/${s}`));
+if (backedUp.length > 0) {
+  console.log();
+  console.log(`  ${DRY ? "WOULD BACK UP" : "BACKED UP"}: ${backedUp.length} component(s) changed on this machine since the pack installed them${DRY ? "" : ` → ${backupRoot()}`}`);
+  for (const c of backedUp) console.log(`    ~ ${c}`);
+  console.log(`    Restore one by copying it back over the installed directory; keep it out of future updates with --keep-<kind>.`);
 }
 
 if (!DRY) {
@@ -355,6 +403,7 @@ if (!DRY) {
   // lived elsewhere. Now it falls back to the engine's own indexer, which is
   // where it always is: whoever gets here already has the engine, because this
   // script lives inside it.
+  if (NO_INDEX) { console.log("  (--no-index) registries not rebuilt — run 'nrv index' before routing to the new content."); process.exit(0); }
   console.log("  re-indexing registries...");
   const nrvBin = join(homedir(), ".local", "bin", "nrv");
   const indexer = join(import.meta.dir, "..", "..", "harness", "scripts", "index.ts");

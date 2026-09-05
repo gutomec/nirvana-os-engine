@@ -97,6 +97,7 @@ A project is where a run's audit, briefs and deliverables live, for every runtim
 | `nrv baseline [--days=N] [--save]` | Snapshot system KPIs from the audit log. |
 | `nrv improver run [--days=N]` | Meta-Nirvana: mine the audit log and propose improvements. |
 | `nrv update [--check\|--force]` | Self-update: pull + re-run installer + re-index. |
+| `nrv update <pack> [--keep-clones\|--keep-squads\|--keep-businesses] [--check]` | Update an installed pack. A component you changed since the pack installed it is backed up under `~/.nirvana/backups/packs/<pack>/<stamp>/` before the overlay replaces it; `--keep-<kind>` leaves what is on disk as it is (new components still arrive). |
 
 > `nrv validate` exits `0` admitted · `1` an error the debt baseline does not cover · `2` only warnings, under `--strict` · `64` usage error or unknown entity. The system doctor moved to `nrv doctor`; `nrv validate` with no arguments still runs it, with a deprecation notice, for one release. Kind aliases: `biz`, `clone`, `mc`. Full contract: [docs/architecture/validate-gate.md](architecture/validate-gate.md).
 >

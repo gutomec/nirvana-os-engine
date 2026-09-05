@@ -8,6 +8,12 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Atualizar um pack não custa mais as suas edições
+
+`nrv update <pack>` sobrepõe o pack novo ao instalado, e dizia isso sem rodeios: o pack é a fonte de verdade, e não há backup. Quem tinha ajustado um clone perdia o ajuste na atualização seguinte, no máximo com um aviso.
+
+Duas coisas agora. Qualquer componente que você mudou desde que o pack o instalou (o manifesto lembra o que instalou, então a mudança é mensurável) é copiado para `~/.nirvana/backups/packs/<pack>/<carimbo>/<tipo>/<slug>/` antes de o overlay escrever por cima, e a execução diz quais e onde; um componente criado por você que colide com um slug do pack é copiado do mesmo jeito. E `--keep-clones` (também `--keep-squads`, `--keep-businesses`) deixa todo componente daquele tipo que já está em disco exatamente como está — os novos ainda chegam, nada é removido — enquanto o manifesto continua registrando o que o pack instalou por último, para que uma atualização seguinte sem a flag os trate de novo como atualização, não como atuais. `--dry` nomeia o que faria backup.
+
 ### Hooks do Codex, instalados já confiáveis
 
 O Codex só roda um hook depois que o usuário o revisa na TUI, e um hook não revisado é pulado em silêncio — o `codex exec` não imprime nada e o hook nunca dispara (medido: zero payloads sem confiança, cinco com ela). Então um instalador que só escrevesse o hooks.json não instalaria nada que uma execução headless pudesse usar, e é por isso que o Codex não tinha hooks de auditoria enquanto Claude, Gemini e Antigravity tinham há meses.

@@ -3,8 +3,14 @@
  * update-pack.ts — updates an already-installed paid pack, authenticated by the
  * PROVENANCE's license_key (no login). It is what `nrv update <slug>` calls.
  *
- *   nrv update <slug>            downloads the current version and re-applies (overlay)
- *   nrv update <slug> --check    only compares the installed version with the server's
+ *   nrv update <slug>                 downloads the current version and re-applies (overlay)
+ *   nrv update <slug> --keep-clones   …but leaves every mind-clone already on disk as it is
+ *                                     (--keep-squads / --keep-businesses likewise)
+ *   nrv update <slug> --check         only compares the installed version with the server's
+ *
+ * Components the buyer changed since the pack installed them are backed up
+ * under ~/.nirvana/backups/packs/<slug>/<stamp>/ before the overlay writes
+ * over them (install-content.ts); --keep-<kind> leaves them in place instead.
  *
  * Flow: PROVENANCE (license_key + version) → POST /pack-update (signed URL) →
  * download the stamped .zip → unzip → find the content folder → install-content.
@@ -186,6 +192,8 @@ async function main(): Promise<number> {
   const ic = spawnSync(process.execPath, [
     join(SKILLS, "_shared", "scripts", "install-content.ts"),
     content, "--slug", slug, ...(version ? ["--version", version] : []),
+    // Pass-through: --keep-clones / --keep-squads / --keep-businesses / --no-index.
+    ...args.filter((a) => a.startsWith("--keep") || a === "--no-index"),
   ], { stdio: "inherit" });
 
   // Refresh the license from the artifact that was just downloaded.

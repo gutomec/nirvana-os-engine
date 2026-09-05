@@ -8,6 +8,12 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### A pack update no longer costs you your edits
+
+`nrv update <pack>` overlays the new pack over the installed one, and it said so plainly: the pack is the source of truth, and there is no backup. A buyer who had tuned a mind-clone lost the tuning on the next update, with a warning at best.
+
+Two things now. Any component you changed since the pack installed it (the manifest remembers what it installed, so a change is measurable) is copied to `~/.nirvana/backups/packs/<pack>/<stamp>/<kind>/<slug>/` before the overlay writes over it, and the run says which ones and where; a user-created component that collides with a pack slug is backed up the same way. And `--keep-clones` (also `--keep-squads`, `--keep-businesses`) leaves every component of that kind already on disk exactly as it is — new ones still arrive, nothing is removed — while the manifest keeps recording what the pack last installed, so a later plain update treats them as updates again rather than as current. `--dry` names what it would back up.
+
 ### Codex hooks, installed already trusted
 
 Codex runs a hook only after the user reviews it in the TUI, and an unreviewed hook is skipped in silence — `codex exec` prints nothing and the hook never fires (measured: zero payloads without trust, five with it). So an installer that only wrote hooks.json would install nothing a headless run could use, which is why Codex had no audit hooks while Claude, Gemini and Antigravity had them for months.
