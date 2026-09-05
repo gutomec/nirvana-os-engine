@@ -44,6 +44,9 @@ function activate(f: Fixture): { status: number | null; json: any; stderr: strin
       NIRVANA_STATE_DIR: join(f.root, "state"),
       NIRVANA_HOME: f.root,
       PATH: `${f.binDir}${delimiter}${process.env.PATH ?? ""}`,
+      ...(process.platform === "win32"
+        ? { PATHEXT: [process.env.PATHEXT, ".COM;.EXE;.BAT;.CMD"].filter(Boolean).join(";") }
+        : {}),
     },
   });
   return { status: result.status, json: JSON.parse(result.stdout), stderr: result.stderr ?? "" };
