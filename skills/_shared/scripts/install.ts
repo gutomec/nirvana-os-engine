@@ -41,7 +41,7 @@ import {
 // Any hook whose command contains one of these tokens is "ours" and is
 // safe to overwrite/remove. Keeps user-added hooks untouched.
 const NIRVANA_TOKENS = ["audit-emit-from-hook.ts", "gemini-session-start.ts"];
-import { codexConfigPath, codexHookTrustEntries, codexHooksPath, removeCodexHookTrust, upsertCodexHookTrust } from "../lib/codex-hooks.ts";
+import { codexConfigPath, codexHookHash, codexHookTrustEntries, codexHooksPath, readCodexHookState, removeCodexHookTrust, upsertCodexHookTrust } from "../lib/codex-hooks.ts";
 
 // Shared skills tree (Option B): prefer ~/.nirvana/skills so the audit-hook
 // command paths written into each runtime's settings.json survive removal of
@@ -572,25 +572,23 @@ function codexTrust(mode: "install" | "uninstall" | "check"): string[] {
 
 /** Keys of trust records that belong to our hooks: same file, our events, and a hash we would compute. */
 function readCodexTrustKeysForOurs(configFile: string, hooksFile: string): Set<string> {
-  const out = new Set<string>();
-  let raw = "";
-  try { raw = fs.readFileSync(configFile, "utf8"); } catch { return out; }
-  const prefix = hooksFile.replace(/\\/g, "\\\\");
-  const re = new RegExp(`^\\[hooks\\.state\\."(${prefix.replace(/[.*+?^${}()|[\]]/g, "\\$&")}:(?:pre_tool_use|post_tool_use):\\d+:\\d+)"\\]\\s*\\n\\s*trusted_hash\\s*=\\s*"(sha256:[0-9a-f]+)"`, "gm");
-  let m: RegExpExecArray | null;
   // Ours are the ones whose hash matches a handler WE would install at that
   // position. Recompute from the spec so a user's own Bash hook in the same
-  // file, trusted by hand, is never removed.
+  // file, trusted by hand, is never removed. Keys come back unescaped from the
+  // lib, so a Windows path compares as a plain string here.
+  const out = new Set<string>();
   const spec = AGENTS_TO_INSTALL.find((a) => a.name === "Codex");
   const ourHashes = new Set<string>();
   if (spec) {
     for (const [event, groups] of Object.entries(spec.groups)) {
       for (const g of groups) for (const h of g.hooks) {
-        try { ourHashes.add(require("../lib/codex-hooks.ts").codexHookHash(event, g.matcher, h)); } catch { /* skip */ }
+        try { ourHashes.add(codexHookHash(event, g.matcher, h as any)); } catch { /* skip */ }
       }
     }
   }
-  while ((m = re.exec(raw))) if (ourHashes.has(m[2])) out.add(m[1].replace(/\\\\/g, "\\"));
+  for (const [key, state] of readCodexHookState(configFile)) {
+    if (key.startsWith(`${hooksFile}:`) && state.trusted_hash && ourHashes.has(state.trusted_hash)) out.add(key);
+  }
   return out;
 }
 
