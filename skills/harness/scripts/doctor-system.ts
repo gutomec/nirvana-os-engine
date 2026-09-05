@@ -26,7 +26,7 @@ import * as os from "node:os";
 import { execSync, spawnSync } from "node:child_process";
 import { paths as nrvPaths } from "../../_shared/lib/bun-helpers.ts";
 import { resolveScope, enumerate } from "../../_shared/lib/scope.ts";
-import { RUNTIME_TARGETS, RUNTIME_SKILL_DIRS, PROJECT_CONTRACT_FILES } from "../../_shared/lib/runtime-dirs.ts";
+import { RUNTIME_TARGETS, RUNTIME_SKILL_DIRS, PROJECT_CONTRACT_FILES, SKILLS as SKILL_NAMES } from "../../_shared/lib/runtime-dirs.ts";
 import { listRuntimes, whichSync } from "../../_shared/lib/host-agent-driver.ts";
 import { expandEnv, findTempNrvEntries, readUserPath, tempRoots } from "../../_shared/lib/windows-user-path.ts";
 import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
@@ -530,6 +530,33 @@ if (fs.existsSync(agentsSkillsDir)) {
       `${doubled.size} skill(s) reachable through ~/.agents/skills AND ${dirs} — same file, but runtimes reading both log "Skill conflict detected". ~/.agents/skills is not created by this engine; remove it if nothing else needs it.`);
   } else {
     add("skills: duplicate exposure", "PASS", "no skill reachable through two directories");
+  }
+}
+
+// Dependencies inside a skills root. Codex's skill scanner follows symlinks,
+// prunes only hidden directories and stops after 20,000 entries per root — a
+// `node_modules` link inside a skill (what installs before 0.13.2 wrote) sends
+// it through the whole dependency store on every run, with a "traversal limit"
+// error and shortened skill descriptions as the visible symptoms. The installer
+// now links deps BESIDE each skills dir; this catches the old layout and any
+// tree a hand install left behind.
+{
+  const inside: string[] = [];
+  // A runtime root is scanned as a whole, so nothing may sit at its top level
+  // either. The canonical tree is reached only through per-skill links, so its
+  // own root-level link (~/.nirvana/skills/node_modules) is the intended home.
+  const candidates = [
+    ...RUNTIME_SKILL_DIRS.flatMap(root => [path.join(root, "node_modules"), ...SKILL_NAMES.map(s => path.join(root, s, "node_modules"))]),
+    ...SKILL_NAMES.map(s => path.join(SKILLS, s, "node_modules")),
+  ];
+  for (const c of candidates) {
+    try { fs.lstatSync(c); inside.push(c.replace(HOME, "~")); } catch { /* absent — the goal */ }
+  }
+  if (inside.length) {
+    add("skills: deps inside a skills root", "WARN",
+      `${inside.length} node_modules under a skills directory (${inside.slice(0, 4).join(", ")}${inside.length > 4 ? ", …" : ""}) — Codex's skill scanner walks into it and hits its entry limit. \`nrv update\` rewrites the layout; a real directory (not a link) is yours to remove.`);
+  } else {
+    add("skills: deps inside a skills root", "PASS", "no node_modules under any skills directory");
   }
 }
 
