@@ -304,7 +304,7 @@ With that settled, pick the targets:
 
 **Dispatching a business means running its ORG CHART — not handing the company to one subagent.**
 
-A business is not a single executor. It is seats with different specialties plus one that consolidates, and the whole point of choosing a business over a squad is that somebody answers for the result. Handing the brief to one subagent and letting it *write as if* the seats had contributed produces a deliverable that names people who never ran. Measured on a live run (2026-09-04): `nexus-council` (9 seats) and `systems-atelier` (14 seats) each emitted ONE `dispatch_business` between them and zero per-employee events, while the artifacts credited six named seats. Work attributed to a seat with no dispatch event is the fiction §Rule 2 exists to prevent.
+A business is not a single executor. It is seats with different specialties plus one that consolidates, and the whole point of choosing a business over a squad is that somebody answers for the result. Handing the brief to one subagent and letting it *write as if* the seats had contributed produces a deliverable that names people who never ran. Measured on a live run (2026-09-04): two businesses with 23 seats between them emitted ONE `dispatch_business` each and zero per-employee events, while the artifacts credited six named seats. Work attributed to a seat with no dispatch event is the fiction §Rule 2 exists to prevent.
 
 The engine decides and audits; **you** execute. Two commands:
 
