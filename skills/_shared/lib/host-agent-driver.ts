@@ -1595,13 +1595,39 @@ function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
   if (opts.yolo === false) args.push("--approve-for-me");
   else args.push("--dangerously-bypass-approvals-and-sandbox");
 
-  const r = driverSpawnSync("codex", args, {
+  const spawnOpts = {
     cwd: opts.cwd,
     input: withPreamble(opts),
-    encoding: "utf8",
+    encoding: "utf8" as const,
     ...(typeof opts.timeoutMs === "number" ? { timeout: opts.timeoutMs } : {}),
     maxBuffer: 64 * 1024 * 1024,
-  });
+  };
+  const warnings: string[] = [];
+  // Flags audited on 0.153.4 are not all on the Codex a client runs:
+  // --approve-for-me arrived in 0.147 (2026-08-07), --add-dir and --ephemeral
+  // later than the adapter's previous audit. clap answers an unknown flag with
+  // exit 2 and "error: unexpected argument '<flag>' found" before anything
+  // runs. Rather than turning every dispatch on an older Codex into that
+  // error, the optional flags are dropped one at a time as Codex names them,
+  // each drop recorded as a warning, and the run proceeds with what that
+  // version has. --approve-for-me falls back to the pre-0.147 restricted path.
+  const takesValue = new Set(["--add-dir", "-c", "--output-schema", "-i", "--model"]);
+  const droppable = new Set(["--add-dir", "--approve-for-me", "--ephemeral", "--output-schema", "-i", "-c", "--model"]);
+  let r = driverSpawnSync("codex", args, spawnOpts);
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const m = (r.status ?? 1) !== 0 ? (r.stderr || "").match(/unexpected argument '([^']+)'/) : null;
+    const flag = m?.[1];
+    if (!flag || !droppable.has(flag) || !args.includes(flag)) break;
+    const next: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === flag) { if (takesValue.has(flag)) i++; continue; }
+      next.push(args[i]);
+    }
+    if (flag === "--approve-for-me") next.push("-s", "workspace-write");
+    warnings.push(`codex: this version does not know ${flag}; retried without it${flag === "--approve-for-me" ? " (restricted path is -s workspace-write, which stalls on the first approval)" : flag === "--add-dir" ? " (extra directories were not granted)" : ""}`);
+    args.length = 0; args.push(...next);
+    r = driverSpawnSync("codex", args, spawnOpts);
+  }
 
   const durationMs = Date.now() - started;
   const exitCode = r.status ?? (r.signal ? 124 : 1);
@@ -1610,7 +1636,6 @@ function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
   let sessionId: string | null = opts.sessionId ?? null;
   let streamError: string | null = null;
   let usage: RunHeadlessResult["usage"];
-  const warnings: string[] = [];
   for (const line of (r.stdout || "").split("\n")) {
     const t = line.trim();
     if (!t.startsWith("{")) continue;
