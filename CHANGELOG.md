@@ -8,6 +8,18 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### `nrv audit where` and `nrv audit tail`
+
+Following a run meant knowing `harnessLogsDir`'s three-rung precedence by heart, remembering that a run writes to up to four files, and hand-writing a `jq` filter that handles both event envelopes. I built that filter three times in one day and got it wrong all three: once missing every CloudEvents line, once with an invalid escape that made the whole expression fail silently, once reading a single file and nearly reporting a healthy run as fraud.
+
+`nrv audit where` prints the resolved log root **and the reason**, then every file holding events for a trace with a provenance count each. `nrv audit tail` follows a run across all four files, normalizes both envelopes, denies the hook stream by default (denying noise beats listing wanted events — a list goes blind the day the engine gains an `x_` event, which is the open namespace's whole point), and with `--follow` starts at the end like tail does, instead of replaying the day.
+
+### Cost events were filed under a path that does not exist
+
+`import-claude-transcripts.ts` recovered a project path from Claude Code's encoded directory name by replacing every `-` with `/`. That encoding replaces `/` with `-`, so undoing it that way destroys the hyphens belonging to the name: `projeto-mini-apps-agroautonomia` became `Users/guto/projeto/mini/apps/agroautonomia`, and every cost event for that project was filed under a path with no directory behind it.
+
+`decodeClaudeProjectDirName` already solved this — it walks the disk, preferring the longest run of tokens that names a real directory — and was one import away. When a path cannot be recovered the encoded name is kept verbatim: an honest opaque id beats a confident wrong one.
+
 ### The validators learned the chain layout
 
 A run dispatched through `nrv team` writes a FLAT outputs root — `outputs/` with `outputs/_team/<seat>/` beside the finals — while the scripted path nests everything under `outputs/<project_id>/`. Both are legitimate; the validators knew one. So `validate-chain --verify-disk` read no per-target audits for a chain run and `verify-deliverable` answered "project not found" for work sitting on disk in front of it.
