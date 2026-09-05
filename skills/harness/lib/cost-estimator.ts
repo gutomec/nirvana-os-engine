@@ -17,8 +17,11 @@
 
 import type { Runtime, RunHeadlessResult } from "./host-agent-driver.ts";
 
-/** USD per million tokens. [input, output]. Updated May 2026 from public pricing. */
-const PRICE_TABLE: Record<string, [number, number]> = {
+/** USD per million tokens. [input, output] or [input, output, cachedInput].
+ * Anthropic/Google rows: May 2026. OpenAI rows: 2026-09-05, standard tier, from
+ * developers.openai.com/api/docs/pricing — cached input is the third number. */
+type Price = [number, number] | [number, number, number];
+const PRICE_TABLE: Record<string, Price> = {
   // Anthropic
   "claude-opus-4-7":       [15.00, 75.00],
   "claude-sonnet-4-6":     [ 3.00, 15.00],
@@ -27,9 +30,17 @@ const PRICE_TABLE: Record<string, [number, number]> = {
   "sonnet":                [ 3.00, 15.00],
   "haiku":                 [ 0.80,  4.00],
   // OpenAI
-  "gpt-5.5":               [ 5.00, 30.00],
-  "gpt-5.3-codex":         [ 5.00, 30.00],
+  "gpt-6-astra":           [10.00, 50.00, 1.00],
+  "gpt-5.6-sol":           [ 4.00, 20.00, 0.40],
+  "gpt-5.6-terra":         [ 2.00, 12.00, 0.20],
+  "gpt-5.6-luna":          [ 0.20,  1.20, 0.02],
+  "gpt-5.5":               [ 5.00, 30.00, 0.50],
+  "gpt-5.4":               [ 2.50, 15.00, 0.25],
+  "gpt-5.4-mini":          [ 0.75,  4.50, 0.075],
+  "gpt-5.3-codex":         [ 1.75, 14.00, 0.175],
   "gpt-5.3":               [ 3.00, 15.00],
+  "gpt-5.2":               [ 1.75, 14.00, 0.175],
+  "gpt-5.1":               [ 1.25, 10.00, 0.125],
   // Google (shared by gemini-cli + antigravity-cli)
   "gemini-3.5-flash":      [ 1.50,  9.00],
   "gemini-3.1-pro-preview":[ 2.00, 12.00],
@@ -46,17 +57,17 @@ const PRICE_TABLE: Record<string, [number, number]> = {
   "deepseek-v3.2":         [ 0.30,  1.20],
 };
 
-/** Allow per-model price override via env: NIRVANA_PRICE_GPT_5_5="5/30". */
-function envPrice(model: string): [number, number] | null {
+/** Allow per-model price override via env: NIRVANA_PRICE_GPT_5_5="5/30" or "5/30/0.5" (cached input third). */
+function envPrice(model: string): Price | null {
   const key = "NIRVANA_PRICE_" + model.toUpperCase().replace(/[^A-Z0-9]/g, "_");
   const v = process.env[key];
   if (!v) return null;
-  const m = v.match(/^([\d.]+)\s*\/\s*([\d.]+)$/);
+  const m = v.match(/^([\d.]+)\s*\/\s*([\d.]+)(?:\s*\/\s*([\d.]+))?$/);
   if (!m) return null;
-  return [parseFloat(m[1]), parseFloat(m[2])];
+  return m[3] ? [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3])] : [parseFloat(m[1]), parseFloat(m[2])];
 }
 
-function priceFor(model: string | null): [number, number] | null {
+function priceFor(model: string | null): Price | null {
   if (!model) return null;
   return envPrice(model) ?? PRICE_TABLE[model] ?? null;
 }
@@ -114,9 +125,16 @@ export function estimateCostUsd(runtime: Runtime, model: string | null, r: RunHe
   // For codex/gemini (and claude-code when costUsd is null), estimate via tokens.
   const price = priceFor(model);
   if (!price) return null;
+  const [inUsd, outUsd, cachedUsd] = price;
+  // The CLI's own usage object wins over scraping the text: it carries the
+  // cached subset of the input, which is billed at a tenth of the rate.
+  if (r.usage) {
+    const cached = Math.min(r.usage.cachedInputTokens, r.usage.inputTokens);
+    const fresh = r.usage.inputTokens - cached;
+    return (fresh * inUsd + cached * (cachedUsd ?? inUsd) + r.usage.outputTokens * outUsd) / 1_000_000;
+  }
   const haystack = [r.result, r.stderr].filter(Boolean).join("\n");
   const tk = extractTokens(haystack);
   if (!tk) return null;
-  const [inUsd, outUsd] = price;
   return (tk.input * inUsd + tk.output * outUsd) / 1_000_000;
 }
