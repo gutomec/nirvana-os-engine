@@ -103,12 +103,17 @@ export function verifyDeliverableOnDisk(
   // --manifest). It's authoritative; brief.md regex is best-effort fallback.
   let expectedPathsRaw: string[] = [];
   let manifestSource = "brief-regex";
-  const deliverablesPath = path.join(projectDir, "businesses", businessSlug, "deliverables.json");
-  const deliverablesPathAlt = path.join(projectDir, "deliverables.json"); // project-level fallback
-
-  let manifestFile: string | null = null;
-  if (fs.existsSync(deliverablesPath)) manifestFile = deliverablesPath;
-  else if (fs.existsSync(deliverablesPathAlt)) manifestFile = deliverablesPathAlt;
+  // A run files its manifest under the target that produced it: `businesses/<slug>/`
+  // for a business, `squads/<slug>/` for a squad, or at the run root. This check
+  // knew the first and the last. On 2026-09-04 a squad run had two manifests under
+  // `squads/`, every promised file on disk, and got FAIL_INDETERMINATE "no
+  // deliverables.json" — a verdict about where the tool looked, not about the work.
+  const manifestCandidates = [
+    path.join(projectDir, "businesses", businessSlug, "deliverables.json"),
+    path.join(projectDir, "squads", businessSlug, "deliverables.json"),
+    path.join(projectDir, "deliverables.json"), // run-level fallback
+  ];
+  const manifestFile: string | null = manifestCandidates.find(p => fs.existsSync(p)) ?? null;
 
   if (manifestFile) {
     try {
@@ -156,7 +161,7 @@ export function verifyDeliverableOnDisk(
   if (expectedPathsRaw.length === 0) {
     return base("FAIL_INDETERMINATE", {
       manifest_source: manifestSource,
-      reason: "no deliverables.json, no acceptance[] entry with a path, and brief.md has no /path markers",
+      reason: `no deliverables.json (looked in ${manifestCandidates.map(p => path.relative(projectDir, p)).join(", ")}), no acceptance[] entry with a path, and brief.md has no /path markers`,
     });
   }
 
@@ -215,7 +220,7 @@ if (import.meta.main) {
   if (r.status === "FAIL_INDETERMINATE") {
     console.error(`WARN: ${r.reason || "indeterminate"}`);
     if (r.reason && r.reason.startsWith("no deliverables.json")) {
-      console.error("To fix: register the project with `brief-business.ts --manifest <paths.json>` next time.");
+      console.error("To fix: write the run's manifest next time — `brief-business.ts --manifest <paths.json>` for a business, or `squads/<slug>/deliverables.json` beside a squad's outputs.");
     }
   }
 

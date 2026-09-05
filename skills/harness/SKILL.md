@@ -428,9 +428,9 @@ Run TWO checks in order:
 
 **1. Deliverable verification** — disk-truth:
 ```bash
-bun ~/.nirvana/skills/businesses/scripts/verify-deliverable.ts <project_id> <business_slug>
+bun ~/.nirvana/skills/businesses/scripts/verify-deliverable.ts <project_id> <slug>
 ```
-Returns `{expected, found, missing, empty_or_stub, status}`, exit 0 (PASS) / 1 (FAIL). If FAIL, re-dispatch a revision agent before proceeding. **Without verify=PASS, no `gate_passed` is legitimate.**
+`<slug>` is the target that produced the work — a business or a squad; the manifest is read from `businesses/<slug>/` or `squads/<slug>/` under the run. Returns `{expected, found, missing, empty_or_stub, status}`, exit 0 (PASS) / 1 (FAIL) / 2 (indeterminate: no manifest found — a tool gap, not a verdict on the work). If FAIL, re-dispatch a revision agent before proceeding. **Without verify=PASS, no `gate_passed` is legitimate.**
 
 **2. Rubric quality gate:**
 ```bash
