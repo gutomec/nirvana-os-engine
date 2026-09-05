@@ -8,6 +8,18 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### `nrv audit where` e `nrv audit tail`
+
+Acompanhar uma execução exigia saber de cor a precedência de três degraus do `harnessLogsDir`, lembrar que uma execução escreve em até quatro arquivos, e escrever à mão um filtro `jq` que trate os dois envelopes de evento. Eu montei esse filtro três vezes num dia e errei nas três: uma perdendo toda linha CloudEvents, uma com escape inválido que fazia a expressão inteira falhar em silêncio, uma lendo um arquivo só e quase reportando uma execução saudável como fraude.
+
+O `nrv audit where` imprime a raiz de log resolvida **e o motivo**, depois cada arquivo que guarda eventos de um trace, com contagem de procedência. O `nrv audit tail` acompanha a execução nos quatro arquivos, normaliza os dois envelopes, nega o fluxo de hooks por padrão (negar ruído é melhor que listar o que se quer — uma lista fica cega no dia em que o engine ganha um evento `x_`, que é justamente o ponto do namespace aberto) e, com `--follow`, começa no fim como o tail faz, em vez de repetir o dia.
+
+### Eventos de custo eram arquivados sob um caminho que não existe
+
+O `import-claude-transcripts.ts` recuperava o caminho do projeto a partir do nome de diretório codificado pelo Claude Code trocando todo `-` por `/`. Essa codificação troca `/` por `-`, então desfazer assim destrói os hífens que pertencem ao nome: `projeto-mini-apps-agroautonomia` virava `Users/guto/projeto/mini/apps/agroautonomia`, e todo evento de custo daquele projeto ia para um caminho sem diretório atrás.
+
+O `decodeClaudeProjectDirName` já resolvia isso — ele caminha o disco preferindo a maior sequência de tokens que nomeia um diretório real — e estava a um import de distância. Quando o caminho não é recuperável, o nome codificado fica como está: um id opaco honesto é melhor que um caminho errado com cara de certo.
+
 ### Os validadores aprenderam o layout de cadeia
 
 Uma execução despachada pelo `nrv team` escreve numa raiz de saída PLANA — `outputs/` com `outputs/_team/<cadeira>/` ao lado dos finais — enquanto o caminho scriptado aninha tudo sob `outputs/<project_id>/`. Os dois são legítimos; os validadores conheciam um. Então o `validate-chain --verify-disk` não lia auditoria por-alvo nenhuma numa execução de cadeia, e o `verify-deliverable` respondia "project not found" para trabalho que estava em disco na frente dele.

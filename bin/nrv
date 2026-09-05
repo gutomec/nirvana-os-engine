@@ -234,6 +234,10 @@ case "$cmd" in
     exec "$BUN_BIN" "$SKILLS/harness/scripts/dispatch.ts" "$@" ;;
   team)
     exec "$BUN_BIN" "$SKILLS/harness/scripts/chain.ts" "$@" ;;
+  audit-where)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/audit-where.ts" "$@" ;;
+  audit-tail)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/audit-tail.ts" "$@" ;;
   run|autopilot)
     exec "$BUN_BIN" "$SKILLS/harness/scripts/dispatch.ts" "$@" --exec ;;
   auto)
