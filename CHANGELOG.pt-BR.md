@@ -6,6 +6,14 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Não lançado
+
+### As linhas de shell de um pack rodam numa shell POSIX também no Windows
+
+Os hooks de `post_install` de um squad, seus comandos `check:` e a sonda de presença (`command -v <ferramenta>`) são escritos em POSIX: `~`, `|`, `||`, `head`, `>/dev/null`. No macOS e no Linux vão para o `/bin/sh`; no Windows o `execSync` os entregava ao `cmd.exe`, que não fala nada disso, então toda dependência em string aparecia como "faltando" e todo hook POSIX falhava — em silêncio, porque hook falhado não casava com ramo nenhum do coletor de falhas. Medido nos packs publicados: 9 dos 47 squads do Genesis e 22 de 23 dos outros packs carregam hooks assim.
+
+O engine já exige o Git for Windows lá (o `nrv.cmd` delega ao Git Bash). Os passos escritos em POSIX agora rodam nesse mesmo bash no Windows, então a diferença de língua some sem tocar em pack nem no contrato de hooks; o que um pack escreveu para o Windows (`install.win32`) continua rodando no `cmd.exe`. Um hook que falha agora é aviso no resultado da ativação, que é o que o agente que conduz a ativação lê e trata; nunca bloqueia o squad. A prova é um teste que roda as linhas com a forma dos packs pelo activator nos três sistemas do CI.
+
 ## 0.13.3 — 2026-09-05
 
 ### Um Codex mais antigo perde uma flag, não a execução inteira

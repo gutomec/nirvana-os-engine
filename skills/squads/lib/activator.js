@@ -65,13 +65,69 @@ function readYaml(filePath) {
   catch (e) { return null; }
 }
 
-function checkCmd(cmd, opts = {}) {
+// ── Which shell runs a pack's shell lines ─────────────────────────────
+//
+// A squad's `post_install`, its `check:` commands and the bare presence probe
+// (`command -v <tool>`) are written in POSIX: `~`, `|`, `||`, `head`,
+// `>/dev/null`. On macOS and Linux `execSync` hands them to /bin/sh and they
+// work. On Windows `execSync` hands them to cmd.exe, which speaks none of that:
+// `~` stays a tilde, `head` does not exist, `command -v` is not a builtin — so
+// every string dependency read as "missing" and every POSIX hook failed, both
+// silently. Measured on the published packs (2026-09-06): 9 of the 47 Genesis
+// squads and 22 of 23 in the other packs carry such hooks.
+//
+// The engine already requires Git for Windows there (the `nrv.cmd` launcher
+// delegates to Git Bash and refuses to run without it). So the POSIX-authored
+// steps run in that same bash on Windows, and the language mismatch is gone
+// without touching a single pack or changing the hook contract. What a pack
+// wrote FOR Windows — `install.win32` — keeps running in cmd.exe, because that
+// is the shell it was written for. No Git Bash found: the old behaviour, so a
+// machine that somehow runs the activator without it is no worse off.
+let POSIX_SHELL_CACHE;
+function posixShell() {
+  if (POSIX_SHELL_CACHE !== undefined) return POSIX_SHELL_CACHE;
+  const override = process.env.NIRVANA_POSIX_SHELL;
+  if (override) { POSIX_SHELL_CACHE = fs.existsSync(override) ? override : null; return POSIX_SHELL_CACHE; }
+  if (PLATFORM !== 'win32') { POSIX_SHELL_CACHE = null; return null; } // execSync already uses /bin/sh
+  const candidates = [
+    process.env.ProgramFiles && path.join(process.env.ProgramFiles, 'Git', 'bin', 'bash.exe'),
+    process.env['ProgramFiles(x86)'] && path.join(process.env['ProgramFiles(x86)'], 'Git', 'bin', 'bash.exe'),
+    process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Programs', 'Git', 'bin', 'bash.exe'),
+  ].filter(Boolean);
   try {
-    execSync(cmd, { stdio: 'pipe', timeout: opts.timeoutMs || 30000 });
-    return { ok: true };
+    const w = spawnSync('where.exe', ['git'], { encoding: 'utf8', windowsHide: true });
+    for (const line of String(w.stdout || '').split(/\r?\n/)) {
+      const g = line.trim();
+      if (g) candidates.push(path.resolve(path.dirname(g), '..', 'bin', 'bash.exe'));
+    }
+  } catch { /* no git on PATH */ }
+  POSIX_SHELL_CACHE = candidates.find((c) => { try { return fs.statSync(c).isFile(); } catch { return false; } }) || null;
+  return POSIX_SHELL_CACHE;
+}
+
+// Runs one shell line and returns the execSync shape, through the POSIX shell
+// when `posix` is asked for and one exists, through the platform default
+// otherwise. Never throws.
+function shellExec(cmd, { posix = false, stdio = 'pipe', timeoutMs, cwd, env } = {}) {
+  const shell = posix ? posixShell() : null;
+  try {
+    if (shell) {
+      const r = spawnSync(shell, ['-c', cmd], { stdio, timeout: timeoutMs, cwd: cwd || undefined, env, encoding: 'utf8', windowsHide: true });
+      if (r.error) return { ok: false, error: r.error.message, code: r.status, stderr: r.stderr || null };
+      if ((r.status ?? 1) !== 0) return { ok: false, error: `Command failed (exit ${r.status}): ${cmd}`, code: r.status, stderr: r.stderr || null };
+      return { ok: true, output: r.stdout || '' };
+    }
+    const out = execSync(cmd, { stdio, timeout: timeoutMs, cwd: cwd || undefined, env });
+    return { ok: true, output: out ? out.toString() : '' };
   } catch (e) {
-    return { ok: false, error: e.message };
+    return { ok: false, error: e.message, code: e.status, stderr: e.stderr ? e.stderr.toString() : null };
   }
+}
+
+// Presence and `check:` commands are POSIX-authored in every pack.
+function checkCmd(cmd, opts = {}) {
+  const r = shellExec(cmd, { posix: true, stdio: 'pipe', timeoutMs: opts.timeoutMs || 30000, env: DEPS.depsEnv(process.env) });
+  return r.ok ? { ok: true } : { ok: false, error: r.error };
 }
 
 function runCmd(cmd, opts = {}) {
@@ -79,21 +135,17 @@ function runCmd(cmd, opts = {}) {
   // an automation agent can see brew/git/pip progress in real time.
   const verbose = process.env.MAESTRO_ACTIVATOR_VERBOSE === '1';
   const stdio = verbose ? 'inherit' : (opts.silent ? 'pipe' : 'pipe');
-  try {
-    const out = execSync(cmd, {
-      stdio,
-      timeout: opts.timeoutMs || 600000,
-      cwd: opts.cwd || undefined,
-      // depsEnv FIRST, then the caller's overrides: a shell line from
-      // `system[].install` or `post_install` inherits the pinned caches, so a
-      // `npx puppeteer browsers install chrome` buried in a squad's hook lands
-      // in ~/.nirvana/cache/puppeteer like everything else.
-      env: { ...DEPS.depsEnv(process.env), ...(opts.env || {}) },
-    });
-    return { ok: true, output: out ? out.toString() : '' };
-  } catch (e) {
-    return { ok: false, error: e.message, code: e.status, stderr: e.stderr ? e.stderr.toString() : null };
-  }
+  return shellExec(cmd, {
+    posix: opts.posix === true,
+    stdio,
+    timeoutMs: opts.timeoutMs || 600000,
+    cwd: opts.cwd || undefined,
+    // depsEnv FIRST, then the caller's overrides: a shell line from
+    // `system[].install` or `post_install` inherits the pinned caches, so a
+    // `npx puppeteer browsers install chrome` buried in a squad's hook lands
+    // in ~/.nirvana/cache/puppeteer like everything else.
+    env: { ...DEPS.depsEnv(process.env), ...(opts.env || {}) },
+  });
 }
 
 // A package list is DATA. `runCmd` builds a shell string, which is right for
@@ -706,7 +758,8 @@ function runPostInstall(commands, dryRun) {
   const results = [];
   for (const cmd of commands) {
     if (dryRun) { results.push({ cmd, status: 'would_run' }); continue; }
-    const r = runCmd(cmd, { timeoutMs: 120000 });
+    // POSIX-authored by every pack that has one: through Git Bash on Windows.
+    const r = runCmd(cmd, { timeoutMs: 120000, posix: true });
     results.push({ cmd, status: r.ok ? 'ok' : 'failed', error: r.ok ? null : r.error });
   }
   return { status: 'done', kind: 'post_install', items: results };
@@ -916,6 +969,11 @@ function activate(slug, opts = {}) {
       // installs its code deps and runs in degraded mode until the user supplies
       // them. Surfaced as warnings so the caller can prompt the user.
       else if (item.status === 'missing_required' || item.status === 'missing_system_tool') warnings.push({ step: stepName, ...item });
+      // A post_install hook that failed. Hooks are cosmetic (reindex, print a
+      // version) and the agent driving the activation is who reads this: a
+      // warning it can act on, never a failure that hides the squad. Until now
+      // this status matched no branch at all and the failure was invisible.
+      else if (item.status === 'failed') warnings.push({ step: stepName, ...item });
     }
   }
 
@@ -957,7 +1015,7 @@ function deactivate(slug) {
 
 // windowsCmdMetachar is exported for its own test: it is the whole Windows
 // decision, and the spawn it guards cannot be exercised from a POSIX runner.
-module.exports = { activate, status, deactivate, _windowsShellPlan: windowsShellPlan, _fetchAndExecute: fetchAndExecute };
+module.exports = { activate, status, deactivate, _windowsShellPlan: windowsShellPlan, _fetchAndExecute: fetchAndExecute, _posixShell: posixShell };
 
 // CLI — exit codes follow the contract documented in scripts/activate-squad.sh:
 //   0 = ok / activated
