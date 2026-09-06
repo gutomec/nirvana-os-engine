@@ -308,7 +308,7 @@ The registry is **cache, not source-of-truth**. Source of truth remains the `squ
   "schema_version": "1.0.0",
   "generated_at": "2026-05-02T15:00:00Z",
   "host_protocol_version": "5.0",
-  "squads_root_dirs": ["${SQUADS_DIR}", "/Volumes/guto1/squads"],
+  "squads_root_dirs": ["${SQUADS_DIR}", "/Volumes/external/squads"],
   "squads": {
     "instagram-intelligence-nirvana": {
       "version": "5.4.0",

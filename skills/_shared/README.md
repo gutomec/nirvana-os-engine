@@ -179,7 +179,7 @@ from validators import (
 )
 
 biz = BusinessManifest.model_validate(manifest_dict)   # raises pydantic.ValidationError on fail
-ok = validate_dna_file('/Volumes/guto1/mindclones/02-negocios/naval-ravikant.md')
+ok = validate_dna_file('/Volumes/external/mindclones/02-negocios/naval-ravikant.md')
 ```
 
 Test: `cd ~/.nirvana/skills/_shared/validators && python3 -m pytest validators.py` (36 passed).
