@@ -151,12 +151,12 @@ if (which("openclaw")) {
 
 // SECTION 1a-quater: CODEX AUDIT HOOKS — present is not enough; Codex skips a
 // hook nobody trusted, silently, so `codex exec` would audit nothing while the
-// file looked wired. `nrv install` writes both; this line checks both.
+// file looked wired. `nrv setup` writes both; this line checks both.
 if (which("codex")) {
   const entries = codexHookTrustEntries(codexHooksPath(), codexConfigPath(), "audit-emit-from-hook.ts");
   const untrusted = entries.filter((e) => !e.trusted);
-  if (entries.length === 0) add("codex: audit hooks", "WARN", `not wired in ${codexHooksPath().replace(HOME, "~")} — run: nrv install`);
-  else if (untrusted.length) add("codex: audit hooks", "WARN", `${untrusted.length}/${entries.length} present but not trusted — a headless run skips them; run: nrv install`);
+  if (entries.length === 0) add("codex: audit hooks", "WARN", `not wired in ${codexHooksPath().replace(HOME, "~")} — run: nrv setup`);
+  else if (untrusted.length) add("codex: audit hooks", "WARN", `${untrusted.length}/${entries.length} present but not trusted — a headless run skips them; run: nrv setup`);
   else add("codex: audit hooks", "PASS", `${entries.length} hook(s) wired and trusted (PreToolUse/PostToolUse: Bash|apply_patch)`);
 }
 

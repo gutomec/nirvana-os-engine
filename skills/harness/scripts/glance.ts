@@ -31,7 +31,7 @@ USAGE
   glance --read-only                  browse only; disable all write endpoints
   glance --port 4242                  fixed port instead of auto
   glance --no-open                    don't auto-open the browser
-  glance --idle-min 60                idle timeout in minutes (default 30)
+  glance --idle-min 60                idle timeout in minutes (default 30; 0 = never shut down on idle)
   glance --theme apple|apple-dark|awwwards    visual theme (default apple)
   glance --host 0.0.0.0               served instance — see SERVED below
   glance -h | --help                  this message
@@ -71,7 +71,12 @@ The cockpit auto-detects the project root from \$cwd (walks up looking for
 
 const port = flags.port ? Number(flags.port) : "auto";
 const open = !flags["no-open"];
-const idleMin = flags["idle-min"] ? Number(flags["idle-min"]) : 30;
+// `--idle-min 0` means NO idle shutdown. It used to mean "shut down on the first
+// watchdog tick": a truthy "0" string became the number 0, and `idle > 0` was
+// true immediately. Reported against the service-mode proposal (#89) — the
+// one-line reason a cockpit could not simply be left running.
+const idleMinRaw = flags["idle-min"] !== undefined ? Number(flags["idle-min"]) : 30;
+const idleMin = Number.isFinite(idleMinRaw) && idleMinRaw >= 0 ? idleMinRaw : 30;
 const host = (flags.host as string) || "127.0.0.1";
 if (host !== "127.0.0.1" && host !== "localhost" && host !== "::1") {
   const glanceKeys = listKeys().filter((k) => k.glance && !k.revoked).length;

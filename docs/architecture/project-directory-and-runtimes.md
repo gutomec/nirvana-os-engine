@@ -40,7 +40,7 @@ project relies on the machine's `~/.nirvana/skills`.
 | Runtime | Enter the project | Contract read from | Extra roots | Audit source |
 |---|---|---|---|---|
 | Claude Code | `cd <project> && claude` | `CLAUDE.md` in cwd | `--add-dir` | hooks (`PreToolUse`/`PostToolUse`) + `nrv audit emit` |
-| Codex | `cd <project> && codex`, or `codex exec -C <project>` | `AGENTS.md` in cwd (native) | `--add-dir` | hooks (`PreToolUse`/`PostToolUse` on `Bash\|apply_patch`, trusted by `nrv install`) + `nrv audit emit` |
+| Codex | `cd <project> && codex`, or `codex exec -C <project>` | `AGENTS.md` in cwd (native) | `--add-dir` | hooks (`PreToolUse`/`PostToolUse` on `Bash\|apply_patch`, trusted by `nrv setup`) + `nrv audit emit` |
 | Gemini CLI | `cd <project> && gemini` | `GEMINI.md` in cwd | `--include-directories` | hooks + `nrv audit emit` |
 | Antigravity | `cd <project> && agy` | `AGENTS.md` in cwd | `--add-dir` | hooks + `nrv audit emit` |
 | Hermes | `nrv-hermes`, or `hermes chat --in <project>` | `AGENTS.md` injected from cwd | n/a (works in cwd) | shell hooks (`pre/post_tool_call`) + fs-watch |
@@ -129,7 +129,7 @@ skipped in silence: `codex exec` prints nothing and the hook never fires
 hash of the normalized hook definition under `[hooks.state."<file>:<event>:<group>:<handler>"]`
 in `config.toml`, and it is reproducible — `_shared/lib/codex-hooks.ts`
 computes it the way `codex-rs` does (canonical JSON of the identity, SHA-256),
-verified against a hash Codex itself had recorded. `nrv install` therefore
+verified against a hash Codex itself had recorded. `nrv setup` therefore
 writes both the hooks and their trust, `--check` reports a hook that lost it,
 `--uninstall` removes both, and `nrv doctor` shows `codex: audit hooks`.
 
