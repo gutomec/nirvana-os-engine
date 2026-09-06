@@ -8,11 +8,17 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### `nrv glance --idle-min 0` means no idle shutdown, and the hook messages name `nrv setup`
+
+`--idle-min 0` used to shut the cockpit down on the first watchdog tick: a truthy `"0"` became the number 0 and "idle longer than 0 ms" was true at once. Reported against the service-mode proposal (#89) as the reason a cockpit could not simply be left running. Zero now disarms the watchdog, `/api/health` reports `idle_timeout_ms: null`, and a cockpit meant to stay up all day is `nrv glance --idle-min 0 --no-open --port 3737`, registered with the operating system's own service manager when it must survive a reboot.
+
+The audit-hook installer is `nrv setup` (bare `nrv install` installs assets); #168 fixed the `nrv init` warning, and the doctor line and trust notes for the Codex hooks that had been written with the same wrong command now say `nrv setup` too.
+
 ### A pack's shell lines run in a POSIX shell on Windows too
 
 A squad's `post_install` hooks, its `check:` commands and the bare presence probe (`command -v <tool>`) are written in POSIX: `~`, `|`, `||`, `head`, `>/dev/null`. On macOS and Linux they go to `/bin/sh`; on Windows `execSync` handed them to `cmd.exe`, which speaks none of it, so every string dependency read as "missing" and every POSIX hook failed — silently, because a failed hook matched no branch of the failure collector. Measured on the published packs: 9 of the 47 Genesis squads and 22 of 23 in the other packs carry such hooks.
 
-The engine already requires Git for Windows there (the `nrv.cmd` launcher delegates to Git Bash). The POSIX-authored steps now run in that same bash on Windows, so the language mismatch is gone without touching a pack or the hook contract; what a pack wrote for Windows (`install.win32`) keeps running in `cmd.exe`. A failed hook is now a warning on the activation result, which is what the agent driving the activation reads and acts on; it never blocks the squad. The proof is a test that runs the pack-shaped lines through the activator on all three CI systems.
+The engine already requires Git for Windows there (the `nrv.cmd` launcher delegates to Git Bash). The POSIX-authored steps now run in that same bash on Windows, so the language mismatch is gone without touching a pack or the hook contract; what a pack wrote for Windows (`install.win32`) keeps running in `cmd.exe`. A failed hook is now a warning on the activation result, which is what the agent driving the activation reads and acts on; it never blocks the squad. The proof is a test that runs the pack-shaped lines through the activator on all three CI systems. The Windows symptom was reported in #228, which also carried the first attempt at a fix; this cut keeps that diagnosis and moves the correction into the engine, where it costs the packs nothing.
 
 ## 0.13.3 — 2026-09-05
 

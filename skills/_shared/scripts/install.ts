@@ -557,7 +557,7 @@ function codexTrust(mode: "install" | "uninstall" | "check"): string[] {
   if (entries.length === 0) return notes;
   const untrusted = entries.filter((e) => !e.trusted);
   if (mode === "check") {
-    notes.push(untrusted.length ? `⚠ ${untrusted.length}/${entries.length} Codex hook(s) not trusted in ${configFile} — run: nrv install` : `✓ Codex hooks trusted (${entries.length})`);
+    notes.push(untrusted.length ? `⚠ ${untrusted.length}/${entries.length} Codex hook(s) not trusted in ${configFile} — run: nrv setup` : `✓ Codex hooks trusted (${entries.length})`);
     return notes;
   }
   if (untrusted.length === 0) return notes;

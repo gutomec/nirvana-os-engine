@@ -1616,7 +1616,7 @@ export async function startServer(opts: ServerOptions) {
           version: "1.0.0",
           uptime_ms: Date.now() - STARTED_AT,
           idle_ms: Date.now() - lastActivity,
-          idle_timeout_ms: opts.idleMin * 60_000,
+          idle_timeout_ms: opts.idleMin > 0 ? opts.idleMin * 60_000 : null,
           allow_actions: opts.allowActions,
           scope: getScope(),
         });
@@ -2135,7 +2135,7 @@ export async function startServer(opts: ServerOptions) {
   });
 
   console.error(`[glance] up on ${url}  (scope=${getScope().mode}, allow_actions=${opts.allowActions}, theme=${opts.theme})`);
-  console.error(`[glance] auto-shutdown after ${opts.idleMin}min idle  ·  Ctrl+C to exit`);
+  console.error(opts.idleMin > 0 ? `[glance] auto-shutdown after ${opts.idleMin}min idle  ·  Ctrl+C to exit` : `[glance] no idle shutdown (--idle-min 0)  ·  Ctrl+C to exit`);
   if (!isLoopback) console.error(`[glance] served on ${host} — authentication required (Authorization: Bearer <token from \`nrv serve keygen --glance\`>); tenant = ${currentProjectRoot()}`);
   // A served instance is a VPS process with no display attached to it, most of the time; even
   // when one exists, opening a browser aimed at a bare non-TLS network address is not this
@@ -2148,13 +2148,14 @@ export async function startServer(opts: ServerOptions) {
   // The maestro turns have no recovery: a dying server signals them (Ctrl+C in a terminal session).
   const detach = () => { canaryQueue?.shutdown(); turnQueue?.shutdown(); };
 
-  // Idle watchdog (a running maestro turn keeps the server up; the tab may be closed meanwhile)
-  const watchdog = setInterval(() => {
+  // Idle watchdog (a running maestro turn keeps the server up; the tab may be closed meanwhile).
+  // Not armed at all when idleMin is 0: a cockpit meant to stay up all day.
+  const watchdog: ReturnType<typeof setInterval> | null = opts.idleMin > 0 ? setInterval(() => {
     if (Date.now() - lastActivity > opts.idleMin * 60_000 && !turnQueue?.hasActive()) {
       console.error(`[glance] idle ${opts.idleMin}min — shutting down`);
       shutdown(server, watchdog, detach);
     }
-  }, 30_000);
+  }, 30_000) : null;
 
   // SIGINT cleanup
   const onSignal = () => { console.error("\n[glance] SIGINT — shutting down"); shutdown(server, watchdog, detach); };
@@ -2510,9 +2511,9 @@ function streamJobSSE(req: Request, id: string): Response {
 
 /** Orderly stop: the execution queue detaches first, then the server, the pid file and the process.
  * `exit` and `pidFile` are seams for the unit test; production passes only the first three. */
-export function shutdown(server: { stop(closeActiveConnections?: boolean): void }, watchdog: ReturnType<typeof setInterval>,
+export function shutdown(server: { stop(closeActiveConnections?: boolean): void }, watchdog: ReturnType<typeof setInterval> | null,
   detach: () => void = () => {}, exit: (code: number) => void = code => process.exit(code), pidFile: string = PID_FILE): void {
-  clearInterval(watchdog);
+  if (watchdog) clearInterval(watchdog);
   try { detach(); } catch {}
   try { server.stop(true); } catch {}
   try { fs.unlinkSync(pidFile); } catch {}
