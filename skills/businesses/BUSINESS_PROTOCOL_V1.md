@@ -606,7 +606,7 @@ Inherits Squad Protocol v4 §6.5 (Identity, Guidelines DO/DO NOT, Process, Outpu
 
 ### 7.5 Mind-clone employees (special case)
 
-When `type: mind_clone`, the employee references a canonical DNA in `${DNA_LIBRARY}/` (consolidated from `/Volumes/guto1/mindclones/`, `~/.claude/agents/`, `${SQUADS_DIR}/sales-funnel-masters/specialists/`).
+When `type: mind_clone`, the employee references a canonical DNA in `${DNA_LIBRARY}/` (consolidated from `/Volumes/external/mindclones/`, `~/.claude/agents/`, `${SQUADS_DIR}/sales-funnel-masters/specialists/`).
 
 ```yaml
 type: mind_clone

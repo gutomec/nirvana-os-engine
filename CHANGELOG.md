@@ -599,7 +599,7 @@ Adds a project switcher to the topnav: an always-visible label showing the
 currently bound project (previously nothing), a dropdown of other Nirvana
 projects discovered on the machine, and a free-text path field for anything
 not discovered. Discovery decodes Claude Code's own transcript-directory
-naming convention (`~/.claude/projects/-Users-guto-nirvana-os`, path
+naming convention (`~/.claude/projects/-Users-alice-nirvana-os`, path
 separators encoded as `-`) by walking the real filesystem and preferring
 the longest real match at each step — a blind `-` → `/` replace misreads a
 hyphenated name like `nirvana-os` as `nirvana/os`; this doesn't, because it

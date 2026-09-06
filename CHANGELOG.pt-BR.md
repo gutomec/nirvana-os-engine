@@ -616,7 +616,7 @@ o projeto vinculado agora (antes não existia nada), um dropdown com outros
 projetos Nirvana descobertos na máquina, e um campo de texto livre para
 qualquer um não descoberto. A descoberta decodifica a convenção de
 nomenclatura de diretório de transcrição do próprio Claude Code
-(`~/.claude/projects/-Users-guto-nirvana-os`, separadores de caminho
+(`~/.claude/projects/-Users-alice-nirvana-os`, separadores de caminho
 codificados como "-") caminhando pelo sistema de arquivos real e preferindo
 o maior trecho real a cada passo — uma substituição cega de "-" por "/" lê
 errado um nome com hífen como `nirvana-os` como `nirvana/os`; isso não

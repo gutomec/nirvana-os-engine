@@ -46,7 +46,7 @@ const PROJECTS_ROOT = path.join(os.homedir(), ".claude", "projects");
 
 function encodeProjectPath(absPath: string): string {
   // Claude Code encodes the absolute path by replacing slashes with hyphens
-  // and prefixing with a single dash. e.g. ~/foo → -Users-guto-foo.
+  // and prefixing with a single dash. e.g. ~/foo → -Users-alice-foo.
   return absPath.replace(/\//g, "-");
 }
 

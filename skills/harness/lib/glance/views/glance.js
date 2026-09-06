@@ -1078,8 +1078,8 @@ function glance() {
       if (item.cwd && (item.cwd === root || item.cwd.startsWith(root + '/'))) return true;
 
       // 2. Fallback for project_id. Claude Code stores transcripts under
-      //    ~/.claude/projects/-Users-guto-foo-bar/, and our importer turns that
-      //    back into "Users/guto/foo/bar" — every "-" becomes "/" indiscriminately,
+      //    ~/.claude/projects/-Users-alice-foo-bar/, and our importer turns that
+      //    back into "Users/alice/foo/bar" — every "-" becomes "/" indiscriminately,
       //    so a real "nirvana-os" path is encoded as "nirvana/os". We can't reverse
       //    that perfectly, but for matching we normalise BOTH sides by treating
       //    "/" and "-" as the same separator and lowercasing.

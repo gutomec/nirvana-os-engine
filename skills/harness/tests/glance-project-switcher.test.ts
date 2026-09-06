@@ -206,10 +206,10 @@ describe("decodeClaudeProjectDirName", () => {
   test("recovers a hyphenated leaf directory name (the case a blind replace(/-/g,'/') gets wrong)", () => {
     const root = makeTempRoot("nrv-decode-");
     roots.push(root);
-    fs.mkdirSync(path.join(root, "Users", "guto", "nirvana-os"), { recursive: true });
-    // Claude Code encoding of "<root>/Users/guto/nirvana-os": every "/" -> "-".
-    const encoded = "-Users-guto-nirvana-os";
-    expect(decodeClaudeProjectDirName(encoded, root)).toBe(path.join(root, "Users", "guto", "nirvana-os"));
+    fs.mkdirSync(path.join(root, "Users", "alice", "nirvana-os"), { recursive: true });
+    // Claude Code encoding of "<root>/Users/alice/nirvana-os": every "/" -> "-".
+    const encoded = "-Users-alice-nirvana-os";
+    expect(decodeClaudeProjectDirName(encoded, root)).toBe(path.join(root, "Users", "alice", "nirvana-os"));
   });
 
   test("prefers the longest real match, so a hyphenated name beats the wrong shorter split even when both exist", () => {
@@ -237,18 +237,18 @@ describe("discoverKnownProjects / validateProjectPath", () => {
     fs.mkdirSync(claudeProjects, { recursive: true });
 
     // A real Nirvana project — should be listed.
-    fs.mkdirSync(path.join(root, "Users", "guto", "nirvana-os", ".nirvana"), { recursive: true });
-    fs.mkdirSync(path.join(claudeProjects, "-Users-guto-nirvana-os"), { recursive: true });
+    fs.mkdirSync(path.join(root, "Users", "alice", "nirvana-os", ".nirvana"), { recursive: true });
+    fs.mkdirSync(path.join(claudeProjects, "-Users-alice-nirvana-os"), { recursive: true });
 
     // A real directory, but no .nirvana/ marker — must NOT be listed.
-    fs.mkdirSync(path.join(root, "Users", "guto", "not-a-project"), { recursive: true });
-    fs.mkdirSync(path.join(claudeProjects, "-Users-guto-not-a-project"), { recursive: true });
+    fs.mkdirSync(path.join(root, "Users", "alice", "not-a-project"), { recursive: true });
+    fs.mkdirSync(path.join(claudeProjects, "-Users-alice-not-a-project"), { recursive: true });
 
     // An encoded name that doesn't decode to anything real — dropped, not an error.
     fs.mkdirSync(path.join(claudeProjects, "-nothing-here-at-all"), { recursive: true });
 
     const found = discoverKnownProjects(claudeProjects, root);
-    expect(found).toEqual([{ path: path.join(root, "Users", "guto", "nirvana-os"), name: "nirvana-os" }]);
+    expect(found).toEqual([{ path: path.join(root, "Users", "alice", "nirvana-os"), name: "nirvana-os" }]);
   });
 
   test("validateProjectPath accepts a real .nirvana/-marked directory and rejects everything else", () => {
