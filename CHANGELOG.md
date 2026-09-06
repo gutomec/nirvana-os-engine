@@ -6,6 +6,14 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### A pack's shell lines run in a POSIX shell on Windows too
+
+A squad's `post_install` hooks, its `check:` commands and the bare presence probe (`command -v <tool>`) are written in POSIX: `~`, `|`, `||`, `head`, `>/dev/null`. On macOS and Linux they go to `/bin/sh`; on Windows `execSync` handed them to `cmd.exe`, which speaks none of it, so every string dependency read as "missing" and every POSIX hook failed — silently, because a failed hook matched no branch of the failure collector. Measured on the published packs: 9 of the 47 Genesis squads and 22 of 23 in the other packs carry such hooks.
+
+The engine already requires Git for Windows there (the `nrv.cmd` launcher delegates to Git Bash). The POSIX-authored steps now run in that same bash on Windows, so the language mismatch is gone without touching a pack or the hook contract; what a pack wrote for Windows (`install.win32`) keeps running in `cmd.exe`. A failed hook is now a warning on the activation result, which is what the agent driving the activation reads and acts on; it never blocks the squad. The proof is a test that runs the pack-shaped lines through the activator on all three CI systems.
+
 ## 0.13.3 — 2026-09-05
 
 ### An older Codex drops a flag instead of the whole run
