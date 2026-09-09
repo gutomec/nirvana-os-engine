@@ -11,6 +11,9 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 ### O normalizador lê gates, grupos, listas de agentes por fase e rotas de evento encadeadas
 
 Cinco squads da biblioteca voltavam da migração 6.0 com `steps.N.agent: Too small`, que o schema define como bug do normalizador: um passo que o schema recusa nunca é conteúdo autoral. Quatro dialetos não eram lidos. Um passo sem ninguém para executá-lo e sem nada a executar (`type: approval`, `type: human-gate`) é um gate na aresta, não um nó: sai do grafo, os passos que esperavam por ele herdam o que ele esperava e o carregam verbatim em `meta.gate_before`, e um gate de que ninguém depende vai para `extensions.trailing_gates`. Um grupo `type: parallel` dentro de uma `sequence` é uma camada: cada filho vira um passo rotulado com o grupo, requer o passo anterior ao grupo, e o passo seguinte requer todos os filhos. Uma fase que lista seus `agents:` vira um passo por entrada, todos na fase. Um roteador `event_routes` em que toda rota nomeia um `agent_chain` é uma floresta, uma cadeia por rota na ordem do autor com o gatilho no primeiro passo; uma rota sem cadeia continua recusada, porque não há ordem a derivar. O backup da migração também pula um socket ou FIFO deixado dentro da árvore do squad (um test ledger local), que o `cp` recusava com EINVAL e abortava a migração inteira.
+### Um pack só embarca squads no Protocolo 6.0
+
+O gate de admissão (`check-entity-admission.ts --pack`) trata um squad cujo manifesto está abaixo do Squad Protocol 6.0, ou sem `protocol` algum, como problema duro: o pack não entra. Abaixo de 6.0 o grafo do workflow é um dialeto que cada leitor interpreta de um jeito, e a correção é um comando (`nrv migrate <slug> --to 6`), então isso nunca é dívida a registrar. O validador continua reportando como aviso numa biblioteca instalada, onde o `nrv doctor` conta os squads que faltam migrar.
 
 ### `self_retrieval_miss` reporta todos os briefs que erram
 
