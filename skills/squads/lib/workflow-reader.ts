@@ -233,9 +233,14 @@ const isMapping = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === "object" && !Array.isArray(v);
 
 function slugify(s: string): string {
-  return String(s).trim().toLowerCase()
+  const out = String(s).trim().toLowerCase()
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "step";
+  // A step id must start with a letter (`^[a-z][a-z0-9_-]*$`). The v5 templates
+  // numbered their actions (`1GerarRelatorioDeEstoque`), and the id derived from
+  // one failed the 6.0 schema after every other file had been written — the
+  // migration rolled the whole squad back and said nothing on the summary line.
+  return /^[a-z]/.test(out) ? out : `step-${out}`;
 }
 
 function isRefShaped(v: unknown): v is string {
