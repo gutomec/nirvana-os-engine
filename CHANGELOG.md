@@ -11,6 +11,10 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 ### `self_retrieval_miss` reports every missed brief
 
 The `return` sat inside the loop over `example_briefs`, so the validator named one miss and stopped: an author fixing briefs one at a time learned about the next miss only after fixing this one, and "1 warning" could mean fourteen. Misses accumulate now, one finding per brief.
+### The routing digest has no budget by default
+
+`routing.digest_token_budget` defaults to 0, no budget: the digest ships whole and never degrades unless an owner sets a ceiling on purpose. The 50k default that shipped with the knob still degraded a large library to level 4 in silence, which is the behaviour the knob existed to end. A budget is a deliberate setting, not something considered by default.
+
 ### The clone search reads the step's task, not the whole brief
 
 A chain brief carries the vocabulary of every seat. Fed with it, the clone search ranked the marketing and press voices for a seat whose job was closing the production macro. `nrv team step` now hands `employee-prompt` the step's own task (`--task-file`), and the search reads that; a seat run outside a chain still searches on the brief.

@@ -13,6 +13,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
+import { getSettingSpec, resolveSetting } from "../../_shared/lib/settings.ts";
 import {
   buildDigest, buildKeywordAliases, splitKeywordGroups, foldKey, detectLang,
   estimateTokens, trunc, TOKEN_BUDGET, loadDigestInput, configuredTokenBudget,
@@ -130,8 +131,11 @@ describe("routing digest — the budget is a knob, and 0 means none", () => {
     expect(open.degradationLevel).toBe(0);
     expect(open.overBudget).toBe(false);
   });
-  test("the configured budget comes from settings, default 50000", () => {
-    expect(configuredTokenBudget()).toBe(50_000);
+  test("the configured budget comes from settings, and the default is none", () => {
+    // The default is pinned on the schema, not on this machine's config: an
+    // owner who set a ceiling must not turn this test red.
+    expect(getSettingSpec("routing.digest_token_budget").default).toBe(0);
+    expect(configuredTokenBudget()).toBe(Number(resolveSetting("routing.digest_token_budget").value));
   });
 });
 
@@ -332,7 +336,7 @@ describe("routing digest — budget degradation ladder", () => {
   });
 
   test("default budget is the documented 50k", () => {
-    expect(TOKEN_BUDGET).toBe(50_000);
+    expect(TOKEN_BUDGET).toBe(0);
   });
 });
 

@@ -11,6 +11,10 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 ### `self_retrieval_miss` reporta todos os briefs que erram
 
 O `return` ficava dentro do laço sobre `example_briefs`, então o validador nomeava um erro e parava: quem corrigia um brief por vez só descobria o próximo depois de corrigir este, e "1 aviso" podia significar catorze. Os erros agora acumulam, um achado por brief.
+### O digest de roteamento não tem orçamento por padrão
+
+`routing.digest_token_budget` passa a valer 0 por padrão, sem teto: o digest sai inteiro e nunca degrada, a menos que o dono fixe um teto de propósito. O padrão de 50k que saiu junto com a chave ainda degradava uma biblioteca grande até o nível 4 em silêncio, que era o comportamento que a chave existia para acabar. Orçamento é decisão deliberada, não algo considerado por padrão.
+
 ### A busca de clone lê a tarefa do passo, não o brief inteiro
 
 O brief de uma cadeia carrega o vocabulário de todos os cargos. Alimentada com ele, a busca de clone classificava as vozes de marketing e de imprensa para um cargo cujo trabalho era fechar a planilha de macro da produção. O `nrv team step` agora entrega ao `employee-prompt` a tarefa do próprio passo (`--task-file`), e a busca lê isso; um cargo rodado fora de cadeia continua buscando pelo brief.
