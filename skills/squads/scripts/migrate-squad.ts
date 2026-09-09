@@ -163,14 +163,64 @@ function rawStepCount(doc: unknown): number {
   return 0;
 }
 
-/** `snake_case` / case-folded index of the components on disk, for `--map-refs`. */
+/** One spelling for a component name: `validateMarketFit`, `validate_market_fit`
+ *  and `Validate-Market-Fit` all fold to `validate-market-fit`. The v5 template
+ *  squads wrote step actions in camelCase over kebab-case task files; without
+ *  the camel split, 64 references in the published packs pointed at files that
+ *  existed under the other spelling. */
+export function foldKey(s: string): string {
+  return s.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase().replace(/_/g, "-");
+}
+
+/** `foldKey` without the hyphens: `nrcjobarchitect` and `nrc-job-architect`
+ *  are the same name to the v5 templates, which wrote step ids by gluing the
+ *  agent slug together. */
+function looseKey(s: string): string {
+  return foldKey(s).replace(/-/g, "");
+}
+
+/** Folded index of the components on disk, for `--map-refs`: every stem under
+ *  its folded key and under its loose (hyphen-free) key. */
 function foldIndex(stems: Set<string>): Map<string, string[]> {
   const m = new Map<string, string[]>();
   for (const s of stems) {
-    const key = s.toLowerCase().replace(/_/g, "-");
-    m.set(key, [...(m.get(key) ?? []), s]);
+    for (const key of new Set([foldKey(s), looseKey(s)])) m.set(key, [...(m.get(key) ?? []), s]);
   }
   return m;
+}
+
+/** The one component whose stem is `<squad-prefix>-<ref>` — the v5 templates
+ *  referenced `macro-economist` and shipped `nait-macro-economist`. Only an
+ *  unambiguous suffix match counts. */
+function bySuffix(ref: string, stems: Set<string>): string | null {
+  const key = foldKey(ref);
+  if (!key) return null;
+  // `macro-economist` for a `nait-macro-economist` file, or the reverse:
+  // `ncc-trade-in-evaluator` written where the file is `trade-in-evaluator`.
+  const hits = [...stems].filter((s) => { const k = foldKey(s); return k.endsWith(`-${key}`) || key.endsWith(`-${k}`); });
+  return hits.length === 1 ? hits[0] : null;
+}
+
+/** A v5 `action:` that was a label, not a document: `setupFrontendProject`,
+ *  `gerarChecklistValidarDocumentos`, `test-checklist-flow`. Read as words. */
+function labelToSentence(ref: string): string {
+  return ref.replace(/\.md$/i, "").replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/** A `task` that is the step's own agent under another name. The v5 templates
+ *  wrote `task: legal-strategist` under `agent: legal-strategist`,
+ *  `action: execute_ncm_classifier` under `agent: ncm-classifier`,
+ *  `analytics-cowork-execute`, a bare `execute`, or the agent stem without the
+ *  squad prefix (`fund-manager` for `nait-fund-manager`). None of those is a
+ *  task document, and none needs one: the step is the agent acting. Fabricating
+ *  a stub task to satisfy the reference would ship a method the squad does not
+ *  have; dropping the reference keeps the graph honest. */
+function namesTheAgent(task: string, agent: string): boolean {
+  const t = foldKey(task), a = foldKey(agent);
+  if (!t || !a) return false;
+  if (t === a || looseKey(task) === looseKey(agent)) return true;
+  return t === "execute" || t === `execute-${a}` || t === `${a}-execute`
+    || a.endsWith(`-${t}`) || t.endsWith(`-${a}`);
 }
 
 const TASK_SCAFFOLD_AC = "## Acceptance Criteria";
@@ -280,7 +330,7 @@ export function planMigration(dir: string, opts: { mapRefs: boolean; extractTask
       normalized.canonical.name = file.stem;
     }
 
-    if (opts.mapRefs) mapStepRefs(normalized.canonical, { agents, tasks, agentFold, taskFold }, plan.refsMapped, file.stem);
+    if (opts.mapRefs) mapStepRefs(normalized.canonical, { agents, tasks, agentFold, taskFold }, plan.refsMapped, file.stem, normalized.prose);
 
     const { body, extracted } = splitProse(normalized, file.stem, opts.extractTasks, tasks);
     base.inline_prompts_extracted = normalized.inlineProse.length;
@@ -317,18 +367,38 @@ export function planMigration(dir: string, opts: { mapRefs: boolean; extractTask
 function mapStepRefs(
   canonical: CanonicalWorkflow,
   idx: { agents: Set<string>; tasks: Set<string>; agentFold: Map<string, string[]>; taskFold: Map<string, string[]> },
-  log: string[], stem: string,
+  log: string[], stem: string, prose: Record<string, string> = {},
 ): void {
   const remap = (value: string, known: Set<string>, fold: Map<string, string[]>): string | null => {
     if (known.has(value) || known.size === 0) return null;
-    const hits = fold.get(value.toLowerCase().replace(/_/g, "-")) ?? [];
-    return hits.length === 1 && hits[0] !== value ? hits[0] : null;
+    const hits = fold.get(foldKey(value)) ?? fold.get(looseKey(value)) ?? [];
+    if (hits.length === 1 && hits[0] !== value) return hits[0];
+    const suffix = bySuffix(value, known);
+    return suffix && suffix !== value ? suffix : null;
   };
   for (const s of canonical.steps) {
+    if (s.agent && /\.md$/i.test(s.agent) && !idx.agents.has(s.agent)) {
+      const bare = s.agent.replace(/\.md$/i, "");
+      log.push(`${stem}#${s.id}: agent ${s.agent} → ${bare}`); s.agent = bare;
+    }
     const a = s.agent ? remap(s.agent, idx.agents, idx.agentFold) : null;
     if (a) { log.push(`${stem}#${s.id}: agent ${s.agent} → ${a}`); s.agent = a; }
     const t = s.task ? remap(s.task, idx.tasks, idx.taskFold) : null;
     if (t) { log.push(`${stem}#${s.id}: task ${s.task} → ${t}`); s.task = t; }
+    if (s.task && idx.tasks.size && !idx.tasks.has(s.task) && s.agent && namesTheAgent(s.task, s.agent)) {
+      log.push(`${stem}#${s.id}: task ${s.task} names the agent ${s.agent} — dropped, the step is the agent acting`);
+      delete s.task;
+    }
+    // Still no document under any spelling: the v5 `action:` was a label of what
+    // the agent does in this step. It stays, as the step's description in the
+    // body, and the reference goes; a stub task would ship a method the squad
+    // does not have.
+    if (s.task && idx.tasks.size && !idx.tasks.has(s.task) && s.agent) {
+      const sentence = labelToSentence(s.task);
+      if (sentence) prose[s.id] = (prose[s.id] ? `${prose[s.id]}\n\n` : "") + sentence;
+      log.push(`${stem}#${s.id}: task ${s.task} is not a document — kept as the step's description`);
+      delete s.task;
+    }
   }
 }
 
