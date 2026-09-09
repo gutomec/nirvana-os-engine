@@ -520,6 +520,29 @@ steps:
   }, spawnBudgetMs(1));
 });
 
+describe("a step id that would start with a digit gets a letter", () => {
+  test("`1GerarRelatorio` becomes `step-1gerar-relatorio` and the squad migrates", () => {
+    const r = root();
+    const dir = fixture(r, "digit-id", { workflows: { "main.yaml": `name: main
+steps:
+  - id: 1GerarRelatorio
+    agent: planner
+    task: plan
+  - id: 2Publicar
+    agent: builder
+    depends_on: [1GerarRelatorio]
+    task: build
+` } });
+    const applied = runMigrate(r, ["digit-id", "--to", "6", "--apply", "--json"]);
+    expect(applied.code).toBe(0);
+    expect(applied.json.refusals).toEqual([]);
+    expect(applied.json.gate.errors).toBe(0);
+    const graph: any = parseYaml(fs.readFileSync(path.join(dir, "workflows", "main.md"), "utf8").split("---")[1]);
+    expect(graph.steps.map((st: any) => st.id)).toEqual(["step-1gerarrelatorio", "step-2publicar"]);
+    expect(graph.steps[1].requires).toEqual(["step-1gerarrelatorio"]);
+  }, spawnBudgetMs(1));
+});
+
 describe("a step id the normalizer slugified is followed by its requires", () => {
   test("chunkN → chunkn, and depends_on: [chunkN] follows", () => {
     const r = root();
