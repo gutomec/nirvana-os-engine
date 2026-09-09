@@ -129,6 +129,14 @@ for (const report of batch.reports as VerifyReport[]) {
     }
   }
 
+  if (report.kind === "squad") {
+    // A pack ships Protocol 6.0 squads only. Below it the workflow graph is a
+    // dialect every reader parses differently, so this is a hard problem the
+    // migration fixes in one command, never debt to record.
+    const f = byId.get("protocol_below_6");
+    if (f) hard(`${f.message} — a pack ships Protocol 6.0 squads only`);
+  }
+
   if (report.kind === "business") {
     // Keyed by "business/employee.md" so two packs shipping the same business
     // share the debt entry (same rule as clone slugs). Every seat is scanned,

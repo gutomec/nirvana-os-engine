@@ -45,7 +45,7 @@ function pack(mutate: (root: string) => void = () => {}): string {
   writeFileSync(join(clone, ".nirvana-surface.json"), "{}", "utf8");
   const squad = join(root, "squads", "one-squad");
   mkdirSync(squad, { recursive: true });
-  writeFileSync(join(squad, "squad.yaml"), "name: one-squad\nversion: 1.0.0\n", "utf8");
+  writeFileSync(join(squad, "squad.yaml"), "name: one-squad\nversion: 1.0.0\nprotocol: \"6.0\"\n", "utf8");
   writeFileSync(join(squad, ".nirvana-surface.json"), "{}", "utf8");
   mutate(root);
   return root;
@@ -85,6 +85,20 @@ describe("hard problems always fail", () => {
     const r = run(root, { baseline: {} });
     expect(r.code).toBe(1);
     expect(r.out).toContain("numbered legacy category");
+  }, spawnBudgetMs(2));
+
+  test("a squad below Protocol 6.0 does not enter", () => {
+    const root = pack((r) => {
+      writeFileSync(join(r, "squads", "one-squad", "squad.yaml"), "name: one-squad\nversion: 1.0.0\nprotocol: \"5.0\"\n", "utf8");
+    });
+    const r = run(root, { baseline: {} });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("protocol 5.0");
+    expect(r.out).toContain("Protocol 6.0 squads only");
+    const missing = pack((r) => {
+      writeFileSync(join(r, "squads", "one-squad", "squad.yaml"), "name: one-squad\nversion: 1.0.0\n", "utf8");
+    });
+    expect(run(missing, { baseline: {} }).code).toBe(1);
   }, spawnBudgetMs(2));
 
   test("a missing surface file does not enter", () => {
