@@ -7,8 +7,8 @@
  * them into ONE pipe-delimited English file (`.routing-digest.md`, written next
  * to the registries, scope-aware via ROUTING_DIGEST_PATH) that a router LLM can
  * read whole: every business, squad, capability collision and mind-clone, one
- * line each, under the configured token budget (`routing.digest_token_budget`,
- * default 50k, chars/4 heuristic).
+ * line each. A token budget (`routing.digest_token_budget`, chars/4 heuristic)
+ * degrades the digest by levels when set; the default is no budget at all.
  *
  * Budget degradation ladder (entries are NEVER dropped):
  *   L0  full format (2 example briefs, capability one-liners, 160c descriptions)
@@ -127,13 +127,15 @@ export interface DigestResult {
   };
 }
 
-export const TOKEN_BUDGET = 50_000;
+/** No budget. The digest used to be sized by a 50k constant with no knob, and a
+ *  library that outgrew it degraded to the last rung in silence: the domains
+ *  lists the agentic router reads were the first thing dropped. A budget is
+ *  something an owner sets on purpose (`routing.digest_token_budget`); by
+ *  default nothing is considered and the digest ships whole. */
+export const TOKEN_BUDGET = 0;
 
-/** The budget in force: `routing.digest_token_budget` from config, falling back
- *  to the constant. It used to be the constant alone, with no knob, and a
- *  library that outgrew it degraded to the last rung in silence; the one way to
- *  keep the digest whole was to edit the installed file, which the next
- *  `nrv update` reverted. 0 means no budget: level 0, never over budget. */
+/** The budget in force: `routing.digest_token_budget` from config, 0 = none
+ *  (level 0, never over budget). */
 export function configuredTokenBudget(): number {
   try {
     const v = Number(resolveSetting("routing.digest_token_budget").value);
