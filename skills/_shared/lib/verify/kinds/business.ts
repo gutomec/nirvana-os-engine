@@ -648,6 +648,10 @@ async function selfRetrieval(ctx: CheckContext): Promise<Finding[]> {
   let prepared = MATCH_INDEX.get(registries as object);
   if (!prepared) { prepared = router.prepareMatchIndex(registries); MATCH_INDEX.set(registries as object, prepared); }
 
+  // Every miss is reported, not only the first. The `return` used to sit inside
+  // this loop, so an author fixing briefs one at a time learned about the next
+  // miss only after fixing this one, and "1 warning" could mean fourteen.
+  const misses: ReturnType<typeof mk>[] = [];
   for (const brief of briefs) {
     const result = await router.route(brief, { registries, amplify: false, preparedMatchIndex: prepared });
     const s3 = result?.stage3 ?? {};
@@ -659,9 +663,9 @@ async function selfRetrieval(ctx: CheckContext): Promise<Finding[]> {
     });
     if (hit === 0) continue;
     const top = ranked.slice(0, 3).map((c: any) => `${c?.meta?.slug ?? c?.id ?? "?"} (${typeof c?.normalized === "number" ? c.normalized.toFixed(2) : "-"})`).join(", ") || "no candidates";
-    return [mk("self_retrieval_miss", `example_brief ${JSON.stringify(brief.slice(0, 48))} does not return this business first (rank ${hit === -1 ? "-" : hit + 1})`, `top: ${top}`)];
+    misses.push(mk("self_retrieval_miss", `example_brief ${JSON.stringify(brief.slice(0, 48))} does not return this business first (rank ${hit === -1 ? "-" : hit + 1})`, `top: ${top}`));
   }
-  return [];
+  return misses;
 }
 
 export async function check(ctx: CheckContext): Promise<Finding[]> {
