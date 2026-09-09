@@ -8,6 +8,10 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### `self_retrieval_miss` reporta todos os briefs que erram
+
+O `return` ficava dentro do laço sobre `example_briefs`, então o validador nomeava um erro e parava: quem corrigia um brief por vez só descobria o próximo depois de corrigir este, e "1 aviso" podia significar catorze. Os erros agora acumulam, um achado por brief.
+
 ### O audit do cargo volta a ser JSONL, e o veredito do verify chega ao audit
 
 Duas regressões de 04/09/2026, as duas no pacote de empresas e as duas invisíveis para quem chama. O emissor de audit do prompt do cargo passou a escrever os dois caracteres `\` `n` entre eventos em vez de uma quebra de linha quando ganhou o carimbo de proveniência, então todo `mind_clone_injected` desde então caiu numa linha só que nenhum leitor de linhas consegue ler: o evento que prova que um clone foi injetado era o que sumia. E o `verify-deliverable` recalculava a raiz do run ao arquivar o veredito, sombreava a própria variável nisso, imprimia "audit emit failed non-fatal" e saía com o código do veredito, então o portão parecia saudável enquanto o audit nunca recebia um `verify_passed` ou `verify_failed`. A checagem agora informa o diretório do run que resolveu (`project_dir` no relatório) e o CLI arquiva o veredito ao lado dele. Os dois caminhos agora são relidos por testes.

@@ -490,9 +490,13 @@ describe("the self-retrieval axis", () => {
       warnings: [],
     };
     const report = await verifyEntity("business", dir, { stateDir: null, emit: null, baselinePath: null, registries });
-    const hit = report.findings.find((f) => f.id === "self_retrieval_miss");
-    expect(hit).toBeDefined();
-    expect(hit!.baselined).toBe(false);
+    // Every miss is reported, not only the first: the three briefs all route to
+    // the brand studio, and the author must see all three.
+    const misses = report.findings.filter((f) => f.id === "self_retrieval_miss");
+    expect(misses.length).toBe(3);
+    expect(new Set(misses.map((f) => f.message)).size).toBe(3);
+    const hit = misses[0];
+    expect(hit.baselined).toBe(false);
     expect(report.summary.warnings).toBeGreaterThan(0);
     expect(report.verdict).toBe("ADMITTED");            // a warning never rejects on its own
   });

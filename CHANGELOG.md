@@ -8,6 +8,10 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### `self_retrieval_miss` reports every missed brief
+
+The `return` sat inside the loop over `example_briefs`, so the validator named one miss and stopped: an author fixing briefs one at a time learned about the next miss only after fixing this one, and "1 warning" could mean fourteen. Misses accumulate now, one finding per brief.
+
 ### The seat audit is JSONL again, and the verify verdict reaches the audit
 
 Two regressions from 2026-09-04, both in the businesses package and both invisible to the caller. The seat prompt's audit emitter wrote the two characters `\` `n` between events instead of a newline once it was wrapped with the provenance stamp, so every `mind_clone_injected` since then landed on one line that no line reader could parse: the event that proves a clone was injected was the one that vanished. And `verify-deliverable` recomputed the run root when filing its verdict, shadowed its own variable while doing it, printed "audit emit failed non-fatal" and exited with the verdict's code, so the gate looked healthy while the audit never received a `verify_passed` or `verify_failed`. The check now reports the run directory it resolved (`project_dir` on the report) and the CLI files the verdict beside it. Both paths are read back by tests now.
