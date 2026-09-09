@@ -252,6 +252,9 @@ export const SETTINGS = {
   "routing.on_router_failure": enumSetting("routing.on_router_failure",
     "Quando o roteador agêntico falha no transporte (após 1 retry): agent-x-only = pula direto pro agent-x, BM25 nunca dispara sem --fast explícito (padrão); cascade = tenta BM25 antes do agent-x; fail = encerra sem despachar nada.",
     ["cascade", "agent-x-only", "fail"], { default: "agent-x-only" }),
+  "routing.digest_token_budget": numberSetting("routing.digest_token_budget",
+    "Orçamento em tokens do digest de roteamento (chars/4); acima dele o digest degrada por níveis. 0 = sem teto.",
+    { default: 50000, type: nonNegativeInt, expects: "inteiro >= 0 (tokens)" }),
 
   "supervisor.progress_ping_sec": numberSetting("supervisor.progress_ping_sec",
     "Intervalo em segundos do aviso de progresso de um run longo; 0 silencia.",

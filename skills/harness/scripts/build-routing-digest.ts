@@ -7,7 +7,8 @@
  * them into ONE pipe-delimited English file (`.routing-digest.md`, written next
  * to the registries, scope-aware via ROUTING_DIGEST_PATH) that a router LLM can
  * read whole: every business, squad, capability collision and mind-clone, one
- * line each, under a hard <50k-token budget (chars/4 heuristic).
+ * line each, under the configured token budget (`routing.digest_token_budget`,
+ * default 50k, chars/4 heuristic).
  *
  * Budget degradation ladder (entries are NEVER dropped):
  *   L0  full format (2 example briefs, capability one-liners, 160c descriptions)
@@ -45,6 +46,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { paths as nrvPaths, parseArgs, EXIT } from "../../_shared/lib/bun-helpers.ts";
 import { resolveScope } from "../../_shared/lib/scope.ts";
+import { resolveSetting } from "../../_shared/lib/settings.ts";
 
 // ─────────────────────────────────────────────────────────────────────
 // Paths — where the registries and the digest live (scope-aware)
@@ -112,6 +114,8 @@ export interface DigestResult {
   tokens: number;
   degradationLevel: 0 | 1 | 2 | 3 | 4;
   overBudget: boolean;
+  /** The budget the ladder was walked against (0 = none). */
+  budget: number;
   counts: {
     businesses: number;
     squads: number;
@@ -124,6 +128,18 @@ export interface DigestResult {
 }
 
 export const TOKEN_BUDGET = 50_000;
+
+/** The budget in force: `routing.digest_token_budget` from config, falling back
+ *  to the constant. It used to be the constant alone, with no knob, and a
+ *  library that outgrew it degraded to the last rung in silence; the one way to
+ *  keep the digest whole was to edit the installed file, which the next
+ *  `nrv update` reverted. 0 means no budget: level 0, never over budget. */
+export function configuredTokenBudget(): number {
+  try {
+    const v = Number(resolveSetting("routing.digest_token_budget").value);
+    return Number.isFinite(v) && v >= 0 ? v : TOKEN_BUDGET;
+  } catch { return TOKEN_BUDGET; }
+}
 
 /** chars/4 heuristic — the budget currency of the digest. */
 export const estimateTokens = (text: string): number => Math.ceil(text.length / 4);
@@ -302,7 +318,7 @@ function renderAt(input: DigestInput, level: 0 | 1 | 2 | 3 | 4, generatedAt: str
  * into exit 1).
  */
 export function buildDigest(input: DigestInput, opts: { budgetTokens?: number; generatedAt?: string } = {}): DigestResult {
-  const budget = opts.budgetTokens ?? TOKEN_BUDGET;
+  const budget = opts.budgetTokens ?? configuredTokenBudget();
   const generatedAt = opts.generatedAt ?? new Date().toISOString();
   let text = "";
   let tokens = 0;
@@ -311,14 +327,15 @@ export function buildDigest(input: DigestInput, opts: { budgetTokens?: number; g
     level = l;
     text = renderAt(input, l, generatedAt);
     tokens = estimateTokens(text);
-    if (tokens < budget) break;
+    if (budget === 0 || tokens < budget) break;
   }
   const capIds = Object.keys(input.capabilities);
   return {
     text,
     tokens,
     degradationLevel: level,
-    overBudget: tokens >= budget,
+    overBudget: budget > 0 && tokens >= budget,
+    budget,
     counts: {
       businesses: Object.keys(input.businesses).length,
       squads: Object.keys(input.squads).length,
@@ -549,7 +566,7 @@ if (import.meta.main) {
       digest_path: checkBudget ? null : digestPath,
       aliases_path: checkBudget ? null : aliasesPath,
       tokens: digest.tokens,
-      budget: TOKEN_BUDGET,
+      budget: digest.budget,
       degradation_level: digest.degradationLevel,
       over_budget: digest.overBudget,
       counts: digest.counts,
@@ -557,14 +574,15 @@ if (import.meta.main) {
     }, null, 2));
   } else if (!quiet) {
     const c = digest.counts;
-    console.error(`[build-routing-digest] ~${digest.tokens} tokens (budget ${TOKEN_BUDGET}, chars/4) · degradation level ${digest.degradationLevel}`);
+    console.error(`[build-routing-digest] ~${digest.tokens} tokens (budget ${digest.budget || "none"}, chars/4) · degradation level ${digest.degradationLevel}`);
     console.error(`[build-routing-digest] businesses=${c.businesses} squads=${c.squads} capability_ids=${c.capabilityIds} providers=${c.capabilityProviders} collisions=${c.capabilityCollisions} clones=${c.mindClones} (${c.mindClonesEnriched} enriched)`);
     console.error(`[build-routing-digest] alias groups: ${aliases.length}`);
     if (!checkBudget) {
       console.error(`[build-routing-digest] digest → ${digestPath}`);
       console.error(`[build-routing-digest] aliases → ${aliasesPath}`);
     }
-    if (digest.overBudget) console.error(`[build-routing-digest] OVER BUDGET even at level 3 — trim registry descriptions/briefs.`);
+    if (digest.overBudget) console.error(`[build-routing-digest] OVER BUDGET even at level ${digest.degradationLevel}, the last rung — raise it with \`nrv config set routing.digest_token_budget <tokens>\` (0 = no budget) or trim registry descriptions/briefs.`);
+    else if (digest.degradationLevel > 0) console.error(`[build-routing-digest] degraded to level ${digest.degradationLevel} to fit the budget — level 4 drops every domains list; raise routing.digest_token_budget to keep them.`);
   }
 
   if (checkBudget && digest.overBudget) process.exit(EXIT.FAILURES);
