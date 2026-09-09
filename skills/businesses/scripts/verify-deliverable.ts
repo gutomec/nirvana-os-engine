@@ -14,7 +14,7 @@
 //
 // Usage:
 //   bun verify-deliverable.ts <project_id> <business_slug>
-//   bun verify-deliverable.ts <project_id> <business_slug> --outputs-root /path
+//   bun verify-deliverable.ts <project_id> <business_slug> [--outputs-root <dir>] [--min-bytes N] [--employee <slug>]
 //   bun verify-deliverable.ts <project_id> <business_slug> --min-bytes 200
 //
 // Exit codes:
@@ -45,8 +45,22 @@ export type DeliverableReport = {
    *  flat chain root). The CLI files the verdict beside the run; recomputing the
    *  root there is how a verdict once went nowhere. Absent when indeterminate. */
   project_dir?: string;
+  /** The seat the check was scoped to, when `--employee` narrowed it. */
+  employee?: string;
+  /** A declared `min_bytes` per promised file (absolute path), whichever list
+   *  named the file. The global `min_bytes_threshold` is the CLI default. */
+  min_bytes_by_path?: Record<string, number>;
   reason?: string;
 };
+
+/** One spelling per file, so a manifest path and an acceptance path that name
+ *  the same file meet in the same map key: a symlinked temp dir or a `..` in
+ *  one of them used to make the declared floor miss the file it was declared
+ *  for. A file that does not exist keeps its resolved spelling, which is the
+ *  one the report names as missing. */
+function canonical(p: string): string {
+  try { return fs.realpathSync.native(p); } catch { return p; }
+}
 
 // Pure disk-truth check. No console, no audit emit, no exit — returns a report
 // the caller acts on. Indeterminate (project/brief/markers absent) is a status,
@@ -54,10 +68,9 @@ export type DeliverableReport = {
 export function verifyDeliverableOnDisk(
   projectId: string,
   businessSlug: string,
-  opts: { outputsRoot?: string; minBytes?: number; businessDir?: string | null } = {}
+  opts: { outputsRoot?: string; minBytes?: number; businessDir?: string | null; employee?: string | null } = {}
 ): DeliverableReport {
   const minBytes = opts.minBytes ?? 200;
-  const outputsRoot = opts.outputsRoot;
   let resolvedProjectDir: string | undefined;
 
   const base = (
@@ -99,6 +112,12 @@ export function verifyDeliverableOnDisk(
   }
   const projectDir = projectsRoot ? path.join(projectsRoot, projectId) : flatRoot!;
   resolvedProjectDir = projectDir;
+  // A relative `--outputs-root` is relative to the run, not to wherever the
+  // shell happens to be: resolved against the cwd it answered PASS from one
+  // directory and FAIL from its subdirectory, over the same files.
+  const outputsRoot = opts.outputsRoot
+    ? (path.isAbsolute(opts.outputsRoot) ? opts.outputsRoot : path.resolve(projectDir, opts.outputsRoot))
+    : undefined;
 
   const briefPath = path.join(projectDir, "brief.md");
   if (!fs.existsSync(briefPath)) {
@@ -136,19 +155,26 @@ export function verifyDeliverableOnDisk(
 
   // Business Protocol 2.0 §11: an `acceptance[]` entry that names a `path` is a
   // promise the disk can be checked against — the same completeness proof a
-  // deliverables.json gives, declared by the role instead of written per run. Read
-  // only when there is no manifest: a manifest is the run's own list and wins.
-  let acceptanceMinBytes: Map<string, number> = new Map();
-  if (expectedPathsRaw.length === 0) {
-    const bizDir = opts.businessDir ?? businessDirFor(businessSlug);
-    const promised = bizDir ? readAcceptance(bizDir).paths : [];
-    if (promised.length > 0) {
-      const base = outputsRoot ?? projectDir;
-      expectedPathsRaw = promised.map(entry => path.isAbsolute(entry.path) ? entry.path : path.resolve(base, entry.path));
-      acceptanceMinBytes = new Map(promised.map((entry, index) => [expectedPathsRaw[index], entry.minBytes ?? minBytes]));
-      manifestSource = "acceptance";
-    }
+  // deliverables.json gives, declared by the role instead of written per run.
+  // The manifest is the run's own list and wins as the list of files; the
+  // declared `min_bytes` applies whichever list named the file, because a
+  // manifest used to switch the declared floor off and the report still
+  // printed the default as if it were in force. `--employee` narrows the
+  // promises to one seat: the whole business's promises charged every step of
+  // a chain, so a seat that delivered its own file failed for its colleagues'.
+  const acceptanceMinBytes: Map<string, number> = new Map();
+  const bizDir = opts.businessDir ?? businessDirFor(businessSlug);
+  const promised = bizDir ? readAcceptance(bizDir, opts.employee ? [opts.employee] : undefined).paths : [];
+  const promiseRoot = outputsRoot ?? projectDir;
+  const resolveEntry = (p: string) => canonical(path.isAbsolute(p) ? p : path.resolve(promiseRoot, p));
+  if (expectedPathsRaw.length === 0 && promised.length > 0) {
+    expectedPathsRaw = promised.map(entry => resolveEntry(entry.path));
+    manifestSource = "acceptance";
   }
+  for (const entry of promised) {
+    if (typeof entry.minBytes === "number") acceptanceMinBytes.set(resolveEntry(entry.path), entry.minBytes);
+  }
+  expectedPathsRaw = expectedPathsRaw.map(canonical);
 
   // Fallback: scan brief.md for explicit absolute paths
   if (expectedPathsRaw.length === 0) {
@@ -199,31 +225,46 @@ export function verifyDeliverableOnDisk(
     delta_pct: deltaPct,
     min_bytes_threshold: minBytes,
     project_dir: projectDir,
+    ...(opts.employee ? { employee: opts.employee } : {}),
+    ...(acceptanceMinBytes.size ? { min_bytes_by_path: Object.fromEntries(acceptanceMinBytes) } : {}),
   };
 }
 
 // ── CLI ──────────────────────────────────────────────────────────────────
 if (import.meta.main) {
-  const argFlag = (name: string, fallback?: string): string | undefined => {
-    const i = process.argv.indexOf(name);
-    if (i === -1) return fallback;
-    const next = process.argv[i + 1];
-    if (!next || next.startsWith("--")) return fallback;
-    return next;
-  };
-
-  const positional = process.argv.slice(2).filter(a => !a.startsWith("--"));
+  const USAGE = "Usage: bun verify-deliverable.ts <project_id> <business_slug> [--outputs-root <dir>] [--min-bytes N] [--employee <slug>]";
+  // `--flag value` and `--flag=value` both count, and a flag this script does
+  // not know is a usage error, not a silent drop: `--outputs-root=/x` used to
+  // vanish without a word and the verdict came back FAIL over intact work.
+  const KNOWN = new Set(["--outputs-root", "--min-bytes", "--employee"]);
+  const flags: Record<string, string> = {};
+  const positional: string[] = [];
+  const argv = process.argv.slice(2);
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (!a.startsWith("--")) { positional.push(a); continue; }
+    const eq = a.indexOf("=");
+    const name = eq === -1 ? a : a.slice(0, eq);
+    if (!KNOWN.has(name)) { console.error(`Unknown flag: ${a}\n${USAGE}`); process.exit(2); }
+    let value = eq === -1 ? argv[i + 1] : a.slice(eq + 1);
+    if (eq === -1) {
+      if (value === undefined || value.startsWith("--")) { console.error(`${name} needs a value\n${USAGE}`); process.exit(2); }
+      i++;
+    }
+    flags[name] = value;
+  }
   const projectId = positional[0];
   const businessSlug = positional[1];
-  const outputsRoot = argFlag("--outputs-root");
-  const minBytes = parseInt(argFlag("--min-bytes", "200") || "200", 10);
+  const outputsRoot = flags["--outputs-root"];
+  const minBytes = parseInt(flags["--min-bytes"] ?? "200", 10);
+  const employee = flags["--employee"];
 
-  if (!projectId || !businessSlug) {
-    console.error("Usage: bun verify-deliverable.ts <project_id> <business_slug> [--outputs-root <dir>] [--min-bytes N]");
+  if (!projectId || !businessSlug || !Number.isFinite(minBytes)) {
+    console.error(USAGE);
     process.exit(2);
   }
 
-  const r = verifyDeliverableOnDisk(projectId, businessSlug, { outputsRoot, minBytes });
+  const r = verifyDeliverableOnDisk(projectId, businessSlug, { outputsRoot, minBytes, employee });
 
   if (r.status === "FAIL_INDETERMINATE") {
     console.error(`WARN: ${r.reason || "indeterminate"}`);
@@ -243,6 +284,8 @@ if (import.meta.main) {
     empty_or_stub: r.empty_or_stub,
     delta_pct: r.delta_pct,
     min_bytes_threshold: r.min_bytes_threshold,
+    ...(r.min_bytes_by_path ? { min_bytes_by_path: r.min_bytes_by_path } : {}),
+    ...(r.employee ? { employee: r.employee } : {}),
     status: r.status,
     timestamp: new Date().toISOString(),
     ...(r.reason ? { reason: r.reason } : {}),
