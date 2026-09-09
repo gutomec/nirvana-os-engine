@@ -8,6 +8,10 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### O normalizador lê gates, grupos, listas de agentes por fase e rotas de evento encadeadas
+
+Cinco squads da biblioteca voltavam da migração 6.0 com `steps.N.agent: Too small`, que o schema define como bug do normalizador: um passo que o schema recusa nunca é conteúdo autoral. Quatro dialetos não eram lidos. Um passo sem ninguém para executá-lo e sem nada a executar (`type: approval`, `type: human-gate`) é um gate na aresta, não um nó: sai do grafo, os passos que esperavam por ele herdam o que ele esperava e o carregam verbatim em `meta.gate_before`, e um gate de que ninguém depende vai para `extensions.trailing_gates`. Um grupo `type: parallel` dentro de uma `sequence` é uma camada: cada filho vira um passo rotulado com o grupo, requer o passo anterior ao grupo, e o passo seguinte requer todos os filhos. Uma fase que lista seus `agents:` vira um passo por entrada, todos na fase. Um roteador `event_routes` em que toda rota nomeia um `agent_chain` é uma floresta, uma cadeia por rota na ordem do autor com o gatilho no primeiro passo; uma rota sem cadeia continua recusada, porque não há ordem a derivar. O backup da migração também pula um socket ou FIFO deixado dentro da árvore do squad (um test ledger local), que o `cp` recusava com EINVAL e abortava a migração inteira.
+
 ### `self_retrieval_miss` reporta todos os briefs que erram
 
 O `return` ficava dentro do laço sobre `example_briefs`, então o validador nomeava um erro e parava: quem corrigia um brief por vez só descobria o próximo depois de corrigir este, e "1 aviso" podia significar catorze. Os erros agora acumulam, um achado por brief.

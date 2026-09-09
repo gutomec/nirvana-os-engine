@@ -8,6 +8,10 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### The normalizer reads gates, groups, phase agent lists and chained event routes
+
+Five library squads rolled back from the 6.0 migration with `steps.N.agent: Too small`, which the schema defines as a normalizer bug: a step the schema refuses is never authored content. Four dialects were unread. A step with nobody to run it and nothing to run (`type: approval`, `type: human-gate`) is a gate on the edge, not a node: it leaves the graph, the steps that waited on it inherit what it waited for and carry it verbatim in `meta.gate_before`, and a gate nothing waits on lands in `extensions.trailing_gates`. A `type: parallel` group inside a `sequence` is a layer: each child is a step labelled with the group, requiring the step before the group, and the step after requires every child. A phase that lists its `agents:` is one step per entry, all in the phase. An `event_routes` router whose every route names an `agent_chain` is a forest, one chain per route in the author's order with the trigger on the first step; a route without a chain still refuses, because there is no order to derive. The migration backup also skips a socket or FIFO left inside the squad tree (a local test ledger), which `cp` refused with EINVAL and aborted the whole migration.
+
 ### `self_retrieval_miss` reports every missed brief
 
 The `return` sat inside the loop over `example_briefs`, so the validator named one miss and stopped: an author fixing briefs one at a time learned about the next miss only after fixing this one, and "1 warning" could mean fourteen. Misses accumulate now, one finding per brief.

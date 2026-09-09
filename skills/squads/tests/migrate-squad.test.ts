@@ -660,3 +660,188 @@ describe("usage", () => {
     expect(out.json.every((x: any) => x.mode === "dry-run")).toBe(true);
   }, spawnBudgetMs(2));
 });
+
+// ── shapes the schema calls a normalizer bug ─────────────────────────────────
+//
+// Five library squads rolled back with `steps.N.agent: Too small`: a step the
+// schema refuses is never authored content, it is a dialect the normalizer did
+// not read. Gates (`type: approval`, `type: human-gate`) have nobody to run
+// them; a `type: parallel` group is a layer, not a step; a phase may list its
+// `agents:`; and an event router whose routes carry an `agent_chain` is a forest.
+
+const graphOf = (dir: string, file = "main.md"): any =>
+  parseYaml(fs.readFileSync(path.join(dir, "workflows", file), "utf8").split("---")[1]);
+
+describe("a gate step folds into the edge", () => {
+  test("`type: approval` between two steps: the follower inherits the wait and carries the gate", () => {
+    const r = root();
+    const dir = fixture(r, "gate-steps", { workflows: { "main.yaml": `name: main
+steps:
+  - id: design
+    agent: planner
+    task: plan
+  - id: design-approval
+    type: approval
+    depends_on: [design]
+    message: Review the design before the build starts.
+    on_reject:
+      route_to: design
+  - id: build
+    agent: builder
+    task: build
+    depends_on: [design-approval]
+  - id: final-review
+    type: approval
+    depends_on: [build]
+` } });
+    const applied = runMigrate(r, ["gate-steps", "--to", "6", "--apply", "--json"]);
+    expect(applied.json.refusals).toEqual([]);
+    expect(applied.json.gate.errors).toBe(0);
+    const graph = graphOf(dir);
+    expect(graph.steps.map((s: any) => s.id)).toEqual(["design", "build"]);
+    expect(graph.steps[1].requires).toEqual(["design"]);
+    expect(graph.steps[1].meta.gate_before).toEqual([{ id: "design-approval", type: "approval", message: "Review the design before the build starts.", on_reject: { route_to: "design" } }]);
+    expect(graph.extensions.trailing_gates).toEqual([{ id: "final-review", type: "approval" }]);
+  }, spawnBudgetMs(1));
+
+  test("`type: human-gate` inside a linear `workflow.sequence` chains around itself", () => {
+    const r = root();
+    const dir = fixture(r, "human-gate", { workflows: { "main.yaml": `workflow:
+  id: main
+  sequence:
+    - agent: planner
+      task: plan
+    - type: human-gate
+      id: confirm-analysis
+      prompt: Confirm the analysis.
+    - agent: builder
+      task: build
+` } });
+    const applied = runMigrate(r, ["human-gate", "--to", "6", "--apply", "--json"]);
+    expect(applied.json.refusals).toEqual([]);
+    const graph = graphOf(dir);
+    expect(graph.steps.map((s: any) => s.id)).toEqual(["planner", "builder"]);
+    expect(graph.steps[1].requires).toEqual(["planner"]);
+    expect(graph.steps[1].meta.gate_before[0].id).toBe("confirm-analysis");
+  }, spawnBudgetMs(1));
+});
+
+describe("a parallel group is a layer", () => {
+  test("children require the step before the group; the step after requires every child", () => {
+    const r = root();
+    const dir = fixture(r, "nested-group", { workflows: { "main.yaml": `workflow:
+  id: main
+  sequence:
+    - agent: planner
+      task: plan
+    - type: parallel
+      id: production
+      steps:
+        - agent: builder
+          task: build
+          id: build-a
+        - agent: builder
+          task: build
+          id: build-b
+    - agent: planner
+      task: plan
+      id: review
+` } });
+    const applied = runMigrate(r, ["nested-group", "--to", "6", "--apply", "--json"]);
+    expect(applied.json.refusals).toEqual([]);
+    expect(applied.json.gate.errors).toBe(0);
+    const graph = graphOf(dir);
+    expect(graph.steps.map((s: any) => s.id)).toEqual(["planner", "build-a", "build-b", "review"]);
+    expect(graph.steps[1].requires).toEqual(["planner"]);
+    expect(graph.steps[2].requires).toEqual(["planner"]);
+    expect(graph.steps[1].meta.group).toBe("production");
+    expect(graph.steps[3].requires).toEqual(["build-a", "build-b"]);
+  }, spawnBudgetMs(1));
+});
+
+describe("a phase that lists its agents is one layer", () => {
+  test("`phases[].agents[]` becomes one step per agent, all of them in the phase", () => {
+    const r = root();
+    const dir = fixture(r, "phase-agents", { workflows: { "main.yaml": `workflow_name: main
+phases:
+  - name: parse
+    agent: planner
+    task: plan
+  - name: research
+    parallel: true
+    agents:
+      - agent: builder
+        task: build
+      - agent: planner
+        task: plan
+  - name: synthesize
+    agent: builder
+    task: build
+` } });
+    const applied = runMigrate(r, ["phase-agents", "--to", "6", "--apply", "--json"]);
+    expect(applied.json.refusals).toEqual([]);
+    expect(applied.json.gate.errors).toBe(0);
+    const graph = graphOf(dir);
+    expect(graph.steps.map((s: any) => s.id)).toEqual(["parse", "builder", "planner", "synthesize"]);
+    expect(graph.steps[1].requires).toEqual(["parse"]);
+    expect(graph.steps[2].requires).toEqual(["parse"]);
+    expect(graph.steps[2].meta.phase).toBe("research");
+    expect(graph.steps[3].requires).toEqual(["builder", "planner"]);
+  }, spawnBudgetMs(1));
+});
+
+describe("an event router with agent chains is a forest", () => {
+  test("each route is its own chain; the trigger rides on the first step", () => {
+    const r = root();
+    const dir = fixture(r, "event-chains", { workflows: { "main.yaml": `workflow_name: main
+event_routes:
+  breakout:
+    trigger_condition: event_type=breakout
+    priority: HIGH
+    agent_chain: [planner, builder]
+  price_alert:
+    trigger_condition: event_type=price_alert
+    agent_chain: [builder]
+` } });
+    const applied = runMigrate(r, ["event-chains", "--to", "6", "--apply", "--json"]);
+    expect(applied.json.refusals).toEqual([]);
+    expect(applied.json.gate.errors).toBe(0);
+    const graph = graphOf(dir);
+    expect(graph.steps.map((s: any) => s.id)).toEqual(["breakout-planner", "breakout-builder", "price_alert-builder"]);
+    expect(graph.steps[0].requires ?? []).toEqual([]);
+    expect(graph.steps[0].meta.event).toEqual({ trigger_condition: "event_type=breakout", priority: "HIGH" });
+    expect(graph.steps[0].meta.route).toBe("breakout");
+    expect(graph.steps[1].requires).toEqual(["breakout-planner"]);
+    expect(graph.steps[2].requires ?? []).toEqual([]);
+  }, spawnBudgetMs(1));
+
+  test("a route without an agent chain still refuses: there is no order to derive", () => {
+    const r = root();
+    fixture(r, "event-router", { workflows: { "main.yaml": `workflow_name: main
+event_routes:
+  breakout:
+    trigger_condition: event_type=breakout
+    agent: planner
+` } });
+    const out = runMigrate(r, ["event-router", "--to", "6", "--apply", "--json"]);
+    expect(out.json.refusals.join("\n")).toContain("router, not a DAG");
+  }, spawnBudgetMs(1));
+});
+
+describe("the backup skips what has no bytes", () => {
+  test.skipIf(process.platform === "win32")("a unix socket inside the squad does not abort the migration", async () => {
+    const net = await import("node:net");
+    const r = root();
+    const dir = fixture(r, "with-socket", { workflows: { "main.yaml": STEPS_DEPENDS_ON } });
+    const sockDir = path.join(dir, "examples", "ledger");
+    fs.mkdirSync(sockDir, { recursive: true });
+    const server = net.createServer();
+    await new Promise<void>((resolve) => server.listen(path.join(sockDir, "admin.rpc"), resolve));
+    try {
+      const applied = runMigrate(r, ["with-socket", "--to", "6", "--apply", "--json"]);
+      expect(applied.code).toBe(0);
+      expect(applied.json.refusals).toEqual([]);
+      expect(fs.existsSync(path.join(applied.json.backup, "examples", "ledger", "admin.rpc"))).toBe(false);
+    } finally { server.close(); }
+  }, spawnBudgetMs(1));
+});

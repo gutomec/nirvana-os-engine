@@ -577,7 +577,10 @@ function copyTree(src: string, dst: string): void {
     verbatimSymlinks: true,
     filter: (p) => {
       const rel = path.relative(src, p).split(path.sep).join("/");
-      return rel === "" || !isRunStatePath(rel, "squads");
+      if (rel !== "" && isRunStatePath(rel, "squads")) return false;
+      // A socket or a FIFO left by a tool inside the tree (a local test
+      // ledger) has no bytes to back up, and `cp` refuses it with EINVAL.
+      try { const st = fs.lstatSync(p); return st.isFile() || st.isDirectory() || st.isSymbolicLink(); } catch { return false; }
     },
   });
 }

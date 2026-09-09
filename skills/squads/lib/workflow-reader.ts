@@ -224,10 +224,14 @@ export interface NormalizeResult {
   prose: Record<string, string>;
   /** Ids of the steps that carried inline prose (what the `task: |` lint reads). */
   inlineProse: string[];
-  /** `event_routes`: a router, not a DAG. Reported, never guessed at. */
+  /** `event_routes` without an `agent_chain` per route: a router, not a DAG. Reported, never guessed at. */
   unnormalizable: boolean;
   notes: string[];
 }
+
+/** A raw step that names its runner under any of the three spellings. */
+const hasAgent = (v: Record<string, unknown>): boolean =>
+  [v.agent, v.owner, v.role].some((a) => typeof a === "string" && a.trim() !== "");
 
 const isMapping = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === "object" && !Array.isArray(v);
@@ -432,10 +436,30 @@ export function normalizeWorkflow(doc: unknown, opts: { stem?: string } = {}): N
   } else if (stepsFromWorkflowKey) {
     rawSteps = stepsFromWorkflowKey;
   } else if (top.event_routes !== undefined) {
-    out.unnormalizable = true;
-    out.notes.push("`event_routes` is a router, not a DAG: no step order can be derived from it");
-    ext.event_routes = top.event_routes;
-    dialect("event_routes");
+    // A route that names its `agent_chain` is a chain: the order inside the
+    // route is the author's, and the routes are independent trees of one
+    // forest. A route without a chain gives no order to derive, so the
+    // router stays reported instead of guessed at.
+    const routes = isMapping(top.event_routes) ? Object.entries(top.event_routes) : [];
+    const chained = routes.length > 0 && routes.every(([, r]) => isMapping(r) && Array.isArray(r.agent_chain) && r.agent_chain.length > 0 && r.agent_chain.every((a) => typeof a === "string" && a.trim()));
+    if (chained) {
+      rawSteps = [];
+      for (const [route, r] of routes) {
+        const { agent_chain, ...event } = r as Record<string, unknown>;
+        (agent_chain as string[]).forEach((agent, i) => {
+          const step: Record<string, unknown> = { id: `${route}-${agent}`, agent, route };
+          if (i === 0) step.event = event;
+          else step.depends_on = [`${route}-${(agent_chain as string[])[i - 1]}`];
+          rawSteps!.push(step);
+        });
+      }
+      dialect("event_routes_chained");
+    } else {
+      out.unnormalizable = true;
+      out.notes.push("`event_routes` is a router, not a DAG: no step order can be derived from it");
+      ext.event_routes = top.event_routes;
+      dialect("event_routes");
+    }
   }
 
   // Every dialect whose steps carry no dependency at all becomes a chain: the
@@ -457,10 +481,32 @@ export function normalizeWorkflow(doc: unknown, opts: { stem?: string } = {}): N
       if (layer.length) previousLayer = layer;
     }
   } else if (rawSteps) {
+    // The layer a linear dialect chains to: one step, or every child of the
+    // group that came before it.
+    let lastLayer: string[] = [];
     for (const raw of rawSteps) {
+      // `{type: parallel, id: x, steps: [...]}` (broadcast-ops): a group is a
+      // layer, not a step. Its children run side by side, each one labelled
+      // with the group so a later `requires: [x]` resolves to all of them.
+      const group = isMapping(raw) && !hasAgent(raw) && Array.isArray(raw.steps) ? raw : null;
+      if (group) {
+        const label = String(group.id ?? group.name ?? `group-${drafts.length + 1}`);
+        const layer: string[] = [];
+        for (const child of group.steps as unknown[]) {
+          const step = normalizeStep(child, drafts.length, out);
+          step.meta.group = label;
+          if (linear && step.requires.length === 0) pushUnique(step.requires, lastLayer);
+          drafts.push({ step, index: drafts.length });
+          layer.push(step.id);
+        }
+        if (layer.length) lastLayer = layer;
+        dialect("nested_group");
+        continue;
+      }
       const step = normalizeStep(raw, drafts.length, out);
-      if (linear && step.requires.length === 0 && drafts.length > 0) step.requires.push(drafts[drafts.length - 1].step.id);
+      if (linear && step.requires.length === 0) pushUnique(step.requires, lastLayer);
       drafts.push({ step, index: drafts.length });
+      lastLayer = [step.id];
     }
   }
 
@@ -479,6 +525,31 @@ export function normalizeWorkflow(doc: unknown, opts: { stem?: string } = {}): N
     const original = d.step.id;
     if (n > 0) d.step.id = `${original}-${n + 1}`;
     latest.set(original, d.step.id);
+  }
+
+  // A step with nobody to run it and nothing to run (`type: approval`,
+  // `type: human-gate`) is a gate on the edge, not a node of the graph: the
+  // steps behind it inherit what it waited for and carry it as
+  // `meta.gate_before`, verbatim. A gate nothing waits on closes the workflow
+  // and lands in `extensions.trailing_gates`.
+  const gates = drafts.filter((d) => !d.step.agent && !d.step.task && d.step.meta.workflow === undefined);
+  if (gates.length) {
+    const gateIds = new Set(gates.map((d) => d.step.id));
+    for (const g of gates) {
+      const gate = { id: g.step.id, ...g.step.meta };
+      let waited = false;
+      for (const d of drafts) {
+        if (gateIds.has(d.step.id) || !d.step.requires.includes(g.step.id)) continue;
+        waited = true;
+        d.step.requires = d.step.requires.filter((r) => r !== g.step.id);
+        pushUnique(d.step.requires, g.step.requires);
+        const before = Array.isArray(d.step.meta.gate_before) ? d.step.meta.gate_before as unknown[] : [];
+        d.step.meta.gate_before = [...before, gate];
+      }
+      if (!waited) ext.trailing_gates = [...(Array.isArray(ext.trailing_gates) ? ext.trailing_gates as unknown[] : []), gate];
+    }
+    for (let i = drafts.length - 1; i >= 0; i--) if (gateIds.has(drafts[i].step.id)) drafts.splice(i, 1);
+    dialect("gate_steps");
   }
 
   out.canonical.steps = drafts.map((d) => d.step);
@@ -553,6 +624,9 @@ function groupPhases(phases: unknown[]): Array<{ label: string; steps: unknown[]
     const label = String(p.phase ?? p.name ?? p.id ?? `phase-${i + 1}`);
     if (Array.isArray(p.steps)) out.push({ label, steps: p.steps });
     else if (Array.isArray(p.tasks)) out.push({ label, steps: p.tasks });
+    // `agents: [{agent, task}, ...]` under a phase (nirvana-context-enricher):
+    // the phase is the layer, and each entry is one step of it.
+    else if (Array.isArray(p.agents)) out.push({ label, steps: p.agents.map((a) => (isMapping(a) ? a : { agent: a })) });
     else out.push({ label, steps: [p] });
   });
   return out;

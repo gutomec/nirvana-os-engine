@@ -147,6 +147,11 @@ Os fixers **nunca inventam**. Eles renomeiam, movem e reformatam o que já está
 | `sequence[]` solto | um passo por entrada, encadeados | `sequence` |
 | `workflow: {agents: [...]}` (la-bottega) | um passo por agente; `all-as-needed` descartado; `command` → `extensions.command` | `workflow_agents` |
 | `depends_on` nomeando o `output:` de outro passo | o passo que o cria, quando é único | `requires_by_output` |
+| passo sem agente e sem task (`type: approval`, `type: human-gate`) | é um gate na aresta, não um nó: sai do grafo; quem dependia dele herda o que ele esperava e o carrega verbatim em `meta.gate_before[]`; um gate de que ninguém depende vai para `extensions.trailing_gates[]` | `gate_steps` |
+| `{type: parallel, id: x, steps: [...]}` dentro de `sequence[]` | um grupo é uma camada: cada filho vira um passo com `meta.group = x`, requer o passo anterior ao grupo, e o passo seguinte requer todos os filhos | `nested_group` |
+| `phases[].agents[]` | um passo por entrada, todos na mesma camada (a fase) | `phases` |
+| `event_routes` com `agent_chain[]` em toda rota | uma floresta: cada rota é uma cadeia de passos `<rota>-<agente>` na ordem do autor, `meta.route` em todos e o gatilho (o resto da rota) em `meta.event` do primeiro | `event_routes_chained` |
+| `event_routes` sem `agent_chain` em alguma rota | não normaliza: é um roteador, nenhuma ordem pode ser derivada; `nrv migrate` recusa | `event_routes` |
 | `workflow_name` | `name` | `workflow_name` |
 | `success_criteria` | `success_indicators` | `success_criteria` |
 | `on_fail` | `on_failure` | `on_fail` |
