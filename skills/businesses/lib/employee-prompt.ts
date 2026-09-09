@@ -95,7 +95,7 @@ function appendAuditEvent(project_dir: string, event: Record<string, unknown>): 
     fs.mkdirSync(dir, { recursive: true });
     fs.appendFileSync(
       path.join(dir, "audit.jsonl"),
-      JSON.stringify(stamp({ ts: new Date().toISOString(), ...event })) + "\\n"
+      JSON.stringify(stamp({ ts: new Date().toISOString(), ...event })) + "\n"
     );
   } catch {
     // non-fatal

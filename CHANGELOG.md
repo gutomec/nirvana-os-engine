@@ -6,6 +6,12 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### The seat audit is JSONL again, and the verify verdict reaches the audit
+
+Two regressions from 2026-09-04, both in the businesses package and both invisible to the caller. The seat prompt's audit emitter wrote the two characters `\` `n` between events instead of a newline once it was wrapped with the provenance stamp, so every `mind_clone_injected` since then landed on one line that no line reader could parse: the event that proves a clone was injected was the one that vanished. And `verify-deliverable` recomputed the run root when filing its verdict, shadowed its own variable while doing it, printed "audit emit failed non-fatal" and exited with the verdict's code, so the gate looked healthy while the audit never received a `verify_passed` or `verify_failed`. The check now reports the run directory it resolved (`project_dir` on the report) and the CLI files the verdict beside it. Both paths are read back by tests now.
+
 ## 0.13.4 — 2026-09-06
 
 ### `nrv glance --idle-min 0` means no idle shutdown, and the hook messages name `nrv setup`
