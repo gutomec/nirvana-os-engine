@@ -262,6 +262,10 @@ function cmdStep(argv: string[]): void {
   const stepBrief = buildStepBrief(step, idx, total, { brief, outputsRoot: plan.outputs_root }, priorOutputs, outDir);
   const stepBriefFile = path.join(outDir, ".step-brief.md");
   fs.writeFileSync(stepBriefFile, stepBrief);
+  // The step's task, on its own, for the clone search: the step brief carries
+  // the whole chain brief, whose vocabulary drowns the seat's own job.
+  const stepTaskFile = path.join(outDir, ".step-task.txt");
+  fs.writeFileSync(stepTaskFile, step.task);
 
   const bizDir = plan.businesses_root
     ? path.join(plan.businesses_root, plan.business)
@@ -269,7 +273,7 @@ function cmdStep(argv: string[]): void {
 
   const ep = spawnSync("bun", [
     path.join(SKILLS, "businesses/lib/employee-prompt.ts"),
-    plan.business, step.employee, plan.project_dir, stepBriefFile, outDir,
+    plan.business, step.employee, plan.project_dir, stepBriefFile, outDir, "--task-file", stepTaskFile,
   ], {
     encoding: "utf8", maxBuffer: 32 * 1024 * 1024,
     // The child resolves the business independently; handing it the library root

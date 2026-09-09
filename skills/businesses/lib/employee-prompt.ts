@@ -57,6 +57,11 @@ export type BuildArgs = {
   requested_clones?: string[];
   /** Clones the seat pins (its identity); channeled before anything else. */
   pinned_clones?: string[];
+  /** The step's own task, when the seat runs as one step of a chain. The clone
+   *  SEARCH runs on this, not on the whole brief: a brief carries the vocabulary
+   *  of every seat, and the search fed with it ranked the marketing and press
+   *  voices for a seat closing the production macro. */
+  task?: string;
 };
 
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
@@ -497,7 +502,8 @@ function resolveClonesByPriority(args: BuildArgs): CloneInjection {
 
   // search runs always (for suggestions); injects only when nothing above won
   let suggestions: CloneHit[] = [];
-  try { suggestions = findCloneForTask(args.brief, { limit: 5, cwd: args.project_dir }); } catch { suggestions = []; }
+  const searchQuery = args.task?.trim() ? args.task : args.brief;
+  try { suggestions = findCloneForTask(searchQuery, { limit: 5, cwd: args.project_dir }); } catch { suggestions = []; }
 
   // 2. SEARCH — ranked against the TASK, injected only above the coverage gate.
   if (!hadRequested) {
@@ -817,16 +823,26 @@ ${args.brief}
 
 // CLI wrapper
 if (import.meta.main) {
-  const [, , slug, employee, projectDir, briefFile, outputsRoot] = process.argv;
+  // `--task-file <path>`: the step's task for the clone search (nrv team step).
+  const argv = process.argv.slice(2);
+  let taskFile: string | undefined;
+  const ti = argv.indexOf("--task-file");
+  if (ti !== -1) { taskFile = argv[ti + 1]; argv.splice(ti, 2); }
+  const [slug, employee, projectDir, briefFile, outputsRoot] = argv;
   if (!slug || !employee || !projectDir || !briefFile) {
-    console.error("Usage: bun employee-prompt.ts <business_slug> <employee> <project_dir> <brief_file> [outputs_root]");
+    console.error("Usage: bun employee-prompt.ts <business_slug> <employee> <project_dir> <brief_file> [outputs_root] [--task-file <path>]");
     process.exit(2);
   }
   if (!fs.existsSync(briefFile)) {
     console.error(`Brief file not found: ${briefFile}`);
     process.exit(2);
   }
+  if (taskFile && !fs.existsSync(taskFile)) {
+    console.error(`Task file not found: ${taskFile}`);
+    process.exit(2);
+  }
   const brief = fs.readFileSync(briefFile, "utf8");
+  const task = taskFile ? fs.readFileSync(taskFile, "utf8") : undefined;
   console.log(
     buildEmployeePrompt({
       business_slug: slug,
@@ -836,6 +852,7 @@ if (import.meta.main) {
       include_dna: true,
       include_handoff: true,
       outputs_root: outputsRoot,
+      ...(task ? { task } : {}),
     })
   );
 }
