@@ -15,7 +15,7 @@ import { spawnSync } from "node:child_process";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 import {
   buildDigest, buildKeywordAliases, splitKeywordGroups, foldKey, detectLang,
-  estimateTokens, trunc, TOKEN_BUDGET, loadDigestInput,
+  estimateTokens, trunc, TOKEN_BUDGET, loadDigestInput, configuredTokenBudget,
   type DigestInput,
 } from "../scripts/build-routing-digest.ts";
 
@@ -113,6 +113,27 @@ function sectionLines(text: string, section: string): string[] {
   }
   return out;
 }
+
+describe("routing digest — the budget is a knob, and 0 means none", () => {
+  // The budget used to be a constant with no knob. A library that outgrew it
+  // degraded to the last rung in silence, and the only way to keep the digest
+  // whole was to edit the installed file, which the next update reverted.
+  test("an explicit budget is walked and echoed on the result", () => {
+    const tight = buildDigest(fixtureInput(), { budgetTokens: 1, generatedAt: "2026-01-01T00:00:00.000Z" });
+    expect(tight.budget).toBe(1);
+    expect(tight.degradationLevel).toBe(4);
+    expect(tight.overBudget).toBe(true);
+  });
+  test("budget 0 never degrades and is never over budget", () => {
+    const open = buildDigest(fixtureInput(), { budgetTokens: 0, generatedAt: "2026-01-01T00:00:00.000Z" });
+    expect(open.budget).toBe(0);
+    expect(open.degradationLevel).toBe(0);
+    expect(open.overBudget).toBe(false);
+  });
+  test("the configured budget comes from settings, default 50000", () => {
+    expect(configuredTokenBudget()).toBe(50_000);
+  });
+});
 
 describe("routing digest — format grammar", () => {
   const r = buildDigest(fixtureInput(), { generatedAt: "2026-01-01T00:00:00.000Z" });

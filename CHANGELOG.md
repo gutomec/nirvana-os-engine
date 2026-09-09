@@ -16,6 +16,9 @@ The `return` sat inside the loop over `example_briefs`, so the validator named o
 The clone closure (`entity-graph`, which `list-clone-refs` and the pack build use) and the seat prompt read their frontmatter lists with a regex that accepted only the `- item` block form. `squads_authorized: [brandcraft]` parsed as empty while the "declared" test saw the key, so the seat was told the opposite of what its author wrote: "WITHOUT dispatching squads". Both readers now parse the frontmatter as YAML, block or inline, and keep the line reader only for frontmatter that is not YAML. A closed set the scope's catalog cannot serve stays a closed set, with the missing squads named, instead of collapsing into "declared EMPTY".
 
 `pinned_mind_clones`, the field Business Protocol v2 §7.7 created for the seat whose identity is the clone, was read by the validator and by nothing else: the pinned clone never entered a pack's closure, and the prompt never channeled it unless the author repeated the slug under `assigned_mind_clones`. The closure reads it now, and the prompt channels a pinned clone before any request or search, with the decision line saying so.
+### The routing digest budget is a config key, and the ladder says where it stands
+
+`routing.digest_token_budget` (default 50000; 0 = no budget) replaces the constant that sized the routing digest. A library that outgrew the constant degraded to the last rung in silence, dropping every `domains` list the agentic router reads, and the one way to keep the digest whole was to edit the installed file, which the next `nrv update` reverted. `nrv index` now says which level the digest settled on and what level 4 drops, and the over-budget message names the real last rung and the knob. The default is unchanged: a library that fit before still fits.
 
 ### The seat audit is JSONL again, and the verify verdict reaches the audit
 
