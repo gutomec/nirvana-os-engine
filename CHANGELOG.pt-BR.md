@@ -14,6 +14,9 @@ Cinco squads da biblioteca voltavam da migração 6.0 com `steps.N.agent: Too sm
 ### Um pack só embarca squads no Protocolo 6.0
 
 O gate de admissão (`check-entity-admission.ts --pack`) trata um squad cujo manifesto está abaixo do Squad Protocol 6.0, ou sem `protocol` algum, como problema duro: o pack não entra. Abaixo de 6.0 o grafo do workflow é um dialeto que cada leitor interpreta de um jeito, e a correção é um comando (`nrv migrate <slug> --to 6`), então isso nunca é dívida a registrar. O validador continua reportando como aviso numa biblioteca instalada, onde o `nrv doctor` conta os squads que faltam migrar.
+### O censo de protocolo do doctor lê o manifesto inteiro
+
+O `nrv doctor` contava um squad como `unset` quando a linha `protocol:` vinha depois dos primeiros 4 KB do `squad.yaml` — cinco squads da biblioteca a declaram depois de uma descrição longa, então uma biblioteca inteira no 6.0 reportava "5 below 6.0". O censo agora lê o manifesto inteiro.
 
 ### `self_retrieval_miss` reporta todos os briefs que erram
 

@@ -79,6 +79,17 @@ describe("the Protocol section counts what the library declares", () => {
     expect(out.protocol["protocol: businesses"].note).toContain("no retired fields");
   }, 60_000);
 
+  test("a protocol declared after a long description still counts", () => {
+    // The census read the first 4 KB of each manifest; a squad whose
+    // `protocol:` came after its description was counted as unset.
+    const home = library({ squads: [["a", "6.0"], ["b", "6.0"]], businesses: [["biz-one", "2.0", false]] });
+    writeFileSync(join(home, "squads", "b", "squad.yaml"),
+      `name: b\nversion: 1.0.0\ndescription: >\n  ${"a long description. ".repeat(300)}\nprotocol: "6.0"\n`, "utf8");
+    const out = doctor(home);
+    expect(out.protocol["protocol: squads"].status).toBe("PASS");
+    expect(out.protocol["protocol: squads"].note).toContain("2 squads, all on 6.0");
+  }, 60_000);
+
   test("it is never a FAIL — the whole point, because CI reads exit >= 2", () => {
     const out = doctor(library({
       squads: [["a", "4.0"], ["b", null]],
