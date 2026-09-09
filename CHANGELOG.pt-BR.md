@@ -11,6 +11,11 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 ### `self_retrieval_miss` reporta todos os briefs que erram
 
 O `return` ficava dentro do laço sobre `example_briefs`, então o validador nomeava um erro e parava: quem corrigia um brief por vez só descobria o próximo depois de corrigir este, e "1 aviso" podia significar catorze. Os erros agora acumulam, um achado por brief.
+### Listas do frontmatter lidas como YAML, e o clone fixado é canalizado
+
+O fecho de clones (`entity-graph`, que o `list-clone-refs` e o build de pack usam) e o prompt do cargo liam as listas do frontmatter com um regex que só aceitava a forma em bloco `- item`. `squads_authorized: [brandcraft]` virava lista vazia enquanto o teste de "declarado" via a chave, e o cargo recebia o oposto do que o autor escreveu: "SEM despachar squads". Os dois leitores agora interpretam o frontmatter como YAML, em bloco ou inline, e só mantêm o leitor de linhas para frontmatter que não é YAML. Um conjunto fechado que o catálogo do escopo não tem continua fechado, com os squads ausentes nomeados, em vez de virar "declarado VAZIO".
+
+`pinned_mind_clones`, o campo que o Business Protocol v2 §7.7 criou para o cargo cuja identidade é o clone, era lido pelo validador e por mais nada: o clone fixado nunca entrava no fecho de um pack, e o prompt nunca o canalizava a menos que o autor repetisse o slug em `assigned_mind_clones`. O fecho agora o lê, e o prompt canaliza o clone fixado antes de qualquer pedido ou busca, com a linha de decisão dizendo isso.
 
 ### O audit do cargo volta a ser JSONL, e o veredito do verify chega ao audit
 
