@@ -172,14 +172,31 @@ export function foldKey(s: string): string {
   return s.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase().replace(/_/g, "-");
 }
 
-/** Folded index of the components on disk, for `--map-refs`. */
+/** `foldKey` without the hyphens: `nrcjobarchitect` and `nrc-job-architect`
+ *  are the same name to the v5 templates, which wrote step ids by gluing the
+ *  agent slug together. */
+function looseKey(s: string): string {
+  return foldKey(s).replace(/-/g, "");
+}
+
+/** Folded index of the components on disk, for `--map-refs`: every stem under
+ *  its folded key and under its loose (hyphen-free) key. */
 function foldIndex(stems: Set<string>): Map<string, string[]> {
   const m = new Map<string, string[]>();
   for (const s of stems) {
-    const key = foldKey(s);
-    m.set(key, [...(m.get(key) ?? []), s]);
+    for (const key of new Set([foldKey(s), looseKey(s)])) m.set(key, [...(m.get(key) ?? []), s]);
   }
   return m;
+}
+
+/** The one component whose stem is `<squad-prefix>-<ref>` — the v5 templates
+ *  referenced `macro-economist` and shipped `nait-macro-economist`. Only an
+ *  unambiguous suffix match counts. */
+function bySuffix(ref: string, stems: Set<string>): string | null {
+  const key = foldKey(ref);
+  if (!key) return null;
+  const hits = [...stems].filter((s) => foldKey(s).endsWith(`-${key}`));
+  return hits.length === 1 ? hits[0] : null;
 }
 
 /** A `task` that is the step's own agent under another name. The v5 templates
@@ -193,7 +210,8 @@ function foldIndex(stems: Set<string>): Map<string, string[]> {
 function namesTheAgent(task: string, agent: string): boolean {
   const t = foldKey(task), a = foldKey(agent);
   if (!t || !a) return false;
-  return t === a || t === "execute" || t === `execute-${a}` || t === `${a}-execute`
+  if (t === a || looseKey(task) === looseKey(agent)) return true;
+  return t === "execute" || t === `execute-${a}` || t === `${a}-execute`
     || a.endsWith(`-${t}`) || t.endsWith(`-${a}`);
 }
 
@@ -345,8 +363,10 @@ function mapStepRefs(
 ): void {
   const remap = (value: string, known: Set<string>, fold: Map<string, string[]>): string | null => {
     if (known.has(value) || known.size === 0) return null;
-    const hits = fold.get(foldKey(value)) ?? [];
-    return hits.length === 1 && hits[0] !== value ? hits[0] : null;
+    const hits = fold.get(foldKey(value)) ?? fold.get(looseKey(value)) ?? [];
+    if (hits.length === 1 && hits[0] !== value) return hits[0];
+    const suffix = bySuffix(value, known);
+    return suffix && suffix !== value ? suffix : null;
   };
   for (const s of canonical.steps) {
     const a = s.agent ? remap(s.agent, idx.agents, idx.agentFold) : null;

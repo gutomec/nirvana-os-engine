@@ -158,6 +158,18 @@ steps:
     task: execute
 `;
 
+/** Glued names and missing squad prefixes, as the v5 templates wrote them. */
+const GLUED_AND_PREFIXED = `name: main
+steps:
+  - id: planner
+    agent: planner
+    task: planner
+  - id: build
+    agent: builder
+    requires: [planner]
+    task: BUILD
+`;
+
 /** A step id with a capital, and a depends_on that wrote it as authored. */
 const CAPITAL_ID_REQUIRES = `name: main
 steps:
@@ -370,11 +382,113 @@ describe("--map-refs understands the v5 template dialects", () => {
     expect(fs.readdirSync(path.join(dir, "tasks")).sort()).toEqual(["build.md", "plan.md"]);
   }, spawnBudgetMs(2));
 
+  test("a glued name and a squad-prefixed stem still resolve", () => {
+    const r = root();
+    const dir = fixture(r, "glued", { workflows: { "main.yaml": GLUED_AND_PREFIXED } });
+    // the fixture's agents are `planner` and `builder`; rename them to carry a
+    // squad prefix and reference them without it, glued and folded.
+    for (const [from, to] of [["planner", "sq-planner"], ["builder", "sq-builder"]]) {
+      fs.renameSync(path.join(dir, "agents", `${from}.md`), path.join(dir, "agents", `${to}.md`));
+    }
+    const manifest = path.join(dir, "squad.yaml");
+    fs.writeFileSync(manifest, fs.readFileSync(manifest, "utf8").replace("agents: [planner, builder]", "agents: [sq-planner, sq-builder]"), "utf8");
+    fs.writeFileSync(path.join(dir, "workflows", "main.yaml"), `name: main
+steps:
+  - id: plan
+    agent: planner
+    task: sqplanner
+  - id: build
+    agent: sqbuilder
+    requires: [plan]
+    task: BUILD
+`, "utf8");
+    const withFlag = runMigrate(r, ["glued", "--to", "6", "--apply", "--map-refs", "--json"]);
+    expect(withFlag.code).toBe(0);
+    expect(withFlag.json.files[0].unresolved_refs).toEqual([]);
+    const graph: any = parseYaml(fs.readFileSync(path.join(dir, "workflows", "main.md"), "utf8").split("---")[1]);
+    expect(graph.steps[0].agent).toBe("sq-planner");   // prefix added by the unique suffix match
+    expect(graph.steps[0].task ?? null).toBeNull();    // `sqplanner` names the agent, glued
+    expect(graph.steps[1].agent).toBe("sq-builder");   // glued key
+    expect(graph.steps[1].task).toBe("build");
+  }, spawnBudgetMs(1));
+
   test("camelCase folds to the kebab-case file", () => {
     expect(foldKey("validateMarketFit")).toBe("validate-market-fit");
     expect(foldKey("execute_ncm_classifier")).toBe("execute-ncm-classifier");
     expect(foldKey("generateHTMLMockup")).toBe("generate-htmlmockup");
   });
+});
+
+describe("requires that name a label, a directory or a duplicate id resolve to steps", () => {
+  test("a group label, a directory prefix over a creates mapping, and an annotated file all resolve", () => {
+    const r = root();
+    const dir = fixture(r, "requires-dialects", { workflows: { "main.yaml": `name: main
+steps:
+  - id: audit
+    agent: planner
+    task: plan
+    group: phase-1-coleta
+    creates:
+      artifact: outputs/audit/report.json
+  - id: sped
+    agent: builder
+    task: build
+    group: phase-1-coleta
+    creates: [02-bookkeeping/sped/]
+  - id: esocial
+    agent: builder
+    task: build
+    creates: [02-bookkeeping/esocial/]
+  - id: statements
+    agent: planner
+    task: plan
+    requires: [02-bookkeeping/]
+  - id: report
+    agent: builder
+    task: build
+    requires: [phase-1-coleta, "report.json (opcional)"]
+` } });
+    const applied = runMigrate(r, ["requires-dialects", "--to", "6", "--apply", "--json"]);
+    expect(applied.code).toBe(0);
+    expect(applied.json.gate.errors).toBe(0);
+    const graph: any = parseYaml(fs.readFileSync(path.join(dir, "workflows", "main.md"), "utf8").split("---")[1]);
+    const byId = Object.fromEntries(graph.steps.map((st: any) => [st.id, st]));
+    expect(byId.statements.requires.sort()).toEqual(["esocial", "sped"]);
+    expect(byId.report.requires.sort()).toEqual(["audit", "sped"]);
+  }, spawnBudgetMs(1));
+
+  test("a duplicate id in a depends_on dialect is renamed and the chain stays acyclic", () => {
+    const r = root();
+    const dir = fixture(r, "dup-ids", { workflows: { "main.yaml": `name: main
+steps:
+  - id: handler
+    agent: planner
+    task: plan
+  - id: budget
+    agent: builder
+    task: build
+    depends_on: [handler]
+  - id: handler
+    agent: planner
+    task: plan
+    depends_on: [budget]
+  - id: handler
+    agent: planner
+    task: plan
+    depends_on: [handler]
+  - id: reporter
+    agent: builder
+    task: build
+    depends_on: [handler]
+` } });
+    const applied = runMigrate(r, ["dup-ids", "--to", "6", "--apply", "--json"]);
+    expect(applied.code).toBe(0);
+    expect(applied.json.gate.errors).toBe(0);
+    const graph: any = parseYaml(fs.readFileSync(path.join(dir, "workflows", "main.md"), "utf8").split("---")[1]);
+    expect(graph.steps.map((st: any) => st.id)).toEqual(["handler", "budget", "handler-2", "handler-3", "reporter"]);
+    expect(graph.steps[3].requires).toEqual(["handler-2"]);
+    expect(graph.steps[4].requires).toEqual(["handler-3"]);
+  }, spawnBudgetMs(1));
 });
 
 describe("a step id the normalizer slugified is followed by its requires", () => {

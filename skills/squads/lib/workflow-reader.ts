@@ -295,8 +295,15 @@ function normalizeStep(raw: unknown, index: number, out: NormalizeResult): Canon
   for (const key of ["creates", "outputs", "output"] as const) {
     const list = stringList(src[key]);
     if (list) pushUnique(step.creates, list);
+    else if (isMapping(src[key])) {
+      // `creates: { artifact: outputs/x.json }` — the paths are the values.
+      pushUnique(step.creates, Object.values(src[key] as Record<string, unknown>).filter((v): v is string => typeof v === "string" && !!v.trim()).map((v) => v.trim()));
+      step.meta[key] = src[key];
+    }
     else if (src[key] !== undefined) step.meta[key] = src[key];
   }
+  // A `group:` label is what a later `requires:` may name (nirvana-agencia-marketing).
+  if (typeof src.group === "string" && src.group.trim()) step.meta.group = src.group.trim();
   const onFailure = src.on_failure ?? src.on_fail;
   if (typeof onFailure === "string" && onFailure.trim()) step.on_failure = onFailure.trim();
   else if (onFailure !== undefined) step.meta.on_failure = onFailure;
@@ -453,18 +460,20 @@ export function normalizeWorkflow(doc: unknown, opts: { stem?: string } = {}): N
   }
 
   // Disambiguate ids the dialects collide on (two steps of the same agent).
+  // Every dialect: a duplicate id is never valid in a DAG, and a `depends_on`
+  // naming it means the most recent occurrence BEFORE the step that depends
+  // (nirvana-odontologia chained the same seat three times and the graph read
+  // as a cycle). Walk in order: a step's requires resolve against the latest
+  // spelling of each id so far, then the step's own id is disambiguated.
   const seen = new Map<string, number>();
+  const latest = new Map<string, string>();
   for (const d of drafts) {
+    d.step.requires = d.step.requires.map((r) => latest.get(r) ?? r);
     const n = seen.get(d.step.id) ?? 0;
     seen.set(d.step.id, n + 1);
-    if (n > 0 && (linear || phaseGroups)) {
-      const renamed = `${d.step.id}-${n + 1}`;
-      for (const other of drafts) {
-        const i = other.step.requires.indexOf(d.step.id);
-        if (i !== -1 && other.index > d.index) other.step.requires[i] = renamed;
-      }
-      d.step.id = renamed;
-    }
+    const original = d.step.id;
+    if (n > 0) d.step.id = `${original}-${n + 1}`;
+    latest.set(original, d.step.id);
   }
 
   out.canonical.steps = drafts.map((d) => d.step);
@@ -479,19 +488,42 @@ export function normalizeWorkflow(doc: unknown, opts: { stem?: string } = {}): N
       byCreation.set(key, [...(byCreation.get(key) ?? []), s.id]);
     }
   }
+  const byLabel = new Map<string, string[]>();
   for (const s of out.canonical.steps) {
-    s.requires = s.requires.map((r) => {
-      if (ids.has(r)) return r;
+    for (const label of [s.meta.group, s.meta.phase]) {
+      if (typeof label === "string" && label.trim()) byLabel.set(label.trim(), [...(byLabel.get(label.trim()) ?? []), s.id]);
+    }
+  }
+  const stripSlash = (v: string) => v.replace(/\/+$/, "");
+  for (const s of out.canonical.steps) {
+    s.requires = s.requires.flatMap((raw) => {
+      // `trade-in-offer.yaml (opcional)`: the annotation is prose, not a name.
+      const r = raw.replace(/\s*\([^)]*\)\s*$/, "").trim();
+      if (ids.has(r)) return [r];
       // The step id was slugified (`chunkN` → `chunkn`); a `depends_on` that
       // wrote it as authored must follow, or the migration reports a dangling
       // requires it created itself.
       const slug = slugify(r);
-      if (ids.has(slug)) return slug;
-      const owners = byCreation.get(r) ?? byCreation.get(r.trim()) ?? [];
-      const distinct = [...new Set(owners.filter((o) => o !== s.id))];
-      if (distinct.length === 1) { dialect("requires_by_output"); return distinct[0]; }
-      return r;
+      if (ids.has(slug)) return [slug];
+      // A phase/group label: every step under it, so the layer completes first.
+      const labelled = (byLabel.get(r) ?? []).filter((o) => o !== s.id);
+      if (labelled.length) { dialect("requires_by_output"); return [...new Set(labelled)]; }
+      // An output: the exact entry, a directory that other steps write into
+      // (`02-bookkeeping/` for `02-bookkeeping/sped/`), or a file's basename.
+      const exact = byCreation.get(r) ?? byCreation.get(raw.trim()) ?? [];
+      let owners = exact.filter((o) => o !== s.id);
+      if (!owners.length) {
+        const dir = stripSlash(r);
+        for (const [created, who] of byCreation) {
+          const c = stripSlash(created);
+          if (c === dir || c.startsWith(dir + "/") || c.endsWith("/" + r) || c.split("/").pop() === r) owners.push(...who.filter((o) => o !== s.id));
+        }
+      }
+      const distinct = [...new Set(owners)];
+      if (distinct.length) { dialect("requires_by_output"); return distinct; }
+      return [raw];
     });
+    s.requires = [...new Set(s.requires)];
   }
 
   // Everything else keeps its bytes. A canonical document re-read merges its
