@@ -163,14 +163,38 @@ function rawStepCount(doc: unknown): number {
   return 0;
 }
 
-/** `snake_case` / case-folded index of the components on disk, for `--map-refs`. */
+/** One spelling for a component name: `validateMarketFit`, `validate_market_fit`
+ *  and `Validate-Market-Fit` all fold to `validate-market-fit`. The v5 template
+ *  squads wrote step actions in camelCase over kebab-case task files; without
+ *  the camel split, 64 references in the published packs pointed at files that
+ *  existed under the other spelling. */
+export function foldKey(s: string): string {
+  return s.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase().replace(/_/g, "-");
+}
+
+/** Folded index of the components on disk, for `--map-refs`. */
 function foldIndex(stems: Set<string>): Map<string, string[]> {
   const m = new Map<string, string[]>();
   for (const s of stems) {
-    const key = s.toLowerCase().replace(/_/g, "-");
+    const key = foldKey(s);
     m.set(key, [...(m.get(key) ?? []), s]);
   }
   return m;
+}
+
+/** A `task` that is the step's own agent under another name. The v5 templates
+ *  wrote `task: legal-strategist` under `agent: legal-strategist`,
+ *  `action: execute_ncm_classifier` under `agent: ncm-classifier`,
+ *  `analytics-cowork-execute`, a bare `execute`, or the agent stem without the
+ *  squad prefix (`fund-manager` for `nait-fund-manager`). None of those is a
+ *  task document, and none needs one: the step is the agent acting. Fabricating
+ *  a stub task to satisfy the reference would ship a method the squad does not
+ *  have; dropping the reference keeps the graph honest. */
+function namesTheAgent(task: string, agent: string): boolean {
+  const t = foldKey(task), a = foldKey(agent);
+  if (!t || !a) return false;
+  return t === a || t === "execute" || t === `execute-${a}` || t === `${a}-execute`
+    || a.endsWith(`-${t}`) || t.endsWith(`-${a}`);
 }
 
 const TASK_SCAFFOLD_AC = "## Acceptance Criteria";
@@ -321,7 +345,7 @@ function mapStepRefs(
 ): void {
   const remap = (value: string, known: Set<string>, fold: Map<string, string[]>): string | null => {
     if (known.has(value) || known.size === 0) return null;
-    const hits = fold.get(value.toLowerCase().replace(/_/g, "-")) ?? [];
+    const hits = fold.get(foldKey(value)) ?? [];
     return hits.length === 1 && hits[0] !== value ? hits[0] : null;
   };
   for (const s of canonical.steps) {
@@ -329,6 +353,10 @@ function mapStepRefs(
     if (a) { log.push(`${stem}#${s.id}: agent ${s.agent} → ${a}`); s.agent = a; }
     const t = s.task ? remap(s.task, idx.tasks, idx.taskFold) : null;
     if (t) { log.push(`${stem}#${s.id}: task ${s.task} → ${t}`); s.task = t; }
+    if (s.task && idx.tasks.size && !idx.tasks.has(s.task) && s.agent && namesTheAgent(s.task, s.agent)) {
+      log.push(`${stem}#${s.id}: task ${s.task} names the agent ${s.agent} — dropped, the step is the agent acting`);
+      delete s.task;
+    }
   }
 }
 

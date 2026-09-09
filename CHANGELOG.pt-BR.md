@@ -11,6 +11,10 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 ### `self_retrieval_miss` reporta todos os briefs que erram
 
 O `return` ficava dentro do laço sobre `example_briefs`, então o validador nomeava um erro e parava: quem corrigia um brief por vez só descobria o próximo depois de corrigir este, e "1 aviso" podia significar catorze. Os erros agora acumulam, um achado por brief.
+### `nrv migrate --map-refs` entende os dialetos dos templates v5
+
+Três coisas que a migração para o Squad Protocol 6.0 reportava como referências sem arquivo, e agora resolve sem inventar nada. Uma ação de passo escrita em camelCase sobre uma task em kebab-case (`validateMarketFit` → `tasks/validate-market-fit.md`) é mapeada: 64 referências nos packs publicados apontavam para arquivos que existiam com a outra grafia. Uma `task` que é o próprio agente do passo com outro nome (`task: legal-strategist` sob esse agente, `execute_ncm_classifier`, `analytics-cowork-execute`, um `execute` solto, ou o agente sem o prefixo do squad) é descartada, porque o passo é o agente agindo e uma task de fachada embarcaria um método que o squad não tem. E um `depends_on` que nomeia o id de um passo como foi escrito (`chunkN`) segue o id que o normalizador transformou (`chunkn`) em vez de ficar pendurado.
+
 ### Uma memória editada na entidade depois da semente é nomeada, não ignorada em silêncio
 
 O `memory/*.md` que uma entidade embarca é semente: copiado uma vez para a casa canônica e nunca mais lido. Quem continuava editando a cópia da entidade não mudava nada do que o prompt lia, e nada avisava (medido: 53 linhas viviam só na cópia de uma empresa). O bloco de memória agora nomeia os arquivos embarcados que diferem da casa e diz que a casa é o que se lê; o `nrv memory relocate` imprime a mesma linha. A política não mudou.

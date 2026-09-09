@@ -482,6 +482,11 @@ export function normalizeWorkflow(doc: unknown, opts: { stem?: string } = {}): N
   for (const s of out.canonical.steps) {
     s.requires = s.requires.map((r) => {
       if (ids.has(r)) return r;
+      // The step id was slugified (`chunkN` → `chunkn`); a `depends_on` that
+      // wrote it as authored must follow, or the migration reports a dangling
+      // requires it created itself.
+      const slug = slugify(r);
+      if (ids.has(slug)) return slug;
       const owners = byCreation.get(r) ?? byCreation.get(r.trim()) ?? [];
       const distinct = [...new Set(owners.filter((o) => o !== s.id))];
       if (distinct.length === 1) { dialect("requires_by_output"); return distinct[0]; }

@@ -11,6 +11,10 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 ### `self_retrieval_miss` reports every missed brief
 
 The `return` sat inside the loop over `example_briefs`, so the validator named one miss and stopped: an author fixing briefs one at a time learned about the next miss only after fixing this one, and "1 warning" could mean fourteen. Misses accumulate now, one finding per brief.
+### `nrv migrate --map-refs` understands the v5 template dialects
+
+Three things the migration to Squad Protocol 6.0 reported as unresolved references, and now resolves without inventing anything. A step action written in camelCase over a kebab-case task file (`validateMarketFit` → `tasks/validate-market-fit.md`) is mapped: 64 references in the published packs pointed at files that existed under the other spelling. A `task` that is the step's own agent under another name (`task: legal-strategist` under that agent, `execute_ncm_classifier`, `analytics-cowork-execute`, a bare `execute`, or the agent without its squad prefix) is dropped, because the step is the agent acting and a stub task would ship a method the squad does not have. And a `depends_on` that names a step id as authored (`chunkN`) follows the id the normalizer slugified (`chunkn`) instead of dangling.
+
 ### A memory edited in the entity after the seed is named, not silently ignored
 
 An entity's shipped `memory/*.md` is a seed: copied once into the canonical home and never read again. An author who kept editing the entity's copy changed nothing the prompt read, and nothing said so (measured: 53 lines lived only in one business's copy). The memory block now names the shipped files that differ from the home and says the home is what is read; `nrv memory relocate` prints the same line. The policy is unchanged.

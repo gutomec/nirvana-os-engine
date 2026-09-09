@@ -22,6 +22,7 @@ import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import { parse as parseYaml } from "yaml";
 import { cliEnv, rmrf, squadFixture, tempRoot, treeDigest, REPO } from "../../_shared/tests/helpers/verify-fixture.ts";
+import { foldKey } from "../scripts/migrate-squad.ts";
 import { runCli } from "../../_shared/tests/helpers/verify-fixture.ts";
 import { spawnBudgetMs } from "../../harness/tests/helpers/test-budgets.ts";
 
@@ -134,6 +135,38 @@ steps:
   - id: build
     agent: builder
     requires: [plan]
+    task: build
+`;
+
+/** The v5 template dialect: the task is the agent under another name. */
+const AGENT_NAMED_TASKS = `name: main
+steps:
+  - id: plan
+    agent: planner
+    task: planner
+  - id: build
+    agent: builder
+    requires: [plan]
+    task: execute_builder
+  - id: ship
+    agent: builder
+    requires: [build]
+    task: executeBuilder
+  - id: done
+    agent: planner
+    requires: [ship]
+    task: execute
+`;
+
+/** A step id with a capital, and a depends_on that wrote it as authored. */
+const CAPITAL_ID_REQUIRES = `name: main
+steps:
+  - id: chunkN
+    agent: planner
+    task: plan
+  - id: tags
+    agent: builder
+    depends_on: [chunkN]
     task: build
 `;
 
@@ -318,6 +351,43 @@ describe("--map-refs", () => {
     expect(graph.steps[0].agent).toBe("planner");
     expect(graph.steps[0].task).toBe("plan");
   }, spawnBudgetMs(2));
+});
+
+describe("--map-refs understands the v5 template dialects", () => {
+  test("a task that names the step's own agent is dropped, not stubbed", () => {
+    const r = root();
+    const dir = fixture(r, "agent-named", { workflows: { "main.yaml": AGENT_NAMED_TASKS } });
+    const without = runMigrate(r, ["agent-named", "--to", "6", "--json"]);
+    expect(without.json.files[0].unresolved_refs.length).toBe(4);
+    const withFlag = runMigrate(r, ["agent-named", "--to", "6", "--apply", "--map-refs", "--json"]);
+    expect(withFlag.code).toBe(0);
+    expect(withFlag.json.gate.errors).toBe(0);
+    expect(withFlag.json.files[0].unresolved_refs).toEqual([]);
+    expect(withFlag.json.refs_mapped.filter((l: string) => l.includes("names the agent")).length).toBe(4);
+    const graph: any = parseYaml(fs.readFileSync(path.join(dir, "workflows", "main.md"), "utf8").split("---")[1]);
+    expect(graph.steps.map((s: any) => s.task ?? null)).toEqual([null, null, null, null]);
+    expect(graph.steps.map((s: any) => s.agent)).toEqual(["planner", "builder", "builder", "planner"]);
+    expect(fs.readdirSync(path.join(dir, "tasks")).sort()).toEqual(["build.md", "plan.md"]);
+  }, spawnBudgetMs(2));
+
+  test("camelCase folds to the kebab-case file", () => {
+    expect(foldKey("validateMarketFit")).toBe("validate-market-fit");
+    expect(foldKey("execute_ncm_classifier")).toBe("execute-ncm-classifier");
+    expect(foldKey("generateHTMLMockup")).toBe("generate-htmlmockup");
+  });
+});
+
+describe("a step id the normalizer slugified is followed by its requires", () => {
+  test("chunkN → chunkn, and depends_on: [chunkN] follows", () => {
+    const r = root();
+    const dir = fixture(r, "capital-id", { workflows: { "main.yaml": CAPITAL_ID_REQUIRES } });
+    const applied = runMigrate(r, ["capital-id", "--to", "6", "--apply", "--json"]);
+    expect(applied.code).toBe(0);
+    expect(applied.json.gate.errors).toBe(0);
+    const graph: any = parseYaml(fs.readFileSync(path.join(dir, "workflows", "main.md"), "utf8").split("---")[1]);
+    expect(graph.steps[0].id).toBe("chunkn");
+    expect(graph.steps[1].requires).toEqual(["chunkn"]);
+  }, spawnBudgetMs(1));
 });
 
 describe("acceptance", () => {
