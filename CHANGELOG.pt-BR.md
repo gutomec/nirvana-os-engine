@@ -11,6 +11,10 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 ### `self_retrieval_miss` reporta todos os briefs que erram
 
 O `return` ficava dentro do laço sobre `example_briefs`, então o validador nomeava um erro e parava: quem corrigia um brief por vez só descobria o próximo depois de corrigir este, e "1 aviso" podia significar catorze. Os erros agora acumulam, um achado por brief.
+### Uma memória editada na entidade depois da semente é nomeada, não ignorada em silêncio
+
+O `memory/*.md` que uma entidade embarca é semente: copiado uma vez para a casa canônica e nunca mais lido. Quem continuava editando a cópia da entidade não mudava nada do que o prompt lia, e nada avisava (medido: 53 linhas viviam só na cópia de uma empresa). O bloco de memória agora nomeia os arquivos embarcados que diferem da casa e diz que a casa é o que se lê; o `nrv memory relocate` imprime a mesma linha. A política não mudou.
+
 ### O digest de roteamento não tem orçamento por padrão
 
 `routing.digest_token_budget` passa a valer 0 por padrão, sem teto: o digest sai inteiro e nunca degrada, a menos que o dono fixe um teto de propósito. O padrão de 50k que saiu junto com a chave ainda degradava uma biblioteca grande até o nível 4 em silêncio, que era o comportamento que a chave existia para acabar. Orçamento é decisão deliberada, não algo considerado por padrão.
