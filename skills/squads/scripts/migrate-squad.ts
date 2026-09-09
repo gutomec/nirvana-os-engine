@@ -195,8 +195,16 @@ function foldIndex(stems: Set<string>): Map<string, string[]> {
 function bySuffix(ref: string, stems: Set<string>): string | null {
   const key = foldKey(ref);
   if (!key) return null;
-  const hits = [...stems].filter((s) => foldKey(s).endsWith(`-${key}`));
+  // `macro-economist` for a `nait-macro-economist` file, or the reverse:
+  // `ncc-trade-in-evaluator` written where the file is `trade-in-evaluator`.
+  const hits = [...stems].filter((s) => { const k = foldKey(s); return k.endsWith(`-${key}`) || key.endsWith(`-${k}`); });
   return hits.length === 1 ? hits[0] : null;
+}
+
+/** A v5 `action:` that was a label, not a document: `setupFrontendProject`,
+ *  `gerarChecklistValidarDocumentos`, `test-checklist-flow`. Read as words. */
+function labelToSentence(ref: string): string {
+  return ref.replace(/\.md$/i, "").replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
 /** A `task` that is the step's own agent under another name. The v5 templates
@@ -322,7 +330,7 @@ export function planMigration(dir: string, opts: { mapRefs: boolean; extractTask
       normalized.canonical.name = file.stem;
     }
 
-    if (opts.mapRefs) mapStepRefs(normalized.canonical, { agents, tasks, agentFold, taskFold }, plan.refsMapped, file.stem);
+    if (opts.mapRefs) mapStepRefs(normalized.canonical, { agents, tasks, agentFold, taskFold }, plan.refsMapped, file.stem, normalized.prose);
 
     const { body, extracted } = splitProse(normalized, file.stem, opts.extractTasks, tasks);
     base.inline_prompts_extracted = normalized.inlineProse.length;
@@ -359,7 +367,7 @@ export function planMigration(dir: string, opts: { mapRefs: boolean; extractTask
 function mapStepRefs(
   canonical: CanonicalWorkflow,
   idx: { agents: Set<string>; tasks: Set<string>; agentFold: Map<string, string[]>; taskFold: Map<string, string[]> },
-  log: string[], stem: string,
+  log: string[], stem: string, prose: Record<string, string> = {},
 ): void {
   const remap = (value: string, known: Set<string>, fold: Map<string, string[]>): string | null => {
     if (known.has(value) || known.size === 0) return null;
@@ -369,12 +377,26 @@ function mapStepRefs(
     return suffix && suffix !== value ? suffix : null;
   };
   for (const s of canonical.steps) {
+    if (s.agent && /\.md$/i.test(s.agent) && !idx.agents.has(s.agent)) {
+      const bare = s.agent.replace(/\.md$/i, "");
+      log.push(`${stem}#${s.id}: agent ${s.agent} → ${bare}`); s.agent = bare;
+    }
     const a = s.agent ? remap(s.agent, idx.agents, idx.agentFold) : null;
     if (a) { log.push(`${stem}#${s.id}: agent ${s.agent} → ${a}`); s.agent = a; }
     const t = s.task ? remap(s.task, idx.tasks, idx.taskFold) : null;
     if (t) { log.push(`${stem}#${s.id}: task ${s.task} → ${t}`); s.task = t; }
     if (s.task && idx.tasks.size && !idx.tasks.has(s.task) && s.agent && namesTheAgent(s.task, s.agent)) {
       log.push(`${stem}#${s.id}: task ${s.task} names the agent ${s.agent} — dropped, the step is the agent acting`);
+      delete s.task;
+    }
+    // Still no document under any spelling: the v5 `action:` was a label of what
+    // the agent does in this step. It stays, as the step's description in the
+    // body, and the reference goes; a stub task would ship a method the squad
+    // does not have.
+    if (s.task && idx.tasks.size && !idx.tasks.has(s.task) && s.agent) {
+      const sentence = labelToSentence(s.task);
+      if (sentence) prose[s.id] = (prose[s.id] ? `${prose[s.id]}\n\n` : "") + sentence;
+      log.push(`${stem}#${s.id}: task ${s.task} is not a document — kept as the step's description`);
       delete s.task;
     }
   }

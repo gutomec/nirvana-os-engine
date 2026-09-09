@@ -412,6 +412,35 @@ steps:
     expect(graph.steps[1].task).toBe("build");
   }, spawnBudgetMs(1));
 
+  test("a prefixed agent ref, an agent ref with .md, and a label that is no document", () => {
+    const r = root();
+    const dir = fixture(r, "labels", { workflows: { "main.yaml": `name: main
+steps:
+  - id: plan
+    agent: sq-planner
+    task: plan
+  - id: build
+    agent: builder.md
+    requires: [plan]
+    task: setupFrontendProject
+  - id: ship
+    agent: builder
+    requires: [build]
+    task: test-checklist-flow
+` } });
+    const withFlag = runMigrate(r, ["labels", "--to", "6", "--apply", "--map-refs", "--json"]);
+    expect(withFlag.code).toBe(0);
+    expect(withFlag.json.gate.errors).toBe(0);
+    expect(withFlag.json.files[0].unresolved_refs).toEqual([]);
+    const md = fs.readFileSync(path.join(dir, "workflows", "main.md"), "utf8");
+    const graph: any = parseYaml(md.split("---")[1]);
+    expect(graph.steps.map((s: any) => s.agent)).toEqual(["planner", "builder", "builder"]);
+    expect(graph.steps.map((s: any) => s.task ?? null)).toEqual(["plan", null, null]);
+    expect(md).toContain("setup frontend project");
+    expect(md).toContain("test checklist flow");
+    expect(fs.readdirSync(path.join(dir, "tasks")).sort()).toEqual(["build.md", "plan.md"]);
+  }, spawnBudgetMs(1));
+
   test("camelCase folds to the kebab-case file", () => {
     expect(foldKey("validateMarketFit")).toBe("validate-market-fit");
     expect(foldKey("execute_ncm_classifier")).toBe("execute-ncm-classifier");
