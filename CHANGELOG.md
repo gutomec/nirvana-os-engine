@@ -14,6 +14,9 @@ Five library squads rolled back from the 6.0 migration with `steps.N.agent: Too 
 ### A pack ships Protocol 6.0 squads only
 
 The admission gate (`check-entity-admission.ts --pack`) treats a squad whose manifest is below Squad Protocol 6.0, or has no `protocol` at all, as a hard problem: the pack does not enter. Below 6.0 the workflow graph is a dialect every reader parses differently, and the fix is one command (`nrv migrate <slug> --to 6`), so this is never debt to record. The validator keeps reporting it as advice on an installed library, where `nrv doctor` counts the squads left to migrate.
+### The doctor's protocol census reads the whole manifest
+
+`nrv doctor` counted a squad as `unset` when its `protocol:` line came after the first 4 KB of `squad.yaml` — five library squads declare it after a long description, so a library entirely on 6.0 reported "5 below 6.0". The census now reads the whole manifest.
 
 ### `self_retrieval_miss` reports every missed brief
 
