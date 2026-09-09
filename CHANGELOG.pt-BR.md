@@ -6,6 +6,12 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Não lançado
+
+### O audit do cargo volta a ser JSONL, e o veredito do verify chega ao audit
+
+Duas regressões de 04/09/2026, as duas no pacote de empresas e as duas invisíveis para quem chama. O emissor de audit do prompt do cargo passou a escrever os dois caracteres `\` `n` entre eventos em vez de uma quebra de linha quando ganhou o carimbo de proveniência, então todo `mind_clone_injected` desde então caiu numa linha só que nenhum leitor de linhas consegue ler: o evento que prova que um clone foi injetado era o que sumia. E o `verify-deliverable` recalculava a raiz do run ao arquivar o veredito, sombreava a própria variável nisso, imprimia "audit emit failed non-fatal" e saía com o código do veredito, então o portão parecia saudável enquanto o audit nunca recebia um `verify_passed` ou `verify_failed`. A checagem agora informa o diretório do run que resolveu (`project_dir` no relatório) e o CLI arquiva o veredito ao lado dele. Os dois caminhos agora são relidos por testes.
+
 ## 0.13.4 — 2026-09-06
 
 ### `nrv glance --idle-min 0` significa sem desligamento por ociosidade, e as mensagens de hooks nomeiam `nrv setup`

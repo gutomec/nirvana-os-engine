@@ -41,6 +41,10 @@ export type DeliverableReport = {
   empty_or_stub: string[];
   delta_pct: number;
   min_bytes_threshold: number;
+  /** The run directory the check resolved (nested `outputs/<project_id>/` or the
+   *  flat chain root). The CLI files the verdict beside the run; recomputing the
+   *  root there is how a verdict once went nowhere. Absent when indeterminate. */
+  project_dir?: string;
   reason?: string;
 };
 
@@ -54,6 +58,7 @@ export function verifyDeliverableOnDisk(
 ): DeliverableReport {
   const minBytes = opts.minBytes ?? 200;
   const outputsRoot = opts.outputsRoot;
+  let resolvedProjectDir: string | undefined;
 
   const base = (
     status: DeliverableReport["status"],
@@ -69,6 +74,7 @@ export function verifyDeliverableOnDisk(
     empty_or_stub: [],
     delta_pct: 100,
     min_bytes_threshold: minBytes,
+    ...(resolvedProjectDir ? { project_dir: resolvedProjectDir } : {}),
     ...extra,
   });
 
@@ -92,6 +98,7 @@ export function verifyDeliverableOnDisk(
     return base("FAIL_INDETERMINATE", { reason: `project not found in ${projectRootCandidates.join(" or ")} (neither nested nor flat layout)` });
   }
   const projectDir = projectsRoot ? path.join(projectsRoot, projectId) : flatRoot!;
+  resolvedProjectDir = projectDir;
 
   const briefPath = path.join(projectDir, "brief.md");
   if (!fs.existsSync(briefPath)) {
@@ -191,6 +198,7 @@ export function verifyDeliverableOnDisk(
     empty_or_stub: empty,
     delta_pct: deltaPct,
     min_bytes_threshold: minBytes,
+    project_dir: projectDir,
   };
 }
 
@@ -245,13 +253,13 @@ if (import.meta.main) {
   // silent in the audit (matches the original, which exited before emit).
   if (r.status === "PASS" || r.status === "FAIL") {
     try {
-      const projectsRoot = [
-        path.join(process.cwd(), "outputs"),
-        path.join(process.cwd(), ".nirvana/outputs"),
-        path.join(os.homedir(), ".nirvana/outputs"),
-      ].find(p => fs.existsSync(path.join(p, projectId)))!;
-      const projectDir = path.join(projectDir, "businesses", businessSlug);
-      fs.mkdirSync(projectDir, { recursive: true });
+      // The check already resolved the run directory (nested or flat); the
+      // verdict is filed beside that run. This block once recomputed the root
+      // and shadowed its own variable, and the verdict never reached the audit.
+      if (!r.project_dir) throw new Error("verdict without a resolved run directory");
+      const projectDir = r.project_dir;
+      const businessOutDir = path.join(projectDir, "businesses", businessSlug);
+      fs.mkdirSync(businessOutDir, { recursive: true });
       const auditEntry = JSON.stringify({
         ts: report.timestamp,
         event: r.status === "PASS" ? "verify_passed" : "verify_failed",
@@ -264,7 +272,7 @@ if (import.meta.main) {
         stub_count: r.empty_or_stub.length,
         delta_pct: r.delta_pct,
       });
-      fs.appendFileSync(path.join(projectDir, "audit.jsonl"), auditEntry + "\n");
+      fs.appendFileSync(path.join(businessOutDir, "audit.jsonl"), auditEntry + "\n");
 
       // Also emit to harness daily audit (per-project when inside a project, else $HOME)
       const { harnessLogsDir } = require(path.join(SKILLS_ROOT, "_shared/lib/log-paths.ts"));
