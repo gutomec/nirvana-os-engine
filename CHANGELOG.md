@@ -11,6 +11,10 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 ### `self_retrieval_miss` reports every missed brief
 
 The `return` sat inside the loop over `example_briefs`, so the validator named one miss and stopped: an author fixing briefs one at a time learned about the next miss only after fixing this one, and "1 warning" could mean fourteen. Misses accumulate now, one finding per brief.
+### A memory edited in the entity after the seed is named, not silently ignored
+
+An entity's shipped `memory/*.md` is a seed: copied once into the canonical home and never read again. An author who kept editing the entity's copy changed nothing the prompt read, and nothing said so (measured: 53 lines lived only in one business's copy). The memory block now names the shipped files that differ from the home and says the home is what is read; `nrv memory relocate` prints the same line. The policy is unchanged.
+
 ### The routing digest has no budget by default
 
 `routing.digest_token_budget` defaults to 0, no budget: the digest ships whole and never degrades unless an owner sets a ceiling on purpose. The 50k default that shipped with the knob still degraded a large library to level 4 in silence, which is the behaviour the knob existed to end. A budget is a deliberate setting, not something considered by default.

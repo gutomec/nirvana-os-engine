@@ -19,7 +19,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { resolveScope } from "../../_shared/lib/scope.ts";
 import { paths } from "../../_shared/lib/bun-helpers.ts";
-import { MEMORY_FILES, entityMemoryDir, globalMemoryHome, seedFromEntity } from "../../_shared/lib/entity-memory.ts";
+import { MEMORY_FILES, entityMemoryDir, globalMemoryHome, seedFromEntity, seedDivergence } from "../../_shared/lib/entity-memory.ts";
 import { createRequire } from "node:module";
 const db = createRequire(import.meta.url)("../../_shared/lib/state-db.js");
 
@@ -160,6 +160,11 @@ if (sub === "add") {
       if (!fs.existsSync(path.join(memDir, name))) continue;
       if (fs.existsSync(path.join(dest, name))) { skipped++; continue; }
       pending.push(name);
+    }
+    // The home is what is read; an entity copy edited after the seed is silent
+    // drift, so say it here where the owner is looking.
+    for (const name of seedDivergence(kind, slug, entityDir)) {
+      console.log(`! ${slug}: memory/${name} differs from the home (${dest}) — the home is what is read; move the change with \`nrv memory add ${slug} "<fact>" --scope global\``);
     }
     if (!pending.length) { empty++; continue; }
     const bytes = pending.reduce((n, f) => n + fs.statSync(path.join(memDir, f)).size, 0);

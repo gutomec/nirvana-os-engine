@@ -11,7 +11,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-  MEMORY_FILES, entityMemoryDir, globalMemoryHome, memoryHomeFor, readEntityMemory, seedFromEntity,
+  MEMORY_FILES, entityMemoryDir, globalMemoryHome, memoryHomeFor, readEntityMemory, seedDivergence, seedFromEntity,
 } from "../lib/entity-memory.ts";
 
 let tmp: string;
@@ -182,5 +182,25 @@ describe("seedFromEntity — a shipped memory populates the home once, then stop
     const bizDir = business("acme", { "permanent.md": "# Permanent memory\n" });
     expect(seedFromEntity("businesses", "acme", bizDir)).toEqual([]);
     expect(fs.existsSync(entityMemoryDir("businesses", "acme", "global"))).toBe(false);
+  });
+});
+
+describe("an entity copy edited after the seed is named, not silently ignored", () => {
+  test("the home is what is read, and the block says the entity copy differs", () => {
+    const entity = path.join(tmp, "biz-drift");
+    fs.mkdirSync(path.join(entity, "memory"), { recursive: true });
+    fs.writeFileSync(path.join(entity, "memory", "permanent.md"), "- Decisão original. SEED-MARKER\n");
+    expect(seedFromEntity("businesses", "biz-drift", entity)).toEqual(["permanent.md"]);
+    expect(seedDivergence("businesses", "biz-drift", entity)).toEqual([]);
+
+    // The author keeps editing the shipped copy: the home does not change.
+    fs.writeFileSync(path.join(entity, "memory", "permanent.md"), "- Decisão original. SEED-MARKER\n- Linha nova que ninguém lê. EDIT-MARKER\n");
+    expect(seedDivergence("businesses", "biz-drift", entity)).toEqual(["permanent.md"]);
+    const mem = readEntityMemory("businesses", "biz-drift", { entityDir: entity });
+    expect(mem.diverged).toEqual(["permanent.md"]);
+    expect(mem.block).toContain("SEED-MARKER");
+    expect(mem.block).not.toContain("EDIT-MARKER");
+    expect(mem.block).toContain("difere da casa canônica");
+    expect(mem.block).toContain(path.join(entity, "memory", "permanent.md"));
   });
 });

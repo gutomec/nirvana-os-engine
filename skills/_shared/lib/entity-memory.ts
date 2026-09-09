@@ -132,12 +132,39 @@ export function seedFromEntity(kind: EntityKind, slug: string, entityDir: string
   return seeded;
 }
 
+/**
+ * The shipped memory files whose content no longer matches the canonical home.
+ *
+ * The seed is read once (see `seedFromEntity`). An author who keeps editing the
+ * entity's own `memory/*.md` changes nothing the prompt reads, and nothing said
+ * so: measured on an installed business, 53 lines lived only in the entity's
+ * copy and were never read. This names the files so the prompt, and `nrv
+ * memory`, can say where the truth is being read from.
+ */
+export function seedDivergence(kind: EntityKind, slug: string, entityDir: string): string[] {
+  const dest = entityMemoryDir(kind, slug, "global");
+  const out: string[] = [];
+  for (const name of MEMORY_FILES) {
+    const from = path.join(entityDir, "memory", name);
+    const to = path.join(dest, name);
+    if (!fs.existsSync(from) || !fs.existsSync(to)) continue;
+    try {
+      const shipped = fs.readFileSync(from, "utf8");
+      if (isStub(shipped.trim())) continue;
+      if (shipped !== fs.readFileSync(to, "utf8")) out.push(name);
+    } catch { /* unreadable — nothing to compare */ }
+  }
+  return out;
+}
+
 /** One scope's curated content, already read. */
 export interface ScopedMemory { scope: MemoryScope; dir: string; files: string[]; bytes: number; text: string }
 
 export interface EntityMemory {
   /** Prompt-ready block, or "" when nothing is curated in either scope. */
   block: string;
+  /** Shipped memory files that differ from the canonical home (see `seedDivergence`). */
+  diverged: string[];
   /** What each scope contributed. */
   scopes: ScopedMemory[];
   /** Bytes of memory content carried, both scopes together. */
@@ -184,13 +211,14 @@ export function readEntityMemory(
   opts: { projectRoot?: string; entityDir?: string; noticeBytes?: number } = {},
 ): EntityMemory {
   const seeded = opts.entityDir ? seedFromEntity(kind, slug, opts.entityDir) : [];
+  const diverged = opts.entityDir ? seedDivergence(kind, slug, opts.entityDir) : [];
   const notice = opts.noticeBytes ?? 8_000;
 
   const scopes = [
     readScope(kind, slug, "global"),
     opts.projectRoot ? readScope(kind, slug, "project", opts.projectRoot) : null,
   ].filter((s): s is ScopedMemory => s !== null);
-  if (!scopes.length) return { block: "", scopes: [], bytes: 0, seeded };
+  if (!scopes.length) return { block: "", scopes: [], bytes: 0, seeded, diverged };
 
   const bytes = scopes.reduce((n, s) => n + s.bytes, 0);
   const label: Record<MemoryScope, string> = {
@@ -203,13 +231,18 @@ export function readEntityMemory(
   const over = bytes > notice
     ? `\n\n> Esta memória soma ${bytes} bytes, acima do ponto de atenção de ${notice} — ela chega **inteira** mesmo assim.`
     : "";
+  const drift = diverged.length
+    ? `\n\n> **Atenção:** ${diverged.map((f) => `\`${path.join(opts.entityDir!, "memory", f)}\``).join(", ")} difere da casa canônica `
+      + `\`${entityMemoryDir(kind, slug, "global")}\`. O que você lê acima é a casa; a cópia da entidade foi só a semente inicial e não é relida. `
+      + `Quem editou a entidade precisa levar a mudança para a casa (\`nrv memory add ${slug} "<fato>" --scope global\`).`
+    : "";
 
   const block = `## MEMÓRIA DESTA ENTIDADE — ${slug} (entre sessões)\n\n`
     + `> Lições, decisões e princípios que sobreviveram a execuções anteriores. Honre-os.\n`
     + `> Ficam fora do diretório da entidade, porque a entidade é substituída quando atualiza.\n\n`
-    + `${body}${over}\n\n`
+    + `${body}${over}${drift}\n\n`
     + `> Para registrar algo novo, **você decide o escopo pelo que o fato significa**, não pelo diretório em que está: `
     + `\`nrv memory add ${slug} "<fato>" --scope global\` quando é verdade sobre a entidade em qualquer lugar, `
     + `\`--scope project\` quando só vale nesta execução/cliente. Na dúvida entre os dois, é project.\n\n---\n\n`;
-  return { block, scopes, bytes, seeded };
+  return { block, scopes, bytes, seeded, diverged };
 }
