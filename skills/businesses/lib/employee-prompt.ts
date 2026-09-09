@@ -38,6 +38,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import { parse as parseYaml } from "yaml";
 import { createRequire } from "node:module";
 import { stamp } from "../../_shared/lib/audit-provenance.ts";
 const requireCjs = createRequire(import.meta.url);
@@ -54,6 +55,8 @@ export type BuildArgs = {
   trace_id?: string;
   /** Clones the USER explicitly asked for (highest priority). Slugs or names. */
   requested_clones?: string[];
+  /** Clones the seat pins (its identity); channeled before anything else. */
+  pinned_clones?: string[];
 };
 
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
@@ -210,24 +213,58 @@ function loadSquadsRegistry(projectRoot?: string): { squads: Record<string, any>
   return { squads: filtered, scopeMode: scope.mode, squadDirs: scope.squadDirs };
 }
 
-/** Parse the squads_authorized list from an employee's YAML frontmatter. */
-function authorizedSquads(employeeContent: string): string[] {
+/** The frontmatter as YAML, or null when it is not valid YAML.
+ *
+ *  A YAML list has two spellings, a `- item` block and an inline `[a, b]`.
+ *  The line readers that used to live here accepted only the block form and
+ *  answered "nothing declared" for the other — and for `squads_authorized`
+ *  that inverted the seat's instruction: a closed set of squads, declared
+ *  inline, became "WITHOUT dispatching squads". The parser reads both. */
+function frontmatterData(employeeContent: string): Record<string, any> | null {
   const fm = employeeContent.match(/^---[\s\S]*?^---/m)?.[0] || "";
-  // Accept both `  - item` and `- item` indentations (YAML allows both at the
-  // top of a mapping value); stop at the next top-level key.
-  const m = fm.match(/^squads_authorized\s*:\s*\n((?:[ \t]*-\s.+\n?)+)/m);
+  if (!fm) return null;
+  try {
+    const d = parseYaml(fm.replace(/^---/, "").replace(/---\s*$/, ""));
+    return d && typeof d === "object" && !Array.isArray(d) ? d : null;
+  } catch { return null; }
+}
+
+/** A list field from the frontmatter: [] when absent, null when the
+ *  frontmatter is not YAML (the caller keeps its old line reader for that). */
+function listField(employeeContent: string, key: string): string[] | null {
+  const d = frontmatterData(employeeContent);
+  if (!d) return null;
+  const v = d[key];
+  if (v == null) return [];
+  return (Array.isArray(v) ? v : [v]).map(x => String(x ?? "").trim()).filter(Boolean);
+}
+
+/** The block-form line reader, kept only for frontmatter that is not YAML. */
+function blockList(employeeContent: string, key: string): string[] {
+  const fm = employeeContent.match(/^---[\s\S]*?^---/m)?.[0] || "";
+  const m = fm.match(new RegExp(`^${key}\\s*:\\s*\\n((?:[ \\t]*-\\s.+\\n?)+)`, "m"));
   if (!m) return [];
   return m[1].split("\n").map(l => l.replace(/^[ \t]*-\s*/, "").trim()).filter(Boolean);
 }
 
+/** Parse the squads_authorized list from an employee's YAML frontmatter. */
+function authorizedSquads(employeeContent: string): string[] {
+  return listField(employeeContent, "squads_authorized") ?? blockList(employeeContent, "squads_authorized");
+}
+
 /** Parse the assigned_mind_clones list from an employee's YAML frontmatter.
- *  Same shape as squads_authorized. Refs may be category-prefixed
- *  (e.g. "21-media-moguls/jane-friedman") or flat ("alex-hormozi"). */
+ *  Refs may be category-prefixed (e.g. "21-media-moguls/jane-friedman") or
+ *  flat ("alex-hormozi"). */
 function assignedMindClones(employeeContent: string): string[] {
-  const fm = employeeContent.match(/^---[\s\S]*?^---/m)?.[0] || "";
-  const m = fm.match(/^assigned_mind_clones\s*:\s*\n((?:[ \t]*-\s.+\n?)+)/m);
-  if (!m) return [];
-  return m[1].split("\n").map(l => l.replace(/^[ \t]*-\s*/, "").trim()).filter(Boolean);
+  return listField(employeeContent, "assigned_mind_clones") ?? blockList(employeeContent, "assigned_mind_clones");
+}
+
+/** The clones a seat PINS (Business Protocol v2 §7.7): the seat whose identity
+ *  is the clone. The validator checked the field and nothing at runtime read
+ *  it, so a typed mind_clone seat ran without its voice unless the author
+ *  repeated the slug under assigned_mind_clones. */
+function pinnedMindClones(employeeContent: string): string[] {
+  return listField(employeeContent, "pinned_mind_clones") ?? blockList(employeeContent, "pinned_mind_clones");
 }
 
 /** Split a clone ref into {category, slug}. "_root" means the clone lives
@@ -285,7 +322,10 @@ function squadCatalogBlock(employeeContent: string, projectRoot?: string): strin
       `> For local projects without their own squads, run in \`merge\` or \`global\` mode to reach the general registry, or create squads under \`<projectRoot>/.nirvana/squads/\` and run \`nrv index\`.`,
     ].join("\n");
   }
-  const authorized = authorizedSquads(employeeContent).filter(s => reg[s]);
+  // The declared set stays declared even when this scope's catalog lacks one of
+  // its squads: filtering them out here turned a closed set of uninstalled
+  // squads into "declared EMPTY", the instruction not to dispatch at all.
+  const authorized = authorizedSquads(employeeContent);
   const lines: string[] = [
     "## AVAILABLE SQUADS (dispatch the specialists — don't improvise what they do better)",
     "",
@@ -298,6 +338,7 @@ function squadCatalogBlock(employeeContent: string, projectRoot?: string): strin
     lines.push("");
     for (const slug of authorized) {
       const s = reg[slug];
+      if (!s) { lines.push(`- **${slug}** — (not in the catalog of this scope; install or activate it before dispatching)`); continue; }
       const doms = (s.domains || []).slice(0, 4).join(", ");
       const caps = (s.capabilities || []).slice(0, 3).map((c: any) => typeof c === "string" ? c : c.id).filter(Boolean).join(" · ");
       lines.push(`- **${slug}** — ${doms || "(no domains)"}${caps ? "\n  - capabilities: " + caps : ""}`);
@@ -444,6 +485,10 @@ function resolveClonesByPriority(args: BuildArgs): CloneInjection {
   };
 
   // 1. REQUESTED
+  // A pinned clone is the seat's identity: channeled whatever the task says,
+  // before the user's requests and before any search.
+  for (const r of (args.pinned_clones || [])) push(parseCloneRef(r).slug, "pinned");
+  const hadPinned = personas.length > 0;
   const requested = new Set<string>();
   for (const r of (args.requested_clones || [])) requested.add(parseCloneRef(r).slug);
   for (const s of scanBriefForClones(args.brief)) requested.add(s);
@@ -466,7 +511,8 @@ function resolveClonesByPriority(args: BuildArgs): CloneInjection {
   // entitled to, and one it contradicts three lines later by listing a strong
   // candidate. Nothing was auto-injected; whether a clone is useful here is the
   // agent's call, made against the ranked list.
-  const decision = hadRequested ? "REQUESTED by the user"
+  const decision = hadPinned ? (personas.some(p => p.reason === "requested") ? "PINNED to the seat + REQUESTED by the user" : "PINNED to the seat")
+    : hadRequested ? "REQUESTED by the user"
     : personas.length ? "found by SEARCH for the task"
     : "YOURS — none auto-injected, pick from the ranked candidates";
 
@@ -573,7 +619,7 @@ export function buildEmployeePrompt(args: BuildArgs): string {
   let clonesInjected = false;
   let contributionsBlock = "";
   if (args.include_dna !== false) {
-    const inj = resolveClonesByPriority(args);
+    const inj = resolveClonesByPriority({ ...args, pinned_clones: [...(args.pinned_clones || []), ...pinnedMindClones(employeeContent)] });
     cloneDecision = inj.decision;
     clonesInjected = inj.personas.length > 0;
     for (const p of inj.personas) {

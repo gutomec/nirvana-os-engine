@@ -64,6 +64,25 @@ describe("readCloneBindings", () => {
     expect(scan.availableClones.has("jane-friedman")).toBeTrue();
   });
 
+  test("an inline list and a pinned clone are bindings too", () => {
+    // Both spellings of a YAML list are the same data to the parser; the
+    // closure used to see only the block form. And `pinned_mind_clones` is the
+    // seat whose identity is the clone — the last field that may go unread.
+    const pack = packFixture();
+    clone(pack, "mark-cerny");
+    clone(pack, "jesse-schell");
+    clone(pack, "shigeru-miyamoto");
+    business(pack, "biz-inline", {
+      "designer": 'assigned_mind_clones: ["01-game/mark-cerny", "jesse-schell"]',
+      "director": "type: mind_clone\npinned_mind_clones:\n  - shigeru-miyamoto",
+    });
+    const scan = readCloneBindings({
+      businessesDir: join(pack, "businesses"),
+      clonesDir: join(pack, "mind-clones"),
+    });
+    expect(scan.bindings.map((x) => x.clone).sort()).toEqual(["jesse-schell", "mark-cerny", "shigeru-miyamoto"]);
+  });
+
   test("a clone the pack does not carry is a binding, not an omission", () => {
     const pack = packFixture();
     business(pack, "biz-b", { "ceo": "assigned_mind_clones:\n  - ghost-expert" });

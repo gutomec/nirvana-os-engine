@@ -72,6 +72,32 @@ function declaredBy(employeeFile) {
   const text = readFileSync(employeeFile, "utf8");
   const fm = text.match(/^---[\s\S]*?^---/m)?.[0] ?? "";
   const out = [];
+  // The frontmatter is YAML, and a YAML list has two spellings: a `- item`
+  // block and an inline `[a, b]`. The line reader below accepted only the
+  // block form and answered "no clones" for the other, so a seat's clones
+  // never entered the pack closure. And `pinned_mind_clones` — the field the
+  // protocol created for the seat whose identity IS the clone — was not read
+  // at all: the one clone that most needed to travel was the one that did not.
+  let data = null;
+  try { data = parseYaml(fm.replace(/^---/, "").replace(/---\s*$/, "")); } catch { data = null; }
+  if (data && typeof data === "object") {
+    for (const key of ["assigned_mind_clones", "pinned_mind_clones"]) {
+      const v = data[key];
+      const items = Array.isArray(v) ? v : (typeof v === "string" && v.trim() ? [v] : []);
+      for (const item of items) {
+        const s = item == null ? "" : String(item).trim();
+        if (s) out.push(slugOf(s));
+      }
+    }
+    const refs = Array.isArray(data.dna_reference) ? data.dna_reference : (data.dna_reference != null ? [data.dna_reference] : []);
+    for (const r of refs) {
+      const slug = refToSlug(String(r));
+      if (slug) out.push(slug);
+    }
+    return out;
+  }
+  // Frontmatter that is not valid YAML: the old line reader, so a stray tab
+  // does not turn a declared clone into a missing one.
   const list = fm.match(/^assigned_mind_clones\s*:\s*\n((?:[ \t]*-\s.+\n?)+)/m);
   if (list) {
     for (const line of list[1].split("\n")) {
