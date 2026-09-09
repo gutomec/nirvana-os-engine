@@ -801,7 +801,9 @@ if (fs.existsSync(dnaLib)) {
 {
   const RETIRED_SEAT_FIELDS = /^(heartbeat|self_score_contract|draws_from|dna_reference|budget_monthly_usd|mentions|escalation_triggers|disclosure_template|default_tools|project_tool_overrides):/m;
   const declared = (file: string): string | null => {
-    try { return /^protocol:\s*["']?([\d.]+)/m.exec(fs.readFileSync(file, "utf8").slice(0, 4096))?.[1] ?? null; }
+    // The whole manifest: five library squads declare `protocol:` after a
+    // 4 KB description, and a window that short counted them as unset.
+    try { return /^protocol:\s*["']?([\d.]+)/m.exec(fs.readFileSync(file, "utf8"))?.[1] ?? null; }
     catch { return null; }
   };
   const dirsOf = (root: string): string[] => {
