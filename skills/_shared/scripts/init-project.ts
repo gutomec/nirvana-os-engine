@@ -36,6 +36,7 @@ import * as os from "node:os";
 import { parseArgs, EXIT, log, paths } from "../lib/bun-helpers.ts";
 import { ProjectService } from "../../harness/lib/control-plane/project-service.ts";
 import { openclawAgentFor, openclawBindCommand } from "../lib/openclaw.ts";
+import { detectOrca, orcaHostActive, orcaRegisterProject, orcaSetWorkspace, resolveOrcaExecutable } from "../lib/orca.ts";
 
 const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
   || (fs.existsSync(path.join(os.homedir(), ".nirvana", "skills")) ? path.join(os.homedir(), ".nirvana", "skills") : path.join(os.homedir(), ".claude", "skills"));
@@ -595,6 +596,25 @@ async function main() {
     }
     if (binOnPath("hermes")) {
       log.info(`Hermes: nrv-hermes from this directory (or hermes chat --in ${target}) — AGENTS.md is injected from cwd and the audit hooks already log here.`);
+    }
+    // Orca is a host: a project it knows is a workspace with a card that the
+    // ledger keeps current. Inside an Orca terminal the new project is
+    // registered here (that is what opening it in Orca means); outside, the
+    // one command is printed and nothing is called.
+    const orcaExe = resolveOrcaExecutable();
+    const orcaHere = detectOrca();
+    if (orcaHere && orcaHostActive()) {
+      const resolvedTarget = fs.realpathSync(target);
+      if (orcaHere.worktreeId && orcaHere.worktreeId.split("::").pop() === resolvedTarget) {
+        orcaSetWorkspace({ comment: "nirvana project · ready", status: "todo" });
+        log.ok("Orca: this directory is the current Orca workspace; its card now follows the ledger.");
+      } else {
+        const reg = orcaRegisterProject(resolvedTarget);
+        if (reg.ok) log.ok(`Orca: registered as workspace '${reg.displayName ?? path.basename(target)}' — every run shows on its card.`);
+        else log.info(`Orca: could not register this directory (${reg.reason}); register it with: ${orcaExe} repo add --path ${target}`);
+      }
+    } else if (binOnPath(orcaExe)) {
+      log.info(`Orca: ${orcaExe} repo add --path ${target} makes this project an Orca workspace; inside Orca every run shows on its card and headless dispatches run as worker terminals.`);
     }
   } catch { /* hints are best-effort */ }
   process.exit(EXIT.OK);

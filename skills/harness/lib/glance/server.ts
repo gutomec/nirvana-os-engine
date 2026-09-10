@@ -38,6 +38,7 @@ import {
   createEmployeeBelow,
 } from "./data-loader.ts";
 import { startJob, getJob, listJobs, streamJob, cancelJob, isMutatingActive } from "./action-runner.ts";
+import { orcaOpenUrl } from "../../../_shared/lib/orca.ts";
 import { deriveAgentStates, summarizeStates } from "./agent-state.ts";
 import { readSubsystems } from "./subsystems.ts";
 import { paths, invalidatePathsCache, overridePath } from "../../../_shared/lib/bun-helpers.ts";
@@ -249,6 +250,10 @@ function methodNotAllowed(): Response {
 }
 
 function openBrowser(url: string) {
+  // Inside Orca the cockpit opens in the app's embedded browser, scoped to the
+  // enclosing workspace; anywhere else (or if that tab cannot be created) the
+  // system browser is the same as always.
+  try { if (orcaOpenUrl(url)) return; } catch { /* fall through to the system browser */ }
   const platform = process.platform;
   const cmd = platform === "darwin" ? "open"
             : platform === "win32" ? "start ''"

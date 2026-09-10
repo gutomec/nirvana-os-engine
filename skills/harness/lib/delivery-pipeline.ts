@@ -471,6 +471,7 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
       sessionId: sessionId || undefined,
       appendSystemPrompt: AUTONOMOUS_DIRECTIVE + (args.rulesDirective ?? ""),
       maxBudgetUsd: args.maxBudgetUsd, timeoutMs: args.timeoutMs, yolo: args.yolo,
+      label: `revision ${revUsed}`,
       ...(led ? { ledger: { runId: led.runId, watchDir: args.outputsRoot } } : {}),
     });
     emit("revision_auto", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, attempt: revUsed, ok: rr.ok });

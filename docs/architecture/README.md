@@ -57,6 +57,7 @@ Este diretório é a fonte canônica para a evolução integrada do Run Kernel, 
 - [ADR-006: modo Gauntlet](adrs/ADR-006-gauntlet-execution-mode.md)
 - [ADR-007: Glance e ProjectService](adrs/ADR-007-glance-project-control-plane.md)
 - [ADR-008: migração por facade](adrs/ADR-008-compatibility-facade.md)
+- [ADR-009: Orca como host (projeção e transporte)](adrs/ADR-009-orca-host.md)
 
 ## Gate documental
 

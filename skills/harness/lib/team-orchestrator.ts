@@ -359,6 +359,7 @@ function runStep(step: ChainStep, idx: number, total: number, args: TeamRunArgs,
     maxBudgetUsd: args.maxBudgetUsd, timeoutMs: args.timeoutMs,
     brief: args.brief, projectRoot: args.projectRoot, outputsRoot: employeeOutDir,
     taskHint: `team-step ${idx + 1}/${total} (${step.employee})`,
+    label: `${args.slug}/${step.employee}`,
     projectId: args.projectId,
   });
 

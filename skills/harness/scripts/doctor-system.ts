@@ -29,6 +29,7 @@ import { resolveScope, enumerate } from "../../_shared/lib/scope.ts";
 import { RUNTIME_TARGETS, RUNTIME_SKILL_DIRS, PROJECT_CONTRACT_FILES, SKILLS as SKILL_NAMES } from "../../_shared/lib/runtime-dirs.ts";
 import { listRuntimes, whichSync } from "../../_shared/lib/host-agent-driver.ts";
 import { openclawAgentsOnProjects } from "../../_shared/lib/openclaw.ts";
+import { detectOrca, orcaHooksStatus, orcaHostActive, orcaStatus, resolveOrcaExecutable } from "../../_shared/lib/orca.ts";
 import { codexConfigPath, codexHookTrustEntries, codexHooksPath } from "../../_shared/lib/codex-hooks.ts";
 import { expandEnv, findTempNrvEntries, readUserPath, tempRoots } from "../../_shared/lib/windows-user-path.ts";
 import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
@@ -147,6 +148,29 @@ if (which("openclaw")) {
     bound.length
       ? bound.map((a) => `${a.id} → ${a.workspace!.replace(HOME, "~")}`).join(", ")
       : "none bound — `openclaw agents add <name> --workspace <project> --non-interactive` makes a project the agent's home");
+}
+
+// SECTION 1a-orca: THE ORCA HOST — Orca is a host, not a runtime: it manages
+// workspaces and the terminals the agents run in. Inside one of its terminals
+// the engine projects every run onto the workspace card and runs headless
+// dispatches as worker terminals (ADR-009). Informational: a machine without
+// Orca is not degraded, and one with Orca closed is told how to open it.
+{
+  const exe = resolveOrcaExecutable();
+  if (which(exe)) {
+    const status = orcaStatus();
+    const here = detectOrca();
+    const session = here ? `; this terminal: ${here.worktreeId ? `worktree ${here.worktreeId.split("::").pop()}` : "an Orca pane"}` : "";
+    if (!status.running) {
+      add("orca: host", "PASS", `${exe} on PATH; app not running (start it with: ${exe} open)${session}`);
+    } else {
+      const hooks = orcaHooksStatus();
+      const hookText = hooks ? (hooks.installed.length ? `hooks on ${hooks.installed.join(", ")}` : "no agent hooks installed") : "hooks: unknown";
+      const orch = status.orchestration ? "orchestration available" : "orchestration not advertised (Settings → Experimental)";
+      const mode = orcaHostActive() ? "host active" : "host inactive here (auto = inside an Orca terminal)";
+      add("orca: host", "PASS", `app ${status.appVersion ?? "?"}; ${hookText}; ${orch}; ${mode}${session}`);
+    }
+  }
 }
 
 // SECTION 1a-quater: CODEX AUDIT HOOKS — present is not enough; Codex skips a

@@ -219,6 +219,15 @@ function emit(event, payload, ctx) {
     if (ctx.session_id) base.session_id = ctx.session_id;
   }
   const ev = Object.assign(base, payload || {});
+  // Emitted from an Orca terminal, the event says which workspace and pane:
+  // the reader (Glance, `nrv audit where`) can then point at the tab a run
+  // happened in. Outside Orca the block is absent — nothing else changes.
+  if (ev.orca === undefined) {
+    try {
+      const orcaCtx = require('../../_shared/lib/orca.js').orcaAuditContext();
+      if (orcaCtx) ev.orca = orcaCtx;
+    } catch { /* detection is best-effort */ }
+  }
   // Dual-write: SQLite primary (when available) + JSONL fallback. The JSONL
   // continues to be authoritative for legacy readers; SQLite is the new
   // race-safe substrate. When SQLite is rolled out across all readers, we

@@ -256,6 +256,13 @@ export const SETTINGS = {
     "Orçamento em tokens do digest de roteamento (chars/4); acima dele o digest degrada por níveis. 0 = sem teto (padrão).",
     { default: 0, type: nonNegativeInt, expects: "inteiro >= 0 (tokens); 0 = sem teto" }),
 
+  "host.orca": enumSetting("host.orca",
+    "Host Orca: auto = só dentro de um terminal do Orca; on = sempre que o app responder; off = nunca chamar o Orca.",
+    ["auto", "on", "off"], { default: "auto", env: "NIRVANA_ORCA_HOST" }),
+  "host.orca_workers": booleanSetting("host.orca_workers",
+    "Com o host Orca ativo, cada despacho headless roda num terminal de worker do Orca; false mantém o processo filho invisível.",
+    { default: true, env: "NIRVANA_ORCA_WORKERS" }),
+
   "supervisor.progress_ping_sec": numberSetting("supervisor.progress_ping_sec",
     "Intervalo em segundos do aviso de progresso de um run longo; 0 silencia.",
     { default: 1800, env: "NIRVANA_PROGRESS_PING_SEC", type: nonNegativeInt, expects: "inteiro >= 0 (segundos)" }),
