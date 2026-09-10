@@ -564,6 +564,7 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
     maxBudgetUsd: args.maxBudgetUsd, timeoutMs: args.timeoutMs,
     brief: args.brief, projectRoot: args.projectRoot, outputsRoot: outDir,
     taskHint: args.mode === "team-mandatory" ? `mandatory squad: ${args.squadSlug}` : `squad-only dispatch: ${args.squadSlug}`,
+    label: `squad ${args.squadSlug}`,
     projectId: args.projectId,
     ...(args.ledger ? { ledger: { runId: args.ledger.runId, watchDir: args.ledger.watchDir ?? outDir } } : {}),
   };

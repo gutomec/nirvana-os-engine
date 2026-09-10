@@ -78,6 +78,14 @@ function appendEvent(ev: Record<string, any>): void {
     const file = path.join(dir, "audit.jsonl");
     // Stamped like every other engine write, so a hook-sourced event reads as
     // `engine` in Glance and `nrv audit where` instead of `unsigned`.
+    // Same `orca` block the canonical emitter adds: a hook event from an Orca
+    // terminal names its workspace and pane; outside Orca nothing is added.
+    if (ev.orca === undefined) {
+      try {
+        const orcaCtx = require("../lib/orca.js").orcaAuditContext();
+        if (orcaCtx) ev.orca = orcaCtx;
+      } catch { /* detection is best-effort */ }
+    }
     let out: Record<string, any> = ev;
     try { out = require("../lib/audit-provenance.js").stamp(ev); } catch { /* no key — still log */ }
     fs.appendFileSync(file, JSON.stringify(out) + "\n", "utf8");

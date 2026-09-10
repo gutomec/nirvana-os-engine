@@ -9,6 +9,7 @@
 // "we hung on telling you", which is worse than silence.
 
 import { spawn } from "node:child_process";
+import { orcaNotify } from "../../_shared/lib/orca.ts";
 
 /** Opt out for tests, CI, and anyone who does not want the popups. */
 function suppressed(): boolean {
@@ -35,6 +36,9 @@ export function notifyDesktop(title: string, message: string): void {
   if (suppressed()) return;
   const text = message.replace(/\s+/g, " ").trim().slice(0, 240);
   if (!text) return;
+  // Inside Orca the same text lands on the workspace card, where the owner who
+  // works there is looking. Best-effort like everything else in this file.
+  try { orcaNotify(title, text); } catch { /* never block the popup */ }
 
   if (process.platform === "darwin") {
     fire("osascript", ["-e", `display notification ${JSON.stringify(text)} with title ${JSON.stringify(title)}`]);

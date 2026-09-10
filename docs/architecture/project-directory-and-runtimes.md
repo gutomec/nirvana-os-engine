@@ -140,6 +140,28 @@ The payload Codex sends is the shape the Claude bridge already reads
 per file. Hook events are stamped like every other engine write, so they read as
 `engine` in Glance and `nrv audit where`.
 
+## 4c. Orca: a host, not a runtime
+
+Orca manages workspaces and the terminals agents run in; the runtime inside
+one of its terminals is still Claude Code, Codex, Gemini or another CLI, so
+the rule of §1 holds unchanged: the agent works in the project directory.
+What Orca adds, the engine uses only when it detects the host
+(`TERM_PROGRAM=Orca`, `ORCA_TERMINAL_HANDLE`, `ORCA_WORKTREE_ID`) and never
+otherwise — `host.orca` (`auto` | `on` | `off`) overrides detection.
+
+Inside an Orca terminal: every audit event carries an `orca` block naming the
+workspace and pane; `nrv init` registers the new project as a workspace;
+each ledger transition updates the workspace card (comment and board column);
+desktop notifications land on the card; `nrv glance` opens in Orca's embedded
+browser; and, with `host.orca_workers` on (its default) and Orca's
+orchestration enabled, every headless dispatch runs as a worker terminal
+titled `<business>/<employee> · claude` (or `squad <slug>`, `agent-x`), the
+engine waiting for its `worker_done` before verifying and gating as always.
+Children the engine spawns lose Orca's pane variables, so a `claude -p` is not
+reported as the coordinator pane's agent. The whole contract, the fallbacks
+and the measured behaviour are in `skills/_shared/adapters/orca.md` and
+`adrs/ADR-009-orca-host.md`.
+
 ## 5. Hermes
 
 Hermes works in cwd and injects `AGENTS.md` from it (what `--ignore-rules`

@@ -51,6 +51,8 @@ import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import { resolveSystemModel } from "./system-model.ts";
 import { resolveSetting } from "./settings.ts";
+import { childEnv } from "./orca.ts";
+import { runOrcaWorker } from "./orca-worker.ts";
 
 const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
   || (fs.existsSync(path.join(os.homedir(), ".nirvana", "skills")) ? path.join(os.homedir(), ".nirvana", "skills") : path.join(os.homedir(), ".claude", "skills"));
@@ -783,7 +785,7 @@ export function callHostAgent(persona: string, userMessage: string, opts: CallOp
       encoding: "utf8",
       timeout: opts.timeoutMs ?? DEFAULT_INACTIVITY_BUDGET_MS,
       maxBuffer: 8 * 1024 * 1024,
-      env: { ...process.env },
+      env: childEnv(),
       ...(exec.shell ? { shell: true } : {}),
       ...(call.input !== undefined ? { input: call.input } : {}),
     });
@@ -951,7 +953,7 @@ export function callHostAgentAsync(persona: string, userMessage: string, opts: C
     const call = adapterCall(host, persona || "", userMessage);
     const exec = resolveExecutable(host.cli);
     const child = spawn(exec.command, exec.args(call.args), {
-      env: { ...process.env },
+      env: childEnv(),
       ...(exec.shell ? { shell: true } : {}),
       stdio: [call.input !== undefined ? "pipe" : "ignore", "pipe", "pipe"],
     });
@@ -1168,6 +1170,10 @@ export interface RunHeadlessOpts {
    * 5 min). This is an early warning and kills nothing: the lease is what
    * decides. Only meaningful together with opts.ledger. */
   stallBudgetMs?: number;
+  /** Human label for a host that shows one terminal per run (Orca names the
+   * worker tab with it): `business/employee`, `squad <slug>`, `agent-x`.
+   * Absent, the host labels the run by runtime. */
+  label?: string;
 }
 
 export interface LedgerHeartbeatOpts {
@@ -1330,7 +1336,10 @@ function driverSpawnSync(cmd: string, args: string[], options: SpawnSyncOptions 
   const exec = resolveExecutable(cmd);
   cmd = exec.command;
   args = exec.args(args);
-  options = { env: { ...process.env }, ...(exec.shell ? { shell: true } : {}), ...options };
+  // childEnv(): the live process.env minus Orca's pane identity, so a child the
+  // engine spawns inside an Orca terminal is not reported to Orca as that
+  // pane's agent (see _shared/lib/orca.js). Outside Orca it is process.env.
+  options = { env: childEnv(), ...(exec.shell ? { shell: true } : {}), ...options };
   if (!managedCtx) return spawnSync(cmd, args, options) as SpawnSyncReturns<string>;
   // "w" truncates between attempts (some runners retry without a flag); the
   // sidecar treats ANY size change as activity, so truncation is safe.
@@ -2249,6 +2258,11 @@ export function runHeadless(opts: RunHeadlessOpts): RunHeadlessResult {
 }
 
 function dispatchToRunner(opts: RunHeadlessOpts): RunHeadlessResult {
+  // Inside Orca (host.orca, host.orca_workers) the dispatch runs as a visible
+  // worker terminal; null means the transport does not apply or could not
+  // start, and the headless child below runs exactly as everywhere else.
+  const viaOrca = runOrcaWorker(opts);
+  if (viaOrca) return viaOrca;
   switch (opts.runtime) {
     case "claude-code":
       return runClaudeCode(opts);

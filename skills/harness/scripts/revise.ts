@@ -152,6 +152,7 @@ const res = runHeadless({
   maxBudgetUsd: maxBudget ? parseFloat(maxBudget) : undefined,
   timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
   yolo,
+  label: `revise ${projectId}`,
 });
 
 // claude --resume can mint a fresh session id; persist whatever we got back.

@@ -412,6 +412,7 @@ export function runAgentX(args: RunAgentXArgs): AgentXResult {
     maxBudgetUsd: args.maxBudgetUsd, timeoutMs: args.timeoutMs, yolo: args.yolo,
     brief: args.brief, projectRoot: args.projectRoot, outputsRoot: args.outputsRoot,
     taskHint: "agent-x fallback (cascade bottom)",
+    label: "agent-x",
     projectId: args.projectId,
     ...(args.ledger ? { ledger: { runId: args.ledger.runId, watchDir: args.ledger.watchDir ?? args.outputsRoot } } : {}),
   });

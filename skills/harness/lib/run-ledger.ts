@@ -46,6 +46,7 @@ import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
+import { orcaProjectRun } from "../../_shared/lib/orca.ts";
 
 // ── states ──────────────────────────────────────────────────────────────
 
@@ -412,6 +413,13 @@ function emitLedgerAudit(event: string, payload: Record<string, unknown>, row?: 
   }
 }
 
+/** The host's projection of a run: inside Orca the workspace card shows the
+ *  run's target and state (ADR-009). Fire-and-forget and gated by detection —
+ *  outside Orca this is a no-op, and a failure here never touches the row. */
+function projectToHost(row: RunRow): void {
+  try { orcaProjectRun(row); } catch { /* a projection never fails the ledger */ }
+}
+
 // ── helpers ─────────────────────────────────────────────────────────────
 
 function nowIso(now?: number): string {
@@ -745,6 +753,7 @@ export function openRun(handle: LedgerHandle, opts: OpenRunOpts): RunRow {
     run_id: runId, target_slug: row.target_slug, target_kind: row.target_kind,
     runtime: row.runtime, lease_expires_at: row.lease_expires_at, max_retries: row.max_retries,
   }, row);
+  projectToHost(row);
   return row;
 }
 
@@ -885,6 +894,7 @@ export function markState(handle: LedgerHandle, runId: string, next: RunState, e
   }, row);
   const updated = getRun(handle, runId)!;
   if (SENTINEL_STATES.has(next)) writeRunSignal(updated);
+  projectToHost(updated);
   return updated;
 }
 

@@ -65,6 +65,8 @@ Gerada a partir do schema. `nrv config explain <chave>` mostra a descrição de 
 | `routing.dense` | `NIRVANA_ROUTER_DENSE` (`1` = fallback, `0` = off) | `off` | global, projeto | off / fallback |
 | `routing.on_router_failure` | nenhuma | `agent-x-only` | global, projeto | cascade / agent-x-only / fail |
 | `routing.digest_token_budget` | nenhuma | `0` (sem teto) | global, projeto | inteiro >= 0 (tokens); 0 = sem teto |
+| `host.orca` | `NIRVANA_ORCA_HOST` | `auto` | global, projeto | auto (só dentro de um terminal do Orca) / on / off |
+| `host.orca_workers` | `NIRVANA_ORCA_WORKERS` | `true` | global, projeto | true / false |
 | `supervisor.progress_ping_sec` | `NIRVANA_PROGRESS_PING_SEC` | `1800` | global, projeto | inteiro >= 0 (segundos) |
 | `supervisor.stall_threshold_ms` | `NIRVANA_STALL_THRESHOLD_MS` | `300000` | global, projeto | inteiro > 0 (milissegundos) |
 | `supervisor.touch_events_max` | `NIRVANA_TOUCH_EVENTS_MAX` | `500` | global, projeto | inteiro >= 0 (eventos); 0 = não relata arquivos |
