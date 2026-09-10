@@ -46,7 +46,6 @@ import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
-import { orcaProjectRun } from "../../_shared/lib/orca.ts";
 
 // ── states ──────────────────────────────────────────────────────────────
 
@@ -414,10 +413,23 @@ function emitLedgerAudit(event: string, payload: Record<string, unknown>, row?: 
 }
 
 /** The host's projection of a run: inside Orca the workspace card shows the
- *  run's target and state (ADR-009). Fire-and-forget and gated by detection —
- *  outside Orca this is a no-op, and a failure here never touches the row. */
+ *  run's target and state (ADR-009). Gated by detection — outside Orca this is
+ *  a no-op — and a failure here never touches the row.
+ *
+ *  The detection gate is the CJS core (environment only) and the typed module
+ *  is loaded on first use, never at import: this file is the heartbeat
+ *  sidecar's entry point, and a static import of the settings core would put
+ *  its startup on the sidecar's clock on every run, Orca or not. */
+let _orcaProject: ((row: RunRow) => boolean) | null | false = null;
 function projectToHost(row: RunRow): void {
-  try { orcaProjectRun(row); } catch { /* a projection never fails the ledger */ }
+  try {
+    const core = createRequire(import.meta.url)("../../_shared/lib/orca.js");
+    if (!core.orcaHostActiveEnv(process.env)) return;
+    if (_orcaProject === null) {
+      try { _orcaProject = createRequire(import.meta.url)("../../_shared/lib/orca.ts").orcaProjectRun; } catch { _orcaProject = false; }
+    }
+    if (_orcaProject) _orcaProject(row);
+  } catch { /* a projection never fails the ledger */ }
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────

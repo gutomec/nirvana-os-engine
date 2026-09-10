@@ -30,7 +30,7 @@ An Orca terminal exports `TERM_PROGRAM=Orca`, `ORCA_WORKTREE_ID` (`<repoId>::<pa
 | `host.orca` | `NIRVANA_ORCA_HOST` | `auto` | `auto`: only inside an Orca terminal. `on`: from any terminal, if the app answers (the workspace is then selected by the project path). `off`: never call Orca. |
 | `host.orca_workers` | `NIRVANA_ORCA_WORKERS` | `true` | With the host active, a headless dispatch runs as a worker terminal. `false` keeps the invisible child process. |
 
-`nrv config set host.orca off` is honored everywhere the settings core is read; the variable is honored by the CJS audit emitter too.
+`nrv config set host.orca off` is honored everywhere the settings core is read; the variable is honored by the CJS audit emitter too. The ledger's card projection gates on the variable and the terminal markers first (its module is the heartbeat sidecar's entry point and must not pay for the settings core on every start); a config-file `on` outside an Orca terminal reaches it through the variable the spawners pin on their children.
 
 ## 3. What changes inside Orca
 

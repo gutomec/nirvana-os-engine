@@ -145,9 +145,11 @@ describe("with a fake orca on PATH", () => {
     delete process.env.ORCA_DEV_REPO_ROOT;
     delete process.env.NIRVANA_ORCA_HOST;
     delete process.env.NIRVANA_ORCA_WORKERS;
-    // On Linux the resolver outside an Orca terminal names `orca-ide`; the fake
-    // answers to that name too, so the "nothing spawned" proof holds there.
-    writeFakeCli(bin, "orca-ide", `process.stdout.write(JSON.stringify({ ok: true, result: {} }) + "\\n"); require("node:fs").appendFileSync(${JSON.stringify(calls)}, JSON.stringify(["orca-ide", ...Bun.argv.slice(2)]) + "\\n");`);
+    // On Linux the resolver outside an Orca terminal names `orca-ide`; the same
+    // fake answers to that name, so every assertion below holds there too.
+    fs.copyFileSync(path.join(bin, "orca.ts"), path.join(bin, "orca-ide.ts"));
+    if (process.platform === "win32") fs.copyFileSync(path.join(bin, "orca.cmd"), path.join(bin, "orca-ide.cmd"));
+    else { fs.copyFileSync(path.join(bin, "orca"), path.join(bin, "orca-ide")); fs.chmodSync(path.join(bin, "orca-ide"), 0o755); }
     process.env.PATH = `${bin}${path.delimiter}${saved.PATH ?? ""}`;
   });
 
