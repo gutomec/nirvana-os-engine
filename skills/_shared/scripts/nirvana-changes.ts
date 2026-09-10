@@ -16,9 +16,9 @@ import * as path from "node:path";
 import * as os from "node:os";
 import {
   extractSurface, readSurface, writeSurface, serializeSurface,
-  detectKind, SURFACE_FILE, type Surface,
+  detectKind, manifestVersion, SURFACE_FILE, type Surface,
 } from "../lib/surface.ts";
-import { diffSurfaces, mergeBehaviorNotes, renderChangelogEntry, type DiffResult } from "../lib/surface-diff.ts";
+import { diffSurfaces, mergeBehaviorNotes, renderChangelogEntry, versionAbove, type DiffResult } from "../lib/surface-diff.ts";
 
 const BEHAVIOR_FILE = ".nirvana-behavior.md";
 const CHANGES_FILE = "CHANGES.json";
@@ -93,6 +93,25 @@ function genOne(dir: string): GenOutcome | null {
   // No change and no rebaseline: touch nothing. This is what guarantees idempotency.
   if (!changed && before && !rebaseline) {
     return { slug, kind, bump: "none", version: before.contract_version, breaking: 0, changed: false, baseline: false };
+  }
+
+  // The manifest's own `version` is the FLOOR for the contract version.
+  //
+  // They are two lines with two owners: the author writes `version:` in
+  // squad.yaml (and `nrv migrate` moves it), the generator derives
+  // `contract_version` from what the surface shows. Nothing kept them in step,
+  // and they drifted apart on 156 of the 161 squads that carry a surface — the
+  // Protocol 6 migration moved manifests to 6.0.0 while the surfaces stayed on
+  // their own 5.x, so one artifact published two different numbers.
+  //
+  // Whenever the surface is written anyway, it adopts the manifest if the
+  // manifest is ahead, and derives from there afterwards. An artifact with no
+  // pending change keeps its recorded number until its next real change: this
+  // never rewrites history nobody asked to rewrite, and never invents a
+  // changelog entry for a version that changed by arithmetic alone.
+  const floor = manifestVersion(dir, kind);
+  if (floor !== null && versionAbove(floor, result.next_version)) {
+    result = { ...result, next_version: floor };
   }
 
   const finalSurface: Surface = { ...next, contract_version: result.next_version };

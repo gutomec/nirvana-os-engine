@@ -6,6 +6,14 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### The contract surface adopts the manifest's version when the manifest is ahead
+
+An artifact carries two version numbers with two owners: `version:` in its manifest, which the author writes and `nrv migrate` moves, and `contract_version` in `.nirvana-surface.json`, which the generator derives from what the surface shows. Nothing kept them in step. Measured on the installed library: 156 of the 161 squads that carry a surface published two different numbers depending on which file you read, because the Protocol 6 migration moved the manifests to 6.0.0 while the surfaces stayed on their own 5.x line.
+
+The manifest is the floor now. Whenever `nrv changes gen` writes a surface, it adopts the manifest's version if that version is above the one the derivation produced, and derives from there afterwards. What it deliberately does not do: it never lowers a derived version, it ignores a manifest version that is not a plain semver, and it leaves an artifact with no pending change exactly as it is, so the adoption waits for a real change instead of rewriting history nobody asked to rewrite or inventing a changelog entry for a version that moved by arithmetic alone. Idempotence is unchanged: a second `gen` still writes zero bytes.
+
 ## 0.13.5 — 2026-09-09
 
 ### Orca is a host: the workspace card follows the ledger, and a headless dispatch runs as a worker terminal

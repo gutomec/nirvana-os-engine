@@ -58,6 +58,19 @@ function bumpVersion(version: string, bump: DiffResult["bump"]): string {
   return version;
 }
 
+/** `a > b`, both plain semver. False when either is not one: an unreadable
+ *  version never wins a comparison it cannot be measured in. */
+export function versionAbove(a: string, b: string): boolean {
+  const pa = /^(\d+)\.(\d+)\.(\d+)$/.exec(a);
+  const pb = /^(\d+)\.(\d+)\.(\d+)$/.exec(b);
+  if (!pa || !pb) return false;
+  for (let i = 1; i <= 3; i++) {
+    const x = Number(pa[i]), y = Number(pb[i]);
+    if (x !== y) return x > y;
+  }
+  return false;
+}
+
 /** `capability:x.y.z` → `capability`. */
 function typeOf(id: string): string {
   return id.split(":", 1)[0];
