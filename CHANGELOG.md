@@ -6,7 +6,7 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
-## Unreleased
+## 0.13.5 — 2026-09-09
 
 ### Orca is a host: the workspace card follows the ledger, and a headless dispatch runs as a worker terminal
 

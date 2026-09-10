@@ -6,7 +6,7 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
-## Não lançado
+## 0.13.5 — 2026-09-09
 
 ### O Orca é um host: o card do workspace segue o ledger, e um despacho headless roda como terminal de worker
 
