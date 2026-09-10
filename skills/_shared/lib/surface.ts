@@ -142,6 +142,30 @@ export function detectKind(dir: string): ArtifactKind | null {
   return null;
 }
 
+const MANIFEST_FILE: Record<ArtifactKind, string> = {
+  squad: "squad.yaml", business: "business.yaml", "mind-clone": "MANIFEST.yaml",
+};
+
+/**
+ * The version the artifact's OWN manifest declares, when it is a plain semver.
+ *
+ * This is a different line from `contract_version`: the author writes this one
+ * (and `nrv migrate` moves it), while the generator derives the other from what
+ * the surface shows. Nothing here reads the manifest to compute a diff — the
+ * caller uses it as a FLOOR, so an artifact whose author moved ahead does not
+ * keep publishing a lower contract number. Null when the file, the key or the
+ * format is missing: a floor nobody can read is no floor at all.
+ */
+export function manifestVersion(dir: string, kind: ArtifactKind): string | null {
+  try {
+    const raw = readYaml(path.join(dir, MANIFEST_FILE[kind]))?.version;
+    const text = typeof raw === "string" || typeof raw === "number" ? String(raw).trim() : "";
+    return /^\d+\.\d+\.\d+$/.test(text) ? text : null;
+  } catch {
+    return null;
+  }
+}
+
 // ───────────────────────────── extraction ─────────────────────────────
 
 function squadSurface(dir: string, slug: string): { entries: Record<string, SurfaceEntry>; prose: string[] } {
