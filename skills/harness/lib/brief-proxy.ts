@@ -16,6 +16,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { runHeadless, runtimeAvailable, type Runtime } from "./host-agent-driver.ts";
+import { resolveRunRuntime } from "./runtime-rules.ts";
 
 const BUSINESSES_ROOT = path.join(os.homedir(), "businesses");
 
@@ -35,7 +36,10 @@ export interface ProxyResult {
   error?: string;
 }
 
-export function proxyEnrichBrief(brief: string, slug: string, runtime: Runtime = "claude-code", opts: { maxBudgetUsd?: number; timeoutMs?: number } = {}): ProxyResult {
+/** `runtime` is REQUIRED on purpose: it used to default to one vendor, so a
+ *  caller that simply did not pass it enriched the brief on a CLI the user may
+ *  never have signed into. The caller knows which session it is serving. */
+export function proxyEnrichBrief(brief: string, slug: string, runtime: Runtime, opts: { maxBudgetUsd?: number; timeoutMs?: number } = {}): ProxyResult {
   if (!runtimeAvailable(runtime)) {
     return { ok: false, enriched: brief, raw: "", error: `runtime '${runtime}' indisponível` };
   }
@@ -86,7 +90,7 @@ if (import.meta.main) {
     process.exit(2);
   }
   const rtArg = process.argv.find(a => a.startsWith("--runtime="))?.split("=")[1] as Runtime | undefined;
-  const out = proxyEnrichBrief(brief, slug, rtArg || "claude-code");
+  const out = proxyEnrichBrief(brief, slug, rtArg ?? resolveRunRuntime({ brief }).runtime);
   if (!out.ok) { console.error("proxy failed:", out.error); process.exit(1); }
   console.log(out.enriched);
 }

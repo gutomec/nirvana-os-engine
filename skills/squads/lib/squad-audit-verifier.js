@@ -17,6 +17,8 @@
 
 'use strict';
 
+const { extractJsonObject } = require('../../_shared/lib/model-json.js');
+
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -107,13 +109,15 @@ function verifyImprovement({ slug, squadDir, backupDir, scoreBefore, scoreAfter,
     return { verdict: 'skipped', reasons: [`${r.host || 'host'}: ${r.error.slice(0, 200)}`] };
   }
   const result = r.text;
-  // Find embedded JSON
-  const m = result.match(/\{[\s\S]*?"verdict"[\s\S]*?\}/);
-  if (!m) {
+  // The verifier's object, read out of whatever its runtime printed around it.
+  // The old `/\{[\s\S]*?"verdict"[\s\S]*?\}/` closed at the first `}` after the
+  // word, which is an inner object's brace whenever the verdict carries one.
+  const parsed = extractJsonObject(result, (v) => v && v.verdict !== undefined);
+  if (!parsed) {
     return { verdict: 'skipped', reasons: ['could not parse verifier response'], raw: result.slice(0, 500) };
   }
   try {
-    const verdict = JSON.parse(m[0]);
+    const verdict = parsed;
     return {
       verdict: verdict.verdict === 'rollback' ? 'rollback' : 'ok',
       reasons: Array.isArray(verdict.reasons) ? verdict.reasons : [],

@@ -184,12 +184,17 @@ export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" |
 /** The variables a worker must inherit for its `nrv` calls to land in the same
  *  project and trace as the coordinator: every NIRVANA_* plus the log roots.
  *  Orca's own pane variables are the terminal's, not ours to forward. */
-export function forwardedEnv(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
+export function forwardedEnv(env: NodeJS.ProcessEnv = process.env, asRuntime?: string): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(env)) {
     if (v === undefined) continue;
     if (/^NIRVANA_/.test(k) || k === "HARNESS_LOGS_DIR" || k === "MAESTRO_LOGS_DIR") out[k] = v;
   }
+  // The worker IS `asRuntime`, whatever this process is. Forwarding the
+  // parent's own `NIRVANA_HOST_RUNTIME` would tell the worker it is the vendor
+  // that launched it, and any `nrv` it runs would route back out of the
+  // terminal the user is watching.
+  if (asRuntime) out.NIRVANA_HOST_RUNTIME = asRuntime;
   return out;
 }
 
@@ -306,7 +311,7 @@ export function runOrcaWorker(opts: RunHeadlessOpts, hooks: OrcaWorkerHooks = {}
   //    and the autonomy flags are ours, not Orca's per-agent defaults. The
   //    workspace is trusted first, so the TUI opens at its prompt.
   const trusted = preTrustWorkspace(opts.runtime, cwd);
-  const command = workerCommand(argv, cwd, forwardedEnv());
+  const command = workerCommand(argv, cwd, forwardedEnv(process.env, opts.runtime));
   const term = call<any>(["terminal", "create", "--worktree", orcaWorkspaceSelector(cwd), "--title", `${label} · ${agent}`, "--command", command], { timeoutMs: 30_000 });
   if (!term.ok) { failTask(); return fallback("terminal-create", term.error?.code ?? term.error?.message ?? "unknown"); }
   const handle: string = term.result?.terminal?.handle;

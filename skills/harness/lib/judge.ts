@@ -39,6 +39,15 @@ async function hostDriver() {
   return _hostDriver;
 }
 
+/** First runtime on the driver's roster that is actually installed here. */
+async function firstInstalledRuntime(): Promise<string | null> {
+  try {
+    const driver = await hostDriver();
+    if (!driver) return null;
+    return driver.listRuntimes().map((r) => r.name).find((n) => driver.runtimeAvailable(n)) ?? null;
+  } catch { return null; }
+}
+
 /**
  * Judge runtime selection — consult the user's runtime rules (USE_* /
  * NOT_USE_* in .env, via runtime-rules.ts decideRuntime) instead of blindly
@@ -65,7 +74,11 @@ async function resolveJudgePreferredRuntime(
     const decision = rules_mod.decideRuntime({
       brief: input.brief ?? "",
       explicitRuntime: null,
-      defaultRuntime: currentHost ?? "claude-code",
+      // Placeholder only: with no detectable session host the decision below
+      // is discarded (see the `source === "default"` guard). It is the first
+      // INSTALLED runtime rather than a vendor literal, so the veto message a
+      // NOT_USE rule prints names a CLI that actually exists here.
+      defaultRuntime: currentHost ?? (await firstInstalledRuntime()) ?? "claude-code",
       rules,
       mode: "fast",
       available,

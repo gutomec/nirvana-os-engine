@@ -69,6 +69,7 @@ import { classify } from "../lib/corpus-language.ts";
 import { checkSync, readBusiness, type BusinessRead } from "../lib/verify/kinds/business.ts";
 import { surfaceRegenFixer } from "../lib/verify/common.ts";
 import { runHeadless, runtimeAvailable, type Runtime } from "../../harness/lib/host-agent-driver.ts";
+import { canonicalRuntimeName, resolveRunRuntime } from "../../harness/lib/runtime-rules.ts";
 import {
   backupFile, extractJson, restoreBackup, topLevelBlockSpan, verifyYamlSurgical, yamlScalar, type BackupEntry,
 } from "./enrich-routing-metadata.ts";
@@ -487,7 +488,13 @@ if (import.meta.main) {
 
   const dry = has("dry");
   const attempts = Math.max(1, Number(flag("attempts") || 3));
-  const runtime = (flag("runtime") || "claude-code") as Runtime;
+  // `--runtime` when given; otherwise the session this script is being run
+  // FROM, then whatever is installed. It used to be one vendor's name, so this
+  // script spent that vendor's quota from inside every other CLI — and died on
+  // its stale credential when the user had not opened it in weeks.
+  const runtime = (flag("runtime")
+    ? canonicalRuntimeName(flag("runtime")!)
+    : resolveRunRuntime({}).runtime) as Runtime;
   const model = flag("model") || undefined;
   const scratch = flag("scratch") || path.join(os.tmpdir(), "nirvana-enrich-business");
   const timeoutMs = Math.max(1, Number(flag("timeout-min") || 12)) * 60 * 1000;

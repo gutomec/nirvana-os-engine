@@ -29,6 +29,8 @@
 
 'use strict';
 
+const { extractJsonObject } = require('../../_shared/lib/model-json.js');
+
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -251,7 +253,7 @@ async function runAgenticConsensus({ scoreReport, squadDir, mechanicalPatches, s
   // Parse critic verdict
   let criticVerdict = 'approve_all';
   try {
-    const j = JSON.parse(r1.text.match(/\{[\s\S]*\}/)?.[0] || '{}');
+    const j = (extractJsonObject(r1.text) || {});
     criticVerdict = j.verdict || 'approve_all';
   } catch { /* keep default */ }
 
@@ -277,7 +279,7 @@ async function runAgenticConsensus({ scoreReport, squadDir, mechanicalPatches, s
     transcript.push(r3);
 
     let meta;
-    try { meta = JSON.parse(r3.text.match(/\{[\s\S]*\}/)?.[0] || '{}'); } catch { meta = { consensus_reached: false }; }
+    try { meta = (extractJsonObject(r3.text) || {}); } catch { meta = { consensus_reached: false }; }
 
     if (!meta.consensus_reached) {
       // Round 4 — empiricus tiebreak
@@ -290,7 +292,7 @@ async function runAgenticConsensus({ scoreReport, squadDir, mechanicalPatches, s
       transcript.push(r4);
       // If empiricus rejects or escalates, fall back to mechanical-only.
       try {
-        const j = JSON.parse(r4.text.match(/\{[\s\S]*\}/)?.[0] || '{}');
+        const j = (extractJsonObject(r4.text) || {});
         if (j.verdict !== 'accept_proposal') {
           return { mode: 'mechanical-after-tiebreak', transcript, status: 'human-review-needed', skipped };
         }
@@ -301,7 +303,7 @@ async function runAgenticConsensus({ scoreReport, squadDir, mechanicalPatches, s
   // Parse final proposal
   let semanticPatches = [];
   try {
-    const j = JSON.parse(finalProposal.match(/\{[\s\S]*\}/)?.[0] || '{}');
+    const j = (extractJsonObject(finalProposal) || {});
     semanticPatches = j.patches || [];
   } catch { /* leave empty */ }
 

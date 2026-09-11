@@ -24,6 +24,7 @@
 // Test seams: parseAndValidate() is exported and pure; agenticRoute() accepts
 // runHeadlessImpl + registry/digest path overrides so tests run zero-token.
 
+import { listRuntimes } from "../../_shared/lib/host-agent-driver.ts";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -35,7 +36,11 @@ import { resolveRoutingArtifactPaths } from "../scripts/build-routing-digest.ts"
 import { formatRulesForRouterPrompt, type RuntimeRule } from "./runtime-rules.ts";
 import { stamp } from "../../_shared/lib/audit-provenance.ts";
 
-const EXEC_RUNTIMES: ReadonlyArray<string> = ["claude-code", "codex", "gemini-cli", "antigravity-cli", "kimi-cli", "grok-cli", "pi"];
+// The roster, DERIVED. Three copies of this list lived in three files and all
+// three had stopped at seven names while the driver grew to nine, so a user who
+// wrote `qwen-code` or `opencode` had their entry dropped without a word. The
+// driver owns the list; everyone else asks it.
+const EXEC_RUNTIMES: ReadonlyArray<string> = listRuntimes().map((r) => r.name);
 
 export type RouteKind = "decision" | "ambiguous" | "no_match";
 

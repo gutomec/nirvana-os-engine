@@ -13,6 +13,14 @@
  * verbosity, the legacy host defaults and LLM_CASCADE.
  */
 
+import { listRuntimes } from "../../../_shared/lib/host-agent-driver.ts";
+
+/** Both pickers below are DERIVED from the driver's roster. Written by hand
+ *  they listed five and four of the nine runtimes respectively, so the Settings
+ *  panel could not offer a user the CLI they were actually sitting in. */
+const RUNTIME_OPTIONS: string[] = listRuntimes().map((r) => r.name);
+const HOST_CLI_OPTIONS: string[] = listRuntimes().map((r) => r.cli);
+
 export type FieldType =
   | "enum"
   | "string"
@@ -202,7 +210,7 @@ export const CONFIG_SCHEMA: ConfigGroup[] = [
         type: "enum",
         label: "Default host agent",
         description: "Which CLI to invoke for sub-agent calls",
-        options: ["claude", "codex", "gemini", "qwen", "opencode"],
+        options: HOST_CLI_OPTIONS,
         default: "claude",
         recommendedScope: "global",
       },
@@ -218,7 +226,7 @@ export const CONFIG_SCHEMA: ConfigGroup[] = [
         type: "enum",
         label: "Host runtime override",
         description: "Força o runtime da sessão (default = detectado automaticamente pelo host)",
-        options: ["", "claude-code", "codex", "gemini-cli", "antigravity-cli"],
+        options: ["", ...RUNTIME_OPTIONS],
         recommendedScope: "global",
       },
       {

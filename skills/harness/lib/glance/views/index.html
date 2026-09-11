@@ -2278,12 +2278,9 @@
     <div class="chat-runtime-bar" x-show="chatMode === 'run'">
       <i data-lucide="cpu" class="icon-inline"></i>
       <span class="text-caption">runtime</span>
-      <select x-model="chatRuntime" class="chat-runtime-select">
+      <select x-model="chatRuntime" class="chat-runtime-select" x-init="ensureRuntimeOptions()">
         <option value="">auto (sua sessão)</option>
-        <option value="claude-code">claude code</option>
-        <option value="codex">codex</option>
-        <option value="gemini-cli">gemini</option>
-        <option value="antigravity-cli">antigravity</option>
+        <template x-for="rt in runtimeOptions" :key="rt"><option :value="rt" x-text="rt"></option></template>
       </select>
       <label class="chat-fast-toggle" :title="chatFast ? 'Modo rápido: BM25 direto do catálogo, mais veloz e econômico, menos deliberação' : 'Modo agêntico (padrão): analisa o catálogo a fundo p/ escolher o melhor squad/empresa'">
         <input type="checkbox" x-model="chatFast">

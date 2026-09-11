@@ -92,6 +92,18 @@ import { spawn, spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { notifyDesktop } from "../lib/os-notify.ts";
+import { resolveRunRuntime } from "../lib/runtime-rules.ts";
+
+/** The runtime to resume a run whose ledger row never recorded one (a legacy
+ *  row, or a row written before the runtime was decided). It used to be the
+ *  literal `"claude-code"`, which silently resumed a stranger's work on a
+ *  vendor the owner may not even be signed into. The session's own runtime is
+ *  the honest answer, and the resolver falls through to what is installed. */
+let _recoveryRuntime: ReturnType<typeof resolveRunRuntime>["runtime"] | null = null;
+function recoveryRuntime() {
+  if (!_recoveryRuntime) _recoveryRuntime = resolveRunRuntime({}).runtime;
+  return _recoveryRuntime;
+}
 import {
   openLedger,
   getRun,
@@ -522,7 +534,7 @@ export function redispatchRun(h: LedgerHandle, row: RunRow, overrides: Redispatc
   const runCascade = runCascadeImpl ?? lazyCascade().runWithCascade;
   const { AUTONOMOUS_DIRECTIVE } = lazyDriver();
   const res = runCascade({
-    runtime: (row.runtime as any) || "claude-code",
+    runtime: (row.runtime as any) || recoveryRuntime(),
     prompt,
     cwd: projectRoot,
     addDirs: [projectDir, outputsRoot],
@@ -542,7 +554,7 @@ export function redispatchRun(h: LedgerHandle, row: RunRow, overrides: Redispatc
     ...baseDeliveryArgs(h, row, brief || prompt, outputsRoot),
     sessionId: typeof res.sessionId === "string" ? res.sessionId : null,
     // The runtime the cascade actually landed on, not the one the row asked for.
-    runtime: (res.finalRuntime as DeliveryArgs["runtime"]) || (row.runtime as DeliveryArgs["runtime"]) || "claude-code",
+    runtime: (res.finalRuntime as DeliveryArgs["runtime"]) || (row.runtime as DeliveryArgs["runtime"]) || recoveryRuntime(),
     maxRevisions: 0,
     // Unattended path stays strict: nobody is awake to read the reservations
     // note, so the owner's accept-with-reservations default (delivery-pipeline)
@@ -579,7 +591,7 @@ function baseDeliveryArgs(h: LedgerHandle, row: RunRow, brief: string, outputsRo
     pid: row.project_id ?? row.run_id,
     slug: kind === "business" ? row.target_slug : null,
     targetKind: kind,
-    runtime: (row.runtime as DeliveryArgs["runtime"]) || "claude-code",
+    runtime: (row.runtime as DeliveryArgs["runtime"]) || recoveryRuntime(),
     projectDir: metaStr(meta, "project_dir") ?? outputsRoot,
     projectRoot: metaStr(meta, "project_root") ?? outputsRoot,
     workingDir: reviseCwdFor(meta),

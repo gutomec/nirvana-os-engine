@@ -20,6 +20,8 @@
 
 'use strict';
 
+const { extractJsonObject } = require('./model-json.js');
+
 const fs = require('fs');
 const path = require('path');
 
@@ -71,18 +73,18 @@ function buildUserMessage(artifact, context) {
   ].join('\n');
 }
 
+// The gate's verdict, read out of whatever the judge's runtime printed around
+// it. This used to strip a code fence and then match `/\{[\s\S]*"verdict"[\s\S]*\}/`
+// — greedy on both sides, so on any runtime that wraps the answer in an event
+// stream the span opened in the telemetry and the gate could not read its own
+// judge. Balanced scan, last object carrying a `verdict`.
 function extractJson(text) {
   if (!text) return null;
-  const stripped = text
-    .replace(/^[\s\S]*?```(?:json)?\s*/i, '')
-    .replace(/```[\s\S]*$/, '')
-    .trim();
-  const candidate = stripped.length > 0 ? stripped : text;
-  const m = candidate.match(/\{[\s\S]*"verdict"[\s\S]*\}/);
-  if (!m) {
-    try { return JSON.parse(candidate); } catch { return null; }
-  }
-  try { return JSON.parse(m[0]); } catch { return null; }
+  const withVerdict = extractJsonObject(text, (v) => v && v.verdict !== undefined);
+  if (withVerdict) return withVerdict;
+  // No `verdict` anywhere: take the last readable object, then the raw text, so
+  // a judge that answered in another shape still reaches the caller's own checks.
+  return extractJsonObject(text) ?? (() => { try { return JSON.parse(text); } catch { return null; } })();
 }
 
 /**
