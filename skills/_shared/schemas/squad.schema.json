@@ -513,13 +513,16 @@
                 "enum": [
                   "claude-code",
                   "codex",
-                  "gemini-cli",
-                  "cursor",
-                  "antigravity",
                   "antigravity-cli",
-                  "openclaw",
+                  "antigravity",
+                  "gemini-cli",
+                  "pi",
+                  "kimi-cli",
+                  "grok-cli",
+                  "qwen-code",
                   "opencode",
-                  "pi"
+                  "cursor",
+                  "openclaw"
                 ]
               },
               "version": {

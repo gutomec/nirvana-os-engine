@@ -50,6 +50,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { harnessLogsDir } from "../lib/log-paths.ts";
+import { ensureDir } from "../lib/ensure-dir.ts";
 import { findProjectRoot } from "../lib/project-root.js";
 
 const NIRVANA_PROJECT_ROOT = process.env.NIRVANA_PROJECT_ROOT || "";
@@ -74,7 +75,7 @@ function todayDir(): string {
 function appendEvent(ev: Record<string, any>): void {
   try {
     const dir = path.join(HARNESS_LOGS_ROOT, todayDir());
-    fs.mkdirSync(dir, { recursive: true });
+    ensureDir(dir);
     const file = path.join(dir, "audit.jsonl");
     // Stamped like every other engine write, so a hook-sourced event reads as
     // `engine` in Glance and `nrv audit where` instead of `unsigned`.

@@ -1322,6 +1322,16 @@ export const DEFAULT_ALLOWED_TOOLS = ["Write", "Edit", "Read", "Glob", "Grep", "
 interface ManagedSpawnCtx { outFile: string; errFile: string }
 let managedCtx: ManagedSpawnCtx | null = null;
 
+/** The runtime the child being spawned IS. A CLI exports its session markers to
+ * everything it starts, so a codex child launched from a Claude Code session
+ * inherits `CLAUDECODE=1` and any `nrv` it runs would read the session as
+ * claude-code — the work would climb back to the vendor the user is not in.
+ * Stamping the target's own name closes that: `NIRVANA_HOST_RUNTIME` is the
+ * explicit override `detectCurrentHost` checks before any vendor marker, so a
+ * dispatched child answers with itself, on every OS and for the runtimes whose
+ * markers we could not measure. */
+let spawnAsRuntime: string | null = null;
+
 /** All runners spawn their child through this. Pass-through to spawnSync when
  * unledgered (zero behavior change); with an active ledger context, stdout/
  * stderr go to capture files the heartbeat sidecar watches.
@@ -1339,7 +1349,12 @@ function driverSpawnSync(cmd: string, args: string[], options: SpawnSyncOptions 
   // childEnv(): the live process.env minus Orca's pane identity, so a child the
   // engine spawns inside an Orca terminal is not reported to Orca as that
   // pane's agent (see _shared/lib/orca.js). Outside Orca it is process.env.
-  options = { env: childEnv(), ...(exec.shell ? { shell: true } : {}), ...options };
+  const baseEnv = childEnv();
+  options = {
+    env: spawnAsRuntime ? { ...baseEnv, NIRVANA_HOST_RUNTIME: spawnAsRuntime } : baseEnv,
+    ...(exec.shell ? { shell: true } : {}),
+    ...options,
+  };
   if (!managedCtx) return spawnSync(cmd, args, options) as SpawnSyncReturns<string>;
   // "w" truncates between attempts (some runners retry without a flag); the
   // sidecar treats ANY size change as activity, so truncation is safe.
@@ -2258,6 +2273,16 @@ export function runHeadless(opts: RunHeadlessOpts): RunHeadlessResult {
 }
 
 function dispatchToRunner(opts: RunHeadlessOpts): RunHeadlessResult {
+  const previousSpawnAs = spawnAsRuntime;
+  spawnAsRuntime = opts.runtime;
+  try {
+    return dispatchToRunnerInner(opts);
+  } finally {
+    spawnAsRuntime = previousSpawnAs;
+  }
+}
+
+function dispatchToRunnerInner(opts: RunHeadlessOpts): RunHeadlessResult {
   // Inside Orca (host.orca, host.orca_workers) the dispatch runs as a visible
   // worker terminal; null means the transport does not apply or could not
   // start, and the headless child below runs exactly as everywhere else.

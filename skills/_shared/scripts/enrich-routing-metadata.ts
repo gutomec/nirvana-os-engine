@@ -46,6 +46,7 @@ import { spawnSync } from "node:child_process";
 import { resolveScope } from "../lib/scope.ts";
 import { paths } from "../lib/bun-helpers.ts";
 import { runHeadless, runtimeAvailable, type Runtime } from "../../harness/lib/host-agent-driver.ts";
+import { canonicalRuntimeName, resolveRunRuntime } from "../../harness/lib/runtime-rules.ts";
 import { runGate, type GateResult } from "./self-retrieval-gate.ts";
 
 const YAML = require("yaml");
@@ -1268,7 +1269,13 @@ if (import.meta.main) {
   const dry = has("dry");
   const limit = Number(flag("limit") || 10);
   const attempts = Math.max(1, Number(flag("attempts") || 2));
-  const runtime = (flag("runtime") || "claude-code") as Runtime;
+  // `--runtime` when given; otherwise the session this script is being run
+  // FROM, then whatever is installed. It used to be one vendor's name, so this
+  // script spent that vendor's quota from inside every other CLI — and died on
+  // its stale credential when the user had not opened it in weeks.
+  const runtime = (flag("runtime")
+    ? canonicalRuntimeName(flag("runtime")!)
+    : resolveRunRuntime({}).runtime) as Runtime;
   const model = flag("model") || undefined;
   const scratch = flag("scratch") || path.join(os.tmpdir(), "nirvana-enrich-routing");
   const timeoutMs = Math.max(1, Number(flag("timeout-min") || 12)) * 60 * 1000;

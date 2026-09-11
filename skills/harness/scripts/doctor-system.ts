@@ -28,6 +28,7 @@ import { paths as nrvPaths } from "../../_shared/lib/bun-helpers.ts";
 import { resolveScope, enumerate } from "../../_shared/lib/scope.ts";
 import { RUNTIME_TARGETS, RUNTIME_SKILL_DIRS, PROJECT_CONTRACT_FILES, SKILLS as SKILL_NAMES } from "../../_shared/lib/runtime-dirs.ts";
 import { listRuntimes, whichSync } from "../../_shared/lib/host-agent-driver.ts";
+import { resolveRunRuntime } from "../lib/runtime-rules.ts";
 import { openclawAgentsOnProjects } from "../../_shared/lib/openclaw.ts";
 import { detectOrca, orcaHooksStatus, orcaHostActive, orcaStatus, resolveOrcaExecutable } from "../../_shared/lib/orca.ts";
 import { codexConfigPath, codexHookTrustEntries, codexHooksPath } from "../../_shared/lib/codex-hooks.ts";
@@ -137,6 +138,30 @@ add(
     ? `${runtimesOnPath}/${listRuntimes().length} agent runtime(s) on PATH`
     : `no agent runtime on PATH — dispatch cannot run; install one (claude, codex, gemini, …)${headlessCI ? " (CI environment: reported as warning)" : ""}`,
 );
+
+// SECTION 1a-bis: WHICH ONE WILL RUN — the roster above says what EXISTS; this
+// says what a dispatch started right now would actually use. The rule is that
+// the work runs where the user is working, and it stopped being observable
+// exactly when it stopped being true: on a client machine the routing was
+// correct and one caller carried a vendor literal, so every business director
+// ran on a Claude Code session that user never opened. Nothing in the report
+// would have shown it.
+{
+  const choice = resolveRunRuntime({ projectRoot: process.cwd() });
+  const how = {
+    host: "the session you are in",
+    env: "execution.default_runtime",
+    "path-scan": "first installed (no session marker, no setting)",
+    fallback: "nothing installed",
+  }[choice.defaultFrom];
+  const green = choice.installed.length ? choice.installed.join(", ") : "none";
+  add(
+    "runtime: session",
+    choice.defaultFrom === "fallback" ? "WARN" : "PASS",
+    `dispatch defaults to ${choice.runtime} — ${how}. Green here: ${green}.`
+    + " Name another with --runtime, a USE_* rule or the brief; one that is not green is refused, never substituted.",
+  );
+}
 
 // SECTION 1a-ter: CLAWS ON PROJECTS — OpenClaw works in an agent's workspace,
 // not in cwd, so the only way a Nirvana project meets an OpenClaw agent is to

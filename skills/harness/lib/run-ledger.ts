@@ -46,6 +46,7 @@ import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
+import { ensureDir } from "../../_shared/lib/ensure-dir.ts";
 
 // ── states ──────────────────────────────────────────────────────────────
 
@@ -336,7 +337,7 @@ export function openLedger(dbPath?: string): LedgerHandle {
   const p = dbPath || resolveLedgerDbPath();
   const cached = _openCache.get(p);
   if (cached) return cached;
-  fs.mkdirSync(path.dirname(p), { recursive: true });
+  ensureDir(path.dirname(p));
   const db = new Database(p);
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA busy_timeout = 5000");
@@ -704,7 +705,7 @@ export interface RunSignal {
 function writeRunSignal(row: RunRow): void {
   try {
     const dir = runSignalDir();
-    fs.mkdirSync(dir, { recursive: true });
+    ensureDir(dir);
     const signal: RunSignal = {
       run_id: row.run_id,
       trace_id: row.trace_id,

@@ -142,7 +142,19 @@ Never switch the runtime into its own plan mode (Claude Code plan mode, Codex pl
 
 ---
 
-### Rule 11 — A cut verifies its area; the whole is verified once, after integration
+### Rule 11 — The work runs where the user is working
+
+The default runtime is the session the user is sitting in. Almost every brief arrives inside a conversation with an agent — Claude Code, Codex, Gemini CLI, Antigravity — and that agent is the runtime. When you dispatch in-process (the `Agent` tool, codex `[agents]`, antigravity subagents) this is automatic: the subagent is your own session. When a scripted path spawns a child instead (`nrv dispatch --exec`, `nrv chain`, `nrv run`, a business director), the engine resolves it the same way, from the session's env markers.
+
+A user or an automation may also call `nrv` from a plain terminal or a cron job, with no session around it. There is no vendor to inherit there, so the engine takes `execution.default_runtime` if it is set and otherwise the first runtime actually installed — announced on stderr, never assumed silently.
+
+The user may name another runtime: a flag, a mention in the brief ("use o codex para isso"), or a `USE_*` rule in the `.env`. That wins — **provided it is installed here**. Naming one that is not installed is refused, with the installed list in the message. The work is never moved to a different vendor behind the user's back, and never spends the quota of a CLI they have not opened in weeks.
+
+What you do with this: don't pass `--runtime` or `--exec=<name>` unless the user asked for that runtime. Adding one overrides their session for no reason. `nrv doctor` shows which runtimes are green on the machine; the same list is what a refusal names.
+
+---
+
+### Rule 12 — A cut verifies its area; the whole is verified once, after integration
 
 A dispatched cut verifies **its own area**. While it works it runs only the tests of what it is touching. Before it hands back it runs that area's tests once, plus the gates its own diff can break by itself, and it stops there. It does not run the full suite and it does not run `check:all`.
 
@@ -159,7 +171,7 @@ The loop the engine gives a cut: `bun test <dir>` while working, `bun run test:f
 
 ---
 
-### Rule 12 — Dependencies install to `~/.nirvana`, never where you are standing
+### Rule 13 — Dependencies install to `~/.nirvana`, never where you are standing
 
 Node packages go to `~/.nirvana/node_modules`, Python packages to
 `~/.nirvana/python`, tool-downloaded runtimes (Chromium, browsers, model

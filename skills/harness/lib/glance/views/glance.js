@@ -1576,6 +1576,20 @@ function glance() {
     rulesData: null,           // { project:[{key,value}], global:[], runtimes:[] }
     rulesDraft: [],            // [{ envKey, mode:'use'|'not', runtime, text }]
     rulesLoading: false,
+    runtimeOptions: [],        // installed runtimes, for the chat override picker
+    /** The runtimes this machine can actually run, fetched once. The picker
+     *  used to carry four names written into the page; a user sitting in pi,
+     *  kimi, grok, qwen or opencode could not name their own CLI, and the list
+     *  said nothing about which of them were installed. Empty is a safe state:
+     *  the select still offers "auto", which follows the session anyway. */
+    async ensureRuntimeOptions() {
+      if (this.runtimeOptions.length) return;
+      if (this.rulesData?.runtimes_installed) { this.runtimeOptions = this.rulesData.runtimes_installed; return; }
+      try {
+        const d = await api('/api/config/rules');
+        this.runtimeOptions = d?.runtimes_installed || [];
+      } catch (e) { this.runtimeOptions = []; }
+    },
     async openSettings() {
       this.settingsOpen = true;
       this.settingsRestartRequired = false;
@@ -1650,27 +1664,60 @@ function glance() {
       } catch (e) { this.rulesData = null; }
       finally { this.rulesLoading = false; }
     },
+    /**
+     * Env-key suffix ⇄ runtime. DERIVED from the roster the server reports
+     * (/api/config/rules), plus the short names a person may have typed.
+     *
+     * Two hand-written maps used to live here and both knew seven of the nine
+     * runtimes, and the gap was not cosmetic. An unrecognised suffix was shown
+     * as a claude-code rule AND saved as one, while the original key went into
+     * `deletes` — so merely opening the settings panel and pressing save turned
+     * a `USE_QWEN` rule into `USE_CLAUDE_CODE` and destroyed the user's.
+     */
+    ruleSuffixes() {
+      const ALIASES = {
+        CLAUDE: 'claude-code', GEMINI: 'gemini-cli',
+        ANTIGRAVITY: 'antigravity-cli', AGY: 'antigravity-cli',
+        KIMI: 'kimi-cli', KIMI_CODE: 'kimi-cli', GROK: 'grok-cli',
+        PI_CLI: 'pi', PI_DEV: 'pi', PI_CODING_AGENT: 'pi',
+        QWEN: 'qwen-code', OPEN_CODE: 'opencode',
+      };
+      const toKey = (rt) => String(rt).toUpperCase().replace(/-/g, '_');
+      const byKey = {};
+      for (const rt of (this.rulesData?.runtimes || [])) byKey[toKey(rt)] = rt;
+      return { byKey: { ...ALIASES, ...byKey }, toKey };
+    },
     // Convert the active scope's rules into editable rows {mode,runtime,text}.
     loadRulesDraft() {
-      const RT = { CLAUDE_CODE: 'claude-code', CLAUDE: 'claude-code', CODEX: 'codex', GEMINI: 'gemini-cli', GEMINI_CLI: 'gemini-cli', ANTIGRAVITY: 'antigravity-cli', ANTIGRAVITY_CLI: 'antigravity-cli', AGY: 'antigravity-cli', KIMI: 'kimi-cli', KIMI_CLI: 'kimi-cli', GROK: 'grok-cli', GROK_CLI: 'grok-cli', PI: 'pi', PI_CLI: 'pi', PI_DEV: 'pi', PI_CODING_AGENT: 'pi', HERMES: 'hermes' };
+      const { byKey } = this.ruleSuffixes();
       const src = (this.rulesData?.[this.settingsScopePicker] || []);
       this.rulesDraft = src.map(r => {
         const m = r.key.match(/^(NOT_USE|USE)_([A-Z0-9_]+)$/);
         const mode = m && m[1] === 'NOT_USE' ? 'not' : 'use';
-        const runtime = m ? (RT[m[2]] || 'claude-code') : 'claude-code';
-        return { mode, runtime, text: r.value };
+        // No fallback runtime: a key this build does not recognise keeps its
+        // own name and travels back to the .env untouched.
+        const runtime = (m && byKey[m[2]]) || '';
+        return { mode, runtime, text: r.value, rawKey: r.key, rawRuntime: runtime };
       });
     },
-    addRule() { this.rulesDraft.push({ mode: 'use', runtime: 'codex', text: '' }); },
+    addRule() {
+      const first = (this.rulesData?.runtimes || []).find(rt => rt !== 'hermes') || '';
+      this.rulesDraft.push({ mode: 'use', runtime: first, text: '' });
+    },
     removeRule(i) { this.rulesDraft.splice(i, 1); },
     // Serialize the rows back into USE_<RT>/NOT_USE_<RT> keys.
     rulesToEnv() {
-      const SUFFIX = { 'claude-code': 'CLAUDE_CODE', 'codex': 'CODEX', 'gemini-cli': 'GEMINI', 'antigravity-cli': 'ANTIGRAVITY', 'kimi-cli': 'KIMI', 'grok-cli': 'GROK', 'pi': 'PI', 'hermes': 'HERMES' };
+      const { toKey } = this.ruleSuffixes();
       const out = {};
       for (const r of this.rulesDraft) {
         if (!r.text.trim()) continue;
-        const key = (r.mode === 'not' ? 'NOT_USE_' : 'USE_') + (SUFFIX[r.runtime] || 'CODEX');
-        out[key] = r.text.trim();
+        // A row nobody edited keeps the exact key it was read from, so an
+        // existing `USE_GEMINI` is not churned into `USE_GEMINI_CLI` for free.
+        const sameRuntime = r.rawKey && r.runtime === r.rawRuntime;
+        const sameMode = r.rawKey && (r.mode === 'not') === r.rawKey.startsWith('NOT_USE_');
+        if (sameRuntime && sameMode) { out[r.rawKey] = r.text.trim(); continue; }
+        if (!r.runtime) { if (r.rawKey) out[r.rawKey] = r.text.trim(); continue; }
+        out[(r.mode === 'not' ? 'NOT_USE_' : 'USE_') + toKey(r.runtime)] = r.text.trim();
       }
       return out;
     },

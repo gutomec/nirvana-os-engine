@@ -24,11 +24,11 @@
 // Hermes is a valid target only on the agentic path (delegation via `hermes -z`):
 // there is no quota classifier nor session id for it in runHeadless. In fast,
 // if it wins, it degrades to the next in the ranking with a warn.
-import * as os from "node:os";
 import * as path from "node:path";
 import { createRequire } from "node:module";
-import type { Runtime } from "./host-agent-driver.ts";
-import { readEnvFile, resolveCascadeRoot } from "./cascade.ts";
+import { listRuntimes, runtimeAvailable, type Runtime } from "../../_shared/lib/host-agent-driver.ts";
+import { resolveSetting } from "../../_shared/lib/settings.ts";
+import { globalEnvFiles, readEnvFile, resolveCascadeRoot } from "./cascade.ts";
 
 const require = createRequire(import.meta.url);
 const { buildIndex, query } = require("./bm25.js");
@@ -57,21 +57,105 @@ export interface RuntimeDecision {
   mention?: string;
   /** Vetoes (NOT_USE_*) that matched the brief and changed/limited the choice. */
   vetoes?: Array<{ envKey: string; runtime: RoutableRuntime; score: number }>;
+  /** The caller named this runtime and it is not installed here. The choice is
+   *  still theirs — this is not a silent substitution — but a caller must refuse
+   *  to run rather than spend another vendor's quota behind their back. */
+  unavailable?: boolean;
 }
 
-// USE_<suffix> → canonical runtime. Unknown suffix → warn, never breaks.
-const RUNTIME_ALIASES: Record<string, RoutableRuntime> = {
-  CLAUDE: "claude-code", CLAUDE_CODE: "claude-code", CLAUDECODE: "claude-code",
-  CODEX: "codex", CODEX_CLI: "codex",
-  GEMINI: "gemini-cli", GEMINI_CLI: "gemini-cli",
-  ANTIGRAVITY: "antigravity-cli", ANTIGRAVITY_CLI: "antigravity-cli", AGY: "antigravity-cli",
-  KIMI: "kimi-cli", KIMI_CLI: "kimi-cli", KIMI_CODE: "kimi-cli",
-  GROK: "grok-cli", GROK_CLI: "grok-cli",
-  PI: "pi", PI_CLI: "pi", PI_DEV: "pi", PI_CODING_AGENT: "pi",
-  HERMES: "hermes",
+/** Everything the engine needs to RECOGNISE one runtime, in one entry:
+ *  the extra names a human types, the env vars that identify a live session of
+ *  it, and how a brief writes it. Typed `Record<Runtime, …>`, so the compiler
+ *  refuses a roster the driver grew past — the same drift that left four tables
+ *  in this file stuck at seven names while the driver carried nine.
+ *
+ *  `markers` are env vars a CLI exports to its own children. For the five that
+ *  are installed here they were measured; for `kimi-cli`, `qwen-code` and
+ *  `opencode` they follow each vendor's own convention and are UNVERIFIED (no
+ *  binary on this machine to read). Our own dispatches never depend on the
+ *  guess: the driver stamps `NIRVANA_HOST_RUNTIME` on every child it spawns,
+ *  and that is checked before any marker. */
+interface RuntimeIdentity {
+  /** USE_<suffix> / typed names beyond the canonical one (upper snake). */
+  aliases: string[];
+  /** Env vars whose presence identifies a session of this runtime. */
+  markers: string[];
+  /** Alternation fragment for a brief mention — no anchors, no capture. */
+  mention: string;
+  /** Derivative of another runtime, so it inherits the parent's env vars and
+   *  must be tested BEFORE the parent or it answers with the parent's name. */
+  fork?: true;
+}
+
+const RUNTIME_IDENTITY: Record<Runtime, RuntimeIdentity> = {
+  "claude-code": {
+    aliases: ["CLAUDE", "CLAUDECODE"],
+    markers: ["CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_ENTRYPOINT"],
+    mention: "claude(?:[- ]code)?",
+  },
+  codex: {
+    aliases: ["CODEX_CLI"],
+    markers: ["CODEX_SANDBOX", "CODEX_THREAD_ID", "CODEX_SESSION_ID"],
+    mention: "codex(?:[- ]cli)?",
+  },
+  "antigravity-cli": {
+    aliases: ["ANTIGRAVITY", "AGY"],
+    markers: ["ANTIGRAVITY_SESSION_ID", "AGY_SESSION_ID", "ANTIGRAVITY_CLI"],
+    mention: "agy|antigravity(?:[- ]cli)?",
+    fork: true,   // Google, Gemini family
+  },
+  "gemini-cli": {
+    aliases: ["GEMINI"],
+    markers: ["GEMINI_SESSION_ID", "GEMINI_CLI"],
+    mention: "gemini(?:[- ]cli)?",
+  },
+  pi: {
+    aliases: ["PI_CLI", "PI_DEV", "PI_CODING_AGENT"],
+    markers: ["PI_CODING_AGENT", "PI_SESSION_ID"],
+    mention: "pi(?:[- ](?:cli|dev|coding[- ]agent))?",
+  },
+  "kimi-cli": {
+    aliases: ["KIMI", "KIMI_CODE"],
+    markers: ["KIMI_SESSION_ID", "KIMI_CLI", "KIMI_CODE"],
+    mention: "kimi(?:[- ](?:code|cli))?",
+  },
+  "grok-cli": {
+    aliases: ["GROK"],
+    markers: ["GROK_SESSION_ID", "GROK_CLI"],
+    mention: "grok(?:[- ]cli)?",
+  },
+  "qwen-code": {
+    aliases: ["QWEN", "QWEN_CLI"],
+    markers: ["QWEN_SESSION_ID", "QWEN_CODE", "QWEN_CLI"],
+    mention: "qwen(?:[- ]code)?",
+    fork: true,   // gemini-cli fork; ships the parent's vars
+  },
+  opencode: {
+    aliases: ["OPEN_CODE", "OPENCODE_CLI"],
+    markers: ["OPENCODE_SESSION_ID", "OPENCODE_CLI", "OPENCODE"],
+    mention: "opencode",
+  },
 };
 
-const EXEC_RUNTIMES: ReadonlyArray<Runtime> = ["claude-code", "codex", "gemini-cli", "antigravity-cli", "kimi-cli", "grok-cli", "pi"];
+/** The canonical USE_ suffix for a runtime: `gemini-cli` → `GEMINI_CLI`. */
+const envSuffix = (r: Runtime): string => r.toUpperCase().replace(/-/g, "_");
+
+// USE_<suffix> → canonical runtime. Unknown suffix → warn, never breaks.
+// Derived: canonical name + declared aliases, for every runtime the driver has.
+const RUNTIME_ALIASES: Record<string, RoutableRuntime> = (() => {
+  const table: Record<string, RoutableRuntime> = { HERMES: "hermes" };
+  for (const { name } of listRuntimes()) {
+    table[envSuffix(name)] = name;
+    for (const alias of RUNTIME_IDENTITY[name]?.aliases ?? []) table[alias] = name;
+  }
+  return table;
+})();
+
+// The roster, DERIVED. Three copies of this list lived in three files and all
+// three had stopped at seven names while the driver grew to nine, so a user who
+// wrote `qwen-code` or `opencode` had their entry dropped without a word. The
+// driver owns the list; everyone else asks it.
+const EXEC_RUNTIMES: ReadonlyArray<Runtime> = listRuntimes().map((r) => r.name);
 
 // PT-BR + EN stopwords removed before BM25: with short rules, function words
 // ("um", "o", "quando", "when") produce false matches — "escreva um
@@ -96,14 +180,18 @@ export function detectCurrentHost(env: NodeJS.ProcessEnv = process.env): Runtime
   if (explicit && RUNTIME_ALIASES[explicit] && RUNTIME_ALIASES[explicit] !== "hermes") {
     return RUNTIME_ALIASES[explicit] as Runtime;
   }
-  if (env.CLAUDECODE || env.CLAUDE_CODE_SESSION_ID || env.CLAUDE_CODE_ENTRYPOINT) return "claude-code";
-  if (env.CODEX_SANDBOX || env.CODEX_THREAD_ID || env.CODEX_SESSION_ID) return "codex";
-  if (env.GEMINI_SESSION_ID || env.GEMINI_CLI) return "gemini-cli";
-  if (env.ANTIGRAVITY_SESSION_ID || env.AGY_SESSION_ID || env.ANTIGRAVITY_CLI) return "antigravity-cli";
-  if (env.KIMI_SESSION_ID || env.KIMI_CLI || env.KIMI_CODE) return "kimi-cli";
-  if (env.GROK_SESSION_ID || env.GROK_CLI) return "grok-cli";
-  if (env.PI_CODING_AGENT || env.PI_SESSION_ID) return "pi";
+  for (const name of detectionOrder()) {
+    if (RUNTIME_IDENTITY[name]?.markers.some((m) => env[m])) return name;
+  }
   return null;
+}
+
+/** Roster order, with the derivatives moved to the front: a `qwen-code` session
+ *  exports the gemini-cli vars it forked, so testing gemini first would answer
+ *  with the parent's name for a runtime that is not it. */
+function detectionOrder(): Runtime[] {
+  const names = listRuntimes().map((r) => r.name);
+  return [...names.filter((n) => RUNTIME_IDENTITY[n]?.fork), ...names.filter((n) => !RUNTIME_IDENTITY[n]?.fork)];
 }
 
 /** Canonical runtime for a user-typed name (`claude`, `agy`, `pi-dev`, …) through the
@@ -130,6 +218,70 @@ export function resolveDefaultRuntime(input: {
   return { runtime: "claude-code", from: "fallback" };
 }
 
+export interface RunRuntimeChoice extends RuntimeDecision {
+  /** What session detection found; null when the CLI exports no marker. */
+  hostDetected: Runtime | null;
+  /** Where the DEFAULT came from, when neither flag, brief nor rule decided. */
+  defaultFrom: "host" | "env" | "path-scan" | "fallback";
+  /** Runtimes actually installed here, in roster order. */
+  installed: Runtime[];
+}
+
+/**
+ * THE house rule for which runtime a run uses, in one place.
+ *
+ * The default is the session the user is sitting in: if they are working in
+ * Codex, the work runs in Codex, on that CLI's own configured model. They may
+ * name another one — flag, or a mention in the brief, or a USE_* rule — and
+ * that wins, provided it is installed here.
+ *
+ * It lives here because the rule was duplicated and drifted. `dispatch.ts`
+ * resolved it properly while `chain.ts` (the business director, and therefore
+ * every seat of every org chart) carried a literal `?? "claude-code"`: a client
+ * working in Codex had the director run on a Claude Code session they never
+ * use, which failed on a stale credential and dropped the whole business to
+ * `agent-x`. One resolver, so a third caller cannot drift again.
+ */
+export function resolveRunRuntime(opts: {
+  brief?: string;
+  explicit?: Runtime | null;
+  projectRoot?: string | null;
+  mode?: "agentic" | "fast";
+  env?: NodeJS.ProcessEnv;
+  /** Test seam: which runtimes count as installed. */
+  available?: (r: Runtime) => boolean;
+}): RunRuntimeChoice {
+  const env = opts.env ?? process.env;
+  const available = opts.available ?? runtimeAvailable;
+  const installed = listRuntimes().map((r) => r.name).filter(available);
+  const hostDetected = detectCurrentHost(env);
+  let envDefault = "";
+  try { envDefault = String(resolveSetting("execution.default_runtime").value ?? "").trim(); } catch { envDefault = ""; }
+  const { runtime: hostDefault, from: defaultFrom } = resolveDefaultRuntime({
+    detectedHost: hostDetected,
+    envDefault,
+    normalize: canonicalRuntimeName,
+    firstAvailable: () => installed[0] ?? null,
+  });
+  const decision = decideRuntime({
+    brief: opts.brief ?? "",
+    explicitRuntime: opts.explicit ?? null,
+    defaultRuntime: hostDefault,
+    rules: loadRuntimeRules(opts.projectRoot ?? null, env),
+    mode: opts.mode ?? "agentic",
+    available,
+  });
+  return { ...decision, hostDetected, defaultFrom, installed };
+}
+
+/** The sentence a caller prints when the runtime the user named is not here. */
+export function unavailableRuntimeMessage(choice: { runtime: Runtime; installed: Runtime[] }): string {
+  const green = choice.installed.length ? choice.installed.join(", ") : "none";
+  return `runtime '${choice.runtime}' was requested but is not installed on this machine. `
+    + `Installed right now: ${green}. `
+    + `Install it, or name one of those instead — the work is not silently moved to another vendor.`;
+}
+
 /** Collects the USE_* vars along the SAME .env chain as LLM_CASCADE (literal
  *  file beats process.env — same reason as the cascade: Bun expands $ on auto-load).
  *  The first file defining a key wins (project overrides global). */
@@ -140,7 +292,7 @@ export function loadRuntimeRules(projectRoot: string | null, env: NodeJS.Process
     const resolved = path.join(resolveCascadeRoot(projectRoot), ".env");
     if (!files.includes(resolved)) files.push(resolved);
   }
-  files.push(path.join(os.homedir(), ".claude", ".env"));
+  for (const f of globalEnvFiles()) if (!files.includes(f)) files.push(f);
 
   const claimed = new Set<string>();
   const rules: RuntimeRule[] = [];
@@ -171,18 +323,30 @@ export function loadRuntimeRules(projectRoot: string | null, env: NodeJS.Process
 // Requires an instrumental cue before the name (use/via/pelo/com o/no/using/with...)
 // so CONTENT is not confused with INSTRUCTION — a brief ABOUT the statue of
 // Hermes must not route to Hermes. The runtime name alone is not enough.
-const MENTION_NAMES: Array<[RegExp, RoutableRuntime]> = [
-  [/\bagy\b|\bantigravity(?:[- ]cli)?\b/i, "antigravity-cli"],
-  [/\bcodex(?:[- ]cli)?\b/i, "codex"],
-  [/\bgemini(?:[- ]cli)?\b/i, "gemini-cli"],
-  [/\bclaude(?:[- ]code)?\b/i, "claude-code"],
-  [/\bkimi(?:[- ](?:code|cli))?\b/i, "kimi-cli"],
-  [/\bgrok(?:[- ]cli)?\b/i, "grok-cli"],
-  [/\bpi(?:[- ](?:cli|dev|coding[- ]agent))?\b/i, "pi"],
-  [/\bhermes\b/i, "hermes"],
+// DERIVED from the same identity table as detection and USE_*, for one reason
+// measured here: this pair used to be two hand-written lists, and the cue's
+// name alternation had stopped four names earlier than the map beside it —
+// `kimi-cli` and `grok-cli` sat in the map where nothing could ever reach them,
+// and neither list had heard of `qwen-code` or `opencode`.
+const MENTION_PAIRS: Array<[Runtime | "hermes", string]> = [
+  ...listRuntimes().map((r) => [r.name, RUNTIME_IDENTITY[r.name].mention] as [Runtime, string]),
+  ["hermes", "hermes"],
 ];
-const MENTION_CUE =
-  /\b(?:use|usa|usando|utilize|utilizando|rode|rodando|execute|executando|despache|via|pelo|pela|com|no|na|using|with|through|run(?:ning)? (?:it )?on|on)\s+(?:o\s+|a\s+|the\s+)?((?:agy|antigravity|codex|gemini|claude|hermes|pi)(?:[- ](?:cli|code|dev))?)\b/gi;
+const MENTION_NAMES: Array<[RegExp, RoutableRuntime]> =
+  MENTION_PAIRS.map(([rt, frag]) => [new RegExp(`^(?:${frag})$`, "i"), rt]);
+/** Each fragment stays WHOLE inside its own group — several carry an internal
+ *  `|` (pi's `cli|dev|coding-agent`), and splitting on it shreds the pattern.
+ *  Longest group first, so no name is cut short by a shorter sibling. */
+const MENTION_ALTERNATION = MENTION_PAIRS
+  .map(([, frag]) => `(?:${frag})`)
+  .sort((a, b) => b.length - a.length)
+  .join("|");
+const MENTION_CUE = new RegExp(
+  "\\b(?:use|usa|usando|utilize|utilizando|rode|rodando|execute|executando|despache|via|pelo|pela|com|no|na"
+  + "|using|with|through|run(?:ning)? (?:it )?on|on)"
+  + `\\s+(?:o\\s+|a\\s+|the\\s+)?((?:${MENTION_ALTERNATION}))\\b`,
+  "gi",
+);
 
 /** Detects an instrumental mention of a runtime in the brief. null when: none,
  *  or more than one distinct runtime named (ambiguous — no guessing). */
@@ -268,11 +432,19 @@ export function decideRuntime(opts: {
   mode: "agentic" | "fast";
   available?: (r: Runtime) => boolean;
 }): RuntimeDecision {
-  // The explicit flag beats EVERYTHING, vetoes included: it is the user's
-  // direct action right now, stronger than any config.
-  if (opts.explicitRuntime) return { runtime: opts.explicitRuntime, source: "flag" };
-
   const avail = opts.available ?? (() => true);
+
+  // The explicit flag beats EVERYTHING, vetoes included: it is the user's
+  // direct action right now, stronger than any config. It does NOT beat
+  // reality: a runtime that is not on this machine cannot run the work, and
+  // quietly serving it from another vendor is the defect this whole file
+  // exists to prevent. The choice is returned as asked, marked unavailable,
+  // and the caller refuses with the list of what is installed.
+  if (opts.explicitRuntime) {
+    return avail(opts.explicitRuntime)
+      ? { runtime: opts.explicitRuntime, source: "flag" }
+      : { runtime: opts.explicitRuntime, source: "flag", unavailable: true };
+  }
 
   // Explicit mention in the BRIEF ("Use o agy para pesquisar...") = the user
   // speaking directly. Beats vetoes and rules (config); loses only to the flag.

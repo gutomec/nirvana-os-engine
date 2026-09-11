@@ -107,15 +107,22 @@ SelfScoreCriterionId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_
 
 
 class Runtime(str, Enum):
+    """Mantenha em sincronia com `Runtime` em validators.ts: os nove runtimes
+    que o driver executa, mais os dois hosts declaráveis que não são alvos de
+    execução (`cursor`, `openclaw`) e o nome curto `antigravity`."""
+
     claude_code = "claude-code"
     codex = "codex"
-    gemini_cli = "gemini-cli"
-    cursor = "cursor"
-    antigravity = "antigravity"
     antigravity_cli = "antigravity-cli"  # canonical name used across squads/businesses (gemini-cli successor)
-    openclaw = "openclaw"
-    opencode = "opencode"
+    antigravity = "antigravity"
+    gemini_cli = "gemini-cli"
     pi = "pi"
+    kimi_cli = "kimi-cli"
+    grok_cli = "grok-cli"
+    qwen_code = "qwen-code"
+    opencode = "opencode"
+    cursor = "cursor"
+    openclaw = "openclaw"
 
 
 class Model(str, Enum):

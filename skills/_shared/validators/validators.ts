@@ -39,9 +39,14 @@ const ACCEPTANCE_ID = /^[a-z][a-z0-9_-]*$/
 /** A capability id, optionally qualified by the providing squad: `slug:ns.cap.verb`. */
 const REQUIRES_REF = /^(?:[a-z][a-z0-9-]{1,63}:)?[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2,}$/
 
+// The nine the driver can execute, plus the two hosts that are declarable but
+// not exec targets (`cursor`, `openclaw`) and the short `antigravity`. The list
+// had stopped at the driver's sixth runtime, so a squad could not declare that
+// it needs kimi, grok or qwen — and the business schema, written separately,
+// disagreed with this one about `pi` and `antigravity-cli`.
 const Runtime = z.enum([
-  'claude-code', 'codex', 'gemini-cli', 'cursor', 'antigravity', 'antigravity-cli',
-  'openclaw', 'opencode', 'pi',
+  'claude-code', 'codex', 'antigravity-cli', 'antigravity', 'gemini-cli', 'pi',
+  'kimi-cli', 'grok-cli', 'qwen-code', 'opencode', 'cursor', 'openclaw',
 ])
 const Model = z.enum(['haiku', 'sonnet', 'opus', 'inherit'])
 const Severity = z.enum(['low', 'medium', 'high'])

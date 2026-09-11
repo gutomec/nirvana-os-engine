@@ -28,6 +28,7 @@ import { stamp } from "../../_shared/lib/audit-provenance.ts";
 import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { runSquadHeadless } from "./squad-exec.ts";
 import { resolveEntityDir } from "../../_shared/lib/entity-resource-map.ts";
+import { extractJsonObject } from "../../_shared/lib/model-json.ts";
 
 const SKILLS = process.env.NIRVANA_SKILLS_DIR
   || (fs.existsSync(path.join(os.homedir(), ".nirvana", "skills")) ? path.join(os.homedir(), ".nirvana", "skills") : path.join(os.homedir(), ".claude", "skills"));
@@ -198,10 +199,8 @@ function pickChain(args: TeamRunArgs): { chain: ChainStep[]; reason: string } {
     timeoutMs: 5 * 60 * 1000,
   });
   const txt = (res.result || "").trim();
-  const m = txt.match(/\{[\s\S]*\}/);
-  if (!m) throw new Error(`director returned no JSON: ${txt.slice(0, 200)}`);
-  let parsed: any;
-  try { parsed = JSON.parse(m[0]); } catch (e: any) { throw new Error(`invalid director JSON: ${e.message}`); }
+  const parsed = extractDirectorPlan(txt);
+  if (!parsed) throw new Error(`director returned no usable JSON plan: ${txt.slice(0, 200)}`);
   if (!Array.isArray(parsed.chain) || !parsed.chain.length) throw new Error("director retornou cadeia vazia");
 
   const known = new Set(employees.map(e => e.name));
@@ -416,6 +415,24 @@ function runMandatorySquad(squadSlug: string, args: TeamRunArgs): StepResult {
  * Throws on a director that returns nothing usable; the caller decides what a
  * failed decision means for it.
  */
+/**
+ * The director's plan, pulled out of whatever the runtime printed around it.
+ *
+ * This was `txt.match(/\{[\s\S]*\}/)`: greedy, from the first `{` in the text
+ * to the last `}`. On a runtime that surrounds the final message with a JSONL
+ * event stream — Codex does — that span opens inside the telemetry and closes
+ * inside the answer, so it never parses. The director had answered correctly
+ * and the run died with "invalid director JSON", which then read as "this
+ * business does not work" and dropped the whole org chart to `agent-x`.
+ *
+ * Scan for BALANCED objects instead, skipping braces inside strings, and keep
+ * the last one that actually looks like a plan. The answer comes after the
+ * noise, and a telemetry line has no `chain`.
+ */
+export function extractDirectorPlan(text: string): any | null {
+  return extractJsonObject(text, (v) => v && Array.isArray(v.chain));
+}
+
 export function planChain(args: TeamRunArgs): { chain: ChainStep[]; reason: string } {
   let chain: ChainStep[];
   let reason: string;

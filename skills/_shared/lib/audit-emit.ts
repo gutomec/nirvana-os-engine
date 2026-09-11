@@ -11,6 +11,7 @@
 // So the copies are the defect, not the missing stamps. One owner, every caller
 // through it, and a gate that fails when a new copy appears.
 
+import { ensureDir } from "./ensure-dir.ts";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { harnessLogsDir } from "./log-paths.ts";
@@ -37,7 +38,7 @@ export function emitAudit(payload: Record<string, any>, opts: EmitOptions = {}):
       new Date().toISOString().slice(0, 10),
       "audit.jsonl",
     );
-    fs.mkdirSync(path.dirname(target), { recursive: true });
+    ensureDir(path.dirname(target));
     fs.appendFileSync(target, JSON.stringify(stamp({ ts: new Date().toISOString(), ...payload })) + "\n");
     return true;
   } catch { return false; }

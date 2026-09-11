@@ -49,6 +49,8 @@ import { resolveEntityDir } from "../../_shared/lib/entity-resource-map.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { stamp, provenanceOf } from "../../_shared/lib/audit-provenance.ts";
 import type { Runtime } from "../lib/host-agent-driver.ts";
+import { resolveRunRuntime, unavailableRuntimeMessage } from "../lib/runtime-rules.ts";
+import { extractJsonObject } from "../../_shared/lib/model-json.ts";
 import * as YAML from "yaml";
 import { readAcceptance } from "../../businesses/lib/acceptance.ts";
 
@@ -88,6 +90,10 @@ interface ChainPlan {
   businesses_root?: string;
   intake: string;
   reason: string;
+  /** The runtime that made the decision, recorded so a reader of the plan can
+   *  see WHICH session decided — the question that took a client three failed
+   *  runs to answer when the chain silently used another vendor's CLI. */
+  runtime: Runtime;
   /** Each step plus the seat that reviews it, from the org chart. A step with no
    *  `reviewer` is the root: it signs, it is not signed off. */
   chain: Array<ChainStep & { reviewer?: string }>;
@@ -173,9 +179,33 @@ function cmdPlan(argv: string[]): void {
   const brief = fs.readFileSync(briefFile, "utf8");
   const intake = intakeEmployee(bizDir);
 
+  // The runtime the chain runs in: the session the caller is sitting in,
+  // unless they named another — and a named one has to be installed here.
+  //
+  // This line was `arg("--runtime") ?? "claude-code"`, and it is the whole
+  // reason a client working in Codex watched every business fail. The director
+  // ran on a Claude Code session they never use, died on its stale credential,
+  // and the maestro read that as "this business is unusable" and dropped to
+  // agent-x. `dispatch.ts` had already been fixed for exactly this; the chain
+  // kept the literal, so it reached every seat of every org chart.
+  const runtimeChoice = resolveRunRuntime({
+    brief,
+    explicit: (arg(argv, "--runtime") as Runtime | undefined) ?? null,
+    projectRoot,
+  });
+  if (runtimeChoice.unavailable) die(unavailableRuntimeMessage(runtimeChoice), EXIT_ARGS);
+  if (!runtimeChoice.hostDetected && runtimeChoice.source === "default") {
+    console.error(`nrv team: host runtime not identified — using ${runtimeChoice.runtime} (${runtimeChoice.defaultFrom}).`
+      + " Pin it with `nrv config set execution.default_runtime <runtime>`, or pass --runtime.");
+    emitAudit({
+      event: "x_host_runtime_undetected", project_id: projectId, business_slug: slug,
+      used: runtimeChoice.runtime, from: runtimeChoice.defaultFrom, cwd: process.cwd(),
+    }, projectRoot);
+  }
+
   const args: TeamRunArgs = {
     slug, brief, projectId, projectDir, projectRoot, outputsRoot,
-    runtime: (arg(argv, "--runtime") ?? "claude-code") as Runtime,
+    runtime: runtimeChoice.runtime,
     intakeEmployee: intake,
     forceChain: argv.includes("--team"),
     // `--single` skips the director outright: the user already decided, and
@@ -209,7 +239,7 @@ function cmdPlan(argv: string[]): void {
     business: slug, project_id: projectId, project_dir: projectDir, project_root: projectRoot,
     outputs_root: outputsRoot, brief_file: path.resolve(briefFile),
     ...(businessesRoot ? { businesses_root: businessesRoot } : {}),
-    intake, reason, chain: chainWithReviewers,
+    intake, reason, runtime: runtimeChoice.runtime, chain: chainWithReviewers,
   };
 
   // The convention every verifier already expects: `brief.md` at the outputs
@@ -437,8 +467,11 @@ function cmdVerdict(argv: string[]): void {
     const text = fs.readFileSync(verdictFile!, "utf8");
     // The reviewer is an LLM; a fenced block or a sentence around the object is
     // ordinary, and failing the whole review over punctuation would teach the
-    // wrong lesson. The object itself is what must be well formed.
-    raw = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] ?? text);
+    // wrong lesson. The object itself is what must be well formed. Scanning for
+    // BALANCED objects (not the first `{` to the last `}`) is what keeps a
+    // reviewer running on a runtime that prints an event stream from reading as
+    // malformed — the same defect that killed the director on Codex.
+    raw = extractJsonObject(text) ?? JSON.parse(text);
   } catch (e: any) { die(`the verdict is not JSON: ${e.message}`); }
 
   const bizDir = plan.businesses_root

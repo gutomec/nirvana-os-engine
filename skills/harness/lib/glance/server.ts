@@ -39,6 +39,7 @@ import {
 } from "./data-loader.ts";
 import { startJob, getJob, listJobs, streamJob, cancelJob, isMutatingActive } from "./action-runner.ts";
 import { orcaOpenUrl } from "../../../_shared/lib/orca.ts";
+import { listRuntimes, runtimeAvailable } from "../../../_shared/lib/host-agent-driver.ts";
 import { deriveAgentStates, summarizeStates } from "./agent-state.ts";
 import { readSubsystems } from "./subsystems.ts";
 import { paths, invalidatePathsCache, overridePath } from "../../../_shared/lib/bun-helpers.ts";
@@ -1380,7 +1381,16 @@ export async function startServer(opts: ServerOptions) {
         return json({
           project: readRules(path.join(projectDir, ".env")),
           global: readRules(path.join(os.homedir(), ".env")),
-          runtimes: ["claude-code", "codex", "gemini-cli", "antigravity-cli", "hermes"],
+          // Derived: this list drives the rules editor's runtime picker and the
+          // chat runtime override. Hand-written, it had four of the nine the
+          // driver ships, so a user on pi/kimi/grok/qwen/opencode could neither
+          // write a USE_ rule for their own CLI nor pick it in the UI.
+          runtimes: [...listRuntimes().map((r) => r.name), "hermes"],
+          // Which of those are actually on this machine. A rule may name a CLI
+          // the user plans to install; an OVERRIDE may not — naming a runtime
+          // that is not here is refused rather than served by another vendor,
+          // so the picker that sets one offers only what is green.
+          runtimes_installed: listRuntimes().map((r) => r.name).filter((n) => runtimeAvailable(n)),
           allow_actions: opts.allowActions,
         });
       }

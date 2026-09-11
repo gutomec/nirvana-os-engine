@@ -89,13 +89,44 @@ function serverSideFailure(text: string): QuotaClass | undefined {
   };
 }
 
+/**
+ * Credential trouble, in the phrasings the CLIs actually print.
+ *
+ * This was five different regexes, one per runtime, and each missed what the
+ * others had: Codex did not recognise `authentication failed`, Claude did not
+ * recognise a bare `401`, and NOT ONE of them recognised an EXPIRED SESSION —
+ * the family a fully paid, signed-in user hits when the local OAuth token can
+ * no longer be refreshed. Measured on a client's machine, 2026-09-11: `OAuth
+ * session expired and could not be refreshed` classified as a generic `error`,
+ * so the cascade neither cooled the dead runtime down nor handed off, and an
+ * entire business silently became `agent-x`.
+ *
+ * The quota checks in each classifier still run FIRST, so "you have hit your
+ * usage limit" stays a quota, not a credential. What is scoped tightly on
+ * purpose: only a session, token or credential "expired" counts — a plan or a
+ * subscription that expired is the provider's billing, not this machine's login.
+ */
+/**
+ * "The plan's allowance is spent", in the phrasings the CLIs print.
+ *
+ * Four classifiers carried their own spelling of this and `classifyGemini`
+ * carried none at all, so one sentence was a quota on four runtimes and a
+ * generic error on the fifth — and a generic error neither cools the runtime
+ * down nor hands off. The older `you'?ve?` also failed to match the written-out
+ * "you have", which is how a real ceiling read as an unknown failure.
+ */
+const USAGE_LIMIT_PATTERN =
+  /you(?:'ve|\s+have|ve)?\s+(hit|reached)\s+(your|the)\s+(usage\s+)?limit|usage\s+limit\s+(reached|exceeded)|hit\s+the\s+(usage|message)\s+limit/i;
+const AUTH_PATTERN =
+  /no\s+(api[ _-]?key|credentials)|missing\s+(api[ _-]?key|credentials)|invalid\s+(api[ _-]?key|credentials|token|grant|refresh[ _-]?token)|api[ _-]?key|OPENAI_API_KEY|unauthor|forbidden|\b401\b|authenticat|please\s+(sign|log)\s*in|sign[ _-]?in|login\s+required|(session|token|credential)s?\s+(ha[sv]e?\s+)?expired|expired\s+(session|token|credential)|could\s+not\s+be\s+refreshed|failed\s+to\s+refresh|refresh\s+token\s+(is\s+)?(invalid|expired|not\s+set)|re-?authenticate|run\s+`?[\w-]+\s+login`?/i;
+
 function classifyClaudeCode(text: string): QuotaClass {
   const t = text.toLowerCase();
   // Subscription windows surface as text — not status codes. The live message
   // is "You've hit your weekly limit · resets May 26, 8pm" — note the
   // contraction "you've" and the "· resets" suffix (not "reached"/"exceeded").
   if (/weekly\s+(usage\s+)?(limit|cap)/i.test(text)
-   || /you'?ve?\s+(reached|hit)\s+(your\s+)?weekly/i.test(text)
+   || /you(?:'ve|\s+have|ve)?\s+(reached|hit)\s+(your\s+)?weekly/i.test(text)
    || /you\s+have\s+(reached|hit)\s+your\s+weekly/i.test(text)) {
     return { kind: "quota_exhausted", ttlSec: DEFAULT_TTL.weekly, hint: "Claude Code weekly cap reached", window: "weekly" };
   }
@@ -104,7 +135,7 @@ function classifyClaudeCode(text: string): QuotaClass {
     const retry = findRetryAfterSec(text);
     return { kind: "quota_exhausted", ttlSec: retry ?? DEFAULT_TTL["5h"], hint: "Claude Code 5-hour window reached", window: "5h" };
   }
-  if (/you'?ve?\s+(hit|reached)\s+(your|the)\s+(usage\s+)?limit|usage\s+limit\s+(reached|exceeded)/i.test(text)) {
+  if (USAGE_LIMIT_PATTERN.test(text)) {
     return { kind: "quota_exhausted", ttlSec: DEFAULT_TTL["5h"], hint: "Claude (plan) usage limit reached", window: "5h" };
   }
   if (/(api\s+error[:\s]+)?rate\s+limit\s+(reached|exceeded)/i.test(text)
@@ -117,7 +148,7 @@ function classifyClaudeCode(text: string): QuotaClass {
   if (/spend\s+limit|monthly\s+cap|billing\s+(threshold|cap)/i.test(text)) {
     return { kind: "quota_exhausted", ttlSec: DEFAULT_TTL.monthly, hint: "Claude spend/billing cap reached", window: "monthly" };
   }
-  if (/authenticat|api[ _-]?key|unauthor|forbidden|sign(\s+)?in|login\s+required/i.test(text)) {
+  if (AUTH_PATTERN.test(text)) {
     return { kind: "auth_failed", hint: "Claude Code auth missing/invalid" };
   }
   return { kind: "error", hint: text.slice(0, 200) };
@@ -135,7 +166,7 @@ function classifyCodex(text: string): QuotaClass {
   // usage limit"). Treat as quota_exhausted with the 5h window (Plus resets
   // hourly-ish; Pro tier rolls weekly — we route conservatively to 5h and
   // let the cooldown re-test sooner).
-  if (/you'?ve?\s+(hit|reached)\s+(your|the)\s+(usage\s+)?limit|usage\s+limit\s+(reached|exceeded)|hit\s+the\s+(usage|message)\s+limit/i.test(text)) {
+  if (USAGE_LIMIT_PATTERN.test(text)) {
     return { kind: "quota_exhausted", ttlSec: DEFAULT_TTL["5h"], hint: "Codex (ChatGPT plan) usage limit reached", window: "5h" };
   }
   if (/rate[ _-]?limit|too\s+many\s+requests|\b429\b/i.test(text)) {
@@ -143,7 +174,7 @@ function classifyCodex(text: string): QuotaClass {
     if (retry !== undefined && retry < 120) return { kind: "transient", retryAfterSec: retry, hint: "Codex rate limit (transient)" };
     return { kind: "quota_exhausted", ttlSec: retry ?? DEFAULT_TTL["5h"], hint: "Codex rate limit (treating as quota)", window: "5h" };
   }
-  if (/api[ _-]?key|OPENAI_API_KEY|unauthorized|invalid\s+token|sign[ _-]?in/i.test(text)) {
+  if (AUTH_PATTERN.test(text)) {
     return { kind: "auth_failed", hint: "Codex auth missing/invalid" };
   }
   return { kind: "error", hint: text.slice(0, 200) };
@@ -168,7 +199,7 @@ function classifyAntigravity(text: string): QuotaClass {
   if (/quota\s+(exceeded|reached)|daily\s+(limit|quota)/i.test(text)) {
     return { kind: "quota_exhausted", ttlSec: DEFAULT_TTL["5h"], hint: "Antigravity quota reached", window: "5h" };
   }
-  if (/you'?ve?\s+(hit|reached)\s+(your|the)\s+(usage\s+)?limit|usage\s+limit\s+(reached|exceeded)/i.test(text)) {
+  if (USAGE_LIMIT_PATTERN.test(text)) {
     return { kind: "quota_exhausted", ttlSec: DEFAULT_TTL["5h"], hint: "Antigravity (plan) usage limit reached", window: "5h" };
   }
   if (/rate[ _-]?limit|too\s+many\s+requests|\b429\b/i.test(text)) {
@@ -180,7 +211,7 @@ function classifyAntigravity(text: string): QuotaClass {
    || (/code["\s:]*404/i.test(text) && /model/i.test(text))) {
     return { kind: "quota_exhausted", ttlSec: 60 * 60, hint: "Antigravity model not found (check --model name)", window: "5h" };
   }
-  if (/no\s+(api[ _-]?key|credentials)|missing\s+(api[ _-]?key|credentials)|invalid\s+(api[ _-]?key|credentials|token)|unauthorized|please\s+(sign|log)\s*in|authentication\s+(failed|required)|401\b/i.test(text)) {
+  if (AUTH_PATTERN.test(text)) {
     return { kind: "auth_failed", hint: "Antigravity auth missing/invalid (try `agy` to re-auth)" };
   }
   return { kind: "error", hint: text.slice(0, 200) };
@@ -192,6 +223,9 @@ function classifyGemini(text: string): QuotaClass {
   }
   if (/quota\s+(exceeded|reached)|daily\s+(limit|quota)/i.test(text)) {
     return { kind: "quota_exhausted", ttlSec: DEFAULT_TTL["5h"], hint: "Gemini daily quota reached", window: "5h" };
+  }
+  if (USAGE_LIMIT_PATTERN.test(text)) {
+    return { kind: "quota_exhausted", ttlSec: DEFAULT_TTL["5h"], hint: "Gemini usage limit reached", window: "5h" };
   }
   if (/rate[ _-]?limit|too\s+many\s+requests|\b429\b/i.test(text)) {
     const retry = findRetryAfterSec(text);
@@ -213,7 +247,7 @@ function classifyGemini(text: string): QuotaClass {
   }
   // Real auth failure (not the informative "Both *_API_KEY are set" warning).
   // Require explicit failure context, not just the var names.
-  if (/no\s+(api[ _-]?key|credentials)|missing\s+(api[ _-]?key|credentials)|invalid\s+(api[ _-]?key|credentials|token)|unauthorized|please\s+(sign|log)\s*in|error\s+authenticating|authentication\s+(failed|required)|401\b/i.test(text)) {
+  if (AUTH_PATTERN.test(text)) {
     return { kind: "auth_failed", hint: "Gemini auth missing/invalid" };
   }
   return { kind: "error", hint: text.slice(0, 200) };
@@ -235,7 +269,7 @@ function classifyPi(text: string): QuotaClass {
   if (/weekly\s+(limit|cap)|usage\s+cap\s+for\s+the\s+week/i.test(text)) {
     return { kind: "quota_exhausted", ttlSec: DEFAULT_TTL.weekly, hint: "Pi (subscription) weekly cap reached", window: "weekly" };
   }
-  if (/you'?ve?\s+(hit|reached)\s+(your|the)\s+(usage\s+)?limit|usage\s+limit\s+(reached|exceeded)/i.test(text)) {
+  if (USAGE_LIMIT_PATTERN.test(text)) {
     return { kind: "quota_exhausted", ttlSec: DEFAULT_TTL["5h"], hint: "Pi (subscription) usage limit reached", window: "5h" };
   }
   if (/rate[ _-]?limit|too\s+many\s+requests|\b429\b/i.test(text)) {
@@ -246,7 +280,7 @@ function classifyPi(text: string): QuotaClass {
   if (/ModelNotFoundError|model[\s_-]+not[\s_-]+found|unknown\s+model|\bnot\s+found\b.*model/i.test(text)) {
     return { kind: "quota_exhausted", ttlSec: 60 * 60, hint: "Pi model not found (check pi:<model>@<provider> in LLM_CASCADE / models.json)", window: "5h" };
   }
-  if (/no\s+(api[ _-]?key|credentials)|missing\s+(api[ _-]?key|credentials)|invalid\s+(api[ _-]?key|credentials|token)|unauthorized|authentication\s+(failed|required)|401\b/i.test(text)) {
+  if (AUTH_PATTERN.test(text)) {
     return { kind: "auth_failed", hint: "Pi provider auth missing/invalid (API key no env/auth.json, ou `pi` → /login)" };
   }
   return { kind: "error", hint: text.slice(0, 200) };

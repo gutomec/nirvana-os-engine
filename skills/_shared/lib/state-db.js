@@ -20,6 +20,8 @@
 
 'use strict';
 
+const { ensureDir } = require('./ensure-dir.js');
+
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -60,7 +62,7 @@ function resolveDbPath(projectRoot) {
 
 function ensureDirFor(filePath) {
   const dir = path.dirname(filePath);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  ensureDir(dir);
 }
 
 const _openCache = new Map(); // path -> { db, close }

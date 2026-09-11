@@ -46,7 +46,7 @@ import { runWithCascade } from "../lib/cascade-runner.ts";
 import { resolveCascadeRoot, loadCascade, nextAfter } from "../lib/cascade.ts";
 import { classify } from "../lib/quota-detector.ts";
 import { isInCooldown, getCooldown, markCooldown } from "../lib/cooldown-registry.ts";
-import { loadRuntimeRules, decideRuntime, detectCurrentHost, formatRulesForDirective, resolveDefaultRuntime, type RuntimeDecision } from "../lib/runtime-rules.ts";
+import { canonicalRuntimeName, loadRuntimeRules, decideRuntime, detectCurrentHost, formatRulesForDirective, resolveDefaultRuntime, unavailableRuntimeMessage, type RuntimeDecision } from "../lib/runtime-rules.ts";
 import { preflightReindex } from "../lib/preflight-index.ts";
 import { maybeSweep } from "./supervisor.ts";
 import * as runLedger from "../lib/run-ledger.ts";
@@ -242,24 +242,22 @@ function c(color: string, text: string): string {
 }
 
 // ── exec-mode flags ──────────────────────────────────────────────────────
-function normRuntime(s: string): Runtime {
-  const v = (s || "").toLowerCase();
-  if (v === "claude" || v === "claude-code") return "claude-code";
-  if (v === "codex") return "codex";
-  if (v === "gemini" || v === "gemini-cli") return "gemini-cli";
-  if (v === "agy" || v === "antigravity" || v === "antigravity-cli") return "antigravity-cli";
-  if (v === "pi" || v === "pi-cli" || v === "pi-dev" || v === "pi-coding-agent") return "pi";
-  return (s || "claude-code") as Runtime;
+/** One alias table, shared with USE_* and NIRVANA_HOST_RUNTIME. This used to be
+ *  a private ladder that knew five of the nine runtimes, so `--exec=kimi` and
+ *  `--exec=grok` fell through to the pass-through branch and reached the driver
+ *  as the literal word the user typed — "unknown runtime 'grok'" — while an
+ *  empty value answered with one vendor's name. */
+const normRuntime = (s: string): Runtime => canonicalRuntimeName(s);
+/** Whether the caller asked to EXECUTE, not which runtime to execute in. It
+ *  used to answer with a runtime and default a bare `--exec` to one vendor; the
+ *  value was never read (only its nullness was), so the literal was a landmine
+ *  waiting for the first reader who trusted it. Which runtime runs the work is
+ *  decided once, further down, by the session-aware resolution. */
+function wantsExec(): boolean {
+  return process.argv.some(a => a.startsWith("--exec=")) || process.argv.includes("--exec")
+    || process.argv.includes("--run") || process.argv.includes("--claude-code");
 }
-function resolveExecRuntime(): Runtime | null {
-  const eq = process.argv.find(a => a.startsWith("--exec="));
-  if (eq) return normRuntime(eq.split("=")[1]);
-  if (process.argv.includes("--claude-code")) return "claude-code";
-  if (process.argv.includes("--exec") || process.argv.includes("--run")) return normRuntime(runtime || "claude-code");
-  return null;
-}
-const execRuntime = resolveExecRuntime();
-const wantExec = execRuntime !== null;
+const wantExec = wantsExec();
 const wantZip = process.argv.includes("--zip");
 const wantPdf = process.argv.includes("--pdf");
 // HTML report is the DEFAULT (skipped only in fast mode or with --no-html). --html
@@ -539,6 +537,16 @@ let runtimeDecision: RuntimeDecision = decideRuntime({
   rules: runtimeRules, mode: routingMode as "agentic" | "fast",
   available: runtimeAvailable,
 });
+// A runtime the caller NAMED and this machine does not have: refuse, and say
+// what is installed. Serving the run from another vendor behind their back is
+// the defect the whole resolution order above exists to prevent.
+if (runtimeDecision.unavailable) {
+  console.error(c("red", "✗") + " " + unavailableRuntimeMessage({
+    runtime: runtimeDecision.runtime,
+    installed: listRuntimes().map((r) => r.name).filter(runtimeAvailable),
+  }));
+  process.exit(4);
+}
 if (runtimeDecision.source === "brief") {
   console.log(c("lime", "▶") + c("bold", ` Runtime named in the brief: "${runtimeDecision.mention}"`) + c("dim", ` → ${runtimeDecision.runtime}`));
   emit("routing_rule_applied", {
@@ -767,7 +775,10 @@ if (autoMode && routingMode === "fast") {
 if (wantAutoBrief) {
   if (autoBriefMode === "proxy" || autoBriefMode === "llm") {
     // LLM "informed client" — interviews + answers on the human's behalf.
-    const pr = proxyEnrichBrief(brief, slug, normRuntime(runtime || "claude-code"), {
+    // The runtime already decided for this run (session > brief > rule > default),
+    // not a literal: enriching the brief on a vendor the user is not signed into
+    // is the same defect as dispatching on one.
+    const pr = proxyEnrichBrief(brief, slug, runtimeDecision.runtime, {
       maxBudgetUsd: effectiveBudgetUsd(),
     });
     if (pr.ok && pr.enriched) {

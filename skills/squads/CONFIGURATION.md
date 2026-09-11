@@ -141,7 +141,7 @@ inicia ou troca de runtime.
 
 | Campo | Função |
 |---|---|
-| `minimum[]` | Lista de `{runtime: <id>, version?: <v>}`. Runtimes aceitos: `claude-code, codex, gemini-cli, cursor, antigravity, openclaw, opencode` |
+| `minimum[]` | Lista de `{runtime: <id>, version?: <v>}`. Runtimes aceitos: `claude-code, codex, antigravity-cli, antigravity, gemini-cli, pi, kimi-cli, grok-cli, qwen-code, opencode, cursor, openclaw` |
 | `compatible[]` | Runtimes que também funcionam (sem garantia) |
 | `incompatible[]` | Runtimes que NÃO funcionam |
 

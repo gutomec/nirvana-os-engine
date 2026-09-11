@@ -38,6 +38,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const ce = require('../../_shared/lib/cloudevents.js');
+const { ensureDir } = require('../../_shared/lib/ensure-dir.js');
 
 const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
   || (fs.existsSync(path.join(os.homedir(), '.nirvana', 'skills')) ? path.join(os.homedir(), '.nirvana', 'skills') : path.join(os.homedir(), '.claude', 'skills'));
@@ -158,7 +159,7 @@ function logPath(dateStr, cwd) {
  */
 function ensureLogDir(dateStr, cwd) {
   const { dir, file } = logPath(dateStr, cwd);
-  fs.mkdirSync(dir, { recursive: true });
+  ensureDir(dir);
   return file;
 }
 
