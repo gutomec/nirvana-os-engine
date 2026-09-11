@@ -192,7 +192,10 @@ describe("the declarable roster agrees with the executable one", () => {
   // squad schema accepted, and none of the four had heard of kimi, grok or
   // qwen, so a squad could not say which runtime it actually needs.
   const REPO = path.resolve(import.meta.dir, "..", "..", "..");
-  const read = (p: string) => fs.readFileSync(path.join(REPO, p), "utf8");
+  // `\r` stripped: git checks these files out with CRLF on Windows, and a
+  // pattern anchored on "\n\n\nclass " then matches nothing there. A test that
+  // only passes on the machine it was written on proves nothing about the code.
+  const read = (p: string) => fs.readFileSync(path.join(REPO, p), "utf8").replace(/\r\n/g, "\n");
   const runtimeEnumOf = (schema: string): string[] => {
     const found: string[] = [];
     const walk = (node: any) => {
