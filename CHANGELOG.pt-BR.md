@@ -6,7 +6,7 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
-## Não lançado
+## 0.13.7 — 2026-09-11
 
 ### O trabalho roda onde o usuário está trabalhando, e a resposta do modelo sobrevive ao ruído do runtime
 
