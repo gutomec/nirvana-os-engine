@@ -389,7 +389,10 @@ export function createEmployeeBelow(businessSlug: string, input: NewEmployeeInpu
     `reports_to: ${input.reportsTo}`,
     "manages: []",
     "authority_level: tier-3",
-    "effort: medium",
+    // No `effort:` and no `model:`. A seat that declares neither is dispatched
+    // without either, so the runtime uses the model and effort the USER has
+    // configured. Stamping `effort: medium` into every new employee was the
+    // engine deciding that for them.
     "operation_mode: zero_human",
     "---",
     "",

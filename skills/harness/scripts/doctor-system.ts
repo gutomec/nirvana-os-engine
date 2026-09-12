@@ -29,6 +29,7 @@ import { resolveScope, enumerate } from "../../_shared/lib/scope.ts";
 import { RUNTIME_TARGETS, RUNTIME_SKILL_DIRS, PROJECT_CONTRACT_FILES, SKILLS as SKILL_NAMES } from "../../_shared/lib/runtime-dirs.ts";
 import { listRuntimes, whichSync } from "../../_shared/lib/host-agent-driver.ts";
 import { resolveRunRuntime } from "../lib/runtime-rules.ts";
+import { resolvePinnedEffort, resolveSystemModel } from "../../_shared/lib/system-model.ts";
 import { classifySkillsLitter } from "../lib/skills-litter.ts";
 import { openclawAgentsOnProjects } from "../../_shared/lib/openclaw.ts";
 import { detectOrca, orcaHooksStatus, orcaHostActive, orcaStatus, resolveOrcaExecutable } from "../../_shared/lib/orca.ts";
@@ -161,6 +162,30 @@ add(
     choice.defaultFrom === "fallback" ? "WARN" : "PASS",
     `dispatch defaults to ${choice.runtime} — ${how}. Green here: ${green}.`
     + " Name another with --runtime, a USE_* rule or the brief; one that is not green is refused, never substituted.",
+  );
+}
+
+// SECTION 1a-quater: WHAT THE DISPATCH SPECIFIES — which should be nothing.
+// Owner doctrine: a dispatch names no model and no effort unless the user did,
+// so each CLI runs on what its own configuration says. Visible here because the
+// opposite failed silently: a vendor variable in the environment was being
+// turned into `--model opus` for all nine runtimes, including the ones that
+// have no such model.
+{
+  const pinnedModel = resolveSystemModel() ?? null;
+  const pinnedEffort = resolvePinnedEffort();
+  const parts: string[] = [];
+  parts.push(pinnedModel ? `model ${pinnedModel} (pinned in execution.model)` : "no model");
+  parts.push(pinnedEffort ? `effort ${pinnedEffort} (pinned in execution.effort)` : "no effort");
+  const pinned = pinnedModel || pinnedEffort;
+  add(
+    "runtime: model & effort",
+    "PASS",
+    `a dispatch specifies: ${parts.join(", ")}.`
+    + (pinned
+      ? " Clear the pin to let each CLI use its own default."
+      : " Each CLI uses what its own configuration says, which is the intended default.")
+    + " Effort reaches claude (--effort) and codex (model_reasoning_effort); no other runtime has the concept.",
   );
 }
 

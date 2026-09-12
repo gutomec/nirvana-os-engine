@@ -10,11 +10,11 @@
 // untouched.
 //
 // Usage:
-//   bun normalize-employee-maxturns.ts --target 400 --dry-run
-//   bun normalize-employee-maxturns.ts --target 400 --apply
+//   bun normalize-employee-maxturns.ts --target 15 --dry-run
+//   bun normalize-employee-maxturns.ts --target 15 --apply
 //
 // Optional flags:
-//   --target <n>          Default 400.
+//   --target <n>          Default 15 (the schema default since 2026-09-12).
 //   --apply               Actually write. Without it, runs in dry mode.
 //   --businesses-dir <p>  Default ~/businesses
 import * as fs from "node:fs";
@@ -29,7 +29,7 @@ function parseArg(name: string, fallback?: string): string | undefined {
   return next;
 }
 
-const target = parseInt(parseArg("--target", "400") || "400", 10);
+const target = parseInt(parseArg("--target", "15") || "15", 10);
 const apply = process.argv.includes("--apply");
 const dryRun = !apply || process.argv.includes("--dry-run");
 const businessesDir = parseArg("--businesses-dir", path.join(os.homedir(), "businesses"))!;

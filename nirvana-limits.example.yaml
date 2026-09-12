@@ -67,7 +67,8 @@ employee_description_max: 3000
 # matava pipelines complexos. Subido para 1000 (teto) e 400 (default
 # padronizado em todos os employees via normalize-employee-maxturns.ts).
 
-# maxTurns de employee — teto 1000. Default por employee = 400.
+# maxTurns de employee — teto 1000. Default por employee = 15 (desceu de 400
+# em 12/09/2026: quinze turnos sem terminar é loop, não trabalho).
 employee_max_turns_max: 1000
 
 # maxTurns de mind-clone DNA — alinhado.
