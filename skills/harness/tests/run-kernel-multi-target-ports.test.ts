@@ -1,17 +1,23 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { removeDir } from "./helpers/temp-dirs.ts";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DependencyGraph } from "../../_shared/lib/dependency-graph.ts";
 import { reserveAggregateGauntletBudget } from "../lib/gauntlet/aggregate-budget.ts";
 import { coordinateMultiTargetPlan, type MultiTargetAdapterInput, type MultiTargetAdapterResult } from "../lib/gauntlet/multi-target-coordinator.ts";
 import { createRunKernelMultiTargetPorts } from "../lib/gauntlet/run-kernel-multi-target-ports.ts";
-import { KERNEL_BUDGET_MS } from "./helpers/test-budgets.ts";
+import { KERNEL_BUDGET_MS, TEARDOWN_BUDGET_MS } from "./helpers/test-budgets.ts";
 import { compileMultiTargetGauntletPolicy } from "../lib/plan-compiler.ts";
 import { createRun, listEvents, openKernel, type KernelHandle } from "../lib/run-kernel/store.ts";
 
 const roots: string[] = [];
-afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+// `removeDir`, not a bare `rmSync`: this teardown deletes a directory holding a
+// file-backed Run Kernel, and on windows-latest it failed the file with
+// `EBUSY: resource busy or locked, rm '…\nirvana-multi-target-kernel-…'` while
+// the SQLite handle was still being released. `removeDir` retries
+// EBUSY/EPERM/EACCES/ENOTEMPTY; `rmSync` gives up on the first one.
+afterEach(() => { for (const root of roots.splice(0)) removeDir(root); }, TEARDOWN_BUDGET_MS);
 
 const graph: DependencyGraph = {
   nodes: [
