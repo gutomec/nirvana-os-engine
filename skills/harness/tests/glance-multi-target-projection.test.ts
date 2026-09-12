@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { KERNEL_BUDGET_MS } from "./helpers/test-budgets.ts";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -66,6 +67,12 @@ function ports(kernel: KernelHandle, runId: string) {
     correlationId: `cor_${runId}`, leaseDurationMs: 1_000, standard: { run: adapter }, gauntlet: { run: adapter } });
 }
 
+// KERNEL_BUDGET_MS: this hook seeds a file-backed Run Kernel, coordinates a
+// five-node multi-target plan and starts a Glance server, all on Bun's 5 s
+// default for HOOKS. On windows-latest it measured 6257 ms and failed the whole
+// file as `(fail) (unnamed)` with every named test passing — the signature
+// `helpers/test-budgets.ts` documents, where the runner's speed picks the
+// victim. Headroom, not slack: a hook that truly wedges still fails, later.
 beforeAll(async () => {
   const root = tempRoot();
   process.env.NIRVANA_PROJECT_ROOT = root;
@@ -82,7 +89,7 @@ beforeAll(async () => {
   const { startServer } = await import("../lib/glance/server.ts");
   instance = await startServer({ port: 0, open: false, idleMin: 60, allowActions: false, theme: "apple" });
   base = `http://127.0.0.1:${instance.port}`;
-});
+}, KERNEL_BUDGET_MS);
 afterAll(() => {
   try { instance?.close(); } catch {}
   delete process.env.NIRVANA_PROJECT_ROOT;

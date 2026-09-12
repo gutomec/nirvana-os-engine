@@ -77,31 +77,25 @@ function machine(opts: { installerExits?: number; olderBackups?: string[] } = {}
 }
 
 describe("a release install gets the same safety net as a git checkout", () => {
-  test("the skills tree is copied aside before the installer overwrites it", () => {
+  // One run, four facts about it. Deliberately not four runs: each one extracts
+  // a tarball and spawns the installer, and the Windows job runs the whole
+  // suite inside one wall-clock budget that a few extra subprocesses move.
+  test("it copies the tree aside, records the update, and prints a rollback that exists", () => {
     const m = machine();
     const r = m.run();
     expect(r.status).toBe(0);
 
     const backups = m.backups();
     expect(backups).toHaveLength(1);
-    const copied = path.join(m.home, ".nirvana", backups[0], "MARKER.txt");
     // The copy holds what was deployed BEFORE, which is the whole point.
-    expect(fs.readFileSync(copied, "utf8")).toBe("the deployment that was here before the update");
+    expect(fs.readFileSync(path.join(m.home, ".nirvana", backups[0], "MARKER.txt"), "utf8"))
+      .toBe("the deployment that was here before the update");
     expect(fs.readFileSync(path.join(m.skills, "MARKER.txt"), "utf8")).toBe("overwritten by the new engine");
-  }, 90_000);
 
-  test("the rollback command it prints names a directory that exists", () => {
-    const m = machine();
-    const out = plain(m.run().stdout);
-    const line = out.split("\n").find((l) => l.includes("rm -rf") && l.includes("mv"));
+    const line = plain(r.stdout).split("\n").find((l) => l.includes("rm -rf") && l.includes("mv"));
     expect(line, "no rollback line was printed on the release path").toBeDefined();
-    const named = line!.match(/mv\s+(\S+)\s/)![1];
-    expect(fs.existsSync(named)).toBe(true);
-  }, 90_000);
+    expect(fs.existsSync(line!.match(/mv\s+(\S+)\s/)![1])).toBe(true);
 
-  test("it records nirvana_updated, so the machine has a trace of when the engine changed", () => {
-    const m = machine();
-    m.run();
     const updated = m.auditEvents().filter((e) => e.event === "nirvana_updated");
     expect(updated).toHaveLength(1);
     expect(updated[0].path).toBe("release");
