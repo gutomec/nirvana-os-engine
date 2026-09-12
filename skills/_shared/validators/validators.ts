@@ -44,6 +44,20 @@ const REQUIRES_REF = /^(?:[a-z][a-z0-9-]{1,63}:)?[a-z][a-z0-9_]*(\.[a-z][a-z0-9_
 // had stopped at the driver's sixth runtime, so a squad could not declare that
 // it needs kimi, grok or qwen — and the business schema, written separately,
 // disagreed with this one about `pi` and `antigravity-cli`.
+/** How these schemas are projected to JSON Schema. Lives here, next to the Zod
+ *  source, because the generator and the parity test must pass the same options
+ *  and the generator script executes on import (it has no `import.meta.main`
+ *  guard), so importing it from a test would silently regenerate the files the
+ *  test is there to compare.
+ *
+ *  `io: "input"` is what a MANIFEST schema means. Zod's default, "output",
+ *  describes the parsed value, where a defaulted field is always present and
+ *  therefore `required` — so the published schemas declared `score_boost`,
+ *  `model_hint` and `parallel_safe` mandatory while both validators default
+ *  them and the docs label them optional (issue #252). Defaults are still
+ *  published; only the `required` lists change. */
+export const JSON_SCHEMA_OPTIONS = { unrepresentable: "any", io: "input" } as const;
+
 const Runtime = z.enum([
   'claude-code', 'codex', 'antigravity-cli', 'antigravity', 'gemini-cli', 'pi',
   'kimi-cli', 'grok-cli', 'qwen-code', 'opencode', 'cursor', 'openclaw',
