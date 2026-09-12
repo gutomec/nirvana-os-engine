@@ -34,7 +34,7 @@ import * as path from "node:path";
 import { createRequire } from "node:module";
 import type { RunHeadlessOpts, RunHeadlessResult, Runtime } from "./host-agent-driver.ts";
 import { orcaJson, orcaFire, orcaWorkersActive, orcaWorkspaceSelector } from "./orca.ts";
-import { resolveSystemModel } from "./system-model.ts";
+import { isEffortLevel, resolvePinnedEffort, resolveSystemModel } from "./system-model.ts";
 import { codexConfigPath } from "./codex-hooks.ts";
 
 /** Nirvana runtime → the agent id Orca recognizes in a terminal (the identity
@@ -145,22 +145,36 @@ export interface OrcaWorkerHooks {
  * (yolo false) drops them, and claude takes `--permission-mode acceptEdits`
  * like its headless twin. Null for a runtime Orca has no agent id for.
  */
-export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" | "model" | "addDirs">): string[] | null {
+export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" | "model" | "effort" | "addDirs">): string[] | null {
   if (!ORCA_AGENT_ID[opts.runtime]) return null;
   const yolo = opts.yolo !== false;
+  // The caller's value, else the user's pin, else nothing — a bare CLI uses the
+  // model its own configuration names. `resolveSystemModel` answers a pin for
+  // any runtime by design, so a Claude alias pinned while dispatching codex is
+  // dropped here the way the headless adapter drops it, instead of reaching
+  // `-m opus` and failing the run.
   let model: string | null = opts.model ?? null;
   if (!model) { try { model = resolveSystemModel(opts.runtime) ?? null; } catch { model = null; } }
+  if (model && opts.runtime === "codex" && !/^(gpt|o[0-9]|codex)/i.test(model)) model = null;
+  let effort: string | null = null;
+  try {
+    const wanted = (opts.effort ?? "").trim().toLowerCase() || resolvePinnedEffort() || "";
+    // Only claude and codex have the concept; the others run at their own default.
+    if (wanted && isEffortLevel(wanted) && (opts.runtime === "claude-code" || opts.runtime === "codex")) effort = wanted;
+  } catch { effort = null; }
   const dirs = opts.addDirs ?? [];
   switch (opts.runtime) {
     case "claude-code": {
       const a = ["claude", ...(yolo ? ["--dangerously-skip-permissions"] : ["--permission-mode", "acceptEdits"])];
       if (model) a.push("--model", model);
+      if (effort) a.push("--effort", effort);
       for (const d of dirs) a.push("--add-dir", d);
       return a;
     }
     case "codex": {
       const a = ["codex", ...(yolo ? ["--dangerously-bypass-approvals-and-sandbox"] : [])];
       if (model) a.push("-m", model);
+      if (effort) a.push("-c", `model_reasoning_effort=${JSON.stringify(effort)}`);
       for (const d of dirs) a.push("--add-dir", d);
       return a;
     }

@@ -16,6 +16,26 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 **A capability validated to two different models depending on the language.** `capability.model_hint` defaulted to `inherit` in the Zod validator and `sonnet` in its Pydantic twin, which `_shared/CONFIGURATION.md` §7 requires to mirror it. The twin is aligned, and a test now compares every defaulted field across both sides rather than only the one that was reported. The published schemas also declared `score_boost`, `model_hint` and `parallel_safe` **required** while both validators default them and the docs label them optional: `z.toJSONSchema` defaults to output mode, which describes the parsed value, where a defaulted field is always present. A manifest schema describes what an author writes, so the generator projects in input mode now — defaults are still published, only the `required` lists changed. The docs enum, which omitted `inherit`, lists it (issue #252).
 
+### No model and no effort unless someone asked for one
+
+Owner doctrine (2026-09-12): dispatching codex means running `codex` — no `--model`, no effort — so it runs on what the user configured in their own codex. Dispatching claude means a bare `claude`, for the same reason. The engine had been doing the opposite, and one branch of it was a hard defect.
+
+`resolveSystemModel` read `ANTHROPIC_MODEL` — a vendor variable set on many machines and nothing to do with Nirvana — **before** it checked which runtime it was answering for. Measured with it exported: the resolver answered `opus` for all nine runtimes, so the driver ran `gemini --model opus`, `agy --model opus`, `pi --model opus`, `qwen --model opus`, model ids those vendors do not have. Only the codex headless adapter guarded itself; the Orca worker path passed `-m opus` to codex unguarded. It also read `~/.claude/settings.json`, which a `claude` child reads on its own, so the engine was re-stating a decision that was never its to make.
+
+What is left is the explicit pin and only that: `execution.model` / `NIRVANA_MODEL`. Absent — the default — means pass nothing.
+
+**Effort is now an axis, and it did not exist before.** A user could write `effort:` on an employee and the engine validated it and passed it nowhere. It is `execution.effort` / `NIRVANA_EFFORT` and `opts.effort` now, `low | medium | high | xhigh | max`, and it reaches the two CLIs that have the concept the way each of them takes it: `claude --effort <level>` and codex's `model_reasoning_effort` config key, overridden per run with `-c`. A runtime with no effort setting says so once instead of appearing to have obeyed. The enum had three levels, so a seat could not declare the `xhigh` a codex config commonly runs at; it has five. `fable` joined the `model_hint` enum, which the engine's own alias resolver already recognised.
+
+### An employee's turn limit defaults to 15, and the QA loop to two rounds
+
+Two numbers, one cause: wall clock spent on work nobody was watching.
+
+`EmployeeFrontmatter.maxTurns` defaulted to **400**. A seat that has not finished in fifteen turns is looping, and four hundred let it burn. The default is 15; the ceiling is unchanged, and a seat that genuinely needs more declares more. `businesses/CONFIGURATION.md` also claimed the range was `1-200` with a "cap 200 hardcoded in the schema" — the cap has been 1000 in `limits.ts` for some time.
+
+The revision ceiling had **two homes that disagreed by 7.5x**. The scripted callers pass `quality_gate.max_revisions` (2); a caller that passed nothing fell to a literal `15` in the delivery pipeline, and the harness protocol told the orchestrating model 15 as well. Every round is a full child dispatch, so the gap was measured in spend, not in style. One home now: `quality_gate.max_revisions`, still overridable with `--max-revisions` or `NIRVANA_MAX_GATE_RETRIES`.
+
+**The quality gate's pass rule is unchanged, deliberately.** Lowering it from "every rubric passes" to a percentage was considered and measured against real artifacts: each rubric already forgives 30% (its own bar is 0.70, not 1.0), the six real deliverables tested score 0.93-1.00 and pass, and an average-of-90 rule would have REJECTED a set of 0.72/0.72/0.72 that passes today — stricter, not looser. A count-based 90% is inert at the two to five rubrics a gate actually selects. The revision ceiling was the number that mattered.
+
 ## 0.13.7 — 2026-09-11
 
 ### The work runs where the user is working, and a model's answer survives its runtime's noise

@@ -145,7 +145,7 @@ Each `employees/<name>.md` has YAML frontmatter with:
 | `role` | required | Free text ≥3 chars describing the role |
 | `type` | `functional_specialist` | `functional_specialist` (generic) or `mind_clone` (embodies a public persona) |
 | `description` | required, ≥20 chars | Short persona/responsibility summary |
-| `maxTurns` | required, 1-200 | Turn limit for agent invocation. **Cap 200 hardcoded in the schema.** |
+| `maxTurns` | 1-1000, padrão 15 | Turn limit for agent invocation. Teto em `limits.ts#employee_max_turns_max`; o padrão desceu de 400 para 15 em 12/09/2026. |
 | `reports_to` | `null` | Slug of the manager OR `null` (CEO / root) |
 | `manages[]` | `[]` | Slugs of direct reports (must match their `reports_to`) |
 | `tools[]` | (none) | Subset of the v5 §10.7 whitelist. Free-form accepted. |
@@ -239,7 +239,7 @@ These come from `~/.nirvana/skills/_shared/schemas/`:
 | `description` length | 20-500 chars | business.schema.json |
 | `domains[]` length | 1-10 entries | business.schema.json |
 | `employee_count` | 1-100 | business.schema.json |
-| `employee.maxTurns` | 1-200 | core-schemas.json#employee |
+| `employee.maxTurns` | 1-1000 (padrão 15) | validators.ts#EmployeeFrontmatter |
 | `self_score_contract.criteria[].threshold` | 0.0-1.0 | core-schemas.json#employee |
 | `self_score_contract.max_revise_iterations` | 0-5 | core-schemas.json#employee |
 

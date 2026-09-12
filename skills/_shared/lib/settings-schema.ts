@@ -200,9 +200,16 @@ export const SETTINGS = {
   "execution.default_runtime": stringSetting("execution.default_runtime",
     "Runtime usado quando a sessão não é identificada; vazio = primeiro disponível no PATH.",
     { env: "NIRVANA_DEFAULT_RUNTIME", type: z.string().regex(/^[A-Za-z0-9._-]*$/), expects: "nome de runtime (claude-code, codex, gemini-cli, ...) ou vazio" }),
+  // Vazio é o padrão, e vazio significa PASSAR NADA: o CLI filho usa o que a
+  // configuração dele diz, que é o padrão do usuário. Despachar o codex é rodar
+  // `codex` sem `--model` e sem effort; despachar o claude é rodar `claude`
+  // puro. Um valor aqui é o usuário pedindo outra coisa de propósito.
   "execution.model": stringSetting("execution.model",
-    "Modelo fixado nos spawns do Nirvana (--model); vazio = herda o modelo da sessão.",
+    "Modelo fixado nos spawns do Nirvana (--model); vazio (padrão) = não especifica nada e o CLI usa o padrão do usuário.",
     { env: "NIRVANA_MODEL", expects: "id ou alias de modelo (opus, sonnet, haiku, fable, ...) ou vazio" }),
+  "execution.effort": stringSetting("execution.effort",
+    "Effort fixado nos spawns do Nirvana; vazio (padrão) = não especifica nada e o CLI usa o padrão do usuário.",
+    { env: "NIRVANA_EFFORT", expects: "low | medium | high | xhigh | max ou vazio" }),
   "execution.dna_injection": enumSetting("execution.dna_injection",
     "Profundidade da injeção de DNA dos mind-clones: full = persona inteira; fragments = camadas da fase.",
     ["full", "fragments"], { default: "full", env: "NIRVANA_DNA_INJECTION" }),
