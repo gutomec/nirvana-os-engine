@@ -126,9 +126,13 @@ class Runtime(str, Enum):
 
 
 class Model(str, Enum):
+    """Mantenha em sincronia com `Model` em validators.ts. `fable` faltava
+    enquanto o resolvedor de alias do engine já o reconhecia."""
+
     haiku = "haiku"
     sonnet = "sonnet"
     opus = "opus"
+    fable = "fable"
     inherit = "inherit"
 
 
@@ -357,7 +361,9 @@ class EmployeeFrontmatter(StrictModel):
     # (galinha-squads gen) load without a forced rewrite. New employees should
     # still declare both explicitly; the defaults are a safe floor, not a license
     # to skip accountability.
-    maxTurns: int = Field(default=400, ge=1, le=LIMITS["employee_max_turns_max"])
+    # 15 por decisão do dono (12/09/2026) — mantenha em sincronia com
+    # validators.ts. Uma cadeira que não terminou em quinze turnos está em loop.
+    maxTurns: int = Field(default=15, ge=1, le=LIMITS["employee_max_turns_max"])
     reports_to: Optional[KebabHyphenStr] = None
     manages: Optional[list[KebabHyphenStr]] = None
     tools: Optional[list[str]] = None
@@ -380,7 +386,10 @@ class EmployeeFrontmatter(StrictModel):
     escalation_triggers: Optional[list[EscalationTrigger]] = None
     # ── Fields from earlier business generations (galinha-squads), officialized
     # 2026-05-21 so rich legacy employees validate without rewrite ──
-    effort: Optional[Literal["low", "medium", "high"]] = None
+    # Cinco níveis, como em validators.ts: os que `claude --effort` aceita e a
+    # faixa que o codex toma em `model_reasoning_effort`. Ausente = o despacho
+    # não especifica effort nenhum e o CLI usa o padrão do usuário.
+    effort: Optional[Literal["low", "medium", "high", "xhigh", "max"]] = None
     authority_level: Optional[Literal["tier-1", "tier-2", "tier-3"]] = None
     assigned_mind_clones: Optional[list[str]] = None
     mind_clones_used: Optional[list[str]] = None

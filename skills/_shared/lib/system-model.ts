@@ -1,24 +1,43 @@
-// system-model.ts — resolves the SYSTEM MODEL (what the user's session is
-// running) to propagate to the subprocesses Nirvana-OS spawns.
+// system-model.ts — the model a dispatch passes to a child, which is NOTHING
+// unless the user pinned one.
 //
-// Problem it solves: Claude Code's `/model` is local to the interactive
-// session and is NOT inherited by a child `claude -p` — no env var exposes the
-// model, and the harness drivers spawn `claude -p` without `--model`. Result:
-// the child falls back to the CLI default (commonly sonnet), even when the
-// user is on fable/opus. Here we resolve the intended model and the driver
-// passes it via `--model`, so "no model requested in the brief → use the
-// system model".
+// Owner doctrine (2026-09-12): "Nenhum modelo ou effort deve ser especificado
+// por padrão. O padrão é sempre o que está por padrão no sistema do usuário."
+// Dispatching codex means running `codex` with no `--model` and no effort, so
+// codex uses what the user configured in their own codex. Dispatching claude
+// means running `claude` bare, so it uses what the user configured in their own
+// claude. Only when the user names a model or an effort does the dispatch carry
+// one.
 //
-// Does not force a model when nothing resolves (keeps the model-agnostic behavior).
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
+// This file used to do the opposite, for a reason that made sense at the time:
+// Claude Code's `/model` is session-local, a child `claude -p` does not inherit
+// it, and the judge was falling to the CLI default. The fix was to read the
+// user's model from wherever it could be found and pass `--model`. Two things
+// were wrong with it.
+//
+// It guessed from a VENDOR env var. `ANTHROPIC_MODEL` is set on many machines
+// and has nothing to do with Nirvana, and the lookup below it ignored the
+// runtime. Measured: with `ANTHROPIC_MODEL=claude-opus-5` exported, the
+// resolver answered `opus` for all nine runtimes, so the driver ran
+// `gemini --model opus`, `agy --model opus`, `pi --model opus`,
+// `qwen --model opus` — model ids those vendors do not have. Only the codex
+// adapter guarded itself (`isOpenAiModelId`), and the Orca worker path did not
+// even do that.
+//
+// And it read `~/.claude/settings.json`. That file is Claude Code's OWN config:
+// a `claude` child reads it without being told. Passing it back as `--model`
+// added nothing and made the engine the author of a decision that was never
+// its to make.
+//
+// What is left is the explicit pin and only that: `execution.model`
+// (`NIRVANA_MODEL`, or the project/global config). Empty is the default, and
+// empty means the child decides.
 import { resolveSetting } from "./settings.ts";
 
 // Sanitizes a model id: strips real ANSI escapes AND ANSI fragments that leak
-// into the saved value (Claude Code's `/model` can record the label in bold
-// and leave "[1m]" glued to the id, e.g. "claude-fable-5[1m]" — an invalid id
-// that makes the CLI fall back to the default). Returns the clean id or "" if
+// into a saved value (Claude Code's `/model` can record the label in bold and
+// leave "[1m]" glued to the id, e.g. "claude-fable-5[1m]" — an invalid id that
+// makes the CLI fall back to the default). Returns the clean id or "" if
 // nothing remains.
 export function sanitizeModelId(raw: string | null | undefined): string {
   if (!raw) return "";
@@ -43,23 +62,40 @@ export function toAlias(model: string): string {
   return fam ? fam[1] : model;
 }
 
-// Resolves the system model, ALWAYS as an alias when it is a Claude family.
-// Priority:
-//   1. the `execution.model` setting — env NIRVANA_MODEL, else the project or
-//      global config (_shared/lib/settings.ts): the explicit pin for Nirvana spawns
-//   2. ANTHROPIC_MODEL — standard env some setups use
-//   3. ~/.claude/settings.json "model" — the model the user set via /model
-// settings.json belongs to Claude Code; only valid for claude-code children.
-// Returns null when nothing resolves (the CLI decides — behavior unchanged).
-export function resolveSystemModel(runtime?: string): string | null {
-  const fromEnv = sanitizeModelId(resolveSetting("execution.model").value) || sanitizeModelId(process.env.ANTHROPIC_MODEL);
-  if (fromEnv) return toAlias(fromEnv);
-  if (runtime && runtime !== "claude-code") return null;
-  try {
-    const cfg = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
-    const j = JSON.parse(fs.readFileSync(path.join(cfg, "settings.json"), "utf8"));
-    const m = sanitizeModelId(j.model);
-    if (m) return toAlias(m);
-  } catch { /* no settings / unreadable — no system model */ }
-  return null;
+/**
+ * The model the USER PINNED for Nirvana's spawns, or null.
+ *
+ * null is the normal answer and means "pass no model": the child CLI uses
+ * whatever its own configuration says, which is the user's default. A pin is
+ * `execution.model` / `NIRVANA_MODEL` — something the user set ON PURPOSE for
+ * this engine, which is why it applies to every runtime they dispatch to.
+ *
+ * The `runtime` parameter is kept for callers and for symmetry with
+ * `resolvePinnedEffort`; the pin is runtime-independent by design, because a
+ * user who writes `NIRVANA_MODEL=gpt-5.3-codex` and then dispatches gemini has
+ * made a mistake the engine should surface, not silently rewrite.
+ */
+export function resolveSystemModel(_runtime?: string): string | null {
+  const pinned = sanitizeModelId(resolveSetting("execution.model").value);
+  return pinned ? toAlias(pinned) : null;
+}
+
+/** The effort level the USER PINNED, or null — same contract as the model.
+ *  `low | medium | high | xhigh | max`, the levels `claude --effort` accepts
+ *  and the range `model_reasoning_effort` takes in codex's own config. */
+export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
+export type EffortLevel = (typeof EFFORT_LEVELS)[number];
+
+export function isEffortLevel(value: string): value is EffortLevel {
+  return (EFFORT_LEVELS as ReadonlyArray<string>).includes(value);
+}
+
+export function resolvePinnedEffort(): EffortLevel | null {
+  const raw = String(resolveSetting("execution.effort").value ?? "").trim().toLowerCase();
+  if (!raw) return null;
+  if (!isEffortLevel(raw)) {
+    console.error(`[effort] execution.effort='${raw}' is not one of ${EFFORT_LEVELS.join(" | ")} — passing no effort.`);
+    return null;
+  }
+  return raw;
 }

@@ -154,7 +154,22 @@ What you do with this: don't pass `--runtime` or `--exec=<name>` unless the user
 
 ---
 
-### Rule 12 — A cut verifies its area; the whole is verified once, after integration
+### Rule 12 — No model and no effort unless someone asked for one
+
+Dispatching codex means running codex. Not `codex --model X`, not `-c model_reasoning_effort=Y` — just codex, so it runs on the model and the effort the user configured in their own codex. Dispatching claude means a bare `claude`, for the same reason. The user's default is the default, and the engine is not the author of that decision.
+
+This matters most on the path you use every day. When you dispatch in-process (the `Agent` tool, codex `[agents]`, antigravity subagents), the subagent inherits your session, so passing nothing is automatic — **do not set a model or an effort on the subagent call**. Adding one overrides the user's own setting with a guess.
+
+Two things override that, and only two:
+
+- **The user named one** — in the brief ("use opus para isso", "roda em effort max"), on the command line (`--model`, `--effort`), or as a pin (`execution.model` / `NIRVANA_MODEL`, `execution.effort` / `NIRVANA_EFFORT`). Then dispatch WITH exactly what they named.
+- **A seat declared one** — an employee's frontmatter `model:` or `effort:`. A seat that declares neither is dispatched with neither, and `model: inherit` (what the business templates ship) means exactly that: pass nothing, the runtime decides.
+
+`effort` takes `low | medium | high | xhigh | max`. Only two runtimes have the concept: `claude --effort <level>` and codex's `model_reasoning_effort` config key (overridden per run with `-c`). For any other runtime a requested effort cannot be honoured, and the driver says so once rather than pretending it was applied.
+
+---
+
+### Rule 13 — A cut verifies its area; the whole is verified once, after integration
 
 A dispatched cut verifies **its own area**. While it works it runs only the tests of what it is touching. Before it hands back it runs that area's tests once, plus the gates its own diff can break by itself, and it stops there. It does not run the full suite and it does not run `check:all`.
 
@@ -171,7 +186,7 @@ The loop the engine gives a cut: `bun test <dir>` while working, `bun run test:f
 
 ---
 
-### Rule 13 — Dependencies install to `~/.nirvana`, never where you are standing
+### Rule 14 — Dependencies install to `~/.nirvana`, never where you are standing
 
 Node packages go to `~/.nirvana/node_modules`, Python packages to
 `~/.nirvana/python`, tool-downloaded runtimes (Chromium, browsers, model
@@ -458,7 +473,9 @@ bun ~/.nirvana/skills/harness/scripts/quality-gate.ts <artifact_path> --auto
 
 If `gate_failed`: read `fix_list` / judge `critique[]`, dispatch a revision agent, iterate. Manually echoing `gate_passed` is dishonest — `nrv validate-chain --verify-disk` flags a `gate_passed` with no on-disk artifact as a `PROTOCOL_VIOLATION`.
 
-**Retry ceiling — a QA loop must terminate in a delivery, not a stall.** After `NIRVANA_MAX_GATE_RETRIES` failed gate rounds (default 15; a project `.env` entry works — Bun auto-loads it), STOP revising: accept the LAST attempt and deliver it WITH RESERVATIONS — write `_QA-RESERVATIONS.md` next to the artifacts listing exactly what the gate still flags, state plainly that the QA judgment itself may be the wrong side (over-strict rubric, contract mismatch), and emit `x_delivered_with_reservations`. Set `NIRVANA_GATE_EXHAUSTED=withhold` to restore strict fail-closed withholding. Two boundaries never move: the completeness ceiling outranks acceptance (reservations cover a QUALITY verdict, never a missing deliverable), and the unattended supervisor sweep stays strict — nobody is awake to read the reservations.
+**Retry ceiling — a QA loop must terminate in a delivery, not a stall.** After the revision ceiling is spent — `quality_gate.max_revisions`, **default 2**, overridable per run with `--max-revisions` or `NIRVANA_MAX_GATE_RETRIES` — STOP revising: accept the LAST attempt and deliver it WITH RESERVATIONS — write `_QA-RESERVATIONS.md` next to the artifacts listing exactly what the gate still flags, state plainly that the QA judgment itself may be the wrong side (over-strict rubric, contract mismatch), and emit `x_delivered_with_reservations`. Set `NIRVANA_GATE_EXHAUSTED=withhold` to restore strict fail-closed withholding. Two boundaries never move: the completeness ceiling outranks acceptance (reservations cover a QUALITY verdict, never a missing deliverable), and the unattended supervisor sweep stays strict — nobody is awake to read the reservations.
+
+**Two rounds, not fifteen.** The ceiling used to be written twice and the two numbers disagreed: the scripted callers passed `quality_gate.max_revisions` (2) while this paragraph and the pipeline's own fallback said 15. Every round is a full child dispatch, so the difference was wall clock and spend, not style. There is one number now. If two revisions did not fix it, a third rarely does — deliver WITH RESERVATIONS and let a human read them, or iterate deliberately with `nrv revise`.
 
 **Loop guard (hard loop ceiling).** Before each revision iteration — and each retry of the dispatch cascade in Phase 4 — run `nrv guard tick --project <projectRoot> --action revision --progress <artifact-count-or-hash>`. It rehydrates the `loop_guard_state` from the HANDOFF and checks the ceilings (`max_steps` 12, `max_repeat` 3 identical signatures, `max_flat_steps` 4 with no progress). If it exits with a non-zero code (`🛑 LOOP GUARD`), **stop iterating, write the HANDOFF and escalate to the human — do not re-dispatch.** Pass a `--progress` value that changes when there is real progress (e.g. the number of delivered files), otherwise `max_flat_steps` fires after 4 iterations.
 

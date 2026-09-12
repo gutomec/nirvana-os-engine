@@ -16,6 +16,26 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 **Uma capability validava para dois modelos diferentes conforme a linguagem.** O `capability.model_hint` tinha default `inherit` no validador Zod e `sonnet` no gêmeo Pydantic, que o `_shared/CONFIGURATION.md` §7 exige espelhado. O gêmeo foi alinhado, e um teste passa a comparar todo campo com default dos dois lados, não só o que foi reportado. As schemas publicadas também declaravam `score_boost`, `model_hint` e `parallel_safe` **obrigatórios** enquanto os dois validadores lhes dão default e a documentação os marca como opcionais: o `z.toJSONSchema` projeta por padrão em modo de saída, que descreve o valor já analisado, onde um campo com default está sempre presente. Uma schema de manifesto descreve o que o autor escreve, então o gerador projeta em modo de entrada — os defaults continuam publicados, só as listas de `required` mudaram. O enum da documentação, que omitia `inherit`, passa a listá-lo (issue #252).
 
+### Nenhum modelo e nenhum effort a não ser que alguém tenha pedido
+
+Doutrina do dono (12/09/2026): despachar o codex é rodar `codex` — sem `--model`, sem effort — para que ele rode no que o usuário configurou no codex dele. Despachar o claude é um `claude` puro, pelo mesmo motivo. O engine fazia o contrário, e um dos ramos disso era defeito puro.
+
+O `resolveSystemModel` lia o `ANTHROPIC_MODEL` — variável de fornecedor, presente em muitas máquinas, sem relação alguma com o Nirvana — **antes** de checar para qual runtime estava respondendo. Medido com ela exportada: o resolvedor respondia `opus` para todos os nove runtimes, então o driver rodava `gemini --model opus`, `agy --model opus`, `pi --model opus`, `qwen --model opus`, ids de modelo que esses fornecedores não têm. Só o adaptador headless do codex se protegia; o caminho do worker no Orca passava `-m opus` ao codex sem proteção nenhuma. Ele também lia o `~/.claude/settings.json`, arquivo que um filho `claude` lê por conta própria, de modo que o engine reafirmava uma decisão que nunca foi dele.
+
+O que ficou é o pin explícito e só ele: `execution.model` / `NIRVANA_MODEL`. Ausente — o padrão — significa não passar nada.
+
+**Effort virou um eixo, e antes não existia.** Dava para escrever `effort:` num employee e o engine validava e não passava a lugar nenhum. Agora é `execution.effort` / `NIRVANA_EFFORT` e `opts.effort`, em `low | medium | high | xhigh | max`, e chega aos dois CLIs que têm o conceito na forma que cada um aceita: `claude --effort <nível>` e a chave de configuração `model_reasoning_effort` do codex, sobreposta por run com `-c`. Um runtime sem effort avisa uma vez em vez de parecer ter obedecido. O enum tinha três níveis, então uma cadeira não podia declarar o `xhigh` em que uma configuração de codex costuma rodar; passou a ter cinco. O `fable` entrou no enum de `model_hint`, que o resolvedor de alias do próprio engine já reconhecia.
+
+### O limite de turnos de um employee passa a 15, e o loop de QA a duas rodadas
+
+Dois números, uma causa: tempo de parede gasto em trabalho que ninguém estava vendo.
+
+O `EmployeeFrontmatter.maxTurns` tinha default **400**. Uma cadeira que não terminou em quinze turnos está em loop, e quatrocentos a deixavam queimar. O padrão é 15; o teto não mudou, e uma cadeira que realmente precise de mais declara mais. O `businesses/CONFIGURATION.md` ainda afirmava faixa `1-200` com "cap 200 hardcoded in the schema" — o teto é 1000 no `limits.ts` desde antes disso.
+
+O teto de revisão tinha **duas casas que discordavam em 7,5x**. Os chamadores scriptados passam o `quality_gate.max_revisions` (2); um chamador que não passava nada caía num `15` literal na esteira de entrega, e o protocolo do harness dizia 15 ao modelo orquestrador também. Cada rodada é um despacho filho completo, então a diferença se mede em gasto, não em estilo. Agora é uma casa só: `quality_gate.max_revisions`, ainda sobreponível por `--max-revisions` ou `NIRVANA_MAX_GATE_RETRIES`.
+
+**A regra de aprovação do quality gate não mudou, de propósito.** Baixá-la de "toda rubrica passa" para uma porcentagem foi considerado e medido contra artefatos reais: cada rubrica já perdoa 30% (a régua dela é 0,70, não 1,0), os seis entregáveis reais testados pontuam de 0,93 a 1,00 e passam, e uma regra de média 90 teria REPROVADO um conjunto 0,72/0,72/0,72 que hoje passa — mais rígida, não mais frouxa. Um 90% por contagem é inerte nas duas a cinco rubricas que o gate de fato seleciona. O número que importava era o teto de revisão.
+
 ## 0.13.7 — 2026-09-11
 
 ### O trabalho roda onde o usuário está trabalhando, e a resposta do modelo sobrevive ao ruído do runtime

@@ -46,6 +46,7 @@ import { isRunStatePath } from "../../_shared/lib/run-state.ts";
 import { detectKind } from "../../_shared/lib/surface.ts";
 import { GATEABLE_EXTS } from "../scripts/quality-gate.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
+import { resolveSetting } from "../../_shared/lib/settings.ts";
 import type { HarnessConfig } from "./harness-config.ts";
 import * as runLedger from "./run-ledger.ts";
 
@@ -349,12 +350,22 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
   const runHeadlessImpl = args.runHeadlessImpl ?? runHeadless;
   const verifyScript = args.verifyScript ?? path.join(SKILLS_DEFAULT, "businesses", "scripts", "verify-deliverable.ts");
   const gateScript = args.gateScript ?? path.join(SKILLS_DEFAULT, "harness", "scripts", "quality-gate.ts");
-  // Retry ceiling (owner policy, 2026-08-21): a QA loop must terminate. The
-  // default is 15 attempts, configurable via NIRVANA_MAX_GATE_RETRIES (Bun
-  // auto-loads .env, so a project .env entry works). An explicit
-  // args.maxRevisions always wins — the unattended sweep passes 0 on purpose.
+  // Retry ceiling (owner policy, 2026-08-21): a QA loop must terminate. It has
+  // ONE home now — `quality_gate.max_revisions`, default 2 — because it used to
+  // have two that disagreed by 7.5x: the scripted callers pass that setting
+  // (dispatch.ts, revise.ts), while a caller that passed nothing fell to a
+  // literal 15 here and the harness protocol told the orchestrating model 15 as
+  // well. Every round is a full child dispatch, so the gap was measured in wall
+  // clock, not in style. `NIRVANA_MAX_GATE_RETRIES` still overrides, and an
+  // explicit args.maxRevisions always wins — the unattended sweep passes 0 on
+  // purpose.
   const envCap = Number.parseInt(process.env.NIRVANA_MAX_GATE_RETRIES ?? "", 10);
-  const maxRevisions = args.maxRevisions ?? (Number.isFinite(envCap) && envCap >= 0 ? envCap : 15);
+  const settingCap = (() => {
+    try { return Number(resolveSetting("quality_gate.max_revisions").value); }
+    catch { return 2; }
+  })();
+  const maxRevisions = args.maxRevisions
+    ?? (Number.isFinite(envCap) && envCap >= 0 ? envCap : (Number.isFinite(settingCap) && settingCap >= 0 ? settingCap : 2));
   const led = args.ledger ?? null;
   const mark = (state: runLedger.RunState, extra?: runLedger.MarkStateExtra) => {
     if (led) ledgerTry(() => runLedger.markState(led.handle, led.runId, state, extra ?? {}), warn);

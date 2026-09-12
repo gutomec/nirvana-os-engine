@@ -49,7 +49,7 @@ import * as os from "node:os";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
-import { resolveSystemModel } from "./system-model.ts";
+import { EFFORT_LEVELS, isEffortLevel, resolvePinnedEffort, resolveSystemModel } from "./system-model.ts";
 import { resolveSetting } from "./settings.ts";
 import { childEnv } from "./orca.ts";
 import { runOrcaWorker } from "./orca-worker.ts";
@@ -1142,6 +1142,15 @@ export interface RunHeadlessOpts {
    * underlying CLI. Honors model hints from LLM_CASCADE entries. If unset,
    * each CLI uses its own configured default. */
   model?: string;
+  /** Optional effort override — `low | medium | high | xhigh | max`. Passed
+   * only to the CLIs that HAVE the concept: `claude --effort <level>` and
+   * codex's own `model_reasoning_effort` config key, overridden per run with
+   * `-c`. Unset (the default) passes nothing, so each CLI uses the effort its
+   * user configured: measured on this machine, `~/.codex/config.toml` carries
+   * `model_reasoning_effort = "xhigh"`, which is exactly the value a dispatch
+   * must not overwrite with a guess. A runtime with no effort flag warns once
+   * and runs without it rather than failing. */
+  effort?: string;
   /** Optional provider id for CLIs that support multi-provider config
    * (codex `--provider <id>` referencing [model_providers.<id>] in
    * ~/.codex/config.toml; qwen-code modelProviders[].id; pi's native
@@ -1319,6 +1328,38 @@ export const DEFAULT_ALLOWED_TOOLS = ["Write", "Edit", "Read", "Glob", "Grep", "
 // the child's output to capture files (read back after exit for result
 // parsing).
 
+/** The effort to pass to THIS runtime, or null.
+ *
+ * Two CLIs have the concept: `claude --effort <level>` and codex's
+ * `model_reasoning_effort` config key. For every other runtime an effort the
+ * caller asked for cannot be honoured, and that is said once rather than
+ * silently dropped — the alternative would be a brief that says "use xhigh"
+ * appearing to have been obeyed. */
+const EFFORT_CAPABLE = new Set<string>(["claude-code", "codex"]);
+const effortWarned = new Set<string>();
+
+/** The requested effort a runtime cannot take, announced once. */
+function warnEffortUnsupported(opts: { effort?: string }, runtime: string): void {
+  const raw = (opts.effort ?? "").trim().toLowerCase() || resolvePinnedEffort() || "";
+  if (!raw || !isEffortLevel(raw) || EFFORT_CAPABLE.has(runtime)) return;
+  if (effortWarned.has(runtime)) return;
+  effortWarned.add(runtime);
+  console.error(`[effort] ${runtime} has no effort setting — the requested '${raw}' is not passed; the CLI runs at its own default.`);
+}
+
+function effortFor(opts: { effort?: string }, runtime: string): string | null {
+  const raw = (opts.effort ?? "").trim().toLowerCase() || resolvePinnedEffort() || "";
+  if (!raw) return null;
+  if (!isEffortLevel(raw)) {
+    if (!effortWarned.has(`bad:${raw}`)) {
+      effortWarned.add(`bad:${raw}`);
+      console.error(`[effort] '${raw}' is not one of ${EFFORT_LEVELS.join(" | ")} — passing no effort.`);
+    }
+    return null;
+  }
+  return EFFORT_CAPABLE.has(runtime) ? raw : null;   // the warn fires in dispatchToRunner
+}
+
 interface ManagedSpawnCtx { outFile: string; errFile: string }
 let managedCtx: ManagedSpawnCtx | null = null;
 
@@ -1469,11 +1510,12 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
   const args: string[] = ["-p", "--output-format", "json"];
 
   if (opts.sessionId) args.push("--resume", opts.sessionId);
-  // Model: caller's explicit value > system model (what the user's session
-  // runs) > CLI default. Without this, the child `claude -p` falls to the
-  // default (sonnet) instead of inheriting the interactive session's fable/opus.
+  // Model and effort: the caller's explicit value, else the user's pin, else
+  // NOTHING — a bare `claude` uses what the user configured in their claude.
   const ccModel = opts.model ?? resolveSystemModel("claude-code");
   if (ccModel) args.push("--model", ccModel);
+  const ccEffort = effortFor(opts, "claude-code");
+  if (ccEffort) args.push("--effort", ccEffort);
 
   // Trust by default. EXPLICIT caller settings (allowedTools / permissionMode)
   // always take precedence — so focused text-only calls like the brief-proxy or
@@ -1606,6 +1648,11 @@ function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
   // id is dropped and codex keeps its configured default.
   const cxModel = opts.model ?? resolveSystemModel("codex");
   if (cxModel && isOpenAiModelId(cxModel)) args.push("--model", cxModel);
+  // Effort is a config key here, not a flag: `-c model_reasoning_effort=...`
+  // overrides ~/.codex/config.toml for this run only. Passing nothing leaves
+  // the user's own value in force.
+  const cxEffort = effortFor(opts, "codex");
+  if (cxEffort) args.push("-c", `model_reasoning_effort=${JSON.stringify(cxEffort)}`);
   // `--provider` no longer exists on `codex exec` ("unexpected argument" on
   // 0.153); the provider is a config key, overridable per run with -c.
   if (opts.providerHint) args.push("-c", `model_provider=${JSON.stringify(opts.providerHint)}`);
@@ -2273,6 +2320,10 @@ export function runHeadless(opts: RunHeadlessOpts): RunHeadlessResult {
 }
 
 function dispatchToRunner(opts: RunHeadlessOpts): RunHeadlessResult {
+  // Said once per runtime, here rather than in each adapter: only claude and
+  // codex have an effort setting, and a brief that asked for one on any other
+  // runtime must not look as though it was obeyed.
+  warnEffortUnsupported(opts, opts.runtime);
   const previousSpawnAs = spawnAsRuntime;
   spawnAsRuntime = opts.runtime;
   try {

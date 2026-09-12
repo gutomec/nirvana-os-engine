@@ -62,7 +62,11 @@ const Runtime = z.enum([
   'claude-code', 'codex', 'antigravity-cli', 'antigravity', 'gemini-cli', 'pi',
   'kimi-cli', 'grok-cli', 'qwen-code', 'opencode', 'cursor', 'openclaw',
 ])
-const Model = z.enum(['haiku', 'sonnet', 'opus', 'inherit'])
+// `fable` was missing while the engine's own alias resolver
+// (_shared/lib/system-model.ts) already recognised it, so a capability could
+// not declare a hint for a model the engine knows how to name. `inherit` is the
+// member that means "no value": use whatever the user's runtime is set to.
+const Model = z.enum(['haiku', 'sonnet', 'opus', 'fable', 'inherit'])
 const Severity = z.enum(['low', 'medium', 'high'])
 const FidelityStatus = z.enum(['validated', 'experimental', 'drifted', 'retired'])
 
@@ -295,7 +299,11 @@ export const EmployeeFrontmatterSchema = z.object({
     : z.string().min(20),
   // maxTurns + self_score_contract: default-friendly so older businesses load
   // without a forced rewrite (matches the canonical pydantic defaults).
-  maxTurns: z.number().int().min(1).max(LIMITS.employee_max_turns_max!).default(400),
+  // 15 by owner decision (2026-09-12): a seat that has not finished in fifteen
+  // turns is looping, and the previous default of 400 let it burn wall clock
+  // before anyone saw it. A seat that genuinely needs more declares more — the
+  // ceiling is still LIMITS.employee_max_turns_max.
+  maxTurns: z.number().int().min(1).max(LIMITS.employee_max_turns_max!).default(15),
   reports_to: z.union([z.string().regex(/^[a-z][a-z0-9-]+$/), z.null()]).optional(),
   manages: z.array(z.string().regex(/^[a-z][a-z0-9-]+$/)).optional(),
   tools: z.array(z.string()).optional(),
@@ -351,7 +359,11 @@ export const EmployeeFrontmatterSchema = z.object({
   squad_dispatched: z.array(z.string()).optional(),
   // Fields officialized 2026-05-21 so rich legacy employees (galinha-squads
   // generation) validate without rewrite — mirrors the canonical validators.py.
-  effort: z.enum(['low', 'medium', 'high']).optional(),
+  // The five levels `claude --effort` accepts and the range codex takes in
+  // `model_reasoning_effort`. It was three, so a seat could not declare the
+  // `xhigh` the owner's own codex config runs at. Optional, and absent means
+  // the dispatch passes NO effort — the CLI uses the user's default.
+  effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
   authority_level: z.enum(['tier-1', 'tier-2', 'tier-3']).optional(),
   assigned_mind_clones: z.array(z.string()).optional(),
   operation_mode: z.enum(['zero_human', 'hybrid', 'human_in_loop']).optional(),
