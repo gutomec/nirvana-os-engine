@@ -6,7 +6,7 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
-## Unreleased
+## 0.13.8 — 2026-09-12
 
 ### Three reported defects: a skill called litter, a backup that never ran, and a validator that answered in two languages
 
