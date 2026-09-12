@@ -64,8 +64,21 @@ jobs:
       # skills/_shared/tests, skills/businesses/tests and skills/squads/tests
       # unrun — including runtime-links.test.ts, the only behavioural test of
       # scripts/install.ts. A test that CI never executes is a comment.
+      #
+      # `--timeout`: Bun's 5 s default applies to HOOKS as well as tests, and 158
+      # hooks across the suite delete install trees, start servers or open a
+      # file-backed Run Kernel without an explicit budget. On windows-latest,
+      # measured 20-35x slower at fsync, those cross 5 s and the file fails as
+      # `(fail) (unnamed) — a beforeEach/afterEach hook timed out`, naming no
+      # test, with every named test in it passing. The victim rotates with the
+      # runner's speed: three different files in three runs recorded in
+      # helpers/test-budgets.ts, plus glance-multi-target-projection (6257 ms)
+      # and verify-install-hooks (6980 ms) here. The per-hook budgets in that
+      # helper stay — they document which hooks are genuinely heavy — and this
+      # raises the floor for the ones nobody has annotated yet. Headroom, not
+      # slack: a hook that truly wedges still fails, only later.
       - name: unit — the whole suite
-        run: bun test skills
+        run: bun test skills --timeout=30000
 
       - name: nrv doctor (warnings ok; falha crítica reprova)
         run: |
