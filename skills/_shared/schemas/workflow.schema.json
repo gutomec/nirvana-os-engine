@@ -71,10 +71,7 @@
         },
         "required": [
           "id",
-          "agent",
-          "requires",
-          "creates",
-          "meta"
+          "agent"
         ],
         "additionalProperties": false
       }
@@ -105,8 +102,7 @@
   },
   "required": [
     "name",
-    "steps",
-    "extensions"
+    "steps"
   ],
   "additionalProperties": false
 }

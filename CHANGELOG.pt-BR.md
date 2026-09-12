@@ -6,6 +6,16 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Não lançado
+
+### Três defeitos reportados: uma skill chamada de lixo, um backup que nunca rodava e um validador que respondia em duas línguas
+
+**O `nrv doctor` mandou o usuário apagar uma skill.** A checagem `skills: backup litter` classificava como descartável qualquer diretório cujo nome apenas CONTIVESSE "backup", e imprimia "Safe to delete." sobre ele. Numa instalação real isso era o `~/.claude/skills/backup-verificado`: uma skill carregada, com frontmatter válido, e justamente a que o contrato daquela máquina exigia antes de qualquer formatação. Os dois ramos ao lado nomeiam uma convenção (`*.bak`, `*.old`); o terceiro não nomeava nada. Cópias convencionais continuam reportadas sem condição — uma cópia de skill também carrega um `SKILL.md`, que é exatamente por que o runtime a carrega duas vezes, então filtrar por isso teria calado o caso que originou a checagem. Um diretório com nome de backup e sem `SKILL.md` passa a ser reportado à parte, como algo a conferir e não a apagar (issue #251).
+
+**O `nrv update` prometia um rollback que não existia.** O script documenta um backup de `~/.nirvana/skills` antes de aplicar qualquer coisa, e imprime um rollback de um comando no fim. Numa instalação feita por `npx @nirvana-os/cli` — o caminho de todo comprador que não clonou o repositório — nenhum dos dois rodava: o `updateFromRelease()` termina em `process.exit`, então o backup, a poda e o evento de auditoria `nirvana_updated`, todos escritos abaixo daquela chamada, pertenciam só ao checkout git. A linha de rollback nomeava um diretório que nunca foi criado, e dezenove dias do log de auditoria de um usuário traziam zero eventos `nirvana_updated` numa atualização de 0.9.0 para 0.13.6. Os dois caminhos passam a dividir os mesmos quatro passos, e a pasta de auditoria é criada com o `ensureDir` tolerante em vez de um mkdir recursivo cru (issue #253).
+
+**Uma capability validava para dois modelos diferentes conforme a linguagem.** O `capability.model_hint` tinha default `inherit` no validador Zod e `sonnet` no gêmeo Pydantic, que o `_shared/CONFIGURATION.md` §7 exige espelhado. O gêmeo foi alinhado, e um teste passa a comparar todo campo com default dos dois lados, não só o que foi reportado. As schemas publicadas também declaravam `score_boost`, `model_hint` e `parallel_safe` **obrigatórios** enquanto os dois validadores lhes dão default e a documentação os marca como opcionais: o `z.toJSONSchema` projeta por padrão em modo de saída, que descreve o valor já analisado, onde um campo com default está sempre presente. Uma schema de manifesto descreve o que o autor escreve, então o gerador projeta em modo de entrada — os defaults continuam publicados, só as listas de `required` mudaram. O enum da documentação, que omitia `inherit`, passa a listá-lo (issue #252).
+
 ## 0.13.7 — 2026-09-11
 
 ### O trabalho roda onde o usuário está trabalhando, e a resposta do modelo sobrevive ao ruído do runtime

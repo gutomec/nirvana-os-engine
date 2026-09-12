@@ -211,7 +211,10 @@ class Capability(StrictModel):
     not_for: Optional[list[Annotated[str, StringConstraints(min_length=5)]]] = None
     fidelity: Optional[CapabilityFidelity] = None
     score_boost: float = Field(default=1.0, ge=0, le=2)
-    model_hint: Model = Model.sonnet
+    # `inherit`, matching validators.ts and the generated JSON Schema. The twin
+    # defaulted to `sonnet` and the same capability therefore validated to two
+    # different values depending on which language read it (issue #252).
+    model_hint: Model = Model.inherit
     estimated_cost_usd: Optional[float] = Field(default=None, ge=0)
     parallel_safe: bool = False
     writes_paths: Optional[list[str]] = None
@@ -1324,7 +1327,7 @@ def test_capability_minimal_valid() -> None:
     cap = Capability.model_validate(_VALID_CAPABILITY)
     assert cap.id == "media.video.analyze"
     assert cap.score_boost == 1.0
-    assert cap.model_hint == Model.sonnet
+    assert cap.model_hint == Model.inherit
 
 
 def test_capability_id_must_be_dotted_min_3_segments() -> None:

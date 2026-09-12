@@ -120,7 +120,7 @@ Escaneia + gera `${SQUADS_REGISTRY_PATH}` (incluindo `_v4_inferred_capabilities`
 | `tools_required[]` | (opcional) Tools que o agent precisa |
 | `not_for[]` | (opcional) Frases que penalizam match (ex: "B2C, consumer-grade") |
 | `score_boost` | `1.0` | Multiplicador de score no harness BM25. **Premium squads (awwwards, nirvana, etc.) recebem 1.2 quando inferred via v4-capability-inferrer.** |
-| `model_hint` | (opcional) `haiku | sonnet | opus` |
+| `model_hint` | (opcional) `haiku | sonnet | opus | inherit` — padrão `inherit` |
 
 ### `components` (obrigatório)
 

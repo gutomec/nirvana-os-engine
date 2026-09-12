@@ -29,6 +29,7 @@ import { resolveScope, enumerate } from "../../_shared/lib/scope.ts";
 import { RUNTIME_TARGETS, RUNTIME_SKILL_DIRS, PROJECT_CONTRACT_FILES, SKILLS as SKILL_NAMES } from "../../_shared/lib/runtime-dirs.ts";
 import { listRuntimes, whichSync } from "../../_shared/lib/host-agent-driver.ts";
 import { resolveRunRuntime } from "../lib/runtime-rules.ts";
+import { classifySkillsLitter } from "../lib/skills-litter.ts";
 import { openclawAgentsOnProjects } from "../../_shared/lib/openclaw.ts";
 import { detectOrca, orcaHooksStatus, orcaHostActive, orcaStatus, resolveOrcaExecutable } from "../../_shared/lib/orca.ts";
 import { codexConfigPath, codexHookTrustEntries, codexHooksPath } from "../../_shared/lib/codex-hooks.ts";
@@ -634,33 +635,30 @@ if (fs.existsSync(agentsSkillsDir)) {
   }
 }
 
-// Backup litter. Two shapes, two harms. A *.bak / *backup* entry INSIDE a
-// runtime skills dir gets scanned like a skill, so a stale pre-migration copy
-// loads next to the real one (seen live: squads.pre-nirvana.*.bak under
+// Backup litter. Two shapes, two harms. A conventional copy INSIDE a runtime
+// skills dir gets scanned like a skill, so a stale pre-migration copy loads
+// next to the real one (seen live: squads.pre-nirvana.*.bak under
 // ~/.antigravity/skills). And skills-backup-* piling up beside ~/.nirvana/skills
 // are full copies of the tree nothing will ever read — `nrv update` keeps
 // exactly one (the latest) and prunes the rest, so more than one here means
 // that prune is not running.
 {
-  const litter: string[] = [];
-  for (const d of RUNTIME_SKILL_DIRS) {
-    try {
-      for (const entry of fs.readdirSync(d)) {
-        if (/\.bak$|\.old$|backup/i.test(entry)) litter.push(path.join(d, entry).replace(HOME, "~"));
-      }
-    } catch { /* dir absent — fine */ }
-  }
+  // Two claims with two confidences; classifySkillsLitter carries the reasoning
+  // and the case that forced it (issue #251).
+  const { copies, unsure } = classifySkillsLitter(RUNTIME_SKILL_DIRS, HOME);
+  const litter = copies;
   let staleBackups: string[] = [];
   try {
     staleBackups = fs.readdirSync(path.dirname(SKILLS))
       .filter((e) => e.startsWith("skills-backup-")).sort();
   } catch { /* parent unreadable — fine */ }
   const extra = staleBackups.length > 1 ? staleBackups.slice(0, -1) : [];
-  if (litter.length || extra.length) {
+  if (litter.length || extra.length || unsure.length) {
     const parts: string[] = [];
-    if (litter.length) parts.push(`${litter.length} stale entr${litter.length === 1 ? "y" : "ies"} inside skills dirs (${litter.join(", ")}) — loaded as if they were skills`);
-    if (extra.length) parts.push(`${extra.length} old skills-backup-* beside ~/.nirvana/skills — nrv update keeps only the latest`);
-    add("skills: backup litter", "WARN", parts.join("; ") + ". Safe to delete.");
+    if (litter.length) parts.push(`${litter.length} stale cop${litter.length === 1 ? "y" : "ies"} inside skills dirs (${litter.join(", ")}) — loaded as if they were skills. Safe to delete`);
+    if (extra.length) parts.push(`${extra.length} old skills-backup-* beside ~/.nirvana/skills — nrv update keeps only the latest. Safe to delete`);
+    if (unsure.length) parts.push(`${unsure.length} director${unsure.length === 1 ? "y" : "ies"} named like a backup with no SKILL.md (${unsure.join(", ")}) — the runtime scans them as skills and they are not. Check before removing`);
+    add("skills: backup litter", "WARN", parts.join("; ") + ".");
   } else {
     add("skills: backup litter", "PASS", "no *.bak inside skills dirs, at most one skills-backup");
   }

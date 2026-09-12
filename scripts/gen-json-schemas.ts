@@ -40,7 +40,7 @@ import { z } from "zod";
 // `skills/_shared/tests/generated-schema-parity.test.ts` holds the name to
 // limits.ts by generating under two hostile override files.
 process.env.NIRVANA_LIMITS_DEFAULTS_ONLY = "1";
-const { CapabilitySchema, SquadManifestSchema, WorkflowSchema } =
+const { CapabilitySchema, JSON_SCHEMA_OPTIONS, SquadManifestSchema, WorkflowSchema } =
   await import("../skills/_shared/validators/validators.ts");
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -88,7 +88,7 @@ function zodVersion(): string {
 }
 
 function render(t: Target): string {
-  const generated = z.toJSONSchema(t.schema, { unrepresentable: "any" }) as Record<string, unknown>;
+  const generated = z.toJSONSchema(t.schema, JSON_SCHEMA_OPTIONS) as Record<string, unknown>;
   const { $schema, ...body } = generated;
   const doc = {
     $schema: $schema ?? "https://json-schema.org/draft/2020-12/schema",

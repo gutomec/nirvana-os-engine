@@ -107,8 +107,7 @@
               },
               "required": [
                 "name",
-                "type",
-                "required"
+                "type"
               ],
               "additionalProperties": false
             }
@@ -268,10 +267,6 @@
                 "maximum": 1
               }
             },
-            "required": [
-              "status",
-              "threshold"
-            ],
             "additionalProperties": false
           },
           "score_boost": {
@@ -338,8 +333,7 @@
                       "type": "string",
                       "maxLength": 4000
                     }
-                  },
-                  "additionalProperties": false
+                  }
                 },
                 "when": {
                   "type": "string",
@@ -449,10 +443,7 @@
           "description",
           "domains",
           "invoke",
-          "examples",
-          "score_boost",
-          "model_hint",
-          "parallel_safe"
+          "examples"
         ],
         "additionalProperties": false
       }
@@ -544,9 +535,6 @@
           "items": {}
         }
       },
-      "required": [
-        "policy"
-      ],
       "additionalProperties": false
     },
     "features_required": {
@@ -605,9 +593,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "base_dir"
-      ],
       "additionalProperties": false
     },
     "legacy": {
@@ -639,8 +624,6 @@
     "name",
     "version",
     "protocol",
-    "license",
-    "experimental_domains",
     "components"
   ],
   "additionalProperties": {}

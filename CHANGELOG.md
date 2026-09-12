@@ -6,6 +6,16 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### Three reported defects: a skill called litter, a backup that never ran, and a validator that answered in two languages
+
+**`nrv doctor` told a user to delete a skill.** The `skills: backup litter` check classified any directory whose name merely CONTAINED "backup" as disposable and printed "Safe to delete." about it. On a real installation that was `~/.claude/skills/backup-verificado`: a loaded skill with valid frontmatter, and the one that machine's own contract required before any format. The two branches beside it name a convention (`*.bak`, `*.old`); the third named nothing. Conventional copies are still reported unconditionally — a copy of a skill carries a `SKILL.md` too, which is exactly why the runtime loads it twice, so filtering on that would have silenced the case the check was built for. A directory named like a backup with no `SKILL.md` is now reported separately, as something to check rather than something to delete (issue #251).
+
+**`nrv update` promised a rollback that did not exist.** The script documents a backup of `~/.nirvana/skills` before applying anything, and prints a one-command rollback at the end. On an installation created by `npx @nirvana-os/cli` — the path every buyer who did not clone the repo takes — neither ever ran: `updateFromRelease()` ends in `process.exit`, so the backup, the prune and the `nirvana_updated` audit event, all written below that call, belonged to the git checkout alone. The rollback line named a directory that was never created, and nineteen days of one user's audit log carried zero `nirvana_updated` events across a 0.9.0 → 0.13.6 upgrade. Both paths share the same four steps now, and the audit directory is created with the tolerant `ensureDir` rather than a bare recursive mkdir (issue #253).
+
+**A capability validated to two different models depending on the language.** `capability.model_hint` defaulted to `inherit` in the Zod validator and `sonnet` in its Pydantic twin, which `_shared/CONFIGURATION.md` §7 requires to mirror it. The twin is aligned, and a test now compares every defaulted field across both sides rather than only the one that was reported. The published schemas also declared `score_boost`, `model_hint` and `parallel_safe` **required** while both validators default them and the docs label them optional: `z.toJSONSchema` defaults to output mode, which describes the parsed value, where a defaulted field is always present. A manifest schema describes what an author writes, so the generator projects in input mode now — defaults are still published, only the `required` lists changed. The docs enum, which omitted `inherit`, lists it (issue #252).
+
 ## 0.13.7 — 2026-09-11
 
 ### The work runs where the user is working, and a model's answer survives its runtime's noise
