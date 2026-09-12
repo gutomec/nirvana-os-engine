@@ -42,9 +42,9 @@ describe("sanitizeModelId", () => {
 });
 
 describe("resolveSystemModel — nothing unless the user pinned it", () => {
-  // Owner doctrine (2026-09-12): "Nenhum modelo ou effort deve ser especificado
-  // por padrão. O padrão é sempre o que está por padrão no sistema do usuário."
-  // So null is the normal answer and null means "pass no --model".
+  // Owner doctrine (2026-09-12): no model and no effort is ever specified by
+  // default; the default is whatever the user's own system is set to. So null is
+  // the normal answer and null means "pass no --model".
   const saved = { ...process.env };
   beforeEach(() => {
     delete process.env.NIRVANA_MODEL;

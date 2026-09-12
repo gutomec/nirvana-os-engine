@@ -1,12 +1,11 @@
 // no-model-no-effort-by-default.test.ts — the dispatch carries nothing the
 // user did not ask for.
 //
-// Owner doctrine (2026-09-12): "Nenhum modelo ou effort deve ser especificado
-// por padrão. O padrão é sempre o que está por padrão no sistema do usuário.
-// Por exemplo para despachar o codex o padrão é somente despachar o codex sem
-// especificar modelo nem effort, para usar o padrão do meu codex. (…) Porém se
-// eu especificar modelo e especificar effort, então deve ser despachado
-// especificando o modelo e o effort que eu mandei."
+// Owner doctrine (2026-09-12): no model and no effort is ever specified by
+// default, because the default is whatever the user's own system is set to.
+// Dispatching codex means dispatching codex — nothing else — so it runs on the
+// model and effort configured in THEIR codex. But when the user does name a
+// model and an effort, the dispatch carries exactly what they named.
 //
 // The engine used to do the opposite, and the way it went wrong is why these
 // cases run a REAL process and read the argv it was actually given rather than
