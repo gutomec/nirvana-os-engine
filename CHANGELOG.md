@@ -6,6 +6,16 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### Antigravity never saw the door
+
+The installer linked the `nirvana` skill into `~/.antigravity/skills`, a directory the Antigravity CLI does not read: measured on 2026-09-16, `agy -p` listed only its built-in skills with the door linked there, and listed `nirvana` once a symlink sat under `~/.gemini/config/skills`, the one global path the agy CLI, the agy IDE and plain agy all honour (the CLI docs also name `~/.gemini/antigravity-cli/skills`, and `.agents/skills` in the workspace). Without the skill, a discovery question ("quais são minhas empresas") left the model with the project contract alone; it guessed at `nrv list businesses`, wrote its own lister, parsed the registry file five times and audited its own chat reply against the writing contract before answering. The Antigravity target is `~/.gemini/config/skills` now; `~/.antigravity/skills` is a legacy directory the installer and `nrv uninstall --engine` sweep our entries out of, leaving anything else there alone.
+
+**A contract written by an earlier engine is refreshed.** `nrv init` skipped a project whose `AGENTS.md` carried the invocation-contract marker, so every project initialised before the entry skill was renamed kept `Skill("harness")` and no discovery commands for good. The marker is versioned (`v2`); a file under `v1` has that block replaced by the current template in place, with the user's own lines above it and the writing contract below it untouched, and a second run changes nothing.
+
+**The writing contract judges deliverables, not replies.** The snippet says so in its first paragraph: it applies to the files the user asked for; a chat reply or the answer to a question is not a deliverable. `nrv list-businesses` prints each business's name beside its slug, so a runtime does not go digging for it.
+
 ## 0.13.10 — 2026-09-16
 
 ### One skill installs it all: `nirvana`, the entry point, now bootstraps the engine

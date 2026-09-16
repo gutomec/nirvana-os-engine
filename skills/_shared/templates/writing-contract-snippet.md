@@ -5,6 +5,8 @@
 <!-- nirvana-os:writing-contract:v1 -->
 ## Writing contract (for any prose deliverable)
 
+It applies to the files the user asked for: a report, a post, a chapter, a page. A chat reply, a status line or the answer to a question is not a deliverable and is not judged by it; answer those plainly and move on.
+
 ### Never
 - **Dash stitching.** `-` only for compound words (well-known) and ranges (90-day). Em-dash/en-dash: max one per 200 words. No dash to glue clauses, replace commas, hedge, or emphasize.
 - **Filler openers.** "In summary/conclusion", "Moreover", "It's worth noting", "Em resumo/conclusão", "É importante notar".

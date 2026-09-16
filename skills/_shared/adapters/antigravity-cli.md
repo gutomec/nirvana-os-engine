@@ -18,7 +18,7 @@
 | `default_model` | herdado do runtime — o engine NUNCA define model; a config do runtime do usuário decide. Passe model só quando o usuário pedir explicitamente. |
 | `tested_against` | Antigravity 2.0 contra Gemini 3 Pro |
 | `config_paths` | `~/.antigravity/settings.json`, `<project>/AGENTS.md`, `~/AGENTS.md` |
-| `skills_root` | Sem skill system formal; adapter usa `~/.antigravity/skills/<name>/` (convenção) |
+| `skills_root` | `~/.gemini/config/skills/<name>/` (lido pelo agy, pelo CLI e pelo IDE; o CLI também lê `~/.gemini/antigravity-cli/skills/` e `<workspace>/.agents/skills/`). `~/.antigravity/skills` não é lido por nenhum deles |
 | `agents_root` | `~/.antigravity/agents/<name>.md` ou bundled em `<project>/.antigravity/agents/` |
 | `memory_root` | `<project>/AGENTS.md` (project), `~/.antigravity/memory/` (custom) |
 | `audit_log` | `~/.antigravity/sessions/` (transcripts), `~/.harness-logs/` (jsonl fallback) |

@@ -23,7 +23,7 @@ import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
 // Same list the installer wires — see skills/_shared/lib/runtime-dirs.ts.
-import { RUNTIME_SKILL_DIRS, SKILLS, RETIRED_SKILLS } from "../lib/runtime-dirs.ts";
+import { LEGACY_RUNTIME_SKILL_DIRS, RUNTIME_SKILL_DIRS, SKILLS, RETIRED_SKILLS } from "../lib/runtime-dirs.ts";
 import { classifyRuntimeEntry, findParkedBackup, foreignProvider } from "../lib/runtime-install.ts";
 
 const HOME = homedir();
@@ -69,7 +69,7 @@ if (existsSync(hookInstaller)) {
 console.log("[2/4] Runtime skill links");
 // Retired names are swept too: a machine that never reinstalled after a rename
 // still has our old entry, and this is the last chance to remove it.
-for (const rtDir of RUNTIME_SKILL_DIRS) {
+for (const rtDir of [...RUNTIME_SKILL_DIRS, ...LEGACY_RUNTIME_SKILL_DIRS.map((l) => l.skillsDir)]) {
   for (const s of [...SKILLS, ...RETIRED_SKILLS]) {
     const linkPath = join(rtDir, s);
     // The same skill placed here by another installer (skills.sh): its relative

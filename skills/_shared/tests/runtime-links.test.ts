@@ -26,7 +26,7 @@ import { RUNTIME_ENTRIES, ENGINE_INTERNAL_SKILLS } from "../lib/runtime-dirs.ts"
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const SKILLS = ["harness", "businesses", "squads", "_shared", "nirvana"];
 const COPY_MARKER = ".nirvana-skill-copy";
-const RUNTIME_PARENTS = [".claude", ".codex", ".gemini", ".antigravity", path.join(".pi", "agent")];
+const RUNTIME_PARENTS = [".claude", ".codex", ".gemini", path.join(".gemini", "config"), ".antigravity", path.join(".pi", "agent")];
 
 let root: string;
 let fakeRepo: string;
@@ -249,6 +249,9 @@ test("uninstall removes our links AND our copies, cleans dangling links, keeps w
     expect(fs.existsSync(dangling)).toBe(false); // broken — existsSync() cannot see it
 
     fs.mkdirSync(foreignTarget, { recursive: true });
+    // ~/.antigravity/skills is a legacy dir the installer no longer creates; a
+    // foreign link there is exactly what the legacy sweep must leave alone.
+    fs.mkdirSync(path.dirname(foreignLink), { recursive: true });
     fs.rmSync(foreignLink, { force: true });
     fs.symlinkSync(foreignTarget, foreignLink);
   }
@@ -417,7 +420,9 @@ test("a retired name is removed from ~/.nirvana and from every runtime dir; a fo
   expect(fs.readFileSync(path.join(foreign, "FOREIGN.txt"), "utf8")).toBe("not ours");
   expect(out).toContain("is not Nirvana's");
   // The current name is wired everywhere the old one was.
-  for (const rt of [".claude", ".gemini", ".antigravity"]) expect(isOurs(path.join(home, rt, "skills", "nirvana"))).toBe(true);
+  for (const rt of [".claude", ".gemini", path.join(".gemini", "config")]) expect(isOurs(path.join(home, rt, "skills", "nirvana"))).toBe(true);
+  // ~/.antigravity/skills is legacy now: our old door there is swept, nothing new lands.
+  expect(exists(path.join(home, ".antigravity", "skills", "nirvana"))).toBe(false);
   expect(fs.existsSync(path.join(home, ".codex", "skills", "nirvana", COPY_MARKER))).toBe(true);
 });
 
@@ -496,4 +501,26 @@ test("uninstall leaves the skills.sh copy and its links alone", () => {
   if (!IS_WINDOWS) expect(isLink(claudeLink)).toBe(true);
   expect(out).toContain("provided by another installer");
   expect(exists(path.join(home, ".gemini", "skills", "nirvana"))).toBe(false);
+});
+
+test("Antigravity is wired where it reads (~/.gemini/config/skills); our entry in the legacy ~/.antigravity/skills is swept, a foreign one stays", () => {
+  const home = freshHome("home-antigravity", [".gemini", path.join(".gemini", "config"), ".antigravity"]);
+  // An engine up to 0.13.10 linked the door here. Ours: a symlink into the engine tree.
+  const legacyOurs = path.join(home, ".antigravity", "skills", "nirvana");
+  const legacyForeign = path.join(home, ".antigravity", "skills", "someone-elses");
+  fs.mkdirSync(path.join(home, ".antigravity", "skills"), { recursive: true });
+  fs.mkdirSync(legacyForeign, { recursive: true });
+  fs.writeFileSync(path.join(legacyForeign, "SKILL.md"), "---\nname: someone-elses\n---\n");
+  if (!IS_WINDOWS) fs.symlinkSync(path.join(home, ".nirvana", "skills", "nirvana"), legacyOurs);
+
+  const { code, out } = install(home);
+  expect(code).toBe(0);
+  for (const s of RUNTIME_ENTRIES) expect(isOurs(path.join(home, ".gemini", "config", "skills", s))).toBe(true);
+  expect(exists(path.join(home, ".antigravity", "skills", "nirvana"))).toBe(false);
+  expect(fs.existsSync(path.join(legacyForeign, "SKILL.md"))).toBe(true);
+  if (!IS_WINDOWS) expect(out).toContain("a directory that runtime never read");
+
+  expect(uninstall(home).code).toBe(0);
+  expect(exists(path.join(home, ".gemini", "config", "skills", "nirvana"))).toBe(false);
+  expect(fs.existsSync(path.join(legacyForeign, "SKILL.md"))).toBe(true);
 });

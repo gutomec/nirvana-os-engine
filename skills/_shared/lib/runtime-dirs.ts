@@ -44,7 +44,14 @@ export const RUNTIME_TARGETS: RuntimeTarget[] = [
   { name: "claude-code", bin: "claude", skillsDir: join(homedir(), ".claude/skills") },
   { name: "codex", bin: "codex", skillsDir: join(homedir(), ".codex/skills") },
   { name: "gemini-cli", bin: "gemini", skillsDir: join(homedir(), ".gemini/skills") },
-  { name: "antigravity-cli", bin: "agy", skillsDir: join(homedir(), ".antigravity/skills") },
+  // Antigravity CLI reads global skills from ~/.gemini/config/skills (the one
+  // path the agy CLI, the agy IDE and plain agy all honour; the CLI docs also
+  // name ~/.gemini/antigravity-cli/skills) and .agents/skills in the workspace.
+  // ~/.antigravity/skills, linked by engines up to 0.13.10, is read by none of
+  // them: measured on 2026-09-16, `agy -p` listed only its built-in skills with
+  // the door linked there, and listed `nirvana` once a symlink sat under
+  // ~/.gemini/config/skills. That directory is retired below.
+  { name: "antigravity-cli", bin: "agy", skillsDir: join(homedir(), ".gemini/config/skills") },
   // Pi Coding Agent (Agent Skills standard)
   { name: "pi", bin: "pi", skillsDir: join(homedir(), ".pi/agent/skills") },
   // OpenClaw reads ~/.agents/skills as its "personal agent skills" source. It
@@ -65,6 +72,14 @@ export const RUNTIME_TARGETS: RuntimeTarget[] = [
 
 /** Back-compat view (uninstaller iterates plain dirs). */
 export const RUNTIME_SKILL_DIRS = RUNTIME_TARGETS.map((t) => t.skillsDir);
+
+/** Skills directories an earlier engine wired and this one no longer does. The
+ *  installer and the uninstaller sweep OUR entries out of them (a symlink to
+ *  the engine tree, live or dangling, or a copy carrying COPY_MARKER); anything
+ *  else there is the user's and stays. */
+export const LEGACY_RUNTIME_SKILL_DIRS: Array<{ runtime: string; skillsDir: string }> = [
+  { runtime: "antigravity-cli", skillsDir: join(homedir(), ".antigravity/skills") },
+];
 
 /**
  * The instruction files agent runtimes read from a project root. `nrv init`

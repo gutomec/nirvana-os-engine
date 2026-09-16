@@ -6,6 +6,16 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Não lançado
+
+### O Antigravity nunca viu a porta
+
+O instalador linkava a skill `nirvana` em `~/.antigravity/skills`, um diretório que o Antigravity CLI não lê: medido em 16/09/2026, o `agy -p` listava só as skills internas dele com a porta linkada ali, e listou a `nirvana` assim que um symlink ficou em `~/.gemini/config/skills`, o único caminho global que o agy CLI, o agy IDE e o agy comum honram (a documentação do CLI também cita `~/.gemini/antigravity-cli/skills`, e `.agents/skills` no workspace). Sem a skill, uma pergunta de descoberta ("quais são minhas empresas") deixou o modelo só com o contrato do projeto; ele chutou `nrv list businesses`, escreveu um listador próprio, leu o registry cinco vezes e auditou a própria resposta de chat contra o contrato de escrita antes de responder. O alvo do Antigravity agora é `~/.gemini/config/skills`; `~/.antigravity/skills` é um diretório legado de onde o instalador e o `nrv uninstall --engine` tiram as nossas entradas, deixando qualquer outra coisa em paz.
+
+**Um contrato escrito por um engine anterior é renovado.** O `nrv init` pulava um projeto cujo `AGENTS.md` carregasse o marcador do contrato de invocação, então todo projeto inicializado antes da renomeação da skill de entrada ficou com `Skill("harness")` e sem os comandos de descoberta para sempre. O marcador ganhou versão (`v2`); um arquivo em `v1` tem esse bloco substituído pelo template atual no lugar, com as linhas do próprio usuário acima e o contrato de escrita abaixo intocados, e uma segunda execução não muda nada.
+
+**O contrato de escrita julga entregáveis, não respostas.** O snippet diz isso no primeiro parágrafo: vale para os arquivos que o usuário pediu; uma resposta de chat ou a resposta a uma pergunta não é entregável. O `nrv list-businesses` imprime o nome de cada empresa ao lado do slug, para que um runtime não saia cavando atrás dele.
+
 ## 0.13.10 — 2026-09-16
 
 ### Uma skill instala tudo: `nirvana`, a porta de entrada, agora faz o bootstrap do engine

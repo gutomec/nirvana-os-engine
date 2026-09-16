@@ -340,7 +340,30 @@ async function main() {
     const writingContractSnippet = path.join(SKILLS_ROOT, "_shared", "templates", "writing-contract-snippet.md");
     const onDemandSnippet = path.join(SKILLS_ROOT, "_shared", "templates", "on-demand-contract-snippet.md");
     const WRITING_CONTRACT_MARKER = "<!-- nirvana-os:writing-contract:v1 -->";
-    const INVOCATION_CONTRACT_MARKER = "<!-- nirvana-os:invocation-contract:v1 -->";
+    const INVOCATION_CONTRACT_MARKER = "<!-- nirvana-os:invocation-contract:v2 -->";
+    // Markers of earlier contracts. A project initialised under one of them
+    // kept the old text forever: the marker check made init skip the file, so
+    // the fix that renamed the entry skill and added the discovery commands
+    // reached new projects only. The block under an older marker (up to the
+    // next nirvana-os marker, or the end of the file) is replaced by the
+    // current template; the user's own lines above it and the other contracts
+    // below it stay where they are.
+    const OLDER_INVOCATION_MARKERS = ["<!-- nirvana-os:invocation-contract:v1 -->"];
+    const refreshInvocationContract = (dst: string): boolean => {
+      if (!fs.existsSync(dst) || !fs.existsSync(agentsTemplate)) return false;
+      const existing = fs.readFileSync(dst, "utf8");
+      const old = OLDER_INVOCATION_MARKERS.find((m) => existing.includes(m));
+      if (!old) return false;
+      const start = existing.indexOf(old);
+      const after = existing.slice(start + old.length);
+      const next = after.search(/<!-- nirvana-os:[a-z-]+:v\d+ -->/);
+      const end = next >= 0 ? start + old.length + next : existing.length;
+      const template = fs.readFileSync(agentsTemplate, "utf8").replace(/\s*$/, "\n");
+      const tail = existing.slice(end).replace(/^\s*/, "");
+      fs.writeFileSync(dst, existing.slice(0, start) + template + (tail ? "\n" + tail : ""));
+      log.ok(`refreshed invocation contract (${old.match(/v\d+/)![0]} → ${INVOCATION_CONTRACT_MARKER.match(/v\d+/)![0]}): ${dst}`);
+      return true;
+    };
     const ON_DEMAND_MARKER = "<!-- nirvana-os:on-demand-contract:v1 -->";
 
     // How Nirvana behaves in THIS project is the owner's call, and it matters
@@ -388,6 +411,9 @@ async function main() {
     } else if (fs.existsSync(agentsTemplate)) {
       for (const name of ["AGENTS.md", "CLAUDE.md", "GEMINI.md"]) {
         const dst = path.join(target, name);
+        // Phase 0: a contract written by an earlier engine is brought to the
+        // current text, in place.
+        refreshInvocationContract(dst);
         // Phase 1: only copy the base if the file is absent (never overwrite
         // pre-existing rules the user wrote).
         if (!fs.existsSync(dst)) {

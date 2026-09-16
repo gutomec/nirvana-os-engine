@@ -24,7 +24,7 @@ import { createRequire } from "node:module";
 // Shared with the uninstaller — see skills/_shared/lib/runtime-dirs.ts for why.
 // Resolves both from the repo and from an extracted release tarball: the
 // tarball ships scripts/install.ts next to the full skills/ tree.
-import { RUNTIME_TARGETS, SKILLS, RETIRED_SKILLS, RUNTIME_ENTRIES, ENGINE_INTERNAL_SKILLS, COPY_MARKER } from "../skills/_shared/lib/runtime-dirs.ts";
+import { RUNTIME_TARGETS, SKILLS, RETIRED_SKILLS, RUNTIME_ENTRIES, ENGINE_INTERNAL_SKILLS, LEGACY_RUNTIME_SKILL_DIRS, COPY_MARKER } from "../skills/_shared/lib/runtime-dirs.ts";
 import { classifyRuntimeEntry, depsLinkFor, ensureDepsLink, findParkedBackup, foreignProvider, materializeRuntimeSkillCopy, parkedBackupPath, pruneDepsLinkInside } from "../skills/_shared/lib/runtime-install.ts";
 import { RUN_STATE_EXCLUDES } from "../skills/_shared/lib/run-state.ts";
 
@@ -336,6 +336,20 @@ function linkRuntimes(): void {
     return;
   }
   console.log("[4/4] Linking runtimes → the nirvana entry (the engine stays in ~/.nirvana/skills) ...");
+  // A directory an earlier engine wired and no runtime reads: our entries come
+  // out (ours only: symlink to the engine tree, live or dangling, or a copy
+  // with COPY_MARKER), a parked backup goes back, and anything else stays.
+  for (const legacy of LEGACY_RUNTIME_SKILL_DIRS) {
+    if (!existsSync(legacy.skillsDir)) continue;
+    for (const s of [...SKILLS, ...RETIRED_SKILLS]) {
+      const p = join(legacy.skillsDir, s);
+      if (classifyRuntimeEntry(p, [NIRVANA_SKILLS]) !== "ours") continue;
+      rmSync(p, { recursive: true, force: true });
+      const bak = findParkedBackup(p);
+      if (bak) { try { renameSync(bak, p); } catch { /* best-effort */ } }
+      console.log(`  ✓ ${legacy.runtime}: unlinked '${s}' from ${legacy.skillsDir} (a directory that runtime never read)${bak ? " (restored pre-Nirvana backup)" : ""}`);
+    }
+  }
   let linked = 0;
   for (const t of RUNTIME_TARGETS) {
     const rtDir = t.skillsDir;
