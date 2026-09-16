@@ -6,7 +6,7 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
-## Unreleased
+## 0.13.9 — 2026-09-15
 
 ### The activator finds a Python by making it run, installs into a venv, and proves presence before it installs
 
