@@ -20,6 +20,7 @@ import * as os from "node:os";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { fakeHomeEnv } from "../../harness/tests/helpers/fake-home.ts";
+import { parkedBackupPath } from "../lib/runtime-install.ts";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const SKILLS = ["harness", "businesses", "squads", "_shared", "nirvana"];
@@ -145,9 +146,12 @@ test("install links every installed runtime and backs up a colliding third-party
   expect(code).toBe(0);
 
   // The user's directory was preserved, never deleted, and the move is visible.
-  const bak = `${thirdParty}.pre-nirvana.bak`;
+  // Parked OUTSIDE the skills root: a sibling `.pre-nirvana.bak` was a second
+  // copy of the skill for every runtime that scans recursively.
+  const bak = parkedBackupPath(thirdParty, home);
   expect(fs.readFileSync(path.join(bak, "THIRD-PARTY.txt"), "utf8")).toContain("não é do Nirvana");
-  expect(out).toContain(".pre-nirvana.bak");
+  expect(out).toContain("backups/runtime-skills");
+  expect(fs.readdirSync(path.join(home, ".claude", "skills")).filter((e) => /\.bak$/i.test(e))).toEqual([]);
 
   // pi is wired too — the list the uninstaller used to be missing.
   expect(isOurs(path.join(home, ".pi", "agent", "skills", "harness"))).toBe(true);
@@ -167,8 +171,9 @@ test("re-install is idempotent: no second backup, nothing deleted", () => {
 
   expect(install(home).code).toBe(0);
 
-  expect(fs.readFileSync(path.join(`${thirdParty}.pre-nirvana.bak`, "THIRD-PARTY.txt"), "utf8")).toContain("não é do Nirvana");
-  expect(exists(`${thirdParty}.pre-nirvana.bak.2`)).toBe(false);
+  const parked = parkedBackupPath(thirdParty, home);
+  expect(fs.readFileSync(path.join(parked, "THIRD-PARTY.txt"), "utf8")).toContain("não é do Nirvana");
+  expect(fs.readdirSync(path.dirname(parked))).toEqual(["harness"]);   // one backup, never a numbered chain
   expect(isOurs(thirdParty)).toBe(true);
   expect(fs.existsSync(path.join(home, ".codex", "skills", "harness", COPY_MARKER))).toBe(true);
 });
@@ -192,7 +197,7 @@ test("a NEW third-party dir over an existing backup is skipped, never deleted", 
   expect(isOurs(target)).toBe(false);
   expect(out).toContain("skipped this skill");
   // The original backup is untouched too.
-  expect(fs.readFileSync(path.join(`${target}.pre-nirvana.bak`, "THIRD-PARTY.txt"), "utf8")).toContain("não é do Nirvana");
+  expect(fs.readFileSync(path.join(parkedBackupPath(target, home), "THIRD-PARTY.txt"), "utf8")).toContain("não é do Nirvana");
   // Every other skill still installed normally.
   expect(isOurs(path.join(home, ".claude", "skills", "squads"))).toBe(true);
 });
@@ -233,7 +238,7 @@ test("uninstall removes our links AND our copies, cleans dangling links, keeps w
   // (c) the third-party directory and its backup survived untouched.
   const claudeHarness = path.join(home, ".claude", "skills", "harness");
   expect(fs.readFileSync(path.join(claudeHarness, "SECOND.txt"), "utf8")).toBe("conteúdo do usuário");
-  expect(fs.existsSync(path.join(`${claudeHarness}.pre-nirvana.bak`, "THIRD-PARTY.txt"))).toBe(true);
+  expect(fs.existsSync(path.join(parkedBackupPath(claudeHarness, home), "THIRD-PARTY.txt"))).toBe(true);
   expect(out).toContain("not ours");
 
   // The foreign symlink is not ours either.
@@ -258,7 +263,38 @@ test("backups are restored when the entry removed WAS ours", () => {
   expect(uninstall(home).code).toBe(0);
   expect(isLink(target)).toBe(false);
   expect(fs.readFileSync(path.join(target, "MINE.txt"), "utf8")).toBe("diretório do usuário");
+  expect(exists(parkedBackupPath(target, home))).toBe(false);
+});
+
+test("a legacy .pre-nirvana.bak beside the entry (installs up to 0.13.9) is still restored", () => {
+  const home = freshHome("home-restore-legacy", [".gemini"]);
+  const target = path.join(home, ".gemini", "skills", "squads");
+  expect(install(home).code).toBe(0);
+  fs.mkdirSync(`${target}.pre-nirvana.bak`, { recursive: true });
+  fs.writeFileSync(path.join(`${target}.pre-nirvana.bak`, "OLD.txt"), "parked by an older install");
+
+  expect(uninstall(home).code).toBe(0);
+  expect(fs.readFileSync(path.join(target, "OLD.txt"), "utf8")).toBe("parked by an older install");
   expect(exists(`${target}.pre-nirvana.bak`)).toBe(false);
+});
+
+test("content roots follow NIRVANA_HOME / SQUADS_DIR / BUSINESSES_DIR / DNA_LIBRARY, like the pack overlay", () => {
+  const home = freshHome("home-content-roots", [".gemini"]);
+  const elsewhere = path.join(home, "elsewhere");
+  const { code } = install(home, [], {
+    SQUADS_DIR: path.join(elsewhere, "my-squads"),
+    BUSINESSES_DIR: path.join(elsewhere, "my-businesses"),
+    DNA_LIBRARY: path.join(elsewhere, "my-dna"),
+  });
+  expect(code).toBe(0);
+  for (const d of ["my-squads", "my-businesses", "my-dna"]) expect(fs.existsSync(path.join(elsewhere, d))).toBe(true);
+  expect(fs.existsSync(path.join(home, "squads"))).toBe(false);
+  expect(fs.existsSync(path.join(home, "businesses"))).toBe(false);
+
+  const home2 = freshHome("home-content-roots-nh", [".gemini"]);
+  expect(install(home2, [], { NIRVANA_HOME: path.join(home2, "nh") }).code).toBe(0);
+  expect(fs.existsSync(path.join(home2, "nh", "businesses", "_library", "dna"))).toBe(true);
+  expect(fs.existsSync(path.join(home2, "businesses"))).toBe(false);
 });
 
 test("copy-mode install is removed by uninstall (the Windows / Codex path)", () => {
@@ -364,7 +400,7 @@ test("retiring our entry restores the pre-Nirvana backup parked beside it, leavi
   fs.mkdirSync(oldTree, { recursive: true });
   const entry = path.join(home, ".gemini", "skills", "nirvana-os");
   plantOurs(entry, oldTree);
-  fs.mkdirSync(`${entry}.pre-nirvana.bak`, { recursive: true });
+  fs.mkdirSync(`${entry}.pre-nirvana.bak`, { recursive: true });   // legacy location, installs up to 0.13.9
   fs.writeFileSync(path.join(`${entry}.pre-nirvana.bak`, "MINE.txt"), "the user's directory");
 
   expect(install(home).code).toBe(0);
@@ -416,7 +452,8 @@ test("a foreign dir named nirvana whose SKILL.md declares another name is still 
 
   expect(install(home).code).toBe(0);
 
-  expect(fs.existsSync(path.join(`${foreign}.pre-nirvana.bak`, "SKILL.md"))).toBe(true);
+  expect(fs.existsSync(path.join(parkedBackupPath(foreign, home), "SKILL.md"))).toBe(true);
+  expect(exists(`${foreign}.pre-nirvana.bak`)).toBe(false);
   expect(isOurs(foreign)).toBe(true);
 });
 

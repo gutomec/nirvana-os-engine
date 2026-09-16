@@ -318,6 +318,13 @@ function wireLocalBinOnPath(dry: boolean): string[] {
   if (shell.includes("zsh")) targets.push(path.join(home, ".zshrc"));
   else if (shell.includes("bash")) { targets.push(path.join(home, ".bashrc")); targets.push(path.join(home, ".bash_profile")); }
   else if (shell.includes("fish")) targets.push(path.join(home, ".config", "fish", "config.fish"));
+  else if (!shell) {
+    // No SHELL at all (some sandboxes and agent harnesses): ~/.profile alone
+    // would leave every macOS zsh user without nrv, since zsh never reads it.
+    // The block is idempotent, so covering the two common shells costs nothing.
+    targets.push(path.join(home, ".zshrc"));
+    targets.push(path.join(home, ".bashrc"));
+  }
   if (!shell.includes("fish")) targets.push(path.join(home, ".profile")); // login-shell fallback
   for (const t of targets) {
     try {

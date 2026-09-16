@@ -23,9 +23,14 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, basename } from "node:path";
 import { homedir } from "node:os";
+import { paths } from "../lib/bun-helpers.ts";
 
+// The same resolution every other clone path uses (index-clones, validate,
+// translate): DNA_LIBRARY, else NIRVANA_HOME/businesses/_library/dna, with the
+// project .env layered in. A fixed homedir() join here listed nothing on any
+// machine that had relocated its library.
 const HOME = homedir();
-const DNA_DIR = join(HOME, "businesses/_library/dna");
+const DNA_DIR = (paths as Record<string, string>).DNA_LIBRARY || join(HOME, "businesses/_library/dna");
 
 const args = process.argv.slice(2);
 const format = args.find((a) => a.startsWith("--format="))?.split("=")[1] ?? "compact";
@@ -249,7 +254,7 @@ if (format === "json") {
   console.log(JSON.stringify(filtered, null, 2));
 } else if (format === "table") {
   if (filtered.length === 0) {
-    console.log("No mind-clones found in ~/businesses/_library/dna/");
+    console.log(`No mind-clones found in ${DNA_DIR.replace(HOME, "~")}/`);
     process.exit(0);
   }
   const w = Math.max(...filtered.map((c) => c.slug.length), 8);
@@ -275,7 +280,7 @@ if (format === "json") {
 } else {
   // compact (default), grouped by parent_dir
   if (filtered.length === 0) {
-    console.log("No mind-clones found in ~/businesses/_library/dna/");
+    console.log(`No mind-clones found in ${DNA_DIR.replace(HOME, "~")}/`);
     console.log("Create one from prose through the harness, or install a pack from https://squads.sh");
     process.exit(0);
   }

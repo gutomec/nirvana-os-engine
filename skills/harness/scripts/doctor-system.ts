@@ -27,7 +27,7 @@ import { execSync, spawnSync } from "node:child_process";
 import { paths as nrvPaths } from "../../_shared/lib/bun-helpers.ts";
 import { resolveScope, enumerate } from "../../_shared/lib/scope.ts";
 import { RUNTIME_TARGETS, RUNTIME_SKILL_DIRS, PROJECT_CONTRACT_FILES, SKILLS as SKILL_NAMES } from "../../_shared/lib/runtime-dirs.ts";
-import { foreignProvider } from "../../_shared/lib/runtime-install.ts";
+import { classifyRuntimeEntry, foreignProvider } from "../../_shared/lib/runtime-install.ts";
 import { listRuntimes, whichSync } from "../../_shared/lib/host-agent-driver.ts";
 import { resolveRunRuntime } from "../lib/runtime-rules.ts";
 import { resolvePinnedEffort, resolveSystemModel } from "../../_shared/lib/system-model.ts";
@@ -640,8 +640,15 @@ if (fs.existsSync(agentsSkillsDir)) {
   });
   const doubled = new Map<string, string[]>();
   for (const s of requiredSkills) {
+    // Our own per-skill link into ~/.agents/skills (OpenClaw is a wired runtime)
+    // and the skills.sh layout (canonical dir there, relative links elsewhere)
+    // both reach one file through two names by design. The conflict this check
+    // was built for is the whole directory symlinked to another runtime's tree
+    // (runtime-dirs.ts), which leaves entries that are neither.
+    const entry = path.join(agentsSkillsDir, s);
+    if (classifyRuntimeEntry(entry, [SKILLS]) === "ours" || foreignProvider(entry, s, SKILLS)) continue;
     let target = "";
-    try { target = fs.realpathSync(path.join(agentsSkillsDir, s)); } catch { continue; }
+    try { target = fs.realpathSync(entry); } catch { continue; }
     const also = otherDirs.filter(d => {
       try { return fs.realpathSync(path.join(d, s)) === target; } catch { return false; }
     });

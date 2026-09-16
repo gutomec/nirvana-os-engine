@@ -38,10 +38,15 @@ SQUADS_DIR          ~/squads                 ~/squads                           
                                              (read; not enumerated)                (read; project overlay)
 SQUADS_REGISTRY     ~/.squads-registry.json  <project>/.nirvana/.squads-registry.  ~/.squads-registry.json
                                              json
-SQUADS_STATE_DIR    ~/.claude/squads-state   <project>/.nirvana/state/squads       see below
-HARNESS_LOGS_DIR    ~/.harness-logs          <project>/.nirvana/logs/harness       ~/.harness-logs
-MAESTRO_LOGS_DIR    ~/.maestro-logs          <project>/.nirvana/logs/maestro       ~/.maestro-logs
+SQUADS_STATE_DIR    ~/.nirvana/squads-state  <project>/.nirvana/state/squads       see below
+HARNESS_LOGS_DIR    ~/.harness-logs          <project>/.nirvana/logs/harness       <project>/.nirvana/logs/harness (*)
+MAESTRO_LOGS_DIR    ~/.maestro-logs          <project>/.nirvana/logs/maestro       <project>/.nirvana/logs/maestro (*)
 ```
+
+(*) Logs, registries and state are anchored to `<project>/.nirvana/` whenever a
+project root is detected, in EVERY mode (`paths.js`): the mode decides which
+assets are visible, not where a run persists. `NIRVANA_HOME` is the fallback
+only when no project root exists.
 
 ### Merge mode subtlety: state writes
 

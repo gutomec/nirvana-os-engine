@@ -19,7 +19,8 @@
 // runtimes, ~/.agents/skills) resolve through `~/.nirvana/skills/node_modules`,
 // because Bun resolves the entry to its real path before walking up.
 import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, resolve, sep } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { homedir } from "node:os";
 import { COPY_MARKER } from "./runtime-dirs.ts";
 
 /** Where a runtime's dependency link lives: beside the skills root, never in it. */
@@ -113,4 +114,31 @@ export function foreignProvider(entryPath: string, skillName: string, canonicalR
   if (real === canon || real.startsWith(canon + sep)) return false;
   if (existsSync(join(real, COPY_MARKER))) return false;
   return skillFrontmatterName(real) === skillName;
+}
+
+/**
+ * Where a foreign entry displaced by the installer is parked. OUTSIDE every
+ * skills root on purpose: Codex, Pi and OpenClaw walk their roots recursively,
+ * and a `<name>.pre-nirvana.bak` beside the entry is a second directory with
+ * the same SKILL.md, loaded twice under one name. The runtime dir is flattened
+ * into one path segment so two runtimes' backups of the same name never meet.
+ *
+ *   ~/.claude/skills/harness  →  ~/.nirvana/backups/runtime-skills/.claude_skills/harness
+ */
+export function parkedBackupPath(entryPath: string, home = homedir()): string {
+  const rel = relative(home, dirname(entryPath)) || "root";
+  const flat = rel.split(/[\\/]+/).filter((s) => s && s !== "..").join("_") || "root";
+  return join(home, ".nirvana", "backups", "runtime-skills", flat, basename(entryPath));
+}
+
+/**
+ * The backup to restore for `entryPath`, if any: the parked location first,
+ * then the legacy `<name>.pre-nirvana.bak` beside it that installs up to 0.13.9
+ * wrote. Returns null when neither exists.
+ */
+export function findParkedBackup(entryPath: string, home = homedir()): string | null {
+  const parked = parkedBackupPath(entryPath, home);
+  if (existsSync(parked)) return parked;
+  const legacy = `${entryPath}.pre-nirvana.bak`;
+  return existsSync(legacy) ? legacy : null;
 }

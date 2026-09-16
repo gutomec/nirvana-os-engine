@@ -25,7 +25,7 @@ import { createRequire } from "node:module";
 // Resolves both from the repo and from an extracted release tarball: the
 // tarball ships scripts/install.ts next to the full skills/ tree.
 import { RUNTIME_TARGETS, SKILLS, RETIRED_SKILLS, COPY_MARKER } from "../skills/_shared/lib/runtime-dirs.ts";
-import { classifyRuntimeEntry, depsLinkFor, ensureDepsLink, foreignProvider, materializeRuntimeSkillCopy, pruneDepsLinkInside } from "../skills/_shared/lib/runtime-install.ts";
+import { classifyRuntimeEntry, depsLinkFor, ensureDepsLink, findParkedBackup, foreignProvider, materializeRuntimeSkillCopy, parkedBackupPath, pruneDepsLinkInside } from "../skills/_shared/lib/runtime-install.ts";
 import { RUN_STATE_EXCLUDES } from "../skills/_shared/lib/run-state.ts";
 
 const requireCjs = createRequire(import.meta.url);
@@ -33,9 +33,15 @@ const HOME = homedir();
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_DIR = resolve(SCRIPT_DIR, "..");
 const LOCAL_BIN = join(HOME, ".local/bin");
-const SQUADS_DIR = join(HOME, "squads");
-const BUSINESSES_DIR = join(HOME, "businesses");
-const DNA_DIR = join(BUSINESSES_DIR, "_library/dna");
+// Content roots follow the environment — the same four variables paths.js and
+// the pack overlay (install-content.ts) honour. Fixed homedir() joins here meant
+// a machine with NIRVANA_HOME or SQUADS_DIR set got empty directories created in
+// the default place while every reader looked elsewhere. The engine's own home
+// (~/.nirvana, ~/.local/bin) stays on homedir(): it is not content.
+const CONTENT_HOME = process.env.NIRVANA_HOME ?? HOME;
+const SQUADS_DIR = process.env.SQUADS_DIR ?? join(CONTENT_HOME, "squads");
+const BUSINESSES_DIR = process.env.BUSINESSES_DIR ?? join(CONTENT_HOME, "businesses");
+const DNA_DIR = process.env.DNA_LIBRARY ?? join(BUSINESSES_DIR, "_library/dna");
 // Starter content no longer lives in this repo (the engine is content-free).
 // It is resolved from the private packs repo: NIRVANA_PACKS_DIR (default
 // ~/nirvana-packs), content root <packs>/starter-pack.
@@ -232,8 +238,10 @@ function installDeps(): void {
  * that skill alone.
  *
  * We NEVER destroy a directory we did not create. When a real user directory
- * is found it is renamed to `<name>.pre-nirvana.bak` once. If a backup from an
- * earlier install is already there and ANOTHER foreign directory has appeared
+ * is found it is parked once under ~/.nirvana/backups/runtime-skills/ — outside
+ * the skills root, because a `<name>.pre-nirvana.bak` beside it was a second
+ * copy of the skill for every runtime that scans recursively. If a backup from
+ * an earlier install is already there and ANOTHER foreign directory has appeared
  * meanwhile, we skip that entry with a loud warning instead of deleting it:
  * a numbered backup chain (.bak.2, .bak.3, …) would silently pile up copies
  * nobody asked for, and overwriting the first backup would destroy the
@@ -244,9 +252,11 @@ function cleanRuntimeEntry(linkPath: string): boolean {
   if (isSymlink(linkPath)) { rmSync(linkPath, { force: true }); return true; }
   if (!existsSync(linkPath)) return true;
   if (existsSync(join(linkPath, COPY_MARKER))) { rmSync(linkPath, { recursive: true, force: true }); return true; } // our copy
-  const bak = `${linkPath}.pre-nirvana.bak`;
-  if (!existsSync(bak)) {
-    renameSync(linkPath, bak);   // real user dir → backup once
+  const existing = findParkedBackup(linkPath);
+  const bak = existing ?? parkedBackupPath(linkPath);
+  if (!existing) {
+    mkdirSync(dirname(bak), { recursive: true });
+    renameSync(linkPath, bak);   // real user dir → parked once, outside the skills root
     console.log(`  ⓘ ${linkPath} already existed and is not Nirvana's — kept at ${bak}`);
     return true;
   }
@@ -361,8 +371,8 @@ function linkRuntimes(): void {
         continue;
       }
       rmSync(p, { recursive: true, force: true });
-      const bak = `${p}.pre-nirvana.bak`;
-      if (existsSync(bak)) {
+      const bak = findParkedBackup(p);
+      if (bak) {
         try { renameSync(bak, p); } catch { /* best-effort */ }
         console.log(`  ✓ retired '${old}' (restored pre-Nirvana backup)`);
       } else {

@@ -31,19 +31,33 @@ function home(): string {
   return root;
 }
 
-function run(args: string[], root: string) {
+function run(args: string[], root: string, envOverride: Record<string, string> = {}) {
   const env: Record<string, string> = {
     ...(process.env as Record<string, string>),
     HOME: root,
     USERPROFILE: root,
     NIRVANA_SKILLS_DIR: join(REPO, "skills"),
     SHELL: "/bin/zsh",
+    ...envOverride,
   };
   delete env.NIRVANA_SKIP_PATH_PERSIST;
   delete env.CODEX_HOME; // ~/.codex under the fake HOME, never the real one // this test targets the write it exists to reverse
   const r = spawnSync(process.execPath, [INSTALL, ...args], { cwd: root, env, encoding: "utf8" });
   return { code: r.status ?? -1, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
 }
+
+describe.skipIf(IS_WINDOWS)("nrv install — no SHELL in the environment (sandboxes, agent harnesses)", () => {
+  test("covers zsh, bash and the login profile, and uninstall removes all three blocks", () => {
+    // ~/.profile alone left every macOS zsh user without nrv: zsh never reads it.
+    const root = home();
+    expect(run([], root, { SHELL: "" }).code).toBe(0);
+    for (const f of [".zshrc", ".bashrc", ".profile"]) {
+      expect(readFileSync(join(root, f), "utf8"), f).toContain("# nirvana-os: nrv on PATH");
+    }
+    expect(run(["--uninstall"], root, { SHELL: "" }).code).toBe(0);
+    for (const f of [".zshrc", ".bashrc", ".profile"]) expect(existsSync(join(root, f)), f).toBe(false); // created solely by us
+  });
+});
 
 describe.skipIf(IS_WINDOWS)("nrv install --uninstall — shell rc file (POSIX; Windows persists to the registry instead)", () => {
   test("removes exactly the PATH block it added, leaving every other byte identical", () => {

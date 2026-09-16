@@ -88,7 +88,7 @@ cd ~/projects/my-agentic-project
 claude        # or: agy, gemini, codex
 ```
 
-`nrv init` scaffolds `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.nirvana/`, and a `briefs/` folder. Any agent launched in this directory discovers the harness skill and routes briefs through it.
+`nrv init` scaffolds `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.env` and `.nirvana/` (with `squads/`, `businesses/`, `mind-clones/`). Any agent launched in this directory discovers the harness skill and routes briefs through it; the orchestrator writes its enriched briefs under `.nirvana/briefs/` as it goes.
 
 ---
 

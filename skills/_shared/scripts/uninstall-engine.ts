@@ -24,7 +24,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 // Same list the installer wires — see skills/_shared/lib/runtime-dirs.ts.
 import { RUNTIME_SKILL_DIRS, SKILLS, RETIRED_SKILLS } from "../lib/runtime-dirs.ts";
-import { classifyRuntimeEntry, foreignProvider } from "../lib/runtime-install.ts";
+import { classifyRuntimeEntry, findParkedBackup, foreignProvider } from "../lib/runtime-install.ts";
 
 const HOME = homedir();
 const NIRVANA_DIR = join(HOME, ".nirvana");
@@ -87,8 +87,8 @@ for (const rtDir of RUNTIME_SKILL_DIRS) {
       continue;
     }
     rm(linkPath);
-    const bak = `${linkPath}.pre-nirvana.bak`;
-    if (existsSync(bak)) {
+    const bak = findParkedBackup(linkPath);
+    if (bak) {
       if (!DRY) { try { renameSync(bak, linkPath); } catch { /* best-effort */ } }
       console.log(`  ${tag} ${linkPath}  (${kind}, restored pre-Nirvana backup)`);
     } else {

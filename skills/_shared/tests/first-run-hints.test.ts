@@ -31,3 +31,19 @@ test("the quickstart names subcommands that exist", () => {
   expect(text).toMatch(/`nrv list-squads`/);
   expect(text).not.toMatch(/`nrv list businesses`|`nrv list squads`/);
 });
+
+test("list-clones reads the library the environment names, not a fixed ~/businesses path", () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-hints-"));
+  const lib = path.join(home, "elsewhere", "dna");
+  fs.mkdirSync(path.join(lib, "test-clone"), { recursive: true });
+  fs.writeFileSync(path.join(lib, "test-clone", "MANIFEST.yaml"), "name: test-clone\ndisplay_name: Test Clone\ncategory: test\n");
+  const run = (extra: NodeJS.ProcessEnv) => spawnSync(process.execPath, [path.join(REPO, "skills", "_shared", "scripts", "list-clones.ts")], {
+    env: fakeHomeEnv(home, { NIRVANA_SCOPE: "global", ...extra }), encoding: "utf8", cwd: home, timeout: 30_000,
+  });
+  const listed = run({ DNA_LIBRARY: lib });
+  expect(listed.status).toBe(0);
+  expect(`${listed.stdout}${listed.stderr}`).toMatch(/test-clone/);
+  const empty = run({});
+  expect(`${empty.stdout}${empty.stderr}`).toMatch(/No mind-clones found in ~\/businesses\/_library\/dna\//);
+  fs.rmSync(home, { recursive: true, force: true });
+});
