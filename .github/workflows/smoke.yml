@@ -108,8 +108,8 @@ jobs:
           # --update on both: the earlier steps already installed the engine here,
           # and a bare --dry-run rightly answers "already installed" in that case.
           sh skills/nirvana/scripts/bootstrap.sh --dry-run --update | grep -q "dry run"
-          sh skills/nirvana/scripts/bootstrap.sh --update | tee "$H/boot.log"
-          grep -q "Checksum verified" "$H/boot.log"
+          sh skills/nirvana/scripts/bootstrap.sh --update | tee "$RUNNER_TEMP/boot.log"
+          grep -q "Checksum verified" "$RUNNER_TEMP/boot.log"
           sh skills/nirvana/scripts/bootstrap.sh | grep -q "already installed"
           test -f "$HOME/.nirvana/skills/nirvana/SKILL.md"
           test ! -e "$HOME/.nirvana/skills/nirvana-os"
@@ -121,8 +121,9 @@ jobs:
         run: |
           $env:NIRVANA_ENGINE_TARBALL = "$PWD\dist\nirvana-os-engine.tar.gz"
           $env:NIRVANA_BOOTSTRAP_YES = "1"
-          powershell -NoProfile -ExecutionPolicy Bypass -File skills\nirvana\scripts\bootstrap.ps1 -Update
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $upd = powershell -NoProfile -ExecutionPolicy Bypass -File skills\nirvana\scripts\bootstrap.ps1 -Update | Out-String
+          if ($LASTEXITCODE -ne 0) { Write-Host $upd; exit $LASTEXITCODE }
+          if ($upd -notmatch "Checksum verified") { Write-Host $upd; exit 1 }
           $out = powershell -NoProfile -ExecutionPolicy Bypass -File skills\nirvana\scripts\bootstrap.ps1 | Out-String
           if ($out -notmatch "already installed") { Write-Host $out; exit 1 }
 
