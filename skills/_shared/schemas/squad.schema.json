@@ -496,7 +496,7 @@
       "type": "object",
       "properties": {
         "policy": {
-          "default": "declared",
+          "default": "active",
           "type": "string",
           "enum": [
             "declared",

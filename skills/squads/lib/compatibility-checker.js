@@ -37,7 +37,9 @@ class CompatibilityChecker {
       degradations: [],
     };
 
-    const policy = squadInfo.runtimePolicy || 'declared';
+    // `active` is the default (6.1.2): the run follows the session; only an
+    // explicit `declared` turns minimum + compatible into an allowlist.
+    const policy = squadInfo.runtimePolicy || 'active';
     const runtimes = squadInfo.runtimes || [];
     const incompatible = runtimes.filter(r => r.type === 'incompatible').map(r => r.runtime);
     if (incompatible.includes(runtimeId)) {
@@ -130,7 +132,7 @@ class CompatibilityChecker {
     const results = new Map();
     const runtimes = squadInfo.runtimes || [];
 
-    if ((squadInfo.runtimePolicy || 'declared') === 'active') {
+    if ((squadInfo.runtimePolicy || 'active') === 'active') {
       if (!activeRuntimeId) {
         results.set('active', {
           compatible: false,

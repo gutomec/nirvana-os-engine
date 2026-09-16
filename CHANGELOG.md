@@ -6,6 +6,12 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### A squad runs on the runtime the user is working in
+
+`runtime_requirements.policy` defaults to `active`: the run follows the runtime hosting the session, on that runtime's own model and effort, and `minimum` / `compatible` stop being an allowlist. `declared` is explicit and reserved for a squad built around one runtime's tools, where `minimum` names it. The old default was `declared`, and the mechanical fixer pinned `minimum: claude-code` on every squad that declared nothing: 153 squads of the library ended up refusing any runtime their list did not name, which is how a user working in Codex or Grok landed on `agent-x` with a perfectly routed brief. The fixer now writes `policy: active`; the validator, its Python twin, the JSON schema, discovery and the compatibility checker agree on the default; the squad template carries only `policy: active`.
+
 ## 0.13.12 — 2026-09-16
 
 ### The release ships a checksum, and every installer verifies it

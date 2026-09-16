@@ -96,18 +96,22 @@ describe('universal runtime and model brokers', () => {
     expect(result.selected.runtime).toBe('future-runtime@1.2.0')
   })
 
-  test('preserves declared policy behavior for legacy manifests', () => {
+  test('a legacy manifest without a policy follows the session; declared stays an explicit allowlist', () => {
     const catalog = createCatalog()
     const checker = new CompatibilityChecker(join(import.meta.dir, '..'), {
       runtimeBroker: new RuntimeBroker(catalog, new ModelBroker(catalog)),
     })
     const legacy = require('yaml').parse(require('node:fs').readFileSync(join(import.meta.dir, 'fixtures', 'legacy-squad.yaml'), 'utf8'))
-    const result = checker.checkCompatibility({
-      runtimePolicy: legacy.runtime_requirements.policy,
-      runtimes: legacy.runtime_requirements.minimum.map((entry: { runtime: string }) => ({ runtime: entry.runtime, type: 'minimum' })),
-    }, 'future-runtime')
-    expect(result.compatible).toBe(false)
-    expect(result.errors[0]).toContain('not declared')
+    const runtimes = legacy.runtime_requirements.minimum.map((entry: { runtime: string }) => ({ runtime: entry.runtime, type: 'minimum' }))
+    // No policy in the fixture: since 6.1.2 that means `active`, and a runtime the
+    // list never named is not refused for it (the minimum is information, not a gate).
+    expect(legacy.runtime_requirements.policy).toBeUndefined()
+    const followsSession = checker.checkCompatibility({ runtimePolicy: legacy.runtime_requirements.policy, runtimes }, 'future-runtime')
+    expect(followsSession.errors.some((e: string) => e.includes('not declared'))).toBe(false)
+    // Said explicitly, `declared` still restricts the run to the listed runtimes.
+    const declared = checker.checkCompatibility({ runtimePolicy: 'declared', runtimes }, 'future-runtime')
+    expect(declared.compatible).toBe(false)
+    expect(declared.errors[0]).toContain('not declared')
   })
 
   test('accepts provider catalog updates without changing a squad manifest', () => {

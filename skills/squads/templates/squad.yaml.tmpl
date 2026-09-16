@@ -91,13 +91,11 @@ components:
 # Runtime Requirements (Squad v4 §6 + v5 App-D)
 # Sem deps externas. Adapters em ~/.claude/skills/_shared/adapters/.
 # ─────────────────────────────────────────────────────────────────────
+# The squad runs on the runtime the user is working in, on that runtime's own
+# model and effort (policy: active). Only a squad built around one runtime's
+# tools sets `policy: declared` with a `minimum:` list.
 runtime_requirements:
   policy: active
-  minimum:
-    - { runtime: claude-code, version: ">=1.0.0" }
-  compatible:
-    - { runtime: codex, version: ">=0.20.0" }
-    - { runtime: gemini-cli, version: ">=0.4.0" }
   incompatible: []
 
 features_required:

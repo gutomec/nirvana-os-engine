@@ -34,12 +34,17 @@ const baseSquad = {
 }
 
 describe('runtime_requirements.policy', () => {
-  test('legacy manifests default to declared and still require minimum', () => {
-    expect(SquadManifestSchema.safeParse({
+  test('a manifest that declares nothing follows the session; declared is explicit and needs minimum', () => {
+    const withMin = SquadManifestSchema.safeParse({
       ...baseSquad, runtime_requirements: { minimum: [{ runtime: 'codex' }] },
-    }).success).toBe(true)
+    })
+    expect(withMin.success).toBe(true)
+    expect((withMin as any).data.runtime_requirements.policy).toBe('active')
+    const empty = SquadManifestSchema.safeParse({ ...baseSquad, runtime_requirements: {} })
+    expect(empty.success).toBe(true)
+    expect((empty as any).data.runtime_requirements.policy).toBe('active')
     expect(SquadManifestSchema.safeParse({
-      ...baseSquad, runtime_requirements: {},
+      ...baseSquad, runtime_requirements: { policy: 'declared' },
     }).success).toBe(false)
   })
 

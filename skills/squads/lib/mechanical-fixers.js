@@ -56,10 +56,18 @@ function fix_runtime_requirements_default(squadDir, patch) {
   const m = readYaml(file);
   if (!m) return { ok: false, reason: 'manifest unreadable' };
   m.runtime_requirements ??= {};
-  // Pydantic SquadManifest expects RuntimeRequirementMin objects: {runtime, version?}
-  if (m.runtime_requirements.policy !== 'active' && (!Array.isArray(m.runtime_requirements.minimum) || m.runtime_requirements.minimum.length === 0)) {
-    m.runtime_requirements.minimum = [{ runtime: 'claude-code' }];
-  } else {
+  // A squad that declares nothing follows the session (policy: active). This
+  // fixer used to pin `minimum: claude-code` here, which under the old
+  // `declared` default refused every runtime the list did not name: 153
+  // squads of the library ended up pinned that way (owner doctrine, 2026-09-16:
+  // the run follows the runtime the user is working in).
+  if (m.runtime_requirements.policy === 'declared' && (!Array.isArray(m.runtime_requirements.minimum) || m.runtime_requirements.minimum.length === 0)) {
+    m.runtime_requirements.policy = 'active';
+    m.runtime_requirements.incompatible ??= [];
+  } else if (!m.runtime_requirements.policy && (!Array.isArray(m.runtime_requirements.minimum) || m.runtime_requirements.minimum.length === 0)) {
+    m.runtime_requirements.policy = 'active';
+    m.runtime_requirements.incompatible ??= [];
+  } else if (Array.isArray(m.runtime_requirements.minimum)) {
     // Coerce string entries to objects (legacy v4 squads sometimes used bare strings)
     m.runtime_requirements.minimum = m.runtime_requirements.minimum.map(e =>
       typeof e === 'string' ? { runtime: e } : e

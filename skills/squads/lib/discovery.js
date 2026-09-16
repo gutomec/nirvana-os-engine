@@ -170,7 +170,7 @@ class SquadDiscovery {
       workflows,
       tasks,
       runtimes,
-      runtimePolicy: parsed.runtime_requirements?.policy || 'declared',
+      runtimePolicy: parsed.runtime_requirements?.policy || 'active',
       featuresRequired,
       featuresOptional,
       modelRequirements,

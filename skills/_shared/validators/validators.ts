@@ -193,7 +193,12 @@ export const SquadManifestSchema = z.object({
     schemas: z.array(z.string()).optional(),  // JSON Schemas the squad ships for output validation
   }).strict(),
   runtime_requirements: z.object({
-    policy: z.enum(['declared', 'active']).default('declared'),
+    // `active` (the default since 6.1.2): the squad runs on the runtime hosting
+    // the session, on that runtime's own model and effort; `minimum` and
+    // `compatible` are information, not an allowlist. `declared` is explicit
+    // and restricts the run to `minimum` + `compatible`: for a squad built
+    // around one runtime's tools.
+    policy: z.enum(['declared', 'active']).default('active'),
     minimum: z.array(z.object({
       runtime: Runtime,
       version: z.string().optional(),
@@ -426,7 +431,7 @@ export const BusinessManifestSchema = z.object({
     }).strict().optional(),
   }).strict().optional(),
   runtime_requirements: z.object({
-    policy: z.enum(['declared', 'active']).default('declared'),
+    policy: z.enum(['declared', 'active']).default('active'),
     minimum: z.array(z.object({
       runtime: Runtime,
       version: z.string().optional(),

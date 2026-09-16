@@ -83,17 +83,23 @@ runtime_requirements:
   incompatible: []
 ```
 
-- `declared` is the default. The active runtime must occur in `minimum` or
-  `compatible`, and `minimum` must contain at least one entry.
-- `active` selects the runtime hosting the current session. `minimum` and
+- `active` is the default (since 6.1.2): the run follows the runtime hosting
+  the session, on that runtime's own model and effort. `minimum` and
   `compatible` may be omitted and do not act as an allowlist.
+- `declared` is explicit, for a squad built around one runtime's tools (an
+  image generator that lives inside Codex, a video generator that lives inside
+  Grok). The active runtime must occur in `minimum` or `compatible`, and
+  `minimum` must contain at least one entry.
 - A registered adapter is preferred. If none exists, activation must pass an
   explicit runtime bridge with `protocolVersion` and `featuresSupported`.
 - Required features fail closed. Unsupported optional features emit auditable
   degradation warnings. `incompatible` is a hard denial under both policies.
 - Selection never installs, starts, or switches to another runtime.
 
-Legacy manifests without `policy` retain the `declared` behavior.
+A manifest without `policy` follows the session (`active`). Until 6.1.1 it was
+read as `declared`, and a fixer pinned `minimum: claude-code` on every squad
+that declared nothing, so a user working in another runtime was refused by
+squads that had no reason to care.
 
 1. Harness refuses to load the squad.
 2. Error message points to the adapter's Feature Support Matrix.

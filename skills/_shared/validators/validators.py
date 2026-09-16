@@ -232,7 +232,7 @@ class RuntimeRequirementMin(BaseModel):
 
 
 class RuntimeRequirements(StrictModel):
-    policy: Literal["declared", "active"] = "declared"
+    policy: Literal["declared", "active"] = "active"
     minimum: Optional[Annotated[list[RuntimeRequirementMin], Field(min_length=1)]] = None
     compatible: Optional[list[Any]] = None
     incompatible: Optional[list[Any]] = None
@@ -1851,12 +1851,14 @@ def test_runtime_requirements_declared_requires_minimum() -> None:
     import pytest
 
     with pytest.raises(Exception):
-        RuntimeRequirements.model_validate({})
+        RuntimeRequirements.model_validate({"policy": "declared"})
 
+    # Nothing declared, or a minimum without a policy: the run follows the session.
+    assert RuntimeRequirements.model_validate({}).policy == "active"
     requirements = RuntimeRequirements.model_validate(
         {"minimum": [{"runtime": "codex"}]}
     )
-    assert requirements.policy == "declared"
+    assert requirements.policy == "active"
 
 
 def test_registry_businesses_rejects_bad_legacy_uuid() -> None:
