@@ -475,7 +475,7 @@ Um arquivo `tasks/<task>.md` tem, nesta ordem:
 | `## Input` | opcional: o que a task recebe |
 | `## Output` | o que produzir e onde |
 | `## Acceptance Criteria` | critérios binários e verificáveis; é o que o juiz lê (§29.3, degrau `task_acceptance_criteria`) |
-| `## Steps` | **opcional**; o método de referência do autor. O executor pode seguir, reordenar ou pular, desde que o `## Outcome` fique verdadeiro. Passos só são obrigação quando a ordem ou a completude dos passos é, ela mesma, um requisito, e aí o autor diz isso no critério de aceitação |
+| `## Steps` | **ausente por padrão**; a migração (36.4) remove a seção inteira. Um autor só a escreve quando a ordem ou a completude dos passos é, ela mesma, um requisito, e aí diz isso também no critério de aceitação; mesmo então o executor lê como método de referência, não como ordem |
 | `## Output Schema` | opcional |
 
 `blocking: true` na aceitação da capability continua sendo o que o portão confere: a altitude muda como a task descreve o trabalho, não o que o juiz cobra.
@@ -494,9 +494,10 @@ O script `deprescribe-tasks.ts` (em `skills/squads/scripts/`) faz a migração, 
 bun ~/.nirvana/skills/squads/scripts/deprescribe-tasks.ts <raiz> [<raiz>…]           # relatório
 bun ~/.nirvana/skills/squads/scripts/deprescribe-tasks.ts <raiz> --apply             # reescreve
 bun ~/.nirvana/skills/squads/scripts/deprescribe-tasks.ts <raiz> --json              # relatório em JSON
+bun ~/.nirvana/skills/squads/scripts/deprescribe-tasks.ts ~/squads --include-library --apply   # a biblioteca instalada, no lugar
 ```
 
-Por task sem `## Outcome`: deriva o parágrafo de resultado da `description` do frontmatter (ou do primeiro parágrafo depois do título) e o insere antes da primeira seção; renomeia `## Steps` para `## Steps (reference method, optional)`. Nada mais é tocado: critérios, passos, esquemas e prosa ficam onde estavam. O relatório diz, por arquivo, `{outcome_added, steps_relabelled}`. A raiz precisa ser passada explicitamente, e a biblioteca instalada (`SQUADS_DIR`) é recusada: o conteúdo canônico dos packs mora em `~/nirvana-packs`, e a cópia instalada é marcada por comprador.
+Por task: acrescenta `## Outcome` quando falta, derivado, nesta ordem, da `description` do frontmatter, do primeiro parágrafo depois do título, ou do parágrafo de `## Output` unido ao primeiro critério de aceitação (e um marcador de pendência quando nada disso existe); e **remove a seção `## Steps` inteira**, do título até o próximo h1/h2 ou o fim do arquivo, preservando uma linha final de comentário de atribuição. Nada mais é tocado: critérios, esquemas e prosa ficam onde estavam. O relatório diz, por arquivo, `{outcome_added, outcome_source, steps_removed, weak}`; `weak` marca a task cuja `description` não servia (vazia, placeholder ou com menos de seis palavras), a lista que a curadoria por modelo reescreve depois. A raiz precisa ser passada explicitamente; a biblioteca instalada (`SQUADS_DIR`) só entra com `--include-library`, migrada no lugar e nunca copiada para um pack, porque a cópia instalada é marcada por comprador.
 
 ---
 
@@ -546,4 +547,4 @@ Os espelhos por squad (`squad-schema.json`, `agent-schema.json`, `task-schema.js
 | 4.0.0 | 2026-03 | núcleo agnóstico de runtime |
 | 5.0.0 | 2026-05-02 | camada de descoberta por capability (§22–§27) |
 | 6.0.0 | 2026-08-27 | documento de workflow, aceitação, avaliador, composição, `not_for` curto, admissão, migração (§28–§35, App-G, App-H) |
-| 6.1.0 | 2026-09-16 | tasks na altitude de resultado: `## Outcome`, passos como método de referência, `path`/`min_bytes` na aceitação, `deprescribe-tasks` (§36) |
+| 6.1.0 | 2026-09-16 | tasks na altitude de resultado: `## Outcome`, seção de passos removida, `path`/`min_bytes` na aceitação, `deprescribe-tasks` (§36) |
