@@ -75,7 +75,7 @@ function buildInferredAssumptions(score: BriefScore): { dimension: string; assum
         out.push({ dimension: dim, assumption: "Escopo interpretado como mínimo viável: entregável principal apenas, sem extras." });
         break;
       case "success_criteria":
-        out.push({ dimension: dim, assumption: "Critério de sucesso: passar quality gate da rubric correspondente, sem revisão obrigatória." });
+        out.push({ dimension: dim, assumption: "Pronto quando: o entregável responde ao pedido, existe no output_path e não é um esboço; método e artefatos ficam a cargo do executor." });
         break;
       case "length":
         out.push({ dimension: dim, assumption: "Comprimento alvo: padrão da categoria (post curto ≈ 200 palavras; longform ≈ 1500-2500)." });

@@ -26,6 +26,41 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { businessDirFor, readAcceptance } from "../lib/acceptance.ts";
+import { resolveSetting } from "../../_shared/lib/settings.ts";
+
+// Run plumbing the harness writes next to the deliverables. Never a deliverable.
+const RUN_PLUMBING = new Set([
+  "HANDOFF.json", "audit.jsonl", "deliverables.json", "brief.md", "agent-prompt.md",
+  ".step-brief.md", "session.json", "sessions.json", "chain.json", "dag-state.json",
+  "_SUMMARY.md", "_QA-RESERVATIONS.md",
+]);
+
+/**
+ * Outcome altitude: the brief names no paths on purpose (the executor decides
+ * the artifact layout), so "no path declared" is not indeterminate — whatever
+ * the run wrote under its outputs root is the deliverable set. Dotfiles,
+ * `node_modules`, `scratch/` and the plumbing above are skipped.
+ */
+function scanOutputsForDeliverables(root: string, maxDepth = 6): string[] {
+  const found: string[] = [];
+  const walk = (dir: string, depth: number) => {
+    if (depth > maxDepth) return;
+    let entries: fs.Dirent[];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      if (entry.name.startsWith(".") || entry.name === "node_modules" || entry.name === "scratch") continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) { walk(full, depth + 1); continue; }
+      if (entry.isFile() && !RUN_PLUMBING.has(entry.name)) found.push(full);
+    }
+  };
+  walk(root, 0);
+  return found.sort();
+}
+
+function briefAltitude(): string {
+  try { return String(resolveSetting("briefing.altitude").value ?? "outcome"); } catch { return "outcome"; }
+}
 
 const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
   || (fs.existsSync(path.join(os.homedir(), ".nirvana", "skills")) ? path.join(os.homedir(), ".nirvana", "skills") : path.join(os.homedir(), ".claude", "skills"));
@@ -191,10 +226,19 @@ export function verifyDeliverableOnDisk(
     }
   }
 
+  // Outcome / guided altitude: the run's own outputs are the promise.
+  if (expectedPathsRaw.length === 0 && briefAltitude() !== "prescriptive") {
+    const scanned = scanOutputsForDeliverables(promiseRoot).map(canonical);
+    if (scanned.length > 0) {
+      expectedPathsRaw = scanned;
+      manifestSource = `outputs-scan (briefing.altitude=${briefAltitude()})`;
+    }
+  }
+
   if (expectedPathsRaw.length === 0) {
     return base("FAIL_INDETERMINATE", {
       manifest_source: manifestSource,
-      reason: `no deliverables.json (looked in ${manifestCandidates.map(p => path.relative(projectDir, p)).join(", ")}), no acceptance[] entry with a path, and brief.md has no /path markers`,
+      reason: `no deliverables.json (looked in ${manifestCandidates.map(p => path.relative(projectDir, p)).join(", ")}), no acceptance[] entry with a path, brief.md has no /path markers, and nothing but run plumbing under ${promiseRoot}`,
     });
   }
 

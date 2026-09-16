@@ -33,14 +33,18 @@ export interface BriefScore {
 type DimensionKey = "length" | "objective" | "audience" | "constraints" | "examples" | "scope" | "success_criteria";
 type CategoryKey = "marketing" | "content" | "code" | "design" | "research" | "juridical" | "fintech" | "generic";
 
+// 2026 doctrine (references/05-brief.md): a brief is objective, why, hard
+// constraints and a definition of done. Examples and in/out scope are the
+// executor's calls; they keep their detectors for the audit miner but weigh 0
+// and never count as missing, so the amplifier stops asking for them.
 const DIMENSION_WEIGHTS: Record<DimensionKey, number> = {
-  length: 0.15,
-  objective: 0.25,
-  audience: 0.15,
+  length: 0.10,
+  objective: 0.30,
+  audience: 0.10,
   constraints: 0.15,
-  examples: 0.10,
-  scope: 0.10,
-  success_criteria: 0.10,
+  examples: 0,
+  scope: 0,
+  success_criteria: 0.35,
 };
 
 // Heuristic keyword sets. Tuned to PT-BR + EN since briefs come in both.
@@ -118,7 +122,7 @@ export function scoreBrief(brief: string): BriefScore {
 
   const missing: DimensionKey[] = [];
   for (const k of Object.keys(dims) as DimensionKey[]) {
-    if (dims[k] < 0.5) missing.push(k);
+    if (DIMENSION_WEIGHTS[k] > 0 && dims[k] < 0.5) missing.push(k);
   }
 
   const reasons: string[] = [];
@@ -126,8 +130,6 @@ export function scoreBrief(brief: string): BriefScore {
   if (dims.objective < 0.5) reasons.push("no clear action verb / objective");
   if (dims.audience < 0.5) reasons.push("audience/persona not specified");
   if (dims.constraints < 0.5) reasons.push("constraints (time, budget, format, length) not declared");
-  if (dims.examples < 0.5) reasons.push("no example or reference point");
-  if (dims.scope < 0.5) reasons.push("scope boundaries (IN/OUT) not declared");
   if (dims.success_criteria < 0.5) reasons.push("success criteria not measurable");
 
   const result: BriefScore = {

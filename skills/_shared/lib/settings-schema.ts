@@ -210,9 +210,16 @@ export const SETTINGS = {
   "execution.effort": stringSetting("execution.effort",
     "Effort fixado nos spawns do Nirvana; vazio (padrão) = não especifica nada e o CLI usa o padrão do usuário.",
     { env: "NIRVANA_EFFORT", expects: "low | medium | high | xhigh | max ou vazio" }),
+  // 2026 models read what they need when they need it (Anthropic: context on
+  // demand; OpenAI: "prompting the model to read files before every edit is a
+  // great way to burn context"). A whole persona pasted three times over made
+  // the task 0.2% of a 169k-character prompt; the card names the file instead.
   "execution.dna_injection": enumSetting("execution.dna_injection",
-    "Profundidade da injeção de DNA dos mind-clones: full = persona inteira; fragments = camadas da fase.",
-    ["full", "fragments"], { default: "full", env: "NIRVANA_DNA_INJECTION" }),
+    "Profundidade da injeção de DNA dos mind-clones: reference = cartão (caminho, one_liner, routing) e o executor lê o arquivo quando precisar; fragments = camadas da fase; full = persona inteira.",
+    ["reference", "fragments", "full"], { default: "reference", env: "NIRVANA_DNA_INJECTION" }),
+  "briefing.altitude": enumSetting("briefing.altitude",
+    "Altitude do brief enriquecido e das instruções de despacho: outcome = resultado, guarda-corpos e definição de pronto (padrão); guided = acrescenta a estrutura sugerida pelo autor; prescriptive = critérios por item, lista de artefatos e método (forma até 0.13.9).",
+    ["outcome", "guided", "prescriptive"], { default: "outcome", env: "NIRVANA_BRIEF_ALTITUDE" }),
   "execution.headless_skip_permissions": booleanSetting("execution.headless_skip_permissions",
     "Filhos headless pulam as aprovações do próprio CLI (autonomia); false = caminho restrito.",
     { default: true, env: "NIRVANA_HEADLESS_SKIP_PERMISSIONS", fromEnv: offWordDisables }),

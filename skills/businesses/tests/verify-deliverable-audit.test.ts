@@ -86,3 +86,48 @@ describe("verify-deliverable files its verdict", () => {
     } finally { process.chdir(prev); }
   });
 });
+
+describe("outcome altitude: the run's outputs are the promise", () => {
+  const roots: string[] = [];
+  afterAll(() => { for (const d of roots) rmSync(d, { recursive: true, force: true }); });
+
+  function scaffoldOutcome(W: string, projectId: string, biz: string): string {
+    mkdirSync(join(W, ".nirvana"), { recursive: true });
+    const run = join(W, "outputs", projectId);
+    mkdirSync(join(run, "businesses", biz), { recursive: true });
+    writeFileSync(join(run, "brief.md"), "# Brief\n\n## Pronto quando\n\nThe report answers the three questions.\n", "utf8");
+    const target = join(run, "businesses", biz, "report.md");
+    writeFileSync(target, "# Report\n\n" + "A paragraph of real content. ".repeat(20) + "\n", "utf8");
+    writeFileSync(join(run, "businesses", biz, "_SUMMARY.md"), "# Summary\n\nreport.md exists.\n", "utf8");
+    return target;
+  }
+
+  function runWith(W: string, projectId: string, biz: string, env: Record<string, string | undefined>) {
+    const r = spawnSync(process.execPath, [SCRIPT, projectId, biz], {
+      cwd: W, encoding: "utf8", env: { ...process.env, HARNESS_LOGS_DIR: join(W, ".nirvana", "logs", "harness"), ...env },
+    });
+    return { code: r.status, report: JSON.parse(`${r.stdout}`.trim().replace(/^[^{]*/, "")) };
+  }
+
+  test("no manifest, no acceptance path, no /path in the brief: the deliverable on disk still passes", () => {
+    const W = mkdtempSync(join(tmpdir(), "verify-outcome-")); roots.push(W);
+    const target = scaffoldOutcome(W, "proj-outcome", "acme");
+    const out = runWith(W, "proj-outcome", "acme", { NIRVANA_BRIEF_ALTITUDE: undefined });
+    expect(out.report.status).toBe("PASS");
+    expect(out.report.manifest_source).toMatch(/^outputs-scan/);
+    expect(out.report.expected).toBe(1);
+    expect(out.report.found).toBe(1);
+    expect(out.report.missing).toEqual([]);
+    expect(out.report.empty_or_stub).toEqual([]);
+    expect(existsSync(target)).toBe(true);
+    expect(out.code).toBe(0);
+  }, spawnBudgetMs(1));
+
+  test("prescriptive altitude keeps the old verdict: nothing declared is indeterminate", () => {
+    const W = mkdtempSync(join(tmpdir(), "verify-prescriptive-")); roots.push(W);
+    scaffoldOutcome(W, "proj-presc", "acme");
+    const out = runWith(W, "proj-presc", "acme", { NIRVANA_BRIEF_ALTITUDE: "prescriptive" });
+    expect(out.report.status).toBe("FAIL_INDETERMINATE");
+    expect(out.report.reason).toContain("run plumbing");
+  }, spawnBudgetMs(1));
+});
