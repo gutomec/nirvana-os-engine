@@ -2,7 +2,7 @@
 
 ```
 Título:      Squad Protocol Specification
-Versão:      6.0.0-draft
+Versão:      6.1.0-draft
 Status:      DRAFT
 Data:        2026-08-27
 Autor:       Luiz Gustavo Vieira Rodrigues (Prospecteezy)
@@ -27,6 +27,7 @@ A v6 acrescenta:
 - §33 `not_for` com teto de 25 caracteres
 - §34 Admissão (`nrv validate squad`)
 - §35 Migração (`nrv migrate --to 6`)
+- §36 Tasks na altitude de resultado (v6.1: `## Outcome`, passos como método de referência, `path`/`min_bytes` na aceitação)
 - App-G Schemas JSON gerados
 - App-H Lista de deprecados
 
@@ -214,6 +215,8 @@ Schema (`CapabilitySchema.acceptance`, `.strict()`, **máximo 12 entradas**):
 | `description` | string não vazia; é a frase que o juiz lê |
 | `blocking` | booleano, opcional |
 | `minimumScore` | número entre 0 e 1, opcional |
+| `path` | v6.1: arquivo que o critério promete, relativo ao diretório de saída; opcional |
+| `min_bytes` | v6.1: inteiro ≥ 0, tamanho abaixo do qual o arquivo prometido é esboço; opcional |
 
 ### 29.2 Por que 12
 
@@ -334,8 +337,8 @@ Toda resolução emite `x_capability_resolved` com o degrau, quantos ids a squad
 
 **O prompt.** Com uma capability resolvida, `buildSquadPrompt` (`skills/harness/lib/squad-exec.ts`) monta quatro seções:
 
-- `## SUA CAPABILITY` carrega o id, a descrição, `produces` e os critérios de aceitação, cada um marcado como bloqueante e com nota mínima quando os declara.
-- `## SEU WORKFLOW (<arquivo>)` carrega a tabela de passos do grafo canônico (`#`, passo, agente, task, requer, cria), lida pelo leitor de workflow da v6, mais o corpo em prosa quando o workflow é `.md`. O caminho sai com separador POSIX em qualquer sistema, para que a squad leia a mesma referência que o `invoke.ref` declara.
+- `## SUA CAPABILITY` carrega o id, a descrição, `produces` e os critérios de aceitação sob o rótulo **pronto quando**, cada um marcado como bloqueante e com nota mínima quando os declara.
+- `## SEU WORKFLOW (<arquivo>)` carrega a tabela de passos do grafo canônico (`#`, passo, agente, task, requer, cria), lida pelo leitor de workflow da v6, mais o corpo em prosa quando o workflow é `.md`, apresentada como **o método de referência do autor** (§36): as dependências de `requer` valem; o resto é decisão do executor. O caminho sai com separador POSIX em qualquer sistema, para que a squad leia a mesma referência que o `invoke.ref` declara.
 - `## SEUS AGENTES` e `## SUAS TASKS` carregam todos os componentes que aquele workflow referencia, em ordem de passo, sempre por inteiro — nenhum documento é cortado ou omitido pelo tamanho. O par de seções mede o total contra um teto compartilhado, `LIMITS.squad_prompt_components_bytes_max`, 65.536 bytes por padrão (configurável, ver `limits.ts`): é um alvo, não uma cota. Quando as duas seções somadas ultrapassam o teto, o bloco de tasks — o último que o prompt mostra — fecha com uma nota dizendo o total e o excesso. O sinal existe para quem for revisar o workflow, não para decidir o que a squad recebe.
 
 - `## O QUE MAIS ESTE SQUAD CARREGA` lista, um nível de profundidade, todo diretório que a squad carrega além dos três que o prompt já traz (`agents/`, `tasks/`, `workflows/`) — nome do diretório e o nome de cada arquivo dentro dele, com `/` no fim para subdiretório. Não é conteúdo: é mapa. O engine concede o diretório da squad no `addDirs` do despacho, então o agente abre o que precisar, em cascata, no momento em que precisar — o mesmo padrão de divulgação progressiva das skills. Ficam de fora o estado de execução (a lista é a do `isRunStatePath`, nunca uma cópia local) e a saída de build e dependência (`node_modules/`, `dist/`, `build/`, `__pycache__/`, `.venv/`). O que um passo **precisa** obedecer continua inline: um caminho é um pedido, texto inline é um fato.
@@ -455,6 +458,48 @@ A migração da biblioteca não é uma passada só, e a ordem importa:
 
 ---
 
+## §36 Tasks na altitude de resultado (v6.1)
+
+### 36.1 O problema medido
+
+Na biblioteca instalada em 16/09/2026 havia 4.001 arquivos de task com 9.018 passos numerados, e os packs somavam 13.488 passos e 2.687 critérios `blocking: true`. O prompt de um squad com capability resolvida inlinava cada task por inteiro e fechava com "Execute os passos nessa ordem". Os modelos de 2026 pedem o contrário: o resultado, o porquê, os guarda-corpos e a definição de pronto, com o método a cargo de quem executa (Anthropic, "Prompting Claude Fable 5.1" e "Prompting Claude Opus 5", 2026; OpenAI, "Rethinking skills and prompts for GPT-6 Astra", 09/2026). Um brief de pesquisa com sete critérios e oito artefatos obrigatórios levou 1 h 31 min para o que um brief de resultado resolve em fração disso.
+
+### 36.2 O que uma task é
+
+Um arquivo `tasks/<task>.md` tem, nesta ordem:
+
+| Seção | Regra |
+|---|---|
+| frontmatter `name`, `description` | como antes |
+| `## Outcome` | **o que deve ser verdade quando a task terminou**; um parágrafo, resultado e não método |
+| `## Input` | opcional: o que a task recebe |
+| `## Output` | o que produzir e onde |
+| `## Acceptance Criteria` | critérios binários e verificáveis; é o que o juiz lê (§29.3, degrau `task_acceptance_criteria`) |
+| `## Steps` | **opcional**; o método de referência do autor. O executor pode seguir, reordenar ou pular, desde que o `## Outcome` fique verdadeiro. Passos só são obrigação quando a ordem ou a completude dos passos é, ela mesma, um requisito, e aí o autor diz isso no critério de aceitação |
+| `## Output Schema` | opcional |
+
+`blocking: true` na aceitação da capability continua sendo o que o portão confere: a altitude muda como a task descreve o trabalho, não o que o juiz cobra.
+
+### 36.3 O que o engine faz com isso
+
+- `buildSquadPrompt` rotula os critérios como **pronto quando** e a tabela de passos como método de referência (§32.2).
+- `briefing.altitude` (`outcome` por padrão, `guided`, `prescriptive`) decide a forma do brief enriquecido e da instrução de despacho; a forma está em `skills/harness/references/05-brief.md`.
+- `capabilities[].acceptance[].path` e `min_bytes` (§29.1) deixam um critério prometer um arquivo, para que a verificação em disco leia a promessa em vez de procurar caminhos no brief.
+
+### 36.4 Migração de conteúdo
+
+O script `deprescribe-tasks.ts` (em `skills/squads/scripts/`) faz a migração, sempre com relatório e nunca à mão:
+
+```bash
+bun ~/.nirvana/skills/squads/scripts/deprescribe-tasks.ts <raiz> [<raiz>…]           # relatório
+bun ~/.nirvana/skills/squads/scripts/deprescribe-tasks.ts <raiz> --apply             # reescreve
+bun ~/.nirvana/skills/squads/scripts/deprescribe-tasks.ts <raiz> --json              # relatório em JSON
+```
+
+Por task sem `## Outcome`: deriva o parágrafo de resultado da `description` do frontmatter (ou do primeiro parágrafo depois do título) e o insere antes da primeira seção; renomeia `## Steps` para `## Steps (reference method, optional)`. Nada mais é tocado: critérios, passos, esquemas e prosa ficam onde estavam. O relatório diz, por arquivo, `{outcome_added, steps_relabelled}`. A raiz precisa ser passada explicitamente, e a biblioteca instalada (`SQUADS_DIR`) é recusada: o conteúdo canônico dos packs mora em `~/nirvana-packs`, e a cópia instalada é marcada por comprador.
+
+---
+
 ## App-H · Deprecado na v6
 
 Nada abaixo deixa de carregar. Cada item é tolerado pelo leitor, avisado pelo portão, convertido ou removido só por `--fix` ou por `nrv migrate`, e sai do leitor numa v7.
@@ -501,3 +546,4 @@ Os espelhos por squad (`squad-schema.json`, `agent-schema.json`, `task-schema.js
 | 4.0.0 | 2026-03 | núcleo agnóstico de runtime |
 | 5.0.0 | 2026-05-02 | camada de descoberta por capability (§22–§27) |
 | 6.0.0 | 2026-08-27 | documento de workflow, aceitação, avaliador, composição, `not_for` curto, admissão, migração (§28–§35, App-G, App-H) |
+| 6.1.0 | 2026-09-16 | tasks na altitude de resultado: `## Outcome`, passos como método de referência, `path`/`min_bytes` na aceitação, `deprescribe-tasks` (§36) |

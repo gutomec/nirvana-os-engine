@@ -51,6 +51,16 @@ describe("the numbers the spec states", () => {
     expect(SPEC).toContain("**máximo 12 entradas**");
   });
 
+  test("v6.1: an acceptance criterion may promise a file (path, min_bytes), and the spec says so", () => {
+    const acceptance = (CapabilitySchema.shape.acceptance as any);
+    expect(acceptance.safeParse([{ id: "report", description: "x", path: "report.md", min_bytes: 400 }]).success).toBe(true);
+    expect(acceptance.safeParse([{ id: "report", description: "x", min_bytes: -1 }]).success).toBe(false);
+    expect(SPEC).toContain("| `path` | v6.1");
+    expect(SPEC).toContain("| `min_bytes` | v6.1");
+    expect(SPEC).toContain("## §36 Tasks na altitude de resultado (v6.1)");
+    expect(SPEC).toContain("`deprescribe-tasks.ts`");
+  });
+
   test("not_for's 25-char ceiling lives in the gate, exactly as the spec says", async () => {
     const { NOT_FOR_MAX_CHARS } = await import("../../_shared/lib/verify/kinds/squad.ts");
     expect(NOT_FOR_MAX_CHARS).toBe(25);

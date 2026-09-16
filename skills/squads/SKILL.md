@@ -282,7 +282,7 @@ When creating a NEW squad, ALWAYS:
 5. Declare `capabilities[]` in the v5 shape: `id` (dotted, ≥3 segments), `description`, `domains[]` from `CAPABILITY_CATALOG_V1.yaml`, `invoke{type,ref}`, `examples[]`. Without capabilities the squad is invisible to harness discovery.
 6. Use portable semantic tool names in agent `tools:` (`read`, `write`, `grep`, `bash`, `web_search`).
 7. Tasks have NO owner — workflows bind agent→task.
-8. Task acceptance criteria MUST be binary and verifiable.
+8. A task states its `## Outcome` (what must be true when it is done) and binary, verifiable `## Acceptance Criteria`. `## Steps` is optional and is the author's reference method, never an order (v6 §36).
 9. Include `<protocol-context>` block in prompts for long-running subagents.
 10. A workflow is a DAG of phases that consume each other's output, so a phase starts only once the phase it depends on has REPORTED — and a phase reports through the `<task-notification>` carrying its `<result>`, never through the spawn's tool result (that is a launch receipt). Dispatching the next phase on a receipt leaves it reading a file that may still be half-written. Phases with no dependency between them go in ONE message as several calls, which is what makes them concurrent; phases that feed each other go one at a time, each dispatched once the previous one's notification landed.
 11. Declare output schemas in `contracts:` for chained tasks.

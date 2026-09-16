@@ -305,12 +305,11 @@ description: "What this accomplishes"
 
 # Task Name
 
+## Outcome
+[What must be true when this task is done: the result, not the method]
+
 ## Input
 [What this receives]
-
-## Steps
-1. [Step]
-2. [Step]
 
 ## Output
 [What to produce, where to save]
@@ -318,7 +317,16 @@ description: "What this accomplishes"
 ## Acceptance Criteria
 - [Binary verifiable criterion]
 - [Binary verifiable criterion]
+
+## Steps (reference method, optional)
+1. [Step]
+2. [Step]
 ```
+
+`## Outcome` and `## Acceptance Criteria` are the task. `## Steps` is the
+author's reference method (v6 §36): the executor may follow it, reorder it or
+skip it, as long as the outcome holds. Write steps only when the order or the
+completeness of the steps is itself a requirement.
 
 ### Phase 6: Generate the workflow document (§28)
 

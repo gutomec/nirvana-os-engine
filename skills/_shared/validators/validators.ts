@@ -160,6 +160,10 @@ export const CapabilitySchema = z.object({
     description: z.string().min(1),
     blocking: z.boolean().optional(),
     minimumScore: z.number().min(0).max(1).optional(),
+    // v6.1 (§36): a criterion may name the file it promises, so the disk can be
+    // checked against it the way employee acceptance already is (§29.1).
+    path: z.string().min(1).optional(),
+    min_bytes: z.number().int().min(0).optional(),
   }).strict()).max(12).optional(),
   evaluator: z.object({
     scorecard: z.string().min(1),
