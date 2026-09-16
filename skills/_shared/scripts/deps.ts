@@ -120,6 +120,8 @@ if (cmd === "status") {
     console.log(`  ${s.exists ? c("green", "✓") : c("red", "✗")} store      ${s.store}`);
     console.log(`    ${c("dim", `${s.packages} package(s) · ${human(s.bytes)}`)}`);
     console.log(`  ${fs.existsSync(py) ? c("green", "✓") : c("dim", "·")} python     ${py} ${c("dim", fs.existsSync(py) ? human(dirSize(py)) : "(empty)")}`);
+    const venv = path.join(py, "venv");
+    console.log(`  ${fs.existsSync(path.join(venv, "pyvenv.cfg")) ? c("green", "✓") : c("dim", "·")} python/venv ${c("dim", fs.existsSync(path.join(venv, "pyvenv.cfg")) ? "where squad packages install" : "(created on the first activation that needs it)")}`);
     for (const ch of caches) {
       console.log(`  ${ch.exists ? c("green", "✓") : c("dim", "·")} cache/${ch.tool.padEnd(11)} ${c("dim", ch.exists ? human(ch.bytes) : "(empty)")}`);
     }

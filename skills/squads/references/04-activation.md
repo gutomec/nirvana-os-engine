@@ -17,7 +17,7 @@ Template: `~/.nirvana/skills/squads/templates/dependencies.template.yaml`. Refer
 | Category | Purpose | Example item |
 |---|---|---|
 | `system` | OS-level CLIs that must be on PATH | `ffmpeg`, `git`, `uv` — checked then installed via brew/apt/choco per-platform |
-| `python` | Python packages | installed into the SHARED Python home `~/.nirvana/python`; `target_dir` is ignored (`use_squad_venv: true` opts into an isolated venv) |
+| `python` | Python packages | installed into the SHARED venv `~/.nirvana/python/venv` through a discovered interpreter (uv when present); skipped when pip's offline `--dry-run` proves every token present at its declared version; `target_dir` is ignored (`use_squad_venv: true` opts into a venv inside the squad); no usable Python is a warning, not a failure |
 | `node` | Node packages | installed into the SHARED store `~/.nirvana/node_modules`, then the squad dir is symlinked to it; `cwd` is ignored. `global: true` still goes through npm for packages that must be a command on PATH |
 | `services` | Long-lived daemons (cloned + installed, NOT started) | Pixelle-Video, ComfyUI, Ollama |
 | `custom_nodes` | ComfyUI-specific custom node repos | `kijai/ComfyUI-WanVideoWrapper`, etc. |

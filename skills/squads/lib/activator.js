@@ -476,36 +476,174 @@ function installSystem(dep, dryRun, confirmHeavy) {
   };
 }
 
-function installPython(spec, dryRun) {
+// ─────────────────────────────────────────────────────────────────────
+// Python: which interpreter, where packages go, how presence is proven.
+//
+// The premise is a machine we know nothing about: bun is there, "probably" a
+// node and a python, and no idea which. Everything below follows from that.
+//
+// WHICH INTERPRETER. Never a name, always a proof. Each candidate has to RUN a
+// one-line program that prints its version and its own path, and only the
+// first that does, at Python 3.8 or newer, is used. Measured on the
+// maintainer's machine: `python` on PATH was a shim that printed
+// "Failed to locate 'python'" and exited 1, ahead of a working `python3`; a
+// name-based pick takes the broken one, a proof-based pick skips it. On
+// Windows `python3.exe` on a stock machine is the Microsoft Store alias — a
+// 0-byte reparse point that opens the Store and exits non-zero — so it is
+// tried LAST there, after the `py` launcher python.org installs and `python`.
+//
+// WHERE PACKAGES GO. A venv under ~/.nirvana/python, not `pip install --user`.
+// PEP 668 (Debian 12, Ubuntu 23.04+, Fedora 38+, Arch, Homebrew) refuses
+// `--user` into a distro Python with `externally-managed-environment`, so the
+// old install path failed outright on a large share of modern machines. And a
+// venv means check and install share ONE interpreter by construction, where the
+// old code probed `pip --version` and installed into whatever Python that pip
+// belonged to, never having asked.
+//
+// HOW PRESENCE IS PROVEN. `<venv python> -m pip install --dry-run --no-index
+// --report - <tokens>`: pip's own resolver answering "would anything be
+// installed?", version specifiers honoured (PEP 440, `pillow >= 10.0` is a
+// real constraint), no network, no import names (pyyaml → yaml, pillow → PIL,
+// scikit-learn → sklearn, all sidestepped because pip speaks distribution
+// names). Measured: satisfied → exit 0 and an empty `install` in 1.1 s;
+// missing or too low → exit 1 in 0.25 s. Needs pip >= 22.2; an older pip
+// rejects the flag, and that answer is "not proven", which means install. The
+// only answer that skips the installer is a proof.
+//
+// uv, WHEN PRESENT. uv is what the ecosystem converged on for exactly this: it
+// discovers interpreters by querying them, creates the venv, downloads a Python
+// when the machine has none, and installs faster. It is preferred whenever it
+// is on PATH and never fetched here — the standalone installer is `curl | sh`,
+// which the fetch-and-execute gate above exists to stop on a buyer's machine.
+// A squad that needs it declares it under `system:` like any other tool.
+// ─────────────────────────────────────────────────────────────────────
+
+const PY_MIN_MAJOR = 3;
+const PY_MIN_MINOR = 8;   // importlib.metadata; below this no proof is possible
+const PY_PROBE = 'import sys; print("%d.%d %s" % (sys.version_info[0], sys.version_info[1], sys.executable))';
+const HINT_NO_PYTHON = 'Install Python 3.8+ from python.org or your package manager, or install uv (brew install uv · winget install astral-sh.uv · pipx install uv), then run nrv activate again.';
+const HINT_VENV = 'The venv could not be created. On Debian/Ubuntu the venv module is a separate package: sudo apt install python3-venv. Installing uv also works — it creates the venv without that package.';
+
+/** Candidate argv prefixes, most trustworthy first. Exported for test. */
+function pythonCandidates(platform = PLATFORM) {
+  return platform === 'win32'
+    ? [['py', '-3'], ['python'], ['python3']]
+    : [['python3'], ['python']];
+}
+
+let pythonMemo;   // undefined = not probed yet · null = nothing usable · {exe, version, via}
+function discoverPython() {
+  if (pythonMemo !== undefined) return pythonMemo;
+  pythonMemo = null;
+  for (const cand of pythonCandidates()) {
+    const r = runArgv([...cand, '-c', PY_PROBE], { timeoutMs: 15000 });
+    if (!r.ok) continue;
+    const m = /^(\d+)\.(\d+) (.+)$/m.exec(String(r.output).trim());
+    if (!m) continue;
+    const major = Number(m[1]), minor = Number(m[2]);
+    if (major < PY_MIN_MAJOR || (major === PY_MIN_MAJOR && minor < PY_MIN_MINOR)) continue;
+    pythonMemo = { exe: m[3].trim(), version: `${major}.${minor}`, via: cand.join(' ') };
+    break;
+  }
+  return pythonMemo;
+}
+
+let uvMemo;
+function uvAvailable() {
+  if (uvMemo === undefined) uvMemo = runArgv(['uv', '--version'], { timeoutMs: 15000 }).ok;
+  return uvMemo;
+}
+
+function venvReady(venvDir) {
+  return fs.existsSync(path.join(venvDir, 'pyvenv.cfg')) && fs.existsSync(DEPS.venvPython(venvDir));
+}
+
+/**
+ * The venv at `venvDir`, created if absent. uv creates it when present
+ * (`--seed` puts pip inside, so the dry-run proof works the same way in both
+ * kinds of venv; `--no-project` keeps a stray .python-version in cwd out of
+ * the decision); otherwise the discovered interpreter's `-m venv`. Returns
+ * {ok, venv, python, created} or {ok:false, error, hint, unavailable?}.
+ */
+function ensureVenv(venvDir, dryRun) {
+  const python = DEPS.venvPython(venvDir);
+  if (venvReady(venvDir)) return { ok: true, venv: venvDir, python, created: false };
+  let argv, via;
+  if (uvAvailable()) {
+    argv = ['uv', 'venv', '--seed', '--no-project', venvDir]; via = 'uv';
+  } else {
+    const py = discoverPython();
+    if (!py) return { ok: false, unavailable: true, error: 'no usable Python 3.8+ answered on PATH, and uv is not installed', hint: HINT_NO_PYTHON };
+    argv = [py.exe, '-m', 'venv', venvDir]; via = py.via;
+  }
+  if (dryRun) return { ok: true, venv: venvDir, python, created: false, would_create: displayCmd(argv), argv };
+  ensureDir(path.dirname(venvDir));
+  const r = runArgv(argv);
+  if (!r.ok) return { ok: false, error: r.error, hint: HINT_VENV };
+  return { ok: true, venv: venvDir, python, created: true, via };
+}
+
+/** pip's own answer to "is every token already satisfied here?". Only exit 0
+ *  with an empty `install` list is a proof; every other outcome — a missing
+ *  package, a version below its specifier, a pip too old for `--dry-run`, an
+ *  unreadable report — is "not proven", and not proven means install. */
+function pythonPresent(pythonExe, tokens) {
+  const r = runArgv([pythonExe, '-m', 'pip', 'install', '--dry-run', '--no-index', '--quiet', '--report', '-', ...tokens], { timeoutMs: 120000 });
+  if (!r.ok) return { present: false, reason: r.code == null ? 'pip did not run' : 'not satisfied, or pip predates --dry-run (22.2)' };
+  try {
+    const report = JSON.parse(String(r.output));
+    const n = Array.isArray(report.install) ? report.install.length : -1;
+    if (n === 0) return { present: true };
+    return { present: false, reason: n > 0 ? `${n} package(s) would be installed` : 'unreadable report' };
+  } catch {
+    return { present: false, reason: 'unreadable report' };
+  }
+}
+
+function installPython(spec, dryRun, squadDir) {
   const norm = normalizeDepSpec(spec, 'pip');
   if (!norm) return { status: 'no_python_deps' };
   const tokens = norm.raw.map(x => depToToken(x, 'pip')).filter(Boolean);
   if (tokens.length === 0) return { status: 'no_python_deps' };
-  if (allChecksPass(norm)) return { status: 'already_present', kind: 'python', packages: tokens };
-  const manager = norm.manager === 'uv' ? 'uv' : 'pip';
-  // An explicit venv (`use_squad_venv`) is a deliberate isolation choice by the
-  // squad author and is honoured. Everything else goes to the shared Python
-  // home: `--user` with PYTHONUSERBASE=~/.nirvana/python (set by depsEnv), which
-  // both installs and imports from there. Left alone, `pip install --user` wrote
-  // to ~/Library/Python — 2.3 GB there on the owner's machine — and a
-  // `target_dir` synthesized from a squad's requirements.txt wrote INTO the
-  // squad, which is the same scatter as the node case.
-  const venv = expandPath((!Array.isArray(spec) && spec.use_squad_venv) ? '.venv' : null);
+  // The author's explicit `check:` on every entry still wins, unchanged.
+  if (allChecksPass(norm)) return { status: 'already_present', kind: 'python', packages: tokens, via: 'check' };
 
-  let argv;
-  if (manager === 'uv') {
-    argv = ['uv', 'pip', 'install', ...(venv ? [] : ['--target', DEPS.pythonHome()]), ...tokens];
-  } else {
-    // pip vs pip3 fallback (macOS system python often only ships pip3).
-    const pipBin = checkCmd('pip --version').ok ? 'pip' : (checkCmd('pip3 --version').ok ? 'pip3' : 'pip');
-    argv = [pipBin, 'install', ...(venv ? [] : ['--user']), ...tokens];
+  // `use_squad_venv` is the author's deliberate isolation choice and is
+  // honoured: the venv lives inside the squad. Everything else shares one.
+  const isolated = !Array.isArray(spec) && !!spec.use_squad_venv;
+  const venvDir = isolated ? path.join(squadDir || process.cwd(), '.venv') : DEPS.pythonVenv();
+
+  const env = ensureVenv(venvDir, dryRun);
+  if (!env.ok) {
+    if (env.unavailable) return { status: 'python_unavailable', kind: 'python', packages: tokens, error: env.error, hint: env.hint };
+    return { status: 'install_failed', kind: 'python', packages: tokens, venv: venvDir, error: env.error, hint: env.hint };
   }
-  if (dryRun) return { status: 'would_install', kind: 'python', manager, home: venv || DEPS.pythonHome(), cmd: displayCmd(argv), argv };
-  const r = runArgv(argv, { cwd: venv || undefined });
+
+  // A venv that exists may already hold everything. One we just created, or
+  // would create, cannot, so the proof is skipped rather than run against
+  // nothing.
+  let notProven = null;
+  if (!env.created && !env.would_create) {
+    const proof = pythonPresent(env.python, tokens);
+    if (proof.present) return { status: 'already_present', kind: 'python', packages: tokens, venv: env.venv, via: 'pip-dry-run' };
+    notProven = proof.reason;
+  }
+
+  const manager = uvAvailable() ? 'uv' : 'pip';
+  const argv = manager === 'uv'
+    ? ['uv', 'pip', 'install', '--python', env.python, ...tokens]
+    : [env.python, '-m', 'pip', 'install', ...tokens];
+  if (dryRun) {
+    return { status: 'would_install', kind: 'python', manager, venv: env.venv, home: env.venv, python: env.python,
+             would_create_venv: env.would_create || null, not_proven: notProven, cmd: displayCmd(argv), argv, packages: tokens };
+  }
+  const r = runArgv(argv);
   return {
     status: r.ok ? 'installed' : 'install_failed',
     kind: 'python',
     manager,
+    venv: env.venv,
+    python: env.python,
     packages: tokens,
     error: r.ok ? null : r.error,
   };
@@ -916,7 +1054,7 @@ function activate(slug, opts = {}) {
 
   // Python deps
   if (deps.python) {
-    log.steps.python = installPython(deps.python, dryRun);
+    log.steps.python = installPython(deps.python, dryRun, squadDir);
   }
 
   // Node deps
@@ -968,7 +1106,7 @@ function activate(slug, opts = {}) {
       // Missing API keys / system prereqs do NOT block activation — the squad
       // installs its code deps and runs in degraded mode until the user supplies
       // them. Surfaced as warnings so the caller can prompt the user.
-      else if (item.status === 'missing_required' || item.status === 'missing_system_tool') warnings.push({ step: stepName, ...item });
+      else if (item.status === 'missing_required' || item.status === 'missing_system_tool' || item.status === 'python_unavailable') warnings.push({ step: stepName, ...item });
       // A post_install hook that failed. Hooks are cosmetic (reindex, print a
       // version) and the agent driving the activation is who reads this: a
       // warning it can act on, never a failure that hides the squad. Until now
@@ -1015,7 +1153,7 @@ function deactivate(slug) {
 
 // windowsCmdMetachar is exported for its own test: it is the whole Windows
 // decision, and the spawn it guards cannot be exercised from a POSIX runner.
-module.exports = { activate, status, deactivate, _windowsShellPlan: windowsShellPlan, _fetchAndExecute: fetchAndExecute, _posixShell: posixShell };
+module.exports = { activate, status, deactivate, _windowsShellPlan: windowsShellPlan, _fetchAndExecute: fetchAndExecute, _posixShell: posixShell, _pythonCandidates: pythonCandidates };
 
 // CLI — exit codes follow the contract documented in scripts/activate-squad.sh:
 //   0 = ok / activated

@@ -86,9 +86,31 @@ export function depsManifest(): string {
   return path.join(path.dirname(depsStore()), "package.json");
 }
 
-/** `~/.nirvana/python` — PYTHONUSERBASE, so `pip install --user` lands here. */
+/** `~/.nirvana/python` — the Python home. PYTHONUSERBASE still points here for
+ *  anything installed with `--user` before the venv existed. */
 export function pythonHome(): string {
   return path.join(nirvanaHome(), "python");
+}
+
+/**
+ * `~/.nirvana/python/venv` — where the activator installs a squad's Python
+ * packages. A venv rather than `pip install --user`, for two reasons that are
+ * both about machines we know nothing about: PEP 668 (Debian 12, Ubuntu 23.04+,
+ * Fedora 38+, Arch, Homebrew) refuses `--user` into a distro Python with
+ * `externally-managed-environment`, and a venv gives one interpreter that
+ * check and install share by construction, instead of a `pip` on PATH that may
+ * belong to a different Python than the `python3` on PATH — measured on the
+ * maintainer's own machine, where the two differed.
+ */
+export function pythonVenv(): string {
+  return path.join(pythonHome(), "venv");
+}
+
+/** The interpreter inside a venv, where each platform puts it. */
+export function venvPython(venvDir: string): string {
+  return process.platform === "win32"
+    ? path.join(venvDir, "Scripts", "python.exe")
+    : path.join(venvDir, "bin", "python");
 }
 
 /** `~/.nirvana/cache/<tool>` — one pinned cache per tool that downloads runtimes. */

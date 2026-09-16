@@ -6,6 +6,20 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Não lançado
+
+### O activator acha um Python fazendo-o rodar, instala num venv e prova presença antes de instalar
+
+A premissa é uma máquina de que não sabemos nada: o bun está lá, "provavelmente" um node e um python, e nenhuma ideia de quais. O ramo Python antigo sondava `pip --version`, caía para `pip3` e rodava `pip install --user` no interpretador a que aquele pip pertencesse, sem nunca ter perguntado. Medido na máquina do mantenedor: o `python` no PATH era um shim morto ("Failed to locate 'python'", exit 1) à frente de um `python3` funcional; o Python do Homebrew trazia o marcador `EXTERNALLY-MANAGED`, então a PEP 668 recusa `--user` ali (Debian 12, Ubuntu 23.04+, Fedora 38+, Arch e Homebrew fazem o mesmo); e 0 das 48 entradas Python da biblioteca instalada declaravam `check:`, então o pip rodava em toda ativação dos 118 squads que declaram Python.
+
+**Qual interpretador.** Nunca um nome, sempre uma prova: cada candidato tem que rodar um programa de uma linha que imprime a versão e o próprio caminho, e o primeiro que consegue, em 3.8 ou mais novo, é usado. Um shim que sai com 1 é pulado por isso, não pelo nome. No Windows o launcher `py` e o `python` vêm primeiro e o `python3` por último, porque numa máquina limpa o `python3.exe` é o alias da Microsoft Store, um reparse point de 0 bytes que abre a Store e sai com erro.
+
+**Onde os pacotes vão.** Um venv em `~/.nirvana/python/venv`, criado com o uv quando ele está instalado (`uv venv --seed --no-project`) e com o `-m venv` do interpretador descoberto caso contrário. Um venv contorna a PEP 668 e dá ao check e à instalação um interpretador só, por construção. O uv é preferido sempre que está no PATH e nunca é baixado: o instalador dele é `curl | sh`, que o gate de fetch-and-execute do próprio activator existe para barrar na máquina de um comprador; um squad que precise do uv o declara em `system:`.
+
+**Como a presença é provada.** `<python do venv> -m pip install --dry-run --no-index --report - <tokens>`: o resolvedor do próprio pip respondendo "algo seria instalado?", com restrição de versão respeitada, sem rede e sem adivinhar nome de import (pyyaml → yaml, pillow → PIL, scikit-learn → sklearn deixam de importar porque o pip fala em nome de distribuição). Medido: satisfeito responde exit 0 e `install` vazio em 1,1 s; faltando ou versão baixa responde exit 1 em 0,25 s. Exige pip 22.2 ou mais novo; um pip mais velho rejeita a flag, e essa resposta é "não provado", que significa instalar. A única resposta que pula o instalador é uma prova. Um `check:` explícito do autor continua tendo precedência.
+
+**Nenhum Python utilizável** é aviso com dica, não falha: a máquina de um comprador sem Python não pode derrubar todos os outros passos da ativação. `use_squad_venv: true` continua isolando, agora num venv dentro do squad. O `nrv deps status` mostra o venv.
+
 ## 0.13.8 — 2026-09-12
 
 ### Três defeitos reportados: uma skill chamada de lixo, um backup que nunca rodava e um validador que respondia em duas línguas

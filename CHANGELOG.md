@@ -6,6 +6,20 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### The activator finds a Python by making it run, installs into a venv, and proves presence before it installs
+
+The premise is a machine we know nothing about: bun is there, "probably" a node and a python, and no idea which. The old Python branch probed `pip --version`, fell back to `pip3`, and ran `pip install --user` into whatever interpreter that pip belonged to, never having asked. Measured on the maintainer's own machine: `python` on PATH was a dead shim ("Failed to locate 'python'", exit 1) ahead of a working `python3`; the Homebrew Python carried an `EXTERNALLY-MANAGED` marker, so PEP 668 refuses `--user` there (Debian 12, Ubuntu 23.04+, Fedora 38+, Arch and Homebrew all do); and 0 of the 48 Python entries in the installed library declared a `check:`, so pip ran on every activation of all 118 squads that declare Python at all.
+
+**Which interpreter.** Never a name, always a proof: each candidate must run a one-line program that prints its version and its own path, and the first that does at 3.8 or newer is used. A shim that exits 1 is skipped by that, not by its name. On Windows the `py` launcher and `python` come first and `python3` last, because on a stock machine `python3.exe` is the Microsoft Store alias, a 0-byte reparse point that opens the Store and exits non-zero.
+
+**Where packages go.** A venv at `~/.nirvana/python/venv`, created with uv when uv is installed (`uv venv --seed --no-project`) and with the discovered interpreter's `-m venv` otherwise. A venv sidesteps PEP 668, and it gives check and install one interpreter by construction. uv is preferred whenever it is on PATH and is never fetched: its installer is `curl | sh`, which the activator's own fetch-and-execute gate exists to stop on a buyer's machine; a squad that needs uv declares it under `system:`.
+
+**How presence is proven.** `<venv python> -m pip install --dry-run --no-index --report - <tokens>`: pip's own resolver answering "would anything be installed?", version specifiers honoured, no network, no import-name guessing (pyyaml → yaml, pillow → PIL, scikit-learn → sklearn are all sidestepped because pip speaks distribution names). Measured: satisfied answers exit 0 and an empty `install` in 1.1 s; missing or too low answers exit 1 in 0.25 s. It needs pip 22.2 or newer; an older pip rejects the flag, and that answer is "not proven", which means install. The only answer that skips the installer is a proof. An author's explicit `check:` still takes precedence.
+
+**No usable Python** is a warning with a hint, not a failure: a buyer's machine without Python must not fail every other step of the activation. `use_squad_venv: true` still isolates, now in a venv inside the squad. `nrv deps status` shows the venv.
+
 ## 0.13.8 — 2026-09-12
 
 ### Three reported defects: a skill called litter, a backup that never ran, and a validator that answered in two languages

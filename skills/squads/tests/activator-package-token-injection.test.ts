@@ -25,6 +25,7 @@ import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
+import { callsOf, fakePython, seedFakeVenv } from "./helpers/fake-python.ts";
 
 const REPO = join(import.meta.dir, "..", "..", "..");
 const ACTIVATOR = join(REPO, "skills", "squads", "lib", "activator.js");
@@ -87,7 +88,12 @@ function activate(f: Fixture, flags: string[] = []): { status: number | null; st
       // ~/.nirvana. Point NIRVANA_HOME at the fixture so the assertion is
       // about argv and nothing touches the real store.
       NIRVANA_HOME: f.root,
-      PATH: `${f.binDir}${delimiter}${process.env.PATH ?? ""}`,
+      // ONLY the fixture's fakes, the directory bun lives in, and the two
+      // system dirs the POSIX probes need. The machine's real PATH used to
+      // ride along, and on a machine with uv installed the Python case then
+      // found the real uv, which tried to install into a fake venv and failed
+      // — a test that depended on which tools happened to be on the runner.
+      PATH: `${f.binDir}${delimiter}${join(process.execPath, "..")}${delimiter}/usr/bin${delimiter}/bin`,
     },
   });
   return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
@@ -132,17 +138,21 @@ describe("a python package token cannot escape the quoting either", () => {
     // closed the quote, ran the redirection, and created the file.
     const token = `left-pad';>${sentinel};echo'`;
     writeFileSync(join(f.squadDir, "dependencies.yaml"), `python:\n  - ${JSON.stringify(token)}\n`);
-    fakeManager(f, "pip", log);
+    // Python packages now install through a discovered interpreter into a venv
+    // (`<venv python> -m pip install …`), never through a `pip` found on PATH.
+    // The fake is an interpreter that creates the venv on `-m venv` and logs
+    // every call; the property under test is unchanged — one argument, no shell.
+    const py = fakePython(f.binDir, "python3", log, { version: "3.11", satisfiedFlag: join(f.root, "never") });
+    seedFakeVenv(join(f.root, ".nirvana", "python", "venv"), py);
     try {
       const r = activate(f);
       expect(r.status).toBe(0);
       expect(existsSync(sentinel)).toBe(false);
 
-      // `pip --version` is the probe that picks pip over pip3; the install is
-      // the call that matters, and it carries the token whole.
-      const seen = calls(log);
-      expect(seen.at(-1)).toEqual(["install", "--user", token]);
-      expect(seen.filter(c => c[0] === "install").length).toBe(1);
+      // The dry-run proof and then the install; the install carries the token
+      // whole, as the last of exactly four arguments.
+      const seen = callsOf(log).filter(c => c[0] === "-m" && c[1] === "pip" && !c.includes("--dry-run"));
+      expect(seen).toEqual([["-m", "pip", "install", token]]);
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }
@@ -177,7 +187,17 @@ describe("the plan says which fields are argv and which are a shell line", () =>
       const j = JSON.parse(r.stdout);
 
       expect(j.steps.node.argv).toEqual(["bun", "add", "--cwd", join(f.root, ".nirvana"), nodeToken]);
-      expect(j.steps.python.argv).toEqual(["uv", "pip", "install", "--target", join(f.root, ".nirvana", "python"), pyToken]);
+      // The Python argv is `uv pip install --python <venv> <token>` on a machine
+      // with uv and `<python> -m pip install <token>` on one without; either
+      // way it is an ARGV, `install` is a word in it, and the token is the last
+      // argument whole. Asserting the exact prefix would make this test depend
+      // on which tools the machine running it happens to have.
+      const py = j.steps.python;
+      expect(py.status).toBe("would_install");
+      expect(Array.isArray(py.argv)).toBe(true);
+      expect(py.argv).toContain("install");
+      expect(py.argv.at(-1)).toBe(pyToken);
+      expect(py.venv).toBe(join(f.root, ".nirvana", "python", "venv"));
 
       // The system entry is the deliberate exception: the author wrote a shell
       // line, the consent gate reads it, and it keeps being one. A future
@@ -289,7 +309,15 @@ describe("the Windows command line, built here instead of left to the runtime", 
     // installs moved to the shared store it is the GLOBAL branch that still
     // does: `npm install -g <tool>` is the machine-level carve-out.
     expect(src).toContain("runArgv(argv, { windowsShim: true })");
-    expect(src).toContain("runArgv(argv, { cwd: venv || undefined })");
+    // The Python branch spawns the discovered interpreter and uv directly —
+    // real executables on every platform — through `runArgv` with no shim: the
+    // probe, the venv creation, pip's dry-run proof and the install. Asserted
+    // on that region of the file, not on a global count of shim call sites,
+    // which other branches are free to add to.
+    const pythonBranch = src.slice(src.indexOf("function pythonCandidates("), src.indexOf("function installNode("));
+    expect(pythonBranch.length).toBeGreaterThan(1000);
+    expect(pythonBranch).not.toContain("windowsShim");
+    expect(pythonBranch).toContain("'-m', 'pip', 'install', '--dry-run', '--no-index', '--quiet', '--report', '-'");
     expect(src).toContain("runArgv(argv, { timeoutMs: 7200000 })");
     // And the local branch spawns bun directly, never through a shell.
     expect(src).toContain("DEPS.install(tokens)");

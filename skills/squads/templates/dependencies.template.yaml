@@ -34,10 +34,17 @@ system:
 # ─────────────────────────────────────────────────────────────
 # Python packages.
 #
-# They install into the SHARED Python home (~/.nirvana/python) — never into the
-# squad, never into ~/Library/Python. Declare the packages and nothing else;
+# They install into a SHARED venv (~/.nirvana/python/venv) — never into the
+# squad, never into ~/Library/Python, never with `pip install --user` (PEP 668
+# refuses that on Debian, Ubuntu, Fedora, Arch and Homebrew). The activator
+# finds an interpreter by making it run (a dead `python` shim on PATH is
+# skipped), creates the venv with uv when uv is installed and with `-m venv`
+# otherwise, and skips the install when pip's own offline dry-run proves every
+# package present at the declared version. Version specifiers are honoured:
+# `pillow >= 10.0` is a real constraint. Declare the packages and nothing else;
 # `target_dir` is ignored. Add `use_squad_venv: true` only when the squad
-# genuinely needs isolation from the shared home.
+# genuinely needs isolation from the shared venv. A `check:` on an entry still
+# takes precedence over the automatic proof.
 # ─────────────────────────────────────────────────────────────
 python:
   manager: pip      # uv | pip
