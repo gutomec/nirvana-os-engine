@@ -105,7 +105,9 @@ jobs:
             echo "sem skill nirvana ou sem tarball — step pulado"; exit 0
           fi
           export NIRVANA_ENGINE_TARBALL="$PWD/dist/nirvana-os-engine.tar.gz" NIRVANA_BOOTSTRAP_YES=1
-          sh skills/nirvana/scripts/bootstrap.sh --dry-run | grep -q "dry run"
+          # --update on both: the earlier steps already installed the engine here,
+          # and a bare --dry-run rightly answers "already installed" in that case.
+          sh skills/nirvana/scripts/bootstrap.sh --dry-run --update | grep -q "dry run"
           sh skills/nirvana/scripts/bootstrap.sh --update
           sh skills/nirvana/scripts/bootstrap.sh | grep -q "already installed"
           test -f "$HOME/.nirvana/skills/nirvana/SKILL.md"

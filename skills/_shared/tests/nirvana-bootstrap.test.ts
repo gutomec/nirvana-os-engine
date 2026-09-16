@@ -78,12 +78,16 @@ function run(kind: "sh" | "ps1", home: string, tmp: string, args: string[]): { c
   return { code: r.status ?? 1, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
 }
 
+/** Windows hands out 8.3 short paths (RUNNER~1) for TEMP and long ones for cwd;
+ *  realpathSync.native expands the short form, and the drive letter case varies. */
+const canon = (p: string) => IS_WINDOWS ? fs.realpathSync.native(p).toLowerCase() : fs.realpathSync(p);
+
 const installs = (home: string) => fs.existsSync(path.join(home, "installs.log"))
   ? fs.readFileSync(path.join(home, "installs.log"), "utf8").trim().split("\n") : [];
 const nrvAt = (home: string) => fs.existsSync(path.join(home, ".local", "bin", IS_WINDOWS ? "nrv.cmd" : "nrv"));
 
 beforeAll(() => {
-  root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "nrv-boot-")));
+  root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "nrv-boot-")));
   tarball = buildStubTarball(root);
 });
 afterAll(() => { try { fs.rmSync(root, { recursive: true, force: true }); } catch { /* best-effort */ } });
@@ -110,7 +114,9 @@ for (const kind of (IS_WINDOWS ? ["ps1"] : ["sh"]) as Array<"sh" | "ps1">) {
       expect(code).toBe(0);
       expect(out).toContain("dry run");
       expect(fs.readdirSync(home)).toEqual(before);
-      expect(fs.readdirSync(tmp)).toEqual([]);
+      // Only OUR work dirs: PowerShell itself drops __PSScriptPolicyTest_* files
+      // into TEMP on every start.
+      expect(fs.readdirSync(tmp).filter((e) => e.startsWith("nrv-engine-"))).toEqual([]);
     });
 
     test("with consent it installs from the tarball, from HOME, with --no-starter, and cleans up", () => {
@@ -122,7 +128,7 @@ for (const kind of (IS_WINDOWS ? ["ps1"] : ["sh"]) as Array<"sh" | "ps1">) {
       const log = installs(home);
       expect(log).toHaveLength(1);
       expect(log[0]).toContain("--no-starter");
-      expect(log[0].split("cwd=")[1]).toBe(fs.realpathSync(home));
+      expect(canon(log[0].split("cwd=")[1])).toBe(canon(home));
       expect(out).toContain("engine installed");
       expect(fs.readdirSync(tmp).filter((e) => e.startsWith("nrv-engine-"))).toEqual([]);
     });
