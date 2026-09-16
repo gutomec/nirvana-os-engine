@@ -109,11 +109,12 @@ for (const kind of (IS_WINDOWS ? ["ps1"] : ["sh"]) as Array<"sh" | "ps1">) {
 
     test("--dry-run prints the list and touches nothing", () => {
       const { home, tmp } = freshHome(`${kind}-dry`);
-      const before = fs.readdirSync(home);
       const { code, out } = run(kind, home, tmp, [dry]);
       expect(code).toBe(0);
       expect(out).toContain("dry run");
-      expect(fs.readdirSync(home)).toEqual(before);
+      // Nothing of the bootstrap's own. Not a full listing: PowerShell creates
+      // AppData under a redirected USERPROFILE on every start.
+      for (const own of [".local", ".nirvana", "installs.log"]) expect(fs.existsSync(path.join(home, own)), own).toBe(false);
       // Only OUR work dirs: PowerShell itself drops __PSScriptPolicyTest_* files
       // into TEMP on every start.
       expect(fs.readdirSync(tmp).filter((e) => e.startsWith("nrv-engine-"))).toEqual([]);
