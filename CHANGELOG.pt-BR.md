@@ -44,6 +44,8 @@ Um brief de pesquisa levou 1 h 31 min em 16/09/2026. O brief enriquecido carrega
 
 **Squad Protocol v6.1 (§36).** Uma task é o seu `## Outcome` e os seus critérios de aceitação; `## Steps` é opcional e é o método de referência do autor, que o prompt do squad passa a dizer no lugar de "execute os passos nessa ordem". `capabilities[].acceptance[]` ganha `path` e `min_bytes` para que um critério prometa um arquivo (schemas regenerados). `skills/squads/scripts/deprescribe-tasks.ts` migra os arquivos de task (acrescenta o outcome a partir da description, rerrotula os passos), relata por padrão, só escreve com `--apply` numa raiz explícita e recusa a biblioteca instalada. Os packs não são migrados nesta release: medido em modo relatório, 84 e 455 arquivos de task em duas raízes, nenhum escrito.
 
+**Comparação lado a lado.** O mesmo pedido da nutrologia, o mesmo squad (`nirvana-pesquisa-mercado`, `design.trend_detection.execute`), o mesmo runtime, em 16/09/2026: 100 minutos, 362 chamadas de ferramenta, 15 arquivos e um relatório de 11.179 palavras com o brief prescritivo; 33 minutos, 102 chamadas, 11 arquivos e um relatório de 7.253 palavras com o brief `outcome`. A verificação passou pela varredura de saídas (10 entregáveis, nenhum esboço), o gate passou com 0,97, e o relatório manteve 36 fontes datadas e as `## Premissas assumidas`.
+
 ## 0.13.9 — 2026-09-15
 
 ### O activator acha um Python fazendo-o rodar, instala num venv e prova presença antes de instalar

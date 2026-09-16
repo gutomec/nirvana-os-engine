@@ -44,6 +44,8 @@ A research brief took 1 h 31 min on 2026-09-16. The enriched brief carried seven
 
 **Squad Protocol v6.1 (§36).** A task is its `## Outcome` and its acceptance criteria; `## Steps` is optional and is the author's reference method, which the squad prompt now says in place of "execute the steps in this order". `capabilities[].acceptance[]` gains `path` and `min_bytes` so a criterion can promise a file (schemas regenerated). `skills/squads/scripts/deprescribe-tasks.ts` migrates task files (adds the outcome from the description, relabels the steps), reports by default, writes only with `--apply` on an explicit root, and refuses the installed library. The packs are not migrated in this release: measured in report mode, 84 and 455 task files on two roots, none written.
 
+**Like-for-like run.** The same nutrologia request, the same squad (`nirvana-pesquisa-mercado`, `design.trend_detection.execute`), the same runtime, on 2026-09-16: 100 minutes, 362 tool calls, 15 files and an 11,179-word report with the prescriptive brief; 33 minutes, 102 tool calls, 11 files and a 7,253-word report with the `outcome` brief. Verify passed through the outputs scan (10 deliverables, no stub), the gate passed at 0.97, and the report kept 36 dated sources and its `## Premissas assumidas`.
+
 ## 0.13.9 — 2026-09-15
 
 ### The activator finds a Python by making it run, installs into a venv, and proves presence before it installs
