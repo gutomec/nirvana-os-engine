@@ -286,7 +286,7 @@ describe("settingsEnvForChild", () => {
     expect(pinned).toMatchObject({
       NIRVANA_ROUTER_DENSE: "1", NIRVANA_ROUTING_MODE: "fast", NIRVANA_MULTI_TARGET_KILL_SWITCH: "1", NIRVANA_MODEL: "opus",
       NIRVANA_PROGRESS_PING_SEC: "5", NIRVANA_NO_UPDATE_CHECK: "1", NIRVANA_EXECUTION_MODE: "standard", NIRVANA_HEADLESS_SKIP_PERMISSIONS: "1",
-      NIRVANA_GLANCE_EXECUTION: "1", NIRVANA_DNA_INJECTION: "full",
+      NIRVANA_GLANCE_EXECUTION: "1", NIRVANA_DNA_INJECTION: "reference", NIRVANA_BRIEF_ALTITUDE: "outcome",
     });
     expect(pinned).not.toHaveProperty("NIRVANA_DEFAULT_RUNTIME");
     expect(pinned).not.toHaveProperty("NIRVANA_GAUNTLET_EVALUATOR");

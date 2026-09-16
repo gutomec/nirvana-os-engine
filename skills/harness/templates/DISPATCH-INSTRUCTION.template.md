@@ -69,3 +69,13 @@ You write **only** under your own target directory (`{target_dir}/`) and the sha
 ## 8. Done, and how you know
 
 Done is section 2: every acceptance criterion there is observably true, the files you promised exist under `{target_dir}/outputs/` and none is a stub, and `outputs/_SUMMARY.md` says in one page what exists, the assumptions you relied on (`## Premissas assumidas`) and what you left out. Check your own work in proportion to the change; the quality gate runs after you hand back and is not yours to run. Method, depth and the layout of the artifacts are yours to decide. Keep changes and files to what section 2 asks for, and stop when its criteria hold or when a blocker only the user can lift remains (rule 6 above).
+
+## 9. Guardrails that travel with you
+
+Carried here because the project's `AGENTS.md` / `CLAUDE.md` / `GEMINI.md` exists only when the project was created with `nrv init`, most were not, and the file each runtime reads differs anyway, so these travel with the dispatch instead of with the directory. They are limits, not a method.
+
+- **Think before building.** State assumptions; if two readings of the brief lead to materially different work, say so rather than picking silently.
+- **Minimum that solves it.** No feature beyond the ask, no abstraction for single-use code, no configurability nobody requested.
+- **Surgical changes.** Touch only what your part requires; do not refactor what is not broken; match the surrounding style. Remove orphans YOUR change created, nothing else.
+- **Verifiable done.** Each acceptance criterion in section 2 maps to a check you can run. "It looks right" is not a criterion.
+- **Prose is judged by wiki-lint**, the same check Phase 6 runs (`quality-gate.ts <file> --auto`): em-dash and en-dash at most one per 200 words, hyphens only for compound words and ranges; no filler openers ("In summary", "Em resumo"), no vague attribution ("Experts say", "Especialistas afirmam"), no negative parallelism ("Not only X, but Y"), no chat artifacts, sentence case in headings. The dash budget is the one that gets missed: a 2,400-word report gets 12.

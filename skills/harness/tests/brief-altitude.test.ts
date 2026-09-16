@@ -62,9 +62,11 @@ describe("the dispatch instruction states done, not method", () => {
   test("no verification scaffold and no building manual", () => {
     const tpl = readFileSync(join(HARNESS, "templates", "DISPATCH-INSTRUCTION.template.md"), "utf8");
     expect(tpl).toMatch(/^## 8\. Done/m);
-    expect(tpl).not.toMatch(/^## 9\./m);
-    expect(tpl).not.toContain("quality-gate");
+    expect(tpl).toMatch(/^## 9\. Guardrails that travel with you/m);
+    expect(tpl).not.toMatch(/^## 9\. How to build/m);
+    expect(tpl).not.toMatch(/re-run until it does/i);
     expect(tpl).toContain("## Premissas assumidas");
+    expect(Buffer.byteLength(tpl)).toBeLessThan(9000);
     expect(existsSync(join(HARNESS, "templates", "DISPATCH-INSTRUCTION.template.md"))).toBe(true);
   });
 });

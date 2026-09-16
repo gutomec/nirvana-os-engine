@@ -139,13 +139,22 @@ describe("verify-deliverable reads the acceptance promise", () => {
     } finally { process.chdir(saved); }
   });
 
-  test("a business that promises nothing keeps the brief-regex behavior", () => {
+  test("a business that promises nothing: the run's outputs are the promise at outcome altitude, the brief regex under prescriptive", () => {
     const bizDir = business({ "brief-intake": "acceptance:\n  - id: quality\n    description: Sem path\n" });
     const { cwd, outputsRoot } = project({ "report.md": "conteúdo" });
     const saved = process.cwd();
+    const altitude = process.env.NIRVANA_BRIEF_ALTITUDE;
     try {
       process.chdir(cwd);
+      delete process.env.NIRVANA_BRIEF_ALTITUDE;
+      const outcome = verifyDeliverableOnDisk("prj_1", "fixture", { outputsRoot, businessDir: bizDir });
+      expect(outcome.manifest_source).toMatch(/^outputs-scan/);
+      expect(outcome.expected).toBe(1);
+      process.env.NIRVANA_BRIEF_ALTITUDE = "prescriptive";
       expect(verifyDeliverableOnDisk("prj_1", "fixture", { outputsRoot, businessDir: bizDir }).manifest_source).toBe("brief-regex");
-    } finally { process.chdir(saved); }
+    } finally {
+      process.chdir(saved);
+      if (altitude === undefined) delete process.env.NIRVANA_BRIEF_ALTITUDE; else process.env.NIRVANA_BRIEF_ALTITUDE = altitude;
+    }
   });
 });

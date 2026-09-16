@@ -30,10 +30,11 @@ describe("the dispatch instruction carries the contract", () => {
     }
   });
 
-  test("it gives a runnable self-check, not just a rule", () => {
+  test("it names the check the gate runs, without ordering a pre-run (2026: the gate is Phase 6's job)", () => {
     expect(tpl).toContain("quality-gate.ts");
     expect(tpl).toMatch(/--auto/);
-    expect(tpl).toMatch(/before.{0,40}_SUMMARY|BEFORE/i);
+    expect(tpl).not.toMatch(/re-run until it does/i);
+    expect(tpl).toMatch(/the quality gate runs after you hand back/i);
   });
 });
 
@@ -47,11 +48,11 @@ describe("the budget in the template matches the one in code", () => {
 });
 
 describe("the protocol reinforces it where the entity self-verifies", () => {
-  test("Phase 5 requires the prose check before handing back", () => {
+  test("Phase 5 leaves the gate to Phase 6; the rule reaches the entity through the dispatch instruction", () => {
     const start = harness.indexOf("### Phase 5");
     const end = harness.indexOf("### Memory levels");
     const p5 = harness.slice(start, end);
-    expect(p5).toMatch(/quality-gate\.ts/);
-    expect(p5).toMatch(/prose deliverable/i);
+    expect(p5).not.toMatch(/quality-gate\.ts/);
+    expect(p5).toMatch(/does not run the quality gate itself/i);
   });
 });
