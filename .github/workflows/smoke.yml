@@ -96,6 +96,33 @@ jobs:
           bun scripts/build-engine-tarball.ts
           NIRVANA_ENGINE_TARBALL="$PWD/dist/nirvana-os-engine.tar.gz" node packaging/cli/bin/cli.mjs
 
+      # A skills.sh install lands the thin `nirvana` skill alone; its bootstrap
+      # must put the engine on the machine from the same tarball. --update forces
+      # the path past the "already installed" gate the earlier steps satisfied.
+      - name: Bootstrap via the nirvana skill (same tarball, forced reinstall)
+        run: |
+          if [ ! -f skills/nirvana/scripts/bootstrap.sh ] || [ ! -f dist/nirvana-os-engine.tar.gz ]; then
+            echo "sem skill nirvana ou sem tarball — step pulado"; exit 0
+          fi
+          export NIRVANA_ENGINE_TARBALL="$PWD/dist/nirvana-os-engine.tar.gz" NIRVANA_BOOTSTRAP_YES=1
+          sh skills/nirvana/scripts/bootstrap.sh --dry-run | grep -q "dry run"
+          sh skills/nirvana/scripts/bootstrap.sh --update
+          sh skills/nirvana/scripts/bootstrap.sh | grep -q "already installed"
+          test -f "$HOME/.nirvana/skills/nirvana/SKILL.md"
+          test ! -e "$HOME/.nirvana/skills/nirvana-os"
+          test -f "$HOME/.squads-registry.json"
+
+      - name: Bootstrap via the nirvana skill (PowerShell mirror)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:NIRVANA_ENGINE_TARBALL = "$PWD\dist\nirvana-os-engine.tar.gz"
+          $env:NIRVANA_BOOTSTRAP_YES = "1"
+          powershell -NoProfile -ExecutionPolicy Bypass -File skills\nirvana\scripts\bootstrap.ps1 -Update
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $out = powershell -NoProfile -ExecutionPolicy Bypass -File skills\nirvana\scripts\bootstrap.ps1 | Out-String
+          if ($out -notmatch "already installed") { Write-Host $out; exit 1 }
+
   # Os gates de contrato do repositório. Rodavam só na máquina de quem lembrasse
   # de chamá-los, o que não é gate — é sugestão. A paridade de changelog entrou
   # aqui porque a deriva que ela detecta (uma release escrita só no idioma

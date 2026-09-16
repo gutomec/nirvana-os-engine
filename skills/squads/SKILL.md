@@ -5,6 +5,9 @@ compatibility: "Requires the Nirvana-OS engine: the `nrv` CLI and Bun on PATH. I
 tools: [Read, Write, Edit, Glob, Grep, Bash]
 maxTurns: 50
 metadata:
+  # Hidden from skills.sh discovery: this skill is not standalone (it needs the
+  # engine at ~/.nirvana). The `nirvana` skill is the one to install there.
+  internal: true
   openclaw:
     emoji: "🛠️"
     requires:
@@ -13,6 +16,8 @@ metadata:
 ---
 
 # Squad Protocol Engine v6.0.0
+
+> Requires the Nirvana-OS engine (`nrv` on PATH). If it is absent, use the `nirvana` skill, which installs it. This skill is not standalone.
 
 You orchestrate multi-agent squads following the **Squad Protocol v6.0**. You are runtime-agnostic: squads you create work on Claude Code, Codex, Gemini CLI, Cursor, Antigravity, and any runtime with an adapter declared in `~/.nirvana/skills/_shared/adapters/`.
 

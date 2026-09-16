@@ -1,6 +1,6 @@
 ---
 name: nirvana-os-hermes
-description: Hermes runtime ONLY — the Nirvana-OS bridge for Hermes Agent. Every other runtime loads the first-class `nirvana-os` skill instead and must ignore this one. Lists and inspects the user's Nirvana-OS businesses (empresas) and squads and routes production briefs to the harness orchestrator via `nrv dispatch`. Trigger when the user asks "quais são minhas empresas", "quais squads eu tenho", "what businesses/squads do I have", "liste minhas empresas", "o que o nirvana pode fazer", or wants to orchestrate / dispatch / produzir work through Nirvana-OS.
+description: Hermes runtime ONLY — the Nirvana-OS bridge for Hermes Agent. Every other runtime loads the first-class `nirvana` skill instead and must ignore this one. Lists and inspects the user's Nirvana-OS businesses (empresas) and squads and routes production briefs to the harness orchestrator via `nrv dispatch`. Trigger when the user asks "quais são minhas empresas", "quais squads eu tenho", "what businesses/squads do I have", "liste minhas empresas", "o que o nirvana pode fazer", or wants to orchestrate / dispatch / produzir work through Nirvana-OS.
 version: 1.0.0
 author: nirvana-os
 license: SUL-1.0
@@ -25,8 +25,8 @@ prerequisites:
 This is the Hermes-only bridge. It lives inside `_shared/`, which the installer
 links into every runtime's skills directory, so runtimes that discover
 `SKILL.md` recursively also see this file: its name is namespaced (`nirvana-os-hermes`)
-precisely so it can never collide with the first-class `nirvana-os` skill, which
-is the one every non-Hermes runtime must load.
+precisely so it can never collide with the first-class `nirvana` skill, which is
+the one every non-Hermes runtime must load.
 
 The user runs Nirvana-OS, a Bun-native multi-agent orchestrator with three pillars: **businesses** (empresas — autonomous multi-agent organizations with org charts of employees), **squads** (portable agent teams with workflows), and **mind-clones** (persona DNA injected into employees). The `nrv` CLI is the single entry point. It reads the global registry at `~/businesses/` and `~/squads/`.
 
@@ -58,7 +58,7 @@ Always answer in the user's language (default PT-BR). Run the commands below wit
 
 When the user wants to actually produce something (a report, post, book, design, code, brand, analysis), the orchestration intelligence lives in the Nirvana harness. Do not produce the artifact yourself — hand the brief to `nrv`:
 
-  → `nrv dispatch "<the user's brief verbatim>"`     (full maestro: picks business/squad/mind-clone, runs the quality gate)
+  → `nrv dispatch --auto "<the user's brief verbatim>"`     (full maestro: the router picks business/squad/mind-clone, runs the quality gate)
   → `nrv ask "<question>"`                            (quick consult)
 
 The harness emits an audit chain under `~/.harness-logs/<date>/audit.jsonl` for every dispatch, so the work is verifiable.

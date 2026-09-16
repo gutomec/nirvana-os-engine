@@ -47,6 +47,17 @@ describe("the registries are built on every install, not only with a starter pac
     expect(fn.slice(0, 600)).toMatch(/FLAG_DRY/);
     expect(fn.slice(0, 600)).toMatch(/FLAG_NO_INDEX/);
   });
+
+  test("the index runs from HOME, not from the caller's project", () => {
+    // Registries anchor to <project>/.nirvana/ whenever a project marker sits
+    // above cwd (paths.js). An install started inside a project — the default
+    // scope of `npx skills add` — indexed only that project and left the global
+    // registry missing, so `nrv doctor` failed anywhere else.
+    const fn = INSTALL.slice(INSTALL.indexOf("function buildRegistries("));
+    const spawn = fn.slice(fn.indexOf("spawnSync(nrvBin"), fn.indexOf("spawnSync(nrvBin") + 200);
+    expect(spawn).toMatch(/cwd: HOME/);
+    expect(fn.slice(0, 1200)).toMatch(/delete env\.NIRVANA_PROJECT_ROOT/);
+  });
 });
 
 describe("the Windows bootstrap reports the installer's exit code", () => {

@@ -1,6 +1,6 @@
 # Nirvana-OS — o que o sistema é e o que ele pode fazer
 
-> Fonte única de identidade do sistema. Citada pelo `harness`, pela skill `nirvana-os`
+> Fonte única de identidade do sistema. Citada pelo `harness`, pela skill `nirvana`
 > e pelos adapters de runtime. Em PT-BR por padrão; responda no idioma do usuário.
 
 ## O que é

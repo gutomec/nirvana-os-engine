@@ -8,12 +8,12 @@
  * Engine updates ship by cutting a new GitHub release — npm is never touched.
  *
  * Layout inside the tarball (extract root):
- *   skills/{harness,businesses,squads,_shared,nirvana-os} + VERSION + EDITION
+ *   skills/{harness,businesses,squads,_shared,nirvana} + VERSION + EDITION
  *   bin/{nrv,nrv-gemini,nrv-hermes}
  *   scripts/install.ts
  *   package.json (engine deps + version)  +  bun.lock
  *
- * Invariants (build fails otherwise): 5 skills, ZERO deliverable content
+ * Invariants (build fails otherwise): every skill in SKILLS, ZERO deliverable content
  * (squad.yaml / business.yaml / MANIFEST.yaml outside any templates/ dir).
  *
  * A per-buyer attribution self-check also runs on this same staged tree, but
@@ -27,6 +27,10 @@ import { cpSync, existsSync, mkdirSync, rmSync, readFileSync, writeFileSync, rea
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+// The ONE list of shipped skills — the same the installer and uninstaller use.
+// A private copy here drifted from it once already (a rename would have passed
+// the build here and failed the install there).
+import { SKILLS } from "../skills/_shared/lib/runtime-dirs.ts";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const SRC = resolve(SCRIPT_DIR, "..");
@@ -34,7 +38,6 @@ const OUT = resolve(process.argv[2] ?? join(SRC, "dist"));
 const STAGE = join(OUT, "engine-stage");
 const TARBALL = join(OUT, "nirvana-os-engine.tar.gz");
 
-const SKILLS = ["harness", "businesses", "squads", "_shared", "nirvana-os"];
 const BINARIES = ["nrv", "nrv-gemini", "nrv-hermes"];
 const COPY_FILTER = (s: string): boolean =>
   !s.split(/[\\/]/).includes("node_modules") && !s.endsWith(".DS_Store") && !/\.bak\./.test(s);
@@ -109,10 +112,10 @@ const walkEnv = (dir: string): void => {
 };
 walkEnv(STAGE);
 console.log(`  version:      ${version}`);
-console.log(`  skills:       ${skillCount}/5`);
+console.log(`  skills:       ${skillCount}/${SKILLS.length}`);
 console.log(`  content leak: ${leaks.length === 0 ? "none (correct)" : `${leaks.length} — ERROR`}`);
 console.log(`  .env gate:    ${envLeaks.length === 0 ? "clean (only the skeleton template)" : `${envLeaks.length} — ERROR`}`);
-if (skillCount !== 5 || leaks.length > 0 || envLeaks.length > 0) {
+if (skillCount !== SKILLS.length || leaks.length > 0 || envLeaks.length > 0) {
   for (const l of leaks) console.error(`  content: ${l}`);
   for (const ev of envLeaks) console.error(`  .env: ${ev}`);
   console.error("\nBuild FAILED invariants.");

@@ -276,7 +276,7 @@ if (format === "json") {
   // compact (default), grouped by parent_dir
   if (filtered.length === 0) {
     console.log("No mind-clones found in ~/businesses/_library/dna/");
-    console.log("Install starter pack via: bun ~/nirvana-os/scripts/install.ts --starter");
+    console.log("Create one from prose through the harness, or install a pack from https://squads.sh");
     process.exit(0);
   }
   const byParent = new Map<string, CloneInfo[]>();

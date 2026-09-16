@@ -1,0 +1,7 @@
+# Codex / ChatGPT presentation extras for the `nirvana` skill. Other runtimes ignore this file.
+interface:
+  display_name: "Nirvana-OS"
+  short_description: "Route a brief through the user's own businesses, squads and mind-clones, or install the engine on first use."
+  default_prompt: "Follow SKILL.md. First check whether the `nrv` CLI exists; if it does not, offer the install. Answer discovery questions by running `nrv`, and hand any production brief to the harness."
+policy:
+  allow_implicit_invocation: true

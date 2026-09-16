@@ -49,13 +49,13 @@ test("no two SKILL.md in the shipped tree declare the same name", () => {
   expect(collisions).toEqual([]);
   // Sanity: the walk really found the first-class skills.
   expect([...byName.keys()].sort()).toEqual(
-    expect.arrayContaining(["businesses", "harness", "nirvana-os", "squads"]),
+    expect.arrayContaining(["businesses", "harness", "nirvana", "squads"]),
   );
 });
 
 test("first-class skills and their references point at the canonical ~/.nirvana tree", () => {
   const files = [
-    ...["harness", "businesses", "squads", "nirvana-os"].map((s) => path.join(SKILLS_ROOT, s, "SKILL.md")),
+    ...["harness", "businesses", "squads", "nirvana"].map((s) => path.join(SKILLS_ROOT, s, "SKILL.md")),
     ...["harness", "businesses", "squads"]
       .map((s) => path.join(SKILLS_ROOT, s, "references"))
       .filter((d) => fs.existsSync(d))

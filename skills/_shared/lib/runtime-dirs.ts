@@ -76,7 +76,19 @@ export const RUNTIME_SKILL_DIRS = RUNTIME_TARGETS.map((t) => t.skillsDir);
 export const PROJECT_CONTRACT_FILES = ["AGENTS.md", "CLAUDE.md", "GEMINI.md"];
 
 /** The skill trees the engine ships, copies to ~/.nirvana/skills and links into every runtime dir. */
-export const SKILLS = ["harness", "businesses", "squads", "_shared", "nirvana-os"];
+export const SKILLS = ["harness", "businesses", "squads", "_shared", "nirvana"];
+
+/**
+ * Skill directory names the engine SHIPPED under a previous release and no
+ * longer does. The installer and the uninstaller iterate only the CURRENT list
+ * above, so a renamed skill would otherwise survive forever: its directory in
+ * ~/.nirvana/skills and our link or copy of it in every runtime dir (seen live
+ * on the maintainer machine with the 0.13.9 `nirvana-os`, linked into six
+ * runtimes). `copySkills` removes the retired tree, `linkRuntimes` and
+ * `uninstall-engine.ts` remove OUR entries for it: never a foreign directory
+ * that happens to share the name.
+ */
+export const RETIRED_SKILLS = ["nirvana-os"];
 
 /**
  * Marker file the installer writes inside a COPIED runtime skill directory

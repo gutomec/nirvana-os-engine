@@ -24,8 +24,8 @@ import { createRequire } from "node:module";
 // Shared with the uninstaller — see skills/_shared/lib/runtime-dirs.ts for why.
 // Resolves both from the repo and from an extracted release tarball: the
 // tarball ships scripts/install.ts next to the full skills/ tree.
-import { RUNTIME_TARGETS, SKILLS, COPY_MARKER } from "../skills/_shared/lib/runtime-dirs.ts";
-import { depsLinkFor, ensureDepsLink, materializeRuntimeSkillCopy, pruneDepsLinkInside } from "../skills/_shared/lib/runtime-install.ts";
+import { RUNTIME_TARGETS, SKILLS, RETIRED_SKILLS, COPY_MARKER } from "../skills/_shared/lib/runtime-dirs.ts";
+import { classifyRuntimeEntry, depsLinkFor, ensureDepsLink, foreignProvider, materializeRuntimeSkillCopy, pruneDepsLinkInside } from "../skills/_shared/lib/runtime-install.ts";
 import { RUN_STATE_EXCLUDES } from "../skills/_shared/lib/run-state.ts";
 
 const requireCjs = createRequire(import.meta.url);
@@ -159,6 +159,15 @@ function copySkills(): void {
       cpSync(src, join(NIRVANA_SKILLS, f));
       console.log(`  ✓ ${f}`);
     }
+  }
+  // A skill this engine shipped under an earlier name. The loop above touches
+  // only the current list, so without this the old tree would sit beside the
+  // new one forever (and stay linked into every runtime — see linkRuntimes).
+  for (const old of RETIRED_SKILLS) {
+    const dead = join(NIRVANA_SKILLS, old);
+    if (!existsSync(dead)) continue;
+    rmSync(dead, { recursive: true, force: true });
+    console.log(`  ✓ removed retired skill '${old}'`);
   }
 }
 
@@ -340,11 +349,40 @@ function linkRuntimes(): void {
     // EEXIST tolerated: on Windows Bun may throw it even with recursive:true.
     try { mkdirSync(rtDir, { recursive: true }); }
     catch (e) { if ((e as NodeJS.ErrnoException)?.code !== "EEXIST") throw e; }
+    // Entries we shipped under an OLD name. Removed only when ours: our symlink
+    // (live or DANGLING — copySkills just deleted the target, so existsSync
+    // would lie here) or a copy carrying COPY_MARKER. A foreign directory that
+    // happens to share the name is never touched; a .pre-nirvana.bak parked by
+    // an earlier install is restored.
+    for (const old of RETIRED_SKILLS) {
+      const p = join(rtDir, old);
+      if (classifyRuntimeEntry(p, [NIRVANA_SKILLS]) !== "ours") {
+        if (existsSync(p)) console.log(`  ⓘ ${p} is not Nirvana's — left untouched`);
+        continue;
+      }
+      rmSync(p, { recursive: true, force: true });
+      const bak = `${p}.pre-nirvana.bak`;
+      if (existsSync(bak)) {
+        try { renameSync(bak, p); } catch { /* best-effort */ }
+        console.log(`  ✓ retired '${old}' (restored pre-Nirvana backup)`);
+      } else {
+        console.log(`  ✓ retired '${old}'`);
+      }
+    }
     let mode = "symlink";
     for (const s of SKILLS) {
       const linkPath = join(rtDir, s);
       const target = join(NIRVANA_SKILLS, s);
       if (!existsSync(target)) continue;
+      // The same skill placed here by another installer — skills.sh puts a real
+      // dir in .agents/skills and RELATIVE symlinks to it in the other agent dirs.
+      // Parking it as <s>.pre-nirvana.bak would dangle those links and leave a
+      // .bak that `nrv doctor` then advises deleting (skills-litter.ts). Same
+      // skill, same name: leave it, and say who provides it.
+      if (foreignProvider(linkPath, s, NIRVANA_SKILLS)) {
+        console.log(`  ⓘ ${linkPath}: '${s}' provided by another installer (skills.sh), kept`);
+        continue;
+      }
       try {
         if (!cleanRuntimeEntry(linkPath)) { mode = "partial — conflitos pulados"; continue; }
         if (preferCopy) {
@@ -828,7 +866,13 @@ function buildRegistries(): void {
   if (FLAG_NO_INDEX) { console.log("      Indexing deferred (--no-index)."); return; }
   if (!existsSync(nrvBin)) return;
   console.log("      Re-indexing registries...");
-  const r = spawnSync(nrvBin, ["index"], { stdio: "inherit", shell: IS_WINDOWS });
+  // From HOME, never from the caller's cwd: registries anchor to <project>/.nirvana/
+  // whenever a project marker sits above cwd (paths.js), so an install started
+  // inside a project — the default skills.sh scope — would index only that
+  // project and leave the global registry missing (`nrv doctor` FAIL elsewhere).
+  const env = { ...process.env };
+  delete env.NIRVANA_PROJECT_ROOT;
+  const r = spawnSync(nrvBin, ["index"], { stdio: "inherit", shell: IS_WINDOWS, cwd: HOME, env });
   if (r.status !== 0) console.log("      ⚠ nrv index reported issues. Run manually to verify.");
 }
 

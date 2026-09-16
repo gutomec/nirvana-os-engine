@@ -19,6 +19,8 @@ npx @nirvana-os/cli
 
 एक कमांड इंजन को इंस्टॉल करती है और उसे हर उस टर्मिनल एजेंट से जोड़ देती है जो उसे मिलता है। इसे कभी भी दोबारा चलाना सुरक्षित है।
 
+skills वाला रास्ता पसंद है? `npx skills add gutomec/nirvana-os-engine -g` [skills.sh](https://skills.sh) के ज़रिए `nirvana` skill इंस्टॉल करती है; पहली बार उपयोग पर यह यही इंजन इंस्टॉल कर देती है, और उसके बाद बस कहें "use nirvana"।
+
 [दस्तावेज़ीकरण](https://gutomec.github.io/nirvana-os-engine/) · [Packs](https://squads.sh/pt/packs) · [सचित्र इंस्टॉल](https://gutomec.github.io/nirvana-os-engine/install.html) · [Changelog](./CHANGELOG.md)
 
 **इसे अपनी भाषा में पढ़ें:** [English](./README.md) · [Português](./README.pt-BR.md) · [Español](./README.es.md) · [中文](./README.zh.md) · [हिन्दी](./README.hi.md) · [العربية](./README.ar.md)

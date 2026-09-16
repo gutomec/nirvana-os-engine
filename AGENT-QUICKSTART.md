@@ -17,6 +17,10 @@ nirvana-os", "via nirvana", "use my companies/squads".
 Skill("harness", "<the user's brief, verbatim>")
 ```
 
+No `Skill` tool in your runtime? Read `~/.nirvana/skills/harness/SKILL.md` and
+follow it as your operating instructions; shell-only runtimes use
+`nrv dispatch --auto "<brief>"`.
+
 The harness skill IS the maestro. It reads the brief, consults the three
 registries (businesses, squads, mind-clones) and dispatches the best
 combination. Do not route by hand; do not pick a squad yourself unless the
@@ -65,7 +69,7 @@ empty, your completion message is not honest yet.
 | Purpose | Command |
 |---|---|
 | System health | `nrv doctor` |
-| What exists | `nrv list businesses` · `nrv list squads` |
+| What exists | `nrv list-businesses` · `nrv list-squads` |
 | Route preview (zero-token) | `nrv find "<brief>"` |
 | Rebuild registries | `nrv index` |
 | Canonical audit writer | `nrv audit emit <event> --business=<slug> --trace=<id>` |

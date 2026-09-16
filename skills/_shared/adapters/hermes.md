@@ -219,8 +219,8 @@ hermes chat
 ### Exemplo 2 — Dispatch determinístico (Tier 2)
 
 ```
-hermes -z "Use a skill nirvana-os: despache este brief — <brief>" --accept-hooks
-# A ponte chama `nrv dispatch "<brief>"` (brief-business + DNA + audit).
+hermes -z "Use a skill nirvana-os-hermes: despache este brief — <brief>" --accept-hooks
+# A ponte chama `nrv dispatch --auto "<brief>"` (brief-business + DNA + audit).
 ```
 
 ### Exemplo 3 — Orquestração in-runtime (Tier 4)

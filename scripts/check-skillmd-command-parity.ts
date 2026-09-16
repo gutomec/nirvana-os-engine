@@ -68,6 +68,9 @@ const sources: Source[] = [];
     sources.push({ label: `skills/harness/references/${f}`, text: readFileSync(join(refsDir, f), "utf8") });
   }
   sources.push({ label: "skills/harness/lib/host-agent-driver.ts (AUTONOMOUS_DIRECTIVE)", text: autonomousDirectiveBlock() });
+  // The entry skill is the first file a skills.sh user's agent reads; a command
+  // typo there (`nrv list businesses`) is the first thing that user hits.
+  sources.push({ label: "skills/nirvana/SKILL.md", text: readFileSync(join(SKILLS, "nirvana", "SKILL.md"), "utf8") });
 }
 
 // ── mention extraction ──────────────────────────────────────────────────────

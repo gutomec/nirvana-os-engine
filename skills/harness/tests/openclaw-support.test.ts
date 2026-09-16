@@ -100,12 +100,17 @@ describe("only the skills a runtime can use are offered to it", () => {
     expect(read(hermesBridge)).toMatch(/Hermes runtime ONLY/);
   });
 
-  test("every Nirvana skill an OpenClaw user can see requires bun", () => {
-    // nirvana-os shipped without a gate and showed up on the list with no emoji
-    // — visible on a machine that cannot run one line of it.
-    for (const rel of [...SKILLS, "skills/nirvana-os/SKILL.md"]) {
-      expect(frontmatter(rel)).toMatch(/bins:\s*\["bun"\]/);
-    }
+  test("every engine skill an OpenClaw user can see requires bun; the entry skill must not", () => {
+    // The three engine skills fail at the first command without bun, so they
+    // are gated. The entry skill is the opposite case: its job on a machine
+    // without bun is to install it (scripts/bootstrap.sh), so a bun gate would
+    // hide it exactly where it is needed. It keeps the openclaw block for the
+    // emoji, with no `requires`.
+    for (const rel of SKILLS) expect(frontmatter(rel)).toMatch(/bins:\s*\["bun"\]/);
+    const entry = frontmatter("skills/nirvana/SKILL.md");
+    expect(entry).toMatch(/openclaw:/);
+    expect(entry).not.toMatch(/bins:\s*\[/);
+    expect(fs.existsSync(path.join(ROOT, "skills", "nirvana", "scripts", "bootstrap.sh"))).toBe(true);
   });
 });
 

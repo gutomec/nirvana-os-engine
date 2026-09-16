@@ -99,6 +99,7 @@ How invocation looks per runtime:
 
 - Claude Code / Anthropic SDK: `Skill("harness", "<user's brief verbatim>")` (or trust the auto-activation by description match).
 - Gemini-CLI / Codex / Cursor / etc.: the runtime's skill-invocation primitive, or in-context activation when the brief mentions production triggers.
+- No skill primitive at all: read `~/.nirvana/skills/harness/SKILL.md` and follow it as your operating instructions for this brief (its `../_shared/…` references resolve against `~/.nirvana/skills/harness/`). Shell-only runtimes (Hermes, legacy gemini-cli, headless) run `nrv dispatch --auto "<user's brief verbatim>"` instead.
 
 Pass the user's brief verbatim. Don't reformulate before invocation — the harness handles amplification, briefing, and clarification on its own.
 

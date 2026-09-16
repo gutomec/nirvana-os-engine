@@ -18,12 +18,13 @@
  *   nrv uninstall --engine        # remove the engine, keep content
  *   nrv uninstall --engine --dry  # report what would be removed, change nothing
  */
-import { existsSync, lstatSync, readlinkSync, rmSync, renameSync, readdirSync } from "node:fs";
+import { existsSync, lstatSync, rmSync, renameSync, readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
-import { dirname, join, resolve, sep } from "node:path";
+import { join } from "node:path";
 // Same list the installer wires — see skills/_shared/lib/runtime-dirs.ts.
-import { RUNTIME_SKILL_DIRS, SKILLS, COPY_MARKER } from "../lib/runtime-dirs.ts";
+import { RUNTIME_SKILL_DIRS, SKILLS, RETIRED_SKILLS } from "../lib/runtime-dirs.ts";
+import { classifyRuntimeEntry, foreignProvider } from "../lib/runtime-install.ts";
 
 const HOME = homedir();
 const NIRVANA_DIR = join(HOME, ".nirvana");
@@ -34,34 +35,19 @@ const BINARIES = ["nrv", "nrv-gemini", "nrv-hermes"];
 // Roots a runtime entry may legitimately point at: the canonical tree, plus the
 // legacy pre-~/.nirvana root that machines installed before the migration use.
 const OWNED_SKILL_ROOTS = [NIRVANA_SKILLS, join(HOME, ".claude", "skills")];
+function isSymlinkEntry(p: string): boolean {
+  try { return lstatSync(p).isSymbolicLink(); } catch { return false; }
+}
 
 const DRY = process.argv.includes("--dry");
 const tag = DRY ? "[dry] would remove" : "removed";
 function rm(p: string): void { if (!DRY) { try { rmSync(p, { recursive: true, force: true }); } catch { /* best-effort */ } } }
 
-/**
- * A symlink is ours when it resolves into one of our skill roots — INCLUDING a
- * dangling one, whose target was already deleted. existsSync() is false for a
- * broken link, so the link itself has to be read (lstat + readlink); otherwise
- * an interrupted or re-run uninstall leaves dead links behind forever.
- */
-function ownedSymlink(p: string): boolean {
-  let target: string;
-  try {
-    if (!lstatSync(p).isSymbolicLink()) return false;
-    target = resolve(dirname(p), readlinkSync(p));
-  } catch { return false; }
-  return OWNED_SKILL_ROOTS.some((root) => target === root || target.startsWith(root + sep));
-}
-
-/**
- * A directory is ours when it carries the marker the installer writes into every
- * COPY it makes (Windows, Codex, --copy-skills). Without this check the
- * uninstaller removed nothing at all on Windows and never for Codex.
- */
-function ownedCopy(p: string): boolean {
-  try { return lstatSync(p).isDirectory() && existsSync(join(p, COPY_MARKER)); } catch { return false; }
-}
+// Ownership lives in _shared/lib/runtime-install.ts (classifyRuntimeEntry), the
+// same answer the installer gives: our symlink — a DANGLING one included, since
+// existsSync() is false for a broken link — or a copy carrying COPY_MARKER.
+// Without the copy rule the uninstaller removed nothing on Windows and never for
+// Codex; without the dangling rule an interrupted uninstall left dead links.
 
 console.log("Nirvana-OS — engine uninstall");
 console.log("  removes: hooks, runtime skill links, ~/.local/bin CLI, ~/.nirvana engine tree");
@@ -81,10 +67,20 @@ if (existsSync(hookInstaller)) {
 // dangling) and our copies. Anything else at that path is the user's and stays.
 // The pre-Nirvana backup is restored after removing either kind.
 console.log("[2/4] Runtime skill links");
+// Retired names are swept too: a machine that never reinstalled after a rename
+// still has our old entry, and this is the last chance to remove it.
 for (const rtDir of RUNTIME_SKILL_DIRS) {
-  for (const s of SKILLS) {
+  for (const s of [...SKILLS, ...RETIRED_SKILLS]) {
     const linkPath = join(rtDir, s);
-    const kind = ownedSymlink(linkPath) ? "symlink" : ownedCopy(linkPath) ? "copy" : null;
+    // The same skill placed here by another installer (skills.sh): its relative
+    // symlink can resolve under the legacy ~/.claude/skills root and look like
+    // ours. It is not ours to remove.
+    if (foreignProvider(linkPath, s, NIRVANA_SKILLS)) {
+      console.log(`  kept    ${linkPath}  (provided by another installer — left untouched)`);
+      continue;
+    }
+    const cls = classifyRuntimeEntry(linkPath, OWNED_SKILL_ROOTS);
+    const kind = cls !== "ours" ? null : isSymlinkEntry(linkPath) ? "symlink" : "copy";
     if (!kind) {
       // Report only what actually sits there, so a skipped entry is visible.
       if (existsSync(linkPath)) console.log(`  kept    ${linkPath}  (not ours — left untouched)`);

@@ -19,6 +19,8 @@ npx @nirvana-os/cli
 
 一条命令即可安装引擎，并把它接入它找到的每一个终端 agent。随时可以安全地再次运行。
 
+更喜欢 skills 的方式？`npx skills add gutomec/nirvana-os-engine -g` 通过 [skills.sh](https://skills.sh) 安装 `nirvana` skill；首次使用时它会安装同一个引擎，之后只需说 "use nirvana"。
+
 [文档](https://gutomec.github.io/nirvana-os-engine/) · [Packs](https://squads.sh/pt/packs) · [图解安装](https://gutomec.github.io/nirvana-os-engine/install.html) · [Changelog](./CHANGELOG.md)
 
 **用你的语言阅读：** [English](./README.md) · [Português](./README.pt-BR.md) · [Español](./README.es.md) · [中文](./README.zh.md) · [हिन्दी](./README.hi.md) · [العربية](./README.ar.md)

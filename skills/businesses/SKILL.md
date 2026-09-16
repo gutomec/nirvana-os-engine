@@ -5,6 +5,9 @@ compatibility: "Requires the Nirvana-OS engine: the `nrv` CLI and Bun on PATH. I
 tools: [Read, Write, Edit, Glob, Grep, Bash, AgentTool, TaskCreate, AskUserQuestion]
 maxTurns: 100
 metadata:
+  # Hidden from skills.sh discovery: this skill is not standalone (it needs the
+  # engine at ~/.nirvana). The `nirvana` skill is the one to install there.
+  internal: true
   openclaw:
     emoji: "🏢"
     requires:
@@ -13,6 +16,8 @@ metadata:
 ---
 
 # Business Protocol Engine v2.0
+
+> Requires the Nirvana-OS engine (`nrv` on PATH). If it is absent, use the `nirvana` skill, which installs it. This skill is not standalone.
 
 Multi-agent business orchestrator following `BUSINESS_PROTOCOL_V2.md` (the delta) over `BUSINESS_PROTOCOL_V1.md` (everything the delta does not change). Runtime-agnostic (Claude Code, Codex, Gemini-CLI). Zero external dependencies beyond the runtime and the centralized validators in `~/.nirvana/skills/_shared/`.
 

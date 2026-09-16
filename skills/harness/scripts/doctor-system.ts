@@ -27,6 +27,7 @@ import { execSync, spawnSync } from "node:child_process";
 import { paths as nrvPaths } from "../../_shared/lib/bun-helpers.ts";
 import { resolveScope, enumerate } from "../../_shared/lib/scope.ts";
 import { RUNTIME_TARGETS, RUNTIME_SKILL_DIRS, PROJECT_CONTRACT_FILES, SKILLS as SKILL_NAMES } from "../../_shared/lib/runtime-dirs.ts";
+import { foreignProvider } from "../../_shared/lib/runtime-install.ts";
 import { listRuntimes, whichSync } from "../../_shared/lib/host-agent-driver.ts";
 import { resolveRunRuntime } from "../lib/runtime-rules.ts";
 import { resolvePinnedEffort, resolveSystemModel } from "../../_shared/lib/system-model.ts";
@@ -283,14 +284,36 @@ try {
 // no ~/.agents until first run; the old dir-exists proxy skipped the link in
 // silence). The installer now creates the dir; this check catches installs
 // done before the fix, or dirs removed since.
+// The entry skill (`nirvana`) is probed too: it may come from another installer
+// (skills.sh puts a real dir in ~/.agents/skills and relative links elsewhere),
+// which is fine and is named as such rather than reported as missing.
 for (const t of RUNTIME_TARGETS) {
   if (!which(t.bin)) continue; // runtime absent — nothing to link
-  const harnessLink = path.join(t.skillsDir, "harness");
-  if (fs.existsSync(harnessLink)) {
-    add(`skills link: ${t.name}`, "PASS", t.skillsDir);
-  } else {
-    add(`skills link: ${t.name}`, "WARN",
-      `'${t.bin}' on PATH but ${t.skillsDir} has no engine link — re-run: bun scripts/install.ts`);
+  for (const s of ["harness", "nirvana"]) {
+    const label = s === "harness" ? `skills link: ${t.name}` : `skills link: ${t.name} (${s})`;
+    const link = path.join(t.skillsDir, s);
+    if (!fs.existsSync(link)) {
+      add(label, "WARN", `'${t.bin}' on PATH but ${t.skillsDir} has no ${s} entry — re-run: bun scripts/install.ts`);
+      continue;
+    }
+    add(label, "PASS", foreignProvider(link, s, SKILLS)
+      ? `${t.skillsDir} — '${s}' provided by another installer (skills.sh), kept`
+      : t.skillsDir);
+  }
+}
+
+// SECTION 1a-quater: nrv ON PATH — the installer writes ~/.local/bin/nrv and
+// persists the PATH line for NEW shells only. The shell that ran the install
+// (an agent's Bash tool, typically) still cannot find `nrv`, and an agent
+// then declares the install broken thirty seconds after it succeeded.
+{
+  const localNrv = path.join(os.homedir(), ".local", "bin", process.platform === "win32" ? "nrv.cmd" : "nrv");
+  const onPath = which("nrv");
+  if (onPath) {
+    add("env: nrv on PATH", "PASS", onPath);
+  } else if (fs.existsSync(localNrv)) {
+    add("env: nrv on PATH", "WARN",
+      `${localNrv} exists but 'nrv' is not on this shell's PATH — for this session: export PATH="$HOME/.local/bin:$PATH" (new shells already have it)`);
   }
 }
 
@@ -591,7 +614,7 @@ if (which("claude")) {
 }
 
 // SECTION 2: SKILLS
-const requiredSkills = ["harness", "businesses", "squads", "_shared"];
+const requiredSkills = ["harness", "businesses", "squads", "_shared", "nirvana"];
 for (const s of requiredSkills) {
   const p = path.join(SKILLS, s);
   if (fs.existsSync(p) && fs.statSync(p).isDirectory()) {

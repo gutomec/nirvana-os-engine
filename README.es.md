@@ -19,6 +19,8 @@ npx @nirvana-os/cli
 
 Un solo comando instala el motor y lo enlaza con cada agente de terminal que encuentra. Es seguro volver a ejecutarlo en cualquier momento.
 
+¿Prefieres la vía de las skills? `npx skills add gutomec/nirvana-os-engine -g` instala la skill `nirvana` a través de [skills.sh](https://skills.sh); en su primer uso instala este mismo motor y, desde entonces, basta con decir "use nirvana".
+
 [Documentación](https://gutomec.github.io/nirvana-os-engine/) · [Packs](https://squads.sh/pt/packs) · [Instalación ilustrada](https://gutomec.github.io/nirvana-os-engine/install.html) · [Changelog](./CHANGELOG.md)
 
 **Léelo en tu idioma:** [English](./README.md) · [Português](./README.pt-BR.md) · [Español](./README.es.md) · [中文](./README.zh.md) · [हिन्दी](./README.hi.md) · [العربية](./README.ar.md)

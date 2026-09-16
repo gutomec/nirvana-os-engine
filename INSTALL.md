@@ -10,6 +10,14 @@ npx @nirvana-os/cli
 
 The launcher fetches the latest engine, ensures Bun is present, and installs it. Nothing else to clone or configure.
 
+## Install as a skill
+
+```bash
+npx skills add gutomec/nirvana-os-engine -g
+```
+
+This installs the `nirvana` skill through [skills.sh](https://skills.sh) into every agent it detects (`-g` is user scope; without it the skill lands in the current project). The skill carries no engine: on first use, when `nrv` is missing, it explains what will change and runs its own `scripts/bootstrap.sh` (`bootstrap.ps1` on Windows), which ensures Bun, downloads the latest engine release and runs the same installer as the launcher above. Then say "use nirvana" in your agent. On Windows add `--copy` when symlinks are not enabled for your user. `npx skills update` refreshes the skill; `nrv update` refreshes the engine.
+
 ## Prerequisites
 
 - **Bun** ≥ 1.0 ([install](https://bun.sh)) — the runtime for everything. The launcher offers to install it if missing.

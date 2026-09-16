@@ -19,6 +19,8 @@ npx @nirvana-os/cli
 
 أمر واحد يثبّت المحرك ويربطه بكل وكيل طرفية يعثر عليه. تشغيله مجدداً آمن في أي وقت.
 
+تفضّل مسار الـ skills؟ الأمر `npx skills add gutomec/nirvana-os-engine -g` يثبّت الـ skill المسماة `nirvana` عبر [skills.sh](https://skills.sh)؛ عند أول استخدام تثبّت هذا المحرك نفسه، وبعدها يكفي أن تقول "use nirvana".
+
 [التوثيق](https://gutomec.github.io/nirvana-os-engine/) · [Packs](https://squads.sh/pt/packs) · [التثبيت المصوّر](https://gutomec.github.io/nirvana-os-engine/install.html) · [Changelog](./CHANGELOG.md)
 
 **اقرأ هذا بلغتك:** [English](./README.md) · [Português](./README.pt-BR.md) · [Español](./README.es.md) · [中文](./README.zh.md) · [हिन्दी](./README.hi.md) · [العربية](./README.ar.md)
