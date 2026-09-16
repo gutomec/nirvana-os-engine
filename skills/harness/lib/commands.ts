@@ -53,7 +53,7 @@ export const COMMANDS: Command[] = [
   { name: "setup", target: "_shared/scripts/install.ts", category: "install", summary: "Install or repair audit hooks across supported agents", visibility: "user" },
   { name: "uninstall", custom: true, category: "install", args: "<name> | --engine | --hooks", summary: "Remove an asset, the engine (keeps content), or just the hooks", visibility: "user" },
   { name: "installed", aliases: ["list-installed"], target: "_shared/scripts/list-installed.ts", category: "install", summary: "List active installations", visibility: "user" },
-  { name: "update", aliases: ["self-update", "upgrade"], target: "harness/scripts/update.ts", category: "install", args: "[--check]", summary: "Update the engine: git pull (dev) or re-fetch the latest release (npx)", visibility: "user" },
+  { name: "update", aliases: ["self-update", "upgrade"], target: "harness/scripts/update.ts", category: "install", args: "[<pack-slug>] [--check]", summary: "Update the engine: git pull (dev) or re-fetch the latest release (npx)", visibility: "user" },
   { name: "update-check", target: "harness/scripts/update-check.ts", category: "install", args: "[--status|--refresh|--print]", summary: "Whether a newer engine release exists (cached; NIRVANA_NO_UPDATE_CHECK=1 disables)", visibility: "user" },
 
   // core

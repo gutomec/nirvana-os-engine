@@ -39,6 +39,24 @@ function c(color: keyof typeof ANSI, s: string): string {
 }
 
 const args = process.argv.slice(2);
+// Asking for help is not asking for an update. `nrv update --help` used to fall
+// through to the default path and re-apply the engine (with a fresh backup
+// directory each time); an unknown flag did the same. Both stop here.
+const USAGE = [
+  "nrv update [<pack-slug>] [--check] [--force] [--branch=<name>] [--skip-pull]",
+  "  (no flag)        pull the engine repo and re-apply skills, with a backup of ~/.nirvana/skills",
+  "  <pack-slug>      update an installed pack instead (nrv update genesis-circle)",
+  "  --check          show local vs remote without changing anything",
+  "  --force          discard local changes in the engine repo before pulling",
+  "  --branch=<name>  pull a branch other than main",
+  "  --skip-pull      re-apply skills without pulling",
+].join("\n");
+if (args.includes("--help") || args.includes("-h")) { console.log(USAGE); process.exit(0); }
+{
+  const known = new Set(["--check", "--force", "--skip-pull", "--no-color"]);
+  const unknown = args.find((a) => a.startsWith("-") && !known.has(a) && !a.startsWith("--branch="));
+  if (unknown) { console.error(`nrv update: unknown flag ${unknown}\n${USAGE}`); process.exit(2); }
+}
 const checkOnly = args.includes("--check");
 const force = args.includes("--force");
 const skipPull = args.includes("--skip-pull");

@@ -6,6 +6,12 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### `nrv update --help` no longer updates
+
+Asking the command what it does ran it: `--help` fell through to the default path, fetched, wrote a fresh `~/.nirvana/skills-backup-<ts>` and re-applied the engine, and an unknown flag did the same. `--help` and `-h` print the usage and exit 0; an unknown flag is refused with exit 2. Neither touches the machine.
+
 ## 0.13.11 — 2026-09-16
 
 ### Antigravity never saw the door
