@@ -21,7 +21,7 @@
 // spawning from CLI). It's the setup + scaffolding so the user can paste
 // pillar by pillar into Claude Code / Codex.
 //
-// For full autonomy, use within a Claude Code session via Skill("harness", ...).
+// For full autonomy, use within a Claude Code session via Skill("nirvana", ...), the door to this harness.
 
 import * as fs from "node:fs";
 import * as path from "node:path";

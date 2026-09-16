@@ -1,8 +1,8 @@
 ---
 name: nirvana
-description: "Nirvana-OS entry point: the user's own operating system of businesses (empresas), squads and mind-clones. Use it to list or inspect them ('quais são minhas empresas', 'quais squads eu tenho', 'what businesses/squads do I have', 'liste minhas empresas', 'quais mind-clones eu tenho', 'o que o nirvana pode fazer'), whenever the user invokes the system by name ('use o nirvana-os', 'via nirvana', 'pelo nirvana', 'orquestre via nirvana', 'manda o nirvana', 'use minhas empresas/squads', 'use Nirvana-OS to…'), and for any concrete artifact asked for through it (book, video, report, design, code, campaign, any deliverable). Discovery runs the `nrv` CLI; production hands the brief to the `harness` orchestrator. When the engine is missing, this skill installs it first."
+description: "Nirvana-OS entry point: the user's own operating system of businesses (empresas), squads and mind-clones. Use it to list or inspect them ('quais são minhas empresas', 'quais squads eu tenho', 'what businesses/squads do I have', 'liste minhas empresas', 'quais mind-clones eu tenho', 'o que o nirvana pode fazer'), whenever the user invokes the system by name ('use o nirvana-os', 'via nirvana', 'pelo nirvana', 'orquestre via nirvana', 'manda o nirvana', 'use minhas empresas/squads', 'use Nirvana-OS to…'), for any concrete artifact asked for through it (book, video, report, design, code, campaign, any deliverable), and to create, validate, inspect or migrate a business or a squad ('crie uma empresa', 'valide o squad X'). Discovery runs the `nrv` CLI; production hands the brief to the harness orchestrator; lifecycle goes to the businesses and squads protocols. When the engine is missing, this skill installs it first."
 compatibility: "Needs Bun and the `nrv` CLI. If they are absent it installs them on first use with the user's go-ahead: Bun in user space, the engine into ~/.nirvana, `nrv` into ~/.local/bin. Runtime-agnostic, no dependency on any specific agent CLI. Network is required for that first install only; everything after it runs locally."
-tools: [Bash, Read, Skill]
+tools: [Bash, Read]
 license: SUL-1.0
 metadata:
   openclaw:
@@ -69,8 +69,7 @@ Then verify and carry on with the user's original request:
 `~/.local/bin/nrv` explicitly for the rest of this session. `nrv doctor` exit 1
 means warnings and the install is fine; exit 2 means read the `FAIL` lines, and
 `registry: … missing` is fixed by `nrv index`. Never re-run the installer because
-doctor exited non-zero. If the `harness` skill is not offered yet, the skills
-directory was created after this session started: restart the session once.
+doctor exited non-zero.
 
 If the bootstrap cannot run (no network, no write access, a locked-down sandbox),
 say exactly that and stop. A Nirvana answer with no engine behind it is fiction.
@@ -101,10 +100,12 @@ squads in parallel, runs the quality gate and verifies the result. **Do not
 produce the artifact yourself.** Pass the brief verbatim; the harness handles
 amplification and clarifying questions.
 
+The harness is not registered as a skill of its own: it lives inside the
+engine, and this file is the door to it.
+
 | Your runtime | How to hand over |
 |---|---|
-| Claude Code, or any runtime with a `Skill` tool | `Skill("harness", "<the user's brief, verbatim>")` |
-| Codex, Gemini CLI, Antigravity, Pi, OpenClaw, Cursor | the runtime's own skill primitive (`$harness`, `activate_skill`); if it has none, read `~/.nirvana/skills/harness/SKILL.md` and follow it as your operating instructions for this brief (its `../_shared/…` references resolve against `~/.nirvana/skills/harness/`) |
+| Any runtime that can read a file (Claude Code, Codex, Gemini CLI, Antigravity, Pi, OpenClaw, Cursor…) | read `~/.nirvana/skills/harness/SKILL.md` and follow it as your operating instructions for this brief; its `../_shared/…` references resolve against `~/.nirvana/skills/harness/` |
 | Shell-only and sub-process runtimes (Hermes, legacy gemini-cli, headless) | `nrv dispatch --auto --exec "<the user's brief, verbatim>"` (`--exec=<runtime>` pins one; without `--exec` the command only scaffolds and delivers nothing) |
 
 Dispatch needs one agent CLI on PATH (`claude`, `codex`, `gemini`, `agy`, `pi`,
@@ -112,7 +113,15 @@ Dispatch needs one agent CLI on PATH (`claude`, `codex`, `gemini`, `agy`, `pi`,
 but cannot dispatch production: say so rather than producing inline. Every
 dispatch writes its audit chain to `~/.harness-logs/<date>/audit.jsonl`.
 
-## 4. What a fresh install looks like
+## 4. Lifecycle: create, validate, inspect, migrate
+
+"crie uma empresa de X", "valide o squad Y", "inspecione a empresa Z", "migre o
+squad W": these are lifecycle operations, not production. Read
+`~/.nirvana/skills/businesses/SKILL.md` (businesses, the mind-clone library)
+or `~/.nirvana/skills/squads/SKILL.md` (squads) and follow it. Both are
+engine-internal like the harness; neither is registered as a skill of its own.
+
+## 5. What a fresh install looks like
 
 The engine ships **no content**. On a new machine the registries are empty and
 `nrv list-businesses`, `nrv list-squads` and `nrv list-clones` print `total: 0`.
@@ -131,7 +140,7 @@ The first brief inside a project also makes it a Nirvana project: the harness
 Phase 0 preflight runs `nrv init .` when the invocation contract is missing.
 That is the harness's job, not yours.
 
-## 5. Where the content lives
+## 6. Where the content lives
 
 Defaults: `~/squads`, `~/businesses`, `~/businesses/_library/dna`. To relocate
 them, set `NIRVANA_HOME`, `SQUADS_DIR`, `BUSINESSES_DIR` or `DNA_LIBRARY` in the
@@ -139,7 +148,7 @@ project `.env`, the only file read for paths besides the real environment.
 `NIRVANA_SCOPE=global|project|merge` in that same file decides whether a project
 sees the global library, its own `.nirvana/` one, or both.
 
-## 6. Update and remove
+## 7. Update and remove
 
 | Goal | Command |
 |---|---|

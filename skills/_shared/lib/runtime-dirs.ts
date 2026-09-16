@@ -91,6 +91,20 @@ export const SKILLS = ["harness", "businesses", "squads", "_shared", "nirvana"];
 export const RETIRED_SKILLS = ["nirvana-os"];
 
 /**
+ * What a runtime's skills directory receives: ONE entry, the door. The other
+ * trees in SKILLS (harness, squads, businesses, _shared) are the engine's
+ * internals: they stay in ~/.nirvana/skills and `nirvana` routes to them by
+ * absolute path, so no runtime lists them as skills of their own. Owner
+ * decision, 2026-09-16: "saem as skills businesses, squads etc., entra a nirvana".
+ */
+export const RUNTIME_ENTRIES = ["nirvana"];
+
+/** Shipped trees that are not runtime entries. Engines up to 0.13.9 linked them
+ * into every runtime dir; later installs unlink OUR entries for them (never a
+ * foreign one, never the tree itself). */
+export const ENGINE_INTERNAL_SKILLS = SKILLS.filter((s) => !RUNTIME_ENTRIES.includes(s));
+
+/**
  * Marker file the installer writes inside a COPIED runtime skill directory
  * (Windows, Codex, `--copy-skills`). It is how a later install or uninstall
  * tells OUR copy apart from a user directory that merely shares the name.

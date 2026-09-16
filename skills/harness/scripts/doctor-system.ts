@@ -26,7 +26,7 @@ import * as os from "node:os";
 import { execSync, spawnSync } from "node:child_process";
 import { paths as nrvPaths } from "../../_shared/lib/bun-helpers.ts";
 import { resolveScope, enumerate } from "../../_shared/lib/scope.ts";
-import { RUNTIME_TARGETS, RUNTIME_SKILL_DIRS, PROJECT_CONTRACT_FILES, SKILLS as SKILL_NAMES } from "../../_shared/lib/runtime-dirs.ts";
+import { RUNTIME_TARGETS, RUNTIME_SKILL_DIRS, PROJECT_CONTRACT_FILES, RUNTIME_ENTRIES, SKILLS as SKILL_NAMES } from "../../_shared/lib/runtime-dirs.ts";
 import { classifyRuntimeEntry, foreignProvider } from "../../_shared/lib/runtime-install.ts";
 import { listRuntimes, whichSync } from "../../_shared/lib/host-agent-driver.ts";
 import { resolveRunRuntime } from "../lib/runtime-rules.ts";
@@ -284,13 +284,14 @@ try {
 // no ~/.agents until first run; the old dir-exists proxy skipped the link in
 // silence). The installer now creates the dir; this check catches installs
 // done before the fix, or dirs removed since.
-// The entry skill (`nirvana`) is probed too: it may come from another installer
-// (skills.sh puts a real dir in ~/.agents/skills and relative links elsewhere),
-// which is fine and is named as such rather than reported as missing.
+// A runtime dir holds ONE engine entry, the `nirvana` door (harness, squads,
+// businesses and _shared are engine-internal and reached by absolute path). It
+// may come from another installer (skills.sh puts a real dir in ~/.agents/skills
+// and relative links elsewhere), which is fine and is named as such.
 for (const t of RUNTIME_TARGETS) {
   if (!which(t.bin)) continue; // runtime absent — nothing to link
-  for (const s of ["harness", "nirvana"]) {
-    const label = s === "harness" ? `skills link: ${t.name}` : `skills link: ${t.name} (${s})`;
+  for (const s of RUNTIME_ENTRIES) {
+    const label = s === RUNTIME_ENTRIES[0] ? `skills link: ${t.name}` : `skills link: ${t.name} (${s})`;
     const link = path.join(t.skillsDir, s);
     if (!fs.existsSync(link)) {
       add(label, "WARN", `'${t.bin}' on PATH but ${t.skillsDir} has no ${s} entry — re-run: bun scripts/install.ts`);

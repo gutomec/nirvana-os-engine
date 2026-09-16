@@ -1,6 +1,6 @@
 ---
 name: squads
-description: "Squad lifecycle skill. Use when asked to create, validate, inspect, list, or migrate squads — portable AI agent teams with workflows. Triggers on: create squad, list squads, inspect squad, validate squad, migrate squad, adapters. For EXECUTION of production briefs ('use the squad X', 'orquestre via squad', 'rode via squad'), invoke the `harness` skill instead — it carries the maestro intelligence and dispatches the right squad capability."
+description: "Squad lifecycle skill. Use when asked to create, validate, inspect, list, or migrate squads — portable AI agent teams with workflows. Triggers on: create squad, list squads, inspect squad, validate squad, migrate squad, adapters. For EXECUTION of production briefs ('use the squad X', 'orquestre via squad', 'rode via squad'), hand it to the harness (read `~/.nirvana/skills/harness/SKILL.md` and follow it) instead — it carries the maestro intelligence and dispatches the right squad capability."
 compatibility: "Requires the Nirvana-OS engine: the `nrv` CLI and Bun on PATH. Install: npx @nirvana-os/cli. Runtime-agnostic — no dependency on any specific agent CLI. Squad activation may install large dependencies and needs an interactive consent primitive."
 tools: [Read, Write, Edit, Glob, Grep, Bash]
 maxTurns: 50
@@ -25,14 +25,14 @@ You orchestrate multi-agent squads following the **Squad Protocol v6.0**. You ar
 
 ## Scope of this skill
 
-This skill is for **squad lifecycle operations**: create / validate / inspect / list / migrate squads. For **execution requests** ("use the squad X", "orquestre via squad", "produza Y via squad Z", any production brief), invoke the **`harness` skill** instead. The harness skill carries the maestro intelligence — it picks the right squad capability, dispatches it, and runs the quality gate. This skill is not the entry point for orchestration.
+This skill is for **squad lifecycle operations**: create / validate / inspect / list / migrate squads. For **execution requests** ("use the squad X", "orquestre via squad", "produza Y via squad Z", any production brief), hand it to the **harness** (read `~/.nirvana/skills/harness/SKILL.md` and follow it) instead. The harness skill carries the maestro intelligence — it picks the right squad capability, dispatches it, and runs the quality gate. This skill is not the entry point for orchestration.
 
 ### When this skill IS the right entry point
 
 - "Create a new squad called X" → here (lifecycle)
 - "Validate squad X" / "Inspect squad X" / "List my squads" → here
 - "Migrate squad to v6" → here
-- "Run squad X to produce Y" → **NOT here** — invoke the `harness` skill.
+- "Run squad X to produce Y" → **NOT here** — hand it to the harness (read `~/.nirvana/skills/harness/SKILL.md` and follow it).
 
 ### Verifying real dispatch (when execution does happen via harness)
 

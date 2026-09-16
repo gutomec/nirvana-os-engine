@@ -92,15 +92,15 @@ is installed once, globally, on purpose. Declare those in the squad's
 
 ## 1. The Nirvana protocol — invoke the harness skill
 
-When the user asks for **any concrete artifact** — book, video, PDF, post, copy, design, illustration, brand, code, page, app, report, analysis, research, dataset, audit, anything — invoke the **`harness` skill**. The harness skill carries the maestro intelligence: the model loading it reads the brief, optionally runs a conversational briefing to fill missing info, optionally researches the web for grounding, consults the businesses + squads + mind-clones registries, picks the right targets, dispatches them, runs the quality gate, and verifies the artifact.
+When the user asks for **any concrete artifact** — book, video, PDF, post, copy, design, illustration, brand, code, page, app, report, analysis, research, dataset, audit, anything — invoke the **harness** — the orchestrator at `~/.nirvana/skills/harness/SKILL.md`, reached through the `nirvana` skill; it is not registered as a skill of its own. The harness carries the maestro intelligence: the model loading it reads the brief, optionally runs a conversational briefing to fill missing info, optionally researches the web for grounding, consults the businesses + squads + mind-clones registries, picks the right targets, dispatches them, runs the quality gate, and verifies the artifact.
 
 You don't pre-route by shell. You don't decide the cascade in your own head. You invoke the harness skill and let it orchestrate. The legacy CLI tools (`nrv route`, `nrv use-businesses`, `nrv find`) are diagnostic helpers — useful to peek at what the keyword router would suggest, never the source of truth.
 
 How invocation looks per runtime:
 
-- Claude Code / Anthropic SDK: `Skill("harness", "<user's brief verbatim>")` (or trust the auto-activation by description match).
-- Gemini-CLI / Codex / Cursor / etc.: the runtime's skill-invocation primitive, or in-context activation when the brief mentions production triggers.
-- No skill primitive at all: read `~/.nirvana/skills/harness/SKILL.md` and follow it as your operating instructions for this brief (its `../_shared/…` references resolve against `~/.nirvana/skills/harness/`). Shell-only runtimes (Hermes, legacy gemini-cli, headless) run `nrv dispatch --auto --exec "<user's brief verbatim>"` instead (`--exec=<runtime>` pins one; without `--exec` the command only scaffolds).
+- Claude Code / Anthropic SDK: `Skill("nirvana", "<user's brief verbatim>")` (or trust the auto-activation by description match); the door reads the harness.
+- Any runtime that can read a file (Codex, Gemini-CLI, Antigravity, Pi, OpenClaw, Cursor…): read `~/.nirvana/skills/harness/SKILL.md` and follow it as your operating instructions for this brief (its `../_shared/…` references resolve against `~/.nirvana/skills/harness/`).
+- Shell-only runtimes (Hermes, legacy gemini-cli, headless): `nrv dispatch --auto --exec "<user's brief verbatim>"` (`--exec=<runtime>` pins one; without `--exec` the command only scaffolds).
 
 Pass the user's brief verbatim. Don't reformulate before invocation — the harness handles amplification, briefing, and clarification on its own.
 

@@ -1,6 +1,6 @@
 ---
 name: businesses
-description: "Business lifecycle skill (DOMAIN-AGNOSTIC). Creates, lists, inspects, validates, and migrates businesses — autonomous multi-agent organizations — following the Business Protocol v2 (v1 businesses still load unchanged). Works for ANY domain: marketing, healthcare, engineering, legal, real-estate, gaming, foodtech, trading, education, research, government, etc. Triggers: list businesses, inspect business, create business, validate business, migrate business, manage org chart, library/dna ops. For EXECUTION of production briefs ('use as empresas', 'produza X via empresa Y'), invoke the `harness` skill instead — it carries the maestro intelligence. Default: zero_human."
+description: "Business lifecycle skill (DOMAIN-AGNOSTIC). Creates, lists, inspects, validates, and migrates businesses — autonomous multi-agent organizations — following the Business Protocol v2 (v1 businesses still load unchanged). Works for ANY domain: marketing, healthcare, engineering, legal, real-estate, gaming, foodtech, trading, education, research, government, etc. Triggers: list businesses, inspect business, create business, validate business, migrate business, manage org chart, library/dna ops. For EXECUTION of production briefs ('use as empresas', 'produza X via empresa Y'), hand it to the harness (read `~/.nirvana/skills/harness/SKILL.md` and follow it) instead — it carries the maestro intelligence. Default: zero_human."
 compatibility: "Requires the Nirvana-OS engine: the `nrv` CLI and Bun on PATH. Install: npx @nirvana-os/cli. Runtime-agnostic — no dependency on any specific agent CLI. Creation flows need an interactive question primitive; without one, use the non-interactive list/inspect/validate paths."
 tools: [Read, Write, Edit, Glob, Grep, Bash, AgentTool, TaskCreate, AskUserQuestion]
 maxTurns: 100
@@ -27,7 +27,7 @@ Multi-agent business orchestrator following `BUSINESS_PROTOCOL_V2.md` (the delta
 
 This skill is for **business lifecycle operations**: list / inspect / create / validate / migrate businesses; manage the `~/businesses/_library/dna/` mind-clone library; bootstrap structure; consult registries.
 
-For **execution requests** ("use as empresas", "rode pela empresa X", "produza um livro/post/vídeo", any production brief), invoke the **`harness` skill** instead. The harness skill carries the maestro intelligence — it reads the brief, optionally researches, picks the right business, dispatches its org chart, and runs the quality gate. This skill is not the entry point for orchestration.
+For **execution requests** ("use as empresas", "rode pela empresa X", "produza um livro/post/vídeo", any production brief), hand it to the **harness** (read `~/.nirvana/skills/harness/SKILL.md` and follow it) instead. The harness skill carries the maestro intelligence — it reads the brief, optionally researches, picks the right business, dispatches its org chart, and runs the quality gate. This skill is not the entry point for orchestration.
 
 ### Verifying real dispatch (when execution does happen via harness)
 

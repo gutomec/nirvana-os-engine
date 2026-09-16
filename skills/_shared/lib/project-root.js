@@ -123,6 +123,12 @@ function isInvalidProjectRoot(dir, opts) {
     for (const t of tempRootDirs()) {
       if (sameDir(resolved, t)) return true;
     }
+    // The engine's own home is not a project either. It carries the dependency
+    // store's package.json, so a command run from inside it (or from
+    // ~/.nirvana/outputs/<run>) adopted ~/.nirvana as the project and wrote a
+    // second ~/.nirvana/.nirvana with registries, logs and a state.db. Seen on
+    // the maintainer machine, 2026-09-16.
+    if (sameDir(resolved, path.join(process.env.NIRVANA_HOME || homeDir(opts), '.nirvana'))) return true;
     if (process.platform === 'win32') {
       const systemDirs = [process.env.SystemRoot, process.env.ProgramFiles, process.env['ProgramFiles(x86)']]
         .filter(Boolean)

@@ -114,3 +114,16 @@ describe("findProjectRoot — HOME is never a project, whatever is inside it", (
     expect(findProjectRoot(standalone, { home })).toBeNull();
   });
 });
+
+test("the engine home (~/.nirvana) is never a project root, even with the deps store's package.json in it", () => {
+  // Seen 2026-09-16: ~/.nirvana carries the dependency store's package.json,
+  // so a command run from inside it adopted ~/.nirvana as the project and
+  // wrote a second ~/.nirvana/.nirvana with registries, logs and a state.db.
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-engine-home-"));
+  const engineHome = path.join(home, ".nirvana");
+  fs.mkdirSync(path.join(engineHome, "outputs", "run-1"), { recursive: true });
+  fs.writeFileSync(path.join(engineHome, "package.json"), '{"name":"nirvana-os","private":true}');
+  expect(isInvalidProjectRoot(engineHome, { home })).toBe(true);
+  expect(findProjectRoot(path.join(engineHome, "outputs", "run-1"), { home })).toBeNull();
+  fs.rmSync(home, { recursive: true, force: true });
+});

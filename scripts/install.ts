@@ -24,7 +24,7 @@ import { createRequire } from "node:module";
 // Shared with the uninstaller — see skills/_shared/lib/runtime-dirs.ts for why.
 // Resolves both from the repo and from an extracted release tarball: the
 // tarball ships scripts/install.ts next to the full skills/ tree.
-import { RUNTIME_TARGETS, SKILLS, RETIRED_SKILLS, COPY_MARKER } from "../skills/_shared/lib/runtime-dirs.ts";
+import { RUNTIME_TARGETS, SKILLS, RETIRED_SKILLS, RUNTIME_ENTRIES, ENGINE_INTERNAL_SKILLS, COPY_MARKER } from "../skills/_shared/lib/runtime-dirs.ts";
 import { classifyRuntimeEntry, depsLinkFor, ensureDepsLink, findParkedBackup, foreignProvider, materializeRuntimeSkillCopy, parkedBackupPath, pruneDepsLinkInside } from "../skills/_shared/lib/runtime-install.ts";
 import { RUN_STATE_EXCLUDES } from "../skills/_shared/lib/run-state.ts";
 
@@ -335,7 +335,7 @@ function linkRuntimes(): void {
     for (const t of wired) console.log(`        ${t.name} → ${t.skillsDir}`);
     return;
   }
-  console.log("[4/4] Linking runtimes → shared skills tree ...");
+  console.log("[4/4] Linking runtimes → the nirvana entry (the engine stays in ~/.nirvana/skills) ...");
   let linked = 0;
   for (const t of RUNTIME_TARGETS) {
     const rtDir = t.skillsDir;
@@ -359,28 +359,31 @@ function linkRuntimes(): void {
     // EEXIST tolerated: on Windows Bun may throw it even with recursive:true.
     try { mkdirSync(rtDir, { recursive: true }); }
     catch (e) { if ((e as NodeJS.ErrnoException)?.code !== "EEXIST") throw e; }
-    // Entries we shipped under an OLD name. Removed only when ours: our symlink
-    // (live or DANGLING — copySkills just deleted the target, so existsSync
-    // would lie here) or a copy carrying COPY_MARKER. A foreign directory that
-    // happens to share the name is never touched; a .pre-nirvana.bak parked by
-    // an earlier install is restored.
-    for (const old of RETIRED_SKILLS) {
+    // Entries this engine no longer puts in a runtime dir: a name it stopped
+    // shipping (RETIRED_SKILLS) and the engine-internal trees that engines up
+    // to 0.13.9 linked beside the door (harness, squads, businesses, _shared).
+    // Removed only when ours: our symlink (live or DANGLING — copySkills just
+    // replaced the target, so existsSync would lie here) or a copy carrying
+    // COPY_MARKER. A foreign directory that happens to share the name is never
+    // touched; a backup parked by an earlier install is restored.
+    for (const old of [...RETIRED_SKILLS, ...ENGINE_INTERNAL_SKILLS]) {
       const p = join(rtDir, old);
       if (classifyRuntimeEntry(p, [NIRVANA_SKILLS]) !== "ours") {
-        if (existsSync(p)) console.log(`  ⓘ ${p} is not Nirvana's — left untouched`);
+        if (existsSync(p) && RETIRED_SKILLS.includes(old)) console.log(`  ⓘ ${p} is not Nirvana's — left untouched`);
         continue;
       }
       rmSync(p, { recursive: true, force: true });
+      const verb = RETIRED_SKILLS.includes(old) ? "retired" : "unlinked (engine-internal, reached through nirvana)";
       const bak = findParkedBackup(p);
       if (bak) {
         try { renameSync(bak, p); } catch { /* best-effort */ }
-        console.log(`  ✓ retired '${old}' (restored pre-Nirvana backup)`);
+        console.log(`  ✓ ${verb} '${old}' (restored pre-Nirvana backup)`);
       } else {
-        console.log(`  ✓ retired '${old}'`);
+        console.log(`  ✓ ${verb} '${old}'`);
       }
     }
     let mode = "symlink";
-    for (const s of SKILLS) {
+    for (const s of RUNTIME_ENTRIES) {
       const linkPath = join(rtDir, s);
       const target = join(NIRVANA_SKILLS, s);
       if (!existsSync(target)) continue;
@@ -409,7 +412,7 @@ function linkRuntimes(): void {
     // (what earlier installs wrote) is what Codex's scanner walks into. Remove
     // ours; a real directory is left for `nrv deps status` to report.
     pruneDepsLinkInside(rtDir);
-    for (const s of SKILLS) pruneDepsLinkInside(join(rtDir, s));
+    for (const s of RUNTIME_ENTRIES) pruneDepsLinkInside(join(rtDir, s));
     if (mode.startsWith("copy")) {
       const deps = ensureDepsLink(depsLinkFor(rtDir), NIRVANA_DEPS, IS_WINDOWS);
       if (deps === "kept-real-dir") console.log(`  ⓘ ${depsLinkFor(rtDir)} is a real directory, not our link — left alone; scripts in the copied skills resolve through it`);

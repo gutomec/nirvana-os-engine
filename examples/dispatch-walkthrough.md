@@ -18,7 +18,7 @@ The user picks nothing else — no squad, no model, no flags. That is the point.
 **1. Engage the harness.** The single entry point:
 
 ```
-Skill("harness", "Analyze the competitive landscape for AI note-taking apps and write me a one-page brief with the three biggest gaps.")
+Skill("nirvana", "Analyze the competitive landscape for AI note-taking apps and write me a one-page brief with the three biggest gaps.")
 ```
 
 **2. Route (zero-token preview available).** The harness consults the three
