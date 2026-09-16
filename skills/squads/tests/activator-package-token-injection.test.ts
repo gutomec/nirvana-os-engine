@@ -25,7 +25,7 @@ import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
-import { callsOf, fakePython, seedFakeVenv } from "./helpers/fake-python.ts";
+import { callsOf, deadShims, fakePython, seedFakeVenv } from "./helpers/fake-python.ts";
 
 const REPO = join(import.meta.dir, "..", "..", "..");
 const ACTIVATOR = join(REPO, "skills", "squads", "lib", "activator.js");
@@ -47,6 +47,9 @@ function fixture(deps: string): Fixture {
   mkdirSync(binDir, { recursive: true });
   writeFileSync(join(squadDir, "squad.yaml"), 'name: token-squad\nversion: "1.0.0"\nprotocol: "5.0"\ndescription: test\n');
   writeFileSync(join(squadDir, "dependencies.yaml"), deps);
+  // Nothing the runner has may answer a Python probe; a test brings alive
+  // exactly the fakes it needs. Shell shims, so POSIX only.
+  if (POSIX) deadShims(binDir);
   return { root, squadDir, binDir };
 }
 
@@ -181,23 +184,32 @@ describe("the plan says which fields are argv and which are a shell line", () =>
       `    - ${JSON.stringify(pyToken)}`,
       "",
     ].join("\n"));
+    // On POSIX a fake interpreter guarantees there is a Python to plan with, so
+    // the argv can be asserted whole. On Windows the fakes cannot run, and the
+    // PATH is isolated, so the runner may or may not offer a Python: both
+    // outcomes are correct behaviour and both keep the property under test —
+    // a plan is an ARGV and never a shell string, and no Python is a report,
+    // never a `cmd` to run.
+    if (POSIX) fakePython(f.binDir, "python3", join(f.root, "py.log"), { version: "3.11", satisfiedFlag: join(f.root, "never") });
     try {
       const r = activate(f, ["--dry-run"]);
       expect(r.status).toBe(0);
       const j = JSON.parse(r.stdout);
 
       expect(j.steps.node.argv).toEqual(["bun", "add", "--cwd", join(f.root, ".nirvana"), nodeToken]);
-      // The Python argv is `uv pip install --python <venv> <token>` on a machine
-      // with uv and `<python> -m pip install <token>` on one without; either
-      // way it is an ARGV, `install` is a word in it, and the token is the last
-      // argument whole. Asserting the exact prefix would make this test depend
-      // on which tools the machine running it happens to have.
       const py = j.steps.python;
-      expect(py.status).toBe("would_install");
-      expect(Array.isArray(py.argv)).toBe(true);
-      expect(py.argv).toContain("install");
-      expect(py.argv.at(-1)).toBe(pyToken);
-      expect(py.venv).toBe(join(f.root, ".nirvana", "python", "venv"));
+      if (py.status === "would_install") {
+        expect(Array.isArray(py.argv)).toBe(true);
+        expect(py.argv).toContain("install");
+        expect(py.argv.at(-1)).toBe(pyToken);
+        expect(py.venv).toBe(join(f.root, ".nirvana", "python", "venv"));
+        expect(py.cmd).toBeDefined();   // a rendering for humans, derived from the argv
+      } else {
+        expect(py.status).toBe("python_unavailable");
+        expect(py.hint).toBeDefined();
+        expect(py.cmd).toBeUndefined();  // nothing to run, so nothing rendered as a line
+      }
+      if (POSIX) expect(py.status).toBe("would_install");   // the fake makes it certain here
 
       // The system entry is the deliberate exception: the author wrote a shell
       // line, the consent gate reads it, and it keeps being one. A future

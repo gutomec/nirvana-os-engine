@@ -84,6 +84,22 @@ export function fakeUv(binDir: string, log: string, pythonSrc: string): string {
   return bin;
 }
 
+/**
+ * Dead shims for every name the activator might probe, so nothing the RUNNER
+ * happens to have can answer through `/usr/bin`. A test then overwrites the
+ * ones it wants alive. Measured on ubuntu-latest: with `/usr/bin` on the
+ * fixture's PATH and only `python3` faked, the runner's real `python` was
+ * found, created a real venv and installed for real — the "no usable Python"
+ * case reported `installed`.
+ */
+export const PROBED_NAMES = ["python", "python3", "py", "uv", "pip", "pip3"];
+export function deadShims(binDir: string, names: string[] = PROBED_NAMES): void {
+  mkdirSync(binDir, { recursive: true });
+  for (const name of names) {
+    writeFileSync(join(binDir, name), '#!/bin/sh\necho "' + name + ': not on this machine" >&2\nexit 1\n', { mode: 0o755 });
+  }
+}
+
 /** Every recorded call of one fake, as argv arrays (the program name is not logged). */
 export function callsOf(log: string): string[][] {
   if (!existsSync(log)) return [];

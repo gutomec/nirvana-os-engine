@@ -19,7 +19,7 @@ import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
-import { callsOf, fakePython, fakeUv, seedFakeVenv } from "./helpers/fake-python.ts";
+import { callsOf, deadShims, fakePython, fakeUv, seedFakeVenv } from "./helpers/fake-python.ts";
 
 const REPO = join(import.meta.dir, "..", "..", "..");
 const ACTIVATOR = join(REPO, "skills", "squads", "lib", "activator.js");
@@ -36,6 +36,9 @@ function fixture(pythonDeps: string): Fixture {
   mkdirSync(binDir, { recursive: true });
   writeFileSync(join(squadDir, "squad.yaml"), 'name: py-squad\nversion: "1.0.0"\nprotocol: "5.0"\ndescription: test\n');
   writeFileSync(join(squadDir, "dependencies.yaml"), pythonDeps);
+  // Every probed name is dead until a test brings one to life, so the machine
+  // running the suite cannot answer for the machine under test.
+  if (POSIX) deadShims(binDir);
   // NIRVANA_HOME points at the fixture, so the shared venv lands here.
   return { root, squadDir, binDir, venvDir: join(root, ".nirvana", "python", "venv"), satisfied: join(root, "pip-satisfied"), oldPip: join(root, "pip-old") };
 }
