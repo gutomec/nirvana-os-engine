@@ -220,7 +220,7 @@ hermes chat
 
 ```
 hermes -z "Use a skill nirvana-os-hermes: despache este brief — <brief>" --accept-hooks
-# A ponte chama `nrv dispatch --auto "<brief>"` (brief-business + DNA + audit).
+# A ponte chama `nrv dispatch --auto --exec "<brief>"` (brief-business + DNA + execução headless + audit).
 ```
 
 ### Exemplo 3 — Orquestração in-runtime (Tier 4)

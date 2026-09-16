@@ -34,7 +34,18 @@ describe("the documented shell-only dispatch form is one that parses", () => {
     expect(src).toMatch(/const inlineBrief = \(autoMode \|\| explicitTarget\) \? positional\[0\] : positional\[1\];/);
   });
 
-  test("every place that teaches the shell-only form teaches --auto", () => {
+  test("without --exec the command only scaffolds; the scripted form must carry it", () => {
+    // Measured 2026-09-16: `nrv dispatch --auto "<brief>" --runtime=grok-cli`
+    // exited 0 having written brief.md, agent-prompt.md and HANDOFF.json, and
+    // its last line read "(exit 3 — nothing dispatched, nothing judged;
+    // delivery only with --exec)". A shell-only runtime has nobody to paste
+    // the prompt into; --exec is the whole delivery.
+    const src = read("skills/harness/scripts/dispatch.ts");
+    expect(src).toMatch(/function wantsExec\(\)/);
+    expect(src).toMatch(/delivery only with --exec/);
+  });
+
+  test("every place that teaches the shell-only form teaches --auto --exec", () => {
     for (const rel of [
       "skills/nirvana/SKILL.md",
       "skills/_shared/adapters/hermes/skills/nirvana/nirvana-os-hermes/SKILL.md",
@@ -43,7 +54,8 @@ describe("the documented shell-only dispatch form is one that parses", () => {
       "AGENT-QUICKSTART.md",
     ]) {
       const text = read(rel);
-      expect(text, rel).toMatch(/nrv dispatch --auto "/);
+      expect(text, rel).toMatch(/nrv dispatch --auto --exec "/);
+      expect(text, rel).not.toMatch(/nrv dispatch --auto "/);
       expect(text, rel).not.toMatch(/nrv dispatch "</);
     }
   });

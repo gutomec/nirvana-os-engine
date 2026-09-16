@@ -105,7 +105,7 @@ amplification and clarifying questions.
 |---|---|
 | Claude Code, or any runtime with a `Skill` tool | `Skill("harness", "<the user's brief, verbatim>")` |
 | Codex, Gemini CLI, Antigravity, Pi, OpenClaw, Cursor | the runtime's own skill primitive (`$harness`, `activate_skill`); if it has none, read `~/.nirvana/skills/harness/SKILL.md` and follow it as your operating instructions for this brief (its `../_shared/…` references resolve against `~/.nirvana/skills/harness/`) |
-| Shell-only and sub-process runtimes (Hermes, legacy gemini-cli, headless) | `nrv dispatch --auto "<the user's brief, verbatim>"` |
+| Shell-only and sub-process runtimes (Hermes, legacy gemini-cli, headless) | `nrv dispatch --auto --exec "<the user's brief, verbatim>"` (`--exec=<runtime>` pins one; without `--exec` the command only scaffolds and delivers nothing) |
 
 Dispatch needs one agent CLI on PATH (`claude`, `codex`, `gemini`, `agy`, `pi`,
 `kimi`, `grok`, `qwen`, `opencode`). With none, Nirvana still answers discovery

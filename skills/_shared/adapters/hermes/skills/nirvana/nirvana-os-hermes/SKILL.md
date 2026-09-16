@@ -58,7 +58,7 @@ Always answer in the user's language (default PT-BR). Run the commands below wit
 
 When the user wants to actually produce something (a report, post, book, design, code, brand, analysis), the orchestration intelligence lives in the Nirvana harness. Do not produce the artifact yourself — hand the brief to `nrv`:
 
-  → `nrv dispatch --auto "<the user's brief verbatim>"`     (full maestro: the router picks business/squad/mind-clone, runs the quality gate)
+  → `nrv dispatch --auto --exec "<the user's brief verbatim>"`     (full maestro: the router picks business/squad/mind-clone, runs the agent headless, runs the quality gate; without --exec it only scaffolds)
   → `nrv ask "<question>"`                            (quick consult)
 
 The harness emits an audit chain under `~/.harness-logs/<date>/audit.jsonl` for every dispatch, so the work is verifiable.

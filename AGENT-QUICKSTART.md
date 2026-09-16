@@ -19,7 +19,7 @@ Skill("harness", "<the user's brief, verbatim>")
 
 No `Skill` tool in your runtime? Read `~/.nirvana/skills/harness/SKILL.md` and
 follow it as your operating instructions; shell-only runtimes use
-`nrv dispatch --auto "<brief>"`.
+`nrv dispatch --auto --exec "<brief>"` (without `--exec` it only scaffolds).
 
 The harness skill IS the maestro. It reads the brief, consults the three
 registries (businesses, squads, mind-clones) and dispatches the best
