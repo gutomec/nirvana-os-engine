@@ -44,6 +44,7 @@ test("list-clones reads the library the environment names, not a fixed ~/busines
   expect(listed.status).toBe(0);
   expect(`${listed.stdout}${listed.stderr}`).toMatch(/test-clone/);
   const empty = run({});
-  expect(`${empty.stdout}${empty.stderr}`).toMatch(/No mind-clones found in ~\/businesses\/_library\/dna\//);
+  // Windows prints the path with backslashes; the trailing slash is literal.
+  expect(`${empty.stdout}${empty.stderr}`).toMatch(/No mind-clones found in ~[\\/]businesses[\\/]_library[\\/]dna\//);
   fs.rmSync(home, { recursive: true, force: true });
 });

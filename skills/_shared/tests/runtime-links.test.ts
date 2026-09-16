@@ -152,7 +152,7 @@ test("install links every installed runtime and backs up a colliding third-party
   // copy of the skill for every runtime that scans recursively.
   const bak = parkedBackupPath(thirdParty, home);
   expect(fs.readFileSync(path.join(bak, "THIRD-PARTY.txt"), "utf8")).toContain("não é do Nirvana");
-  expect(out).toContain("backups/runtime-skills");
+  expect(out).toMatch(/backups[\\/]runtime-skills/);   // backslashes on Windows
   expect(fs.readdirSync(path.join(home, ".claude", "skills")).filter((e) => /\.bak$/i.test(e))).toEqual([]);
 
   // pi is wired too — the list the uninstaller used to be missing.
