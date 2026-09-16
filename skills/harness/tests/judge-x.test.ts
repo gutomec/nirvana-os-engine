@@ -132,14 +132,15 @@ describe("prompt", () => {
     const judgePrompt = buildJudgeXPrompt({ persona: judgePersona, brief: EVALUATION_BRIEF, projectId: "prj", outputsRoot: "/tmp/e/outputs", scorecardPath: "/tmp/e/outputs/scorecard.json" });
     const agentXTurn = agentXPrompt.length + agentXSystem.length;
     const judgeTurn = judgePrompt.length;
-    // Same brief in both, so the reduction lives in what wraps it: the judge wrap is at most a third of agent-x's.
+    // Same brief in both, so the reduction lives in what wraps it: the judge wrap is at most half of agent-x's
+    // (a third until the autonomous directive shrank from 5.9K to 2.9K chars in the 2026 rewrite).
     const agentXWrap = agentXTurn - EVALUATION_BRIEF.length;
     const judgeWrap = judgeTurn - EVALUATION_BRIEF.length;
     expect(agentXSystem).toContain("AUTONOMOUS MODE");
-    expect(judgeWrap).toBeLessThanOrEqual(agentXWrap / 3);
-    expect(judgeTurn).toBeLessThanOrEqual(agentXTurn / 2);
-    // Reference values on this tree, recorded so a persona that grows past them is noticed: agent-x ≈ 15.5K chars (≈ 3.9K tokens),
-    // judge-x ≈ 7K chars (≈ 1.75K tokens) with a 3K-char evaluation brief. Bounds, not exact numbers.
+    expect(judgeWrap).toBeLessThanOrEqual(agentXWrap / 2);
+    expect(judgeTurn).toBeLessThanOrEqual(agentXTurn * 0.6);
+    // Reference values on this tree, recorded so a persona that grows past them is noticed: agent-x ≈ 14.4K chars (≈ 3.6K tokens),
+    // judge-x ≈ 7.9K chars (≈ 2K tokens) with a 3K-char evaluation brief. Bounds, not exact numbers.
     expect(Math.round(agentXTurn / 4)).toBeGreaterThan(3000);
     expect(Math.round(judgeTurn / 4)).toBeLessThan(2000);
   });

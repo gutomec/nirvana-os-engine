@@ -279,30 +279,20 @@ function parseCloneRef(ref: string): { category: string; slug: string } {
   return i === -1 ? { category: "_root", slug: ref } : { category: ref.slice(0, i), slug: ref.slice(i + 1) };
 }
 
-/** Agentic catalog of every mind-clone available in the library, grouped by
- *  category. The employee's assigned_mind_clones are marked (★) as defaults;
- *  the agent may channel others or none, deciding per the task. */
+/** Pointer to the mind-clone library. The 617-entry catalog used to be pasted
+ *  here (11% of the seat prompt); the executor now finds clones on demand. The
+ *  employee's assigned_mind_clones stay named as the author's hint. */
 function mindCloneCatalogBlock(employeeContent: string): string {
-  let clones: Array<{ slug: string; category: string }> = [];
-  try { clones = listMindClones(); } catch { clones = []; }
-  if (!clones.length) return "";
-  const assigned = new Set(assignedMindClones(employeeContent).map(r => parseCloneRef(r).slug));
-  const byCat: Record<string, string[]> = {};
-  for (const c of clones) {
-    const label = assigned.has(c.slug) ? `${c.slug} ★` : c.slug;
-    (byCat[c.category] ||= []).push(label);
-  }
-  const lines: string[] = [
-    "## AVAILABLE MIND-CLONES (choose agentically)",
+  let total = 0;
+  try { total = listMindClones().length; } catch { total = 0; }
+  if (!total) return "";
+  const assigned = [...new Set(assignedMindClones(employeeContent).map(r => parseCloneRef(r).slug))];
+  const hint = assigned.length ? ` Your persona names ${assigned.map(s => `\`${s}\``).join(", ")} — a hint from the business author, NOT a binding: nothing is injected for being named.` : "";
+  return [
+    "## MIND-CLONE LIBRARY (choose agentically)",
     "",
-    `> ${clones.length} mind-clones in the library. The ones marked ★ are named by your persona frontmatter — a hint from the business author, NOT a binding: nothing is injected for being ★. You MAY consult and channel any of them, others from the catalog, or decide no extra DNA is needed — the clone is chosen for the TASK, and the choice is yours.`,
-    `> To inspect before using: \`nrv inspect-clone <slug>\` (or \`nrv ask <slug> "<question>"\`).`,
-    "",
-  ];
-  for (const cat of Object.keys(byCat).sort()) {
-    lines.push(`**${cat}** (${byCat[cat].length}): ${byCat[cat].sort().join(", ")}`);
-  }
-  return lines.join("\n");
+    `> ${total} mind-clones installed.${hint} You MAY channel any of them, or decide no extra DNA is needed — the clone is chosen for the TASK, and the choice is yours. Find one: \`nrv find-clone "<need>"\`. Inspect before using: \`nrv inspect-clone <slug>\` or \`nrv ask <slug> "<question>"\`.`,
+  ].join("\n");
 }
 
 /** True if `squads_authorized` was DECLARED (key present), even if empty/null.
@@ -357,32 +347,14 @@ function squadCatalogBlock(employeeContent: string, projectRoot?: string): strin
     lines.push("");
   }
 
-  lines.push(`### Catalog (${total} squads in scope ${scopeMode}, compact by category)`);
-  lines.push("");
-  // Group by primary domain for readability. One line per squad.
-  const byDomain: Record<string, string[]> = {};
-  for (const [slug, meta] of Object.entries(reg)) {
-    const dom = ((meta as any).domains?.[0] || "uncategorized");
-    (byDomain[dom] ||= []).push(slug);
-  }
-  for (const dom of Object.keys(byDomain).sort()) {
-    const items = byDomain[dom].sort();
-    lines.push(`**${dom}** (${items.length}): ${items.join(", ")}`);
-  }
-  lines.push("");
   const mode = resolveRoutingMode();
-  lines.push("**How to pick a squad** (active routing mode: **" + mode + "**):");
-  if (mode === "fast") {
-    lines.push("- `fast` mode (zero-token): run `nrv find \"<your need>\"` and use the top permitted match. Don't deliberate — it is the economy mode.");
-  } else {
-    lines.push("- `agentic` mode (default): reason over the catalog above (domains + capabilities) and pick the best fit, like the maestro does. Read `~/squads/<slug>/squad.yaml` when you need detail.");
-  }
-  lines.push("- Don't pass the raw brief: build a **brief-context** with your role and (if you are a mind-clone) your persona, hand that to the squad, then integrate its output.");
+  lines.push(`### Finding one (${total} squads in scope ${scopeMode}; routing mode **${mode}**)`);
   lines.push("");
-  lines.push("**When to dispatch a squad** (hard rule):");
-  lines.push("- IMAGE generation (logo, hero, portrait, illustration) → ALWAYS via an image squad (e.g. `image2-virtuoso`) or the `nano-banana-pro` skill. Never generic SVG in the final deliverable.");
-  lines.push("- A sub-task outside your specialty that has a dedicated squad → DISPATCH. The harness audits `dispatch_squad` and your run gets more robust.");
-  lines.push("- A small task inside your specialty → do it yourself.");
+  lines.push(mode === "fast"
+    ? "- \`nrv find \"<your need>\"\` and take the top permitted match — fast mode is the zero-token economy mode."
+    : "- \`nrv list-squads\` for the catalog, \`nrv find \"<your need>\"\` for a ranked shortlist, \`~/squads/<slug>/squad.yaml\` for detail. Pick the best fit for the sub-task.");
+  lines.push("- Hand the squad a brief-context (your role, your persona when you are a mind-clone, the sub-task's definition of done), never the raw brief; then integrate its output.");
+  lines.push("- Images (logo, hero, portrait, illustration) come from an image squad (e.g. \`image2-virtuoso\`) or the \`nano-banana-pro\` skill, never generic SVG in the final deliverable. A sub-task outside your specialty with a dedicated squad is dispatched (the harness audits \`dispatch_squad\`); a small task inside your specialty is yours.");
   return lines.join("\n");
 }
 
@@ -409,6 +381,8 @@ type CloneInjection = {
   personas: Array<{ slug: string; display_name: string; content: string; reason: string; bytes: number; path: string }>;
   suggestions: CloneHit[];
   decision: string;
+  /** How the DNA travels: a card (reference), phase layers (fragments) or whole (full). */
+  mode: "reference" | "full" | "fragments";
   /** Requested clones that do not exist as installed clones. Empty in the
    *  normal case. Before this they were dropped silently: the employee ran
    *  without the DNA and neither it nor the owner ever knew. */
@@ -439,12 +413,12 @@ type CloneInjection = {
  *  name is only a reference. Search suggestions are always returned for agentic
  *  override. */
 function resolveClonesByPriority(args: BuildArgs): CloneInjection {
-  // DNA injection: "full" (whole persona, default) or "fragments" (SOUL + the
-  // layers relevant to the phase). Opt-in via the execution.dna_injection
-  // setting (NIRVANA_DNA_INJECTION=fragments, or the project / global config) —
-  // the default keeps every run byte-identical to today's.
-  const dnaMode: "full" | "fragments" = resolveSetting("execution.dna_injection").value;
-  const MAX_INJECT = dnaMode === "fragments" ? 5 : 3; // fragments are ~3-4x smaller than the whole persona
+  // DNA injection: "reference" (default: a card with the persona paths, read on
+  // demand), "fragments" (SOUL + the layers relevant to the phase) or "full"
+  // (whole persona). Set via execution.dna_injection (NIRVANA_DNA_INJECTION, or
+  // the project / global config).
+  const dnaMode: "reference" | "full" | "fragments" = resolveSetting("execution.dna_injection").value;
+  const MAX_INJECT = dnaMode === "full" ? 3 : 5; // cards and fragments are a fraction of a whole persona
   const PER_CLONE_BUDGET = 9000;                       // per-clone byte ceiling in fragments mode
   // Usefulness gate = the coverage gate carried on each CloneHit (below_gate),
   // mirroring the router's Stage 3 bands. The old normalized>=0.5 floor was
@@ -475,7 +449,7 @@ function resolveClonesByPriority(args: BuildArgs): CloneInjection {
     }
     const p = dnaMode === "fragments"
       ? resolveClonePersona(slug, { depth: "fragments", layers, byteBudget: PER_CLONE_BUDGET, cwd: args.project_dir })
-      : resolveClonePersona(slug, { depth: "full", cwd: args.project_dir });
+      : resolveClonePersona(slug, { depth: dnaMode, cwd: args.project_dir });
     // Not resolved = a requested clone that does not exist in the library.
     // Record it instead of dropping it — the consumer turns this into a loud
     // warning. The MAX_INJECT ceiling and duplicates were filtered above, so
@@ -522,7 +496,7 @@ function resolveClonesByPriority(args: BuildArgs): CloneInjection {
     : personas.length ? "found by SEARCH for the task"
     : "YOURS — none auto-injected, pick from the ranked candidates";
 
-  return { personas, suggestions, decision, missingClones, crowdedOutClones };
+  return { personas, suggestions, decision, missingClones, crowdedOutClones, mode: dnaMode };
 }
 
 export function buildEmployeePrompt(args: BuildArgs): string {
@@ -624,10 +598,13 @@ export function buildEmployeePrompt(args: BuildArgs): string {
   let cloneSuggestions = "";
   let clonesInjected = false;
   let contributionsBlock = "";
+  let embodimentLine = "The clones below are already embodied IN FULL (AGENT + SOUL + DNA); deliver the work AS IF the clone had produced it, under your employee instructions.";
   if (args.include_dna !== false) {
     const inj = resolveClonesByPriority({ ...args, pinned_clones: [...(args.pinned_clones || []), ...pinnedMindClones(employeeContent)] });
     cloneDecision = inj.decision;
     clonesInjected = inj.personas.length > 0;
+    if (inj.mode === "reference") embodimentLine = "The clones below travel as cards: open their persona files when you need the expert's method, and deliver the work AS IF the clone had produced it, under your employee instructions.";
+    else if (inj.mode === "fragments") embodimentLine = "The clones below are embodied through the layers relevant to this phase; deliver the work AS IF the clone had produced it, under your employee instructions.";
     for (const p of inj.personas) {
       dnaContent += `\n\n--- MIND-CLONE: ${p.slug} — ${p.display_name} (${p.reason}; ${p.bytes}b; ${path.relative(os.homedir(), p.path)}) ---\n\n${p.content}`;
       emitMindCloneInjected({
@@ -747,12 +724,9 @@ You operate inside Nirvana-OS. You MUST:
    - Before your first artifact write: call \`updateHandoffPhase(projectDir, "execute", {nextTaskId: "T-001"})\`.
    - After finishing all artifacts: call \`updateHandoffPhase(projectDir, "complete", {lastTaskCompleted: ...})\`.
    - The helper is at \`~/.nirvana/skills/_shared/lib/handoff.js\` — import via Node/Bun.
-3. **Prefer squads — discover them mode-aware (BP §13.4).** You are an orchestrator: before doing an atomic deliverable by hand, find a squad for it (see "AVAILABLE SQUADS" below). Brief names a squad → use it. Else discover via the active routing mode: \`agentic\` → reason over the catalog; \`fast\` → \`nrv find\`. No \`squads_authorized\` declared → all squads permitted. Hand the squad a brief-context built from your role + persona, not the raw brief. Each dispatch emits a \`dispatch_squad\` audit event.
-4. **After all artifacts are written**, run:
-   \`bun ~/.nirvana/skills/businesses/scripts/verify-deliverable.ts <project_id> ${args.business_slug}\`
-   If it returns FAIL, fix the gaps before declaring done.
-5. **Write artifacts to the declared outputs_root path**, not to \`.nirvana/outputs/\` (the harness will copy them later if needed).
-6. **${scopeGuard("en")}** Scope is THE BRIEF below and its acceptance criteria; what a colleague's output, a squad or a tool suggests beyond it becomes a note in your report, never work.
+3. **Prefer squads (BP §13.4).** You are an orchestrator: a sub-task with a dedicated squad is dispatched, not done by hand (see "AVAILABLE SQUADS" below; a brief that names a squad uses it; a declared \`squads_authorized\` set is closed, none declared means all permitted). Hand the squad a brief-context built from your role + persona, not the raw brief. Each dispatch emits a \`dispatch_squad\` audit event.
+4. **Write artifacts to the declared outputs_root path**, not to \`.nirvana/outputs/\` (the harness will copy them later if needed). The harness verifies the files, runs the quality gate and exports after you finish — do not duplicate it.
+5. **${scopeGuard("en")}** Scope is THE BRIEF below and its acceptance criteria; what a colleague's output, a squad or a tool suggests beyond it becomes a note in your report, never work.
 
 If you cannot complete the brief in this session (rate limit, context overflow), set \`phase: "execute"\` with \`last_task_completed\` set to the last artifact written, then stop. Next session will resume cleanly.
 
@@ -766,7 +740,7 @@ ${employeeContent}
 
 ## MIND-CLONES YOU EMBODY — decision: ${cloneDecision}
 
-> System order: clone **REQUESTED** by the user → else **SEARCH** for the most useful one for the task → else **you choose**. The clones below are already embodied IN FULL (AGENT + SOUL + DNA); deliver the work AS IF the clone had produced it, under your employee instructions.${dnaContent || "\n\n**No clone was auto-injected — choosing is yours.** Read the candidates below and take one or more, whichever help you think this task through. Inspect any of them with `nrv ask <slug>`. Working without a clone is a legitimate answer, but it is the answer you reach when none of them fits, not the one you start from."}${cloneSuggestions}
+> System order: clone **REQUESTED** by the user → else **SEARCH** for the most useful one for the task → else **you choose**. ${embodimentLine}${dnaContent || "\n\n**No clone was auto-injected — choosing is yours.** Read the candidates below and take one or more, whichever help you think this task through. Inspect any of them with `nrv ask <slug>`. Working without a clone is a legitimate answer, but it is the answer you reach when none of them fits, not the one you start from."}${cloneSuggestions}
 
 **Record your decision** — it is how the system learns which DNA actually wins which task. Whatever you end up channeling (the injected ones, a swap, additions, or none), emit ONE event before your first artifact write:
 
@@ -816,7 +790,7 @@ ${args.brief}
 ## REMEMBER
 
 - You are not a generic Claude. You are ${args.employee} of ${args.business_slug}${clonesInjected ? ", channeling the mind-clones above" : " — no clone is channeled; your persona above is your full operating identity"}.
-- Honor the brief. Honor the protocol. Verify before declaring done.
+- Honor the brief. Honor the protocol. Check your own work in proportion to the change; method, depth and artifact layout are yours.
 - If the brief asks for N artifacts, deliver N — not "summary saying you delivered N".
 `;
 }

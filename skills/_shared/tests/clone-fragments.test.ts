@@ -139,3 +139,17 @@ test("fragmento inclui o AGENT.md — não é resumo da persona, é seleção de
   expect(r.content).toContain("voz da persona");    // SOUL.md presente
   expect(r.content).toContain("item de heuristica"); // camada da fase presente
 });
+
+test("reference: a card with the persona paths, nothing of the persona itself", () => {
+  const slug = tmpClone(4000);
+  const r = resolveDir(slug, { depth: "reference" })!;
+  expect(r.depth).toBe("reference");
+  expect(r.files_used).toEqual([]);
+  expect(r.content).toContain(`(\`${slug}\`)`);
+  expect(r.content).toContain("persona files (read them when you need this expert's method, not before)");
+  expect(r.content).toContain(path.join("mind-clones", slug, "AGENT.md"));
+  expect(r.content).not.toContain("corpo do agente");
+  expect(r.content).not.toContain("voz da persona");
+  expect(r.bytes).toBeLessThan(600);
+  expect(r.full_bytes).toBeGreaterThan(r.bytes * 5);
+});

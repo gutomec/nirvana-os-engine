@@ -19,7 +19,23 @@ import * as os from "node:os";
 import { resolveScope } from "./scope.ts";
 import { parseDnaSchema, type LayerKey } from "./dna-schema-parser.ts";
 
-export type CloneDepth = "full" | "concise" | "fragments";
+export type CloneDepth = "full" | "concise" | "fragments" | "reference";
+
+/** The reference card (execution.dna_injection=reference, the default): what
+ *  the clone is for and where its persona lives. The executor opens the files
+ *  when it needs the method — context on demand — instead of receiving three
+ *  whole personas in every prompt (measured on one seat: 125,750 of 173,064
+ *  bytes were pasted DNA and 327 were the brief). */
+function renderCloneCard(slug: string, entry: any, dir: string, files: Record<string, string | null>): string {
+  const m = entry?.match || {};
+  const lines = [`**${entry?.display_name || slug}** (\`${slug}\`)`];
+  if (typeof m.one_liner === "string" && m.one_liner) lines.push(m.one_liner);
+  if (Array.isArray(m.domains) && m.domains.length) lines.push(`- domains: ${m.domains.slice(0, 8).join(", ")}`);
+  if (typeof m.when_to_use === "string" && m.when_to_use) lines.push(`- when to use: ${m.when_to_use.split(/(?<=[.!?])\s/)[0]}`);
+  const personaFiles = ["agent", "soul", "dna_schema"].map((k) => files[k]).filter((f): f is string => !!f && fs.existsSync(f));
+  lines.push(`- persona files (read them when you need this expert's method, not before): ${personaFiles.length ? personaFiles.map((f) => `\`${f}\``).join(", ") : `\`${dir}\``}`);
+  return lines.join("\n");
+}
 
 export type ClonePersona = {
   slug: string;
@@ -133,6 +149,14 @@ export function resolveClonePersona(
 
   let content = "";
   let layers_injected: LayerKey[] | undefined;
+
+  if (depth === "reference") {
+    content = renderCloneCard(slug, entry, dir, files);
+    return {
+      slug, display_name: entry?.display_name || slug, content, files_used: [], bytes: content.length,
+      source: dir, resolved_by, degraded, reason: degradeReason, depth, full_bytes: fullBytes,
+    };
+  }
 
   if (depth === "fragments") {
     // AGENT.md is the persona's OPERATIONAL SPINE: Principles, named

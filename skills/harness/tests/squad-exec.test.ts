@@ -304,8 +304,12 @@ describe("buildSquadPrompt — with a resolved capability", () => {
     expect(p).toContain("## SEU WORKFLOW (`workflows/guided-analysis.md`)");
     expect(p).toContain("| 1 | `collect` | `analyst` | `collect` | — | dataset.json |");
     expect(p).toContain("| 2 | `write` | `writer` | — | `collect` | report.md |");
-    // The prose body of a Markdown workflow travels with the graph.
+    // The prose body of a Markdown workflow travels with the graph, as the author's
+    // reference method: dependencies bind, the rest is the executor's.
     expect(p).toContain("BODY-COLLECT-MARKER");
+    expect(p).toContain("método de referência do autor do squad");
+    expect(p).not.toContain("Execute os passos nessa ordem");
+    expect(p).toContain("- **pronto quando** (critérios de aceitação");
 
     // Referenced components only, in step order — never the alphabetical top 3.
     expect(p).toContain("## SEUS AGENTES\n");

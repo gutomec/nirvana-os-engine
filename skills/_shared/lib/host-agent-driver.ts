@@ -79,7 +79,7 @@ const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
  * (agy, kimi, opencode, pi) would hand Windows a command line between 32 KB and
  * 100 KB believing it safe, and the interpreter route would cut it at 8 KB.
  *
- * KNOWN TRADE-OFF, measured: AUTONOMOUS_DIRECTIVE is 5,942 bytes and
+ * KNOWN TRADE-OFF, measured: AUTONOMOUS_DIRECTIVE is 2,873 bytes (5,942 until 0.13.9) and
  * `withPreamble` merges it ahead of every prompt, so on Windows the argv branch
  * is effectively unreachable for those four adapters — every dispatch takes the
  * temp-file route. That is deliberate rather than accidental, because no number

@@ -339,7 +339,7 @@ function renderCapabilityBlock(ctx: SquadCapabilityPromptContext): string {
   if (ctx.description) lines.push(`- **descrição**: ${ctx.description}`);
   if (ctx.produces.length) lines.push(`- **produces**: ${ctx.produces.join(", ")}`);
   if (ctx.acceptance.length) {
-    lines.push("- **critérios de aceitação**:");
+    lines.push("- **pronto quando** (critérios de aceitação; os bloqueantes são o que o gate confere):");
     for (const a of ctx.acceptance) {
       const marks = [a.blocking ? "bloqueante" : "", a.minimumScore !== undefined ? `nota mínima ${a.minimumScore}` : ""].filter(Boolean);
       lines.push(`  - \`${a.id}\`${marks.length ? ` (${marks.join(", ")})` : ""} — ${a.description}`);
@@ -356,7 +356,7 @@ function renderCapabilityBlock(ctx: SquadCapabilityPromptContext): string {
     "| --- | --- | --- | --- | --- | --- |",
     ...ctx.workflow.steps.map((s, i) => `| ${i + 1} | \`${s.id}\` | \`${s.agent}\` | ${s.task ? `\`${s.task}\`` : EM_DASH_CELL} | ${s.requires.length ? s.requires.map(r => `\`${r}\``).join(", ") : EM_DASH_CELL} | ${s.creates.length ? s.creates.join(", ") : EM_DASH_CELL} |`),
     "",
-    "Execute os passos nessa ordem, respeitando as dependências da coluna `requer`.",
+    "Esse é o método de referência do autor do squad. As dependências da coluna `requer` valem; profundidade, formato e o que fazer entre um passo e outro são seus, desde que os critérios acima fiquem verdadeiros.",
   ];
   if (ctx.workflow.body) table.push("", ctx.workflow.body);
   return `${lines.join("\n")}\n\n${table.join("\n")}`;
