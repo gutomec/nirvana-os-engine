@@ -339,7 +339,7 @@ async function main() {
     const agentsTemplate = path.join(SKILLS_ROOT, "_shared", "templates", "AGENTS.md");
     const writingContractSnippet = path.join(SKILLS_ROOT, "_shared", "templates", "writing-contract-snippet.md");
     const onDemandSnippet = path.join(SKILLS_ROOT, "_shared", "templates", "on-demand-contract-snippet.md");
-    const WRITING_CONTRACT_MARKER = "<!-- nirvana-os:writing-contract:v1 -->";
+    const WRITING_CONTRACT_MARKER = "<!-- nirvana-os:writing-contract:v2 -->";
     const INVOCATION_CONTRACT_MARKER = "<!-- nirvana-os:invocation-contract:v2 -->";
     // Markers of earlier contracts. A project initialised under one of them
     // kept the old text forever: the marker check made init skip the file, so
@@ -348,22 +348,45 @@ async function main() {
     // next nirvana-os marker, or the end of the file) is replaced by the
     // current template; the user's own lines above it and the other contracts
     // below it stay where they are.
-    const OLDER_INVOCATION_MARKERS = ["<!-- nirvana-os:invocation-contract:v1 -->"];
-    const refreshInvocationContract = (dst: string): boolean => {
-      if (!fs.existsSync(dst) || !fs.existsSync(agentsTemplate)) return false;
+    const refreshManagedBlock = (dst: string, label: string, olderMarkers: string[], currentMarker: string, templatePath: string, endSentinel?: string): boolean => {
+      if (!fs.existsSync(dst) || !fs.existsSync(templatePath)) return false;
       const existing = fs.readFileSync(dst, "utf8");
-      const old = OLDER_INVOCATION_MARKERS.find((m) => existing.includes(m));
+      const old = olderMarkers.find((m) => existing.includes(m));
       if (!old) return false;
       const start = existing.indexOf(old);
       const after = existing.slice(start + old.length);
-      const next = after.search(/<!-- nirvana-os:[a-z-]+:v\d+ -->/);
-      const end = next >= 0 ? start + old.length + next : existing.length;
-      const template = fs.readFileSync(agentsTemplate, "utf8").replace(/\s*$/, "\n");
-      const tail = existing.slice(end).replace(/^\s*/, "");
+      // The block ends at the next nirvana-os marker, or at the old block's own
+      // last line when the caller names it (the writing contract has no marker
+      // after it, and lines the user added below it must survive), or at EOF.
+      const nextMarker = after.search(/<!-- nirvana-os:[a-z-]+:v\d+ -->/);
+      const sentinelAt = endSentinel ? after.indexOf(endSentinel) : -1;
+      const candidates = [nextMarker >= 0 ? nextMarker : Infinity, sentinelAt >= 0 ? sentinelAt + endSentinel!.length : Infinity];
+      const cut = Math.min(...candidates);
+      const end = Number.isFinite(cut) ? start + old.length + cut : existing.length;
+      // A snippet may open with a separator (`---`) before its marker; the
+      // block replaced here starts at the marker, so drop that lead-in.
+      const template = fs.readFileSync(templatePath, "utf8").replace(/^[\s\S]*?(?=<!-- nirvana-os:)/, "").replace(/\s*$/, "\n");
+      let tail = existing.slice(end).replace(/^\s*/, "");
+      // A second copy of the old block (an earlier init appended one it did not
+      // recognise) goes with it: same bounds, same rule.
+      for (let guard = 0; guard < 8; guard++) {
+        const dupAt = tail.indexOf(old);
+        if (dupAt < 0) break;
+        const rest = tail.slice(dupAt + old.length);
+        const m2 = rest.search(/<!-- nirvana-os:[a-z-]+:v\d+ -->/);
+        const s2 = endSentinel ? rest.indexOf(endSentinel) : -1;
+        const c2 = Math.min(m2 >= 0 ? m2 : Infinity, s2 >= 0 ? s2 + endSentinel!.length : Infinity);
+        const dupEnd = Number.isFinite(c2) ? dupAt + old.length + c2 : tail.length;
+        tail = (tail.slice(0, dupAt).replace(/\s*(---\s*)?$/, "\n") + tail.slice(dupEnd).replace(/^\s*/, "\n")).replace(/^\s*/, "");
+      }
       fs.writeFileSync(dst, existing.slice(0, start) + template + (tail ? "\n" + tail : ""));
-      log.ok(`refreshed invocation contract (${old.match(/v\d+/)![0]} → ${INVOCATION_CONTRACT_MARKER.match(/v\d+/)![0]}): ${dst}`);
+      log.ok(`refreshed ${label} (${old.match(/v\d+/)![0]} → ${currentMarker.match(/v\d+/)![0]}): ${dst}`);
       return true;
     };
+    const refreshInvocationContract = (dst: string) =>
+      refreshManagedBlock(dst, "invocation contract", ["<!-- nirvana-os:invocation-contract:v1 -->"], INVOCATION_CONTRACT_MARKER, agentsTemplate);
+    const refreshWritingContract = (dst: string) =>
+      refreshManagedBlock(dst, "writing contract", ["<!-- nirvana-os:writing-contract:v1 -->"], WRITING_CONTRACT_MARKER, writingContractSnippet, "Gate flags = build fails. No auto-rewrite.");
     const ON_DEMAND_MARKER = "<!-- nirvana-os:on-demand-contract:v1 -->";
 
     // How Nirvana behaves in THIS project is the owner's call, and it matters
@@ -414,6 +437,7 @@ async function main() {
         // Phase 0: a contract written by an earlier engine is brought to the
         // current text, in place.
         refreshInvocationContract(dst);
+        refreshWritingContract(dst);
         // Phase 1: only copy the base if the file is absent (never overwrite
         // pre-existing rules the user wrote).
         if (!fs.existsSync(dst)) {

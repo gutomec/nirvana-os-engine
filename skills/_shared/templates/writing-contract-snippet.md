@@ -2,7 +2,7 @@
 
 ---
 
-<!-- nirvana-os:writing-contract:v1 -->
+<!-- nirvana-os:writing-contract:v2 -->
 ## Writing contract (for any prose deliverable)
 
 It applies to the files the user asked for: a report, a post, a chapter, a page. A chat reply, a status line or the answer to a question is not a deliverable and is not judged by it; answer those plainly and move on.
