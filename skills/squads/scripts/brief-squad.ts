@@ -27,6 +27,7 @@ import { exec, paths, EXIT, BUN_BIN } from "../../_shared/lib/bun-helpers.ts";
 import { resolveScope, enumerate, outputsDir } from "../../_shared/lib/scope.ts";
 import { briefExcerpt } from "../../_shared/lib/brief-excerpt.ts";
 import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
+import { preflightWarnings, squadPreflight } from "../../_shared/lib/squad-preflight.ts";
 
 const skillDir = path.join(paths.CLAUDE_SKILLS_DIR, "squads");
 const scope = resolveScope();
@@ -66,6 +67,12 @@ const validate = exec(`${JSON.stringify(BUN_BIN)} ${JSON.stringify(validator)} $
 if (!validate.ok) {
   console.error(validate.stdout || validate.stderr);
   process.exit(validate.code ?? EXIT.FAILURES);
+}
+
+// What the squad declares of its host (credentials, MCP servers): said here,
+// before the dispatch, instead of surfacing as an empty string mid-run.
+for (const line of preflightWarnings(squadPreflight(target, { cwd: process.cwd() }), slug)) {
+  console.error(`[brief-squad] WARN: ${line}`);
 }
 
 // Project ID (auto if not given) — same shape as brief-business.

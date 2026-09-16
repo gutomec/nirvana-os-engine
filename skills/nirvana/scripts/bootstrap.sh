@@ -19,8 +19,14 @@
 #   NIRVANA_SKIP_PATH_PERSIST, NIRVANA_HOME, SQUADS_DIR, BUSINESSES_DIR,
 #   DNA_LIBRARY              passed through to the installer untouched
 #
+# Integrity: the release publishes nirvana-os-engine.tar.gz.sha256 beside the
+# tarball (a local NIRVANA_ENGINE_TARBALL may have a <file>.sha256 sibling).
+# When a checksum is found it is verified and a mismatch stops everything;
+# when none is published, or no hasher exists, the script says so and goes on.
+#
 # Exit codes: 0 engine present or installed · 2 usage · 3 no consent ·
-#   4 missing prerequisite · 5 download failed · 7 installer failed
+#   4 missing prerequisite · 5 download failed · 6 checksum mismatch ·
+#   7 installer failed
 set -eu
 
 YES="${NIRVANA_BOOTSTRAP_YES:-}"
@@ -118,15 +124,38 @@ trap 'rm -rf "$WORK"' EXIT INT TERM
 cd "$WORK"
 local_tb="${NIRVANA_ENGINE_TARBALL:-}"
 local_tb="${local_tb#file://}"
+EXPECTED=""
 if [ -n "$local_tb" ]; then
   [ -f "$local_tb" ] || { echo "NIRVANA_ENGINE_TARBALL not found: $local_tb" >&2; exit 5; }
   cp "$local_tb" engine.tar.gz
+  [ -f "$local_tb.sha256" ] && EXPECTED="$(cut -c1-64 < "$local_tb.sha256")"
 else
   echo "Downloading $URL ..."
   if ! fetch "$URL" engine.tar.gz; then
     echo "Download failed. Behind a proxy or offline? Fetch the tarball by hand and re-run with NIRVANA_ENGINE_TARBALL=/path/to/nirvana-os-engine.tar.gz" >&2
     exit 5
   fi
+  if fetch "$URL.sha256" engine.tar.gz.sha256 2>/dev/null; then EXPECTED="$(cut -c1-64 < engine.tar.gz.sha256)"; fi
+fi
+# Verify the bytes against the published checksum when both exist.
+if [ -n "$EXPECTED" ]; then
+  if command -v sha256sum >/dev/null 2>&1; then ACTUAL="$(sha256sum engine.tar.gz | cut -c1-64)"
+  elif command -v shasum >/dev/null 2>&1; then ACTUAL="$(shasum -a 256 engine.tar.gz | cut -c1-64)"
+  elif command -v openssl >/dev/null 2>&1; then ACTUAL="$(openssl dgst -sha256 -r engine.tar.gz | cut -c1-64)"
+  else ACTUAL=""; fi
+  if [ -z "$ACTUAL" ]; then
+    echo "No sha256 tool found (sha256sum, shasum or openssl); checksum not verified." >&2
+  elif [ "$ACTUAL" != "$EXPECTED" ]; then
+    echo "Checksum mismatch: the engine tarball is not the one the release published." >&2
+    echo "  expected $EXPECTED" >&2
+    echo "  got      $ACTUAL" >&2
+    echo "Nothing was installed. Download again, or verify the source." >&2
+    exit 6
+  else
+    echo "Checksum verified (sha256 $EXPECTED)."
+  fi
+else
+  echo "No checksum published for this asset; proceeding without integrity verification."
 fi
 mkdir -p src
 tar -xzf engine.tar.gz -C src

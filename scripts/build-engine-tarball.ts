@@ -139,4 +139,13 @@ if (spawnSync("tar", ["-czf", relTarball, "."], { stdio: "inherit", cwd: STAGE, 
   process.exit(1);
 }
 rmSync(STAGE, { recursive: true, force: true });
+// The checksum sidecar, in sha256sum format, so a downloader can prove the
+// bytes that arrived are the bytes the CI produced. The release workflow
+// attaches it beside the tarball; bootstrap.sh / .ps1 and cli.mjs verify it.
+{
+  const { createHash } = await import("node:crypto");
+  const digest = createHash("sha256").update(readFileSync(TARBALL)).digest("hex");
+  writeFileSync(`${TARBALL}.sha256`, `${digest}  nirvana-os-engine.tar.gz\n`);
+  console.log(`  sha256:       ${digest}`);
+}
 console.log(`\nOK → ${TARBALL}`);

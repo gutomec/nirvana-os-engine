@@ -548,3 +548,4 @@ Os espelhos por squad (`squad-schema.json`, `agent-schema.json`, `task-schema.js
 | 5.0.0 | 2026-05-02 | camada de descoberta por capability (§22–§27) |
 | 6.0.0 | 2026-08-27 | documento de workflow, aceitação, avaliador, composição, `not_for` curto, admissão, migração (§28–§35, App-G, App-H) |
 | 6.1.0 | 2026-09-16 | tasks na altitude de resultado: `## Outcome`, seção de passos removida, `path`/`min_bytes` na aceitação, `deprescribe-tasks` (§36) |
+| 6.1.1 | 2026-09-16 | v4 §9.3 corrigido: MCP é declarado pelo squad em `dependencies.yaml` (`mcps:`) e configurado e executado pelo host; `nrv activate`, `nrv doctor` e o preflight do despacho relatam credenciais e servidores declarados, sem bloquear |

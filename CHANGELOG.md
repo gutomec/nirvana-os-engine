@@ -8,6 +8,18 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### The release ships a checksum, and every installer verifies it
+
+`scripts/build-engine-tarball.ts` writes `nirvana-os-engine.tar.gz.sha256` (sha256sum format) beside the tarball and the release workflow attaches both. `bootstrap.sh`, `bootstrap.ps1` and `npx @nirvana-os/cli` fetch the sidecar next to the asset (or read `<file>.sha256` beside a local `NIRVANA_ENGINE_TARBALL`), hash what arrived and refuse to install on a mismatch (exit 6, nothing written); when no checksum is published or no hasher exists, they say so and proceed. The CI bootstrap step asserts the verified path. Integrity, not authorship: the sidecar proves the bytes are the ones the CI produced, not who produced them.
+
+### MCP servers are declared by the squad and run by the host
+
+Squad Protocol v4 §9.3 said the harness managed MCP server lifecycle from `squad.yaml`; no engine code ever read the key and the manifest schema would have refused it. The section now says what the code does (6.1.1): a squad declares the servers it needs or works better with in `dependencies.yaml` under `mcps:` (`name`, `purpose`, `required`), and the runtime that executes the squad configures and runs them from its own configuration. `nrv activate` reports each declared server and the host file that names it (`~/.claude.json`, `~/.codex/config.toml`, `~/.gemini/settings.json`, a project `.mcp.json`) or that none does; `nrv doctor` does the same across every installed squad; the dispatch prep step and the headless runner repeat the warning and file `x_preflight_warning`. None of it blocks.
+
+### Credentials are checked where the run starts, not only in `nrv activate`
+
+`checkEnvVars()` ran inside `nrv activate` alone, and a variable a business path referenced expanded to an empty string in silence, so the failure downstream read like a model mistake. The same preflight (`_shared/lib/squad-preflight.ts`) now runs in `nrv doctor` (one WARN per squad whose `required: true` variables are unset, PASS when none), in `brief-squad.ts` before the dispatch and in the headless squad runner; the business loader says once, on stderr, which variable it expanded to nothing. Nothing blocks: a squad without its key runs degraded, as before, but now it is said.
+
 ### `nrv update --help` no longer updates
 
 Asking the command what it does ran it: `--help` fell through to the default path, fetched, wrote a fresh `~/.nirvana/skills-backup-<ts>` and re-applied the engine, and an unknown flag did the same. `--help` and `-h` print the usage and exit 0; an unknown flag is refused with exit 2. Neither touches the machine.

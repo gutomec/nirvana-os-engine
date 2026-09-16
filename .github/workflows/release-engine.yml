@@ -28,5 +28,7 @@ jobs:
       - name: Attach engine asset to the release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/nirvana-os-engine.tar.gz
+          files: |
+            dist/nirvana-os-engine.tar.gz
+            dist/nirvana-os-engine.tar.gz.sha256
           fail_on_unmatched_files: true

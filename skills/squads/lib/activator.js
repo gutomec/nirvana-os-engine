@@ -891,6 +891,21 @@ function checkEnvVars(vars) {
   return { status: 'done', kind: 'env_vars', items: results };
 }
 
+function reportMcps(mcps) {
+  const { normalizeMcps, mcpConfiguredIn } = require(path.join(__dirname, "..", "..", "_shared", "lib", "host-mcp.js"));
+  const list = normalizeMcps(mcps);
+  if (list.length === 0) return { status: "no_mcps" };
+  const items = list.map((m) => {
+    const configured_in = mcpConfiguredIn(m.name);
+    return {
+      name: m.name, purpose: m.purpose, required: m.required, configured_in,
+      status: configured_in.length ? "host_configured" : "host_missing",
+      note: configured_in.length ? null : "declared by the squad; configure it in the runtime that executes the squad",
+    };
+  });
+  return { status: "done", kind: "mcps", items };
+}
+
 function runPostInstall(commands, dryRun) {
   if (!Array.isArray(commands) || commands.length === 0) return { status: 'no_post_install' };
   const results = [];
@@ -1087,6 +1102,12 @@ function activate(slug, opts = {}) {
     log.steps.env_vars = checkEnvVars(deps.env_vars);
   }
 
+  // MCP servers (report only — the HOST runtime configures and runs them;
+  // the squad declares what it needs so the operator knows before dispatch)
+  if (deps.mcps) {
+    log.steps.mcps = reportMcps(deps.mcps);
+  }
+
   // Post-install hooks
   if (deps.post_install) {
     log.steps.post_install = runPostInstall(deps.post_install, dryRun);
@@ -1107,6 +1128,10 @@ function activate(slug, opts = {}) {
       // installs its code deps and runs in degraded mode until the user supplies
       // them. Surfaced as warnings so the caller can prompt the user.
       else if (item.status === 'missing_required' || item.status === 'missing_system_tool' || item.status === 'python_unavailable') warnings.push({ step: stepName, ...item });
+      // An MCP server the squad declares and no host configuration names: the
+      // engine cannot install it (it belongs to the runtime), so it is a warning
+      // with the file to edit, never a failure.
+      else if (item.status === 'host_missing') warnings.push({ step: stepName, ...item });
       // A post_install hook that failed. Hooks are cosmetic (reindex, print a
       // version) and the agent driving the activation is who reads this: a
       // warning it can act on, never a failure that hides the squad. Until now

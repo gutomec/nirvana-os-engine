@@ -108,7 +108,8 @@ jobs:
           # --update on both: the earlier steps already installed the engine here,
           # and a bare --dry-run rightly answers "already installed" in that case.
           sh skills/nirvana/scripts/bootstrap.sh --dry-run --update | grep -q "dry run"
-          sh skills/nirvana/scripts/bootstrap.sh --update
+          sh skills/nirvana/scripts/bootstrap.sh --update | tee "$H/boot.log"
+          grep -q "Checksum verified" "$H/boot.log"
           sh skills/nirvana/scripts/bootstrap.sh | grep -q "already installed"
           test -f "$HOME/.nirvana/skills/nirvana/SKILL.md"
           test ! -e "$HOME/.nirvana/skills/nirvana-os"

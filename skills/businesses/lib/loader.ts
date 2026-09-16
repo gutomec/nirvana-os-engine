@@ -65,10 +65,20 @@ export interface LoadedBusiness {
   warnings: string[];
 }
 
+const warnedEnv = new Set<string>();
 function expand(p: string): string {
   let out = p;
   if (out.startsWith("~")) out = path.join(os.homedir(), out.slice(1));
-  out = out.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_, n) => process.env[n] ?? "");
+  // An unset variable still expands to "" (the path must resolve to something),
+  // but it is said once: silently, the failure downstream looked like a model
+  // mistake instead of a missing credential or path.
+  out = out.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_, n) => {
+    if (process.env[n] === undefined && !warnedEnv.has(n)) {
+      warnedEnv.add(n);
+      console.error(`[loader] $${n} is not set in this environment; expanded to an empty string`);
+    }
+    return process.env[n] ?? "";
+  });
   return path.resolve(out);
 }
 

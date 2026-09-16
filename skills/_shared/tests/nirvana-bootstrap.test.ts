@@ -9,6 +9,7 @@
 // a second run says so and installs nothing; --update installs again.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -155,5 +156,64 @@ describe("bootstrap.sh usage", () => {
     const { code, out } = run("sh", home, tmp, ["--bogus"]);
     expect(code).toBe(2);
     expect(out).toContain("unknown option");
+  });
+});
+
+// ── Integrity: the checksum sidecar beside the tarball ───────────────────────
+//
+// The release publishes <asset>.sha256; a local NIRVANA_ENGINE_TARBALL may have
+// a <file>.sha256 sibling. A matching digest is reported, a mismatch stops the
+// install before anything is written (exit 6), and no sidecar at all is said
+// and tolerated (older releases have none).
+describe("bootstrap checksum", () => {
+  const kind: "sh" | "ps1" = IS_WINDOWS ? "ps1" : "sh";
+  const yes = kind === "sh" ? "--yes" : "-Yes";
+
+  function runWithTarball(home: string, tmp: string, tb: string, args: string[]): { code: number; out: string } {
+    const env = fakeHomeEnv(home, {
+      NIRVANA_ENGINE_TARBALL: tb,
+      PATH: `${path.dirname(process.execPath)}${path.delimiter}${BARE_PATH}`,
+      Path: `${path.dirname(process.execPath)}${path.delimiter}${BARE_PATH}`,
+      TMPDIR: tmp, TMP: tmp, TEMP: tmp,
+    });
+    delete env.NIRVANA_BOOTSTRAP_YES;
+    delete env.NIRVANA_PROJECT_ROOT;
+    const r = kind === "sh"
+      ? spawnSync("sh", [SH, ...args], { env, encoding: "utf8", cwd: home, timeout: spawnBudgetMs(60_000) })
+      : spawnSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", PS1, ...args], { env, encoding: "utf8", cwd: home, timeout: spawnBudgetMs(60_000) });
+    return { code: r.status ?? 1, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
+  }
+
+  test("a matching sidecar is verified and the install proceeds", () => {
+    const { home, tmp } = freshHome(`${kind}-sha-ok`);
+    const tb = path.join(tmp, "engine.tar.gz");
+    fs.copyFileSync(tarball, tb);
+    const digest = createHash("sha256").update(fs.readFileSync(tb)).digest("hex");
+    fs.writeFileSync(`${tb}.sha256`, `${digest}  nirvana-os-engine.tar.gz\n`);
+    const { code, out } = runWithTarball(home, tmp, tb, [yes]);
+    expect(code).toBe(0);
+    expect(out).toContain("Checksum verified");
+    expect(nrvAt(home)).toBe(true);
+  });
+
+  test("a mismatching sidecar stops everything with exit 6 and nothing installed", () => {
+    const { home, tmp } = freshHome(`${kind}-sha-bad`);
+    const tb = path.join(tmp, "engine.tar.gz");
+    fs.copyFileSync(tarball, tb);
+    fs.writeFileSync(`${tb}.sha256`, `${"0".repeat(64)}  nirvana-os-engine.tar.gz\n`);
+    const { code, out } = runWithTarball(home, tmp, tb, [yes]);
+    expect(code).toBe(6);
+    expect(out).toContain("Checksum mismatch");
+    expect(nrvAt(home)).toBe(false);
+    expect(installs(home)).toEqual([]);
+  });
+
+  test("no sidecar is said and tolerated", () => {
+    const { home, tmp } = freshHome(`${kind}-sha-none`);
+    const tb = path.join(tmp, "engine.tar.gz");
+    fs.copyFileSync(tarball, tb);
+    const { code, out } = runWithTarball(home, tmp, tb, [yes]);
+    expect(code).toBe(0);
+    expect(out).toContain("No checksum published");
   });
 });

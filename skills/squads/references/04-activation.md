@@ -23,6 +23,7 @@ Template: `~/.nirvana/skills/squads/templates/dependencies.template.yaml`. Refer
 | `custom_nodes` | ComfyUI-specific custom node repos | `kijai/ComfyUI-WanVideoWrapper`, etc. |
 | `models` | HuggingFace / URL downloads | `Wan-AI/Wan2.1-T2V-14B`. Items with `size_gb > 1` require user consent |
 | `env_vars` | Existing env vars to verify (NEVER written) | `GEMINI_API_KEY`, `RUNNINGHUB_API_KEY` — surfaced as set / missing_required / missing_optional |
+| `mcps` | MCP servers the squad needs or works better with (NEVER installed: the host runtime configures and runs them) | `- name: comfyui`, `purpose: "…"`, `required: false` — surfaced as host_configured / host_missing with the host file that names the server |
 | `post_install` | Hooks run after everything else | re-index registry, ping a service, run a smoke test |
 
 ### Synthesis fallback

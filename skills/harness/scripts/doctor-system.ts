@@ -778,6 +778,36 @@ for (const [reg, label] of [[squadsReg, "squads"], [bizReg, "businesses"], [clon
   }
 }
 
+// SECTION 3b: WHAT INSTALLED SQUADS DECLARE OF THE HOST — credentials and MCP
+// servers live in dependencies.yaml and belong to the runtime and the operator,
+// not to the engine. The check used to run only inside `nrv activate`; here it
+// runs over every installed squad, as warnings with the names to set or the
+// server to configure. Never a failure: a squad without its key runs degraded.
+try {
+  const { squadPreflight } = await import("../../_shared/lib/squad-preflight.ts");
+  const reg = fs.existsSync(squadsReg) ? JSON.parse(fs.readFileSync(squadsReg, "utf8")) : null;
+  const entries: Array<[string, any]> = reg?.squads ? Object.entries(reg.squads) : [];
+  let declared = 0, credWarn = 0, mcpWarn = 0, mcpDeclared = 0;
+  const lines: Array<[string, string]> = [];
+  for (const [slug, e] of entries) {
+    const dir = typeof e?.manifest_path === "string" ? path.dirname(e.manifest_path) : (typeof e?.dir === "string" ? e.dir : null);
+    if (!dir) continue;
+    const pre = squadPreflight(dir);
+    if (!pre.declared) continue;
+    declared++;
+    mcpDeclared += pre.mcps.length;
+    if (pre.missingRequired.length) { credWarn++; lines.push([`credentials: ${slug}`, `required and not set: ${pre.missingRequired.map((v) => v.name).join(", ")}`]); }
+    for (const m of pre.mcpsNotConfigured) { mcpWarn++; lines.push([`mcp: ${slug}`, `declares '${m.name}'${m.purpose ? ` (${m.purpose})` : ""}; no host config names it — configure it in the runtime that runs the squad (~/.claude.json, ~/.codex/config.toml, ~/.gemini/settings.json or .mcp.json)`]); }
+  }
+  const CAP = 20;
+  for (const [name, note] of lines.slice(0, CAP)) add(name, "WARN", note);
+  if (lines.length > CAP) add("squads: host declarations", "WARN", `${lines.length - CAP} more squad(s) with missing credentials or MCP servers — run \`nrv activate <slug> --dry-run\` per squad`);
+  if (credWarn === 0) add("credentials: required env vars", "PASS", `${declared} squad(s) declare host dependencies; every required variable is set`);
+  if (mcpDeclared > 0 && mcpWarn === 0) add("mcp: declared servers", "PASS", `${mcpDeclared} declared MCP server(s), all named in a host configuration`);
+} catch (e: any) {
+  add("squads: host declarations", "WARN", `could not read dependencies: ${e.message}`);
+}
+
 // SECTION 4: HOOKS
 try {
   const settingsPath = path.join(HOME, ".claude/settings.json");

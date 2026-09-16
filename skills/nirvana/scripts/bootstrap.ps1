@@ -6,7 +6,7 @@
 # engine release tarball, extracts it and runs the engine's own installer
 # (scripts/install.ts --no-starter). Same environment variables, same exit
 # codes: 0 present or installed, 2 usage, 3 no consent, 4 missing prerequisite,
-# 5 download failed, 7 installer failed.
+# 5 download failed, 6 checksum mismatch, 7 installer failed.
 #
 # Console strings stay unaccented on purpose: PowerShell 5.1 reads a BOM-less
 # .ps1 as ANSI and a non-ASCII character reaches the user as mojibake.
@@ -95,9 +95,11 @@ $code = 0
 try {
   $localTb = $env:NIRVANA_ENGINE_TARBALL
   if ($localTb) { $localTb = $localTb -replace '^file://', '' }
+  $expected = ""
   if ($localTb) {
     if (-not (Test-Path $localTb)) { Write-Host "NIRVANA_ENGINE_TARBALL not found: $localTb"; exit 5 }
     Copy-Item $localTb (Join-Path $work "engine.tar.gz")
+    if (Test-Path "$localTb.sha256") { $expected = (Get-Content "$localTb.sha256" -First 1).Substring(0, 64) }
   } else {
     Write-Host "Downloading $url ..."
     try { Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile (Join-Path $work "engine.tar.gz") }
@@ -105,6 +107,24 @@ try {
       Write-Host "Download failed. Behind a proxy or offline? Fetch the tarball by hand and re-run with NIRVANA_ENGINE_TARBALL=<path>"
       exit 5
     }
+    try {
+      Invoke-WebRequest -UseBasicParsing -Uri "$url.sha256" -OutFile (Join-Path $work "engine.tar.gz.sha256")
+      $expected = (Get-Content (Join-Path $work "engine.tar.gz.sha256") -First 1).Substring(0, 64)
+    } catch { $expected = "" }
+  }
+  # Verify the bytes against the published checksum when both exist.
+  if ($expected) {
+    $actual = (Get-FileHash -Algorithm SHA256 (Join-Path $work "engine.tar.gz")).Hash.ToLower()
+    if ($actual -ne $expected.ToLower()) {
+      Write-Host "Checksum mismatch: the engine tarball is not the one the release published."
+      Write-Host "  expected $expected"
+      Write-Host "  got      $actual"
+      Write-Host "Nothing was installed. Download again, or verify the source."
+      exit 6
+    }
+    Write-Host "Checksum verified (sha256 $actual)."
+  } else {
+    Write-Host "No checksum published for this asset; proceeding without integrity verification."
   }
   New-Item -ItemType Directory -Path (Join-Path $work "src") | Out-Null
   Push-Location $work

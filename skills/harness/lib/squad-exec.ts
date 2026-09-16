@@ -35,6 +35,7 @@ import { paths } from "../../_shared/lib/bun-helpers.ts";
 import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { renderResourceMap } from "../../_shared/lib/entity-resource-map.ts";
 import { resolveSetting } from "../../_shared/lib/settings.ts";
+import { preflightWarnings, squadPreflight } from "../../_shared/lib/squad-preflight.ts";
 
 /** Why a squad is running.
  *
@@ -497,6 +498,17 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
   if (!fs.existsSync(squadDir)) {
     appendAudit({ event: "squad_run_failed", project_id: args.projectId, ...bizCtx, squad_slug: args.squadSlug, reason: "squad dir not found" }, args.projectRoot);
     return { ok: false, squadSlug: args.squadSlug, sessionId: null, costUsd: null, durationMs: 0, outputsDir: outDir, error: "squad dir not found" };
+  }
+
+  // Credentials and MCP servers the squad declares of its host: a warning
+  // before the run, in the terminal and in the audit, never a block.
+  {
+    const pre = squadPreflight(squadDir, { cwd: args.projectRoot });
+    const warnings = preflightWarnings(pre, args.squadSlug);
+    for (const w of warnings) console.error(`[squad-exec] WARN: ${w}`);
+    if (warnings.length) {
+      appendAudit({ event: "x_preflight_warning", project_id: args.projectId, ...bizCtx, squad_slug: args.squadSlug, missing_required: pre.missingRequired.map((v) => v.name), mcps_not_configured: pre.mcpsNotConfigured.map((m) => m.name) }, args.projectRoot);
+    }
   }
 
   const cloneInj = squadCloneInjection(args.brief, args.projectDir);

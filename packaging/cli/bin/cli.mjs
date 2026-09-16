@@ -21,7 +21,8 @@
  *   NIRVANA_ENGINE_REPO=owner/repo                    default: gutomec/nirvana-os-engine
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, writeFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync, readdirSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir, homedir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { createInterface } from "node:readline";
@@ -95,6 +96,8 @@ async function fetchEngineTarball() {
       process.exit(1);
     }
     console.log(`Usando engine local: ${p}`);
+    if (existsSync(`${p}.sha256`)) verifyChecksum(readFileSync(p), readFileSync(`${p}.sha256`, "utf8"));
+    else console.log("Sem checksum ao lado do tarball local; seguindo sem verificação de integridade.");
     return p;
   }
   console.log(`Baixando o engine mais recente: ${ENGINE_URL}`);
@@ -111,9 +114,32 @@ async function fetchEngineTarball() {
     process.exit(1);
   }
   const buf = Buffer.from(await res.arrayBuffer());
+  // The release publishes <asset>.sha256 beside the tarball; when it is there,
+  // the bytes that arrived must be the bytes the CI produced.
+  let expected = null;
+  try {
+    const sha = await fetch(`${ENGINE_URL}.sha256`, { redirect: "follow" });
+    if (sha.ok) expected = await sha.text();
+  } catch { expected = null; }
+  if (expected) verifyChecksum(buf, expected);
+  else console.log("Nenhum checksum publicado para este asset; seguindo sem verificação de integridade.");
   const f = join(mkdtempSync(join(tmpdir(), "nrv-engine-")), "engine.tar.gz");
   writeFileSync(f, buf);
   return f;
+}
+
+function verifyChecksum(buf, sidecar) {
+  const expected = String(sidecar).trim().slice(0, 64).toLowerCase();
+  const actual = createHash("sha256").update(buf).digest("hex");
+  if (!/^[0-9a-f]{64}$/.test(expected)) { console.log("Checksum publicado ilegível; seguindo sem verificação de integridade."); return; }
+  if (actual !== expected) {
+    console.error("Checksum divergente: o tarball do engine não é o que a release publicou.");
+    console.error(`  esperado ${expected}`);
+    console.error(`  obtido   ${actual}`);
+    console.error("Nada foi instalado. Baixe de novo ou verifique a origem.");
+    process.exit(6);
+  }
+  console.log(`Checksum verificado (sha256 ${actual}).`);
 }
 
 function extract(tarball) {

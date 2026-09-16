@@ -508,10 +508,35 @@ Parse failures default to sequential (fail-closed).
 | 2 (Deferred) | Agent activation | git, supabase, context7 |
 | 3 (Deferred) | On demand | Playwright, Apify, EXA |
 
-### 9.3 MCP Integration `[HARNESS]`
+### 9.3 MCP Integration `[HOST]`
 
-MCP servers are configured in `squad.yaml` under `mcps` and in
-`.claude/settings.json`. The harness manages server lifecycle.
+A squad never runs an MCP server, and the harness never starts, stops or
+configures one. MCP servers belong to the **host runtime** that executes the
+squad (Claude Code, Codex, Gemini CLI, Antigravity, …), in that runtime's own
+configuration (`~/.claude.json` or a project `.mcp.json`, `~/.codex/config.toml`,
+`~/.gemini/settings.json`).
+
+What a squad does is **declare** the servers it needs or works better with, in
+`dependencies.yaml` under `mcps:`, beside the other host-side dependencies
+(`system:`, `env_vars:`):
+
+```yaml
+mcps:
+  - name: comfyui
+    purpose: "image and video generation through the ComfyUI graph"
+    required: false        # true = the squad cannot do its work without it
+```
+
+The declaration is information for the operator and for the runtime: `nrv
+activate <slug>` reports each declared server and the host configuration file it
+was found in (or that none names it), `nrv doctor` does the same across every
+installed squad, and the dispatch preflight repeats the warning before a run.
+None of the three blocks: a squad whose server is missing runs degraded, and the
+audit records `x_preflight_warning` with the names.
+
+Until 6.1.1 this section said the harness managed server lifecycle and that the
+declaration lived in `squad.yaml`; no engine code ever read either, and the
+manifest schema would have refused the key. The text now says what the code does.
 
 ---
 

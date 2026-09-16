@@ -8,6 +8,18 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### A release publica um checksum, e todo instalador verifica
+
+O `scripts/build-engine-tarball.ts` grava `nirvana-os-engine.tar.gz.sha256` (formato sha256sum) ao lado do tarball e o workflow de release anexa os dois. `bootstrap.sh`, `bootstrap.ps1` e `npx @nirvana-os/cli` buscam o arquivo ao lado do asset (ou leem `<arquivo>.sha256` ao lado de um `NIRVANA_ENGINE_TARBALL` local), calculam o hash do que chegou e recusam instalar quando diverge (saída 6, nada gravado); quando não há checksum publicado ou não há ferramenta de hash, dizem isso e seguem. O passo de bootstrap do CI exige o caminho verificado. Integridade, não autoria: o arquivo prova que os bytes são os que o CI produziu, não quem os produziu.
+
+### Servidores MCP são declarados pelo squad e executados pelo host
+
+O §9.3 do Squad Protocol v4 dizia que a harness gerenciava o ciclo de vida de servidores MCP a partir do `squad.yaml`; nenhum código do engine jamais leu essa chave, e o schema do manifesto a recusaria. A seção agora diz o que o código faz (6.1.1): o squad declara os servidores de que precisa ou com os quais trabalha melhor em `dependencies.yaml`, sob `mcps:` (`name`, `purpose`, `required`), e o runtime que executa o squad os configura e roda a partir da própria configuração. O `nrv activate` relata cada servidor declarado e o arquivo do host que o nomeia (`~/.claude.json`, `~/.codex/config.toml`, `~/.gemini/settings.json`, um `.mcp.json` do projeto) ou que nenhum o faz; o `nrv doctor` faz o mesmo em todo squad instalado; o passo de preparação do despacho e o executor headless repetem o aviso e registram `x_preflight_warning`. Nada disso bloqueia.
+
+### Credenciais são conferidas onde a execução começa, não só no `nrv activate`
+
+O `checkEnvVars()` rodava só dentro do `nrv activate`, e uma variável referenciada num caminho de empresa virava string vazia em silêncio, então a falha mais adiante parecia erro de modelo. O mesmo preflight (`_shared/lib/squad-preflight.ts`) agora roda no `nrv doctor` (um WARN por squad com variáveis `required: true` não definidas, PASS quando não há nenhuma), no `brief-squad.ts` antes do despacho e no executor headless; o loader de empresas diz uma vez, no stderr, qual variável expandiu para nada. Nada bloqueia: um squad sem a chave roda degradado, como antes, mas agora isso é dito.
+
 ### `nrv update --help` não atualiza mais
 
 Perguntar ao comando o que ele faz executava o comando: `--help` caía no caminho padrão, buscava a origem, gravava um `~/.nirvana/skills-backup-<ts>` novo e reaplicava o engine, e uma flag desconhecida fazia o mesmo. `--help` e `-h` imprimem o uso e saem com 0; uma flag desconhecida é recusada com 2. Nenhum dos dois toca a máquina.
