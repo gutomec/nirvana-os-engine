@@ -15,6 +15,20 @@ import { spawn } from "node:child_process";
 import * as ledger from "../run-ledger.ts";
 import type { SessionRecord } from "./sessions.ts";
 import { listArtifacts } from "./artifacts.ts";
+import { childEnvFor } from "../../../_shared/lib/child-env.ts";
+import { defaultDotenvFiles, knownSecrets, redactText } from "../../../_shared/lib/secret-scan.ts";
+
+/** The secrets a response from this server must never carry: credential-like
+ *  variables of the server and the dotenv files of the session and the home. */
+export function serveKnownSecrets(sessionDir: string): Array<[string, string]> {
+  return knownSecrets({ env: process.env, dotenvFiles: defaultDotenvFiles({ cwd: sessionDir, projectRoot: sessionDir }) });
+}
+
+/** Text with known secret values and credential-shaped content masked. */
+export function redactForClient(text: string | null, sessionDir: string): { text: string | null; redactions: number } {
+  if (text == null) return { text, redactions: 0 };
+  return redactText(text, serveKnownSecrets(sessionDir));
+}
 
 export type RunEnvelopeState = "queued" | "running" | "delivered" | "withheld" | "indeterminate" | "failed";
 
@@ -150,10 +164,13 @@ export function start(memo: RunMemo, opts: { budgetUsd?: number } = {}): Promise
   memo.state = "running";
   persist(memo);
   return new Promise((resolve) => {
+    // The dispatched agent sees an allowlist of this server's environment, not
+    // the whole of it (NIRVANA_SERVE_CHILD_ENV=inherit restores the old shape).
+    const parentEnv = childEnvFor(process.env, { mode: process.env.NIRVANA_SERVE_CHILD_ENV === "inherit" ? "inherit" : "declared", runtime: null });
     const child = spawn(bin, args, {
       cwd: memo.session.dir,
       env: {
-        ...process.env,
+        ...parentEnv,
         // Where the intelligence is FOUND (merge: the operator's library,
         // project entries winning on conflict). Where files are WRITTEN is
         // decided separately, below: always inside this session.
@@ -223,9 +240,9 @@ export function envelope(memo: RunMemo): RunEnvelope {
     finished_at: memo.finished_at,
     exit_code: memo.exit_code,
     artifacts,
-    summary: readIf(path.join(memo.outputs_root, "_SUMMARY.md"))
-      ?? readIf(path.join(memo.outputs_root, "outputs", "_SUMMARY.md")),
-    reservations: readIf(path.join(memo.outputs_root, "_QA-RESERVATIONS.md")),
+    summary: redactForClient(readIf(path.join(memo.outputs_root, "_SUMMARY.md"))
+      ?? readIf(path.join(memo.outputs_root, "outputs", "_SUMMARY.md")), memo.session.dir).text,
+    reservations: redactForClient(readIf(path.join(memo.outputs_root, "_QA-RESERVATIONS.md")), memo.session.dir).text,
     error: memo.error,
   };
 }

@@ -52,7 +52,16 @@ import { randomUUID } from "node:crypto";
 import { EFFORT_LEVELS, isEffortLevel, resolvePinnedEffort, resolveSystemModel } from "./system-model.ts";
 import { resolveSetting } from "./settings.ts";
 import { childEnv } from "./orca.ts";
+import { childEnvFor, type ChildEnvMode } from "./child-env.ts";
 import { runOrcaWorker } from "./orca-worker.ts";
+
+/** `execution.child_env`. The variable NIRVANA_CHILD_ENV wins over any file
+ *  (settings precedence), which is how a child that was itself filtered — it
+ *  carries the stamp — filters its own children the same way. */
+function childEnvModeSetting(): ChildEnvMode {
+  try { return String(resolveSetting("execution.child_env").value) === "declared" ? "declared" : "inherit"; }
+  catch { return "inherit"; }
+}
 
 const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
   || (fs.existsSync(path.join(os.homedir(), ".nirvana", "skills")) ? path.join(os.homedir(), ".nirvana", "skills") : path.join(os.homedir(), ".claude", "skills"));
@@ -1390,7 +1399,12 @@ function driverSpawnSync(cmd: string, args: string[], options: SpawnSyncOptions 
   // childEnv(): the live process.env minus Orca's pane identity, so a child the
   // engine spawns inside an Orca terminal is not reported to Orca as that
   // pane's agent (see _shared/lib/orca.js). Outside Orca it is process.env.
-  const baseEnv = childEnv();
+  // childEnvFor(): in `declared` mode (execution.child_env, or NIRVANA_CHILD_ENV
+  // stamped by a parent that already filtered) the child sees only the base the
+  // OS needs, the engine's scope, the credentials of the runtime being spawned
+  // and the variables the installed squads declare — never the operator's
+  // whole environment.
+  const baseEnv = childEnvFor(childEnv(), { mode: childEnvModeSetting(), runtime: spawnAsRuntime ?? null });
   options = {
     env: spawnAsRuntime ? { ...baseEnv, NIRVANA_HOST_RUNTIME: spawnAsRuntime } : baseEnv,
     ...(exec.shell ? { shell: true } : {}),

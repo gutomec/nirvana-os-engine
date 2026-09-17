@@ -6,6 +6,20 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Unreleased
+
+### Um agente despachado vê uma lista do ambiente, não uma cópia dele
+
+Todo filho que o engine criava herdava o `process.env` inteiro do pai; um agente com shell tinha `printenv`, e com ele cada credencial do operador que iniciou o processo, precisasse ou não. `execution.child_env` (`NIRVANA_CHILD_ENV`) ganha `declared`: o filho recebe a base que o sistema e as ferramentas precisam, o escopo `NIRVANA_*` / `HARNESS_*` do engine, as credenciais do runtime que vai executar, as `env_vars` que os squads instalados declaram em `dependencies.yaml` (lidas do registry) e o que `NIRVANA_CHILD_ENV_EXTRA` nomear; todo o resto fica ausente, e o filho recebe a marca para filtrar os próprios filhos do mesmo jeito. O padrão local continua `inherit`. O `nrv serve` roda `declared` salvo `NIRVANA_SERVE_CHILD_ENV=inherit`.
+
+### Uma entrega nunca sai carregando um segredo
+
+A rubrica `secret-leak` roda em todo artefato de texto que o portão julga. Se o artefato contém o valor de um segredo que esta máquina conhece (uma variável de nome credencial no processo, uma linha dos arquivos dotenv do projeto ou do engine), a rubrica falha, a entrega é retida e o veredito nomeia a variável, nunca o valor. Conteúdo que só parece credencial (bloco de chave privada, prefixo de token de fornecedor, despejo de linhas `CHAVE=valor`) passa com reserva, porque documentação e `.env.example` têm essa forma de propósito. O `nrv serve` mascara valores conhecidos como `[redacted:NOME]` e formas de credencial como `[redacted:tipo]` no `summary` e nas `reservations` do envelope, no stream de eventos e no download de artefatos de texto (`X-Nirvana-Redactions` conta as máscaras); binários saem como estão.
+
+### O `nrv init` nega os arquivos dotenv do projeto ao Claude Code
+
+O `nrv init` mescla `permissions.deny: ["Read(./.env)", "Read(./.env.*)", "Read(./**/.env)", "Read(./**/.env.*)"]` em `<projeto>/.claude/settings.json`, mantendo o que o projeto já tinha, sem duplicar regra e deixando um arquivo inválido como está com um aviso. Primeira camada, não a garantia: a propriedade do arquivo e um uid separado são, e a página nova `docs/architecture/serve-hardening.md` diz como rodar o `nrv serve` num servidor de modo que o `.env` do projeto fique fora do alcance do agente, com uma unidade systemd de exemplo.
+
 ## 0.13.13 — 2026-09-16
 
 ### Um squad roda no runtime em que o usuário está trabalhando

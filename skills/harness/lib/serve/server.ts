@@ -19,6 +19,17 @@ import { listRuntimes } from "../../../_shared/lib/host-agent-driver.ts";
 import { parseAuditLine } from "../../../_shared/lib/cloudevents.js";
 import * as outbox from "./webhook-outbox.ts";
 
+/** Text artifacts go out redacted (known secret values, credential-shaped
+ *  content); binaries go out as they are. */
+function artifactResponse(abs: string, contentType: string, sessionDir: string, h: Record<string, string>): Response {
+  const textual = /^(text\/|application\/(json|x-yaml|yaml|xml|javascript|typescript))/.test(contentType) || /\.(md|txt|json|ya?ml|html|css|ts|js|py|csv|tsv|xml|svg)$/i.test(abs);
+  if (!textual) {
+    return new Response(Bun.file(abs), { headers: { "Content-Type": contentType, "Content-Disposition": `attachment; filename="${path.basename(abs)}"`, ...h } });
+  }
+  const { text, redactions } = runsLib.redactForClient(fs.readFileSync(abs, "utf8"), sessionDir);
+  return new Response(text ?? "", { headers: { "Content-Type": contentType, "Content-Disposition": `attachment; filename="${path.basename(abs)}"`, ...(redactions ? { "X-Nirvana-Redactions": String(redactions) } : {}), ...h } });
+}
+
 export interface ServeOpts {
   port: number;
   host: string;
@@ -176,9 +187,7 @@ export function startServer(opts: ServeOpts) {
         if (!memo || memo.session.id !== mArt[1] || memo.key_id !== key.id) return json({ error: "run_not_found" }, 404, h);
         const abs = resolveArtifact(memo.outputs_root, decodeURIComponent(mArt[3]));
         if (!abs) return json({ error: "artifact_not_found" }, 404, h);
-        return new Response(Bun.file(abs), {
-          headers: { "Content-Type": contentTypeFor(abs), "Content-Disposition": `attachment; filename="${path.basename(abs)}"`, ...h },
-        });
+        return artifactResponse(abs, contentTypeFor(abs), memo.session.dir, h);
       }
 
       // ── jobs (session-agnostic — the polling floor) ──────────────────────
@@ -210,9 +219,7 @@ export function startServer(opts: ServeOpts) {
         if (artifacts.length === 1) {
           const abs = resolveArtifact(memo.outputs_root, artifacts[0].path);
           if (abs) {
-            return new Response(Bun.file(abs), {
-              headers: { "Content-Type": artifacts[0].content_type, "Content-Disposition": `attachment; filename="${path.basename(abs)}"`, ...h },
-            });
+            return artifactResponse(abs, artifacts[0].content_type, memo.session.dir, h);
           }
         }
         return json({ artifacts, hint: artifacts.length ? `download one by path: GET /v1/jobs/${mJobResult[1]}/artifacts/{path}` : "no artifacts produced" }, 200, h);
@@ -284,8 +291,10 @@ function sseAuditStream(memo: ReturnType<typeof runsLib.get> & {}, extraHeaders:
       // the dead controller, and an uncaught exception inside a bare
       // `setInterval` callback took down the whole test process, not just
       // this one request.
+      // Events are text an agent wrote (tool output, summaries): a secret value
+      // in them is masked before it leaves, like an artifact.
       const send = (obj: unknown) => {
-        try { controller.enqueue(enc.encode(`data: ${JSON.stringify(obj)}\n\n`)); }
+        try { controller.enqueue(enc.encode(`data: ${runsLib.redactForClient(JSON.stringify(obj), memo.session.dir).text}\n\n`)); }
         catch { if (timer) clearInterval(timer); }
       };
       const pump = () => {

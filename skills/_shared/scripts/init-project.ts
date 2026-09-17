@@ -120,6 +120,30 @@ function copyFile(src: string, dst: string, overwrite = false) {
  * If `dst` doesn't exist, it's created from scratch with just the snippet.
  * Preserves the user's pre-existing content untouched (we never overwrite).
  */
+/** The rules `nrv init` writes into `<target>/.claude/settings.json`
+ *  (`permissions.deny`), merged into whatever the project already has. */
+export const CLAUDE_DENY_RULES = ["Read(./.env)", "Read(./.env.*)", "Read(./**/.env)", "Read(./**/.env.*)"];
+
+function ensureClaudeDenyRules(target: string): boolean {
+  const dir = path.join(target, ".claude");
+  const file = path.join(dir, "settings.json");
+  let settings: any = {};
+  if (fs.existsSync(file)) {
+    try { settings = JSON.parse(fs.readFileSync(file, "utf8")); }
+    catch { log.warn(`not valid JSON, left alone: ${file}`); return false; }
+    if (!settings || typeof settings !== "object" || Array.isArray(settings)) { log.warn(`unexpected shape, left alone: ${file}`); return false; }
+  }
+  const perms = (settings.permissions && typeof settings.permissions === "object") ? settings.permissions : (settings.permissions = {});
+  const deny: string[] = Array.isArray(perms.deny) ? perms.deny : (perms.deny = []);
+  const missing = CLAUDE_DENY_RULES.filter((r) => !deny.includes(r));
+  if (!missing.length) { log.info(`dotenv deny rules already present: ${file}`); return false; }
+  deny.push(...missing);
+  ensureDir(dir);
+  fs.writeFileSync(file, JSON.stringify(settings, null, 2) + "\n", "utf8");
+  log.ok(`wrote dotenv deny rules (${missing.length}) to ${file}`);
+  return true;
+}
+
 function appendWithMarker(src: string, dst: string, marker: string, label = "snippet"): boolean {
   if (!fs.existsSync(src)) {
     log.warn(`snippet missing: ${src}`);
@@ -462,6 +486,11 @@ async function main() {
     } else {
       log.warn(`AGENTS.md template missing: ${agentsTemplate} — skipping agent contract`);
     }
+
+    // Claude Code deny rules for the project's dotenv files: `deny` applies
+    // before the folder is trusted, to Read and to the shell alike. A layer,
+    // not the guarantee: file ownership and the child-env allowlist are.
+    ensureClaudeDenyRules(target);
 
     if (scope && scope !== "global") {
       const envPath = path.join(target, ".env");

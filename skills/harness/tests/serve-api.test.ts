@@ -36,6 +36,13 @@ if (process.env.FIXTURE_RESERVATIONS === "1") {
 if (process.env.FIXTURE_BUDGET_ECHO === "1") {
   fs.writeFileSync(path.join(out, "budget.txt"), String(val("--max-budget")));
 }
+if (process.env.FIXTURE_ENV_DUMP === "1") {
+  fs.writeFileSync(path.join(out, "env-dump.txt"), ["CANARY_SECRET_TOKEN", "FIXTURE_ENV_DUMP", "NIRVANA_CHILD_ENV"].map((k) => k + "=" + (process.env[k] ?? "absent")).join("\\n") + "\\n");
+}
+if (process.env.FIXTURE_LEAK === "1") {
+  fs.writeFileSync(path.join(out, "deliverable.md"), "# entrega\\n\\nthe key is " + process.env.LEAKED_API_KEY + "\\n");
+  fs.writeFileSync(path.join(out, "_SUMMARY.md"), "summary mentions " + process.env.LEAKED_API_KEY);
+}
 process.exit(parseInt(process.env.FIXTURE_EXIT || "0", 10));
 `);
 
@@ -73,6 +80,9 @@ beforeAll(async () => {
   process.env.NIRVANA_SERVE_DISPATCH_BIN = dispatchFixture;
   process.env.NIRVANA_RUN_LEDGER_DB = join(root, "ledger.sqlite");
   process.env.NIRVANA_SERVE_WEBHOOK_SWEEP_MS = "30";
+  // The served child receives an allowlist of the environment; the fixture's
+  // switches are named so they reach it.
+  process.env.NIRVANA_CHILD_ENV_EXTRA = "FIXTURE_RESERVATIONS,FIXTURE_BUDGET_ECHO,FIXTURE_EXIT,FIXTURE_ENV_DUMP";
   mkdirSync(serveDir, { recursive: true });
 
   const { keygen } = await import("../lib/serve/auth.ts");
@@ -440,4 +450,49 @@ describe("webhook delivery — signed, timed, idempotent, referenced not embedde
       receiver.stop(true);
     }
   }, spawnBudgetMs(1));
+});
+
+describe("secrets hardening", () => {
+  test("the dispatched child does not see an undeclared secret of the server; a declared name passes", async () => {
+    process.env.CANARY_SECRET_TOKEN = "canary-value-0123456789";
+    process.env.FIXTURE_ENV_DUMP = "1";
+    try {
+      const s = await (await api("/v1/sessions", { method: "POST" })).json();
+      const r = await api(`/v1/sessions/${s.session_id}/briefs`, { method: "POST", body: JSON.stringify({ brief: "dump env" }) });
+      expect(r.status).toBe(202);
+      const { trace_id } = await r.json();
+      const env = await waitTerminal(s.session_id, trace_id);
+      expect(["delivered", "withheld", "indeterminate", "failed"]).toContain(env.state);
+      const dump = await api(`/v1/sessions/${s.session_id}/runs/${trace_id}/artifacts/env-dump.txt`);
+      expect(dump.status).toBe(200);
+      const text = await dump.text();
+      expect(text).toContain("CANARY_SECRET_TOKEN=absent");
+      expect(text).toContain("FIXTURE_ENV_DUMP=1");
+      expect(text).toContain("NIRVANA_CHILD_ENV=declared");
+    } finally {
+      delete process.env.CANARY_SECRET_TOKEN;
+      delete process.env.FIXTURE_ENV_DUMP;
+    }
+  }, spawnBudgetMs(20_000));
+
+  test("a summary and an artifact that carry a known secret value leave the server redacted", async () => {
+    process.env.LEAKED_API_KEY = "leaked-value-9876543210";
+    process.env.FIXTURE_LEAK = "1";
+    process.env.NIRVANA_CHILD_ENV_EXTRA = `${process.env.NIRVANA_CHILD_ENV_EXTRA},FIXTURE_LEAK,LEAKED_API_KEY`;
+    try {
+      const s = await (await api("/v1/sessions", { method: "POST" })).json();
+      const r = await api(`/v1/sessions/${s.session_id}/briefs`, { method: "POST", body: JSON.stringify({ brief: "leak it" }) });
+      const { trace_id } = await r.json();
+      const env = await waitTerminal(s.session_id, trace_id);
+      expect(String(env.summary)).toContain("[redacted:LEAKED_API_KEY]");
+      expect(String(env.summary)).not.toContain("leaked-value-9876543210");
+      const art = await api(`/v1/sessions/${s.session_id}/runs/${trace_id}/artifacts/deliverable.md`);
+      const text = await art.text();
+      expect(text).not.toContain("leaked-value-9876543210");
+      expect(art.headers.get("X-Nirvana-Redactions")).toBe("1");
+    } finally {
+      delete process.env.LEAKED_API_KEY;
+      delete process.env.FIXTURE_LEAK;
+    }
+  }, spawnBudgetMs(20_000));
 });

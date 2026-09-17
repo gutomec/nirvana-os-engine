@@ -210,6 +210,9 @@ export const SETTINGS = {
   "execution.effort": stringSetting("execution.effort",
     "Effort fixado nos spawns do Nirvana; vazio (padrão) = não especifica nada e o CLI usa o padrão do usuário.",
     { env: "NIRVANA_EFFORT", expects: "low | medium | high | xhigh | max ou vazio" }),
+  "execution.child_env": enumSetting("execution.child_env",
+    "Ambiente que um agente despachado recebe: inherit = o ambiente inteiro do processo pai (padrão local); declared = só a base do sistema, o escopo NIRVANA_*, as credenciais do runtime que vai rodar e as env_vars que os squads instalados declaram (padrão do nrv serve).",
+    ["inherit", "declared"], { default: "inherit", env: "NIRVANA_CHILD_ENV" }),
   // 2026 models read what they need when they need it (Anthropic: context on
   // demand; OpenAI: "prompting the model to read files before every edit is a
   // great way to burn context"). A whole persona pasted three times over made

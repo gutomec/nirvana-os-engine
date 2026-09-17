@@ -2,7 +2,7 @@
 
 ## 1. Princípios
 
-CLI, Glance e `nrv serve` são adapters dos mesmos application services. Base HTTP proposta: `/api/v1`. Toda escrita exige `Idempotency-Key`; atualização concorrente usa `If-Match`; erro usa `application/problem+json` e inclui `correlation_id`.
+CLI, Glance e `nrv serve` são adapters dos mesmos application services. O que um agente despachado pelo `nrv serve` alcança do ambiente e dos arquivos do servidor, e o que nunca sai numa resposta, está em [Operação do `nrv serve` com segredos](serve-hardening.md). Base HTTP proposta: `/api/v1`. Toda escrita exige `Idempotency-Key`; atualização concorrente usa `If-Match`; erro usa `application/problem+json` e inclui `correlation_id`.
 
 ## 2. Services internos
 

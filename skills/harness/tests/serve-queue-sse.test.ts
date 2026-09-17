@@ -65,6 +65,7 @@ beforeAll(async () => {
   process.env.NIRVANA_SERVE_DISPATCH_BIN = dispatchFixture;
   process.env.NIRVANA_RUN_LEDGER_DB = join(root, "ledger.sqlite");
   process.env.FIXTURE_MARKS = marksFile;
+  process.env.NIRVANA_CHILD_ENV_EXTRA = "FIXTURE_MARKS,FIXTURE_MS";
   mkdirSync(join(root, "serve"), { recursive: true });
   writeFileSync(marksFile, "");
 

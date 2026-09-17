@@ -29,7 +29,7 @@ describe(".css is gateable", () => {
   });
 
   test(".css maps to the css-composite-alpha rubric", () => {
-    expect(rubricsForExt(".css")).toEqual(["css-composite-alpha"]);
+    expect(rubricsForExt(".css")).toEqual(["css-composite-alpha", "secret-leak"]);
   });
 
   test("gateableFiles() picks up a .css deliverable alongside .html — it did not before this cut", () => {

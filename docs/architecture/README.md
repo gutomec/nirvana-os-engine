@@ -46,6 +46,7 @@ Este diretório é a fonte canônica para a evolução integrada do Run Kernel, 
 
 26. [Portão de admissão `nrv validate`](validate-gate.md)
 27. [O diretório do projeto e como cada runtime entra nele](project-directory-and-runtimes.md)
+28. [Operação do `nrv serve` com segredos](serve-hardening.md)
 
 ## ADRs
 

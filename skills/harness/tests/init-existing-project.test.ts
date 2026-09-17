@@ -235,3 +235,29 @@ describe("a duplicated old block is collapsed by the refresh", () => {
     expect(c.match(/Gate flags = build fails/g)!.length).toBe(1);
   }, INIT_TIMEOUT_MS);
 });
+
+describe("Claude Code deny rules for dotenv files", () => {
+  test("init writes permissions.deny for .env files, merges into an existing settings.json, and is idempotent", () => {
+    const dir = project("deny-rules", { "CLAUDE.md": "# Mine\n" });
+    fs.mkdirSync(path.join(dir, ".claude"), { recursive: true });
+    fs.writeFileSync(path.join(dir, ".claude", "settings.json"), JSON.stringify({ permissions: { allow: ["Bash(npm test)"], deny: ["Read(./.env)"] }, other: true }, null, 2));
+    runInit(dir);
+    const s = JSON.parse(fs.readFileSync(path.join(dir, ".claude", "settings.json"), "utf8"));
+    expect(s.other).toBe(true);
+    expect(s.permissions.allow).toEqual(["Bash(npm test)"]);
+    expect(s.permissions.deny).toContain("Read(./.env)");
+    expect(s.permissions.deny).toContain("Read(./.env.*)");
+    expect(s.permissions.deny.filter((r: string) => r === "Read(./.env)").length).toBe(1);
+    const first = fs.readFileSync(path.join(dir, ".claude", "settings.json"), "utf8");
+    runInit(dir);
+    expect(fs.readFileSync(path.join(dir, ".claude", "settings.json"), "utf8")).toBe(first);
+  }, INIT_TIMEOUT_MS);
+
+  test("a settings.json that is not valid JSON is left alone", () => {
+    const dir = project("deny-rules-bad", { "CLAUDE.md": "# Mine\n" });
+    fs.mkdirSync(path.join(dir, ".claude"), { recursive: true });
+    fs.writeFileSync(path.join(dir, ".claude", "settings.json"), "{ not json");
+    runInit(dir);
+    expect(fs.readFileSync(path.join(dir, ".claude", "settings.json"), "utf8")).toBe("{ not json");
+  }, INIT_TIMEOUT_MS);
+});

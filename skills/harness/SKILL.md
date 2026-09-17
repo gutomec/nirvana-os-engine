@@ -549,6 +549,15 @@ carries the gate verdict and promotes `_SUMMARY.md` and
 `_QA-RESERVATIONS.md` to fields, so a delivery accepted with reservations
 arrives honest rather than silently.
 
+The dispatched child sees an allowlist of the server's environment, never a
+copy of it (`execution.child_env = declared`: the OS base, the engine's
+`NIRVANA_*` scope, the credentials of the runtime being run, and the
+`env_vars` the installed squads declare); `NIRVANA_SERVE_CHILD_ENV=inherit`
+restores the old shape. Every text artifact passes the `secret-leak` rubric
+(a known secret VALUE withholds the delivery; credential-shaped content passes
+with a reservation), and the envelope, the event stream and text downloads
+leave the server with known values masked as `[redacted:NAME]`.
+
 ---
 
 ## Optional subsystems

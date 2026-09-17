@@ -58,6 +58,7 @@ Gerada a partir do schema. `nrv config explain <chave>` mostra a descrição de 
 | `execution.dna_injection` | `NIRVANA_DNA_INJECTION` | `reference` | global, projeto | reference / fragments / full |
 | `briefing.altitude` | `NIRVANA_BRIEF_ALTITUDE` | `outcome` | global, projeto | outcome / guided / prescriptive |
 | `execution.headless_skip_permissions` | `NIRVANA_HEADLESS_SKIP_PERMISSIONS` | `true` | global, projeto | true / false |
+| `execution.child_env` | `NIRVANA_CHILD_ENV` | `inherit` | global, projeto | inherit / declared (o `nrv serve` usa `declared` salvo `NIRVANA_SERVE_CHILD_ENV=inherit`) |
 | `glance.execution` | `NIRVANA_GLANCE_EXECUTION` | `true` | global, projeto | true / false |
 | `glance.maestro_max_budget_usd` | nenhuma | `5` | global, projeto | número >= 0 (USD); 0 = sem teto |
 | `runtime.provider_catalog_dir` | `NIRVANA_PROVIDER_CATALOG_DIR` | `""` | global, projeto | lista de caminhos separados pelo delimitador do sistema, ou vazio |

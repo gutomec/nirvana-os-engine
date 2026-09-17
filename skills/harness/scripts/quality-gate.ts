@@ -60,31 +60,34 @@ export const GATEABLE_EXTS: ReadonlySet<string> = new Set([
 
 export function rubricsForExt(ext: string): string[] {
   switch (ext.toLowerCase()) {
+    // secret-leak rides every text artifact: a deliverable never carries the
+    // value of a credential this machine holds (withheld), and credential-shaped
+    // content is flagged for redaction on the way out.
     case ".md":
     case ".txt":
-      return ["correctness", "structure-bounds", "wiki-lint"];
+      return ["correctness", "structure-bounds", "wiki-lint", "secret-leak"];
     case ".json":
-      return ["json-valid"];
+      return ["json-valid", "secret-leak"];
     case ".yaml":
     case ".yml":
-      return ["yaml-valid"];
+      return ["yaml-valid", "secret-leak"];
     case ".png":
     case ".jpg":
     case ".jpeg":
     case ".webp":
       return ["brief-fidelity"];
     case ".html":
-      return ["html-valid"];
+      return ["html-valid", "secret-leak"];
     case ".css":
-      return ["css-composite-alpha"];
+      return ["css-composite-alpha", "secret-leak"];
     case ".pdf":
       return ["pdf-valid"];
     case ".ts":
     case ".js":
     case ".py":
-      return ["correctness"];
+      return ["correctness", "secret-leak"];
     default:
-      return ["correctness"];
+      return ["correctness", "secret-leak"];
   }
 }
 
