@@ -231,6 +231,10 @@ Tudo o que o engine faz com um runtime embrulha o brief: uma persona, a diretiva
 
 ## 0.13.14 — 2026-09-17
 
+### A instalação de hooks preserva a configuração existente
+
+O instalador de hooks agora reconhece tabelas de confiança do Codex escritas com os dois estilos de string TOML, para que uma segunda instalação atualize o registro existente em vez de acrescentar uma tabela duplicada. Claude Code, Gemini-CLI e Antigravity deixam arquivos de configuração inválidos intactos e removem apenas handlers do Nirvana de um grupo de hooks compartilhado. Hermes valida YAML e o JSON de permissões semanticamente, recusa fontes inválidas ou fora do schema e adiciona apenas entradas ausentes de ponte, hook e aprovação, inclusive reparando permissões após um YAML sem mudança. Cada arquivo JSON, TOML ou YAML alterado é validado a partir de uma cópia candidata, conferido outra vez antes da substituição, recebe backup único, é relido após a publicação e mantém seu modo de arquivo.
+
 ### Um agente despachado vê uma lista do ambiente, não uma cópia dele
 
 Todo filho que o engine criava herdava o `process.env` inteiro do pai; um agente com shell tinha `printenv`, e com ele cada credencial do operador que iniciou o processo, precisasse ou não. `execution.child_env` (`NIRVANA_CHILD_ENV`) ganha `declared`: o filho recebe a base que o sistema e as ferramentas precisam, o escopo `NIRVANA_*` / `HARNESS_*` do engine, as credenciais do runtime que vai executar, as `env_vars` que os squads instalados declaram em `dependencies.yaml` (lidas do registry) e o que `NIRVANA_CHILD_ENV_EXTRA` nomear; todo o resto fica ausente, e o filho recebe a marca para filtrar os próprios filhos do mesmo jeito. O padrão local continua `inherit`. O `nrv serve` roda `declared` salvo `NIRVANA_SERVE_CHILD_ENV=inherit`.

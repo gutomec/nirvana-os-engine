@@ -37,12 +37,20 @@ function run(args: string[], root: string, envOverride: Record<string, string> =
     HOME: root,
     USERPROFILE: root,
     NIRVANA_SKILLS_DIR: join(REPO, "skills"),
+    PIP_CACHE_DIR: join(root, ".pip-cache"),
+    PIP_TARGET: join(root, ".pip-target"),
+    PYTHONUSERBASE: join(root, ".python-user"),
+    PIP_NO_INDEX: "1",
+    PIP_DISABLE_PIP_VERSION_CHECK: "1",
     SHELL: "/bin/zsh",
     ...envOverride,
   };
   delete env.NIRVANA_SKIP_PATH_PERSIST;
   delete env.CODEX_HOME; // ~/.codex under the fake HOME, never the real one // this test targets the write it exists to reverse
-  const r = spawnSync(process.execPath, [INSTALL, ...args], { cwd: root, env, encoding: "utf8" });
+  delete env.HERMES_HOME;
+  delete env.NIRVANA_CONNECTOR_BRIDGE;
+  delete env.NIRVANA_CONNECTOR_BRIDGE_ARGS_JSON;
+  const r = spawnSync(process.execPath, [INSTALL, ...args], { cwd: root, env, encoding: "utf8", windowsHide: true });
   return { code: r.status ?? -1, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
 }
 
@@ -220,4 +228,69 @@ describe("nrv install — Codex: hooks.json AND the trust record, symmetric on u
     expect(readCodexHookState(join(codexDir, "config.toml")).size).toBe(0);
     expect(readFileSync(join(codexDir, "config.toml"), "utf8").trim()).toBe(configBefore.trim());
   }, 60_000);
+
+  test("reports a malformed config.toml as a failed install and leaves it unchanged", () => {
+    const root = home();
+    const codexDir = join(root, ".codex");
+    mkdirSync(codexDir, { recursive: true });
+    const malformed = '[hooks.state."same"]\ntrusted_hash = "a"\n[hooks.state."same"]\ntrusted_hash = "b"\n';
+    writeFileSync(join(codexDir, "config.toml"), malformed, "utf8");
+    const install = run([], root);
+    expect(install.code).toBe(1);
+    expect(install.out).toContain("refusing to modify invalid TOML");
+    expect(readFileSync(join(codexDir, "config.toml"), "utf8")).toBe(malformed);
+  }, 30_000);
+});
+
+describe("nrv install — existing JSON settings are preserved", () => {
+  test("is byte-idempotent for Claude Code, Gemini-CLI and Antigravity", () => {
+    const root = home();
+    for (const dir of [".claude", ".gemini", ".antigravity"]) mkdirSync(join(root, dir), { recursive: true });
+    expect(run([], root).code).toBe(0);
+    const first = new Map([".claude", ".gemini", ".antigravity"].map((dir) => [dir, readFileSync(join(root, dir, "settings.json"), "utf8")]));
+    expect(run([], root).code).toBe(0);
+    for (const [dir, raw] of first) {
+      expect(readFileSync(join(root, dir, "settings.json"), "utf8")).toBe(raw);
+      const doc = JSON.parse(raw);
+      for (const groups of Object.values(doc.hooks) as any[]) {
+        expect(groups.flatMap((group: any) => group.hooks)).toHaveLength(1);
+      }
+    }
+  }, 30_000);
+
+  test("refuses malformed settings for every JSON harness without overwriting any of them", () => {
+    const root = home();
+    for (const dir of [".claude", ".gemini", ".antigravity"]) {
+      mkdirSync(join(root, dir), { recursive: true });
+      writeFileSync(join(root, dir, "settings.json"), '{"hooks": [}', "utf8");
+    }
+    const install = run([], root);
+    expect(install.code).toBe(1);
+    for (const dir of [".claude", ".gemini", ".antigravity"]) {
+      expect(install.out).toMatch(new RegExp(`${dir === ".claude" ? "Claude Code" : dir === ".gemini" ? "Gemini-CLI" : "Antigravity"} — invalid JSON:.*; left untouched`));
+      expect(readFileSync(join(root, dir, "settings.json"), "utf8")).toBe('{"hooks": [}');
+      expect(readdirSync(join(root, dir)).filter((name) => name.includes("nirvana-backup")).length).toBe(0);
+    }
+  }, 30_000);
+
+  test("keeps a user handler that shares a matcher group with an existing Nirvana hook", () => {
+    const root = home();
+    const claudeDir = join(root, ".claude");
+    mkdirSync(claudeDir, { recursive: true });
+    const mixed = {
+      hooks: { PreToolUse: [{ matcher: "Bash", enabled: false, hooks: [
+        { name: "user-own-hook", type: "command", command: "echo mine" },
+        { name: "nirvana-audit-pre", type: "command", command: "bun /tmp/audit-emit-from-hook.ts pre claude-code" },
+      ] }] },
+    };
+    writeFileSync(join(claudeDir, "settings.json"), JSON.stringify(mixed, null, 2) + "\n", "utf8");
+    expect(run([], root).code).toBe(0);
+    const afterInstall = JSON.parse(readFileSync(join(claudeDir, "settings.json"), "utf8"));
+    const preserved = afterInstall.hooks.PreToolUse.find((group: any) => group.hooks.some((hook: any) => hook.name === "user-own-hook"));
+    expect(preserved.enabled).toBe(false);
+    expect(preserved.hooks).toHaveLength(1);
+    expect(run(["--uninstall"], root).code).toBe(0);
+    const afterUninstall = JSON.parse(readFileSync(join(claudeDir, "settings.json"), "utf8"));
+    expect(afterUninstall.hooks.PreToolUse).toEqual([{ matcher: "Bash", enabled: false, hooks: [{ name: "user-own-hook", type: "command", command: "echo mine" }] }]);
+  }, 30_000);
 });
