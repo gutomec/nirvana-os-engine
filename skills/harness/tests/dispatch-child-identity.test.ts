@@ -20,7 +20,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { writeFakeCli } from "./helpers/fake-cli.ts";
-import { spawnBudgetMs } from "./helpers/test-budgets.ts";
+import { spawnBudgetMs, waitFor } from "./helpers/test-budgets.ts";
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-child-identity-test-"));
 const SKILLS = path.resolve(import.meta.dir, "..", "..");
@@ -115,7 +115,7 @@ describe("dispatch child identity — the kill targets the CLI child, not the di
 
     try {
       // Wait for the run_id (written the instant the row opens).
-      for (let i = 0; i < 50 && !fs.existsSync(runIdFile); i++) await Bun.sleep(100);
+      await waitFor(() => fs.existsSync(runIdFile));
       expect(fs.existsSync(runIdFile)).toBe(true);
       const runId = fs.readFileSync(runIdFile, "utf8").trim();
 
@@ -123,7 +123,7 @@ describe("dispatch child identity — the kill targets the CLI child, not the di
 
       // Wait for the sidecar's discovery write: child_pid becomes non-null.
       let row = getRun(h, runId);
-      for (let i = 0; i < 50 && !row?.child_pid; i++) { await Bun.sleep(100); row = getRun(h, runId); }
+      await waitFor(() => { row = getRun(h, runId); return !!row?.child_pid; });
       expect(row?.child_pid).toBeTruthy();
 
       // The identity claim itself: the ledger names the fake `grok`
@@ -158,13 +158,13 @@ describe("dispatch child identity — the kill targets the CLI child, not the di
       expect(s.redispatched + s.escalated + s.errors).toBeGreaterThanOrEqual(0); // sweep ran without throwing
 
       // The CLI child died from the sweep's SIGTERM...
-      for (let i = 0; i < 30 && pidAlive(cliChildPid); i++) await Bun.sleep(100);
+      await waitFor(() => !pidAlive(cliChildPid));
       expect(pidAlive(cliChildPid)).toBe(false);
 
       // ...while the dispatcher was NEVER signaled: it ran to completion on
       // its own, past the runHeadless call, and wrote its done marker —
       // exactly the `finally` unwind an abrupt SIGTERM would have skipped.
-      for (let i = 0; i < 50 && !fs.existsSync(doneFile); i++) await Bun.sleep(100);
+      await waitFor(() => fs.existsSync(doneFile));
       expect(fs.existsSync(doneFile)).toBe(true);
       const done = JSON.parse(fs.readFileSync(doneFile, "utf8"));
       expect(done.pid).toBe(dispatcherPid);

@@ -41,6 +41,7 @@ process.env.NIRVANA_RUN_LEDGER_DB = path.join(TMP, "default-ledger.sqlite");
 process.env.NIRVANA_NO_DESKTOP_NOTIFY = "1";
 
 import { Database } from "bun:sqlite";
+import { waitFor } from "./helpers/test-budgets.ts";
 import {
   openLedger, openRun, openAgenticRun, getRun, markState, beatAgenticRuns,
   findNonTerminal, countNonTerminal, findExpired, findRelatedRuns,
@@ -570,7 +571,7 @@ describe("supervisor status — DOING column and --follow", () => {
     });
     let out = "";
     child.stdout!.on("data", (b: Buffer) => { out += b.toString(); });
-    for (let i = 0; i < 50 && !out.includes("doing-known"); i++) await Bun.sleep(100);
+    await waitFor(() => out.includes("doing-known"));
     expect(out).toContain("doing-known");
 
     const pid = child.pid!;
@@ -585,7 +586,7 @@ describe("supervisor status — DOING column and --follow", () => {
     // how well-behaved the handler is. "Cleanly" on Windows can only mean
     // "the process is actually gone", which the pidAlive check below proves.
     expect(exitCode).toBe(process.platform === "win32" ? 1 : 0);
-    for (let i = 0; i < 30 && pidAlive(pid); i++) await Bun.sleep(100);
+    await waitFor(() => !pidAlive(pid));
     expect(pidAlive(pid)).toBe(false);
   });
 });

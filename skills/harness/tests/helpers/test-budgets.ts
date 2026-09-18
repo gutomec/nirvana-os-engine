@@ -19,6 +19,31 @@ export function spawnBudgetMs(processes: number): number {
   return 10_000 + 5_000 * processes;
 }
 
+/**
+ * Polls `ready` until it is true or the runner's own budget runs out.
+ *
+ * The tests that wait on a real process used a fixed tick count — 50 × 100 ms,
+ * five seconds — chosen from a developer's machine. This file's own evidence
+ * says that is exactly what ONE cold `bun <script>.ts` costs on windows-latest,
+ * so a wait for a dispatcher to unwind and write its marker was budgeted at
+ * roughly the cost of starting it. Measured 2026-09-18: `dispatch-child-identity`
+ * consumed all five seconds on that runner and failed, then passed on a re-run
+ * without a line changing.
+ *
+ * Same idea as spawnBudgetMs: wall-clock reality with headroom, not slack for a
+ * hang. A hang still fails, only later — and the assertion after the call is
+ * what reports it, so nothing here hides a real stall.
+ */
+export async function waitFor(ready: () => boolean | Promise<boolean>, opts: { processes?: number; everyMs?: number } = {}): Promise<boolean> {
+  const deadline = Date.now() + spawnBudgetMs(opts.processes ?? 1);
+  const everyMs = opts.everyMs ?? 100;
+  for (;;) {
+    if (await ready()) return true;
+    if (Date.now() >= deadline) return false;
+    await Bun.sleep(everyMs);
+  }
+}
+
 /** A test that drives the Run Kernel or a Gauntlet in-process: fsync-bound SQLite, measured up to
  * 5.5 s per test on the slowest runner against 150-350 ms normally. */
 export const KERNEL_BUDGET_MS = 30_000;
