@@ -103,6 +103,10 @@ A rubrica `secret-leak` roda em todo artefato de texto que o portão julga. Se o
 
 O `nrv init` mescla `permissions.deny: ["Read(./.env)", "Read(./.env.*)", "Read(./**/.env)", "Read(./**/.env.*)"]` em `<projeto>/.claude/settings.json`, mantendo o que o projeto já tinha, sem duplicar regra e deixando um arquivo inválido como está com um aviso. Primeira camada, não a garantia: a propriedade do arquivo e um uid separado são, e a página nova `docs/architecture/serve-hardening.md` diz como rodar o `nrv serve` num servidor de modo que o `.env` do projeto fique fora do alcance do agente, com uma unidade systemd de exemplo.
 
+### Uma árvore de dependência linkada não quebra mais a atualização no Windows
+
+O `nrv deps link` (Regra 12) transforma o `node_modules` de um componente num junction para o store compartilhado em `~/.nirvana`. Três passagens do `install-content.ts` atravessavam esse link em vez de passar ao lado: o hash do componente absorvia o store inteiro, então um squad que ninguém tocou aparecia como "alterado em disco" a cada atualização; a passagem de remoção do `mirror` listava os arquivos do store como candidatos; e o backup pré-overlay recriava o link, o que no Windows exige um privilégio que a maioria dos compradores não tem. O `EPERM` encerrava o overlay com um stack trace cru do Bun *depois* de o pack já ter sido baixado, então o `nrv update` falhava em qualquer pack que carregasse um squad assim — genesis-circle 0.1.88 e game-development 0.1.3 abortaram exatamente desse jeito na 0.13.13, deixando os packs sem atualizar. A descoberta de conteúdo agora vive em `skills/_shared/lib/walk-files.ts`, julga com `lstatSync` e nunca desce por um link; o backup pula caminhos linkados e nomeia o que pulou, para que um backup nunca fique silenciosamente incompleto. Verificado contra o caso que o originou: os dois packs atualizaram com o fix aplicado.
+
 ## 0.13.13 — 2026-09-16
 
 ### Um squad roda no runtime em que o usuário está trabalhando
