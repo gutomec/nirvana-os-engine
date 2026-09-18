@@ -16,6 +16,10 @@ Two path bugs put it there and one aggravator kept it. `nrv serve` wrote a run's
 
 Now: one `runOutputsRoot()` for the writer and both readers, canonical, with the legacy root still readable so a server upgraded mid-flight finds the runs it wrote yesterday. One `run-plumbing.ts` naming what the engine writes beside the work and what is never a deliverable, read by the API, the renderer and the verifier alike, and it covers the prompt, the brief, the handoff, the ledger, the envelope fields and the project's own `AGENTS.md`, `CLAUDE.md` and `GEMINI.md`. A client asking `/v1/jobs/<trace>/result` now gets the work, because the summary stopped counting as an artifact.
 
+### The zip handed to the client carried the employee prompt too
+
+`--zip` is the most dangerous of the three surfaces that face a client, because it is a bundle they keep, and it held a fourth private copy of the exclusion list: `audit.jsonl`, `HANDOFF.json` and two dotfiles. `agent-prompt.md` went straight through it, and with it the persona, the mind-clone library and the firm's permanent memory. Worse, `--deliverables-only` fell back to archiving the WHOLE PROJECT whenever it could not isolate exactly one `deliverables/` folder — and a run served over the API has no such folder, since its artifacts sit flat in the run root, so the normal case took the fallback and shipped the scaffold. Now the archive reads the same `run-plumbing.ts` as the API, the renderer and the verifier, in both the zip and the tgz path, and the fallback packs the run root without the scaffold instead of the project. `--include-audit` still returns the audit trail, and still never the prompt.
+
 ### The HTML report is asked for, never assumed
 
 It ran on every delivery that was not in `fast` mode. A deliverable nobody asked for is a deliverable nobody checks, which is how the leak above went unnoticed. It is now `--html` on the dispatcher and "on request" in the protocol, and when it is asked for it renders the run directory rather than the project.

@@ -16,6 +16,10 @@ Dois defeitos de caminho puseram isso lá e um agravante manteve. O `nrv serve` 
 
 Agora: um `runOutputsRoot()` para o escritor e os dois leitores, canônico, com o caminho legado ainda legível para um servidor atualizado no meio do caminho achar as execuções de ontem. Um `run-plumbing.ts` nomeando o que o engine grava ao lado do trabalho e que nunca é entrega, lido pela API, pelo gerador e pelo verificador igualmente, cobrindo o prompt, o brief, o handoff, o ledger, os campos do envelope e os próprios `AGENTS.md`, `CLAUDE.md` e `GEMINI.md` do projeto. Um cliente que pede `/v1/jobs/<trace>/result` passa a receber o trabalho, porque o sumário deixou de contar como artefato.
 
+### O zip entregue ao cliente também levava o prompt do employee
+
+O `--zip` é a mais perigosa das três superfícies que dão de cara com o cliente, porque é um pacote que ele guarda, e ele tinha uma quarta cópia privada da lista de exclusão: `audit.jsonl`, `HANDOFF.json` e dois arquivos ocultos. O `agent-prompt.md` passava direto, e com ele a persona, a biblioteca de mind-clones e a memória permanente da firma. Pior, o `--deliverables-only` caía para arquivar o PROJETO INTEIRO sempre que não conseguia isolar exatamente uma pasta `deliverables/` — e uma execução servida pela API não tem essa pasta, porque os artefatos ficam soltos na raiz da execução, então o caso normal caía no atalho e levava o andaime junto. Agora o arquivo lê o mesmo `run-plumbing.ts` que a API, o gerador e o verificador, tanto no caminho do zip quanto no do tgz, e o atalho empacota a raiz da execução sem o andaime em vez do projeto. O `--include-audit` continua devolvendo a trilha de auditoria, e continua nunca devolvendo o prompt.
+
 ### O relatório HTML é pedido, nunca presumido
 
 Ele rodava em toda entrega que não fosse em modo `fast`. Uma entrega que ninguém pediu é uma entrega que ninguém confere, e foi assim que o vazamento acima passou despercebido. Passa a ser `--html` no despachante e "sob pedido" no protocolo, e quando é pedido renderiza o diretório da execução e não o do projeto.

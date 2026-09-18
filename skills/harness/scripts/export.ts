@@ -16,6 +16,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { spawnSync } from "node:child_process";
+import { RUN_PLUMBING, RUN_PLUMBING_DIRS } from "../../_shared/lib/run-plumbing.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 
 const ANSI = { reset: "\x1b[0m", bold: "\x1b[1m", dim: "\x1b[2m",
@@ -85,9 +86,16 @@ if (deliverablesOnly) {
   if (delivDirs.length === 1) {
     archiveSource = delivDirs[0];
   } else if (delivDirs.length === 0) {
-    console.error(c("yellow", "  ⚠ --deliverables-only: nenhuma pasta deliverables/ encontrada; exportando projeto completo"));
+    // It used to fall back to the WHOLE PROJECT here, which is the scaffold plus
+    // every deliverable plus the employee prompt. A run served over the API has
+    // no `deliverables/` folder at all — its artifacts sit flat in the run root —
+    // so the normal case took the fallback and shipped the scaffold. The run root
+    // is the right answer, and the plumbing filter below keeps it clean.
+    console.error(c("yellow", "  ⚠ --deliverables-only: no deliverables/ folder; packing the run root, without the scaffold"));
   } else {
-    console.error(c("yellow", `  ⚠ --deliverables-only: ${delivDirs.length} pastas deliverables/ (multi-business); exportando projeto completo`));
+    // Several businesses delivered. Their folders are the product, organized as
+    // the org chart produced them — not a reason to ship the scaffold instead.
+    console.error(c("yellow", `  ⚠ --deliverables-only: ${delivDirs.length} deliverables/ folders (multi-business); packing the run root, without the scaffold`));
   }
 }
 
@@ -102,20 +110,17 @@ console.log(c("dim", `  output: ${outputPath}`));
 console.log(c("dim", `  audit:  ${includeAudit ? "included" : "excluded"}`));
 console.log("");
 
-// Always exclude harness-internal scratch from client deliveries:
-// _team/ holds intermediate work of peer employees in --team mode,
-// .step-brief.md is the orchestrator's instruction to each step.
-const excludes = (includeAudit ? [] : [
-  "--exclude=audit.jsonl",
-  "--exclude=HANDOFF.json",
-  "--exclude=handoffs",
-  "--exclude=tickets",
-  "--exclude=employees",
-]).concat([
-  "--exclude=_team",
-  "--exclude=.step-brief.md",
-  "--exclude=.publisher-brief.md",
-]);
+// What never ships to a client, whichever archive format is used. The list is
+// the engine's one list (run-plumbing.ts), not a fourth private copy — and a
+// fourth private copy is exactly what this was. It excluded `audit.jsonl` and
+// `HANDOFF.json` and let `agent-prompt.md` through, which is the employee's
+// system prompt, the mind-clone library and the firm's permanent memory, in the
+// zip the client is handed as "the complete final product".
+const plumbingFiles = [...RUN_PLUMBING].filter((f) => includeAudit ? !["audit.jsonl", "HANDOFF.json"].includes(f) : true);
+const plumbingDirs = [...RUN_PLUMBING_DIRS].concat(includeAudit ? ["_team"] : ["handoffs", "tickets", "employees", "_team"]);
+const excludes = plumbingFiles.map((f) => `--exclude=${f}`)
+  .concat(plumbingDirs.map((d) => `--exclude=${d}`))
+  .concat(["--exclude=.publisher-brief.md"]);
 
 const parent = path.resolve(archiveSource, "..");
 const basename = path.basename(archiveSource);
@@ -132,12 +137,12 @@ if (format === "tgz") {
 } else {
   // zip — use python3 zipfile to avoid `zip` dep on minimal systems
   const py = `
-import os, sys, zipfile
+import os, sys, zipfile, json
 src = sys.argv[1]
 dst = sys.argv[2]
 include_audit = sys.argv[3] == "true"
-exclude_basenames = ({"audit.jsonl", "HANDOFF.json"} if not include_audit else set()) | {".step-brief.md", ".publisher-brief.md"}
-exclude_dirs = ({"handoffs", "tickets", "employees"} if not include_audit else set()) | {"_team"}
+exclude_basenames = set(json.loads(sys.argv[4]))
+exclude_dirs = set(json.loads(sys.argv[5]))
 with zipfile.ZipFile(dst, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as z:
     for root, dirs, files in os.walk(src):
         dirs[:] = [d for d in dirs if d not in exclude_dirs]
@@ -148,7 +153,8 @@ with zipfile.ZipFile(dst, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6
             arc = os.path.relpath(p, os.path.dirname(src))
             z.write(p, arcname=arc)
 `;
-  r = spawnSync("python3", ["-c", py, archiveSource, outputPath, includeAudit ? "true" : "false"], { encoding: "utf8" });
+  r = spawnSync("python3", ["-c", py, archiveSource, outputPath, includeAudit ? "true" : "false",
+    JSON.stringify(plumbingFiles.concat(".publisher-brief.md")), JSON.stringify(plumbingDirs)], { encoding: "utf8" });
 }
 
 if (r.status !== 0) {
