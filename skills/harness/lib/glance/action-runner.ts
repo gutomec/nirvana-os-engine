@@ -115,6 +115,7 @@ export function startJob(opts: StartOpts): { job: Job; reason?: string } | { err
   // Spawn the child
   try {
     const proc = Bun.spawn([opts.command, ...opts.args], {
+      windowsHide: true,
       cwd: opts.cwd,
       env: { ...process.env, ...(opts.env || {}) },
       stdout: "pipe",

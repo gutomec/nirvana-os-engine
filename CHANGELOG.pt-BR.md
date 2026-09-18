@@ -103,6 +103,10 @@ A rubrica `secret-leak` roda em todo artefato de texto que o portão julga. Se o
 
 O `nrv init` mescla `permissions.deny: ["Read(./.env)", "Read(./.env.*)", "Read(./**/.env)", "Read(./**/.env.*)"]` em `<projeto>/.claude/settings.json`, mantendo o que o projeto já tinha, sem duplicar regra e deixando um arquivo inválido como está com um aviso. Primeira camada, não a garantia: a propriedade do arquivo e um uid separado são, e a página nova `docs/architecture/serve-hardening.md` diz como rodar o `nrv serve` num servidor de modo que o `.env` do projeto fique fora do alcance do agente, com uma unidade systemd de exemplo.
 
+### Nenhum processo filho abre janela de console no Windows
+
+Uma proteção foi aplicada à cadeia do sweep quando as janelas apareceram pela primeira vez, mas ela vivia na árvore instalada: o `nrv update` seguinte substituiu a árvore e elas voltaram. O `windowsHide: true` agora está em **todo** spawn do engine — 117 pontos em 48 arquivos, incluindo o único lugar por onde todo adapter de runtime passa (o `driverSpawnSync`, que monta o objeto de opções uma vez para dezesseis chamadores). No Windows, um processo sem console próprio faz o sistema alocar um console NOVO E VISÍVEL para cada filho que ele cria, e `stdio: "ignore"` não impede isso. O sweep roda detached a cada comando `nrv`, então cada elo da cadeia — supervisor, revise, quality-gate, verify-deliverable — mais os probes powershell do ledger abriam uma janela numa máquina onde nada parecia errado. No-op em POSIX.
+
 ## 0.13.13 — 2026-09-16
 
 ### Um squad roda no runtime em que o usuário está trabalhando

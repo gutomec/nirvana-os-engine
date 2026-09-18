@@ -248,6 +248,7 @@ export function start(memo: RunMemo, opts: { budgetUsd?: number } = {}): Promise
     // the whole of it (NIRVANA_SERVE_CHILD_ENV=inherit restores the old shape).
     const parentEnv = childEnvFor(process.env, { mode: process.env.NIRVANA_SERVE_CHILD_ENV === "inherit" ? "inherit" : "declared", runtime: null });
     const child = spawn(bin, args, {
+      windowsHide: true,
       cwd: memo.session.dir,
       env: {
         ...parentEnv,

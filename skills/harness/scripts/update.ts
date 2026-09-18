@@ -92,7 +92,7 @@ function checkInstalledPacks(): void {
     if (!fs.existsSync(script)) return;
     console.log("");
     console.log(c("lime", "▶") + c("bold", ` Pack installed ('${slug}') — checking for an update...`));
-    spawnSync(process.execPath, [script, slug, "--check"], { stdio: "inherit" });
+    spawnSync(process.execPath, [script, slug, "--check"], { windowsHide: true, stdio: "inherit" });
   } catch { /* no PROVENANCE = no paid pack; stay silent */ }
 }
 
@@ -186,7 +186,7 @@ async function updateFromRelease(): Promise<never> {
     const r = path.relative(tarCwd, p);
     return (r === "" ? "." : r.includes(":") ? p : r).split(path.sep).join("/");
   };
-  const x = spawnSync("tar", ["-xzf", rel(tarball), "-C", rel(srcDir)], { stdio: "inherit", cwd: tarCwd });
+  const x = spawnSync("tar", ["-xzf", rel(tarball), "-C", rel(srcDir)], { windowsHide: true, stdio: "inherit", cwd: tarCwd });
   if (x.status !== 0) { console.error(c("red", "failed to extract the engine (needs 'tar').")); process.exit(1); }
   // Asset extracts flat (scripts/install.ts at root); a source archive wraps it
   // in a single top dir — handle both.
@@ -201,7 +201,7 @@ async function updateFromRelease(): Promise<never> {
   // path does, so it needs the copy just as much.
   const backupDir = backupSkills();
   console.log(c("lime", "▶") + c("bold", " Re-running installer (engine only)..."));
-  const r = spawnSync(process.execPath, [installer, "--no-starter"], { stdio: "inherit" });
+  const r = spawnSync(process.execPath, [installer, "--no-starter"], { windowsHide: true, stdio: "inherit" });
   const ok = (r.status ?? 1) === 0;
   if (ok) {
     pruneOldBackups(backupDir);
@@ -227,7 +227,7 @@ if (!isGitCheckout) {
 }
 
 function git(...gitArgs: string[]): { stdout: string; stderr: string; code: number } {
-  const r = spawnSync("git", gitArgs, { cwd: REPO, encoding: "utf8" });
+  const r = spawnSync("git", gitArgs, { windowsHide: true, cwd: REPO, encoding: "utf8" });
   return { stdout: (r.stdout || "").trim(), stderr: (r.stderr || "").trim(), code: r.status ?? 1 };
 }
 
@@ -346,6 +346,7 @@ if (!fs.existsSync(INSTALL_SCRIPT)) {
 }
 
 const installer = spawnSync("bun", [INSTALL_SCRIPT, "--no-starter"], {
+  windowsHide: true,
   cwd: REPO,
   stdio: "inherit",
 });
@@ -370,7 +371,7 @@ pruneOldBackups(backupDir);
 // Step 5: re-index registries
 console.log("");
 console.log(c("lime", "▶") + c("bold", " Re-indexing registries..."));
-const index = spawnSync("nrv", ["index"], { stdio: "inherit" });
+const index = spawnSync("nrv", ["index"], { windowsHide: true, stdio: "inherit" });
 if (index.status !== 0) {
   console.log(c("yellow", "  ⚠ nrv index failed (non-fatal). Run manually: `nrv index`"));
 }

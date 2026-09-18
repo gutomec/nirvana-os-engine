@@ -73,6 +73,7 @@ export interface GateOptions {
 function reindexIfStale(): void {
   const script = path.join(import.meta.dir, "..", "..", "harness", "scripts", "index.ts");
   const r = spawnSync(process.execPath, [script, "--if-stale", "--quiet"], {
+    windowsHide: true,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   });

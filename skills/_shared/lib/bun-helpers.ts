@@ -171,6 +171,7 @@ export function exec(cmd: string, opts: { cwd?: string; env?: Record<string, str
 export function run(bin: string, args: string[], opts: { cwd?: string; env?: Record<string, string>; timeoutMs?: number; silent?: boolean } = {}): ExecResult {
   const stdio = opts.silent ? "pipe" : (process.env.NIRVANA_VERBOSE === "1" ? "inherit" : "pipe");
   const r = spawnSync(bin, args, {
+    windowsHide: true,
     cwd: opts.cwd,
     env: { ...process.env, ...(opts.env || {}) },
     timeout: opts.timeoutMs ?? 600_000,

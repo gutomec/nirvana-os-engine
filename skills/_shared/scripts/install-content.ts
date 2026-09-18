@@ -111,7 +111,7 @@ function engineVersion(): string | null {
   }
 }
 
-const RSYNC = spawnSync("rsync", ["--version"], { stdio: "ignore" }).status === 0;
+const RSYNC = spawnSync("rsync", ["--version"], { windowsHide: true, stdio: "ignore" }).status === 0;
 const RUNSTATE_EXCLUDES = RUN_STATE_EXCLUDES;
 
 function listFilesRel(root: string): string[] {
@@ -139,7 +139,7 @@ function mirror(src: string, dst: string, ex: string[]): void {
   mkdirSync(dst, { recursive: true });
   if (RSYNC) {
     const a = ["-a", "--checksum", "--delete"]; for (const e of ex) a.push(`--exclude=${e}`); a.push(`${src}/`, `${dst}/`);
-    if (spawnSync("rsync", a, { stdio: ["ignore", "ignore", "inherit"] }).status === 0) return;
+    if (spawnSync("rsync", a, { windowsHide: true, stdio: ["ignore", "ignore", "inherit"] }).status === 0) return;
   }
   const srcFiles = new Set(listFilesRel(src));
   for (const rel of listFilesRel(dst)) { if (srcFiles.has(rel) || isExcluded(rel, ex)) continue; try { rmSync(join(dst, rel), { force: true }); } catch { /* ignore */ } }
@@ -408,8 +408,8 @@ if (!DRY) {
   const nrvBin = join(homedir(), ".local", "bin", "nrv");
   const indexer = join(import.meta.dir, "..", "..", "harness", "scripts", "index.ts");
   const reindex = existsSync(nrvBin)
-    ? spawnSync(nrvBin, ["index"], { stdio: "inherit" })
-    : spawnSync("bun", [indexer], { stdio: "inherit" });
+    ? spawnSync(nrvBin, ["index"], { windowsHide: true, stdio: "inherit" })
+    : spawnSync("bun", [indexer], { windowsHide: true, stdio: "inherit" });
   if (reindex.status !== 0) {
     console.log(`  ⚠ Indexes not built (exit ${reindex.status ?? "?"}). The content is installed;`);
     console.log(`    run 'nrv index' — without them routing cannot find what was just installed.`);

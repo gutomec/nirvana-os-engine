@@ -292,7 +292,7 @@ function wireLocalBinOnPath(dry: boolean): string[] {
       "[Environment]::SetEnvironmentVariable('PATH', ($b + ';' + $d), 'User'); Write-Output 'added' } else { Write-Output 'present' }";
     let persisted = "";
     try {
-      const r = spawnSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", persistPs], { encoding: "utf8" });
+      const r = spawnSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", persistPs], { windowsHide: true, encoding: "utf8" });
       persisted = r.stdout || "";
     } catch { /* fall through to the manual-add note below */ }
 
@@ -430,9 +430,9 @@ function installDependencies(repoRoot: string, dry: boolean): { ok: boolean; not
     } else if (dry) {
       notes.push("would run: npm install (root)");
     } else {
-      const installer = spawnSync("bun", ["install"], { cwd: repoRoot, encoding: "utf8" });
+      const installer = spawnSync("bun", ["install"], { windowsHide: true, cwd: repoRoot, encoding: "utf8" });
       if (installer.status !== 0) {
-        const npmTry = spawnSync("npm", ["install", "--no-audit", "--no-fund"], { cwd: repoRoot, encoding: "utf8" });
+        const npmTry = spawnSync("npm", ["install", "--no-audit", "--no-fund"], { windowsHide: true, cwd: repoRoot, encoding: "utf8" });
         notes.push(npmTry.status === 0 ? "npm install ok (npm fallback)" : `npm install FAILED: ${(npmTry.stderr || installer.stderr || "").slice(0, 200)}`);
       } else {
         notes.push("bun install ok");
@@ -474,7 +474,7 @@ function installDependencies(repoRoot: string, dry: boolean): { ok: boolean; not
   //    validators are an optional legacy mirror. A Bun-only machine skips this.
   const reqs = path.join(repoRoot, "requirements.txt");
   if (fs.existsSync(reqs)) {
-    const haveP = spawnSync("python3", ["-c", "import pydantic,sys; sys.exit(0 if pydantic.VERSION.startswith('2') else 1)"], { encoding: "utf8" });
+    const haveP = spawnSync("python3", ["-c", "import pydantic,sys; sys.exit(0 if pydantic.VERSION.startswith('2') else 1)"], { windowsHide: true, encoding: "utf8" });
     const pythonPresent = !haveP.error && haveP.status !== null;
     if (haveP.status === 0) {
       notes.push("pydantic v2 already present (skip)");
@@ -483,10 +483,10 @@ function installDependencies(repoRoot: string, dry: boolean): { ok: boolean; not
     } else if (dry) {
       notes.push("would run: pip install -r requirements.txt");
     } else {
-      let p = spawnSync("pip3", ["install", "-q", "-r", reqs], { cwd: repoRoot, encoding: "utf8" });
+      let p = spawnSync("pip3", ["install", "-q", "-r", reqs], { windowsHide: true, cwd: repoRoot, encoding: "utf8" });
       if (p.status !== 0) {
         // PEP 668 externally-managed env (Ubuntu 24.04 etc)
-        p = spawnSync("pip3", ["install", "-q", "--break-system-packages", "--ignore-installed", "-r", reqs], { cwd: repoRoot, encoding: "utf8" });
+        p = spawnSync("pip3", ["install", "-q", "--break-system-packages", "--ignore-installed", "-r", reqs], { windowsHide: true, cwd: repoRoot, encoding: "utf8" });
       }
       notes.push(p.status === 0 ? "pip install ok" : `pip install FAILED: ${(p.stderr || "").slice(0, 200)}`);
     }

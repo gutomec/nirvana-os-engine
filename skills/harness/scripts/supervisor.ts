@@ -422,6 +422,7 @@ function defaultResume(h: LedgerHandle, row: RunRow): RecoveryResult {
   }
   const reviseScript = path.join(import.meta.dir, "revise.ts");
   const r = spawnSync(process.execPath, [reviseScript, info.projectId, CONTINUE_PROMPT, "--no-color"], {
+    windowsHide: true,
     cwd: reviseCwdFor(info.meta),
     encoding: "utf8",
     timeout: RESUME_TIMEOUT_MS,
@@ -987,6 +988,7 @@ export function maybeSweep(): boolean {
     const scope = resolveSweepScope(false, true);
     if (countNonTerminal(h, { allProjects: scope.allProjects }) === 0) return false;
     const child = spawn(process.execPath, [SUPERVISOR_PATH, "sweep", "--quiet", ...(scope.allProjects ? ["--all-projects"] : [])], {
+      windowsHide: true,
       detached: true,
       stdio: "ignore",
       env: { ...process.env, NRV_IN_SWEEP: "1" },

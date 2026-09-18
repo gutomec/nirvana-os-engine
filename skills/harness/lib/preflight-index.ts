@@ -28,6 +28,7 @@ export function preflightReindex(): boolean {
   if (fresh) return false;
   const indexScript = path.join(import.meta.dir, "..", "scripts", "index.ts");
   spawnSync(BUN_BIN, [indexScript, "--if-stale", "--quiet"], {
+    windowsHide: true,
     // stdout ignored so routing scripts keep machine-parseable output clean;
     // indexer failures still surface on stderr.
     stdio: ["ignore", "ignore", "inherit"],

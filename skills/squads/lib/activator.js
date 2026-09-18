@@ -224,9 +224,9 @@ function runArgv(argv, opts = {}) {
         `Every other character, ^ and > and | included, is passed as data. ` +
         `Drop that one from the spec, or run the install yourself and re-activate.` };
     }
-    r = spawnSync(plan.line, { ...common, shell: true });
+    r = spawnSync(plan.line, { windowsHide: true, ...common, shell: true });
   } else {
-    r = spawnSync(argv[0], argv.slice(1), { ...common, shell: false });
+    r = spawnSync(argv[0], argv.slice(1), { windowsHide: true, ...common, shell: false });
   }
   if (r.error) return { ok: false, error: r.error.message };
   if (r.signal) return { ok: false, error: `${argv[0]} killed by ${r.signal}`, code: null, stderr: r.stderr ? r.stderr.toString() : null };

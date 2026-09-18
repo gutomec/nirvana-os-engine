@@ -1177,7 +1177,7 @@ if (pendingCascade?.kind === "squad-only") {
   console.log(c("lime", "▶") + c("bold", ` Squad-only — scaffold (${squads.length} squad(s))`));
   let projDir: string | null = null;
   for (const sq of squads) {
-    const r = spawnSync("bun", [briefSquadScript, sq, brief, "--project", pid], { encoding: "utf8", env: prepScriptEnv });
+    const r = spawnSync("bun", [briefSquadScript, sq, brief, "--project", pid], { windowsHide: true, encoding: "utf8", env: prepScriptEnv });
     if (r.status !== 0) {
       console.error(c("red", `✗ brief-squad failed for '${sq}':`));
       console.error(r.stdout || r.stderr);
@@ -1589,7 +1589,7 @@ console.log(c("lime", "▶") + c("bold", " Step 1/4 — brief-business.ts"));
 const args = [briefBiz, slug, brief];
 if (projectId) args.push("--project", projectId);
 if (manifest) args.push("--manifest", manifest);
-const r1 = spawnSync("bun", args, { encoding: "utf8", env: prepScriptEnv });
+const r1 = spawnSync("bun", args, { windowsHide: true, encoding: "utf8", env: prepScriptEnv });
 if (r1.status !== 0) {
   console.error(c("red", "✗ brief-business failed:"));
   console.error(r1.stdout || r1.stderr);
@@ -1638,7 +1638,7 @@ if (!fs.existsSync(tmpBriefFile)) {
 }
 const buildArgs = [employeePrompt, slug, intake, projDir, tmpBriefFile];
 if (execOutputsRoot) buildArgs.push(execOutputsRoot);
-const r2 = spawnSync("bun", buildArgs, { encoding: "utf8", env: prepScriptEnv });
+const r2 = spawnSync("bun", buildArgs, { windowsHide: true, encoding: "utf8", env: prepScriptEnv });
 if (r2.status !== 0) {
   console.error(c("red", "✗ employee-prompt failed:"));
   console.error(r2.stderr);
@@ -1735,7 +1735,7 @@ if (wantExec) {
     // The employee prompt embeds `outputs_root`, so it is rebuilt per candidate root: every
     // candidate and revision writes into its own isolated directory, never into `oroot`.
     const employeePromptFor = (briefFile: string, candidateRoot: string): string => {
-      const built = spawnSync("bun", [employeePrompt, slug, intake, projDir, briefFile, candidateRoot], { encoding: "utf8", env: prepScriptEnv });
+      const built = spawnSync("bun", [employeePrompt, slug, intake, projDir, briefFile, candidateRoot], { windowsHide: true, encoding: "utf8", env: prepScriptEnv });
       if (built.status !== 0) throw new Error(`employee-prompt failed: ${built.stderr}`);
       return built.stdout;
     };

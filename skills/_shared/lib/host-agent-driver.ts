@@ -259,7 +259,7 @@ export function firstExecutablePath(stdout: string): string | null {
 
 export function whichSync(cli: string): string | null {
   const probe = whichProbe(cli);
-  const r = spawnSync(probe.command, probe.args, { encoding: "utf8", env: process.env });
+  const r = spawnSync(probe.command, probe.args, { windowsHide: true, encoding: "utf8", env: process.env });
   // bash builtin `command` is shell-only; fallback to PATH scan
   if (r.status === 0) {
     const found = firstExecutablePath(r.stdout);
@@ -798,6 +798,7 @@ export function callHostAgent(persona: string, userMessage: string, opts: CallOp
   try {
     const exec = resolveExecutable(host.cli);
     r = spawnSync(exec.command, exec.args(call.args), {
+      windowsHide: true,
       encoding: "utf8",
       timeout: opts.timeoutMs ?? DEFAULT_INACTIVITY_BUDGET_MS,
       maxBuffer: 8 * 1024 * 1024,
@@ -969,6 +970,7 @@ export function callHostAgentAsync(persona: string, userMessage: string, opts: C
     const call = adapterCall(host, persona || "", userMessage);
     const exec = resolveExecutable(host.cli);
     const child = spawn(exec.command, exec.args(call.args), {
+      windowsHide: true,
       env: childEnv(),
       ...(exec.shell ? { shell: true } : {}),
       stdio: [call.input !== undefined ? "pipe" : "ignore", "pipe", "pipe"],
@@ -1431,6 +1433,12 @@ function driverSpawnSync(cmd: string, args: string[], options: SpawnSyncOptions 
   // And WHAT it is, so its own dispatches answer to the role rule.
   if (spawnAsRole) baseEnv[ROLE_ENV] = spawnAsRole;
   options = {
+    // Windows: a process without its own console makes Windows allocate a VISIBLE
+    // one for every child it spawns, and `stdio: "ignore"` does not prevent it.
+    // Every runtime adapter reaches the OS through here, so this is the one place
+    // the rule has to hold; a caller that really wants the window can override it
+    // with `...options` below. No-op on POSIX.
+    windowsHide: true,
     env: spawnAsRuntime ? { ...baseEnv, NIRVANA_HOST_RUNTIME: spawnAsRuntime } : baseEnv,
     ...(exec.shell ? { shell: true } : {}),
     ...options,
@@ -1442,7 +1450,7 @@ function driverSpawnSync(cmd: string, args: string[], options: SpawnSyncOptions 
   const errFd = fs.openSync(managedCtx.errFile, "w");
   try {
     // `input` (when given) overrides stdio[0] per Node semantics.
-    const r = spawnSync(cmd, args, { ...options, stdio: ["pipe", outFd, errFd] }) as SpawnSyncReturns<string>;
+    const r = spawnSync(cmd, args, { windowsHide: true, ...options, stdio: ["pipe", outFd, errFd] }) as SpawnSyncReturns<string>;
     let stdout = "";
     let stderr = "";
     try { stdout = fs.readFileSync(managedCtx.outFile, "utf8"); } catch { /* keep "" */ }
@@ -1489,7 +1497,7 @@ function runWithLedgerHeartbeat(opts: RunHeadlessOpts, runner: (o: RunHeadlessOp
   try {
     // Live env (not Bun's original-env snapshot) so audit/state paths set at
     // runtime reach the sidecar.
-    const sc = spawn(process.execPath, sidecarArgs, { detached: true, stdio: "ignore", env: { ...process.env } });
+    const sc = spawn(process.execPath, sidecarArgs, { windowsHide: true, detached: true, stdio: "ignore", env: { ...process.env } });
     sc.unref();
     sidecarPid = sc.pid ?? null;
   } catch (e) {
@@ -2488,7 +2496,7 @@ export function runtimeAvailable(runtime: Runtime): boolean {
   // invocation runs with (callHostAgent spawns with `env: {...process.env}`),
   // so a runtime added to PATH mid-process reads as unavailable while being
   // perfectly invocable. Same reason in whichSync below.
-  const r = spawnSync(probe, [bin], { encoding: "utf8", env: process.env });
+  const r = spawnSync(probe, [bin], { windowsHide: true, encoding: "utf8", env: process.env });
   return r.status === 0;
 }
 

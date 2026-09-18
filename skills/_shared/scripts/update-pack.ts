@@ -68,7 +68,7 @@ function extractZip(zip: string, dest: string): boolean {
     ["powershell", ["-NoProfile", "-Command", `Expand-Archive -Force -LiteralPath '${zip}' -DestinationPath '${dest}'`]],
   ];
   for (const [cmd, a] of tries) {
-    const r = spawnSync(cmd, a, { stdio: "ignore", cwd });
+    const r = spawnSync(cmd, a, { windowsHide: true, stdio: "ignore", cwd });
     if (r.status === 0) return true;
   }
   return false;
@@ -194,7 +194,7 @@ async function main(): Promise<number> {
     content, "--slug", slug, ...(version ? ["--version", version] : []),
     // Pass-through: --keep-clones / --keep-squads / --keep-businesses / --no-index.
     ...args.filter((a) => a.startsWith("--keep") || a === "--no-index"),
-  ], { stdio: "inherit" });
+  ], { windowsHide: true, stdio: "inherit" });
 
   // Refresh the license from the artifact that was just downloaded.
   //

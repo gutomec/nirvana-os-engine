@@ -91,7 +91,7 @@ function runDoctor(argv: string[]): never {
   process.stderr.write("deprecated: `nrv validate` without arguments runs the system doctor; use `nrv doctor`.\n" +
     "           `nrv validate <squad|business|mind-clone> <slug>` is the admission gate (nrv validate --help).\n");
   const script = process.env.NIRVANA_VERIFY_DOCTOR_SCRIPT || path.join(import.meta.dir, "..", "..", "harness", "scripts", "doctor-system.ts");
-  const r = spawnSync(process.execPath, [script, ...argv], { stdio: "inherit" });
+  const r = spawnSync(process.execPath, [script, ...argv], { windowsHide: true, stdio: "inherit" });
   process.exit(r.status ?? 1);
 }
 

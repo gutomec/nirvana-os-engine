@@ -103,6 +103,10 @@ The `secret-leak` rubric runs on every text artifact the gate judges. If the art
 
 `nrv init` merges `permissions.deny: ["Read(./.env)", "Read(./.env.*)", "Read(./**/.env)", "Read(./**/.env.*)"]` into `<project>/.claude/settings.json`, keeping what the project already had, never duplicating a rule and leaving an invalid file alone with a warning. A first layer, not the guarantee: file ownership and a separate uid are, and the new page `docs/architecture/serve-hardening.md` says how to run `nrv serve` on a server so the project's `.env` is out of the agent's reach, with a systemd unit as example.
 
+### No child process opens a console window on Windows
+
+A guard was applied to the sweep chain when the windows were first reported, but it lived in the installed tree: the next `nrv update` replaced the tree and they came back. `windowsHide: true` is now on **every** spawn in the engine — 117 call sites across 48 files, including the single place every runtime adapter passes through (`driverSpawnSync`, which builds its options object once for sixteen callers). On Windows a process without its own console makes Windows allocate a NEW VISIBLE console for each child it spawns, and `stdio: "ignore"` does not prevent it. The sweep runs detached on every `nrv` command, so each link in the chain — supervisor, revise, quality-gate, verify-deliverable — plus the powershell probes of the run ledger opened a window on a machine where nothing looked wrong. No-op on POSIX.
+
 ## 0.13.13 — 2026-09-16
 
 ### A squad runs on the runtime the user is working in

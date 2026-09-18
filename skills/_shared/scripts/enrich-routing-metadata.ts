@@ -871,14 +871,14 @@ function buildBusinessPrompt(
 // ── reindex + gate ──────────────────────────────────────────────────────────
 
 function reindexAll(): void {
-  const r = spawnSync(process.execPath, [HARNESS_INDEX, "--quiet"], { encoding: "utf8", cwd: REPO_ROOT });
+  const r = spawnSync(process.execPath, [HARNESS_INDEX, "--quiet"], { windowsHide: true, encoding: "utf8", cwd: REPO_ROOT });
   if (r.status !== 0) throw new Error(`reindex failed (exit ${r.status}): ${r.stderr}`);
 }
 
 function reindexGlobalScope(): void {
   // Second scope: the installed system reads ~/.nirvana. Clones mirror
   // automatically (index-clones.ts); businesses/squads need a home-cwd run.
-  const r = spawnSync(process.execPath, [HARNESS_INDEX, "--quiet"], { encoding: "utf8", cwd: os.homedir() });
+  const r = spawnSync(process.execPath, [HARNESS_INDEX, "--quiet"], { windowsHide: true, encoding: "utf8", cwd: os.homedir() });
   if (r.status !== 0) {
     process.stderr.write(`[enrich] WARN: global-scope reindex failed (exit ${r.status})\n`);
   }
@@ -1168,7 +1168,7 @@ interface FinalEval {
 }
 
 async function measureEvals(): Promise<{ routing: any; clone: any }> {
-  const gb = spawnSync(process.execPath, [BUILD_GOLDEN, "--quiet"], { encoding: "utf8", cwd: REPO_ROOT });
+  const gb = spawnSync(process.execPath, [BUILD_GOLDEN, "--quiet"], { windowsHide: true, encoding: "utf8", cwd: REPO_ROOT });
   if (gb.status !== 0) throw new Error(`build-golden-set failed: ${gb.stderr}`);
   const { runEval: runRoutingEval } = await import("../../harness/scripts/eval-routing.ts");
   const routing = await runRoutingEval({ quiet: true });

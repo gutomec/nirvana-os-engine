@@ -650,7 +650,7 @@ async function main() {
   log.info(`Next: $EDITOR ${path.join(target, ".env")}  →  pick scope, then drop skills/squads in.`);
   // Verify hooks are installed in the user's agent settings.
   try {
-    const result = require("node:child_process").spawnSync("bun", [path.join(SKILLS_ROOT, "_shared", "scripts", "install.ts"), "--check"], { encoding: "utf8" });
+    const result = require("node:child_process").spawnSync("bun", [path.join(SKILLS_ROOT, "_shared", "scripts", "install.ts"), "--check"], { windowsHide: true, encoding: "utf8" });
     if (result.status !== 0) {
       log.warn(`Audit hooks are NOT yet wired into your agents. Run: nrv setup`);
       log.info(`(this configures Claude Code + Gemini-CLI to emit audit events automatically)`);
@@ -702,7 +702,7 @@ async function main() {
 /** `where` on Windows, `which` elsewhere: is the CLI on PATH? */
 function binOnPath(bin: string): boolean {
   const probe = process.platform === "win32" ? "where" : "which";
-  try { return require("node:child_process").spawnSync(probe, [bin], { stdio: "ignore" }).status === 0; } catch { return false; }
+  try { return require("node:child_process").spawnSync(probe, [bin], { windowsHide: true, stdio: "ignore" }).status === 0; } catch { return false; }
 }
 
 await main();

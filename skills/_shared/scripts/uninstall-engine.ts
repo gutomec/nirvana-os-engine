@@ -58,7 +58,7 @@ const hookInstaller = join(NIRVANA_SKILLS, "_shared", "scripts", "install.ts");
 if (existsSync(hookInstaller)) {
   console.log("[1/4] Audit hooks");
   if (DRY) console.log("  [dry] would run the hook uninstaller (Claude / Gemini / Antigravity)");
-  else spawnSync(process.execPath, [hookInstaller, "--uninstall"], { stdio: "inherit" });
+  else spawnSync(process.execPath, [hookInstaller, "--uninstall"], { windowsHide: true, stdio: "inherit" });
 } else {
   console.log("[1/4] Audit hooks — hook uninstaller not found, skipping");
 }

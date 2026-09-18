@@ -376,6 +376,7 @@ function runStep(step: ChainStep, idx: number, total: number, args: TeamRunArgs,
     path.join(SKILLS, "businesses/lib/employee-prompt.ts"),
     args.slug, step.employee, args.projectDir, stepBriefFile, employeeOutDir,
   ], {
+    windowsHide: true,
     encoding: "utf8", maxBuffer: 32 * 1024 * 1024,
     env: { ...process.env, BUSINESSES_DIR: path.dirname(bizDir) },
   });

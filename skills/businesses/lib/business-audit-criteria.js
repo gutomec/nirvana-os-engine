@@ -48,7 +48,7 @@ function readYaml(p) { try { return YAML?.parse(fs.readFileSync(p, 'utf8')); } c
 function c1_manifest_valid({ businessDir }) {
   const max = 12;
   if (!exists(LOADER_TS)) return { score: max, max, evidence: 'loader.ts missing — skipping' };
-  const r = spawnSync(process.execPath, [LOADER_TS, businessDir], { encoding: 'utf8', timeout: 30000 });
+  const r = spawnSync(process.execPath, [LOADER_TS, businessDir], { windowsHide: true, encoding: 'utf8', timeout: 30000 });
   const ok = r.status === 0;
   return {
     score: ok ? max : 0, max,
