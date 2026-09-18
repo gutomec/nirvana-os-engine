@@ -39,6 +39,8 @@ The only briefs that bypass this rule are pure utility lookups (`list`, `inspect
 
 **Dispatch cascade (always):** Business → Squad → `agent-x.<runtime>` (the runtime's fallback generalist at `~/.nirvana/skills/_shared/agents/`). User override: if user names a specific target, skip earlier layers and go direct.
 
+**Who may dispatch what.** A **business** opens its own org chart and the squads its seats carry. An **employee** may use squads to build its deliverable, as many as the work needs, and nothing else — a seat that convenes another company is the runaway. A **squad** executes and **never** dispatches; so does `agent-x`; so does any decision step (a director, a judge, a router). The engine enforces this from `NIRVANA_DISPATCH_ROLE` and refuses the spawn, so this paragraph describes a rule rather than requesting one.
+
 ---
 
 <!-- nirvana:runtime-rule:v1 -->

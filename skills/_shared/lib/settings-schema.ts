@@ -218,8 +218,8 @@ export const SETTINGS = {
   // became fifteen agents, each opening its own subagents, one of them looping
   // against the project contract's orchestration rule.
   "execution.max_dispatch_depth": numberSetting("execution.max_dispatch_depth",
-    "Profundidade máxima de uma cadeia de agentes despachando agentes; 0 = ilimitado. O padrão 3 cobre empresa (1), assento da empresa (2) e squad obrigatório ou juiz despachado pelo assento (3).",
-    { default: 3, type: nonNegativeInt, env: "NIRVANA_MAX_DISPATCH_DEPTH", expects: "inteiro >= 0" }),
+    "Profundidade máxima de uma cadeia de agentes despachando agentes; 0 = ilimitado. O padrão 4 cobre as duas topologias: no terminal empresa (1), assento (2) e squad usado pelo assento (3); no Glance o maestro é ele mesmo um filho, então tudo desce um nível e o squad fica em 4.",
+    { default: 4, type: nonNegativeInt, env: "NIRVANA_MAX_DISPATCH_DEPTH", expects: "inteiro >= 0" }),
   // 2026 models read what they need when they need it (Anthropic: context on
   // demand; OpenAI: "prompting the model to read files before every edit is a
   // great way to burn context"). A whole persona pasted three times over made

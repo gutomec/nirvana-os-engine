@@ -1689,7 +1689,7 @@ if (wantExec) {
     const produce = (candidateRoot: string, briefFile: string, candidateBrief: string) => {
       const prompt = employeePromptFor(briefFile, candidateRoot);
       attempt.markProductionStarted();
-      const candidate = runWithCascade({ runtime: rt, prompt, cwd: projectRoot,
+      const candidate = runWithCascade({ dispatchRole: "agent-x", runtime: rt, prompt, cwd: projectRoot,
         addDirs: [projDir, candidateRoot], appendSystemPrompt: AUTONOMOUS_DIRECTIVE + rulesDirective,
         maxBudgetUsd: budget.candidateBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
         yolo, brief: candidateBrief, projectRoot, outputsRoot: candidateRoot, taskHint: `business Gauntlet canary · ${slug}/${intake}`,
@@ -1848,6 +1848,8 @@ if (wantExec) {
     // runWithCascade falls through to plain runHeadless when LLM_CASCADE is not set
     // in the project .env, so non-cascade users see no behavioral change.
     res = runWithCascade({
+      // A dispatched worker produces the deliverable and opens nothing.
+      dispatchRole: "agent-x",
       runtime: rt,
       prompt: agentPrompt,
       cwd: projectRoot,

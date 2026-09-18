@@ -53,7 +53,7 @@ import { EFFORT_LEVELS, isEffortLevel, resolvePinnedEffort, resolveSystemModel }
 import { resolveSetting } from "./settings.ts";
 import { childEnv } from "./orca.ts";
 import { childEnvFor, type ChildEnvMode } from "./child-env.ts";
-import { childDepth, currentDepth, DEFAULT_MAX_DEPTH, DEPTH_ENV, mayDispatch, refusalMessage } from "./dispatch-depth.ts";
+import { childDepth, currentDepth, currentRole, DEFAULT_MAX_DEPTH, DEPTH_ENV, mayDispatch, refusalMessage, roleMayDispatch, roleRefusalMessage, ROLE_ENV, type DispatchRole } from "./dispatch-depth.ts";
 import { runOrcaWorker } from "./orca-worker.ts";
 
 /** `execution.child_env`. The variable NIRVANA_CHILD_ENV wins over any file
@@ -1158,6 +1158,10 @@ export interface RunHeadlessOpts {
    *  Off by default: a dispatched worker produces the artifact, and the engine
    *  is the only orchestrator. See the deny in the claude-code arg builder. */
   allowSubagents?: boolean;
+  /** WHAT is being dispatched, so the role rule can be enforced: a business
+   *  employee may dispatch a squad, a squad may dispatch nothing. Absent means
+   *  the target is unknown, and then only the empty-allowance roles refuse. */
+  dispatchRole?: DispatchRole;
   /** Optional model override. Passed as `--model <id>` (or equivalent) to the
    * underlying CLI. Honors model hints from LLM_CASCADE entries. If unset,
    * each CLI uses its own configured default. */
@@ -1392,6 +1396,10 @@ let managedCtx: ManagedSpawnCtx | null = null;
  * dispatched child answers with itself, on every OS and for the runtimes whose
  * markers we could not measure. */
 let spawnAsRuntime: string | null = null;
+/** The role stamped on the next child. Same idiom and same safety as
+ *  spawnAsRuntime above: set by runHeadless immediately around a SYNCHRONOUS
+ *  spawn, saved and restored, so it cannot leak across calls. */
+let spawnAsRole: string | null = null;
 
 /** All runners spawn their child through this. Pass-through to spawnSync when
  * unledgered (zero behavior change); with an active ledger context, stdout/
@@ -1420,6 +1428,8 @@ function driverSpawnSync(cmd: string, args: string[], options: SpawnSyncOptions 
   // NIRVANA_ prefix survives the declared-mode allowlist, so the counter cannot
   // be dropped by a filtered spawn.
   baseEnv[DEPTH_ENV] = String(childDepth());
+  // And WHAT it is, so its own dispatches answer to the role rule.
+  if (spawnAsRole) baseEnv[ROLE_ENV] = spawnAsRole;
   options = {
     env: spawnAsRuntime ? { ...baseEnv, NIRVANA_HOST_RUNTIME: spawnAsRuntime } : baseEnv,
     ...(exec.shell ? { shell: true } : {}),
@@ -2341,6 +2351,18 @@ const BUDGET_CAPABLE: ReadonlySet<Runtime> = new Set<Runtime>(["claude-code"]);
 const _warnedUncappable = new Set<string>();
 
 export function runHeadless(opts: RunHeadlessOpts): RunHeadlessResult {
+  // WHO may dispatch WHAT. The owner's rule: a business employee may use a
+  // squad to build its deliverable; a squad executes and never dispatches.
+  // Checked before the depth ceiling because it is the sharper of the two — a
+  // squad dispatched straight from the maestro sits at depth 1 with room
+  // underneath, and depth alone would let it open another squad.
+  if (!roleMayDispatch(opts.dispatchRole ?? null)) {
+    const error = roleRefusalMessage(opts.dispatchRole ?? null);
+    console.error(`[driver] ${error}`);
+    try { loadAudit()?.emit?.("x_dispatch_role_refused", { role: currentRole(), target: opts.dispatchRole ?? null, runtime: opts.runtime }); }
+    catch { /* audit is never the reason a refusal fails to happen */ }
+    return { ok: false, runtime: opts.runtime, sessionId: null, result: "", costUsd: null, exitCode: null, stderr: error, durationMs: 0, error };
+  }
   // Agents dispatching agents, bounded. The ceiling is read here because this
   // is the one funnel every dispatch of every runtime passes through, and a
   // refusal has to look like a failed run so callers already handle it.
@@ -2385,11 +2407,14 @@ function dispatchToRunner(opts: RunHeadlessOpts): RunHeadlessResult {
   // runtime must not look as though it was obeyed.
   warnEffortUnsupported(opts, opts.runtime);
   const previousSpawnAs = spawnAsRuntime;
+  const previousSpawnRole = spawnAsRole;
   spawnAsRuntime = opts.runtime;
+  spawnAsRole = opts.dispatchRole ?? null;
   try {
     return dispatchToRunnerInner(opts);
   } finally {
     spawnAsRuntime = previousSpawnAs;
+    spawnAsRole = previousSpawnRole;
   }
 }
 

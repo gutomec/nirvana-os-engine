@@ -317,3 +317,66 @@ describe("dispatch depth — the engine refuses its own runaway", () => {
     expect(childDepth({ [DEPTH]: "1" })).toBe(2);
   });
 });
+
+describe("the role rule at the driver", () => {
+  const ROLE = "NIRVANA_DISPATCH_ROLE";
+  let savedRole: string | undefined;
+  beforeAll(() => { savedRole = process.env[ROLE]; });
+  afterAll(() => { if (savedRole === undefined) delete process.env[ROLE]; else process.env[ROLE] = savedRole; });
+
+  function attempt(extra: Record<string, unknown> = {}) {
+    try { fs.rmSync(path.join(CAP, "claude-args.json"), { force: true }); } catch { /* ignore */ }
+    const r = runHeadless({ runtime: "claude-code", prompt: "do the task", cwd: TMP, timeoutMs: 20_000, ...extra });
+    return { r, started: fs.existsSync(path.join(CAP, "claude-args.json")) };
+  }
+
+  test("a squad is refused and no process starts", () => {
+    process.env[ROLE] = "squad";
+    const { r, started } = attempt({ dispatchRole: "squad" });
+    expect(r.ok).toBe(false);
+    expect(String(r.error)).toContain("a squad executes, it never dispatches");
+    expect(started).toBe(false);
+    delete process.env[ROLE];
+  });
+
+  test("a squad is refused even when the target is not declared", () => {
+    process.env[ROLE] = "squad";
+    const { r, started } = attempt();
+    expect(r.ok).toBe(false);
+    expect(started).toBe(false);
+    delete process.env[ROLE];
+  });
+
+  test("an employee may open a squad, and that run really starts", () => {
+    process.env[ROLE] = "employee";
+    const { r, started } = attempt({ dispatchRole: "squad" });
+    expect(r.ok, r.error ?? r.stderr).toBe(true);
+    expect(started).toBe(true);
+    delete process.env[ROLE];
+  });
+
+  test("an employee may not convene a business", () => {
+    process.env[ROLE] = "employee";
+    const { r } = attempt({ dispatchRole: "business" });
+    expect(r.ok).toBe(false);
+    expect(String(r.error)).toContain("may dispatch only squad");
+    delete process.env[ROLE];
+  });
+
+  test("the operator's own session is unrestricted", () => {
+    delete process.env[ROLE];
+    const { r, started } = attempt({ dispatchRole: "business" });
+    expect(r.ok, r.error ?? r.stderr).toBe(true);
+    expect(started).toBe(true);
+  });
+
+  test("the role refusal is checked before the depth ceiling, so its message is the one that travels", () => {
+    process.env[ROLE] = "squad";
+    process.env.NIRVANA_DISPATCH_DEPTH = "9";
+    const { r } = attempt({ dispatchRole: "squad" });
+    expect(String(r.error)).toContain("never dispatches");
+    expect(String(r.error)).not.toContain("max_dispatch_depth");
+    delete process.env[ROLE];
+    delete process.env.NIRVANA_DISPATCH_DEPTH;
+  });
+});

@@ -193,6 +193,11 @@ function pickChain(args: TeamRunArgs): { chain: ChainStep[]; reason: string } {
   // the business granted. If it wants to open a seat's method file before
   // deciding the seat is unnecessary, it can.
   const res = (args.runHeadlessImpl ?? runHeadless)({
+    // The director decides and returns a plan. It has Bash and full trust so it
+    // can read a seat method file before ruling the seat out, which is also how
+    // it could shell out to `nrv dispatch` — so it is stamped as a planner,
+    // which may open nothing.
+    dispatchRole: "planner",
     runtime: args.runtime, prompt, cwd: args.projectRoot,
     addDirs: [businessDir(args), args.projectDir],
     yolo: args.yolo ?? true,
@@ -382,6 +387,9 @@ function runStep(step: ChainStep, idx: number, total: number, args: TeamRunArgs,
   appendAudit({ event: "dispatch_business", trace_id: args.projectId, project_id: args.projectId, business_slug: args.slug, employee: step.employee, mode: "team-step", step: idx + 1, total }, args.projectRoot);
 
   const res = runWithSession("employee", step.employee, args, {
+    // An employee may use a squad to build its deliverable, and may not convene
+    // another company. That is the whole allowance.
+    dispatchRole: "employee",
     // bizDir is granted so the employee prompt's resource map is a door and not a
     // sign: `playbooks/`, `standards/`, `rubrics/` and `templates/` live under it,
     // and on claude-code and agy an ungranted path is simply refused. Same grant

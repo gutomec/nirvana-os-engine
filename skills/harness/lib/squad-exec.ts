@@ -554,6 +554,9 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
 
   const cascadeImpl = args.runWithCascadeImpl ?? runWithCascade;
   const cascadeArgs: Parameters<typeof runWithCascade>[0] = {
+    // A squad EXECUTES. The owner rule has no exception: it may open nothing,
+    // and the stamp is what makes that enforceable rather than advisory.
+    dispatchRole: "squad",
     // The dispatched runtime runs INSIDE the project — it needs the project's .nirvana/,
     // its config, its logs and its code-base — with the scaffold and the outputs dir handed
     // to it as additional directories so both stay writable.
