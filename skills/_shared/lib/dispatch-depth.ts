@@ -41,7 +41,7 @@ export const ROLE_ENV = "NIRVANA_DISPATCH_ROLE";
  * would let a squad dispatched straight from the maestro open another squad,
  * because it sits at depth 1 with room underneath.
  */
-export type DispatchRole = "business" | "employee" | "squad" | "agent-x" | "planner";
+export type DispatchRole = "business" | "employee" | "squad" | "agent-x" | "planner" | "exec";
 
 /** What each role is allowed to dispatch. `[]` means: nothing, ever. */
 const ALLOWED: Record<DispatchRole, readonly DispatchRole[]> = {
@@ -58,6 +58,11 @@ const ALLOWED: Record<DispatchRole, readonly DispatchRole[]> = {
   // a verdict and opens nothing. It exists as a role because these run with
   // tools and full trust, so "it would not dispatch" is a hope, not a rule.
   planner: [],
+  // `nrv exec`: a raw runtime call with no persona, no gate and no outputs
+  // root. It is an OPERATOR tool, and the empty allowance is how that is
+  // enforced rather than documented — every dispatched role refuses to open
+  // one, so a seat cannot shell out to it and get an unsupervised agent.
+  exec: [],
 };
 
 /** The role of the process that is about to spawn; null = the operator. */

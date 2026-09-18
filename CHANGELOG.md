@@ -37,6 +37,10 @@ A depth ceiling bounds a chain but says nothing about who is in it, and a squad 
 =======
 >>>>>>> bb46e5c (fix(dispatch): the ceiling clears the Glance topology, and an employee may use several squads)
 
+### `nrv exec` — the runtime as itself, and honest about what that is worth
+
+Everything the engine does with a runtime wraps the brief: a persona, the autonomous directive, an outputs root, the ledger, the delivery pipeline, the quality gate. That wrapping is the product, and it is also why there was no way to ask a runtime a plain question. `--agent-x` is the thinnest dispatch and still carries all of it, so an errand around the work — check a fact, ask a second runtime when the one you are sitting in has hit a limit of its own, read something back in a language you do not write — had no home. `nrv exec [--runtime=<rt>] "<prompt>"` is that home, and it promises nothing: no persona, no outputs directory, no run in the ledger, no gate. It picks the runtime by the same rule a dispatch does, so the session's own runtime is the default and a named one that is not installed is a stop rather than a silent substitution to another vendor. `--json` returns `{ok, runtime, result, cost_usd, duration_ms, gate: null}`, and that `gate: null` is the point: the value of this engine is that a deliverable has `gate_passed` behind it, so a command that returns raw text says on stderr, every time, that it passed no gate and produced no artifact. It is an operator tool and the role rule is what makes that true rather than documented: `exec` carries an empty allowance, so a squad, a seat, a director or another exec is refused — a dispatched agent shelling out to it would be an unsupervised agent with a different name. Every errand records `x_exec_passthrough` with its runtime, cost and duration, and never with the prompt.
+
 ## 0.13.14 — 2026-09-17
 
 ### A dispatched agent sees an allowlist of the environment, not a copy of it

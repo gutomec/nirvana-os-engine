@@ -37,6 +37,10 @@ Um teto de profundidade limita a cadeia mas não diz nada sobre quem está nela,
 =======
 >>>>>>> bb46e5c (fix(dispatch): the ceiling clears the Glance topology, and an employee may use several squads)
 
+### `nrv exec` — o runtime como ele mesmo, e honesto sobre quanto isso vale
+
+Tudo o que o engine faz com um runtime embrulha o brief: uma persona, a diretiva autônoma, uma raiz de saída, o ledger, o pipeline de entrega, o portão de qualidade. Esse embrulho é o produto, e é também por isso que não havia como fazer uma pergunta simples a um runtime. O `--agent-x` é o despacho mais fino e ainda carrega tudo isso, então uma tarefa ao redor do trabalho — conferir um fato, perguntar a um segundo runtime quando aquele em que você está bateu num limite próprio, ler algo de volta numa língua que você não escreve — não tinha lugar. O `nrv exec [--runtime=<rt>] "<prompt>"` é esse lugar, e ele não promete nada: sem persona, sem diretório de saída, sem execução no ledger, sem portão. Escolhe o runtime pela mesma regra de um despacho, então o runtime da sessão é o padrão e um runtime nomeado que não está instalado é parada, nunca troca silenciosa de fornecedor. O `--json` devolve `{ok, runtime, result, cost_usd, duration_ms, gate: null}`, e esse `gate: null` é o ponto: o valor deste engine é que uma entrega tem `gate_passed` atrás dela, então um comando que devolve texto cru diz no stderr, toda vez, que não passou por portão nenhum e não produziu artefato. É ferramenta do operador, e a regra de papéis é o que torna isso verdadeiro em vez de documentado: `exec` carrega permissão vazia, então um squad, um assento, um diretor ou outro exec são recusados — um agente despachado que saísse por ele seria um agente sem supervisão com outro nome. Toda tarefa registra `x_exec_passthrough` com runtime, custo e duração, e nunca com o prompt.
+
 ## 0.13.14 — 2026-09-17
 
 ### Um agente despachado vê uma lista do ambiente, não uma cópia dele
