@@ -31,6 +31,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import { parseArgs, EXIT, log } from "../lib/bun-helpers.ts";
 import {
   SKIP_PATH_PERSIST_ENV, skipPathPersist, isUnderTempRoot, broadcastEnvironmentChange,
@@ -179,24 +180,36 @@ const AGENTS_TO_INSTALL: AgentInstallSpec[] = [
 ];
 
 // ─── settings.json patcher (idempotent) ──────────────────────────────
-function isOurHook(h: any): boolean {
-  if (!h?.hooks) return false;
-  return h.hooks.some((x: any) => typeof x?.command === "string" && NIRVANA_TOKENS.some(tok => x.command.includes(tok)));
+function isOurHookHandler(h: any): boolean {
+  return typeof h?.command === "string" && NIRVANA_TOKENS.some(tok => h.command.includes(tok));
 }
 
-function patchSettings(spec: AgentInstallSpec, mode: "install" | "uninstall"): { changed: boolean; before: any; after: any } {
+function patchSettings(spec: AgentInstallSpec, mode: "install" | "uninstall"): { changed: boolean; before: any; after: any; raw: string; existed: boolean; error?: string } {
   let current: any = {};
-  if (fs.existsSync(spec.settingsPath)) {
-    try { current = JSON.parse(fs.readFileSync(spec.settingsPath, "utf8")); }
-    catch { /* keep empty — we'll overwrite a malformed file */ }
+  let raw = "";
+  const existed = fs.existsSync(spec.settingsPath);
+  if (existed) {
+    raw = fs.readFileSync(spec.settingsPath, "utf8");
+    try { current = JSON.parse(raw); }
+    catch (error) { return { changed: false, before: {}, after: {}, raw, existed, error: `invalid JSON: ${(error as Error).message}` }; }
   }
+  if (!current || typeof current !== "object" || Array.isArray(current)) return { changed: false, before: current, after: current, raw, existed, error: "settings root must be a JSON object" };
   const before = JSON.parse(JSON.stringify(current || {}));
-  current.hooks = current.hooks || {};
+  if (current.hooks === undefined) current.hooks = {};
+  if (!current.hooks || typeof current.hooks !== "object" || Array.isArray(current.hooks)) return { changed: false, before, after: before, raw, existed, error: "hooks must be a JSON object when present" };
 
   for (const [event, ourGroups] of Object.entries(spec.groups)) {
-    const existing = Array.isArray(current.hooks[event]) ? current.hooks[event] : [];
-    // Drop our previous hooks (matched by token) — preserve everything else
-    const userKept = existing.filter((g: any) => !isOurHook(g));
+    const source = current.hooks[event];
+    if (source !== undefined && !Array.isArray(source)) return { changed: false, before, after: before, raw, existed, error: `hooks.${event} must be an array when present` };
+    const existing = source || [];
+    // Remove only our handlers. A user handler may share a matcher group with
+    // ours, and must survive install and uninstall with the group's other keys.
+    const userKept = existing.flatMap((group: any) => {
+      if (!group || typeof group !== "object" || !Array.isArray(group.hooks)) return [group];
+      if (!group.hooks.some((handler: any) => isOurHookHandler(handler))) return [group];
+      const hooks = group.hooks.filter((handler: any) => !isOurHookHandler(handler));
+      return hooks.length ? [{ ...group, hooks }] : [];
+    });
     if (mode === "install") {
       current.hooks[event] = [...userKept, ...ourGroups];
     } else {
@@ -207,13 +220,39 @@ function patchSettings(spec: AgentInstallSpec, mode: "install" | "uninstall"): {
   if (Object.keys(current.hooks).length === 0) delete current.hooks;
 
   const changed = JSON.stringify(before) !== JSON.stringify(current);
-  return { changed, before, after: current };
+  return { changed, before, after: current, raw, existed };
 }
 
-function backup(file: string): string | null {
+function publishSettings(file: string, existed: boolean, raw: string, after: any): string | null {
+  const next = JSON.stringify(after, null, 2) + "\n";
+  // JSON.stringify is the candidate; parse it before creating any backup or
+  // replacing the user's file, then guard against a concurrent edit.
+  const dir = path.dirname(file);
+  fs.mkdirSync(dir, { recursive: true });
+  const nonce = `${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const temp = path.join(dir, `.${path.basename(file)}.nirvana-${nonce}.tmp`);
+  const mode = existed ? fs.statSync(file).mode : 0o600;
+  try {
+    fs.writeFileSync(temp, next, { encoding: "utf8", flag: "wx" });
+    fs.chmodSync(temp, mode);
+    if (!isDeepStrictEqual(JSON.parse(fs.readFileSync(temp, "utf8")), after)) throw new Error(`JSON candidate validation failed for ${file}`);
+    const unchanged = fs.existsSync(file) === existed && (!existed || fs.readFileSync(file, "utf8") === raw);
+    if (!unchanged) throw new Error(`refusing to replace ${file}: it changed while the candidate was prepared`);
+    const bak = existed ? backup(file, nonce) : null;
+    const stillUnchanged = fs.existsSync(file) === existed && (!existed || fs.readFileSync(file, "utf8") === raw);
+    if (!stillUnchanged) throw new Error(`refusing to replace ${file}: it changed while the backup was prepared`);
+    fs.renameSync(temp, file);
+    if (!isDeepStrictEqual(JSON.parse(fs.readFileSync(file, "utf8")), after)) throw new Error(`JSON readback validation failed for ${file}`);
+    return bak;
+  } finally {
+    try { if (fs.existsSync(temp)) fs.rmSync(temp); } catch { /* preserve the original failure */ }
+  }
+}
+
+function backup(file: string, nonce = `${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`): string | null {
   if (!fs.existsSync(file)) return null;
-  const bak = `${file}.nirvana-backup.${Date.now()}`;
-  fs.copyFileSync(file, bak);
+  const bak = `${file}.nirvana-backup.${nonce}`;
+  fs.copyFileSync(file, bak, fs.constants.COPYFILE_EXCL);
   return bak;
 }
 
@@ -694,6 +733,7 @@ inline, with no dispatch, no quality gate and no audit trail.
   // Per-agent
   console.log("\nAgents");
   let anyChange = false;
+  let failures = false;
   let installedCount = 0;
   for (const spec of AGENTS_TO_INSTALL) {
     const exists = fs.existsSync(spec.settingsPath);
@@ -707,17 +747,27 @@ inline, with no dispatch, no quality gate and no audit trail.
       console.log(`  ◌ ${spec.name} — ${runtimeInstalled ? `not installed (no ${spec.settingsPath})` : `runtime absent (no ${runtimeHome}) — skipping`}`);
       if (runtimeInstalled && mode === "install" && !check && !dryRun) {
         // Create the file with just our hooks
-        fs.mkdirSync(runtimeHome, { recursive: true });
-        const { after } = patchSettings(spec, "install");
-        fs.writeFileSync(spec.settingsPath, JSON.stringify(after, null, 2) + "\n", "utf8");
+        const result = patchSettings(spec, "install");
+        if (result.error) { console.log(`     ⚠ ${result.error}; left untouched`); failures = true; continue; }
+        publishSettings(spec.settingsPath, result.existed, result.raw, result.after);
         console.log(`     → created ${spec.settingsPath} with hooks`);
-        if (spec.name === "Codex") for (const n of codexTrust("install")) console.log(`     ${n}`);
+        if (spec.name === "Codex") {
+          const notes = codexTrust("install");
+          for (const n of notes) console.log(`     ${n}`);
+          if (notes.some((n) => n.startsWith("⚠"))) failures = true;
+        }
         anyChange = true;
         installedCount++;
       }
       continue;
     }
     const result = patchSettings(spec, mode);
+    if (result.error) {
+      console.log(`  ⚠ ${spec.name} — ${result.error}; left untouched`);
+      anyChange = true;
+      failures = true;
+      continue;
+    }
     if (!result.changed) {
       console.log(`  ✓ ${spec.name} — already ${mode === "install" ? "installed" : "uninstalled"}`);
       // The hooks were there; the trust record may not be (an install older
@@ -727,6 +777,7 @@ inline, with no dispatch, no quality gate and no audit trail.
         const notes = codexTrust(check ? "check" : mode);
         for (const n of notes) console.log(`     ${n}`);
         if (check && notes.some((n) => n.startsWith("⚠"))) anyChange = true;
+        if (notes.some((n) => n.startsWith("⚠"))) failures = true;
       }
       if (mode === "install") installedCount++;
       continue;
@@ -741,10 +792,13 @@ inline, with no dispatch, no quality gate and no audit trail.
       anyChange = true;
       continue;
     }
-    const bak = backup(spec.settingsPath);
-    fs.writeFileSync(spec.settingsPath, JSON.stringify(result.after, null, 2) + "\n", "utf8");
+    const bak = publishSettings(spec.settingsPath, result.existed, result.raw, result.after);
     console.log(`  ✓ ${spec.name} — ${mode}ed${bak ? ` (backup: ${path.basename(bak)})` : ""}`);
-    if (spec.name === "Codex") for (const n of codexTrust(mode)) console.log(`     ${n}`);
+    if (spec.name === "Codex") {
+      const notes = codexTrust(mode);
+      for (const n of notes) console.log(`     ${n}`);
+      if (notes.some((n) => n.startsWith("⚠"))) failures = true;
+    }
     anyChange = true;
     if (mode === "install") installedCount++;
   }
@@ -769,11 +823,11 @@ inline, with no dispatch, no quality gate and no audit trail.
   // Summary
   console.log("");
   if (check) {
-    process.exit(anyChange ? EXIT.FAILURES : EXIT.OK);
+    process.exit(anyChange || failures ? EXIT.FAILURES : EXIT.OK);
   }
   if (dryRun) {
     console.log("(dry run — no files modified)");
-    process.exit(EXIT.OK);
+    process.exit(failures ? EXIT.FAILURES : EXIT.OK);
   }
   if (mode === "install") {
     if (installedCount === 0) {
@@ -787,7 +841,7 @@ inline, with no dispatch, no quality gate and no audit trail.
   } else {
     console.log("Done. Hooks and PATH block removed. Other settings preserved.");
   }
-  process.exit(EXIT.OK);
+  process.exit(failures ? EXIT.FAILURES : EXIT.OK);
 }
 
 main();

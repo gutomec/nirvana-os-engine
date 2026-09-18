@@ -24,6 +24,7 @@ import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { isDeepStrictEqual } from "node:util";
 
 export const CODEX_HOOK_EVENT_LABEL: Record<string, string> = {
   PreToolUse: "pre_tool_use",
@@ -92,22 +93,123 @@ export function codexHookStateKey(hooksFile: string, eventName: string, groupInd
 }
 
 function tomlEscape(s: string): string { return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"'); }
-function tomlUnescape(s: string): string { return s.replace(/\\"/g, '"').replace(/\\\\/g, "\\"); }
+type TomlDocument = Record<string, any>;
+
+function parseToml(raw: string, configFile: string): TomlDocument {
+  if (!raw.trim()) return {};
+  try { return Bun.TOML.parse(raw) as TomlDocument; }
+  catch (error) { throw new Error(`refusing to modify invalid TOML at ${configFile}: ${(error as Error).message}`); }
+}
+
+function stateFrom(doc: TomlDocument): Record<string, any> {
+  const hooks = doc.hooks;
+  if (!hooks || typeof hooks !== "object") return {};
+  const state = hooks.state;
+  return state && typeof state === "object" ? state : {};
+}
+
+function sameToml(a: TomlDocument, b: TomlDocument): boolean {
+  return isDeepStrictEqual(a, b);
+}
+
+function expectedWithTrust(doc: TomlDocument, key: string, hash: string): TomlDocument {
+  const expected = structuredClone(doc);
+  if (!expected.hooks || typeof expected.hooks !== "object") expected.hooks = {};
+  if (!expected.hooks.state || typeof expected.hooks.state !== "object") expected.hooks.state = {};
+  if (!expected.hooks.state[key] || typeof expected.hooks.state[key] !== "object") expected.hooks.state[key] = {};
+  expected.hooks.state[key].trusted_hash = hash;
+  return expected;
+}
+
+function expectedWithoutTrust(doc: TomlDocument, keys: string[]): TomlDocument {
+  const expected = structuredClone(doc);
+  const state = stateFrom(expected);
+  for (const key of keys) delete state[key];
+  if (expected.hooks && typeof expected.hooks === "object" && expected.hooks.state && Object.keys(expected.hooks.state).length === 0) delete expected.hooks.state;
+  if (expected.hooks && typeof expected.hooks === "object" && Object.keys(expected.hooks).length === 0) delete expected.hooks;
+  return expected;
+}
+
+interface TableSpan { start: number; end: number; headerEnd: number; }
+
+/** Locate a simple hooks.state table header outside multiline TOML strings. */
+function findStateTable(raw: string, key: string): TableSpan | null {
+  const lines = raw.split(/(?<=\n)/);
+  let offset = 0;
+  let inMultiline: "'''" | '\"\"\"' | null = null;
+  const tables: Array<{ key?: string; start: number; headerEnd: number }> = [];
+  for (const line of lines) {
+    const code = inMultiline ? "" : line;
+    if (!inMultiline) {
+      const m = code.match(/^\s*\[\s*hooks\s*\.\s*state\s*\.\s*((?:"(?:[^"\\]|\\.)*")|(?:'(?:''|[^'])*'))\s*\]\s*(?:#.*)?(?:\r?\n)?$/);
+      if (m) {
+        try {
+          const value = Bun.TOML.parse(`value = ${m[1]}`) as { value?: unknown };
+          if (typeof value.value === "string") tables.push({ key: value.value, start: offset, headerEnd: offset + line.length });
+        } catch { /* candidate validation below fails closed if a header is exotic */ }
+      } else if (/^\s*\[\[?[^\]]+\]\]?\s*(?:#.*)?(?:\r?\n)?$/.test(code)) {
+        tables.push({ start: offset, headerEnd: offset + line.length });
+      }
+    }
+    // Table-like text inside a multiline string must never be treated as a header.
+    const marker = inMultiline || (line.includes('"""') ? '"""' : line.includes("'''") ? "'''" : null);
+    if (marker) {
+      const count = line.split(marker).length - 1;
+      if (count % 2 === 1) inMultiline = inMultiline === marker ? null : marker;
+    }
+    offset += line.length;
+  }
+  const index = tables.findIndex((h) => h.key === key);
+  if (index < 0) return null;
+  return { start: tables[index].start, headerEnd: tables[index].headerEnd, end: index + 1 < tables.length ? tables[index + 1].start : raw.length };
+}
+
+function replaceTrustHash(raw: string, span: TableSpan, hash: string): string {
+  const body = raw.slice(span.headerEnd, span.end);
+  const withoutHash = body.replace(/^\s*trusted_hash\s*=.*(?:\r?\n|$)/m, "");
+  const header = raw.slice(span.start, span.headerEnd);
+  const newline = header.includes("\r\n") ? "\r\n" : "\n";
+  return raw.slice(0, span.start) + header + `trusted_hash = "${hash}"${newline}` + withoutHash + raw.slice(span.end);
+}
+
+function publishToml(configFile: string, existed: boolean, raw: string, next: string, expected: TomlDocument): void {
+  const dir = path.dirname(configFile);
+  fs.mkdirSync(dir, { recursive: true });
+  const nonce = `${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const temp = path.join(dir, `.${path.basename(configFile)}.nirvana-${nonce}.tmp`);
+  const mode = existed ? fs.statSync(configFile).mode : 0o600;
+  try {
+    fs.writeFileSync(temp, next, { encoding: "utf8", flag: "wx" });
+    fs.chmodSync(temp, mode);
+    const candidate = parseToml(fs.readFileSync(temp, "utf8"), configFile);
+    if (!sameToml(candidate, expected)) throw new Error(`refusing a TOML edit whose semantics exceed the requested hook trust update at ${configFile}`);
+    const unchanged = fs.existsSync(configFile) === existed && (!existed || fs.readFileSync(configFile, "utf8") === raw);
+    if (!unchanged) throw new Error(`refusing to replace ${configFile}: it changed while the candidate was prepared`);
+    if (existed) fs.copyFileSync(configFile, `${configFile}.nirvana-backup.${nonce}`, fs.constants.COPYFILE_EXCL);
+    const stillUnchanged = fs.existsSync(configFile) === existed && (!existed || fs.readFileSync(configFile, "utf8") === raw);
+    if (!stillUnchanged) throw new Error(`refusing to replace ${configFile}: it changed while the backup was prepared`);
+    fs.renameSync(temp, configFile);
+    if (!sameToml(parseToml(fs.readFileSync(configFile, "utf8"), configFile), expected)) throw new Error(`TOML readback validation failed for ${configFile}`);
+  } finally {
+    try { if (fs.existsSync(temp)) fs.rmSync(temp); } catch { /* preserve the original failure */ }
+  }
+}
 
 /** Every `[hooks.state."key"]` block in a config.toml, key → { trusted_hash?, enabled? }. */
 export function readCodexHookState(configFile: string): Map<string, { trusted_hash?: string; enabled?: boolean }> {
   const out = new Map<string, { trusted_hash?: string; enabled?: boolean }>();
-  let raw: string;
-  try { raw = fs.readFileSync(configFile, "utf8"); } catch { return out; }
-  const re = /^\[hooks\.state\."((?:[^"\\]|\\.)*)"\]\s*\n((?:(?!^\[).*\n?)*)/gm;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(raw))) {
-    const key = tomlUnescape(m[1]);
-    const body = m[2] || "";
-    const entry: { trusted_hash?: string; enabled?: boolean } = {};
-    const h = body.match(/^\s*trusted_hash\s*=\s*"([^"]*)"/m); if (h) entry.trusted_hash = h[1];
-    const e = body.match(/^\s*enabled\s*=\s*(true|false)/m); if (e) entry.enabled = e[1] === "true";
-    out.set(key, entry);
+  try {
+    const state = stateFrom(parseToml(fs.readFileSync(configFile, "utf8"), configFile));
+    for (const [key, value] of Object.entries(state)) {
+      if (!value || typeof value !== "object") continue;
+      const entry: { trusted_hash?: string; enabled?: boolean } = {};
+      if (typeof value.trusted_hash === "string") entry.trusted_hash = value.trusted_hash;
+      if (typeof value.enabled === "boolean") entry.enabled = value.enabled;
+      out.set(key, entry);
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return out;
+    throw error;
   }
   return out;
 }
@@ -119,36 +221,34 @@ export function readCodexHookState(configFile: string): Map<string, { trusted_ha
  */
 export function upsertCodexHookTrust(configFile: string, key: string, hash: string): boolean {
   let raw = "";
-  try { raw = fs.readFileSync(configFile, "utf8"); } catch { /* new file */ }
+  let existed = true;
+  try { raw = fs.readFileSync(configFile, "utf8"); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; existed = false; }
+  const before = parseToml(raw, configFile);
+  if (stateFrom(before)[key]?.trusted_hash === hash) return false;
+  const newline = raw.includes("\r\n") ? "\r\n" : "\n";
   const header = `[hooks.state."${tomlEscape(key)}"]`;
-  const block = `${header}\ntrusted_hash = "${hash}"\n`;
-  const escapedHeader = header.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const re = new RegExp(`^${escapedHeader}\\s*\\n((?:(?!^\\[).*\\n?)*)`, "m");
-  const m = raw.match(re);
-  let next: string;
-  if (m) {
-    if (new RegExp(`^\\s*trusted_hash\\s*=\\s*"${hash}"`, "m").test(m[1] || "")) return false;
-    const body = (m[1] || "").replace(/^\s*trusted_hash\s*=.*\n?/m, "");
-    next = raw.replace(re, `${header}\ntrusted_hash = "${hash}"\n${body}`);
-  } else {
-    next = raw.replace(/\s*$/, "") + (raw.trim() ? "\n\n" : "") + block;
-  }
-  fs.mkdirSync(path.dirname(configFile), { recursive: true });
-  fs.writeFileSync(configFile, next, "utf8");
+  const block = `${header}${newline}trusted_hash = "${hash}"${newline}`;
+  const span = findStateTable(raw, key);
+  const separator = raw ? (raw.endsWith("\n") ? newline : `${newline}${newline}`) : "";
+  const next = span ? replaceTrustHash(raw, span, hash) : raw + separator + block;
+  publishToml(configFile, existed, raw, next, expectedWithTrust(before, key, hash));
   return true;
 }
 
 /** Remove the `[hooks.state."key"]` blocks for `keys`. Returns whether the file changed. */
 export function removeCodexHookTrust(configFile: string, keys: string[]): boolean {
   let raw: string;
-  try { raw = fs.readFileSync(configFile, "utf8"); } catch { return false; }
+  try { raw = fs.readFileSync(configFile, "utf8"); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return false; throw error; }
+  const before = parseToml(raw, configFile);
   let next = raw;
   for (const key of keys) {
-    const header = `[hooks.state."${tomlEscape(key)}"]`.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    next = next.replace(new RegExp(`\\n*^${header}\\s*\\n((?:(?!^\\[).*\\n?)*)`, "m"), "\n");
+    const span = findStateTable(next, key);
+    if (span) next = next.slice(0, span.start) + next.slice(span.end);
   }
   if (next === raw) return false;
-  fs.writeFileSync(configFile, next.replace(/\n{3,}/g, "\n\n"), "utf8");
+  publishToml(configFile, true, raw, next, expectedWithoutTrust(before, keys));
   return true;
 }
 

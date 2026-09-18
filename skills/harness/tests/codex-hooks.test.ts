@@ -1,7 +1,7 @@
 // codex-hooks.test.ts — the trust hash Codex computes for a hook, reproduced;
 // the trust record written and removed in a config.toml without touching the
 // rest of it; our handlers in a hooks.json recognised with their trust state.
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -63,6 +63,95 @@ describe("trust records in config.toml", () => {
     expect(readCodexHookState(cfg).get(key)?.trusted_hash).toBe("sha256:ccc");
     expect(removeCodexHookTrust(cfg, [key])).toBe(true);
     expect(readCodexHookState(cfg).size).toBe(0);
+  });
+
+  test("recognizes a literal-quoted Windows key, preserves disabled and unknown fields, and stays byte-identical on repeat", () => {
+    const d = tmp();
+    const cfg = path.join(d, "config.toml");
+    const key = "C:\\Users\\me\\.codex\\hooks.json:pre_tool_use:0:0";
+    const raw = [
+      "note = '''",
+      `[hooks.state."${key.replace(/\\/g, "\\\\")}"]`,
+      "'''",
+      "",
+      `[hooks.state.'${key}']`,
+      'trusted_hash = "sha256:old"',
+      "enabled = false",
+      'status_message = "keep"',
+      "",
+      '[projects."/x"]',
+      'trust_level = "trusted"',
+      "",
+    ].join("\r\n");
+    fs.writeFileSync(cfg, raw, "utf8");
+    expect(upsertCodexHookTrust(cfg, key, "sha256:new")).toBe(true);
+    const changed = fs.readFileSync(cfg, "utf8");
+    expect(changed).toContain("enabled = false\r\nstatus_message = \"keep\"");
+    expect(changed).toContain(`[projects."/x"]`);
+    expect(readCodexHookState(cfg).get(key)?.trusted_hash).toBe("sha256:new");
+    expect(upsertCodexHookTrust(cfg, key, "sha256:new")).toBe(false);
+    expect(fs.readFileSync(cfg, "utf8")).toBe(changed);
+  });
+
+  test("rejects an invalid original without changing it", () => {
+    const d = tmp();
+    const cfg = path.join(d, "config.toml");
+    const raw = '[hooks.state."same"]\ntrusted_hash = "a"\n[hooks.state."same"]\ntrusted_hash = "b"\n';
+    fs.writeFileSync(cfg, raw, "utf8");
+    expect(() => upsertCodexHookTrust(cfg, "same", "sha256:new")).toThrow("refusing to modify invalid TOML");
+    expect(fs.readFileSync(cfg, "utf8")).toBe(raw);
+  });
+
+  test.skipIf(process.platform === "win32")("retains a restrictive config file mode through atomic publication", () => {
+    const d = tmp();
+    const cfg = path.join(d, "config.toml");
+    fs.writeFileSync(cfg, 'model = "x"\n', "utf8");
+    fs.chmodSync(cfg, 0o600);
+    upsertCodexHookTrust(cfg, "hook", "sha256:new");
+    expect(fs.statSync(cfg).mode & 0o777).toBe(0o600);
+  });
+
+  test("keeps the original and backup when publication fails", () => {
+    const d = tmp();
+    const cfg = path.join(d, "config.toml");
+    const raw = 'model = "x"\n';
+    fs.writeFileSync(cfg, raw, "utf8");
+    const rename = spyOn(fs, "renameSync").mockImplementationOnce(() => { throw new Error("simulated rename failure"); });
+    try { expect(() => upsertCodexHookTrust(cfg, "hook", "sha256:new")).toThrow("simulated rename failure"); }
+    finally { rename.mockRestore(); }
+    expect(fs.readFileSync(cfg, "utf8")).toBe(raw);
+    expect(fs.readdirSync(d).filter((name) => name.includes("nirvana-backup")).length).toBe(1);
+  });
+
+  test("rejects a corrupted candidate before creating a backup", () => {
+    const d = tmp();
+    const cfg = path.join(d, "config.toml");
+    const raw = 'model = "x"\n';
+    fs.writeFileSync(cfg, raw, "utf8");
+    const original = fs.writeFileSync;
+    const write = spyOn(fs, "writeFileSync").mockImplementationOnce(((file: fs.PathOrFileDescriptor, _data: string | NodeJS.ArrayBufferView, options?: fs.WriteFileOptions) => {
+      original(file, "[broken", options);
+    }) as typeof fs.writeFileSync);
+    try { expect(() => upsertCodexHookTrust(cfg, "hook", "sha256:new")).toThrow("refusing to modify invalid TOML"); }
+    finally { write.mockRestore(); }
+    expect(fs.readFileSync(cfg, "utf8")).toBe(raw);
+    expect(fs.readdirSync(d).filter((name) => name.includes("nirvana-backup")).length).toBe(0);
+  });
+
+  test("aborts when the original changes after the backup snapshot", () => {
+    const d = tmp();
+    const cfg = path.join(d, "config.toml");
+    const raw = 'model = "x"\n';
+    fs.writeFileSync(cfg, raw, "utf8");
+    const original = fs.copyFileSync;
+    const copy = spyOn(fs, "copyFileSync").mockImplementationOnce(((from: fs.PathLike, to: fs.PathLike, flags?: number) => {
+      original(from, to, flags);
+      fs.writeFileSync(cfg, 'model = "concurrent"\n', "utf8");
+    }) as typeof fs.copyFileSync);
+    try { expect(() => upsertCodexHookTrust(cfg, "hook", "sha256:new")).toThrow("changed while the backup was prepared"); }
+    finally { copy.mockRestore(); }
+    expect(fs.readFileSync(cfg, "utf8")).toBe('model = "concurrent"\n');
+    expect(fs.readdirSync(d).filter((name) => name.includes("nirvana-backup")).length).toBe(1);
   });
 
   test("codexHookTrustEntries finds ours by token and reports trust per handler", () => {

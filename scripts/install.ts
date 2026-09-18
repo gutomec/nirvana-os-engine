@@ -27,6 +27,7 @@ import { createRequire } from "node:module";
 import { RUNTIME_TARGETS, SKILLS, RETIRED_SKILLS, RUNTIME_ENTRIES, ENGINE_INTERNAL_SKILLS, LEGACY_RUNTIME_SKILL_DIRS, COPY_MARKER } from "../skills/_shared/lib/runtime-dirs.ts";
 import { classifyRuntimeEntry, depsLinkFor, ensureDepsLink, findParkedBackup, foreignProvider, materializeRuntimeSkillCopy, parkedBackupPath, pruneDepsLinkInside } from "../skills/_shared/lib/runtime-install.ts";
 import { RUN_STATE_EXCLUDES } from "../skills/_shared/lib/run-state.ts";
+import { patchHermesAllowlist, patchHermesAuditHooks, patchHermesExternalDirs, publishHermesJson, publishHermesYaml, readHermesYaml } from "../skills/_shared/lib/hermes-config.ts";
 
 const requireCjs = createRequire(import.meta.url);
 const HOME = homedir();
@@ -929,142 +930,86 @@ function hermesPresent(): boolean {
   }
 }
 
-function loadYamlLib(): any {
-  try { return requireCjs("yaml"); } catch { /* try repo node_modules */ }
-  try { return requireCjs(join(REPO_DIR, "node_modules", "yaml")); } catch { /* unavailable */ }
-  return null;
-}
-
-function hermesBackup(raw: string): void {
-  if (FLAG_DRY) return;
-  try { writeFileSync(`${HERMES_CONFIG}.nirvana-backup.${Date.now()}`, raw, "utf8"); } catch { /* best-effort */ }
-}
-
-// Fallback only: full round-trip via the yaml lib (used when the target key is
-// non-empty and not ours). Preserves comments + semantics; lineWidth:0 +
-// indentSeq:false keeps reformatting churn minimal.
-function patchHermesConfigYaml(mutate: (doc: any) => boolean): boolean {
-  const YAML = loadYamlLib();
-  if (!YAML) { console.log("      ! 'yaml' lib unavailable — skipped (run 'bun install')."); return false; }
-  const raw = readFileSync(HERMES_CONFIG, "utf8");
-  const doc = YAML.parseDocument(raw);
-  if (!mutate(doc)) return false;
-  if (!FLAG_DRY) { hermesBackup(raw); writeFileSync(HERMES_CONFIG, doc.toString({ lineWidth: 0, indentSeq: false }), "utf8"); }
-  return true;
-}
-
 // Project-skills env entry. Hermes expands ${VAR} in external_dirs and skips
 // entries that don't resolve to an existing dir — so this is inert until the
 // nrv-hermes wrapper exports NIRVANA_PROJECT_SKILLS=<project>/.agents/skills for
 // that session (Tier 3). Per-session, no config mutation per run.
 const HERMES_PROJECT_SKILLS_VAR = "${NIRVANA_PROJECT_SKILLS}";
 
-function wireHermesExternalDirs(bridgeDir: string): void {
-  if (!existsSync(HERMES_CONFIG)) { console.log("      ! ~/.hermes/config.yaml not found — skipped."); return; }
+function wireHermesExternalDirs(bridgeDir: string): boolean {
+  if (!existsSync(HERMES_CONFIG)) { console.log("      ! ~/.hermes/config.yaml not found — skipped."); return false; }
   const raw = readFileSync(HERMES_CONFIG, "utf8");
-  if (raw.includes(bridgeDir) && raw.includes(HERMES_PROJECT_SKILLS_VAR)) {
-    console.log("      ✓ external_dirs already configured (no-op)."); return;
-  }
-  // Surgical fast-path: empty list `external_dirs: []` (the fresh-config case).
-  const emptyRe = /^([ \t]*)external_dirs:[ \t]*\[[ \t]*\][ \t]*$/m;
-  const m = raw.match(emptyRe);
-  if (m) {
-    const ind = m[1];
-    const block = `${ind}external_dirs:\n${ind}- ${bridgeDir}\n${ind}- "${HERMES_PROJECT_SKILLS_VAR}"`;
-    if (!FLAG_DRY) { hermesBackup(raw); writeFileSync(HERMES_CONFIG, raw.replace(emptyRe, block), "utf8"); }
-    console.log("      ✓ external_dirs: ponte + ${NIRVANA_PROJECT_SKILLS} (skills por projeto via nrv-hermes)");
-    return;
-  }
-  // Fallback: non-empty list → yaml-lib merge.
-  const did = patchHermesConfigYaml((doc) => {
-    const cur = doc.getIn(["skills", "external_dirs"]);
-    const arr: any[] = cur && typeof cur.toJSON === "function" ? cur.toJSON() : (Array.isArray(cur) ? cur : []);
-    const clean = arr.filter((x) => typeof x === "string");
-    const want = [bridgeDir, HERMES_PROJECT_SKILLS_VAR].filter((w) => !clean.includes(w));
-    if (!want.length) return false;
-    doc.setIn(["skills", "external_dirs"], [...clean, ...want]);
+  try {
+    const candidate = patchHermesExternalDirs(raw, HERMES_CONFIG, bridgeDir, HERMES_PROJECT_SKILLS_VAR);
+    if (!candidate) { console.log("      ✓ external_dirs already configured (no-op)."); return true; }
+    if (!FLAG_DRY) publishHermesYaml(HERMES_CONFIG, raw, candidate);
+    console.log("      ✓ external_dirs updated (merge).");
     return true;
-  });
-  console.log(did ? "      ✓ external_dirs updated (merge)." : "      ✓ external_dirs already configured (no-op).");
+  } catch (error) { console.log(`      ! ${(error as Error).message}; left untouched.`); return false; }
 }
 
-function wireHermesAuditHooks(): void {
-  if (!existsSync(HERMES_CONFIG)) { console.log("      ! ~/.hermes/config.yaml not found — skipped."); return; }
+function wireHermesAuditHooks(): boolean {
+  if (!existsSync(HERMES_CONFIG)) { console.log("      ! ~/.hermes/config.yaml not found — skipped."); return false; }
   const cmdPre = `bun ${HERMES_HOOK_SHIM} pre`;
   const cmdPost = `bun ${HERMES_HOOK_SHIM} post`;
   const raw = readFileSync(HERMES_CONFIG, "utf8");
-  if (raw.includes(HERMES_HOOK_TOKEN)) { console.log("      ✓ audit hooks already wired (no-op)."); return; }
-  // Surgical fast-path: empty map `hooks: {}` (the fresh-config case).
-  const emptyRe = /^hooks:[ \t]*\{[ \t]*\}[ \t]*$/m;
-  if (emptyRe.test(raw)) {
-    const block = [
-      "hooks:",
-      "  pre_tool_call:",
-      `  - matcher: "terminal|file"`,
-      `    command: ${cmdPre}`,
-      "    timeout: 5",
-      "  post_tool_call:",
-      `  - matcher: "terminal|file"`,
-      `    command: ${cmdPost}`,
-      "    timeout: 5",
-    ].join("\n");
-    if (!FLAG_DRY) { hermesBackup(raw); writeFileSync(HERMES_CONFIG, raw.replace(emptyRe, block), "utf8"); preApproveHermesHooks([cmdPre, cmdPost]); }
-    console.log("      ✓ audit hooks (pre/post_tool_call) wired + pre-approved.");
-    return;
-  }
-  // Fallback: non-empty hooks → yaml-lib merge.
-  const did = patchHermesConfigYaml((doc) => {
-    let changed = false;
-    for (const [evt, cmd] of [["pre_tool_call", cmdPre], ["post_tool_call", cmdPost]] as Array<[string, string]>) {
-      const cur = doc.getIn(["hooks", evt]);
-      const list: any[] = cur && typeof cur.toJSON === "function" ? cur.toJSON() : (Array.isArray(cur) ? cur : []);
-      const kept = list.filter((h) => !(h && typeof h.command === "string" && h.command.includes(HERMES_HOOK_TOKEN)));
-      const next = [...kept, { matcher: "terminal|file", command: cmd, timeout: 5 }];
-      if (JSON.stringify(list) !== JSON.stringify(next)) { doc.setIn(["hooks", evt], next); changed = true; }
+  try {
+    const candidate = patchHermesAuditHooks(raw, HERMES_CONFIG, HERMES_HOOK_TOKEN, [["pre_tool_call", cmdPre], ["post_tool_call", cmdPost]]);
+    if (!candidate) {
+      if (!FLAG_DRY && !preApproveHermesHooks([cmdPre, cmdPost])) {
+        console.log("      ! audit hooks are wired but their allowlist was left untouched.");
+        return false;
+      }
+      console.log("      ✓ audit hooks already wired + pre-approved (no-op).");
+      return true;
     }
-    return changed;
-  });
-  if (did && !FLAG_DRY) preApproveHermesHooks([cmdPre, cmdPost]);
-  console.log(did ? "      ✓ audit hooks wired + pre-approved." : "      ✓ audit hooks already wired (no-op).");
+    if (!FLAG_DRY) {
+      publishHermesYaml(HERMES_CONFIG, raw, candidate);
+      if (!preApproveHermesHooks([cmdPre, cmdPost])) {
+        console.log("      ! audit hooks wired but their allowlist was left untouched.");
+        return false;
+      }
+    }
+    console.log("      ✓ audit hooks wired + pre-approved.");
+    return true;
+  } catch (error) { console.log(`      ! ${(error as Error).message}; left untouched.`); return false; }
 }
 
 // Pre-approve our two (event, command) pairs in Hermes' shell-hook allowlist so
 // the user doesn't get a consent prompt on first tool use. We only do this after
 // the user said "yes" (or passed --with-hermes). Matches Hermes' _is_allowlisted
 // which keys on (event, command) only (agent/shell_hooks.py:589-596).
-function preApproveHermesHooks(commands: string[]): void {
-  if (FLAG_DRY) return;
-  let data: any = { approvals: [] };
-  if (existsSync(HERMES_ALLOWLIST)) {
-    try { data = JSON.parse(readFileSync(HERMES_ALLOWLIST, "utf8")); } catch { data = { approvals: [] }; }
-  }
-  if (!Array.isArray(data.approvals)) data.approvals = [];
+function preApproveHermesHooks(commands: string[]): boolean {
+  if (FLAG_DRY) return true;
+  const raw = existsSync(HERMES_ALLOWLIST) ? readFileSync(HERMES_ALLOWLIST, "utf8") : null;
+  const source = raw ?? '{"approvals":[]}\n';
   const now = new Date().toISOString().replace(/\.\d+Z$/, "Z");
   const pairs: Array<[string, string]> = [["pre_tool_call", commands[0]], ["post_tool_call", commands[1]]];
-  for (const [event, command] of pairs) {
-    data.approvals = data.approvals.filter((e: any) => !(e && e.event === event && e.command === command));
-    data.approvals.push({ event, command, approved_at: now, script_mtime_at_approval: null });
-  }
-  try { writeFileSync(HERMES_ALLOWLIST, JSON.stringify(data, null, 2)); } catch { /* best-effort */ }
+  try {
+    const candidate = patchHermesAllowlist(source, HERMES_ALLOWLIST, pairs, now);
+    if (candidate) publishHermesJson(HERMES_ALLOWLIST, raw, candidate);
+    return true;
+  } catch (error) { console.log(`      ! ${(error as Error).message}; left untouched.`); return false; }
 }
 
-async function offerHermesBridge(): Promise<void> {
-  if (FLAG_NO_HERMES) return;
-  if (!hermesPresent()) return; // silent skip when Hermes is absent
+async function offerHermesBridge(): Promise<boolean> {
+  if (FLAG_NO_HERMES) return true;
+  if (!hermesPresent()) return true; // silent skip when Hermes is absent
 
   // Explicit opt-in: default NO. Headless only acts with --with-hermes.
   let ok = FLAG_WITH_HERMES;
   if (!ok) {
-    if (!process.stdin.isTTY) return;
+    if (!process.stdin.isTTY) return true;
     console.log();
     console.log("[hermes] Hermes Agent detected.");
     ok = await promptYesNo("Install the Nirvana-OS bridge into Hermes (lookup + dispatch via nrv)?", false);
   }
-  if (!ok) { console.log("      Skipped. Run later: bun scripts/install.ts --with-hermes"); return; }
+  if (!ok) { console.log("      Skipped. Run later: bun scripts/install.ts --with-hermes"); return true; }
 
   // 1. Register the bridge (single source via external_dirs pointing at the installed tree)
-  if (existsSync(HERMES_BRIDGE_DIR)) wireHermesExternalDirs(HERMES_BRIDGE_DIR);
-  else console.log("      ! bridge not found in ~/.claude/skills — run the full install first.");
+  let healthy = true;
+  if (existsSync(HERMES_BRIDGE_DIR)) healthy = wireHermesExternalDirs(HERMES_BRIDGE_DIR);
+  else { console.log("      ! bridge not found in ~/.claude/skills — run the full install first."); healthy = false; }
 
   // 2. Audit hooks (sub-toggle; more invasive → separate opt-in)
   if (!FLAG_NO_HERMES_HOOKS) {
@@ -1072,9 +1017,11 @@ async function offerHermesBridge(): Promise<void> {
     if (!FLAG_WITH_HERMES && process.stdin.isTTY) {
       wantHooks = await promptYesNo("      Also wire Hermes' audit hooks (pre/post tool)? Pre-approves 2 hooks on your behalf.", false);
     }
-    if (wantHooks) wireHermesAuditHooks();
+    if (wantHooks) healthy = wireHermesAuditHooks() && healthy;
   }
-  console.log("      ✓ Hermes ready. Check: hermes skills list | grep nirvana");
+  if (healthy) console.log("      ✓ Hermes ready. Check: hermes skills list | grep nirvana");
+  else console.log("      ! Hermes integration incomplete; review the messages above.");
+  return healthy;
 }
 
 function checkOnly(): void {
@@ -1120,11 +1067,10 @@ function checkOnly(): void {
   if (!hermesPresent()) {
     console.log("  hermes CLI:    not installed (bridge optional)");
   } else {
-    const YAML = loadYamlLib();
     let extReg = false, hooksReg = false;
-    if (YAML && existsSync(HERMES_CONFIG)) {
+    if (existsSync(HERMES_CONFIG)) {
       try {
-        const doc = YAML.parse(readFileSync(HERMES_CONFIG, "utf8")) || {};
+        const doc = readHermesYaml(readFileSync(HERMES_CONFIG, "utf8"), HERMES_CONFIG);
         const ext = doc?.skills?.external_dirs || [];
         extReg = Array.isArray(ext) && ext.some((d: any) => typeof d === "string" && d.includes("adapters/hermes/skills"));
         const h = doc?.hooks || {};
@@ -1198,7 +1144,7 @@ async function main(): Promise<void> {
   // After the starter pack (so seeded content is in the index) and outside it
   // (so an engine-only install gets registries too — see buildRegistries).
   buildRegistries();
-  await offerHermesBridge();
+  if (!await offerHermesBridge()) process.exitCode = 1;
   summary();
 }
 
