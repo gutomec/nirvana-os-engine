@@ -295,6 +295,59 @@ describe("agentic router — digest staleness + injected runner", () => {
     expect(auditEvents().some((e) => e.event === "agentic_route_failed")).toBe(true);
   }, 30_000);
 
+  // The router runs with Read/Glob/Grep/Bash, and an agent with tools reports
+  // its work instead of returning a payload. Observed 2026-09-17 on a real
+  // brief: "Routing decision: aurum-contabil + nirvana-societario-sucessao / I
+  // read the client brief ... and surveyed" — a correct decision, 117 seconds
+  // spent, no JSON, and the brief fell through to agent-x. The cascade's retry
+  // replays the same prompt, which answers flaky transport and not a missing
+  // envelope.
+  const NARRATED = [
+    "Routing decision: acme-web + squad-a",
+    "I read the client brief and surveyed the digest, then picked the business and its landing squad.",
+  ].join("\n");
+
+  /** Narration first, then whatever the re-ask returns. */
+  function narratingRunner(second: string) {
+    const calls: RunHeadlessOpts[] = [];
+    const impl = (opts: RunHeadlessOpts): RunHeadlessResult => {
+      calls.push(opts);
+      return {
+        ok: true, runtime: opts.runtime, sessionId: "s-1",
+        result: calls.length === 1 ? NARRATED : second,
+        costUsd: 0.01, exitCode: 0, stderr: "", durationMs: 5,
+      };
+    };
+    return { impl, calls };
+  }
+
+  test("a narrated decision is re-asked once and recovered", async () => {
+    const { impl, calls } = narratingRunner('{"kind":"decision","primary_business":"acme-web","mandatory_squads":["squad-a"],"optional_squads":[],"rationale":"transcribed"}');
+    const d = await agenticRoute({ brief: "landing page", runtime: "claude-code", cwd: tmp, runHeadlessImpl: impl, paths: routerPaths });
+    expect(d.ok).toBe(true);
+    expect(d.kind).toBe("decision");
+    expect(d.primary_business).toBe("acme-web");
+    expect(d.mandatory_squads).toEqual(["squad-a"]);
+    expect(calls.length).toBe(2);
+  }, 30_000);
+
+  test("the re-ask transcribes, carries the answer back, and grants no tools", async () => {
+    const { impl, calls } = narratingRunner('{"kind":"no_match","rationale":"x"}');
+    await agenticRoute({ brief: "landing page", runtime: "claude-code", cwd: tmp, runHeadlessImpl: impl, paths: routerPaths });
+    const reask = String(calls[1].prompt);
+    expect(reask).toContain("Transcribe the decision you ALREADY made");
+    expect(reask).toContain("Do not decide again");
+    expect(reask).toContain("Routing decision: acme-web + squad-a");
+    expect(calls[1].allowedTools).toBeUndefined();
+    expect(calls[0].allowedTools).toEqual(["Read", "Glob", "Grep", "Bash"]);
+  }, 30_000);
+
+  test("a first answer that parses is never re-asked", async () => {
+    const { impl, calls } = cannedRunner('{"kind":"no_match","rationale":"nothing fits"}');
+    await agenticRoute({ brief: "x", runtime: "claude-code", cwd: tmp, runHeadlessImpl: impl, paths: routerPaths });
+    expect(calls.length).toBe(1);
+  }, 30_000);
+
   test("agenticRoute: unparsable stdout is ok:false; canned no_match is ok:true", async () => {
     const bad = await agenticRoute({
       brief: "x", runtime: "claude-code", cwd: tmp,

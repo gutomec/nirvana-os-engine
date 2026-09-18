@@ -451,7 +451,54 @@ export async function agenticRoute(args: AgenticRouteArgs): Promise<AgenticRoute
   }
 
   const slugs = loadRegistrySlugs(routerPaths);
-  const parsed = parseAndValidate(res.result || "", slugs);
+  let parsed = parseAndValidate(res.result || "", slugs);
+
+  // The router runs with Read, Glob, Grep and Bash, because a decision over a
+  // large catalogue should be allowed to look things up. That grant has a cost
+  // the director seat pays too: an agent with tools treats its final message as
+  // a REPORT of the work it did, not as the payload.
+  //
+  // Observed on this machine, 2026-09-17: a real brief about a family holding
+  // answered "Routing decision: aurum-contabil + nirvana-societario-sucessao /
+  // I read the client brief ... and surveyed", spent 117 seconds, and failed to
+  // parse. It had decided correctly — a business AND a squad, both real slugs —
+  // and the brief still fell through to agent-x with "this brief got NO
+  // specialist". The cascade's own retry cannot help there: it replays the
+  // identical prompt, which answers the transport being flaky and not the
+  // envelope being missing.
+  //
+  // So ask once for the envelope alone, carrying the answer back to be
+  // transcribed rather than re-decided. No tools on the re-ask: there is no
+  // work left to report on, which is what produced the prose in the first
+  // place. The same shape the business director uses.
+  if (!parsed.ok) {
+    const narrated = (res.result || "").trim();
+    emitAudit({
+      event: "x_router_reask",
+      project_id: args.projectId ?? null,
+      error: parsed.error ?? null,
+      answer_chars: narrated.length,
+    }, args.cwd);
+    const reask = [
+      "You already made the routing decision. Below is your own answer. Transcribe the decision you ALREADY made into JSON. Do not decide again, do not change a target, do not explain.",
+      "",
+      "YOUR ANSWER:",
+      narrated.slice(0, 6000),
+      "",
+      "Your entire reply must be one JSON object and nothing else, in the shape the instructions gave you:",
+      '{"kind":"decision"|"ambiguous"|"no_match","primary_business":"<slug>"|null,"mandatory_squads":[],"optional_squads":[],"mind_clones":[],"rationale":"<one sentence>"}',
+      "No preamble, no summary of what you did, no markdown fences. The JSON object is the whole reply.",
+    ].join("\n");
+    const retry = runner({
+      runtime: args.runtime,
+      prompt: reask,
+      cwd: args.cwd,
+      maxBudgetUsd: args.maxBudgetUsd,
+      timeoutMs: 2 * 60 * 1000,
+    });
+    parsed = retry.ok ? parseAndValidate(retry.result || "", slugs) : parsed;
+  }
+
   if (!parsed.ok || !parsed.decision) {
     emitAudit({
       event: "agentic_route_failed",
