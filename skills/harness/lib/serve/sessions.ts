@@ -87,6 +87,7 @@ export function createSession(keyId: string, library: SessionLibrary = "global")
   const init = path.join(SKILLS_ROOT, "_shared", "scripts", "init-project.ts");
   if (fs.existsSync(init)) {
     spawnSync(process.env.NIRVANA_SERVE_BUN || "bun", [init, dir, `--scope=${SCOPE_FOR_LIBRARY[library]}`], {
+      windowsHide: true,
       stdio: "ignore", timeout: 60_000, env: { ...process.env },
     });
   }

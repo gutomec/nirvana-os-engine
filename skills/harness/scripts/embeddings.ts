@@ -85,7 +85,7 @@ export function enableSummary(neuralLoaded: boolean): { info: string[]; warn: st
 
 async function enable() {
   console.log(`Installing ${PKG} (~150MB, once) in ${NIRVANA_HOME}…`);
-  const r = spawnSync("bun", ["add", PKG], { cwd: NIRVANA_HOME, stdio: "inherit" });
+  const r = spawnSync("bun", ["add", PKG], { windowsHide: true, cwd: NIRVANA_HOME, stdio: "inherit" });
   if (r.status !== 0) { console.error("failed to install the neural package."); process.exit(1); }
   fs.writeFileSync(BACKEND_FILE, "transformers\n", "utf8");
   console.log("Backend recorded. Verifying it actually loads (model downloads on first use)…");

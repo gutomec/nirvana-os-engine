@@ -511,7 +511,7 @@ function processStartedAtWindows(pid: number, timeoutMs = WINDOWS_PS_TIMEOUT_MS)
     const r = spawnSync("powershell", [
       "-NoProfile", "-NonInteractive", "-Command",
       `(Get-Process -Id ${pid} -ErrorAction SilentlyContinue).StartTime.Ticks`,
-    ], { encoding: "utf8", timeout: timeoutMs });
+    ], { windowsHide: true, encoding: "utf8", timeout: timeoutMs });
     if (r.status !== 0) return null;
     const line = (r.stdout || "").trim();
     return line || null;
@@ -528,7 +528,7 @@ function findChildPidWindows(parentPid: number, excludePid?: number, timeoutMs =
     const r = spawnSync("powershell", [
       "-NoProfile", "-NonInteractive", "-Command",
       `(Get-CimInstance Win32_Process -Filter "ParentProcessId=${parentPid}" -ErrorAction SilentlyContinue).ProcessId`,
-    ], { encoding: "utf8", timeout: timeoutMs });
+    ], { windowsHide: true, encoding: "utf8", timeout: timeoutMs });
     if (r.status !== 0) return null;
     for (const line of (r.stdout || "").trim().split(/\r?\n/)) {
       const pid = parseInt(line.trim(), 10);
@@ -550,7 +550,7 @@ export function processStartedAt(pid: number, timeoutMs?: number): string | null
   if (!Number.isFinite(pid) || pid <= 0) return null;
   if (process.platform === "win32") return processStartedAtWindows(pid, timeoutMs);
   try {
-    const r = spawnSync("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8" });
+    const r = spawnSync("ps", ["-o", "lstart=", "-p", String(pid)], { windowsHide: true, encoding: "utf8" });
     if (r.status !== 0) return null;
     const line = (r.stdout || "").trim();
     return line || null;
@@ -569,7 +569,7 @@ export function findChildPid(parentPid: number, excludePid?: number, timeoutMs?:
   if (!Number.isFinite(parentPid) || parentPid <= 0) return null;
   if (process.platform === "win32") return findChildPidWindows(parentPid, excludePid, timeoutMs);
   try {
-    const r = spawnSync("ps", ["-A", "-o", "pid=,ppid="], { encoding: "utf8" });
+    const r = spawnSync("ps", ["-A", "-o", "pid=,ppid="], { windowsHide: true, encoding: "utf8" });
     if (r.status !== 0) return null;
     for (const line of (r.stdout || "").trim().split("\n")) {
       const [pidStr, ppidStr] = line.trim().split(/\s+/);

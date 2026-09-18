@@ -56,11 +56,11 @@ function escapeHtml(s: string): string {
 
 // markdown -> html: pandoc (best), then python-markdown, then escaped <pre>.
 function mdToHtml(file: string): string {
-  const pandoc = spawnSync("pandoc", [file, "-f", "gfm", "-t", "html", "--wrap=none"], { encoding: "utf8" });
+  const pandoc = spawnSync("pandoc", [file, "-f", "gfm", "-t", "html", "--wrap=none"], { windowsHide: true, encoding: "utf8" });
   if (pandoc.status === 0 && pandoc.stdout && pandoc.stdout.trim()) return pandoc.stdout;
   const py = spawnSync("python3", ["-c",
     "import sys,markdown;print(markdown.markdown(open(sys.argv[1],encoding='utf-8').read(),extensions=['extra','sane_lists','toc']))",
-    file], { encoding: "utf8" });
+    file], { windowsHide: true, encoding: "utf8" });
   if (py.status === 0 && py.stdout && py.stdout.trim()) return py.stdout;
   return "<pre>" + escapeHtml(fs.readFileSync(file, "utf8")) + "</pre>";
 }
@@ -217,7 +217,7 @@ function findChrome(): string | null {
   for (const p of byOs[process.platform] || []) if (fs.existsSync(p)) return p;
   for (const bin of ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "msedge"]) {
     const probe = process.platform === "win32" ? "where" : "which";
-    const r = spawnSync(probe, [bin], { encoding: "utf8" });
+    const r = spawnSync(probe, [bin], { windowsHide: true, encoding: "utf8" });
     if (r.status === 0 && r.stdout.trim()) return r.stdout.trim().split("\n")[0];
   }
   return null;
@@ -225,15 +225,15 @@ function findChrome(): string | null {
 
 function render(): { ok: boolean; engine: string; error?: string } {
   // weasyprint first: best paged-media support (page numbers, TOC page refs).
-  const wp = spawnSync(process.platform === "win32" ? "where" : "which", ["weasyprint"], { encoding: "utf8" });
+  const wp = spawnSync(process.platform === "win32" ? "where" : "which", ["weasyprint"], { windowsHide: true, encoding: "utf8" });
   if (wp.status === 0) {
-    const r = spawnSync("weasyprint", [tmpHtml, path.resolve(outputPdf)], { encoding: "utf8" });
+    const r = spawnSync("weasyprint", [tmpHtml, path.resolve(outputPdf)], { windowsHide: true, encoding: "utf8" });
     if (r.status === 0 && fs.existsSync(outputPdf)) return { ok: true, engine: "weasyprint" };
   }
   // Chrome fallback.
   const chrome = findChrome();
   if (chrome) {
-    const r = spawnSync(chrome, ["--headless=new", "--disable-gpu", "--no-pdf-header-footer", `--print-to-pdf=${path.resolve(outputPdf)}`, tmpHtml], { encoding: "utf8" });
+    const r = spawnSync(chrome, ["--headless=new", "--disable-gpu", "--no-pdf-header-footer", `--print-to-pdf=${path.resolve(outputPdf)}`, tmpHtml], { windowsHide: true, encoding: "utf8" });
     if (r.status === 0 && fs.existsSync(outputPdf)) return { ok: true, engine: "chrome" };
     return { ok: false, engine: "chrome", error: r.stderr || "chrome print falhou" };
   }

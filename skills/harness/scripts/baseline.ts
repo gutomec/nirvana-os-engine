@@ -167,7 +167,7 @@ function confidenceFor(sampleSize: number): "high" | "medium" | "low" | "unmeasu
 }
 
 function gitSha(repoRoot: string): string | null {
-  const res = spawnSync("git", ["-C", repoRoot, "rev-parse", "HEAD"], { encoding: "utf8" });
+  const res = spawnSync("git", ["-C", repoRoot, "rev-parse", "HEAD"], { windowsHide: true, encoding: "utf8" });
   if (res.status !== 0) return null;
   return res.stdout.trim() || null;
 }

@@ -88,7 +88,7 @@ for (const kind of ["squads", "businesses", "mind-clones"] as const) {
 if (!DRY) {
   try { unlinkSync(manifestPath); } catch { /* ignore */ }
   const nrv = join(HOME, ".local", "bin", "nrv");
-  if (existsSync(nrv)) { console.log("  re-indexando registries..."); spawnSync(nrv, ["index"], { stdio: "inherit" }); }
+  if (existsSync(nrv)) { console.log("  re-indexando registries..."); spawnSync(nrv, ["index"], { windowsHide: true, stdio: "inherit" }); }
 }
 
 console.log(`\n${DRY ? "Dry run — nothing changed." : `Pack '${slug}' removed`} (${removed} component(s)${kept ? `, ${kept} with run-state preserved` : ""}).`);

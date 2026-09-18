@@ -94,6 +94,7 @@ const BUSINESS_ALLOWLIST_ENV = "NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST";
 
 const defaultSpawn: DispatchSpawn = async (request) => {
   const child = Bun.spawn(request.command, {
+    windowsHide: true,
     cwd: request.cwd, env: request.env, stdin: "ignore", stdout: "pipe", stderr: "pipe",
   });
   const kill = () => { try { child.kill(); } catch { /* already gone */ } };
@@ -360,7 +361,7 @@ Read ${instructionFile} before producing anything: it names the upstream summari
     const logsDir = env.HARNESS_LOGS_DIR ? path.resolve(env.HARNESS_LOGS_DIR) : harnessLogsDir({ projectRoot });
     env.HARNESS_LOGS_DIR = logsDir;
 
-    const spawned = await spawn({ command, cwd: projectRoot, env, signal: adapterInput.signal });
+    const spawned = await spawn({ windowsHide: true, command, cwd: projectRoot, env, signal: adapterInput.signal });
     if (adapterInput.signal?.aborted) return failed(`aborted: ${String(adapterInput.signal.reason)}`);
 
     const { costUsd: reportedCostUsd, observed: costObserved } = observeCost(logsDir, input.projectId, costMatcher({ ...adapterInput.target, nodeId: adapterInput.nodeId }));

@@ -16,5 +16,5 @@ import * as path from "node:path";
 import { paths } from "../../_shared/lib/bun-helpers.ts";
 
 const doctor = path.join(paths.CLAUDE_SKILLS_DIR, "harness", "scripts", "doctor-system.ts");
-const r = spawnSync(process.execPath, [doctor, ...process.argv.slice(2)], { stdio: "inherit" });
+const r = spawnSync(process.execPath, [doctor, ...process.argv.slice(2)], { windowsHide: true, stdio: "inherit" });
 process.exit(r.status ?? 1);

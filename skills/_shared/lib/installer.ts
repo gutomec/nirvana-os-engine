@@ -108,7 +108,7 @@ function isHttpUrl(s: string): boolean {
 }
 
 function runCmd(cmd: string, args: string[], opts: { cwd?: string; timeoutMs?: number } = {}): { ok: boolean; stdout: string; stderr: string } {
-  const r = spawnSync(cmd, args, { cwd: opts.cwd, encoding: "utf8", timeout: opts.timeoutMs ?? 120_000 });
+  const r = spawnSync(cmd, args, { windowsHide: true, cwd: opts.cwd, encoding: "utf8", timeout: opts.timeoutMs ?? 120_000 });
   return { ok: r.status === 0, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
 

@@ -191,7 +191,7 @@ function rezip(): string | null {
   if (!zipWanted) return null;
   const exportScript = path.join(SKILLS, "harness/scripts/export.ts");
   const out = (session.zip_path as string | null) || path.resolve(`./${projectId}.zip`);
-  const z = spawnSync("bun", [exportScript, projectId, "--format=zip", "--deliverables-only", `--output=${out}`], { encoding: "utf8", stdio: "inherit" });
+  const z = spawnSync("bun", [exportScript, projectId, "--format=zip", "--deliverables-only", `--output=${out}`], { windowsHide: true, encoding: "utf8", stdio: "inherit" });
   if (z.status !== 0) return null;
   session.zip_path = out;
   fs.writeFileSync(sessionFile!, JSON.stringify(session, null, 2));

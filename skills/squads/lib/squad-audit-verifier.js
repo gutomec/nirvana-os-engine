@@ -55,6 +55,7 @@ function diffSquad(backupDir, currentDir) {
   // Use git diff --no-index for a clean diff (don't touch git state)
   try {
     const r = spawnSync('git', ['diff', '--no-index', '--no-color', '--stat', backupDir, currentDir], {
+      windowsHide: true,
       encoding: 'utf8', maxBuffer: 4 * 1024 * 1024,
     });
     return r.stdout || '(no diff produced)';

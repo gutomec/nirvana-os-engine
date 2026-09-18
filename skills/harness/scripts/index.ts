@@ -57,6 +57,7 @@ function runIndexer(label: string, scriptRelPath: string) {
   if (quiet) childArgs.push("--quiet");
   if (jsonOut) childArgs.push("--json");
   const r = spawnSync(BUN, childArgs, {
+    windowsHide: true,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
     env: process.env,

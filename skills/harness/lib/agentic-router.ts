@@ -137,7 +137,7 @@ export function ensureFreshDigest(
     "--clones", p.mindClonesRegistry,
     "--out", p.digest,
     "--quiet",
-  ], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 120_000 });
+  ], { windowsHide: true, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 120_000 });
   emitAudit({
     event: "x_digest_regenerated",
     project_id: opts.projectId ?? null,

@@ -91,7 +91,7 @@ export function runBusinessPostGate(input: BusinessPostGateInput): { zipPath: st
 
       let publisherPrompt = publisherBrief;
       if (hasPublisher) {
-        const result = deps.spawn("bun", [input.employeePromptScript, input.businessSlug, "report-publisher", input.projectDir, publisherBriefFile, reportDir], { encoding: "utf8" });
+        const result = deps.spawn("bun", [input.employeePromptScript, input.businessSlug, "report-publisher", input.projectDir, publisherBriefFile, reportDir], { windowsHide: true, encoding: "utf8" });
         if (result.status === 0 && result.stdout) publisherPrompt = result.stdout;
         else input.warn("⚠ report-publisher prompt failed; using the generic publisher");
       }
@@ -120,7 +120,7 @@ export function runBusinessPostGate(input: BusinessPostGateInput): { zipPath: st
       pdfArgs.push("--title", title, "--brand", brand);
       if (subtitle) pdfArgs.push("--subtitle", subtitle);
       if (clientName) pdfArgs.push("--client", clientName);
-      const pdf = deps.spawn("bun", pdfArgs, { encoding: "utf8" });
+      const pdf = deps.spawn("bun", pdfArgs, { windowsHide: true, encoding: "utf8" });
       if (pdf.status === 0 && deps.exists(pdfOutput)) {
         input.log(`✓ PDF: ${pdfOutput} (${(deps.size(pdfOutput) / 1024).toFixed(1)} KB)`);
         input.emit("report_pdf_generated", { trace_id: input.projectId, project_id: input.projectId, business_slug: input.businessSlug, output: pdfOutput });
@@ -140,7 +140,7 @@ export function runBusinessPostGate(input: BusinessPostGateInput): { zipPath: st
     // of the work. SKILL.md always said `<outputs>/<run_id>`; the code did not.
     const htmlArgs = [htmlBuild, "--project", input.outputsRoot, "--output", htmlOutput, "--title", `Relatório — ${input.businessSlug}`];
     if (input.offlineSnapshot) htmlArgs.push("--offline-snapshot");
-    const html = deps.spawn("bun", htmlArgs, { encoding: "utf8", stdio: "inherit" });
+    const html = deps.spawn("bun", htmlArgs, { windowsHide: true, encoding: "utf8", stdio: "inherit" });
     if (html.status === 0) input.emit("report_html_generated", { trace_id: input.projectId, project_id: input.projectId, business_slug: input.businessSlug, output: htmlOutput });
     else input.warn(`⚠ build-report-html failed (rc=${html.status})`);
   } else if (input.routingMode === "fast") {
@@ -152,7 +152,7 @@ export function runBusinessPostGate(input: BusinessPostGateInput): { zipPath: st
     input.log("▶ Step 7/7 — export .zip");
     const exportScript = path.join(input.skillsRoot, "harness/scripts/export.ts");
     const output = deps.resolve(`./${input.projectId}.zip`);
-    const zip = deps.spawn("bun", [exportScript, input.projectId, "--format=zip", "--deliverables-only", `--output=${output}`], { encoding: "utf8", stdio: "inherit" });
+    const zip = deps.spawn("bun", [exportScript, input.projectId, "--format=zip", "--deliverables-only", `--output=${output}`], { windowsHide: true, encoding: "utf8", stdio: "inherit" });
     if (zip.status === 0) {
       zipPath = output;
       input.sessionData.zip_path = output;

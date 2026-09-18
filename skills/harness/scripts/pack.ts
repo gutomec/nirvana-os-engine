@@ -124,7 +124,7 @@ if (sub === "create") {
   const tar = spawnSync(
     "tar",
     ["-czf", relOut, basename],
-    { encoding: "utf8", cwd: parent }
+    { windowsHide: true, encoding: "utf8", cwd: parent }
   );
   if (tar.status !== 0) {
     console.error(c("red", "✗ tar failed:"));
@@ -211,7 +211,7 @@ if (sub === "inspect") {
 
   // List contents (cwd + basename: path absoluto do Windows tem ":" e o GNU tar
   // do Git Bash o trata como host remoto)
-  const listing = spawnSync("tar", ["-tzf", path.basename(tgz)], { encoding: "utf8", cwd: path.dirname(path.resolve(tgz)) });
+  const listing = spawnSync("tar", ["-tzf", path.basename(tgz)], { windowsHide: true, encoding: "utf8", cwd: path.dirname(path.resolve(tgz)) });
   if (listing.status !== 0) {
     console.error(c("red", "✗ tar listing failed"));
     process.exit(1);

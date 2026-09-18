@@ -24,7 +24,7 @@ const BUN = process.execPath; // the bun running this file
 
 /** Run a bun script with args, then exit with its status. */
 function runScript(script: string, args: string[]): never {
-  const r = spawnSync(BUN, [script, ...args], { stdio: "inherit" });
+  const r = spawnSync(BUN, [script, ...args], { windowsHide: true, stdio: "inherit" });
   process.exit(r.status ?? 1);
 }
 
