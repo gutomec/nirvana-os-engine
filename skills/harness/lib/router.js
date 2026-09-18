@@ -1030,6 +1030,53 @@ async function stage2MatchHybrid(intent, registries, opts) {
  * stage3Decide and the Stage 3.5 dense-fallback dedupe: two candidates with
  * one destination are one suggestion, not an ambiguity.
  */
+/**
+ * How many candidates a Stage 3 decision EXPOSES. Not a scoring parameter: the
+ * signal is decided before this list is built, so widening it cannot turn a
+ * NO_MATCH into a HIGH.
+ *
+ * It was 3, and 3 was measured to be the dominant loss of the whole router.
+ * On the 35 real briefs harvested from the audit log (2026-09-17, installed
+ * 0.13.13): the right destination is the exposed top-1 in 0.171 of them, sits
+ * in the first 3 distinct destinations in 0.371, and in the first 15 in 0.686.
+ * The retriever finds the answer four times more often than the decision let
+ * anyone see it. Nothing downstream reads this list as membership — the
+ * self-retrieval gate compares `rank <= maxRank`, the business verifier asks
+ * for `hit === 0`, and eval-routing measures position 1 and the first 3 — so
+ * the depth is free to the gates and only makes their diagnostics honest
+ * (a miss past rank 3 used to report rank "unknown").
+ */
+const EXPOSED_ALTERNATIVES_MAX = 15;
+
+/**
+ * The exposed list for a decision that asks the caller to CHOOSE: one entry per
+ * destination, in score order, up to EXPOSED_ALTERNATIVES_MAX of them.
+ *
+ * Deduping by destination is the point here and not elsewhere. A brief that
+ * cannot be decided needs variety of destinations to pick from, and slots are
+ * per capability, so the same squad used to occupy several of the three
+ * (measured on the real briefs: 4.34 slots collapsed to 2.06 destinations, so
+ * a "top 3" was a choice between two). Inside a single-destination HIGH
+ * cluster the opposite is true — sibling capabilities of one squad are
+ * legitimately distinct candidates — which is why those paths stay positional.
+ * Candidates with no resolvable destination are kept, never deduped.
+ */
+function exposeAlternatives(matches, opts) {
+  const limit = (opts && typeof opts.limit === 'number') ? opts.limit : EXPOSED_ALTERNATIVES_MAX;
+  const out = [];
+  const seen = new Set();
+  for (const m of (Array.isArray(matches) ? matches : [])) {
+    const destination = resolveDestination(m);
+    if (destination) {
+      if (seen.has(destination)) continue;
+      seen.add(destination);
+    }
+    out.push(m);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
 function resolveDestination(m) {
   const meta = (m && (m.meta || (m.doc && m.doc.meta))) || {};
   if (meta.type === 'business_route') return String(meta.route_to || '').split('::')[0] || null;
@@ -1132,14 +1179,14 @@ function stage3Decide(matches, opts) {
       return {
         signal: 'NO_MATCH',
         reason: `coverage: vencedor casa ${cov.matched} de ${cov.total} tokens de conteúdo do brief`,
-        alternatives: matches.slice(0, 3),
+        alternatives: exposeAlternatives(matches),
         thresholds: thr,
       };
     }
     if (cov.matched === 2 && cov.total >= 4 && frac <= 0.5) {
       return {
         signal: 'AMBIGUOUS',
-        alternatives: matches.slice(0, 3),
+        alternatives: exposeAlternatives(matches),
         reason: `coverage: vencedor casa só 2 de ${cov.total} tokens de conteúdo — confirmação necessária`,
         thresholds: thr,
       };
@@ -1155,7 +1202,7 @@ function stage3Decide(matches, opts) {
     if (cov.matched <= 1 && cov.total === 2) {
       return {
         signal: 'AMBIGUOUS',
-        alternatives: matches.slice(0, 3),
+        alternatives: exposeAlternatives(matches),
         reason: `coverage: vencedor casa ${cov.matched} de 2 tokens de conteúdo — confirmação necessária`,
         thresholds: thr,
       };
@@ -1168,7 +1215,7 @@ function stage3Decide(matches, opts) {
     return {
       signal: 'HIGH',
       target: top,
-      alternatives: matches.slice(1, 3),
+      alternatives: matches.slice(1, EXPOSED_ALTERNATIVES_MAX),
       reason: `top=${top.normalized.toFixed(3)} ge ${thr.match_high_threshold} & lead=${lead.toFixed(3)} ge ${thr.match_high_lead}`,
       thresholds: thr,
     };
@@ -1197,7 +1244,7 @@ function stage3Decide(matches, opts) {
       return {
         signal: 'HIGH',
         target: top,
-        alternatives: cluster.slice(1, 3),
+        alternatives: cluster.slice(1, EXPOSED_ALTERNATIVES_MAX),
         reason: `${cluster.length} candidatos, destino único ${[...destinos][0]}`,
         thresholds: thr,
       };
@@ -1217,7 +1264,7 @@ function stage3Decide(matches, opts) {
     // Single match between ambiguous and high. Prefer to surface as AMBIGUOUS so user confirms.
     return {
       signal: 'AMBIGUOUS',
-      alternatives: [top, ...matches.slice(1, 3)],
+      alternatives: [top, ...matches.slice(1, EXPOSED_ALTERNATIVES_MAX)],
       reason: `top ${top.normalized.toFixed(3)} below high threshold ${thr.match_high_threshold} — confirm`,
       thresholds: thr,
     };
@@ -1226,7 +1273,7 @@ function stage3Decide(matches, opts) {
   return {
     signal: 'NO_MATCH',
     reason: `top score ${top.normalized.toFixed(3)} below ambiguous threshold ${thr.match_ambiguous_threshold}`,
-    alternatives: matches.slice(0, 3),
+    alternatives: exposeAlternatives(matches),
     thresholds: thr,
   };
 }
@@ -2373,6 +2420,8 @@ module.exports = {
   buildAliasMap,
   loadKeywordAliases,
   resolveDestination,
+  exposeAlternatives,
+  EXPOSED_ALTERNATIVES_MAX,
   DEFAULT_THRESHOLDS,
   DENSE_FALLBACK_MIN_COSINE,
   STAGE0_KEYWORD_THRESHOLD,
