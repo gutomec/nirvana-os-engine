@@ -18,6 +18,7 @@ import {
   HEADLESS_SKIP_PERMISSIONS_ENV, __testables, claudeDirectiveArgs, headlessSkipPermissions, resolveExecutable,
   runHeadless, type Runtime,
 } from "../../_shared/lib/host-agent-driver.ts";
+import { childDepth } from "../../_shared/lib/dispatch-depth.ts";
 import { CAPTURE_PRELUDE, readCapturedArgs, writeFakeCli } from "./helpers/fake-cli.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
@@ -239,5 +240,80 @@ describe("headless layer — runHeadless argv per runtime", () => {
 
   test("an explicit yolo:false stays restricted with the switch on", () => {
     expect(argv("claude-code", "claude", "1", false)).not.toContain("--dangerously-skip-permissions");
+  });
+});
+
+describe("a dispatched worker does not open its own agents", () => {
+  // The leg of the recursion the engine cannot see. A depth counter only counts
+  // ENGINE dispatches; the runtime's own subagent tool multiplies inside one
+  // child and never reaches the driver. Reported from a live run: two
+  // dispatches became fifteen agents, "each opening its own subagents, and
+  // those opened more".
+  function argvFor(extra: Record<string, unknown>): string[] {
+    try { fs.rmSync(path.join(CAP, "claude-args.json"), { force: true }); } catch { /* ignore */ }
+    const r = runHeadless({ runtime: "claude-code", prompt: "do the task", cwd: TMP, timeoutMs: 20_000, ...extra });
+    expect(r.ok, r.error ?? r.stderr).toBe(true);
+    return readCapturedArgs(CAP, "claude");
+  }
+
+  test("the subagent tools are denied by default, alongside the trust flag", () => {
+    const a = argvFor({});
+    expect(a).toContain("--dangerously-skip-permissions");
+    const i = a.indexOf("--disallowedTools");
+    expect(i).toBeGreaterThan(-1);
+    expect(a.slice(i + 1, i + 3)).toEqual(["Task", "Agent"]);
+  });
+
+  test("both spellings travel, because the tool was renamed across CLI versions", () => {
+    const a = argvFor({});
+    expect(a).toContain("Task");
+    expect(a).toContain("Agent");
+  });
+
+  test("the deny also holds on the restricted path, where tools are an allowlist", () => {
+    const a = argvFor({ yolo: false });
+    expect(a).toContain("--disallowedTools");
+  });
+
+  test("a caller that really orchestrates opts back in", () => {
+    const a = argvFor({ allowSubagents: true });
+    expect(a).not.toContain("--disallowedTools");
+  });
+
+  test("an explicit allowlist keeps its own tools and still denies the subagent ones", () => {
+    const a = argvFor({ allowedTools: ["Read", "Grep"] });
+    const i = a.indexOf("--allowedTools");
+    expect(i).toBeGreaterThan(-1);
+    expect(a[i + 1]).toBe("Read Grep");
+    expect(a).toContain("--disallowedTools");
+  });
+});
+
+describe("dispatch depth — the engine refuses its own runaway", () => {
+  const DEPTH = "NIRVANA_DISPATCH_DEPTH";
+  let savedDepth: string | undefined;
+  beforeAll(() => { savedDepth = process.env[DEPTH]; });
+  afterAll(() => { if (savedDepth === undefined) delete process.env[DEPTH]; else process.env[DEPTH] = savedDepth; });
+
+  test("a spawn at the ceiling is refused without starting a process, and says why", () => {
+    try { fs.rmSync(path.join(CAP, "claude-args.json"), { force: true }); } catch { /* ignore */ }
+    process.env[DEPTH] = "9";
+    const r = runHeadless({ runtime: "claude-code", prompt: "do the task", cwd: TMP, timeoutMs: 20_000 });
+    expect(r.ok).toBe(false);
+    expect(String(r.error)).toContain("execution.max_dispatch_depth");
+    expect(fs.existsSync(path.join(CAP, "claude-args.json"))).toBe(false);
+    delete process.env[DEPTH];
+  });
+
+  test("the child is told how deep it is, so its own dispatches count from there", () => {
+    try { fs.rmSync(path.join(CAP, "claude-env.json"), { force: true }); } catch { /* ignore */ }
+    delete process.env[DEPTH];
+    const r = runHeadless({ runtime: "claude-code", prompt: "do the task", cwd: TMP, timeoutMs: 20_000 });
+    expect(r.ok, r.error ?? r.stderr).toBe(true);
+    // The fake CLI records argv, not env, so the stamp is asserted through the
+    // pure helper the driver uses. What matters here is that the driver did not
+    // refuse at depth 0 and that the next level is 1.
+    expect(childDepth({})).toBe(1);
+    expect(childDepth({ [DEPTH]: "1" })).toBe(2);
   });
 });

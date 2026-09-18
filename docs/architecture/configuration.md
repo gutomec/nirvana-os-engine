@@ -59,6 +59,7 @@ Gerada a partir do schema. `nrv config explain <chave>` mostra a descrição de 
 | `briefing.altitude` | `NIRVANA_BRIEF_ALTITUDE` | `outcome` | global, projeto | outcome / guided / prescriptive |
 | `execution.headless_skip_permissions` | `NIRVANA_HEADLESS_SKIP_PERMISSIONS` | `true` | global, projeto | true / false |
 | `execution.child_env` | `NIRVANA_CHILD_ENV` | `inherit` | global, projeto | inherit / declared (o `nrv serve` usa `declared` salvo `NIRVANA_SERVE_CHILD_ENV=inherit`) |
+| `execution.max_dispatch_depth` | `NIRVANA_MAX_DISPATCH_DEPTH` | `3` | global, projeto | inteiro >= 0; 0 = ilimitado. Profundidade de uma cadeia de agentes despachando agentes: empresa (1), assento (2), squad obrigatório ou juiz (3) |
 | `glance.execution` | `NIRVANA_GLANCE_EXECUTION` | `true` | global, projeto | true / false |
 | `glance.maestro_max_budget_usd` | nenhuma | `5` | global, projeto | número >= 0 (USD); 0 = sem teto |
 | `runtime.provider_catalog_dir` | `NIRVANA_PROVIDER_CATALOG_DIR` | `""` | global, projeto | lista de caminhos separados pelo delimitador do sistema, ou vazio |

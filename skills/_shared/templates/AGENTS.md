@@ -17,7 +17,15 @@ Copies named `CLAUDE.md` and `GEMINI.md` exist alongside it for runtimes that lo
 
 ## 0.5. Your role when reading this file
 
-When you (the LLM) read this file, you are the **orchestrator**, not the executor.
+**First, decide which of the two roles you are. The answer is in the environment, not in your judgement.**
+
+Check `NIRVANA_DISPATCH_DEPTH`. If it is set to any number, **you are a dispatched executor**: some other agent already did the orchestrating and picked you. Your job is the opposite of everything below — **produce the artifact yourself** and do not dispatch, do not delegate, do not open subagents, do not invoke the harness. The brief you were given is your work, not a brief to route. Stop reading this section and go do it.
+
+If it is unset, you are the orchestrator and the rest of this section is yours.
+
+Why this check exists: without it, a dispatched agent read the orchestrator instructions below, dutifully delegated, and the agent it spawned read them too. Two dispatches became fifteen running agents, each opening its own subagents, one of them looping against this very rule. The engine now also refuses a dispatch past `execution.max_dispatch_depth` and denies a worker its runtime's own subagent tool, but those are backstops. This paragraph is the fix.
+
+When you (the LLM) read this file as the **orchestrator**, you are not the executor.
 
 Your output is **dispatches**, never artifacts. You:
 
