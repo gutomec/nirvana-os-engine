@@ -86,3 +86,42 @@ describe("a rule written in the cockpit reaches the dispatch", () => {
     expect(rules.map((r) => r.envKey)).toEqual(["USE_CODEX"]);   // the loader ignores it
   });
 });
+
+describe("a USE_ variable that is not a rule", () => {
+  // `USE_` is a common prefix in the wild. A CI runner with Bazel exports
+  // USE_BAZEL_FALLBACK_VERSION, and every `nrv` call on that machine used to
+  // print "[runtime-rules] unknown runtime ..." at it — alarming, useless, and
+  // measured on this repo's own CI. A typo inside a .env is a different thing:
+  // that file exists to hold these rules, so it is still worth saying.
+  function captureStderr(fn: () => void): string {
+    const original = console.error;
+    let out = "";
+    console.error = (...args: unknown[]) => { out += args.join(" ") + "\n"; };
+    try { fn(); } finally { console.error = original; }
+    return out;
+  }
+
+  test("a stray one in the ambient environment is ignored in silence", () => {
+    const err = captureStderr(() => loadRuntimeRules(null, { USE_BAZEL_FALLBACK_VERSION: "8.1.0" }));
+    expect(err).toBe("");
+  });
+
+  test("and it still produces no rule", () => {
+    expect(loadRuntimeRules(null, { USE_BAZEL_FALLBACK_VERSION: "8.1.0" })).toEqual([]);
+  });
+
+  test("a real rule in the same environment is still read", () => {
+    const rules = loadRuntimeRules(null, { USE_BAZEL_FALLBACK_VERSION: "8.1.0", USE_CODEX: "for code review" });
+    expect(rules.map((r) => r.runtime)).toEqual(["codex"]);
+  });
+
+  test("a typo inside a project .env is still reported, because that file is only for rules", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-rules-env-"));
+    try {
+      fs.writeFileSync(path.join(dir, ".env"), "USE_CLAUDE_KODE=for prose\n", "utf8");
+      const err = captureStderr(() => loadRuntimeRules(dir, {}));
+      expect(err).toContain("USE_CLAUDE_KODE");
+      expect(err).toContain("rule ignored");
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+});

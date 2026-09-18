@@ -305,7 +305,15 @@ export function loadRuntimeRules(projectRoot: string | null, env: NodeJS.Process
       const negate = m[1] === "NOT_USE";
       const runtime = RUNTIME_ALIASES[m[2]];
       if (!runtime) {
-        console.error(`[runtime-rules] unknown runtime in ${key}${sourceFile ? ` (${sourceFile})` : ""} — rule ignored. Known: ${Object.keys(RUNTIME_ALIASES).join(", ")}`);
+        // Only complain about a rule the user WROTE. `USE_*` is a common prefix
+        // in the wild — a CI runner with Bazel exports USE_BAZEL_FALLBACK_VERSION,
+        // and every `nrv` call on that machine printed "unknown runtime" at it,
+        // which is alarming, useless and (measured on this repo's own CI) real.
+        // A typo inside a .env is still worth saying, because that file exists
+        // to hold these rules and nothing else claims the prefix there.
+        if (sourceFile) {
+          console.error(`[runtime-rules] unknown runtime in ${key} (${sourceFile}) — rule ignored. Known: ${Object.keys(RUNTIME_ALIASES).join(", ")}`);
+        }
         claimed.add(key);
         continue;
       }

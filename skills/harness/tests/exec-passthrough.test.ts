@@ -15,17 +15,33 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { CAPTURE_PRELUDE, writeFakeCli } from "./helpers/fake-cli.ts";
+import { writeFakeCli } from "./helpers/fake-cli.ts";
 
 const SCRIPT = path.join(import.meta.dir, "..", "scripts", "exec.ts");
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-exec-"));
 const BIN = path.join(TMP, "bin");
 const LOGS = path.join(TMP, "logs");
+const CAP = path.join(TMP, "capture");
+fs.mkdirSync(CAP, { recursive: true });
 fs.mkdirSync(BIN, { recursive: true });
 
 beforeAll(() => {
-  // A fake `claude` that answers with a fixed line, so stdout is exact.
-  writeFakeCli(BIN, "claude", `${CAPTURE_PRELUDE}\nprocess.stdout.write("the answer\\n");`);
+  // A fake `claude` that records what it was given and answers with a fixed
+  // line, so stdout is exact. The prompt arrives on STDIN for this adapter, not
+  // in argv, which is the whole reason the parser test reads it from here.
+  writeFakeCli(BIN, "claude", [
+    `import * as fs from "node:fs";`,
+    `import * as path from "node:path";`,
+    `const dir = process.env.FAKE_CAPTURE_DIR;`,
+    `const argv = Bun.argv.slice(2);`,
+    `let stdin = "";`,
+    `try { stdin = await Bun.stdin.text(); } catch {}`,
+    `if (dir) {`,
+    `  try { fs.writeFileSync(path.join(dir, "claude-args.json"), JSON.stringify(argv)); } catch {}`,
+    `  try { fs.writeFileSync(path.join(dir, "claude-stdin.txt"), stdin); } catch {}`,
+    `}`,
+    `process.stdout.write("the answer\\n");`,
+  ].join("\n"));
 });
 afterAll(() => { try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* best effort */ } });
 
@@ -38,6 +54,7 @@ function run(args: string[], env: Record<string, string> = {}) {
       HARNESS_LOGS_DIR: LOGS,
       NIRVANA_HOST_RUNTIME: "claude-code",
       NO_COLOR: "1",
+      FAKE_CAPTURE_DIR: CAP,
       ...env,
     },
     cwd: TMP,
@@ -106,10 +123,13 @@ describe("it leaves a trace", () => {
 describe("the arguments", () => {
   test("a repeated word survives: the prompt is parsed by index, not by value", () => {
     // `indexOf` would have matched the second "codex" against the --runtime
-    // flag and eaten a word out of the middle of the question.
-    const { out, err } = run(["--quiet", "--runtime", "claude-code", "compare", "codex", "and", "codex"]);
-    expect(err).not.toContain("unknown runtime");
-    expect(out.trim()).toBe("the answer");
+    // flag and eaten a word out of the middle of the question. Asserted on what
+    // the CLI actually RECEIVED — an earlier version of this test watched
+    // stderr for "unknown runtime" and went red on a CI runner that exports
+    // USE_BAZEL_FALLBACK_VERSION, which says nothing about the parser.
+    const { code } = run(["--quiet", "--runtime", "claude-code", "compare", "codex", "and", "codex"]);
+    expect(code).toBe(0);
+    expect(fs.readFileSync(path.join(CAP, "claude-stdin.txt"), "utf8")).toContain("compare codex and codex");
   });
 
   test("an unknown runtime is refused as bad usage, never substituted", () => {
