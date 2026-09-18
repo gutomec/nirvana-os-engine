@@ -204,7 +204,7 @@ describe("library scope", () => {
     })).json();
     await waitTerminal(session_id, trace_id);
     // outputs under the session, never in a shared root
-    const artifact = join(root, "sessions", session_id, ".nirvana", "outputs", trace_id, "deliverable.md");
+    const artifact = join(root, "sessions", session_id, "outputs", trace_id, "deliverable.md");
     expect(readFileSync(artifact, "utf8")).toContain("conteúdo real");
   });
 
@@ -336,13 +336,15 @@ describe("jobs — session-agnostic, the polling floor", () => {
     expect(env.trace_id).toBe(trace_id);
     expect(env.artifacts.some((a: any) => a.path === "deliverable.md")).toBe(true);
 
-    // The fixture writes two files (deliverable.md + _SUMMARY.md), so /result
-    // answers with the listing and a pointer to the by-path route rather than
-    // guessing which one is "the" artifact.
+    // The fixture writes deliverable.md and _SUMMARY.md, and the summary is not
+    // an artifact: it is promoted into the envelope as a field, and it is run
+    // plumbing besides. So exactly one artifact remains and /result answers with
+    // the work itself. Before, the client asking for "the result" got a listing
+    // with instrumentation in it.
     const result = await api(`/v1/jobs/${trace_id}/result`);
     expect(result.status).toBe(200);
-    const resultBody = await result.json();
-    expect(resultBody.artifacts.some((a: any) => a.path === "deliverable.md")).toBe(true);
+    expect(await result.text()).toContain("conteúdo real");
+    expect(env.artifacts.some((a: any) => a.path === "_SUMMARY.md")).toBe(false);
 
     const download = await api(`/v1/jobs/${trace_id}/artifacts/deliverable.md`);
     expect(await download.text()).toContain("conteúdo real");

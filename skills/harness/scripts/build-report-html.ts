@@ -40,11 +40,9 @@ if (!fs.existsSync(projectDir)) {
 }
 
 // Dirs whose markdowns are internal plumbing, not deliverables.
-const SKIP_DIRS = new Set([
-  "node_modules", ".git", ".nirvana", ".squad-state", ".squads-outputs",
-  ".harness-logs", ".wiki-brain-state", ".vercel", ".omc", "_internal", "relatorio",
-]);
-const SKIP_FILES = new Set(["HANDOFF.json"]);
+// The engine's one list; a private copy here shipped the employee prompt
+// inside a client's report.
+import { isRunPlumbing, isRunPlumbingDir } from "../../_shared/lib/run-plumbing.ts";
 
 function walk(root: string): string[] {
   const out: string[] = [];
@@ -54,8 +52,8 @@ function walk(root: string): string[] {
     for (const e of entries) {
       if (e.name.startsWith(".")) continue;
       const abs = path.join(dir, e.name);
-      if (e.isDirectory()) { if (!SKIP_DIRS.has(e.name)) rec(abs); }
-      else if (e.name.toLowerCase().endsWith(".md") && !SKIP_FILES.has(e.name)) out.push(abs);
+      if (e.isDirectory()) { if (!isRunPlumbingDir(e.name)) rec(abs); }
+      else if (e.name.toLowerCase().endsWith(".md") && !isRunPlumbing(e.name)) out.push(abs);
     }
   };
   rec(root);

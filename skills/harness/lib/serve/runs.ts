@@ -30,6 +30,18 @@ export function redactForClient(text: string | null, sessionDir: string): { text
   return redactText(text, serveKnownSecrets(sessionDir));
 }
 
+/**
+ * Where a run's artifacts live, for `nrv serve`.
+ *
+ * One function so the writer and both readers cannot drift apart again. It is
+ * the same shape `outputsDir()` returns for a project — `<root>/outputs/<run>`
+ * — which is what OUTPUTS_CONTRACT calls canonical and what every other layer
+ * of the engine computes on its own. An empty `traceId` returns the base.
+ */
+export function runOutputsRoot(sessionDir: string, traceId: string): string {
+  return traceId ? path.join(sessionDir, "outputs", traceId) : path.join(sessionDir, "outputs");
+}
+
 export type RunEnvelopeState = "queued" | "running" | "delivered" | "withheld" | "indeterminate" | "failed";
 
 export interface RunEnvelope {
@@ -93,7 +105,12 @@ function rehydrate(traceId: string, sessionsRoot: string): RunMemo | null {
   let sessions: string[];
   try { sessions = fs.readdirSync(sessionsRoot); } catch { return null; }
   for (const sid of sessions) {
-    const f = path.join(sessionsRoot, sid, ".nirvana", "outputs", traceId, ".run.json");
+    // Canonical first, then the legacy root: a server upgraded mid-flight
+    // must still find the runs it wrote yesterday.
+    const f = [runOutputsRoot(path.join(sessionsRoot, sid), traceId),
+           path.join(sessionsRoot, sid, ".nirvana", "outputs", traceId)]
+      .map((d) => path.join(d, ".run.json")).find((p) => fs.existsSync(p))
+      ?? path.join(runOutputsRoot(path.join(sessionsRoot, sid), traceId), ".run.json");
     try {
       const raw = JSON.parse(fs.readFileSync(f, "utf8")) as RunMemo;
       // A run that was mid-flight when the server died is not "running" any

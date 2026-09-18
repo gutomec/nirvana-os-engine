@@ -489,13 +489,16 @@ If `gate_failed`: read `fix_list` / judge `critique[]`, dispatch a revision agen
 ### Phase 7 — Verify & deliver
 Confirm the artifact exists where it should land. Tail the audit log and confirm the chain (`brief_received → ... → gate_passed`) is real. **Close the ledger run of every target you dispatched** — one per target, `nrv run-track close <run-id> --state delivered|withheld|failed` (each run id was printed by its prep step in Phase 4; `nrv run-track list` shows any you still owe; see **Run ledger & supervisor** below). This is not bookkeeping: it is what notifies the owner that the work ended, and an unclosed run is escalated to them as stalled. Then tell the user: artifact path, what was actually used (only the businesses + squads + mind-clones really invoked), 1-line summary, audit log path.
 
-### Phase 8 — HTML report (DEFAULT; skip ONLY in `fast` mode)
-Except in `fast` mode, every run that reaches delivery generates an Apple-style HTML report at `<outputs>/<run_id>/relatorio-final.html`:
+### Phase 8 — HTML report (ON REQUEST ONLY)
+
+The HTML report is **not** part of delivery. Build it when the user asks for it, with `--html`, and never otherwise:
+
 ```bash
 bun ~/.nirvana/skills/harness/scripts/build-report-html.ts --project <outputs>/<run_id> \
   --output <outputs>/<run_id>/relatorio-final.html --title "Relatório — <slug>"
 ```
-The renderer indexes everything produced and applies the full-CDN Apple skin (Tailwind + Lucide + Inter, glassmorphism, dark mode). For a copy that opens 100% offline, add `--offline-snapshot` (fetches and inlines the CDN assets). Emit `report_html_generated`; in `fast`, skip and emit `report_skipped_fast`. Give the user the report path together with the artifacts. The scripted autopilot (`dispatch.ts --exec`) already does this by itself in Step 6.6.
+
+`--project` is the RUN directory, never the project root. Pointed at the project root the renderer indexes the contract files and the employee prompt sitting beside them, and on a customer VPS that produced an 81 KB "report" holding none of the delivered work and all of the run's instrumentation — the persona, the mind-clone library and the firm's permanent memory, downloadable through the API. The renderer applies the full-CDN Apple skin (Tailwind + Lucide + Inter, glassmorphism, dark mode); `--offline-snapshot` inlines the CDN assets. Emit `report_html_generated`. Give the user the report path together with the artifacts.
 
 ### Run ledger & supervisor (never-stall)
 **Every dispatch registers a run in the dispatch run-ledger — yours included.** Scripted dispatch (`nrv dispatch --exec`) opens its own run and heartbeats while the child runtime works. Your dispatches are covered by the prep step you already run: `brief-squad.ts` / `brief-business.ts` open the run as a side effect and print its id, exactly as they do for the audit events. You do not open those. **You DO close them.**

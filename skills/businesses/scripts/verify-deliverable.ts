@@ -29,11 +29,8 @@ import { businessDirFor, readAcceptance } from "../lib/acceptance.ts";
 import { resolveSetting } from "../../_shared/lib/settings.ts";
 
 // Run plumbing the harness writes next to the deliverables. Never a deliverable.
-const RUN_PLUMBING = new Set([
-  "HANDOFF.json", "audit.jsonl", "deliverables.json", "brief.md", "agent-prompt.md",
-  ".step-brief.md", "session.json", "sessions.json", "chain.json", "dag-state.json",
-  "_SUMMARY.md", "_QA-RESERVATIONS.md",
-]);
+// One list: the API and the report builder read the same one.
+import { RUN_PLUMBING } from "../../_shared/lib/run-plumbing.ts";
 
 /**
  * Outcome altitude: the brief names no paths on purpose (the executor decides

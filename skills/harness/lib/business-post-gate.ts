@@ -134,7 +134,11 @@ export function runBusinessPostGate(input: BusinessPostGateInput): { zipPath: st
     input.log("▶ Step 6.6 — HTML report");
     const htmlBuild = path.join(input.skillsRoot, "harness/scripts/build-report-html.ts");
     const htmlOutput = path.join(input.outputsRoot, "relatorio-final.html");
-    const htmlArgs = [htmlBuild, "--project", input.projectDir, "--output", htmlOutput, "--title", `Relatório — ${input.businessSlug}`];
+    // The RUN, not the project. Pointed at projectDir it indexed the project's
+    // own contract files and the employee prompt beside them, which is how a
+    // client report came to contain the persona and the firm's memory instead
+    // of the work. SKILL.md always said `<outputs>/<run_id>`; the code did not.
+    const htmlArgs = [htmlBuild, "--project", input.outputsRoot, "--output", htmlOutput, "--title", `Relatório — ${input.businessSlug}`];
     if (input.offlineSnapshot) htmlArgs.push("--offline-snapshot");
     const html = deps.spawn("bun", htmlArgs, { encoding: "utf8", stdio: "inherit" });
     if (html.status === 0) input.emit("report_html_generated", { trace_id: input.projectId, project_id: input.projectId, business_slug: input.businessSlug, output: htmlOutput });

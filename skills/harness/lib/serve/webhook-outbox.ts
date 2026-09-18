@@ -44,6 +44,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { createRequire } from "node:module";
 import { attemptDelivery } from "./webhooks.ts";
+import { runOutputsRoot } from "./runs.ts";
 
 const require = createRequire(import.meta.url);
 
@@ -159,7 +160,10 @@ export function adoptPending(sessionsRoot: string): number {
   try { sessions = fs.readdirSync(sessionsRoot); } catch { return 0; }
   let n = 0;
   for (const sid of sessions) {
-    const outputsBase = path.join(sessionsRoot, sid, ".nirvana", "outputs");
+    // Same two roots, same order, same reason as runs.ts.
+    const canonical = runOutputsRoot(path.join(sessionsRoot, sid), "");
+    const legacy = path.join(sessionsRoot, sid, ".nirvana", "outputs");
+    const outputsBase = fs.existsSync(canonical) ? canonical : legacy;
     let traces: string[];
     try { traces = fs.readdirSync(outputsBase); } catch { continue; }
     for (const t of traces) {

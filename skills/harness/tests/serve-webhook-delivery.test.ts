@@ -179,7 +179,7 @@ describe("webhook outbox — the retry schedule survives without a broker", () =
 
   test("adoptPending rediscovers a delivery this process forgot about (crash recovery)", () => {
     const sessRoot = mkdtempSync(join(tmpdir(), "sessions-"));
-    const outputsBase = join(sessRoot, "ses_x", ".nirvana", "outputs", "run_5");
+    const outputsBase = join(sessRoot, "ses_x", "outputs", "run_5");
     mkdirSync(outputsBase, { recursive: true });
     const now = new Date().toISOString();
     writeFileSync(join(outputsBase, ".webhook-delivery.jsonl"), JSON.stringify({

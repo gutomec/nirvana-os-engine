@@ -16,7 +16,10 @@ const TYPES: Record<string, string> = {
   ".csv": "text/csv", ".ts": "text/plain", ".js": "text/javascript",
 };
 
-const SKIP = new Set([".brief.md", ".run.json", "HANDOFF.json"]);
+// One list, shared with the verifier and the report builder. A private copy
+// here is what let the employee prompt, the mind-clone library and the firm's
+// permanent memory be downloaded straight through the API.
+import { isRunPlumbing } from "../../../_shared/lib/run-plumbing.ts";
 
 export function listArtifacts(outputsRoot: string): { path: string; bytes: number; content_type: string }[] {
   const out: { path: string; bytes: number; content_type: string }[] = [];
@@ -28,7 +31,7 @@ export function listArtifacts(outputsRoot: string): { path: string; bytes: numbe
       const abs = path.join(dir, e.name);
       const r = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) { walk(abs, r); continue; }
-      if (SKIP.has(e.name)) continue;
+      if (isRunPlumbing(e.name)) continue;
       let bytes = 0;
       try { bytes = fs.statSync(abs).size; } catch { continue; }
       out.push({ path: r, bytes, content_type: TYPES[path.extname(e.name).toLowerCase()] || "application/octet-stream" });

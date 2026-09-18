@@ -6,6 +6,26 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Unreleased
+
+### A API servia a instrumentação da execução como se fosse a entrega
+
+Relatado de uma VPS de cliente: `GET /v1/jobs/<trace>/artifacts/relatorio-final.html` devolvia 81 KB que não continham uma linha do trabalho entregue e continham todas as linhas da instrumentação da execução — o prompt de sistema inteiro do employee, a biblioteca de mind-clones, o manifesto da empresa e a memória permanente da firma. É a propriedade intelectual de um pack vendido por US$ 1.290, baixável por qualquer um com uma chave de sessão.
+
+Dois defeitos de caminho puseram isso lá e um agravante manteve. O `nrv serve` gravava as entregas de uma execução no caminho legado `.nirvana/outputs/<run>` enquanto todas as outras camadas calculam o canônico `outputs/<run>` que o `outputsDir()` devolve, então uma execução só ficava partida em dois diretórios; o gerador do relatório, apontado para o caminho canônico exatamente como o protocolo documenta, encontrava só o prompt do employee e renderizava aquilo como relatório do cliente. O piloto automático piorava passando o diretório do PROJETO em vez do da execução, então a renderização ainda indexava os arquivos de contrato do projeto. E três consumidores mantinham cada um sua cópia privada da lista de exclusão — a do verificador tinha doze itens e estava certa, a da API tinha três, a do gerador tinha um — então as duas que davam de cara com o cliente eram as curtas.
+
+Agora: um `runOutputsRoot()` para o escritor e os dois leitores, canônico, com o caminho legado ainda legível para um servidor atualizado no meio do caminho achar as execuções de ontem. Um `run-plumbing.ts` nomeando o que o engine grava ao lado do trabalho e que nunca é entrega, lido pela API, pelo gerador e pelo verificador igualmente, cobrindo o prompt, o brief, o handoff, o ledger, os campos do envelope e os próprios `AGENTS.md`, `CLAUDE.md` e `GEMINI.md` do projeto. Um cliente que pede `/v1/jobs/<trace>/result` passa a receber o trabalho, porque o sumário deixou de contar como artefato.
+
+### O relatório HTML é pedido, nunca presumido
+
+Ele rodava em toda entrega que não fosse em modo `fast`. Uma entrega que ninguém pediu é uma entrega que ninguém confere, e foi assim que o vazamento acima passou despercebido. Passa a ser `--html` no despachante e "sob pedido" no protocolo, e quando é pedido renderiza o diretório da execução e não o do projeto.
+
+### Duas regras de como o trabalho é despachado
+
+**Nunca despachar no modo `fast`.** Ele é o roteador BM25: offline, reprodutível, grátis, e medido em 0,224 de top-1 contra briefs reais de primeiro toque, perdendo o destino certo por completo em dois terços deles. É diagnóstico e prévia, não jeito de escolher quem faz o trabalho.
+
+**Nunca fixar teto de gasto que o usuário não pediu.** O `--max-budget` é rígido, não consultivo: cruzá-lo para a execução, então um teto escolhido pelo orquestrador é um palpite sobre o dinheiro dos outros que pode encerrar uma execução no meio com tudo gasto e nada entregue. Passe um quando o usuário nomeou um número, ou quando um manifesto de empresa declara `run_budget_usd` — aí é o dono falando pelo manifesto.
+
 ## 0.13.15 — 2026-09-18
 
 ### O modo de roteamento fast voltou a ser offline, e reprodutível

@@ -262,7 +262,12 @@ const wantZip = process.argv.includes("--zip");
 const wantPdf = process.argv.includes("--pdf");
 // HTML report is the DEFAULT (skipped only in fast mode or with --no-html). --html
 // stays as a no-op alias for compat. --offline-snapshot inlines the CDN assets.
-const skipHtml = routingMode === "fast" || process.argv.includes("--no-html");
+// The HTML report is produced ON REQUEST, never by default. It used to run on
+// every delivery, and on a customer VPS it shipped 81 KB that held none of the
+// delivered work and all of the run's instrumentation. A deliverable nobody
+// asked for is a deliverable nobody checks.
+const wantHtml = process.argv.includes("--html") && routingMode !== "fast";
+const skipHtml = !wantHtml;
 // Who decides the shape of a business run: the chain of employees, or a single
 // seat carrying the whole brief.
 //

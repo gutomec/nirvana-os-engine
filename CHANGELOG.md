@@ -6,6 +6,26 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### The API served the run's instrumentation as if it were the deliverable
+
+Reported from a customer VPS: `GET /v1/jobs/<trace>/artifacts/relatorio-final.html` returned 81 KB that contained no line of the delivered work and every line of the run's own instrumentation — the employee's full system prompt, the mind-clone library, the business manifest and the firm's permanent memory. That is the intellectual property of a pack sold for US$ 1,290, downloadable by anyone holding a session key.
+
+Two path bugs put it there and one aggravator kept it. `nrv serve` wrote a run's deliverables to the legacy `.nirvana/outputs/<run>` while every other layer computes the canonical `outputs/<run>` that `outputsDir()` returns, so a single run was split across two directories; the report renderer, pointed at the canonical path exactly as the protocol documents, found only the employee prompt and rendered that as the client's report. The scripted autopilot made it worse by passing the PROJECT directory rather than the run, so the render also indexed the project's own contract files. And three consumers each kept a private copy of the exclusion list — the verifier's had twelve entries and was right, the API's had three, the renderer's had one — so the two that faced the client were the short ones.
+
+Now: one `runOutputsRoot()` for the writer and both readers, canonical, with the legacy root still readable so a server upgraded mid-flight finds the runs it wrote yesterday. One `run-plumbing.ts` naming what the engine writes beside the work and what is never a deliverable, read by the API, the renderer and the verifier alike, and it covers the prompt, the brief, the handoff, the ledger, the envelope fields and the project's own `AGENTS.md`, `CLAUDE.md` and `GEMINI.md`. A client asking `/v1/jobs/<trace>/result` now gets the work, because the summary stopped counting as an artifact.
+
+### The HTML report is asked for, never assumed
+
+It ran on every delivery that was not in `fast` mode. A deliverable nobody asked for is a deliverable nobody checks, which is how the leak above went unnoticed. It is now `--html` on the dispatcher and "on request" in the protocol, and when it is asked for it renders the run directory rather than the project.
+
+### Two rules for how work is dispatched
+
+**Never dispatch in `fast` mode.** It is the BM25 router: offline, reproducible, free, and measured at 0.224 top-1 against real first-touch briefs, losing the right destination entirely in two thirds of them. It is a diagnostic and a preview, not a way to pick who does the work.
+
+**Never set a spend ceiling the user did not ask for.** `--max-budget` is hard, not advisory: crossing it stops the run, so a ceiling chosen by the orchestrator is a guess about someone else's money that can end a run halfway with everything spent and nothing delivered. Pass one when the user named a number, or when a business manifest declares `run_budget_usd` — that is the owner speaking through the manifest.
+
 ## 0.13.15 — 2026-09-18
 
 ### The fast routing mode is offline again, and reproducible

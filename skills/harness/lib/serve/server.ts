@@ -18,6 +18,7 @@ import { todayAuditFile } from "../../../_shared/lib/log-paths.ts";
 import { listRuntimes } from "../../../_shared/lib/host-agent-driver.ts";
 import { parseAuditLine } from "../../../_shared/lib/cloudevents.js";
 import * as outbox from "./webhook-outbox.ts";
+import { runOutputsRoot } from "./runs.ts";
 
 /** Text artifacts go out redacted (known secret values, credential-shaped
  *  content); binaries go out as they are. */
@@ -152,7 +153,13 @@ export function startServer(opts: ServeOpts) {
           session,
           key_id: key.id,
           brief,
-          outputs_root: path.join(session.dir, ".nirvana", "outputs", traceId),
+          // The canonical run root, the one `outputsDir()` returns and every
+          // other layer computes for itself. serve used to force the legacy
+          // `.nirvana/outputs`, which split a single run across two
+          // directories: the deliverables landed here and the report builder,
+          // pointed at the canonical path exactly as SKILL.md documents, found
+          // only the employee prompt and rendered THAT as the client's report.
+          outputs_root: runOutputsRoot(session.dir, traceId),
           created_at: new Date().toISOString(),
         });
         queue.submit({ memo, budgetUsd: key.budget_usd, webhook: key.webhook });
