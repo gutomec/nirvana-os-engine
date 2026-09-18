@@ -350,3 +350,92 @@ describe("runTeam — a step that fails does not take the chain with it", () => 
     expect(seen.filter(o => String(o.taskHint).includes("synth"))).toHaveLength(2);
   });
 });
+
+describe("runTeam — the director narrated instead of answering", () => {
+  // meridian-advisory, 2026-09-18, 16 seats: the director decided well and then
+  // reported the decision in prose, twice, in auto and under --team. Its own
+  // second answer claimed it had "returned the chain as a single JSON object".
+  // An agent with tools treats the final message as a report of work done, so
+  // this is a live failure mode and not a prompt typo — and the whole run
+  // collapsed to one seat because of a missing envelope around a good plan.
+  const PROSE = [
+    "Cadeia de 5 empregados definida para o diagnóstico",
+    "Atuei como diretor de orquestração e devolvi a cadeia como um único objeto JSON,",
+    "sem arquivos criados: researcher (pesquisa), writer (redação), synth (consolidação).",
+  ].join("\n");
+
+  /** Prose first, then whatever the re-ask gets. */
+  function narrator(secondAnswer: string) {
+    const prompts: string[] = [];
+    const impl = ((opts: any) => {
+      prompts.push(String(opts.prompt ?? ""));
+      return {
+        ok: true, runtime: opts.runtime, sessionId: null,
+        result: prompts.length === 1 ? PROSE : secondAnswer,
+        costUsd: 0, exitCode: 0, stderr: "", durationMs: 1,
+      };
+    }) as any;
+    return { impl, prompts };
+  }
+
+  test("one re-ask recovers the plan, and the chain is the one it had decided", () => {
+    business("acme", ["researcher", "writer", "synth"]);
+    const seen: any[] = [];
+    const n = narrator(JSON.stringify({ reason: "three seats", chain: [
+      { employee: "researcher", task: "pesquise" }, { employee: "writer", task: "escreva" }, { employee: "synth", task: "consolide" },
+    ] }));
+    const a = args("acme", { runHeadlessImpl: n.impl, runWithCascadeImpl: cascade(seen) });
+    const r = runTeam(a);
+    expect(r.ok).toBe(true);
+    expect(r.chain.map(s => s.employee)).toEqual(["researcher", "writer", "synth"]);
+    expect(n.prompts.length).toBe(2);
+  });
+
+  test("the re-ask asks for transcription, never for a new decision, and carries the answer back", () => {
+    business("acme", ["researcher", "writer", "synth"]);
+    const n = narrator(JSON.stringify({ chain: [{ employee: "synth", task: "faça" }] }));
+    runTeam(args("acme", { runHeadlessImpl: n.impl, runWithCascadeImpl: cascade([]) }));
+    const reask = n.prompts[1];
+    expect(reask).toContain("Transcribe the decision you ALREADY made");
+    expect(reask).toContain("Do not decide again");
+    expect(reask).toContain("devolvi a cadeia como um único objeto JSON");
+    for (const seat of ["researcher", "writer", "synth"]) expect(reask).toContain(`- ${seat}`);
+    // No tools and no directories: there is nothing for it to report on.
+    expect(reask.length).toBeLessThan(n.prompts[0].length);
+  });
+
+  test("the re-ask is recorded, so a narrating seat is visible instead of silently costing a turn", () => {
+    business("acme", ["researcher", "writer", "synth"]);
+    const n = narrator(JSON.stringify({ chain: [{ employee: "synth", task: "faça" }] }));
+    const a = args("acme", { runHeadlessImpl: n.impl, runWithCascadeImpl: cascade([]) });
+    runTeam(a);
+    const ev = readAudit(a.projectId).find(e => e.event === "x_director_reask");
+    expect(ev).toBeDefined();
+    expect(ev.business_slug).toBe("acme");
+    expect(ev.reason).toBe("no_json_object_in_answer");
+  });
+
+  test("prose twice still fails, and says both attempts were spent", () => {
+    business("acme", ["researcher", "writer", "synth"]);
+    const n = narrator(PROSE);
+    const a = args("acme", { runHeadlessImpl: n.impl, runWithCascadeImpl: cascade([]) });
+    const r = runTeam(a);
+    expect(r.ok).toBe(false);
+    expect(String(r.error)).toContain("none after one re-ask");
+    expect(n.prompts.length).toBe(2);
+    expect(readAudit(a.projectId).some(e => e.event === "team_director_failed")).toBe(true);
+  });
+
+  test("a director that answers with JSON the first time is never re-asked", () => {
+    business("acme", ["researcher", "writer", "synth"]);
+    let calls = 0;
+    const impl = ((opts: any) => {
+      calls++;
+      return { ok: true, runtime: opts.runtime, sessionId: null, result: JSON.stringify({ chain: [{ employee: "synth", task: "faça" }] }), costUsd: 0, exitCode: 0, stderr: "", durationMs: 1 };
+    }) as any;
+    const a = args("acme", { runHeadlessImpl: impl, runWithCascadeImpl: cascade([]) });
+    runTeam(a);
+    expect(calls).toBe(1);
+    expect(readAudit(a.projectId).some(e => e.event === "x_director_reask")).toBe(false);
+  });
+});

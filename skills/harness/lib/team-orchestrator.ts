@@ -199,8 +199,47 @@ function pickChain(args: TeamRunArgs): { chain: ChainStep[]; reason: string } {
     timeoutMs: 5 * 60 * 1000,
   });
   const txt = (res.result || "").trim();
-  const parsed = extractDirectorPlan(txt);
-  if (!parsed) throw new Error(`director returned no usable JSON plan: ${txt.slice(0, 200)}`);
+  let parsed = extractDirectorPlan(txt);
+
+  // The director runs with tools, full trust and the project granted — it runs
+  // like the agents it dispatches. That is deliberate, and it has a cost: an
+  // agent with tools treats its final message as a REPORT of work done, not as
+  // the payload. Measured on meridian-advisory (2026-09-18, 16 seats): it
+  // decided well and then narrated the decision, twice, in auto and under
+  // --team. The second answer said, in the client's language, "I returned the
+  // chain as a single JSON object" — while returning prose that named the seats
+  // it had chosen. The plan existed; only the envelope was missing.
+  //
+  // So ask once more, for the envelope alone. The re-ask carries the previous
+  // answer and asks it to be transcribed, never re-decided: the judgement was
+  // already made and paid for, and a second opinion would be a different chain
+  // for no reason. It is a short prompt with no tools and no directories, which
+  // is also why it does not reproduce the failure — there is no work to report.
+  if (!parsed) {
+    appendAudit({
+      event: "x_director_reask", project_id: args.projectId, business_slug: args.slug,
+      reason: "no_json_object_in_answer", answer_chars: txt.length,
+    }, args.projectRoot);
+    const reask = [
+      "You already decided the chain. Below is your own answer. Transcribe the decision you ALREADY made into JSON. Do not decide again, do not add or drop an employee, do not explain.",
+      "",
+      "YOUR ANSWER:",
+      txt.slice(0, 6000),
+      "",
+      "VALID EMPLOYEE NAMES (use these spellings exactly):",
+      employees.map(e => `- ${e.name}`).join("\n"),
+      "",
+      'Your entire reply must be this one JSON object and nothing else: {"reason":"<one sentence>","chain":[{"employee":"<exact-name>","task":"<what has to exist at the end>"}, ...]}',
+      "No preamble, no summary of what you did, no markdown fences. The JSON object is the whole reply.",
+    ].join("\n");
+    const retry = (args.runHeadlessImpl ?? runHeadless)({
+      runtime: args.runtime, prompt: reask, cwd: args.projectRoot,
+      yolo: args.yolo ?? true,
+      timeoutMs: 2 * 60 * 1000,
+    });
+    parsed = extractDirectorPlan((retry.result || "").trim());
+    if (!parsed) throw new Error(`director returned no usable JSON plan, and none after one re-ask: ${txt.slice(0, 200)}`);
+  }
   if (!Array.isArray(parsed.chain) || !parsed.chain.length) throw new Error("director retornou cadeia vazia");
 
   const known = new Set(employees.map(e => e.name));
