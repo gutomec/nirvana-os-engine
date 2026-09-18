@@ -6,7 +6,7 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
-## Unreleased
+## 0.13.16 — 2026-09-18
 
 ### The API served the run's instrumentation as if it were the deliverable
 
