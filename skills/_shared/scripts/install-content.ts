@@ -15,7 +15,7 @@
  *
  * <contentDir> = the pack's `starter-pack` dir (squads/ businesses/ mind-clones/).
  */
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { createHash } from "node:crypto";
@@ -114,18 +114,8 @@ function engineVersion(): string | null {
 const RSYNC = spawnSync("rsync", ["--version"], { stdio: "ignore" }).status === 0;
 const RUNSTATE_EXCLUDES = RUN_STATE_EXCLUDES;
 
-function listFilesRel(root: string): string[] {
-  const out: string[] = [];
-  const walk = (d: string, base: string) => {
-    for (const e of readdirSync(d)) {
-      const abs = join(d, e); const rel = base ? `${base}/${e}` : e;
-      let st; try { st = statSync(abs); } catch { continue; }
-      if (st.isDirectory()) walk(abs, rel); else out.push(rel);
-    }
-  };
-  if (existsSync(root)) walk(root, "");
-  return out;
-}
+// Content discovery lives in ../lib/walk-files.ts so the no-follow rule has a
+// test: a link is a pointer at the shared store, never content this pack owns.
 const isExcluded = (rel: string, ex: string[]): boolean => ex.some((e) => rel === e || rel.startsWith(e + "/"));
 function hashDir(dir: string, ex: string[]): string {
   const h = createHash("sha256");
@@ -149,6 +139,7 @@ function mirror(src: string, dst: string, ex: string[]): void {
 import { contractBreaks, reportBreaks, type BreakingChange } from "../lib/contract-breaks.ts";
 import { InstallManifest } from "../lib/install-manifest.ts";
 import { RUN_STATE_EXCLUDES } from "../lib/run-state.ts";
+import { isLinked, listFilesRel } from "../lib/walk-files.ts";
 import { randomUUID } from "node:crypto";
 
 interface Manifest { slug?: string; version?: string | null; updated_at?: string; squads?: Record<string, string>; businesses?: Record<string, string>; "mind-clones"?: Record<string, string>; }
@@ -209,11 +200,31 @@ interface SyncRes { added: string[]; updated: string[]; unchanged: string[]; rem
 // nothing behind. Restoring is a copy back.
 const BACKUP_STAMP = new Date().toISOString().replace(/[:.]/g, "-");
 function backupRoot(): string { return join(nirvanaHome(), ".nirvana", "backups", "packs", SLUG, BACKUP_STAMP); }
+
+// Links are skipped in the backup, and named when they are. cpSync recreates a
+// link rather than following it, and on Windows creating one needs a privilege
+// the buyer usually does not have — the backup died with EPERM and took the
+// whole overlay with it, AFTER the pack had been downloaded: `nrv update` on
+// Windows failed for any pack carrying a squad with a linked `node_modules`,
+// which is the layout Rule 12 tells everyone to use. Restoring a link would also
+// protect nothing: it points at the shared store, which the overlay never
+// touches. Reported, so a backup is never silently incomplete.
+const linksSkippedInBackup: string[] = [];
 function backupComponent(kind: string, slug: string, dst: string, ex: string[]): void {
   if (DRY) return;
   const dest = join(backupRoot(), kind, slug);
   mkdirSync(dest, { recursive: true });
-  cpSync(dst, dest, { recursive: true, force: true, filter: (p) => { const rel = relative(dst, p).split(sep).join("/"); return rel === "" || !isExcluded(rel, ex); } });
+  cpSync(dst, dest, {
+    recursive: true,
+    force: true,
+    filter: (p) => {
+      const rel = relative(dst, p).split(sep).join("/");
+      if (rel === "") return true;
+      if (isExcluded(rel, ex)) return false;
+      if (isLinked(p)) { linksSkippedInBackup.push(`${kind}/${slug}/${rel}`); return false; }
+      return true;
+    },
+  });
 }
 
 function syncKind(kind: string, srcRoot: string, dstRoot: string, available: string[], old: Record<string, string>, precomputed?: Record<string, string>): SyncRes {
@@ -389,6 +400,16 @@ if (backedUp.length > 0) {
   console.log(`  ${DRY ? "WOULD BACK UP" : "BACKED UP"}: ${backedUp.length} component(s) changed on this machine since the pack installed them${DRY ? "" : ` → ${backupRoot()}`}`);
   for (const c of backedUp) console.log(`    ~ ${c}`);
   console.log(`    Restore one by copying it back over the installed directory; keep it out of future updates with --keep-<kind>.`);
+}
+
+// Named because the backup is not byte-complete for these paths. Nothing is
+// lost: a link points at the shared store, and the store is not what the overlay
+// replaces.
+if (linksSkippedInBackup.length > 0) {
+  console.log();
+  console.log(`  ${DRY ? "WOULD SKIP" : "SKIPPED"} in the backup: ${linksSkippedInBackup.length} linked path(s) — a link points at the shared store (~/.nirvana), not at content this pack owns.`);
+  for (const p of linksSkippedInBackup.slice(0, 5)) console.log(`    -> ${p}`);
+  if (linksSkippedInBackup.length > 5) console.log(`    ... and ${linksSkippedInBackup.length - 5} more`);
 }
 
 if (!DRY) {
