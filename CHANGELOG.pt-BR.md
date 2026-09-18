@@ -103,6 +103,10 @@ A rubrica `secret-leak` roda em todo artefato de texto que o portão julga. Se o
 
 O `nrv init` mescla `permissions.deny: ["Read(./.env)", "Read(./.env.*)", "Read(./**/.env)", "Read(./**/.env.*)"]` em `<projeto>/.claude/settings.json`, mantendo o que o projeto já tinha, sem duplicar regra e deixando um arquivo inválido como está com um aviso. Primeira camada, não a garantia: a propriedade do arquivo e um uid separado são, e a página nova `docs/architecture/serve-hardening.md` diz como rodar o `nrv serve` num servidor de modo que o `.env` do projeto fique fora do alcance do agente, com uma unidade systemd de exemplo.
 
+### Atualizar um pack nunca troca a licença por uma mais estreita
+
+O `nrv update <pack>` renovava o cofre de licença a partir do `PROVENANCE.json` dentro do zip baixado — o conserto certo para um cofre ausente, defasado ou de uma compra antiga — mas escrevia sem condição, e o cofre é UM arquivo. Um comprador cuja licença era o bundle Genesis Circle rodou `nrv update commerce-backoffice`: o conteúdo atualizou corretamente, e a licença da máquina virou commerce-backoffice. Todo outro pack passou a responder `pack_mismatch` a qualquer atualização seguinte, então os packs que aquele comprador havia pago deixaram de ser atualizáveis, e a falha apareceu no comando *seguinte*, não no que a causou. A renovação agora fica no escopo que ela sempre quis dizer: licença ausente, ilegível ou sem `license_key` é substituída, a mesma edição numa versão mais nova é consertada, e uma edição diferente é preservada e reportada com o comando que troca de propósito (`nrv license install <pasta>`). Uma atualização conserta a licença ou não a toca — nunca a estreita.
+
 ## 0.13.13 — 2026-09-16
 
 ### Um squad roda no runtime em que o usuário está trabalhando
