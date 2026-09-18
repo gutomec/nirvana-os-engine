@@ -6,6 +6,16 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Unreleased
+
+### O modo de roteamento fast voltou a ser offline, e reprodutível
+
+O `route()` amplificava por padrão, e o amplificador é chamada de LLM nos seus dois gatilhos: o estágio -1.5 num brief fraco e a ponte de cobertura do estágio 2.7. Ele não tem braço determinístico, porque `builtin` e `maestro` nomeiam a persona e não um caminho offline. Então o modo que alguém escolhe para ter resposta barata e reprodutível não era nem uma coisa nem outra: gastava tokens em todo brief fraco e devolvia vereditos diferentes para a mesma entrada. Medido no corpus vivo: dez briefs reais roteados duas vezes dentro de um processo, mesmas registries, e um deles virou de HIGH para AMBIGUOUS entre passadas consecutivas; com o amplificador desligado as duas passadas foram idênticas. O `routing.mode: fast` agora implica sem amplificação, a razão do salto nomeia o modo, e um `amplify` explícito continua vencendo nos dois sentidos. O `agentic` e qualquer outro modo mantêm o amplificador.
+
+### Uma decisão de rota expõe os destinos que encontrou, e recupera fundo o bastante para tê-los
+
+O estágio 2 recuperava 10 vagas pontuadas e o estágio 3 expunha 3 delas. Vagas são por capacidade, então uma squad ocupava várias: nos 35 briefs reais colhidos do log de auditoria, 4,34 vagas colapsavam para 2,06 destinos, o que fazia de um "top 3" uma escolha entre dois. Nenhum dos dois números é parâmetro de pontuação, porque toda atribuição de `alternatives` fica dentro de um return cujo sinal já foi escolhido, então a profundidade nunca mudou veredito, só o que quem chama podia ver. A recuperação passa a 30 vagas, medida como o pico (acima disso, mais vagas amontoam mais destinos na janela e empurram o certo para fora), e a decisão expõe uma entrada por destino até 15. Nesses briefs o top-1 decidido fica igual em 0,400, o destino certo aparece em algum lugar da lista exposta em 0,543 dos casos em vez de 0,457, e quem chama vê 6,29 destinos em vez de 2,66. O eixo fraco é o que mais ganha na recuperação: a cobertura de empresa dentro da janela vai de 0,474 para 0,632.
+
 ## 0.13.14 — 2026-09-17
 
 ### Um agente despachado vê uma lista do ambiente, não uma cópia dele

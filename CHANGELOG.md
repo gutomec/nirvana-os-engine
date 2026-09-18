@@ -6,6 +6,16 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### The fast routing mode is offline again, and reproducible
+
+`route()` amplified by default, and the amplifier is an LLM call at both of its trigger points: Stage -1.5 on a WEAK brief, and the Stage 2.7 coverage bridge. It has no deterministic arm, since `builtin` and `maestro` name the persona rather than an offline path. So the mode a caller picks to get a cheap reproducible answer was neither: it spent tokens on every WEAK brief and returned different verdicts for the same input. Measured on the live corpus: ten real briefs routed twice inside one process, same registries, and one flipped HIGH to AMBIGUOUS between consecutive passes; with the amplifier off the two passes were identical. `routing.mode: fast` now implies no amplification, the skip reason names the mode, and an explicit `amplify` still wins in both directions. `agentic` and any other mode keep the amplifier.
+
+### A routing decision exposes the destinations it found, and retrieves deep enough to have them
+
+Stage 2 retrieved 10 scored slots and Stage 3 exposed 3 of them. Slots are per capability, so one squad occupied several: on 35 real briefs harvested from the audit log, 4.34 slots collapsed to 2.06 destinations, which made a "top 3" a choice between two. Neither number is a scoring parameter, since every `alternatives` assignment sits inside a return whose signal is already chosen, so the depth never changed a verdict, only what the caller could see. Retrieval is now 30 slots, measured as the peak (past it, more slots crowd more destinations into the window and push the right one out), and the decision exposes one entry per destination up to 15. On those briefs the decided top-1 is unchanged at 0.400, the right destination appears somewhere in the exposed list in 0.543 of cases instead of 0.457, and the caller sees 6.29 destinations instead of 2.66. The weak axis gains most in retrieval: business recall in the window goes from 0.474 to 0.632.
+
 ## 0.13.14 — 2026-09-17
 
 ### A dispatched agent sees an allowlist of the environment, not a copy of it
