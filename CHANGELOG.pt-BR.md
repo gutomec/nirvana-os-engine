@@ -6,6 +6,12 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Unreleased
+
+### O `nrv mine-briefs` atende pelo nome que ele mesmo documenta
+
+O script foi publicado na 0.13.16 e o comando não: o `mine-real-briefs.ts` estava no tarball, o cabeçalho dele mandava rodar `nrv mine-briefs`, e o `nrv mine-briefs` respondia "unknown subcommand". Um comando mora em três lugares — a tabela, o roteador em TypeScript e o lançador em bash — e ele não estava em nenhum, o que também explica o silêncio da checagem de paridade do CLI: aquele portão compara os três entre si, então um script ausente dos três é invisível para ele. Registrado nos três agora, e o portão conta 66 comandos em sincronia.
+
 ## 0.13.16 — 2026-09-18
 
 ### A API servia a instrumentação da execução como se fosse a entrega

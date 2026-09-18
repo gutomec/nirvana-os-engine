@@ -129,6 +129,7 @@ switch (cmd) {
   case "export": runScript(join(H, "export.ts"), rest);
   case "ask": runScript(join(H, "ask.ts"), rest);
   case "exec": runScript(join(H, "exec.ts"), rest);
+  case "mine-briefs": runScript(join(H, "mine-real-briefs.ts"), rest);
   case "launch": runScript(join(H, "launch.ts"), rest);
   case "tui": case "cockpit-tui": runScript(join(H, "tui.ts"), rest);
   case "activate": case "activate-squad": case "squad-activate": runScript(join(H, "activate.ts"), rest);
