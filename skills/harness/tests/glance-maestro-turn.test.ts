@@ -194,7 +194,11 @@ describe("a Message is a turn of the project's runtime session", () => {
     expect(call.argv[call.argv.indexOf("--session-id") + 1]).toBe(receipt.turn.session_id);
     expect(call.argv).not.toContain("--resume");
     expect(call.argv).toContain("--dangerously-skip-permissions");
-    expect(call.argv[call.argv.indexOf("--max-budget-usd") + 1]).toBe("5");
+    // No ceiling unless the owner named one. This used to assert 5, the engine's
+    // own default, which was the only place it put a number on someone else's
+    // money — and the cap is HARD, so it could end a turn halfway with
+    // everything spent and nothing delivered.
+    expect(call.argv).not.toContain("--max-budget-usd");
     // Inline on POSIX; by file under the Windows shell (the fake read it at call time).
     expect(call.directive).toStartWith(MAESTRO_DIRECTIVE);
     expect(call.prompt).toBe("Quais empresas eu tenho para marketing?");

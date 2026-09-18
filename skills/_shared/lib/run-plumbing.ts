@@ -23,7 +23,7 @@ export const RUN_PLUMBING: ReadonlySet<string> = new Set([
   // What the dispatcher and the loop leave behind
   "HANDOFF.json", "audit.jsonl", "deliverables.json", "brief.md", ".brief.md",
   "agent-prompt.md", ".step-brief.md", "session.json", "sessions.json",
-  "chain.json", "dag-state.json", ".run.json",
+  "chain.json", "dag-state.json", ".run.json", "run-budget.json",
   // Promoted into the run envelope as fields; not files a client downloads
   "_SUMMARY.md", "_QA-RESERVATIONS.md",
   // The project's own contract, which travels with every Nirvana project and

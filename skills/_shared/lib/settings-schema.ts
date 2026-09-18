@@ -237,9 +237,13 @@ export const SETTINGS = {
   "glance.execution": booleanSetting("glance.execution",
     "O Glance executa Messages por processo filho; false = cockpit sem execução.",
     { default: true, env: "NIRVANA_GLANCE_EXECUTION", fromEnv: offWordDisables }),
+  // 0, like every other cap here. A ceiling is the owner's to name: it is
+  // HARD, so one chosen by the engine can end a turn halfway with everything
+  // spent and nothing delivered. This defaulted to 5 and was the only place
+  // the engine put a number on someone else's money by itself.
   "glance.maestro_max_budget_usd": numberSetting("glance.maestro_max_budget_usd",
-    "Teto de gasto em USD de um turno do maestro no chat do Glance (claude --max-budget-usd); 0 = sem teto.",
-    { default: 5, type: nonNegative, expects: "número >= 0 (USD); 0 = sem teto" }),
+    "Teto de gasto em USD de um turno do maestro no chat do Glance (claude --max-budget-usd); 0 = sem teto, e é o padrão.",
+    { default: 0, type: nonNegative, expects: "número >= 0 (USD); 0 = sem teto" }),
 
   // Enforced today only by a served Glance instance (`glance --host` beyond loopback), against
   // the log already pinned to the project (the tenant). The default (365) is the same number

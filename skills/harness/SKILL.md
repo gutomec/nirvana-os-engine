@@ -545,6 +545,10 @@ nrv serve keygen --budget-usd 5      # token shown once
 nrv serve --port 7777                # local by default; proxy TLS to expose
 ```
 
+`DELETE /v1/jobs/{trace}` stops a run in flight (SIGTERM, state `cancelled`,
+`signalled` says whether a process was reached). The envelope carries
+`runtime_errored` when the runtime died and the work was judged anyway.
+
 `POST /v1/sessions` → `POST /v1/sessions/{id}/briefs` (202, async — a real
 brief takes minutes) → `GET .../runs/{trace}` for the envelope, `/events`
 for the live audit stream, `/artifacts` to list and download. The envelope

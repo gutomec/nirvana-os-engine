@@ -30,6 +30,20 @@ It ran on every delivery that was not in `fast` mode. A deliverable nobody asked
 
 **Never set a spend ceiling the user did not ask for.** `--max-budget` is hard, not advisory: crossing it stops the run, so a ceiling chosen by the orchestrator is a guess about someone else's money that can end a run halfway with everything spent and nothing delivered. Pass one when the user named a number, or when a business manifest declares `run_budget_usd` — that is the owner speaking through the manifest.
 
+### A ceiling belongs to the run, and only the owner sets one
+
+`--max-budget` was passed to every child at its full value, so a chain of six employees received six ceilings: a run a customer had capped at US$ 2 spent US$ 4,90, and the worst case is one ceiling per seat. The cap the owner names is for the run, so it is now a balance that decreases — each child is offered what is left, and a seat that cannot be paid for is not started, because a run stopped after the overage has already paid it. The accounting lives beside the run, so `nrv team step`, which runs one seat per process, accumulates the same way the in-process chain does. A cost the runtime could not report is not counted as zero, which would let an unmeasurable runtime run forever under a ceiling.
+
+And the engine no longer names a ceiling by itself. `glance.maestro_max_budget_usd` defaulted to 5, the only place the engine put a number on someone else's money; it defaults to 0 now, like every other cap here. A ceiling comes from `--max-budget`, from a business manifest's `run_budget_usd`, or from a serve key the owner minted with one, and from nowhere else.
+
+### A run can be stopped
+
+There was no way to end a run but its own: an expensive one could only be stopped by opening an SSH session and killing it by hand, which a client of an HTTP API cannot do. `DELETE /v1/jobs/<trace>` sends SIGTERM — not SIGKILL, so the runtime closes its children and flushes what it wrote — and the run enters `cancelled`, its own terminal state rather than `failed`, because a run the owner stopped is not a run that broke. Cancelling a finished run is a no-op that reports what it became. The signal goes through the live child handle rather than the recorded pid: a pid that answers is not proof it is ours, and the supervisor carries the same warning. A run started by a previous server process is marked cancelled with `signalled: false`, so the caller is told the process was not reached rather than left to assume it was.
+
+### The envelope says when the runtime died
+
+When a runtime errors after producing files, the engine does not discard the work: the verifier runs, the gate judges, and only an approved result is delivered. That is right. But the envelope dropped the fact, so an API client read `delivered` with exit 0 while the ledger, the audit and the CLI all knew the runtime had failed. The envelope now carries `runtime_errored` beside the state, the way it already carries `fail-accepted` when the gate passed with reservations.
+
 ## 0.13.15 — 2026-09-18
 
 ### The fast routing mode is offline again, and reproducible

@@ -43,7 +43,7 @@ if (process.env.FIXTURE_LEAK === "1") {
   fs.writeFileSync(path.join(out, "deliverable.md"), "# entrega\\n\\nthe key is " + process.env.LEAKED_API_KEY + "\\n");
   fs.writeFileSync(path.join(out, "_SUMMARY.md"), "summary mentions " + process.env.LEAKED_API_KEY);
 }
-process.exit(parseInt(process.env.FIXTURE_EXIT || "0", 10));
+if (process.env.FIXTURE_SLEEP_MS) {\n  // Alive on purpose, so a test can cancel a run that is really running.\n  await new Promise((r) => setTimeout(r, parseInt(process.env.FIXTURE_SLEEP_MS, 10)));\n}\nprocess.exit(parseInt(process.env.FIXTURE_EXIT || "0", 10));
 `);
 
 let server: { stop: () => void; port: number };
@@ -82,7 +82,7 @@ beforeAll(async () => {
   process.env.NIRVANA_SERVE_WEBHOOK_SWEEP_MS = "30";
   // The served child receives an allowlist of the environment; the fixture's
   // switches are named so they reach it.
-  process.env.NIRVANA_CHILD_ENV_EXTRA = "FIXTURE_RESERVATIONS,FIXTURE_BUDGET_ECHO,FIXTURE_EXIT,FIXTURE_ENV_DUMP";
+  process.env.NIRVANA_CHILD_ENV_EXTRA = "FIXTURE_RESERVATIONS,FIXTURE_BUDGET_ECHO,FIXTURE_EXIT,FIXTURE_ENV_DUMP,FIXTURE_SLEEP_MS,FIXTURE_RUNTIME_ERROR";
   mkdirSync(serveDir, { recursive: true });
 
   const { keygen } = await import("../lib/serve/auth.ts");
@@ -496,5 +496,66 @@ describe("secrets hardening", () => {
       delete process.env.LEAKED_API_KEY;
       delete process.env.FIXTURE_LEAK;
     }
+  }, spawnBudgetMs(20_000));
+});
+
+describe("stopping a run", () => {
+  // A run had no way to end but its own: an expensive one could only be stopped
+  // by SSH, which a client of an HTTP API cannot do.
+  test("DELETE on a running job stops it, and says a process was actually reached", async () => {
+    process.env.FIXTURE_SLEEP_MS = "8000";
+    try {
+      const s1 = await (await api("/v1/sessions", { method: "POST" })).json();
+      const { trace_id } = await (await api(`/v1/sessions/${s1.session_id}/briefs`, {
+        method: "POST", body: JSON.stringify({ brief: "algo demorado" }),
+      })).json();
+      // Let it actually start before stopping it.
+      const deadline = Date.now() + 5000;
+      let state = "queued";
+      while (Date.now() < deadline && state !== "running") {
+        state = (await (await api(`/v1/jobs/${trace_id}`)).json()).state;
+        await new Promise((r) => setTimeout(r, 60));
+      }
+      expect(state).toBe("running");
+
+      const res = await api(`/v1/jobs/${trace_id}`, { method: "DELETE" });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.state).toBe("cancelled");
+      expect(body.cancelled).toBe(true);
+      expect(body.signalled).toBe(true);
+      expect(body.gate).toBeNull();
+
+      // And it stays cancelled: the close that follows the signal is a
+      // consequence, not a new verdict.
+      await new Promise((r) => setTimeout(r, 400));
+      expect((await (await api(`/v1/jobs/${trace_id}`)).json()).state).toBe("cancelled");
+    } finally { delete process.env.FIXTURE_SLEEP_MS; }
+  }, spawnBudgetMs(25_000));
+
+  test("cancelling a finished run is a no-op that reports what it became", async () => {
+    process.env.FIXTURE_EXIT = "0";
+    const s1 = await (await api("/v1/sessions", { method: "POST" })).json();
+    const { trace_id } = await (await api(`/v1/sessions/${s1.session_id}/briefs`, {
+      method: "POST", body: JSON.stringify({ brief: "rápido" }),
+    })).json();
+    await waitTerminal(s1.session_id, trace_id);
+    const body = await (await api(`/v1/jobs/${trace_id}`, { method: "DELETE" })).json();
+    expect(body.state).toBe("delivered");
+    expect(body.cancelled).toBe(false);
+  }, spawnBudgetMs(20_000));
+
+  test("another key cannot stop someone else's run", async () => {
+    process.env.FIXTURE_EXIT = "0";
+    const s1 = await (await api("/v1/sessions", { method: "POST" })).json();
+    const { trace_id } = await (await api(`/v1/sessions/${s1.session_id}/briefs`, {
+      method: "POST", body: JSON.stringify({ brief: "privado" }),
+    })).json();
+    const { keygen } = await import("../lib/serve/auth.ts");
+    const other = keygen({ label: "intruder-cancel" });
+    const res = await fetch(`${base}/v1/jobs/${trace_id}`, {
+      method: "DELETE", headers: { Authorization: `Bearer ${other.token}` },
+    });
+    expect(res.status).toBe(404);
   }, spawnBudgetMs(20_000));
 });

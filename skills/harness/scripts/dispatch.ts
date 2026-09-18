@@ -74,6 +74,7 @@ import type { GauntletPlan, SuccessRequirement } from "../lib/gauntlet/types.ts"
 import { RunAlreadyTerminalError, createHarnessLegacyAdapter, openKernel, type TargetRef } from "../lib/run-kernel/index.ts";
 import { inertStandardPublication, openStandardPublication } from "../lib/run-kernel/standard-publication.ts";
 import { freezeExecutionSnapshot } from "../lib/runtime-snapshot.ts";
+import * as runBudget from "../lib/run-budget.ts";
 
 // Back-compat re-exports: these helpers moved to lib/delivery-pipeline.ts in
 // routing-360 Phase 4.2 (the pipeline is shared by all three dispatch paths).
@@ -494,12 +495,54 @@ function businessRunBudget(businessSlug: string): number | null {
   } catch { return null; }
 }
 
-/** Tighter of the --max-budget flag and the business's own run_budget_usd. */
-function effectiveBudgetUsd(): number | undefined {
+/** Where this run's spend is accounted. `--outputs-root` when the caller gave
+ *  one (serve always does), otherwise whatever path computed the run's root
+ *  most recently. One dispatch is one process, so this is run state. */
+let _runBudgetRoot: string | null = null;
+// An explicit --outputs-root wins (serve always gives one), then the FIRST root
+// any path computed. First and not last on purpose: the budget belongs to the
+// run, and a nested child — a Gauntlet candidate, an evaluation — must charge
+// the run that pays for it rather than opening an account of its own.
+function runBudgetKey(): string { return path.basename(outputsRoot ?? _runBudgetRoot ?? "run"); }
+function setRunBudgetRoot(dir: string): void { if (_runBudgetRoot === null) _runBudgetRoot = dir; }
+
+/** The ceiling the OWNER named: the tighter of --max-budget and the business's
+ *  own run_budget_usd, or nothing at all. Never a number of the engine's own. */
+function ownerCeilingUsd(): number | undefined {
   const flag = maxBudget ? parseFloat(maxBudget) : null;
   const biz = typeof slug === "string" && slug ? businessRunBudget(slug) : null;
   const caps = [flag, biz].filter((v): v is number => typeof v === "number" && Number.isFinite(v) && v > 0);
   return caps.length ? Math.min(...caps) : undefined;
+}
+
+/**
+ * What the NEXT child may spend.
+ *
+ * The ceiling is for the run, not for each seat. Passing the full number to
+ * every child gave a six-employee chain six ceilings: a run capped at $2 spent
+ * $4.90 on a customer VPS. This reads what the run has already spent and offers
+ * the remainder. With no ceiling it returns undefined, which is the normal case.
+ */
+function effectiveBudgetUsd(): number | undefined {
+  const ceiling = ownerCeilingUsd();
+  if (ceiling === undefined) return undefined;
+  return runBudget.remaining(runBudget.open(PROJECT_ROOT, runBudgetKey(), ceiling));
+}
+
+/** Records what a child cost, so the next one is offered what is left. */
+function chargeRunBudget(costUsd: number | null | undefined): void {
+  const ceiling = ownerCeilingUsd();
+  if (ceiling === undefined) return;
+  const key = runBudgetKey();
+  runBudget.charge(PROJECT_ROOT, key, runBudget.open(PROJECT_ROOT, key, ceiling), costUsd);
+}
+
+/** True when the owner's ceiling is spent. Checked BEFORE a child starts:
+ *  a run stopped after the overage has already paid for it. */
+function runBudgetExhausted(): boolean {
+  const ceiling = ownerCeilingUsd();
+  if (ceiling === undefined) return false;
+  return runBudget.exhausted(runBudget.open(PROJECT_ROOT, runBudgetKey(), ceiling));
 }
 
 // ── User USE_* rules (natural-language per-runtime routing) ────────────────
@@ -1172,6 +1215,7 @@ if (pendingCascade?.kind === "squad-only") {
     process.exit(1);
   }
   const oroot = outputsRoot || path.join(scaffoldRoot, "deliverables");
+  setRunBudgetRoot(oroot);
   fs.mkdirSync(oroot, { recursive: true });
   // The capability each squad of the chain actually runs (lib/capability-resolver.ts):
   // the id the user named, the squad's only capability, the best one for this brief
@@ -1286,7 +1330,8 @@ if (pendingCascade?.kind === "squad-only") {
       failedSquad = sq;
       break;
     }
-    console.log(c("dim", `  · ${sq}: ${r.durationMs}ms${r.costUsd != null ? ` · $${r.costUsd.toFixed(4)}` : ""}`));
+    console.log(c("dim", `  · ${sq}: ${r.durationMs}ms${r.costUsd != null ? ` · ${r.costUsd.toFixed(4)}` : ""}`));
+    chargeRunBudget(r.costUsd);
   }
   if (ledgerRunId && lastSession) ledgerTry(() => runLedger.recordSession(ledgerHandle!, ledgerRunId!, lastSession));
 
@@ -1335,6 +1380,7 @@ if (pendingCascade?.kind === "judge-x") {
     process.exit(3);
   }
   const oroot = outputsRoot || path.join(scaffoldRoot, "deliverables");
+  setRunBudgetRoot(oroot);
   fs.mkdirSync(oroot, { recursive: true });
   const requestFile = path.join(path.dirname(oroot), EVALUATION_REQUEST_FILE);
   let request: EvaluationRequest;
@@ -1361,7 +1407,8 @@ if (pendingCascade?.kind === "judge-x") {
   const maxBudgetUsd = effectiveBudgetUsd();
   const r = runJudgeX({ brief, runtime: rt, projectId: pid, projectDir: projDir, projectRoot: PROJECT_ROOT, outputsRoot: oroot, scorecardPath,
     candidateRoot: request.candidateRoot, maxBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined, yolo, audit: emit });
-  console.log(c("dim", `  session: ${r.sessionId || "(none)"} · ${r.durationMs}ms${r.costUsd != null ? ` · $${r.costUsd.toFixed(4)}` : ""} · prompt ${r.promptChars} chars`));
+  console.log(c("dim", `  session: ${r.sessionId || "(none)"} · ${r.durationMs}ms${r.costUsd != null ? ` · ${r.costUsd.toFixed(4)}` : ""} · prompt ${r.promptChars} chars`));
+  chargeRunBudget(r.costUsd);
   publication.verify();
   const outcome = judgeXOutcome({ scorecardPath, requirements: request.requirements, run: r, maxBudgetUsd });
   if (outcome.exitCode === 0) {
@@ -1412,6 +1459,7 @@ if (pendingCascade?.kind === "agent-x") {
     process.exit(1);
   }
   const oroot = outputsRoot || path.join(scaffoldRoot, "deliverables");
+  setRunBudgetRoot(oroot);
   fs.mkdirSync(oroot, { recursive: true });
   if (shouldRunAgentXGauntlet({ targetKind: "agent-x", wantExec, resolvedMode: executionOptions.resolvedMode })) {
     const canonicalRunId = canonicalRunIdFor(pid, runIdFlag);
@@ -1520,7 +1568,8 @@ if (pendingCascade?.kind === "agent-x") {
     printDeliverySummary(outcome.result!, pid, oroot, null, true);
     process.exit(outcome.exitCode);
   }
-  console.log(c("dim", `  session: ${r.sessionId || "(none)"} · ${r.durationMs}ms${r.costUsd != null ? ` · $${r.costUsd.toFixed(4)}` : ""}`));
+  console.log(c("dim", `  session: ${r.sessionId || "(none)"} · ${r.durationMs}ms${r.costUsd != null ? ` · ${r.costUsd.toFixed(4)}` : ""}`));
+  chargeRunBudget(r.costUsd);
 
   console.log(c("lime", "▶") + c("bold", " Delivery pipeline — verify → gate → deliver"));
   const res = deliver(agentXDeliverOpts);

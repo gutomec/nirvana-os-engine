@@ -30,6 +30,20 @@ Ele rodava em toda entrega que não fosse em modo `fast`. Uma entrega que ningu�
 
 **Nunca fixar teto de gasto que o usuário não pediu.** O `--max-budget` é rígido, não consultivo: cruzá-lo para a execução, então um teto escolhido pelo orquestrador é um palpite sobre o dinheiro dos outros que pode encerrar uma execução no meio com tudo gasto e nada entregue. Passe um quando o usuário nomeou um número, ou quando um manifesto de empresa declara `run_budget_usd` — aí é o dono falando pelo manifesto.
 
+### Um teto pertence à execução, e só o dono define um
+
+O `--max-budget` era passado a cada filho com o valor cheio, então uma cadeia de seis employees recebia seis tetos: uma execução que um cliente havia limitado em US$ 2 gastou US$ 4,90, e o pior caso é um teto por assento. O teto que o dono nomeia é da execução, então virou um saldo que diminui — cada filho recebe o que sobrou, e um assento que não pode ser pago não é iniciado, porque execução interrompida depois do estouro já pagou por ele. A contabilidade fica ao lado da execução, então o `nrv team step`, que roda um assento por processo, acumula igual à cadeia em processo único. Custo que o runtime não soube informar não é contado como zero, o que deixaria um runtime não mensurável rodar para sempre sob um teto.
+
+E o engine deixa de nomear teto por conta própria. O `glance.maestro_max_budget_usd` tinha padrão 5, o único lugar em que o engine punha número no dinheiro dos outros; agora é 0, como todo outro teto daqui. Um teto vem do `--max-budget`, do `run_budget_usd` de um manifesto de empresa, ou de uma chave do serve que o dono criou com um, e de nenhum outro lugar.
+
+### Dá para parar uma execução
+
+Não havia como encerrar uma execução a não ser ela mesma: uma cara só parava abrindo SSH e matando na mão, o que um cliente de API HTTP não pode fazer. O `DELETE /v1/jobs/<trace>` manda SIGTERM — não SIGKILL, para o runtime fechar os filhos dele e gravar o que produziu — e a execução entra em `cancelled`, estado terminal próprio e não `failed`, porque execução que o dono parou não é execução que quebrou. Cancelar uma execução já terminada é no-op que relata no que ela deu. O sinal vai pelo handle vivo do filho e não pelo pid gravado: pid que responde não prova ser o nosso, e o supervisor carrega o mesmo aviso. Uma execução iniciada por um servidor anterior é marcada como cancelada com `signalled: false`, então quem chamou é informado de que o processo não foi alcançado em vez de presumir que foi.
+
+### O envelope conta quando o runtime morreu
+
+Quando um runtime dá erro depois de produzir arquivos, o engine não descarta o trabalho: o verificador roda, o portão julga, e só um resultado aprovado é entregue. Isso está certo. Mas o envelope perdia o fato, então um cliente da API lia `delivered` com código 0 enquanto o ledger, a auditoria e o CLI todos sabiam que o runtime havia falhado. O envelope passa a carregar `runtime_errored` ao lado do estado, do mesmo jeito que já carrega `fail-accepted` quando o portão passou com reservas.
+
 ## 0.13.15 — 2026-09-18
 
 ### O modo de roteamento fast voltou a ser offline, e reprodutível

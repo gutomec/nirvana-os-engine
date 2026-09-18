@@ -210,6 +210,19 @@ export function startServer(opts: ServeOpts) {
         return json(runsLib.envelope(memo), 200, h);
       }
 
+      // Stopping a run is a verb the API did not have: an expensive one could
+      // only be ended by SSH. DELETE on the job, because that is what the
+      // client is asking to end — the session keeps its other runs.
+      if (mJob && req.method === "DELETE") {
+        const memo = runsLib.get(mJob[1], sessionsRoot());
+        if (!memo || memo.key_id !== key.id) return json({ error: "job_not_found" }, 404, h);
+        const before = memo.state;
+        const { memo: after, signalled } = runsLib.cancel(memo);
+        // Idempotent: cancelling a finished run is not an error, it is a no-op
+        // that reports what the run actually became. `signalled` says whether a
+        // process was actually reached, which a client cannot infer from the state.
+        return json({ ...runsLib.envelope(after), cancelled: before !== after.state, signalled }, 200, h);
+      }
       const mJobEvents = /^\/v1\/jobs\/([^/]+)\/events$/.exec(p);
       if (mJobEvents && req.method === "GET") {
         const memo = runsLib.get(mJobEvents[1], sessionsRoot());
