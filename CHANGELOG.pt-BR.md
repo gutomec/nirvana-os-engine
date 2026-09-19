@@ -6,6 +6,18 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Unreleased
+
+### A integração com a OpenAI Agents API, medida em vez de presumida
+
+O `docs/integrations/openai-agents-api.md` é a página que o plano de setembro devia e nunca escreveu. Ela separa o que foi de fato observado do que era só esperado, porque a Agents API declarar compatibilidade com o padrão Agent Skills é motivo para tentar, não prova de que funciona.
+
+Verificado numa sessão real: o `POST /v1/agents/sessions` com o header `OpenAI-Beta: agents=v1` responde 201 (os SDKs escrevem a mesma chamada como `client.beta.agents.sessions.create`); um ambiente self-hosted aceita `workspace_directory` e `capability_directories`; um diretório de capability com só a skill `nirvana` volta intacto; e a skill mede 5 arquivos e 44 KB contra tetos publicados de 500 arquivos e 25 MB.
+
+Não verificado, e nomeado como tal: descoberta, um turno, um despacho com cadeia de auditoria, cold-start. O executor nunca conectou. O `codex exec-server` exige o escopo `api.agents.environments.connect`, que uma chave de aplicação não carrega e não pode ganhar — o `/v1/agents/environment_keys` responde 404 e o caminho documentado `--use-agent-identity-auth` informa que a Agent Identity está indisponível. A chave sai do dashboard da plataforma, então a página nomeia esse passo em vez de fingir que a lacuna não existe.
+
+A página também corrige o plano de onde veio: o critério antigo era descobrir quatro skills, e desde a 0.13.10 existe exatamente uma. `harness`, `squads`, `businesses` e `_shared` são internos do engine e nunca são expostos a um runtime.
+
 ## 0.13.18 — 2026-09-18
 
 ### A entrega completa de uma execução, numa chamada só
