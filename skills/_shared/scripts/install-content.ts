@@ -8,20 +8,31 @@
  * (projects/, outputs/, memory/projects/, .squad-state, …) is preserved. Per-pack
  * ownership is tracked in ~/.nirvana/packs/<slug>.json, so a later update of the
  * SAME pack can drop files it removed without ever touching the user's own
- * squads/businesses/clones or another pack's components.
+ * squads/businesses/clones or another pack's components. Managed files are an
+ * immutable ownership boundary: direct edits and same-slug user components are
+ * snapshotted and block the update before the first write.
  *
  * Usage:
  *   bun install-content.ts <contentDir> --slug <slug> [--dry] [--skip-validate]
  *
  * <contentDir> = the pack's `starter-pack` dir (squads/ businesses/ mind-clones/).
  */
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { buildEntityGraph, installKindOrder, readCloneBindings } from "../lib/entity-graph.ts";
+import {
+  collectManagedUpdatePlan,
+  createCustomizationSnapshot,
+  guardManagedMutation,
+  hashManagedTree,
+  removeManagedTree,
+  reportBlockedUpdate,
+  type ManagedTargetObservation,
+} from "../lib/update-safety.ts";
 
 /** Best-effort audit emission (open x_ namespace); never blocks an install. */
 function auditEmit(event: string, payload: Record<string, unknown>): void {
@@ -114,13 +125,14 @@ function engineVersion(): string | null {
 const RSYNC = spawnSync("rsync", ["--version"], { stdio: "ignore" }).status === 0;
 const RUNSTATE_EXCLUDES = RUN_STATE_EXCLUDES;
 
-function listFilesRel(root: string): string[] {
+function listFilesRel(root: string, ex: string[] = []): string[] {
   const out: string[] = [];
   const walk = (d: string, base: string) => {
     for (const e of readdirSync(d)) {
       const abs = join(d, e); const rel = base ? `${base}/${e}` : e;
-      let st; try { st = statSync(abs); } catch { continue; }
-      if (st.isDirectory()) walk(abs, rel); else out.push(rel);
+      if (isExcluded(rel, ex)) continue;
+      let st; try { st = lstatSync(abs); } catch { continue; }
+      if (st.isDirectory() && !st.isSymbolicLink()) walk(abs, rel); else out.push(rel);
     }
   };
   if (existsSync(root)) walk(root, "");
@@ -128,12 +140,7 @@ function listFilesRel(root: string): string[] {
 }
 const isExcluded = (rel: string, ex: string[]): boolean => ex.some((e) => rel === e || rel.startsWith(e + "/"));
 function hashDir(dir: string, ex: string[]): string {
-  const h = createHash("sha256");
-  for (const rel of listFilesRel(dir).filter((r) => !isExcluded(r, ex)).sort()) {
-    h.update(rel); h.update("\0");
-    try { h.update(readFileSync(join(dir, rel))); } catch { /* ignore */ }
-  }
-  return h.digest("hex");
+  return hashManagedTree(dir, ex);
 }
 function mirror(src: string, dst: string, ex: string[]): void {
   mkdirSync(dst, { recursive: true });
@@ -141,8 +148,8 @@ function mirror(src: string, dst: string, ex: string[]): void {
     const a = ["-a", "--checksum", "--delete"]; for (const e of ex) a.push(`--exclude=${e}`); a.push(`${src}/`, `${dst}/`);
     if (spawnSync("rsync", a, { stdio: ["ignore", "ignore", "inherit"] }).status === 0) return;
   }
-  const srcFiles = new Set(listFilesRel(src));
-  for (const rel of listFilesRel(dst)) { if (srcFiles.has(rel) || isExcluded(rel, ex)) continue; try { rmSync(join(dst, rel), { force: true }); } catch { /* ignore */ } }
+  const srcFiles = new Set(listFilesRel(src, ex));
+  for (const rel of listFilesRel(dst, ex)) { if (srcFiles.has(rel)) continue; try { rmSync(join(dst, rel), { force: true }); } catch { /* ignore */ } }
   cpSync(src, dst, { recursive: true, force: true, filter: (s) => { const rel = relative(src, s).split(sep).join("/"); return rel === "" || !isExcluded(rel, ex); } });
 }
 
@@ -151,7 +158,15 @@ import { InstallManifest } from "../lib/install-manifest.ts";
 import { RUN_STATE_EXCLUDES } from "../lib/run-state.ts";
 import { randomUUID } from "node:crypto";
 
-interface Manifest { slug?: string; version?: string | null; updated_at?: string; squads?: Record<string, string>; businesses?: Record<string, string>; "mind-clones"?: Record<string, string>; }
+interface Manifest {
+  slug?: string;
+  ownership?: "pack-managed";
+  version?: string | null;
+  updated_at?: string;
+  squads?: Record<string, string>;
+  businesses?: Record<string, string>;
+  "mind-clones"?: Record<string, string>;
+}
 
 /**
  * Record the install in ~/.nirvana-installed.jsonl, which is what `nrv installed`
@@ -204,9 +219,30 @@ const availableIn = (dir: string, marker: string): string[] =>
 
 interface SyncRes { added: string[]; updated: string[]; unchanged: string[]; removed: string[]; overwritten: string[]; kept: string[]; backedUp: string[]; hashes: Record<string, string>; breaking: BreakingChange[]; }
 
-// Where a component goes before the overlay writes over it. One directory per
-// overlay run, created on first use so a run that backs nothing up leaves
-// nothing behind. Restoring is a copy back.
+// The guard: detect drift BEFORE the mutation, not after. updateObservations
+// carries what the preflight saw for each managed target, and mutateManaged
+// routes every write through it, stopping when the risk is real.
+let updateObservations = new Map<string, ManagedTargetObservation>();
+const observationKey = (kind: string, slug: string): string => `${kind}/${slug}`;
+function mutateManaged(kind: string, slug: string, mutate: () => void): void {
+  const observation = updateObservations.get(observationKey(kind, slug));
+  if (!observation) { mutate(); return; }
+  const guarded = guardManagedMutation(
+    observation,
+    join(nirvanaHome(), ".nirvana", "customization-snapshots", `pack-${SLUG}`),
+    mutate,
+  );
+  if (guarded.ok) return;
+  reportBlockedUpdate([guarded.risk!], guarded.snapshot_dir);
+  process.exit(1);
+}
+
+// The backup, kept alongside the guard rather than replaced by it: the guard
+// stops a component it can prove is user-owned, and the backup still covers an
+// edit to a pack-owned component that the guard does not claim. Where a
+// component goes before the overlay writes over it. One directory per overlay
+// run, created on first use so a run that backs nothing up leaves nothing
+// behind. Restoring is a copy back.
 const BACKUP_STAMP = new Date().toISOString().replace(/[:.]/g, "-");
 function backupRoot(): string { return join(nirvanaHome(), ".nirvana", "backups", "packs", SLUG, BACKUP_STAMP); }
 function backupComponent(kind: string, slug: string, dst: string, ex: string[]): void {
@@ -224,7 +260,7 @@ function syncKind(kind: string, srcRoot: string, dstRoot: string, available: str
   for (const slug of available) {
     const src = join(srcRoot, slug), dst = join(dstRoot, slug);
     const h = precomputed?.[slug] ?? hashDir(src, ex); res.hashes[slug] = h;
-    if (!existsSync(dst)) { res.added.push(slug); if (!DRY) mirror(src, dst, ex); continue; }
+    if (!existsSync(dst)) { res.added.push(slug); if (!DRY) mutateManaged(kind, slug, () => mirror(src, dst, ex)); continue; }
     // --keep-<kind>: what is on disk stays, whatever the pack carries. The
     // manifest keeps saying what the pack last INSTALLED here (the previous
     // hash), so the next overlay without the flag treats it as an update again
@@ -232,9 +268,10 @@ function syncKind(kind: string, srcRoot: string, dstRoot: string, available: str
     // outside the manifest.
     if (keep) { res.kept.push(slug); if (slug in old) res.hashes[slug] = old[slug]; else delete res.hashes[slug]; continue; }
     // Collision: it exists on disk but the pack never owned it (outside the
-    // manifest) — a user creation with the same slug. The pack wins (it is the
-    // source of truth), and the user's version is backed up first.
-    if (!(slug in old)) { res.overwritten.push(slug); res.backedUp.push(slug); backupComponent(kind, slug, dst, ex); if (!DRY) mirror(src, dst, ex); continue; }
+    // manifest) — a user creation with the same slug. The user's version is
+    // snapshotted, and the mutation is routed through the guard first, so a
+    // provable user-owned component stops the run instead of being replaced.
+    if (!(slug in old)) { res.overwritten.push(slug); res.backedUp.push(slug); backupComponent(kind, slug, dst, ex); if (!DRY) mutateManaged(kind, slug, () => mirror(src, dst, ex)); continue; }
     const prev = old[slug];
     if (prev !== h) {
       res.updated.push(slug);
@@ -244,7 +281,7 @@ function syncKind(kind: string, srcRoot: string, dstRoot: string, available: str
       // up before the overlay replaces them; an untouched component is not,
       // because the pack can always reproduce it.
       if (hashDir(dst, ex) !== prev) { res.backedUp.push(slug); backupComponent(kind, slug, dst, ex); }
-      if (!DRY) mirror(src, dst, ex);
+      if (!DRY) mutateManaged(kind, slug, () => mirror(src, dst, ex));
     } else res.unchanged.push(slug);
   }
   for (const slug of Object.keys(old)) {
@@ -252,12 +289,50 @@ function syncKind(kind: string, srcRoot: string, dstRoot: string, available: str
     const dst = join(dstRoot, slug);
     if (!existsSync(dst)) continue;
     if (keep) { res.kept.push(slug); res.hashes[slug] = old[slug]; continue; }
-    res.removed.push(slug); if (!DRY) rmSync(dst, { recursive: true, force: true });
+    res.removed.push(slug); if (!DRY) mutateManaged(kind, slug, () => removeManagedTree(dst, ex));
   }
   return res;
 }
 
 const squadsSrc = join(CONTENT, "squads"), bizSrc = join(CONTENT, "businesses"), cloneSrc = join(CONTENT, "mind-clones");
+const availableSquads = availableIn(squadsSrc, "squad.yaml");
+const availableBusinesses = availableIn(bizSrc, "business.yaml");
+const availableClones = availableIn(cloneSrc, "MANIFEST.yaml");
+
+// Preflight ALL kinds before the first mirror/remove. This avoids a partial
+// update where one component is already replaced when drift is discovered in
+// another. The manifest hash is the ownership boundary; run-state paths are
+// deliberately excluded because the pack never owns them.
+const updatePlans = [
+  collectManagedUpdatePlan({
+    ownership: "pack-managed", ownerId: SLUG, kind: "squads",
+    sourceRoot: squadsSrc, targetRoot: squadsDir(), incomingSlugs: availableSquads,
+    installedHashes: man.squads ?? {}, excludes: RUNSTATE_EXCLUDES.squads ?? [],
+    baseVersion: man.version, incomingVersion: VERSION,
+  }),
+  collectManagedUpdatePlan({
+    ownership: "pack-managed", ownerId: SLUG, kind: "mind-clones",
+    sourceRoot: cloneSrc, targetRoot: dnaDir(), incomingSlugs: availableClones,
+    installedHashes: man["mind-clones"] ?? {}, excludes: RUNSTATE_EXCLUDES["mind-clones"] ?? [],
+    baseVersion: man.version, incomingVersion: VERSION,
+  }),
+  collectManagedUpdatePlan({
+    ownership: "pack-managed", ownerId: SLUG, kind: "businesses",
+    sourceRoot: bizSrc, targetRoot: businessesDir(), incomingSlugs: availableBusinesses,
+    installedHashes: man.businesses ?? {}, excludes: RUNSTATE_EXCLUDES.businesses ?? [],
+    baseVersion: man.version, incomingVersion: VERSION,
+  }),
+];
+const updateRisks = updatePlans.flatMap((plan) => plan.risks);
+updateObservations = new Map(updatePlans.flatMap((plan) => plan.observations)
+  .map((observation) => [observationKey(observation.kind, observation.slug), observation]));
+if (updateRisks.length > 0) {
+  const snapshotDir = DRY
+    ? undefined
+    : createCustomizationSnapshot(updateRisks, join(nirvanaHome(), ".nirvana", "customization-snapshots", `pack-${SLUG}`));
+  reportBlockedUpdate(updateRisks, snapshotDir);
+  if (!DRY) process.exit(1);
+}
 
 // Dependency-ordered install (typed entity graph): a business's employees
 // embody mind-clones, so clones must be on disk BEFORE the business that
@@ -366,16 +441,16 @@ line("squads", sq); line("businesses", bz); line("mind-clones", cl);
 // the user's project stop working without anyone noticing.
 reportBreaks([sq, bz, cl].flatMap((r) => r.breaking), DRY, (m) => console.log(m));
 
-// Slug collisions in their own block: it is the only line that means loss of
-// the user's work, and it drowns in the counts unless highlighted.
+// Dry-run collision detail. Write mode exits during preflight, after making a
+// recoverable snapshot, so this block can never describe data already lost.
 const collisions = ([["squads", sq], ["businesses", bz], ["mind-clones", cl]] as const)
   .flatMap(([l, r]) => r.overwritten.map((s) => `${l}/${s}`));
 if (collisions.length > 0) {
   console.log();
-  console.log(`  ${DRY ? "WOULD OVERWRITE" : "OVERWRITTEN"}: ${collisions.length} component(s) you created share a slug with a pack component.`);
+  console.log(`  ${DRY ? "WOULD BLOCK" : "BLOCKED"}: ${collisions.length} user-owned component(s) share a slug with a pack component.`);
   for (const c of collisions) console.log(`    ! ${c}`);
-  console.log("    The pack is the source of truth for its own components, so it wins; your version was backed up first (below).");
-  console.log("    To keep your version in place, give it a different slug, or pass --keep-clones / --keep-squads / --keep-businesses.");
+  console.log("    Write mode creates a recoverable snapshot and stops before replacing anything.");
+  console.log("    Move the customization to an overlay, a different slug, or a fork, then rerun.");
   console.log("    Your run-state (projects/, outputs/, memory/projects) was preserved.");
 }
 // What the overlay wrote over that the buyer had changed: named, and where it
@@ -393,7 +468,7 @@ if (backedUp.length > 0) {
 
 if (!DRY) {
   mkdirSync(packsDir(), { recursive: true });
-  const out: Manifest = { slug: SLUG, version: VERSION, updated_at: new Date().toISOString(), squads: sq.hashes, businesses: bz.hashes, "mind-clones": cl.hashes };
+  const out: Manifest = { slug: SLUG, ownership: "pack-managed", version: VERSION, updated_at: new Date().toISOString(), squads: sq.hashes, businesses: bz.hashes, "mind-clones": cl.hashes };
   writeFileSync(manifestPath, JSON.stringify(out, null, 2) + "\n");
   recordInstall(out);
   // Reindex: without this the content stays on disk and the orchestrator cannot
