@@ -19,6 +19,7 @@ import { listRuntimes } from "../../../_shared/lib/host-agent-driver.ts";
 import { parseAuditLine } from "../../../_shared/lib/cloudevents.js";
 import * as outbox from "./webhook-outbox.ts";
 import { runOutputsRoot } from "./runs.ts";
+import { buildRunArchive } from "./archive.ts";
 
 /** Text artifacts go out redacted (known secret values, credential-shaped
  *  content); binaries go out as they are. */
@@ -29,6 +30,60 @@ function artifactResponse(abs: string, contentType: string, sessionDir: string, 
   }
   const { text, redactions } = runsLib.redactForClient(fs.readFileSync(abs, "utf8"), sessionDir);
   return new Response(text ?? "", { headers: { "Content-Type": contentType, "Content-Disposition": `attachment; filename="${path.basename(abs)}"`, ...(redactions ? { "X-Nirvana-Redactions": String(redactions) } : {}), ...h } });
+}
+
+/**
+ * The whole delivery of one run, as a zip.
+ *
+ * Refuses while the run is still going, for the same reason `/result` does:
+ * an archive of a half-written tree is a bundle that looks complete and is not.
+ * A finished run that produced nothing still gets a valid zip — MANIFEST.json
+ * inside says so — because "the work is empty" and "the run does not exist" are
+ * different answers and a 404 conflates them.
+ */
+function archiveResponse(memo: NonNullable<ReturnType<typeof runsLib.get>>, url: URL, h: Record<string, string>): Response {
+  if (memo.state === "queued" || memo.state === "running") {
+    return json({ error: "job_not_finished", state: memo.state, hint: "poll GET /v1/jobs/{id} or subscribe to /events" }, 409, h);
+  }
+  const includeAudit = ["1", "true", "yes"].includes((url.searchParams.get("include_audit") ?? "").toLowerCase());
+  const env = runsLib.envelope(memo);
+  let built;
+  try {
+    built = buildRunArchive({
+      outputsRoot: memo.outputs_root,
+      sessionDir: memo.session.dir,
+      rootName: memo.trace_id,
+      includeAudit,
+      manifest: {
+        trace_id: memo.trace_id,
+        session_id: memo.session.id,
+        state: env.state,
+        gate: env.gate,
+        runtime_errored: env.runtime_errored,
+        brief: memo.brief,
+        summary: env.summary,
+        reservations: env.reservations,
+        created_at: memo.created_at,
+        finished_at: memo.finished_at,
+        engine: ENGINE_VERSION,
+        includes_audit: includeAudit,
+      },
+    });
+  } catch (e) {
+    // The zip ceilings (65,535 files, 4 GiB) are the only way this throws, and
+    // a client deserves the real reason rather than a 500 with no name on it.
+    return json({ error: e instanceof Error ? e.message.split(":")[0] : "archive_failed", detail: e instanceof Error ? e.message : String(e) }, 413, h);
+  }
+  return new Response(built.zip, {
+    headers: {
+      "Content-Type": "application/zip",
+      "Content-Disposition": `attachment; filename="${memo.trace_id}.zip"`,
+      "Content-Length": String(built.zip.length),
+      "X-Nirvana-Artifacts": String(built.files.length),
+      ...(built.redactions ? { "X-Nirvana-Redactions": String(built.redactions) } : {}),
+      ...h,
+    },
+  });
 }
 
 export interface ServeOpts {
@@ -137,10 +192,14 @@ export function startServer(opts: ServeOpts) {
       if (mBriefs && req.method === "POST") {
         const session = getSession(mBriefs[1], key.id);
         if (!session) return json({ error: "session_not_found" }, 404, h);
-        let body: { brief?: string } = {};
-        try { body = await req.json() as { brief?: string }; } catch { /* validated below */ }
+        let body: { brief?: string; deliver?: string } = {};
+        try { body = await req.json() as { brief?: string; deliver?: string }; } catch { /* validated below */ }
         const brief = (body.brief || "").trim();
         if (!brief) return json({ error: "brief_required" }, 400, h);
+        // How the client wants the finished work back. Unlike a budget, this is
+        // the caller's to choose: it decides the SHAPE of a response, not what
+        // the run is allowed to spend. Anything but "zip" is the artifact default.
+        const deliver = body.deliver === "zip" ? "zip" as const : "artifact" as const;
         // Money and limits are attributes of the KEY. A client-supplied
         // budget/limit is ignored on purpose (never trust the caller with
         // its own ceiling).
@@ -161,9 +220,18 @@ export function startServer(opts: ServeOpts) {
           // only the employee prompt and rendered THAT as the client's report.
           outputs_root: runOutputsRoot(session.dir, traceId),
           created_at: new Date().toISOString(),
+          deliver,
         });
         queue.submit({ memo, budgetUsd: key.budget_usd, webhook: key.webhook });
-        return json({ trace_id: traceId, session_id: session.id, state: "queued" }, 202, h);
+        return json({
+          trace_id: traceId,
+          session_id: session.id,
+          state: "queued",
+          deliver,
+          job_url: `/v1/jobs/${traceId}`,
+          events_url: `/v1/jobs/${traceId}/events`,
+          archive_url: `/v1/jobs/${traceId}/archive`,
+        }, 202, h);
       }
 
       // ── runs ────────────────────────────────────────────────────────────
@@ -195,6 +263,13 @@ export function startServer(opts: ServeOpts) {
         const abs = resolveArtifact(memo.outputs_root, decodeURIComponent(mArt[3]));
         if (!abs) return json({ error: "artifact_not_found" }, 404, h);
         return artifactResponse(abs, contentTypeFor(abs), memo.session.dir, h);
+      }
+
+      const mRunArchive = /^\/v1\/sessions\/([^/]+)\/runs\/([^/]+)\/archive$/.exec(p);
+      if (mRunArchive && req.method === "GET") {
+        const memo = runsLib.get(mRunArchive[2], sessionsRoot());
+        if (!memo || memo.session.id !== mRunArchive[1] || memo.key_id !== key.id) return json({ error: "run_not_found" }, 404, h);
+        return archiveResponse(memo, url, h);
       }
 
       // ── jobs (session-agnostic — the polling floor) ──────────────────────
@@ -235,6 +310,10 @@ export function startServer(opts: ServeOpts) {
         const memo = runsLib.get(mJobResult[1], sessionsRoot());
         if (!memo || memo.key_id !== key.id) return json({ error: "job_not_found" }, 404, h);
         if (memo.state === "queued" || memo.state === "running") return json({ error: "job_not_finished", state: memo.state }, 409, h);
+        // A brief submitted with {"deliver":"zip"} said once how it wants the
+        // result, so a webhook consumer that only follows result_url gets the
+        // complete bundle without having to know a second URL exists.
+        if (memo.deliver === "zip") return archiveResponse(memo, url, h);
         const artifacts = listArtifacts(memo.outputs_root);
         if (artifacts.length === 1) {
           const abs = resolveArtifact(memo.outputs_root, artifacts[0].path);
@@ -242,7 +321,22 @@ export function startServer(opts: ServeOpts) {
             return artifactResponse(abs, artifacts[0].content_type, memo.session.dir, h);
           }
         }
-        return json({ artifacts, hint: artifacts.length ? `download one by path: GET /v1/jobs/${mJobResult[1]}/artifacts/{path}` : "no artifacts produced" }, 200, h);
+        return json({
+          artifacts,
+          archive_url: `/v1/jobs/${mJobResult[1]}/archive`,
+          hint: artifacts.length
+            ? `all of it at once: GET /v1/jobs/${mJobResult[1]}/archive · one file: GET /v1/jobs/${mJobResult[1]}/artifacts/{path}`
+            : "no artifacts produced",
+        }, 200, h);
+      }
+
+      // The whole delivery, in one call. Placed before /artifacts/{path} only
+      // for reading order; the patterns do not overlap.
+      const mJobArchive = /^\/v1\/jobs\/([^/]+)\/archive$/.exec(p);
+      if (mJobArchive && req.method === "GET") {
+        const memo = runsLib.get(mJobArchive[1], sessionsRoot());
+        if (!memo || memo.key_id !== key.id) return json({ error: "job_not_found" }, 404, h);
+        return archiveResponse(memo, url, h);
       }
 
       const mJobArt = /^\/v1\/jobs\/([^/]+)\/artifacts\/(.+)$/.exec(p);

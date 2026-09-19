@@ -42,6 +42,76 @@ curl -s $API/v1/sessions/$SID/runs/$TRACE/artifacts/relatorio.md \
   -H "Authorization: Bearer $TOKEN" -o relatorio.md
 ```
 
+## Prose in, one zip out
+
+The shortest complete path through this API: send the brief, ask for a zip,
+download the whole delivery when it is done.
+
+```bash
+TOKEN=nrv_…
+API=http://127.0.0.1:7777
+
+SID=$(curl -s -X POST $API/v1/sessions -H "Authorization: Bearer $TOKEN" | jq -r .session_id)
+
+# `deliver: "zip"` says how you want the finished work back. Said once, here.
+TRACE=$(curl -s -X POST $API/v1/sessions/$SID/briefs \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"brief":"faça a análise competitiva e o plano de mídia","deliver":"zip"}' | jq -r .trace_id)
+
+# A real brief takes minutes to hours. Poll, or register a webhook.
+until [ "$(curl -s $API/v1/jobs/$TRACE -H "Authorization: Bearer $TOKEN" | jq -r .state)" != "running" ]; do sleep 20; done
+
+curl -s $API/v1/jobs/$TRACE/archive -H "Authorization: Bearer $TOKEN" -o entrega.zip
+```
+
+There is no synchronous version and there will not be one: a run that
+mobilizes several businesses and squads takes minutes at best and hours at
+worst, which no HTTP request survives. The submission returns a receipt, and
+the archive is a separate GET you make whenever you like.
+
+```
+GET /v1/jobs/{trace_id}/archive                    → application/zip
+GET /v1/sessions/{sid}/runs/{trace_id}/archive     → the same bundle
+GET /v1/jobs/{trace_id}/archive?include_audit=1    → plus the audit trail
+```
+
+**What is inside.** Everything every business and every squad delivered,
+under one top folder named for the run, organized the way the org chart
+produced it:
+
+```
+run_9f2c…/MANIFEST.json
+run_9f2c…/businesses/acme/deliverables/analise-competitiva.md
+run_9f2c…/businesses/beta/deliverables/plano-de-midia.md
+run_9f2c…/squads/design-squad/capa.png
+```
+
+`MANIFEST.json` is generated for the bundle: the brief, the state, the gate
+verdict, the summary, the reservations, the engine version, and every file
+with its size. It is what tells you the archive of a run that delivered
+nothing is an honest empty bundle rather than a lost one — that case is a
+valid zip holding only the manifest, never a 404.
+
+**What is never inside.** The run's instrumentation: `agent-prompt.md` (the
+employee's system prompt, the mind-clone library and the firm's permanent
+memory), `brief.md`, `HANDOFF.json`, `audit.jsonl`, `_SUMMARY.md`,
+`_QA-RESERVATIONS.md`, the project's own `AGENTS.md` / `CLAUDE.md` /
+`GEMINI.md`, and every run-state directory. One list — `run-plumbing.ts` —
+shared with the artifact listing, the report renderer, the verifier and
+`nrv export`. Text is redacted on the way in exactly as
+`/artifacts/{path}` redacts it, and `X-Nirvana-Redactions` counts the masks.
+
+**Headers**: `X-Nirvana-Artifacts` is the file count, so a client can tell an
+empty delivery from a full one without opening the zip.
+
+**Status**: `409` while the run is still queued or running — an archive of a
+half-written tree is a bundle that looks complete and is not. `404` for a job
+that does not exist or belongs to another key. `413` if the delivery exceeds
+what a classic zip can address (65,535 files or 4 GiB); the body names which.
+
+The server writes the zip itself, with no `python3` and no `zip` binary, so a
+minimal VPS image needs nothing added.
+
 ## Which library a session can reach
 
 ```bash
@@ -87,6 +157,7 @@ NIRVANA_SERVE_SESSIONS_ROOT=/data/nirvana-sessions nrv serve --port 7777
   "state": "delivered | withheld | indeterminate | failed | running | queued",
   "gate": "pass | fail-accepted | fail | indeterminate | null",
   "artifacts": [{ "path": "relatorio.md", "bytes": 2413, "content_type": "text/markdown" }],
+  "archive_url": "/v1/jobs/run_…/archive",
   "summary": "…contents of _SUMMARY.md…",
   "reservations": "…contents of _QA-RESERVATIONS.md, when the gate ran out of retries…",
   "exit_code": 0
@@ -108,11 +179,14 @@ GET  /v1/jobs/{trace_id}                  → the envelope (same shape as above)
 GET  /v1/jobs/{trace_id}/events           → SSE, same feed as the session route
 GET  /v1/jobs/{trace_id}/result           → the artifact, or the list + a path to pick one
 GET  /v1/jobs/{trace_id}/artifacts/{path} → one artifact by path
+GET  /v1/jobs/{trace_id}/archive          → the WHOLE delivery as one zip
 ```
 
 `/result` streams the file directly when the run produced exactly one
 artifact; otherwise it answers with the same `artifacts` list the envelope
-already carries, plus a pointer to `/artifacts/{path}`. Ownership is the same
+already carries, plus pointers to `/archive` and `/artifacts/{path}`. A brief
+submitted with `{"deliver":"zip"}` gets the bundle from `/result` instead, so a
+consumer that only follows `result_url` never needs to know a second URL exists. Ownership is the same
 key check every session route makes — another key's token gets
 `job_not_found`, the same 404 a stranger's session id gets.
 
@@ -129,7 +203,8 @@ delivers ONE POST, retried on failure — see below — carrying:
 ```json
 { "event": "run.finished", "trace_id": "run_…", "session_id": "ses_…",
   "state": "delivered", "gate": "pass",
-  "job_url": "/v1/jobs/run_…", "result_url": "/v1/jobs/run_…/result" }
+  "job_url": "/v1/jobs/run_…", "result_url": "/v1/jobs/run_…/result",
+  "archive_url": "/v1/jobs/run_…/archive" }
 ```
 
 **By reference, never by value**: the body never carries `summary`,

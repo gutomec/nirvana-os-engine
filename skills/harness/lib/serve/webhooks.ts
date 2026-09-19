@@ -49,7 +49,7 @@ const CLOCK_SKEW_SEC = 60;
  * this API in the first place.
  */
 export function referenceBody(env: Pick<RunEnvelope, "trace_id" | "session_id" | "state" | "gate">, baseUrl = process.env.NIRVANA_SERVE_PUBLIC_URL ?? ""): {
-  event: "run.finished"; trace_id: string; session_id: string; state: RunEnvelope["state"]; gate: RunEnvelope["gate"]; job_url: string; result_url: string;
+  event: "run.finished"; trace_id: string; session_id: string; state: RunEnvelope["state"]; gate: RunEnvelope["gate"]; job_url: string; result_url: string; archive_url: string;
 } {
   const base = baseUrl.replace(/\/+$/, "");
   return {
@@ -60,6 +60,11 @@ export function referenceBody(env: Pick<RunEnvelope, "trace_id" | "session_id" |
     gate: env.gate,
     job_url: `${base}/v1/jobs/${env.trace_id}`,
     result_url: `${base}/v1/jobs/${env.trace_id}/result`,
+    // Still by reference: a path the consumer fetches with the credential it
+    // already holds, never the bundle itself. A webhook that carried the work
+    // in its body would put the deliverable through whatever logs and proxies
+    // sit between here and the receiver.
+    archive_url: `${base}/v1/jobs/${env.trace_id}/archive`,
   };
 }
 

@@ -6,6 +6,26 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Unreleased
+
+### A entrega completa de uma execução, numa chamada só
+
+A API sabia entregar um arquivo de cada vez e mais nada. O `/artifacts` devolvia uma listagem que o chamador tinha que percorrer; o `/artifacts/{path}` devolvia um arquivo; o `/result` só ajudava quando a execução produzia exatamente um artefato e degradava para a mesma listagem assim que produzia dois. Um brief que mobilizou quatro empresas e nove squads não tinha nesta API nenhuma representação daquilo que o cliente de fato comprou — só treze idas e voltas que ele mesmo tinha que orquestrar.
+
+O `GET /v1/jobs/{trace_id}/archive` devolve tudo num zip, e o `GET /v1/sessions/{sid}/runs/{trace_id}/archive` é o gêmeo no escopo da sessão. Tudo o que cada empresa e cada squad entregou, sob uma pasta raiz com o nome da execução, organizado como o organograma produziu, mais um `MANIFEST.json` gerado com o brief, o estado, o veredito do portão, o resumo, as ressalvas, a versão do engine e cada arquivo com seu tamanho. O `?include_audit=1` acrescenta a trilha de auditoria, deliberadamente, do mesmo jeito que o `nrv export` sempre tratou. Uma execução que não entregou nada vira um zip válido só com o manifesto, que é um pacote vazio honesto em vez de um 404 para um trabalho que de fato terminou.
+
+O pacote leva o trabalho e nada da instrumentação: o mesmo `run-plumbing.ts` que a listagem, o gerador de relatório, o verificador e o `nrv export` leem, então o prompt de sistema do employee, a biblioteca de mind-clones e a memória permanente da firma ficam fora de um arquivo que o cliente guarda. O texto é redigido na entrada exatamente como o `/artifacts/{path}` redige — um zip que pulasse esse passo seria um buraco em volta de toda a camada de redação, e mais largo, porque um pacote é guardado e não apenas lido. O `X-Nirvana-Artifacts` conta os arquivos e o `X-Nirvana-Redactions` conta as máscaras.
+
+O zip é escrito pelo próprio servidor. O `nrv export` chama `python3` ou `tar`, o que serve numa máquina de desenvolvimento e não serve numa VPS que pode não ter nenhum dos dois: uma rota de download que falha por falta de interpretador é pior que rota nenhuma. O `node:zlib` já está lá, então o formato é escrito à mão — sem dependência, sem subprocesso, sem arquivo temporário. O `unzip -t` confere cada CRC na suíte de testes, porque um zip de que o nosso próprio leitor gosta não prova nada.
+
+### Um brief pode dizer como quer a resposta de volta
+
+O `POST /v1/sessions/{sid}/briefs` aceita `{"deliver":"zip"}` ao lado do brief. O `/result` passa a devolver o pacote em vez da listagem, então um consumidor movido a webhook nunca precisa aprender uma segunda URL. Diferente de um orçamento, essa escolha é do chamador: ela decide a FORMA da resposta, não quanto a execução pode gastar. O recibo 202 passa a carregar `job_url`, `events_url` e `archive_url`; o envelope da execução e o payload do webhook também carregam `archive_url` — ainda por referência, nunca o pacote no corpo.
+
+### Meia lista compartilhada é uma lista privada com passos a mais
+
+O `run-plumbing.ts` nomeia diretórios de estado além de arquivos, e a listagem de artefatos da API lia só a metade dos arquivos. O `_internal/` e o `relatorio/` apareciam lá como entregas enquanto o verificador, o gerador e o `nrv export` recusavam os três.
+
 ## 0.13.17 — 2026-09-18
 
 ### O `nrv mine-briefs` atende pelo nome que ele mesmo documenta

@@ -49,6 +49,15 @@ export function redactForClient(text: string | null, sessionDir: string): { text
  * — which is what OUTPUTS_CONTRACT calls canonical and what every other layer
  * of the engine computes on its own. An empty `traceId` returns the base.
  */
+/**
+ * The path to a run's complete delivery. One function because three callers
+ * need it — the envelope, the webhook body and the route itself — and a string
+ * spelled out three times is a string that eventually differs in one of them.
+ */
+export function archiveUrl(traceId: string, baseUrl = process.env.NIRVANA_SERVE_PUBLIC_URL ?? ""): string {
+  return `${baseUrl.replace(/\/+$/, "")}/v1/jobs/${traceId}/archive`;
+}
+
 export function runOutputsRoot(sessionDir: string, traceId: string): string {
   return traceId ? path.join(sessionDir, "outputs", traceId) : path.join(sessionDir, "outputs");
 }
@@ -81,6 +90,16 @@ export interface RunEnvelope {
    * of silence this envelope exists to prevent.
    */
   runtime_errored: boolean;
+  /**
+   * Where the whole delivery is, as one zip.
+   *
+   * The API could hand a client one file at a time and nothing else, so a run
+   * where several businesses and squads each delivered had no representation
+   * for "the finished work" — only a listing the caller had to walk. The link
+   * is always present and always true; it costs nothing to carry and it is the
+   * answer to the question the listing raised.
+   */
+  archive_url: string;
   error: string | null;
 }
 
@@ -96,6 +115,12 @@ interface RunMemo {
   error: string | null;
   child_pid: number | null;
   state: RunEnvelopeState;
+  /**
+   * What the client asked `/result` to return: the artifact (default) or the
+   * whole delivery as a zip. Stated once, when the brief is submitted, so a
+   * consumer driven by webhooks never has to decide again at download time.
+   */
+  deliver: "artifact" | "zip";
 }
 
 const runs = new Map<string, RunMemo>();
@@ -117,7 +142,7 @@ function persist(m: RunMemo): void {
     fs.writeFileSync(memoFile(m.outputs_root), JSON.stringify({
       trace_id: m.trace_id, session: m.session, key_id: m.key_id, brief: m.brief,
       outputs_root: m.outputs_root, created_at: m.created_at, finished_at: m.finished_at,
-      exit_code: m.exit_code, error: m.error, state: m.state,
+      exit_code: m.exit_code, error: m.error, state: m.state, deliver: m.deliver,
     }, null, 2));
   } catch { /* a run whose outputs dir vanished is already lost; do not crash the server */ }
 }
@@ -137,7 +162,7 @@ function rehydrate(traceId: string, sessionsRoot: string): RunMemo | null {
       const raw = JSON.parse(fs.readFileSync(f, "utf8")) as RunMemo;
       // A run that was mid-flight when the server died is not "running" any
       // more — no child of ours survives. Report it honestly.
-      const m: RunMemo = { ...raw, child_pid: null, state: raw.state === "running" || raw.state === "queued" ? "failed" : raw.state };
+      const m: RunMemo = { ...raw, deliver: raw.deliver ?? "artifact", child_pid: null, state: raw.state === "running" || raw.state === "queued" ? "failed" : raw.state };
       if (m.state === "failed" && !m.error) m.error = "server restarted while the run was in flight";
       runs.set(traceId, m);
       return m;
@@ -162,8 +187,8 @@ function dispatchCmd(): { bin: string; script: string } {
   return { bin: process.env.NIRVANA_SERVE_BUN || "bun", script: path.join(SKILLS_ROOT, "harness", "scripts", "dispatch.ts") };
 }
 
-export function register(memo: Omit<RunMemo, "state" | "finished_at" | "exit_code" | "error" | "child_pid">): RunMemo {
-  const m: RunMemo = { ...memo, state: "queued", finished_at: null, exit_code: null, error: null, child_pid: null };
+export function register(memo: Omit<RunMemo, "state" | "finished_at" | "exit_code" | "error" | "child_pid" | "deliver"> & { deliver?: RunMemo["deliver"] }): RunMemo {
+  const m: RunMemo = { ...memo, deliver: memo.deliver ?? "artifact", state: "queued", finished_at: null, exit_code: null, error: null, child_pid: null };
   runs.set(m.trace_id, m);
   persist(m);
   return m;
@@ -334,6 +359,7 @@ export function envelope(memo: RunMemo): RunEnvelope {
     // no way to tell. The state is right — the gate did pass — and the
     // caveat travels beside it, the way `fail-accepted` already does.
     runtime_errored: runtimeErrored(memo.outputs_root),
+    archive_url: archiveUrl(memo.trace_id),
     artifacts,
     summary: redactForClient(readIf(path.join(memo.outputs_root, "_SUMMARY.md"))
       ?? readIf(path.join(memo.outputs_root, "outputs", "_SUMMARY.md")), memo.session.dir).text,

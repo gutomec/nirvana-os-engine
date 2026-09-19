@@ -6,6 +6,26 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### The complete delivery of a run, in one call
+
+The API could hand a client one file at a time and nothing else. `/artifacts` returned a listing the caller had to walk; `/artifacts/{path}` returned one file; `/result` helped only when a run produced exactly one artifact and degraded into the same listing the moment it produced two. A brief that mobilized four businesses and nine squads therefore had no representation in this API for the thing the client actually bought — only thirteen round trips they had to orchestrate themselves.
+
+`GET /v1/jobs/{trace_id}/archive` returns it as one zip, with `GET /v1/sessions/{sid}/runs/{trace_id}/archive` as the session-scoped twin. Everything every business and every squad delivered, under one top folder named for the run, organized the way the org chart produced it, plus a generated `MANIFEST.json` carrying the brief, the state, the gate verdict, the summary, the reservations, the engine version and every file with its size. `?include_audit=1` adds the audit trail, deliberately, the way `nrv export` has always treated it. A run that delivered nothing is a valid zip holding only the manifest, which is an honest empty bundle rather than a 404 for work that really did finish.
+
+The bundle carries the work and none of the instrumentation: same `run-plumbing.ts` the listing, the renderer, the verifier and `nrv export` read, so the employee's system prompt, the mind-clone library and the firm's permanent memory stay out of a file the client keeps. Text is redacted on the way in exactly as `/artifacts/{path}` redacts it — a zip that skipped that step would have been a hole around the whole redaction layer, and a wider one, because a bundle is kept rather than read. `X-Nirvana-Artifacts` counts the files and `X-Nirvana-Redactions` counts the masks.
+
+The zip is written by the server itself. `nrv export` shells out to `python3` or `tar`, which is fine on a developer machine and wrong on a VPS that need not have either: a download route that fails because an interpreter is missing is worse than no route. `node:zlib` is already there, so the format is written by hand — no dependency, no subprocess, no temp file. `unzip -t` verifies every CRC in the test suite, because a zip our own reader likes proves nothing.
+
+### A brief can say how it wants the answer back
+
+`POST /v1/sessions/{sid}/briefs` accepts `{"deliver":"zip"}` beside the brief. `/result` then returns the bundle instead of a listing, so a consumer driven by webhooks never has to learn a second URL. Unlike a budget, this is the caller's to choose: it decides the shape of a response, not what the run is allowed to spend. The 202 receipt now carries `job_url`, `events_url` and `archive_url`; the run envelope and the webhook payload carry `archive_url` too — still by reference, never the bundle in the body.
+
+### Half a shared list is a private list with extra steps
+
+`run-plumbing.ts` names run-state directories as well as files, and the API's artifact listing read only the file half of it. `_internal/` and `relatorio/` were listed as deliverables there while the verifier, the renderer and `nrv export` all refused them.
+
 ## 0.13.17 — 2026-09-18
 
 ### `nrv mine-briefs` is reachable by the name it documents
