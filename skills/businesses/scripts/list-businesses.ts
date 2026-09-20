@@ -11,6 +11,8 @@ import { resolveScope, enumerate, describeScope } from "../../_shared/lib/scope.
 const { flags } = parseArgs();
 const fmt = (flags.format as string) || "compact";
 const showScope = !!flags["show-scope"];
+// Full descriptions by default; --short is for a human scrolling a terminal.
+const short = !!flags.short;
 
 const scope = resolveScope();
 const entries = enumerate(scope, "businesses").filter(e => !e.overridden);
@@ -24,10 +26,21 @@ if (showScope) {
 // businesses do I have" used to go digging in the registry and the manifests
 // for it (measured on Antigravity, 2026-09-16: a private lister, five registry
 // reads). The first sentence of `description`, capped, from the manifest.
+/**
+ * What a business says it does. Never cut.
+ *
+ * This kept the FIRST SENTENCE capped at 96 characters, and 288 of the
+ * library's 292 entities were cut by it — routinely right where the prose stops
+ * naming the domain and starts naming the work. A caller deciding who can do
+ * something was reading the half of each entity that discriminates least.
+ *
+ * `--short` OMITS the description rather than cutting it: half a sentence
+ * ending in an ellipsis is the worst of both, expensive enough to read and too
+ * partial to decide on. A terminal listing that just wants the slugs should say
+ * so; anything that wants to know what the business does gets all of it.
+ */
 function blurb(text: string | undefined): string {
-  if (!text) return "";
-  const first = text.replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s/)[0] ?? "";
-  return first.length > 96 ? first.slice(0, 93).trimEnd() + "…" : first;
+  return text ? text.replace(/\s+/g, " ").trim() : "";
 }
 function blurbOf(dir: string | undefined): string {
   if (!dir) return "";
@@ -48,7 +61,7 @@ if (scope.mode === "global" && !scope.projectRoot) {
   } else {
     for (const s of slugs) {
       const e = reg.businesses[s];
-      const what = blurb(e.description) || blurbOf(e.manifest_path ? path.dirname(e.manifest_path) : undefined);
+      const what = short ? "" : (blurb(e.description) || blurbOf(e.manifest_path ? path.dirname(e.manifest_path) : undefined));
       console.log(`  [global] ${s}${what ? ` — ${what}` : ""} (v${e.version}, protocol ${e.protocol}, employees ${e.employee_count ?? "?"})`);
     }
     console.log(`\n  total: ${slugs.length} businesses (scope=global)`);
@@ -60,7 +73,7 @@ if (fmt === "json") {
   console.log(JSON.stringify(entries.map(e => ({ slug: e.slug, description: blurbOf(e.dir) || undefined, source: e.source, path: e.dir })), null, 2));
 } else {
   for (const e of entries) {
-    const what = blurbOf(e.dir);
+    const what = short ? "" : blurbOf(e.dir);
     console.log(`  [${e.source}] ${e.slug}${what ? ` — ${what}` : ""}  (${e.dir})`);
   }
   console.log(`\n  total: ${entries.length} businesses (scope=${scope.mode})`);

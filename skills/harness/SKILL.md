@@ -287,26 +287,50 @@ If the brief depends on facts you don't have (market state, regulations, recent 
 
 **The freshness gate — not optional.** When the deliverable involves a technology, service, library, API, vendor or model choice **the user did not specify**, research the current state of the art BEFORE committing the plan, choose the best option, and record every choice in the enriched brief under `## Escolhas de stack`: the option chosen, the date, the source URL, and 1 line of why. A default you "remember" is months stale by construction — that is how briefs get built on deprecated tools, dead APIs and superseded models. When the gate fires, emit `x_research_completed` with a `choices[]` field so the audit trail shows the decisions were grounded, not recalled.
 
-### Phase 3 — Registry consult (two-pass: shortlist → deep confirm)
-The portfolio has **three pillars** — businesses, squads, mind-clones. Survey all three in pass 1; deep-read finalists in pass 2.
+### Phase 3 — Registry consult (two-pass: survey everything → deep-read the finalists)
+The portfolio has **three pillars** — businesses, squads, mind-clones. Pass 1 surveys ALL of them; Pass 2 opens the finalists and reads what they actually contain.
 
-**Pass 1 — semantic shortlist (cheap, ~5k tokens).** Read the indexes only:
+**Pass 1 — READ THE WHOLE CATALOG. Do not let a keyword search narrow it for you.**
 
 ```bash
-# Registries are scope-aware: inside a project they live at
-# <project>/.nirvana/.businesses-registry.json and <project>/.nirvana/.squads-registry.json,
-# falling back to $NIRVANA_HOME (default: $HOME). Prefer the resolvers — they
-# follow the exact paths the code uses (_shared/lib/paths.js):
-nrv search "<the need>" --kind=business   # or: nrv list-businesses
-nrv search "<the need>" --kind=squad      # or: nrv list-squads
+Read  ~/.nirvana/.catalog.md      # every business and squad: slug + full description
+```
+
+`nrv index` writes it; it is scope-aware like the registries (a project's own lives at `<project>/.nirvana/.catalog.md`). Read it whole, every time. `nrv list-businesses` / `nrv list-squads` print the same material when you want it on a terminal.
+
+It carries exactly two things per entity — the slug and the FULL description — because those are what decide WHAT TO OPEN. `produces`, `domains`, capability ids, versions and protocol numbers cost 27k tokens on this library and decide nothing at survey time; they matter once a finalist is open, which is Pass 2, where there are five entities instead of 292.
+
+It is a FILE and not two commands on purpose: sorted and byte-stable, so a provider's prompt cache holds it across sessions. Command output varies in ordering and scaffolding and caches badly. On a maintainer-sized library the survey is ~45k tokens and the file is the difference between paying that once and paying it every run; on the library a customer installs — the few entities that service needs — it is a few thousand tokens and none of this matters.
+
+What it cost, measured against 123 briefs that were dispatched, executed and passed the gate: the entity that ACTUALLY DELIVERED was absent from a 15-deep keyword shortlist in 47.9% of them, and in 62.5% of the business cases. Not misranked — absent, and therefore never deep-read in Pass 2, because Pass 2 can only judge what Pass 1 put on the table.
+
+The reason is structural and no amount of keyword tuning fixes it. A real brief says what the work is ABOUT, in the client's own language, and almost never names what has to be BUILT:
+
+```
+"Monitor judicial diário operacional: DataJud real (chave pública CNJ) + agendamento"
+
+  by keyword   compliance-citadel · juridical-singularity · ux-atelier · aurum-contabil
+               (matched: monitor, diario, judicial, chave)      software-forge: ABSENT
+
+  in the full  software-forge — "Builds production software end to end: fullstack web
+  catalog       applications, native iOS and Android apps…"      obvious on sight
+```
+
+Match (in order of fidelity): `produces[]` (concrete deliverable types) → `example_briefs[]` (real briefs the entry was designed for) → `keywords[]` (PT/EN synonyms) → fallback `description` + `domains`.
+
+The OBJECT is software; the THEME is judicial. Lexical matching has no concept of the difference — you do, and that is exactly the Mother Rule above. So read the whole list and apply it. `software-forge` declares 50 keywords and 12 example briefs; it was not under-declared, it was out-ranked by theme. Reading the catalog is not the expensive option here, it is the correct one.
+
+Nothing here is truncated. The description is what an entity says it does, and the part that discriminates is routinely the second half of it — the half that stops naming the domain and starts naming the work. The catalog decides WHAT TO OPEN; who executes is Pass 2's answer, taken from the agents, tasks and workflows themselves.
+
+**Mind-clones are the exception, and the only one.** 617 of them cost ~23k tokens to list, so they stay searched — by NEED, framed as a symptom:
+
+```bash
 nrv find-clone "<a necessidade, formulada como sintoma — ex.: 'diretora de elenco para o comercial'>" --limit 8
 ```
 
-For businesses and squads, semantically match (in order of fidelity): `produces[]` (concrete deliverable types) → `example_briefs[]` (real briefs the entry was designed for) → `keywords[]` (PT/EN synonyms) → fallback `description` + `domains`.
-
 For **mind-clones**, search by NEED, never by name: `nrv find-clone` runs BM25 over the routing block (`one_liner` + `domains` + `serves` — the fields the enrichment contract makes owners declare). Read the top hits' `routing:` blocks before picking — `not_for`/`refuses` are the boundary map (`delegates_to` is retired — existing lists are ignored; when `not_for` prose names a better-fitting person, find them via `nrv find-clone` against the library actually installed), and a hit whose `refuses` covers the task is a wrong pick at any score. Matching by `category`/`tags`/`display_name` is the legacy fallback, valid only for clones with no `routing:` block yet; a brief that names the operator directly wins over any ranking (Rule 9).
 
-Pick a **shortlist of 5–10 candidates** across all three pillars with rough rationale.
+From the full catalog, pick the candidates worth opening — typically 5 to 10 across the three pillars, with rough rationale. That number is a consequence of reading, not a budget you spend before reading.
 
 **Two candidates covering the same ground is normal, and it is an opportunity, not a tie to break.** Read both. Decide which one executes — then take what the other does better and put it into the brief you hand the winner. A step the loser's workflow had and the winner's lacks, a check only one of them makes, a sharper way of framing the output: none of that is lost when you pick, because you are writing the brief. The dispatch that follows is better than either candidate would have been alone.
 

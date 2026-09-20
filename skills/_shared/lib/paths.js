@@ -171,6 +171,13 @@ function resolvePaths(opts = {}) {
     // ~/.nirvana/ (beside the mind-clones registry). Built by
     // harness/scripts/build-routing-digest.ts.
     ROUTING_DIGEST_PATH:      cfg('ROUTING_DIGEST_PATH')      || projectPath('.routing-digest.md')        || join(NIRVANA_HOME, '.nirvana', '.routing-digest.md'),
+    // What the orchestrator reads to find out WHAT EXISTS: every business and
+    // squad, slug and full description, nothing else. Written by `nrv index`
+    // so it is a stable file at a fixed path rather than the output of two
+    // commands — a stable file is what a provider's prompt cache can hold
+    // across sessions, and on a maintainer-sized library that is the whole
+    // difference between paying for the survey once and paying every run.
+    CATALOG_PATH:             cfg('CATALOG_PATH')             || projectPath('.catalog.md')               || join(NIRVANA_HOME, '.nirvana', '.catalog.md'),
 
     // Cross-language alias groups, emitted next to the digest by the same
     // builder and read by router.js Stage 2.7 arm (b).

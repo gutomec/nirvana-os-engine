@@ -187,6 +187,9 @@ if (import.meta.main) {
   // Step 4: derive .routing-digest.md + .keyword-aliases.json from the three
   // registries (only when at least one of them actually rebuilt this run).
   if (want("digest") || results.some(r => r.ok && !r.skipped)) results.push(runIndexer("digest", "harness/scripts/build-routing-digest.ts"));
+  // The survey the orchestrator reads: slug + full description, sorted, stable.
+  // Same trigger as the digest — it is derived from the same registries.
+  if (want("catalog") || results.some(r => r.ok && !r.skipped)) results.push(runIndexer("catalog", "harness/scripts/build-catalog.ts"));
 
   if (jsonOut) {
     console.log(JSON.stringify({

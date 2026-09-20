@@ -6,6 +6,32 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### The orchestrator was surveying the library through a keyhole
+
+Phase 3 Pass 1 was a keyword shortlist: "semantic shortlist (cheap, ~5k tokens)", pick 5 to 10 candidates, deep-read those. Pass 2 can only judge what Pass 1 puts on the table, so a lexical ranking decided the outcome before any reading happened.
+
+Measured against 123 briefs that were dispatched, executed and **passed the gate**: the entity that ACTUALLY DELIVERED was absent from a 15-deep shortlist in 47.9% of them, and in 62.5% of the business cases. Absent, not misranked — and therefore never opened. The cause is structural. A real brief says what the work is ABOUT, in the client's language, and almost never names what has to be BUILT:
+
+```
+"Monitor judicial diário operacional: DataJud real (chave pública CNJ) + agendamento"
+  → compliance-citadel · juridical-singularity · ux-atelier · aurum-contabil
+    (matched: monitor, diario, judicial, chave)          software-forge: ABSENT
+```
+
+The OBJECT is software; the THEME is judicial. `software-forge` declares 50 keywords and 12 example briefs — it was not under-declared, it was out-ranked by theme, and no amount of keyword tuning fixes that.
+
+Two more things were hiding the library from its own orchestrator. `nrv list-squads` carried **no description at all** — 224 lines of `[global] slug (v5.1.0, protocol 6.0, caps=3)`, from which nothing can be decided. And `nrv list-businesses` cut each description to its first sentence capped at 96 characters, which cut **288 of the library's 292 entities**, routinely right where the prose stops naming the domain and starts naming the work.
+
+**Pass 1 now reads `~/.nirvana/.catalog.md`**: every business and every squad, slug and full description, nothing else. `nrv index` writes it, scope-aware like the registries. Nothing in it is truncated, and `--short` on the listings now OMITS a description rather than cutting it — half a sentence ending in an ellipsis is the worst of both, expensive to read and too partial to decide on.
+
+It carries slug and description because those decide WHAT TO OPEN. `produces`, `domains`, capability ids, versions and protocol numbers cost 27k tokens on this library and decide nothing at survey time; they matter once a finalist is open, which is Pass 2, where there are five entities instead of 292.
+
+It is a FILE and not two commands because a sorted, byte-stable file at a fixed path is what a provider's prompt cache holds across sessions. On a maintainer-sized library the survey is ~45k tokens and the file is the difference between paying that once and paying it every run. On the library a customer installs — the few entities that service needs — it is a few thousand tokens and none of this matters.
+
+`nrv eval-recall` measures any of this again, against the corpus `nrv mine-briefs` builds from work that already ran.
+
 ## 0.14.0 — 2026-09-20
 
 ### The keyword router is no longer offered to agents

@@ -77,6 +77,8 @@ export const COMMANDS: Command[] = [
   { name: "revise", target: "harness/scripts/revise.ts", category: "dispatch", args: '<project> "<change>"', summary: "Apply a change keeping the same runtime session", visibility: "user" },
   { name: "ask", target: "harness/scripts/ask.ts", category: "dispatch", args: "<clone> [question]", summary: "Talk to a single mind-clone (DNA injected)", visibility: "user" },
   { name: "exec", target: "harness/scripts/exec.ts", category: "dispatch", args: '[--runtime=<rt>] "<prompt>"', summary: "The runtime as itself: one prompt, its answer, no persona and no gate", visibility: "user" },
+  { name: "build-catalog", target: "harness/scripts/build-catalog.ts", category: "dev", args: "[--stdout]", summary: "Rebuild the survey catalog (slug + full description)", visibility: "dev" },
+  { name: "eval-recall", target: "harness/scripts/eval-recall.ts", category: "observability", args: "[--corpus <f>] [--exclude-named] [--misses]", summary: "Does the shortlist contain the entity that actually delivered?", visibility: "user" },
   { name: "mine-briefs", target: "harness/scripts/mine-real-briefs.ts", category: "observability", args: "[--write] [--all] [--out <file>]", summary: "Build a routing eval corpus from dispatches that already ran", visibility: "user" },
   { name: "launch", target: "harness/scripts/launch.ts", category: "dispatch", args: "<name> [--pillars=...]", summary: "Scaffold a multi-pillar 360 launch", visibility: "user" },
   { name: "clean", aliases: ["clean-project", "purge"], target: "harness/scripts/clean-project.ts", category: "dispatch", args: "<project> [--hard]", summary: "Remove a project scaffold (trash by default)", visibility: "user" },
