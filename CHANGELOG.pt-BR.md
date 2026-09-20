@@ -18,6 +18,30 @@ Não verificado, e nomeado como tal: descoberta, um turno, um despacho com cadei
 
 A página também corrige o plano de onde veio: o critério antigo era descobrir quatro skills, e desde a 0.13.10 existe exatamente uma. `harness`, `squads`, `businesses` e `_shared` são internos do engine e nunca são expostos a um runtime.
 
+## Unreleased
+
+### Um brief que o roteador entendeu pela metade foi despachado com confiança
+
+Medido numa biblioteca cheia (19/09/2026): `"me empresta vinte reais até sexta-feira"` casou 3 dos seus 6 tokens de conteúdo contra a capability de CAMPANHA DE RETENÇÃO de um personal trainer e saiu `HIGH`, normalized 1,000, lead 0,388. Não foi por pouco: um brief sobre pedir dinheiro emprestado a um amigo, despachado com confiança para um squad de marketing.
+
+A trava de cobertura tinha bandas para `matched <= 1` e `matched === 2`, ambas testando contagem e fração juntas, e nada acima delas. O `matched = 3` passou pelas bandas de contagem enquanto metade do brief seguia sem explicação, então a fração nunca teve voz. A trava passa a aplicar o princípio que ela já codificava, sem o teto arbitrário na contagem: um vencedor que explica metade ou menos de um brief devolve `AMBIGUOUS`.
+
+Custo em trabalho legítimo, medido antes da mudança em vez de torcido depois: **zero**. Dos 378 briefs dourados que decidem `HIGH`, nenhum tem fração de cobertura igual ou abaixo de 0,5, porque um brief real casa praticamente todos os próprios tokens de conteúdo (fração p5 do dourado = 1,00). No corpus de negativos, 3 dos 5 despachos confiantes viram confirmações, incluindo o único do conjunto `no_match` — a taxa de falso despacho, que a suíte chama de eixo de segurança, voltou a zero. Os briefs-sonda que deveriam perguntar em vez de responder foram de 50,0% para 70,0% de acerto. O `top1` se mantém em 98,3% e o `top3` subiu para 99,7%.
+
+### Um piso absoluto de score, medido e rejeitado de novo
+
+A própria nota do roteador registra um piso rejeitado uma vez. Ele foi medido de novo contra a biblioteca como ela está e rejeitado de novo, e os números agora moram no código para a próxima pessoa não precisar refazê-los.
+
+Só contra o conjunto dourado o caso parece fechado: 800 briefs amostrados chegam no mínimo a 19,8, com exatamente um abaixo de 25, enquanto os 40 negativos param em 24,0. Uma lacuna limpa — e uma armadilha. Acrescente os briefs que cruzam idioma e ela fecha: `"criar um ebook sobre emagrecimento com copy persuasiva"` é inteiramente legítimo e pontua 14,8, porque um brief em português contra um squad declarado em inglês pontua baixo POR CONSTRUÇÃO. É essa a condição que a ponte de aliases existe para reparar. Todo escalar testado se comporta igual — score por token, contagem de casados e fração de cobertura colocam briefs reais que cruzam idioma na mesma banda do ruído. Qualquer piso que pegue os negativos se abstém diante do usuário em português, que é a maioria deles.
+
+Por isso a correção acima é uma banda de fração que só rebaixa confiança, nunca se abstém. Confirmar custa uma pergunta; abster-se custa o trabalho.
+
+### A página da Agents API passa a relatar um spike que rodou
+
+O `docs/integrations/openai-agents-api.md` foi publicado com uma linha verificada e um bloqueio. O bloqueio caiu e a página conta o que aconteceu: o executor conecta, o harness descobre a skill `nirvana`, e um turno de discovery rodou `nrv list-businesses` e relatou 68 empresas reais com seus caminhos, sem inventar nenhuma.
+
+Ela também documenta a armadilha que custou a primeira tentativa de despacho. O executor guarda a chave de ambiente em `CODEX_API_KEY`, e com `shell_environment_policy.inherit=all` todo filho a herda — inclusive o `codex exec` que o roteador agêntico abre, que então usa uma chave cujas outras permissões são todas `None`. A falha se lê como escopo faltando na chave de aplicação, e a chave de aplicação está certa; o filho é que está usando a errada.
+
 ## 0.13.18 — 2026-09-18
 
 ### A entrega completa de uma execução, numa chamada só
