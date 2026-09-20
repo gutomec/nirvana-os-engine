@@ -6,6 +6,32 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### A squad installed alone stopped doing its own work
+
+The coverage band shipped in 0.13.19 downgraded a confident dispatch whenever the winner explained half a brief or less. Correct against 223 competing squads. Wrong alone — and alone is what ships.
+
+Measured against a single nutrition squad, as a customer VPS or a one-pack machine actually runs: `"monte um plano alimentar de 1800 kcal para ganho de massa magra"` — the most obvious brief that squad will ever receive — came back `AMBIGUOUS`, asking the caller to confirm, with exactly one destination on the list. Two of three legitimate briefs did the same.
+
+The defect the band exists to stop needs a crowd to happen at all. The same `"me empresta vinte reais até sexta-feira"` that dispatched `HIGH` across 223 squads produces **zero candidates** against the nutrition squad alone, score 0.0. It took a dense neighbourhood for anything to match it well enough to win. So the band now requires two distinct destinations before it downgrades: `AMBIGUOUS` means *confirm which one*, and that is only an answer when there is more than one to choose between. Solo installs dispatch again; the dense library keeps the guard.
+
+Every routing test in this repo measured the maintainer's machine or skipped. `solo-install-routing.test.ts` measures the other density with fixtures, so it runs on a clean runner too — which is itself the sparse case.
+
+### A manifest is a claim; the directory beside it is the evidence
+
+The agentic router surveyed the digest and its escalation clause said, literally, *"Read a full manifest ONLY"*. The deepest it could look was `squad.yaml`. Two squads whose manifests read alike are routinely far apart once opened: one has three agents and a two-step workflow, the other eight agents, typed tasks and a gate. Choosing between similar claims is not choosing between capabilities.
+
+When two or more finalists could plausibly do the work, the router now opens them — `agents/*.md`, `tasks/*.md`, `workflows/*`, and `employees/*.md` for a business — and decides on what they can demonstrably do. The digest header points at those files and says why. The survey is still the digest alone.
+
+The three branches are now stated as the rule they are: **several candidates** → open and compare, returning `ambiguous` only when they are genuinely equivalent; **exactly one** → dispatch it, because asking with a single candidate is a refusal wearing a question mark; **none** → `agent-x`, which is a real execution and not a failure.
+
+### A `not_for` declares incompetence, never a neighbour
+
+`SQUAD_PROTOCOL_V6.md` §33 governed the FORM of a fence — 25 characters, so it actually fires — and said nothing about what a fence is for. So they were written to deflect neighbours. Measured on the installed library, 66 of 3,238 entries name another installed entity, and the clearest come in mutual pairs: the nutrition squad declares `not_for: ["psicologo"]` while the psychology squad declares `not_for: ["nutricao"]`.
+
+Neither describes incompetence. A squad travels; its neighbourhood does not. A fence written to avoid a neighbour becomes pure loss the moment that neighbour is not installed — and it travels inside the pack to every machine where it never was. §33.1 gives the test as one question: *if this squad were the only thing installed, would the sentence still be true?* The same rule in reverse — never leave a capability unbuilt because a neighbour has it — is now in the project contract that every runtime loads.
+
 ## 0.13.19 — 2026-09-20
 
 ### The OpenAI Agents API integration, measured rather than assumed

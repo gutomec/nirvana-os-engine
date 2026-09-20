@@ -1258,11 +1258,32 @@ function stage3Decide(matches, opts) {
     //
     // `total >= 4` keeps very short briefs out: "escreva o ebook" is 2 tokens and
     // is already governed by the bands above.
-    if (frac <= 0.5 && cov.total >= 4) {
+    //
+    // AMBIGUOUS means "confirm WHICH ONE", so it is only an answer when there is
+    // more than one destination to choose between. This band shipped without
+    // that condition in 0.13.19 and the cost landed on exactly the install that
+    // ships: measured against a single squad, as a customer VPS or a one-pack
+    // machine actually runs, "monte um plano alimentar de 1800 kcal para ganho
+    // de massa magra" matched 4 of 8 tokens against the nutrition squad — the
+    // most obvious brief that squad will ever receive — and came back asking the
+    // caller to confirm, with exactly one destination on the list.
+    //
+    // The defect this band exists to stop needs a crowd to happen at all: the
+    // same "me empresta vinte reais até sexta-feira" that dispatched HIGH across
+    // 223 squads produces ZERO candidates against the nutrition squad alone
+    // (score 0.0). It took a dense neighbourhood for anything to match it well
+    // enough to win. So the band belongs where the crowd is, and nowhere else.
+    //
+    // A squad must be complete on its own. What the router decides among
+    // INSTALLED neighbours is a runtime question and may vary by machine; what a
+    // squad DECLARES about itself must not. A rule that quietly narrows a solo
+    // squad is the declaration mistake wearing a routing rule's clothes.
+    const distinctDestinations = new Set(matches.map(resolveDestination).filter(Boolean));
+    if (frac <= 0.5 && cov.total >= 4 && distinctDestinations.size >= 2) {
       return {
         signal: 'AMBIGUOUS',
         alternatives: exposeAlternatives(matches),
-        reason: `coverage: vencedor casa ${cov.matched} de ${cov.total} tokens de conteúdo (metade ou menos do brief) — confirmação necessária`,
+        reason: `coverage: vencedor casa ${cov.matched} de ${cov.total} tokens de conteúdo (metade ou menos do brief) e há ${distinctDestinations.size} destinos possíveis — confirmação necessária`,
         thresholds: thr,
       };
     }

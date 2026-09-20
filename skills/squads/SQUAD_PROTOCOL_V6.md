@@ -25,6 +25,7 @@ A v6 acrescenta:
 - §31 Composição (`requires[]` e `consumes[]`)
 - §32 Vínculo de execução (o que o engine consome, e o que a capability resolvida leva à execução)
 - §33 `not_for` com teto de 25 caracteres
+- §33.1 Uma cerca declara incompetência, nunca vizinhança
 - §34 Admissão (`nrv validate squad`)
 - §35 Migração (`nrv migrate --to 6`)
 - §36 Tasks na altitude de resultado (v6.1: `## Outcome`, passos como método de referência, `path`/`min_bytes` na aceitação)
@@ -369,6 +370,38 @@ not_for:
 O critério `not_for_too_long` é **erro sob 6.0** e aviso sob 5.0 — as 902 entradas longas da biblioteca instalada continuam carregando, e só uma squad que declara v6 é cobrada. Nota de precisão: o teto vive no portão (`NOT_FOR_MAX_CHARS` em `kinds/squad.ts`), não em `CapabilitySchema`, que só exige mínimo de 5 caracteres. Um manifesto com uma cerca longa parseia; o que ele não faz é ser admitido sob 6.0.
 
 O critério irmão `not_for_dead` (aviso, baselineável) constata uma entrada que não dispara contra nenhum `example_brief` da própria squad.
+
+---
+
+### §33.1 Uma cerca declara incompetência, nunca vizinhança
+
+Uma entrada de `not_for` diz **o que esta squad não faz**. Ela nunca diz "existe alguém melhor para isso aqui do lado".
+
+A diferença não é de estilo, é de onde a frase é verdadeira. A squad viaja; a vizinhança, não. O que está instalado ao lado dela muda em cada máquina: a biblioteca do mantenedor tem 223 squads competindo, uma VPS roda as poucas squads daquele serviço, e quem comprou um pack tem aquele pack. Uma cerca escrita para desviar de um vizinho vira perda pura assim que o vizinho não existe — e ela viaja dentro do pack para todas as instalações onde ele nunca existiu.
+
+O sintoma é a cerca recíproca. Medido na biblioteca instalada em 20/09/2026, 66 das 3.238 entradas nomeiam outra entidade instalada, e as mais claras vêm em pares:
+
+```yaml
+# nirvana-nutricao      not_for: ["psicologo"]
+# nirvana-psicologo     not_for: ["nutricao"]
+# nirvana-clinica-medica  not_for: ["odontologia"]
+# nirvana-odontologia     not_for: ["clinica medica"]
+```
+
+Nenhum desses pares descreve incompetência. Uma squad de nutrição sabe tratar o componente emocional de um transtorno alimentar até onde nutrição vai; ela declarou que não sabe porque havia um psicólogo ao lado. Instale essa squad sozinha para um cliente e o brief com qualquer carga emocional passa a ser desviado para lugar nenhum.
+
+O teste é uma pergunta só: **se esta squad fosse a única coisa instalada na máquina, a frase continuaria verdadeira?**
+
+| | |
+|---|---|
+| `"logo design"` numa squad de copy | sim — ela não desenha logo em máquina nenhuma |
+| `"cirurgia"` numa squad de nutrição | sim |
+| `"psicologo"` numa squad de nutrição | **não** — isso é o vizinho, não a fronteira |
+| `"crypto trading"` numa squad de engenharia EVM | sim, se ela de fato não opera; não, se foi para não competir |
+
+E o recíproco vale igual: **nunca deixe de construir uma capability porque o vizinho já cobre**. Uma squad tem que ser completa para o serviço que ela promete, como se não houvesse ninguém ao lado. Quem resolve sobreposição entre entidades instaladas é o roteador, em tempo de execução, com a vizinhança que aquela máquina realmente tem — e essa decisão pode ser diferente em cada instalação, que é exatamente por que ela não pode estar congelada dentro do manifesto.
+
+O portão não consegue cobrar isto sozinho: saber que `"psicologo"` é um vizinho exige olhar a biblioteca instalada, e a biblioteca instalada é justamente o que não vale como referência. O `not_for_dead` continua medindo se a cerca dispara; se ela **deveria** existir é julgamento de quem escreve a squad, e é este parágrafo.
 
 ---
 

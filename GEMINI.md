@@ -202,6 +202,36 @@ When the user (or quality judge) flags issues:
 
 ---
 
+## 7.5. A squad is complete on its own — never build for the neighbourhood
+
+Whenever you create, edit, validate or migrate a business or a squad, the entity
+you are writing must stand alone. It travels; the neighbourhood does not.
+
+The maintainer's machine has hundreds of squads competing for every brief. No
+customer runs that. A VPS carries the few squads that service needs; a machine
+that bought one pack carries that pack. **What is installed beside an entity is
+different on every install, and on most installs it is nearly empty.**
+
+Two rules follow, and they cost real capability when broken:
+
+- **Never add a `not_for` because a neighbour covers it.** A `not_for` states
+  what the entity does NOT do, intrinsically. The test is one question: *if this
+  were the only thing installed on the machine, would the sentence still be
+  true?* `"logo design"` on a copywriting squad passes. `"psicologo"` on a
+  nutrition squad fails — that is a neighbour, not a boundary, and it becomes
+  pure loss the moment the neighbour is not there. Full rule and the measured
+  reciprocal pairs: `skills/squads/SQUAD_PROTOCOL_V6.md` §33.1.
+- **Never leave a capability out because a neighbour has it.** An entity must be
+  complete for the service it promises, as if nothing else existed.
+
+Overlap between INSTALLED entities is the router's job, decided at dispatch time
+against whatever that machine actually has. That decision may differ per
+install, which is exactly why it must not be frozen into a manifest.
+
+The same applies to engine code: a routing rule that reads as protective against
+hundreds of competitors can be a defect alone. Measure any such rule at BOTH
+densities — the full library and a single entity — before shipping it.
+
 ## 8. Anti-patterns (these are bugs)
 
 - ❌ Reading `business.yaml` / `squad.yaml` / `agents/*.md` and writing "I used X + Y" without an actual `dispatch_*` audit event.
@@ -210,6 +240,7 @@ When the user (or quality judge) flags issues:
 - ❌ Skipping the quality gate; declaring "done" without `gate_passed`.
 - ❌ Calling `Task()` / sub-agent tools outside an active workflow without a corresponding `dispatch_squad` event.
 - ❌ Trusting `nrv route` / `nrv find` output as authoritative — those are diagnostic.
+- ❌ Fencing a squad with `not_for` because a neighbour covers it, or leaving a capability unbuilt for the same reason. The neighbourhood is different on every install (§7.5).
 
 ---
 

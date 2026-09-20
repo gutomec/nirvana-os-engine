@@ -6,6 +6,32 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Unreleased
+
+### Uma squad instalada sozinha deixou de fazer o próprio trabalho
+
+A banda de cobertura publicada na 0.13.19 rebaixava um despacho confiante sempre que o vencedor explicava metade ou menos do brief. Correto contra 223 squads competindo. Errado sozinho — e sozinho é o que vai para o cliente.
+
+Medido contra uma única squad de nutrição, como uma VPS ou uma máquina de um pack só de fato rodam: `"monte um plano alimentar de 1800 kcal para ganho de massa magra"` — o brief mais óbvio que aquela squad vai receber na vida — voltava `AMBIGUOUS`, pedindo confirmação, com exatamente um destino na lista. Dois de três briefs legítimos faziam o mesmo.
+
+O defeito que a banda existe para conter precisa de multidão para acontecer. O mesmo `"me empresta vinte reais até sexta-feira"` que saía `HIGH` entre 223 squads produz **zero candidatos** contra a squad de nutrição sozinha, score 0,0. Foi preciso uma vizinhança densa para alguma coisa casar bem o bastante para vencer. Então a banda passa a exigir dois destinos distintos antes de rebaixar: `AMBIGUOUS` quer dizer *confirme qual*, e isso só é resposta quando há mais de um para escolher. Instalação solo volta a despachar; a biblioteca densa mantém a proteção.
+
+Todo teste de roteamento deste repositório media a máquina do mantenedor ou pulava. O `solo-install-routing.test.ts` mede a outra densidade com fixtures, então roda também em runner limpo — que é, ele mesmo, o caso esparso.
+
+### Um manifesto é uma alegação; o diretório ao lado é a evidência
+
+O roteador agêntico pesquisava o digest e sua cláusula de escalação dizia, literalmente, *"Read a full manifest ONLY"*. O mais fundo que ele conseguia olhar era o `squad.yaml`. Duas squads cujos manifestos se leem parecidos ficam rotineiramente longe uma da outra quando abertas: uma tem três agentes e um workflow de dois passos, a outra oito agentes, tasks tipadas e um portão. Escolher entre alegações parecidas não é escolher entre capacidades.
+
+Quando dois ou mais finalistas podem plausivelmente fazer o trabalho, o roteador passa a abri-los — `agents/*.md`, `tasks/*.md`, `workflows/*`, e `employees/*.md` para empresa — e decide pelo que eles demonstravelmente fazem. O cabeçalho do digest aponta para esses arquivos e diz por quê. A pesquisa continua sendo só o digest.
+
+Os três ramos passam a estar escritos como a regra que são: **vários candidatos** → abrir e comparar, devolvendo `ambiguous` só quando forem genuinamente equivalentes; **exatamente um** → despachar, porque perguntar com um candidato só é recusa fantasiada de pergunta; **nenhum** → `agent-x`, que é execução de verdade e não falha.
+
+### Uma `not_for` declara incompetência, nunca vizinhança
+
+O §33 do `SQUAD_PROTOCOL_V6.md` governava a FORMA da cerca — 25 caracteres, para ela de fato disparar — e não dizia nada sobre para que a cerca serve. Então elas passaram a ser escritas para desviar de vizinhos. Medido na biblioteca instalada, 66 das 3.238 entradas nomeiam outra entidade instalada, e as mais claras vêm em pares recíprocos: a squad de nutrição declara `not_for: ["psicologo"]` enquanto a de psicologia declara `not_for: ["nutricao"]`.
+
+Nenhuma das duas descreve incompetência. Uma squad viaja; a vizinhança dela, não. Uma cerca escrita para evitar um vizinho vira perda pura assim que aquele vizinho não está instalado — e viaja dentro do pack para toda máquina onde ele nunca esteve. O §33.1 dá o teste como uma pergunta só: *se esta squad fosse a única coisa instalada, a frase continuaria verdadeira?* A regra recíproca — nunca deixar de construir uma capability porque o vizinho tem — entra no contrato de projeto que todo runtime carrega.
+
 ## 0.13.19 — 2026-09-20
 
 ### A integração com a OpenAI Agents API, medida em vez de presumida
