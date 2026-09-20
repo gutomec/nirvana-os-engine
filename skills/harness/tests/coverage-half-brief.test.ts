@@ -44,14 +44,14 @@ d("the band itself", () => {
     const r = await router.route("me empresta vinte reais até sexta-feira", { registries: all, amplify: false });
     expect((r.stage3?.alternatives || []).length).toBeGreaterThan(0);
   });
-});
 
-describe("what the band must not cost", () => {
   test("a fully covered brief still dispatches", async () => {
     const r = await router.route("escreva um ebook completo sobre finanças pessoais para iniciantes", { registries: all, amplify: false });
     expect(["HIGH", "AMBIGUOUS"]).toContain(r.stage3?.signal);
   });
+});
 
+describe("what the band must not cost (corpus-independent)", () => {
   test("the threshold reads the fraction, not the raw score", () => {
     // A raw-score floor was measured and REJECTED on 2026-09-19: the golden set
     // bottoms out at 19.8 and the negatives top out at 24.0, which looks like a
