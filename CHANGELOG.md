@@ -6,6 +6,28 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### Repeated installs stopped editing configurations that were not ours
+
+Contributed by @AndreAlmeidaDC, rebased onto 0.14.1 and extended here.
+
+Four defects, each of which loses something a user owns:
+
+**A hook group shared with another tool was deleted.** `settings.json` for Claude Code, Gemini-CLI and Antigravity was filtered by GROUP: if any handler in a matcher group was ours, the whole group went, taking the user's handlers with it — on install and again on uninstall. It now filters by HANDLER, keeps the group's other handlers and its other keys, and removes the group only when it becomes empty.
+
+**A malformed `settings.json` was overwritten.** The old comment said so out loud: *"keep empty — we'll overwrite a malformed file"*. It now refuses and reports why.
+
+**A TOML trust key was recognised in one spelling only.** TOML writes the same key as `"k"` or `'k'`, and Codex's own TUI is free to pick either. The engine matched the first form by regex, so a key written the other way got a second block appended — and a duplicate table is invalid TOML, which stops Codex reading the whole file, not just our part of it. The header is now resolved through the parser, so both spellings are the same key. Table-like text inside a multiline string is no longer mistaken for a header either.
+
+**A malformed `config.toml` was written into.** It now refuses and leaves the file alone.
+
+Every write to a file the user owns goes through the same publication: a temp file with the original's mode, the candidate PARSED and compared semantically against exactly the intended change, a check that the original did not move before and after the backup, an atomic rename, and a re-read validated again. The text edit is never trusted; the parsed result is.
+
+**And the backups are bounded.** Four writers each invented a backup name with a fresh nonce and nothing ever removed one, so a machine that reinstalls accumulated a copy per write per file, forever, in the user's own config directory. `_shared/lib/config-backup.ts` keeps the newest three. The copy just taken is protected by name rather than by timestamp: several backups written inside the same millisecond carry the same mtime, the sort between them is arbitrary, and pruning by time alone deleted the one the caller was about to need.
+
+The `yaml` library keeps degrading with a sentence someone can act on — `run 'nrv deps install yaml'` — rather than a resolution stack trace. The installer runs before the shared dependency store necessarily exists, so absence is a reachable state and not a programming error.
+
 ## 0.14.1 — 2026-09-20
 
 ### The orchestrator was surveying the library through a keyhole
@@ -230,6 +252,10 @@ Everything the engine does with a runtime wraps the brief: a persona, the autono
 `USE_<runtime>` and `NOT_USE_<runtime>` are how a project steers a dispatch to a runtime, and an unrecognized one printed `[runtime-rules] unknown runtime … rule ignored` so a typo would not sit silent. The prefix is not ours alone, though: a CI runner with Bazel exports `USE_BAZEL_FALLBACK_VERSION`, and every `nrv` call on that machine warned about it — alarming, useless, and measured on this repository's own CI. The warning is now limited to a variable that came from a `.env` file, which exists to hold these rules and nothing else, so a real typo is still reported while the machine's own environment is read in silence.
 
 ## 0.13.14 — 2026-09-17
+
+### Hook installation preserves existing configuration
+
+The hook installer now recognizes Codex trust tables written with either TOML string style, so a second install updates the existing trust record instead of appending a duplicate table. Claude Code, Gemini-CLI and Antigravity now leave malformed settings files untouched and remove only Nirvana handlers from a shared hook group. Hermes validates YAML and its allowlist JSON semantically, refuses malformed or schema-invalid sources, then adds only missing bridge, hook and approval entries, including an allowlist repair after a YAML no-op. Every changed JSON, TOML or YAML file is validated from a candidate copy, checked again before replacement, backed up uniquely, read back after publication and retains its file mode.
 
 ### A dispatched agent sees an allowlist of the environment, not a copy of it
 

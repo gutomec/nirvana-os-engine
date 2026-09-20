@@ -6,6 +6,28 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Unreleased
+
+### Instalações repetidas deixaram de editar configurações que não são nossas
+
+Contribuição de @AndreAlmeidaDC, rebasada na 0.14.1 e estendida aqui.
+
+Quatro defeitos, cada um deles perdendo algo que pertence ao usuário:
+
+**Um grupo de hooks dividido com outra ferramenta era apagado.** O `settings.json` do Claude Code, do Gemini-CLI e do Antigravity era filtrado por GRUPO: se qualquer handler de um grupo de matcher fosse nosso, o grupo inteiro saía, levando junto os handlers do usuário — na instalação e de novo na desinstalação. Agora filtra por HANDLER, preserva os demais handlers do grupo e suas outras chaves, e só remove o grupo quando ele fica vazio.
+
+**Um `settings.json` malformado era sobrescrito.** O comentário antigo dizia isso em voz alta: *"keep empty — we'll overwrite a malformed file"*. Agora recusa e informa o motivo.
+
+**Uma chave de trust em TOML era reconhecida numa grafia só.** O TOML escreve a mesma chave como `"k"` ou `'k'`, e a própria TUI do Codex pode escolher qualquer uma. O engine casava a primeira forma por regex, então uma chave escrita da outra maneira ganhava um segundo bloco — e tabela duplicada é TOML inválido, o que faz o Codex parar de ler o arquivo inteiro, não só a nossa parte. O cabeçalho passa a ser resolvido pelo parser, então as duas grafias são a mesma chave. Texto parecido com tabela dentro de string multilinha também deixou de ser confundido com cabeçalho.
+
+**Um `config.toml` malformado recebia escrita.** Agora recusa e não toca no arquivo.
+
+Toda escrita num arquivo do usuário passa pela mesma publicação: arquivo temporário com o modo do original, candidato PARSEADO e comparado semanticamente contra exatamente a mudança pretendida, verificação de que o original não se mexeu antes e depois do backup, rename atômico, e releitura validada de novo. A manipulação de texto nunca é confiada; o resultado parseado é.
+
+**E os backups ficaram limitados.** Quatro escritores inventavam cada um seu nome de backup com nonce novo e nada removia nenhum, então uma máquina que reinstala acumulava uma cópia por escrita por arquivo, para sempre, no diretório de configuração do próprio usuário. O `_shared/lib/config-backup.ts` mantém as três mais novas. A cópia recém-criada é protegida por nome e não por timestamp: vários backups escritos no mesmo milissegundo carregam o mesmo mtime, a ordenação entre eles é arbitrária, e podar só por tempo apagava justamente aquele de que o chamador ia precisar.
+
+A biblioteca `yaml` volta a degradar com uma frase acionável — `run 'nrv deps install yaml'` — em vez de um stack trace de resolução. O instalador roda antes de a loja compartilhada de dependências necessariamente existir, então a ausência é um estado alcançável e não um erro de programação.
+
 ## 0.14.1 — 2026-09-20
 
 ### O orquestrador pesquisava a biblioteca por um buraco de fechadura
@@ -230,6 +252,10 @@ Tudo o que o engine faz com um runtime embrulha o brief: uma persona, a diretiva
 `USE_<runtime>` e `NOT_USE_<runtime>` são como um projeto direciona um despacho para um runtime, e uma não reconhecida imprimia `[runtime-rules] unknown runtime … rule ignored` para que um erro de digitação não ficasse calado. Só que o prefixo não é só nosso: uma máquina de CI com Bazel exporta `USE_BAZEL_FALLBACK_VERSION`, e toda chamada de `nrv` naquela máquina avisava sobre ela — alarmante, inútil e medido no CI deste próprio repositório. O aviso passa a valer só para variável vinda de um arquivo `.env`, que existe para guardar essas regras e mais nada, então um erro de digitação de verdade continua sendo relatado enquanto o ambiente da máquina é lido em silêncio.
 
 ## 0.13.14 — 2026-09-17
+
+### A instalação de hooks preserva a configuração existente
+
+O instalador de hooks agora reconhece tabelas de confiança do Codex escritas com os dois estilos de string TOML, para que uma segunda instalação atualize o registro existente em vez de acrescentar uma tabela duplicada. Claude Code, Gemini-CLI e Antigravity deixam arquivos de configuração inválidos intactos e removem apenas handlers do Nirvana de um grupo de hooks compartilhado. Hermes valida YAML e o JSON de permissões semanticamente, recusa fontes inválidas ou fora do schema e adiciona apenas entradas ausentes de ponte, hook e aprovação, inclusive reparando permissões após um YAML sem mudança. Cada arquivo JSON, TOML ou YAML alterado é validado a partir de uma cópia candidata, conferido outra vez antes da substituição, recebe backup único, é relido após a publicação e mantém seu modo de arquivo.
 
 ### Um agente despachado vê uma lista do ambiente, não uma cópia dele
 
