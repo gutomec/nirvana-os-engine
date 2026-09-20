@@ -406,12 +406,9 @@ function squadCatalogBlock(employeeContent: string, projectRoot?: string): strin
     lines.push("");
   }
 
-  const mode = resolveRoutingMode();
-  lines.push(`### Finding one (${total} squads in scope ${scopeMode}; routing mode **${mode}**)`);
+  lines.push(`### Finding one (${total} squads in scope ${scopeMode})`);
   lines.push("");
-  lines.push(mode === "fast"
-    ? "- \`nrv find \"<your need>\"\` and take the top permitted match — fast mode is the zero-token economy mode."
-    : "- \`nrv list-squads\` for the catalog, \`nrv find \"<your need>\"\` for a ranked shortlist, \`~/squads/<slug>/squad.yaml\` for detail. Pick the best fit for the sub-task.");
+  lines.push("- \`nrv list-squads\` for the catalog, \`nrv search \"<your need>\" --kind=squad\` for a ranked shortlist, \`~/squads/<slug>/squad.yaml\` for detail. The ranking surfaces candidates; read them and pick the best fit for the sub-task.");
   lines.push("- Hand the squad a brief-context (your role, your persona when you are a mind-clone, the sub-task's definition of done), never the raw brief; then integrate its output.");
   lines.push("- Images (logo, hero, portrait, illustration) come from an image squad (e.g. \`image2-virtuoso\`) or the \`nano-banana-pro\` skill, never generic SVG in the final deliverable. A sub-task outside your specialty with a dedicated squad is dispatched (the harness audits \`dispatch_squad\`); a small task inside your specialty is yours.");
   return lines.join("\n");

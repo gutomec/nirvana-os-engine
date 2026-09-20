@@ -37,7 +37,7 @@ import { runHeadless, runtimeAvailable, AUTONOMOUS_DIRECTIVE, LEDGER_DEFAULT_TIM
 import { listRuntimes } from "../../_shared/lib/host-agent-driver.ts";
 import { amplify } from "../lib/amplifier.ts";
 import { proxyEnrichBrief } from "../lib/brief-proxy.ts";
-import { resolveRoutingMode } from "../../_shared/lib/routing-mode.ts";
+import { resolveRoutingMode, routingModeOrigin } from "../../_shared/lib/routing-mode.ts";
 import { runTeam } from "../lib/team-orchestrator.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { briefExcerpt } from "../../_shared/lib/brief-excerpt.ts";
@@ -207,7 +207,7 @@ const positional = extractPositional(process.argv.slice(2));
 const autoMode = process.argv.includes("--auto");
 const explicit = parseExplicitTarget(process.argv.slice(2));
 const explicitTarget = explicit.target;
-// Routing mode (agentic default | fast). Precedence: --mode > env > config.
+// Routing mode. Precedence: --mode > env > config.
 const routingMode = resolveRoutingMode(arg("--mode"));
 let slug = autoMode ? "" : explicitTarget ? (explicitTarget.kind === "business" ? explicitTarget.slug : "") : positional[0];
 const inlineBrief = (autoMode || explicitTarget) ? positional[0] : positional[1];
@@ -240,6 +240,19 @@ const noColor = process.argv.includes("--no-color") || !process.stdout.isTTY;
 
 function c(color: string, text: string): string {
   return noColor ? text : `${(ANSI as any)[color]}${text}${ANSI.reset}`;
+}
+
+// Inherited, not chosen: say so. The keyword router is not advertised to agents
+// any more — not in the help, not in the protocol, not in a seat's prompt. That
+// makes silence dangerous in one direction: a machine carrying `routing.mode:
+// fast` in a config file would route by score forever while the agent driving
+// it has never heard the mode exists and cannot name what it is seeing. So the
+// mode is silent when it is chosen for a run, and loud when it is inherited.
+if (routingMode === "fast" && routingModeOrigin(arg("--mode")) !== "flag") {
+  const from = routingModeOrigin(arg("--mode"));
+  console.error(c("yellow", `  ⚠ routing.mode is 'fast' on this machine${from === "env" ? " (from NIRVANA_ROUTING_MODE)" : " (from a config file)"}.`));
+  console.error(c("yellow", "    Targets are being picked by keyword match instead of by reading the entities, and this run did not ask for that."));
+  console.error(c("yellow", `    Clear it with: nrv config unset routing.mode${from === "env" ? "  — and unset NIRVANA_ROUTING_MODE in your shell" : ""}`));
 }
 
 // ── exec-mode flags ──────────────────────────────────────────────────────

@@ -8,6 +8,16 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### The keyword router is no longer offered to agents
+
+It was being sold in the highest-reach surface the system has. The harness `SKILL.md` **description** — the first thing any runtime reads to decide whether to activate — ended: *"Agentic by default; a `fast` BM25 mode gives zero-token deterministic routing."* A pitch for the worse mode, on the most tempting axis an agent has. The project contract then spent a paragraph forbidding it, which is weaker than silence: a prohibition teaches the shortcut exists and then asks for restraint.
+
+Measured at 0.224 top-1 against real first-touch briefs, it loses the right destination in two thirds of them. It stays in the engine, because a user may ask for it by name. It leaves every surface an agent reads: the skill description, the routing section, the "legacy spec" and "diagnostic helpers" pointers, the contract paragraph in `AGENTS.md` / `CLAUDE.md` / `GEMINI.md` and the template `nrv init` writes, and the branch in a seat's own prompt. `nrv route` and `nrv find` — the decider's CLI — are dev diagnostics now and are gone from `nrv --help`.
+
+**The retriever stays.** `nrv search` and `nrv find-clone` surface candidates for Phase 3 to READ; hiding them would cut the agentic pipeline's own recall step. What changed is the sentence around them: a ranked list is where a survey starts, never where it ends.
+
+**And concealment alone would have been worse than the advertising.** A machine carrying `routing.mode: fast` in a config file — inherited, copied from an old tutorial, set months ago — would route by score forever while the agent driving it has never heard the mode exists and cannot name what it is seeing. So the mode is silent when it is chosen for a run (`--mode`) and loud when it is inherited: the dispatcher prints what is set, where it came from, and how to clear it.
+
 ### The orchestrator draws the whole map; the business executes it
 
 A seat was handed two catalogs and told to choose. The mind-clone library, with *"the clone is chosen for the TASK, and the choice is yours"*. Every installed squad, with *"Open authorization: every squad in the catalog below is permitted. Pick the best one for the sub-task"*. And to find one: `nrv list-squads`, `nrv find`, and `squad.yaml`.

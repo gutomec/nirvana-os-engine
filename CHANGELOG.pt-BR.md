@@ -8,6 +8,16 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Unreleased
 
+### O roteador por palavra-chave deixa de ser oferecido a agentes
+
+Ele estava sendo vendido na superfície de maior alcance do sistema. A **description** do `SKILL.md` do harness — a primeira coisa que qualquer runtime lê para decidir se ativa — terminava assim: *"Agentic by default; a `fast` BM25 mode gives zero-token deterministic routing."* Uma propaganda do modo pior, no argumento mais tentador que existe para um agente. E o contrato do projeto gastava um parágrafo proibindo, o que é mais fraco que o silêncio: proibição ensina que o atalho existe e depois pede contenção.
+
+Medido em 0,224 de top-1 contra briefs reais de primeiro toque, ele perde o destino certo em dois terços deles. Ele continua no engine, porque um usuário pode pedir por ele pelo nome. Ele sai de toda superfície que um agente lê: a description da skill, a seção de roteamento, os ponteiros de "spec legada" e "helpers de diagnóstico", o parágrafo do contrato em `AGENTS.md` / `CLAUDE.md` / `GEMINI.md` e no template que o `nrv init` escreve, e o ramo dentro do prompt do próprio assento. O `nrv route` e o `nrv find` — o CLI do decisor — passam a ser diagnóstico de dev e somem do `nrv --help`.
+
+**O buscador fica.** O `nrv search` e o `nrv find-clone` trazem candidatos para a fase 3 LER; escondê-los cortaria a própria etapa de recall do caminho agêntico. O que mudou é a frase ao redor deles: uma lista ranqueada é onde a pesquisa começa, nunca onde ela termina.
+
+**E só esconder teria sido pior que a propaganda.** Uma máquina carregando `routing.mode: fast` num arquivo de config — herdado, copiado de um tutorial antigo, setado meses atrás — rotearia por score para sempre enquanto o agente que a dirige nunca ouviu falar que esse modo existe e não consegue nomear o que está vendo. Então o modo é silencioso quando é escolhido para a execução (`--mode`) e alto quando é herdado: o despachante imprime o que está setado, de onde veio e como limpar.
+
 ### O orquestrador desenha o mapa inteiro; a empresa executa
 
 Um assento recebia dois catálogos e a ordem de escolher. A biblioteca de mind-clones, com *"o clone é escolhido para a TAREFA, e a escolha é sua"*. Todos os squads instalados, com *"autorização aberta: todo squad do catálogo abaixo é permitido. Escolha o melhor para a sub-tarefa"*. E para achar um: `nrv list-squads`, `nrv find` e o `squad.yaml`.

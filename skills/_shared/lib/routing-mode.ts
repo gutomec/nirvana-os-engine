@@ -41,6 +41,28 @@ export function resolveRoutingMode(explicit?: string | null): RoutingMode {
   return normalize(explicit) ?? resolveSetting("routing.mode").value;
 }
 
+/**
+ * Where the routing mode came from, which is the difference between a choice
+ * and an inheritance.
+ *
+ * The keyword router is not advertised to agents any more — it is not in the
+ * help, not in the protocol, not in a seat's prompt. Concealment alone would be
+ * worse than the advertising it replaced: a machine that has `routing.mode:
+ * fast` in a config file (inherited, copied from an old tutorial, set months
+ * ago and forgotten) would route by keyword forever while the agent driving it
+ * has never heard the mode exists and cannot explain what it is seeing.
+ *
+ * So the mode is silent when it is chosen and loud when it is inherited.
+ */
+export function routingModeOrigin(explicit?: string | null): "flag" | "env" | "config" | "default" {
+  if (normalize(explicit)) return "flag";
+  const r = resolveSetting("routing.mode");
+  if (r.source === "env") return "env";
+  // `engine-default` is the value shipped in the engine config — nobody on this
+  // machine chose it, so it is a default and not an inheritance to warn about.
+  return r.source === "default" || r.source === "engine-default" ? "default" : "config";
+}
+
 export function isFastMode(explicit?: string | null): boolean {
   return resolveRoutingMode(explicit) === "fast";
 }

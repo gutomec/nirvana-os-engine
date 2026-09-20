@@ -114,12 +114,18 @@ describe("the report is asked for, never assumed", () => {
   });
 });
 
-describe("the two dispatch rules the owner set", () => {
+describe("the dispatch rules the owner set", () => {
   test.each(["AGENTS.md", "CLAUDE.md", "GEMINI.md", path.join("skills", "_shared", "templates", "AGENTS.md")])(
     "%s states them",
     (file) => {
       const src = read(file);
-      expect(src).toContain("Never dispatch in `fast` mode");
+      // The rule used to read "Never dispatch in `fast` mode". A prohibition
+      // teaches the shortcut exists and then asks for restraint, which is
+      // weaker than not naming it: the keyword router is no longer offered on
+      // any surface an agent reads (see fast-is-not-advertised.test.ts). What
+      // replaces it is the positive statement of how routing works.
+      expect(src).toContain("Routing is agentic, and it is yours");
+      expect(src).toContain("Never hand the decision to a score");
       expect(src).toContain("Never set a spend ceiling the user did not ask for");
     },
   );

@@ -60,8 +60,8 @@ export const COMMANDS: Command[] = [
   { name: "glance", target: "harness/scripts/glance.ts", category: "core", args: "[--allow-actions]", summary: "Open the Glance web cockpit", visibility: "user" },
   { name: "tui", aliases: ["cockpit-tui"], target: "harness/scripts/tui.ts", category: "core", summary: "Terminal cockpit (live audit + projects + registries)", visibility: "user" },
   { name: "doctor", aliases: ["capability-doctor"], custom: true, category: "core", args: "[--system|--capability]", summary: "Full system diagnostic", visibility: "user" },
-  { name: "route", target: "harness/scripts/route.ts", category: "core", args: '"<brief>"', summary: "Route a brief (HIGH/AMBIGUOUS/NO_MATCH)", visibility: "user" },
-  { name: "find", target: "harness/scripts/find.ts", category: "core", args: '"<query>"', summary: "Dry-run capability discovery", visibility: "user" },
+  { name: "route", target: "harness/scripts/route.ts", category: "dev", args: '"<brief>"', summary: "Keyword-router diagnostic: what it would match, never what runs", visibility: "dev" },
+  { name: "find", target: "harness/scripts/find.ts", category: "dev", args: '"<query>"', summary: "Keyword-router diagnostic: capability discovery dry-run", visibility: "dev" },
   { name: "validate", aliases: ["verify"], target: "_shared/scripts/verify.ts", category: "core", args: "<squad|business|mind-clone> <slug|path> [--fix] [--strict] [--json] | <kind> --all [--record] | --pack <dir>", summary: "Admission gate: verify an entity, --fix it, record debt (exit 0/1/2/64; bare = deprecated doctor alias)", visibility: "user" },
   { name: "index", target: "harness/scripts/index.ts", category: "core", summary: "Re-index squads + businesses", visibility: "user" },
   { name: "config", target: "harness/scripts/config.ts", category: "core", args: "list|get|set|unset|explain [<key> [<value>]] [--global|--project]", summary: "Operational settings: effective value + origin per key; set/unset write the project or the global config.yaml", visibility: "user" },
@@ -89,7 +89,7 @@ export const COMMANDS: Command[] = [
 
   // quality of life
   { name: "audit-view", aliases: ["audit"], target: "harness/scripts/audit-view.ts", category: "qol", args: "<project>", summary: "Chronological viewer of a project's audit chain", visibility: "user" },
-  { name: "search", target: "harness/scripts/search.ts", category: "qol", args: '"<query>"', summary: "Keyword + BM25 search across your libraries", visibility: "user" },
+  { name: "search", target: "harness/scripts/search.ts", category: "qol", args: '"<query>"', summary: "Search your libraries for candidates to read", visibility: "user" },
   { name: "export", target: "harness/scripts/export.ts", category: "qol", args: "<project>", summary: "Bundle a project's outputs (.zip/.tgz)", visibility: "user" },
 
   // project

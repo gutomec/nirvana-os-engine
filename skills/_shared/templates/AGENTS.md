@@ -40,7 +40,7 @@ The only briefs that bypass this rule are pure utility lookups (`list`, `inspect
 
 **Dispatch cascade (always):** Business → Squad → `agent-x.<runtime>` (the runtime's fallback generalist at `~/.nirvana/skills/_shared/agents/`). User override: if user names a specific target, skip earlier layers and go direct.
 
-**Never dispatch in `fast` mode.** `fast` is the BM25 router: offline, reproducible, free, and measured at 0.224 top-1 against real first-touch briefs — it loses the right destination entirely in two thirds of them. It is a diagnostic and a preview, not a way to pick who does the work. Route with it, read what it says, and dispatch through the agentic cascade. If the user explicitly asks for a fast dispatch, say what it costs in accuracy and do it.
+**Routing is agentic, and it is yours.** You survey the registries, open the finalists — a manifest is a claim, the agents, tasks and workflows beside it are the evidence — and decide. Keyword search is a retriever that surfaces candidates for you to read; a ranked list is where the survey starts, never where it ends. Never hand the decision to a score.
 
 **Never set a spend ceiling the user did not ask for.** `--max-budget` is hard, not advisory: crossing it stops the run per the configured action, and a run stopped halfway costs everything it spent and delivers nothing. A ceiling chosen by the orchestrator rather than by the owner is a guess about someone else's money. Pass one only when the user named a number, or when a business manifest declares `run_budget_usd` — that is the owner speaking through the manifest.
 
