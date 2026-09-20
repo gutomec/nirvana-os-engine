@@ -6,7 +6,7 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
-## 0.13.20 — 2026-09-20
+## 0.14.0 — 2026-09-20
 
 ### The keyword router is no longer offered to agents
 

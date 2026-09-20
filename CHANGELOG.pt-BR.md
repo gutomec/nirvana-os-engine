@@ -6,7 +6,7 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
-## 0.13.20 — 2026-09-20
+## 0.14.0 — 2026-09-20
 
 ### O roteador por palavra-chave deixa de ser oferecido a agentes
 
