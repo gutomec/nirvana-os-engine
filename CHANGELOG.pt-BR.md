@@ -6,6 +6,32 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Unreleased
+
+### O orquestrador pesquisava a biblioteca por um buraco de fechadura
+
+A passada 1 da fase 3 era uma peneira de palavra-chave: *"semantic shortlist (cheap, ~5k tokens)"*, escolha 5 a 10 candidatos, leia esses a fundo. A passada 2 só consegue julgar o que a passada 1 põe na mesa, então um ranking lexical decidia o resultado antes de qualquer leitura acontecer.
+
+Medido contra 123 briefs que foram despachados, executados e **passaram no portão**: a entidade que DE FATO ENTREGOU estava ausente de uma peneira de 15 em 47,9% deles, e em 62,5% dos casos de empresa. Ausente, não mal ranqueada — e portanto nunca aberta. A causa é estrutural. Um brief real diz sobre o que o trabalho é, na língua do cliente, e quase nunca nomeia o que precisa ser construído:
+
+```
+"Monitor judicial diário operacional: DataJud real (chave pública CNJ) + agendamento"
+  → compliance-citadel · juridical-singularity · ux-atelier · aurum-contabil
+    (casou: monitor, diario, judicial, chave)            software-forge: AUSENTE
+```
+
+O OBJETO é software; o TEMA é judicial. A `software-forge` declara 50 keywords e 12 example_briefs — ela não estava mal declarada, estava sendo vencida pelo tema, e nenhum ajuste de keyword conserta isso.
+
+Outras duas coisas escondiam a biblioteca do próprio orquestrador. O `nrv list-squads` não tinha **descrição nenhuma** — 224 linhas de `[global] slug (v5.1.0, protocol 6.0, caps=3)`, de onde não se decide nada. E o `nrv list-businesses` cortava cada descrição na primeira frase limitada a 96 caracteres, o que cortava **288 das 292 entidades da biblioteca**, rotineiramente bem onde a prosa para de nomear o domínio e começa a nomear o trabalho.
+
+**A passada 1 passa a ler o `~/.nirvana/.catalog.md`**: cada empresa e cada squad, slug e descrição completa, nada mais. O `nrv index` o escreve, consciente de escopo como os registries. Nada nele é truncado, e o `--short` das listagens passa a OMITIR a descrição em vez de cortá-la — meia frase terminando em reticências é o pior dos dois, cara de ler e parcial demais para decidir.
+
+Ele leva slug e descrição porque é isso que decide O QUE ABRIR. `produces`, `domains`, ids de capability, versões e números de protocolo custam 27k tokens nesta biblioteca e não decidem nada no survey; eles importam quando um finalista é aberto, que é a passada 2, onde há cinco entidades em vez de 292.
+
+É um ARQUIVO e não dois comandos porque um arquivo ordenado e byte-estável num caminho fixo é o que o prompt cache de um provedor segura entre sessões. Numa biblioteca do tamanho da do mantenedor o survey custa ~45k tokens, e o arquivo é a diferença entre pagar isso uma vez e pagar toda execução. Na biblioteca que um cliente instala — as poucas entidades daquele serviço — são alguns milhares de tokens e nada disso importa.
+
+O `nrv eval-recall` mede qualquer uma dessas coisas de novo, contra o corpus que o `nrv mine-briefs` monta a partir de trabalho que já rodou.
+
 ## 0.14.0 — 2026-09-20
 
 ### O roteador por palavra-chave deixa de ser oferecido a agentes

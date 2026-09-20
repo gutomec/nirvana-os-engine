@@ -282,6 +282,10 @@ case "$cmd" in
     exec "$BUN_BIN" "$SKILLS/harness/scripts/ask.ts" "$@" ;;
   exec)
     exec "$BUN_BIN" "$SKILLS/harness/scripts/exec.ts" "$@" ;;
+  build-catalog)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/build-catalog.ts" "$@" ;;
+  eval-recall)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/eval-recall.ts" "$@" ;;
   mine-briefs)
     exec "$BUN_BIN" "$SKILLS/harness/scripts/mine-real-briefs.ts" "$@" ;;
   launch)
