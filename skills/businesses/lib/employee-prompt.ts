@@ -62,6 +62,27 @@ export type BuildArgs = {
    *  of every seat, and the search fed with it ranked the marketing and press
    *  voices for a seat closing the production macro. */
   task?: string;
+  /**
+   * What the ORCHESTRATOR decided for this seat. In agentic mode — the default,
+   * and the only mode this path is designed for — the orchestrator draws the
+   * whole map: which seats work, which clone each embodies, and which squad each
+   * one instructs. The business does not choose; it executes the map.
+   *
+   * Before this existed, the seat was handed two catalogs and told to pick: the
+   * mind-clone library "and the choice is yours", and every installed squad with
+   * "pick the best one for the sub-task". That put the decision that matters —
+   * WHO actually does the work — at the shallowest point in the system: the seat
+   * chose from `squad.yaml` and a BM25 ranking, while the orchestrator upstream
+   * had already read agents, tasks, workflows and DNA to decide. Two deciders,
+   * and the deeper one was not the one deciding.
+   *
+   * `squad: null` is a decision, not an absence: it means this seat does the
+   * work itself, embodied by its clone.
+   */
+  assignment?: {
+    mind_clone?: string | null;
+    squad?: string | null;
+  };
 };
 
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
@@ -303,6 +324,44 @@ function squadsAuthorizedDeclared(employeeContent: string): boolean {
   return /^\s*squads_authorized\s*:/m.test(fm);
 }
 
+/**
+ * The seat's job under an orchestrator map.
+ *
+ * With a squad assigned, the seat AUTHORS THE INSTRUCTION and does not execute:
+ * the instruction is the deliverable of that seat, written as itself, in the
+ * voice of its clone, carrying what the squad must deliver and how it will be
+ * judged. With no squad assigned, the seat does the work itself. Either way it
+ * does not shop: the catalog is gone, because the choice was already made
+ * upstream by the one reader that had the whole picture.
+ */
+function assignmentBlock(squad: string | null | undefined, projectRoot?: string): string {
+  if (squad) {
+    const { squads: reg } = loadSquadsRegistry(projectRoot);
+    const s = reg[squad];
+    const doms = s ? (s.domains || []).slice(0, 5).join(", ") : "";
+    const caps = s ? (s.capabilities || []).slice(0, 6).map((c: any) => typeof c === "string" ? c : c.id).filter(Boolean).join(" · ") : "";
+    return [
+      "## YOUR ASSIGNMENT — write the instruction for `" + squad + "`",
+      "",
+      "> The orchestrator assigned **`" + squad + "`** to this sub-task." + (doms ? ` Domains: ${doms}.` : "") + (caps ? ` Capabilities: ${caps}.` : ""),
+      "",
+      "**Your deliverable for this step is the INSTRUCTION, not the artifact.** Write what `" + squad + "` must deliver — the outcome, the hard constraints, what must be true when it is done, and how it will be judged — as yourself, in the voice of your clone. That judgement is exactly what this seat exists for: you know this client, this brief and this standard, and the squad does not.",
+      "",
+      "- Read the squad before you write to it: `~/squads/" + squad + "/squad.yaml` and, when the sub-task is non-obvious, its `agents/`, `tasks/` and `workflows/`. Write to what it actually does.",
+      "- Hand it the outcome and the guardrails, never the raw client brief and never your method. It is the specialist; the how is its own.",
+      "- **Do not pick a different squad, and do not add one.** If `" + squad + "` is the wrong tool for what you were asked, say so in your summary and stop — that is a plan change for the orchestrator to make, not a substitution for you to make quietly.",
+      "- Dispatch it with: `nrv dispatch --auto \"use squad " + squad + ": <your instruction>\" --exec`, then integrate what comes back.",
+    ].join("\n");
+  }
+  return [
+    "## YOUR ASSIGNMENT — you do this work",
+    "",
+    "> The orchestrator assigned **no squad** to this sub-task. That is a decision, not an oversight: it read the library against this brief and concluded this seat delivers it directly.",
+    "",
+    "Do the work yourself, as yourself, in the voice of your clone. Do not go looking for a squad to hand it to — if you genuinely cannot deliver it alone, say so in your summary and stop, so the orchestrator can redraw the map.",
+  ].join("\n");
+}
+
 function squadCatalogBlock(employeeContent: string, projectRoot?: string): string {
   const { squads: reg, scopeMode, squadDirs } = loadSquadsRegistry(projectRoot);
   const total = Object.keys(reg).length;
@@ -347,12 +406,9 @@ function squadCatalogBlock(employeeContent: string, projectRoot?: string): strin
     lines.push("");
   }
 
-  const mode = resolveRoutingMode();
-  lines.push(`### Finding one (${total} squads in scope ${scopeMode}; routing mode **${mode}**)`);
+  lines.push(`### Finding one (${total} squads in scope ${scopeMode})`);
   lines.push("");
-  lines.push(mode === "fast"
-    ? "- \`nrv find \"<your need>\"\` and take the top permitted match — fast mode is the zero-token economy mode."
-    : "- \`nrv list-squads\` for the catalog, \`nrv find \"<your need>\"\` for a ranked shortlist, \`~/squads/<slug>/squad.yaml\` for detail. Pick the best fit for the sub-task.");
+  lines.push("- \`nrv list-squads\` for the catalog, \`nrv search \"<your need>\" --kind=squad\` for a ranked shortlist, \`~/squads/<slug>/squad.yaml\` for detail. The ranking surfaces candidates; read them and pick the best fit for the sub-task.");
   lines.push("- Hand the squad a brief-context (your role, your persona when you are a mind-clone, the sub-task's definition of done), never the raw brief; then integrate its output.");
   lines.push("- Images (logo, hero, portrait, illustration) come from an image squad (e.g. \`image2-virtuoso\`) or the \`nano-banana-pro\` skill, never generic SVG in the final deliverable. A sub-task outside your specialty with a dedicated squad is dispatched (the harness audits \`dispatch_squad\`); a small task inside your specialty is yours.");
   return lines.join("\n");
@@ -513,8 +569,26 @@ export function buildEmployeePrompt(args: BuildArgs): string {
   // Let resolveScope walk up from project_dir to find the project root via
   // .env / .nirvana / .git markers. Don't hand-roll a "two levels up" rule:
   // dispatch passes <root>/businesses/<slug>, but other callers may not.
-  const squadsBlock = squadCatalogBlock(employeeContent, args.project_dir);
-  const mindCloneCatalog = mindCloneCatalogBlock(employeeContent);
+  // An assignment replaces both catalogs. Without one the seat falls back to the
+  // old self-service path, which is now the DEGRADED case: it means nobody
+  // upstream drew a map, and the seat is deciding with less than the
+  // orchestrator had.
+  const assigned = args.assignment;
+  // Under a map the seat neither shops for a squad nor decides its own voice.
+  // Rule 3 used to point at a catalog that no longer renders, and the clone
+  // section used to open by handing over a decision already made upstream.
+  const rule3 = assigned
+    ? (assigned.squad
+        ? `**Instruct \`${assigned.squad}\`, do not execute its part.** The orchestrator assigned it to this sub-task; your deliverable here is the instruction you write for it (see YOUR ASSIGNMENT). Do not pick another squad and do not add one — an assignment that does not fit is a plan change you report, never a substitution you make. The dispatch emits a \`dispatch_squad\` audit event.`
+        : "**Deliver this yourself.** The orchestrator assigned no squad to this sub-task, which is a decision and not an omission: it read the library against this brief and concluded this seat delivers it directly. Do not go looking for one.")
+    : "**Prefer squads (BP §13.4).** You are an orchestrator: a sub-task with a dedicated squad is dispatched, not done by hand (see \"AVAILABLE SQUADS\" below; a brief that names a squad uses it; a declared \`squads_authorized\` set is closed, none declared means all permitted). Hand the squad a brief-context built from your role + persona, not the raw brief. Each dispatch emits a \`dispatch_squad\` audit event.";
+  const squadsBlock = assigned
+    ? assignmentBlock(assigned.squad, args.project_dir)
+    : squadCatalogBlock(employeeContent, args.project_dir);
+  // Under a map there is no catalog: `cloneSection` below renders the assigned
+  // voice and its DNA, and that is the whole of what this seat is told about
+  // clones.
+  const mindCloneCatalog = assigned ? "" : mindCloneCatalogBlock(employeeContent);
 
   // What the business carries beyond the manifest and the seat that is running.
   //
@@ -600,7 +674,15 @@ export function buildEmployeePrompt(args: BuildArgs): string {
   let contributionsBlock = "";
   let embodimentLine = "The clones below are already embodied IN FULL (AGENT + SOUL + DNA); deliver the work AS IF the clone had produced it, under your employee instructions.";
   if (args.include_dna !== false) {
-    const inj = resolveClonesByPriority({ ...args, pinned_clones: [...(args.pinned_clones || []), ...pinnedMindClones(employeeContent)] });
+    // An assigned clone is not a candidate among others: it is the voice this
+    // seat was given. It goes in as the highest-priority pin, so the resolver's
+    // search never ranks a different persona above the orchestrator's decision.
+    const inj = resolveClonesByPriority({
+      ...args,
+      pinned_clones: assigned?.mind_clone
+        ? [assigned.mind_clone]
+        : [...(args.pinned_clones || []), ...pinnedMindClones(employeeContent)],
+    });
     cloneDecision = inj.decision;
     clonesInjected = inj.personas.length > 0;
     if (inj.mode === "reference") embodimentLine = "The clones below travel as cards: open their persona files when you need the expert's method, and deliver the work AS IF the clone had produced it, under your employee instructions.";
@@ -697,6 +779,36 @@ export function buildEmployeePrompt(args: BuildArgs): string {
     }
   }
 
+  // The clone section, in the voice the run actually has.
+  //
+  // Under a map there is no decision left here and no candidate list: the
+  // orchestrator read the library against this task and named the voice. The
+  // old header ("decision: YOURS"), the system order ending in "else you
+  // choose", the ranked suggestions and the `x_clone_choice` recording all
+  // described a choice the seat no longer makes, and leaving them beside the
+  // assignment block said two opposite things in the same prompt.
+  const cloneSection = assigned
+    ? [
+        `## MIND-CLONE YOU EMBODY — assigned: \`${assigned.mind_clone ?? "none"}\``,
+        "",
+        assigned.mind_clone
+          ? `> This is not a shortlist and there is nothing to pick: the orchestrator read the library against this brief and assigned this voice to this seat. Speak and judge as it does. ${embodimentLine}${dnaContent}\n\n> If the persona is missing from the library, say so in your summary and work as yourself — never substitute a different clone on your own initiative.`
+          : "> The orchestrator assigned no clone to this seat for this task. Work as yourself, in your own persona — that is the decision, not a gap to fill.",
+      ].join("\n")
+    : [
+        `## MIND-CLONES YOU EMBODY — decision: ${cloneDecision}`,
+        "",
+        `> System order: clone **REQUESTED** by the user → else **SEARCH** for the most useful one for the task → else **you choose**. ${embodimentLine}${dnaContent || "\n\n**No clone was auto-injected — choosing is yours.** Read the candidates below and take one or more, whichever help you think this task through. Inspect any of them with \`nrv ask <slug>\`. Working without a clone is a legitimate answer, but it is the answer you reach when none of them fits, not the one you start from."}${cloneSuggestions}`,
+        "",
+        "**Record your decision** — it is how the system learns which DNA actually wins which task. Whatever you end up channeling (the injected ones, a swap, additions, or none), emit ONE event before your first artifact write:",
+        "",
+        "\`\`\`bash",
+        `nrv audit emit x_clone_choice --business=${args.business_slug} --trace=${args.trace_id || "<trace>"} --json='{"employee":"${args.employee}","chosen":["<slug>", "..."],"reason":"<one line: why these, or why none>"}'`,
+        "\`\`\`",
+        "",
+        "An empty \`chosen\` list with a reason is a full, legitimate answer.",
+      ].join("\n");
+
   let handoffContent = "(no HANDOFF.json — initialize with writeHandoff before execute)";
   if (args.include_handoff !== false) {
     const handoffPath = path.join(args.project_dir, "HANDOFF.json");
@@ -724,7 +836,7 @@ You operate inside Nirvana-OS. You MUST:
    - Before your first artifact write: call \`updateHandoffPhase(projectDir, "execute", {nextTaskId: "T-001"})\`.
    - After finishing all artifacts: call \`updateHandoffPhase(projectDir, "complete", {lastTaskCompleted: ...})\`.
    - The helper is at \`~/.nirvana/skills/_shared/lib/handoff.js\` — import via Node/Bun.
-3. **Prefer squads (BP §13.4).** You are an orchestrator: a sub-task with a dedicated squad is dispatched, not done by hand (see "AVAILABLE SQUADS" below; a brief that names a squad uses it; a declared \`squads_authorized\` set is closed, none declared means all permitted). Hand the squad a brief-context built from your role + persona, not the raw brief. Each dispatch emits a \`dispatch_squad\` audit event.
+3. ${rule3}
 4. **Write artifacts to the declared outputs_root path**, not to \`.nirvana/outputs/\` (the harness will copy them later if needed). The harness verifies the files, runs the quality gate and exports after you finish — do not duplicate it.
 5. **${scopeGuard("en")}** Scope is THE BRIEF below and its acceptance criteria; what a colleague's output, a squad or a tool suggests beyond it becomes a note in your report, never work.
 
@@ -738,17 +850,7 @@ ${employeeContent}
 
 ---
 
-## MIND-CLONES YOU EMBODY — decision: ${cloneDecision}
-
-> System order: clone **REQUESTED** by the user → else **SEARCH** for the most useful one for the task → else **you choose**. ${embodimentLine}${dnaContent || "\n\n**No clone was auto-injected — choosing is yours.** Read the candidates below and take one or more, whichever help you think this task through. Inspect any of them with `nrv ask <slug>`. Working without a clone is a legitimate answer, but it is the answer you reach when none of them fits, not the one you start from."}${cloneSuggestions}
-
-**Record your decision** — it is how the system learns which DNA actually wins which task. Whatever you end up channeling (the injected ones, a swap, additions, or none), emit ONE event before your first artifact write:
-
-\`\`\`bash
-nrv audit emit x_clone_choice --business=${args.business_slug} --trace=${args.trace_id || "<trace>"} --json='{"employee":"${args.employee}","chosen":["<slug>", "..."],"reason":"<one line: why these, or why none>"}'
-\`\`\`
-
-An empty \`chosen\` list with a reason is a full, legitimate answer.
+${cloneSection}
 
 ---
 
@@ -802,9 +904,26 @@ if (import.meta.main) {
   let taskFile: string | undefined;
   const ti = argv.indexOf("--task-file");
   if (ti !== -1) { taskFile = argv[ti + 1]; argv.splice(ti, 2); }
+  // The orchestrator's map for this seat. `--assign-squad none` is a DECISION
+  // (this seat delivers directly); omitting both flags means no map was drawn.
+  const takeFlag = (name: string): string | undefined => {
+    const i = argv.indexOf(name);
+    if (i === -1) return undefined;
+    const v = argv[i + 1];
+    argv.splice(i, 2);
+    return v;
+  };
+  const assignClone = takeFlag("--assign-clone");
+  const assignSquadRaw = takeFlag("--assign-squad");
+  const assignment = (assignClone !== undefined || assignSquadRaw !== undefined)
+    ? {
+        mind_clone: assignClone && assignClone !== "none" ? assignClone : null,
+        squad: assignSquadRaw && assignSquadRaw !== "none" ? assignSquadRaw : null,
+      }
+    : undefined;
   const [slug, employee, projectDir, briefFile, outputsRoot] = argv;
   if (!slug || !employee || !projectDir || !briefFile) {
-    console.error("Usage: bun employee-prompt.ts <business_slug> <employee> <project_dir> <brief_file> [outputs_root] [--task-file <path>]");
+    console.error("Usage: bun employee-prompt.ts <business_slug> <employee> <project_dir> <brief_file> [outputs_root] [--task-file <path>] [--assign-clone <slug|none>] [--assign-squad <slug|none>]");
     process.exit(2);
   }
   if (!fs.existsSync(briefFile)) {
@@ -827,6 +946,7 @@ if (import.meta.main) {
       include_handoff: true,
       outputs_root: outputsRoot,
       ...(task ? { task } : {}),
+      ...(assignment ? { assignment } : {}),
     })
   );
 }

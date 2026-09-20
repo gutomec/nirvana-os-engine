@@ -6,6 +6,66 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Unreleased
+
+### O roteador por palavra-chave deixa de ser oferecido a agentes
+
+Ele estava sendo vendido na superfície de maior alcance do sistema. A **description** do `SKILL.md` do harness — a primeira coisa que qualquer runtime lê para decidir se ativa — terminava assim: *"Agentic by default; a `fast` BM25 mode gives zero-token deterministic routing."* Uma propaganda do modo pior, no argumento mais tentador que existe para um agente. E o contrato do projeto gastava um parágrafo proibindo, o que é mais fraco que o silêncio: proibição ensina que o atalho existe e depois pede contenção.
+
+Medido em 0,224 de top-1 contra briefs reais de primeiro toque, ele perde o destino certo em dois terços deles. Ele continua no engine, porque um usuário pode pedir por ele pelo nome. Ele sai de toda superfície que um agente lê: a description da skill, a seção de roteamento, os ponteiros de "spec legada" e "helpers de diagnóstico", o parágrafo do contrato em `AGENTS.md` / `CLAUDE.md` / `GEMINI.md` e no template que o `nrv init` escreve, e o ramo dentro do prompt do próprio assento. O `nrv route` e o `nrv find` — o CLI do decisor — passam a ser diagnóstico de dev e somem do `nrv --help`.
+
+**O buscador fica.** O `nrv search` e o `nrv find-clone` trazem candidatos para a fase 3 LER; escondê-los cortaria a própria etapa de recall do caminho agêntico. O que mudou é a frase ao redor deles: uma lista ranqueada é onde a pesquisa começa, nunca onde ela termina.
+
+**E só esconder teria sido pior que a propaganda.** Uma máquina carregando `routing.mode: fast` num arquivo de config — herdado, copiado de um tutorial antigo, setado meses atrás — rotearia por score para sempre enquanto o agente que a dirige nunca ouviu falar que esse modo existe e não consegue nomear o que está vendo. Então o modo é silencioso quando é escolhido para a execução (`--mode`) e alto quando é herdado: o despachante imprime o que está setado, de onde veio e como limpar.
+
+### O orquestrador desenha o mapa inteiro; a empresa executa
+
+Um assento recebia dois catálogos e a ordem de escolher. A biblioteca de mind-clones, com *"o clone é escolhido para a TAREFA, e a escolha é sua"*. Todos os squads instalados, com *"autorização aberta: todo squad do catálogo abaixo é permitido. Escolha o melhor para a sub-tarefa"*. E para achar um: `nrv list-squads`, `nrv find` e o `squad.yaml`.
+
+Isso punha a decisão que importa — quem de fato faz o trabalho — no ponto mais raso do sistema. O orquestrador, acima, já tinha lido agentes, tasks, workflows e DNA para escolher a empresa (fase 3, passada 2). O assento então redecidia por uma linha de manifesto e um ranking BM25. Dois decisores, e o mais profundo não era o que decidia.
+
+O orquestrador passa a decidir tudo — quais assentos trabalham, qual clone cada um incorpora, qual squad cada um instrui — e entrega isso como dado:
+
+```bash
+nrv team plan --business <slug> --brief <file> --project <dir> --outputs <dir> \
+              --assign .nirvana/<trace>-map.json --save .nirvana/<trace>-chain.json
+```
+
+```json
+[{"employee":"editor-chefe","task":"…","mind_clone":"akira-master","squad":"ebook-maestro-nirvana"},
+ {"employee":"revisor","task":"…","mind_clone":null,"squad":null}]
+```
+
+O `--assign` pula o diretor por completo: ele decide FORMATO a partir do organograma, e um mapa que já diz quem trabalha com o quê é decisão de outra natureza — que só o orquestrador pode tomar, porque só ele leu o brief, a biblioteca e o cliente juntos.
+
+**Com squad atribuído, o assento escreve a instrução e não executa.** A instrução é a entrega daquele assento, escrita como ele mesmo, na voz do seu clone, carregando o resultado esperado, as travas e como o trabalho será julgado — o julgamento pelo qual aquele assento existe, já que ele conhece este cliente e este padrão e o squad não. **Com `squad: null`, o assento entrega direto.** Isso é decisão, não omissão. Nenhum dos dois pode sair às compras: uma atribuição que não serve é mudança de plano que o assento reporta, nunca substituição que ele faz calado.
+
+Os catálogos sumiram dos dois, e junto tudo o que falava por eles: a regra dura que dizia *"prefira squads… veja AVAILABLE SQUADS abaixo"* passa a nomear a atribuição, e a seção de clone não abre mais com uma decisão que o assento não toma. Um passo sem nenhuma das duas chaves ainda recebe o caminho antigo de autosserviço — isso é compatibilidade, e é o caso degradado, não o desenho.
+
+### Uma squad instalada sozinha deixou de fazer o próprio trabalho
+
+A banda de cobertura publicada na 0.13.19 rebaixava um despacho confiante sempre que o vencedor explicava metade ou menos do brief. Correto contra 223 squads competindo. Errado sozinho — e sozinho é o que vai para o cliente.
+
+Medido contra uma única squad de nutrição, como uma VPS ou uma máquina de um pack só de fato rodam: `"monte um plano alimentar de 1800 kcal para ganho de massa magra"` — o brief mais óbvio que aquela squad vai receber na vida — voltava `AMBIGUOUS`, pedindo confirmação, com exatamente um destino na lista. Dois de três briefs legítimos faziam o mesmo.
+
+O defeito que a banda existe para conter precisa de multidão para acontecer. O mesmo `"me empresta vinte reais até sexta-feira"` que saía `HIGH` entre 223 squads produz **zero candidatos** contra a squad de nutrição sozinha, score 0,0. Foi preciso uma vizinhança densa para alguma coisa casar bem o bastante para vencer. Então a banda passa a exigir dois destinos distintos antes de rebaixar: `AMBIGUOUS` quer dizer *confirme qual*, e isso só é resposta quando há mais de um para escolher. Instalação solo volta a despachar; a biblioteca densa mantém a proteção.
+
+Todo teste de roteamento deste repositório media a máquina do mantenedor ou pulava. O `solo-install-routing.test.ts` mede a outra densidade com fixtures, então roda também em runner limpo — que é, ele mesmo, o caso esparso.
+
+### Um manifesto é uma alegação; o diretório ao lado é a evidência
+
+O roteador agêntico pesquisava o digest e sua cláusula de escalação dizia, literalmente, *"Read a full manifest ONLY"*. O mais fundo que ele conseguia olhar era o `squad.yaml`. Duas squads cujos manifestos se leem parecidos ficam rotineiramente longe uma da outra quando abertas: uma tem três agentes e um workflow de dois passos, a outra oito agentes, tasks tipadas e um portão. Escolher entre alegações parecidas não é escolher entre capacidades.
+
+Quando dois ou mais finalistas podem plausivelmente fazer o trabalho, o roteador passa a abri-los — `agents/*.md`, `tasks/*.md`, `workflows/*`, e `employees/*.md` para empresa — e decide pelo que eles demonstravelmente fazem. O cabeçalho do digest aponta para esses arquivos e diz por quê. A pesquisa continua sendo só o digest.
+
+Os três ramos passam a estar escritos como a regra que são: **vários candidatos** → abrir e comparar, devolvendo `ambiguous` só quando forem genuinamente equivalentes; **exatamente um** → despachar, porque perguntar com um candidato só é recusa fantasiada de pergunta; **nenhum** → `agent-x`, que é execução de verdade e não falha.
+
+### Uma `not_for` declara incompetência, nunca vizinhança
+
+O §33 do `SQUAD_PROTOCOL_V6.md` governava a FORMA da cerca — 25 caracteres, para ela de fato disparar — e não dizia nada sobre para que a cerca serve. Então elas passaram a ser escritas para desviar de vizinhos. Medido na biblioteca instalada, 66 das 3.238 entradas nomeiam outra entidade instalada, e as mais claras vêm em pares recíprocos: a squad de nutrição declara `not_for: ["psicologo"]` enquanto a de psicologia declara `not_for: ["nutricao"]`.
+
+Nenhuma das duas descreve incompetência. Uma squad viaja; a vizinhança dela, não. Uma cerca escrita para evitar um vizinho vira perda pura assim que aquele vizinho não está instalado — e viaja dentro do pack para toda máquina onde ele nunca esteve. O §33.1 dá o teste como uma pergunta só: *se esta squad fosse a única coisa instalada, a frase continuaria verdadeira?* A regra recíproca — nunca deixar de construir uma capability porque o vizinho tem — entra no contrato de projeto que todo runtime carrega.
+
 ## 0.13.19 — 2026-09-20
 
 ### A integração com a OpenAI Agents API, medida em vez de presumida
@@ -17,8 +77,6 @@ Verificado numa sessão real: o `POST /v1/agents/sessions` com o header `OpenAI-
 Não verificado, e nomeado como tal: descoberta, um turno, um despacho com cadeia de auditoria, cold-start. O executor nunca conectou. O `codex exec-server` exige o escopo `api.agents.environments.connect`, que uma chave de aplicação não carrega e não pode ganhar — o `/v1/agents/environment_keys` responde 404 e o caminho documentado `--use-agent-identity-auth` informa que a Agent Identity está indisponível. A chave sai do dashboard da plataforma, então a página nomeia esse passo em vez de fingir que a lacuna não existe.
 
 A página também corrige o plano de onde veio: o critério antigo era descobrir quatro skills, e desde a 0.13.10 existe exatamente uma. `harness`, `squads`, `businesses` e `_shared` são internos do engine e nunca são expostos a um runtime.
-
-## Unreleased
 
 ### Um brief que o roteador entendeu pela metade foi despachado com confiança
 

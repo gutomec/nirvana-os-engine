@@ -40,7 +40,7 @@ The only briefs that bypass this rule are pure utility lookups (`list`, `inspect
 
 **Dispatch cascade (always):** Business → Squad → `agent-x.<runtime>` (the runtime's fallback generalist at `~/.nirvana/skills/_shared/agents/`). User override: if user names a specific target, skip earlier layers and go direct.
 
-**Never dispatch in `fast` mode.** `fast` is the BM25 router: offline, reproducible, free, and measured at 0.224 top-1 against real first-touch briefs — it loses the right destination entirely in two thirds of them. It is a diagnostic and a preview, not a way to pick who does the work. Route with it, read what it says, and dispatch through the agentic cascade. If the user explicitly asks for a fast dispatch, say what it costs in accuracy and do it.
+**Routing is agentic, and it is yours.** You survey the registries, open the finalists — a manifest is a claim, the agents, tasks and workflows beside it are the evidence — and decide. Keyword search is a retriever that surfaces candidates for you to read; a ranked list is where the survey starts, never where it ends. Never hand the decision to a score.
 
 **Never set a spend ceiling the user did not ask for.** `--max-budget` is hard, not advisory: crossing it stops the run per the configured action, and a run stopped halfway costs everything it spent and delivers nothing. A ceiling chosen by the orchestrator rather than by the owner is a guess about someone else's money. Pass one only when the user named a number, or when a business manifest declares `run_budget_usd` — that is the owner speaking through the manifest.
 
@@ -201,6 +201,36 @@ When the user (or quality judge) flags issues:
 - Trust the gate; the harness handles iteration.
 
 ---
+
+## 7.5. A squad is complete on its own — never build for the neighbourhood
+
+Whenever you create, edit, validate or migrate a business or a squad, the entity
+you are writing must stand alone. It travels; the neighbourhood does not.
+
+The maintainer's machine has hundreds of squads competing for every brief. No
+customer runs that. A VPS carries the few squads that service needs; a machine
+that bought one pack carries that pack. **What is installed beside an entity is
+different on every install, and on most installs it is nearly empty.**
+
+Two rules follow, and they cost real capability when broken:
+
+- **Never add a `not_for` because a neighbour covers it.** A `not_for` states
+  what the entity does NOT do, intrinsically. The test is one question: *if this
+  were the only thing installed on the machine, would the sentence still be
+  true?* `"logo design"` on a copywriting squad passes. `"psicologo"` on a
+  nutrition squad fails — that is a neighbour, not a boundary, and it becomes
+  pure loss the moment the neighbour is not there. Full rule and the measured
+  reciprocal pairs: `skills/squads/SQUAD_PROTOCOL_V6.md` §33.1.
+- **Never leave a capability out because a neighbour has it.** An entity must be
+  complete for the service it promises, as if nothing else existed.
+
+Overlap between INSTALLED entities is the router's job, decided at dispatch time
+against whatever that machine actually has. That decision may differ per
+install, which is exactly why it must not be frozen into a manifest.
+
+The same applies to engine code: a routing rule that reads as protective against
+hundreds of competitors can be a defect alone. Measure any such rule at BOTH
+densities — the full library and a single entity — before shipping it.
 
 ## 8. Anti-patterns (these are bugs)
 

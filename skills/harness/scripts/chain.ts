@@ -31,7 +31,18 @@
  * Usage:
  *   nrv team plan --business <slug> --brief <file> --project <dir> \
  *                  --outputs <dir> [--runtime <rt>] [--team|--single] [--safe] \
- *                  [--project-id <id>] [--save <plan.json>]
+ *                  [--project-id <id>] [--save <plan.json>] [--assign <map.json>]
+ *
+ *     --assign is the orchestrator handing over the map it drew: who works, in
+ *     what order, which clone each seat embodies and which squad each instructs.
+ *     It skips the director entirely.
+ *
+ *       [{"employee":"editor-chefe","task":"…","mind_clone":"akira-master","squad":"ebook-maestro-nirvana"},
+ *        {"employee":"revisor","task":"…","mind_clone":"maria-editor","squad":null}]
+ *
+ *     `squad: null` is a decision — that seat delivers directly. A step with
+ *     neither key means no map was drawn for it and the seat chooses for itself,
+ *     which is the degraded path, not the design.
  *     → the plan on stdout as JSON. Emits x_chain_shape_decided +
  *       team_chain_selected (or team_director_failed, exit 1).
  *
@@ -215,7 +226,41 @@ function cmdPlan(argv: string[]): void {
   };
 
   let chain: ChainStep[], reason: string;
-  if (argv.includes("--single")) {
+  // `--assign` is the orchestrator handing over the map it drew. It names the
+  // seats, in order, each with the clone it embodies and the squad it instructs
+  // (`squad: null` meaning the seat delivers directly). The director is skipped
+  // entirely: it decides SHAPE from the org chart, and a map that already says
+  // who works with what is a decision of a different kind, made by the one
+  // reader that had the brief, the library and the client in view at once.
+  const assignFlag = argv.indexOf("--assign");
+  if (assignFlag >= 0) {
+    const file = argv[assignFlag + 1];
+    if (!file) die("--assign needs a path to the orchestrator's map (JSON).", EXIT_ARGS);
+    let parsed: any;
+    try { parsed = JSON.parse(fs.readFileSync(file, "utf8")); }
+    catch (e: any) { die(`--assign: cannot read ${file}: ${e?.message || e}`, EXIT_ARGS); }
+    const steps = Array.isArray(parsed) ? parsed : parsed?.chain;
+    if (!Array.isArray(steps) || !steps.length) die("--assign: expected a non-empty array, or an object with a non-empty `chain`.", EXIT_ARGS);
+    chain = steps.map((s: any, i: number) => {
+      if (!s?.employee || typeof s.employee !== "string") die(`--assign: step ${i} has no \`employee\`.`, EXIT_ARGS);
+      if (!s?.task || typeof s.task !== "string") die(`--assign: step ${i} (${s.employee}) has no \`task\`.`, EXIT_ARGS);
+      return {
+        employee: String(s.employee),
+        task: String(s.task),
+        // Absent stays absent: it is what tells the seat no map was drawn for it.
+        ...("mind_clone" in s ? { mind_clone: s.mind_clone == null ? null : String(s.mind_clone) } : {}),
+        ...("squad" in s ? { squad: s.squad == null ? null : String(s.squad) } : {}),
+      };
+    });
+    reason = "--assign: the orchestrator drew the map";
+    emitAudit({
+      event: "x_chain_shape_decided", project_id: projectId, business_slug: slug,
+      steps: chain.length, reason, forced: "assign",
+      assigned_clones: chain.filter(s => s.mind_clone).length,
+      assigned_squads: chain.filter(s => s.squad).length,
+      seats_delivering_directly: chain.filter(s => "squad" in s && s.squad == null).length,
+    }, projectRoot);
+  } else if (argv.includes("--single")) {
     chain = [{ employee: intake, task: "Carry the brief end to end." }];
     reason = "--single: the caller chose one seat";
     emitAudit({
@@ -290,6 +335,11 @@ function cmdStep(argv: string[]): void {
 
   const brief = fs.readFileSync(plan.brief_file, "utf8");
   const stepBrief = buildStepBrief(step, idx, total, { brief, outputsRoot: plan.outputs_root }, priorOutputs, outDir);
+  // The map travels to the seat's prompt. Present means the orchestrator decided
+  // for this seat; absent means it did not, and the seat falls back to choosing.
+  const assignment = ("mind_clone" in step || "squad" in step)
+    ? { mind_clone: step.mind_clone ?? null, squad: step.squad ?? null }
+    : undefined;
   const stepBriefFile = path.join(outDir, ".step-brief.md");
   fs.writeFileSync(stepBriefFile, stepBrief);
   // The step's task, on its own, for the clone search: the step brief carries
@@ -304,6 +354,7 @@ function cmdStep(argv: string[]): void {
   const ep = spawnSync("bun", [
     path.join(SKILLS, "businesses/lib/employee-prompt.ts"),
     plan.business, step.employee, plan.project_dir, stepBriefFile, outDir, "--task-file", stepTaskFile,
+    ...(assignment ? ["--assign-clone", assignment.mind_clone ?? "none", "--assign-squad", assignment.squad ?? "none"] : []),
   ], {
     encoding: "utf8", maxBuffer: 32 * 1024 * 1024,
     // The child resolves the business independently; handing it the library root
@@ -640,6 +691,9 @@ if (!sub || sub === "-h" || sub === "--help") {
   nrv team plan --business <slug> --brief <file> --project <dir> --outputs <dir>
                  [--project-id <id>] [--project-root <dir>] [--runtime <rt>]
                  [--team | --single] [--safe] [--save <plan.json>]
+                 [--assign <map.json>]   the orchestrator's map: seats in order,
+                                         each with mind_clone and squad
+                                         (squad: null = that seat delivers itself)
 
       The director reads the brief against the org chart and answers with a
       chain and a reason. --team asks for 3 to 6 seats; --single skips the

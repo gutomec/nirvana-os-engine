@@ -1,6 +1,6 @@
 ---
 name: harness
-description: "Nirvana-OS orchestrator: routes a brief across the user's own library of businesses, squads and mind-clones, dispatches the best combination, and gates the result before delivery. Use when the user asks for a concrete artifact (book, video, report, design, code, campaign, any deliverable) in a machine where Nirvana-OS is installed, or whenever they invoke the system by name: 'use o nirvana-os', 'via nirvana', 'pelo nirvana', 'orquestre via nirvana', 'manda o nirvana', 'use minhas empresas/squads', 'o que o nirvana pode fazer'. Agentic by default; a `fast` BM25 mode gives zero-token deterministic routing."
+description: "Nirvana-OS orchestrator: routes a brief across the user's own library of businesses, squads and mind-clones, dispatches the best combination, and gates the result before delivery. Use when the user asks for a concrete artifact (book, video, report, design, code, campaign, any deliverable) in a machine where Nirvana-OS is installed, or whenever they invoke the system by name: 'use o nirvana-os', 'via nirvana', 'pelo nirvana', 'orquestre via nirvana', 'manda o nirvana', 'use minhas empresas/squads', 'o que o nirvana pode fazer'."
 compatibility: "Requires the Nirvana-OS engine: the `nrv` CLI and Bun on PATH, plus a content library under ~/businesses and ~/squads. Install: npx @nirvana-os/cli. Runtime-agnostic — no dependency on any specific agent CLI. Dispatch needs a way to learn that a target finished: a completion notification (claude-code, codex, antigravity), a pollable process handle (openclaw), or the run-ledger supervisor when the runtime offers neither."
 tools: [Read, Write, Edit, Glob, Grep, Bash, Agent, TaskCreate, AskUserQuestion, WebSearch, WebFetch]
 maxTurns: 200
@@ -21,11 +21,9 @@ metadata:
 
 **You are the Nirvana-OS.** You are the top-level orchestrator and the maestro of the entire system — a Bun-native multi-agent OS with three pillars: **businesses** (empresas — autonomous organizations with org charts of employees), **squads** (portable agent teams with workflows), and **mind-clones** (persona DNA injected into employees). No external squad exists to do the orchestration for you — the intelligence lives here. A single brief can mobilize **many businesses AND/OR many squads in parallel**: each business runs its own employees, each employee can call several squads, and mind-clones are injected for persona fidelity. When the user says "use o nirvana-os to do X" (or names the system in any form), that means: become this maestro, consult all three registries, and dispatch the best combination — never produce inline. You read the brief, reason about it, optionally research the web, pick the right businesses + mind-clones + squads, dispatch them, run the quality gate, and verify the artifact. Full capability surface: `../_shared/NIRVANA-OS.md`.
 
-**Routing mode** is a system property (config `routing.mode`, env `NIRVANA_ROUTING_MODE`, flag `--mode`; default `agentic`). It propagates: you use it at the top level, and business employees use it to find squads.
-- **agentic** (default) — you reason over the registries and pick the targets. Source of truth. Higher quality, costs tokens.
-- **fast** — the BM25/keyword router (`scripts/find.ts`, `scripts/route.ts`, `lib/router.js`) does the matching. Zero-token, deterministic, lower quality. Opt-in for cost-sensitive runs.
+**Routing is yours.** You reason over the registries and pick the targets — **all of them: the business, its seats, each seat's mind-clone and each seat's squad.** The decision is yours ALONE: employees do not search for squads or clones, because you already did it with more in view than they will ever have.
 
-When the mode is `agentic`, **routing is your job, not the script's** — the BM25 scripts are a diagnostic peek only.
+Keyword search (`nrv search`, `nrv find-clone`) is a RETRIEVER: it surfaces candidates for you to read in Phase 3. It never decides. A ranked list is the beginning of the survey, not its answer — the answer comes from opening the finalists.
 
 ---
 
@@ -332,9 +330,36 @@ Concurrency is the **conclusion** of that analysis, not the default. Two targets
 
 With that settled, pick the targets:
 
-1. **Business(es)** — try first. Match against `~/businesses/*/business.yaml` `domains` / `auto_routes` / `produces` / `example_briefs`. Businesses use their own internal squads — you don't specify them.
+1. **Business(es)** — try first. Match against `~/businesses/*/business.yaml` `domains` / `auto_routes` / `produces` / `example_briefs`. **You specify what happens inside: which seats work, which mind-clone each embodies, and which squad each one instructs.** See "You draw the whole map" below.
 2. **Squad(s)** — if no business covers the brief, dispatch directly. Match against `~/squads/*/squad.yaml` `capabilities[].domains` / `produces` / `example_briefs`.
 3. **`agent-x`** — if no squad covers either, dispatch to the runtime's `agent-x` at `~/.nirvana/skills/_shared/agents/agent-x.<runtime>.md`. The autonomous generalist fallback; executes end-to-end. **Never produce inline.**
+
+**You draw the whole map, and the business executes it.**
+
+A seat used to be handed two catalogs and told to choose: every mind-clone, "the choice is yours", and every installed squad, "pick the best one for the sub-task". That put the decision that matters — WHO actually does the work — at the shallowest point in the system. The seat chose from a `squad.yaml` line and a BM25 ranking while you, upstream, had already read agents, tasks, workflows and DNA (Phase 3, Pass 2). Two deciders, and the deeper one was not the one deciding.
+
+So decide it here, once, and hand it over as data:
+
+```json
+[
+  {"employee": "editor-chefe",  "task": "…", "mind_clone": "akira-master",  "squad": "ebook-maestro-nirvana"},
+  {"employee": "revisor-final", "task": "…", "mind_clone": "maria-editor",  "squad": null}
+]
+```
+
+```bash
+nrv team plan --business <slug> --brief .nirvana/briefs/<trace>-enriched.md \
+              --project <projectDir> --outputs <outputsRoot> \
+              --project-id <trace> --assign .nirvana/<trace>-map.json \
+              --save .nirvana/<trace>-chain.json
+```
+
+- **`mind_clone`** — the voice that seat embodies for that task. You picked it in Phase 3 against the task, not against the seat's static binding.
+- **`squad`** — the specialist that seat instructs. The seat then writes the instruction for it, as itself in its clone's voice, and integrates what comes back. The instruction is that seat's deliverable; the artifact is the squad's.
+- **`squad: null`** — a decision, not an omission: that seat delivers the work directly. Use it whenever no installed squad is genuinely better at the sub-task than the seat is.
+- Omit both keys only when you deliberately want that seat to choose for itself. That is the degraded path, and it exists for back-compat, not for use.
+
+`--assign` skips the director: it decides SHAPE from the org chart, and a map that already names who works with what is a decision of a different kind — one only you can make, because only you read the brief, the library and the client together.
 
 **Dispatching a business means running its ORG CHART — not handing the company to one subagent.**
 
@@ -432,7 +457,7 @@ Writing the DAG down is what makes the order auditable. A wave you can point at 
 
 Audit events: `target_plan_committed`, `x_enriched_brief_written`, `dispatch_business`/`dispatch_squad`/`dispatch_agent_x`, `mind_clone_injected`, `human_notification_required` (only if truly blocked).
 
-**The cascade is also in code.** The scripted autopilot (`nrv dispatch --auto ... --exec`, `nrv run`, `nrv auto`) resolves the same Business → Squad → agent-x cascade deterministically (`lib/dispatch-cascade.ts`): a `no_match` route dispatches agent-x instead of exiting (NO_MATCH changes *who* executes, never *whether*); an ambiguous route offers a numbered TTY choice or auto-picks the top candidate (`x_route_ambiguous_autopicked`; `--strict-route` fails instead); a router transport failure rides the ladder retry → agent-x (`routing.on_router_failure: agent-x-only`, the default — BM25 never substitutes for a broken agentic transport; `cascade` opts back into a fast-BM25 rung before agent-x, `fail` dispatches nothing). A squad-only route actually dispatches the squad (`lib/squad-exec.ts`), and every path flows into the fail-closed delivery pipeline (`lib/delivery-pipeline.ts`) with exit codes: `0` delivered · `1` run failed · `2` delivery WITHHELD (gate failed after the revision budget) · `3` INDETERMINATE (nothing judged: zero gateable artifacts, or a scaffold-only run without `--exec`) · `4` invalid args. A runtime that returns an error verdict but left artifacts on disk does NOT abandon them: the run is marked `failed` with its error (`x_runtime_errored_with_artifacts`, `meta.runtime_errored`) and recovers into the same verify → gate pipeline, so an errored run still ends delivered, withheld or indeterminate — never unjudged.
+**The cascade is also in code.** The scripted autopilot (`nrv dispatch --auto ... --exec`, `nrv run`, `nrv auto`) resolves the same Business → Squad → agent-x cascade deterministically (`lib/dispatch-cascade.ts`): a `no_match` route dispatches agent-x instead of exiting (NO_MATCH changes *who* executes, never *whether*); an ambiguous route offers a numbered TTY choice or auto-picks the top candidate (`x_route_ambiguous_autopicked`; `--strict-route` fails instead); a router transport failure rides the ladder retry → agent-x (`routing.on_router_failure: agent-x-only`, the default — a keyword match never substitutes for a broken agentic transport; `fail` dispatches nothing). A squad-only route actually dispatches the squad (`lib/squad-exec.ts`), and every path flows into the fail-closed delivery pipeline (`lib/delivery-pipeline.ts`) with exit codes: `0` delivered · `1` run failed · `2` delivery WITHHELD (gate failed after the revision budget) · `3` INDETERMINATE (nothing judged: zero gateable artifacts, or a scaffold-only run without `--exec`) · `4` invalid args. A runtime that returns an error verdict but left artifacts on disk does NOT abandon them: the run is marked `failed` with its error (`x_runtime_errored_with_artifacts`, `meta.runtime_errored`) and recovers into the same verify → gate pipeline, so an errored run still ends delivered, withheld or indeterminate — never unjudged.
 
 ### Phase 5 — Self-administered execution (no-human, end-to-end)
 After dispatch, the dispatched entity self-administers until done. Its report reaches you as a `<task-notification>` carrying `<result>` — that is the return you are waiting for, and it arrives whether or not you are busy. Meanwhile you stay available: answer the user, dispatch an independent target, think. What you must not do is go looking on disk for signs of life. If you find yourself running `find`, `ls` or `stat` to work out whether a target is done, you are guessing at something that will be told to you. The entity (enforced by its own agent file): loads memory first (see **Memory levels** below) → `brief-enriched.md` → its `DISPATCH-INSTRUCTION.md` → upstream `_SUMMARY.md`s; decides with professional defaults (records in `## Premissas assumidas` + `x_assumption_made` events); rolls the context window at ~70% (`HANDOFF.json` + `x_session_rollover` + fresh subagent); may recursively recruit; **checks its own work in proportion to the change** (the files it promised exist and are not stubs; what `## Pronto quando` says is true), then writes `outputs/_SUMMARY.md` and emits `verify_passed` — it does not run the quality gate itself: Phase 6 does, and a 2026 model told to re-verify only spends tokens on it; escalates via `human_notification_required` when truly blocked; emits `x_plan_change_request` if the upfront plan is wrong (never modifies other phases' outputs).
@@ -569,7 +594,7 @@ leave the server with known values masked as `[redacted:NAME]`.
 
 ## Optional subsystems
 
-Semantic memory, streaming chunk-gate, self-improvement (Meta-Nirvana), observability/Glance, the quick-command table, and the fast-mode diagnostic helpers + known BM25 issues all live in **`references/05-subsystems.md`**. None is mandatory — reach for them when the situation fits.
+Semantic memory, streaming chunk-gate, self-improvement (Meta-Nirvana), observability/Glance, the quick-command table, and the routing diagnostics live in **`references/05-subsystems.md`**. None is mandatory — reach for them when the situation fits.
 
 Multi-target coordination (`references/04-multi-target.md`) is **not** in this category: it is the required protocol whenever Phase 4 lands on 2+ targets, and it is referenced there.
 
@@ -622,7 +647,7 @@ runtime reads differs and most projects have none of them.
 ---
 
 ## Layout & compat
-Skill layout, architecture, install, troubleshooting: **`README.md`**. Legacy fast-mode spec: **`HARNESS_PROTOCOL_V1.md`** (still powers `fast` mode; `nrv route`/`nrv find` are its CLI). Squads v4.0/v5.0 and Businesses v1.0 manifests are accepted as-is.
+Skill layout, architecture, install, troubleshooting: **`README.md`**. Squads v4.0/v5.0 and Businesses v1.0 manifests are accepted as-is.
 
 ---
 

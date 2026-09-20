@@ -328,7 +328,8 @@ If a candidate business cannot deliver the OBJECT (e.g. a medical business does 
 ## SURVEY
 - \`Read ${briefFile}\` — the full brief.
 - \`Read ${digestPath}\` — the routing digest: EVERY business, squad, capability collision and mind-clone, one line each. This single file IS your survey of all three registries — do NOT read the raw registries to survey.
-- Escalation (finalists only): the digest header lists the three registry paths; each registry entry carries \`manifest_path\` (businesses/squads) or persona file paths (mind-clones). Read a full manifest ONLY to confirm or rule out a finalist you are genuinely unsure about — never to survey.
+- Escalation (finalists only): the digest header lists the three registry paths; each registry entry carries \`manifest_path\` (businesses/squads) or persona file paths (mind-clones). Never for the survey — the digest IS the survey.
+- **When two or more finalists could plausibly do the work, OPEN THEM AND COMPARE.** A manifest is a claim; the directory beside it is the evidence. From \`manifest_path\`, \`Glob\` and \`Read\` the entity's own files: \`agents/*.md\` (who actually executes, and what they are expert in), \`tasks/*.md\` (the unit of work and its acceptance criteria), \`workflows/*\` (the pipeline, its steps and its gates), and for a business \`employees/*.md\` (the org chart). Judge on what the entity can DEMONSTRABLY do, not on how well its description is written — two squads whose manifests read alike are routinely far apart once you see one has three agents and a two-step workflow and the other has eight agents, typed tasks and a gate. Choosing between similar claims from the digest alone is the failure this step exists to prevent.
 
 ## METHOD
 1. Read the brief. **State OBJECT and THEME to yourself** (they go into the rationale).
@@ -337,7 +338,10 @@ If a candidate business cannot deliver the OBJECT (e.g. a medical business does 
 4. primary_business: the one whose capabilities/employees align with the OBJECT. A THEME business that cannot deliver the OBJECT can NEVER be primary.
 5. mandatory_squads: the user's literal asks + OBJECT squads when there is a clear specialist.
 6. optional_squads: up to 3, usually THEME squads for validation. suggested_mind_clones: rule 7.
-7. If two or more genuinely different routes fit and the brief does not disambiguate, return kind "ambiguous" with the candidates instead of guessing. If nothing in the catalog can deliver the OBJECT, return kind "no_match" — an honest no_match beats a forced dispatch.
+7. **Decide by how much company the brief has.** The library you are surveying is not the library the next machine has: a VPS carries the few entities that service needs, a customer carries the pack they bought, and this one carries everything. So decide against what is ACTUALLY INSTALLED here, never against what usually exists.
+   - **Several plausible candidates** → open their directories (see SURVEY) and pick the one most capable of this brief. Say in the rationale what you read that decided it. Return "ambiguous" only when they are genuinely equivalent AND the brief itself cannot disambiguate — not merely because there is more than one.
+   - **Exactly one candidate can deliver the OBJECT** → that is the answer. Dispatch it. Do not return "ambiguous" with one candidate: there is nothing for the user to choose between, and asking is a refusal wearing a question mark.
+   - **Nothing in the catalog can deliver it** → kind "no_match". The engine dispatches the generalist \`agent-x\`, which is a real execution and not a failure; an honest no_match beats a forced dispatch into the wrong specialist.
 8. Rationale (3-5 sentences): start with "OBJECT=<x>, THEME=<y>." then justify.
 
 ${runtimeRules?.length ? formatRulesForRouterPrompt(runtimeRules) + "\n\n" : ""}## OUTPUT

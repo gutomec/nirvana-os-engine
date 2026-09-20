@@ -6,6 +6,66 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### The keyword router is no longer offered to agents
+
+It was being sold in the highest-reach surface the system has. The harness `SKILL.md` **description** — the first thing any runtime reads to decide whether to activate — ended: *"Agentic by default; a `fast` BM25 mode gives zero-token deterministic routing."* A pitch for the worse mode, on the most tempting axis an agent has. The project contract then spent a paragraph forbidding it, which is weaker than silence: a prohibition teaches the shortcut exists and then asks for restraint.
+
+Measured at 0.224 top-1 against real first-touch briefs, it loses the right destination in two thirds of them. It stays in the engine, because a user may ask for it by name. It leaves every surface an agent reads: the skill description, the routing section, the "legacy spec" and "diagnostic helpers" pointers, the contract paragraph in `AGENTS.md` / `CLAUDE.md` / `GEMINI.md` and the template `nrv init` writes, and the branch in a seat's own prompt. `nrv route` and `nrv find` — the decider's CLI — are dev diagnostics now and are gone from `nrv --help`.
+
+**The retriever stays.** `nrv search` and `nrv find-clone` surface candidates for Phase 3 to READ; hiding them would cut the agentic pipeline's own recall step. What changed is the sentence around them: a ranked list is where a survey starts, never where it ends.
+
+**And concealment alone would have been worse than the advertising.** A machine carrying `routing.mode: fast` in a config file — inherited, copied from an old tutorial, set months ago — would route by score forever while the agent driving it has never heard the mode exists and cannot name what it is seeing. So the mode is silent when it is chosen for a run (`--mode`) and loud when it is inherited: the dispatcher prints what is set, where it came from, and how to clear it.
+
+### The orchestrator draws the whole map; the business executes it
+
+A seat was handed two catalogs and told to choose. The mind-clone library, with *"the clone is chosen for the TASK, and the choice is yours"*. Every installed squad, with *"Open authorization: every squad in the catalog below is permitted. Pick the best one for the sub-task"*. And to find one: `nrv list-squads`, `nrv find`, and `squad.yaml`.
+
+That put the decision that matters — who actually does the work — at the shallowest point in the system. The orchestrator upstream had already read agents, tasks, workflows and DNA to choose the business (Phase 3, Pass 2). The seat then re-decided from a manifest line and a BM25 ranking. Two deciders, and the deeper one was not the one deciding.
+
+The orchestrator now decides all of it — which seats work, which mind-clone each embodies, which squad each instructs — and hands it over as data:
+
+```bash
+nrv team plan --business <slug> --brief <file> --project <dir> --outputs <dir> \
+              --assign .nirvana/<trace>-map.json --save .nirvana/<trace>-chain.json
+```
+
+```json
+[{"employee":"editor-chefe","task":"…","mind_clone":"akira-master","squad":"ebook-maestro-nirvana"},
+ {"employee":"revisor","task":"…","mind_clone":null,"squad":null}]
+```
+
+`--assign` skips the director entirely: it decides SHAPE from the org chart, and a map that already names who works with what is a decision of a different kind — one only the orchestrator can make, because only it read the brief, the library and the client together.
+
+**With a squad assigned, the seat writes the instruction and does not execute.** The instruction is that seat's deliverable, authored as itself in its clone's voice, carrying the outcome, the guardrails and how the work will be judged — the judgement the seat exists for, since it knows this client and this standard and the squad does not. **With `squad: null`, the seat delivers directly.** That is a decision, not an omission. Neither case may shop: an assignment that does not fit is a plan change the seat reports, never a substitution it makes quietly.
+
+The catalogs are gone from both, and so is everything that spoke for them: the hard rule that said *"Prefer squads… see AVAILABLE SQUADS below"* now names the assignment, and the clone section no longer opens with a decision the seat does not make. A step carrying neither key still gets the old self-service path — that is back-compat, and it is the degraded case, not the design.
+
+### A squad installed alone stopped doing its own work
+
+The coverage band shipped in 0.13.19 downgraded a confident dispatch whenever the winner explained half a brief or less. Correct against 223 competing squads. Wrong alone — and alone is what ships.
+
+Measured against a single nutrition squad, as a customer VPS or a one-pack machine actually runs: `"monte um plano alimentar de 1800 kcal para ganho de massa magra"` — the most obvious brief that squad will ever receive — came back `AMBIGUOUS`, asking the caller to confirm, with exactly one destination on the list. Two of three legitimate briefs did the same.
+
+The defect the band exists to stop needs a crowd to happen at all. The same `"me empresta vinte reais até sexta-feira"` that dispatched `HIGH` across 223 squads produces **zero candidates** against the nutrition squad alone, score 0.0. It took a dense neighbourhood for anything to match it well enough to win. So the band now requires two distinct destinations before it downgrades: `AMBIGUOUS` means *confirm which one*, and that is only an answer when there is more than one to choose between. Solo installs dispatch again; the dense library keeps the guard.
+
+Every routing test in this repo measured the maintainer's machine or skipped. `solo-install-routing.test.ts` measures the other density with fixtures, so it runs on a clean runner too — which is itself the sparse case.
+
+### A manifest is a claim; the directory beside it is the evidence
+
+The agentic router surveyed the digest and its escalation clause said, literally, *"Read a full manifest ONLY"*. The deepest it could look was `squad.yaml`. Two squads whose manifests read alike are routinely far apart once opened: one has three agents and a two-step workflow, the other eight agents, typed tasks and a gate. Choosing between similar claims is not choosing between capabilities.
+
+When two or more finalists could plausibly do the work, the router now opens them — `agents/*.md`, `tasks/*.md`, `workflows/*`, and `employees/*.md` for a business — and decides on what they can demonstrably do. The digest header points at those files and says why. The survey is still the digest alone.
+
+The three branches are now stated as the rule they are: **several candidates** → open and compare, returning `ambiguous` only when they are genuinely equivalent; **exactly one** → dispatch it, because asking with a single candidate is a refusal wearing a question mark; **none** → `agent-x`, which is a real execution and not a failure.
+
+### A `not_for` declares incompetence, never a neighbour
+
+`SQUAD_PROTOCOL_V6.md` §33 governed the FORM of a fence — 25 characters, so it actually fires — and said nothing about what a fence is for. So they were written to deflect neighbours. Measured on the installed library, 66 of 3,238 entries name another installed entity, and the clearest come in mutual pairs: the nutrition squad declares `not_for: ["psicologo"]` while the psychology squad declares `not_for: ["nutricao"]`.
+
+Neither describes incompetence. A squad travels; its neighbourhood does not. A fence written to avoid a neighbour becomes pure loss the moment that neighbour is not installed — and it travels inside the pack to every machine where it never was. §33.1 gives the test as one question: *if this squad were the only thing installed, would the sentence still be true?* The same rule in reverse — never leave a capability unbuilt because a neighbour has it — is now in the project contract that every runtime loads.
+
 ## 0.13.19 — 2026-09-20
 
 ### The OpenAI Agents API integration, measured rather than assumed
@@ -17,8 +77,6 @@ Verified on a real session: `POST /v1/agents/sessions` with `OpenAI-Beta: agents
 Not verified, and named as such: discovery, a turn, a dispatch with an audit chain, cold start. The executor never connected. `codex exec-server` needs the scope `api.agents.environments.connect`, which an application key does not carry and cannot be granted — `/v1/agents/environment_keys` is a 404 and the documented `--use-agent-identity-auth` path reports Agent Identity as unavailable. The key is minted in the platform dashboard, so the page names that step instead of pretending the gap is not there.
 
 The page also corrects the plan it came from: the old success criterion was discovering four skills, and since 0.13.10 there is exactly one. `harness`, `squads`, `businesses` and `_shared` are engine internals and are never exposed to a runtime.
-
-## Unreleased
 
 ### A brief the router half-understood was dispatched with confidence
 
