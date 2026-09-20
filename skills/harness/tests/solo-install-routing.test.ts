@@ -10,9 +10,9 @@
 // confident dispatch whenever the winner explained half a brief or less —
 // correct against 223 competing squads, and wrong alone, where the same rule
 // asked a caller to "confirm" with exactly one destination on the list. Measured
-// against a single nutrition squad, "monte um plano alimentar de 1800 kcal para
-// ganho de massa magra" — the most obvious brief that squad will ever get — came
-// back AMBIGUOUS.
+// against a single nutrition squad, the brief
+// `"monte um plano alimentar de 1800 kcal para ganho de massa magra"` — the most
+// obvious brief that squad will ever get — came back AMBIGUOUS.
 //
 // The principle these tests hold: A SQUAD MUST BE COMPLETE ON ITS OWN. What the
 // router decides among INSTALLED neighbours is a runtime question and may differ

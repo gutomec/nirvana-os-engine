@@ -1263,8 +1263,9 @@ function stage3Decide(matches, opts) {
     // more than one destination to choose between. This band shipped without
     // that condition in 0.13.19 and the cost landed on exactly the install that
     // ships: measured against a single squad, as a customer VPS or a one-pack
-    // machine actually runs, "monte um plano alimentar de 1800 kcal para ganho
-    // de massa magra" matched 4 of 8 tokens against the nutrition squad — the
+    // machine actually runs, the brief
+    // `"monte um plano alimentar de 1800 kcal para ganho de massa magra"`
+    // matched 4 of 8 tokens against the nutrition squad — the
     // most obvious brief that squad will ever receive — and came back asking the
     // caller to confirm, with exactly one destination on the list.
     //
