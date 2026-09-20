@@ -6,6 +6,28 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Unreleased
+
+### Instalações repetidas deixaram de editar configurações que não são nossas
+
+Contribuição de @AndreAlmeidaDC, rebasada na 0.14.1 e estendida aqui.
+
+Quatro defeitos, cada um deles perdendo algo que pertence ao usuário:
+
+**Um grupo de hooks dividido com outra ferramenta era apagado.** O `settings.json` do Claude Code, do Gemini-CLI e do Antigravity era filtrado por GRUPO: se qualquer handler de um grupo de matcher fosse nosso, o grupo inteiro saía, levando junto os handlers do usuário — na instalação e de novo na desinstalação. Agora filtra por HANDLER, preserva os demais handlers do grupo e suas outras chaves, e só remove o grupo quando ele fica vazio.
+
+**Um `settings.json` malformado era sobrescrito.** O comentário antigo dizia isso em voz alta: *"keep empty — we'll overwrite a malformed file"*. Agora recusa e informa o motivo.
+
+**Uma chave de trust em TOML era reconhecida numa grafia só.** O TOML escreve a mesma chave como `"k"` ou `'k'`, e a própria TUI do Codex pode escolher qualquer uma. O engine casava a primeira forma por regex, então uma chave escrita da outra maneira ganhava um segundo bloco — e tabela duplicada é TOML inválido, o que faz o Codex parar de ler o arquivo inteiro, não só a nossa parte. O cabeçalho passa a ser resolvido pelo parser, então as duas grafias são a mesma chave. Texto parecido com tabela dentro de string multilinha também deixou de ser confundido com cabeçalho.
+
+**Um `config.toml` malformado recebia escrita.** Agora recusa e não toca no arquivo.
+
+Toda escrita num arquivo do usuário passa pela mesma publicação: arquivo temporário com o modo do original, candidato PARSEADO e comparado semanticamente contra exatamente a mudança pretendida, verificação de que o original não se mexeu antes e depois do backup, rename atômico, e releitura validada de novo. A manipulação de texto nunca é confiada; o resultado parseado é.
+
+**E os backups ficaram limitados.** Quatro escritores inventavam cada um seu nome de backup com nonce novo e nada removia nenhum, então uma máquina que reinstala acumulava uma cópia por escrita por arquivo, para sempre, no diretório de configuração do próprio usuário. O `_shared/lib/config-backup.ts` mantém as três mais novas. A cópia recém-criada é protegida por nome e não por timestamp: vários backups escritos no mesmo milissegundo carregam o mesmo mtime, a ordenação entre eles é arbitrária, e podar só por tempo apagava justamente aquele de que o chamador ia precisar.
+
+A biblioteca `yaml` volta a degradar com uma frase acionável — `run 'nrv deps install yaml'` — em vez de um stack trace de resolução. O instalador roda antes de a loja compartilhada de dependências necessariamente existir, então a ausência é um estado alcançável e não um erro de programação.
+
 ## 0.14.1 — 2026-09-20
 
 ### O orquestrador pesquisava a biblioteca por um buraco de fechadura

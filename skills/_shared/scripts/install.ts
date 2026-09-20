@@ -32,6 +32,7 @@ import * as os from "node:os";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
+import { backupConfig } from "../lib/config-backup.ts";
 import { parseArgs, EXIT, log } from "../lib/bun-helpers.ts";
 import {
   SKIP_PATH_PERSIST_ENV, skipPathPersist, isUnderTempRoot, broadcastEnvironmentChange,
@@ -251,9 +252,9 @@ function publishSettings(file: string, existed: boolean, raw: string, after: any
 
 function backup(file: string, nonce = `${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`): string | null {
   if (!fs.existsSync(file)) return null;
-  const bak = `${file}.nirvana-backup.${nonce}`;
-  fs.copyFileSync(file, bak, fs.constants.COPYFILE_EXCL);
-  return bak;
+  // Bounded: every writer that touches a user config takes a copy, and nothing
+  // removed one. See _shared/lib/config-backup.ts.
+  return backupConfig(file, nonce);
 }
 
 // ─── Toolchain checks ─────────────────────────────────────────────────

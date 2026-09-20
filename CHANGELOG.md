@@ -6,6 +6,28 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### Repeated installs stopped editing configurations that were not ours
+
+Contributed by @AndreAlmeidaDC, rebased onto 0.14.1 and extended here.
+
+Four defects, each of which loses something a user owns:
+
+**A hook group shared with another tool was deleted.** `settings.json` for Claude Code, Gemini-CLI and Antigravity was filtered by GROUP: if any handler in a matcher group was ours, the whole group went, taking the user's handlers with it — on install and again on uninstall. It now filters by HANDLER, keeps the group's other handlers and its other keys, and removes the group only when it becomes empty.
+
+**A malformed `settings.json` was overwritten.** The old comment said so out loud: *"keep empty — we'll overwrite a malformed file"*. It now refuses and reports why.
+
+**A TOML trust key was recognised in one spelling only.** TOML writes the same key as `"k"` or `'k'`, and Codex's own TUI is free to pick either. The engine matched the first form by regex, so a key written the other way got a second block appended — and a duplicate table is invalid TOML, which stops Codex reading the whole file, not just our part of it. The header is now resolved through the parser, so both spellings are the same key. Table-like text inside a multiline string is no longer mistaken for a header either.
+
+**A malformed `config.toml` was written into.** It now refuses and leaves the file alone.
+
+Every write to a file the user owns goes through the same publication: a temp file with the original's mode, the candidate PARSED and compared semantically against exactly the intended change, a check that the original did not move before and after the backup, an atomic rename, and a re-read validated again. The text edit is never trusted; the parsed result is.
+
+**And the backups are bounded.** Four writers each invented a backup name with a fresh nonce and nothing ever removed one, so a machine that reinstalls accumulated a copy per write per file, forever, in the user's own config directory. `_shared/lib/config-backup.ts` keeps the newest three. The copy just taken is protected by name rather than by timestamp: several backups written inside the same millisecond carry the same mtime, the sort between them is arbitrary, and pruning by time alone deleted the one the caller was about to need.
+
+The `yaml` library keeps degrading with a sentence someone can act on — `run 'nrv deps install yaml'` — rather than a resolution stack trace. The installer runs before the shared dependency store necessarily exists, so absence is a reachable state and not a programming error.
+
 ## 0.14.1 — 2026-09-20
 
 ### The orchestrator was surveying the library through a keyhole

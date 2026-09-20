@@ -2,7 +2,11 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { createRequire } from "node:module";
 
+import { backupConfig } from "./config-backup.ts";
+
 const requireCjs = createRequire(import.meta.url);
+// The one home every dependency lives in (AGENTS.md "Dependencies").
+const NIRVANA_HOME = process.env.NIRVANA_HOME || require("node:os").homedir() + "/.nirvana";
 type YamlDocument = any;
 type PublishOptions = {
   afterTemporaryWrite?: (temporary: string) => void;
@@ -10,8 +14,19 @@ type PublishOptions = {
   rename?: (from: string, to: string) => void;
 };
 
+/**
+ * The YAML library, or a refusal a reader can act on.
+ *
+ * The installer runs before the shared dependency store necessarily exists, so
+ * "module not found" is a reachable state and not a programming error. It used
+ * to print `'yaml' lib unavailable — skipped (run 'bun install')` and carry on;
+ * this keeps that sentence, because a generic resolution stack trace tells the
+ * person at the terminal nothing about what to type next.
+ */
 function yaml(): { parseDocument: (source: string) => YamlDocument } {
-  return requireCjs("yaml");
+  try { return requireCjs("yaml"); } catch { /* the shared store may not be linked yet */ }
+  try { return requireCjs(path.join(NIRVANA_HOME, "node_modules", "yaml")); } catch { /* nor installed */ }
+  throw new Error("the 'yaml' library is unavailable — run 'nrv deps install yaml', then re-run");
 }
 
 function yamlError(file: string, message: string): Error {
@@ -106,7 +121,7 @@ export function publishHermesYaml(file: string, raw: string, candidate: string, 
     if (!fs.existsSync(file) || fs.readFileSync(file, "utf8") !== raw) {
       throw new Error(`refusing to replace ${file}: it changed while the candidate was prepared`);
     }
-    fs.copyFileSync(file, `${file}.nirvana-backup.${nonce}`, fs.constants.COPYFILE_EXCL);
+    backupConfig(file, nonce);
     if (fs.readFileSync(file, "utf8") !== raw) {
       throw new Error(`refusing to replace ${file}: it changed while the backup was prepared`);
     }
@@ -148,7 +163,7 @@ export function publishHermesJson(file: string, raw: string | null, candidate: s
     JSON.parse(prepared);
     options.beforePublish?.();
     if (fs.existsSync(file) !== existed || (existed && fs.readFileSync(file, "utf8") !== raw)) throw new Error(`refusing to replace ${file}: it changed while the candidate was prepared`);
-    if (existed) fs.copyFileSync(file, `${file}.nirvana-backup.${nonce}`, fs.constants.COPYFILE_EXCL);
+    if (existed) backupConfig(file, nonce);
     if (fs.existsSync(file) !== existed || (existed && fs.readFileSync(file, "utf8") !== raw)) throw new Error(`refusing to replace ${file}: it changed while the backup was prepared`);
     (options.rename ?? fs.renameSync)(temporary, file);
     const published = fs.readFileSync(file, "utf8");

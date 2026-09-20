@@ -25,6 +25,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { isDeepStrictEqual } from "node:util";
+import { backupConfig } from "./config-backup.ts";
 
 export const CODEX_HOOK_EVENT_LABEL: Record<string, string> = {
   PreToolUse: "pre_tool_use",
@@ -185,7 +186,7 @@ function publishToml(configFile: string, existed: boolean, raw: string, next: st
     if (!sameToml(candidate, expected)) throw new Error(`refusing a TOML edit whose semantics exceed the requested hook trust update at ${configFile}`);
     const unchanged = fs.existsSync(configFile) === existed && (!existed || fs.readFileSync(configFile, "utf8") === raw);
     if (!unchanged) throw new Error(`refusing to replace ${configFile}: it changed while the candidate was prepared`);
-    if (existed) fs.copyFileSync(configFile, `${configFile}.nirvana-backup.${nonce}`, fs.constants.COPYFILE_EXCL);
+    if (existed) backupConfig(configFile, nonce);
     const stillUnchanged = fs.existsSync(configFile) === existed && (!existed || fs.readFileSync(configFile, "utf8") === raw);
     if (!stillUnchanged) throw new Error(`refusing to replace ${configFile}: it changed while the backup was prepared`);
     fs.renameSync(temp, configFile);
