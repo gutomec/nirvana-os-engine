@@ -17,6 +17,9 @@ o que ainda bloqueia.
 | Diretório de capability aceito | `["/Users/<user>/nirvana-spike/capabilities"]`, contendo só `nirvana/`, volta intacto no corpo da sessão. |
 | Tamanho da skill contra os tetos | 5 arquivos e 44 KB. Os tetos publicados são 500 arquivos por versão de skill e 25 MB descompactados. Folga de duas ordens de grandeza. |
 | Limite de diretórios | 32 por sessão. A `nirvana` é **uma** entrada, então um diretório basta. |
+| Executor conectado | `codex exec-server --remote … --environment-id …` com a chave de ambiente em `CODEX_API_KEY`: conecta e fica de pé. |
+| Descoberta da skill | O agente abriu dizendo que usou a skill `nirvana`, rodou `command -v nrv`, checou `NIRVANA_DISPATCH_DEPTH` e leu o `SKILL.md`. |
+| Turno de discovery | `nrv list-businesses` executado de verdade, 68 empresas com nomes e caminhos reais, nenhuma inventada. |
 | `agents/openai.yaml` | Embarca na skill desde a 0.13.10 e é instalado junto. Carrega `interface.display_name`, `short_description`, `default_prompt` e `policy.allow_implicit_invocation`. |
 
 ## O que ainda NÃO foi verificado
@@ -25,11 +28,9 @@ Nada abaixo foi observado. Não é "deve funcionar": é não medido.
 
 | Item | Por que não |
 |---|---|
-| Descoberta da skill pelo harness | O executor nunca conectou (ver o bloqueio). Sem ambiente conectado o agente não começa. |
-| Um turno de discovery (`nrv list-businesses`) | idem |
-| Um despacho com cadeia em `audit.jsonl` | idem |
-| Cold-start só com a skill fina | idem |
-| Se o Codex lê `agents/openai.yaml` sem aviso | idem |
+| Um despacho com cadeia em `audit.jsonl` | Tentado em 19/09/2026: o roteador falhou por herança de `CODEX_API_KEY` (ver a armadilha abaixo). O engine degradou para `agent-x` como devia. Não refeito com o ambiente corrigido. |
+| Cold-start só com a skill fina | Não tentado: nesta máquina o `nrv` já existia, então a seção 1 do SKILL.md seguiu adiante em vez de rodar o bootstrap. |
+| Se o Codex lê `agents/openai.yaml` sem aviso | Nenhum aviso apareceu nos dois turnos, o que é indício e não prova. |
 | Se a descoberta é recursiva abaixo do diretório registrado | A doc mostra um nível (`<capability_dir>/<skill>/SKILL.md`); mais fundo não foi testado. |
 
 ## O bloqueio, com precisão
@@ -124,6 +125,38 @@ POST /v1/agents/sessions/{session_id}/events
 O stream da sessão reporta `agent.session.environment.pending`, `.connected` e
 `.failed`. O agente só começa quando o ambiente está conectado **e** existe
 entrada do usuário.
+
+## A armadilha: a chave de ambiente não pode vazar para o trabalho
+
+Medido em 19/09/2026, e custa uma execução inteira quando acontece.
+
+O executor recebe a chave de ambiente em `CODEX_API_KEY`. Com
+`-c shell_environment_policy.inherit=all`, **tudo que nasce abaixo dele herda
+essa variável** — e o roteador agêntico do Nirvana-OS roda um `codex exec` como
+processo filho. Esse filho encontra `CODEX_API_KEY` no ambiente, usa a chave de
+ambiente para inferência, e a chave de ambiente por desenho tem todas as outras
+permissões em **None**:
+
+```
+⚠ agentic router failed (401 Unauthorized:
+  Missing scopes: api.responses.write, url: https://api.openai.com/v1/responses)
+```
+
+As duas pontas, isoladas:
+
+| Comando | Resultado |
+|---|---|
+| `CODEX_API_KEY=<chave de ambiente> codex exec` | `401` em `wss://api.openai.com/v1/responses` |
+| `env -u CODEX_API_KEY -u OPENAI_API_KEY codex exec` | roda normal, pela assinatura do ChatGPT |
+
+O sintoma engana: parece falta de escopo na chave de aplicação, e não é. A chave
+de aplicação está certa; o filho é que está usando a errada.
+
+Dê `CODEX_API_KEY` **apenas** ao processo do `exec-server` e limpe-a para os
+filhos, ou não herde o ambiente inteiro. E note o que isso implica para o
+despacho: o Nirvana-OS despacha para runtimes locais, então o que o agente da
+Agents API enxerga é o ambiente que VOCÊ montou para ele — a doutrina de
+`~/.nirvana` e a lista de ambiente do filho valem ali dentro igual.
 
 ## Uma correção ao plano original
 

@@ -18,6 +18,30 @@ Not verified, and named as such: discovery, a turn, a dispatch with an audit cha
 
 The page also corrects the plan it came from: the old success criterion was discovering four skills, and since 0.13.10 there is exactly one. `harness`, `squads`, `businesses` and `_shared` are engine internals and are never exposed to a runtime.
 
+## Unreleased
+
+### A brief the router half-understood was dispatched with confidence
+
+Measured on a full library (2026-09-19): `"me empresta vinte reais até sexta-feira"` — lend me twenty bucks till Friday — matched 3 of its 6 content tokens against a personal trainer's RETENTION CAMPAIGN capability and came out `HIGH`, normalized 1.000, lead 0.388. Not a near miss: a confident dispatch of a brief about borrowing money from a friend to a marketing squad.
+
+The coverage gate had bands for `matched <= 1` and `matched === 2`, both testing count and fraction together, and nothing above them. `matched = 3` cleared the count bands while half the brief stayed unexplained, so the fraction never got a say. The gate now applies the principle it already encoded, without the arbitrary ceiling on count: a winner that explains half of a brief or less returns `AMBIGUOUS`.
+
+Cost on legitimate work, measured before the change rather than hoped for afterwards: **zero**. Of 378 golden briefs that decide `HIGH`, none has a coverage fraction at or below 0.5, because a real brief matches essentially all of its own content tokens (golden fraction p5 = 1.00). On the negatives corpus, 3 of 5 confident dispatches become confirmations, including the only one in the `no_match` set — the false-dispatch rate, which the suite calls the safety axis, is back to zero. Probe briefs that should ask rather than answer went from 50.0% to 70.0% correct. `top1` holds at 98.3% and `top3` rose to 99.7%.
+
+### An absolute score floor, measured and rejected again
+
+The router's own note records a floor being rejected once. It was re-measured against the library as it stands and rejected again, and the numbers are now in the code so the next person does not have to redo them.
+
+Against the golden set alone the case looks closed: 800 sampled briefs bottom out at 19.8 with exactly one below 25, while the 40 negatives top out at 24.0. A clean gap — and a trap. Add the cross-language briefs and it shuts: `"criar um ebook sobre emagrecimento com copy persuasiva"` is entirely legitimate and scores 14.8, because a Portuguese brief against an English-declared squad scores low BY CONSTRUCTION. That is the condition the alias bridge exists to repair. Every scalar tried behaves the same way — per-token score, matched count, coverage fraction all put real cross-language briefs in the same band as nonsense. Any floor that catches the negatives abstains on the Portuguese user, which is most of them.
+
+So the fix above is a fraction band that only ever downgrades confidence, never abstains. Confirming costs a question; abstaining costs the work.
+
+### The OpenAI Agents API page now reports a spike that ran
+
+`docs/integrations/openai-agents-api.md` shipped with one verified line and a blocker. The blocker is cleared and the page says what happened: the executor connects, the harness discovers the `nirvana` skill, and a discovery turn ran `nrv list-businesses` and reported 68 real businesses with their paths, inventing none.
+
+It also documents the trap that cost the first dispatch attempt. The executor holds the environment key in `CODEX_API_KEY`, and with `shell_environment_policy.inherit=all` every child inherits it — including the `codex exec` the agentic router spawns, which then uses a key whose every other permission is `None`. The failure reads as a missing scope on the application key, and the application key is fine; the child is using the wrong one.
+
 ## 0.13.18 — 2026-09-18
 
 ### The complete delivery of a run, in one call

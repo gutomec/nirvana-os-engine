@@ -1236,6 +1236,36 @@ function stage3Decide(matches, opts) {
         thresholds: thr,
       };
     }
+    // The bands above stop at matched<=2, and the gap let a confident dispatch
+    // through: "me empresta vinte reais até sexta-feira" matched 3 of 6 tokens
+    // against a personal-trainer retention campaign and came out HIGH
+    // (normalized 1.000, lead 0.388) — a brief about borrowing money, dispatched
+    // with confidence. matched=3 cleared the count bands while HALF the brief
+    // stayed unexplained.
+    //
+    // The principle the earlier bands already encode is count AND fraction
+    // together; this is the same principle without the arbitrary ceiling on
+    // count. Half or less of a brief explained is a reason to CONFIRM, never a
+    // reason to dispatch — and never, by itself, a reason to abstain either,
+    // which is why this returns AMBIGUOUS and not NO_MATCH.
+    //
+    // Measured 2026-09-19 against the library as it stands. Cost on legitimate
+    // work: ZERO — of 378 golden briefs that decide HIGH, none has frac <= 0.5,
+    // because a real brief matches essentially all of its own content tokens
+    // (golden frac p5 = 1.00). Effect on the negatives corpus: 3 of the 5
+    // confident dispatches become confirmations, including the only one in the
+    // no_match set. The five bridge (cross-language) cases are untouched.
+    //
+    // `total >= 4` keeps very short briefs out: "escreva o ebook" is 2 tokens and
+    // is already governed by the bands above.
+    if (frac <= 0.5 && cov.total >= 4) {
+      return {
+        signal: 'AMBIGUOUS',
+        alternatives: exposeAlternatives(matches),
+        reason: `coverage: vencedor casa ${cov.matched} de ${cov.total} tokens de conteúdo (metade ou menos do brief) — confirmação necessária`,
+        thresholds: thr,
+      };
+    }
   }
 
   const lead = top.normalized - second.normalized;
