@@ -83,7 +83,20 @@ export interface TeamRunArgs {
   runHeadlessImpl?: typeof runHeadless;
 }
 
-export interface ChainStep { employee: string; task: string; }
+export interface ChainStep {
+  employee: string;
+  task: string;
+  /**
+   * The orchestrator's map for this seat, when it drew one.
+   *
+   * `mind_clone` is the voice this seat embodies for this task; `squad` is the
+   * specialist it writes an instruction for. `squad: null` is a decision — this
+   * seat delivers directly — and is not the same as the field being absent,
+   * which means no map was drawn and the seat falls back to choosing for itself.
+   */
+  mind_clone?: string | null;
+  squad?: string | null;
+}
 export interface StepResult {
   employee: string; ok: boolean; sessionId: string | null; costUsd: number | null;
   durationMs: number; outputsDir: string;

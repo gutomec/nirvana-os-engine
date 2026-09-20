@@ -8,6 +8,30 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Unreleased
 
+### O orquestrador desenha o mapa inteiro; a empresa executa
+
+Um assento recebia dois catálogos e a ordem de escolher. A biblioteca de mind-clones, com *"o clone é escolhido para a TAREFA, e a escolha é sua"*. Todos os squads instalados, com *"autorização aberta: todo squad do catálogo abaixo é permitido. Escolha o melhor para a sub-tarefa"*. E para achar um: `nrv list-squads`, `nrv find` e o `squad.yaml`.
+
+Isso punha a decisão que importa — quem de fato faz o trabalho — no ponto mais raso do sistema. O orquestrador, acima, já tinha lido agentes, tasks, workflows e DNA para escolher a empresa (fase 3, passada 2). O assento então redecidia por uma linha de manifesto e um ranking BM25. Dois decisores, e o mais profundo não era o que decidia.
+
+O orquestrador passa a decidir tudo — quais assentos trabalham, qual clone cada um incorpora, qual squad cada um instrui — e entrega isso como dado:
+
+```bash
+nrv team plan --business <slug> --brief <file> --project <dir> --outputs <dir> \
+              --assign .nirvana/<trace>-map.json --save .nirvana/<trace>-chain.json
+```
+
+```json
+[{"employee":"editor-chefe","task":"…","mind_clone":"akira-master","squad":"ebook-maestro-nirvana"},
+ {"employee":"revisor","task":"…","mind_clone":null,"squad":null}]
+```
+
+O `--assign` pula o diretor por completo: ele decide FORMATO a partir do organograma, e um mapa que já diz quem trabalha com o quê é decisão de outra natureza — que só o orquestrador pode tomar, porque só ele leu o brief, a biblioteca e o cliente juntos.
+
+**Com squad atribuído, o assento escreve a instrução e não executa.** A instrução é a entrega daquele assento, escrita como ele mesmo, na voz do seu clone, carregando o resultado esperado, as travas e como o trabalho será julgado — o julgamento pelo qual aquele assento existe, já que ele conhece este cliente e este padrão e o squad não. **Com `squad: null`, o assento entrega direto.** Isso é decisão, não omissão. Nenhum dos dois pode sair às compras: uma atribuição que não serve é mudança de plano que o assento reporta, nunca substituição que ele faz calado.
+
+Os catálogos sumiram dos dois, e junto tudo o que falava por eles: a regra dura que dizia *"prefira squads… veja AVAILABLE SQUADS abaixo"* passa a nomear a atribuição, e a seção de clone não abre mais com uma decisão que o assento não toma. Um passo sem nenhuma das duas chaves ainda recebe o caminho antigo de autosserviço — isso é compatibilidade, e é o caso degradado, não o desenho.
+
 ### Uma squad instalada sozinha deixou de fazer o próprio trabalho
 
 A banda de cobertura publicada na 0.13.19 rebaixava um despacho confiante sempre que o vencedor explicava metade ou menos do brief. Correto contra 223 squads competindo. Errado sozinho — e sozinho é o que vai para o cliente.
@@ -43,8 +67,6 @@ Verificado numa sessão real: o `POST /v1/agents/sessions` com o header `OpenAI-
 Não verificado, e nomeado como tal: descoberta, um turno, um despacho com cadeia de auditoria, cold-start. O executor nunca conectou. O `codex exec-server` exige o escopo `api.agents.environments.connect`, que uma chave de aplicação não carrega e não pode ganhar — o `/v1/agents/environment_keys` responde 404 e o caminho documentado `--use-agent-identity-auth` informa que a Agent Identity está indisponível. A chave sai do dashboard da plataforma, então a página nomeia esse passo em vez de fingir que a lacuna não existe.
 
 A página também corrige o plano de onde veio: o critério antigo era descobrir quatro skills, e desde a 0.13.10 existe exatamente uma. `harness`, `squads`, `businesses` e `_shared` são internos do engine e nunca são expostos a um runtime.
-
-## Unreleased
 
 ### Um brief que o roteador entendeu pela metade foi despachado com confiança
 

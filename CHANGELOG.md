@@ -8,6 +8,30 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### The orchestrator draws the whole map; the business executes it
+
+A seat was handed two catalogs and told to choose. The mind-clone library, with *"the clone is chosen for the TASK, and the choice is yours"*. Every installed squad, with *"Open authorization: every squad in the catalog below is permitted. Pick the best one for the sub-task"*. And to find one: `nrv list-squads`, `nrv find`, and `squad.yaml`.
+
+That put the decision that matters — who actually does the work — at the shallowest point in the system. The orchestrator upstream had already read agents, tasks, workflows and DNA to choose the business (Phase 3, Pass 2). The seat then re-decided from a manifest line and a BM25 ranking. Two deciders, and the deeper one was not the one deciding.
+
+The orchestrator now decides all of it — which seats work, which mind-clone each embodies, which squad each instructs — and hands it over as data:
+
+```bash
+nrv team plan --business <slug> --brief <file> --project <dir> --outputs <dir> \
+              --assign .nirvana/<trace>-map.json --save .nirvana/<trace>-chain.json
+```
+
+```json
+[{"employee":"editor-chefe","task":"…","mind_clone":"akira-master","squad":"ebook-maestro-nirvana"},
+ {"employee":"revisor","task":"…","mind_clone":null,"squad":null}]
+```
+
+`--assign` skips the director entirely: it decides SHAPE from the org chart, and a map that already names who works with what is a decision of a different kind — one only the orchestrator can make, because only it read the brief, the library and the client together.
+
+**With a squad assigned, the seat writes the instruction and does not execute.** The instruction is that seat's deliverable, authored as itself in its clone's voice, carrying the outcome, the guardrails and how the work will be judged — the judgement the seat exists for, since it knows this client and this standard and the squad does not. **With `squad: null`, the seat delivers directly.** That is a decision, not an omission. Neither case may shop: an assignment that does not fit is a plan change the seat reports, never a substitution it makes quietly.
+
+The catalogs are gone from both, and so is everything that spoke for them: the hard rule that said *"Prefer squads… see AVAILABLE SQUADS below"* now names the assignment, and the clone section no longer opens with a decision the seat does not make. A step carrying neither key still gets the old self-service path — that is back-compat, and it is the degraded case, not the design.
+
 ### A squad installed alone stopped doing its own work
 
 The coverage band shipped in 0.13.19 downgraded a confident dispatch whenever the winner explained half a brief or less. Correct against 223 competing squads. Wrong alone — and alone is what ships.
@@ -43,8 +67,6 @@ Verified on a real session: `POST /v1/agents/sessions` with `OpenAI-Beta: agents
 Not verified, and named as such: discovery, a turn, a dispatch with an audit chain, cold start. The executor never connected. `codex exec-server` needs the scope `api.agents.environments.connect`, which an application key does not carry and cannot be granted — `/v1/agents/environment_keys` is a 404 and the documented `--use-agent-identity-auth` path reports Agent Identity as unavailable. The key is minted in the platform dashboard, so the page names that step instead of pretending the gap is not there.
 
 The page also corrects the plan it came from: the old success criterion was discovering four skills, and since 0.13.10 there is exactly one. `harness`, `squads`, `businesses` and `_shared` are engine internals and are never exposed to a runtime.
-
-## Unreleased
 
 ### A brief the router half-understood was dispatched with confidence
 

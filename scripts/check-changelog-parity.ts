@@ -167,6 +167,27 @@ export function checkParity(dir: string = ROOT): ParityReport {
   const variants = localeFiles(dir);
   for (const f of variants) compare(primary, parseChangelog(readFileSync(join(dir, f), "utf8")), f, problems);
 
+  // ONE unreleased section per file.
+  //
+  // Stacked PRs each add their own, and nothing merged them: the cut then
+  // replaces the FIRST heading and leaves the rest orphaned BELOW the version
+  // it just wrote. It shipped that way three times before this guard existed —
+  // most recently 0.13.19, whose changelog named the docs work under the
+  // version heading while the router fix it actually carried sat under a stray
+  // "Unreleased" underneath. A reader looking up what a release contains finds
+  // half of it filed under a release that does not exist.
+  //
+  // The check is textual on purpose: it reads the same heading the cut reads,
+  // so it cannot disagree with the thing it is guarding.
+  for (const file of [PRIMARY, ...variants]) {
+    const p = join(dir, file);
+    if (!existsSync(p)) continue;
+    const n = readFileSync(p, "utf8").split("\n").filter((l) => /^##\s+Unreleased\s*$/.test(l)).length;
+    if (n > 1) {
+      problems.push(`${file}: ${n} "## Unreleased" sections — merge them into one before cutting, or the cut files the rest under the version it writes`);
+    }
+  }
+
   return {
     // No translation yet is a valid state: the gate guards drift, it does not
     // demand locales that were never promised.
