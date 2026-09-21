@@ -8,6 +8,92 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### A project reindex could blank the global mind-clone registry
+
+The clones indexer mirrors a project-scoped scan into the global registry when
+the scan covered the global library. It decided that with
+`resolve(roots[0]) === resolve(paths.DNA_LIBRARY)` — and in global mode `roots`
+IS `[paths.DNA_LIBRARY]`, so the comparison was true by construction. Worse,
+`DNA_LIBRARY` resolves through the PROJECT's `.env`, so a project pointing it at
+a local fixture scanned that fixture, passed the guard, and published it as the
+install's truth. An empty benchmark fixture took 617 mind-clones out of every
+listing until the file was restored from a snapshot.
+
+Nothing is ever deleted by this — the registry is a derived cache and the clones
+are files on disk — but for as long as it stands, `nrv list-clones` and every
+routing decision answer as if the library were empty.
+
+Two guards now, either of which stops it. A scan rooted inside the project never
+mirrors, compared on real paths (on macOS `/tmp` is a symlink to `/private/tmp`
+and `$TMPDIR` sits under `/private/var`, so one side arrives resolved and the
+other does not — that alone waved the fixture through in testing). And no write
+replaces a populated registry with an empty one, on either path, unless
+`--allow-empty` says that is the intent.
+
+### Two indexers running at once killed each other
+
+The squads registry staged its atomic write through `<target>.tmp` — one path,
+shared by every process. A cold start is exactly the case that breaks it:
+sibling children each reindex, the first rename moves the temp away, and every
+later rename finds nothing to move and throws
+`ENOENT: no such file or directory, rename '<target>.tmp' -> '<target>'`.
+Measured at 9 of 10 concurrent writers dying. `rename(2)` is atomic, so no
+registry was ever corrupted and no reader was ever at risk; what broke was every
+writer but one.
+
+The businesses registry had the same job done worse — a direct `writeFileSync`
+with no staging at all, which does leave a reader free to parse a half-written
+file. Both now stage through a name carrying the pid, like the spend tracker and
+the cooldown registry already did, and both clean up their staging file if the
+write fails.
+
+### Using the engine inside its own clone turned its purity gate red
+
+The gate has two halves. The run-artifact half asks git, so an untracked
+dispatch is correctly invisible to it. The entity-content half walks the disk,
+and the roots a run writes to were missing from its skip set — so a dispatch
+that produced a `squad.yaml` under `outputs/` failed the gate over files git
+will never accept. Both halves now ask the engine's own resolvers the same
+question. The skip applies at the repo root only, so a real
+`skills/**/outputs/` is still scanned.
+
+### score_boost is a no-op, and the indexer stopped handing it out by name
+
+`score_boost` multiplied a capability's match score in the BM25 path, and the
+capability declared its own. The indexer handed more of it out by reading the
+squad's NAME: `awwwards` → 2.0, `singularity`/`nirvana` → 1.5, and
+`master`/`elite`/`premium`/`cinematic`/`studio`/`forge` → 1.2. A brand prefix is
+not evidence that a capability answers a brief, and the effect was what you
+would predict — `nirvana-turismo`, a tourism squad, took rank 1 on "criar um
+ebook sobre emagrecimento com copy persuasiva" over a copywriting squad scoring
+14.79 to its 11.67.
+
+It had also stopped discriminating: 291 of 352 boosted capabilities carried the
+same 1.5, so it no longer lifted the curated few — it sank the 56% that never
+copied the field. And the floor clamped declared values BELOW 1 up to 1, so
+three authors who asked to be de-prioritised were overruled in silence.
+
+Every axis that reflects real work improved once it was gone, measured against
+4567 golden briefs on the full library: top-1 98.3% → 98.9%, business top-1
+93.1% → 95.3%, fabric@1 94.5% → 96.7%, probes 70% → 80%. The field stays in the
+schema so existing manifests keep validating; it simply buys nothing. Only the
+BM25 path ever read it — the agentic orchestrator, which is the default, reads
+each entity's slug and full description and decides.
+
+### The negatives axis is reported, not gated
+
+Nothing reaches the router that the orchestrator has not already read and
+understood as dispatchable work, and that orchestrator is the agent itself, not
+a script: it answers "what is two plus two" on its own and asks the user when a
+brief is unclear. The 30 hand-written negatives measure behaviour on inputs the
+architecture does not deliver, and defending against them costs the side that is
+real — both cases that reach a confident signal there carry high coverage (1.00
+and 0.80), so the only discriminator left is an absolute content-token floor,
+and "criar um ebook" has the same two tokens as "what is two plus two". The
+NO_MATCH share is likewise a tuning number on whatever library the machine
+holds, not on the population that ships. Both are now reported with floors that
+catch a collapse rather than ratchets that go red for library growth.
+
 ### A resumed Codex run died in the argument parser
 
 `codex exec` and `codex exec resume` accept different flags. Four the adapter

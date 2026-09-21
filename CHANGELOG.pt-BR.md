@@ -8,6 +8,94 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Unreleased
 
+### Reindexar num projeto podia zerar o registry global de mind-clones
+
+O indexador de clones espelha uma varredura de projeto no registry global quando
+a varredura cobriu a biblioteca global. Ele decidia isso com
+`resolve(roots[0]) === resolve(paths.DNA_LIBRARY)` — e em escopo global `roots`
+É `[paths.DNA_LIBRARY]`, então a comparação era verdadeira por construção. Pior:
+`DNA_LIBRARY` resolve pelo `.env` DO PROJETO, então um projeto apontando para
+uma fixture local varria a fixture, passava pela guarda e a publicava como
+verdade da instalação. Uma fixture vazia de benchmark tirou 617 mind-clones de
+toda listagem até o arquivo ser restaurado de um snapshot.
+
+Nada é apagado por isso — o registry é cache derivado e os clones são arquivos
+em disco —, mas enquanto durar, `nrv list-clones` e toda decisão de roteamento
+respondem como se a biblioteca estivesse vazia.
+
+Agora são duas guardas, e qualquer uma sozinha impede. Varredura com raiz dentro
+do projeto nunca espelha, comparando caminhos reais (no macOS `/tmp` é symlink
+para `/private/tmp` e o `$TMPDIR` fica sob `/private/var`, então um lado chega
+resolvido e o outro não — só isso já deixou a fixture passar no teste). E
+nenhuma escrita substitui um registry populado por um vazio, em nenhum dos dois
+caminhos, a menos que `--allow-empty` diga que é essa a intenção.
+
+### Dois indexadores ao mesmo tempo se matavam
+
+O registry de squads fazia a escrita atômica passando por `<alvo>.tmp` — um
+caminho só, compartilhado por todo processo. Um cold start é exatamente o caso
+que quebra: filhos irmãos reindexam, o primeiro rename leva o temp embora, e
+todo rename seguinte não acha o que mover e lança
+`ENOENT: no such file or directory, rename '<alvo>.tmp' -> '<alvo>'`.
+Medido em 9 de 10 escritores concorrentes morrendo. O `rename(2)` é atômico,
+então nenhum registry foi corrompido e nenhum leitor correu risco; o que quebrou
+foi todo escritor menos um.
+
+O registry de empresas fazia o mesmo trabalho pior — `writeFileSync` direto, sem
+staging nenhum, o que de fato deixa um leitor livre para ler arquivo pela
+metade. Os dois agora passam por um nome que carrega o pid, como o spend tracker
+e o cooldown registry já faziam, e os dois limpam o arquivo de staging se a
+escrita falhar.
+
+### Usar o engine dentro do próprio clone deixava o gate de pureza vermelho
+
+O gate tem duas metades. A de artefatos de run pergunta ao git, então um
+dispatch não rastreado é corretamente invisível para ela. A de conteúdo de
+entidade varre o disco, e as raízes onde um run escreve faltavam no conjunto de
+skip — então um dispatch que produziu um `squad.yaml` dentro de `outputs/`
+reprovava o gate por arquivos que o git nunca vai aceitar. As duas metades agora
+fazem a mesma pergunta aos resolvedores do próprio engine. O skip vale só na
+raiz do repositório, então um `skills/**/outputs/` de verdade continua varrido.
+
+### score_boost não faz mais nada, e o indexador parou de distribuí-lo por nome
+
+O `score_boost` multiplicava o score de match de uma capability no caminho BM25,
+e a própria capability declarava o dela. O indexador distribuía mais lendo o
+NOME do squad: `awwwards` → 2,0, `singularity`/`nirvana` → 1,5 e
+`master`/`elite`/`premium`/`cinematic`/`studio`/`forge` → 1,2. Prefixo de marca
+não é evidência de que uma capability responde a um brief, e o efeito foi o
+previsível — `nirvana-turismo`, um squad de turismo, ficou em primeiro lugar em
+"criar um ebook sobre emagrecimento com copy persuasiva", à frente de um squad
+de copywriting que pontuava 14,79 contra os 11,67 dele.
+
+Ele também havia parado de discriminar: 291 das 352 capabilities com boost
+carregavam o mesmo 1,5, então ele não elevava mais os poucos curados — afundava
+os 56% que nunca copiaram o campo. E o piso clampava para cima os valores
+declarados ABAIXO de 1, de modo que três autores que pediram menos prioridade
+foram sobrepostos em silêncio.
+
+Todo eixo que reflete trabalho real melhorou depois que ele saiu, medido contra
+4567 briefs dourados na biblioteca cheia: top-1 98,3% → 98,9%, business top-1
+93,1% → 95,3%, fabric@1 94,5% → 96,7%, probes 70% → 80%. O campo continua no
+schema para que manifestos existentes sigam validando; ele simplesmente não
+compra nada. Só o caminho BM25 lia isso — o orquestrador agêntico, que é o
+padrão, lê o slug e a descrição completa de cada entidade e decide.
+
+### O eixo de negativos passa a ser reportado, não portão
+
+Nada chega ao roteador que o orquestrador já não tenha lido e entendido como
+trabalho despachável, e esse orquestrador é o próprio agente, não um script: ele
+responde "quanto é dois mais dois" sozinho e pergunta ao usuário quando um brief
+está obscuro. Os 30 negativos escritos à mão medem comportamento sobre entradas
+que a arquitetura não entrega, e defender contra elas cobra do lado que é real —
+os dois casos que lá chegam a sinal confiante têm cobertura alta (1,00 e 0,80),
+então o único discriminador restante é um piso absoluto de tokens de conteúdo, e
+"criar um ebook" tem os mesmos dois tokens de "what is two plus two". A fatia de
+NO_MATCH é igualmente um número de afinação sobre a biblioteca que a máquina
+tiver, não sobre a população que embarca. Os dois agora são reportados, com
+pisos que pegam colapso em vez de catracas que ficam vermelhas por crescimento
+da biblioteca.
+
 ### Retomada de sessão no Codex morria no parser de argumentos
 
 `codex exec` e `codex exec resume` aceitam flags diferentes. Quatro das que o

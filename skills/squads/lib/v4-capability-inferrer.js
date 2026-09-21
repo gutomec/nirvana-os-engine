@@ -27,33 +27,6 @@
 const fs = require('fs');
 const path = require('path');
 
-// Premium-marker keywords (case-insensitive substring).
-//
-// ELITE markers (boost 2.0): squads with proven external track record.
-// `awwwards` alone — squads named after the Awwwards.com curation site
-// signal "production-grade premium web experience" tier. They MUST win
-// over project-internal "premium" peers in BM25 ties.
-//
-// TOP markers (boost 1.5): project-internal premium signaling.
-// `nirvana, singularity` — these are project naming conventions for
-// elevated quality, but should not outweigh ELITE in tie-breaking.
-//
-// REGULAR markers (boost 1.2): quality-signaling but not elite.
-const ELITE_PREMIUM_MARKERS = [
-  'awwwards',
-];
-const TOP_PREMIUM_MARKERS = [
-  'singularity', 'nirvana',
-];
-const REGULAR_PREMIUM_MARKERS = [
-  'master', 'elite', 'premium', 'cinematic', 'studio', 'forge',
-];
-const PREMIUM_MARKERS = [
-  ...ELITE_PREMIUM_MARKERS,
-  ...TOP_PREMIUM_MARKERS,
-  ...REGULAR_PREMIUM_MARKERS,
-];
-
 // Heuristic mapping squad/workflow name keywords → canonical catalog domain.
 // Catalog reference: ~/.nirvana/skills/_shared/catalogs/CAPABILITY_CATALOG_V1.yaml
 const KEYWORD_DOMAINS = [
@@ -147,17 +120,25 @@ function inferDomains(squadName, workflowName) {
 }
 
 /**
- * Detects premium-marker presence in squad name → returns score_boost.
- * ELITE (awwwards) → 2.0
- * TOP (singularity/nirvana) → 1.5
- * REGULAR (master/elite/premium/cinematic/studio/forge) → 1.2
- * Otherwise → 1.0
+ * Always 1.0. A squad does not rank better for what it is CALLED.
+ *
+ * This used to read the name for marketing words and hand out a permanent
+ * ranking multiplier: `awwwards` → 2.0, `singularity`/`nirvana` → 1.5,
+ * `master`/`elite`/`premium`/`cinematic`/`studio`/`forge` → 1.2. A brand prefix
+ * is not evidence that a capability answers a brief, and the effect was exactly
+ * what you would predict: `nirvana-turismo`, a tourism squad, took rank 1 on
+ * "criar um ebook sobre emagrecimento com copy persuasiva" over a copywriting
+ * squad that scored 14.79 to its 11.67.
+ *
+ * It also stopped discriminating long ago. 291 of 352 boosted capabilities in
+ * the owner's library carried the same 1.5, so the boost had inverted: it no
+ * longer lifted the curated few, it sank the 56% that never copied the field.
+ *
+ * The owner's decision (2026-09-21) is that every score_boost is 1. The field
+ * stays in the schema so existing manifests keep validating, and the router
+ * clamps it to a no-op, so a manifest cannot buy rank by declaring one either.
  */
-function inferScoreBoost(squadName) {
-  const lc = (squadName || '').toLowerCase();
-  if (ELITE_PREMIUM_MARKERS.some((m) => lc.includes(m))) return 2.0;
-  if (TOP_PREMIUM_MARKERS.some((m) => lc.includes(m))) return 1.5;
-  if (REGULAR_PREMIUM_MARKERS.some((m) => lc.includes(m))) return 1.2;
+function inferScoreBoost() {
   return 1.0;
 }
 
@@ -240,7 +221,7 @@ function inferCapabilities(manifest, manifestDir) {
   const components = manifest.components || {};
   const workflows = Array.isArray(components.workflows) ? components.workflows : [];
 
-  const scoreBoost = inferScoreBoost(squadName);
+  const scoreBoost = inferScoreBoost();
   const inferred = [];
 
   // Strategy A: 1 capability per workflow file.

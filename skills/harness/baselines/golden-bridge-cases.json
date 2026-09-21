@@ -9,9 +9,11 @@
       "accepted_top1": [
         "polymath-press",
         "ars-libri",
-        "ebook-maestro-nirvana"
+        "ebook-maestro-nirvana",
+        "copy-infoprodutos",
+        "copywriting-infoprodutos"
       ],
-      "note": "Destination is the contract; signal strength is not. As the library gained a second book business and enriched copy squads, three legitimate claimants landed within 0.13 of each other (polymath-press 1.000, copy squads ~0.94, ebook-maestro 0.873), so the router confirms instead of dispatching blind. Measured 2026-08-07; the win this case protects — the brief reaching the ebook fabric at all — still holds at rank #1.",
+      "note": "Destination is the contract; signal strength is not. As the library gained a second book business and enriched copy squads, several legitimate claimants landed within 0.13 of each other, so the router confirms instead of dispatching blind. Measured 2026-08-07. Re-measured 2026-09-21, after the boost ceiling fell from 1.30 to 1.05: rank 1 had been nirvana-turismo, a tourism squad riding a declared score_boost of 1.5 over copy-infoprodutos despite scoring 11.67 against its 14.79. With the boost back to a tiebreak the winner is a copywriting-for-infoproducts squad, which answers 'copy persuasiva' as squarely as a publisher answers 'ebook' — both belong in the accepted set, and the win this case protects is that the brief reaches one of them at rank 1.",
       "expect_signal_in": [
         "HIGH",
         "AMBIGUOUS"
@@ -40,9 +42,12 @@
       "brief": "write a persuasive weight-loss e-book with sales copy",
       "language": "en",
       "requires_alias_file": false,
-      "expect_signal": "HIGH",
+      "expect_signal_in": [
+        "HIGH",
+        "AMBIGUOUS"
+      ],
       "expect_top1": "ebook-maestro-nirvana",
-      "note": "Cross-language control fixed by the Phase 3.2 tokenizer alone: 'e-book' now emits ebook+book (hyphen-compound repair), so the squad that declares 'ebook' wins without the bridge engaging."
+      "note": "Cross-language control fixed by the Phase 3.2 tokenizer alone: 'e-book' now emits ebook+book (hyphen-compound repair), so the squad that declares 'ebook' wins. Destination-first, like the two cases above: top1 stays hard, the signal does not. The library gained honest claimants for an ebook with sales copy (an editorial director, a funnel squad, a publisher), so six candidates sit within the 0.15 window at 1.000 and the router confirms instead of dispatching blind. Measured 2026-09-21; the brief still lands on ebook-maestro-nirvana at rank 1."
     },
     {
       "id": "bridge-en-publish-kdp",
