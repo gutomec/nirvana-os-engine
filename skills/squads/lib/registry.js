@@ -369,22 +369,13 @@ function write(registry, registryPath) {
   // EEXIST tolerated: on Windows Bun may throw it even with recursive:true.
   try { fs.mkdirSync(parent, { recursive: true }); }
   catch (e) { if (e && e.code !== 'EEXIST') throw e; }
-  // Unique per write, not `target + '.tmp'`. Two indexers running at once —
-  // which is the normal shape of a cold start, where sibling children each
-  // reindex — shared that one path: the first rename moved it, the second
-  // found nothing to move and threw
-  // `ENOENT: no such file or directory, rename '<target>.tmp' -> '<target>'`.
-  // Measured at 9 of 10 concurrent writers dying. rename(2) itself is atomic,
-  // so a READER was never at risk; what broke was every writer but one.
-  // Same form as spend-tracker and cooldown-registry.
-  const tmp = `${target}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
-  try {
-    fs.writeFileSync(tmp, JSON.stringify(registry, null, 2), 'utf8');
-    fs.renameSync(tmp, target);
-  } catch (e) {
-    try { fs.rmSync(tmp, { force: true }); } catch { /* best effort */ }
-    throw e;
-  }
+  // One implementation, shared with the businesses and clones registries:
+  // unique staging plus a rename that retries a Windows sharing violation.
+  // This used to be `target + '.tmp'` — one path for every process, so the
+  // first rename moved it and the rest threw ENOENT. 9 of 10 concurrent
+  // writers died; on Windows, unique names alone still lost 5 of 10.
+  require('../../_shared/lib/atomic-write.js')
+    .writeFileAtomic(target, JSON.stringify(registry, null, 2));
   return target;
 }
 

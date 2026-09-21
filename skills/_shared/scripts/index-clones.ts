@@ -20,6 +20,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { paths, parseArgs, EXIT } from "../lib/bun-helpers.ts";
 import { resolveScope } from "../lib/scope.ts";
+import { writeFileAtomic } from "../lib/atomic-write.js";
 
 const YAML = require("yaml");
 
@@ -239,10 +240,9 @@ function existingCount(p: string): number {
  * makes the whole library invisible. A stale index is the lesser harm. When
  * emptying IS the intent, `--allow-empty` says so out loud.
  *
- * The temp name carries a random suffix as well as the pid: `nrv index` runs
- * concurrently from sibling children on a cold start, and two processes that
- * recycle a pid (or run in containers that share one) would otherwise collide
- * on the same temp path and hand each other a half-written file.
+ * Staging and the rename itself live in _shared/lib/atomic-write.js, shared
+ * with the squads and businesses registries, which each had their own answer
+ * and two of them were wrong.
  */
 function writeRegistry(target: string, label: string): boolean {
   const had = existingCount(target);
@@ -253,15 +253,7 @@ function writeRegistry(target: string, label: string): boolean {
     console.error(`[index-clones]   if emptying is intended, rerun with --allow-empty.`);
     return false;
   }
-  const tmp = `${target}.${process.pid}.${Math.random().toString(36).slice(2, 10)}.tmp`;
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  try {
-    fs.writeFileSync(tmp, JSON.stringify(out, null, 1));
-    fs.renameSync(tmp, target);
-  } catch (e) {
-    try { fs.rmSync(tmp, { force: true }); } catch { /* best effort */ }
-    throw e;
-  }
+  writeFileAtomic(target, JSON.stringify(out, null, 1));
   return true;
 }
 
@@ -285,22 +277,40 @@ writeRegistry(registryPath, "the project registry");
 // carries is the project's, whatever a variable calls it, and it never speaks
 // for the install.
 const globalRegistryPath = path.join(os.homedir(), ".nirvana", ".mind-clones-registry.json");
-// Containment is compared on REAL paths. One side of this arrives resolved and
-// the other does not: on macOS /tmp is a symlink to /private/tmp and $TMPDIR
-// lives under /private/var, so a fixture reached as /tmp/p/dna and a project
-// root recorded as /private/tmp/p look unrelated to path.relative — and the
-// guard waves through exactly the case it exists to stop.
+// Does the PROJECT relocate the clone library? That is the whole attack
+// surface, and naming it directly beats measuring it. `paths.DNA_LIBRARY`
+// resolves through `cfg()`, which reads the project's .env, so a project that
+// declares DNA_LIBRARY (or moves NIRVANA_HOME under it) is describing ITS
+// library, never the install's — and must not publish it as the global truth.
+//
+// This replaced a path-containment test, which was right in principle and kept
+// losing to the filesystem. On macOS /tmp is a symlink to /private/tmp and
+// $TMPDIR sits under /private/var, so one side arrived resolved and the other
+// did not; on Windows the same comparison met 8.3 short names
+// (C:\Users\RUNNER~1) against their long form. Both waved the fixture through.
+// Containment is kept below as a second net, now case-folded, but the decision
+// no longer rests on it.
+const projectEnvRelocatesLibrary = (): boolean => {
+  if (!scope.projectRoot) return false;
+  try {
+    const env = fs.readFileSync(path.join(scope.projectRoot, ".env"), "utf8");
+    return /^\s*(?:export\s+)?(?:DNA_LIBRARY|NIRVANA_HOME)\s*=/m.test(env);
+  } catch { return false; }
+};
+
 const real = (p: string): string => {
   try { return fs.realpathSync(path.resolve(p)); } catch { return path.resolve(p); }
 };
 const insideProject = (dir: string): boolean => {
   if (!scope.projectRoot) return false;
-  const rel = path.relative(real(scope.projectRoot), real(dir));
+  const fold = (x: string) => (process.platform === "win32" ? x.toLowerCase() : x);
+  const rel = path.relative(fold(real(scope.projectRoot)), fold(real(dir)));
   return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
 };
 const scannedOnlyGlobalLibrary =
   roots.length === 1
   && path.resolve(roots[0]) === path.resolve(paths.DNA_LIBRARY)
+  && !projectEnvRelocatesLibrary()
   && !insideProject(roots[0]);
 if (registryPath !== globalRegistryPath && scannedOnlyGlobalLibrary) {
   if (writeRegistry(globalRegistryPath, "the global registry") && !quiet) {

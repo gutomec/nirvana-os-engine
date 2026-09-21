@@ -82,20 +82,33 @@ describe("concurrent indexers do not kill each other", () => {
     expect(fs.readdirSync(dir).filter((f) => f.includes(".tmp"))).toEqual([]);
   });
 
-  test("the staging name carries the process, so two of them cannot collide", () => {
-    // Asserted on the source: after a SUCCESSFUL write the temp is gone either
-    // way, so no filesystem check can tell a shared name from a private one.
-    // The shared name is the whole defect, so it is the thing to pin.
-    const src = fs.readFileSync(SQUADS_REGISTRY, "utf8");
-    expect(src).not.toMatch(/const tmp = target \+ '\.tmp';/);
-    expect(src).toMatch(/const tmp = `\$\{target\}\.\$\{process\.pid\}\./);
+  test("two staging names never collide, which is the whole defect", async () => {
+    // After a SUCCESSFUL write the staging file is gone either way, so no
+    // filesystem check can tell a shared name from a private one. The helper
+    // exports the name, so the property is asserted where it lives.
+    const { stagingPathFor } = await import("../../_shared/lib/atomic-write.js");
+    const target = path.join(tmpDir(), "reg.json");
+    const names = new Set(Array.from({ length: 200 }, () => stagingPathFor(target)));
+    expect(names.size).toBe(200);
+    for (const n of names) {
+      expect(path.dirname(n)).toBe(path.dirname(target));   // same filesystem, so rename is atomic
+      expect(n).not.toBe(`${target}.tmp`);                   // the name every process shared
+    }
   });
 
-  test("the businesses twin stages through a temp file at all", () => {
-    // It wrote straight onto the target, so a reader could parse a partial
-    // registry. Asserted on the source because the writer is not exported.
-    const src = fs.readFileSync(BUSINESSES_REGISTRY, "utf8");
-    expect(src).toContain("fs.renameSync(tmp, out)");
-    expect(src).not.toMatch(/fs\.writeFileSync\(out,/);
+  test("both registries stage through the shared writer, not their own copy", () => {
+    // Three registries had three different answers and two were wrong. The
+    // squads one shared `<target>.tmp` across processes; the businesses one
+    // wrote straight onto the target, leaving a reader free to parse a
+    // half-written file.
+    const squads = fs.readFileSync(SQUADS_REGISTRY, "utf8");
+    expect(squads).toContain("writeFileAtomic(target");
+    // The assignment, not the prose: the comment above the call names the old
+    // shared path on purpose, and a text search cannot tell the two apart.
+    expect(squads).not.toMatch(/const tmp = target \+ '\.tmp'/);
+
+    const businesses = fs.readFileSync(BUSINESSES_REGISTRY, "utf8");
+    expect(businesses).toContain("writeFileAtomic(out");
+    expect(businesses).not.toMatch(/fs\.writeFileSync\(out,/);
   });
 });

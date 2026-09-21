@@ -43,9 +43,13 @@ foi todo escritor menos um.
 
 O registry de empresas fazia o mesmo trabalho pior — `writeFileSync` direto, sem
 staging nenhum, o que de fato deixa um leitor livre para ler arquivo pela
-metade. Os dois agora passam por um nome que carrega o pid, como o spend tracker
-e o cooldown registry já faziam, e os dois limpam o arquivo de staging se a
-escrita falhar.
+metade. Os três agora compartilham um escritor só, `_shared/lib/atomic-write.js`, que
+faz staging num nome com o pid e um sufixo aleatório e repete o rename diante de
+uma violação de compartilhamento do Windows. Nome único sozinho não bastava lá:
+o Windows recusa renomear sobre um arquivo que outro processo tem aberto, e 5 de
+10 escritores ainda morriam no windows-latest até o retry entrar. É um módulo
+`.js` de propósito — `require()` de um `.ts` a partir de um `.js` lança no
+Windows, e o repo já barra esse formato.
 
 ### Usar o engine dentro do próprio clone deixava o gate de pureza vermelho
 

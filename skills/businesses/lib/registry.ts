@@ -21,6 +21,7 @@ import { loadBusiness, ValidationError } from "./loader.ts";
 import { RegistryBusinessesSchema } from "../../_shared/validators/validators.ts";
 import { LIMITS } from "../../_shared/validators/limits.ts";
 import { paths, ensureDir } from "../../_shared/lib/bun-helpers.ts";
+import { writeFileAtomic } from "../../_shared/lib/atomic-write.js";
 
 const DEFAULT_REGISTRY_PATH = paths.BUSINESSES_REGISTRY_PATH;
 const DEFAULT_ROOTS = [paths.BUSINESSES_DIR];
@@ -249,19 +250,9 @@ function writeRegistry(registry: Record<string, any>, outPath: string): string {
       "Registry resultante inválido: " + parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
     );
   }
-  // Atomic, and unique per write. A direct writeFileSync leaves a reader free
-  // to parse a half-written registry; a shared temp name makes concurrent
-  // indexers kill each other on rename (measured on the squads twin: 9 of 10
-  // died with ENOENT). rename(2) is atomic within a filesystem, so the reader
-  // sees the whole old file or the whole new one.
-  const tmp = `${out}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
-  try {
-    fs.writeFileSync(tmp, JSON.stringify(registry, null, 2), "utf8");
-    fs.renameSync(tmp, out);
-  } catch (e) {
-    try { fs.rmSync(tmp, { force: true }); } catch { /* best effort */ }
-    throw e;
-  }
+  // Shared with the squads and clones registries. This wrote straight onto
+  // the target, so a reader could parse a half-written registry.
+  writeFileAtomic(out, JSON.stringify(registry, null, 2));
   return out;
 }
 

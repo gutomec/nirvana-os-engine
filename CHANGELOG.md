@@ -43,9 +43,13 @@ writer but one.
 
 The businesses registry had the same job done worse — a direct `writeFileSync`
 with no staging at all, which does leave a reader free to parse a half-written
-file. Both now stage through a name carrying the pid, like the spend tracker and
-the cooldown registry already did, and both clean up their staging file if the
-write fails.
+file. All three now share one writer, `_shared/lib/atomic-write.js`, which stages
+through a name carrying the pid and a random suffix and retries the rename on a
+Windows sharing violation. Unique names alone were not enough there: Windows
+refuses to rename over a file another process holds open, and 5 of 10 writers
+still died on windows-latest until the retry went in. It is a `.js` module on
+purpose — `require()` of a `.ts` file from a `.js` file throws on Windows, and
+the repo already gates that shape.
 
 ### Using the engine inside its own clone turned its purity gate red
 
