@@ -21,6 +21,7 @@ import { spawnSync } from "node:child_process";
 import { homedir, hostname, platform, arch, tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { createHash } from "node:crypto";
+import { decideLicenseRefresh } from "../lib/license-refresh.ts";
 
 const HOME = homedir();
 const SKILLS = process.env.NIRVANA_SKILLS_DIR
@@ -204,16 +205,36 @@ async function main(): Promise<number> {
   // could run this command at all (from the pack folder, say) still had to go
   // find `nrv license install` on their own.
   //
+  // It used to write unconditionally, and that was destructive. The store holds
+  // ONE file, so updating any single pack replaced whatever license was there
+  // with the edition of that pack: a buyer whose license was a bundle ran
+  // `nrv update <one vertical>` and came out holding a license for that vertical
+  // alone. Every other pack then answered `pack_mismatch` to every later update,
+  // and the packs they had paid for stopped being updatable — the failure lands
+  // on the next command, far from the one that caused it. So the repair is
+  // scoped to what the comment above always meant: a missing, stale or older
+  // license OF THE SAME EDITION. A different edition is never overwritten in
+  // silence; it is reported, with the command that switches deliberately.
+  //
   // Best-effort: the content is already installed and correct by this point.
   const freshProv = [join(content, "PROVENANCE.json"), join(dirname(content), "PROVENANCE.json")]
     .find((p) => existsSync(p));
   if (freshProv) {
     const licDir = join(HOME, ".nirvana-license");
+    const licPath = join(licDir, "PROVENANCE.json");
     try {
       mkdirSync(licDir, { recursive: true });
-      copyFileSync(freshProv, join(licDir, "PROVENANCE.json"));
-      const notice = join(dirname(freshProv), "LICENSE.txt");
-      if (existsSync(notice)) copyFileSync(notice, join(licDir, "LICENSE.txt"));
+      const incoming = JSON.parse(readFileSync(freshProv, "utf8")) as Record<string, unknown>;
+      const decision = decideLicenseRefresh(licPath, incoming);
+      if (decision.refresh) {
+        copyFileSync(freshProv, licPath);
+        const notice = join(dirname(freshProv), "LICENSE.txt");
+        if (existsSync(notice)) copyFileSync(notice, join(licDir, "LICENSE.txt"));
+        console.log(`  ${DIM}license refreshed: ${decision.reason}${RST}`);
+      } else {
+        console.log(`  ${DIM}license kept: ${decision.reason}${RST}`);
+        console.log(`  ${DIM}This pack updated fine; the license on this machine was not touched.${RST}`);
+      }
     } catch (e) {
       console.log(`  ${YEL}could not refresh the license at ${licDir}: ${(e as Error).message}${RST}`);
       console.log(`  ${DIM}The content updated fine. Run 'nrv license install' when the permission is sorted.${RST}`);

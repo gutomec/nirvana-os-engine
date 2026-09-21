@@ -384,6 +384,10 @@ The `secret-leak` rubric runs on every text artifact the gate judges. If the art
 
 `nrv init` merges `permissions.deny: ["Read(./.env)", "Read(./.env.*)", "Read(./**/.env)", "Read(./**/.env.*)"]` into `<project>/.claude/settings.json`, keeping what the project already had, never duplicating a rule and leaving an invalid file alone with a warning. A first layer, not the guarantee: file ownership and a separate uid are, and the new page `docs/architecture/serve-hardening.md` says how to run `nrv serve` on a server so the project's `.env` is out of the agent's reach, with a systemd unit as example.
 
+### Updating one pack never replaces the license with a narrower one
+
+`nrv update <pack>` refreshed the license store from the `PROVENANCE.json` inside the downloaded zip — the right repair for a store that is missing, stale or from an older purchase — but it wrote unconditionally, and the store holds ONE file. A buyer whose license was the Genesis Circle bundle ran `nrv update commerce-backoffice`: the content updated correctly, and the license on the machine became commerce-backoffice. Every other pack then answered `pack_mismatch` to every later update, so the packs that buyer had paid for stopped being updatable, and the failure appeared on the *next* command instead of the one that caused it. The refresh is now scoped to what it always meant: a missing, unreadable or keyless license is replaced, the same edition at a newer version is repaired, and a different edition is left untouched and reported with the command that switches deliberately (`nrv license install <folder>`). An update can repair the license or leave it alone — never narrow it.
+
 ## 0.13.13 — 2026-09-16
 
 ### A squad runs on the runtime the user is working in
