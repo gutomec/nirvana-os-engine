@@ -570,7 +570,12 @@ describe("codex — flags audited against 0.153.4, usage and notices", () => {
     expect(args).toContain('web_search="live"');
     runWith("codex", { ephemeral: true, sessionId: "t1" });
     args = capturedArgs("codex");
-    expect(args.slice(0, 3)).toEqual(["exec", "resume", "t1"]);
+    // `resume <id>` follows the exec parent and whatever parent-only flags the
+    // run needs (-C, --add-dir, --approve-for-me), which is the only order the
+    // CLI accepts — see codex-resume-arg-placement.test.ts.
+    expect(args[0]).toBe("exec");
+    expect(args[args.indexOf("resume") + 1]).toBe("t1");
+    expect(args.indexOf("-C")).toBeLessThan(args.indexOf("resume"));
     expect(args).not.toContain("--ephemeral");
   }, spawnBudgetMs(3));
 
