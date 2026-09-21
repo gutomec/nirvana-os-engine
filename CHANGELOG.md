@@ -6,7 +6,19 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
-## Unreleased
+## 0.14.4 — 2026-09-21
+
+### Updating one pack never replaces the license with a narrower one
+
+`nrv update <pack>` refreshed the license store from the `PROVENANCE.json` inside the downloaded zip — the right repair for a store that is missing, stale or from an older purchase — but it wrote unconditionally, and the store holds ONE file. A buyer whose license was the Genesis Circle bundle ran `nrv update commerce-backoffice`: the content updated correctly, and the license on the machine became commerce-backoffice. Every other pack then answered `pack_mismatch` to every later update, so the packs that buyer had paid for stopped being updatable, and the failure appeared on the *next* command instead of the one that caused it. The refresh is now scoped to what it always meant: a missing, unreadable or keyless license is replaced, the same edition at a newer version is repaired, and a different edition is left untouched and reported with the command that switches deliberately (`nrv license install <folder>`). An update can repair the license or leave it alone — never narrow it.
+
+### A linked dependency tree no longer breaks an update on Windows
+
+`nrv deps link` (Rule 12) makes a component's `node_modules` a junction onto the shared store in `~/.nirvana`. Three passes in `install-content.ts` walked through it instead of past it: the component hash folded the whole store in, so a squad nobody had touched read as "changed on disk" on every update; `mirror`'s deletion pass listed the store's files as candidates; and the pre-overlay backup recreated the link, which on Windows needs a privilege most buyers do not have. The `EPERM` ended the overlay with a raw Bun stack trace *after* the pack had already been downloaded, so `nrv update` failed for any pack carrying such a squad — genesis-circle 0.1.88 and game-development 0.1.3 both aborted that way on 0.13.13, leaving the packs un-updated. Content discovery now lives in `skills/_shared/lib/walk-files.ts`, judges with `lstatSync` and never descends into a link; the backup skips linked paths and names what it skipped, so a backup is never silently incomplete. Verified against the case that produced it: both packs updated with the fix in place.
+
+### No child process opens a console window on Windows
+
+A guard was applied to the sweep chain when the windows were first reported, but it lived in the installed tree: the next `nrv update` replaced the tree and they came back. `windowsHide: true` is now on **every** spawn in the engine — 117 call sites across 48 files, including the single place every runtime adapter passes through (`driverSpawnSync`, which builds its options object once for sixteen callers). On Windows a process without its own console makes Windows allocate a NEW VISIBLE console for each child it spawns, and `stdio: "ignore"` does not prevent it. The sweep runs detached on every `nrv` command, so each link in the chain — supervisor, revise, quality-gate, verify-deliverable — plus the powershell probes of the run ledger opened a window on a machine where nothing looked wrong. No-op on POSIX.
 
 ### Engine update backups preserve Windows directory junctions
 
@@ -396,10 +408,6 @@ The `secret-leak` rubric runs on every text artifact the gate judges. If the art
 ### A linked dependency tree no longer breaks an update on Windows
 
 `nrv deps link` (Rule 12) makes a component's `node_modules` a junction onto the shared store in `~/.nirvana`. Three passes in `install-content.ts` walked through it instead of past it: the component hash folded the whole store in, so a squad nobody had touched read as "changed on disk" on every update; `mirror`'s deletion pass listed the store's files as candidates; and the pre-overlay backup recreated the link, which on Windows needs a privilege most buyers do not have. The `EPERM` ended the overlay with a raw Bun stack trace *after* the pack had already been downloaded, so `nrv update` failed for any pack carrying such a squad — genesis-circle 0.1.88 and game-development 0.1.3 both aborted that way on 0.13.13, leaving the packs un-updated. Content discovery now lives in `skills/_shared/lib/walk-files.ts`, judges with `lstatSync` and never descends into a link; the backup skips linked paths and names what it skipped, so a backup is never silently incomplete. Verified against the case that produced it: both packs updated with the fix in place.
-### No child process opens a console window on Windows
-
-A guard was applied to the sweep chain when the windows were first reported, but it lived in the installed tree: the next `nrv update` replaced the tree and they came back. `windowsHide: true` is now on **every** spawn in the engine — 117 call sites across 48 files, including the single place every runtime adapter passes through (`driverSpawnSync`, which builds its options object once for sixteen callers). On Windows a process without its own console makes Windows allocate a NEW VISIBLE console for each child it spawns, and `stdio: "ignore"` does not prevent it. The sweep runs detached on every `nrv` command, so each link in the chain — supervisor, revise, quality-gate, verify-deliverable — plus the powershell probes of the run ledger opened a window on a machine where nothing looked wrong. No-op on POSIX.
-
 ## 0.13.13 — 2026-09-16
 
 ### A squad runs on the runtime the user is working in
