@@ -271,7 +271,7 @@ export interface DeliveryArgs {
   /** cwd for revision runs (the project scaffold dir). */
   projectDir: string;
   projectRoot: string;
-  /** cwd for the verify-deliverable spawn (must see <cwd>/outputs/<pid>, { windowsHide: true }). */
+  /** cwd for the verify-deliverable spawn (must see <cwd>/outputs/<pid>). */
   workingDir?: string;
   /** Session to resume for auto-revisions. */
   sessionId?: string | null;
