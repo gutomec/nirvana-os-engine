@@ -267,7 +267,7 @@ export function install(pkgs: string[], opts: { dryRun?: boolean; bun?: string }
 
   // argv, never a shell line: a token like `left-pad && echo pwned` is one
   // argument to the package manager and can never become a second command.
-  const r = spawnSync(argv[0], argv.slice(1), { encoding: "utf8", env: depsEnv() });
+  const r = spawnSync(argv[0], argv.slice(1), { windowsHide: true, encoding: "utf8", env: depsEnv() });
   if (r.status === 0) return { status: "installed", packages: clean, added: missing, cmd, argv };
 
   // A non-zero exit is not proof that nothing installed. Puppeteer's

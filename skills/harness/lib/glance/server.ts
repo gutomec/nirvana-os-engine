@@ -260,7 +260,7 @@ function openBrowser(url: string) {
             : platform === "win32" ? "start ''"
             : "xdg-open";
   try {
-    Bun.spawn([cmd.split(" ")[0], ...(cmd.split(" ").slice(1)), url], { stdout: "ignore", stderr: "ignore" });
+    Bun.spawn([cmd.split(" ")[0], ...(cmd.split(" ").slice(1)), url], { windowsHide: true, stdout: "ignore", stderr: "ignore" });
   } catch (e) {
     console.error(`[glance] couldn't auto-open browser; visit ${url} manually`);
   }
@@ -360,6 +360,7 @@ export async function startServer(opts: ServerOptions) {
     let child: ReturnType<typeof Bun.spawn> | null = null;
     try {
       child = Bun.spawn([process.env.NIRVANA_BUN || "bun", script, kind, slug, "--json", "--no-retrieval"], {
+        windowsHide: true,
         env: { ...process.env, NO_COLOR: "1" }, stdout: "pipe", stderr: "pipe",
       });
       const proc = child;
@@ -848,6 +849,7 @@ export async function startServer(opts: ServerOptions) {
           if (scope === "project" || scope === "merge") args.push(`--scope=${scope}`);
           const result = await new Promise<any>((resolve) => {
             const child = require("child_process").spawn("bun", args, {
+              windowsHide: true,
               env: { ...process.env },
               stdio: ["ignore", "pipe", "pipe"],
             });
@@ -1160,6 +1162,7 @@ export async function startServer(opts: ServerOptions) {
             // Re-index (best-effort, silent)
             const reindex = (script: string) => new Promise<void>((resolve) => {
               require("child_process").spawn("bun", ["run", path.join(SKILLS_ROOT, script)], {
+                windowsHide: true,
                 env: { ...process.env, NIRVANA_PROJECT_ROOT: targetDir, NIRVANA_SCOPE: "project" },
                 stdio: "ignore",
               }).on("close", () => resolve()).on("error", () => resolve());
@@ -1222,6 +1225,7 @@ export async function startServer(opts: ServerOptions) {
           // Re-index local registries (best-effort) — silent fail
           const reindex = (script: string) => new Promise<void>((resolve) => {
             require("child_process").spawn("bun", ["run", path.join(SKILLS_ROOT, script)], {
+              windowsHide: true,
               env: { ...process.env, NIRVANA_PROJECT_ROOT: targetDir, NIRVANA_SCOPE: "project" },
               stdio: "ignore",
             }).on("close", () => resolve()).on("error", () => resolve());

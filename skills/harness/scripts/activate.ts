@@ -71,7 +71,7 @@ activated. --skip-verify is the documented escape.`);
 
 /** status passes straight through — it is a per-squad question. */
 if (positional[0] === "status" || positional[0] === "deactivate") {
-  const r = spawnSync(BUN, [ACTIVATOR, positional[0], positional[1] ?? "", ...passthrough], { stdio: "inherit" });
+  const r = spawnSync(BUN, [ACTIVATOR, positional[0], positional[1] ?? "", ...passthrough], { windowsHide: true, stdio: "inherit" });
   process.exit(r.status ?? 1);
 }
 
@@ -90,7 +90,7 @@ async function gateOne(slug: string): Promise<boolean> {
 
 async function runOne(slug: string): Promise<number> {
   if (!(await gateOne(slug))) return 1;
-  const r = spawnSync(BUN, [ACTIVATOR, "activate", slug, ...passthrough], { stdio: "inherit" });
+  const r = spawnSync(BUN, [ACTIVATOR, "activate", slug, ...passthrough], { windowsHide: true, stdio: "inherit" });
   return r.status ?? 1;
 }
 

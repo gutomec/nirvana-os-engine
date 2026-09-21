@@ -141,7 +141,7 @@ export type UserPathKind = "String" | "ExpandString";
 export interface UserPathValue { value: string; kind: UserPathKind }
 
 function powershell(script: string, env?: NodeJS.ProcessEnv) {
-  return spawnSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], { encoding: "utf8", timeout: 15000, env });
+  return spawnSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], { windowsHide: true, encoding: "utf8", timeout: 15000, env });
 }
 
 /** HKCU\Environment\Path as stored — unexpanded, with its value kind — or null
@@ -187,5 +187,5 @@ export function broadcastEnvironmentChange(): void {
     "$s='[DllImport(\"user32.dll\")] public static extern int SendMessageTimeout(IntPtr h,int m,IntPtr w,string l,int f,int t,out IntPtr r);'; " +
     "Add-Type -MemberDefinition $s -Name W -Namespace N | Out-Null; " +
     "$r=[IntPtr]::Zero; [void][N.W]::SendMessageTimeout([IntPtr]0xffff,0x1A,[IntPtr]::Zero,'Environment',2,5000,[ref]$r)";
-  try { spawnSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps], { encoding: "utf8", timeout: 8000 }); } catch { /* best-effort */ }
+  try { spawnSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps], { windowsHide: true, encoding: "utf8", timeout: 8000 }); } catch { /* best-effort */ }
 }

@@ -103,7 +103,7 @@ for (const b of bins) {
   if (p) {
     let version = "";
     try {
-      const r = spawnSync(b.name, ["--version"], { encoding: "utf8" });
+      const r = spawnSync(b.name, ["--version"], { windowsHide: true, encoding: "utf8" });
       version = (r.stdout || r.stderr || "").split("\n")[0].slice(0, 50);
     } catch {}
     add(`binary: ${b.name}`, "PASS", `${p} ${version ? `(${version})` : ""}`);
@@ -424,7 +424,7 @@ if (process.platform === "darwin") {
   const NIRVANA_LABEL = /^(sh|com)\.nirvana\./;
   let loaded: string[] = [];
   try {
-    const r = spawnSync("launchctl", ["list"], { encoding: "utf8", timeout: 10_000 });
+    const r = spawnSync("launchctl", ["list"], { windowsHide: true, encoding: "utf8", timeout: 10_000 });
     if (r.status === 0) {
       loaded = (r.stdout || "").split("\n")
         .map((l) => l.trim().split(/\s+/).pop() || "")
@@ -505,7 +505,7 @@ if (which("claude")) {
     ];
     for (const [hive, key] of hives) {
       try {
-        const r = spawnSync("reg", ["query", `${hive}\\${key}`, "/v", "CLAUDE_CODE_OAUTH_TOKEN"], { encoding: "utf8" });
+        const r = spawnSync("reg", ["query", `${hive}\\${key}`, "/v", "CLAUDE_CODE_OAUTH_TOKEN"], { windowsHide: true, encoding: "utf8" });
         if (r.status === 0 && /CLAUDE_CODE_OAUTH_TOKEN/i.test(r.stdout || "")) {
           offenders.push(`${hive}\\${key} (registry)`);
         }
@@ -534,7 +534,7 @@ if (which("claude")) {
   };
 
   // tar: present? which flavor? (Git Bash's GNU tar vs Win10+/macOS bsdtar)
-  const tarVer = spawnSync("tar", ["--version"], { encoding: "utf8" });
+  const tarVer = spawnSync("tar", ["--version"], { windowsHide: true, encoding: "utf8" });
   if (tarVer.status !== 0) {
     add("env: tar", "FAIL", "tar not found — nrv update/install cannot extract archives");
   } else {
@@ -550,9 +550,9 @@ if (which("claude")) {
       fs.mkdirSync(src, { recursive: true }); fs.mkdirSync(out, { recursive: true });
       fs.writeFileSync(path.join(src, "probe.txt"), "ok");
       const tgz = path.join(envTmp, "probe.tar.gz");
-      const cr = spawnSync("tar", ["-czf", relFrom(src, tgz), "probe.txt"], { encoding: "utf8", cwd: src });
+      const cr = spawnSync("tar", ["-czf", relFrom(src, tgz), "probe.txt"], { windowsHide: true, encoding: "utf8", cwd: src });
       const ex = cr.status === 0
-        ? spawnSync("tar", ["-xzf", relFrom(path.dirname(tgz), tgz), "-C", relFrom(path.dirname(tgz), out)], { encoding: "utf8", cwd: path.dirname(tgz) })
+        ? spawnSync("tar", ["-xzf", relFrom(path.dirname(tgz), tgz), "-C", relFrom(path.dirname(tgz), out)], { windowsHide: true, encoding: "utf8", cwd: path.dirname(tgz) })
         : cr;
       if (ex.status === 0 && fs.existsSync(path.join(out, "probe.txt"))) {
         add("env: tar roundtrip", "PASS", "create+extract with relative paths works");

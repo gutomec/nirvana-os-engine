@@ -110,6 +110,7 @@ const DEFAULT_DISPATCH_SCRIPT = path.resolve(path.dirname(fileURLToPath(import.m
 
 const defaultSpawn: EvaluatorSpawn = (request) => {
   const child = spawnSync(request.command[0], request.command.slice(1), {
+    windowsHide: true,
     cwd: request.cwd, env: request.env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
     timeout: request.timeoutMs, killSignal: "SIGKILL", maxBuffer: 64 * 1024 * 1024,
   });
@@ -217,7 +218,7 @@ export function createDispatchEvaluator(input: DispatchEvaluatorInput): AgentXGa
     const logsDir = env.HARNESS_LOGS_DIR ? path.resolve(env.HARNESS_LOGS_DIR) : harnessLogsDir({ projectRoot });
     env.HARNESS_LOGS_DIR = logsDir;
 
-    const spawned = spawn({ command, cwd: projectRoot, env, timeoutMs });
+    const spawned = spawn({ windowsHide: true, command, cwd: projectRoot, env, timeoutMs });
     const costUsd = observedCostUsd(logsDir, projectId, evaluatorCostMatcher(target));
     const detail = { exit_code: spawned.exitCode, observed_cost_usd: costUsd };
     if (spawned.timedOut) return indeterminate(`evaluator timed out after ${timeoutMs} ms`, detail);

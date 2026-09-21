@@ -210,6 +210,7 @@ export function runGateOnce(files: string[], gate: string | GateRunOpts): { pass
       if (opts.produces?.length) argv.push(`--produces=${opts.produces.join(",")}`);
     }
     const g = spawnSync("bun", argv, {
+      windowsHide: true,
       encoding: "utf8",
       env: { ...process.env, ...(opts.env ?? {}) },
     });
@@ -407,6 +408,7 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
     // the scan below). It emits verify_passed/verify_failed itself. The promise comes
     // from the run's manifest, or — with no manifest — from the roles' acceptance[].
     const v = spawnSync("bun", [verifyScript, args.pid, args.slug, "--outputs-root", args.outputsRoot], {
+      windowsHide: true,
       encoding: "utf8",
       cwd: args.workingDir ?? process.cwd(),
       env: { ...process.env, ...gateEnv },

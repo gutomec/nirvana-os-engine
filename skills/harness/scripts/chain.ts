@@ -114,7 +114,7 @@ interface ChainPlan {
  *  owner `brief-business.ts` asks, so a business cannot have two answers. */
 function intakeEmployee(bizDir: string): string {
   const loader = path.join(SKILLS, "businesses", "lib", "loader.ts");
-  const r = spawnSync("bun", [loader, bizDir, "--field", "intake_employee"], { encoding: "utf8" });
+  const r = spawnSync("bun", [loader, bizDir, "--field", "intake_employee"], { windowsHide: true, encoding: "utf8" });
   const name = (r.stdout || "").trim();
   if (name) return name;
 
@@ -356,6 +356,7 @@ function cmdStep(argv: string[]): void {
     plan.business, step.employee, plan.project_dir, stepBriefFile, outDir, "--task-file", stepTaskFile,
     ...(assignment ? ["--assign-clone", assignment.mind_clone ?? "none", "--assign-squad", assignment.squad ?? "none"] : []),
   ], {
+    windowsHide: true,
     encoding: "utf8", maxBuffer: 32 * 1024 * 1024,
     // The child resolves the business independently; handing it the library root
     // this plan settled on removes the second opinion.
@@ -474,6 +475,7 @@ function cmdReview(argv: string[]): void {
     path.join(SKILLS, "businesses/lib/employee-prompt.ts"),
     plan.business, step.reviewer, plan.project_dir, briefFile, reviewDir,
   ], {
+    windowsHide: true,
     encoding: "utf8", maxBuffer: 32 * 1024 * 1024,
     env: { ...process.env, BUSINESSES_DIR: path.dirname(bizDir) },
   });

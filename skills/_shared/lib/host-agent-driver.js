@@ -63,7 +63,7 @@ function resolveSystemModel(runtime) {
 }
 
 function whichSync(cli) {
-  const r = spawnSync(process.platform === 'win32' ? 'where' : 'command', ['-v', cli], { encoding: 'utf8' });
+  const r = spawnSync(process.platform === 'win32' ? 'where' : 'command', ['-v', cli], { windowsHide: true, encoding: 'utf8' });
   if (r.status === 0 && r.stdout.trim()) return r.stdout.trim().split('\n')[0];
   const PATH = (process.env.PATH || '').split(path.delimiter);
   for (const dir of PATH) {
@@ -152,6 +152,7 @@ function callHostAgent(persona, userMessage, opts) {
   }
   const args = host.buildArgs(persona || '', userMessage);
   const r = spawnSync(host.cli, args, {
+    windowsHide: true,
     encoding: 'utf8',
     timeout: opts.timeoutMs || 120000,
     maxBuffer: 8 * 1024 * 1024,
@@ -181,6 +182,7 @@ function callHostAgentAsync(persona, userMessage, opts) {
     }
     const args = host.buildArgs(persona || '', userMessage);
     const child = spawn(host.cli, args, {
+      windowsHide: true,
       env: Object.assign({}, process.env),
       stdio: ['ignore', 'pipe', 'pipe'],
     });

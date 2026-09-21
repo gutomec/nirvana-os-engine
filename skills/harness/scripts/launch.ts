@@ -127,7 +127,7 @@ for (const p of pillars) {
 
   // Run brief-business
   console.log(c("cyan", `  → ${p.pillar} via ${p.business}`));
-  const r = spawnSync("bun", [briefBiz, p.business, briefText, "--project", projectId, "--manifest", manifestFile], { encoding: "utf8" });
+  const r = spawnSync("bun", [briefBiz, p.business, briefText, "--project", projectId, "--manifest", manifestFile], { windowsHide: true, encoding: "utf8" });
   if (r.status !== 0) {
     console.error(c("red", `    ✗ brief-business failed for ${p.pillar}:`));
     console.error(c("dim", "    " + (r.stderr || r.stdout || "").split("\n")[0]));

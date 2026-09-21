@@ -86,6 +86,7 @@ function readStdin(): Promise<string> {
           if (res && typeof res === "object") mapped.tool_response = res;
         }
         spawnSync(process.execPath, [TARGET, stage, "hermes-cli"], {
+          windowsHide: true,
           input: JSON.stringify(mapped),
           cwd: p.cwd || process.cwd(), // inherit so inNirvanaScope(cwd) sees the project
           stdio: ["pipe", "ignore", "ignore"],

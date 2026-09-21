@@ -26,7 +26,7 @@ function toolPages(artifact: string): number | null {
     }],
   ] as const) {
     try {
-      const r = spawnSync(bin as string, args as string[], { encoding: "utf8", timeout: 20_000 });
+      const r = spawnSync(bin as string, args as string[], { windowsHide: true, encoding: "utf8", timeout: 20_000 });
       if (r.status === 0) {
         const n = parse(r.stdout || "");
         if (Number.isFinite(n) && n >= 0) return n;
