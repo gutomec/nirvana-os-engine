@@ -20,11 +20,14 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { paths, parseArgs, EXIT } from "../lib/bun-helpers.ts";
 import { resolveScope } from "../lib/scope.ts";
+import { writeFileAtomic } from "../lib/atomic-write.js";
 
 const YAML = require("yaml");
 
 const { flags } = parseArgs();
 const quiet = !!flags.quiet || !!flags.q;
+/** Publishing an empty index over a populated one is refused unless asked for. */
+const allowEmpty = !!flags["allow-empty"];
 
 const scope = resolveScope();
 const roots = scope.mindCloneDirs.length ? scope.mindCloneDirs : [paths.DNA_LIBRARY];
@@ -214,32 +217,105 @@ if (contradicoes.length && !quiet) {
   for (const c of contradicoes.slice(0, 20)) console.warn(`  ! ${c}`);
 }
 
-// Atomic write: write to a temp file in the SAME directory, then rename. rename(2)
-// is atomic within the filesystem, so a concurrent reader sees either the whole
-// old registry or the whole new one, never a truncated JSON. It matters because
-// the enrichment runs several agents in parallel and each one reindexes to
-// verify its own block — without this, two simultaneous reindexes can
-// hand a corrupted registry to a third one that was only reading.
-const tmpPath = `${registryPath}.${process.pid}.tmp`;
-fs.writeFileSync(tmpPath, JSON.stringify(out, null, 1));
-fs.renameSync(tmpPath, registryPath);
+/** How many clones the registry at `p` currently describes. -1 when absent. */
+function existingCount(p: string): number {
+  try {
+    const n = JSON.parse(fs.readFileSync(p, "utf8"))?.count;
+    return typeof n === "number" && Number.isFinite(n) ? n : -1;
+  } catch { return -1; }
+}
 
-// Mirror into global scope: when the scan covered exactly the global library
-// (no project-local clone), the content of the two registries is identical by
-// construction — so the global one is updated along. Without this, reindexing
-// only in the project leaves the install blind to the new work (it happened: the
-// global registry sat still for 5 days while the project one moved). With a
-// project-local clone in the scan, the mirror does NOT run: the content would
-// diverge from what the global must hold.
+/**
+ * Atomic write: a temp file in the SAME directory, then rename. rename(2) is
+ * atomic within the filesystem, so a concurrent reader sees either the whole
+ * old registry or the whole new one, never a truncated JSON. It matters because
+ * the enrichment runs several agents in parallel and each one reindexes to
+ * verify its own block — without this, two simultaneous reindexes can hand a
+ * corrupted registry to a third one that was only reading.
+ *
+ * The floor: a scan that found NOTHING never replaces a registry that had
+ * something. Going from N>0 to 0 is a misconfiguration far more often than an
+ * intent — a library behind a bad mount, a wrong NIRVANA_HOME, a fixture .env —
+ * and every consumer reads this file as truth, so an index describing nothing
+ * makes the whole library invisible. A stale index is the lesser harm. When
+ * emptying IS the intent, `--allow-empty` says so out loud.
+ *
+ * Staging and the rename itself live in _shared/lib/atomic-write.js, shared
+ * with the squads and businesses registries, which each had their own answer
+ * and two of them were wrong.
+ */
+function writeRegistry(target: string, label: string): boolean {
+  const had = existingCount(target);
+  if (out.count === 0 && had > 0 && !allowEmpty) {
+    console.error(`[index-clones] REFUSED to overwrite ${label} (${had} clones) with an empty index.`);
+    console.error(`[index-clones]   scanned: ${roots.join(", ") || "(no readable root)"}`);
+    console.error(`[index-clones]   the clones themselves are untouched; this file is a derived cache.`);
+    console.error(`[index-clones]   if emptying is intended, rerun with --allow-empty.`);
+    return false;
+  }
+  writeFileAtomic(target, JSON.stringify(out, null, 1));
+  return true;
+}
+
+writeRegistry(registryPath, "the project registry");
+
+// Mirror into global scope: when the scan covered exactly the global library,
+// the content of the two registries is identical by construction — so the
+// global one is updated along. Without this, reindexing only in the project
+// leaves the install blind to the new work (it happened: the global registry
+// sat still for 5 days while the project one moved).
+//
+// Deciding "exactly the global library" used to be
+// `resolve(roots[0]) === resolve(paths.DNA_LIBRARY)`, and in global mode
+// `roots` IS `[paths.DNA_LIBRARY]` — a tautology. Worse, DNA_LIBRARY resolves
+// through the PROJECT's .env, so a project pointing it at a local fixture
+// scanned that fixture, passed the guard by construction, and published it as
+// the global truth. It happened: an empty benchmark fixture took the owner's
+// 617 clones out of every listing for two minutes.
+//
+// So the root must also live OUTSIDE the project. A directory the project
+// carries is the project's, whatever a variable calls it, and it never speaks
+// for the install.
 const globalRegistryPath = path.join(os.homedir(), ".nirvana", ".mind-clones-registry.json");
+// Does the PROJECT relocate the clone library? That is the whole attack
+// surface, and naming it directly beats measuring it. `paths.DNA_LIBRARY`
+// resolves through `cfg()`, which reads the project's .env, so a project that
+// declares DNA_LIBRARY (or moves NIRVANA_HOME under it) is describing ITS
+// library, never the install's — and must not publish it as the global truth.
+//
+// This replaced a path-containment test, which was right in principle and kept
+// losing to the filesystem. On macOS /tmp is a symlink to /private/tmp and
+// $TMPDIR sits under /private/var, so one side arrived resolved and the other
+// did not; on Windows the same comparison met 8.3 short names
+// (C:\Users\RUNNER~1) against their long form. Both waved the fixture through.
+// Containment is kept below as a second net, now case-folded, but the decision
+// no longer rests on it.
+const projectEnvRelocatesLibrary = (): boolean => {
+  if (!scope.projectRoot) return false;
+  try {
+    const env = fs.readFileSync(path.join(scope.projectRoot, ".env"), "utf8");
+    return /^\s*(?:export\s+)?(?:DNA_LIBRARY|NIRVANA_HOME)\s*=/m.test(env);
+  } catch { return false; }
+};
+
+const real = (p: string): string => {
+  try { return fs.realpathSync(path.resolve(p)); } catch { return path.resolve(p); }
+};
+const insideProject = (dir: string): boolean => {
+  if (!scope.projectRoot) return false;
+  const fold = (x: string) => (process.platform === "win32" ? x.toLowerCase() : x);
+  const rel = path.relative(fold(real(scope.projectRoot)), fold(real(dir)));
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+};
 const scannedOnlyGlobalLibrary =
-  roots.length === 1 && path.resolve(roots[0]) === path.resolve(paths.DNA_LIBRARY);
+  roots.length === 1
+  && path.resolve(roots[0]) === path.resolve(paths.DNA_LIBRARY)
+  && !projectEnvRelocatesLibrary()
+  && !insideProject(roots[0]);
 if (registryPath !== globalRegistryPath && scannedOnlyGlobalLibrary) {
-  const gTmp = `${globalRegistryPath}.${process.pid}.tmp`;
-  fs.mkdirSync(path.dirname(globalRegistryPath), { recursive: true });
-  fs.writeFileSync(gTmp, JSON.stringify(out, null, 1));
-  fs.renameSync(gTmp, globalRegistryPath);
-  if (!quiet) console.error(`[index-clones] espelhado no escopo global → ${globalRegistryPath}`);
+  if (writeRegistry(globalRegistryPath, "the global registry") && !quiet) {
+    console.error(`[index-clones] espelhado no escopo global → ${globalRegistryPath}`);
+  }
 }
 
 if (!quiet) {

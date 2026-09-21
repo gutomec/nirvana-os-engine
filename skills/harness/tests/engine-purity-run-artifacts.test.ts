@@ -76,6 +76,35 @@ describe("run artifacts cannot be committed", () => {
     }
   });
 
+  test("a real dispatch inside the clone leaves the gate silent", () => {
+    // The gate has two halves and they disagreed. The run-artifact half asks
+    // git, so an untracked run is correctly invisible to it. The entity-content
+    // half walks the DISK, and `outputs` was missing from its skip set — so a
+    // dispatch that produced a squad.yaml under outputs/ turned the gate red
+    // for files git will never accept. A contributor who used the engine in
+    // their own clone then had to read a failure that says nothing about what
+    // they are about to commit.
+    const made: string[] = [];
+    const write = (rel: string, body: string) => {
+      const abs = path.join(ROOT, rel);
+      fs.mkdirSync(path.dirname(abs), { recursive: true });
+      fs.writeFileSync(abs, body);
+      made.push(abs);
+    };
+    try {
+      write("outputs/__purity_run__/squads/bench/squad.yaml", "name: bench\n");
+      write("outputs/__purity_run__/businesses/acme/business.yaml", "name: acme\n");
+      write("outputs/__purity_run__/clone/MANIFEST.yaml", "routing:\n  domains: [x]\n");
+      write("outputs/__purity_run__/persona/AGENT.md", "# a\n");
+      write("outputs/__purity_run__/persona/SOUL.md", "# s\n");
+      const r = runGate();
+      expect(r.stdout + r.stderr).not.toContain("__purity_run__");
+      expect(r.status).toBe(0);
+    } finally {
+      fs.rmSync(path.join(ROOT, "outputs", "__purity_run__"), { recursive: true, force: true });
+    }
+  }, spawnBudgetMs(2));
+
   test("git itself refuses to add one without --force", () => {
     // The gate is the backstop; this is the first line, and it is the one that
     // stops the mistake being made at all.

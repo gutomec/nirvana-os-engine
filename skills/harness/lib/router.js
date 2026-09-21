@@ -827,16 +827,32 @@ function applyAdjustments(results, intent, briefText) {
     // (a brief routing to nexus-billing-ops counts as WORK delegation).
 
     let score = r.normalized;
-    // Cap on the applied boost: with keywords now indexed (E6), a high boost
-    // (1.5) turns broad-vocabulary squads into magnets that steal other
-    // squads' domains. The boost should favor curation on ties, not overcome a
-    // real relevance difference. Ceiling 1.3 keeps the intent without the magnet effect.
-    // Floor 1.0: a score_boost declared as 0 was accepted as a ×0 multiplier and
-    // self-annihilated the capability (2 real cases in the census, omnidoc
-    // automation.deps.bootstrap). Boost is an upward tiebreak, never a veto — veto
-    // is not_for/refuses.
+    // score_boost is a no-op. Ceiling 1.0, by the owner's decision of
+    // 2026-09-21, and every manifest in the library and in the pack sources was
+    // set to 1 in the same change.
+    //
+    // It was a multiplier a capability declared for ITSELF, and the indexer
+    // handed more of it out by reading the squad's NAME: `awwwards` → 2.0,
+    // `singularity`/`nirvana` → 1.5, `master`/`elite`/`premium`/`cinematic`/
+    // `studio`/`forge` → 1.2 (v4-capability-inferrer, now always 1.0). A brand
+    // prefix is not evidence that a capability answers a brief. `nirvana-turismo`,
+    // a tourism squad, took rank 1 on "criar um ebook sobre emagrecimento com
+    // copy persuasiva" over a copywriting squad scoring 14.79 to its 11.67.
+    //
+    // It had also stopped discriminating: 291 of 352 boosted capabilities
+    // carried the same 1.5, so it no longer lifted the curated few — it sank
+    // the 56% that never copied the field. And the floor clamped declared
+    // values BELOW 1 up to 1, so three authors who asked to be de-prioritised
+    // were overruled in silence.
+    //
+    // The field stays in the schema (z.number().min(0).max(2).default(1.0)) so
+    // manifests that carry it keep validating. It simply buys nothing.
+    //
+    // Only the BM25 path ever read it; the agentic orchestrator, which is the
+    // default, reads slug and full description and decides. So this changes
+    // nothing about how a brief is routed today.
     const rawBoost = meta.score_boost != null ? meta.score_boost : 1.0;
-    const boost = Math.min(Math.max(rawBoost, 1.0), 1.3);
+    const boost = Math.min(Math.max(rawBoost, 1.0), 1.0);
     score *= boost;
 
     if (Array.isArray(meta.not_for) && meta.not_for.length > 0) {

@@ -20,6 +20,10 @@
  * Skipped entirely: .git, node_modules, dist (build output) and gitignored
  * local-only dirs (tmp, _private, .readme-work, .sanitization-work, .nirvana,
  * scratch) — those never ship, and several are not part of the repo at all.
+ * Also skipped, at the repo root only: everywhere a dispatch WRITES (outputs,
+ * .nirvana, .harness-logs, asked of the engine's own resolvers). Using the
+ * engine inside its own clone is normal; what is judged there is whatever git
+ * TRACKS under those paths, which the run-artifact check below does.
  *
  * Usage: bun scripts/check-engine-purity.ts
  */
@@ -69,7 +73,11 @@ function walk(dir: string, rel: string): void {
     const abs = join(dir, e.name);
     const childRel = rel ? `${rel}/${e.name}` : e.name;
     if (e.isDirectory()) {
-      if (!SKIP_DIRS.has(e.name)) walk(abs, childRel);
+      // A run root is skipped only where it actually is — directly under the
+      // repo. Matching the bare name at any depth would also hide a real
+      // `skills/**/outputs/` one day, and this gate's whole job is to see.
+      const isRunRoot = rel === "" && RUN_ARTIFACT_ROOTS.includes(e.name);
+      if (!SKIP_DIRS.has(e.name) && !isRunRoot) walk(abs, childRel);
       continue;
     }
     if (isAllowlisted(childRel)) continue;
@@ -87,6 +95,15 @@ if (!existsSync(REPO)) {
   console.error(`repo not found: ${REPO}`);
   process.exit(2);
 }
+
+// Where a run writes, asked once and used by both halves of this gate: the walk
+// below skips these, and the git check further down judges what is TRACKED under
+// them. They disagreed before — the walk read the disk and had no idea `outputs`
+// existed, so a contributor who ran a dispatch in their own clone got a red gate
+// listing files git will never accept. Using one source removes the disagreement
+// by construction. (`runArtifactRoots` is a function declaration; it hoists.)
+const RUN_ARTIFACT_ROOTS = runArtifactRoots();
+
 walk(REPO, "");
 
 // Run artifacts are not entity content, but they are the same mistake wearing
@@ -136,7 +153,7 @@ function runArtifactRoots(): string[] {
 // inside their clone is normal and must stay silent; committing one is the fault.
 const trackedRunArtifacts = (() => {
   try {
-    const out = Bun.spawnSync(["git", "ls-files", ...runArtifactRoots()], { cwd: REPO }).stdout.toString().trim();
+    const out = Bun.spawnSync(["git", "ls-files", ...RUN_ARTIFACT_ROOTS], { cwd: REPO }).stdout.toString().trim();
     return out ? out.split("\n") : [];
   } catch {
     return [];   // no git (a tarball checkout) — nothing to judge

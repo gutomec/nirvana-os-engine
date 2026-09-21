@@ -369,9 +369,13 @@ function write(registry, registryPath) {
   // EEXIST tolerated: on Windows Bun may throw it even with recursive:true.
   try { fs.mkdirSync(parent, { recursive: true }); }
   catch (e) { if (e && e.code !== 'EEXIST') throw e; }
-  const tmp = target + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(registry, null, 2), 'utf8');
-  fs.renameSync(tmp, target);
+  // One implementation, shared with the businesses and clones registries:
+  // unique staging plus a rename that retries a Windows sharing violation.
+  // This used to be `target + '.tmp'` — one path for every process, so the
+  // first rename moved it and the rest threw ENOENT. 9 of 10 concurrent
+  // writers died; on Windows, unique names alone still lost 5 of 10.
+  require('../../_shared/lib/atomic-write.js')
+    .writeFileAtomic(target, JSON.stringify(registry, null, 2));
   return target;
 }
 
