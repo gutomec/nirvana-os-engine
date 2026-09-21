@@ -6,6 +6,31 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### A resumed Codex run died in the argument parser
+
+`codex exec` and `codex exec resume` accept different flags. Four the adapter
+depends on live only on the `exec` parent: `-C/--cd`, `--add-dir`,
+`--approve-for-me`, and the `-s/--sandbox` the last one falls back to. The
+adapter appended all of them after the subcommand, so a resumed run reached the
+CLI as `codex exec resume <id> ... -C <cwd>` and clap answered `error:
+unexpected argument '-C' found` with exit 2, before any model call.
+
+Nothing rescued it. The unknown-flag retry only drops the flags in its
+`droppable` set, and `-C` is not one of them, so the run returned the parse
+error rather than degrading. Every `nrv revise` on Codex, and every resumed
+chain, failed there. The grants went with it: `--add-dir` never reached a
+resumed child, so it lost write access to the outputs root and to the
+business or squad directory.
+
+Cwd, grants and approval now ride the `exec` parent, before `resume`, which is
+the only order the CLI accepts in either mode. Audited against codex-cli
+0.155.1. `codex-resume-arg-placement.test.ts` pins the placement with a fake
+CLI and, when a real `codex` is installed, checks every flag left after the
+subcommand against `codex exec resume --help`, so a future version that moves
+one is caught here instead of in a dead revise.
+
 ## 0.14.2 — 2026-09-20
 
 ### Repeated installs stopped editing configurations that were not ours

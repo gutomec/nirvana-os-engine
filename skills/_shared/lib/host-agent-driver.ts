@@ -1695,10 +1695,18 @@ function isOpenAiModelId(m: string): boolean { return /^(gpt-|o[1-9]|codex)/i.te
 function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
   const started = Date.now();
   const lastMsg = path.join(os.tmpdir(), `codex-last-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`);
-  const base = opts.sessionId
-    ? ["exec", "resume", opts.sessionId]
-    : ["exec"];
-  const args = [...base, "--json", "--skip-git-repo-check", "-C", opts.cwd, "-o", lastMsg];
+  // `exec` and `exec resume` take different flags: cwd, the grants and the
+  // reviewed-approval path exist ONLY on the exec parent (audited against
+  // 0.155.1). Sent after the subcommand they are a parse error, exit 2, before
+  // the model — and `-C` is not droppable, so the retry below cannot rescue it.
+  // Built on the parent, they hold in both modes.
+  // Grants: under workspace-write only cwd is writable; the project dir, the
+  // outputs root and the business/squad dir come through --add-dir.
+  const base = ["exec", "-C", opts.cwd];
+  for (const directory of opts.addDirs ?? []) base.push("--add-dir", directory);
+  if (opts.yolo === false) base.push("--approve-for-me");
+  if (opts.sessionId) base.push("resume", opts.sessionId);
+  const args = [...base, "--json", "--skip-git-repo-check", "-o", lastMsg];
   // Only an OpenAI id reaches `--model`. resolveSystemModel returns the
   // session's Claude alias when NIRVANA_MODEL is set — that is its contract —
   // and `--model opus` is a hard error here, so anything that is not an OpenAI
@@ -1713,15 +1721,11 @@ function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
   // `--provider` no longer exists on `codex exec` ("unexpected argument" on
   // 0.153); the provider is a config key, overridable per run with -c.
   if (opts.providerHint) args.push("-c", `model_provider=${JSON.stringify(opts.providerHint)}`);
-  // Grants: under workspace-write only cwd is writable; the project dir, the
-  // outputs root and the business/squad dir come through --add-dir.
-  for (const d of opts.addDirs ?? []) args.push("--add-dir", d);
   if (opts.ephemeral && !opts.sessionId) args.push("--ephemeral");
   if (opts.outputSchema) args.push("--output-schema", opts.outputSchema);
   for (const img of opts.images ?? []) args.push("-i", img);
   if (opts.webSearch) args.push("-c", `web_search=${JSON.stringify(opts.webSearch)}`);
-  if (opts.yolo === false) args.push("--approve-for-me");
-  else args.push("--dangerously-bypass-approvals-and-sandbox");
+  if (opts.yolo !== false) args.push("--dangerously-bypass-approvals-and-sandbox");
 
   const spawnOpts = {
     cwd: opts.cwd,
@@ -1751,7 +1755,7 @@ function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
       if (args[i] === flag) { if (takesValue.has(flag)) i++; continue; }
       next.push(args[i]);
     }
-    if (flag === "--approve-for-me") next.push("-s", "workspace-write");
+    if (flag === "--approve-for-me") next.splice(next.includes("resume") ? next.indexOf("resume") : next.length, 0, "-s", "workspace-write");
     warnings.push(`codex: this version does not know ${flag}; retried without it${flag === "--approve-for-me" ? " (restricted path is -s workspace-write, which stalls on the first approval)" : flag === "--add-dir" ? " (extra directories were not granted)" : ""}`);
     args.length = 0; args.push(...next);
     r = driverSpawnSync("codex", args, spawnOpts);
