@@ -125,6 +125,40 @@ describe("a failed update keeps what could still save it", () => {
   }, 90_000);
 });
 
+describe("backups preserve shared directory links", () => {
+  test.each([0, 1])("directory links survive backup and installer exit %i without copying the shared store", (installerExits) => {
+    const oldBackup = "skills-backup-2026-01-01T00-00-00";
+    const m = machine({ installerExits, olderBackups: [oldBackup] });
+    const shared = path.join(m.home, ".nirvana", "node_modules");
+    fs.mkdirSync(shared);
+    fs.writeFileSync(path.join(shared, "sentinel.txt"), "shared dependency");
+    const links = ["node_modules", path.join("nested", "shared-assets")];
+    for (const relative of links) {
+      const link = path.join(m.skills, relative);
+      fs.mkdirSync(path.dirname(link), { recursive: true });
+      fs.symlinkSync(shared, link, process.platform === "win32" ? "junction" : "dir");
+    }
+    fs.symlinkSync(shared, path.join(m.home, ".nirvana", oldBackup, "node_modules"),
+      process.platform === "win32" ? "junction" : "dir");
+
+    const r = m.run();
+    expect(r.status, `${r.stdout}\n${r.stderr}`).toBe(installerExits);
+    const backups = m.backups();
+    expect(backups).toHaveLength(installerExits === 0 ? 1 : 2);
+    const current = backups.find((name) => name !== oldBackup)!;
+    expect(current).toBeDefined();
+    for (const relative of links) {
+      const savedLink = path.join(m.home, ".nirvana", current, relative);
+      expect(fs.lstatSync(savedLink).isSymbolicLink()).toBe(true);
+      expect(fs.realpathSync(savedLink)).toBe(fs.realpathSync(shared));
+      expect(fs.realpathSync(path.join(m.skills, relative))).toBe(fs.realpathSync(shared));
+    }
+    expect(fs.readFileSync(path.join(shared, "sentinel.txt"), "utf8")).toBe("shared dependency");
+    expect(fs.readFileSync(path.join(m.home, ".nirvana", current, "MARKER.txt"), "utf8"))
+      .toBe("the deployment that was here before the update");
+  }, 90_000);
+});
+
 describe("what the file still promises", () => {
   const src = fs.readFileSync(SCRIPT, "utf8").replace(/\r\n/g, "\n");
 

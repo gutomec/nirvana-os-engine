@@ -111,7 +111,21 @@ function backupSkills(): string | null {
   }
   const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
   const dir = path.join(path.dirname(SKILLS_ROOT), `skills-backup-${stamp}`);
-  fs.cpSync(SKILLS_ROOT, dir, { recursive: true });
+  fs.cpSync(SKILLS_ROOT, dir, {
+    recursive: true,
+    filter: (src, dest) => {
+      // cpSync recreates junctions as symlinks, which require extra privileges
+      // on Windows. Keep shared directory links as junctions, without copying
+      // the dependency store into every backup or traversing linked trees.
+      if (process.platform === "win32" && fs.lstatSync(src).isSymbolicLink()
+        && fs.statSync(src).isDirectory()) {
+        ensureDir(path.dirname(dest));
+        fs.symlinkSync(path.resolve(path.dirname(src), fs.readlinkSync(src)), dest, "junction");
+        return false;
+      }
+      return true;
+    },
+  });
   console.log(c("dim", `  → ${dir}`));
   return dir;
 }

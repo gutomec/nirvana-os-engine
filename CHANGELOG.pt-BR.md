@@ -6,6 +6,16 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Unreleased
+
+### Backup do engine preserva junctions de diretório no Windows
+
+`nrv update` podia falhar com `EPERM` ao fazer backup das skills quando
+`node_modules` apontava para o armazenamento compartilhado de dependências.
+O backup agora recria vínculos de diretório como junctions no Windows, sem
+exigir privilégios de symlink ou copiar as dependências. Os testes cobrem
+vínculos aninhados, sucesso, falha do instalador e limpeza de backup antigo.
+
 ## 0.14.3 — 2026-09-21
 
 ### Reindexar num projeto podia zerar o registry global de mind-clones

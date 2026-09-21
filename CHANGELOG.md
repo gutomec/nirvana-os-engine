@@ -6,6 +6,16 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### Engine update backups preserve Windows directory junctions
+
+`nrv update` could fail with `EPERM` while backing up a deployed skills tree
+whose `node_modules` points at the shared dependency store. The backup now
+recreates Windows directory links as junctions, without administrator-only
+symlink privileges or copying the shared store. Regression tests cover nested
+links, successful updates, failed installers and pruning an older backup.
+
 ## 0.14.3 — 2026-09-21
 
 ### A project reindex could blank the global mind-clone registry
