@@ -20,6 +20,17 @@ import { childState, shimRuntimeOnPath, writeFakeGlanceChild } from "./helpers/f
 import { removeDir } from "./helpers/temp-dirs.ts";
 import { KERNEL_BUDGET_MS } from "./helpers/test-budgets.ts";
 
+/** The body of a config file, with the self-documenting header a blank file is
+ *  born with stripped off. The header names the layer and says `nrv update`
+ *  never replaces the global one; the body is what these assertions are about. */
+const body = (file: string): string => {
+  const text = fs.readFileSync(file, "utf8");
+  return text.startsWith("# Nirvana-OS —")
+    ? text.slice(text.indexOf("\n\n") + 2).replace(/^\n+/, "")
+    : text;
+};
+
+
 const SCHEMA_VARIABLES = SETTINGS_SCHEMA.flatMap((spec) => [spec.env, ...(spec.envAliases ?? [])]).filter((name): name is string => !!name);
 const SCRUBBED = [...SCHEMA_VARIABLES, "NIRVANA_PROJECT_ROOT", "NIRVANA_HOME", "HARNESS_LOGS_DIR", "NIRVANA_STATE_DB"];
 const saved = new Map<string, string | undefined>();
@@ -169,7 +180,7 @@ describe("Glance settings API", () => {
     expect(set.status).toBe(200);
     expect(await set.json()).toEqual({ key: "routing.mode", scope: "project", path: setup.projectFile, from: null, to: "fast", changed: true,
       effective: { value: "fast", source: "project", path: setup.projectFile, variable: null, raw: null, locked: false } });
-    expect(fs.readFileSync(setup.projectFile, "utf8")).toBe('routing:\n  mode: "fast"\n');
+    expect(body(setup.projectFile)).toBe('routing:\n  mode: "fast"\n');
     expect(((await get(base).then((response) => response.json())) as any).values["routing.mode"]).toMatchObject({ value: "fast", source: "project" });
 
     const again = await put(base, "routing.mode", { value: "fast", scope: "project" });
@@ -177,7 +188,7 @@ describe("Glance settings API", () => {
 
     const global = await put(base, "quality_gate.max_revisions", { value: "4", scope: "global" });
     expect((await global.json()) as any).toMatchObject({ scope: "global", path: setup.globalFile, from: null, to: 4, changed: true, effective: { value: 4, source: "global" } });
-    expect(fs.readFileSync(setup.globalFile, "utf8")).toBe("quality_gate:\n  max_revisions: 4\n");
+    expect(body(setup.globalFile)).toBe("quality_gate:\n  max_revisions: 4\n");
 
     const shadowed = await put(base, "routing.mode", { value: "agentic", scope: "global" });
     expect((await shadowed.json()) as any).toMatchObject({ scope: "global", to: "agentic", changed: true, effective: { value: "fast", source: "project" } });
@@ -215,7 +226,7 @@ describe("Glance settings API", () => {
     expect(replay.status).toBe(200);
     expect(await replay.json()).toEqual(firstBody);
     // The replay wrote nothing: the file still holds what was written between the two calls.
-    expect(fs.readFileSync(setup.projectFile, "utf8")).toBe('routing:\n  mode: "agentic"\n');
+    expect(body(setup.projectFile)).toBe('routing:\n  mode: "agentic"\n');
     expect(auditEvents(setup)).toHaveLength(1);
     const reused = await put(base, "routing.mode", { value: "agentic", scope: "project" }, headers(base, "settings-one"));
     expect(reused.status).toBe(409);

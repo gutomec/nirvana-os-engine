@@ -27,7 +27,7 @@ nrv <subcommand> [args]
 | `nrv config get <key>` / `nrv config explain <key>` | The effective value; `explain` adds the description, the default, the allowed scopes and the legacy variable. |
 | `nrv config set <key> <value> [--global\|--project]` / `nrv config unset <key> [...]` | Writes `<project>/.nirvana/config.yaml` (the default inside a project) or `~/.nirvana/config.yaml` (kept across `nrv update`), one line at a time, comments preserved. Refuses a value the schema rejects, a scope the key does not accept, and a key pinned by a variable in this shell, each with the reason; every write audits `x_settings_changed`. |
 
-Precedence, always: environment variable > `<project>/.nirvana/config.yaml` > `~/.nirvana/config.yaml` > the engine's `skills/harness/config.yaml` > the default. The full key table, the variables that stay environment-only and the reasons are in `docs/architecture/configuration.md`.
+Precedence, always: environment variable > `<project>/.nirvana/config.yaml` > `~/.nirvana/config.yaml` > the engine's `skills/harness/config.yaml` > the default. What survives an update, and what to do when a value is not what you expect, is in [`docs/configuration.md`](configuration.md); the full key table, the variables that stay environment-only and the reasons are in [`docs/architecture/configuration.md`](architecture/configuration.md).
 
 ## Talk to it / run work
 

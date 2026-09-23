@@ -1182,8 +1182,20 @@ try {
     ["engine", engineConfigPath()],
   ];
   const settings = resolveAllSettings(); // refuses a broken file before any line is added
+  // Naming the files was not enough: a buyer asked which layer survives an
+  // update, because the engine's own config.yaml is replaced on every one and
+  // the layer that does survive was documented in an architecture page the
+  // product never pointed to. So the line says which is which, and an absent
+  // global file says what writes it rather than reading as a fault.
   add("config: files", "PASS", files
-    .map(([label, file]) => `${label} ${file ? `${file.replace(HOME, "~")}${fs.existsSync(file) ? "" : " (absent)"}` : "(none)"}`)
+    .map(([label, file]) => {
+      if (!file) return `${label} (none)`;
+      const shown = file.replace(HOME, "~");
+      const here = fs.existsSync(file);
+      if (label === "global") return `global ${shown}${here ? "" : " (absent)"} — survives nrv update; written by \`nrv config set <key> <value> --global\``;
+      if (label === "engine") return `engine ${shown}${here ? "" : " (absent)"} — replaced on every update, never set anything here`;
+      return `${label} ${shown}${here ? "" : " (absent)"}`;
+    })
     .join(" · "));
   for (const setting of settings) {
     add(`config: ${setting.key}`, "PASS", `${JSON.stringify(setting.value)} (${describeSettingSource(setting).replace(HOME, "~")})`);

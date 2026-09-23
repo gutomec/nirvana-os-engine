@@ -6,6 +6,37 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Unreleased
+
+### A camada de configuração que sobrevive a um update passa a dizer isso
+
+O `~/.nirvana/config.yaml` é a única camada que o `nrv update` não substitui — o
+`skills/harness/config.yaml` do próprio engine é sobrescrito a cada update,
+então uma configuração colocada lá se perde sem aviso. Essa camada estava
+documentada numa página de arquitetura e não era apontada de nenhum lugar que o
+produto mostra, e o arquivo em si chegava em branco: sem nome, sem precedência,
+sem pista do que era.
+
+Quatro mudanças, todas de superfície. Um arquivo de configuração agora nasce com
+um cabeçalho que nomeia a camada, imprime a precedência e diz qual das duas
+promessas ele carrega — o global sobrevive aos updates, o de projeto viaja com o
+repositório. Um arquivo existente nunca é re-cabeçalhado nem reformatado; a
+escrita continua linha a linha e os comentários ficam. O `nrv doctor` diz a mesma
+coisa onde as pessoas já olham: a linha `config: files` passa a informar qual
+arquivo sobrevive a um update e qual é substituído, e um global ausente lê como o
+estado normal de uma instalação nova, não como falha. O `nrv config --help`
+chega ao texto de uso em vez de despejar a tabela de configurações — `--help` é
+uma flag, então era retirado dos argumentos posicionais e o comando caía no
+`list`. E o `docs/configuration.md` é a página para quem precisa decidir onde uma
+configuração vai, com as cinco camadas, o que cada uma sobrevive, e a ressalva de
+que `execution.model` e `execution.effort` são vazios por desenho e não fazem
+parte de configurar o sistema.
+
+O cabeçalho é escolhido pelo escopo que o chamador passa, nunca inferido do
+caminho: o `globalPath` é sobrescrevível e a API do Glance o sobrescreve, então
+comparar o caminho com o global real rotulava um arquivo global sobrescrito como
+sendo de projeto.
+
 ## 0.14.4 — 2026-09-21
 
 ### Atualizar um pack nunca troca a licença por uma mais estreita

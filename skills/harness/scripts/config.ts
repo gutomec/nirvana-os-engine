@@ -35,7 +35,11 @@ const EXIT = { ok: 0, failure: 1, invalid: 4 } as const;
 const argv = process.argv.slice(2);
 const flags = new Set(argv.filter((argument) => argument.startsWith("--")));
 const positional = argv.filter((argument) => !argument.startsWith("--"));
-const command = positional[0] ?? "list";
+// `--help` is a flag, so it was stripped out of `positional` and the command
+// fell through to "list": asking for help printed the whole settings table and
+// never the usage. Recognised here rather than in the switch, because by the
+// time the switch runs the flag is gone.
+const command = flags.has("--help") ? "help" : (positional[0] ?? "list");
 const json = flags.has("--json");
 
 function usage(code: number): never {
