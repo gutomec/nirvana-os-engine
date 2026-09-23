@@ -164,9 +164,17 @@ describe("writing", () => {
     setSetting("quality_gate.max_revisions", "3", { ...opts, scope: "global" });
     setSetting("multi_target.enabled", "off", { ...opts, scope: "global" });
     setSetting("budget.default_max_cost_usd", 2.5, { ...opts, scope: "global" });
-    expect(read(opts.globalPath)).toBe([
+    const body = [
       "routing:", '  mode: "fast"', "", "quality_gate:", "  max_revisions: 3", "", "multi_target:", "  enabled: false", "", "budget:", "  default_max_cost_usd: 2.5", "",
-    ].join("\n"));
+    ].join("\n");
+    // A file born blank now arrives with a header explaining what layer it is
+    // and that `nrv update` does not replace it — the settings were documented
+    // in an architecture page and nowhere the product pointed to. The body it
+    // precedes is unchanged, which is what the rest of this assertion pins.
+    const written = read(opts.globalPath);
+    expect(written.startsWith("# Nirvana-OS —")).toBe(true);
+    expect(written).toContain("nrv config set <chave> <valor> --global");
+    expect(written.endsWith(body)).toBe(true);
     expect(resolveSettingsMap(opts)).toMatchObject({ "routing.mode": "fast", "quality_gate.max_revisions": 3, "multi_target.enabled": false, "budget.default_max_cost_usd": 2.5 });
   });
 

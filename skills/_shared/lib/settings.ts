@@ -414,11 +414,51 @@ function storedScalar(file: string, key: string): SettingValue | null {
 }
 
 /** Sets (`value`) or removes (`null`) one key in one file, preserving the rest of it. */
-export function editSettingInFile(file: string, key: string, value: SettingValue | null): FileEdit {
+/**
+ * The comment block a config file is born with.
+ *
+ * Which file this is decides what it promises: the global one survives
+ * `nrv update`, the project one travels with the repository. The SCOPE is
+ * passed, never inferred from the path: `globalPath` is overridable (the
+ * Glance API and every test do it), so a path comparison against the real
+ * global location calls an overridden global file a project one. Both are read
+ * under the same precedence, and a variable in the shell beats either.
+ */
+export function configFileHeader(scope: SettingScope): string {
+  const isGlobal = scope === "global";
+  const banner = isGlobal
+    ? "Configuração GLOBAL do usuário. Sobrevive ao `nrv update` — o engine nunca\n# reescreve este arquivo."
+    : "Configuração DESTE PROJETO. Viaja com o repositório e vence a global.";
+  return [
+    "# Nirvana-OS — " + banner,
+    "#",
+    "# Precedência, da mais forte para a mais fraca:",
+    "#   variável de ambiente  >  <projeto>/.nirvana/config.yaml  >  ~/.nirvana/config.yaml",
+    "#   >  config.yaml do engine (substituído a cada update)  >  padrão do schema",
+    "#",
+    "# Não edite à mão se não quiser: o comando escreve aqui e valida o valor.",
+    "#   nrv config list                  toda chave: valor efetivo, origem e padrão",
+    "#   nrv config explain <chave>       o que a chave faz, escopos e variável equivalente",
+    "#   nrv config set <chave> <valor> " + (isGlobal ? "--global" : "--project"),
+    "#   nrv config unset <chave> " + (isGlobal ? "--global" : "--project"),
+    "#",
+    "# Uma chave que o schema não conhece é ignorada, não é erro.",
+    "",
+    "",
+  ].join("\n");
+}
+
+export function editSettingInFile(file: string, key: string, value: SettingValue | null, scope?: SettingScope): FileEdit {
   const from = storedScalar(file, key);
   if (from === value) return { path: file, from, to: value, changed: false };
   if (value === null && from === null) return { path: file, from, to: null, changed: false };
-  const source = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+  const existing = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+  // A file that has never held anything is the user's first sight of this
+  // layer, and it used to arrive blank: no name, no precedence, no hint that it
+  // is the one file `nrv update` does not replace. Seeding the header on first
+  // write makes the file explain itself to whoever opens it, which is where
+  // they will be looking. An existing file is never re-headed.
+  const source = existing.trim() === "" && scope ? configFileHeader(scope) : existing;
   const edited = editYamlScalar(source, key, value === null ? null : yamlScalar(value));
   if (edited === source) return { path: file, from, to: value, changed: false };
   writeFileAtomic(file, edited);
@@ -483,7 +523,7 @@ export function setSetting(key: string, input: unknown, opts: ChangeOptions): Se
   if (!checked.ok) throw new SettingsError("invalid_value", checked.message, { key });
   const file = targetFile(spec, opts);
   refuseWhenPinned(spec, opts);
-  const edit = editSettingInFile(file, key, checked.value);
+  const edit = editSettingInFile(file, key, checked.value, opts.scope);
   if (edit.changed) opts.audit?.("x_settings_changed", { key, scope: opts.scope, path: file, from: edit.from, to: edit.to });
   return { key, scope: opts.scope, ...edit };
 }
@@ -493,7 +533,7 @@ export function unsetSetting(key: string, opts: ChangeOptions): SettingChange {
   const spec = requireSpec(key);
   const file = targetFile(spec, opts);
   refuseWhenPinned(spec, opts);
-  const edit = editSettingInFile(file, key, null);
+  const edit = editSettingInFile(file, key, null, opts.scope);
   if (edit.changed) opts.audit?.("x_settings_changed", { key, scope: opts.scope, path: file, from: edit.from, to: null });
   return { key, scope: opts.scope, ...edit };
 }

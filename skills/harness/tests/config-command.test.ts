@@ -15,6 +15,17 @@ import { SETTINGS_SCHEMA } from "../../_shared/lib/settings.ts";
 import { removeDir } from "./helpers/temp-dirs.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
+/** The body of a config file, with the self-documenting header a blank file is
+ *  born with stripped off. The header names the layer and says `nrv update`
+ *  never replaces the global one; the body is what these assertions are about. */
+const body = (file: string): string => {
+  const text = fs.readFileSync(file, "utf8");
+  return text.startsWith("# Nirvana-OS —")
+    ? text.slice(text.indexOf("\n\n") + 2).replace(/^\n+/, "")
+    : text;
+};
+
+
 const SCRIPT = path.join(import.meta.dir, "..", "scripts", "config.ts");
 const SCHEMA_VARIABLES = new Set(SETTINGS_SCHEMA.flatMap((spec) => [spec.env, ...(spec.envAliases ?? [])]).filter((name): name is string => !!name));
 
@@ -82,12 +93,12 @@ describe("nrv config", () => {
     const inside = nrvConfig(setup, ["set", "routing.mode", "fast"], { cwd: path.join(setup.project, ".nirvana") });
     expect(inside.status).toBe(0);
     expect(inside.out).toContain(`routing.mode = fast gravado em ${slashes(setup.projectFile)} (projeto)`);
-    expect(fs.readFileSync(setup.projectFile, "utf8")).toBe('routing:\n  mode: "fast"\n');
+    expect(body(setup.projectFile)).toBe('routing:\n  mode: "fast"\n');
 
     const outside = nrvConfig(setup, ["set", "quality_gate.max_revisions", "4"]);
     expect(outside.status).toBe(0);
     expect(outside.out).toContain("quality_gate.max_revisions = 4 gravado em ~/.nirvana/config.yaml (global)");
-    expect(fs.readFileSync(setup.globalFile, "utf8")).toBe("quality_gate:\n  max_revisions: 4\n");
+    expect(body(setup.globalFile)).toBe("quality_gate:\n  max_revisions: 4\n");
 
     const shadowed = nrvConfig(setup, ["set", "routing.mode", "agentic", "--global"], { cwd: setup.project });
     expect(shadowed.out).toContain("routing.mode = agentic gravado em ~/.nirvana/config.yaml (global)");
@@ -135,7 +146,7 @@ describe("nrv config", () => {
     const removed = nrvConfig(setup, ["unset", "routing.mode"]);
     expect(removed.status).toBe(0);
     expect(removed.out).toContain("routing.mode removido de ~/.nirvana/config.yaml (global); era fast");
-    expect(fs.readFileSync(setup.globalFile, "utf8")).toBe("# mine\nrouting:\n  dense: fallback\n");
+    expect(body(setup.globalFile)).toBe("# mine\nrouting:\n  dense: fallback\n");
     expect(nrvConfig(setup, ["unset", "routing.mode"]).out).toContain("não estava definido");
     expect(auditEvents(setup).filter((event) => event.event === "x_settings_changed")).toEqual([
       expect.objectContaining({ key: "routing.mode", scope: "global", from: "fast", to: null }),

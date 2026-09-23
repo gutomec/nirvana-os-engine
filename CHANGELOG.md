@@ -6,6 +6,36 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### The config layer that survives an update says so
+
+`~/.nirvana/config.yaml` is the one layer `nrv update` does not replace — the
+engine's own `skills/harness/config.yaml` is overwritten on every update, so a
+setting put there is lost without a word. That layer was documented in an
+architecture page and pointed to from nowhere the product shows, and the file
+itself arrived blank: no name, no precedence, no hint of what it was for.
+
+Four changes, all of them surface. A config file is now born with a header that
+names its layer, prints the precedence and says which of the two promises it
+carries — the global one survives updates, the project one travels with the
+repository. An existing file is never re-headed and never reformatted; writes
+stay line-by-line and comments are kept. `nrv doctor` names the same thing
+where people already look: its `config: files` line says which file survives an
+update and which is replaced, and an absent global file reads as the normal
+state of a fresh install rather than as a fault. `nrv config --help` reaches
+the usage instead of dumping the settings table — `--help` is a flag, so it was
+being stripped out of the positional arguments and the command fell through to
+`list`. And `docs/configuration.md` is the page for the person who has to
+decide where a setting goes, with the five layers, what each one survives, and
+the note that `execution.model` and `execution.effort` are empty by design and
+are not part of setting the system up.
+
+The header is chosen from the scope the caller passes, never inferred from the
+path: `globalPath` is overridable and the Glance API overrides it, so a path
+comparison against the real global location labelled an overridden global file
+a project one.
+
 ## 0.14.4 — 2026-09-21
 
 ### Updating one pack never replaces the license with a narrower one
