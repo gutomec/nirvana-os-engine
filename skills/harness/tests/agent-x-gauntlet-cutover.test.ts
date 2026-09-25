@@ -304,7 +304,9 @@ describe("agent-x Gauntlet cutover", () => {
           finalGate() { throw new Error("must not run"); } });
       } catch (error) { thrown = error; }
       expect(thrown, state).toBeInstanceOf(RunAlreadyTerminalError);
-      expect((thrown as Error).message, state).toBe(`run '${runId}' is already terminal (${state}); pass a fresh --run-id`);
+      // Contract: the refusal and its reason. The remedy the message carries
+      // after them is guidance, not a pinned string.
+      expect((thrown as Error).message, state).toContain(`run '${runId}' is already terminal (${state}); pass a fresh --run-id`);
       expect(getRun(fixture.handle, "prj_canary", runId)?.state, state).toBe(state);
       expect(listEvents(fixture.handle, "prj_canary"), state).toHaveLength(before);
     }

@@ -350,6 +350,18 @@ Your output is **dispatches**, not artifacts. Two choices, in this order: **to w
 - **Needs an upstream deliverable** → it runs after that target, and its `DISPATCH-INSTRUCTION.md` names the upstream phase plus the path to read.
 - **Needs nothing from anyone** → it runs concurrently with its peers, provided its instruction is self-sufficient: a target that would have to ask a sibling something mid-run was never independent, it was under-briefed.
 
+**Chaining two dispatches in one project.** A sequence — research with one runtime, then a report with another that reads it — is two `nrv dispatch` calls into the **same `--project`**, and the second needs its own `--run-id`:
+
+```sh
+nrv dispatch --agent-x --exec=antigravity-cli --project=<pid> "<step 1>"
+nrv dispatch --agent-x --exec=codex --project=<pid> --run-id=run_<pid>-2 \
+  "Read outputs/<pid>/deliverables/<file from step 1> and <step 2>"
+```
+
+Without the second `--run-id` the dispatch stops with `run 'run_<pid>' is already terminal (completed); pass a fresh --run-id`, and it is **right to stop**: the default id is derived from the project, a finished Run is immutable, and that refusal is what keeps a second dispatch from silently continuing a project someone already cleaned. So name the id yourself, one per step, and the ledger reads as the chain it is.
+
+Two things the downstream step needs spelled out, because it cannot guess either: the **path** to the upstream deliverable (relative to the project root, and `agent-x` reads files named in its brief), and the instruction not to invent what is not in them. `--exec=<runtime>` picks who executes — the session's runtime is the default, and a different one per step is normal when the work calls for it.
+
 Concurrency is the **conclusion** of that analysis, not the default. Two targets that merely *look* unrelated but read each other's output are a corrupted run, and the failure shows up late and looks like a quality problem. Independence is cheap to verify and expensive to assume.
 
 With that settled, pick the targets:

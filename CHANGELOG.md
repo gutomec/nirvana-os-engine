@@ -6,6 +6,30 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### A chained dispatch stops being a surprise
+
+Two `nrv dispatch` calls into the same `--project` — research with one runtime,
+then a report with another that reads it — met a refusal nobody had been told
+about: `run 'run_<project>' is already terminal (completed); pass a fresh
+--run-id`. The default Run id is derived from the project, so the second call
+collided with the first by construction, and nothing the agent reads said what
+to do about it.
+
+The refusal itself is right and stays. A finished Run is immutable, and that
+guard is what stops a second dispatch from silently continuing a project
+someone already cleaned — it records `x_run_id_collision` and starts no
+producer. Auto-deriving a fresh id would have deleted the guard, because the
+engine cannot tell a deliberate chain from a forgotten clean.
+
+So the fix is instruction, in the two places the reader is standing. Phase 4 of
+the harness skill now teaches chaining where it already teaches order: the two
+commands, one run id per step, and the two things a downstream step cannot
+guess — the path to the upstream deliverable and the instruction not to invent
+what is not in it. And the refusal carries its own remedy, with the shape of the
+id and the fact that chaining is expected rather than a mistake.
+
 ## 0.14.5 — 2026-09-23
 
 ### The config layer that survives an update says so
