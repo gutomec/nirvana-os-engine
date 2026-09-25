@@ -197,7 +197,10 @@ describe("openStandardPublication", () => {
       expect(() => { publication.start(); publication.verify(); publication.finish({ exitCode: 0, gateOutcome: "pass" }, "/out"); }).not.toThrow();
       expect(fx.read(runId).run?.state, state).toBe(state);
       expect(fx.read(runId).events, state).toHaveLength(before);
-      expect(fx.warnings.at(-1), state).toBe(`[run-kernel] run '${runId}' is already terminal (${state}); pass a fresh --run-id`);
+      // The refusal and its reason are the contract; the remedy the message
+      // now carries after them is guidance, and pinning prose would make
+      // improving it a test edit.
+      expect(fx.warnings.at(-1), state).toContain(`[run-kernel] run '${runId}' is already terminal (${state}); pass a fresh --run-id`);
     }
     expect(fx.audit.map(entry => entry.event)).toEqual(states.map(() => "x_run_id_collision"));
     expect(fx.audit[0].payload).toEqual({ trace_id: "trace_std", project_id: "prj_std", run_id: "run_abandoned", state: "abandoned",

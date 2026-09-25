@@ -24,10 +24,19 @@ export function assertTransition(from: CanonicalRunState, to: CanonicalRunState)
 }
 
 /** Thrown when a dispatch would continue, under the id it was given, a Run that already ended.
- * A terminal Run is never re-created nor transitioned: the caller fails closed before any producer. */
+ * A terminal Run is never re-created nor transitioned: the caller fails closed before any producer.
+ *
+ * The message carries the remedy because this is where a legitimate chain meets
+ * the guard. A second dispatch into the same project is ordinary — research with
+ * one runtime, then a report with another that reads it — and the default id is
+ * derived from the project, so it collides by construction. Saying "pass a fresh
+ * --run-id" left the caller to invent the shape; it now shows one. */
 export class RunAlreadyTerminalError extends Error {
   constructor(readonly runId: string, readonly state: CanonicalRunState) {
-    super(`run '${runId}' is already terminal (${state}); pass a fresh --run-id`);
+    super(`run '${runId}' is already terminal (${state}); pass a fresh --run-id`
+      + ` — e.g. --run-id=${runId}-2. Chaining a second step into the same project is`
+      + ` expected; each step takes its own run id, and the downstream brief names the`
+      + ` upstream file it must read.`);
     this.name = "RunAlreadyTerminalError";
   }
 }

@@ -6,6 +6,30 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Unreleased
+
+### Um despacho encadeado deixa de ser surpresa
+
+Dois `nrv dispatch` no mesmo `--project` — pesquisa com um runtime, depois um
+relatório com outro que a lê — encontravam uma recusa que ninguém havia
+explicado: `run 'run_<projeto>' is already terminal (completed); pass a fresh
+--run-id`. O id de Run padrão é derivado do projeto, então a segunda chamada
+colidia com a primeira por construção, e nada do que o agente lê dizia o que
+fazer.
+
+A recusa em si está certa e fica. Um Run concluído é imutável, e essa guarda é o
+que impede um segundo despacho de continuar em silêncio um projeto que alguém já
+limpou — ela grava `x_run_id_collision` e não inicia produtor nenhum. Derivar um
+id novo automaticamente apagaria a guarda, porque o motor não distingue um
+encadeamento deliberado de uma limpeza esquecida.
+
+Então o conserto é instrução, nos dois lugares onde o leitor está. A Fase 4 da
+skill da harness passa a ensinar o encadeamento onde já ensina a ordem: os dois
+comandos, um run id por etapa, e as duas coisas que a etapa de baixo não tem como
+adivinhar — o caminho do artefato da etapa de cima e a instrução de não inventar
+o que não está nele. E a recusa passa a carregar o próprio remédio, com a forma
+do id e o fato de que encadear é esperado, não engano.
+
 ## 0.14.5 — 2026-09-23
 
 ### A camada de configuração que sobrevive a um update passa a dizer isso
