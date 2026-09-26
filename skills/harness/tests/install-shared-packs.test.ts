@@ -2,9 +2,9 @@
 //
 // A squad, business or clone that serves a task in one pack ships in the other
 // packs that need it too, and every copy lands in the same library directory.
-// Each purchase is its own copy, so two packs never carry byte-identical files
-// for the same component. Installing, updating or removing one pack must not
-// read the other pack's copy as the buyer's work: no "you created" collision,
+// Two packs can carry different revisions of the same component, and a
+// business ships in per-pack variants. Installing, updating or removing one
+// pack must not read the other pack's copy as the buyer's work: no "you created" collision,
 // no backup of content a pack can reproduce, and no uninstall that takes the
 // other pack's component with it. The real scripts, a real temp home.
 import { afterEach, describe, expect, test } from "bun:test";
