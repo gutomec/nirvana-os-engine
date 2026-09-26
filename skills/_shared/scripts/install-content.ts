@@ -138,6 +138,7 @@ function mirror(src: string, dst: string, ex: string[]): void {
 
 import { contractBreaks, reportBreaks, type BreakingChange } from "../lib/contract-breaks.ts";
 import { InstallManifest } from "../lib/install-manifest.ts";
+import { claimKey, readPackClaims } from "../lib/pack-claims.ts";
 import { RUN_STATE_EXCLUDES } from "../lib/run-state.ts";
 import { isLinked, listFilesRel } from "../lib/walk-files.ts";
 import { randomUUID } from "node:crypto";
@@ -193,7 +194,12 @@ const man: Manifest = (() => { try { return JSON.parse(readFileSync(manifestPath
 const availableIn = (dir: string, marker: string): string[] =>
   existsSync(dir) ? readdirSync(dir).filter((e) => !e.startsWith(".") && e !== "README.md" && existsSync(join(dir, e, marker))) : [];
 
-interface SyncRes { added: string[]; updated: string[]; unchanged: string[]; removed: string[]; overwritten: string[]; kept: string[]; backedUp: string[]; hashes: Record<string, string>; breaking: BreakingChange[]; }
+// What the other installed packs deliver. A component in their manifests that
+// is also in this pack is shared by design, never the buyer's creation, and
+// the copy another pack installed is never the buyer's edit.
+const otherClaims = readPackClaims(packsDir(), SLUG);
+
+interface SyncRes { added: string[]; updated: string[]; unchanged: string[]; removed: string[]; overwritten: string[]; kept: string[]; backedUp: string[]; shared: string[]; hashes: Record<string, string>; breaking: BreakingChange[]; }
 
 // Where a component goes before the overlay writes over it. One directory per
 // overlay run, created on first use so a run that backs nothing up leaves
@@ -230,11 +236,13 @@ function backupComponent(kind: string, slug: string, dst: string, ex: string[]):
 function syncKind(kind: string, srcRoot: string, dstRoot: string, available: string[], old: Record<string, string>, precomputed?: Record<string, string>): SyncRes {
   const ex = RUNSTATE_EXCLUDES[kind] ?? [];
   const keep = KEEP.has(kind);
-  const res: SyncRes = { added: [], updated: [], unchanged: [], removed: [], overwritten: [], kept: [], backedUp: [], hashes: {}, breaking: [] };
+  const res: SyncRes = { added: [], updated: [], unchanged: [], removed: [], overwritten: [], kept: [], backedUp: [], shared: [], hashes: {}, breaking: [] };
   if (available.length) mkdirSync(dstRoot, { recursive: true });
   for (const slug of available) {
     const src = join(srcRoot, slug), dst = join(dstRoot, slug);
     const h = precomputed?.[slug] ?? hashDir(src, ex); res.hashes[slug] = h;
+    const claim = otherClaims.get(claimKey(kind, slug));
+    if (claim) res.shared.push(slug);
     if (!existsSync(dst)) { res.added.push(slug); if (!DRY) mirror(src, dst, ex); continue; }
     // --keep-<kind>: what is on disk stays, whatever the pack carries. The
     // manifest keeps saying what the pack last INSTALLED here (the previous
@@ -244,17 +252,23 @@ function syncKind(kind: string, srcRoot: string, dstRoot: string, available: str
     if (keep) { res.kept.push(slug); if (slug in old) res.hashes[slug] = old[slug]; else delete res.hashes[slug]; continue; }
     // Collision: it exists on disk but the pack never owned it (outside the
     // manifest) — a user creation with the same slug. The pack wins (it is the
-    // source of truth), and the user's version is backed up first.
-    if (!(slug in old)) { res.overwritten.push(slug); res.backedUp.push(slug); backupComponent(kind, slug, dst, ex); if (!DRY) mirror(src, dst, ex); continue; }
+    // source of truth), and the user's version is backed up first. When another
+    // installed pack delivered it, it is not a collision: this pack installs its
+    // own copy, and a backup is owed only if the buyer changed the one on disk.
+    if (!(slug in old) && !claim) { res.overwritten.push(slug); res.backedUp.push(slug); backupComponent(kind, slug, dst, ex); if (!DRY) mirror(src, dst, ex); continue; }
     const prev = old[slug];
     if (prev !== h) {
+      // What is on disk now: this pack's last copy, another pack's copy, or
+      // either one after the buyer edited it. Only the last is the buyer's work.
+      const onDisk = hashDir(dst, ex);
+      if (onDisk === h) { res.unchanged.push(slug); continue; }
       res.updated.push(slug);
       // BEFORE the mirror: the only window when installed and incoming coexist.
       res.breaking.push(...contractBreaks(dst, src, `${kind}/${slug}`));
-      // Changed on disk since the pack installed it — the buyer's edits. Backed
+      // Changed on disk since a pack installed it — the buyer's edits. Backed
       // up before the overlay replaces them; an untouched component is not,
-      // because the pack can always reproduce it.
-      if (hashDir(dst, ex) !== prev) { res.backedUp.push(slug); backupComponent(kind, slug, dst, ex); }
+      // because the pack that installed it can always reproduce it.
+      if (onDisk !== prev && !claim?.hashes.has(onDisk)) { res.backedUp.push(slug); backupComponent(kind, slug, dst, ex); }
       if (!DRY) mirror(src, dst, ex);
     } else res.unchanged.push(slug);
   }
@@ -263,6 +277,8 @@ function syncKind(kind: string, srcRoot: string, dstRoot: string, available: str
     const dst = join(dstRoot, slug);
     if (!existsSync(dst)) continue;
     if (keep) { res.kept.push(slug); res.hashes[slug] = old[slug]; continue; }
+    // This pack dropped it, another installed pack still delivers it.
+    if (otherClaims.has(claimKey(kind, slug))) continue;
     res.removed.push(slug); if (!DRY) rmSync(dst, { recursive: true, force: true });
   }
   return res;
@@ -368,7 +384,7 @@ const sq = runs["squads"], bz = runs["businesses"], cl = runs["mind-clones"];
   }
 }
 
-const line = (l: string, r: SyncRes) => console.log(`  ${l}: ${r.added.length} new · ${r.updated.length} updated · ${r.unchanged.length} unchanged · ${r.removed.length} removed${r.kept.length ? ` · ${r.kept.length} kept (local)` : ""}${r.overwritten.length ? ` · ${r.overwritten.length} OVERWRITTEN` : ""}`);
+const line = (l: string, r: SyncRes) => console.log(`  ${l}: ${r.added.length} new · ${r.updated.length} updated · ${r.unchanged.length} unchanged · ${r.removed.length} removed${r.kept.length ? ` · ${r.kept.length} kept (local)` : ""}${r.overwritten.length ? ` · ${r.overwritten.length} OVERWRITTEN` : ""}${r.shared.length ? ` · ${r.shared.length} shared with other packs` : ""}`);
 console.log(`${DRY ? "[DRY] " : ""}install-content '${SLUG}' ← ${CONTENT}`);
 line("squads", sq); line("businesses", bz); line("mind-clones", cl);
 

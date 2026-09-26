@@ -6,6 +6,14 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Unreleased
+
+### Packs que compartilham um componente instalam, atualizam e desinstalam sem conflito
+
+O mesmo squad, empresa ou mind-clone vai em todo pack que precisa dele: um componente que serve a uma tarefa num pack serve à mesma tarefa em outro, e cada pack tem que funcionar sozinho. Todos caem no mesmo diretório da biblioteca, e o manifesto de cada pack registrava só a própria cópia, então o overlay lia a cópia de outro pack como trabalho do comprador. Instalar um segundo pack reportava os componentes compartilhados como `OVERWRITTEN: component(s) you created` e fazia backup deles. Cada atualização seguinte de qualquer um dos dois fazia backup de novo, como "changed on this machine". E o `nrv uninstall <pack>` removia todo componente do seu manifesto, inclusive os que outro pack instalado entrega, então remover um pack levava junto pedaços de outro até que esse outro fosse atualizado.
+
+O overlay e o desinstalador agora leem o manifesto de todo pack instalado, pelo mesmo leitor (`_shared/lib/pack-claims.ts`). Um componente que outro pack instalado entrega é compartilhado. O pack em instalação escreve a própria cópia sem aviso de colisão e sem backup; o backup só acontece quando a cópia em disco não bate com nenhum hash que algum pack registrou, o que significa que o comprador a editou. Um pack que deixa de trazer um componente compartilhado o deixa para o pack que ainda o entrega. Desinstalar mantém todo componente compartilhado e nomeia o pack que o mantém. Uma empresa compartilhada, o único componente que os packs entregam em variantes, recebe também a linha `nrv update <pack>` que reinstala a variante do pack que ficou. O resumo da instalação conta `N shared with other packs`.
+
 ## 0.14.6 — 2026-09-25
 
 ### Um despacho encadeado deixa de ser surpresa
