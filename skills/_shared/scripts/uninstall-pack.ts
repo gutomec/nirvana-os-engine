@@ -14,6 +14,7 @@ import { existsSync, readFileSync, readdirSync, rmSync, unlinkSync } from "node:
 import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { claimKey, readPackClaims } from "../lib/pack-claims.ts";
 import { RUN_STATE_EXCLUDES } from "../lib/run-state.ts";
 
 const HOME = homedir();
@@ -45,8 +46,13 @@ const KEEP: Record<string, Set<string>> = {
 };
 const ROOT: Record<string, string> = { squads: SQUADS_DIR, businesses: BUSINESSES_DIR, "mind-clones": DNA_DIR };
 
-const tag = DRY ? "[dry] removeria" : "removido";
-let removed = 0, kept = 0;
+const tag = DRY ? "[dry] would remove" : "removed";
+let removed = 0, kept = 0, shared = 0;
+
+// A component another installed pack also delivers stays: removing this pack
+// must not take the other pack's content with it.
+const otherClaims = readPackClaims(PACKS_DIR, slug);
+const restoreFrom = new Set<string>();
 
 for (const kind of ["squads", "businesses", "mind-clones"] as const) {
   const comps = man[kind] ?? {};
@@ -54,6 +60,17 @@ for (const kind of ["squads", "businesses", "mind-clones"] as const) {
   for (const comp of Object.keys(comps)) {
     const dir = join(ROOT[kind], comp);
     if (!existsSync(dir)) continue;
+    const claim = otherClaims.get(claimKey(kind, comp));
+    if (claim) {
+      shared++;
+      console.log(`  stays ${kind}/${comp}  \x1b[2m(also in ${claim.packs.join(", ")})\x1b[0m`);
+      // A business is the one component packs ship in variants: each binds its
+      // seats to the clones its own pack carries. If this pack installed last,
+      // the copy on disk may point at clones leaving with it, until the other
+      // pack's update puts its own variant back.
+      if (kind === "businesses" && !claim.hashes.has(comps[comp])) restoreFrom.add(claim.packs[0]);
+      continue;
+    }
     // Deletes everything except the top-level run-state dirs.
     let entries: string[] = [];
     try { entries = readdirSync(dir); } catch { continue; }
@@ -79,7 +96,7 @@ for (const kind of ["squads", "businesses", "mind-clones"] as const) {
       console.log(`  ${tag} ${kind}/${comp}`);
     } else {
       kept++;
-      console.log(`  ${tag} ${kind}/${comp}  ${"\x1b[2m"}(mantido run-state: ${survivors.join(", ")})\x1b[0m`);
+      console.log(`  ${tag} ${kind}/${comp}  ${"\x1b[2m"}(run-state kept: ${survivors.join(", ")})\x1b[0m`);
     }
     removed++;
   }
@@ -88,7 +105,10 @@ for (const kind of ["squads", "businesses", "mind-clones"] as const) {
 if (!DRY) {
   try { unlinkSync(manifestPath); } catch { /* ignore */ }
   const nrv = join(HOME, ".local", "bin", "nrv");
-  if (existsSync(nrv)) { console.log("  re-indexando registries..."); spawnSync(nrv, ["index"], { windowsHide: true, stdio: "inherit" }); }
+  if (existsSync(nrv)) { console.log("  re-indexing registries..."); spawnSync(nrv, ["index"], { windowsHide: true, stdio: "inherit" }); }
 }
 
-console.log(`\n${DRY ? "Dry run — nothing changed." : `Pack '${slug}' removed`} (${removed} component(s)${kept ? `, ${kept} with run-state preserved` : ""}).`);
+console.log(`\n${DRY ? "Dry run — nothing changed." : `Pack '${slug}' removed`} (${removed} component(s)${kept ? `, ${kept} with run-state preserved` : ""}${shared ? `; ${shared} shared with other packs stay installed` : ""}).`);
+for (const other of restoreFrom) {
+  console.log(`  A business shared with '${other}' may still carry this pack's variant. To reinstall the '${other}' variant: nrv update ${other}`);
+}

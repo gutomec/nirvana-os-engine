@@ -6,6 +6,14 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### Packs that share a component install, update and uninstall cleanly
+
+The same squad, business or mind-clone ships in every pack that needs it: a component that serves a task in one pack serves the same task in another, and each pack has to work on its own. All of them land in one library directory, and each pack's manifest recorded only its own copy, so the overlay read another pack's copy as the buyer's work. Installing a second pack reported the shared components as `OVERWRITTEN: component(s) you created` and backed them up. Every later update of either pack backed them up again as "changed on this machine". And `nrv uninstall <pack>` removed every component in its manifest, including the ones another installed pack delivers, so removing one pack took pieces of another with it until that pack was updated.
+
+The overlay and the uninstaller now read every installed pack's manifest, through one reader for both (`_shared/lib/pack-claims.ts`). A component another installed pack delivers is shared. The pack being installed writes its own copy with no collision notice and no backup; a backup happens only when the copy on disk matches no hash any pack recorded, which means the buyer edited it. A pack that drops a shared component leaves it for the pack that still delivers it. Uninstalling keeps every shared component and names the pack that holds it. A shared business, the one component packs ship in variants, also gets the `nrv update <pack>` line that reinstalls the remaining pack's variant. The install summary counts `N shared with other packs`.
+
 ## 0.14.6 — 2026-09-25
 
 ### A chained dispatch stops being a surprise
