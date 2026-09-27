@@ -28,11 +28,15 @@
 // The session IS the supervisor — no OS service is ever registered, on any
 // platform. Three triggers, all inside a session that is already running:
 //
-//   1. dispatch start    maybeSweep() piggybacks on every nrv find/route/
-//                         dispatch (mirrors preflight-index.ts): a run
-//                         abandoned by a session that died is recovered by
-//                         the next dispatch on the same project — exactly
-//                         when someone starts caring about it again.
+//   1. dispatch start    maybeSweep() piggybacks on every nrv dispatch: a
+//                         run abandoned by a session that died is recovered
+//                         by the next dispatch on the same project — exactly
+//                         when someone starts caring about it again. Lookups
+//                         (nrv find, nrv route) never trigger it: a recovery
+//                         spawns runtime workers and spends quota, and a
+//                         question must not start work. A `find` for a squad
+//                         once relaunched a superseded attempt from the day
+//                         before on a worker that rewrote its outputs.
 //   2. dispatch return    dispatch.ts calls maybeSweep() again on the way
 //                         out (process.on("exit")). A dispatch can run for
 //                         tens of minutes; reconciling once more when it
@@ -155,7 +159,7 @@ const SALVAGE_CEILING_REASON =
   "supervisor salvage: the run was interrupted, so the deliverable set is unproven; only a passing manifest verification can call it complete";
 
 // Heavy deps (cascade-runner → host-agent-driver → …) load lazily so
-// maybeSweep stays feather-weight on the nrv find/route/dispatch hot path.
+// maybeSweep stays feather-weight on the nrv dispatch hot path.
 function lazyCascade(): { runWithCascade: (args: any) => any } {
   return requireCjs("../lib/cascade-runner.ts");
 }
@@ -969,7 +973,7 @@ function escalate(h: LedgerHandle, row: RunRow, deps: SweepDeps, summary: SweepS
   summary.escalated++;
 }
 
-// ── lazy sweep (wired into nrv find/route/dispatch, like preflight-index) ──
+// ── lazy sweep (wired into nrv dispatch; never into a lookup) ──
 
 /** <20ms when nothing pending: one supervisor_meta read + one indexed COUNT.
  *  When runs are pending and the last sweep is >5 min old, spawns a DETACHED
@@ -1200,10 +1204,10 @@ if (import.meta.main) {
         "                         it goes machine-wide anyway and says so.",
         "",
         "No OS service is ever registered — the session is the supervisor. Recovery",
-        "triggers lazily on every nrv find/route/dispatch and again when a dispatch",
+        "triggers lazily on every nrv dispatch and again when a dispatch",
         "returns; `watch` covers the unattended case as long as it keeps running.",
         "",
-        "env: NRV_SUPERVISOR=0 disables the lazy sweep on nrv find/route/dispatch",
+        "env: NRV_SUPERVISOR=0 disables the lazy sweep on nrv dispatch",
       ].join("\n"));
       process.exit(sub === "help" || sub === "--help" ? 0 : 2);
   }

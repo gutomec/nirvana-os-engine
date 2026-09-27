@@ -568,7 +568,7 @@ bun ~/.nirvana/skills/harness/scripts/build-report-html.ts --project <outputs>/<
 nrv run-track close <run-id> --state delivered|withheld|failed [--error "<why>"]
 ```
 
-Closing is what tells the owner the work ended — they are not watching the terminal you are running in, and the close fires the desktop notification. Do it in Phase 7, after the artifact is verified, with the state the gate actually produced: `delivered` (gate passed), `withheld` (gate failed after the revision budget), `failed` (the run could not produce the deliverable). Never close `delivered` without a `gate_passed` event; a close is a claim, and the ledger is where it is checked.
+Closing is what tells the owner the work ended — they are not watching the terminal you are running in, and the close fires the desktop notification. Do it in Phase 7, after the artifact is verified, with the state the gate actually produced: `delivered` (gate passed), `withheld` (gate failed after the revision budget), `failed` (the run could not produce the deliverable). Never close `delivered` without a `gate_passed` event; a close is a claim, and the ledger is where it is checked. A close is also final: a run you close as `failed` ends in `abandoned` with your `--error` as the reason, and the supervisor never resumes it. That is the way to retire an attempt a later one superseded; leaving it open, or in a recoverable state, lets the next sweep relaunch it.
 
 `agent-x` has no prep script, so it is the one target you open yourself:
 

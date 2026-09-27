@@ -364,8 +364,36 @@ describe("nrv run-track", () => {
     const runId = runTrack(["open", "--target", "x", "--kind", "agent-x", "--project", "p-rt2", "--outputs", outputs]).stdout.trim();
     runTrack(["close", runId, "--state", "failed", "--error", "runtime sem cota"]);
     const row = getRun(openLedger(ledger), runId)!;
-    expect(row.state).toBe("failed");
+    // A close is final: the declared failure ends in `abandoned`, reason kept.
+    expect(row.state).toBe("abandoned");
+    expect(row.last_error).toContain("failed");
     expect(row.last_error).toContain("cota");
+  }, spawnBudgetMs(2));
+
+  test("a run closed as failed is never resumed by the supervisor", () => {
+    // The incident: an attempt superseded by a later one was closed as `failed`
+    // with the reason in --error. `failed` is recoverable, so the next sweep
+    // relaunched it a day later on a runtime worker. A close is the end of the
+    // run: it must leave the recoverable states the sweep reads.
+    const outputs = path.join(TMP, "rt-outputs-superseded");
+    fs.mkdirSync(outputs, { recursive: true });
+    const runId = runTrack(["open", "--target", "x", "--kind", "squad", "--project", "p-rt-superseded", "--outputs", outputs]).stdout.trim();
+    expect(runTrack(["close", runId, "--state", "failed", "--error", "superseded by attempt 2"]).status).toBe(0);
+
+    const h = openLedger(ledger);
+    expect(findNonTerminal(h, { allProjects: true }).map((r) => r.run_id)).not.toContain(runId);
+    let resumed = 0, redispatched = 0;
+    const s = sweep({
+      handle: h, allProjects: true, now: Date.now() + 24 * 60 * 60_000, pidExitWaitMs: 0,
+      notifyImpl: () => {}, killImpl: () => {},
+      resumeImpl: () => { resumed++; return { ok: false, finalState: "failed", detail: "must not run" } as RecoveryResult; },
+      redispatchImpl: () => { redispatched++; return { ok: false, finalState: "failed", detail: "must not run" } as RecoveryResult; },
+    });
+    expect(resumed).toBe(0);
+    expect(redispatched).toBe(0);
+    expect(s.resumed + s.redispatched).toBe(0);
+    expect(getRun(h, runId)!.state).toBe("abandoned");
+    expect(getRun(h, runId)!.last_error).toContain("superseded by attempt 2");
   }, spawnBudgetMs(2));
 });
 

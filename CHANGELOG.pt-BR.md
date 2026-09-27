@@ -6,6 +6,16 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Unreleased
+
+### Run fechado continua fechado, e consulta nunca começa trabalho
+
+Duas coisas juntas relançaram trabalho que ninguém pediu. `nrv run-track close <run> --state failed` era como um agente aposentava uma tentativa que outra, mais nova, tinha substituído, e a SKILL diz a ele que fechar é o fim do run. Mas `failed` é um estado recuperável no ledger, porque o engine também o usa para falhas que ele mesmo detecta, e o supervisor retoma essas. Então o run continuava ao alcance da varredura. E a varredura não esperava um dispatch: `nrv find` e `nrv route` também a disparavam. Uma busca por um squad bastou para a varredura retomar a tentativa substituída num worker de runtime, que regravou as saídas desatualizadas dela e gastou a cota do runtime com um trabalho que a tentativa mais nova já tinha entregue.
+
+Fechar agora é definitivo. `close --state failed` continua registrando a falha e avisando o dono, e depois termina o run em `abandoned`, o estado terminal que carrega um motivo (`failed: <o seu --error>`). `nrv run-track status` e `wait` o reportam com o mesmo código de saída, 1, e o supervisor nunca mais o toca. Falhas que o engine detecta sozinho (um runtime que morreu, um worker que travou) continuam sendo retomadas como antes.
+
+E consulta não tem efeito colateral. `nrv find` e `nrv route` deixam de disparar a varredura preguiçosa; o `nrv dispatch` continua disparando, na entrada e na saída, e o `nrv supervisor watch` continua cobrindo o caso desatendido.
+
 ## 0.14.7 — 2026-09-26
 
 ### Packs que compartilham um componente instalam, atualizam e desinstalam sem conflito

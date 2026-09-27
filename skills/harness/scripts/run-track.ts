@@ -19,6 +19,8 @@
 //   nrv run-track open   --target <slug> --kind <business|squad|agent-x|clone> --outputs <dir> [--project <id>]
 //   nrv run-track beat   <run-id>                    # still working (renews the lease)
 //   nrv run-track close  <run-id> --state <delivered|withheld|failed> [--error "<why>"]
+//                                                     # a close is final: `failed` ends in
+//                                                     # `abandoned`, never resumed
 //   nrv run-track list                               # what is open right now, IN THIS PROJECT
 //   nrv run-track status <run-id|trace-id> [--json]  # one-shot: is it done, and how did it end
 //   nrv run-track wait   <run-id|trace-id> [--timeout <sec>] [--json]
@@ -50,7 +52,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { resolveScope } from "../../_shared/lib/scope.ts";
 import {
-  openLedger, openAgenticRun, markState, renewLease, findNonTerminal, getRun, findByTraceId,
+  openLedger, openAgenticRun, markState, abandon, renewLease, findNonTerminal, getRun, findByTraceId,
   resolveProjectRoot, sameProjectRoot, isTerminal, pidAlive, runSignalDir,
   AGENTIC_LEASE_SEC, type RunState, type RunRow,
 } from "../lib/run-ledger.ts";
@@ -221,6 +223,16 @@ try {
       try { markState(handle, runId, step); } catch { /* already past it */ }
     }
     markState(handle, runId, state, { error: flag("error") || undefined });
+    // A close is the end of the run. `failed` is a recoverable state in the
+    // ledger, because the engine uses it for failures it detected itself (a
+    // runtime that died, a worker that stalled), and the supervisor resumes
+    // those. A run someone CLOSED as failed was decided, not detected: left in
+    // `failed`, the next sweep resumed it. A superseded attempt closed this way
+    // was relaunched a day later on a runtime worker, rewrote its stale outputs
+    // and spent quota on work a later attempt had already delivered. So the
+    // declared failure is recorded, and the run ends in `abandoned`, which
+    // carries the reason and which the supervisor never touches.
+    if (state === "failed") abandon(handle, runId, `failed: ${flag("error") || "closed by the operator"}`);
     // The whole point of the ledger, from the owner's side: they are not
     // watching this terminal, so the END of the work has to travel to them.
     const label = { delivered: "entregue", withheld: "RETIDO pelo gate", failed: "FALHOU" }[state] ?? state;
