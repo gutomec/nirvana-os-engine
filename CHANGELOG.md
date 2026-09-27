@@ -6,7 +6,7 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
-## Unreleased
+## 0.14.8 — 2026-09-27
 
 ### A closed run stays closed, and a lookup never starts work
 
