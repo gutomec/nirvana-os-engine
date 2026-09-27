@@ -791,6 +791,16 @@ describe("supervisor redispatch — the outcome goes through the delivery pipeli
 });
 
 describe("supervisor — lazy sweep guards and speed", () => {
+  test("lookups never trigger a recovery; dispatch does", () => {
+    // A recovery spawns runtime workers and spends quota. `nrv find` used to
+    // piggyback the lazy sweep, and a search for a squad relaunched a
+    // superseded attempt from the day before. Questions must not start work.
+    const src = (f: string) => fs.readFileSync(path.join(import.meta.dir, "..", "scripts", f), "utf8");
+    expect(src("find.ts")).not.toContain("maybeSweep");
+    expect(src("route.ts")).not.toContain("maybeSweep");
+    expect(src("dispatch.ts")).toContain("maybeSweep()");
+  });
+
   test("recursion guard and opt-out short-circuit", () => {
     process.env.NRV_IN_SWEEP = "1";
     expect(maybeSweep()).toBe(false);

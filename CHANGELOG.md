@@ -6,6 +6,16 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### A closed run stays closed, and a lookup never starts work
+
+Two things combined to relaunch work nobody asked for. `nrv run-track close <run> --state failed` was how an agent retired an attempt a later attempt had superseded, and the SKILL tells it that a close is the end of the run. But `failed` is a recoverable state in the ledger, because the engine also uses it for failures it detects itself, and the supervisor resumes those. So the run stayed in the sweep's reach. And the sweep did not wait for a dispatch: `nrv find` and `nrv route` piggybacked it too. A search for a squad was enough for a sweep to resume the superseded attempt on a runtime worker, which rewrote the attempt's outdated outputs and spent the runtime's quota on work a later attempt had already delivered.
+
+A close is now final. `close --state failed` still records the failure and still notifies the owner, then ends the run in `abandoned`, the terminal state that carries a reason (`failed: <your --error>`). `nrv run-track status` and `wait` report it with the same exit code, 1, and the supervisor never touches it. Failures the engine detects on its own (a runtime that died, a worker that stalled) are still resumed as before.
+
+And lookups have no side effects. `nrv find` and `nrv route` no longer trigger the lazy sweep; `nrv dispatch` still does, on the way in and on the way out, and `nrv supervisor watch` still covers the unattended case.
+
 ## 0.14.7 — 2026-09-26
 
 ### Packs that share a component install, update and uninstall cleanly
