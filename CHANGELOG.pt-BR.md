@@ -14,6 +14,12 @@ Todo filho Claude Code que o engine inicia passa `--permission-mode auto` no lug
 
 A diretiva autônoma deixou de dizer ao agente que ele roda com "FULL TRUST, permissions skipped", o que também era falso sob `--safe`, e o comando que ela ensina para delegar a um colega usa `--permission-mode auto`.
 
+### Os testes param de gravar no state.db real, e `squads_authorized` vazio quer dizer todos os squads
+
+Todo evento de auditoria é gravado no JSONL e no espelho SQLite dele, o `state.db`. O preload dos testes fixava só a raiz do JSONL, então cada evento emitido num teste também caía no `state.db` global do usuário, onde o `nrv doctor` e as linhas de base o liam como atividade real. O preload agora fixa `NIRVANA_STATE_DB` dentro da raiz temporária do teste, e o `state-db.js` ganha o mesmo piso que o `log-paths.js` já tem: um teste que apaga a variável para exercitar o caminho sem ela resolve dentro da raiz do teste, nunca na pasta do usuário.
+
+O prompt do cargo lia `squads_authorized: []` como "não despache squad nenhum", o contrário da Business Protocol v2 §6.10, onde a lista vazia é idêntica à ausente e as duas querem dizer que todo squad é permitido. Agora segue a spec.
+
 ## 0.14.8 — 2026-09-27
 
 ### Run fechado continua fechado, e consulta nunca começa trabalho

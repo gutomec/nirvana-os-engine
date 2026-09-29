@@ -23,6 +23,14 @@ if (!process.env.HARNESS_LOGS_DIR) {
 // owner's audit.
 process.env.NIRVANA_TEST_LOGS_HOME = process.env.HARNESS_LOGS_DIR;
 
+// And the SQLite mirror of the same audit. Every event is written to the JSONL
+// above AND to state.db, which resolves on its own (NIRVANA_STATE_DB, else the
+// project's, else the global one in the user's home), so pinning only the logs
+// left each event a test emitted landing in the user's real state.db.
+if (!process.env.NIRVANA_STATE_DB) {
+  process.env.NIRVANA_STATE_DB = path.join(process.env.HARNESS_LOGS_DIR!, "state.db");
+}
+
 if (!process.env.NIRVANA_AUDIT_KEY) {
   process.env.NIRVANA_AUDIT_KEY = path.join(process.env.HARNESS_LOGS_DIR!, "audit-key");
 }

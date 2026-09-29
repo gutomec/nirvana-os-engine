@@ -316,14 +316,6 @@ function mindCloneCatalogBlock(employeeContent: string): string {
   ].join("\n");
 }
 
-/** True if `squads_authorized` was DECLARED (key present), even if empty/null.
- *  Declared-but-empty => operate with the system default WITHOUT squads.
- *  Absent (never declared) => open authorization (all squads permitted). */
-function squadsAuthorizedDeclared(employeeContent: string): boolean {
-  const fm = employeeContent.match(/^---[\s\S]*?^---/m)?.[0] || "";
-  return /^\s*squads_authorized\s*:/m.test(fm);
-}
-
 /**
  * The seat's job under an orchestrator map.
  *
@@ -398,11 +390,10 @@ function squadCatalogBlock(employeeContent: string, projectRoot?: string): strin
       lines.push(`- **${slug}** — ${doms || "(no domains)"}${caps ? "\n  - capabilities: " + caps : ""}`);
     }
     lines.push("");
-  } else if (squadsAuthorizedDeclared(employeeContent)) {
-    lines.push("> **No authorized squads:** `squads_authorized` was declared EMPTY — operate with the system default, **WITHOUT dispatching squads**. Deliver yourself (via your employees/skills), without delegating to the catalog below.");
-    lines.push("");
   } else {
-    lines.push("> **Open authorization:** your business declared no `squads_authorized`, so **every squad in the catalog below is permitted**. Pick the best one for the sub-task.");
+    // Business Protocol v2 §6.10: `squads_authorized` closes the set only when
+    // it lists something. `[]` is identical to absent, and both mean every squad.
+    lines.push("> **Open authorization:** your seat declares no closed `squads_authorized` set, so **every squad in the catalog below is permitted**. Pick the best one for the sub-task.");
     lines.push("");
   }
 
