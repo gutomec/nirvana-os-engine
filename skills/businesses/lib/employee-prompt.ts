@@ -78,6 +78,10 @@ export type BuildArgs = {
    *
    * `squad: null` is a decision, not an absence: it means this seat does the
    * work itself, embodied by its clone.
+   *
+   * A map can be partial. A field left undefined was not mapped, and that half
+   * of the prompt stays self-service: a business chain that gives a seat a
+   * mandatory squad does not also decide the seat's voice.
    */
   assignment?: {
     mind_clone?: string | null;
@@ -565,21 +569,25 @@ export function buildEmployeePrompt(args: BuildArgs): string {
   // upstream drew a map, and the seat is deciding with less than the
   // orchestrator had.
   const assigned = args.assignment;
+  // Each half of the map stands alone: a mapped squad replaces the squad catalog,
+  // a mapped clone replaces the clone catalog, and an unmapped half keeps its own.
+  const squadMapped = !!assigned && assigned.squad !== undefined;
+  const cloneMapped = !!assigned && assigned.mind_clone !== undefined;
   // Under a map the seat neither shops for a squad nor decides its own voice.
   // Rule 3 used to point at a catalog that no longer renders, and the clone
   // section used to open by handing over a decision already made upstream.
-  const rule3 = assigned
-    ? (assigned.squad
-        ? `**Instruct \`${assigned.squad}\`, do not execute its part.** The orchestrator assigned it to this sub-task; your deliverable here is the instruction you write for it (see YOUR ASSIGNMENT). Do not pick another squad and do not add one — an assignment that does not fit is a plan change you report, never a substitution you make. The dispatch emits a \`dispatch_squad\` audit event.`
+  const rule3 = squadMapped
+    ? (assigned!.squad
+        ? `**Instruct \`${assigned!.squad}\`, do not execute its part.** The orchestrator assigned it to this sub-task; your deliverable here is the instruction you write for it (see YOUR ASSIGNMENT). Do not pick another squad and do not add one — an assignment that does not fit is a plan change you report, never a substitution you make. The dispatch emits a \`dispatch_squad\` audit event.`
         : "**Deliver this yourself.** The orchestrator assigned no squad to this sub-task, which is a decision and not an omission: it read the library against this brief and concluded this seat delivers it directly. Do not go looking for one.")
     : "**Prefer squads (BP §13.4).** You are an orchestrator: a sub-task with a dedicated squad is dispatched, not done by hand (see \"AVAILABLE SQUADS\" below; a brief that names a squad uses it; a declared \`squads_authorized\` set is closed, none declared means all permitted). Hand the squad a brief-context built from your role + persona, not the raw brief. Each dispatch emits a \`dispatch_squad\` audit event.";
-  const squadsBlock = assigned
-    ? assignmentBlock(assigned.squad, args.project_dir)
+  const squadsBlock = squadMapped
+    ? assignmentBlock(assigned!.squad, args.project_dir)
     : squadCatalogBlock(employeeContent, args.project_dir);
   // Under a map there is no catalog: `cloneSection` below renders the assigned
   // voice and its DNA, and that is the whole of what this seat is told about
   // clones.
-  const mindCloneCatalog = assigned ? "" : mindCloneCatalogBlock(employeeContent);
+  const mindCloneCatalog = cloneMapped ? "" : mindCloneCatalogBlock(employeeContent);
 
   // What the business carries beyond the manifest and the seat that is running.
   //
@@ -781,11 +789,11 @@ export function buildEmployeePrompt(args: BuildArgs): string {
   // choose", the ranked suggestions and the `x_clone_choice` recording all
   // described a choice the seat no longer makes, and leaving them beside the
   // assignment block said two opposite things in the same prompt.
-  const cloneSection = assigned
+  const cloneSection = cloneMapped
     ? [
-        `## MIND-CLONE YOU EMBODY — assigned: \`${assigned.mind_clone ?? "none"}\``,
+        `## MIND-CLONE YOU EMBODY — assigned: \`${assigned!.mind_clone ?? "none"}\``,
         "",
-        assigned.mind_clone
+        assigned!.mind_clone
           ? `> This is not a shortlist and there is nothing to pick: the orchestrator read the library against this brief and assigned this voice to this seat. Speak and judge as it does. ${embodimentLine}${dnaContent}\n\n> If the persona is missing from the library, say so in your summary and work as yourself — never substitute a different clone on your own initiative.`
           : "> The orchestrator assigned no clone to this seat for this task. Work as yourself, in your own persona — that is the decision, not a gap to fill.",
       ].join("\n")
@@ -925,11 +933,11 @@ if (import.meta.main) {
   };
   const assignClone = takeFlag("--assign-clone");
   const assignSquadRaw = takeFlag("--assign-squad");
+  // A flag left out leaves that half of the map undefined, so it stays
+  // self-service: `nrv team` passes both, a business chain may pass only the squad.
+  const mapped = (v: string | undefined) => v === undefined ? undefined : (v && v !== "none" ? v : null);
   const assignment = (assignClone !== undefined || assignSquadRaw !== undefined)
-    ? {
-        mind_clone: assignClone && assignClone !== "none" ? assignClone : null,
-        squad: assignSquadRaw && assignSquadRaw !== "none" ? assignSquadRaw : null,
-      }
+    ? { mind_clone: mapped(assignClone), squad: mapped(assignSquadRaw) }
     : undefined;
   const [slug, employee, projectDir, briefFile, outputsRoot] = argv;
   if (!slug || !employee || !projectDir || !briefFile) {

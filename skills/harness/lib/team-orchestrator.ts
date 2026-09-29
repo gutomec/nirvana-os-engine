@@ -8,8 +8,9 @@
 // mind_clone_injected + agent_executed — provable orchestration.
 //
 // Flow:
-//   1. Director call (cheap, tool-less LLM): given the brief + the list of
-//      employees of this business, returns the ordered chain {employee,task}.
+//   1. Director call (an agent with its runtime's tools, stamped as a planner):
+//      given the brief, the employees of this business and the squads the
+//      router made mandatory, returns the ordered chain {employee,task,squad?}.
 //   2. Sequential executor: for each step, builds the employee prompt via
 //      employee-prompt.ts (full DNA injection), runs runHeadless, captures
 //      outputs into _team/<employee>/. The LAST step is the intake/synthesizer
@@ -29,9 +30,16 @@ import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { runSquadHeadless } from "./squad-exec.ts";
 import { resolveEntityDir } from "../../_shared/lib/entity-resource-map.ts";
 import { extractJsonObject } from "../../_shared/lib/model-json.ts";
+import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 
 const SKILLS = process.env.NIRVANA_SKILLS_DIR
   || (fs.existsSync(path.join(os.homedir(), ".nirvana", "skills")) ? path.join(os.homedir(), ".nirvana", "skills") : path.join(os.homedir(), ".claude", "skills"));
+/** The seat prompt builder shipped beside this file, so the chain and the prompt
+ *  it builds are always the same version of the engine; the skills root is the
+ *  fallback for a layout where the sibling is absent. */
+const EMPLOYEE_PROMPT = fs.existsSync(path.join(import.meta.dir, "..", "..", "businesses", "lib", "employee-prompt.ts"))
+  ? path.join(import.meta.dir, "..", "..", "businesses", "lib", "employee-prompt.ts")
+  : path.join(SKILLS, "businesses/lib/employee-prompt.ts");
 
 export interface TeamRunArgs {
   slug: string;
@@ -42,10 +50,12 @@ export interface TeamRunArgs {
   outputsRoot: string;
   runtime: Runtime;
   intakeEmployee: string;
-  /** Squads the user explicitly asked for (from the agentic router). Each runs
-   * as `nrv dispatch <slug> "<task>" --exec` right before the synthesizer; its
-   * outputs land under <outputsRoot>/_squads/<slug>/ for the synthesizer to
-   * read. Each emits dispatch_squad in the audit. */
+  /** Squads the router made mandatory for this brief. The director gives each
+   * to the seat whose sub-task it serves; that seat writes the squad's
+   * instruction and integrates what comes back. A squad no seat delivered runs
+   * on its own right before the synthesizer, its outputs under
+   * <outputsRoot>/_squads/<slug>/. Either way it always runs, and each run emits
+   * dispatch_squad in the audit. */
   mandatorySquads?: string[];
   maxBudgetUsd?: number;
   timeoutMs?: number;
@@ -166,6 +176,12 @@ function pickChain(args: TeamRunArgs): { chain: ChainStep[]; reason: string } {
   }
 
   const list = employees.map(e => `- ${e.name} (${e.role}): ${e.description}`).join("\n");
+  // Squads the router made mandatory. They used to run as a separate track the
+  // director never saw, on the whole brief, right before the synthesizer, while
+  // the seat whose job covered the same part did it too: the work was done twice
+  // and merged at the end. The director now gives each to the seat it serves.
+  const mandatory = [...new Set(args.mandatorySquads ?? [])];
+  const squadShape = mandatory.length ? `,"squad":"<one of the mandatory squads, or null>"` : "";
   const prompt = [
     `You are the orchestration director of the business "${args.slug}". Your only job is to decide the chain of employees that executes the brief below at the highest quality this system can reach.`,
     "",
@@ -187,8 +203,9 @@ function pickChain(args: TeamRunArgs): { chain: ChainStep[]; reason: string } {
     "- Order by logical dependency: whoever produces an input comes before whoever needs it.",
     "- Each sub-task: the expected result and what is mandatory about it. The path belongs to whoever executes.",
     "- The DELIVERABLE follows the language of the client brief above. These instructions are in English; what the business ships is not.",
+    mandatory.length ? `- MANDATORY SQUADS for this brief: ${mandatory.map(q => `"${q}"`).join(", ")}. Give each one to the seat whose sub-task it serves, with "squad" on that step: that seat writes the squad's instruction and integrates what it delivers, so the part is done once. One squad per seat, never on "${args.intakeEmployee}". A squad no step takes still runs, on its own, before the synthesizer.` : "",
     "",
-    'Answer with ONE valid JSON object only: {"reason":"<one sentence: why THIS number of steps>","chain":[{"employee":"<exact-name>","task":"<1-2 sentences: what has to exist at the end, and what is non-negotiable>"}, ...]}',
+    `Answer with ONE valid JSON object only: {"reason":"<one sentence: why THIS number of steps>","chain":[{"employee":"<exact-name>","task":"<1-2 sentences: what has to exist at the end, and what is non-negotiable>"${squadShape}}, ...]}`,
     "No markdown, no fences, no comment before or after.",
     // The two mandate rules above are chain-only, so they render as "" under
     // --team; dropping the empties keeps the rule list from growing blank lines.
@@ -218,6 +235,12 @@ function pickChain(args: TeamRunArgs): { chain: ChainStep[]; reason: string } {
   });
   const txt = (res.result || "").trim();
   let parsed = extractDirectorPlan(txt);
+  // The re-ask below transcribes a decision that was made. A call that failed
+  // (timeout, quota, a dead runtime) or answered nothing made none, so asking
+  // again only spends two more minutes before failing the same way.
+  if (!parsed && (!res.ok || !txt)) {
+    throw new Error(`director call failed before deciding: ${res.error || (res.stderr || "").trim().slice(0, 200) || "empty answer"}`);
+  }
 
   // The director runs with tools, full trust and the project granted — it runs
   // like the agents it dispatches. That is deliberate, and it has a cost: an
@@ -246,11 +269,15 @@ function pickChain(args: TeamRunArgs): { chain: ChainStep[]; reason: string } {
       "",
       "VALID EMPLOYEE NAMES (use these spellings exactly):",
       employees.map(e => `- ${e.name}`).join("\n"),
+      ...(mandatory.length ? ["", "MANDATORY SQUADS (keep the assignment you already made, if any):", mandatory.map(q => `- ${q}`).join("\n")] : []),
       "",
-      'Your entire reply must be this one JSON object and nothing else: {"reason":"<one sentence>","chain":[{"employee":"<exact-name>","task":"<what has to exist at the end>"}, ...]}',
+      `Your entire reply must be this one JSON object and nothing else: {"reason":"<one sentence>","chain":[{"employee":"<exact-name>","task":"<what has to exist at the end>"${squadShape}}, ...]}`,
       "No preamble, no summary of what you did, no markdown fences. The JSON object is the whole reply.",
     ].join("\n");
     const retry = (args.runHeadlessImpl ?? runHeadless)({
+      // Same role as the first call: the re-ask decides nothing and may open
+      // nothing, whatever tools its runtime hands it.
+      dispatchRole: "planner",
       runtime: args.runtime, prompt: reask, cwd: args.projectRoot,
       yolo: args.yolo ?? true,
       timeoutMs: 2 * 60 * 1000,
@@ -261,9 +288,22 @@ function pickChain(args: TeamRunArgs): { chain: ChainStep[]; reason: string } {
   if (!Array.isArray(parsed.chain) || !parsed.chain.length) throw new Error("director retornou cadeia vazia");
 
   const known = new Set(employees.map(e => e.name));
+  // A squad assignment is kept only when it names a mandatory squad, the seat is
+  // not the synthesizer, and no earlier step took it. Anything else is dropped
+  // and the squad falls to the pre-synthesizer pass, so a bad assignment can
+  // cost a seat's instruction but never the squad itself.
+  const taken = new Set<string>();
   let chain: ChainStep[] = parsed.chain
     .filter((s: any) => s && typeof s.employee === "string" && known.has(s.employee))
-    .map((s: any) => ({ employee: s.employee, task: String(s.task || "Execute sua especialidade aplicada ao brief.").trim() }));
+    .map((s: any) => {
+      const step: ChainStep = { employee: s.employee, task: String(s.task || "Execute sua especialidade aplicada ao brief.").trim() };
+      const squad = typeof s.squad === "string" ? s.squad.trim() : "";
+      if (squad && mandatory.includes(squad) && s.employee !== args.intakeEmployee && !taken.has(squad)) {
+        step.squad = squad;
+        taken.add(squad);
+      }
+      return step;
+    });
   if (!chain.length) throw new Error("director picked no valid employee");
   if (chain[chain.length - 1].employee !== args.intakeEmployee) {
     chain.push({ employee: args.intakeEmployee, task: `Final synthesis: read the colleagues' outputs under _team/* and consolidate the FINAL DELIVERABLES under ${args.outputsRoot}. State any assumptions under a "## Assumptions" heading.` });
@@ -385,9 +425,13 @@ function runStep(step: ChainStep, idx: number, total: number, args: TeamRunArgs,
   // subprocess, walking its own resolution, lands on the global one — then the
   // prompt describes one tree and the grant below opens another. Handing it the
   // library root this run already settled on removes the second opinion.
+  // A step the director gave a mandatory squad carries it as the seat's
+  // assignment: the seat writes the squad's instruction and integrates what it
+  // delivers. Only the squad is mapped; the seat still chooses its own voice.
   const ep = spawnSync("bun", [
-    path.join(SKILLS, "businesses/lib/employee-prompt.ts"),
+    EMPLOYEE_PROMPT,
     args.slug, step.employee, args.projectDir, stepBriefFile, employeeOutDir,
+    ...(step.squad ? ["--assign-squad", step.squad] : []),
   ], {
     windowsHide: true,
     encoding: "utf8", maxBuffer: 32 * 1024 * 1024,
@@ -431,6 +475,35 @@ function runStep(step: ChainStep, idx: number, total: number, args: TeamRunArgs,
   }, args.projectRoot);
 
   return { employee: step.employee, ok: res.ok, sessionId: res.sessionId, costUsd: res.costUsd, durationMs: res.durationMs, outputsDir: employeeOutDir };
+}
+
+/**
+ * Whether `squad` ran at or after `sinceMs`, as the audit records it.
+ *
+ * The evidence is the `agent_executed` event squad-exec writes, with
+ * `squad_slug`, once the squad's run returns (its `dispatch_squad` is written
+ * before the run, so it proves only that one started). A seat reaches its squad
+ * through a nested `nrv dispatch`: that child runs in this project root and
+ * inherits `HARNESS_LOGS_DIR`, so it writes to the log this reads. The nested
+ * run has its own project id, which is why the match is on the squad and the
+ * time, not on this run's id.
+ */
+export function squadRanSince(squad: string, sinceMs: number, projectRoot: string): boolean {
+  const root = harnessLogsDir({ cwd: projectRoot });
+  const days = new Set([new Date(sinceMs).toISOString().slice(0, 10), new Date().toISOString().slice(0, 10)]);
+  for (const day of days) {
+    let text: string;
+    try { text = fs.readFileSync(path.join(root, day, "audit.jsonl"), "utf8"); } catch { continue; }
+    for (const line of text.split("\n")) {
+      if (!line.includes(squad) || !line.includes("agent_executed")) continue;
+      let e: any;
+      try { e = parseAuditLine(line); } catch { continue; }
+      if (e?.event !== "agent_executed" || e?.squad_slug !== squad) continue;
+      const ts = Date.parse(String(e.ts ?? ""));
+      if (Number.isFinite(ts) && ts >= sinceMs) return true;
+    }
+  }
+  return false;
 }
 
 /** Run a mandatory squad as a sub-task of this business chain. The squad
@@ -510,7 +583,7 @@ export function planChain(args: TeamRunArgs): { chain: ChainStep[]; reason: stri
     event: "x_chain_shape_decided", project_id: args.projectId, business_slug: args.slug,
     steps: chain.length, reason, forced: args.forceChain ? "team" : "auto",
   }, args.projectRoot);
-  appendAudit({ event: "team_chain_selected", project_id: args.projectId, business_slug: args.slug, chain: chain.map(s => ({ employee: s.employee, task: s.task.slice(0, 120) })) }, args.projectRoot);
+  appendAudit({ event: "team_chain_selected", project_id: args.projectId, business_slug: args.slug, chain: chain.map(s => ({ employee: s.employee, task: s.task.slice(0, 120), ...(s.squad ? { squad: s.squad } : {}) })) }, args.projectRoot);
   return { chain, reason };
 }
 
@@ -524,12 +597,22 @@ export function runTeam(args: TeamRunArgs): TeamResult {
   const steps: StepResult[] = [];
   const priorOutputs: { employee: string; dir: string }[] = [];
   const gaps: ChainGap[] = [];
-  const mandatorySquads = args.mandatorySquads ?? [];
+  const mandatorySquads = [...new Set(args.mandatorySquads ?? [])];
+  // Mandatory squads a seat carried and that the audit shows RAN during that
+  // seat's step. A seat can finish well without dispatching its squad (its
+  // assignment tells it to stop and say so when the squad is the wrong tool),
+  // so the seat's success alone proves nothing. Without the evidence the squad
+  // runs on its own below: running it twice is the lesser evil next to a
+  // mandatory squad that never runs.
+  const deliveredBySeat = new Set<string>();
   for (let i = 0; i < chain.length; i++) {
-    // Right before the synthesizer (last step), dispatch each mandatory squad
-    // so its output is available in priorOutputs for the synthesizer to read.
-    if (i === chain.length - 1 && mandatorySquads.length) {
-      for (const squadSlug of mandatorySquads) {
+    // Right before the synthesizer (last step), dispatch each mandatory squad no
+    // seat delivered, so its output is in priorOutputs for the synthesizer.
+    // A squad the user named always runs: either its seat carried it or it
+    // runs here.
+    const pending = mandatorySquads.filter(q => !deliveredBySeat.has(q));
+    if (i === chain.length - 1 && pending.length) {
+      for (const squadSlug of pending) {
         const sr = runMandatorySquad(squadSlug, args);
         steps.push(sr);
         if (sr.ok) priorOutputs.push({ employee: `squad:${squadSlug}`, dir: sr.outputsDir });
@@ -538,6 +621,7 @@ export function runTeam(args: TeamRunArgs): TeamResult {
       }
     }
     const isLast = i === chain.length - 1;
+    const stepStartedMs = Date.now();
     let r = runStep(chain[i], i, chain.length, args, priorOutputs, gaps);
     let attempts = 1;
 
@@ -558,6 +642,14 @@ export function runTeam(args: TeamRunArgs): TeamResult {
 
     if (r.ok) {
       priorOutputs.push({ employee: chain[i].employee, dir: r.outputsDir });
+      const carried = chain[i].squad;
+      if (carried) {
+        if (squadRanSince(carried, stepStartedMs, args.projectRoot)) deliveredBySeat.add(carried);
+        else appendAudit({
+          event: "x_carried_squad_unconfirmed", trace_id: args.projectId, project_id: args.projectId,
+          business_slug: args.slug, employee: chain[i].employee, squad_slug: carried, step: i + 1, total: chain.length,
+        }, args.projectRoot);
+      }
       continue;
     }
 

@@ -1857,12 +1857,16 @@ if (wantExec) {
   publication.start();
 
   // res = unified result shape consumed by the delivery pipeline below.
-  let res: { ok: boolean; sessionId: string | null; durationMs: number; costUsd: number | null; exitCode?: number; error?: string; stderr?: string };
+  // Assigned by exactly one of the two branches below (team, or the intake seat alone).
+  let res!: { ok: boolean; sessionId: string | null; durationMs: number; costUsd: number | null; exitCode?: number; error?: string; stderr?: string };
   // Set when the runtime returned an error verdict. The run is NOT abandoned
   // here: whatever landed on disk still goes through verify → gate below
   // (deliverAfterRuntimeError), which needs the afterGate hook defined further
   // down — so the decision is deferred instead of exiting on the spot.
   let runtimeError: string | null = null;
+  // Whether the intake seat ran alone: the single-seat mode, or a team whose
+  // director failed and handed the brief to its intake seat.
+  let ranSingle = !wantTeam;
 
   if (wantTeam) {
     const tr = runTeam({
@@ -1875,7 +1879,17 @@ if (wantExec) {
       timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
       rulesDirective,
     });
-    if (!tr.ok) {
+    // A director that failed decided nothing, so no seat ran and the chain has
+    // nothing on disk. The run used to die there, taking the business with it.
+    // The intake seat carries the brief alone instead, the same path `--single`
+    // takes, and the switch is loud: a failed director never reads as a normal
+    // single-seat run.
+    const directorFailed = !tr.ok && tr.steps.length === 0 && String(tr.error ?? "").startsWith("director:");
+    if (directorFailed) {
+      console.error(c("yellow", `⚠ the director failed (${tr.error}); the intake seat '${intake}' carries the brief alone`));
+      emit("x_director_failed_single_fallback", { trace_id: pid, project_id: pid, business_slug: slug, runtime: rt, employee: intake, error: tr.error });
+      ranSingle = true;
+    } else if (!tr.ok) {
       console.error(c("red", `✗ team failed: ${tr.error}`));
       emit("agent_exec_failed", { trace_id: pid, project_id: pid, business_slug: slug, runtime: rt, mode: "team", error: tr.error });
       runtimeError = `team failed: ${tr.error}`;
@@ -1893,8 +1907,9 @@ if (wantExec) {
       }
       console.log(c("dim", `  total: ${tr.totalDurationMs}ms · $${tr.totalCostUsd.toFixed(4)}`));
     }
-    res = { ok: tr.ok, sessionId: tr.lastSessionId, durationMs: tr.totalDurationMs, costUsd: tr.totalCostUsd };
-  } else {
+    if (!ranSingle) res = { ok: tr.ok, sessionId: tr.lastSessionId, durationMs: tr.totalDurationMs, costUsd: tr.totalCostUsd };
+  }
+  if (ranSingle) {
     // The specialists the router already picked, run before the seat that needs
     // them. They used to execute only inside `runTeam`, so a single-seat run
     // emitted `auto_route_selected` naming squads that never ran — the log
@@ -1915,6 +1930,18 @@ if (wantExec) {
       else console.error(c("yellow", `  ⚠ mandatory squad '${sq}' failed: ${sr.error}`));
     }
 
+    // A team run may reach here without the intake prompt on disk (its director
+    // failed after the chain was chosen as the mode); build it now in that case.
+    if (!fs.existsSync(outputPath)) {
+      const lateArgs = [employeePrompt, slug, intake, projDir, tmpBriefFile, ...(execOutputsRoot ? [execOutputsRoot] : [])];
+      const late = spawnSync("bun", lateArgs, { windowsHide: true, encoding: "utf8", env: prepScriptEnv });
+      if (late.status !== 0) {
+        console.error(c("red", "✗ employee-prompt failed:"));
+        console.error(late.stderr);
+        process.exit(1);
+      }
+      fs.writeFileSync(outputPath, late.stdout);
+    }
     let agentPrompt = fs.readFileSync(outputPath, "utf8");
     if (priorSquadDirs.length) {
       agentPrompt += `\n\n## O QUE OS ESPECIALISTAS JÁ ENTREGARAM\nEstes squads rodaram antes de você, sobre o mesmo brief. Leia o que produziram e construa em cima — não refaça, não ignore.\n\n${priorSquadDirs.map(s => `- **${s.slug}** → \`${s.dir}\``).join("\n")}`;
@@ -1966,7 +1993,7 @@ if (wantExec) {
   // emit to avoid double counting. In single-shot mode, audit the parent run.
   // An errored run already emitted agent_exec_failed — claiming agent_executed
   // on top of it would put two contradictory verdicts in the same chain.
-  if (!wantTeam && !runtimeError) {
+  if (ranSingle && !runtimeError) {
     emit("agent_executed", { trace_id: pid, project_id: pid, business_slug: slug, employee: intake, runtime: rt, session_id: res.sessionId, cost_usd: res.costUsd, duration_ms: res.durationMs });
   }
 
@@ -2018,7 +2045,7 @@ if (wantExec) {
   let delivery: DeliveryResult;
   publication.verify();
   if (runtimeError) {
-    const outcome = deliverAfterError(bizDeliverOpts, runtimeError, { employee: intake, mode: wantTeam ? "team" : "single" });
+    const outcome = deliverAfterError(bizDeliverOpts, runtimeError, { employee: intake, mode: ranSingle ? "single" : "team" });
     publication.finish({ exitCode: outcome.exitCode, gateOutcome: outcome.result?.gateOutcome ?? "indeterminate", error: runtimeError }, oroot);
     if (!outcome.judged) {
       console.error(c("red", `✗ nothing was produced in ${oroot} — nothing to judge.`));

@@ -150,8 +150,10 @@ describe("dispatch.ts prep scripts", () => {
   test("the prep-script environment carries the pinned settings and every employee-prompt spawn uses it", () => {
     const src = fs.readFileSync(path.join(import.meta.dir, "..", "scripts", "dispatch.ts"), "utf8");
     expect(src).toMatch(/const prepScriptEnv = \{ \.\.\.process\.env, \.\.\.settingsEnvForChild\(\), NIRVANA_DISPATCH_TRACKS_RUN: "1" \};/);
-    const employeePromptSpawns = src.match(/spawnSync\("bun", (?:buildArgs|\[employeePrompt)[^\n]*/g) ?? [];
-    expect(employeePromptSpawns.length).toBe(2);
+    // Three: the intake prompt, the one a team run builds late when its director
+    // fails and the intake seat carries the brief alone, and the gauntlet canary's.
+    const employeePromptSpawns = src.match(/spawnSync\("bun", (?:buildArgs|lateArgs|\[employeePrompt)[^\n]*/g) ?? [];
+    expect(employeePromptSpawns.length).toBe(3);
     for (const spawn of employeePromptSpawns) expect(spawn).toContain("env: prepScriptEnv");
     const prepScriptSpawns = src.match(/spawnSync\("bun", (?:args|\[briefSquadScript)[^\n]*/g) ?? [];
     expect(prepScriptSpawns.length).toBe(2);
