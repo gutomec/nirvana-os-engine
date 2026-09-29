@@ -16,7 +16,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { parse as parseYaml } from "yaml";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { type Runtime } from "./host-agent-driver.ts";
 import { LEGACY_CAPABILITY_ID } from "./capability-resolver.ts";
 import {
@@ -106,7 +106,7 @@ function appendAudit(payload: Record<string, any>, projectRoot?: string): void {
 // can read different scopes (the exact leak fixed in employee-prompt on
 // 2026-08-18: a test run from the engine repo picked up the repo's derived
 // registry and injected clones its fixture never wrote).
-export function squadCloneInjection(brief: string, cwd?: string): { block: string; decision: string; missingClones: string[] } {
+export function squadCloneInjection(brief: string, cwd?: string): { block: string; decision: string; missingClones: string[]; mode?: "reference" | "full" | "fragments"; personaDirs?: string[] } {
   const MAX = 2;
   const picked: Array<{ slug: string; reason: string }> = [];
   // 1. SOLICITADO — brief names a clone (slug or display name)
@@ -135,19 +135,26 @@ export function squadCloneInjection(brief: string, cwd?: string): { block: strin
     decision = picked.length ? "encontrado por BUSCA" : "PADRÃO — nenhum clone útil";
   }
   if (!picked.length) return { block: "", decision, missingClones: [] };
-  // Same opt-in mode as employee-prompt (the execution.dna_injection setting):
-  // fragments injects SOUL + phase layers (squads execute → execute layers)
-  // with a byte budget; full = the whole persona.
-  const dnaMode: "full" | "fragments" = resolveSetting("execution.dna_injection").value;
+  // Same mode as employee-prompt (the execution.dna_injection setting):
+  // reference (the default) = a card naming the persona files, read on demand;
+  // fragments = SOUL + phase layers (squads execute → execute layers) with a
+  // byte budget; full = the whole persona.
+  const dnaMode: "reference" | "full" | "fragments" = resolveSetting("execution.dna_injection").value;
   const fragLayers = layersForPhase("execute");
   const parts: string[] = [];
   const missingClones: string[] = [];
+  // A card names files the executor opens on demand, so each clone's folder is
+  // granted to the run: a runtime that refuses an ungranted path would otherwise
+  // hold a card it cannot read.
+  const personaDirs: string[] = [];
   for (const p of picked) {
     const persona = dnaMode === "fragments"
       ? resolveClonePersona(p.slug, { depth: "fragments", layers: fragLayers, byteBudget: 16000, cwd })
-      : resolveClonePersona(p.slug, { depth: "full", cwd });
-    if (persona) parts.push(`--- MIND-CLONE: ${p.slug} — ${persona.display_name} (${p.reason}) ---\n\n${persona.content}`);
-    else missingClones.push(p.slug);
+      : resolveClonePersona(p.slug, { depth: dnaMode, cwd });
+    if (persona) {
+      parts.push(`--- MIND-CLONE: ${p.slug} — ${persona.display_name} (${p.reason}) ---\n\n${persona.content}`);
+      if (persona.source) personaDirs.push(persona.source);
+    } else missingClones.push(p.slug);
   }
 
   // A requested but nonexistent clone does not take down the squad — but
@@ -173,7 +180,36 @@ export function squadCloneInjection(brief: string, cwd?: string): { block: strin
       `pela capability \`knowledge_management.mind_clone_generation_pipeline.execute\`).\n`
     );
   }
-  return { block: parts.join("\n\n"), decision, missingClones };
+  return { block: parts.join("\n\n"), decision, missingClones, mode: dnaMode, personaDirs };
+}
+
+// ── the manifest an executor reads ──────────────────────────────────────────
+
+/** Capability fields the router and the admission gate read, never the squad
+ *  that executes: they were 40–53% of a real squad.yaml, pasted whole into every
+ *  dispatch. */
+const ROUTING_ONLY_CAPABILITY_KEYS = ["keywords", "example_briefs", "examples", "not_for", "domains", "score_boost", "fidelity"];
+const ROUTING_ONLY_TOP_KEYS = ["tags", "experimental_domains"];
+
+/** The squad.yaml a dispatched capability needs: identity, components and
+ *  runtime requirements, the dispatched capability in full minus its routing
+ *  fields, and every other capability by id and description. The raw file when
+ *  it does not parse or does not declare the capability. */
+export function executorManifest(raw: string, capabilityId: string): string {
+  let doc: any;
+  try { doc = parseYaml(raw); } catch { return raw; }
+  if (!doc || typeof doc !== "object" || !Array.isArray(doc.capabilities)) return raw;
+  if (!doc.capabilities.some((c: any) => c && c.id === capabilityId)) return raw;
+  const out: Record<string, unknown> = { ...doc };
+  for (const k of ROUTING_ONLY_TOP_KEYS) delete out[k];
+  out.capabilities = doc.capabilities.map((c: any) => {
+    if (!c || typeof c !== "object") return c;
+    if (c.id !== capabilityId) return { id: c.id, description: c.description };
+    const kept: Record<string, unknown> = { ...c };
+    for (const k of ROUTING_ONLY_CAPABILITY_KEYS) delete kept[k];
+    return kept;
+  });
+  return stringifyYaml(out, { lineWidth: 0 });
 }
 
 // ── the capability a dispatch runs, as prompt sections ──────────────────────
@@ -376,7 +412,7 @@ export function buildSquadPrompt(args: {
   brief: string;
   outDir: string;
   mode: SquadExecMode;
-  cloneInjection: { block: string; decision: string };
+  cloneInjection: { block: string; decision: string; mode?: "reference" | "full" | "fragments" };
   /** The capability this dispatch runs (capability-resolver.ts). Absent, or the
    *  legacy `squad.execute`, keeps the historical prompt. */
   capabilityId?: string | null;
@@ -386,7 +422,7 @@ export function buildSquadPrompt(args: {
 }): string {
   const { squadSlug, squadDir, brief, outDir, mode, cloneInjection: cloneInj } = args;
   const readIfExists = (p: string) => fs.existsSync(p) ? fs.readFileSync(p, "utf8") : "";
-  const manifest = readIfExists(path.join(squadDir, "squad.yaml")) || "(squad.yaml missing)";
+  const rawManifest = readIfExists(path.join(squadDir, "squad.yaml")) || "(squad.yaml missing)";
   // Collect up to ~3 agents and ~3 tasks so the prompt stays bounded.
   const agentsDir = path.join(squadDir, "agents");
   const tasksDir = path.join(squadDir, "tasks");
@@ -402,6 +438,7 @@ export function buildSquadPrompt(args: {
   // squad-exec.test.ts pins that path. Every squad with `capabilities[]`
   // declared (mandatory since Creation Rule 5) gets the contract for free.
   const capability = args.capabilityId ? capabilityContext(squadDir, args.capabilityId) : null;
+  const manifest = capability ? executorManifest(rawManifest, capability.capabilityId) : rawManifest;
   const capabilitySection = capability
     ? `${renderCapabilityBlock(capability)}\n\n${renderEventContractBlock(squadSlug, args.traceId)}\n\n`
     : "";
@@ -446,7 +483,11 @@ ${agentsSection}
 ${tasksSection}
 ${resourceSection}
 ## MIND-CLONES QUE VOCÊ INCORPORA (decisão: ${cloneInj.decision})
-> Incorpore por inteiro; entregue COMO SE o clone tivesse produzido, sob a especialidade do squad.
+> ${cloneInj.block && cloneInj.mode === "reference"
+    ? "Cada clone vem como cartão: abra os arquivos de persona dele quando precisar do método e entregue COMO SE o clone tivesse produzido, sob a especialidade do squad."
+    : cloneInj.block && cloneInj.mode === "fragments"
+      ? "Os clones vêm pelas camadas desta fase; entregue COMO SE o clone tivesse produzido, sob a especialidade do squad."
+      : "Incorpore por inteiro; entregue COMO SE o clone tivesse produzido, sob a especialidade do squad."}
 ${cloneInj.block || "(sem clone para esta tarefa — opere com a especialidade padrão do squad)"}
 
 ## BRIEF ORIGINAL DO CLIENTE
@@ -574,7 +615,7 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
     // what every later dispatch reads. Nothing here enforces read-only — the
     // prompt says so in words (renderResourceMap), which is the same instrument
     // the engine uses everywhere else to keep deliverables under outputs_root.
-    runtime: args.runtime, prompt, cwd: args.projectRoot, addDirs: [args.projectDir, outDir, squadDir],
+    runtime: args.runtime, prompt, cwd: args.projectRoot, addDirs: [args.projectDir, outDir, squadDir, ...(cloneInj.personaDirs ?? [])],
     appendSystemPrompt: args.autonomousDirective + (args.rulesDirective ?? ""),
     maxBudgetUsd: args.maxBudgetUsd, timeoutMs: args.timeoutMs,
     brief: args.brief, projectRoot: args.projectRoot, outputsRoot: outDir,
