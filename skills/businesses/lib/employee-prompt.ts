@@ -346,7 +346,7 @@ function assignmentBlock(squad: string | null | undefined, projectRoot?: string)
       "- Read the squad before you write to it: `~/squads/" + squad + "/squad.yaml` and, when the sub-task is non-obvious, its `agents/`, `tasks/` and `workflows/`. Write to what it actually does.",
       "- Hand it the outcome and the guardrails, never the raw client brief and never your method. It is the specialist; the how is its own.",
       "- **Do not pick a different squad, and do not add one.** If `" + squad + "` is the wrong tool for what you were asked, say so in your summary and stop — that is a plan change for the orchestrator to make, not a substitution for you to make quietly.",
-      "- Dispatch it with: `nrv dispatch --auto \"use squad " + squad + ": <your instruction>\" --exec`, then integrate what comes back.",
+      "- Dispatch it with: `nrv dispatch --squad " + squad + " \"<your instruction>\" --exec`, then integrate what comes back.",
     ].join("\n");
   }
   return [
@@ -379,7 +379,7 @@ function squadCatalogBlock(employeeContent: string, projectRoot?: string): strin
   const lines: string[] = [
     "## AVAILABLE SQUADS (dispatch the specialists — don't improvise what they do better)",
     "",
-    `> Scope of this run: **${scopeLabel}**. ${total} squads available. To EXECUTE one: \`nrv dispatch --auto "use squad <slug>: <sub-task>" --exec\` (naming the squad routes straight to it). To list/inspect before deciding: \`nrv list-squads\`, or read \`~/squads/<slug>/squad.yaml\`. (These are the canonical tools — the \`squads\` skill is lifecycle-only, NOT execution.)`,
+    `> Scope of this run: **${scopeLabel}**. ${total} squads available. To EXECUTE one: \`nrv dispatch --squad <slug> "<sub-task>" --exec\` (a named squad runs directly, without the router). To list/inspect before deciding: \`nrv list-squads\`, or read \`~/squads/<slug>/squad.yaml\`. (These are the canonical tools — the \`squads\` skill is lifecycle-only, NOT execution.)`,
     "",
   ];
 

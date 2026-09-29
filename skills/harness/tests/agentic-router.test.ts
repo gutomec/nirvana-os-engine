@@ -295,6 +295,38 @@ describe("agentic router — digest staleness + injected runner", () => {
     expect(auditEvents().some((e) => e.event === "agentic_route_failed")).toBe(true);
   }, 30_000);
 
+  test("a run killed at the ceiling (exit 124) is marked timed_out; another failure is not", async () => {
+    const killed = (): RunHeadlessResult => ({
+      ok: false, runtime: "claude-code", sessionId: null, result: "",
+      costUsd: null, exitCode: 124, stderr: "", durationMs: 5, error: "claude exited null",
+    });
+    const timedOut = await agenticRoute({ brief: "x", runtime: "claude-code", cwd: tmp, runHeadlessImpl: killed, paths: routerPaths });
+    expect(timedOut.ok).toBe(false);
+    expect(timedOut.timed_out).toBe(true);
+    const crashed = (): RunHeadlessResult => ({
+      ok: false, runtime: "claude-code", sessionId: null, result: "",
+      costUsd: null, exitCode: 1, stderr: "boom", durationMs: 5, error: "boom",
+    });
+    const other = await agenticRoute({ brief: "x", runtime: "claude-code", cwd: tmp, runHeadlessImpl: crashed, paths: routerPaths });
+    expect(other.timed_out).toBeUndefined();
+  }, 30_000);
+
+  test("the router and its re-ask run as planners, under routing.timeout_ms unless the caller names one", async () => {
+    const previous = process.env.NIRVANA_ROUTING_TIMEOUT_MS;
+    process.env.NIRVANA_ROUTING_TIMEOUT_MS = "123456";
+    try {
+      const { impl, calls } = narratingRunner('{"kind":"no_match","rationale":"x"}');
+      await agenticRoute({ brief: "landing page", runtime: "claude-code", cwd: tmp, runHeadlessImpl: impl, paths: routerPaths });
+      expect(calls[0].timeoutMs).toBe(123456);
+      expect(calls.map(c => c.dispatchRole)).toEqual(["planner", "planner"]);
+      const named = cannedRunner('{"kind":"no_match","rationale":"x"}');
+      await agenticRoute({ brief: "landing page", runtime: "claude-code", cwd: tmp, runHeadlessImpl: named.impl, paths: routerPaths, timeoutMs: 42_000 });
+      expect(named.calls[0].timeoutMs).toBe(42_000);
+    } finally {
+      if (previous === undefined) delete process.env.NIRVANA_ROUTING_TIMEOUT_MS; else process.env.NIRVANA_ROUTING_TIMEOUT_MS = previous;
+    }
+  }, 30_000);
+
   // The router runs with Read/Glob/Grep/Bash, and an agent with tools reports
   // its work instead of returning a payload. Observed 2026-09-17 on a real
   // brief: "Routing decision: aurum-contabil + nirvana-societario-sucessao / I

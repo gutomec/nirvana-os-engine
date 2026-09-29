@@ -141,6 +141,14 @@ describe("who may dispatch what", () => {
     expect(roleMayDispatch("business", as("business"))).toBe(false);
   });
 
+  test("a business and a seat may ask a decision step (the router, the director), which opens nothing", () => {
+    expect(roleMayDispatch("planner", as("employee"))).toBe(true);
+    expect(roleMayDispatch("planner", as("business"))).toBe(true);
+    // A seat still convenes no company and starts no generalist.
+    expect(roleMayDispatch("business", as("employee"))).toBe(false);
+    expect(roleMayDispatch("agent-x", as("employee"))).toBe(false);
+  });
+
   test("the workers and the decision steps open nothing", () => {
     for (const role of ["agent-x", "planner"]) {
       expect(roleMayDispatch(null, as(role))).toBe(false);

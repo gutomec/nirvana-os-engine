@@ -55,6 +55,7 @@ import { describeSettingSource, resolveSetting, settingsEnvForChild } from "../.
 import { planRouteWithFallback, resolveDispatchPlan, runAgentX, type DispatchPlan } from "../lib/dispatch-cascade.ts";
 import { runSquadHeadless } from "../lib/squad-exec.ts";
 import { parseSquadTarget, resolveSquadCapability } from "../lib/capability-resolver.ts";
+import { parseMessageTargetSpec } from "../lib/control-plane/agent-x-canary-queue.ts";
 import { runDelivery, deliverAfterRuntimeError, gateableFiles, producesForRubric, runGateOnce, type DeliveryArgs, type DeliveryResult, type RuntimeErrorOutcome } from "../lib/delivery-pipeline.ts";
 import { runBusinessPostGate } from "../lib/business-post-gate.ts";
 import { parseExecutionOptions } from "../lib/gauntlet/execution-options.ts";
@@ -180,6 +181,32 @@ export async function explicitTargetPlan(target: Exclude<ExplicitTarget, { kind:
     };
   }
   return resolveDispatchPlan(NO_ROUTER_DECISION, { explicitTarget: target });
+}
+
+/** The target a brief names at its head, when the installed registry knows it.
+ *
+ * `use squad <slug>[:<capabilityId>]:` and `use business <slug>:` are the grammar
+ * the Glance already reads on a Message (parseMessageTargetSpec). Under --auto the
+ * router honored that phrasing only because its prompt tells it to, so a brief that
+ * named its target still paid a whole agentic routing run to be sent where it said.
+ * A slug the registry does not know returns null and the router decides, as before. */
+export function installedBriefTarget(text: string, loadRegistries: () => { squads: Record<string, unknown>; businesses: Record<string, unknown> } = defaultRegistries):
+  { kind: "business" | "squad"; slug: string; capabilityId?: string } | null {
+  const spec = parseMessageTargetSpec(text || "");
+  const t = spec.target;
+  if (t.kind !== "squad" && t.kind !== "business") return null;
+  let known: Record<string, unknown> = {};
+  try {
+    const r = loadRegistries();
+    known = (t.kind === "squad" ? r.squads : r.businesses) ?? {};
+  } catch { return null; }
+  if (!Object.prototype.hasOwnProperty.call(known, t.slug)) return null;
+  return { kind: t.kind, slug: t.slug, ...(spec.capabilityId ? { capabilityId: spec.capabilityId } : {}) };
+}
+
+function defaultRegistries(): { squads: Record<string, unknown>; businesses: Record<string, unknown> } {
+  const loader = require("../lib/registry-loader.js");
+  return { squads: loader.loadSquads().registry.squads ?? {}, businesses: loader.loadBusinesses().registry.businesses ?? {} };
 }
 
 // ── the one answer to "which project is this?" ────────────────────────────
@@ -685,7 +712,25 @@ let pendingCascade:
   | { kind: "agent-x"; reason: string; plan: DispatchPlan }
   | { kind: "judge-x" }
   | null = null;
-if (autoMode && routingMode === "fast") {
+// A brief that opens by naming an installed squad or business goes there with
+// no router, exactly as --squad / --business would send it.
+const briefTarget = autoMode ? installedBriefTarget(brief ?? "") : null;
+if (briefTarget) {
+  emit("x_explicit_target_short_circuit", {
+    project_id: projectId || null, target_kind: briefTarget.kind, target_slug: briefTarget.slug,
+    capability_id: briefTarget.capabilityId ?? null,
+  });
+  if (briefTarget.kind === "business") {
+    slug = briefTarget.slug;
+    console.log(c("lime", "▶") + c("bold", ` Target named in the brief — business ${slug}`) + c("dim", " (no router)"));
+    emit("auto_route_selected", { project_id: projectId || null, business_slug: slug, method: "explicit-in-brief" });
+  } else {
+    const plan = await explicitTargetPlan(briefTarget);
+    const step = plan.steps[0];
+    console.log(c("lime", "▶") + c("bold", ` Target named in the brief — squad ${step.slug}`) + c("dim", " (no router)"));
+    pendingCascade = { kind: "squad-only", squads: [step.slug!], plan };
+  }
+} else if (autoMode && routingMode === "fast") {
   // fast mode: BM25 business pick, zero-token. Honest fallback when BM25 can't
   // confidently choose a business (most businesses lack auto_routes yet).
   console.log(c("lime", "▶") + c("bold", " Auto-route — fast (BM25, zero-token)"));
@@ -738,7 +783,7 @@ if (autoMode && routingMode === "fast") {
     const d = await agenticRoute({
       brief, runtime, cwd: process.cwd(), projectId: projectId || null,
       maxBudgetUsd: effectiveBudgetUsd(),
-      timeoutMs: 5 * 60 * 1000,
+      timeoutMs: resolveSetting("routing.timeout_ms").value,
       runtimeRules,
     });
     if (!d.ok) {
@@ -1117,6 +1162,8 @@ function deliveryArgs(opts: DeliverOpts): DeliveryArgs {
     maxBudgetUsd: effectiveBudgetUsd(),
     timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
     yolo,
+    // A squad run carries the `squad` stamp (squad-exec), so its revision does too.
+    ...(opts.targetKind === "squad" ? { producerRole: "squad" as const } : {}),
     rulesDirective,
     forceDeliver,
     config: harnessConfig,

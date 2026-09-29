@@ -252,19 +252,26 @@ export async function planRouteWithFallback(first: AgenticRouteDecision, opts: P
   const warn = opts.warn ?? ((m: string) => console.error(m));
   let decision = first;
 
-  if (!decision.ok) {
+  if (!decision.ok && decision.timed_out) {
+    // The identical call again would most likely spend the same ceiling a
+    // second time; go straight to routing.on_router_failure.
+    warn(`agentic router timed out (${decision.error || "no answer before routing.timeout_ms"}) — not retrying`);
+    emit("x_router_timeout_no_retry", { error: decision.error ?? null, duration_ms: decision.duration_ms });
+  } else if (!decision.ok) {
     warn(`agentic router failed (${decision.error || "unknown"}) — retrying once`);
     emit("x_router_failure_retry", { error: decision.error ?? null });
     decision = await opts.routeOnce();
   }
   if (decision.ok) return resolveDispatchPlan(decision, opts);
 
+  // A timeout was tried once, any other failure twice; the messages say which.
+  const failed = decision.timed_out ? "timed out" : "failed twice";
   const policy: RouterFailurePolicy = opts.onRouterFailure ?? "agent-x-only";
   if (policy === "fail") {
     emit("x_router_failure_fail_policy", { error: decision.error ?? null });
     return {
       ok: false, steps: [], ...planBase("router-failure-agent-x"),
-      error: `agentic router failed twice (${decision.error || "unknown"}); routing.on_router_failure=fail`,
+      error: `agentic router ${failed} (${decision.error || "unknown"}); routing.on_router_failure=fail`,
     };
   }
 
@@ -273,7 +280,7 @@ export async function planRouteWithFallback(first: AgenticRouteDecision, opts: P
   if (policy === "cascade") {
     const bm25Slug = opts.fastRoute ? await opts.fastRoute() : null;
     if (bm25Slug) {
-      warn(`agentic router failed twice — falling back to fast BM25 route: ${bm25Slug}`);
+      warn(`agentic router ${failed} — falling back to fast BM25 route: ${bm25Slug}`);
       emit("x_router_failure_cascade", { stage: "bm25", picked: bm25Slug, error: decision.error ?? null });
       return {
         ok: true,
@@ -285,8 +292,8 @@ export async function planRouteWithFallback(first: AgenticRouteDecision, opts: P
 
   // …then agent-x, loudly.
   warn(policy === "cascade"
-    ? "agentic router failed twice AND BM25 could not decide — dispatching agent-x (generalist fallback). Review the routing setup: this brief got NO specialist."
-    : "agentic router failed twice — dispatching agent-x (generalist fallback), never BM25. Review the routing setup: this brief got NO specialist.");
+    ? `agentic router ${failed} AND BM25 could not decide — dispatching agent-x (generalist fallback). Review the routing setup: this brief got NO specialist.`
+    : `agentic router ${failed} — dispatching agent-x (generalist fallback), never BM25. Review the routing setup: this brief got NO specialist.`);
   emit("x_router_failure_cascade", { stage: "agent-x", error: decision.error ?? null, policy });
   return {
     ok: true,

@@ -46,10 +46,13 @@ export type DispatchRole = "business" | "employee" | "squad" | "agent-x" | "plan
 /** What each role is allowed to dispatch. `[]` means: nothing, ever. */
 const ALLOWED: Record<DispatchRole, readonly DispatchRole[]> = {
   // A business opens its own org chart, and a seat of it can carry a squad.
-  business: ["employee", "squad"],
-  // An employee builds its deliverable, and a squad is a tool it may use.
+  // A planner (the router, the director) opens nothing, so asking one for a
+  // decision adds no agent that can dispatch.
+  business: ["employee", "squad", "planner"],
+  // An employee builds its deliverable, and a squad is a tool it may use; a
+  // planner is how `nrv dispatch --auto` finds that squad.
   // Not a business: a seat that convenes another company is the runaway.
-  employee: ["squad"],
+  employee: ["squad", "planner"],
   // A squad EXECUTES. This is the rule with no exception.
   squad: [],
   // The generalist fallback is a worker too.
