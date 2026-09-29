@@ -340,7 +340,7 @@ function renderCapabilityBlock(ctx: SquadCapabilityPromptContext): string {
   if (ctx.description) lines.push(`- **descrição**: ${ctx.description}`);
   if (ctx.produces.length) lines.push(`- **produces**: ${ctx.produces.join(", ")}`);
   if (ctx.acceptance.length) {
-    lines.push("- **pronto quando** (critérios de aceitação; os bloqueantes são o que o gate confere):");
+    lines.push("- **pronto quando** (critérios de aceitação; os bloqueantes são obrigatórios):");
     for (const a of ctx.acceptance) {
       const marks = [a.blocking ? "bloqueante" : "", a.minimumScore !== undefined ? `nota mínima ${a.minimumScore}` : ""].filter(Boolean);
       lines.push(`  - \`${a.id}\`${marks.length ? ` (${marks.join(", ")})` : ""} — ${a.description}`);

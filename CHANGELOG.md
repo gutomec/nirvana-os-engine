@@ -20,6 +20,10 @@ Every audit event is written to the JSONL and to its SQLite mirror, `state.db`. 
 
 The seat prompt read `squads_authorized: []` as "do not dispatch any squad", the opposite of Business Protocol v2 §6.10, where an empty list is identical to an absent one and both mean every squad is permitted. It now follows the spec.
 
+### The judge grades against the brief
+
+`JudgeInput.brief` existed and the judge rendered it above the artifact, but the quality gate never passed it, so an enabled judge graded every deliverable against its rubric alone. The delivery pipeline now writes the brief into the run's workspace and hands it to the gate (`--brief-file`), which forwards it to the judge. The squad prompt also stopped telling the squad that its blocking acceptance criteria are what the gate checks: the standard gate does not read them.
+
 ## 0.14.8 — 2026-09-27
 
 ### A closed run stays closed, and a lookup never starts work
