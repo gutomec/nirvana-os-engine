@@ -69,7 +69,7 @@ Orca reports an operator-started worker as `unsupervised`, which is exact: the e
 
 | Nirvana runtime | Orca agent | Interactive command |
 |---|---|---|
-| `claude-code` | `claude` | `claude --dangerously-skip-permissions [--model M] [--add-dir D…]` |
+| `claude-code` | `claude` | `claude --permission-mode auto [--model M] [--add-dir D…]` |
 | `codex` | `codex` | `codex --dangerously-bypass-approvals-and-sandbox [-m M] [--add-dir D…]` |
 | `gemini-cli` | `gemini` | `gemini --approval-mode yolo [-m M]` |
 | `antigravity-cli` | `antigravity` | `agy --dangerously-skip-permissions [--model M]` |

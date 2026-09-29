@@ -302,7 +302,7 @@ const forceTeam = process.argv.includes("--team");
 const autoBriefEq = process.argv.find(a => a.startsWith("--auto-brief="));
 const autoBriefMode = autoBriefEq ? autoBriefEq.split("=")[1] : (process.argv.includes("--auto-brief") ? "inferred" : null);
 const wantAutoBrief = autoBriefMode !== null;
-// Default = full trust (Bash enabled, permissions skipped on every runtime)
+// Default = autonomy (Bash enabled; claude in auto mode, the other runtimes skip approvals)
 // so the agent can delegate to colleagues and deliver with quality.
 // --safe opts into the old restricted mode (allowlist + acceptEdits / workspace-write).
 const safeMode = process.argv.includes("--safe");

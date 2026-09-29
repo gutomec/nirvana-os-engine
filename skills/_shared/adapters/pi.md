@@ -265,7 +265,7 @@ USE_PI="Quando precisar de modelos locais (Ollama/llama.cpp) ou de um provider f
 6. **Sem cron/ScheduleWakeup** → degradar para cron externo.
 7. **Sem sandbox próprio** → containerizar quando isolamento importa (docs oficiais cobrem).
 8. **Custo por token CONFIRMADO no stream** — `message.usage.cost.total` por turn do assistant (o driver soma). Budget `$N` do cascade funciona quando o provider reporta custo; trilhas OAuth de assinatura podem reportar 0.
-9. **`--approve` semantics**: trust é sobre ARQUIVOS LOCAIS do projeto (extensões/settings), não um permission-mode por tool — não confundir com o `--dangerously-skip-permissions` do claude.
+9. **`--approve` semantics**: trust é sobre ARQUIVOS LOCAIS do projeto (extensões/settings), não um permission-mode por tool — não confundir com o `--permission-mode` do claude.
 10. **Modo RPC não usado** pelo driver atual — sessões persistentes com steering ficam como evolução (§7).
 
 **Vantagem compensatória:** um único runtime cobre 15+ providers + modelos locais ($0/token, 100% offline), com resume/fork de sessão nativo e trilha JSONL auditável — o melhor fit do engine para fallback-infinito e briefs privacy-sensitive.

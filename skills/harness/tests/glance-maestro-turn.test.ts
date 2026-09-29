@@ -117,7 +117,8 @@ describe("the maestro directive", () => {
     const fresh = claudeTurnCommand({ sessionId: null, directive: "d", skipPermissions: true, maxBudgetUsd: 5 }, direct);
     expect(fresh.args.slice(0, 5)).toEqual(["-p", "--output-format", "stream-json", "--include-partial-messages", "--verbose"]);
     expect(fresh.args[fresh.args.indexOf("--session-id") + 1]).toBe(fresh.sessionId);
-    expect(fresh.args).toContain("--dangerously-skip-permissions");
+    expect(fresh.args[fresh.args.indexOf("--permission-mode") + 1]).toBe("auto");
+    expect(fresh.args).not.toContain("--dangerously-skip-permissions");
     expect(fresh.args[fresh.args.indexOf("--max-budget-usd") + 1]).toBe("5");
     const resumed = claudeTurnCommand({ sessionId: "sid-1", directive: "d", skipPermissions: false, maxBudgetUsd: 0 }, direct);
     expect(resumed.args[resumed.args.indexOf("--resume") + 1]).toBe("sid-1");
@@ -148,7 +149,7 @@ describe("the maestro directive", () => {
     const file = command.args[flag + 1].replace(/^"|"$/g, "");
     expect(fs.readFileSync(file, "utf8")).toBe("linha 1\nlinha 2");
     expect(command.tmpFiles).toEqual([file]);
-    expect(command.args.indexOf("--dangerously-skip-permissions")).toBeGreaterThan(flag);
+    expect(command.args.indexOf("--permission-mode")).toBeGreaterThan(flag);
     expect(command.args[command.args.indexOf("--max-budget-usd") + 1]).toBe("5");
     fs.rmSync(path.dirname(file), { recursive: true, force: true });
   });
@@ -193,7 +194,7 @@ describe("a Message is a turn of the project's runtime session", () => {
     const [call] = fake.calls().slice(-1);
     expect(call.argv[call.argv.indexOf("--session-id") + 1]).toBe(receipt.turn.session_id);
     expect(call.argv).not.toContain("--resume");
-    expect(call.argv).toContain("--dangerously-skip-permissions");
+    expect(call.argv[call.argv.indexOf("--permission-mode") + 1]).toBe("auto");
     // No ceiling unless the owner named one. This used to assert 5, the engine's
     // own default, which was the only place it put a number on someone else's
     // money — and the cap is HARD, so it could end a turn halfway with

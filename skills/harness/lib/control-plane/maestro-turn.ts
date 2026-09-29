@@ -115,7 +115,7 @@ export interface TurnCommand {
 
 /** The `claude -p` command line of a turn. A conversation without a session gets a fresh
  * `--session-id`, so the id is known before the child answers; one with a session resumes it.
- * The autonomy flag follows the driver's rule: the bypass, or the restricted path (`acceptEdits`
+ * The autonomy flag follows the driver's rule: auto mode, or the restricted path (`acceptEdits`
  * plus the driver's tool allowlist) when execution.headless_skip_permissions is off.
  *
  * The directive spans several lines. On Windows a `.cmd` whose shape `resolveExecutable` cannot
@@ -139,7 +139,7 @@ export function claudeTurnCommand(input: { sessionId: string | null; directive: 
     args.push("--append-system-prompt", input.directive);
   }
   if (input.model) args.push("--model", input.model);
-  if (input.skipPermissions) args.push("--dangerously-skip-permissions");
+  if (input.skipPermissions) args.push("--permission-mode", "auto");
   else args.push("--allowedTools", DEFAULT_ALLOWED_TOOLS.join(" "), "--permission-mode", "acceptEdits");
   if (input.maxBudgetUsd > 0) args.push("--max-budget-usd", String(input.maxBudgetUsd));
   return { command: executable.command, args: executable.args(args), shell: executable.shell, sessionId, ...(tmpFiles.length ? { tmpFiles } : {}) };
