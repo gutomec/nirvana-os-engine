@@ -83,8 +83,10 @@ describe("squads_authorized means the same in both spellings", () => {
     expect(p).not.toContain("declared EMPTY");
   }, spawnBudgetMs(1));
 
-  test("an inline empty list is declared-empty, and an absent key is open", () => {
-    expect(prompt("inline-empty")).toContain("declared EMPTY");
+  test("an empty list means the same as an absent key: every squad (v2 §6.10)", () => {
+    const empty = prompt("inline-empty");
+    expect(empty).toContain("Open authorization");
+    expect(empty).not.toContain("WITHOUT dispatching squads");
     expect(prompt("open")).toContain("Open authorization");
   }, spawnBudgetMs(2));
 });

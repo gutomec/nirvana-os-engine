@@ -14,6 +14,12 @@ Every Claude Code child the engine starts now passes `--permission-mode auto` in
 
 The autonomous directive no longer tells the agent it runs with "FULL TRUST, permissions skipped", which was false under `--safe` as well, and the command it gives for delegating to a colleague uses `--permission-mode auto`.
 
+### Tests stop writing to the real state.db, and an empty `squads_authorized` means every squad
+
+Every audit event is written to the JSONL and to its SQLite mirror, `state.db`. The test preload pinned the JSONL root only, so each event a test emitted also landed in the user's global `state.db`, where `nrv doctor` and the baselines read it as real activity. The preload now pins `NIRVANA_STATE_DB` inside the test's temporary root, and `state-db.js` gains the same floor `log-paths.js` has: a test that deletes the variable to exercise the unset branch resolves under the test root, never the user's home.
+
+The seat prompt read `squads_authorized: []` as "do not dispatch any squad", the opposite of Business Protocol v2 §6.10, where an empty list is identical to an absent one and both mean every squad is permitted. It now follows the spec.
+
 ## 0.14.8 — 2026-09-27
 
 ### A closed run stays closed, and a lookup never starts work

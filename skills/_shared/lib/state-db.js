@@ -12,7 +12,8 @@
  * Path resolution:
  *   1. NIRVANA_STATE_DB env var (absolute)
  *   2. <projectRoot>/.nirvana/state.db when inside a project
- *   3. ~/.nirvana/state.db (global fallback — shared across all runtimes)
+ *   3. $NIRVANA_TEST_LOGS_HOME/state.db (test isolation; preload only)
+ *   4. ~/.nirvana/state.db (global fallback — shared across all runtimes)
  *
  * The lib is host-agnostic and OS-agnostic. No bash, no /tmp paths, no
  * platform-specific APIs.
@@ -57,6 +58,10 @@ function resolveDbPath(projectRoot) {
       return path.join(resolved, '.nirvana', 'state.db');
     }
   }
+  // Last rung before the user's home, the same floor log-paths.js has: a test
+  // that deletes NIRVANA_STATE_DB to exercise the unset branch must not gain a
+  // path to the real database. Set only by skills/test-preload.ts.
+  if (process.env.NIRVANA_TEST_LOGS_HOME) return path.join(path.resolve(process.env.NIRVANA_TEST_LOGS_HOME), 'state.db');
   return path.join(os.homedir(), '.nirvana', 'state.db');
 }
 
