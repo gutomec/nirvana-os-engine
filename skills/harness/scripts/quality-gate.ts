@@ -127,6 +127,12 @@ async function runWithRevisions(artifact: string, content: string, args: string[
   const producesArg = args.find(a => a.startsWith("--produces="));
   const produces = producesArg ? producesArg.slice("--produces=".length).split(",").map(s => s.trim()) : [];
   const maxRev = parseInt(args.find(a => a.startsWith("--max-revisions="))?.split("=")[1] || "2", 10);
+  // The brief the artifact answers. The judge renders it above the artifact
+  // (JudgeInput.brief) so a rubric can hold the work to what was asked; without
+  // it the judge graded the artifact against the rubric alone.
+  const briefFileArg = args.find(a => a.startsWith("--brief-file="))?.slice("--brief-file=".length);
+  let brief: string | undefined;
+  if (briefFileArg) { try { brief = fs.readFileSync(briefFileArg, "utf8").trim() || undefined; } catch { brief = undefined; } }
 
   let selector: typeof import("../lib/rubric-selector.ts");
   let revision: typeof import("../lib/revision-dispatch.ts");
@@ -169,7 +175,7 @@ async function runWithRevisions(artifact: string, content: string, args: string[
   // this can pass a real ReviseFn that re-dispatches.
   const judgeMod = await import("../lib/judge.ts");
   const result = await judgeMod.judge(
-    { rubric, artifact: content, trace_id: process.env.NIRVANA_TRACE_ID || undefined,
+    { rubric, artifact: content, brief, trace_id: process.env.NIRVANA_TRACE_ID || undefined,
       business_slug: process.env.NIRVANA_BUSINESS_SLUG || undefined },
   );
 

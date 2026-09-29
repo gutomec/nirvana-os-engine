@@ -20,6 +20,10 @@ Todo evento de auditoria é gravado no JSONL e no espelho SQLite dele, o `state.
 
 O prompt do cargo lia `squads_authorized: []` como "não despache squad nenhum", o contrário da Business Protocol v2 §6.10, onde a lista vazia é idêntica à ausente e as duas querem dizer que todo squad é permitido. Agora segue a spec.
 
+### O juiz avalia contra o brief
+
+O `JudgeInput.brief` existia e o juiz o mostrava acima do artefato, mas o gate de qualidade nunca o passava, então um juiz ligado avaliava cada entregável só contra a própria rubrica. O pipeline de entrega agora grava o brief na pasta de trabalho da execução e o entrega ao gate (`--brief-file`), que o repassa ao juiz. O prompt do squad também deixou de dizer que os critérios de aceitação bloqueantes são o que o gate confere: o gate padrão não os lê.
+
 ## 0.14.8 — 2026-09-27
 
 ### Run fechado continua fechado, e consulta nunca começa trabalho

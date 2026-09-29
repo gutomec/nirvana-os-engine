@@ -173,6 +173,8 @@ export interface GateRunOpts {
   offline: boolean;
   /** produces[] slugs forwarded to the judge's rubric selector. */
   produces?: string[];
+  /** The brief, on disk, for the judge to grade the artifact against it. */
+  briefFile?: string;
   /** Env for the gate child (trace/project/business ids for its audit emit). */
   env?: Record<string, string | undefined>;
 }
@@ -208,6 +210,7 @@ export function runGateOnce(files: string[], gate: string | GateRunOpts): { pass
     else {
       argv.push("--with-revisions");
       if (opts.produces?.length) argv.push(`--produces=${opts.produces.join(",")}`);
+      if (opts.briefFile) argv.push(`--brief-file=${opts.briefFile}`);
     }
     const g = spawnSync("bun", argv, {
       windowsHide: true,
@@ -442,7 +445,14 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
 
   // ── Step: quality gate (ALL gateable artifacts) ────────────────────────
   const judgeMode = args.config.quality_gate.judge_enabled === true && runtimeAvailable(args.runtime);
-  const gateOpts: GateRunOpts = { gateScript, offline: !judgeMode, produces: args.produces, env: gateEnv };
+  // The judge grades against the brief (JudgeInput.brief). It lives in the
+  // run's workspace, beside HANDOFF.json, never among the deliverables.
+  let briefFile: string | undefined;
+  if (judgeMode && args.brief?.trim()) {
+    briefFile = path.join(args.projectDir, "gate-brief.md");
+    try { fs.writeFileSync(briefFile, args.brief, "utf8"); } catch { briefFile = undefined; }
+  }
+  const gateOpts: GateRunOpts = { gateScript, offline: !judgeMode, produces: args.produces, briefFile, env: gateEnv };
   if (judgeMode) log(`  gate mode: LLM judge (quality_gate.judge_enabled) via ${args.runtime}`);
 
   let gatedFiles = gateableFiles(args.outputsRoot, namedInBrief);
