@@ -6,6 +6,14 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Não lançado
+
+### O Claude Code roda em modo auto, nunca com o bypass de permissões
+
+Todo filho Claude Code que o engine inicia passa `--permission-mode auto` no lugar de `--dangerously-skip-permissions`: o executor headless (`runHeadless`), a camada leve `callHostAgent`, o turno do maestro do Glance e o worker interativo de terminal do Orca. No modo auto um classificador revisa as ações arriscadas no lugar de uma pessoa e o sistema de permissões continua ligado, então uma ação que ele recusa não roda e a sessão segue trabalhando. O `claude -p` começa em modo manual, e é por isso que o flag vai explícito. O modo auto exige um modelo compatível (Opus 4.6 ou superior, Sonnet 4.6 ou superior, um modelo Fable); com qualquer outro a sessão começa em modo manual. `--safe` e `NIRVANA_HEADLESS_SKIP_PERMISSIONS=0` mantêm o caminho restrito (`acceptEdits` com a lista de ferramentas permitidas). Codex, Gemini, Antigravity, Grok e Qwen mantêm os próprios flags de aprovação.
+
+A diretiva autônoma deixou de dizer ao agente que ele roda com "FULL TRUST, permissions skipped", o que também era falso sob `--safe`, e o comando que ela ensina para delegar a um colega usa `--permission-mode auto`.
+
 ## 0.14.8 — 2026-09-27
 
 ### Run fechado continua fechado, e consulta nunca começa trabalho

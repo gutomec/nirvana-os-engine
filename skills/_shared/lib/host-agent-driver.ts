@@ -31,13 +31,16 @@
  * Verification notes (per-CLI --help audits) live on each adapter below.
  *
  * HEADLESS AUTONOMY: a non-interactive child cannot answer an approval prompt,
- * so every adapter whose CLI documents an approval-bypass flag passes it by
- * default, in BOTH layers (per-CLI --help audits, 2026-08-26: claude
- * --dangerously-skip-permissions, codex --dangerously-bypass-approvals-and-
- * sandbox, gemini --approval-mode yolo, agy --dangerously-skip-permissions,
- * grok --always-approve). NIRVANA_HEADLESS_SKIP_PERMISSIONS=0 turns the bypass
- * off everywhere (headlessSkipPermissions): the light layer then omits the
- * flag and runHeadless takes each runner's restricted path (the --safe path).
+ * so every adapter passes its CLI's autonomy flag by default, in BOTH layers.
+ * Claude Code runs in auto mode (`--permission-mode auto`, `claude --help`
+ * audited 2026-09-29): a classifier reviews risky actions instead of a person,
+ * and it never bypasses the permission system. The others keep their approval
+ * bypass (per-CLI --help audits, 2026-08-26: codex --dangerously-bypass-
+ * approvals-and-sandbox, gemini --approval-mode yolo, agy --dangerously-skip-
+ * permissions, grok --always-approve). NIRVANA_HEADLESS_SKIP_PERMISSIONS=0
+ * turns autonomy off everywhere (headlessSkipPermissions): the light layer then
+ * omits the flag and runHeadless takes each runner's restricted path (the
+ * --safe path).
  * CLIs whose flag could not be verified here (kimi, qwen, opencode) and pi,
  * whose --approve is project-file trust rather than tool permission, stay as
  * they are.
@@ -115,7 +118,7 @@ export const MAX_ARGV_PROMPT_BYTES = process.platform === "win32" ? 6_000 : 100_
  * approval path; anything else, unset included, is the autonomous default. */
 export const HEADLESS_SKIP_PERMISSIONS_ENV = "NIRVANA_HEADLESS_SKIP_PERMISSIONS";
 
-/** True unless the setting (env > project > global config) disables the permission bypass. */
+/** True unless the setting (env > project > global config) disables headless autonomy. */
 export function headlessSkipPermissions(): boolean {
   return resolveSetting("execution.headless_skip_permissions").value;
 }
@@ -557,15 +560,15 @@ const RUNTIMES: RuntimeAdapter[] = [
     cli: "claude",
     // `claude -p` reads the prompt from STDIN when no positional is given
     // (same channel runClaudeCode uses) — argv stays small no matter the
-    // prompt size. `claude --help` (audited 2026-08-26): "--dangerously-skip-
-    // permissions  Bypass all permission checks" — without it a headless
-    // child dies on the first tool that needs approval.
+    // prompt size. `claude -p` starts in Manual mode, where a headless child
+    // is refused the first tool that needs approval; auto mode (`claude
+    // --help`, audited 2026-09-29) lets a classifier approve instead.
     buildCall(persona, userMsg) {
       // System model (what the user's session runs) propagated to the child —
       // without this, judge/gate/verify fell to the CLI default (sonnet)
       // instead of inheriting fable/opus. null → no --model (keeps the default).
       const args = ["-p", "--no-session-persistence", "--output-format", "json"];
-      if (headlessSkipPermissions()) args.push("--dangerously-skip-permissions");
+      if (headlessSkipPermissions()) args.push("--permission-mode", "auto");
       const model = resolveSystemModel("claude-code");
       if (model) args.push("--model", model);
       if (persona) args.push("--append-system-prompt", clampPersona(persona, "claude-code"));
@@ -1151,8 +1154,8 @@ export interface RunHeadlessOpts {
    * with exit 143). Callers that want a cap pass it explicitly (e.g. the fast
    * router sets 5 min; `nrv dispatch --timeout=<min>`). */
   timeoutMs?: number;
-  /** Bypass all permission checks (claude --dangerously-skip-permissions and
-   * each runtime's equivalent). Default true; `false` is the restricted path
+  /** Autonomy: claude runs in auto mode (`--permission-mode auto`), the other
+   * runtimes pass their approval bypass. Default true; `false` is the restricted path
    * (`nrv dispatch --safe`). NIRVANA_HEADLESS_SKIP_PERMISSIONS=0 forces
    * `false` for every run (see headlessSkipPermissions). */
   yolo?: boolean;
@@ -1564,7 +1567,7 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
   const ccEffort = effortFor(opts, "claude-code");
   if (ccEffort) args.push("--effort", ccEffort);
 
-  // Trust by default. EXPLICIT caller settings (allowedTools / permissionMode)
+  // Auto mode by default. EXPLICIT caller settings (allowedTools / permissionMode)
   // always take precedence — so focused text-only calls like the brief-proxy or
   // the team-orchestrator director can lock down permissions without the trust
   // default overriding them.
@@ -1585,7 +1588,7 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
   } else if (safe) {
     args.push("--permission-mode", "acceptEdits");
   } else {
-    args.push("--dangerously-skip-permissions");
+    args.push("--permission-mode", "auto");
   }
 
   // A dispatched worker does not open its own agents. This is the leg of the

@@ -228,7 +228,7 @@ export const SETTINGS = {
     "Profundidade da injeção de DNA dos mind-clones: reference = cartão (caminho, one_liner, routing) e o executor lê o arquivo quando precisar; fragments = camadas da fase; full = persona inteira.",
     ["reference", "fragments", "full"], { default: "reference", env: "NIRVANA_DNA_INJECTION" }),
   "execution.headless_skip_permissions": booleanSetting("execution.headless_skip_permissions",
-    "Filhos headless pulam as aprovações do próprio CLI (autonomia); false = caminho restrito.",
+    "Filhos headless rodam com autonomia: o claude em modo auto (um classificador aprova no lugar de uma pessoa), os outros runtimes pulam as aprovações do próprio CLI; false = caminho restrito.",
     { default: true, env: "NIRVANA_HEADLESS_SKIP_PERMISSIONS", fromEnv: offWordDisables }),
 
   "briefing.altitude": enumSetting("briefing.altitude",

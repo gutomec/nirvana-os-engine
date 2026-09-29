@@ -96,13 +96,13 @@ describe("light layer — buildCall argv per adapter", () => {
 
   test.each([
     ["claude-code",
-      ["-p", "--no-session-persistence", "--output-format", "json", "--dangerously-skip-permissions", "--append-system-prompt", "persona"],
+      ["-p", "--no-session-persistence", "--output-format", "json", "--permission-mode", "auto", "--append-system-prompt", "persona"],
       ["-p", "--no-session-persistence", "--output-format", "json", "--append-system-prompt", "persona"]],
     ["codex", ["exec", "--dangerously-bypass-approvals-and-sandbox"], ["exec"]],
     ["gemini-cli", ["-p", "", "--approval-mode", "yolo"], ["-p", ""]],
     ["antigravity-cli", ["-p", MERGED, "--dangerously-skip-permissions"], ["-p", MERGED]],
     ["grok-cli", ["--prompt-file", "<file>", "--always-approve"], ["--prompt-file", "<file>"]],
-  ])("%s passes its documented bypass flag by default and drops it under =0", (name, byDefault, restricted) => {
+  ])("%s passes its documented autonomy flag by default and drops it under =0", (name, byDefault, restricted) => {
     expect(argv(name, undefined)).toEqual(byDefault);
     expect(argv(name, "1")).toEqual(byDefault);
     expect(argv(name, "0")).toEqual(restricted);
@@ -127,13 +127,14 @@ describe("headless layer — runHeadless argv per runtime", () => {
     return readCapturedArgs(CAP, cli);
   }
 
-  test("claude-code: --dangerously-skip-permissions by default; the acceptEdits allowlist path under =0", () => {
+  test("claude-code: auto mode by default, never the bypass; the acceptEdits allowlist path under =0", () => {
     const trusted = argv("claude-code", "claude", undefined);
-    expect(trusted).toContain("--dangerously-skip-permissions");
-    expect(trusted).not.toContain("--permission-mode");
+    expect(hasPair(trusted, ["--permission-mode", "auto"])).toBeTrue();
+    expect(trusted).not.toContain("--dangerously-skip-permissions");
     expect(trusted).not.toContain("--allowedTools");
     const restricted = argv("claude-code", "claude", "0", true);
     expect(restricted).not.toContain("--dangerously-skip-permissions");
+    expect(hasPair(restricted, ["--permission-mode", "auto"])).toBeFalse();
     expect(hasPair(restricted, ["--permission-mode", "acceptEdits"])).toBeTrue();
     expect(restricted).toContain("--allowedTools");
   });
@@ -180,7 +181,8 @@ describe("headless layer — runHeadless argv per runtime", () => {
     expect(at).toBeGreaterThanOrEqual(0);
     expect(args).toHaveLength(at + 2);   // the directive pair is last: nothing behind it to lose
     expect(args.lastIndexOf("--add-dir")).toBeLessThan(at);
-    expect(args.indexOf("--dangerously-skip-permissions")).toBeLessThan(at);
+    expect(args.indexOf("--permission-mode")).toBeGreaterThanOrEqual(0);
+    expect(args.indexOf("--permission-mode")).toBeLessThan(at);
     expect(hasPair(args, ["--add-dir", "/tmp/grant-b"])).toBeTrue();
     // What the CHILD received, read from its own argv. Inline (the direct-spawn path, and every
     // POSIX run) this is the multi-line directive itself, so the run proves what no simulation
@@ -239,7 +241,9 @@ describe("headless layer — runHeadless argv per runtime", () => {
   });
 
   test("an explicit yolo:false stays restricted with the switch on", () => {
-    expect(argv("claude-code", "claude", "1", false)).not.toContain("--dangerously-skip-permissions");
+    const args = argv("claude-code", "claude", "1", false);
+    expect(hasPair(args, ["--permission-mode", "auto"])).toBeFalse();
+    expect(hasPair(args, ["--permission-mode", "acceptEdits"])).toBeTrue();
   });
 });
 
@@ -256,9 +260,9 @@ describe("a dispatched worker does not open its own agents", () => {
     return readCapturedArgs(CAP, "claude");
   }
 
-  test("the subagent tools are denied by default, alongside the trust flag", () => {
+  test("the subagent tools are denied by default, alongside the autonomy flag", () => {
     const a = argvFor({});
-    expect(a).toContain("--dangerously-skip-permissions");
+    expect(hasPair(a, ["--permission-mode", "auto"])).toBeTrue();
     const i = a.indexOf("--disallowedTools");
     expect(i).toBeGreaterThan(-1);
     expect(a.slice(i + 1, i + 3)).toEqual(["Task", "Agent"]);
