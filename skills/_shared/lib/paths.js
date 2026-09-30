@@ -34,9 +34,10 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const projectRootLib = require('./project-root.js');
+const { envPath } = require('./env-path.js');
 
 const HOME = os.homedir();
-const NIRVANA_HOME = process.env.NIRVANA_HOME || HOME;
+const NIRVANA_HOME = envPath('NIRVANA_HOME') || HOME;
 const join = (...parts) => path.join(...parts);
 
 // ─────────────────────────────────────────────────────────────────────
@@ -115,7 +116,10 @@ function detectScope(opts = {}) {
 function resolvePaths(opts = {}) {
   const scope = detectScope(opts);
   const { mode, projectRoot, dotenv } = scope;
-  const cfg = (k) => process.env[k] || dotenv[k];
+  // Every key read through cfg() is a path. A value from the environment is
+  // expanded, and skipped when it is not absolute (env-path.js); the project's
+  // .env was already expanded by loadDotenv above.
+  const cfg = (k) => envPath(k) || dotenv[k];
 
   // Canonical SHARED skills tree + deps. These live in the neutral ~/.nirvana
   // location so every runtime (claude-code, codex, antigravity, hermes) shares

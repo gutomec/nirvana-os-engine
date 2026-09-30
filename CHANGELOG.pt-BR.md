@@ -48,6 +48,14 @@ O teto do roteador é uma configuração, `routing.timeout_ms` (`NIRVANA_ROUTING
 
 Uma rodada de revisão do gate retoma a sessão que produziu. Quando a retomada falha, ela agora tenta uma vez a frio, com o brief que a sessão retomada teria (`revision_auto` leva `cold_retry`), em vez de gastar a rodada em arquivos inalterados. O prompt de correção nomeia os caminhos completos e a raiz de saídas, e a revisão de um squad leva o papel de squad que o produtor levava.
 
+### Overrides de caminho são expandidos, execuções no Antigravity informam os tokens, e custo desconhecido deixa de ser $0
+
+Um runtime que carrega um `.env` sem expansão de shell entrega ao engine valores como `$NIRVANA_HOME/.harness-logs` ao pé da letra, e os resolvedores de logs e de caminhos os liam como caminhos relativos ao diretório de trabalho: o primeiro evento de auditoria criava uma pasta chamada literalmente `$NIRVANA_HOME` onde quer que o agente rodasse. Todo leitor de override de pasta ou arquivo (`log-paths.js`, o gravador de auditoria, `paths.js`) passa agora por um único auxiliar, `env-path.js`, que expande `~`, `$VAR` e `${VAR}` e ignora, com um aviso, o valor que continua sem ser caminho absoluto; o resolvedor então segue para o próximo degrau como se a variável não existisse. O gravador de auditoria também passa a carregar o resolvedor de logs e o banco de estado da própria árvore, e não da cópia instalada das skills, então uma cópia de desenvolvimento deixa de rodar os resolvedores de outra versão.
+
+O executor do Antigravity guardava só o campo `response` do `agy --output-format json` e descartava o bloco `usage` ao lado dele, então toda execução no Antigravity chegava ao ledger sem custo e o estimador não tinha o que precificar. As contagens de tokens agora voltam com o resultado (tokens de raciocínio contam como saída), e o estimador de custo precifica a execução quando o modelo é conhecido. Uma execução em equipe cujos passos não informaram custo imprime `cost n/a` no lugar de `$0.0000`, e o `team_completed` registra `total_cost_usd: null` em vez de um zero que parecia execução de graça.
+
+O bloco de despacho do agent-x diz que as pastas de outras execuções ao lado da sua não são entrada dele.
+
 
 
 

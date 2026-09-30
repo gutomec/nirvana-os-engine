@@ -40,9 +40,6 @@ const os = require('os');
 const ce = require('../../_shared/lib/cloudevents.js');
 const { ensureDir } = require('../../_shared/lib/ensure-dir.js');
 
-const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
-  || (fs.existsSync(path.join(os.homedir(), '.nirvana', 'skills')) ? path.join(os.homedir(), '.nirvana', 'skills') : path.join(os.homedir(), '.claude', 'skills'));
-
 const ALLOWED_EVENTS = new Set([
   'brief_received', 'brief_amplified', 'routing_decision', 'invocation_start', 'invocation_end',
   'cost_emission', 'handoff',
@@ -127,9 +124,13 @@ const ALLOWED_EVENTS = new Set([
 // here so a dispatcher can pin events to the PROJECT's root regardless of
 // where the process was started (routing-360 Phase 4 split-root fix).
 function harnessLogsRoot(cwd) {
-  if (process.env.HARNESS_LOGS_DIR) return path.resolve(process.env.HARNESS_LOGS_DIR);
+  const override = require('../../_shared/lib/env-path.js').envPath('HARNESS_LOGS_DIR');
+  if (override) return override;
   try {
-    const { harnessLogsDir } = require(path.join(SKILLS_ROOT, '_shared/lib/log-paths.ts'));
+    // Relative, like cloudevents.js and ensure-dir.js above: resolving through
+    // the installed skills root loaded the INSTALLED copy, so a checkout ran
+    // another version's resolver.
+    const { harnessLogsDir } = require('../../_shared/lib/log-paths.js');
     return harnessLogsDir(cwd ? { cwd } : {});
   } catch { return path.join(os.homedir(), '.harness-logs'); }
 }
@@ -182,7 +183,9 @@ let _stateDb = null;
 function loadStateDb() {
   if (_stateDb !== null) return _stateDb;
   try {
-    const sdb = require(path.join(SKILLS_ROOT, '_shared', 'lib', 'state-db.js'));
+    // Relative for the same reason as log-paths above: the installed skills
+    // root loaded the installed copy's resolver, not this tree's.
+    const sdb = require('../../_shared/lib/state-db.js');
     const handle = sdb.openDb(null);
     _stateDb = handle.available ? { sdb, handle } : false;
   } catch { _stateDb = false; }

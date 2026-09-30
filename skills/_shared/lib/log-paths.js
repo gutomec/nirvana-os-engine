@@ -11,7 +11,8 @@
  * dependency chain carries a top-level await.
  *
  * Resolution order (first match wins):
- *   1. $HARNESS_LOGS_DIR / $MAESTRO_LOGS_DIR (explicit override, honored everywhere)
+ *   1. $HARNESS_LOGS_DIR / $MAESTRO_LOGS_DIR (explicit override, honored everywhere
+ *      once expanded; skipped when not an absolute path, see env-path.js)
  *   2. <projectRoot>/.nirvana/logs/{harness,maestro}/  (when running inside a project)
  *   3. $NIRVANA_TEST_LOGS_HOME                        (test isolation; preload only)
  *   4. ~/.harness-logs/ / ~/.maestro-logs/            (fallback, no project context)
@@ -25,6 +26,7 @@
 const os = require('os');
 const path = require('path');
 const { findProjectRoot } = require('./project-root.js');
+const { envPath } = require('./env-path.js');
 
 function resolveProjectRoot(opts) {
   const options = opts || {};
@@ -35,7 +37,10 @@ function resolveProjectRoot(opts) {
 }
 
 function harnessLogsDir(opts) {
-  if (process.env.HARNESS_LOGS_DIR) return path.resolve(process.env.HARNESS_LOGS_DIR);
+  // Expanded, or skipped when unusable (env-path.js): a literal `$VAR/...` from
+  // a runtime that loads .env without expansion used to land under the cwd.
+  const override = envPath('HARNESS_LOGS_DIR');
+  if (override) return override;
   const root = resolveProjectRoot(opts);
   if (root) return path.join(root, '.nirvana', 'logs', 'harness');
   // Last rung before the owner's home: a test process. `HARNESS_LOGS_DIR` is
@@ -50,7 +55,8 @@ function harnessLogsDir(opts) {
 }
 
 function maestroLogsDir(opts) {
-  if (process.env.MAESTRO_LOGS_DIR) return path.resolve(process.env.MAESTRO_LOGS_DIR);
+  const override = envPath('MAESTRO_LOGS_DIR');
+  if (override) return override;
   const root = resolveProjectRoot(opts);
   if (root) return path.join(root, '.nirvana', 'logs', 'maestro');
   return path.join(os.homedir(), '.maestro-logs');

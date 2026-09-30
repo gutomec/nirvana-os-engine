@@ -48,6 +48,14 @@ The router's ceiling is a setting, `routing.timeout_ms` (`NIRVANA_ROUTING_TIMEOU
 
 A gate revision round resumes the producing session. When the resume fails it now retries once cold, with the brief the resumed session would have had (`revision_auto` carries `cold_retry`), instead of spending the round on unchanged files. The fix prompt names full paths and the outputs root, and a squad's revision carries the squad role its producer carried.
 
+### Path overrides are expanded, Antigravity runs report their tokens, and an unknown cost is no longer $0
+
+A runtime that loads a `.env` without shell expansion hands the engine values such as `$NIRVANA_HOME/.harness-logs` literally, and the log and path resolvers read them as paths relative to the working directory: the first audit event created a folder literally named `$NIRVANA_HOME` wherever the agent ran. Every reader of a directory or file override (`log-paths.js`, the audit writer, `paths.js`) now goes through one helper, `env-path.js`, which expands `~`, `$VAR` and `${VAR}` and ignores, with one warning, a value that is still not an absolute path; the resolver then falls through to its next rung as if the variable were unset. The audit writer also loads the log-path resolver and the state database from its own tree instead of the installed skills copy, so a checkout no longer runs another version's resolvers.
+
+The Antigravity runner kept only the `response` field of `agy --output-format json` and dropped the `usage` block beside it, so every Antigravity run reached the ledger with no cost and the estimator had nothing to price. The token counts now come back with the result (thinking tokens count as output), and the cost estimator prices the run when the model is known. A team run whose steps reported no cost prints `cost n/a` instead of `$0.0000`, and `team_completed` records `total_cost_usd: null` rather than a zero that read as a free run.
+
+The agent-x dispatch block states that the folders of other runs beside its own are not its input.
+
 
 
 
