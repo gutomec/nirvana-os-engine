@@ -44,6 +44,7 @@ import { runHeadless, runtimeAvailable, AUTONOMOUS_DIRECTIVE, type Runtime } fro
 import type { DispatchRole } from "../../_shared/lib/dispatch-depth.ts";
 import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { isRunStatePath } from "../../_shared/lib/run-state.ts";
+import { runFolderOf } from "../../_shared/lib/run-workspace.ts";
 import { detectKind } from "../../_shared/lib/surface.ts";
 import { GATEABLE_EXTS } from "../scripts/quality-gate.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
@@ -524,6 +525,9 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
       maxBudgetUsd: args.maxBudgetUsd, timeoutMs: args.timeoutMs, yolo: args.yolo,
       ...(args.producerRole ? { dispatchRole: args.producerRole } : {}),
       label: `revision ${revUsed}`,
+      // The producer's run folder, which is also where its session lives: a
+      // runtime that keys sessions by directory resumes only from there.
+      workspace: runFolderOf(args.projectDir, args.projectRoot) ?? undefined,
       ...(led ? { ledger: { runId: led.runId, watchDir: args.outputsRoot } } : {}),
     });
     let rr = revise(sessionId || undefined, fixPrompt);

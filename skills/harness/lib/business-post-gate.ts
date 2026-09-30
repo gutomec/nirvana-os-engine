@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { AUTONOMOUS_DIRECTIVE, runHeadless, type Runtime } from "./host-agent-driver.ts";
+import { runFolderOf } from "../../_shared/lib/run-workspace.ts";
 
 type SpawnResult = Pick<SpawnSyncReturns<string>, "status" | "stdout" | "stderr">;
 
@@ -97,6 +98,7 @@ export function runBusinessPostGate(input: BusinessPostGateInput): { zipPath: st
       }
       const publisher = deps.runPublisher({
         runtime: input.runtime, prompt: publisherPrompt, cwd: input.projectRoot, addDirs: [input.projectDir, reportDir],
+        workspace: runFolderOf(input.projectDir, input.projectRoot) ?? undefined,
         appendSystemPrompt: AUTONOMOUS_DIRECTIVE + input.rulesDirective,
         maxBudgetUsd: input.maxBudgetUsd, timeoutMs: input.timeoutMs, yolo: input.yolo,
       });

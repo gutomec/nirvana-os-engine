@@ -77,6 +77,11 @@ describe("the interactive command per runtime", () => {
     expect(interactiveArgv({ runtime: "grok-cli", yolo: true, model: "x" })).toEqual(["grok", "--always-approve", "-m", "x"]);
   });
 
+  test("a confined claude worker carries its run's deny rules, as the headless runner does", () => {
+    expect(interactiveArgv({ runtime: "claude-code", yolo: true, model: "opus", addDirs: ["/p"], claudeSettings: "/tmp/fence.json" }))
+      .toEqual(["claude", "--permission-mode", "auto", "--model", "opus", "--settings", "/tmp/fence.json", "--add-dir", "/p"]);
+  });
+
   test("the terminal command enters the run's directory and pins the engine's environment", () => {
     const posix = workerCommand(["claude", "--x"], "/w/a b", { NIRVANA_TRACE_ID: "t1", HARNESS_LOGS_DIR: "/l/it's" }, "darwin");
     expect(posix).toBe(`cd '/w/a b' && env NIRVANA_TRACE_ID='t1' HARNESS_LOGS_DIR='/l/it'\\''s' 'claude' '--x'`);
@@ -381,5 +386,25 @@ describe("through the driver, with real fakes on PATH", () => {
     const term = calls[2];
     expect(term[term.indexOf("--title") + 1]).toBe("squad demo · claude");
     expect(term[term.indexOf("--worktree") + 1]).toBe("id:r::/w");
+  });
+
+  test("a confined worker's terminal starts in its run folder, filed under the caller's project", () => {
+    process.env.NIRVANA_ORCA_HOST = "on";
+    delete process.env.ORCA_WORKTREE_ID;
+    const run = path.join(root, "outputs", "run-1");
+    fs.mkdirSync(path.join(root, "outputs", "run-0"), { recursive: true });
+    fs.rmSync(orcaCalls, { force: true });
+    const r = runHeadless({ runtime: "claude-code", prompt: "hello", cwd: root, workspace: run, timeoutMs: 60_000, label: "squad demo" });
+    expect(r.ok).toBe(true);
+    Bun.sleepSync(500);
+    const calls: string[][] = fs.readFileSync(orcaCalls, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+    const term = calls.find((a) => a[0] === "terminal" && a[1] === "create")!;
+    expect(term[term.indexOf("--worktree") + 1]).toBe(`path:${root}`);
+    const command = term[term.indexOf("--command") + 1];
+    // `cd '<run>' && …` on POSIX, `Set-Location -LiteralPath '<run>'; …` on Windows.
+    expect(command.indexOf(run)).toBeGreaterThanOrEqual(0);
+    expect(command.indexOf(run)).toBeLessThan(command.indexOf("claude"));
+    expect(command).toContain("--settings");
+    process.env.ORCA_WORKTREE_ID = "r::/w";
   });
 });

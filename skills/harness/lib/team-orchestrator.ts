@@ -23,6 +23,7 @@ import * as os from "node:os";
 import { spawnSync } from "node:child_process";
 import { runHeadless, AUTONOMOUS_DIRECTIVE, type Runtime } from "./host-agent-driver.ts";
 import { runWithCascade } from "./cascade-runner.ts";
+import { runFolderOf } from "../../_shared/lib/run-workspace.ts";
 import { sessionKey, getSession, putSession, dropSession, type EntityKind } from "./session-store.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { stamp } from "../../_shared/lib/audit-provenance.ts";
@@ -229,6 +230,7 @@ function pickChain(args: TeamRunArgs): { chain: ChainStep[]; reason: string } {
     // which may open nothing.
     dispatchRole: "planner",
     runtime: args.runtime, prompt, cwd: args.projectRoot,
+    workspace: runFolderOf(args.projectDir, args.projectRoot) ?? undefined,
     addDirs: [businessDir(args), args.projectDir],
     yolo: args.yolo ?? true,
     timeoutMs: 5 * 60 * 1000,
@@ -279,6 +281,7 @@ function pickChain(args: TeamRunArgs): { chain: ChainStep[]; reason: string } {
       // nothing, whatever tools its runtime hands it.
       dispatchRole: "planner",
       runtime: args.runtime, prompt: reask, cwd: args.projectRoot,
+      workspace: runFolderOf(args.projectDir, args.projectRoot) ?? undefined,
       yolo: args.yolo ?? true,
       timeoutMs: 2 * 60 * 1000,
     });
@@ -456,6 +459,9 @@ function runStep(step: ChainStep, idx: number, total: number, args: TeamRunArgs,
     // The prompt says in words that it is read-only, which is the instrument the
     // rest of the engine uses to keep deliverables where they belong.
     runtime: args.runtime, prompt: ep.stdout, cwd: args.projectRoot, addDirs: [args.projectDir, employeeOutDir, bizDir],
+    // Every seat of the run starts in the run's folder, fenced off from the
+    // runs beside it (run-workspace.ts).
+    workspace: runFolderOf(args.projectDir, args.projectRoot) ?? undefined,
     // The chain never passed this, so `--safe` stopped at the business door and
     // every employee inside ran in full trust regardless.
     yolo: args.yolo ?? true,

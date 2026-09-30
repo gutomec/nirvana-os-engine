@@ -18,6 +18,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { type Runtime } from "./host-agent-driver.ts";
+import { runFolderOf } from "../../_shared/lib/run-workspace.ts";
 import { LEGACY_CAPABILITY_ID } from "./capability-resolver.ts";
 import {
   normalizeWorkflow, readWorkflow, referencedComponents, resolveWorkflowRef, type CanonicalStep,
@@ -599,9 +600,12 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
     // A squad EXECUTES. The owner rule has no exception: it may open nothing,
     // and the stamp is what makes that enforceable rather than advisory.
     dispatchRole: "squad",
-    // The dispatched runtime runs INSIDE the project — it needs the project's .nirvana/,
-    // its config, its logs and its code-base — with the scaffold and the outputs dir handed
-    // to it as additional directories so both stay writable.
+    // The dispatched runtime starts in its own run folder, with the project it
+    // serves granted beside it (its .nirvana/, config, logs and code-base) and
+    // the other runs' folders fenced off (run-workspace.ts). The scaffold and
+    // the outputs dir are handed to it as additional directories so both stay
+    // writable when a caller pins them elsewhere.
+    workspace: runFolderOf(args.projectDir, args.projectRoot) ?? undefined,
     // squadDir is granted so the resource map in the prompt is a door and not a
     // sign: `references/`, `checklists/`, `templates/`, `schemas/`, `config/` and
     // the rest live under it, and on claude-code and agy an ungranted path is

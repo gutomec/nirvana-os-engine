@@ -103,6 +103,17 @@ The brief moved to the result in 0.13.x; the prompts the engine wraps around it 
 
 `runHeadless` gains `noTools` for answer-only calls: Claude Code runs with `--tools ""`, Codex in its read-only sandbox and Gemini in `plan` approval mode. `scripts/bench-routing-modes.ts` routes a set of briefs with each mode, one call at a time, and prints the target, squads, clones, seconds and cost of every decision.
 
+### A worker starts in its own run folder, and the runs beside it are fenced off
+
+Every dispatched worker (the squad, agent-x, the business intake and each team seat, the director, the revision, the report publisher, judge-x and `nrv revise`) started in the project root, or in home outside a project, with every earlier run in reach. Asked to write a summary and reuse "earlier analysis nearby", a headless Claude worker read a sibling run's deliverable and quoted it. A worker now starts in its own run folder (`<outputs>/<run id>/`), with the project it serves granted beside it so a brief about the user's files still reads them (`skills/_shared/lib/run-workspace.ts`, applied once in the driver, so the Orca worker terminal gets the same folder).
+
+- On Claude Code the other run folders under the same outputs base are denied to `Read` and `Edit` through a per-run `--settings` file. Claude Code applies those rules to its file tools, to `cat`, `cp` and redirects in Bash, and to Glob and Grep roots; the same task that quoted the sibling now gets "File is in a directory that is denied by your permission settings". `permissions.blockReadsOutsideWorkingDirectories` was not used: it would also refuse the skills library, persona files and any file a brief points at outside the project.
+- Claude Code loads a project's `.claude/settings.json` from the cwd only, so its `Read`/`Edit` deny rules (the `.env` rules `nrv init` writes) travel in the same settings file, re-anchored at the project root.
+- Every runtime gets one line after its directive naming the run folder and saying the folders beside it are not its input. For Codex, Gemini CLI, Antigravity, Grok, Pi, Kimi, Qwen and OpenCode that line is the whole fence: measured on one short run each, Antigravity and Grok kept to it and Pi did not. Decision steps (the director, judge-x) run lean with no directive and still get the folder and, on Claude Code, the rules.
+- A sibling run folder the instruction names by path (`outputs/<id>` or its absolute path) stays readable: building on an earlier run on purpose is the user's call.
+- `session.json` records the folder a session started in and `nrv revise` resumes from there, since Claude Code and Gemini CLI keep a session under its working directory. A run from before this change has no record and resumes as before.
+- Codex reads `AGENTS.md` only from its cwd when the project is not a git repository, so in that case its run-folder line names the project's `AGENTS.md`.
+
 
 ## 0.14.8 — 2026-09-27
 

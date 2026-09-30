@@ -123,10 +123,10 @@ describe("dispatch.ts --judge-x", () => {
     const args = fx.judgeArgs();
     expect(args).not.toContain("--append-system-prompt");
     expect(args[args.indexOf("--max-budget-usd") + 1]).toBe("1.5");
-    // The judge's cwd is the PROJECT; its scaffold, its outputs root and the candidate it
-    // reads are the three granted directories.
+    // The judge starts in its own run folder; its scaffold, its outputs root, the
+    // candidate it reads and the project are the granted directories.
     const addDirs = args.filter((_, index) => args[index - 1] === "--add-dir");
-    expect(addDirs).toEqual([path.join(fx.projectRoot, "outputs", fx.projectId, "judge-x"), fx.outputsRoot, fx.candidateRoot]);
+    expect(addDirs).toEqual([path.join(fx.projectRoot, "outputs", fx.projectId, "judge-x"), fx.outputsRoot, fx.candidateRoot, fx.projectRoot]);
     // The candidate was only read; the outputs root holds the scorecard alone.
     expect(fs.readdirSync(fx.candidateRoot)).toEqual(["report.md"]);
     expect(fs.readdirSync(fx.outputsRoot)).toEqual([SCORECARD_FILE]);

@@ -146,7 +146,7 @@ export interface OrcaWorkerHooks {
  * (yolo false) drops them, and claude takes `--permission-mode acceptEdits`
  * like its headless twin. Null for a runtime Orca has no agent id for.
  */
-export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" | "model" | "effort" | "addDirs">): string[] | null {
+export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" | "model" | "effort" | "addDirs" | "claudeSettings">): string[] | null {
   if (!ORCA_AGENT_ID[opts.runtime]) return null;
   const yolo = opts.yolo !== false;
   // The caller's value, else the user's pin, else nothing — a bare CLI uses the
@@ -169,6 +169,8 @@ export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" |
       const a = ["claude", "--permission-mode", yolo ? "auto" : "acceptEdits"];
       if (model) a.push("--model", model);
       if (effort) a.push("--effort", effort);
+      // The run's deny rules (run-workspace.ts): the same fence as headless.
+      if (opts.claudeSettings) a.push("--settings", opts.claudeSettings);
       for (const d of dirs) a.push("--add-dir", d);
       return a;
     }
@@ -327,7 +329,10 @@ export function runOrcaWorker(opts: RunHeadlessOpts, hooks: OrcaWorkerHooks = {}
   //    workspace is trusted first, so the TUI opens at its prompt.
   const trusted = preTrustWorkspace(opts.runtime, cwd);
   const command = workerCommand(argv, cwd, forwardedEnv(process.env, opts.runtime));
-  const term = call<any>(["terminal", "create", "--worktree", orcaWorkspaceSelector(cwd), "--title", `${label} · ${agent}`, "--command", command], { timeoutMs: 30_000 });
+  // The terminal starts in the run folder (cwd); the worktree Orca files it
+  // under is the project's, which is the caller's own cwd when the driver
+  // moved the worker into its workspace.
+  const term = call<any>(["terminal", "create", "--worktree", orcaWorkspaceSelector(opts.hostCwd ?? cwd), "--title", `${label} · ${agent}`, "--command", command], { timeoutMs: 30_000 });
   if (!term.ok) { failTask(); return fallback("terminal-create", term.error?.code ?? term.error?.message ?? "unknown"); }
   const handle: string = term.result?.terminal?.handle;
   if (!handle) { failTask(); return fallback("terminal-create", "no terminal handle in answer"); }

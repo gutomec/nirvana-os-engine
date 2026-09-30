@@ -25,6 +25,7 @@ import { scopeGuard } from "../../../_shared/lib/scope-guard.ts";
 import { runWithCascade } from "../cascade-runner.ts";
 import { agentsDirCandidates } from "../dispatch-cascade.ts";
 import { runtimeAvailable, type Runtime } from "../host-agent-driver.ts";
+import { runFolderOf } from "../../../_shared/lib/run-workspace.ts";
 import type { TargetRef } from "../run-kernel/types.ts";
 import { SCORECARD_FILE, validateScorecardFile, type ScorecardFile } from "./evaluation-contract.ts";
 import type { SuccessRequirement } from "./types.ts";
@@ -137,6 +138,8 @@ export function runJudgeX(args: RunJudgeXArgs): JudgeXResult {
     maxBudgetUsd: args.maxBudgetUsd, timeoutMs: args.timeoutMs, yolo: args.yolo,
     brief: args.brief, projectRoot: args.projectRoot, outputsRoot: args.outputsRoot,
     taskHint: "judge-x (Gauntlet evaluation)", projectId: args.projectId,
+    // Judges this run from its folder, fenced off from the runs beside it.
+    workspace: runFolderOf(args.projectDir, args.projectRoot) ?? undefined,
   });
   const budgetExhausted = !res.ok && res.resultSubtype === BUDGET_EXHAUSTED_SUBTYPE;
   emit("agent_executed", { trace_id: args.projectId, project_id: args.projectId, employee: JUDGE_X_SLUG, runtime: res.finalRuntime,

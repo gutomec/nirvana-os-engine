@@ -9,8 +9,10 @@
 //
 // Two invariants are pinned here, both the owner's decision:
 //   1. every event of a trace lands in ONE audit log — the project's;
-//   2. the dispatched runtime runs INSIDE the project (cwd = project root),
-//      with the outputs root reachable as an additional directory.
+//   2. the dispatched runtime runs INSIDE the project: its cwd is the run's own
+//      folder under the project's outputs (never the bare project root, so the
+//      runs beside it are not in reach), with the project and the outputs root
+//      reachable as additional directories.
 //
 // Hermetic: a fake `claude` on PATH, a squad fixture under a temporary HOME, no
 // LLM and no network. HARNESS_LOGS_DIR is deliberately NOT set — pinning it
@@ -138,8 +140,10 @@ describe("a dispatch whose outputs root is outside the project", () => {
     const addDirs = child.argv.filter((_, index) => child.argv[index - 1] === "--add-dir");
     expect(addDirs).toContain(fx.outputs);
 
-    // Decision 1 — the dispatched runtime runs INSIDE the project.
-    expect(child.cwd).toBe(fx.projectRoot);
+    // Decision 1 — the dispatched runtime runs INSIDE the project, from its
+    // own run folder, with the project granted.
+    expect(child.cwd).toBe(path.join(fx.projectRoot, "outputs", pid));
+    expect(addDirs).toContain(fx.projectRoot);
 
     // Decision 2 — one trace, one audit log: the project's.
     const projectLog = path.join(fx.projectRoot, ".nirvana", "logs", "harness", new Date().toISOString().slice(0, 10), "audit.jsonl");
