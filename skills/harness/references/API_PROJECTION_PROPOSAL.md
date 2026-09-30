@@ -1,7 +1,7 @@
 # The API is the fourth projection
 
 **Status:** proposal, registered · **Written:** 2026-08-22 · **Owner-approved direction:** yes (design phase)
-**Grounding:** ~/vps-setup-squad/artefatos/nirvana-os-via-api-e-sdks.md (field survey, VPS-verified CLI paths + vendor-doc SDK research)
+**Grounding:** a field survey (VPS-verified CLI paths + vendor-doc SDK research)
 
 Nirvana-OS is not a service; it is a protocol with projections. The graph
 (PR #41) projects the org as a validated artifact; glance projects

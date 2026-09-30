@@ -3084,9 +3084,8 @@ o dry run padrão, o backup e o rollback explicitados.
 
 ### Um projeto para de enxergar os runs dos outros
 
-Em 27/08/2026 uma sessão trabalhando em `~/nirvana-os` rodou `nrv run-track
-list`, viu linhas de `~/venda-mundial-pro` e de `consultorio-dr-paulo`, e fechou
-uma delas. Um run de outro projeto, encerrado por um estranho, recuperável só
+Uma sessão trabalhando num projeto rodou `nrv run-track list`, viu linhas de
+dois outros projetos e fechou uma delas. Um run de outro projeto, encerrado por um estranho, recuperável só
 por um `x_audit_correction`. O ledger é um arquivo SQLite global, e até agora
 todo leitor dele via a máquina inteira.
 

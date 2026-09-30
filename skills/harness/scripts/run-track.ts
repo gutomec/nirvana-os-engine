@@ -86,9 +86,8 @@ function defaultProjectId(): string {
 /**
  * A run of ANOTHER project is not this session's to touch.
  *
- * On 2026-08-27 a session working in ~/nirvana-os ran `list`, saw rows of
- * ~/venda-mundial-pro and consultorio-dr-paulo — the ledger showed the whole
- * machine — and closed one of them. `list` no longer shows them; this refuses
+ * A session working in one project ran `list`, saw rows of two other
+ * projects — the ledger showed the whole machine — and closed one of them. `list` no longer shows them; this refuses
  * the operation even when the id arrives some other way (a log, a paste, a
  * script). A LEGACY row (no project_root, nothing to derive it from) is let
  * through: ownership cannot be proven, and refusing would strand it forever.
