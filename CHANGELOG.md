@@ -2994,9 +2994,8 @@ default, the backup and the rollback spelled out.
 
 ### A project stops seeing other projects' runs
 
-On 2026-08-27 a session working in `~/nirvana-os` ran `nrv run-track list`, saw
-rows belonging to `~/venda-mundial-pro` and `consultorio-dr-paulo`, and closed
-one of them. Another project's run, terminated by a stranger, recoverable only
+A session working in one project ran `nrv run-track list`, saw rows belonging
+to two other projects, and closed one of them. Another project's run, terminated by a stranger, recoverable only
 through an `x_audit_correction`. The ledger is one global SQLite file, and until
 now every reader of it saw the whole machine.
 

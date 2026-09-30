@@ -1,10 +1,10 @@
 // run-ledger-project-scope.test.ts — a project sees ITS OWN runs, and nothing else.
 //
 // The ledger is one global SQLite DB, and until now every reader of it saw the
-// whole machine. On 2026-08-27 a session working in ~/nirvana-os listed the
-// open runs, found rows belonging to ~/venda-mundial-pro and
-// consultorio-dr-paulo, and CLOSED one of them — a run of another project,
-// terminated by a stranger, recoverable only through an x_audit_correction.
+// whole machine. A session working in one project listed the open runs,
+// found rows belonging to two other projects, and CLOSED one of them — a run
+// of another project, terminated by a stranger, recoverable only through an
+// x_audit_correction.
 //
 // The reasoning behind the global DB ("a machine-wide supervisor invocation
 // runs with no project context and must see every run on the machine") was

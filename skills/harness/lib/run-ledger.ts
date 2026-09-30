@@ -21,9 +21,8 @@
 // supervisor is the one documented exception — it asks for the machine-wide
 // scope explicitly (`--all-projects`, or no project found at all).
 //
-// Why: on 2026-08-27 a session working in ~/nirvana-os listed the open runs,
-// saw rows belonging to ~/venda-mundial-pro and consultorio-dr-paulo, and
-// closed one of them. One project could pollute — and terminate — another's
+// Why: a session working in one project listed the open runs, saw rows
+// belonging to two other projects, and closed one of them. One project could pollute — and terminate — another's
 // work. Rows written before the column exists carry `project_root = NULL`,
 // which reads as "legacy": visible only in the machine-wide scope, never lost.
 //
