@@ -306,7 +306,7 @@ function pickChain(args: TeamRunArgs): { chain: ChainStep[]; reason: string } {
     });
   if (!chain.length) throw new Error("director picked no valid employee");
   if (chain[chain.length - 1].employee !== args.intakeEmployee) {
-    chain.push({ employee: args.intakeEmployee, task: `Final synthesis: read the colleagues' outputs under _team/* and consolidate the FINAL DELIVERABLES under ${args.outputsRoot}. State any assumptions under a "## Assumptions" heading.` });
+    chain.push({ employee: args.intakeEmployee, task: `Final synthesis: the FINAL DELIVERABLES under ${args.outputsRoot} consolidate the colleagues' outputs under _team/*, with any assumptions under a "## Assumptions" heading.` });
   }
   const reason = String(parsed.reason || "").replace(/\s+/g, " ").trim().slice(0, 300)
     || "the director stated no reason";
@@ -377,9 +377,9 @@ export function buildStepBrief(step: ChainStep, idx: number, total: number, args
       + "\nCarry on with what does exist. If the absence blocks part of your work, do all the rest and say which part was left out and why.\n\n"
     : "";
   const outputInstr = isLast
-    ? `## Output\nWrite the FINAL DELIVERABLES as files under: \`${args.outputsRoot}\`\nRead everything the colleagues produced under \`_team/*\` and consolidate it. State your assumptions under "## Assumptions" in the main deliverable. Do NOT duplicate a colleague's work — synthesize, refine, complete.`
+    ? `## Output\nThe FINAL DELIVERABLES exist as files under: \`${args.outputsRoot}\`\nThey consolidate what the colleagues produced under \`_team/*\` into one delivery: synthesized, refined and complete, never a colleague's work duplicated. Your assumptions are stated under "## Assumptions" in the main deliverable.`
       + (gaps.length ? `\n\nAlso write \`${args.outputsRoot}/_QA-RESERVATIONS.md\`: what is missing from this delivery because of the seats that did not deliver, and what that practically costs whoever uses the material. If the file already exists, add to it instead of overwriting.` : "")
-    : `## Output\nWrite YOUR work as well-named Markdown files under: \`${employeeOutDir}\`\nOne or more files with your analysis and the deliverable of your specialty. The colleagues after you will read it to continue — write with them in mind.`;
+    : `## Output\nYour work exists as files under: \`${employeeOutDir}\`\nThe deliverable of your specialty, in a form the colleagues after you can read to continue.`;
 
   return [
     `# Task for ${step.employee} — step ${idx + 1} of ${total}`,
@@ -395,13 +395,13 @@ export function buildStepBrief(step: ChainStep, idx: number, total: number, args
     // delivery — the language of the instruction leaking into the work.
     "## Language\nThese instructions are in English. What you DELIVER follows the language of the client brief above.",
     "",
-    // A seat is handed a RANKED LIST of mind-clones and told to choose; nothing
-    // is auto-injected unless the brief named one. On 2026-09-04 three seats
-    // each picked a clone, logged a good reason, and then worked without ever
-    // loading it — so the persona was a name in a log, not a voice in the work,
-    // and the run read as if it had clone fidelity it never had. Rule 9 of the
-    // protocol names that exact failure: never claim fidelity you did not load.
-    "## If you pick a mind-clone, LOAD IT\nYour prompt lists candidates; nothing was injected for you. Choosing one and working from what you already know about that person is NOT embodying them — it is the failure the protocol calls claiming fidelity you did not load. If you pick one, run `nrv inspect-clone <slug>` — it prints `Path:` and the artifacts it holds — then READ `agent/AGENT.md`, `agent/SOUL.md` and `dna/dna-schema.md` under that path, and work from what they say. (Not `--dna`: that flag prints layer COUNTS, not the DNA.) If you decide none fits, say so in your output and work as yourself; that is honest and allowed.",
+    // Seats once picked a clone, logged a good reason, and then worked without
+    // ever loading it — so the persona was a name in a log, not a voice in the
+    // work, and the run read as if it had clone fidelity it never had. Rule 9 of
+    // the protocol names that exact failure: never claim fidelity you did not
+    // load. The constraint is the result; how the persona files are found and
+    // read is the seat's own (a card names them; `nrv inspect-clone` prints them).
+    "## Mind-clones\nA voice you channel comes from that clone's persona files (`nrv inspect-clone <slug>` prints where they are), not from what you already know about the person; claiming a fidelity you did not load is the failure the protocol forbids. If none fits, say so in your output and work as yourself.",
     "",
     priorBlock + gapBlock + outputInstr,
     scopeGuard("en"),

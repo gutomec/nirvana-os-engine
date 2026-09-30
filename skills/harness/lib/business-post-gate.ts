@@ -78,9 +78,9 @@ export function runBusinessPostGate(input: BusinessPostGateInput): { zipPath: st
       const orderPath = path.join(reportDir, "order.json");
       const publisherBrief = [
         "Você é o publicador do relatório final. Compile a entrega.",
-        `Leia TODOS os arquivos .md em: ${input.outputsRoot}`,
+        `A entrega são os arquivos .md em: ${input.outputsRoot}`,
         "",
-        "Escreva EXATAMENTE dois arquivos (use a ferramenta Write, não rode shell):",
+        "O resultado são EXATAMENTE dois arquivos:",
         `1. ${summaryPath} — resumo executivo fiel (markdown), que vai na capa do PDF.`,
         `2. ${orderPath} — JSON: {"title": "...", "subtitle": "...", "client": "...", "summary_file": "${summaryPath}", "order": ["arquivo1.md", "arquivo2.md", ...]}`,
         "   - order = nomes dos .md em " + input.outputsRoot + " na sequência ideal (resposta direta primeiro, depois análise, base e anexos).",

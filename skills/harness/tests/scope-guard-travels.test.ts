@@ -38,7 +38,7 @@ describe("the team step brief", () => {
 
   test("the last step synthesizes into the outputs root and still carries it", () => {
     const text = buildStepBrief({ employee: "ceo", task: "Consolide." }, 2, 3, args, [], "/out/final");
-    expect(text).toContain("FINAL DELIVERABLES as files under: `/out/final`");
+    expect(text).toContain("FINAL DELIVERABLES exist as files under: `/out/final`");
     expect(text).not.toContain("## What your colleagues produced");
     expect(text.trim().endsWith(SCOPE_GUARD_EN)).toBe(true);
   });
