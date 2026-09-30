@@ -1178,8 +1178,10 @@ function deliveryArgs(opts: DeliverOpts): DeliveryArgs {
     maxBudgetUsd: effectiveBudgetUsd(),
     timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
     yolo,
-    // A squad run carries the `squad` stamp (squad-exec), so its revision does too.
+    // A squad run carries the `squad` stamp (squad-exec) and agent-x its own
+    // (runAgentX), so their revisions do too.
     ...(opts.targetKind === "squad" ? { producerRole: "squad" as const } : {}),
+    ...(opts.targetKind === "agent-x" ? { producerRole: "agent-x" as const } : {}),
     rulesDirective,
     forceDeliver,
     config: harnessConfig,

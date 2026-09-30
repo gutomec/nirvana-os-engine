@@ -32,7 +32,7 @@ import type { AgenticRouteDecision, RouteCandidate } from "./agentic-router.ts";
 import type { Runtime } from "./host-agent-driver.ts";
 import { runWithCascade } from "./cascade-runner.ts";
 import type { RouterFailurePolicy } from "./harness-config.ts";
-import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
+import { scopeBoundary, scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { briefExcerpt } from "../../_shared/lib/brief-excerpt.ts";
 
 export type DispatchStepKind = "business" | "squad" | "agent-x";
@@ -401,6 +401,7 @@ export function runAgentX(args: RunAgentXArgs): AgentXResult {
     "Other runs' folders beside this one are not your input: do not list, read or edit them.",
     "Do not print a summary of what you would do — deliver files. Record",
     'assumptions under "## Premissas assumidas" in the main deliverable.',
+    scopeBoundary("en"),
     scopeGuard("en"),
   ].join("\n");
 
@@ -415,6 +416,10 @@ export function runAgentX(args: RunAgentXArgs): AgentXResult {
 
   const cascadeImpl = args.runWithCascadeImpl ?? runWithCascade;
   const res = cascadeImpl({
+    // The generalist is a worker: it may open nothing. Without the stamp it
+    // inherited its parent's role, which let it dispatch as the operator or,
+    // under a seat, as that employee.
+    dispatchRole: "agent-x",
     runtime: args.runtime, prompt, cwd: args.projectRoot, addDirs: [args.projectDir, args.outputsRoot],
     appendSystemPrompt: args.appendSystemPrompt,
     maxBudgetUsd: args.maxBudgetUsd, timeoutMs: args.timeoutMs, yolo: args.yolo,

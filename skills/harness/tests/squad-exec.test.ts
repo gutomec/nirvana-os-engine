@@ -14,7 +14,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { runSquadHeadless, buildSquadPrompt, capabilityContext, promptPath, executorManifest } from "../lib/squad-exec.ts";
 import { sessionKey, putSession } from "../lib/session-store.ts";
-import { SCOPE_GUARD_PT_BR } from "../../_shared/lib/scope-guard.ts";
+import { SCOPE_GUARD_PT_BR, scopeBoundary } from "../../_shared/lib/scope-guard.ts";
 import { LIMITS } from "../../_shared/validators/limits.ts";
 
 let tmp: string;
@@ -139,11 +139,11 @@ Este diretório é a fonte do squad, compartilhada por todo projeto desta máqui
 the brief
 
 ## SUA SUB-TAREFA
-Execute a SUA especialidade aplicada ao brief acima. Escreva arquivos sob \`/out/dir\` (HTML, CSS, JS, MD, PNG/JPG via skills de imagem, o que for da sua expertise). Não invoque a skill harness, não rode \`nrv run\`/\`nrv dispatch\` para este mesmo brief (anti-loop). Pode usar Bash, Read, Write, Edit, geração de imagem (nano-banana-pro), e qualquer ferramenta disponível para entregar o melhor possível.
+Execute a SUA especialidade aplicada ao brief acima. Escreva arquivos sob \`/out/dir\`, no formato que a sua especialidade pede; imagem neles é imagem gerada de verdade, nunca placeholder nem SVG genérico. Método e ferramentas são seus. Não invoque a skill harness, não rode \`nrv run\`/\`nrv dispatch\` para este mesmo brief (anti-loop).
 
 Se o brief mencionar você por nome (ex.: "use o squad brandcraft"), priorize fazer EXATAMENTE o que o usuário pediu nesse parágrafo. O usuário manda.
 
-${SCOPE_GUARD_PT_BR} Escopo é o brief acima e os critérios de aceitação da sua sub-tarefa.
+${SCOPE_GUARD_PT_BR} Escopo é o brief acima e os critérios de aceitação da sua sub-tarefa. ${scopeBoundary("pt-BR")}
 
 ## SAÍDA
 Arquivos no diretório acima. Não printe sumário — entregue arquivos. Termine quando o trabalho estiver pronto para entrega ao usuário.`;

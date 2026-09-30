@@ -32,7 +32,7 @@ import { resolveClonePersona, loadCloneRegistry } from "../../_shared/lib/clone-
 import { layersForPhase } from "../../_shared/lib/dna-layer-policy.ts";
 import { findCloneForTask } from "../../_shared/lib/clone-search.ts";
 import { paths } from "../../_shared/lib/bun-helpers.ts";
-import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
+import { scopeBoundary, scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { renderResourceMap } from "../../_shared/lib/entity-resource-map.ts";
 import { resolveSetting } from "../../_shared/lib/settings.ts";
 import { preflightWarnings, squadPreflight } from "../../_shared/lib/squad-preflight.ts";
@@ -381,6 +381,7 @@ function renderCapabilityBlock(ctx: SquadCapabilityPromptContext): string {
       const marks = [a.blocking ? "bloqueante" : "", a.minimumScore !== undefined ? `nota mínima ${a.minimumScore}` : ""].filter(Boolean);
       lines.push(`  - \`${a.id}\`${marks.length ? ` (${marks.join(", ")})` : ""} — ${a.description}`);
     }
+    lines.push("- Antes de terminar, confira você mesmo cada critério de pronto.");
   }
   if (!ctx.workflow) {
     lines.push("", "> Esta capability não aponta para um workflow legível; siga o manifesto e os documentos abaixo.");
@@ -494,11 +495,11 @@ ${cloneInj.block || "(sem clone para esta tarefa — opere com a especialidade p
 ${brief}
 
 ## SUA SUB-TAREFA
-Execute a SUA especialidade aplicada ao brief acima. Escreva arquivos sob \`${outDir}\` (HTML, CSS, JS, MD, PNG/JPG via skills de imagem, o que for da sua expertise). Não invoque a skill harness, não rode \`nrv run\`/\`nrv dispatch\` para este mesmo brief (anti-loop). Pode usar Bash, Read, Write, Edit, geração de imagem (nano-banana-pro), e qualquer ferramenta disponível para entregar o melhor possível.
+Execute a SUA especialidade aplicada ao brief acima. Escreva arquivos sob \`${outDir}\`, no formato que a sua especialidade pede; imagem neles é imagem gerada de verdade, nunca placeholder nem SVG genérico. Método e ferramentas são seus. Não invoque a skill harness, não rode \`nrv run\`/\`nrv dispatch\` para este mesmo brief (anti-loop).
 
 Se o brief mencionar você por nome (ex.: "use o squad ${squadSlug}"), priorize fazer EXATAMENTE o que o usuário pediu nesse parágrafo. O usuário manda.
 
-${scopeGuard("pt-BR")} Escopo é o brief acima e os critérios de aceitação da sua sub-tarefa.
+${scopeGuard("pt-BR")} Escopo é o brief acima e os critérios de aceitação da sua sub-tarefa. ${scopeBoundary("pt-BR")}
 
 ## SAÍDA
 Arquivos no diretório acima. Não printe sumário — entregue arquivos. ${doneLine}`;
