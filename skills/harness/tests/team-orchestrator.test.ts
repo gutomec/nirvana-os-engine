@@ -438,4 +438,177 @@ describe("runTeam — the director narrated instead of answering", () => {
     expect(calls).toBe(1);
     expect(readAudit(a.projectId).some(e => e.event === "x_director_reask")).toBe(false);
   });
+
+  // The re-ask transcribes a decision. A call that failed or answered nothing
+  // made none, and asking again only spent another two minutes on the way to
+  // the same failure.
+  test.each([
+    ["a call that failed", { ok: false, result: "", error: "timed out after 300000ms", exitCode: 124 }, "timed out"],
+    ["an empty answer", { ok: true, result: "   ", exitCode: 0 }, "empty answer"],
+  ])("%s is not re-asked, and the real reason travels", (_label, answer, reason) => {
+    business("acme", ["researcher", "writer", "synth"]);
+    let calls = 0;
+    const impl = ((opts: any) => {
+      calls++;
+      return { runtime: opts.runtime, sessionId: null, costUsd: 0, stderr: "", durationMs: 1, ...answer };
+    }) as any;
+    const a = args("acme", { runHeadlessImpl: impl, runWithCascadeImpl: cascade([]) });
+    const r = runTeam(a);
+    expect(calls).toBe(1);
+    expect(r.ok).toBe(false);
+    expect(r.steps).toHaveLength(0);
+    expect(String(r.error)).toStartWith("director:");
+    expect(String(r.error)).toContain(reason);
+    expect(readAudit(a.projectId).some(e => e.event === "x_director_reask")).toBe(false);
+    expect(readAudit(a.projectId).some(e => e.event === "team_director_failed")).toBe(true);
+  });
+
+  test("the re-ask is stamped as a planner, like the first call", () => {
+    business("acme", ["researcher", "writer", "synth"]);
+    const roles: unknown[] = [];
+    let n = 0;
+    const impl = ((opts: any) => {
+      roles.push(opts.dispatchRole);
+      n++;
+      return {
+        ok: true, runtime: opts.runtime, sessionId: null, costUsd: 0, exitCode: 0, stderr: "", durationMs: 1,
+        result: n === 1 ? PROSE : JSON.stringify({ chain: [{ employee: "synth", task: "faça" }] }),
+      };
+    }) as any;
+    runTeam(args("acme", { runHeadlessImpl: impl, runWithCascadeImpl: cascade([]) }));
+    expect(roles).toEqual(["planner", "planner"]);
+  });
+});
+
+describe("runTeam — mandatory squads go to the seat they serve", () => {
+  // The router's mandatory squads used to run as a separate track the director
+  // never saw, on the whole brief, right before the synthesizer, while the seat
+  // whose job covered the same part did it too. The part was done twice and
+  // merged at the end. A slug no library carries: the pre-synthesizer pass then
+  // fails fast on "squad dir not found" and still records its step, which is
+  // exactly what these tests read.
+  const SQUAD = "zz-fixture-mandatory-squad";
+
+  function directorWith(chain: any[]) {
+    const prompts: string[] = [];
+    const impl = ((opts: any) => {
+      prompts.push(String(opts.prompt ?? ""));
+      return { ok: true, runtime: opts.runtime, sessionId: null, costUsd: 0, exitCode: 0, stderr: "", durationMs: 1, result: JSON.stringify({ chain }) };
+    }) as any;
+    return { impl, prompts };
+  }
+  const promptOf = (seen: any[], employee: string) => String(seen.find(o => String(o.taskHint).includes(`(${employee})`))?.prompt ?? "");
+
+  test("the director is told the mandatory squads and how to assign them", () => {
+    business("acme", ["researcher", "synth"]);
+    const d = directorWith([{ employee: "synth", task: "faça" }]);
+    runTeam(args("acme", { runHeadlessImpl: d.impl, runWithCascadeImpl: cascade([]), mandatorySquads: [SQUAD] }));
+    expect(d.prompts[0]).toContain("MANDATORY SQUADS");
+    expect(d.prompts[0]).toContain(`"${SQUAD}"`);
+    expect(d.prompts[0]).toContain('"squad":');
+  });
+
+  test("without mandatory squads the director's prompt and the seats' prompts are as before", () => {
+    business("acme", ["researcher", "synth"]);
+    const seen: any[] = [];
+    const d = directorWith([{ employee: "researcher", task: "pesquise" }, { employee: "synth", task: "consolide" }]);
+    runTeam(args("acme", { runHeadlessImpl: d.impl, runWithCascadeImpl: cascade(seen) }));
+    expect(d.prompts[0]).not.toContain("MANDATORY SQUADS");
+    expect(d.prompts[0]).not.toContain('"squad":');
+    expect(promptOf(seen, "researcher")).not.toContain("YOUR ASSIGNMENT");
+  });
+
+  /** A cascade whose `researcher` step leaves the evidence a real nested squad
+   *  dispatch leaves: squad-exec's `agent_executed` with `squad_slug`, written to
+   *  the same harness log runTeam reads, under the nested run's own project id. */
+  function cascadeWhereSeatRanSquad(seen: any[], squad: string) {
+    const inner = cascade(seen);
+    return ((opts: any) => {
+      if (String(opts.taskHint ?? "").includes("(researcher)")) {
+        const dir = path.join(harnessLogsDir({ cwd: tmp }), new Date().toISOString().slice(0, 10));
+        fs.mkdirSync(dir, { recursive: true });
+        fs.appendFileSync(path.join(dir, "audit.jsonl"), JSON.stringify({
+          ts: new Date().toISOString(), event: "agent_executed", project_id: "proj-nested-squad",
+          squad_slug: squad, employee: `squad:${squad}`, mode: "squad-only",
+        }) + "\n");
+      }
+      return inner(opts);
+    }) as any;
+  }
+
+  test("the seat given the squad carries it and keeps choosing its own voice", () => {
+    business("acme", ["researcher", "synth"]);
+    const seen: any[] = [];
+    const d = directorWith([{ employee: "researcher", task: "pesquise", squad: SQUAD }, { employee: "synth", task: "consolide" }]);
+    const r = runTeam(args("acme", { runHeadlessImpl: d.impl, runWithCascadeImpl: cascade(seen), mandatorySquads: [SQUAD] }));
+    expect(r.chain[0].squad).toBe(SQUAD);
+    const seat = promptOf(seen, "researcher");
+    expect(seat).toContain(`YOUR ASSIGNMENT — write the instruction for \`${SQUAD}\``);
+    // Only the squad was mapped: the clone half stays self-service.
+    expect(seat).toContain("MIND-CLONES YOU EMBODY — decision:");
+    expect(seat).not.toContain("MIND-CLONE YOU EMBODY — assigned:");
+  });
+
+  test("a seat that ends well WITHOUT running its squad does not count: the squad still runs before the synthesizer", () => {
+    // The assignment lets a seat stop and say the squad is the wrong tool, and
+    // that step is ok. Its success is not evidence the squad ran.
+    business("acme", ["researcher", "synth"]);
+    const d = directorWith([{ employee: "researcher", task: "pesquise", squad: SQUAD }, { employee: "synth", task: "consolide" }]);
+    const a = args("acme", { runHeadlessImpl: d.impl, runWithCascadeImpl: cascade([]), mandatorySquads: [SQUAD] });
+    const r = runTeam(a);
+    expect(r.steps.map(s => s.employee)).toEqual(["researcher", `squad:${SQUAD}`, "synth"]);
+    expect(readAudit(a.projectId).some(e => e.event === "x_carried_squad_unconfirmed" && e.squad_slug === SQUAD)).toBe(true);
+  });
+
+  test("a seat whose squad the audit shows ran during its step is not followed by a second run", () => {
+    const RAN = `${SQUAD}-ran`;
+    business("acme", ["researcher", "synth"]);
+    const d = directorWith([{ employee: "researcher", task: "pesquise", squad: RAN }, { employee: "synth", task: "consolide" }]);
+    const a = args("acme", { runHeadlessImpl: d.impl, runWithCascadeImpl: cascadeWhereSeatRanSquad([], RAN), mandatorySquads: [RAN] });
+    const r = runTeam(a);
+    expect(r.ok).toBe(true);
+    expect(r.steps.map(s => s.employee)).toEqual(["researcher", "synth"]);
+    expect(readAudit(a.projectId).some(e => e.event === "x_carried_squad_unconfirmed")).toBe(false);
+  });
+
+  test("evidence from before the seat's step does not count", () => {
+    const OLD = `${SQUAD}-old`;
+    business("acme", ["researcher", "synth"]);
+    const dir = path.join(harnessLogsDir({ cwd: tmp }), new Date().toISOString().slice(0, 10));
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(path.join(dir, "audit.jsonl"), JSON.stringify({
+      ts: new Date(Date.now() - 60_000).toISOString(), event: "agent_executed", project_id: "proj-earlier", squad_slug: OLD,
+    }) + "\n");
+    const d = directorWith([{ employee: "researcher", task: "pesquise", squad: OLD }, { employee: "synth", task: "consolide" }]);
+    const r = runTeam(args("acme", { runHeadlessImpl: d.impl, runWithCascadeImpl: cascade([]), mandatorySquads: [OLD] }));
+    expect(r.steps.map(s => s.employee)).toEqual(["researcher", `squad:${OLD}`, "synth"]);
+  });
+
+  test("a squad no seat took still runs, before the synthesizer", () => {
+    business("acme", ["researcher", "synth"]);
+    const d = directorWith([{ employee: "researcher", task: "pesquise" }, { employee: "synth", task: "consolide" }]);
+    const r = runTeam(args("acme", { runHeadlessImpl: d.impl, runWithCascadeImpl: cascade([]), mandatorySquads: [SQUAD] }));
+    expect(r.steps.map(s => s.employee)).toEqual(["researcher", `squad:${SQUAD}`, "synth"]);
+  });
+
+  test("a seat that carried the squad and did not deliver leaves it to the pre-synthesizer pass", () => {
+    business("acme", ["researcher", "synth"]);
+    const d = directorWith([{ employee: "researcher", task: "pesquise", squad: SQUAD }, { employee: "synth", task: "consolide" }]);
+    const r = runTeam(args("acme", { runHeadlessImpl: d.impl, runWithCascadeImpl: cascade([], new Set(["researcher"])), mandatorySquads: [SQUAD] }));
+    expect(r.steps.map(s => s.employee)).toEqual(["researcher", `squad:${SQUAD}`, "synth"]);
+  });
+
+  test("an assignment the director should not make is dropped, never the squad", () => {
+    business("acme", ["researcher", "writer", "synth"]);
+    const d = directorWith([
+      { employee: "researcher", task: "pesquise", squad: "not-a-mandatory-squad" },
+      { employee: "writer", task: "escreva", squad: SQUAD },
+      { employee: "synth", task: "consolide", squad: SQUAD },
+    ]);
+    const r = runTeam(args("acme", { runHeadlessImpl: d.impl, runWithCascadeImpl: cascade([]), mandatorySquads: [SQUAD] }));
+    expect(r.chain.map(s => s.squad ?? null)).toEqual([null, SQUAD, null]);
+    // The writer kept the assignment, but nothing shows the squad ran in its
+    // step, so it still runs on its own before the synthesizer.
+    expect(r.steps.map(s => s.employee)).toEqual(["researcher", "writer", `squad:${SQUAD}`, "synth"]);
+  });
 });

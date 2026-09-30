@@ -32,6 +32,15 @@ The seat prompt read `squads_authorized: []` as "do not dispatch any squad", the
 - The seat prompt renders `HANDOFF.json` without a copy of the brief the brief section already shows word for word, and the ranked clone candidates no longer repeat the clones injected above them.
 - The harness survey reads the catalog and opens manifests only for finalists: two instructions pointed it at `produces`, `example_briefs` and `keywords`, which only the manifests carry.
 
+### A failed director hands the brief to the intake seat, and mandatory squads go to the seat they serve
+
+A business run in team mode died whole when its director failed: no seat had run, nothing was on disk, and the run ended without trying the one seat that can always carry a brief. The intake seat now takes it alone, the path `--single` takes, and the switch is loud in both places that matter: a warning in the terminal and an `x_director_failed_single_fallback` event with the error in the audit, so the fallback never reads as a normal single-seat run.
+
+The director is re-asked only when there is a decision to transcribe. A call that failed or answered nothing made no decision, so it now fails at once with the runtime's own error instead of spending two more minutes on a re-ask that fails the same way. The re-ask is stamped as a planner, like the first call.
+
+The router's mandatory squads used to run as a separate track the director never saw, on the whole brief, right before the synthesizer, while the seat whose job covered the same part did it too. The director now gives each mandatory squad to the seat it serves, and that seat writes the squad's instruction and integrates what it delivers, so the part is done once. A seat's success is not taken as proof that its squad ran, because the assignment lets a seat stop and say the squad is the wrong tool: the squad counts as delivered only when the audit shows it executed during that seat's step. Any other squad runs on its own before the synthesizer, and an `x_carried_squad_unconfirmed` event names the seat that carried it, so a squad the user named always runs. The seat's assignment maps only the squad: `employee-prompt.ts` accepts a partial map, and a seat given a squad still chooses its own mind-clone.
+
+
 
 ## 0.14.8 — 2026-09-27
 

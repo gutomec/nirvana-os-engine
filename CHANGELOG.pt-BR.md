@@ -32,6 +32,15 @@ O `JudgeInput.brief` existia e o juiz o mostrava acima do artefato, mas o gate d
 - O prompt do cargo mostra o `HANDOFF.json` sem a cópia do brief que a seção do brief já mostra palavra por palavra, e a lista de clones candidatos deixou de repetir os clones já injetados acima dela.
 - A triagem da harness lê o catálogo e só abre manifestos dos finalistas: duas instruções a mandavam olhar `produces`, `example_briefs` e `keywords`, que só os manifestos têm.
 
+### Um diretor que falha passa o brief ao cargo de intake, e os squads obrigatórios vão para o cargo que atendem
+
+Uma empresa rodando em modo equipe morria inteira quando o diretor falhava: nenhum cargo tinha rodado, não havia nada em disco, e a execução acabava sem tentar o único cargo que sempre consegue carregar um brief. Agora o cargo de intake assume sozinho, pelo mesmo caminho do `--single`, e a troca aparece nos dois lugares que importam: um aviso no terminal e um evento `x_director_failed_single_fallback` com o erro na auditoria, para que a queda nunca pareça uma execução normal de cargo único.
+
+O diretor só é perguntado de novo quando há uma decisão a transcrever. Uma chamada que falhou ou não respondeu nada não decidiu nada, então agora falha na hora com o erro do próprio runtime, em vez de gastar mais dois minutos numa nova pergunta que falha do mesmo jeito. A nova pergunta leva o carimbo de planejador, como a primeira chamada.
+
+Os squads obrigatórios do roteador rodavam num trilho separado que o diretor nunca via, sobre o brief inteiro, logo antes do sintetizador, enquanto o cargo responsável pela mesma parte também a fazia. Agora o diretor entrega cada squad obrigatório ao cargo que ele atende, e esse cargo escreve a instrução do squad e integra o que ele entrega, então a parte é feita uma vez. O sucesso do cargo não é tomado como prova de que o squad rodou, porque a atribuição permite ao cargo parar e dizer que o squad é a ferramenta errada: o squad só conta como entregue quando a auditoria mostra que ele executou durante o passo daquele cargo. Qualquer outro squad roda sozinho antes do sintetizador, e um evento `x_carried_squad_unconfirmed` nomeia o cargo que o carregava, então um squad que o usuário pediu sempre roda. A atribuição do cargo mapeia só o squad: o `employee-prompt.ts` aceita um mapa parcial, e um cargo que recebe um squad continua escolhendo o próprio mind-clone.
+
+
 
 ## 0.14.8 — 2026-09-27
 
