@@ -160,6 +160,7 @@
           "properties": {
             "escalation_path": {
               "type": "object",
+              "description": "Accepted and ignored: nothing reads it. Kept so org charts that declare it still validate.",
               "patternProperties": {
                 "^[a-z][a-z0-9-]+$": { "type": "string" }
               }

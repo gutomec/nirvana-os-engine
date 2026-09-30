@@ -569,6 +569,8 @@ class OrgChartAntagonistRules(StrictModel):
 
 
 class OrgChartRoutingRules(StrictModel):
+    # Accepted and ignored: nothing reads it. Kept so the org charts that
+    # declare it still validate.
     escalation_path: Optional[dict[str, str]] = None
     default_skip_levels: bool = False
     cross_team_handoff_allowed: bool = True

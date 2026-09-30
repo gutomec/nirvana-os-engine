@@ -479,6 +479,8 @@ export const OrgChartSchema = z.object({
   }).strict()).min(1).optional(),
   org: z.record(z.string(), z.unknown()).optional(),
   routing_rules: z.object({
+    // Accepted and ignored: nothing reads it (seats do not escalate). Kept in
+    // the schema so the org charts that declare it still validate.
     escalation_path: z.record(z.string(), z.string()).optional(),
     default_skip_levels: z.boolean().default(false),
     cross_team_handoff_allowed: z.boolean().default(true),
