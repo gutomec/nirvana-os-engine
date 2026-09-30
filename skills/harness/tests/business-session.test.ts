@@ -106,6 +106,8 @@ describe("the brief points, it does not paste", () => {
     expect(brief).toContain("never widen what was asked");
     expect(brief).toContain("only the seats this request needs");
     expect(brief).toContain("as a subagent of your runtime");
+    expect(brief).toContain("You are the business, not one of its seats");
+    expect(brief).toContain("it does not bind you");
     expect(brief).toContain("Start its prompt with its seat file path");
     expect(brief).toContain("Wait until every subagent has finished");
     expect(brief).toContain(OUTPUTS);
