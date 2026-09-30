@@ -398,6 +398,7 @@ export function runAgentX(args: RunAgentXArgs): AgentXResult {
     "",
     "## Output",
     `Write every final deliverable as a file under: ${args.outputsRoot}`,
+    "Other runs' folders beside this one are not your input: do not list, read or edit them.",
     "Do not print a summary of what you would do — deliver files. Record",
     'assumptions under "## Premissas assumidas" in the main deliverable.',
     scopeGuard("en"),

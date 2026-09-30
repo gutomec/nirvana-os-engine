@@ -1945,9 +1945,28 @@ function runAntigravity(opts: RunHeadlessOpts): RunHeadlessResult {
   let result = rawStdout;
   let envelopeError: string | null = null;
   let costUsd: number | null = null;
+  let usage: RunHeadlessResult["usage"];
   try {
     const j = JSON.parse(rawStdout);
     sessionId = j.session_id || j.sessionId || j.conversation_id || sid;
+    // Token counts (`agy -p --output-format json`, 1.2.13: `usage` carries
+    // input_tokens, output_tokens, thinking_tokens, cache_read_tokens and
+    // total_tokens; no USD and no model name). Handed back whole, as the codex
+    // runner does, so the cost estimator can price the run when the model is
+    // known; before this the block was dropped with the envelope and every agy
+    // run recorded no cost at all. Thinking tokens bill as output, so they count
+    // in outputTokens and are named again as the reasoning subset.
+    const u = j.usage;
+    if (u && typeof u === "object") {
+      const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+      usage = {
+        inputTokens: n(u.input_tokens),
+        cachedInputTokens: n(u.cache_read_tokens),
+        cacheWriteInputTokens: 0,
+        outputTokens: n(u.output_tokens) + n(u.thinking_tokens),
+        reasoningOutputTokens: n(u.thinking_tokens),
+      };
+    }
     // JSON format (new builds): the response comes in a field; text (old
     // builds): the whole stdout IS the response.
     if (typeof j.response === "string") result = j.response;
@@ -1962,6 +1981,7 @@ function runAntigravity(opts: RunHeadlessOpts): RunHeadlessResult {
   return {
     ok, runtime: "antigravity-cli", sessionId, result,
     costUsd, ...(costUsd === null ? { costUnavailable: true } : {}),
+    ...(usage ? { usage } : {}),
     exitCode, stderr, durationMs,
     error: ok ? undefined : (envelopeError || salientError(stderr, "agy failed")),
   };

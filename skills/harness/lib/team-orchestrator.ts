@@ -682,7 +682,9 @@ export function runTeam(args: TeamRunArgs): TeamResult {
   // whole" stay two different statements in the log.
   appendAudit({
     event: "team_completed", project_id: args.projectId, business_slug: args.slug,
-    steps: chain.length, total_cost_usd: totalCost, total_duration_ms: totalDur,
+    // null, not 0, when no step reported a cost: a runtime that reports none is
+    // "unknown", and a $0 total reads as a free run.
+    steps: chain.length, total_cost_usd: steps.some(x => x.costUsd != null) ? totalCost : null, total_duration_ms: totalDur,
     ...(gaps.length ? { gaps: gaps.map(g => g.employee) } : {}),
   }, args.projectRoot);
   return { ok: true, steps, chain, gaps, lastSessionId: steps[steps.length - 1].sessionId, totalCostUsd: totalCost, totalDurationMs: totalDur };

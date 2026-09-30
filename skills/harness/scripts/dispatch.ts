@@ -1952,7 +1952,11 @@ if (wantExec) {
       if (tr.gaps.length) {
         console.log(c("yellow", `  ⚠ delivered with a gap: ${tr.gaps.map(g => g.employee).join(", ")} — the synthesizer was told to record it in _QA-RESERVATIONS.md`));
       }
-      console.log(c("dim", `  total: ${tr.totalDurationMs}ms · $${tr.totalCostUsd.toFixed(4)}`));
+      // Steps whose runtime reported no cost are unknown, not free.
+      const priced = tr.steps.filter(s => s.costUsd != null).length;
+      const unpriced = tr.steps.length - priced;
+      const costText = priced === 0 ? "cost n/a" : `$${tr.totalCostUsd.toFixed(4)}${unpriced ? ` + ${unpriced} step(s) with no cost reported` : ""}`;
+      console.log(c("dim", `  total: ${tr.totalDurationMs}ms · ${costText}`));
     }
     if (!ranSingle) res = { ok: tr.ok, sessionId: tr.lastSessionId, durationMs: tr.totalDurationMs, costUsd: tr.totalCostUsd };
   }
