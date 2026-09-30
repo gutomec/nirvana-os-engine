@@ -36,6 +36,7 @@ import type { RunHeadlessOpts, RunHeadlessResult, Runtime } from "./host-agent-d
 import { orcaJson, orcaFire, orcaWorkersActive, orcaWorkspaceSelector } from "./orca.ts";
 import { isEffortLevel, resolvePinnedEffort, resolveSystemModel } from "./system-model.ts";
 import { codexConfigPath } from "./codex-hooks.ts";
+import { RUN_WORKSPACE_ENV } from "./run-workspace.ts";
 
 /** Nirvana runtime → the agent id Orca recognizes in a terminal (the identity
  *  its hooks report, and what `dispatch --inject` needs to deliver a preamble).
@@ -328,7 +329,11 @@ export function runOrcaWorker(opts: RunHeadlessOpts, hooks: OrcaWorkerHooks = {}
   //    and the autonomy flags are ours, not Orca's per-agent defaults. The
   //    workspace is trusted first, so the TUI opens at its prompt.
   const trusted = preTrustWorkspace(opts.runtime, cwd);
-  const command = workerCommand(argv, cwd, forwardedEnv(process.env, opts.runtime));
+  // A confined worker carries its run folder, as the headless child does
+  // (driverSpawnSync), so what it dispatches nests inside its run.
+  const workerEnv = forwardedEnv(process.env, opts.runtime);
+  if (opts.workspace) workerEnv[RUN_WORKSPACE_ENV] = cwd;
+  const command = workerCommand(argv, cwd, workerEnv);
   // The terminal starts in the run folder (cwd); the worktree Orca files it
   // under is the project's, which is the caller's own cwd when the driver
   // moved the worker into its workspace.

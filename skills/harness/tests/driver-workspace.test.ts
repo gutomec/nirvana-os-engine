@@ -30,11 +30,11 @@ const argv = Bun.argv.slice(2);
 const name = path.basename(import.meta.path).replace(/\\.ts$/, "");
 const i = argv.indexOf("--settings");
 const settings = i >= 0 ? fs.readFileSync(argv[i + 1], "utf8") : null;
-fs.writeFileSync(path.join(process.env.FAKE_CAPTURE_DIR!, name + ".json"), JSON.stringify({ cwd: process.cwd(), argv, settings }));
+fs.writeFileSync(path.join(process.env.FAKE_CAPTURE_DIR!, name + ".json"), JSON.stringify({ cwd: process.cwd(), argv, settings, workspace: process.env.NIRVANA_RUN_WORKSPACE ?? null }));
 try { await Bun.stdin.text(); } catch {}
 `;
 
-function captured(name: string): { cwd: string; argv: string[]; settings: string | null } {
+function captured(name: string): { cwd: string; argv: string[]; settings: string | null; workspace: string | null } {
   return JSON.parse(fs.readFileSync(path.join(CAP, `${name}.json`), "utf8"));
 }
 
@@ -72,6 +72,8 @@ describe("runHeadless with a workspace", () => {
     expect(deny.some((rule) => rule.includes("run-mine"))).toBe(false);
     // The settings file is the run's own and does not outlive it.
     expect(fs.existsSync(c.argv[c.argv.indexOf("--settings") + 1])).toBe(false);
+    // The child knows its run folder, so a dispatch it starts nests inside it.
+    expect(c.workspace).toBe(MINE);
   });
 
   test("codex starts in the run folder too (-C), with no Claude settings", () => {
@@ -88,6 +90,7 @@ describe("runHeadless with a workspace", () => {
     const c = captured("claude");
     expect(fs.realpathSync(c.cwd)).toBe(ROOT);
     expect(c.argv).not.toContain("--settings");
+    expect(c.workspace).toBeNull();
   });
 
   test("the directive line names the run folder and the folders beside it", () => {

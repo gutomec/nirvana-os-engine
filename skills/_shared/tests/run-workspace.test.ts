@@ -11,7 +11,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-  claudeAbsolutePattern, confineToWorkspace, contractPointer, fenceSettings, projectDenyRules, runFolderOf, siblingRunFolders, workspaceDirective,
+  claudeAbsolutePattern, confineToWorkspace, contractPointer, fenceSettings, nestedOutputsBase, projectDenyRules, runFolderOf,
+  RUN_WORKSPACE_ENV, siblingRunFolders, workspaceDirective,
 } from "../lib/run-workspace.ts";
 import { outputsBaseDir } from "../lib/project-root.js";
 
@@ -48,6 +49,26 @@ describe("runFolderOf", () => {
     expect(runFolderOf(path.join(p.root, "src"), p.root)).toBeNull();
     expect(runFolderOf(path.join(p.root, "outputs"), p.root)).toBeNull();
     expect(runFolderOf(undefined, p.root)).toBeNull();
+  });
+});
+
+describe("nestedOutputsBase", () => {
+  test("a dispatch started inside a run nests under that run, and maps back to it", () => {
+    const p = project("nested");
+    const base = nestedOutputsBase(p.root, { [RUN_WORKSPACE_ENV]: p.mine });
+    expect(base).toBe(path.join(p.mine, "dispatches"));
+    // The squad a seat dispatched is part of the seat's run, not a sibling.
+    const squadDir = path.join(base!, "proj-nested", "squads", "tiny");
+    expect(runFolderOf(squadDir, p.root)).toBe(p.mine);
+    fs.mkdirSync(squadDir, { recursive: true });
+    expect(siblingRunFolders(p.mine)).toEqual([p.other]);
+  });
+
+  test("from the operator, or with a variable that names no run folder, nothing nests", () => {
+    const p = project("nested-none");
+    expect(nestedOutputsBase(p.root, {})).toBeNull();
+    expect(nestedOutputsBase(p.root, { [RUN_WORKSPACE_ENV]: p.root })).toBeNull();
+    expect(nestedOutputsBase(p.root, { [RUN_WORKSPACE_ENV]: path.join(p.root, "outputs", "missing") })).toBeNull();
   });
 });
 

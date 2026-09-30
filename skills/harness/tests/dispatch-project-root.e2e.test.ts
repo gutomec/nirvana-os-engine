@@ -158,3 +158,37 @@ describe("a dispatch whose outputs root is outside the project", () => {
     }
   }, 120000);
 });
+
+describe("a dispatch started from inside a run", () => {
+  test("squad --exec from a seat's run folder nests in that run, and its chain stays in the project's log", () => {
+    const fx = fixture();
+    // The seat's run, and a run of someone else beside it.
+    const parent = path.join(fx.projectRoot, "outputs", "proj-parent");
+    fs.mkdirSync(parent, { recursive: true });
+    fs.mkdirSync(path.join(fx.projectRoot, "outputs", "proj-unrelated"), { recursive: true });
+    const pid = "proj-nested";
+    const nested = path.join(parent, "dispatches", pid);
+    const env = { ...fx.env, NIRVANA_RUN_WORKSPACE: parent, FAKE_CLAUDE_OUTPUTS_ROOT: path.join(nested, "deliverables") };
+    const result = spawnSync(process.execPath, [DISPATCH, "--squad", "fixture-squad", "--brief-file", fx.briefFile, "--exec",
+      "--project", pid, "--max-revisions", "0"], { cwd: parent, encoding: "utf8", env });
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+
+    // The squad's scaffold and deliverable live inside the seat's run, not beside it.
+    expect(fs.existsSync(path.join(nested, "squads", "fixture-squad"))).toBe(true);
+    expect(fs.existsSync(path.join(nested, "deliverables", "report.html"))).toBe(true);
+    expect(fs.existsSync(path.join(fx.projectRoot, "outputs", pid))).toBe(false);
+    // Its worker starts in the seat's run folder, fenced from the unrelated run only.
+    const child = fx.child();
+    expect(child.cwd).toBe(parent);
+    const settings = child.argv[child.argv.indexOf("--settings") + 1];
+    expect(settings).toBeTruthy();
+
+    // One trace, one audit log: the project's, with the evidence the chain reads.
+    const projectLog = path.join(fx.projectRoot, ".nirvana", "logs", "harness", new Date().toISOString().slice(0, 10), "audit.jsonl");
+    const events = readEvents(projectLog).filter(event => event.trace_id === pid);
+    for (const name of ["dispatch_squad", "agent_executed", "gate_passed", "delivered"]) {
+      expect(events.map(event => event.event), name).toContain(name);
+    }
+    expect(events.find(event => event.event === "agent_executed")?.squad_slug).toBe("fixture-squad");
+  }, 120000);
+});

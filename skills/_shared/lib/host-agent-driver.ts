@@ -58,7 +58,7 @@ import { childEnv } from "./orca.ts";
 import { childEnvFor, type ChildEnvMode } from "./child-env.ts";
 import { childDepth, currentDepth, currentRole, DEFAULT_MAX_DEPTH, DEPTH_ENV, mayDispatch, refusalMessage, roleMayDispatch, roleRefusalMessage, ROLE_ENV, type DispatchRole } from "./dispatch-depth.ts";
 import { runOrcaWorker } from "./orca-worker.ts";
-import { confineToWorkspace, FENCE_FILE_PREFIX } from "./run-workspace.ts";
+import { confineToWorkspace, FENCE_FILE_PREFIX, RUN_WORKSPACE_ENV } from "./run-workspace.ts";
 
 /** `execution.child_env`. The variable NIRVANA_CHILD_ENV wins over any file
  *  (settings precedence), which is how a child that was itself filtered — it
@@ -1436,6 +1436,10 @@ let spawnAsRuntime: string | null = null;
  *  spawnAsRuntime above: set by runHeadless immediately around a SYNCHRONOUS
  *  spawn, saved and restored, so it cannot leak across calls. */
 let spawnAsRole: string | null = null;
+/** The run folder the next child is confined to (run-workspace.ts), stamped on
+ *  its environment so a dispatch it starts nests inside the same run. Same
+ *  save-and-restore idiom as the two above. */
+let spawnInWorkspace: string | null = null;
 
 /** All runners spawn their child through this. Pass-through to spawnSync when
  * unledgered (zero behavior change); with an active ledger context, stdout/
@@ -1467,6 +1471,8 @@ function driverSpawnSync(cmd: string, args: string[], options: SpawnSyncOptions 
   baseEnv[DEPTH_ENV] = String(childDepth());
   // And WHAT it is, so its own dispatches answer to the role rule.
   if (spawnAsRole) baseEnv[ROLE_ENV] = spawnAsRole;
+  // And WHERE it runs, so what it dispatches belongs to its run.
+  if (spawnInWorkspace) baseEnv[RUN_WORKSPACE_ENV] = spawnInWorkspace;
   if (isClaude) headlessClaudeEnv(baseEnv);
   options = {
     // Windows: a process without its own console makes Windows allocate a VISIBLE
@@ -2500,9 +2506,12 @@ function dispatchToRunnerInner(requested: RunHeadlessOpts): RunHeadlessResult {
   // the runs beside it (run-workspace.ts). Done here, once, so every runtime
   // and the Orca transport below get the same cwd and the same fence.
   const { opts, cleanup } = confineToWorkspace(requested);
+  const previousWorkspace = spawnInWorkspace;
+  spawnInWorkspace = opts.workspace ? opts.cwd : null;
   try {
     return runConfined(opts);
   } finally {
+    spawnInWorkspace = previousWorkspace;
     cleanup();
   }
 }

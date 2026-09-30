@@ -65,7 +65,10 @@ are denied to `Read` and `Edit` by a per-run `--settings` file; the project's ow
 `.claude/settings.json` deny rules, which Claude Code loads from the cwd only,
 travel in the same file re-anchored at the project root. The other runtimes read
 the same boundary as one line of their directive. A run folder the brief names
-by path stays readable.
+by path stays readable. A dispatch the worker starts itself (a seat's
+`nrv dispatch --squad`) is part of its run: the worker carries
+`NIRVANA_RUN_WORKSPACE`, and the nested scaffold goes to
+`<run folder>/dispatches/<id>`, where the later seats can read it.
 
 ## 4. OpenClaw: the project is the agent's home
 

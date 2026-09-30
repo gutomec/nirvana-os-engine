@@ -25,7 +25,10 @@
 //     that builds on an earlier run on purpose is the user's call;
 //   · on every runtime, one line appended to the worker's directive naming the
 //     run folder and saying the folders beside it are not its input. For the
-//     runtimes with no path rules that line is the whole fence.
+//     runtimes with no path rules that line is the whole fence;
+//   · the run folder in its environment (RUN_WORKSPACE_ENV), so a dispatch the
+//     worker starts itself nests inside this run (nestedOutputsBase) instead of
+//     becoming a sibling the next seat could not read.
 //
 // Moving the cwd has one cost that is paid back here: Claude Code loads a
 // project's `.claude/settings.json` from the cwd only, with no parent fallback,
@@ -40,6 +43,11 @@ import { canonical, findProjectRoot, isInvalidProjectRoot, outputsBaseDir, resol
 
 /** Prefix of the per-run settings file, so the driver's orphan reaper knows it. */
 export const FENCE_FILE_PREFIX = "nrv-fence-";
+
+/** The run folder a confined worker runs in, exported to its environment. A
+ *  dispatch the worker starts itself (a seat's `nrv dispatch --squad …`) reads
+ *  it and nests its scaffold inside that run. */
+export const RUN_WORKSPACE_ENV = "NIRVANA_RUN_WORKSPACE";
 
 /**
  * The run folder that holds `dir`: `<base>/<run id>` for the first outputs base
@@ -62,6 +70,25 @@ export function runFolderOf(dir: string | null | undefined, projectRoot?: string
     }
   }
   return null;
+}
+
+/**
+ * Where a dispatch started from inside a run puts its scaffold:
+ * `<run folder>/dispatches`. A seat that dispatches a squad integrates what the
+ * squad delivers, and so do the seats after it and the final synthesis; as a
+ * run of its own under the outputs base the squad's work would sit BESIDE the
+ * seat's run, fenced off from every later seat. Nested, `runFolderOf` maps it
+ * to the run that asked for it. Null for a dispatch from the operator, and for
+ * a variable that does not name a run folder of this project or of the store.
+ */
+export function nestedOutputsBase(projectRoot: string | null, env: Record<string, string | undefined> = process.env): string | null {
+  const named = env[RUN_WORKSPACE_ENV];
+  if (!named) return null;
+  const workspace = path.resolve(named);
+  if (!fs.existsSync(workspace)) return null;
+  const run = runFolderOf(workspace, projectRoot);
+  if (!run || !sameDir(canonical(run), canonical(workspace))) return null;
+  return path.join(workspace, "dispatches");
 }
 
 /** The other run folders under the same outputs base as `workspace`. */
@@ -158,7 +185,7 @@ export function fenceSettings(workspace: string, projectRoot: string | null, pla
 
 /** The line every confined worker reads, on every runtime. */
 export function workspaceDirective(workspace: string): string {
-  return `YOUR RUN FOLDER is ${workspace}. The folders beside it, in ${path.dirname(workspace)}, are other runs' work and not your input: do not list, read, copy or edit them, unless your instruction names one by its path.`;
+  return `YOUR RUN FOLDER is ${workspace}. What you dispatch from here lands inside it and is yours to use. The folders beside it, in ${path.dirname(workspace)}, are other runs' work and not your input: do not list, read, copy or edit them, unless your instruction names one by its path.`;
 }
 
 /**

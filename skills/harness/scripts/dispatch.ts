@@ -41,7 +41,7 @@ import { resolveRoutingMode, routingModeOrigin } from "../../_shared/lib/routing
 import { runTeam } from "../lib/team-orchestrator.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { globalStoreDir, outputsBaseDir } from "../../_shared/lib/project-root.js";
-import { runFolderOf } from "../../_shared/lib/run-workspace.ts";
+import { nestedOutputsBase, runFolderOf } from "../../_shared/lib/run-workspace.ts";
 import { briefExcerpt } from "../../_shared/lib/brief-excerpt.ts";
 import { agenticRoute, type AgenticRouteDecision } from "../lib/agentic-router.ts";
 import { cardsRoute, withDoneWhen } from "../lib/cards-router.ts";
@@ -237,7 +237,13 @@ function defaultRegistries(): { squads: Record<string, unknown>; businesses: Rec
 // a dispatch launched from any folder planted `outputs/` and `.nirvana/` in it.
 const DECLARED_PROJECT_ROOT = runLedger.resolveProjectRoot();
 const PROJECT_ROOT = DECLARED_PROJECT_ROOT ?? path.dirname(globalStoreDir());
-const OUTPUTS_BASE = outputsBaseDir(DECLARED_PROJECT_ROOT);
+// A dispatch a confined worker starts itself (a seat's `nrv dispatch --squad`)
+// belongs to the worker's run: its scaffold nests under that run folder, so the
+// seat, the seats after it and the final synthesis can read what it delivers
+// (run-workspace.ts nestedOutputsBase). From the operator this is null and the
+// outputs base is the project's (or the store's), as before.
+const NESTED_OUTPUTS_BASE = nestedOutputsBase(DECLARED_PROJECT_ROOT);
+const OUTPUTS_BASE = NESTED_OUTPUTS_BASE ?? outputsBaseDir(DECLARED_PROJECT_ROOT);
 
 const positional = extractPositional(process.argv.slice(2));
 // --auto: no business is named; the router picks the best one for the brief.
@@ -964,6 +970,9 @@ const verifyScriptPath = path.join(SKILLS, "businesses/scripts/verify-deliverabl
 // settingsEnvForChild: routing.mode, execution.dna_injection, ...), so the project's
 // and the user's config hold in the prep scripts and in the employee prompt alike.
 const prepScriptEnv = { ...process.env, ...settingsEnvForChild(), NIRVANA_DISPATCH_TRACKS_RUN: "1" };
+// The scaffolders (brief-squad, brief-business) place the run where scope.ts
+// outputsDir says; a nested dispatch tells them the parent run's folder.
+if (NESTED_OUTPUTS_BASE) (prepScriptEnv as Record<string, string>).NIRVANA_OUTPUTS_DIR = NESTED_OUTPUTS_BASE;
 
 // Frozen runtime, provider and model decision of one canary Run: the broker answers
 // from the provider catalogs on disk (lib/runtime-snapshot.ts); without a descriptor
