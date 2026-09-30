@@ -63,6 +63,11 @@ O bloco de despacho do agent-x diz que as pastas de outras execuções ao lado d
 
 O `skills/harness/SKILL.md`, que toda sessão orquestradora lê inteiro, caiu de 79 KB para 57 KB sem perder nenhuma regra. Histórias de incidente e casos datados viraram razões de uma oração, e as medições que os testes fixam como evidência ficaram. O que outro arquivo já carregava foi para lá, com um ponteiro de uma linha: o ciclo de testes do próprio engine para cortes paralelos foi para o `CONTRIBUTING.md`, os códigos de saída do piloto automático e os detalhes internos de vida, recuperação e salvamento do supervisor foram para o `references/05-subsystems.md`, e os detalhes do `nrv serve` foram para o `references/06-api.md`. Os dois blocos sobrepostos do modo equipe viraram um. A skill deixou de afirmar que um filho do caminho scriptado morre aos 20 minutos (o driver não tem teto padrão), deixou de se contradizer sobre quantos finalistas recebem o manifesto inteiro (a segunda passada abre os finalistas, tipicamente três a seis) e deixou de dizer a uma entidade despachada que ela pode recrutar recursivamente, o que a matriz de papéis de despacho proíbe.
 
+### Um filho Claude sem terminal não consegue deixar trabalho em segundo plano
+
+Um filho `-p` termina junto com o último turno, e o que ele deixava em segundo plano (uma chamada de Bash ou um subagente com `run_in_background`, ou trabalho que o próprio CLI mandava para lá) morria junto. A diretiva autônoma já pedia ao agente que não fizesse isso; agora todo filho Claude sem terminal que o engine inicia (o executor, a camada leve `callHostAgent` e o turno do maestro do Glance) roda com `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, que o CLI documenta como o desligamento de toda a função de tarefas em segundo plano. Um valor que o usuário tenha definido é mantido.
+
+
 ## 0.14.8 — 2026-09-27
 
 ### Run fechado continua fechado, e consulta nunca começa trabalho
