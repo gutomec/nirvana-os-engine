@@ -118,6 +118,12 @@ async function runRubric(name: string, artifact: string, content: string, opts: 
   }
 }
 
+/** The fixes a failed judge verdict hands to the revision: high, then medium. */
+export function revisionFixes(critique: { severity: string; suggested_fix: string }[]): string[] {
+  const work = [...critique.filter(c => c.severity === "high"), ...critique.filter(c => c.severity === "medium")];
+  return (work.length ? work : critique).map(c => c.suggested_fix).filter(Boolean);
+}
+
 // --with-revisions: run the nirvana-evolution LLM judge + revision loop
 // instead of the heuristic rubrics. The judge selects a domain rubric (.md)
 // by --produces, calls the host LLM runtime (codex/claude/gemini via
@@ -178,6 +184,13 @@ async function runWithRevisions(artifact: string, content: string, args: string[
     { rubric, artifact: content, brief, trace_id: process.env.NIRVANA_TRACE_ID || undefined,
       business_slug: process.env.NIRVANA_BUSINESS_SLUG || undefined },
   );
+  // No verdict came back (no runtime, a failed call, an answer that is not the
+  // schema). That says nothing about the artifact, so it is not a fail: the
+  // heuristic rubrics decide this file, as they do with the judge off.
+  if (!result.schema_valid) {
+    console.error(`[gate] judge gave no usable verdict (${(result.schema_errors ?? []).join(", ") || result.judge_runtime}); the heuristic rubrics decide ${path.basename(artifact)}.`);
+    return -1;
+  }
 
   // Normalized verdict schema {status, mode, score, results[], critique?} —
   // same shape the heuristic path prints, so callers (delivery-pipeline's
@@ -191,7 +204,10 @@ async function runWithRevisions(artifact: string, content: string, args: string[
       passed: result.verdict === "pass",
       score: result.total_score,
       reasoning: result.critique.map(c => `[${c.severity}] ${c.issue}`).join("; ") || "judge verdict",
-      fix_list: result.critique.map(c => c.suggested_fix).filter(Boolean),
+      // What a revision is asked to fix: the material items first, then the
+      // medium ones. Low items (style, polish) stay in `critique` as notes and
+      // never become revision work, unless nothing else explains a low score.
+      fix_list: revisionFixes(result.critique),
     }],
     critique: result.critique,
     artifact,
@@ -221,6 +237,11 @@ async function runWithRevisions(artifact: string, content: string, args: string[
       business_slug: process.env.NIRVANA_BUSINESS_SLUG || null,
       artifact, rubric: rubric.name, score: out.total_score,
       judge_runtime: out.judge_runtime,
+      // A pass can still carry the judge's notes (style, polish): recorded
+      // here so they reach whoever reads the run, without sending it back.
+      ...(result.verdict === "pass" && result.critique.length
+        ? { notes: result.critique.slice(0, 12).map(c => `[${c.severity}] ${c.issue}`.slice(0, 240)) }
+        : {}),
     })) + "\n");
   } catch { /* non-fatal */ }
 

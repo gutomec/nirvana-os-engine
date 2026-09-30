@@ -7,8 +7,13 @@
  *
  * The judge prompt is constructed from the rubric body. The schema the judge
  * must return is documented in each rubric's markdown. We validate the
- * response against `JudgeOutput` and fall back to a soft "schema_invalid"
- * verdict (fail) when malformed.
+ * response against `JudgeOutput`; a malformed or failed call comes back with
+ * `schema_valid: false`, which the gate reads as "no judge verdict" (it falls
+ * back to the heuristic rubrics) rather than as a defect in the artifact.
+ *
+ * The verdict is not the model's to state: `ruleVerdict` derives it from the
+ * critique severities and the score, so a deliverable fails only for a
+ * material defect or a score below the rubric's threshold.
  *
  * Side effects: emits `judge_invoked` and `critique_generated` audit events.
  */
@@ -133,18 +138,51 @@ export interface JudgeOutput {
   schema_errors?: string[];
 }
 
+/**
+ * The verdict, from the critique and the score. A deliverable fails when it has
+ * a material defect (a `high` critique item) or scores below the rubric's
+ * threshold; a score AT the threshold passes. Style, polish and nits are `low`
+ * or `medium` items and reach the author as notes, never as a fail on their own.
+ *
+ * It used to be the model's own `verdict`, under a persona told to prefer
+ * "fail" at the threshold: real text deliverables scoring exactly 70 against a
+ * threshold of 70 were failed and sent back for revision over wording.
+ */
+export function ruleVerdict(out: Pick<JudgeOutput, "total_score" | "critique">, passThreshold: number): "pass" | "fail" {
+  const material = out.critique.some((c) => c.severity === "high");
+  return material || out.total_score < passThreshold ? "fail" : "pass";
+}
+
 function buildPersona(rubric: RubricMeta): string {
   return [
-    `You are an impartial quality judge for an autonomous multi-agent system.`,
-    `You apply ONE rubric strictly: "${rubric.display_name}".`,
-    `You evaluate produced artifacts against the rubric's criteria.`,
+    `You are the quality judge of an autonomous multi-agent system.`,
+    `You apply ONE rubric: "${rubric.display_name}".`,
+    `You decide whether the deliverable does what the brief asked, and you name`,
+    `what would make it better.`,
     ``,
     `You MUST return ONLY a single JSON object matching the schema declared at`,
     `the end of the rubric. No prose, no markdown fences, no preamble. JSON only.`,
     ``,
-    `You are calibrated, not lenient. Avoid grade inflation. Pass threshold is`,
-    `${rubric.pass_threshold}. Total score below the threshold → verdict: "fail".`,
-    `When score is exactly at the threshold, prefer "fail" — the bar is the floor.`,
+    `Severity of each critique item:`,
+    `- "high": a MATERIAL defect. A part the brief asked for is missing or unusable;`,
+    `  a fact, number, name or citation is wrong or invented; the deliverable`,
+    `  contradicts the brief, or contradicts itself in a way that would mislead the`,
+    `  person who uses it; it claims work that was not done; a criterion the rubric`,
+    `  marks as a hard gate is broken for the deliverable as a whole or on a claim it`,
+    `  depends on.`,
+    `- "medium": a real quality problem worth fixing that does not stop the`,
+    `  deliverable from doing its job.`,
+    `- "low": style, polish, wording, structure preferences, and anything a competent`,
+    `  editor would call a matter of taste.`,
+    `Not defects: professional defaults the executor declared as assumptions (for`,
+    `example under "## Premissas assumidas" or "## Assumptions"), anything the brief`,
+    `did not ask for, and choices of method, format or length the brief left open.`,
+    ``,
+    `Verdict: "fail" only when there is at least one "high" item or the total score`,
+    `is below the pass threshold (${rubric.pass_threshold}); otherwise "pass". A score AT the`,
+    `threshold passes. Style, polish and nits never make the verdict fail on their`,
+    `own: list them as "low" items so they reach the author as notes.`,
+    `Score each criterion on what is there, and do not deduct twice for one problem.`,
     ``,
     `========================`,
     `RUBRIC BODY:`,
@@ -359,6 +397,7 @@ export async function judge(input: JudgeInput, opts: JudgeOpts = {}): Promise<Ju
 
   const result: JudgeOutput = {
     ...v.data,
+    verdict: ruleVerdict(v.data, input.rubric.pass_threshold),
     judge_runtime: call.host,
     raw_response_chars: call.text.length,
   };
@@ -366,8 +405,11 @@ export async function judge(input: JudgeInput, opts: JudgeOpts = {}): Promise<Ju
   audit().emit("critique_generated", {
     rubric_name: input.rubric.name,
     verdict: result.verdict,
+    // What the model itself said, when the rule disagreed with it.
+    ...(v.data.verdict !== result.verdict ? { model_verdict: v.data.verdict } : {}),
     total_score: result.total_score,
     critique_count: result.critique.length,
+    material_count: result.critique.filter((c) => c.severity === "high").length,
     schema_valid: true,
     judge_runtime: result.judge_runtime,
   }, {

@@ -95,6 +95,8 @@ Formas legadas das variáveis, mantidas por compatibilidade: `NIRVANA_MULTI_TARG
 
 `updates.check` é a única chave só global: a verificação de release é da máquina, não do projeto. O `bin/nrv` em bash, que decide antes de qualquer Bun se imprime o aviso de release, continua lendo só a variável e o `CI`; com `updates.check: false` no arquivo global, o refresher em Bun grava um cache sem aviso e o bash não imprime nada nem o relança.
 
+Desligar o juiz LLM: `nrv config set quality_gate.judge_enabled false` (ou `off`) desliga na máquina ou no projeto, `NIRVANA_JUDGE_ENABLED=false` desliga no ambiente, e `nrv dispatch ... --no-judge` desliga numa execução só. Com o juiz desligado, o gate heurístico offline continua rodando e a execução ainda registra um veredito.
+
 ## Leitores migrados
 
 Cada interruptor do schema tem exatamente um caminho de leitura, `resolveSetting` ou `resolveAllSettings`:
