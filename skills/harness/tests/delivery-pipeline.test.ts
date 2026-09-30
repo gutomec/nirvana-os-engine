@@ -25,7 +25,10 @@ import {
   type DeliveryArgs,
   type RuntimeErrorOutcome,
 } from "../lib/delivery-pipeline.ts";
-import { loadHarnessConfig } from "../lib/harness-config.ts";
+import { loadHarnessConfig, type HarnessConfig } from "../lib/harness-config.ts";
+// The judge runs by default on report deliverables; these tests pin the
+// heuristic gate, whatever runtime the machine has on PATH.
+const judgeOff = (cfg: HarnessConfig): HarnessConfig => ({ ...cfg, quality_gate: { ...cfg.quality_gate, judge_enabled: false } });
 import * as runLedger from "../lib/run-ledger.ts";
 import { SCOPE_GUARD_PT_BR } from "../../_shared/lib/scope-guard.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
@@ -91,7 +94,7 @@ function baseArgs(oroot: string, over: Partial<DeliveryArgs> = {}): { args: Deli
     projectRoot: tmp,
     workingDir: tmp,
     maxRevisions: 0,
-    config: loadHarnessConfig(path.join(tmp, "no-config.yaml")), // pure defaults, judge off
+    config: judgeOff(loadHarnessConfig(path.join(tmp, "no-config.yaml"))), // defaults with the judge off: these pin the heuristic gate
     audit: (event, payload) => calls.push({ event, payload }),
     gateScript: GATE,
     log: () => {}, warn: () => {},
@@ -760,7 +763,7 @@ describe("runDelivery — gate exhausted: accepted with reservations", () => {
 });
 
 describe("producesForRubric — delivery.produces_to_rubric", () => {
-  test("off (the default) hands the judge [], which is what it received before v6", () => {
+  test("off hands the judge [], and the judge infers the rubric from the extension", () => {
     expect(producesForRubric(["landing-page", "copy"], false)).toEqual([]);
     expect(producesForRubric(undefined, false)).toEqual([]);
   });

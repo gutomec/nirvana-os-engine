@@ -76,6 +76,13 @@ Uma pasta era projeto quando ela, ou o ancestral mais próximo abaixo da pasta d
 - Um `NIRVANA_PROJECT_ROOT` que aponta para uma pasta que nunca pode ser projeto (a pasta do usuário, a raiz do sistema de arquivos, uma raiz temporária compartilhada, o store) resolve para nenhum projeto, então um dispatcher que não serve projeto nenhum nunca entrega a pasta do usuário como projeto aos filhos.
 - O indexador de clones se recusa a rodar numa pasta que não é projeto mas relocaliza a biblioteca no próprio `.env`: o Bun carrega esse arquivo em todo script, e sem registro de projeto para escrever a biblioteca teria substituído a global.
 
+### O juiz LLM lê relatórios por padrão
+
+`quality_gate.judge_enabled` aceita três valores e tem `reports` como padrão: o juiz avalia os entregáveis de texto (`.md`, `.txt`) contra o brief, e código, imagens e arquivos de dados continuam nas rubricas heurísticas. `true` julga todo arquivo que o gate cobre e `false` mantém só as heurísticas offline, como antes; um `true` ou `false` escrito antes no YAML continua valendo o mesmo. O HTML fica nas heurísticas porque em geral é uma página e não um relatório, e o PDF também, porque o gate não entrega texto dele ao juiz. O juiz só roda quando o runtime está disponível, e o log diz em que modo o gate rodou. A configuração ganha uma variável, `NIRVANA_JUDGE_ENABLED`, e o preload dos testes a fixa em `false`, para que uma máquina com runtime instalado rode o mesmo gate heurístico que o CI.
+
+`delivery.produces_to_rubric` passa a vir ligado, então um relatório cujo alvo produz pesquisa é julgado pela rubrica de pesquisa e pela checagem obrigatória de fontes dela, e não pela de prosa genérica. Um produces sem rubrica continua caindo na rubrica que a extensão do arquivo indica.
+
+
 ## 0.14.8 — 2026-09-27
 
 ### Run fechado continua fechado, e consulta nunca começa trabalho

@@ -31,6 +31,12 @@ if (!process.env.NIRVANA_STATE_DB) {
   process.env.NIRVANA_STATE_DB = path.join(process.env.HARNESS_LOGS_DIR!, "state.db");
 }
 
+// The LLM judge runs by default on report deliverables, through whatever
+// runtime is on PATH. On a machine that has a real one installed, every test
+// that reaches the gate would call it (and spend) where CI, with none installed,
+// runs the heuristics. A test that exercises the judge sets its own value.
+if (process.env.NIRVANA_JUDGE_ENABLED === undefined) process.env.NIRVANA_JUDGE_ENABLED = "false";
+
 if (!process.env.NIRVANA_AUDIT_KEY) {
   process.env.NIRVANA_AUDIT_KEY = path.join(process.env.HARNESS_LOGS_DIR!, "audit-key");
 }

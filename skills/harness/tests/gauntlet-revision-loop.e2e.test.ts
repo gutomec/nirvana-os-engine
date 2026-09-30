@@ -15,7 +15,10 @@ import { JUDGE_X_TARGET } from "../lib/gauntlet/judge-x.ts";
 import { parseExecutionOptions } from "../lib/gauntlet/execution-options.ts";
 import { getGauntlet, listCandidateRevisions, listScorecards } from "../lib/gauntlet/store.ts";
 import type { GauntletIntensity } from "../lib/gauntlet/types.ts";
-import { loadHarnessConfig } from "../lib/harness-config.ts";
+import { loadHarnessConfig, type HarnessConfig } from "../lib/harness-config.ts";
+// The judge runs by default on report deliverables; these tests pin the
+// heuristic gate, whatever runtime the machine has on PATH.
+const judgeOff = (cfg: HarnessConfig): HarnessConfig => ({ ...cfg, quality_gate: { ...cfg.quality_gate, judge_enabled: false } });
 import { getRun, listEvents, openKernel, type KernelHandle, type TargetRef } from "../lib/run-kernel/index.ts";
 import { SCOPE_GUARD_PT_BR } from "../../_shared/lib/scope-guard.ts";
 import { writeFakeDispatch } from "./helpers/fake-dispatch.ts";
@@ -282,7 +285,7 @@ describe("Gauntlet causal revision loop", () => {
       fs.writeFileSync(sessionFile, JSON.stringify(sessionData, null, 2), "utf8");
       const delivery = runDelivery({ brief: "Produza report.html", outputsRoot: loop.outputsRoot, pid: "prj_loop", slug: business.slug,
         targetKind: "business", runtime: "codex", projectDir: loop.root, projectRoot: loop.root, maxRevisions: 0,
-        config: loadHarnessConfig(path.join(loop.root, "missing-config.yaml")), audit: () => {}, log: () => {}, warn: () => {},
+        config: judgeOff(loadHarnessConfig(path.join(loop.root, "missing-config.yaml"))), audit: () => {}, log: () => {}, warn: () => {},
         afterGate: () => { postGateCalls += 1; return runBusinessPostGate({ projectId: "prj_loop", businessSlug: business.slug,
           runtime: "codex", projectDir: loop.root, projectRoot: loop.root, outputsRoot: loop.outputsRoot, skillsRoot: "/skills",
           employeePromptScript: "/skills/employee-prompt.ts", sessionFile, sessionData, rulesDirective: "", yolo: true,

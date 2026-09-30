@@ -4,7 +4,10 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { runBusinessPostGate, type BusinessPostGateDependencies } from "../lib/business-post-gate.ts";
 import { runDelivery, type DeliveryArgs } from "../lib/delivery-pipeline.ts";
-import { loadHarnessConfig } from "../lib/harness-config.ts";
+import { loadHarnessConfig, type HarnessConfig } from "../lib/harness-config.ts";
+// The judge runs by default on report deliverables; these tests pin the
+// heuristic gate, whatever runtime the machine has on PATH.
+const judgeOff = (cfg: HarnessConfig): HarnessConfig => ({ ...cfg, quality_gate: { ...cfg.quality_gate, judge_enabled: false } });
 import * as runLedger from "../lib/run-ledger.ts";
 import { KERNEL_BUDGET_MS } from "./helpers/test-budgets.ts";
 
@@ -84,7 +87,7 @@ function runScenario(kind: "legacy-reference" | "boundary", verifyExit: 0 | 1) {
   const args: DeliveryArgs = {
     brief: "Produce report.html", outputsRoot, manifest, pid: "proj-parity", slug: "example", targetKind: "business",
     runtime: "codex", projectDir: root, projectRoot: root, workingDir: root, maxRevisions: 0,
-    gateExhaustedPolicy: "withhold", config: loadHarnessConfig(path.join(root, "missing-config.yaml")),
+    gateExhaustedPolicy: "withhold", config: judgeOff(loadHarnessConfig(path.join(root, "missing-config.yaml"))),
     ledger: { handle: ledger, runId: row.run_id }, audit: (event, payload) => audit.push({ event, payload }),
     verifyScript, afterGate: postGate, log: () => {}, warn: () => {},
   };

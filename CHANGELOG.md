@@ -76,6 +76,13 @@ A folder was a project when it, or its nearest ancestor below home, carried any 
 - A `NIRVANA_PROJECT_ROOT` naming a folder that can never be a project (home, the filesystem root, a shared temp root, the store) resolves to no project, so a dispatcher serving none never hands its children home as their project.
 - The clone indexer refuses to run in a folder that is not a project but relocates the library in its `.env`: Bun loads that file into every script, and with no project registry to write the library would have replaced the global one.
 
+### The LLM judge reads reports by default
+
+`quality_gate.judge_enabled` takes three values and defaults to `reports`: the judge grades the text deliverables (`.md`, `.txt`) against the brief, and code, images and data files keep their heuristic rubrics. `true` judges every gateable file and `false` keeps the offline heuristics only, as before; a YAML `true` or `false` written earlier still means the same. HTML stays on its heuristics because it is mostly a page rather than a report, and so does PDF, because the gate hands the judge no text for it. The judge runs only when the runtime is available, and the log names the mode the gate ran in. The setting gains a variable, `NIRVANA_JUDGE_ENABLED`, and the test preload pins it to `false`, so a machine with a runtime installed runs the same heuristic gate CI does.
+
+`delivery.produces_to_rubric` now defaults to on, so a report whose target produces research is judged by the research rubric and its hard source check rather than the generic prose one. A produces slug with no rubric still falls back to the rubric the file's extension implies.
+
+
 ## 0.14.8 — 2026-09-27
 
 ### A closed run stays closed, and a lookup never starts work

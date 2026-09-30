@@ -32,17 +32,18 @@ Após o frontmatter, o corpo Markdown contém:
 | `lib/critique.ts` | Transforma critique em instrução acionável de revisão. |
 | `lib/revision-dispatch.ts` | Orquestra `judge → critique → revise → judge` em loop até converger ou estourar `max_revisions`. |
 
-## Como ativar o gate em produção
+## Quando o juiz roda
 
-Por padrão a Fase 3 vem desligada (`quality_gate.judge_enabled: false`). Para ativar:
+`quality_gate.judge_enabled` tem três valores:
 
-1. Edite `skills/harness/config.yaml`:
-   ```yaml
-   quality_gate:
-     judge_enabled: true
-     max_revisions: 2
-   ```
-2. Implemente o ponto de chamada no `lib/dispatch.ts` (não está incluído na entrega da Fase 3 para evitar mudança invasiva no dispatcher core; veja `docs/nirvana-evolution/decisions/0001-judge-integration-deferred.md`).
+- `reports` (padrão): o juiz avalia os entregáveis de texto (`.md`, `.txt`) contra o brief; código, imagens e dados seguem nas rubricas heurísticas.
+- `true`: o juiz avalia todo arquivo que o gate cobre.
+- `false`: só as heurísticas offline.
+
+Com `delivery.produces_to_rubric` (ligado por padrão), o `produces[]` do alvo escolhe a rubrica de domínio, como `data_research` para uma pesquisa; um produces sem rubrica cai na rubrica que a extensão indica.
+
+1. Para mudar o modo: `nrv config set quality_gate.judge_enabled <reports|true|false>`.
+2. O pipeline de entrega (`lib/delivery-pipeline.ts`) chama o gate com o brief do run.
 3. Rode `bun test skills/harness/tests/` para confirmar 100%.
 4. Monitore audit log para os novos eventos:
    - `judge_invoked` — judge LLM call iniciado

@@ -16,6 +16,7 @@ import {
   loadHarnessConfig,
   denseRoutingMode,
   setRoutingDense,
+  judgeScope,
 } from "../lib/harness-config.ts";
 import { _resetSettingsCache } from "../../_shared/lib/settings.ts";
 
@@ -60,7 +61,7 @@ describe("loadHarnessConfig", () => {
     const p = write("d.yaml", "budget:\n  default_max_cost_usd: 0\n");
     const cfg = loadHarnessConfig(p);
     expect(cfg.routing.dense).toBe("off");
-    expect(cfg.quality_gate.judge_enabled).toBe(false);
+    expect(cfg.quality_gate.judge_enabled).toBe("reports");
     expect(cfg.quality_gate.max_revisions).toBe(2);
   });
 
@@ -72,7 +73,8 @@ describe("loadHarnessConfig", () => {
   test("quality_gate reads the keys it knows and fills defaults for the rest", () => {
     const p = write("f.yaml", "quality_gate:\n  judge_enabled: true\n  custom_key: 7\n");
     const qg = loadHarnessConfig(p).quality_gate;
-    expect(qg.judge_enabled).toBe(true);
+    expect(qg.judge_enabled).toBe("true");
+    expect(judgeScope(qg.judge_enabled)).toBe("all");
     expect(qg.rubric_fallback).toBe("prose_shortform"); // default filled
     expect(qg.max_revisions).toBe(2);
   });
@@ -81,8 +83,17 @@ describe("loadHarnessConfig", () => {
     const committed = path.join(import.meta.dir, "..", "config.yaml");
     const cfg = loadHarnessConfig(committed);
     expect(cfg.routing.dense).toBe("off"); // Phase 3.4 DECISION — default off
-    expect(cfg.quality_gate.judge_enabled).toBe(false); // Phase 4: judge stays opt-in
+    expect(cfg.quality_gate.judge_enabled).toBe("reports"); // the judge takes report deliverables by default
     expect(cfg.config_path).toBe(committed);
+  });
+
+  test("judge_enabled: reports | true | false, and the old booleans keep their meaning", () => {
+    expect(loadHarnessConfig(write("j1.yaml", "quality_gate:\n  judge_enabled: reports\n")).quality_gate.judge_enabled).toBe("reports");
+    expect(loadHarnessConfig(write("j2.yaml", "quality_gate:\n  judge_enabled: false\n")).quality_gate.judge_enabled).toBe("false");
+    expect(loadHarnessConfig(write("j3.yaml", 'quality_gate:\n  judge_enabled: "true"\n')).quality_gate.judge_enabled).toBe("true");
+    expect(() => loadHarnessConfig(write("j4.yaml", "quality_gate:\n  judge_enabled: sometimes\n"))).toThrow(/judge_enabled/);
+    expect([judgeScope("reports"), judgeScope(true), judgeScope("true"), judgeScope(false), judgeScope(undefined)])
+      .toEqual(["reports", "all", "all", "off", "off"]);
   });
 
   // routing.on_router_failure — Phase 4 router-failure ladder policy.

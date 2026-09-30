@@ -14,8 +14,8 @@
 //      `delivered` event). `--force-deliver` is the explicit escape hatch and
 //      emits delivered with gate:"fail-forced".
 //   2. Judge never ran — the gate spawn hardcoded --offline. Now the LLM
-//      judge path activates when config quality_gate.judge_enabled is true
-//      AND the runtime is available; heuristics remain the default.
+//      judge path follows config quality_gate.judge_enabled (reports | true | false)
+//      AND the runtime is available; the heuristics cover everything else.
 //
 // Exit-code contract (BREAKING vs pre-Phase-4 — see CHANGELOG):
 //   0 = delivered (gate pass, or fail-forced via --force-deliver)
@@ -48,7 +48,7 @@ import { detectKind } from "../../_shared/lib/surface.ts";
 import { GATEABLE_EXTS } from "../scripts/quality-gate.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { resolveSetting } from "../../_shared/lib/settings.ts";
-import type { HarnessConfig } from "./harness-config.ts";
+import { judgeScope, type HarnessConfig } from "./harness-config.ts";
 import * as runLedger from "./run-ledger.ts";
 
 // ── deliverable surface (moved verbatim from scripts/dispatch.ts) ─────────
@@ -176,6 +176,9 @@ export interface GateRunOpts {
   produces?: string[];
   /** The brief, on disk, for the judge to grade the artifact against it. */
   briefFile?: string;
+  /** Judge mode only: the extensions the judge takes. A file outside the set
+   *  keeps its offline heuristic rubrics. Absent = the judge takes every file. */
+  judgeExts?: ReadonlySet<string>;
   /** Env for the gate child (trace/project/business ids for its audit emit). */
   env?: Record<string, string | undefined>;
 }
@@ -191,13 +194,20 @@ export interface GateRunOpts {
  * rubrics cover roughly 45 of the 3.024 slugs the library declares, and a slug
  * with no rubric must degrade to the fallback, never to a refusal.
  *
- * Off (the default) returns `[]` — bit for bit what the judge received before.
+ * On by default: a produces slug with no rubric falls back to the rubric the
+ * file's extension implies (quality-gate.ts), never to a refusal. Off returns
+ * `[]`, and the judge uses the extension's rubric for every file.
  */
 export function producesForRubric(produces: readonly string[] | null | undefined, enabled: boolean): string[] {
   if (!enabled) return [];
   const slugs = (produces ?? []).map(slug => String(slug ?? "").trim()).filter(Boolean);
   return [...new Set(slugs)];
 }
+
+/** The deliverables `judge_enabled: "reports"` sends to the LLM judge: the
+ *  text the judge reads whole. HTML is mostly a page, not a report, and the
+ *  gate hands the judge no text for a PDF, so both keep their heuristics. */
+export const REPORT_EXTS: ReadonlySet<string> = new Set([".md", ".txt"]);
 
 /** Run the quality gate over each artifact; collect fix lists for failures.
  * Accepts a bare script path (legacy signature, offline heuristics) or full
@@ -207,7 +217,8 @@ export function runGateOnce(files: string[], gate: string | GateRunOpts): { pass
   const fails: { file: string; fixes: string[] }[] = [];
   for (const f of files) {
     const argv = [opts.gateScript, f, "--auto"];
-    if (opts.offline) argv.push("--offline");
+    const offline = opts.offline || (opts.judgeExts !== undefined && !opts.judgeExts.has(path.extname(f).toLowerCase()));
+    if (offline) argv.push("--offline");
     else {
       argv.push("--with-revisions");
       if (opts.produces?.length) argv.push(`--produces=${opts.produces.join(",")}`);
@@ -448,7 +459,12 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
   }
 
   // ── Step: quality gate (ALL gateable artifacts) ────────────────────────
-  const judgeMode = args.config.quality_gate.judge_enabled === true && runtimeAvailable(args.runtime);
+  // quality_gate.judge_enabled: "reports" (default) judges the text
+  // deliverables, the reports and research the offline heuristics cannot hold
+  // to the brief; true judges every gateable file; false none. The judge needs
+  // the runtime; without it the gate stays on the heuristics.
+  const scope = judgeScope(args.config.quality_gate.judge_enabled);
+  const judgeMode = scope !== "off" && runtimeAvailable(args.runtime);
   // The judge grades against the brief (JudgeInput.brief). It lives in the
   // run's workspace, beside HANDOFF.json, never among the deliverables.
   let briefFile: string | undefined;
@@ -456,8 +472,13 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
     briefFile = path.join(args.projectDir, "gate-brief.md");
     try { fs.writeFileSync(briefFile, args.brief, "utf8"); } catch { briefFile = undefined; }
   }
-  const gateOpts: GateRunOpts = { gateScript, offline: !judgeMode, produces: args.produces, briefFile, env: gateEnv };
-  if (judgeMode) log(`  gate mode: LLM judge (quality_gate.judge_enabled) via ${args.runtime}`);
+  const gateOpts: GateRunOpts = {
+    gateScript, offline: !judgeMode, produces: args.produces, briefFile, env: gateEnv,
+    ...(judgeMode && scope === "reports" ? { judgeExts: REPORT_EXTS } : {}),
+  };
+  if (!judgeMode) log(`  gate mode: offline heuristics${scope === "off" ? " (quality_gate.judge_enabled=false)" : ` (no ${args.runtime} runtime for the judge)`}`);
+  else if (scope === "reports") log(`  gate mode: LLM judge on text deliverables (${[...REPORT_EXTS].join(", ")}) via ${args.runtime}; heuristics for the rest`);
+  else log(`  gate mode: LLM judge on every gateable file via ${args.runtime}`);
 
   let gatedFiles = gateableFiles(args.outputsRoot, namedInBrief);
 
