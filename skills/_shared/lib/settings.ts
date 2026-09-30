@@ -35,6 +35,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import YAML from "yaml";
 import { isProjectRoot, pinnedProjectRoot } from "./project-root.js";
+import { profileValue } from "./profiles.ts";
 import {
   coerceText, getSettingSpec, SETTINGS_SCHEMA, validateSettingValue,
   type SettingKey, type SettingScope, type SettingSpec, type SettingValue, type SettingValueOf, type SettingsEnv,
@@ -43,7 +44,7 @@ import {
 export { SETTINGS, SETTINGS_SCHEMA, SETTING_KEYS, getSettingSpec, settingInfo, coerceText, validateSettingValue } from "./settings-schema.ts";
 export type { SettingInfo, SettingKey, SettingKind, SettingScope, SettingSpec, SettingValue, SettingValueOf, SettingsEnv } from "./settings-schema.ts";
 
-export type SettingSource = "env" | "project" | "global" | "engine-default" | "default";
+export type SettingSource = "env" | "project" | "global" | "profile" | "engine-default" | "default";
 
 export interface ResolvedSetting<T extends SettingValue = SettingValue> {
   key: string;
@@ -55,6 +56,8 @@ export interface ResolvedSetting<T extends SettingValue = SettingValue> {
   variable?: string;
   /** The variable's text (env). */
   raw?: string;
+  /** The profile the value came from (profile). */
+  profile?: string;
 }
 
 export interface ResolveOptions {
@@ -233,7 +236,9 @@ export function readSettingEnv(spec: SettingSpec, env: SettingsEnv = process.env
 
 // ── resolution ──────────────────────────────────────────────────────────────
 
-interface Layers { env: SettingsEnv; files: Layer[] }
+interface Layers { env: SettingsEnv; files: Layer[]; profile: string }
+
+const PROFILE_KEY = "execution.profile";
 
 function loadLayers(opts: ResolveOptions): Layers {
   const env = opts.env ?? process.env;
@@ -247,15 +252,39 @@ function loadLayers(opts: ResolveOptions): Layers {
   if (globalPath) files.push({ source: "global", path: globalPath, data: readYamlFile(globalPath) });
   const enginePath = opts.enginePath === undefined ? engineConfigPath(env) : opts.enginePath;
   if (enginePath) files.push({ source: "engine-default", path: enginePath, data: readYamlFile(enginePath) });
-  return { env, files };
+  // The profile is resolved over the same layers, without a profile of its
+  // own, before any other key reads it.
+  const profile = String(resolveSpec(getSettingSpec(PROFILE_KEY)!, { env, files, profile: "none" }).value);
+  return { env, files, profile };
 }
 
+/** env > project > global > profile > engine default > schema default. The
+ *  profile sits below the user's own files, so a key the user set explicitly
+ *  wins, and above the engine defaults, which it exists to replace. */
 function resolveSpec(spec: SettingSpec, layers: Layers): ResolvedSetting {
   const fromEnv = readSettingEnv(spec, layers.env);
   if (fromEnv) return { key: spec.key, value: fromEnv.value, source: "env", variable: fromEnv.variable, raw: fromEnv.raw };
+  let profileChecked = false;
+  const fromProfile = (): ResolvedSetting | null => {
+    profileChecked = true;
+    const preset = profileValue(layers.profile, spec.key);
+    if (preset === undefined) return null;
+    const checked = validateSettingValue(spec, preset);
+    // A preset that does not validate is an engine bug, caught by the profile tests; never a silent value.
+    if (!checked.ok) throw new SettingsError("invalid_value", `profile ${layers.profile}: ${checked.message}`, { key: spec.key });
+    return { key: spec.key, value: checked.value, source: "profile", profile: layers.profile };
+  };
   for (const layer of layers.files) {
+    if (layer.source === "engine-default" && !profileChecked) {
+      const preset = fromProfile();
+      if (preset) return preset;
+    }
     const value = layerValue(layer, spec);
     if (value !== undefined) return { key: spec.key, value, source: layer.source, path: layer.path };
+  }
+  if (!profileChecked) {
+    const preset = fromProfile();
+    if (preset) return preset;
   }
   return { key: spec.key, value: spec.default, source: "default" };
 }
@@ -309,6 +338,7 @@ export function settingsEnvForChild(opts: ResolveOptions = {}): Record<string, s
 export function describeSettingSource(resolved: ResolvedSetting): string {
   if (resolved.source === "env") return `env ${resolved.variable}=${resolved.raw}`;
   if (resolved.source === "default") return "default";
+  if (resolved.source === "profile") return `profile ${resolved.profile}`;
   return `${resolved.source === "engine-default" ? "engine" : resolved.source} ${resolved.path}`;
 }
 

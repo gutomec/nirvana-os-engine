@@ -68,6 +68,7 @@ function sourceLabel(resolved: ResolvedSetting): string {
     case "env": return `env ${resolved.variable}=${resolved.raw}`;
     case "project": return `projeto ${tilde(resolved.path!)}`;
     case "global": return `global ${tilde(resolved.path!)}`;
+    case "profile": return `perfil ${resolved.profile}`;
     case "engine-default": return `engine ${tilde(resolved.path!)}`;
     default: return "padrão";
   }

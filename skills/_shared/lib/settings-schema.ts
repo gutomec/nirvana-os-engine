@@ -223,10 +223,26 @@ export const SETTINGS = {
   // How a business runs when the user named neither --team nor --single. `chain`
   // is the director and one session per seat, in series. `session` is one
   // session for the whole business, with the seats as the runtime's own
-  // subagents. Opt-in while it is measured against the chain.
+  // subagents. `solo` is one agent for the whole business, playing its seats
+  // itself and using squads by reading their cards: no director, no subagent
+  // per seat, no squad dispatch. The profiles select `solo`; `chain` stays the
+  // schema default so an install without a profile keeps today's behavior.
   "execution.business_mode": enumSetting("execution.business_mode",
-    "Como uma empresa roda sem --team nem --single: chain = um diretor escolhe a cadeia e cada cargo roda numa sessão própria, em série (padrão); session = uma sessão só roda a empresa e abre os cargos como subagentes do próprio runtime, em paralelo quando um não depende do outro.",
-    ["chain", "session"], { default: "chain", env: "NIRVANA_BUSINESS_MODE" }),
+    "Como uma empresa roda sem --team nem --single: chain = um diretor escolhe a cadeia e cada cargo roda numa sessão própria, em série (padrão); session = uma sessão só roda a empresa e abre os cargos como subagentes do próprio runtime, em paralelo quando um não depende do outro; solo = um único agente é a empresa inteira, assume os cargos ele mesmo e usa squads lendo os cartões deles, sem despachar.",
+    ["chain", "session", "solo"], { default: "chain", env: "NIRVANA_BUSINESS_MODE" }),
+  // The profile is a layer of defaults (profiles.ts), resolved between the
+  // user's files and the engine defaults; `none` keeps the engine defaults.
+  "execution.profile": enumSetting("execution.profile",
+    "Perfil de desempenho: max = máxima qualidade e maior consumo de tokens; balanced = equilíbrio (recomendado); economy = menor consumo; none = sem perfil, valem os padrões do engine. Uma chave definida explicitamente sempre vence o perfil.",
+    ["none", "max", "balanced", "economy"], { default: "none", env: "NIRVANA_PROFILE" }),
+  // Measured on real runs: 76% of the plan went to re-reading context, and a
+  // worker's conversation grew to 650k-870k tokens before the runtime
+  // compacted it. The ceiling makes the worker compact early; its state lives
+  // on disk (PROGRESS.md), so what leaves the context is tool output it has
+  // already turned into files.
+  "execution.context_window": numberSetting("execution.context_window",
+    "Teto de contexto, em tokens, dos agentes que o Nirvana despacha: acima dele o runtime compacta a conversa. 0 = o padrão do runtime. Vale no claude-code (CLAUDE_CODE_AUTO_COMPACT_WINDOW) e no codex (model_auto_compact_token_limit).",
+    { default: 0, type: nonNegativeInt, env: "NIRVANA_CONTEXT_WINDOW", expects: "inteiro >= 0 (tokens)" }),
   // 2026 models read what they need when they need it (Anthropic: context on
   // demand; OpenAI: "prompting the model to read files before every edit is a
   // great way to burn context"). A whole persona pasted three times over made
@@ -369,6 +385,18 @@ export const SETTINGS = {
     "Rubrica usada quando produces[] não casa com nenhuma.", { default: "prose_shortform", type: z.string().min(1), expects: "nome de rubrica" }),
   "quality_gate.default_judge_model": stringSetting("quality_gate.default_judge_model",
     "Modelo do juiz; inherit = o modelo configurado no runtime do usuário.", { default: "inherit", type: z.string().min(1), expects: "id de modelo ou inherit" }),
+
+  // The review of a solo delivery (solo-review.ts): one reviewer for the whole
+  // delivery, never one per seat, decided by a rule rather than by an LLM.
+  "review.policy": enumSetting("review.policy",
+    "Quando uma entrega do modo solo passa por revisão: always = sempre; rule = quando o usuário pede, quando o manifesto da empresa marca a entrega como sensível ou quando o portão determinístico falha; on-request = só quando o usuário pede ou o portão falha; never = nunca.",
+    ["always", "rule", "on-request", "never"], { default: "rule", env: "NIRVANA_REVIEW_POLICY" }),
+  "review.runtime": enumSetting("review.runtime",
+    "Runtime do revisor: other = um runtime diferente do que fez o trabalho, quando houver outro disponível (independência barata); same = o mesmo runtime.",
+    ["other", "same"], { default: "other", env: "NIRVANA_REVIEW_RUNTIME" }),
+  "review.max_rounds": numberSetting("review.max_rounds",
+    "Rodadas de correção depois de uma revisão reprovada; esgotadas, a entrega sai com _QA-RESERVATIONS.md.",
+    { default: 1, type: nonNegativeInt, env: "NIRVANA_REVIEW_MAX_ROUNDS", expects: "inteiro >= 0" }),
 
   // The admission gate's rollout switches. `verify.mode` is what the HOOKS
   // read (creation, install, activation, pack build); the explicit CLI

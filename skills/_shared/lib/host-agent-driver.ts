@@ -132,7 +132,21 @@ export function headlessSkipPermissions(): boolean {
  *  functionality. A value the user set explicitly is left as it is. */
 export function headlessClaudeEnv<T extends Record<string, string | undefined>>(env: T): T {
   if (env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS === undefined) (env as Record<string, string | undefined>).CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = "1";
+  // The context ceiling (execution.context_window): the child compacts its
+  // conversation above it instead of re-reading up to the model's full window
+  // on every call. Verified in claude 2.1.284: the variable caps the window
+  // auto-compaction measures against.
+  const window = contextWindowSetting();
+  if (window > 0) (env as Record<string, string | undefined>).CLAUDE_CODE_AUTO_COMPACT_WINDOW = String(window);
   return env;
+}
+
+/** `execution.context_window` in tokens; 0 when unset, invalid or unreadable. */
+export function contextWindowSetting(): number {
+  try {
+    const v = Number(resolveSetting("execution.context_window").value);
+    return Number.isFinite(v) && v > 0 ? Math.floor(v) : 0;
+  } catch { return 0; }
 }
 
 /** Max persona chars accepted by --append-system-prompt-style flags. */
@@ -1775,6 +1789,9 @@ function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
   // the user's own value in force.
   const cxEffort = effortFor(opts, "codex");
   if (cxEffort) args.push("-c", `model_reasoning_effort=${JSON.stringify(cxEffort)}`);
+  // The context ceiling, as codex's own config key (present in codex 0.159).
+  const cxWindow = contextWindowSetting();
+  if (cxWindow > 0) args.push("-c", `model_auto_compact_token_limit=${cxWindow}`);
   // `--provider` no longer exists on `codex exec` ("unexpected argument" on
   // 0.153); the provider is a config key, overridable per run with -c.
   if (opts.providerHint) args.push("-c", `model_provider=${JSON.stringify(opts.providerHint)}`);
