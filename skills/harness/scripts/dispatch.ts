@@ -40,6 +40,8 @@ import { proxyEnrichBrief } from "../lib/brief-proxy.ts";
 import { resolveRoutingMode, routingModeOrigin } from "../../_shared/lib/routing-mode.ts";
 import { runTeam } from "../lib/team-orchestrator.ts";
 import { ALLOWED_SQUADS_ENV, isBusinessSession, namedSquadsIn, runBusinessSession, squadsRefusedHere } from "../lib/business-session.ts";
+import { isBusinessSolo, runBusinessSolo } from "../lib/business-solo.ts";
+import { runSoloReviewStage, type ReviewPolicy } from "../lib/solo-review.ts";
 import { resolveEntityDir } from "../../_shared/lib/entity-resource-map.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { globalStoreDir, outputsBaseDir } from "../../_shared/lib/project-root.js";
@@ -376,6 +378,14 @@ try {
 // path its canary was built on.
 const businessSession = isBusinessSession({ forceTeam, forceSingle, requestedMode: executionOptions.requestedMode,
   businessMode: resolveSetting("execution.business_mode").value });
+// `execution.business_mode: solo` runs the business as ONE agent that plays its
+// seats itself and opens nothing (lib/business-solo.ts); the review that may
+// follow is decided by a rule (lib/solo-review.ts). `--review` asks for one,
+// `--no-review` declines it.
+const businessSolo = isBusinessSolo({ forceTeam, forceSingle, requestedMode: executionOptions.requestedMode,
+  businessMode: resolveSetting("execution.business_mode").value });
+const reviewAsked = process.argv.includes("--review");
+const reviewDeclined = process.argv.includes("--no-review");
 
 // The chain is the default (see the flags above), with one thing allowed to
 // outrank it: an explicit `--execution-mode=gauntlet`. `decideBusinessCanary`
@@ -384,7 +394,7 @@ const businessSession = isBusinessSession({ forceTeam, forceSingle, requestedMod
 // like a change about orchestration. Asking for the canary is asking for the
 // single-seat path it was built on; `--team` on top of it still wins, because
 // then the user has said both things and the later one is the specific one.
-const wantTeam = !businessSession && (forceTeam || (!forceSingle && executionOptions.requestedMode !== "gauntlet"));
+const wantTeam = !businessSession && !businessSolo && (forceTeam || (!forceSingle && executionOptions.requestedMode !== "gauntlet"));
 
 // ── audit facade (routing-360 Phase 4.3, dispatch side) ───────────────────
 // lib/audit.js emit() is the canonical writer (closed enum + open x_
@@ -484,6 +494,7 @@ if (!slug && !autoMode && !explicitTarget) {
     console.error("    --pdf                   build relatorio-final.pdf via report-publisher (if the business has one)");
     console.error("    --html                  build relatorio-final.html from every markdown in the project (marked)");
   console.error("    --team                  real multi-employee orchestration (director + chain, each step audits)");
+  console.error("    --review | --no-review  solo mode: ask for the delivery review, or decline it (review.policy decides otherwise)");
   console.error("    --execution-mode=<mode> standard|gauntlet|auto (default: standard)");
   console.error("    --gauntlet-intensity=<profile> light|balanced|exhaustive");
   console.error("    --run-id=<runId>        the Run's id in the project kernel: adopted when prepared (Glance), created otherwise (multi-target nodes); default run_<project>");
@@ -1774,8 +1785,9 @@ if (!fs.existsSync(tmpBriefFile)) {
 // hands the user. A team run never reads it: the chain builds each seat's own
 // prompt, the intake's included. Building it anyway cost a whole employee-prompt
 // pass and emitted mind_clone_injected for a prompt that never ran.
-// A business session reads the seat files itself, so it needs no intake prompt either.
-const teamChainRun = wantExec && (wantTeam || businessSession) && !businessCanaryDecision.enabled;
+// A business session reads the seat files itself, so it needs no intake prompt
+// either, and neither does a solo business.
+const teamChainRun = wantExec && (wantTeam || businessSession || businessSolo) && !businessCanaryDecision.enabled;
 const outputPath = path.join(projDir, "agent-prompt.md");
 let promptSize = 0;
 let dnaCount = 0;
@@ -1819,7 +1831,7 @@ if (wantExec && !businessCanaryDecision.enabled) {
         project_dir: projDir, project_root: projectRoot, scaffold_root: scaffoldRoot,
         outputs_root: execOutputsRoot ?? null,
         prompt_path: teamChainRun ? null : outputPath, brief_path: tmpBriefFile,
-        mode: businessSession ? "session" : wantTeam ? "team" : "single",
+        mode: businessSession ? "session" : businessSolo ? "solo" : wantTeam ? "team" : "single",
       },
     });
     ledgerRunId = row.run_id;
@@ -1832,7 +1844,7 @@ emit("dispatch_business", {
   business_slug: slug,
   // A session dispatches the business, not a seat: its seats are credited from
   // what the session records (x_seat_credited), never from this event.
-  ...(wantExec && businessSession ? { business_mode: "session" } : { employee: intake }),
+  ...(wantExec && businessSession ? { business_mode: "session" } : wantExec && businessSolo ? { business_mode: "solo" } : { employee: intake }),
   // Honest mode: this standalone script either scaffolds only, or shells out to
   // a headless child runtime via --exec. The TRUE in-process subagent path is
   // the maestro calling the runtime's native subagent (Agent tool / codex
@@ -1992,7 +2004,46 @@ if (wantExec) {
   let runtimeError: string | null = null;
   // Whether the intake seat ran alone: the single-seat mode, or a team whose
   // director failed and handed the brief to its intake seat.
-  let ranSingle = !wantTeam && !businessSession;
+  let ranSingle = !wantTeam && !businessSession && !businessSolo;
+
+  if (businessSolo) {
+    const bizDir = businessEntry.bizDir ?? resolveEntityDir("businesses", slug, projDir);
+    const sr = runBusinessSolo({
+      slug, bizDir, brief,
+      ...(briefFile ? { briefFile: path.resolve(briefFile) } : {}),
+      projectId: pid, projectDir: projDir, projectRoot, outputsRoot: oroot, runtime: rt,
+      mandatorySquads: autoMandatorySquads, optionalSquads: autoOptionalSquads,
+      briefSquads: (() => { try { return namedSquadsIn(brief, Object.keys(defaultRegistries().squads)); } catch { return []; } })(),
+      rulesDirective, maxBudgetUsd: effectiveBudgetUsd(),
+      timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
+      yolo, ledgerRunId, emit,
+    });
+    res = sr;
+    const credited = sr.receipt.credited;
+    console.log(c("dim", `  seats played: ${credited.length ? credited.map(x => x.seat).join(", ") : "none declared"}`));
+    if (!sr.ok) {
+      console.error(c("red", `✗ solo business failed (exit ${sr.exitCode}): ${sr.error || sr.stderr || "unknown"}`));
+      emit("agent_exec_failed", { trace_id: pid, project_id: pid, business_slug: slug, runtime: rt, mode: "business-solo", exit_code: sr.exitCode, error: sr.error || sr.stderr });
+      runtimeError = sr.error || sr.stderr || `exit ${sr.exitCode}`;
+    } else {
+      console.log(c("dim", `  session: ${sr.sessionId || "(none)"} · ${sr.durationMs}ms${sr.costUsd != null ? ` · $${sr.costUsd.toFixed(4)}` : ""}`));
+      // Review as an exception: a rule decides, one reviewer for the whole
+      // delivery, corrections in the worker's own session, then the normal
+      // delivery pipeline below (verify → gate → deliver) as for any run.
+      const review = runSoloReviewStage({
+        business: slug, bizDir, briefFile: sr.briefFile, outputsRoot: oroot, projectRoot,
+        worker: { runtime: sr.finalRuntime, sessionId: sr.sessionId, launch: sr.launch },
+        policy: resolveSetting("review.policy").value as ReviewPolicy,
+        runtimePref: resolveSetting("review.runtime").value as "other" | "same",
+        maxRounds: Number(resolveSetting("review.max_rounds").value),
+        userAsked: reviewAsked, userDeclined: reviewDeclined, yolo,
+        timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
+        emit: (event, payload) => emit(event, { trace_id: pid, project_id: pid, ...payload }),
+        log: message => console.log(c("dim", message)),
+      });
+      if (review.reservations) console.error(c("yellow", `  ⚠ review left reservations: ${review.reservations}`));
+    }
+  }
 
   if (businessSession) {
     const sr = runBusinessSession({
@@ -2202,7 +2253,7 @@ if (wantExec) {
   let delivery: DeliveryResult;
   publication.verify();
   if (runtimeError) {
-    const outcome = deliverAfterError(bizDeliverOpts, runtimeError, { employee: intake, mode: businessSession ? "session" : ranSingle ? "single" : "team" });
+    const outcome = deliverAfterError(bizDeliverOpts, runtimeError, { employee: intake, mode: businessSession ? "session" : businessSolo ? "solo" : ranSingle ? "single" : "team" });
     publication.finish({ exitCode: outcome.exitCode, gateOutcome: outcome.result?.gateOutcome ?? "indeterminate", error: runtimeError }, oroot);
     if (!outcome.judged) {
       console.error(c("red", `✗ nothing was produced in ${oroot} — nothing to judge.`));

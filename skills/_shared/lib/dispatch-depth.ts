@@ -41,7 +41,7 @@ export const ROLE_ENV = "NIRVANA_DISPATCH_ROLE";
  * would let a squad dispatched straight from the maestro open another squad,
  * because it sits at depth 1 with room underneath.
  */
-export type DispatchRole = "business" | "employee" | "squad" | "agent-x" | "planner" | "exec";
+export type DispatchRole = "business" | "employee" | "squad" | "agent-x" | "planner" | "exec" | "solo";
 
 /** What each role is allowed to dispatch. `[]` means: nothing, ever. */
 const ALLOWED: Record<DispatchRole, readonly DispatchRole[]> = {
@@ -66,6 +66,11 @@ const ALLOWED: Record<DispatchRole, readonly DispatchRole[]> = {
   // enforced rather than documented — every dispatched role refuses to open
   // one, so a seat cannot shell out to it and get an unsupervised agent.
   exec: [],
+  // A solo business (execution.business_mode: solo) is the whole company in
+  // one agent: it plays its seats itself and runs squads from their cards, so
+  // it opens nothing. What the chain spreads over a director, seats and squad
+  // dispatches happens inside this one worker.
+  solo: [],
 };
 
 /** The role of the process that is about to spawn; null = the operator. */

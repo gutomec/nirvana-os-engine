@@ -161,7 +161,7 @@ function listOf(v: unknown): string[] {
 
 function cloneSlug(ref: string): string { return ref.slice(ref.lastIndexOf("/") + 1); }
 
-function defaultCloneLookup(cwd: string): (slug: string) => { dir: string; files: string[] } | null {
+export function defaultCloneLookup(cwd: string): (slug: string) => { dir: string; files: string[] } | null {
   let registry: Record<string, any> = {};
   try { registry = loadCloneRegistry({ cwd }); } catch { registry = {}; }
   return (slug) => {
@@ -219,7 +219,7 @@ export function readSeats(bizDir: string, cloneLookup: (slug: string) => { dir: 
 }
 
 /** The business's memory, as the directories it lives in. Pointed at, never pasted. */
-function defaultMemoryDirs(slug: string, bizDir: string, projectRoot: string): string[] {
+export function defaultMemoryDirs(slug: string, bizDir: string, projectRoot: string): string[] {
   const dirs = [entityMemoryDir("businesses", slug, "global")];
   try { dirs.push(entityMemoryDir("businesses", slug, "project", projectRoot)); } catch { /* no project */ }
   const found = dirs.filter((d) => fs.existsSync(d));
