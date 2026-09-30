@@ -25,15 +25,20 @@
 
 const os = require('os');
 const path = require('path');
-const { findProjectRoot } = require('./project-root.js');
+const projectRootLib = require('./project-root.js');
 const { envPath } = require('./env-path.js');
 
 function resolveProjectRoot(opts) {
   const options = opts || {};
-  // `?? findProjectRoot(...)` in the original: null and undefined both fall
-  // through to the walk, matching every existing caller (several pass
-  // `projectRoot: X || undefined` specifically to opt into that fallback).
-  return options.projectRoot != null ? options.projectRoot : findProjectRoot(options.cwd || process.cwd());
+  // null and undefined both fall through to the resolution, matching every
+  // existing caller (several pass `projectRoot: X || undefined` specifically to
+  // opt into that fallback). A root named explicitly that can never be a
+  // project (HOME, the filesystem root, the engine's store) means "no project":
+  // its logs go to the global root, not to `<HOME>/.nirvana/logs`.
+  if (options.projectRoot != null) {
+    return projectRootLib.isInvalidProjectRoot(options.projectRoot) ? null : options.projectRoot;
+  }
+  return projectRootLib.resolveProjectRoot({ cwd: options.cwd || process.cwd() });
 }
 
 function harnessLogsDir(opts) {

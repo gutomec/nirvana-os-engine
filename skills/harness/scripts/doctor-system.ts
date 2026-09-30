@@ -37,6 +37,7 @@ import { detectOrca, orcaHooksStatus, orcaHostActive, orcaStatus, resolveOrcaExe
 import { codexConfigPath, codexHookTrustEntries, codexHooksPath } from "../../_shared/lib/codex-hooks.ts";
 import { expandEnv, findTempNrvEntries, readUserPath, tempRoots } from "../../_shared/lib/windows-user-path.ts";
 import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
+import { resolveProjectRoot, undeclaredProjectState } from "../../_shared/lib/project-root.js";
 import {
   describeSettingSource, discoverProjectRoot, engineConfigPath, globalConfigPath, projectConfigPath, resolveAllSettings, resolveSetting,
 } from "../../_shared/lib/settings.ts";
@@ -740,6 +741,24 @@ if (fs.existsSync(agentsSkillsDir)) {
   } else {
     add("project: contract", "WARN",
       `no ${PROJECT_CONTRACT_FILES.join(" / ")} in ${cwd.replace(HOME, "~")} — the runtime has no instruction to invoke Nirvana, so a brief may be answered inline instead of dispatched. Fix: nrv init .`);
+  }
+}
+
+// Declared project. A project is a folder with `.nirvana/project.yaml`; a
+// folder whose `.nirvana/` holds outputs, logs, a kernel or registries but no
+// project.yaml was a project under the old marker rule and is not one now, so
+// its runs, settings and registries resolve globally until it is adopted.
+{
+  const cwd = process.cwd();
+  const declared = resolveProjectRoot({ cwd });
+  const undeclared = declared ? null : undeclaredProjectState(cwd);
+  if (declared) {
+    add("project: declared", "PASS", declared.replace(HOME, "~"));
+  } else if (undeclared) {
+    add("project: declared", "WARN",
+      `${undeclared.dir.replace(HOME, "~")} holds Nirvana state (${undeclared.state.join(", ")}) but no .nirvana/project.yaml, so it is not a project and its work resolves globally. If it is one: nrv init --adopt ${undeclared.dir.replace(HOME, "~")} (writes only that file). If not, its .nirvana/ is leftover.`);
+  } else {
+    add("project: declared", "PASS", "no project here — runs use the global store");
   }
 }
 

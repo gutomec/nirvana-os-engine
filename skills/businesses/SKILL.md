@@ -143,8 +143,8 @@ Project outputs live in `${PROJECTS_OUTPUT_DIR}/<project-id>/businesses/<biz-slu
 
 Project-root resolution:
 1. `$PROJECTS_OUTPUT_DIR` env var
-2. Walk up until `.git/` or `CLAUDE.md` or `package.json` or `pyproject.toml`
-3. Fallback `cwd()`
+2. `$NIRVANA_PROJECT_ROOT`, else walk up to the nearest folder with `.nirvana/project.yaml` (written by `nrv init`; `nrv init --adopt` declares an existing folder)
+3. No project: the engine's store, `~/.nirvana/outputs/`
 
 ## Intent classification
 

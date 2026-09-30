@@ -25,15 +25,16 @@
  * the file (comments included), and land atomically (temp file + rename).
  *
  * Project discovery: NIRVANA_PROJECT_ROOT, else the nearest ancestor of the
- * cwd holding a `.nirvana/` directory. HOME itself never counts: its
- * `.nirvana/` is the global store, and reading it as a project would make the
- * global file its own override.
+ * cwd holding a declared project (`.nirvana/project.yaml`). HOME itself never
+ * counts: its `.nirvana/` is the global store, and reading it as a project
+ * would make the global file its own override.
  */
 
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import YAML from "yaml";
+import { isProjectRoot, pinnedProjectRoot } from "./project-root.js";
 import {
   coerceText, getSettingSpec, SETTINGS_SCHEMA, validateSettingValue,
   type SettingKey, type SettingScope, type SettingSpec, type SettingValue, type SettingValueOf, type SettingsEnv,
@@ -125,22 +126,19 @@ function canonicalDir(dir: string): string {
 }
 
 /**
- * NIRVANA_PROJECT_ROOT, else the nearest ancestor of `cwd` with a `.nirvana/`
- * directory. Never HOME (under any of its names) and never the root; and a
- * `.nirvana/` that holds `skills/` is the engine's own store, not a project,
- * whatever directory it sits in: on Windows the temp directory lives under
- * HOME, so a walk from a temp cwd reaches the store before the root.
+ * NIRVANA_PROJECT_ROOT, else the nearest ancestor of `cwd` holding a declared
+ * project (`.nirvana/project.yaml`, by project-root.js, the one definition).
+ * Never HOME (under any of its names) and never the root. A bare `.nirvana/`
+ * no longer counts: hooks and CLI runs created one in folders that were never
+ * projects, and every one of them then had a settings layer of its own.
  */
 export function discoverProjectRoot(env: SettingsEnv = process.env, cwd: string = process.cwd()): string | null {
-  if (env.NIRVANA_PROJECT_ROOT) return path.resolve(env.NIRVANA_PROJECT_ROOT);
+  if (env.NIRVANA_PROJECT_ROOT) return pinnedProjectRoot(env, { home: env.HOME || env.USERPROFILE });
   const homes = new Set([env.NIRVANA_HOME, env.HOME, env.USERPROFILE, os.homedir()].filter((dir): dir is string => !!dir).map(canonicalDir));
   let dir = path.resolve(cwd);
   for (let depth = 0; depth < 40; depth++) {
     if (dir === path.parse(dir).root || homes.has(canonicalDir(dir))) return null;
-    const store = path.join(dir, ".nirvana");
-    try {
-      if (fs.statSync(store).isDirectory()) return fs.existsSync(path.join(store, "skills")) ? null : dir;
-    } catch { /* not here */ }
+    if (isProjectRoot(dir, { home: env.HOME || env.USERPROFILE })) return dir;
     const parent = path.dirname(dir);
     if (parent === dir) return null;
     dir = parent;

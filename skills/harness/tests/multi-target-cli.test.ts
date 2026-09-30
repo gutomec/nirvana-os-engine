@@ -88,6 +88,7 @@ function fixture(projectId = "proj-multi") {
   roots.push(root);
   const projectRoot = path.join(root, "project");
   fs.mkdirSync(path.join(projectRoot, ".nirvana", "plans"), { recursive: true });
+  fs.writeFileSync(path.join(projectRoot, ".nirvana", "project.yaml"), "{}\n");
   const planFile = path.join(projectRoot, ".nirvana", "plans", `${projectId}.json`);
   fs.writeFileSync(planFile, JSON.stringify(PLAN, null, 2));
   return {

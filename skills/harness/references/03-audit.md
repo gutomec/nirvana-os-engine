@@ -13,8 +13,8 @@
 | Per project | `<project>/audit.jsonl` (plus the session log) | 365 days |
 
 Resolution: `$HARNESS_LOGS_DIR` wins when set; otherwise `_shared/lib/log-paths.ts`
-walks up from the caller's `cwd` to find the project root (`.nirvana` / `.env` /
-`.git` markers) so a dispatcher can pin events to the project regardless of
+walks up from the caller's `cwd` to find the project root (a folder with
+`.nirvana/project.yaml`) so a dispatcher can pin events to the project regardless of
 where the process started; the fallback is `~/.harness-logs`. Writers also
 dual-write to the SQLite state-db when `bun:sqlite` is available — JSONL stays
 authoritative for legacy readers, SQLite is the race-safe substrate.

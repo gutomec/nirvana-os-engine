@@ -33,6 +33,8 @@ import { SCOPE_GUARD_EN } from "../../_shared/lib/scope-guard.ts";
 const ROOT = mkdtempSync(join(tmpdir(), "biz-"));
 mkdirSync(join(ROOT, ".nirvana", "businesses"), { recursive: true });
 writeFileSync(join(ROOT, ".env"), "NIRVANA_SCOPE=project\n", "utf8");
+mkdirSync(join(ROOT, ".nirvana"), { recursive: true });
+writeFileSync(join(ROOT, ".nirvana", "project.yaml"), "{}\n", "utf8");
 afterAll(() => rmSync(ROOT, { recursive: true, force: true }));
 
 /** A business with one employee and no declared clone — the state 43 of the
@@ -111,6 +113,8 @@ describe("the clone is chosen for the task, not for the seat", () => {
 
   // project scope
   writeFileSync(join(R, ".env"), "NIRVANA_SCOPE=project\n", "utf8");
+  mkdirSync(join(R, ".nirvana"), { recursive: true });
+  writeFileSync(join(R, ".nirvana", "project.yaml"), "{}\n", "utf8");
 
   // the business, with a seat statically bound to the wrong director
   const biz = join(R, ".nirvana", "businesses", "studio-co");

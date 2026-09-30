@@ -107,7 +107,7 @@ All squad outputs write to a **standard workspace** inside the project:
 ```
 
 **Resolution algorithm:**
-1. Project root: `$SQUADS_PROJECT_ROOT` env var, OR walk up from cwd() until `.git/`, OR cwd()
+1. Project root: `$NIRVANA_PROJECT_ROOT` or `$SQUADS_PROJECT_ROOT`, OR the nearest folder up from cwd() with `.nirvana/project.yaml`, OR the engine's store (`~/.nirvana`) when there is no project
 2. Output root: `{project-root}/.squads-outputs/`
 3. Run directory: `{output-root}/{squad-name}/{ISO-timestamp}-{slug}/`
 

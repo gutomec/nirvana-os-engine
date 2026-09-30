@@ -33,7 +33,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
-const { findProjectRoot } = require('./project-root.js');
+const { resolveProjectRoot } = require('./project-root.js');
 
 const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
   || (fs.existsSync(path.join(os.homedir(), ".nirvana", "skills")) ? path.join(os.homedir(), ".nirvana", "skills") : path.join(os.homedir(), ".claude", "skills"));
@@ -45,14 +45,12 @@ function handoffPath(projectDir) {
   return path.join(projectDir, FILENAME);
 }
 
-// Walk up from cwd looking for .nirvana/ or .git/. Delegates to
-// project-root.js (the one implementation shared with paths.js, scope.ts,
-// log-paths.ts and wiki-lint.js) for the HOME/root/Windows-system-dir
-// hardening this walk lacked: a stray ~/.nirvana (the engine's own install)
-// sitting in HOME was mistaken for a project, exactly the mechanism that
-// broke PR #158 round 2 for log-paths.ts before it got the same fix.
+// The project this process serves, by the one definition in project-root.js
+// (shared with paths.js, scope.ts, log-paths.js and wiki-lint.js). This used
+// to walk for any `.nirvana/` or `.git/`, so a repository with no Nirvana
+// project in it got a state.db of its own.
 function findProjectRootFromCwd() {
-  return findProjectRoot(process.cwd(), { markers: ['.nirvana', '.git'] });
+  return resolveProjectRoot({ cwd: process.cwd() });
 }
 
 function writeHandoff(projectDir, partial) {

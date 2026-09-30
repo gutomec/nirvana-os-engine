@@ -258,6 +258,7 @@ describe("nrv multi-target run freezes the coordinator's runtime snapshot", () =
     const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "nrv-runtime-snapshot-mt-"))); roots.push(root);
     const projectRoot = path.join(root, "project");
     fs.mkdirSync(path.join(projectRoot, ".nirvana", "plans"), { recursive: true });
+    fs.writeFileSync(path.join(projectRoot, ".nirvana", "project.yaml"), "{}\n");
     const planFile = path.join(projectRoot, ".nirvana", "plans", "plan.json");
     fs.writeFileSync(planFile, JSON.stringify(PLAN, null, 2));
     const spawnLog = path.join(root, "spawns.log");

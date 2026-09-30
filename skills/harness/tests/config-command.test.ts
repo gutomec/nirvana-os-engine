@@ -40,6 +40,7 @@ function fixture() {
   const logs = path.join(root, "logs");
   fs.mkdirSync(path.join(home, ".nirvana"), { recursive: true });
   fs.mkdirSync(path.join(project, ".nirvana"), { recursive: true });
+  fs.writeFileSync(path.join(project, ".nirvana", "project.yaml"), "{}\n");
   return { root, home, project, logs, globalFile: path.join(home, ".nirvana", "config.yaml"), projectFile: path.join(project, ".nirvana", "config.yaml") };
 }
 type Fixture = ReturnType<typeof fixture>;

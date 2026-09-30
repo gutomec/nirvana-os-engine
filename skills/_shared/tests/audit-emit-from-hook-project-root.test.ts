@@ -37,7 +37,8 @@ function fixture() {
   const root = makeTempRoot("nrv-hook-projroot-"); roots.push(root);
   const home = path.join(root, "home");
   const projectRoot = path.join(root, "project");
-  fs.mkdirSync(path.join(projectRoot, ".git"), { recursive: true });
+  fs.mkdirSync(path.join(projectRoot, ".nirvana"), { recursive: true });
+  fs.writeFileSync(path.join(projectRoot, ".nirvana", "project.yaml"), "{}\n");
   fs.mkdirSync(home, { recursive: true });
 
   const env: Record<string, string> = {};
@@ -144,9 +145,8 @@ describe("audit-emit-from-hook.ts — the Codex shape", () => {
     expect(ev!.success).toBe(false);
   }, spawnBudgetMs(1));
 
-  test("a project found by its .nirvana/ marker is in scope with no prefix hint at all", () => {
+  test("a declared project (.nirvana/project.yaml) is in scope with no prefix hint at all", () => {
     const fx = fixture();
-    fs.mkdirSync(path.join(fx.projectRoot, ".nirvana"), { recursive: true });
     const env = { ...fx.env }; delete env.NIRVANA_AUDIT_PREFIXES;
     const today = new Date().toISOString().slice(0, 10);
     const projectLog = path.join(fx.projectRoot, ".nirvana", "logs", "harness", today, "audit.jsonl");
@@ -156,5 +156,24 @@ describe("audit-emit-from-hook.ts — the Codex shape", () => {
     });
     expect(r.status).toBe(0);
     expect(eventsIn(projectLog).some(e => e.event === "bash_completed")).toBe(true);
+  }, spawnBudgetMs(1));
+
+  test("a repository that is no project gets no .nirvana/ from the hook; its events go to the home log", () => {
+    // A repository carries `.git`, `package.json` and `.env`; none of them makes
+    // it a project. The hook used to create `.nirvana/logs` in any such folder.
+    const fx = fixture();
+    const repo = path.join(fx.root, "some-repo");
+    fs.mkdirSync(path.join(repo, ".git"), { recursive: true });
+    fs.writeFileSync(path.join(repo, "package.json"), "{}");
+    fs.writeFileSync(path.join(repo, ".env"), "X=1\n");
+    const env = { ...fx.env, NIRVANA_AUDIT_PREFIXES: repo };
+    const today = new Date().toISOString().slice(0, 10);
+    const r = spawnSync(process.execPath, [SCRIPT, "post", "claude-code"], {
+      cwd: repo, env, encoding: "utf8",
+      input: JSON.stringify({ session_id: "cc-4", tool_name: "Bash", tool_input: { command: "echo hi" }, tool_response: { success: true } }),
+    });
+    expect(r.status).toBe(0);
+    expect(fs.existsSync(path.join(repo, ".nirvana"))).toBe(false);
+    expect(eventsIn(path.join(fx.home, ".harness-logs", today, "audit.jsonl")).some(e => e.event === "bash_completed")).toBe(true);
   }, spawnBudgetMs(1));
 });

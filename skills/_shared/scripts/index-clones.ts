@@ -21,6 +21,7 @@ import * as os from "node:os";
 import { paths, parseArgs, EXIT } from "../lib/bun-helpers.ts";
 import { resolveScope } from "../lib/scope.ts";
 import { writeFileAtomic } from "../lib/atomic-write.js";
+import { isInvalidProjectRoot } from "../lib/project-root.js";
 
 const YAML = require("yaml");
 
@@ -30,6 +31,21 @@ const quiet = !!flags.quiet || !!flags.q;
 const allowEmpty = !!flags["allow-empty"];
 
 const scope = resolveScope();
+
+// A folder that is not a project can still hand this script a library of its
+// own: Bun loads the cwd's `.env` into the environment of every script it
+// starts. With no project there is no project registry to write, so that
+// library would be published as the global one. Home is exempt: a relocation in
+// `~/.env` is the user's own install setting, not a folder's.
+if (!scope.projectRoot && !isInvalidProjectRoot(process.cwd())) {
+  let cwdEnv = "";
+  try { cwdEnv = fs.readFileSync(path.join(process.cwd(), ".env"), "utf8"); } catch { /* no .env here */ }
+  if (/^\s*(?:export\s+)?(?:DNA_LIBRARY|NIRVANA_HOME)\s*=/m.test(cwdEnv)) {
+    console.error(`[index-clones] ${process.cwd()} relocates the clone library in its .env but is not a Nirvana project, so indexing here would overwrite the global registry with that library. Declare it a project (nrv init --adopt) or run the index from elsewhere.`);
+    process.exit(2);
+  }
+}
+
 const roots = scope.mindCloneDirs.length ? scope.mindCloneDirs : [paths.DNA_LIBRARY];
 
 const registryDir = scope.projectRoot

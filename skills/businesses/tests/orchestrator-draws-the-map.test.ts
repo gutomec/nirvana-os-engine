@@ -29,6 +29,8 @@ import { buildEmployeePrompt } from "../lib/employee-prompt.ts";
 const ROOT = mkdtempSync(join(tmpdir(), "nrv-map-"));
 mkdirSync(join(ROOT, ".nirvana", "businesses"), { recursive: true });
 writeFileSync(join(ROOT, ".env"), "NIRVANA_SCOPE=project\n", "utf8");
+mkdirSync(join(ROOT, ".nirvana"), { recursive: true });
+writeFileSync(join(ROOT, ".nirvana", "project.yaml"), "{}\n", "utf8");
 afterAll(() => { try { rmSync(ROOT, { recursive: true, force: true }); } catch { /* the OS reclaims tmp */ } });
 
 function business(slug: string): void {

@@ -34,6 +34,7 @@ beforeEach(() => {
   project = path.join(tmp, "project");
   engine = path.join(tmp, "engine-config.yaml");
   fs.mkdirSync(path.join(project, ".nirvana"), { recursive: true });
+  fs.writeFileSync(path.join(project, ".nirvana", "project.yaml"), "{}\n");
   fs.mkdirSync(path.join(home, ".nirvana"), { recursive: true });
   base = { env: {}, projectRoot: project, globalPath: globalConfigPath({ NIRVANA_HOME: home }), enginePath: engine };
   _resetSettingsCache();
@@ -122,7 +123,7 @@ describe("clear errors, never silent defaults", () => {
 });
 
 describe("project discovery", () => {
-  test("NIRVANA_PROJECT_ROOT wins; else the nearest ancestor with .nirvana/; HOME and the root never count", () => {
+  test("NIRVANA_PROJECT_ROOT wins; else the nearest declared ancestor; HOME and the root never count", () => {
     expect(discoverProjectRoot({ NIRVANA_PROJECT_ROOT: "/elsewhere/project" }, project)).toBe(path.resolve("/elsewhere/project"));
     const deep = path.join(project, "src", "deep");
     fs.mkdirSync(deep, { recursive: true });
@@ -133,12 +134,14 @@ describe("project discovery", () => {
     expect(discoverProjectRoot({}, tmp)).toBeNull();
   });
 
-  test("a .nirvana/ that holds skills/ is the engine's store, never a project, wherever it sits", () => {
+  test("a bare .nirvana/ (the engine's store, or one a hook left behind) is never a project; project.yaml is", () => {
     const store = path.join(tmp, "store");
     fs.mkdirSync(path.join(store, ".nirvana", "skills"), { recursive: true });
     fs.mkdirSync(path.join(store, "work", "deeper"), { recursive: true });
     expect(discoverProjectRoot({}, path.join(store, "work", "deeper"))).toBeNull();
-    fs.mkdirSync(path.join(store, "work", ".nirvana"), { recursive: true });
+    fs.mkdirSync(path.join(store, "work", ".nirvana", "logs"), { recursive: true });
+    expect(discoverProjectRoot({}, path.join(store, "work", "deeper"))).toBeNull();
+    fs.writeFileSync(path.join(store, "work", ".nirvana", "project.yaml"), "{}\n");
     expect(discoverProjectRoot({}, path.join(store, "work", "deeper"))).toBe(path.join(store, "work"));
   });
 

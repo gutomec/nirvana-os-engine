@@ -28,7 +28,8 @@ function fixture() {
   const root = makeTempRoot("nrv-gemini-projroot-"); roots.push(root);
   const home = path.join(root, "home");
   const projectRoot = path.join(root, "project");
-  fs.mkdirSync(path.join(projectRoot, ".git"), { recursive: true });
+  fs.mkdirSync(path.join(projectRoot, ".nirvana"), { recursive: true });
+  fs.writeFileSync(path.join(projectRoot, ".nirvana", "project.yaml"), "{}\n");
   fs.mkdirSync(home, { recursive: true });
 
   const env: Record<string, string> = {};
@@ -62,6 +63,21 @@ describe("gemini-session-start.ts — where the SessionStart hook's events land"
     expect(fs.existsSync(homeLog), "session_started must not fall through to the home root").toBe(false);
     const events = eventsIn(projectLog);
     expect(events.some(e => e.event === "session_started")).toBe(true);
+  }, spawnBudgetMs(1));
+
+  test("a session in a repository that is no project creates no .nirvana/ there", () => {
+    const fx = fixture();
+    const repo = path.join(fx.root, "some-repo");
+    fs.mkdirSync(path.join(repo, ".git"), { recursive: true });
+    fs.writeFileSync(path.join(repo, "package.json"), "{}");
+    const today = new Date().toISOString().slice(0, 10);
+    const result = spawnSync(process.execPath, [SCRIPT], {
+      cwd: repo, env: fx.env, encoding: "utf8",
+      input: JSON.stringify({ session_id: "sess-repo", cwd: repo }),
+    });
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(fs.existsSync(path.join(repo, ".nirvana"))).toBe(false);
+    expect(eventsIn(path.join(fx.home, ".harness-logs", today, "audit.jsonl")).some(e => e.event === "session_started")).toBe(true);
   }, spawnBudgetMs(1));
 
   test("a session with no project in reach still logs somewhere sane (~/.harness-logs)", () => {

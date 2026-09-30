@@ -90,7 +90,7 @@ As of v4.1 (§16bis), the **skill/runtime** resolves output paths with a standar
 
 ### Resolution Algorithm
 
-1. **Project root:** `$SQUADS_PROJECT_ROOT` env var → walk up from cwd() until `.git/`, `AGENTS.md`, `CLAUDE.md`, `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, or `Makefile` → fallback cwd()
+1. **Project root:** `$NIRVANA_PROJECT_ROOT` or `$SQUADS_PROJECT_ROOT` → the nearest folder up from cwd() with `.nirvana/project.yaml` → the engine's store (`~/.nirvana`) when there is no project
 2. **Output root:** `{project-root}/.squads-outputs/`
 3. **Run directory:** `{output-root}/{squad-name}/{timestamp}-{slug}/`
 4. **Environment injection:** Runtime sets `$SQUAD_RUN_DIR` to the resolved run directory before executing the squad
