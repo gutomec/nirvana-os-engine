@@ -88,6 +88,12 @@ describe("manifestVersion", () => {
     expect(manifestVersion(dir, "business")).toBe("2.1.0");
     expect(manifestVersion(dir, "squad")).toBeNull();
   });
+  test("reads a clone manifest, whose fields sit under `manifest:`", () => {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "nrv-floor-clone-")));
+    roots.push(dir);
+    fs.writeFileSync(path.join(dir, "MANIFEST.yaml"), "manifest:\n  name: jane-doe\n  version: 2.0.0\n");
+    expect(manifestVersion(dir, "mind-clone")).toBe("2.0.0");
+  });
 });
 
 describe("gen adopts the manifest when the manifest is ahead", () => {

@@ -8,6 +8,16 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Clones e squads escopados no projeto: listagem, validação, versões e o link de dependências
+
+Quatro defeitos encontrados ao montar um squad, uma empresa e clones escopados num projeto:
+
+- O `nrv list-clones` lia só a biblioteca global de DNA, então os clones de `<projeto>/.nirvana/mind-clones` não apareciam. Agora ele percorre as raízes de clones do escopo resolvido, o projeto primeiro, e um clone do projeto vence um clone global de mesmo slug, como o index-clones e o dispatch já resolvem.
+- O `nrv validate mind-clone` admitia um `agent/DNA-CONFIG.yaml` que não era YAML válido, porque só conferia se o arquivo existia e não estava vazio. O novo erro `dna_config_parse` reprova uma configuração que não é lida como YAML ou não é um mapa.
+- O `nrv changes` lia a versão de um clone no topo do `MANIFEST.yaml`, mas o clone a guarda em `manifest.version`, então a versão do próprio clone nunca servia de piso para a versão do contrato. Agora ele lê as duas formas.
+- O link `node_modules` que o `nrv activate` e o `nrv deps link` põem num squad é encanamento local. O `.gitignore` da pasta agora nomeia `node_modules` (uma vez, sem duplicar), então a publicação por git e os empacotadores que respeitam o `.gitignore` o deixam de fora.
+
+
 ### O juiz reprova uma entrega por defeito material, nunca por estilo, e desliga com um flag
 
 O juiz LLM era instruído a aplicar a rubrica com rigor, evitar nota inflada e reprovar uma nota exatamente no limite, então entregas de texto que faziam o que o brief pedia voltavam para revisão por causa de redação. O veredito agora sai de uma regra, não do modelo: uma entrega só reprova quando o juiz acha um defeito material (uma parte pedida no brief faltando ou inutilizável, um fato errado ou inventado, uma contradição com o brief, trabalho declarado e não feito, um critério eliminatório quebrado) ou quando a nota fica abaixo do limite da rubrica, e uma nota igual ao limite passa. Estilo, acabamento e redação ficam registrados como notas no evento do gate e nunca viram trabalho de revisão sozinhos; a revisão corrige primeiro os itens materiais, depois os médios. Premissas declaradas e escolhas que o brief deixou em aberto não são defeitos. Uma chamada do juiz que falha ou não devolve um veredito utilizável não reprova mais o arquivo: as rubricas heurísticas decidem, como acontece com o juiz desligado.

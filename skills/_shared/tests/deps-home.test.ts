@@ -113,6 +113,16 @@ describe("consumers resolve by symlink, and a real tree is never clobbered", () 
     expect(D.link(consumer).status).toBe("already_linked");
   });
 
+  test("the link is kept out of what gets published: .gitignore names node_modules once", async () => {
+    const D = await load();
+    const consumer = join(home, "squads", "ignored");
+    mkdirSync(consumer, { recursive: true });
+    writeFileSync(join(consumer, ".gitignore"), "output/");
+    D.link(consumer);
+    D.link(consumer);
+    expect(readFileSync(join(consumer, ".gitignore"), "utf8")).toBe("output/\nnode_modules\n");
+  });
+
   test("an existing real node_modules is reported, not deleted", async () => {
     const D = await load();
     const consumer = join(home, "squads", "occupied");

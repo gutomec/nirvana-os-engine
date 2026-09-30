@@ -36,7 +36,7 @@ describe("the catalog", () => {
     const baselineable = mindCloneCriteria.filter((c) => c.baselineable).map((c) => c.id).sort();
     expect(baselineable).toEqual(["dna_layers_missing", "fonte_density_low", "one_liner_missing", "routing_block_missing", "self_retrieval_miss", "source_material_missing", "validation_verdict_missing"]);
     const errors = mindCloneCriteria.filter((c) => c.severity === "error").map((c) => c.id).sort();
-    expect(errors).toEqual(["agent_md_invalid", "artifact_missing", "category_numbered", "dna_schema_layers_incomplete", "domains_item_malformed", "manifest_name_mismatch", "manifest_parse", "manifest_schema", "surface_missing", "validation_verdict_unknown"]);
+    expect(errors).toEqual(["agent_md_invalid", "artifact_missing", "category_numbered", "dna_config_parse", "dna_schema_layers_incomplete", "domains_item_malformed", "manifest_name_mismatch", "manifest_parse", "manifest_schema", "surface_missing", "validation_verdict_unknown"]);
   });
 
   test("a complete clone has no finding at all", async () => {
@@ -70,6 +70,15 @@ describe("errors", () => {
       const r = await ids(dir);
       expect(r).toContain(`artifact_missing:${rel}`);
     }
+  });
+  test("dna_config_parse: a DNA-CONFIG.yaml that is not YAML, or not a mapping, is an error", async () => {
+    for (const text of ["dna_config:\n  name: [unclosed\n", "- just\n- a list\n"]) {
+      const dir = cloneFixture(root(), "jane-doe");
+      fs.writeFileSync(path.join(dir, "agent", "DNA-CONFIG.yaml"), text, "utf8");
+      const f = await finding(dir, "dna_config_parse");
+      expect(f?.severity).toBe("error");
+    }
+    expect(await ids(cloneFixture(root(), "jane-doe"))).not.toContain("dna_config_parse:agent/DNA-CONFIG.yaml");
   });
   test("agent_md_invalid uses the persona validator's errors", async () => {
     const dir = cloneFixture(root(), "jane-doe");

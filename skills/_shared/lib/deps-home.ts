@@ -182,7 +182,7 @@ export function link(dir: string): LinkResult {
     const st = fs.lstatSync(target);
     if (st.isSymbolicLink()) {
       const cur = fs.readlinkSync(target);
-      if (path.resolve(path.dirname(target), cur) === path.resolve(store)) return { status: "already_linked", target };
+      if (path.resolve(path.dirname(target), cur) === path.resolve(store)) { ignoreNodeModules(dir); return { status: "already_linked", target }; }
       fs.unlinkSync(target);   // points somewhere else — repoint it
     } else {
       return { status: "occupied", target };
@@ -191,10 +191,26 @@ export function link(dir: string): LinkResult {
   try {
     ensure(store);
     fs.symlinkSync(store, target, process.platform === "win32" ? "junction" : "dir");
+    ignoreNodeModules(dir);
     return { status: "linked", target };
   } catch (e) {
     return { status: "failed", target, error: (e as Error).message };
   }
+}
+
+/**
+ * The link is local plumbing, never content: a squad published from git, or
+ * packed by anything that honours `.gitignore`, must not carry it. So the
+ * directory's `.gitignore` names `node_modules` (added once, never duplicated).
+ * Best effort: a directory that cannot be written keeps its link all the same.
+ */
+export function ignoreNodeModules(dir: string): void {
+  const file = path.join(dir, ".gitignore");
+  try {
+    const text = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+    if (/^\/?node_modules\/?\s*$/m.test(text)) return;
+    fs.writeFileSync(file, `${text}${text && !text.endsWith("\n") ? "\n" : ""}node_modules\n`, "utf8");
+  } catch { /* best effort */ }
 }
 
 /** Remove a node_modules symlink we created (leaves real directories alone). */
