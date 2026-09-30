@@ -43,6 +43,31 @@ released version.
 - Match the style of the file you are editing. Surgical diffs: every changed
   line should trace to the change you are making.
 
+## Working in parallel cuts
+
+A cut (one branch, one agent) verifies its own area and hands back; the whole
+is verified once, on the integrated tree, by CI on the three systems and by
+whoever merges. That is the same gate charged once instead of once per slice:
+the full suite takes minutes, and every cut running it on code nobody has
+integrated yet multiplies that for no new information.
+
+The loop, in order of cost:
+
+```bash
+bun test <dir>          # while working: the tests of what you touch
+bun run test:fast       # whole-repo smell check, the fast files only
+bun run check:quick     # the cheap gates, during the work
+bun run test:<area>     # once, before handing back (harness, businesses, squads, shared, gate)
+bun run test:full       # once, on the integrated tree
+bun run check:all       # once, on the integrated tree
+```
+
+Every cut names the files it touched, what it did not verify, and the areas
+outside its own it suspects it may have broken. A failure of the whole goes
+back to the cut that produced it, in that cut's session. Write a large new
+file in blocks with the area's tests running between them rather than in one
+write.
+
 ## Pull requests
 
 1. Fork, branch from `main`.

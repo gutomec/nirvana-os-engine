@@ -87,3 +87,25 @@ Residuals that keep agentic mode the source of truth:
 - Stage 0 and Stage -1 remain keyword-based (pruned and gated, but not semantic).
 - The router has no notion of "the right mind-clone for this voice" — that is pure agentic reasoning; the script does not do it.
 - Without the dense fallback active, matching is lexical.
+
+## Scripted autopilot: routing fallbacks and exit codes
+
+The scripted autopilot (`nrv dispatch --auto ... --exec`, `nrv run`, `nrv auto`) resolves the same Business → Squad → agent-x cascade deterministically (`lib/dispatch-cascade.ts`):
+
+- A `no_match` route dispatches agent-x instead of exiting: NO_MATCH changes *who* executes, never *whether*.
+- An ambiguous route offers a numbered TTY choice or auto-picks the top candidate (`x_route_ambiguous_autopicked`); `--strict-route` fails instead.
+- A router transport failure rides the ladder retry → agent-x (`routing.on_router_failure: agent-x-only`, the default: a keyword match never substitutes for a broken agentic transport; `fail` dispatches nothing).
+- A brief that opens by naming an installed target (`use squad <slug>:` / `use business <slug>:`) goes straight to it with no router.
+- A squad-only route dispatches the squad (`lib/squad-exec.ts`), and every path flows into the fail-closed delivery pipeline (`lib/delivery-pipeline.ts`).
+
+Exit codes: `0` delivered · `1` run failed · `2` delivery WITHHELD (gate failed after the revision budget) · `3` INDETERMINATE (nothing judged: zero gateable artifacts, or a scaffold-only run without `--exec`) · `4` invalid args. A runtime that returns an error verdict but left artifacts on disk does not abandon them: the run is marked `failed` with its error (`x_runtime_errored_with_artifacts`, `meta.runtime_errored`) and recovers into the same verify → gate pipeline, so an errored run still ends delivered, withheld or indeterminate, never unjudged.
+
+## Run ledger & supervisor internals
+
+What happens to a run nobody closed. The orchestrator-facing side (who opens, who closes, `status` / `wait`) is in the harness SKILL; the kernel view is `docs/architecture/run-kernel-operations.md`.
+
+**Liveness.** `nrv supervisor sweep` finds expired leases, `nrv supervisor status|watch` inspects them, and every `nrv dispatch`/`nrv run` triggers a lazy background sweep on start (`maybeSweep`, under 20ms when nothing is pending). A scripted run is resumed or re-dispatched. An agentic run cannot be (no session to resume, no pid of ours to signal), so the sweep asks whether the trace has shown any life since it last looked: a beat on the row, an active or freshly delivered child run in the same project (the squad an employee dispatched), a hook event of the trace, or a write under `--outputs`. The audit records which one (`x_ledger_grace_extended.liveness_source`). With life, the lease is extended; with none, the run escalates at once, its artifacts go once through the same verify → gate path, and the human is notified with what was found. Long runs report in every 30 minutes (`x_ledger_progress_ping`; `NIRVANA_PROGRESS_PING_SEC=0` silences it).
+
+**Recovery ends in the delivery pipeline, never in a private verdict.** A re-dispatch hands its fresh output to `runDelivery()` (verify → gate → delivered | withheld | indeterminate), and a resume reads `nrv revise`'s exit code (0 delivered · 2 withheld · 3 indeterminate). Both run with zero auto-revisions: an unattended sweep must not spend LLM budget in a fix loop nobody is watching, so a failing gate is withheld and escalated for a human to run `nrv revise`. A re-dispatch that ran to completion is not capped by the completeness ceiling, which is for interrupted runs.
+
+**Salvage.** When the retries are exhausted the sweep marks the run `stalled` and escalates, and before it does, it salvages what the run left on disk: the artifacts go once through verify → quality gate, read-only (zero revisions, offline rubrics, no runtime spawn). Because an interrupted run's file set is unproven, `delivered` is reachable only when a manifest verification passes; otherwise the best outcome is `withheld` with the gate verdict attached. The escalation (`human_notification_required`, `x_ledger_notify_human`, the stderr block and the OS notification) carries the verdict: artifacts found, gateable count, gate outcome, decision, where the files are. The salvage runs once per run (`meta.salvaged`).

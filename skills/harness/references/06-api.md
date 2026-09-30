@@ -8,6 +8,7 @@ executor, and there never will be.
 ## Start
 
 ```bash
+nrv activate --all --only-declared                # install what the squads' dependencies.yaml declare
 nrv serve keygen --budget-usd 5 --daily-runs 50   # token is shown ONCE
 nrv serve --port 7777                             # binds 127.0.0.1
 ```
@@ -264,6 +265,18 @@ wildcard.
   schedule is re-discovered from `.webhook-delivery.jsonl` on startup, the
   same way orphaned runs are.
 - **Concurrency**: one run per session, `--max-concurrent` across sessions.
+- **Stopping a run**: `DELETE /v1/jobs/{trace}` stops a run in flight (SIGTERM,
+  state `cancelled`; `signalled` says whether a process was reached). The
+  envelope carries `runtime_errored` when the runtime died and the work was
+  judged anyway.
+- **What the child sees**: an allowlist of the server's environment, never a
+  copy of it (`execution.child_env = declared`: the OS base, the engine's
+  `NIRVANA_*` scope, the credentials of the runtime being run, and the
+  `env_vars` the installed squads declare); `NIRVANA_SERVE_CHILD_ENV=inherit`
+  restores the old shape. Every text artifact passes the `secret-leak` rubric,
+  and the envelope, the event stream and text downloads leave the server with
+  known secret values masked as `[redacted:NAME]`. Details:
+  `docs/architecture/serve-hardening.md`.
 - **Seats**: each machine running the engine consumes a seat of the pack
   license. A fleet of API workers needs a licensing decision before it
   scales (see API_PROJECTION_PROPOSAL.md §4).
