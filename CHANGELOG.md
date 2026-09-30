@@ -115,6 +115,13 @@ Every dispatched worker (the squad, agent-x, the business intake and each team s
 - `session.json` records the folder a session started in and `nrv revise` resumes from there, since Claude Code and Gemini CLI keep a session under its working directory. A run from before this change has no record and resumes as before.
 - Codex reads `AGENTS.md` only from its cwd when the project is not a git repository, so in that case its run-folder line names the project's `AGENTS.md`.
 
+### A business can run as one session, with its seats as subagents
+
+A business run is a director that picks a chain of seats, then one fresh session per seat, one after the other. Seats that do not depend on each other still wait for each other, and every session rereads what the one before it read. `execution.business_mode` (`NIRVANA_BUSINESS_MODE`) adds the other shape as an opt-in. With `session`, the business runs as one headless session that receives the request verbatim and a map of the business instead of its content: the folder, each seat's file, role, superior, voices and squads, the router's squads and criteria of done when it gave them, and the memory directories. The session assembles only the seats the request needs, runs each as a subagent of its own runtime, in parallel when one does not need another's output, and writes a participation file at the end. The default stays `chain`, and `--team`, `--single` and a gauntlet request still choose the shape outright.
+
+That session is the one dispatch that keeps the runtime's subagent tool. It runs as the business, with the business folder, its seats' clone directories, the router's squads and the memory granted; every other worker keeps the deny. Its `dispatch_business` names the mode instead of the intake seat. The quality gate, the judge and revisions run as before.
+
+Seats are credited from evidence. On Claude Code the session registers a hook for its own run (`claude --settings`, through a new `settingsFile` driver option), and each subagent call becomes an `x_seat_subagent` event naming the seat it worked as, recognized by the seat file its prompt starts with; an ambiguous call stays unattributed. A seat with a recorded call is credited `recorded`. A seat only the participation file names is credited `declared`, which is the only evidence on runtimes without that hook, and a seat declared as a subagent with no recorded call is named in `x_business_session_receipt`. A seat with neither is not credited.
 
 ## 0.14.8 — 2026-09-27
 

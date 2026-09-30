@@ -115,6 +115,13 @@ Todo executor despachado (o squad, o agent-x, o intake da empresa e cada cargo d
 - O `session.json` registra a pasta onde a sessão começou e o `nrv revise` retoma dali, porque o Claude Code e o Gemini CLI guardam a sessão pelo diretório de trabalho. Uma execução de antes desta mudança não tem esse registro e retoma como antes.
 - O Codex lê o `AGENTS.md` só do cwd quando o projeto não é um repositório git, então nesse caso a linha da pasta da execução aponta o `AGENTS.md` do projeto.
 
+### Uma empresa pode rodar como uma sessão só, com os cargos como subagentes
+
+Uma execução de empresa é um diretor que escolhe uma cadeia de cargos e depois uma sessão nova por cargo, um depois do outro. Cargos que não dependem um do outro esperam um pelo outro mesmo assim, e cada sessão relê o que a anterior leu. `execution.business_mode` (`NIRVANA_BUSINESS_MODE`) acrescenta a outra forma, por opção. Com `session`, a empresa roda como uma sessão headless que recebe o pedido na íntegra e um mapa da empresa em vez do conteúdo dela: a pasta, o arquivo de cada cargo com função, superior, vozes e squads, os squads e os critérios de pronto do roteador quando ele os deu, e as pastas de memória. A sessão monta só os cargos que o pedido pede, roda cada um como subagente do próprio runtime, em paralelo quando um não precisa da saída do outro, e grava um arquivo de participação no fim. O padrão continua `chain`, e `--team`, `--single` e um pedido de gauntlet ainda escolhem a forma diretamente.
+
+Essa sessão é o único despacho que mantém a ferramenta de subagentes do runtime. Ela roda como a empresa, com a pasta da empresa, as pastas dos clones dos cargos, os squads do roteador e a memória liberados; todo outro executor continua com a negação. O `dispatch_business` dela traz o modo em vez do cargo de intake. O quality gate, o juiz e as revisões rodam como antes.
+
+Os cargos são creditados por evidência. No Claude Code a sessão registra um hook só para a própria execução (`claude --settings`, por uma nova opção `settingsFile` do driver), e cada chamada de subagente vira um evento `x_seat_subagent` com o cargo em que ela trabalhou, reconhecido pelo arquivo do cargo com que o prompt começa; uma chamada ambígua fica sem atribuição. Um cargo com chamada registrada é creditado `recorded`. Um cargo que só o arquivo de participação nomeia é creditado `declared`, que é a única evidência nos runtimes sem esse hook, e um cargo declarado como subagente sem chamada registrada é nomeado em `x_business_session_receipt`. Um cargo sem nenhum dos dois não é creditado.
 
 ## 0.14.8 — 2026-09-27
 
