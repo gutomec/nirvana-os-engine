@@ -59,6 +59,10 @@ The agent-x dispatch block states that the folders of other runs beside its own 
 
 
 
+### A leaner orchestrator skill
+
+`skills/harness/SKILL.md`, which every orchestrating session reads in full, went from 79 KB to 57 KB with every rule kept. Incident stories and dated anecdotes became one-clause reasons, and the measurements the tests pin as evidence stay. Material another file already carries moved there with a one-line pointer: the engine's own test loop for parallel cuts to `CONTRIBUTING.md`, the scripted autopilot's exit codes and the supervisor's liveness, recovery and salvage internals to `references/05-subsystems.md`, and the `nrv serve` details to `references/06-api.md`. The two overlapping team-mode blocks are one. The skill no longer claims a scripted child is killed at 20 minutes (the driver has no default ceiling), no longer disagrees with itself on how many finalists get full manifests (Pass 2 opens the finalists, typically three to six), and no longer tells a dispatched entity it may recruit recursively, which the dispatch-role matrix forbids.
+
 ## 0.14.8 — 2026-09-27
 
 ### A closed run stays closed, and a lookup never starts work

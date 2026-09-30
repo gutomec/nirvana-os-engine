@@ -71,7 +71,7 @@ Três consequências para o Nirvana, e nenhuma é opcional:
    notificação do runtime. É precisamente o cenário para o qual o run-ledger e o
    supervisor foram construídos: sem callback automático, a prova de vida é a
    atividade em disco sob `--outputs`, o lease vence, e o supervisor escala e
-   avisa. Ver `harness/SKILL.md` §Run ledger & supervisor.
+   avisa. Ver `harness/references/05-subsystems.md` §Run ledger & supervisor internals.
 3. **O contrato de invocação não pode morar num arquivo de projeto**, porque o
    OpenClaw não lê nenhum. Ele mora na skill — que é justamente onde o Nirvana
    já o coloca desde 2026-08-13. Um projeto sem `nrv init` aqui não é degradação

@@ -59,6 +59,10 @@ O bloco de despacho do agent-x diz que as pastas de outras execuções ao lado d
 
 
 
+### Uma skill de orquestrador mais enxuta
+
+O `skills/harness/SKILL.md`, que toda sessão orquestradora lê inteiro, caiu de 79 KB para 57 KB sem perder nenhuma regra. Histórias de incidente e casos datados viraram razões de uma oração, e as medições que os testes fixam como evidência ficaram. O que outro arquivo já carregava foi para lá, com um ponteiro de uma linha: o ciclo de testes do próprio engine para cortes paralelos foi para o `CONTRIBUTING.md`, os códigos de saída do piloto automático e os detalhes internos de vida, recuperação e salvamento do supervisor foram para o `references/05-subsystems.md`, e os detalhes do `nrv serve` foram para o `references/06-api.md`. Os dois blocos sobrepostos do modo equipe viraram um. A skill deixou de afirmar que um filho do caminho scriptado morre aos 20 minutos (o driver não tem teto padrão), deixou de se contradizer sobre quantos finalistas recebem o manifesto inteiro (a segunda passada abre os finalistas, tipicamente três a seis) e deixou de dizer a uma entidade despachada que ela pode recrutar recursivamente, o que a matriz de papéis de despacho proíbe.
+
 ## 0.14.8 — 2026-09-27
 
 ### Run fechado continua fechado, e consulta nunca começa trabalho
