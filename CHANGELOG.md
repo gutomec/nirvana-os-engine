@@ -6,6 +6,12 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### The loop guard counts repeats per target
+
+The orchestrator skill told every revision to tick `nrv guard tick --action revision`, one fixed signature for all of them. Three seats revised once each read as one action repeated three times, tripped `repeated_action` and blocked a run that was not looping. The skill now asks for a signature that names the target (`--action revision:<seat>`, `retry:<squad>`), so the guard stops only when the same target is revised three times; the 12-step ceiling is unchanged.
+
 ## 0.14.9 — 2026-09-30
 
 ### Project-scoped clones and squads: listing, validation, versions and the dependency link

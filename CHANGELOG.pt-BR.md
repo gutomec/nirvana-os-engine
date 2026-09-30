@@ -6,6 +6,12 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Não lançado
+
+### O disjuntor de laço conta repetições por alvo
+
+A skill do orquestrador mandava toda revisão registrar `nrv guard tick --action revision`, uma assinatura fixa para todas. Três cargos revisados uma vez cada viravam uma ação repetida três vezes, disparavam `repeated_action` e travavam uma execução que não estava em laço. A skill agora pede uma assinatura com o alvo (`--action revision:<cargo>`, `retry:<squad>`), então o disjuntor só para quando o mesmo alvo é revisado três vezes; o teto de 12 passos não muda.
+
 ## 0.14.9 — 2026-09-30
 
 ### Clones e squads escopados no projeto: listagem, validação, versões e o link de dependências
