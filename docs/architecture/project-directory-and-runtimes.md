@@ -17,9 +17,15 @@ including the two whose home is not the current directory.
 4. `~/.harness-logs/` when nothing above applies
 
 "Inside a project" is decided by `project-root.js`: walk up from the process
-**cwd** until a directory carries `.nirvana/`, stopping at `$HOME` (a stray
-`~/.nirvana` is the engine's install, never a project). `NIRVANA_PROJECT_ROOT`
-names the root explicitly when cwd cannot.
+**cwd** until a directory holds `.nirvana/project.yaml`, stopping at `$HOME`
+(`~/.nirvana` is the engine's install, never a project). `nrv init` writes that
+file; `nrv init --adopt` writes only that file for a folder that already holds
+work. `.git`, `.env`, `package.json`, `pyproject.toml` and a bare `.nirvana/` do
+not make a project: every repository has one of them, and reading them as a
+project sent run outputs to the root of unrelated repositories.
+`NIRVANA_PROJECT_ROOT` names the root explicitly when cwd cannot. With no project
+in reach, run outputs go to `<NIRVANA_HOME|HOME>/.nirvana/outputs/` and logs to
+`~/.harness-logs/`.
 
 So the invariant a runtime has to satisfy is small: its shell and file tools run
 with cwd inside the project, or the variable is set. Then `nrv` commands the

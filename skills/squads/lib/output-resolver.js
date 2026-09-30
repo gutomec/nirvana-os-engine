@@ -19,15 +19,10 @@ const projectRootLib = require('../../_shared/lib/project-root.js');
 
 const OUTPUT_DIR_NAME = '.squads-outputs';
 
-// Kept intentionally in sync with _shared/lib/scope.ts SCOPE_MARKERS so this
-// resolver picks the SAME project root as the rest of the system.
-const PROJECT_ROOT_MARKERS = [
-  '.env',
-  '.nirvana',
-  '.git',
-  'package.json',
-  'pyproject.toml',
-];
+// What a project is comes from project-root.js, so this resolver picks the
+// SAME project root as the rest of the system. Exported for callers that read
+// the list; it is the shared definition, never a copy.
+const PROJECT_ROOT_MARKERS = projectRootLib.DEFAULT_MARKERS;
 
 const README_TEMPLATE = `# Squad Outputs
 
@@ -46,8 +41,8 @@ Convention: §16bis of SQUAD_PROTOCOL_V4.md
 class OutputResolver {
   /**
    * Resolve the project root directory.
-   * Priority: $NIRVANA_PROJECT_ROOT > $SQUADS_PROJECT_ROOT > walk-up to marker > cwd()
-   * Root detection is intentionally kept in sync with _shared/lib/scope.ts.
+   * Priority: $NIRVANA_PROJECT_ROOT > $SQUADS_PROJECT_ROOT > the nearest declared
+   * project > the engine's store (project-root.js globalStoreDir).
    */
   resolveProjectRoot(startDir) {
     // 1. Environment variable override (NIRVANA_PROJECT_ROOT wins, matching scope.ts)
@@ -69,13 +64,13 @@ class OutputResolver {
     // Windows shell (PowerShell/cmd.exe use `%USERPROFILE%`), silently
     // disabling the guard there.
     const start = path.resolve(startDir || process.cwd());
-    const found = projectRootLib.findProjectRoot(start, { markers: PROJECT_ROOT_MARKERS });
+    const found = projectRootLib.findProjectRoot(start);
     if (found) return found;
 
-    // 3. Fallback to startDir, but never HOME or fs root — fall through to cwd.
-    if (!projectRootLib.isInvalidProjectRoot(start)) return start;
-    const cwd = path.resolve(process.cwd());
-    return !projectRootLib.isInvalidProjectRoot(cwd) ? cwd : start;
+    // 3. No project: the engine's store, the same fallback the dispatcher and
+    // scope.ts use for run outputs. This used to be the start directory, so a
+    // squad run from any folder planted `.squads-outputs/` in it.
+    return projectRootLib.globalStoreDir();
   }
 
   /**

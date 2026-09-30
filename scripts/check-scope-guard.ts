@@ -67,6 +67,7 @@ function employeePrompt(): string {
   const business = path.join(projectRoot, ".nirvana", "businesses", "fixture-business");
   fs.mkdirSync(path.join(business, "employees"), { recursive: true });
   fs.writeFileSync(path.join(projectRoot, ".env"), "NIRVANA_SCOPE=project\n");
+  fs.writeFileSync(path.join(projectRoot, ".nirvana", "project.yaml"), "{}\n");
   fs.writeFileSync(path.join(business, "business.yaml"), "name: fixture-business\ndescription: a fixture business\n");
   fs.writeFileSync(path.join(business, "employees", "analyst.md"), "# Analyst\n\nDoes the work.\n");
   return buildEmployeePrompt({ business_slug: "fixture-business", employee: "analyst", project_dir: projectRoot, brief: BRIEF, trace_id: "scope-guard-gate" });

@@ -18,6 +18,8 @@ describe("the seat audit is one event per line", () => {
   afterAll(() => rmSync(R, { recursive: true, force: true }));
 
   writeFileSync(join(R, ".env"), "NIRVANA_SCOPE=project\n", "utf8");
+  mkdirSync(join(R, ".nirvana"), { recursive: true });
+  writeFileSync(join(R, ".nirvana", "project.yaml"), "{}\n", "utf8");
   const biz = join(R, ".nirvana", "businesses", "audit-co");
   mkdirSync(join(biz, "employees"), { recursive: true });
   writeFileSync(join(biz, "business.yaml"), "name: audit-co\ndescription: a fixture business\n", "utf8");

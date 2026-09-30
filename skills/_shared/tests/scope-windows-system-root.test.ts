@@ -29,8 +29,8 @@ describe("system directories are never project roots", () => {
     const cwd = path.join(systemRoot, "System32");
 
     try {
-      mkdirSync(cwd);
-      writeFileSync(path.join(cwd, "package.json"), "{}");
+      mkdirSync(path.join(cwd, ".nirvana"), { recursive: true });
+      writeFileSync(path.join(cwd, ".nirvana", "project.yaml"), "{}\n");
       process.env.SystemRoot = systemRoot;
 
       expect(resolveScope({ cwd }).projectRoot).toBeNull();
@@ -64,7 +64,8 @@ describe("system directories are never project roots", () => {
     // guard must not swallow the normal case it exists to protect.
     const proj = mkdtempSync(path.join(os.tmpdir(), "nrv-real-project-"));
     try {
-      writeFileSync(path.join(proj, "package.json"), "{}");
+      mkdirSync(path.join(proj, ".nirvana"), { recursive: true });
+      writeFileSync(path.join(proj, ".nirvana", "project.yaml"), "{}\n");
       expect(resolveScope({ cwd: proj }).projectRoot).not.toBeNull();
     } finally {
       rmSync(proj, { recursive: true, force: true });

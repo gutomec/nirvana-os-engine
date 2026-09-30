@@ -35,6 +35,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { parseArgs, EXIT, log, paths } from "../lib/bun-helpers.ts";
 import { ProjectService } from "../../harness/lib/control-plane/project-service.ts";
+import { isInvalidProjectRoot } from "../lib/project-root.js";
 import { openclawAgentFor, openclawBindCommand } from "../lib/openclaw.ts";
 import { detectOrca, orcaHostActive, orcaRegisterProject, orcaSetWorkspace, resolveOrcaExecutable } from "../lib/orca.ts";
 
@@ -238,6 +239,8 @@ USAGE
   bun init-project.ts <target_dir> --with-skills      symlink .agents/skills → ~/.nirvana/skills
   bun init-project.ts <target_dir> --copy             embed a snapshot of all skills (portable)
   bun init-project.ts <target_dir> --link             re-run skill linking (no-op without --with-skills)
+  bun init-project.ts [target_dir] --adopt            make an existing folder a project: writes ONLY
+                                   .nirvana/project.yaml (default: the current directory; idempotent)
   bun init-project.ts <target_dir> --force            overwrite existing files
   bun init-project.ts -h | --help                     this message
 
@@ -295,6 +298,24 @@ async function main() {
 
   if (flags.h || flags.help) {
     printHelp();
+    process.exit(EXIT.OK);
+  }
+
+  // --adopt: a folder that already holds Nirvana work (outputs, logs, a ledger)
+  // but was never declared a project. A project is exactly a folder with
+  // `.nirvana/project.yaml`, so adoption writes that file and nothing else.
+  if (flags.adopt) {
+    const dir = path.resolve(positional[0] || process.cwd());
+    if (isInvalidProjectRoot(dir)) {
+      log.fail(`${dir} cannot be a project (your home, the filesystem root, a shared temp root and the engine's own store never are)`);
+      process.exit(EXIT.INVALID_ARGS);
+    }
+    const projectService = new ProjectService();
+    const plan = projectService.planAdoption({ projectRoot: dir });
+    const project = projectService.adopt({ projectRoot: dir }, plan.plan_hash);
+    log.ok(plan.creates.length
+      ? `adopted: wrote ${plan.manifest_path} (${project.project_id}); nothing else was created or changed`
+      : `already a Nirvana project: ${plan.manifest_path} (${project.project_id})`);
     process.exit(EXIT.OK);
   }
 

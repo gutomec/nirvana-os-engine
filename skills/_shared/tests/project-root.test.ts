@@ -15,11 +15,17 @@ import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { findProjectRoot, isInvalidProjectRoot } from "../lib/project-root.js";
+import { findProjectRoot, isInvalidProjectRoot, isProjectRoot, outputsBaseDir, resolveProjectRoot, undeclaredProjectState } from "../lib/project-root.js";
 import { makeTempRoot } from "../../harness/tests/helpers/temp-dirs.ts";
 
 const roots: string[] = [];
 afterEach(() => { while (roots.length) fs.rmSync(roots.pop()!, { recursive: true, force: true }); });
+
+/** A folder declared a project, the way `nrv init` / `nrv init --adopt` leave it. */
+function declare(dir: string): void {
+  fs.mkdirSync(path.join(dir, ".nirvana"), { recursive: true });
+  fs.writeFileSync(path.join(dir, ".nirvana", "project.yaml"), "{}\n");
+}
 
 function fixture() {
   const root = makeTempRoot("nrv-project-root-");
@@ -53,7 +59,7 @@ describe("findProjectRoot — a shared temp root is never a project either", () 
     const root = makeTempRoot("nrv-under-temp-");
     roots.push(root);
     const proj = path.join(root, "a-real-project");
-    fs.mkdirSync(path.join(proj, ".nirvana"), { recursive: true });
+    declare(proj);
     const start = path.join(proj, "src", "deep");
     fs.mkdirSync(start, { recursive: true });
     expect(findProjectRoot(start)).toBe(fs.realpathSync(proj));
@@ -77,7 +83,7 @@ describe("findProjectRoot — HOME is never a project, whatever is inside it", (
     const { home } = fixture();
     const proj = path.join(home, "work", "my-project");
     fs.mkdirSync(path.join(proj, "sub"), { recursive: true });
-    fs.mkdirSync(path.join(proj, ".git"));
+    declare(proj);
     expect(findProjectRoot(path.join(proj, "sub"), { home })).toBe(proj);
   });
 
@@ -85,7 +91,7 @@ describe("findProjectRoot — HOME is never a project, whatever is inside it", (
     const { root, home } = fixture();
     const proj = path.join(root, "other", "project");
     fs.mkdirSync(path.join(proj, "sub"), { recursive: true });
-    fs.mkdirSync(path.join(proj, ".env"));
+    declare(proj);
     expect(findProjectRoot(path.join(proj, "sub"), { home })).toBe(proj);
   });
 
@@ -96,15 +102,13 @@ describe("findProjectRoot — HOME is never a project, whatever is inside it", (
     expect(isInvalidProjectRoot(fsRoot)).toBe(true);
   });
 
-  test("markers are caller-configurable — handoff.js/wiki-lint.js's narrower 2-marker list", () => {
+  test("a lookup for something that is not a project passes its own marker (validators/limits.ts)", () => {
     const { root, home } = fixture();
-    const proj = path.join(root, "narrow-project");
-    fs.mkdirSync(proj, { recursive: true });
-    fs.writeFileSync(path.join(proj, "package.json"), "{}");
-    // package.json is NOT in the narrow marker list — must not match.
-    expect(findProjectRoot(proj, { home, markers: [".nirvana", ".git"] })).toBeNull();
-    fs.mkdirSync(path.join(proj, ".git"));
-    expect(findProjectRoot(proj, { home, markers: [".nirvana", ".git"] })).toBe(proj);
+    const dir = path.join(root, "with-config");
+    fs.mkdirSync(dir, { recursive: true });
+    expect(findProjectRoot(dir, { home, markers: [".nirvana-limits.yaml"] })).toBeNull();
+    fs.writeFileSync(path.join(dir, ".nirvana-limits.yaml"), "{}");
+    expect(findProjectRoot(dir, { home, markers: [".nirvana-limits.yaml"] })).toBe(dir);
   });
 
   test("no project in reach returns null, not a guess", () => {
@@ -126,4 +130,63 @@ test("the engine home (~/.nirvana) is never a project root, even with the deps s
   expect(isInvalidProjectRoot(engineHome, { home })).toBe(true);
   expect(findProjectRoot(path.join(engineHome, "outputs", "run-1"), { home })).toBeNull();
   fs.rmSync(home, { recursive: true, force: true });
+});
+
+describe("a project is declared, never inferred", () => {
+  // Every repository carries `.git`, `package.json`, `.env` or `pyproject.toml`,
+  // and hooks left bare `.nirvana/` folders behind. Reading any of those as a
+  // project made a repository's root the project of every command run inside it.
+  test("a repository with .git, package.json, .env, pyproject.toml and a bare .nirvana is not a project", () => {
+    const { root, home } = fixture();
+    const repo = path.join(root, "some-repo");
+    fs.mkdirSync(path.join(repo, ".git"), { recursive: true });
+    fs.mkdirSync(path.join(repo, ".nirvana", "logs"), { recursive: true });
+    for (const f of ["package.json", ".env", "pyproject.toml"]) fs.writeFileSync(path.join(repo, f), "");
+    fs.mkdirSync(path.join(repo, "src"), { recursive: true });
+    expect(findProjectRoot(path.join(repo, "src"), { home })).toBeNull();
+    expect(isProjectRoot(repo, { home })).toBe(false);
+  });
+
+  test(".nirvana/project.yaml makes it one", () => {
+    const { root, home } = fixture();
+    const repo = path.join(root, "declared-repo");
+    fs.mkdirSync(path.join(repo, ".git", "objects"), { recursive: true });
+    declare(repo);
+    expect(findProjectRoot(path.join(repo, ".git", "objects"), { home })).toBe(repo);
+    expect(isProjectRoot(repo, { home })).toBe(true);
+  });
+
+  test("NIRVANA_PROJECT_ROOT wins over the walk", () => {
+    const { root, home } = fixture();
+    const walked = path.join(root, "walked");
+    const pinned = path.join(root, "pinned");
+    declare(walked);
+    fs.mkdirSync(pinned, { recursive: true });
+    expect(resolveProjectRoot({ cwd: walked, env: { NIRVANA_PROJECT_ROOT: pinned }, home })).toBe(pinned);
+    expect(resolveProjectRoot({ cwd: walked, env: {}, home })).toBe(walked);
+  });
+
+  test("a pinned root that can never be a project (HOME) resolves to none, not to a project", () => {
+    const { home } = fixture();
+    expect(resolveProjectRoot({ cwd: home, env: { NIRVANA_PROJECT_ROOT: home }, home })).toBeNull();
+  });
+
+  test("outputs go to <project>/outputs, or to the engine's store when there is no project", () => {
+    expect(outputsBaseDir("/work/proj")).toBe(path.join("/work/proj", "outputs"));
+    expect(outputsBaseDir(null, { HOME: "/h" })).toBe(path.join("/h", ".nirvana", "outputs"));
+    expect(outputsBaseDir(null, { HOME: "/h", NIRVANA_HOME: "/n" })).toBe(path.join("/n", ".nirvana", "outputs"));
+  });
+
+  test("a folder holding Nirvana state without project.yaml is reported for adoption", () => {
+    const { root, home } = fixture();
+    const legacy = path.join(root, "legacy-project");
+    fs.mkdirSync(path.join(legacy, ".nirvana", "logs"), { recursive: true });
+    fs.writeFileSync(path.join(legacy, ".nirvana", "run-kernel.sqlite"), "");
+    fs.mkdirSync(path.join(legacy, "src"), { recursive: true });
+    const found = undeclaredProjectState(path.join(legacy, "src"), { home });
+    expect(found?.dir).toBe(fs.realpathSync(legacy));
+    expect(found?.state).toEqual(expect.arrayContaining(["logs", "run-kernel.sqlite"]));
+    declare(legacy);
+    expect(undeclaredProjectState(path.join(legacy, "src"), { home })).toBeNull();
+  });
 });

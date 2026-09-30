@@ -49,10 +49,11 @@ import {
   type LedgerHandle, type RunRow,
 } from "../lib/run-ledger.ts";
 
-/** Two real projects on disk: a marker each, exactly as the resolver finds one. */
+/** Two real projects on disk: a declaration each, exactly as the resolver finds one. */
 function makeProject(name: string): string {
   const dir = path.join(TMP, name);
-  fs.mkdirSync(path.join(dir, ".git"), { recursive: true });
+  fs.mkdirSync(path.join(dir, ".nirvana"), { recursive: true });
+  fs.writeFileSync(path.join(dir, ".nirvana", "project.yaml"), "{}\n");
   // The ledger's OWN normalizer, never a hand-rolled realpath: macOS hands out
   // /var/folders/… for a /private/var/folders/… dir, and a Windows runner hands
   // out C:\Users\RUNNER~1\… for C:\Users\runneradmin\… . `fs.realpathSync` collapses
@@ -98,15 +99,15 @@ describe("the root a process is serving", () => {
     });
   });
 
-  test("without the env var, the first marker-bearing ancestor of cwd", () => {
+  test("without the env var, the nearest declared ancestor of cwd", () => {
     const nested = path.join(PROJ_B, "outputs", "trace-1", "squads", "x");
     fs.mkdirSync(nested, { recursive: true });
     expect(findProjectRootFrom(nested)).toBe(PROJ_B);
   });
 
   test("a path that never had a marker resolves to no project", () => {
-    // TMP itself carries no .git/.env/.nirvana/package.json; HOME and / are
-    // never projects, so the walk runs out.
+    // TMP itself was never declared a project; HOME and / are never projects,
+    // so the walk runs out.
     expect(findProjectRootFrom(TMP)).toBeNull();
   });
 
@@ -129,16 +130,17 @@ describe("the root a process is serving", () => {
     const fakeHome = path.join(TMP, "fake-home");
     const start = path.join(fakeHome, "AppData", "Local", "Temp", "some-fixture");
     fs.mkdirSync(start, { recursive: true });
-    // A marker one level ABOVE fakeHome — real, unrelated ancestry the walk
-    // must never reach once it has climbed through HOME.
-    fs.writeFileSync(path.join(TMP, "package.json"), "{}");
+    // A declared project one level ABOVE fakeHome — real, unrelated ancestry
+    // the walk must never reach once it has climbed through HOME.
+    fs.mkdirSync(path.join(TMP, ".nirvana"), { recursive: true });
+    fs.writeFileSync(path.join(TMP, ".nirvana", "project.yaml"), "{}\n");
 
     const before = process.env.HOME;
     process.env.HOME = fakeHome;
     try {
       expect(findProjectRootFrom(start)).toBeNull();
     } finally {
-      fs.rmSync(path.join(TMP, "package.json"), { force: true });
+      fs.rmSync(path.join(TMP, ".nirvana", "project.yaml"), { force: true });
       if (before === undefined) delete process.env.HOME;
       else process.env.HOME = before;
     }

@@ -17,6 +17,8 @@ afterAll(() => rmSync(R, { recursive: true, force: true }));
 
 writeFileSync(join(R, ".env"), "NIRVANA_SCOPE=project\n", "utf8");
 mkdirSync(join(R, ".nirvana"), { recursive: true });
+writeFileSync(join(R, ".nirvana", "project.yaml"), "{}\n", "utf8");
+mkdirSync(join(R, ".nirvana"), { recursive: true });
 const agentDir = join(R, "dna", "fixture-voice", "agent");
 mkdirSync(agentDir, { recursive: true });
 const AGENT = join(agentDir, "AGENT.md");

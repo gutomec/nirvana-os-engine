@@ -135,11 +135,13 @@ export function globalEnvFiles(): string[] {
   ];
 }
 
+/** The project a cascade call serves (project-root.js: the nearest declared
+ *  project), or the start directory itself when there is none. It used to look
+ *  for `.env`/`.git` first, so a run directory nested in any repository read
+ *  the repository's `.env` and wrote its spend tracker at the repository root. */
 export function resolveCascadeRoot(start: string): string {
   const startAbs = path.resolve(start);
-  return findProjectRoot(startAbs, { markers: [".env", ".git"] })
-    ?? findProjectRoot(startAbs, { markers: [".nirvana"] })
-    ?? startAbs;
+  return findProjectRoot(startAbs) ?? startAbs;
 }
 
 /** Read LLM_CASCADE from disk. CRITICAL: we deliberately ignore

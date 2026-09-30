@@ -67,6 +67,14 @@ O `skills/harness/SKILL.md`, que toda sessão orquestradora lê inteiro, caiu de
 
 Um filho `-p` termina junto com o último turno, e o que ele deixava em segundo plano (uma chamada de Bash ou um subagente com `run_in_background`, ou trabalho que o próprio CLI mandava para lá) morria junto. A diretiva autônoma já pedia ao agente que não fizesse isso; agora todo filho Claude sem terminal que o engine inicia (o executor, a camada leve `callHostAgent` e o turno do maestro do Glance) roda com `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, que o CLI documenta como o desligamento de toda a função de tarefas em segundo plano. Um valor que o usuário tenha definido é mantido.
 
+### Projeto é uma pasta com `.nirvana/project.yaml`, nunca um repositório que por acaso está em volta
+
+Uma pasta era projeto quando ela, ou o ancestral mais próximo abaixo da pasta do usuário, tinha qualquer um de `.env`, `.git`, `package.json`, `pyproject.toml` ou um diretório `.nirvana/`. Todo repositório tem um desses, então um comando rodado em qualquer lugar dentro de um repositório adotava a raiz do repositório como projeto: as saídas das execuções iam parar na raiz de um repositório sem relação, e os hooks das ferramentas criavam `.nirvana/` (logs, e registros no próximo index) em qualquer pasta onde um agente trabalhasse, e esse `.nirvana/` solto passava a ser marcador também. Projeto agora é o que foi declarado projeto: `NIRVANA_PROJECT_ROOT`, ou a pasta mais próxima com `.nirvana/project.yaml`, que o `nrv init` escreve. O `project-root.js` guarda essa definição única, e o ledger, as configurações, o escopo, os caminhos, os resolvedores de log e de estado, a cascata e o resolvedor de saídas dos squads leem dela em vez de manter listas de marcadores próprias.
+
+- `nrv init --adopt [pasta]` declara uma pasta que já tem trabalho: escreve `.nirvana/project.yaml` e mais nada, e uma segunda execução não muda nada. O `nrv doctor` aponta a pasta cujo `.nirvana/` guarda saídas, logs, um kernel ou registros sem esse arquivo, com o comando.
+- Sem projeto ao alcance, as saídas das execuções vão para `<NIRVANA_HOME|HOME>/.nirvana/outputs/` no dispatcher, nos scaffolders e no resolvedor de saídas dos squads (eles caíam no cwd, no store e no diretório de partida), o estado do despacho vai para o store, e o `nrv dispatch` mostra onde as saídas vão ficar antes de começar.
+- Um `NIRVANA_PROJECT_ROOT` que aponta para uma pasta que nunca pode ser projeto (a pasta do usuário, a raiz do sistema de arquivos, uma raiz temporária compartilhada, o store) resolve para nenhum projeto, então um dispatcher que não serve projeto nenhum nunca entrega a pasta do usuário como projeto aos filhos.
+- O indexador de clones se recusa a rodar numa pasta que não é projeto mas relocaliza a biblioteca no próprio `.env`: o Bun carrega esse arquivo em todo script, e sem registro de projeto para escrever a biblioteca teria substituído a global.
 
 ## 0.14.8 — 2026-09-27
 

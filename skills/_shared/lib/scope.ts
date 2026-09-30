@@ -25,9 +25,8 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as os from "node:os";
 import { paths } from "./bun-helpers.ts";
-import { findProjectRoot as sharedFindProjectRoot } from "./project-root.js";
+import { resolveProjectRoot as sharedResolveProjectRoot, outputsBaseDir } from "./project-root.js";
 
 export type ScopeMode = "global" | "project" | "merge";
 
@@ -48,18 +47,13 @@ interface SlugLocation {
   overridden?: boolean;
 }
 
-const SCOPE_MARKERS = [".env", ".nirvana", ".git", "package.json", "pyproject.toml"];
-
-// The walk itself (HOME/root/Windows-system-dir hardening, canonicalization
-// via realpathSync.native for the Windows 8.3-short-path case) lives in
-// project-root.js — the one implementation shared with paths.js, log-paths.ts,
-// handoff.js and wiki-lint.js. Imported as CJS (`.js`, not a local `.ts`
-// reimplementation) so this file's own dependency chain (bun-helpers.ts's
-// top-level `await import("bun")`) never has to be duplicated into the walk
-// to keep it in one place.
-function findProjectRoot(start: string): string | null {
-  return sharedFindProjectRoot(start, { markers: SCOPE_MARKERS });
-}
+// What a project is and the walk (HOME/root/Windows-system-dir hardening,
+// canonicalization via realpathSync.native for the Windows 8.3-short-path
+// case) live in project-root.js — the one definition shared with paths.js,
+// log-paths.js, handoff.js, wiki-lint.js, run-ledger.ts, settings.ts and
+// cascade.ts. Imported as CJS (`.js`, not a local `.ts` reimplementation) so
+// this file's own dependency chain (bun-helpers.ts's top-level
+// `await import("bun")`) never has to be duplicated into the walk.
 
 // Expand $VAR / ${VAR} using process.env + previously seen keys in the file.
 function expandEnvRefs(value: string, scope: Record<string, string>): string {
@@ -112,9 +106,7 @@ function cliScope(): ScopeMode | null {
 
 export function resolveScope(opts: { cwd?: string; explicitMode?: ScopeMode } = {}): ResolvedScope {
   const cwd = opts.cwd ?? process.cwd();
-  const projectRoot = process.env.NIRVANA_PROJECT_ROOT
-    ? path.resolve(process.env.NIRVANA_PROJECT_ROOT)
-    : findProjectRoot(cwd);
+  const projectRoot = sharedResolveProjectRoot({ cwd });
 
   // Layered config: defaults < .env (project) < process.env < CLI flag
   const dotenv = projectRoot ? loadDotenv(path.join(projectRoot, ".env")) : {};
@@ -279,8 +271,7 @@ export function outputsDir(scope: ResolvedScope): string {
       ? env
       : path.join(scope.projectRoot ?? process.cwd(), env);
   }
-  if (scope.projectRoot) return path.join(scope.projectRoot, "outputs");
-  return path.join(os.homedir(), ".nirvana", "outputs");
+  return outputsBaseDir(scope.projectRoot);
 }
 
 /**

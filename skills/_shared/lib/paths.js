@@ -41,19 +41,14 @@ const NIRVANA_HOME = envPath('NIRVANA_HOME') || HOME;
 const join = (...parts) => path.join(...parts);
 
 // ─────────────────────────────────────────────────────────────────────
-// Project root + .env detection. The walk itself lives in project-root.js
-// (the one implementation shared with scope.ts, log-paths.ts, handoff.js and
-// wiki-lint.js) — this file only supplies its own default marker list, kept
-// dependency-free otherwise so it stays loadable from CommonJS callers like
-// activator.js / registry.js without TS.
+// Project root + .env detection. What a project is, and the walk, live in
+// project-root.js (the one definition, shared with scope.ts, log-paths.js,
+// handoff.js, wiki-lint.js, run-ledger.ts, settings.ts, cascade.ts and the
+// squad output resolver). This file stays dependency-free otherwise so it is
+// loadable from CommonJS callers like activator.js / registry.js without TS.
 // ─────────────────────────────────────────────────────────────────────
 
-const SCOPE_MARKERS = projectRootLib.DEFAULT_MARKERS;
 const isInvalidProjectRoot = projectRootLib.isInvalidProjectRoot;
-
-function findProjectRoot(start) {
-  return projectRootLib.findProjectRoot(start, { markers: SCOPE_MARKERS });
-}
 
 // Expand $VAR and ${VAR} references using process.env + values seen earlier in
 // the same dotenv file. Falls back to the literal `$VAR` text only when no
@@ -92,9 +87,7 @@ function detectScope(opts = {}) {
     return { mode: opts.mode || 'global', projectRoot: null, dotenv: {} };
   }
   const cwd = opts.cwd || process.cwd();
-  const projectRoot = process.env.NIRVANA_PROJECT_ROOT
-    ? path.resolve(process.env.NIRVANA_PROJECT_ROOT)
-    : findProjectRoot(cwd);
+  const projectRoot = projectRootLib.resolveProjectRoot({ cwd });
   const dotenv = projectRoot ? loadDotenv(path.join(projectRoot, '.env')) : {};
   const cliMode = (() => {
     for (const a of (process.argv || []).slice(2)) {

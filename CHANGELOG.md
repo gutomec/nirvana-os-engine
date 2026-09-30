@@ -67,6 +67,14 @@ The agent-x dispatch block states that the folders of other runs beside its own 
 
 A `-p` child ends with its final turn, and anything it left in the background (a `run_in_background` Bash call or subagent, or work the CLI moved there on its own) died with it. The autonomous directive already told the agent not to; every headless Claude child the engine starts (the runner, the light `callHostAgent` layer and the Glance maestro turn) now runs with `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, which the CLI documents as turning off all background task functionality. A value the user set is kept.
 
+### A project is a folder with `.nirvana/project.yaml`, never a repository that happens to be around it
+
+A folder was a project when it, or its nearest ancestor below home, carried any of `.env`, `.git`, `package.json`, `pyproject.toml` or a `.nirvana/` directory. Every repository has one of those, so a command run anywhere inside a repository adopted the repository's root as the project: run outputs landed at the root of an unrelated repository, and the tool hooks created `.nirvana/` (logs, and registries on the next index) in any folder an agent worked in, after which that bare `.nirvana/` was itself a marker. A project is now what was declared one: `NIRVANA_PROJECT_ROOT`, or the nearest folder holding `.nirvana/project.yaml`, which `nrv init` writes. `project-root.js` holds that one definition, and the ledger, settings, scope, paths, log and state resolvers, the cascade and the squad output resolver read it instead of keeping marker lists of their own.
+
+- `nrv init --adopt [dir]` declares a folder that already holds work: it writes `.nirvana/project.yaml` and nothing else, and a second run changes nothing. `nrv doctor` names a folder whose `.nirvana/` holds outputs, logs, a kernel or registries without that file, with the command.
+- With no project in reach, run outputs go to `<NIRVANA_HOME|HOME>/.nirvana/outputs/` for the dispatcher, the scaffolders and the squad output resolver alike (they fell back to the cwd, the store and the start directory), dispatch state goes to the store, and `nrv dispatch` prints where the outputs will land before it starts.
+- A `NIRVANA_PROJECT_ROOT` naming a folder that can never be a project (home, the filesystem root, a shared temp root, the store) resolves to no project, so a dispatcher serving none never hands its children home as their project.
+- The clone indexer refuses to run in a folder that is not a project but relocates the library in its `.env`: Bun loads that file into every script, and with no project registry to write the library would have replaced the global one.
 
 ## 0.14.8 — 2026-09-27
 

@@ -46,10 +46,19 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-/** The marker files paths.js and scope.ts have always used. handoff.js and
- *  wiki-lint.js pass a narrower list (their own historical behaviour) via
- *  `opts.markers` — the walk hardening applies regardless of which list. */
-const DEFAULT_MARKERS = ['.env', '.nirvana', '.git', 'package.json', 'pyproject.toml'];
+/** What makes a directory a Nirvana project: the file `nrv init` writes (and
+ *  `nrv init --adopt` writes alone, for a folder that already holds work).
+ *
+ *  It used to be the first ancestor carrying any of `.env`, `.nirvana`, `.git`,
+ *  `package.json` or `pyproject.toml`. Every repository has one of those, so a
+ *  command run anywhere inside a repository adopted the repository's root as
+ *  the project: run outputs landed at the root of an unrelated repository, and
+ *  a hook writing an audit line created `.nirvana/` (logs, registries) in any
+ *  folder an agent happened to work in — after which that bare `.nirvana/` was
+ *  itself a marker. A project is now something that was declared one, never
+ *  something inferred from files every codebase has. */
+const PROJECT_MARKER = path.join('.nirvana', 'project.yaml');
+const DEFAULT_MARKERS = [PROJECT_MARKER];
 
 /** The OS's own resolver. `realpathSync.native` is the one that expands a
  *  Windows 8.3 short path; the JS `realpathSync` resolves symlinks but can
@@ -142,13 +151,14 @@ function isInvalidProjectRoot(dir, opts) {
 }
 
 /**
- * Walk up from `start` looking for a Nirvana project root marker.
+ * Walk up from `start` to the nearest Nirvana project root.
  *
  * @param {string} start
  * @param {{markers?: string[], home?: string}} [opts]
- *   `markers` — file/dir names that identify a project root (default: the
- *   five paths.js/scope.ts have always used). `home` overrides the resolved
- *   HOME, for tests.
+ *   `markers` — what to look for (default: `.nirvana/project.yaml`, the one
+ *   definition of a project). Only a lookup for something that is NOT a
+ *   project, such as a config file (validators/limits.ts), passes its own.
+ *   `home` overrides the resolved HOME, for tests.
  * @returns {string | null}
  */
 function findProjectRoot(start, opts) {
@@ -170,8 +180,100 @@ function findProjectRoot(start, opts) {
   return null;
 }
 
+/** Does `dir` hold a declared project? */
+function isProjectRoot(dir, opts) {
+  if (!dir || isInvalidProjectRoot(dir, opts)) return false;
+  return fs.existsSync(path.join(dir, PROJECT_MARKER));
+}
+
+/** `NIRVANA_PROJECT_ROOT` as a project root, or null when it is unset or names
+ *  a directory that can never be one. A dispatcher serving no project hands
+ *  its children the user's home as their root; read as a project, that home
+ *  would give every child a project `.env`, scope and ledger of its own. */
+function pinnedProjectRoot(env, opts) {
+  const pinned = (env || process.env).NIRVANA_PROJECT_ROOT;
+  if (!pinned) return null;
+  const resolved = path.resolve(pinned);
+  return isInvalidProjectRoot(resolved, opts) ? null : resolved;
+}
+
+/**
+ * The project this process serves: `NIRVANA_PROJECT_ROOT` when set (the caller
+ * named it; a dispatcher pins it for its children), else the walk from `cwd`.
+ * Null when there is none.
+ *
+ * @param {{cwd?: string, env?: Record<string, string|undefined>, home?: string}} [opts]
+ * @returns {string | null}
+ */
+function resolveProjectRoot(opts) {
+  const options = opts || {};
+  const env = options.env || process.env;
+  if (env.NIRVANA_PROJECT_ROOT) return pinnedProjectRoot(env, options);
+  return findProjectRoot(options.cwd || process.cwd(), options);
+}
+
+/** What a `.nirvana/` holds when real work happened in its folder. */
+const PROJECT_STATE = ['run-kernel.sqlite', 'state.db', 'logs', 'outputs',
+  '.squads-registry.json', '.businesses-registry.json', '.mind-clones-registry.json'];
+
+/**
+ * The nearest folder, from `start` up to HOME's boundary, whose `.nirvana/`
+ * holds project state but that was never declared a project (no
+ * `project.yaml`). Null when a declared project is reached first, or when
+ * nothing like that is in reach. It is what `nrv doctor` shows with the adopt
+ * command: such a folder was a project under the old marker rule, and stops
+ * being one under this one.
+ *
+ * @param {string} start
+ * @param {{home?: string}} [opts]
+ * @returns {{dir: string, state: string[]} | null}
+ */
+function undeclaredProjectState(start, opts) {
+  const options = opts || {};
+  let dir = canonical(path.resolve(start));
+  const home = homeDir(options);
+  const root = path.parse(dir).root;
+  while (dir !== root && !sameDir(dir, home) && !isUnder(home, dir)) {
+    if (!isInvalidProjectRoot(dir, options)) {
+      if (fs.existsSync(path.join(dir, PROJECT_MARKER))) return null;
+      const store = path.join(dir, '.nirvana');
+      if (fs.existsSync(store)) {
+        const state = PROJECT_STATE.filter((m) => fs.existsSync(path.join(store, m)));
+        if (fs.existsSync(path.join(dir, 'outputs'))) state.push('../outputs');
+        if (state.length) return { dir, state };
+      }
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
+/** The engine's own store, `<NIRVANA_HOME|HOME>/.nirvana`: where state lives
+ *  when no project is in reach. */
+function globalStoreDir(env) {
+  const e = env || process.env;
+  return path.join(e.NIRVANA_HOME || e.HOME || os.homedir(), '.nirvana');
+}
+
+/** Where run outputs go: `<project>/outputs`, or `<store>/outputs` when there
+ *  is no project. The one answer for the dispatcher, scope.ts and the squad
+ *  output resolver, which used to fall back to three different places (the
+ *  cwd, the store, the start directory). */
+function outputsBaseDir(projectRoot, env) {
+  return projectRoot ? path.join(projectRoot, 'outputs') : path.join(globalStoreDir(env), 'outputs');
+}
+
 module.exports = {
+  PROJECT_MARKER,
   DEFAULT_MARKERS,
+  isProjectRoot,
+  pinnedProjectRoot,
+  resolveProjectRoot,
+  undeclaredProjectState,
+  globalStoreDir,
+  outputsBaseDir,
   canonical,
   sameDir,
   isUnder,

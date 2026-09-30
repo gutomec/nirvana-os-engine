@@ -25,8 +25,10 @@ beforeEach(() => {
   delete process.env.HARNESS_LOGS_DIR;
   tmpA = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-replay-a-"));
   tmpB = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-replay-b-"));
-  fs.mkdirSync(path.join(tmpA, ".nirvana"), { recursive: true });
-  fs.mkdirSync(path.join(tmpB, ".nirvana"), { recursive: true });
+  for (const dir of [tmpA, tmpB]) {
+    fs.mkdirSync(path.join(dir, ".nirvana"), { recursive: true });
+    fs.writeFileSync(path.join(dir, ".nirvana", "project.yaml"), "{}\n");
+  }
 });
 afterEach(() => {
   if (savedLogsDir === undefined) delete process.env.HARNESS_LOGS_DIR;

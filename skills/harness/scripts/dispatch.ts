@@ -40,6 +40,7 @@ import { proxyEnrichBrief } from "../lib/brief-proxy.ts";
 import { resolveRoutingMode, routingModeOrigin } from "../../_shared/lib/routing-mode.ts";
 import { runTeam } from "../lib/team-orchestrator.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
+import { globalStoreDir, outputsBaseDir } from "../../_shared/lib/project-root.js";
 import { briefExcerpt } from "../../_shared/lib/brief-excerpt.ts";
 import { agenticRoute, type AgenticRouteDecision } from "../lib/agentic-router.ts";
 import { runWithCascade } from "../lib/cascade-runner.ts";
@@ -225,7 +226,16 @@ function defaultRegistries(): { squads: Record<string, unknown>; businesses: Rec
 //
 // Where a path still has to be scaffold-shaped (brief.md, the dispatch kernel,
 // the Gauntlet workspace) the variable is called `scaffoldRoot` and says so.
-const PROJECT_ROOT = runLedger.resolveProjectRoot() ?? path.resolve(process.cwd());
+//
+// Outside any project the engine's store is the state root: HOME stands in, so
+// every `<root>/.nirvana/…` path (the dispatch kernel, the run budget) is the
+// store itself, HOME is never read as a project by the log and state resolvers,
+// and the run's outputs go to `<store>/outputs/<pid>` (OUTPUTS_BASE) — the same
+// place scope.ts and the squad output resolver use. This used to be the cwd, so
+// a dispatch launched from any folder planted `outputs/` and `.nirvana/` in it.
+const DECLARED_PROJECT_ROOT = runLedger.resolveProjectRoot();
+const PROJECT_ROOT = DECLARED_PROJECT_ROOT ?? path.dirname(globalStoreDir());
+const OUTPUTS_BASE = outputsBaseDir(DECLARED_PROJECT_ROOT);
 
 const positional = extractPositional(process.argv.slice(2));
 // --auto: no business is named; the router picks the best one for the brief.
@@ -415,6 +425,12 @@ if (explicit.error) {
   console.error(`nrv dispatch: ${explicit.error}`);
   process.exit(4);
 }
+
+// Say where the work will land before any of it does. Outside a project that
+// is the engine's store, and the line names the command that makes one.
+console.log(c("dim", DECLARED_PROJECT_ROOT
+  ? `  project: ${DECLARED_PROJECT_ROOT} · outputs under ${OUTPUTS_BASE}`
+  : `  no Nirvana project here (no .nirvana/project.yaml; \`nrv init\` makes one) · outputs under ${OUTPUTS_BASE}`));
 
 // Named `emit` so check-audit-parity's literal emit-call scan sees every
 // dispatch-side emission.
@@ -1427,7 +1443,7 @@ if (pendingCascade?.kind === "judge-x") {
   const rt = runtimeDecision.runtime;
   const ts = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "");
   const pid = projectId || `proj-${ts}-judge-x`;
-  const scaffoldRoot = path.join(PROJECT_ROOT, "outputs", pid);
+  const scaffoldRoot = path.join(OUTPUTS_BASE, pid);
   const projDir = path.join(scaffoldRoot, "judge-x");
   fs.mkdirSync(projDir, { recursive: true });
   dispatchAudit.bindProjectRoot(PROJECT_ROOT);
@@ -1493,7 +1509,7 @@ if (pendingCascade?.kind === "agent-x") {
   const rt = runtimeDecision.runtime;
   const ts = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "");
   const pid = projectId || `proj-${ts}-agent-x`;
-  const scaffoldRoot = path.join(PROJECT_ROOT, "outputs", pid);
+  const scaffoldRoot = path.join(OUTPUTS_BASE, pid);
   const projDir = path.join(scaffoldRoot, "agent-x");
   fs.mkdirSync(projDir, { recursive: true });
   const briefPath = path.join(scaffoldRoot, "brief-enriched.md");

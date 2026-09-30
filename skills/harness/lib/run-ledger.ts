@@ -141,16 +141,13 @@ export interface RunRow {
 }
 
 // ── project scope ───────────────────────────────────────────────────────
-// The scope of a ledger operation is the project root the process is serving.
-// It is resolved exactly as the rest of the engine resolves it —
-// NIRVANA_PROJECT_ROOT, else the first ancestor of cwd carrying a project
-// marker — but the walk is repeated here instead of imported from
-// _shared/lib/scope.ts on purpose: run-ledger.ts is `require()`d from CJS
-// callers (handoff.js, brief-squad.ts, brief-business.ts), scope.ts's
-// dependency chain contains a top-level await, and Bun refuses to `require()`
-// an async module. Keep the two walks in step if the marker list changes.
-
-const PROJECT_MARKERS = [".env", ".nirvana", ".git", "package.json", "pyproject.toml"];
+// The scope of a ledger operation is the project root the process is serving,
+// resolved exactly as the rest of the engine resolves it: NIRVANA_PROJECT_ROOT,
+// else the nearest ancestor of cwd holding `.nirvana/project.yaml`. The
+// definition comes from _shared/lib/project-root.js (plain CJS, no top-level
+// await), never from scope.ts: run-ledger.ts is `require()`d from CJS callers
+// (handoff.js, brief-squad.ts, brief-business.ts), scope.ts's dependency chain
+// contains a top-level await, and Bun refuses to `require()` an async module.
 
 export type RealpathFn = (p: string) => string;
 
@@ -184,56 +181,19 @@ export function normalizeRoot(dir: string, realpath: RealpathFn = osRealpath): s
   }
 }
 
-/** Is `descendant` strictly inside `ancestor`? Both must already be
- *  normalized. Mirrors project-root.js's `isUnder` — case-insensitive on
- *  win32, where a path can arrive in 8.3 short form on one side. */
-function isStrictlyUnder(descendant: string, ancestor: string): boolean {
-  const prefix = ancestor.endsWith(path.sep) ? ancestor : ancestor + path.sep;
-  return process.platform === "win32"
-    ? descendant.toLowerCase().startsWith(prefix.toLowerCase())
-    : descendant.startsWith(prefix);
-}
-
-/** Walk up from `start` to the first directory carrying a project marker.
- *  HOME and the filesystem root are never projects — a stray marker in either
- *  would collapse every project into one scope. Missing directories are walked
- *  THROUGH, not stopped at: an outputs dir that was deleted still names the
- *  project it lived under.
- *
- * The walk STOPS as soon as it reaches HOME, or as soon as HOME becomes
- * strictly nested under the current directory: climbing further would leave
- * the boundary that contains HOME and enter real, unrelated ancestry above
- * it. On `os.tmpdir()` resolving *inside* HOME (the Windows CI runner shape),
- * a walk that starts in a temp fixture directory climbs through HOME's own
- * ancestry before it would reach the filesystem root — without this check it
- * keeps going and can match a marker up there instead of correctly reporting
- * "no project in reach" (see log-paths.ts's own history for the same fix). */
-const { isInvalidProjectRoot } = createRequire(import.meta.url)(
+/** Walk up from `start` to the nearest declared project (project-root.js).
+ *  HOME, the filesystem root, the shared temp roots and the engine's store are
+ *  never projects, and the walk stops at HOME's boundary. Missing directories
+ *  are walked THROUGH, not stopped at: an outputs dir that was deleted still
+ *  names the project it lived under. The result is normalized so two processes
+ *  serving one project produce the same root string. */
+const { findProjectRoot: sharedFindProjectRoot, pinnedProjectRoot: sharedPinnedProjectRoot } = createRequire(import.meta.url)(
   path.join(import.meta.dir, "..", "..", "_shared", "lib", "project-root.js"),
-) as { isInvalidProjectRoot: (dir: string) => boolean };
+) as { findProjectRoot: (start: string) => string | null; pinnedProjectRoot: (env: NodeJS.ProcessEnv) => string | null };
 
 export function findProjectRootFrom(start: string): string | null {
-  let cur = path.resolve(start);
-  const home = normalizeRoot(process.env.HOME || os.homedir());
-  for (let i = 0; i < 40; i++) {
-    const norm = normalizeRoot(cur);
-    if (norm === path.parse(norm).root) return null;
-    if (sameNormalizedRoot(norm, home)) return null;
-    if (isStrictlyUnder(home, norm)) return null;
-    // A shared temp ROOT is not a project, for the same reason HOME is not.
-    // The rule comes from project-root.js so the two walks cannot disagree:
-    // this file reimplemented the walk (see the note above findProjectRootFrom)
-    // and hardening only the shared copy left this one adopting `/private/tmp`
-    // as a project the moment an unrelated tool dropped a marker there.
-    if (isInvalidProjectRoot(norm)) return null;
-    for (const m of PROJECT_MARKERS) {
-      if (fs.existsSync(path.join(cur, m))) return norm;
-    }
-    const parent = path.dirname(cur);
-    if (parent === cur) return null;
-    cur = parent;
-  }
-  return null;
+  const found = sharedFindProjectRoot(path.resolve(start));
+  return found ? normalizeRoot(found) : null;
 }
 
 /** Compare two roots that ALREADY went through `normalizeRoot` — the marker
@@ -262,7 +222,8 @@ export function resolveProjectRoot(cwd?: string): string | null {
   const env = process.env.NIRVANA_PROJECT_ROOT || "";
   const key = `${env}\0${base}`;
   if (_rootMemo && _rootMemo.key === key) return _rootMemo.root;
-  const root = env ? normalizeRoot(env) : findProjectRootFrom(base);
+  const pinned = env ? sharedPinnedProjectRoot(process.env) : null;
+  const root = env ? (pinned ? normalizeRoot(pinned) : null) : findProjectRootFrom(base);
   _rootMemo = { key, root };
   return root;
 }

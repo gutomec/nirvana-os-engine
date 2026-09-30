@@ -39,6 +39,12 @@ function tmp(): string {
   return d;
 }
 
+/** A folder declared a project, the way `nrv init --adopt` leaves it. */
+function declare(dir: string): void {
+  fs.mkdirSync(path.join(dir, ".nirvana"), { recursive: true });
+  fs.writeFileSync(path.join(dir, ".nirvana", "project.yaml"), "{}\n");
+}
+
 /** One canonical clone: a directory named by its slug, with a MANIFEST.yaml. */
 function clone(root: string, slug: string): void {
   const dir = path.join(root, slug);
@@ -85,6 +91,7 @@ describe("a project scan never overwrites the global registry", () => {
     const project = path.join(home, "proj");
     const fixture = path.join(project, "fixture-dna");
     fs.mkdirSync(fixture, { recursive: true });
+    declare(project);
     fs.writeFileSync(path.join(project, ".env"), `DNA_LIBRARY=${fixture}\n`);
 
     const r = index(home, project);
@@ -105,12 +112,33 @@ describe("a project scan never overwrites the global registry", () => {
     const fixture = path.join(project, "fixture-dna");
     fs.mkdirSync(fixture, { recursive: true });
     clone(fixture, "project-only-clone");
+    declare(project);
     fs.writeFileSync(path.join(project, ".env"), `DNA_LIBRARY=${fixture}\n`);
 
     expect(index(home, project).status).toBe(0);
     const g = globalRegistry(home)!;
     expect(g.count).toBe(3);
     expect(g.roots.some((x) => x.includes("fixture-dna"))).toBe(false);
+  });
+});
+
+describe("a folder that is not a project cannot publish its library as the global one", () => {
+  // Bun loads the cwd's `.env` into the environment of every script it starts,
+  // so a folder whose `.env` relocates the library reaches the indexer as
+  // DNA_LIBRARY even when it is no project. Without a project there is no
+  // project registry to write, and the only target left is the global one.
+  test("the indexer refuses, and the global registry stays as it was", () => {
+    const { home } = homeWithLibrary(3);
+    const folder = path.join(home, "not-a-project");
+    const fixture = path.join(folder, "fixture-dna");
+    fs.mkdirSync(fixture, { recursive: true });
+    clone(fixture, "folder-only-clone");
+    fs.writeFileSync(path.join(folder, ".env"), `DNA_LIBRARY=${fixture}\n`);
+
+    const r = index(home, folder);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("nrv init --adopt");
+    expect(globalRegistry(home)?.count).toBe(3);
   });
 });
 
