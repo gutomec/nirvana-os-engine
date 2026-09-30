@@ -158,10 +158,10 @@ A squad is a portable multi-agent team with workflows:
 - `squad.yaml` — manifest (name, capabilities, agents, runtime requirements).
 - `agents/*.md` — the personas (e.g., `brand-architect.md`, `document-renderer.md`).
 - `tasks/*.md` — atomic work units (do exactly one thing).
-- `workflows/*.yaml` — DAGs that compose tasks into pipelines.
+- `workflows/*.yaml` — the reference method: which tasks, in what order, owned by which agent.
 - `capabilities[]` declare `domains` (what the squad does) and `invoke` (workflow / task / agent entry point). The harness picks a capability by domain match.
 
-When the harness dispatches a squad, it invokes a specific capability. The squad's workflow runs the agents in sequence (or DAG), each agent using a mind-clone if assigned.
+When the harness dispatches a squad, it invokes a specific capability. The dispatched agent receives that capability's workflow as the reference method and delivers the capability's outcome; the engine does not execute the workflow step by step. Each agent uses a mind-clone if assigned.
 
 ---
 

@@ -358,7 +358,18 @@ function assignmentBlock(squad: string | null | undefined, projectRoot?: string)
   ].join("\n");
 }
 
-function squadCatalogBlock(employeeContent: string, projectRoot?: string): string {
+/** The squads a business prefers (`squads_preferred` in business.yaml): a
+ *  preference shown first in a seat's catalog, never a fence. [] when absent. */
+export function preferredSquads(bizDir: string | null | undefined): string[] {
+  if (!bizDir) return [];
+  try {
+    const doc = parseYaml(fs.readFileSync(path.join(bizDir, "business.yaml"), "utf8"));
+    const list = doc?.squads_preferred;
+    return Array.isArray(list) ? list.filter((s: unknown): s is string => typeof s === "string" && s.length > 0) : [];
+  } catch { return []; }
+}
+
+function squadCatalogBlock(employeeContent: string, projectRoot?: string, preferred: string[] = []): string {
   const { squads: reg, scopeMode, squadDirs } = loadSquadsRegistry(projectRoot);
   const total = Object.keys(reg).length;
   const scopeLabel = scopeMode === "global" ? "global (general registry)"
@@ -398,6 +409,19 @@ function squadCatalogBlock(employeeContent: string, projectRoot?: string): strin
     // Business Protocol v2 §6.10: `squads_authorized` closes the set only when
     // it lists something. `[]` is identical to absent, and both mean every squad.
     lines.push("> **Open authorization:** your seat declares no closed `squads_authorized` set, so **every squad in the catalog below is permitted**. Pick the best one for the sub-task.");
+    lines.push("");
+  }
+
+  // `squads_preferred`: the business's own first choices. A preference only; it
+  // never narrows what the seat may use.
+  const preferredHere = preferred.filter((slug) => !authorized.length || authorized.includes(slug));
+  if (preferredHere.length) {
+    lines.push("### Squads your business prefers (look here first; any permitted squad may still be used)");
+    lines.push("");
+    for (const slug of preferredHere) {
+      const s = reg[slug];
+      lines.push(s ? `- **${slug}** — ${(s.domains || []).slice(0, 4).join(", ") || "(no domains)"}` : `- **${slug}** — (not in the catalog of this scope)`);
+    }
     lines.push("");
   }
 
@@ -583,7 +607,7 @@ export function buildEmployeePrompt(args: BuildArgs): string {
     : "**Prefer squads (BP §13.4).** You are an orchestrator: a sub-task with a dedicated squad is dispatched, not done by hand (see \"AVAILABLE SQUADS\" below; a brief that names a squad uses it; a \`squads_authorized\` list closes the set, an empty or absent one permits all). A squad receives its sub-task's outcome and guardrails, never the raw brief. Each dispatch emits a \`dispatch_squad\` audit event.";
   const squadsBlock = squadMapped
     ? assignmentBlock(assigned!.squad, args.project_dir)
-    : squadCatalogBlock(employeeContent, args.project_dir);
+    : squadCatalogBlock(employeeContent, args.project_dir, preferredSquads(bizDir));
   // Under a map there is no catalog: `cloneSection` below renders the assigned
   // voice and its DNA, and that is the whole of what this seat is told about
   // clones.

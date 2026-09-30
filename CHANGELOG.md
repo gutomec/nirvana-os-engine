@@ -14,6 +14,14 @@ The LLM judge was told to apply its rubric strictly, avoid grade inflation and f
 
 The judge turns off in three scopes: `nrv config set quality_gate.judge_enabled false` (or `off`) for the machine or a project, `NIRVANA_JUDGE_ENABLED=false` for an environment, and the new `nrv dispatch ... --no-judge` for one run. The offline heuristic gate still runs, so every run still records a verdict.
 
+### `squads_preferred` is read, the DNA card points at DNA-CONFIG.yaml, and the contract stops saying the engine runs workflows
+
+- A business's `squads_preferred` had a schema and a validator but no reader. A seat's squad catalog now lists those squads first, under "Squads your business prefers". It is a preference only: it never narrows `squads_authorized` or blocks another squad, and a closed `squads_authorized` set still decides what is permitted.
+- The DNA reference card (`execution.dna_injection: reference`, the default) names the clone's `agent/DNA-CONFIG.yaml` beside `AGENT.md`, `SOUL.md` and the DNA schema. It points at the file; nothing is pasted.
+- The project contract (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md` and the template `nrv init` writes) described a squad's workflow as a DAG the engine runs. The engine hands the workflow to the dispatched agent as the reference method and never executes it step by step; the contract now says so.
+- `routing_rules.escalation_path` in an org chart is still accepted, so the charts that declare it keep validating, and the schemas now say nothing reads it.
+
+
 
 ### Registry writes on Windows wait out a busy target instead of dying
 

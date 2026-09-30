@@ -14,6 +14,14 @@ O juiz LLM era instruído a aplicar a rubrica com rigor, evitar nota inflada e r
 
 O juiz desliga em três escopos: `nrv config set quality_gate.judge_enabled false` (ou `off`) na máquina ou num projeto, `NIRVANA_JUDGE_ENABLED=false` num ambiente, e o novo `nrv dispatch ... --no-judge` numa execução só. O gate heurístico offline continua rodando, então toda execução ainda registra um veredito.
 
+### `squads_preferred` passa a ser lido, o cartão de DNA aponta o DNA-CONFIG.yaml, e o contrato deixa de dizer que o engine executa workflows
+
+- O `squads_preferred` de uma empresa tinha schema e validador, mas nenhum leitor. O catálogo de squads de um cargo agora lista esses squads primeiro, em "Squads your business prefers". É só preferência: nunca estreita o `squads_authorized` nem bloqueia outro squad, e um conjunto fechado de `squads_authorized` continua decidindo o que é permitido.
+- O cartão de referência de DNA (`execution.dna_injection: reference`, o padrão) nomeia o `agent/DNA-CONFIG.yaml` do clone ao lado de `AGENT.md`, `SOUL.md` e do schema de DNA. Ele aponta o arquivo; nada é colado.
+- O contrato do projeto (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md` e o modelo que o `nrv init` grava) descrevia o workflow de um squad como um DAG que o engine executa. O engine entrega o workflow ao agente despachado como método de referência e nunca o executa passo a passo; o contrato agora diz isso.
+- O `routing_rules.escalation_path` de um organograma continua aceito, para que os organogramas que o declaram sigam válidos, e os schemas agora dizem que nada o lê.
+
+
 
 ### No Windows, a gravação do registro espera o arquivo ocupado em vez de morrer
 
