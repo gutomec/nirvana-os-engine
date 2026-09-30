@@ -27,7 +27,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { paths as nrvPaths } from "../../../_shared/lib/bun-helpers.ts";
-import { DEFAULT_ALLOWED_TOOLS, resolveExecutable, runHeadless, runtimeAvailable, type Runtime } from "../../../_shared/lib/host-agent-driver.ts";
+import { DEFAULT_ALLOWED_TOOLS, headlessClaudeEnv, resolveExecutable, runHeadless, runtimeAvailable, type Runtime } from "../../../_shared/lib/host-agent-driver.ts";
 import { harnessLogsDir } from "../../../_shared/lib/log-paths.ts";
 import { resolveSetting, settingsEnvForChild } from "../../../_shared/lib/settings.ts";
 import { resolveSystemModel } from "../../../_shared/lib/system-model.ts";
@@ -100,7 +100,8 @@ export function turnEnvironment(projectRoot: string, base: NodeJS.ProcessEnv = p
   env.NIRVANA_PROJECT_ROOT = projectRoot;
   Object.assign(env, settingsEnvForChild({ env, projectRoot }));
   if (!env.HARNESS_LOGS_DIR) env.HARNESS_LOGS_DIR = harnessLogsDir({ projectRoot });
-  return env;
+  // A turn is a `-p` session: whatever it leaves in the background dies when it ends.
+  return headlessClaudeEnv(env);
 }
 
 /** How a CLI is started on this platform (`resolveExecutable`'s shape). Injected in tests so the

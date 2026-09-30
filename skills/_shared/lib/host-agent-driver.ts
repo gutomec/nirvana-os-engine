@@ -123,6 +123,17 @@ export function headlessSkipPermissions(): boolean {
   return resolveSetting("execution.headless_skip_permissions").value;
 }
 
+/** A headless claude child ends the moment its final turn does, and anything it
+ *  started in the background (a `run_in_background` Bash call or subagent, or
+ *  work the CLI moved there on its own) dies with it, orphaned. The prompt
+ *  already says so; this makes it hold in the runtime: `claude` documents
+ *  CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1 as turning off all background task
+ *  functionality. A value the user set explicitly is left as it is. */
+export function headlessClaudeEnv<T extends Record<string, string | undefined>>(env: T): T {
+  if (env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS === undefined) (env as Record<string, string | undefined>).CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = "1";
+  return env;
+}
+
 /** Max persona chars accepted by --append-system-prompt-style flags. */
 const PERSONA_MAX_CHARS = 8_000;
 
@@ -805,7 +816,7 @@ export function callHostAgent(persona: string, userMessage: string, opts: CallOp
       encoding: "utf8",
       timeout: opts.timeoutMs ?? DEFAULT_INACTIVITY_BUDGET_MS,
       maxBuffer: 8 * 1024 * 1024,
-      env: childEnv(),
+      env: host.cli === "claude" ? headlessClaudeEnv(childEnv()) : childEnv(),
       ...(exec.shell ? { shell: true } : {}),
       ...(call.input !== undefined ? { input: call.input } : {}),
     });
@@ -974,7 +985,7 @@ export function callHostAgentAsync(persona: string, userMessage: string, opts: C
     const exec = resolveExecutable(host.cli);
     const child = spawn(exec.command, exec.args(call.args), {
       windowsHide: true,
-      env: childEnv(),
+      env: host.cli === "claude" ? headlessClaudeEnv(childEnv()) : childEnv(),
       ...(exec.shell ? { shell: true } : {}),
       stdio: [call.input !== undefined ? "pipe" : "ignore", "pipe", "pipe"],
     });
@@ -1415,6 +1426,7 @@ let spawnAsRole: string | null = null;
  * Passing the live process.env explicitly restores Node semantics (and lets
  * hermetic tests inject a fake runtime binary via PATH). */
 function driverSpawnSync(cmd: string, args: string[], options: SpawnSyncOptions & { encoding: "utf8" }): SpawnSyncReturns<string> {
+  const isClaude = cmd === "claude";
   // Every runtime adapter reaches the OS through here, so Windows `.cmd`
   // resolution belongs here too — sixteen call sites, one rule. No-op on POSIX.
   const exec = resolveExecutable(cmd);
@@ -1435,6 +1447,7 @@ function driverSpawnSync(cmd: string, args: string[], options: SpawnSyncOptions 
   baseEnv[DEPTH_ENV] = String(childDepth());
   // And WHAT it is, so its own dispatches answer to the role rule.
   if (spawnAsRole) baseEnv[ROLE_ENV] = spawnAsRole;
+  if (isClaude) headlessClaudeEnv(baseEnv);
   options = {
     // Windows: a process without its own console makes Windows allocate a VISIBLE
     // one for every child it spawns, and `stdio: "ignore"` does not prevent it.
