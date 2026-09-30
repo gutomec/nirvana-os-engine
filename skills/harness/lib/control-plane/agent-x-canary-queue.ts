@@ -108,8 +108,8 @@ export interface MessageTargetResolution {
   cancelled?: true;
 }
 
-/** Ceiling of one routing call from a Message. No settings key configures the router's timeout
- * yet; the dispatch waits five minutes, the Glance answers a chat and waits two. */
+/** Ceiling of one routing call from a Message. The dispatch's ceiling is `routing.timeout_ms`;
+ * the Glance answers a chat and keeps its own, shorter one. */
 export const MESSAGE_ROUTE_TIMEOUT_MS = 120_000;
 
 const AGENT_X_TARGET: TargetRef = { kind: "agent-x", slug: "agent-x" };

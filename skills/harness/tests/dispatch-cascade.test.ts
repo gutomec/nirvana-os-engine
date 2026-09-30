@@ -162,6 +162,24 @@ describe("planRouteWithFallback — router-failure ladder", () => {
     expect(plan.steps[0]).toMatchObject({ kind: "business", slug: "recovered-biz" });
   });
 
+  test("a timeout is not retried: the identical call would spend the same ceiling again", async () => {
+    const spy = auditSpy();
+    const warns: string[] = [];
+    let retries = 0;
+    const timedOut = mkDecision({ ok: false, kind: "no_match", error: "claude exited null", timed_out: true, duration_ms: 300_000 });
+    const plan = await planRouteWithFallback(timedOut, {
+      routeOnce: () => { retries++; return okDecision; },
+      audit: spy.fn, warn: m => warns.push(m),
+    });
+    expect(retries).toBe(0);
+    expect(plan.ok).toBe(true);
+    expect(plan.steps[0].kind).toBe("agent-x");
+    expect(spy.calls.some(x => x.event === "x_router_timeout_no_retry")).toBe(true);
+    expect(spy.calls.some(x => x.event === "x_router_failure_retry")).toBe(false);
+    expect(warns.join(" ")).toContain("timed out");
+    expect(warns.join(" ")).not.toContain("failed twice");
+  });
+
   test("first decision ok → no retry at all", async () => {
     let retries = 0;
     const plan = await planRouteWithFallback(okDecision, {

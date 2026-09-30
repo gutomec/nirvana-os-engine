@@ -40,6 +40,15 @@ The director is re-asked only when there is a decision to transcribe. A call tha
 
 The router's mandatory squads used to run as a separate track the director never saw, on the whole brief, right before the synthesizer, while the seat whose job covered the same part did it too. The director now gives each mandatory squad to the seat it serves, and that seat writes the squad's instruction and integrates what it delivers, so the part is done once. A seat's success is not taken as proof that its squad ran, because the assignment lets a seat stop and say the squad is the wrong tool: the squad counts as delivered only when the audit shows it executed during that seat's step. Any other squad runs on its own before the synthesizer, and an `x_carried_squad_unconfirmed` event names the seat that carried it, so a squad the user named always runs. The seat's assignment maps only the squad: `employee-prompt.ts` accepts a partial map, and a seat given a squad still chooses its own mind-clone.
 
+### A brief that names its target skips the router, and a routing timeout is not paid twice
+
+Seats and the autonomous directive delegated with `nrv dispatch --auto "use squad <slug>: <sub-task>" --exec` and said the named squad was reached directly. It was not: under `--auto` the agentic router ran on every such call and honored the name only because its prompt asks it to. `--auto` now reads `use squad <slug>[:<capabilityId>]:` and `use business <slug>:` at the head of the brief, with the grammar the Glance already applies to a Message, and sends an installed target straight to it (`x_explicit_target_short_circuit`); a slug the registry does not know still goes to the router. The seat and directive commands use the direct form, `nrv dispatch --squad <slug> "<sub-task>" --exec`.
+
+The router's ceiling is a setting, `routing.timeout_ms` (`NIRVANA_ROUTING_TIMEOUT_MS`, default five minutes as before). A call that hits it is no longer repeated identically: the dispatch goes straight to `routing.on_router_failure` (`x_router_timeout_no_retry`), where a timeout used to cost two ceilings. The router and its re-ask run as planners, the role that dispatches nothing; because `nrv dispatch --auto` asks one, a business and a seat may now open a planner.
+
+A gate revision round resumes the producing session. When the resume fails it now retries once cold, with the brief the resumed session would have had (`revision_auto` carries `cold_retry`), instead of spending the round on unchanged files. The fix prompt names full paths and the outputs root, and a squad's revision carries the squad role its producer carried.
+
+
 
 
 ## 0.14.8 — 2026-09-27

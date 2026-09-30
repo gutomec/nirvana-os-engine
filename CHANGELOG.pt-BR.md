@@ -40,6 +40,15 @@ O diretor só é perguntado de novo quando há uma decisão a transcrever. Uma c
 
 Os squads obrigatórios do roteador rodavam num trilho separado que o diretor nunca via, sobre o brief inteiro, logo antes do sintetizador, enquanto o cargo responsável pela mesma parte também a fazia. Agora o diretor entrega cada squad obrigatório ao cargo que ele atende, e esse cargo escreve a instrução do squad e integra o que ele entrega, então a parte é feita uma vez. O sucesso do cargo não é tomado como prova de que o squad rodou, porque a atribuição permite ao cargo parar e dizer que o squad é a ferramenta errada: o squad só conta como entregue quando a auditoria mostra que ele executou durante o passo daquele cargo. Qualquer outro squad roda sozinho antes do sintetizador, e um evento `x_carried_squad_unconfirmed` nomeia o cargo que o carregava, então um squad que o usuário pediu sempre roda. A atribuição do cargo mapeia só o squad: o `employee-prompt.ts` aceita um mapa parcial, e um cargo que recebe um squad continua escolhendo o próprio mind-clone.
 
+### Um brief que nomeia o alvo pula o roteador, e um timeout de roteamento não é pago duas vezes
+
+Os cargos e a diretiva autônoma delegavam com `nrv dispatch --auto "use squad <slug>: <sub-tarefa>" --exec` e diziam que o squad nomeado era alcançado direto. Não era: sob `--auto` o roteador agêntico rodava em toda chamada assim e só respeitava o nome porque o prompt dele pede. O `--auto` agora lê `use squad <slug>[:<capabilityId>]:` e `use business <slug>:` no começo do brief, com a gramática que o Glance já aplica a uma Message, e manda um alvo instalado direto para ele (`x_explicit_target_short_circuit`); um slug que o registro não conhece continua indo ao roteador. Os comandos do cargo e da diretiva usam a forma direta, `nrv dispatch --squad <slug> "<sub-tarefa>" --exec`.
+
+O teto do roteador é uma configuração, `routing.timeout_ms` (`NIRVANA_ROUTING_TIMEOUT_MS`, padrão de cinco minutos como antes). Uma chamada que atinge o teto não é mais repetida igual: o despacho segue direto para `routing.on_router_failure` (`x_router_timeout_no_retry`), onde um timeout custava dois tetos. O roteador e a re-pergunta dele rodam como planejadores, o papel que não despacha nada; como `nrv dispatch --auto` consulta um, uma empresa e um cargo agora podem abrir um planejador.
+
+Uma rodada de revisão do gate retoma a sessão que produziu. Quando a retomada falha, ela agora tenta uma vez a frio, com o brief que a sessão retomada teria (`revision_auto` leva `cold_retry`), em vez de gastar a rodada em arquivos inalterados. O prompt de correção nomeia os caminhos completos e a raiz de saídas, e a revisão de um squad leva o papel de squad que o produtor levava.
+
+
 
 
 ## 0.14.8 — 2026-09-27

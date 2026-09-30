@@ -67,6 +67,7 @@ Gerada a partir do schema. `nrv config explain <chave>` mostra a descrição de 
 | `routing.mode` | `NIRVANA_ROUTING_MODE` | `agentic` | global, projeto | agentic / fast |
 | `routing.dense` | `NIRVANA_ROUTER_DENSE` (`1` = fallback, `0` = off) | `off` | global, projeto | off / fallback |
 | `routing.on_router_failure` | nenhuma | `agent-x-only` | global, projeto | cascade / agent-x-only / fail |
+| `routing.timeout_ms` | `NIRVANA_ROUTING_TIMEOUT_MS` | `300000` (5 min) | global, projeto | inteiro > 0 (ms) |
 | `routing.digest_token_budget` | nenhuma | `0` (sem teto) | global, projeto | inteiro >= 0 (tokens); 0 = sem teto |
 | `host.orca` | `NIRVANA_ORCA_HOST` | `auto` | global, projeto | auto (só dentro de um terminal do Orca) / on / off |
 | `host.orca_workers` | `NIRVANA_ORCA_WORKERS` | `true` | global, projeto | true / false |
@@ -112,6 +113,7 @@ Cada interruptor do schema tem exatamente um caminho de leitura, `resolveSetting
 | `glance.execution` | `harness/scripts/glance.ts` |
 | `runtime.provider_catalog_dir`, `allow_stale_catalog` | `harness/lib/runtime-snapshot.ts` |
 | `routing.mode` | `_shared/lib/routing-mode.ts` |
+| `routing.timeout_ms` | `harness/lib/agentic-router.ts`, `harness/scripts/dispatch.ts` |
 | `routing.dense`, `on_router_failure`, `quality_gate.*` | `harness/lib/harness-config.ts` (`loadHarnessConfig`, `denseRoutingMode`, `setRoutingDense`) e, por ele, `router.js`, `dispatch.ts`, `revise.ts`, `supervisor.ts`, `embeddings.ts` |
 | `supervisor.progress_ping_sec`, `stall_threshold_ms` | `harness/scripts/supervisor.ts`; o limiar também é o `stallBudgetMs` padrão do heartbeat em `host-agent-driver.ts` |
 | `supervisor.touch_events_max` | `_shared/lib/host-agent-driver.ts`, que passa o teto ao sidecar como `--touch-max` |

@@ -275,6 +275,62 @@ describe("runDelivery — outcomes", () => {
     expect(gp?.payload.revisions).toBe(1);
   }, spawnBudgetMs(2));
 
+  test("a session that does not resume is retried cold, once, with the brief, full paths and the producer's role", () => {
+    const oroot = path.join(tmp, "out-cold");
+    fs.mkdirSync(oroot);
+    const artifact = path.join(oroot, "nota.md");
+    fs.writeFileSync(artifact, FAILING_MD);
+    const seen: any[] = [];
+    const { args, calls } = baseArgs(oroot, {
+      maxRevisions: 1,
+      sessionId: "sess-expired",
+      targetKind: "squad",
+      producerRole: "squad",
+      runHeadlessImpl: ((opts: any) => {
+        seen.push(opts);
+        if (opts.sessionId) {
+          return { ok: false, runtime: opts.runtime, sessionId: null, result: "", costUsd: null, exitCode: 1, stderr: "No conversation found", durationMs: 5, error: "No conversation found" };
+        }
+        fs.writeFileSync(artifact, PASSING_MD);
+        return { ok: true, runtime: opts.runtime, sessionId: "sess-cold-1", result: "", costUsd: null, exitCode: 0, stderr: "", durationMs: 5 };
+      }) as any,
+    });
+    const res = runDelivery(args);
+    expect(seen).toHaveLength(2);
+    expect(seen[0].sessionId).toBe("sess-expired");
+    expect(seen[1].sessionId).toBeUndefined();
+    // The resumed round had the conversation; the cold one gets what it lacked.
+    expect(seen[0].prompt).not.toContain("Produza a entrega de teste.");
+    expect(seen[1].prompt).toContain("Produza a entrega de teste.");
+    for (const call of seen) {
+      expect(call.prompt).toContain(path.resolve(artifact));
+      expect(call.prompt).toContain(path.resolve(oroot));
+      expect(call.dispatchRole).toBe("squad");
+    }
+    expect(res.exitCode).toBe(0);
+    expect(res.sessionId).toBe("sess-cold-1");
+    expect(calls.find(x => x.event === "revision_auto")?.payload.cold_retry).toBe(true);
+  }, spawnBudgetMs(2));
+
+  test("no producer role, no stamp: the revision carries what the producer carried", () => {
+    const oroot = path.join(tmp, "out-norole");
+    fs.mkdirSync(oroot);
+    const artifact = path.join(oroot, "nota.md");
+    fs.writeFileSync(artifact, FAILING_MD);
+    const seen: any[] = [];
+    const { args } = baseArgs(oroot, {
+      maxRevisions: 1,
+      runHeadlessImpl: ((opts: any) => {
+        seen.push(opts);
+        fs.writeFileSync(artifact, PASSING_MD);
+        return { ok: true, runtime: opts.runtime, sessionId: "sess-1", result: "", costUsd: null, exitCode: 0, stderr: "", durationMs: 5 };
+      }) as any,
+    });
+    runDelivery(args);
+    expect(seen).toHaveLength(1);
+    expect("dispatchRole" in seen[0]).toBe(false);
+  }, spawnBudgetMs(2));
+
   test("afterGate hook runs ONLY on deliverable outcomes and its zip lands in delivered", () => {
     const orootPass = path.join(tmp, "out-hook-pass");
     fs.mkdirSync(orootPass);

@@ -36,6 +36,7 @@ import { BUN_BIN } from "../../_shared/lib/bun-helpers.ts";
 import { resolveRoutingArtifactPaths } from "../scripts/build-routing-digest.ts";
 import { formatRulesForRouterPrompt, type RuntimeRule } from "./runtime-rules.ts";
 import { stamp } from "../../_shared/lib/audit-provenance.ts";
+import { resolveSetting } from "../../_shared/lib/settings.ts";
 
 // The roster, DERIVED. Three copies of this list lived in three files and all
 // three had stopped at seven names while the driver grew to nine, so a user who
@@ -71,6 +72,9 @@ export interface AgenticRouteDecision {
   cost_usd: number | null;
   duration_ms: number;
   error?: string;
+  /** The routing call hit its ceiling (routing.timeout_ms). The same call again
+   *  would most likely hit it again, so the fallback ladder does not repeat it. */
+  timed_out?: boolean;
 }
 
 function emitAudit(payload: Record<string, any>, cwd?: string): void {
@@ -376,6 +380,7 @@ export interface AgenticRouteArgs {
   cwd: string;
   projectId?: string | null;
   maxBudgetUsd?: number;
+  /** Ceiling of the routing call; default `routing.timeout_ms`. */
   timeoutMs?: number;
   /** User USE_* rules — injected verbatim into the router prompt. */
   runtimeRules?: RuntimeRule[];
@@ -387,11 +392,12 @@ export interface AgenticRouteArgs {
   digestBuilderScript?: string;
 }
 
-function failed(error: string, costUsd: number | null, durationMs: number): AgenticRouteDecision {
+function failed(error: string, costUsd: number | null, durationMs: number, timedOut = false): AgenticRouteDecision {
   return {
     ok: false, kind: "no_match", primary_business: null, mandatory_squads: [],
     optional_squads: [], suggested_mind_clones: [], candidates: [], rationale: "",
     runtime: null, warnings: [], cost_usd: costUsd, duration_ms: durationMs, error,
+    ...(timedOut ? { timed_out: true } : {}),
   };
 }
 
@@ -438,7 +444,10 @@ export async function agenticRoute(args: AgenticRouteArgs): Promise<AgenticRoute
     allowedTools: ["Read", "Glob", "Grep", "Bash"],
     permissionMode: "acceptEdits",
     maxBudgetUsd: args.maxBudgetUsd,
-    timeoutMs: args.timeoutMs ?? 5 * 60 * 1000,
+    timeoutMs: args.timeoutMs ?? resolveSetting("routing.timeout_ms").value,
+    // A decision step answers with a verdict and opens nothing: the router has
+    // Bash, so the stamp is what keeps it from dispatching, not its prompt.
+    dispatchRole: "planner",
   });
   const durationMs = Date.now() - started;
 
@@ -452,7 +461,8 @@ export async function agenticRoute(args: AgenticRouteArgs): Promise<AgenticRoute
       duration_ms: durationMs,
       cost_usd: res.costUsd,
     }, args.cwd);
-    return failed(res.error || res.stderr || "router run failed", res.costUsd, durationMs);
+    // A child killed at the ceiling exits 124 (the driver's code for a signal).
+    return failed(res.error || res.stderr || "router run failed", res.costUsd, durationMs, res.exitCode === 124);
   }
 
   const slugs = loadRegistrySlugs(routerPaths);
@@ -500,6 +510,7 @@ export async function agenticRoute(args: AgenticRouteArgs): Promise<AgenticRoute
       cwd: args.cwd,
       maxBudgetUsd: args.maxBudgetUsd,
       timeoutMs: 2 * 60 * 1000,
+      dispatchRole: "planner",
     });
     parsed = retry.ok ? parseAndValidate(retry.result || "", slugs) : parsed;
   }

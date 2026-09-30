@@ -41,6 +41,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import { runHeadless, runtimeAvailable, AUTONOMOUS_DIRECTIVE, type Runtime } from "./host-agent-driver.ts";
+import type { DispatchRole } from "../../_shared/lib/dispatch-depth.ts";
 import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { isRunStatePath } from "../../_shared/lib/run-state.ts";
 import { detectKind } from "../../_shared/lib/surface.ts";
@@ -287,6 +288,9 @@ export interface DeliveryArgs {
   maxBudgetUsd?: number;
   timeoutMs?: number;
   yolo?: boolean;
+  /** The role the producing run carried. A revision round continues that run,
+   *  so it carries the same stamp. Absent when the producer ran without one. */
+  producerRole?: DispatchRole;
   rulesDirective?: string;
   /** --force-deliver: deliver despite a failed gate (gate:"fail-forced"). */
   forceDeliver?: boolean;
@@ -479,25 +483,39 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
   while (!gate.pass && revUsed < maxRevisions) {
     revUsed++;
     warn(`  gate FAIL — auto-revision ${revUsed}/${maxRevisions}`);
-    const fixLines = gate.fails.flatMap(fl => [`Arquivo ${path.basename(fl.file)}:`, ...fl.fixes.map(x => `  - ${x}`)]);
+    // Full paths and the outputs root: a round that has to start cold (below)
+    // has no conversation to recover them from.
+    const fixLines = gate.fails.flatMap(fl => [`Arquivo ${path.resolve(fl.file)}:`, ...fl.fixes.map(x => `  - ${x}`)]);
     const fixPrompt = [
       "O quality gate reprovou os entregáveis. Corrija EXATAMENTE estes pontos, reescrevendo os arquivos no mesmo caminho:",
       "",
       ...fixLines,
       "",
+      `Os entregáveis ficam em ${path.resolve(args.outputsRoot)}.`,
       "Regra de hífen (a mais comum): use '-' só para palavras compostas; nunca para emendar orações nem como travessão — troque por vírgula, dois-pontos ou ponto.",
       scopeGuard("pt-BR"),
       "Não imprima resumo: entregue os arquivos corrigidos.",
     ].join("\n");
-    const rr = runHeadlessImpl({
-      runtime: args.runtime, prompt: fixPrompt, cwd: args.projectRoot, addDirs: [args.projectDir, args.outputsRoot],
-      sessionId: sessionId || undefined,
+    const revise = (resume: string | undefined, prompt: string) => runHeadlessImpl({
+      runtime: args.runtime, prompt, cwd: args.projectRoot, addDirs: [args.projectDir, args.outputsRoot],
+      sessionId: resume,
       appendSystemPrompt: AUTONOMOUS_DIRECTIVE + (args.rulesDirective ?? ""),
       maxBudgetUsd: args.maxBudgetUsd, timeoutMs: args.timeoutMs, yolo: args.yolo,
+      ...(args.producerRole ? { dispatchRole: args.producerRole } : {}),
       label: `revision ${revUsed}`,
       ...(led ? { ledger: { runId: led.runId, watchDir: args.outputsRoot } } : {}),
     });
-    emit("revision_auto", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, attempt: revUsed, ok: rr.ok });
+    let rr = revise(sessionId || undefined, fixPrompt);
+    let coldRetry = false;
+    if (!rr.ok && sessionId) {
+      // The session could not be resumed (expired, pruned, another runtime).
+      // Without a second try the gate re-ran on unchanged files and the round
+      // was spent; a cold run gets the brief the resumed one would have had.
+      coldRetry = true;
+      warn(`  revision ${revUsed}: the session did not resume — retrying cold`);
+      rr = revise(undefined, [fixPrompt, "", "O brief que estes entregáveis atendem:", args.brief].join("\n"));
+    }
+    emit("revision_auto", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, attempt: revUsed, ok: rr.ok, ...(coldRetry ? { cold_retry: true } : {}) });
     if (rr.sessionId) {
       sessionId = rr.sessionId;
       args.onSession?.(rr.sessionId);
