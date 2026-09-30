@@ -34,7 +34,7 @@ nrv config explain <chave> [--json]               descrição, tipo, padrão, es
 
 `set` e `unset` gravam no projeto quando rodam dentro de um (diretório `.nirvana/` no cwd ou num ancestral, ou `NIRVANA_PROJECT_ROOT`) e no global fora dele. A gravação edita uma linha por vez, `seção:` e `  chave:`, preservando todo o resto do arquivo, comentários inclusive, e é atômica (arquivo temporário e rename). Strings vão entre aspas duplas, para que `off`, `no` e `1.0` nunca virem outra coisa num leitor YAML 1.1.
 
-Recusas, cada uma com o motivo e exit 4: valor que o schema rejeita (`routing.mode: valor inválido "turbo"; esperado agentic | fast`), escopo que a chave não aceita, chave fixada por variável no shell atual (o valor gravado só valeria sem a variável; o comando diz qual é) e `--project` fora de um projeto. Um arquivo que a resolução não consegue ler sai com exit 1 e o caminho. A gravação não valida o valor que substitui: um arquivo com um valor inválido pode ser consertado pelo próprio `nrv config set`.
+Recusas, cada uma com o motivo e exit 4: valor que o schema rejeita (`routing.mode: valor inválido "turbo"; esperado agentic | cards | fast`), escopo que a chave não aceita, chave fixada por variável no shell atual (o valor gravado só valeria sem a variável; o comando diz qual é) e `--project` fora de um projeto. Um arquivo que a resolução não consegue ler sai com exit 1 e o caminho. A gravação não valida o valor que substitui: um arquivo com um valor inválido pode ser consertado pelo próprio `nrv config set`.
 
 Cada `set` e `unset` que muda um arquivo grava `x_settings_changed { key, scope, path, from, to }` no audit, pelo mesmo `lib/audit.js` do resto do engine. Um valor já igual não escreve nem audita.
 
@@ -64,7 +64,7 @@ Gerada a partir do schema. `nrv config explain <chave>` mostra a descrição de 
 | `glance.maestro_max_budget_usd` | nenhuma | `5` | global, projeto | número >= 0 (USD); 0 = sem teto |
 | `runtime.provider_catalog_dir` | `NIRVANA_PROVIDER_CATALOG_DIR` | `""` | global, projeto | lista de caminhos separados pelo delimitador do sistema, ou vazio |
 | `runtime.allow_stale_catalog` | `NIRVANA_ALLOW_STALE_CATALOG` | `false` | global, projeto | true / false |
-| `routing.mode` | `NIRVANA_ROUTING_MODE` | `agentic` | global, projeto | agentic / fast |
+| `routing.mode` | `NIRVANA_ROUTING_MODE` | `agentic` | global, projeto | agentic / cards / fast. `cards` faz uma única chamada, sem ferramentas, sobre `.routing-cards.md` (uma linha por empresa e por squad, escrita pelo `nrv index` ao lado do digest) e leva os critérios de pronto do roteador ao brief |
 | `routing.dense` | `NIRVANA_ROUTER_DENSE` (`1` = fallback, `0` = off) | `off` | global, projeto | off / fallback |
 | `routing.on_router_failure` | nenhuma | `agent-x-only` | global, projeto | cascade / agent-x-only / fail |
 | `routing.timeout_ms` | `NIRVANA_ROUTING_TIMEOUT_MS` | `300000` (5 min) | global, projeto | inteiro > 0 (ms) |
@@ -112,8 +112,8 @@ Cada interruptor do schema tem exatamente um caminho de leitura, `resolveSetting
 | `execution.headless_skip_permissions` | `_shared/lib/host-agent-driver.ts` |
 | `glance.execution` | `harness/scripts/glance.ts` |
 | `runtime.provider_catalog_dir`, `allow_stale_catalog` | `harness/lib/runtime-snapshot.ts` |
-| `routing.mode` | `_shared/lib/routing-mode.ts` |
-| `routing.timeout_ms` | `harness/lib/agentic-router.ts`, `harness/scripts/dispatch.ts` |
+| `routing.mode` | `_shared/lib/routing-mode.ts`; o modo `cards` roda em `harness/lib/cards-router.ts` |
+| `routing.timeout_ms` | `harness/lib/agentic-router.ts`, `harness/lib/cards-router.ts`, `harness/scripts/dispatch.ts` |
 | `routing.dense`, `on_router_failure`, `quality_gate.*` | `harness/lib/harness-config.ts` (`loadHarnessConfig`, `denseRoutingMode`, `setRoutingDense`) e, por ele, `router.js`, `dispatch.ts`, `revise.ts`, `supervisor.ts`, `embeddings.ts` |
 | `supervisor.progress_ping_sec`, `stall_threshold_ms` | `harness/scripts/supervisor.ts`; o limiar também é o `stallBudgetMs` padrão do heartbeat em `host-agent-driver.ts` |
 | `supervisor.touch_events_max` | `_shared/lib/host-agent-driver.ts`, que passa o teto ao sidecar como `--touch-max` |

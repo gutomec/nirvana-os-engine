@@ -19,6 +19,10 @@
  *   L4  additionally drop the clone and squad domain lists
  * The applied level is reported in the digest header.
  *
+ * Also emits `.routing-cards.md` (same directory): one short line per business
+ * and squad, what it produces first, for the `cards` routing mode
+ * (lib/routing-cards.ts).
+ *
  * Also emits `.keyword-aliases.json` (same directory): cross-language alias
  * groups mined from business + capability `keywords` arrays, following the
  * ROUTING_METADATA_CONTRACT keyword-group convention — each concept ships as a
@@ -32,10 +36,10 @@
  *   [["ebook","e-book","livro digital"],["code review","revisão de código","revisao de codigo"]]
  *
  * Usage:
- *   bun build-routing-digest.ts                 # build + write digest + aliases
+ *   bun build-routing-digest.ts                 # build + write digest + cards + aliases
  *   bun build-routing-digest.ts --check-budget  # dry-run; exit 1 if over budget
  *   bun build-routing-digest.ts --quiet | --json
- *   # test seams: --businesses/--squads/--clones/--out/--aliases-out <path>
+ *   # test seams: --businesses/--squads/--clones/--out/--cards-out/--aliases-out <path>
  *
  * Standalone by design: index.ts stays untouched; the agentic router
  * regenerates the digest when it is stale (lib/agentic-router.ts).
@@ -47,6 +51,7 @@ import * as path from "node:path";
 import { paths as nrvPaths, parseArgs, EXIT } from "../../_shared/lib/bun-helpers.ts";
 import { resolveScope } from "../../_shared/lib/scope.ts";
 import { resolveSetting } from "../../_shared/lib/settings.ts";
+import { renderRoutingCards } from "../lib/routing-cards.ts";
 
 // ─────────────────────────────────────────────────────────────────────
 // Paths — where the registries and the digest live (scope-aware)
@@ -57,7 +62,14 @@ export interface RoutingArtifactPaths {
   squadsRegistry: string;
   mindClonesRegistry: string;
   digest: string;
+  /** `.routing-cards.md`, always beside the digest. */
+  cards: string;
   aliases: string;
+}
+
+/** The cards travel with the digest: same directory, whatever scope put it there. */
+export function routingCardsPathFor(digestPath: string): string {
+  return path.join(path.dirname(digestPath), ".routing-cards.md");
 }
 
 /**
@@ -79,6 +91,7 @@ export function resolveRoutingArtifactPaths(): RoutingArtifactPaths {
     squadsRegistry: nrvPaths.SQUADS_REGISTRY_PATH,
     mindClonesRegistry: path.join(cloneDir, ".mind-clones-registry.json"),
     digest,
+    cards: routingCardsPathFor(digest),
     // The same constant the router reads. Deriving it from the digest's
     // directory here and from the registry's there put the file, in global
     // scope, somewhere nothing looked.
@@ -530,6 +543,7 @@ if (import.meta.main) {
   // Explicit flags win, and `--out` carries the aliases with it: a caller that
   // relocates the digest means to relocate the pair. Only the DEFAULT comes from
   // the shared constant — that default is what diverged from the reader.
+  const cardsPath = typeof flags["cards-out"] === "string" ? flags["cards-out"] : routingCardsPathFor(digestPath);
   const aliasesPath = typeof flags["aliases-out"] === "string"
     ? flags["aliases-out"]
     : typeof flags.out === "string"
@@ -560,6 +574,7 @@ if (import.meta.main) {
 
   if (!checkBudget) {
     writeAtomic(digestPath, digest.text);
+    writeAtomic(cardsPath, renderRoutingCards(input));
     writeAtomic(aliasesPath, JSON.stringify(aliases, null, 1) + "\n");
   }
 
@@ -567,6 +582,7 @@ if (import.meta.main) {
     console.log(JSON.stringify({
       ok: !digest.overBudget,
       digest_path: checkBudget ? null : digestPath,
+      cards_path: checkBudget ? null : cardsPath,
       aliases_path: checkBudget ? null : aliasesPath,
       tokens: digest.tokens,
       budget: digest.budget,
@@ -582,6 +598,7 @@ if (import.meta.main) {
     console.error(`[build-routing-digest] alias groups: ${aliases.length}`);
     if (!checkBudget) {
       console.error(`[build-routing-digest] digest → ${digestPath}`);
+      console.error(`[build-routing-digest] cards → ${cardsPath}`);
       console.error(`[build-routing-digest] aliases → ${aliasesPath}`);
     }
     if (digest.overBudget) console.error(`[build-routing-digest] OVER BUDGET even at level ${digest.degradationLevel}, the last rung — raise it with \`nrv config set routing.digest_token_budget <tokens>\` (0 = no budget) or trim registry descriptions/briefs.`);

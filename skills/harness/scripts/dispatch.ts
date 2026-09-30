@@ -43,6 +43,7 @@ import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { globalStoreDir, outputsBaseDir } from "../../_shared/lib/project-root.js";
 import { briefExcerpt } from "../../_shared/lib/brief-excerpt.ts";
 import { agenticRoute, type AgenticRouteDecision } from "../lib/agentic-router.ts";
+import { cardsRoute, withDoneWhen } from "../lib/cards-router.ts";
 import { runWithCascade } from "../lib/cascade-runner.ts";
 import { resolveCascadeRoot, loadCascade, nextAfter } from "../lib/cascade.ts";
 import { classify } from "../lib/quota-detector.ts";
@@ -778,8 +779,9 @@ if (briefTarget) {
 } else if (autoMode) {
   // agentic (default): an LLM with Read+Bash+Grep inspects the brief AND the
   // registries and returns the structured routing contract. The user's
-  // explicit asks are ALWAYS honored.
-  console.log(c("lime", "▶") + c("bold", " Auto-route — agentic"));
+  // explicit asks are ALWAYS honored. cards: one tool-less call over the
+  // compiled cards, answering the same contract (lib/cards-router.ts).
+  console.log(c("lime", "▶") + c("bold", ` Auto-route — ${routingMode}`));
   const rt = explicitRuntime || runtimeDecision.runtime;
   // The router runs on a runtime like any other work, so it can land on one that
   // is down. Picking the runtime PER ATTEMPT (rather than closing over a single
@@ -787,6 +789,8 @@ if (briefTarget) {
   // dead runtime the router otherwise fails twice and the brief falls through to
   // agent-x with no specialist — routing quality lost to an unrelated outage.
   const routerRoot = resolveCascadeRoot(process.cwd());
+  // The cards router's done states, from the call the plan was built on.
+  let routedDone: string[] = [];
   const routeOnce = async () => {
     let runtime = rt;
     if (isInCooldown(routerRoot, runtime)) {
@@ -796,12 +800,19 @@ if (briefTarget) {
         runtime = alt;
       }
     }
-    const d = await agenticRoute({
-      brief, runtime, cwd: process.cwd(), projectId: projectId || null,
-      maxBudgetUsd: effectiveBudgetUsd(),
-      timeoutMs: resolveSetting("routing.timeout_ms").value,
-      runtimeRules,
-    });
+    const d = routingMode === "cards"
+      ? await cardsRoute({
+        brief, runtime, cwd: process.cwd(), projectId: projectId || null,
+        maxBudgetUsd: effectiveBudgetUsd(),
+        timeoutMs: resolveSetting("routing.timeout_ms").value,
+      })
+      : await agenticRoute({
+        brief, runtime, cwd: process.cwd(), projectId: projectId || null,
+        maxBudgetUsd: effectiveBudgetUsd(),
+        timeoutMs: resolveSetting("routing.timeout_ms").value,
+        runtimeRules,
+      });
+    routedDone = d.ok && "done" in d ? d.done : [];
     if (!d.ok) {
       // Transport failure. When the CAUSE is the runtime itself (retired tier,
       // spent quota) cool it down, so the retry above — and any agent-x dispatch
@@ -850,6 +861,13 @@ if (briefTarget) {
     process.exit(1);
   }
 
+  // Whatever runs next (business, squad or agent-x) and the judge after it
+  // read `brief`, so the router's done states ride in it.
+  if (routedDone.length) {
+    brief = withDoneWhen(brief, routedDone);
+    console.log(c("dim", `  done when: ${routedDone.length} state(s) added to the brief`));
+  }
+
   const step = plan.steps[0];
   if (step.kind === "business") {
     slug = step.slug!;
@@ -859,16 +877,16 @@ if (briefTarget) {
     if (autoMandatorySquads.length) console.log(c("dim", `  mandatory squads: ${autoMandatorySquads.join(", ")}`));
     if (plan.optionalSquads.length) console.log(c("dim", `  optional squads: ${plan.optionalSquads.join(", ")}`));
     if (plan.rationale) console.log(c("dim", `  rationale: ${plan.rationale}`));
-    emit("auto_route_selected", { project_id: projectId || null, business_slug: slug, method: "agentic", source: plan.source, mandatory_squads: autoMandatorySquads, optional_squads: plan.optionalSquads });
+    emit("auto_route_selected", { project_id: projectId || null, business_slug: slug, method: routingMode, source: plan.source, mandatory_squads: autoMandatorySquads, optional_squads: plan.optionalSquads });
   } else if (step.kind === "squad") {
     const squads = plan.steps.filter(s => s.kind === "squad").map(s => s.slug!) as string[];
     console.log(c("lime", "  →") + c("bold", ` squad-only route: ${squads.join(", ")}`) + c("dim", ` (${plan.source})`));
     if (plan.rationale) console.log(c("dim", `  rationale: ${plan.rationale}`));
-    emit("auto_route_selected", { project_id: projectId || null, business_slug: null, method: "agentic", source: plan.source, squad_only: true, mandatory_squads: squads, optional_squads: plan.optionalSquads });
+    emit("auto_route_selected", { project_id: projectId || null, business_slug: null, method: routingMode, source: plan.source, squad_only: true, mandatory_squads: squads, optional_squads: plan.optionalSquads });
     pendingCascade = { kind: "squad-only", squads, plan };
   } else {
     console.log(c("yellow", "  →") + c("bold", " agent-x route (generalist)") + c("dim", ` (${plan.source}: ${step.reason})`));
-    emit("auto_route_selected", { project_id: projectId || null, business_slug: null, method: "agentic", source: plan.source, agent_x: true, reason: step.reason });
+    emit("auto_route_selected", { project_id: projectId || null, business_slug: null, method: routingMode, source: plan.source, agent_x: true, reason: step.reason });
     pendingCascade = { kind: "agent-x", reason: step.reason, plan };
   }
 } else if (explicitTarget?.kind === "judge-x") {

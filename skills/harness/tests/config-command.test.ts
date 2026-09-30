@@ -84,7 +84,7 @@ describe("nrv config", () => {
     expect(json.status).toBe(0);
     const rows = JSON.parse(json.stdout) as Array<Record<string, unknown>>;
     expect(rows.map((row) => row.key)).toEqual(SETTINGS_SCHEMA.map((spec) => spec.key));
-    expect(rows.find((row) => row.key === "routing.mode")).toMatchObject({ value: "fast", source: "global", path: setup.globalFile, default: "agentic", kind: "enum", options: ["agentic", "fast"], env: "NIRVANA_ROUTING_MODE" });
+    expect(rows.find((row) => row.key === "routing.mode")).toMatchObject({ value: "fast", source: "global", path: setup.globalFile, default: "agentic", kind: "enum", options: ["agentic", "cards", "fast"], env: "NIRVANA_ROUTING_MODE" });
     expect(rows.find((row) => row.key === "routing.dense")).toMatchObject({ value: "fallback", source: "env", variable: "NIRVANA_ROUTER_DENSE", raw: "1" });
     expect(rows.every((row) => row.secret === false && typeof row.description === "string")).toBe(true);
   }, spawnBudgetMs(2));
@@ -122,7 +122,7 @@ describe("nrv config", () => {
     const setup = fixture();
     const invalid = nrvConfig(setup, ["set", "routing.mode", "turbo"]);
     expect(invalid.status).toBe(4);
-    expect(invalid.stderr).toContain('nrv config: routing.mode: valor inválido "turbo"; esperado agentic | fast');
+    expect(invalid.stderr).toContain('nrv config: routing.mode: valor inválido "turbo"; esperado agentic | cards | fast');
     const unknown = nrvConfig(setup, ["get", "routing.nope"]);
     expect(unknown.status).toBe(4);
     expect(unknown.stderr).toContain("chave desconhecida: routing.nope");

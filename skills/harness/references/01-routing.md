@@ -5,7 +5,7 @@
 > state, 2026-08-06). The legacy 5-stage description in
 > `HARNESS_PROTOCOL_V1.md` §6 is historical.
 
-Two routers exist, and the mode decides which one speaks:
+Three routers exist, and the mode decides which one speaks:
 
 - **agentic (default)** — the model reads the brief plus a compact registry
   digest (`scripts/build-routing-digest.ts`, businesses + squads + per-squad
@@ -13,6 +13,11 @@ Two routers exist, and the mode decides which one speaks:
   (`lib/agentic-router.ts`: `primary_business`, `mandatory_squads`,
   `optional_squads`, `suggested_mind_clones`, `rationale`). Higher quality,
   costs tokens. The cascade consumes its decision (`lib/dispatch-cascade.ts`).
+- **cards** — one call with no tools over `.routing-cards.md` (one line per
+  business and squad, what it produces first; written beside the digest) and
+  the top mind-clones of the lexical clone search (`lib/cards-router.ts`). It
+  answers `business:<slug>`, `squad:<slug>` or `solo` plus the brief's done
+  states, mapped onto the same contract the cascade consumes.
 - **fast** — `lib/router.js`, documented below. Deterministic, zero LLM tokens
   by default. Used by `nrv route` / `nrv find`, `--mode=fast`, and as the
   BM25 fallback rung when the agentic router fails at the transport level.

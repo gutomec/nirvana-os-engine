@@ -1156,6 +1156,13 @@ export interface RunHeadlessOpts {
   appendSystemPrompt?: string;
   /** Tool allowlist. Default: file + web tools, no Bash. */
   allowedTools?: string[];
+  /** An answer-only call: the child gets no tools at all where the CLI can
+   *  say so (claude `--tools ""`, codex's read-only sandbox, gemini's plan
+   *  mode). A decision step that only returns JSON has nothing to do with a
+   *  tool, and a model holding tools reports its work instead of answering.
+   *  Runtimes without such a switch run as before; the caller contains them
+   *  with an empty working directory. */
+  noTools?: boolean;
   /** claude permission mode. Default: acceptEdits. */
   permissionMode?: string;
   /** Hard dollar cap for the run (claude --max-budget-usd). Omit = uncapped. */
@@ -1588,6 +1595,9 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
   const explicitTools = opts.allowedTools !== undefined;
   const explicitPerm = opts.permissionMode !== undefined;
 
+  // `claude --help` (audited 2026-09-29): `--tools <tools...>` — 'Use "" to
+  // disable all tools'.
+  if (opts.noTools) args.push("--tools", "");
   if (explicitTools) {
     if (opts.allowedTools!.length > 0) args.push("--allowedTools", opts.allowedTools!.join(" "));
     // length === 0 → caller asked for "no tools": skip the flag and let
@@ -1728,7 +1738,10 @@ function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
   // outputs root and the business/squad dir come through --add-dir.
   const base = ["exec", "-C", opts.cwd];
   for (const directory of opts.addDirs ?? []) base.push("--add-dir", directory);
-  if (opts.yolo === false) base.push("--approve-for-me");
+  // No tool switch exists; the read-only sandbox (`codex exec --help`, audited
+  // 2026-09-30) is the closest, and it replaces both autonomy paths.
+  if (opts.noTools) base.push("-s", "read-only");
+  else if (opts.yolo === false) base.push("--approve-for-me");
   if (opts.sessionId) base.push("resume", opts.sessionId);
   const args = [...base, "--json", "--skip-git-repo-check", "-o", lastMsg];
   // Only an OpenAI id reaches `--model`. resolveSystemModel returns the
@@ -1749,7 +1762,7 @@ function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
   if (opts.outputSchema) args.push("--output-schema", opts.outputSchema);
   for (const img of opts.images ?? []) args.push("-i", img);
   if (opts.webSearch) args.push("-c", `web_search=${JSON.stringify(opts.webSearch)}`);
-  if (opts.yolo !== false) args.push("--dangerously-bypass-approvals-and-sandbox");
+  if (opts.yolo !== false && !opts.noTools) args.push("--dangerously-bypass-approvals-and-sandbox");
 
   const spawnOpts = {
     cwd: opts.cwd,
@@ -1861,8 +1874,10 @@ function runGemini(opts: RunHeadlessOpts): RunHeadlessResult {
   // Workspace grants (`gemini --help`, audited 2026-09-05: "--include-directories
   // Additional directories to include in the workspace", repeatable).
   for (const d of opts.addDirs ?? []) args.push("--include-directories", d);
-  // Trust by default (--yolo); --safe (opts.yolo===false) → auto_edit.
-  args.push("--approval-mode", opts.yolo === false ? "auto_edit" : "yolo");
+  // Trust by default (--yolo); --safe (opts.yolo===false) → auto_edit; an
+  // answer-only call → plan, which `gemini --help` (audited 2026-09-29) calls
+  // "read-only mode".
+  args.push("--approval-mode", opts.noTools ? "plan" : opts.yolo === false ? "auto_edit" : "yolo");
 
   const r = driverSpawnSync("gemini", args, {
     cwd: opts.cwd,
