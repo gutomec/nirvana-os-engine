@@ -765,8 +765,11 @@ export function buildEmployeePrompt(args: BuildArgs): string {
       const header = inj.personas.length
         ? "**Other candidates by search** (you may swap/add; inspect with `nrv ask <slug>` or `nrv find-clone \"<task>\"`):"
         : "**Candidates for this task, ranked** (take one or more; inspect with `nrv ask <slug>` or `nrv find-clone \"<task>\"`):";
-      cloneSuggestions = ["", header,
-        ...inj.suggestions.slice(0, 5).map(h => `- ${h.normalized.toFixed(2)} \`${h.slug}\`${h.one_liner ? " — " + h.one_liner : ""}`)].join("\n");
+      // A hit that was injected is already above, in full or as a card.
+      const injected = new Set(inj.personas.map((p) => p.slug));
+      const others = inj.suggestions.filter((h) => !injected.has(h.slug)).slice(0, 5);
+      if (others.length) cloneSuggestions = ["", header,
+        ...others.map(h => `- ${h.normalized.toFixed(2)} \`${h.slug}\`${h.one_liner ? " — " + h.one_liner : ""}`)].join("\n");
     }
   }
 
@@ -805,6 +808,22 @@ export function buildEmployeePrompt(args: BuildArgs): string {
     const handoffPath = path.join(args.project_dir, "HANDOFF.json");
     if (fs.existsSync(handoffPath)) {
       handoffContent = fs.readFileSync(handoffPath, "utf8");
+      // The brief has its own section below, and HANDOFF carries copies of it
+      // (brief_original, and amplified_brief when the intake amplified it), so
+      // rendering the file whole put the same text in the prompt two or three
+      // times. A copy leaves the render only when the brief section already
+      // holds it word for word; the file on disk keeps everything.
+      try {
+        const h = JSON.parse(handoffContent);
+        if (h && typeof h === "object" && !Array.isArray(h)) {
+          let trimmed = false;
+          for (const key of ["brief_original", "amplified_brief"]) {
+            const v = h[key];
+            if (typeof v === "string" && v.trim() && args.brief.includes(v.trim())) { delete h[key]; trimmed = true; }
+          }
+          if (trimmed) handoffContent = JSON.stringify(h, null, 2);
+        }
+      } catch { /* not JSON: render it as it is */ }
     }
   }
 

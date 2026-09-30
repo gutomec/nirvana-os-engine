@@ -24,6 +24,15 @@ The seat prompt read `squads_authorized: []` as "do not dispatch any squad", the
 
 `JudgeInput.brief` existed and the judge rendered it above the artifact, but the quality gate never passed it, so an enabled judge graded every deliverable against its rubric alone. The delivery pipeline now writes the brief into the run's workspace and hands it to the gate (`--brief-file`), which forwards it to the judge. The squad prompt also stopped telling the squad that its blocking acceptance criteria are what the gate checks: the standard gate does not read them.
 
+### Lighter prompts: the default DNA card reaches squads, and nothing arrives twice
+
+- `execution.dna_injection` defaults to `reference`, a card naming the persona files the executor opens on demand. The seat prompt honored it; squad dispatches and direct dispatches typed the setting as `full` or `fragments` and pasted whole personas for everything else, the default included. Both now pass the configured mode through, and a squad grants the folders of the personas its cards name, so a runtime that refuses an ungranted path can still open them.
+- A squad dispatch with a resolved capability reads a manifest cut to what it executes: identity, components, runtime requirements and the dispatched capability in full, every other capability by id and description. The routing fields (`keywords`, `example_briefs`, `examples`, `not_for`, `domains`, `score_boost`, `fidelity`, `tags`) were most of the file. A manifest that does not parse, or a squad without the capability, keeps the file as it is.
+- A team run no longer builds the intake seat's prompt it never reads, nor reports clones injected into it.
+- The seat prompt renders `HANDOFF.json` without a copy of the brief the brief section already shows word for word, and the ranked clone candidates no longer repeat the clones injected above them.
+- The harness survey reads the catalog and opens manifests only for finalists: two instructions pointed it at `produces`, `example_briefs` and `keywords`, which only the manifests carry.
+
+
 ## 0.14.8 — 2026-09-27
 
 ### A closed run stays closed, and a lookup never starts work

@@ -316,7 +316,7 @@ The reason is structural and no amount of keyword tuning fixes it. A real brief 
   catalog       applications, native iOS and Android apps…"      obvious on sight
 ```
 
-Match (in order of fidelity): `produces[]` (concrete deliverable types) → `example_briefs[]` (real briefs the entry was designed for) → `keywords[]` (PT/EN synonyms) → fallback `description` + `domains`.
+Survey on what the catalog carries: the full description of every entry. `produces[]`, `example_briefs[]` and `keywords[]` live in the manifests, and a manifest is Pass 2's to open for a finalist, never a way to survey.
 
 The OBJECT is software; the THEME is judicial. Lexical matching has no concept of the difference — you do, and that is exactly the Mother Rule above. So read the whole list and apply it. `software-forge` declares 50 keywords and 12 example briefs; it was not under-declared, it was out-ranked by theme. Reading the catalog is not the expensive option here, it is the correct one.
 
@@ -366,8 +366,8 @@ Concurrency is the **conclusion** of that analysis, not the default. Two targets
 
 With that settled, pick the targets:
 
-1. **Business(es)** — try first. Match against `~/businesses/*/business.yaml` `domains` / `auto_routes` / `produces` / `example_briefs`. **You specify what happens inside: which seats work, which mind-clone each embodies, and which squad each one instructs.** See "You draw the whole map" below.
-2. **Squad(s)** — if no business covers the brief, dispatch directly. Match against `~/squads/*/squad.yaml` `capabilities[].domains` / `produces` / `example_briefs`.
+1. **Business(es)** — try first. Pick from the Pass 1 survey; a finalist's `business.yaml` (`produces`, `example_briefs`, `auto_routes`) confirms it in Pass 2. **You specify what happens inside: which seats work, which mind-clone each embodies, and which squad each one instructs.** See "You draw the whole map" below.
+2. **Squad(s)** — if no business covers the brief, dispatch directly. Pick from the Pass 1 survey; a finalist's `squad.yaml` (`capabilities[].produces`, `example_briefs`) confirms it in Pass 2.
 3. **`agent-x`** — if no squad covers either, dispatch to the runtime's `agent-x` at `~/.nirvana/skills/_shared/agents/agent-x.<runtime>.md`. The autonomous generalist fallback; executes end-to-end. **Never produce inline.**
 
 **You draw the whole map, and the business executes it.**

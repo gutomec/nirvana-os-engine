@@ -49,7 +49,7 @@ export interface InjectedMindClone {
   path: string;            // primary file path
   bytes: number;           // total content bytes
   sha256: string;          // fingerprint (first 16 chars)
-  format: "canonical" | "flat" | "fragments";
+  format: "canonical" | "flat" | "fragments" | "reference";
 }
 
 export interface InjectionResult {
@@ -130,13 +130,13 @@ export function injectMindClones(opts: {
   const blocks: string[] = [];
   const missing: { input: string; tried: string }[] = [];
 
-  // Injection mode: "full" (getMindClone — AGENT+SOUL+MANIFEST, default) or
-  // "fragments" (SOUL + phase layers via resolveClonePersona). Opt-in via the
-  // execution.dna_injection setting (NIRVANA_DNA_INJECTION=fragments, or the
-  // project / global config). Squads execute → execute layers.
-  // Additive and regression-free: in fragments, if the clone does not resolve by
-  // bare slug, fall back to getMindClone (legacy path). Flag off = byte-identical to today.
-  const dnaMode: "full" | "fragments" = resolveSetting("execution.dna_injection").value;
+  // Injection mode, from the execution.dna_injection setting: "reference" (the
+  // default: a card naming the persona files, which the executor opens when it
+  // needs the method), "fragments" (SOUL + phase layers, squads execute → execute
+  // layers) or "full" (getMindClone — AGENT+SOUL+MANIFEST). A clone that does
+  // not resolve by bare slug falls back to getMindClone, the legacy path; under
+  // "reference" that fallback still yields a card, never the whole persona.
+  const dnaMode: "reference" | "full" | "fragments" = resolveSetting("execution.dna_injection").value;
   const fragLayers = layersForPhase(opts.phase || "execute");
 
   for (const input of opts.slugs) {
@@ -147,10 +147,12 @@ export function injectMindClones(opts: {
     let resolvedSlug = slug;
     let fmt: InjectedMindClone["format"] = "canonical";
 
-    if (dnaMode === "fragments") {
-      const persona = resolveClonePersona(slug, { depth: "fragments", layers: fragLayers, byteBudget: FRAGMENT_BYTE_BUDGET });
+    if (dnaMode === "fragments" || dnaMode === "reference") {
+      const persona = dnaMode === "fragments"
+        ? resolveClonePersona(slug, { depth: "fragments", layers: fragLayers, byteBudget: FRAGMENT_BYTE_BUDGET })
+        : resolveClonePersona(slug, { depth: "reference" });
       if (persona && persona.content) {
-        content = persona.content; outPath = persona.source; resolvedSlug = persona.slug; fmt = "fragments";
+        content = persona.content; outPath = persona.source; resolvedSlug = persona.slug; fmt = dnaMode;
       }
     }
     if (!content) {
@@ -159,7 +161,13 @@ export function injectMindClones(opts: {
         missing.push({ input, tried: `${category}/${slug}` });
         continue;
       }
-      content = mc.content; outPath = mc.path; resolvedCat = mc.category; resolvedSlug = mc.slug; fmt = mc.format || "canonical";
+      outPath = mc.path; resolvedCat = mc.category; resolvedSlug = mc.slug;
+      if (dnaMode === "reference") {
+        content = `**${mc.slug}** (\`${mc.category}/${mc.slug}\`)\n- persona file (read it when you need this expert's method, not before): \`${mc.path}\``;
+        fmt = "reference";
+      } else {
+        content = mc.content; fmt = mc.format || "canonical";
+      }
     }
 
     const bytes = Buffer.byteLength(content, "utf8");

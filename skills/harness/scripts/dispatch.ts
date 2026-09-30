@@ -1649,22 +1649,29 @@ if (!fs.existsSync(tmpBriefFile)) {
   console.error(c("red", `✗ brief.md not found at ${tmpBriefFile}`));
   process.exit(1);
 }
-const buildArgs = [employeePrompt, slug, intake, projDir, tmpBriefFile];
-if (execOutputsRoot) buildArgs.push(execOutputsRoot);
-const r2 = spawnSync("bun", buildArgs, { windowsHide: true, encoding: "utf8", env: prepScriptEnv });
-if (r2.status !== 0) {
-  console.error(c("red", "✗ employee-prompt failed:"));
-  console.error(r2.stderr);
-  process.exit(1);
-}
-
+// The intake prompt is what a single-seat run executes and what scaffold-only
+// hands the user. A team run never reads it: the chain builds each seat's own
+// prompt, the intake's included. Building it anyway cost a whole employee-prompt
+// pass and emitted mind_clone_injected for a prompt that never ran.
+const teamChainRun = wantExec && wantTeam && !businessCanaryDecision.enabled;
 const outputPath = path.join(projDir, "agent-prompt.md");
-fs.writeFileSync(outputPath, r2.stdout);
-
-const promptSize = r2.stdout.length;
-const dnaCount = (r2.stdout.match(/^--- MIND-CLONE:/gm) || []).length;
-console.log(c("dim", `  Prompt: ${promptSize.toLocaleString()} chars · ${dnaCount} mind-clones injected`));
-console.log(c("dim", `  Saved to: ${outputPath}`));
+let promptSize = 0;
+let dnaCount = 0;
+if (!teamChainRun) {
+  const buildArgs = [employeePrompt, slug, intake, projDir, tmpBriefFile];
+  if (execOutputsRoot) buildArgs.push(execOutputsRoot);
+  const r2 = spawnSync("bun", buildArgs, { windowsHide: true, encoding: "utf8", env: prepScriptEnv });
+  if (r2.status !== 0) {
+    console.error(c("red", "✗ employee-prompt failed:"));
+    console.error(r2.stderr);
+    process.exit(1);
+  }
+  fs.writeFileSync(outputPath, r2.stdout);
+  promptSize = r2.stdout.length;
+  dnaCount = (r2.stdout.match(/^--- MIND-CLONE:/gm) || []).length;
+  console.log(c("dim", `  Prompt: ${promptSize.toLocaleString()} chars · ${dnaCount} mind-clones injected`));
+  console.log(c("dim", `  Saved to: ${outputPath}`));
+}
 
 // Step 3 — dispatch_business audit event. Bind the audit facade to the project
 // (pre-scaffold events are replayed there, flagged replayed_from_global — the
@@ -1689,7 +1696,7 @@ if (wantExec && !businessCanaryDecision.enabled) {
       meta: {
         project_dir: projDir, project_root: projectRoot, scaffold_root: scaffoldRoot,
         outputs_root: execOutputsRoot ?? null,
-        prompt_path: outputPath, brief_path: tmpBriefFile,
+        prompt_path: teamChainRun ? null : outputPath, brief_path: tmpBriefFile,
         mode: wantTeam ? "team" : "single",
       },
     });
@@ -1710,8 +1717,8 @@ emit("dispatch_business", {
   mode: wantExec ? "headless-subprocess" : "scaffold-only",
   runtime: runtimeDecision.runtime,
   runtime_source: runtimeDecision.source,
-  dna_files_injected: dnaCount,
-  prompt_size_chars: promptSize,
+  // A team run built no intake prompt; each seat's prompt reports its own clones.
+  ...(teamChainRun ? {} : { dna_files_injected: dnaCount, prompt_size_chars: promptSize }),
 });
 if (executionOptions.requestedMode === "gauntlet") {
   emit(businessCanaryDecision.enabled ? "x_business_gauntlet_selected" : "x_business_gauntlet_bypassed", {

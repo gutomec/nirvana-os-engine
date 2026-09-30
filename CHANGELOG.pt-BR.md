@@ -24,6 +24,15 @@ O prompt do cargo lia `squads_authorized: []` como "não despache squad nenhum",
 
 O `JudgeInput.brief` existia e o juiz o mostrava acima do artefato, mas o gate de qualidade nunca o passava, então um juiz ligado avaliava cada entregável só contra a própria rubrica. O pipeline de entrega agora grava o brief na pasta de trabalho da execução e o entrega ao gate (`--brief-file`), que o repassa ao juiz. O prompt do squad também deixou de dizer que os critérios de aceitação bloqueantes são o que o gate confere: o gate padrão não os lê.
 
+### Prompts mais leves: o cartão de DNA padrão chega aos squads, e nada chega duas vezes
+
+- `execution.dna_injection` tem `reference` como padrão, um cartão com os caminhos dos arquivos de persona que o executor abre quando precisa. O prompt do cargo respeitava isso; o despacho de squad e o despacho direto tratavam a configuração como `full` ou `fragments` e colavam a persona inteira em todo o resto, inclusive no padrão. Os dois agora repassam o modo configurado, e o squad libera as pastas das personas que os cartões nomeiam, para que um runtime que recusa caminho não liberado ainda consiga abri-las.
+- O despacho de squad com a capability resolvida lê um manifesto cortado ao que ele executa: identidade, componentes, requisitos de runtime e a capability despachada inteira, com as demais só por id e descrição. Os campos de roteamento (`keywords`, `example_briefs`, `examples`, `not_for`, `domains`, `score_boost`, `fidelity`, `tags`) eram a maior parte do arquivo. Um manifesto que não parseia, ou um squad sem a capability, mantém o arquivo como está.
+- A execução em equipe deixou de montar o prompt do cargo de intake que ela nunca lê, e de relatar clones injetados nele.
+- O prompt do cargo mostra o `HANDOFF.json` sem a cópia do brief que a seção do brief já mostra palavra por palavra, e a lista de clones candidatos deixou de repetir os clones já injetados acima dela.
+- A triagem da harness lê o catálogo e só abre manifestos dos finalistas: duas instruções a mandavam olhar `produces`, `example_briefs` e `keywords`, que só os manifestos têm.
+
+
 ## 0.14.8 — 2026-09-27
 
 ### Run fechado continua fechado, e consulta nunca começa trabalho

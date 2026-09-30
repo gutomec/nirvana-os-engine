@@ -3,7 +3,8 @@
 //
 // Spawns a headless host agent that reads ONE file — the routing digest built
 // by scripts/build-routing-digest.ts (every business, squad, capability
-// collision and mind-clone, one line each, <50k tokens) — instead of the raw
+// collision and mind-clone, one line each; it grows with the library and has no
+// ceiling unless `routing.digest_token_budget` sets one) — instead of the raw
 // registries (2MB+ ≈ 600k tokens). The digest header carries the registry
 // paths, so the agent can escalate to a full manifest for finalists only.
 //

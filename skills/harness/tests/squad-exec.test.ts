@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { runSquadHeadless, buildSquadPrompt, capabilityContext, promptPath } from "../lib/squad-exec.ts";
+import { runSquadHeadless, buildSquadPrompt, capabilityContext, promptPath, executorManifest } from "../lib/squad-exec.ts";
 import { sessionKey, putSession } from "../lib/session-store.ts";
 import { SCOPE_GUARD_PT_BR } from "../../_shared/lib/scope-guard.ts";
 import { LIMITS } from "../../_shared/validators/limits.ts";
@@ -239,6 +239,34 @@ describe("promptPath — the workflow reference reads the same on every platform
     const ctx = capabilityContext(squadDir, "analysis.report.produce")!;
     expect(ctx.workflow!.file).toBe("workflows/guided-analysis.md");
     expect(ctx.workflow!.file).not.toContain("\\");
+  });
+});
+
+describe("buildSquadPrompt — the manifest the executor reads", () => {
+  // Routing fields are what the router matches on; the squad that executes never
+  // reads them, and they were 40–53% of a real squad.yaml pasted into every run.
+  test("a resolved capability keeps its own contract and drops the routing fields", () => {
+    const squadDir = scaffoldCapabilitySquad(path.join(tmp, "squads-manifest"));
+    const yamlPath = path.join(squadDir, "squad.yaml");
+    fs.writeFileSync(yamlPath, fs.readFileSync(yamlPath, "utf8")
+      .replace("    produces:\n      - report.md", "    keywords: [KEYWORD-MARKER]\n    example_briefs: [\"BRIEF-MARKER\"]\n    not_for: [NOTFOR-MARKER]\n    produces:\n      - report.md")
+      .replace("  - id: analysis.dataset.extract\n    description: Extract the raw dataset only.", "  - id: analysis.dataset.extract\n    description: Extract the raw dataset only.\n    keywords: [OTHER-KEYWORD-MARKER]\n    acceptance:\n      - id: other-ac\n        description: OTHER-ACCEPTANCE-MARKER"));
+    for (const marker of ["KEYWORD-MARKER", "BRIEF-MARKER", "NOTFOR-MARKER", "OTHER-KEYWORD-MARKER", "OTHER-ACCEPTANCE-MARKER"]) {
+      expect(fs.readFileSync(yamlPath, "utf8")).toContain(marker);
+    }
+    const p = buildSquadPrompt({
+      squadSlug: "guided", squadDir, brief: "analise a conta", outDir: "/out/dir",
+      mode: "squad-only", cloneInjection: { block: "", decision: "PADRÃO" }, capabilityId: "analysis.report.produce",
+    });
+    const identity = p.slice(p.indexOf("## SUA IDENTIDADE"), p.indexOf("## SUA CAPABILITY"));
+    for (const gone of ["KEYWORD-MARKER", "BRIEF-MARKER", "NOTFOR-MARKER", "OTHER-KEYWORD-MARKER", "OTHER-ACCEPTANCE-MARKER"]) expect(p).not.toContain(gone);
+    expect(identity).toContain("workflows/guided-analysis");
+    expect(identity).toContain("analysis.dataset.extract");
+    expect(identity).toContain("Extract the raw dataset only.");
+  });
+
+  test("the raw file stays when the manifest does not parse", () => {
+    expect(executorManifest("name: [unclosed", "x.y.z")).toBe("name: [unclosed");
   });
 });
 
