@@ -256,7 +256,7 @@ Never copy these into a skill's own dir. Always import via path absolute.
 1. Edit `catalogs/CAPABILITY_CATALOG_V1.yaml`.
 2. Place the new entry in the appropriate category (Marketing/Content/Engineering/Business/Vertical/Cross-cutting). Update the count in the comment header.
 3. If it warrants a new namespace (rare), add to `namespaces` with `prefix`, `parent_domain`, `sample_capabilities`.
-4. Note the addition in `~/.nirvana/skills/squads/SQUAD_PROTOCOL_V5.md` Appendix C if you're a protocol author.
+4. Record the addition in `~/.nirvana/skills/squads/SQUAD_PROTOCOL_V6.md` if you're a protocol author.
 5. The next time `index-squads.ts` runs, the new domain becomes accepted (squads can now use it without `experimental_domains: true`).
 
 ---

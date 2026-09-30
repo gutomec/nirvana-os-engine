@@ -4,7 +4,7 @@
 Intent: CREATE, VALIDATE, MODIFY
 
 ## Protocol Reference
-SQUAD_PROTOCOL_V4.md §5.1, §6.2, §7.1 · SQUAD_PROTOCOL_V6.md §28.1, App-G
+Squad Protocol v4 (archived) §5.1, §6.2, §7.1 · SQUAD_PROTOCOL_V6.md §28.1, App-G
 
 ## Schemas Available
 

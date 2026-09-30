@@ -4,7 +4,7 @@
 Intent: ACTIVATE (keywords: activate, register, install, deps, enable, ative, instale, prepare)
 
 ## Protocol Reference
-SQUAD_PROTOCOL_V5.md §5 (Squad Structure), §16 (Security), §18 (Runtime Compatibility), §22 (Capabilities).
+Squad Protocol v5 (archived) §5 (Squad Structure), §16 (Security), §18 (Runtime Compatibility), §22 (Capabilities).
 
 ## Sidecar `dependencies.yaml` (v5 install model)
 

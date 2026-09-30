@@ -57,16 +57,11 @@ P7 Runtime Neutrality — Core spec has no runtime-specific values.
 P8 Technical Honesty — never sell enforcement that doesn't exist.
 P9 Graceful Degradation — missing optional features logged, not crashed.
 P10 Namespaced Extensions — runtime config under `runtimes.{id}.*`.
-P11 Output Humanization — human-facing outputs pass through humanization before the final return (Squad v5 §27, Business v1 §10.7).
+P11 Output Humanization — human-facing outputs pass through humanization before the final return (Squad v5 §27, Business v1 §10.7; both archived).
 
 ## Protocol Source
 
-Sources of truth, in resolution order:
-
-- `SQUAD_PROTOCOL_V6.md` (v6.0 delta over v5, PT-BR): §28 workflow document, §29 acceptance, §30 evaluator, §31 composition, §32 execution binding, §33 `not_for` ≤25, §34 admission, §35 migration, App-G/H.
-- `SQUAD_PROTOCOL_V5.md` (v5.0 delta over v4): §22 capabilities, §23 registry, §24 discovery, §25 routing, §26 telemetry, §27 humanization, App-C/D/E/F/Z.
-- `SQUAD_PROTOCOL_V4.md` (21 sections, runtime-agnostic) — unchanged base that v5 extends.
-- `SQUAD_PROTOCOL.md` (v2.0, deprecated, kept for legacy squads).
+Source of truth: `SQUAD_PROTOCOL_V6.md` (PT-BR): §28 workflow document, §29 acceptance, §30 evaluator, §31 composition, §32 execution binding, §33 `not_for` ≤25, §34 admission, §35 migration, App-G/H. The working contract for everything else is `references/*.md`, the templates and the validators. The earlier versions (v2, v4, v5) are archived in the repository's `docs/legacy/protocols/`, not installed.
 
 Schemas in `~/.nirvana/skills/_shared/schemas/{capability,business,core-schemas}.json`.
 Adapters in `~/.nirvana/skills/_shared/adapters/{claude-code,codex,gemini-cli,hermes}.md` (cover squads + businesses + harness).
@@ -135,10 +130,7 @@ All squad outputs write to a **standard workspace** inside the project:
 ```
 ~/.nirvana/skills/squads/
 ├── SKILL.md                    ← this file
-├── SQUAD_PROTOCOL_V6.md        ← v6 delta (§28-35 + App-G/H), PT-BR
-├── SQUAD_PROTOCOL_V5.md        ← v5 delta (§22-27 + appendices)
-├── SQUAD_PROTOCOL_V4.md        ← v4 base (§1-21) that v5 extends
-├── SQUAD_PROTOCOL.md           ← v2 deprecated (kept for legacy squads)
+├── SQUAD_PROTOCOL_V6.md        ← the protocol (§28-35 + App-G/H), PT-BR
 ├── references/01..11-*.md      ← loaded on demand by intent
 ├── templates/*.tmpl            ← agent/task/workflow/squad templates
 ├── lib/*.js                    ← output-resolver, adapter-loader, etc.
@@ -153,7 +145,7 @@ All squad outputs write to a **standard workspace** inside the project:
 
 ## First Invocation
 
-1. Verify `SQUAD_PROTOCOL_V6.md` and `SQUAD_PROTOCOL_V5.md` exist alongside this SKILL.md.
+1. Verify `SQUAD_PROTOCOL_V6.md` exists alongside this SKILL.md.
 2. Check node>=18, python3>=3.8 (validators).
 3. Create `${SQUADS_DIR}/` if missing: `mkdir -p ${SQUADS_DIR}`. Default `${SQUADS_DIR}` resolves to `~/squads`.
 4. Report: `Squad Protocol Engine v6.0.0 ready. Default protocol for new squads: 6.0. Roots: ${SQUADS_DIR} (N), ./squads (M).`
@@ -340,7 +332,7 @@ You are a {specific role} for {domain}. You {primary action}. You {boundary}.
 
 NEVER:
 - Guess squad structure — always read squad.yaml first.
-- Load full SQUAD_PROTOCOL_V4.md or V5.md into context — use TOC, read sections on demand.
+- Load the full SQUAD_PROTOCOL_V6.md into context — use its TOC, read sections on demand.
 - Create agents without `maxTurns` — runtime may loop infinitely.
 - Create tasks with `owner:` field — use workflow binding instead.
 - Use runtime-specific tool names in portable `tools:` field — use semantic names.

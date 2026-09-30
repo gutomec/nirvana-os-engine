@@ -4,7 +4,7 @@
 Intent: VALIDATE (keywords: validate, check, verify, fix, repair, lint, audit)
 
 ## Protocol Reference
-SQUAD_PROTOCOL_V4.md §15
+Squad Protocol v4 (archived) §15
 
 ## Validation — Two-Stage
 

@@ -278,9 +278,9 @@ USE_PI="Quando precisar de modelos locais (Ollama/llama.cpp) ou de um provider f
 - Docs: `https://pi.dev/docs/latest` — usage (flags), providers (auth, llama.cpp, models.json), json (event stream), rpc, skills (padrão Agent Skills), environment-variables (`PI_CODING_AGENT`, `PI_SESSION_ID`, `PI_SESSION_FILE`, `PI_PROVIDER`, `PI_MODEL`).
 - Repo: `github.com/earendil-works/pi` (MIT).
 - Driver: `skills/harness/lib/host-agent-driver.ts` (`runPi`); judge driver: `skills/_shared/lib/host-agent-driver.ts` (adapter `pi`).
-- Squad Protocol v5: `~/.nirvana/skills/squads/SQUAD_PROTOCOL_V5.md`
-- Business Protocol v1: `~/.nirvana/skills/businesses/BUSINESS_PROTOCOL_V1.md`
-- Harness Protocol v1: `~/.nirvana/skills/harness/HARNESS_PROTOCOL_V1.md`
+- Squad Protocol v6: `~/.nirvana/skills/squads/SQUAD_PROTOCOL_V6.md`
+- Business Protocol v2: `~/.nirvana/skills/businesses/BUSINESS_PROTOCOL_V2.md`
+- Harness protocol: `~/.nirvana/skills/harness/SKILL.md`
 
 ---
 

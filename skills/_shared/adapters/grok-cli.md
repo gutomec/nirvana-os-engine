@@ -284,9 +284,9 @@ echo '{"type":"human_escalation_required","trigger_id":"budget","severity":"high
 - xAI API: rota paga via `XAI_API_KEY` (pay-per-token).
 - Driver: `skills/harness/lib/host-agent-driver.ts` (`runGrok`).
 - Squad de referência (rota assinatura): `grok-studio-nirvana`.
-- Squad Protocol v5: `~/.nirvana/skills/squads/SQUAD_PROTOCOL_V5.md`
-- Business Protocol v1: `~/.nirvana/skills/businesses/BUSINESS_PROTOCOL_V1.md`
-- Harness Protocol v1: `~/.nirvana/skills/harness/HARNESS_PROTOCOL_V1.md`
+- Squad Protocol v6: `~/.nirvana/skills/squads/SQUAD_PROTOCOL_V6.md`
+- Business Protocol v2: `~/.nirvana/skills/businesses/BUSINESS_PROTOCOL_V2.md`
+- Harness protocol: `~/.nirvana/skills/harness/SKILL.md`
 
 ---
 

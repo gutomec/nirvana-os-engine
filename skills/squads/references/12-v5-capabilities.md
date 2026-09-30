@@ -8,7 +8,7 @@ from scratch.
 
 ## Protocol Reference
 
-`SQUAD_PROTOCOL_V5.md` §22 (Capability Manifest), §22.9 (validation rules).
+Squad Protocol v5 (archived) §22 (Capability Manifest), §22.9 (validation rules).
 Schema: `~/.nirvana/skills/_shared/schemas/capability.schema.json`.
 Validator: `~/.nirvana/skills/_shared/validators/validators.py` (class `Capability`).
 Domain catalog: `~/.nirvana/skills/_shared/catalogs/CAPABILITY_CATALOG_V1.yaml`.

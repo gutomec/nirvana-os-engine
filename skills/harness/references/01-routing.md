@@ -3,7 +3,7 @@
 > How a brief becomes a decision in **fast mode**. Source of truth:
 > `lib/router.js` (this file documents what that code does today, routing-360
 > state, 2026-08-06). The legacy 5-stage description in
-> `HARNESS_PROTOCOL_V1.md` §6 is historical.
+> the archived Harness Protocol v1 §6 is historical.
 
 Three routers exist, and the mode decides which one speaks:
 

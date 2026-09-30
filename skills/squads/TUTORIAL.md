@@ -472,4 +472,4 @@ Quando precisar evoluir:
 - Conectar com business: business pode declarar `squads_authorized: [competitor-analyzer-quick]` em `business.yaml` para usar
 - Migrar v4 → v5: pegue um squad legacy de `${SQUADS_LEGACY_DIR}` (se definido) ou `${SQUADS_DIR}`, adicione `protocol: "5.0"` + `capabilities[]`, mantenha `legacy.v4_path` durante coexistência
 
-Veja `README.md` da skill para reference completa, `SQUAD_PROTOCOL_V5.md` para spec detalhado, e `~/.nirvana/skills/_shared/catalogs/CAPABILITY_CATALOG_V1.yaml` para vocabulário canônico.
+Veja `README.md` da skill para reference completa, `SQUAD_PROTOCOL_V6.md` para o protocolo, e `~/.nirvana/skills/_shared/catalogs/CAPABILITY_CATALOG_V1.yaml` para vocabulário canônico.

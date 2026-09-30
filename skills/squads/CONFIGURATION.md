@@ -295,8 +295,7 @@ capabilities:
 - **SKILL.md** — entrada da skill
 - **README.md** — overview
 - **TUTORIAL.md** — tutorial passo-a-passo PT-BR
-- **SQUAD_PROTOCOL_V5.md** — spec v5 completo
-- **SQUAD_PROTOCOL_V4.md** — spec v4 (legacy)
+- **SQUAD_PROTOCOL_V6.md** — o protocolo
 - **lib/v4-capability-inferrer.js** — código + comments do inferrer
 - **~/.nirvana/skills/_shared/catalogs/CAPABILITY_CATALOG_V1.yaml** — vocabulário canônico (57 domains)
-- **~/.nirvana/skills/harness/CONFIGURATION.md** — config do roteador que consome este registry
+- **`nrv config explain <chave>`** — as configurações do engine, com a origem de cada valor

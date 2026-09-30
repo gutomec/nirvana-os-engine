@@ -4,7 +4,7 @@
 Intent: UPGRADE, MIGRATE (keywords: upgrade, migrate, convert, v4)
 
 ## Protocol Reference
-SQUAD_PROTOCOL_V6.md §35 (v5 → v6) · SQUAD_PROTOCOL_V4.md §21 (everything older)
+SQUAD_PROTOCOL_V6.md §35 (v5 → v6) · Squad Protocol v4 (archived) §21 (everything older)
 
 ## v5 → v6: one command
 

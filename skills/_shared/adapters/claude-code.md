@@ -336,9 +336,9 @@ Além de `validators.ts/.py`, Claude Code requer:
   - `src/tools/TaskCreateTool/prompt.ts` — TaskCreate
   - `src/tools/TeamCreateTool/prompt.ts` — TeamCreate
   - `src/coordinator/coordinatorMode.ts` — coordenação multi-agent
-- Squad Protocol v5: `~/.nirvana/skills/squads/SQUAD_PROTOCOL_V5.md`
-- Business Protocol v1: `~/.nirvana/skills/businesses/BUSINESS_PROTOCOL_V1.md`
-- Harness Protocol v1: `~/.nirvana/skills/harness/HARNESS_PROTOCOL_V1.md`
+- Squad Protocol v6: `~/.nirvana/skills/squads/SQUAD_PROTOCOL_V6.md`
+- Business Protocol v2: `~/.nirvana/skills/businesses/BUSINESS_PROTOCOL_V2.md`
+- Harness protocol: `~/.nirvana/skills/harness/SKILL.md`
 
 ---
 

@@ -8,7 +8,7 @@ does not show up.
 
 ## Protocol Reference
 
-`SQUAD_PROTOCOL_V5.md` §23 (Global Registry and Indexing).
+Squad Protocol v5 (archived) §23 (Global Registry and Indexing).
 Registry schema: `core-schemas.json#/registry_squads`.
 Implementation: `~/.nirvana/skills/squads/lib/registry.js`.
 

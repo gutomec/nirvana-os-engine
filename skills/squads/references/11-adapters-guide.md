@@ -4,7 +4,7 @@
 Intent: AUTHOR_ADAPTER, UNDERSTAND_RUNTIME, DEBUG_RUNTIME_ISSUE
 
 ## Protocol Reference
-SQUAD_PROTOCOL_V4.md §4, §18
+Squad Protocol v4 (archived) §4, §18
 
 ## What an Adapter Is
 

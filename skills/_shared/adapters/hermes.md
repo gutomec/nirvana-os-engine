@@ -278,7 +278,7 @@ hermes slack send "#nirvana-ops" "Escalação: budget_violation no trace <id>"
 - Ponte + shim: `skills/_shared/adapters/hermes/skills/nirvana/`, `skills/_shared/scripts/audit-emit-from-hermes-hook.ts`.
 - Wrapper: `bin/nrv-hermes`. Installer: `scripts/install.ts` (`offerHermesBridge`).
 - DNA injection: `harness/lib/dispatch.ts` (`injectMindClones`, `validateTrace`).
-- Squad v5: `~/.nirvana/skills/squads/SQUAD_PROTOCOL_V5.md`. Business v1: `~/.nirvana/skills/businesses/BUSINESS_PROTOCOL_V1.md`. Harness v1: `~/.nirvana/skills/harness/HARNESS_PROTOCOL_V1.md`.
+- Squad v6: `~/.nirvana/skills/squads/SQUAD_PROTOCOL_V6.md`. Business v2: `~/.nirvana/skills/businesses/BUSINESS_PROTOCOL_V2.md`.
 
 ---
 

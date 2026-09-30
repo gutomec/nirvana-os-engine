@@ -8,12 +8,12 @@ Date:     2026-08-27
 Author:   Luiz Gustavo Vieira Rodrigues (Prospecteezy)
 license:  SUL-1.0
 Scope:    Núcleo agnóstico de runtime para operação autônoma de empresas
-Predecessor: v1.0.0 (`BUSINESS_PROTOCOL_V1.md`)
+Predecessor: v1.0.0 (arquivado em `docs/legacy/protocols/businesses/` no repositório)
 ```
 
 ## Sobre esta versão
 
-A v2.0 é um **delta sobre a v1.0**, na mesma forma que a v5 do Squad Protocol foi delta sobre a v4: este documento descreve só o que muda. Tudo o que não aparece aqui continua valendo exatamente como está escrito em `BUSINESS_PROTOCOL_V1.md`.
+A v2.0 é um **delta sobre a v1.0**, na mesma forma que a v5 do Squad Protocol foi delta sobre a v4: este documento descreve só o que muda. Tudo o que não aparece aqui continua valendo exatamente como está escrito na v1.0, arquivada em `docs/legacy/protocols/businesses/BUSINESS_PROTOCOL_V1.md` no repositório.
 
 A v1 foi escrita antes do engine existir. Dois anos de uso mediram a distância: em 26/08/2026, com 61 empresas e 581 funcionários instalados, **475 funcionários declaravam `heartbeat` e nada lia**, **566 declaravam `self_score_contract` e nada lia**, **234 declaravam `escalation_triggers` e nada lia**, nenhuma empresa tinha o diretório `tickets/` que a §10.2 chama de obrigatório, e nenhuma das 61 declarava `run_budget_usd`, o único campo de orçamento que o despacho realmente lê. Na direção contrária, o engine precisava de sete coisas que o protocolo não declarava: metadados de roteamento, clone fixado por cargo, preferência de squads sem fechar o conjunto, critério de aceitação por cargo, um campo único de orçamento, `.nirvana-surface.json` e o enum de `type` com os quatro valores que o validador já aceitava.
 

@@ -182,7 +182,6 @@ Event taxonomy: `references/03-audit.md`. Schema: `~/.nirvana/skills/_shared/sch
 ~/.nirvana/skills/harness/
 ├── SKILL.md                       ← source of truth (Agentic Mode)
 ├── README.md                      ← this file (operator/reference companion)
-├── HARNESS_PROTOCOL_V1.md         ← legacy spec (fast-mode 6-stage pipeline, ~1200 lines)
 ├── config.yaml                    ← routing mode + thresholds, budget, telemetry
 ├── lib/
 │   ├── router.js                  ← fast-mode 6-stage pipeline (stages -1, 0, 1-5)
@@ -225,5 +224,5 @@ Event taxonomy: `references/03-audit.md`. Schema: `~/.nirvana/skills/_shared/sch
 ## Spec & versioning
 
 - Protocol: **Harness Protocol v2.0 (Agentic Mode)** — `SKILL.md` is canonical.
-- Legacy spec: **v1.0** fast-mode 6-stage pipeline — `HARNESS_PROTOCOL_V1.md` (still powers `fast` mode).
+- Legacy spec: **v1.0** fast-mode 6-stage pipeline, archived in the repository's `docs/legacy/protocols/harness/`.
 - Tests: smoke 6/6 + unit suites; routing behavior guarded by `tests/routing-eval/` (tolerance-based). The exact-match golden snapshot (`tests/regression-runner.ts`) is informational and drifts with the live registry by design.

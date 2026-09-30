@@ -20,6 +20,6 @@ In Squad Protocol v4.0, runtime-specific documentation lives in adapter files un
 - Source references (SRC-1…SRC-12 citations) → [§14](../../_shared/adapters/claude-code.md#14-source-references)
 
 For runtime-neutral squad authoring guidance, see:
-- [`SQUAD_PROTOCOL_V4.md`](../SQUAD_PROTOCOL_V4.md) — the Core spec
+- Squad Protocol v4 (archived) — the original core spec; the current one is [`SQUAD_PROTOCOL_V6.md`](../SQUAD_PROTOCOL_V6.md)
 - [`references/02-creation.md`](02-creation.md) — how to create a squad
 - [`references/11-adapters-guide.md`](11-adapters-guide.md) — how adapters work

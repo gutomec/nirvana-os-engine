@@ -5,7 +5,7 @@ Intent: CREATE (keywords: create, new, scaffold, generate, build squad)
 
 ## Protocol Reference
 - `SQUAD_PROTOCOL_V6.md` §28 (workflow document), §29 (acceptance), §33 (`not_for` ≤25), §34 (admission gate).
-- `SQUAD_PROTOCOL_V5.md` §22 (capabilities) + base v4 §5–§8.
+- Squad Protocol v5 (archived) §22 (capabilities) + base v4 §5–§8.
 - Canonical schema: `~/.nirvana/skills/_shared/schemas/capability.schema.json`.
 - Routing metadata: `~/.nirvana/skills/_shared/ROUTING_METADATA_CONTRACT.md`.
 - Prompt wizard: `references/15-creation-wizard.md`.

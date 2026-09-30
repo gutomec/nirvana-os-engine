@@ -19,7 +19,7 @@ metadata:
 
 > Requires the Nirvana-OS engine (`nrv` on PATH). If it is absent, use the `nirvana` skill, which installs it. This skill is not standalone.
 
-Multi-agent business orchestrator following `BUSINESS_PROTOCOL_V2.md` (the delta) over `BUSINESS_PROTOCOL_V1.md` (everything the delta does not change). Runtime-agnostic (Claude Code, Codex, Gemini-CLI). Zero external dependencies beyond the runtime and the centralized validators in `~/.nirvana/skills/_shared/`.
+Business lifecycle and structure following `BUSINESS_PROTOCOL_V2.md`. Runtime-agnostic (Claude Code, Codex, Gemini-CLI). Zero external dependencies beyond the runtime and the centralized validators in `~/.nirvana/skills/_shared/`.
 
 ---
 
@@ -91,7 +91,7 @@ When invoked from inside a project tree with `<project>/.env` containing `NIRVAN
 
 ## Protocol source
 
-Source of truth, in this directory: `BUSINESS_PROTOCOL_V2.md` (the v2 delta) plus `BUSINESS_PROTOCOL_V1.md` for every section v2 leaves untouched. A v1 business loads, routes and dispatches exactly as before; v2 fields are optional.
+Source of truth, in this directory: `BUSINESS_PROTOCOL_V2.md`. Version 1.0 is archived in the repository's `docs/legacy/protocols/`, not installed; a v1 business still loads, routes and dispatches, and v2 fields are optional.
 
 **The validator that runs is Zod**, in `~/.nirvana/skills/_shared/validators/validators.ts`. `validators.py` is the canonical mirror for hosts with Python. `~/.nirvana/skills/_shared/schemas/business.schema.json` and `core-schemas.json` are **documentation mirrors** — they describe the contract, they do not execute it, and a divergence between them and the Zod schema is a defect in the JSON. Always delegate validation to the validators instead of re-implementing it.
 
@@ -158,8 +158,8 @@ When the user invokes this skill, map the input to one of the actions below. Use
 | **VALIDATE**: validate, check, verify | `nrv validate business <slug>` | `scripts/validate-business.ts` |
 | **INDEX**: index, rebuild, refresh registry | `*business index` | `scripts/index-businesses.ts` |
 | **BRIEF**: brief, process, execute, run | `*business brief <slug> "<text>"` | `scripts/brief-business.ts` |
-| **EMPLOYEES**: add employee, new employee, hire | `BUSINESS_PROTOCOL_V2.md` §7 + `BUSINESS_PROTOCOL_V1.md` §7 |
-| **ORG**: org chart, hierarchy, reporting | `BUSINESS_PROTOCOL_V1.md` §8 |
+| **EMPLOYEES**: add employee, new employee, hire | `BUSINESS_PROTOCOL_V2.md` §7 |
+| **ORG**: org chart, hierarchy, reporting | `org-chart.yaml` + `nrv validate business <slug>` |
 | **HANDOFFS**: delegate, escalate, route | `BUSINESS_PROTOCOL_V2.md` §13 |
 | **MEMORY**: edit memory, maintenance | `*business memory edit <slug>` |
 
@@ -321,7 +321,6 @@ Employees that produce only technical artifacts (JSON, schemas, code) ignore the
 ~/.nirvana/skills/businesses/
 ├── SKILL.md                                # this file
 ├── BUSINESS_PROTOCOL_V2.md                 # the v2 delta (source of truth)
-├── BUSINESS_PROTOCOL_V1.md                 # everything v2 leaves untouched
 ├── templates/
 │   ├── business-types/<type>/              # solo · council · agency · conglomerate
 │   └── example-business/                   # runnable solo template (validation passes)
@@ -367,7 +366,6 @@ For each handoff: judge the seat's `acceptance[]`, log to audit, persist to `han
 - DO NOT use `mind_clone` without `disclosure_required: true`.
 - DO NOT create businesses with >5 employees without an antagonist (BP7).
 - DO NOT bypass the antagonist (BP7) on client-facing output.
-- DO NOT load the full BUSINESS_PROTOCOL_V1.md — read the v2 delta, then the v1 TOC on demand.
 - DO NOT emit prose output that violates the writing contract in `AGENTS.md` / `CLAUDE.md` / `GEMINI.md` (BP13).
 
 ## Backward compat
@@ -376,4 +374,4 @@ For each handoff: judge the seat's `acceptance[]`, log to audit, persist to `han
 
 ---
 
-*Protocol: 2.0 (1.0 still loads) · Status: operational · Spec: BUSINESS_PROTOCOL_V2.md + BUSINESS_PROTOCOL_V1.md*
+*Protocol: 2.0 (1.0 still loads) · Status: operational · Spec: BUSINESS_PROTOCOL_V2.md*

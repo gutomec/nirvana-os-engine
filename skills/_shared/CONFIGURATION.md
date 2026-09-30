@@ -458,4 +458,3 @@ isso é seguro (rejeita a mais, nunca a menos).
 - **adapters/{claude-code,codex,gemini-cli}.md** + `adapters/README.md`
 - **~/.nirvana/skills/businesses/CONFIGURATION.md** — consumer downstream
 - **~/.nirvana/skills/squads/CONFIGURATION.md** — consumer downstream
-- **~/.nirvana/skills/harness/CONFIGURATION.md** — consumer downstream

@@ -260,9 +260,9 @@ echo '{"type":"human_escalation_required","trigger_id":"budget","severity":"high
 - Gemini CLI docs: https://ai.google.dev/gemini-api/docs/cli
 - Google Gen AI SDK: https://github.com/google-gemini/generative-ai-python
 - MCP support em Gemini CLI (experimental): https://ai.google.dev/gemini-api/docs/mcp
-- Squad Protocol v5: `~/.nirvana/skills/squads/SQUAD_PROTOCOL_V5.md`
-- Business Protocol v1: `~/.nirvana/skills/businesses/BUSINESS_PROTOCOL_V1.md`
-- Harness Protocol v1: `~/.nirvana/skills/harness/HARNESS_PROTOCOL_V1.md`
+- Squad Protocol v6: `~/.nirvana/skills/squads/SQUAD_PROTOCOL_V6.md`
+- Business Protocol v2: `~/.nirvana/skills/businesses/BUSINESS_PROTOCOL_V2.md`
+- Harness protocol: `~/.nirvana/skills/harness/SKILL.md`
 
 ---
 

@@ -8,7 +8,7 @@ Data:        2026-08-27
 Autor:       Luiz Gustavo Vieira Rodrigues (Prospecteezy)
 license:     SUL-1.0
 Escopo:      O documento de workflow, a aceitação, o avaliador e a composição
-Antecessor:  v5.0.0 (`SQUAD_PROTOCOL_V5.md`), que por sua vez é delta sobre v4.0.0
+Antecessor:  v5.0.0, delta sobre v4.0.0 (ambos arquivados em `docs/legacy/protocols/squads/` no repositório)
 ```
 
 ## Sobre esta versão

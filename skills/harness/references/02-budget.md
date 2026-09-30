@@ -2,7 +2,7 @@
 
 > How the harness computes and applies cost caps. Source of truth:
 > `lib/budget.js` (this file documents its current defaults; the
-> `HARNESS_PROTOCOL_V1.md` §8 figures are historical).
+> the archived Harness Protocol v1 §8 figures are historical).
 
 ## Principle (HP3, amended by Rule 4)
 
@@ -146,7 +146,7 @@ nrv doctor
 - For recurring businesses, declare `run_budget_usd` per business and review
   monthly.
 - When telemetry history is available, replace the static baseline with a
-  moving average of the last N runs (not implemented — see BUILD-NOTES.md).
+  moving average of the last N runs (not implemented).
 
 ## Anti-patterns
 

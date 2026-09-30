@@ -277,9 +277,9 @@ echo '{"type":"human_escalation_required","trigger_id":"budget","severity":"high
 - Kimi Code CLI: repo `MoonshotAI/kimi-code` (TypeScript); install `curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash` (ou npm global).
 - Moonshot API: `https://api.moonshot.ai/v1` (key `MOONSHOT_API_KEY`).
 - Driver: `skills/harness/lib/host-agent-driver.ts` (`runKimi`).
-- Squad Protocol v5: `~/.nirvana/skills/squads/SQUAD_PROTOCOL_V5.md`
-- Business Protocol v1: `~/.nirvana/skills/businesses/BUSINESS_PROTOCOL_V1.md`
-- Harness Protocol v1: `~/.nirvana/skills/harness/HARNESS_PROTOCOL_V1.md`
+- Squad Protocol v6: `~/.nirvana/skills/squads/SQUAD_PROTOCOL_V6.md`
+- Business Protocol v2: `~/.nirvana/skills/businesses/BUSINESS_PROTOCOL_V2.md`
+- Harness protocol: `~/.nirvana/skills/harness/SKILL.md`
 
 ---
 
