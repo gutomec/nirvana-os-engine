@@ -328,6 +328,8 @@ describe("runAgentX — the cascade bottom (injected runWithCascade seam)", () =
       expect(seen[0].prompt).toContain("router no_match: nothing fits");
       // The persona fixture carries no guard of its own: this line is runAgentX's.
       expect(seen[0].prompt).toContain(SCOPE_GUARD_EN);
+      // A worker: the stamp is what makes "agent-x dispatches nothing" enforced.
+      expect(seen[0].dispatchRole).toBe("agent-x");
       const dx = spy.calls.find(x => x.event === "dispatch_agent_x");
       expect(dx).toBeTruthy();
       expect(dx!.payload.trace_id).toBe("proj-test-ax");

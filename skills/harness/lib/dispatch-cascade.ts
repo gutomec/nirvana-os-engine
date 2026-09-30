@@ -416,6 +416,10 @@ export function runAgentX(args: RunAgentXArgs): AgentXResult {
 
   const cascadeImpl = args.runWithCascadeImpl ?? runWithCascade;
   const res = cascadeImpl({
+    // The generalist is a worker: it may open nothing. Without the stamp it
+    // inherited its parent's role, which let it dispatch as the operator or,
+    // under a seat, as that employee.
+    dispatchRole: "agent-x",
     runtime: args.runtime, prompt, cwd: args.projectRoot, addDirs: [args.projectDir, args.outputsRoot],
     appendSystemPrompt: args.appendSystemPrompt,
     maxBudgetUsd: args.maxBudgetUsd, timeoutMs: args.timeoutMs, yolo: args.yolo,

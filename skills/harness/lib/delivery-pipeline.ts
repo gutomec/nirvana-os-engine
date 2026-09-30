@@ -513,6 +513,7 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
       ...fixLines,
       "",
       `Os entregáveis ficam em ${path.resolve(args.outputsRoot)}.`,
+      "Regra de hífen (a mais comum): use '-' só para palavras compostas; nunca para emendar orações nem como travessão — troque por vírgula, dois-pontos ou ponto.",
       scopeGuard("pt-BR"),
       "Não imprima resumo: entregue os arquivos corrigidos.",
     ].join("\n");
