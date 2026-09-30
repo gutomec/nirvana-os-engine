@@ -8,6 +8,10 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### No Windows, a gravação do registro espera o arquivo ocupado em vez de morrer
+
+O gravador atômico compartilhado repetia uma violação de compartilhamento do Windows doze vezes, com 15 ms de intervalo, girando a CPU o tempo todo. Cerca de 180 ms nem sempre bastava: indexadores concorrentes no windows-latest ainda perdiam um gravador, e dez processos girando num runner de dois núcleos atrasam o leitor que segura o arquivo. A nova tentativa agora dorme entre as tentativas, recua de forma exponencial com variação aleatória e desiste depois de dois segundos. Um erro permanente, como ENOENT, continua falhando na primeira tentativa.
+
 ### O Claude Code roda em modo auto, nunca com o bypass de permissões
 
 Todo filho Claude Code que o engine inicia passa `--permission-mode auto` no lugar de `--dangerously-skip-permissions`: o executor headless (`runHeadless`), a camada leve `callHostAgent`, o turno do maestro do Glance e o worker interativo de terminal do Orca. No modo auto um classificador revisa as ações arriscadas no lugar de uma pessoa e o sistema de permissões continua ligado, então uma ação que ele recusa não roda e a sessão segue trabalhando. O `claude -p` começa em modo manual, e é por isso que o flag vai explícito. O modo auto exige um modelo compatível (Opus 4.6 ou superior, Sonnet 4.6 ou superior, um modelo Fable); com qualquer outro a sessão começa em modo manual. `--safe` e `NIRVANA_HEADLESS_SKIP_PERMISSIONS=0` mantêm o caminho restrito (`acceptEdits` com a lista de ferramentas permitidas). Codex, Gemini, Antigravity, Grok e Qwen mantêm os próprios flags de aprovação.
