@@ -104,7 +104,7 @@ describe("clear errors, never silent defaults", () => {
 
   test("an invalid value names the file, the key and the choices", () => {
     write(projectConfigPath(project), "routing:\n  mode: turbo\n");
-    expect(() => resolveSetting("routing.mode", base)).toThrow(`${projectConfigPath(project)}: routing.mode: valor inválido "turbo"; esperado agentic | fast`);
+    expect(() => resolveSetting("routing.mode", base)).toThrow(`${projectConfigPath(project)}: routing.mode: valor inválido "turbo"; esperado agentic | cards | fast`);
     write(projectConfigPath(project), "quality_gate:\n  max_revisions: two\n");
     expect(() => resolveSetting("quality_gate.max_revisions", base)).toThrow(/quality_gate\.max_revisions: valor inválido "two"; esperado inteiro >= 0/);
   });
@@ -118,7 +118,7 @@ describe("clear errors, never silent defaults", () => {
 
   test("an invalid variable names the variable", () => {
     expect(() => resolveSetting("routing.mode", { ...base, env: { NIRVANA_ROUTING_MODE: "turbo" } }))
-      .toThrow("NIRVANA_ROUTING_MODE=turbo inválido para routing.mode; esperado agentic | fast");
+      .toThrow("NIRVANA_ROUTING_MODE=turbo inválido para routing.mode; esperado agentic | cards | fast");
   });
 });
 
@@ -237,7 +237,7 @@ describe("writing", () => {
   });
 
   test("refusals: an invalid value, a scope the key rejects, a project scope with no project, a section written in line", () => {
-    expect(() => setSetting("routing.mode", "turbo", { ...base, scope: "global" })).toThrow('routing.mode: valor inválido "turbo"; esperado agentic | fast');
+    expect(() => setSetting("routing.mode", "turbo", { ...base, scope: "global" })).toThrow('routing.mode: valor inválido "turbo"; esperado agentic | cards | fast');
     expect(() => setSetting("quality_gate.max_revisions", "many", { ...base, scope: "global" })).toThrow(/esperado inteiro >= 0/);
     expect(() => setSetting("updates.check", "false", { ...base, scope: "project" })).toThrow(/updates\.check só aceita escopo global/);
     expect(() => setSetting("routing.mode", "fast", { env: {}, cwd: tmp, scope: "project", globalPath: base.globalPath, enginePath: null })).toThrow(/nenhum projeto Nirvana/);

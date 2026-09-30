@@ -142,7 +142,7 @@ describe("Glance settings API", () => {
     expect((await del(base, "routing.nope", "project")).status).toBe(404);
     const invalid = await put(base, "routing.mode", { value: "turbo", scope: "project" });
     expect(invalid.status).toBe(400);
-    expect((await invalid.json()) as any).toMatchObject({ title: "Invalid value", detail: 'routing.mode: valor inválido "turbo"; esperado agentic | fast' });
+    expect((await invalid.json()) as any).toMatchObject({ title: "Invalid value", detail: 'routing.mode: valor inválido "turbo"; esperado agentic | cards | fast' });
     const number = await put(base, "supervisor.progress_ping_sec", { value: "muitos", scope: "global" });
     expect(number.status).toBe(400);
     expect(((await number.json()) as any).detail).toContain("esperado inteiro >= 0 (segundos)");

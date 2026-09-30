@@ -263,8 +263,8 @@ export const SETTINGS = {
     { default: false, env: "NIRVANA_ALLOW_STALE_CATALOG" }),
 
   "routing.mode": enumSetting("routing.mode",
-    "Como o roteador escolhe o alvo: agentic = um agente lê os registries; fast = BM25 determinístico.",
-    ["agentic", "fast"], { default: "agentic", env: "NIRVANA_ROUTING_MODE" }),
+    "Como o roteador escolhe o alvo: agentic = um agente lê os registries; cards = uma chamada sem ferramentas sobre os cartões compilados; fast = BM25 determinístico.",
+    ["agentic", "cards", "fast"], { default: "agentic", env: "NIRVANA_ROUTING_MODE" }),
   "routing.dense": enumSetting("routing.dense",
     "Braço neural do roteador fast: off; fallback = consultado só em NO_MATCH, sugere, nunca despacha.",
     ["off", "fallback"], {

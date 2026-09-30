@@ -384,3 +384,34 @@ describe("the role rule at the driver", () => {
     delete process.env.NIRVANA_DISPATCH_DEPTH;
   });
 });
+
+describe("an answer-only call runs without tools where the CLI can say so", () => {
+  // The cards router's call (lib/cards-router.ts): a decision step that only
+  // returns JSON. Each switch is the one the CLI's own --help documents.
+  function argvNoTools(runtime: Runtime, cli: string, noTools = true): string[] {
+    try { fs.rmSync(path.join(CAP, `${cli}-args.json`), { force: true }); } catch { /* ignore */ }
+    const r = runHeadless({ runtime, prompt: "answer", cwd: TMP, timeoutMs: 20_000, ...(noTools ? { noTools } : {}) });
+    expect(r.ok, r.error ?? r.stderr).toBe(true);
+    return readCapturedArgs(CAP, cli);
+  }
+
+  test("claude-code: --tools \"\"", () => {
+    expect(hasPair(argvNoTools("claude-code", "claude"), ["--tools", ""])).toBeTrue();
+    expect(argvNoTools("claude-code", "claude", false)).not.toContain("--tools");
+  });
+
+  test("codex: the read-only sandbox, in place of both autonomy paths", () => {
+    const args = argvNoTools("codex", "codex");
+    expect(hasPair(args, ["-s", "read-only"])).toBeTrue();
+    expect(args).not.toContain("--dangerously-bypass-approvals-and-sandbox");
+    expect(args).not.toContain("--approve-for-me");
+  });
+
+  test("gemini-cli: plan, its read-only approval mode", () => {
+    expect(hasPair(argvNoTools("gemini-cli", "gemini"), ["--approval-mode", "plan"])).toBeTrue();
+  });
+
+  test("antigravity-cli has no such switch and runs as before", () => {
+    expect(argvNoTools("antigravity-cli", "agy")).toContain("--dangerously-skip-permissions");
+  });
+});

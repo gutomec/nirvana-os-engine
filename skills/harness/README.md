@@ -8,13 +8,14 @@ This skill turns the runtime model into the **maestro**: it reads a free-form br
 
 ---
 
-## Two routing modes
+## Three routing modes
 
 Routing is a system property (`config.yaml → routing.mode`, env `NIRVANA_ROUTING_MODE`, flag `--mode`).
 
 | Mode | Who decides the target | Cost | Quality |
 |---|---|---|---|
 | **agentic** (default) | *You* (the model) reason over the registries and pick | tokens | high |
+| **cards** | One tool-less call over the compiled cards (`lib/cards-router.ts`, `.routing-cards.md`), which also returns the brief's done states | tokens, one turn | under measurement |
 | **fast** | The BM25/keyword router (`lib/router.js`, `scripts/find.ts`, `scripts/route.ts`) | zero-token, deterministic | lower |
 
 In **agentic** mode the BM25 router is only a **diagnostic peek** — never the verdict. The router has known mis-routing failure modes (Stage 0 keyword short-circuit emits HIGH at a 0.5 score; meta-intent detection is keyword-fragile; it has no notion of "the right mind-clone for this voice"). `SKILL.md` documents when to overrule it. In **fast** mode the router *is* the decision — opt into it only for cost-sensitive runs that tolerate lower quality.
@@ -135,7 +136,7 @@ In agentic mode treat `find.ts`/`route.ts` output as a *suggestion*; override wh
 
 ```yaml
 routing:
-  mode: agentic                       # agentic (default) | fast
+  mode: agentic                       # agentic (default) | cards | fast
   match_high_threshold: 0.80          # min top score for HIGH
   match_high_lead: 0.15               # min lead over second place
   match_ambiguous_threshold: 0.60     # min for AMBIGUOUS cluster

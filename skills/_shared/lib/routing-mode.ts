@@ -2,13 +2,19 @@
 //
 // Routing mode is a PROPAGATING system property: the maestro uses it at the top
 // level (business-or-squad selection), and business employees use it to find
-// squads. Two modes:
+// squads. Three modes:
 //
 //   agentic (default) — an agent inspects the registries and reasons about the
 //                       best target. Higher quality, costs tokens.
+//   cards             — one tool-less call over compiled one-line cards
+//                       (harness/lib/cards-router.ts). Costs tokens, answers
+//                       in one turn; the router does not open any file.
 //   fast              — BM25/keyword matching over the registry indexes
 //                       (harness/lib/router.js). Zero-token, deterministic,
 //                       lower quality. Opt-in for cost-sensitive runs.
+//
+// Businesses and the Glance compose their own routing and read only whether
+// the mode is `fast`; to them `cards` is the agentic default.
 //
 // Precedence: explicit arg (--mode) > the `routing.mode` setting, resolved by
 // _shared/lib/settings.ts (env NIRVANA_ROUTING_MODE > project config > global
@@ -21,9 +27,9 @@
 
 import { resolveSetting } from "./settings.ts";
 
-export type RoutingMode = "agentic" | "fast";
+export type RoutingMode = "agentic" | "cards" | "fast";
 
-const VALID: RoutingMode[] = ["agentic", "fast"];
+const VALID: RoutingMode[] = ["agentic", "cards", "fast"];
 
 function normalize(value: string | null | undefined): RoutingMode | null {
   if (!value) return null;

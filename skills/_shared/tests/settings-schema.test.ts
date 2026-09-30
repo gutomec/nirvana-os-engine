@@ -96,7 +96,7 @@ describe("the table", () => {
 describe("validation", () => {
   const cases: Array<[string, unknown, boolean, RegExp?]> = [
     ["routing.mode", "fast", true],
-    ["routing.mode", "turbo", false, /routing\.mode: valor inválido "turbo"; esperado agentic \| fast/],
+    ["routing.mode", "turbo", false, /routing\.mode: valor inválido "turbo"; esperado agentic \| cards \| fast/],
     ["multi_target.enabled", true, true],
     ["multi_target.enabled", "true", false, /esperado true \| false/],
     ["quality_gate.max_revisions", 3, true],

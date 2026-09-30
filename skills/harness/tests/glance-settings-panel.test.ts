@@ -37,7 +37,7 @@ describe("Glance settings panel module", () => {
   test("a field carries the schema, the effective value, its origin in words and the control for its kind", () => {
     const fields = Object.fromEntries(buildSettingsPanel(payload).groups.flatMap((group: any) => group.fields).map((field: any) => [field.key, field]));
     expect(fields["routing.mode"]).toMatchObject({
-      section: "routing", name: "mode", kind: "enum", control: "select", options: ["agentic", "fast"], default: "agentic",
+      section: "routing", name: "mode", kind: "enum", control: "select", options: ["agentic", "cards", "fast"], default: "agentic",
       value: "fast", source: "project", sourceLabel: "projeto", origin: "/prj/.nirvana/config.yaml", locked: false, writable: true, env: "NIRVANA_ROUTING_MODE",
     });
     expect(typeof fields["routing.mode"].description).toBe("string");
