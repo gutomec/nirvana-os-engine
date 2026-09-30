@@ -25,8 +25,11 @@
 // surfacing as EPERM, EACCES or EBUSY — and a registry that several indexers
 // read while one writes hits exactly that. With unique staging names and no
 // retry, 5 of 10 concurrent writers still died on windows-latest. The retry is
-// short and bounded; a real permission error still surfaces, because the last
-// attempt rethrows.
+// bounded by time, not by count: twelve fixed 15 ms spins (180 ms) still lost a
+// writer on windows-latest, and ten processes spinning on a two-core runner
+// starve the very reader that holds the file. So the wait sleeps, backs off
+// exponentially with jitter, and gives up after RETRY_BUDGET_MS; a real
+// permission error still surfaces, because the last attempt rethrows.
 //
 // CommonJS, and a `.js` on purpose: the squads registry is `.js`, and
 // `require()` of a `.ts` file from a `.js` file throws
@@ -39,8 +42,14 @@ const path = require('path');
 
 /** Transient on Windows when a reader holds the target; permanent elsewhere. */
 const SHARING_VIOLATION = new Set(['EPERM', 'EACCES', 'EBUSY']);
-const RETRIES = 12;
+const RETRY_BUDGET_MS = 2000;
 const BACKOFF_MS = 15;
+const BACKOFF_CAP_MS = 250;
+
+/** A synchronous sleep that yields the CPU, unlike a spin. */
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
 
 /** A staging path no other process can be holding. */
 function stagingPathFor(target) {
@@ -48,17 +57,19 @@ function stagingPathFor(target) {
 }
 
 function renameWithRetry(from, to) {
+  const deadline = Date.now() + RETRY_BUDGET_MS;
   for (let attempt = 0; ; attempt++) {
     try {
       fs.renameSync(from, to);
       return;
     } catch (e) {
       const code = (e && e.code) || '';
-      if (attempt >= RETRIES || !SHARING_VIOLATION.has(code)) throw e;
-      // Busy-wait: this runs inside synchronous indexer code with no event loop
-      // to yield to, and the window a reader holds a registry open is brief.
-      const until = Date.now() + BACKOFF_MS;
-      while (Date.now() < until) { /* spin */ }
+      const left = deadline - Date.now();
+      if (left <= 0 || !SHARING_VIOLATION.has(code)) throw e;
+      // Synchronous indexer code has no event loop to yield to, so it sleeps
+      // the thread. The jitter keeps the writers from retrying in lockstep.
+      const backoff = Math.min(BACKOFF_MS * 2 ** attempt, BACKOFF_CAP_MS);
+      sleepSync(Math.min(left, backoff / 2 + Math.random() * backoff / 2));
     }
   }
 }
@@ -82,4 +93,4 @@ function writeFileAtomic(target, contents) {
   }
 }
 
-module.exports = { writeFileAtomic, stagingPathFor };
+module.exports = { writeFileAtomic, stagingPathFor, renameWithRetry };

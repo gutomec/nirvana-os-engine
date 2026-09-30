@@ -96,6 +96,37 @@ describe("concurrent indexers do not kill each other", () => {
     }
   });
 
+  test("a sharing violation longer than the old 180 ms retry window still lands", () => {
+    // Windows reports a reader holding the target as EBUSY/EPERM/EACCES. Twelve
+    // fixed 15 ms spins gave up after ~180 ms and lost a writer on
+    // windows-latest; the retry is now bounded by time and sleeps between tries.
+    const req = createRequire(import.meta.url);
+    const nodeFs = req("fs");
+    const { renameWithRetry } = req("../../_shared/lib/atomic-write.js");
+    const dir = tmpDir();
+    const from = path.join(dir, "staged.tmp"), to = path.join(dir, "reg.json");
+    fs.writeFileSync(from, "{}");
+    const real = nodeFs.renameSync;
+    const busyUntil = Date.now() + 300;
+    let refused = 0;
+    nodeFs.renameSync = (a: string, b: string) => {
+      if (Date.now() < busyUntil) { refused++; throw Object.assign(new Error("EBUSY"), { code: "EBUSY" }); }
+      return real(a, b);
+    };
+    try { renameWithRetry(from, to); } finally { nodeFs.renameSync = real; }
+    expect(refused).toBeGreaterThan(0);
+    expect(fs.readFileSync(to, "utf8")).toBe("{}");
+  });
+
+  test("a permanent error is not retried", () => {
+    const req = createRequire(import.meta.url);
+    const { renameWithRetry } = req("../../_shared/lib/atomic-write.js");
+    const dir = tmpDir();
+    const started = Date.now();
+    expect(() => renameWithRetry(path.join(dir, "missing.tmp"), path.join(dir, "reg.json"))).toThrow(/ENOENT/);
+    expect(Date.now() - started).toBeLessThan(100);
+  });
+
   test("both registries stage through the shared writer, not their own copy", () => {
     // Three registries had three different answers and two were wrong. The
     // squads one shared `<target>.tmp` across processes; the businesses one
