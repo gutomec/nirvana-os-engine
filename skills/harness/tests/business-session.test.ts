@@ -9,9 +9,10 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import {
-  buildSessionBrief, creditSessionSeats, isBusinessSession, participationFile, readSeats,
-  runBusinessSession, SESSION_INTAKE_LINE, sessionDirective, sessionGrants, type BusinessSessionArgs,
+  ALLOWED_SQUADS_ENV, allowedSessionSquads, buildSessionBrief, creditSessionSeats, isBusinessSession, namedSquadsIn, participationFile, readSeats,
+  runBusinessSession, SESSION_INTAKE_LINE, SESSION_SPECIALIST_CLAUSE, sessionDirective, sessionGrants, squadsRefusedHere, type BusinessSessionArgs,
 } from "../lib/business-session.ts";
+import { AUTONOMOUS_DIRECTIVE } from "../lib/host-agent-driver.ts";
 import { attributeSeat } from "../../_shared/lib/seat-attribution.ts";
 import { stamp } from "../../_shared/lib/audit-provenance.ts";
 import { resolveSetting } from "../../_shared/lib/settings.ts";
@@ -94,7 +95,9 @@ describe("the brief points, it does not paste", () => {
     expect(brief).toContain("reports to `al-ceo`");
     expect(brief).toContain(path.join(TMP, "clones", "copy-legend", "agent", "AGENT.md"));
     expect(brief).toContain("`founder-voice` (not installed)");
-    expect(brief).toContain("squads: `email-squad`");
+    // No squad was routed, so no seat has one, whatever it declares.
+    expect(brief).toContain("squads: none");
+    expect(brief).not.toContain("squads: `email-squad`");
     // The seat is a path; what it says is read by the session when it needs it.
     expect(brief).not.toContain(SEAT_BODY_SENTINEL);
   });
@@ -123,7 +126,7 @@ describe("the brief points, it does not paste", () => {
     expect(withSquads).toContain("`vsl-squad`");
     expect(withSquads).toContain("Nobody redoes the squad's work, and the squad does not redo the seats'");
     const without = buildSessionBrief(baseArgs(), seats(), [], squadDirOf);
-    expect(without).not.toContain("Squads for this request");
+    expect(without).toContain("None. The router named no squad for this request");
   });
 
   test("done: the router's states ride in the request once, and each seat's acceptance is pointed at", () => {
@@ -143,6 +146,67 @@ describe("the brief points, it does not paste", () => {
     expect(d).toContain("NOTHING HALF-BAKED");
     expect(d).toContain("HEADLESS SESSION LIFETIME");
     expect(d.endsWith("RULE: X")).toBeTrue();
+  });
+});
+
+describe("squads: only the ones the router named, or the request names", () => {
+  const seats = () => readSeats(BIZ, lookup);
+
+  test("the allowed set is the router's squads plus the request's, once each", () => {
+    expect(allowedSessionSquads({ mandatorySquads: ["course-architect"], optionalSquads: ["vsl-squad", "course-architect"], briefSquads: ["brandcraft"] }))
+      .toEqual(["course-architect", "vsl-squad", "brandcraft"]);
+    expect(allowedSessionSquads({})).toEqual([]);
+  });
+
+  test("the request names a squad only by its whole slug", () => {
+    const slugs = ["brandcraft", "brandcraft-pro", "copy"];
+    expect(namedSquadsIn("Use brandcraft for the logo.", slugs)).toEqual(["brandcraft"]);
+    expect(namedSquadsIn("Use brandcraft-pro, please", slugs)).toEqual(["brandcraft-pro"]);
+    expect(namedSquadsIn("A copywriter writes the copy-deck.", slugs)).toEqual([]);
+  });
+
+  test("the brief lists the allowed squads as the only ones, and a seat sees its own closed set inside them", () => {
+    const brief = buildSessionBrief(baseArgs({ mandatorySquads: ["course-architect"], briefSquads: ["brandcraft"] }), seats(), [], squadDirOf);
+    expect(brief).toContain("These are the only squads this run may use; the engine refuses any other");
+    expect(brief).toContain("`brandcraft` (`" + squadDirOf("brandcraft") + "`): the request names it");
+    // al-copy declares [email-squad], which was not routed; al-qa is open.
+    expect(brief).toMatch(/`al-copy`[^\n]*squads: none/);
+    expect(brief).toMatch(/`al-qa`[^\n]*squads: `course-architect`, `brandcraft`/);
+  });
+
+  test("the directive's specialist clause gives way to the run's list", () => {
+    expect(AUTONOMOUS_DIRECTIVE).toContain("and the specialist whenever one exists");
+    const d = sessionDirective();
+    expect(d).not.toContain("and the specialist whenever one exists");
+    expect(d).toContain(SESSION_SPECIALIST_CLAUSE);
+    expect(d).toContain("Conservative defaults are for factual premises");
+  });
+
+  test("no session, no restriction; inside one, only the listed squads pass", () => {
+    expect(squadsRefusedHere(["brandcraft"], {})).toBeNull();
+    expect(squadsRefusedHere(["brandcraft"], { [ALLOWED_SQUADS_ENV]: "course-architect,brandcraft" })).toEqual([]);
+    expect(squadsRefusedHere(["email-squad", "brandcraft"], { [ALLOWED_SQUADS_ENV]: "brandcraft" })).toEqual(["email-squad"]);
+    // An empty list allows none.
+    expect(squadsRefusedHere(["brandcraft"], { [ALLOWED_SQUADS_ENV]: "" })).toEqual(["brandcraft"]);
+  });
+
+  test("the session's environment carries the list for its lifetime only", () => {
+    const before = process.env[ALLOWED_SQUADS_ENV];
+    delete process.env[ALLOWED_SQUADS_ENV];
+    try {
+      let during: string | undefined;
+      runBusinessSession(baseArgs({
+        runtime: "gemini-cli", mandatorySquads: ["course-architect"], briefSquads: ["brandcraft"],
+        runWithCascadeImpl: ((a: any) => {
+          during = process.env[ALLOWED_SQUADS_ENV];
+          return { ok: true, runtime: a.runtime, sessionId: null, result: "", costUsd: null, exitCode: 0, stderr: "", durationMs: 1, handoffs: [], finalRuntime: a.runtime };
+        }) as any,
+      }));
+      expect(during).toBe("course-architect,brandcraft");
+      expect(process.env[ALLOWED_SQUADS_ENV]).toBeUndefined();
+    } finally {
+      if (before === undefined) delete process.env[ALLOWED_SQUADS_ENV]; else process.env[ALLOWED_SQUADS_ENV] = before;
+    }
   });
 });
 

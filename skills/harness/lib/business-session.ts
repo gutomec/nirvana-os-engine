@@ -15,6 +15,10 @@
 // it worked as (`x_seat_subagent`, recorded); elsewhere the only account is the
 // session's own participation file, and a seat credited from it says so
 // (declared). A seat with neither is not credited.
+//
+// Squads are the router's call, not the seats': a session may run only the
+// squads the router named (and any the request names), and dispatch.ts refuses
+// the rest from the list the session stamps on its environment.
 
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -60,6 +64,9 @@ export interface BusinessSessionArgs {
   /** Squads the router picked for a part no seat covers; a seat must use each. */
   mandatorySquads?: string[];
   optionalSquads?: string[];
+  /** Installed squads the request itself names. The user is in command, so
+   *  they join the router's picks; no other squad may run in this session. */
+  briefSquads?: string[];
   rulesDirective?: string;
   maxBudgetUsd?: number;
   timeoutMs?: number;
@@ -113,6 +120,38 @@ export interface BusinessSessionResult {
  *  path its canary was built on. */
 export function isBusinessSession(o: { forceTeam: boolean; forceSingle: boolean; requestedMode: string; businessMode: string }): boolean {
   return o.businessMode === "session" && !o.forceTeam && !o.forceSingle && o.requestedMode !== "gauntlet";
+}
+
+/** The squads a session may run, stamped on its environment so that the
+ *  session and every seat subagent it opens (they share it) answer to the list
+ *  in dispatch.ts. Absent means no session: nothing is restricted. */
+export const ALLOWED_SQUADS_ENV = "NIRVANA_ALLOWED_SQUADS";
+
+/** The router's squads plus the ones the request names, and nothing else. A
+ *  squad the router did not name for a part no seat covers is work the seats
+ *  can do, and running it as a full dispatch with its own gate made a session
+ *  slower and costlier than the chain it was meant to beat. */
+export function allowedSessionSquads(args: Pick<BusinessSessionArgs, "mandatorySquads" | "optionalSquads" | "briefSquads">): string[] {
+  return [...new Set([...(args.mandatorySquads ?? []), ...(args.optionalSquads ?? []), ...(args.briefSquads ?? [])])];
+}
+
+/** Installed squads a text names by slug, as a whole token. */
+export function namedSquadsIn(text: string, slugs: Iterable<string>): string[] {
+  const out: string[] = [];
+  for (const slug of slugs) {
+    const escaped = slug.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (new RegExp(`(^|[^A-Za-z0-9_-])${escaped}($|[^A-Za-z0-9_-])`).test(text)) out.push(slug);
+  }
+  return out;
+}
+
+/** The squads of a dispatch that the running session may not use, or null when
+ *  no session restricts this process. An empty list in the environment allows none. */
+export function squadsRefusedHere(squads: string[], env: NodeJS.ProcessEnv = process.env): string[] | null {
+  const raw = env[ALLOWED_SQUADS_ENV];
+  if (raw === undefined) return null;
+  const allowed = new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
+  return squads.filter((s) => !allowed.has(s));
 }
 
 function listOf(v: unknown): string[] {
@@ -196,6 +235,8 @@ export function participationFile(projectDir: string): string { return path.join
 export function buildSessionBrief(args: BusinessSessionArgs, seats: SessionSeat[], memoryDirs: string[], squadDirOf: (slug: string) => string): string {
   const mandatory = [...new Set(args.mandatorySquads ?? [])];
   const optional = [...new Set(args.optionalSquads ?? [])].filter((s) => !mandatory.includes(s));
+  const named = [...new Set(args.briefSquads ?? [])].filter((s) => !mandatory.includes(s) && !optional.includes(s));
+  const allowed = allowedSessionSquads(args);
   const lines: string[] = [];
   lines.push(`# Business session: ${args.slug}`, "");
   lines.push("You run this business for one request, as one session. Everything below except the request is a path: open what the work needs, when it needs it.", "");
@@ -211,16 +252,22 @@ export function buildSessionBrief(args: BusinessSessionArgs, seats: SessionSeat[
     const voices = s.voices.length
       ? s.voices.map((v) => v.files.length ? `\`${v.slug}\` (${v.files.map((f) => `\`${f}\``).join(", ")})` : v.dir ? `\`${v.slug}\` (\`${v.dir}\`)` : `\`${v.slug}\` (not installed)`).join(", ")
       : "none";
-    const squads = s.squads ? s.squads.map((q) => `\`${q}\``).join(", ") : "any";
+    // What the seat may use in THIS run: its own closed set, if it declares one,
+    // inside the squads the run was given.
+    const usable = s.squads ? s.squads.filter((q) => allowed.includes(q)) : allowed;
+    const squads = usable.length ? usable.map((q) => `\`${q}\``).join(", ") : "none";
     lines.push(`- \`${s.slug}\`${s.role ? ` (${s.role})` : ""}${s.intake ? ", takes the request in" : ""}: file \`${s.file}\` · reports to ${s.reportsTo ? `\`${s.reportsTo}\`` : "nobody"} · voices: ${voices} · squads: ${squads}`);
   }
   lines.push("");
 
-  if (mandatory.length || optional.length) {
-    lines.push("## Squads for this request", "");
+  lines.push("## Squads for this request", "");
+  if (allowed.length) {
     for (const q of mandatory) lines.push(`- \`${q}\` (\`${squadDirOf(q)}\`): the router picked it for this request, so a seat uses it.`);
     for (const q of optional) lines.push(`- \`${q}\` (\`${squadDirOf(q)}\`): available if a seat needs it.`);
-    lines.push("", "A seat triggers the squad (`nrv dispatch --squad <slug> \"<what it must deliver>\" --exec`) and integrates what it delivers. Nobody redoes the squad's work, and the squad does not redo the seats'.", "");
+    for (const q of named) lines.push(`- \`${q}\` (\`${squadDirOf(q)}\`): the request names it, so a seat uses it.`);
+    lines.push("", "These are the only squads this run may use; the engine refuses any other, and every other part is the seats' own work. A seat triggers one (`nrv dispatch --squad <slug> \"<what it must deliver>\" --exec`) and integrates what it delivers. Nobody redoes the squad's work, and the squad does not redo the seats'.", "");
+  } else {
+    lines.push("None. The router named no squad for this request, so the seats deliver every part themselves; the engine refuses a squad dispatch from this run.", "");
   }
 
   // The router's done states, when it gave them, already ride in the request
@@ -257,17 +304,27 @@ export function buildSessionBrief(args: BusinessSessionArgs, seats: SessionSeat[
 export function sessionGrants(args: BusinessSessionArgs, seats: SessionSeat[], memoryDirs: string[], squadDirOf: (slug: string) => string): string[] {
   const dirs = [args.projectDir, args.outputsRoot, args.bizDir, ...memoryDirs];
   for (const s of seats) for (const v of s.voices) if (v.dir) dirs.push(v.dir);
-  for (const q of [...(args.mandatorySquads ?? []), ...(args.optionalSquads ?? [])]) dirs.push(squadDirOf(q));
+  for (const q of allowedSessionSquads(args)) dirs.push(squadDirOf(q));
   return [...new Set(dirs.map((d) => path.resolve(d)))];
 }
 
 /** The session is the business, not its intake seat, and its colleagues are
  *  the subagents it opens. The directive's intake line says colleagues are run
  *  by the engine's team mode; left in, it forbids what this mode is for. */
-export const SESSION_INTAKE_LINE = "- You ARE the business, already dispatched. Do not invoke the `harness` skill, do not run `nrv run` and never recurse `--auto` on this same brief (anti-loop). A squad is dispatched through the command above, which records it. Your colleagues, the seats, run as subagents of this runtime that you open yourself, one per chosen seat; never start another runtime from the shell to run one.";
+export const SESSION_INTAKE_LINE = "- You ARE the business, already dispatched. Do not invoke the `harness` skill, do not run `nrv run` and never recurse `--auto` on this same brief (anti-loop). A squad listed for this run in the brief is dispatched through `nrv dispatch --squad`, which records it. Your colleagues, the seats, run as subagents of this runtime that you open yourself, one per chosen seat; never start another runtime from the shell to run one.";
+
+/** The premise tells every executor to reach for the specialist whenever one
+ *  exists. In a session the specialists are the ones the brief lists, and
+ *  only those: the engine refuses any other (ALLOWED_SQUADS_ENV). */
+const PREMISE_SPECIALIST = /and the specialist whenever one exists[^;]*;[^.]*\./;
+export const SESSION_SPECIALIST_CLAUSE = "and, for squads, the ones the brief lists for this run and only those: the router named them for parts no seat covers, every other part is the seats' own work, and the engine refuses any other squad.";
 
 export function sessionDirective(rulesDirective = ""): string {
-  const lines = AUTONOMOUS_DIRECTIVE.split("\n").map((l) => l.includes("You ARE the intake") ? SESSION_INTAKE_LINE : l);
+  const lines = AUTONOMOUS_DIRECTIVE.split("\n").map((l) => {
+    if (l.includes("You ARE the intake")) return SESSION_INTAKE_LINE;
+    if (l.startsWith("FUNDAMENTAL PREMISE")) return l.replace(PREMISE_SPECIALIST, SESSION_SPECIALIST_CLAUSE);
+    return l;
+  });
   return lines.join("\n") + rulesDirective;
 }
 
@@ -386,38 +443,50 @@ export function runBusinessSession(args: BusinessSessionArgs): BusinessSessionRe
   const workspace = runFolderOf(args.projectDir, args.projectRoot) ?? undefined;
   const claudeSettings = HOOK_RUNTIMES.has(args.runtime) ? writeClaudeSettings(args, seats, workspace, prompt) : undefined;
 
+  const allowedSquads = allowedSessionSquads(args);
   emit("x_business_session_started", {
     trace_id: args.projectId, project_id: args.projectId, business_slug: args.slug, runtime: args.runtime,
     seats: seats.length, brief_chars: prompt.length, grants: addDirs.length,
-    mandatory_squads: args.mandatorySquads ?? [], seat_evidence: claudeSettings ? "hook" : "declared",
+    mandatory_squads: args.mandatorySquads ?? [], allowed_squads: allowedSquads, seat_evidence: claudeSettings ? "hook" : "declared",
   });
 
   const startedMs = Date.now();
   const run = args.runWithCascadeImpl ?? runWithCascade;
-  const res = run({
-    // The business opens its own org chart and the squads its seats carry.
-    dispatchRole: "business",
-    // The one worker that keeps the runtime's subagent tool. Every other
-    // dispatch denies it, because a worker that opens its own agents multiplies
-    // where the engine cannot count; here the subagents ARE the seats, bounded
-    // by the team above, recorded by the hook, and they are the point of the mode.
-    allowSubagents: true,
-    ...(claudeSettings ? { claudeSettings } : {}),
-    runtime: args.runtime,
-    prompt,
-    cwd: args.projectRoot,
-    addDirs,
-    appendSystemPrompt: sessionDirective(args.rulesDirective),
-    maxBudgetUsd: args.maxBudgetUsd,
-    timeoutMs: args.timeoutMs,
-    yolo: args.yolo ?? true,
-    brief: args.brief, projectRoot: args.projectRoot, outputsRoot: args.outputsRoot,
-    taskHint: `business session · ${args.slug}`,
-    label: args.slug,
-    workspace,
-    projectId: args.projectId,
-    ...(args.ledgerRunId ? { ledger: { runId: args.ledgerRunId, watchDir: args.outputsRoot } } : {}),
-  });
+  // The child environment is built from the live process.env at spawn time (the
+  // driver and the Orca worker both), and the run is synchronous, so the list
+  // is set for exactly the session's lifetime and restored after it.
+  const previousAllowed = process.env[ALLOWED_SQUADS_ENV];
+  process.env[ALLOWED_SQUADS_ENV] = allowedSquads.join(",");
+  let res: ReturnType<typeof runWithCascade>;
+  try {
+    res = run({
+      // The business opens its own org chart and the squads its seats carry.
+      dispatchRole: "business",
+      // The one worker that keeps the runtime's subagent tool. Every other
+      // dispatch denies it, because a worker that opens its own agents multiplies
+      // where the engine cannot count; here the subagents ARE the seats, bounded
+      // by the team above, recorded by the hook, and they are the point of the mode.
+      allowSubagents: true,
+      ...(claudeSettings ? { claudeSettings } : {}),
+      runtime: args.runtime,
+      prompt,
+      cwd: args.projectRoot,
+      addDirs,
+      appendSystemPrompt: sessionDirective(args.rulesDirective),
+      maxBudgetUsd: args.maxBudgetUsd,
+      timeoutMs: args.timeoutMs,
+      yolo: args.yolo ?? true,
+      brief: args.brief, projectRoot: args.projectRoot, outputsRoot: args.outputsRoot,
+      taskHint: `business session · ${args.slug}`,
+      label: args.slug,
+      workspace,
+      projectId: args.projectId,
+      ...(args.ledgerRunId ? { ledger: { runId: args.ledgerRunId, watchDir: args.outputsRoot } } : {}),
+    });
+  } finally {
+    if (previousAllowed === undefined) delete process.env[ALLOWED_SQUADS_ENV];
+    else process.env[ALLOWED_SQUADS_ENV] = previousAllowed;
+  }
 
   const receipt = creditSessionSeats({
     projectId: args.projectId, projectRoot: args.projectRoot, projectDir: args.projectDir,
