@@ -36,6 +36,7 @@ import type { RunHeadlessOpts, RunHeadlessResult, Runtime } from "./host-agent-d
 import { orcaJson, orcaFire, orcaWorkersActive, orcaWorkspaceSelector } from "./orca.ts";
 import { isEffortLevel, resolvePinnedEffort, resolveSystemModel } from "./system-model.ts";
 import { codexConfigPath } from "./codex-hooks.ts";
+import { RUN_WORKSPACE_ENV } from "./run-workspace.ts";
 
 /** Nirvana runtime → the agent id Orca recognizes in a terminal (the identity
  *  its hooks report, and what `dispatch --inject` needs to deliver a preamble).
@@ -146,7 +147,7 @@ export interface OrcaWorkerHooks {
  * (yolo false) drops them, and claude takes `--permission-mode acceptEdits`
  * like its headless twin. Null for a runtime Orca has no agent id for.
  */
-export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" | "model" | "effort" | "addDirs">): string[] | null {
+export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" | "model" | "effort" | "addDirs" | "claudeSettings">): string[] | null {
   if (!ORCA_AGENT_ID[opts.runtime]) return null;
   const yolo = opts.yolo !== false;
   // The caller's value, else the user's pin, else nothing — a bare CLI uses the
@@ -169,6 +170,8 @@ export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" |
       const a = ["claude", "--permission-mode", yolo ? "auto" : "acceptEdits"];
       if (model) a.push("--model", model);
       if (effort) a.push("--effort", effort);
+      // The run's deny rules (run-workspace.ts): the same fence as headless.
+      if (opts.claudeSettings) a.push("--settings", opts.claudeSettings);
       for (const d of dirs) a.push("--add-dir", d);
       return a;
     }
@@ -326,8 +329,15 @@ export function runOrcaWorker(opts: RunHeadlessOpts, hooks: OrcaWorkerHooks = {}
   //    and the autonomy flags are ours, not Orca's per-agent defaults. The
   //    workspace is trusted first, so the TUI opens at its prompt.
   const trusted = preTrustWorkspace(opts.runtime, cwd);
-  const command = workerCommand(argv, cwd, forwardedEnv(process.env, opts.runtime));
-  const term = call<any>(["terminal", "create", "--worktree", orcaWorkspaceSelector(cwd), "--title", `${label} · ${agent}`, "--command", command], { timeoutMs: 30_000 });
+  // A confined worker carries its run folder, as the headless child does
+  // (driverSpawnSync), so what it dispatches nests inside its run.
+  const workerEnv = forwardedEnv(process.env, opts.runtime);
+  if (opts.workspace) workerEnv[RUN_WORKSPACE_ENV] = cwd;
+  const command = workerCommand(argv, cwd, workerEnv);
+  // The terminal starts in the run folder (cwd); the worktree Orca files it
+  // under is the project's, which is the caller's own cwd when the driver
+  // moved the worker into its workspace.
+  const term = call<any>(["terminal", "create", "--worktree", orcaWorkspaceSelector(opts.hostCwd ?? cwd), "--title", `${label} · ${agent}`, "--command", command], { timeoutMs: 30_000 });
   if (!term.ok) { failTask(); return fallback("terminal-create", term.error?.code ?? term.error?.message ?? "unknown"); }
   const handle: string = term.result?.terminal?.handle;
   if (!handle) { failTask(); return fallback("terminal-create", "no terminal handle in answer"); }

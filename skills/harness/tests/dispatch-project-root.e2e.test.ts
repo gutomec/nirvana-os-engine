@@ -9,8 +9,10 @@
 //
 // Two invariants are pinned here, both the owner's decision:
 //   1. every event of a trace lands in ONE audit log — the project's;
-//   2. the dispatched runtime runs INSIDE the project (cwd = project root),
-//      with the outputs root reachable as an additional directory.
+//   2. the dispatched runtime runs INSIDE the project: its cwd is the run's own
+//      folder under the project's outputs (never the bare project root, so the
+//      runs beside it are not in reach), with the project and the outputs root
+//      reachable as additional directories.
 //
 // Hermetic: a fake `claude` on PATH, a squad fixture under a temporary HOME, no
 // LLM and no network. HARNESS_LOGS_DIR is deliberately NOT set — pinning it
@@ -138,8 +140,10 @@ describe("a dispatch whose outputs root is outside the project", () => {
     const addDirs = child.argv.filter((_, index) => child.argv[index - 1] === "--add-dir");
     expect(addDirs).toContain(fx.outputs);
 
-    // Decision 1 — the dispatched runtime runs INSIDE the project.
-    expect(child.cwd).toBe(fx.projectRoot);
+    // Decision 1 — the dispatched runtime runs INSIDE the project, from its
+    // own run folder, with the project granted.
+    expect(child.cwd).toBe(path.join(fx.projectRoot, "outputs", pid));
+    expect(addDirs).toContain(fx.projectRoot);
 
     // Decision 2 — one trace, one audit log: the project's.
     const projectLog = path.join(fx.projectRoot, ".nirvana", "logs", "harness", new Date().toISOString().slice(0, 10), "audit.jsonl");
@@ -152,5 +156,39 @@ describe("a dispatch whose outputs root is outside the project", () => {
     for (const name of ["dispatch_squad", "verify_passed", "gate_passed", "delivered"]) {
       expect(events, name).toContain(name);
     }
+  }, 120000);
+});
+
+describe("a dispatch started from inside a run", () => {
+  test("squad --exec from a seat's run folder nests in that run, and its chain stays in the project's log", () => {
+    const fx = fixture();
+    // The seat's run, and a run of someone else beside it.
+    const parent = path.join(fx.projectRoot, "outputs", "proj-parent");
+    fs.mkdirSync(parent, { recursive: true });
+    fs.mkdirSync(path.join(fx.projectRoot, "outputs", "proj-unrelated"), { recursive: true });
+    const pid = "proj-nested";
+    const nested = path.join(parent, "dispatches", pid);
+    const env = { ...fx.env, NIRVANA_RUN_WORKSPACE: parent, FAKE_CLAUDE_OUTPUTS_ROOT: path.join(nested, "deliverables") };
+    const result = spawnSync(process.execPath, [DISPATCH, "--squad", "fixture-squad", "--brief-file", fx.briefFile, "--exec",
+      "--project", pid, "--max-revisions", "0"], { cwd: parent, encoding: "utf8", env });
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+
+    // The squad's scaffold and deliverable live inside the seat's run, not beside it.
+    expect(fs.existsSync(path.join(nested, "squads", "fixture-squad"))).toBe(true);
+    expect(fs.existsSync(path.join(nested, "deliverables", "report.html"))).toBe(true);
+    expect(fs.existsSync(path.join(fx.projectRoot, "outputs", pid))).toBe(false);
+    // Its worker starts in the seat's run folder, fenced from the unrelated run only.
+    const child = fx.child();
+    expect(child.cwd).toBe(parent);
+    const settings = child.argv[child.argv.indexOf("--settings") + 1];
+    expect(settings).toBeTruthy();
+
+    // One trace, one audit log: the project's, with the evidence the chain reads.
+    const projectLog = path.join(fx.projectRoot, ".nirvana", "logs", "harness", new Date().toISOString().slice(0, 10), "audit.jsonl");
+    const events = readEvents(projectLog).filter(event => event.trace_id === pid);
+    for (const name of ["dispatch_squad", "agent_executed", "gate_passed", "delivered"]) {
+      expect(events.map(event => event.event), name).toContain(name);
+    }
+    expect(events.find(event => event.event === "agent_executed")?.squad_slug).toBe("fixture-squad");
   }, 120000);
 });

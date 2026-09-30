@@ -29,6 +29,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { AgenticRouteDecision, RouteCandidate } from "./agentic-router.ts";
+import { runFolderOf } from "../../_shared/lib/run-workspace.ts";
 import type { Runtime } from "./host-agent-driver.ts";
 import { runWithCascade } from "./cascade-runner.ts";
 import type { RouterFailurePolicy } from "./harness-config.ts";
@@ -426,6 +427,8 @@ export function runAgentX(args: RunAgentXArgs): AgentXResult {
     brief: args.brief, projectRoot: args.projectRoot, outputsRoot: args.outputsRoot,
     taskHint: "agent-x fallback (cascade bottom)",
     label: "agent-x",
+    // Starts in its own run folder, fenced off from the runs beside it.
+    workspace: runFolderOf(args.projectDir, args.projectRoot) ?? undefined,
     projectId: args.projectId,
     ...(args.ledger ? { ledger: { runId: args.ledger.runId, watchDir: args.ledger.watchDir ?? args.outputsRoot } } : {}),
   });

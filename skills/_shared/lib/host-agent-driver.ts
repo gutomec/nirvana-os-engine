@@ -58,6 +58,7 @@ import { childEnv } from "./orca.ts";
 import { childEnvFor, type ChildEnvMode } from "./child-env.ts";
 import { childDepth, currentDepth, currentRole, DEFAULT_MAX_DEPTH, DEPTH_ENV, mayDispatch, refusalMessage, roleMayDispatch, roleRefusalMessage, ROLE_ENV, type DispatchRole } from "./dispatch-depth.ts";
 import { runOrcaWorker } from "./orca-worker.ts";
+import { confineToWorkspace, FENCE_FILE_PREFIX, RUN_WORKSPACE_ENV } from "./run-workspace.ts";
 
 /** `execution.child_env`. The variable NIRVANA_CHILD_ENV wins over any file
  *  (settings precedence), which is how a child that was itself filtered — it
@@ -205,7 +206,7 @@ function removeTmpFiles(files: string[] | undefined): void {
 /** Every prefix writePromptFile is ever called with (default "nrv-prompt",
  * plus claudeDirectiveArgs' "nrv-directive"). One place, so the reaper below
  * can never drift from what this module actually creates. */
-const TMP_FILE_PREFIXES = ["nrv-prompt-", "nrv-directive-"];
+const TMP_FILE_PREFIXES = ["nrv-prompt-", "nrv-directive-", FENCE_FILE_PREFIX];
 
 /**
  * Process-wide safety net for the one gap a `finally`/`settle()` cannot close:
@@ -1230,6 +1231,18 @@ export interface RunHeadlessOpts {
    * worker tab with it): `business/employee`, `squad <slug>`, `agent-x`.
    * Absent, the host labels the run by runtime. */
   label?: string;
+  /** The run's own folder (`<outputs base>/<run id>`, see run-workspace.ts).
+   *  When set, the child starts there instead of in `cwd`, the project `cwd`
+   *  serves stays reachable as an additional directory, and the other run
+   *  folders beside it are fenced off. Absent, the child runs in `cwd`. */
+  workspace?: string;
+  /** A settings file passed to claude-code as `--settings`. The workspace
+   *  confinement sets it to the run's deny rules. */
+  claudeSettings?: string;
+  /** The cwd the caller asked for, kept when the child was moved into its
+   *  workspace: a host that addresses the project (Orca's worktree selector)
+   *  still needs it. */
+  hostCwd?: string;
 }
 
 export interface LedgerHeartbeatOpts {
@@ -1423,6 +1436,10 @@ let spawnAsRuntime: string | null = null;
  *  spawnAsRuntime above: set by runHeadless immediately around a SYNCHRONOUS
  *  spawn, saved and restored, so it cannot leak across calls. */
 let spawnAsRole: string | null = null;
+/** The run folder the next child is confined to (run-workspace.ts), stamped on
+ *  its environment so a dispatch it starts nests inside the same run. Same
+ *  save-and-restore idiom as the two above. */
+let spawnInWorkspace: string | null = null;
 
 /** All runners spawn their child through this. Pass-through to spawnSync when
  * unledgered (zero behavior change); with an active ledger context, stdout/
@@ -1454,6 +1471,8 @@ function driverSpawnSync(cmd: string, args: string[], options: SpawnSyncOptions 
   baseEnv[DEPTH_ENV] = String(childDepth());
   // And WHAT it is, so its own dispatches answer to the role rule.
   if (spawnAsRole) baseEnv[ROLE_ENV] = spawnAsRole;
+  // And WHERE it runs, so what it dispatches belongs to its run.
+  if (spawnInWorkspace) baseEnv[RUN_WORKSPACE_ENV] = spawnInWorkspace;
   if (isClaude) headlessClaudeEnv(baseEnv);
   options = {
     // Windows: a process without its own console makes Windows allocate a VISIBLE
@@ -1633,6 +1652,7 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
   if (!opts.allowSubagents) args.push("--disallowedTools", "Task", "Agent");
 
   if (typeof opts.maxBudgetUsd === "number") args.push("--max-budget-usd", String(opts.maxBudgetUsd));
+  if (opts.claudeSettings) args.push("--settings", opts.claudeSettings);
   for (const d of opts.addDirs ?? []) args.push("--add-dir", d);
 
   // The directive goes LAST, and under a shell it does not go through argv at all
@@ -2481,7 +2501,22 @@ function dispatchToRunner(opts: RunHeadlessOpts): RunHeadlessResult {
   }
 }
 
-function dispatchToRunnerInner(opts: RunHeadlessOpts): RunHeadlessResult {
+function dispatchToRunnerInner(requested: RunHeadlessOpts): RunHeadlessResult {
+  // A worker with a workspace starts in its own run folder, fenced off from
+  // the runs beside it (run-workspace.ts). Done here, once, so every runtime
+  // and the Orca transport below get the same cwd and the same fence.
+  const { opts, cleanup } = confineToWorkspace(requested);
+  const previousWorkspace = spawnInWorkspace;
+  spawnInWorkspace = opts.workspace ? opts.cwd : null;
+  try {
+    return runConfined(opts);
+  } finally {
+    spawnInWorkspace = previousWorkspace;
+    cleanup();
+  }
+}
+
+function runConfined(opts: RunHeadlessOpts): RunHeadlessResult {
   // Inside Orca (host.orca, host.orca_workers) the dispatch runs as a visible
   // worker terminal; null means the transport does not apply or could not
   // start, and the headless child below runs exactly as everywhere else.

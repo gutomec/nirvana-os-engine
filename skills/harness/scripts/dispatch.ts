@@ -41,6 +41,7 @@ import { resolveRoutingMode, routingModeOrigin } from "../../_shared/lib/routing
 import { runTeam } from "../lib/team-orchestrator.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { globalStoreDir, outputsBaseDir } from "../../_shared/lib/project-root.js";
+import { nestedOutputsBase, runFolderOf } from "../../_shared/lib/run-workspace.ts";
 import { briefExcerpt } from "../../_shared/lib/brief-excerpt.ts";
 import { agenticRoute, type AgenticRouteDecision } from "../lib/agentic-router.ts";
 import { cardsRoute, withDoneWhen } from "../lib/cards-router.ts";
@@ -236,7 +237,13 @@ function defaultRegistries(): { squads: Record<string, unknown>; businesses: Rec
 // a dispatch launched from any folder planted `outputs/` and `.nirvana/` in it.
 const DECLARED_PROJECT_ROOT = runLedger.resolveProjectRoot();
 const PROJECT_ROOT = DECLARED_PROJECT_ROOT ?? path.dirname(globalStoreDir());
-const OUTPUTS_BASE = outputsBaseDir(DECLARED_PROJECT_ROOT);
+// A dispatch a confined worker starts itself (a seat's `nrv dispatch --squad`)
+// belongs to the worker's run: its scaffold nests under that run folder, so the
+// seat, the seats after it and the final synthesis can read what it delivers
+// (run-workspace.ts nestedOutputsBase). From the operator this is null and the
+// outputs base is the project's (or the store's), as before.
+const NESTED_OUTPUTS_BASE = nestedOutputsBase(DECLARED_PROJECT_ROOT);
+const OUTPUTS_BASE = NESTED_OUTPUTS_BASE ?? outputsBaseDir(DECLARED_PROJECT_ROOT);
 
 const positional = extractPositional(process.argv.slice(2));
 // --auto: no business is named; the router picks the best one for the brief.
@@ -963,6 +970,9 @@ const verifyScriptPath = path.join(SKILLS, "businesses/scripts/verify-deliverabl
 // settingsEnvForChild: routing.mode, execution.dna_injection, ...), so the project's
 // and the user's config hold in the prep scripts and in the employee prompt alike.
 const prepScriptEnv = { ...process.env, ...settingsEnvForChild(), NIRVANA_DISPATCH_TRACKS_RUN: "1" };
+// The scaffolders (brief-squad, brief-business) place the run where scope.ts
+// outputsDir says; a nested dispatch tells them the parent run's folder.
+if (NESTED_OUTPUTS_BASE) (prepScriptEnv as Record<string, string>).NIRVANA_OUTPUTS_DIR = NESTED_OUTPUTS_BASE;
 
 // Frozen runtime, provider and model decision of one canary Run: the broker answers
 // from the provider catalogs on disk (lib/runtime-snapshot.ts); without a descriptor
@@ -1718,6 +1728,9 @@ console.log(c("lime", "▶") + c("bold", ` Step 2/4 — buildEmployeePrompt (${i
 // inside the business subdir. That root is the scaffold's, never the project's — see PROJECT_ROOT.
 const scaffoldRoot = path.resolve(projDir, "..", "..");
 const projectRoot = PROJECT_ROOT;
+// The run's own folder: where the intake starts, fenced off from the runs
+// beside it (run-workspace.ts).
+const runWorkspace = runFolderOf(projDir, projectRoot) ?? undefined;
 // In exec mode the agent writes deliverables here (a clean subfolder export
 // includes but the scaffold dirs handoffs/tickets/employees are excluded).
 const execOutputsRoot = outputsRoot || (wantExec ? path.join(projDir, "deliverables") : undefined);
@@ -1850,6 +1863,7 @@ if (wantExec) {
         addDirs: [projDir, candidateRoot], appendSystemPrompt: AUTONOMOUS_DIRECTIVE + rulesDirective,
         maxBudgetUsd: budget.candidateBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
         yolo, brief: candidateBrief, projectRoot, outputsRoot: candidateRoot, taskHint: `business Gauntlet canary · ${slug}/${intake}`,
+        workspace: runWorkspace,
         projectId: pid, ledger: { runId: canonicalRunId, watchDir: candidateRoot } });
       canarySessionId = candidate.sessionId;
       if (candidate.sessionId) runLedger.recordSession(canaryLedger, canonicalRunId, candidate.sessionId);
@@ -1875,6 +1889,7 @@ if (wantExec) {
             const sessionFile = path.join(projDir, "session.json");
             const sessionData: Record<string, any> = { project_id: pid, business_slug: slug, employee: intake, runtime: rt,
               session_id: sessionId, project_dir: projDir, project_root: projectRoot, outputs_root: oroot,
+              workspace: runWorkspace ?? null,
               zip_path: null, created_at: new Date().toISOString(), manifest: manifest ?? null };
             fs.writeFileSync(sessionFile, JSON.stringify(sessionData, null, 2));
             const afterGate = () => runBusinessPostGate({ projectId: pid, businessSlug: slug, runtime: rt,
@@ -2048,6 +2063,7 @@ if (wantExec) {
       yolo,
       brief, projectRoot, outputsRoot: oroot,
       taskHint: `single-shot dispatch · ${slug}/${intake}`,
+      workspace: runWorkspace,
       projectId: pid,
       // Ledger heartbeat: the sidecar renews the lease while the child shows
       // activity (stdout/stderr growth or output-dir mtime advance).
@@ -2068,6 +2084,9 @@ if (wantExec) {
     project_id: pid, business_slug: slug, employee: intake, runtime: rt,
     session_id: res.sessionId, project_dir: projDir, project_root: projectRoot,
     outputs_root: oroot, zip_path: null, created_at: new Date().toISOString(),
+    // Where the session was started: `nrv revise` resumes from the same folder,
+    // since claude and gemini keep a session under its working directory.
+    workspace: runWorkspace ?? null,
     // The manifest travels with the session: without it `nrv revise` loses the
     // one completeness proof the system has (promised paths vs disk truth) and
     // silently downgrades to the scan fallback on every revision.

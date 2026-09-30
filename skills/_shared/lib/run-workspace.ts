@@ -1,0 +1,258 @@
+// run-workspace.ts — a dispatched worker starts in its own run folder and
+// cannot reach the run folders beside it.
+//
+// Every run lives in `<outputs base>/<run id>/` (project-root.js
+// outputsBaseDir): the run's HANDOFF, its deliverables and whatever its squads
+// wrote. Workers used to start in the project root, or in HOME outside a
+// project, with every earlier run one `ls ../` away. A worker that finds a
+// finished run of the same brief beside it can copy that run's deliverables and
+// present them as its own work; it happened in a benchmark run, and nothing in
+// the engine could tell.
+//
+// So a worker given a `workspace` (RunHeadlessOpts.workspace) gets:
+//
+//   · its cwd in the run folder, never HOME or the bare project root;
+//   · the project it serves as an additional directory, so a brief about the
+//     user's own files still reads them;
+//   · on claude-code, `Read` and `Edit` deny rules for every other run folder
+//     under the same outputs base, in a per-run `--settings` file. Claude Code
+//     applies them to its file tools, to the file commands it recognizes in
+//     Bash (cat, cp, sed, redirects) and to Glob/Grep roots
+//     (code.claude.com/docs/en/permissions). Deny beats allow and an allow rule
+//     cannot carve an exception out of a deny, which is why the siblings are
+//     listed one by one instead of denying the base and re-allowing this run.
+//     A sibling the worker's instruction names by path is left out: a brief
+//     that builds on an earlier run on purpose is the user's call;
+//   · on every runtime, one line appended to the worker's directive naming the
+//     run folder and saying the folders beside it are not its input. For the
+//     runtimes with no path rules that line is the whole fence;
+//   · the run folder in its environment (RUN_WORKSPACE_ENV), so a dispatch the
+//     worker starts itself nests inside this run (nestedOutputsBase) instead of
+//     becoming a sibling the next seat could not read.
+//
+// Moving the cwd has one cost that is paid back here: Claude Code loads a
+// project's `.claude/settings.json` from the cwd only, with no parent fallback,
+// so the project's Read/Edit deny rules (the `.env` rules `nrv init` writes)
+// stopped applying. They are re-anchored at the project root and travel in the
+// same settings file.
+
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { canonical, findProjectRoot, isInvalidProjectRoot, outputsBaseDir, resolveProjectRoot, sameDir } from "./project-root.js";
+
+/** Prefix of the per-run settings file, so the driver's orphan reaper knows it. */
+export const FENCE_FILE_PREFIX = "nrv-fence-";
+
+/** The run folder a confined worker runs in, exported to its environment. A
+ *  dispatch the worker starts itself (a seat's `nrv dispatch --squad …`) reads
+ *  it and nests its scaffold inside that run. */
+export const RUN_WORKSPACE_ENV = "NIRVANA_RUN_WORKSPACE";
+
+/**
+ * The run folder that holds `dir`: `<base>/<run id>` for the first outputs base
+ * `dir` sits under (the project's, then the engine store's). Null when `dir` is
+ * not inside a run, which leaves the caller's cwd as it was.
+ */
+export function runFolderOf(dir: string | null | undefined, projectRoot?: string | null): string | null {
+  if (!dir) return null;
+  const bases: string[] = [];
+  if (projectRoot && !isInvalidProjectRoot(projectRoot)) bases.push(outputsBaseDir(projectRoot));
+  bases.push(outputsBaseDir(null));
+  const targets = [path.resolve(dir), canonical(dir)];
+  for (const base of bases) {
+    for (const b of new Set([path.resolve(base), canonical(base)])) {
+      for (const t of targets) {
+        const rel = path.relative(b, t);
+        if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) continue;
+        return path.join(b, rel.split(path.sep)[0]);
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Where a dispatch started from inside a run puts its scaffold:
+ * `<run folder>/dispatches`. A seat that dispatches a squad integrates what the
+ * squad delivers, and so do the seats after it and the final synthesis; as a
+ * run of its own under the outputs base the squad's work would sit BESIDE the
+ * seat's run, fenced off from every later seat. Nested, `runFolderOf` maps it
+ * to the run that asked for it. Null for a dispatch from the operator, and for
+ * a variable that does not name a run folder of this project or of the store.
+ */
+export function nestedOutputsBase(projectRoot: string | null, env: Record<string, string | undefined> = process.env): string | null {
+  const named = env[RUN_WORKSPACE_ENV];
+  if (!named) return null;
+  const workspace = path.resolve(named);
+  if (!fs.existsSync(workspace)) return null;
+  const run = runFolderOf(workspace, projectRoot);
+  if (!run || !sameDir(canonical(run), canonical(workspace))) return null;
+  return path.join(workspace, "dispatches");
+}
+
+/** The other run folders under the same outputs base as `workspace`. */
+export function siblingRunFolders(workspace: string): string[] {
+  const base = path.dirname(workspace);
+  const own = path.basename(workspace);
+  let entries: fs.Dirent[];
+  try { entries = fs.readdirSync(base, { withFileTypes: true }); } catch { return []; }
+  return entries
+    .filter((e) => e.name !== own && (e.isDirectory() || e.isSymbolicLink()))
+    .map((e) => path.join(base, e.name))
+    .sort();
+}
+
+/**
+ * An absolute path as a Claude Code permission pattern: `//` anchors at the
+ * filesystem root, and on Windows the path is matched in POSIX form
+ * (`C:\Users\a` is `/c/Users/a`). Gitignore metacharacters in the path are
+ * escaped so a folder name cannot turn into a wildcard. Null for a path the
+ * rules cannot express (a UNC share).
+ */
+export function claudeAbsolutePattern(absPath: string, platform: NodeJS.Platform = process.platform): string | null {
+  let p = absPath;
+  if (platform === "win32") {
+    const m = /^([A-Za-z]):[\\/]*(.*)$/.exec(p);
+    if (!m) return null;
+    p = `/${m[1].toLowerCase()}/${m[2].replace(/\\/g, "/")}`;
+  }
+  if (!p.startsWith("/")) return null;
+  const escaped = p.replace(/\/+$/, "").replace(/([[\]*?\\])/g, "\\$1");
+  return `/${escaped}`;
+}
+
+/** Read/Edit deny rules for one folder: the folder itself (Glob and Grep roots)
+ *  and everything under it. */
+function denyFolder(dir: string, platform: NodeJS.Platform): string[] {
+  const pattern = claudeAbsolutePattern(dir, platform);
+  if (!pattern) return [];
+  return [`Read(${pattern})`, `Read(${pattern}/**)`, `Edit(${pattern})`, `Edit(${pattern}/**)`];
+}
+
+/**
+ * The project's own Read/Edit deny rules, re-anchored at the project root.
+ * In `.claude/settings.json` a relative pattern anchors at the cwd, and a deny
+ * pattern with no anchor matches at any depth under it; both keep that meaning
+ * once the cwd is the run folder. Anchored (`//`, `~/`) rules and non-path
+ * rules are Claude Code's to load from the user's settings, not ours to copy.
+ */
+export function projectDenyRules(projectRoot: string, platform: NodeJS.Platform = process.platform): string[] {
+  let settings: any;
+  try { settings = JSON.parse(fs.readFileSync(path.join(projectRoot, ".claude", "settings.json"), "utf8")); }
+  catch { return []; }
+  const deny: unknown = settings?.permissions?.deny;
+  if (!Array.isArray(deny)) return [];
+  const root = claudeAbsolutePattern(projectRoot, platform);
+  if (!root) return [];
+  const out: string[] = [];
+  for (const rule of deny) {
+    const m = typeof rule === "string" ? /^(Read|Edit)\((.+)\)$/.exec(rule.trim()) : null;
+    if (!m) continue;
+    const [, tool, pattern] = m;
+    if (pattern.startsWith("//") || pattern.startsWith("~/") || pattern.startsWith("!")) continue;
+    let rest: string;
+    if (pattern.startsWith("./")) rest = pattern.slice(2);
+    else if (pattern.startsWith("/")) rest = pattern.slice(1);
+    else if (pattern.startsWith("**/")) rest = pattern;
+    else rest = `**/${pattern}`;
+    out.push(`${tool}(${root}/${rest})`);
+  }
+  return out;
+}
+
+/** Is this run folder named in the instruction? A brief may point at an earlier
+ *  run on purpose ("build on the analysis in outputs/<id>"); the user is in
+ *  command there, and only incidental reach is fenced. Matched by absolute path
+ *  or by `outputs/<id>`, never by a bare id that could be an ordinary word. */
+export function namedIn(text: string, runFolder: string): boolean {
+  if (!text) return false;
+  const name = path.basename(runFolder);
+  const base = path.basename(path.dirname(runFolder));
+  return text.includes(runFolder) || text.includes(`${base}/${name}`) || text.includes(`${base}\\${name}`);
+}
+
+/** The settings a confined claude-code worker runs with, or null when there is
+ *  nothing to fence. `instruction` is what the worker was told; a run folder it
+ *  names stays readable. */
+export function fenceSettings(workspace: string, projectRoot: string | null, platform: NodeJS.Platform = process.platform, instruction = ""): { permissions: { deny: string[] } } | null {
+  const deny = [
+    ...siblingRunFolders(workspace).filter((dir) => !namedIn(instruction, dir)).flatMap((dir) => denyFolder(dir, platform)),
+    ...(projectRoot ? projectDenyRules(projectRoot, platform) : []),
+  ];
+  return deny.length ? { permissions: { deny } } : null;
+}
+
+/** The line every confined worker reads, on every runtime. */
+export function workspaceDirective(workspace: string): string {
+  return `YOUR RUN FOLDER is ${workspace}. What you dispatch from here lands inside it and is yours to use. The folders beside it, in ${path.dirname(workspace)}, are other runs' work and not your input: do not list, read, copy or edit them, unless your instruction names one by its path.`;
+}
+
+/**
+ * Codex reads AGENTS.md from the repository root down to its cwd, and only the
+ * cwd when there is no repository (learn.chatgpt.com/docs/agent-configuration/
+ * agents-md). Started in a run folder of a project that is not a repository, it
+ * would lose the project's contract, so it is pointed at it. Claude Code and
+ * Gemini CLI find theirs walking up from the run folder and are not told twice.
+ */
+export function contractPointer(runtime: string, workspace: string, projectRoot: string | null): string {
+  if (runtime !== "codex" || !projectRoot) return "";
+  const contract = path.join(projectRoot, "AGENTS.md");
+  // A git root is not a project, so the walk is asked for `.git` explicitly.
+  if (!fs.existsSync(contract) || findProjectRoot(workspace, { markers: [".git"] })) return "";
+  return ` The project's instructions are in ${contract}: read them before you start.`;
+}
+
+type Confinable = {
+  runtime: string;
+  cwd: string;
+  prompt?: string;
+  workspace?: string;
+  addDirs?: string[];
+  appendSystemPrompt?: string;
+  claudeSettings?: string;
+  hostCwd?: string;
+};
+
+/**
+ * Moves a worker into its run folder. Returns the options to spawn with and a
+ * cleanup for the settings file; with no `workspace` the options come back
+ * untouched.
+ */
+export function confineToWorkspace<T extends Confinable>(opts: T): { opts: T; cleanup: () => void } {
+  if (!opts.workspace) return { opts, cleanup: () => {} };
+  const workspace = path.resolve(opts.workspace);
+  fs.mkdirSync(workspace, { recursive: true });
+  // The project the caller serves, spelled as the caller spelled it when it is
+  // the caller's own cwd (the resolver hands back the canonical form).
+  const resolved: string | null = resolveProjectRoot({ cwd: opts.cwd });
+  const projectRoot = resolved && sameDir(canonical(resolved), canonical(opts.cwd)) ? opts.cwd : resolved;
+  const addDirs = [...(opts.addDirs ?? [])];
+  if (projectRoot && !addDirs.some((d) => sameDir(canonical(d), canonical(projectRoot)))) addDirs.push(projectRoot);
+  // The line rides with the worker's directive. A decision step (a director, a
+  // judge) runs lean with no directive at all and keeps it that way; it still
+  // gets the cwd and, on claude-code, the deny rules.
+  const confined: T = {
+    ...opts,
+    cwd: workspace,
+    hostCwd: opts.hostCwd ?? opts.cwd,
+    addDirs,
+    ...(opts.appendSystemPrompt
+      ? { appendSystemPrompt: `${opts.appendSystemPrompt}\n\n${workspaceDirective(workspace)}${contractPointer(opts.runtime, workspace, projectRoot)}` }
+      : {}),
+  };
+  let file: string | null = null;
+  if (opts.runtime === "claude-code" && !opts.claudeSettings) {
+    const settings = fenceSettings(workspace, projectRoot, process.platform, opts.prompt ?? "");
+    if (settings) {
+      const written: string = path.join(os.tmpdir(), `${FENCE_FILE_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+      fs.writeFileSync(written, JSON.stringify(settings, null, 2), "utf8");
+      confined.claudeSettings = written;
+      file = written;
+    }
+  }
+  return {
+    opts: confined,
+    cleanup: () => { if (file) { try { fs.rmSync(file, { force: true }); } catch { /* best effort */ } } },
+  };
+}

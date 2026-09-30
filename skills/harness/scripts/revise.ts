@@ -147,6 +147,9 @@ const res = runHeadless({
   prompt: revisePrompt,
   cwd: projectRoot,
   addDirs: [projDir, oroot],
+  // The folder the session was started in (absent on runs from before runs
+  // had one): claude and gemini resume a session only from its own folder.
+  workspace: session.workspace || undefined,
   sessionId,
   appendSystemPrompt: AUTONOMOUS_DIRECTIVE,
   maxBudgetUsd: maxBudget ? parseFloat(maxBudget) : undefined,
