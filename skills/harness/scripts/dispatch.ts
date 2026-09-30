@@ -39,7 +39,7 @@ import { amplify } from "../lib/amplifier.ts";
 import { proxyEnrichBrief } from "../lib/brief-proxy.ts";
 import { resolveRoutingMode, routingModeOrigin } from "../../_shared/lib/routing-mode.ts";
 import { runTeam } from "../lib/team-orchestrator.ts";
-import { doneCriteriaFrom, isBusinessSession, runBusinessSession } from "../lib/business-session.ts";
+import { isBusinessSession, runBusinessSession } from "../lib/business-session.ts";
 import { resolveEntityDir } from "../../_shared/lib/entity-resource-map.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { globalStoreDir, outputsBaseDir } from "../../_shared/lib/project-root.js";
@@ -724,9 +724,8 @@ async function fastBm25Business(briefText: string): Promise<{ slug: string | nul
 // executors receive the enriched brief), business routes flow into the
 // existing brief-business scaffold path.
 let autoMandatorySquads: string[] = [];
-// Read only by a business session, which lists them and the router's criteria of done.
+// Read only by a business session, which lists them beside the mandatory ones.
 let autoOptionalSquads: string[] = [];
-let autoDoneCriteria: string[] = [];
 /**
  * Corpus language mix, for the fast-mode notice. Best-effort and cached by the
  * process: a warning must never cost the dispatch it is warning about.
@@ -892,7 +891,6 @@ if (briefTarget) {
     slug = step.slug!;
     autoMandatorySquads = plan.mandatorySquads;
     autoOptionalSquads = plan.optionalSquads;
-    autoDoneCriteria = doneCriteriaFrom(decision);
     const cost = decision.cost_usd != null ? ` · $${decision.cost_usd.toFixed(4)}` : "";
     console.log(c("lime", "  →") + c("bold", ` ${slug}`) + c("dim", ` (${plan.source}${decision.ok ? ` · ${decision.duration_ms}ms${cost}` : ""})`));
     if (autoMandatorySquads.length) console.log(c("dim", `  mandatory squads: ${autoMandatorySquads.join(", ")}`));
@@ -1987,7 +1985,7 @@ if (wantExec) {
     const sr = runBusinessSession({
       slug, bizDir: businessEntry.bizDir ?? resolveEntityDir("businesses", slug, projDir), brief,
       projectId: pid, projectDir: projDir, projectRoot, outputsRoot: oroot, runtime: rt,
-      mandatorySquads: autoMandatorySquads, optionalSquads: autoOptionalSquads, doneCriteria: autoDoneCriteria,
+      mandatorySquads: autoMandatorySquads, optionalSquads: autoOptionalSquads,
       rulesDirective, maxBudgetUsd: effectiveBudgetUsd(),
       timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
       yolo, ledgerRunId, emit,

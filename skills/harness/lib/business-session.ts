@@ -59,8 +59,6 @@ export interface BusinessSessionArgs {
   /** Squads the router picked for a part no seat covers; a seat must use each. */
   mandatorySquads?: string[];
   optionalSquads?: string[];
-  /** The router's criteria of done, when its decision carried them. */
-  doneCriteria?: string[];
   rulesDirective?: string;
   maxBudgetUsd?: number;
   timeoutMs?: number;
@@ -180,13 +178,6 @@ export function readSeats(bizDir: string, cloneLookup: (slug: string) => { dir: 
   });
 }
 
-/** The router's criteria of done, when its decision carries them. Read
- *  tolerantly: a decision without the field is the normal case. */
-export function doneCriteriaFrom(decision: unknown): string[] {
-  const done = (decision as { done?: unknown } | null)?.done;
-  return listOf(done);
-}
-
 /** The business's memory, as the directories it lives in. Pointed at, never pasted. */
 function defaultMemoryDirs(slug: string, bizDir: string, projectRoot: string): string[] {
   const dirs = [entityMemoryDir("businesses", slug, "global")];
@@ -231,10 +222,12 @@ export function buildSessionBrief(args: BusinessSessionArgs, seats: SessionSeat[
     lines.push("", "A seat triggers the squad (`nrv dispatch --squad <slug> \"<what it must deliver>\" --exec`) and integrates what it delivers. Nobody redoes the squad's work, and the squad does not redo the seats'.", "");
   }
 
+  // The router's done states, when it gave them, already ride in the request
+  // (dispatch appends them as its own "Done when" section), so they are
+  // pointed at here rather than repeated.
   lines.push("## Done when", "");
-  const done = args.doneCriteria ?? [];
-  if (done.length) for (const d of done) lines.push(`- ${d}`);
-  else lines.push("- Every seat you assemble meets the `acceptance` items in its own file.");
+  lines.push("- The request's own \"Done when\" states, when it has them.");
+  lines.push("- Every seat you assemble meets the `acceptance` items in its own file.");
   lines.push("");
 
   const participation = participationFile(args.projectDir);
@@ -267,11 +260,14 @@ export function sessionGrants(args: BusinessSessionArgs, seats: SessionSeat[], m
   return [...new Set(dirs.map((d) => path.resolve(d)))];
 }
 
-/** The autonomous directive without its line on delegating to colleagues by
- *  piping a seat prompt into a fresh CLI: here the seats are subagents. */
+/** The session is the business, not its intake seat, and its colleagues are
+ *  the subagents it opens. The directive's intake line says colleagues are run
+ *  by the engine's team mode; left in, it forbids what this mode is for. */
+export const SESSION_INTAKE_LINE = "- You ARE the business, already dispatched. Do not invoke the `harness` skill, do not run `nrv run` and never recurse `--auto` on this same brief (anti-loop). A squad is dispatched through the command above, which records it. Your colleagues, the seats, run as subagents of this runtime that you open yourself, one per chosen seat; never start another runtime from the shell to run one.";
+
 export function sessionDirective(rulesDirective = ""): string {
-  const kept = AUTONOMOUS_DIRECTIVE.split("\n").filter((l) => !l.includes("employee-prompt.ts"));
-  return kept.join("\n") + rulesDirective;
+  const lines = AUTONOMOUS_DIRECTIVE.split("\n").map((l) => l.includes("You ARE the intake") ? SESSION_INTAKE_LINE : l);
+  return lines.join("\n") + rulesDirective;
 }
 
 /** The hook registration for this run: every subagent call the session makes

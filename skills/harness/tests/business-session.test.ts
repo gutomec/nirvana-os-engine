@@ -9,8 +9,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import {
-  buildSessionBrief, creditSessionSeats, doneCriteriaFrom, isBusinessSession, participationFile, readSeats,
-  runBusinessSession, sessionDirective, sessionGrants, type BusinessSessionArgs,
+  buildSessionBrief, creditSessionSeats, isBusinessSession, participationFile, readSeats,
+  runBusinessSession, SESSION_INTAKE_LINE, sessionDirective, sessionGrants, type BusinessSessionArgs,
 } from "../lib/business-session.ts";
 import { attributeSeat } from "../../_shared/lib/seat-attribution.ts";
 import { stamp } from "../../_shared/lib/audit-provenance.ts";
@@ -126,24 +126,20 @@ describe("the brief points, it does not paste", () => {
     expect(without).not.toContain("Squads for this request");
   });
 
-  test("done criteria: the router's when it gave them, the seats' acceptance otherwise", () => {
-    const routed = buildSessionBrief(baseArgs({ doneCriteria: ["Four emails, one per launch day"] }), seats(), [], squadDirOf);
-    expect(routed).toContain("- Four emails, one per launch day");
-    expect(routed).not.toContain("`acceptance` items");
-    const unrouted = buildSessionBrief(baseArgs(), seats(), [], squadDirOf);
-    expect(unrouted).toContain("`acceptance` items in its own file");
+  test("done: the router's states ride in the request once, and each seat's acceptance is pointed at", () => {
+    const routedBrief = "Launch it.\n\n## Done when\n\nCheck each of these yourself before you finish:\n- Four emails, one per launch day\n";
+    const brief = buildSessionBrief(baseArgs({ brief: routedBrief }), seats(), [], squadDirOf);
+    expect(brief.split("Four emails, one per launch day").length - 1).toBe(1);
+    expect(brief).toContain("The request's own \"Done when\" states");
+    expect(brief).toContain("`acceptance` items in its own file");
   });
 
-  test("the router's done criteria are read when present and never required", () => {
-    expect(doneCriteriaFrom({ done: ["a", " ", "b"] })).toEqual(["a", "b"]);
-    expect(doneCriteriaFrom({ done: "one line" })).toEqual(["one line"]);
-    expect(doneCriteriaFrom({ primary_business: "x" })).toEqual([]);
-    expect(doneCriteriaFrom(null)).toEqual([]);
-  });
-
-  test("the directive keeps the premises and drops the pipe-a-colleague delegation", () => {
+  test("the directive keeps the premises and lets the business open its seats as subagents", () => {
     const d = sessionDirective("\nRULE: X");
     expect(d).not.toContain("employee-prompt.ts");
+    expect(d).not.toContain("You ARE the intake");
+    expect(d).not.toContain("run by the engine's team mode");
+    expect(d).toContain(SESSION_INTAKE_LINE);
     expect(d).toContain("NOTHING HALF-BAKED");
     expect(d).toContain("HEADLESS SESSION LIFETIME");
     expect(d.endsWith("RULE: X")).toBeTrue();
@@ -183,7 +179,7 @@ describe("the run", () => {
     expect(call.allowSubagents).toBeTrue();
     expect(call.cwd).toBe(PROJECT_ROOT);
     expect(call.addDirs).toContain(path.resolve(BIZ));
-    expect(call.appendSystemPrompt).not.toContain("employee-prompt.ts");
+    expect(call.appendSystemPrompt).toContain(SESSION_INTAKE_LINE);
     expect(call.prompt).toContain("# Business session: acme-launch");
     expect(fs.readFileSync(path.join(PROJECT_DIR, "session-brief.md"), "utf8")).toBe(call.prompt);
   });
