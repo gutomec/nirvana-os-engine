@@ -55,12 +55,23 @@ describe("concurrent indexers do not kill each other", () => {
       Bun.spawn([process.execPath, child, `w${w}`, target], { stdout: "ignore", stderr: "pipe" }));
 
     // Read while they write: rename is atomic, so this must never see a
-    // half-written file either.
+    // half-written file either. Only a parse failure proves one. On Windows an
+    // open that lands while the target is being replaced fails with a sharing
+    // violation (EBUSY, EPERM, EACCES); that is a busy file, not a torn one,
+    // and every registry reader already treats a failed read as no registry.
+    const busyOnWindows = new Set(["EBUSY", "EPERM", "EACCES"]);
     let corrupted = 0;
     const deadline = Date.now() + 20_000;
     while (Date.now() < deadline && procs.some((p) => p.exitCode === null)) {
-      try { JSON.parse(fs.readFileSync(target, "utf8")); }
-      catch (e: any) { if (e?.code !== "ENOENT") corrupted++; }
+      let raw: string;
+      try { raw = fs.readFileSync(target, "utf8"); }
+      catch (e: any) {
+        if (e?.code === "ENOENT") continue;
+        if (process.platform === "win32" && busyOnWindows.has(e?.code)) continue;
+        corrupted++;
+        continue;
+      }
+      try { JSON.parse(raw); } catch { corrupted++; }
     }
 
     const codes = await Promise.all(procs.map((p) => p.exited));
