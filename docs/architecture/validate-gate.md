@@ -103,6 +103,7 @@ Os critérios saem dos números da biblioteca medidos em 26/08/2026 (555 clones 
 | `manifest_schema` | erro | — |
 | `manifest_name_mismatch` | erro | `manifest_name_sync` |
 | `artifact_missing:<path>` | erro | — |
+| `dna_config_parse` | erro | — |
 | `agent_md_invalid` | erro | — |
 | `category_numbered` | erro | `category_bare` |
 | `domains_item_malformed` | erro | — |

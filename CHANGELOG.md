@@ -8,6 +8,16 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Project-scoped clones and squads: listing, validation, versions and the dependency link
+
+Four defects found while building a squad, a business and clones scoped to one project:
+
+- `nrv list-clones` read only the global DNA library, so the clones in `<project>/.nirvana/mind-clones` were not listed. It now walks the clone roots of the resolved scope, project first, and a project clone wins over a global clone of the same slug, as index-clones and dispatch already resolve them.
+- `nrv validate mind-clone` admitted an `agent/DNA-CONFIG.yaml` that was not valid YAML, because it only checked that the file existed and was not empty. The new `dna_config_parse` error fails a config that does not parse or is not a mapping.
+- `nrv changes` read a clone's version at the top of `MANIFEST.yaml`, while a clone keeps it under `manifest.version`, so a clone's own version never set the floor of its contract version. It now reads both shapes.
+- The `node_modules` link that `nrv activate` and `nrv deps link` place in a squad is local plumbing. The directory's `.gitignore` now names `node_modules` (once, never duplicated), so publishing from git and packers that honour `.gitignore` leave it out.
+
+
 ### The judge fails a deliverable for a material defect, never for style, and turns off with one flag
 
 The LLM judge was told to apply its rubric strictly, avoid grade inflation and fail a score exactly at the threshold, so text deliverables that did what the brief asked went back for revision over wording. The verdict now comes from a rule, not from the model: a deliverable fails only when the judge finds a material defect (a part the brief asked for missing or unusable, a wrong or invented fact, a contradiction with the brief, work claimed but not done, a broken hard gate) or scores below the rubric's threshold, and a score at the threshold passes. Style, polish and wording are recorded as notes on the gate event and never become revision work on their own; a revision is asked to fix the material items first, then the medium ones. Declared assumptions and choices the brief left open are not defects. A judge call that fails or returns no usable verdict no longer fails the file: the heuristic rubrics decide it, as they do with the judge off.

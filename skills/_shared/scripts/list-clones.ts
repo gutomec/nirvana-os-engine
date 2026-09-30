@@ -24,6 +24,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, basename } from "node:path";
 import { homedir } from "node:os";
 import { paths } from "../lib/bun-helpers.ts";
+import { resolveScope } from "../lib/scope.ts";
 
 // The same resolution every other clone path uses (index-clones, validate,
 // translate): DNA_LIBRARY, else NIRVANA_HOME/businesses/_library/dna, with the
@@ -31,6 +32,11 @@ import { paths } from "../lib/bun-helpers.ts";
 // machine that had relocated its library.
 const HOME = homedir();
 const DNA_DIR = (paths as Record<string, string>).DNA_LIBRARY || join(HOME, "businesses/_library/dna");
+// The clone roots of the resolved scope, project first: a project's own
+// `.nirvana/mind-clones` is listed, and wins over a global clone of the same
+// slug, exactly as index-clones and dispatch resolve them.
+const scopeRoots = (() => { try { return resolveScope().mindCloneDirs; } catch { return []; } })();
+const ROOTS = scopeRoots.length ? scopeRoots : [DNA_DIR];
 
 const args = process.argv.slice(2);
 const format = args.find((a) => a.startsWith("--format="))?.split("=")[1] ?? "compact";
@@ -130,6 +136,19 @@ function categorySlugFromDir(dirName: string): string {
 }
 
 function listClones(): CloneInfo[] {
+  const seen = new Set<string>();
+  const out: CloneInfo[] = [];
+  for (const root of ROOTS) {
+    for (const clone of listClonesIn(root)) {
+      if (seen.has(clone.slug)) continue;
+      seen.add(clone.slug);
+      out.push(clone);
+    }
+  }
+  return out;
+}
+
+function listClonesIn(DNA_DIR: string): CloneInfo[] {
   if (!safeExists(DNA_DIR)) return [];
   const topEntries = readdirSync(DNA_DIR).filter((e) => {
     if (e.startsWith(".")) return false;
@@ -254,7 +273,7 @@ if (format === "json") {
   console.log(JSON.stringify(filtered, null, 2));
 } else if (format === "table") {
   if (filtered.length === 0) {
-    console.log(`No mind-clones found in ${DNA_DIR.replace(HOME, "~")}/`);
+    console.log(`No mind-clones found in ${ROOTS.map((r) => r.replace(HOME, "~") + "/").join(", ")}`);
     process.exit(0);
   }
   const w = Math.max(...filtered.map((c) => c.slug.length), 8);
@@ -280,7 +299,7 @@ if (format === "json") {
 } else {
   // compact (default), grouped by parent_dir
   if (filtered.length === 0) {
-    console.log(`No mind-clones found in ${DNA_DIR.replace(HOME, "~")}/`);
+    console.log(`No mind-clones found in ${ROOTS.map((r) => r.replace(HOME, "~") + "/").join(", ")}`);
     console.log("Create one from prose through the harness, or install a pack from https://squads.sh");
     process.exit(0);
   }

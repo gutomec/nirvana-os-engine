@@ -158,7 +158,11 @@ const MANIFEST_FILE: Record<ArtifactKind, string> = {
  */
 export function manifestVersion(dir: string, kind: ArtifactKind): string | null {
   try {
-    const raw = readYaml(path.join(dir, MANIFEST_FILE[kind]))?.version;
+    const doc = readYaml(path.join(dir, MANIFEST_FILE[kind]));
+    // A clone's MANIFEST.yaml nests its fields under `manifest:`; squads and
+    // businesses keep `version` at the top. Reading only the top made every
+    // clone's version invisible to the contract-version floor.
+    const raw = doc?.version ?? doc?.manifest?.version;
     const text = typeof raw === "string" || typeof raw === "number" ? String(raw).trim() : "";
     return /^\d+\.\d+\.\d+$/.test(text) ? text : null;
   } catch {

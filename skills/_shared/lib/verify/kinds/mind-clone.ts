@@ -50,6 +50,7 @@ export const criteria: Criterion[] = [
   { id: "manifest_schema", severity: "error", autofix: "none", baselineable: false, title: "MANIFEST.yaml matches MindCloneManifestSchema" },
   { id: "manifest_name_mismatch", severity: "error", autofix: "mechanical", baselineable: false, title: "manifest.name equals the directory slug", fixer: "manifest_name_sync" },
   { id: "artifact_missing", severity: "error", autofix: "none", baselineable: false, title: "AGENT.md, SOUL.md, DNA-CONFIG.yaml and dna-schema.md exist and are not empty" },
+  { id: "dna_config_parse", severity: "error", autofix: "none", baselineable: false, title: "agent/DNA-CONFIG.yaml parses as a YAML mapping" },
   { id: "agent_md_invalid", severity: "error", autofix: "none", baselineable: false, title: "agent/AGENT.md passes the persona validator" },
   { id: "category_numbered", severity: "error", autofix: "mechanical", baselineable: false, title: "category is bare (no numbered legacy prefix)", fixer: "category_bare" },
   { id: "domains_item_malformed", severity: "error", autofix: "none", baselineable: false, title: "every routing.domains item is text" },
@@ -158,6 +159,19 @@ export async function check(ctx: CheckContext): Promise<Finding[]> {
   for (const rel of CANONICAL_ARTIFACTS) {
     const a = artifactPath(dir, rel);
     if (!a.present) out.push(mk("artifact_missing", `${rel} is absent or empty`, a.path, rel));
+  }
+  // Present is not enough: a config that does not parse was admitted and then
+  // silently read as nothing by everything that loads it.
+  const dnaConfig = artifactPath(dir, "agent/DNA-CONFIG.yaml");
+  if (dnaConfig.present) {
+    try {
+      const cfg = parseYaml(fs.readFileSync(dnaConfig.path, "utf8"));
+      if (!cfg || typeof cfg !== "object" || Array.isArray(cfg)) {
+        out.push(mk("dna_config_parse", "agent/DNA-CONFIG.yaml is not a YAML mapping", typeof cfg, "agent/DNA-CONFIG.yaml"));
+      }
+    } catch (e: any) {
+      out.push(mk("dna_config_parse", "agent/DNA-CONFIG.yaml does not parse", String(e?.message ?? e).split("\n")[0], "agent/DNA-CONFIG.yaml"));
+    }
   }
   const agentMd = artifactPath(dir, "agent/AGENT.md");
   if (agentMd.present) {
