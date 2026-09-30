@@ -490,6 +490,7 @@ if (!slug && !autoMode && !explicitTarget) {
   console.error("    --max-budget=<usd>      cost ceiling for the run (claude --max-budget-usd)");
   console.error("    --timeout=<min>         wall-clock ceiling for the run (default 24h; a real hang is caught by ~5 min of inactivity)");
   console.error("    --safe                  opt in to restricted mode (limited tools + sandbox); default = full trust");
+  console.error("    --no-judge              skip the LLM judge for this run; the offline heuristic gate still runs");
   console.error("    --strict-route          an ambiguous route FAILS instead of auto-picking the top candidate");
   console.error("    --force-deliver         deliver even when the gate fails (delivered gate:\"fail-forced\")");
   console.error("");
@@ -545,6 +546,9 @@ function ledgerTry<T>(fn: () => T): T | null {
 
 // Harness config (quality_gate.*, routing.on_router_failure) — Phase 4.
 const harnessConfig = loadHarnessConfig();
+// --no-judge: this run keeps only the offline heuristic gate, whatever the
+// config says. `quality_gate.judge_enabled: false` does the same for good.
+if (process.argv.includes("--no-judge")) harnessConfig.quality_gate.judge_enabled = "false";
 // Revision budget: the flag wins, otherwise the config key that until now had
 // no reader (quality_gate.max_revisions) — a hardcoded 2 here made the setting
 // a lie for anyone who edited config.yaml.

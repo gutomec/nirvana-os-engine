@@ -8,6 +8,13 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### O juiz reprova uma entrega por defeito material, nunca por estilo, e desliga com um flag
+
+O juiz LLM era instruído a aplicar a rubrica com rigor, evitar nota inflada e reprovar uma nota exatamente no limite, então entregas de texto que faziam o que o brief pedia voltavam para revisão por causa de redação. O veredito agora sai de uma regra, não do modelo: uma entrega só reprova quando o juiz acha um defeito material (uma parte pedida no brief faltando ou inutilizável, um fato errado ou inventado, uma contradição com o brief, trabalho declarado e não feito, um critério eliminatório quebrado) ou quando a nota fica abaixo do limite da rubrica, e uma nota igual ao limite passa. Estilo, acabamento e redação ficam registrados como notas no evento do gate e nunca viram trabalho de revisão sozinhos; a revisão corrige primeiro os itens materiais, depois os médios. Premissas declaradas e escolhas que o brief deixou em aberto não são defeitos. Uma chamada do juiz que falha ou não devolve um veredito utilizável não reprova mais o arquivo: as rubricas heurísticas decidem, como acontece com o juiz desligado.
+
+O juiz desliga em três escopos: `nrv config set quality_gate.judge_enabled false` (ou `off`) na máquina ou num projeto, `NIRVANA_JUDGE_ENABLED=false` num ambiente, e o novo `nrv dispatch ... --no-judge` numa execução só. O gate heurístico offline continua rodando, então toda execução ainda registra um veredito.
+
+
 ### No Windows, a gravação do registro espera o arquivo ocupado em vez de morrer
 
 O gravador atômico compartilhado repetia uma violação de compartilhamento do Windows doze vezes, com 15 ms de intervalo, girando a CPU o tempo todo. Cerca de 180 ms nem sempre bastava: indexadores concorrentes no windows-latest ainda perdiam um gravador, e dez processos girando num runner de dois núcleos atrasam o leitor que segura o arquivo. A nova tentativa agora dorme entre as tentativas, recua de forma exponencial com variação aleatória e desiste depois de dois segundos. Um erro permanente, como ENOENT, continua falhando na primeira tentativa.

@@ -348,8 +348,9 @@ export const SETTINGS = {
     key: "quality_gate.judge_enabled", kind: "enum",
     // A YAML `true`/`false` written before this key had three values is still
     // valid and reads as the matching word, so every value has one spelling.
-    type: z.union([z.boolean(), z.enum(["reports", "true", "false"])])
-      .transform((v) => (v === true ? "true" : v === false ? "false" : v)) as unknown as z.ZodType<"reports" | "true" | "false">,
+    // `off` is accepted as a spelling of `false`, the way the judge is turned off.
+    type: z.union([z.boolean(), z.enum(["reports", "true", "false", "off"])])
+      .transform((v) => (v === true ? "true" : v === false || v === "off" ? "false" : v)) as unknown as z.ZodType<"reports" | "true" | "false">,
     default: "reports", options: ["reports", "true", "false"], scopes: ["global", "project"],
     description: "Juiz LLM do quality gate: reports (padrão) = julga os entregáveis de texto (.md, .txt) contra o brief e deixa o resto nas heurísticas; true = julga tudo que o gate cobre; false = só as heurísticas offline.",
     expects: "reports | true | false", env: "NIRVANA_JUDGE_ENABLED", secret: false,

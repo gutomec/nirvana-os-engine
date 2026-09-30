@@ -8,6 +8,13 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### The judge fails a deliverable for a material defect, never for style, and turns off with one flag
+
+The LLM judge was told to apply its rubric strictly, avoid grade inflation and fail a score exactly at the threshold, so text deliverables that did what the brief asked went back for revision over wording. The verdict now comes from a rule, not from the model: a deliverable fails only when the judge finds a material defect (a part the brief asked for missing or unusable, a wrong or invented fact, a contradiction with the brief, work claimed but not done, a broken hard gate) or scores below the rubric's threshold, and a score at the threshold passes. Style, polish and wording are recorded as notes on the gate event and never become revision work on their own; a revision is asked to fix the material items first, then the medium ones. Declared assumptions and choices the brief left open are not defects. A judge call that fails or returns no usable verdict no longer fails the file: the heuristic rubrics decide it, as they do with the judge off.
+
+The judge turns off in three scopes: `nrv config set quality_gate.judge_enabled false` (or `off`) for the machine or a project, `NIRVANA_JUDGE_ENABLED=false` for an environment, and the new `nrv dispatch ... --no-judge` for one run. The offline heuristic gate still runs, so every run still records a verdict.
+
+
 ### Registry writes on Windows wait out a busy target instead of dying
 
 The shared atomic writer retried a Windows sharing violation twelve times, 15 ms apart, spinning the CPU the whole time. About 180 ms was not always enough: concurrent indexers on windows-latest still lost a writer, and ten processes spinning on a two-core runner slow down the reader that holds the file. The retry now sleeps between attempts, backs off exponentially with jitter, and gives up after two seconds. A permanent error such as ENOENT still throws on the first attempt.
