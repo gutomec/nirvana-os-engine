@@ -28,6 +28,7 @@ import { resolveEntityDir } from "../../_shared/lib/entity-resource-map.ts";
 import { entityMemoryDir } from "../../_shared/lib/entity-memory.ts";
 import { loadCloneRegistry, resolveClonePersona } from "../../_shared/lib/clone-resolver.ts";
 import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
+import { fenceSettings, runFolderOf } from "../../_shared/lib/run-workspace.ts";
 
 /** Runtimes on which this module registers the seat hook. The others credit by declaration. */
 export const HOOK_RUNTIMES: ReadonlySet<Runtime> = new Set<Runtime>(["claude-code"]);
@@ -271,8 +272,11 @@ export function sessionDirective(rulesDirective = ""): string {
 }
 
 /** The hook registration for this run: every subagent call the session makes
- *  is recorded against the seat it worked as. claude-code only. */
-function writeClaudeSettings(args: BusinessSessionArgs, seats: SessionSeat[]): string {
+ *  is recorded against the seat it worked as. claude-code only.
+ *
+ *  A caller-set settings file replaces the run folder's fence in the driver
+ *  (run-workspace.ts), so the fence's deny rules travel in this same file. */
+function writeClaudeSettings(args: BusinessSessionArgs, seats: SessionSeat[], workspace: string | undefined, prompt: string): string {
   const dir = path.join(args.projectDir, ".business-session");
   fs.mkdirSync(dir, { recursive: true });
   const seatsFile = path.join(dir, "seats.json");
@@ -281,7 +285,9 @@ function writeClaudeSettings(args: BusinessSessionArgs, seats: SessionSeat[]): s
     seats: seats.map((s) => ({ slug: s.slug, file: s.file })),
   }, null, 2));
   const settingsFile = path.join(dir, "claude-settings.json");
+  const fence = workspace ? fenceSettings(workspace, args.projectRoot, process.platform, prompt) : null;
   fs.writeFileSync(settingsFile, JSON.stringify({
+    ...(fence ?? {}),
     hooks: {
       PostToolUse: [{
         matcher: "Agent|Task",
@@ -292,8 +298,7 @@ function writeClaudeSettings(args: BusinessSessionArgs, seats: SessionSeat[]): s
   return settingsFile;
 }
 
-function readRunEvents(projectRoot: string, projectId: string, sinceMs: number): { events: any[]; notCounted: number } {
-  const root = harnessLogsDir({ cwd: projectRoot });
+function readRunEvents(root: string, projectId: string, sinceMs: number): { events: any[]; notCounted: number } {
   const days = new Set([new Date(sinceMs).toISOString().slice(0, 10), new Date().toISOString().slice(0, 10)]);
   const events: any[] = [];
   let notCounted = 0;
@@ -336,9 +341,11 @@ function readParticipation(file: string): { seats: { seat: string; how?: string 
  */
 export function creditSessionSeats(input: {
   projectId: string; projectRoot: string; projectDir: string; runtime: Runtime; seats: SessionSeat[]; sinceMs: number;
+  /** The audit root to read; the project's by default (the one the hook writes). */
+  logsRoot?: string;
 }): SessionReceipt {
   const known = new Set(input.seats.map((s) => s.slug));
-  const { events, notCounted } = readRunEvents(input.projectRoot, input.projectId, input.sinceMs);
+  const { events, notCounted } = readRunEvents(input.logsRoot ?? harnessLogsDir({ cwd: input.projectRoot }), input.projectId, input.sinceMs);
   const recorded = new Map<string, number>();
   let unattributed = 0;
   for (const e of events) {
@@ -374,12 +381,15 @@ export function runBusinessSession(args: BusinessSessionArgs): BusinessSessionRe
   fs.mkdirSync(args.outputsRoot, { recursive: true });
   try { fs.rmSync(participationFile(args.projectDir), { force: true }); } catch { /* a stale file would credit this run */ }
   fs.writeFileSync(path.join(args.projectDir, "session-brief.md"), prompt);
-  const settingsFile = HOOK_RUNTIMES.has(args.runtime) ? writeClaudeSettings(args, seats) : undefined;
+  // The run folder, like every other worker: the session starts there, fenced
+  // off from the runs beside it, and what its seats dispatch nests inside it.
+  const workspace = runFolderOf(args.projectDir, args.projectRoot) ?? undefined;
+  const claudeSettings = HOOK_RUNTIMES.has(args.runtime) ? writeClaudeSettings(args, seats, workspace, prompt) : undefined;
 
   emit("x_business_session_started", {
     trace_id: args.projectId, project_id: args.projectId, business_slug: args.slug, runtime: args.runtime,
     seats: seats.length, brief_chars: prompt.length, grants: addDirs.length,
-    mandatory_squads: args.mandatorySquads ?? [], seat_evidence: settingsFile ? "hook" : "declared",
+    mandatory_squads: args.mandatorySquads ?? [], seat_evidence: claudeSettings ? "hook" : "declared",
   });
 
   const startedMs = Date.now();
@@ -392,7 +402,7 @@ export function runBusinessSession(args: BusinessSessionArgs): BusinessSessionRe
     // where the engine cannot count; here the subagents ARE the seats, bounded
     // by the team above, recorded by the hook, and they are the point of the mode.
     allowSubagents: true,
-    ...(settingsFile ? { settingsFile } : {}),
+    ...(claudeSettings ? { claudeSettings } : {}),
     runtime: args.runtime,
     prompt,
     cwd: args.projectRoot,
@@ -404,6 +414,7 @@ export function runBusinessSession(args: BusinessSessionArgs): BusinessSessionRe
     brief: args.brief, projectRoot: args.projectRoot, outputsRoot: args.outputsRoot,
     taskHint: `business session · ${args.slug}`,
     label: args.slug,
+    workspace,
     projectId: args.projectId,
     ...(args.ledgerRunId ? { ledger: { runId: args.ledgerRunId, watchDir: args.outputsRoot } } : {}),
   });

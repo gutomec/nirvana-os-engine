@@ -186,8 +186,8 @@ describe("the run", () => {
 
   test("on claude-code the seat hook is registered for this run only", () => {
     const { call } = capture("claude-code");
-    expect(typeof call.settingsFile).toBe("string");
-    const settings = JSON.parse(fs.readFileSync(call.settingsFile, "utf8"));
+    expect(typeof call.claudeSettings).toBe("string");
+    const settings = JSON.parse(fs.readFileSync(call.claudeSettings, "utf8"));
     const entry = settings.hooks.PostToolUse[0];
     expect(entry.matcher).toBe("Agent|Task");
     expect(entry.hooks[0].command).toContain("audit-emit-from-hook.ts");
@@ -198,9 +198,32 @@ describe("the run", () => {
     expect(spec.seats.map((s: any) => s.slug)).toEqual(["al-ceo", "al-copy", "al-qa"]);
   });
 
+  test("inside a project the session runs in its run folder, and the hook file carries the fence", () => {
+    const root = path.join(TMP, "fenced");
+    write(path.join(root, ".nirvana", "project.yaml"), "id: prj_test\n");
+    const run = path.join(root, "outputs", "run-a");
+    const sibling = path.join(root, "outputs", "run-b");
+    fs.mkdirSync(sibling, { recursive: true });
+    const projectDir = path.join(run, "businesses", "acme-launch");
+    fs.mkdirSync(projectDir, { recursive: true });
+    const calls: any[] = [];
+    runBusinessSession(baseArgs({
+      projectDir, projectRoot: root, outputsRoot: path.join(projectDir, "deliverables"),
+      runWithCascadeImpl: ((a: any) => {
+        calls.push(a);
+        return { ok: true, runtime: "claude-code", sessionId: "s", result: "", costUsd: 0, exitCode: 0, stderr: "", durationMs: 1, handoffs: [], finalRuntime: "claude-code" };
+      }) as any,
+    }));
+    expect(calls[0].workspace).toBe(run);
+    const settings = JSON.parse(fs.readFileSync(calls[0].claudeSettings, "utf8"));
+    expect(settings.hooks.PostToolUse[0].matcher).toBe("Agent|Task");
+    expect(JSON.stringify(settings.permissions.deny)).toContain("run-b");
+    expect(JSON.stringify(settings.permissions.deny)).not.toContain("run-a");
+  });
+
   test("a runtime without the hook gets no settings and credits by declaration", () => {
     const { call, events } = capture("codex");
-    expect(call.settingsFile).toBeUndefined();
+    expect(call.claudeSettings).toBeUndefined();
     const started = events.find((e) => e.event === "x_business_session_started")!;
     expect(started.payload.seat_evidence).toBe("declared");
   });
@@ -273,7 +296,10 @@ describe("which seat a subagent worked as", () => {
 });
 
 describe("crediting the seats", () => {
-  const logsDir = () => process.env.HARNESS_LOGS_DIR!;
+  // Its own audit root, handed to the reader: the process-wide one belongs to
+  // whichever test file ran last and may be unset by then.
+  const LOGS = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-session-credit-"));
+  const logsDir = () => LOGS;
   function appendAudit(ev: Record<string, unknown>, signed = true): void {
     const dir = path.join(logsDir(), new Date().toISOString().slice(0, 10));
     fs.mkdirSync(dir, { recursive: true });
@@ -292,7 +318,7 @@ describe("crediting the seats", () => {
     write(participationFile(projectDir), JSON.stringify({ seats: [
       { seat: "al-ceo", how: "self" }, { seat: "al-copy", how: "subagent" }, { seat: "al-qa", how: "subagent" }, { seat: "ghost-seat", how: "subagent" },
     ] }));
-    const r = creditSessionSeats({ projectId: "p-credit", projectRoot: PROJECT_ROOT, projectDir, runtime: "claude-code", seats: readSeats(BIZ, lookup), sinceMs: since });
+    const r = creditSessionSeats({ projectId: "p-credit", projectRoot: PROJECT_ROOT, projectDir, runtime: "claude-code", seats: readSeats(BIZ, lookup), sinceMs: since, logsRoot: LOGS });
     expect(r.credited).toEqual([
       { seat: "al-ceo", evidence: "declared", how: "self" },
       { seat: "al-copy", evidence: "recorded", subagents: 2, how: "subagent" },
@@ -309,14 +335,14 @@ describe("crediting the seats", () => {
   test("on a runtime without the hook, a declaration is the evidence and says so", () => {
     const projectDir = fs.mkdtempSync(path.join(TMP, "credit-codex-"));
     write(participationFile(projectDir), JSON.stringify({ seats: ["al-copy", { seat: "al-qa", how: "subagent" }] }));
-    const r = creditSessionSeats({ projectId: "p-codex", projectRoot: PROJECT_ROOT, projectDir, runtime: "codex", seats: readSeats(BIZ, lookup), sinceMs: Date.now() });
+    const r = creditSessionSeats({ projectId: "p-codex", projectRoot: PROJECT_ROOT, projectDir, runtime: "codex", seats: readSeats(BIZ, lookup), sinceMs: Date.now(), logsRoot: LOGS });
     expect(r.credited).toEqual([{ seat: "al-copy", evidence: "declared" }, { seat: "al-qa", evidence: "declared", how: "subagent" }]);
     expect(r.declaredNotRecorded).toEqual([]);
   });
 
   test("no record and no declaration credits nobody", () => {
     const projectDir = fs.mkdtempSync(path.join(TMP, "credit-none-"));
-    const r = creditSessionSeats({ projectId: "p-none", projectRoot: PROJECT_ROOT, projectDir, runtime: "claude-code", seats: readSeats(BIZ, lookup), sinceMs: Date.now() });
+    const r = creditSessionSeats({ projectId: "p-none", projectRoot: PROJECT_ROOT, projectDir, runtime: "claude-code", seats: readSeats(BIZ, lookup), sinceMs: Date.now(), logsRoot: LOGS });
     expect(r.credited).toEqual([]);
   });
 
@@ -370,7 +396,7 @@ describe("the driver passes the run's own settings to claude", () => {
   afterAll(() => { for (const k of MANAGED) { if (SAVED[k] === undefined) delete process.env[k]; else process.env[k] = SAVED[k]; } });
 
   test("--settings with the file, no deny when subagents are allowed, and the child is stamped as the business", () => {
-    const r = runHeadless({ runtime: "claude-code", prompt: "run", cwd: TMP, timeoutMs: 20_000, allowSubagents: true, settingsFile: "/x/settings.json", dispatchRole: "business" });
+    const r = runHeadless({ runtime: "claude-code", prompt: "run", cwd: TMP, timeoutMs: 20_000, allowSubagents: true, claudeSettings: "/x/settings.json", dispatchRole: "business" });
     expect(r.ok, r.error ?? r.stderr).toBeTrue();
     const a = readCapturedArgs(CAP, "claude");
     const i = a.indexOf("--settings");

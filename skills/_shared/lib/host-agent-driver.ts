@@ -1182,10 +1182,6 @@ export interface RunHeadlessOpts {
    *  Off by default: a dispatched worker produces the artifact, and the engine
    *  is the only orchestrator. See the deny in the claude-code arg builder. */
   allowSubagents?: boolean;
-  /** Extra Claude Code settings for this run only (`claude --settings <file>`),
-   *  layered over the user's own. A business session registers its seat hook
-   *  with it. Ignored by the other runtimes. */
-  settingsFile?: string;
   /** WHAT is being dispatched, so the role rule can be enforced: a business
    *  employee may dispatch a squad, a squad may dispatch nothing. Absent means
    *  the target is unknown, and then only the empty-allowance roles refuse. */
@@ -1654,7 +1650,6 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
   // A caller that genuinely orchestrates — not a worker — opts back in with
   // `allowSubagents: true`.
   if (!opts.allowSubagents) args.push("--disallowedTools", "Task", "Agent");
-  if (opts.settingsFile) args.push("--settings", opts.settingsFile);
 
   if (typeof opts.maxBudgetUsd === "number") args.push("--max-budget-usd", String(opts.maxBudgetUsd));
   if (opts.claudeSettings) args.push("--settings", opts.claudeSettings);
