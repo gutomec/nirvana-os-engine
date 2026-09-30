@@ -220,6 +220,13 @@ export const SETTINGS = {
   "execution.max_dispatch_depth": numberSetting("execution.max_dispatch_depth",
     "Profundidade máxima de uma cadeia de agentes despachando agentes; 0 = ilimitado. O padrão 4 cobre as duas topologias: no terminal empresa (1), assento (2) e squad usado pelo assento (3); no Glance o maestro é ele mesmo um filho, então tudo desce um nível e o squad fica em 4.",
     { default: 4, type: nonNegativeInt, env: "NIRVANA_MAX_DISPATCH_DEPTH", expects: "inteiro >= 0" }),
+  // How a business runs when the user named neither --team nor --single. `chain`
+  // is the director and one session per seat, in series. `session` is one
+  // session for the whole business, with the seats as the runtime's own
+  // subagents. Opt-in while it is measured against the chain.
+  "execution.business_mode": enumSetting("execution.business_mode",
+    "Como uma empresa roda sem --team nem --single: chain = um diretor escolhe a cadeia e cada cargo roda numa sessão própria, em série (padrão); session = uma sessão só roda a empresa e abre os cargos como subagentes do próprio runtime, em paralelo quando um não depende do outro.",
+    ["chain", "session"], { default: "chain", env: "NIRVANA_BUSINESS_MODE" }),
   // 2026 models read what they need when they need it (Anthropic: context on
   // demand; OpenAI: "prompting the model to read files before every edit is a
   // great way to burn context"). A whole persona pasted three times over made

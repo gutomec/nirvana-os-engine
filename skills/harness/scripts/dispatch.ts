@@ -39,6 +39,8 @@ import { amplify } from "../lib/amplifier.ts";
 import { proxyEnrichBrief } from "../lib/brief-proxy.ts";
 import { resolveRoutingMode, routingModeOrigin } from "../../_shared/lib/routing-mode.ts";
 import { runTeam } from "../lib/team-orchestrator.ts";
+import { isBusinessSession, runBusinessSession } from "../lib/business-session.ts";
+import { resolveEntityDir } from "../../_shared/lib/entity-resource-map.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { globalStoreDir, outputsBaseDir } from "../../_shared/lib/project-root.js";
 import { nestedOutputsBase, runFolderOf } from "../../_shared/lib/run-workspace.ts";
@@ -368,6 +370,13 @@ try {
   throw error;
 }
 
+// `execution.business_mode: session` runs the business as ONE session with its
+// seats as the runtime's own subagents (lib/business-session.ts). The flags
+// still name the shape outright, and a gauntlet request keeps the single-seat
+// path its canary was built on.
+const businessSession = isBusinessSession({ forceTeam, forceSingle, requestedMode: executionOptions.requestedMode,
+  businessMode: resolveSetting("execution.business_mode").value });
+
 // The chain is the default (see the flags above), with one thing allowed to
 // outrank it: an explicit `--execution-mode=gauntlet`. `decideBusinessCanary`
 // refuses to arm under team mode, so a default that always said "team" would
@@ -375,7 +384,7 @@ try {
 // like a change about orchestration. Asking for the canary is asking for the
 // single-seat path it was built on; `--team` on top of it still wins, because
 // then the user has said both things and the later one is the specific one.
-const wantTeam = forceTeam || (!forceSingle && executionOptions.requestedMode !== "gauntlet");
+const wantTeam = !businessSession && (forceTeam || (!forceSingle && executionOptions.requestedMode !== "gauntlet"));
 
 // ── audit facade (routing-360 Phase 4.3, dispatch side) ───────────────────
 // lib/audit.js emit() is the canonical writer (closed enum + open x_
@@ -715,6 +724,8 @@ async function fastBm25Business(briefText: string): Promise<{ slug: string | nul
 // executors receive the enriched brief), business routes flow into the
 // existing brief-business scaffold path.
 let autoMandatorySquads: string[] = [];
+// Read only by a business session, which lists them beside the mandatory ones.
+let autoOptionalSquads: string[] = [];
 /**
  * Corpus language mix, for the fast-mode notice. Best-effort and cached by the
  * process: a warning must never cost the dispatch it is warning about.
@@ -879,6 +890,7 @@ if (briefTarget) {
   if (step.kind === "business") {
     slug = step.slug!;
     autoMandatorySquads = plan.mandatorySquads;
+    autoOptionalSquads = plan.optionalSquads;
     const cost = decision.cost_usd != null ? ` · $${decision.cost_usd.toFixed(4)}` : "";
     console.log(c("lime", "  →") + c("bold", ` ${slug}`) + c("dim", ` (${plan.source}${decision.ok ? ` · ${decision.duration_ms}ms${cost}` : ""})`));
     if (autoMandatorySquads.length) console.log(c("dim", `  mandatory squads: ${autoMandatorySquads.join(", ")}`));
@@ -1735,7 +1747,7 @@ const runWorkspace = runFolderOf(projDir, projectRoot) ?? undefined;
 // includes but the scaffold dirs handoffs/tickets/employees are excluded).
 const execOutputsRoot = outputsRoot || (wantExec ? path.join(projDir, "deliverables") : undefined);
 if (execOutputsRoot && wantExec) fs.mkdirSync(execOutputsRoot, { recursive: true });
-const businessCanaryDecision = decideBusinessCanary({ businessSlug: slug, wantExec, teamMode: wantTeam,
+const businessCanaryDecision = decideBusinessCanary({ businessSlug: slug, wantExec, teamMode: wantTeam || businessSession,
   requestedMode: executionOptions.requestedMode, resolvedMode: executionOptions.resolvedMode,
   // The gauntlet.business_allowlist and gauntlet.business_kill_switch settings (variables, else config).
   intensity: executionOptions.intensity, allowlist: resolveSetting("gauntlet.business_allowlist").value,
@@ -1749,7 +1761,8 @@ if (!fs.existsSync(tmpBriefFile)) {
 // hands the user. A team run never reads it: the chain builds each seat's own
 // prompt, the intake's included. Building it anyway cost a whole employee-prompt
 // pass and emitted mind_clone_injected for a prompt that never ran.
-const teamChainRun = wantExec && wantTeam && !businessCanaryDecision.enabled;
+// A business session reads the seat files itself, so it needs no intake prompt either.
+const teamChainRun = wantExec && (wantTeam || businessSession) && !businessCanaryDecision.enabled;
 const outputPath = path.join(projDir, "agent-prompt.md");
 let promptSize = 0;
 let dnaCount = 0;
@@ -1793,7 +1806,7 @@ if (wantExec && !businessCanaryDecision.enabled) {
         project_dir: projDir, project_root: projectRoot, scaffold_root: scaffoldRoot,
         outputs_root: execOutputsRoot ?? null,
         prompt_path: teamChainRun ? null : outputPath, brief_path: tmpBriefFile,
-        mode: wantTeam ? "team" : "single",
+        mode: businessSession ? "session" : wantTeam ? "team" : "single",
       },
     });
     ledgerRunId = row.run_id;
@@ -1804,7 +1817,9 @@ emit("dispatch_business", {
   trace_id: pid,
   project_id: pid,
   business_slug: slug,
-  employee: intake,
+  // A session dispatches the business, not a seat: its seats are credited from
+  // what the session records (x_seat_credited), never from this event.
+  ...(wantExec && businessSession ? { business_mode: "session" } : { employee: intake }),
   // Honest mode: this standalone script either scaffolds only, or shells out to
   // a headless child runtime via --exec. The TRUE in-process subagent path is
   // the maestro calling the runtime's native subagent (Agent tool / codex
@@ -1831,7 +1846,7 @@ if (wantExec) {
   const oroot = execOutputsRoot as string;
 
   console.log("");
-  console.log(c("lime", "▶") + c("bold", ` Step 4/7 — exec ${wantTeam ? "team-chain" : "headless"} (${rt})`));
+  console.log(c("lime", "▶") + c("bold", ` Step 4/7 — exec ${businessSession ? "business-session" : wantTeam ? "team-chain" : "headless"} (${rt})`));
   if (!runtimeAvailable(rt)) {
     console.error(c("red", `✗ runtime '${rt}' is not on the PATH. Install it or use --runtime=claude-code.`));
     emit("agent_exec_failed", { trace_id: pid, project_id: pid, business_slug: slug, runtime: rt, reason: "runtime not on PATH" });
@@ -1964,7 +1979,29 @@ if (wantExec) {
   let runtimeError: string | null = null;
   // Whether the intake seat ran alone: the single-seat mode, or a team whose
   // director failed and handed the brief to its intake seat.
-  let ranSingle = !wantTeam;
+  let ranSingle = !wantTeam && !businessSession;
+
+  if (businessSession) {
+    const sr = runBusinessSession({
+      slug, bizDir: businessEntry.bizDir ?? resolveEntityDir("businesses", slug, projDir), brief,
+      projectId: pid, projectDir: projDir, projectRoot, outputsRoot: oroot, runtime: rt,
+      mandatorySquads: autoMandatorySquads, optionalSquads: autoOptionalSquads,
+      rulesDirective, maxBudgetUsd: effectiveBudgetUsd(),
+      timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
+      yolo, ledgerRunId, emit,
+    });
+    res = sr;
+    const r = sr.receipt;
+    console.log(c("dim", `  seats credited: ${r.credited.length ? r.credited.map(x => `${x.seat} (${x.evidence})`).join(", ") : "none"} · subagents recorded: ${r.subagents}${r.unattributed ? ` (${r.unattributed} unattributed)` : ""}`));
+    if (r.declaredNotRecorded.length) console.error(c("yellow", `  ⚠ declared as subagents with no recorded call: ${r.declaredNotRecorded.join(", ")}`));
+    if (!sr.ok) {
+      console.error(c("red", `✗ business session failed (exit ${sr.exitCode}): ${sr.error || sr.stderr || "unknown"}`));
+      emit("agent_exec_failed", { trace_id: pid, project_id: pid, business_slug: slug, runtime: rt, mode: "business-session", exit_code: sr.exitCode, error: sr.error || sr.stderr });
+      runtimeError = sr.error || sr.stderr || `exit ${sr.exitCode}`;
+    } else {
+      console.log(c("dim", `  session: ${sr.sessionId || "(none)"} · ${sr.durationMs}ms${sr.costUsd != null ? ` · $${sr.costUsd.toFixed(4)}` : ""}`));
+    }
+  }
 
   if (wantTeam) {
     const tr = runTeam({
@@ -2151,7 +2188,7 @@ if (wantExec) {
   let delivery: DeliveryResult;
   publication.verify();
   if (runtimeError) {
-    const outcome = deliverAfterError(bizDeliverOpts, runtimeError, { employee: intake, mode: ranSingle ? "single" : "team" });
+    const outcome = deliverAfterError(bizDeliverOpts, runtimeError, { employee: intake, mode: businessSession ? "session" : ranSingle ? "single" : "team" });
     publication.finish({ exitCode: outcome.exitCode, gateOutcome: outcome.result?.gateOutcome ?? "indeterminate", error: runtimeError }, oroot);
     if (!outcome.judged) {
       console.error(c("red", `✗ nothing was produced in ${oroot} — nothing to judge.`));

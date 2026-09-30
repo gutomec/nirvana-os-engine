@@ -60,6 +60,7 @@ Gerada a partir do schema. `nrv config explain <chave>` mostra a descrição de 
 | `execution.headless_skip_permissions` | `NIRVANA_HEADLESS_SKIP_PERMISSIONS` | `true` | global, projeto | true / false |
 | `execution.child_env` | `NIRVANA_CHILD_ENV` | `inherit` | global, projeto | inherit / declared (o `nrv serve` usa `declared` salvo `NIRVANA_SERVE_CHILD_ENV=inherit`) |
 | `execution.max_dispatch_depth` | `NIRVANA_MAX_DISPATCH_DEPTH` | `4` | global, projeto | inteiro >= 0; 0 = ilimitado. Cadeia de agentes despachando agentes. No terminal: empresa (1), assento (2), squad usado pelo assento (3). No Glance o maestro é ele mesmo um filho e tudo desce um nível, então 4 |
+| `execution.business_mode` | `NIRVANA_BUSINESS_MODE` | `chain` | global, projeto | chain / session. Como uma empresa roda quando o pedido não traz `--team` nem `--single`: `chain` é o diretor e uma sessão por cargo, em série; `session` é uma sessão só, com os cargos como subagentes do runtime |
 | `glance.execution` | `NIRVANA_GLANCE_EXECUTION` | `true` | global, projeto | true / false |
 | `glance.maestro_max_budget_usd` | nenhuma | `5` | global, projeto | número >= 0 (USD); 0 = sem teto |
 | `runtime.provider_catalog_dir` | `NIRVANA_PROVIDER_CATALOG_DIR` | `""` | global, projeto | lista de caminhos separados pelo delimitador do sistema, ou vazio |
@@ -110,6 +111,7 @@ Cada interruptor do schema tem exatamente um caminho de leitura, `resolveSetting
 | `execution.model` | `_shared/lib/system-model.ts` |
 | `execution.dna_injection` | `harness/lib/dispatch.ts`, `harness/lib/squad-exec.ts`, `businesses/lib/employee-prompt.ts` |
 | `execution.headless_skip_permissions` | `_shared/lib/host-agent-driver.ts` |
+| `execution.business_mode` | `harness/scripts/dispatch.ts` |
 | `glance.execution` | `harness/scripts/glance.ts` |
 | `runtime.provider_catalog_dir`, `allow_stale_catalog` | `harness/lib/runtime-snapshot.ts` |
 | `routing.mode` | `_shared/lib/routing-mode.ts`; o modo `cards` roda em `harness/lib/cards-router.ts` |
