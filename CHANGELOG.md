@@ -130,6 +130,12 @@ That session is the one dispatch that keeps the runtime's subagent tool. It star
 
 Seats are credited from evidence. On Claude Code the session registers a hook for its own run in the run's `claude --settings` file, which also carries the run folder's fence, and each subagent call becomes an `x_seat_subagent` event naming the seat it worked as, recognized by the seat file its prompt starts with; an ambiguous call stays unattributed. A seat with a recorded call is credited `recorded`. A seat only the participation file names is credited `declared`, which is the only evidence on runtimes without that hook, and a seat declared as a subagent with no recorded call is named in `x_business_session_receipt`. A seat with neither is not credited.
 
+### In a business session, a seat uses a squad only when the router named it
+
+A measured session sent the course, the offer and the copy to squads the router had not asked for, each a full dispatch with its own gate, one after the other, and ran slower and costlier than the chain it was meant to beat. A session now runs only the squads the router named for this request (mandatory and optional) plus any installed squad the request names by its slug; when there are none, the seats deliver every part themselves. The session brief lists those squads as the only ones, a seat's own `squads_authorized` applies inside them, and the directive's "use the specialist whenever one exists" clause is replaced for the session by the run's list.
+
+The list is enforced, not only written. The session stamps it on its environment as `NIRVANA_ALLOWED_SQUADS`, which the session and every seat subagent share, and `nrv dispatch` refuses a squad outside it on every squad path (`--squad`, a brief that names one, an `--auto` squad-only route) with a one-line reason telling the seat to do the part itself, exit 1 and an `x_session_squad_refused` event. A business or agent-x dispatch from inside a session was already refused by the role rules. Outside a session the variable is absent and nothing changes.
+
 ## 0.14.8 — 2026-09-27
 
 ### A closed run stays closed, and a lookup never starts work

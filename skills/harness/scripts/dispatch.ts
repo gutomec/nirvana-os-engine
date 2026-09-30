@@ -39,7 +39,7 @@ import { amplify } from "../lib/amplifier.ts";
 import { proxyEnrichBrief } from "../lib/brief-proxy.ts";
 import { resolveRoutingMode, routingModeOrigin } from "../../_shared/lib/routing-mode.ts";
 import { runTeam } from "../lib/team-orchestrator.ts";
-import { isBusinessSession, runBusinessSession } from "../lib/business-session.ts";
+import { ALLOWED_SQUADS_ENV, isBusinessSession, namedSquadsIn, runBusinessSession, squadsRefusedHere } from "../lib/business-session.ts";
 import { resolveEntityDir } from "../../_shared/lib/entity-resource-map.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { globalStoreDir, outputsBaseDir } from "../../_shared/lib/project-root.js";
@@ -1291,6 +1291,15 @@ function printDeliverySummary(res: DeliveryResult, pid: string, oroot: string, z
 // shared delivery pipeline.
 if (pendingCascade?.kind === "squad-only") {
   const squads = pendingCascade.squads;
+  // Inside a business session only the squads the router named (or the request
+  // names) may run; the session stamps them on its environment. Every squad path
+  // lands here: --squad, a brief that names one, and an --auto squad-only route.
+  const refused = squadsRefusedHere(squads);
+  if (refused?.length) {
+    console.error(c("red", `✗ refused: ${refused.join(", ")} is not a squad this business session was given (${process.env[ALLOWED_SQUADS_ENV] || "none"}); deliver that part yourself.`));
+    emit("x_session_squad_refused", { project_id: projectId || null, squads: refused, allowed: (process.env[ALLOWED_SQUADS_ENV] || "").split(",").filter(Boolean) });
+    process.exit(1);
+  }
   const rt = runtimeDecision.runtime;
   const ts = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "");
   const pid = projectId || `proj-${ts}-${squads[0]}`;
@@ -1990,6 +1999,7 @@ if (wantExec) {
       slug, bizDir: businessEntry.bizDir ?? resolveEntityDir("businesses", slug, projDir), brief,
       projectId: pid, projectDir: projDir, projectRoot, outputsRoot: oroot, runtime: rt,
       mandatorySquads: autoMandatorySquads, optionalSquads: autoOptionalSquads,
+      briefSquads: (() => { try { return namedSquadsIn(brief, Object.keys(defaultRegistries().squads)); } catch { return []; } })(),
       rulesDirective, maxBudgetUsd: effectiveBudgetUsd(),
       timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
       yolo, ledgerRunId, emit,

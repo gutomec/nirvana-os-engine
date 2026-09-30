@@ -130,6 +130,12 @@ Essa sessão é o único despacho que mantém a ferramenta de subagentes do runt
 
 Os cargos são creditados por evidência. No Claude Code a sessão registra um hook só para a própria execução no arquivo `claude --settings` da execução, que também leva a cerca da pasta da execução, e cada chamada de subagente vira um evento `x_seat_subagent` com o cargo em que ela trabalhou, reconhecido pelo arquivo do cargo com que o prompt começa; uma chamada ambígua fica sem atribuição. Um cargo com chamada registrada é creditado `recorded`. Um cargo que só o arquivo de participação nomeia é creditado `declared`, que é a única evidência nos runtimes sem esse hook, e um cargo declarado como subagente sem chamada registrada é nomeado em `x_business_session_receipt`. Um cargo sem nenhum dos dois não é creditado.
 
+### Numa sessão de empresa, um cargo só usa squad quando o roteador o nomeou
+
+Uma sessão medida mandou o curso, a oferta e a copy para squads que o roteador não tinha pedido, cada um um despacho completo com gate próprio, um depois do outro, e ficou mais lenta e mais cara que a cadeia que devia superar. A sessão agora roda só os squads que o roteador nomeou para o pedido (obrigatórios e opcionais) mais qualquer squad instalado que o próprio pedido nomeie pelo slug; quando não há nenhum, os cargos entregam todas as partes eles mesmos. O brief da sessão lista esses squads como os únicos, o `squads_authorized` de cada cargo vale dentro deles, e a cláusula "use o especialista sempre que existir" da diretiva é trocada, na sessão, pela lista da execução.
+
+A lista é aplicada, não só escrita. A sessão grava a lista no próprio ambiente como `NIRVANA_ALLOWED_SQUADS`, que a sessão e todo subagente de cargo compartilham, e o `nrv dispatch` recusa um squad fora dela em todos os caminhos de squad (`--squad`, um brief que nomeia um, uma rota `--auto` só de squad) com uma linha de motivo que manda o cargo fazer a parte ele mesmo, saída 1 e um evento `x_session_squad_refused`. Um despacho de empresa ou de agent-x de dentro da sessão já era recusado pelas regras de papel. Fora de uma sessão a variável não existe e nada muda.
+
 ## 0.14.8 — 2026-09-27
 
 ### Run fechado continua fechado, e consulta nunca começa trabalho
