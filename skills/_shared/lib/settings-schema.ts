@@ -194,8 +194,8 @@ export const SETTINGS = {
     ["brief", "capability"], { default: "brief", env: "NIRVANA_GAUNTLET_REQUIREMENTS_SOURCE" }),
 
   "delivery.produces_to_rubric": booleanSetting("delivery.produces_to_rubric",
-    "Passa o produces[] do alvo ao seletor de rubricas do quality gate; false = o juiz continua caindo na rubrica genérica.",
-    { default: false, env: "NIRVANA_PRODUCES_TO_RUBRIC" }),
+    "Passa o produces[] do alvo ao seletor de rubricas do quality gate, para que um relatório de pesquisa seja julgado pela rubrica de pesquisa; um produces sem rubrica cai na inferência pela extensão. false = o juiz usa só a rubrica inferida pela extensão.",
+    { default: true, env: "NIRVANA_PRODUCES_TO_RUBRIC" }),
 
   "execution.default_runtime": stringSetting("execution.default_runtime",
     "Runtime usado quando a sessão não é identificada; vazio = primeiro disponível no PATH.",
@@ -332,8 +332,27 @@ export const SETTINGS = {
   "baselines.per_handoff_usd": numberSetting("baselines.per_handoff_usd",
     "Custo estimado por handoff.", { default: 0.05, type: nonNegative, expects: "número >= 0 (USD)" }),
 
-  "quality_gate.judge_enabled": booleanSetting("quality_gate.judge_enabled",
-    "Liga o juiz LLM do quality gate (senão só as heurísticas offline).", { default: false }),
+  // Three values, and the old two keep their meaning: `true` judges every gateable
+  // file, `false` keeps the offline heuristics only. `reports` (the default)
+  // judges the text deliverables (.md, .txt) — the reports and research whose
+  // content the heuristics cannot check against the brief — and leaves code,
+  // images and data files to their heuristic rubrics.
+  "quality_gate.judge_enabled": {
+    key: "quality_gate.judge_enabled", kind: "enum",
+    // A YAML `true`/`false` written before this key had three values is still
+    // valid and reads as the matching word, so every value has one spelling.
+    type: z.union([z.boolean(), z.enum(["reports", "true", "false"])])
+      .transform((v) => (v === true ? "true" : v === false ? "false" : v)) as unknown as z.ZodType<"reports" | "true" | "false">,
+    default: "reports", options: ["reports", "true", "false"], scopes: ["global", "project"],
+    description: "Juiz LLM do quality gate: reports (padrão) = julga os entregáveis de texto (.md, .txt) contra o brief e deixa o resto nas heurísticas; true = julga tudo que o gate cobre; false = só as heurísticas offline.",
+    expects: "reports | true | false", env: "NIRVANA_JUDGE_ENABLED", secret: false,
+    fromEnv: (raw) => {
+      if (raw.trim().toLowerCase() === "reports") return "reports";
+      const word = parseBooleanWord(raw);
+      return word === null ? raw : word ? "true" : "false";
+    },
+    toEnv: (value) => value,
+  } as SettingSpec<"reports" | "true" | "false">,
   "quality_gate.max_revisions": numberSetting("quality_gate.max_revisions",
     "Revisões automáticas antes de reter a entrega.", { default: 2, type: nonNegativeInt, expects: "inteiro >= 0" }),
   "quality_gate.escalate_after": numberSetting("quality_gate.escalate_after",

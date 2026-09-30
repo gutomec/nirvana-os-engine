@@ -28,8 +28,9 @@
  *     old default (tries BM25 first) for anyone who wants that safety net
  *     back; "fail" refuses to dispatch anything at all.
  *
- *   quality_gate.* — `judge_enabled` (default false) turns the LLM-judge path
- *     of the delivery pipeline on; heuristics remain the offline default.
+ *   quality_gate.* — `judge_enabled` decides where the LLM judge runs in the
+ *     delivery pipeline: "reports" (default) on text deliverables, true on
+ *     every gateable file, false nowhere (offline heuristics only).
  *
  * Explicit paths remain the test hook: `loadHarnessConfig(file)` and
  * `denseRoutingMode(file)` read that file as the only file layer,
@@ -56,8 +57,19 @@ export type DenseRoutingMode = "off" | "fallback";
  *                                nothing is dispatched at all. */
 export type RouterFailurePolicy = "cascade" | "agent-x-only" | "fail";
 
+/** Where the LLM judge runs: nowhere, on text deliverables, or on every gateable file. */
+export type JudgeScope = "off" | "reports" | "all";
+
+/** `quality_gate.judge_enabled` as a scope. `true`/`false` keep their meaning. */
+export function judgeScope(value: unknown): JudgeScope {
+  if (value === true || value === "true") return "all";
+  if (value === "reports") return "reports";
+  return "off";
+}
+
 export interface QualityGateConfig {
-  judge_enabled: boolean;
+  /** "reports" | "true" | "false" from the settings; a boolean when code builds the config. */
+  judge_enabled: boolean | "reports" | "true" | "false";
   max_revisions: number;
   escalate_after: number;
   rubric_fallback: string;
@@ -96,7 +108,7 @@ export function loadHarnessConfig(explicitPath?: string): HarnessConfig {
       on_router_failure: values["routing.on_router_failure"] as RouterFailurePolicy,
     },
     quality_gate: {
-      judge_enabled: values["quality_gate.judge_enabled"] as boolean,
+      judge_enabled: values["quality_gate.judge_enabled"] as "reports" | "true" | "false",
       max_revisions: values["quality_gate.max_revisions"] as number,
       escalate_after: values["quality_gate.escalate_after"] as number,
       rubric_fallback: values["quality_gate.rubric_fallback"] as string,

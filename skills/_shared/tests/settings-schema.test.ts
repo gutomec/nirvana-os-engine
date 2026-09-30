@@ -67,7 +67,7 @@ describe("the table", () => {
       "supervisor.stall_threshold_ms": "NIRVANA_STALL_THRESHOLD_MS",
       "updates.check": "NIRVANA_NO_UPDATE_CHECK",
       "budget.default_max_cost_usd": null,
-      "quality_gate.judge_enabled": null,
+      "quality_gate.judge_enabled": "NIRVANA_JUDGE_ENABLED",
       "quality_gate.max_revisions": null,
       "verify.mode": "NIRVANA_VERIFY_MODE",
       "verify.enforce_on_install": "NIRVANA_VERIFY_ENFORCE_ON_INSTALL",

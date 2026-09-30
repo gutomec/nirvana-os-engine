@@ -6,7 +6,10 @@ import { runBusinessPostGate, type BusinessPostGateDependencies } from "../lib/b
 import { ProjectService } from "../lib/control-plane/project-service.ts";
 import { runDelivery } from "../lib/delivery-pipeline.ts";
 import { runAgentXGauntlet, shouldRunAgentXGauntlet, type AgentXGauntletEvaluator } from "../lib/gauntlet/agent-x-cutover.ts";
-import { loadHarnessConfig } from "../lib/harness-config.ts";
+import { loadHarnessConfig, type HarnessConfig } from "../lib/harness-config.ts";
+// The judge runs by default on report deliverables; these tests pin the
+// heuristic gate, whatever runtime the machine has on PATH.
+const judgeOff = (cfg: HarnessConfig): HarnessConfig => ({ ...cfg, quality_gate: { ...cfg.quality_gate, judge_enabled: false } });
 import { appendEvent, listEvents, openKernel, type KernelHandle } from "../lib/run-kernel/index.ts";
 import { removeDir } from "./helpers/temp-dirs.ts";
 import { KERNEL_BUDGET_MS } from "./helpers/test-budgets.ts";
@@ -84,7 +87,7 @@ async function runProof(pass: boolean) {
       fs.writeFileSync(sessionFile, JSON.stringify(sessionData, null, 2), "utf8");
       const delivery = runDelivery({ brief: "Produce report.html", outputsRoot, pid: project.project_id, slug: BUSINESS.slug,
         targetKind: "business", runtime: "codex", projectDir: root, projectRoot: root, maxRevisions: 0,
-        config: loadHarnessConfig(path.join(root, "missing-config.yaml")), audit, log: () => {}, warn: () => {},
+        config: judgeOff(loadHarnessConfig(path.join(root, "missing-config.yaml"))), audit, log: () => {}, warn: () => {},
         afterGate: () => { postGateCalls += 1; return runBusinessPostGate({ projectId: project.project_id, businessSlug: BUSINESS.slug,
           runtime: "codex", projectDir: root, projectRoot: root, outputsRoot, skillsRoot: "/skills",
           employeePromptScript: "/skills/employee-prompt.ts", sessionFile, sessionData, rulesDirective: "", yolo: true,

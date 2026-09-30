@@ -52,7 +52,7 @@ Gerada a partir do schema. `nrv config explain <chave>` mostra a descrição de 
 | `gauntlet.business_kill_switch` | `NIRVANA_BUSINESS_GAUNTLET_KILL_SWITCH` | `false` | global, projeto | true / false |
 | `gauntlet.auto_allowed` | `NIRVANA_ALLOW_AUTO_GAUNTLET` | `false` | global, projeto | true / false |
 | `gauntlet.requirements_source` | `NIRVANA_GAUNTLET_REQUIREMENTS_SOURCE` | `brief` | global, projeto | brief / capability |
-| `delivery.produces_to_rubric` | `NIRVANA_PRODUCES_TO_RUBRIC` | `false` | global, projeto | true / false |
+| `delivery.produces_to_rubric` | `NIRVANA_PRODUCES_TO_RUBRIC` | `true` | global, projeto | true / false |
 | `execution.default_runtime` | `NIRVANA_DEFAULT_RUNTIME` | `""` | global, projeto | nome de runtime (claude-code, codex, gemini-cli, ...) ou vazio |
 | `execution.model` | `NIRVANA_MODEL` | `""` | global, projeto | id ou alias de modelo (opus, sonnet, haiku, fable, ...) ou vazio |
 | `execution.dna_injection` | `NIRVANA_DNA_INJECTION` | `reference` | global, projeto | reference / fragments / full |
@@ -84,7 +84,7 @@ Gerada a partir do schema. `nrv config explain <chave>` mostra a descrição de 
 | `baselines.squad_capability_usd` | nenhuma | `0.3` | global, projeto | número >= 0 (USD) |
 | `baselines.business_usd` | nenhuma | `0.8` | global, projeto | número >= 0 (USD) |
 | `baselines.per_handoff_usd` | nenhuma | `0.05` | global, projeto | número >= 0 (USD) |
-| `quality_gate.judge_enabled` | nenhuma | `false` | global, projeto | true / false |
+| `quality_gate.judge_enabled` | `NIRVANA_JUDGE_ENABLED` | `reports` | global, projeto | reports / true / false |
 | `quality_gate.max_revisions` | nenhuma | `2` | global, projeto | inteiro >= 0 |
 | `quality_gate.escalate_after` | nenhuma | `2` | global, projeto | inteiro >= 0 |
 | `quality_gate.rubric_fallback` | nenhuma | `prose_shortform` | global, projeto | nome de rubrica |
