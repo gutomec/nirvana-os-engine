@@ -57,8 +57,6 @@ const DIR_SKIPLIST = [
 const FILE_ALLOWLIST = new Set<string>([
   // Golden routing set + negatives: briefs are PT user data by design.
   "skills/harness/tests/routing-golden-set.jsonl",
-  // Mind-clone content scaffold: clone personas are user-library content.
-  "skills/_shared/templates/MIND_CLONE_TEMPLATE.md",
   // Bilingual writing contract: quotes PT-BR tells as data on purpose.
   "skills/_shared/templates/writing-contract-snippet.md",
 ]);
