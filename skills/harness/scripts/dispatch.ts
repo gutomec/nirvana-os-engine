@@ -74,6 +74,7 @@ import { loadHarnessConfig } from "../lib/harness-config.ts";
 import { describeSettingSource, resolveSetting, settingsEnvForChild } from "../../_shared/lib/settings.ts";
 import { planRouteWithFallback, resolveDispatchPlan, runAgentX, type DispatchPlan } from "../lib/dispatch-cascade.ts";
 import { runSquadHeadless } from "../lib/squad-exec.ts";
+import { writeWorkerSession } from "../lib/run-session.ts";
 import { parseSquadTarget, resolveSquadCapability } from "../lib/capability-resolver.ts";
 import { parseMessageTargetSpec } from "../lib/control-plane/agent-x-canary-queue.ts";
 import { runDelivery, deliverAfterRuntimeError, gateableFiles, producesForRubric, runGateOnce, type DeliveryArgs, type DeliveryResult, type RuntimeErrorOutcome } from "../lib/delivery-pipeline.ts";
@@ -734,6 +735,55 @@ if ((wantExec || (autoMode && routingMode !== "fast")) && !runtimeAvailable(runt
     + `Installed: ${installed.length ? `${installed.join(", ")}. Install it, or pass --runtime with one of those` : "none. Install a supported runtime"} (\`nrv doctor\` shows which runtimes work).`);
 }
 
+// ── an explicit --project that already holds a run ─────────────────────────
+// Generated ids are unique; an explicit --project is reused on purpose (a Glance
+// chat, a re-dispatch after a failure), and its folder is the earlier run's. A
+// run still working there is refused before anything exists: two workers in one
+// folder overwrite each other. A run that ended without a decision (failed,
+// stalled, or a worker gone with its lease expired) is superseded once this run
+// opens its own row: left open, the supervisor could resume it into the folder
+// this run is using (a run failed on quota, `nrv clean` moved its folder, the
+// project was re-dispatched on another runtime, and the old row stayed active).
+// A dispatch with --run-id is coordinated by a control plane (Glance, a
+// multi-target plan running a wave of nodes under one project id) that owns the
+// concurrency of its own runs, and is left out.
+const priorRuns: runLedger.RunRow[] = (() => {
+  if (!projectId || runIdFlag) return [];
+  try { return runLedger.findNonTerminal(runLedger.openLedger()).filter(row => row.project_id === projectId); }
+  catch (e) {
+    console.error(c("dim", `  (run ledger unavailable: ${(e as Error)?.message ?? e}; earlier runs of --project ${projectId} were not checked)`));
+    return [];
+  }
+})();
+const workingRun = priorRuns.find(row => runLedger.WORKING_STATES.has(row.state) && runLedger.stillWorking(row));
+if (workingRun) refuse(`run ${workingRun.run_id} is still working in this project; wait for it or pick another --project`);
+
+/** This dispatcher beside the worker the sidecar records: `nrv run-track stop`
+ *  ends both, so the dispatcher does not take a killed worker for a failure
+ *  and carry on to the gate. The start time tells a reused pid from this one. */
+function dispatcherMeta(): Record<string, unknown> {
+  return { dispatcher_pid: process.pid, dispatcher_started_at: runLedger.processStartedAt(process.pid) };
+}
+
+/** Abandons what an earlier dispatch into this --project left open. Called
+ *  once this run's own row is open, and never for a run that did not start. */
+function supersedePriorRuns(newRunId: string): void {
+  if (!priorRuns.length) return;
+  const closed: string[] = [];
+  try {
+    const handle = runLedger.openLedger();
+    for (const prior of priorRuns) {
+      const row = runLedger.getRun(handle, prior.run_id);
+      // Re-read: it may have ended, or been picked up again, since the check above.
+      if (!row || row.run_id === newRunId || runLedger.isTerminal(row.state)) continue;
+      if (runLedger.WORKING_STATES.has(row.state) && runLedger.stillWorking(row)) continue;
+      runLedger.abandon(handle, row.run_id, `superseded by ${newRunId}`);
+      closed.push(row.run_id);
+    }
+  } catch (e) { console.error(`[run-ledger] ${(e as Error)?.message ?? e}`); }
+  if (closed.length) console.error(c("yellow", `⚠ --project ${projectId}: earlier run(s) ${closed.join(", ")} abandoned, superseded by ${newRunId}.`));
+}
+
 /** A runtime the user chose (flag, or named in the brief) is pinned: its run
  *  never hands off to another vendor, quota failure included. Read at call
  *  time, since the --auto router may still replace a default with a rule. */
@@ -766,7 +816,10 @@ if (executionOptions.requestedMode !== "standard") {
 preflightReindex();
 // Never-stall guarantee (routing-360 Phase 4): recover forgotten runs lazily.
 // <20ms when nothing pending; spawns a DETACHED background sweep otherwise.
-maybeSweep();
+// Not while this --project holds runs this dispatch is about to supersede: the
+// sweep could resume one into the folder this run is taking. The sweep on the
+// way out runs after they are abandoned.
+if (!priorRuns.length) maybeSweep();
 // Second trigger: the session that ran this dispatch and waited on it is the
 // supervisor too. A dispatch can run for tens of minutes; reconciling again
 // on the way out — no timer, just "control is about to return" — catches
@@ -1634,14 +1687,18 @@ if (pendingCascade?.kind === "squad-only") {
     const kernel = openKernel(KERNEL_PATH);
     const legacy = runLedger.openLedger();
     let finalDelivery: DeliveryResult | null = null;
+    // The runtime each candidate session finished on: the final session.json names it.
+    const sessionRuntimes = new Map<string, Runtime>();
     // One producer for the first candidate and for every revision: same squad, same runtime.
     const produce = (candidateRoot: string, candidateBrief: string) => {
+      supersedePriorRuns(canonicalRunId);
       const candidate = runSquadHeadless({ squadSlug: squad, brief: candidateBrief, projectId: pid, projectDir: projDir, projectRoot,
         outputsDir: candidateRoot, runtime: rt, capabilityId,
         maxBudgetUsd: budget.candidateBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
         rulesDirective, autonomousDirective: AUTONOMOUS_DIRECTIVE, runWithCascadeImpl: pinnedCascade,
         ledger: { runId: canonicalRunId, watchDir: candidateRoot } });
       if (candidate.sessionId) runLedger.recordSession(legacy, canonicalRunId, candidate.sessionId);
+      if (candidate.sessionId) sessionRuntimes.set(candidate.sessionId, candidate.finalRuntime);
       return { ok: candidate.ok, sessionId: candidate.sessionId, costUsd: candidate.costUsd, error: candidate.error };
     };
     const executionSnapshot = frozenExecutionSnapshot(pid, rt, "squad");
@@ -1655,6 +1712,8 @@ if (pendingCascade?.kind === "squad-only") {
         reviseCandidate: request => produce(request.candidateRoot, writeRevisionBrief(brief, request).text),
         evaluator,
         finalGate({ sessionId }) {
+          writeWorkerSession({ projectId: pid, kind: "squad", slug: squad, runtime: (sessionId && sessionRuntimes.get(sessionId)) || rt,
+            sessionId, projectDir: projDir, projectRoot, outputsRoot: oroot, workspace: runFolderOf(projDir, projectRoot) });
           finalDelivery = runDelivery({ ...deliveryArgs({ pid, slugOrNull: null, targetKind: "squad", rt, oroot,
             projDir, projectRoot, sessionId, withManifest: false, produces: squadProduces }), ledger: null, maxRevisions: 0 });
           return { exitCode: finalDelivery.exitCode, gateOutcome: finalDelivery.gateOutcome };
@@ -1681,7 +1740,7 @@ if (pendingCascade?.kind === "squad-only") {
     const row = runLedger.openRun(ledgerHandle, {
       traceId: pid, projectId: pid, targetSlug: squads.join(","), targetKind: "squad",
       runtime: rt,
-      meta: { project_dir: projDir, project_root: projectRoot, scaffold_root: scaffoldRoot,
+      meta: { ...dispatcherMeta(), project_dir: projDir, project_root: projectRoot, scaffold_root: scaffoldRoot,
         brief_path: path.join(scaffoldRoot, "brief.md"), outputs_root: oroot, mode: "squad-only",
         runtime_source: runtimeDecision.source, dispatch_role: "squad" },
     });
@@ -1693,12 +1752,17 @@ if (pendingCascade?.kind === "squad-only") {
   // (this dispatcher, about to block inside spawnSync) here is exactly the
   // bug this cut fixes: the supervisor would SIGTERM the orchestrator itself.
   if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "running"));
+  supersedePriorRuns(ledgerRunId ?? publication.runId);
 
   console.log(c("lime", "▶") + c("bold", ` Squad-only — exec headless (${rt})`));
   publication.start();
   let lastSession: string | null = null;
   let squadError: string | null = null;
   let failedSquad: string | null = null;
+  // session.json per squad that ran, beside its scaffold: `nrv revise` continues
+  // that squad's own conversation, on the runtime that finished it.
+  let lastSquadSession: ReturnType<typeof writeWorkerSession> | null = null;
+  let lastRuntime: Runtime = rt;
   for (const sq of squads) {
     const outDir = squads.length > 1 ? path.join(oroot, sq) : oroot;
     const r = runSquadHeadless({
@@ -1711,6 +1775,11 @@ if (pendingCascade?.kind === "squad-only") {
       ...(ledgerRunId ? { ledger: { runId: ledgerRunId, watchDir: outDir } } : {}),
     });
     lastSession = r.sessionId ?? lastSession;
+    const written = writeWorkerSession({ projectId: pid, kind: "squad", slug: sq, runtime: r.finalRuntime, sessionId: r.sessionId,
+      projectDir: path.join(scaffoldRoot, "squads", sq), projectRoot, outputsRoot: outDir,
+      workspace: runFolderOf(projDir, projectRoot) });
+    // The delivery's corrections resume the last session, on its own runtime.
+    if (r.sessionId) { lastRuntime = r.finalRuntime; lastSquadSession = written; }
     if (!r.ok) {
       // Stop the route, but do NOT abandon what is already on disk — the
       // delivery pipeline below decides (see deliverAfterRuntimeError).
@@ -1726,8 +1795,13 @@ if (pendingCascade?.kind === "squad-only") {
   if (ledgerRunId && lastSession) ledgerTry(() => runLedger.recordSession(ledgerHandle!, ledgerRunId!, lastSession));
 
   const squadDeliverOpts = {
-    pid, slugOrNull: null, targetKind: "squad" as const, rt, oroot,
+    pid, slugOrNull: null, targetKind: "squad" as const, rt: lastRuntime, oroot,
     projDir, projectRoot, sessionId: lastSession, withManifest: false, produces: squadProduces,
+    onSession: (sid: string) => {
+      if (!lastSquadSession) return;
+      lastSquadSession.data.session_id = sid;
+      fs.writeFileSync(lastSquadSession.file, JSON.stringify(lastSquadSession.data, null, 2));
+    },
   };
   publication.verify();
   if (squadError) {
@@ -1792,6 +1866,7 @@ if (pendingCascade?.kind === "judge-x") {
   if (publication.incompatible) process.exit(1);
 
   console.log(c("lime", "▶") + c("bold", ` Judge-x — exec headless (${rt})`));
+  supersedePriorRuns(publication.runId);
   publication.start();
   const maxBudgetUsd = effectiveBudgetUsd();
   const r = runJudgeX({ brief, runtime: rt, projectId: pid, projectDir: projDir, projectRoot: PROJECT_ROOT, outputsRoot: oroot, scorecardPath,
@@ -1851,13 +1926,17 @@ if (pendingCascade?.kind === "agent-x") {
     const kernel = openKernel(KERNEL_PATH);
     const legacy = runLedger.openLedger();
     let finalDelivery: DeliveryResult | null = null;
+    // The runtime each candidate session finished on: the final session.json names it.
+    const sessionRuntimes = new Map<string, Runtime>();
     // One producer for the first candidate and for every revision: same persona, same runtime.
     const produce = (candidateRoot: string, candidateBrief: string, candidateBriefPath: string) => {
+      supersedePriorRuns(canonicalRunId);
       const candidate = runAgentX({ brief: candidateBrief, briefPath: candidateBriefPath, runtime: rt, projectId: pid, projectDir: projDir,
         projectRoot: PROJECT_ROOT, outputsRoot: candidateRoot, reason: pendingCascade.reason, appendSystemPrompt: AUTONOMOUS_DIRECTIVE + rulesDirective,
         maxBudgetUsd: budget.candidateBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
         yolo, ledger: { runId: canonicalRunId, watchDir: candidateRoot }, audit: emit, runWithCascadeImpl: pinnedCascade });
       if (candidate.sessionId) runLedger.recordSession(legacy, canonicalRunId, candidate.sessionId);
+      if (candidate.sessionId) sessionRuntimes.set(candidate.sessionId, candidate.finalRuntime);
       if (!candidate.ok) emit("agent_exec_failed", { trace_id: pid, project_id: pid, employee: "agent-x", runtime: rt,
         exit_code: candidate.exitCode, error: candidate.error || candidate.stderr });
       return { ok: candidate.ok, sessionId: candidate.sessionId, costUsd: candidate.costUsd,
@@ -1877,6 +1956,8 @@ if (pendingCascade?.kind === "agent-x") {
         },
         evaluator,
         finalGate({ sessionId }) {
+          writeWorkerSession({ projectId: pid, kind: "agent-x", slug: "agent-x", runtime: (sessionId && sessionRuntimes.get(sessionId)) || rt,
+            sessionId, projectDir: projDir, projectRoot: PROJECT_ROOT, outputsRoot: oroot, workspace: runFolderOf(projDir, PROJECT_ROOT) });
           finalDelivery = runDelivery({ ...deliveryArgs({ pid, slugOrNull: null, targetKind: "agent-x", rt, oroot,
             projDir, projectRoot: PROJECT_ROOT, sessionId, withManifest: false }), ledger: null, maxRevisions: 0 });
           return { exitCode: finalDelivery.exitCode, gateOutcome: finalDelivery.gateOutcome };
@@ -1902,7 +1983,7 @@ if (pendingCascade?.kind === "agent-x") {
     const row = runLedger.openRun(ledgerHandle, {
       traceId: pid, projectId: pid, targetSlug: "agent-x", targetKind: "agent-x",
       runtime: rt,
-      meta: { project_dir: projDir, project_root: PROJECT_ROOT, scaffold_root: scaffoldRoot,
+      meta: { ...dispatcherMeta(), project_dir: projDir, project_root: PROJECT_ROOT, scaffold_root: scaffoldRoot,
         brief_path: briefPath, outputs_root: oroot, mode: "agent-x",
         runtime_source: runtimeDecision.source, dispatch_role: "agent-x" },
     });
@@ -1914,6 +1995,7 @@ if (pendingCascade?.kind === "agent-x") {
   // (this dispatcher, about to block inside spawnSync) here is exactly the
   // bug this cut fixes: the supervisor would SIGTERM the orchestrator itself.
   if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "running"));
+  supersedePriorRuns(ledgerRunId ?? publication.runId);
 
   console.log(c("lime", "▶") + c("bold", ` Agent-x — exec headless (${rt})`));
   publication.start();
@@ -1929,9 +2011,17 @@ if (pendingCascade?.kind === "agent-x") {
     audit: emit, runWithCascadeImpl: pinnedCascade,
   });
   if (ledgerRunId) ledgerTry(() => runLedger.recordSession(ledgerHandle!, ledgerRunId!, r.sessionId));
+  // session.json beside the run's plumbing: `nrv revise` continues this
+  // conversation, on the runtime that finished it.
+  const agentXSession = writeWorkerSession({ projectId: pid, kind: "agent-x", slug: "agent-x", runtime: r.finalRuntime,
+    sessionId: r.sessionId, projectDir: projDir, projectRoot: PROJECT_ROOT, outputsRoot: oroot, workspace: runFolderOf(projDir, PROJECT_ROOT) });
   const agentXDeliverOpts = {
-    pid, slugOrNull: null, targetKind: "agent-x" as const, rt, oroot,
+    pid, slugOrNull: null, targetKind: "agent-x" as const, rt: r.finalRuntime, oroot,
     projDir, projectRoot: PROJECT_ROOT, sessionId: r.sessionId, withManifest: false,
+    onSession: (sid: string) => {
+      agentXSession.data.session_id = sid;
+      fs.writeFileSync(agentXSession.file, JSON.stringify(agentXSession.data, null, 2));
+    },
   };
   publication.verify();
   if (!r.ok) {
@@ -2070,6 +2160,7 @@ if (wantExec && !businessCanaryDecision.enabled) {
       runtime: runtimeDecision.runtime,
       initialLeaseSec: 900,
       meta: {
+        ...dispatcherMeta(),
         project_dir: projDir, project_root: projectRoot, scaffold_root: scaffoldRoot,
         outputs_root: execOutputsRoot ?? null,
         prompt_path: path.join(projDir, "solo-prompt.md"), brief_path: workerBriefFile ?? path.join(projDir, "brief.md"),
@@ -2129,6 +2220,7 @@ if (wantExec) {
     // worker, its prompt rebuilt per candidate root so every candidate and
     // revision writes into its own isolated directory, never into `oroot`.
     const produce = (candidateRoot: string, briefFile: string, candidateBrief: string) => {
+      supersedePriorRuns(canonicalRunId);
       const prep = prepareBusinessSolo(soloArgs(candidateRoot, briefFile));
       attempt.markProductionStarted();
       const candidate = runWithCascade({ dispatchRole: "solo", runtime: rt, pinned: runtimePinned(), prompt: prep.prompt, ...prep.launch,
@@ -2199,7 +2291,7 @@ if (wantExec) {
       ledgerTry(() => {
         ledgerHandle = runLedger.openLedger();
         const row = runLedger.openRun(ledgerHandle, { traceId: pid, projectId: pid, targetSlug: slug, targetKind: "business",
-          runtime: rt, meta: { project_dir: projDir, project_root: projectRoot, scaffold_root: scaffoldRoot,
+          runtime: rt, meta: { ...dispatcherMeta(), project_dir: projDir, project_root: projectRoot, scaffold_root: scaffoldRoot,
             outputs_root: oroot, prompt_path: outputPath, brief_path: workerBriefFile ?? tmpBriefFile, mode: "single",
             runtime_source: runtimeDecision.source, dispatch_role: "solo" } });
         ledgerRunId = row.run_id;
@@ -2222,6 +2314,7 @@ if (wantExec) {
     if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "failed", { error }));
     process.exit(1);
   }
+  supersedePriorRuns(ledgerRunId ?? publication.runId);
   // No childPid here: the heartbeat sidecar (spawned inside runHeadless, once
   // the runner below actually calls spawnSync) discovers the real CLI child
   // and records it — see run-ledger.ts recordChildPid. Writing process.pid

@@ -37,7 +37,7 @@ Precedence, always: environment variable > `<project>/.nirvana/config.yaml` > `~
 | `nrv run <business> "<brief>"` | Autopilot against a company you name: dispatch + execute + verify + gate. |
 | `nrv dispatch <business> --brief-file <file> --exec` | Run a business on the brief (the session's runtime). Without `--exec` it refuses; `--scaffold-only` only prepares the run folder. |
 | `nrv dispatch --business <slug> \| --squad <slug>[:<capabilityId>] \| --agent-x "<brief>" [--exec]` | Name the target yourself; the three flags are mutually exclusive with each other and with `--auto`, and none of them consults the router. `--squad` takes an optional capability id: without one the dispatch resolves the squad's capability from the brief. `--exec` runs it, otherwise it only scaffolds. (`--judge-x` is the engine's Gauntlet judge, spawned by the evaluator adapter on an evaluation brief; it is not a producer.) |
-| `nrv revise <project> "<change>"` | Apply a change while keeping the same runtime session. |
+| `nrv revise <project> "<change>"` | Apply a change while keeping the same runtime session: a business run, a squad run or an agent-x run, resumed on the runtime that finished it. A route of several squads has no single session and is refused (exit 4). |
 | `nrv launch <name> --pillars=brand,marketing,gtm` | Scaffold a multi-pillar 360° launch (default: all 11 pillars). |
 | `nrv ask <clone> "<question>"` | Talk directly to a single specialist (mind-clone), DNA injected. |
 | `nrv multi-target plan\|run\|status <plan.json>` | Multi-target engine by plan file (alias `nrv mt`): `plan` compiles the waves, `run` executes them over the Run Kernel (`nrv config set multi_target.enabled false` or `NIRVANA_MULTI_TARGET_KILL_SWITCH=1` turns it off), `status` reads the projection. |
@@ -69,8 +69,9 @@ Useful flags on `run` / `auto`: `--single` / `--team` (how many seats of the bus
 |---|---|
 | `nrv init <dir>` | Create a new Nirvana project. `--copy` (portable delivery), `--scope=project` (isolated). By default agents in the project work as they would without Nirvana and use it only when a request names it, asks for a business, a squad or a mind-clone, or asks for another runtime; `--orchestrators=always` makes Nirvana the orchestrator of every artifact. Rerunning init switches an existing project to the mode it is given. |
 | `nrv resume <project>` | Resume an incomplete project from its audit log. |
+| `nrv run-track stop <run-id\|project>` | Stop a run: end its dispatcher and worker and close it in the ledger, so the supervisor does not resume it. Killing the processes by hand leaves the run open. |
 | `nrv export <project> [--format=zip\|tgz]` | Bundle a project's outputs to share. |
-| `nrv clean <project> [--hard]` | Remove a project scaffold (trash by default). |
+| `nrv clean <project> [--hard] [--force] [--dry-run]` | Remove a project scaffold (trash by default) and abandon the project's open runs in the ledger. A run still working there stops it (exit 4, with the command to end it); `--force` abandons it anyway without stopping its worker; `--dry-run` lists what it would close. |
 
 A project is where a run's audit, briefs and deliverables live, for every runtime — including OpenClaw, whose agent must have the project as its workspace. How each one enters it: [docs/architecture/project-directory-and-runtimes.md](architecture/project-directory-and-runtimes.md).
 

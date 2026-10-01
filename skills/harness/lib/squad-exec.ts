@@ -65,6 +65,8 @@ export interface SquadExecResult {
   ok: boolean;
   squadSlug: string;
   sessionId: string | null;
+  /** The runtime that finished the work, after any handoff: the session is its. */
+  finalRuntime: Runtime;
   costUsd: number | null;
   durationMs: number;
   outputsDir: string;
@@ -502,12 +504,12 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
   const dirResolved = fs.existsSync(squadDir) ? fs.realpathSync(squadDir) : path.resolve(squadDir);
   if (dirResolved !== rootReal && !dirResolved.startsWith(rootReal + path.sep)) {
     appendAudit({ event: "squad_run_failed", project_id: args.projectId, squad_slug: args.squadSlug, reason: "squad slug escapes the squads root" }, args.projectRoot);
-    return { ok: false, squadSlug: args.squadSlug, sessionId: null, costUsd: null, durationMs: 0, outputsDir: outDir, error: "squad slug escapes the squads root" };
+    return { ok: false, squadSlug: args.squadSlug, sessionId: null, finalRuntime: args.runtime, costUsd: null, durationMs: 0, outputsDir: outDir, error: "squad slug escapes the squads root" };
   }
 
   if (!fs.existsSync(squadDir)) {
     appendAudit({ event: "squad_run_failed", project_id: args.projectId, squad_slug: args.squadSlug, reason: "squad dir not found" }, args.projectRoot);
-    return { ok: false, squadSlug: args.squadSlug, sessionId: null, costUsd: null, durationMs: 0, outputsDir: outDir, error: "squad dir not found" };
+    return { ok: false, squadSlug: args.squadSlug, sessionId: null, finalRuntime: args.runtime, costUsd: null, durationMs: 0, outputsDir: outDir, error: "squad dir not found" };
   }
 
   // Credentials and MCP servers the squad declares of its host: a warning
@@ -628,6 +630,7 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
 
   return {
     ok: res.ok, squadSlug: args.squadSlug, sessionId: res.sessionId,
+    finalRuntime: res.finalRuntime ?? args.runtime,
     costUsd: res.costUsd, durationMs: res.durationMs, outputsDir: outDir,
     error: res.ok ? undefined : (res.error || res.stderr || `exit ${res.exitCode}`),
   };

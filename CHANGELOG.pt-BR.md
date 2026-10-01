@@ -8,6 +8,22 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Parar uma execução a fecha
+
+Uma execução parada matando os processos mantinha a linha aberta no ledger e, quando a lease expirava, o supervisor a tomava por um crash e a retomava: a execução do Grok que o dono parou teria voltado sozinha. `nrv run-track stop <run-id|project>` encerra primeiro o dispatcher (todo dispatch agora grava o pid e a hora de início dele ao lado dos do worker), depois a árvore de processos do worker, e fecha a execução como "stopped by the user"; um pid que agora pertence a outro processo não é tocado. O protocolo do orquestrador manda parar execuções assim, nunca com `kill`. A rotina do supervisor que mata a árvore de processos foi para o ledger (`killProcessTree`) e é usada pelos dois.
+
+### Revisar qualquer execução; clean e um novo dispatch fecham o que o projeto deixou aberto
+
+O `nrv revise` continua execuções de squad e de agent-x, e não só de empresa. Cada squad que rodou grava `squads/<slug>/session.json`, e uma execução de agent-x grava `agent-x/session.json`, com o runtime que terminou o trabalho; o revise retoma essa conversa nesse runtime, com a diretiva do próprio worker. Uma rota de vários squads, uma execução cujo runtime não devolveu id de sessão e uma execução anterior a esta mudança são recusadas com exit 4. O `nrv clean` abandona as linhas abertas do projeto no ledger, recusa (exit 4, com o comando para encerrá-la) enquanto uma execução dele ainda trabalha e aceita `--force` e `--dry-run`. Um novo dispatch num `--project` explícito recusa enquanto uma execução desse projeto trabalha e abandona o que uma anterior deixou aberto (falhou, travou, worker sumiu) como "superseded by <run>", sem a varredura de início que poderia retomar uma delas na pasta dele. O `nrv launch` não abre mais linhas agênticas que ninguém fecha.
+
+### Os agentes não renderizam o próprio trabalho para conferi-lo, fora do perfil max
+
+Um worker Grok num squad no estilo Awwwards gastou minutos e boa parte dos tokens da execução na etapa de verificação do squad: mais de 110 capturas por perfil de viewport, cada uma lida como imagem. Todo agente despachado (empresa, squad, agent-x, revisor, correção do gate, revise) agora é instruído a pular capturas de tela, passadas de captura, matrizes de viewport, execuções do Lighthouse e a leitura de imagens da própria saída, mesmo quando o workflow do squad as pede; o usuário revisa o resultado. `execution.visual_checks` (`NIRVANA_VISUAL_CHECKS`) as religa, e o perfil max a liga. A medição `html-layout` do próprio gate lê a geometria da página num navegador headless, sem capturas e sem tokens, e continua rodando.
+
+### Um worker calado que gasta CPU mantém a lease
+
+O heartbeat só renovava a lease quando o worker imprimia algo ou gravava um arquivo. Um CLI headless imprime uma vez, no fim, e um modelo pode raciocinar por minutos sem gravar nada, então a lease da execução do Grok teve de ser renovada à mão para o supervisor não matá-la. Num tick calado, no máximo uma vez por minuto, o sidecar agora mede a CPU da árvore de processos do worker (`process-cpu.ts`: `/proc` no Linux, `ps` no macOS, `Get-CimInstance` no Windows); um aumento de 100ms ou mais conta como atividade e renova a lease com origem `cpu`. Um worker parado sem gastar CPU continua sendo reportado como travado.
+
 ### O Nirvana fica fora do caminho até um pedido chamá-lo
 
 Um runtime com o Nirvana instalado tratava todo artefato concreto como despacho: as descrições das skills pediam isso, o `nrv init` escrevia o contrato de invocação completo por padrão e o hook de sessão do Gemini e do Antigravity mandava toda sessão carregar o harness. Agora o padrão é `on-demand`, e o agente trabalha como trabalharia sem o Nirvana. Ele só recorre ao Nirvana quando o pedido cita o Nirvana ou o nirvana-os, pede uma das empresas, squads ou mind-clones do usuário, ou pede que o trabalho (ou parte dele) rode em outro runtime. As descrições das skills `nirvana` e `harness` listam exatamente esses gatilhos e mandam trabalhar normalmente fora deles. O `nrv init` escreve a nota curta on-demand (v2), a menos que receba `--orchestrators=always`, e grava o modo em `.nirvana/project.yaml`. Rodar de novo troca o modo de um projeto existente no lugar, nos dois sentidos, e preserva as linhas do usuário. O hook de sessão lê o modo do projeto e só fala como orquestrador num projeto `always`.

@@ -25,8 +25,10 @@ import {
   openLedger, openRun, getRun, markState, renewLease, abandon, incrementRetries,
   findExpired, findNonTerminal, countNonTerminal, resumeInfo, canTransition,
   isTerminal, resolveLedgerDbPath, patchMeta, scanDir, latestMtimeMs, TERMINAL_STATES,
+  stillWorking, workerPidAlive, processStartedAt,
   type LedgerHandle,
 } from "../lib/run-ledger.ts";
+import { spawnSync } from "node:child_process";
 
 let dbSeq = 0;
 function freshLedger(): LedgerHandle {
@@ -244,6 +246,62 @@ describe("run-ledger — abandon and resume info", () => {
     expect(info.maxRetries).toBe(5);
     expect(info.meta.outputs_root).toBe("/tmp/x");
     expect(resumeInfo(h, "nope")).toBeNull();
+  }, KERNEL_BUDGET_MS);
+});
+
+describe("run-ledger — stillWorking (what a new dispatch and nrv clean check first)", () => {
+  // A pid that existed and is gone: a child that ran and exited.
+  const deadPid = (): number => spawnSync(process.execPath, ["-e", ""], { windowsHide: true }).pid!;
+
+  test("a working state with a live worker pid is still working, whatever its lease says", () => {
+    const h = freshLedger();
+    const row = openRun(h, { childPid: process.pid, initialLeaseSec: -60 });
+    markState(h, row.run_id, "running");
+    expect(stillWorking(getRun(h, row.run_id)!)).toBe(true);
+  }, KERNEL_BUDGET_MS);
+
+  test("a working state without a live pid is still working only while its lease runs", () => {
+    const h = freshLedger();
+    // The dispatcher judging what its worker wrote: no pid any more, the lease still runs.
+    const leased = openRun(h, { initialLeaseSec: 600 });
+    markState(h, leased.run_id, "running");
+    markState(h, leased.run_id, "verifying");
+    expect(stillWorking(getRun(h, leased.run_id)!)).toBe(true);
+    const expired = openRun(h, { initialLeaseSec: -60 });
+    markState(h, expired.run_id, "running");
+    expect(stillWorking(getRun(h, expired.run_id)!)).toBe(false);
+    const deadWorker = openRun(h, { childPid: deadPid(), initialLeaseSec: -60 });
+    markState(h, deadWorker.run_id, "running");
+    expect(stillWorking(getRun(h, deadWorker.run_id)!)).toBe(false);
+  }, KERNEL_BUDGET_MS);
+
+  test("failed and stalled have no worker unless a live pid says so; a terminal row never works", () => {
+    const h = freshLedger();
+    const failed = openRun(h, { initialLeaseSec: 600 });
+    markState(h, failed.run_id, "failed", { error: "quota" });
+    expect(stillWorking(getRun(h, failed.run_id)!)).toBe(false);
+    const stalled = openRun(h, { initialLeaseSec: 600 });
+    markState(h, stalled.run_id, "stalled");
+    expect(stillWorking(getRun(h, stalled.run_id)!)).toBe(false);
+    const failedAlive = openRun(h, { childPid: process.pid });
+    markState(h, failedAlive.run_id, "failed");
+    expect(stillWorking(getRun(h, failedAlive.run_id)!)).toBe(true);
+    const done = openRun(h, { childPid: process.pid, initialLeaseSec: 600 });
+    markState(h, done.run_id, "running");
+    markState(h, done.run_id, "delivered");
+    expect(stillWorking(getRun(h, done.run_id)!)).toBe(false);
+  }, KERNEL_BUDGET_MS);
+
+  test("a recycled pid is not the worker: the start time recorded beside it no longer matches", () => {
+    const h = freshLedger();
+    const row = openRun(h, { childPid: process.pid, initialLeaseSec: -60 });
+    markState(h, row.run_id, "running");
+    expect(workerPidAlive(getRun(h, row.run_id)!)).toBe(true);
+    patchMeta(h, row.run_id, { child_pid_started_at: "a process that started long ago" });
+    // Where the OS cannot report a start time, "cannot prove recycling" keeps the pid alive.
+    const canVerify = processStartedAt(process.pid) !== null;
+    expect(workerPidAlive(getRun(h, row.run_id)!)).toBe(!canVerify);
+    expect(stillWorking(getRun(h, row.run_id)!)).toBe(!canVerify);
   }, KERNEL_BUDGET_MS);
 });
 

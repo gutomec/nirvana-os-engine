@@ -46,6 +46,7 @@ import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
 import { ensureDir } from "../../_shared/lib/ensure-dir.ts";
+import { CPU_ACTIVITY_MIN_MS, processTreeCpuMs } from "./process-cpu.ts";
 
 // ── states ──────────────────────────────────────────────────────────────
 
@@ -548,6 +549,22 @@ export function findChildPid(parentPid: number, excludePid?: number, timeoutMs?:
   } catch { return null; }
 }
 
+/** Ends `pid` and what it started. Windows has no process groups: `process.kill`
+ *  ends only that pid and leaves the CLI's own children running, so taskkill /T
+ *  takes the tree. POSIX: when the pid leads its own group, the group goes with
+ *  it, else the pid alone. Never pid 1, this process or its parent. */
+export function killProcessTree(pid: number): void {
+  if (!Number.isFinite(pid) || pid <= 1) return;
+  if (pid === process.pid || pid === process.ppid) return;
+  if (process.platform === "win32") {
+    const r = spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { windowsHide: true, encoding: "utf8" });
+    if (r.status !== 0) { try { process.kill(pid, "SIGTERM"); } catch { /* already gone */ } }
+    return;
+  }
+  try { process.kill(-pid, "SIGTERM"); return; } catch { /* not a group leader */ }
+  try { process.kill(pid, "SIGTERM"); } catch { /* already gone */ }
+}
+
 /** One file the sweep found newer than the mark it was given. */
 export interface TouchedFile { path: string; mtimeMs: number; sizeBytes: number }
 
@@ -1000,6 +1017,38 @@ export function findExpired(handle: LedgerHandle, now?: Date | number, scope?: S
   return rows.map(r => parseRow(r)!);
 }
 
+/** The states in which a run's worker, or the dispatcher judging what it
+ *  wrote, is still expected to be at work in the run's folder. */
+export const WORKING_STATES: ReadonlySet<RunState> = new Set(["dispatched", "running", "verifying", "gated"]);
+
+/** The row's recorded worker pid is alive and is still that worker. A pid the
+ *  OS has handed to another process since (its start time no longer matches
+ *  the one recorded beside it) is not. A start time nobody can read counts as
+ *  alive: "cannot prove recycling" is not "recycled", the supervisor's rule. */
+export function workerPidAlive(row: RunRow): boolean {
+  const pid = row.child_pid;
+  if (!pid || !pidAlive(pid)) return false;
+  const recorded = typeof row.meta?.child_pid_started_at === "string" ? row.meta.child_pid_started_at as string : null;
+  if (!recorded) return true;
+  const current = processStartedAt(pid);
+  return current === null || current === recorded;
+}
+
+/** Whether something may still be writing in this row's folder: its worker
+ *  pid is alive, or, with no live pid, it sits in a working state under a
+ *  lease that has not expired (the dispatcher between its worker and the gate,
+ *  a worker the sidecar has not found yet, a pid-less agentic run). A failed
+ *  or stalled row has no worker unless a live pid says otherwise. Used by a
+ *  new dispatch into the same project and by `nrv clean` before either
+ *  touches that folder. */
+export function stillWorking(row: RunRow, now: number = Date.now()): boolean {
+  if (isTerminal(row.state)) return false;
+  if (workerPidAlive(row)) return true;
+  if (!WORKING_STATES.has(row.state)) return false;
+  const lease = Date.parse(row.lease_expires_at ?? "");
+  return Number.isFinite(lease) && lease > now;
+}
+
 /** Everything the supervisor needs to resume a run. */
 export function resumeInfo(handle: LedgerHandle, runId: string): {
   runId: string; state: RunState; sessionId: string | null; runtime: string | null;
@@ -1269,6 +1318,10 @@ const TOUCH_EVENTS_PER_TICK = 25;
  *  have starved of its own tick. */
 const HEARTBEAT_DISCOVERY_TIMEOUT_MS = 1500;
 
+/** How often a quiet tick samples the worker's CPU (see heartbeatMain). Tests
+ *  shorten it through NIRVANA_HEARTBEAT_CPU_SAMPLE_MS. */
+const CPU_SAMPLE_MS = Math.max(0, Number(process.env.NIRVANA_HEARTBEAT_CPU_SAMPLE_MS) || 60_000);
+
 /** How many ticks get a discovery attempt before the sidecar stops trying —
  *  more than one, because the real CLI child can still be mid-spawn on the
  *  very first tick (see heartbeatMain); a small fixed number rather than a
@@ -1344,6 +1397,18 @@ export function heartbeatMain(): void {
   // genuine activity to earn one.
   let discoveryAttempts = 0;
   let childDiscovered = false;
+  let workerPid = 0;
+
+  // CPU as a sign of life: a headless CLI prints once, at the end, and a model
+  // that reasons for minutes writes no file meanwhile, so a worker can show no
+  // activity above for longer than its lease while it works. On a quiet tick,
+  // at most once a minute (a PowerShell spawn on Windows), the CPU of the
+  // worker's process tree is sampled; growth since the last quiet sample counts
+  // as activity. A worker blocked on a dead socket spends none. Any other
+  // activity resets the baseline, so CPU spent while it was writing never
+  // renews the lease after it stops.
+  let cpuBaseline: { root: number; ms: number } | null = null;
+  let cpuSampledAt = 0;
 
   for (;;) {
     Bun.sleepSync(intervalMs);
@@ -1359,15 +1424,29 @@ export function heartbeatMain(): void {
       ? scanDir(watchDir, lastMtime, { limit: Math.min(TOUCH_EVENTS_PER_TICK, touchBudget) })
       : { latestMs: 0, changed: [], omitted: 0 };
     const mtime = scan.latestMs;
-    const activity = bytes !== lastBytes || mtime > lastMtime;
+    const wrote = bytes !== lastBytes || mtime > lastMtime;
     lastBytes = bytes;
     if (mtime > lastMtime) lastMtime = mtime;
 
     const now = Date.now();
+    let thinking = false;
+    if (wrote) cpuBaseline = null;
+    else if (parentPid > 0 && now - cpuSampledAt >= CPU_SAMPLE_MS) {
+      cpuSampledAt = now;
+      // The discovered worker, or the dispatcher's tree without this sidecar.
+      const root = workerPid || parentPid;
+      const cpu = processTreeCpuMs(root, process.pid);
+      if (cpu !== null) {
+        thinking = cpuBaseline?.root === root && cpu - cpuBaseline.ms >= CPU_ACTIVITY_MIN_MS;
+        cpuBaseline = { root, ms: cpu };
+      }
+    }
+    const activity = wrote || thinking;
+
     if (activity) {
       lastActivityAt = now;
       stallRecorded = false;
-      renewLease(handle, runId, leaseSec);
+      renewLease(handle, runId, leaseSec, wrote ? undefined : "cpu");
       for (let i = 0; i < scan.changed.length; i++) {
         const f = scan.changed[i];
         // Always "modify": a poller sees that a file moved, never that it was
@@ -1403,6 +1482,7 @@ export function heartbeatMain(): void {
       if (childPid) {
         recordChildPid(handle, runId, childPid, processStartedAt(childPid, HEARTBEAT_DISCOVERY_TIMEOUT_MS));
         childDiscovered = true;
+        workerPid = childPid;
       }
     }
   }

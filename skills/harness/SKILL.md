@@ -139,6 +139,11 @@ worker re-reads its brief at every phase:
 nrv brief decide .nirvana/briefs/<business>.md "<the decision>"
 ```
 
+When the user asks to stop a run, stop it with `nrv run-track stop <run-id|project>`:
+it ends the dispatcher and the worker and closes the run. Never `kill` its
+processes: the run stays open, and the supervisor resumes it once its lease
+expires.
+
 ## 6. When it returns
 
 Read `<outputs>/_STATUS.json` first (`state`, `gate`, `serious`,

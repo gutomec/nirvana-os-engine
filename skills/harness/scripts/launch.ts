@@ -127,7 +127,12 @@ for (const p of pillars) {
 
   // Run brief-business
   console.log(c("cyan", `  → ${p.pillar} via ${p.business}`));
-  const r = spawnSync("bun", [briefBiz, p.business, briefText, "--project", projectId, "--manifest", manifestFile], { windowsHide: true, encoding: "utf8" });
+  // The run plan below is `nrv dispatch` commands, and each one tracks its own
+  // run, so brief-business opens no agentic row: nobody would close it, and a
+  // dispatch into the same --project would be refused while its lease ran.
+  const r = spawnSync("bun", [briefBiz, p.business, briefText, "--project", projectId, "--manifest", manifestFile], {
+    windowsHide: true, encoding: "utf8", env: { ...process.env, NIRVANA_DISPATCH_TRACKS_RUN: "1" },
+  });
   if (r.status !== 0) {
     console.error(c("red", `    ✗ brief-business failed for ${p.pillar}:`));
     console.error(c("dim", "    " + (r.stderr || r.stdout || "").split("\n")[0]));

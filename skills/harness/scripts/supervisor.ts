@@ -136,6 +136,7 @@ import {
   type RunRow,
   type RunState,
   resolveLedgerDbPath,
+  killProcessTree,
 } from "../lib/run-ledger.ts";
 import { acquireLockSync } from "../../_shared/lib/file-lock.ts";
 import type { DeliveryArgs, DeliveryResult, GateOutcome } from "../lib/delivery-pipeline.ts";
@@ -248,19 +249,7 @@ export interface SweepSummary {
 }
 
 function defaultKill(pid: number): void {
-  if (!Number.isFinite(pid) || pid <= 1) return; // never signal init/invalid
-  if (pid === process.pid || pid === process.ppid) return; // never the supervisor itself or its parent
-  if (process.platform === "win32") {
-    // Windows has no process groups: `process.kill` ends only that pid and
-    // leaves the CLI's own children running. taskkill /T takes the tree.
-    const r = spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { windowsHide: true, encoding: "utf8" });
-    if (r.status !== 0) { try { process.kill(pid, "SIGTERM"); } catch { /* already gone */ } }
-    return;
-  }
-  // POSIX: when the child leads its own group, signal the group so the agent's
-  // own subprocesses go with it; otherwise (ESRCH on the group) the pid alone.
-  try { process.kill(-pid, "SIGTERM"); return; } catch { /* not a group leader */ }
-  try { process.kill(pid, "SIGTERM"); } catch { /* already gone */ }
+  killProcessTree(pid);
 }
 
 /** Why the salvage landed where it landed, in one human-readable clause. */

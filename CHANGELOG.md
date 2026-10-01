@@ -8,6 +8,22 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Stopping a run closes it
+
+A run stopped by killing its processes kept its ledger row open, and once the lease expired the supervisor took it for a crash and resumed it: the Grok run its owner stopped would have come back by itself. `nrv run-track stop <run-id|project>` ends the dispatcher first (every dispatch now records its pid and start time beside the worker's), then the worker's process tree, and closes the run as "stopped by the user"; a pid now held by another process is left alone. The orchestrator protocol says to stop runs this way and never with `kill`. The tree kill the supervisor used moved to the ledger (`killProcessTree`), shared by both.
+
+### Revise any run; clean and re-dispatch close what a project left open
+
+`nrv revise` continues squad and agent-x runs, not only business runs. Each squad that ran writes `squads/<slug>/session.json` and an agent-x run writes `agent-x/session.json`, naming the runtime that finished the work; revise resumes that conversation on that runtime with the worker's own directive. A route of several squads, a run whose runtime returned no session id and a run from before this change are refused with exit 4. `nrv clean` abandons the project's open ledger rows, refuses (exit 4, with the command to end it) while one of its runs is still working, and takes `--force` and `--dry-run`. A new dispatch into an explicit `--project` refuses while a run of that project is working, and abandons what an earlier one left open (failed, stalled, worker gone) as "superseded by <run>", skipping the startup sweep that could resume one of them into its folder. `nrv launch` no longer opens agentic rows that nothing closes.
+
+### Agents do not render their own work to check it, outside the max profile
+
+A Grok worker on an Awwwards-style squad spent minutes and a large share of the run's tokens on the squad's verify step: 110+ screenshots per viewport profile, each read as an image. Every dispatched agent (business, squad, agent-x, reviewer, gate correction, revise) is now told to skip screenshots, capture passes, viewport matrices, Lighthouse runs and reading images of its output, even when a squad's workflow asks for them; the user reviews the result. `execution.visual_checks` (`NIRVANA_VISUAL_CHECKS`) turns them back on, and the max profile sets it. The gate's own `html-layout` measurement reads the page's geometry in a headless browser, with no screenshots and no tokens, and still runs.
+
+### A quiet worker that spends CPU keeps its lease
+
+The heartbeat renewed a lease only when the worker printed or wrote a file. A headless CLI prints once, at the end, and a model can reason for minutes without writing, so the Grok run's lease had to be renewed by hand to keep the supervisor from killing it. On a quiet tick, at most once a minute, the sidecar now samples the CPU of the worker's process tree (`process-cpu.ts`: `/proc` on Linux, `ps` on macOS, `Get-CimInstance` on Windows); growth of 100ms or more counts as activity and renews the lease with source `cpu`. A worker blocked with no CPU is still reported stalled.
+
 ### Nirvana stays out of the way until a request calls for it
 
 A runtime with Nirvana installed used to treat every concrete artifact as a dispatch: the skill descriptions asked for it, `nrv init` wrote the full invocation contract by default, and the Gemini and Antigravity session hook told every session to load the harness. Now the default is `on-demand`, and the agent works as it would without Nirvana. It reaches for Nirvana only when the request names Nirvana or nirvana-os, asks for one of the user's businesses, squads or mind-clones, or asks for the work (or a part of it) to run on another runtime. The `nirvana` and `harness` skill descriptions list exactly those triggers and say to work normally otherwise. `nrv init` writes the short on-demand note (v2) unless `--orchestrators=always` is passed and records the mode in `.nirvana/project.yaml`. Rerunning it switches an existing project in place, both ways, keeping the user's own lines. The session hook reads the project's mode and speaks the orchestrator text only in an `always` project.

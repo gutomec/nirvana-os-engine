@@ -24,6 +24,7 @@ import { writeFakeCli } from "./helpers/fake-cli.ts";
 import { SCOPE_GUARD_EN } from "../../_shared/lib/scope-guard.ts";
 import { spawnBudgetMs, TEARDOWN_BUDGET_MS } from "./helpers/test-budgets.ts";
 import * as runLedger from "../lib/run-ledger.ts";
+import { SOLO_ROLE_LINE } from "../lib/business-solo.ts";
 
 const SKILLS = path.resolve(import.meta.dir, "..", "..");
 const REVISE = path.join(SKILLS, "harness", "scripts", "revise.ts");
@@ -84,24 +85,38 @@ interface ReviseCase {
 }
 
 /** A project laid out the way dispatch.ts leaves one (outputs/<pid>/businesses/
- *  <slug>/session.json), with `files` already in the outputs root, plus a fake
- *  runtime that succeeds without touching disk. Then: `nrv revise`. */
-function runRevise(files: Record<string, string | Buffer>, opts: { env?: Record<string, string>; runtimeFails?: boolean; brief?: string; setup?: (pid: string, home: string) => void } = {}): ReviseCase {
+ *  <slug>/session.json; squads/<slug>/ or agent-x/ for those kinds), with
+ *  `files` already in the outputs root, plus a fake runtime that succeeds
+ *  without touching disk. Then: `nrv revise`. */
+function runRevise(files: Record<string, string | Buffer>, opts: {
+  env?: Record<string, string>; runtimeFails?: boolean; brief?: string; setup?: (pid: string, home: string) => void;
+  kind?: "business" | "squad" | "agent-x"; sessionId?: string | null;
+} = {}): ReviseCase {
   const n = caseSeq++;
   const home = path.join(TMP, `case-${n}`);
   const pid = `proj-revise-${n}`;
-  const slug = "biz";
+  const kind = opts.kind ?? "business";
+  const slug = kind === "business" ? "biz" : kind === "squad" ? "copy" : "agent-x";
   const projectRoot = path.join(home, "outputs", pid);
-  const projDir = path.join(projectRoot, "businesses", slug);
-  const oroot = path.join(projDir, "deliverables");
+  const projDir = kind === "business" ? path.join(projectRoot, "businesses", slug)
+    : kind === "squad" ? path.join(projectRoot, "squads", slug) : path.join(projectRoot, "agent-x");
+  // A business writes under its own scaffold; a squad and agent-x under the run's deliverables/.
+  const oroot = kind === "business" ? path.join(projDir, "deliverables") : path.join(projectRoot, "deliverables");
+  fs.mkdirSync(projDir, { recursive: true });
   fs.mkdirSync(oroot, { recursive: true });
   for (const [name, body] of Object.entries(files)) fs.writeFileSync(path.join(oroot, name), body as any);
-  // The run's brief lives at its scaffold root, two levels above businesses/<slug>.
-  if (opts.brief) fs.writeFileSync(path.join(projectRoot, "brief.md"), opts.brief);
-  fs.writeFileSync(path.join(projDir, "session.json"), JSON.stringify({
+  // The run's brief lives at its scaffold root, two levels above businesses/<slug>
+  // or squads/<slug>; agent-x's is brief-enriched.md, one level above agent-x/.
+  if (opts.brief) fs.writeFileSync(path.join(projectRoot, kind === "agent-x" ? "brief-enriched.md" : "brief.md"), opts.brief);
+  const sessionId = opts.sessionId === undefined ? "sess-original" : opts.sessionId;
+  fs.writeFileSync(path.join(projDir, "session.json"), JSON.stringify(kind === "business" ? {
     project_id: pid, business_slug: slug, employee: "ceo", runtime: "claude-code",
-    session_id: "sess-original", project_dir: projDir, project_root: projectRoot,
+    session_id: sessionId, project_dir: projDir, project_root: projectRoot,
     outputs_root: oroot, zip_path: null,
+  } : {
+    project_id: pid, target_kind: kind, target_slug: slug, runtime: "claude-code",
+    session_id: sessionId, project_dir: projDir, project_root: projectRoot,
+    outputs_root: oroot, workspace: null, manifest: null,
   }, null, 2));
 
   // Fake `claude`: swallows the prompt, prints the runtime's JSON envelope,
@@ -323,7 +338,7 @@ describe("nrv revise continues the ORIGINAL worker", () => {
     expect(row.child_pid).toBeNull();
   }, 30_000);
 
-  test("a squad run has no session to continue: refused with a clear message, exit 4", () => {
+  test("a squad run from before squad runs recorded their session: refused with a clear message, exit 4", () => {
     const home = path.join(TMP, "squad-case");
     fs.mkdirSync(path.join(home, "outputs", "proj-squad", "squads", "copy"), { recursive: true });
     const r = spawnSync(process.execPath, [REVISE, "proj-squad", "encurte", "--no-color"], {
@@ -334,4 +349,78 @@ describe("nrv revise continues the ORIGINAL worker", () => {
     expect(r.stderr).toContain("is a squad run");
     expect(r.stderr).not.toContain("Was this project created");
   }, spawnBudgetMs(1));
+});
+
+describe("nrv revise continues a squad or agent-x worker like a business one", () => {
+  test("a squad revision resumes the squad's session as `squad`, told to update its summary (no claims), and judges the result", () => {
+    let db = "";
+    let runId = "";
+    const c = runRevise({ "nota.md": PASSING_MD }, {
+      kind: "squad",
+      setup: (pid, home) => {
+        // The squad run finished (delivered): the revision opens a new attempt of the trace.
+        db = path.join(home, "ledger.sqlite");
+        const h = runLedger.openLedger(db);
+        const row = runLedger.openRun(h, { traceId: pid, projectId: pid, projectRoot: null, targetSlug: "copy", targetKind: "squad", runtime: "claude-code",
+          meta: { mode: "squad-only", dispatch_role: "squad", runtime_source: "default" } });
+        runLedger.markState(h, row.run_id, "running");
+        runLedger.markState(h, row.run_id, "delivered");
+        runId = row.run_id;
+      },
+    });
+    expect(c.status, c.stdout).toBe(0);
+    expect(c.runtimeCalls).toBe(1);
+    expect(c.roles[0]).toBe("squad");
+    expect(c.prompt).toContain("--resume");
+    expect(c.prompt).toContain("sess-original");
+    expect(c.prompt).toContain(path.join(c.oroot, "_SUMMARY.md"));
+    expect(c.prompt).not.toContain("_CLAIMS.json");
+    expect(c.prompt).not.toContain(SOLO_ROLE_LINE);
+    expect(c.audit.find(l => l.event === "revision_requested")).toMatchObject({ target_kind: "squad", target_slug: "copy", dispatch_role: "squad", business_slug: null });
+    expect(events(c)).toContain("delivered");
+    const h = runLedger.openLedger(db);
+    const fresh = runLedger.findByTraceId(h, path.basename(path.dirname(c.oroot)))!;
+    expect(fresh.run_id).not.toBe(runId);
+    expect(fresh).toMatchObject({ target_kind: "squad", target_slug: "copy", state: "delivered" });
+    expect(fresh.meta).toMatchObject({ revision_of: runId, dispatch_role: "squad" });
+  }, 30_000);
+
+  test("an agent-x revision resumes the generalist's session as `agent-x`", () => {
+    const c = runRevise({ "nota.md": PASSING_MD }, { kind: "agent-x" });
+    expect(c.status, c.stdout).toBe(0);
+    expect(c.roles[0]).toBe("agent-x");
+    expect(c.prompt).toContain("sess-original");
+    expect(c.prompt).toContain(path.join(c.oroot, "_SUMMARY.md"));
+    expect(c.prompt).not.toContain("_CLAIMS.json");
+    expect(c.audit.find(l => l.event === "revision_requested")).toMatchObject({ target_kind: "agent-x", dispatch_role: "agent-x" });
+  }, 30_000);
+
+  test("the corrections after a failed gate run as the same worker", () => {
+    const c = runRevise({ "nota.md": FAILING_MD }, { kind: "squad" });
+    expect(c.status).toBe(0);
+    expect(c.runtimeCalls).toBe(3);
+    expect(c.roles.every(r => r === "squad")).toBe(true);
+  }, 60_000);
+
+  test("a run whose runtime returned no session id is refused (exit 4) and nothing runs", () => {
+    const c = runRevise({ "nota.md": PASSING_MD }, { kind: "agent-x", sessionId: null });
+    expect(c.status).toBe(4);
+    expect(c.stdout).toContain("returned no session id");
+    expect(c.stdout).toContain("new dispatch");
+    expect(c.runtimeCalls).toBe(0);
+  }, 30_000);
+
+  test("a route of several squads has no single session to continue: refused (exit 4)", () => {
+    const c = runRevise({ "nota.md": PASSING_MD }, {
+      kind: "squad",
+      setup: (pid, home) => {
+        const other = path.join(home, "outputs", pid, "squads", "design");
+        fs.mkdirSync(other, { recursive: true });
+        fs.writeFileSync(path.join(other, "session.json"), JSON.stringify({ project_id: pid, target_kind: "squad", target_slug: "design", runtime: "claude-code", session_id: "sess-2" }));
+      },
+    });
+    expect(c.status).toBe(4);
+    expect(c.stdout).toContain("ran 2 workers (squad copy, squad design)");
+    expect(c.runtimeCalls).toBe(0);
+  }, 30_000);
 });

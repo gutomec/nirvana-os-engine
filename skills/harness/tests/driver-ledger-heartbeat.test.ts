@@ -412,3 +412,75 @@ describe("driver — the sidecar dies on its own", () => {
     expect(await exitedWithin(spawnSidecar("run-that-never-existed", ["--parent", String(process.pid)]), 8_000)).toBe(true);
   }, 30_000);
 });
+
+// ── CPU is a sign of life ────────────────────────────────────────────────
+//
+// A headless CLI prints once, at the end, and a model that reasons for minutes
+// writes no file meanwhile: a Grok landing page run went quiet long enough
+// that its lease had to be renewed by hand to keep the supervisor from killing
+// it. A worker that keeps spending CPU is working; one that spends none is not.
+describe("driver — a quiet worker that spends CPU keeps its lease", () => {
+  const withCpuSampling = <T>(run: () => T): T => {
+    const saved = process.env.NIRVANA_HEARTBEAT_CPU_SAMPLE_MS;
+    process.env.NIRVANA_HEARTBEAT_CPU_SAMPLE_MS = "300";
+    try { return run(); } finally {
+      if (saved === undefined) delete process.env.NIRVANA_HEARTBEAT_CPU_SAMPLE_MS;
+      else process.env.NIRVANA_HEARTBEAT_CPU_SAMPLE_MS = saved;
+    }
+  };
+  const renewals = (runId: string, source?: string) => readAuditEvents()
+    .filter(e => e.event === "x_ledger_lease_renewed" && e.run_id === runId && (source === undefined || e.source === source));
+  const stalls = (runId: string) => readAuditEvents().filter(e => e.event === "x_ledger_stall_observed" && e.run_id === runId);
+
+  test("busy and silent: renewed with source cpu, never reported stalled", () => {
+    const h = openLedger(DB);
+    const row = openRun(h, { targetSlug: "fake", targetKind: "squad", runtime: "claude-code", initialLeaseSec: 120 });
+    const res = withCpuSampling(() => withWritingFake("cpu-busy", `
+      import * as fs from "node:fs";
+      import * as path from "node:path";
+      console.error("started");
+      // Burn CPU in short slices, print nothing, write nothing, until the
+      // sidecar has renewed the lease on CPU alone.
+      const auditRoot = ${JSON.stringify(process.env.HARNESS_LOGS_DIR)};
+      const needles = ["x_ledger_lease_renewed", ${JSON.stringify(row.run_id)}, '"cpu"'];
+      const seen = () => {
+        try {
+          for (const day of fs.readdirSync(auditRoot)) {
+            const f = path.join(auditRoot, day, "audit.jsonl");
+            if (fs.existsSync(f) && fs.readFileSync(f, "utf8").split("\\n").some(l => needles.every(n => l.includes(n)))) return true;
+          }
+        } catch { /* not written yet */ }
+        return false;
+      };
+      const deadline = Date.now() + 20_000;
+      while (!seen() && Date.now() < deadline) { const t = Date.now(); while (Date.now() - t < 200) {} }
+      console.log(JSON.stringify({ type: "result", result: "done", session_id: "cpu-session", total_cost_usd: 0 }));
+      process.exit(0);
+    `, () => runHeadless({
+      runtime: "claude-code", prompt: "think", cwd: TMP, yolo: true,
+      ledger: { runId: row.run_id, dbPath: DB, intervalMs: 250, leaseSec: 120 },
+      stallBudgetMs: 1200,
+    })));
+    expect(res.ok).toBe(true);
+    expect(renewals(row.run_id, "cpu").length).toBeGreaterThanOrEqual(1);
+    expect(stalls(row.run_id)).toEqual([]);
+  }, 40_000);
+
+  test("idle and silent: no CPU renewal, and the stall is reported", () => {
+    const h = openLedger(DB);
+    const row = openRun(h, { targetSlug: "fake", targetKind: "squad", runtime: "claude-code", initialLeaseSec: 120 });
+    const res = withCpuSampling(() => withWritingFake("cpu-idle", `
+      console.error("started");
+      await Bun.sleep(3500);
+      console.log(JSON.stringify({ type: "result", result: "done", session_id: "idle-session", total_cost_usd: 0 }));
+      process.exit(0);
+    `, () => runHeadless({
+      runtime: "claude-code", prompt: "wait", cwd: TMP, yolo: true,
+      ledger: { runId: row.run_id, dbPath: DB, intervalMs: 250, leaseSec: 120 },
+      stallBudgetMs: 1200,
+    })));
+    expect(res.ok).toBe(true);
+    expect(renewals(row.run_id, "cpu")).toEqual([]);
+    expect(stalls(row.run_id).length).toBeGreaterThanOrEqual(1);
+  }, 40_000);
+});

@@ -21,6 +21,7 @@
 //   nrv run-track close  <run-id> --state <delivered|withheld|failed> [--error "<why>"]
 //                                                     # a close is final: `failed` ends in
 //                                                     # `abandoned`, never resumed
+//   nrv run-track stop   <run-id|project-id>         # end the dispatcher and its worker, close the run
 //   nrv run-track list                               # what is open right now, IN THIS PROJECT
 //   nrv run-track status <run-id|trace-id> [--json]  # one-shot: is it done, and how did it end
 //   nrv run-track wait   <run-id|trace-id> [--timeout <sec>] [--json]
@@ -54,6 +55,7 @@ import { resolveScope } from "../../_shared/lib/scope.ts";
 import {
   openLedger, openAgenticRun, markState, abandon, renewLease, findNonTerminal, getRun, findByTraceId,
   resolveProjectRoot, sameProjectRoot, isTerminal, pidAlive, runSignalDir,
+  killProcessTree, processStartedAt, workerPidAlive,
   AGENTIC_LEASE_SEC, type RunState, type RunRow,
 } from "../lib/run-ledger.ts";
 import { notifyDesktop } from "../lib/os-notify.ts";
@@ -113,6 +115,7 @@ function usage(code: number): never {
     "  nrv run-track open   --target <slug> --kind <business|squad|agent-x|clone> --outputs <dir> [--project <id>] [--runtime <r>]\n" +
     "  nrv run-track beat   <run-id>\n" +
     "  nrv run-track close  <run-id> --state <delivered|withheld|failed> [--error \"<why>\"]\n" +
+    "  nrv run-track stop   <run-id|project-id>        # end the dispatcher and worker, close the run\n" +
     "  nrv run-track list                              # only this project's runs\n" +
     "  nrv run-track status <run-id|trace-id> [--json]  # finished? in which state?\n" +
     "  nrv run-track wait   <run-id|trace-id> [--timeout <sec>] [--json]\n",
@@ -246,6 +249,38 @@ try {
     const why = flag("error") ? ` — ${flag("error")}` : "";
     notifyDesktop("Nirvana-OS", `${before.target_kind ?? "run"}/${before.target_slug ?? runId}: ${label}${why}`);
     process.stdout.write(`${runId} → ${state}\n`);
+    process.exit(0);
+  }
+
+  if (sub === "stop") {
+    // Killing a run's processes by hand leaves its row open: once the lease
+    // expires the supervisor takes it for a crash and resumes it, which is how
+    // a Grok run its owner had stopped would have come back by itself. This
+    // ends the dispatcher first (so it does not take a killed worker for a
+    // failure and go on to the gate), then the worker, and closes the run.
+    const target = argv[1];
+    if (!target) usage(4);
+    const one = getRun(handle, target);
+    const rows = one ? [one] : findNonTerminal(handle).filter(r => r.project_id === target || r.trace_id === target);
+    const open = rows.filter(r => !isTerminal(r.state));
+    if (!open.length) { process.stdout.write(`no open run for '${target}'; nothing to stop\n`); process.exit(0); }
+    for (const row of open) refuseForeignRun(row, "stopped");
+    for (const row of open) {
+      const dispatcher = Number(row.meta?.dispatcher_pid) || 0;
+      const startedAt = typeof row.meta?.dispatcher_started_at === "string" ? row.meta.dispatcher_started_at as string : null;
+      const pids: number[] = [];
+      // A pid whose start time no longer matches belongs to another process now.
+      if (dispatcher > 0 && pidAlive(dispatcher) && (!startedAt || (processStartedAt(dispatcher) ?? startedAt) === startedAt)) pids.push(dispatcher);
+      if (workerPidAlive(row)) pids.push(row.child_pid!);
+      for (const pid of pids) killProcessTree(pid);
+      const deadline = Date.now() + 5_000;
+      while (pids.some(pidAlive) && Date.now() < deadline) Bun.sleepSync(100);
+      const survivors = pids.filter(pidAlive);
+      // The dispatcher may have closed the run itself on the way out.
+      if (!isTerminal(getRun(handle, row.run_id)?.state ?? "abandoned")) abandon(handle, row.run_id, "stopped by the user");
+      process.stdout.write(`${row.run_id} stopped${pids.length ? ` (ended pid ${pids.join(", ")})` : " (no live process)"}\n`);
+      if (survivors.length) warn(`pid ${survivors.join(", ")} still alive after SIGTERM; end it from the task manager or with kill -9`);
+    }
     process.exit(0);
   }
 

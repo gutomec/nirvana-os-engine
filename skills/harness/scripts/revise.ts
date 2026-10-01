@@ -3,13 +3,18 @@
 //
 // Resumes the SAME runtime conversation (claude --resume <session_id>) so the
 // agent has full context of what it produced, applies the change, then re-runs
-// verify + gate + (re)export. State lives in <run>/businesses/<slug>/session.json
-// (written by `nrv dispatch <business> --exec`), and the run's ledger row.
+// verify + gate + (re)export. State lives in the session.json `nrv dispatch
+// --exec` leaves beside the worker's scaffold (lib/run-session.ts):
+// <run>/businesses/<slug>/, <run>/squads/<slug>/ or <run>/agent-x/, and in the
+// run's ledger row.
 //
 // The revision continues the ORIGINAL worker: the same role (a business runs
-// as one `solo` worker, with the solo directive, and may open nothing), the
-// same runtime, pinned when the owner chose it (flag or brief). Squad and
-// agent-x runs keep no session to continue, and are refused.
+// as one `solo` worker with the solo directive, a squad as `squad`, the
+// generalist as `agent-x`; none of them may open anything), on the runtime that
+// finished the run, pinned when the owner chose it (flag or brief). A run whose
+// runtime returned no session id, a run from before squad and agent-x runs
+// recorded one, and a route of several squads have no single conversation to
+// continue, and are refused (exit 4): a change to them is a new dispatch.
 //
 // Usage:
 //   nrv revise <project_id> "<change request>"
@@ -33,6 +38,10 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { spawnSync } from "node:child_process";
 import { runtimeAvailable, AUTONOMOUS_DIRECTIVE, type Runtime } from "../lib/host-agent-driver.ts";
+import { findRunSessions, type RunSessionFile } from "../lib/run-session.ts";
+import { resolveCascadeRoot } from "../lib/cascade.ts";
+import { formatRulesForDirective, loadRuntimeRules } from "../lib/runtime-rules.ts";
+import { paths } from "../../_shared/lib/bun-helpers.ts";
 import { runWithCascade } from "../lib/cascade-runner.ts";
 import { soloDirective } from "../lib/business-solo.ts";
 import { runDelivery, deliverAfterRuntimeError, type DeliveryArgs, type DeliveryResult } from "../lib/delivery-pipeline.ts";
@@ -103,18 +112,13 @@ function runRoots(pid: string): string[] {
   ];
 }
 
-// Locate <run>/businesses/<slug>/session.json across the standard roots.
-function findSessionFile(pid: string): string | null {
+/** The session files of the run, from the nearest run folder that holds any. */
+function findSessions(pid: string): RunSessionFile[] {
   for (const root of runRoots(pid)) {
-    const bizRoot = path.join(root, "businesses");
-    if (!fs.existsSync(bizRoot)) continue;
-    for (const e of fs.readdirSync(bizRoot, { withFileTypes: true })) {
-      if (!e.isDirectory()) continue;
-      const sf = path.join(bizRoot, e.name, "session.json");
-      if (fs.existsSync(sf)) return sf;
-    }
+    const found = findRunSessions(root);
+    if (found.length) return found;
   }
-  return null;
+  return [];
 }
 
 /** The run's ledger row (the newest attempt of this trace), when the ledger has one. */
@@ -128,7 +132,9 @@ const ledger = (() => {
   }
 })();
 
-/** What kind of run this id is when it has no session: the ledger says it, or the run folder's shape does. */
+/** What kind of run this id is when it has no session file: the ledger says
+ *  it, or the run folder's shape does. A squad or agent-x run dispatched before
+ *  those runs wrote one keeps none. */
 function sessionlessKind(pid: string): "squad" | "agent-x" | null {
   const kind = ledger?.row?.target_kind;
   if (kind === "squad" || kind === "agent-x") return kind;
@@ -139,17 +145,23 @@ function sessionlessKind(pid: string): "squad" | "agent-x" | null {
   return null;
 }
 
-const sessionFile = findSessionFile(projectId);
-if (!sessionFile) {
+const sessions = findSessions(projectId);
+if (!sessions.length) {
   const kind = sessionlessKind(projectId);
   if (kind) {
-    console.error(c("red", `✗ '${projectId}' is a ${kind} run, and nrv revise continues a business run's own session.`));
-    console.error(`  A ${kind} run keeps no session.json to continue. Its deliverables stay where they are; a change to them is a new dispatch.`);
+    console.error(c("red", `✗ '${projectId}' is a ${kind} run from before ${kind} runs recorded their session: it keeps no session.json to continue.`));
+    console.error("  Its deliverables stay where they are; a change to them is a new dispatch.");
     process.exit(4);
   }
-  console.error(c("red", `✗ no run '${projectId}' with a session to continue was found (looked for businesses/<slug>/session.json under ${runRoots(projectId).join(", ")}).`));
+  console.error(c("red", `✗ no run '${projectId}' with a session to continue was found (looked for businesses/<slug>/, squads/<slug>/ and agent-x/session.json under ${runRoots(projectId).join(", ")}).`));
   process.exit(1);
 }
+if (sessions.length > 1) {
+  console.error(c("red", `✗ '${projectId}' ran ${sessions.length} workers (${sessions.map(s => s.kind === "agent-x" ? "agent-x" : `${s.kind} ${s.slug}`).join(", ")}), and nrv revise continues one worker's own session.`));
+  console.error("  This run has no single conversation to continue: a change to it is a new dispatch.");
+  process.exit(4);
+}
+const { file: sessionFile, kind } = sessions[0];
 const session = JSON.parse(fs.readFileSync(sessionFile, "utf8"));
 const meta: Record<string, unknown> = ledger?.row?.meta ?? {};
 const metaStr = (key: string): string | null => {
@@ -160,29 +172,28 @@ const metaStr = (key: string): string | null => {
 // there. The ledger's runtime is the fallback for a session that never named one.
 const rt = ((session.runtime as string) || ledger?.row?.runtime || "") as Runtime;
 const sessionId = session.session_id as string | null;
-const slug = session.business_slug as string;
+// The worker's slug: the business's, the squad's, or "agent-x".
+const slug = ((kind === "business" ? session.business_slug : session.target_slug) as string) || sessions[0].slug;
 const projDir = session.project_dir as string;
 const projectRoot = session.project_root as string;
 const oroot = session.outputs_root as string;
 
-// The original worker's role, never the operator's: the ledger records it
-// (meta.dispatch_role); a run from before that field is a business run, and a
-// business runs as one solo worker.
-const DISPATCH_ROLES: ReadonlySet<string> = new Set(["business", "employee", "squad", "agent-x", "planner", "exec", "solo"]);
-const role: DispatchRole = (() => {
-  const recorded = metaStr("dispatch_role");
-  return recorded && DISPATCH_ROLES.has(recorded) ? recorded as DispatchRole : "solo";
-})();
+// The original worker's role, never the operator's: a business runs as one
+// solo worker, a squad as `squad`, the generalist as `agent-x`. Each may open
+// nothing, and the revision carries the same stamp.
+const role: DispatchRole = kind === "business" ? "solo" : kind;
 // The owner chose this runtime (a flag, or a mention in the brief): the
 // revision stays on it and never hands off to another vendor.
 const pinned = ["flag", "brief"].includes(metaStr("runtime_source") ?? "");
 
 /** The brief the run answered: where the run recorded it, else the run's
- *  scaffold root (`<run>/brief.md`, two levels above businesses/<slug>), else
+ *  scaffold root (`<run>/brief.md`, two levels above businesses/<slug> or
+ *  squads/<slug>; `<run>/brief-enriched.md`, one level above agent-x), else
  *  beside the session. Never the project root, which holds no brief. */
 function readBrief(): string | null {
-  const scaffoldRoot = metaStr("scaffold_root") ?? path.resolve(projDir, "..", "..");
-  for (const file of [metaStr("brief_path"), path.join(scaffoldRoot, "brief.md"), path.join(projDir, "brief.md")]) {
+  const scaffoldRoot = metaStr("scaffold_root") ?? (kind === "agent-x" ? path.dirname(projDir) : path.resolve(projDir, "..", ".."));
+  const briefName = kind === "agent-x" ? "brief-enriched.md" : "brief.md";
+  for (const file of [metaStr("brief_path"), path.join(scaffoldRoot, briefName), path.join(projDir, "brief.md")]) {
     if (!file) continue;
     const text = readIfExists(file);
     if (text?.trim()) return text;
@@ -191,9 +202,17 @@ function readBrief(): string | null {
 }
 const brief = readBrief();
 
+/** The squad's own folder, as squad-exec granted it to the run; none for a business or agent-x. */
+function squadDirs(): string[] {
+  if (kind !== "squad") return [];
+  const dir = path.join(paths.SQUADS_DIR, slug);
+  return fs.existsSync(dir) ? [dir] : [];
+}
+
 if (!sessionId) {
-  console.error(c("red", "✗ session.json has no session_id — the runtime conversation cannot be resumed."));
-  process.exit(1);
+  console.error(c("red", `✗ '${projectId}': the ${kind} run's runtime${rt ? ` (${rt})` : ""} returned no session id, so there is no conversation to continue.`));
+  console.error("  Its deliverables stay where they are; a change to them is a new dispatch (nrv dispatch).");
+  process.exit(4);
 }
 
 console.log("");
@@ -218,7 +237,7 @@ const ledgerRun: { handle: runLedger.LedgerHandle; runId: string } | null = (() 
       return { handle, runId: row.run_id };
     }
     const fresh = runLedger.openRun(handle, {
-      traceId: projectId, projectId, projectRoot: row.project_root, targetSlug: slug, targetKind: "business", runtime: rt,
+      traceId: projectId, projectId, projectRoot: row.project_root, targetSlug: row.target_slug ?? slug, targetKind: kind, runtime: rt,
       sessionId, meta: { ...row.meta, revision_of: row.run_id, dispatch_role: role },
     });
     runLedger.markState(handle, fresh.run_id, "running");
@@ -230,29 +249,36 @@ const ledgerRun: { handle: runLedger.LedgerHandle; runId: string } | null = (() 
 })();
 
 const solo = role === "solo";
+// The user's USE_* rules, as the dispatch handed them to the worker.
+const rulesDirective = formatRulesForDirective(loadRuntimeRules(resolveCascadeRoot(projectRoot || process.cwd())));
 const revisePrompt = [
   "REVISION INSTRUCTION (same session: you have the full context of what you produced):",
   "",
   change,
   "",
   `Rewrite or update the deliverables as files under: ${oroot}`,
-  ...(solo ? [`Then update ${path.join(oroot, "_SUMMARY.md")} and ${path.join(oroot, "_CLAIMS.json")} so they describe the revised delivery; each claim's evidence names a file that exists under ${oroot}.`] : []),
+  solo
+    ? `Then update ${path.join(oroot, "_SUMMARY.md")} and ${path.join(oroot, "_CLAIMS.json")} so they describe the revised delivery; each claim's evidence names a file that exists under ${oroot}.`
+    : `Then update ${path.join(oroot, "_SUMMARY.md")} so it describes the revised delivery.`,
   scopeGuard(),
   'Do not print a summary: deliver the updated files. Update the assumptions section ("## Assumptions" or its equivalent in the language of the deliverable) if anything changed.',
 ].join("\n");
 
-appendAudit({ event: "revision_requested", trace_id: projectId, project_id: projectId, business_slug: slug, runtime: rt, session_id: sessionId, dispatch_role: role, pinned }, projectRoot);
+appendAudit({ event: "revision_requested", trace_id: projectId, project_id: projectId, business_slug: kind === "business" ? slug : null,
+  target_kind: kind, target_slug: slug, runtime: rt, session_id: sessionId, dispatch_role: role, pinned }, projectRoot);
 
 const res = runWithCascade({
   runtime: rt,
   prompt: revisePrompt,
   cwd: projectRoot,
-  addDirs: [projDir, oroot],
+  // A squad's own tree, granted again as the run granted it: its resource map
+  // names files under it, and claude-code and agy refuse an ungranted path.
+  addDirs: [projDir, oroot, ...squadDirs()],
   // The folder the session was started in (absent on runs from before runs
   // had one): claude and gemini resume a session only from its own folder.
   workspace: session.workspace || undefined,
   sessionId,
-  appendSystemPrompt: solo ? soloDirective() : AUTONOMOUS_DIRECTIVE,
+  appendSystemPrompt: solo ? soloDirective(rulesDirective) : AUTONOMOUS_DIRECTIVE + rulesDirective,
   dispatchRole: role,
   pinned,
   maxBudgetUsd: maxBudget ? parseFloat(maxBudget) : undefined,
@@ -325,10 +351,11 @@ const deliveryArgs: DeliveryArgs = {
   // Older sessions predate the field: null there, and verify degrades as before.
   manifest: (typeof session.manifest === "string" && session.manifest) ? session.manifest : null,
   pid: projectId,
-  slug,
-  targetKind: "business",
+  slug: kind === "business" ? slug : null,
+  targetKind: kind,
   runtime: finalRuntime,
   producerRole: role,
+  rulesDirective,
   projectDir: projDir,
   projectRoot,
   workingDir: process.cwd(),
@@ -380,7 +407,7 @@ function printOutcome(result: DeliveryResult): void {
 if (!res.ok) {
   const runtimeError = `revision run: ${res.error || res.stderr || `exit ${res.exitCode}`}`;
   console.error(c("red", `✗ revision failed (exit ${res.exitCode}): ${res.error || res.stderr || "unknown"}`));
-  appendAudit({ event: "revision_failed", trace_id: projectId, project_id: projectId, business_slug: slug, exit_code: res.exitCode, error: res.error || res.stderr }, projectRoot);
+  appendAudit({ event: "revision_failed", trace_id: projectId, project_id: projectId, business_slug: kind === "business" ? slug : null, target_kind: kind, exit_code: res.exitCode, error: res.error || res.stderr }, projectRoot);
   // A failed revision does NOT mean nothing changed on disk: the usual case is
   // a limit hit after the edits were written. Judge what exists instead of
   // abandoning it — same policy the dispatch path applies (deliverAfterRuntimeError).
