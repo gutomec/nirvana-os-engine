@@ -12,7 +12,8 @@
  *
  * The pack carries NO engine — only content. Re-running is safe (idempotent).
  */
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { createInterface } from "node:readline";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -209,7 +210,7 @@ async function installEngineWithBun(): Promise<boolean> {
       console.error("    ✗ Asset do engine invalido (sem scripts/install.ts).");
       return false;
     }
-    return await okNested("bun", [installer, "--no-starter"]);
+    return await okNested("bun", [installer, "--no-starter", ...profileArgs]);
   } catch (e) {
     console.error(`    ✗ Falha ao instalar o engine: ${(e as Error).message}`);
     return false;
@@ -224,6 +225,34 @@ const runEngineInstaller = async (): Promise<boolean> => {
   console.log("    Tentando pelo npm (npx)...");
   return okNested("npx", ["-y", "@nirvana-os/cli"]);
 };
+
+// Performance profile: asked HERE, where the terminal is. The engine installer
+// runs nested with its output relayed line by line, so a question it printed
+// would never show; it gets the answer as --profile instead.
+const PROFILES = ["max", "balanced", "economy"];
+const profileFlag = process.argv.find((a) => a.startsWith("--profile="))?.slice("--profile=".length) ?? "";
+function recordedProfile(): string {
+  try {
+    const m = /^\s*profile:\s*["']?(max|balanced|economy)/m.exec(readFileSync(join(HOME, ".nirvana", "config.yaml"), "utf8"));
+    return m ? m[1] : "";
+  } catch { return ""; }
+}
+async function askProfile(): Promise<string> {
+  // i18n-user-facing
+  console.log("\n[perfil] Como o Nirvana deve gastar tokens? (mude depois com: nrv config set execution.profile <nome> --global)");
+  console.log("  1) max       máxima qualidade e maior consumo: esforço xhigh, sem teto de contexto, toda entrega revisada por outro runtime");
+  console.log("  2) balanced  recomendado: esforço high, teto de contexto de 400k, revisão quando uma regra pedir");
+  console.log("  3) economy   menor consumo: esforço medium, teto de contexto de 200k, revisão só quando pedida");
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((done) => rl.question("Escolha 1-3 [2]: ", (a) => {
+    rl.close();
+    const v = a.trim().toLowerCase();
+    done(PROFILES[Number(v) - 1] ?? (PROFILES.includes(v) ? v : "balanced"));
+  }));
+}
+const chosenProfile = PROFILES.includes(profileFlag) ? profileFlag
+  : !recordedProfile() && process.stdin.isTTY ? await askProfile() : "";
+const profileArgs = chosenProfile ? [`--profile=${chosenProfile}`] : [];
 
 if (!enginePresent) {
   console.log("[1/4] Engine not found — installing from GitHub...");
@@ -253,6 +282,12 @@ if (!enginePresent) {
     // Engine já satisfaz o pack: a falha de rede não impede a instalação.
     console.log(`    ⚠ Could not update right now (network?). Carrying on with engine ${installedVer ?? "as installed"}, which already serves this pack.`);
   }
+}
+
+// The installer records the profile when it runs; a skipped or failed update
+// does not, so it is recorded here through the installed engine.
+if (chosenProfile && recordedProfile() !== chosenProfile && existsSync(join(SKILLS, "harness", "scripts", "config.ts"))) {
+  spawnSync("bun", [join(SKILLS, "harness", "scripts", "config.ts"), "set", "execution.profile", chosenProfile, "--global"], { cwd: HOME, stdio: "ignore" });
 }
 
 // 2. Overlay content — surface the REAL error if it fails (sem isso o cliente fica cego).

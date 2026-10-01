@@ -49,7 +49,7 @@
     "test:businesses": "bun test skills/businesses/tests",
     "test:shared": "bun test skills/_shared/tests",
     "test:harness": "bun test skills/harness/tests",
-    "test:gate": "bun test skills/_shared/tests/verify- skills/_shared/tests/validators- skills/_shared/tests/validate-cli-alias skills/harness/tests/entity-admission skills/harness/tests/quality-gate skills/harness/tests/gate-timing skills/harness/tests/gate-zero-files",
+    "test:gate": "bun test skills/_shared/tests/verify- skills/_shared/tests/validators- skills/_shared/tests/validate-cli-alias skills/harness/tests/entity-admission skills/harness/tests/quality-gate skills/harness/tests/gate-zero-files",
     "test:timings": "bun scripts/test-timings.ts",
     "validate": "bun skills/_shared/scripts/validate-mind-clones.ts && bun skills/harness/scripts/validate.ts",
     "glance": "bun skills/harness/scripts/glance.ts",

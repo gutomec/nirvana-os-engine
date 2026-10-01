@@ -12,11 +12,12 @@ Uma resolução só, em `skills/_shared/lib/settings.ts`, com a mesma ordem em t
 |---|---|---|---|
 | 1 | variável de ambiente | o shell, o `.env` do projeto (o Bun carrega o `.env` da pasta onde o comando roda), o env que um spawner monta para o filho | o usuário, o CI, um spawner fixando o efetivo no filho |
 | 2 | projeto | `<projeto>/.nirvana/config.yaml` | `nrv config set --project` (padrão dentro de um projeto) |
-| 3 | global do usuário | `~/.nirvana/config.yaml` (`NIRVANA_HOME` substitui o `~`) | `nrv config set --global`, `nrv embeddings enable` |
-| 4 | padrão do engine | `skills/harness/config.yaml` (instalado em `~/.nirvana/skills/harness/config.yaml`) | o engine; cada `nrv update` sobrescreve |
-| 5 | padrão do schema | `skills/_shared/lib/settings-schema.ts` | o código |
+| 3 | global do usuário | `~/.nirvana/config.yaml` (`NIRVANA_HOME` substitui o `~`) | `nrv config set --global`, `nrv embeddings enable`, o instalador (o perfil) |
+| 4 | perfil de desempenho | `execution.profile` resolvido nas camadas acima; os valores de cada perfil estão em `skills/_shared/lib/profiles.ts` | o usuário, ao escolher o perfil |
+| 5 | padrão do engine | `skills/harness/config.yaml` (instalado em `~/.nirvana/skills/harness/config.yaml`) | o engine; cada `nrv update` sobrescreve |
+| 6 | padrão do schema | `skills/_shared/lib/settings-schema.ts` | o código |
 
-A variável vence sempre: é o contrato de compatibilidade dos scripts, do CI e dos spawners. O arquivo do engine é só a camada 4; ele deixou de ser o lugar onde o usuário persiste escolhas, porque a atualização o apaga. O arquivo global é novo neste corte e sobrevive ao `nrv update`. O arquivo de projeto é o mesmo `.nirvana/config.yaml` que o `locale-resolver.ts` já lia (`locale`); chaves que o schema não conhece são ignoradas, então o `locale` continua onde estava.
+A variável vence sempre: é o contrato de compatibilidade dos scripts, do CI e dos spawners. O perfil fica abaixo dos arquivos do usuário e acima dos padrões do engine: escolher `economy` muda várias chaves de uma vez, e uma chave gravada explicitamente no projeto ou no global continua valendo. O perfil nunca fixa modelo, porque um mesmo id não serve para todos os runtimes. O arquivo do engine é só a camada 4; ele deixou de ser o lugar onde o usuário persiste escolhas, porque a atualização o apaga. O arquivo global é novo neste corte e sobrevive ao `nrv update`. O arquivo de projeto é o mesmo `.nirvana/config.yaml` que o `locale-resolver.ts` já lia (`locale`); chaves que o schema não conhece são ignoradas, então o `locale` continua onde estava.
 
 Descoberta do projeto: `NIRVANA_PROJECT_ROOT`, senão o ancestral mais próximo do diretório atual que tenha um `.nirvana/`. O `~` nunca conta como projeto, mesmo tendo `.nirvana/`: esse é o armazém global, e lê-lo como projeto faria o arquivo global sobrescrever a si mesmo.
 
@@ -60,7 +61,8 @@ Gerada a partir do schema. `nrv config explain <chave>` mostra a descrição de 
 | `execution.headless_skip_permissions` | `NIRVANA_HEADLESS_SKIP_PERMISSIONS` | `true` | global, projeto | true / false |
 | `execution.child_env` | `NIRVANA_CHILD_ENV` | `inherit` | global, projeto | inherit / declared (o `nrv serve` usa `declared` salvo `NIRVANA_SERVE_CHILD_ENV=inherit`) |
 | `execution.max_dispatch_depth` | `NIRVANA_MAX_DISPATCH_DEPTH` | `4` | global, projeto | inteiro >= 0; 0 = ilimitado. Cadeia de agentes despachando agentes. No terminal: empresa (1), assento (2), squad usado pelo assento (3). No Glance o maestro é ele mesmo um filho e tudo desce um nível, então 4 |
-| `execution.business_mode` | `NIRVANA_BUSINESS_MODE` | `chain` | global, projeto | chain / session. Como uma empresa roda quando o pedido não traz `--team` nem `--single`: `chain` é o diretor e uma sessão por cargo, em série; `session` é uma sessão só, com os cargos como subagentes do runtime |
+| `execution.profile` | `NIRVANA_PROFILE` | `none` | global, projeto | none / max / balanced / economy. Uma camada de padrões entre os arquivos do usuário e os padrões do engine (`_shared/lib/profiles.ts`); uma chave definida explicitamente vence o perfil |
+| `execution.context_window` | `NIRVANA_CONTEXT_WINDOW` | `0` | global, projeto | inteiro >= 0 (tokens); 0 = o padrão do runtime. Teto de contexto dos agentes despachados: `CLAUDE_CODE_AUTO_COMPACT_WINDOW` no claude-code, `model_auto_compact_token_limit` no codex |
 | `glance.execution` | `NIRVANA_GLANCE_EXECUTION` | `true` | global, projeto | true / false |
 | `glance.maestro_max_budget_usd` | nenhuma | `5` | global, projeto | número >= 0 (USD); 0 = sem teto |
 | `runtime.provider_catalog_dir` | `NIRVANA_PROVIDER_CATALOG_DIR` | `""` | global, projeto | lista de caminhos separados pelo delimitador do sistema, ou vazio |
@@ -90,6 +92,9 @@ Gerada a partir do schema. `nrv config explain <chave>` mostra a descrição de 
 | `quality_gate.escalate_after` | nenhuma | `2` | global, projeto | inteiro >= 0 |
 | `quality_gate.rubric_fallback` | nenhuma | `prose_shortform` | global, projeto | nome de rubrica |
 | `quality_gate.default_judge_model` | nenhuma | `inherit` | global, projeto | id de modelo ou inherit |
+| `review.policy` | `NIRVANA_REVIEW_POLICY` | `rule` | global, projeto | always / rule / on-request / never. Quando uma entrega passa por revisão |
+| `review.runtime` | `NIRVANA_REVIEW_RUNTIME` | `other` | global, projeto | other / same. Runtime do revisor |
+| `review.max_rounds` | `NIRVANA_REVIEW_MAX_ROUNDS` | `1` | global, projeto | inteiro >= 0. Rodadas de correção depois de uma revisão reprovada |
 
 Formas legadas das variáveis, mantidas por compatibilidade: `NIRVANA_MULTI_TARGET_KILL_SWITCH=1|true|on` desliga o multi-target e `NIRVANA_MULTI_TARGET_ENGINE=0|false|off` também (em `1` a flag antiga é aceita e não faz nada); `NIRVANA_HEADLESS_SKIP_PERMISSIONS` e `NIRVANA_GLANCE_EXECUTION` só desligam com `0|false|off|no`, qualquer outro texto mantém o padrão ligado; `NIRVANA_NO_UPDATE_CHECK=1|true|yes` desliga a verificação; uma variável vazia é o mesmo que ausente. Para todas as outras a variável carrega o valor no formato da chave, e um texto fora do tipo é erro com o nome da variável.
 
@@ -111,9 +116,11 @@ Cada interruptor do schema tem exatamente um caminho de leitura, `resolveSetting
 | `delivery.produces_to_rubric` | `harness/scripts/dispatch.ts` (`deliveryArgs`) |
 | `execution.default_runtime` | `harness/scripts/dispatch.ts`, `control-plane/execution-runner.ts` |
 | `execution.model` | `_shared/lib/system-model.ts` |
-| `execution.dna_injection` | `harness/lib/dispatch.ts`, `harness/lib/squad-exec.ts`, `businesses/lib/employee-prompt.ts` |
+| `execution.dna_injection` | `harness/lib/dispatch.ts`, `harness/lib/squad-exec.ts` |
 | `execution.headless_skip_permissions` | `_shared/lib/host-agent-driver.ts` |
-| `execution.business_mode` | `harness/scripts/dispatch.ts` |
+| `execution.profile` | `_shared/lib/settings.ts` (a camada de perfil, com os valores de `_shared/lib/profiles.ts`) |
+| `execution.context_window` | `_shared/lib/host-agent-driver.ts` (`contextWindowSetting`), `harness/scripts/guard.ts` |
+| `review.policy`, `runtime`, `max_rounds` | `harness/scripts/dispatch.ts` → `harness/lib/solo-review.ts` |
 | `glance.execution` | `harness/scripts/glance.ts` |
 | `runtime.provider_catalog_dir`, `allow_stale_catalog` | `harness/lib/runtime-snapshot.ts` |
 | `routing.mode` | `_shared/lib/routing-mode.ts`; o modo `cards` roda em `harness/lib/cards-router.ts` |

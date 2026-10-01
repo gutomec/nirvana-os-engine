@@ -10,7 +10,11 @@
  * Re-running is safe (idempotent). Existing user settings are preserved.
  *
  * Usage:
- *   bun scripts/install.ts
+ *   bun scripts/install.ts [--profile=max|balanced|economy]
+ *
+ * The performance profile is asked once, in an interactive terminal, when no
+ * profile is recorded yet; --profile sets it without asking. A run with no
+ * terminal and no flag records none (the engine defaults hold).
  */
 
 import { cpSync, existsSync, mkdirSync, chmodSync, readdirSync, rmSync, writeFileSync, readFileSync, statSync, symlinkSync, lstatSync, renameSync } from "node:fs";
@@ -71,6 +75,7 @@ const FLAG_NO_HERMES_HOOKS = args.includes("--no-hermes-hooks");
 // Forces COPYING the skills into the runtime dirs instead of symlinking (Windows
 // already forces this automatically; useful on any FS/runtime that cannot resolve links).
 const FLAG_COPY_SKILLS = args.includes("--copy-skills");
+const FLAG_PROFILE = (args.find((a) => a.startsWith("--profile="))?.slice("--profile=".length) ?? "").trim().toLowerCase();
 
 function header(): void {
   console.log("Nirvana OS installer");
@@ -1024,6 +1029,67 @@ async function offerHermesBridge(): Promise<boolean> {
   return healthy;
 }
 
+// ── Performance profile ────────────────────────────────────────────────────
+// Written through the INSTALLED engine (`config.ts set ... --global`), after
+// the dependencies are in place: the settings core needs them, and the global
+// file it writes (~/.nirvana/config.yaml) survives every later update.
+
+const PROFILES = ["max", "balanced", "economy"] as const;
+const PROFILE_HELP: Record<(typeof PROFILES)[number], string> = {
+  max: "highest quality, highest token use: xhigh effort, no context ceiling, every delivery reviewed by another runtime",
+  balanced: "recommended: high effort, a 400k context ceiling, review when a rule asks for it",
+  economy: "lowest token use: medium effort, a 200k context ceiling, review only on request",
+};
+
+function engineConfig(argv: string[]) {
+  // From HOME, which is never a project: the global file is the one read and written.
+  return spawnSync(process.execPath, [join(NIRVANA_SKILLS, "harness/scripts/config.ts"), ...argv], { cwd: HOME, encoding: "utf8" });
+}
+
+/** The profile recorded in the global config, or "" when there is none. */
+function recordedProfile(): string {
+  const r = engineConfig(["get", "execution.profile", "--json"]);
+  try {
+    const d = JSON.parse(r.stdout);
+    return d.source === "global" && d.value !== "none" ? String(d.value) : "";
+  } catch { return ""; }
+}
+
+async function promptProfile(): Promise<string> {
+  console.log();
+  console.log("[profile] How should Nirvana spend tokens? (change later: nrv config set execution.profile <name> --global)");
+  PROFILES.forEach((name, i) => console.log(`  ${i + 1}) ${name.padEnd(9)} ${PROFILE_HELP[name]}`));
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((done) => {
+    rl.question("Choose 1-3 [2]: ", (answer) => {
+      rl.close();
+      const a = answer.trim().toLowerCase();
+      const byNumber = PROFILES[Number(a) - 1];
+      done(byNumber ?? (PROFILES as readonly string[]).find((p) => p === a) ?? "balanced");
+    });
+  });
+}
+
+async function chooseProfile(): Promise<boolean> {
+  let profile = FLAG_PROFILE;
+  if (profile && !(PROFILES as readonly string[]).includes(profile)) {
+    console.log(`  ! --profile must be one of ${PROFILES.join(", ")}; no profile recorded.`);
+    return false;
+  }
+  if (!profile) {
+    if (recordedProfile()) return true;     // an update never asks again
+    if (!process.stdin.isTTY) return true;  // no terminal, no flag: the engine defaults hold
+    profile = await promptProfile();
+  }
+  const r = engineConfig(["set", "execution.profile", profile, "--global"]);
+  if (r.status !== 0) {
+    console.log(`  ! could not record the profile (${(r.stderr || r.stdout).trim().split("\n")[0]}); run: nrv config set execution.profile ${profile} --global`);
+    return false;
+  }
+  console.log(`  ✓ performance profile: ${profile} (${PROFILE_HELP[profile as (typeof PROFILES)[number]]})`);
+  return true;
+}
+
 function checkOnly(): void {
   console.log("=== Nirvana OS — install check ===");
   let allReady = true;
@@ -1144,6 +1210,7 @@ async function main(): Promise<void> {
   // After the starter pack (so seeded content is in the index) and outside it
   // (so an engine-only install gets registries too — see buildRegistries).
   buildRegistries();
+  if (!await chooseProfile()) process.exitCode = 1;
   if (!await offerHermesBridge()) process.exitCode = 1;
   summary();
 }

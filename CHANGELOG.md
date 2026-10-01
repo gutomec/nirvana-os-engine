@@ -8,9 +8,27 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
-### The loop guard counts repeats per target
+### One agent per business; the chain, the director and the session mode are gone
 
-The orchestrator skill told every revision to tick `nrv guard tick --action revision`, one fixed signature for all of them. Three seats revised once each read as one action repeated three times, tripped `repeated_action` and blocked a run that was not looping. The skill now asks for a signature that names the target (`--action revision:<seat>`, `retry:<squad>`), so the guard stops only when the same target is revised three times; the 12-step ceiling is unchanged.
+A business now runs as ONE agent. It reads the brief the orchestrator wrote for it, plays its seats from their files, writes in a clone's voice after loading that clone's persona, and uses a squad by reading the squad's work card (`nrv cards squad <slug>`, about 5% of the squad's size) and working as its agents. It dispatches nothing: a new `solo` role has an empty allowance. It works in phases with its state in `_work/PROGRESS.md` and ends with `_SUMMARY.md`, `_CLAIMS.json` and `participation.json`.
+
+Measured on a real run of the chain this replaces: 21 agents for one request (9 seats, 11 reviews), each born with about 47k tokens of base context plus a 10k seat prompt, 76% of the plan spent re-reading context, 7.5 hours of wall clock. `execution.business_mode`, `--team`, `--single`, `nrv team`, the director, the seat prompt builder and the session mode are removed; the gauntlet producer and the report publisher use the same solo worker.
+
+### Review is an exception decided by a rule
+
+At most one reviewer checks a whole delivery, and only when a rule says so (`review.policy`: `always`, `rule`, `on-request`, `never`): the user asked (`--review`), the business manifest marks the work sensitive, or a deterministic precheck failed. `--no-review` declines it. The reviewer runs on another runtime when one is available (`review.runtime`), checks the worker's claims, and the engine scores the answer; a rejection goes back to the worker in its own session, at most `review.max_rounds` times, then the delivery goes on with `_QA-RESERVATIONS.md`.
+
+### Performance profiles and a context ceiling for workers
+
+`execution.profile` (`max`, `balanced`, `economy`) is a layer of defaults between the user's files and the engine defaults: it moves effort, the workers' context ceiling, the review policy, routing and the judge at once, and an explicit key still wins. No profile pins a model. The installer asks for one once, in an interactive terminal (`--profile=<name>` sets it without asking). `execution.context_window` reaches claude as `CLAUDE_CODE_AUTO_COMPACT_WINDOW` and codex as `model_auto_compact_token_limit`.
+
+### A lean orchestrator protocol, project contract and brief
+
+The harness protocol is 8 KB instead of 57 KB: pick the businesses, write each a six-section brief (`nrv brief template`, checked by `nrv brief check`, updated mid-run by `nrv brief decide`), dispatch in the background, read `_SUMMARY.md`. The contract `nrv init` writes is 5.6 KB instead of 22 KB (marker v3; re-running init refreshes a v2 contract), and the project skeleton keeps only what the engine reads (`.env.example`: 24 KB to 2 KB; 20 documented variables were read by nothing).
+
+### The project's scope lives in `.nirvana/project.yaml`
+
+`scope.ts` and `paths.js` read the scope from the project manifest (environment, then manifest, then a legacy `.env`, then `global`). `nrv init` creates no `.env`; `--scope` writes the manifest, a `NIRVANA_SCOPE` line in an existing `.env` moves into it, and `--adopt` carries it without touching the `.env`. The Glance config panel reads and writes the manifest. Superseded protocols (Squad v2, v4, v5; Business v1; Harness v1) and stale notes move to `docs/legacy/`, which install never copies.
 
 ## 0.14.9 — 2026-09-30
 

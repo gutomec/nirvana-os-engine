@@ -8,9 +8,27 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
-### O disjuntor de laço conta repetições por alvo
+### Um agente por empresa; a cadeia, o diretor e o modo session saíram
 
-A skill do orquestrador mandava toda revisão registrar `nrv guard tick --action revision`, uma assinatura fixa para todas. Três cargos revisados uma vez cada viravam uma ação repetida três vezes, disparavam `repeated_action` e travavam uma execução que não estava em laço. A skill agora pede uma assinatura com o alvo (`--action revision:<cargo>`, `retry:<squad>`), então o disjuntor só para quando o mesmo alvo é revisado três vezes; o teto de 12 passos não muda.
+Uma empresa agora roda como UM agente. Ele lê o brief que o orquestrador escreveu para ela, assume os cargos a partir dos arquivos deles, escreve na voz de um clone depois de carregar a persona desse clone e usa um squad lendo o cartão de trabalho do squad (`nrv cards squad <slug>`, cerca de 5% do tamanho do squad) e trabalhando como os agentes dele. Ele não despacha nada: o novo papel `solo` tem permissão vazia. Trabalha em fases, com o estado em `_work/PROGRESS.md`, e termina com `_SUMMARY.md`, `_CLAIMS.json` e `participation.json`.
+
+Medido numa execução real da cadeia que ele substitui: 21 agentes para um pedido (9 cargos, 11 revisões), cada um nascendo com cerca de 47 mil tokens de contexto base mais um prompt de cargo de 10 mil, 76% do plano gasto relendo contexto, 7,5 horas de relógio. Saem `execution.business_mode`, `--team`, `--single`, `nrv team`, o diretor, o montador de prompt de cargo e o modo session; o produtor do gauntlet e o publicador de relatório usam o mesmo worker solo.
+
+### Revisão é exceção, decidida por regra
+
+No máximo um revisor confere a entrega inteira, e só quando uma regra manda (`review.policy`: `always`, `rule`, `on-request`, `never`): o usuário pediu (`--review`), o manifesto da empresa marca o trabalho como sensível, ou uma checagem determinística falhou. `--no-review` recusa. O revisor roda em outro runtime quando houver um disponível (`review.runtime`), confere as afirmações do worker, e o engine pontua a resposta; uma reprovação volta ao worker na própria sessão, no máximo `review.max_rounds` vezes, e então a entrega segue com `_QA-RESERVATIONS.md`.
+
+### Perfis de desempenho e um teto de contexto para os workers
+
+`execution.profile` (`max`, `balanced`, `economy`) é uma camada de padrões entre os arquivos do usuário e os padrões do engine: muda de uma vez o esforço, o teto de contexto dos workers, a política de revisão, o roteamento e o juiz, e uma chave explícita continua vencendo. Nenhum perfil fixa modelo. O instalador pergunta uma vez, num terminal interativo (`--profile=<nome>` define sem perguntar). `execution.context_window` chega ao claude como `CLAUDE_CODE_AUTO_COMPACT_WINDOW` e ao codex como `model_auto_compact_token_limit`.
+
+### Protocolo do orquestrador, contrato de projeto e brief enxutos
+
+O protocolo do harness tem 8 KB em vez de 57 KB: escolher as empresas, escrever para cada uma um brief de seis seções (`nrv brief template`, conferido por `nrv brief check`, atualizado durante a execução por `nrv brief decide`), despachar em segundo plano, ler o `_SUMMARY.md`. O contrato que o `nrv init` grava tem 5,6 KB em vez de 22 KB (marcador v3; rodar o init de novo atualiza um contrato v2), e o esqueleto do projeto guarda só o que o engine lê (`.env.example`: de 24 KB para 2 KB; 20 variáveis documentadas não eram lidas por nada).
+
+### O escopo do projeto vive em `.nirvana/project.yaml`
+
+`scope.ts` e `paths.js` leem o escopo do manifesto do projeto (ambiente, depois manifesto, depois um `.env` legado, depois `global`). O `nrv init` não cria `.env`; `--scope` grava o manifesto, uma linha `NIRVANA_SCOPE` num `.env` existente migra para ele, e `--adopt` a leva sem tocar no `.env`. O painel de configuração do Glance lê e grava o manifesto. Protocolos superados (Squad v2, v4, v5; Business v1; Harness v1) e notas desatualizadas vão para `docs/legacy/`, que a instalação nunca copia.
 
 ## 0.14.9 — 2026-09-30
 
