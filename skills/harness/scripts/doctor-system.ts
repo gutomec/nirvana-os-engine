@@ -726,8 +726,8 @@ if (fs.existsSync(agentsSkillsDir)) {
 // "before touching the project, regardless of skill activation". A working
 // directory with none of them still orchestrates — the skill carries the
 // protocol, and since 2026-08-13 the dispatch instruction carries the build and
-// writing rules — but nothing tells the runtime to reach for the skill in the
-// first place. That is a real degradation and it should be visible, not
+// writing rules — but nothing tells the runtime that Nirvana is here when a
+// request asks for it. That is a real degradation and it should be visible, not
 // inferred. Checked only when the cwd looks like a working project, so running
 // the doctor from a home directory is not scolded.
 {
@@ -740,7 +740,7 @@ if (fs.existsSync(agentsSkillsDir)) {
     add("project: contract", "PASS", `${found.join(", ")} present`);
   } else {
     add("project: contract", "WARN",
-      `no ${PROJECT_CONTRACT_FILES.join(" / ")} in ${cwd.replace(HOME, "~")} — the runtime has no instruction to invoke Nirvana, so a brief may be answered inline instead of dispatched. Fix: nrv init .`);
+      `no ${PROJECT_CONTRACT_FILES.join(" / ")} in ${cwd.replace(HOME, "~")} — the runtime is not told Nirvana is here, so a request that names it or asks for a business, squad or mind-clone may not reach it. Fix: nrv init .`);
   }
 }
 
