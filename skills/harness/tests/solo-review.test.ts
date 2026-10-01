@@ -58,11 +58,9 @@ describe("decideReview", () => {
 });
 
 describe("the signals", () => {
-  test("a manifest asks for review with review: required or review_required: true", () => {
+  test("a manifest asks for review with review: required", () => {
     expect(businessWantsReview(bizDir)).toBe(false);
     write(path.join(bizDir, "business.yaml"), "name: biz\nreview: required\n");
-    expect(businessWantsReview(bizDir)).toBe(true);
-    write(path.join(bizDir, "business.yaml"), "name: biz\nreview_required: true\n");
     expect(businessWantsReview(bizDir)).toBe(true);
   });
 

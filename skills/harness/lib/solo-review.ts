@@ -58,12 +58,10 @@ export function decideReview(s: ReviewSignals): ReviewDecision {
   }
 }
 
-/** Whether a business manifest asks for review: `review: required` or `review_required: true` in business.yaml. */
+/** Whether a business manifest asks for review: `review: required` in business.yaml. */
 export function businessWantsReview(bizDir: string): boolean {
-  try {
-    const doc = parseYaml(fs.readFileSync(path.join(bizDir, "business.yaml"), "utf8"));
-    return doc?.review === "required" || doc?.review_required === true;
-  } catch { return false; }
+  try { return parseYaml(fs.readFileSync(path.join(bizDir, "business.yaml"), "utf8"))?.review === "required"; }
+  catch { return false; }
 }
 
 /** Runtimes in the order a different reviewer is preferred. */

@@ -400,9 +400,9 @@ export const BusinessManifestSchema = z.object({
   example_briefs: z.array(z.string().min(20).max(LIMITS.business_example_briefs_item_max!)).max(LIMITS.business_example_briefs_max!).optional(),
   keywords: z.array(z.string().min(2).max(60)).max(LIMITS.business_keywords_max!).optional(),
   squads_authorized: z.array(z.string().regex(KEBAB_CASE)).optional().nullable(),
-  // Business Protocol v2 (accepted, not yet read): open preference list, routing
-  // fences and a per-run budget. The manifest is passthrough, so `not_for`
-  // stays as loose as it already was; the others are new keys.
+  // Business Protocol v2: an open preference list (the solo worker gets a card
+  // for each), routing fences and a per-run budget. The manifest is
+  // passthrough, so `not_for` stays as loose as it already was.
   squads_preferred: z.array(z.string().regex(KEBAB_CASE)).optional(),
   // Business Protocol 2.0 §6.9. Bounded like a fence, not like prose: the
   // router fires an entry <=25 chars by substring and a longer one by >=60%
@@ -411,6 +411,9 @@ export const BusinessManifestSchema = z.object({
   // entry is a sentence; the count ceiling is configurable.
   not_for: z.array(z.string().min(5).max(80)).max(LIMITS.business_not_for_max!).optional(),
   run_budget_usd: z.number().min(0).optional(),
+  // `required` makes every delivery of this business reviewed under
+  // review.policy "rule" (harness/lib/solo-review.ts).
+  review: z.enum(['required']).optional(),
   operation_mode: z.enum(['zero_human', 'hybrid', 'human_in_loop']).default('zero_human'),
   output: z.object({
     base_dir: z.string().default('default'),
