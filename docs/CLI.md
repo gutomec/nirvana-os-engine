@@ -67,7 +67,7 @@ Useful flags on `run` / `auto`: `--single` / `--team` (how many seats of the bus
 
 | Command | What it does |
 |---|---|
-| `nrv init <dir>` | Create a new Nirvana project. `--copy` (portable delivery), `--scope=project` (isolated). |
+| `nrv init <dir>` | Create a new Nirvana project. `--copy` (portable delivery), `--scope=project` (isolated). By default agents in the project work as they would without Nirvana and use it only when a request names it, asks for a business, a squad or a mind-clone, or asks for another runtime; `--orchestrators=always` makes Nirvana the orchestrator of every artifact. Rerunning init switches an existing project to the mode it is given. |
 | `nrv resume <project>` | Resume an incomplete project from its audit log. |
 | `nrv export <project> [--format=zip\|tgz]` | Bundle a project's outputs to share. |
 | `nrv clean <project> [--hard]` | Remove a project scaffold (trash by default). |

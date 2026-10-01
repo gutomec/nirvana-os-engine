@@ -8,6 +8,10 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Nirvana stays out of the way until a request calls for it
+
+A runtime with Nirvana installed used to treat every concrete artifact as a dispatch: the skill descriptions asked for it, `nrv init` wrote the full invocation contract by default, and the Gemini and Antigravity session hook told every session to load the harness. Now the default is `on-demand`, and the agent works as it would without Nirvana. It reaches for Nirvana only when the request names Nirvana or nirvana-os, asks for one of the user's businesses, squads or mind-clones, or asks for the work (or a part of it) to run on another runtime. The `nirvana` and `harness` skill descriptions list exactly those triggers and say to work normally otherwise. `nrv init` writes the short on-demand note (v2) unless `--orchestrators=always` is passed and records the mode in `.nirvana/project.yaml`. Rerunning it switches an existing project in place, both ways, keeping the user's own lines. The session hook reads the project's mode and speaks the orchestrator text only in an `always` project.
+
 ### One agent per business; the chain, the director and the session mode are gone
 
 A business now runs as ONE agent. It reads the brief the orchestrator wrote for it, plays its seats from their files, writes in a clone's voice after loading that clone's persona, and uses a squad by reading the squad's work card (`nrv cards squad <slug>`, about 5% of the squad's size) and working as its agents. It dispatches nothing: a new `solo` role has an empty allowance. It works in phases with its state in `_work/PROGRESS.md` and ends with `_SUMMARY.md`, `_CLAIMS.json` and `participation.json`.

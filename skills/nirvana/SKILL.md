@@ -1,6 +1,6 @@
 ---
 name: nirvana
-description: "Nirvana-OS entry point: the user's own operating system of businesses (empresas), squads and mind-clones. Use it to list or inspect them ('quais são minhas empresas', 'quais squads eu tenho', 'what businesses/squads do I have', 'liste minhas empresas', 'quais mind-clones eu tenho', 'o que o nirvana pode fazer'), whenever the user invokes the system by name ('use o nirvana-os', 'via nirvana', 'pelo nirvana', 'orquestre via nirvana', 'manda o nirvana', 'use minhas empresas/squads', 'use Nirvana-OS to…'), for any concrete artifact asked for through it (book, video, report, design, code, campaign, any deliverable), and to create, validate, inspect or migrate a business or a squad ('crie uma empresa', 'valide o squad X'). Discovery runs the `nrv` CLI; production hands the brief to the harness orchestrator; lifecycle goes to the businesses and squads protocols. When the engine is missing, this skill installs it first."
+description: "Nirvana-OS entry point: the user's own system of businesses (empresas), squads and mind-clones. Use it ONLY when the request calls for it: it names Nirvana or nirvana-os ('use o nirvana-os', 'via nirvana', 'pelo nirvana', 'manda o nirvana'); asks for one of the user's businesses, squads or mind-clones, by name or by kind ('use minhas empresas/squads', 'o squad de copy', 'com a voz do Hormozi'); asks for the work, or a part of it, to run on another agent runtime ('use o codex para revisar'); asks what they have ('quais são minhas empresas', 'quais squads eu tenho', 'o que o nirvana pode fazer'); or asks to create, validate or migrate a business or a squad. Otherwise do not use it: work as you normally would. Discovery runs the `nrv` CLI, production goes to the harness orchestrator, lifecycle to the protocols; a missing engine is installed first."
 compatibility: "Needs Bun and the `nrv` CLI. If they are absent it installs them on first use with the user's go-ahead: Bun in user space, the engine into ~/.nirvana, `nrv` into ~/.local/bin. Runtime-agnostic, no dependency on any specific agent CLI. Network is required for that first install only; everything after it runs locally."
 tools: [Bash, Read]
 license: SUL-1.0
@@ -21,8 +21,8 @@ to the registries, and the `harness` skill is the orchestrator that turns a brie
 into dispatched work with an audit trail.
 
 You are at the entry point: decide whether the engine is here, whether this is
-discovery or production, and who executes. Always answer in the user's language
-(default PT-BR). Never invent the name of a business, a squad or a mind-clone.
+discovery or production, and who executes. Always answer in the language of the
+request. Never invent the name of a business, a squad or a mind-clone.
 Report only what `nrv` actually prints.
 
 ## 1. Is the engine here?

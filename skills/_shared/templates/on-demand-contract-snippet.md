@@ -1,14 +1,20 @@
+<!-- nirvana-os:on-demand-contract:v2 -->
+## Nirvana-OS: installed, out of the way
 
-<!-- nirvana-os:on-demand-contract:v1 -->
-## Nirvana-OS — available on demand
+Work as you would without it. Answer, write, code and build with your own
+tools; Nirvana-OS does nothing here unless the request calls for it.
 
-Nirvana-OS is installed in this environment, in **on-demand mode**: it is NOT
-the default orchestrator for this project. Do not route ordinary work through
-it, and do not treat its protocols as this project's defaults.
+Use it only when the user's request:
+- names it ("use o Nirvana", "via nirvana-os", "use Nirvana to …");
+- asks for one of their businesses, squads or mind-clones, by name or by kind
+  ("use minha empresa de lançamentos", "o squad de copy", "com a voz do Hormozi");
+- asks for the work, or a part of it, to run on another agent runtime
+  ("use o codex para revisar", "rode no agy").
 
-Invoke it ONLY when the user explicitly asks — "use o Nirvana para X", "use
-Nirvana to X", "dispatch this to a squad/business". On that request, invoke the
-`harness` skill with the user's brief verbatim and let it orchestrate
-(businesses → squads → quality gate → audit). Utility lookups on request:
-`nrv list-squads`, `nrv list-businesses`, `nrv find-clone "<need>"`,
-`nrv glance`.
+Then invoke the `nirvana` skill with the user's words verbatim; a runtime that
+reads files instead reads `~/.nirvana/skills/harness/SKILL.md` and follows it.
+Questions about the library are lookups: `nrv list-businesses`,
+`nrv list-squads`, `nrv list-clones`.
+
+If `NIRVANA_DISPATCH_DEPTH` is set, Nirvana dispatched you: do the work in your
+brief yourself and never invoke Nirvana again.

@@ -8,6 +8,10 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### O Nirvana fica fora do caminho até um pedido chamá-lo
+
+Um runtime com o Nirvana instalado tratava todo artefato concreto como despacho: as descrições das skills pediam isso, o `nrv init` escrevia o contrato de invocação completo por padrão e o hook de sessão do Gemini e do Antigravity mandava toda sessão carregar o harness. Agora o padrão é `on-demand`, e o agente trabalha como trabalharia sem o Nirvana. Ele só recorre ao Nirvana quando o pedido cita o Nirvana ou o nirvana-os, pede uma das empresas, squads ou mind-clones do usuário, ou pede que o trabalho (ou parte dele) rode em outro runtime. As descrições das skills `nirvana` e `harness` listam exatamente esses gatilhos e mandam trabalhar normalmente fora deles. O `nrv init` escreve a nota curta on-demand (v2), a menos que receba `--orchestrators=always`, e grava o modo em `.nirvana/project.yaml`. Rodar de novo troca o modo de um projeto existente no lugar, nos dois sentidos, e preserva as linhas do usuário. O hook de sessão lê o modo do projeto e só fala como orquestrador num projeto `always`.
+
 ### Um agente por empresa; a cadeia, o diretor e o modo session saíram
 
 Uma empresa agora roda como UM agente. Ele lê o brief que o orquestrador escreveu para ela, assume os cargos a partir dos arquivos deles, escreve na voz de um clone depois de carregar a persona desse clone e usa um squad lendo o cartão de trabalho do squad (`nrv cards squad <slug>`, cerca de 5% do tamanho do squad) e trabalhando como os agentes dele. Ele não despacha nada: o novo papel `solo` tem permissão vazia. Trabalha em fases, com o estado em `_work/PROGRESS.md`, e termina com `_SUMMARY.md`, `_CLAIMS.json` e `participation.json`.

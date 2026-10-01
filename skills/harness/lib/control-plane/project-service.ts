@@ -103,6 +103,17 @@ export class ProjectService {
     return next;
   }
 
+  /** Change how agents in the project reach Nirvana (`always` / `on-demand`). */
+  setOrchestrationMode(projectRoot: string, mode: OrchestrationMode): Project {
+    const root = canonicalRoot(projectRoot);
+    const file = manifestPath(root);
+    const next: Project = { ...this.read(root), orchestration_mode: mode };
+    const temporary = `${file}.${process.pid}.tmp`;
+    fs.writeFileSync(temporary, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+    fs.renameSync(temporary, file);
+    return next;
+  }
+
   read(projectRoot: string): Project {
     const root = canonicalRoot(projectRoot);
     const file = manifestPath(root);
@@ -123,7 +134,7 @@ export class ProjectService {
       display_name: input.displayName || path.basename(plan.project_root),
       created_at: new Date().toISOString(), lifecycle: "active",
       workspace: { workspace_id: `wsp_${randomUUID()}`, relative_root: ".", kind: "local" },
-      scope: input.scope || "global", orchestration_mode: input.orchestrationMode || "always",
+      scope: input.scope || "global", orchestration_mode: input.orchestrationMode || "on-demand",
     };
     const temporary = `${plan.manifest_path}.${process.pid}.tmp`;
     // JSON is a strict YAML 1.2 subset. Keeping the manifest JSON-shaped avoids

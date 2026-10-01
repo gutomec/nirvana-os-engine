@@ -249,10 +249,10 @@ USAGE
   bun init-project.ts <target_dir>                    create project at <target_dir>
   bun init-project.ts <target_dir> --scope=project    scope in .nirvana/project.yaml: only the project's entities
   bun init-project.ts <target_dir> --scope=merge      scope in .nirvana/project.yaml: project entities over the global ones
-  bun init-project.ts <target_dir> --orchestrators=always     Nirvana is the default orchestrator
-  bun init-project.ts <target_dir> --orchestrators=on-demand  Nirvana acts only when explicitly asked
-                                   (no flag + existing AGENTS/CLAUDE/GEMINI.md + TTY → you are asked,
-                                    on-demand recommended; non-interactive keeps "always")
+  bun init-project.ts <target_dir> --orchestrators=on-demand  default: agents work as usual and use Nirvana only
+                                   when the request names it, asks for a business, squad or
+                                   mind-clone, or asks for another runtime
+  bun init-project.ts <target_dir> --orchestrators=always     Nirvana is the default orchestrator for every artifact
   bun init-project.ts <target_dir> --with-skills      symlink .agents/skills → ~/.nirvana/skills
   bun init-project.ts <target_dir> --copy             embed a snapshot of all skills (portable)
   bun init-project.ts <target_dir> --link             re-run skill linking (no-op without --with-skills)
@@ -438,53 +438,38 @@ async function main() {
       refreshManagedBlock(dst, "invocation contract", ["<!-- nirvana-os:invocation-contract:v1 -->", "<!-- nirvana-os:invocation-contract:v2 -->"], INVOCATION_CONTRACT_MARKER, agentsTemplate);
     const refreshWritingContract = (dst: string) =>
       refreshManagedBlock(dst, "writing contract", ["<!-- nirvana-os:writing-contract:v1 -->"], WRITING_CONTRACT_MARKER, writingContractSnippet, "Gate flags = build fails. No auto-rewrite.");
-    const ON_DEMAND_MARKER = "<!-- nirvana-os:on-demand-contract:v1 -->";
+    const ON_DEMAND_MARKER = "<!-- nirvana-os:on-demand-contract:v2 -->";
+    const INVOCATION_MARKERS = ["<!-- nirvana-os:invocation-contract:v1 -->", "<!-- nirvana-os:invocation-contract:v2 -->", INVOCATION_CONTRACT_MARKER];
+    const ON_DEMAND_MARKERS = ["<!-- nirvana-os:on-demand-contract:v1 -->", ON_DEMAND_MARKER];
 
-    // How Nirvana behaves in THIS project is the owner's call, and it matters
-    // most exactly when the project already has instruction files: appending
-    // the invocation contract to a pre-existing AGENTS.md turns Nirvana into
-    // the default orchestrator for every agent in the repo — a significant,
-    // silent behavior change for a project that was already configured.
+    // How Nirvana behaves in THIS project:
     //
-    //   always    → Nirvana is the default orchestrator (the full contract)
-    //   on-demand → Nirvana acts only when explicitly asked ("use o Nirvana
-    //               para X"); instruction files gain one short marked note and
-    //               nothing else
+    //   on-demand (default) → the agent works as it would without Nirvana and
+    //               reaches for it only when the request names Nirvana, asks
+    //               for a business, a squad or a mind-clone, or asks for work
+    //               on another runtime; instruction files carry one short note
+    //   always    → Nirvana is the default orchestrator: every concrete
+    //               artifact is dispatched (the full contract)
     //
-    // Interactive TTY with pre-existing instruction files and no flag: ask,
-    // recommending on-demand. Non-interactive without a flag keeps the
-    // historical default (always) so CI and scripts do not change behavior.
-    const preexisting = ["AGENTS.md", "CLAUDE.md", "GEMINI.md"].filter((n) => fs.existsSync(path.join(target, n)));
-    if (!orchestrators && preexisting.length && process.stdin.isTTY && process.stdout.isTTY) {
-      const readline = require("node:readline/promises");
-      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-      const answer = (await rl.question(
-        `\nThis project already has ${preexisting.join(", ")}.\n` +
-        `How should Nirvana's orchestrators behave here?\n` +
-        `  [1] on-demand (recommended for existing projects) — act only when explicitly asked\n` +
-        `  [2] always — Nirvana becomes the default orchestrator for every agent\n` +
-        `Choice [1/2, default 1]: `)).trim();
-      rl.close();
-      orchestrators = answer === "2" ? "always" : "on-demand";
-    }
-    if (!orchestrators) {
-      orchestrators = "always";
-      if (preexisting.length) {
-        log.info(`pre-existing instruction files found; using --orchestrators=always (the historical default). Pass --orchestrators=on-demand to keep Nirvana opt-in here.`);
-      }
-    }
-
+    // Re-running init switches a project to the mode it is given, so a project
+    // that got "always" from the old default becomes on-demand unless
+    // --orchestrators=always is passed.
+    if (!orchestrators) orchestrators = "on-demand";
     if (orchestrators === "on-demand") {
-      // Structure and global skills stay available; instruction files gain ONE
-      // short marked note telling agents Nirvana exists and acts only on
-      // explicit request. No invocation contract, no writing contract — the
-      // project's configured behavior stays its own.
+      // Structure and global skills stay available; instruction files carry ONE
+      // short marked note (the on-demand contract). A full invocation contract
+      // an earlier init wrote is replaced by it, in place; the user's own lines
+      // and the writing contract stay.
       for (const name of ["AGENTS.md", "CLAUDE.md", "GEMINI.md"]) {
-        appendWithMarker(onDemandSnippet, path.join(target, name), ON_DEMAND_MARKER, "on-demand contract");
+        const dst = path.join(target, name);
+        refreshManagedBlock(dst, "on-demand contract", [...INVOCATION_MARKERS, ON_DEMAND_MARKERS[0]], ON_DEMAND_MARKER, onDemandSnippet);
+        appendWithMarker(onDemandSnippet, dst, ON_DEMAND_MARKER, "on-demand contract");
       }
     } else if (fs.existsSync(agentsTemplate)) {
       for (const name of ["AGENTS.md", "CLAUDE.md", "GEMINI.md"]) {
         const dst = path.join(target, name);
+        // An on-demand note becomes the full contract when the project opts in.
+        refreshManagedBlock(dst, "invocation contract", ON_DEMAND_MARKERS, INVOCATION_CONTRACT_MARKER, agentsTemplate);
         // Phase 0: a contract written by an earlier engine is brought to the
         // current text, in place.
         refreshInvocationContract(dst);
@@ -636,6 +621,13 @@ async function main() {
       orchestrationMode: orchestrators as "always" | "on-demand",
     });
     if (wanted && project.scope !== wanted) project = projectService.setScope(target, wanted);
+    if (project.orchestration_mode !== orchestrators) {
+      const was = project.orchestration_mode;
+      project = projectService.setOrchestrationMode(target, orchestrators as "always" | "on-demand");
+      log.ok(`orchestration: ${was} → ${orchestrators}` + (orchestrators === "on-demand"
+        ? " (agents work as usual and use Nirvana only when the request asks for it; --orchestrators=always restores the old default)"
+        : " (Nirvana is the default orchestrator here)"));
+    }
     if (legacyScope) log.ok(`moved NIRVANA_SCOPE=${legacyScope} from .env into .nirvana/project.yaml`);
     log.ok(`project manifest: ${path.join(target, ".nirvana", "project.yaml")} (${project.project_id}, scope ${project.scope})`);
   }

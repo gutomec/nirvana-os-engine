@@ -196,9 +196,11 @@ interface EvaluationScorecard {
   "lifecycle": "active",
   "workspace": { "workspace_id": "wsp_example", "relative_root": ".", "kind": "local" },
   "scope": "merge",
-  "orchestration_mode": "always"
+  "orchestration_mode": "on-demand"
 }
 ```
+
+`orchestration_mode` vale `on-demand` por padrão: os agentes do projeto trabalham como se o Nirvana não existisse e só recorrem a ele quando o pedido cita o Nirvana, pede uma empresa, um squad ou um mind-clone, ou pede outro runtime. Com `always`, todo artefato concreto passa pelo orquestrador.
 
 Conversation guarda mensagens visíveis e referências a Runs. Provider session ID é um handle técnico e não substitui Conversation.
 

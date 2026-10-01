@@ -44,6 +44,30 @@ describe("the session hook speaks the contract", () => {
     expect(hook).toContain('hookEventName: "SessionStart"');
   });
 
+  test("on-demand, the default, keeps Nirvana out of the way; always makes it the orchestrator", async () => {
+    const { sessionContext } = await import("../../_shared/scripts/gemini-session-start.ts");
+    const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const project = (mode: string | null) => {
+      const dir = mkdtempSync(join(tmpdir(), "nrv-session-"));
+      mkdirSync(join(dir, ".nirvana"));
+      writeFileSync(join(dir, ".nirvana", "project.yaml"), mode === null ? "{}\n" : JSON.stringify({ orchestration_mode: mode }));
+      return dir;
+    };
+    for (const cwd of [mkdtempSync(join(tmpdir(), "nrv-session-")), project(null), project("on-demand")]) {
+      const text = sessionContext(cwd);
+      expect(text).toContain("stays out of the way");
+      expect(text).not.toContain("For ANY concrete artifact");
+    }
+    const always = sessionContext(project("always"));
+    expect(always).toContain("For ANY concrete artifact");
+    expect(always).toContain("Never produce the artifact inline");
+    // a manifest hand-edited into plain YAML is still read
+    const yamlDir = project(null);
+    writeFileSync(join(yamlDir, ".nirvana", "project.yaml"), "orchestration_mode: always\n");
+    expect(sessionContext(yamlDir)).toContain("For ANY concrete artifact");
+  });
+
   test("the injected text carries the four rules that were unreachable", () => {
     expect(hook).toContain("harness/SKILL.md");          // where the protocol lives
     expect(hook).toContain("Never produce the artifact inline");
