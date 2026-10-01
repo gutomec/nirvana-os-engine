@@ -31,6 +31,15 @@ if (!process.env.NIRVANA_STATE_DB) {
   process.env.NIRVANA_STATE_DB = path.join(process.env.HARNESS_LOGS_DIR!, "state.db");
 }
 
+// And the run ledger, whose run-signals live beside it. A test that opens its
+// ledger at a temp path still gets its signals from this resolution, not from
+// the handle, so every terminal run it marked landed in the user's
+// ~/.nirvana/run-signals: run_a.json, run_glance.json and a pile of
+// `"trace_id":"t"` withheld runs, all fixtures.
+if (!process.env.NIRVANA_RUN_LEDGER_DB) {
+  process.env.NIRVANA_RUN_LEDGER_DB = path.join(process.env.HARNESS_LOGS_DIR!, "run-ledger.sqlite");
+}
+
 // The LLM judge runs by default on report deliverables, through whatever
 // runtime is on PATH. On a machine that has a real one installed, every test
 // that reaches the gate would call it (and spend) where CI, with none installed,
@@ -41,6 +50,11 @@ if (process.env.NIRVANA_JUDGE_ENABLED === undefined) process.env.NIRVANA_JUDGE_E
 // moves effort, the context ceiling and the review policy at once; under test
 // the engine defaults hold. A test that exercises a profile sets its own.
 if (process.env.NIRVANA_PROFILE === undefined) process.env.NIRVANA_PROFILE = "none";
+
+// Host detection walks the process tree when no session marker is set, and a
+// test is a descendant of whatever CLI started the suite. A test that exercises
+// the walk injects its own process lookup.
+if (process.env.NRV_HOST_ANCESTRY === undefined) process.env.NRV_HOST_ANCESTRY = "0";
 
 if (!process.env.NIRVANA_AUDIT_KEY) {
   process.env.NIRVANA_AUDIT_KEY = path.join(process.env.HARNESS_LOGS_DIR!, "audit-key");

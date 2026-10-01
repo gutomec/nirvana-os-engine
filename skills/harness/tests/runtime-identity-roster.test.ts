@@ -24,7 +24,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-  canonicalRuntimeName, detectCurrentHost, detectRuntimeMention, loadRuntimeRules,
+  canonicalRuntimeName, detectCurrentHost, detectRuntimeMention, hostFromAncestors, loadRuntimeRules,
+  type ProcessLookup,
 } from "../lib/runtime-rules.ts";
 import { listRuntimes, type Runtime } from "../../_shared/lib/host-agent-driver.ts";
 import { forwardedEnv } from "../../_shared/lib/orca-worker.ts";
@@ -75,6 +76,35 @@ describe("which runtime am I running inside", () => {
   test("NIRVANA_HOST_RUNTIME is checked before every vendor marker", () => {
     expect(detectCurrentHost({ NIRVANA_HOST_RUNTIME: "opencode", CLAUDECODE: "1" })).toBe("opencode");
     expect(detectCurrentHost({ NIRVANA_HOST_RUNTIME: "qwen-code", CLAUDECODE: "1" })).toBe("qwen-code");
+  });
+});
+
+describe("a host that exports no marker is found in the process tree", () => {
+  /** A fake process table: pid → [ppid, command line]. */
+  const table = (rows: Record<number, [number, string]>): ProcessLookup => (pid) =>
+    rows[pid] ? { ppid: rows[pid][0], args: rows[pid][1] } : null;
+
+  test("nrv run from agy's shell answers antigravity-cli", () => {
+    const lookup = table({
+      40: [30, "bun /Users/u/.nirvana/skills/harness/scripts/dispatch.ts launch-lab-br --exec"],
+      30: [20, "bash /Users/u/.local/bin/nrv dispatch launch-lab-br --exec"],
+      20: [10, "/bin/zsh -c nrv dispatch launch-lab-br --exec"],
+      10: [1, "/Users/u/.local/bin/agy --dangerously-skip-permissions"],
+    });
+    expect(hostFromAncestors(lookup, 40)).toBe("antigravity-cli");
+  });
+
+  test("a CLI run by node is matched on its script", () => {
+    const lookup = table({ 20: [10, "/bin/zsh -c nrv find x"], 10: [1, "node /opt/homebrew/bin/gemini"] });
+    expect(hostFromAncestors(lookup, 20)).toBe("gemini-cli");
+  });
+
+  test("the nearest CLI wins, and a plain terminal identifies nobody", () => {
+    const nested = table({ 30: [20, "/bin/zsh"], 20: [10, "codex"], 10: [1, "/Users/u/.local/bin/claude"] });
+    expect(hostFromAncestors(nested, 30)).toBe("codex");
+    const plain = table({ 30: [20, "/bin/zsh -l"], 20: [1, "/Applications/Ghostty.app/Contents/MacOS/ghostty"] });
+    expect(hostFromAncestors(plain, 30)).toBeNull();
+    expect(hostFromAncestors(() => null, 30)).toBeNull();
   });
 });
 

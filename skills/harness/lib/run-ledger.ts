@@ -287,8 +287,13 @@ function backfillProjectRoots(db: Database): void {
 
 export function resolveLedgerDbPath(): string {
   if (process.env.NIRVANA_RUN_LEDGER_DB) return process.env.NIRVANA_RUN_LEDGER_DB;
-  const home = process.env.NIRVANA_HOME || os.homedir();
-  return path.join(home, ".nirvana", "run-ledger.sqlite");
+  if (process.env.NIRVANA_HOME) return path.join(process.env.NIRVANA_HOME, ".nirvana", "run-ledger.sqlite");
+  // Last rung before the user's home, the same floor state-db.js and
+  // log-paths.js have: a test that deletes NIRVANA_RUN_LEDGER_DB must not gain
+  // a path to the real ledger, nor to the run-signals written beside it.
+  // Set only by skills/test-preload.ts.
+  if (process.env.NIRVANA_TEST_LOGS_HOME) return path.join(path.resolve(process.env.NIRVANA_TEST_LOGS_HOME), "run-ledger.sqlite");
+  return path.join(os.homedir(), ".nirvana", "run-ledger.sqlite");
 }
 
 const _openCache = new Map<string, LedgerHandle>();

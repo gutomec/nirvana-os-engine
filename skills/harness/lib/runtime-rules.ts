@@ -25,6 +25,7 @@
 // there is no quota classifier nor session id for it in runHeadless. In fast,
 // if it wins, it degrades to the next in the ranking with a warn.
 import * as path from "node:path";
+import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { listRuntimes, runtimeAvailable, type Runtime } from "../../_shared/lib/host-agent-driver.ts";
 import { resolveSetting } from "../../_shared/lib/settings.ts";
@@ -182,6 +183,39 @@ export function detectCurrentHost(env: NodeJS.ProcessEnv = process.env): Runtime
   }
   for (const name of detectionOrder()) {
     if (RUNTIME_IDENTITY[name]?.markers.some((m) => env[m])) return name;
+  }
+  return null;
+}
+
+/** One process's parent and command line, or null when it cannot be read. */
+export type ProcessLookup = (pid: number) => { ppid: number; args: string } | null;
+
+const psLookup: ProcessLookup = (pid) => {
+  if (process.platform === "win32") return null;
+  const r = spawnSync("ps", ["-o", "ppid=,args=", "-p", String(pid)], { encoding: "utf8", windowsHide: true });
+  const m = (r.stdout || "").trim().match(/^(\d+)\s+(.*)$/);
+  return m ? { ppid: Number(m[1]), args: m[2] } : null;
+};
+
+/**
+ * The runtime whose CLI launched this process, found by walking the parent
+ * chain. Some hosts export no session marker (Antigravity's `agy` exports
+ * none), but `nrv` still runs as their descendant. The first two tokens of each
+ * ancestor's command line are matched by basename against the runtimes' CLIs,
+ * so `node /opt/homebrew/bin/gemini` counts as gemini. POSIX only; null when
+ * no ancestor is a known CLI.
+ */
+export function hostFromAncestors(lookup: ProcessLookup = psLookup, start: number = process.ppid): Runtime | null {
+  const byCli = new Map(listRuntimes().map((r) => [r.cli, r.name]));
+  let pid = start;
+  for (let depth = 0; pid > 1 && depth < 12; depth++) {
+    const proc = lookup(pid);
+    if (!proc) return null;
+    for (const token of proc.args.split(/\s+/).slice(0, 2)) {
+      const hit = byCli.get(path.basename(token));
+      if (hit) return hit;
+    }
+    pid = proc.ppid;
   }
   return null;
 }

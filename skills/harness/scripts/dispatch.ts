@@ -51,7 +51,7 @@ import { runWithCascade } from "../lib/cascade-runner.ts";
 import { resolveCascadeRoot, loadCascade, nextAfter } from "../lib/cascade.ts";
 import { classify } from "../lib/quota-detector.ts";
 import { isInCooldown, getCooldown, markCooldown } from "../lib/cooldown-registry.ts";
-import { canonicalRuntimeName, loadRuntimeRules, decideRuntime, detectCurrentHost, formatRulesForDirective, resolveDefaultRuntime, unavailableRuntimeMessage, type RuntimeDecision } from "../lib/runtime-rules.ts";
+import { canonicalRuntimeName, loadRuntimeRules, decideRuntime, detectCurrentHost, formatRulesForDirective, hostFromAncestors, resolveDefaultRuntime, unavailableRuntimeMessage, type RuntimeDecision } from "../lib/runtime-rules.ts";
 import { preflightReindex } from "../lib/preflight-index.ts";
 import { maybeSweep } from "./supervisor.ts";
 import * as runLedger from "../lib/run-ledger.ts";
@@ -612,7 +612,10 @@ const explicitRuntime: Runtime | null = (() => {
 // the dispatch quietly walked away from the CLI the user was sitting in and
 // spent another vendor's quota. Precedence (flag > brief > rules > host) was
 // correct above this line and undone by one fallback.
-const detectedHost = detectCurrentHost();
+// A host that exports no session marker is still this process's ancestor.
+// NRV_HOST_ANCESTRY=0 switches the walk off (the test preload does, since a
+// test runs as a descendant of whatever CLI started the suite).
+const detectedHost = detectCurrentHost() ?? (process.env.NRV_HOST_ANCESTRY === "0" ? null : hostFromAncestors());
 // The execution.default_runtime setting: NIRVANA_DEFAULT_RUNTIME, else the project or global config.
 const defaultRuntimeSetting = resolveSetting("execution.default_runtime");
 const envDefault = defaultRuntimeSetting.value.trim();

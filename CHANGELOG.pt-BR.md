@@ -30,6 +30,10 @@ O protocolo do harness tem 8 KB em vez de 57 KB: escolher as empresas, escrever 
 
 `scope.ts` e `paths.js` leem o escopo do manifesto do projeto (ambiente, depois manifesto, depois um `.env` legado, depois `global`). O `nrv init` não cria `.env`; `--scope` grava o manifesto, uma linha `NIRVANA_SCOPE` num `.env` existente migra para ele, e `--adopt` a leva sem tocar no `.env`. O painel de configuração do Glance lê e grava o manifesto. Protocolos superados (Squad v2, v4, v5; Business v1; Harness v1) e notas desatualizadas vão para `docs/legacy/`, que a instalação nunca copia.
 
+### Um dispatch feito no Antigravity roda no Antigravity
+
+O runtime da sessão só era reconhecido por variáveis de ambiente, e o `agy` do Antigravity não exporta nenhuma, então um dispatch feito numa sessão Antigravity caía no primeiro runtime do PATH (Claude Code). Quando nenhuma variável identifica o host, o dispatch agora percorre a própria árvore de processos e usa o ancestral mais próximo que seja a CLI de um runtime conhecido (`agy`, `claude`, `codex`, `node …/gemini`, …). Um terminal comum continua não identificando ninguém. Só em POSIX.
+
 ### O `nrv find` não custa nada, e um dispatch de squad nomeia a capability
 
 O `nrv find` chamava um modelo para amplificar toda consulta curta: cerca de 18 segundos e 29k tokens em cada busca do orquestrador, com respostas que mudavam entre uma passada e outra. Agora ele ranqueia sem modelo (0,5 s); `--amplify` pede o comportamento antigo. O roteador não imprime mais uma porcentagem de "contexto" feita de todos os eventos de auditoria do dia, de todas as sessões, que mandava o orquestrador limpar um contexto que nunca mediu; o `nrv guard context` continua sendo a verificação por sessão. O protocolo orienta o orquestrador a despachar um squad como `--squad <slug>:<capability>` com um id que o `nrv find` imprimiu, para o BM25 não escolher entre capabilities que dividem a mesma descrição. Nos testes, o perfil de desempenho instalado não altera mais os padrões do engine.
