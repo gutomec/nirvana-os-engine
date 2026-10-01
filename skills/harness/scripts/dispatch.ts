@@ -36,6 +36,7 @@
 // path (business, squad-only, agent-x), never 0: `nrv dispatch … && publish`
 // must not publish a run that never executed.
 
+import { isSafeId, runFolderId } from "../../_shared/lib/run-id.ts";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -164,13 +165,7 @@ export function argvWarnings(argv: string[], positionalsUsed: number): string[] 
   ];
 }
 
-/** A project id or an entity slug is a folder NAME, never a path: letters,
- *  digits, '.', '_' and '-', no '..', no separator of either OS, no drive
- *  letter, no trailing dot and no Windows device name. */
-export function isSafeId(id: string): boolean {
-  return /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,198}[A-Za-z0-9_-])?$/.test(id) && !id.includes("..")
-    && !/^(?:con|prn|aux|nul|com\d|lpt\d)(?:\..*)?$/i.test(id);
-}
+export { isSafeId } from "../../_shared/lib/run-id.ts";
 
 /** One argument of a command line that pastes into a POSIX shell, PowerShell
  *  and cmd alike: bare when it is plain, otherwise in double quotes (cmd knows
@@ -1538,7 +1533,6 @@ function claimProjectId(base: string, root: string = OUTPUTS_BASE): string {
     catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
   }
 }
-const runStamp = () => new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "");
 /** Where the prep scripts (brief-business, brief-squad) place a run: scope.ts
  *  outputsDir, which also honours NIRVANA_OUTPUTS_DIR. Their id is claimed there. */
 const prepOutputsBase = (): string => NESTED_OUTPUTS_BASE ?? outputsDir(resolveScope());
@@ -1576,7 +1570,7 @@ if (pendingCascade?.kind === "squad-only") {
   const squads = pendingCascade.squads;
   const rt = runtimeDecision.runtime;
   warnBusinessOnlyFlags(`squad ${squads.join(", ")}`);
-  const pid = projectId || claimProjectId(`proj-${runStamp()}-${squads[0]}`, prepOutputsBase());
+  const pid = projectId || claimProjectId(runFolderId(squads[0]), prepOutputsBase());
   const briefSquadScript = path.join(SKILLS, "squads", "scripts", "brief-squad.ts");
 
   console.log(c("lime", "▶") + c("bold", ` Squad-only — scaffold (${squads.length} squad(s))`));
@@ -1761,7 +1755,7 @@ if (pendingCascade?.kind === "squad-only") {
 // scorecard; otherwise `withheld`, and a spent cap is named `budget_exhausted`.
 if (pendingCascade?.kind === "judge-x") {
   const rt = runtimeDecision.runtime;
-  const pid = projectId || claimProjectId(`proj-${runStamp()}-judge-x`);
+  const pid = projectId || claimProjectId(runFolderId("judge-x"));
   const scaffoldRoot = path.join(OUTPUTS_BASE, pid);
   const projDir = path.join(scaffoldRoot, "judge-x");
   fs.mkdirSync(projDir, { recursive: true });
@@ -1828,7 +1822,7 @@ if (pendingCascade?.kind === "judge-x") {
 if (pendingCascade?.kind === "agent-x") {
   const rt = runtimeDecision.runtime;
   warnBusinessOnlyFlags("agent-x");
-  const pid = projectId || claimProjectId(`proj-${runStamp()}-agent-x`);
+  const pid = projectId || claimProjectId(runFolderId("agent-x"));
   const scaffoldRoot = path.join(OUTPUTS_BASE, pid);
   const projDir = path.join(scaffoldRoot, "agent-x");
   fs.mkdirSync(projDir, { recursive: true });
@@ -1971,7 +1965,7 @@ if (!fs.existsSync(briefBiz)) {
 
 // Step 1 — brief-business
 console.log(c("lime", "▶") + c("bold", " Step 1/4 — brief-business.ts"));
-const pid = projectId || claimProjectId(`proj-${runStamp()}-${slug}`, prepOutputsBase());
+const pid = projectId || claimProjectId(runFolderId(slug), prepOutputsBase());
 const args = [briefBiz, slug, brief, "--project", pid];
 if (manifest) args.push("--manifest", manifest);
 const r1 = spawnSync("bun", args, { windowsHide: true, encoding: "utf8", env: prepScriptEnv });

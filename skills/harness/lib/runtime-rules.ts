@@ -473,20 +473,50 @@ const MENTION_CUE = new RegExp(
  *  work brief (everything else is engine-written context), else the whole text.
  *  Backticked and quoted spans are dropped: a runtime named inside them is
  *  being talked about, not asked for. */
+/** One `## <name>` section of a work brief, or null. */
+function briefSection(brief: string, name: string): string | null {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const m = brief.match(new RegExp(`^##\\s+${escaped}\\s*\\n([\\s\\S]*?)(?=^##\\s|(?![\\s\\S]))`, "im"));
+  return m ? m[1] : null;
+}
+
+/**
+ * Where a runtime request is read. A six-section brief is one part of a request
+ * the orchestrator split ("write the copy, and use gemini for the html"): the
+ * user's verbatim words are copied into every part's brief, so they cannot say
+ * which part runs where. The orchestrator's own words for THIS part (Decisions,
+ * Your part) can. A raw brief (the shell path, no orchestrator) is the user's
+ * words: its Request section, or the whole text.
+ */
+function mentionScope(brief: string): string {
+  const part = briefSection(brief, "Your part");
+  if (part !== null) return [briefSection(brief, "Decisions") ?? "", part].join("\n");
+  return briefSection(brief, "Request (verbatim)") ?? brief;
+}
+
 function userWords(brief: string): string {
-  const m = brief.match(/^##\s+Request \(verbatim\)\s*\n([\s\S]*?)(?=^##\s|(?![\s\S]))/im);
-  const scope = m ? m[1] : brief;
-  return scope
+  return mentionScope(brief)
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/`[^`\n]*`/g, " ")
     .replace(/"[^"\n]*"/g, " ")
     .replace(/\u201c[^\u201d\n]*\u201d/g, " ");
 }
 
+/** `runtime <name>` in the brief's scope, the explicit form an orchestrator
+ *  writes under Decisions (like `squad <slug>` and `clone <slug>`). */
+function markedRuntime(brief: string): { runtime: RoutableRuntime; mention: string } | null {
+  const m = mentionScope(brief).match(/(?:^|\n)\s*(?:[-*]\s*)?runtime[\s:=]+`?([A-Za-z][A-Za-z0-9_-]*)`?/i);
+  if (!m) return null;
+  for (const [re, rt] of MENTION_NAMES) if (re.test(m[1])) return { runtime: rt, mention: m[0].trim() };
+  return null;
+}
+
 /** Detects an instrumental mention of a runtime in the brief. null when: none,
  *  or more than one distinct runtime named (ambiguous — no guessing). */
 export function detectRuntimeMention(brief: string): { runtime: RoutableRuntime; mention: string } | null {
   if (!brief?.trim()) return null;
+  const marked = markedRuntime(brief);
+  if (marked) return marked;
   const found = new Map<RoutableRuntime, string>();
   const words = userWords(brief);
   for (const m of words.matchAll(MENTION_CUE)) {

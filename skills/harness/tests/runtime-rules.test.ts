@@ -246,6 +246,22 @@ describe("menção de runtime no brief (detectRuntimeMention)", () => {
   });
 });
 
+describe("a runtime request in a split brief belongs to its part", () => {
+  const six = (req: string, dec: string, part: string) => `## Request (verbatim)\n${req}\n\n## Decisions\n${dec}\n\n## Your part\n${part}\n`;
+  const REQ = "Crie a copy de venda e use o gemini para criar o html";
+  test("the user's words travel in every part's brief and choose no runtime there", () => {
+    expect(detectRuntimeMention(six(REQ, "- squad copywriting-infoprodutos", "Entregar a copy."))).toBeNull();
+  });
+  test("the orchestrator's words for this part choose it: a marker or an instruction", () => {
+    expect(detectRuntimeMention(six(REQ, "- runtime gemini\n- squad brandcraft", "Construir o HTML."))?.runtime).toBe("gemini-cli");
+    expect(detectRuntimeMention(six("x", "- None.", "Use o gemini para construir o HTML."))?.runtime).toBe("gemini-cli");
+  });
+  test("a raw brief, with no orchestrator in between, is the user's words", () => {
+    expect(detectRuntimeMention("use o codex para revisar o código")?.runtime).toBe("codex");
+    expect(detectRuntimeMention("## Request (verbatim)\nrode no agy a análise\n")?.runtime).toBe("antigravity-cli");
+  });
+});
+
 describe("detectCurrentHost", () => {
   test("marcadores de sessão de cada CLI", () => {
     expect(detectCurrentHost({ CLAUDECODE: "1" })).toBe("claude-code");

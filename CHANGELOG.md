@@ -30,6 +30,10 @@ The harness protocol is 8 KB instead of 57 KB: pick the businesses, write each a
 
 `scope.ts` and `paths.js` read the scope from the project manifest (environment, then manifest, then a legacy `.env`, then `global`). `nrv init` creates no `.env`; `--scope` writes the manifest, a `NIRVANA_SCOPE` line in an existing `.env` moves into it, and `--adopt` carries it without touching the `.env`. The Glance config panel reads and writes the manifest. Superseded protocols (Squad v2, v4, v5; Business v1; Harness v1) and stale notes move to `docs/legacy/`, which install never copies.
 
+### Run folders start with the date, and a runtime request belongs to its part
+
+A run's folder under `outputs/` is named date first: the engine's default is `<YYYYMMDD>-<HHMM>-<target>` in local time (was `proj-<timestamp>-<target>`), and the protocol asks the orchestrator for `--project <YYYYMMDD>-<subject>-<part>`, so `outputs/` sorts by day and two parts of one request sit together. Glance accepts any safe project id, not only `proj-`. A runtime named in a split request ("write the copy and use gemini for the html") no longer moves every part: in a six-section brief only the orchestrator's words for that part count (`--runtime`, `runtime <rt>` under Decisions, or an instruction in Your part). `--no-review` is passed only when the user said to skip the review.
+
 ### A dispatch, step by step: checked before it starts, honest when it ends
 
 An audit followed every `nrv dispatch` option from the command line to the orchestrator's next step and fixed what each path got wrong.

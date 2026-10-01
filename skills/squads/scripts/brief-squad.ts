@@ -23,6 +23,7 @@
  *   bun brief-squad.ts <slug> "<brief text>" [--project <id>]
  */
 
+import { runFolderId } from "../../_shared/lib/run-id.ts";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { exec, paths, EXIT, BUN_BIN } from "../../_shared/lib/bun-helpers.ts";
@@ -96,7 +97,7 @@ const outputsRoot = outputsDir(scope);
 // generated id is claimed by creating its folder: two briefs for the same squad
 // in the same second used to share one, and now the second takes the next suffix.
 if (!projectId) {
-  const base = `proj-${new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "")}-${slug}`;
+  const base = runFolderId(slug);
   fs.mkdirSync(outputsRoot, { recursive: true });
   for (let n = 1; !projectId; n++) {
     const id = n === 1 ? base : `${base}-${n}`;

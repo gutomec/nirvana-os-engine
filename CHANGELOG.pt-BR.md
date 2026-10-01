@@ -30,6 +30,10 @@ O protocolo do harness tem 8 KB em vez de 57 KB: escolher as empresas, escrever 
 
 `scope.ts` e `paths.js` leem o escopo do manifesto do projeto (ambiente, depois manifesto, depois um `.env` legado, depois `global`). O `nrv init` não cria `.env`; `--scope` grava o manifesto, uma linha `NIRVANA_SCOPE` num `.env` existente migra para ele, e `--adopt` a leva sem tocar no `.env`. O painel de configuração do Glance lê e grava o manifesto. Protocolos superados (Squad v2, v4, v5; Business v1; Harness v1) e notas desatualizadas vão para `docs/legacy/`, que a instalação nunca copia.
 
+### Pastas de execução começam pela data, e um pedido de runtime pertence à sua parte
+
+A pasta de uma execução em `outputs/` começa pela data: o padrão do engine é `<AAAAMMDD>-<HHMM>-<alvo>` no horário local (era `proj-<timestamp>-<alvo>`), e o protocolo pede ao orquestrador `--project <AAAAMMDD>-<assunto>-<parte>`, então `outputs/` fica em ordem de dia e as partes de um pedido ficam juntas. O Glance aceita qualquer id de projeto seguro, não só `proj-`. Um runtime citado num pedido dividido ("escreva a copy e use o gemini para o html") não move mais todas as partes: num brief de seis seções só contam as palavras do orquestrador para aquela parte (`--runtime`, `runtime <rt>` em Decisions ou uma instrução em Your part). O `--no-review` só é passado quando o usuário pediu para pular a revisão.
+
 ### Um dispatch, passo a passo: conferido antes de começar, honesto ao terminar
 
 Uma auditoria seguiu cada opção do `nrv dispatch` da linha de comando até o próximo passo do orquestrador e corrigiu o que cada caminho fazia errado.

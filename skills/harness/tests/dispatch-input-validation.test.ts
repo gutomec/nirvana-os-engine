@@ -12,6 +12,7 @@
 //
 // Hermetic: a temporary HOME and project, a fake `claude` on PATH where a run
 // is needed, no LLM and no network.
+import { runFolderId } from "../../_shared/lib/run-id.ts";
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
@@ -113,6 +114,9 @@ function fixture() {
     NIRVANA_RUN_LEDGER_DB: path.join(root, "ledger.sqlite"), NIRVANA_STATE_DB: path.join(root, "state.db"),
     HARNESS_LOGS_DIR: path.join(root, "logs"), NIRVANA_NO_UPDATE_CHECK: "1", NIRVANA_SCOPE_QUIET: "1", NRV_PREFLIGHT: "0", NRV_SUPERVISOR: "0",
     PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
+    // bun test runs in UTC without exporting TZ; the child names its run folder in
+    // local time, so both sides are pinned to the same zone.
+    TZ: "Etc/UTC",
   });
   const dispatch = (args: string[], extra: Record<string, string> = {}) =>
     spawnSync(process.execPath, [DISPATCH, ...args], { cwd: projectRoot, encoding: "utf8", env: { ...env, ...extra } });
@@ -233,18 +237,17 @@ describe("--scaffold-only", () => {
     expect(r.stderr).toContain("--html only apply to a business run; ignored for squad fixture-squad.");
   }, spawnBudgetMs(3));
 
-  test("a generated project id already taken this second gets the next suffix instead of sharing the folder", () => {
+  test("a generated project id already taken this minute gets the next suffix instead of sharing the folder", () => {
     const fx = fixture();
-    // Every stamp of the next 20 seconds is taken, so the run cannot miss the collision.
+    // This minute and the next two are taken, so the run cannot miss the collision.
     const now = Date.now();
-    for (let s = 0; s < 20; s++) {
-      const stamp = new Date(now + s * 1000).toISOString().replace(/[-:]/g, "").replace(/\..+/, "");
-      fs.mkdirSync(path.join(fx.projectRoot, "outputs", `proj-${stamp}-agent-x`), { recursive: true });
+    for (let m = 0; m < 3; m++) {
+      fs.mkdirSync(path.join(fx.projectRoot, "outputs", runFolderId("agent-x", new Date(now + m * 60_000))), { recursive: true });
     }
     const r = fx.dispatch(["--agent-x", "x", "--scaffold-only"]);
     expect(r.status, r.stdout + r.stderr).toBe(3);
     const pid = r.stdout.match(/Project ID: (\S+)/)?.[1] ?? "";
-    expect(pid).toMatch(/^proj-\d{8}T\d{6}-agent-x-2$/);
+    expect(pid).toMatch(/^\d{8}-\d{4}-agent-x-2$/);
     expect(fs.existsSync(path.join(fx.projectRoot, "outputs", pid, "brief-enriched.md"))).toBe(true);
   }, spawnBudgetMs(1));
 

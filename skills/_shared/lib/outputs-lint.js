@@ -23,7 +23,8 @@ const SUSPICIOUS_NAMES = new Set(['runs', 'results']);
 
 // Top-level entries matching these patterns are almost always run artifacts.
 const SUSPICIOUS_PATTERNS = [
-  /^proj-/,                              // brief-business default project_id
+  /^proj-/,                              // the default run id before 2026-10-01
+  /^\d{8}-\d{4}-/,                       // the default run id: <YYYYMMDD>-<HHMM>-<target>
   /^\d{8}T\d{6}/,                        // ISO-ish timestamp prefix
   /^run-\d/,                             // run-1, run-001, etc.
 ];

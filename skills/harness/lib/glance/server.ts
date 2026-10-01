@@ -6,6 +6,7 @@
  * (auto-cleanup on exit).
  */
 
+import { isSafeId } from "../../../_shared/lib/run-id.ts";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -656,7 +657,7 @@ export async function startServer(opts: ServerOptions) {
         const gauntletMatch = p.match(/^\/api\/v1\/runs\/(run_[A-Za-z0-9-]+)\/gauntlet$/);
         if (gauntletMatch && req.method === "GET") {
           const projectId = u.searchParams.get("project_id") || "";
-          if (!validId(projectId, "prj") && !projectId.startsWith("proj-")) return problem(400, "Invalid project", "project_id is required");
+          if (!validId(projectId, "prj") && !isSafeId(projectId)) return problem(400, "Invalid project", "project_id is required");
           const projection = getGauntlet(kernelService(), projectId, gauntletMatch[1]);
           return projection ? json({ projection,
             candidates: listCandidateRevisions(kernelService(), projectId, gauntletMatch[1]),
@@ -665,7 +666,7 @@ export async function startServer(opts: ServerOptions) {
         const multiTargetMatch = p.match(/^\/api\/v1\/runs\/(run_[A-Za-z0-9-]+)\/multi-target$/);
         if (multiTargetMatch && req.method === "GET") {
           const projectId = u.searchParams.get("project_id") || "";
-          if (!validId(projectId, "prj") && !projectId.startsWith("proj-")) return problem(400, "Invalid project", "project_id is required");
+          if (!validId(projectId, "prj") && !isSafeId(projectId)) return problem(400, "Invalid project", "project_id is required");
           if (!getKernelRun(kernelService(), projectId, multiTargetMatch[1])) return notFound("run not found");
           return json({ projection: projectMultiTargetRun(kernelService(), projectId, multiTargetMatch[1]) });
         }

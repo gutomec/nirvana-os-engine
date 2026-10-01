@@ -116,7 +116,8 @@ describe("Glance multi-target projection", () => {
 
   test("an unknown Run is 404 and an invalid project is 400", async () => {
     expect((await fetch(`${base}/api/v1/runs/run_missing/multi-target?project_id=${projectId}`)).status).toBe(404);
-    expect((await fetch(`${base}/api/v1/runs/${multiRunId}/multi-target?project_id=nope`)).status).toBe(400);
+    expect((await fetch(`${base}/api/v1/runs/${multiRunId}/multi-target?project_id=${encodeURIComponent("../etc")}`)).status).toBe(400);
+    expect((await fetch(`${base}/api/v1/runs/${multiRunId}/multi-target?project_id=nope`)).status).toBe(404);
     expect((await fetch(`${base}/api/v1/runs/${multiRunId}/multi-target`)).status).toBe(400);
   });
 

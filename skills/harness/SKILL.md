@@ -33,8 +33,10 @@ and you do not plan how it is made.
 2. **Never enter the runtime's plan mode.** It makes the session read-only and
    stalls the run. If the runtime is already in it, ask the user once to leave.
 3. **The work runs where the user is working.** A dispatch inherits the session
-   it starts from. Pass `--runtime` only when the user named a runtime;
-   `nrv doctor` shows which ones are installed.
+   it starts from. When the user named a runtime for a part, pass `--runtime <rt>`
+   on that part's dispatch (or write `runtime <rt>` under its Decisions): the
+   verbatim request travels in every brief and does not choose. `nrv doctor`
+   shows which runtimes are installed.
 4. **No model and no effort unless someone asked.** The user's own runtime
    configuration is the default. A performance profile the user picked
    (`execution.profile`) counts as asking.
@@ -103,9 +105,16 @@ nrv dispatch <business> --brief-file .nirvana/briefs/<business>.md --exec [--run
 ```
 
 Dispatch once, with `--exec`: without it the command refuses and nothing is
-created. `--review` when the user asked for a review, `--no-review` when they
-said to skip it; otherwise `review.policy` decides, and at most one reviewer
-checks the whole delivery.
+created.
+
+Name the run `--project <YYYYMMDD>-<subject>-<part>`, e.g.
+`20261001-motion-design-genius-copy`: the date first, so `outputs/` sorts by
+day; add `-2` when that folder already exists. Without it the engine names it
+`<YYYYMMDD>-<HHMM>-<target>`.
+
+`--review` only when the user asked for a review, `--no-review` only when they
+said to skip it; otherwise leave both out and `review.policy` decides. At most
+one reviewer checks the whole delivery.
 Pass `--html` or `--pdf` only when the user asked for a report; none is built by default.
 
 **Dispatch in the background.** Independent businesses go out at the same
