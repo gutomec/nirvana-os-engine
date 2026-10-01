@@ -29,6 +29,17 @@ export type {
   LedgerHeartbeatOpts,
 } from "../../_shared/lib/host-agent-driver.ts";
 import { scopeBoundary, scopeGuard } from "../../_shared/lib/scope-guard.ts";
+import { resolveSetting } from "../../_shared/lib/settings.ts";
+
+/** The line that keeps a worker from rendering its own output to check it,
+ *  unless `execution.visual_checks` is on (the max profile). A squad's verify
+ *  step had a worker take 110+ screenshots per viewport profile and read them
+ *  all: minutes and a large share of the run's tokens, for a review the user
+ *  makes in seconds. Empty when the checks are on. */
+export function visualChecksLine(): string {
+  if (resolveSetting("execution.visual_checks").value) return "";
+  return "- NO VISUAL SELF-CHECKS: no screenshots, capture passes or Lighthouse runs of your output, even when a squad step asks for them. The user reviews.";
+}
 
 /** Autonomous-mode directive: the quality contract of a run nobody supervises,
  * true for every dispatched worker (a business, a squad, the generalist).
@@ -51,4 +62,5 @@ export const AUTONOMOUS_DIRECTIVE = [
   "- CONTINUOUS FLOW: phases (your progress file, a staged plan) advance in sequence until `complete` without pausing, confirming or reporting in between. Interrupt only on an unrecoverable error or an explicit `notify: human` trigger.",
   "- MESSAGE INTERRUPTION: a question or status message that arrives mid-execution gets ONE line with the current state, then execution resumes in the same action. Never go idle waiting for a new order: the order to continue is this one.",
   "- Follow the writing contract in AGENTS.md / CLAUDE.md / GEMINI.md when the project has one.",
+  ...[visualChecksLine()].filter(Boolean),
 ].join("\n");

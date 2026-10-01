@@ -30,12 +30,14 @@ export function isProfileName(value: unknown): value is ProfileName {
  *  every value must validate against it (settings-profiles.test.ts). */
 export const PROFILE_PRESETS: Record<ProfileName, Readonly<Record<string, SettingValue>>> = {
   // Highest quality, highest token use: the deepest effort, no context ceiling,
-  // every delivery reviewed, two correction rounds. The reviewer runs on the
+  // every delivery reviewed, two correction rounds, and agents that render
+  // their visual work to check it. The reviewer runs on the
   // session's runtime like every other profile; `review.runtime: other` is the
   // user's choice to make, never a profile's.
   max: {
     "execution.effort": "xhigh",
     "execution.context_window": 0,
+    "execution.visual_checks": true,
     "review.policy": "always",
     "review.runtime": "same",
     "review.max_rounds": 2,

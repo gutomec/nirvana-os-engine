@@ -63,6 +63,7 @@ Gerada a partir do schema. `nrv config explain <chave>` mostra a descrição de 
 | `execution.max_dispatch_depth` | `NIRVANA_MAX_DISPATCH_DEPTH` | `4` | global, projeto | inteiro >= 0; 0 = ilimitado. Cadeia de agentes despachando agentes. No terminal: empresa (1), assento (2), squad usado pelo assento (3). No Glance o maestro é ele mesmo um filho e tudo desce um nível, então 4 |
 | `execution.profile` | `NIRVANA_PROFILE` | `none` | global, projeto | none / max / balanced / economy. Uma camada de padrões entre os arquivos do usuário e os padrões do engine (`_shared/lib/profiles.ts`); uma chave definida explicitamente vence o perfil |
 | `execution.context_window` | `NIRVANA_CONTEXT_WINDOW` | `0` | global, projeto | inteiro >= 0 (tokens); 0 = o padrão do runtime. Teto de contexto dos agentes despachados: `CLAUDE_CODE_AUTO_COMPACT_WINDOW` no claude-code, `model_auto_compact_token_limit` no codex |
+| `execution.visual_checks` | `NIRVANA_VISUAL_CHECKS` | `false` (`true` no perfil max) | global, projeto | true / false. Ligado, os agentes despachados conferem o próprio trabalho visual renderizando: capturas de tela, passadas por viewport, Lighthouse, leitura de imagens da saída. Desligado, pulam esses passos mesmo quando o workflow do squad os pede, e o usuário revisa o resultado |
 | `glance.execution` | `NIRVANA_GLANCE_EXECUTION` | `true` | global, projeto | true / false |
 | `glance.maestro_max_budget_usd` | nenhuma | `5` | global, projeto | número >= 0 (USD); 0 = sem teto |
 | `runtime.provider_catalog_dir` | `NIRVANA_PROVIDER_CATALOG_DIR` | `""` | global, projeto | lista de caminhos separados pelo delimitador do sistema, ou vazio |
@@ -120,6 +121,7 @@ Cada interruptor do schema tem exatamente um caminho de leitura, `resolveSetting
 | `execution.headless_skip_permissions` | `_shared/lib/host-agent-driver.ts` |
 | `execution.profile` | `_shared/lib/settings.ts` (a camada de perfil, com os valores de `_shared/lib/profiles.ts`) |
 | `execution.context_window` | `_shared/lib/host-agent-driver.ts` (`contextWindowSetting`), `harness/scripts/guard.ts` |
+| `execution.visual_checks` | `harness/lib/host-agent-driver.ts` (`visualChecksLine`, no `AUTONOMOUS_DIRECTIVE` de todo worker) |
 | `review.policy`, `runtime`, `max_rounds` | `harness/scripts/dispatch.ts` → `harness/lib/solo-review.ts` |
 | `glance.execution` | `harness/scripts/glance.ts` |
 | `runtime.provider_catalog_dir`, `allow_stale_catalog` | `harness/lib/runtime-snapshot.ts` |

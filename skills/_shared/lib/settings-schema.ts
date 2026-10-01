@@ -230,6 +230,13 @@ export const SETTINGS = {
   // compacted it. The ceiling makes the worker compact early; its state lives
   // on disk (PROGRESS.md), so what leaves the context is tool output it has
   // already turned into files.
+  // Rendering a page and reading screenshots of it is the costliest check a
+  // worker can choose: one squad's verify step took 110+ captures per viewport
+  // profile, each an image the model reads. The user reviews the result and
+  // asks for changes; only the max profile pays for it.
+  "execution.visual_checks": booleanSetting("execution.visual_checks",
+    "Lets dispatched agents check their own visual work by rendering it: screenshots, capture passes across viewports, Lighthouse runs, reading images of their output. Off, they skip those steps even when a squad's workflow asks for them, and the user reviews the result. On in the max profile.",
+    { default: false, env: "NIRVANA_VISUAL_CHECKS", fromEnv: (raw) => parseBooleanWord(raw) ?? raw }),
   "execution.context_window": numberSetting("execution.context_window",
     "Context ceiling, in tokens, for the agents Nirvana dispatches: above it the runtime compacts the conversation. 0 = the runtime default. Applies to claude-code (CLAUDE_CODE_AUTO_COMPACT_WINDOW) and codex (model_auto_compact_token_limit).",
     { default: 0, type: nonNegativeInt, env: "NIRVANA_CONTEXT_WINDOW", expects: "integer >= 0 (tokens)" }),
