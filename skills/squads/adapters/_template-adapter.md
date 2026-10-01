@@ -1,6 +1,6 @@
 # Adapter Template
 
-Use this template to author a new runtime adapter for Squad Protocol v4.0.
+Use this template to author a new runtime adapter for the Squad Protocol (`SQUAD_PROTOCOL_V6.md` §18.5).
 
 Replace `{runtime-id}`, `{Runtime Name}`, `{Vendor}`, and all bracketed placeholders. Remove sections that do not apply after replacing them with a "Not applicable — runtime does not support X" sentence.
 

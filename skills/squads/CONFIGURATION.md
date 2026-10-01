@@ -1,301 +1,131 @@
-# squads skill · Configuration Reference
+# squads skill: configuration reference
 
-> Tudo que pode ser configurado nesta skill, onde, e o efeito de cada variável.
-> Última atualização: 2026-05-03 (refactor v4 capability inferrer + premium routing).
+Everything that can be configured for squads, where, and what it does.
 
----
+## 1. Where configuration lives
 
-## 1. Onde a configuração mora
+In order of precedence:
 
-3 fontes, em ordem de precedência:
+1. **Command flags** of the scripts below.
+2. **Environment variables.**
+3. **Engine settings** (`nrv config list|get|set|explain <key>`), with the origin of each value.
+4. **Defaults** in `skills/_shared/lib/paths.js` and `skills/_shared/validators/limits.ts`.
 
-1. **CLI flags** dos scripts (`--roots`, `--report`, `--legacy-v4`)
-2. **Variáveis de ambiente** (`~/.env`)
-3. **Defaults hardcoded** em `lib/registry.js`
+The skill has no `config.yaml` of its own.
 
-Não existe `config.yaml` próprio. A "configuração runtime" da skill está distribuída entre lib + scripts + .env.
+## 2. Environment variables
 
----
-
-## 2. Variáveis de ambiente
-
-| Variável | Default | Função |
+| Variable | Default | Effect |
 |---|---|---|
-| `SQUADS_DIR` | `~/squads` | Diretório canônico de squads. Squads novos vão aqui. Indexado pelo `index-squads.ts`. |
-| `SQUADS_LEGACY_DIR` | (none) | Diretório legacy adicional (~134 squads v4). Quando definido, lido em paralelo com `${SQUADS_DIR}`. Em colisão de slug, `${SQUADS_DIR}` ganha. |
+| `SQUADS_DIR` | `~/squads` (under `$NIRVANA_HOME` when set) | Canonical squads directory. New squads go here and `nrv index` scans it. |
+| `SQUADS_LEGACY_DIR` | `<home>/squads-legacy-v4` | Extra directory scanned by the indexer. On a slug collision `${SQUADS_DIR}` wins. |
+| `SQUADS_REGISTRY_PATH` | project `.squads-registry.json`, else `~/.squads-registry.json` | Where the registry is written (`SQUAD_PROTOCOL_V6.md` §23). |
+| `NIRVANA_PROJECT_ROOT`, `SQUADS_PROJECT_ROOT` | nearest declared project | Project root used for standalone run output `.squads-outputs/` (§16bis). |
+| `NIRVANA_SCOPE` | `global` | `global`, `project` or `merge`, read from `<project>/.env`; decides which squads `list-squads` and the indexer see. |
+| `NIRVANA_LIMIT_<KEY>` | none | Overrides a payload limit (section 5). |
 
-Ambas são lidas pelo `lib/registry.js` (default roots) e pelos scripts CLI.
+## 3. Commands and flags
 
-### Outras variáveis indiretamente relevantes
+### `nrv validate squad`
 
-| Variável | Quando importa |
+The admission gate (`SQUAD_PROTOCOL_V6.md` §34).
+
+| Flag | Effect |
 |---|---|
-| `HARNESS_LOGS_DIR` | Para audit logs do `validate-squad.ts` se rodar com `--audit-trail` |
-| `PROJECTS_OUTPUT_DIR` | Subdir relativo a cada squad onde invocations escrevem output |
+| `<slug\|path>` or `--all` | One squad, or the whole library |
+| `--fix` | Mechanical repairs, with backup and rollback |
+| `--fix=agentic` with `--yes` | Then an agent repairs what only meaning can fix |
+| `--strict` | Warnings reject too |
+| `--json` | Machine-readable report (`--all --json` gives `nirvana.verify-batch/v1`) |
+| `--no-retrieval` | Skip retrieval checks |
+| `--baseline <file>` | Use a debt baseline |
+| `--record [--allow-regression]` | With `--all`, record the current debt |
+| `--root <dir>` | With `--all`, the library root |
 
----
+### `nrv migrate`
 
-## 3. Scripts CLI — flags
+`<slug|path> --to 6 [--apply] [--map-refs] [--no-extract-tasks] [--no-derive-acceptance] [--force] [--json]`, `<slug|path> --rollback <ts>`, and `squad --all --to 6 [--root <dir>]`. Dry run unless `--apply` (§35).
 
-### `init-squad.ts <name> [opções]`
+### `nrv index` and `nrv list-squads`
 
-Cria scaffold de squad novo.
+`nrv index` rebuilds the registry (`index-squads.ts` takes `--json` to print the scan and `--quiet`). `nrv list-squads` takes `--format compact|table|json`, `--short` and `--show-scope`.
 
-| Flag | Default | Função |
-|---|---|---|
-| `<name>` (positional) | obrigatório | Slug kebab-case |
-| `--legacy-v4` | (off, default v5) | Cria scaffold v4 com `agents/`, `tasks/`, `workflows/` flat (sem `capabilities[]`). Use só para coexistir com v4 existente. |
-| `--protocol <v>` | `5.0` | Versão do protocolo declarada no manifest |
-| `--target-dir <path>` | `$SQUADS_DIR` | Override do diretório de criação |
+### Other squad commands
 
-### `validate-squad.ts <path-or-slug> [opções]`
-
-Valida manifest. Branches por `protocol`:
-- `5.0` → Pydantic SquadManifest + capability validator
-- `4.0` → legacy B1-B18 blocking checks
-
-| Flag | Default | Função |
-|---|---|---|
-| `<path-or-slug>` (positional) | obrigatório | Path absoluto ou slug (resolvido contra `$SQUADS_DIR`) |
-| `--report` | (off) | Output em formato AI-friendly com remediation guidance por erro |
-| `--runtime <id>` | (off) | Valida features_required contra capabilities específicas do runtime (claude-code, codex, gemini-cli) |
-
-### `index-squads.ts [opções]`
-
-Escaneia + gera `${SQUADS_REGISTRY_PATH}` (incluindo `_v4_inferred_capabilities` para v4).
-
-| Flag | Default | Função |
-|---|---|---|
-| `--roots <dir>...` | `[$SQUADS_LEGACY_DIR, $SQUADS_DIR]` | Diretórios a escanear |
-| `--output <path>` | `${SQUADS_REGISTRY_PATH}` | Path do registry |
-| `--no-infer-v4` | (off) | Desliga inferência automática de capabilities para v4 squads (não recomendado) |
-
-### `list-squads.ts [opções]`
-
-| Flag | Default | Função |
-|---|---|---|
-| `--format <fmt>` | `table` | `table` ou `json` |
-| `--protocol <v>` | (off) | Filtra `5.0` ou `4.0` |
-| `--filter-domain <slug>` | (off) | Mostra só squads com domain |
-
----
-
-## 4. Squad manifest — `squad.yaml` campos configuráveis
-
-### Top-level (obrigatórios)
-
-| Campo | Função |
+| Command | Effect |
 |---|---|
-| `name` | Slug kebab-case (`^[a-z][a-z0-9-]+$`) |
-| `version` | Semver (`^\d+\.\d+\.\d+...$`) |
-| `protocol` | `"5.0"` (preferido) ou `"4.0"` (legacy) |
-| `description` | Texto descrevendo o squad |
-| `author` | Quem criou |
-| `license` | Default `MIT` |
+| `nrv activate <slug>` or `--all` | Installs what `dependencies.yaml` declares. Flags: `--dry-run`, `--confirm-heavy`, `--only-declared`, `--verbose`, `--skip-verify` |
+| `nrv fix-squad <slug\|path> [--apply]` | Writes `SQUAD-DOCTOR-REPORT.md`; `--apply` applies the safe fixes |
+| `nrv find "<brief>"` | Dry-run discovery: signal, capability, squad, score |
+| `nrv cards squad <slug>` | The work card a business reads to use a squad (§32.3) |
+| `nrv dispatch --squad <slug>[:<capabilityId>] "<brief>"` | Dispatches one squad on its own; add `--exec` (or use `nrv run --squad`) to execute (§32.2) |
 
-### Top-level (opcionais)
+### `init-squad.ts`
 
-| Campo | Default | Função |
-|---|---|---|
-| `slashPrefix` | `<name>` truncado | Prefix do slash command (ex: `aws` para `*aws ...`) |
-| `tags[]` | `[]` | Tags para search/discovery |
-| `experimental_domains` | `false` | Aceita domains fora do CAPABILITY_CATALOG_V1.yaml |
-| `legacy.v4_path` | (sem) | Path para versão v4 ainda em coexistência |
-
-### `capabilities[]` (v5 only — array de objetos)
-
-| Campo | Função |
-|---|---|
-| `id` | Pattern `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2,}$` — ≥3 segmentos dotted (ex: `marketing.funnel.create`) |
-| `description` | ≥20 chars |
-| `domains[]` | 1-5 do CAPABILITY_CATALOG_V1.yaml |
-| `examples[]` | ≥1 frase em linguagem natural (BM25 indexa) |
-| `outputs[].name` | Nome da saída |
-| `outputs[].type` | `file | string | json | array | markdown | html | binary` (NÃO `yaml` ou `jsonl` — schema rejeita) |
-| `invoke.type` | `workflow | task | agent` |
-| `invoke.ref` | Path relativo ao squad dir |
-| `invoke.agent` | (opcional) Agent específico para `task` invocation |
-| `invoke.prompt_template` | (opcional) Template para `task` invocation |
-| `inputs[]` | (opcional) Inputs declarados — `{name, type, formats[], schema, required, description}` |
-| `tools_required[]` | (opcional) Tools que o agent precisa |
-| `not_for[]` | (opcional) Frases que penalizam match (ex: "B2C, consumer-grade") |
-| `score_boost` | `1.0` | Multiplicador de score no harness BM25. **Premium squads (awwwards, nirvana, etc.) recebem 1.2 quando inferred via v4-capability-inferrer.** |
-| `model_hint` | (opcional) `haiku | sonnet | opus | fable | inherit` — padrão `inherit`, que significa o modelo do runtime do usuário |
-
-### `components` (obrigatório)
-
-| Campo | Função |
-|---|---|
-| `agents[]` | Lista de paths relativos a `agents/<name>.md` |
-| `tasks[]` | Lista de paths relativos a `tasks/<name>.md` |
-| `workflows[]` | Lista de paths relativos a `workflows/<name>.yaml` |
-| `schemas[]` | (opcional) Schemas JSON do squad |
-
-### `runtime_requirements` (obrigatório)
-
-`policy: declared` é o padrão retrocompatível e exige `minimum[]`. `policy: active`
-usa o runtime que hospeda a sessão e pode omitir `minimum`; adapters registrados
-continuam preferenciais, features obrigatórias continuam fail-closed e
-`incompatible[]` continua sendo uma negação explícita. O engine nunca instala,
-inicia ou troca de runtime.
-
-| Campo | Função |
-|---|---|
-| `minimum[]` | Lista de `{runtime: <id>, version?: <v>}`. Runtimes aceitos: `claude-code, codex, antigravity-cli, antigravity, gemini-cli, pi, kimi-cli, grok-cli, qwen-code, opencode, cursor, openclaw` |
-| `compatible[]` | Runtimes que também funcionam (sem garantia) |
-| `incompatible[]` | Runtimes que NÃO funcionam |
-
-### `features_required[]` / `features_optional[]`
-
-15 features canônicas:
-
-| Feature | Função |
-|---|---|
-| `max_turns` | Cap de turns por invocation |
-| `tool_whitelist` | Filtro de tools permitidos |
-| `subagent_spawning` | Capacidade de spawnar Agent({subagent_type}) |
-| `audit_trail` | Logging de eventos |
-| `scheduled_invocation` | Cron / heartbeats |
-| `event_bus` | Pub/sub entre agents |
-| `hooks` | Pre/post hooks |
-| `sandboxing` | Isolation por worktree ou similar |
-| `session_memory` | Memória entre invocations |
-| `project_memory` | Memória por projeto |
-| `global_memory` | Memória cross-projeto |
-| `handoff_artifacts` | Schema validation de handoffs |
-| `fork_context` | Spawn com fork de contexto |
-| `teammate_primitive` | Suporte a `Skill({skill: ..., teammate: ...})` |
-| `telemetry_otel` | Export OTel |
-
----
-
-## 5. v4 capability inferrer — controles
-
-`lib/v4-capability-inferrer.js` infere capabilities virtuais para squads v4. Comportamento configurável:
-
-| Constante (no código) | Default | Como mudar |
-|---|---|---|
-| `PREMIUM_MARKERS[]` | `[awwwards, nirvana, master, elite, premium, singularity, cinematic, studio, forge]` | Edite array no arquivo. Squads cujo nome contém qualquer marker recebem `score_boost: 1.2` |
-| `KEYWORD_DOMAINS[]` | ~30 entries | Edite para mudar mapping `keyword → canonical domain` |
-| Inferência habilitada | `true` | Desligue passando `--no-infer-v4` ao `index-squads.ts` |
-
-### Como funciona
-
-Para cada squad v4 (sem `capabilities[]` declarado):
-
-1. Lê `components.workflows[]` do manifest
-2. Para cada workflow file: lê `description`, `objective`, `workflow_name` via parsing leve
-3. Infere `id`: `<namespace>.<workflow_slug>.execute` (3 segmentos)
-4. Infere `domains[]`: heurística keyword → catalog
-5. Gera `examples[]` a partir de description ou nome
-6. Aplica `score_boost: 1.2` se nome do squad contém PREMIUM_MARKER
-
-Output: `${SQUADS_REGISTRY_PATH}#_v4_inferred_capabilities` (extra-schema, prefixo `_`).
-
-Consumido pelo harness `lib/router.js#buildMatchDocs` no Stage 2 BM25.
-
-### Resultado atual (run-2 do refactor)
-
-- 147 squads v4 inferred
-- 458 capabilities virtuais total
-- Awwwards-singularity-studio: 5 capabilities discoveráveis
-
----
-
-## 6. Como mudar configuração
-
-### Migrar squad v4 → v5 nativo
-
-Adicione ao topo do `squad.yaml`:
-
-```yaml
-protocol: "5.0"
-capabilities:
-  - id: <namespace>.<verb>.<action>
-    description: "≥20 chars"
-    domains: [domain_canonical]
-    invoke:
-      type: workflow
-      ref: workflows/main.yaml
-    examples:
-      - "Frase 1"
-      - "Frase 2"
-    outputs:
-      - name: result
-        type: markdown
-```
-
-Re-validate + re-index.
-
-### Mudar root dir
+Scaffold a v6 squad from `templates/`. It is a script, not an `nrv` subcommand, and runs the create gate afterwards.
 
 ```bash
-echo 'SQUADS_DIR=/Volumes/external/squads' >> ~/.env
-source ~/.env
-bun ~/.nirvana/skills/squads/scripts/index-squads.ts
+bun ~/.nirvana/skills/squads/scripts/init-squad.ts <target-dir> [--name N] [--description D] [--author A] [--prefix P] \
+  [--capability-id ID] [--capability-description D] [--capability-domains "a,b"] [--workflow-ref NAME] \
+  [--example "intent"] [--force] [--skip-verify]
 ```
 
-### Adicionar nova capability a squad existente
+Each value also has an environment variable (`SQUAD_NAME`, `SQUAD_DESCRIPTION`, `SQUAD_CAPABILITY_ID`, `SQUAD_WORKFLOW_REF`, and others). Without `--force` it refuses to overwrite an existing `squad.yaml`.
 
-Edite `squad.yaml`, append em `capabilities[]`. Re-validate + re-index. BM25 indexa imediatamente.
+## 4. Manifest fields
 
-### Boost de descoberta para um squad específico
+The manifest is defined by `SQUAD_PROTOCOL_V6.md` §5.1 and §22; the generated schemas are `skills/_shared/schemas/{squad,capability,workflow}.schema.json`. The settings that change how a squad runs:
 
-```yaml
-capabilities:
-  - id: my.cap.execute
-    score_boost: 1.5     # default 1.0; valores >1.0 priorizam em empate
-```
+| Field | Effect |
+|---|---|
+| `protocol` | `"6.0"` for new squads; `4.0`, `4.1`, `5.0` still load |
+| `runtime_requirements.policy` | `active` (default): run on the session's runtime. `declared`: restrict to `minimum` plus `compatible`, and `minimum` is required |
+| `runtime_requirements.incompatible[]` | Hard denial under either policy |
+| `features_required[]` | Closed enum (App-B); the load fails when the runtime lacks one |
+| `experimental_domains` | Allows domains outside `CAPABILITY_CATALOG_V1.yaml` |
+| `capabilities[].score_boost` | 0 to 2, default 1; multiplies the discovery score |
+| `model_hint` (per capability) | `haiku`, `sonnet`, `opus`, `fable` or `inherit` (default: the user's runtime model) |
+| `capabilities[].fidelity.status` | `validated`, `experimental`, `drifted`, `retired`; also scales the score |
+| `capabilities[].acceptance[]` | What the judge charges (§29); at most 12 |
 
-OU adicione palavra ao `PREMIUM_MARKERS[]` de `v4-capability-inferrer.js` se for v4.
+Runtimes accepted in `runtime_requirements`: `claude-code`, `codex`, `antigravity-cli`, `antigravity`, `gemini-cli`, `pi`, `kimi-cli`, `grok-cli`, `qwen-code`, `opencode`, `cursor`, `openclaw`.
 
-### Marcar capability como experimental
+## 5. Settings and limits
 
-```yaml
-capabilities:
-  - id: experimental.thing.execute
-    fidelity_status: experimental    # default 'validated' — afeta se aparece em recommendations
-```
-
-**Nota:** o schema Pydantic v5 NÃO aceita `fidelity_status` direto na capability. Para squads v5 puros, esse campo é ignorado. Para v4 inferred, é hardcoded como `inferred`.
-
----
-
-## 7. Defaults e limites do schema
-
-| Limite | Valor | Origem |
+| Setting or limit | Default | Effect |
 |---|---|---|
-| `name` regex | `^[a-z][a-z0-9-]+$` | manifest |
-| `version` regex | `^\d+\.\d+\.\d+(-[a-z0-9.-]+)?$` | manifest |
-| `protocol` enum | `5.0` ou `4.0` | manifest |
-| `capability.id` regex | `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2,}$` | capability.schema.json |
-| `capability.description` length | ≥20 chars | capability.schema.json |
-| `capability.domains[]` | 1-5 | capability.schema.json |
-| `capability.examples[]` | ≥1 | capability.schema.json |
-| `outputs[].type` enum | `file | string | json | array | markdown | html | binary` | capability.schema.json |
+| `routing.mode` | `agentic` | `agentic`, `cards` or `fast` (BM25) matcher |
+| `routing.dense` | `off` | `fallback` consults dense retrieval only when BM25 finds nothing (`nrv embeddings enable`) |
+| `gauntlet.requirements_source` | `brief` | `capability` makes the judge charge `acceptance[]` (§29.3) |
+| `gauntlet.evaluator` | automatic | Pin the evaluator, `squad:<slug>[:<cap>]` (§30.3) |
+| `capability_description_max` | 1500 | Capability description ceiling (200 to 5000) |
+| `capability_keywords_max`, `capability_example_briefs_max`, `capability_produces_max` | 60, 20, 40 | Routing metadata ceilings |
+| `squad_capabilities_max` | 50 | Capabilities per squad |
+| `workflow_body_words_max` | 2500 | Workflow body ceiling, a warning (§28.2) |
+| `squad_prompt_components_bytes_max` | 65536 | Target for agent and task bytes in a dispatch prompt; a note when crossed, never a cut (§32.2) |
 
----
+Limits cascade: `NIRVANA_LIMIT_<KEY>` env, then `.nirvana-limits.yaml` in the project, then `~/.claude/nirvana-limits.yaml`, then the defaults.
 
-## 8. Troubleshooting de configuração
+## 6. Common changes
 
-| Sintoma | Causa | Fix |
+**Move the squads directory.** Set `SQUADS_DIR=/path/to/squads` in the environment, then `nrv index`.
+
+**Add a capability.** Append to `capabilities[]` in `squad.yaml` (`templates/capability-block.tmpl`), then `nrv validate squad <slug>`, `nrv index` and the self-retrieval gate (`bun ~/.nirvana/skills/_shared/scripts/self-retrieval-gate.ts <slug>`).
+
+**Raise a squad's discovery priority.** Set `score_boost` above 1 on the capability. Prefer sharper `description`, `keywords` and `example_briefs`, which is what the matchers read.
+
+## 7. Troubleshooting
+
+| Symptom | Cause | Fix |
 |---|---|---|
-| `Capability id pattern violation` | <3 segmentos dotted | Use `marketing.funnel.create` (3 segmentos) |
-| Domain warning | Não está no catalog | Adicione domain ao `CAPABILITY_CATALOG_V1.yaml` OU set `experimental_domains: true` |
-| `outputs[].type: yaml rejected` | Schema só aceita 7 tipos | Use `string` e descreva inline |
-| `Extra inputs not permitted: fidelity_status` | v5 schema strict | Remova o campo (ou use v4) |
-| Awwwards squad não descoberto | Brief sem keywords premium | Use "cinematic", "awwwards", "webgl" no brief para bypass de Stage 0 |
-| BM25 não match seu squad | Description curta ou examples vazios | Pad description ≥20 chars + adicione 2-3 examples próximos do vocabulário do usuário |
-| v4 squad sem capabilities inferidas | Manifest sem `components.workflows[]` | Inferrer cai no fallback Strategy B (1 capability genérica via primeiro agent). Se sem agents também, squad fica sem caps. |
+| `manifest_schema` on a capability id | Fewer than 3 dotted segments | Use `domain.subject.verb`, such as `marketing.funnel.create` |
+| Domain warning | Not in the catalog | Use a catalog domain or set `experimental_domains: true` |
+| `outputs[].type` rejected | Only `file`, `string`, `json`, `array`, `markdown`, `html`, `binary` are accepted | Use `string` and describe the format |
+| `not_for_too_long` | Entry over 25 characters | Two to four content words, no `(use X)` suffix (§33) |
+| `invoke_ref_extension` | `invoke.ref` ends in `.md` or `.yaml` | Drop the extension (§28.6), or `--fix` |
+| Squad missing from `nrv list-squads` | Registry stale or wrong scope | `nrv index`; check `NIRVANA_SCOPE` and `SQUADS_DIR` |
+| Router does not pick the squad | Thin description or few examples | Complete the routing metadata (§22.4), run the self-retrieval gate |
 
----
+## References
 
-## Referências
-
-- **SKILL.md** — entrada da skill
-- **README.md** — overview
-- **TUTORIAL.md** — tutorial passo-a-passo PT-BR
-- **SQUAD_PROTOCOL_V6.md** — o protocolo
-- **lib/v4-capability-inferrer.js** — código + comments do inferrer
-- **~/.nirvana/skills/_shared/catalogs/CAPABILITY_CATALOG_V1.yaml** — vocabulário canônico (57 domains)
-- **`nrv config explain <chave>`** — as configurações do engine, com a origem de cada valor
+`SKILL.md`, `README.md`, `TUTORIAL.md`, `SQUAD_PROTOCOL_V6.md`, `skills/_shared/catalogs/CAPABILITY_CATALOG_V1.yaml`, and `nrv config explain <key>` for engine settings.

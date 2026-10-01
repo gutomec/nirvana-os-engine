@@ -37,8 +37,12 @@ released version.
 ## Conventions
 
 - Code, comments, identifiers, commit messages: **English**.
-- User-facing runtime strings: localized (PT-BR is the default locale).
-- UTF-8 everywhere; never strip accents from localized text.
+- Everything the engine prints, shows or sends to an agent (CLI output,
+  errors, `nrv config` descriptions, prompts, the Glance UI): **English**.
+  Portuguese stays only as data the engine matches against input (keyword and
+  stopword lists, regexes, eval briefs) and in content about Brazil-only law
+  or norms. Deliverables follow the language of the request.
+- UTF-8 everywhere; never strip diacritics from content.
 - Runtime: Bun only — top-level await, `Bun.$`, `bun:sqlite` are used freely.
 - Match the style of the file you are editing. Surgical diffs: every changed
   line should trace to the change you are making.

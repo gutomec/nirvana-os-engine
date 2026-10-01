@@ -2489,9 +2489,9 @@ export function runHeadless(opts: RunHeadlessOpts): RunHeadlessResult {
     if (!_warnedUncappable.has(key)) {
       _warnedUncappable.add(key);
       console.error(
-        `[driver] AVISO: teto de $${opts.maxBudgetUsd} pedido, mas o runtime '${opts.runtime}' não aceita limite de gasto — ` +
-        `este run NÃO está limitado. Só claude-code aplica o teto no próprio CLI. ` +
-        `Entre runs, o acumulador de gasto do LLM_CASCADE continua valendo.`,
+        `[driver] WARNING: a ceiling of $${opts.maxBudgetUsd} was requested, but runtime '${opts.runtime}' does not accept a spend limit; ` +
+        `this run is NOT limited. Only claude-code applies the ceiling in its own CLI. ` +
+        `Across runs, the LLM_CASCADE spend accumulator still applies.`,
       );
     }
   }

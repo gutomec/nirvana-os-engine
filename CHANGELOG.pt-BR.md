@@ -30,6 +30,12 @@ O protocolo do harness tem 8 KB em vez de 57 KB: escolher as empresas, escrever 
 
 `scope.ts` e `paths.js` leem o escopo do manifesto do projeto (ambiente, depois manifesto, depois um `.env` legado, depois `global`). O `nrv init` não cria `.env`; `--scope` grava o manifesto, uma linha `NIRVANA_SCOPE` num `.env` existente migra para ele, e `--adopt` a leva sem tocar no `.env`. O painel de configuração do Glance lê e grava o manifesto. Protocolos superados (Squad v2, v4, v5; Business v1; Harness v1) e notas desatualizadas vão para `docs/legacy/`, que a instalação nunca copia.
 
+### O engine fala inglês, e os protocolos são documentos completos
+
+Tudo o que o engine imprime, mostra ou envia a um agente está em inglês: saída e erros da CLI, descrições e rótulos do `nrv config`, perguntas do instalador, os prompts de squad, de revisão e de correção, rótulos de relatório, o cockpit Glance, os adaptadores de runtime, os templates de empresa. As entregas continuam no idioma do pedido (o contrato de projeto não tem mais PT-BR como padrão). Os arquivos que o engine nomeia também estão em inglês: o relatório é `final-report.pdf` / `final-report.html`, o publicador trabalha em `_report/` (`executive-summary.md`), e os agentes registram seus padrões em `## Assumptions`, com o título no idioma da entrega; execuções anteriores continuam sendo lidas. O português fica só como dado que o engine compara com a entrada (listas de palavras-chave e stopwords, regex, briefs de avaliação) e em conteúdo sobre leis ou normas exclusivamente brasileiras. O `check-english-source` agora lê toda string do código do engine, inclusive prompts de várias linhas, todo markdown sob `skills/` e os comentários de instaladores, lançadores, shell e Python.
+
+`SQUAD_PROTOCOL_V6.md` e `BUSINESS_PROTOCOL_V2.md` são completos e autossuficientes: nenhuma seção remete a uma versão arquivada, e os números de seção que o código e os testes citam não mudaram. O protocolo de empresas descreve a execução solo e documenta `review: required`; o tutorial e o guia de configuração de empresas não ensinam mais handoffs, heartbeats, tickets nem cadeias de aprovação.
+
 ## 0.14.9 — 2026-09-30
 
 ### Clones e squads escopados no projeto: listagem, validação, versões e o link de dependências

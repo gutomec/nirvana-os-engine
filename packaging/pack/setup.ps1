@@ -1,9 +1,9 @@
-# setup.ps1 — bootstrap de 1 comando no Windows, sem pré-requisito além do PowerShell.
+# setup.ps1 — one-command bootstrap on Windows, no prerequisite beyond PowerShell.
 #
 #   powershell -ExecutionPolicy Bypass -File setup.ps1
 #
-# Instala o Bun (user-space, em %USERPROFILE%\.bun) se faltar, garante o binário no
-# PATH DESTA sessão e roda o setup.ts do pack com esse Bun. Idempotente.
+# Installs Bun (user space, in %USERPROFILE%\.bun) if missing, puts the binary on
+# THIS session's PATH and runs the pack's setup.ts with that Bun. Idempotent.
 $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 
@@ -17,21 +17,21 @@ function Find-Bun {
 
 $bun = Find-Bun
 if (-not $bun) {
-  Write-Host "Bun nao encontrado - instalando (user-space, sem admin)..."
+  Write-Host "Bun not found - installing (user-space, no admin)..."
   powershell -Command "irm bun.sh/install.ps1 | iex"
   $bun = Find-Bun
 }
 if (-not $bun) {
   # Console strings stay unaccented on purpose: PowerShell 5.1 reads a BOM-less
   # .ps1 as ANSI, so a "nao" written with the tilde reaches the buyer as mojibake.
-  # The comments above keep their accents; only what Write-Host prints is ASCII.
-  Write-Host "Nao consegui instalar o Bun automaticamente."
-  Write-Host "  Instale manualmente e rode de novo:"
+  # Only what Write-Host prints needs to stay ASCII.
+  Write-Host "Could not install Bun automatically."
+  Write-Host "  Install it manually and run again:"
   Write-Host '    powershell -c "irm bun.sh/install.ps1 | iex"'
   Write-Host "    powershell -ExecutionPolicy Bypass -File setup.ps1"
-  Write-Host "  Se a politica de execucao bloquear o irm, instale pelo winget:"
+  Write-Host "  If the execution policy blocks irm, install with winget:"
   Write-Host "    winget install Oven-sh.Bun"
-  Write-Host "  Instalou e o Bun continua sumido? Abra um terminal novo antes de rodar de novo."
+  Write-Host "  Installed it and Bun is still missing? Open a new terminal before running again."
   exit 1
 }
 

@@ -5,7 +5,7 @@ Intent: CREATE (keywords: create, new, scaffold, generate, build squad)
 
 ## Protocol Reference
 - `SQUAD_PROTOCOL_V6.md` §28 (workflow document), §29 (acceptance), §33 (`not_for` ≤25), §34 (admission gate).
-- Squad Protocol v5 (archived) §22 (capabilities) + base v4 §5–§8.
+- `SQUAD_PROTOCOL_V6.md` §22 (capabilities) and §5–§8 (package, agents, tasks, workflows).
 - Canonical schema: `~/.nirvana/skills/_shared/schemas/capability.schema.json`.
 - Routing metadata: `~/.nirvana/skills/_shared/ROUTING_METADATA_CONTRACT.md`.
 - Prompt wizard: `references/15-creation-wizard.md`.
@@ -256,7 +256,7 @@ in `templates/capability-block.tmpl`.
     estimated_cost_usd: 0.50
 ```
 
-**Practical rules (v5 §22.9 + v6 §29/§33):**
+**Practical rules (`SQUAD_PROTOCOL_V6.md` §22.9, §29, §33):**
 - `id` unique within the squad. Globally, multiple squads MAY share the same
   id; the harness picks by the `score_boost + fidelity_status` combination.
 - `description` is the strong signal for BM25. Be concrete.

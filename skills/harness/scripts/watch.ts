@@ -114,7 +114,7 @@ function fmtEvent(ev: any): string {
 
   // Per-event detail line
   const parts: string[] = [];
-  const bizSlug = ev.business_slug ?? (ev as any).business; // alias agêntico (E3)
+  const bizSlug = ev.business_slug ?? (ev as any).business; // agentic alias (E3)
   const sqdName = ev.squad_name ?? (ev as any).squad;
   if (bizSlug) parts.push(`biz=${bizSlug}`);
   if (sqdName) parts.push(`squad=${sqdName}`);

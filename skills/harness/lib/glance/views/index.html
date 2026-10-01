@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="pt-BR" data-theme="__GLANCE_THEME__">
+<html lang="en" data-theme="__GLANCE_THEME__">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -59,7 +59,7 @@
           class="glance-search-input">
         <kbd class="glance-search-kbd">⌘K</kbd>
       </div>
-      <!-- Search dropdown (com estado de zero-resultados) -->
+      <!-- Search dropdown (with zero-results state) -->
       <div x-show="searchResults.length > 0 || (searchDone && searchQuery.trim().length >= 2)" x-transition class="dropdown glance-search-dropdown">
         <template x-for="r in searchResults" :key="r.kind + r.slug">
           <button @click="onSearchPick(r)" class="dropdown-item">
@@ -142,12 +142,12 @@
         </div>
       </div>
       <button @click="toggleSetupMode()" :class="setupMode ? 'icon-btn icon-btn-active' : 'icon-btn'" x-cloak x-show="health.allow_actions" title="Setup mode — pick squads/businesses/mind-clones to copy to a project"><i data-lucide="package"></i></button>
-      <button @click="openActivity()" x-ref="activityTrigger" :class="activityOverlayOpen ? 'icon-btn icon-btn-active activity-trigger' : 'icon-btn activity-trigger'" :aria-pressed="activityOverlayOpen ? 'true' : 'false'" title="Activity — feed de eventos do sistema">
+      <button @click="openActivity()" x-ref="activityTrigger" :class="activityOverlayOpen ? 'icon-btn icon-btn-active activity-trigger' : 'icon-btn activity-trigger'" :aria-pressed="activityOverlayOpen ? 'true' : 'false'" title="Activity: system event feed">
         <i data-lucide="bell"></i>
         <span class="activity-badge" x-show="activityUnseenCount > 0" x-text="activityUnseenCount > 99 ? '99+' : activityUnseenCount"></span>
       </button>
-      <button @click="chatOpen ? closeChat() : openChat()" :class="chatOpen ? 'icon-btn icon-btn-active' : 'icon-btn'" title="Chat — converse com o Nirvana e opere o sistema"><i data-lucide="message-square"></i></button>
-      <button @click="openSettings()" :class="settingsOpen ? 'icon-btn icon-btn-active' : 'icon-btn'" title="Configuração" aria-label="Configuração"><i data-lucide="settings"></i></button>
+      <button @click="chatOpen ? closeChat() : openChat()" :class="chatOpen ? 'icon-btn icon-btn-active' : 'icon-btn'" title="Chat: talk to Nirvana and operate the system"><i data-lucide="message-square"></i></button>
+      <button @click="openSettings()" :class="settingsOpen ? 'icon-btn icon-btn-active' : 'icon-btn'" title="Settings" aria-label="Settings"><i data-lucide="settings"></i></button>
       <button @click="consoleOpen = !consoleOpen" title="Console" class="icon-btn" :class="jobs.some(j => j.status==='running') ? 'icon-btn-pulse' : ''"><i data-lucide="terminal"></i></button>
       <button @click="cycleTheme()" title="Toggle theme" class="icon-btn">
         <i data-lucide="sun" class="theme-icon-apple"></i>
@@ -158,10 +158,10 @@
     </div>
   </nav>
 
-  <!-- ─── Subsystems — o que está de pé (não o que rodou) ───
-       Cada célula é uma leitura real do disco. Uma que não pôde ser
-       determinada mostra — em vez de acender um verde que ninguém mediu. -->
-  <div class="subsystem-row gl" role="status" aria-label="Subsistemas do engine" :inert="activityOverlayOpen">
+  <!-- ─── Subsystems: what is up (not what ran) ───
+       Each cell is a real read from disk. One that could not be
+       determined shows a dash instead of lighting up a green nobody measured. -->
+  <div class="subsystem-row gl" role="status" aria-label="Engine subsystems" :inert="activityOverlayOpen">
     <span class="subsystem-row-title">ENGINE</span>
     <template x-for="cell in subsystemRow.cells" :key="cell.key">
       <span class="subsystem-cell" :title="cell.title">
@@ -171,7 +171,7 @@
       </span>
     </template>
     <span class="subsystem-row-summary" x-text="subsystemSummary"></span>
-    <button class="subsystem-row-refresh" @click="fetchSubsystems()" title="Reler os subsistemas" aria-label="Reler os subsistemas">
+    <button class="subsystem-row-refresh" @click="fetchSubsystems()" title="Re-read the subsystems" aria-label="Re-read the subsystems">
       <i data-lucide="rotate-cw"></i>
     </button>
   </div>
@@ -192,7 +192,7 @@
           <i data-lucide="chevron-left"></i>
         </button>
       </div>
-      <!-- ══ NÍVEL 1 — cartões de tipo (ocupam o aside inteiro) ══ -->
+      <!-- ══ LEVEL 1: kind cards (fill the whole aside) ══ -->
       <div class="kind-cards" x-show="navLevel === 'kinds'" role="tablist" aria-label="Sections">
         <template x-for="k in kinds" :key="k.id">
           <button
@@ -223,21 +223,21 @@
         </template>
       </div>
 
-      <!-- ══ NÍVEL 2 — lista (só p/ LIST_KINDS): back header + filtro + lista full-height ══ -->
+      <!-- ══ LEVEL 2: list (LIST_KINDS only): back header + filter + full-height list ══ -->
       <div class="list-nav" x-show="navLevel === 'list'">
 
-        <!-- Back header: voltar aos tipos + troca rápida de tipo -->
+        <!-- Back header: back to kinds + quick kind switch -->
         <div class="list-nav-header">
-          <button class="nav-back-btn" @click="backToKinds()" title="Voltar aos tipos (ESC)" aria-label="Voltar aos tipos">
+          <button class="nav-back-btn" @click="backToKinds()" title="Back to kinds (ESC)" aria-label="Back to kinds">
             <i data-lucide="arrow-left"></i>
           </button>
           <div class="nav-title-wrap" @click.outside="kindMenuOpen = false">
-            <button class="nav-title-btn" @click="kindMenuOpen = !kindMenuOpen" :aria-expanded="kindMenuOpen ? 'true' : 'false'" title="Trocar de tipo">
+            <button class="nav-title-btn" @click="kindMenuOpen = !kindMenuOpen" :aria-expanded="kindMenuOpen ? 'true' : 'false'" title="Switch kind">
               <span class="nav-title" x-text="kindLabel"></span>
               <span class="nav-title-count" x-text="countText(counts[kind])"></span>
               <i data-lucide="chevron-down" class="nav-title-caret"></i>
             </button>
-            <!-- Popover de troca rápida -->
+            <!-- Quick-switch popover -->
             <div class="nav-kind-menu" x-show="kindMenuOpen" x-transition role="menu">
               <template x-for="k in kinds.filter(x => LIST_KINDS.includes(x.id))" :key="k.id">
                 <button class="nav-kind-menu-item" :class="kind === k.id ? 'active' : ''" role="menuitem"
@@ -252,8 +252,8 @@
         </div>
 
         <div class="filter-row">
-          <input type="text" x-model="filterQuery" @input.debounce.200ms placeholder="filter…" class="filter-input" aria-label="Filtrar lista">
-          <select x-model="filterSource" class="filter-select" aria-label="Filtrar por origem">
+          <input type="text" x-model="filterQuery" @input.debounce.200ms placeholder="filter…" class="filter-input" aria-label="Filter list">
+          <select x-model="filterSource" class="filter-select" aria-label="Filter by source">
             <option value="">all</option>
             <option value="project">project</option>
             <option value="global">global</option>
@@ -285,7 +285,7 @@
         </div>
 
         <div class="list-pane">
-          <!-- Loading: skeletons (distingue de "vazio") -->
+          <!-- Loading: skeletons (distinct from "empty") -->
           <template x-if="listLoading[kind] && currentList.length === 0">
             <div class="list-skeletons">
               <template x-for="i in 6" :key="i"><div class="list-skeleton"></div></template>
@@ -294,8 +294,8 @@
           <!-- Error state -->
           <div x-show="!listLoading[kind] && listError[kind]" class="list-error">
             <i data-lucide="alert-circle" class="icon-inline"></i>
-            <span x-text="`Falha ao carregar ${kind}: ${listError[kind]}`"></span>
-            <button class="btn btn-ghost btn-xs" @click="refreshAll()">tentar de novo</button>
+            <span x-text="`Failed to load ${kind}: ${listError[kind]}`"></span>
+            <button class="btn btn-ghost btn-xs" @click="refreshAll()">try again</button>
           </div>
           <!-- Rows -->
           <template x-for="item in filteredList" :key="item.id || item.slug">
@@ -314,9 +314,9 @@
               <span x-show="scoreFor(item)" class="score-badge" :class="`tier-${scoreFor(item)?.tier}`" :title="`${scoreFor(item)?.tier} · ${scoreFor(item)?.score}/100`" x-text="scoreFor(item)?.score"></span>
             </button>
           </template>
-          <!-- Empty (não carregando, sem erro, zero itens) -->
+          <!-- Empty (not loading, no error, zero items) -->
           <div x-show="!listLoading[kind] && !listError[kind] && filteredList.length === 0" class="empty-state">
-            <span x-text="filterQuery || filterSource ? `Nenhum ${kind} para este filtro` : `No ${kind} in current scope`"></span>
+            <span x-text="filterQuery || filterSource ? `No ${kind} matches this filter` : `No ${kind} in current scope`"></span>
             <button x-show="projectFilter === 'project' && canFilterByProject()"
                     @click="setProjectFilter('all')" class="btn btn-ghost btn-xs filter-reset"
                     title="Switch from Project to All">switch to All</button>
@@ -327,9 +327,9 @@
            detail (page-layout-redesign.md §1.3) — persisted like the other
            Glance layout preferences (glance.sidebarOpen, glance.rightPaneOpen). -->
       <div class="sidebar-foot">
-        <button type="button" class="sidebar-pin-btn" :class="showSidebarHint ? 'hint-pulse' : ''" @click="toggleSidebarPin()" :aria-pressed="sidebarPinnedFull ? 'true' : 'false'" title="Fixar sidebar cheia mesmo com uma run aberta">
+        <button type="button" class="sidebar-pin-btn" :class="showSidebarHint ? 'hint-pulse' : ''" @click="toggleSidebarPin()" :aria-pressed="sidebarPinnedFull ? 'true' : 'false'" title="Keep the sidebar fully open even with a run open">
           <i data-lucide="pin"></i>
-          <span class="sidebar-pin-label" x-text="sidebarPinnedFull ? 'fixada cheia' : 'auto-colapsa'"></span>
+          <span class="sidebar-pin-label" x-text="sidebarPinnedFull ? 'pinned open' : 'auto-collapses'"></span>
         </button>
       </div>
     </aside>
@@ -339,7 +339,7 @@
          finding, page-layout-redesign.md §3.1). An aria-live region announces
          the same change for screen-reader users, independent of the toast. -->
     <div class="sidebar-hint" x-show="showSidebarHint" x-cloak role="status">
-      Sidebar recolhida para ícones — uma run está aberta em detalhe. Clique <i data-lucide="pin" style="width:12px;height:12px;display:inline;vertical-align:-2px;"></i> para fixá-la cheia.
+      Sidebar collapsed to icons: a run is open in detail. Click <i data-lucide="pin" style="width:12px;height:12px;display:inline;vertical-align:-2px;"></i> to keep it fully open.
     </div>
     <div class="sr-only" aria-live="polite" x-text="sidebarLiveMessage"></div>
 
@@ -369,7 +369,7 @@
             </div>
             <!-- Per-squad actions (only when --allow-actions) -->
             <div class="detail-actions">
-              <button @click="verifyEntity('squad', detail?.slug || selected.slug)" class="action-btn">Verificar</button>
+              <button @click="verifyEntity('squad', detail?.slug || selected.slug)" class="action-btn">Verify</button>
             </div>
             <div class="detail-actions" x-cloak x-show="health.allow_actions">
               <button @click="runAction('activate-dry-run', { slug: detail.slug })" class="action-btn">Activate (dry-run)</button>
@@ -379,14 +379,14 @@
           </header>
           <div class="verify-panel" x-cloak x-show="verifyShown('squad', detail?.slug || selected.slug)">
             <div class="verify-verdict" :class="verifyReport?.verdict === 'ADMITTED' ? 'ok' : 'bad'"
-                 x-text="`${verifyReport?.verdict} · ${verifyReport?.summary?.errors || 0} erro(s) · ${verifyReport?.summary?.warnings || 0} aviso(s) · ${verifyReport?.summary?.debt || 0} baselinado(s)`"></div>
+                 x-text="`${verifyReport?.verdict} · ${verifyReport?.summary?.errors || 0} error(s) · ${verifyReport?.summary?.warnings || 0} warning(s) · ${verifyReport?.summary?.debt || 0} baselined`"></div>
             <template x-for="f in (verifyReport?.findings || [])" :key="f.id + (f.where || '')">
               <div class="verify-finding" :class="f.severity"
                    x-text="`${f.severity === 'error' ? '✗' : f.severity === 'warning' ? '⚠' : 'ℹ'} ${f.id}${f.where ? ':' + f.where : ''} — ${f.message}`"></div>
             </template>
             <div class="detail-actions" x-show="health.allow_actions && verifyFixable()">
-              <button @click="confirmAction('verify-fix', { kind: 'squad', slug: detail?.slug || selected.slug }, `Aplicar os reparos mecânicos em ${detail?.slug || selected.slug}? Há backup e rollback automático se algo piorar.`)"
-                      class="action-btn warning">Corrigir (--fix)</button>
+              <button @click="confirmAction('verify-fix', { kind: 'squad', slug: detail?.slug || selected.slug }, `Apply the mechanical repairs to ${detail?.slug || selected.slug}? A backup is made, with automatic rollback if anything gets worse.`)"
+                      class="action-btn warning">Fix (--fix)</button>
             </div>
           </div>
           <nav class="tabs">
@@ -470,19 +470,19 @@
               </div>
             </div>
             <div class="detail-actions">
-              <button @click="verifyEntity('business', detail?.slug || selected.slug)" class="action-btn">Verificar</button>
+              <button @click="verifyEntity('business', detail?.slug || selected.slug)" class="action-btn">Verify</button>
             </div>
           </header>
           <div class="verify-panel" x-cloak x-show="verifyShown('business', detail?.slug || selected.slug)">
             <div class="verify-verdict" :class="verifyReport?.verdict === 'ADMITTED' ? 'ok' : 'bad'"
-                 x-text="`${verifyReport?.verdict} · ${verifyReport?.summary?.errors || 0} erro(s) · ${verifyReport?.summary?.warnings || 0} aviso(s) · ${verifyReport?.summary?.debt || 0} baselinado(s)`"></div>
+                 x-text="`${verifyReport?.verdict} · ${verifyReport?.summary?.errors || 0} error(s) · ${verifyReport?.summary?.warnings || 0} warning(s) · ${verifyReport?.summary?.debt || 0} baselined`"></div>
             <template x-for="f in (verifyReport?.findings || [])" :key="f.id + (f.where || '')">
               <div class="verify-finding" :class="f.severity"
                    x-text="`${f.severity === 'error' ? '✗' : f.severity === 'warning' ? '⚠' : 'ℹ'} ${f.id}${f.where ? ':' + f.where : ''} — ${f.message}`"></div>
             </template>
             <div class="detail-actions" x-show="health.allow_actions && verifyFixable()">
-              <button @click="confirmAction('verify-fix', { kind: 'business', slug: detail?.slug || selected.slug }, `Aplicar os reparos mecânicos em ${detail?.slug || selected.slug}? Há backup e rollback automático se algo piorar.`)"
-                      class="action-btn warning">Corrigir (--fix)</button>
+              <button @click="confirmAction('verify-fix', { kind: 'business', slug: detail?.slug || selected.slug }, `Apply the mechanical repairs to ${detail?.slug || selected.slug}? A backup is made, with automatic rollback if anything gets worse.`)"
+                      class="action-btn warning">Fix (--fix)</button>
             </div>
           </div>
           <nav class="tabs">
@@ -522,35 +522,35 @@
                      it only render at all when actions are enabled). -->
                 <aside class="org-edit-panel" x-show="orgEditOpen" x-transition x-cloak>
                   <header class="org-edit-head">
-                    <span class="text-label" x-text="orgEditMode === 'add' ? 'Novo funcionário' : 'Editar posição'"></span>
-                    <button @click="closeOrgEdit()" class="icon-btn" title="Fechar"><i data-lucide="x"></i></button>
+                    <span class="text-label" x-text="orgEditMode === 'add' ? 'New employee' : 'Edit position'"></span>
+                    <button @click="closeOrgEdit()" class="icon-btn" title="Close"><i data-lucide="x"></i></button>
                   </header>
                   <section class="org-edit-body">
                     <div class="org-edit-field">
-                      <label class="text-caption">Título</label>
-                      <input type="text" x-model="orgEditDraft.role" class="memory-input" placeholder="ex: Coordenador de Escrituração">
+                      <label class="text-caption">Title</label>
+                      <input type="text" x-model="orgEditDraft.role" class="memory-input" placeholder="e.g. Bookkeeping Coordinator">
                     </div>
                     <div class="org-edit-field">
-                      <label class="text-caption">Descrição</label>
-                      <textarea x-model="orgEditDraft.description" class="memory-textarea" rows="3" placeholder="O que essa posição faz"></textarea>
+                      <label class="text-caption">Description</label>
+                      <textarea x-model="orgEditDraft.description" class="memory-textarea" rows="3" placeholder="What this position does"></textarea>
                     </div>
                     <div class="org-edit-field" x-show="orgEditMode === 'edit'">
-                      <label class="text-caption">Reporta para (slug do funcionário)</label>
-                      <input type="text" x-model="orgEditDraft.reportsTo" class="memory-input" placeholder="ex: ac-tech-director">
+                      <label class="text-caption">Reports to (employee slug)</label>
+                      <input type="text" x-model="orgEditDraft.reportsTo" class="memory-input" placeholder="e.g. ac-tech-director">
                     </div>
                     <div class="org-edit-field" x-show="orgEditMode === 'edit'">
-                      <label class="text-caption">DNA — mind-clones (separados por vírgula)</label>
-                      <input type="text" x-model="orgEditDraft.assignedMindClones" class="memory-input" placeholder="ex: eliseu-martins, seth-godin">
+                      <label class="text-caption">DNA: mind-clones (comma-separated)</label>
+                      <input type="text" x-model="orgEditDraft.assignedMindClones" class="memory-input" placeholder="e.g. eliseu-martins, seth-godin">
                     </div>
                     <div class="org-edit-field" x-show="orgEditMode === 'edit'">
-                      <label class="text-caption">Squads (separados por vírgula)</label>
-                      <input type="text" x-model="orgEditDraft.squadsAuthorized" class="memory-input" placeholder="ex: nirvana-contabilidade">
+                      <label class="text-caption">Squads (comma-separated)</label>
+                      <input type="text" x-model="orgEditDraft.squadsAuthorized" class="memory-input" placeholder="e.g. nirvana-contabilidade">
                     </div>
                     <div class="org-edit-error" x-show="orgEditError" x-text="orgEditError"></div>
                   </section>
                   <footer class="org-edit-buttons">
-                    <button @click="saveOrgEdit()" class="btn-primary" :disabled="orgEditSaving" x-text="orgEditSaving ? 'Salvando…' : 'Salvar'"></button>
-                    <button @click="closeOrgEdit()" class="btn-secondary">Cancelar</button>
+                    <button @click="saveOrgEdit()" class="btn-primary" :disabled="orgEditSaving" x-text="orgEditSaving ? 'Saving…' : 'Save'"></button>
+                    <button @click="closeOrgEdit()" class="btn-secondary">Cancel</button>
                   </footer>
                 </aside>
               </div>
@@ -632,19 +632,19 @@
               </div>
             </div>
             <div class="detail-actions">
-              <button @click="verifyEntity('mind-clone', selected.slug)" class="action-btn">Verificar</button>
+              <button @click="verifyEntity('mind-clone', selected.slug)" class="action-btn">Verify</button>
             </div>
           </header>
           <div class="verify-panel" x-cloak x-show="verifyShown('mind-clone', selected.slug)">
             <div class="verify-verdict" :class="verifyReport?.verdict === 'ADMITTED' ? 'ok' : 'bad'"
-                 x-text="`${verifyReport?.verdict} · ${verifyReport?.summary?.errors || 0} erro(s) · ${verifyReport?.summary?.warnings || 0} aviso(s) · ${verifyReport?.summary?.debt || 0} baselinado(s)`"></div>
+                 x-text="`${verifyReport?.verdict} · ${verifyReport?.summary?.errors || 0} error(s) · ${verifyReport?.summary?.warnings || 0} warning(s) · ${verifyReport?.summary?.debt || 0} baselined`"></div>
             <template x-for="f in (verifyReport?.findings || [])" :key="f.id + (f.where || '')">
               <div class="verify-finding" :class="f.severity"
                    x-text="`${f.severity === 'error' ? '✗' : f.severity === 'warning' ? '⚠' : 'ℹ'} ${f.id}${f.where ? ':' + f.where : ''} — ${f.message}`"></div>
             </template>
             <div class="detail-actions" x-show="health.allow_actions && verifyFixable()">
-              <button @click="confirmAction('verify-fix', { kind: 'mind-clone', slug: selected.slug }, `Aplicar os reparos mecânicos em ${selected.slug}? Há backup e rollback automático se algo piorar.`)"
-                      class="action-btn warning">Corrigir (--fix)</button>
+              <button @click="confirmAction('verify-fix', { kind: 'mind-clone', slug: selected.slug }, `Apply the mechanical repairs to ${selected.slug}? A backup is made, with automatic rollback if anything gets worse.`)"
+                      class="action-btn warning">Fix (--fix)</button>
             </div>
           </div>
 
@@ -946,12 +946,12 @@
       </header>
       <div class="runs-grid">
         <!-- LEFT: searchable, collapsible rail of runs (280px full ⇄ 56px
-             icon strip — page-layout-redesign.md §1.3, "lista de runs vira
-             rail fino e buscável"). -->
+             icon strip — page-layout-redesign.md §1.3, "runs list becomes
+             a thin, searchable rail"). -->
         <aside class="runs-list" :class="[selectedRun ? 'has-selection' : '', runsRailCollapsed ? 'collapsed' : '']">
           <div class="runs-list-head">
-            <input type="text" x-model="runsListQuery" x-show="!runsRailCollapsed" class="runs-list-search" placeholder="Filtrar runs…" aria-label="Filtrar runs">
-            <button type="button" class="runs-list-collapse-btn" @click="toggleRunsRail()" :aria-expanded="(!runsRailCollapsed).toString()" :title="runsRailCollapsed ? 'Expandir a lista de runs' : 'Colapsar a lista de runs'">
+            <input type="text" x-model="runsListQuery" x-show="!runsRailCollapsed" class="runs-list-search" placeholder="Filter runs…" aria-label="Filter runs">
+            <button type="button" class="runs-list-collapse-btn" @click="toggleRunsRail()" :aria-expanded="(!runsRailCollapsed).toString()" :title="runsRailCollapsed ? 'Expand the runs list' : 'Collapse the runs list'">
               <i :data-lucide="runsRailCollapsed ? 'chevron-right' : 'chevron-left'"></i>
             </button>
           </div>
@@ -1021,9 +1021,9 @@
                   <div class="flex items-center gap-2">
                     <!-- Continuar esta session no chat (Fase 2 → abre o chat da Fase 3) -->
                     <button x-show="health.allow_actions" @click="openChatForRun(selectedRun)"
-                            class="btn btn-solid btn-primary btn-sm" :title="selectedRun.resumable ? 'Continuar a mesma conversa (nrv revise)' : 'Retomar o projeto em contexto novo'">
+                            class="btn btn-solid btn-primary btn-sm" :title="selectedRun.resumable ? 'Continue the same conversation (nrv revise)' : 'Resume the project in a fresh context'">
                       <i data-lucide="message-square" class="icon-inline"></i>
-                      <span x-text="selectedRun.resumable ? 'Continuar session' : 'Retomar projeto'"></span>
+                      <span x-text="selectedRun.resumable ? 'Continue session' : 'Resume project'"></span>
                     </button>
                     <button @click="selectedRun = null" class="icon-btn" title="Close detail"><i data-lucide="x"></i></button>
                   </div>
@@ -1074,12 +1074,12 @@
                 <section class="related-activity">
                   <button type="button" class="related-activity-head" :aria-expanded="relatedActivityOpen ? 'true' : 'false'" @click="relatedActivityOpen = !relatedActivityOpen">
                     <i data-lucide="activity" class="icon-inline"></i>
-                    <span>Atividade relacionada · <b x-text="relatedActivity(selectedRun).length"></b> evento<span x-show="relatedActivity(selectedRun).length !== 1">s</span><template x-if="selectedRun.business_slug"><span> de <span x-text="selectedRun.business_slug"></span></span></template></span>
+                    <span>Related activity · <b x-text="relatedActivity(selectedRun).length"></b> event<span x-show="relatedActivity(selectedRun).length !== 1">s</span><template x-if="selectedRun.business_slug"><span> from <span x-text="selectedRun.business_slug"></span></span></template></span>
                     <i data-lucide="chevron-down" class="related-activity-chev"></i>
                   </button>
                   <div class="related-activity-body" x-show="relatedActivityOpen" x-cloak>
                     <template x-if="relatedActivity(selectedRun).length === 0">
-                      <div class="text-caption related-activity-empty">Nenhum outro evento recente deste business/projeto — o Cartão de Trajetória abaixo já conta a história inteira.</div>
+                      <div class="text-caption related-activity-empty">No other recent events for this business/project. The Trajectory Card below already tells the whole story.</div>
                     </template>
                     <template x-for="a in relatedActivity(selectedRun)" :key="(a.id || a.ts || '') + '-' + a.event">
                       <div class="related-activity-row">
@@ -1102,8 +1102,8 @@
                             <button type="button" class="trajectory-judgement-head"
                                     :aria-expanded="isTrajectoryRowExpanded(row._seq) ? 'true' : 'false'" @click="toggleTrajectoryRow(row._seq)">
                               <i data-lucide="gavel" class="icon-inline"></i>
-                              <span class="trajectory-judgement-title">Faixa de julgamento</span>
-                              <span class="text-caption" x-text="`${row.items.length} evento${row.items.length === 1 ? '' : 's'}${row.terminal ? ' · ' + row.terminal.view.title : ''}`"></span>
+                              <span class="trajectory-judgement-title">Judgement strip</span>
+                              <span class="text-caption" x-text="`${row.items.length} event${row.items.length === 1 ? '' : 's'}${row.terminal ? ' · ' + row.terminal.view.title : ''}`"></span>
                               <i data-lucide="chevron-down" class="trajectory-chevron icon-inline"></i>
                             </button>
                             <div class="trajectory-judgement-body" x-show="isTrajectoryRowExpanded(row._seq)" x-cloak>
@@ -1143,17 +1143,17 @@
                                 </button>
                               </template>
                               <dl class="kv-grid delivery-badge-detail" x-show="row.nuance && isTrajectoryRowExpanded(row._seq)" x-cloak>
-                                <template x-if="row.nuance?.detail?.ceiling"><dt>teto</dt></template>
+                                <template x-if="row.nuance?.detail?.ceiling"><dt>ceiling</dt></template>
                                 <template x-if="row.nuance?.detail?.ceiling"><dd x-text="row.nuance.detail.ceiling"></dd></template>
-                                <template x-if="row.nuance?.detail?.ceiling_reason"><dt>motivo</dt></template>
+                                <template x-if="row.nuance?.detail?.ceiling_reason"><dt>reason</dt></template>
                                 <template x-if="row.nuance?.detail?.ceiling_reason"><dd x-text="row.nuance.detail.ceiling_reason"></dd></template>
                                 <template x-if="row.nuance?.detail?.gate"><dt>gate</dt></template>
                                 <template x-if="row.nuance?.detail?.gate"><dd x-text="row.nuance.detail.gate"></dd></template>
-                                <template x-if="row.nuance?.detail?.gated_files != null"><dt>arquivos no gate</dt></template>
+                                <template x-if="row.nuance?.detail?.gated_files != null"><dt>files at the gate</dt></template>
                                 <template x-if="row.nuance?.detail?.gated_files != null"><dd x-text="row.nuance.detail.gated_files"></dd></template>
-                                <template x-if="row.nuance?.detail?.revisions != null"><dt>revisões</dt></template>
+                                <template x-if="row.nuance?.detail?.revisions != null"><dt>revisions</dt></template>
                                 <template x-if="row.nuance?.detail?.revisions != null"><dd x-text="row.nuance.detail.revisions"></dd></template>
-                                <template x-if="row.nuance?.detail?.files != null"><dt>arquivos</dt></template>
+                                <template x-if="row.nuance?.detail?.files != null"><dt>files</dt></template>
                                 <template x-if="row.nuance?.detail?.files != null"><dd x-text="row.nuance.detail.files"></dd></template>
                               </dl>
                               <!-- Runtime-health chip: the hint is visible inline, no extra click -->
@@ -1173,7 +1173,7 @@
                   <!-- Infrastructure events (coordinator snapshots, lease renewals) stay in the stream, hidden until toggled -->
                   <button type="button" class="run-infra-toggle text-caption" x-show="infraEventsVisible || trajectoryRows(selectedRun.events).hidden > 0"
                           :aria-expanded="infraEventsVisible ? 'true' : 'false'" @click="infraEventsVisible = !infraEventsVisible"
-                          x-text="infraEventsVisible ? 'Ocultar eventos de infraestrutura' : `Mostrar ${trajectoryRows(selectedRun.events).hidden} eventos de infraestrutura`"></button>
+                          x-text="infraEventsVisible ? 'Hide infrastructure events' : `Show ${trajectoryRows(selectedRun.events).hidden} infrastructure events`"></button>
                 </section>
                 <template x-if="selectedRun.artifact_paths.length">
                   <section>
@@ -1363,7 +1363,7 @@
           </template>
         </div>
         <span class="text-caption" x-show="graphScope === 'activity' && !canFilterByProject()">
-          Sem projeto vinculado — mostrando atividade de todos os projetos conhecidos.
+          No project bound: showing activity from all known projects.
         </span>
         <div class="toolbar toolbar-sm graph-filter-chips" x-show="graphScope === 'topology'">
           <button @click="setGraphFilter('capabilities')"  :class="graphFilter==='capabilities' ? 'toolbar-btn active' : 'toolbar-btn'">All</button>
@@ -1629,9 +1629,9 @@
       </div>
       <div class="cost-tables" x-show="cost && cost.period_events > 0">
         <div class="cost-table-block" x-show="!cost?.scoped_to && (cost?.by_project || []).length">
-          <h3 class="cost-table-title">Custo por projeto</h3>
+          <h3 class="cost-table-title">Cost by project</h3>
           <table class="cost-table">
-            <thead><tr><th>projeto</th><th>tarefas</th><th>ops</th><th>tokens</th><th>USD</th></tr></thead>
+            <thead><tr><th>project</th><th>tasks</th><th>ops</th><th>tokens</th><th>USD</th></tr></thead>
             <tbody>
               <template x-for="p in (cost?.by_project || [])" :key="p.project_id">
                 <tr>
@@ -1646,12 +1646,12 @@
           </table>
         </div>
         <div class="cost-table-block">
-          <h3 class="cost-table-title" x-text="cost?.scoped_to ? 'Sessões / tarefas deste projeto' : 'Sessões / tarefas (todos os projetos)'"></h3>
+          <h3 class="cost-table-title" x-text="cost?.scoped_to ? 'Sessions / tasks in this project' : 'Sessions / tasks (all projects)'"></h3>
           <table class="cost-table">
-            <thead><tr><th>tarefa</th><th>quando</th><th>modelo</th><th>turnos</th><th>tokens</th><th>USD</th></tr></thead>
+            <thead><tr><th>task</th><th>when</th><th>model</th><th>turns</th><th>tokens</th><th>USD</th></tr></thead>
             <tbody>
               <template x-for="s in (cost?.sessions || [])" :key="s.trace_id">
-                <tr class="cost-session-row" @click="enterKind('runs'); $nextTick(() => { location.hash = '#/runs/' + s.trace_id; })" title="Abrir esta session em Runs">
+                <tr class="cost-session-row" @click="enterKind('runs'); $nextTick(() => { location.hash = '#/runs/' + s.trace_id; })" title="Open this session in Runs">
                   <td x-text="s.brief ? (s.brief.length > 60 ? s.brief.slice(0,60)+'…' : s.brief) : (s.trace_id || '').slice(0,12)"></td>
                   <td x-text="(s.last_ts || '').slice(0,16).replace('T',' ')"></td>
                   <td x-text="(s.model || '').replace('claude-','')"></td>
@@ -1660,7 +1660,7 @@
                   <td x-text="`$${s.usd.toFixed(3)}`"></td>
                 </tr>
               </template>
-              <tr x-show="!(cost?.sessions || []).length"><td colspan="6" class="text-caption">nenhuma session no período</td></tr>
+              <tr x-show="!(cost?.sessions || []).length"><td colspan="6" class="text-caption">no sessions in the period</td></tr>
             </tbody>
           </table>
         </div>
@@ -1737,7 +1737,7 @@
     <header class="activity-overlay-head">
       <span class="activity-title">Activity</span>
       <span class="activity-counter" x-show="activityEvents.length > 0" x-text="`${activityEvents.length}`"></span>
-      <button type="button" class="icon-btn" x-ref="activityCloseBtn" @click="closeActivity()" title="Fechar (Esc)"><i data-lucide="x"></i></button>
+      <button type="button" class="icon-btn" x-ref="activityCloseBtn" @click="closeActivity()" title="Close (Esc)"><i data-lucide="x"></i></button>
     </header>
     <div class="activity-list">
       <template x-for="(e, idx) in visibleActivityEvents" :key="idx + '-' + (e.id || '') + '-' + (e.ts || '')">
@@ -1785,8 +1785,8 @@
       <header class="modal-head">
         <div class="modal-head-title">
           <i data-lucide="settings"></i>
-          <span class="text-headline" id="settings-modal-title">Configuração</span>
-          <span class="text-caption" x-text="settingsIsEngineTab() ? 'Engine (nrv config): vale no próximo despacho, sem reiniciar' : 'Ambiente (.env): segredos, escopo de biblioteca, regras de runtime'"></span>
+          <span class="text-headline" id="settings-modal-title">Settings</span>
+          <span class="text-caption" x-text="settingsIsEngineTab() ? 'Engine (nrv config): applies on the next dispatch, no restart needed' : 'Environment (.env): secrets, library scope, runtime rules'"></span>
         </div>
         <div class="modal-head-meta">
           <div class="toolbar toolbar-sm" x-show="!settingsIsEngineTab()">
@@ -1834,7 +1834,7 @@
         </div>
 
         <!-- Group tabs: the engine settings (nrv config) first, then the .env groups, each cluster labelled -->
-        <nav class="tabs settings-tabs-nav" x-show="settingsData || engineGroups.length" aria-label="Seções de configuração">
+        <nav class="tabs settings-tabs-nav" x-show="settingsData || engineGroups.length" aria-label="Settings sections">
           <span class="settings-tabs-source text-caption" x-show="engineGroups.length">Engine</span>
           <template x-for="g in engineGroups" :key="'engine:' + g.id">
             <button @click="settingsActiveGroup = 'engine:' + g.id"
@@ -1842,14 +1842,14 @@
                     :aria-current="settingsActiveGroup === 'engine:' + g.id ? 'true' : null"
                     x-text="g.label"></button>
           </template>
-          <span class="settings-tabs-source text-caption" x-show="settingsData">Ambiente (.env)</span>
+          <span class="settings-tabs-source text-caption" x-show="settingsData">Environment (.env)</span>
           <template x-for="g in settingsData?.groups || []" :key="g.id">
             <button @click="settingsActiveGroup = g.id"
                     :class="settingsActiveGroup === g.id ? 'tab active' : 'tab'"
                     :aria-current="settingsActiveGroup === g.id ? 'true' : null"
                     x-text="g.label"></button>
           </template>
-          <!-- Aba especial: regras de roteamento por runtime (chaves dinâmicas) -->
+          <!-- Special tab: per-runtime routing rules (dynamic keys) -->
           <button @click="settingsActiveGroup = '__rules__'"
                   :class="settingsActiveGroup === '__rules__' ? 'tab active' : 'tab'"
                   :aria-current="settingsActiveGroup === '__rules__' ? 'true' : null">Runtime rules</button>
@@ -1858,12 +1858,12 @@
         <!-- ══ Engine settings (nrv config): one control per key, saved per key ══ -->
         <div class="settings-body" x-show="settingsIsEngineTab()">
           <p class="text-caption settings-engine-intro">
-            Precedência: variável de ambiente &gt; projeto (<code x-text="engineSettings?.files?.project?.path || '.nirvana/config.yaml'"></code>) &gt; global (<code x-text="engineSettings?.files?.global?.path || '~/.nirvana/config.yaml'"></code>) &gt; engine &gt; padrão.
-            Cada gravação vale no próximo despacho pelo Glance, sem reiniciar; o mesmo que <code>nrv config set</code>.
+            Precedence: environment variable &gt; project (<code x-text="engineSettings?.files?.project?.path || '.nirvana/config.yaml'"></code>) &gt; global (<code x-text="engineSettings?.files?.global?.path || '~/.nirvana/config.yaml'"></code>) &gt; engine &gt; default.
+            Each write applies on the next dispatch through Glance, with no restart; the same as <code>nrv config set</code>.
           </p>
           <div x-show="engineError" class="run-suspicious-banner" role="alert">
             <div class="run-suspicious-banner-head">
-              <span class="badge badge-danger">Configuração ilegível</span>
+              <span class="badge badge-danger">Unreadable configuration</span>
               <strong x-text="engineError"></strong>
             </div>
           </div>
@@ -1872,7 +1872,7 @@
               <div class="settings-field-head">
                 <label class="settings-field-label" :for="'engine-' + f.key" x-text="f.name"></label>
                 <span class="badge badge-xs" :class="f.source === 'project' ? 'badge-success' : f.source === 'global' ? 'badge-info' : f.source === 'env' ? 'badge-warn' : 'badge-neutral'" x-text="f.sourceLabel"></span>
-                <span class="badge badge-xs badge-warn" x-show="f.locked"><i data-lucide="lock" class="icon-inline"></i> somente leitura</span>
+                <span class="badge badge-xs badge-warn" x-show="f.locked"><i data-lucide="lock" class="icon-inline"></i> read-only</span>
                 <code class="text-mono-sm settings-field-key" x-text="f.key"></code>
               </div>
               <div class="text-caption settings-field-desc" :id="'engine-desc-' + f.key" x-text="f.description"></div>
@@ -1900,22 +1900,22 @@
                        :value="engineDraftValue(f)" :placeholder="f.expects" @input="engineDraft[f.key] = $event.target.value"
                        spellcheck="false" autocomplete="off">
                 <label class="text-caption settings-engine-scope">
-                  <span>gravar em</span>
-                  <select class="input input-sm" :disabled="!f.writable" :aria-label="'Escopo de ' + f.key"
+                  <span>write to</span>
+                  <select class="input input-sm" :disabled="!f.writable" :aria-label="'Scope of ' + f.key"
                           @change="engineScope[f.key] = $event.target.value">
-                    <template x-for="s in f.scopes" :key="s"><option :value="s" x-text="s === 'project' ? 'projeto' : 'global'" :selected="s === engineScope[f.key]"></option></template>
+                    <template x-for="s in f.scopes" :key="s"><option :value="s" x-text="s === 'project' ? 'project' : 'global'" :selected="s === engineScope[f.key]"></option></template>
                   </select>
                 </label>
                 <button type="button" class="btn btn-solid btn-primary btn-sm" @click="saveEngineSetting(f)"
-                        :disabled="!f.writable || !!engineSaving[f.key]" x-text="engineSaving[f.key] ? 'salvando…' : 'Salvar'"></button>
+                        :disabled="!f.writable || !!engineSaving[f.key]" x-text="engineSaving[f.key] ? 'saving…' : 'Save'"></button>
                 <button type="button" class="btn btn-ghost btn-sm" @click="unsetEngineSetting(f)"
-                        :disabled="!f.writable || !!engineSaving[f.key]" :title="'Remover ' + f.key + ' do arquivo escolhido; a camada seguinte passa a valer'">Remover do arquivo</button>
+                        :disabled="!f.writable || !!engineSaving[f.key]" :title="'Remove ' + f.key + ' from the chosen file; the next layer takes over'">Remove from file</button>
               </div>
               <div class="settings-field-foot text-caption">
-                <span>padrão: <code class="text-mono-sm" x-text="engineDisplay(f, f.default)"></code></span>
-                <span x-text="'esperado: ' + f.expects"></span>
-                <span x-show="f.env" x-text="'variável: ' + f.env"></span>
-                <span x-show="f.origin" x-text="'origem: ' + f.origin"></span>
+                <span>default: <code class="text-mono-sm" x-text="engineDisplay(f, f.default)"></code></span>
+                <span x-text="'expected: ' + f.expects"></span>
+                <span x-show="f.env" x-text="'variable: ' + f.env"></span>
+                <span x-show="f.origin" x-text="'origin: ' + f.origin"></span>
               </div>
               <div class="settings-engine-note text-caption" x-show="f.locked" x-text="f.lockReason"></div>
               <div class="settings-engine-error text-caption" role="alert" x-show="engineErrors[f.key]" x-text="engineErrors[f.key]"></div>
@@ -1926,28 +1926,28 @@
 
         <!-- ══ Painel de REGRAS USE_*/NOT_USE_* ══ -->
         <div class="settings-body" x-show="settingsData && settingsActiveGroup === '__rules__'">
-          <p class="text-caption" style="margin-bottom:10px">Diga em português quando cada CLI deve ser usado. Ex.: <em>use codex quando precisar gerar imagens</em>, <em>nunca gemini para análise de codebase</em>. Precedência: flag explícita &gt; menção no brief &gt; veto (nunca) &gt; regra (use) &gt; runtime atual.</p>
+          <p class="text-caption" style="margin-bottom:10px">Say when each CLI should be used. E.g.: <em>use codex when you need to generate images</em>, <em>never gemini for codebase analysis</em>. Precedence: explicit flag &gt; mention in the brief &gt; veto (never) &gt; rule (use) &gt; current runtime.</p>
           <div class="rules-list">
             <template x-for="(r, i) in rulesDraft" :key="i">
               <div class="rule-row">
                 <select class="input input-sm rule-mode" x-model="r.mode" :class="r.mode === 'not' ? 'rule-mode-not' : 'rule-mode-use'">
                   <option value="use">Use</option>
-                  <option value="not">Nunca use</option>
+                  <option value="not">Never use</option>
                 </select>
                 <select class="input input-sm rule-runtime" x-model="r.runtime">
                   <template x-for="rt in rulesData?.runtimes || []" :key="rt"><option :value="rt" x-text="rt"></option></template>
                 </select>
-                <span class="rule-when text-caption">quando</span>
-                <input type="text" class="input input-sm rule-text" x-model="r.text" placeholder="ex.: precisar gerar imagens" spellcheck="false">
-                <button class="icon-btn" @click="removeRule(i)" title="Remover regra"><i data-lucide="trash-2"></i></button>
+                <span class="rule-when text-caption">when</span>
+                <input type="text" class="input input-sm rule-text" x-model="r.text" placeholder="e.g. you need to generate images" spellcheck="false">
+                <button class="icon-btn" @click="removeRule(i)" title="Remove rule"><i data-lucide="trash-2"></i></button>
               </div>
             </template>
-            <div x-show="rulesDraft.length === 0" class="empty-state" style="padding:20px">Nenhuma regra. O sistema usa o runtime atual da sua sessão.</div>
+            <div x-show="rulesDraft.length === 0" class="empty-state" style="padding:20px">No rules. The system uses the current runtime of your session.</div>
           </div>
-          <button class="btn btn-ghost btn-sm" @click="addRule()" style="margin-top:8px"><i data-lucide="plus" class="icon-inline"></i> Adicionar regra</button>
+          <button class="btn btn-ghost btn-sm" @click="addRule()" style="margin-top:8px"><i data-lucide="plus" class="icon-inline"></i> Add rule</button>
           <div style="margin-top:14px; display:flex; gap:8px; align-items:center">
-            <button class="btn btn-solid btn-primary btn-md" @click="saveRules()" :disabled="!rulesData?.allow_actions">Salvar regras → <span x-text="settingsScopePicker"></span></button>
-            <span class="text-caption" x-show="!rulesData?.allow_actions">requer --allow-actions</span>
+            <button class="btn btn-solid btn-primary btn-md" @click="saveRules()" :disabled="!rulesData?.allow_actions">Save rules → <span x-text="settingsScopePicker"></span></button>
+            <span class="text-caption" x-show="!rulesData?.allow_actions">requires --allow-actions</span>
           </div>
         </div>
 
@@ -2043,7 +2043,7 @@
          though the visible bar is a slim 3px (WCAG 2.2 AA 2.5.8 target size —
          ux-qa finding §3.1: the previous 8px-wide handle failed the floor). -->
     <div class="chat-resize-handle"
-         role="separator" aria-orientation="vertical" aria-label="Redimensionar o painel de chat"
+         role="separator" aria-orientation="vertical" aria-label="Resize the chat panel"
          :aria-valuemin="460" :aria-valuemax="920" :aria-valuenow="chatWidth" tabindex="0"
          @mousedown="startChatResize($event)"
          @keydown.left="stepChatWidth(-40)" @keydown.right="stepChatWidth(40)"></div>
@@ -2053,29 +2053,29 @@
         <span class="chat-head-dot"></span>
         <div>
           <div class="chat-head-name">Nirvana chat</div>
-          <div class="chat-head-sub text-caption" x-show="!chatSession" x-text="chatMode === 'run' ? (canonicalProjectId ? 'maestro · pergunte ou peça um trabalho' : 'concierge · pergunte ou peça um trabalho') : (chatMode === 'revise' ? 'continuando session' : 'retomando projeto')"></div>
-          <!-- A sessão nativa do runtime desta conversa (guardada por diretório de trabalho): continua no terminal -->
-          <div class="chat-head-sub text-caption chat-session" x-show="chatSession" x-cloak :title="chatResumeCommand ? 'Continue a mesma sessão no terminal, na raiz do projeto: ' + chatResumeCommand : ''">
-            <span>maestro · sessão </span><code class="chat-session-id" x-text="(chatSession || '').slice(0, 8)"></code>
-            <button type="button" class="chat-session-copy" x-show="chatResumeCommand" @click="navigator.clipboard?.writeText(chatResumeCommand); flash('Comando copiado: ' + chatResumeCommand, 2500)" title="Copiar o comando para continuar no terminal">copiar comando</button>
+          <div class="chat-head-sub text-caption" x-show="!chatSession" x-text="chatMode === 'run' ? (canonicalProjectId ? 'maestro · ask a question or request a job' : 'concierge · ask a question or request a job') : (chatMode === 'revise' ? 'continuing session' : 'resuming project')"></div>
+          <!-- The runtime's native session for this conversation (kept per working directory): continues in the terminal -->
+          <div class="chat-head-sub text-caption chat-session" x-show="chatSession" x-cloak :title="chatResumeCommand ? 'Continue the same session in the terminal, at the project root: ' + chatResumeCommand : ''">
+            <span>maestro · session </span><code class="chat-session-id" x-text="(chatSession || '').slice(0, 8)"></code>
+            <button type="button" class="chat-session-copy" x-show="chatResumeCommand" @click="navigator.clipboard?.writeText(chatResumeCommand); flash('Command copied: ' + chatResumeCommand, 2500)" title="Copy the command to continue in the terminal">copy command</button>
           </div>
         </div>
       </div>
-      <div class="chat-width-toggle" role="group" aria-label="Largura do painel">
-        <button type="button" :aria-pressed="chatWidth <= 460 ? 'true' : 'false'" @click="setChatWidthPreset(460)">compacto</button>
-        <button type="button" :aria-pressed="chatWidth >= 880 ? 'true' : 'false'" @click="setChatWidthPreset(880)">amplo</button>
+      <div class="chat-width-toggle" role="group" aria-label="Panel width">
+        <button type="button" :aria-pressed="chatWidth <= 460 ? 'true' : 'false'" @click="setChatWidthPreset(460)">compact</button>
+        <button type="button" :aria-pressed="chatWidth >= 880 ? 'true' : 'false'" @click="setChatWidthPreset(880)">wide</button>
       </div>
       <div class="flex items-center gap-2">
-        <button @click="openChat()" class="icon-btn" title="Nova conversa"><i data-lucide="plus"></i></button>
-        <button @click="chatHistoryOpen = !chatHistoryOpen" :class="chatHistoryOpen ? 'icon-btn icon-btn-active' : 'icon-btn'" title="Histórico de conversas"><i data-lucide="history"></i></button>
-        <button @click="closeChat()" class="icon-btn" title="Fechar (não interrompe o run)"><i data-lucide="x"></i></button>
+        <button @click="openChat()" class="icon-btn" title="New conversation"><i data-lucide="plus"></i></button>
+        <button @click="chatHistoryOpen = !chatHistoryOpen" :class="chatHistoryOpen ? 'icon-btn icon-btn-active' : 'icon-btn'" title="Conversation history"><i data-lucide="history"></i></button>
+        <button @click="closeChat()" class="icon-btn" title="Close (does not stop the run)"><i data-lucide="x"></i></button>
       </div>
     </header>
 
-    <!-- Drawer de histórico -->
+    <!-- History drawer -->
     <div class="chat-history" x-show="chatHistoryOpen" x-transition>
-      <div class="chat-history-head text-caption">Conversas recentes</div>
-      <template x-if="chatHistory.length === 0"><div class="chat-history-empty text-caption">Nenhuma conversa ainda.</div></template>
+      <div class="chat-history-head text-caption">Recent conversations</div>
+      <template x-if="chatHistory.length === 0"><div class="chat-history-empty text-caption">No conversations yet.</div></template>
       <template x-for="c in chatHistory" :key="c.id">
         <div class="chat-history-row" :class="c.id === chatId ? 'active' : ''">
           <button class="chat-history-open" @click="openChatFromHistory(c)">
@@ -2085,7 +2085,7 @@
               <div class="chat-history-time text-caption" x-text="runRelTime(new Date(c.updatedAt).toISOString())"></div>
             </div>
           </button>
-          <button class="icon-btn-sm" @click.stop="deleteChatFromHistory(c.id)" title="Remover"><i data-lucide="trash-2"></i></button>
+          <button class="icon-btn-sm" @click.stop="deleteChatFromHistory(c.id)" title="Remove"><i data-lucide="trash-2"></i></button>
         </div>
       </template>
     </div>
@@ -2094,12 +2094,12 @@
       <template x-if="chatMessages.length === 0">
         <div class="chat-empty">
           <div class="chat-empty-glyph">✦</div>
-          <div class="chat-empty-title">Converse com o seu Nirvana-OS</div>
-          <div class="chat-empty-sub text-caption">Descreva o que quer entregar. O orquestrador escolhe as empresas e squads, executa e mostra cada passo aqui.</div>
+          <div class="chat-empty-title">Talk to your Nirvana-OS</div>
+          <div class="chat-empty-sub text-caption">Describe what you want delivered. The orchestrator picks the businesses and squads, runs them and shows each step here.</div>
           <div class="chat-suggestions">
-            <button class="chat-chip" @click="chatInput='Análise de concorrência no Instagram do meu nicho'; sendChat()">Análise de concorrência</button>
-            <button class="chat-chip" @click="chatInput='Crie uma landing page de conversão para um SaaS'; sendChat()">Landing de SaaS</button>
-            <button class="chat-chip" @click="chatInput='Monte um plano de conteúdo de 30 dias'; sendChat()">Plano de conteúdo</button>
+            <button class="chat-chip" @click="chatInput='Competitor analysis on Instagram for my niche'; sendChat()">Competitor analysis</button>
+            <button class="chat-chip" @click="chatInput='Create a conversion landing page for a SaaS'; sendChat()">SaaS landing</button>
+            <button class="chat-chip" @click="chatInput='Build a 30-day content plan'; sendChat()">Content plan</button>
           </div>
         </div>
       </template>
@@ -2111,10 +2111,10 @@
             </div>
           </template>
           <div class="chat-bubble" :class="`chat-bubble-${m.role}`">
-            <!-- timeline dos eventos de audit (os 5 de ouro) sob a resposta -->
+            <!-- timeline of audit events (the golden 5) under the answer -->
             <template x-if="m.role === 'assistant' && (m.events?.length || (m.streaming && chatRunEvents.length))">
               <div class="run-surface">
-                <!-- cabeçalho vivo: qual empresa/squad/agente está trabalhando + custo -->
+                <!-- live header: which business/squad/agent is working + cost -->
                 <template x-if="m.streaming && (runSummary.business || runSummary.lastAgent || runSummary.state)">
                   <div class="run-head">
                     <span class="run-head-actor" x-show="runSummary.business"><i data-lucide="building-2" class="icon-inline"></i><span x-text="runSummary.business"></span></span>
@@ -2137,8 +2137,8 @@
                           <button type="button" class="trajectory-judgement-head"
                                   :aria-expanded="isTrajectoryRowExpanded(row._seq) ? 'true' : 'false'" @click="toggleTrajectoryRow(row._seq)">
                             <i data-lucide="gavel" class="icon-inline"></i>
-                            <span class="trajectory-judgement-title">Faixa de julgamento</span>
-                            <span class="text-caption" x-text="`${row.items.length} evento${row.items.length === 1 ? '' : 's'}${row.terminal ? ' · ' + row.terminal.view.title : ''}`"></span>
+                            <span class="trajectory-judgement-title">Judgement strip</span>
+                            <span class="text-caption" x-text="`${row.items.length} event${row.items.length === 1 ? '' : 's'}${row.terminal ? ' · ' + row.terminal.view.title : ''}`"></span>
                             <i data-lucide="chevron-down" class="trajectory-chevron icon-inline"></i>
                           </button>
                           <div class="trajectory-judgement-body" x-show="isTrajectoryRowExpanded(row._seq)" x-cloak>
@@ -2178,17 +2178,17 @@
                               </button>
                             </template>
                             <dl class="kv-grid delivery-badge-detail" x-show="row.nuance && isTrajectoryRowExpanded(row._seq)" x-cloak>
-                              <template x-if="row.nuance?.detail?.ceiling"><dt>teto</dt></template>
+                              <template x-if="row.nuance?.detail?.ceiling"><dt>ceiling</dt></template>
                               <template x-if="row.nuance?.detail?.ceiling"><dd x-text="row.nuance.detail.ceiling"></dd></template>
-                              <template x-if="row.nuance?.detail?.ceiling_reason"><dt>motivo</dt></template>
+                              <template x-if="row.nuance?.detail?.ceiling_reason"><dt>reason</dt></template>
                               <template x-if="row.nuance?.detail?.ceiling_reason"><dd x-text="row.nuance.detail.ceiling_reason"></dd></template>
                               <template x-if="row.nuance?.detail?.gate"><dt>gate</dt></template>
                               <template x-if="row.nuance?.detail?.gate"><dd x-text="row.nuance.detail.gate"></dd></template>
-                              <template x-if="row.nuance?.detail?.gated_files != null"><dt>arquivos no gate</dt></template>
+                              <template x-if="row.nuance?.detail?.gated_files != null"><dt>files at the gate</dt></template>
                               <template x-if="row.nuance?.detail?.gated_files != null"><dd x-text="row.nuance.detail.gated_files"></dd></template>
-                              <template x-if="row.nuance?.detail?.revisions != null"><dt>revisões</dt></template>
+                              <template x-if="row.nuance?.detail?.revisions != null"><dt>revisions</dt></template>
                               <template x-if="row.nuance?.detail?.revisions != null"><dd x-text="row.nuance.detail.revisions"></dd></template>
-                              <template x-if="row.nuance?.detail?.files != null"><dt>arquivos</dt></template>
+                              <template x-if="row.nuance?.detail?.files != null"><dt>files</dt></template>
                               <template x-if="row.nuance?.detail?.files != null"><dd x-text="row.nuance.detail.files"></dd></template>
                             </dl>
                             <!-- Runtime-health chip: the hint is visible inline, no extra click -->
@@ -2208,7 +2208,7 @@
                 <!-- Infrastructure events (coordinator snapshots, lease renewals) stay in the stream, hidden until toggled -->
                 <button type="button" class="run-infra-toggle text-caption" x-show="infraEventsVisible || trajectoryRows(m.streaming ? chatRunEvents : m.events).hidden > 0"
                         :aria-expanded="infraEventsVisible ? 'true' : 'false'" @click="infraEventsVisible = !infraEventsVisible"
-                        x-text="infraEventsVisible ? 'Ocultar eventos de infraestrutura' : `Mostrar ${trajectoryRows(m.streaming ? chatRunEvents : m.events).hidden} eventos de infraestrutura`"></button>
+                        x-text="infraEventsVisible ? 'Hide infrastructure events' : `Show ${trajectoryRows(m.streaming ? chatRunEvents : m.events).hidden} infrastructure events`"></button>
                 <!-- Multi-target projection of the Run (GET /api/v1/runs/:run/multi-target); rendered only once the coordinator saved a snapshot -->
                 <template x-if="runMultiTarget(m)">
                   <div class="run-mt">
@@ -2221,9 +2221,9 @@
                     <div class="text-caption run-mt-reason" x-show="runMultiTarget(m).terminalReason" x-text="runMultiTarget(m).terminalReason"></div>
                     <div class="run-mt-scroll">
                       <table class="cap-table run-mt-table">
-                        <caption class="sr-only">Nós do plano multi-target por onda</caption>
+                        <caption class="sr-only">Multi-target plan nodes by wave</caption>
                         <thead>
-                          <tr><th scope="col">Onda</th><th scope="col">Nó</th><th scope="col">Alvo</th><th scope="col">Modo</th><th scope="col">Estado</th><th scope="col">Concedido</th><th scope="col">Reportado</th><th scope="col">Razão</th><th scope="col">Bloqueios</th></tr>
+                          <tr><th scope="col">Wave</th><th scope="col">Node</th><th scope="col">Target</th><th scope="col">Mode</th><th scope="col">State</th><th scope="col">Granted</th><th scope="col">Reported</th><th scope="col">Reason</th><th scope="col">Blockers</th></tr>
                         </thead>
                         <tbody>
                           <template x-for="node in runMultiTarget(m).nodes" :key="node.nodeId">
@@ -2263,48 +2263,48 @@
               </div>
             </template>
             <div class="chat-text" x-show="m.text" x-html="m.role === 'assistant' ? renderMd(m.text) : escapeHtml(m.text)"></div>
-            <span x-show="m.streaming && !m.text && !(m.tools?.length)" class="chat-thinking">orquestrando<span class="chat-dots">…</span></span>
-            <!-- Estado e custo do turno do maestro (total_cost_usd do result) -->
+            <span x-show="m.streaming && !m.text && !(m.tools?.length)" class="chat-thinking">orchestrating<span class="chat-dots">…</span></span>
+            <!-- Maestro turn state and cost (total_cost_usd of the result) -->
             <div class="chat-turn-meta text-caption" x-show="m.role === 'assistant' && !m.streaming && (m.cost != null || (m.turnState && m.turnState !== 'completed'))">
-              <span x-show="m.turnState && m.turnState !== 'completed'" x-text="m.turnState === 'cancelled' ? 'turno cancelado' : 'turno falhou'"></span>
-              <span x-show="m.cost != null" x-text="'custo $' + Number(m.cost || 0).toFixed(3)"></span>
+              <span x-show="m.turnState && m.turnState !== 'completed'" x-text="m.turnState === 'cancelled' ? 'turn cancelled' : 'turn failed'"></span>
+              <span x-show="m.cost != null" x-text="'cost $' + Number(m.cost || 0).toFixed(3)"></span>
             </div>
           </div>
         </div>
       </template>
     </div>
 
-    <!-- Seletor de runtime: 'auto' = o host da sua sessão + suas regras USE_* decidem -->
+    <!-- Runtime selector: 'auto' = your session's host + your USE_* rules decide -->
     <div class="chat-runtime-bar" x-show="chatMode === 'run'">
       <i data-lucide="cpu" class="icon-inline"></i>
       <span class="text-caption">runtime</span>
       <select x-model="chatRuntime" class="chat-runtime-select" x-init="ensureRuntimeOptions()">
-        <option value="">auto (sua sessão)</option>
+        <option value="">auto (your session)</option>
         <template x-for="rt in runtimeOptions" :key="rt"><option :value="rt" x-text="rt"></option></template>
       </select>
-      <label class="chat-fast-toggle" :title="chatFast ? 'Modo rápido: BM25 direto do catálogo, mais veloz e econômico, menos deliberação' : 'Modo agêntico (padrão): analisa o catálogo a fundo p/ escolher o melhor squad/empresa'">
+      <label class="chat-fast-toggle" :title="chatFast ? 'Fast mode: BM25 straight from the catalog, quicker and cheaper, less deliberation' : 'Agentic mode (default): analyzes the catalog in depth to pick the best squad/business'">
         <input type="checkbox" x-model="chatFast">
         <i data-lucide="zap" class="icon-inline"></i>
-        <span class="text-caption" x-text="chatFast ? 'rápido' : 'agêntico'"></span>
+        <span class="text-caption" x-text="chatFast ? 'fast' : 'agentic'"></span>
       </label>
     </div>
     <div class="chat-composer">
       <textarea x-model="chatInput" @keydown.enter.prevent="if(!$event.shiftKey) sendChat()"
-                :disabled="chatBusy" placeholder="Pergunte algo ou descreva um trabalho… (Enter envia)"
+                :disabled="chatBusy" placeholder="Ask something or describe a job… (Enter to send)"
                 class="chat-input" rows="1"></textarea>
-      <button type="button" class="chat-cancel" x-show="chatBusy && chatTurnId" x-cloak @click="cancelTurn()" title="Cancelar o turno (SIGTERM no runtime)" aria-label="Cancelar o turno">
+      <button type="button" class="chat-cancel" x-show="chatBusy && chatTurnId" x-cloak @click="cancelTurn()" title="Cancel the turn (SIGTERM to the runtime)" aria-label="Cancel the turn">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
       </button>
       <button class="chat-send" @click="sendChat()" :disabled="chatBusy || !chatInput.trim()">
-        <!-- SVG inline (não lucide): o lucide troca o <i> por <svg> uma vez e não
-             re-renderiza quando :data-lucide muda, deixando o ícone preso no
-             loader. Com SVG estático + x-show, o Alpine alterna de verdade. -->
+        <!-- Inline SVG (not lucide): lucide swaps the <i> for an <svg> once and does
+             not re-render when :data-lucide changes, leaving the icon stuck on
+             the loader. With static SVG + x-show, Alpine really toggles. -->
         <svg x-show="!chatBusy" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
         <svg x-show="chatBusy" x-cloak class="spin" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
       </button>
     </div>
     <div class="chat-foot text-caption" x-show="!health.allow_actions">
-      Somente leitura — reinicie o Glance com <code>--allow-actions</code> para o chat operar o sistema.
+      Read-only: restart Glance with <code>--allow-actions</code> so the chat can operate the system.
     </div>
     </div>
   </aside>

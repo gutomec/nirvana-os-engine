@@ -10,7 +10,7 @@ const VOID_TAGS = new Set([
 export async function evaluate(args: { artifact: string; content: string; offline?: boolean }) {
   const { content } = args;
   if (!content || !content.trim()) {
-    return { name: "html-valid", passed: false, score: 0, reasoning: "HTML vazio.", fix_list: ["Escreva conteúdo HTML."] };
+    return { name: "html-valid", passed: false, score: 0, reasoning: "Empty HTML.", fix_list: ["Write HTML content."] };
   }
 
   // Ignore comments and <script>/<style> content (they may contain '<' that are not tags).
@@ -35,10 +35,10 @@ export async function evaluate(args: { artifact: string; content: string; offlin
   const fix_list: string[] = [];
   const unbalanced = [...counts.entries()].filter(([, n]) => n !== 0);
   for (const [name, n] of unbalanced) {
-    fix_list.push(n > 0 ? `<${name}> aberto ${n}× sem fechar` : `</${name}> fechado ${-n}× a mais`);
+    fix_list.push(n > 0 ? `<${name}> opened ${n}x without closing` : `</${name}> closed ${-n}x too many`);
   }
   const hasStructure = /<(html|body|div|section|main|article|p|h[1-6]|ul|ol|table|nav|header|footer)\b/i.test(clean);
-  if (total > 0 && !hasStructure) fix_list.push("Sem elementos estruturais reconhecíveis (div/section/p/…).");
+  if (total > 0 && !hasStructure) fix_list.push("No recognizable structural elements (div/section/p/…).");
 
   const passed = total > 0 && unbalanced.length === 0 && hasStructure;
   const score = total === 0 ? 0 : Math.max(0, 1 - unbalanced.length * 0.25 - (hasStructure ? 0 : 0.25));
@@ -47,10 +47,10 @@ export async function evaluate(args: { artifact: string; content: string; offlin
     passed,
     score: passed ? 1.0 : score,
     reasoning: total === 0
-      ? "Nenhuma tag HTML encontrada."
+      ? "No HTML tag found."
       : unbalanced.length === 0
-        ? `HTML estruturalmente bem-formado (${total} tags balanceadas).`
-        : `${unbalanced.length} tag(s) desbalanceada(s) de ${total}.`,
+        ? `Structurally well-formed HTML (${total} balanced tags).`
+        : `${unbalanced.length} unbalanced tag(s) out of ${total}.`,
     fix_list,
   };
 }

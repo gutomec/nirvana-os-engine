@@ -2,8 +2,8 @@ name: example-solo
 version: 1.0.0
 protocol: "2.0"
 description: >
-  Business solo de exemplo. Single-employee setup que funciona como prova de
-  conceito mínima. Use como base para criar businesses customizadas via wizard
+  Example solo business. Single-employee setup that works as a minimal proof
+  of concept. Use as a base for custom businesses created through the wizard
   (*business init <name> --template solo).
 author: businesses-skill
 license: SUL-1.0
@@ -18,17 +18,15 @@ domains:
 capabilities: []            # TODO: dotted capability ids this business fulfills (§2)
 produces:                   # artifact-type slugs, kebab-case (§3)
   - todo-artifact-type
-keywords:                   # multilingual synonym groups (§4): EN + PT (+ES), accented AND unaccented
+keywords:                   # synonym groups (§4): English, add other languages your clients write in
   - "TODO concept in English"
-  - "TODO conceito em português"
-  - "TODO conceito em portugues"
-example_briefs:             # >=3; >=1 EN and >=1 PT; symptom-phrased; conjugated + infinitive verbs (§5)
-  - "TODO: EN brief phrased as a real user ask, conjugated verb form"
-  - "TODO: brief PT como o dono escreveria em pânico, verbo conjugado"
-  - "TODO: brief cobrindo a forma no infinitivo (quero lançar... / launch...)"
+example_briefs:             # >=3; symptom-phrased; conjugated + infinitive verbs (§5)
+  - "TODO: brief phrased as a real user ask, conjugated verb form"
+  - "TODO: brief as the owner would write it in a panic, conjugated verb form"
+  - "TODO: brief covering the infinitive form (I want to launch... / launch...)"
 not_for:                    # exclusion fences (§6): 2-4 content words, 5-80 chars, no parentheses
   - "TODO: two-word fence"
-  - "TODO: cerca curta"
+  - "TODO: short fence"
 
 authority_level: tier-3
 run_budget_usd: 0            # per-run ceiling in USD; 0 = unlimited (v2 §6.11)
@@ -41,7 +39,7 @@ runtime_requirements:
   compatible:
     - { runtime: codex, version: ">=0.20.0" }
     - { runtime: gemini-cli, version: ">=0.4.0" }
-    - { runtime: antigravity-cli, version: ">=0.4.0" }  # +antigravity-cli (sucessor; gemini-cli sunset 2026-06-18 consumer)
+    - { runtime: antigravity-cli, version: ">=0.4.0" }  # +antigravity-cli (successor; gemini-cli consumer sunset 2026-06-18)
 
 features_required:
   - max_turns
@@ -65,4 +63,4 @@ memory:
 ui:
   client_facing_name: "Solo Business (Example)"
   category: general
-  pitch: "Template solo — 1 employee CEO que faz tudo. Substitua pela sua business real."
+  pitch: "Solo template: 1 CEO employee who does everything. Replace it with your real business."

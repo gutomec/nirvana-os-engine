@@ -211,12 +211,12 @@ export async function resolveMessageTarget(content: string, deps: MessageRouting
 }
 
 /** The chat's answer to a Message the router could not place (`no_match`): the router's own
- * rationale, then how to ask for work or name a target. PT-BR, as every string the Glance shows. */
+ * rationale, then how to ask for work or name a target. English, as every string the Glance shows. */
 function noMatchAnswer(rationale: string): string {
   return [
-    "Nenhuma empresa ou squad da sua biblioteca entrega este pedido, e o Glance não abre um Gauntlet para respondê-lo.",
-    rationale ? `Razão do roteador: ${rationale}` : "",
-    "Para pedir um trabalho, descreva o artefato que quer receber. Para nomear o alvo, comece a Message com `use business <slug>:` ou `use squad <slug>:`.",
+    "No business or squad in your library delivers this request, and Glance does not open a Gauntlet to answer it.",
+    rationale ? `Router rationale: ${rationale}` : "",
+    "To request work, describe the artifact you want to receive. To name the target, start the Message with `use business <slug>:` or `use squad <slug>:`.",
   ].filter(Boolean).join("\n\n");
 }
 

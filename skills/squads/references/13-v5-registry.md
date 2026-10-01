@@ -8,7 +8,7 @@ does not show up.
 
 ## Protocol Reference
 
-Squad Protocol v5 (archived) §23 (Global Registry and Indexing).
+`SQUAD_PROTOCOL_V6.md` §23 (Registry and Indexing), §24 (Discovery).
 Registry schema: `core-schemas.json#/registry_squads`.
 Implementation: `~/.nirvana/skills/squads/lib/registry.js`.
 
@@ -125,7 +125,7 @@ When the harness receives a brief, it:
    capabilities.
 4. Applies `score_boost` and the fidelity penalty (validated=1.0,
    experimental=0.85, drifted=0.5, retired=0).
-5. Returns 1 of the 3 signals (Squad v5 §24): `MATCH_HIGH` (score ≥0.80 and
+5. Returns 1 of the 3 signals (`SQUAD_PROTOCOL_V6.md` §24): `MATCH_HIGH` (score ≥0.80 and
    gap ≥0.15), `MATCH_AMBIGUOUS` (score 0.60-0.80), `NO_MATCH` (<0.60).
 
 v4 squads (without `capabilities[]`) **are in the registry**, but

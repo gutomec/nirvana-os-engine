@@ -140,7 +140,7 @@ export function resolveClonePersona(
     files = probed.files;
     resolved_by = "fs-probe";
     degraded = true;
-    degradeReason = "clone fora do registry (fs-probe) — rode nrv index";
+    degradeReason = "clone outside the registry (fs-probe); run nrv index";
   }
 
   const used: string[] = [];
@@ -214,7 +214,7 @@ export function resolveClonePersona(
       const overBudget = Boolean(opts.byteBudget && totalOf(units) > opts.byteBudget);
       if (overBudget) {
         degraded = true;
-        degradeReason = degradeReason || `fragmento acima do orçamento (${totalOf(units)}B > ${opts.byteBudget}B), entregue íntegro`;
+        degradeReason = degradeReason || `fragment over budget (${totalOf(units)}B > ${opts.byteBudget}B), delivered whole`;
       }
 
       if (dnaPath) used.push(dnaPath);
@@ -224,7 +224,7 @@ export function resolveClonePersona(
       // Schema missing/unreadable → fall back to full (never lose the persona).
       depth = "full";
       degraded = true;
-      degradeReason = degradeReason || (dnaRaw ? "dna-schema não parseável — fallback full" : "sem dna-schema.md — fallback full");
+      degradeReason = degradeReason || (dnaRaw ? "dna-schema not parseable, falling back to full" : "no dna-schema.md, falling back to full");
     }
     if (!content && depth === "fragments") depth = "full"; // empty soul+layers → falls back to full
   }
@@ -248,9 +248,9 @@ export function resolveClonePersona(
   if (depth !== "fragments" && opts.byteBudget && content.length > opts.byteBudget) {
     let cut = content.lastIndexOf("\n", opts.byteBudget);
     if (cut < opts.byteBudget * 0.6) cut = opts.byteBudget; // break too early → cut straight
-    content = content.slice(0, cut).trimEnd() + "\n\n…(persona truncada ao orçamento)";
+    content = content.slice(0, cut).trimEnd() + "\n\n…(persona truncated to budget)";
     degraded = true;
-    degradeReason = degradeReason || "persona truncada (byteBudget)";
+    degradeReason = degradeReason || "persona truncated (byteBudget)";
   }
 
   if (!content) return null;

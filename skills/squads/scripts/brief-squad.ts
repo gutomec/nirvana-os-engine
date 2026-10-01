@@ -98,11 +98,11 @@ fs.writeFileSync(briefFile, `# Brief
 **Project ID:** ${projectId}
 **Submitted:** ${submitted}
 
-## Conteúdo
+## Content
 
 ${brief}
 
-${scopeGuard("pt-BR")}
+${scopeGuard()}
 `);
 
 // Audit — the whole point. Emit brief_received AND dispatch_squad with the

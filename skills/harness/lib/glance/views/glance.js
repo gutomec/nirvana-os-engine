@@ -447,14 +447,14 @@ function glance() {
               assignedMindClones: toList(this.orgEditDraft.assignedMindClones),
               squadsAuthorized: toList(this.orgEditDraft.squadsAuthorized),
             };
-        if (this.orgEditMode === 'add' && !body.role) { this.orgEditError = 'título é obrigatório'; return; }
+        if (this.orgEditMode === 'add' && !body.role) { this.orgEditError = 'title is required'; return; }
         const res = await fetch(url, {
           method: this.orgEditMode === 'add' ? 'POST' : 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
         const data = await res.json();
-        if (!res.ok || data.error) { this.orgEditError = data.error || `erro ${res.status}`; return; }
+        if (!res.ok || data.error) { this.orgEditError = data.error || `error ${res.status}`; return; }
         this.orgEditOpen = false;
         this.detail = await api(`/api/businesses/${encodeURIComponent(bizSlug)}`);
         this.renderActiveChart('org-chart');
@@ -592,7 +592,7 @@ function glance() {
       if (!wasCollapsed && this.sidebarCollapsed && !this.sidebarHintShown) {
         this.sidebarHintShown = true;
         this.showSidebarHint = true;
-        this.sidebarLiveMessage = 'Sidebar recolhida para ícones — uma run está aberta em detalhe. Use o botão fixar para mantê-la cheia.';
+        this.sidebarLiveMessage = 'Sidebar collapsed to icons: a run is open in detail. Use the pin button to keep it fully open.';
         setTimeout(() => { this.showSidebarHint = false; }, 4000);
       }
     },
@@ -719,7 +719,7 @@ function glance() {
     },
     async addDecision() {
       if (!this.memoryAddDraft.decision_id || !this.memoryAddDraft.text) {
-        this.toast = { visible: true, message: 'decision_id + text obrigatórios' };
+        this.toast = { visible: true, message: 'decision_id + text required' };
         setTimeout(() => { this.toast.visible = false; }, 2500);
         return;
       }
@@ -742,7 +742,7 @@ function glance() {
           this.memoryAddDraft = { decision_id: '', text: '', source: 'manual', rationale: '' };
           await this.fetchDecisions();
         } else {
-          this.toast = { visible: true, message: data.error || 'erro ao salvar' };
+          this.toast = { visible: true, message: data.error || 'error while saving' };
         }
         setTimeout(() => { this.toast.visible = false; }, 2500);
       } catch (e) { this.toast = { visible: true, message: String(e) }; setTimeout(() => { this.toast.visible = false; }, 2500); }
@@ -1508,7 +1508,7 @@ function glance() {
     },
     saveChatToHistory() {
       if (!this.chatId) return;
-      const title = (this.chatMessages.find(m => m.role === 'user')?.text || 'Nova conversa').slice(0, 60);
+      const title = (this.chatMessages.find(m => m.role === 'user')?.text || 'New conversation').slice(0, 60);
       const existing = this.chatHistory.findIndex(c => c.id === this.chatId);
       const entry = { id: this.chatId, title, mode: this.chatMode, updatedAt: Date.now() };
       if (existing >= 0) this.chatHistory[existing] = entry; else this.chatHistory.unshift(entry);
@@ -1542,7 +1542,7 @@ function glance() {
       const isRun = this.chatMode === 'revise' || this.chatMode === 'resume';
       if (isRun) {
         // Production run: rehydrate the timeline from the trace's audit trail.
-        this.chatMessages = [{ role: 'system', text: `Continuando a conversa "${entry.title}".` }];
+        this.chatMessages = [{ role: 'system', text: `Continuing the conversation "${entry.title}".` }];
         try {
           const run = await api(`/api/runs/${encodeURIComponent(entry.id)}`);
           if (run?.brief) this.chatMessages.push({ role: 'user', text: run.brief });
@@ -1566,8 +1566,8 @@ function glance() {
       this.chatId = run.trace_id;
       this.chatMode = run.resumable ? 'revise' : 'resume';
       this.chatMessages = [{ role: 'system', text: run.resumable
-        ? `Continuando a session ${run.session_id?.slice(0,12)} (${run.session_runtime}). Escreva a mudança que quer.`
-        : `Retomando o projeto ${run.trace_id.slice(0,20)} em contexto novo.` }];
+        ? `Continuing session ${run.session_id?.slice(0,12)} (${run.session_runtime}). Write the change you want.`
+        : `Resuming project ${run.trace_id.slice(0,20)} in a fresh context.` }];
       this.chatOpen = true;
       this.subscribeRun(run.trace_id);
     },
@@ -1602,7 +1602,7 @@ function glance() {
     engineActiveGroup() { return this.engineGroups.find(g => 'engine:' + g.id === this.settingsActiveGroup) || null; },
     async fetchEngineSettings() {
       const panel = window.NirvanaSettingsPanel;
-      if (!panel) { this.engineError = 'settings-panel.js não carregou'; return; }
+      if (!panel) { this.engineError = 'settings-panel.js did not load'; return; }
       try {
         const query = this.canonicalProjectId ? `?project_id=${encodeURIComponent(this.canonicalProjectId)}` : '';
         const r = await fetch(`/api/v1/settings${query}`);
@@ -1733,7 +1733,7 @@ function glance() {
           body: JSON.stringify({ scope: this.settingsScopePicker, updates, deletes }),
         }).then(x => x.json());
         if (r.ok) { this.flash(`✓ ${r.applied_count} regra(s) salva(s) → ${this.settingsScopePicker} .env`); await this.fetchRules(); }
-        else { this.flash(`✗ ${r.error || 'falhou'}`, 3000); }
+        else { this.flash(`✗ ${r.error || 'failed'}`, 3000); }
       } catch (e) { this.flash(`✗ ${e.message}`, 3000); }
     },
     closeSettings() {
@@ -1847,7 +1847,7 @@ function glance() {
       if (this.canonicalProjectId) {
         try {
           const response = await fetch(`/api/v1/projects/${encodeURIComponent(this.canonicalProjectId)}/conversations`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify({ title: 'Nova conversa' }),
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify({ title: 'New conversation' }),
           });
           const conversation = await response.json();
           this.chatId = conversation.conversation_id;
@@ -1951,9 +1951,9 @@ function glance() {
     // What a prepared Run is doing, from its target and `run.route`: a Run without a route is
     // still being routed by the queue (`x_run_route_resolved` brings the target).
     canonicalRunStep(target, route) {
-      if (!route) return 'Roteando a Message (empresa, squad ou agent-x)…';
+      if (!route) return 'Routing the Message (business, squad or agent-x)…';
       const kind = target?.kind;
-      return (!kind || kind === 'agent-x') ? `Executando agent-x no Gauntlet light${this.routeVia(route)}…` : `Executando ${kind} ${target.slug || ''}${this.routeVia(route)}…`;
+      return (!kind || kind === 'agent-x') ? `Running agent-x in the light Gauntlet${this.routeVia(route)}…` : `Running ${kind} ${target.slug || ''}${this.routeVia(route)}…`;
     },
     // The answer the queue wrote to the conversation for a Message the router could not place.
     async canonicalRunAnswer(runId) {
@@ -2012,7 +2012,7 @@ function glance() {
             body: JSON.stringify({ project_id: this.canonicalProjectId, role: 'user', content: msg, mode: 'turn' }),
           });
           canonicalReceipt = await response.json();
-          if (!response.ok) throw new Error(canonicalReceipt.detail || canonicalReceipt.title || 'falha ao iniciar o turno');
+          if (!response.ok) throw new Error(canonicalReceipt.detail || canonicalReceipt.title || 'failed to start the turn');
         } catch (error) {
           const asst = this.chatMessages[this.chatMessages.length - 1];
           asst.text = `⚠ ${error.message || error}`; asst.streaming = false; this.chatBusy = false;
@@ -2032,7 +2032,7 @@ function glance() {
         // A maestro turn: the project's runtime session answers; the events arrive by SSE.
         const turn = canonicalReceipt.turn;
         if (turn.state === 'unavailable') {
-          asst.text = `⚠ Turnos do maestro indisponíveis (${turn.detail || turn.reason}).`;
+          asst.text = `⚠ Maestro turns unavailable (${turn.detail || turn.reason}).`;
           asst.streaming = false; this.chatBusy = false;
           return;
         }
@@ -2044,8 +2044,8 @@ function glance() {
         // The receipt is immediate: an explicit prefix already carries target and `run.route`; a
         // routed Message shows them once the stream brings `x_run_route_resolved`.
         asst.text = canonicalReceipt.queued
-          ? `Run canônico preparado. ${this.canonicalRunStep(canonicalReceipt.run.target, canonicalReceipt.run.route)}`
-          : `Run não executado: ${canonicalReceipt.run.state}${this.routeVia(canonicalReceipt.run.route)}.`;
+          ? `Canonical run prepared. ${this.canonicalRunStep(canonicalReceipt.run.target, canonicalReceipt.run.route)}`
+          : `Run not executed: ${canonicalReceipt.run.state}${this.routeVia(canonicalReceipt.run.route)}.`;
         if (canonicalReceipt.queued) this.subscribeCanonicalRun(this.canonicalProjectId, canonicalReceipt.run.runId, canonicalReceipt.run.lastSequence || 0, asst);
         else { asst.streaming = false; this.chatBusy = false; }
         return;
@@ -2064,7 +2064,7 @@ function glance() {
       }
       try {
         const r = await fetch(`/api/actions/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(x => x.json());
-        if (r.error || !r.job) { asst.text = `⚠ ${r.error || 'falha ao iniciar o job'}`; asst.streaming = false; this.chatBusy = false; return; }
+        if (r.error || !r.job) { asst.text = `⚠ ${r.error || 'failed to start the job'}`; asst.streaming = false; this.chatBusy = false; return; }
         this.followChatJob(r.job.id, asst, action === 'chat-agent' ? 'concierge' : 'run');
       } catch (e) {
         asst.text = `⚠ ${e.message}`; asst.streaming = false; this.chatBusy = false;
@@ -2083,7 +2083,7 @@ function glance() {
           this.chatRunEvents.push(item);
           // Only snapshots, node events and the terminal event change the projection.
           if (item.type === 'multi_target.snapshot_saved' || item.type === 'multi_target.plan_terminal' || item.payload?.node) this.refreshMultiTarget(projectId, runId);
-          if (item.type === 'x_run_route_resolved') asst.text = `Run canônico preparado. ${this.canonicalRunStep(item.payload?.target, item.payload?.route)}`;
+          if (item.type === 'x_run_route_resolved') asst.text = `Canonical run prepared. ${this.canonicalRunStep(item.payload?.target, item.payload?.route)}`;
           if (item.type === 'run.transitioned' && ['completed', 'withheld', 'delivered_with_reservations', 'cancelled', 'failed', 'rolled_back'].includes(item.payload?.to)) {
             es.close();
             if (this.chatMultiTarget) await this.refreshMultiTarget(projectId, runId);
@@ -2135,7 +2135,7 @@ function glance() {
         else if (ev.t === 'tool') { asst.tools = [...(asst.tools || []), { name: ev.name, cmd: ev.cmd }]; this.$nextTick(() => this.scrollChatBottom()); }
         else if (ev.t === 'run') { asst.runs = [...(asst.runs || []), ev]; this.fetchRuns(); this.$nextTick(() => { try { window.lucide?.createIcons(); } catch {} }); }
         else if (ev.t === 'done') {
-          asst.text = ev.result || (asst.text || '').trim() || (ev.state === 'cancelled' ? 'Turno cancelado.' : (ev.error ? `⚠ ${ev.error}` : '(sem resposta)'));
+          asst.text = ev.result || (asst.text || '').trim() || (ev.state === 'cancelled' ? 'Turn cancelled.' : (ev.error ? `⚠ ${ev.error}` : '(no response)'));
           asst.cost = ev.cost_usd; asst.turnState = ev.state;
           this.applySession({ session_id: ev.session_id, session_runtime: ev.runtime, resume_command: ev.resume_command }, null);
           finish();
@@ -2144,9 +2144,9 @@ function glance() {
       es.onerror = () => {
         // CLOSED = the server ended the stream without `done` (it died). CONNECTING = the
         // EventSource reconnects on its own (Last-Event-ID resumes); 20 s of grace, then give up
-        // instead of an eternal "orquestrando…".
-        if (es.readyState === EventSource.CLOSED) { if (asst.streaming) finish('⚠ conexão encerrada. Recarregue a página.'); return; }
-        if (asst.streaming && !graceTimer) graceTimer = setTimeout(() => { if (asst.streaming) finish('⚠ conexão perdida (o servidor pode ter reiniciado). Recarregue a página.'); }, 20000);
+        // instead of an eternal "orchestrating…".
+        if (es.readyState === EventSource.CLOSED) { if (asst.streaming) finish('⚠ connection closed. Reload the page.'); return; }
+        if (asst.streaming && !graceTimer) graceTimer = setTimeout(() => { if (asst.streaming) finish('⚠ connection lost (the server may have restarted). Reload the page.'); }, 20000);
       };
     },
     // SIGTERM on the turn's process group; the stream ends with done.state = cancelled.
@@ -2167,7 +2167,7 @@ function glance() {
     // Kept as a compatibility method for old bookmarked UI state. The control
     // plane intentionally has no browser shell route.
     async runShell(cmd) {
-      this.chatMessages.push({ role: 'system', text: 'Comandos de shell não são aceitos pelo control plane do browser.' });
+      this.chatMessages.push({ role: 'system', text: 'Shell commands are not accepted by the browser control plane.' });
     },
     // `/<cmd>` — slash commands (client-side; no shell).
     runSlash(raw) {
@@ -2179,27 +2179,27 @@ function glance() {
           this.openChat();
           return;
         case 'fast':
-          this.chatFast = true; say('Modo **rápido** ligado (mais veloz e econômico).'); return;
+          this.chatFast = true; say('**Fast** mode on (quicker and cheaper).'); return;
         case 'agentic': case 'agentico':
-          this.chatFast = false; say('Modo **agêntico** ligado (mais acertivo — padrão).'); return;
+          this.chatFast = false; say('**Agentic** mode on (more accurate, the default).'); return;
         case 'route':
-          if (!arg) return say('Uso: `/route <o que você quer entregar>`');
-          this.chatInput = `Qual empresa ou squad usar para: ${arg}? Explique a escolha.`;
+          if (!arg) return say('Usage: `/route <what you want delivered>`');
+          this.chatInput = `Which business or squad should I use for: ${arg}? Explain the choice.`;
           return this.sendChat();
         case 'run': {
           const [slug, ...briefParts] = rest;
           const brief = briefParts.join(' ');
-          if (!slug || !brief) return say('Uso: `/run <empresa-ou-squad> <brief>`');
+          if (!slug || !brief) return say('Usage: `/run <business-or-squad> <brief>`');
           return this.runDispatch(slug, brief);
         }
         case 'help': default:
           say([
-            '**Comandos do chat:**',
-            '`/new` — nova conversa · `/clear` — limpar',
-            '`/route <brief>` — qual empresa/squad usar',
-            '`/run <slug> <brief>` — despachar um trabalho',
-            '`/fast` · `/agentic` — trocar o modo de roteamento',
-            'Comandos de shell não são expostos pelo browser.',
+            '**Chat commands:**',
+            '`/new`: new conversation · `/clear`: clear',
+            '`/route <brief>`: which business/squad to use',
+            '`/run <slug> <brief>`: dispatch a job',
+            '`/fast` · `/agentic`: switch the routing mode',
+            'Shell commands are not exposed by the browser.',
           ].join('\n'));
           return;
       }
@@ -2216,7 +2216,7 @@ function glance() {
       this.$nextTick(() => this.scrollChatBottom());
       try {
         const r = await fetch('/api/actions/chat-run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: this.chatId, slug, message: brief }) }).then(x => x.json());
-        if (r.error || !r.job) { asst.text = `⚠ ${r.error || 'falha ao despachar'}`; asst.streaming = false; this.chatBusy = false; return; }
+        if (r.error || !r.job) { asst.text = `⚠ ${r.error || 'failed to dispatch'}`; asst.streaming = false; this.chatBusy = false; return; }
         this.followChatJob(r.job.id, asst, 'run');
       } catch (e) { asst.text = `⚠ ${e.message}`; asst.streaming = false; this.chatBusy = false; }
     },
@@ -2249,13 +2249,13 @@ function glance() {
           // carries the canonical reply (and the session_id to continue). Runtimes
           // without a token-stream (codex/gemini/agy/hermes) send it all at once in done.
           const answer = (doneData && doneData.result) || (asst.text || '').trim();
-          asst.text = answer || errText || '(sem resposta)';
+          asst.text = answer || errText || '(no response)';
           if (doneData && doneData.session_id) this.chatResumeSession = doneData.session_id;
         } else if (kind === 'shell') {
           // Raw shell output → monospace code block.
-          asst.text = '```\n' + (joined || errText || '(sem saída)') + '\n```';
+          asst.text = '```\n' + (joined || errText || '(no output)') + '\n```';
         } else {
-          asst.text = joined || errText || '(sem saída)';
+          asst.text = joined || errText || '(no output)';
           asst.events = [...this.chatRunEvents];
         }
         this.saveChatToHistory();
@@ -2268,10 +2268,10 @@ function glance() {
         this.$nextTick(() => { this.scrollChatBottom(); try { window.lucide?.createIcons(); } catch {} });
       };
       // Final safety net: if nothing signals 'done' (hung job), don't leave an
-      // eternal "orquestrando…". 6min > the concierge timeout (5min) so a
+      // eternal "orchestrating…". 6min > the concierge timeout (5min) so a
       // legitimately slow turn isn't killed.
       const watchdog = setTimeout(() => {
-        if (this.chatBusy) finish('⚠ sem resposta (tempo esgotado). Recarregue a página e tente de novo.');
+        if (this.chatBusy) finish('⚠ no response (timed out). Reload the page and try again.');
       }, 6 * 60 * 1000);
       es.onmessage = (e) => {
         clearGrace(); // data arrived → connection alive
@@ -2294,14 +2294,14 @@ function glance() {
         } catch {}
       };
       es.onerror = () => {
-        if (es.readyState === EventSource.CLOSED) { if (this.chatBusy) finish('⚠ conexão encerrada. Recarregue a página.'); return; }
+        if (es.readyState === EventSource.CLOSED) { if (this.chatBusy) finish('⚠ connection closed. Reload the page.'); return; }
         // CONNECTING = the EventSource is reconnecting on its own (transient blip
         // or dead server). Give 20s of grace: if a snapshot/done re-arrives,
         // onmessage clears the timer; if it does NOT recover, the server probably
-        // restarted/died → give up instead of hanging in an eternal "orquestrando…".
+        // restarted/died → give up instead of hanging in an eternal "orchestrating…".
         if (this.chatBusy && !graceTimer) {
           graceTimer = setTimeout(() => {
-            if (this.chatBusy) finish('⚠ conexão perdida (o servidor pode ter reiniciado). Recarregue a página.');
+            if (this.chatBusy) finish('⚠ connection lost (the server may have restarted). Reload the page.');
           }, 20000);
         }
       };
@@ -2327,7 +2327,7 @@ function glance() {
         // The hash reflects the CURRENT conversation (sendChat updates it). If we
         // are already in it, don't reload — reloading would wipe the live bubbles.
         if (parts[1] === this.chatId && (this.chatOpen || this.chatBusy)) return;
-        const entry = this.chatHistory.find(c => c.id === parts[1]) || { id: parts[1], title: 'conversa', mode: 'run' };
+        const entry = this.chatHistory.find(c => c.id === parts[1]) || { id: parts[1], title: 'conversation', mode: 'run' };
         this.openChatFromHistory(entry);
         return;
       }
@@ -2590,7 +2590,7 @@ function glance() {
         if (!r.ok) { this.flash(`✗ ${data.title || 'verify'}: ${data.detail || r.status}`, 5000); this.verifyKey = null; return; }
         this.verifyReport = data;
         const s = data.summary || {};
-        this.flash(`${data.verdict} · ${s.errors || 0} erro(s), ${s.warnings || 0} aviso(s)`, 3000);
+        this.flash(`${data.verdict} · ${s.errors || 0} error(s), ${s.warnings || 0} warning(s)`, 3000);
       } catch (e) {
         this.flash(`✗ ${e.message}`, 4000);
         this.verifyKey = null;

@@ -79,7 +79,7 @@ function loadAllEvents(): Event[] {
 
   // Project-local across all output roots
   const roots = [
-    path.join(process.cwd(), "outputs"),            // novo default visível
+    path.join(process.cwd(), "outputs"),            // new visible default
     path.join(os.homedir(), ".nirvana/outputs"),
     path.join(process.cwd(), ".nirvana/outputs"),
   ];
@@ -190,7 +190,7 @@ for (const e of events) {
   const color = colorForEvent(e.event);
   const detail = [];
   if (e.from_phase && e.to_phase) detail.push(`${e.from_phase}→${e.to_phase}`);
-  const bizSlug = e.business_slug ?? (e as any).business; // alias agêntico (E3)
+  const bizSlug = e.business_slug ?? (e as any).business; // agentic alias (E3)
   if (bizSlug) detail.push(`biz=${bizSlug}`);
   if (e.employee) detail.push(`emp=${e.employee}`);
   if (e.artifact) detail.push(`artifact=${path.basename(e.artifact)}`);

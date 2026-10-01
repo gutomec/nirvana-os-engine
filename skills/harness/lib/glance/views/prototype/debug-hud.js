@@ -1,4 +1,4 @@
-// debug-hud.js — "mensurável" made literal: real Content-Length bytes read
+// debug-hud.js — "measurable" made literal: real Content-Length bytes read
 // off this same running server for every prototype file versus the real
 // glance.js, via HEAD requests. No estimate, no marketing number — whatever
 // this panel shows is what the server actually served just now.
@@ -8,12 +8,12 @@ import { Panel } from "./panel.js";
 
 const FILES = [
   { path: "/prototype/app.js", label: "app.js (bootstrap)" },
-  { path: "/prototype/panel.js", label: "panel.js (componente reusável)" },
+  { path: "/prototype/panel.js", label: "panel.js (reusable component)" },
   { path: "/prototype/businesses-panel.js", label: "businesses-panel.js" },
   { path: "/prototype/agents-panel.js", label: "agents-panel.js" },
-  { path: "/prototype/debug-hud.js", label: "debug-hud.js (este arquivo)" },
+  { path: "/prototype/debug-hud.js", label: "debug-hud.js (this file)" },
 ];
-const BASELINE = { path: "/glance.js", label: "glance.js — Glance real, um arquivo com todo o estado do app" };
+const BASELINE = { path: "/glance.js", label: "glance.js — the real Glance, one file with all the app state" };
 
 export function DebugHud() {
   const sizes = useSignal({});
@@ -28,7 +28,7 @@ export function DebugHud() {
   const baselineSize = sizes.value[BASELINE.path] || 0;
 
   return html`
-    <${Panel} title="Debug HUD" hint="Content-Length real via HEAD, não estimativa">
+    <${Panel} title="Debug HUD" hint="Real Content-Length via HEAD, not an estimate">
       <ul class="text-xs flex flex-col gap-1">
         ${FILES.map(f => html`
           <li key=${f.path} class="flex justify-between">
@@ -46,9 +46,9 @@ export function DebugHud() {
         </li>
       </ul>
       <p class="text-[10px] text-[var(--text-tertiary)] mt-3 leading-relaxed">
-        O ponto não é qual número é menor — é que aqui cada arquivo tem UMA responsabilidade e pode ser aberto,
-        entendido e testado sozinho. No glance.js real, mexer em uma aba exige carregar o arquivo inteiro na
-        cabeça pra achar onde encaixar um campo novo (foi assim que o editor de organograma foi adicionado).
+        The point is not which number is smaller: here each file has ONE responsibility and can be opened,
+        understood and tested on its own. In the real glance.js, touching one tab means loading the whole file
+        into your head to find where a new field fits (this is how the org chart editor was added).
       </p>
     </${Panel}>
   `;

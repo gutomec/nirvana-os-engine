@@ -98,10 +98,10 @@ export function squadCloneInjection(brief: string, cwd?: string): { block: strin
     if (picked.length >= MAX) break;
     const name = String((c as any).display_name || "").toLowerCase();
     if (low.includes(slug) || low.includes(slug.replace(/-/g, " ")) || (name.length > 3 && low.includes(name))) {
-      picked.push({ slug, reason: "solicitado" });
+      picked.push({ slug, reason: "requested" });
     }
   }
-  let decision = picked.length ? "SOLICITADO pelo usuário" : "";
+  let decision = picked.length ? "REQUESTED by the user" : "";
   // 2. BUSCA — only if nothing requested
   if (!picked.length) {
     let hits: any[] = [];
@@ -112,9 +112,9 @@ export function squadCloneInjection(brief: string, cwd?: string): { block: strin
       // is max-normalized, so the top hit is 1.0 by construction even for an
       // out-of-domain brief ("consertar a bomba hidráulica do trator") — a
       // vacuous gate. `below_gate` mirrors the router's Stage 3 coverage bands.
-      if (h.below_gate === false) picked.push({ slug: h.slug, reason: `busca cobertura ${h.coverage?.matched}/${h.coverage?.total}` });
+      if (h.below_gate === false) picked.push({ slug: h.slug, reason: `search coverage ${h.coverage?.matched}/${h.coverage?.total}` });
     }
-    decision = picked.length ? "encontrado por BUSCA" : "PADRÃO — nenhum clone útil";
+    decision = picked.length ? "found by SEARCH" : "DEFAULT, no useful clone";
   }
   if (!picked.length) return { block: "", decision, missingClones: [] };
   // The execution.dna_injection setting:
@@ -147,19 +147,19 @@ export function squadCloneInjection(brief: string, cwd?: string): { block: strin
   // to report the absence in the deliverable.
   if (missingClones.length) {
     parts.push(
-      `--- MIND-CLONE AUSENTE: ${missingClones.join(", ")} ---\n\n` +
-      `# Especialista sem clone na biblioteca\n\n` +
-      `Os seguintes especialistas foram pedidos e NÃO existem como mind-clone instalado: ` +
+      `--- MIND-CLONE MISSING: ${missingClones.join(", ")} ---\n\n` +
+      `# Expert without a clone in the library\n\n` +
+      `The following experts were requested and are NOT installed as a mind-clone: ` +
       `**${missingClones.join(", ")}**.\n\n` +
-      `Você NÃO está carregando o DNA dessas pessoas. Trabalhe com o seu próprio ` +
-      `conhecimento sobre o método delas, e trate isso como o que é: uma aproximação, ` +
-      `não a persona.\n\n` +
-      `Duas obrigações:\n` +
-      `1. **Não afirme** que aplicou o método daquela pessoa com fidelidade de clone. ` +
-      `Diga que atuou por conhecimento geral.\n` +
-      `2. **Registre no entregável** quais especialistas faltaram, para que o dono ` +
-      `possa decidir se quer criar o mind-clone (o squad \`fabrica-de-genios\` faz isso ` +
-      `pela capability \`knowledge_management.mind_clone_generation_pipeline.execute\`).\n`
+      `You are NOT loading these people's DNA. Work from your own ` +
+      `knowledge of their method, and treat it for what it is: an approximation, ` +
+      `not the persona.\n\n` +
+      `Two obligations:\n` +
+      `1. **Do not claim** that you applied that person's method with clone fidelity. ` +
+      `Say that you worked from general knowledge.\n` +
+      `2. **Record in the deliverable** which experts were missing, so the owner ` +
+      `can decide whether to create the mind-clone (the \`fabrica-de-genios\` squad does this ` +
+      `through the \`knowledge_management.mind_clone_generation_pipeline.execute\` capability).\n`
     );
   }
   return { block: parts.join("\n\n"), decision, missingClones, mode: dnaMode, personaDirs };
@@ -240,7 +240,7 @@ function renderComponents(squadDir: string, sub: "agents" | "tasks", stems: stri
     try { text = fs.readFileSync(file, "utf8"); } catch { missing++; continue; }
     parts.push(`--- ${stem}.md ---\n${text}`);
   }
-  if (missing) parts.push(`[${missing} referência(s) sem arquivo em ${sub}/]`);
+  if (missing) parts.push(`[${missing} reference(s) without a file in ${sub}/]`);
   return parts.join("\n\n");
 }
 
@@ -257,11 +257,11 @@ function ceilingNote(agentDocs: string, taskSection: string): string {
   const max = componentsBytesMax();
   const total = Buffer.byteLength(agentDocs, "utf8") + Buffer.byteLength(taskSection, "utf8");
   if (total <= max) return "";
-  // "nada foi cortado pelo teto", not "nada foi omitido": the sibling note from
+  // "nothing was cut by the ceiling", not "nothing was omitted": the sibling note from
   // renderComponents can be reporting a reference with no file on disk, and an
   // absolute about omission would read as contradicting it. This note answers
   // for the ceiling only — the one thing it measures.
-  return `\n\n[componentes (agentes + tasks) somam ${total} bytes, ${total - max} acima do teto de ${max} — nada foi cortado pelo teto]`;
+  return `\n\n[components (agents + tasks) total ${total} bytes, ${total - max} above the ceiling of ${max}; nothing was cut by the ceiling]`;
 }
 
 /**
@@ -307,7 +307,7 @@ export function capabilityContext(squadDir: string, capabilityId: string): Squad
       // Only take over the blocks when at least the agents resolved: a workflow
       // whose every reference is dangling must not leave the squad with nothing.
       if (agentDocs) {
-        const taskSection = taskDocs || "(o workflow não referencia nenhuma task)";
+        const taskSection = taskDocs || "(the workflow references no task)";
         // The note rides the LAST section the prompt shows, so the reader meets
         // it after the content it is measuring.
         components = { agents: agentDocs, tasks: taskSection + ceilingNote(agentDocs, taskSection) };
@@ -342,8 +342,8 @@ const EM_DASH_CELL = "—";
  */
 function renderEventContractBlock(squadSlug: string, traceId?: string): string {
   const trace = traceId || "<trace_id>";
-  return `## COMO REPORTAR EVENTOS
-Emita marcos do seu trabalho com \`nrv audit emit <nome> --squad=${squadSlug} --trace=${trace}\`. Sempre passe \`--squad=${squadSlug}\`: é o que atribui o evento a você no cockpit. O nome não precisa estar na lista fechada do motor — se não estiver, escreva-o já com o prefixo \`x_\` (ex.: \`x_pagina_altura_acima_orcamento\`), assim o nome que chega ao log é o mesmo que você digitou. Payload vai em \`--json='{...}'\`, curto: nunca o brief inteiro, um output completo ou um segredo, só o resumo que o evento precisa carregar.`;
+  return `## HOW TO REPORT EVENTS
+Emit milestones of your work with \`nrv audit emit <name> --squad=${squadSlug} --trace=${trace}\`. Always pass \`--squad=${squadSlug}\`: it is what attributes the event to you in the cockpit. The name does not need to be on the engine's closed list. If it is not, write it with the \`x_\` prefix from the start (e.g. \`x_page_height_above_budget\`), so the name that reaches the log is the one you typed. The payload goes in \`--json='{...}'\` and stays short: never the whole brief, a full output or a secret, only the summary the event needs to carry.`;
 }
 
 /** The three the prompt carries in full — but only when a capability resolved
@@ -354,29 +354,29 @@ const INLINED_DIRS = ["agents", "tasks", "workflows"];
 
 /** The capability block, plus the workflow block when the graph resolved. */
 function renderCapabilityBlock(ctx: SquadCapabilityPromptContext): string {
-  const lines = ["## SUA CAPABILITY", `- **id**: \`${ctx.capabilityId}\``];
-  if (ctx.description) lines.push(`- **descrição**: ${ctx.description}`);
+  const lines = ["## YOUR CAPABILITY", `- **id**: \`${ctx.capabilityId}\``];
+  if (ctx.description) lines.push(`- **description**: ${ctx.description}`);
   if (ctx.produces.length) lines.push(`- **produces**: ${ctx.produces.join(", ")}`);
   if (ctx.acceptance.length) {
-    lines.push("- **pronto quando** (critérios de aceitação; os bloqueantes são obrigatórios):");
+    lines.push("- **done when** (acceptance criteria; the blocking ones are mandatory):");
     for (const a of ctx.acceptance) {
-      const marks = [a.blocking ? "bloqueante" : "", a.minimumScore !== undefined ? `nota mínima ${a.minimumScore}` : ""].filter(Boolean);
+      const marks = [a.blocking ? "blocking" : "", a.minimumScore !== undefined ? `minimum score ${a.minimumScore}` : ""].filter(Boolean);
       lines.push(`  - \`${a.id}\`${marks.length ? ` (${marks.join(", ")})` : ""} — ${a.description}`);
     }
-    lines.push("- Antes de terminar, confira você mesmo cada critério de pronto.");
+    lines.push("- Before you finish, check each done criterion yourself.");
   }
   if (!ctx.workflow) {
-    lines.push("", "> Esta capability não aponta para um workflow legível; siga o manifesto e os documentos abaixo.");
+    lines.push("", "> This capability does not point to a readable workflow; follow the manifest and the documents below.");
     return lines.join("\n");
   }
 
   const table = [
-    `## SEU WORKFLOW (\`${ctx.workflow.file}\`)`,
-    "| # | passo | agente | task | requer | cria |",
+    `## YOUR WORKFLOW (\`${ctx.workflow.file}\`)`,
+    "| # | step | agent | task | requires | creates |",
     "| --- | --- | --- | --- | --- | --- |",
     ...ctx.workflow.steps.map((s, i) => `| ${i + 1} | \`${s.id}\` | \`${s.agent}\` | ${s.task ? `\`${s.task}\`` : EM_DASH_CELL} | ${s.requires.length ? s.requires.map(r => `\`${r}\``).join(", ") : EM_DASH_CELL} | ${s.creates.length ? s.creates.join(", ") : EM_DASH_CELL} |`),
     "",
-    "Esse é o método de referência do autor do squad. As dependências da coluna `requer` valem; profundidade, formato e o que fazer entre um passo e outro são seus, desde que os critérios acima fiquem verdadeiros.",
+    "This is the squad author's reference method. The dependencies in the `requires` column hold; depth, format and what to do between one step and the next are yours, as long as the criteria above come true.",
   ];
   if (ctx.workflow.body) table.push("", ctx.workflow.body);
   return `${lines.join("\n")}\n\n${table.join("\n")}`;
@@ -438,48 +438,48 @@ export function buildSquadPrompt(args: {
   const resourceMap = renderResourceMap(squadDir, {
     kind: "squads",
     inlined: capability?.components ? INLINED_DIRS : [],
-    label: "ESTE SQUAD",
-    sourceNoun: "do squad",
-    outputsHint: "o diretório de saída indicado na sua sub-tarefa",
+    label: "THIS SQUAD",
+    sourceNoun: "of the squad",
+    outputsHint: "the output directory named in your sub-task",
   });
   const resourceSection = resourceMap ? `\n${resourceMap}\n` : "";
 
-  const roleLine = `Você É o squad "${squadSlug}" executando o brief do cliente de ponta a ponta. Sua saída é o ENTREGÁVEL FINAL para o usuário.`;
-  const doneLine = "Termine quando o trabalho estiver pronto para entrega ao usuário.";
+  const roleLine = `You ARE the squad "${squadSlug}", running the client's brief end to end. Your output is the FINAL DELIVERABLE for the user.`;
+  const doneLine = "Finish when the work is ready to hand to the user.";
 
   return `${roleLine}
 
-## SUA IDENTIDADE (squad.yaml)
+## YOUR IDENTITY (squad.yaml)
 \`\`\`yaml
 ${manifest}
 \`\`\`
 
-${capabilitySection}## SEUS AGENTES${componentsHeading}
+${capabilitySection}## YOUR AGENTS${componentsHeading}
 ${agentsSection}
 
-## SUAS TASKS${componentsHeading}
+## YOUR TASKS${componentsHeading}
 ${tasksSection}
 ${resourceSection}
-## MIND-CLONES QUE VOCÊ INCORPORA (decisão: ${cloneInj.decision})
+## MIND-CLONES YOU EMBODY (decision: ${cloneInj.decision})
 > ${cloneInj.block && cloneInj.mode === "reference"
-    ? "Cada clone vem como cartão: abra os arquivos de persona dele quando precisar do método e entregue COMO SE o clone tivesse produzido, sob a especialidade do squad."
+    ? "Each clone comes as a card: open its persona files when you need the method, and deliver AS IF the clone had produced it, under the squad's specialty."
     : cloneInj.block && cloneInj.mode === "fragments"
-      ? "Os clones vêm pelas camadas desta fase; entregue COMO SE o clone tivesse produzido, sob a especialidade do squad."
-      : "Incorpore por inteiro; entregue COMO SE o clone tivesse produzido, sob a especialidade do squad."}
-${cloneInj.block || "(sem clone para esta tarefa — opere com a especialidade padrão do squad)"}
+      ? "The clones come through this phase's layers; deliver AS IF the clone had produced it, under the squad's specialty."
+      : "Embody it fully; deliver AS IF the clone had produced it, under the squad's specialty."}
+${cloneInj.block || "(no clone for this task: operate with the squad's default specialty)"}
 
-## BRIEF ORIGINAL DO CLIENTE
+## CLIENT'S ORIGINAL BRIEF
 ${brief}
 
-## SUA SUB-TAREFA
-Execute a SUA especialidade aplicada ao brief acima. Escreva arquivos sob \`${outDir}\`, no formato que a sua especialidade pede; imagem neles é imagem gerada de verdade, nunca placeholder nem SVG genérico. Método e ferramentas são seus. Não invoque a skill harness, não rode \`nrv run\`/\`nrv dispatch\` para este mesmo brief (anti-loop).
+## YOUR SUB-TASK
+Run YOUR specialty applied to the brief above. Write files under \`${outDir}\`, in the format your specialty calls for; an image in them is a really generated image, never a placeholder or a generic SVG. Method and tools are yours. Deliverables follow the language of the request. Do not invoke the harness skill, and do not run \`nrv run\`/\`nrv dispatch\` for this same brief (anti-loop).
 
-Se o brief mencionar você por nome (ex.: "use o squad ${squadSlug}"), priorize fazer EXATAMENTE o que o usuário pediu nesse parágrafo. O usuário manda.
+If the brief mentions you by name (e.g. "use the ${squadSlug} squad"), prioritize doing EXACTLY what the user asked in that paragraph. The user decides.
 
-${scopeGuard("pt-BR")} Escopo é o brief acima e os critérios de aceitação da sua sub-tarefa. ${scopeBoundary("pt-BR")}
+${scopeGuard()} Scope is the brief above and the acceptance criteria of your sub-task. ${scopeBoundary()}
 
-## SAÍDA
-Arquivos no diretório acima. Não printe sumário — entregue arquivos. ${doneLine}`;
+## OUTPUT
+Files in the directory above. Do not print a summary: deliver files. ${doneLine}`;
 }
 
 /**

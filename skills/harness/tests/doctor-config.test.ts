@@ -70,7 +70,7 @@ describe("doctor — config", () => {
     const checks = runDoctor(setup);
     const files = checks.find((check) => check.name === "config: files");
     expect(files?.status).toBe("FAIL");
-    expect(files?.note).toContain(`${setup.globalFile}: routing.mode: valor inválido "turbo"`);
+    expect(files?.note).toContain(`${setup.globalFile}: routing.mode: invalid value "turbo"`);
     expect(checks.some((check) => check.name === "config: routing.mode")).toBe(false);
   }, 60_000);
 });

@@ -20,8 +20,8 @@ aliases:
   - motion-graphic
   - shorts
 description: |
-  Avalia vídeo (assumindo que o judge recebe descrição estruturada ou
-  storyboard + frames-chave). Hook nos primeiros 3s é decisivo.
+  Evaluates video (assuming the judge receives a structured description or
+  a storyboard + key frames). The hook in the first 3s is decisive.
 ---
 
 # Video Rubric
@@ -39,29 +39,29 @@ description: |
 ## Criteria
 
 1. **hook_first_3s** (weight 30)  
-   Primeiros 3 segundos retêm atenção. Falha: logo do canal no início,
-   "olá pessoal", lentidão de exposição.
+   The first 3 seconds hold attention. Failure: channel logo at the start,
+   "hi everyone", slow exposition.
 
 2. **brief_fidelity** (weight 20)  
-   Mensagem principal entregue. Tom adequado. Persona/produto retratado.
+   Main message delivered. Appropriate tone. Persona/product portrayed.
 
 3. **pacing** (weight 15)  
-   Cortes na cadência certa. Sem dead air. Música/SFX casa com cortes.
+   Cuts at the right cadence. No dead air. Music/SFX match the cuts.
 
 4. **audio_quality** (weight 10)  
-   Voz clara, sem ruído ambiente, mixed levels. Música não compete com fala.
+   Clear voice, no ambient noise, balanced levels. Music does not compete with speech.
 
 5. **caption_quality** (weight 10)  
-   Closed captions presentes, sincronizados, sem typos. Plataforma exige.
+   Closed captions present, synchronized, no typos. The platform requires it.
 
 6. **cta_quality** (weight 5)  
-   CTA visual + auditivo. Claro. Específico.
+   Visual + audible CTA. Clear. Specific.
 
 7. **brand_consistency** (weight 5)  
-   Cores, tom, logo placement.
+   Colors, tone, logo placement.
 
 8. **platform_fit** (weight 5)  
-   Aspect ratio (9:16 reels, 1:1 feed, 16:9 YouTube). Duração dentro do limite.
+   Aspect ratio (9:16 reels, 1:1 feed, 16:9 YouTube). Duration within the limit.
 
 ## Output schema
-Padrão. Critique[] cita timecodes (mm:ss).
+Default. Critique[] cites timecodes (mm:ss).

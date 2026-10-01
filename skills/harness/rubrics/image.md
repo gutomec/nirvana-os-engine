@@ -1,6 +1,6 @@
 ---
 name: image
-display_name: "Image / Visual (foto, ilustração, banner, logo)"
+display_name: "Image / Visual (photo, illustration, banner, logo)"
 type: harness_rubric
 version: 1.0.0
 target_model: inherit
@@ -24,9 +24,9 @@ aliases:
   - infografico
   - infográfico
 description: |
-  Avalia imagens descritivamente (assumindo que o judge pode ver a imagem
-  via base64 ou recebe descrição estruturada do gerador). Foca em
-  brief-fidelity, qualidade composicional, ausência de artefatos.
+  Evaluates images descriptively (assuming the judge can see the image
+  via base64 or receives a structured description from the generator). Focuses on
+  brief-fidelity, compositional quality, absence of artifacts.
 ---
 
 # Image Rubric
@@ -44,28 +44,28 @@ description: |
 ## Criteria
 
 1. **brief_fidelity** (weight 30)  
-   A imagem corresponde ao que foi pedido (assunto, estilo, mood)?
+   Does the image match what was requested (subject, style, mood)?
 
 2. **composition** (weight 20)  
-   Hierarquia visual, regra dos terços onde aplicável, foco claro,
-   espaço negativo onde precisa.
+   Visual hierarchy, rule of thirds where applicable, clear focus,
+   negative space where needed.
 
 3. **no_artifacts** (weight 20)  
-   Sem mãos com 6 dedos, texto ilegível/garbled, anatomia errada,
-   reflexos físicos impossíveis.
+   No hands with 6 fingers, illegible/garbled text, wrong anatomy,
+   physically impossible reflections.
 
 4. **brand_consistency** (weight 10)  
-   Se há paleta/tom de marca declarado no brief, está respeitada.
+   If a brand palette/tone is declared in the brief, it is respected.
 
 5. **format_compliance** (weight 10)  
-   Aspect ratio correto. Resolução adequada à plataforma alvo. Margens
-   safe-zone respeitadas.
+   Correct aspect ratio. Resolution suited to the target platform. Safe-zone
+   margins respected.
 
 6. **typography** (weight 5)  
-   Se há texto, é legível, kerning OK, hierarquia clara, sem widows/orphans.
+   If there is text, it is legible, kerning OK, clear hierarchy, no widows/orphans.
 
 7. **accessibility** (weight 5)  
-   Contraste suficiente. Texto não dependente de cor para ser entendido.
+   Sufficient contrast. Text does not depend on color to be understood.
 
 ## Output schema
-Padrão. Critique[] cita coordenadas/regiões da imagem quando relevante.
+Default. Critique[] cites image coordinates/regions when relevant.

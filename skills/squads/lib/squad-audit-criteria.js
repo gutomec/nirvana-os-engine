@@ -198,7 +198,7 @@ function c6_tasks({ squadDir }) {
     // Accept either: "## Acceptance Criteria" header (markdown style)
     //              OR: declarative `outputs:` block (yaml-frontmatter style),
     //              OR: declarative `acceptance_criteria:` field.
-    // Both patterns satisfy v5 §7.3 (binary verifiable acceptance).
+    // Both patterns satisfy v6 §7.3 (binary verifiable acceptance).
     const hasACHeader = /^##+\s+(Acceptance Criteria|Critérios de Aceita[çc]ão|Success Criteria)/im.test(body);
     const hasOutputs = /^outputs\s*:/m.test(body);
     const hasACField = /^acceptance_criteria\s*:/m.test(body);
@@ -380,8 +380,10 @@ function c11_readme({ squadDir }) {
   const wantGroups = [
     ['#'],                                              // any heading
     ['## '],                                            // any sub-heading
+    // i18n-user-facing: section markers matched in user-language content
     ['description', 'descrição', 'sobre', 'o que é', 'overview'],
     ['agent', 'agente'],
+    // i18n-user-facing: section markers matched in user-language content
     ['usage', 'uso', 'como usar', 'comece', 'getting started'],
     ['example', 'exemplo'],
     ['workflow', 'fluxo', 'pipeline'],

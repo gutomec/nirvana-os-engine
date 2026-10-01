@@ -4,7 +4,7 @@
 Intent: ADAPT, UNDERSTAND_RUNTIME, AUTHOR_ADAPTER
 
 ## Protocol Reference
-Squad Protocol v4 (archived) §4, §18
+`SQUAD_PROTOCOL_V6.md` §4, §18
 
 ## What a Runtime Adapter Provides
 

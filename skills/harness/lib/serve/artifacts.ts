@@ -31,7 +31,7 @@ export function listArtifacts(outputsRoot: string): { path: string; bytes: numbe
       const abs = path.join(dir, e.name);
       const r = rel ? `${rel}/${e.name}` : e.name;
       // The shared list names run-state DIRECTORIES too, and this walk read
-      // only the file half of it: `_internal/` and `relatorio/` were listed as
+      // only the file half of it: `_internal/` and `_report/` were listed as
       // deliverables here while the verifier, the renderer and `nrv export`
       // all refused them. Half a shared list is a private list with extra steps.
       if (e.isDirectory()) { if (!isRunPlumbingDir(e.name)) walk(abs, r); continue; }

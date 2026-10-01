@@ -4,7 +4,7 @@
 Intent: EXECUTE (keywords: run, execute, start, launch, resume)
 
 ## Protocol Reference
-Squad Protocol v4 (archived) §8
+`SQUAD_PROTOCOL_V6.md` §8, §28
 
 ## Workflow Types
 

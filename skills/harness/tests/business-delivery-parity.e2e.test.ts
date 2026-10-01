@@ -43,10 +43,10 @@ function runScenario(kind: "legacy-reference" | "boundary", verifyExit: 0 | 1) {
 
   const publishLegacyReference = () => {
     publicationCalls++;
-    const pdf = path.join(outputsRoot, "relatorio-final.pdf"); fs.writeFileSync(pdf, "pdf", "utf8");
+    const pdf = path.join(outputsRoot, "final-report.pdf"); fs.writeFileSync(pdf, "pdf", "utf8");
     audit.push({ event: "report_publisher_ran", payload: { trace_id: "proj-parity", project_id: "proj-parity", business_slug: "example", ok: true, publisher: "generic" } });
     audit.push({ event: "report_pdf_generated", payload: { trace_id: "proj-parity", project_id: "proj-parity", business_slug: "example", output: pdf } });
-    const html = path.join(outputsRoot, "relatorio-final.html"); fs.writeFileSync(html, "html", "utf8");
+    const html = path.join(outputsRoot, "final-report.html"); fs.writeFileSync(html, "html", "utf8");
     audit.push({ event: "report_html_generated", payload: { trace_id: "proj-parity", project_id: "proj-parity", business_slug: "example", output: html } });
     const zip = path.join(root, "proj-parity.zip"); fs.writeFileSync(zip, "zip", "utf8");
     sessionData.zip_path = zip; fs.writeFileSync(sessionFile, JSON.stringify(sessionData, null, 2), "utf8");
@@ -60,9 +60,9 @@ function runScenario(kind: "legacy-reference" | "boundary", verifyExit: 0 | 1) {
     runPublisher: () => ({ ok: true, sessionId: null, durationMs: 0, costUsd: 0 }),
     spawn: (_command, args) => {
       if (args.some(argument => argument.endsWith("build-report-pdf.ts"))) {
-        fs.writeFileSync(path.join(outputsRoot, "relatorio-final.pdf"), "pdf", "utf8");
+        fs.writeFileSync(path.join(outputsRoot, "final-report.pdf"), "pdf", "utf8");
       } else if (args.some(argument => argument.endsWith("build-report-html.ts"))) {
-        fs.writeFileSync(path.join(outputsRoot, "relatorio-final.html"), "html", "utf8");
+        fs.writeFileSync(path.join(outputsRoot, "final-report.html"), "html", "utf8");
       } else if (args.some(argument => argument.endsWith("export.ts"))) {
         fs.writeFileSync(path.join(root, "proj-parity.zip"), "zip", "utf8");
       }
@@ -105,7 +105,7 @@ describe("Business delivery parity E2E", () => {
     const boundary = runScenario("boundary", 0);
     expect(boundary).toEqual(legacy);
     expect(boundary).toMatchObject({ terminal: "delivered", publicationCalls: 1,
-      files: ["relatorio-final.html", "relatorio-final.pdf", "report.html"] });
+      files: ["final-report.html", "final-report.pdf", "report.html"] });
   }, KERNEL_BUDGET_MS);
 
   test("keeps manifest failure terminal and never runs post-gate publication", () => {

@@ -1,5 +1,5 @@
 // glance-settings-panel.test.ts — the pure module behind the Glance
-// "Configuração" panel: groups and fields rendered from the API payload (the
+// "Settings" panel: groups and fields rendered from the API payload (the
 // real schema, through settingInfo), the locked state of a key pinned by a
 // variable, the control per kind, the mapping from a control's input to the
 // value the API receives, the requests and the notices the panel shows.
@@ -22,12 +22,12 @@ values["budget.default_max_cost_usd"] = entry(0, "engine-default", { path: "/eng
 const payload = { schema, values, files: { project: { path: "/prj/.nirvana/config.yaml", exists: true } }, allow_actions: true };
 
 describe("Glance settings panel module", () => {
-  test("groups every schema key by section, in schema order, with PT-BR labels and the seven groups the panel names", () => {
+  test("groups every schema key by section, in schema order, with English labels and the seven groups the panel names", () => {
     const panel = buildSettingsPanel(payload);
     expect(panel.groups.map((group: any) => group.id)).toEqual([...new Set(SETTINGS_SCHEMA.map((spec) => spec.key.split(".")[0]))]);
     expect(panel.groups.flatMap((group: any) => group.fields.map((field: any) => field.key))).toEqual(SETTINGS_SCHEMA.map((spec) => spec.key));
     const labels = Object.fromEntries(panel.groups.map((group: any) => [group.id, group.label]));
-    expect(labels).toMatchObject({ gauntlet: "Gauntlet", multi_target: "Multi-target", execution: "Execução", runtime: "Runtime", routing: "Roteamento", supervisor: "Supervisor", updates: "Atualizações" });
+    expect(labels).toMatchObject({ gauntlet: "Gauntlet", multi_target: "Multi-target", execution: "Execution", runtime: "Runtime", routing: "Routing", supervisor: "Supervisor", updates: "Updates" });
     expect(Object.keys(GROUP_LABELS)).toEqual(expect.arrayContaining(Object.keys(labels)));
     expect(groupLabel("future_section")).toBe("future section");
     expect(panel.allowActions).toBe(true);
@@ -38,11 +38,11 @@ describe("Glance settings panel module", () => {
     const fields = Object.fromEntries(buildSettingsPanel(payload).groups.flatMap((group: any) => group.fields).map((field: any) => [field.key, field]));
     expect(fields["routing.mode"]).toMatchObject({
       section: "routing", name: "mode", kind: "enum", control: "select", options: ["agentic", "cards", "fast"], default: "agentic",
-      value: "fast", source: "project", sourceLabel: "projeto", origin: "/prj/.nirvana/config.yaml", locked: false, writable: true, env: "NIRVANA_ROUTING_MODE",
+      value: "fast", source: "project", sourceLabel: "project", origin: "/prj/.nirvana/config.yaml", locked: false, writable: true, env: "NIRVANA_ROUTING_MODE",
     });
     expect(typeof fields["routing.mode"].description).toBe("string");
     expect(fields["gauntlet.evaluator"]).toMatchObject({ kind: "string", control: "text", value: "judge-x", sourceLabel: "global", origin: "/home/.nirvana/config.yaml" });
-    expect(fields["supervisor.progress_ping_sec"]).toMatchObject({ kind: "number", control: "number", value: 1800, source: "default", sourceLabel: "padrão", origin: "" });
+    expect(fields["supervisor.progress_ping_sec"]).toMatchObject({ kind: "number", control: "number", value: 1800, source: "default", sourceLabel: "default", origin: "" });
     expect(fields["budget.default_max_cost_usd"]).toMatchObject({ source: "engine-default", sourceLabel: "engine", origin: "/engine/skills/harness/config.yaml" });
     expect(fields["updates.check"]).toMatchObject({ kind: "boolean", control: "toggle", scopes: ["global"] });
     expect(controlFor("boolean")).toBe("toggle");
@@ -55,10 +55,10 @@ describe("Glance settings panel module", () => {
   test("a key pinned by a variable is locked and read-only, with the variable in the reason; read-only mode locks everything", () => {
     const fields = Object.fromEntries(buildSettingsPanel(payload).groups.flatMap((group: any) => group.fields).map((field: any) => [field.key, field]));
     const pinned = fields["multi_target.enabled"];
-    expect(pinned).toMatchObject({ locked: true, writable: false, value: false, source: "env", variable: "NIRVANA_MULTI_TARGET_KILL_SWITCH", raw: "1", sourceLabel: "variável NIRVANA_MULTI_TARGET_KILL_SWITCH=1", origin: "" });
+    expect(pinned).toMatchObject({ locked: true, writable: false, value: false, source: "env", variable: "NIRVANA_MULTI_TARGET_KILL_SWITCH", raw: "1", sourceLabel: "variable NIRVANA_MULTI_TARGET_KILL_SWITCH=1", origin: "" });
     expect(pinned.lockReason).toContain("NIRVANA_MULTI_TARGET_KILL_SWITCH=1");
     expect(lockReason({ source: "project" })).toBe("");
-    expect(sourceLabel({ source: "env" })).toBe("variável de ambiente");
+    expect(sourceLabel({ source: "env" })).toBe("environment variable");
     const readOnly = buildSettingsPanel({ ...payload, allow_actions: false });
     expect(readOnly.allowActions).toBe(false);
     expect(readOnly.groups.every((group: any) => group.fields.every((field: any) => field.writable === false))).toBe(true);
@@ -85,11 +85,11 @@ describe("Glance settings panel module", () => {
     expect(inputValue(toggle, "true")).toBe(true);
     expect(inputValue(number, " 7 ")).toBe(" 7 ");
     expect(inputValue(text, null)).toBe("");
-    expect(displayValue(toggle)).toBe("ligado");
-    expect(displayValue(toggle, false)).toBe("desligado");
-    expect(displayValue(text)).toBe("(vazio)");
+    expect(displayValue(toggle)).toBe("on");
+    expect(displayValue(toggle, false)).toBe("off");
+    expect(displayValue(text)).toBe("(empty)");
     expect(displayValue(number)).toBe("1800");
-    expect(displayValue(null, null)).toBe("(ausente)");
+    expect(displayValue(null, null)).toBe("(unset)");
     expect(defaultScope(toggle)).toBe("project");
     expect(defaultScope(toggle, false)).toBe("global");
     expect(defaultScope({ scopes: ["global"] })).toBe("global");
@@ -100,17 +100,17 @@ describe("Glance settings panel module", () => {
     expect(writeRequest(field, "project", "fast")).toEqual({ method: "PUT", path: "/api/v1/settings/routing.mode", body: { value: "fast", scope: "project" } });
     expect(unsetRequest(field, "global")).toEqual({ method: "DELETE", path: "/api/v1/settings/routing.mode?scope=global", body: null });
     expect(changeNotice({ key: "routing.mode", scope: "project", path: "/p/config.yaml", from: null, to: "fast", changed: true, effective: { value: "fast", source: "project" } }))
-      .toBe("routing.mode = fast gravado em projeto (/p/config.yaml)");
+      .toBe("routing.mode = fast written to project (/p/config.yaml)");
     expect(changeNotice({ key: "routing.mode", scope: "global", path: "/g/config.yaml", from: "fast", to: "agentic", changed: true, effective: { value: "fast", source: "project" } }))
-      .toBe("routing.mode = agentic gravado em global (/g/config.yaml) (era fast) · valor efetivo agora: fast (projeto)");
+      .toBe("routing.mode = agentic written to global (/g/config.yaml) (was fast) · effective value now: fast (project)");
     expect(changeNotice({ key: "routing.mode", scope: "project", path: "/p/config.yaml", from: "fast", to: "fast", changed: false, effective: { value: "fast", source: "project" } }))
-      .toBe("routing.mode já era fast em projeto (/p/config.yaml); nada mudou");
+      .toBe("routing.mode was already fast in project (/p/config.yaml); nothing changed");
     expect(changeNotice({ key: "routing.mode", scope: "project", path: "/p/config.yaml", from: "fast", to: null, changed: true, effective: { value: "agentic", source: "default" } }))
-      .toBe("routing.mode removido de projeto (/p/config.yaml); era fast · valor efetivo agora: agentic (padrão)");
+      .toBe("routing.mode removed from project (/p/config.yaml); was fast · effective value now: agentic (default)");
     expect(changeNotice({ key: "routing.mode", scope: "project", path: "/p/config.yaml", from: null, to: null, changed: false, effective: { value: "agentic", source: "project" } }))
-      .toBe("routing.mode não estava definido em projeto (/p/config.yaml); nada mudou");
+      .toBe("routing.mode was not set in project (/p/config.yaml); nothing changed");
     expect(changeNotice(null)).toBe("");
-    expect(problemMessage({ type: "about:blank", title: "Invalid value", detail: 'routing.mode: valor inválido "turbo"' }, 400)).toBe('routing.mode: valor inválido "turbo"');
+    expect(problemMessage({ type: "about:blank", title: "Invalid value", detail: 'routing.mode: invalid value "turbo"' }, 400)).toBe('routing.mode: invalid value "turbo"');
     expect(problemMessage({ title: "Forbidden" }, 403)).toBe("Forbidden");
     expect(problemMessage({ error: "actions disabled" }, 403)).toBe("actions disabled");
     expect(problemMessage(null, 500)).toBe("HTTP 500");

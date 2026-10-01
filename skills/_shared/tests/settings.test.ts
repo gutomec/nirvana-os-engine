@@ -87,7 +87,7 @@ describe("the four origins", () => {
 
   test("an unknown key is a clear error", () => {
     expect(() => resolveSetting("routing.nope", base)).toThrow(SettingsError);
-    expect(() => resolveSetting("nope", base)).toThrow(/chave desconhecida: nope/);
+    expect(() => resolveSetting("nope", base)).toThrow(/unknown key: nope/);
   });
 });
 
@@ -99,26 +99,26 @@ describe("clear errors, never silent defaults", () => {
     expect(error).toBeInstanceOf(SettingsError);
     expect(error!.code).toBe("invalid_file");
     expect(error!.message).toContain(base.globalPath!);
-    expect(error!.message).toContain("YAML inválido");
+    expect(error!.message).toContain("invalid YAML");
   });
 
   test("an invalid value names the file, the key and the choices", () => {
     write(projectConfigPath(project), "routing:\n  mode: turbo\n");
-    expect(() => resolveSetting("routing.mode", base)).toThrow(`${projectConfigPath(project)}: routing.mode: valor inválido "turbo"; esperado agentic | cards | fast`);
+    expect(() => resolveSetting("routing.mode", base)).toThrow(`${projectConfigPath(project)}: routing.mode: invalid value "turbo"; expected agentic | cards | fast`);
     write(projectConfigPath(project), "quality_gate:\n  max_revisions: two\n");
-    expect(() => resolveSetting("quality_gate.max_revisions", base)).toThrow(/quality_gate\.max_revisions: valor inválido "two"; esperado inteiro >= 0/);
+    expect(() => resolveSetting("quality_gate.max_revisions", base)).toThrow(/quality_gate\.max_revisions: invalid value "two"; expected integer >= 0/);
   });
 
   test("a section that is not a mapping is refused, a scalar file too", () => {
     write(projectConfigPath(project), "routing: fast\n");
-    expect(() => resolveSetting("routing.mode", base)).toThrow(/"routing" deve ser um mapeamento/);
+    expect(() => resolveSetting("routing.mode", base)).toThrow(/"routing" must be a mapping/);
     write(projectConfigPath(project), "just a string\n");
-    expect(() => resolveSetting("routing.mode", base)).toThrow(/deve ser um mapeamento/);
+    expect(() => resolveSetting("routing.mode", base)).toThrow(/must be a mapping/);
   });
 
   test("an invalid variable names the variable", () => {
     expect(() => resolveSetting("routing.mode", { ...base, env: { NIRVANA_ROUTING_MODE: "turbo" } }))
-      .toThrow("NIRVANA_ROUTING_MODE=turbo inválido para routing.mode; esperado agentic | cards | fast");
+      .toThrow("NIRVANA_ROUTING_MODE=turbo is invalid for routing.mode; expected agentic | cards | fast");
   });
 });
 
@@ -176,7 +176,7 @@ describe("writing", () => {
     // precedes is unchanged, which is what the rest of this assertion pins.
     const written = read(opts.globalPath);
     expect(written.startsWith("# Nirvana-OS —")).toBe(true);
-    expect(written).toContain("nrv config set <chave> <valor> --global");
+    expect(written).toContain("nrv config set <key> <value> --global");
     expect(written.endsWith(body)).toBe(true);
     expect(resolveSettingsMap(opts)).toMatchObject({ "routing.mode": "fast", "quality_gate.max_revisions": 3, "multi_target.enabled": false, "budget.default_max_cost_usd": 2.5 });
   });
@@ -237,19 +237,19 @@ describe("writing", () => {
   });
 
   test("refusals: an invalid value, a scope the key rejects, a project scope with no project, a section written in line", () => {
-    expect(() => setSetting("routing.mode", "turbo", { ...base, scope: "global" })).toThrow('routing.mode: valor inválido "turbo"; esperado agentic | cards | fast');
-    expect(() => setSetting("quality_gate.max_revisions", "many", { ...base, scope: "global" })).toThrow(/esperado inteiro >= 0/);
-    expect(() => setSetting("updates.check", "false", { ...base, scope: "project" })).toThrow(/updates\.check só aceita escopo global/);
-    expect(() => setSetting("routing.mode", "fast", { env: {}, cwd: tmp, scope: "project", globalPath: base.globalPath, enginePath: null })).toThrow(/nenhum projeto Nirvana/);
+    expect(() => setSetting("routing.mode", "turbo", { ...base, scope: "global" })).toThrow('routing.mode: invalid value "turbo"; expected agentic | cards | fast');
+    expect(() => setSetting("quality_gate.max_revisions", "many", { ...base, scope: "global" })).toThrow(/expected integer >= 0/);
+    expect(() => setSetting("updates.check", "false", { ...base, scope: "project" })).toThrow(/updates\.check only accepts scope global/);
+    expect(() => setSetting("routing.mode", "fast", { env: {}, cwd: tmp, scope: "project", globalPath: base.globalPath, enginePath: null })).toThrow(/no Nirvana project/);
     write(base.globalPath!, "routing: { mode: agentic }\n");
-    expect(() => setSetting("routing.dense", "fallback", { ...base, scope: "global" })).toThrow(/"routing:" está escrito em linha/);
+    expect(() => setSetting("routing.dense", "fallback", { ...base, scope: "global" })).toThrow(/"routing:" is written inline/);
     expect(fs.existsSync(projectConfigPath(project))).toBe(false);
   });
 
   test("a key pinned by a variable is refused with the variable named, unless the caller ignores the environment", () => {
     const env = { NIRVANA_ROUTING_MODE: "agentic" };
-    expect(() => setSetting("routing.mode", "fast", { ...base, env, scope: "global" })).toThrow(/routing\.mode está fixado pela variável NIRVANA_ROUTING_MODE=agentic/);
-    expect(() => unsetSetting("routing.mode", { ...base, env, scope: "global" })).toThrow(/fixado pela variável/);
+    expect(() => setSetting("routing.mode", "fast", { ...base, env, scope: "global" })).toThrow(/routing\.mode is pinned by the variable NIRVANA_ROUTING_MODE=agentic/);
+    expect(() => unsetSetting("routing.mode", { ...base, env, scope: "global" })).toThrow(/pinned by the variable/);
     expect(setSetting("routing.mode", "fast", { ...base, env, scope: "global", ignoreEnv: true }).changed).toBe(true);
     // The variable still wins the resolution; the file holds the value for later.
     expect(resolveSetting("routing.mode", { ...base, env })).toMatchObject({ value: "agentic", source: "env" });

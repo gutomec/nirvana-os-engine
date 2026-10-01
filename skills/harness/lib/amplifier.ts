@@ -60,25 +60,25 @@ function buildInferredAssumptions(score: BriefScore): { dimension: string; assum
   for (const dim of score.missing_dimensions) {
     switch (dim) {
       case "objective":
-        out.push({ dimension: dim, assumption: "Assumindo que o objetivo é produzir o output mais comum para esta categoria, com qualidade publicável." });
+        out.push({ dimension: dim, assumption: "Assuming the goal is to produce the most common output for this category, at publishable quality." });
         break;
       case "audience":
-        out.push({ dimension: dim, assumption: "Assumindo audiência média do segmento; tom profissional, não técnico." });
+        out.push({ dimension: dim, assumption: "Assuming the average audience of the segment; professional, non-technical tone." });
         break;
       case "constraints":
-        out.push({ dimension: dim, assumption: "Sem restrições declaradas: usando defaults razoáveis (PT-BR, formato padrão da categoria, prazo de até 24h)." });
+        out.push({ dimension: dim, assumption: "No constraints declared: using reasonable defaults (the language of the request, the category's standard format, a deadline of up to 24h)." });
         break;
       case "examples":
-        out.push({ dimension: dim, assumption: "Sem referência declarada: o agente decide estilo conforme melhor prática da categoria." });
+        out.push({ dimension: dim, assumption: "No reference declared: the agent decides style according to the category's best practice." });
         break;
       case "scope":
-        out.push({ dimension: dim, assumption: "Escopo interpretado como mínimo viável: entregável principal apenas, sem extras." });
+        out.push({ dimension: dim, assumption: "Scope interpreted as the viable minimum: the main deliverable only, no extras." });
         break;
       case "success_criteria":
-        out.push({ dimension: dim, assumption: "Pronto quando: o entregável responde ao pedido, existe no output_path e não é um esboço; método e artefatos ficam a cargo do executor." });
+        out.push({ dimension: dim, assumption: "Done when: the deliverable answers the request, exists at output_path and is not a sketch; method and artifacts are up to the executor." });
         break;
       case "length":
-        out.push({ dimension: dim, assumption: "Comprimento alvo: padrão da categoria (post curto ≈ 200 palavras; longform ≈ 1500-2500)." });
+        out.push({ dimension: dim, assumption: "Target length: the category standard (short post ≈ 200 words; longform ≈ 1500-2500)." });
         break;
     }
   }

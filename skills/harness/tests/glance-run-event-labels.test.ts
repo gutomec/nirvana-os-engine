@@ -45,66 +45,66 @@ describe("Glance run event labels", () => {
 
   test("canonical payloads drive titles, subtitles and tones", () => {
     expect(runEventView({ type: "run.transitioned", payload: { from: "running", to: "completed" } }))
-      .toEqual({ icon: "party-popper", title: "Run concluído", sub: "running → completed", tone: "ok" });
-    expect(runEventView({ type: "run.transitioned", payload: { from: "running", to: "failed" } })).toMatchObject({ title: "Run falhou", tone: "fail" });
-    expect(runEventView({ type: "run.prepared", payload: { target: { kind: "business", slug: "proof" } } })).toMatchObject({ title: "Run preparado → proof", sub: "business" });
+      .toEqual({ icon: "party-popper", title: "Run completed", sub: "running → completed", tone: "ok" });
+    expect(runEventView({ type: "run.transitioned", payload: { from: "running", to: "failed" } })).toMatchObject({ title: "Run failed", tone: "fail" });
+    expect(runEventView({ type: "run.prepared", payload: { target: { kind: "business", slug: "proof" } } })).toMatchObject({ title: "Run prepared → proof", sub: "business" });
     expect(runEventView({ type: "run.prepared", payload: { target: { kind: "business", slug: "proof" }, route: { source: "router", rationale: "OBJECT=site." } } }).sub)
-      .toBe("business · escolhido pelo roteador · OBJECT=site.");
-    expect(runEventView({ type: "run.prepared", payload: { target: { kind: "agent-x", slug: "agent-x" }, route: { source: "fallback", rationale: "" } } }).sub).toBe("agent-x · agent-x por fallback");
+      .toBe("business · chosen by the router · OBJECT=site.");
+    expect(runEventView({ type: "run.prepared", payload: { target: { kind: "agent-x", slug: "agent-x" }, route: { source: "fallback", rationale: "" } } }).sub).toBe("agent-x · agent-x by fallback");
     expect(runEventView({ type: "x_run_route_resolved", payload: { target: { kind: "business", slug: "proof" }, route: { source: "router", rationale: "OBJECT=site." } } }))
-      .toEqual({ icon: "compass", title: "Alvo resolvido → proof", sub: "business · escolhido pelo roteador · OBJECT=site.", tone: "active" });
+      .toEqual({ icon: "compass", title: "Target resolved → proof", sub: "business · chosen by the router · OBJECT=site.", tone: "active" });
     expect(runEventView({ type: "runtime.selection_snapshot", payload: { snapshot: { runtime: { id: "codex" }, provider: { id: "openai" }, model: { id: "runtime-default" } } } }))
       .toMatchObject({ title: "Runtime: codex", sub: "openai · runtime-default" });
-    expect(runEventView({ type: "gauntlet.round_started", payload: { round: 1, costReservedUsd: 1.5 } })).toMatchObject({ title: "Rodada 1 iniciada", sub: "reservado $1.50", tone: "active" });
+    expect(runEventView({ type: "gauntlet.round_started", payload: { round: 1, costReservedUsd: 1.5 } })).toMatchObject({ title: "Round 1 started", sub: "reserved $1.50", tone: "active" });
     expect(runEventView({ type: "gauntlet.stopped", payload: { reason: "success", decision: "delivered", reservations: [], finalQualityGateRequired: true } }))
-      .toMatchObject({ title: "Gauntlet parou: entregar", sub: "sucesso · gate final pendente", tone: "ok" });
-    expect(runEventView({ type: "gauntlet.stopped", payload: { reason: "critical_regression", decision: "withheld" } })).toMatchObject({ title: "Gauntlet parou: reter", tone: "fail" });
-    expect(runEventView({ type: "multi_target.node_delivered", payload: { node } })).toMatchObject({ title: "Nó business-a entregue", sub: "onda 2 · reportado $0.25", tone: "ok" });
-    expect(runEventView({ type: "multi_target.node_skipped", payload: { node: { ...node, state: "skipped" } } }).sub).toBe("onda 2 · bloqueado por brief");
+      .toMatchObject({ title: "Gauntlet stopped: deliver", sub: "success · final gate pending", tone: "ok" });
+    expect(runEventView({ type: "gauntlet.stopped", payload: { reason: "critical_regression", decision: "withheld" } })).toMatchObject({ title: "Gauntlet stopped: withhold", tone: "fail" });
+    expect(runEventView({ type: "multi_target.node_delivered", payload: { node } })).toMatchObject({ title: "Node business-a delivered", sub: "wave 2 · reported $0.25", tone: "ok" });
+    expect(runEventView({ type: "multi_target.node_skipped", payload: { node: { ...node, state: "skipped" } } }).sub).toBe("wave 2 · blocked by brief");
     // The target kind of the node follows the wave when the projection carries it (agent-x for an agent node).
     expect(runEventView({ type: "multi_target.node_started", payload: { node: { ...node, nodeId: "role-copywriter", targetKind: "agent-x", waveIndex: 2 } } }))
-      .toMatchObject({ title: "Nó role-copywriter iniciado", sub: "onda 3 · agent-x · gauntlet · concedido $2.00", tone: "active" });
-    expect(runEventView({ type: "multi_target.node_delivered", payload: { node: { ...node, targetKind: "squad" } } }).sub).toBe("onda 2 · squad · reportado $0.25");
-    expect(runEventView({ type: "multi_target.lease_lost", payload: { nodeId: "squad-c", ownerId: "w", version: 2 } })).toMatchObject({ title: "Lease de squad-c perdida", sub: "w · v2", tone: "fail" });
-    expect(runEventView({ type: "multi_target.plan_terminal", payload: { state: "withheld", reason: "node x was withheld" } })).toMatchObject({ title: "Plano multi-target retido", sub: "node x was withheld", tone: "fail" });
+      .toMatchObject({ title: "Node role-copywriter started", sub: "wave 3 · agent-x · gauntlet · granted $2.00", tone: "active" });
+    expect(runEventView({ type: "multi_target.node_delivered", payload: { node: { ...node, targetKind: "squad" } } }).sub).toBe("wave 2 · squad · reported $0.25");
+    expect(runEventView({ type: "multi_target.lease_lost", payload: { nodeId: "squad-c", ownerId: "w", version: 2 } })).toMatchObject({ title: "Lease of squad-c lost", sub: "w · v2", tone: "fail" });
+    expect(runEventView({ type: "multi_target.plan_terminal", payload: { state: "withheld", reason: "node x was withheld" } })).toMatchObject({ title: "Multi-target plan withheld", sub: "node x was withheld", tone: "fail" });
   });
 
   test("child-process and recovery events show pid, attempt and exit", () => {
-    expect(runEventView({ type: "glance.child_started", payload: { pid: 42, attempt: 1, argv: ["--agent-x"] } })).toEqual({ icon: "terminal-square", title: "Processo filho iniciado", sub: "pid 42 · tentativa 1", tone: "active" });
-    expect(runEventView({ type: "glance.child_exited", payload: { pid: 42, attempt: 1, exitCode: 0 } })).toEqual({ icon: "check-circle-2", title: "Processo filho encerrou", sub: "pid 42 · tentativa 1 · saída 0", tone: "ok" });
-    expect(runEventView({ type: "glance.child_exited", payload: { pid: 42, attempt: 2, exitCode: 1 } })).toMatchObject({ icon: "x-circle", sub: "pid 42 · tentativa 2 · saída 1", tone: "fail" });
-    expect(runEventView({ type: "glance.child_exited", payload: { pid: 42, attempt: 1, exitCode: null } })).toMatchObject({ sub: "pid 42 · tentativa 1 · sem código de saída", tone: "" });
-    expect(runEventView({ type: "glance.child_killed", payload: { pid: 42, attempt: 1, signal: "SIGTERM" } })).toEqual({ icon: "ban", title: "Processo filho interrompido", sub: "pid 42 · tentativa 1 · SIGTERM", tone: "fail" });
-    expect(runEventView({ type: "canary.recovery_reattached", payload: { pid: 42, attempt: 1 } })).toEqual({ icon: "link", title: "Recuperação reanexada ao processo", sub: "pid 42 · tentativa 1", tone: "active" });
-    expect(runEventView({ type: "canary.recovery_redispatched", payload: { pid: 42, attempt: 1, reason: "child_pid_dead" } })).toEqual({ icon: "refresh-cw", title: "Recuperação redespachada", sub: "pid 42 · tentativa 1 · child_pid_dead", tone: "active" });
+    expect(runEventView({ type: "glance.child_started", payload: { pid: 42, attempt: 1, argv: ["--agent-x"] } })).toEqual({ icon: "terminal-square", title: "Child process started", sub: "pid 42 · attempt 1", tone: "active" });
+    expect(runEventView({ type: "glance.child_exited", payload: { pid: 42, attempt: 1, exitCode: 0 } })).toEqual({ icon: "check-circle-2", title: "Child process exited", sub: "pid 42 · attempt 1 · exit 0", tone: "ok" });
+    expect(runEventView({ type: "glance.child_exited", payload: { pid: 42, attempt: 2, exitCode: 1 } })).toMatchObject({ icon: "x-circle", sub: "pid 42 · attempt 2 · exit 1", tone: "fail" });
+    expect(runEventView({ type: "glance.child_exited", payload: { pid: 42, attempt: 1, exitCode: null } })).toMatchObject({ sub: "pid 42 · attempt 1 · no exit code", tone: "" });
+    expect(runEventView({ type: "glance.child_killed", payload: { pid: 42, attempt: 1, signal: "SIGTERM" } })).toEqual({ icon: "ban", title: "Child process killed", sub: "pid 42 · attempt 1 · SIGTERM", tone: "fail" });
+    expect(runEventView({ type: "canary.recovery_reattached", payload: { pid: 42, attempt: 1 } })).toEqual({ icon: "link", title: "Recovery reattached to the process", sub: "pid 42 · attempt 1", tone: "active" });
+    expect(runEventView({ type: "canary.recovery_redispatched", payload: { pid: 42, attempt: 1, reason: "child_pid_dead" } })).toEqual({ icon: "refresh-cw", title: "Recovery redispatched", sub: "pid 42 · attempt 1 · child_pid_dead", tone: "active" });
   });
 
   test("legacy audit events keep resolving through the old map", () => {
-    expect(runEventView({ event: "gate_passed", rubrics: ["a", "b"] })).toEqual({ icon: "shield-check", title: "Gate passou", sub: "a, b", tone: "ok" });
+    expect(runEventView({ event: "gate_passed", rubrics: ["a", "b"] })).toEqual({ icon: "shield-check", title: "Gate passed", sub: "a, b", tone: "ok" });
     expect(runEventView({ event: "agent_executed", employee: "writer", cost_usd: 1.5 })).toMatchObject({ icon: "bot", title: "writer", sub: "$1.50", tone: "ok" });
-    expect(runEventView({ event: "dispatch_business", business_slug: "acme" }).title).toBe("acme assumiu");
-    expect(chatEventLabel({ event: "dispatch_business" })).toBe("Despachou empresa");
+    expect(runEventView({ event: "dispatch_business", business_slug: "acme" }).title).toBe("acme took over");
+    expect(chatEventLabel({ event: "dispatch_business" })).toBe("Dispatched business");
     expect(chatEventLabel({ event: "custom_thing" })).toBe("custom_thing");
     // Facade-wrapped legacy events carry the legacy fields inside payload.
-    expect(runEventView({ type: "delivery.gate_passed", payload: { legacyEvent: "gate_passed", rubrics: ["wiki-lint"] } })).toMatchObject({ title: "Gate passou", sub: "wiki-lint" });
-    expect(runEventView({ type: "delivery.report_pdf_generated", payload: {} }).title).toBe("PDF gerado");
+    expect(runEventView({ type: "delivery.gate_passed", payload: { legacyEvent: "gate_passed", rubrics: ["wiki-lint"] } })).toMatchObject({ title: "Gate passed", sub: "wiki-lint" });
+    expect(runEventView({ type: "delivery.report_pdf_generated", payload: {} }).title).toBe("PDF generated");
     // Run ledger: a withheld row says whether the supervisor (stall) or the gate withheld it,
     // and a grace says which proof of life kept the run alive.
     expect(runEventView({ event: "x_ledger_state_changed", to: "withheld", error: null, last_error: "supervisor: agentic run stopped reporting" }))
-      .toEqual({ icon: "pause-circle", title: "Ledger: retido", sub: "supervisor: agentic run stopped reporting", tone: "fail" });
-    expect(runEventView({ event: "x_ledger_state_changed", to: "withheld", error: null, last_error: null })).toMatchObject({ title: "Ledger: retido", sub: "retido pelo gate" });
-    expect(runEventView({ event: "x_ledger_state_changed", to: "running", error: null })).toMatchObject({ icon: "arrow-right-circle", title: "Ledger: em execução", sub: "", tone: "" });
+      .toEqual({ icon: "pause-circle", title: "Ledger: withheld", sub: "supervisor: agentic run stopped reporting", tone: "fail" });
+    expect(runEventView({ event: "x_ledger_state_changed", to: "withheld", error: null, last_error: null })).toMatchObject({ title: "Ledger: withheld", sub: "withheld by the gate" });
+    expect(runEventView({ event: "x_ledger_state_changed", to: "running", error: null })).toMatchObject({ icon: "arrow-right-circle", title: "Ledger: running", sub: "", tone: "" });
     expect(runEventView({ event: "x_ledger_grace_extended", liveness_source: "child_run", child_run_id: "run-1" }))
-      .toEqual({ icon: "activity", title: "Prova de vida: squad ou funcionário despachado", sub: "run-1", tone: "active" });
-    expect(runEventView({ event: "x_ledger_grace_extended" })).toMatchObject({ title: "Prova de vida: lease renovada", sub: "" });
+      .toEqual({ icon: "activity", title: "Proof of life: squad or employee dispatched", sub: "run-1", tone: "active" });
+    expect(runEventView({ event: "x_ledger_grace_extended" })).toMatchObject({ title: "Proof of life: lease renewed", sub: "" });
   });
 
   test("unknown or empty events never yield an undefined title", () => {
     expect(runEventView({ type: "future.thing", payload: {} })).toEqual({ icon: "circle", title: "future.thing", sub: "", tone: "" });
     expect(runEventView({ event: "x_custom" })).toEqual({ icon: "circle", title: "x_custom", sub: "", tone: "" });
-    expect(runEventView({}).title).toBe("evento");
-    expect(runEventView(null).title).toBe("evento");
-    expect(chatEventLabel({})).toBe("evento");
+    expect(runEventView({}).title).toBe("event");
+    expect(runEventView(null).title).toBe("event");
+    expect(chatEventLabel({})).toBe("event");
   });
 
   test("infrastructure events are hidden by default and counted", () => {
@@ -131,23 +131,23 @@ describe("Glance run event labels", () => {
 
   test("atom-level events added for the judgement strip, runtime cascade and delivery nuance all resolve to a real label", () => {
     expect(runEventView({ event: "judge_invoked", rubric_name: "prose-structure", pass_threshold: 0.8 }))
-      .toMatchObject({ icon: "gavel", title: "Julgando: prose-structure", tone: "active" });
+      .toMatchObject({ icon: "gavel", title: "Judging: prose-structure", tone: "active" });
     expect(runEventView({ event: "critique_generated", verdict: "pass", total_score: 0.9, schema_valid: true }))
-      .toMatchObject({ title: "Veredito: aprovado", tone: "ok" });
+      .toMatchObject({ title: "Verdict: approved", tone: "ok" });
     expect(runEventView({ event: "revision_loop_exhausted", total_revisions: 2, final_score: 0.6 }))
       .toMatchObject({ icon: "flag", tone: "fail" });
     expect(runEventView({ event: "runtime_auth_failed", runtime: "codex", hint: "token expired" }))
-      .toMatchObject({ title: "Autenticação falhou: codex", sub: "token expired", tone: "fail" });
+      .toMatchObject({ title: "Authentication failed: codex", sub: "token expired", tone: "fail" });
     expect(runEventView({ event: "x_router_failure_cascade", stage: "agent-x", error: "no route" }))
-      .toMatchObject({ title: "Roteador recorreu a agent-x", tone: "fail" });
+      .toMatchObject({ title: "Router fell back to agent-x", tone: "fail" });
     expect(runEventView({ event: "x_delivery_withheld", gate: "fail", gated_files: 2 }))
-      .toMatchObject({ icon: "pause-circle", title: "Entrega retida", tone: "fail" });
+      .toMatchObject({ icon: "pause-circle", title: "Delivery withheld", tone: "fail" });
     expect(runEventView({ event: "x_delivered_with_reservations", revisions: 1, ceiling: 2 }))
-      .toMatchObject({ icon: "shield-alert", title: "Entregue com ressalvas", tone: "active" });
+      .toMatchObject({ icon: "shield-alert", title: "Delivered with reservations", tone: "active" });
     expect(runEventView({ event: "team_completed", steps: 3, total_cost_usd: 1.2, total_duration_ms: 5000 }))
-      .toMatchObject({ title: "Time concluído · 3 passo(s)", sub: "$1.20 · 5s", tone: "ok" });
+      .toMatchObject({ title: "Team completed · 3 step(s)", sub: "$1.20 · 5s", tone: "ok" });
     expect(runEventView({ event: "session_resume_failed", entity: "squad:copywriter" }))
-      .toMatchObject({ icon: "unplug", title: "Sessão não retomou: squad:copywriter", tone: "fail" });
+      .toMatchObject({ icon: "unplug", title: "Session did not resume: squad:copywriter", tone: "fail" });
     // Removed from the label map as dead (no emitter anywhere — see the Wave 1/2
     // inventory): falls back to the generic circle + raw event name.
     expect(runEventView({ event: "artifact_published" })).toMatchObject({ icon: "circle", title: "artifact_published" });

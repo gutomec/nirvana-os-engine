@@ -1,305 +1,218 @@
-# businesses skill · Configuration Reference
+# businesses skill · Configuration reference
 
-> Everything that can be configured in this skill, where, and the effect of each variable.
-> Last updated: 2026-05-03 (refactor enforcement layer + capabilities indexer).
+> What can be configured in this skill, where, and what each setting does. The field contracts are in `BUSINESS_PROTOCOL_V2.md`; this file is the operational summary.
 
 ---
 
-## 1. Where the configuration lives
+## 1. Where configuration lives
 
-The `businesses` skill reads configuration from 3 sources, in precedence order (first wins):
+In precedence order (first wins):
 
-1. **CLI flags** of the scripts (e.g. `--roots <dir>`, `--format json`)
-2. **Environment variables** (`~/.env` loaded via shell)
-3. **Hardcoded defaults** in `lib/registry.py` and the scripts
+1. **Command-line flags** of the scripts.
+2. **Environment variables.**
+3. **Defaults** in the scripts and `lib/`.
 
-There is no dedicated `config.yaml` for this skill. The relevant configuration lives in `~/.env` or in CLI flags.
+There is no `config.yaml` for this skill. Engine-wide settings (review, budget, verify mode) are read with `nrv config explain <key>`.
 
 ---
 
 ## 2. Environment variables
 
-Set in `~/.env` (and propagated via `set -a; source ~/.env; set +a` or by Claude Code).
-
-### Paths
-
 | Variable | Default | Purpose |
 |---|---|---|
-| `BUSINESSES_DIR` | `~/businesses` | Root directory where businesses are read/written by the scripts. Each `<slug>/` subdirectory is a business with `business.yaml`, `employees/`, `org-chart.yaml`, `routing.yaml`. |
-| `BUSINESSES_LIBRARY` | `${BUSINESSES_DIR}/_library` | Directory with assets shared across businesses (DNA library, templates). Not scanned by the registry. |
-| `DNA_LIBRARY` | `${BUSINESSES_LIBRARY}/dna` | Directory with canonical mind-clones (60 categories, 408 .md). Employees with `type: mind_clone` point to files here via `dna_reference`. |
-| `PROJECTS_OUTPUT_DIR` | `.projects-outputs` | Subdirectory (relative to each business) where dispatches via `brief-business.ts` write outputs. Each brief becomes `<biz>/<PROJECTS_OUTPUT_DIR>/proj-<id>/`. |
+| `BUSINESSES_DIR` | `~/businesses` | Root of the installed businesses. Each `<slug>/` holds `business.yaml`, `employees/`, `org-chart.yaml`, `routing.yaml`. |
+| `BUSINESSES_LIBRARY` | `${BUSINESSES_DIR}/_library` | Assets shared across businesses (clone library, frameworks). Not scanned as businesses. |
+| `DNA_LIBRARY` | `${BUSINESSES_LIBRARY}/dna` | The mind-clone library that `pinned_mind_clones` and `assigned_mind_clones` resolve against. |
+| `BUSINESSES_REGISTRY_PATH` | `<NIRVANA_HOME>/.businesses-registry.json` | The registry `nrv index` writes. |
+| `PROJECTS_OUTPUT_DIR` | `.projects-outputs` | Where run outputs are written, per project. |
+| `NIRVANA_PROJECT_ROOT` | (walk up to `.nirvana/project.yaml`) | Pins the project root regardless of the working directory. |
+| `NIRVANA_HOME` | `~` | Home of `.nirvana` (engine, machine memory). |
 
-### Flow: how each one is used
-
-- `BUSINESSES_DIR` is what `index-businesses.ts` scans to generate `${BUSINESSES_REGISTRY_PATH}`
-- `BUSINESSES_LIBRARY` + `DNA_LIBRARY` are consumed by `mapAgentToEmployee()` when creating a business via `init-business.ts` or via the `paperclip-to-business-v1.ts` adapter
-- `PROJECTS_OUTPUT_DIR` is just a naming convention — used by the scripts when creating dispatch dirs
-
----
-
-## 3. CLI scripts — flags and arguments
-
-The 6 scripts in `~/.nirvana/skills/businesses/scripts/`:
-
-### `init-business.ts <name> [options]`
-
-Creates a new business via interactive wizard.
-
-| Flag | Default | Purpose |
-|---|---|---|
-| `<name>` (positional) | required | Business slug (kebab-case, 3-64 chars, regex `^[a-z][a-z0-9-]+$`) |
-| `--template <name>` | `solo` | Initial template: `solo` (1 employee), `council` (3-7 employees with C-suite), `agency` (8-15 employees full agency) |
-| `--force` | (off) | Overwrites existing directory without asking |
-| `--domain <slug>,...` | (interactive) | Override domains (skips the user prompt) |
-| `--employee-count <n>` | (interactive) | Pre-sets the wizard's employee count |
-
-### `validate-business.ts <path-or-slug>|--all`
-
-The admission gate. Delegates to the shared runner, so this script and
-`nrv validate business` are the same code path and the same catalog
-(`BUSINESS_PROTOCOL_V2.md` §16: 16 errors, 23 warnings).
-
-| Flag | Default | Purpose |
-|---|---|---|
-| `<path-or-slug>` (positional) | required unless `--all` | Absolute path or slug (resolved against the scope, then `BUSINESSES_DIR`) |
-| `--all` | (off) | Every business the scope resolves, one batch report |
-| `--fix` | (off) | Applies the mechanical fixers with backup, re-check and rollback |
-| `--strict` | (off) | Warnings reject too (exit 2) |
-| `--json` | (off) | `nirvana.verify-report/v1`, or `nirvana.verify-batch/v1` with `--all` |
-| `--report` | (off) | Also writes the JSON to `.audit-state/<slug>/verify.json` |
-| `--no-retrieval` | (off) | Skips the self-retrieval axis |
-
-Exit: `0` admitted · `1` an error the baseline does not cover · `2` only
-warnings, under `--strict` · `64` usage error or unknown business.
-
-### `index-businesses.ts [options]`
-
-Scans + generates `${BUSINESSES_REGISTRY_PATH}`.
-
-| Flag | Default | Purpose |
-|---|---|---|
-| `--roots <dir>...` | `[$BUSINESSES_DIR]` | Override the roots to scan. Accepts multiple: `--roots ~/businesses ~/work-businesses` |
-| `--output <path>` | `${BUSINESSES_REGISTRY_PATH}` | Path of the generated registry JSON |
-| `--quiet` | (off) | Suppresses listing of found businesses |
-
-### `list-businesses.ts [options]`
-
-Enumerates the registry.
-
-| Flag | Default | Purpose |
-|---|---|---|
-| `--format <fmt>` | `table` | `table` (readable output) or `json` (raw) |
-| `--filter-domain <slug>` | (off) | Shows only businesses containing the domain |
-| `--filter-mode <mode>` | (off) | Filters by `operation_mode` (zero_human, hybrid, human_in_loop) |
-
-### `inspect-business.ts <slug>`
-
-Detailed view of a business.
-
-| Flag | Default | Purpose |
-|---|---|---|
-| `<slug>` (positional) | required | Canonical business name (not path) |
-| `--show-memory` | (off) | Includes the contents of `memory/permanent.md` in the output |
-| `--validate` | (off) | Runs `validate-business.ts` at the end |
-
-### `brief-business.ts <slug> "<brief>" [options]`
-
-Atomic dispatch of 1 brief to 1 business.
-
-| Flag | Default | Purpose |
-|---|---|---|
-| `<slug>` (positional) | required | Target business |
-| `"<brief>"` (positional) | required | Free text (PT-BR or EN) |
-| `--project-id <id>` | auto-generated `proj-<ts>-<slug>` | Override the project_id |
-| `--target-employee <name>` | (auto: `is_brief_intake: true`) | Force dispatch to a specific employee, bypassing the default intake |
-| `--priority <p>` | `normal` | `low | normal | high | urgent` |
+Run scripts from the project's working directory with absolute paths. Scope (global, project, merge) is detected by walking up from the current directory.
 
 ---
 
-## 4. Manifest — `business.yaml` configurable fields
+## 3. Scripts
 
-Each business has a manifest with optional fields:
+Run them with `bun ~/.nirvana/skills/businesses/scripts/<script>.ts`, or through `nrv` where a subcommand exists (`nrv list-businesses`, `nrv validate business`, `nrv index`).
 
-| Field | Default | Purpose |
+### `init-business.ts <slug> [options]`
+
+Scaffolds a business from a template and runs the gate over it in `--fix` mode.
+
+| Flag | Purpose |
+|---|---|
+| `--template <type>` or `--type <type>` | `solo`, `council`, `agency` or `conglomerate` |
+| `--from-json <path>` | Build from a JSON description |
+| `--non-interactive` | Never ask questions |
+| `--domains a,b` | Override domains |
+| `--description <text>` | Set the description |
+| `--force` | Overwrite an existing directory |
+| `--skip-verify` | Skip the post-scaffold gate run |
+
+### `validate-business.ts <path-or-slug> | --all` (same code as `nrv validate business`)
+
+The admission gate: the 41 criteria of `BUSINESS_PROTOCOL_V2.md` §16.2 (18 errors, 23 warnings).
+
+| Flag | Purpose |
+|---|---|
+| `--all` | Every business the scope resolves, one batch report |
+| `--fix` | Apply the mechanical fixers with backup, re-check and rollback |
+| `--strict` | Warnings fail too (exit 2) |
+| `--json` | Machine report (`nirvana.verify-report/v1`; `nirvana.verify-batch/v1` with `--all`) |
+| `--report` | Also write the JSON to `.audit-state/<slug>/verify.json` |
+| `--no-retrieval` | Skip the self-retrieval axis |
+
+Exit codes: `0` admitted; `1` an error the baseline does not cover; `2` only warnings under `--strict`; `64` usage error or unknown business.
+
+### `index-businesses.ts [--quiet]` (`nrv index`)
+
+Scans the scope's business directories and writes the registry.
+
+### `list-businesses.ts [--short] [--format compact|json]` (`nrv list-businesses`)
+
+Lists the registry. `--short` omits descriptions.
+
+### `inspect-business.ts <slug> [--format compact|json]`
+
+Manifest, seats and org chart of one business.
+
+### `brief-business.ts <slug> "<brief>" [--project <id>] [--manifest <file>]`
+
+Scaffolds a run (project folder, brief, ledger entry) without executing. `--manifest` lists the files the delivery must contain. Execution is `nrv dispatch <slug> --brief-file <brief> --exec`.
+
+### `verify-deliverable.ts`
+
+The completeness proof the engine runs after a run: expected files from a manifest or from the `path` entries of `acceptance[]`.
+
+---
+
+## 4. Manifest (`business.yaml`)
+
+The complete field list, with limits, is `BUSINESS_PROTOCOL_V2.md` §6. The fields that change engine behavior:
+
+| Field | Default | Effect |
 |---|---|---|
-| `operation_mode` | `zero_human` | `zero_human` (autonomous), `hybrid` (escalation gates), `human_in_loop` (every decision validated with a human) |
-| `authority_level` | `tier-2` | `tier-1` (board approval for changes), `tier-2` (default), `tier-3` (more permissive) |
-| `runtime_requirements.policy` | `declared` | `declared` requires `minimum[]`; `active` uses the session runtime without an allowlist |
-| `runtime_requirements.minimum[]` | `[{runtime: claude-code}]` | Which runtimes are supported under `policy: declared` |
-| `features_required[]` | `[]` | Features that MUST exist in the runtime: `max_turns, tool_whitelist, subagent_spawning, audit_trail, scheduled_invocation, event_bus, hooks, sandboxing, session_memory, project_memory, global_memory, handoff_artifacts, fork_context, teammate_primitive, telemetry_otel` |
-| `features_optional[]` | `[]` | Features that improve experience but do not block |
-| `env_required[]` | `[]` | List of env var keys that must exist before the business can operate |
-| `experimental_domains` | `false` | When `true`, accepts domains outside `CAPABILITY_CATALOG_V1.yaml` |
-| `legacy.*` | `{}` | Free-form bag for migration metadata (paperclip_company_id, paperclip_data_dir, etc.) |
+| `protocol` | required | `"1.0"` or `"2.0"` |
+| `description`, `domains`, `produces`, `keywords`, `example_briefs`, `not_for` | see §6.9 | Routing metadata; decides whether the router finds the business |
+| `squads_preferred` | none | Open list: the worker always gets a card for these squads |
+| `squads_authorized` | none | Closed set, only when not empty; `[]` equals absent (every squad allowed) |
+| `run_budget_usd` | none | Ceiling for one run; 0 or absent is unlimited; the smaller of this and `--max-budget` wins |
+| `review` | none | `required` marks the work as sensitive; under `review.policy: rule` every delivery is reviewed |
+| `operation_mode` | `zero_human` | Only `zero_human` is honored; other values warn |
+| `authority_level` | `tier-2` | `tier-1`, `tier-2`, `tier-3` |
+| `runtime_requirements.policy` | `active` | `active` uses the session runtime; `declared` requires `minimum[]` |
+| `features_required`, `features_optional` | none | Runtime features the business needs |
+| `env_required` | none | Environment variable names that must exist; never values |
+| `experimental_domains` | `false` | When true, domains outside the capability catalog are accepted |
+| `legacy` | none | Migration metadata |
+
+`employee_count` is derived from `employees/*.md`; do not author it. `output` and the manifest `memory` block are accepted and read by nothing.
 
 ---
 
-## 5. Employee frontmatter — configurable fields
+## 5. Seat frontmatter (`employees/<name>.md`)
 
-Each `employees/<name>.md` has YAML frontmatter with:
+The frontmatter schema is strict: an unknown key fails `employee_frontmatter_invalid`. The full table, with what the solo run does with each field, is `BUSINESS_PROTOCOL_V2.md` §7.2. The fields the engine uses:
 
-| Field | Default | Purpose |
+| Field | Default | Effect |
 |---|---|---|
-| `name` | required | Employee slug (kebab-case, 1-64 chars) |
-| `role` | required | Free text ≥3 chars describing the role |
-| `type` | `functional_specialist` | `functional_specialist` (generic) or `mind_clone` (embodies a public persona) |
-| `description` | required, ≥20 chars | Short persona/responsibility summary |
-| `maxTurns` | 1-1000, padrão 15 | Turn limit for agent invocation. Teto em `limits.ts#employee_max_turns_max`; o padrão desceu de 400 para 15 em 12/09/2026. |
-| `reports_to` | `null` | Slug of the manager OR `null` (CEO / root) |
-| `manages[]` | `[]` | Slugs of direct reports (must match their `reports_to`) |
-| `tools[]` | (none) | Subset of the v5 §10.7 whitelist. Free-form accepted. |
-| `model` | (not set) | `haiku | sonnet | opus | inherit` — hint for the runtime |
-| `budget_monthly_usd` | (none) | Monthly cost cap for this employee's invocations |
-| `heartbeat.cadence` | `manual` | `hourly | daily | weekly | manual` (manual = only dispatched on demand) |
-| `heartbeat.enabled` | `false` | Enables scheduled_invocation if the runtime supports it |
-| `is_antagonist` | `false` | Marks the employee as an internal adversary (BP7 — required when `employee_count > 5`) |
-| `is_brief_intake` | `false` | Receives briefs by default. **Exactly 1 per business** (validated). |
-| `dna_reference` | (none) | Path to canonical mind-clone in `~/businesses/_library/dna/<category>/<name>.md` |
-| `disclosure_required` | (none) | For mind-clones: forces "AI-generated persona" disclosure in the body |
-| `commercial_use_allowed` | (none) | `never | review | allowed` for mind-clones |
-| `self_score_contract` | required | Falsifiable criteria the employee meets on every handoff. Templates in `~/migration-tools/templates/self-score/<role>.yaml` |
+| `name`, `role`, `description` | required | Identity; `description` is 20+ characters |
+| `type` | `functional_specialist` | Also `mind_clone` (needs `disclosure_required: true`), `orchestrator`, `antagonist_gate` |
+| `reports_to`, `manages` | none | Org chart |
+| `is_brief_intake` | `false` | Exactly one per business; its `acceptance[]` is the judge's contract |
+| `is_antagonist`, `antagonizes` | `false` | BP7: required above 5 seats |
+| `acceptance[]` | none | What the deliverable must satisfy (§11) |
+| `pinned_mind_clones` | none | At most 2; strong voice binding, must resolve in the library |
+| `assigned_mind_clones` | none | Voice hint |
+| `squads_authorized`, `squads_preferred` | none | Narrow or extend the business lists |
+
+`maxTurns` (default 15), `model`, `effort`, `tools` and `authority_level` are valid but not applied to a solo run, which is one session for the whole business. Retired fields (`heartbeat`, `self_score_contract`, `mentions`, `escalation_triggers`, `budget_monthly_usd`, `draws_from`, `dna_reference`) are tolerated and warned; see `BUSINESS_PROTOCOL_V2.md` §22.
 
 ---
 
-## 6. Routing — `routing.yaml` configurables
+## 6. Routing (`routing.yaml`)
 
-| Field | Default | Purpose |
+| Field | Effect |
+|---|---|
+| `brief_intake.default_employee` | The seat for a request no route claims |
+| `auto_routes[].pattern` | Regex; must fire on at least one of the business's own `example_briefs` |
+| `auto_routes[].route_to` | Seat the request belongs to; must exist |
+
+First match wins. A catch-all pattern is ignored and flagged. `auto_routes` live only here, never in `business.yaml`.
+
+---
+
+## 7. Org chart (`org-chart.yaml`)
+
+`chart[]` nodes carry `employee`, `reports` (zero or one parent), `direct_reports`, optional `is_antagonist` and `antagonizes`. Exactly one node has no parent; reporting must be bidirectional and acyclic. `nrv validate business <slug> --fix` rederives the chart from `reports_to` and `manages`. The `routing_rules` block is accepted and read by nothing.
+
+---
+
+## 8. Engine settings that act on a business run
+
+| Setting | Default | Effect |
 |---|---|---|
-| `brief_intake.default_employee` | `<is_brief_intake employee>` | Who receives the brief when nothing else matches |
-| `brief_intake.alternates[]` | `[]` | Conditions that route to a different intake (e.g. type=urgent → CEO) |
-| `auto_routes[].pattern` | required | Pattern like `type:<x>` or substring that triggers direct dispatch |
-| `auto_routes[].route_to` | required | Employee slug |
-| `auto_routes[].confidence_threshold` | `0.7` | Minimum match confidence (consumed by harness Stage 0) |
-| `auto_routes[].requires_escalation_to` | (none) | Approver slug — if the brief requires approval, escalate to this employee first |
-| `mention_routing[]` | `[]` | Map `@<mention>` → employee |
-| `ticket_intake.default_assignee` | `<is_brief_intake>` | Who receives a ticket created by another employee |
-| `ticket_intake.by_type` | `{}` | Map `type` (regex) → employee for categorized tickets |
+| `review.policy` | `rule` | `always`, `rule`, `on-request`, `never`: when the delivery is reviewed |
+| `review.runtime` | `other` | Reviewer on a different available runtime, or `same` |
+| `review.max_rounds` | `1` | Correction rounds after a failed review, then `_QA-RESERVATIONS.md` |
+| `quality_gate.max_revisions` | `2` | Automatic revisions before holding a delivery back |
+| `verify.mode` | `report` | How the admission-gate hooks treat a finding: `report`, `warn`, `block` |
+
+Per run: `--review` and `--no-review` on `nrv dispatch` override the policy, and `--max-budget <usd>` sets a ceiling. Read any setting with `nrv config explain <key>`.
 
 ---
 
-## 7. Org chart — `org-chart.yaml` configurables
+## 9. Memory
 
-| Field | Default | Purpose |
-|---|---|---|
-| `chart[].employee` | required | Slug |
-| `chart[].reports[]` | required, max 1 | List of managers (always 0 or 1) |
-| `chart[].direct_reports[]` | required | Direct subordinates. Bidirectional check validates against `reports[]` |
-| `chart[].is_antagonist` | `false` | Marks antagonist on the chart as well (consistent with employee.is_antagonist) |
-| `chart[].antagonizes[]` | `[]` | Slugs this antagonist challenges (typically C-suite peers) |
-| `routing_rules.escalation_path` | `{}` | Map `<gate_id>` → employee (e.g. `price_change → human`) |
-| `routing_rules.default_skip_levels` | `false` | If `true`, escalation can skip hierarchical levels |
-| `routing_rules.cross_team_handoff_allowed` | `true` | If `false`, handoffs must go through the CEO |
+Memory lives outside the business, in two scopes (`BUSINESS_PROTOCOL_V2.md` §9):
+
+- Machine: `<NIRVANA_HOME>/.nirvana/memory/businesses/<slug>/{permanent.md, learned.md}`
+- Project: `<projectRoot>/.nirvana/memory/businesses/<slug>/{permanent.md, learned.md}`
+
+A shipped `memory/permanent.md` is a seed, copied once into the machine scope. `permanent.md` is curated by the owner; `learned.md` holds what a human promoted from past runs. A run reads both scopes and writes neither; it lists promotion candidates in its report. A business folder holding `memory/learned.md` or `memory/projects/` raises `memory_inside_entity`; `nrv memory relocate --apply` moves them.
+
+There is no shortcut that appends a fact to memory on its own. A fact enters memory through a human edit or a human promotion, so every entry traces to a person.
 
 ---
 
-## 8. How to change configuration
-
-### Change the businesses directory path
-
-```bash
-echo 'BUSINESSES_DIR=/Volumes/external/businesses' >> ~/.env
-source ~/.env
-bun ~/.nirvana/skills/businesses/scripts/index-businesses.ts
-```
-
-### Add a new business
-
-```bash
-BUSINESSES_DIR=~/businesses bun ~/.nirvana/skills/businesses/scripts/init-business.ts my-new-biz --template council
-bun ~/.nirvana/skills/businesses/scripts/validate-business.ts my-new-biz
-bun ~/.nirvana/skills/businesses/scripts/index-businesses.ts
-```
-
-
-### Switch operation mode to human_in_loop
-
-```yaml
-operation_mode: human_in_loop
-```
-
-And add gates in `routing.yaml`:
-
-```yaml
-auto_routes:
-  - pattern: "type:strategic_decision"
-    route_to: ceo
-    requires_escalation_to: human   # forces AskUserQuestion
-```
-
----
-
-## 9. Schema defaults and limits (non-negotiable)
-
-These come from `~/.nirvana/skills/_shared/schemas/`:
+## 10. Limits
 
 | Limit | Value | Source |
 |---|---|---|
-| `name` regex | `^[a-z][a-z0-9-]{1,63}$` | business.schema.json |
-| `description` length | 20-500 chars | business.schema.json |
-| `domains[]` length | 1-10 entries | business.schema.json |
-| `employee_count` | 1-100 | business.schema.json |
-| `employee.maxTurns` | 1-1000 (padrão 15) | validators.ts#EmployeeFrontmatter |
-| `self_score_contract.criteria[].threshold` | 0.0-1.0 | core-schemas.json#employee |
-| `self_score_contract.max_revise_iterations` | 0-5 | core-schemas.json#employee |
+| Business `name` | `^[a-z][a-z0-9-]{1,63}$` | `validators.ts` |
+| `description` | 20 to 2000 characters (configurable ceiling) | `validators.ts`, `limits.ts` |
+| `domains` | 1 to 50 | `validators.ts` |
+| `produces` | 1 to 60 | `limits.ts` (`business_produces_max`) |
+| `example_briefs` | at most 30, each 20 to 1000 characters | `limits.ts` |
+| `keywords` | at most 100 | `limits.ts` |
+| `not_for` | at most 40, each 5 to 80 characters | `limits.ts` (`business_not_for_max`) |
+| `pinned_mind_clones` | at most 2 per seat | `validators.ts` |
+| `employee_count` | derived; declared values 1 to 100 | `validators.ts` |
 
-Schemas validated by `~/.nirvana/skills/_shared/validators/validators.{ts,py}` (Zod + Pydantic v2 mirrors).
+The executed validator is Zod in `skills/_shared/validators/validators.ts`; `validators.py` mirrors it, and the JSON schemas are documentation.
 
 ---
 
-## 10. Configuration troubleshooting
+## 11. Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `BUSINESSES_DIR is empty` | env not loaded | `source ~/.env` before running scripts |
-| Registry does not find new business | Forgot to re-index | `bun scripts/index-businesses.ts` |
-| Slug rejected | uppercase, space, special char | kebab-case only, no spaces |
-| `BP7 violation` | >5 employees without antagonist | Add `is_antagonist: true` on one (typically a qa role) |
-| `Exactly one brief_intake` | Zero or ≥2 employees with `is_brief_intake: true` | Set exactly 1 (typically CEO) |
-| Domain rejected | Not in CAPABILITY_CATALOG_V1.yaml | Add to the catalog OR set `experimental_domains: true` in business.yaml |
+| Registry does not list a new business | Not re-indexed | `nrv index` |
+| Slug rejected | Uppercase, space or special character | kebab-case only |
+| `antagonist_bp7` | More than 5 seats, no antagonist | `is_antagonist: true` on one seat |
+| `intake_exactly_one` | Zero or several intake seats | Exactly one `is_brief_intake: true` |
+| Domain rejected | Not in `CAPABILITY_CATALOG_V1.yaml` | Use a catalog domain or set `experimental_domains: true` |
+| `surface_stale` or `surface_missing` | `.nirvana-surface.json` is engine-owned | `nrv validate business <slug> --fix` |
+| Scripts list the home registry in a project | Shell left the project tree | Run from the project directory, or set `NIRVANA_PROJECT_ROOT` |
 
 ---
 
 ## References
 
-- **SKILL.md** — skill entry in Claude Code
-- **README.md** — overview + tutorials
-- **TUTORIAL.md** — step-by-step tutorial
-- **BUSINESS_PROTOCOL_V2.md** — the protocol
-- **~/.nirvana/skills/_shared/CONFIGURATION.md** — central schemas + validators
-- **`nrv config explain <key>`** — the engine settings, with the origin of each value
-- **~/.nirvana/skills/_shared/SCRIPT_CONTRACT.md** — the system-wide bash script contract (portable shebang, no stdin, structured exit codes, two-mode flags)
-
----
-
-## Why there is no `memory-add.sh` shortcut
-
-A natural request from automation agents is "give me a script that appends a fact to a business's permanent memory in one call". The Nirvana system intentionally does NOT provide one. Here's why.
-
-### Memory is a Stage 6.5 / synthesizer-controlled artifact
-
-`<business>/memory/permanent.md` is the long-term knowledge a business carries between projects. Every employee inside the business reads it as authoritative context. If we let any agent write to it directly via a `memory-add.sh "fact"` shortcut, two failure modes emerge:
-
-1. **Filler poisoning.** The exact failure the Antigravity demonstrated for outputs (lorem ipsum BRAND-BIBLE, `<p>Line N>` landing) becomes possible for memory: an LLM under throughput pressure invents "facts" and pushes them into permanent storage. Future projects then consume those fabrications as ground truth, compounding the error.
-2. **Cross-squad incoherence.** Memory drift becomes invisible because there's no audit trail tying each fact to a producing project, a council verdict, or an agentic auditor approval.
-
-### The right path
-
-Permanent memory is written ONLY by the maestro (the orchestrator that compiles final deliverables) AFTER both gates pass:
-
-- **Gate 1 — Handoff completeness.** Every expected handoff for the project is present, validated against `HandoffArtifactSchema`, and has an authorship comment.
-- **Gate 2 — Stage 6.5 audit-wave gate.** No `FILLER` verdict on any critical artifact. Run via `bash ${MAESTRO_DIR}/scripts/audit-wave.sh gate <project_id>`.
-
-Once the synthesizer's deliverable passes both gates, it may extract durable findings and append them to `<business>/memory/permanent.md` with a citation pointing back to the project_id, the producing squad/business, and the council session that approved it.
-
-### What an agent should do instead
-
-If you want a fact persisted to memory:
-
-1. Run the project end-to-end through the maestro pipeline.
-2. Let the synthesizer extract memory-worthy findings.
-3. Re-index: `bun ~/.nirvana/skills/businesses/scripts/index-businesses.ts`.
-
-If you have a single, uncontestable fact (e.g., a config detail that doesn't need council review), edit `<business>/memory/permanent.md` directly with `Read` + `Edit`, then re-index. The lack of a shortcut is the protection — it keeps every memory write traceable to a human or to the audited synthesizer, not to a hung-up automation agent improvising under time pressure.
-
-This is the same separation-of-duties principle that makes Stage 6.5 work: the producer is never the auditor, and the auditor is never the writer.
+- `SKILL.md`: the skill entry
+- `README.md`: overview
+- `TUTORIAL.md`: step-by-step
+- `BUSINESS_PROTOCOL_V2.md`: the complete protocol
+- `~/.nirvana/skills/_shared/CONFIGURATION.md`: shared schemas and validators
+- `~/.nirvana/skills/_shared/SCRIPT_CONTRACT.md`: the script contract

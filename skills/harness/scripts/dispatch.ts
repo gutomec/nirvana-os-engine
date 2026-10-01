@@ -454,8 +454,8 @@ if (!slug && !autoMode && !explicitTarget) {
   console.error("    --claude-code           shortcut for --exec=claude-code");
   console.error("    --auto-brief            enrich a thin brief and decide for the human");
   console.error("    --zip                   pack the deliverables into ./<project>.zip");
-    console.error("    --pdf                   build relatorio-final.pdf via report-publisher (if the business has one)");
-    console.error("    --html                  build relatorio-final.html from every markdown in the project (marked)");
+    console.error("    --pdf                   build final-report.pdf via report-publisher (if the business has one)");
+    console.error("    --html                  build final-report.html from every markdown in the project (marked)");
   console.error("    --review | --no-review  ask for the delivery review, or decline it (review.policy decides otherwise)");
   console.error("    --execution-mode=<mode> standard|gauntlet|auto (default: standard)");
   console.error("    --gauntlet-intensity=<profile> light|balanced|exhaustive");
@@ -476,9 +476,8 @@ if (!slug && !autoMode && !explicitTarget) {
   console.error("    4  invalid arguments");
   console.error("");
   console.error("Example:");
-  // Example slugs and briefs are user-library DATA, kept in the user's language.
-  console.error("  nrv dispatch brand-creative-studio \"Manifesto para produto X\"");  // i18n-user-facing
-  console.error("  nrv run minha-marca \"caso de acidente\" --auto-brief --zip");      // i18n-user-facing
+  console.error("  nrv dispatch brand-creative-studio \"Brand manifesto for product X\"");
+  console.error("  nrv run my-brand \"car accident case\" --auto-brief --zip");
   process.exit(4);
 }
 
@@ -906,7 +905,7 @@ if (briefTarget) {
 
 // --auto-brief: deterministically enrich a thin brief so the headless agent can
 // decide for the human. Inferred assumptions are appended to the brief and the
-// agent surfaces them under "Premissas assumidas" in the output (correct later
+// agent surfaces them under an "Assumptions" heading in the output (correct later
 // via `nrv revise`).
 if (wantAutoBrief) {
   if (autoBriefMode === "proxy" || autoBriefMode === "llm") {

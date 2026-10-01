@@ -25,7 +25,7 @@ function arg(name: string, fallback?: string): string | undefined {
 
 const projectDir = arg("--project") || arg("--deliverables");
 const output = arg("--output");
-const title = arg("--title", "Relatório do projeto");
+const title = arg("--title", "Project report");
 const client = arg("--client", "");
 const dateStr = arg("--date", "");
 const offlineSnapshot = process.argv.includes("--offline-snapshot");
@@ -65,7 +65,7 @@ function escapeHtml(s: string): string {
 }
 
 // Render summaries first, then the rest sorted by path.
-const SUMMARY_HINTS = ["resumo-executivo", "_summary", "resumo", "executive-summary", "readme"];
+const SUMMARY_HINTS = ["executive-summary", "_summary", "resumo-executivo", "resumo", "readme"];
 const files = walk(projectDir).sort((a, b) => {
   const ra = path.relative(projectDir, a).toLowerCase();
   const rb = path.relative(projectDir, b).toLowerCase();
@@ -93,7 +93,7 @@ files.forEach((file, i) => {
   sections.push(`<section id="${id}"><div class="doc-path">${escapeHtml(rel)}</div>${body}</section>`);
 });
 
-const meta = [client && `Cliente: ${escapeHtml(client)}`, dateStr && `Data: ${escapeHtml(dateStr)}`, `${files.length} documento(s)`]
+const meta = [client && `Client: ${escapeHtml(client)}`, dateStr && `Date: ${escapeHtml(dateStr)}`, `${files.length} document(s)`]
   .filter(Boolean).join(" · ");
 
 // --- CDN asset references (default) ---
@@ -154,7 +154,7 @@ hr{border:none;border-top:1px solid var(--line);margin:28px 0}
 
 // Assemble the HTML with placeholders for the CDN/inline asset blocks.
 const htmlTemplate = `<!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -167,10 +167,10 @@ const htmlTemplate = `<!DOCTYPE html>
 </head>
 <body class="font-sf">
 <div class="layout">
-  <nav class="toc"><h2>Documentos</h2><ol>${nav.join("")}</ol></nav>
+  <nav class="toc"><h2>Documents</h2><ol>${nav.join("")}</ol></nav>
   <main>
     <header class="report">
-      <span class="eyebrow"><i data-lucide="sparkles"></i> Relatório Nirvana-OS</span>
+      <span class="eyebrow"><i data-lucide="sparkles"></i> Nirvana-OS Report</span>
       <h1>${escapeHtml(title)}</h1>
       <div class="meta">${meta}${offlineSnapshot ? " · offline snapshot" : ""}</div>
     </header>
@@ -206,9 +206,9 @@ if (offlineSnapshot) {
   // Offline: rely on the system SF/Inter stack (no webfont fetch needed).
   fontsBlock = "";
   if (tw) tailwindBlock = `<script>\n${tw}\n</script>`;
-  else console.error("  ⚠ offline-snapshot: falha ao buscar Tailwind — mantendo link CDN");
+  else console.error("  ⚠ offline-snapshot: failed to fetch Tailwind; keeping the CDN link");
   if (lu) lucideBlock = `<script>\n${lu}\n</script>`;
-  else console.error("  ⚠ offline-snapshot: falha ao buscar Lucide — mantendo link CDN");
+  else console.error("  ⚠ offline-snapshot: failed to fetch Lucide; keeping the CDN link");
 }
 
 // Replace placeholders with a FUNCTION replacement so `$` and backticks inside
@@ -223,7 +223,7 @@ try {
   fs.mkdirSync(path.dirname(output), { recursive: true });
   fs.writeFileSync(output, html, "utf8");
 } catch (e) {
-  console.error(`Falha ao escrever ${output}: ${(e as Error).message}`);
+  console.error(`Failed to write ${output}: ${(e as Error).message}`);
   process.exit(1);
 }
 const sizeKb = (fs.statSync(output).size / 1024).toFixed(0);

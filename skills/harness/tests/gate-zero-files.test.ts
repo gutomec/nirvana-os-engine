@@ -23,12 +23,12 @@ describe("dispatch quality gate — zero gated files", () => {
   test("nonStubText (legacy surface) returns [] for a dir with only .html deliverables", () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-gate-"));
     try {
-      fs.writeFileSync(path.join(tmp, "relatorio-final.html"), "<html>" + "x".repeat(500) + "</html>");
+      fs.writeFileSync(path.join(tmp, "final-report.html"), "<html>" + "x".repeat(500) + "</html>");
       fs.writeFileSync(path.join(tmp, "cover.png"), Buffer.alloc(1024));
       expect(nonStubText(tmp, new Set())).toEqual([]);
       // Phase 4: the pipeline's REAL surface gates both of these now.
       expect(gateableFiles(tmp, new Set()).map(f => path.basename(f)).sort())
-        .toEqual(["cover.png", "relatorio-final.html"]);
+        .toEqual(["cover.png", "final-report.html"]);
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }

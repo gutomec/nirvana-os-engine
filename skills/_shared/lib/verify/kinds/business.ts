@@ -448,7 +448,7 @@ function deprecatedFindings(dir: string, b: BusinessRead): Finding[] {
 /** §5.3: the chart is a graph over the seats, consistent in both directions. */
 function chartFindings(b: BusinessRead): Finding[] {
   const out: Finding[] = [];
-  if (b.chartMissing) return [mk("org_chart_missing", "org-chart.yaml is absent — the hierarchy the team mode walks has no file", "org-chart.yaml")];
+  if (b.chartMissing) return [mk("org_chart_missing", "org-chart.yaml is absent — the single agent that runs the business has no file to read which seat owns what", "org-chart.yaml")];
   if (!b.chart) return [mk("org_chart_inconsistent", `org-chart.yaml does not load: ${b.chartParseError ?? "unknown reason"}`, "org-chart.yaml")];
   const parsed = OrgChartSchema.safeParse(b.chart);
   if (!parsed.success) {

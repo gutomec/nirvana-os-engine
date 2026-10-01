@@ -127,7 +127,7 @@ export function screenShowsTrustPrompt(lines: unknown): boolean {
 
 /** The reply the engine gives a worker that asks: the zero-human doctrine,
  *  stated once. */
-const ASK_REPLY = "Decide with professional defaults, record the assumption under a 'Premissas assumidas' (assumptions) section of the main deliverable, and continue. No human is in this loop.";
+const ASK_REPLY = "Decide with professional defaults, record the assumption under an 'Assumptions' section of the main deliverable (titled in its language), and continue. No human is in this loop.";
 
 export interface OrcaWorkerHooks {
   /** Test seam: canned `orca … --json` answers. */

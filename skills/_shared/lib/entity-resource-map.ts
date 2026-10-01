@@ -72,12 +72,12 @@ export interface ResourceMapOptions {
    *  thing as carrying the directory, and hiding it there switched the map off
    *  for the one path with most of itself missing. */
   inlined?: Iterable<string>;
-  /** Heading noun, e.g. "ESTE SQUAD" / "ESTA EMPRESA". */
+  /** Heading noun, e.g. "THIS SQUAD" / "THIS BUSINESS". */
   label: string;
-  /** How the prose names the tree, e.g. "do squad" / "da empresa". Kept explicit
-   *  rather than derived from `label`: a reader who is told "a fonte" and not
-   *  "a fonte do squad" has to infer which tree the read-only rule covers, and
-   *  the rule is exactly the one that must not need inferring. */
+  /** How the prose names the tree, e.g. "of the squad" / "of the business". Kept
+   *  explicit rather than derived from `label`: a reader who is told "the
+   *  source" and not "the source of the squad" has to infer which tree the read-only
+   *  rule covers, and the rule is exactly the one that must not need inferring. */
   sourceNoun?: string;
   /** Where deliverables go, named so the read-only rule has an alternative. */
   outputsHint?: string;
@@ -105,16 +105,16 @@ export function renderResourceMap(entityDir: string, opts: ResourceMapOptions): 
     if (!names.length) continue;
     const shown = names.slice(0, MAP_ENTRIES_PER_DIR).map(n => `\`${n}\``).join(", ");
     const rest = names.length - MAP_ENTRIES_PER_DIR;
-    lines.push(`- \`${dir.name}/\` — ${shown}${rest > 0 ? ` … e mais ${rest}: rode \`ls\` nesse diretório para a lista inteira` : ""}`);
+    lines.push(`- \`${dir.name}/\` — ${shown}${rest > 0 ? ` … and ${rest} more: run \`ls\` in that directory for the full list` : ""}`);
   }
   if (!lines.length) return "";
 
-  const out = opts.outputsHint ?? "o diretório de saída indicado na sua tarefa";
+  const out = opts.outputsHint ?? "the output directory named in your task";
   const noun = opts.sourceNoun ? ` ${opts.sourceNoun}` : "";
-  return `## O QUE MAIS ${opts.label} CARREGA
-Tudo abaixo existe em \`${entityDir}\` e **não** está neste prompt. Abra o que precisar, quando precisar, em cascata — nada aqui é obrigatório, e nada aqui foi resumido: o arquivo em disco é o conteúdo. Um nome terminado em \`/\` é subdiretório, desça nele.
+  return `## WHAT ELSE ${opts.label} CARRIES
+Everything below exists in \`${entityDir}\` and is **not** in this prompt. Open what you need, when you need it, one level at a time. Nothing here is mandatory, and nothing here was summarized: the file on disk is the content. A name ending in \`/\` is a subdirectory, descend into it.
 
-Este diretório é a fonte${noun}, compartilhada por todo projeto desta máquina e lida por toda execução futura: **é somente leitura para você**. Não edite, crie nem apague nada aqui, nem para "corrigir" um template ou anotar um resultado. Todo arquivo que você produzir vai para ${out}.
+This directory is the source${noun}, shared by every project on this machine and read by every future run: **it is read-only for you**. Do not edit, create or delete anything here, not even to "fix" a template or note a result. Every file you produce goes to ${out}.
 
 ${lines.join("\n")}`;
 }

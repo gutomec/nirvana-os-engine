@@ -185,8 +185,8 @@ describe("vetos NOT_USE_* (regras negativas)", () => {
   });
 
   test("formatadores incluem os vetos como NUNCA", () => {
-    expect(formatRulesForRouterPrompt(WITH_VETO)).toContain("NUNCA use gemini-cli");
-    expect(formatRulesForDirective(WITH_VETO)).toContain("NUNCA use gemini-cli");
+    expect(formatRulesForRouterPrompt(WITH_VETO)).toContain("NEVER use gemini-cli");
+    expect(formatRulesForDirective(WITH_VETO)).toContain("NEVER use gemini-cli");
   });
 });
 
@@ -254,7 +254,7 @@ describe("formatadores de prompt", () => {
     expect(s).toContain("USE_CODEX");
     expect(s).toContain("Quando precisar gerar imagens ou refinar visuais");
     expect(s).toContain('"runtime"');
-    expect(s).toContain("hermes NUNCA");
+    expect(s).toContain("hermes is NEVER");
   });
   test("directive inclui delegação hermes -z e --exec por runtime", () => {
     const s = formatRulesForDirective(RULES);

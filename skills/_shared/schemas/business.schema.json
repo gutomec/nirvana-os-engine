@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://nirvana-protocol/v1/schemas/business.schema.json",
   "title": "Business Manifest (business.yaml)",
-  "description": "Business Protocol v1 §6 manifest schema",
+  "description": "Business Protocol v2 §6 manifest schema",
   "type": "object",
   "required": ["name", "version", "protocol", "description", "domains", "operation_mode", "runtime_requirements"],
   "additionalProperties": false,

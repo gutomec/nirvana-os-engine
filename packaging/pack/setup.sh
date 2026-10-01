@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# setup.sh — bootstrap de 1 comando, sem pré-requisito além de bash + curl.
+# setup.sh — one-command bootstrap, no prerequisite beyond bash + curl.
 #
 #   bash setup.sh
 #
-# Instala o Bun (user-space, em ~/.bun, SEM sudo) se faltar, garante o binário no
-# PATH DESTA sessão (evita o gotcha de "precisa abrir um terminal novo") e roda o
-# setup.ts do pack com esse Bun. Idempotente: se o Bun já existe, só roda o setup.
+# Installs Bun (user space, in ~/.bun, WITHOUT sudo) if missing, puts the binary on
+# THIS session's PATH (avoids the "open a new terminal" gotcha) and runs the pack's
+# setup.ts with that Bun. Idempotent: if Bun already exists, it just runs the setup.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -17,17 +17,17 @@ find_bun() {
 
 BUN="$(find_bun || true)"
 if [ -z "${BUN:-}" ]; then
-  echo "Bun não encontrado — instalando (user-space, em ~/.bun, sem sudo)…"
+  echo "Bun not found. Installing (user-space, in ~/.bun, no sudo)..."
   if ! curl -fsSL https://bun.sh/install | bash; then
-    echo "✗ Não consegui instalar o Bun automaticamente."
-    echo "  Instale manualmente e rode de novo:  curl -fsSL https://bun.sh/install | bash && bash setup.sh"
-    echo "  NUNCA use 'npm install -g bun' (dá EACCES em /usr/local)."
+    echo "✗ Could not install Bun automatically."
+    echo "  Install it manually and run again:  curl -fsSL https://bun.sh/install | bash && bash setup.sh"
+    echo "  NEVER use 'npm install -g bun' (it fails with EACCES in /usr/local)."
     exit 1
   fi
   BUN="$(find_bun || true)"
 fi
 if [ -z "${BUN:-}" ]; then
-  echo "✗ Bun instalado mas não encontrado no PATH. Abra um novo terminal e rode:  bash setup.sh"
+  echo "✗ Bun is installed but was not found on the PATH. Open a new terminal and run:  bash setup.sh"
   exit 1
 fi
 

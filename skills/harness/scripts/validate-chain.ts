@@ -61,7 +61,7 @@ function loadEvents(projectId: string): { events: AuditEvent[]; sources: string[
   // 2026-09-04) with the right diagnosis: a path convention defect, not missing
   // work. Both layouts are read now.
   const candidateRoots = [
-    path.join(process.cwd(), "outputs", projectId),            // novo default visível
+    path.join(process.cwd(), "outputs", projectId),            // new visible default
     path.join(process.cwd(), ".nirvana/outputs", projectId),
     path.join(os.homedir(), ".nirvana/outputs", projectId),
     path.join(process.cwd(), "outputs"),                       // chain layout: flat root
@@ -130,7 +130,7 @@ function loadEvents(projectId: string): { events: AuditEvent[]; sources: string[
 
 function listProjectsToday(): string[] {
   const roots = [
-    path.join(process.cwd(), "outputs"),            // novo default visível
+    path.join(process.cwd(), "outputs"),            // new visible default
     path.join(os.homedir(), ".nirvana/outputs"),
     path.join(process.cwd(), ".nirvana/outputs"),
   ];
@@ -235,7 +235,7 @@ function validateProject(projectId: string, opts: { strict: boolean; verifyDisk?
   if (opts.verifyDisk) {
     const verifySlugs = new Set<string>();
     for (const e of events) {
-      const bslug = e.business_slug ?? (e as any).business; // alias agêntico (E3)
+      const bslug = e.business_slug ?? (e as any).business; // agentic alias (E3)
       if ((e.event === "gate_passed" || e.event === "verify_passed") && bslug) {
         verifySlugs.add(bslug);
       }

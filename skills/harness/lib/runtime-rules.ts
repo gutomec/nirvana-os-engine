@@ -1,10 +1,10 @@
 // runtime-rules.ts — per-runtime routing rules written by the USER in natural
 // language, in the .env:
 //
-//   USE_CODEX="Quando precisar gerar imagens ou refinar visuais"
-//   USE_ANTIGRAVITY="Quando for fazer deep research na internet"
-//   USE_GEMINI="Quando o contexto for gigante (1M tokens)"
-//   USE_HERMES="Quando precisar interagir com o usuário via mensageria"
+//   USE_CODEX="When you need to generate images or refine visuals"
+//   USE_ANTIGRAVITY="When doing deep research on the internet"
+//   USE_GEMINI="When the context is huge (1M tokens)"
+//   USE_HERMES="When you need to interact with the user through messaging"
 //
 // A rule only picks the PREFERRED runtime (head of the queue) for the dispatch
 // exec; resilience (quota/budget/cooldown) remains LLM_CASCADE's job
@@ -350,7 +350,7 @@ const MENTION_ALTERNATION = MENTION_PAIRS
   .sort((a, b) => b.length - a.length)
   .join("|");
 const MENTION_CUE = new RegExp(
-  "\\b(?:use|usa|usando|utilize|utilizando|rode|rodando|execute|executando|despache|via|pelo|pela|com|no|na"
+  "\\b(?:use|usa|usando|utilize|utilizando|rode|rodando|execute|executando|despache|via|pelo|pela|com|no|na" // i18n-user-facing: PT cue data matched against user input
   + "|using|with|through|run(?:ning)? (?:it )?on|on)"
   + `\\s+(?:o\\s+|a\\s+|the\\s+)?((?:${MENTION_ALTERNATION}))\\b`,
   "gi",
@@ -509,14 +509,14 @@ export function decideRuntime(opts: {
 export function formatRulesForRouterPrompt(rules: RuntimeRule[]): string {
   if (!rules.length) return "";
   const positives = rules.filter(r => !r.negate).map(r => `- ${r.envKey} (${r.runtime}): "${r.rule}"`);
-  const negatives = rules.filter(r => r.negate).map(r => `- ${r.envKey}: NUNCA use ${r.runtime} quando "${r.rule}"`);
+  const negatives = rules.filter(r => r.negate).map(r => `- ${r.envKey}: NEVER use ${r.runtime} when "${r.rule}"`);
   return [
-    "## REGRAS DE RUNTIME DO USUÁRIO",
-    ...(positives.length ? ["O usuário definiu em qual CLI agêntico cada tipo de tarefa deve rodar:", ...positives] : []),
-    ...(negatives.length ? ["VETOS (têm prioridade sobre as regras positivas):", ...negatives] : []),
-    'Se o brief casar claramente com uma regra, inclua o campo "runtime" no seu JSON de saída com o runtime canônico',
-    `(um de: ${EXEC_RUNTIMES.join(", ")}). NUNCA retorne um runtime vetado para este brief. hermes NUNCA é runtime de execução — tarefas de mensageria são DELEGADAS pelo maestro via \`hermes -z\`.`,
-    'Sem match claro, omita o campo "runtime".',
+    "## USER RUNTIME RULES",
+    ...(positives.length ? ["The user defined which agentic CLI each type of task must run on:", ...positives] : []),
+    ...(negatives.length ? ["VETOES (they take priority over the positive rules):", ...negatives] : []),
+    'If the brief clearly matches a rule, include the "runtime" field in your output JSON with the canonical runtime',
+    `(one of: ${EXEC_RUNTIMES.join(", ")}). NEVER return a vetoed runtime for this brief. hermes is NEVER an execution runtime: messaging tasks are DELEGATED by the maestro via \`hermes -z\`.`,
+    'With no clear match, omit the "runtime" field.',
   ].join("\n");
 }
 
@@ -524,12 +524,12 @@ export function formatRulesForRouterPrompt(rules: RuntimeRule[]): string {
  *  when DELEGATING sub-tasks (nrv dispatch ... --exec=<rt>; messaging via hermes -z). */
 export function formatRulesForDirective(rules: RuntimeRule[]): string {
   if (!rules.length) return "";
-  const lines = rules.filter(r => !r.negate).map(r => `- ${r.rule} → ${r.runtime === "hermes" ? "delegue via `hermes -z \"<prompt>\"`" : `use \`--exec=${r.runtime}\` ao despachar`}`);
+  const lines = rules.filter(r => !r.negate).map(r => `- ${r.rule} → ${r.runtime === "hermes" ? "delegate via `hermes -z \"<prompt>\"`" : `use \`--exec=${r.runtime}\` when dispatching`}`);
   return [
     "",
-    "REGRAS DE ROTEAMENTO DO USUÁRIO (obrigatórias ao delegar sub-tarefas):",
+    "USER ROUTING RULES (mandatory when delegating sub-tasks):",
     ...lines,
-    ...rules.filter(r => r.negate).map(r => `- ${r.rule} → NUNCA use ${r.runtime} (veto do usuário; prevalece sobre as regras acima)`),
-    "Sem match com regra, siga no runtime atual.",
+    ...rules.filter(r => r.negate).map(r => `- ${r.rule} → NEVER use ${r.runtime} (user veto; it prevails over the rules above)`),
+    "With no rule match, stay on the current runtime.",
   ].join("\n");
 }

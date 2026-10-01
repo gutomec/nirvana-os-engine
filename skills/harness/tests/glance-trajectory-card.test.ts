@@ -17,14 +17,14 @@ describe("Trajectory Card row builder", () => {
     const group = rows[1] as any;
     expect(group.items).toHaveLength(3);
     expect(group.items.map((i: any) => i.view.title)).toEqual([
-      "Julgando: prose-structure", "Veredito: reprovado", "Revisão despachada · tentativa 1",
+      "Judging: prose-structure", "Verdict: failed", "Revision dispatched · attempt 1",
     ]);
-    expect(group.terminal.view.title).toBe("Gate passou");
+    expect(group.terminal.view.title).toBe("Gate passed");
     // The group's own _seq is its first atom's (judge_invoked), not the group's array position.
     expect(group._seq).toBe(events.findIndex((e) => e.event === "judge_invoked"));
     // Delivered gets the ok nuance (a plain pass, not a reservations gate).
     const delivered = rows[2] as any;
-    expect(delivered.nuance).toEqual({ variant: "ok", label: "Entregue", detail: { gate: "pass", files: 2 } });
+    expect(delivered.nuance).toEqual({ variant: "ok", label: "Delivered", detail: { gate: "pass", files: 2 } });
   });
 
   test("a gate_passed with no preceding judgement atoms stays a plain row (heuristic-mode gate)", () => {
@@ -39,21 +39,21 @@ describe("Trajectory Card row builder", () => {
       { event: "x_delivery_withheld", gate: "fail", ceiling: "completeness", ceiling_reason: "manifest not verified", gated_files: 3, revisions: 2 },
     ]).rows[0] as any;
     expect(withheld.nuance.variant).toBe("fail-reversible");
-    expect(withheld.nuance.label).toBe("Retido");
+    expect(withheld.nuance.label).toBe("Withheld");
     expect(withheld.nuance.detail).toMatchObject({ ceiling_reason: "manifest not verified", gated_files: 3 });
 
     const reservations = buildTrajectoryRows([
       { event: "x_delivered_with_reservations", gated_files: 1, revisions: 2, ceiling: 2 },
     ]).rows[0] as any;
     expect(reservations.nuance.variant).toBe("warn-detail");
-    expect(reservations.nuance.label).toBe("Com ressalvas");
+    expect(reservations.nuance.label).toBe("With reservations");
 
     // `delivered` right after fail-accepted reservations reads as reservations
     // too, not a second, contradicting "clean pass".
     const deliveredAfterReservations = buildTrajectoryRows([
       { event: "delivered", gate: "fail-accepted", files: 2 },
     ]).rows[0] as any;
-    expect(deliveredAfterReservations.nuance).toEqual({ variant: "warn-detail", label: "Com ressalvas", detail: { gate: "fail-accepted", files: 2 } });
+    expect(deliveredAfterReservations.nuance).toEqual({ variant: "warn-detail", label: "With reservations", detail: { gate: "fail-accepted", files: 2 } });
   });
 
   test("runtime-health events carry the hint inline, no extra click needed", () => {

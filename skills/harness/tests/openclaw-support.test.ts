@@ -74,7 +74,7 @@ describe("the dispatch path OpenClaw can actually run", () => {
   });
 
   test("the adapter is honest that no project contract file exists there", () => {
-    expect(read("skills/_shared/adapters/openclaw.md")).toMatch(/não existe.*equivalente a `CLAUDE\.md`|reads NO project|não lê nenhum/i);
+    expect(read("skills/_shared/adapters/openclaw.md")).toMatch(/there is no.*equivalent of `CLAUDE\.md`|reads no project/i);
   });
 });
 

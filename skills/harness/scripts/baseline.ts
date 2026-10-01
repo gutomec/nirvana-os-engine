@@ -239,13 +239,13 @@ async function collect(args: CliArgs): Promise<{
         }
         case "dispatch_business": {
           tr.hasDispatch = true;
-          const b = obj.business_slug ?? obj.business; // alias agêntico (E3)
+          const b = obj.business_slug ?? obj.business; // agentic alias (E3)
           if (typeof b === "string") tr.businessSlugs.add(b);
           break;
         }
         case "dispatch_squad": {
           tr.hasDispatch = true;
-          const s = obj.squad_name ?? obj.squad; // alias agêntico (E3)
+          const s = obj.squad_name ?? obj.squad; // agentic alias (E3)
           if (typeof s === "string") tr.squadNames.add(s);
           break;
         }

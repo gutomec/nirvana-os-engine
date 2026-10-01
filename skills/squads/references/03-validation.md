@@ -4,102 +4,49 @@
 Intent: VALIDATE (keywords: validate, check, verify, fix, repair, lint, audit)
 
 ## Protocol Reference
-Squad Protocol v4 (archived) §15
+`SQUAD_PROTOCOL_V6.md` §15, §34
 
-## Validation — Two-Stage
+## The gate
 
-Validation runs in two stages:
-
-1. **Core validation** — universal rules that hold on every runtime (this document).
-2. **Adapter validation** — runtime-specific rules declared in each adapter's §12 Runtime-Specific Validators.
-
-## Format Detection
-
-The validator accepts v4.0 (native), v3.1 (auto-upgrade), and v2.0 (legacy shim) formats.
-
-| Indicator | Detected version |
-|-----------|-----------------|
-| `protocol: "4.0"` in manifest | **v4.0 native** |
-| `protocol` absent, flat agent frontmatter with mandatory `maxTurns` | v3.1 |
-| `protocol` absent, flat `name:`+`description:` in agent | v2.0 CC flat |
-| Nested `agent:`/`persona:` blocks in agent | v2.0 legacy nested |
-
-## Core Blocking Checks (MUST pass)
-
-| # | Check | v4 | v2 legacy |
-|---|-------|----|-----------|
-| B1 | `squad.yaml` exists and valid YAML | Same | Same |
-| B2 | `name` is kebab-case (2–50 chars) | Same | Same |
-| B3 | `version` is valid semver | Same | Same |
-| B4 | `protocol` declared and supported | **Required** | Auto-injected by shim |
-| B5 | All files in `components.*` exist on disk | Same | Same |
-| B6 | Agent has identity | `name`+`description`+`maxTurns` | `agent.name`+`agent.id` |
-| B7 | Agent frontmatter valid YAML | Same | Same |
-| B8 | **`maxTurns` declared per agent** | **Blocking** | Shim warns + defaults to 25 |
-| B9 | Task has identity | `name` | `task`+`owner` |
-| B10 | Task frontmatter valid YAML | Same | Same |
-| B11 | Workflow has name | `name` or `workflow_name` | Same |
-| B12 | Agent names unique | Same | Same |
-| B13 | Task names unique | Same | Same |
-| B14 | Workflow step `agent`/`task` refs resolve | Same | Same |
-| B15 | Workflow DAG is acyclic | Same | Same |
-| B16 | `runtime_requirements.minimum` has at least one runtime | **Required** | Auto-injected by shim |
-| B17 | Every runtime in `runtime_requirements` has adapter available | **Required** | Auto-fills to claude-code |
-| B18 | If `contracts:` present, schemas exist and valid | Same | Same |
-
-## Non-Blocking Checks (Advisories)
-
-These do NOT block validation but are flagged as warnings:
-
-- `tools:` declared per agent.
-- `description` follows "[verb] [domain]. Use when… Do NOT use for…" pattern.
-- Body contains four canonical sections (identity, guidelines, process, output).
-- `features_required` non-empty.
-- Memory GC policy declared if persistent memory is used.
-- `ui.agents_metadata` present for marketplace display.
-
-## Adapter Validation Stage
-
-After Core passes, the harness loads each target adapter and runs its runtime-specific validators. Examples:
-
-- Claude Code: `cc-max-turns-required` (blocking), `cc-description-length` (warning)
-- Codex: `codex-tools-lowercase` (warning), `codex-sequential-only` (info)
-- Gemini CLI: `gemini-max-turns-required` (blocking)
-
-See each adapter's §12 for its validators list.
-
-## Validation Procedure
-
-1. Detect squad version.
-2. Run Core blocking checks (B1–B18).
-3. Run Core advisory checks.
-4. For each target runtime in `runtime_requirements`, load adapter and run adapter validators.
-5. Report results with score.
-6. If errors: offer `--report` for AI-friendly fix guidance.
-7. If errors: offer `--fix` for auto-fix of common issues.
-
-## CLI Commands
+A squad is admitted by one command, the admission gate. Its criteria catalog is in `SQUAD_PROTOCOL_V6.md` §34.1 and in code at `skills/_shared/lib/verify/kinds/squad.ts`.
 
 ```bash
-squads validate ./my-squad                       # Validate with colored report
-squads validate ./my-squad --json                # JSON output
-squads validate ./my-squad --report              # AI-friendly fix report
-squads validate ./my-squad --fix                 # Auto-fix then validate
-squads validate ./my-squad --runtime claude-code # Validate only against specific adapter
+nrv validate squad <slug|path>                  # report
+nrv validate squad <slug|path> --fix            # mechanical repairs, with backup and rollback
+nrv validate squad <slug|path> --fix=agentic --yes   # then an agent repairs what only meaning can fix
+nrv validate squad <slug|path> --strict         # warnings reject too
+nrv validate squad <slug|path> --json           # machine-readable report
+nrv validate squad <slug|path> --no-retrieval   # skip the retrieval checks
+nrv validate squad <slug|path> --baseline <file>
+nrv validate squad --all [--json] [--record [--allow-regression]] [--root <dir>]
 ```
 
----
+Exit codes: 0 admitted, 1 an error the baseline does not cover, 2 warnings only under `--strict`, 64 usage error or unknown entity. `--fix=agentic` spends model budget, so it needs `--yes` (exit 2 without it).
 
-## Runtime-Specific Details
+## What it checks
 
-Adapter-level validators live in each adapter's §12:
+- **Manifest:** `squad.yaml` parses, matches `SquadManifestSchema` for its protocol, declares at least one capability, and every `components.*` entry exists.
+- **Capabilities:** `outputs[]` shape, usable `examples[]`, `invoke.ref` resolves, `not_for` entries at most 25 characters (§33).
+- **Workflows:** the lint rules of §28.3 (parse, refs, ids, cycles, dialect, twins, inline prose).
+- **Hygiene:** `.nirvana-surface.json` present and current, no run output or per-buyer files inside the squad, no machine-local paths, audit events prefixed and attributed.
+- **Quality (warnings):** agent frontmatter has `maxTurns` and `tools`, tasks have acceptance criteria, `dependencies.yaml` and `README.md` exist, routing metadata is complete, `fidelity: validated` has evidence.
 
-| Runtime | See |
-|---------|-----|
-| Claude Code | [_shared/adapters/claude-code.md §12](../../_shared/adapters/claude-code.md#12-runtime-specific-validators) |
-| Gemini CLI | [_shared/adapters/gemini-cli.md §12](../../_shared/adapters/gemini-cli.md#12-runtime-specific-validators) |
-| Codex | [_shared/adapters/codex.md §12](../../_shared/adapters/codex.md#12-runtime-specific-validators) |
-| Antigravity | [_shared/adapters/antigravity-cli.md §12](../../_shared/adapters/antigravity-cli.md#12-runtime-specific-validators) |
-| Kimi | [_shared/adapters/kimi-cli.md §12](../../_shared/adapters/kimi-cli.md#12-runtime-specific-validators) |
-| Grok | [_shared/adapters/grok-cli.md §12](../../_shared/adapters/grok-cli.md#12-runtime-specific-validators) |
-| Pi | [_shared/adapters/pi.md §12](../../_shared/adapters/pi.md#12-runtime-specific-validators) |
+Severity follows the declared `protocol`: under `"6.0"` the workflow and `not_for` rules are errors, under `"5.0"` they are warnings.
+
+## Fixing
+
+`--fix` runs the mechanical fixers in a fixed order (structure, manifest, files, surface), takes a backup, re-checks, and rolls back if a fixer failed or a new error appeared. A second run changes nothing. A reference that resolves to nothing is never invented: it stays a finding.
+
+`nrv fix-squad <slug|path> [--apply]` writes `SQUAD-DOCTOR-REPORT.md` (problem, why, how to fix) and, with `--apply`, applies the safe fixes, such as downgrading an unproven `validated` fidelity to `experimental`.
+
+## Routing check
+
+Creation is not finished until the self-retrieval gate passes:
+
+```bash
+bun ~/.nirvana/skills/_shared/scripts/self-retrieval-gate.ts <slug> [--lenient] [--json]
+```
+
+## Adapter stage
+
+After the core passes, the target runtime's adapter may add validators. They are listed in section 12 of each adapter in `skills/_shared/adapters/`.

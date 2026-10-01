@@ -23,7 +23,7 @@ runtime_requirements:
     version: '>=0.20.0'
   - runtime: gemini-cli
     version: '>=0.4.0'
-  - runtime: antigravity-cli  # +antigravity-cli (sucessor; gemini-cli sunset 2026-06-18 consumer)
+  - runtime: antigravity-cli  # +antigravity-cli (successor; gemini-cli consumer sunset 2026-06-18)
     version: '>=0.4.0'
 features_required:
 - max_turns
@@ -45,5 +45,5 @@ memory:
 ui:
   client_facing_name: Conglomerate Business (Example)
   category: general
-  pitch: Template conglomerate — Holding CEO + N business CEOs. Bom para holdings,
-    conglomerados multi-vertical e portfolios de empresas.
+  pitch: Conglomerate template with Holding CEO + N business CEOs. Good for holdings,
+    multi-vertical conglomerates and company portfolios.

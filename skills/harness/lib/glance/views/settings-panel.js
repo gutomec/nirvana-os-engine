@@ -1,4 +1,4 @@
-/* settings-panel.js — the logic of the Glance "Configuração" panel, the engine
+/* settings-panel.js — the logic of the Glance "Settings" panel, the engine
  * settings section over GET/PUT/DELETE /api/v1/settings.
  *
  * Pure ES module with no dependencies. `bun test` imports it directly; the page
@@ -9,24 +9,24 @@
  * groups and fields the template renders, maps a control's input back to the
  * value the API receives, builds the requests and reads the API's answers.
  * The server validates every value; nothing here re-implements the schema.
- * UI strings are PT-BR by design.
+ * UI strings are English.
  */
 
-// One group per schema section, labelled in PT-BR, in schema order. A section
+// One group per schema section, labelled in English, in schema order. A section
 // the map does not know is still shown, under its own name, so a key added to
 // the schema never falls off the screen.
 export const GROUP_LABELS = Object.freeze({
-  multi_target: 'Multi-target', gauntlet: 'Gauntlet', execution: 'Execução', glance: 'Glance', runtime: 'Runtime',
-  routing: 'Roteamento', supervisor: 'Supervisor', updates: 'Atualizações', budget: 'Orçamento',
-  baselines: 'Baselines de custo', quality_gate: 'Quality gate', delivery: 'Entrega', verify: 'Portão de admissão',
-  audit: 'Auditoria', host: 'Host (Orca)', briefing: 'Briefing', review: 'Revisão',
+  multi_target: 'Multi-target', gauntlet: 'Gauntlet', execution: 'Execution', glance: 'Glance', runtime: 'Runtime',
+  routing: 'Routing', supervisor: 'Supervisor', updates: 'Updates', budget: 'Budget',
+  baselines: 'Cost baselines', quality_gate: 'Quality gate', delivery: 'Delivery', verify: 'Admission gate',
+  audit: 'Audit', host: 'Host (Orca)', briefing: 'Briefing', review: 'Review',
 });
 
 export const SOURCE_LABELS = Object.freeze({
-  env: 'variável de ambiente', project: 'projeto', global: 'global', profile: 'perfil', 'engine-default': 'engine', default: 'padrão',
+  env: 'environment variable', project: 'project', global: 'global', profile: 'profile', 'engine-default': 'engine', default: 'default',
 });
 
-export const SCOPE_LABELS = Object.freeze({ project: 'projeto', global: 'global' });
+export const SCOPE_LABELS = Object.freeze({ project: 'project', global: 'global' });
 
 const CONTROLS = Object.freeze({ boolean: 'toggle', enum: 'select', number: 'number', string: 'text' });
 
@@ -43,7 +43,7 @@ export function controlFor(kind) {
 
 export function sourceLabel(entry) {
   const source = entry?.source;
-  if (source === 'env') return entry.variable ? `variável ${entry.variable}=${entry.raw ?? ''}` : SOURCE_LABELS.env;
+  if (source === 'env') return entry.variable ? `variable ${entry.variable}=${entry.raw ?? ''}` : SOURCE_LABELS.env;
   return SOURCE_LABELS[source] || SOURCE_LABELS.default;
 }
 
@@ -56,7 +56,7 @@ export function originDetail(entry) {
 
 export function lockReason(entry) {
   if (!entry || entry.source !== 'env') return '';
-  return `Fixado pela variável ${entry.variable}=${entry.raw ?? ''} no ambiente do servidor do Glance (o shell que o iniciou ou o .env do projeto); um valor gravado no arquivo só valeria sem a variável. Remova a variável, reinicie o Glance e edite aqui.`;
+  return `Pinned by the variable ${entry.variable}=${entry.raw ?? ''} in the Glance server's environment (the shell that started it or the project's .env); a value written to the file would only apply without the variable. Remove the variable, restart Glance and edit here.`;
 }
 
 // `nrv config set` writes the project inside one; the panel follows that rule
@@ -98,11 +98,11 @@ export function buildSettingsPanel(payload) {
 }
 
 // What a control shows for a value: booleans as words (never colour alone),
-// an empty string as "(vazio)", everything else as text.
+// an empty string as "(empty)", everything else as text.
 export function displayValue(field, value = field?.value) {
-  if (value === null || value === undefined) return '(ausente)';
-  if (field?.kind === 'boolean' || typeof value === 'boolean') return value ? 'ligado' : 'desligado';
-  return value === '' ? '(vazio)' : String(value);
+  if (value === null || value === undefined) return '(unset)';
+  if (field?.kind === 'boolean' || typeof value === 'boolean') return value ? 'on' : 'off';
+  return value === '' ? '(empty)' : String(value);
 }
 
 // The value the API receives from a control's raw input: a switch sends a
@@ -134,14 +134,14 @@ export function changeNotice(change) {
   const where = `${scope}${change.path ? ` (${change.path})` : ''}`;
   let notice;
   if (change.to === null) {
-    notice = change.changed ? `${change.key} removido de ${where}; era ${displayValue(null, change.from)}` : `${change.key} não estava definido em ${where}; nada mudou`;
+    notice = change.changed ? `${change.key} removed from ${where}; was ${displayValue(null, change.from)}` : `${change.key} was not set in ${where}; nothing changed`;
   } else {
     notice = change.changed
-      ? `${change.key} = ${displayValue(null, change.to)} gravado em ${where}${change.from === null || change.from === undefined ? '' : ` (era ${displayValue(null, change.from)})`}`
-      : `${change.key} já era ${displayValue(null, change.to)} em ${where}; nada mudou`;
+      ? `${change.key} = ${displayValue(null, change.to)} written to ${where}${change.from === null || change.from === undefined ? '' : ` (was ${displayValue(null, change.from)})`}`
+      : `${change.key} was already ${displayValue(null, change.to)} in ${where}; nothing changed`;
   }
   const effective = change.effective;
-  if (effective && effective.source !== change.scope) notice += ` · valor efetivo agora: ${displayValue(null, effective.value)} (${sourceLabel(effective)})`;
+  if (effective && effective.source !== change.scope) notice += ` · effective value now: ${displayValue(null, effective.value)} (${sourceLabel(effective)})`;
   return notice;
 }
 
@@ -153,5 +153,5 @@ export function problemMessage(body, status) {
     if (typeof body.title === 'string' && body.title) return body.title;
     if (typeof body.error === 'string' && body.error) return body.error;
   }
-  return status ? `HTTP ${status}` : 'falhou';
+  return status ? `HTTP ${status}` : 'failed';
 }

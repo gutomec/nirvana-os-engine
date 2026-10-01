@@ -1,282 +1,162 @@
 # Step-by-step tutorial · businesses skill
 
-> Journey from zero to your first real business deliverable. Approximately 30 minutes to complete.
+> From zero to a first business deliverable. About 30 minutes. Protocol reference: `BUSINESS_PROTOCOL_V2.md`.
 
-This tutorial assumes Node 18+, Python 3.9+, and the skill installed at `~/.nirvana/skills/businesses/`.
-
----
-
-## Tutorial scenario
-
-You are the founder of a SaaS product called **Beta Studio** (an online video production course). You want an "internal agency" that handles content, sales, and support. You will create a business with 4 employees: CEO, Marketing Lead, Sales Lead, and a QA Antagonist.
-
-By the end of the tutorial you will have:
-- The `beta-studio` business validated and indexed
-- 4 employees with self-score contracts and bridges
-- One brief dispatched
-- An audit log of what happened
+This tutorial assumes the Nirvana-OS engine is installed (`nrv` and Bun on PATH).
 
 ---
 
-## Step 1 — Inspect what already exists
+## Scenario
 
-Before creating anything, check the current portfolio.
+You run a SaaS product called **Beta Studio**, an online video production course. You want an internal agency for content, sales and support: a business with four seats (CEO, marketing lead, sales lead, and a QA antagonist).
+
+At the end you will have a validated, indexed business, one brief dispatched to it, and the audit trail of the run.
+
+A dispatched business runs as **one agent** that plays its seats by opening their files (`BUSINESS_PROTOCOL_V2.md` §14). The seats are the business's structure and method, not separate running processes.
+
+---
+
+## Step 1: look at what exists
 
 ```bash
-bun ~/.nirvana/skills/businesses/scripts/list-businesses.ts
+nrv list-businesses
+bun ~/.nirvana/skills/businesses/scripts/inspect-business.ts <slug>
 ```
 
-Expected output:
-```
-Total: 31 valid businesses · 328 employees
-  - agency-hq (12 emp)
-  - authority-engine (13 emp)
-  - ...
-  - nexus-council (9 emp)
-```
-
-Copy an example for inspiration:
-
-```bash
-bun ~/.nirvana/skills/businesses/scripts/inspect-business.ts nexus-council
-```
-
-You will see hierarchy, employees with roles, intake, antagonist. Use it as reference.
+Pick a business close to what you want and read its seats, intake and antagonist.
 
 ---
 
-## Step 2 — Create the business via wizard
+## Step 2: scaffold the business
 
 ```bash
 bun ~/.nirvana/skills/businesses/scripts/init-business.ts beta-studio --template council
 ```
 
-The wizard asks 4 rounds of questions:
+Templates are `solo`, `council`, `agency` and `conglomerate`. The scaffold is created under `~/businesses/beta-studio/` (or the project's `.nirvana/businesses/` in a scoped project) and the admission gate runs over it in `--fix` mode, so `.nirvana-surface.json` is already on disk.
 
-**Round 1 — Identity**
-- Canonical name: `beta-studio`
-- Display name: `Beta Studio`
-- Short pitch: `Video production courses with mind-clones of top cinematographers`
-- Domains (comma-separated): `education, video, content, sales`
-
-**Round 2 — Runtime + budget**
-- Minimum runtime: `claude-code`
-- Total monthly budget: `$200`
-- Operation mode: `zero_human`
-
-**Round 3 — Employees**
-Add 4:
-1. `beta-ceo` — role: `ceo`, reports_to: empty (CEO is root)
-2. `beta-marketing-lead` — role: `marketing-lead`, reports_to: `beta-ceo`
-3. `beta-sales-lead` — role: `sales-lead`, reports_to: `beta-ceo`
-4. `beta-qa` — role: `qa` (auto-promoted to antagonist), reports_to: `beta-ceo`
-
-**Round 4 — Initial routing**
-Add 2 auto_routes:
-- `type:course-launch` → `beta-marketing-lead`
-- `type:refund-request` → `beta-sales-lead` (with escalation to `beta-ceo`)
-
-Output:
-```
-✅ Created ~/businesses/beta-studio/
-   - business.yaml
-   - employees/{beta-ceo, beta-marketing-lead, beta-sales-lead, beta-qa}.md
-   - org-chart.yaml
-   - routing.yaml
-   - memory/permanent.md
-```
+You get `business.yaml`, `org-chart.yaml`, `routing.yaml`, `employees/*.md`, `memory/permanent.md` and a README.
 
 ---
 
-## Step 3 — Inspect what the wizard generated
+## Step 3: author what the gate cannot invent
+
+Edit the files so they describe Beta Studio.
+
+**`business.yaml`**: a concrete `description`, `domains`, and the routing metadata of §6.9: `produces`, `keywords` (EN and PT, with and without accents), at least three `example_briefs` (one EN, one PT), and short `not_for` fences that are true even if nothing else were installed. Optional: `squads_preferred`, `run_budget_usd`, and `review: required` if every delivery must be reviewed.
+
+**Seats** (`employees/*.md`): four seats here.
+
+| Seat | Role | `reports_to` | Flags |
+|---|---|---|---|
+| `beta-ceo` | CEO | none | `is_brief_intake: true` |
+| `beta-marketing-lead` | Marketing lead | `beta-ceo` | |
+| `beta-sales-lead` | Sales lead | `beta-ceo` | |
+| `beta-qa` | QA | `beta-ceo` | `is_antagonist: true` |
+
+Each body needs its own method (Identity, Guidelines, Process, Output, Anti-patterns). Give the intake seat an `acceptance[]`: that list is the contract the judge checks (§11). Pin a clone with `pinned_mind_clones` only for a seat whose identity is a voice; `assigned_mind_clones` is a hint.
+
+**`routing.yaml`**: `brief_intake.default_employee: beta-ceo`, and `auto_routes` whose patterns each fire on one of your `example_briefs` (§13.2).
+
+BP7 only applies above five seats, so the antagonist is optional here. With six or more it is required.
+
+---
+
+## Step 4: validate
 
 ```bash
-ls -la ~/businesses/beta-studio/
-cat ~/businesses/beta-studio/business.yaml
+nrv validate business beta-studio --strict
 ```
 
-The `business.yaml` should have:
-```yaml
-name: beta-studio
-version: 1.0.0
-protocol: "1.0"
-description: "Video production courses with mind-clones of top cinematographers"
-domains: [education, video, content, sales]
-employee_count: 4
-authority_level: tier-2
-operation_mode: zero_human
-runtime_requirements:
-  minimum:
-    - runtime: claude-code
-```
+This runs the 41-criterion catalog of §16.2. Exit `0` means admitted. Fix mechanical findings with `--fix`; authorship findings (`acceptance_missing`, `seat_thin`, `routing_metadata_incomplete`, `auto_route_never_fires`) are yours to write. Add `--json` for the machine report.
 
-Look at one employee:
+Two more checks a new business must pass:
 
 ```bash
-sed -n '1,/^---$/p' ~/businesses/beta-studio/employees/beta-ceo.md
+bun ~/.nirvana/skills/_shared/scripts/check-seat-sufficiency.ts beta-studio --strict
+bun ~/.nirvana/skills/_shared/scripts/self-retrieval-gate.ts beta-studio
 ```
-
-You will see the full frontmatter: `name, role, type: functional_specialist, description, maxTurns, reports_to: null, self_score_contract` (template `ceo.yaml` applied).
 
 ---
 
-## Step 4 — Validate before anything else
+## Step 5: index and confirm discovery
 
 ```bash
-bun ~/.nirvana/skills/businesses/scripts/validate-business.ts ~/businesses/beta-studio
+nrv index
+nrv find "launch a new filmmaking course"
 ```
 
-Expected output:
-```
-OK: beta-studio v1.0.0
-  protocol: 1.0
-  domains: [education, video, content, sales]
-  employees: 4
-  brief_intake: beta-ceo
-  antagonists: [beta-qa]
-  org_chart nodes: 4
-  routing: present
-```
-
-If a **BP7 violation** appears ("businesses with > 5 employees require ≥1 antagonist"): in our case we only have 4 employees, so it does not apply. If you accidentally added 2+ more employees, set `is_antagonist: true` on one of them.
+`nrv find` is a diagnostic: it shows what the keyword router surfaces. If `beta-studio` does not appear, fix its `example_briefs`, `keywords` and routes, then re-index.
 
 ---
 
-## Step 5 — Index into the registry
+## Step 6: write a brief
+
+The orchestrator writes one brief per business, in six sections:
 
 ```bash
-bun ~/.nirvana/skills/businesses/scripts/index-businesses.ts
+nrv brief template > .nirvana/briefs/beta-studio.md
+# fill: Request (verbatim), Decisions, Your part, Inputs, Done when, Output
+nrv brief check .nirvana/briefs/beta-studio.md
 ```
 
-Output:
-```
-OK: registry written to ${BUSINESSES_REGISTRY_PATH}
-   32 valid businesses indexed, 0 invalid
-   - beta-studio v1.0.0 (protocol 1.0, employees 4, mode zero_human)
-   - ...
-```
-
-Now `beta-studio` shows up in the list.
+Say what and why, never how. Mark with `(blocking)` the "Done when" items the delivery cannot fail on.
 
 ---
 
-## Step 6 — Confirm via inspect
+## Step 7: dispatch
 
 ```bash
-bun ~/.nirvana/skills/businesses/scripts/inspect-business.ts beta-studio
+nrv dispatch beta-studio --brief-file .nirvana/briefs/beta-studio.md --exec [--review | --no-review]
 ```
 
-Output:
-```
-=== beta-studio v1.0.0 ===
-Path:           ${BUSINESSES_DIR}/beta-studio
-Protocol:       1.0
-Description:    Video production courses with mind-clones of top cinematographers
-Domains:        education, video, content, sales
-Authority:      tier-2
-Operation:      zero_human
-Employees:      4
+The engine builds the worker's prompt (a map of the brief, the business folder, the memory, the seats and the squad cards), starts one agent, and waits for it. The agent works in phases, keeps `_work/PROGRESS.md`, uses squads by reading their work cards (`nrv cards squad <slug>`), and ends with `_SUMMARY.md`, `_CLAIMS.json` and `participation.json`.
 
---- Employees ---
-  beta-ceo                role=ceo  reports_to=<root>  maxTurns=80  [intake]
-  beta-marketing-lead     role=marketing-lead  reports_to=beta-ceo  maxTurns=100
-  beta-sales-lead         role=sales-lead  reports_to=beta-ceo  maxTurns=100
-  beta-qa                 role=qa  reports_to=beta-ceo  maxTurns=80  [antagonist]
-
---- Org Chart ---
-beta-ceo (manages: beta-marketing-lead, beta-sales-lead, beta-qa)
-  beta-marketing-lead (manages: -)
-  beta-sales-lead (manages: -)
-  beta-qa (manages: -)
-```
-
----
-
-## Step 7 — Confirm discovery via harness
+A decision you take while it runs reaches the worker without stopping it:
 
 ```bash
-bun ~/.nirvana/skills/harness/scripts/find.ts "launch a new filmmaking course"
+nrv brief decide .nirvana/briefs/beta-studio.md "<the decision>"
 ```
 
-Stage 0 of the harness should detect `type:course-launch` in `beta-studio`'s auto_route and return:
-
-```
-signal: HIGH
-top-match: business_route:beta-studio:beta-marketing-lead:type:course-launch
-```
-
-If it does not return that: review `~/businesses/beta-studio/routing.yaml` and re-run `index-businesses.ts`.
+Then the engine decides on a review by rule (`review.policy`; `review: required` in the manifest forces it under the default rule), runs the verification and the quality gate, and delivers. Read `<outputs>/_SUMMARY.md`, and `_QA-RESERVATIONS.md` if it exists.
 
 ---
 
-## Step 8 — Dispatch the first brief
+## Step 8: inspect the audit trail
 
 ```bash
-bun ~/.nirvana/skills/businesses/scripts/brief-business.ts beta-studio "Launch the new course 'Digital Cinematography 2026'"
+nrv audit-tail
 ```
 
-Output:
-```
-Project ID: proj-20260502T230015-beta-studio
-Brief saved: ~/.projects-outputs/proj-20260502T230015-beta-studio/brief.md
-Project dir: ~/.projects-outputs/proj-20260502T230015-beta-studio/businesses/beta-studio/
-Audit log:   ~/.projects-outputs/proj-20260502T230015-beta-studio/businesses/beta-studio/audit.jsonl
-
-Next step (executed by the skill via Agent tool):
-  Spawn employee 'beta-ceo' with the brief above as context.
-  Wait for handoff_artifact in handoffs/.
-```
-
-From here, in a real Claude Code session, you would ask Claude:
-
-> Spawn beta-ceo (from ~/businesses/beta-studio/employees/beta-ceo.md) as a subagent with the brief at ~/.projects-outputs/proj-…/brief.md and give me its handoff_artifact.
-
-Claude will:
-1. Read the beta-ceo employee.md (frontmatter + body)
-2. Spawn it as `Agent({subagent_type: "beta-ceo", ...})`
-3. beta-ceo decides: delegate to marketing-lead (for the launch), receive deliverables, synthesize, return a handoff_artifact with self-score.
+Look for `brief_received`, `dispatch_business`, `x_business_solo_started`, one `x_seat_credited` per seat the worker declared, `agent_executed`, then `gate_passed`. Without those events the run did not happen.
 
 ---
 
-## Step 9 — Inspect the audit trail
+## Step 9: iterate
 
-```bash
-ls ~/.projects-outputs/proj-20260502T230015-beta-studio/
-cat ~/.projects-outputs/proj-20260502T230015-beta-studio/businesses/beta-studio/audit.jsonl
-```
-
-Each event (brief_received, invocation_start, handoff, ticket_opened, etc.) is recorded as JSONL, schema-validated.
+- **New seat**: add `employees/<name>.md`, re-run `nrv validate business beta-studio --fix`, which regenerates `org-chart.yaml` and the surface.
+- **New route**: edit `routing.yaml`, validate, `nrv index`.
+- **Change intake**: move `is_brief_intake: true` to the other seat; exactly one is allowed.
+- **Memory**: live memory is in `.nirvana/memory/businesses/<slug>/` (machine scope) and in the project's `.nirvana` (project scope), never in the business folder. `nrv memory relocate --apply` moves strays.
 
 ---
 
-## Step 10 — Iterate the manifest
+## Troubleshooting
 
-As you use it, you will want to adjust:
-
-- **Add new employee**: create a `.md` in `employees/`, add to `org-chart.yaml`, re-validate, re-index.
-- **Add auto_route**: edit `routing.yaml`, re-validate, re-index. Stage 0 of the harness picks it up immediately.
-- **Switch intake**: set `is_brief_intake: false` on the old one, `true` on the new one. Validator accepts exactly 1.
-- **Customize self-score template**: copy a yaml from `~/migration-tools/templates/self-score/` to `<more-specific-role>.yaml` and `pickSelfScoreTemplate` will pick it up via substring on the next migration.
-
----
-
-## Tutorial troubleshooting
-
-| Error | Cause | Fix |
+| Symptom | Cause | Fix |
 |---|---|---|
-| `validate-business.ts` complains about `bidirectional inconsistency` | manages and reports_to do not match | Edit `org-chart.yaml`: if A.direct_reports includes B, then B.reports must contain A |
-| `BP7 violation` | >5 employees without antagonist | Set `is_antagonist: true` on one (preference: `qa` role) |
-| `Slug must match ^[a-z][a-z0-9-]{1,63}$` | uppercase or special character | kebab-case only |
-| Harness does not route to your business | Forgot to re-index after editing | `bun scripts/index-businesses.ts` |
-| Description rejected with `minLength: 20` | Text too short | minimum 20 chars in business and employee `description` |
+| `org_chart_inconsistent` | `reports_to`/`manages` and the chart disagree | `nrv validate business <slug> --fix` rederives the chart from the frontmatter |
+| `antagonist_bp7` | more than 5 seats and no antagonist | set `is_antagonist: true` on one seat (a QA role fits) |
+| `intake_exactly_one` | zero or several intake seats | set `is_brief_intake: true` on exactly one |
+| `employee_frontmatter_invalid` | unknown key or bad value (frontmatter is strict) | remove or fix the key; the finding names it |
+| Slug rejected | uppercase or special characters | kebab-case, `^[a-z][a-z0-9-]{1,63}$` |
+| Business never routed to | metadata too thin or not re-indexed | complete §6.9 fields, run the self-retrieval gate, `nrv index` |
+| `description` rejected | under 20 characters | write a concrete description |
 
 ---
 
 ## Next steps
 
-- Migrate an existing company (paperclip → business v1) using `~/migration-tools/paperclip-to-business-v1.ts`
-- Compose a multi-business brief via the `business-nirvana-maestro` squad (in `${MAESTRO_DIR}/`)
-- Customize self-score templates for roles specific to your business
-- Connect bridges to squads (in `bridges/squad-bridges.yaml`) so employees can invoke external squads
-
-See the skill's `README.md` for a full reference of CLI, programmatic API, and architecture.
+- Migrate a Paperclip company (`BUSINESS_PROTOCOL_V2.md` §21).
+- Read `BUSINESS_PROTOCOL_V2.md` §14 for the exact execution model and §16.2 for the full gate catalog.
+- See `README.md` and `CONFIGURATION.md` for the CLI reference and every configurable field.

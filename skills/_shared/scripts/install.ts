@@ -345,7 +345,7 @@ function wireLocalBinOnPath(dry: boolean): string[] {
       notes.push(`added ${localBin} to the user PATH (Windows) — new terminals work immediately (no restart).`);
       notes.push(`  this window only: run  set PATH=%USERPROFILE%\\.local\\bin;%PATH%`);
     } else if (/present/.test(persisted)) { /* already there */ }
-    else notes.push(`não consegui ajustar o PATH automaticamente — adicione "%USERPROFILE%\\.local\\bin" ao PATH do usuário.`);
+    else notes.push(`could not adjust PATH automatically; add "%USERPROFILE%\\.local\\bin" to the user PATH.`);
     return notes;
   }
   if (skipReason) {
@@ -377,7 +377,7 @@ function wireLocalBinOnPath(dry: boolean): string[] {
       notes.push(`${dry ? "would add" : "added"} ~/.local/bin to PATH in ${t.replace(home, "~")}`);
     } catch (e) { notes.push(`could not update ${t.replace(home, "~")}: ${(e as Error).message}`); }
   }
-  if (notes.some(n => /added|would add/.test(n))) notes.push("→ abra um NOVO terminal (ou `source` o profile) para o `nrv` funcionar.");
+  if (notes.some(n => /added|would add/.test(n))) notes.push("→ open a NEW terminal (or `source` your profile) for `nrv` to work.");
   return notes;
 }
 

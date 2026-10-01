@@ -1,6 +1,6 @@
 ---
 name: prose_longform
-display_name: "Prose — Longform (livro, relatório, ensaio, dossiê)"
+display_name: "Prose — Longform (book, report, essay, dossier)"
 type: harness_rubric
 version: 1.0.0
 target_model: inherit
@@ -25,9 +25,9 @@ aliases:
   - memorando
   - report
 description: |
-  Critérios de qualidade para deliverables de prosa longa (≥ 1500 palavras).
-  Foco em estrutura, coerência argumentativa, precisão factual e ausência
-  de tells de LLM.
+  Quality criteria for long-prose deliverables (≥ 1500 words).
+  Focus on structure, argumentative coherence, factual precision and absence
+  of LLM tells.
 ---
 
 # Prose Longform Rubric
@@ -44,38 +44,38 @@ description: |
 ## Criteria (each scored 0-10, weighted)
 
 1. **brief_fidelity** (weight 25)  
-   O artefato responde a TODOS os requisitos explícitos do brief? Falhas:
-   parágrafos genéricos não conectados ao pedido; assumir restrições que o
-   usuário não fez; omitir entregáveis solicitados.
+   Does the artifact answer ALL the explicit requirements of the brief? Failures:
+   generic paragraphs unconnected to the request; assuming constraints the
+   user did not state; omitting requested deliverables.
 
 2. **structure** (weight 20)  
-   Headers H1/H2/H3 hierárquicos, parágrafos com tese clara, transições
-   entre seções. Falha: muros de texto, headers decorativos sem conteúdo
-   distinto, listas em vez de prosa onde prosa seria melhor.
+   Hierarchical H1/H2/H3 headers, paragraphs with a clear thesis, transitions
+   between sections. Failure: walls of text, decorative headers with no distinct
+   content, lists instead of prose where prose would be better.
 
 3. **factual_precision** (weight 20)  
-   Datas, números, nomes e citações são verificáveis? Há alegação concreta
-   ou tudo é vago? Falhas comuns: "estudos mostram", "muitos especialistas",
-   números redondos sem fonte, anos genéricos.
+   Are dates, numbers, names and quotes verifiable? Is there a concrete claim
+   or is everything vague? Common failures: "studies show", "many experts",
+   round numbers without a source, generic years.
 
 4. **no_llm_tells** (weight 15)  
-   Ausência de: em-dash overuse (3+ em parágrafo); regra de três artificial
-   ("rapid, robust, and resilient"); atribuições vagas ("alguns dizem",
-   "frequentemente argumentado"); conclusões formulaicas ("em síntese",
-   "em última análise"); negative parallelism ("não X, mas Y").
+   Absence of: em-dash overuse (3+ in a paragraph); artificial rule of three
+   ("rapid, robust, and resilient"); vague attributions ("some say",
+   "often argued"); formulaic conclusions ("in summary",
+   "ultimately"); negative parallelism ("not X, but Y"). The equivalent tells in the deliverable's language count too.
 
 5. **argumentative_coherence** (weight 10)  
-   Tese aparece cedo, é desenvolvida, é defendida contra contra-argumentos,
-   conclui. Falha: tese muda no meio, conclusão não conversa com introdução.
+   The thesis appears early, is developed, is defended against counterarguments,
+   and concludes. Failure: the thesis changes midway, the conclusion does not talk to the introduction.
 
 6. **length_discipline** (weight 5)  
-   Dentro de ±20% do `expected_length_words`. Falha grave: ≥ 50% de desvio
-   ou texto que claramente "encheu linguiça" para bater meta.
+   Within ±20% of `expected_length_words`. Serious failure: ≥ 50% deviation
+   or text that clearly padded to hit the target.
 
 7. **natural_voice** (weight 5)  
-   Sem cadências robóticas; usa contrações; varia comprimento de frase;
-   tem ao menos UMA observação que soa pessoal/contextual (não genérica).
-   Segue o writing contract de AGENTS.md/CLAUDE.md/GEMINI.md.
+   No robotic cadences; uses contractions; varies sentence length;
+   has at least ONE observation that sounds personal/contextual (not generic).
+   Follows the writing contract of AGENTS.md/CLAUDE.md/GEMINI.md.
 
 ## Output schema (judge must return)
 ```json

@@ -2,16 +2,16 @@
 """
 businesses skill · loader
 
-Carrega uma business inteira (manifest + employees + org-chart + routing) e
-roda validação cruzada. Reusa os validators centralizados em
+Loads a whole business (manifest + employees + org-chart + routing) and
+runs cross-validation. Reuses the centralized validators in
 ~/.claude/skills/_shared/validators/validators.py.
 
-Use:
+Usage:
     from lib.loader import load_business, ValidationError
     biz = load_business('~/businesses/my-startup')
     print(biz.manifest.name, len(biz.employees))
 
-ou via CLI:
+or via CLI:
     python3 lib/loader.py ~/businesses/my-startup
 """
 from __future__ import annotations
@@ -23,7 +23,7 @@ import yaml
 from dataclasses import dataclass
 from pathlib import Path
 
-# Importa validators centralizados
+# Import the centralized validators
 SHARED_VALIDATORS = os.path.expanduser('~/.claude/skills/_shared/validators')
 if SHARED_VALIDATORS not in sys.path:
     sys.path.insert(0, SHARED_VALIDATORS)
@@ -39,7 +39,7 @@ from validators import (  # type: ignore[import-not-found]
 
 
 class ValidationError(Exception):
-    """Raised quando uma business falha validação."""
+    """Raised when a business fails validation."""
 
     def __init__(self, message: str, errors: list[str] | None = None) -> None:
         super().__init__(message)
@@ -48,7 +48,7 @@ class ValidationError(Exception):
 
 @dataclass
 class LoadedBusiness:
-    """Container de business carregada e validada."""
+    """Container for a loaded, validated business."""
 
     path: Path
     manifest: BusinessManifest
@@ -63,21 +63,21 @@ def _expand(p: str | Path) -> Path:
 
 
 def _read_frontmatter_md(path: Path) -> tuple[dict, str]:
-    """Lê arquivo .md, retorna (frontmatter dict, body)."""
+    """Read a .md file, return (frontmatter dict, body)."""
     raw = path.read_text(encoding='utf-8')
     m = re.match(r'^---\n(.*?)\n---\n(.*)$', raw, flags=re.DOTALL)
     if not m:
-        raise ValidationError(f'Frontmatter ausente ou malformado em {path}')
+        raise ValidationError(f'Frontmatter missing or malformed in {path}')
     fm_yaml = m.group(1)
     body = m.group(2)
     fm = yaml.safe_load(fm_yaml)
     if not isinstance(fm, dict):
-        raise ValidationError(f'Frontmatter de {path} deve ser mapping')
+        raise ValidationError(f'Frontmatter of {path} must be a mapping')
     return fm, body
 
 
 def load_business(path: str | Path, *, strict: bool = True) -> LoadedBusiness:
-    """Carrega business completa de um diretório.
+    """Load a complete business from a directory.
 
     Estrutura esperada:
         <path>/business.yaml
@@ -87,42 +87,42 @@ def load_business(path: str | Path, *, strict: bool = True) -> LoadedBusiness:
         <path>/escalation-triggers.yaml (opcional)
         <path>/memory/permanent.md  (opcional)
 
-    Quando strict=True (default), lança ValidationError se algo está inválido.
-    Quando strict=False, retorna a business com erros acumulados (raise apenas
-    em erros fatais como manifest ausente).
+    When strict=True (default), raises ValidationError if anything is invalid.
+    When strict=False, returns the business with accumulated errors (raises
+    only on fatal errors such as a missing manifest).
     """
     biz_path = _expand(path)
     if not biz_path.is_dir():
-        raise ValidationError(f'Diretório não encontrado: {biz_path}')
+        raise ValidationError(f'Directory not found: {biz_path}')
 
     errors: list[str] = []
 
-    # 1. Manifest (obrigatório)
+    # 1. Manifest (required)
     manifest_path = biz_path / 'business.yaml'
     if not manifest_path.is_file():
-        raise ValidationError(f'business.yaml ausente em {biz_path}')
+        raise ValidationError(f'business.yaml missing in {biz_path}')
 
     manifest_data = yaml.safe_load(manifest_path.read_text(encoding='utf-8'))
     try:
         manifest = BusinessManifest.model_validate(manifest_data)
     except Exception as exc:
-        raise ValidationError(f'business.yaml inválido: {exc}') from exc
+        raise ValidationError(f'invalid business.yaml: {exc}') from exc
 
-    # 2. Org chart (obrigatório)
+    # 2. Org chart (required)
     chart_path = biz_path / 'org-chart.yaml'
     if not chart_path.is_file():
-        raise ValidationError(f'org-chart.yaml ausente em {biz_path}')
+        raise ValidationError(f'org-chart.yaml missing in {biz_path}')
 
     chart_data = yaml.safe_load(chart_path.read_text(encoding='utf-8'))
     try:
         org_chart = OrgChart.model_validate(chart_data)
     except Exception as exc:
-        raise ValidationError(f'org-chart.yaml inválido: {exc}') from exc
+        raise ValidationError(f'invalid org-chart.yaml: {exc}') from exc
 
-    # 3. Employees (obrigatório, ≥1)
+    # 3. Employees (required, at least 1)
     employees_dir = biz_path / 'employees'
     if not employees_dir.is_dir():
-        raise ValidationError(f'employees/ ausente em {biz_path}')
+        raise ValidationError(f'employees/ missing in {biz_path}')
 
     employees: list[EmployeeFrontmatter] = []
     for emp_file in sorted(employees_dir.glob('*.md')):
@@ -136,14 +136,14 @@ def load_business(path: str | Path, *, strict: bool = True) -> LoadedBusiness:
             errors.append(err)
 
     if not employees and strict:
-        raise ValidationError(f'employees/ vazio em {biz_path}')
+        raise ValidationError(f'employees/ empty in {biz_path}')
 
-    # 4. Routing (opcional, documentação)
-    # routing.yaml não é a fonte de verdade do roteamento em runtime: o router
-    # consome auto_routes via registry._read_routing (que faz parse tolerante de
-    # business.yaml + routing.yaml). Logo, um routing.yaml que não bate com o
-    # schema canônico (formatos mais ricos: routing_rules, approval_gates, etc.)
-    # NÃO deve invalidar uma business correta. Mantemos como warning.
+    # 4. Routing (optional, documentation)
+    # routing.yaml is not the source of truth for runtime routing: the router
+    # consumes auto_routes via registry._read_routing (which parses
+    # business.yaml + routing.yaml tolerantly). So a routing.yaml that does not
+    # match the canonical schema (richer formats: routing_rules, approval_gates,
+    # etc.) must NOT invalidate a correct business. We keep it as a warning.
     routing: Routing | None = None
     routing_path = biz_path / 'routing.yaml'
     if routing_path.is_file():
@@ -159,13 +159,13 @@ def load_business(path: str | Path, *, strict: bool = True) -> LoadedBusiness:
     if permanent_md.is_file():
         permanent_memory_path = permanent_md
 
-    # 6. Cross-protocol integrity check (BP7, intake único, sem ciclos, etc.)
+    # 6. Cross-protocol integrity check (BP7, single intake, no cycles, etc.)
     ctx = BusinessLoadContext(manifest=manifest, employees=employees, org_chart=org_chart)
     result = validate_business_integrity(ctx)
     if not result.valid:
         if strict:
             raise ValidationError(
-                f'Integrity check falhou em {biz_path}', errors=result.errors
+                f'Integrity check failed in {biz_path}', errors=result.errors
             )
         errors.extend(result.errors)
 

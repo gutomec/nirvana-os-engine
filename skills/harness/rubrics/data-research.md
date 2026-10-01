@@ -1,6 +1,6 @@
 ---
 name: data_research
-display_name: "Data / Research (relatório de pesquisa, análise de dados, dataset)"
+display_name: "Data / Research (research report, data analysis, dataset)"
 type: harness_rubric
 version: 1.0.0
 target_model: inherit
@@ -26,8 +26,8 @@ aliases:
   - research
   - planilha
 description: |
-  Pesquisa rigorosa: fontes verificáveis, sem fabricação. Opus por padrão
-  porque hallucinations são catastróficas aqui.
+  Rigorous research: verifiable sources, no fabrication. Opus by default
+  because hallucinations are catastrophic here.
 ---
 
 # Data / Research Rubric
@@ -44,34 +44,34 @@ description: |
 ## Criteria
 
 1. **source_grounding** (weight 30) **[HARD GATE]**  
-   Toda alegação numérica/factual aponta para fonte verificável (URL,
-   paper, base oficial). Sem números soltos. Sem "estudos mostram" sem
-   citação. **Falha grave → reprova sem revisão (gerar de novo do zero).**
+   Every numeric/factual claim points to a verifiable source (URL,
+   paper, official database). No loose numbers. No "studies show" without
+   a citation. **Serious failure → fails without revision (regenerate from scratch).**
 
 2. **no_fabrication** (weight 25)  
-   Nomes, datas, citações de pessoas existem como citadas. Cuidado com
-   nomes de "executivos da empresa X" inventados, papers que não existem.
+   Names, dates and quotes from people exist as cited. Beware of invented
+   "executives of company X" and papers that do not exist.
 
 3. **brief_fidelity** (weight 15)  
-   Cobre o escopo pedido. Não foge para tangentes próximas.
+   Covers the requested scope. Does not drift into nearby tangents.
 
 4. **methodology_explicit** (weight 10)  
-   Como o dado foi obtido? Sample size, janela temporal, filtros, fonte.
-   Sem black-box.
+   How was the data obtained? Sample size, time window, filters, source.
+   No black box.
 
 5. **calibration** (weight 10)  
-   Quando incerto, diz "incerto". Não inflaciona certeza. Distingue dado
-   primário de opinião informada.
+   When uncertain, says "uncertain". Does not inflate certainty. Distinguishes
+   primary data from informed opinion.
 
 6. **synthesis_quality** (weight 5)  
-   Vai além de listar fontes: tira conclusão coerente, identifica padrão.
+   Goes beyond listing sources: draws a coherent conclusion, identifies a pattern.
 
 7. **structure** (weight 3)  
-   Executive summary → método → achados → implicações → limitações.
+   Executive summary → method → findings → implications → limitations.
 
 8. **trade_offs_explicit** (weight 2)  
-   Quando recomenda, mostra trade-off. Não apresenta solução única
-   sem alternativas.
+   When recommending, shows the trade-off. Does not present a single
+   solution without alternatives.
 
 ## Output schema
-Padrão. Critique[] obrigatoriamente cita evidência para cada item.
+Default. Critique[] must cite evidence for each item.

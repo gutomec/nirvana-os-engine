@@ -55,7 +55,7 @@ describe("the dispatch instruction states done, not method", () => {
     expect(tpl).toMatch(/^## 9\. Guardrails that travel with you/m);
     expect(tpl).not.toMatch(/^## 9\. How to build/m);
     expect(tpl).not.toMatch(/re-run until it does/i);
-    expect(tpl).toContain("## Premissas assumidas");
+    expect(tpl).toContain("## Assumptions");
     expect(Buffer.byteLength(tpl)).toBeLessThan(9000);
     expect(existsSync(join(HARNESS, "templates", "DISPATCH-INSTRUCTION.template.md"))).toBe(true);
   });
@@ -65,7 +65,7 @@ describe("the autonomous directive is a page of guardrails, not a manual", () =>
   test("under 3.2K bytes, keeps the markers the gates read, drops the library table and the hyphen rule", async () => {
     const { AUTONOMOUS_DIRECTIVE } = await import("../lib/host-agent-driver.ts");
     expect(Buffer.byteLength(AUTONOMOUS_DIRECTIVE)).toBeLessThanOrEqual(3200);
-    for (const kept of ["FUNDAMENTAL PREMISE", "AUTONOMOUS MODE", "HEADLESS SESSION LIFETIME", "CONTINUOUS FLOW", "MESSAGE INTERRUPTION", "## Premissas assumidas", "Finish the whole task"]) {
+    for (const kept of ["FUNDAMENTAL PREMISE", "AUTONOMOUS MODE", "HEADLESS SESSION LIFETIME", "CONTINUOUS FLOW", "MESSAGE INTERRUPTION", "## Assumptions", "Finish the whole task"]) {
       expect(AUTONOMOUS_DIRECTIVE).toContain(kept);
     }
     for (const gone of ["Leaflet", "Next.js", "HYPHEN", "AVAILABLE SQUADS section"]) expect(AUTONOMOUS_DIRECTIVE).not.toContain(gone);

@@ -1,83 +1,83 @@
 # Adapter · Gemini CLI
 
-> Runtime adapter para Squad Protocol v5 + Business Protocol v1 + Harness Protocol v1.
-> Cobre os 3 protocolos em um único doc. Seções canônicas conforme Squad v4 §18.5.
-> Identidade + capabilities do sistema (o que o Nirvana-OS é e pode fazer): ver `../NIRVANA-OS.md` (fonte única).
+> Runtime adapter for Squad Protocol v6 + Business Protocol v2 + Harness Protocol v1.
+> Covers the 3 protocols in a single doc. Canonical sections per Squad Protocol v6 §18.5.
+> System identity + capabilities (what Nirvana-OS is and can do): see `../NIRVANA-OS.md` (single source).
 
-> **LEGADO — sunset em 2026-06-18.** O Gemini CLI foi descontinuado. Seu sucessor é o **antigravity-cli** (binário `agy`, ver [`antigravity-cli.md`](./antigravity-cli.md)), que mantém o backend Google/Gemini mas adiciona **subagents dinâmicos nativos in-process** (via Agent Harness local). O dispatch do Gemini CLI permanece **sub-process** (`gemini run`); para novas instalações no tier consumer, prefira o antigravity-cli.
+> **LEGACY: sunset on 2026-06-18.** Gemini CLI was discontinued. Its successor is **antigravity-cli** (binary `agy`, see [`antigravity-cli.md`](./antigravity-cli.md)), which keeps the Google/Gemini backend but adds **native in-process dynamic subagents** (via the local Agent Harness). Gemini CLI dispatch stays **sub-process** (`gemini run`); for new installs on the consumer tier, prefer antigravity-cli.
 
 ---
 
 ## 1. Adapter Metadata
 
-| Campo | Valor |
+| Field | Value |
 |---|---|
 | `runtime` | `gemini-cli` |
 | `vendor` | Google |
 | `min_version` | `0.4+` (Gemini CLI), `google-genai` SDK `>=0.5` |
-| `default_model` | herdado do runtime — o engine NUNCA define model; a config do runtime do usuário decide. Passe model só quando o usuário pedir explicitamente. |
-| `tested_against` | Gemini CLI 0.4–0.6 contra Gemini 2.5 Pro |
+| `default_model` | inherited from the runtime. The engine NEVER sets a model; the user's runtime config decides. Pass a model only when the user explicitly asks. |
+| `tested_against` | Gemini CLI 0.4-0.6 against Gemini 2.5 Pro |
 | `config_paths` | `~/.gemini/settings.json`, `<project>/GEMINI.md`, `<project>/.gemini/config.toml` |
-| `skills_root` | Sem skill system formal; adapter usa `~/.gemini/skills/<name>/` (convenção) |
-| `agents_root` | `~/.gemini/agents/<name>.md` (experimental) ou bundled em `<project>/.gemini/agents/` |
+| `skills_root` | No formal skill system; the adapter uses `~/.gemini/skills/<name>/` (convention) |
+| `agents_root` | `~/.gemini/agents/<name>.md` (experimental) or bundled in `<project>/.gemini/agents/` |
 | `memory_root` | `<project>/GEMINI.md` (project), `~/.gemini/memory/` (custom) |
 | `audit_log` | `~/.gemini/sessions/` (experimental), `~/.harness-logs/` (jsonl fallback) |
-| `protocol_versions` | Squad 5.0, Business 1.0, Harness 1.0 (com gaps registrados em §13) |
+| `protocol_versions` | Squad 5.0, Business 1.0, Harness 1.0 (with gaps recorded in §13) |
 
 ---
 
 ## 2. Feature Support Matrix
 
-`✓` = nativo · `~` = workaround/parcial · `✗` = não suportado
+`✓` = native · `~` = workaround/partial · `✗` = not supported
 
-| Feature (Business v1 §6) | Squad v5 | Business v1 | Harness v1 | Notas |
+| Feature (Business v2 §6.5) | Squad v6 | Business v2 | Harness v1 | Notes |
 |---|---|---|---|---|
-| `max_turns` | ~ | ~ | ~ | `--max-iterations` no CLI; per-employee via wrapper |
+| `max_turns` | ~ | ~ | ~ | `--max-iterations` on the CLI; per-employee via wrapper |
 | `tool_whitelist` | ✓ | ✓ | ✓ | Function calling whitelist + `--tools` flag |
-| `subagent_spawning` | ~ | ~ | ~ | `gemini agent` (experimental) ou sub-process `gemini run` — sem isolation primitive |
-| `audit_trail` | ~ | ~ | ~ | Session transcripts experimentais; harness adiciona OTel/jsonl |
-| `scheduled_invocation` | ✗ | ✗ | ✗ | Sem `ScheduleWakeup` — cron externo |
-| `event_bus` | ✗ | ~ | ~ | Mentions/tickets via file-system; sem broker |
-| `hooks` | ✗ | ✗ | ✗ | Sem hook system; workaround em wrapper |
-| `sandboxing` | ~ | ~ | ~ | Container-based sandbox (`--sandbox`) opcional, profiles limitados vs Codex |
+| `subagent_spawning` | ~ | ~ | ~ | `gemini agent` (experimental) or the `gemini run` sub-process; no isolation primitive |
+| `audit_trail` | ~ | ~ | ~ | Experimental session transcripts; the harness adds OTel/jsonl |
+| `scheduled_invocation` | ✗ | ✗ | ✗ | No `ScheduleWakeup`: external cron |
+| `event_bus` | ✗ | ~ | ~ | Mentions/tickets via file-system; no broker |
+| `hooks` | ✗ | ✗ | ✗ | No hook system; workaround in a wrapper |
+| `sandboxing` | ~ | ~ | ~ | Optional container-based sandbox (`--sandbox`), limited profiles compared to Codex |
 | `session_memory` | ✓ | ✓ | ✓ | Conversation context |
-| `project_memory` | ✓ | ✓ | ✓ | `GEMINI.md` carregado no start |
-| `global_memory` | ~ | ~ | ~ | `~/GEMINI.md` user-level — sem auto-discovery rico |
-| `handoff_artifacts` | ✓ | ✓ | ✓ | JSON em tool_result ou arquivo persistido |
+| `project_memory` | ✓ | ✓ | ✓ | `GEMINI.md` loaded at start |
+| `global_memory` | ~ | ~ | ~ | `~/GEMINI.md` user-level, no rich auto-discovery |
+| `handoff_artifacts` | ✓ | ✓ | ✓ | JSON in tool_result or in a persisted file |
 | `fork_context` | ~ | ~ | ~ | Sub-process spawn |
 | `teammate_primitive` | ✗ | ✗ | ✗ | Sem `TeamCreate` |
 | `telemetry_otel` | ~ | ~ | ~ | Via OpenTelemetry SDK externo |
 
-> **Nota fora da matriz canônica:** Gemini CLI suporta MCP servers (experimental) registrados em `~/.gemini/mcp/`. Não é uma das 15 features de Business v1 §6, mas vale como vetor extra para tools customizadas. Tratado em §5 e §13.
+> **Note outside the canonical matrix:** Gemini CLI supports MCP servers (experimental) registered in `~/.gemini/mcp/`. It is not one of the 15 features of Business v2 §6.5, but it is worth having as an extra vector for custom tools. Covered in §5 and §13.
 
 ---
 
 ## 3. Concept Mapping
 
-| Conceito (Protocolo) | Equivalente Gemini CLI | Implementação |
+| Concept (Protocol) | Gemini CLI equivalent | Implementation |
 |---|---|---|
-| Squad / Business | Diretório + GEMINI.md | `<project>/.gemini/<name>/GEMINI.md` carrega o "skill" |
-| Capability | Workflow file | `<skill>/capabilities/<id>.md` invocado por wrapper ou via slash command de Gemini CLI |
-| Employee | Gemini agent profile | `~/.gemini/agents/<name>.md` (experimental) |
-| `is_brief_intake: true` | Default agent quando skill ativa | `default_agent` em settings.json |
-| `is_antagonist: true` | Sub-process invocado em pipeline | `gemini run --agent <name> --prompt "..."` |
-| Handoff artifact | JSON em arquivo + tool_result | `<project>/.handoffs/` |
-| Mention `@employee` | Convenção em prompt | Adapter resolve para spawn de sub-process |
-| Ticket | Arquivo persistido | `<project>/.tickets/<TICKET_ID>.json` |
-| Escalation trigger | Wrapper script + harness call | Wrapper checa condição → emite notification |
-| Permanent memory | `~/GEMINI.md` + custom files | Auto-load só de GEMINI.md |
+| Squad / Business | Directory + GEMINI.md | `<project>/.gemini/<name>/GEMINI.md` loads the "skill" |
+| Capability | Workflow file | `<skill>/capabilities/<id>.md` invoked by a wrapper or via a Gemini CLI slash command |
+| Employee (seat) | Seat file played by the one business agent; optional Gemini agent profile | A business runs as ONE solo agent (`skills/harness/lib/business-solo.ts`) that opens a seat's file when it works as that seat; `~/.gemini/agents/<name>.md` (experimental) is only for a stand-alone subagent |
+| `is_brief_intake: true` | Default agent when the skill is active | `default_agent` in settings.json |
+| `is_antagonist: true` | Sub-process invoked in a pipeline | `gemini run --agent <name> --prompt "..."` |
+| Handoff artifact | JSON in a file + tool_result | `<project>/.handoffs/` |
+| Mention `@employee` | Convention in the prompt | The adapter resolves it to a sub-process spawn |
+| Ticket | Persisted file | `<project>/.tickets/<TICKET_ID>.json` |
+| Escalation trigger | Wrapper script + harness call | The wrapper checks the condition → emits a notification |
+| Permanent memory | `~/GEMINI.md` + custom files | Auto-loads only GEMINI.md |
 | Project memory | `<project>/GEMINI.md` | Auto-load |
-| Session memory | Conversation transcript | Compactado |
-| Routing decision (harness) | Pre-spawn lookup | BM25 sobre `capabilities[].examples[]` em wrapper |
+| Session memory | Conversation transcript | Compacted |
+| Routing decision (harness) | Pre-spawn lookup | BM25 over `capabilities[].examples[]` in a wrapper |
 
 ---
 
 ## 4. Frontmatter Mapping
 
-### Squad v5 / Business v1 → GEMINI.md
+### Squad v6 / Business v2 → GEMINI.md
 
 ```markdown
-# GEMINI.md (head do projeto/skill)
+# GEMINI.md (head of the project/skill)
 You are an AI agent operating under the Squad/Business Protocol.
 
 Available capabilities: [media.video.analyze, media.transcript.extract, ...]
@@ -86,7 +86,7 @@ Sandbox: enabled
 ```
 
 ```yaml
-# .gemini/manifest.yaml (auxiliar, lido por wrapper)
+# .gemini/manifest.yaml (auxiliary, read by a wrapper)
 name: nexus-council
 protocol: 1.0
 employees: [ceo, marketing-lead, ...]
@@ -100,7 +100,7 @@ operation_mode: zero_human
 ---
 name: alex-hormozi
 description: Mind clone of Alex Hormozi for offer evaluation. (DISCLOSURE: AI-generated persona, not real person.)
-model: inherit  # o engine não fixa model; usa o do runtime
+model: inherit  # the engine does not pin a model; it uses the runtime's
 tools: [Read, Grep, Bash]
 max_iterations: 30
 ---
@@ -109,36 +109,36 @@ max_iterations: 30
 You are a mind-clone of Alex Hormozi specialized in offer evaluation...
 ```
 
-> Adapter prepende `(DISCLOSURE: ...)` em description quando `type: mind_clone`.
+> The adapter prepends `(DISCLOSURE: ...)` to the description when `type: mind_clone`.
 
 ---
 
 ## 5. Tool Whitelist Mechanics
 
-- Gemini usa function calling. Adapter traduz semantic tools → function declarations:
+- Gemini uses function calling. The adapter translates semantic tools → function declarations:
   - `read` → `read_file({path})`
   - `bash` → `execute_command({command})`
   - `web_fetch` → `fetch_url({url})`
-- Whitelist enforçada na lista passada ao SDK (`tools=[...]`).
-- MCP servers (experimental) registrados via `~/.gemini/mcp/` aparecem como tools adicionais — adapter pode incluir/excluir por prefixo `mcp__<server>__`.
+- The whitelist is enforced in the list passed to the SDK (`tools=[...]`).
+- MCP servers (experimental) registered via `~/.gemini/mcp/` appear as additional tools; the adapter can include/exclude them by the `mcp__<server>__` prefix.
 
 ---
 
 ## 6. Max-Turns Mechanics
 
-Gemini CLI tem `--max-iterations N` global. Adapter simula per-employee assim:
+Gemini CLI has a global `--max-iterations N`. The adapter simulates per-employee like this:
 
-1. Wrapper spawn `gemini run --max-iterations <N> --agent <name> --prompt "..."`.
-2. `<N>` lido do employee frontmatter (`maxTurns`).
-3. Process exit ou wrapper detecta limit → emite `audit_event: budget_violation`.
+1. The wrapper spawns `gemini run --max-iterations <N> --agent <name> --prompt "..."`.
+2. `<N>` is read from the employee frontmatter (`maxTurns`).
+3. Process exit or the wrapper detects the limit → emits `audit_event: budget_violation`.
 
-Limitação: nested invocations escapam da contagem. Documentar como `~`.
+Limitation: nested invocations escape the count. Documented as `~`.
 
 ---
 
 ## 7. Subagent Spawning
 
-Gemini CLI tem `gemini agent` experimental. Adapter prefere abordagem sub-process robusta:
+Gemini CLI has an experimental `gemini agent`. The adapter prefers the robust sub-process approach:
 
 ```bash
 gemini run \
@@ -149,50 +149,50 @@ gemini run \
   > .handoffs/alex-hormozi-$(date +%s).json
 ```
 
-Quando `gemini agent` API estabilizar, adapter pode migrar para spawn in-process. Para v1: sub-process.
+When the `gemini agent` API stabilizes, the adapter can migrate to in-process spawn. For v1: sub-process.
 
 ---
 
 ## 8. Memory Storage
 
-| Camada | Path | Persistência |
+| Layer | Path | Persistence |
 |---|---|---|
-| Permanent (cross-session) | `~/GEMINI.md` + `~/.gemini/memory/` (convenção do adapter) | Manual |
+| Permanent (cross-session) | `~/GEMINI.md` + `~/.gemini/memory/` (adapter convention) | Manual |
 | Project | `<project>/GEMINI.md` | Auto-load |
-| Session | Conversation transcript | Compactado |
-| Business permanent | `~/businesses/<biz>/memory/permanent.md` | Adapter persiste |
+| Session | Conversation transcript | Compacted |
+| Business permanent | `~/businesses/<biz>/memory/permanent.md` | Adapter persists |
 | Project (business) | `<project>/<biz>/<project_id>/memory/` | Isolation by construction |
 
-> **Isolation guard:** Gemini CLI não enforça memory isolation. Adapter monta prompt com APENAS o memory relevante ao `project_id`. Caso contrário emite `audit_event: isolation_violation`.
+> **Isolation guard:** Gemini CLI does not enforce memory isolation. The adapter builds the prompt with ONLY the memory relevant to the `project_id`. Otherwise it emits `audit_event: isolation_violation`.
 
 ---
 
 ## 9. Context Window & Compaction
 
-- Janela: 1M–2M tokens (Gemini 2.5 Pro/Flash) — maior que Claude/Codex.
-- Compaction: auto-summarization quando perto do limit.
-- **Vantagem:** janela maior reduz pressão por compaction em businesses long-running.
+- Window: 1M-2M tokens (Gemini 2.5 Pro/Flash), larger than Claude/Codex.
+- Compaction: auto-summarization near the limit.
+- **Advantage:** the larger window reduces compaction pressure in long-running businesses.
 
 ---
 
 ## 10. Hook System
 
-Gemini CLI não tem hooks granulares. Workarounds em wrapper:
+Gemini CLI has no granular hooks. Workarounds in a wrapper:
 
-| Hook desejado | Workaround Gemini CLI |
+| Desired hook | Gemini CLI workaround |
 |---|---|
-| `PreToolUse` | Function declaration validation no SDK |
-| `PostToolUse` | Wrapper parseia tool calls do transcript após cada turn |
-| `UserPromptSubmit` | Adapter injeta system instructions no prompt do `gemini run` |
-| `Stop` | Wrapper inspeciona exit code e final transcript |
-| `SessionStart` | Wrapper carrega memory antes de invocar `gemini run` |
+| `PreToolUse` | Function declaration validation in the SDK |
+| `PostToolUse` | The wrapper parses tool calls from the transcript after each turn |
+| `UserPromptSubmit` | The adapter injects system instructions into the `gemini run` prompt |
+| `Stop` | The wrapper inspects the exit code and the final transcript |
+| `SessionStart` | The wrapper loads memory before invoking `gemini run` |
 | `Compact` | `--checkpoint` flag (experimental) |
 
 ---
 
 ## 11. Invocation Examples
 
-### Exemplo 1 — Squad capability
+### Example 1: Squad capability
 
 ```bash
 gemini run \
@@ -203,10 +203,10 @@ gemini run \
   --output-format json
 ```
 
-### Exemplo 2 — Business brief com handoff em pipeline
+### Example 2: Business brief with handoff in a pipeline
 
 ```bash
-# CEO recebe brief
+# The business runs as ONE solo agent (it plays the seats itself)
 gemini run --agent nexus-ceo --max-iterations 10 \
   --prompt "<brief>" > .handoffs/ceo-1.json
 
@@ -219,7 +219,7 @@ gemini run --agent alex-hormozi --max-iterations 15 \
   --prompt "<context from marketing handoff>" > .handoffs/alex-1.json
 ```
 
-### Exemplo 3 — Harness escalation
+### Example 3: Harness escalation
 
 ```bash
 echo '{"type":"human_escalation_required","trigger_id":"budget","severity":"high",...}' \
@@ -230,28 +230,28 @@ echo '{"type":"human_escalation_required","trigger_id":"budget","severity":"high
 
 ## 12. Runtime-Specific Validators
 
-- **MCP server reachability**: se employee.tools inclui `mcp__<server>__*`, validar que o MCP server está em `~/.gemini/mcp/<server>/` e responde a health check.
-- **Function declaration coerente**: tools no whitelist precisam ter declaration válida — wrapper valida pre-spawn.
-- **GEMINI.md carregado**: adapter verifica que skill manifest é referenciado no GEMINI.md (caso contrário não carrega).
-- **Modelo suportado**: alguns features (function calling rico, code execution) variam por modelo. Adapter checa `model` em employee frontmatter contra capability matrix do Gemini.
+- **MCP server reachability**: if employee.tools includes `mcp__<server>__*`, validate that the MCP server is in `~/.gemini/mcp/<server>/` and answers a health check.
+- **Coherent function declarations**: tools in the whitelist need a valid declaration; the wrapper validates pre-spawn.
+- **GEMINI.md loaded**: the adapter checks that the skill manifest is referenced in GEMINI.md (otherwise it does not load).
+- **Supported model**: some features (rich function calling, code execution) vary by model. The adapter checks `model` in the employee frontmatter against the Gemini capability matrix.
 
 ---
 
 ## 13. Known Limitations
 
-1. **Sem subagent primitive estável** — `gemini agent` experimental, adapter prefere sub-process.
-2. **Sem hooks granulares** — validações em wrapper externo.
-3. **Sem `ScheduleWakeup` / `CronCreate`** — cron externo.
-4. **Sem memory cross-session rico** — adapter mantém memory em files.
-5. **Max-iterations per-employee é simulado** — assume employees flat.
-6. **Sem `TeamCreate`** — teams como convenção.
-7. **OTel não built-in** — SDK externo.
-8. **Mentions e tickets** dependem do wrapper detectar e fan-out.
-9. **MCP support é experimental** — pode mudar entre versões; adapter precisa testar antes de cada bump de versão.
-10. **Slash commands** experimentais; adapter usa CLI flags.
-11. **Audit log** experimental — não confiar para produção sem fallback jsonl do harness.
+1. **No stable subagent primitive**: `gemini agent` is experimental, the adapter prefers sub-process.
+2. **No granular hooks**: validation in an external wrapper.
+3. **No `ScheduleWakeup` / `CronCreate`**: external cron.
+4. **No rich cross-session memory**: the adapter keeps memory in files.
+5. **Per-employee max-iterations is simulated**: assumes flat employees.
+6. **No `TeamCreate`**: teams as a convention.
+7. **OTel not built-in**: external SDK.
+8. **Mentions and tickets** depend on the wrapper detecting and fanning out.
+9. **MCP support is experimental**: it can change between versions; the adapter has to test before each version bump.
+10. **Slash commands** are experimental; the adapter uses CLI flags.
+11. **Audit log** is experimental: do not rely on it for production without the harness jsonl fallback.
 
-**Vantagem compensatória:** janela de contexto 5–10x maior que Claude/Codex permite businesses long-running com menos pressure de compaction.
+**Compensating advantage:** a context window 5-10x larger than Claude/Codex allows long-running businesses with less compaction pressure.
 
 ---
 
@@ -259,7 +259,7 @@ echo '{"type":"human_escalation_required","trigger_id":"budget","severity":"high
 
 - Gemini CLI docs: https://ai.google.dev/gemini-api/docs/cli
 - Google Gen AI SDK: https://github.com/google-gemini/generative-ai-python
-- MCP support em Gemini CLI (experimental): https://ai.google.dev/gemini-api/docs/mcp
+- MCP support in Gemini CLI (experimental): https://ai.google.dev/gemini-api/docs/mcp
 - Squad Protocol v6: `~/.nirvana/skills/squads/SQUAD_PROTOCOL_V6.md`
 - Business Protocol v2: `~/.nirvana/skills/businesses/BUSINESS_PROTOCOL_V2.md`
 - Harness protocol: `~/.nirvana/skills/harness/SKILL.md`
@@ -268,6 +268,6 @@ echo '{"type":"human_escalation_required","trigger_id":"budget","severity":"high
 
 ## 15. Version History
 
-| Versão | Data | Mudanças |
+| Version | Date | Changes |
 |---|---|---|
-| 1.0.0 | 2026-05-02 | Doc inicial — cobre Squad 5.0 + Business 1.0 + Harness 1.0 contra Gemini CLI 0.4–0.6 (Gemini 2.5 Pro) |
+| 1.0.0 | 2026-05-02 | Initial doc: covers Squad 5.0 + Business 1.0 + Harness 1.0 against Gemini CLI 0.4-0.6 (Gemini 2.5 Pro) |

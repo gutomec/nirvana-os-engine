@@ -1,17 +1,17 @@
 # Juridical amplification questions
 
 ## objective
-Qual é a pergunta jurídica concreta a responder ou o ato a praticar?
-_Example:_ "Posso oferecer stock options pra CLT sem implicação imediata de IRPF?"
+What is the concrete legal question to answer or the act to perform?
+_Example:_ "Can I offer stock options to employees without an immediate income tax implication?"
 
 ## audience
-Cliente sofisticado (advogado, in-house) ou leigo? Tom resumido ou parecer formal?
-_Example:_ Founder não-jurídico; sumário em PT claro + parecer técnico em anexo.
+A sophisticated client (lawyer, in-house) or a layperson? A short summary or a formal opinion?
+_Example:_ Non-legal founder; plain-language summary + technical opinion as an appendix.
 
 ## constraints
-Jurisdição (BR, MG, internacional?), urgência, prazo prescricional, custo?
-_Example:_ Direito BR; prazo 7 dias; até 8h de honorário.
+Jurisdiction (which country or state, international?), urgency, limitation period, cost?
+_Example:_ Brazilian law; 7-day deadline; up to 8h of fees.
 
 ## success_criteria
-Como você vai usar o produto final?
-_Example:_ Para tomar decisão de implantar o programa antes do board de Q4.
+How will you use the final product?
+_Example:_ To decide whether to launch the program before the Q4 board meeting.

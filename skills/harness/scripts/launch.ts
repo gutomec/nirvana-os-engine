@@ -116,7 +116,7 @@ for (const p of pillars) {
   const pillarDir = path.join(outputsRoot, p.pillar);
   fs.mkdirSync(pillarDir, { recursive: true });
   const projectId = `${projectName}-${p.pillar}`;
-  const briefText = `Pillar ${p.pillar} do lançamento ${projectName}. Output dir: ${pillarDir}/. Suggested artifacts: ${p.suggested_artifacts.join(", ")}. (Customize before dispatching for real production.)`;
+  const briefText = `Pillar ${p.pillar} of the ${projectName} launch. Output dir: ${pillarDir}/. Suggested artifacts: ${p.suggested_artifacts.join(", ")}. (Customize before dispatching for real production.)`;
 
   // Auto-generate deliverables.json
   const deliverables = p.suggested_artifacts.map(a => path.join(pillarDir, a));

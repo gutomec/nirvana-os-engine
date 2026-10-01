@@ -43,8 +43,8 @@ function publicationDependencies(root: string, outputsRoot: string): Partial<Bus
     exists: pathname => pathname.endsWith("build-report-pdf.ts") || fs.existsSync(pathname),
     runPublisher: () => ({ ok: true, sessionId: null, durationMs: 0, costUsd: 0 }),
     spawn: (_command, args) => {
-      if (args.some(argument => argument.endsWith("build-report-pdf.ts"))) fs.writeFileSync(path.join(outputsRoot, "relatorio-final.pdf"), "pdf", "utf8");
-      else if (args.some(argument => argument.endsWith("build-report-html.ts"))) fs.writeFileSync(path.join(outputsRoot, "relatorio-final.html"), "html", "utf8");
+      if (args.some(argument => argument.endsWith("build-report-pdf.ts"))) fs.writeFileSync(path.join(outputsRoot, "final-report.pdf"), "pdf", "utf8");
+      else if (args.some(argument => argument.endsWith("build-report-html.ts"))) fs.writeFileSync(path.join(outputsRoot, "final-report.html"), "html", "utf8");
       else if (args.some(argument => argument.endsWith("export.ts"))) fs.writeFileSync(path.join(root, "proof.zip"), "zip", "utf8");
       return { status: 0, stdout: "", stderr: "" };
     },
@@ -117,7 +117,7 @@ describe("typed Business Gauntlet proof through Glance", () => {
     const proof = await runProof(true);
     expect(proof.result.run).toMatchObject({ target: BUSINESS, state: "completed" });
     expect(proof.postGateCalls).toBe(1);
-    expect(fs.existsSync(path.join(proof.root, "deliverables", "relatorio-final.pdf"))).toBeTrue();
+    expect(fs.existsSync(path.join(proof.root, "deliverables", "final-report.pdf"))).toBeTrue();
     const snapshot = proof.timeline.find(event => event.type === "runtime.selection_snapshot");
     expect((snapshot?.payload as any).snapshot).toEqual(proof.snapshot);
     expect(proof.result.run.policySnapshotRef).toBe((snapshot?.payload as any).ref);

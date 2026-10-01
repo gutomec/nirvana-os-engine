@@ -1,6 +1,6 @@
 ---
 name: juridical
-display_name: "Juridical (parecer, peticao, contrato, jurisprudencia)"
+display_name: "Juridical (legal opinion, petition, contract, case law)"
 type: harness_rubric
 version: 1.0.0
 target_model: inherit
@@ -23,9 +23,9 @@ aliases:
   - legal-opinion
   - legal-research
 description: |
-  Threshold alto (80) porque erros jurídicos têm custo alto. Opus por padrão.
-  Cita legislação e jurisprudência só quando verificável; sem alucinar
-  números de processo, súmulas ou artigos.
+  High threshold (80) because legal errors are costly. Opus by default.
+  Cites legislation and case law only when verifiable; no hallucinated
+  case numbers, precedents or articles.
 ---
 
 # Juridical Rubric
@@ -43,33 +43,33 @@ description: |
 ## Criteria
 
 1. **citation_verifiability** (weight 30) **[HARD GATE]**  
-   Artigos de lei citados existem e são pertinentes. Súmulas citadas
-   existem (TST, STF, STJ, TJMG quando aplicável). Acórdãos com número
-   real. **Falha individual → reprova sem revisão; gerar do zero.**
+   Cited statute articles exist and are pertinent. Cited precedents
+   exist (labor, supreme and superior courts, state courts where applicable). Rulings with a
+   real number. **Individual failure → fails without revision; regenerate from scratch.**
 
 2. **brief_fidelity** (weight 15)  
-   Responde a pergunta exatamente como formulada.
+   Answers the question exactly as formulated.
 
 3. **jurisdictional_correctness** (weight 15)  
-   Não aplica direito errado (ex: CLT em sociedade civil, código de
-   defesa do consumidor em B2B). Considera jurisdição declarada.
+   Does not apply the wrong law (e.g. labor code to a civil partnership, consumer
+   protection code to B2B). Considers the declared jurisdiction.
 
 4. **structure** (weight 10)  
-   Parecer: ementa → fatos → fundamentos → conclusão. Petição: peças
-   formais corretas. Contrato: cláusulas numeradas e classificadas.
+   Opinion: summary → facts → grounds → conclusion. Petition: correct formal
+   pleading parts. Contract: numbered, classified clauses.
 
 5. **risk_calibration** (weight 10)  
-   Identifica riscos com graduação (alto/médio/baixo). Sem alarmismo
-   nem complacência.
+   Identifies risks with gradation (high/medium/low). Neither alarmism
+   nor complacency.
 
 6. **alternative_paths** (weight 8)  
-   Quando há mais de uma estratégia, lista (não impõe uma).
+   When there is more than one strategy, lists them (does not impose one).
 
 7. **plain_language_where_needed** (weight 5)  
-   Para cliente leigo, há sumário executivo em português claro.
+   For a lay client, there is an executive summary in plain language.
 
 8. **deadlines_explicit** (weight 2)  
-   Prazos prescricionais/decadenciais identificados quando relevantes.
+   Limitation and forfeiture periods identified when relevant.
 
 ## Output schema
-Padrão. Severity HIGH obrigatório para qualquer issue de citation_verifiability.
+Default. Severity HIGH is required for any citation_verifiability issue.

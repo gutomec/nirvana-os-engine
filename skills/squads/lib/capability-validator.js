@@ -1,5 +1,5 @@
 /**
- * Capability Validator — Squad Protocol v5 §22.9
+ * Capability Validator — Squad Protocol v6 §15bis, §22.9
  *
  * Authoritative schema validation via the Zod validators in
  * ~/.nirvana/skills/_shared/validators/validators.ts, plus a fast pure-JS

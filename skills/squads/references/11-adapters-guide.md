@@ -4,7 +4,7 @@
 Intent: AUTHOR_ADAPTER, UNDERSTAND_RUNTIME, DEBUG_RUNTIME_ISSUE
 
 ## Protocol Reference
-Squad Protocol v4 (archived) §4, §18
+`SQUAD_PROTOCOL_V6.md` §4, §18
 
 ## What an Adapter Is
 
@@ -203,4 +203,4 @@ This discipline keeps adapters honest. When a line changes, the citation becomes
 
 Adapters are the honest answer to "portability is hard." Rather than pretending all runtimes are equivalent, adapters document the exact shape of each runtime's support. Squads declare what they need. Adapters declare what they provide. The harness matches them, degrades what doesn't fit, and logs everything.
 
-This is how Squad Protocol v4.0 achieves portability without dishonesty.
+This is how the Squad Protocol achieves portability without dishonesty.

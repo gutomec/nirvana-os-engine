@@ -41,7 +41,7 @@ if (!project) {
 // the brief/zip is NOT a project — without the marker guard it used to be
 // picked and the real outputs under .nirvana/outputs/<project>/ got ignored.
 const candidates = [
-  path.join(process.cwd(), "outputs", project),            // novo default visível
+  path.join(process.cwd(), "outputs", project),            // new visible default
   path.join(process.cwd(), ".nirvana/outputs", project),   // compat: runs antigos
   path.join(os.homedir(), ".nirvana/outputs", project),
   path.join(os.homedir(), project),

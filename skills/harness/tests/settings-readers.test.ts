@@ -100,7 +100,7 @@ describe("each reader: global, project over global, variable over both", () => {
     expect(parseExecutionOptions(["--gauntlet-intensity=balanced"]).intensity).toBe("balanced");
     delete process.env.NIRVANA_EXECUTION_MODE;
     projectConfig("gauntlet:\n  default_mode: forever\n");
-    expect(() => parseExecutionOptions([])).toThrow(/gauntlet\.default_mode: valor inválido "forever"/);
+    expect(() => parseExecutionOptions([])).toThrow(/gauntlet\.default_mode: invalid value "forever"/);
   });
 
   test("execution.headless_skip_permissions (host-agent-driver.ts)", () => {

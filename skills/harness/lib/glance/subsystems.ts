@@ -54,7 +54,7 @@ function read(key: string, label: string, probe: () => Omit<Subsystem, "key" | "
   try {
     return { key, label, ...probe() };
   } catch (error: any) {
-    return { key, label, status: null, detail: `não foi possível ler: ${error?.message || error}`, source: null };
+    return { key, label, status: null, detail: `could not read: ${error?.message || error}`, source: null };
   }
 }
 
@@ -78,8 +78,8 @@ function probeRouter(): Omit<Subsystem, "key" | "label"> {
   return {
     status: total > 0 ? "up" : "down",
     detail: total > 0
-      ? `modo ${mode} · ${squadCount} squads, ${capabilities} capabilities, ${businessCount} businesses`
-      : `modo ${mode} · registries vazios: só responde NO_MATCH`,
+      ? `mode ${mode} · ${squadCount} squads, ${capabilities} capabilities, ${businessCount} businesses`
+      : `mode ${mode} · empty registries: can only answer NO_MATCH`,
     // The path the loader actually chose, which its cascade may resolve to the
     // global scope when the project registry is missing or empty.
     source: squads?.source_path || paths.SQUADS_REGISTRY_PATH,
@@ -96,7 +96,7 @@ function probeRouter(): Omit<Subsystem, "key" | "label"> {
 function probeSupervisor(): Omit<Subsystem, "key" | "label"> {
   const dbPath = resolveLedgerDbPath();
   if (!fs.existsSync(dbPath)) {
-    return { status: null, detail: "ledger ainda não criado: nenhum run foi rastreado nesta casa", source: dbPath };
+    return { status: null, detail: "ledger not created yet: no run has been tracked in this home", source: dbPath };
   }
   const require_ = createRequire(import.meta.url);
   const { Database } = require_("bun:sqlite") as any;
@@ -105,7 +105,7 @@ function probeSupervisor(): Omit<Subsystem, "key" | "label"> {
     const placeholders = ACTIVE_STATES.map(() => "?").join(", ");
     const row = db.query(`SELECT COUNT(*) AS n FROM runs WHERE state IN (${placeholders})`).get(...ACTIVE_STATES);
     const active = Number(row?.n || 0);
-    return { status: "up", detail: `${active} ${active === 1 ? "run ativo" : "runs ativos"} no ledger`, source: dbPath };
+    return { status: "up", detail: `${active} ${active === 1 ? "active run" : "active runs"} in the ledger`, source: dbPath };
   } finally {
     try { db.close(); } catch { /* the reading is done either way */ }
   }
@@ -120,10 +120,10 @@ function probeSupervisor(): Omit<Subsystem, "key" | "label"> {
 function probeQualityGate(): Omit<Subsystem, "key" | "label"> {
   const probe = getGates({ limit: 1 });
   if (!probe.available) {
-    return { status: null, detail: "state.db indisponível: os veredictos não puderam ser lidos", source: null };
+    return { status: null, detail: "state.db unavailable: the verdicts could not be read", source: null };
   }
-  const recorded = probe.gates?.length ? "com veredictos gravados" : "sem veredicto gravado ainda";
-  return { status: "up", detail: `quality_gates legível ${recorded}`, source: "state.db" };
+  const recorded = probe.gates?.length ? "with verdicts recorded" : "no verdict recorded yet";
+  return { status: "up", detail: `quality_gates readable ${recorded}`, source: "state.db" };
 }
 
 /**
@@ -135,11 +135,11 @@ function probeQualityGate(): Omit<Subsystem, "key" | "label"> {
  * gap is the next cut's input, stated in the report rather than faked here.
  */
 function probeGauntlet(): Omit<Subsystem, "key" | "label"> {
-  const evaluator = resolveSetting("gauntlet.evaluator").value || "seleção automática";
+  const evaluator = resolveSetting("gauntlet.evaluator").value || "automatic selection";
   const intensity = resolveSetting("gauntlet.default_intensity").value;
   return {
     status: null,
-    detail: `sem sinal de saúde fora de um run · avaliador ${evaluator}, intensidade ${intensity}`,
+    detail: `no health signal outside a run · evaluator ${evaluator}, intensity ${intensity}`,
     source: null,
   };
 }
@@ -154,7 +154,7 @@ function probeGauntlet(): Omit<Subsystem, "key" | "label"> {
 function probeRunKernel(projectRoot: string): Omit<Subsystem, "key" | "label"> {
   const dbPath = path.join(projectRoot, ".nirvana", "run-kernel.sqlite");
   if (!fs.existsSync(dbPath)) {
-    return { status: null, detail: "kernel ainda não criado neste projeto: nenhum run canônico foi preparado", source: dbPath };
+    return { status: null, detail: "kernel not created in this project yet: no canonical run has been prepared", source: dbPath };
   }
   const require_ = createRequire(import.meta.url);
   const { Database } = require_("bun:sqlite") as any;
@@ -162,10 +162,10 @@ function probeRunKernel(projectRoot: string): Omit<Subsystem, "key" | "label"> {
   try {
     const tables = db.query("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((r: any) => r.name);
     if (!tables.includes("run_events")) {
-      return { status: "down", detail: "banco presente sem a tabela run_events", source: dbPath };
+      return { status: "down", detail: "database present without the run_events table", source: dbPath };
     }
     const runs = Number(db.query("SELECT COUNT(DISTINCT run_id) AS n FROM run_events").get()?.n || 0);
-    return { status: "up", detail: `${runs} ${runs === 1 ? "run" : "runs"} no kernel deste projeto`, source: dbPath };
+    return { status: "up", detail: `${runs} ${runs === 1 ? "run" : "runs"} in this project's kernel`, source: dbPath };
   } finally {
     try { db.close(); } catch { /* the reading is done either way */ }
   }
@@ -182,15 +182,15 @@ function probeEmbeddings(): Omit<Subsystem, "key" | "label"> {
   const mode = resolveSetting("routing.dense").value;
   const cacheDir = path.join(nirvanaDir(), "cache");
   if (mode === "off") {
-    return { status: "down", detail: "desligado (routing.dense = off)", source: cacheDir };
+    return { status: "down", detail: "off (routing.dense = off)", source: cacheDir };
   }
   if (!fs.existsSync(cacheDir)) {
-    return { status: null, detail: "routing.dense = fallback, cache de vetores ainda não escrito", source: cacheDir };
+    return { status: null, detail: "routing.dense = fallback, vector cache not written yet", source: cacheDir };
   }
   const vectors = fs.readdirSync(cacheDir).filter(f => f.startsWith("dense-") && f.endsWith(".json"));
   return {
     status: "up",
-    detail: `routing.dense = fallback · ${vectors.length} ${vectors.length === 1 ? "índice denso" : "índices densos"} em cache`,
+    detail: `routing.dense = fallback · ${vectors.length} ${vectors.length === 1 ? "dense index" : "dense indexes"} cached`,
     source: cacheDir,
   };
 }
@@ -200,8 +200,8 @@ function probeSettings(): Omit<Subsystem, "key" | "label"> {
   const resolved = resolveAllSettings();
   const pinned = resolved.filter(s => s.source === "env").length;
   const detail = pinned
-    ? `${resolved.length} chaves resolvidas · ${pinned} fixadas por variável`
-    : `${resolved.length} chaves resolvidas`;
+    ? `${resolved.length} keys resolved · ${pinned} pinned by variable`
+    : `${resolved.length} keys resolved`;
   return { status: "up", detail, source: path.join(nirvanaDir(), "config.yaml") };
 }
 
@@ -209,19 +209,19 @@ function probeSettings(): Omit<Subsystem, "key" | "label"> {
 function probeUpdates(): Omit<Subsystem, "key" | "label"> {
   const file = path.join(nirvanaDir(), "cache", "update-notice.txt");
   if (checkDisabled()) {
-    return { status: "down", detail: "desligado (updates.check = false ou CI)", source: file };
+    return { status: "down", detail: "off (updates.check = false or CI)", source: file };
   }
   const age = ageMs(file);
   if (age === Infinity) {
-    return { status: null, detail: "nunca verificado: o cache do aviso não existe", source: file };
+    return { status: null, detail: "never checked: the notice cache does not exist", source: file };
   }
   const notice = readNotice(file);
   const current = installedVersion();
   const pending = notice && current && compareVersions(notice.latest, current) > 0 ? notice.latest : null;
-  const checked = `verificado há ${Math.floor(age / 60_000)} min`;
+  const checked = `checked ${Math.floor(age / 60_000)} min ago`;
   return {
     status: "up",
-    detail: pending ? `${checked} · ${pending} disponível` : `${checked} · em dia`,
+    detail: pending ? `${checked} · ${pending} available` : `${checked} · up to date`,
     source: file,
   };
 }

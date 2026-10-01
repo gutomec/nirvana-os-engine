@@ -85,13 +85,13 @@ if (sub === "context") {
     } catch { /* audit down must never block the rollover advice */ }
     console.error(
       `🔄 CONTEXT GUARD: ${used.toLocaleString()} / ${window.toLocaleString()} tokens ` +
-      `(${(ratio * 100).toFixed(0)}%, teto ${budget.toLocaleString()}).\n` +
-      `   Escreva o HANDOFF e continue numa sessão nova — não siga acumulando.\n` +
-      `   Retomar com: nrv resume ${projectDir}`,
+      `(${(ratio * 100).toFixed(0)}%, cap ${budget.toLocaleString()}).\n` +
+      `   Write the HANDOFF and continue in a fresh session; do not keep accumulating.\n` +
+      `   Resume with: nrv resume ${projectDir}`,
     );
     process.exit(8);
   }
-  console.log(`context guard ok — ${used.toLocaleString()}/${window.toLocaleString()} (${(ratio * 100).toFixed(0)}%, rola em ${(ROLL_AT * 100).toFixed(0)}%)`);
+  console.log(`context guard ok — ${used.toLocaleString()}/${window.toLocaleString()} (${(ratio * 100).toFixed(0)}%, rolls over at ${(ROLL_AT * 100).toFixed(0)}%)`);
   process.exit(0);
 }
 

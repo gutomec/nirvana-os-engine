@@ -46,22 +46,22 @@ function installedEngineVersion(): string | null {
   try { return readFileSync(join(SKILLS, "VERSION"), "utf8").trim() || null; } catch { return null; }
 }
 
-// Versão do pack (do PROVENANCE injetado por-comprador) → grava no manifesto p/
-// o `nrv update --check` comparar depois. Ausente em cópias sem procedência.
+// Pack version (from the per-buyer PROVENANCE) → written to the manifest so
+// `nrv update --check` can compare later. Absent in copies without provenance.
 let packVersion: string | null = null;
-try { packVersion = JSON.parse(readFileSync(join(HERE, "PROVENANCE.json"), "utf8")).version ?? null; } catch { /* sem provenance */ }
+try { packVersion = JSON.parse(readFileSync(join(HERE, "PROVENANCE.json"), "utf8")).version ?? null; } catch { /* no provenance */ }
 
-// Roda um subprocesso com a saida ANINHADA sob o passo atual.
+// Runs a subprocess with its output NESTED under the current step.
 //
-// Sem isto o instalador do engine imprime a numeracao DELE ("[1/4] Copying
-// skills tree...") por dentro do passo [1/4] deste script, e as duas escalas se
-// misturam: quem le ve "[2/4] Installing shared deps" e acha que o pack ja
-// passou para o passo 2. A barra a esquerda diz, sem precisar de texto, "isto e
-// detalhe do passo acima".
+// Without this the engine installer prints ITS OWN numbering ("[1/4] Copying
+// skills tree...") inside this script's step [1/4], and the two scales get
+// mixed: the reader sees "[2/4] Installing shared deps" and thinks the pack
+// already moved to step 2. The bar on the left says, with no text needed, "this
+// is detail of the step above".
 //
-// Efeito colateral desejado: com a saida em pipe, os subprocessos deixam de ver
-// um TTY e trocam spinners com \r por linhas simples — o log fica legivel
-// tambem quando redirecionado para arquivo.
+// Desired side effect: with piped output, subprocesses stop seeing a TTY and
+// swap \r spinners for plain lines, so the log stays readable when redirected
+// to a file.
 function runNested(cmd: string, args: string[], cwd?: string): Promise<{ status: number | null; error?: Error }> {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, { stdio: ["inherit", "pipe", "pipe"], env: process.env, cwd });
@@ -86,63 +86,64 @@ const okNested = async (cmd: string, args: string[], cwd?: string): Promise<bool
 
 console.log(`\n\x1b[1mNirvana-OS — pack '${slug}'\x1b[0m\n`);
 
-// 1. Engine: instala se faltar, ATUALIZA se já existir.
+// 1. Engine: install if missing, UPDATE if already present.
 //
-//    `npx @nirvana-os/cli` sempre busca o tarball mais recente do GitHub e roda
-//    o instalador, então instalar e atualizar são a mesma operação. O pack é
-//    conteúdo curado e testado contra um engine; deixar o comprador com um
-//    engine velho é entregar metade do produto e chamar de instalado.
+//    `npx @nirvana-os/cli` always fetches the latest GitHub tarball and runs
+//    the installer, so installing and updating are the same operation. The pack
+//    is content curated and tested against an engine; leaving the buyer on an
+//    old engine delivers half the product and calls it installed.
 //
-//    Antes daqui havia uma contradição: com engine desatualizado, este passo
-//    dizia "o conteúdo instala normalmente" e o install-content abortava logo
-//    depois com exit 3. O comprador lia que ia funcionar e levava um erro. Agora
-//    o engine é atualizado antes, e a falha (se houver) aparece UMA vez, aqui.
+//    There used to be a contradiction here: with an outdated engine, this step
+//    said "the content installs normally" and install-content aborted right
+//    after with exit 3. The buyer read that it would work and got an error.
+//    Now the engine is updated first, and the failure (if any) shows up ONCE, here.
 //
-//    NIRVANA_SKIP_ENGINE_UPDATE=1 pula a atualização (útil em teste offline e
-//    para quem fixou uma versão de propósito).
+//    NIRVANA_SKIP_ENGINE_UPDATE=1 skips the update (useful for offline tests
+//    and for anyone who pinned a version on purpose).
 const enginePresent = existsSync(join(SKILLS, "harness"));
 const installedVer = installedEngineVersion();
 const stale = enginePresent && requiresEngine != null && installedVer != null && cmpVer(installedVer, requiresEngine) < 0;
 const unknownVer = enginePresent && requiresEngine != null && installedVer == null;
 const skipUpdate = process.env.NIRVANA_SKIP_ENGINE_UPDATE === "1";
 
-// Test/offline override: NIRVANA_CLI_LOCAL aponta para um launcher local.
+// Test/offline override: NIRVANA_CLI_LOCAL points to a local launcher.
 const localCli = process.env.NIRVANA_CLI_LOCAL;
-//    Instala/atualiza o engine SEM depender de Node.
+//    Installs/updates the engine WITHOUT depending on Node.
 //
-//    Este script ja esta rodando em Bun, e o Bun sabe fazer tudo que o
-//    instalador precisa: `fetch` do release, `tar` para extrair, e rodar o
-//    install.ts. O `npx @nirvana-os/cli` era so um intermediario — e um
-//    intermediario caro, porque arrastava Node.js como segunda dependencia.
+//    This script is already running in Bun, and Bun can do everything the
+//    installer needs: `fetch` the release, `tar` to extract, and run
+//    install.ts. `npx @nirvana-os/cli` was just an intermediary, and an
+//    expensive one, because it dragged in Node.js as a second dependency.
 //
-//    A tentativa de trocar por `bunx` falhou e vale registrar por que: o binario
-//    do pacote publicado tem shebang `#!/usr/bin/env node`, entao o bunx baixa o
-//    pacote e morre com 127 (`env: node: No such file or directory`). Medido com
-//    um Bun recem-instalado num HOME sem Node. Baixar o tarball direto contorna
-//    o problema inteiro: nao ha binario de terceiro para executar.
+//    The attempt to swap it for `bunx` failed, and it is worth recording why:
+//    the published package's binary has the shebang `#!/usr/bin/env node`, so
+//    bunx downloads the package and dies with 127 (`env: node: No such file or
+//    directory`). Measured with a freshly installed Bun in a HOME without Node.
+//    Downloading the tarball directly sidesteps the whole problem: there is no
+//    third-party binary to execute.
 //
-//    `tar` existe em Windows 10+, macOS e Linux. Os paths passados sao
-//    RELATIVOS de proposito: um path absoluto do Windows (C:\...) tem ":" e o
-//    GNU tar do Git Bash o trata como host remoto.
+//    `tar` exists on Windows 10+, macOS and Linux. The paths passed are
+//    RELATIVE on purpose: an absolute Windows path (C:\...) has ":" and Git
+//    Bash's GNU tar treats it as a remote host.
 //
-//    npx fica como ultimo recurso, para o caso de a rede bloquear o GitHub mas
-//    liberar o registro do npm.
+//    npx stays as a last resort, for when the network blocks GitHub but allows
+//    the npm registry.
 const ENGINE_URL =
   process.env.NIRVANA_ENGINE_URL ??
   `https://github.com/${process.env.NIRVANA_ENGINE_REPO ?? "gutomec/nirvana-os-engine"}/releases/latest/download/nirvana-os-engine.tar.gz`;
 
-// Remove o diretorio de trabalho e CONFIRMA que sumiu. Um rmSync que "nao
-// lancou" nao prova remocao: no Windows um antivirus segurando um handle faz o
-// unlink falhar silenciosamente, e no macOS um arquivo sem permissao de escrita
-// sobrevive. Por isso o laco verifica com existsSync a cada tentativa e so
-// devolve o controle quando o diretorio realmente nao esta mais la.
+// Removes the work directory and CONFIRMS it is gone. An rmSync that "did not
+// throw" does not prove removal: on Windows an antivirus holding a handle makes
+// the unlink fail silently, and on macOS a file without write permission
+// survives. So the loop checks with existsSync on every attempt and only
+// returns control when the directory is really no longer there.
 //
-// Nunca lanca: limpeza que derruba a instalacao seria pior que o lixo que ela
-// deixaria. Se as tentativas se esgotarem, o usuario e avisado do path exato.
+// Never throws: cleanup that brings down the install would be worse than the
+// litter it would leave. If the attempts run out, the user is told the exact path.
 function removeWorkDir(dir: string): void {
-  // Devolve permissao de escrita na arvore. Medido: um diretorio sem +w faz o
-  // rmSync falhar com EACCES nas tres tentativas — ele nao tenta o chmod sozinho
-  // em POSIX. Sem este passo o laco so repete o mesmo erro.
+  // Restores write permission across the tree. Measured: a directory without +w
+  // makes rmSync fail with EACCES on all three attempts, since it does not chmod
+  // on its own on POSIX. Without this step the loop just repeats the same error.
   const grantWrite = (p: string): void => {
     try {
       const st = statSync(p);
@@ -151,17 +152,17 @@ function removeWorkDir(dir: string): void {
     } catch { /* best-effort */ }
   };
   for (let attempt = 1; attempt <= 3; attempt++) {
-    try { rmSync(dir, { recursive: true, force: true, maxRetries: 3 }); } catch { /* verifica abaixo */ }
+    try { rmSync(dir, { recursive: true, force: true, maxRetries: 3 }); } catch { /* checked below */ }
     if (!existsSync(dir)) return;
     grantWrite(dir);
   }
   console.log(`    ⚠ Could not remove the temp dir: ${dir}`);
-  console.log(`      Nada quebrou — apague quando puder.`);
+  console.log(`      Nothing broke; delete it when you can.`);
 }
 
-// Varre sobras de instalacoes anteriores. As versoes ate 0.1.73 nao limpavam, e
-// cada execucao deixava ~14 MB em /tmp. Só toca no que tem mais de uma hora,
-// para nunca puxar o tapete de uma instalacao rodando em paralelo.
+// Sweeps leftovers from previous installs. Versions up to 0.1.73 did not clean
+// up, and each run left ~14 MB in /tmp. Only touches what is over an hour old,
+// so it never pulls the rug from under an install running in parallel.
 function sweepStaleWorkDirs(): void {
   const cutoff = Date.now() - 3600_000;
   try {
@@ -186,7 +187,7 @@ async function installEngineWithBun(): Promise<boolean> {
     } else {
       const res = await fetch(ENGINE_URL, { redirect: "follow" });
       if (!res.ok) {
-        console.error(`    ✗ Download do engine falhou (HTTP ${res.status}).`);
+        console.error(`    ✗ Engine download failed (HTTP ${res.status}).`);
         return false;
       }
       tarball = join(work, "engine.tar.gz");
@@ -195,11 +196,11 @@ async function installEngineWithBun(): Promise<boolean> {
     const out = join(work, "src");
     mkdirSync(out, { recursive: true });
     if (!(await okNested("tar", ["-xzf", "engine.tar.gz", "-C", "src"], work))) {
-      console.error("    ✗ Nao consegui extrair o engine (precisa do 'tar').");
+      console.error("    ✗ Could not extract the engine (needs 'tar').");
       return false;
     }
-    // O asset extrai plano (scripts/ na raiz); um archive de source vem
-    // embrulhado num diretorio unico. Aceita os dois.
+    // The asset extracts flat (scripts/ at the root); a source archive comes
+    // wrapped in a single directory. Accept both.
     let root = out;
     if (!existsSync(join(root, "scripts", "install.ts"))) {
       const entries = readdirSync(out);
@@ -207,12 +208,12 @@ async function installEngineWithBun(): Promise<boolean> {
     }
     const installer = join(root, "scripts", "install.ts");
     if (!existsSync(installer)) {
-      console.error("    ✗ Asset do engine invalido (sem scripts/install.ts).");
+      console.error("    ✗ Invalid engine asset (no scripts/install.ts).");
       return false;
     }
     return await okNested("bun", [installer, "--no-starter", ...profileArgs]);
   } catch (e) {
-    console.error(`    ✗ Falha ao instalar o engine: ${(e as Error).message}`);
+    console.error(`    ✗ Failed to install the engine: ${(e as Error).message}`);
     return false;
   } finally {
     if (work) removeWorkDir(work);
@@ -222,7 +223,7 @@ async function installEngineWithBun(): Promise<boolean> {
 const runEngineInstaller = async (): Promise<boolean> => {
   if (localCli) return okNested("node", [localCli]);
   if (await installEngineWithBun()) return true;
-  console.log("    Tentando pelo npm (npx)...");
+  console.log("    Trying npm (npx)...");
   return okNested("npx", ["-y", "@nirvana-os/cli"]);
 };
 
@@ -238,13 +239,12 @@ function recordedProfile(): string {
   } catch { return ""; }
 }
 async function askProfile(): Promise<string> {
-  // i18n-user-facing
-  console.log("\n[perfil] Como o Nirvana deve gastar tokens? (mude depois com: nrv config set execution.profile <nome> --global)");
-  console.log("  1) max       máxima qualidade e maior consumo: esforço xhigh, sem teto de contexto, toda entrega revisada por outro runtime");
-  console.log("  2) balanced  recomendado: esforço high, teto de contexto de 400k, revisão quando uma regra pedir");
-  console.log("  3) economy   menor consumo: esforço medium, teto de contexto de 200k, revisão só quando pedida");
+  console.log("\n[profile] How should Nirvana spend tokens? (change it later with: nrv config set execution.profile <name> --global)");
+  console.log("  1) max       highest quality and highest usage: xhigh effort, no context cap, every delivery reviewed by another runtime");
+  console.log("  2) balanced  recommended: high effort, 400k context cap, review when a rule asks for it");
+  console.log("  3) economy   lowest usage: medium effort, 200k context cap, review only when requested");
   const rl = createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise((done) => rl.question("Escolha 1-3 [2]: ", (a) => {
+  return new Promise((done) => rl.question("Choose 1-3 [2]: ", (a) => {
     rl.close();
     const v = a.trim().toLowerCase();
     done(PROFILES[Number(v) - 1] ?? (PROFILES.includes(v) ? v : "balanced"));
@@ -257,29 +257,29 @@ const profileArgs = chosenProfile ? [`--profile=${chosenProfile}`] : [];
 if (!enginePresent) {
   console.log("[1/4] Engine not found — installing from GitHub...");
   if (!(await runEngineInstaller()) || !existsSync(join(SKILLS, "harness"))) {
-    console.error("    ✗ Não consegui instalar o engine do Nirvana-OS.");
-    console.error("      Verifique a conexão com a internet e rode este setup de novo.");
-    console.error(`      O engine vem de:  ${ENGINE_URL}`);
-    console.error("      Atrás de proxy/firewall? Baixe o .tar.gz e aponte:  NIRVANA_ENGINE_TARBALL=/caminho/engine.tar.gz bun setup.ts");
+    console.error("    ✗ Could not install the Nirvana-OS engine.");
+    console.error("      Check your internet connection and run this setup again.");
+    console.error(`      The engine comes from:  ${ENGINE_URL}`);
+    console.error("      Behind a proxy/firewall? Download the .tar.gz and point to it:  NIRVANA_ENGINE_TARBALL=/path/engine.tar.gz bun setup.ts");
     process.exit(1);
   }
 } else if (skipUpdate) {
   console.log(`[1/4] Engine ${installedVer ?? "present"} — update skipped (NIRVANA_SKIP_ENGINE_UPDATE=1).`);
 } else {
-  console.log(`[1/4] Atualizando o engine${installedVer ? ` (atual: ${installedVer})` : ""}...`);
+  console.log(`[1/4] Updating the engine${installedVer ? ` (current: ${installedVer})` : ""}...`);
   const updated = await runEngineInstaller();
   const nowVer = installedEngineVersion();
   if (updated) {
     console.log(`    ✓ Engine at ${nowVer ?? "unknown version"}.`);
   } else if (stale || unknownVer) {
-    // Não dá para seguir: o install-content abaixo tem o gate de versão e
-    // abortaria de qualquer jeito. Falhar aqui, com o motivo certo, é melhor
-    // que falhar depois com um erro que parece ser do conteúdo.
-    console.error(`    ✗ Falha ao atualizar o engine, e o atual (${installedVer ?? "desconhecido"}) é mais antigo que o exigido por este pack (>=${requiresEngine}).`);
-    console.error(`      Atualize manualmente e rode de novo:  npx @nirvana-os/cli`);
+    // Cannot go on: install-content below has the version gate and would abort
+    // anyway. Failing here, with the right reason, beats failing later with an
+    // error that looks like it comes from the content.
+    console.error(`    ✗ Failed to update the engine, and the current one (${installedVer ?? "unknown"}) is older than this pack requires (>=${requiresEngine}).`);
+    console.error(`      Update manually and run again:  npx @nirvana-os/cli`);
     process.exit(1);
   } else {
-    // Engine já satisfaz o pack: a falha de rede não impede a instalação.
+    // The engine already satisfies the pack: the network failure does not block the install.
     console.log(`    ⚠ Could not update right now (network?). Carrying on with engine ${installedVer ?? "as installed"}, which already serves this pack.`);
   }
 }
@@ -290,11 +290,11 @@ if (chosenProfile && recordedProfile() !== chosenProfile && existsSync(join(SKIL
   spawnSync("bun", [join(SKILLS, "harness", "scripts", "config.ts"), "set", "execution.profile", chosenProfile, "--global"], { cwd: HOME, stdio: "ignore" });
 }
 
-// 2. Overlay content — surface the REAL error if it fails (sem isso o cliente fica cego).
+// 2. Overlay content — surface the REAL error if it fails (without it the customer is left blind).
 console.log(`[2/4] Installing pack '${slug}' content (businesses, squads and mind-clones)...`);
 if (!existsSync(CONTENT)) {
-  console.error(`    ✗ Pasta de conteúdo não encontrada: ${CONTENT}`);
-  console.error(`      O zip deve ser descompactado INTEIRO (a pasta 'starter-pack/' fica ao lado deste setup.ts).`);
+  console.error(`    ✗ Content folder not found: ${CONTENT}`);
+  console.error(`      The zip must be extracted IN FULL (the 'starter-pack/' folder sits next to this setup.ts).`);
   process.exit(1);
 }
 const icArgs = [
@@ -303,50 +303,50 @@ const icArgs = [
 ];
 const ic = await runNested("bun", icArgs);
 if (ic.status !== 0) {
-  console.error(`\n    ✗ Falha ao instalar o conteúdo (exit ${ic.status ?? "?"}).`);
+  console.error(`\n    ✗ Failed to install the content (exit ${ic.status ?? "?"}).`);
   if (ic.error) {
     const e = ic.error as NodeJS.ErrnoException;
-    console.error(`      processo: ${e.message}${e.code === "ENOENT" ? " — o comando 'bun' não está no PATH desta sessão" : ""}`);
+    console.error(`      process: ${e.message}${e.code === "ENOENT" ? " (the 'bun' command is not on this session's PATH)" : ""}`);
   }
   console.error(`      contentDir: ${CONTENT}`);
   console.error(`      skills:     ${SKILLS}`);
-  console.error(`      Windows/WSL: rode tudo DENTRO do WSL (bun do Linux, zip em ~/, não em /mnt/c).`);
-  console.error(`      Para ver o erro completo, rode manualmente:`);
+  console.error(`      Windows/WSL: run everything INSIDE WSL (Linux bun, zip in ~/, not in /mnt/c).`);
+  console.error(`      To see the full error, run manually:`);
   console.error(`        bun ${icArgs.join(" ")}`);
   process.exit(1);
 }
 
-// Constrói os índices de roteamento (squads + businesses + mind-clones) para que
-// `nrv route`/`nrv auto` e o chat do Glance funcionem BEM já na 1ª execução. Sem
-// isso os registries de businesses/squads não existem e o roteamento roda
-// degradado (chuta pelo nome em vez de casar por capability). O indexador
-// respeita o escopo: global no install do pack, project se rodado num projeto.
-// Best-effort — nunca bloqueia a instalação.
+// Builds the routing indexes (squads + businesses + mind-clones) so that
+// `nrv route`/`nrv auto` and the Glance chat work WELL from the first run.
+// Without this the businesses/squads registries do not exist and routing runs
+// degraded (guesses by name instead of matching by capability). The indexer
+// respects scope: global on the pack install, project if run inside a project.
+// Best-effort — never blocks the install.
 console.log(`[3/4] Building the routing indexes...`);
 const idx = await runNested("bun", [join(SKILLS, "harness", "scripts", "index.ts")]);
 if (idx.status !== 0) {
   console.log(`    ⚠ Index not built (exit ${idx.status ?? "?"}). The content is installed; run 'nrv index' when you can — routing gets sharper with it.`);
 }
 
-// Carimba a edição com o NOME DO PACK que o comprador instalou, para que
-// `nrv -v` mostre o produto pago (ex.: "Nirvana-OS Genesis Circle") em vez do
-// rótulo do motor grátis. O EDITION do engine é neutro ("Nirvana-OS"); aqui ele
-// passa a refletir a compra. Best-effort — nunca bloqueia a instalação.
+// Stamps the edition with the NAME OF THE PACK the buyer installed, so that
+// `nrv -v` shows the paid product (e.g. "Nirvana-OS Genesis Circle") instead of
+// the free engine's label. The engine's EDITION is neutral ("Nirvana-OS"); here
+// it comes to reflect the purchase. Best-effort — never blocks the install.
 try {
   const pretty = slug.split(/[-_]/).map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(" ");
   writeFileSync(join(SKILLS, "EDITION"), `Nirvana-OS ${pretty}\n`);
 } catch { /* best-effort */ }
 
-// 3. Instala a licença, DEPOIS verifica.
+// 3. Install the license, THEN verify.
 //
-// Este passo faltava. O instalador lia o PROVENANCE.json só para descobrir a
-// versão do pack (linha ~51) e nunca o copiava para ~/.nirvana-license/ — que é
-// o único lugar onde `nrv update <slug>` sabe procurar, fora do diretório atual.
-// O comprador terminava o setup com "✓ Pack instalado", ia atualizar dias depois
-// de qualquer outra pasta, e ouvia que não tinha licença nenhuma.
+// This step was missing. The installer read PROVENANCE.json only to find out
+// the pack version (line ~51) and never copied it to ~/.nirvana-license/, the
+// only place `nrv update <slug>` knows to look, outside the current directory.
+// The buyer finished setup with "✓ Pack installed", went to update days later
+// from any other folder, and heard they had no license at all.
 //
-// Falhar aqui não pode ser silencioso: o pack funciona sem a licença instalada,
-// o que quebra é só o update autenticado, e é agora que dá para dizer isso.
+// Failing here must not be silent: the pack works without the installed
+// license, only the authenticated update breaks, and now is when we can say so.
 console.log("[4/4] Installing and checking the license (soft)...");
 const provSrc = join(HERE, "PROVENANCE.json");
 if (existsSync(provSrc)) {
@@ -362,7 +362,7 @@ if (existsSync(provSrc)) {
     console.log(`    \x1b[2mOnce the permission is sorted, run: nrv license install "${HERE}"\x1b[0m`);
   }
 } else {
-  // Cópia sem procedência roda igual; o que ela não tem é update autenticado.
+  // A copy without provenance runs the same; what it lacks is the authenticated update.
   console.log(`    \x1b[2m(no PROVENANCE.json in this folder — the pack runs, but 'nrv update ${slug}' will find no license)\x1b[0m`);
 }
 await okNested("bun", [join(SKILLS, "_shared", "scripts", "license.ts"), "check"]);

@@ -1,34 +1,34 @@
 # _shared · Configuration Reference
 
-> Tudo que pode ser configurado nas peças centrais (schemas, validators, catalog, adapters).
-> Última atualização: 2026-05-03.
+> Everything that can be configured in the central pieces (schemas, validators, catalog, adapters).
+> Last updated: 2026-05-03.
 
 ---
 
-## 1. O que mora aqui
+## 1. What lives here
 
-`~/.nirvana/skills/_shared/` é onde os 3 skills (businesses, squads, harness) **importam** schemas, validators e catalog. **Não é executável sozinho** — sempre é consumido por outras skills.
+`~/.nirvana/skills/_shared/` is where the 3 skills (businesses, squads, harness) **import** schemas, validators and the catalog from. **It is not executable on its own**: it is always consumed by other skills.
 
 ```
-catalogs/CAPABILITY_CATALOG_V1.yaml      ← vocabulário canônico (57 domains)
+catalogs/CAPABILITY_CATALOG_V1.yaml      ← canonical vocabulary (57 domains)
 schemas/business.schema.json             ← business manifest
 schemas/capability.schema.json           ← squad capability
-schemas/core-schemas.json                ← bundle: employee, org_chart, routing, ticket, mention, etc.
+schemas/core-schemas.json                ← bundle: employee, org_chart, routing, etc.
 schemas/dna.schema.json                  ← mind-clone DNA file
 validators/validators.ts                 ← Zod (TypeScript)
 validators/validators.py                 ← Pydantic v2 (Python)
-adapters/{claude-code,codex,gemini-cli}.md ← runtime-neutral specs
+adapters/<runtime>.md                    ← one doc per runtime (+ README.md matrix)
 ```
 
-A configuração relevante aqui é estática (governance + versioning), não env vars.
+The relevant configuration here is static (governance + versioning), not env vars.
 
 ---
 
-## 2. Capability Catalog — `catalogs/CAPABILITY_CATALOG_V1.yaml`
+## 2. Capability Catalog: `catalogs/CAPABILITY_CATALOG_V1.yaml`
 
-Source of truth do vocabulário controlado.
+Source of truth for the controlled vocabulary.
 
-### Estrutura
+### Structure
 
 ```yaml
 version: "1.0.0"
@@ -44,7 +44,7 @@ domains:
     description: "..."
   - id: branding
     description: "..."
-  # ... 57 entries em 6 categorias
+  # ... 57 entries in 6 categories
 
 namespaces:
   - prefix: marketing
@@ -61,7 +61,7 @@ governance:
   removals: "deprecation cycle of one minor version"
 ```
 
-### Domains atuais (57)
+### Current domains (57)
 
 **Marketing & Sales (10):** marketing, sales, branding, copy, growth, performance, ads, retention, lifecycle, crm
 
@@ -73,37 +73,37 @@ governance:
 
 **Vertical (12):** healthcare, education, real_estate, fintech, crypto, gaming, ecommerce, hospitality, energy, agriculture, government, foodtech
 
-**Cross-cutting (6):** research, knowledge_management, document_processing, automation, integration, **multi_agent_orchestration** (adicionado 2026-05-02)
+**Cross-cutting (6):** research, knowledge_management, document_processing, automation, integration, **multi_agent_orchestration** (added 2026-05-02)
 
-### Como adicionar domain novo
+### How to add a new domain
 
-1. Edite `catalogs/CAPABILITY_CATALOG_V1.yaml`
-2. Inclua na categoria certa (Marketing/Content/Engineering/Business/Vertical/Cross-cutting)
-3. Atualize o count no comment header da categoria
-4. Se requer namespace novo, adicione em `namespaces[]`
-5. Squad/business agora aceita o domain sem `experimental_domains: true`
+1. Edit `catalogs/CAPABILITY_CATALOG_V1.yaml`
+2. Put it in the right category (Marketing/Content/Engineering/Business/Vertical/Cross-cutting)
+3. Update the count in the category's comment header
+4. If it needs a new namespace, add it in `namespaces[]`
+5. Squads/businesses now accept the domain without `experimental_domains: true`
 
-### Como deprecate domain
+### How to deprecate a domain
 
-1. Marque em `deprecated[]` com `from_version` e `replacement`
-2. Schemas continuam aceitando 1 minor version
-3. `validate-squad.ts` emite warning quando squad usa domain deprecated
+1. Mark it in `deprecated[]` with `from_version` and `replacement`
+2. Schemas keep accepting it for 1 minor version
+3. `validate-squad.ts` emits a warning when a squad uses a deprecated domain
 
 ---
 
 ## 3. Schemas (JSON Schema 2020-12)
 
-Schemas controlam o que é aceito em manifests, frontmatters, e payloads de runtime.
+Schemas control what is accepted in manifests, frontmatters, and runtime payloads.
 
 ### `business.schema.json`
 
-| Campo | Required | Constraint |
+| Field | Required | Constraint |
 |---|---|---|
 | `name` | ✅ | regex `^[a-z][a-z0-9-]{1,63}$` |
 | `version` | ✅ | semver |
 | `protocol` | ✅ | enum: `"1.0"` |
 | `description` | ✅ | 20-500 chars |
-| `domains` | ✅ | 1-50 entries, cada matching `^[a-z][a-z0-9_]*$` |
+| `domains` | ✅ | 1-50 entries, each matching `^[a-z][a-z0-9_]*$` |
 | `employee_count` | optional | 1-100 |
 | `authority_level` | optional | enum: `tier-1, tier-2, tier-3` (default `tier-2`) |
 | `operation_mode` | ✅ | enum: `zero_human, hybrid, human_in_loop` (default `zero_human`) |
@@ -113,7 +113,7 @@ Schemas controlam o que é aceito em manifests, frontmatters, e payloads de runt
 
 ### `capability.schema.json`
 
-| Campo | Required | Constraint |
+| Field | Required | Constraint |
 |---|---|---|
 | `id` | ✅ | regex `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2,}$` (≥3 segments) |
 | `description` | ✅ | 20-500 chars |
@@ -124,61 +124,30 @@ Schemas controlam o que é aceito em manifests, frontmatters, e payloads de runt
 | `invoke.type` | ✅ | enum: `workflow, task, agent` |
 | `invoke.ref` | ✅ | string |
 | `examples[]` | ✅ | min 1, each ≥5 chars |
-| `produces[]` | optional | kebab-case deliverable slugs (≥1, ≤20); sinal primário de descoberta agêntica |
-| `example_briefs[]` | optional | briefs reais PT/EN (≤10, cada 20-500 chars) |
-| `keywords[]` | optional | sinônimos PT/EN (≤30, cada 2-60 chars) |
+| `produces[]` | optional | kebab-case deliverable slugs (≥1, ≤20); primary signal for agentic discovery |
+| `example_briefs[]` | optional | real PT/EN briefs (≤10, each 20-500 chars) |
+| `keywords[]` | optional | PT/EN synonyms (≤30, each 2-60 chars) |
 | `not_for[]` | optional | array of strings |
 | `fidelity` | optional | `{status: validated\|experimental\|drifted\|retired, ground_truth_dir?, eval_results?, threshold?}` |
 | `score_boost` | optional | number (default 1.0) |
 | `model_hint` | optional | enum: `haiku, sonnet, opus, inherit` |
 | `estimated_cost_usd` | optional | number ≥0 |
-| `parallel_safe` | optional | boolean (default `false`); Phase 5 — concorrência segura no DAG |
-| `writes_paths[]` | optional | paths que a capability escreve (consumido pelo race-detector) |
+| `parallel_safe` | optional | boolean (default `false`); Phase 5: safe concurrency in the DAG |
+| `writes_paths[]` | optional | paths the capability writes (consumed by the race-detector) |
 
 ### `core-schemas.json#/definitions/employee`
 
-| Campo | Required | Constraint |
-|---|---|---|
-| `name` | ✅ | regex `^[a-z][a-z0-9-]{1,63}$` |
-| `role` | ✅ | min 3 chars |
-| `type` | ✅ | enum: `functional_specialist, mind_clone` |
-| `description` | ✅ | min 20 chars |
-| `maxTurns` | ✅ | 1-200 (CAP HARDCODED) |
-| `reports_to` | ✅ | slug or `null` |
-| `manages[]` | optional | array of slugs |
-| `tools[]` | optional | array (free-form) |
-| `model` | optional | enum |
-| `budget_monthly_usd` | optional | non-negative number |
-| `heartbeat.cadence` | optional | enum: `hourly, daily, weekly, manual` |
-| `is_antagonist` | optional | boolean |
-| `is_brief_intake` | optional | boolean |
-| `dna_reference` | optional | path |
-| `disclosure_required` | optional | boolean (forced `true` when `type: mind_clone`) |
-| `commercial_use_allowed` | optional | enum: `never, review, allowed` |
-| `self_score_contract` | ✅ | object com `criteria[]` |
-| `self_score_contract.max_revise_iterations` | optional | 0-5 (default 2) |
+The seat (employee) frontmatter is validated by `EmployeeFrontmatterSchema` (strict: an unknown key is an error). The complete field table, the retired fields (`self_score_contract`, `heartbeat`, `budget_monthly_usd`, `dna_reference`, ...) and how the solo run uses each one are in `skills/businesses/BUSINESS_PROTOCOL_V2.md` §7.2. Only `name`, `role` and `description` are required.
 
 ### `core-schemas.json#/definitions/handoff_artifact`
 
-| Campo | Required | Constraint |
-|---|---|---|
-| `schemaVersion` | ✅ | string (default `1.0.0`) |
-| `from_agent` | ✅ | string |
-| `to_agent` | ✅ | string |
-| `summary` | ✅ | 10-1000 chars |
-| `next_action` | ✅ | string |
-| `key_decisions[]` | optional | max 5 |
-| `files_modified[]` | optional | max 10 |
-| `blockers[]` | optional | max 3 |
-| `business_extensions.type` | optional | enum: `mention, ticket, escalation, delegation, auto_route` |
-
-Este é o schema **mais crítico** quando `MAESTRO_HARD_FAIL_MODE=true` — toda handoff entre agents é validada contra ele.
+Retired. A business runs as one solo agent (`skills/harness/lib/business-solo.ts`), so no handoff between seats exists at runtime and nothing reads this schema. It stays in the bundle only so old manifests still load.
 
 ### `dna.schema.json`
 
-Frontmatter de mind-clone:
+Mind-clone frontmatter:
 
-| Campo | Required |
+| Field | Required |
 |---|---|
 | `name` | ✅ |
 | `description` | ✅ |
@@ -186,108 +155,92 @@ Frontmatter de mind-clone:
 | `maxTurns` | ✅ (1-200) |
 | `tools[]` | ✅ |
 
-Body deve ter 10 seções top-level numeradas (`## 1. ...` até `## 10. ...`). Validado por `validators.py#validate_dna_file()`.
+The body must have 10 numbered top-level sections (`## 1. ...` through `## 10. ...`). Validated by `validators.py#validate_dna_file()`.
 
 ---
 
-## 4. Validators — `validators.{ts,py}`
+## 4. Validators: `validators.{ts,py}`
 
 ### TypeScript / Zod (`validators.ts`)
 
-Exporta:
+Exports:
 
-| Schema | Função |
+| Schema | Purpose |
 |---|---|
-| `CapabilitySchema` | Para validar capability dentro de squad.yaml |
-| `SquadManifestSchema` | Para validar squad.yaml |
-| `SelfScoreContractSchema` | Subset usado em employee |
-| `EscalationTriggerSchema` | Subset usado em employee |
-| `EmployeeFrontmatterSchema` | Para validar `<biz>/employees/<name>.md` frontmatter |
-| `BusinessManifestSchema` | Para validar business.yaml |
-| `OrgChartSchema` | Para validar org-chart.yaml |
-| `RoutingSchema` | Para validar routing.yaml |
-| `TicketSchema, MentionSchema` | Runtime primitives |
-| `HandoffArtifactSchema` | **Crítico para enforcement layer** |
-| `ApprovalChainSchema` | Approval primitives |
-| `RegistrySquadsSchema, RegistryBusinessesSchema` | Para validar registries gerados |
-| `AuditEventSchema` | Para validar audit jsonl entries |
+| `CapabilitySchema` | Validates a capability inside squad.yaml |
+| `SquadManifestSchema` | Validates squad.yaml |
+| `EmployeeFrontmatterSchema` | Validates the `<biz>/employees/<name>.md` frontmatter |
+| `BusinessManifestSchema` | Validates business.yaml |
+| `OrgChartSchema` | Validates org-chart.yaml |
+| `RoutingSchema` | Validates routing.yaml |
+| `TicketSchema, MentionSchema, HandoffArtifactSchema, ApprovalChainSchema` | Retired runtime primitives, kept so old files load |
+| `RegistrySquadsSchema, RegistryBusinessesSchema` | Validate generated registries |
+| `AuditEventSchema` | Validates audit jsonl entries |
 | `HarnessConfigSchema, HarnessNotificationSchema` | Harness-specific |
-| `validateBusinessIntegrity({manifest, employees, org_chart})` | Cross-artifact: BP7 + intake unique + DAG no cycles + bidirectional |
+| `validateBusinessIntegrity({manifest, employees, org_chart})` | Cross-artifact: BP7 + unique intake + org chart with no cycles + bidirectional |
 
 Smoke: `bun ~/.nirvana/skills/_shared/validators/validators.ts test`
 
 ### Python / Pydantic v2 (`validators.py`)
 
-Mirror do TS:
+Mirror of the TS:
 
-| Class | Função |
+| Class | Purpose |
 |---|---|
-| `BusinessManifest` | Mirror de BusinessManifestSchema |
-| `Employee` | Mirror de EmployeeFrontmatterSchema |
-| `OrgChart` | Mirror de OrgChartSchema |
-| `Routing` | Mirror de RoutingSchema |
-| `HandoffArtifact` | **Mirror crítico — usado pelo enforcement.js** |
+| `BusinessManifest` | Mirror of BusinessManifestSchema |
+| `Employee` | Mirror of EmployeeFrontmatterSchema |
+| `OrgChart` | Mirror of OrgChartSchema |
+| `Routing` | Mirror of RoutingSchema |
+| `HandoffArtifact` | Mirror of the retired schema |
 | `AuditEvent` | Mirror |
-| `validate_dna_file(path)` | Frontmatter + 10 seções numeradas |
+| `validate_dna_file(path)` | Frontmatter + 10 numbered sections |
 
-Test: `cd ~/.nirvana/skills/_shared/validators && python3 -m pytest validators.py` (36 passed atualmente).
+Test: `cd ~/.nirvana/skills/_shared/validators && python3 -m pytest validators.py`.
 
-### Como mudar validador
+### How to change a validator
 
-1. Edite ambos validators.ts E validators.py simultaneamente (TS = source de UX, PY = source de enforcement runtime)
-2. Roda os 2 test suites para detectar drift
-3. Atualize schemas JSON correspondente em `schemas/` se mudou shape
-4. Documente em `~/.nirvana/skills/_shared/README.md#schemas`
-
----
-
-## 5. Adapters — runtime-neutral specs
-
-`adapters/{claude-code,codex,gemini-cli}.md` descrevem como cada runtime implementa as 15 seções canônicas:
-
-1. Skill discovery
-2. Subagent spawning
-3. Memory isolation enforcement
-4. Tool whitelisting
-5. Handoff artifact validation
-6. Audit event emission
-7. Budget pre-flight
-8. Workflow orchestration
-9. Mention/ticket dispatch
-10. Escalation trigger handling
-11. Approval chain execution
-12. Cron / heartbeat scheduling (optional)
-13. Project memory layout
-14. Multi-runtime negotiation
-
-Use estes quando:
-- Implementar adapter novo (cursor, aider, antigravity)
-- Verificar se runtime suporta o protocolo completo
-- Debugging cross-runtime brief portability
-
-`adapters/README.md` tem matrix comparativa de features entre runtimes.
+1. Edit both validators.ts AND validators.py at the same time (TS = UX source, PY = runtime enforcement source)
+2. Run both test suites to detect drift
+3. Update the corresponding JSON schema in `schemas/` if the shape changed
+4. Document in `~/.nirvana/skills/_shared/README.md#schemas`
 
 ---
 
-## 6. Variáveis de ambiente que afetam _shared
+## 5. Adapters: runtime-neutral specs
 
-Não há env vars exclusivas de `_shared`. Mas estes paths são lidos por validators e schemas:
+`adapters/<runtime>.md` describes how each runtime maps to the protocol, and `adapters/README.md` has the comparative matrix. The engine drives a runtime through `lib/host-agent-driver.ts` (`runHeadless`), so a runtime is usable when it can:
 
-| Variável | Default | Função |
+1. Run one prompt headless and exit (prompt by stdin, prompt file or argv).
+2. Resume a session by id (`sessionId`).
+3. Restrict tools (`allowedTools`, or none) and add extra directories (`addDirs`).
+4. Append a system prompt (`appendSystemPrompt`).
+5. Report cost and the final text in a parseable output.
+6. Honor a context ceiling (`execution.context_window`) by compacting.
+7. Discover skills (`nrv install` links the Nirvana tree where the runtime reads them).
+
+Use the docs when implementing a new adapter or checking what a runtime supports.
+
+---
+
+## 6. Environment variables that affect _shared
+
+There are no env vars exclusive to `_shared`. But these paths are read by validators and schemas:
+
+| Variable | Default | Purpose |
 |---|---|---|
-| `HOME` | (auto) | Usado para resolver paths absolutos em validators |
+| `HOME` | (auto) | Used to resolve absolute paths in validators |
 
-Tudo mais é hardcoded por design — schemas centrais não devem variar entre máquinas.
+Everything else is hardcoded by design: central schemas must not vary between machines.
 
 ---
 
-## 7. Como contribuir mudanças
+## 7. How to contribute changes
 
-### Adicionar schema novo
+### Add a new schema
 
-1. Edite `core-schemas.json` adicionando definition `<name>`
-2. Mirror em Zod (`validators.ts`) com strict mode (`.strict()`)
-3. Mirror em Pydantic (`validators.py`) com `model_config = ConfigDict(extra='forbid')`
+1. Edit `core-schemas.json` adding definition `<name>`
+2. Mirror it in Zod (`validators.ts`) with strict mode (`.strict()`)
+3. Mirror it in Pydantic (`validators.py`) with `model_config = ConfigDict(extra='forbid')`
 4. Add positive + strict-mode-rejection tests
 5. Run smoke + pytest:
    ```bash
@@ -296,16 +249,16 @@ Tudo mais é hardcoded por design — schemas centrais não devem variar entre m
    python3 -m pytest validators.py
    ```
 
-### Adicionar runtime adapter novo
+### Add a new runtime adapter
 
-1. Copie `adapters/claude-code.md` como template (15 seções canônicas)
-2. Para cada seção, documente primitiva nativa
-3. Adicione linha no `adapters/README.md` (feature matrix)
-4. Add `<runtime>` ao enum `Runtime` em ambos validators
+1. Add the adapter in `lib/host-agent-driver.ts` (the capabilities in §5)
+2. Copy `adapters/claude-code.md` as the template and document the native primitives
+3. Add a row to `adapters/README.md` (feature matrix)
+4. Add `<runtime>` to the `Runtime` enum in both validators
 
-### Adicionar domain ao catalog
+### Add a domain to the catalog
 
-Ver §2 acima.
+See §2 above.
 
 ---
 
@@ -313,148 +266,114 @@ Ver §2 acima.
 
 | Asset | Versioning |
 |---|---|
-| `CAPABILITY_CATALOG_V1.yaml` | Semver — additions = minor, removals = major |
-| Schemas | Implícito no `protocol` field (squad: `"5.0"`, business: `"1.0"`, harness: `"1.0"`) |
-| Validators | Devem suportar TODAS as protocol versions live (atualmente squad 4.0 + 5.0, business 1.0) |
-| Adapters | Independente — versionado por arquivo |
+| `CAPABILITY_CATALOG_V1.yaml` | Semver: additions = minor, removals = major |
+| Schemas | Implicit in the `protocol` field (squad: `"5.0"`, business: `"1.0"`, harness: `"1.0"`) |
+| Validators | Must support ALL live protocol versions the validators accept |
+| Adapters | Independent: versioned per file |
 
 ---
 
 ## 9. Test coverage
 
-| Suite | Comando | Status |
+| Suite | Command | Status |
 |---|---|---|
-| TS smoke | `bun validators.ts test` | 8/8 OK |
-| Python pytest | `python3 -m pytest validators.py` | 36/36 passed |
-| Drift detection | Ambos rodando | Manual — sem CI ainda |
+| TS smoke | `bun validators.ts test` | Prints OK per schema |
+| Python pytest | `python3 -m pytest validators.py` | All pass |
+| Drift detection | Both running | Manual: no CI yet |
 
 ---
 
 ## 10. Troubleshooting
 
-| Sintoma | Causa | Fix |
+| Symptom | Cause | Fix |
 |---|---|---|
-| Validator TS aceita, Python rejeita (ou vice-versa) | Drift entre os dois | Review diff, alinhar |
-| `Domain X not in catalog` warning | Domain ausente | Add ao `CAPABILITY_CATALOG_V1.yaml` ou usar `experimental_domains: true` |
-| `Capability id pattern violation` | <3 dotted segments | Ajustar id |
-| `Extra inputs not permitted` | Schema strict, campo extra | Remover OR mover para `legacy.*` (que aceita extras) |
-| Pydantic erro em `HandoffArtifact` mas TS aceita | Schemas core podem ter divergido | Conferir `core-schemas.json` é source de verdade |
+| The TS validator accepts, Python rejects (or vice versa) | Drift between the two | Review the diff, align them |
+| `Domain X not in catalog` warning | Domain missing | Add it to `CAPABILITY_CATALOG_V1.yaml` or use `experimental_domains: true` |
+| `Capability id pattern violation` | <3 dotted segments | Fix the id |
+| `Extra inputs not permitted` | Strict schema, extra field | Remove it OR move it to `legacy.*` (which accepts extras) |
 
 ---
 
-## Limites configuráveis (`limits.py` / `limits.ts`)
+## Configurable limits (`limits.py` / `limits.ts`)
 
-> Adicionado 2026-05-15. Permite sobrescrever limites de tamanho/contagem
-> dos validators sem editar código.
+> Added 2026-05-15. Allows overriding the size/count limits of the validators
+> without editing code.
 
-### Por quê
+### Why
 
-Vários campos tinham limites hard-coded (`description` 500 chars,
-`produces` 30 itens, `keywords` 40 itens, etc.). Com modelos de janela
-de 1M tokens e businesses multi-dimensionais, alguns limites ficaram
-apertados. Agora são configuráveis — mas **com cabeça**: nem tudo deve
-crescer.
+Several fields had hard-coded limits (`description` 500 chars,
+`produces` 30 items, `keywords` 40 items, etc.). With 1M-token window
+models and multi-dimensional businesses, some limits got tight. Now they are
+configurable, but **with judgment**: not everything should grow.
 
-### Arquivos
+### Files
 
-| Arquivo | Função |
+| File | Purpose |
 |---|---|
-| `validators/limits.py` | Loader cascata (Python) — exporta `LIMITS` |
-| `validators/limits.ts` | Loader cascata (TypeScript) — exporta `LIMITS` |
-| `~/.claude/nirvana-limits.yaml` | Override nível usuário (opcional) |
-| `<projeto>/.nirvana-limits.yaml` | Override nível projeto (opcional) |
+| `validators/limits.py` | Cascade loader (Python): exports `LIMITS` |
+| `validators/limits.ts` | Cascade loader (TypeScript): exports `LIMITS` |
+| `~/.claude/nirvana-limits.yaml` | User-level override (optional) |
+| `<project>/.nirvana-limits.yaml` | Project-level override (optional) |
 
-`validators.py` e `validators.ts` importam `LIMITS` e usam nos
+`validators.py` and `validators.ts` import `LIMITS` and use it in the
 `StringConstraints` / `z.string().max()`.
 
-### Cascata de precedência (maior vence)
+### Precedence cascade (highest wins)
 
 ```
 1. NIRVANA_LIMIT_<KEY>  env var
-2. <projeto>/.nirvana-limits.yaml      (acha subindo do cwd até a raiz)
-3. ~/.claude/nirvana-limits.yaml       (nível usuário)
-4. DEFAULTS                            (valores históricos hard-coded)
+2. <project>/.nirvana-limits.yaml      (found by walking up from cwd to the root)
+3. ~/.claude/nirvana-limits.yaml       (user level)
+4. DEFAULTS                            (historical hard-coded values)
 ```
 
-**Backward-compatible**: sem `.yaml` e sem env var, `LIMITS == DEFAULTS`
-== comportamento idêntico ao anterior.
+**Backward-compatible**: with no `.yaml` and no env var, `LIMITS == DEFAULTS`
+== behavior identical to before.
 
 ### Safety bounds
 
-Toda chave tem `(piso, teto)` em `SAFETY_BOUNDS`. Valores absurdos são
-**clampados** com aviso no stderr — não é possível, por exemplo, setar
-`business_description_max=10` (quebraria entidades existentes) nem
-`employee_max_turns_max=99999` (runaway financeiro).
+Every key has `(floor, ceiling)` in `SAFETY_BOUNDS`. Absurd values are
+**clamped** with a warning on stderr: it is not possible, for example, to set
+`business_description_max=10` (it would break existing entities) nor
+`employee_max_turns_max=99999` (runaway).
 
-### 3 buckets de limite
+### Limit buckets
 
-| Bucket | Política | Exemplos |
+| Bucket | Policy | Examples |
 |---|---|---|
-| **A — PAYLOAD SIZE** | Configurável, baixo risco | description, example_briefs, keywords, produces, handoff_summary |
-| **B — EXECUTION CONTROL** | Configurável, exige cap orçamentário no projeto | max_turns, max_tokens, max_duration, max_handoffs |
-| **C — FEATURE LIMITS** | **NÃO** exposto — limite é feature de design | handoff.blockers (3), orgchart.reports (1), domains, selfscore.criteria min |
+| **A: PAYLOAD SIZE** | Configurable, low risk | description, example_briefs, keywords, produces |
+| **B: EXECUTION CONTROL** | Configurable, loose defaults | max_turns, max_tokens, max_cost, max_duration |
+| **C: FEATURE LIMITS** | **NOT** exposed: the limit is a design feature | orgchart.reports (1), domains |
 
-### Chaves disponíveis (22)
+### Available keys
 
-```
-# Bucket A — payload size
-business_description_max            (default 500)
-business_produces_max               (default 30)
-business_example_briefs_max         (default 15)
-business_example_briefs_item_max    (default 500)
-business_keywords_max               (default 40)
-business_capabilities_max           (default 100)
-capability_description_max          (default 500)
-capability_produces_max             (default 20)
-capability_example_briefs_max       (default 10)
-capability_example_briefs_item_max  (default 500)
-capability_keywords_max             (default 30)
-squad_capabilities_max              (default 50)
-handoff_summary_max                 (default 1000)
-handoff_files_modified_max          (default 10)
-employee_description_max            (default null = sem teto)
+The keys, their defaults and their `[floor, ceiling]` bounds are the `DEFAULTS` and `SAFETY_BOUNDS` tables in `validators/limits.ts` (mirrored in `limits.py`). Read them there or with the commands below; this file does not copy the numbers.
 
-# Bucket B — execution control (CAUTELA)
-employee_max_turns_max              (default 200)
-dna_max_turns_max                   (default 200)
-harness_default_max_tokens          (default 200000)
-harness_default_max_cost_usd        (default 2.00)
-harness_default_max_handoffs        (default 20)
-harness_default_max_duration_seconds(default 600)
-business_memory_max_facts_ceiling   (default 5000)
-```
-
-### Inspecionar limites efetivos
+### Inspect the effective limits
 
 ```bash
-python3 ~/.nirvana/skills/_shared/validators/limits.py    # tabela Python
-bun     ~/.nirvana/skills/_shared/validators/limits.ts    # tabela TS
-NIRVANA_LIMITS_DEBUG=1 python3 -c "import limits"         # com fonte de cada valor
+python3 ~/.nirvana/skills/_shared/validators/limits.py    # Python table
+bun     ~/.nirvana/skills/_shared/validators/limits.ts    # TS table
+NIRVANA_LIMITS_DEBUG=1 python3 -c "import limits"         # with the source of each value
 ```
 
-### Fix incluído (2026-05): `SelfScoreCriterion.id`
+### Where the JSON Schema lags behind
 
-A regex era `^[a-z_]+$` — bloqueava dígitos não-iniciais
-(`iso_42001_compliant`, `gpt4_check`). Corrigida para
-`^[a-z][a-z0-9_]*$`. Não é configurável — é fix de bug.
-
-### Onde o JSON Schema fica defasado
-
-Os arquivos `schemas/*.json` continuam com os **defaults antigos**
-(ferramentas externas que validam por JSON Schema não conhecem env vars).
-`validators.py`/`.ts` têm precedência no runtime real do Nirvana. Se
-você usa um validador JSON Schema externo, ele será mais restritivo —
-isso é seguro (rejeita a mais, nunca a menos).
+The `schemas/*.json` files still carry the **old defaults**
+(external tools that validate by JSON Schema do not know env vars).
+`validators.py`/`.ts` take precedence in the real Nirvana runtime. If
+you use an external JSON Schema validator, it will be stricter:
+that is safe (it rejects more, never less).
 
 ---
 
-## Referências
+## References
 
-- **README.md** — overview de _shared + sample usage
-- **CAPABILITY_CATALOG_V1.yaml** — vocabulário canônico
+- **README.md**: overview of _shared + sample usage
+- **CAPABILITY_CATALOG_V1.yaml**: canonical vocabulary
 - **schemas/{business,capability,core-schemas,dna}.schema.json**
 - **validators/{validators.ts, validators.py, limits.ts, limits.py}**
-- **~/.claude/nirvana-limits.yaml** — override de limites nível usuário
+- **~/.claude/nirvana-limits.yaml**: user-level limits override
 - **adapters/{claude-code,codex,gemini-cli}.md** + `adapters/README.md`
-- **~/.nirvana/skills/businesses/CONFIGURATION.md** — consumer downstream
-- **~/.nirvana/skills/squads/CONFIGURATION.md** — consumer downstream
+- **~/.nirvana/skills/businesses/CONFIGURATION.md**: downstream consumer
+- **~/.nirvana/skills/squads/CONFIGURATION.md**: downstream consumer

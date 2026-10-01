@@ -2,8 +2,8 @@ name: example-solo
 version: 1.0.0
 protocol: "1.0"
 description: >
-  Business solo de exemplo. Single-employee setup que funciona como prova de
-  conceito mínima. Use como base para criar businesses customizadas via wizard
+  Example solo business. Single-employee setup that works as a minimal proof
+  of concept. Use as a base for custom businesses created through the wizard
   (*business init <name> --template solo).
 author: businesses-skill
 license: SUL-1.0
@@ -22,7 +22,7 @@ runtime_requirements:
   compatible:
     - { runtime: codex, version: ">=0.20.0" }
     - { runtime: gemini-cli, version: ">=0.4.0" }
-    - { runtime: antigravity-cli, version: ">=0.4.0" }  # +antigravity-cli (sucessor; gemini-cli sunset 2026-06-18 consumer)
+    - { runtime: antigravity-cli, version: ">=0.4.0" }  # +antigravity-cli (successor; gemini-cli consumer sunset 2026-06-18)
 
 features_required:
   - max_turns
@@ -46,4 +46,4 @@ memory:
 ui:
   client_facing_name: "Solo Business (Example)"
   category: general
-  pitch: "Template solo — 1 employee CEO que faz tudo. Substitua pela sua business real."
+  pitch: "Solo template: 1 CEO employee who does everything. Replace it with your real business."

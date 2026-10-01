@@ -8,7 +8,7 @@ This document has moved. Its content is now part of the Claude Code adapter.
 
 ## Why did this move?
 
-In Squad Protocol v4.0, runtime-specific documentation lives in adapter files under `adapters/`. The Claude Code adapter is the reference implementation and contains all the detail previously in this file:
+In the Squad Protocol (`SQUAD_PROTOCOL_V6.md` §4, §18), runtime-specific documentation lives in adapter files under `adapters/`. The Claude Code adapter is the reference implementation and contains all the detail previously in this file:
 
 - Claude Code frontmatter format and field semantics → [§4](../../_shared/adapters/claude-code.md#4-frontmatter-mapping)
 - Tool whitelist mechanics (hard enforcement via API schema) → [§5](../../_shared/adapters/claude-code.md#5-tool-whitelist-mechanics)
@@ -20,6 +20,6 @@ In Squad Protocol v4.0, runtime-specific documentation lives in adapter files un
 - Source references (SRC-1…SRC-12 citations) → [§14](../../_shared/adapters/claude-code.md#14-source-references)
 
 For runtime-neutral squad authoring guidance, see:
-- Squad Protocol v4 (archived) — the original core spec; the current one is [`SQUAD_PROTOCOL_V6.md`](../SQUAD_PROTOCOL_V6.md)
+- [`SQUAD_PROTOCOL_V6.md`](../SQUAD_PROTOCOL_V6.md): the complete Squad Protocol
 - [`references/02-creation.md`](02-creation.md) — how to create a squad
 - [`references/11-adapters-guide.md`](11-adapters-guide.md) — how adapters work

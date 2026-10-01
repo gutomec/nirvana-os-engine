@@ -292,7 +292,7 @@ export function prepareBusinessSolo(args: BusinessSoloArgs): PreparedSolo {
   }
   const squads = soloSquads(args, seats, preferredSquads(args.bizDir));
   const squadCards = writeSquadCards(path.join(args.projectDir, "cards"), squads, squadDirOf);
-  const prompt = buildSoloPrompt({ ...args, briefFile }, seats, memoryDirs, squadCards) + "\n\n" + scopeGuard("en");
+  const prompt = buildSoloPrompt({ ...args, briefFile }, seats, memoryDirs, squadCards) + "\n\n" + scopeGuard();
   fs.writeFileSync(path.join(args.projectDir, "solo-prompt.md"), prompt);
   // What the worker may touch: the run, the business, its voices, the squads
   // on its cards, its memory, and the folder of the brief.

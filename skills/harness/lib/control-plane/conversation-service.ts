@@ -15,6 +15,11 @@ export interface SessionRecord { session_id: string; session_runtime: string; st
 export interface Message { message_id: string; conversation_id: string; project_id: string; run_id?: string; role: "user" | "assistant" | "system"; content: string; created_at: string; sequence: number }
 
 // Columns added after the first release; the migration is idempotent (PRAGMA table_info, then ALTER).
+// A conversation keeps this title until its first user message names it.
+// Conversations created before the English UI carry 'Nova conversa' and are
+// still renamed by the same rule.
+export const DEFAULT_CONVERSATION_TITLE = "New conversation";
+
 const SESSION_COLUMNS: ReadonlyArray<[string, string]> = [
   ["session_id", "TEXT"], ["session_runtime", "TEXT"], ["session_started_at", "TEXT"], ["last_turn_at", "TEXT"], ["session_history", "TEXT"],
 ];
@@ -38,7 +43,7 @@ export class ConversationService {
     for (const [name, type] of SESSION_COLUMNS) if (!columns.has(name)) this.db.exec(`ALTER TABLE conversations ADD COLUMN ${name} ${type}`);
   }
   close(): void { this.db.close(); }
-  create(projectId: string, title = "Nova conversa", conversationId = `cnv_${randomUUID()}`): Conversation {
+  create(projectId: string, title = DEFAULT_CONVERSATION_TITLE, conversationId = `cnv_${randomUUID()}`): Conversation {
     const now = new Date().toISOString();
     this.db.run("INSERT OR IGNORE INTO conversations (conversation_id, project_id, title, state, created_at, updated_at) VALUES (?, ?, ?, 'active', ?, ?)", conversationId, projectId, title, now, now);
     return this.get(conversationId)!;
@@ -82,7 +87,7 @@ export class ConversationService {
       const row = this.db.query("SELECT COALESCE(MAX(sequence), 0) + 1 AS next FROM conversation_messages WHERE conversation_id = ?").get(input.conversationId) as { next: number };
       const message: Message = { message_id: input.messageId || `msg_${randomUUID()}`, conversation_id: input.conversationId, project_id: input.projectId, ...(input.runId ? { run_id: input.runId } : {}), role: input.role, content: input.content, created_at: createdAt, sequence: row.next };
       this.db.run("INSERT INTO conversation_messages VALUES (?, ?, ?, ?, ?, ?, ?, ?)", message.message_id, message.conversation_id, message.project_id, message.run_id || null, message.role, message.content, message.created_at, message.sequence);
-      this.db.run("UPDATE conversations SET updated_at = ?, title = CASE WHEN title = 'Nova conversa' AND ? = 'user' THEN substr(?, 1, 80) ELSE title END WHERE conversation_id = ?", createdAt, input.role, input.content, input.conversationId);
+      this.db.run("UPDATE conversations SET updated_at = ?, title = CASE WHEN title IN (?, 'Nova conversa') AND ? = 'user' THEN substr(?, 1, 80) ELSE title END WHERE conversation_id = ?", createdAt, DEFAULT_CONVERSATION_TITLE, input.role, input.content, input.conversationId);
       return message;
     })();
   }

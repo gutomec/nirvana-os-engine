@@ -2,28 +2,24 @@
 // check-english-source.ts — CI gate: source comments and agentic instruction
 // files must be English.
 //
-// WHAT is checked (the contract, per AGENTS.md §0):
-//   - Comments in .ts/.js files (repo root scripts, scripts/, skills/) —
-//     string literals are NEVER checked: PT-BR console/UX output is allowed
-//     by design (runtime UX is localized; code and comments are English).
-//   - Agentic instruction markdown: skills/**/SKILL.md, skills/*/references/,
-//     skills/*/agents/, skills/*/templates/, skills/_shared/fragments/.
-//     Fenced code blocks and inline code spans are stripped first — example
-//     briefs inside them are user-language DATA, not instructions.
+// WHAT is checked (the contract, per CONTRIBUTING.md "Conventions"):
+//   - Comments in .ts/.js/.mjs/.cjs files (repo root, scripts/, skills/,
+//     packaging/) and `#` comments in .sh/.ps1/.py files and bin/ launchers.
+//   - String literals in engine source (outside tests): everything the engine
+//     prints, shows or sends to an agent is English. Test files are skipped:
+//     their PT strings are user-language fixtures.
+//   - Every markdown file under skills/ outside tests: instructions,
+//     protocols, templates and docs. Fenced code blocks and inline code spans
+//     are stripped first; example requests inside them are data.
 //
 // WHAT is allowed (never flagged):
 //   - README locale variants, CHANGELOG history, docs/, localized assets.
-//   - CONTENT SCAFFOLDS: templates whose OUTPUT belongs to the user's library
-//     in the user's language (business-type employees, mind-clone template,
-//     amplification briefing questions) — per AGENTS.md §0, generated content,
-//     employee outputs and mind-clone voices are user-language deliverables.
 //   - Double-quoted spans in markdown ("crie um squad ...") — quoted user
 //     utterances and trigger phrases are user-language DATA.
-//   - Test fixture files listed in FILE_ALLOWLIST (deliberate PT content:
-//     golden negatives, bridge cases — briefs are user-language data).
-//   - Any comment segment (or the line right after) carrying the pragma
-//     `i18n-user-facing` — for comments that intentionally quote PT-BR data
-//     (user-facing output strings, stopword/alias lists, fixtures).
+//   - Files listed in FILE_ALLOWLIST (deliberate PT content kept as data).
+//   - Any segment (or the line right after) carrying the pragma
+//     `i18n-user-facing`, for PT that is data the engine matches against
+//     input: stopword and alias lists, regexes, evaluation briefs.
 //
 // Heuristic (tuned on the live tree; tuning notes in the phase report):
 //   A line of comment/prose is PT when EITHER
@@ -53,12 +49,8 @@ const PRAGMA = "i18n-user-facing";
 // Path prefixes/segments never scanned (relative to ROOT, forward slashes).
 const DIR_SKIPLIST = [
   "node_modules", "dist", "tmp", "_private", ".git",
-  "docs", "examples", "packaging",
+  "docs", "examples",
   "skills/harness/baselines", "skills/harness/assets",
-  // Content scaffolds — their OUTPUT is user-library content in the user's
-  // language (AGENTS.md §0), not agentic instructions:
-  "skills/businesses/templates",           // generated businesses (employees, memory)
-  "skills/harness/templates/amplification", // briefing questions shown to the user
 ];
 
 // Files with deliberate PT content (fixtures / user-language data).
@@ -220,11 +212,36 @@ function codeFiles(): string[] {
   for (const entry of readdirSync(ROOT, { withFileTypes: true })) {
     if (entry.isFile() && /\.(ts|js)$/.test(entry.name)) out.push(join(ROOT, entry.name));
   }
-  for (const dir of ["scripts", "skills"]) {
+  for (const dir of ["scripts", "skills", "packaging"]) {
     const full = join(ROOT, dir);
     if (!existsSync(full)) continue;
-    for (const f of walk(full)) if (/\.(ts|js)$/.test(f) && !f.endsWith(".d.ts")) out.push(f);
+    for (const f of walk(full)) if (/\.(ts|js|mjs|cjs)$/.test(f) && !f.endsWith(".d.ts")) out.push(f);
   }
+  return out;
+}
+
+/** Shell, PowerShell and Python sources, plus the extensionless launchers in
+ *  bin/: only their `#` comments are read. */
+function hashCommentFiles(): string[] {
+  const out: string[] = [];
+  for (const dir of ["scripts", "skills", "packaging", "bin"]) {
+    const full = join(ROOT, dir);
+    if (!existsSync(full)) continue;
+    for (const f of walk(full)) {
+      const rel = relative(ROOT, f).split(sep).join("/");
+      if (/\.(sh|ps1|py)$/.test(f) || /^bin\/[^/.]+$/.test(rel)) out.push(f);
+    }
+  }
+  return out;
+}
+
+function extractHashComments(src: string): Segment[] {
+  const out: Segment[] = [];
+  src.split("\n").forEach((raw, idx) => {
+    if (idx === 0 && raw.startsWith("#!")) return;
+    const m = raw.match(/^\s*#(?!!)\s?(.*)$/);
+    if (m) out.push({ line: idx + 1, text: m[1] });
+  });
   return out;
 }
 
@@ -232,16 +249,13 @@ function instructionMdFiles(): string[] {
   const out: string[] = [];
   const skills = join(ROOT, "skills");
   if (!existsSync(skills)) return out;
+  // Every markdown file the engine ships is instructions or documentation, and
+  // both are English. Fixtures live under tests/ and are skipped.
   for (const f of walk(skills)) {
     if (!f.endsWith(".md")) continue;
     const rel = relative(ROOT, f).split(sep).join("/");
-    const isInstruction =
-      /\/SKILL\.md$/.test(rel) ||
-      /skills\/[^/]+\/references\//.test(rel) ||
-      /skills\/[^/]+\/agents\//.test(rel) ||
-      /skills\/[^/]+\/templates\//.test(rel) ||
-      /skills\/_shared\/(agents|fragments|templates)\//.test(rel);
-    if (isInstruction) out.push(f);
+    if (/(^|\/)tests?\//.test(rel)) continue;
+    out.push(f);
   }
   return out;
 }
@@ -253,26 +267,76 @@ function instructionMdFiles(): string[] {
 // license bug got a Portuguese error. Comments and identifiers were already
 // covered; the output was the half nobody was watching.
 //
-// Only output calls are scanned — console.log/error/warn/info and
-// `throw new Error(...)`. Everything else quoted stays data: a slug, a path, a
-// regex, a YAML key, an example brief. Use the `i18n-user-facing` pragma on the
-// line or the one above it for the rare string that must stay Portuguese.
-const OUTPUT_CALL = /\b(?:console\.(?:log|error|warn|info)|throw new Error)\s*\(/;
+// Every quoted span is scanned, line by line: output calls, prompts sent to an
+// agent, setting descriptions, help text. A slug, a path or a single keyword
+// never trips the heuristic; a PT sentence does. Use the `i18n-user-facing`
+// pragma on the line or the one above it for PT that is data (a stopword list,
+// an example brief the router is evaluated on).
+const isTestFile = (rel: string) => /(^|\/)tests?\//.test(rel) || /\.test\.[tj]s$/.test(rel);
 
 function extractUserFacingStrings(src: string): Segment[] {
+  // A small tokenizer: comments and regex literals are skipped, every string
+  // body is kept with its line numbers, so a prompt written as a multi-line
+  // template literal is read line by line like prose. Interpolations are
+  // dropped: `${slug}` is an identifier, not prose.
   const out: Segment[] = [];
-  const lines = src.split("\n");
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (!OUTPUT_CALL.test(line)) continue;
-    // Quoted spans on this line, template literals included. Interpolations are
-    // dropped: `${slug}` is an identifier, not prose.
-    const spans = line.match(/(["'`])(?:\\.|(?!\1)[^\\])*\1/g) || [];
-    const text = spans
-      .map(s => s.slice(1, -1).replace(/\$\{[^}]*\}/g, " ").replace(/\\x1b\[[0-9;]*m/g, " "))
-      .join(" ")
-      .trim();
-    if (text) out.push({ line: i + 1, text });
+  let i = 0, line = 1, prev = "";
+  const n = src.length;
+  const emit = (body: string, startLine: number) => {
+    let ln = startLine;
+    for (const part of body.split("\n")) {
+      const text = part.replace(/\\x1b\[[0-9;]*m/g, " ").trim();
+      if (text) out.push({ line: ln, text });
+      ln++;
+    }
+  };
+  while (i < n) {
+    const c = src[i];
+    if (c === "\n") { line++; i++; continue; }
+    if (c === "/" && src[i + 1] === "/") { while (i < n && src[i] !== "\n") i++; continue; }
+    if (c === "/" && src[i + 1] === "*") {
+      i += 2;
+      while (i < n && !(src[i] === "*" && src[i + 1] === "/")) { if (src[i] === "\n") line++; i++; }
+      i += 2; continue;
+    }
+    if (c === "/" && (prev === "" || "(,=:[!&|?{};+-*%<>~^".includes(prev) || /\breturn$/.test(src.slice(Math.max(0, i - 7), i).trimEnd()))) {
+      i++;
+      let inClass = false;
+      while (i < n && src[i] !== "\n") {
+        if (src[i] === "\\") { i += 2; continue; }
+        if (src[i] === "[") inClass = true;
+        else if (src[i] === "]") inClass = false;
+        else if (src[i] === "/" && !inClass) { i++; break; }
+        i++;
+      }
+      prev = "/"; continue;
+    }
+    if (c === '"' || c === "'" || c === "`") {
+      const quote = c, startLine = line;
+      let body = "";
+      i++;
+      while (i < n) {
+        const d = src[i];
+        if (d === "\\") { body += " "; i += 2; continue; }
+        if (d === "\n") { line++; if (quote !== "`") break; }
+        if (d === quote) { i++; break; }
+        if (quote === "`" && d === "$" && src[i + 1] === "{") {
+          let depth = 1; i += 2; body += " ";
+          while (i < n && depth > 0) {
+            if (src[i] === "{") depth++;
+            else if (src[i] === "}") depth--;
+            else if (src[i] === "\n") { line++; body += "\n"; }
+            i++;
+          }
+          continue;
+        }
+        body += d; i++;
+      }
+      emit(body, startLine);
+      prev = "x"; continue;
+    }
+    if (!/\s/.test(c)) prev = c;
+    i++;
   }
   return out;
 }
@@ -281,14 +345,15 @@ function extractUserFacingStrings(src: string): Segment[] {
 
 interface FileReport { rel: string; hits: Array<Segment & LineVerdict>; }
 
-function scanFile(file: string, kind: "code" | "md"): FileReport | null {
+function scanFile(file: string, kind: "code" | "hash" | "md"): FileReport | null {
   const rel = relative(ROOT, file);
   let src: string;
   try { src = readFileSync(file, "utf8"); } catch { return null; }
   if (src.includes(`${PRAGMA}: file`)) return null; // whole-file pragma
+  const relPosix = rel.split(sep).join("/");
   const segments = kind === "code"
-    ? [...extractComments(src), ...extractUserFacingStrings(src)]
-    : extractMarkdownProse(src);
+    ? [...extractComments(src), ...(isTestFile(relPosix) ? [] : extractUserFacingStrings(src))]
+    : kind === "hash" ? extractHashComments(src) : extractMarkdownProse(src);
   const rawLines = src.split("\n");
   const hits: FileReport["hits"] = [];
   for (const seg of segments) {
@@ -306,6 +371,7 @@ function scanFile(file: string, kind: "code" | "md"): FileReport | null {
 const reports: FileReport[] = [];
 let scannedCode = 0, scannedMd = 0;
 for (const f of codeFiles()) { scannedCode++; const r = scanFile(f, "code"); if (r) reports.push(r); }
+for (const f of hashCommentFiles()) { scannedCode++; const r = scanFile(f, "hash"); if (r) reports.push(r); }
 for (const f of instructionMdFiles()) { scannedMd++; const r = scanFile(f, "md"); if (r) reports.push(r); }
 reports.sort((a, b) => b.hits.length - a.hits.length);
 

@@ -72,19 +72,19 @@ export function runBusinessPostGate(input: BusinessPostGateInput): { zipPath: st
       input.warn("⚠ --pdf: build-report-pdf.ts not found; skipping PDF");
     } else {
       input.log(`▶ Step 6.5 — PDF report (${hasPublisher ? "report-publisher" : "generic publisher"})`);
-      const reportDir = path.join(input.projectDir, "relatorio");
+      const reportDir = path.join(input.projectDir, "_report");
       deps.mkdir(reportDir);
-      const summaryPath = path.join(reportDir, "resumo-executivo.md");
+      const summaryPath = path.join(reportDir, "executive-summary.md");
       const orderPath = path.join(reportDir, "order.json");
       const publisherBrief = [
-        "Você é o publicador do relatório final. Compile a entrega.",
-        `A entrega são os arquivos .md em: ${input.outputsRoot}`,
+        "You are the publisher of the final report. Compile the delivery.",
+        `The delivery is the .md files in: ${input.outputsRoot}`,
         "",
-        "O resultado são EXATAMENTE dois arquivos:",
-        `1. ${summaryPath} — resumo executivo fiel (markdown), que vai na capa do PDF.`,
-        `2. ${orderPath} — JSON: {"title": "...", "subtitle": "...", "client": "...", "summary_file": "${summaryPath}", "order": ["arquivo1.md", "arquivo2.md", ...]}`,
-        "   - order = nomes dos .md em " + input.outputsRoot + " na sequência ideal (resposta direta primeiro, depois análise, base e anexos).",
-        "Não invente conclusão nem fonte. Apenas sintetize e ordene.",
+        "The result is EXACTLY two files:",
+        `1. ${summaryPath}: a faithful executive summary (markdown), which goes on the PDF cover.`,
+        `2. ${orderPath}: JSON {"title": "...", "subtitle": "...", "client": "...", "summary_file": "${summaryPath}", "order": ["file1.md", "file2.md", ...]}`,
+        "   - order = the names of the .md files in " + input.outputsRoot + " in the ideal sequence (direct answer first, then analysis, evidence and appendices).",
+        "Do not invent a conclusion or a source. Only synthesize and order. The report follows the language of the deliverables.",
       ].join("\n");
       const publisherBriefFile = path.join(reportDir, ".publisher-brief.md");
       deps.write(publisherBriefFile, publisherBrief);
@@ -103,10 +103,10 @@ export function runBusinessPostGate(input: BusinessPostGateInput): { zipPath: st
       input.emit("report_publisher_ran", { trace_id: input.projectId, project_id: input.projectId,
         business_slug: input.businessSlug, ok: publisher.ok, publisher: hasPublisher ? "employee" : "generic" });
 
-      const pdfOutput = path.join(input.outputsRoot, "relatorio-final.pdf");
+      const pdfOutput = path.join(input.outputsRoot, "final-report.pdf");
       const pdfArgs = [buildScript, "--deliverables", input.outputsRoot, "--output", pdfOutput];
       if (deps.exists(summaryPath)) pdfArgs.push("--summary", summaryPath);
-      let title = `Relatório — ${input.projectId}`, subtitle = "", clientName = "", brand = input.businessSlug;
+      let title = `Report: ${input.projectId}`, subtitle = "", clientName = "", brand = input.businessSlug;
       if (deps.exists(orderPath)) {
         try {
           const metadata = JSON.parse(deps.read(orderPath));
@@ -133,12 +133,12 @@ export function runBusinessPostGate(input: BusinessPostGateInput): { zipPath: st
   if (!input.skipHtml) {
     input.log("▶ Step 6.6 — HTML report");
     const htmlBuild = path.join(input.skillsRoot, "harness/scripts/build-report-html.ts");
-    const htmlOutput = path.join(input.outputsRoot, "relatorio-final.html");
+    const htmlOutput = path.join(input.outputsRoot, "final-report.html");
     // The RUN, not the project. Pointed at projectDir it indexed the project's
     // own contract files and the employee prompt beside them, which is how a
     // client report came to contain the persona and the firm's memory instead
     // of the work. SKILL.md always said `<outputs>/<run_id>`; the code did not.
-    const htmlArgs = [htmlBuild, "--project", input.outputsRoot, "--output", htmlOutput, "--title", `Relatório — ${input.businessSlug}`];
+    const htmlArgs = [htmlBuild, "--project", input.outputsRoot, "--output", htmlOutput, "--title", `Report: ${input.businessSlug}`];
     if (input.offlineSnapshot) htmlArgs.push("--offline-snapshot");
     const html = deps.spawn("bun", htmlArgs, { windowsHide: true, encoding: "utf8", stdio: "inherit" });
     if (html.status === 0) input.emit("report_html_generated", { trace_id: input.projectId, project_id: input.projectId, business_slug: input.businessSlug, output: htmlOutput });

@@ -19,9 +19,6 @@
 //
 // Exit: 0 ok · 1 a config file could not be read · 4 invalid arguments, key,
 // value or scope, or the key is pinned by the environment.
-//
-// i18n-user-facing: file — what the user reads is PT-BR by contract; code,
-// identifiers and comments stay English.
 
 import { createRequire } from "node:module";
 import * as os from "node:os";
@@ -44,16 +41,16 @@ const json = flags.has("--json");
 
 function usage(code: number): never {
   console.error([
-    "uso:",
-    "  nrv config list [--json]                          toda chave: valor efetivo, origem, padrão",
-    "  nrv config get <chave> [--json]                   o valor efetivo",
-    "  nrv config set <chave> <valor> [--global|--project]",
-    "  nrv config unset <chave> [--global|--project]",
-    "  nrv config explain <chave> [--json]               descrição, padrão, escopos, variável, valor efetivo",
+    "usage:",
+    "  nrv config list [--json]                          every key: effective value, source, default",
+    "  nrv config get <key> [--json]                   the effective value",
+    "  nrv config set <key> <value> [--global|--project]",
+    "  nrv config unset <key> [--global|--project]",
+    "  nrv config explain <key> [--json]               description, default, scopes, variable, effective value",
     "",
-    "  precedência: variável de ambiente > <projeto>/.nirvana/config.yaml > ~/.nirvana/config.yaml > engine > padrão",
-    "  set/unset gravam no projeto quando rodam dentro de um (diretório .nirvana/), senão no global.",
-    "  exit: 0 ok · 1 arquivo de config ilegível · 4 argumento, chave, valor ou escopo inválido, ou chave fixada por variável",
+    "  precedence: environment variable > <project>/.nirvana/config.yaml > ~/.nirvana/config.yaml > engine > default",
+    "  set/unset write to the project when run inside one (.nirvana/ directory), otherwise to the global file.",
+    "  exit: 0 ok · 1 unreadable config file · 4 invalid argument, key, value or scope, or key pinned by a variable",
   ].join("\n"));
   process.exit(code);
 }
@@ -66,18 +63,18 @@ function tilde(file: string): string {
 function sourceLabel(resolved: ResolvedSetting): string {
   switch (resolved.source) {
     case "env": return `env ${resolved.variable}=${resolved.raw}`;
-    case "project": return `projeto ${tilde(resolved.path!)}`;
+    case "project": return `project ${tilde(resolved.path!)}`;
     case "global": return `global ${tilde(resolved.path!)}`;
-    case "profile": return `perfil ${resolved.profile}`;
+    case "profile": return `profile ${resolved.profile}`;
     case "engine-default": return `engine ${tilde(resolved.path!)}`;
-    default: return "padrão";
+    default: return "default";
   }
 }
 
-const scopeWord = (scope: SettingScope): string => (scope === "project" ? "projeto" : "global");
+const scopeWord = (scope: SettingScope): string => (scope === "project" ? "project" : "global");
 
 function show(value: SettingValue | null): string {
-  if (value === null) return "(ausente)";
+  if (value === null) return "(absent)";
   return typeof value === "string" ? (value === "" ? '""' : value) : String(value);
 }
 
@@ -95,14 +92,14 @@ function scopeFlag(): SettingScope | null {
 
 const audit = (event: string, payload: Record<string, unknown>): void => {
   try { createRequire(import.meta.url)("../lib/audit.js").emit(event, payload); }
-  catch (error) { console.error(`aviso: o audit não foi gravado (${(error as Error).message})`); }
+  catch (error) { console.error(`warning: the audit event was not written (${(error as Error).message})`); }
 };
 
 function list(): number {
   const all = resolveAllSettings();
   if (json) { console.log(JSON.stringify(all.map(report), null, 2)); return EXIT.ok; }
   const rows = all.map((resolved) => [resolved.key, show(resolved.value), sourceLabel(resolved), show(requireSpec(resolved.key).default)]);
-  const header = ["chave", "valor", "origem", "padrão"];
+  const header = ["key", "value", "source", "default"];
   const widths = header.slice(0, 3).map((title, index) => Math.max(title.length, ...rows.map((row) => row[index].length)));
   const line = (row: string[]) => `${row[0].padEnd(widths[0])}  ${row[1].padEnd(widths[1])}  ${row[2].padEnd(widths[2])}  ${row[3]}`;
   console.log(line(header));
@@ -122,14 +119,14 @@ function explain(key: string): number {
   const resolved = resolveSetting(key);
   if (json) { console.log(JSON.stringify(report(resolved), null, 2)); return EXIT.ok; }
   const info = settingInfo(spec);
-  const variable = info.env ? `${info.env}${info.envAliases.length ? ` (também ${info.envAliases.join(", ")})` : ""}` : "(nenhuma)";
+  const variable = info.env ? `${info.env}${info.envAliases.length ? ` (also ${info.envAliases.join(", ")})` : ""}` : "(none)";
   console.log([
     `${key} — ${info.description}`,
-    `  tipo:     ${info.expects}`,
-    `  padrão:   ${show(info.default)}`,
-    `  escopos:  ${info.scopes.map(scopeWord).join(", ")}`,
-    `  variável: ${variable}`,
-    `  efetivo:  ${show(resolved.value)} (${sourceLabel(resolved)})`,
+    `  type:      ${info.expects}`,
+    `  default:   ${show(info.default)}`,
+    `  scopes:    ${info.scopes.map(scopeWord).join(", ")}`,
+    `  variable:  ${variable}`,
+    `  effective: ${show(resolved.value)} (${sourceLabel(resolved)})`,
   ].join("\n"));
   return EXIT.ok;
 }
@@ -137,17 +134,17 @@ function explain(key: string): number {
 /** After a write, the value in force may still come from a higher layer; say so. */
 function reportEffective(key: string, scope: SettingScope): void {
   const effective = resolveSetting(key);
-  if (effective.source !== scope) console.log(`valor efetivo agora: ${show(effective.value)} (${sourceLabel(effective)})`);
+  if (effective.source !== scope) console.log(`effective value now: ${show(effective.value)} (${sourceLabel(effective)})`);
 }
 
 function set(key: string, value: string): number {
   const scope = scopeFlag() ?? defaultWriteScope().scope;
   const change = setSetting(key, value, { scope, audit });
   if (change.changed) {
-    const was = change.from === null ? "" : ` (era ${show(change.from)})`;
-    console.log(`${key} = ${show(change.to)} gravado em ${tilde(change.path)} (${scopeWord(scope)})${was}`);
+    const was = change.from === null ? "" : ` (was ${show(change.from)})`;
+    console.log(`${key} = ${show(change.to)} written to ${tilde(change.path)} (${scopeWord(scope)})${was}`);
   } else {
-    console.log(`${key} já era ${show(change.to)} em ${tilde(change.path)} (${scopeWord(scope)}); nada mudou`);
+    console.log(`${key} was already ${show(change.to)} in ${tilde(change.path)} (${scopeWord(scope)}); nothing changed`);
   }
   reportEffective(key, scope);
   return EXIT.ok;
@@ -156,8 +153,8 @@ function set(key: string, value: string): number {
 function unset(key: string): number {
   const scope = scopeFlag() ?? defaultWriteScope().scope;
   const change = unsetSetting(key, { scope, audit });
-  if (change.changed) console.log(`${key} removido de ${tilde(change.path)} (${scopeWord(scope)}); era ${show(change.from)}`);
-  else console.log(`${key} não estava definido em ${tilde(change.path)} (${scopeWord(scope)}); nada mudou`);
+  if (change.changed) console.log(`${key} removed from ${tilde(change.path)} (${scopeWord(scope)}); was ${show(change.from)}`);
+  else console.log(`${key} was not set in ${tilde(change.path)} (${scopeWord(scope)}); nothing changed`);
   reportEffective(key, scope);
   return EXIT.ok;
 }

@@ -1,17 +1,17 @@
 # Content amplification questions
 
 ## objective
-Qual é o ângulo e o ponto único que diferencia este conteúdo do que já existe?
-_Example:_ "Por que a Lei do Bem é subutilizada por startups" — ângulo novo: número real de empresas que aplicam.
+What is the angle and the single point that sets this content apart from what already exists?
+_Example:_ "Why R&D tax credits are underused by startups" — new angle: the real number of companies that claim them.
 
 ## audience
-Quem lê e em que momento da jornada (descoberta, decisão, retenção)?
-_Example:_ Founders early-stage em decisão de constituir empresa.
+Who reads it, and at which moment of the journey (discovery, decision, retention)?
+_Example:_ Early-stage founders deciding whether to incorporate.
 
 ## constraints
-Comprimento, tom, formato, deadline?
-_Example:_ 1500 palavras, tom análise (não opinião), markdown, em 48h.
+Length, tone, format, deadline?
+_Example:_ 1500 words, analytical tone (not opinion), markdown, within 48h.
 
 ## success_criteria
-O post deve gerar o quê — tráfego, signups, comentários, autoridade?
-_Example:_ Top 5 Google para "Lei do Bem startups" em 90 dias.
+What should the post achieve: traffic, signups, comments, authority?
+_Example:_ Top 5 on Google for "R&D tax credits startups" within 90 days.

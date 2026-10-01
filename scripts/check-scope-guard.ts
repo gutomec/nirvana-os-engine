@@ -44,7 +44,7 @@ const STRICT = process.argv.includes("--strict");
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-scope-guard-"));
 process.env.HARNESS_LOGS_DIR = path.join(TMP, "harness-logs");
 
-const { hasScopeGuard, SCOPE_GUARD_SENTINEL, SCOPE_GUARD_SENTINEL_PT_BR } = await import("../skills/_shared/lib/scope-guard.ts");
+const { hasScopeGuard } = await import("../skills/_shared/lib/scope-guard.ts");
 const { prepareBusinessSolo } = await import("../skills/harness/lib/business-solo.ts");
 const { buildSquadPrompt } = await import("../skills/harness/lib/squad-exec.ts");
 const { runAgentX } = await import("../skills/harness/lib/dispatch-cascade.ts");
@@ -127,11 +127,11 @@ const SURFACES: Surface[] = [
   { label: "autonomous directive (skills/harness/lib/host-agent-driver.ts AUTONOMOUS_DIRECTIVE)", kind: "render", render: () => AUTONOMOUS_DIRECTIVE },
   // Scripts that build their prompt inline: proven at the source.
   { label: "nrv revise prompt (skills/harness/scripts/revise.ts revisePrompt)", kind: "source", file: "skills/harness/scripts/revise.ts",
-    pattern: /const revisePrompt = \[[\s\S]*?scopeGuard\("pt-BR"\)[\s\S]*?\]\.join/ },
+    pattern: /const revisePrompt = \[[\s\S]*?scopeGuard\([^)]*\)[\s\S]*?\]\.join/ },
   { label: "standard-mode fix prompt (skills/harness/lib/delivery-pipeline.ts fixPrompt)", kind: "source", file: "skills/harness/lib/delivery-pipeline.ts",
-    pattern: /const fixPrompt = \[[\s\S]*?scopeGuard\("pt-BR"\)[\s\S]*?\]\.join/ },
+    pattern: /const fixPrompt = \[[\s\S]*?scopeGuard\([^)]*\)[\s\S]*?\]\.join/ },
   { label: "squad brief file (skills/squads/scripts/brief-squad.ts brief.md)", kind: "source", file: "skills/squads/scripts/brief-squad.ts",
-    pattern: /writeFileSync\(briefFile, `[\s\S]*?\$\{scopeGuard\("pt-BR"\)\}[\s\S]*?`\)/ },
+    pattern: /writeFileSync\(briefFile, `[\s\S]*?\$\{scopeGuard\([^)]*\)\}[\s\S]*?`\)/ },
   // Composition proofs: these two hand the executor a surface rendered above.
   { label: "Gauntlet revision file (skills/harness/scripts/dispatch.ts writeRevisionBrief composes revisionDefectsSection)", kind: "source", file: "skills/harness/scripts/dispatch.ts",
     pattern: /function writeRevisionBrief\([\s\S]*?revisionDefectsSection\(request\)/ },
@@ -145,23 +145,17 @@ const SURFACES: Surface[] = [
   { label: "multi-target reference (skills/harness/references/04-multi-target.md)", kind: "markdown", file: "skills/harness/references/04-multi-target.md" },
 ];
 
-function language(text: string): string {
-  const en = text.includes(SCOPE_GUARD_SENTINEL);
-  const pt = text.includes(SCOPE_GUARD_SENTINEL_PT_BR);
-  return en && pt ? "en + pt-BR" : en ? "en" : "pt-BR";
-}
-
 const results: { label: string; ok: boolean; detail: string }[] = [];
 for (const surface of SURFACES) {
   try {
     if (surface.kind === "render") {
       const text = surface.render();
       const ok = hasScopeGuard(text);
-      results.push({ label: surface.label, ok, detail: ok ? language(text) : "rendered without the sentinel" });
+      results.push({ label: surface.label, ok, detail: ok ? "en" : "rendered without the sentinel" });
     } else if (surface.kind === "markdown") {
       const text = fs.readFileSync(path.join(ROOT, surface.file), "utf8");
       const ok = hasScopeGuard(text);
-      results.push({ label: surface.label, ok, detail: ok ? language(text) : "no sentinel in the file" });
+      results.push({ label: surface.label, ok, detail: ok ? "en" : "no sentinel in the file" });
     } else {
       const text = fs.readFileSync(path.join(ROOT, surface.file), "utf8");
       const ok = surface.pattern.test(text);
@@ -189,7 +183,7 @@ console.log("");
 console.log(`  ${results.length} surface(s) · ${missing.length} missing`);
 
 if (missing.length) {
-  console.error("\n  A surface lost the scope guard. Inject scopeGuard(locale) from skills/_shared/lib/scope-guard.ts");
+  console.error("\n  A surface lost the scope guard. Inject scopeGuard() from skills/_shared/lib/scope-guard.ts");
   console.error("  where that surface builds its instruction (markdown carries SCOPE_GUARD_EN verbatim).\n");
   process.exit(STRICT ? 1 : 0);
 }

@@ -1,30 +1,30 @@
 """
 Nirvana Configurable Limits — cascade loader (Python)
 
-Mirror exato de limits.ts.
+Exact mirror of limits.ts.
 
-Carrega limites de tamanho/contagem com cascata de precedência:
+Loads size/count limits with a precedence cascade:
 
-  1. NIRVANA_LIMIT_<KEY> env vars        (precedência máxima)
-  2. <cwd ou ancestral>/.nirvana-limits.yaml   (override do projeto)
-  3. ~/.claude/nirvana-limits.yaml        (override do usuário)
-  4. DEFAULTS                              (valores históricos do sistema)
+  1. NIRVANA_LIMIT_<KEY> env vars        (highest precedence)
+  2. <cwd or ancestor>/.nirvana-limits.yaml   (project override)
+  3. ~/.claude/nirvana-limits.yaml        (user override)
+  4. DEFAULTS                              (the system's historical values)
 
-Backward-compatible: sem nenhum .yaml e sem env vars, os DEFAULTS são
-idênticos aos limites originais hard-coded — comportamento inalterado.
+Backward-compatible: with no .yaml and no env vars, the DEFAULTS are
+identical to the original hard-coded limits, so behavior is unchanged.
 
-Toda configuração passa por SAFETY_BOUNDS: valores absurdos (que
-quebrariam entidades já existentes ou criariam risco operacional) são
-clampados ao piso/teto seguro, com aviso no stderr.
+Every setting goes through SAFETY_BOUNDS: absurd values (that would
+break existing entities or create operational risk) are clamped to the
+safe floor/ceiling, with a warning on stderr.
 
-Debug: exporte NIRVANA_LIMITS_DEBUG=1 para ver cada limite + sua fonte.
+Debug: export NIRVANA_LIMITS_DEBUG=1 to see each limit and its source.
 
-Filosofia de design (ver _shared/CONFIGURATION.md §Limites configuráveis):
-- PAYLOAD SIZE (description, examples, keywords) → configurável, baixo risco.
-- EXECUTION CONTROL (turns, tokens, handoffs) → configurável COM teto de
-  segurança, pois aumentar sem cap orçamentário é risco financeiro real.
-- FEATURE LIMITS (handoff.blockers=3, orgchart.reports=1, domains) → NÃO
-  expostos: o limite é uma feature de design, não um bug.
+Design philosophy (see _shared/CONFIGURATION.md, configurable limits):
+- PAYLOAD SIZE (description, examples, keywords) → configurable, low risk.
+- EXECUTION CONTROL (turns, tokens, handoffs) → configurable WITH a safety
+  ceiling, because raising it without a budget cap is a real financial risk.
+- FEATURE LIMITS (handoff.blockers=3, orgchart.reports=1, domains) → NOT
+  exposed: the limit is a design feature, not a bug.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ from typing import Any, Optional
 
 
 # ──────────────────────────────────────────────────────────────────────
-# DEFAULTS — valores históricos do sistema (backward-compatible)
+# DEFAULTS — the system's historical values (backward-compatible)
 # ──────────────────────────────────────────────────────────────────────
 
 DEFAULTS: dict[str, Any] = {
@@ -54,7 +54,7 @@ DEFAULTS: dict[str, Any] = {
     "business_not_for_max": 40,
 
     # ── employee frontmatter ──
-    # None = sem teto (comportamento histórico). Pode receber um inteiro.
+    # None = no ceiling (historical behavior). May be given an integer.
     "employee_description_max": None,
     "employee_max_turns_max": 1000,
 
@@ -69,14 +69,13 @@ DEFAULTS: dict[str, Any] = {
     "squad_capabilities_max": 50,
 
     # ── workflow document (Squad Protocol v6) — PAYLOAD SIZE ──
-    # Corpo em prosa de um workflow Markdown, em palavras: é teto, nunca
-    # rejeição (o lint avisa sob qualquer protocolo). 2500 palavras é ~6x o
-    # maior corpo que a biblioteca tem hoje.
+    # Prose body of a Markdown workflow, in words: a ceiling, never a
+    # rejection (the lint warns under any protocol). 2500 words is ~6x the
+    # largest body the library has today.
     "workflow_body_words_max": 2500,
-    # Alvo de bytes de documentos de agente + task que o prompt de squad
-    # carrega. Todo documento referenciado viaja por inteiro de qualquer jeito
-    # — é um teto flexível sinalizado numa nota ao ser cruzado, nunca um corte
-    # (squad-exec.ts).
+    # Byte target for the agent + task documents the squad prompt carries.
+    # Every referenced document travels whole anyway; this is a soft ceiling
+    # flagged in a note when crossed, never a cut (squad-exec.ts).
     "squad_prompt_components_bytes_max": 65536,
 
     # ── mind-clone DNA frontmatter ──
@@ -90,7 +89,7 @@ DEFAULTS: dict[str, Any] = {
     "business_memory_max_facts_ceiling": 5000,
 
     # ── harness budget — EXECUTION CONTROL (Bucket B — MAX POWER v2) ──
-    # Nirvana fica fora do caminho. Default $1M / 10M tokens / 24h.
+    # Nirvana stays out of the way. Default $1M / 10M tokens / 24h.
     "harness_default_max_tokens": 10_000_000,
     "harness_default_max_cost_usd": 1_000_000.00,
     "harness_default_max_handoffs": 1_000,
@@ -99,16 +98,16 @@ DEFAULTS: dict[str, Any] = {
 
 
 # ──────────────────────────────────────────────────────────────────────
-# SAFETY_BOUNDS — (piso, teto) para cada limite configurável.
-# None em qualquer posição = sem restrição naquela direção.
-# Protege contra valores que quebrariam entidades existentes (piso) ou
-# criariam risco operacional/financeiro (teto).
+# SAFETY_BOUNDS — (floor, ceiling) for each configurable limit.
+# None in either position = no restriction in that direction.
+# Protects against values that would break existing entities (floor) or
+# create operational/financial risk (ceiling).
 # ──────────────────────────────────────────────────────────────────────
 
 SAFETY_BOUNDS: dict[str, tuple[Optional[float], Optional[float]]] = {
-    # Piso 200 — descrições de mind-clones/businesses existentes já passam
-    # de 200 chars; baixar disso quebraria entidades. Teto 5000 — acima
-    # disso o ranking BM25 do discovery degrada (descrição vira ruído).
+    # Floor 200: existing mind-clone/business descriptions already exceed
+    # 200 chars; going lower would break entities. Ceiling 5000: above
+    # that the discovery BM25 ranking degrades (the description becomes noise).
     "business_description_max": (200, 5000),
     "business_produces_max": (10, 200),
     "business_example_briefs_max": (5, 60),
@@ -117,8 +116,8 @@ SAFETY_BOUNDS: dict[str, tuple[Optional[float], Optional[float]]] = {
     "business_capabilities_max": (20, 500),
     "business_not_for_max": (5, 200),
 
-    "employee_description_max": (200, 8000),  # se definido (None ignora)
-    "employee_max_turns_max": (50, 1000),     # >1000 é risco de runaway
+    "employee_description_max": (200, 8000),  # if set (None is ignored)
+    "employee_max_turns_max": (50, 1000),     # >1000 risks a runaway
 
     "capability_description_max": (200, 5000),
     "capability_produces_max": (8, 120),
@@ -138,9 +137,9 @@ SAFETY_BOUNDS: dict[str, tuple[Optional[float], Optional[float]]] = {
 
     "business_memory_max_facts_ceiling": (500, 50_000),
 
-    # Execution control — MAX POWER v2 (pós NIRVANA-OS-CORRECTION-REPORT).
-    # Default agora é $1M / 10M tokens / 24h / 1000 handoffs. Quem quiser
-    # apertar configura no projeto. Teto solto: 100x do default.
+    # Execution control — MAX POWER v2 (after NIRVANA-OS-CORRECTION-REPORT).
+    # The default is now $1M / 10M tokens / 24h / 1000 handoffs. Whoever wants
+    # to tighten it configures the project. Loose ceiling: 100x the default.
     "harness_default_max_tokens": (50_000, 100_000_000),
     "harness_default_max_cost_usd": (0.10, 100_000_000.00),
     "harness_default_max_handoffs": (10, 100_000),
@@ -171,12 +170,12 @@ def _log(msg: str) -> None:
 
 
 def _parse_flat_yaml(text: str) -> dict[str, Any]:
-    """Parser de YAML achatado (apenas pares key: value, sem aninhamento).
+    """Flat YAML parser (only key: value pairs, no nesting).
 
-    O arquivo nirvana-limits.yaml é deliberadamente flat. Não usamos
-    PyYAML aqui para manter paridade exata com limits.ts (que não tem
-    dependência de YAML). Suporta: comentários '#', linhas em branco,
-    valores int/float/null/string.
+    The nirvana-limits.yaml file is deliberately flat. We do not use
+    PyYAML here, to keep exact parity with limits.ts (which has no
+    YAML dependency). Supports: '#' comments, blank lines,
+    int/float/null/string values.
     """
     out: dict[str, Any] = {}
     for raw in text.splitlines():
@@ -188,7 +187,7 @@ def _parse_flat_yaml(text: str) -> dict[str, Any]:
         key, _, value = line.partition(":")
         key = key.strip()
         value = value.strip()
-        # remove comentário inline (após ' #')
+        # strip the inline comment (after ' #')
         if " #" in value:
             value = value.split(" #", 1)[0].strip()
         if not key:
@@ -198,14 +197,14 @@ def _parse_flat_yaml(text: str) -> dict[str, Any]:
 
 
 def _coerce_scalar(value: str) -> Any:
-    """Converte string de config para int/float/None/bool/str."""
+    """Convert a config string to int/float/None/bool/str."""
     if value == "" or value.lower() in ("null", "~", "none"):
         return None
     if value.lower() in ("true", "yes", "on"):
         return True
     if value.lower() in ("false", "no", "off"):
         return False
-    # remove separadores de milhar (1_000 ou 1,000) só para numéricos
+    # strip thousands separators (1_000 or 1,000), for numerics only
     numeric = value.replace("_", "")
     try:
         if "." in numeric:
@@ -216,9 +215,9 @@ def _coerce_scalar(value: str) -> Any:
 
 
 def _coerce_to_default_type(value: Any, default: Any) -> Any:
-    """Garante que o valor configurado tem o tipo do default."""
+    """Ensure the configured value has the default's type."""
     if default is None:
-        # default None = campo aceita int ou None
+        # default None = the field accepts int or None
         if value is None:
             return None
         try:
@@ -245,13 +244,13 @@ def _load_config_file(path: Path) -> dict[str, Any]:
         return {}
     try:
         return _parse_flat_yaml(path.read_text(encoding="utf-8"))
-    except Exception as exc:  # noqa: BLE001 — config inválida não pode derrubar validação
-        _log(f"WARN: falha ao ler {path}: {exc} — ignorando")
+    except Exception as exc:  # noqa: BLE001 — an invalid config must not break validation
+        _log(f"WARN: failed to read {path}: {exc}; ignoring")
         return {}
 
 
 def _find_project_config() -> Optional[Path]:
-    """Procura .nirvana-limits.yaml a partir do cwd subindo até a raiz."""
+    """Look for .nirvana-limits.yaml from the cwd up to the root."""
     cwd = Path.cwd()
     for parent in [cwd, *cwd.parents]:
         candidate = parent / _PROJECT_CONFIG_NAME
@@ -261,7 +260,7 @@ def _find_project_config() -> Optional[Path]:
 
 
 def _apply_safety_bounds(key: str, value: Any) -> Any:
-    """Clampa valor ao piso/teto seguro. Emite aviso se clampar."""
+    """Clamp a value to the safe floor/ceiling. Warns when it clamps."""
     if value is None:
         return None
     bounds = SAFETY_BOUNDS.get(key)
@@ -269,25 +268,25 @@ def _apply_safety_bounds(key: str, value: Any) -> Any:
         return value
     lo, hi = bounds
     if lo is not None and value < lo:
-        _log(f"WARN: {key}={value} abaixo do piso seguro {lo} — clampado para {lo}")
+        _log(f"WARN: {key}={value} below the safe floor {lo}; clamped to {lo}")
         return lo
     if hi is not None and value > hi:
-        _log(f"WARN: {key}={value} acima do teto seguro {hi} — clampado para {hi}")
+        _log(f"WARN: {key}={value} above the safe ceiling {hi}; clamped to {hi}")
         return hi
     return value
 
 
 def load_limits() -> dict[str, Any]:
-    """Carrega os limites com cascata user → project → env + safety bounds.
+    """Load the limits with a user → project → env cascade + safety bounds.
 
-    NIRVANA_LIMITS_DEFAULTS_ONLY=1 pula as três camadas e responde DEFAULTS.
+    NIRVANA_LIMITS_DEFAULTS_ONLY=1 skips the three layers and answers DEFAULTS.
     """
     limits: dict[str, Any] = dict(DEFAULTS)
     sources: dict[str, str] = {k: "default" for k in limits}
 
-    # Um artefato distribuível lê DEFAULTS e mais nada. Os safety bounds abaixo
-    # continuam rodando: os DEFAULTS cabem dentro deles por construção, e uma
-    # única saída impede que os dois modos divirjam.
+    # A distributable artifact reads DEFAULTS and nothing else. The safety
+    # bounds below still run: the DEFAULTS fit inside them by construction,
+    # and a single exit keeps the two modes from diverging.
     pinned = _defaults_only()
 
     # 1. User-level (~/.claude/nirvana-limits.yaml)
@@ -297,7 +296,7 @@ def load_limits() -> dict[str, Any]:
             limits[k] = _coerce_to_default_type(v, DEFAULTS[k])
             sources[k] = f"user:{_USER_CONFIG}"
         else:
-            _log(f"WARN: chave desconhecida ignorada em {_USER_CONFIG}: {k!r}")
+            _log(f"WARN: unknown key ignored in {_USER_CONFIG}: {k!r}")
 
     # 2. Project-level (.nirvana-limits.yaml — sobrescreve user)
     project_path = None if pinned else _find_project_config()
@@ -308,9 +307,9 @@ def load_limits() -> dict[str, Any]:
                 limits[k] = _coerce_to_default_type(v, DEFAULTS[k])
                 sources[k] = f"project:{project_path}"
             else:
-                _log(f"WARN: chave desconhecida ignorada em {project_path}: {k!r}")
+                _log(f"WARN: unknown key ignored in {project_path}: {k!r}")
 
-    # 3. Env vars (NIRVANA_LIMIT_* — precedência máxima)
+    # 3. Env vars (NIRVANA_LIMIT_* — highest precedence)
     for k in limits:
         env_key = _ENV_PREFIX + k.upper()
         if not pinned and env_key in os.environ:
@@ -319,7 +318,7 @@ def load_limits() -> dict[str, Any]:
             )
             sources[k] = f"env:{env_key}"
 
-    # 4. Safety bounds — clampa valores absurdos
+    # 4. Safety bounds — clamp absurd values
     for k in list(limits.keys()):
         limits[k] = _apply_safety_bounds(k, limits[k])
 
@@ -332,13 +331,13 @@ def load_limits() -> dict[str, Any]:
     return limits
 
 
-# Singleton — carregado uma vez na importação do módulo.
+# Singleton — loaded once when the module is imported.
 LIMITS: dict[str, Any] = load_limits()
 
 
 if __name__ == "__main__":
-    # `python limits.py` → imprime tabela de limites efetivos.
-    print("Nirvana Configurable Limits — valores efetivos\n")
+    # `python limits.py` → prints the table of effective limits.
+    print("Nirvana Configurable Limits — effective values\n")
     src = LIMITS.get("_sources", {})
     for key in sorted(DEFAULTS):
         eff = LIMITS[key]

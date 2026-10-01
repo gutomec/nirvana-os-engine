@@ -561,7 +561,7 @@ async function main() {
           else fs.copyFileSync(src, dst);
         } catch (err: any) {
           // Fail-closed: swallowing here left a half-done project exiting 0.
-          log.fail(`falha ao copiar ${src}: ${err.message}`);
+          log.fail(`failed to copy ${src}: ${err.message}`);
           process.exit(EXIT.FAILURES);
         }
       }

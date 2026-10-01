@@ -507,16 +507,16 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
     warn(`  gate FAIL — auto-revision ${revUsed}/${maxRevisions}`);
     // Full paths and the outputs root: a round that has to start cold (below)
     // has no conversation to recover them from.
-    const fixLines = gate.fails.flatMap(fl => [`Arquivo ${path.resolve(fl.file)}:`, ...fl.fixes.map(x => `  - ${x}`)]);
+    const fixLines = gate.fails.flatMap(fl => [`File ${path.resolve(fl.file)}:`, ...fl.fixes.map(x => `  - ${x}`)]);
     const fixPrompt = [
-      "O quality gate reprovou os entregáveis. Corrija EXATAMENTE estes pontos, reescrevendo os arquivos no mesmo caminho:",
+      "The quality gate rejected the deliverables. Fix EXACTLY these points, rewriting the files at the same path:",
       "",
       ...fixLines,
       "",
-      `Os entregáveis ficam em ${path.resolve(args.outputsRoot)}.`,
-      "Regra de hífen (a mais comum): use '-' só para palavras compostas; nunca para emendar orações nem como travessão — troque por vírgula, dois-pontos ou ponto.",
-      scopeGuard("pt-BR"),
-      "Não imprima resumo: entregue os arquivos corrigidos.",
+      `The deliverables are in ${path.resolve(args.outputsRoot)}.`,
+      "Hyphen rule (the most common failure): use '-' only for compound words; never to join clauses or as a dash. Replace it with a comma, a colon or a period.",
+      scopeGuard(),
+      "Do not print a summary: deliver the corrected files.",
     ].join("\n");
     const revise = (resume: string | undefined, prompt: string) => runHeadlessImpl({
       runtime: args.runtime, prompt, cwd: args.projectRoot, addDirs: [args.projectDir, args.outputsRoot],
@@ -538,7 +538,7 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
       // was spent; a cold run gets the brief the resumed one would have had.
       coldRetry = true;
       warn(`  revision ${revUsed}: the session did not resume — retrying cold`);
-      rr = revise(undefined, [fixPrompt, "", "O brief que estes entregáveis atendem:", args.brief].join("\n"));
+      rr = revise(undefined, [fixPrompt, "", "The brief these deliverables answer:", args.brief].join("\n"));
     }
     emit("revision_auto", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, attempt: revUsed, ok: rr.ok, ...(coldRetry ? { cold_retry: true } : {}) });
     if (rr.sessionId) {
@@ -560,7 +560,7 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
   const ceilingReason = (): string | null =>
     args.completenessCeiling && !manifestVerified ? args.completenessCeiling.reason : null;
   const withholdByCeiling = (reason: string, verdict: GateOutcome | "fail-forced" | "fail-accepted"): DeliveryResult => {
-    warn(`  entrega RETIDA pelo teto de completude — o gate (${verdict}) julga a QUALIDADE do que existe, não se o conjunto está completo, e nenhum manifesto verificado prova isso. Os artefatos seguem em ${args.outputsRoot}; quem decide é um humano.`);
+    warn(`  delivery WITHHELD by the completeness ceiling: the gate (${verdict}) judges the QUALITY of what exists, not whether the set is complete, and no verified manifest proves that. The artifacts stay in ${args.outputsRoot}; a human decides.`);
     emit("x_delivery_withheld", {
       trace_id: args.pid, project_id: args.pid, business_slug: args.slug,
       files: produced.length, gated_files: gatedFiles.length, revisions: revUsed,
@@ -712,8 +712,8 @@ export function deliverAfterRuntimeError(args: RuntimeErrorArgs): RuntimeErrorOu
     return { judged: false, candidates: 0, exitCode: 1, result: null };
   }
 
-  warn(`  ⚠ o runtime reportou erro (${args.runtimeError}) DEPOIS de produzir ${candidates.length} arquivo(s).`);
-  warn("    Os artefatos NÃO são abandonados: seguem para verificação e quality gate. Nada é entregue sem o gate aprovar.");
+  warn(`  ⚠ the runtime reported an error (${args.runtimeError}) AFTER producing ${candidates.length} file(s).`);
+  warn("    The artifacts are NOT abandoned: they go on to verification and the quality gate. Nothing is delivered without the gate passing.");
   args.audit("x_runtime_errored_with_artifacts", {
     trace_id: args.pid, project_id: args.pid, business_slug: args.slug,
     ...(args.errorContext ?? {}),

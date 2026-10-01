@@ -5,7 +5,7 @@ import { parse } from "yaml";
 export async function evaluate(args: { artifact: string; content: string; offline?: boolean }) {
   const { content } = args;
   if (!content || !content.trim()) {
-    return { name: "yaml-valid", passed: false, score: 0, reasoning: "YAML vazio.", fix_list: ["Escreva conteúdo YAML."] };
+    return { name: "yaml-valid", passed: false, score: 0, reasoning: "Empty YAML.", fix_list: ["Write YAML content."] };
   }
   try {
     const parsed = parse(content);
@@ -17,17 +17,17 @@ export async function evaluate(args: { artifact: string; content: string; offlin
       passed,
       score: passed ? 1.0 : 0.5,
       reasoning: passed
-        ? `YAML válido com ${count} ${Array.isArray(parsed) ? "itens" : "chaves"} no topo.`
-        : "YAML parseável mas a raiz é escalar ou vazia.",
-      fix_list: passed ? [] : ["A raiz deveria ser um mapa ou lista com conteúdo."],
+        ? `Valid YAML with ${count} top-level ${Array.isArray(parsed) ? "items" : "keys"}.`
+        : "YAML parses but the root is a scalar or empty.",
+      fix_list: passed ? [] : ["The root should be a map or a list with content."],
     };
   } catch (e: any) {
     return {
       name: "yaml-valid",
       passed: false,
       score: 0,
-      reasoning: `Erro de parse YAML: ${e.message}`,
-      fix_list: [`Corrija a sintaxe YAML: ${String(e.message).slice(0, 100)}`],
+      reasoning: `YAML parse error: ${e.message}`,
+      fix_list: [`Fix the YAML syntax: ${String(e.message).slice(0, 100)}`],
     };
   }
 }

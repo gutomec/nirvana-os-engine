@@ -30,7 +30,7 @@ import { loadHarnessConfig, type HarnessConfig } from "../lib/harness-config.ts"
 // heuristic gate, whatever runtime the machine has on PATH.
 const judgeOff = (cfg: HarnessConfig): HarnessConfig => ({ ...cfg, quality_gate: { ...cfg.quality_gate, judge_enabled: false } });
 import * as runLedger from "../lib/run-ledger.ts";
-import { SCOPE_GUARD_PT_BR } from "../../_shared/lib/scope-guard.ts";
+import { SCOPE_GUARD_EN } from "../../_shared/lib/scope-guard.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const GATE = path.join(import.meta.dir, "..", "scripts", "quality-gate.ts");
@@ -261,8 +261,8 @@ describe("runDelivery — outcomes", () => {
       maxRevisions: 1,
       runHeadlessImpl: ((opts: any) => {
         revisions++;
-        expect(opts.prompt).toContain("quality gate reprovou");
-        expect(opts.prompt).toContain(SCOPE_GUARD_PT_BR);
+        expect(opts.prompt).toContain("quality gate rejected");
+        expect(opts.prompt).toContain(SCOPE_GUARD_EN);
         fs.writeFileSync(artifact, PASSING_MD); // the "agent" fixes the file
         return { ok: true, runtime: opts.runtime, sessionId: "sess-rev-1", result: "", costUsd: null, exitCode: 0, stderr: "", durationMs: 5 };
       }) as any,

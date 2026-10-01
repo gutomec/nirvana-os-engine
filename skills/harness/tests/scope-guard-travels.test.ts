@@ -13,7 +13,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import { prepareBusinessSolo } from "../lib/business-solo.ts";
 import { AUTONOMOUS_DIRECTIVE } from "../lib/host-agent-driver.ts";
-import { SCOPE_GUARD_EN, SCOPE_GUARD_PT_BR } from "../../_shared/lib/scope-guard.ts";
+import { SCOPE_GUARD_EN } from "../../_shared/lib/scope-guard.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const ROOT = path.resolve(import.meta.dir, "..", "..", "..");
@@ -30,7 +30,6 @@ describe("the solo business prompt", () => {
       });
       expect(prompt).toContain("Deliverables follow the language of the request.");
       expect(prompt.trim().endsWith(SCOPE_GUARD_EN)).toBe(true);
-      expect(prompt).not.toContain(SCOPE_GUARD_PT_BR);
     } finally { fs.rmSync(root, { recursive: true, force: true }); }
   });
 });

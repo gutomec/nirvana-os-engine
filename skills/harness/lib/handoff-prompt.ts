@@ -37,7 +37,7 @@ function safeRead(p: string, max = 16000): string {
  * What the previous runtime already produced.
  *
  * This stopped at 60 entries and said nothing, under a prompt whose hard rules
- * tell the incoming runtime "não duplique arquivos já entregues". Not redoing
+ * tell the incoming runtime "do not duplicate files already delivered". Not redoing
  * finished work is the entire job of a handoff, and the list it was given could
  * be a fraction of what exists: a rotation mid-book, after 140 chapter files,
  * handed the next runtime 60 of them, no `capitulo-08.md` among the rest, and
@@ -72,7 +72,7 @@ function listFiles(dir: string, max = 60): string {
     if (!out.length) return "(no files written yet)";
     const hidden = total - out.length;
     return hidden > 0
-      ? `${out.join("\n")}\n  … e mais ${hidden} arquivo(s) NÃO listados aqui (total ${total}). Liste o diretório antes de escrever: um arquivo ausente desta lista pode já existir.`
+      ? `${out.join("\n")}\n  … and ${hidden} more file(s) NOT listed here (total ${total}). List the directory before writing: a file missing from this list may already exist.`
       : out.join("\n");
   } catch { return "(unable to list)"; }
 }
@@ -81,32 +81,32 @@ export function buildHandoffPrompt(args: HandoffArgs): string {
   const handoffJsonPath = path.join(args.projectDir, "HANDOFF.json");
   const handoffContent = safeRead(handoffJsonPath, 8000);
   const filesList = listFiles(args.outputsRoot);
-  const taskBlock = args.taskHint ? `\n## SUA POSIÇÃO NA CADEIA\n${args.taskHint}\n` : "";
-  const auditBlock = args.auditTailLines ? `\n## ÚLTIMOS EVENTOS DA AUDITORIA\n${args.auditTailLines}\n` : "";
+  const taskBlock = args.taskHint ? `\n## YOUR POSITION IN THE CHAIN\n${args.taskHint}\n` : "";
+  const auditBlock = args.auditTailLines ? `\n## LATEST AUDIT EVENTS\n${args.auditTailLines}\n` : "";
 
-  return `# HANDOFF AGÊNTICO — CONTINUE O TRABALHO
+  return `# AGENTIC HANDOFF: CONTINUE THE WORK
 
-Você é o agente **${args.toRuntime}**. Você está **continuando** um dispatch que o agente **${args.fromRuntime}** começou e teve que parar por:
+You are the **${args.toRuntime}** agent. You are **continuing** a dispatch that the **${args.fromRuntime}** agent started and had to stop because of:
 
 > ${args.reason}
 
-Não é um restart. Não é uma sessão nova do zero. É uma passagem de bastão. Mantenha voz, tom, e decisões já tomadas. **Não recomece, não duplique trabalho, não mude a abordagem** sem motivo claro.
+This is not a restart. This is not a brand-new session. It is a baton pass. Keep the voice, the tone and the decisions already made. **Do not start over, do not duplicate work, do not change the approach** without a clear reason.
 
 ---
 
-## BRIEF ORIGINAL DO USUÁRIO (não mude o entendimento)
+## USER'S ORIGINAL BRIEF (do not change the understanding)
 
 ${args.brief}
 
 ---
 
-## ESTADO ATUAL DO TRABALHO (HANDOFF.json)
+## CURRENT STATE OF THE WORK (HANDOFF.json)
 
-${handoffContent ? "```json\n" + handoffContent + "\n```" : "(HANDOFF.json não encontrado — o agente anterior pode não ter inicializado o protocolo de fase)"}
+${handoffContent ? "```json\n" + handoffContent + "\n```" : "(HANDOFF.json not found: the previous agent may not have initialized the phase protocol)"}
 
 ---
 
-## ARQUIVOS JÁ PRODUZIDOS EM \`${args.outputsRoot}\`
+## FILES ALREADY PRODUCED IN \`${args.outputsRoot}\`
 
 ${filesList}
 
@@ -114,21 +114,21 @@ ${taskBlock}${auditBlock}
 
 ---
 
-## SUA TAREFA AGORA
+## YOUR TASK NOW
 
-1. **Leia rapidamente** os arquivos listados acima para entender onde o agente anterior parou. Não precisa re-ler tudo — passe por nomes e abra os 3-5 mais relevantes para a continuação.
-2. **Identifique exatamente o que falta** para entregar o que o brief original pede.
-3. **Continue de onde parou.** Se o agente anterior estava no meio de gerar um arquivo, complete-o. Se acabou de gerar e ia partir para o próximo, faça o próximo.
-4. **Mantenha continuidade total**: mesma voz, mesmas decisões de design/copy/estrutura, mesmos paths de saída.
-5. **Termine.** Quando o trabalho do brief estiver concluído, encerre normalmente — o harness vai pegar daqui (gate, verificação, etc).
+1. **Skim** the files listed above to understand where the previous agent stopped. You do not need to re-read everything: go through the names and open the 3-5 most relevant for the continuation.
+2. **Identify exactly what is missing** to deliver what the original brief asks for.
+3. **Continue where it stopped.** If the previous agent was in the middle of generating a file, complete it. If it had just finished one and was about to start the next, do the next.
+4. **Keep full continuity**: same voice, same design/copy/structure decisions, same output paths. Deliverables follow the language of the request.
+5. **Finish.** When the brief's work is done, end normally. The harness takes over from there (gate, verification, etc).
 
-## REGRAS DURAS DO HANDOFF
+## HARD HANDOFF RULES
 
-- ❌ Não pergunte ao usuário "por onde devo começar?" — você tem o brief inteiro acima.
-- ❌ Não inicie uma nova abordagem só porque você é um modelo diferente. Use as decisões já materializadas no disco.
-- ❌ Não duplique arquivos já entregues.
-- ✅ Pode (e deve) ler os arquivos parciais e melhorar/completar o que ficou incompleto.
-- ✅ Pode anotar no HANDOFF.json (campo \`decisions[]\` ou similar) que houve um handoff de ${args.fromRuntime} → ${args.toRuntime}, para auditoria.
+- ❌ Do not ask the user "where should I start?": you have the whole brief above.
+- ❌ Do not start a new approach just because you are a different model. Use the decisions already materialized on disk.
+- ❌ Do not duplicate files already delivered.
+- ✅ You may (and should) read the partial files and improve or complete what was left incomplete.
+- ✅ You may note in HANDOFF.json (the \`decisions[]\` field or similar) that a handoff from ${args.fromRuntime} → ${args.toRuntime} happened, for audit.
 
-Comece.`;
+Begin.`;
 }

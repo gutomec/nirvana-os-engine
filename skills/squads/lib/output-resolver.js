@@ -35,7 +35,7 @@ These are **working artifacts** — move final deliverables to your project's
 appropriate directory when ready. You may delete old runs freely.
 
 Managed by: Squad Protocol Engine v4.1 (skill: squads)
-Convention: §16bis of Squad Protocol v4 (archived in docs/legacy/protocols/squads/)
+Convention: §16bis of the Squad Protocol (SQUAD_PROTOCOL_V6.md)
 `;
 
 class OutputResolver {

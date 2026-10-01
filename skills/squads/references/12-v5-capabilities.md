@@ -8,7 +8,7 @@ from scratch.
 
 ## Protocol Reference
 
-Squad Protocol v5 (archived) §22 (Capability Manifest), §22.9 (validation rules).
+`SQUAD_PROTOCOL_V6.md` §22 (Capability Manifest), §22.9 (validation rules).
 Schema: `~/.nirvana/skills/_shared/schemas/capability.schema.json`.
 Validator: `~/.nirvana/skills/_shared/validators/validators.py` (class `Capability`).
 Domain catalog: `~/.nirvana/skills/_shared/catalogs/CAPABILITY_CATALOG_V1.yaml`.
@@ -215,7 +215,7 @@ NEVER:
    `validated` status requires evidence (ground-truth eval + results).
    Without it, leave `experimental`.
 9. **`tools_required` with runtime-specific names** — use the semantic
-   names from v4 §10.7 (`read`, `write`, `bash`, `web_search`, etc.). The
+   names from `SQUAD_PROTOCOL_V6.md` §10.7 (`read`, `write`, `bash`, `web_search`, etc.). The
    adapter translates to native names.
 10. **`estimated_cost_usd: 0`** — a zero estimate is a lie. Without a
     confident estimate, omit the field.

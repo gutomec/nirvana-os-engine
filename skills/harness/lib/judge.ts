@@ -175,7 +175,7 @@ function buildPersona(rubric: RubricMeta): string {
     `- "low": style, polish, wording, structure preferences, and anything a competent`,
     `  editor would call a matter of taste.`,
     `Not defects: professional defaults the executor declared as assumptions (for`,
-    `example under "## Premissas assumidas" or "## Assumptions"), anything the brief`,
+    `example under an "## Assumptions" heading, in any language), anything the brief`,
     `did not ask for, and choices of method, format or length the brief left open.`,
     ``,
     `Verdict: "fail" only when there is at least one "high" item or the total score`,
@@ -215,7 +215,7 @@ function buildUserMessage(input: JudgeInput): string {
     input.artifact,
     `\`\`\``,
     input.artifact.length > JUDGE_LARGE_ARTIFACT_CHARS
-      ? `\n> Este artefato tem ${input.artifact.length} caracteres, acima de ${JUDGE_LARGE_ARTIFACT_CHARS}. Ele foi entregue INTEIRO acima — avalie o conjunto, não só o começo.\n`
+      ? `\n> This artifact has ${input.artifact.length} characters, above ${JUDGE_LARGE_ARTIFACT_CHARS}. It was delivered WHOLE above: judge the whole, not only the beginning.\n`
       : ``,
     briefBlock,
     kindBlock,

@@ -8,9 +8,9 @@ Every agent reads this file before doing anything here. `CLAUDE.md` and
 
 - Code, file paths, identifiers, logs, commit messages and protocol files
   (`squad.yaml`, `business.yaml`): **English**.
-- What the user reads or receives as a deliverable: **the user's language**, or
-  the one asked for this task. Default: **PT-BR**.
-- UTF-8 always. Never strip diacritics (acentos, ç, ã, õ) when editing a file.
+- What the user reads or receives as a deliverable: **the language of the
+  request**, or the one asked for this task.
+- UTF-8 always. Never strip diacritics (ç, ã, õ, ü) when editing a file.
 
 ## 0.5. Your role when reading this file
 

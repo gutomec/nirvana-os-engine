@@ -125,8 +125,8 @@ export function verifyDeliverableOnDisk(
 
   // Find the project root (.nirvana/outputs in project cwd, or ~/.nirvana/outputs)
   const projectRootCandidates = [
-    path.join(process.cwd(), "outputs"),            // novo default visível
-    path.join(process.cwd(), ".nirvana/outputs"),   // compat: runs antigos
+    path.join(process.cwd(), "outputs"),            // new visible default
+    path.join(process.cwd(), ".nirvana/outputs"),   // compat: old runs
     path.join(os.homedir(), ".nirvana/outputs"),
   ];
   // Two layouts, both legitimate. The scripted path nests a run under

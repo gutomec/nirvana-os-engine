@@ -78,7 +78,7 @@ describe("the engine subsystem row", () => {
   test("the gauntlet has no readable health signal outside a run, and says so instead of inventing one", () => {
     const gauntlet = readSubsystems(root).find(s => s.key === "gauntlet")!;
     expect(gauntlet.status).toBeNull();
-    expect(gauntlet.detail).toContain("sem sinal de saúde fora de um run");
+    expect(gauntlet.detail).toContain("no health signal outside a run");
   });
 
   test("/api/subsystems serves the same reading over the wire", async () => {
@@ -93,7 +93,7 @@ describe("the engine subsystem row", () => {
     expect(statusClass("up")).toBe("subsystem-dot-up");
     expect(statusClass("down")).toBe("subsystem-dot-down");
     expect(statusClass(null)).toBe("subsystem-dot-unknown");
-    expect(cellTitle({ label: "ROUTER", status: null, detail: "não lido", source: null })).toBe("ROUTER: não determinado · não lido");
+    expect(cellTitle({ label: "ROUTER", status: null, detail: "not read", source: null })).toBe("ROUTER: undetermined · not read");
   });
 
   test("the tally counts an undetermined subsystem on neither side", () => {
@@ -103,7 +103,7 @@ describe("the engine subsystem row", () => {
       { key: "c", label: "C", status: null, detail: null, source: null },
     ] });
     expect([row.up, row.down, row.unknown]).toEqual([1, 1, 1]);
-    expect(rowSummary(row)).toBe("1/3 de pé · 1 sem sinal");
+    expect(rowSummary(row)).toBe("1/3 up · 1 no signal");
 
     // Nothing fetched yet, or the fetch failed: the row says nothing rather than
     // reporting every subsystem as down.

@@ -1,26 +1,26 @@
 # Permanent Memory · example-solo
 
-> Memória cross-session da business. Editada apenas via `*business memory edit example-solo`.
+> Cross-session memory of the business. Edited only through `*business memory edit example-solo`.
 
-## Identidade
+## Identity
 
-- **Nome:** example-solo
-- **Tipo:** Business solo (template)
-- **Domínios:** strategy, business_operations
-- **Versão:** 1.0.0
+- **Name:** example-solo
+- **Type:** Solo business (template)
+- **Domains:** strategy, business_operations
+- **Version:** 1.0.0
 
-## Decisões arquiteturais (sticky)
+## Architectural decisions (sticky)
 
-_Vazio. Adicione decisões fundamentais que devem persistir entre sessões._
+_Empty. Add foundational decisions that must persist across sessions._
 
-## Aprendizados (rolling)
+## Learnings (rolling)
 
-_Vazio. Adicione lições aprendidas conforme a business opera. Garbage collection acontece a cada 60 dias._
+_Empty. Add lessons learned as the business operates. Garbage collection runs every 60 days._
 
-## Contatos & integrações
+## Contacts and integrations
 
-_Vazio._
+_Empty._
 
-## Notas
+## Notes
 
-Este é um template. Quando você criar sua business via wizard, esta memória será inicializada com identidade da sua business e ficará vazia para você popular conforme operar.
+This is a template. When you create your business through the wizard, this memory is initialized with your business identity and stays empty for you to fill as you operate.

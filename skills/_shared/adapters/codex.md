@@ -1,81 +1,81 @@
 # Adapter · Codex (OpenAI Codex CLI)
 
-> Runtime adapter para Squad Protocol v5 + Business Protocol v1 + Harness Protocol v1.
-> Cobre os 3 protocolos em um único doc. Seções canônicas conforme Squad v4 §18.5.
-> Identidade + capabilities do sistema (o que o Nirvana-OS é e pode fazer): ver `../NIRVANA-OS.md` (fonte única).
+> Runtime adapter for Squad Protocol v6 + Business Protocol v2 + Harness Protocol v1.
+> Covers the 3 protocols in a single doc. Canonical sections per Squad Protocol v6 §18.5.
+> System identity + capabilities (what Nirvana-OS is and can do): see `../NIRVANA-OS.md` (single source).
 
 ---
 
 ## 1. Adapter Metadata
 
-| Campo | Valor |
+| Field | Value |
 |---|---|
 | `runtime` | `codex` |
 | `vendor` | OpenAI |
 | `min_version` | `0.20+` (Codex CLI), OpenAI SDK `>=1.50` |
-| `default_model` | herdado do runtime — o engine NUNCA define model; a config do runtime do usuário decide. Passe model só quando o usuário pedir explicitamente. |
-| `tested_against` | Codex CLI 0.2x — modelo default do runtime / escolhido pelo usuário (o engine nunca fixa model) |
+| `default_model` | inherited from the runtime. The engine NEVER sets a model; the user's runtime config decides. Pass a model only when the user explicitly asks. |
+| `tested_against` | Codex CLI 0.2x — runtime default model / chosen by the user (the engine never pins a model) |
 | `config_paths` | `~/.codex/config.toml`, `<project>/AGENTS.md`, `~/AGENTS.md` |
-| `skills_root` | Sem skill system nativo — adapter usa `~/.codex/skills/<name>/` (convenção) ou flat `~/.codex/agents/` |
-| `agents_root` | `~/.codex/agents/<name>.md` ou bundled em `<project>/.codex/agents/` |
-| `memory_root` | `<project>/AGENTS.md` (project), `~/.codex/memory/` (custom) — Codex não tem memory nativo cross-session |
+| `skills_root` | No native skill system: the adapter uses `~/.codex/skills/<name>/` (convention) or flat `~/.codex/agents/` |
+| `agents_root` | `~/.codex/agents/<name>.md` or bundled in `<project>/.codex/agents/` |
+| `memory_root` | `<project>/AGENTS.md` (project), `~/.codex/memory/` (custom). Codex has no native cross-session memory |
 | `audit_log` | `~/.codex/sessions/` (transcripts), `~/.harness-logs/` (jsonl fallback) |
-| `protocol_versions` | Squad 5.0, Business 1.0, Harness 1.0 (com gaps registrados em §13) |
+| `protocol_versions` | Squad 5.0, Business 1.0, Harness 1.0 (with gaps recorded in §13) |
 
 ---
 
 ## 2. Feature Support Matrix
 
-`✓` = nativo · `~` = workaround/parcial · `✗` = não suportado
+`✓` = native · `~` = workaround/partial · `✗` = not supported
 
-| Feature (Business v1 §6) | Squad v5 | Business v1 | Harness v1 | Notas |
+| Feature (Business v2 §6.5) | Squad v6 | Business v2 | Harness v1 | Notes |
 |---|---|---|---|---|
-| `max_turns` | ~ | ~ | ~ | Codex tem `--max-turns` global no CLI; adapter precisa simular per-employee via wrapper script |
+| `max_turns` | ~ | ~ | ~ | Codex has a global `--max-turns` on the CLI; the adapter has to simulate per-employee via a wrapper script |
 | `tool_whitelist` | ✓ | ✓ | ✓ | Function-calling whitelist via OpenAI tool definitions; sandbox gating native |
-| `subagent_spawning` | ✓ | ✓ | ✓ | native via `[agents]` em `~/.codex/config.toml` (`agents.max_depth` default 1, explicit-only, `/agent`); `runCodex` sub-process é fallback |
-| `audit_trail` | ✓ | ✓ | ✓ | Session transcripts em `~/.codex/sessions/`, harness adiciona OTel/jsonl |
-| `scheduled_invocation` | ✗ | ✗ | ✗ | Sem `ScheduleWakeup`/`CronCreate` — degradar para cron externo |
-| `event_bus` | ~ | ~ | ~ | Mentions/tickets via file-system; sem broker |
-| `hooks` | ~ | ~ | ~ | Codex tem `--profile` e `instructions` mas sem hooks granulares (`PreToolUse`, etc.) |
-| `sandboxing` | ✓ | ✓ | ✓ | Sandbox nativo (`workspace-write`, `read-only`, `danger-full-access`) |
-| `session_memory` | ✓ | ✓ | ✓ | Conversation context por sessão |
-| `project_memory` | ✓ | ✓ | ✓ | `AGENTS.md` no projeto (load automático) |
-| `global_memory` | ~ | ~ | ~ | `~/AGENTS.md` user-level — sem auto-discovery rico como `~/.claude/memory/` |
-| `handoff_artifacts` | ✓ | ✓ | ✓ | Estrutura JSON em tool_result ou em arquivo persistido |
-| `fork_context` | ~ | ~ | ~ | Sub-process spawn cria fork mas sem isolation forte |
-| `teammate_primitive` | ✗ | ✗ | ✗ | Sem `TeamCreate`; team é convenção via file system |
-| `telemetry_otel` | ~ | ~ | ~ | OTel via OpenTelemetry SDK externo (não built-in) |
+| `subagent_spawning` | ✓ | ✓ | ✓ | native via `[agents]` in `~/.codex/config.toml` (`agents.max_depth` default 1, explicit-only, `/agent`); the `runCodex` sub-process is the fallback |
+| `audit_trail` | ✓ | ✓ | ✓ | Session transcripts in `~/.codex/sessions/`, the harness adds OTel/jsonl |
+| `scheduled_invocation` | ✗ | ✗ | ✗ | No `ScheduleWakeup`/`CronCreate`: degrade to external cron |
+| `event_bus` | ~ | ~ | ~ | Mentions/tickets via file-system; no broker |
+| `hooks` | ~ | ~ | ~ | Codex has `--profile` and `instructions` but no granular hooks (`PreToolUse`, etc.) |
+| `sandboxing` | ✓ | ✓ | ✓ | Native sandbox (`workspace-write`, `read-only`, `danger-full-access`) |
+| `session_memory` | ✓ | ✓ | ✓ | Conversation context per session |
+| `project_memory` | ✓ | ✓ | ✓ | `AGENTS.md` in the project (automatic load) |
+| `global_memory` | ~ | ~ | ~ | `~/AGENTS.md` user-level, without the rich auto-discovery of `~/.claude/memory/` |
+| `handoff_artifacts` | ✓ | ✓ | ✓ | JSON structure in tool_result or in a persisted file |
+| `fork_context` | ~ | ~ | ~ | Sub-process spawn creates a fork but without strong isolation |
+| `teammate_primitive` | ✗ | ✗ | ✗ | No `TeamCreate`; a team is a convention via the file system |
+| `telemetry_otel` | ~ | ~ | ~ | OTel via an external OpenTelemetry SDK (not built-in) |
 
 ---
 
 ## 3. Concept Mapping
 
-| Conceito (Protocolo) | Equivalente Codex | Implementação |
+| Concept (Protocol) | Codex equivalent | Implementation |
 |---|---|---|
-| Squad / Business | Diretório de agents + AGENTS.md | `<project>/.codex/<name>/AGENTS.md` carrega o "skill" |
-| Capability | Workflow file | `<skill>/capabilities/<id>.md` invocado por wrapper |
-| Employee | Codex agent profile | `~/.codex/agents/<name>.md` (frontmatter + body) |
-| `is_brief_intake: true` | Default agent quando skill ativa | Configurado em `AGENTS.md` do skill |
-| `is_antagonist: true` | Sub-process invocado em pipeline | `codex run --agent <name> --prompt "..."` |
-| Handoff artifact | JSON em arquivo + tool_result | Persistido em `<project>/.handoffs/` |
-| Mention `@employee` | Convenção em prompt | Adapter resolve para spawn de sub-process |
-| Ticket | Arquivo persistido | `<project>/.tickets/<TICKET_ID>.json` |
-| Escalation trigger | Wrapper script + harness call | Wrapper checa condição → emite notification para harness |
-| Permanent memory | `~/AGENTS.md` + custom files | Codex auto-load somente AGENTS.md |
+| Squad / Business | Agents directory + AGENTS.md | `<project>/.codex/<name>/AGENTS.md` loads the "skill" |
+| Capability | Workflow file | `<skill>/capabilities/<id>.md` invoked by a wrapper |
+| Employee (seat) | Seat file played by the one business agent; optional Codex agent profile | A business runs as ONE solo agent (`skills/harness/lib/business-solo.ts`) that opens a seat's file when it works as that seat; a profile `~/.codex/agents/<name>.md` (frontmatter + body) is only needed for a stand-alone subagent |
+| `is_brief_intake: true` | Default agent when the skill is active | Configured in the skill's `AGENTS.md` |
+| `is_antagonist: true` | Sub-process invoked in a pipeline | `codex run --agent <name> --prompt "..."` |
+| Handoff artifact | JSON in a file + tool_result | Persisted in `<project>/.handoffs/` |
+| Mention `@employee` | Convention in the prompt | The adapter resolves it to a sub-process spawn |
+| Ticket | Persisted file | `<project>/.tickets/<TICKET_ID>.json` |
+| Escalation trigger | Wrapper script + harness call | The wrapper checks the condition → emits a notification to the harness |
+| Permanent memory | `~/AGENTS.md` + custom files | Codex auto-loads only AGENTS.md |
 | Project memory | `<project>/AGENTS.md` | Auto-load |
-| Session memory | Conversation transcript | Codex compacta automaticamente |
-| Routing decision (harness) | Pre-spawn lookup table | BM25 sobre `capabilities[].examples[]` em wrapper Python/Node |
+| Session memory | Conversation transcript | Codex compacts automatically |
+| Routing decision (harness) | Pre-spawn lookup table | BM25 over `capabilities[].examples[]` in a Python/Node wrapper |
 
 ---
 
 ## 4. Frontmatter Mapping
 
-### Squad v5 / Business v1 → AGENTS.md
+### Squad v6 / Business v2 → AGENTS.md
 
-Codex não tem frontmatter rico. O adapter gera dois arquivos:
+Codex has no rich frontmatter. The adapter generates two files:
 
 ```yaml
-# AGENTS.md (head do projeto/skill)
+# AGENTS.md (head of the project/skill)
 You are an AI agent operating under the Squad/Business Protocol.
 
 Available capabilities: [media.video.analyze, media.transcript.extract, ...]
@@ -84,7 +84,7 @@ Sandbox: workspace-write
 ```
 
 ```yaml
-# .codex/manifest.yaml (auxiliar — lido por wrapper, não pelo Codex)
+# .codex/manifest.yaml (auxiliary: read by a wrapper, not by Codex)
 name: nexus-council
 protocol: 1.0
 employees: [ceo, marketing-lead, ...]
@@ -98,7 +98,7 @@ operation_mode: zero_human
 ---
 name: alex-hormozi
 description: Mind clone of Alex Hormozi for offer evaluation. (DISCLOSURE: AI-generated persona, not real person.)
-model: inherit  # o engine não fixa model; usa o do runtime
+model: inherit  # the engine does not pin a model; it uses the runtime's
 tools: [Read, Grep, Bash]
 sandbox: read-only
 ---
@@ -107,46 +107,46 @@ sandbox: read-only
 You are a mind-clone of Alex Hormozi specialized in offer evaluation...
 ```
 
-> Adapter prepende `(DISCLOSURE: ...)` em description quando `type: mind_clone`.
+> The adapter prepends `(DISCLOSURE: ...)` to the description when `type: mind_clone`.
 
 ---
 
 ## 5. Tool Whitelist Mechanics
 
-- Codex usa OpenAI function-calling. Adapter traduz semantic tools → function definitions:
+- Codex uses OpenAI function-calling. The adapter translates semantic tools → function definitions:
   - `read` → `read_file({path})`
   - `bash` → `run_command({command})`
   - `web_fetch` → `fetch_url({url})`
-- Whitelist enforçada na lista passada à API (`tools=[...]`).
-- Sandbox profile (`workspace-write` / `read-only` / `danger-full-access`) gate adicional.
+- The whitelist is enforced in the list passed to the API (`tools=[...]`).
+- The sandbox profile (`workspace-write` / `read-only` / `danger-full-access`) is an additional gate.
 
 ---
 
 ## 6. Max-Turns Mechanics
 
-Codex CLI tem `--max-turns N` global, mas não per-subagent. Adapter simula assim:
+Codex CLI has a global `--max-turns N`, but not per-subagent. The adapter simulates it like this:
 
-1. Wrapper spawn `codex run --max-turns <N> --agent <name> --prompt "..."`.
-2. `<N>` lido do employee frontmatter (`maxTurns`).
-3. Process exit code != 0 quando excede → harness emite `audit_event: budget_violation`.
+1. The wrapper spawns `codex run --max-turns <N> --agent <name> --prompt "..."`.
+2. `<N>` is read from the employee frontmatter (`maxTurns`).
+3. Process exit code != 0 when it exceeds → the harness emits `audit_event: budget_violation`.
 
-**Limitação:** se employee invoca outro employee internamente (sem voltar pro adapter), o adapter perde contagem. Documentar como `~` (parcial). Recomenda-se employees de Codex serem flat (sem nested invocation).
+**Limitation:** if an employee invokes another employee internally (without returning to the adapter), the adapter loses the count. Documented as `~` (partial). Codex employees are recommended to be flat (no nested invocation).
 
 ---
 
 ## 7. Subagent Spawning
 
-**PRIMÁRIO — subagents nativos do Codex.** O Codex agora tem subagents nativos: blocos `[agents]` em `~/.codex/config.toml`, com `agents.max_depth` (default 1), delegação **explicit-only** e o comando `/agent`. Quando o maestro roda dentro de um `codex run` interativo/headless, ele despacha o employee como subagent nativo (in-process àquele run), sem cold start de sub-process. Ref: https://developers.openai.com/codex/subagents.
+**PRIMARY: native Codex subagents.** Codex now has native subagents: `[agents]` blocks in `~/.codex/config.toml`, with `agents.max_depth` (default 1), **explicit-only** delegation and the `/agent` command. When the maestro runs inside an interactive/headless `codex run`, it dispatches the work as a native subagent (in-process to that run), with no sub-process cold start. Ref: https://developers.openai.com/codex/subagents.
 
 ```toml
 # ~/.codex/config.toml
 [agents.alex-hormozi]
 description = "Mind clone of Alex Hormozi for offer evaluation."
-model = "inherit"  # o engine nao fixa model; usa o do runtime
-# agents.max_depth default 1 — delegação é explicit-only (/agent)
+model = "inherit"  # the engine does not pin a model; it uses the runtime's
+# agents.max_depth default 1: delegation is explicit-only (/agent)
 ```
 
-**FALLBACK — `codex exec` sub-process.** Para scripts standalone sem contexto LLM próprio, o adapter usa `codex exec` como sub-process com escopo isolado:
+**FALLBACK: `codex exec` sub-process.** For standalone scripts with no LLM context of their own, the adapter uses `codex exec` as a sub-process with an isolated scope:
 
 ```bash
 # Adapter spawn (pseudocode)
@@ -159,53 +159,53 @@ codex run \
   > .handoffs/alex-hormozi-$(date +%s).json
 ```
 
-Sub-process retorna handoff artifact em stdout. Adapter parseia e registra em audit log.
+The sub-process returns the handoff artifact on stdout. The adapter parses it and records it in the audit log.
 
-> **Nota driver:** `host-agent-driver.runCodex` atualmente usa **sempre** o fallback sub-process (`codex exec`). A doc descreve os subagents nativos como caminho primário — doc-ahead-of-driver é aceitável até o driver ser atualizado.
+> **Driver note:** `host-agent-driver.runCodex` currently **always** uses the sub-process fallback (`codex exec`). This doc describes native subagents as the primary path; doc-ahead-of-driver is acceptable until the driver is updated.
 
-**Para mention `@x`:** adapter detecta no handoff retornado, abre novo sub-process para `x`.
+**For a mention `@x`:** the adapter detects it in the returned handoff and opens a new sub-process for `x`.
 
 ---
 
 ## 8. Memory Storage
 
-| Camada | Path | Persistência |
+| Layer | Path | Persistence |
 |---|---|---|
-| Permanent (cross-session) | `~/AGENTS.md` + `~/.codex/memory/` (convenção do adapter) | Manual |
+| Permanent (cross-session) | `~/AGENTS.md` + `~/.codex/memory/` (adapter convention) | Manual |
 | Project | `<project>/AGENTS.md` | Auto-load |
-| Session | Conversation transcript | Compactado |
-| Business permanent | `~/businesses/<biz>/memory/permanent.md` | Adapter persiste |
+| Session | Conversation transcript | Compacted |
+| Business permanent | `~/businesses/<biz>/memory/permanent.md` | Adapter persists |
 | Project (business) | `<project>/<biz>/<project_id>/memory/` | Isolation by construction |
 
-> **Isolation guard:** Codex não enforça memory isolation natively. Adapter precisa montar prompt com APENAS o memory relevante ao `project_id` antes de spawn — caso contrário `audit_event: isolation_violation`.
+> **Isolation guard:** Codex does not enforce memory isolation natively. The adapter must build the prompt with ONLY the memory relevant to the `project_id` before spawning, otherwise `audit_event: isolation_violation`.
 
 ---
 
 ## 9. Context Window & Compaction
 
-- Janela: 128K–200K tokens, variável conforme o modelo que o runtime está usando.
-- Compaction: Codex tem auto-summarization quando perto do limit; adapter pode forçar `--checkpoint` antes.
+- Window: 128K-200K tokens, varying with the model the runtime is using.
+- Compaction: Codex has auto-summarization near the limit; the adapter can force `--checkpoint` first.
 
 ---
 
 ## 10. Hook System
 
-Codex não tem hooks granulares. Workarounds:
+Codex has no granular hooks. Workarounds:
 
-| Hook desejado | Workaround Codex |
+| Desired hook | Codex workaround |
 |---|---|
-| `PreToolUse` | Function definition pode ter `description` que age como soft-validator; hard validation em wrapper |
-| `PostToolUse` | Wrapper parseia tool calls do transcript após cada turn |
-| `UserPromptSubmit` | Adapter injeta `instructions` no prompt do `codex run` |
-| `Stop` | Wrapper inspeciona exit code e final transcript |
-| `SessionStart` | Wrapper carrega memory antes de invocar `codex run` |
+| `PreToolUse` | A function definition can carry a `description` that acts as a soft validator; hard validation in a wrapper |
+| `PostToolUse` | The wrapper parses tool calls from the transcript after each turn |
+| `UserPromptSubmit` | The adapter injects `instructions` into the `codex run` prompt |
+| `Stop` | The wrapper inspects the exit code and the final transcript |
+| `SessionStart` | The wrapper loads memory before invoking `codex run` |
 | `Compact` | `--checkpoint` flag |
 
 ---
 
 ## 11. Invocation Examples
 
-### Exemplo 1 — Squad capability
+### Example 1: Squad capability
 
 ```bash
 # User: "transcrever vídeo do Instagram https://..."
@@ -218,51 +218,47 @@ codex run \
   --output-format json
 ```
 
-### Exemplo 2 — Business brief com handoff
+### Example 2: Business brief with handoff
 
 ```bash
-# CEO recebe brief
-codex run --agent nexus-ceo --max-turns 10 --prompt "<brief>" > .handoffs/ceo-1.json
+# The business runs as ONE solo agent that plays the seats itself
+codex run --agent nexus-council --max-turns 40 --prompt "<brief>" > .handoffs/nexus-1.json
 
-# Adapter detecta `next_action: delegate to marketing-lead` no handoff
-codex run --agent marketing-lead --max-turns 30 \
-  --prompt "<context from ceo handoff>" > .handoffs/marketing-1.json
-
-# Adapter detecta mention `@alex-hormozi`
+# A stand-alone subagent (optional) is only spawned for an explicit mention `@alex-hormozi`
 codex run --agent alex-hormozi --max-turns 15 \
-  --prompt "<context from marketing handoff>" > .handoffs/alex-1.json
+  --prompt "<context from the business handoff>" > .handoffs/alex-1.json
 ```
 
-### Exemplo 3 — Harness escalation
+### Example 3: Harness escalation
 
 ```bash
 # Wrapper detecta budget_violation
 echo '{"type":"human_escalation_required","trigger_id":"budget","severity":"high",...}' \
   > .harness/notifications/$(date +%s).json
-# Harness orchestrator (em outro runtime ou interativo) consome o file
+# The harness orchestrator (in another runtime or interactive) consumes the file
 ```
 
 ---
 
 ## 12. Runtime-Specific Validators
 
-- **Sandbox profile coerente**: se employee.tools inclui `Bash`, sandbox deve ser `workspace-write` ou `danger-full-access` (não `read-only`).
-- **Function definition match**: cada tool no whitelist precisa ter function definition válida — wrapper valida antes de spawn.
-- **AGENTS.md carregado**: adapter verifica que `AGENTS.md` referencia `manifest.yaml` corretamente (caso contrário Codex não vê o skill).
+- **Coherent sandbox profile**: if employee.tools includes `Bash`, the sandbox must be `workspace-write` or `danger-full-access` (not `read-only`).
+- **Function definition match**: every tool in the whitelist needs a valid function definition; the wrapper validates before spawning.
+- **AGENTS.md loaded**: the adapter checks that `AGENTS.md` references `manifest.yaml` correctly (otherwise Codex does not see the skill).
 
 ---
 
 ## 13. Known Limitations
 
-1. **Sem subagent primitive** → adapter usa sub-process `codex run`. Custo: cada spawn paga overhead de cold start.
-2. **Sem hooks granulares** → validações em wrapper externo, não inline.
-3. **Sem `ScheduleWakeup` / `CronCreate`** → harness degradar para cron externo.
-4. **Sem memory cross-session rico** → adapter mantém memory em files, monta prompt manualmente.
-5. **Max-turns per-employee é simulado** → assume employees flat (sem nested invocation).
-6. **Sem `TeamCreate`** → teams são convenção em file-system.
-7. **OTel não é built-in** → adapter integra com OpenTelemetry SDK externo.
-8. **Mentions e tickets** dependem do wrapper detectar e fan-out — race conditions possíveis em multi-process.
-9. **Slash commands** não existem nativamente; adapter usa CLI flags (`--agent`, `--skill`, `--prompt`).
+1. **No subagent primitive** (for the fallback path) → the adapter uses the `codex run` sub-process. Cost: each spawn pays cold start overhead.
+2. **No granular hooks** → validation in an external wrapper, not inline.
+3. **No `ScheduleWakeup` / `CronCreate`** → the harness degrades to external cron.
+4. **No rich cross-session memory** → the adapter keeps memory in files and builds the prompt manually.
+5. **Per-employee max-turns is simulated** → assumes flat employees (no nested invocation).
+6. **No `TeamCreate`** → teams are a file-system convention.
+7. **OTel is not built-in** → the adapter integrates with an external OpenTelemetry SDK.
+8. **Mentions and tickets** depend on the wrapper detecting and fanning out; race conditions are possible in multi-process.
+9. **Slash commands** do not exist natively; the adapter uses CLI flags (`--agent`, `--skill`, `--prompt`).
 
 ---
 
@@ -278,6 +274,6 @@ echo '{"type":"human_escalation_required","trigger_id":"budget","severity":"high
 
 ## 15. Version History
 
-| Versão | Data | Mudanças |
+| Version | Date | Changes |
 |---|---|---|
-| 1.0.0 | 2026-05-02 | Doc inicial — cobre Squad 5.0 + Business 1.0 + Harness 1.0 contra Codex CLI 0.2x |
+| 1.0.0 | 2026-05-02 | Initial doc: covers Squad 5.0 + Business 1.0 + Harness 1.0 against Codex CLI 0.2x |

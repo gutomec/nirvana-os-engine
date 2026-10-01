@@ -2,7 +2,7 @@
 
 > **Business Protocol v2** (v1 businesses still load) · zero-deps · filesystem-first · auto-bootstrap · **DOMAIN-AGNOSTIC**
 
-Create, validate, index, and invoke multi-agent organizations ("businesses") with hierarchical employees, memory isolation, and structured handoff primitives. Each business is a folder with a manifest, employees, an org chart, and routing rules — versionable, portable, auditable.
+Create, validate, index, and invoke multi-agent organizations ("businesses") with hierarchical employees, memory isolation, and a single-agent execution model (`BUSINESS_PROTOCOL_V2.md` §14). Each business is a folder with a manifest, employees, an org chart, and routing rules — versionable, portable, auditable.
 
 **The skill is universal.** It works for any domain where a team of agents makes sense: marketing, healthcare, engineering, legal, real-estate, gaming, foodtech, trading, education, research, government, etc. The 31 currently indexed businesses are marketing-focused because that was the initial migration. Create businesses in whichever domains you need.
 
@@ -19,7 +19,7 @@ A **business** is a self-contained organization of AI agents that share:
 - Isolated **memory** (`memory/permanent.md` + `memory/projects/<id>/`)
 - A **legacy/** dir preserving non-runtime artifacts from migrations
 
-Briefs sent to a business are intaken by exactly one `is_brief_intake` employee (default CEO) and routed via mention/ticket/escalation/delegation/auto_route primitives. Outputs flow back as schema-validated `handoff_artifact`s.
+A dispatched business runs as ONE agent that reads the brief, plays its seats from their files and ends with `_SUMMARY.md`, `_CLAIMS.json` and `participation.json` (`BUSINESS_PROTOCOL_V2.md` §14). The `is_brief_intake` seat's `acceptance[]` is the contract the judge checks (§11); `auto_routes` choose the business (§13.2).
 
 ---
 
@@ -121,13 +121,13 @@ Generates `${BUSINESSES_REGISTRY_PATH}` — consumed by the **harness** skill fo
 bun ~/.nirvana/skills/businesses/scripts/brief-business.ts my-startup "Define the brand essence and 3 differentiation axes"
 ```
 
-Resolves to a `project_id`, copies the brief to `~/.projects-outputs/<id>/`, and returns the path. The next step (LLM-mediated) is to spawn the `is_brief_intake` employee as a subagent that processes the brief and emits a `handoff_artifact`.
+Resolves to a `project_id`, copies the brief to `~/.projects-outputs/<id>/`, and returns the path. The run itself is `nrv dispatch <slug> --brief-file <brief> --exec`, which executes the business as one agent (`BUSINESS_PROTOCOL_V2.md` §14).
 
 ---
 
 ## Common workflows
 
-### Workflow A — Migrate an existing org (paperclip company → business v1)
+### Workflow A — Migrate an existing org (paperclip company → business, v2 §21)
 
 ```bash
 bun ~/migration-tools/paperclip-to-business-v1.ts \
@@ -136,7 +136,7 @@ bun ~/migration-tools/paperclip-to-business-v1.ts \
   --dry-run
 ```
 
-The adapter (~2000 LOC, 17 functions) reads filesystem-first, generates the full business directory with employees, org chart, routing, and a `legacy/` preserve. Use `--no-translate` (default) to keep original AI agent prompts; `--translate=llm` rewrites paperclip-specific protocol calls into business v1 primitives.
+The adapter (~2000 LOC, 17 functions) reads filesystem-first, generates the full business directory with employees, org chart, routing, and a `legacy/` preserve. Use `--no-translate` (default) to keep original AI agent prompts; `--translate=llm` rewrites paperclip-specific protocol calls into business primitives.
 
 Override domain inference, intake, and antagonist auto-pick:
 ```bash
@@ -180,7 +180,7 @@ Routing rules drive the harness Stage 0 short-circuit: when a brief contains key
 ```
 ~/.nirvana/skills/businesses/
 ├── SKILL.md                      ← Claude-discoverable skill descriptor
-├── BUSINESS_PROTOCOL_V2.md       ← the protocol (routing metadata, pins, acceptance, budget)
+├── BUSINESS_PROTOCOL_V2.md       ← the complete protocol (structure, gate catalog, solo-run execution)
 ├── lib/
 │   ├── loader.py                 ← load_business(path) → BusinessConfig
 │   └── registry.py               ← scan + write ${BUSINESSES_REGISTRY_PATH}

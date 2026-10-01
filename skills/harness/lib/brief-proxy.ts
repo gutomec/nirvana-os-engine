@@ -22,7 +22,7 @@ const BUSINESSES_ROOT = path.join(os.homedir(), "businesses");
 
 function businessContext(slug: string): string {
   const yml = path.join(BUSINESSES_ROOT, slug, "business.yaml");
-  if (!fs.existsSync(yml)) return `(business '${slug}' — sem manifesto local)`;
+  if (!fs.existsSync(yml)) return `(business '${slug}' — no local manifest)`;
   const text = fs.readFileSync(yml, "utf8");
   // Keep it short: name, description, domains lines only.
   const keep = text.split("\n").filter(l => /^(name|description|domains|industry|sector|owner):/.test(l.trim()) || /^\s+-\s/.test(l)).slice(0, 20);
@@ -41,27 +41,27 @@ export interface ProxyResult {
  *  never have signed into. The caller knows which session it is serving. */
 export function proxyEnrichBrief(brief: string, slug: string, runtime: Runtime, opts: { maxBudgetUsd?: number; timeoutMs?: number } = {}): ProxyResult {
   if (!runtimeAvailable(runtime)) {
-    return { ok: false, enriched: brief, raw: "", error: `runtime '${runtime}' indisponível` };
+    return { ok: false, enriched: brief, raw: "", error: `runtime '${runtime}' unavailable` };
   }
   const ctx = businessContext(slug);
   const prompt = [
-    `Você é um analista de intake experiente do negócio "${slug}". Contexto do negócio:`,
+    `You are an experienced intake analyst for the business "${slug}". Business context:`,
     "",
     ctx,
     "",
-    "Recebeu o briefing abaixo de um cliente que NÃO está disponível para responder perguntas:",
+    "You received the briefing below from a client who is NOT available to answer questions:",
     "",
     "<<<BRIEFING>>>",
     brief,
-    "<<<FIM>>>",
+    "<<<END>>>",
     "",
-    "Sua tarefa (decidir pelo cliente ausente):",
-    "1. Liste mentalmente as perguntas de esclarecimento que um intake profissional faria para este briefing neste negócio.",
-    "2. Responda CADA uma você mesmo, com premissas conservadoras e padrão de mercado (você decide no lugar do humano ausente).",
-    "3. Produza UM briefing enriquecido em PT-BR que incorpore o pedido original mais suas respostas, terminando com uma seção '## Premissas decididas pelo proxy' listando o que você assumiu.",
+    "Your task (decide on behalf of the absent client):",
+    "1. List mentally the clarifying questions a professional intake would ask for this briefing in this business.",
+    "2. Answer EACH one yourself, with conservative, market-standard assumptions (you decide in place of the absent human).",
+    "3. Produce ONE enriched briefing, in the language of the original briefing, that incorporates the original request plus your answers, ending with a section '## Assumptions decided by the proxy' listing what you assumed.",
     "",
-    "Regra de hífen: use '-' só para palavras compostas; nunca para emendar orações nem como travessão.",
-    "Saída: APENAS o texto do briefing enriquecido, sem comentários meta nem cercas de código.",
+    "Hyphen rule: use '-' only for compound words; never to join clauses or as a dash.",
+    "Output: ONLY the text of the enriched briefing, with no meta commentary and no code fences.",
   ].join("\n");
 
   const res = runHeadless({

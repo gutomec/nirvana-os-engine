@@ -1,4 +1,4 @@
-# Nirvana Glance — visualizador instantâneo do harness
+# Nirvana Glance: instant viewer for the harness
 
 > Local browser-based control plane for the Nirvana system. **Read-only by default.** Project, Conversation, Message and Run state persists in the project; the server process remains ephemeral.
 
@@ -97,9 +97,9 @@ Every `/api/v1` write requires `--allow-actions`, a same-origin request and `Ide
 
 Current limitation: canonical Project discovery is scoped to the workspace where Glance was started. Multi-root registration, archive/fork commands, typed approvals and automatic dispatch from a prepared canonical Run remain later cutovers. The current action runner continues to execute legacy chat jobs while their resulting messages are persisted by `ConversationService`.
 
-Em Projects adotados, uma Message de usuário prepara e enfileira somente o canário `agent-x` com Gauntlet `light`. A resposta contém Message, Run e capability. O histórico e o vínculo sobrevivem ao restart, e a timeline usa os events do Run Kernel. Se o host não fornecer o adapter dessa capability, o Run registra `capability_unavailable`; o Glance não troca silenciosamente de target, runtime ou modo. Projects legados continuam usando o action runner anterior.
+In adopted Projects, a user Message prepares and enqueues only the `agent-x` canary with a `light` Gauntlet. The response contains the Message, Run and capability. History and the link survive a restart, and the timeline uses the Run Kernel events. If the host does not provide the adapter for that capability, the Run records `capability_unavailable`; Glance does not silently switch target, runtime or mode. Legacy Projects keep using the previous action runner.
 
-No startup, a recuperação canônica reencaminha somente Runs `prepared` do canário com Message vinculada. O claim `prepared → running` impede side effects duplicados em restart concorrente. Runs `running`, cancelados ou terminais são ignorados sem uma lease de provider comprovadamente recuperável. Os events `canary.recovery_enqueued` e `canary.recovery_skipped` tornam a decisão visível na timeline.
+At startup, canonical recovery re-routes only `prepared` canary Runs with a linked Message. The `prepared → running` claim prevents duplicate side effects on a concurrent restart. `running`, cancelled or terminal Runs are ignored without a provably recoverable provider lease. The `canary.recovery_enqueued` and `canary.recovery_skipped` events make the decision visible in the timeline.
 
 ## Security
 
@@ -189,7 +189,7 @@ When `--allow-actions` is on, Glance gains:
 
 ## Why this works
 
-- **Processo efêmero, estado persistente:** o servidor vive apenas durante a sessão; Projects, Conversations, Messages e Runs canônicos sobrevivem ao restart.
+- **Ephemeral process, persistent state:** the server lives only for the session; canonical Projects, Conversations, Messages and Runs survive a restart.
 - **Cross-platform:** Bun runs natively on macOS / Linux / Windows / WSL2 / Alpine.
 - **Zero build:** all frontend deps via CDN (Tailwind, Alpine, D3, Inter, JetBrains Mono). Just open the URL.
 - **Scope-coherent:** reads everything via the same `paths.js` / `scope.ts` the rest of the system uses. What Glance shows = what the harness sees.

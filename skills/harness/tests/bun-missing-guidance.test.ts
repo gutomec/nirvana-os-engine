@@ -100,7 +100,7 @@ describe("bin/nrv, with no bun on PATH and none in HOME", () => {
 
 describe("setup.ps1 answers as well as setup.sh does", () => {
   const PS1 = read("packaging", "pack", "setup.ps1");
-  const failure = PS1.slice(PS1.indexOf("Nao consegui instalar o Bun"));
+  const failure = PS1.slice(PS1.indexOf("Could not install Bun"));
 
   test("it prints the command it just tried, instead of a website", () => {
     expect(failure).toContain('powershell -c "irm bun.sh/install.ps1 | iex"');
@@ -116,7 +116,7 @@ describe("setup.ps1 answers as well as setup.sh does", () => {
   });
 
   test("it names the new-terminal gotcha", () => {
-    expect(failure).toMatch(/terminal novo/i);
+    expect(failure).toMatch(/new terminal/i);
   });
 
   // Split on BOTH terminators. .gitattributes now pins .ps1 to CRLF, and this has

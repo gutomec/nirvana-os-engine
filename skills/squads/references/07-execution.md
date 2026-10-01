@@ -4,7 +4,7 @@
 Intent: EXECUTE, RUN, DEBUG
 
 ## Protocol Reference
-Squad Protocol v4 (archived) §8, §13, §14
+`SQUAD_PROTOCOL_V6.md` §8, §13, §14, §32
 
 ## Execution Concepts
 

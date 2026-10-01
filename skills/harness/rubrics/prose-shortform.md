@@ -1,6 +1,6 @@
 ---
 name: prose_shortform
-display_name: "Prose — Shortform (post, copy, caption, comentário)"
+display_name: "Prose — Shortform (post, copy, caption, comment)"
 type: harness_rubric
 version: 1.0.0
 target_model: inherit
@@ -28,8 +28,8 @@ aliases:
   - email-marketing
   - roteiro-de-post
 description: |
-  Curto, denso, sem gordura. Critérios refletem que o falhas mais comuns
-  em prose curta são genericidade, hook fraco e CTA ausente/genérico.
+  Short, dense, no fat. The criteria reflect that the most common failures
+  in short prose are genericness, a weak hook and a missing/generic CTA.
 ---
 
 # Prose Shortform Rubric
@@ -47,34 +47,34 @@ description: |
 ## Criteria
 
 1. **hook_strength** (weight 25)  
-   Primeira frase para o scroll. Falhas: começa com "neste post", "vamos
-   falar sobre", "muitos profissionais". Sem promessa específica.
+   The first sentence stops the scroll. Failures: starts with "in this post", "let's
+   talk about", "many professionals". No specific promise.
 
 2. **brief_fidelity** (weight 20)  
-   Cobre todos os pontos do brief sem inflar.
+   Covers every point of the brief without inflating.
 
 3. **specificity** (weight 15)  
-   Concreto > abstrato. Números, nomes, exemplos. Sem chavões.
+   Concrete > abstract. Numbers, names, examples. No clichés.
 
 4. **cta_quality** (weight 10)  
-   CTA existe, é claro, é específico. "Saiba mais" não conta. "Responda
-   este post com X" conta.
+   A CTA exists, is clear, is specific. "Learn more" does not count. "Reply to
+   this post with X" counts.
 
 5. **no_llm_tells** (weight 10)  
-   Mesmo critério da longform, ajustado: em-dash overuse, rule-of-three,
-   "vamos explorar", "em última análise", "transforme sua vida".
+   Same criterion as longform, adjusted: em-dash overuse, rule-of-three,
+   "let's explore", "ultimately", "transform your life". The equivalent tells in the deliverable's language count too.
 
 6. **platform_fit** (weight 10)  
-   Limite de caracteres respeitado. Tom adequado à plataforma. Hashtags
-   (Instagram) ou tags (LinkedIn) coerentes. Sem misturar tom blog em
+   Character limit respected. Tone suited to the platform. Hashtags
+   (Instagram) or tags (LinkedIn) coherent. No blog tone mixed into
    Twitter.
 
 7. **scannability** (weight 5)  
-   Quebras de linha, ênfases (bold/itálico) onde fazem sentido. Não é um
-   bloco de texto compacto.
+   Line breaks, emphasis (bold/italic) where they make sense. Not a
+   compact block of text.
 
 8. **brand_consistency** (weight 5)  
-   Se o brief mencionou marca/cliente, o tom é consistente.
+   If the brief mentioned a brand/client, the tone is consistent.
 
 ## Output schema
-Igual ao prose-longform: `verdict`, `total_score`, `criteria_scores[]`, `critique[]`.
+Same as prose-longform: `verdict`, `total_score`, `criteria_scores[]`, `critique[]`.

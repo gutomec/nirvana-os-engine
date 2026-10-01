@@ -163,18 +163,18 @@ export function gauntletRoundBudget(plan: GauntletPlan, maxBudgetUsd?: number, e
 /** Deterministic section appended to the original brief when a candidate is revised. */
 export function revisionDefectsSection(request: AgentXRevisionRequest): string {
   return [
-    "## Defeitos a corrigir",
+    "## Defects to fix",
     "",
-    `Esta é a revisão ${request.revision} do candidate ${request.candidateId} (rodada ${request.round}).`,
-    `Leia a revisão anterior em ${request.previousRoot} e escreva a revisão completa em ${request.candidateRoot}.`,
-    "Corrija somente os defeitos listados e preserve tudo o que já foi aprovado.",
-    scopeGuard("pt-BR"),
+    `This is revision ${request.revision} of candidate ${request.candidateId} (round ${request.round}).`,
+    `Read the previous revision at ${request.previousRoot} and write the complete revision to ${request.candidateRoot}.`,
+    "Fix only the listed defects and preserve everything that was already approved.",
+    scopeGuard(),
     "",
-    `Dimensões reprovadas: ${request.defects.failedDimensions.join(", ")}`,
-    `Avaliações causais: ${request.defects.evaluationIds.join(", ")}`,
+    `Failed dimensions: ${request.defects.failedDimensions.join(", ")}`,
+    `Causal evaluations: ${request.defects.evaluationIds.join(", ")}`,
     "",
-    "Requisitos a revisar:",
-    ...request.defects.revisionRequests.map(item => `- ${item.requirementId}: ${item.evidenceRefs.join(", ") || "sem evidência anexada"}`),
+    "Requirements to revise:",
+    ...request.defects.revisionRequests.map(item => `- ${item.requirementId}: ${item.evidenceRefs.join(", ") || "no evidence attached"}`),
   ].join("\n");
 }
 

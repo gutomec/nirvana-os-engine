@@ -8,7 +8,7 @@
 //   build-report-html.ts     1 entry    → the client report embedded it
 //
 // Measured on a customer VPS (2026-09-18): `GET /v1/jobs/<trace>/artifacts/
-// relatorio-final.html` returned 81 KB that contained no line of the delivered
+// final-report.html` returned 81 KB that contained no line of the delivered
 // work and every line of the run's instrumentation — the employee's full system
 // prompt, the mind-clone library, the business manifest and the firm's
 // permanent memory. That is the intellectual property of a pack sold for
@@ -34,7 +34,9 @@ export const RUN_PLUMBING: ReadonlySet<string> = new Set([
 /** Directories that hold run state or the engine itself, never deliverables. */
 export const RUN_PLUMBING_DIRS: ReadonlySet<string> = new Set([
   "node_modules", ".git", ".nirvana", ".squad-state", ".squads-outputs",
-  ".harness-logs", ".wiki-brain-state", ".vercel", ".omc", "_internal", "relatorio",
+  ".harness-logs", ".wiki-brain-state", ".vercel", ".omc", "_internal", "_report",
+  // The report publisher's working folder in runs made before it was renamed.
+  "relatorio",
 ]);
 
 /** True when this file is instrumentation rather than work. Name-based on

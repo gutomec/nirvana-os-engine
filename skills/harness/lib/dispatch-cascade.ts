@@ -106,7 +106,7 @@ function defaultChoose(candidates: RouteCandidate[]): number | null {
   try {
     const lines = candidates.map((c, i) => `  ${i + 1}. [${c.type}] ${c.target} — ${c.reason}`).join("\n");
     const answer = (globalThis as any).prompt?.(
-      `Rota ambígua — escolha o alvo:\n${lines}\nNúmero [1-${candidates.length}] (Enter = 1):`);
+      `Ambiguous route, choose the target:\n${lines}\nNumber [1-${candidates.length}] (Enter = 1):`);
     const n = parseInt(String(answer ?? "").trim(), 10);
     if (Number.isFinite(n) && n >= 1 && n <= candidates.length) return n - 1;
   } catch { /* fall back */ }
@@ -401,9 +401,9 @@ export function runAgentX(args: RunAgentXArgs): AgentXResult {
     `Write every final deliverable as a file under: ${args.outputsRoot}`,
     "Other runs' folders beside this one are not your input: do not list, read or edit them.",
     "Do not print a summary of what you would do — deliver files. Record",
-    'assumptions under "## Premissas assumidas" in the main deliverable.',
-    scopeBoundary("en"),
-    scopeGuard("en"),
+    'assumptions under "## Assumptions" (titled in the deliverable\'s language) in the main deliverable.',
+    scopeBoundary(),
+    scopeGuard(),
   ].join("\n");
 
   emit("dispatch_agent_x", {

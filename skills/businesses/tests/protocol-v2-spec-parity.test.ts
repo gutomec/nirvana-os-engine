@@ -30,8 +30,8 @@ export interface SpecCriterion {
 
 /**
  * Parse the two tables under `### 16.2`. A row is
- * `| \`id\` | autofix | baselinável | descrição |`, and the `#### Erros` /
- * `#### Avisos` headings decide the severity.
+ * `| \`id\` | autofix | baselineable | what it checks |`, and the `#### Errors` /
+ * `#### Warnings` headings decide the severity.
  */
 export function parseSpecCriteria(text: string): SpecCriterion[] {
   const start = text.indexOf("### 16.2");
@@ -42,14 +42,14 @@ export function parseSpecCriteria(text: string): SpecCriterion[] {
   const out: SpecCriterion[] = [];
   let severity: "error" | "warning" | null = null;
   for (const line of section.split("\n")) {
-    if (/^####\s+Erros/.test(line)) { severity = "error"; continue; }
-    if (/^####\s+Avisos/.test(line)) { severity = "warning"; continue; }
+    if (/^####\s+Errors/.test(line)) { severity = "error"; continue; }
+    if (/^####\s+Warnings/.test(line)) { severity = "warning"; continue; }
     if (!severity || !line.startsWith("|")) continue;
     const cells = line.split("|").slice(1, -1).map((c) => c.trim());
     if (cells.length < 4) continue;
     const id = /^`([^`]+)`$/.exec(cells[0])?.[1];
     if (!id) continue;                                   // header + separator rows
-    out.push({ id, severity, autofix: cells[1], baselineable: cells[2] === "sim" });
+    out.push({ id, severity, autofix: cells[1], baselineable: cells[2] === "yes" });
   }
   return out;
 }
@@ -69,7 +69,7 @@ describe("Business Protocol 2.0 §16.2 — the table is a catalog", () => {
   });
 
   test("autofix is one of the three declared values", () => {
-    for (const c of spec) expect(["mecânico", "agêntico", "nenhum"]).toContain(c.autofix);
+    for (const c of spec) expect(["mechanical", "agentic", "none"]).toContain(c.autofix);
   });
 
   test("the criteria the protocol names in prose are in the table", () => {
@@ -101,9 +101,6 @@ describe("Business Protocol 2.0 §16.2 — the table is a catalog", () => {
 });
 
 describe("Business Protocol 2.0 §16.2 — parity with the gate module", () => {
-  /** The spec writes the autofix class in Portuguese; the module in English. */
-  const AUTOFIX: Record<string, string> = { "mecânico": "mechanical", "agêntico": "agentic", "nenhum": "none" };
-
   test("the module exists and exports a catalog", () => {
     expect(existsSync(KIND_MODULE)).toBe(true);
   });
@@ -126,7 +123,7 @@ describe("Business Protocol 2.0 §16.2 — parity with the gate module", () => {
       const c = byId.get(row.id);
       if (!c) continue;                                    // the id test above owns this
       if (c.severity !== row.severity) drift.push(`${row.id}: severity ${String(c.severity)} vs ${row.severity}`);
-      if (c.autofix !== AUTOFIX[row.autofix]) drift.push(`${row.id}: autofix ${String(c.autofix)} vs ${AUTOFIX[row.autofix]}`);
+      if (c.autofix !== row.autofix) drift.push(`${row.id}: autofix ${String(c.autofix)} vs ${row.autofix}`);
       if (c.baselineable !== row.baselineable) drift.push(`${row.id}: baselineable ${String(c.baselineable)} vs ${row.baselineable}`);
     }
     expect(drift).toEqual([]);

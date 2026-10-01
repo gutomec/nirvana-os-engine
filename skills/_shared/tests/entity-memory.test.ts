@@ -99,9 +99,9 @@ describe("readEntityMemory", () => {
     // The block names where the memory lives, so a reader can go to the source,
     // and labels the scope so the agent can tell a project fact from a global one.
     expect(mem.block).toContain(dir);
-    expect(mem.block).toContain("DESTE PROJETO");
+    expect(mem.block).toContain("THIS PROJECT");
     // And it tells the agent the choice is theirs to make when recording.
-    expect(mem.block).toContain("você decide o escopo");
+    expect(mem.block).toContain("you choose the scope");
   });
 
   test("nothing curated yields no block at all", () => {
@@ -133,8 +133,8 @@ describe("readEntityMemory", () => {
     // The last line survives: nothing was sliced off the end.
     expect(mem.block).toContain("TAIL-MARKER");
     expect(mem.block).not.toContain("memory truncated");
-    expect(mem.block).toContain("chega **inteira**");
-    expect(mem.block).toContain(`acima do ponto de atenção de 8000`);
+    expect(mem.block).toContain("delivered **in full**");
+    expect(mem.block).toContain(`above the attention threshold of 8000`);
   });
 });
 
@@ -200,7 +200,7 @@ describe("an entity copy edited after the seed is named, not silently ignored", 
     expect(mem.diverged).toEqual(["permanent.md"]);
     expect(mem.block).toContain("SEED-MARKER");
     expect(mem.block).not.toContain("EDIT-MARKER");
-    expect(mem.block).toContain("difere da casa canônica");
+    expect(mem.block).toContain("differs from the canonical home");
     expect(mem.block).toContain(path.join(entity, "memory", "permanent.md"));
   });
 });

@@ -2330,7 +2330,7 @@ const ACTIONS: Record<string, ActionDef> = {
       const chatId = (b?.chat_id || "").toString();
       const resume = (b?.resume_session || "").toString();
       const runtime = (b?.runtime || "").toString();
-      if (!msg.trim()) throw new Error("message vazia");
+      if (!msg.trim()) throw new Error("empty message");
       if (!/^[a-z0-9-]+$/.test(chatId)) throw new Error("invalid chat_id");
       const args = [`${SKILLS}/harness/scripts/chat-concierge.ts`, msg];
       if (resume && /^[A-Za-z0-9_-]+$/.test(resume)) args.push("--resume", resume);
@@ -2351,7 +2351,7 @@ const ACTIONS: Record<string, ActionDef> = {
     argsBuilder: (b) => {
       const cmd = (b?.command || "").toString();
       const chatId = (b?.chat_id || "").toString();
-      if (!cmd.trim()) throw new Error("comando vazio");
+      if (!cmd.trim()) throw new Error("empty command");
       if (!/^[a-z0-9-]+$/.test(chatId)) throw new Error("invalid chat_id");
       return ["-c", cmd];
     },
@@ -2366,9 +2366,9 @@ const ACTIONS: Record<string, ActionDef> = {
       const msg = (b?.message || "").toString();
       const chatId = (b?.chat_id || "").toString();
       const budget = (b?.max_budget || "0.50").toString();
-      if (!msg.trim()) throw new Error("message vazia");
+      if (!msg.trim()) throw new Error("empty message");
       if (!/^[a-z0-9-]+$/.test(chatId)) throw new Error("invalid chat_id");
-      // slug vazio → --auto (roteador agêntico escolhe a empresa)
+      // empty slug → --auto (the agentic router picks the business)
       const args = [`${SKILLS}/harness/scripts/dispatch.ts`];
       if (slug) { if (!/^[a-z0-9-]+$/.test(slug)) throw new Error("invalid slug"); args.push(slug, msg); }
       else args.push("--auto", msg);
@@ -2385,7 +2385,7 @@ const ACTIONS: Record<string, ActionDef> = {
       const chatId = (b?.chat_id || "").toString();
       const msg = (b?.message || "").toString();
       if (!/^[a-z0-9-]+$/.test(chatId)) throw new Error("invalid chat_id");
-      if (!msg.trim()) throw new Error("message vazia");
+      if (!msg.trim()) throw new Error("empty message");
       return [`${SKILLS}/harness/scripts/revise.ts`, chatId, msg, "--safe"];
     },
   },

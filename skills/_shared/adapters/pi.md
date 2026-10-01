@@ -1,86 +1,86 @@
-# Adapter · Pi Coding Agent (Earendil — pi.dev)
+# Adapter · Pi Coding Agent (Earendil, pi.dev)
 
-> Runtime adapter para Squad Protocol v5 + Business Protocol v1 + Harness Protocol v1.
-> Cobre os 3 protocolos em um único doc. Seções canônicas conforme Squad v4 §18.5.
-> Identidade + capabilities do sistema (o que o Nirvana-OS é e pode fazer): ver `../NIRVANA-OS.md` (fonte única).
-> Espelha o `kimi-cli.md` (dispatch sub-process, sem agent-profile por arquivo), com duas diferenças de peso:
-> **resume nativo de sessão** (`--session <id>`) e **multi-provider real** (15+ providers, incluindo modelos LOCAIS).
+> Runtime adapter for Squad Protocol v6 + Business Protocol v2 + Harness Protocol v1.
+> Covers the 3 protocols in a single doc. Canonical sections per Squad Protocol v6 §18.5.
+> System identity + capabilities (what Nirvana-OS is and can do): see `../NIRVANA-OS.md` (single source).
+> Mirrors `kimi-cli.md` (sub-process dispatch, no per-file agent profile), with two heavy differences:
+> **native session resume** (`--session <id>`) and **real multi-provider** (15+ providers, including LOCAL models).
 
 ---
 
 ## 1. Adapter Metadata
 
-| Campo | Valor |
+| Field | Value |
 |---|---|
 | `runtime` | `pi` |
-| `vendor` | Earendil Inc. (pi.dev) — MIT, npm `@earendil-works/pi-coding-agent` |
-| `min_version` | `pi 0.82.1` (verificado). `--mode json` exigido, com fallback para print mode `-p` em builds sem a flag (§7). |
-| `default_model` | herdado do runtime — o engine NUNCA define model; vem da entrada `pi:<model>@<provider>` do `LLM_CASCADE`. O `@provider` vira `--provider` NATIVO (anthropic, openai, google, openrouter, ollama, …). `--model` aceita `provider/id` e sufixo `:<thinking>` (ex.: `sonnet:high`). |
-| `tested_against` | `pi 0.82.1` (2026-07-28) — flags confirmadas via `--help` E runs headless reais: (a) caminho de ERRO (provider xai sem créditos → exit 0 com `stopReason:"error"` no stream, classificado `quota_exhausted`); (b) caminho de SUCESSO 100% LOCAL (`--provider ollama --model qwen2.5-coder:7b` via `models.json`): texto do assistant extraído do stream, custo $0, e RESUME real da sessão via `--session-id` (2ª chamada recuperou o contexto da 1ª) |
+| `vendor` | Earendil Inc. (pi.dev), MIT, npm `@earendil-works/pi-coding-agent` |
+| `min_version` | `pi 0.82.1` (verified). `--mode json` required, with a fallback to print mode `-p` on builds without the flag (§7). |
+| `default_model` | inherited from the runtime. The engine NEVER sets a model; it comes from the `pi:<model>@<provider>` entry of `LLM_CASCADE`. The `@provider` becomes a NATIVE `--provider` (anthropic, openai, google, openrouter, ollama, …). `--model` accepts `provider/id` and a `:<thinking>` suffix (e.g. `sonnet:high`). |
+| `tested_against` | `pi 0.82.1` (2026-07-28): flags confirmed via `--help` AND real headless runs: (a) ERROR path (xai provider with no credits → exit 0 with `stopReason:"error"` in the stream, classified `quota_exhausted`); (b) 100% LOCAL SUCCESS path (`--provider ollama --model qwen2.5-coder:7b` via `models.json`): assistant text extracted from the stream, $0 cost, and a real session RESUME via `--session-id` (the 2nd call recovered the 1st call's context) |
 | `config_paths` | `~/.pi/agent/` (`auth.json`, `models.json`, settings), `<project>/AGENTS.md`, `SYSTEM.md` |
-| `skills_root` | Padrão **Agent Skills** (agentskills.io, mesmo formato do Claude Code): globais em `~/.pi/agent/skills/` e `~/.agents/skills/`; por projeto em `.pi/skills/` e `.agents/skills/`. O `nrv install` symlinka a árvore do Nirvana em `~/.pi/agent/skills/` quando `~/.pi/agent` existe. |
-| `agents_root` | Sem agent-profile por arquivo (como Codex/Kimi) — persona vai no prompt do `pi --mode json` (§7). Extensões TypeScript podem definir agentes custom. |
-| `memory_root` | `<project>/AGENTS.md` (project) + `SYSTEM.md`; sessões persistidas como árvores JSONL (`PI_SESSION_FILE`) |
-| `audit_log` | `~/.harness-logs/` (jsonl via driver) + o próprio session file JSONL do pi (árvore navegável, exportável em HTML/gist) |
-| `protocol_versions` | Squad 5.0, Business 1.0, Harness 1.0 (com gaps registrados em §13) |
+| `skills_root` | **Agent Skills** standard (agentskills.io, same format as Claude Code): global in `~/.pi/agent/skills/` and `~/.agents/skills/`; per project in `.pi/skills/` and `.agents/skills/`. `nrv install` symlinks the Nirvana tree into `~/.pi/agent/skills/` when `~/.pi/agent` exists. |
+| `agents_root` | No per-file agent profile (like Codex/Kimi); the persona goes in the `pi --mode json` prompt (§7). TypeScript extensions can define custom agents. |
+| `memory_root` | `<project>/AGENTS.md` (project) + `SYSTEM.md`; sessions persisted as JSONL trees (`PI_SESSION_FILE`) |
+| `audit_log` | `~/.harness-logs/` (jsonl via the driver) + pi's own JSONL session file (a navigable tree, exportable as HTML/gist) |
+| `protocol_versions` | Squad 5.0, Business 1.0, Harness 1.0 (with gaps recorded in §13) |
 
 ---
 
 ## 2. Feature Support Matrix
 
-`✓` = nativo · `~` = workaround/parcial · `✗` = não suportado
+`✓` = native · `~` = workaround/partial · `✗` = not supported
 
-| Feature (Business v1 §6) | Squad v5 | Business v1 | Harness v1 | Notas |
+| Feature (Business v2 §6.5) | Squad v6 | Business v2 | Harness v1 | Notes |
 |---|---|---|---|---|
-| `max_turns` | ~ | ~ | ~ | Sem flag per-employee; adapter simula via timeout do sub-process + contagem no handoff |
-| `tool_whitelist` | ✓ | ✓ | ✓ | Flags NATIVAS confirmadas: `--tools/-t` (allowlist), `--exclude-tools/-xt` (denylist), `--no-tools/-nt`, `--no-builtin-tools/-nbt`; skills aceitam `allowed-tools` no frontmatter |
-| `subagent_spawning` | ~ | ~ | ~ | SEM sub-agentes built-in (filosofia "primitives, not features"). Fan-out via sub-process `pi --mode json`, OU via pacote: `@pi9/subagent` instalado (`pi install npm:@pi9/subagent` — subagents assíncronos/recursivos/resumíveis; carrega em headless sem quebrar o driver, orquestração ainda não exercitada) |
-| `audit_trail` | ✓ | ✓ | ✓ | Sessão inteira persistida como árvore JSONL (`PI_SESSION_FILE`); harness adiciona jsonl próprio via `runPi` |
-| `scheduled_invocation` | ✗ | ✗ | ✗ | Sem cron nativo — degradar para cron externo |
-| `event_bus` | ~ | ~ | ~ | Mentions/tickets via file-system; modo RPC (JSONL stdin/stdout) permite um broker externo no futuro |
-| `hooks` | ~ | ~ | ~ | Sem hook system de shell; extensões TypeScript interceptam eventos do agente (equivalente funcional, exige escrever a extensão) |
-| `sandboxing` | ~ | ~ | ~ | Sem sandbox próprio; docs oficiais cobrem containerização — isolar via cwd + container |
-| `session_memory` | ✓ | ✓ | ✓ | Sessões em árvore com navegação, bookmarks, `--fork` e resume nativo (`--session <id>`) |
-| `project_memory` | ✓ | ✓ | ✓ | `AGENTS.md` no projeto (convenção compartilhada com Codex/Antigravity/Kimi) + `SYSTEM.md` |
-| `global_memory` | ~ | ~ | ~ | Sem auto-discovery rico como `~/.claude/memory/`; `~/.pi/agent/` guarda config/skills globais |
-| `handoff_artifacts` | ✓ | ✓ | ✓ | JSON extraído dos eventos `message_end` (JSONL), ou texto puro no fallback `-p` |
-| `fork_context` | ✓ | ✓ | ✓ | `--fork <path\|id>` cria fork REAL da sessão (melhor que sub-process cego) |
-| `teammate_primitive` | ✗ | ✗ | ✗ | Sem `TeamCreate`; team é convenção via file system |
-| `telemetry_otel` | ~ | ~ | ~ | `PI_TELEMETRY` controla a telemetria própria; OTel via SDK externo |
-| `mcp` | ~ | ~ | ~ | SEM MCP nativo (decisão de design) — coberto via pacote: `pi-mcp-adapter` instalado (`pi install npm:pi-mcp-adapter`; carrega em headless sem quebrar o driver, servers ainda não configurados/exercitados) |
+| `max_turns` | ~ | ~ | ~ | No per-employee flag; the adapter simulates via sub-process timeout + count in the handoff |
+| `tool_whitelist` | ✓ | ✓ | ✓ | NATIVE flags confirmed: `--tools/-t` (allowlist), `--exclude-tools/-xt` (denylist), `--no-tools/-nt`, `--no-builtin-tools/-nbt`; skills accept `allowed-tools` in the frontmatter |
+| `subagent_spawning` | ~ | ~ | ~ | NO built-in subagents ("primitives, not features" philosophy). Fan-out via `pi --mode json` sub-process, OR via a package: `@pi9/subagent` installed (`pi install npm:@pi9/subagent`, asynchronous/recursive/resumable subagents; loads in headless without breaking the driver, orchestration not yet exercised) |
+| `audit_trail` | ✓ | ✓ | ✓ | The whole session persisted as a JSONL tree (`PI_SESSION_FILE`); the harness adds its own jsonl via `runPi` |
+| `scheduled_invocation` | ✗ | ✗ | ✗ | No native cron: degrade to external cron |
+| `event_bus` | ~ | ~ | ~ | Mentions/tickets via file-system; RPC mode (JSONL stdin/stdout) allows an external broker in the future |
+| `hooks` | ~ | ~ | ~ | No shell hook system; TypeScript extensions intercept agent events (functional equivalent, requires writing the extension) |
+| `sandboxing` | ~ | ~ | ~ | No sandbox of its own; the official docs cover containerization: isolate via cwd + container |
+| `session_memory` | ✓ | ✓ | ✓ | Tree sessions with navigation, bookmarks, `--fork` and native resume (`--session <id>`) |
+| `project_memory` | ✓ | ✓ | ✓ | `AGENTS.md` in the project (convention shared with Codex/Antigravity/Kimi) + `SYSTEM.md` |
+| `global_memory` | ~ | ~ | ~ | No rich auto-discovery like `~/.claude/memory/`; `~/.pi/agent/` holds global config/skills |
+| `handoff_artifacts` | ✓ | ✓ | ✓ | JSON extracted from `message_end` events (JSONL), or plain text in the `-p` fallback |
+| `fork_context` | ✓ | ✓ | ✓ | `--fork <path\|id>` creates a REAL fork of the session (better than a blind sub-process) |
+| `teammate_primitive` | ✗ | ✗ | ✗ | No `TeamCreate`; a team is a convention via the file system |
+| `telemetry_otel` | ~ | ~ | ~ | `PI_TELEMETRY` controls its own telemetry; OTel via an external SDK |
+| `mcp` | ~ | ~ | ~ | NO native MCP (design decision), covered via a package: `pi-mcp-adapter` installed (`pi install npm:pi-mcp-adapter`; loads in headless without breaking the driver, servers not yet configured/exercised) |
 
-> **Nota fora da matriz canônica:** o grande diferencial do pi é **um runtime → 15+ providers** (Anthropic, OpenAI, Google, Azure, Bedrock, Mistral, Groq, Cerebras, xAI, Hugging Face, MiniMax, NVIDIA, OpenRouter, Ollama…), com OAuth de assinaturas (Claude Pro/Max, ChatGPT, Copilot) e **modelos LOCAIS** (§8), além do trio print/JSON/RPC para uso programático.
+> **Note outside the canonical matrix:** pi's big differentiator is **one runtime → 15+ providers** (Anthropic, OpenAI, Google, Azure, Bedrock, Mistral, Groq, Cerebras, xAI, Hugging Face, MiniMax, NVIDIA, OpenRouter, Ollama…), with OAuth for subscriptions (Claude Pro/Max, ChatGPT, Copilot) and **LOCAL models** (§8), plus the print/JSON/RPC trio for programmatic use.
 
 ---
 
 ## 3. Concept Mapping
 
-| Conceito (Protocolo) | Equivalente Pi | Implementação |
+| Concept (Protocol) | Pi equivalent | Implementation |
 |---|---|---|
-| Squad / Business | Diretório de skills + AGENTS.md | `~/.pi/agent/skills/<name>/` (global) ou `.agents/skills/` (projeto) + `AGENTS.md` do CWD |
-| Capability | Skill (padrão Agent Skills) | `SKILL.md` com frontmatter `name`/`description`; forçável via `/skill:nome` |
-| Employee | Persona embutida no prompt | persona-núcleo + DNA no corpo do prompt do `pi --mode json`; não é arquivo de agent |
-| `is_brief_intake: true` | Persona default quando skill ativa | Montada no prompt / `AGENTS.md` |
-| `is_antagonist: true` | Sub-process invocado em pipeline | `pi --mode json --provider <p> --model <m> "<persona+brief>"` |
-| Handoff artifact | JSON nos eventos `message_end` + arquivo | Persistido em `<project>/.handoffs/` |
-| Mention `@employee` | Convenção no handoff | Adapter detecta → novo sub-process |
-| Ticket | Arquivo persistido | `<project>/.tickets/<TICKET_ID>.json` |
-| Escalation trigger | Wrapper script + harness call | Wrapper checa condição → emite notification para harness |
-| Permanent memory | `<project>/AGENTS.md` + files custom | Sem auto-load global rico |
-| Project memory | `<project>/AGENTS.md` + `SYSTEM.md` | Convenção |
-| Session memory | Árvore de sessão JSONL | Resume via `--session <id>`; fork via `--fork`; compaction automática nativa |
-| Routing decision (harness) | Pre-spawn lookup table | BM25 sobre `capabilities[].examples[]` em wrapper Bun/Node |
+| Squad / Business | Skills directory + AGENTS.md | `~/.pi/agent/skills/<name>/` (global) or `.agents/skills/` (project) + the CWD's `AGENTS.md` |
+| Capability | Skill (Agent Skills standard) | `SKILL.md` with `name`/`description` frontmatter; forceable via `/skill:name` |
+| Employee (seat) | Persona embedded in the prompt | A business runs as ONE solo agent (`skills/harness/lib/business-solo.ts`) that plays the seats itself; core persona + DNA in the body of the `pi --mode json` prompt; not an agent file |
+| `is_brief_intake: true` | Default persona when the skill is active | Built in the prompt / `AGENTS.md` |
+| `is_antagonist: true` | Sub-process invoked in a pipeline | `pi --mode json --provider <p> --model <m> "<persona+brief>"` |
+| Handoff artifact | JSON in `message_end` events + file | Persisted in `<project>/.handoffs/` |
+| Mention `@employee` | Convention in the handoff | The adapter detects it → new sub-process |
+| Ticket | Persisted file | `<project>/.tickets/<TICKET_ID>.json` |
+| Escalation trigger | Wrapper script + harness call | The wrapper checks the condition → emits a notification to the harness |
+| Permanent memory | `<project>/AGENTS.md` + custom files | No rich global auto-load |
+| Project memory | `<project>/AGENTS.md` + `SYSTEM.md` | Convention |
+| Session memory | JSONL session tree | Resume via `--session <id>`; fork via `--fork`; native automatic compaction |
+| Routing decision (harness) | Pre-spawn lookup table | BM25 over `capabilities[].examples[]` in a Bun/Node wrapper |
 
 ---
 
 ## 4. Frontmatter Mapping
 
-### Squad v5 / Business v1 → AGENTS.md
+### Squad v6 / Business v2 → AGENTS.md
 
-O pi lê `AGENTS.md` nativamente (context engineering minimalista). O adapter gera dois arquivos (mesma tática do Codex/Kimi):
+pi reads `AGENTS.md` natively (minimalist context engineering). The adapter generates two files (same tactic as Codex/Kimi):
 
 ```yaml
-# AGENTS.md (head do projeto/skill)
+# AGENTS.md (head of the project/skill)
 You are an AI agent operating under the Squad/Business Protocol.
 
 Available capabilities: [media.video.analyze, media.transcript.extract, ...]
@@ -88,132 +88,132 @@ Default tools: [Read, Write, Bash]
 ```
 
 ```yaml
-# .agents/manifest.yaml (auxiliar — lido por wrapper, não pelo pi)
+# .agents/manifest.yaml (auxiliary: read by a wrapper, not by pi)
 name: nexus-council
 protocol: 1.0
 employees: [ceo, marketing-lead, ...]
 operation_mode: zero_human
 ```
 
-### Employee → prompt do `pi --mode json`
+### Employee → `pi --mode json` prompt
 
-Sem agent-profile por arquivo. A persona do employee é montada no prompt:
+No per-file agent profile. The employee persona is assembled in the prompt:
 
 ```
-<persona-núcleo do employee (frontmatter → topo)>
-<DNA do mind-clone — injectMindClones().combined_prompt>
+<employee core persona (frontmatter → top)>
+<mind-clone DNA: injectMindClones().combined_prompt>
 ## Brief
-<brief enriquecido>
-## Tools permitidos
+<enriched brief>
+## Allowed tools
 <tool whitelist>
-## Contrato de saída
-Responda SOMENTE com um único objeto JSON: {...}
+## Output contract
+Reply ONLY with a single JSON object: {...}
 ```
 
-> Para `type: mind_clone`, o adapter **prepende** `(DISCLOSURE: AI-generated persona, not a real person.)` na persona, igual ao Codex.
+> For `type: mind_clone`, the adapter **prepends** `(DISCLOSURE: AI-generated persona, not a real person.)` to the persona, same as Codex.
 
 ---
 
 ## 5. Tool Whitelist Mechanics
 
-- Built-in tools: `read`, `bash`, `edit`, `write` (+ `grep`, `find`, `ls` read-only, off por default). Tudo além disso vem de **extensões TypeScript**.
-- Whitelist NATIVA por flag (confirmada no 0.82.1, vale para built-in + extension + custom tools):
-  - `--tools, -t <a,b,c>` — allowlist por nome (`pi --tools read,grep,find,ls -p "..."` = modo read-only real).
-  - `--exclude-tools, -xt <a,b>` — denylist.
-  - `--no-tools, -nt` / `--no-builtin-tools, -nbt` — desligar tudo / só as built-in.
-  - Skill frontmatter: campo `allowed-tools` do padrão Agent Skills (por skill).
-- O driver não injeta `--tools` hoje (o contrato `allowedTools` do harness usa nomes do Claude — Write/Edit/Read — que não mapeiam 1:1); wrapper que precisar de safe-mode duro pode passar a flag direto.
-- `-a/--approve` × `-na/--no-approve` controlam a confiança nos **arquivos locais do projeto** (extensões/settings de `.pi/`) — não é um permission-mode por tool. Headless: o driver passa `--approve` (full trust) ou `--no-approve` (`--safe`), porque sem TTY não há como responder o trust prompt.
+- Built-in tools: `read`, `bash`, `edit`, `write` (+ `grep`, `find`, `ls` read-only, off by default). Anything beyond that comes from **TypeScript extensions**.
+- NATIVE whitelist by flag (confirmed on 0.82.1, applies to built-in + extension + custom tools):
+  - `--tools, -t <a,b,c>`: allowlist by name (`pi --tools read,grep,find,ls -p "..."` = a real read-only mode).
+  - `--exclude-tools, -xt <a,b>`: denylist.
+  - `--no-tools, -nt` / `--no-builtin-tools, -nbt`: turn everything off / only the built-ins.
+  - Skill frontmatter: the Agent Skills standard's `allowed-tools` field (per skill).
+- The driver does not inject `--tools` today (the harness `allowedTools` contract uses Claude's names, Write/Edit/Read, which do not map 1:1); a wrapper that needs a hard safe mode can pass the flag directly.
+- `-a/--approve` × `-na/--no-approve` control trust in the project's **local files** (`.pi/` extensions/settings); it is not a per-tool permission mode. Headless: the driver passes `--approve` (full trust) or `--no-approve` (`--safe`), because without a TTY there is no way to answer the trust prompt.
 
 ---
 
 ## 6. Max-Turns Mechanics
 
-O pi **não** expõe `--max-turns` per-employee. Adapter simula assim:
+pi **does not** expose a per-employee `--max-turns`. The adapter simulates it like this:
 
-1. Cada employee roda como sub-process `pi --mode json`, com `timeout` do wrapper (`opts.timeoutMs` → `spawnSync`).
-2. Contagem lógica de turns vem do handoff (o employee reporta steps executados) — ou dos eventos `turn_start`/`turn_end` do próprio JSONL, que o pi emite e o wrapper pode contar.
-3. Estouro de timeout → o sub-process termina; o wrapper registra `audit_event: budget_violation`.
+1. Each employee runs as a `pi --mode json` sub-process, with the wrapper's `timeout` (`opts.timeoutMs` → `spawnSync`).
+2. The logical turn count comes from the handoff (the employee reports the steps executed), or from the `turn_start`/`turn_end` events of the JSONL itself, which pi emits and the wrapper can count.
+3. Timeout overrun → the sub-process ends; the wrapper records `audit_event: budget_violation`.
 
-**Vantagem sobre kimi/grok:** os eventos `turn_*` do stream JSON dão contagem de turns REAL (não estimada), se o wrapper quiser enforçar.
+**Advantage over kimi/grok:** the `turn_*` events of the JSON stream give a REAL (not estimated) turn count, if the wrapper wants to enforce it.
 
 ---
 
 ## 7. Subagent Spawning
 
-**Sem subagent primitive nativo** — decisão de design explícita do pi ("no built-in sub-agents"). O caminho é sub-process (`host-agent-driver.runPi`):
+**No native subagent primitive**, an explicit pi design decision ("no built-in sub-agents"). The path is a sub-process (`host-agent-driver.runPi`):
 
 ```bash
-# Adapter spawn (host-agent-driver.runPi) — verificado contra pi 0.82.1
+# Adapter spawn (host-agent-driver.runPi), verified against pi 0.82.1
 pi -p --mode json --session-id <uuid> --provider <provider> --model <model> --approve \
   "Review this offer: ..." \
   > .handoffs/alex-hormozi-$(date +%s).jsonl
 ```
 
-Flags usadas pelo driver (todas confirmadas no `pi --help` 0.82.1 + run real):
-- `-p --mode json` — event stream JSONL: header `{"type":"session","version":3,"id":"<uuid>","timestamp","cwd"}` + eventos (`agent_start`, `turn_start/end`, `message_start/update/end`, `tool_execution_*`, `agent_end`, `agent_settled`). O texto do assistant vem nos `message_end` (`message.content = [{type:"text",text}]`). **Builds sem `--mode`** → o driver detecta o erro de flag e **re-executa em print mode `-p`** (texto puro no stdout).
-- `--session-id <uuid>` — sessão DETERMINÍSTICA ("exact project session ID, creating it if missing"): o driver gera o uuid no 1º run e o `nrv revise` retoma passando o MESMO id (padrão runGemini). Alternativas: `--session <path|id>` (lookup por UUID parcial), `--fork <path|id>` (branch), `-c/--continue` (mais recente).
-- `--append-system-prompt <text>` — o `AUTONOMOUS_DIRECTIVE` vai como system prompt DE VERDADE (não dobrado no prompt do usuário como em codex/gemini/kimi/grok).
-- `--model <pattern>` / `--provider <name>` — vêm SÓ da entrada `pi:<model>@<provider>` do cascade, nunca hardcoded. Sem eles, vale o default da config do usuário do pi (não necessariamente `google`, o default de fábrica).
-- `--approve` / `--no-approve` — trust nos arquivos locais do projeto (ver §5).
-- Prompt como argumento posicional; stdin também é aceito como conteúdo anexado (`cat file | pi -p "..."`) — cuidado em shells interativos: sem EOF no stdin o pi BLOQUEIA esperando input (o spawnSync do driver fecha o stdin, então o dispatch não sofre disso; em teste manual use `< /dev/null`).
+Flags used by the driver (all confirmed in `pi --help` 0.82.1 + a real run):
+- `-p --mode json`: JSONL event stream: header `{"type":"session","version":3,"id":"<uuid>","timestamp","cwd"}` + events (`agent_start`, `turn_start/end`, `message_start/update/end`, `tool_execution_*`, `agent_end`, `agent_settled`). The assistant text arrives in `message_end` (`message.content = [{type:"text",text}]`). **Builds without `--mode`** → the driver detects the flag error and **re-runs in print mode `-p`** (plain text on stdout).
+- `--session-id <uuid>`: a DETERMINISTIC session ("exact project session ID, creating it if missing"): the driver generates the uuid on the 1st run and `nrv revise` resumes by passing the SAME id (runGemini pattern). Alternatives: `--session <path|id>` (lookup by partial UUID), `--fork <path|id>` (branch), `-c/--continue` (most recent).
+- `--append-system-prompt <text>`: the `AUTONOMOUS_DIRECTIVE` goes as a REAL system prompt (not folded into the user prompt as in codex/gemini/kimi/grok).
+- `--model <pattern>` / `--provider <name>`: they come ONLY from the `pi:<model>@<provider>` cascade entry, never hardcoded. Without them, the default of the user's pi config applies (not necessarily `google`, the factory default).
+- `--approve` / `--no-approve`: trust in the project's local files (see §5).
+- The prompt is a positional argument; stdin is also accepted as attached content (`cat file | pi -p "..."`). Careful in interactive shells: with no EOF on stdin pi BLOCKS waiting for input (the driver's spawnSync closes stdin, so dispatch does not suffer from this; in a manual test use `< /dev/null`).
 
-**Detecção de erro (quirk importante):** o pi **sai com exit 0 mesmo quando o provider falha**. O erro vem no stream: `message.stopReason === "error"` + `message.errorMessage` (ex.: `403 "...used all available credits or reached its monthly spending limit"`). O `runPi` marca `ok=false` a partir do stream e propaga o `errorMessage` para o quota-detector (classificado como `quota_exhausted`/`auth_failed`/etc.). Custo real por turn em `message.usage.cost.total` (o driver soma).
+**Error detection (important quirk):** pi **exits 0 even when the provider fails**. The error comes in the stream: `message.stopReason === "error"` + `message.errorMessage` (e.g. `403 "...used all available credits or reached its monthly spending limit"`). `runPi` marks `ok=false` from the stream and propagates the `errorMessage` to the quota-detector (classified as `quota_exhausted`/`auth_failed`/etc.). Real cost per turn is in `message.usage.cost.total` (the driver sums it).
 
-**Para mention `@x`:** adapter detecta no handoff retornado, abre novo sub-process para `x`.
+**For a mention `@x`:** the adapter detects it in the returned handoff and opens a new sub-process for `x`.
 
-**Fan-out paralelo:** simulado ao nível do OS (sub-processes independentes), não dentro do pi. Alternativa avançada: **modo RPC** (`--mode rpc`, JSONL bidirecional em stdin/stdout) permite um driver persistente com steering/follow-up — não usado pelo driver atual (ver §13).
+**Parallel fan-out:** simulated at the OS level (independent sub-processes), not inside pi. Advanced alternative: **RPC mode** (`--mode rpc`, bidirectional JSONL on stdin/stdout) allows a persistent driver with steering/follow-up; not used by the current driver (see §13).
 
 ---
 
 ## 8. Memory Storage
 
-| Camada | Path | Persistência |
+| Layer | Path | Persistence |
 |---|---|---|
-| Permanent (cross-session) | `<project>/AGENTS.md` + files custom | Manual |
-| Project | `<project>/AGENTS.md` + `SYSTEM.md` | Nativa (context engineering do pi) |
-| Session | Árvore JSONL (`PI_SESSION_FILE`) | Nativa; resume/fork/navegação; compaction automática |
-| Business permanent | `~/businesses/<biz>/memory/permanent.md` | Adapter persiste |
+| Permanent (cross-session) | `<project>/AGENTS.md` + custom files | Manual |
+| Project | `<project>/AGENTS.md` + `SYSTEM.md` | Native (pi's context engineering) |
+| Session | JSONL tree (`PI_SESSION_FILE`) | Native; resume/fork/navigation; automatic compaction |
+| Business permanent | `~/businesses/<biz>/memory/permanent.md` | Adapter persists |
 | Project (business) | `<project>/<biz>/<project_id>/memory/` | Isolation by construction |
 
-**Autenticação (multi-provider — o coração do pi).** Resolução de credencial em ordem: flag `--api-key` > `~/.pi/agent/auth.json` > env var do provider > keys em `models.json`. Rotas:
+**Authentication (multi-provider, the heart of pi).** Credential resolution in order: `--api-key` flag > `~/.pi/agent/auth.json` > the provider's env var > keys in `models.json`. Routes:
 
-- **API keys** — `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `MISTRAL_API_KEY`, `DEEPSEEK_API_KEY`, … (envs padrão de cada provider).
-- **OAuth de assinatura** — `/login` interativo: Claude Pro/Max, ChatGPT Plus/Pro, GitHub Copilot, xAI, OpenRouter. $0 marginal (cap da assinatura), igual ao trilho subscription dos outros runtimes.
-- **MODELOS LOCAIS** — resposta direta à pergunta "o pi roda LLM local?": **sim, por três portas**:
-  1. **Ollama** — provider suportado via `models.json` (endpoint local `http://localhost:11434`).
-  2. **llama.cpp router server** — suporte dedicado: `/login llama.cpp` + gestão de modelos carregados com `/llama`.
-  3. **Qualquer endpoint OpenAI-compatible** — LM Studio, vLLM, etc., registrado em `~/.pi/agent/models.json` (o pi fala OpenAI Completions, Anthropic Messages e Google Generative AI).
-  Custo por token = $0 (hardware próprio); privacidade total (nada sai da máquina). Cascade: `pi:<modelo-local>@ollama`.
+- **API keys**: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `MISTRAL_API_KEY`, `DEEPSEEK_API_KEY`, … (each provider's standard envs).
+- **Subscription OAuth**: interactive `/login`: Claude Pro/Max, ChatGPT Plus/Pro, GitHub Copilot, xAI, OpenRouter. $0 marginal (subscription cap), same as the subscription track of the other runtimes.
+- **LOCAL MODELS**: a direct answer to "does pi run a local LLM?": **yes, through three doors**:
+  1. **Ollama**: provider supported via `models.json` (local endpoint `http://localhost:11434`).
+  2. **llama.cpp router server**: dedicated support: `/login llama.cpp` + management of loaded models with `/llama`.
+  3. **Any OpenAI-compatible endpoint**: LM Studio, vLLM, etc., registered in `~/.pi/agent/models.json` (pi speaks OpenAI Completions, Anthropic Messages and Google Generative AI).
+  Per-token cost = $0 (own hardware); total privacy (nothing leaves the machine). Cascade: `pi:<local-model>@ollama`.
 
 ---
 
 ## 9. Context Window & Compaction
 
-- Janela: **depende do modelo ativo** (200K Anthropic, 1M Gemini, local = config do servidor). O pi é a única porta do engine onde a janela é escolhida POR ENTRADA de cascade, não por runtime.
-- Compaction: **automática nativa** — o pi compacta a sessão sozinho quando a janela aperta (parte do context engineering minimalista).
-- Troca de modelo mid-session (`/model`, `Ctrl+L`) preserva a sessão — útil para escalar um brief travado para um modelo maior sem perder contexto.
+- Window: **depends on the active model** (200K Anthropic, 1M Gemini, local = server config). pi is the only door of the engine where the window is chosen PER cascade entry, not per runtime.
+- Compaction: **native and automatic**: pi compacts the session by itself when the window tightens (part of the minimalist context engineering).
+- Switching model mid-session (`/model`, `Ctrl+L`) preserves the session, useful to escalate a stuck brief to a bigger model without losing context.
 
 ---
 
 ## 10. Hook System
 
-Sem hooks de shell. O equivalente funcional são **extensões TypeScript** (o pi recarrega com `/reload`):
+No shell hooks. The functional equivalent is **TypeScript extensions** (pi reloads with `/reload`):
 
-| Hook desejado | Workaround Pi |
+| Desired hook | Pi workaround |
 |---|---|
-| `PreToolUse` | Extensão TypeScript interceptando tool events; ou persona como soft-validator + hard validation no wrapper |
-| `PostToolUse` | Extensão, ou wrapper parseando os eventos `tool_execution_end` do JSONL |
-| `UserPromptSubmit` | Adapter injeta instructions no prompt |
-| `Stop` | Wrapper inspeciona `agent_end` + exit code |
-| `SessionStart` | Wrapper carrega memory antes de invocar; ou `SYSTEM.md`/`AGENTS.md` |
-| `Compact` | Compaction automática nativa (evento `compaction_start` no stream) |
+| `PreToolUse` | A TypeScript extension intercepting tool events; or persona as a soft validator + hard validation in the wrapper |
+| `PostToolUse` | An extension, or a wrapper parsing the JSONL `tool_execution_end` events |
+| `UserPromptSubmit` | The adapter injects instructions into the prompt |
+| `Stop` | The wrapper inspects `agent_end` + the exit code |
+| `SessionStart` | The wrapper loads memory before invoking; or `SYSTEM.md`/`AGENTS.md` |
+| `Compact` | Native automatic compaction (`compaction_start` event in the stream) |
 
 ---
 
 ## 11. Invocation Examples
 
-### Exemplo 1 — Squad capability
+### Example 1: Squad capability
 
 ```bash
 # User: "transcrever vídeo do Instagram https://..."
@@ -222,23 +222,23 @@ pi --mode json --approve "You are instagram-intelligence. Analyze video: https:/
   > .handoffs/ii-1.jsonl
 ```
 
-### Exemplo 2 — Business brief com handoff em pipeline (modelo local!)
+### Example 2: Business brief with handoff (local model!)
 
 ```bash
-# CEO no modelo local via Ollama (privacidade total, $0/token)
+# The business agent on a local model via Ollama (total privacy, $0/token)
 pi --mode json --provider ollama --model qwen3-coder --approve \
-  "<persona ceo + brief + contrato JSON>" > .handoffs/ceo-1.jsonl
+  "<business persona + brief + JSON contract>" > .handoffs/nexus-1.jsonl
 
-# Adapter detecta `next_action: delegate to marketing-lead` — resume a MESMA sessão
-SESSION_ID=$(head -1 .handoffs/ceo-1.jsonl | jq -r .id)
+# A follow-up resumes the SAME session
+SESSION_ID=$(head -1 .handoffs/nexus-1.jsonl | jq -r .id)
 pi --mode json --session "$SESSION_ID" --approve \
-  "<persona marketing + contrato JSON>" > .handoffs/marketing-1.jsonl
+  "<follow-up instruction + JSON contract>" > .handoffs/nexus-2.jsonl
 ```
 
-### Exemplo 3 — Entradas de cascade (`.env`)
+### Example 3: Cascade entries (`.env`)
 
 ```dotenv
-# pi como camada de resiliência multi-provider + fallback local infinito
+# pi as a multi-provider resilience layer + endless local fallback
 LLM_CASCADE=claude-code:opus,pi:gpt-5.5@openai$10,pi:qwen3-coder@ollama
 USE_PI="Quando precisar de modelos locais (Ollama/llama.cpp) ou de um provider fora dos CLIs oficiais"
 ```
@@ -247,35 +247,35 @@ USE_PI="Quando precisar de modelos locais (Ollama/llama.cpp) ou de um provider f
 
 ## 12. Runtime-Specific Validators
 
-- **Credencial do provider ATIVO**: a entrada `pi:<model>@<provider>` só é válida se o provider tem credencial resolvível (`auth.json`, env, `models.json`) — ou é local (ollama/llama.cpp rodando). Wrapper checa antes do spawn.
-- **Model resolvível**: `<model>` tem que existir no catálogo do provider ou no `models.json`; erro vira `quota_exhausted` de TTL curto no quota-detector (cascade pula para a próxima entrada).
-- **Endpoint local vivo**: para providers locais, provar `GET /v1/models` (ou equivalente) responde antes de despachar — servidor local caído é o erro mais comum.
-- **Trust do projeto**: headless SEMPRE com `--approve` ou `--no-approve` explícito — nunca deixar o pi tentar perguntar num TTY que não existe.
+- **ACTIVE provider's credential**: the `pi:<model>@<provider>` entry is only valid if the provider has a resolvable credential (`auth.json`, env, `models.json`), or is local (ollama/llama.cpp running). The wrapper checks before spawning.
+- **Resolvable model**: `<model>` has to exist in the provider catalog or in `models.json`; an error becomes a short-TTL `quota_exhausted` in the quota-detector (the cascade skips to the next entry).
+- **Live local endpoint**: for local providers, prove that `GET /v1/models` (or equivalent) answers before dispatching; a downed local server is the most common error.
+- **Project trust**: headless ALWAYS with an explicit `--approve` or `--no-approve`; never let pi try to ask on a TTY that does not exist.
 
 ---
 
 ## 13. Known Limitations
 
-1. **Exit code NÃO sinaliza erro de provider** (verificado no 0.82.1): o pi sai com 0 mesmo com `stopReason: "error"` — quem checar só exit code declara sucesso falso. O `runPi` já detecta pelo stream; qualquer wrapper próprio TEM que fazer o mesmo.
-2. **Schema dos eventos JSONL pode variar por build** (formato confirmado no 0.82.1) → o driver extrai session id e texto do assistant defensivamente; se nada parsear, mantém o stdout inteiro.
-3. **Sem MCP nativo** (decisão de design) → mitigado pelo pacote `pi-mcp-adapter` (instalado, headless OK; servers ainda não exercitados). Squads que exigem `mcp` hard devem validar antes de declarar `pi`.
-4. **Sem subagents nativos** → fan-out via sub-process, ou pacote `@pi9/subagent` (instalado, headless OK; orquestração ainda não exercitada).
-4b. **Modelos locais pequenos (≤7B) NÃO sustentam o dispatch de business completo** — testado 2x com `qwen2.5-coder:7b` (prompt de employee de 92k chars): zero tool calls, entregável nunca escrito (verify reprovou honestamente); no 2º teste o modelo se perdeu na persona do DNA. Pacotes de contexto/planejamento não resolvem (o gargalo é o prompt inicial + capacidade). Uso correto do trilho local: fim do cascade, chamadas de julgamento curtas, tarefas mecânicas — não o topo da cascata de produção.
-5. **Sem hooks de shell** → equivalente via extensões TypeScript (exige escrevê-las).
-6. **Sem cron/ScheduleWakeup** → degradar para cron externo.
-7. **Sem sandbox próprio** → containerizar quando isolamento importa (docs oficiais cobrem).
-8. **Custo por token CONFIRMADO no stream** — `message.usage.cost.total` por turn do assistant (o driver soma). Budget `$N` do cascade funciona quando o provider reporta custo; trilhas OAuth de assinatura podem reportar 0.
-9. **`--approve` semantics**: trust é sobre ARQUIVOS LOCAIS do projeto (extensões/settings), não um permission-mode por tool — não confundir com o `--permission-mode` do claude.
-10. **Modo RPC não usado** pelo driver atual — sessões persistentes com steering ficam como evolução (§7).
+1. **The exit code does NOT signal a provider error** (verified on 0.82.1): pi exits 0 even with `stopReason: "error"`, so whoever checks only the exit code declares a false success. `runPi` already detects it from the stream; any wrapper of your own MUST do the same.
+2. **The JSONL event schema may vary by build** (format confirmed on 0.82.1) → the driver extracts the session id and the assistant text defensively; if nothing parses, it keeps the whole stdout.
+3. **No native MCP** (design decision) → mitigated by the `pi-mcp-adapter` package (installed, headless OK; servers not yet exercised). Squads that require `mcp` as a hard need must validate before declaring `pi`.
+4. **No native subagents** → fan-out via sub-process, or the `@pi9/subagent` package (installed, headless OK; orchestration not yet exercised).
+4b. **Small local models (<=7B) do NOT sustain a full business dispatch**: tested 2x with `qwen2.5-coder:7b` (92k-char employee prompt): zero tool calls, deliverable never written (verify honestly failed); in the 2nd test the model got lost in the DNA persona. Context/planning packages do not solve it (the bottleneck is the initial prompt + capacity). Correct use of the local track: the end of the cascade, short judgment calls, mechanical tasks, not the top of the production cascade.
+5. **No shell hooks** → equivalent via TypeScript extensions (requires writing them).
+6. **No cron/ScheduleWakeup** → degrade to external cron.
+7. **No sandbox of its own** → containerize when isolation matters (the official docs cover it).
+8. **Per-token cost CONFIRMED in the stream**: `message.usage.cost.total` per assistant turn (the driver sums it). The cascade's `$N` budget works when the provider reports cost; subscription OAuth tracks may report 0.
+9. **`--approve` semantics**: trust is about the project's LOCAL FILES (extensions/settings), not a per-tool permission mode; do not confuse it with claude's `--permission-mode`.
+10. **RPC mode not used** by the current driver: persistent sessions with steering remain an evolution (§7).
 
-**Vantagem compensatória:** um único runtime cobre 15+ providers + modelos locais ($0/token, 100% offline), com resume/fork de sessão nativo e trilha JSONL auditável — o melhor fit do engine para fallback-infinito e briefs privacy-sensitive.
+**Compensating advantage:** a single runtime covers 15+ providers + local models ($0/token, 100% offline), with native session resume/fork and an auditable JSONL trail, the engine's best fit for endless fallback and privacy-sensitive briefs.
 
 ---
 
 ## 14. Source References
 
-- Site/instalação: `https://pi.dev` — `curl -fsSL https://pi.dev/install.sh | sh` ou `npm i -g --ignore-scripts @earendil-works/pi-coding-agent`.
-- Docs: `https://pi.dev/docs/latest` — usage (flags), providers (auth, llama.cpp, models.json), json (event stream), rpc, skills (padrão Agent Skills), environment-variables (`PI_CODING_AGENT`, `PI_SESSION_ID`, `PI_SESSION_FILE`, `PI_PROVIDER`, `PI_MODEL`).
+- Site/install: `https://pi.dev`, `curl -fsSL https://pi.dev/install.sh | sh` or `npm i -g --ignore-scripts @earendil-works/pi-coding-agent`.
+- Docs: `https://pi.dev/docs/latest`: usage (flags), providers (auth, llama.cpp, models.json), json (event stream), rpc, skills (Agent Skills standard), environment-variables (`PI_CODING_AGENT`, `PI_SESSION_ID`, `PI_SESSION_FILE`, `PI_PROVIDER`, `PI_MODEL`).
 - Repo: `github.com/earendil-works/pi` (MIT).
 - Driver: `skills/harness/lib/host-agent-driver.ts` (`runPi`); judge driver: `skills/_shared/lib/host-agent-driver.ts` (adapter `pi`).
 - Squad Protocol v6: `~/.nirvana/skills/squads/SQUAD_PROTOCOL_V6.md`
@@ -286,7 +286,7 @@ USE_PI="Quando precisar de modelos locais (Ollama/llama.cpp) ou de um provider f
 
 ## 15. Version History
 
-| Versão | Data | Mudanças |
+| Version | Date | Changes |
 |---|---|---|
-| 1.0.0 | 2026-07-27 | Doc inicial — cobre Squad 5.0 + Business 1.0 + Harness 1.0 contra o Pi Coding Agent (pi.dev). Dispatch via `pi --mode json` (sub-process, JSONL→texto), resume nativo `--session`, multi-provider com modelos locais. Flags não verificadas contra binário real. |
-| 1.1.0 | 2026-07-28 | **Verificado contra `pi 0.82.1`** (--help + run headless real). Driver migrado para `--session-id` determinístico + `--append-system-prompt` nativo; detecção de erro pelo stream (exit 0 no erro de provider — §13.1); custo real em `message.usage.cost.total`; tool whitelist nativa (`--tools`) documentada (§5). Caminho de SUCESSO verificado 100% local: Ollama + qwen2.5-coder:7b via `models.json`, com resume de sessão real. |
+| 1.0.0 | 2026-07-27 | Initial doc: covers Squad 5.0 + Business 1.0 + Harness 1.0 against the Pi Coding Agent (pi.dev). Dispatch via `pi --mode json` (sub-process, JSONL→text), native `--session` resume, multi-provider with local models. Flags not verified against the real binary. |
+| 1.1.0 | 2026-07-28 | **Verified against `pi 0.82.1`** (--help + real headless run). Driver migrated to a deterministic `--session-id` + native `--append-system-prompt`; error detection from the stream (exit 0 on provider error, §13.1); real cost in `message.usage.cost.total`; native tool whitelist (`--tools`) documented (§5). SUCCESS path verified 100% local: Ollama + qwen2.5-coder:7b via `models.json`, with a real session resume. |

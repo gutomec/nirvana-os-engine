@@ -330,7 +330,7 @@ const scannedOnlyGlobalLibrary =
   && !insideProject(roots[0]);
 if (registryPath !== globalRegistryPath && scannedOnlyGlobalLibrary) {
   if (writeRegistry(globalRegistryPath, "the global registry") && !quiet) {
-    console.error(`[index-clones] espelhado no escopo global → ${globalRegistryPath}`);
+    console.error(`[index-clones] mirrored to the global scope → ${globalRegistryPath}`);
   }
 }
 

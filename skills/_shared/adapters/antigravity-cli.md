@@ -1,85 +1,85 @@
 # Adapter · Antigravity CLI (Google Antigravity 2.0)
 
-> Runtime adapter para Squad Protocol v5 + Business Protocol v1 + Harness Protocol v1.
-> Cobre os 3 protocolos em um único doc. Seções canônicas conforme Squad v4 §18.5.
-> Identidade + capabilities do sistema (o que o Nirvana-OS é e pode fazer): ver `../NIRVANA-OS.md` (fonte única).
+> Runtime adapter for Squad Protocol v6 + Business Protocol v2 + Harness Protocol v1.
+> Covers the 3 protocols in a single doc. Canonical sections per Squad Protocol v6 §18.5.
+> System identity + capabilities (what Nirvana-OS is and can do): see `../NIRVANA-OS.md` (single source).
 
-> **Sucessor do gemini-cli.** Anunciado no Google I/O 2026, o Antigravity 2.0 **substitui o gemini-cli** no tier consumer a partir de 2026-06-18. Mesmo backend Google (modelos Gemini), binário e convenções de flag diferentes (`agy`). Ver [`gemini-cli.md`](./gemini-cli.md) (legado).
+> **Successor to gemini-cli.** Announced at Google I/O 2026, Antigravity 2.0 **replaces gemini-cli** on the consumer tier from 2026-06-18. Same Google backend (Gemini models), different binary and flag conventions (`agy`). See [`gemini-cli.md`](./gemini-cli.md) (legacy).
 
 ---
 
 ## 1. Adapter Metadata
 
-| Campo | Valor |
+| Field | Value |
 |---|---|
 | `runtime` | `antigravity-cli` |
 | `vendor` | Google |
 | `min_version` | `2.0+` (Antigravity CLI), `google-genai` SDK `>=0.5` |
-| `default_model` | herdado do runtime — o engine NUNCA define model; a config do runtime do usuário decide. Passe model só quando o usuário pedir explicitamente. |
-| `tested_against` | Antigravity 2.0 contra Gemini 3 Pro |
+| `default_model` | inherited from the runtime. The engine NEVER sets a model; the user's runtime config decides. Pass a model only when the user explicitly asks. |
+| `tested_against` | Antigravity 2.0 against Gemini 3 Pro |
 | `config_paths` | `~/.antigravity/settings.json`, `<project>/AGENTS.md`, `~/AGENTS.md` |
-| `skills_root` | `~/.gemini/config/skills/<name>/` (lido pelo agy, pelo CLI e pelo IDE; o CLI também lê `~/.gemini/antigravity-cli/skills/` e `<workspace>/.agents/skills/`). `~/.antigravity/skills` não é lido por nenhum deles |
-| `agents_root` | `~/.antigravity/agents/<name>.md` ou bundled em `<project>/.antigravity/agents/` |
+| `skills_root` | `~/.gemini/config/skills/<name>/` (read by agy, by the CLI and by the IDE; the CLI also reads `~/.gemini/antigravity-cli/skills/` and `<workspace>/.agents/skills/`). `~/.antigravity/skills` is not read by any of them |
+| `agents_root` | `~/.antigravity/agents/<name>.md` or bundled in `<project>/.antigravity/agents/` |
 | `memory_root` | `<project>/AGENTS.md` (project), `~/.antigravity/memory/` (custom) |
 | `audit_log` | `~/.antigravity/sessions/` (transcripts), `~/.harness-logs/` (jsonl fallback) |
-| `protocol_versions` | Squad 5.0, Business 1.0, Harness 1.0 (com gaps registrados em §13) |
+| `protocol_versions` | Squad 5.0, Business 1.0, Harness 1.0 (with gaps recorded in §13) |
 
 ---
 
 ## 2. Feature Support Matrix
 
-`✓` = nativo · `~` = workaround/parcial · `✗` = não suportado
+`✓` = native · `~` = workaround/partial · `✗` = not supported
 
-| Feature (Business v1 §6) | Squad v5 | Business v1 | Harness v1 | Notas |
+| Feature (Business v2 §6.5) | Squad v6 | Business v2 | Harness v1 | Notes |
 |---|---|---|---|---|
-| `max_turns` | ~ | ~ | ~ | `--max-iterations` global no CLI; per-employee via wrapper |
+| `max_turns` | ~ | ~ | ~ | global `--max-iterations` on the CLI; per-employee via wrapper |
 | `tool_whitelist` | ✓ | ✓ | ✓ | Function calling whitelist + `--tools` flag |
-| `subagent_spawning` | ✓ | ✓ | ✓ | native — dynamic subagents in-process via Agent Harness local; Managed Agents para long runs; `agy -p` sub-process é fallback |
-| `audit_trail` | ✓ | ✓ | ✓ | Session transcripts em `~/.antigravity/sessions/`; harness adiciona OTel/jsonl |
-| `scheduled_invocation` | ✗ | ✗ | ✗ | Sem `ScheduleWakeup` — cron externo |
-| `event_bus` | ~ | ~ | ~ | Mentions/tickets via file-system; sem broker |
-| `hooks` | ~ | ~ | ~ | Hooks parciais; validações complexas em wrapper |
-| `sandboxing` | ~ | ~ | ~ | Approval modes (Request Review / Proceed-in-Sandbox / Always-Proceed); profiles em consolidação |
+| `subagent_spawning` | ✓ | ✓ | ✓ | native: dynamic subagents in-process via the local Agent Harness; Managed Agents for long runs; the `agy -p` sub-process is the fallback |
+| `audit_trail` | ✓ | ✓ | ✓ | Session transcripts in `~/.antigravity/sessions/`; the harness adds OTel/jsonl |
+| `scheduled_invocation` | ✗ | ✗ | ✗ | No `ScheduleWakeup`: external cron |
+| `event_bus` | ~ | ~ | ~ | Mentions/tickets via file-system; no broker |
+| `hooks` | ~ | ~ | ~ | Partial hooks; complex validation in a wrapper |
+| `sandboxing` | ~ | ~ | ~ | Approval modes (Request Review / Proceed-in-Sandbox / Always-Proceed); profiles are being consolidated |
 | `session_memory` | ✓ | ✓ | ✓ | Conversation context |
-| `project_memory` | ✓ | ✓ | ✓ | `AGENTS.md` carregado no start |
-| `global_memory` | ~ | ~ | ~ | `~/AGENTS.md` user-level — sem auto-discovery rico |
-| `handoff_artifacts` | ✓ | ✓ | ✓ | JSON em tool_result ou arquivo persistido |
-| `fork_context` | ✓ | ✓ | ✓ | Subagents dinâmicos criam contexto isolado in-process |
-| `teammate_primitive` | ~ | ~ | ~ | Managed Agents para long runs; team formal via convenção |
-| `telemetry_otel` | ~ | ~ | ~ | Via OpenTelemetry SDK externo |
+| `project_memory` | ✓ | ✓ | ✓ | `AGENTS.md` loaded at start |
+| `global_memory` | ~ | ~ | ~ | `~/AGENTS.md` user-level, no rich auto-discovery |
+| `handoff_artifacts` | ✓ | ✓ | ✓ | JSON in tool_result or in a persisted file |
+| `fork_context` | ✓ | ✓ | ✓ | Dynamic subagents create an isolated context in-process |
+| `teammate_primitive` | ~ | ~ | ~ | Managed Agents for long runs; a formal team via convention |
+| `telemetry_otel` | ~ | ~ | ~ | Via an external OpenTelemetry SDK |
 
-> **Nota fora da matriz canônica:** Antigravity expõe um SDK próprio para orquestrar agentes programaticamente, além do Agent Harness local que hospeda os subagents dinâmicos. Tratado em §7.
+> **Note outside the canonical matrix:** Antigravity exposes its own SDK to orchestrate agents programmatically, besides the local Agent Harness that hosts the dynamic subagents. Covered in §7.
 
 ---
 
 ## 3. Concept Mapping
 
-| Conceito (Protocolo) | Equivalente Antigravity | Implementação |
+| Concept (Protocol) | Antigravity equivalent | Implementation |
 |---|---|---|
-| Squad / Business | Diretório de agents + AGENTS.md | `<project>/.antigravity/<name>/AGENTS.md` carrega o "skill" |
-| Capability | Workflow file | `<skill>/capabilities/<id>.md` invocado por wrapper |
-| Employee | Antigravity agent profile | `~/.antigravity/agents/<name>.md` (frontmatter + body) |
-| `is_brief_intake: true` | Default agent quando skill ativa | Configurado em `AGENTS.md` do skill |
-| `is_antagonist: true` | Subagent dinâmico em pipeline | Spawn in-process via Agent Harness |
-| Handoff artifact | JSON em arquivo + tool_result | Persistido em `<project>/.handoffs/` |
-| Mention `@employee` | Convenção em prompt | Adapter resolve para spawn de subagent |
-| Ticket | Arquivo persistido | `<project>/.tickets/<TICKET_ID>.json` |
-| Escalation trigger | Wrapper script + harness call | Wrapper checa condição → emite notification para harness |
-| Permanent memory | `~/AGENTS.md` + custom files | Auto-load só de AGENTS.md |
+| Squad / Business | Agents directory + AGENTS.md | `<project>/.antigravity/<name>/AGENTS.md` loads the "skill" |
+| Capability | Workflow file | `<skill>/capabilities/<id>.md` invoked by a wrapper |
+| Employee (seat) | Seat file played by the one business agent; optional Antigravity agent profile | A business runs as ONE solo agent (`skills/harness/lib/business-solo.ts`) that opens a seat's file when it works as that seat; `~/.antigravity/agents/<name>.md` (frontmatter + body) is only for a stand-alone subagent |
+| `is_brief_intake: true` | Default agent when the skill is active | Configured in the skill's `AGENTS.md` |
+| `is_antagonist: true` | Dynamic subagent in a pipeline | In-process spawn via the Agent Harness |
+| Handoff artifact | JSON in a file + tool_result | Persisted in `<project>/.handoffs/` |
+| Mention `@employee` | Convention in the prompt | The adapter resolves it to a subagent spawn |
+| Ticket | Persisted file | `<project>/.tickets/<TICKET_ID>.json` |
+| Escalation trigger | Wrapper script + harness call | The wrapper checks the condition → emits a notification to the harness |
+| Permanent memory | `~/AGENTS.md` + custom files | Auto-loads only AGENTS.md |
 | Project memory | `<project>/AGENTS.md` | Auto-load |
-| Session memory | Conversation transcript | Compactado automaticamente |
-| Routing decision (harness) | Pre-spawn lookup table | BM25 sobre `capabilities[].examples[]` em wrapper Python/Node |
+| Session memory | Conversation transcript | Compacted automatically |
+| Routing decision (harness) | Pre-spawn lookup table | BM25 over `capabilities[].examples[]` in a Python/Node wrapper |
 
 ---
 
 ## 4. Frontmatter Mapping
 
-### Squad v5 / Business v1 → AGENTS.md
+### Squad v6 / Business v2 → AGENTS.md
 
-Antigravity não tem frontmatter rico no head do skill. O adapter gera dois arquivos:
+Antigravity has no rich frontmatter in the skill head. The adapter generates two files:
 
 ```yaml
-# AGENTS.md (head do projeto/skill)
+# AGENTS.md (head of the project/skill)
 You are an AI agent operating under the Squad/Business Protocol.
 
 Available capabilities: [media.video.analyze, media.transcript.extract, ...]
@@ -87,7 +87,7 @@ Default tools: [Read, Write, Bash]
 ```
 
 ```yaml
-# .antigravity/manifest.yaml (auxiliar — lido por wrapper, não pelo runtime)
+# .antigravity/manifest.yaml (auxiliary: read by a wrapper, not by the runtime)
 name: nexus-council
 protocol: 1.0
 employees: [ceo, marketing-lead, ...]
@@ -101,7 +101,7 @@ operation_mode: zero_human
 ---
 name: alex-hormozi
 description: Mind clone of Alex Hormozi for offer evaluation. (DISCLOSURE: AI-generated persona, not real person.)
-model: inherit  # o engine não fixa model; usa o do runtime
+model: inherit  # the engine does not pin a model; it uses the runtime's
 tools: [Read, Grep, Bash]
 max_iterations: 30
 ---
@@ -110,38 +110,38 @@ max_iterations: 30
 You are a mind-clone of Alex Hormozi specialized in offer evaluation...
 ```
 
-> Adapter prepende `(DISCLOSURE: ...)` em description quando `type: mind_clone`.
+> The adapter prepends `(DISCLOSURE: ...)` to the description when `type: mind_clone`.
 
 ---
 
 ## 5. Tool Whitelist Mechanics
 
-- Antigravity usa function calling (backend Gemini). Adapter traduz semantic tools → function declarations:
+- Antigravity uses function calling (Gemini backend). The adapter translates semantic tools → function declarations:
   - `read` → `read_file({path})`
   - `bash` → `execute_command({command})`
   - `web_fetch` → `fetch_url({url})`
-- Whitelist enforçada na lista passada ao SDK (`tools=[...]`) ou via `--tools`.
-- Approval mode (§9) gate adicional sobre comandos que escrevem.
+- The whitelist is enforced in the list passed to the SDK (`tools=[...]`) or via `--tools`.
+- The approval mode (§9) is an additional gate on commands that write.
 
 ---
 
 ## 6. Max-Turns Mechanics
 
-Antigravity CLI tem `--max-iterations N` global, mas não per-subagent. Adapter simula assim:
+Antigravity CLI has a global `--max-iterations N`, but not per-subagent. The adapter simulates it like this:
 
-1. Wrapper spawn `agy -p "..." --max-iterations <N>` (ou despacha subagent nativo com limite por agent).
-2. `<N>` lido do employee frontmatter (`maxTurns` / `max_iterations`).
-3. Process exit ou wrapper detecta limit → emite `audit_event: budget_violation`.
+1. The wrapper spawns `agy -p "..." --max-iterations <N>` (or dispatches a native subagent with a per-agent limit).
+2. `<N>` is read from the employee frontmatter (`maxTurns` / `max_iterations`).
+3. Process exit or the wrapper detects the limit → emits `audit_event: budget_violation`.
 
-**Limitação:** nested invocations via subagent dinâmico podem escapar da contagem do wrapper externo. Documentar como `~` (parcial).
+**Limitation:** nested invocations via a dynamic subagent can escape the external wrapper's count. Documented as `~` (partial).
 
 ---
 
 ## 7. Subagent Spawning
 
-**PRIMÁRIO — subagents dinâmicos nativos.** O Antigravity 2.0 spawna subagents **dinâmicos in-process** através de um **Agent Harness server local**. Quando o maestro roda dentro de uma sessão `agy`, ele despacha o employee como subagent dinâmico hospedado pelo Agent Harness — in-process àquela run, sem cold start de sub-process. Para execuções longas existem **Managed Agents** (rodam de forma gerenciada/persistente), e um **SDK** permite orquestrar agentes programaticamente.
+**PRIMARY: native dynamic subagents.** Antigravity 2.0 spawns **in-process dynamic** subagents through a **local Agent Harness server**. When the maestro runs inside an `agy` session, it dispatches the work as a dynamic subagent hosted by the Agent Harness, in-process to that run, with no sub-process cold start. For long runs there are **Managed Agents** (they run in a managed/persistent way), and an **SDK** allows orchestrating agents programmatically.
 
-**FALLBACK — `agy -p` sub-process.** Para scripts standalone sem contexto LLM próprio (ou runtimes só-sub-process), o adapter usa `agy -p` como sub-process (`host-agent-driver.runAntigravity`):
+**FALLBACK: `agy -p` sub-process.** For standalone scripts with no LLM context of their own (or sub-process-only runtimes), the adapter uses `agy -p` as a sub-process (`host-agent-driver.runAntigravity`):
 
 ```bash
 # Adapter spawn (host-agent-driver.runAntigravity)
@@ -150,71 +150,71 @@ agy -p "Review this offer: ..." \
   > .handoffs/alex-hormozi-$(date +%s).json
 ```
 
-Flags reais usadas pelo driver:
-- `-p "<prompt>"` — prompt headless (one-shot). `-p` / `--print` / `--prompt` aceitam o prompt como valor de argv.
-- `--output-format json` — objeto JSON único (paridade com `runGemini`/`runClaudeCode`). `stream-json` (NDJSON) também existe.
-- `--resume <id>` — retoma a sessão (passado quando `opts.sessionId` está setado).
-- `--model <id>` — override de modelo (passado quando `opts.model` está setado).
+Real flags used by the driver:
+- `-p "<prompt>"`: headless prompt (one-shot). `-p` / `--print` / `--prompt` take the prompt as an argv value.
+- `--output-format json`: a single JSON object (parity with `runGemini`/`runClaudeCode`). `stream-json` (NDJSON) also exists.
+- `--resume <id>`: resumes the session (passed when `opts.sessionId` is set).
+- `--model <id>`: model override (passed when `opts.model` is set).
 
-Sub-process retorna handoff artifact em stdout. Adapter parseia e registra em audit log.
+The sub-process returns the handoff artifact on stdout. The adapter parses it and records it in the audit log.
 
-> **Nota driver:** a flag de approval-mode (autonomous/yolo) **ainda não está confirmada** na pesquisa (`(base de conhecimento interna)` §5.3 — modos Request Review / Proceed-in-Sandbox / Always-Proceed). `host-agent-driver.runAntigravity` carrega um TODO: confirmar com `agy --help` depois de autenticado, então mapear `opts.yolo !== false → Always-Proceed`.
+> **Driver note:** the approval-mode flag (autonomous/yolo) is **not yet confirmed** in the research (`(internal knowledge base)` §5.3, modes Request Review / Proceed-in-Sandbox / Always-Proceed). `host-agent-driver.runAntigravity` carries a TODO: confirm with `agy --help` once authenticated, then map `opts.yolo !== false → Always-Proceed`.
 
-**Para mention `@x`:** adapter detecta no handoff retornado, spawna novo subagent (in-process) ou sub-process para `x`.
+**For a mention `@x`:** the adapter detects it in the returned handoff and spawns a new subagent (in-process) or sub-process for `x`.
 
 ---
 
 ## 8. Memory Storage
 
-| Camada | Path | Persistência |
+| Layer | Path | Persistence |
 |---|---|---|
-| Permanent (cross-session) | `~/AGENTS.md` + `~/.antigravity/memory/` (convenção do adapter) | Manual |
+| Permanent (cross-session) | `~/AGENTS.md` + `~/.antigravity/memory/` (adapter convention) | Manual |
 | Project | `<project>/AGENTS.md` | Auto-load |
-| Session | Conversation transcript | Compactado |
-| Business permanent | `~/businesses/<biz>/memory/permanent.md` | Adapter persiste |
+| Session | Conversation transcript | Compacted |
+| Business permanent | `~/businesses/<biz>/memory/permanent.md` | Adapter persists |
 | Project (business) | `<project>/<biz>/<project_id>/memory/` | Isolation by construction |
 
-> **Isolation guard:** Antigravity não enforça memory isolation natively. Adapter monta prompt com APENAS o memory relevante ao `project_id` antes de spawn — caso contrário `audit_event: isolation_violation`.
+> **Isolation guard:** Antigravity does not enforce memory isolation natively. The adapter builds the prompt with ONLY the memory relevant to the `project_id` before spawning, otherwise `audit_event: isolation_violation`.
 
 ---
 
 ## 9. Context Window & Compaction
 
-- Janela: 1M–2M tokens (Gemini 3 Pro/Flash) — maior que Claude/Codex.
-- Compaction: auto-summarization quando perto do limit.
-- **Approval modes** (Request Review / Proceed-in-Sandbox / Always-Proceed) governam se comandos que escrevem pedem confirmação; afetam runs autônomos longos.
-- **Vantagem:** janela maior reduz pressão por compaction em businesses long-running.
+- Window: 1M-2M tokens (Gemini 3 Pro/Flash), larger than Claude/Codex.
+- Compaction: auto-summarization near the limit.
+- **Approval modes** (Request Review / Proceed-in-Sandbox / Always-Proceed) govern whether commands that write ask for confirmation; they affect long autonomous runs.
+- **Advantage:** the larger window reduces compaction pressure in long-running businesses.
 
 ---
 
 ## 10. Hook System
 
-Antigravity não tem hooks granulares maduros. Workarounds em wrapper:
+Antigravity has no mature granular hooks. Workarounds in a wrapper:
 
-| Hook desejado | Workaround Antigravity |
+| Desired hook | Antigravity workaround |
 |---|---|
-| `PreToolUse` | Function declaration validation no SDK |
-| `PostToolUse` | Wrapper parseia tool calls do transcript após cada turn |
-| `UserPromptSubmit` | Adapter injeta system instructions no prompt do `agy -p` |
-| `Stop` | Wrapper inspeciona exit code e final transcript |
-| `SessionStart` | Wrapper carrega memory antes de invocar `agy` |
-| `Compact` | `--checkpoint` flag (quando disponível) |
+| `PreToolUse` | Function declaration validation in the SDK |
+| `PostToolUse` | The wrapper parses tool calls from the transcript after each turn |
+| `UserPromptSubmit` | The adapter injects system instructions into the `agy -p` prompt |
+| `Stop` | The wrapper inspects the exit code and the final transcript |
+| `SessionStart` | The wrapper loads memory before invoking `agy` |
+| `Compact` | `--checkpoint` flag (when available) |
 
 ---
 
 ## 11. Invocation Examples
 
-### Exemplo 1 — Squad capability
+### Example 1: Squad capability
 
 ```bash
 agy -p "Analyze video: https://..." \
   --output-format json
 ```
 
-### Exemplo 2 — Business brief com handoff em pipeline
+### Example 2: Business brief with handoff in a pipeline
 
 ```bash
-# CEO recebe brief
+# The business runs as ONE solo agent (it plays the seats itself)
 agy -p "<brief>" --output-format json > .handoffs/ceo-1.json
 
 # Adapter detecta `next_action: delegate to marketing-lead`
@@ -226,7 +226,7 @@ agy -p "<context from marketing handoff>" --output-format json \
   > .handoffs/alex-1.json
 ```
 
-### Exemplo 3 — Harness escalation
+### Example 3: Harness escalation
 
 ```bash
 echo '{"type":"human_escalation_required","trigger_id":"budget","severity":"high",...}' \
@@ -237,29 +237,29 @@ echo '{"type":"human_escalation_required","trigger_id":"budget","severity":"high
 
 ## 12. Runtime-Specific Validators
 
-- **Approval mode coerente**: se employee.tools inclui `Bash`, o approval mode não pode ser tão restritivo que bloqueie toda escrita esperada pelo brief.
-- **Function declaration coerente**: tools no whitelist precisam ter declaration válida — wrapper valida pre-spawn.
-- **AGENTS.md carregado**: adapter verifica que skill manifest é referenciado no `AGENTS.md` (caso contrário não carrega).
-- **Modelo suportado**: alguns features (function calling rico, code execution) variam por modelo. Adapter checa `model` em employee frontmatter contra a capability matrix do Antigravity.
+- **Coherent approval mode**: if employee.tools includes `Bash`, the approval mode must not be so restrictive that it blocks every write the brief expects.
+- **Coherent function declarations**: tools in the whitelist need a valid declaration; the wrapper validates pre-spawn.
+- **AGENTS.md loaded**: the adapter checks that the skill manifest is referenced in `AGENTS.md` (otherwise it does not load).
+- **Supported model**: some features (rich function calling, code execution) vary by model. The adapter checks `model` in the employee frontmatter against the Antigravity capability matrix.
 
 ---
 
 ## 13. Known Limitations
 
-1. **Approval-mode flag para runs autônomos ainda não confirmada** — TODO no driver (§7); confirmar com `agy --help` autenticado.
-2. **Sem hooks granulares maduros** — validações em wrapper externo.
-3. **Sem `ScheduleWakeup` / `CronCreate`** — cron externo.
-4. **Sem memory cross-session rico** — adapter mantém memory em files, monta prompt manualmente.
-5. **Max-iterations per-employee é simulado** — nested subagent invocations podem escapar da contagem do wrapper.
-6. **Mentions e tickets** dependem do wrapper detectar e fan-out — race conditions possíveis em multi-process.
-7. **OTel não é built-in** — adapter integra com OpenTelemetry SDK externo.
-8. **Runtime recente (2.0)** — superfície de flags/SDK pode mudar entre versões; testar antes de cada bump.
+1. **Approval-mode flag for autonomous runs not yet confirmed**: TODO in the driver (§7); confirm with an authenticated `agy --help`.
+2. **No mature granular hooks**: validation in an external wrapper.
+3. **No `ScheduleWakeup` / `CronCreate`**: external cron.
+4. **No rich cross-session memory**: the adapter keeps memory in files and builds the prompt manually.
+5. **Per-employee max-iterations is simulated**: nested subagent invocations can escape the wrapper's count.
+6. **Mentions and tickets** depend on the wrapper detecting and fanning out; race conditions are possible in multi-process.
+7. **OTel is not built-in**: the adapter integrates with an external OpenTelemetry SDK.
+8. **Recent runtime (2.0)**: the flag/SDK surface can change between versions; test before each bump.
 
 ---
 
 ## 14. Source References
 
-- Antigravity CLI spec (pesquisa interna): `(base de conhecimento interna)`
+- Antigravity CLI spec (internal research): `(internal knowledge base)`
 - Google Gen AI SDK: https://github.com/google-gemini/generative-ai-python
 - Squad Protocol v6: `~/.nirvana/skills/squads/SQUAD_PROTOCOL_V6.md`
 - Business Protocol v2: `~/.nirvana/skills/businesses/BUSINESS_PROTOCOL_V2.md`
@@ -269,6 +269,6 @@ echo '{"type":"human_escalation_required","trigger_id":"budget","severity":"high
 
 ## 15. Version History
 
-| Versão | Data | Mudanças |
+| Version | Date | Changes |
 |---|---|---|
-| 1.0.0 | 2026-06-06 | Doc inicial — sucessor do gemini-cli (sunset 2026-06-18); cobre Squad 5.0 + Business 1.0 + Harness 1.0 contra Antigravity 2.0 (Gemini 3 Pro) |
+| 1.0.0 | 2026-06-06 | Doc inicial — successor to gemini-cli (sunset 2026-06-18); covers Squad 5.0 + Business 1.0 + Harness 1.0 against Antigravity 2.0 (Gemini 3 Pro) |

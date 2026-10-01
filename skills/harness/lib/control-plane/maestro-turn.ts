@@ -44,17 +44,16 @@ const AUDIT_POLL_MS = 1500;
 const MAESTRO_TURN_SCRIPT = fileURLToPath(import.meta.url);
 const MAX_CATALOG_HINT_CHARS = 8000;
 
-// i18n-user-facing: the directive is what the maestro reads; PT-BR by the project's language rule.
 export const MAESTRO_DIRECTIVE = [
-  "Você é o maestro do Nirvana-OS DESTE projeto, falando pelo chat do Glance. Vale aqui o mesmo protocolo do `CLAUDE.md` do projeto e do skill `harness`: você orquestra, e o trabalho é dos despachos. A sessão é longa: continue o contexto das mensagens anteriores.",
+  "You are the maestro of Nirvana-OS for THIS project, speaking through the Glance chat. The same protocol as the project's `CLAUDE.md` and the `harness` skill applies here: you orchestrate, and the work belongs to the dispatches. The session is long: continue the context of the earlier messages.",
   "",
-  "Perguntas e conversa: responda em português, direto, sem despachar nada. Para listar, contar ou indicar empresas e squads, use a linha de catálogo no fim desta diretiva, sem rodar comandos; consulte os comandos de leitura (`nrv find \"<termo>\"`, `nrv config list`, os registros de empresas, squads e mind-clones, `nrv run-track list`) só quando o catálogo não bastar. Saudação recebe conversa, não pipeline.",
+  "Questions and conversation: answer in the language the user writes in, directly, without dispatching anything. To list, count or point to businesses and squads, use the catalog line at the end of this directive, without running commands; use the read commands (`nrv find \"<term>\"`, `nrv config list`, the business, squad and mind-clone registries, `nrv run-track list`) only when the catalog is not enough. A greeting gets conversation, not a pipeline.",
   "",
-  "Pedido de trabalho: siga o protocolo do harness (brief enriquecido em `.nirvana/briefs/`, cascata Empresa → Squad → agent-x, `run-track` e audit, gate, entrega). Antes de começar, diga qual empresa, squad, mind-clone e runtime usaria, o modo (standard, Gauntlet e intensidade, multi-target) e por quê, e pergunte o que falta no brief. `use business <slug>:` ou `use squad <slug>:` no início da mensagem é ordem do usuário. Respeite as settings (`gauntlet.default_mode`, `routing.mode`). Nunca pule o gate.",
+  "Work request: follow the harness protocol (enriched brief in `.nirvana/briefs/`, Business → Squad → agent-x cascade, `run-track` and audit, gate, delivery). Before starting, say which business, squad, mind-clone and runtime you would use, the mode (standard, Gauntlet and intensity, multi-target) and why, and ask for whatever the brief is missing. `use business <slug>:` or `use squad <slug>:` at the start of the message is a user order. Respect the settings (`gauntlet.default_mode`, `routing.mode`). Never skip the gate.",
   "",
-  "Runtime: sem escolha do usuário, o padrão é o runtime desta sessão; as regras `USE_*`/`NOT_USE_*` do `.env` redirecionam por tipo de tarefa. Se perguntarem com qual sistema você vai trabalhar, explique isso e diga sua escolha.",
+  "Runtime: without a user choice, the default is this session's runtime; the `USE_*`/`NOT_USE_*` rules in `.env` redirect by task type. If asked which system you will work with, explain this and state your choice.",
   "",
-  "Estilo: markdown, conciso. Você está numa janela de chat estreita; uma saudação merece uma ou duas frases.",
+  "Style: markdown, concise. You are in a narrow chat window; a greeting deserves one or two sentences.",
 ].join("\n");
 
 /** One light catalog line from the project's registries (else the user's): each business with up
@@ -75,14 +74,14 @@ export function catalogHint(projectRoot: string): string {
     const domains = Array.isArray(entry?.domains) ? entry.domains.slice(0, 3).map(String).join(", ") : "";
     return domains ? `${slug} (${domains})` : slug;
   };
-  const head = `Instalado neste escopo: ${businesses.length} empresas e ${squads.length} squads. Empresas: ${businesses.map(line).join("; ") || "nenhuma"}. Squads: `;
+  const head = `Installed in this scope: ${businesses.length} businesses and ${squads.length} squads. Businesses: ${businesses.map(line).join("; ") || "none"}. Squads: `;
   // Every business line stays; the squads list is cut to the budget, saying how many were left out.
   const listed: string[] = [];
   let used = head.length;
   for (const [slug] of squads) { if (used + slug.length + 2 > MAX_CATALOG_HINT_CHARS) break; listed.push(slug); used += slug.length + 2; }
   const omitted = squads.length - listed.length;
-  const squadsPart = listed.length ? `${listed.join(", ")}${omitted > 0 ? ` e mais ${omitted}` : ""}` : (squads.length ? `${squads.length} (liste com \`nrv find\`)` : "nenhum");
-  return `${head}${squadsPart}. Detalhes de cada uma: \`nrv find "<termo>"\`.`;
+  const squadsPart = listed.length ? `${listed.join(", ")}${omitted > 0 ? ` and ${omitted} more` : ""}` : (squads.length ? `${squads.length} (list with \`nrv find\`)` : "none");
+  return `${head}${squadsPart}. Details for each one: \`nrv find "<termo>"\`.`;
 }
 
 /** The system-prompt suffix of a turn: the directive plus the light catalog line. */
@@ -216,7 +215,7 @@ export function resumeCommand(runtime: Runtime, sessionId: string): string {
     case "codex": return `codex resume ${sessionId}`;
     case "gemini-cli": return `gemini -r ${sessionId}`;
     case "pi": return `pi --session ${sessionId}`;
-    default: return `${runtime}: sessão ${sessionId}`;
+    default: return `${runtime}: session ${sessionId}`;
   }
 }
 export interface StartedTurn {
@@ -291,18 +290,18 @@ function childCommand(input: StartTurnInput): TurnCommand {
  * stdout as NDJSON for the job stream, and the `done` line at the end. */
 export async function runMaestroTurnToStdout(input: { prompt: string; cwd: string; sessionId: string | null; runtime?: string; fast?: boolean }): Promise<void> {
   const emit = (event: Record<string, unknown>) => process.stdout.write(JSON.stringify(event) + "\n");
-  if (!input.prompt.trim()) { emit({ t: "done", ok: true, state: "completed", result: "(mensagem vazia)", session_id: input.sessionId, cost_usd: 0 }); return; }
+  if (!input.prompt.trim()) { emit({ t: "done", ok: true, state: "completed", result: "(empty message)", session_id: input.sessionId, cost_usd: 0 }); return; }
   const projectRoot = path.resolve(input.cwd);
   const env = turnEnvironment(projectRoot);
   const runtime = input.runtime ? canonicalRuntimeName(input.runtime) : detectExecutionRuntime(env).runtime;
-  const directive = maestroDirective(projectRoot) + (input.fast ? "\n\nModo rápido: responda curto, sem deliberar." : "");
+  const directive = maestroDirective(projectRoot) + (input.fast ? "\n\nFast mode: answer briefly, without deliberating." : "");
   const child = startMaestroTurn({
     runtime, prompt: input.prompt, cwd: projectRoot, sessionId: input.sessionId, directive, env, onEvent: emit,
     model: resolveSystemModel(runtime), skipPermissions: resolveSetting("execution.headless_skip_permissions", { projectRoot }).value,
     maxBudgetUsd: resolveSetting("glance.maestro_max_budget_usd", { projectRoot }).value,
   });
   const outcome = await child.done;
-  emit({ t: "done", ok: outcome.ok, state: outcome.ok ? "completed" : "failed", result: outcome.result || outcome.error || "(sem resposta)",
+  emit({ t: "done", ok: outcome.ok, state: outcome.ok ? "completed" : "failed", result: outcome.result || outcome.error || "(no answer)",
     session_id: outcome.sessionId, cost_usd: outcome.costUsd, runtime, error: outcome.error ?? null, reason: null });
 }
 
@@ -336,15 +335,14 @@ const TERMINAL_TURN_STATES: ReadonlySet<TurnState> = new Set(["completed", "fail
 const RECAP_MESSAGES = 6;
 const RECAP_CHARS_PER_MESSAGE = 600;
 
-// i18n-user-facing: the recap is read by the maestro, in the conversation's language.
 /** The last visible messages of the conversation (the current Message excluded), labelled as a recap, for a session the runtime lost. */
 export function continuityRecap(messages: Array<{ message_id: string; role: string; content: string }>, currentMessageId: string): string {
   const visible = messages.filter(message => message.message_id !== currentMessageId && message.role !== "system").slice(-RECAP_MESSAGES);
   const lines = visible.map(message => {
     const text = message.content.replace(/\s+/g, " ").trim();
-    return `- ${message.role === "user" ? "usuário" : "assistente"}: ${text.length > RECAP_CHARS_PER_MESSAGE ? text.slice(0, RECAP_CHARS_PER_MESSAGE) + "…" : text}`;
+    return `- ${message.role === "user" ? "user" : "assistant"}: ${text.length > RECAP_CHARS_PER_MESSAGE ? text.slice(0, RECAP_CHARS_PER_MESSAGE) + "…" : text}`;
   });
-  return ["Recapitulação da conversa (a sessão anterior do runtime não existe mais; esta é uma sessão nova, continue de onde parou):", ...(lines.length ? lines : ["- (sem mensagens anteriores)"])].join("\n");
+  return ["Conversation recap (the runtime's previous session no longer exists; this is a new session, continue where you left off):", ...(lines.length ? lines : ["- (no earlier messages)"])].join("\n");
 }
 
 function defaultAudit(): TurnAudit {

@@ -170,13 +170,11 @@ function readYamlFile(file: string): Mapping | null {
   let parsed: unknown;
   try { parsed = YAML.parse(fs.readFileSync(file, "utf8")); }
   catch (error) {
-    // i18n-user-facing
-    throw new SettingsError("invalid_file", `${file}: YAML inválido (${(error as Error).message.split("\n")[0]})`, { path: file });
+    throw new SettingsError("invalid_file", `${file}: invalid YAML (${(error as Error).message.split("\n")[0]})`, { path: file });
   }
   if (parsed === null || parsed === undefined) parsed = {};
   if (typeof parsed !== "object" || Array.isArray(parsed)) {
-    // i18n-user-facing
-    throw new SettingsError("invalid_file", `${file}: o conteúdo deve ser um mapeamento (seção: chave: valor)`, { path: file });
+    throw new SettingsError("invalid_file", `${file}: the content must be a mapping (section: key: value)`, { path: file });
   }
   const data = parsed as Mapping;
   cache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, data });
@@ -196,8 +194,7 @@ function rawFileValue(file: string, data: Mapping, key: string): unknown {
   const block = data[section];
   if (block === undefined || block === null) return undefined;
   if (typeof block !== "object" || Array.isArray(block)) {
-    // i18n-user-facing
-    throw new SettingsError("invalid_file", `${file}: "${section}" deve ser um mapeamento (chave: valor) para conter ${key}`, { path: file, key });
+    throw new SettingsError("invalid_file", `${file}: "${section}" must be a mapping (key: value) to hold ${key}`, { path: file, key });
   }
   const value = (block as Mapping)[name];
   return value === null ? undefined : value;
@@ -209,7 +206,6 @@ function layerValue(layer: Layer, spec: SettingSpec): SettingValue | undefined {
   const raw = rawFileValue(layer.path, layer.data, spec.key);
   if (raw === undefined) return undefined;
   const checked = validateSettingValue(spec, raw);
-  // i18n-user-facing
   if (!checked.ok) throw new SettingsError("invalid_value", `${layer.path}: ${checked.message}`, { path: layer.path, key: spec.key });
   return checked.value;
 }
@@ -227,8 +223,7 @@ export function readSettingEnv(spec: SettingSpec, env: SettingsEnv = process.env
     const candidate = spec.fromEnv ? spec.fromEnv(raw.trim(), variable) : coerceText(spec, raw);
     if (candidate === null) continue;
     const checked = validateSettingValue(spec, candidate);
-    // i18n-user-facing
-    if (!checked.ok) throw new SettingsError("invalid_env", `${variable}=${raw} inválido para ${spec.key}; esperado ${spec.expects}`, { variable, raw, key: spec.key });
+    if (!checked.ok) throw new SettingsError("invalid_env", `${variable}=${raw} is invalid for ${spec.key}; expected ${spec.expects}`, { variable, raw, key: spec.key });
     return { variable, raw, value: checked.value };
   }
   return null;
@@ -291,8 +286,7 @@ function resolveSpec(spec: SettingSpec, layers: Layers): ResolvedSetting {
 
 export function requireSpec(key: string): SettingSpec {
   const spec = getSettingSpec(key);
-  // i18n-user-facing
-  if (!spec) throw new SettingsError("unknown_key", `chave desconhecida: ${key} (veja nrv config list)`, { key });
+  if (!spec) throw new SettingsError("unknown_key", `unknown key: ${key} (see nrv config list)`, { key });
   return spec;
 }
 
@@ -388,8 +382,7 @@ export function editYamlScalar(source: string, key: string, text: string | null)
   if (sectionLine !== -1) {
     const rest = lines[sectionLine].replace(sectionRe, "").trim();
     if (rest && !rest.startsWith("#")) {
-      // i18n-user-facing
-      throw new SettingsError("invalid_file", `"${section}:" está escrito em linha (${lines[sectionLine].trim()}); edite o arquivo manualmente para gravar ${key}`, { key });
+      throw new SettingsError("invalid_file", `"${section}:" is written inline (${lines[sectionLine].trim()}); edit the file by hand to store ${key}`, { key });
     }
   }
 
@@ -455,22 +448,22 @@ function storedScalar(file: string, key: string): SettingValue | null {
 export function configFileHeader(scope: SettingScope): string {
   const isGlobal = scope === "global";
   const banner = isGlobal
-    ? "Configuração GLOBAL do usuário. Sobrevive ao `nrv update` — o engine nunca\n# reescreve este arquivo."
-    : "Configuração DESTE PROJETO. Viaja com o repositório e vence a global.";
+    ? "GLOBAL user configuration. It survives `nrv update`: the engine never\n# rewrites this file."
+    : "THIS PROJECT's configuration. It travels with the repository and beats the global one.";
   return [
     "# Nirvana-OS — " + banner,
     "#",
-    "# Precedência, da mais forte para a mais fraca:",
-    "#   variável de ambiente  >  <projeto>/.nirvana/config.yaml  >  ~/.nirvana/config.yaml",
-    "#   >  config.yaml do engine (substituído a cada update)  >  padrão do schema",
+    "# Precedence, strongest to weakest:",
+    "#   environment variable  >  <project>/.nirvana/config.yaml  >  ~/.nirvana/config.yaml",
+    "#   >  engine config.yaml (replaced on every update)  >  schema default",
     "#",
-    "# Não edite à mão se não quiser: o comando escreve aqui e valida o valor.",
-    "#   nrv config list                  toda chave: valor efetivo, origem e padrão",
-    "#   nrv config explain <chave>       o que a chave faz, escopos e variável equivalente",
-    "#   nrv config set <chave> <valor> " + (isGlobal ? "--global" : "--project"),
-    "#   nrv config unset <chave> " + (isGlobal ? "--global" : "--project"),
+    "# No need to edit by hand: the command writes here and validates the value.",
+    "#   nrv config list                  every key: effective value, source and default",
+    "#   nrv config explain <key>       what the key does, scopes and the equivalent variable",
+    "#   nrv config set <key> <value> " + (isGlobal ? "--global" : "--project"),
+    "#   nrv config unset <key> " + (isGlobal ? "--global" : "--project"),
     "#",
-    "# Uma chave que o schema não conhece é ignorada, não é erro.",
+    "# A key the schema does not know is ignored, not an error.",
     "",
     "",
   ].join("\n");
@@ -517,20 +510,17 @@ export function defaultWriteScope(opts: ResolveOptions = {}): { scope: SettingSc
 
 function targetFile(spec: SettingSpec, opts: ChangeOptions): string {
   if (!spec.scopes.includes(opts.scope)) {
-    // i18n-user-facing
-    throw new SettingsError("scope", `${spec.key} só aceita escopo ${spec.scopes.join(" ou ")}; --${opts.scope} não vale para esta chave`, { key: spec.key, scope: opts.scope });
+    throw new SettingsError("scope", `${spec.key} only accepts scope ${spec.scopes.join(" or ")}; --${opts.scope} does not apply to this key`, { key: spec.key, scope: opts.scope });
   }
   const env = opts.env ?? process.env;
   if (opts.scope === "global") {
     const file = opts.globalPath === undefined ? globalConfigPath(env) : opts.globalPath;
-    // i18n-user-facing
-    if (!file) throw new SettingsError("scope", "a camada global está desativada nesta resolução", { key: spec.key, scope: "global" });
+    if (!file) throw new SettingsError("scope", "the global layer is disabled in this resolution", { key: spec.key, scope: "global" });
     return file;
   }
   const projectRoot = opts.projectRoot === undefined ? discoverProjectRoot(env, opts.cwd) : opts.projectRoot;
   if (!projectRoot) {
-    // i18n-user-facing
-    throw new SettingsError("no_project", `nenhum projeto Nirvana (diretório .nirvana/) encontrado a partir de ${opts.cwd ?? process.cwd()}; rode dentro do projeto ou use --global`, { key: spec.key, scope: "project" });
+    throw new SettingsError("no_project", `no Nirvana project (.nirvana/ directory) found from ${opts.cwd ?? process.cwd()}; run inside the project or use --global`, { key: spec.key, scope: "project" });
   }
   return projectConfigPath(projectRoot);
 }
@@ -539,8 +529,7 @@ function refuseWhenPinned(spec: SettingSpec, opts: ChangeOptions): void {
   if (opts.ignoreEnv) return;
   const pinned = readSettingEnv(spec, opts.env ?? process.env);
   if (!pinned) return;
-  // i18n-user-facing
-  throw new SettingsError("pinned_by_env", `${spec.key} está fixado pela variável ${pinned.variable}=${pinned.raw} no ambiente; o valor gravado no arquivo só valeria sem a variável. Remova a variável (ou rode com ela vazia) e repita`, { key: spec.key, variable: pinned.variable, raw: pinned.raw });
+  throw new SettingsError("pinned_by_env", `${spec.key} is pinned by the variable ${pinned.variable}=${pinned.raw} in the environment; the value stored in the file would only apply without the variable. Remove the variable (or run with it empty) and retry`, { key: spec.key, variable: pinned.variable, raw: pinned.raw });
 }
 
 /** Validates `input` (a typed value, or text as the CLI receives it) and writes it to the file of `scope`. */

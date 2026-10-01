@@ -2,7 +2,7 @@
 // one list that says so.
 //
 // Measured on a customer VPS (2026-09-18): `GET /v1/jobs/<trace>/artifacts/
-// relatorio-final.html` returned 81 KB containing no line of the delivered work
+// final-report.html` returned 81 KB containing no line of the delivered work
 // and every line of the run's instrumentation — the employee's system prompt,
 // the mind-clone library, the business manifest and the firm's permanent
 // memory. That is the IP of a pack sold for US$ 1,290, downloadable by anyone
@@ -40,7 +40,7 @@ describe("what counts as plumbing", () => {
   });
 
   test("and real work is not", () => {
-    for (const f of ["checklist-fechamento-mensal-consolidado.md", "relatorio-final.html", "logo.png", "README.md"]) {
+    for (const f of ["checklist-fechamento-mensal-consolidado.md", "final-report.html", "logo.png", "README.md"]) {
       expect(isRunPlumbing(f)).toBe(false);
     }
   });

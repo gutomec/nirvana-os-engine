@@ -15,7 +15,7 @@ slashPrefix: {{PREFIX}}                   # 2-4 chars, ex: sfm, ig, mk
 tags: [{{TAG_1}}, {{TAG_2}}]              # busca livre
 
 # ─────────────────────────────────────────────────────────────────────
-# Capabilities (Squad v5 §22, v6 §29-§33) — OBRIGATÓRIO em v5 e v6
+# Capabilities (SQUAD_PROTOCOL_V6.md §22, §29-§33) — OBRIGATÓRIO em v5 e v6
 # Cada capability mapeia uma intenção do usuário (NL) para um workflow,
 # task ou agent dentro desta squad. Sem capabilities[], a squad fica
 # invisível à descoberta do harness.
@@ -75,7 +75,7 @@ capabilities:
   # ~/.claude/skills/squads/templates/capability-block.tmpl
 
 # ─────────────────────────────────────────────────────────────────────
-# Components (Squad v4 §5) — preservado em v5
+# Components (SQUAD_PROTOCOL_V6.md §5.1)
 # ─────────────────────────────────────────────────────────────────────
 components:
   agents:
@@ -88,7 +88,7 @@ components:
     - {{WORKFLOW_REF}}                    # §28.6: sem extensão, como o `invoke.ref`
 
 # ─────────────────────────────────────────────────────────────────────
-# Runtime Requirements (Squad v4 §6 + v5 App-D)
+# Runtime Requirements (SQUAD_PROTOCOL_V6.md §4.3, §18.1)
 # Sem deps externas. Adapters em ~/.claude/skills/_shared/adapters/.
 # ─────────────────────────────────────────────────────────────────────
 # The squad runs on the runtime the user is working in, on that runtime's own
@@ -110,7 +110,7 @@ features_optional:
   - telemetry_otel
 
 # ─────────────────────────────────────────────────────────────────────
-# Output convention (Squad v4 §16bis)
+# Output convention (SQUAD_PROTOCOL_V6.md §16bis)
 # `default` = .squads-outputs/{squad-name}/{timestamp}-{slug}/
 # Custom path: base_dir: ./my-output-folder
 # ─────────────────────────────────────────────────────────────────────

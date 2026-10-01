@@ -23,7 +23,7 @@ runtime_requirements:
     version: '>=0.20.0'
   - runtime: gemini-cli
     version: '>=0.4.0'
-  - runtime: antigravity-cli  # +antigravity-cli (sucessor; gemini-cli sunset 2026-06-18 consumer)
+  - runtime: antigravity-cli  # +antigravity-cli (successor; gemini-cli consumer sunset 2026-06-18)
     version: '>=0.4.0'
 features_required:
 - max_turns
@@ -45,5 +45,5 @@ memory:
 ui:
   client_facing_name: Agency Business (Example)
   category: general
-  pitch: Template agency — CEO + 3 diretores + antagonist. Bom para agências de marketing,
-    consultoria e estúdios criativos.
+  pitch: Agency template with CEO + 3 directors + antagonist. Good for marketing agencies,
+    consulting firms and creative studios.

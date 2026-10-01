@@ -143,8 +143,8 @@ export function diffSurfaces(before: Surface | null, after: Surface): DiffResult
       from: label(from),
       to: label(to),
       severity: "breaking",
-      detail: `${typeOf(from)} renomeado: ${label(from)} → ${label(to)}`,
-      migration: `substitua as referências a "${label(from)}" por "${label(to)}"`,
+      detail: `${typeOf(from)} renamed: ${label(from)} → ${label(to)}`,
+      migration: `replace references to "${label(from)}" with "${label(to)}"`,
     });
   }
 
@@ -154,8 +154,8 @@ export function diffSurfaces(before: Surface | null, after: Surface): DiffResult
       type: "removed",
       id: k,
       severity: "breaking",
-      detail: `${typeOf(k)} removido: ${label(k)}`,
-      migration: `quem invocava "${label(k)}" precisa de substituto; não há equivalente automático`,
+      detail: `${typeOf(k)} removed: ${label(k)}`,
+      migration: `whoever invoked "${label(k)}" needs a replacement; there is no automatic equivalent`,
     });
   }
 
@@ -165,7 +165,7 @@ export function diffSurfaces(before: Surface | null, after: Surface): DiffResult
       type: "added",
       id: k,
       severity: "additive",
-      detail: `${typeOf(k)} novo: ${label(k)}`,
+      detail: `${typeOf(k)} new: ${label(k)}`,
     });
   }
 
@@ -181,11 +181,11 @@ export function diffSurfaces(before: Surface | null, after: Surface): DiffResult
       changes.push({
         type: "rebound",
         id: k,
-        from: oe.binding ?? "(nenhuma)",
-        to: ne.binding ?? "(nenhuma)",
+        from: oe.binding ?? "(none)",
+        to: ne.binding ?? "(none)",
         severity: "breaking",
-        detail: `${label(k)} passou a apontar para outro alvo: ${oe.binding ?? "(nenhuma)"} → ${ne.binding ?? "(nenhuma)"}`,
-        migration: "revise o que espera desta invocação; o destino mudou",
+        detail: `${label(k)} now points to a different target: ${oe.binding ?? "(none)"} → ${ne.binding ?? "(none)"}`,
+        migration: "review what you expect from this invocation; the destination changed",
       });
     }
 
@@ -199,8 +199,8 @@ export function diffSurfaces(before: Surface | null, after: Surface): DiffResult
         type: "routing_lost",
         id: k,
         severity: "breaking",
-        detail: `${label(k)} perdeu roteamento: ${lost.join(", ")}`,
-        migration: "quem selecionava por esses rótulos deixa de encontrar esta capability",
+        detail: `${label(k)} lost routing: ${lost.join(", ")}`,
+        migration: "whoever selected by these labels no longer finds this capability",
       });
     }
     if (gained.length) {
@@ -208,7 +208,7 @@ export function diffSurfaces(before: Surface | null, after: Surface): DiffResult
         type: "routing_gained",
         id: k,
         severity: "additive",
-        detail: `${label(k)} ganhou roteamento: ${gained.join(", ")}`,
+        detail: `${label(k)} gained routing: ${gained.join(", ")}`,
       });
     }
 
@@ -217,7 +217,7 @@ export function diffSurfaces(before: Surface | null, after: Surface): DiffResult
         type: "content_changed",
         id: k,
         severity: "patch",
-        detail: `${label(k)} teve o corpo alterado (interface intacta)`,
+        detail: `${label(k)} body changed (interface intact)`,
       });
     }
   }
@@ -227,7 +227,7 @@ export function diffSurfaces(before: Surface | null, after: Surface): DiffResult
       type: "prose_changed",
       id: `${after.kind}:${after.slug}`,
       severity: "patch",
-      detail: "descrições, exemplos ou keywords de descoberta mudaram (afeta roteamento semântico, não invocação)",
+      detail: "descriptions, examples or discovery keywords changed (affects semantic routing, not invocation)",
     });
   }
 
@@ -262,7 +262,7 @@ export function mergeBehaviorNotes(result: DiffResult, notes: string[]): DiffRes
     id: "behavior",
     severity: "breaking" as const,
     detail: n,
-    migration: "revise projetos que dependiam do comportamento anterior",
+    migration: "review projects that depended on the previous behavior",
   }));
   const changes = [...extra, ...result.changes];
   return {
@@ -277,14 +277,14 @@ export function mergeBehaviorNotes(result: DiffResult, notes: string[]): DiffRes
 /** Readable markdown GENERATED from the changes. Never a source, always output. */
 export function renderChangelogEntry(slug: string, result: DiffResult): string {
   if (!result.changes.length) return "";
-  const icon: Record<Severity, string> = { breaking: "QUEBRA", additive: "novo", patch: "ajuste" };
+  const icon: Record<Severity, string> = { breaking: "BREAKING", additive: "new", patch: "tweak" };
   const lines = [`## ${result.next_version}`, ""];
   for (const sev of ["breaking", "additive", "patch"] as Severity[]) {
     const group = result.changes.filter((c) => c.severity === sev);
     if (!group.length) continue;
     lines.push(`### ${icon[sev]}`, "");
     for (const c of group) {
-      lines.push(`- ${c.detail}${c.migration ? `\n  - migração: ${c.migration}` : ""}`);
+      lines.push(`- ${c.detail}${c.migration ? `\n  - migration: ${c.migration}` : ""}`);
     }
     lines.push("");
   }

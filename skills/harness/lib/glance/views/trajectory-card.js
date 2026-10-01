@@ -1,4 +1,4 @@
-/* trajectory-card.js — the Trajectory Card ("Cartão de Trajetória" in the
+/* trajectory-card.js — the Trajectory Card (as named in the
  * product briefing): the single organism that renders a run's event stream,
  * used both in the Chat panel (mode "live", streaming) and the Runs tab
  * (mode "historical", a finished/in-progress run's full timeline). Wave 2
@@ -13,17 +13,17 @@
  * groups adjacent events and classifies rows for the three new molecules; it
  * never invents an icon/title/tone of its own.
  *
- * The three molecules this module produces rows for (briefing §3.2; PT-BR
+ * The three molecules this module produces rows for (briefing §3.2; the
  * names are what the UI actually shows, kept here for traceability):
- *   - Judgement strip ("Faixa de julgamento"): judge_invoked →
+ *   - Judgement strip ("Judgement strip" in the UI): judge_invoked →
  *     critique_generated → revision_dispatched/revision_auto (0..N) →
  *     gate_passed/gate_failed/revision_loop_exhausted, nested as one
  *     collapsible `kind: "judgement"` row.
- *   - Delivery-nuance badge ("Selo de nuance de entrega"): `delivered` /
+ *   - Delivery-nuance badge: `delivered` /
  *     `x_delivered_with_reservations` / `x_delivery_withheld` rows carry a
  *     `nuance` field (variant + text label, never color alone — WCAG 2.2 AA
  *     1.4.1).
- *   - Runtime-health chip ("Chip de saúde de runtime"): `runtime_auth_failed`
+ *   - Runtime-health chip: `runtime_auth_failed`
  *     / `runtime_error` / `x_router_failure_cascade` rows carry a
  *     `runtimeChip` field with the hint visible inline, no extra click.
  *
@@ -57,20 +57,20 @@ function eventName(ev) {
   return typeof ev.type === 'string' ? ev.type : (ev.event || '');
 }
 
-// The delivery-nuance badge ("Selo de nuance de entrega"): three tones, each
+// The delivery-nuance badge ("Delivery nuance badge"): three tones, each
 // with its OWN text label — never color alone (WCAG 2.2 AA 1.4.1), matching
 // the existing badge pattern
 // at index.html's chat badge (tone + x-text side by side).
 function deliveryNuance(ev, name) {
   if (name === 'x_delivery_withheld') {
     return {
-      variant: 'fail-reversible', label: 'Retido',
+      variant: 'fail-reversible', label: 'Withheld',
       detail: { ceiling: ev.ceiling ?? null, ceiling_reason: ev.ceiling_reason ?? null, gate: ev.gate ?? null, gated_files: ev.gated_files ?? null, revisions: ev.revisions ?? null },
     };
   }
   if (name === 'x_delivered_with_reservations') {
     return {
-      variant: 'warn-detail', label: 'Com ressalvas',
+      variant: 'warn-detail', label: 'With reservations',
       detail: { ceiling: ev.ceiling ?? null, gated_files: ev.gated_files ?? null, revisions: ev.revisions ?? null },
     };
   }
@@ -78,9 +78,9 @@ function deliveryNuance(ev, name) {
   // (x_delivered_with_reservations fires first) — do not show it as a clean
   // pass twice; a bare pass shows the ok variant.
   if (ev.gate === 'fail-accepted') {
-    return { variant: 'warn-detail', label: 'Com ressalvas', detail: { gate: ev.gate, files: ev.files ?? null } };
+    return { variant: 'warn-detail', label: 'With reservations', detail: { gate: ev.gate, files: ev.files ?? null } };
   }
-  return { variant: 'ok', label: 'Entregue', detail: { gate: ev.gate ?? null, files: ev.files ?? null } };
+  return { variant: 'ok', label: 'Delivered', detail: { gate: ev.gate ?? null, files: ev.files ?? null } };
 }
 
 function toEventRow(ev) {

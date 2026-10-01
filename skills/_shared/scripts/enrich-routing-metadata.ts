@@ -739,8 +739,8 @@ THE CONTRACT (MIND_CLONE_ROUTING_CONTRACT.md, distilled — each rule exists bec
 3d. Declare the SYMPTOM, not the scaffold: 3-4 domain items phrased as the owner describes the problem
    ("o app está confuso e ninguém completa a tarefa", "a margem caiu 2 meses seguidos"), with zero intent
    verbs ("quero", "preciso", "want") — state the problem, never the wish.
-3d-bis. SYMPTOMS ARE THE TRAP FOR RULE 3a: the natural way to describe a problem is negative ("o
-   espectador NÃO sente que está dentro da cena", "a equipe NÃO documenta requisitos"), and every such
+3d-bis. SYMPTOMS ARE THE TRAP FOR RULE 3a: the natural way to describe a problem is negative, as in
+   "o espectador NÃO sente que está dentro da cena" or "a equipe NÃO documenta requisitos", and every such
    item poisons the index — the clone then wins the very query it should repel. Rewrite each symptom as
    the positive state that is missing or the observable fact:
      BAD  "o espectador não sente que está dentro da cena"

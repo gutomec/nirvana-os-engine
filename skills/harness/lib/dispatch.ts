@@ -216,19 +216,19 @@ export function injectMindClones(opts: {
       degraded.push({ input: m.input, tried: m.tried });
     }
     blocks.push(
-      `\n<!-- mind-clone AUSENTE: ${missing.map(m => m.input).join(", ")} -->\n` +
-      `# Especialista sem clone na biblioteca\n\n` +
-      `Os seguintes especialistas foram pedidos e NÃO existem como mind-clone instalado: ` +
+      `\n<!-- mind-clone MISSING: ${missing.map(m => m.input).join(", ")} -->\n` +
+      `# Expert without a clone in the library\n\n` +
+      `The following experts were requested and are NOT installed as a mind-clone: ` +
       `**${missing.map(m => m.input).join(", ")}**.\n\n` +
-      `Você NÃO está carregando o DNA dessas pessoas. Trabalhe com o seu próprio ` +
-      `conhecimento sobre o método delas, e trate isso como o que é: uma aproximação, ` +
-      `não a persona.\n\n` +
-      `Duas obrigações:\n` +
-      `1. **Não afirme** que aplicou o método daquela pessoa com fidelidade de clone. ` +
-      `Diga que atuou por conhecimento geral.\n` +
-      `2. **Registre no entregável** quais especialistas faltaram, para que o dono ` +
-      `possa decidir se quer criar o mind-clone (o squad \`fabrica-de-genios\` faz isso ` +
-      `pela capability \`knowledge_management.mind_clone_generation_pipeline.execute\`).\n`
+      `You are NOT loading these people's DNA. Work from your own ` +
+      `knowledge of their method, and treat it for what it is: an approximation, ` +
+      `not the persona.\n\n` +
+      `Two obligations:\n` +
+      `1. **Do not claim** that you applied that person's method with clone fidelity. ` +
+      `Say that you worked from general knowledge.\n` +
+      `2. **Record in the deliverable** which experts were missing, so the owner ` +
+      `can decide whether to create the mind-clone (the \`fabrica-de-genios\` squad does this ` +
+      `through the \`knowledge_management.mind_clone_generation_pipeline.execute\` capability).\n`
     );
   }
 

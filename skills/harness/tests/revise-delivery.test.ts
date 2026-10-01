@@ -21,7 +21,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import { writeFakeCli } from "./helpers/fake-cli.ts";
-import { SCOPE_GUARD_PT_BR } from "../../_shared/lib/scope-guard.ts";
+import { SCOPE_GUARD_EN } from "../../_shared/lib/scope-guard.ts";
 import { spawnBudgetMs, TEARDOWN_BUDGET_MS } from "./helpers/test-budgets.ts";
 
 const SKILLS = path.resolve(import.meta.dir, "..", "..");
@@ -155,10 +155,10 @@ function runRevise(files: Record<string, string | Buffer>, opts: { env?: Record<
 const events = (c: ReviseCase) => c.audit.filter(l => !l.artifact).map(l => l.event);
 
 describe("nrv revise — the outcome goes through the delivery pipeline", () => {
-  test("the revision prompt the runtime receives carries the scope guard in PT-BR", () => {
+  test("the revision prompt the runtime receives carries the scope guard", () => {
     const c = runRevise({ "nota.md": PASSING_MD });
     expect(c.runtimeCalls).toBeGreaterThanOrEqual(1);
-    expect(c.prompt).toContain(SCOPE_GUARD_PT_BR);
+    expect(c.prompt).toContain(SCOPE_GUARD_EN);
   }, 30_000);
 
   test("THE FAIL-OPEN, CLOSED: zero text files never claims a gate pass", () => {

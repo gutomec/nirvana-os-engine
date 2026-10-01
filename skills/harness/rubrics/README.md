@@ -1,81 +1,81 @@
-# Rubrics — Phase 3 (Quality Gate com Revision Loop)
+# Rubrics — Phase 3 (Quality Gate with Revision Loop)
 
-Cada rubric vive em um arquivo `<name>.md` com frontmatter YAML declarando:
+Each rubric lives in a `<name>.md` file with YAML frontmatter declaring:
 
 ```yaml
 ---
-name: prose_shortform                # slug interno
+name: prose_shortform                # internal slug
 display_name: "Prose — Shortform …"  # human-readable
-type: harness_rubric                  # OBRIGATÓRIO — filtro do loader
+type: harness_rubric                  # REQUIRED — the loader's filter
 version: 1.0.0
 target_model: inherit
-pass_threshold: 75                    # 0-100; abaixo disso → fail
-applies_to_produces:                  # lista de slugs de `produces` que disparam essa rubric
+pass_threshold: 75                    # 0-100; below this → fail
+applies_to_produces:                  # list of `produces` slugs that trigger this rubric
   - blog-post
   - instagram-post
 description: |
-  Breve descrição do escopo da rubric.
+  Short description of the rubric's scope.
 ---
 ```
 
-Após o frontmatter, o corpo Markdown contém:
-- `## Inputs` — schema JSON dos campos que o judge recebe
-- `## Criteria` — lista numerada de critérios com pesos (soma normalmente = 100)
-- `## Output schema` — schema da resposta JSON do judge
+After the frontmatter, the Markdown body contains:
+- `## Inputs` — JSON schema of the fields the judge receives
+- `## Criteria` — numbered list of criteria with weights (normally summing to 100)
+- `## Output schema` — schema of the judge's JSON response
 
-## Componentes que consomem rubrics
+## Components that consume rubrics
 
-| Módulo | Função |
+| Module | Function |
 |---|---|
-| `lib/rubric-selector.ts` | Carrega todas as rubrics; mapeia `produces[]` → rubrics aplicáveis. |
-| `lib/judge.ts` | Recebe `(rubric, artifact)`, invoca o host-agent (Claude Code / Codex / Gemini), valida resposta contra schema. |
-| `lib/critique.ts` | Transforma critique em instrução acionável de revisão. |
-| `lib/revision-dispatch.ts` | Orquestra `judge → critique → revise → judge` em loop até converger ou estourar `max_revisions`. |
+| `lib/rubric-selector.ts` | Loads every rubric; maps `produces[]` → applicable rubrics. |
+| `lib/judge.ts` | Receives `(rubric, artifact)`, invokes the host agent (Claude Code / Codex / Gemini), validates the response against the schema. |
+| `lib/critique.ts` | Turns a critique into an actionable revision instruction. |
+| `lib/revision-dispatch.ts` | Orchestrates `judge → critique → revise → judge` in a loop until it converges or exceeds `max_revisions`. |
 
-## Quando o juiz roda
+## When the judge runs
 
-`quality_gate.judge_enabled` tem três valores:
+`quality_gate.judge_enabled` has three values:
 
-- `reports` (padrão): o juiz avalia os entregáveis de texto (`.md`, `.txt`) contra o brief; código, imagens e dados seguem nas rubricas heurísticas.
-- `true`: o juiz avalia todo arquivo que o gate cobre.
-- `false`: só as heurísticas offline.
+- `reports` (default): the judge evaluates the text deliverables (`.md`, `.txt`) against the brief; code, images and data stay on the heuristic rubrics.
+- `true`: the judge evaluates every file the gate covers.
+- `false`: offline heuristics only.
 
-Com `delivery.produces_to_rubric` (ligado por padrão), o `produces[]` do alvo escolhe a rubrica de domínio, como `data_research` para uma pesquisa; um produces sem rubrica cai na rubrica que a extensão indica.
+With `delivery.produces_to_rubric` (on by default), the target's `produces[]` picks the domain rubric, such as `data_research` for a research piece; a produces with no rubric falls back to the rubric the extension indicates.
 
-1. Para mudar o modo: `nrv config set quality_gate.judge_enabled <reports|true|false>`.
-2. O pipeline de entrega (`lib/delivery-pipeline.ts`) chama o gate com o brief do run.
-3. Rode `bun test skills/harness/tests/` para confirmar 100%.
-4. Monitore audit log para os novos eventos:
-   - `judge_invoked` — judge LLM call iniciado
-   - `critique_generated` — verdict + critique retornados
-   - `revision_dispatched` — re-invocação com instrução de revisão
-   - `revision_loop_exhausted` — `max_revisions` atingido sem convergir
+1. To change the mode: `nrv config set quality_gate.judge_enabled <reports|true|false>`.
+2. The delivery pipeline (`lib/delivery-pipeline.ts`) calls the gate with the run's brief.
+3. Run `bun test skills/harness/tests/` to confirm 100%.
+4. Monitor the audit log for the new events:
+   - `judge_invoked` — judge LLM call started
+   - `critique_generated` — verdict + critique returned
+   - `revision_dispatched` — re-invocation with a revision instruction
+   - `revision_loop_exhausted` — `max_revisions` reached without converging
 
-## Quando criar uma rubric nova
+## When to create a new rubric
 
-Quando um novo tipo de deliverable não casa com nenhuma das 8 existentes:
+When a new deliverable type does not match any of the 8 existing ones:
 
-1. Defina o slug do `produces` (ex: `podcast-episode`).
-2. Crie `<name>.md` neste diretório com frontmatter completo.
-3. Garanta ≥ 5 critérios com pesos somando 100.
-4. Inclua o schema de output JSON.
-5. Adicione testes em `tests/rubric-selector.test.ts` cobrindo o mapping.
-6. Rode o suite.
+1. Define the `produces` slug (e.g. `podcast-episode`).
+2. Create `<name>.md` in this directory with complete frontmatter.
+3. Ensure ≥ 5 criteria with weights summing to 100.
+4. Include the JSON output schema.
+5. Add tests in `tests/rubric-selector.test.ts` covering the mapping.
+6. Run the suite.
 
-## Quando NÃO criar rubric
+## When NOT to create a rubric
 
-- Para uma variação pequena de tipo existente (ex: "carrossel" de Instagram → usar `prose_shortform` com hint).
-- Para teste único / one-off — use `mock_judge` em vez disso.
-- Para mudança em critério existente — versionar a rubric existente, não criar nova.
+- For a small variation of an existing type (e.g. an Instagram "carousel" → use `prose_shortform` with a hint).
+- For a single one-off test — use `mock_judge` instead.
+- For a change to an existing criterion — version the existing rubric, do not create a new one.
 
-## Hard gates (falha individual = reprova sem revisão)
+## Hard gates (an individual failure fails the artifact without revision)
 
-Algumas rubrics declaram critérios com **HARD GATE** no body:
+Some rubrics declare criteria with a **HARD GATE** in the body:
 
-- `data-research.md`: `source_grounding` (sem fonte = re-geração total)
-- `juridical.md`: `citation_verifiability` (citação inventada = re-geração total)
-- `design.md`: `wcag_2_2_AA` (falha de acessibilidade)
-- `image.md`: tradicionalmente `no_artifacts` quando crítico
+- `data-research.md`: `source_grounding` (no source = full regeneration)
+- `juridical.md`: `citation_verifiability` (an invented citation = full regeneration)
+- `design.md`: `wcag_2_2_AA` (accessibility failure)
+- `image.md`: traditionally `no_artifacts` when critical
 
-O `judge.ts` deve sinalizar severity:"high" em qualquer item desses; o loop então
-decide se aceita revisão (severity high é fixable=true) ou aborta (fixable=false).
+`judge.ts` must flag severity:"high" on any of these items; the loop then
+decides whether to accept a revision (severity high is fixable=true) or abort (fixable=false).

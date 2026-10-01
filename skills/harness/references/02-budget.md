@@ -105,7 +105,7 @@ Configured by `budget.on_budget_exceeded`:
 |---|---|
 | `warn` (default) | Continue, but emit a warning plus a `budget_violation` audit event |
 | `abort` | Stop immediately, structured error, `budget_violation` audit event |
-| `escalate` | Pause and fire the escalation trigger (Business Protocol §12) |
+| `escalate` | Pause and fire the escalation trigger (Business Protocol v2 §12) |
 
 ## Telemetry
 

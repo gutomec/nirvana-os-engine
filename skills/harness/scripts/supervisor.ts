@@ -314,7 +314,7 @@ function defaultNotify(row: RunRow, message: string, verdict?: SalvageVerdict | 
 }
 
 function defaultPing(row: RunRow, elapsedMin: number): void {
-  notifyDesktop("Nirvana-OS", `${row.target_kind ?? "run"}/${row.target_slug ?? row.run_id}: em andamento há ${elapsedMin} min (${row.state})`);
+  notifyDesktop("Nirvana-OS", `${row.target_kind ?? "run"}/${row.target_slug ?? row.run_id}: running for ${elapsedMin} min (${row.state})`);
 }
 
 /** Move a run to `running` regardless of which active state it crashed in.

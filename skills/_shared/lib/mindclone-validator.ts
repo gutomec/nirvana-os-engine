@@ -124,11 +124,12 @@ export function validateMindClone(text: string, opts: { filePath?: string } = {}
   } else if (meta.description.length < 40) {
     errors.push({ code: "DESCRIPTION_TOO_SHORT", message: `frontmatter.description must be ≥40 chars (got ${meta.description.length})`, path: fp });
   } else {
-    // Soft check: format hint "Use quando … Invocar para: … NÃO usar para:"
+    // Soft check: format hint "Use when … Use for: … Do NOT use for: …". The
+    // Portuguese markers of existing clones are accepted too.
     const hasInvocarPara = /Invocar para:/i.test(meta.description) || /Use for:/i.test(meta.description);
     const hasAntiPattern = /N(Ã|A)O usar para:/i.test(meta.description) || /Do NOT use for:/i.test(meta.description);
     if (!hasInvocarPara || !hasAntiPattern) {
-      warnings.push({ code: "DESCRIPTION_FORMAT", message: "description should include 'Invocar para: …' and 'NÃO usar para: …' triggers/anti-patterns", path: fp });
+      warnings.push({ code: "DESCRIPTION_FORMAT", message: "description should include 'Use for: …' and 'Do NOT use for: …' triggers/anti-patterns", path: fp });
     }
   }
 

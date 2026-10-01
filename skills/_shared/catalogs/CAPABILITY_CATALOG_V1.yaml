@@ -1,7 +1,7 @@
 # Canonical Capability Catalog v1
 #
-# Source of truth for the controlled vocabulary used in Squad Protocol v5
-# (capabilities[].domains, capabilities[].id namespaces) and Business Protocol v1
+# Source of truth for the controlled vocabulary used in Squad Protocol v6 (App-C)
+# (capabilities[].domains, capabilities[].id namespaces) and Business Protocol v2
 # (business.capabilities, business.domains).
 #
 # Squads/businesses MAY use entries marked experimental: true for testing,

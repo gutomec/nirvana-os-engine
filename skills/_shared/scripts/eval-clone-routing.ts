@@ -11,6 +11,7 @@
  * Usage: bun eval-clone-routing.ts — or import runEval(); it is what
  * tests/clone-routing-eval.test.ts does to lock the watermark baselines in CI.
  */
+// i18n-user-facing: file — the eval briefs are user-language routing data, not engine text.
 import { loadCloneRegistry } from "../lib/clone-resolver.ts";
 import { buildCloneDocForTest } from "../lib/clone-search.ts";
 const bm25 = require("../../harness/lib/bm25.js");

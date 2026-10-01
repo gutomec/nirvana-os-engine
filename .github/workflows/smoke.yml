@@ -1,23 +1,23 @@
 # Smoke test cross-OS do Nirvana-OS engine.
 #
-# Motivação: os 4 bugs de Windows de 2026-07 (mkdir EEXIST do Bun, GNU tar
-# tratando "C:" como host remoto, symlinks sem privilégio, erros mudos) só
-# apareceram na máquina de um cliente. Este workflow reproduz o ambiente real:
-# shell bash em TODOS os OS — no Windows isso é o Git Bash, onde o tar é o
-# GNU tar, exatamente como o Claude Code roda lá.
+# Motivation: the 4 Windows bugs of 2026-07 (Bun's mkdir EEXIST, GNU tar
+# treating "C:" as a remote host, symlinks without privilege, silent errors)
+# only showed up on a customer's machine. This workflow reproduces the real
+# environment: bash shell on ALL OSes — on Windows that is Git Bash, where tar is
+# GNU tar, exactly as Claude Code runs there.
 #
-# Roda neste repo (public-primary desde 2026-08-12) — os guards [ -f ... ]
-# sobrevivem para checkouts parciais e para o tarball instalado.
+# Runs in this repo (public-primary since 2026-08-12) — the guards [ -f ... ]
+# survive for partial checkouts and for the installed tarball.
 name: smoke
 on:
-  # Um run por mudança: `push` só em main (pós-merge); branches de trabalho
-  # recebem o CI pelo `pull_request` abaixo. Antes, um push numa `feat/**`
-  # com PR aberto disparava dois runs completos e o merge esperava pelos dois.
+  # One run per change: `push` only on main (post-merge); working branches
+  # get CI through `pull_request` below. Before, a push on a `feat/**` branch
+  # with an open PR triggered two full runs and the merge waited for both.
   push:
     branches: [main]
-  # PRs de fork: `pull_request` (nunca pull_request_target) — roda o código do
-  # contribuidor SEM secrets e sem token de escrita. É o que dá feedback de CI
-  # a quem contribui, e é seguro por construção.
+  # Fork PRs: `pull_request` (never pull_request_target) — runs the
+  # contributor's code WITHOUT secrets and without a write token. It gives CI
+  # feedback to contributors, and is safe by construction.
   pull_request:
     branches: [main]
   workflow_dispatch: {}
@@ -127,11 +127,12 @@ jobs:
           $out = powershell -NoProfile -ExecutionPolicy Bypass -File skills\nirvana\scripts\bootstrap.ps1 | Out-String
           if ($out -notmatch "already installed") { Write-Host $out; exit 1 }
 
-  # Os gates de contrato do repositório. Rodavam só na máquina de quem lembrasse
-  # de chamá-los, o que não é gate — é sugestão. A paridade de changelog entrou
-  # aqui porque a deriva que ela detecta (uma release escrita só no idioma
-  # principal) é invisível em review: cada arquivo parece completo sozinho.
-  # Um sistema operacional basta: nenhum destes checks lê comportamento de OS.
+  # The repository's contract gates. They used to run only on the machine of
+  # whoever remembered to call them, which is not a gate — it is a suggestion.
+  # Changelog parity was added here because the drift it detects (a release
+  # written only in the main language) is invisible in review: each file looks
+  # complete on its own. One operating system is enough: none of these checks
+  # reads OS behavior.
   gates:
     runs-on: ubuntu-latest
     defaults:

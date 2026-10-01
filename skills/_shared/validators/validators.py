@@ -1,8 +1,8 @@
 """
 Nirvana Protocol Validators (Python / Pydantic v2)
 
-Mirror exato de validators.ts. Fail-closed validators para:
-- Squad Protocol v5
+Exact mirror of validators.ts. Fail-closed validators for:
+- Squad Protocol v6
 - Business Protocol v1
 - Harness Protocol v1
 
@@ -40,15 +40,15 @@ from pydantic import (
     model_validator,
 )
 
-# Limites configuráveis (cascata user -> project -> env). Sem .yaml/env,
-# LIMITS == DEFAULTS == valores historicos (backward-compatible).
-# Ver limits.py e _shared/CONFIGURATION.md secao "Limites configuraveis".
+# Configurable limits (user -> project -> env cascade). With no .yaml/env,
+# LIMITS == DEFAULTS == historical values (backward-compatible).
+# See limits.py and _shared/CONFIGURATION.md, section "Configurable limits".
 #
-# Import robusto do modulo irmao `limits`: garante o diretorio deste
-# arquivo em sys.path ANTES do import. Necessario porque validators.py e
-# carregado de 3 formas — `import validators`, `python validators.py`, e
-# importlib.spec_from_file_location (capability-validator.js do skill
-# squads) — e a 3a forma nao poe o diretorio em sys.path.
+# Robust import of the sibling module `limits`: guarantees this file's
+# directory is on sys.path BEFORE the import. Needed because validators.py is
+# loaded in 3 ways: `import validators`, `python validators.py`, and
+# importlib.spec_from_file_location (capability-validator.js of the squads
+# skill), and the 3rd way does not put the directory on sys.path.
 import os as _os
 import sys as _sys
 
@@ -58,10 +58,10 @@ if _VALIDATORS_DIR not in _sys.path:
 
 try:
     from limits import LIMITS  # type: ignore[import-not-found]
-except Exception as _limits_exc:  # noqa: BLE001 — fail-safe: limits nunca derruba validacao
-    # Fallback ultra-defensivo: se limits.py estiver ausente/corrompido,
-    # usa os DEFAULTS historicos hard-coded. Sistema continua funcionando.
-    _sys.stderr.write(f"[nirvana-limits] WARN: fallback p/ defaults ({_limits_exc})\n")
+except Exception as _limits_exc:  # noqa: BLE001 — fail-safe: limits never breaks validation
+    # Ultra-defensive fallback: if limits.py is missing/corrupt, use the
+    # hard-coded historical DEFAULTS. The system keeps working.
+    _sys.stderr.write(f"[nirvana-limits] WARN: falling back to defaults ({_limits_exc})\n")
     LIMITS = {
         "business_description_max": 500, "business_produces_max": 30,
         "business_example_briefs_max": 15, "business_example_briefs_item_max": 500,
@@ -78,7 +78,7 @@ except Exception as _limits_exc:  # noqa: BLE001 — fail-safe: limits nunca der
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Primitives — regex strings (idênticos a validators.ts)
+# Primitives — regex strings (identical to validators.ts)
 # ──────────────────────────────────────────────────────────────────────
 
 KEBAB_CASE = r"^[a-z][a-z0-9-]{1,63}$"
@@ -90,7 +90,7 @@ SHA256 = r"^sha256:[a-f0-9]{64}$"
 ENV_VAR = r"^[A-Z][A-Z0-9_]*$"
 MENTION = r"^@[a-z][a-z0-9-]+$"
 
-# Aliases de tipo reutilizáveis
+# Reusable type aliases
 KebabCaseStr = Annotated[str, StringConstraints(pattern=KEBAB_CASE)]
 SnakeCaseStr = Annotated[str, StringConstraints(pattern=SNAKE_CASE)]
 CapabilityIdStr = Annotated[str, StringConstraints(pattern=CAPABILITY_ID)]
@@ -100,16 +100,16 @@ EnvVarStr = Annotated[str, StringConstraints(pattern=ENV_VAR)]
 MentionStr = Annotated[str, StringConstraints(pattern=MENTION)]
 KebabHyphenStr = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9-]+$")]
 SnakeUnderscoreId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]+$")]
-# Fix (2026-05): regex anterior `^[a-z_]+$` bloqueava digitos nao-iniciais
-# (ex.: `iso_42001_compliant`, `gpt4_check`). Agora aceita digitos apos o
-# 1o caractere, mantendo snake_case. Comeca com letra; sem digito inicial.
+# Fix (2026-05): the previous regex `^[a-z_]+$` blocked non-leading digits
+# (e.g. `iso_42001_compliant`, `gpt4_check`). It now accepts digits after the
+# 1st character, keeping snake_case. Starts with a letter; no leading digit.
 SelfScoreCriterionId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]*$")]
 
 
 class Runtime(str, Enum):
-    """Mantenha em sincronia com `Runtime` em validators.ts: os nove runtimes
-    que o driver executa, mais os dois hosts declaráveis que não são alvos de
-    execução (`cursor`, `openclaw`) e o nome curto `antigravity`."""
+    """Keep in sync with `Runtime` in validators.ts: the nine runtimes
+    the driver executes, plus the two declarable hosts that are not execution
+    targets (`cursor`, `openclaw`) and the short name `antigravity`."""
 
     claude_code = "claude-code"
     codex = "codex"
@@ -126,8 +126,8 @@ class Runtime(str, Enum):
 
 
 class Model(str, Enum):
-    """Mantenha em sincronia com `Model` em validators.ts. `fable` faltava
-    enquanto o resolvedor de alias do engine já o reconhecia."""
+    """Keep in sync with `Model` in validators.ts. `fable` was missing
+    while the engine's alias resolver already recognized it."""
 
     haiku = "haiku"
     sonnet = "sonnet"
@@ -149,13 +149,13 @@ class FidelityStatus(str, Enum):
     retired = "retired"
 
 
-# Base estrita: rejeita campos extras (mirror de additionalProperties: false do JSON Schema)
+# Strict base: rejects extra fields (mirror of the JSON Schema additionalProperties: false)
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Squad Protocol v5
+# Squad Protocol v6 §22
 # ──────────────────────────────────────────────────────────────────────
 
 
@@ -354,15 +354,15 @@ class EmployeeFrontmatter(StrictModel):
     name: KebabCaseStr
     role: Annotated[str, StringConstraints(min_length=2)]
     type: Literal["functional_specialist", "mind_clone", "orchestrator", "antagonist_gate"] = "functional_specialist"
-    # max_length=None (default historico) => sem teto. Configuravel via
-    # employee_description_max no nirvana-limits.yaml.
+    # max_length=None (historical default) => no ceiling. Configurable via
+    # employee_description_max in nirvana-limits.yaml.
     description: Annotated[str, StringConstraints(min_length=20, max_length=LIMITS["employee_description_max"])]
     # maxTurns + self_score_contract: default-friendly so older businesses
     # (galinha-squads gen) load without a forced rewrite. New employees should
     # still declare both explicitly; the defaults are a safe floor, not a license
     # to skip accountability.
-    # 15 por decisão do dono (12/09/2026) — mantenha em sincronia com
-    # validators.ts. Uma cadeira que não terminou em quinze turnos está em loop.
+    # 15 by the owner's decision (12/09/2026); keep in sync with
+    # validators.ts. A seat that has not finished in fifteen turns is looping.
     maxTurns: int = Field(default=15, ge=1, le=LIMITS["employee_max_turns_max"])
     reports_to: Optional[KebabHyphenStr] = None
     manages: Optional[list[KebabHyphenStr]] = None
@@ -386,9 +386,9 @@ class EmployeeFrontmatter(StrictModel):
     escalation_triggers: Optional[list[EscalationTrigger]] = None
     # ── Fields from earlier business generations (galinha-squads), officialized
     # 2026-05-21 so rich legacy employees validate without rewrite ──
-    # Cinco níveis, como em validators.ts: os que `claude --effort` aceita e a
-    # faixa que o codex toma em `model_reasoning_effort`. Ausente = o despacho
-    # não especifica effort nenhum e o CLI usa o padrão do usuário.
+    # Five levels, as in validators.ts: the ones `claude --effort` accepts and the
+    # range codex takes in `model_reasoning_effort`. Absent = the dispatch
+    # specifies no effort and the CLI uses the user's default.
     effort: Optional[Literal["low", "medium", "high", "xhigh", "max"]] = None
     authority_level: Optional[Literal["tier-1", "tier-2", "tier-3"]] = None
     assigned_mind_clones: Optional[list[str]] = None
@@ -471,7 +471,7 @@ class BusinessUI(StrictModel):
     employees_metadata: Optional[dict[str, Any]] = None
 
 
-# Whitelist de features (refletido de business.schema.json — mais rígido que zod)
+# Feature whitelist (mirrored from business.schema.json; stricter than zod)
 FEATURES_VALID: set[str] = {
     # Runtime / control
     "max_turns", "tool_whitelist", "subagent_spawning", "subagents",
@@ -615,13 +615,13 @@ class OrgChart(BaseModel):
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Handoff Artifact (Squad v4 §9 + Business v1 §10.6)
+# Handoff Artifact (Squad Protocol v6 §9 + Business v2 §10, retired)
 # ──────────────────────────────────────────────────────────────────────
 
 
 class SelfScore(BaseModel):
-    """Self-score artefato. Chaves arbitrárias (snake_case lowercase) mapeiam
-    para floats em [0,1]. Campos nomeados cobrem metadata.
+    """Artifact self-score. Arbitrary keys (snake_case lowercase) map
+    to floats in [0,1]. Named fields cover metadata.
 
     Mirror do `SelfScoreSchema = z.record(...).and(z.object(...))` do TS.
     """
@@ -671,8 +671,8 @@ class HandoffArtifact(StrictModel):
     from_agent: str
     to_agent: str
     summary: Annotated[str, StringConstraints(min_length=10, max_length=LIMITS["handoff_summary_max"])]
-    # key_decisions e blockers permanecem hard-coded (feature de design:
-    # forcam priorizacao — ver CONFIGURATION.md). files_modified e configuravel.
+    # key_decisions and blockers stay hard-coded (a design feature:
+    # they force prioritization; see CONFIGURATION.md). files_modified is configurable.
     key_decisions: Optional[Annotated[list[str], Field(max_length=5)]] = None
     files_modified: Optional[Annotated[list[str], Field(max_length=LIMITS["handoff_files_modified_max"])]] = None
     blockers: Optional[Annotated[list[str], Field(max_length=3)]] = None
@@ -791,7 +791,7 @@ AuditEventType = Literal[
 
 
 class AuditEvent(BaseModel):
-    """Audit event. Permite campos extras por tipo (passthrough no zod)."""
+    """Audit event. Allows extra fields per type (passthrough in zod)."""
 
     model_config = ConfigDict(extra="allow", str_strip_whitespace=True)
 
@@ -971,7 +971,7 @@ def validate_dna_file(file_path: str) -> DNAValidationResult:
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Routing (Business Protocol v1 §13)
+# Routing (Business Protocol v2 §13)
 # ──────────────────────────────────────────────────────────────────────
 
 
@@ -1027,7 +1027,7 @@ class Routing(StrictModel):
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Mention (Business Protocol v1 §10.1)
+# Mention (retired, Business Protocol v2 §10)
 # ──────────────────────────────────────────────────────────────────────
 
 
@@ -1046,7 +1046,7 @@ class Mention(StrictModel):
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Approval Chain (Business Protocol v1 §14.3)
+# Approval Chain (retired, Business Protocol v2 §10)
 # ──────────────────────────────────────────────────────────────────────
 
 
@@ -1072,7 +1072,7 @@ class ApprovalChain(StrictModel):
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Registries (Squad v5 §23, Business v1 §App-?)
+# Registries (Squad Protocol v6 §23, Business v2 §6.9)
 # ──────────────────────────────────────────────────────────────────────
 
 
@@ -1177,12 +1177,12 @@ class RegistryBusinesses(StrictModel):
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Cross-protocol cross-checks (BP7, BP9, etc.)
+# Cross-protocol cross-checks (BP7, etc.)
 # ──────────────────────────────────────────────────────────────────────
 
 
 class BusinessLoadContext(BaseModel):
-    """Artefatos carregados de um business para validação de integridade end-to-end."""
+    """Artifacts loaded from a business for end-to-end integrity validation."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -1197,15 +1197,15 @@ class BusinessIntegrityResult(BaseModel):
 
 
 def validate_business_integrity(ctx: BusinessLoadContext) -> BusinessIntegrityResult:
-    """Mirror de validateBusinessIntegrity() de validators.ts.
+    """Mirror of validateBusinessIntegrity() in validators.ts.
 
-    Verifica:
-    - BP7: > 5 employees ⇒ ao menos 1 antagonista
-    - exatamente 1 brief_intake
-    - org chart referencia apenas employees declarados
-    - reporting bidirecional consistente
-    - sem ciclos no org chart
-    - manifest.employee_count bate com employees[].length
+    Checks:
+    - BP7: > 5 employees ⇒ at least 1 antagonist
+    - exactly 1 brief_intake
+    - org chart references only declared employees
+    - consistent bidirectional reporting
+    - no cycles in the org chart
+    - manifest.employee_count matches employees[].length
     """
     errors: list[str] = []
 
@@ -1225,8 +1225,8 @@ def validate_business_integrity(ctx: BusinessLoadContext) -> BusinessIntegrityRe
         )
 
     # Org chart consistency: every name in chart exists in employees[]
-    # O formato alternativo `org:` (chart=None) não expõe nós chart; nesse caso
-    # pulamos as checagens baseadas em chart (não há grafo para validar).
+    # The alternative `org:` format (chart=None) exposes no chart nodes; in that
+    # case we skip the chart-based checks (there is no graph to validate).
     employee_names = {e.name for e in ctx.employees}
     chart = ctx.org_chart.chart or []
     chart_by_name = {n.employee: n for n in chart}
@@ -1289,7 +1289,7 @@ def validate_business_integrity(ctx: BusinessLoadContext) -> BusinessIntegrityRe
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Self-test (smoke) — equivale ao bloco final de validators.ts
+# Self-test (smoke) — equivalent to the final block of validators.ts
 # ──────────────────────────────────────────────────────────────────────
 
 
@@ -1302,7 +1302,7 @@ def _self_test() -> int:
         ),
         "domains": ["media", "content"],
         "invoke": {"type": "task", "ref": "tasks/analyze.md"},
-        "examples": ["transcrever vídeo do Instagram"],
+        "examples": ["transcribe Instagram video"],
     }
     try:
         cap = Capability.model_validate(sample_capability)
@@ -1319,10 +1319,10 @@ if __name__ == "__main__":
 
 
 # ══════════════════════════════════════════════════════════════════════
-# Pytest snippets — rodam com `pytest validators.py -v`
+# Pytest snippets — run with `pytest validators.py -v`
 # ══════════════════════════════════════════════════════════════════════
-# Os testes são auto-contidos: importam pytest dentro de cada teste
-# para o módulo continuar utilizável fora de pytest sem dependência.
+# The tests are self-contained: each imports pytest inside the test,
+# so the module stays usable outside pytest with no dependency.
 
 
 _VALID_CAPABILITY = {
@@ -1330,7 +1330,7 @@ _VALID_CAPABILITY = {
     "description": "Analyze video file with multimodal LLM extracting transcripts and frames.",
     "domains": ["media"],
     "invoke": {"type": "task", "ref": "tasks/analyze.md"},
-    "examples": ["transcrever vídeo do Instagram"],
+    "examples": ["transcribe Instagram video"],
 }
 
 
@@ -1576,7 +1576,7 @@ def test_handoff_artifact_minimal_valid() -> None:
         {
             "from_agent": "ceo",
             "to_agent": "specialist",
-            "summary": "Briefing inicial passado para specialist começar análise.",
+            "summary": "Initial briefing handed to specialist to start the analysis.",
             "next_action": "specialist must produce first draft",
         }
     )

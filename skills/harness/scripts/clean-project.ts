@@ -62,7 +62,7 @@ const expanded = projectId.startsWith("~") ? path.join(os.homedir(), projectId.s
 const candidates = looksLikePath
   ? [path.resolve(expanded)]
   : [
-      path.join(process.cwd(), "outputs", projectId),            // novo default visível
+      path.join(process.cwd(), "outputs", projectId),            // new visible default
       path.join(os.homedir(), ".nirvana/outputs", projectId),
       path.join(process.cwd(), ".nirvana/outputs", projectId),
       path.join(os.homedir(), projectId),

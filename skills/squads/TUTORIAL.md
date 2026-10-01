@@ -1,475 +1,166 @@
-# Tutorial passo a passo · squads skill
+# Tutorial: your first v6 squad
 
-> Jornada do zero ao primeiro squad v5 com capability discoverável. Aproximadamente 30 min para completar.
+From nothing to a validated, discoverable squad, then using it on its own and from a business. About 30 minutes. It assumes the engine is installed (`nrv` on PATH). The rules behind each step are in `SQUAD_PROTOCOL_V6.md`.
 
-Este tutorial assume Node 18+, Python 3.9+ e a skill já instalada em `~/.nirvana/skills/squads/`.
+## The scenario
 
----
+A reusable squad that scans a SaaS competitor: it takes a competitor name, researches it, and returns a one-page market-fit report. You will build `competitor-analyzer-quick` with:
 
-## Cenário do tutorial
+- one capability, `research.competitor.quick_scan`
+- two agents, `web-researcher` and `report-synthesizer`
+- two tasks, `scan-competitor` and `synthesize-report`
+- one workflow, `quick-scan`
 
-Você quer um squad reusável que faz **análise rápida de competidores SaaS** — recebe nome de um competidor, faz pesquisa web em 2-3 min, e retorna um market-fit report estruturado de 1 página. Esse squad será invocável por qualquer business no portfólio que precisar de análise competitiva.
-
-Você vai criar `competitor-analyzer-quick` com:
-- 1 capability: `research.competitor.quick_scan`
-- 2 agents: `web-researcher`, `report-synthesizer`
-- 2 tasks: `scan-competitor`, `synthesize-report`
-- 1 workflow: `quick-scan.yaml`
-
-No fim do tutorial você terá um squad v5 validado e discoverável via harness.
-
----
-
-## Passo 1 — Inspecionar squads existentes
+## Step 1. Look at a mature squad
 
 ```bash
-bun ~/.nirvana/skills/squads/scripts/list-squads.ts | head -10
+nrv list-squads --format table | head
+cat ${SQUADS_DIR:-~/squads}/<some-squad>/squad.yaml | head -60
 ```
 
-Saída esperada:
-```
-Total: 148 squads
-  - business-nirvana-maestro (v1.0.0, protocol 5.0, 7 capabilities)
-  - sales-funnel-masters (v5.0.0, protocol 5.0, 7 capabilities)
-  - brandcraft-nirvana (v4.x, protocol 4.0, legacy)
-  - ...
-```
+Note the top level: `name`, `version`, `protocol`, `description`, `capabilities[]`, `components`, `runtime_requirements`.
 
-Copie um squad v5 maduro para inspirar:
+## Step 2. Scaffold
 
 ```bash
-cat ${SQUADS_DIR}/sales-funnel-masters/squad.yaml | head -50
+SQUAD_AGENT_1=web-researcher SQUAD_AGENT_2=report-synthesizer \
+SQUAD_TASK_1=scan-competitor SQUAD_TASK_2=synthesize-report \
+bun ~/.nirvana/skills/squads/scripts/init-squad.ts ${SQUADS_DIR:-~/squads}/competitor-analyzer-quick \
+  --name competitor-analyzer-quick \
+  --description "Researches a SaaS competitor and writes a one-page market-fit report." \
+  --capability-id research.competitor.quick_scan \
+  --capability-domains "research,strategy" \
+  --workflow-ref quick-scan
 ```
 
-Você vê: top-level com `name, version, protocol: "5.0", description, capabilities[], components, runtime_requirements`.
+This writes `squad.yaml`, `workflows/quick-scan.md`, stub agents and tasks, and runs the create gate. The directories are `agents/`, `tasks/`, `workflows/` and `schemas/`.
 
----
+## Step 3. Fill in the manifest
 
-## Passo 2 — Scaffold do squad novo
+Open `squad.yaml` and replace every placeholder in the capability (`SQUAD_PROTOCOL_V6.md` §22):
 
-```bash
-bun ~/.nirvana/skills/squads/scripts/init-squad.ts competitor-analyzer-quick
-```
+- `description`: 20 to 1,500 characters, in English, front-loaded with what it delivers: "Researches a SaaS competitor on the web and writes a one-page market-fit report: positioning, pricing, strengths, gaps."
+- `domains`: 1 to 5 from `skills/_shared/catalogs/CAPABILITY_CATALOG_V1.yaml`.
+- `examples`: natural intents ("analyze our competitor Notion", "analisar o concorrente Notion").
+- Routing metadata: `produces` (`competitor-report`), `keywords` (English, Portuguese and unaccented groups), three or more `example_briefs` (at least one English and one Portuguese, phrased as a real user would), and `not_for` entries of at most 25 characters (`"consumer apps"`, `"legal review"`). A `not_for` states what the squad never does, not what a neighbour does better (§33.1).
+- `acceptance`: binary criteria the judge will charge, for example `{ id: one_page, description: "the report fits one page and covers positioning, pricing, strengths and gaps", blocking: true }`.
 
-Isso cria estrutura em `${SQUADS_DIR}/competitor-analyzer-quick/`:
-```
-squad.yaml         # template v5 com placeholders
-agents/            # vazio
-tasks/             # vazio
-workflows/         # vazio
-templates/         # templates de agente/task/workflow
-```
+## Step 4. Write agents and tasks
 
----
+An agent (`agents/web-researcher.md`) has frontmatter with `name`, `description`, `maxTurns`, `tools`, then a short body: identity, `# Guidelines` (`## DO`, `## DO NOT`), `# Process`, `# Output`, `# Safety Boundaries`. `templates/agent.md.tmpl` is the shape.
 
-## Passo 3 — Preencher o `squad.yaml`
-
-Edite `${SQUADS_DIR}/competitor-analyzer-quick/squad.yaml`:
-
-```yaml
-name: competitor-analyzer-quick
-version: 1.0.0
-protocol: "5.0"
-description: |
-  Squad reusável para análise rápida de competidores SaaS. Recebe nome do
-  competidor + ICP do solicitante; retorna market-fit report de 1 página em
-  ≤3 min com 5-10 citações.
-author: nirvana-system
-license: SUL-1.0
-slashPrefix: caq
-tags:
-  - research
-  - competitor-intelligence
-
-capabilities:
-  - id: research.competitor.quick_scan
-    description: |
-      Análise rápida de 1 competidor SaaS específico. Pesquisa web em ≤3 min,
-      extrai positioning + pricing + tração + diferenciação, sintetiza em
-      report markdown de 1 página.
-    domains:
-      - research
-      - knowledge_management
-    invoke:
-      type: workflow
-      ref: workflows/quick-scan.yaml
-    examples:
-      - "Analise o competidor Notion no espaço de productivity SaaS"
-      - "Quick scan de Linear vs nosso ICP"
-      - "Compete intel rápido sobre Stripe Atlas"
-    outputs:
-      - name: competitor_report
-        type: markdown
-        description: Report 1 página com 5 seções (positioning, pricing, tração, diferenciação, ameaça)
-    score_boost: 1.0
-    model_hint: sonnet
-
-components:
-  agents:
-    - agents/web-researcher.md
-    - agents/report-synthesizer.md
-  tasks:
-    - tasks/scan-competitor.md
-    - tasks/synthesize-report.md
-  workflows:
-    - workflows/quick-scan.yaml
-
-runtime_requirements:
-  minimum:
-    - runtime: claude-code
-
-features_required:
-  - max_turns
-  - tool_whitelist
-  - handoff_artifacts
-
-features_optional:
-  - hooks
-  - telemetry_otel
-
-output:
-  base_dir: default
-```
-
-**Pontos críticos:**
-- `id` da capability tem 3 segmentos dotted (`research.competitor.quick_scan`) — schema rejeita menos
-- `description` ≥20 chars
-- `domains` em `[research, knowledge_management]` — ambos no canonical catalog (`~/.nirvana/skills/_shared/catalogs/CAPABILITY_CATALOG_V1.yaml`)
-- `examples` com ≥1 frase em linguagem natural (BM25 vai indexar)
-- `outputs[].type` apenas `file/string/json/array/markdown/html/binary` (não `yaml`)
-
----
-
-## Passo 4 — Escrever o agente `web-researcher`
-
-Crie `${SQUADS_DIR}/competitor-analyzer-quick/agents/web-researcher.md`:
-
-```markdown
----
-name: web-researcher
-id: web-researcher
-title: Web Researcher (fast)
-icon: 🔎
-whenToUse: Use para pesquisa rápida de 1 competidor via WebSearch + WebFetch. Limite ≤6 queries e ≤3 min.
-model_hint: sonnet
-maxTurns: 12
-tools: [WebSearch, WebFetch, Read]
-archetype: Builder
----
-
-# Web Researcher
-
-**Papel:** trazer dados verificáveis sobre o competidor em ≤3 min.
-
-## Core principles
-- Velocidade > exaustividade. ≤6 queries totais.
-- Citação obrigatória — toda afirmação tem URL verificável.
-- 2026-aware — preferir fontes ≥2024.
-
-## Inputs
-- `competitor_name: string`
-- `requester_icp: string` (perfil do solicitante para framing relativo)
-
-## Outputs
-```yaml
-research_payload:
-  competitor: <name>
-  positioning: <texto curto>
-  pricing_tiers: [...]
-  recent_traction_signals: [{ claim, url, year }]
-  diferenciacao_vs_alternativas: [...]
-  red_flags: [...]
-  citations: [{ url, title, accessed_at }]
-```
-
-## Steps
-1. Query 1: "<competitor> positioning 2026"
-2. Query 2: "<competitor> pricing"
-3. Query 3-4: "<competitor> reviews 2026" + traction signals
-4. WebFetch top-3 URLs relevantes
-5. Output research_payload estruturado
-
-## Anti-patterns
-- ❌ >6 queries
-- ❌ Citação sem URL
-- ❌ Inferir pricing sem fonte
-```
-
----
-
-## Passo 5 — Escrever o agente `report-synthesizer`
-
-Crie `${SQUADS_DIR}/competitor-analyzer-quick/agents/report-synthesizer.md`:
-
-```markdown
----
-name: report-synthesizer
-id: report-synthesizer
-title: Report Synthesizer
-icon: 📝
-whenToUse: Use após web-researcher entregar research_payload. Sintetiza em report markdown de 1 página com 5 seções.
-model_hint: sonnet
-maxTurns: 10
-tools: [Read, Write]
-archetype: Balancer
----
-
-# Report Synthesizer
-
-**Papel:** transformar research_payload em report 1 página estruturado.
-
-## Inputs
-- `research_payload` (do web-researcher)
-- `requester_icp: string`
-
-## Outputs
-- `competitor_report.md` com seções:
-  1. Sumário em 3 linhas
-  2. Positioning + value prop (≤100 palavras)
-  3. Pricing & tiers (tabela)
-  4. Tração & sinais 2024-2026 (5-7 bullets com URLs)
-  5. Ameaça relativa ao ICP do solicitante (1-3 frases acionáveis)
-
-## Anti-patterns
-- ❌ Report >1 página
-- ❌ Síntese vaga sem números
-- ❌ Esquecer URLs de citação
-```
-
----
-
-## Passo 6 — Escrever as 2 tasks
-
-Crie `${SQUADS_DIR}/competitor-analyzer-quick/tasks/scan-competitor.md`:
+A task (`tasks/scan-competitor.md`) states its outcome, not its method:
 
 ```markdown
 ---
 name: scan-competitor
-agent: web-researcher
-type: web_research
-duration_estimate: 2-3 min
+description: "Collects positioning, pricing and product facts about one competitor from public sources"
 ---
 
-# Task: Scan Competitor
+# Scan competitor
 
-## Entrada
-- `competitor_name`
-- `requester_icp`
+## Outcome
+A sourced fact sheet on the competitor: positioning, pricing tiers, main features, and a link for each claim.
 
-## Saída
-- `research_payload` conforme schema do agent
+## Input
+The competitor name and the market it competes in.
 
-## Steps
-1. ≤6 queries WebSearch
-2. ≤3 WebFetch
-3. Output estruturado YAML
+## Output
+`fact-sheet.md` in the run directory.
 
-## Success criteria
-- ≤6 queries
-- ≥3 citations com URL
-- Pricing presente OU `pricing: unavailable` flag
+## Acceptance Criteria
+- Every claim has a source link.
+- Pricing is listed per tier, or marked as not public.
 ```
 
-Crie `${SQUADS_DIR}/competitor-analyzer-quick/tasks/synthesize-report.md`:
+No `## Steps` section unless the order is itself a requirement (§36).
+
+## Step 5. Write the workflow
+
+`workflows/quick-scan.md` is one document: frontmatter is the graph, the body is prose per step.
 
 ```markdown
 ---
-name: synthesize-report
-agent: report-synthesizer
-type: synthesis
-duration_estimate: 1-2 min
----
-
-# Task: Synthesize Report
-
-## Entrada
-- `research_payload` (de scan-competitor)
-- `requester_icp`
-
-## Saída
-- `competitor_report.md` 1 página
-
-## Success criteria
-- 5 seções presentes
-- ≥5 citações URL preservadas
-- Ameaça ao ICP articulada em frase acionável
-```
-
----
-
-## Passo 7 — Escrever o workflow
-
-Crie `${SQUADS_DIR}/competitor-analyzer-quick/workflows/quick-scan.yaml`:
-
-```yaml
 name: quick-scan
-description: |
-  Workflow do squad competitor-analyzer-quick. Sequência: pesquisa web →
-  síntese de report. ≤5 min total.
-version: 1.0.0
-capability: research.competitor.quick_scan
-duration_estimate: 3-5 min
-
-inputs:
-  - name: competitor_name
-    type: string
-    required: true
-  - name: requester_icp
-    type: string
-    required: true
-
-outputs:
-  - name: competitor_report
-    type: markdown
-
-agent_sequence:
-  - phase: 1_research
+description: "Scans the competitor, then synthesizes the report"
+version: "1.0.0"
+steps:
+  - id: scan
     agent: web-researcher
     task: scan-competitor
-    inputs: [competitor_name, requester_icp]
-    outputs: [research_payload]
-    transitions:
-      success: 2_synthesize
-      failure: ESCALATE_RESEARCH_FAILED
-
-  - phase: 2_synthesize
+    creates: [fact-sheet]
+  - id: synthesize
     agent: report-synthesizer
     task: synthesize-report
-    inputs: [research_payload, requester_icp]
-    outputs: [competitor_report]
-    transitions:
-      success: COMPLETE
-
+    requires: [scan]
+    creates: [report]
 success_indicators:
-  - ≤6 queries totais
-  - ≥5 citations URL
-  - Report 1 página markdown
-```
-
+  - "the report fits one page"
 ---
 
-## Passo 8 — Validar
+## scan
+
+Read the competitor's site, pricing page and two independent reviews. Hand the fact sheet to the next step.
+
+## synthesize
+
+Turn the fact sheet into the one-page report. Cut anything without a source.
+```
+
+Rules: `name` equals the file name, a `task` is a reference to `tasks/<task>.md` and never prose, and `requires` lists step ids (§28.1).
+
+## Step 6. Validate and fix
 
 ```bash
-bun ~/.nirvana/skills/squads/scripts/validate-squad.ts ${SQUADS_DIR}/competitor-analyzer-quick
+nrv validate squad competitor-analyzer-quick
+nrv validate squad competitor-analyzer-quick --fix     # mechanical repairs, backup, rollback
 ```
 
-Saída esperada:
-```
-Validating squad at: ${SQUADS_DIR}/competitor-analyzer-quick
-Protocol: 5.0
-================================
-[PASS] v5 manifest valid
+Errors block, warnings advise, and `--strict` makes warnings reject too. The catalog is in `SQUAD_PROTOCOL_V6.md` §34.1. Add `dependencies.yaml` and a `README.md` to clear the quality warnings.
 
-Components: 5 referenced, 0 missing
-```
-
-Se aparecer **`Capability id pattern violation`**: seu id precisa ter ≥3 segmentos dotted. `research.competitor.quick_scan` ✅, `research.competitor` ❌.
-
-Se aparecer **warnings sobre domains**: o domain não está no catalog canonical. Ou troque para um existente OU adicione `experimental_domains: true` no top-level do `squad.yaml`.
-
----
-
-## Passo 9 — Indexar
+## Step 7. Index and check routing
 
 ```bash
-bun ~/.nirvana/skills/squads/scripts/index-squads.ts
+nrv index
+nrv find "analyze our competitor Notion and write a one-page report"
+bun ~/.nirvana/skills/_shared/scripts/self-retrieval-gate.ts competitor-analyzer-quick
 ```
 
-Saída:
-```
-registry written: ${SQUADS_REGISTRY_PATH}
-  squads: 149
-  capabilities: 15
-v5 squads with capabilities:
-  - business-nirvana-maestro (7 capabilities)
-  - sales-funnel-masters (7 capabilities)
-  - competitor-analyzer-quick (1 capability)
-  - ...
-```
+`nrv find` prints the signal (`MATCH_HIGH`, `MATCH_AMBIGUOUS` or `NO_MATCH`), the capability and the score. The gate checks that each of your `example_briefs` finds this squad first. Creation is not finished until it passes.
 
----
-
-## Passo 10 — Confirmar discovery via harness
+## Step 8. Run the squad on its own
 
 ```bash
-bun ~/.nirvana/skills/harness/scripts/find.ts "quick scan do Linear como competitor SaaS"
+nrv dispatch --squad competitor-analyzer-quick:research.competitor.quick_scan "Analyze Notion" --exec
 ```
 
-Stage 2 BM25 deve match seu squad:
+One agent plays the whole squad: it reads the capability, the workflow table, the agents and tasks the workflow references, and writes the deliverable to the run's output directory. `:<capabilityId>` is optional: with one capability it is implied, with several it is chosen by the brief (§32.2).
 
-```
-signal: HIGH
-top-match: squad_capability:competitor-analyzer-quick:research.competitor.quick_scan
-```
+## Step 9. Use it from a business
 
-Se não retornou (top match foi outro squad): seus `examples[]` no manifest provavelmente não cobrem o vocabulário da query. Adicione 2-3 examples mais próximos das frases reais que usuários usariam.
+A business runs as one agent. It never dispatches the squad; it reads the squad's work card and works as its agents:
 
----
-
-## Passo 11 — Invocação real (em session Claude Code)
-
-Em uma session do Claude Code:
-
-> Use o squad competitor-analyzer-quick para fazer quick scan do Linear, ICP é founder solo de SaaS B2B 50 funcionários.
-
-Claude vai:
-1. Ler `squad.yaml` da capability
-2. Resolver workflow `quick-scan.yaml`
-3. Spawnar `web-researcher` com inputs (Agent + tools WebSearch/WebFetch)
-4. Receber `research_payload`
-5. Spawnar `report-synthesizer` com payload + ICP
-6. Receber `competitor_report.md` final
-7. Retornar para você
-
-OU programaticamente:
-
-```javascript
-Skill({
-  skill: "squads",
-  args: JSON.stringify({
-    command: "invoke-capability",
-    squad: "competitor-analyzer-quick",
-    capability: "research.competitor.quick_scan",
-    inputs: {
-      competitor_name: "Linear",
-      requester_icp: "founder solo de SaaS B2B 50 funcionários"
-    }
-  })
-})
+```bash
+nrv cards squad competitor-analyzer-quick
 ```
 
----
+The card is built from frontmatter at run time: one line per capability, agent, task and workflow, each with the file to open (§32.3). Write clear `description` fields, because that is what the card shows.
 
-## Passo 12 — Iterar o squad
+## Step 10. Maintain
 
-Quando precisar evoluir:
+- After editing the manifest or workflows, `nrv validate squad <slug>` and `nrv index`.
+- Declare external programs and credentials in `dependencies.yaml`, then `nrv activate competitor-analyzer-quick`.
+- To convert a v5 squad: `nrv migrate <slug> --to 6` (dry run), then `--apply` (`references/09-upgrade.md`).
+- Never install packages inside the squad: use `nrv deps install` (`nrv deps status` shows where things are).
 
-- **Adicionar segunda capability** (ex: `research.competitor.deep_dive` 30min vs quick_scan): apenas adicione no `capabilities[]` + workflow novo. Re-validate, re-index.
-- **Trocar agent**: edite `agents/web-researcher.md` (frontmatter ou body). Workflow continua funcionando.
-- **Pluggar mind-clone advisor**: adicione `dna_reference` no employee equivalente em business consumer (não no squad).
-- **Backward compat com v4**: NÃO necessário aqui — squad já nasceu v5. Mas se você herdou squad v4 e quer migrar, veja `${SQUADS_DIR}/sales-funnel-masters/MIGRATION-NOTES.md`.
+## Troubleshooting
 
----
+| Symptom | Fix |
+|---|---|
+| `workflow_ref_unresolved` | A step names an agent or task with no file. Create it, or fix the name |
+| `invoke_ref_extension` | Write `invoke.ref: workflows/quick-scan`, without extension |
+| `not_for_too_long` | Shorten to two to four words |
+| `routing_metadata_incomplete` | Add `keywords`, three `example_briefs` (English and Portuguese) and `not_for` |
+| `nrv find` returns `NO_MATCH` | Rewrite the capability `description` and `example_briefs` in the vocabulary of a real request |
 
-## Troubleshooting do tutorial
-
-| Erro | Causa | Fix |
-|---|---|---|
-| `Capability id pattern violation` | <3 segmentos dotted | `research.competitor.quick_scan` ✅ |
-| Warnings sobre domains | Domain não está no catalog canonical | troque para existente OU adicione `experimental_domains: true` |
-| `outputs[].type: yaml` rejected | Schema só aceita types canonical | use `string` |
-| `fidelity_status` rejected | Campo não existe no Pydantic v5 | remova |
-| BM25 não match | Examples curtos / vocabulário distante | adicione 2-3 examples mais naturais |
-| `Components: N referenced, M missing` | Path em `components[]` aponta para arquivo inexistente | crie o arquivo OU remova do manifest |
-
----
-
-## Próximos passos
-
-- Compor squad → squad: dentro de um workflow, adicione phase que invoca outra capability via `Skill({skill: "squads", ...})`
-- Adicionar quality gate (NSC pattern): crie `checklists/quality-gate.md` com 6-cat veto
-- Conectar com business: business pode declarar `squads_authorized: [competitor-analyzer-quick]` em `business.yaml` para usar
-- Migrar v4 → v5: pegue um squad legacy de `${SQUADS_LEGACY_DIR}` (se definido) ou `${SQUADS_DIR}`, adicione `protocol: "5.0"` + `capabilities[]`, mantenha `legacy.v4_path` durante coexistência
-
-Veja `README.md` da skill para reference completa, `SQUAD_PROTOCOL_V6.md` para o protocolo, e `~/.nirvana/skills/_shared/catalogs/CAPABILITY_CATALOG_V1.yaml` para vocabulário canônico.
+More: `CONFIGURATION.md` for flags and settings, `references/` for per-topic guides, `SQUAD_PROTOCOL_V6.md` for the rules.

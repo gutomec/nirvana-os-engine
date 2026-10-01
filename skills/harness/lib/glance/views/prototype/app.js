@@ -16,7 +16,7 @@ function App() {
         <h1 class="text-lg font-semibold">Glance — prototype</h1>
         <span class="text-[10px] text-[var(--text-tertiary)]">
           Preact + Signals + htm, via import map · Tailwind (browser CDN) lendo tokens.css · zero build ·
-          servido pelo mesmo Bun em /prototype · não faz parte de nenhuma release
+          served by the same Bun at /prototype · not part of any release
         </span>
       </header>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">

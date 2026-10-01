@@ -222,27 +222,27 @@ export function readEntityMemory(
 
   const bytes = scopes.reduce((n, s) => n + s.bytes, 0);
   const label: Record<MemoryScope, string> = {
-    global: "GLOBAL — vale para esta entidade em qualquer projeto",
-    project: "DESTE PROJETO — vale só aqui, e prevalece quando contradiz a global",
+    global: "GLOBAL: applies to this entity in any project",
+    project: "THIS PROJECT: applies only here, and wins when it contradicts the global one",
   };
   const body = scopes
     .map((s) => `### ${label[s.scope]}\n> \`${s.dir}\`\n\n${s.text}`)
     .join("\n\n");
   const over = bytes > notice
-    ? `\n\n> Esta memória soma ${bytes} bytes, acima do ponto de atenção de ${notice} — ela chega **inteira** mesmo assim.`
+    ? `\n\n> This memory totals ${bytes} bytes, above the attention threshold of ${notice}; it is delivered **in full** anyway.`
     : "";
   const drift = diverged.length
-    ? `\n\n> **Atenção:** ${diverged.map((f) => `\`${path.join(opts.entityDir!, "memory", f)}\``).join(", ")} difere da casa canônica `
-      + `\`${entityMemoryDir(kind, slug, "global")}\`. O que você lê acima é a casa; a cópia da entidade foi só a semente inicial e não é relida. `
-      + `Quem editou a entidade precisa levar a mudança para a casa (\`nrv memory add ${slug} "<fato>" --scope global\`).`
+    ? `\n\n> **Warning:** ${diverged.map((f) => `\`${path.join(opts.entityDir!, "memory", f)}\``).join(", ")} differs from the canonical home `
+      + `\`${entityMemoryDir(kind, slug, "global")}\`. What you read above is the home; the entity's copy was only the initial seed and is not read again. `
+      + `Whoever edited the entity must carry the change to the home (\`nrv memory add ${slug} "<fact>" --scope global\`).`
     : "";
 
-  const block = `## MEMÓRIA DESTA ENTIDADE — ${slug} (entre sessões)\n\n`
-    + `> Lições, decisões e princípios que sobreviveram a execuções anteriores. Honre-os.\n`
-    + `> Ficam fora do diretório da entidade, porque a entidade é substituída quando atualiza.\n\n`
+  const block = `## THIS ENTITY'S MEMORY: ${slug} (across sessions)\n\n`
+    + `> Lessons, decisions and principles that survived earlier runs. Honor them.\n`
+    + `> They live outside the entity directory, because the entity is replaced when it updates.\n\n`
     + `${body}${over}${drift}\n\n`
-    + `> Para registrar algo novo, **você decide o escopo pelo que o fato significa**, não pelo diretório em que está: `
-    + `\`nrv memory add ${slug} "<fato>" --scope global\` quando é verdade sobre a entidade em qualquer lugar, `
-    + `\`--scope project\` quando só vale nesta execução/cliente. Na dúvida entre os dois, é project.\n\n---\n\n`;
+    + `> To record something new, **you choose the scope by what the fact means**, not by the directory you are in: `
+    + `\`nrv memory add ${slug} "<fact>" --scope global\` when it is true of the entity anywhere, `
+    + `\`--scope project\` when it only holds for this run/client. When unsure between the two, use project.\n\n---\n\n`;
   return { block, scopes, bytes, seeded, diverged };
 }

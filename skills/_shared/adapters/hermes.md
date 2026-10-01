@@ -1,140 +1,140 @@
 # Adapter · Hermes (Hermes Agent CLI)
 
-> Runtime adapter para Squad Protocol v5 + Business Protocol v1 + Harness Protocol v1.
-> Cobre os 3 protocolos em um único doc. Seções canônicas conforme Squad v4 §18.5.
-> Identidade + capabilities do sistema (o que o Nirvana-OS é e pode fazer): ver `../NIRVANA-OS.md` (fonte única).
-> Espelha o `codex.md` (sub-process dispatch). Tudo verificado contra o Hermes real
-> instalado (`~/.hermes/`, v0.13.x) e o código (`agent/shell_hooks.py`, `agent/prompt_builder.py`).
+> Runtime adapter for Squad Protocol v6 + Business Protocol v2 + Harness Protocol v1.
+> Covers the 3 protocols in a single doc. Canonical sections per Squad Protocol v6 §18.5.
+> System identity + capabilities (what Nirvana-OS is and can do): see `../NIRVANA-OS.md` (single source).
+> Mirrors `codex.md` (sub-process dispatch). Everything verified against the real Hermes
+> install (`~/.hermes/`, v0.13.x) and the code (`agent/shell_hooks.py`, `agent/prompt_builder.py`).
 
 ---
 
 ## 1. Adapter Metadata
 
-| Campo | Valor |
+| Field | Value |
 |---|---|
 | `runtime` | `hermes` |
-| `vendor` | Hermes Agent (linhagem OpenClaw) |
+| `vendor` | Hermes Agent (OpenClaw lineage) |
 | `min_version` | `0.13+` (Hermes CLI) |
-| `default_model` | definido pelo provider/profile do usuário (ex.: via OpenRouter); sem default próprio |
+| `default_model` | defined by the user's provider/profile (e.g. via OpenRouter); no default of its own |
 | `tested_against` | Hermes Agent v0.13.0 (2026.5.7) |
 | `config_paths` | `~/.hermes/config.yaml`, `~/.hermes/profiles/<p>/config.yaml`, `<project>/AGENTS.md`, `~/.hermes/SOUL.md` |
-| `skills_root` | `~/.hermes/skills/` (HOME-global) + `skills.external_dirs` no `config.yaml` (formato `SKILL.md` idêntico ao Claude Code) |
-| `agents_root` | sem agent-profile por arquivo como o Codex; persona vai no prompt do `hermes -z` (ver §7) ou via `hermes profile` |
-| `memory_root` | `<project>/AGENTS.md` (auto-load do CWD), SOUL.md/USER.md no system prompt, SQLite+FTS5, Honcho |
+| `skills_root` | `~/.hermes/skills/` (HOME-global) + `skills.external_dirs` in `config.yaml` (`SKILL.md` format identical to Claude Code) |
+| `agents_root` | no per-file agent profile like Codex; the persona goes in the `hermes -z` prompt (see §7) or via `hermes profile` |
+| `memory_root` | `<project>/AGENTS.md` (auto-load from the CWD), SOUL.md/USER.md in the system prompt, SQLite+FTS5, Honcho |
 | `audit_log` | `~/.harness-logs/<date>/audit.jsonl` via shell hooks (§10) + fs-watch (`nrv-hermes`) |
-| `protocol_versions` | Squad 5.0, Business 1.0, Harness 1.0 (gaps em §13) |
+| `protocol_versions` | Squad 5.0, Business 1.0, Harness 1.0 (gaps in §13) |
 
 ---
 
 ## 2. Feature Support Matrix
 
-`✓` = nativo · `~` = workaround/parcial · `✗` = não suportado
+`✓` = native · `~` = workaround/partial · `✗` = not supported
 
-| Feature (Business v1 §6) | Squad v5 | Business v1 | Harness v1 | Notas |
+| Feature (Business v2 §6.5) | Squad v6 | Business v2 | Harness v1 | Notes |
 |---|---|---|---|---|
-| `max_turns` | ~ | ~ | ~ | `agent.max_turns` global no config/profile; não há per-employee. Cada sub-process `hermes -z` herda o limite do profile |
-| `tool_whitelist` | ✓ | ✓ | ✓ | `-t/--toolsets` restringe o universo de tools por invocação; `disabled_toolsets` no config |
-| `subagent_spawning` | ~ | ~ | ~ | `delegation` nativo é mono-nível (`max_spawn_depth: 1`); fan-out multi-nível via sub-process `hermes -z` (= padrão Codex) |
-| `audit_trail` | ~ | ~ | ~ | Shell hooks `pre/post_tool_call` → `audit-emit-from-hermes-hook.ts` → jsonl; + fs-watch. Não nativo |
-| `scheduled_invocation` | ✓ | ✓ | ✓ | **`hermes cron` nativo** — vantagem sobre Codex/Gemini |
-| `event_bus` | ~ | ~ | ~ | Mentions/tickets via file-system (`.handoffs/`); sem broker |
-| `hooks` | ~ | ~ | ~ | `pre/post_tool_call`, `on_session_start/end`, `transform_*`, etc. — shell-based, consent-gated; sem granularidade por-arg do Claude |
-| `sandboxing` | ✓ | ✓ | ✓ | 6 terminal backends (local, Docker, SSH, Daytona, Modal, Singularity); scanner Tirith pré-execução |
-| `session_memory` | ✓ | ✓ | ✓ | Contexto por sessão + compressão automática |
-| `project_memory` | ✓ | ✓ | ✓ | `AGENTS.md` do CWD carregado automaticamente (inclusive em `hermes -z`) |
-| `global_memory` | ✓ | ✓ | ✓ | SOUL.md/USER.md + SQLite+FTS5 + Honcho (mais rico que Codex/Gemini) |
-| `handoff_artifacts` | ✓ | ✓ | ✓ | JSON em `.handoffs/` (texto→JSON parse; ver §7) |
-| `fork_context` | ~ | ~ | ~ | Sub-process spawn cria fork; isolation por profile/toolset |
-| `teammate_primitive` | ~ | ~ | ~ | `delegation.orchestrator_enabled` (mono-nível); teams multi-nível são convenção via file-system |
-| `telemetry_otel` | ~ | ~ | ~ | Sem OTel built-in; jsonl via hooks |
-| `messaging_escalation` | ✓ | ✓ | ✓ | 18 adaptadores (Slack/Telegram/WhatsApp) — **upgrade sobre Codex** para escalação humana |
-| `mcp` | ✓ | ✓ | ✓ | `mcp_servers` nativo |
+| `max_turns` | ~ | ~ | ~ | Global `agent.max_turns` in the config/profile; there is no per-employee limit. Each `hermes -z` sub-process inherits the profile's limit |
+| `tool_whitelist` | ✓ | ✓ | ✓ | `-t/--toolsets` restricts the tool universe per invocation; `disabled_toolsets` in the config |
+| `subagent_spawning` | ~ | ~ | ~ | Native `delegation` is single-level (`max_spawn_depth: 1`); multi-level fan-out via `hermes -z` sub-process (= Codex pattern) |
+| `audit_trail` | ~ | ~ | ~ | `pre/post_tool_call` shell hooks → `audit-emit-from-hermes-hook.ts` → jsonl; + fs-watch. Not native |
+| `scheduled_invocation` | ✓ | ✓ | ✓ | **Native `hermes cron`**, an advantage over Codex/Gemini |
+| `event_bus` | ~ | ~ | ~ | Mentions/tickets via file-system (`.handoffs/`); no broker |
+| `hooks` | ~ | ~ | ~ | `pre/post_tool_call`, `on_session_start/end`, `transform_*`, etc.: shell-based, consent-gated; no per-arg granularity like Claude |
+| `sandboxing` | ✓ | ✓ | ✓ | 6 terminal backends (local, Docker, SSH, Daytona, Modal, Singularity); Tirith pre-execution scanner |
+| `session_memory` | ✓ | ✓ | ✓ | Per-session context + automatic compression |
+| `project_memory` | ✓ | ✓ | ✓ | CWD `AGENTS.md` loaded automatically (including in `hermes -z`) |
+| `global_memory` | ✓ | ✓ | ✓ | SOUL.md/USER.md + SQLite+FTS5 + Honcho (richer than Codex/Gemini) |
+| `handoff_artifacts` | ✓ | ✓ | ✓ | JSON in `.handoffs/` (text→JSON parse; see §7) |
+| `fork_context` | ~ | ~ | ~ | Sub-process spawn creates a fork; isolation by profile/toolset |
+| `teammate_primitive` | ~ | ~ | ~ | `delegation.orchestrator_enabled` (single-level); multi-level teams are a file-system convention |
+| `telemetry_otel` | ~ | ~ | ~ | No built-in OTel; jsonl via hooks |
+| `messaging_escalation` | ✓ | ✓ | ✓ | 18 adapters (Slack/Telegram/WhatsApp), an **upgrade over Codex** for human escalation |
+| `mcp` | ✓ | ✓ | ✓ | Native `mcp_servers` |
 
 ---
 
 ## 3. Concept Mapping
 
-| Conceito (Protocolo) | Equivalente Hermes | Implementação |
+| Concept (Protocol) | Hermes equivalent | Implementation |
 |---|---|---|
-| Squad / Business | Skill-ponte + `AGENTS.md` do projeto | Registry global lido via `nrv`; `AGENTS.md` carregado por CWD |
-| Capability | Comando `nrv` determinístico | `nrv find/route/index/verify-deliverable/quality-gate` via tool `terminal` |
-| Employee | Persona embutida no prompt do `hermes -z` | persona-núcleo + DNA injetado (§7); não é arquivo de agent como no Codex |
-| `is_brief_intake: true` | Maestro raciocina sobre o brief | É prompt (igual qualquer runtime), não código |
-| `is_antagonist: true` | Sub-process `hermes -z` em pipeline | `hermes -z "<persona+DNA+brief>" > .handoffs/<id>.out` |
-| Handoff artifact | JSON parseado do stdout do `-z` | Persistido em `<project>/.handoffs/` |
-| Mention `@employee` | Convenção no handoff JSON | Adapter detecta `mentions[]` → novo sub-process |
-| Ticket | Arquivo persistido | `<project>/.tickets/<TICKET_ID>.json` |
-| Escalation trigger | Notificação + canal de mensageria | Wrapper emite notification; Hermes pode notificar via Slack/Telegram |
-| Permanent memory | SOUL.md/USER.md + SQLite | Hermes nativo |
-| Project memory | `<project>/AGENTS.md` | Auto-load por CWD |
-| Session memory | Transcript + compressão | Hermes nativo |
-| Routing decision (harness) | `nrv find` (BM25) | Shell-out determinístico via tool `terminal` |
+| Squad / Business | Bridge skill + the project's `AGENTS.md` | Global registry read via `nrv`; `AGENTS.md` loaded by CWD |
+| Capability | Deterministic `nrv` command | `nrv find/route/index/verify-deliverable/quality-gate` via the `terminal` tool |
+| Employee (seat) | Persona embedded in the `hermes -z` prompt | A business runs as ONE solo agent (`skills/harness/lib/business-solo.ts`) that plays the seats itself; core persona + injected DNA (§7); not an agent file as in Codex |
+| `is_brief_intake: true` | The maestro reasons about the brief | It is a prompt (like on any runtime), not code |
+| `is_antagonist: true` | `hermes -z` sub-process in a pipeline | `hermes -z "<persona+DNA+brief>" > .handoffs/<id>.out` |
+| Handoff artifact | JSON parsed from the `-z` stdout | Persisted in `<project>/.handoffs/` |
+| Mention `@employee` | Convention in the handoff JSON | The adapter detects `mentions[]` → new sub-process |
+| Ticket | Persisted file | `<project>/.tickets/<TICKET_ID>.json` |
+| Escalation trigger | Notification + messaging channel | The wrapper emits a notification; Hermes can notify via Slack/Telegram |
+| Permanent memory | SOUL.md/USER.md + SQLite | Hermes native |
+| Project memory | `<project>/AGENTS.md` | Auto-load by CWD |
+| Session memory | Transcript + compression | Hermes native |
+| Routing decision (harness) | `nrv find` (BM25) | Deterministic shell-out via the `terminal` tool |
 
 ---
 
 ## 4. Frontmatter Mapping
 
-### Squad v5 / Business v1 → skill-ponte + AGENTS.md
+### Squad v6 / Business v2 → bridge skill + AGENTS.md
 
-A ponte (`skills/_shared/adapters/hermes/skills/nirvana/`) é uma skill `SKILL.md` padrão que o Hermes descobre via `external_dirs`. O contrato de projeto vai em `AGENTS.md` (byte-idêntico a `CLAUDE.md`/`GEMINI.md`), carregado pelo CWD.
+The bridge (`skills/_shared/adapters/hermes/skills/nirvana/`) is a standard `SKILL.md` skill that Hermes discovers via `external_dirs`. The project contract goes in `AGENTS.md` (byte-identical to `CLAUDE.md`/`GEMINI.md`), loaded by the CWD.
 
-### Employee → prompt do `hermes -z`
+### Employee → `hermes -z` prompt
 
-O Hermes não tem agent-profile por arquivo (como `~/.codex/agents/<name>.md`). A persona do employee é montada no prompt:
+Hermes has no per-file agent profile (like `~/.codex/agents/<name>.md`). The employee persona is assembled in the prompt:
 
 ```
-<persona-núcleo do employee (frontmatter → topo)>
-<DNA do mind-clone — injectMindClones().combined_prompt>
+<employee core persona (frontmatter → top)>
+<mind-clone DNA: injectMindClones().combined_prompt>
 ## Brief
-<brief enriquecido>
-## Contrato de saída
-Responda SOMENTE com um único objeto JSON: {...}
+<enriched brief>
+## Output contract
+Reply ONLY with a single JSON object: {...}
 ```
 
-> Para `type: mind_clone`, o adapter prepende `(DISCLOSURE: AI-generated persona, not a real person.)` na persona, igual ao Codex.
+> For `type: mind_clone`, the adapter prepends `(DISCLOSURE: AI-generated persona, not a real person.)` to the persona, same as Codex.
 
 ---
 
 ## 5. Tool Whitelist Mechanics
 
-- Hermes tem 47 tools em 19 toolsets. O whitelist por employee é aplicado via `-t/--toolsets` na invocação `hermes -z` — o que não está no toolset não existe na sessão.
-- Mapeamento semantic tools → toolset Hermes:
+- Hermes has 47 tools in 19 toolsets. The per-employee whitelist is applied via `-t/--toolsets` on the `hermes -z` invocation: what is not in the toolset does not exist in the session.
+- Semantic tools → Hermes toolset mapping:
   - `read` / `write` / `edit` → `file`
   - `bash` → `terminal`
   - `web_fetch` → `web`
   - `image` → image toolset
-- Default mínimo do adapter: `-t file,terminal`. Expande conforme `employee.tools`.
-- Gate adicional: scanner Tirith pré-execução + hooks `pre_tool_call` (mas o nosso hook de audit NÃO bloqueia — segurança fica no `-t` + Tirith + `--yolo` controlado).
+- Adapter minimum default: `-t file,terminal`. It expands according to `employee.tools`.
+- Additional gate: Tirith pre-execution scanner + `pre_tool_call` hooks (but our audit hook does NOT block; security rests on `-t` + Tirith + a controlled `--yolo`).
 
 ---
 
 ## 6. Max-Turns Mechanics
 
-Hermes tem `agent.max_turns` global (config/profile), não per-subagent. Adapter simula:
+Hermes has a global `agent.max_turns` (config/profile), not per-subagent. The adapter simulates it:
 
-1. Cada employee roda como sub-process `hermes -z`, que herda `agent.max_turns` do profile ativo.
-2. Para limites distintos por employee, usar um profile dedicado (`hermes profile`) com `max_turns` próprio, ou aceitar o global.
-3. Estouro → o sub-process termina; o wrapper registra `audit_event: budget_violation`.
+1. Each employee runs as a `hermes -z` sub-process, which inherits `agent.max_turns` from the active profile.
+2. For distinct limits per employee, use a dedicated profile (`hermes profile`) with its own `max_turns`, or accept the global.
+3. Overrun → the sub-process ends; the wrapper records `audit_event: budget_violation`.
 
-**Limitação:** sem contagem per-employee fina. Documentado como `~` (parcial). Recomenda-se employees flat (sem invocação aninhada dentro de um único `-z`).
+**Limitation:** no fine per-employee counting. Documented as `~` (partial). Flat employees are recommended (no nested invocation inside a single `-z`).
 
 ---
 
 ## 7. Subagent Spawning
 
-Hermes **não tem** `hermes run` nem subagent primitive in-process. O one-shot é `hermes -z "<prompt>"` (saída **texto puro**, sem `--output-format json`, sem `--agent`/`--soul`). O adapter despacha assim:
+Hermes **has no** `hermes run` and no in-process subagent primitive. The one-shot is `hermes -z "<prompt>"` (**plain text** output, no `--output-format json`, no `--agent`/`--soul`). The adapter dispatches like this:
 
 ```bash
-# Adapter spawn (pseudocódigo do que o wrapper executa)
+# Adapter spawn (pseudocode of what the wrapper runs)
 PROMPT=$(cat <<EOF
-$PERSONA_CORE                      # persona-núcleo do employee (frontmatter)
+$PERSONA_CORE                      # employee core persona (frontmatter)
 $DNA_BLOCK                         # injectMindClones().combined_prompt
 ## Brief
 $BRIEF
-## Tools permitidos
+## Allowed tools
 $TOOL_WHITELIST
-## Contrato de saída (OBRIGATÓRIO)
-Responda SOMENTE com um único objeto JSON, sem texto antes/depois:
+## Output contract (MANDATORY)
+Reply ONLY with a single JSON object, no text before/after:
 {"success":bool,"artifact_path":string|null,"summary":string,
  "next_action":string|null,"mentions":[string],"errors":[string]}
 EOF
@@ -145,45 +145,45 @@ hermes -z "$PROMPT" \
   --accept-hooks --yolo \
   > ".handoffs/${EMPLOYEE}-$(date +%s).out"
 
-# Parse texto→JSON: extrai o 1º objeto {...} balanceado do stdout (tolerante a ruído).
+# Parse text→JSON: extract the 1st balanced {...} object from stdout (noise tolerant).
 ```
 
-**DNA / limite de contexto.** O system prompt do Hermes trunca arquivos de contexto em `CONTEXT_FILE_MAX_CHARS = 20_000` (head 70% + tail 20%, `agent/prompt_builder.py:824`). Por isso o DNA vai no **corpo do prompt do `-z`**, não num arquivo de contexto (evita o truncamento). Se `injectMindClones().total_bytes > ~14_000`, o adapter degrada para o top-1 clone + resumo determinístico dos demais e emite `dispatch_degraded`. Cada injeção emite `mind_clone_injected` com sha256 (`harness/lib/dispatch.ts:123-130`); `validateTrace()` (`dispatch.ts:193`) confirma pós-dispatch que o DNA declarado == injetado (invariante anti-fabricação).
+**DNA / context limit.** The Hermes system prompt truncates context files at `CONTEXT_FILE_MAX_CHARS = 20_000` (head 70% + tail 20%, `agent/prompt_builder.py:824`). That is why the DNA goes in the **body of the `-z` prompt**, not in a context file (it avoids truncation). If `injectMindClones().total_bytes > ~14_000`, the adapter degrades to the top-1 clone + a deterministic summary of the others and emits `dispatch_degraded`. Each injection emits `mind_clone_injected` with a sha256 (`harness/lib/dispatch.ts:123-130`); `validateTrace()` (`dispatch.ts:193`) confirms after dispatch that the declared DNA == the injected DNA (anti-fabrication invariant).
 
-**Mention `@x`:** detectada em `mentions[]` no handoff → novo sub-process `hermes -z`. Fan-out multi-nível fica no wrapper Nirvana (o `delegation` nativo do Hermes é mono-nível, `max_spawn_depth: 1`).
+**Mention `@x`:** detected in `mentions[]` in the handoff → new `hermes -z` sub-process. Multi-level fan-out stays in the Nirvana wrapper (Hermes' native `delegation` is single-level, `max_spawn_depth: 1`).
 
 ---
 
 ## 8. Memory Storage
 
-| Camada | Path | Persistência |
+| Layer | Path | Persistence |
 |---|---|---|
-| Permanent (cross-session) | SOUL.md/USER.md + SQLite+FTS5 + Honcho | Nativo |
-| Project | `<project>/AGENTS.md` | Auto-load por CWD |
-| Session | Transcript + compressão automática | Nativo |
-| Business permanent | `~/businesses/<biz>/memory/permanent.md` | Adapter persiste via `nrv` |
+| Permanent (cross-session) | SOUL.md/USER.md + SQLite+FTS5 + Honcho | Native |
+| Project | `<project>/AGENTS.md` | Auto-load by CWD |
+| Session | Transcript + automatic compression | Native |
+| Business permanent | `~/businesses/<biz>/memory/permanent.md` | Adapter persists via `nrv` |
 | Project (business) | `<project>/<biz>/<project_id>/memory/` | Isolation by construction |
 
-> **Isolation guard:** ao montar o prompt do `-z`, o adapter inclui APENAS o memory do `project_id` corrente — caso contrário `audit_event: isolation_violation`.
+> **Isolation guard:** when assembling the `-z` prompt, the adapter includes ONLY the current `project_id`'s memory, otherwise `audit_event: isolation_violation`.
 
 ---
 
 ## 9. Context Window & Compaction
 
-- Janela: depende do modelo/provider configurado (o Hermes roteia para o provider do profile).
-- Arquivos de contexto (SOUL/USER/AGENTS) truncados em 20K chars (head70/tail20). DNA vai no corpo do prompt para não cair nessa regra (§7).
-- Compaction: o Hermes comprime contexto automaticamente; cada `hermes -z` é efêmero (sem estado acumulado entre dispatches).
+- Window: depends on the configured model/provider (Hermes routes to the profile's provider).
+- Context files (SOUL/USER/AGENTS) are truncated at 20K chars (head70/tail20). The DNA goes in the prompt body so it escapes that rule (§7).
+- Compaction: Hermes compresses context automatically; each `hermes -z` is ephemeral (no state accumulated between dispatches).
 
 ---
 
 ## 10. Hook System
 
-Hermes tem shell hooks declarados em `~/.hermes/config.yaml` (`hooks:`). O `nrv setup --with-hermes` pluga dois, idempotentes por token:
+Hermes has shell hooks declared in `~/.hermes/config.yaml` (`hooks:`). `nrv setup --with-hermes` plugs in two, idempotent by token:
 
 ```yaml
 hooks:
   pre_tool_call:
-    - matcher: "terminal|file"        # re.fullmatch sobre tool_name
+    - matcher: "terminal|file"        # re.fullmatch over tool_name
       command: "bun ~/.nirvana/skills/_shared/scripts/audit-emit-from-hermes-hook.ts pre"
       timeout: 5
   post_tool_call:
@@ -192,55 +192,53 @@ hooks:
       timeout: 5
 ```
 
-- Payload JSON via stdin (`{hook_event_name, tool_name, tool_input, session_id, cwd}`); o shim normaliza `terminal→Bash`, `file→Write/Edit` e delega ao `audit-emit-from-hook.ts` (host `hermes-cli-hook`).
-- **Regra de ouro:** o shim mantém stdout vazio + exit 0 — Hermes bloqueia o tool se a resposta parecer `{"action":"block"}`. O hook só observa.
-- Comando roda via `shlex.split`, `shell=False` (sem operadores de shell). Consent na 1ª execução é pré-aprovado pelo instalador (`shell-hooks-allowlist.json`) quando o usuário opta pelos hooks.
+- JSON payload via stdin (`{hook_event_name, tool_name, tool_input, session_id, cwd}`); the shim normalizes `terminal→Bash`, `file→Write/Edit` and delegates to `audit-emit-from-hook.ts` (host `hermes-cli-hook`).
+- **Golden rule:** the shim keeps stdout empty + exit 0, because Hermes blocks the tool if the response looks like `{"action":"block"}`. The hook only observes.
+- The command runs via `shlex.split`, `shell=False` (no shell operators). Consent on first run is pre-approved by the installer (`shell-hooks-allowlist.json`) when the user opts into the hooks.
 
-| Hook desejado | Equivalente Hermes |
+| Desired hook | Hermes equivalent |
 |---|---|
-| `PreToolUse` | `pre_tool_call` (matcher por tool_name) |
+| `PreToolUse` | `pre_tool_call` (matcher by tool_name) |
 | `PostToolUse` | `post_tool_call` |
 | `SessionStart` | `on_session_start` |
 | `Stop` / `SubagentStop` | `on_session_end` / `subagent_stop` |
-| `UserPromptSubmit` | injetar no prompt do `-z` |
+| `UserPromptSubmit` | inject into the `-z` prompt |
 
 ---
 
 ## 11. Invocation Examples
 
-### Exemplo 1 — Consulta (Tier 0/1, sem degradação)
+### Example 1: Query (Tier 0/1, no degradation)
 
 ```
 hermes chat
 > Quais são minhas empresas e squads?
-# A skill-ponte roteia para `nrv list-businesses` / `nrv list-squads`.
+# The bridge skill routes to `nrv list-businesses` / `nrv list-squads`.
 ```
 
-### Exemplo 2 — Dispatch determinístico (Tier 2)
+### Example 2: Deterministic dispatch (Tier 2)
 
 ```
 hermes -z "Use a skill nirvana-os-hermes: despache este brief — <brief>" --accept-hooks
-# A ponte chama `nrv dispatch --auto --exec "<brief>"` (brief-business + DNA + execução headless + audit).
+# The bridge calls `nrv dispatch --auto --exec "<brief>"` (brief-business + DNA + headless execution + audit).
 ```
 
-### Exemplo 3 — Orquestração in-runtime (Tier 4)
+### Example 3: In-runtime orchestration (Tier 4)
 
 ```bash
-# CEO recebe brief
-hermes -z "<persona ceo + brief + contrato JSON>" -t file,terminal --accept-hooks --yolo \
-  > .handoffs/ceo-1.out
-# Adapter parseia JSON, detecta next_action: marketing-lead
-hermes -z "<persona marketing + DNA + contexto do ceo + contrato JSON>" ... \
-  > .handoffs/marketing-1.out
-# Adapter detecta mentions:["alex-hormozi"]
-hermes -z "<persona alex-hormozi + DNA + contexto + contrato JSON>" ... \
+# The business runs as ONE solo agent that plays the seats itself
+hermes -z "<business persona + brief + JSON contract>" -t file,terminal --accept-hooks --yolo \
+  > .handoffs/nexus-1.out
+# A stand-alone sub-process is only spawned for an explicit mention
+# Adapter detects mentions:["alex-hormozi"]
+hermes -z "<persona alex-hormozi + DNA + context + JSON contract>" ... \
   > .handoffs/alex-1.out
 ```
 
-### Exemplo 4 — Escalação humana (vantagem do Hermes)
+### Example 4: Human escalation (a Hermes advantage)
 
 ```bash
-# Wrapper detecta budget_violation → Hermes notifica via canal
+# Wrapper detects budget_violation → Hermes notifies via a channel
 hermes slack send "#nirvana-ops" "Escalação: budget_violation no trace <id>"
 ```
 
@@ -248,24 +246,24 @@ hermes slack send "#nirvana-ops" "Escalação: budget_violation no trace <id>"
 
 ## 12. Runtime-Specific Validators
 
-- **`bun` + `nrv` no PATH** do terminal backend do Hermes (`command -v bun`, `command -v nrv`). Em backend efêmero (Modal/Singularity), instalar Bun na imagem.
-- **Toolset coerente**: se `employee.tools` inclui `bash`, o `-t` precisa incluir `terminal`.
-- **Hook não-bloqueante**: o shim de audit nunca escreve `{"action":"block"}` nem sai != 0.
-- **external_dirs resolvível**: o caminho da ponte é absoluto (não `~`); `${NIRVANA_PROJECT_SKILLS}` resolve só quando o `nrv-hermes` exporta a var.
-- **Contrato JSON**: parser tolerante (extrai o 1º `{...}` balanceado); 1 retry com instrução reforçada se o modelo devolver texto solto.
+- **`bun` + `nrv` on the PATH** of the Hermes terminal backend (`command -v bun`, `command -v nrv`). On an ephemeral backend (Modal/Singularity), install Bun in the image.
+- **Coherent toolset**: if `employee.tools` includes `bash`, `-t` must include `terminal`.
+- **Non-blocking hook**: the audit shim never writes `{"action":"block"}` and never exits != 0.
+- **Resolvable external_dirs**: the bridge path is absolute (not `~`); `${NIRVANA_PROJECT_SKILLS}` resolves only when `nrv-hermes` exports the var.
+- **JSON contract**: tolerant parser (extracts the 1st balanced `{...}`); 1 retry with a reinforced instruction if the model returns loose text.
 
 ---
 
 ## 13. Known Limitations
 
-1. **Sem `hermes run` / `--output-format json`** → dispatch usa `hermes -z` (texto puro) + contrato "responda só JSON" + parse. Risco de o modelo não seguir → parser tolerante + retry.
-2. **Sem subagent primitive in-process** → sub-process `hermes -z` (teto = Codex, não Claude Code). `delegation` nativo é mono-nível.
-3. **Sem hooks granulares por-arg** → audit via `pre/post_tool_call` shell + fs-watch.
-4. **Max-turns per-employee** é global do profile (simulado).
-5. **Consent de hooks** exige allowlist (pré-aprovada pelo instalador sob opt-in do usuário).
-6. **Limite de 20K chars** em arquivos de contexto → DNA grande vai no corpo do prompt + gate de degradação.
-7. **Backends efêmeros** precisam de Bun na imagem.
-8. **`hermes acp`** (servidor ACP de longa duração) seria a evolução para orquestração persistente — fora do v1 (que usa `-z` one-shot).
+1. **No `hermes run` / `--output-format json`** → dispatch uses `hermes -z` (plain text) + a "reply only JSON" contract + parsing. Risk that the model does not comply → tolerant parser + retry.
+2. **No in-process subagent primitive** → `hermes -z` sub-process (ceiling = Codex, not Claude Code). Native `delegation` is single-level.
+3. **No per-arg granular hooks** → audit via `pre/post_tool_call` shell + fs-watch.
+4. **Per-employee max-turns** is the profile's global (simulated).
+5. **Hook consent** requires an allowlist (pre-approved by the installer under user opt-in).
+6. **20K chars limit** on context files → large DNA goes in the prompt body + degradation gate.
+7. **Ephemeral backends** need Bun in the image.
+8. **`hermes acp`** (long-lived ACP server) would be the evolution for persistent orchestration; out of scope for v1 (which uses one-shot `-z`).
 
 ---
 
@@ -275,7 +273,7 @@ hermes slack send "#nirvana-ops" "Escalação: budget_violation no trace <id>"
 - Hooks: `~/.hermes/hermes-agent/agent/shell_hooks.py` (`_serialize_payload`, `_record_approval`, `_is_allowlisted`).
 - Context limit: `~/.hermes/hermes-agent/agent/prompt_builder.py:824` (`CONTEXT_FILE_MAX_CHARS = 20_000`).
 - Skills/external_dirs: `~/.hermes/hermes-agent/agent/skill_utils.py` (`get_external_skills_dirs`), `~/.hermes/config.yaml`.
-- Ponte + shim: `skills/_shared/adapters/hermes/skills/nirvana/`, `skills/_shared/scripts/audit-emit-from-hermes-hook.ts`.
+- Bridge + shim: `skills/_shared/adapters/hermes/skills/nirvana/`, `skills/_shared/scripts/audit-emit-from-hermes-hook.ts`.
 - Wrapper: `bin/nrv-hermes`. Installer: `scripts/install.ts` (`offerHermesBridge`).
 - DNA injection: `harness/lib/dispatch.ts` (`injectMindClones`, `validateTrace`).
 - Squad v6: `~/.nirvana/skills/squads/SQUAD_PROTOCOL_V6.md`. Business v2: `~/.nirvana/skills/businesses/BUSINESS_PROTOCOL_V2.md`.
@@ -284,6 +282,6 @@ hermes slack send "#nirvana-ops" "Escalação: budget_violation no trace <id>"
 
 ## 15. Version History
 
-| Versão | Data | Mudanças |
+| Version | Date | Changes |
 |---|---|---|
-| 1.0.0 | 2026-06-05 | Doc inicial — Squad 5.0 + Business 1.0 + Harness 1.0 contra Hermes Agent v0.13.0. Dispatch via `hermes -z` (sub-process, texto→JSON). Ponte + audit hooks + nrv-hermes. |
+| 1.0.0 | 2026-06-05 | Initial doc: Squad 5.0 + Business 1.0 + Harness 1.0 against Hermes Agent v0.13.0. Dispatch via `hermes -z` (sub-process, text→JSON). Bridge + audit hooks + nrv-hermes. |

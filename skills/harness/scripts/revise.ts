@@ -131,13 +131,13 @@ if (!runtimeAvailable(rt)) {
 }
 
 const revisePrompt = [
-  "INSTRUÇÃO DE REVISÃO (mesma sessão — você tem o contexto completo do que produziu):",
+  "REVISION INSTRUCTION (same session: you have the full context of what you produced):",
   "",
   change,
   "",
-  `Reescreva/atualize os entregáveis como arquivos sob: ${oroot}`,
-  scopeGuard("pt-BR"),
-  'Não imprima resumo: entregue os arquivos atualizados. Atualize a seção "## Premissas assumidas" se algo mudou.',
+  `Rewrite or update the deliverables as files under: ${oroot}`,
+  scopeGuard(),
+  'Do not print a summary: deliver the updated files. Update the assumptions section ("## Assumptions" or its equivalent in the language of the deliverable) if anything changed.',
 ].join("\n");
 
 appendAudit({ event: "revision_requested", trace_id: projectId, project_id: projectId, business_slug: slug, runtime: rt, session_id: sessionId }, projectRoot);

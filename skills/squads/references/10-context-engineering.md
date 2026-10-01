@@ -4,7 +4,7 @@
 Intent: OPTIMIZE, DEBUG, DESIGN
 
 ## Protocol Reference
-Squad Protocol v4 (archived) §12, §13
+`SQUAD_PROTOCOL_V6.md` §12, §13
 
 ## Context Is a Budget
 

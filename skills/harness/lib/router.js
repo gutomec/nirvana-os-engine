@@ -1223,7 +1223,7 @@ function stage3Decide(matches, opts) {
     if (cov.matched <= 1 && cov.total >= 3) {
       return {
         signal: 'NO_MATCH',
-        reason: `coverage: vencedor casa ${cov.matched} de ${cov.total} tokens de conteúdo do brief`,
+        reason: `coverage: winner matches ${cov.matched} of ${cov.total} content tokens of the brief`,
         alternatives: exposeAlternatives(matches),
         thresholds: thr,
       };
@@ -1232,7 +1232,7 @@ function stage3Decide(matches, opts) {
       return {
         signal: 'AMBIGUOUS',
         alternatives: exposeAlternatives(matches),
-        reason: `coverage: vencedor casa só 2 de ${cov.total} tokens de conteúdo — confirmação necessária`,
+        reason: `coverage: winner matches only 2 of ${cov.total} content tokens, confirmation required`,
         thresholds: thr,
       };
     }
@@ -1248,7 +1248,7 @@ function stage3Decide(matches, opts) {
       return {
         signal: 'AMBIGUOUS',
         alternatives: exposeAlternatives(matches),
-        reason: `coverage: vencedor casa ${cov.matched} de 2 tokens de conteúdo — confirmação necessária`,
+        reason: `coverage: winner matches ${cov.matched} of 2 content tokens, confirmation required`,
         thresholds: thr,
       };
     }
@@ -1300,7 +1300,7 @@ function stage3Decide(matches, opts) {
       return {
         signal: 'AMBIGUOUS',
         alternatives: exposeAlternatives(matches),
-        reason: `coverage: vencedor casa ${cov.matched} de ${cov.total} tokens de conteúdo (metade ou menos do brief) e há ${distinctDestinations.size} destinos possíveis — confirmação necessária`,
+        reason: `coverage: winner matches ${cov.matched} of ${cov.total} content tokens (half or less of the brief) and there are ${distinctDestinations.size} possible destinations, confirmation required`,
         thresholds: thr,
       };
     }
@@ -1342,7 +1342,7 @@ function stage3Decide(matches, opts) {
         signal: 'HIGH',
         target: top,
         alternatives: cluster.slice(1, EXPOSED_ALTERNATIVES_MAX),
-        reason: `${cluster.length} candidatos, destino único ${[...destinos][0]}`,
+        reason: `${cluster.length} candidates, single destination ${[...destinos][0]}`,
         thresholds: thr,
       };
     }
@@ -1770,8 +1770,8 @@ const META_INTENT_KEYWORDS = [
   'todo o projeto', 'projeto inteiro', 'projeto completo',
   'audita portfolio', 'audita o portfolio', 'auditar portfolio',
   'cria empresa', 'criar business', 'cria business', 'criar squad', 'criar uma business',
-  'preciso de uma business', 'preciso de uma squad', 'preciso de business',
-  'tudo o que', 'completo com', 'consolidar outputs',
+  'preciso de uma business', 'preciso de uma squad', 'preciso de business', // i18n-user-facing: PT keyword data
+  'tudo o que', 'completo com', 'consolidar outputs', // i18n-user-facing: PT keyword data
   'lance um produto', 'lance produto', 'lance o produto', 'lança produto',
   'operacao completa', 'operação completa', 'projeto multi',
   // user saying "use suas melhores empresas" → the Maestro must intercept
@@ -2285,7 +2285,7 @@ async function route(brief, ctx) {
           signal: 'HIGH',
           target: targetMatch,
           alternatives: [],
-          reason: `explicit mention: você nomeou o ${mention.type === 'squad' ? 'squad' : 'a empresa'} "${mention.slug}"`,
+          reason: `explicit mention: you named the ${mention.type === 'squad' ? 'squad' : 'business'} "${mention.slug}"`,
           thresholds: DEFAULT_THRESHOLDS,
           route_tier: 'explicit_mention',
         };

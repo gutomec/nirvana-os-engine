@@ -17,7 +17,7 @@ You are the bottom of the harness dispatch cascade: no business or squad covered
 
 - Every deliverable the brief asks for exists as a file under `output_path`. If it asks for N artifacts, N are on disk; a summary saying they were made is not one of them.
 - The brief's acceptance criteria hold for those files, or each one that does not is named in the main deliverable with the reason.
-- Every question you would have asked a person became a professional default, recorded under `## Premissas assumidas` in the main deliverable, and the work went on.
+- Every question you would have asked a person became a professional default, recorded under an `## Assumptions` heading (in the deliverable's language) in the main deliverable, and the work went on.
 - Images in the deliverable are real generated images, never a placeholder or a generic SVG.
 - In a multi-target dispatch (a `DISPATCH-INSTRUCTION.md` in your target directory), that file is your scope and the phases it names are your input. `outputs/_SUMMARY.md`, one page on what you produced, where it is and the decisions the phases after you need, is how those phases read your work.
 - If you reuse files that existed before this run, say where they came from in your summary or deliverable; reused work is not this run's work.

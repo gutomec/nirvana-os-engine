@@ -1,6 +1,6 @@
 # ─────────────────────────────────────────────────────────────────────
 # Capability Block — snippet para colar dentro de capabilities[] em squad.yaml
-# Squad Protocol v5 §22 / v6 §29-§33. Schema: capability.schema.json (generated).
+# SQUAD_PROTOCOL_V6.md §22, §29-§33. Schema: capability.schema.json (generated).
 # ─────────────────────────────────────────────────────────────────────
 
   - id: {{CAPABILITY_ID}}
@@ -36,7 +36,7 @@
       - read
       - write
       - web_search
-    # ^^^ semantic tool names (Squad v4 §10.7). Adapter traduz para nomes nativos.
+    # ^^^ semantic tool names (SQUAD_PROTOCOL_V6.md §10.7). Adapter traduz para nomes nativos.
 
     invoke:
       type: workflow                        # workflow | task | agent

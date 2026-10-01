@@ -99,22 +99,22 @@ function refuseForeignRun(row: RunRow, action: string): void {
   const mine = resolveProjectRoot();
   if (!row.project_root || sameProjectRoot(row.project_root, mine)) return;
   process.stderr.write(
-    `[run-track] recusado: o run '${row.run_id}' pertence ao projeto ${row.project_root}` +
-    `${row.project_id ? ` (${row.project_id})` : ""}, e esta sessão atende ${mine ?? "nenhum projeto"}.\n` +
-    `  Nada foi ${action}. Rode o comando de dentro do projeto dono, ou use\n` +
-    `  \`nrv supervisor status --all-projects\` para a visão da máquina inteira.\n`,
+    `[run-track] refused: run '${row.run_id}' belongs to project ${row.project_root}` +
+    `${row.project_id ? ` (${row.project_id})` : ""}, and this session serves ${mine ?? "no project"}.\n` +
+    `  Nothing was ${action}. Run the command from inside the owning project, or use\n` +
+    `  \`nrv supervisor status --all-projects\` for the whole-machine view.\n`,
   );
   process.exit(4);
 }
 
 function usage(code: number): never {
   process.stderr.write(
-    "uso:\n" +
+    "usage:\n" +
     "  nrv run-track open   --target <slug> --kind <business|squad|agent-x|clone> --outputs <dir> [--project <id>] [--runtime <r>]\n" +
     "  nrv run-track beat   <run-id>\n" +
     "  nrv run-track close  <run-id> --state <delivered|withheld|failed> [--error \"<why>\"]\n" +
-    "  nrv run-track list                              # só os runs deste projeto\n" +
-    "  nrv run-track status <run-id|trace-id> [--json]  # terminou? em qual estado?\n" +
+    "  nrv run-track list                              # only this project's runs\n" +
+    "  nrv run-track status <run-id|trace-id> [--json]  # finished? in which state?\n" +
     "  nrv run-track wait   <run-id|trace-id> [--timeout <sec>] [--json]\n",
   );
   process.exit(code);
@@ -198,7 +198,7 @@ try {
     const runId = argv[1];
     if (!runId) usage(4);
     const beating = getRun(handle, runId);
-    if (beating) refuseForeignRun(beating, "renovado");
+    if (beating) refuseForeignRun(beating, "renewed");
     const ok = renewLease(handle, runId, Number(flag("seconds") || AGENTIC_LEASE_SEC));
     if (!ok) warn(`run '${runId}' is not renewable (unknown or already terminal)`);
     process.exit(0);
@@ -214,7 +214,7 @@ try {
     }
     const before = getRun(handle, runId);
     if (!before) { warn(`run '${runId}' not found — nothing closed`); process.exit(0); }
-    refuseForeignRun(before, "fechado");
+    refuseForeignRun(before, "closed");
     // Walk the state machine rather than jumping: a run that is still `running`
     // cannot go straight to `delivered`, and refusing here would leave it open
     // forever — the very thing this command exists to prevent.
@@ -234,7 +234,7 @@ try {
     if (state === "failed") abandon(handle, runId, `failed: ${flag("error") || "closed by the operator"}`);
     // The whole point of the ledger, from the owner's side: they are not
     // watching this terminal, so the END of the work has to travel to them.
-    const label = { delivered: "entregue", withheld: "RETIDO pelo gate", failed: "FALHOU" }[state] ?? state;
+    const label = { delivered: "delivered", withheld: "WITHHELD by the gate", failed: "FAILED" }[state] ?? state;
     const why = flag("error") ? ` — ${flag("error")}` : "";
     notifyDesktop("Nirvana-OS", `${before.target_kind ?? "run"}/${before.target_slug ?? runId}: ${label}${why}`);
     process.stdout.write(`${runId} → ${state}\n`);
@@ -247,7 +247,7 @@ try {
     const rows = findNonTerminal(handle);
     if (!rows.length) {
       const root = resolveProjectRoot();
-      process.stdout.write(`no open runs${root ? ` em ${root}` : ""}\n`);
+      process.stdout.write(`no open runs${root ? ` in ${root}` : ""}\n`);
       process.exit(0);
     }
     // The `run_id` column is the point of the listing: `beat` and `close` take
@@ -273,7 +273,7 @@ try {
     if (!id) usage(4);
     const row = findRowById(id);
     if (!row) { warn(`no run found for '${id}' (checked run_id and trace_id)`); process.exit(5); }
-    refuseForeignRun(row, "consultado");
+    refuseForeignRun(row, "queried");
     report(row, interpretState(row));
   }
 
@@ -297,7 +297,7 @@ try {
       row0 = findRowById(id);
     }
     if (!row0) { warn(`no run found for '${id}' (checked run_id and trace_id)`); process.exit(5); }
-    refuseForeignRun(row0, "aguardado");
+    refuseForeignRun(row0, "awaited");
     const runId = row0.run_id;
 
     const early = interpretState(row0);
@@ -344,7 +344,7 @@ try {
     if (argv.includes("--json")) {
       process.stdout.write(JSON.stringify({ run_id: runId, trace_id: final.trace_id, state: finalState, timed_out: true }) + "\n");
     } else {
-      process.stdout.write(`${runId} → ainda ${finalState} (timeout após ${timeoutSec}s)\n`);
+      process.stdout.write(`${runId} → still ${finalState} (timed out after ${timeoutSec}s)\n`);
     }
     process.exit(6);
   }

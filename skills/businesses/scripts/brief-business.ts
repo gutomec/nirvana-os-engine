@@ -94,7 +94,7 @@ fs.writeFileSync(briefFile, `# Brief
 **Project ID:** ${projectId}
 **Submitted:** ${submitted}
 
-## Conteúdo
+## Content
 
 ${brief}
 `);
@@ -261,20 +261,12 @@ console.log(`OK: brief registered.
 
 Org chart:     ${seatSummary}
 
-Next step — a business runs its ORG CHART, not one agent:
-  nrv team plan --business ${slug} --brief ${briefFile} \\
-                --project ${projectDir} --outputs ${projectDir}/outputs \\
-                --project-id ${projectId} --save ${projectDir}/chain.json
+Next step — a business runs as ONE agent that carries the whole org chart:
+  nrv dispatch --business ${slug} --brief-file ${briefFile} --exec
 
-  Then, for each step it returns, in order:
-  nrv team step --plan ${projectDir}/chain.json --index <n>
-  → run the printed prompt in your own subagent, verbatim. Each step emits
-    dispatch_business with the seat on it, and injects that seat's mind-clone.
-
-  Spawning '${intake}' alone is correct ONLY when \`team plan\` returns a
-  one-step chain — and then it says why. Do not decide that yourself: a seat
-  credited in a deliverable with no dispatch_business behind it is the fiction
-  the audit exists to prevent.
+  The agent reads the org chart to know which seat owns what, and uses each
+  seat's mind-clone and squads to build the deliverable. Do not spawn '${intake}'
+  by hand: the dispatch emits the dispatch_business event the audit expects.
 ${runId ? `
 REQUIRED when you finish (this is what tells the owner it is done):
   nrv run-track close ${runId} --state delivered|withheld|failed [--error "<reason>"]` : ""}`);

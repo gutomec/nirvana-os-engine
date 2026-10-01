@@ -38,9 +38,6 @@
 // arguments, engine switched off, or a retry refused (plan or reservation
 // changed, Run not terminal, nothing to reopen).
 //
-// i18n-user-facing: file — what the user reads is PT-BR by contract; code,
-// identifiers and comments stay English.
-
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -210,12 +207,12 @@ export function engineGate(env: Record<string, string | undefined>): EngineGate 
   if (enabled.source === "env") {
     return {
       enabled: false, variable: enabled.variable!, value: enabled.raw!, source: "env", path: null,
-      message: `O engine multi-target está desligado por ${enabled.variable}=${enabled.raw}. Remova a variável para executar; plan e status funcionam sempre.`,
+      message: `The multi-target engine is switched off by ${enabled.variable}=${enabled.raw}. Remove the variable to run; plan and status always work.`,
     };
   }
   return {
     enabled: false, variable: "multi_target.enabled", value: "false", source: enabled.source, path: enabled.path ?? null,
-    message: `O engine multi-target está desligado por multi_target.enabled=false em ${enabled.path}. Rode nrv config set multi_target.enabled true (ou nrv config unset multi_target.enabled) para executar; plan e status funcionam sempre.`,
+    message: `The multi-target engine is switched off by multi_target.enabled=false in ${enabled.path}. Run nrv config set multi_target.enabled true (or nrv config unset multi_target.enabled) to run; plan and status always work.`,
   };
 }
 
@@ -261,44 +258,44 @@ function emitPlanCompiled(loaded: LoadedPlan, ws: string, file: string): void {
 
 function printPlan(projectId: string, loaded: LoadedPlan, ws: string): void {
   const { compiled, reservation } = loaded;
-  console.log(`Plano multi-target: ${projectId}`);
-  console.log(`  digest do plano ....... ${compiled.digest}`);
-  console.log(`  digest da reserva ..... ${reservation?.digest ?? "(sem reserva: nenhuma decisão Gauntlet sob teto agregado)"}`);
-  console.log("  ondas:");
+  console.log(`Multi-target plan: ${projectId}`);
+  console.log(`  plan digest ............ ${compiled.digest}`);
+  console.log(`  reservation digest .... ${reservation?.digest ?? "(no reservation: no Gauntlet decision under an aggregate cap)"}`);
+  console.log("  waves:");
   compiled.manifest.parallel_waves.forEach((wave, index) => console.log(`    ${index}: ${[...wave].sort().join(", ")}`));
-  console.log("  decisões:");
+  console.log("  decisions:");
   for (const decision of [...compiled.decisions, ...(compiled.synthesis ? [compiled.synthesis] : [])]) {
     const mode = decision.mode === "gauntlet" ? `gauntlet ${decision.intensity ?? "light"}` : "standard";
     console.log(`    ${decision.nodeId.padEnd(24)} ${decision.targetKind.padEnd(10)} ${mode.padEnd(18)} ${decision.reason}`);
   }
   if (reservation) {
-    console.log(`  alocações (teto USD ${reservation.aggregateCapUsd} · concedido USD ${reservation.grantedUsd} · saldo USD ${reservation.balanceUsd}):`);
+    console.log(`  allocations (cap USD ${reservation.aggregateCapUsd} · granted USD ${reservation.grantedUsd} · balance USD ${reservation.balanceUsd}):`);
     for (const allocation of reservation.allocations.filter((item) => item.reason !== "standard_no_reservation")) {
-      console.log(`    ${allocation.nodeId.padEnd(24)} onda ${allocation.waveIndex}  solicitado ${allocation.requestedUsd}  concedido ${allocation.grantedUsd}  ${allocation.reason}`);
+      console.log(`    ${allocation.nodeId.padEnd(24)} wave ${allocation.waveIndex}  requested ${allocation.requestedUsd}  granted ${allocation.grantedUsd}  ${allocation.reason}`);
     }
   }
   console.log(`  workspace: ${ws} (manifest.json, brief-enriched.md)`);
 }
 
-const COST_UNOBSERVED = "custo não observado";
+const COST_UNOBSERVED = "cost not observed";
 
 function costUnobservedNodes(projection: MultiTargetCoordinatorSnapshot | null): string[] {
   return projection?.nodes.filter((node) => node.costObserved === false).map((node) => node.nodeId) ?? [];
 }
 
 function printStatus(run: RunProjection, projection: MultiTargetCoordinatorSnapshot | null): void {
-  console.log(`Run ${run.runId} (projeto ${run.projectId}): ${run.state}${run.parentRunId ? ` · reaberto de ${run.parentRunId}` : ""}`);
+  console.log(`Run ${run.runId} (project ${run.projectId}): ${run.state}${run.parentRunId ? ` · reopened from ${run.parentRunId}` : ""}`);
   if (!projection) {
-    console.log("  o coordenador ainda não salvou snapshot: nenhuma onda começou.");
+    console.log("  the coordinator has not saved a snapshot yet: no wave has started.");
     return;
   }
   const reason = projection.terminalReason ? ` · ${projection.terminalReason}` : "";
-  const attempt = projection.attempt && projection.attempt > 1 ? ` · tentativa ${projection.attempt}` : "";
-  console.log(`  plano ${projection.state} · onda atual ${projection.currentWave} · custo reportado USD ${projection.reportedCostUsd}${attempt}${reason}`);
+  const attempt = projection.attempt && projection.attempt > 1 ? ` · attempt ${projection.attempt}` : "";
+  console.log(`  plan ${projection.state} · current wave ${projection.currentWave} · reported cost USD ${projection.reportedCostUsd}${attempt}${reason}`);
   for (const node of projection.nodes) {
-    const notes = [node.reason, node.blockedBy.length ? `bloqueado por ${node.blockedBy.join(", ")}` : "", node.costObserved === false ? COST_UNOBSERVED : ""]
+    const notes = [node.reason, node.blockedBy.length ? `blocked by ${node.blockedBy.join(", ")}` : "", node.costObserved === false ? COST_UNOBSERVED : ""]
       .filter(Boolean).join(" · ");
-    console.log(`    onda ${node.waveIndex}  ${node.nodeId.padEnd(24)} ${(node.targetKind ?? "").padEnd(10)} ${node.mode.padEnd(9)} ${node.state.padEnd(10)} USD ${node.reportedCostUsd}/${node.grantedCostUsd}${notes ? `  ${notes}` : ""}`);
+    console.log(`    wave ${node.waveIndex}  ${node.nodeId.padEnd(24)} ${(node.targetKind ?? "").padEnd(10)} ${node.mode.padEnd(9)} ${node.state.padEnd(10)} USD ${node.reportedCostUsd}/${node.grantedCostUsd}${notes ? `  ${notes}` : ""}`);
   }
 }
 
@@ -311,18 +308,18 @@ function report(args: {
     return args.code;
   }
   console.log("");
-  if (args.code === EXIT.delivered) console.log("✓ Plano multi-target entregue.");
-  else if (args.code === EXIT.withheld) console.log("⚠ Plano multi-target RETIDO: um nó foi retido ou pulado; nada foi marcado como entregue.");
-  else console.log("✗ Plano multi-target falhou.");
-  console.log(`  Run:        ${args.runId} (${args.run.state})${args.run.parentRunId ? ` · reaberto de ${args.run.parentRunId}` : ""}`);
+  if (args.code === EXIT.delivered) console.log("✓ Multi-target plan delivered.");
+  else if (args.code === EXIT.withheld) console.log("⚠ Multi-target plan WITHHELD: a node was withheld or skipped; nothing was marked as delivered.");
+  else console.log("✗ Multi-target plan failed.");
+  console.log(`  Run:        ${args.runId} (${args.run.state})${args.run.parentRunId ? ` · reopened from ${args.run.parentRunId}` : ""}`);
   if (args.projection) {
-    console.log(`  Custo:      USD ${args.projection.reportedCostUsd}${args.projection.terminalReason ? ` · ${args.projection.terminalReason}` : ""}`);
+    console.log(`  Cost:       USD ${args.projection.reportedCostUsd}${args.projection.terminalReason ? ` · ${args.projection.terminalReason}` : ""}`);
     const unobserved = costUnobservedNodes(args.projection);
-    if (unobserved.length) console.log(`  Atenção:    ${COST_UNOBSERVED} em ${unobserved.length} nó(s): ${unobserved.join(", ")} (o custo real desses nós é desconhecido, não zero)`);
+    if (unobserved.length) console.log(`  Warning:    ${COST_UNOBSERVED} in ${unobserved.length} node(s): ${unobserved.join(", ")} (the real cost of these nodes is unknown, not zero)`);
   }
   console.log(`  Workspace:  ${args.ws}`);
   console.log(`  Status:     nrv multi-target status ${args.file}`);
-  if (args.code !== EXIT.delivered) console.log(`  Reabrir:    nrv multi-target run ${args.file} --retry-failed (depois de corrigir a causa; nós entregues não executam de novo)`);
+  if (args.code !== EXIT.delivered) console.log(`  Reopen:     nrv multi-target run ${args.file} --retry-failed (after fixing the cause; delivered nodes do not run again)`);
   return args.code;
 }
 
@@ -337,20 +334,20 @@ function flag(argv: string[], name: string): string | undefined {
 
 function usage(code: number): never {
   console.error([
-    "uso:",
-    "  nrv multi-target plan   <arquivo> [--project <id>]",
-    "  nrv multi-target run    <arquivo> [--project <id>] [--runtime <rt>] [--owner <id>] [--retry-failed] [--json]",
-    "  nrv multi-target status <arquivo|runId> [--project <id>] [--json]",
+    "usage:",
+    "  nrv multi-target plan   <file> [--project <id>]",
+    "  nrv multi-target run    <file> [--project <id>] [--runtime <rt>] [--owner <id>] [--retry-failed] [--json]",
+    "  nrv multi-target status <file|runId> [--project <id>] [--json]",
     "",
-    `  run executa sem variável; ${KILL_SWITCH}=1, ${ENGINE_FLAG}=0 ou nrv config set multi_target.enabled false desligam. plan e status funcionam sempre.`,
-    "  --retry-failed reabre um Run failed ou withheld num Run novo encadeado: nós entregues ficam, o resto volta a pending.",
-    "  exit: 0 entregue · 1 falhou · 2 retido · 4 plano ou argumentos inválidos, engine desligado, ou retomada recusada",
+    `  run works without any variable; ${KILL_SWITCH}=1, ${ENGINE_FLAG}=0 or nrv config set multi_target.enabled false switch it off. plan and status always work.`,
+    "  --retry-failed reopens a failed or withheld Run as a new chained Run: delivered nodes stay, the rest go back to pending.",
+    "  exit: 0 delivered · 1 failed · 2 withheld · 4 invalid plan or arguments, engine switched off, or retry refused",
   ].join("\n"));
   process.exit(code);
 }
 
 function reportIssues(issues: PlanIssue[]): number {
-  console.error(`Plano inválido (${issues.length} problema${issues.length === 1 ? "" : "s"}):`);
+  console.error(`Invalid plan (${issues.length} problem${issues.length === 1 ? "" : "s"}):`);
   for (const issue of issues) console.error(`  ${issue.path}: ${issue.message}`);
   return EXIT.invalid;
 }
@@ -371,7 +368,7 @@ function commandPlan(file: string, argv: string[]): number {
   const ws = writeWorkspace(projectRoot, projectId, loaded);
   emitPlanCompiled(loaded, ws, file);
   printPlan(projectId, loaded, ws);
-  console.log(`Nada foi executado. Para executar: nrv multi-target run ${file}.`);
+  console.log(`Nothing was executed. To run: nrv multi-target run ${file}.`);
   return EXIT.delivered;
 }
 
@@ -407,8 +404,8 @@ async function commandRun(file: string, argv: string[]): Promise<number> {
     let run = chain.run;
     let runId = chain.runId;
     if (run && run.policySnapshotRef !== policySnapshotRef) {
-      console.error(`✗ O Run ${runId} já existe com outro plano (${run.policySnapshotRef}; o plano atual é ${policySnapshotRef}).`);
-      console.error("  Use outro --project para este plano, ou restaure o arquivo que originou o Run.");
+      console.error(`✗ Run ${runId} already exists with a different plan (${run.policySnapshotRef}; the current plan is ${policySnapshotRef}).`);
+      console.error("  Use another --project for this plan, or restore the file that originated the Run.");
       return EXIT.invalid;
     }
     // A retry is a new Run chained to the terminal one: the kernel state machine admits no
@@ -416,24 +413,24 @@ async function commandRun(file: string, argv: string[]): Promise<number> {
     let retry: { previousRunId: string; snapshot: MultiTargetCoordinatorSnapshot; resetNodes: string[] } | null = null;
     if (retryFailed) {
       const refuse = (message: string): number => { console.error(`✗ ${message}`); return EXIT.invalid; };
-      if (!run) return refuse(`Nada a reabrir: o plano ${projectId} nunca executou. Use nrv multi-target run sem --retry-failed.`);
-      if (!TERMINAL_RUN_STATES.has(run.state)) return refuse(`O Run ${runId} não é terminal (${run.state}); repita o comando sem --retry-failed para retomar.`);
-      if (run.state !== "failed" && run.state !== "withheld") return refuse(`O Run ${runId} está ${run.state}: só um Run failed ou withheld pode ser reaberto.`);
+      if (!run) return refuse(`Nothing to reopen: plan ${projectId} never ran. Use nrv multi-target run without --retry-failed.`);
+      if (!TERMINAL_RUN_STATES.has(run.state)) return refuse(`Run ${runId} is not terminal (${run.state}); repeat the command without --retry-failed to resume.`);
+      if (run.state !== "failed" && run.state !== "withheld") return refuse(`Run ${runId} is ${run.state}: only a failed or withheld Run can be reopened.`);
       const previous = projectMultiTargetRun(kernel, projectId, runId);
-      if (!previous) return refuse(`O Run ${runId} não tem snapshot do coordenador; nada a reabrir.`);
+      if (!previous) return refuse(`Run ${runId} has no coordinator snapshot; nothing to reopen.`);
       let reopened: ReturnType<typeof retryMultiTargetSnapshot>;
       try {
         reopened = retryMultiTargetSnapshot({ previous, plan: loaded.compiled, reservation: loaded.reservation });
       } catch (error) {
-        return refuse(`O plano ou a reserva mudaram desde o Run ${runId} (${(error as Error).message}). Restaure o arquivo que originou o Run ou use outro --project.`);
+        return refuse(`The plan or the reservation changed since Run ${runId} (${(error as Error).message}). Restore the file that originated the Run or use another --project.`);
       }
       retry = { previousRunId: runId, ...reopened };
       runId = multiTargetRunId(projectId, chain.attempt + 1);
       run = null;
     } else if (run && TERMINAL_RUN_STATES.has(run.state)) {
       if (!json) {
-        console.log(`Run ${runId} já é terminal (${run.state}); nada foi executado.`);
-        if (run.state === "failed" || run.state === "withheld") console.log(`  Corrigida a causa, reabra só o que falta: nrv multi-target run ${file} --retry-failed`);
+        console.log(`Run ${runId} is already terminal (${run.state}); nothing was executed.`);
+        if (run.state === "failed" || run.state === "withheld") console.log(`  Once the cause is fixed, reopen only what is missing: nrv multi-target run ${file} --retry-failed`);
       }
       return report({ json, projectId, runId, run, projection: projectMultiTargetRun(kernel, projectId, runId), ws, file, code: exitForRunState(run.state) });
     }
@@ -457,7 +454,7 @@ async function commandRun(file: string, argv: string[]): Promise<number> {
         // RT-002: an incompatible runtime ends the Run before any node, reasons journaled.
         emit("x_runtime_incompatible", { run_id: runId, runtime: runtimeId, runtime_source: runtimeSource, errors: snapshot.errors, rejected: snapshot.rejected ?? [] });
         run = transition(kernel, projectId, runId, "rolled_back", actor, { reason: "runtime_incompatible", errors: snapshot.errors });
-        console.error(`✗ O runtime ${runtimeId} é incompatível com o catálogo de providers; o Run ${runId} foi encerrado antes de qualquer nó.`);
+        console.error(`✗ Runtime ${runtimeId} is incompatible with the provider catalog; Run ${runId} was closed before any node ran.`);
         for (const error of snapshot.errors) console.error(`  ${error}`);
         return report({ json, projectId, runId, run, projection: null, ws, file, code: EXIT.failed });
       }
@@ -467,9 +464,9 @@ async function commandRun(file: string, argv: string[]): Promise<number> {
       owner, runtime: runtime ?? null, resumed, retried_from: retry?.previousRunId ?? null,
     });
     if (!json) {
-      if (resumed) console.log(`▶ Retomando o Run ${runId} (estado ${run.state}, owner ${owner})`);
-      else if (retry) console.log(`▶ Run ${runId} criado a partir de ${retry.previousRunId} (owner ${owner}); voltam a pending: ${retry.resetNodes.join(", ")}`);
-      else console.log(`▶ Run ${runId} criado (owner ${owner})`);
+      if (resumed) console.log(`▶ Resuming Run ${runId} (state ${run.state}, owner ${owner})`);
+      else if (retry) console.log(`▶ Run ${runId} created from ${retry.previousRunId} (owner ${owner}); back to pending: ${retry.resetNodes.join(", ")}`);
+      else console.log(`▶ Run ${runId} created (owner ${owner})`);
     }
     if (run.state === "prepared") run = transition(kernel, projectId, runId, "running", actor);
 
@@ -499,7 +496,7 @@ async function commandRun(file: string, argv: string[]): Promise<number> {
         });
         if (!json) {
           const cost = `USD ${node.reportedCostUsd}${node.costObserved === false ? ` (${COST_UNOBSERVED})` : ""}`;
-          console.log(`  · onda ${node.waveIndex} ${node.nodeId}: ${node.state}${node.reason ? ` (${node.reason})` : ""} · ${cost}`);
+          console.log(`  · wave ${node.waveIndex} ${node.nodeId}: ${node.state}${node.reason ? ` (${node.reason})` : ""} · ${cost}`);
         }
       },
     };
@@ -519,8 +516,8 @@ async function commandRun(file: string, argv: string[]): Promise<number> {
     } catch (error) {
       const message = (error as Error).message;
       emit("x_multi_target_terminal", { run_id: runId, state: "error", error: message, exit: EXIT.failed });
-      console.error(`✗ O coordenador parou com erro: ${message}`);
-      console.error(`  O Run ${runId} continua em ${getRun(kernel, projectId, runId)?.state ?? "?"}; repita o comando para retomar.`);
+      console.error(`✗ The coordinator stopped with an error: ${message}`);
+      console.error(`  Run ${runId} is still in ${getRun(kernel, projectId, runId)?.state ?? "?"}; repeat the command to resume.`);
       return EXIT.failed;
     }
     const terminal: CanonicalRunState = snapshot.state === "delivered" ? "completed" : snapshot.state === "withheld" ? "withheld" : "failed";
@@ -552,7 +549,7 @@ function commandStatus(target: string, argv: string[]): number {
   } else {
     const project = flag(argv, "project");
     if (!project) {
-      console.error("status <runId> exige --project <id>; ou passe o arquivo do plano.");
+      console.error("status <runId> requires --project <id>; or pass the plan file.");
       return EXIT.invalid;
     }
     projectId = project;
@@ -560,7 +557,7 @@ function commandStatus(target: string, argv: string[]): number {
   }
   const kernelPath = path.join(resolveProjectRoot(), ".nirvana", "run-kernel.sqlite");
   if (!fs.existsSync(kernelPath)) {
-    console.error(`Nenhum Run Kernel em ${kernelPath}: nada foi executado neste projeto.`);
+    console.error(`No Run Kernel at ${kernelPath}: nothing was executed in this project.`);
     return EXIT.failed;
   }
   const kernel = openKernel(kernelPath);
@@ -574,7 +571,7 @@ function commandStatus(target: string, argv: string[]): number {
     kernel.close();
   }
   if (!run) {
-    console.error(`Run ${runId} não encontrado no projeto ${projectId}.`);
+    console.error(`Run ${runId} not found in project ${projectId}.`);
     return EXIT.failed;
   }
   if (json) console.log(JSON.stringify({ projectId, runId, run, projection }, null, 2));

@@ -157,7 +157,7 @@
   function heartbeatWho(emp) {
     var hb = emp && emp.heartbeat;
     if (!hb || hb.enabled === false || !hb.cadence) return '';
-    var map = { hourly: 'horário', daily: 'diário', weekly: 'semanal', manual: 'manual', 'on-demand': 'sob demanda' };
+    var map = { hourly: 'hourly', daily: 'daily', weekly: 'weekly', manual: 'manual', 'on-demand': 'on demand' };
     return 'heartbeat ' + (map[hb.cadence] || hb.cadence);
   }
 
@@ -270,8 +270,8 @@
     var sq = squadHtml(d);
     if (sq) html += '<div class="sq">' + sq + '</div>';
     if (opts && opts.allowActions) {
-      html += '<button type="button" class="orgd3-edit-btn" title="Editar posição">✎</button>';
-      html += '<button type="button" class="orgd3-add-btn" title="Adicionar funcionário abaixo">+</button>';
+      html += '<button type="button" class="orgd3-edit-btn" title="Edit position">✎</button>';
+      html += '<button type="button" class="orgd3-add-btn" title="Add an employee below">+</button>';
     }
     art.innerHTML = html;
     if (opts && opts.allowActions) {
@@ -316,7 +316,7 @@
       refs.canvas.style.height = '100%';
       var empty = document.createElement('p');
       empty.className = 'orgd3-empty';
-      empty.textContent = 'Sem organograma para esta empresa.';
+      empty.textContent = 'No org chart for this business.';
       refs.nodesLayer.appendChild(empty);
       return null;
     }
