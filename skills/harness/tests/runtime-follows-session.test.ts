@@ -124,25 +124,6 @@ describe("a runtime named in the brief is a weaker signal than a flag", () => {
   });
 });
 
-describe("the chain no longer carries a vendor literal", () => {
-  const chain = fs.readFileSync(path.join(import.meta.dir, "..", "scripts", "chain.ts"), "utf8");
-
-  test("chain.ts resolves the runtime instead of defaulting to one", () => {
-    expect(chain).toContain("resolveRunRuntime");
-    // The only surviving mention is the comment recording what the line was.
-    const code = chain.split("\n").filter((l) => !l.trim().startsWith("//") && !l.trim().startsWith("*"));
-    expect(code.join("\n")).not.toContain('"claude-code"');
-  });
-
-  test("it refuses a named runtime that is not installed", () => {
-    expect(chain).toContain("unavailableRuntimeMessage");
-  });
-
-  test("the plan records WHICH runtime decided, so a reader can tell", () => {
-    expect(chain).toContain("runtime: runtimeChoice.runtime");
-  });
-});
-
 describe("the sites that used to default to one vendor", () => {
   test("the brief proxy requires its caller to say which runtime", () => {
     const src = fs.readFileSync(path.join(import.meta.dir, "..", "lib", "brief-proxy.ts"), "utf8");

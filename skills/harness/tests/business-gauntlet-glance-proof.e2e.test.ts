@@ -90,7 +90,7 @@ async function runProof(pass: boolean) {
         config: judgeOff(loadHarnessConfig(path.join(root, "missing-config.yaml"))), audit, log: () => {}, warn: () => {},
         afterGate: () => { postGateCalls += 1; return runBusinessPostGate({ projectId: project.project_id, businessSlug: BUSINESS.slug,
           runtime: "codex", projectDir: root, projectRoot: root, outputsRoot, skillsRoot: "/skills",
-          employeePromptScript: "/skills/employee-prompt.ts", sessionFile, sessionData, rulesDirective: "", yolo: true,
+          sessionFile, sessionData, rulesDirective: "", yolo: true,
           wantPdf: true, skipHtml: false, offlineSnapshot: false, routingMode: "agentic", wantZip: true,
           emit: audit, log: () => {}, warn: () => {}, dependencies: publicationDependencies(root, outputsRoot) }); },
       });

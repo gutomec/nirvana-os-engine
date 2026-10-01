@@ -288,7 +288,7 @@ describe("Gauntlet causal revision loop", () => {
         config: judgeOff(loadHarnessConfig(path.join(loop.root, "missing-config.yaml"))), audit: () => {}, log: () => {}, warn: () => {},
         afterGate: () => { postGateCalls += 1; return runBusinessPostGate({ projectId: "prj_loop", businessSlug: business.slug,
           runtime: "codex", projectDir: loop.root, projectRoot: loop.root, outputsRoot: loop.outputsRoot, skillsRoot: "/skills",
-          employeePromptScript: "/skills/employee-prompt.ts", sessionFile, sessionData, rulesDirective: "", yolo: true,
+          sessionFile, sessionData, rulesDirective: "", yolo: true,
           wantPdf: true, skipHtml: false, offlineSnapshot: false, routingMode: "agentic", wantZip: true,
           emit: () => {}, log: () => {}, warn: () => {}, dependencies: publicationDependencies(loop.root, loop.outputsRoot) }); },
       });
@@ -356,7 +356,7 @@ describe("Gauntlet causal revision loop", () => {
   test.each(["balanced", "exhaustive"] as const)("%s enters every canary only with an explicit gauntlet request and --exec", intensity => {
     const explicit = parseExecutionOptions(["--execution-mode=gauntlet", `--gauntlet-intensity=${intensity}`], {});
     const standard = parseExecutionOptions([`--gauntlet-intensity=${intensity}`], {});
-    const policy = { businessSlug: "allowed", wantExec: true, teamMode: false, requestedMode: explicit.requestedMode, resolvedMode: explicit.resolvedMode, allowlist: "allowed" };
+    const policy = { businessSlug: "allowed", wantExec: true, requestedMode: explicit.requestedMode, resolvedMode: explicit.resolvedMode, allowlist: "allowed" };
     expect(explicit.intensity).toBe(intensity);
     expect(shouldRunAgentXGauntlet({ targetKind: "agent-x", wantExec: true, resolvedMode: explicit.resolvedMode })).toBeTrue();
     expect(shouldRunSquadGauntlet({ squadCount: 1, wantExec: true, resolvedMode: explicit.resolvedMode })).toBeTrue();

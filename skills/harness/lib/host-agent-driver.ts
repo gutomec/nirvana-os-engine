@@ -7,7 +7,7 @@
 // skills/_shared/lib/host-agent-driver.ts (all 9 runtimes: claude-code,
 // codex, gemini-cli, antigravity-cli, kimi-cli, grok-cli, pi, qwen-code,
 // opencode). This file re-exports that surface unchanged for the harness
-// callers (dispatch.ts, team-orchestrator.ts, cascade-runner.ts, revise.ts,
+// callers (dispatch.ts, cascade-runner.ts, revise.ts,
 // chat-concierge.ts, brief-proxy.ts, agentic-router.ts, supervisor.ts, tests)
 // and keeps only the harness-specific extras below. Do not add adapters here
 // — the pre-unification split (two divergent drivers) is exactly what the

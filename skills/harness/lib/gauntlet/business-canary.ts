@@ -3,7 +3,6 @@ import { RunAlreadyTerminalError } from "../run-kernel/index.ts";
 export interface BusinessCanaryPolicyInput {
   businessSlug: string;
   wantExec: boolean;
-  teamMode: boolean;
   requestedMode: "standard" | "gauntlet" | "auto";
   resolvedMode: "standard" | "gauntlet";
   allowlist?: string;
@@ -12,13 +11,12 @@ export interface BusinessCanaryPolicyInput {
 
 export interface BusinessCanaryDecision {
   enabled: boolean;
-  reason: "selected" | "kill_switch" | "not_explicit" | "scaffold_only" | "team_mode" | "not_allowlisted";
+  reason: "selected" | "kill_switch" | "not_explicit" | "scaffold_only" | "not_allowlisted";
 }
 
 export function decideBusinessCanary(input: BusinessCanaryPolicyInput): BusinessCanaryDecision {
   if (["1", "true", "on"].includes((input.killSwitch ?? "").trim().toLowerCase())) return { enabled: false, reason: "kill_switch" };
   if (!input.wantExec) return { enabled: false, reason: "scaffold_only" };
-  if (input.teamMode) return { enabled: false, reason: "team_mode" };
   if (input.requestedMode !== "gauntlet" || input.resolvedMode !== "gauntlet") return { enabled: false, reason: "not_explicit" };
   const allowed = new Set((input.allowlist ?? "").split(",").map(slug => slug.trim()).filter(Boolean));
   if (!allowed.has(input.businessSlug)) return { enabled: false, reason: "not_allowlisted" };

@@ -60,15 +60,15 @@ describe("the presets", () => {
 
 describe("the profile layer", () => {
   test("no profile: the engine defaults hold", () => {
-    expect(resolveSetting("execution.business_mode", base).value).toBe("chain");
+    expect(resolveSetting("review.policy", base)).toMatchObject({ value: "rule", source: "default" });
     expect(resolveSetting("execution.profile", base).source).toBe("default");
   });
 
   test("a profile in the global file moves its keys, and names itself as the origin", () => {
     write(base.globalPath!, "execution:\n  profile: \"economy\"\n");
-    const mode = resolveSetting("execution.business_mode", base);
-    expect(mode).toEqual({ key: "execution.business_mode", value: "solo", source: "profile", profile: "economy" });
-    expect(describeSettingSource(mode)).toBe("profile economy");
+    const effort = resolveSetting("execution.effort", base);
+    expect(effort).toEqual({ key: "execution.effort", value: "medium", source: "profile", profile: "economy" });
+    expect(describeSettingSource(effort)).toBe("profile economy");
     expect(resolveSetting("execution.context_window", base).value).toBe(200000);
     expect(resolveSetting("review.policy", base).value).toBe("on-request");
   });

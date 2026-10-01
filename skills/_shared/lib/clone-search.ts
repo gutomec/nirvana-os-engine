@@ -74,7 +74,7 @@ function cloneDoc(c: any) {
   // lobo, couto).
   //
   // The fix is removing the name from here: BY-NAME search has its own path
-  // and runs BEFORE BM25 (the team-orchestrator's REQUESTED step), so in this
+  // and runs BEFORE BM25 (a clone requested by name), so in this
   // corpus, which exists for discovery by NEED, the name is noise.
   //
   // It cannot be done yet: as long as a clone lacks a `routing:` block, the
@@ -134,7 +134,7 @@ function toHit(h: any, briefTokens: string[]): CloneHit {
 
 /** Rank clones by usefulness for a brief. Returns up to `limit` hits, each
  *  annotated with the router-mirroring coverage gate (`coverage` +
- *  `below_gate`) — injection consumers (team-orchestrator, employee-prompt)
+ *  `below_gate`) — injection consumers (the squad runner)
  *  must skip `below_gate` hits, so an out-of-domain brief injects NOTHING.
  *  The ranked list itself still surfaces below-gate hits (agentic-override /
  *  diagnostic display); `minNormalized` is kept for callers that filter by

@@ -1622,7 +1622,7 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
 
   // Auto mode by default. EXPLICIT caller settings (allowedTools / permissionMode)
   // always take precedence — so focused text-only calls like the brief-proxy or
-  // the team-orchestrator director can lock down permissions without the trust
+  // a decision step can lock down permissions without the trust
   // default overriding them.
   const safe = opts.yolo === false;
   const explicitTools = opts.allowedTools !== undefined;

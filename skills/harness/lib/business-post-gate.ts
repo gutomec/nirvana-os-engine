@@ -27,7 +27,6 @@ export interface BusinessPostGateInput {
   projectRoot: string;
   outputsRoot: string;
   skillsRoot: string;
-  employeePromptScript: string;
   sessionFile: string;
   sessionData: Record<string, unknown>;
   rulesDirective: string;
@@ -90,12 +89,11 @@ export function runBusinessPostGate(input: BusinessPostGateInput): { zipPath: st
       const publisherBriefFile = path.join(reportDir, ".publisher-brief.md");
       deps.write(publisherBriefFile, publisherBrief);
 
-      let publisherPrompt = publisherBrief;
-      if (hasPublisher) {
-        const result = deps.spawn("bun", [input.employeePromptScript, input.businessSlug, "report-publisher", input.projectDir, publisherBriefFile, reportDir], { windowsHide: true, encoding: "utf8" });
-        if (result.status === 0 && result.stdout) publisherPrompt = result.stdout;
-        else input.warn("⚠ report-publisher prompt failed; using the generic publisher");
-      }
+      // A business with its own publisher seat gets that seat's voice and method:
+      // the worker opens the seat file, the same way a solo worker plays a seat.
+      const publisherPrompt = hasPublisher
+        ? `Work as the seat described in \`${publisherEmployee}\`: read it first.\n\n${publisherBrief}`
+        : publisherBrief;
       const publisher = deps.runPublisher({
         runtime: input.runtime, prompt: publisherPrompt, cwd: input.projectRoot, addDirs: [input.projectDir, reportDir],
         workspace: runFolderOf(input.projectDir, input.projectRoot) ?? undefined,

@@ -2,8 +2,8 @@
 //
 // Replaces the two divergent injection paths (the `dna/` walk that preferred the
 // irregular LEGACY-SIMPLIFIED.md, and the assigned_mind_clones path that
-// concatenated AGENT+SOUL+MANIFEST). Both the business loader (employee-prompt)
-// and the squad loader resolve a clone's persona through THIS function, so the
+// concatenated AGENT+SOUL+MANIFEST). The business worker and the squad loader
+// resolve a clone's persona through THIS function, so the
 // same clone always yields the same, complete embodiment.
 //
 // depth="full"    → AGENT.md + SOUL.md + dna/dna-schema.md  (complete embodiment)
@@ -60,7 +60,7 @@ export type ClonePersona = {
 
 export function cloneRegistryPath(opts: { cwd?: string } = {}): string {
   // Scope from the DISPATCH's project when given, not from process.cwd(): the
-  // business dir already resolves per project_dir (employee-prompt), and the
+  // business dir already resolves per project_dir, and the
   // clone registry resolving per cwd made the two halves of one dispatch read
   // different scopes — a test run from the engine repo picked up the repo's
   // own derived .nirvana registry and injected clones its fixture never wrote.

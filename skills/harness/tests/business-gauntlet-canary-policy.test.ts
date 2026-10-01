@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { decideBusinessCanary, runBusinessCanaryWithRollback } from "../lib/gauntlet/business-canary.ts";
 import { RunAlreadyTerminalError } from "../lib/run-kernel/index.ts";
 
-const selected = { businessSlug: "allowed-business", wantExec: true, teamMode: false, requestedMode: "gauntlet" as const,
+const selected = { businessSlug: "allowed-business", wantExec: true, requestedMode: "gauntlet" as const,
   resolvedMode: "gauntlet" as const, allowlist: "other, allowed-business" };
 
 describe("Business canary policy", () => {
@@ -10,7 +10,6 @@ describe("Business canary policy", () => {
     expect(decideBusinessCanary(selected)).toEqual({ enabled: true, reason: "selected" });
     expect(decideBusinessCanary({ ...selected, killSwitch: "1" }).reason).toBe("kill_switch");
     expect(decideBusinessCanary({ ...selected, wantExec: false }).reason).toBe("scaffold_only");
-    expect(decideBusinessCanary({ ...selected, teamMode: true }).reason).toBe("team_mode");
     expect(decideBusinessCanary({ ...selected, requestedMode: "auto" }).reason).toBe("not_explicit");
     expect(decideBusinessCanary({ ...selected, resolvedMode: "standard" }).reason).toBe("not_explicit");
     expect(decideBusinessCanary({ ...selected, allowlist: "" }).reason).toBe("not_allowlisted");

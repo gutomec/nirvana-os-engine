@@ -7,10 +7,9 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-  buildSoloPrompt, isBusinessSolo, runBusinessSolo, SOLO_INTAKE_LINE, SOLO_LIFETIME_LINE, SOLO_SPECIALIST_CLAUSE,
+  buildSoloPrompt, participationFile, preferredSquads, readSeats, runBusinessSolo, SOLO_INTAKE_LINE, SOLO_LIFETIME_LINE, SOLO_SPECIALIST_CLAUSE,
   soloDirective, soloSquads, type BusinessSoloArgs,
 } from "../lib/business-solo.ts";
-import { ALLOWED_SQUADS_ENV, readSeats } from "../lib/business-session.ts";
 import { AUTONOMOUS_DIRECTIVE } from "../lib/host-agent-driver.ts";
 import { roleMayDispatch } from "../../_shared/lib/dispatch-depth.ts";
 
@@ -50,17 +49,8 @@ function baseArgs(extra: Partial<BusinessSoloArgs> = {}): BusinessSoloArgs {
   };
 }
 
-describe("when solo applies", () => {
-  test("only the setting turns it on, and any explicit shape turns it off", () => {
-    const base = { forceTeam: false, forceSingle: false, requestedMode: "standard", businessMode: "solo" };
-    expect(isBusinessSolo(base)).toBe(true);
-    expect(isBusinessSolo({ ...base, businessMode: "chain" })).toBe(false);
-    expect(isBusinessSolo({ ...base, forceTeam: true })).toBe(false);
-    expect(isBusinessSolo({ ...base, forceSingle: true })).toBe(false);
-    expect(isBusinessSolo({ ...base, requestedMode: "gauntlet" })).toBe(false);
-  });
-
-  test("the solo role may dispatch nothing", () => {
+describe("the solo role", () => {
+  test("may dispatch nothing", () => {
     for (const target of ["business", "employee", "squad", "agent-x", "planner", "exec", "solo"] as const) {
       expect(roleMayDispatch(target, { NIRVANA_DISPATCH_ROLE: "solo" })).toBe(false);
     }
@@ -70,8 +60,13 @@ describe("when solo applies", () => {
 describe("the prompt", () => {
   const seats = () => readSeats(BIZ, lookup);
 
-  test("the squads: router picks, named ones and the seats' closed sets, deduplicated", () => {
-    expect(soloSquads({ mandatorySquads: ["a"], optionalSquads: ["b", "a"], briefSquads: ["c"] }, seats())).toEqual(["a", "b", "c", "email-squad"]);
+  test("the squads: router picks, named ones, the business's preferred and the seats' closed sets, deduplicated", () => {
+    expect(soloSquads({ mandatorySquads: ["a"], optionalSquads: ["b", "a"], briefSquads: ["c"] }, seats(), ["d", "a"])).toEqual(["a", "b", "c", "d", "email-squad"]);
+  });
+
+  test("the business's preferred squads come from business.yaml", () => {
+    expect(preferredSquads(BIZ)).toEqual([]);
+    expect(preferredSquads(null)).toEqual([]);
   });
 
   test("a map of paths: the brief file, seats, voices, squad cards; never a seat body", () => {
@@ -111,23 +106,20 @@ describe("the directive", () => {
 });
 
 describe("runBusinessSolo", () => {
-  test("one run, role solo, no subagents, squads refused by the environment, cards written", () => {
+  test("one run, role solo, no subagents, cards written, the seats it declares credited", () => {
     let seen: any = null;
-    let allowedDuring: string | undefined;
-    const before = process.env[ALLOWED_SQUADS_ENV];
     const res = runBusinessSolo(baseArgs({
       runWithCascadeImpl: ((opts: any) => {
         seen = opts;
-        allowedDuring = process.env[ALLOWED_SQUADS_ENV];
+        fs.writeFileSync(participationFile(PROJECT_DIR), JSON.stringify({ seats: [{ seat: "al-copy" }, { seat: "not-a-seat" }] }));
         return { ok: true, runtime: "claude-code", sessionId: "s-1", result: "", costUsd: null, durationMs: 5, finalRuntime: "claude-code", handoffs: [] };
       }) as any,
     }));
     expect(res.ok).toBe(true);
     expect(res.sessionId).toBe("s-1");
+    expect(res.seatsPlayed).toEqual(["al-copy"]);
     expect(seen.dispatchRole).toBe("solo");
     expect(seen.allowSubagents).toBeUndefined();
-    expect(allowedDuring).toBe("");
-    expect(process.env[ALLOWED_SQUADS_ENV]).toBe(before);
     expect(seen.addDirs).toContain(path.join(TMP, "squads", "email-squad"));
     expect(fs.existsSync(path.join(PROJECT_DIR, "cards", "squad-email-squad.md"))).toBe(true);
     expect(fs.readFileSync(res.briefFile, "utf8")).toContain("Launch a course.");

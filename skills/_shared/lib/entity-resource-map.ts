@@ -123,9 +123,8 @@ ${lines.join("\n")}`;
  * Where an entity lives for THIS run: the project's copy when scope resolves one,
  * the global otherwise.
  *
- * It lives here because it grew a second consumer. `employee-prompt` uses it to
- * read the manifest and the seat; `team-orchestrator` needs the exact same path
- * to grant in the dispatch, and granting a different directory than the prompt
+ * The prompt that describes an entity and the dispatch that grants its folder
+ * must resolve the same path: granting a different directory than the prompt
  * describes is worse than granting none — the agent gets the map of one tree and
  * the key to another.
  */

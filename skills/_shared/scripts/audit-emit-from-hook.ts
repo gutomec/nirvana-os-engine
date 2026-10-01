@@ -28,14 +28,6 @@
  * Mapping (PostToolUse):
  *   Write/Edit success  → artifact_touched  (path = filePath / file_path, size_bytes when readable)
  *   Bash success        → bash_completed   (exit_code if available)
- *   Agent/Task          → x_seat_subagent  (only with `--seats <file>`; see below)
- *
- * `--seats <file>` is passed by a business session (execution.business_mode:
- * session), which registers this hook for its own run on the subagent tool. The
- * file names the run and its seats; each subagent call becomes one
- * `x_seat_subagent` event carrying the seat it worked as (seat-attribution.ts),
- * on the run's trace, so the session can credit a seat from a record instead
- * of from its own account.
  *
  * `artifact_touched` has a second producer: the run-ledger.ts heartbeat sweep
  * (a poller, not a hook), which always carries `run_id`/`size_bytes` but only
@@ -60,7 +52,6 @@ import * as os from "node:os";
 import { harnessLogsDir } from "../lib/log-paths.ts";
 import { ensureDir } from "../lib/ensure-dir.ts";
 import { findProjectRoot } from "../lib/project-root.js";
-import { attributeSeat, type SeatRef } from "../lib/seat-attribution.ts";
 
 const NIRVANA_PROJECT_ROOT = process.env.NIRVANA_PROJECT_ROOT || "";
 
@@ -220,34 +211,6 @@ async function main() {
 
   const filePath: string | undefined = input.file_path || input.filePath || response.filePath || response.file_path;
   const command: string | undefined = input.command;
-
-  // A subagent call inside a business session. Recorded before the scope filter:
-  // the session named its run in the seats file, so there is nothing to infer.
-  const seatsIdx = process.argv.indexOf("--seats");
-  if ((tool === "Agent" || tool === "Task") && seatsIdx !== -1) {
-    if (stage !== "post") process.exit(0);
-    let spec: { trace_id?: string; project_root?: string; business_slug?: string; seats?: SeatRef[] } = {};
-    try { spec = JSON.parse(fs.readFileSync(process.argv[seatsIdx + 1], "utf8")); } catch { process.exit(0); }
-    const who = attributeSeat(input, Array.isArray(spec.seats) ? spec.seats : []);
-    appendEvent({
-      ts: new Date().toISOString(),
-      event: "x_seat_subagent",
-      trace_id: spec.trace_id || (payload.session_id || "").slice(0, 36) || "no-session",
-      project_id: spec.trace_id,
-      business_slug: spec.business_slug,
-      host: hostLabel,
-      runtime: agentArg,
-      session_id: payload.session_id,
-      tool_name: tool,
-      seat: who.seat,
-      ...(who.by ? { matched_by: who.by } : {}),
-      ...(who.candidates ? { candidates: who.candidates } : {}),
-      ...(typeof input.description === "string" ? { description: input.description.slice(0, 200) } : {}),
-      ...(typeof input.subagent_type === "string" ? { subagent_type: input.subagent_type } : {}),
-      success: succeeded,
-    }, harnessLogsDir({ projectRoot: spec.project_root || NIRVANA_PROJECT_ROOT || undefined }));
-    process.exit(0);
-  }
 
   // Decide if we should record
   const cwd = process.cwd();

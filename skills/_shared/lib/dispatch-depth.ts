@@ -66,10 +66,9 @@ const ALLOWED: Record<DispatchRole, readonly DispatchRole[]> = {
   // enforced rather than documented — every dispatched role refuses to open
   // one, so a seat cannot shell out to it and get an unsupervised agent.
   exec: [],
-  // A solo business (execution.business_mode: solo) is the whole company in
-  // one agent: it plays its seats itself and runs squads from their cards, so
-  // it opens nothing. What the chain spreads over a director, seats and squad
-  // dispatches happens inside this one worker.
+  // A business is the whole company in one agent (business-solo.ts): it
+  // plays its seats itself and runs squads from their cards, so it opens
+  // nothing.
   solo: [],
 };
 

@@ -10,7 +10,7 @@
 // platform — mirrors brief-excerpt.ts/.js.
 //
 // All read/write callers (audit emit, audit-view, validate-chain, quality-gate,
-// employee-prompt, doctor, tui, baseline, etc.) MUST use this helper. Hardcoded
+// doctor, tui, baseline, etc.) MUST use this helper. Hardcoded
 // `~/.harness-logs` paths create split brain: writes go per-project, reads still
 // hit $HOME, the audit chain breaks.
 //

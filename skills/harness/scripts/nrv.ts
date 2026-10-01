@@ -102,7 +102,8 @@ switch (cmd) {
   }
   case "audit-where": runScript(join(H, "audit-where.ts"), rest);
   case "audit-tail": runScript(join(H, "audit-tail.ts"), rest);
-  case "team": runScript(join(H, "chain.ts"), rest);
+  case "brief": runScript(join(H, "brief.ts"), rest);
+  case "cards": runScript(join(H, "cards.ts"), rest);
   case "dispatch": runScript(join(H, "dispatch.ts"), rest);
   case "run": case "autopilot": runScript(join(H, "dispatch.ts"), [...rest, "--exec"]);
   case "auto": runScript(join(H, "dispatch.ts"), [...rest, "--exec", "--auto"]);

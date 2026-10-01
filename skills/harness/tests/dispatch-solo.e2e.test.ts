@@ -1,5 +1,4 @@
-// dispatch-solo.e2e.test.ts — `nrv dispatch <business> --exec` in solo mode,
-// end to end: ONE runtime call is the whole business (no director, no seat
+// dispatch-solo.e2e.test.ts — `nrv dispatch <business> --exec`, end to end: ONE runtime call is the whole business (no director, no seat
 // subagents), it runs as the `solo` role under the context ceiling of the
 // profile, the review is decided by a rule, and the normal delivery pipeline
 // delivers what it wrote.
@@ -106,7 +105,7 @@ function fixture(extraEnv: Record<string, string>, extraArgs: string[] = []) {
   return { out, result, calls, audit };
 }
 
-describe("a business in solo mode", () => {
+describe("a business dispatch", () => {
   test("the economy profile: one call as the solo role, under a 200k ceiling, no review, delivered", () => {
     const fx = fixture({ NIRVANA_PROFILE: "economy" });
     expect(fx.result.status, fx.result.stdout + fx.result.stderr).toBe(0);
@@ -128,9 +127,9 @@ describe("a business in solo mode", () => {
     expect(fs.existsSync(path.join(fx.out, "_QA-RESERVATIONS.md"))).toBe(false);
   }, 120000);
 
-  test("without a profile the chain is still the default", () => {
+  test("without a profile a business still runs as one agent, with no ceiling", () => {
     const fx = fixture({});
-    const calls = fx.calls();
-    expect(calls.some((c: any) => c.role === "solo")).toBe(false);
+    expect(fx.result.status, fx.result.stdout + fx.result.stderr).toBe(0);
+    expect(fx.calls().map((c: any) => [c.role, c.window, c.director])).toEqual([["solo", null, false]]);
   }, 120000);
 });

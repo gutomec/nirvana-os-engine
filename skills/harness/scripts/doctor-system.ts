@@ -1180,7 +1180,6 @@ const keyFiles: [string, string][] = [
   [path.join(SKILLS, "_shared/lib/handoff.js"), "F1: updateHandoffPhase"],
   [path.join(SKILLS, "businesses/scripts/verify-deliverable.ts"), "F2: verify-deliverable"],
   [path.join(SKILLS, "businesses/lib/loader-cli.py"), "F4: loader-cli wrapper"],
-  [path.join(SKILLS, "businesses/lib/employee-prompt.ts"), "F8: DNA injection helper"],
   [path.join(SKILLS, "harness/scripts/quality-gate.ts"), "F9: quality-gate driver"],
   [path.join(SKILLS, "harness/scripts/validate-chain.ts"), "F3 enforcer: validate-chain"],
 ];

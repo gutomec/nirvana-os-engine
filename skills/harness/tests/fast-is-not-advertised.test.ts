@@ -37,7 +37,7 @@ describe("no agent-facing surface offers it", () => {
     ["CLAUDE.md", "the same contract, Claude's filename"],
     ["GEMINI.md", "the same contract, Gemini's filename"],
     ["skills/_shared/templates/AGENTS.md", "what `nrv init` writes into a project"],
-    ["skills/businesses/lib/employee-prompt.ts", "a seat's prompt"],
+    ["skills/harness/lib/business-solo.ts", "the business worker's prompt"],
   ])("%s — %s", (file) => {
     expect(advertises(read(file))).toEqual([]);
   });

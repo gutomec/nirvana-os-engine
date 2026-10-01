@@ -2,45 +2,36 @@
 // surfaces no other prompt test renders, and the gate that watches all of them
 // is green on this tree.
 //
-// Team mode used to build the step brief inline in runStep, so nothing could
-// look at it without running a chain; buildStepBrief is the extraction. The
+// The solo business prompt is what a business worker executes. The
 // autonomous directive rides every headless run as the system prompt, so the
 // guard there reaches even the paths that replay a stored prompt (the
 // supervisor's re-dispatch, the report publisher).
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import * as path from "node:path";
-import { buildStepBrief } from "../lib/team-orchestrator.ts";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import { prepareBusinessSolo } from "../lib/business-solo.ts";
 import { AUTONOMOUS_DIRECTIVE } from "../lib/host-agent-driver.ts";
 import { SCOPE_GUARD_EN, SCOPE_GUARD_PT_BR } from "../../_shared/lib/scope-guard.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const ROOT = path.resolve(import.meta.dir, "..", "..", "..");
 
-describe("the team step brief", () => {
-  const args = { brief: "Uma landing page para a clínica.", outputsRoot: "/out/final" };
-
-  // The instruction is English and the DELIVERABLE is not — the brief here is
-  // Portuguese on purpose, and the step brief has to say which of the two the
-  // employee should follow. Without that sentence, switching the prompt language
-  // silently switches the language of the work.
-  test("a middle step writes to its own dir, lists the colleagues and carries the guard", () => {
-    const text = buildStepBrief({ employee: "copywriter", task: "Escreva o copy." }, 1, 3, args,
-      [{ employee: "strategist", dir: "/out/final/_team/strategist" }], "/out/final/_team/copywriter");
-    expect(text).toContain("# Task for copywriter — step 2 of 3");
-    expect(text).toContain("Escreva o copy.");
-    expect(text).toContain("- **strategist** → /out/final/_team/strategist");
-    expect(text).toContain("under: `/out/final/_team/copywriter`");
-    expect(text).toContain("What you DELIVER follows the language of the client brief");
-    expect(text).toContain(SCOPE_GUARD_EN);
-    expect(text).not.toContain(SCOPE_GUARD_PT_BR);
-  });
-
-  test("the last step synthesizes into the outputs root and still carries it", () => {
-    const text = buildStepBrief({ employee: "ceo", task: "Consolide." }, 2, 3, args, [], "/out/final");
-    expect(text).toContain("FINAL DELIVERABLES exist as files under: `/out/final`");
-    expect(text).not.toContain("## What your colleagues produced");
-    expect(text.trim().endsWith(SCOPE_GUARD_EN)).toBe(true);
+describe("the solo business prompt", () => {
+  test("carries the guard in English, at the end", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-guard-solo-"));
+    try {
+      fs.mkdirSync(path.join(root, "biz", "employees"), { recursive: true });
+      fs.writeFileSync(path.join(root, "biz", "employees", "copywriter.md"), "---\nname: copywriter\n---\n");
+      const { prompt } = prepareBusinessSolo({
+        slug: "biz", bizDir: path.join(root, "biz"), brief: "Uma landing page para a clínica.", projectId: "p", projectDir: path.join(root, "run"),
+        projectRoot: root, outputsRoot: path.join(root, "run", "out"), runtime: "claude-code", cloneLookup: () => null, memoryDirs: [],
+      });
+      expect(prompt).toContain("Deliverables follow the language of the request.");
+      expect(prompt.trim().endsWith(SCOPE_GUARD_EN)).toBe(true);
+      expect(prompt).not.toContain(SCOPE_GUARD_PT_BR);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
   });
 });
 
@@ -57,7 +48,7 @@ describe("the gate", () => {
     expect(r.stdout).toContain("0 missing");
     expect(r.status).toBe(0);
     for (const surface of [
-      "employee prompt", "team step brief", "squad prompt", "agent-x prompt", "judge-x prompt", "DISPATCH-INSTRUCTION.md", "revision brief",
+      "solo business prompt", "squad prompt", "agent-x prompt", "judge-x prompt", "DISPATCH-INSTRUCTION.md", "revision brief",
       "autonomous directive", "nrv revise", "fix prompt", "squad brief file", "Glance child", "agent-x persona", "judge-x persona",
       "DISPATCH-INSTRUCTION template", "SKILL.md", "04-multi-target.md",
     ]) expect(r.stdout).toContain(surface);

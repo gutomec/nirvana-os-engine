@@ -105,7 +105,7 @@ engine, and this file is the door to it.
 
 | Your runtime | How to hand over |
 |---|---|
-| Any runtime that can read a file (Claude Code, Codex, Gemini CLI, Antigravity, Pi, OpenClaw, Cursor…) | read `~/.nirvana/skills/harness/SKILL.md` and follow it as your operating instructions for this brief; its `../_shared/…` references resolve against `~/.nirvana/skills/harness/` |
+| Any runtime that can read a file (Claude Code, Codex, Gemini CLI, Antigravity, Pi, OpenClaw, Cursor…) | run `nrv protocol` and follow what it prints as your operating instructions for this brief: the lean protocol when a performance profile is set, otherwise a pointer to `~/.nirvana/skills/harness/SKILL.md` (its `../_shared/…` references resolve against `~/.nirvana/skills/harness/`) |
 | Shell-only and sub-process runtimes (Hermes, legacy gemini-cli, headless) | `nrv dispatch --auto --exec "<the user's brief, verbatim>"` (`--exec=<runtime>` pins one; without `--exec` the command only scaffolds and delivers nothing) |
 
 Dispatch needs one agent CLI on PATH (`claude`, `codex`, `gemini`, `agy`, `pi`,

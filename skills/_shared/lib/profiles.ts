@@ -32,7 +32,6 @@ export const PROFILE_PRESETS: Record<ProfileName, Readonly<Record<string, Settin
   // Highest quality, highest token use: the deepest effort, no context ceiling,
   // every delivery reviewed by another runtime, two correction rounds.
   max: {
-    "execution.business_mode": "solo",
     "execution.effort": "xhigh",
     "execution.context_window": 0,
     "review.policy": "always",
@@ -41,10 +40,9 @@ export const PROFILE_PRESETS: Record<ProfileName, Readonly<Record<string, Settin
     "routing.mode": "agentic",
     "quality_gate.judge_enabled": "reports",
   },
-  // The recommended default: one agent per business, a 400k ceiling, review
-  // when a rule asks for it, the deterministic gate instead of a per-report judge.
+  // The recommended default: a 400k ceiling, review when a rule asks for it,
+  // the deterministic gate instead of a per-report judge.
   balanced: {
-    "execution.business_mode": "solo",
     "execution.effort": "high",
     "execution.context_window": 400000,
     "review.policy": "rule",
@@ -56,7 +54,6 @@ export const PROFILE_PRESETS: Record<ProfileName, Readonly<Record<string, Settin
   // Lowest token use: a 200k ceiling, medium effort, review only when the user
   // asks or the gate fails, reviewed on the same runtime.
   economy: {
-    "execution.business_mode": "solo",
     "execution.effort": "medium",
     "execution.context_window": 200000,
     "review.policy": "on-request",

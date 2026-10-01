@@ -22,8 +22,7 @@
 // back to the resolved setting (the safe, higher-quality default) with a
 // warning; an unknown value in a variable or a file is a clear error there.
 //
-// Lives in _shared because BOTH harness (dispatch) and businesses
-// (employee-prompt) consume it.
+// Lives in _shared because the harness and the squad runner both consume it.
 
 import { resolveSetting } from "./settings.ts";
 

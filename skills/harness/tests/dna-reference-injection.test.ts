@@ -1,7 +1,7 @@
 // dna-reference-injection.test.ts — the default DNA mode reaches squads and direct dispatches.
 //
 // `execution.dna_injection` defaults to "reference": a card naming the persona
-// files, which the executor opens when it needs the method. employee-prompt
+// files, which the executor opens when it needs the method. The seat prompt
 // honored it; squad-exec and dispatch typed the setting as "full" | "fragments"
 // and sent everything that was not "fragments" down the full-persona branch, so
 // the default pasted whole personas into every squad prompt.

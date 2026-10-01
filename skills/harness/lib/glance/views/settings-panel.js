@@ -19,11 +19,11 @@ export const GROUP_LABELS = Object.freeze({
   multi_target: 'Multi-target', gauntlet: 'Gauntlet', execution: 'Execução', glance: 'Glance', runtime: 'Runtime',
   routing: 'Roteamento', supervisor: 'Supervisor', updates: 'Atualizações', budget: 'Orçamento',
   baselines: 'Baselines de custo', quality_gate: 'Quality gate', delivery: 'Entrega', verify: 'Portão de admissão',
-  audit: 'Auditoria', host: 'Host (Orca)', briefing: 'Briefing',
+  audit: 'Auditoria', host: 'Host (Orca)', briefing: 'Briefing', review: 'Revisão',
 });
 
 export const SOURCE_LABELS = Object.freeze({
-  env: 'variável de ambiente', project: 'projeto', global: 'global', 'engine-default': 'engine', default: 'padrão',
+  env: 'variável de ambiente', project: 'projeto', global: 'global', profile: 'perfil', 'engine-default': 'engine', default: 'padrão',
 });
 
 export const SCOPE_LABELS = Object.freeze({ project: 'projeto', global: 'global' });

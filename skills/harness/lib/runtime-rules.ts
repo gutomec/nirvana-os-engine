@@ -236,7 +236,7 @@ export interface RunRuntimeChoice extends RuntimeDecision {
  * that wins, provided it is installed here.
  *
  * It lives here because the rule was duplicated and drifted. `dispatch.ts`
- * resolved it properly while `chain.ts` (the business director, and therefore
+ * resolved it properly while the business director of the time (and therefore
  * every seat of every org chart) carried a literal `?? "claude-code"`: a client
  * working in Codex had the director run on a Claude Code session they never
  * use, which failed on a stale credential and dropped the whole business to

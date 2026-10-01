@@ -2,7 +2,7 @@
 // validate-chain.ts — Enforces the Nirvana audit chain integrity end-to-end.
 //
 // Closes F3 enforcer side from NIRVANA-OS-CORRECTION-REPORT. SKILL.md was
-// hardened in C.7 to require brief-business.ts → buildEmployeePrompt → gate;
+// hardened in C.7 to require brief-business.ts → dispatch → gate;
 // this is the post-hoc validator that catches when the maestro (or any
 // caller) deviated from the protocol.
 //

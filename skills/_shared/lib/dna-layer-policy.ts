@@ -2,8 +2,8 @@
 //
 // L1 Philosophies · L2 Mental Models · L3 Heuristics · L4 Frameworks · L5 Methodologies.
 // SOUL.md + L1 are ALWAYS injected by clone-resolver (voice + axioms); this picks
-// the extra cognitive layers most useful to the phase at hand. Used by
-// employee-prompt to drive depth:"fragments" selection from the HANDOFF phase.
+// the extra cognitive layers most useful to the phase at hand, for
+// depth:"fragments" selection from the HANDOFF phase.
 
 import type { LayerKey } from "./dna-schema-parser.ts";
 

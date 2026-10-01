@@ -26,7 +26,7 @@ function fixture(overrides: Partial<BusinessPostGateInput> = {}, dependencyOverr
   const input: BusinessPostGateInput = {
     projectId: "proj-1", businessSlug: "example", runtime: "codex", projectDir: "/project/business",
     projectRoot: "/project", outputsRoot: "/project/deliverables", skillsRoot: "/skills",
-    employeePromptScript: "/skills/employee-prompt.ts", sessionFile: "/project/session.json",
+    sessionFile: "/project/session.json",
     sessionData: { zip_path: null }, rulesDirective: "rules", maxBudgetUsd: 5, timeoutMs: 1000,
     yolo: true, wantPdf: true, skipHtml: false, offlineSnapshot: true, routingMode: "agentic", wantZip: true,
     emit: (event, payload) => events.push({ event, payload }), log: () => {}, warn: warning => warnings.push(warning),
@@ -45,6 +45,13 @@ describe("Business post-gate boundary", () => {
     expect(fx.events.map(entry => entry.event)).toEqual(["report_publisher_ran", "report_pdf_generated", "report_html_generated"]);
     expect(fx.calls.some(call => call.args.includes("--offline-snapshot"))).toBeTrue();
     expect(fx.calls.some(call => call.args.includes("--deliverables-only"))).toBeTrue();
+  });
+
+  test("a business with a publisher seat hands the publisher that seat's file", () => {
+    let prompt = "";
+    const fx = fixture({}, { runPublisher: (input) => { prompt = input.prompt; return { ok: true, sessionId: "s", durationMs: 1, costUsd: 0 } as any; } });
+    runBusinessPostGate(fx.input);
+    expect(prompt.startsWith("Work as the seat described in `/home/test/businesses/example/employees/report-publisher.md`")).toBeTrue();
   });
 
   test("keeps publication failures non-fatal and does not claim ZIP success", () => {

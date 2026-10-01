@@ -74,7 +74,7 @@ function runScenario(kind: "legacy-reference" | "boundary", verifyExit: 0 | 1) {
     publicationCalls++;
     return runBusinessPostGate({
       projectId: "proj-parity", businessSlug: "example", runtime: "codex", projectDir: root, projectRoot: root,
-      outputsRoot, skillsRoot: "/skills", employeePromptScript: "/skills/employee-prompt.ts",
+      outputsRoot, skillsRoot: "/skills",
       sessionFile, sessionData, rulesDirective: "", yolo: true, wantPdf: true, skipHtml: false,
       offlineSnapshot: false, routingMode: "agentic", wantZip: true,
       emit: (event, payload) => audit.push({ event, payload }), log: () => {}, warn: () => {}, dependencies,
