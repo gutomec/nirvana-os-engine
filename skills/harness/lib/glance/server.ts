@@ -2461,8 +2461,14 @@ async function handleSwitchProject(req: Request, isLoopback: boolean): Promise<R
     PROJECTS_OUTPUT_DIR: "outputs",
   };
   process.env.NIRVANA_PROJECT_ROOT = to;
+  // The library's indexes stay global unless the new project owns a library of
+  // its own (paths.js projectOwnsLibraryIndex): the same rule paths.js applies.
+  const pathsLib = createRequire(import.meta.url)("../../../_shared/lib/paths.js");
+  const ownsIndex = pathsLib.projectOwnsLibraryIndex(to, getScope().mode);
+  const globalPaths = pathsLib.resolvePaths({ mode: "global", skipScopeFile: true });
+  const LIBRARY_INDEX_KEYS = new Set(["BUSINESSES_REGISTRY_PATH", "SQUADS_REGISTRY_PATH", "ROUTING_DIGEST_PATH", "KEYWORD_ALIASES_PATH"]);
   for (const [key, sub] of Object.entries(PROJECT_SCOPED_PATHS)) {
-    const value = path.join(dotNirvana, sub);
+    const value = LIBRARY_INDEX_KEYS.has(key) && !ownsIndex ? globalPaths[key] : path.join(dotNirvana, sub);
     // audit.js/log-paths.ts re-check these two specific env vars on every call; everything
     // else (including these same two, for OTHER readers) reads the frozen `paths.js` object
     // overridePath() mutates in place — set both so no reader is left on the old project.

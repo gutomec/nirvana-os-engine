@@ -82,6 +82,28 @@ function loadDotenv(envPath) {
   return out;
 }
 
+// Keys a project's .env uses to point at a library of its own. With one of
+// them set, the library indexes describe that library, not the global one.
+const LIBRARY_ENV_KEYS = ['SQUADS_DIR', 'SQUADS_LEGACY_DIR', 'BUSINESSES_DIR', 'BUSINESSES_LIBRARY', 'DNA_LIBRARY', 'NIRVANA_HOME'];
+
+/**
+ * Whether the library's indexes (the business, squad and clone registries, the
+ * routing digest and cards, the catalog, the keyword aliases) belong in the
+ * project. They describe the library, not the project: in global scope every
+ * project sees the same one, and a copy in each project was ~12 MB of the
+ * user's whole library inside a folder that has nothing to do with it, stale
+ * the moment the library changed. A project keeps its own when its entities
+ * are part of what it sees (project or merge scope), or when a library
+ * location is moved, by its .env or by the environment: the index then
+ * describes another library and must never be published as the global one.
+ */
+function projectOwnsLibraryIndex(projectRoot, mode, dotenv) {
+  if (!projectRoot) return false;
+  if (mode !== 'global') return true;
+  const env = dotenv || loadDotenv(path.join(projectRoot, '.env'));
+  return LIBRARY_ENV_KEYS.some((k) => env[k] || process.env[k]);
+}
+
 function detectScope(opts = {}) {
   if (opts.skipScopeFile) {
     return { mode: opts.mode || 'global', projectRoot: null, dotenv: {} };
@@ -123,19 +145,20 @@ function resolvePaths(opts = {}) {
     || (fs.existsSync(nirvanaSkills) ? nirvanaSkills : join(HOME, '.claude', 'skills'));
   const DEPS_DIR = cfg('NIRVANA_DEPS_DIR') || cfg('DEPS_DIR') || join(NIRVANA_HOME, '.nirvana', 'node_modules');
 
-  // Project-scoped persistence: WHENEVER there is a project root, registry /
-  // state / logs live under <project>/.nirvana/, regardless of scope mode.
-  // Rationale: nrv is always invoked from inside the project dir; keeping the
-  // run's artifacts inside that dir is the principled default — the project
-  // becomes self-contained, the global HOME stays clean across many projects,
-  // and historical browsing per project is trivial (it's all right there).
-  // `mode` still governs which assets are VISIBLE (squads/businesses/clones)
-  // via scope.ts. NIRVANA_HOME is the fallback ONLY when no project root is
-  // detected (running from $HOME or any non-project dir).
+  // Project-scoped persistence: WHENEVER there is a project root, the run's
+  // own history (state, logs, outputs) lives under <project>/.nirvana/,
+  // regardless of scope mode, so browsing a project's history is trivial.
+  // The library's indexes follow the library instead (see
+  // projectOwnsLibraryIndex): in the project when it has entities of its own
+  // or another library, in the global location otherwise. `mode` still governs
+  // which assets are VISIBLE (squads/businesses/clones) via scope.ts.
+  // NIRVANA_HOME is the fallback ONLY when no project root is detected.
   const projectScoped = !!projectRoot;
   const dotNirvana = projectRoot ? join(projectRoot, '.nirvana') : null;
 
   const projectPath = (sub) => projectScoped ? join(dotNirvana, sub) : null;
+  const ownsIndex = projectOwnsLibraryIndex(projectRoot, mode, dotenv);
+  const indexPath = (sub) => ownsIndex ? join(dotNirvana, sub) : null;
 
   const p = {
     HOME,
@@ -158,22 +181,22 @@ function resolvePaths(opts = {}) {
     HARNESS_LOGS_DIR:         cfg('HARNESS_LOGS_DIR')         || projectPath('logs/harness') || join(NIRVANA_HOME, '.harness-logs'),
     MAESTRO_LOGS_DIR:         cfg('MAESTRO_LOGS_DIR')         || projectPath('logs/maestro') || join(NIRVANA_HOME, '.maestro-logs'),
 
-    BUSINESSES_REGISTRY_PATH: cfg('BUSINESSES_REGISTRY_PATH') || projectPath('.businesses-registry.json') || join(NIRVANA_HOME, '.businesses-registry.json'),
-    SQUADS_REGISTRY_PATH:     cfg('SQUADS_REGISTRY_PATH')     || projectPath('.squads-registry.json')     || join(NIRVANA_HOME, '.squads-registry.json'),
+    BUSINESSES_REGISTRY_PATH: cfg('BUSINESSES_REGISTRY_PATH') || indexPath('.businesses-registry.json') || join(NIRVANA_HOME, '.businesses-registry.json'),
+    SQUADS_REGISTRY_PATH:     cfg('SQUADS_REGISTRY_PATH')     || indexPath('.squads-registry.json')     || join(NIRVANA_HOME, '.squads-registry.json'),
 
     // Compact routing digest (routing-360 Phase 3.1): one pipe-delimited file
     // summarizing all three registries for the agentic router. Lives next to
     // the registries: project scope → <project>/.nirvana/; global scope →
     // ~/.nirvana/ (beside the mind-clones registry). Built by
     // harness/scripts/build-routing-digest.ts.
-    ROUTING_DIGEST_PATH:      cfg('ROUTING_DIGEST_PATH')      || projectPath('.routing-digest.md')        || join(NIRVANA_HOME, '.nirvana', '.routing-digest.md'),
+    ROUTING_DIGEST_PATH:      cfg('ROUTING_DIGEST_PATH')      || indexPath('.routing-digest.md')        || join(NIRVANA_HOME, '.nirvana', '.routing-digest.md'),
     // What the orchestrator reads to find out WHAT EXISTS: every business and
     // squad, slug and full description, nothing else. Written by `nrv index`
     // so it is a stable file at a fixed path rather than the output of two
     // commands — a stable file is what a provider's prompt cache can hold
     // across sessions, and on a maintainer-sized library that is the whole
     // difference between paying for the survey once and paying every run.
-    CATALOG_PATH:             cfg('CATALOG_PATH')             || projectPath('.catalog.md')               || join(NIRVANA_HOME, '.nirvana', '.catalog.md'),
+    CATALOG_PATH:             cfg('CATALOG_PATH')             || indexPath('.catalog.md')               || join(NIRVANA_HOME, '.nirvana', '.catalog.md'),
 
     // Cross-language alias groups, emitted next to the digest by the same
     // builder and read by router.js Stage 2.7 arm (b).
@@ -186,7 +209,7 @@ function resolvePaths(opts = {}) {
     // cross-language bridge was dead code. A PT brief against an EN-declared
     // squad never got its coverage lift, and the degradation is silent by
     // design (absence is treated as normal).
-    KEYWORD_ALIASES_PATH:     cfg('KEYWORD_ALIASES_PATH')     || projectPath('.keyword-aliases.json')     || join(NIRVANA_HOME, '.nirvana', '.keyword-aliases.json'),
+    KEYWORD_ALIASES_PATH:     cfg('KEYWORD_ALIASES_PATH')     || indexPath('.keyword-aliases.json')     || join(NIRVANA_HOME, '.nirvana', '.keyword-aliases.json'),
 
     SQUADS_STATE_DIR:         cfg('NIRVANA_STATE_DIR')        || projectPath('state/squads')              || join(NIRVANA_HOME, '.nirvana', 'squads-state'),
 
@@ -227,3 +250,4 @@ const defaultPaths = resolvePaths();
 module.exports = defaultPaths;
 module.exports.resolvePaths = resolvePaths;
 module.exports.detectScope = detectScope;
+module.exports.projectOwnsLibraryIndex = projectOwnsLibraryIndex;

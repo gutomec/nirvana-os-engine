@@ -26,6 +26,7 @@ import * as os from "node:os";
 import { execSync, spawnSync } from "node:child_process";
 import { paths as nrvPaths } from "../../_shared/lib/bun-helpers.ts";
 import { resolveScope, enumerate } from "../../_shared/lib/scope.ts";
+import { cloneRegistryPath } from "../../_shared/lib/clone-resolver.ts";
 import { RUNTIME_TARGETS, RUNTIME_SKILL_DIRS, PROJECT_CONTRACT_FILES, RUNTIME_ENTRIES, SKILLS as SKILL_NAMES } from "../../_shared/lib/runtime-dirs.ts";
 import { classifyRuntimeEntry, foreignProvider } from "../../_shared/lib/runtime-install.ts";
 import { listRuntimes, whichSync } from "../../_shared/lib/host-agent-driver.ts";
@@ -774,10 +775,7 @@ const bizReg = nrvPaths.BUSINESSES_REGISTRY_PATH;
 // days while squads/businesses were flagged.
 const clonesReg = (() => {
   try {
-    const scope = resolveScope();
-    return scope.projectRoot
-      ? path.join(scope.projectRoot, ".nirvana", ".mind-clones-registry.json")
-      : path.join(HOME, ".nirvana", ".mind-clones-registry.json");
+    return cloneRegistryPath();
   } catch {
     return path.join(HOME, ".nirvana", ".mind-clones-registry.json");
   }

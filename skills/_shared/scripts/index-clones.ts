@@ -22,6 +22,7 @@ import { paths, parseArgs, EXIT } from "../lib/bun-helpers.ts";
 import { resolveScope } from "../lib/scope.ts";
 import { writeFileAtomic } from "../lib/atomic-write.js";
 import { isInvalidProjectRoot } from "../lib/project-root.js";
+import { projectOwnsLibraryIndex } from "../lib/paths.js";
 
 const YAML = require("yaml");
 
@@ -273,8 +274,6 @@ function writeRegistry(target: string, label: string): boolean {
   return true;
 }
 
-writeRegistry(registryPath, "the project registry");
-
 // Mirror into global scope: when the scan covered exactly the global library,
 // the content of the two registries is identical by construction — so the
 // global one is updated along. Without this, reindexing only in the project
@@ -328,6 +327,14 @@ const scannedOnlyGlobalLibrary =
   && path.resolve(roots[0]) === path.resolve(paths.DNA_LIBRARY)
   && !projectEnvRelocatesLibrary()
   && !insideProject(roots[0]);
+// A global-scope project that scanned only the global library has no registry
+// of its own: its readers resolve the global one (paths.js
+// projectOwnsLibraryIndex), which the mirror below writes. A copy in the
+// project was the user's whole library inside a folder unrelated to it.
+const projectCopy = registryPath !== globalRegistryPath && scannedOnlyGlobalLibrary
+  && !projectOwnsLibraryIndex(scope.projectRoot, scope.mode);
+if (!projectCopy) writeRegistry(registryPath, "the project registry");
+
 if (registryPath !== globalRegistryPath && scannedOnlyGlobalLibrary) {
   if (writeRegistry(globalRegistryPath, "the global registry") && !quiet) {
     console.error(`[index-clones] mirrored to the global scope → ${globalRegistryPath}`);
@@ -336,7 +343,7 @@ if (registryPath !== globalRegistryPath && scannedOnlyGlobalLibrary) {
 
 if (!quiet) {
   console.error(`[index-clones] scope=${scope.mode} → scanning: ${roots.join(", ")}`);
-  console.error(`[index-clones] registry → ${registryPath}`);
+  console.error(`[index-clones] registry → ${projectCopy ? globalRegistryPath : registryPath}`);
   const enriched = Object.values(clones).filter((c: any) => c.match.one_liner).length;
   console.error(`[index-clones] ✓ ${out.count} mind-clones indexed (${scanned} scanned, ${enriched} enriched)`);
   if (legacyNested > 0) {

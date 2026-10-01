@@ -22,10 +22,10 @@
 
 import * as path from "node:path";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import { spawnSync } from "node:child_process";
 import { paths, EXIT, BUN_BIN } from "../../_shared/lib/bun-helpers.ts";
 import { resolveScope } from "../../_shared/lib/scope.ts";
+import { cloneRegistryPath } from "../../_shared/lib/clone-resolver.ts";
 
 const args = process.argv.slice(2);
 const quiet = args.includes("--quiet") || args.includes("-q");
@@ -158,9 +158,7 @@ export function stalenessTarget(label: RegistryTarget): { registry: string; newe
   }
   const scope = resolveScope();
   const roots = scope.mindCloneDirs.length > 0 ? scope.mindCloneDirs : [paths.DNA_LIBRARY];
-  const registry = scope.projectRoot
-    ? path.join(scope.projectRoot, ".nirvana", ".mind-clones-registry.json")
-    : path.join(os.homedir(), ".nirvana", ".mind-clones-registry.json");
+  const registry = cloneRegistryPath();
   return { registry, newest: newestManifestMtime(roots, ["MANIFEST.yaml", "manifest.yaml"], 2) }; // depth 2: legacy nested layout
 }
 

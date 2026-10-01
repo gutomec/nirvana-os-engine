@@ -50,6 +50,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { paths as nrvPaths, parseArgs, EXIT } from "../../_shared/lib/bun-helpers.ts";
 import { resolveScope } from "../../_shared/lib/scope.ts";
+import { cloneRegistryPath } from "../../_shared/lib/clone-resolver.ts";
 import { resolveSetting } from "../../_shared/lib/settings.ts";
 import { renderRoutingCards } from "../lib/routing-cards.ts";
 
@@ -89,7 +90,7 @@ export function resolveRoutingArtifactPaths(): RoutingArtifactPaths {
   return {
     businessesRegistry: nrvPaths.BUSINESSES_REGISTRY_PATH,
     squadsRegistry: nrvPaths.SQUADS_REGISTRY_PATH,
-    mindClonesRegistry: path.join(cloneDir, ".mind-clones-registry.json"),
+    mindClonesRegistry: cloneRegistryPath(),
     digest,
     cards: routingCardsPathFor(digest),
     // The same constant the router reads. Deriving it from the digest's

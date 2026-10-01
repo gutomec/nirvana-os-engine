@@ -17,6 +17,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { resolveScope } from "./scope.ts";
+import { projectOwnsLibraryIndex } from "./paths.js";
 import { parseDnaSchema, type LayerKey } from "./dna-schema-parser.ts";
 
 export type CloneDepth = "full" | "concise" | "fragments" | "reference";
@@ -64,8 +65,10 @@ export function cloneRegistryPath(opts: { cwd?: string } = {}): string {
   // clone registry resolving per cwd made the two halves of one dispatch read
   // different scopes — a test run from the engine repo picked up the repo's
   // own derived .nirvana registry and injected clones its fixture never wrote.
+  // A project keeps its own registry only when it owns a library of its own
+  // (paths.js projectOwnsLibraryIndex); in global scope it reads the global one.
   const scope = resolveScope(opts.cwd ? { cwd: opts.cwd } : {});
-  const dir = scope.projectRoot
+  const dir = scope.projectRoot && projectOwnsLibraryIndex(scope.projectRoot, scope.mode)
     ? path.join(scope.projectRoot, ".nirvana")
     : path.join(os.homedir(), ".nirvana");
   return path.join(dir, ".mind-clones-registry.json");
