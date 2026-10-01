@@ -1,6 +1,6 @@
 ---
 name: harness
-description: "Nirvana-OS orchestrator: picks which of the user's businesses, squads or mind-clones deliver a request, writes each one a brief, dispatches them on any installed runtime and reports what came back. Use it ONLY when the request calls for Nirvana: the user names it ('use o nirvana-os', 'via nirvana', 'pelo nirvana', 'orquestre via nirvana', 'manda o nirvana'), asks for one of their businesses, squads or mind-clones ('use minhas empresas/squads', 'o squad de copy', 'com a voz do Hormozi'), or asks for the work, or a part of it, to run on another agent runtime ('use o codex para revisar'). An ordinary request for an artifact is not one of these: work on it as you normally would."
+description: "Nirvana-OS orchestrator: picks which of the user's businesses, squads or mind-clones deliver a request, writes each one a brief, dispatches them on any installed runtime and reports what came back. Use it ONLY when the request calls for Nirvana: the user names it ('use o nirvana-os', 'via nirvana', 'pelo nirvana', 'orquestre via nirvana', 'manda o nirvana'), names or points to one of their businesses, squads or mind-clones, a pack name or a model to follow included ('use minhas empresas/squads', 'o squad de copy', 'com a voz do Hormozi', 'como a empresa X e seus squads e clones'), or asks for the work, or a part of it, to run on another agent runtime ('use o codex para revisar'). An ordinary request for an artifact is not one of these: work on it as you normally would."
 compatibility: "Requires the Nirvana-OS engine: the `nrv` CLI and Bun on PATH, plus a content library under ~/businesses and ~/squads. Install: npx @nirvana-os/cli. Runtime-agnostic: a dispatch is a process any runtime can start in the background and learn has ended."
 tools: [Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion, WebSearch, WebFetch]
 maxTurns: 200
@@ -65,6 +65,12 @@ different businesses. Shortlist without spending tokens, then decide yourself:
 nrv find "<the request in a few words>"   # ranked candidates, zero tokens
 nrv list-businesses                        # the library, one line each
 ```
+
+A business the user names by something other than its slug (a pack or product
+name, "a empresa de motion design") is the one whose description and squads
+fit that name; `nrv list-businesses` and the squads the user mentions settle
+it, and when two fit equally, ask. A name with no exact match is never a reason
+to do the work yourself.
 
 Decide which run in parallel (independent parts) and which in sequence (one
 builds on another's output). There is no director and no router agent: this

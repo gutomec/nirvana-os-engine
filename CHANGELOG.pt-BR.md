@@ -8,6 +8,14 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### Um pedido que aponta para uma empresa chega ao Nirvana, no Antigravity também
+
+Achado numa execução no Antigravity: "faça este vídeo como a empresa Motion Design Genius e seus squads e clones" foi lido como referência de estilo. A empresa está instalada como `kinetic-motion-studio` (Motion Design Genius é o nome do pack), então o `nrv search` não achou correspondência exata, e o agente fez o vídeo sozinho depois de ler a skill de entrada cinco vezes. Foram três correções. O gatilho agora cobre um pedido que cita ou aponta para uma empresa, um squad ou um mind-clone pelo nome, pelo tipo, pelo nome do pack ou como modelo a seguir, nas descrições das skills `nirvana` e `harness`, na nota on-demand (v3, atualizada pelo `nrv init`) e no contexto de sessão. A skill de entrada e o harness dizem que buscar não é o trabalho e que um nome sem correspondência exata vai para o harness mesmo assim, que o resolve ou pergunta. E o instalador punha os hooks do Antigravity em `~/.antigravity/settings.json`, que o `agy` nunca lê, então nenhuma sessão do `agy` recebia o contexto do Nirvana: o hook agora vai para `~/.gemini/config/hooks.json`, como um hook nomeado `nirvana-os` de `PreInvocation` que injeta o contexto, e as entradas antigas são removidas.
+
+### Um projeto de escopo global não guarda cópia dos índices da biblioteca
+
+Cada projeto guardava cerca de 12 MB da biblioteca inteira do usuário (os registros de empresas, squads e clones, o digest de roteamento, os cards, o catálogo e os aliases), refeitos ali por uma reindexação completa que verificava todos os squads, mesmo com escopo `global` e sem entidades próprias. Esses índices agora vivem uma vez só no lugar global; um projeto mantém os seus apenas no escopo `project` ou `merge`, ou quando o `.env` dele ou o ambiente muda o lugar de uma biblioteca (`paths.js` `projectOwnsLibraryIndex`, usado pelo registro de clones, pelos indexadores, pelo doctor e pela troca de projeto do Glance).
+
 ### Parar uma execução a fecha
 
 Uma execução parada matando os processos mantinha a linha aberta no ledger e, quando a lease expirava, o supervisor a tomava por um crash e a retomava: a execução do Grok que o dono parou teria voltado sozinha. `nrv run-track stop <run-id|project>` encerra primeiro o dispatcher (todo dispatch agora grava o pid e a hora de início dele ao lado dos do worker), depois a árvore de processos do worker, e fecha a execução como "stopped by the user"; um pid que agora pertence a outro processo não é tocado. O protocolo do orquestrador manda parar execuções assim, nunca com `kill`. A rotina do supervisor que mata a árvore de processos foi para o ledger (`killProcessTree`) e é usada pelos dois.

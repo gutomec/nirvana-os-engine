@@ -9,7 +9,7 @@
  * Currently configures:
  *   - Claude Code   → ~/.claude/settings.json      (PreToolUse + PostToolUse)
  *   - Gemini-CLI    → ~/.gemini/settings.json       (BeforeTool + AfterTool + SessionStart)
- *   - Antigravity   → ~/.antigravity/settings.json  (BeforeTool + AfterTool + SessionStart)
+ *   - Antigravity   → ~/.gemini/config/hooks.json   (named hook "nirvana-os": PreInvocation context)
  *
  *   - Codex         → ~/.codex/hooks.json           (PreToolUse + PostToolUse, matcher Bash|apply_patch)
  *                     plus the trust record in ~/.codex/config.toml that lets a
@@ -62,6 +62,10 @@ interface AgentInstallSpec {
   name: string;                   // human label
   settingsPath: string;           // absolute path
   groups: Record<string, HookSpec[]>;  // hooks block keyed by event name
+  /** "named-hooks": the file's root maps a hook name to its events (agy's
+   *  hooks.json), and ours is the one entry under `hookName`. */
+  format?: "settings" | "named-hooks";
+  hookName?: string;
 }
 
 const AGENTS_TO_INSTALL: AgentInstallSpec[] = [
@@ -144,38 +148,20 @@ const AGENTS_TO_INSTALL: AgentInstallSpec[] = [
     },
   },
   {
-    // Antigravity 2.0 — the gemini-cli successor (same Google backend), so it
-    // carries the same settings.json hook schema. If a future version diverges,
-    // these extra keys are simply ignored — they never break the config.
+    // Antigravity's `agy` CLI reads named hooks from ~/.gemini/config/hooks.json
+    // (its own docs: builtin/skills/agy-customizations/docs/hooks.md).
+    // ~/.antigravity/settings.json, where these hooks used to be written, is
+    // not read by it, so a session there never got Nirvana's context. It has no
+    // SessionStart: the context goes in through PreInvocation as a transient
+    // message, re-sent before each model call. Its PostToolUse carries no tool
+    // name and its PreToolUse must answer with a permission decision, so the
+    // audit hooks are not wired here.
     name: "Antigravity",
-    settingsPath: path.join(os.homedir(), ".antigravity", "settings.json"),
+    settingsPath: path.join(os.homedir(), ".gemini", "config", "hooks.json"),
+    format: "named-hooks",
+    hookName: "nirvana-os",
     groups: {
-      BeforeTool: [{
-        matcher: "write_file|replace|run_shell_command",
-        hooks: [{
-          name: "nirvana-audit-pre",
-          type: "command",
-          command: `bun "${HOOK_SCRIPT}" pre antigravity-cli`,
-          timeout: 5000,
-        }],
-      }],
-      AfterTool: [{
-        matcher: "write_file|replace|run_shell_command",
-        hooks: [{
-          name: "nirvana-audit-post",
-          type: "command",
-          command: `bun "${HOOK_SCRIPT}" post antigravity-cli`,
-          timeout: 5000,
-        }],
-      }],
-      SessionStart: [{
-        hooks: [{
-          name: "nirvana-session-start",
-          type: "command",
-          command: `bun "${SESSION_START_SCRIPT}"`,
-          timeout: 5000,
-        }],
-      }],
+      PreInvocation: [{ type: "command", command: `bun "${SESSION_START_SCRIPT}" --agy`, timeout: 10 } as any],
     },
   },
 ];
@@ -196,6 +182,11 @@ function patchSettings(spec: AgentInstallSpec, mode: "install" | "uninstall"): {
   }
   if (!current || typeof current !== "object" || Array.isArray(current)) return { changed: false, before: current, after: current, raw, existed, error: "settings root must be a JSON object" };
   const before = JSON.parse(JSON.stringify(current || {}));
+  if (spec.format === "named-hooks") {
+    if (mode === "install") current[spec.hookName!] = spec.groups;
+    else delete current[spec.hookName!];
+    return { changed: JSON.stringify(before) !== JSON.stringify(current), before, after: current, raw, existed };
+  }
   if (current.hooks === undefined) current.hooks = {};
   if (!current.hooks || typeof current.hooks !== "object" || Array.isArray(current.hooks)) return { changed: false, before, after: before, raw, existed, error: "hooks must be a JSON object when present" };
 
@@ -733,6 +724,19 @@ inline, with no dispatch, no quality gate and no audit trail.
 
   // Per-agent
   console.log("\nAgents");
+  // Antigravity's hooks used to go to ~/.antigravity/settings.json, which the
+  // agy CLI does not read: take ours out of it.
+  const oldAntigravity: AgentInstallSpec = {
+    name: "Antigravity (old location)", settingsPath: path.join(os.homedir(), ".antigravity", "settings.json"),
+    groups: { BeforeTool: [], AfterTool: [], SessionStart: [] },
+  };
+  if (!check && !dryRun && fs.existsSync(oldAntigravity.settingsPath)) {
+    const old = patchSettings(oldAntigravity, "uninstall");
+    if (!old.error && old.changed) {
+      publishSettings(oldAntigravity.settingsPath, old.existed, old.raw, old.after);
+      console.log(`  ✓ removed Nirvana hooks from ${oldAntigravity.settingsPath} (Antigravity does not read it)`);
+    }
+  }
   let anyChange = false;
   let failures = false;
   let installedCount = 0;

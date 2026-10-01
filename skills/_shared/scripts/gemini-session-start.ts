@@ -60,9 +60,12 @@ export function sessionContext(cwd: string): string {
   ].join("\n");
   return [
     "Nirvana-OS is installed on this machine and stays out of the way: work as you",
-    "would without it. Use it only when the user's request names Nirvana, asks for",
-    "one of their businesses, squads or mind-clones, or asks for work on another",
-    "agent runtime; then load ~/.nirvana/skills/harness/SKILL.md and follow it.",
+    "would without it. Use it only when the user's request names Nirvana, names or",
+    "points to one of their businesses, squads or mind-clones (a pack name or a",
+    "model to follow included: \"como a empresa X e seus squads e clones\"), or asks",
+    "for work on another agent runtime. Then load ~/.nirvana/skills/harness/SKILL.md",
+    "and follow it, and do not build the deliverable yourself, even when a search",
+    "finds no exact match for the name.",
     ...safety,
   ].join("\n");
 }
@@ -134,6 +137,21 @@ function extractFirstUserPrompt(jsonlPath: string): string | null {
   return null;
 }
 
+/** Antigravity CLI (`agy`) has no SessionStart: a `PreInvocation` hook in
+ *  ~/.gemini/config/hooks.json runs before every model call and injects
+ *  context as a transient message, so it is re-sent each call. No audit event
+ *  here: it would fire on every call. */
+async function agyMain() {
+  const raw = await readStdin();
+  let payload: any = {};
+  try { payload = raw ? JSON.parse(raw) : {}; } catch { /* tolerate empty/malformed */ }
+  const cwd = (Array.isArray(payload.workspacePaths) && payload.workspacePaths[0]) || process.cwd();
+  try {
+    console.log(JSON.stringify({ injectSteps: [{ ephemeralMessage: sessionContext(cwd) }] }));
+  } catch { console.log("{}"); }
+  process.exit(0);
+}
+
 async function main() {
   const raw = await readStdin();
   let payload: any = {};
@@ -197,4 +215,4 @@ async function main() {
   process.exit(0);
 }
 
-if (import.meta.main) main().catch(() => process.exit(0));
+if (import.meta.main) (process.argv.includes("--agy") ? agyMain() : main()).catch(() => process.exit(0));

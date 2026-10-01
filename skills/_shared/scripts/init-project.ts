@@ -438,9 +438,9 @@ async function main() {
       refreshManagedBlock(dst, "invocation contract", ["<!-- nirvana-os:invocation-contract:v1 -->", "<!-- nirvana-os:invocation-contract:v2 -->"], INVOCATION_CONTRACT_MARKER, agentsTemplate);
     const refreshWritingContract = (dst: string) =>
       refreshManagedBlock(dst, "writing contract", ["<!-- nirvana-os:writing-contract:v1 -->"], WRITING_CONTRACT_MARKER, writingContractSnippet, "Gate flags = build fails. No auto-rewrite.");
-    const ON_DEMAND_MARKER = "<!-- nirvana-os:on-demand-contract:v2 -->";
+    const ON_DEMAND_MARKER = "<!-- nirvana-os:on-demand-contract:v3 -->";
     const INVOCATION_MARKERS = ["<!-- nirvana-os:invocation-contract:v1 -->", "<!-- nirvana-os:invocation-contract:v2 -->", INVOCATION_CONTRACT_MARKER];
-    const ON_DEMAND_MARKERS = ["<!-- nirvana-os:on-demand-contract:v1 -->", ON_DEMAND_MARKER];
+    const ON_DEMAND_MARKERS = ["<!-- nirvana-os:on-demand-contract:v1 -->", "<!-- nirvana-os:on-demand-contract:v2 -->", ON_DEMAND_MARKER];
 
     // How Nirvana behaves in THIS project:
     //
@@ -462,7 +462,7 @@ async function main() {
       // and the writing contract stay.
       for (const name of ["AGENTS.md", "CLAUDE.md", "GEMINI.md"]) {
         const dst = path.join(target, name);
-        refreshManagedBlock(dst, "on-demand contract", [...INVOCATION_MARKERS, ON_DEMAND_MARKERS[0]], ON_DEMAND_MARKER, onDemandSnippet);
+        refreshManagedBlock(dst, "on-demand contract", [...INVOCATION_MARKERS, ...ON_DEMAND_MARKERS.slice(0, -1)], ON_DEMAND_MARKER, onDemandSnippet);
         appendWithMarker(onDemandSnippet, dst, ON_DEMAND_MARKER, "on-demand contract");
       }
     } else if (fs.existsSync(agentsTemplate)) {

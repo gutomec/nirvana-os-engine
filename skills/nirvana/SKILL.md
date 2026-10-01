@@ -1,6 +1,6 @@
 ---
 name: nirvana
-description: "Nirvana-OS entry point: the user's own system of businesses (empresas), squads and mind-clones. Use it ONLY when the request calls for it: it names Nirvana or nirvana-os ('use o nirvana-os', 'via nirvana', 'pelo nirvana', 'manda o nirvana'); asks for one of the user's businesses, squads or mind-clones, by name or by kind ('use minhas empresas/squads', 'o squad de copy', 'com a voz do Hormozi'); asks for the work, or a part of it, to run on another agent runtime ('use o codex para revisar'); asks what they have ('quais são minhas empresas', 'quais squads eu tenho', 'o que o nirvana pode fazer'); or asks to create, validate or migrate a business or a squad. Otherwise do not use it: work as you normally would. Discovery runs the `nrv` CLI, production goes to the harness orchestrator, lifecycle to the protocols; a missing engine is installed first."
+description: "Nirvana-OS entry point: the user's own system of businesses (empresas), squads and mind-clones. Use it ONLY when the request calls for it: it names Nirvana or nirvana-os ('use o nirvana-os', 'via nirvana', 'pelo nirvana', 'manda o nirvana'); names or points to one of the user's businesses, squads or mind-clones, by name, by kind, by pack name or as the model to follow ('use minhas empresas/squads', 'o squad de copy', 'com a voz do Hormozi', 'como a empresa X e seus squads e clones'); asks for the work, or a part of it, to run on another agent runtime ('use o codex para revisar'); asks what they have ('quais são minhas empresas', 'quais squads eu tenho', 'o que o nirvana pode fazer'); or asks to create, validate or migrate a business or a squad. Otherwise do not use it: work as you normally would. Discovery runs the `nrv` CLI, production goes to the harness orchestrator, lifecycle to the protocols; a missing engine is installed first."
 compatibility: "Needs Bun and the `nrv` CLI. If they are absent it installs them on first use with the user's go-ahead: Bun in user space, the engine into ~/.nirvana, `nrv` into ~/.local/bin. Runtime-agnostic, no dependency on any specific agent CLI. Network is required for that first install only; everything after it runs locally."
 tools: [Bash, Read]
 license: SUL-1.0
@@ -36,7 +36,7 @@ Found: go to section 2. Not found: install it, then come back.
 **What the install changes.** Bun in user space (`~/.bun`) if it is missing; the
 engine in `~/.nirvana`; the `nrv` launcher in `~/.local/bin` plus one PATH line
 in the user's shell rc; audit hooks in the settings of the agent runtimes it
-finds (`~/.claude`, `~/.gemini`, `~/.codex`, `~/.antigravity`); the empty content
+finds (`~/.claude`, `~/.gemini`, `~/.codex`); the empty content
 roots `~/squads`, `~/businesses`, `~/businesses/_library/dna`. Network once, no
 project code touched, no sudo, idempotent, reversible with `nrv uninstall --engine`.
 
@@ -89,7 +89,8 @@ say exactly that and stop. A Nirvana answer with no engine behind it is fiction.
 | anything else | `nrv --help` |
 
 Run it with your shell tool and summarize the real output. Add `--format=json`
-only when you need to parse it.
+only when you need to parse it. Discovery answers a question about the library;
+it never stands in for a request to make something (section 3).
 
 ## 3. Production: hand the brief to the harness
 
@@ -99,6 +100,14 @@ skill. It surveys the three registries, can mobilize several businesses and
 squads in parallel, runs the quality gate and verifies the result. **Do not
 produce the artifact yourself.** Pass the brief verbatim; the harness handles
 amplification and clarifying questions.
+
+A request that names or points to one of the user's businesses, squads or
+mind-clones is production too, whatever words it uses for them: a slug, a kind,
+a pack or product name, or the model to follow ("como a empresa Motion Design
+Genius e seus squads e clones"). Searching the library is not the work. When
+`nrv search` or `nrv find` shows no exact match for the name the user used,
+hand the brief over anyway: the harness reads the library and resolves the
+name, or asks. Never search and then build the deliverable yourself.
 
 The harness is not registered as a skill of its own: it lives inside the
 engine, and this file is the door to it.

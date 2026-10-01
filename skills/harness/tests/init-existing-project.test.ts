@@ -109,8 +109,9 @@ describe("on-demand mode leaves the project's behavior alone", () => {
     runInitWith(dir, "--orchestrators=on-demand");
     const agents = fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8");
     expect(agents).toContain("MY LINE");
-    expect(agents).toContain("nirvana-os:on-demand-contract:v2");
-    expect(agents).toContain("Use it only when the user's request");
+    expect(agents).toContain("nirvana-os:on-demand-contract:v3");
+    expect(agents).toContain("The request calls for it when it");
+    expect(agents).toContain("as the model to follow");
     expect(agents).not.toContain("nirvana-os:invocation-contract:v3");
     expect(agents).not.toContain("nirvana-os:writing-contract:v2");
     expect(agents).not.toMatch(/invoke the .?harness.? skill for any concrete artifact/i);
@@ -120,7 +121,7 @@ describe("on-demand mode leaves the project's behavior alone", () => {
     const dir = project("od-created", { "AGENTS.md": "# Mine\n" });
     runInitWith(dir, "--orchestrators=on-demand");
     const claude = fs.readFileSync(path.join(dir, "CLAUDE.md"), "utf8");
-    expect(claude).toContain("nirvana-os:on-demand-contract:v2");
+    expect(claude).toContain("nirvana-os:on-demand-contract:v3");
     expect(claude).not.toContain("nirvana-os:invocation-contract:v3");
   }, INIT_TIMEOUT_MS);
 
@@ -143,7 +144,7 @@ describe("on-demand mode leaves the project's behavior alone", () => {
     const dir = project("od-default", { "CLAUDE.md": "# Mine\n" });
     runInit(dir);
     const claude = fs.readFileSync(path.join(dir, "CLAUDE.md"), "utf8");
-    expect(claude).toContain("nirvana-os:on-demand-contract:v2");
+    expect(claude).toContain("nirvana-os:on-demand-contract:v3");
     expect(claude).not.toContain("nirvana-os:invocation-contract:v3");
     const manifest = JSON.parse(fs.readFileSync(path.join(dir, ".nirvana", "project.yaml"), "utf8"));
     expect(manifest.orchestration_mode).toBe("on-demand");
@@ -159,7 +160,7 @@ describe("on-demand mode leaves the project's behavior alone", () => {
     expect(`${r.stdout}`).toContain("orchestration: always → on-demand");
     let c = fs.readFileSync(path.join(dir, "CLAUDE.md"), "utf8");
     expect(c).toContain("KEEP-ABOVE");
-    expect(c).toContain("nirvana-os:on-demand-contract:v2");
+    expect(c).toContain("nirvana-os:on-demand-contract:v3");
     expect(c).not.toContain("nirvana-os:invocation-contract:v3");
     expect(c.match(/nirvana-os:on-demand-contract/g)!.length).toBe(1);
     expect(manifest().orchestration_mode).toBe("on-demand");
@@ -173,14 +174,14 @@ describe("on-demand mode leaves the project's behavior alone", () => {
     expect(manifest().orchestration_mode).toBe("always");
   }, INIT_TIMEOUT_MS);
 
-  test("an on-demand note from an earlier engine is brought to the current text", () => {
-    const v1 = ["# Mine", "KEEP", "", "<!-- nirvana-os:on-demand-contract:v1 -->", "## Nirvana-OS (on demand)", "OLD-NOTE-MUST-GO", ""].join("\n");
-    const dir = project("od-v1", { "AGENTS.md": v1 });
+  test.each(["v1", "v2"])("an on-demand note %s from an earlier engine is brought to the current text", (version) => {
+    const old = ["# Mine", "KEEP", "", `<!-- nirvana-os:on-demand-contract:${version} -->`, "## Nirvana-OS (on demand)", "OLD-NOTE-MUST-GO", ""].join("\n");
+    const dir = project(`od-${version}`, { "AGENTS.md": old });
     runInit(dir);
     const c = fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8");
     expect(c).toContain("KEEP");
     expect(c).not.toContain("OLD-NOTE-MUST-GO");
-    expect(c.match(/nirvana-os:on-demand-contract:v2/g)!.length).toBe(1);
+    expect(c.match(/nirvana-os:on-demand-contract:v3/g)!.length).toBe(1);
   }, INIT_TIMEOUT_MS);
 });
 

@@ -8,6 +8,14 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### A request that points to a business reaches Nirvana, in Antigravity too
+
+Found on an Antigravity run: "make this video like the business Motion Design Genius and its squads and clones" was read as a style reference. The business is installed as `kinetic-motion-studio` (Motion Design Genius is its pack's name), so `nrv search` found no exact match, and the agent built the video itself after reading the entry skill five times. Three fixes. The trigger now covers a request that names or points to a business, squad or mind-clone by name, by kind, by pack name or as the model to follow, in the `nirvana` and `harness` skill descriptions, the on-demand note (v3, refreshed by `nrv init`) and the session context. The entry skill and the harness say that searching is not the work and that a name with no exact match is still handed to the harness, which resolves it or asks. And the installer wired Antigravity's hooks into `~/.antigravity/settings.json`, which `agy` never reads, so no `agy` session ever received Nirvana's context: the hook now goes into `~/.gemini/config/hooks.json` as a named `nirvana-os` `PreInvocation` hook that injects the context, and the old entries are removed.
+
+### A global-scope project keeps no copy of the library's indexes
+
+Every project held about 12 MB of the user's whole library (the business, squad and clone registries, the routing digest, cards, catalog and aliases), rebuilt there by a full reindex that verified every squad, even when its scope was `global` and it had no entities of its own. Those indexes now live once in the global location; a project keeps its own only in `project` or `merge` scope, or when its `.env` or the environment moves a library location (`paths.js` `projectOwnsLibraryIndex`, shared by the clone registry, the indexers, doctor and Glance's project switch).
+
 ### Stopping a run closes it
 
 A run stopped by killing its processes kept its ledger row open, and once the lease expired the supervisor took it for a crash and resumed it: the Grok run its owner stopped would have come back by itself. `nrv run-track stop <run-id|project>` ends the dispatcher first (every dispatch now records its pid and start time beside the worker's), then the worker's process tree, and closes the run as "stopped by the user"; a pid now held by another process is left alone. The orchestrator protocol says to stop runs this way and never with `kill`. The tree kill the supervisor used moved to the ledger (`killProcessTree`), shared by both.

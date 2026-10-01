@@ -17,7 +17,7 @@
 | `min_version` | `2.0+` (Antigravity CLI), `google-genai` SDK `>=0.5` |
 | `default_model` | inherited from the runtime. The engine NEVER sets a model; the user's runtime config decides. Pass a model only when the user explicitly asks. |
 | `tested_against` | Antigravity 2.0 against Gemini 3 Pro |
-| `config_paths` | `~/.antigravity/settings.json`, `<project>/AGENTS.md`, `~/AGENTS.md` |
+| `config_paths` | `~/.gemini/config/hooks.json` (named hooks; Nirvana's is `nirvana-os`, a `PreInvocation` that injects the session context), `<project>/AGENTS.md`, `~/AGENTS.md` |
 | `skills_root` | `~/.gemini/config/skills/<name>/` (read by agy, by the CLI and by the IDE; the CLI also reads `~/.gemini/antigravity-cli/skills/` and `<workspace>/.agents/skills/`). `~/.antigravity/skills` is not read by any of them |
 | `agents_root` | `~/.antigravity/agents/<name>.md` or bundled in `<project>/.antigravity/agents/` |
 | `memory_root` | `<project>/AGENTS.md` (project), `~/.antigravity/memory/` (custom) |
