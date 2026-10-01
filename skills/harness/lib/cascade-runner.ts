@@ -13,7 +13,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { runHeadless, runtimeAvailable, type Runtime, type RunHeadlessOpts, type RunHeadlessResult } from "./host-agent-driver.ts";
 import { classify } from "./quota-detector.ts";
-import { markCooldown, isInCooldown, getCooldown } from "./cooldown-registry.ts";
+import { markCooldown, isInCooldown, getCooldown, clearCooldown } from "./cooldown-registry.ts";
 import { loadCascade, nextAfter, explain as explainCascade, entryKey, resolveCascadeRoot, type CascadeEntry } from "./cascade.ts";
 import { buildHandoffPrompt } from "./handoff-prompt.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
@@ -27,6 +27,19 @@ import { stamp } from "../../_shared/lib/audit-provenance.ts";
  * enough that the next run picks it up again once the user fixes the credential.
  */
 const AUTH_COOLDOWN_SEC = 15 * 60;
+
+/** A missing CLI binary is fixed by installing it, which can happen at any
+ *  moment. It used to ground the runtime for 24 h. */
+const MISSING_BINARY_COOLDOWN_SEC = 10 * 60;
+
+/** Drops a cooldown that was written for a missing binary (reason text below)
+ *  once the binary is back on PATH; quota and auth cooldowns are left alone. */
+function clearMissingBinaryCooldown(projectRoot: string, runtime: Runtime): void {
+  try {
+    const cd = getCooldown(projectRoot, runtime);
+    if (cd && /CLI binary for .* not on PATH/.test(cd.reason ?? "")) clearCooldown(projectRoot, runtime);
+  } catch { /* non-fatal */ }
+}
 
 function emitAudit(payload: Record<string, any>, projectRoot: string): void {
   try {
@@ -49,6 +62,10 @@ export interface CascadeRunArgs extends RunHeadlessOpts {
   projectId?: string | null;
   /** Hard cap on number of handoffs before giving up (default: cascade length). */
   maxHandoffs?: number;
+  /** The user chose `runtime` themselves (--runtime/--exec flag, or a mention in
+   *  the brief). A pinned run never hands off to another runtime, quota failure
+   *  included: it ends with the failure, and the user decides what comes next. */
+  pinned?: boolean;
 }
 
 export interface CascadeRunResult extends RunHeadlessResult {
@@ -79,47 +96,30 @@ export function runWithCascade(args: CascadeRunArgs): CascadeRunResult {
     return { ...r, handoffs: [], finalRuntime: args.runtime };
   }
 
-  // Pick the starting entry. Preference order:
-  //   1. The cascade entry whose runtime matches the caller's request AND is
-  //      currently usable (runtime not in cooldown, per-entry budget not spent).
-  //   2. The first cascade entry that is usable.
-  //   3. Pass-through to runHeadless (everything blocked — let the user see).
-  const usable = (e: CascadeEntry) =>
-    !isInCooldown(args.projectRoot, e.runtime) &&
-    !isBudgetExhausted(args.projectRoot, entryKey(e), e.budgetUsd);
-  let currentEntry: CascadeEntry | undefined = cascade.find(e => e.runtime === args.runtime && usable(e))
-                                            ?? cascade.find(usable);
-  if (!currentEntry) {
+  // The run STARTS on args.runtime, always: the caller already decided it (the
+  // session the user is working in, or what they asked for). LLM_CASCADE is a
+  // failover list, not a starting-runtime selector: it may take over only AFTER
+  // this runtime fails with a classified quota/auth error. An entry in cooldown
+  // or over its budget does not move the start either; the cooldown records a
+  // past failure, and the run itself is the cheapest way to learn whether it is
+  // still true (a new failure re-classifies and, unless pinned, hands off).
+  const startEntries = cascade.filter(e => e.runtime === args.runtime);
+  let currentEntry: CascadeEntry = startEntries.find(e =>
+      !isInCooldown(args.projectRoot, e.runtime) &&
+      !isBudgetExhausted(args.projectRoot, entryKey(e), e.budgetUsd))
+    ?? startEntries[0]
+    ?? { runtime: args.runtime, model: args.model ?? null, providerHint: args.providerHint ?? null, budgetUsd: null };
+  if (startEntries.length && isInCooldown(args.projectRoot, args.runtime)) {
     emitAudit({
-      event: "cascade_no_entry_available", project_id: args.projectId ?? null,
-      cascade_explained: explainCascade(args.projectRoot, cascade),
-    }, args.projectRoot);
-    return { ...runHeadless(args), handoffs, finalRuntime: args.runtime };
-  }
-  if (currentEntry.runtime !== args.runtime) {
-    // Diagnose WHY the requested runtime was skipped — budget? cooldown? not in cascade?
-    // Makes audit logs informative when debugging multi-step team runs.
-    let reason = `requested ${args.runtime} unavailable at start`;
-    const wantedEntries = cascade.filter(e => e.runtime === args.runtime);
-    if (wantedEntries.length) {
-      const reasons: string[] = [];
-      for (const e of wantedEntries) {
-        if (isInCooldown(args.projectRoot, e.runtime)) reasons.push(`${entryKey(e)}: cooldown`);
-        else if (isBudgetExhausted(args.projectRoot, entryKey(e), e.budgetUsd)) reasons.push(`${entryKey(e)}: budget exhausted ($${getSpend(args.projectRoot, entryKey(e)).toFixed(4)} of $${e.budgetUsd})`);
-      }
-      if (reasons.length) reason = `${args.runtime} unavailable — ${reasons.join("; ")}`;
-    } else {
-      reason = `${args.runtime} not in LLM_CASCADE`;
-    }
-    handoffs.push({ from: args.runtime, to: currentEntry.runtime, reason });
-    emitAudit({
-      event: "runtime_handoff", project_id: args.projectId ?? null,
-      from: args.runtime, to: currentEntry.runtime, model: currentEntry.model,
-      provider: currentEntry.providerHint, reason,
+      event: "x_cascade_start_kept_on_requested", project_id: args.projectId ?? null,
+      runtime: args.runtime, reason: "requested runtime is in cooldown; running it anyway (no silent vendor switch)",
       cascade_explained: explainCascade(args.projectRoot, cascade),
     }, args.projectRoot);
   }
+  const canHandOff = !args.pinned;
   let chosen: Runtime = currentEntry.runtime;
+  // The entry's model wins when the cascade pins one for this runtime; otherwise
+  // the caller's model, which was meant for exactly this runtime.
   let chosenModel: string | null = currentEntry.model ?? args.model ?? null;
   let chosenProvider: string | null = currentEntry.providerHint ?? args.providerHint ?? null;
 
@@ -142,10 +142,21 @@ export function runWithCascade(args: CascadeRunArgs): CascadeRunResult {
     attempt++;
 
     if (!runtimeAvailable(chosen)) {
-      // CLI binary missing — treat as install failure, cooldown briefly, move on.
-      markCooldown(args.projectRoot, chosen, 24 * 3600, `CLI binary for ${chosen} not on PATH`, "unknown");
       emitAudit({ event: "runtime_unavailable", project_id: args.projectId ?? null, runtime: chosen }, args.projectRoot);
-      const nxt = nextAfter(args.projectRoot, cascade, chosen, entryKey(currentEntry!));
+      // The user's own runtime is not installed: say so. Moving the work to
+      // another vendor because a binary is missing is a silent switch.
+      if (chosen === args.runtime && handoffs.length === 0) {
+        return {
+          ok: false, runtime: chosen, sessionId: null, result: "", costUsd: null, exitCode: 127, stderr: "", durationMs: 0,
+          error: `runtime '${chosen}' is not installed on this machine (CLI binary not on PATH); not moving the work to another runtime.`,
+          handoffs, finalRuntime: chosen,
+        };
+      }
+      // A handoff target that is not installed: skip it. Short cooldown, because
+      // the user may install it any minute; it lapses (or is cleared by the
+      // next successful probe below) instead of blocking the runtime for a day.
+      markCooldown(args.projectRoot, chosen, MISSING_BINARY_COOLDOWN_SEC, `CLI binary for ${chosen} not on PATH`, "unknown");
+      const nxt = nextAfter(args.projectRoot, cascade, chosen, entryKey(currentEntry));
       if (!nxt) break;
       handoffs.push({ from: chosen, to: nxt.runtime, reason: `${chosen} CLI not installed` });
       currentEntry = nxt;
@@ -156,9 +167,12 @@ export function runWithCascade(args: CascadeRunArgs): CascadeRunResult {
         ...currentOpts, runtime: chosen,
         model: chosenModel ?? undefined,
         providerHint: chosenProvider ?? undefined,
+        sessionId: undefined,
       };
       continue;
     }
+    // Found on PATH: a cooldown written because it was missing is stale.
+    clearMissingBinaryCooldown(args.projectRoot, chosen);
 
     const r = runHeadless(currentOpts);
     const verdict = classify(chosen, r);
@@ -167,13 +181,13 @@ export function runWithCascade(args: CascadeRunArgs): CascadeRunResult {
       // Estimate spend and accumulate. Null cost = unknown → no enforcement.
       const cost = estimateCostUsd(chosen, chosenModel, r);
       if (cost != null) {
-        const key = entryKey(currentEntry!);
+        const key = entryKey(currentEntry);
         addSpend(args.projectRoot, key, cost);
         const totalSpend = getSpend(args.projectRoot, key);
         emitAudit({
           event: "dispatch_cost_recorded", project_id: args.projectId ?? null,
           entry_key: key, cost_usd: cost, total_spend_usd: totalSpend,
-          budget_usd: currentEntry!.budgetUsd, source: chosen === "claude-code" && typeof r.costUsd === "number" ? "cli_native" : "estimate",
+          budget_usd: currentEntry.budgetUsd, source: chosen === "claude-code" && typeof r.costUsd === "number" ? "cli_native" : "estimate",
         }, args.projectRoot);
       }
       return { ...r, handoffs, finalRuntime: chosen };
@@ -223,7 +237,14 @@ export function runWithCascade(args: CascadeRunArgs): CascadeRunResult {
       }, args.projectRoot);
     }
 
-    const next = nextAfter(args.projectRoot, cascade, chosen, entryKey(currentEntry!));
+    if (!canHandOff) {
+      emitAudit({
+        event: "x_runtime_handoff_refused", project_id: args.projectId ?? null,
+        runtime: chosen, reason: "the user chose this runtime; no handoff to another one",
+      }, args.projectRoot);
+      return { ...r, handoffs, finalRuntime: chosen };
+    }
+    const next = nextAfter(args.projectRoot, cascade, chosen, entryKey(currentEntry));
     if (!next) {
       emitAudit({
         event: "cascade_exhausted", project_id: args.projectId ?? null,

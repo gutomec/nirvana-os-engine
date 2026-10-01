@@ -32,7 +32,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { createRequire } from "node:module";
-import type { RunHeadlessOpts, RunHeadlessResult, Runtime } from "./host-agent-driver.ts";
+import { contextWindowSetting, headlessClaudeEnv, type RunHeadlessOpts, type RunHeadlessResult, type Runtime } from "./host-agent-driver.ts"; // cycle is safe: used at call time only
+import { childDepth, DEPTH_ENV, ROLE_ENV } from "./dispatch-depth.ts";
 import { orcaJson, orcaFire, orcaWorkersActive, orcaWorkspaceSelector } from "./orca.ts";
 import { isEffortLevel, resolvePinnedEffort, resolveSystemModel } from "./system-model.ts";
 import { codexConfigPath } from "./codex-hooks.ts";
@@ -147,7 +148,7 @@ export interface OrcaWorkerHooks {
  * (yolo false) drops them, and claude takes `--permission-mode acceptEdits`
  * like its headless twin. Null for a runtime Orca has no agent id for.
  */
-export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" | "model" | "effort" | "addDirs" | "claudeSettings">): string[] | null {
+export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" | "model" | "effort" | "addDirs" | "claudeSettings"> & Partial<Pick<RunHeadlessOpts, "allowSubagents">>): string[] | null {
   if (!ORCA_AGENT_ID[opts.runtime]) return null;
   const yolo = opts.yolo !== false;
   // The caller's value, else the user's pin, else nothing — a bare CLI uses the
@@ -172,6 +173,10 @@ export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" |
       if (effort) a.push("--effort", effort);
       // The run's deny rules (run-workspace.ts): the same fence as headless.
       if (opts.claudeSettings) a.push("--settings", opts.claudeSettings);
+      // The headless runner's rule: a dispatched worker does not open its own
+      // agents (the runtime's subagent tool multiplies inside one child and
+      // never passes through the engine's depth counter).
+      if (!opts.allowSubagents) a.push("--disallowedTools", "Task", "Agent");
       for (const d of dirs) a.push("--add-dir", d);
       return a;
     }
@@ -179,6 +184,9 @@ export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" |
       const a = ["codex", ...(yolo ? ["--dangerously-bypass-approvals-and-sandbox"] : [])];
       if (model) a.push("-m", model);
       if (effort) a.push("-c", `model_reasoning_effort=${JSON.stringify(effort)}`);
+      // The context ceiling, as the headless runner passes it.
+      const window = contextWindowSetting();
+      if (window > 0) a.push("-c", `model_auto_compact_token_limit=${window}`);
       for (const d of dirs) a.push("--add-dir", d);
       return a;
     }
@@ -206,13 +214,29 @@ export function forwardedEnv(env: NodeJS.ProcessEnv = process.env, asRuntime?: s
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(env)) {
     if (v === undefined) continue;
-    if (/^NIRVANA_/.test(k) || k === "HARNESS_LOGS_DIR" || k === "MAESTRO_LOGS_DIR") out[k] = v;
+    if (/^NIRVANA_/.test(k) || k === "HARNESS_LOGS_DIR" || k === "MAESTRO_LOGS_DIR") {
+      // The command line is visible (Orca titles and shell history): a variable
+      // that carries a secret does not travel on it. NIRVANA_AUDIT_KEY is a
+      // PATH to the key file, not the key, so it stays.
+      if (/(?:SECRET|TOKEN|PASSWORD|API_?KEY)/i.test(k)) continue;
+      out[k] = v;
+    }
   }
   // The worker IS `asRuntime`, whatever this process is. Forwarding the
   // parent's own `NIRVANA_HOST_RUNTIME` would tell the worker it is the vendor
   // that launched it, and any `nrv` it runs would route back out of the
   // terminal the user is watching.
   if (asRuntime) out.NIRVANA_HOST_RUNTIME = asRuntime;
+  return out;
+}
+
+/** What the worker is, for the role and depth rules its own dispatches answer
+ *  to. Inheriting the parent's would make a squad worker look like the business
+ *  that started it: unrestricted, and one level shallower than it is. The
+ *  headless runner stamps the same two values on its child (driverSpawnSync). */
+export function workerRoleEnv(opts: Pick<RunHeadlessOpts, "dispatchRole">, env: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  const out: Record<string, string> = { [DEPTH_ENV]: String(childDepth(env)) };
+  if (opts.dispatchRole) out[ROLE_ENV] = opts.dispatchRole;
   return out;
 }
 
@@ -290,6 +314,14 @@ export function runOrcaWorker(opts: RunHeadlessOpts, hooks: OrcaWorkerHooks = {}
   if (!active()) return null;
   const argv = interactiveArgv(opts);
   if (!argv) return null;
+  // An interactive worker cannot honour an answer-only call (it needs its tools
+  // to report worker_done) nor an explicit tool allowlist. Running those as a
+  // worker would hand a decision step an unrestricted agent, so the headless
+  // child, which can say `--tools ""`, keeps them.
+  if (opts.noTools || opts.allowedTools !== undefined) {
+    emit("x_orca_transport_fallback", { stage: "restrictions", reason: "answer-only or tool-restricted call cannot be honoured by an interactive worker", runtime: opts.runtime, label: opts.label ?? null }, opts.cwd);
+    return null;
+  }
   const call = hooks.orcaJsonImpl ?? orcaJson;
   const fire = hooks.orcaFireImpl ?? orcaFire;
   const now = hooks.now ?? Date.now;
@@ -331,7 +363,17 @@ export function runOrcaWorker(opts: RunHeadlessOpts, hooks: OrcaWorkerHooks = {}
   const trusted = preTrustWorkspace(opts.runtime, cwd);
   // A confined worker carries its run folder, as the headless child does
   // (driverSpawnSync), so what it dispatches nests inside its run.
-  const workerEnv = forwardedEnv(process.env, opts.runtime);
+  const workerEnv = { ...forwardedEnv(process.env, opts.runtime), ...workerRoleEnv(opts) };
+  if (opts.runtime === "claude-code") {
+    // Same environment the headless claude child gets: no background tasks that
+    // die with the session, and the configured context ceiling. A value the
+    // user set in their own environment is kept.
+    const seeded: Record<string, string | undefined> = {
+      CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS,
+      CLAUDE_CODE_AUTO_COMPACT_WINDOW: process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW,
+    };
+    for (const [k, v] of Object.entries(headlessClaudeEnv(seeded))) if (v !== undefined) workerEnv[k] = v;
+  }
   if (opts.workspace) workerEnv[RUN_WORKSPACE_ENV] = cwd;
   const command = workerCommand(argv, cwd, workerEnv);
   // The terminal starts in the run folder (cwd); the worktree Orca files it
@@ -375,9 +417,10 @@ export function runOrcaWorker(opts: RunHeadlessOpts, hooks: OrcaWorkerHooks = {}
   let filesModified: string[] = [];
   let error: string | undefined;
   let pendingAck: string | null = null;
+  let timedOut = false;
   for (;;) {
     const remaining = deadline === null ? WAIT_WINDOW_MS : Math.min(WAIT_WINDOW_MS, deadline - now());
-    if (remaining <= 0) { error = `orca worker did not report within ${Math.round((opts.timeoutMs ?? 0) / 60_000)} min`; outcome = "failed"; break; }
+    if (remaining <= 0) { error = `orca worker did not report within ${Math.round((opts.timeoutMs ?? 0) / 60_000)} min`; outcome = "failed"; timedOut = true; break; }
     const args = ["orchestration", "check", "--run", runId, "--wait", "--types", "worker_done,escalation,question", "--timeout-ms", String(remaining)];
     if (pendingAck) args.push("--ack", pendingAck);
     const batch = call<any>(args, { timeoutMs: remaining + 30_000 });
@@ -435,9 +478,17 @@ export function runOrcaWorker(opts: RunHeadlessOpts, hooks: OrcaWorkerHooks = {}
   emit("x_orca_worker_done", { run_id: runId, task_id: taskId, dispatch_id: dispatchId, outcome, duration_ms: durationMs, files_modified: filesModified, report_path: reportPath, transcript: transcriptFile, error: error ?? null }, cwd);
 
   // 9. A finished worker's tab is closed; a failed one stays for inspection.
-  const keep = process.env.NIRVANA_ORCA_KEEP_WORKERS === "1" || !ok;
-  if (keep) warnings.push(`orca: terminal ${handle} left open${ok ? " (NIRVANA_ORCA_KEEP_WORKERS=1)" : " for inspection"}`);
-  else closeTerminal();
+  // A worker that timed out is closed whatever else is set: left open, the
+  // agent keeps running and spending after the engine has given up on it. The
+  // transcript was archived above, so nothing is lost by closing.
+  if (timedOut) {
+    closeTerminal();
+    warnings.push(`orca: terminal ${handle} closed after the timeout (transcript kept)`);
+  } else if (process.env.NIRVANA_ORCA_KEEP_WORKERS === "1" || !ok) {
+    warnings.push(`orca: terminal ${handle} left open${ok ? " (NIRVANA_ORCA_KEEP_WORKERS=1)" : " for inspection"}`);
+  } else {
+    closeTerminal();
+  }
 
   const result = [subject && `${subject}`, body, reportPath && `Report: ${reportPath}`].filter(Boolean).join("\n");
   return {

@@ -26,9 +26,9 @@
 //   · on every runtime, one line appended to the worker's directive naming the
 //     run folder and saying the folders beside it are not its input. For the
 //     runtimes with no path rules that line is the whole fence;
-//   · the run folder in its environment (RUN_WORKSPACE_ENV), so a dispatch the
-//     worker starts itself nests inside this run (nestedOutputsBase) instead of
-//     becoming a sibling the next seat could not read.
+//   · the run folder in its environment (RUN_WORKSPACE_ENV), so a dispatch
+//     started from inside this run (only an orchestrator may start one) nests
+//     inside it (nestedOutputsBase) instead of becoming a sibling.
 //
 // Moving the cwd has one cost that is paid back here: Claude Code loads a
 // project's `.claude/settings.json` from the cwd only, with no parent fallback,
@@ -45,8 +45,8 @@ import { canonical, findProjectRoot, isInvalidProjectRoot, outputsBaseDir, resol
 export const FENCE_FILE_PREFIX = "nrv-fence-";
 
 /** The run folder a confined worker runs in, exported to its environment. A
- *  dispatch the worker starts itself (a seat's `nrv dispatch --squad …`) reads
- *  it and nests its scaffold inside that run. */
+ *  dispatch started from inside that run reads it and nests its scaffold
+ *  inside the run. */
 export const RUN_WORKSPACE_ENV = "NIRVANA_RUN_WORKSPACE";
 
 /**
@@ -74,11 +74,9 @@ export function runFolderOf(dir: string | null | undefined, projectRoot?: string
 
 /**
  * Where a dispatch started from inside a run puts its scaffold:
- * `<run folder>/dispatches`. A seat that dispatches a squad integrates what the
- * squad delivers, and so do the seats after it and the final synthesis; as a
- * run of its own under the outputs base the squad's work would sit BESIDE the
- * seat's run, fenced off from every later seat. Nested, `runFolderOf` maps it
- * to the run that asked for it. Null for a dispatch from the operator, and for
+ * `<run folder>/dispatches`. As a run of its own under the outputs base, that
+ * work would sit BESIDE the run that asked for it, fenced off from it. Nested,
+ * `runFolderOf` maps it to the run that asked for it. Null for a dispatch from the operator, and for
  * a variable that does not name a run folder of this project or of the store.
  */
 export function nestedOutputsBase(projectRoot: string | null, env: Record<string, string | undefined> = process.env): string | null {
@@ -164,12 +162,16 @@ export function projectDenyRules(projectRoot: string, platform: NodeJS.Platform 
 /** Is this run folder named in the instruction? A brief may point at an earlier
  *  run on purpose ("build on the analysis in outputs/<id>"); the user is in
  *  command there, and only incidental reach is fenced. Matched by absolute path
- *  or by `outputs/<id>`, never by a bare id that could be an ordinary word. */
-export function namedIn(text: string, runFolder: string): boolean {
+ *  or by `outputs/<id>`, never by a bare id that could be an ordinary word.
+ *  On Windows the match ignores case and treats `/` and `\\` alike, as the file
+ *  system does. */
+export function namedIn(text: string, runFolder: string, platform: NodeJS.Platform = process.platform): boolean {
   if (!text) return false;
+  const fold = (v: string) => (platform === "win32" ? v.replace(/\\/g, "/").toLowerCase() : v);
+  const hay = fold(text);
   const name = path.basename(runFolder);
   const base = path.basename(path.dirname(runFolder));
-  return text.includes(runFolder) || text.includes(`${base}/${name}`) || text.includes(`${base}\\${name}`);
+  return hay.includes(fold(runFolder)) || hay.includes(fold(`${base}/${name}`)) || text.includes(`${base}\\${name}`);
 }
 
 /** The settings a confined claude-code worker runs with, or null when there is
@@ -177,7 +179,7 @@ export function namedIn(text: string, runFolder: string): boolean {
  *  names stays readable. */
 export function fenceSettings(workspace: string, projectRoot: string | null, platform: NodeJS.Platform = process.platform, instruction = ""): { permissions: { deny: string[] } } | null {
   const deny = [
-    ...siblingRunFolders(workspace).filter((dir) => !namedIn(instruction, dir)).flatMap((dir) => denyFolder(dir, platform)),
+    ...siblingRunFolders(workspace).filter((dir) => !namedIn(instruction, dir, platform)).flatMap((dir) => denyFolder(dir, platform)),
     ...(projectRoot ? projectDenyRules(projectRoot, platform) : []),
   ];
   return deny.length ? { permissions: { deny } } : null;
@@ -185,7 +187,7 @@ export function fenceSettings(workspace: string, projectRoot: string | null, pla
 
 /** The line every confined worker reads, on every runtime. */
 export function workspaceDirective(workspace: string): string {
-  return `YOUR RUN FOLDER is ${workspace}. What you dispatch from here lands inside it and is yours to use. The folders beside it, in ${path.dirname(workspace)}, are other runs' work and not your input: do not list, read, copy or edit them, unless your instruction names one by its path.`;
+  return `YOUR RUN FOLDER is ${workspace}. Everything you write belongs under the output folder your prompt names. The folders beside it, in ${path.dirname(workspace)}, are other runs' work and not your input: do not list, read, copy or edit them, unless your instruction names one by its path.`;
 }
 
 /**
@@ -229,8 +231,8 @@ export function confineToWorkspace<T extends Confinable>(opts: T): { opts: T; cl
   const projectRoot = resolved && sameDir(canonical(resolved), canonical(opts.cwd)) ? opts.cwd : resolved;
   const addDirs = [...(opts.addDirs ?? [])];
   if (projectRoot && !addDirs.some((d) => sameDir(canonical(d), canonical(projectRoot)))) addDirs.push(projectRoot);
-  // The line rides with the worker's directive. A decision step (a director, a
-  // judge) runs lean with no directive at all and keeps it that way; it still
+  // The line rides with the worker's directive. A decision step (a judge, a router)
+  // runs lean with no directive at all and keeps it that way; it still
   // gets the cwd and, on claude-code, the deny rules.
   const confined: T = {
     ...opts,

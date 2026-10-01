@@ -41,22 +41,25 @@ if (!fs.existsSync(projectDir)) {
 
 // Dirs whose markdowns are internal plumbing, not deliverables.
 // The engine's one list; a private copy here shipped the employee prompt
-// inside a client's report.
-import { isRunPlumbing, isRunPlumbingDir } from "../../_shared/lib/run-plumbing.ts";
+// inside a client's report. Run state (the worker's summary and claims, the
+// gate's reservations, `_work/`, `_review/`) is the run talking about itself,
+// never the work, so it stays out of the client's report too.
+import { isRunPlumbing, isRunPlumbingDir, isRunStateFile } from "../../_shared/lib/run-plumbing.ts";
 
 function walk(root: string): string[] {
   const out: string[] = [];
-  const rec = (dir: string) => {
+  const rec = (dir: string, rel: string) => {
     let entries: fs.Dirent[];
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
     for (const e of entries) {
       if (e.name.startsWith(".")) continue;
       const abs = path.join(dir, e.name);
-      if (e.isDirectory()) { if (!isRunPlumbingDir(e.name)) rec(abs); }
-      else if (e.name.toLowerCase().endsWith(".md") && !isRunPlumbing(e.name)) out.push(abs);
+      const r = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) { if (!isRunPlumbingDir(e.name) && !isRunStateFile(`${r}/`)) rec(abs, r); }
+      else if (e.name.toLowerCase().endsWith(".md") && !isRunPlumbing(e.name) && !isRunStateFile(r)) out.push(abs);
     }
   };
-  rec(root);
+  rec(root, "");
   return out;
 }
 

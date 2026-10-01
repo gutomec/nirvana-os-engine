@@ -15,7 +15,9 @@
  *
  * The actual invocation (spawning the subagent over squad.yaml + workflow) stays
  * the SKILL.md orchestrator's responsibility; this only validates + scaffolds +
- * emits the dispatch_squad / brief_received events.
+ * emits the dispatch_squad / brief_received events. Every input is validated
+ * before anything is written: an unknown or invalid squad, or a --project that
+ * is a path, leaves no folder behind.
  *
  * Usage:
  *   bun brief-squad.ts <slug> "<brief text>" [--project <id>]
@@ -54,11 +56,24 @@ if (!slug || !brief) {
   process.exit(EXIT.INVALID_ARGS);
 }
 
+// A slug and a project id are folder NAMES, never paths: no separator of either
+// OS, no '..', no drive letter, no trailing dot, no Windows device name.
+const SAFE_ID = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,198}[A-Za-z0-9_-])?$/;
+const safeId = (id: string) => SAFE_ID.test(id) && !id.includes("..") && !/^(?:con|prn|aux|nul|com\d|lpt\d)(?:\..*)?$/i.test(id);
+if (!safeId(slug)) {
+  console.error(`ERROR: '${slug}' is not a squad slug (letters, digits, '.', '_', '-')`);
+  process.exit(EXIT.INVALID_ARGS);
+}
+if (projectId && !safeId(projectId)) {
+  console.error(`ERROR: --project must be a plain id (letters, digits, '.', '_', '-'), never a path: '${projectId}'`);
+  process.exit(EXIT.INVALID_ARGS);
+}
+
 const hit = enumerate(scope, "squads").find(e => e.slug === slug && !e.overridden);
 const target = hit?.dir ?? path.join(paths.SQUADS_DIR, slug);
 if (!fs.existsSync(target) || !fs.statSync(target).isDirectory()) {
   console.error(`ERROR: squad '${slug}' not found (scope=${scope.mode})`);
-  process.exit(EXIT.FAILURES);
+  process.exit(EXIT.INVALID_ARGS);
 }
 
 // Validate the v5 manifest before dispatching (fail closed).
@@ -75,13 +90,20 @@ for (const line of preflightWarnings(squadPreflight(target, { cwd: process.cwd()
   console.error(`[brief-squad] WARN: ${line}`);
 }
 
-// Project ID (auto if not given) — same shape as brief-business.
-if (!projectId) {
-  const ts = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "");
-  projectId = `proj-${ts}-${slug}`;
-}
-
 const outputsRoot = outputsDir(scope);
+
+// Project ID (generated when not given), same shape as brief-business. A
+// generated id is claimed by creating its folder: two briefs for the same squad
+// in the same second used to share one, and now the second takes the next suffix.
+if (!projectId) {
+  const base = `proj-${new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "")}-${slug}`;
+  fs.mkdirSync(outputsRoot, { recursive: true });
+  for (let n = 1; !projectId; n++) {
+    const id = n === 1 ? base : `${base}-${n}`;
+    try { fs.mkdirSync(path.join(outputsRoot, id)); projectId = id; }
+    catch (e: any) { if (e?.code !== "EEXIST") throw e; }
+  }
+}
 // Only the dir we are about to write into: `handoffs/` was pre-created on the
 // chance a handoff landed there, and most runs write none, so every brief left
 // an empty directory behind. Whoever writes one creates it then, and the only

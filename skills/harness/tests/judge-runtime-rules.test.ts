@@ -103,6 +103,52 @@ describe("judge — runtime-rules consultation", () => {
     expect(captured[0].preferredHost).toBe("pi");
   });
 
+  test("the session's runtime is found by detectSessionHost (the process tree too), not only by env markers", async () => {
+    const captured: Array<Record<string, unknown>> = [];
+    await judge(input("qualquer brief"), {
+      __testDriver: fakeDriver(captured),
+      __testRuntimeRules: {
+        loadRuntimeRules: () => [],
+        detectSessionHost: () => "codex",
+        detectCurrentHost: () => null,
+        decideRuntime: (o: Record<string, unknown>) => ({ runtime: o.defaultRuntime, source: "default" }),
+      },
+    });
+    expect(captured[0].preferredHost).toBe("codex");
+  });
+
+  test("no session host: the placeholder default is the first INSTALLED runtime, never a vendor literal", async () => {
+    const captured: Array<Record<string, unknown>> = [];
+    const decideCalls: Array<Record<string, unknown>> = [];
+    const driver = { ...fakeDriver(captured, ["gemini-cli"]), listRuntimes: () => [{ name: "claude-code" }, { name: "gemini-cli" }] };
+    await judge(input("julgue isto"), {
+      __testDriver: driver,
+      __testRuntimeRules: {
+        loadRuntimeRules: () => [{ runtime: "codex", rule: "nada a ver", envKey: "USE_CODEX", sourceFile: null, negate: false }],
+        detectSessionHost: () => null,
+        decideRuntime: (o: Record<string, unknown>) => { decideCalls.push(o); return { runtime: o.defaultRuntime, source: "default" }; },
+      },
+    });
+    expect(decideCalls[0].defaultRuntime).toBe("gemini-cli");
+    expect(captured[0].preferredHost).toBeUndefined();   // a default without a host is no signal
+  });
+
+  test("nothing installed and no host: the rules are not consulted with an invented default", async () => {
+    const captured: Array<Record<string, unknown>> = [];
+    const decideCalls: Array<Record<string, unknown>> = [];
+    const driver = { ...fakeDriver(captured, []), listRuntimes: () => [{ name: "claude-code" }] };
+    await judge(input("julgue isto"), {
+      __testDriver: driver,
+      __testRuntimeRules: {
+        loadRuntimeRules: () => [{ runtime: "codex", rule: "julgue", envKey: "USE_CODEX", sourceFile: null, negate: false }],
+        detectSessionHost: () => null,
+        decideRuntime: (o: Record<string, unknown>) => { decideCalls.push(o); return { runtime: "codex", source: "rule" }; },
+      },
+    });
+    expect(decideCalls).toHaveLength(0);
+    expect(captured[0].preferredHost).toBeUndefined();
+  });
+
   test("rules module exploding falls back to PATH scan instead of failing the judge", async () => {
     const captured: Array<Record<string, unknown>> = [];
     const out = await judge(input("brief"), {

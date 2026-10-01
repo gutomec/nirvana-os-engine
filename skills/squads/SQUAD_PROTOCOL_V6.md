@@ -104,7 +104,7 @@ runtime_requirements:
 
 A squad runs in one of two ways. Neither involves a chain of seats, directors or seat subagents.
 
-1. **On its own.** The orchestrator dispatches it with `nrv dispatch --squad <slug>[:<capabilityId>]` (`nrv run --squad` also executes). One agent plays the squad end to end (§32.2).
+1. **On its own.** The orchestrator dispatches it with `nrv dispatch --squad <slug>[:<capabilityId>] --exec` (`nrv run --squad` adds `--exec`). One agent plays the squad end to end (§32.2).
 2. **Inside a business.** A business runs as ONE agent. It uses a squad by reading its work card (`nrv cards squad <slug>`) and working as the squad's agents. A business never dispatches a squad (§32.3).
 
 ---
@@ -696,7 +696,7 @@ nrv list-squads                                # what is installed
 - **`MATCH_HIGH`** may run without confirmation.
 - **`MATCH_AMBIGUOUS`** goes to the user, or to the agentic router with the registries open, with each candidate's id, squad and score.
 - **`NO_MATCH`** dispatches no squad. The orchestrator falls back to the generalist, or offers to scaffold a new capability.
-- **Override.** Naming the squad skips the router: `nrv dispatch --squad <slug>[:<capabilityId>]`, or a Glance message beginning `use squad <slug>[:<cap>]:`. The caller is in command (§32.2).
+- **Override.** Naming the squad skips the router: `nrv dispatch --squad <slug>[:<capabilityId>] --exec`, or a Glance message beginning `use squad <slug>[:<cap>]:`. The caller is in command (§32.2).
 
 ---
 
@@ -961,7 +961,7 @@ This section separates what v6 promises from what the engine does.
 
 ### 32.2 A squad dispatched on its own
 
-`nrv dispatch --squad <slug>[:<capabilityId>]` (`skills/harness/lib/squad-exec.ts`) runs one agent as the squad. `capability-resolver.ts` decides which capability and says which rung answered:
+`nrv dispatch --squad <slug>[:<capabilityId>] --exec` (`skills/harness/lib/squad-exec.ts`) runs one agent as the squad. `capability-resolver.ts` decides which capability and says which rung answered:
 
 | Rung | When it answers |
 |---|---|

@@ -44,6 +44,7 @@ import type { Runtime } from "./host-agent-driver.ts";
 import { isInCooldown, getCooldown } from "./cooldown-registry.ts";
 import { getSpend } from "./spend-tracker.ts";
 import { findProjectRoot } from "../../_shared/lib/project-root.js";
+import { canonicalRuntimeName } from "./runtime-rules.ts"; // cycle is safe: used at call time only
 
 export interface CascadeEntry {
   runtime: Runtime;
@@ -64,22 +65,29 @@ export interface CascadeEntry {
 // driver owns the list; everyone else asks it.
 const VALID_RUNTIMES: ReadonlyArray<Runtime> = listRuntimes().map((r) => r.name);
 
+const warnedDropped = new Set<string>();
+
 function parseCascadeString(s: string): CascadeEntry[] {
-  return s.split(",").map(tok => tok.trim()).filter(Boolean).map(tok => {
+  const entries: CascadeEntry[] = [];
+  for (let tok of s.split(",").map(t => t.trim()).filter(Boolean)) {
+    const raw = tok;
     // Format: runtime[:model[@provider]][$N]
     // The $N (USD budget) attaches to the LAST segment — peel it off first.
     let budgetUsd: number | null = null;
     const bm = tok.match(/\$(\d+(?:\.\d+)?)$/);
     if (bm) { budgetUsd = parseFloat(bm[1]); tok = tok.slice(0, -bm[0].length); }
-    const [runtimeAndModel, providerHint = null] = tok.split("@").map(s => s.trim());
-    const [runtime, model = null] = runtimeAndModel.split(":").map(s => s.trim());
-    return {
-      runtime: runtime as Runtime,
-      model: model || null,
-      providerHint: providerHint || null,
-      budgetUsd,
-    };
-  }).filter(e => (VALID_RUNTIMES as ReadonlyArray<string>).includes(e.runtime));
+    const [runtimeAndModel, providerHint = null] = tok.split("@").map(x => x.trim());
+    const [name, model = null] = runtimeAndModel.split(":").map(x => x.trim());
+    // `claude`, `agy`, `codex-cli` … resolve through the same alias table as USE_*.
+    const runtime = canonicalRuntimeName(name);
+    if (!(VALID_RUNTIMES as ReadonlyArray<string>).includes(runtime)) {
+      if (!warnedDropped.has(raw)) console.error(`[cascade] LLM_CASCADE entry '${raw}' names an unknown runtime — entry dropped. Known: ${VALID_RUNTIMES.join(", ")}`);
+      warnedDropped.add(raw);
+      continue;
+    }
+    entries.push({ runtime, model: model || null, providerHint: providerHint || null, budgetUsd });
+  }
+  return entries;
 }
 
 /** Stable string key identifying a unique entry — used by the spend tracker. */

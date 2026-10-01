@@ -1,13 +1,15 @@
 #!/usr/bin/env bun
 /**
- * brief-business.ts — register a brief for a business and prepare the
- * invocation plan. Pure Bun port of brief-business.sh.
+ * brief-business.ts — register a brief for a business and prepare its run
+ * folder. Pure Bun port of brief-business.sh.
  *
- * The actual invocation (spawning subagents) is the SKILL.md orchestrator's
- * responsibility; this script only validates + builds the initial context.
+ * Every input is validated before anything is written: an unknown business, an
+ * invalid manifest, a --project that is a path or a bad --manifest file leave
+ * no folder behind. Running the business is `nrv dispatch --exec`'s job; this
+ * script only validates and builds the initial context.
  *
  * Usage:
- *   bun brief-business.ts <slug> "<brief text>" [--project <id>]
+ *   bun brief-business.ts <slug> "<brief text>" [--project <id>] [--manifest <file>]
  */
 
 import * as fs from "node:fs";
@@ -48,11 +50,24 @@ if (!slug || !brief) {
   process.exit(EXIT.INVALID_ARGS);
 }
 
+// A slug and a project id are folder NAMES, never paths: no separator of either
+// OS, no '..', no drive letter, no trailing dot, no Windows device name.
+const SAFE_ID = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,198}[A-Za-z0-9_-])?$/;
+const safeId = (id: string) => SAFE_ID.test(id) && !id.includes("..") && !/^(?:con|prn|aux|nul|com\d|lpt\d)(?:\..*)?$/i.test(id);
+if (!safeId(slug)) {
+  console.error(`ERROR: '${slug}' is not a business slug (letters, digits, '.', '_', '-')`);
+  process.exit(EXIT.INVALID_ARGS);
+}
+if (projectId && !safeId(projectId)) {
+  console.error(`ERROR: --project must be a plain id (letters, digits, '.', '_', '-'), never a path: '${projectId}'`);
+  process.exit(EXIT.INVALID_ARGS);
+}
+
 const hit = enumerate(scope, "businesses").find(e => e.slug === slug && !e.overridden);
 const target = hit?.dir ?? path.join(paths.BUSINESSES_DIR, slug);
 if (!fs.existsSync(target) || !fs.statSync(target).isDirectory()) {
   console.error(`ERROR: business '${slug}' not found (scope=${scope.mode})`);
-  process.exit(EXIT.FAILURES);
+  process.exit(EXIT.INVALID_ARGS);
 }
 
 // Validate
@@ -62,16 +77,60 @@ if (!validate.ok) {
   process.exit(validate.code ?? EXIT.FAILURES);
 }
 
-// Project ID (auto if not given)
-if (!projectId) {
-  const ts = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "");
-  projectId = `proj-${ts}-${slug}`;
+// --manifest: a .json array (or { deliverables: [...] }) or a .txt with one path
+// per line, every path absolute. Read and checked here, before any folder exists.
+let manifestPaths: string[] = [];
+if (manifestFile) {
+  let raw = "";
+  try { raw = fs.readFileSync(manifestFile, "utf8").replace(/^\uFEFF/, "").trim(); }
+  catch (e: any) {
+    // Decided by the error code, never by an OS-specific message.
+    console.error(e?.code === "ENOENT" ? `ERROR: --manifest file not found: ${manifestFile}`
+      : `ERROR: --manifest cannot be read: ${manifestFile} (${e?.code ?? "error"})`);
+    process.exit(EXIT.INVALID_ARGS);
+  }
+  if (manifestFile.toLowerCase().endsWith(".json")) {
+    let parsed: unknown = null;
+    try { parsed = JSON.parse(raw); } catch { parsed = null; }
+    if (Array.isArray(parsed)) manifestPaths = parsed;
+    else if (parsed && Array.isArray((parsed as { deliverables?: unknown }).deliverables)) manifestPaths = (parsed as { deliverables: string[] }).deliverables;
+    else {
+      console.error("ERROR: --manifest .json must be an array of paths or { deliverables: [...] }");
+      process.exit(EXIT.INVALID_ARGS);
+    }
+  } else {
+    // .txt: one path per line; blank lines and # comments are skipped.
+    manifestPaths = raw.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith("#"));
+  }
+  if (manifestPaths.length === 0) {
+    console.error("ERROR: --manifest is empty");
+    process.exit(EXIT.INVALID_ARGS);
+  }
+  // verify-deliverable expects absolute paths, POSIX or Windows (C:\..., \\server\share).
+  const invalid = manifestPaths.filter(p => typeof p !== "string" || !path.isAbsolute(p) && !path.win32.isAbsolute(p));
+  if (invalid.length > 0) {
+    console.error(`ERROR: manifest contains non-absolute paths: ${invalid.slice(0, 3).join(", ")}...`);
+    process.exit(EXIT.INVALID_ARGS);
+  }
 }
 
 // Resolve outputs root via canonical scope helper. Defaults to
 // <projectRoot>/outputs (or HOME fallback when not in a project).
 // Honors NIRVANA_OUTPUTS_DIR override. Reuses the single `scope` resolved above.
 const outputsRoot = outputsDir(scope);
+
+// Project ID (generated when not given). A generated id is claimed by creating
+// its folder: two briefs for the same business in the same second used to share
+// one, and now the second takes the next free suffix.
+if (!projectId) {
+  const base = `proj-${new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "")}-${slug}`;
+  fs.mkdirSync(outputsRoot, { recursive: true });
+  for (let n = 1; !projectId; n++) {
+    const id = n === 1 ? base : `${base}-${n}`;
+    try { fs.mkdirSync(path.join(outputsRoot, id)); projectId = id; }
+    catch (e: any) { if (e?.code !== "EEXIST") throw e; }
+  }
+}
 
 // Only the dir we are about to write into. `handoffs/`, `tickets/` and
 // `employees/` used to be pre-created here on the chance something landed in
@@ -129,39 +188,10 @@ try {
   fs.appendFileSync(path.join(auditDir, "audit.jsonl"), auditEntry + "\n");
 } catch { /* non-fatal */ }
 
-// F11 fix: process --manifest if given. Writes canonical deliverables.json
-// inside project dir so verify-deliverable.ts can validate without relying on
-// regex-matching paths in the brief.md (which is unreliable for short briefs).
-if (manifestFile) {
-  if (!fs.existsSync(manifestFile)) {
-    console.error(`ERROR: --manifest file not found: ${manifestFile}`);
-    process.exit(EXIT.FAILURES);
-  }
-  let manifestPaths: string[] = [];
-  const raw = fs.readFileSync(manifestFile, "utf8").trim();
-  if (manifestFile.endsWith(".json")) {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) manifestPaths = parsed;
-    else if (parsed && Array.isArray(parsed.deliverables)) manifestPaths = parsed.deliverables;
-    else {
-      console.error("ERROR: --manifest .json must be an array of paths or { deliverables: [...] }");
-      process.exit(EXIT.FAILURES);
-    }
-  } else {
-    // .txt — 1 path por linha; ignora linhas vazias e comments com #
-    manifestPaths = raw.split("\n").map(l => l.trim()).filter(l => l && !l.startsWith("#"));
-  }
-  if (manifestPaths.length === 0) {
-    console.error("ERROR: --manifest is empty");
-    process.exit(EXIT.FAILURES);
-  }
-  // Validate paths are absolute (verify-deliverable expects absolute)
-  const invalid = manifestPaths.filter(p => !p.startsWith("/"));
-  if (invalid.length > 0) {
-    console.error(`ERROR: manifest contains non-absolute paths: ${invalid.slice(0, 3).join(", ")}...`);
-    process.exit(EXIT.FAILURES);
-  }
-  // Persist as canonical deliverables.json in projectDir
+// The manifest, validated above, persisted as the canonical deliverables.json
+// inside the project dir so verify-deliverable.ts can validate without relying
+// on regex-matching paths in the brief.md (unreliable for short briefs).
+if (manifestPaths.length) {
   fs.writeFileSync(
     path.join(projectDir, "deliverables.json"),
     JSON.stringify({ deliverables: manifestPaths, source: "manifest-cli-flag", count: manifestPaths.length }, null, 2)
@@ -224,50 +254,18 @@ try {
   console.error(`[brief-business] WARN: HANDOFF.json write failed: ${e.message}`);
 }
 
-// Identify the brief_intake employee via the Bun loader (--field).
-const loaderTs = path.join(skillDir, "lib", "loader.ts");
-const r = exec(`${JSON.stringify(BUN_BIN)} ${JSON.stringify(loaderTs)} ${JSON.stringify(target)} --field intake_employee`, { silent: true });
-const intake = (r.stdout || "").trim();
-if (!intake) {
-  console.error(`ERROR: business '${slug}' declares no employee with is_brief_intake: true.`);
-  console.error(`Edit ${path.join(target, "employees")}/*.md and add 'is_brief_intake: true' to one of them.`);
-  process.exit(EXIT.FAILURES);
-}
-
-// The org chart, named in the output the caller is already reading. Until
-// 2026-09-04 this block told the caller to "spawn employee '<intake>'" — one
-// seat — and a business with fourteen of them did exactly that, crediting six
-// in the deliverable with a single dispatch event behind them. An instruction
-// in SKILL.md only reaches a session that re-read it; this reaches the session
-// that ran the command.
-let seatSummary = "(no employees/ directory)";
-try {
-  const names = fs.readdirSync(path.join(target, "employees"))
-    .filter(f => f.endsWith(".md")).map(f => path.basename(f, ".md")).sort();
-  seatSummary = names.length
-    ? `${names.length} seat(s) — ${names.join(", ")}`
-    : "(no seats declared)";
-} catch { /* keep the fallback */ }
-
 console.log(`OK: brief registered.
 
   Project ID:    ${projectId}
   Business:      ${slug}
-  Intake:        ${intake}
   Project dir:   ${projectDir}
   Brief file:    ${briefFile}
   Audit log:     ${auditFile}
   Run ID:        ${runId ?? (trackedByDispatch ? "(tracked by the dispatch that spawned this step)" : "(not tracked — see the warning above)")}
 
-Org chart:     ${seatSummary}
-
-Next step — a business runs as ONE agent that carries the whole org chart:
-  nrv dispatch --business ${slug} --brief-file ${briefFile} --exec
-
-  The agent reads the org chart to know which seat owns what, and uses each
-  seat's mind-clone and squads to build the deliverable. Do not spawn '${intake}'
-  by hand: the dispatch emits the dispatch_business event the audit expects.
-${runId ? `
+${trackedByDispatch ? "" : `Next step — the business runs as ONE agent:
+  nrv dispatch --business ${slug} --brief-file ${/\s/.test(briefFile) ? `"${briefFile}"` : briefFile} --exec
+`}${runId ? `
 REQUIRED when you finish (this is what tells the owner it is done):
   nrv run-track close ${runId} --state delivered|withheld|failed [--error "<reason>"]` : ""}`);
 

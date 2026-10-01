@@ -49,7 +49,7 @@ routing:
 # pass/fail check, not a rewrite.
 # Phase 3 — quality gate with LLM judge + revision loop (nirvana-evolution)
 quality_gate:
-  judge_enabled: reports      # reports = judge text deliverables (.md, .txt) against the brief; true = every gateable file; false = offline heuristics only.
+  judge_enabled: reports      # reports = judge text deliverables (.md, .txt, .html) against the brief; true = every gateable file; false = offline heuristics only.
   max_revisions: 2            # hard cap; loop fails open after this.
   escalate_after: 2           # alias of max_revisions; future-use placeholder.
   rubric_fallback: prose_shortform   # used when produces[] has no matching rubric

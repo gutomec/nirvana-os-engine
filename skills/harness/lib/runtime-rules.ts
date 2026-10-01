@@ -190,12 +190,61 @@ export function detectCurrentHost(env: NodeJS.ProcessEnv = process.env): Runtime
 /** One process's parent and command line, or null when it cannot be read. */
 export type ProcessLookup = (pid: number) => { ppid: number; args: string } | null;
 
+/** POSIX: one `ps` per ancestor (cheap, and the chain is short). */
 const psLookup: ProcessLookup = (pid) => {
-  if (process.platform === "win32") return null;
   const r = spawnSync("ps", ["-o", "ppid=,args=", "-p", String(pid)], { encoding: "utf8", windowsHide: true });
   const m = (r.stdout || "").trim().match(/^(\d+)\s+(.*)$/);
   return m ? { ppid: Number(m[1]), args: m[2] } : null;
 };
+
+/** Parses `Get-CimInstance Win32_Process | ConvertTo-Json` output (an array, or
+ *  a bare object when there is exactly one process) into a pid table. */
+export function parseWindowsProcessTable(json: string): Map<number, { ppid: number; args: string }> {
+  const table = new Map<number, { ppid: number; args: string }>();
+  let rows: unknown;
+  try { rows = JSON.parse(json); } catch { return table; }
+  for (const row of Array.isArray(rows) ? rows : [rows]) {
+    const r = row as { ProcessId?: number; ParentProcessId?: number; CommandLine?: string | null } | null;
+    if (r && typeof r.ProcessId === "number") {
+      table.set(r.ProcessId, { ppid: Number(r.ParentProcessId) || 0, args: r.CommandLine || "" });
+    }
+  }
+  return table;
+}
+
+/** Windows: ONE query for the whole process table, then the walk happens in
+ *  memory. Spawning PowerShell per ancestor would cost a second or more each. */
+function windowsLookup(): ProcessLookup {
+  let table: Map<number, { ppid: number; args: string }> | null = null;
+  return (pid) => {
+    if (!table) {
+      const r = spawnSync("powershell", [
+        "-NoProfile", "-NonInteractive", "-Command",
+        "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Json -Compress",
+      ], { encoding: "utf8", windowsHide: true, timeout: 10_000, maxBuffer: 32 * 1024 * 1024 });
+      table = r.status === 0 ? parseWindowsProcessTable(r.stdout || "") : new Map();
+    }
+    return table.get(pid) ?? null;
+  };
+}
+
+/** The first `limit` tokens of a command line, quotes removed, so
+ *  `"C:\\Program Files\\nodejs\\node.exe" C:\\x\\codex.js` keeps its spaces. */
+function commandTokens(args: string, limit: number): string[] {
+  const out: string[] = [];
+  for (const m of args.matchAll(/"([^"]*)"|'([^']*)'|(\S+)/g)) {
+    out.push(m[1] ?? m[2] ?? m[3]);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/** A path's last segment, split on BOTH separators (a Windows path is not a
+ *  path to POSIX basename), lowercased, minus a launcher extension. */
+function cliBasename(token: string): string {
+  const last = token.split(/[\\/]/).pop() ?? token;
+  return last.toLowerCase().replace(/\.(?:exe|cmd|bat|ps1|js|mjs|cjs)$/, "");
+}
 
 /**
  * The runtime whose CLI launched this process, found by walking the parent
@@ -205,19 +254,42 @@ const psLookup: ProcessLookup = (pid) => {
  * so `node /opt/homebrew/bin/gemini` counts as gemini. POSIX only; null when
  * no ancestor is a known CLI.
  */
-export function hostFromAncestors(lookup: ProcessLookup = psLookup, start: number = process.ppid): Runtime | null {
-  const byCli = new Map(listRuntimes().map((r) => [r.cli, r.name]));
+export function hostFromAncestors(lookup?: ProcessLookup, start: number = process.ppid): Runtime | null {
+  const look = lookup ?? (process.platform === "win32" ? windowsLookup() : psLookup);
+  const byCli = new Map(listRuntimes().map((r) => [r.cli.toLowerCase(), r.name]));
   let pid = start;
   for (let depth = 0; pid > 1 && depth < 12; depth++) {
-    const proc = lookup(pid);
+    const proc = look(pid);
     if (!proc) return null;
-    for (const token of proc.args.split(/\s+/).slice(0, 2)) {
-      const hit = byCli.get(path.basename(token));
+    const tokens = commandTokens(proc.args, 2);
+    for (const token of tokens) {
+      const hit = byCli.get(cliBasename(token));
       if (hit) return hit;
+    }
+    // `node <pkg>\\gemini-cli\\dist\\index.js`: the CLI is the package directory.
+    if (tokens[1]) {
+      for (const segment of tokens[1].toLowerCase().split(/[\\/]/)) {
+        const m = segment.match(/^(.+)-cli$/);
+        const hit = m ? byCli.get(m[1]) : undefined;
+        if (hit) return hit;
+      }
     }
     pid = proc.ppid;
   }
   return null;
+}
+
+/** The runtime hosting this session: env markers first (pure, cheap), then the
+ *  parent chain for hosts that export nothing. `NRV_HOST_ANCESTRY=0` turns the
+ *  process walk off (tests, sandboxes). THE one resolver every caller uses for
+ *  "which runtime is the user working in": `detectCurrentHost` alone misses
+ *  hosts without a marker and answers null, which is how a run ended up on
+ *  another vendor than the session. */
+export function detectSessionHost(env: NodeJS.ProcessEnv = process.env): Runtime | null {
+  const marked = detectCurrentHost(env);
+  if (marked) return marked;
+  if (env.NRV_HOST_ANCESTRY === "0" || process.env.NRV_HOST_ANCESTRY === "0") return null;
+  return hostFromAncestors();
 }
 
 /** Roster order, with the derivatives moved to the front: a `qwen-code` session
@@ -237,7 +309,7 @@ export function canonicalRuntimeName(name: string): Runtime {
 
 /** Default exec runtime once flag, brief mention and rules are silent, in the order
  *  dispatch.ts applies: the session host, then NIRVANA_DEFAULT_RUNTIME, then the first
- *  runtime installed on PATH, then claude-code. Pure, so the dispatch and the Glance
+ *  runtime installed on PATH, then claude-code (only when nothing is installed or known). Pure, so the dispatch and the Glance
  *  execution runner cannot disagree about which runtime a child would pick. */
 export function resolveDefaultRuntime(input: {
   detectedHost: Runtime | null;
@@ -288,7 +360,7 @@ export function resolveRunRuntime(opts: {
   const env = opts.env ?? process.env;
   const available = opts.available ?? runtimeAvailable;
   const installed = listRuntimes().map((r) => r.name).filter(available);
-  const hostDetected = detectCurrentHost(env);
+  const hostDetected = detectSessionHost(env);
   let envDefault = "";
   try { envDefault = String(resolveSetting("execution.default_runtime").value ?? "").trim(); } catch { envDefault = ""; }
   const { runtime: hostDefault, from: defaultFrom } = resolveDefaultRuntime({
@@ -383,22 +455,46 @@ const MENTION_ALTERNATION = MENTION_PAIRS
   .map(([, frag]) => `(?:${frag})`)
   .sort((a, b) => b.length - a.length)
   .join("|");
+// The cue is an instruction VERB (optionally followed by a preposition), or a
+// preposition that only counts right after such a verb. Bare prepositions
+// ("com", "no", "with", "on") are NOT cues: "landing page com Claude Code como
+// assunto" and "using pi to 5 digits" are content, not an order.
 const MENTION_CUE = new RegExp(
-  "\\b(?:use|usa|usando|utilize|utilizando|rode|rodando|execute|executando|despache|via|pelo|pela|com|no|na" // i18n-user-facing: PT cue data matched against user input
-  + "|using|with|through|run(?:ning)? (?:it )?on|on)"
+  "\\b(?:"
+  + "(?:use|using|usa|usar|usando|utilize|utilizar|utilizando|rode|rodar|rodando|execute|executar|executando|despache|despachar)(?:\\s+(?:isso|it|this|tudo|esse|essa))?(?:\\s+(?:via|pelo|pela|com|no|na|em|on|with|through))?" // i18n-user-facing: PT cue data matched against user input
+  + "|run(?:ning)?(?:\\s+(?:it|this))?\\s+(?:on|with|through|via)"
+  + "|via|pelo|pela|through" // i18n-user-facing: PT cue data matched against user input
+  + ")"
   + `\\s+(?:o\\s+|a\\s+|the\\s+)?((?:${MENTION_ALTERNATION}))\\b`,
   "gi",
 );
+
+/** The user's own words: the "## Request (verbatim)" section when the text is a
+ *  work brief (everything else is engine-written context), else the whole text.
+ *  Backticked and quoted spans are dropped: a runtime named inside them is
+ *  being talked about, not asked for. */
+function userWords(brief: string): string {
+  const m = brief.match(/^##\s+Request \(verbatim\)\s*\n([\s\S]*?)(?=^##\s|(?![\s\S]))/im);
+  const scope = m ? m[1] : brief;
+  return scope
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`[^`\n]*`/g, " ")
+    .replace(/"[^"\n]*"/g, " ")
+    .replace(/\u201c[^\u201d\n]*\u201d/g, " ");
+}
 
 /** Detects an instrumental mention of a runtime in the brief. null when: none,
  *  or more than one distinct runtime named (ambiguous — no guessing). */
 export function detectRuntimeMention(brief: string): { runtime: RoutableRuntime; mention: string } | null {
   if (!brief?.trim()) return null;
   const found = new Map<RoutableRuntime, string>();
-  for (const m of brief.matchAll(MENTION_CUE)) {
+  const words = userWords(brief);
+  for (const m of words.matchAll(MENTION_CUE)) {
     const name = m[1];
     for (const [re, rt] of MENTION_NAMES) {
-      if (re.test(name)) { if (!found.has(rt)) found.set(rt, m[0].trim()); break; }
+      if (re.test(name)) {
+        // "using pi to 5 digits": pi the number, not the CLI.
+        if (rt === "pi" && /^\s*(?:\S+\s+){0,2}?(?:\d|digits?\b|decimals?\b|d[ií]gitos?\b|casas\b|decimais\b)/i.test(words.slice((m.index ?? 0) + m[0].length))) break; if (!found.has(rt)) found.set(rt, m[0].trim()); break; }
     }
   }
   if (found.size !== 1) {
@@ -464,8 +560,10 @@ export function resolveRuntimeByRules(
   return { rule: top.rule, score: top.score, ranked };
 }
 
-/** Precedence flag > rule > default; degrades an unavailable runtime to the
- *  next in the ranking and, finally, to the default (= the user's current host). */
+/** Precedence flag > brief mention > rule > default. A runtime the user named
+ *  (flag or brief) that is not installed is returned marked `unavailable`; an
+ *  unavailable RULE target degrades to the next in the ranking and, finally,
+ *  to the default (= the user's current host). */
 export function decideRuntime(opts: {
   brief: string;
   explicitRuntime: Runtime | null;
@@ -496,7 +594,9 @@ export function decideRuntime(opts: {
     if (avail(mention.runtime as Runtime)) {
       return { runtime: mention.runtime as Runtime, source: "brief", mention: mention.mention };
     }
-    console.error(`[runtime-rules] the brief asks for ${mention.runtime} ("${mention.mention}"), but it is not on this machine — falling back to the rules/default.`);
+    // The user asked for it in their own words: same contract as the flag. Do
+    // not warn and serve it from another vendor; return it marked unavailable.
+    return { runtime: mention.runtime as Runtime, source: "brief", mention: mention.mention, unavailable: true };
   }
   // Vetoes (NOT_USE_*) matching this brief: they block the runtime both in the
   // positive-rule choice and in the default. Veto beats positive rule.

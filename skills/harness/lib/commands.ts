@@ -68,7 +68,7 @@ export const COMMANDS: Command[] = [
   { name: "deps", target: "_shared/scripts/deps.ts", category: "core", args: "[status|scan|adopt|link|install|env] [--apply] [--json]", summary: "The one dependency home (~/.nirvana): where packages live, what escaped it, and how to fold it back in", visibility: "user" },
 
   // dispatch & execute
-  { name: "dispatch", target: "harness/scripts/dispatch.ts", category: "dispatch", args: '<business> "<brief>"', summary: "Scaffold a run (brief + DNA injection + audit; no exec)", visibility: "user" },
+  { name: "dispatch", target: "harness/scripts/dispatch.ts", category: "dispatch", args: '<business> | --squad <slug>[:<capability>] | --agent-x | --auto  "<brief>" --exec', summary: "Run a business, a squad or the generalist: execute, verify, gate, deliver. Refuses without --exec; --scaffold-only only prepares; --mode <m> routes --auto", visibility: "user" },
   { name: "run", aliases: ["autopilot"], custom: true, category: "dispatch", args: '<business> "<brief>" [--zip --pdf --html]', summary: "Autopilot: dispatch + execute + verify + gate", visibility: "user" },
   { name: "auto", custom: true, category: "dispatch", args: '"<brief>" [--zip --pdf --html]', summary: "Autopilot with auto-selected business (= run --auto)", visibility: "user" },
   { name: "audit-where", target: "harness/scripts/audit-where.ts", category: "observability", args: "[--project <dir>] [--trace <id>]", summary: "Which audit files a run wrote, and why those", visibility: "user" },

@@ -24,7 +24,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-  canonicalRuntimeName, detectCurrentHost, detectRuntimeMention, hostFromAncestors, loadRuntimeRules,
+  canonicalRuntimeName, detectCurrentHost, detectSessionHost, parseWindowsProcessTable, detectRuntimeMention, hostFromAncestors, loadRuntimeRules,
   type ProcessLookup,
 } from "../lib/runtime-rules.ts";
 import { listRuntimes, type Runtime } from "../../_shared/lib/host-agent-driver.ts";
@@ -261,5 +261,49 @@ describe("the declarable roster agrees with the executable one", () => {
     const business = runtimeEnumOf("skills/_shared/schemas/business.schema.json");
     expect(squad.sort()).toEqual([...DECLARABLE].sort());
     expect(business.sort()).toEqual(squad);
+  });
+});
+
+describe("Windows-shaped process trees", () => {
+  const table = (rows: Record<number, [number, string]>): ProcessLookup => (pid) =>
+    rows[pid] ? { ppid: rows[pid][0], args: rows[pid][1] } : null;
+
+  test("agy.exe with a quoted path that has spaces", () => {
+    const lookup = table({
+      400: [300, '"C:\\Users\\Ana Souza\\.bun\\bin\\bun.exe" C:\\nrv\\dispatch.ts x'],
+      300: [200, 'C:\\Windows\\System32\\cmd.exe /c nrv dispatch x'],
+      200: [1, '"C:\\Program Files\\Antigravity\\bin\\AGY.EXE" --yolo'],
+    });
+    expect(hostFromAncestors(lookup, 400)).toBe("antigravity-cli");
+  });
+
+  test("node.exe running a .js launcher or a package directory", () => {
+    const codex = table({ 20: [10, "cmd /c nrv"], 10: [1, '"C:\\Program Files\\nodejs\\node.exe" C:\\Users\\a\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\bin\\codex.js'] });
+    expect(hostFromAncestors(codex, 20)).toBe("codex");
+    const gemini = table({ 20: [10, "cmd /c nrv"], 10: [1, "node.exe C:\\Users\\a\\npm\\node_modules\\@google\\gemini-cli\\dist\\index.js --yolo"] });
+    expect(hostFromAncestors(gemini, 20)).toBe("gemini-cli");
+  });
+
+  test("a .cmd shim and a plain terminal", () => {
+    expect(hostFromAncestors(table({ 20: [1, "C:\\Users\\a\\npm\\claude.CMD --resume"] }), 20)).toBe("claude-code");
+    expect(hostFromAncestors(table({ 20: [10, "powershell.exe -NoLogo"], 10: [1, "C:\\Windows\\explorer.exe"] }), 20)).toBeNull();
+  });
+
+  test("parses the Get-CimInstance JSON, array or single object, null command lines", () => {
+    const rows = parseWindowsProcessTable(JSON.stringify([
+      { ProcessId: 5, ParentProcessId: 4, CommandLine: "agy.exe" },
+      { ProcessId: 4, ParentProcessId: 0, CommandLine: null },
+    ]));
+    expect(rows.get(5)).toEqual({ ppid: 4, args: "agy.exe" });
+    expect(rows.get(4)?.args).toBe("");
+    expect(parseWindowsProcessTable(JSON.stringify({ ProcessId: 9, ParentProcessId: 1, CommandLine: "x" })).size).toBe(1);
+    expect(parseWindowsProcessTable("not json").size).toBe(0);
+  });
+});
+
+describe("detectSessionHost", () => {
+  test("markers win; NRV_HOST_ANCESTRY=0 skips the process walk", () => {
+    expect(detectSessionHost({ CODEX_THREAD_ID: "x" })).toBe("codex");
+    expect(detectSessionHost({ NRV_HOST_ANCESTRY: "0" })).toBeNull();
   });
 });

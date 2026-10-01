@@ -106,14 +106,14 @@ describe("a runtime named in the brief is a weaker signal than a flag", () => {
     expect(choice.source).toBe("brief");
   });
 
-  test("an uninstalled one falls back to the session, warned, instead of blocking the run", () => {
+  test("an uninstalled one is refused like a flag: the user's own words are not substituted", () => {
     const choice = resolveRunRuntime({
       brief: "use o qwen para isso", env: { CLAUDECODE: "1" },
       available: only("claude-code"),
     });
-    expect(choice.runtime).toBe("claude-code");
-    expect(choice.source).not.toBe("brief");
-    expect(choice.unavailable).toBeUndefined();
+    expect(choice.runtime).toBe("qwen-code");
+    expect(choice.source).toBe("brief");
+    expect(choice.unavailable).toBe(true);
   });
 
   test("the same runtime as a FLAG is refused — that is the difference", () => {

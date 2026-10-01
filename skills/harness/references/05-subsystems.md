@@ -98,7 +98,9 @@ The scripted autopilot (`nrv dispatch --auto ... --exec`, `nrv run`, `nrv auto`)
 - A brief that opens by naming an installed target (`use squad <slug>:` / `use business <slug>:`) goes straight to it with no router.
 - A squad-only route dispatches the squad (`lib/squad-exec.ts`), and every path flows into the fail-closed delivery pipeline (`lib/delivery-pipeline.ts`).
 
-Exit codes: `0` delivered · `1` run failed · `2` delivery WITHHELD (gate failed after the revision budget) · `3` INDETERMINATE (nothing judged: zero gateable artifacts, or a scaffold-only run without `--exec`) · `4` invalid args. A runtime that returns an error verdict but left artifacts on disk does not abandon them: the run is marked `failed` with its error (`x_runtime_errored_with_artifacts`, `meta.runtime_errored`) and recovers into the same verify → gate pipeline, so an errored run still ends delivered, withheld or indeterminate, never unjudged.
+Every input is checked before the first side effect: runtime names and availability, the target's existence, `--brief-file`, numeric flags, `--project` (a plain id, never a path) and whether the caller's role may dispatch. A dispatch without `--exec` refuses and prints the same command with it; `--scaffold-only` is the one way to prepare the folder and the prompt without running them.
+
+Exit codes: `0` delivered, or delivered with reservations · `1` run failed · `2` delivery WITHHELD (gate failed after the revision budget) · `3` INDETERMINATE (nothing judged: zero gateable artifacts, or `--scaffold-only`) · `4` invalid input, or refused before anything ran. `<outputs>/_STATUS.json` names the state and its reasons. A runtime that returns an error verdict but left artifacts on disk does not abandon them: the run is marked `failed` with its error (`x_runtime_errored_with_artifacts`, `meta.runtime_errored`) and recovers into the same verify → gate pipeline under the completeness ceiling, so an errored run ends withheld or indeterminate (delivered only when promised paths, from a manifest or the roles' `acceptance[]`, prove the set complete), never unjudged.
 
 ## Run ledger & supervisor internals
 

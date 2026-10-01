@@ -77,7 +77,7 @@ describe("verify-deliverable CLI", () => {
     expect(out.report.found).toBe(2);
   }, spawnBudgetMs(1));
 
-  test("--employee scopes the promises to one seat", () => {
+  test("one worker delivers the whole business: every seat's promise counts, and --employee is gone", () => {
     const { W, run: R } = scaffold(); roots.push(W);
     writeFileSync(join(R, "seat-a.md"), content(300), "utf8");
     const whole = run(W, ["proj", "acme"]);
@@ -85,9 +85,26 @@ describe("verify-deliverable CLI", () => {
     expect(whole.report.expected).toBe(2);
     expect(whole.report.found).toBe(1);
     const seat = run(W, ["proj", "acme", "--employee", "seat-a"]);
-    expect(seat.report.status).toBe("PASS");
-    expect(seat.report.expected).toBe(1);
-    expect(seat.report.employee).toBe("seat-a");
+    expect(seat.code).toBe(2);
+    expect(seat.stderr).toContain("Unknown flag: --employee");
+  }, spawnBudgetMs(2));
+
+  test("the outcome scan counts the work, never the run's own state", () => {
+    const W = mkdtempSync(join(tmpdir(), "verify-cli-scan-")); roots.push(W);
+    mkdirSync(join(W, ".nirvana"), { recursive: true });
+    const R = join(W, "outputs", "proj");
+    mkdirSync(join(R, "art", "_work"), { recursive: true });
+    writeFileSync(join(R, "brief.md"), "# Brief\n\nDeliver a report.\n", "utf8");
+    writeFileSync(join(R, "art", "_SUMMARY.md"), content(300), "utf8");
+    writeFileSync(join(R, "art", "_CLAIMS.json"), content(300), "utf8");
+    writeFileSync(join(R, "art", "_STATUS.json"), content(300), "utf8");
+    writeFileSync(join(R, "art", "_work", "PROGRESS.md"), content(300), "utf8");
+    const onlyState = run(W, ["proj", "nobiz", "--outputs-root", join(R, "art")]);
+    expect(onlyState.code).toBe(2);   // nothing but run state: indeterminate, not a PASS
+    writeFileSync(join(R, "art", "relatorio.md"), content(300), "utf8");
+    const withWork = run(W, ["proj", "nobiz", "--outputs-root", join(R, "art")]);
+    expect(withWork.report.status).toBe("PASS");
+    expect(withWork.report.expected).toBe(1);
   }, spawnBudgetMs(2));
 
   test("a declared min_bytes holds with a manifest too, and the report says which floor applied", () => {

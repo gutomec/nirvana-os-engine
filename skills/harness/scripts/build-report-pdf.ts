@@ -22,6 +22,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { spawnSync } from "node:child_process";
+import { isRunPlumbing, isRunStateFile } from "../../_shared/lib/run-plumbing.ts";
 
 function arg(name: string, fallback?: string): string | undefined {
   const eq = process.argv.find(a => a.startsWith(`${name}=`));
@@ -87,7 +88,11 @@ function humanize(file: string): string {
 }
 
 // Resolve ordered deliverable list (exclude the summary file if it lives here).
-const allMd = fs.readdirSync(deliverablesDir).filter(f => f.toLowerCase().endsWith(".md")).sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true }));
+// The run's own bookkeeping (the worker's _SUMMARY.md, the gate's
+// _QA-RESERVATIONS.md, the prompt) is never a section of the client's report,
+// whoever names it in --order.
+const isWork = (f: string) => !isRunPlumbing(f) && !isRunStateFile(f);
+const allMd = fs.readdirSync(deliverablesDir).filter(f => f.toLowerCase().endsWith(".md") && isWork(f)).sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true }));
 const summaryBase = summaryFile ? path.basename(summaryFile) : null;
 let ordered: string[];
 if (orderArg) {
@@ -97,7 +102,7 @@ if (orderArg) {
 } else {
   ordered = allMd.filter(f => f !== summaryBase);
 }
-ordered = ordered.filter(f => f !== summaryBase && fs.existsSync(path.join(deliverablesDir, f)));
+ordered = ordered.filter(f => f !== summaryBase && isWork(f) && fs.existsSync(path.join(deliverablesDir, f)));
 
 // Build sections.
 type Section = { id: string; title: string; html: string };

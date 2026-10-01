@@ -88,8 +88,10 @@ function fixture(extraEnv: Record<string, string>, extraArgs: string[] = []) {
     FAKE_CLAUDE_OUTPUTS_ROOT: out, FAKE_CAPTURE_DIR: capture, PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
     ...extraEnv,
   });
+  // --no-judge: these cases count the worker and reviewer calls; the gate's LLM
+  // judge (it reads .html reports by default) is the delivery pipeline's own test.
   const result = spawnSync(process.execPath, [DISPATCH, "fixture-biz", "--brief-file", brief, "--exec",
-    "--project", "proj-solo", "--outputs-root", out, "--max-revisions", "0", ...extraArgs], { cwd: projectRoot, encoding: "utf8", env });
+    "--project", "proj-solo", "--outputs-root", out, "--max-revisions", "0", "--no-judge", ...extraArgs], { cwd: projectRoot, encoding: "utf8", env });
   const calls = () => {
     const f = path.join(capture, "calls.jsonl");
     return fs.existsSync(f) ? fs.readFileSync(f, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];

@@ -32,7 +32,7 @@
 //   nrv exec --json "one sentence on X" | jq -r .result
 import { EXIT } from "../../_shared/lib/bun-helpers.ts";
 import { runHeadless, runtimeAvailable, listRuntimes, type Runtime } from "../../_shared/lib/host-agent-driver.ts";
-import { resolveRunRuntime } from "../lib/runtime-rules.ts";
+import { canonicalRuntimeName, resolveRunRuntime, unavailableRuntimeMessage } from "../lib/runtime-rules.ts";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
@@ -107,7 +107,8 @@ let prompt = positional.join(" ").trim();
 if (!prompt && !process.stdin.isTTY) prompt = (await Bun.stdin.text()).trim();
 if (!prompt) usage();
 
-const explicit = val("runtime") as Runtime | undefined;
+const rawRuntime = val("runtime");
+const explicit = (rawRuntime ? canonicalRuntimeName(rawRuntime) : undefined) as Runtime | undefined;
 if (explicit && !listRuntimes().some((r) => r.name === explicit)) {
   console.error(c("red", `✗ unknown runtime '${explicit}'. Known: ${listRuntimes().map((r) => r.name).join(", ")}`));
   process.exit(EXIT.INVALID_ARGS);
@@ -120,6 +121,11 @@ if (explicit && !runtimeAvailable(explicit)) {
 }
 
 const choice = resolveRunRuntime({ explicit: explicit ?? null, brief: prompt });
+if (choice.unavailable) {
+  // The brief named a runtime that is not here: same stop as --runtime.
+  console.error(c("red", `✗ ${unavailableRuntimeMessage(choice)}`));
+  process.exit(EXIT.FAILURES);
+}
 const runtime = choice.runtime;
 
 if (!quiet && !asJson) console.error(c("dim", `▪ ${runtime} — raw, no gate`));

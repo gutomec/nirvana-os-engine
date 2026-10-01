@@ -323,8 +323,12 @@ describe("runAgentX — the cascade bottom (injected runWithCascade seam)", () =
       expect(r.promptPath).toBe(path.join(agentsDir, "agent-x.claude-code.md"));
       expect(seen).toHaveLength(1);
       expect(seen[0].prompt).toContain("PERSONA-MARKER");
+      // The brief file differs from the text here, so the text rides along; the next test covers the file alone.
       expect(seen[0].prompt).toContain("Deliver the impossible artifact.");
       expect(seen[0].prompt).toContain(oroot);
+      // The generalist ends with the same one-page summary, and writes nowhere else.
+      expect(seen[0].prompt).toContain(path.join(oroot, "_SUMMARY.md"));
+      expect(seen[0].prompt).toContain("Write nothing anywhere else, even where the brief names another folder.");
       expect(seen[0].prompt).toContain("router no_match: nothing fits");
       // The persona fixture carries no guard of its own: this line is runAgentX's.
       expect(seen[0].prompt).toContain(SCOPE_GUARD_EN);
@@ -338,6 +342,25 @@ describe("runAgentX — the cascade bottom (injected runWithCascade seam)", () =
       expect(ax).toBeTruthy();
       expect(ax!.payload.employee).toBe("agent-x");
       expect(ax!.payload.mode).toBe("agent-x");
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+  });
+
+  test("one copy of the brief: the file alone when it holds the brief", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-agentx-one-"));
+    try {
+      const briefPath = path.join(tmp, "brief-enriched.md");
+      fs.writeFileSync(briefPath, "LONG-BRIEF-TEXT\n");
+      const seen: any[] = [];
+      runAgentX({
+        brief: "LONG-BRIEF-TEXT", briefPath, runtime: "claude-code", projectId: "p", projectDir: tmp, projectRoot: tmp, outputsRoot: path.join(tmp, "o"),
+        reason: "r", agentsDir: path.join(tmp, "no-such-dir"), audit: auditSpy().fn,
+        runWithCascadeImpl: ((opts: any) => {
+          seen.push(opts);
+          return { ok: true, runtime: opts.runtime, sessionId: null, result: "", costUsd: null, exitCode: 0, stderr: "", durationMs: 1, handoffs: [], finalRuntime: opts.runtime };
+        }) as any,
+      });
+      expect(seen[0].prompt).toContain(briefPath);
+      expect(seen[0].prompt).not.toContain("LONG-BRIEF-TEXT");
     } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
   });
 

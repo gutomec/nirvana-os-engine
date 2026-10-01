@@ -65,14 +65,20 @@ export interface Criterion { id: string; description: string; blocking: boolean 
  * that ends in "(blocking)" or starts with "must" is blocking; the rest count
  * toward the score only.
  */
+// i18n-user-facing: blocking markers matched against the brief, in the user's language
+const BLOCKING_TAIL = /\s*(?:\*\*)?\(\s*(?:blocking|bloqueante)\s*\)(?:\*\*)?\s*[.;]?\s*$/i;
+// i18n-user-facing: a criterion that opens with "must" / "deve" is blocking
+const BLOCKING_HEAD = /^(?:\*\*)?(?:must|deve)\b/i;
+/** A top-level bullet: no indentation beyond one space. A nested bullet
+ *  details its parent and is not a criterion of its own. */
+const TOP_LEVEL_BULLET = /^ ?(?:[-*+]|\d+[.)])\s+(.*\S)\s*$/;
+
 export function doneWhenCriteria(text: string): Criterion[] {
-  const body = parseWorkBrief(text).sections["Done when"] ?? "";
-  const items = body.split("\n")
-    .map((l) => /^\s*(?:[-*]|\d+[.)])\s+(.*\S)\s*$/.exec(l)?.[1])
-    .filter((x): x is string => !!x);
-  return items.map((description, i) => {
-    const blocking = /\(blocking\)\s*$/i.test(description) || /^must\b/i.test(description);
-    return { id: `d${i + 1}`, description: description.replace(/\s*\(blocking\)\s*$/i, ""), blocking };
+  const body = parseWorkBrief(text ?? "").sections["Done when"] ?? "";
+  const items = body.split("\n").map((l) => TOP_LEVEL_BULLET.exec(l)?.[1]).filter((x): x is string => !!x);
+  return items.map((raw, i) => {
+    const blocking = BLOCKING_TAIL.test(raw) || BLOCKING_HEAD.test(raw);
+    return { id: `d${i + 1}`, description: raw.replace(BLOCKING_TAIL, "").trim(), blocking };
   });
 }
 

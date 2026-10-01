@@ -372,7 +372,7 @@ export interface AgentXResult {
 }
 
 /** Dispatch the generalist fallback: persona from _shared/agents +
- * the enriched brief, run through the LLM cascade. Emits dispatch_agent_x
+ * the enriched brief (its file, or its text when the file differs), run through the LLM cascade. Emits dispatch_agent_x
  * (closed-enum event) + agent_executed. */
 export function runAgentX(args: RunAgentXArgs): AgentXResult {
   const emit = args.audit;
@@ -383,6 +383,13 @@ export function runAgentX(args: RunAgentXArgs): AgentXResult {
     "to end, autonomously, with professional defaults. Never ask a human.",
   ].join("\n");
 
+  // One copy of the brief: the file when it holds the brief (the case for every
+  // dispatch, and the better one for a long brief the worker re-reads), the text
+  // only when the file cannot be read or says something else.
+  const fileBrief = (() => { try { return fs.readFileSync(args.briefPath, "utf8"); } catch { return null; } })();
+  const briefInFile = fileBrief !== null && fileBrief.trim() === args.brief.trim();
+  const summaryFile = path.join(args.outputsRoot, "_SUMMARY.md");
+
   const prompt = [
     persona,
     "",
@@ -391,16 +398,16 @@ export function runAgentX(args: RunAgentXArgs): AgentXResult {
     `- trace_id: ${args.projectId}`,
     `- project_dir: ${args.projectDir}`,
     `- output_path: ${args.outputsRoot}`,
-    `- enriched brief file: ${args.briefPath}`,
+    `- brief file: ${args.briefPath}${briefInFile ? " (read it first; it is the whole brief)" : ""}`,
     `- cascade reason: ${args.reason}`,
-    "",
-    "## Enriched brief",
-    args.brief,
+    ...(briefInFile ? [] : ["", "## Brief", args.brief]),
     "",
     "## Output",
     `Write every final deliverable as a file under: ${args.outputsRoot}`,
+    "Write nothing anywhere else, even where the brief names another folder.",
     "Other runs' folders beside this one are not your input: do not list, read or edit them.",
-    "Do not print a summary of what you would do — deliver files. Record",
+    `End with ${summaryFile}: one page at most with what you delivered and where, the decisions you took, what is still open and the out-of-scope notes.`,
+    "Do not print a summary to stdout in place of files. Record",
     'assumptions under "## Assumptions" (titled in the deliverable\'s language) in the main deliverable.',
     scopeBoundary(),
     scopeGuard(),

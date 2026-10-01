@@ -30,29 +30,32 @@ export function isProfileName(value: unknown): value is ProfileName {
  *  every value must validate against it (settings-profiles.test.ts). */
 export const PROFILE_PRESETS: Record<ProfileName, Readonly<Record<string, SettingValue>>> = {
   // Highest quality, highest token use: the deepest effort, no context ceiling,
-  // every delivery reviewed by another runtime, two correction rounds.
+  // every delivery reviewed, two correction rounds. The reviewer runs on the
+  // session's runtime like every other profile; `review.runtime: other` is the
+  // user's choice to make, never a profile's.
   max: {
     "execution.effort": "xhigh",
     "execution.context_window": 0,
     "review.policy": "always",
-    "review.runtime": "other",
+    "review.runtime": "same",
     "review.max_rounds": 2,
     "routing.mode": "agentic",
     "quality_gate.judge_enabled": "reports",
   },
   // The recommended default: a 400k ceiling, review when a rule asks for it,
-  // the deterministic gate instead of a per-report judge.
+  // and the judge on the text deliverables (.md, .txt, .html), which the
+  // offline heuristics cannot hold to the brief.
   balanced: {
     "execution.effort": "high",
     "execution.context_window": 400000,
     "review.policy": "rule",
-    "review.runtime": "other",
+    "review.runtime": "same",
     "review.max_rounds": 1,
     "routing.mode": "cards",
-    "quality_gate.judge_enabled": "false",
+    "quality_gate.judge_enabled": "reports",
   },
   // Lowest token use: a 200k ceiling, medium effort, review only when the user
-  // asks or the gate fails, reviewed on the same runtime.
+  // asks or the gate fails, no per-report judge.
   economy: {
     "execution.effort": "medium",
     "execution.context_window": 200000,

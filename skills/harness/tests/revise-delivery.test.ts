@@ -23,6 +23,7 @@ import { spawnSync } from "node:child_process";
 import { writeFakeCli } from "./helpers/fake-cli.ts";
 import { SCOPE_GUARD_EN } from "../../_shared/lib/scope-guard.ts";
 import { spawnBudgetMs, TEARDOWN_BUDGET_MS } from "./helpers/test-budgets.ts";
+import * as runLedger from "../lib/run-ledger.ts";
 
 const SKILLS = path.resolve(import.meta.dir, "..", "..");
 const REVISE = path.join(SKILLS, "harness", "scripts", "revise.ts");
@@ -77,13 +78,15 @@ interface ReviseCase {
   runtimeCalls: number;
   /** Everything the fake runtime received: its argv and its stdin. */
   prompt: string;
+  /** The dispatch role each runtime call carried (NIRVANA_DISPATCH_ROLE). */
+  roles: string[];
   oroot: string;
 }
 
 /** A project laid out the way dispatch.ts leaves one (outputs/<pid>/businesses/
  *  <slug>/session.json), with `files` already in the outputs root, plus a fake
  *  runtime that succeeds without touching disk. Then: `nrv revise`. */
-function runRevise(files: Record<string, string | Buffer>, opts: { env?: Record<string, string>; runtimeFails?: boolean } = {}): ReviseCase {
+function runRevise(files: Record<string, string | Buffer>, opts: { env?: Record<string, string>; runtimeFails?: boolean; brief?: string; setup?: (pid: string, home: string) => void } = {}): ReviseCase {
   const n = caseSeq++;
   const home = path.join(TMP, `case-${n}`);
   const pid = `proj-revise-${n}`;
@@ -93,6 +96,8 @@ function runRevise(files: Record<string, string | Buffer>, opts: { env?: Record<
   const oroot = path.join(projDir, "deliverables");
   fs.mkdirSync(oroot, { recursive: true });
   for (const [name, body] of Object.entries(files)) fs.writeFileSync(path.join(oroot, name), body as any);
+  // The run's brief lives at its scaffold root, two levels above businesses/<slug>.
+  if (opts.brief) fs.writeFileSync(path.join(projectRoot, "brief.md"), opts.brief);
   fs.writeFileSync(path.join(projDir, "session.json"), JSON.stringify({
     project_id: pid, business_slug: slug, employee: "ceo", runtime: "claude-code",
     session_id: "sess-original", project_dir: projDir, project_root: projectRoot,
@@ -106,6 +111,7 @@ function runRevise(files: Record<string, string | Buffer>, opts: { env?: Record<
   fs.mkdirSync(binDir, { recursive: true });
   const callsFile = path.join(home, "runtime-calls.log");
   const promptFile = path.join(home, "runtime-prompt.log");
+  const rolesFile = path.join(home, "runtime-roles.log");
   // Bun/TS body with a per-OS launcher: a `#!/bin/sh` fake is invisible to
   // Windows, which is why this whole file used to fail there.
   const envelope = opts.runtimeFails
@@ -118,12 +124,14 @@ function runRevise(files: Record<string, string | Buffer>, opts: { env?: Record<
     let stdin = "";
     try { stdin = await Bun.stdin.text(); } catch {}
     try { fs.appendFileSync(${JSON.stringify(callsFile)}, "call\\n"); } catch {}
+    try { fs.appendFileSync(${JSON.stringify(rolesFile)}, (process.env.NIRVANA_DISPATCH_ROLE ?? "") + "\\n"); } catch {}
     try { fs.writeFileSync(${JSON.stringify(promptFile)}, process.argv.slice(2).join("\\n") + "\\n" + stdin); } catch {}
     console.log(JSON.stringify(${JSON.stringify(envelope)}));
     process.exit(0);
   `);
 
   const logs = path.join(home, "harness-logs");
+  opts.setup?.(pid, home);
   const r = spawnSync(process.execPath, [REVISE, pid, "encurte o texto", "--no-color"], {
     cwd: home,
     encoding: "utf8",
@@ -135,6 +143,7 @@ function runRevise(files: Record<string, string | Buffer>, opts: { env?: Record<
       NIRVANA_SKILLS_DIR: SKILLS,
       HARNESS_LOGS_DIR: logs,
       NRV_IN_SWEEP: "",
+      NIRVANA_RUN_LEDGER_DB: path.join(home, "ledger.sqlite"),
       ...(opts.env ?? {}),
     },
   });
@@ -146,7 +155,8 @@ function runRevise(files: Record<string, string | Buffer>, opts: { env?: Record<
     : [];
   const runtimeCalls = fs.existsSync(callsFile) ? fs.readFileSync(callsFile, "utf8").split("\n").filter(Boolean).length : 0;
   const prompt = fs.existsSync(promptFile) ? fs.readFileSync(promptFile, "utf8") : "";
-  return { status: r.status, stdout: (r.stdout || "") + (r.stderr || ""), audit, runtimeCalls, prompt, oroot };
+  const roles = fs.existsSync(rolesFile) ? fs.readFileSync(rolesFile, "utf8").split("\n").slice(0, -1) : [];
+  return { status: r.status, stdout: (r.stdout || "") + (r.stderr || ""), audit, runtimeCalls, prompt, roles, oroot };
 }
 
 /** DELIVERY-level events only. quality-gate.ts appends its own per-file
@@ -182,15 +192,26 @@ describe("nrv revise — the outcome goes through the delivery pipeline", () => 
     expect(c.stdout).toContain("INDETERMINATE");
   }, 30_000);
 
-  test("a real gate FAIL withholds — it never emits delivered before exiting", () => {
+  test("a style failure the corrections did not clear ships WITH RESERVATIONS (rule A), after the corrections ran", () => {
     const c = runRevise({ "nota.md": FAILING_MD });
-    expect(c.status).toBe(2);
+    expect(c.status).toBe(0);
     expect(events(c)).toContain("gate_failed");
-    expect(events(c)).not.toContain("delivered");   // old code emitted it with gate:"fail"
+    expect(events(c)).toContain("x_delivered_with_reservations");
+    expect(c.audit.find(l => l.event === "delivered" && !l.artifact)?.gate).toBe("fail-accepted");
     // Interactive budget: the config's max_revisions (2) revision runs on top
     // of the revision itself. The human asked for this loop.
     expect(c.runtimeCalls).toBe(3);
+    expect(fs.existsSync(path.join(c.oroot, "_QA-RESERVATIONS.md"))).toBe(true);
+    expect(JSON.parse(fs.readFileSync(path.join(c.oroot, "_STATUS.json"), "utf8")).state).toBe("delivered_with_reservations");
   }, 60_000);
+
+  test("a SERIOUS failure gets 3 more corrections and is then WITHHELD — it never emits delivered", () => {
+    const c = runRevise({ "dados.json": '{"itens": [' + '"valor", '.repeat(40) });
+    expect(c.status).toBe(2);
+    expect(events(c)).toContain("x_delivery_withheld");
+    expect(events(c)).not.toContain("delivered");
+    expect(c.runtimeCalls).toBe(1 + 2 + 3);
+  }, 90_000);
 
   test("passing artifacts → exit 0, delivered, marked as a revision", () => {
     const c = runRevise({ "nota.md": PASSING_MD });
@@ -225,18 +246,19 @@ describe("nrv revise — the outcome goes through the delivery pipeline", () => 
     expect(r.stderr).toContain("Usage: nrv revise");
   }, spawnBudgetMs(1));
 
-  test("a FAILED revision still judges what is on disk instead of abandoning it", () => {
+  test("a FAILED revision still judges what is on disk, and ships it WITH RESERVATIONS, never as a full pass", () => {
     // The runtime errors, but the artifacts exist. Old behavior: exit 1, nothing
     // verified, nothing gated — the unjudged-artifact defect, in the revise door.
     const c = runRevise({ "guia.md": PASSING_MD }, { runtimeFails: true });
-    expect(c.status).toBe(0);                       // gate passed → delivered
+    expect(c.status).toBe(0);
     expect(events(c)).toContain("revision_failed");  // the error is never swallowed
     expect(events(c)).toContain("x_runtime_errored_with_artifacts");
+    expect(events(c)).toContain("x_delivered_with_reservations");
     expect(events(c)).toContain("delivered");
   }, spawnBudgetMs(2));
 
-  test("a FAILED revision whose artifacts fail the gate is WITHHELD, never delivered", () => {
-    const c = runRevise({ "guia.md": FAILING_MD }, { runtimeFails: true });
+  test("a FAILED revision whose artifacts carry a serious finding is WITHHELD, never delivered", () => {
+    const c = runRevise({ "guia.json": '{"itens": [' + '"valor", '.repeat(40) }, { runtimeFails: true, env: { NRV_IN_SWEEP: "1" } });
     expect(c.status).toBe(2);
     expect(events(c)).toContain("x_runtime_errored_with_artifacts");
     expect(events(c)).toContain("x_delivery_withheld");
@@ -249,4 +271,67 @@ describe("nrv revise — the outcome goes through the delivery pipeline", () => 
     expect(events(c)).toContain("revision_failed");
     expect(events(c)).not.toContain("delivered");
   }, spawnBudgetMs(2));
+});
+
+describe("nrv revise continues the ORIGINAL worker", () => {
+  const BRIEF = [
+    "## Request (verbatim)", "Encurte o relatório.", "",
+    "## Decisions", "None.", "",
+    "## Your part", "O relatório.", "",
+    "## Inputs", "None.", "",
+    "## Done when", "- O relatório tem no máximo uma página (bloqueante)", "",
+    "## Output", "nota.md", "",
+  ].join("\n");
+
+  test("a business revision runs as the solo worker, told to update its summary and claims", () => {
+    const c = runRevise({ "nota.md": PASSING_MD, "_CLAIMS.json": JSON.stringify([{ id: "d1", evidence: "nota.md:1-14, o relatório inteiro" }]) }, { brief: BRIEF });
+    expect(c.status).toBe(0);
+    expect(c.roles[0]).toBe("solo");
+    expect(c.prompt).toContain("_SUMMARY.md");
+    expect(c.prompt).toContain("_CLAIMS.json");
+  }, 30_000);
+
+  test("the brief is read from the run's scaffold root: its blocking criterion is held to the claims", () => {
+    // No _CLAIMS.json and a runtime that writes nothing: the blocking criterion
+    // never gets its proof, which is serious, so the delivery is withheld.
+    const c = runRevise({ "nota.md": PASSING_MD }, { brief: BRIEF });
+    expect(c.status).toBe(2);
+    expect(events(c)).toContain("x_delivery_withheld");
+    const status = JSON.parse(fs.readFileSync(path.join(c.oroot, "_STATUS.json"), "utf8"));
+    expect(status.serious[0]).toContain("blocking criterion d1");
+    // Every correction ran as the solo worker too.
+    expect(c.roles.every(r => r === "solo")).toBe(true);
+  }, 90_000);
+
+  test("the ledger row of the run is carried to its terminal state", () => {
+    let db = "";
+    let runId = "";
+    const c = runRevise({ "nota.md": PASSING_MD }, {
+      setup: (pid, home) => {
+        db = path.join(home, "ledger.sqlite");
+        const h = runLedger.openLedger(db);
+        const row = runLedger.openRun(h, { traceId: pid, projectId: pid, projectRoot: null, targetSlug: "biz", targetKind: "business", runtime: "claude-code",
+          meta: { mode: "solo", dispatch_role: "solo", runtime_source: "flag" } });
+        runLedger.markState(h, row.run_id, "running");
+        runId = row.run_id;
+      },
+    });
+    expect(c.status).toBe(0);
+    const h = runLedger.openLedger(db);
+    const row = runLedger.getRun(h, runId)!;
+    expect(row.state).toBe("delivered");
+    expect(row.child_pid).toBeNull();
+  }, 30_000);
+
+  test("a squad run has no session to continue: refused with a clear message, exit 4", () => {
+    const home = path.join(TMP, "squad-case");
+    fs.mkdirSync(path.join(home, "outputs", "proj-squad", "squads", "copy"), { recursive: true });
+    const r = spawnSync(process.execPath, [REVISE, "proj-squad", "encurte", "--no-color"], {
+      cwd: home, encoding: "utf8",
+      env: { ...process.env, HOME: home, USERPROFILE: home, NIRVANA_SKILLS_DIR: SKILLS, NIRVANA_RUN_LEDGER_DB: path.join(home, "ledger.sqlite") },
+    });
+    expect(r.status).toBe(4);
+    expect(r.stderr).toContain("is a squad run");
+    expect(r.stderr).not.toContain("Was this project created");
+  }, spawnBudgetMs(1));
 });

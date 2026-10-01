@@ -10,17 +10,26 @@
 // ladder (retry → BM25 → agent-x) keeps the brief from stalling.
 //
 // Usage:
-//   nrv dispatch <business_slug> "<brief>"
-//   nrv dispatch <business_slug> "<brief>" --manifest=paths.json --project=name --runtime=claude-code
-//   nrv dispatch <business_slug> --brief-file=brief.md --manifest=paths.json
+//   nrv dispatch <business_slug> "<brief>" --exec
+//   nrv dispatch <business_slug> --brief-file=brief.md --manifest=paths.json --project=name --exec
+//   nrv dispatch --squad <slug>[:<capability>] | --agent-x | --auto  "<brief>" --exec
+//
+// Without --exec the command refuses (exit 4) before it creates anything and
+// prints the same command with --exec. --scaffold-only prepares the run folder
+// and the prompt without running them (exit 3).
+//
+// Every input is checked before the first side effect (folder, audit event,
+// ledger row): runtime names and availability, the target's existence, the
+// brief file, numeric flags, --project, and whether this caller's role may
+// dispatch at all.
 //
 // Exit codes (routing-360 Phase 4 — BREAKING, see CHANGELOG):
-//   0 = delivered (gate pass, or --force-deliver)
+//   0 = delivered, possibly with reservations (gate pass, accepted, or --force-deliver)
 //   1 = run failed (routing / exec / verify failure)
 //   2 = delivery WITHHELD — gate failed after the revision budget
 //   3 = delivery INDETERMINATE — nothing was judged: zero gateable artifacts,
-//       or a scaffold-only run (no --exec) that dispatched nothing at all
-//   4 = invalid args (EXIT.INVALID_ARGS per SCRIPT_CONTRACT; was 2)
+//       or a --scaffold-only run that dispatched nothing at all
+//   4 = invalid input, or refused before anything ran (no --exec, role, depth)
 //
 // 0 means DELIVERED, and only that. A scaffold-only run prepares the prompt
 // and stops — it delivers nothing and judges nothing — so it exits 3 on every
@@ -31,6 +40,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { runHeadless, runtimeAvailable, AUTONOMOUS_DIRECTIVE, LEDGER_DEFAULT_TIMEOUT_MS, type Runtime } from "../lib/host-agent-driver.ts";
@@ -38,7 +48,7 @@ import { listRuntimes } from "../../_shared/lib/host-agent-driver.ts";
 import { amplify } from "../lib/amplifier.ts";
 import { proxyEnrichBrief } from "../lib/brief-proxy.ts";
 import { resolveRoutingMode, routingModeOrigin } from "../../_shared/lib/routing-mode.ts";
-import { namedSquadsIn, prepareBusinessSolo, runBusinessSolo } from "../lib/business-solo.ts";
+import { creditSoloRun, namedSquadsIn, prepareBusinessSolo, runBusinessSolo } from "../lib/business-solo.ts";
 import { runSoloReviewStage, type ReviewPolicy } from "../lib/solo-review.ts";
 import { resolveEntityDir } from "../../_shared/lib/entity-resource-map.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
@@ -51,7 +61,11 @@ import { runWithCascade } from "../lib/cascade-runner.ts";
 import { resolveCascadeRoot, loadCascade, nextAfter } from "../lib/cascade.ts";
 import { classify } from "../lib/quota-detector.ts";
 import { isInCooldown, getCooldown, markCooldown } from "../lib/cooldown-registry.ts";
-import { canonicalRuntimeName, loadRuntimeRules, decideRuntime, detectCurrentHost, formatRulesForDirective, hostFromAncestors, resolveDefaultRuntime, unavailableRuntimeMessage, type RuntimeDecision } from "../lib/runtime-rules.ts";
+import { canonicalRuntimeName, loadRuntimeRules, decideRuntime, detectSessionHost, formatRulesForDirective, matchedVetoes, resolveDefaultRuntime, unavailableRuntimeMessage, type RuntimeDecision, type RuntimeRule } from "../lib/runtime-rules.ts";
+import { DEFAULT_MAX_DEPTH, mayDispatch, refusalMessage, roleMayDispatch, roleRefusalMessage, type DispatchRole } from "../../_shared/lib/dispatch-depth.ts";
+import { enumerate, outputsDir, resolveScope } from "../../_shared/lib/scope.ts";
+import { paths as nirvanaPaths } from "../../_shared/lib/bun-helpers.ts";
+import { briefProblems, parseWorkBrief } from "../lib/work-brief.ts";
 import { preflightReindex } from "../lib/preflight-index.ts";
 import { maybeSweep } from "./supervisor.ts";
 import * as runLedger from "../lib/run-ledger.ts";
@@ -112,18 +126,100 @@ function arg(name: string, fallback?: string): string | undefined {
 // filter(!startsWith("--")) treats the "X" in "--project X" as a positional,
 // which made "--project caso-bruno" leak its value as the inline brief and
 // override --brief-file. Skip the token after each known value-flag.
-const VALUE_FLAGS = new Set(["--project", "--runtime", "--manifest", "--brief-file", "--outputs-root", "--max-budget", "--timeout", "--max-revisions", "--execution-mode", "--gauntlet-intensity", "--business", "--squad", "--run-id"]);
+const VALUE_FLAGS = new Set(["--project", "--runtime", "--manifest", "--brief-file", "--outputs-root", "--max-budget", "--timeout", "--max-revisions", "--execution-mode", "--gauntlet-intensity", "--business", "--squad", "--run-id", "--mode", "--scope", "-s"]);
+/** Flags that take no value. With VALUE_FLAGS, everything this command reads
+ *  (`--scope`/`-s` is read by the scope resolver). */
+const BOOLEAN_FLAGS = new Set(["--auto", "--agent-x", "--judge-x", "--exec", "--run", "--claude-code", "--scaffold-only", "--zip", "--pdf", "--html",
+  "--offline-snapshot", "--auto-brief", "--safe", "--strict-route", "--force-deliver", "--review", "--no-review", "--no-judge", "--no-color", "--help", "-h"]);
+/** Flags whose `=<value>` form is read as well as the bare one. */
+const OPTIONAL_VALUE_FLAGS = new Set(["--exec", "--auto-brief"]);
 function extractPositional(argv: string[]): string[] {
   const out: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a.startsWith("--")) {
+    if (a.startsWith("--") || a === "-h" || a === "-s") {
       if (!a.includes("=") && VALUE_FLAGS.has(a)) i++; // skip its space-form value
       continue;
     }
     out.push(a);
   }
   return out;
+}
+
+/** Warnings for flags this command does not read and for positionals beyond the
+ *  ones it uses. Pure; the caller prints them. An unread flag used to vanish in
+ *  silence, and an extra positional did too: `--exec codex` read `codex` as an
+ *  argument and nobody was told. */
+export function argvWarnings(argv: string[], positionalsUsed: number): string[] {
+  const unknown = argv.filter((a) => {
+    if (!a.startsWith("-") || a === "-") return false;
+    const name = a.includes("=") ? a.slice(0, a.indexOf("=")) : a;
+    if (a.includes("=")) return !(VALUE_FLAGS.has(name) || OPTIONAL_VALUE_FLAGS.has(name));
+    return !(VALUE_FLAGS.has(name) || BOOLEAN_FLAGS.has(name));
+  });
+  const extra = extractPositional(argv).slice(positionalsUsed);
+  return [
+    ...(unknown.length ? [`unknown flag(s) ignored: ${unknown.join(" ")}`] : []),
+    ...(extra.length ? [`extra argument(s) ignored: ${extra.map(quoteArg).join(" ")}`] : []),
+  ];
+}
+
+/** A project id or an entity slug is a folder NAME, never a path: letters,
+ *  digits, '.', '_' and '-', no '..', no separator of either OS, no drive
+ *  letter, no trailing dot and no Windows device name. */
+export function isSafeId(id: string): boolean {
+  return /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,198}[A-Za-z0-9_-])?$/.test(id) && !id.includes("..")
+    && !/^(?:con|prn|aux|nul|com\d|lpt\d)(?:\..*)?$/i.test(id);
+}
+
+/** One argument of a command line that pastes into a POSIX shell, PowerShell
+ *  and cmd alike: bare when it is plain, otherwise in double quotes (cmd knows
+ *  no single quotes), an inner quote written \" and backslashes doubled only
+ *  where they precede a quote, so a Windows path keeps its separators. */
+export function quoteArg(a: string): string {
+  if (a && !/[\s"'`$&|;<>()^%!*?{}[\]#~,]/.test(a)) return a;
+  return `"${a.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, "$1$1")}"`;
+}
+
+/** The command a user reruns: `nrv dispatch` with these arguments, `--scaffold-only`
+ *  dropped and `--exec` added once. Built from argv so nothing the user typed is lost
+ *  or truncated. */
+export function rerunWithExec(argv: string[]): string {
+  const kept = argv.filter((a) => a !== "--scaffold-only");
+  const execs = kept.some((a) => a === "--exec" || a.startsWith("--exec=") || a === "--run" || a === "--claude-code");
+  return ["nrv", "dispatch", ...kept, ...(execs ? [] : ["--exec"])].map(quoteArg).join(" ");
+}
+
+/** The --brief-file contents, or why they cannot be used. Decided from the
+ *  file's stat and the error CODE, never from an OS-specific message, so a
+ *  Windows path (backslashes, spaces, a drive letter) is read the same way. */
+export function readBriefFile(file: string): { text: string } | { error: string } {
+  let stat: fs.Stats;
+  try { stat = fs.statSync(file); }
+  catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    return { error: code === "ENOENT" || code === "ENOTDIR" ? `--brief-file not found: ${file}` : `--brief-file cannot be read: ${file} (${code ?? "error"})` };
+  }
+  if (stat.isDirectory()) return { error: `--brief-file is a directory, not a file: ${file}` };
+  let text: string;
+  try { text = fs.readFileSync(file, "utf8").replace(/^\uFEFF/, ""); }
+  catch (error) { return { error: `--brief-file cannot be read: ${file} (${(error as NodeJS.ErrnoException).code ?? "error"})` }; }
+  if (!text.trim()) return { error: `--brief-file is empty: ${file}` };
+  return { text };
+}
+
+/** Whether the runtime the --auto router suggested may replace the one already
+ *  decided. Only when the user wrote a USE_* rule for it and no NOT_USE_* rule
+ *  that matches this brief vetoes it: the router is a planner, and without a rule
+ *  its preference is a guess about whose quota to spend. */
+export function routerRuntimeAllowed(suggested: string | null | undefined, brief: string, rules: RuntimeRule[]):
+  { allowed: true; rule: RuntimeRule } | { allowed: false; reason: string } {
+  if (!suggested) return { allowed: false, reason: "no runtime suggested" };
+  const rule = rules.find((r) => !r.negate && r.runtime === suggested);
+  if (!rule) return { allowed: false, reason: `no USE_* rule names ${suggested}` };
+  const veto = matchedVetoes(brief, rules).find((v) => v.rule.runtime === suggested);
+  if (veto) return { allowed: false, reason: `${veto.rule.envKey} vetoes ${suggested} for this brief` };
+  return { allowed: true, rule };
 }
 
 // ── explicit target selection ──────────────────────────────────────────────
@@ -239,9 +335,9 @@ function defaultRegistries(): { squads: Record<string, unknown>; businesses: Rec
 // a dispatch launched from any folder planted `outputs/` and `.nirvana/` in it.
 const DECLARED_PROJECT_ROOT = runLedger.resolveProjectRoot();
 const PROJECT_ROOT = DECLARED_PROJECT_ROOT ?? path.dirname(globalStoreDir());
-// A dispatch a confined worker starts itself (a seat's `nrv dispatch --squad`)
+// A dispatch a confined worker starts itself (an employee's `nrv dispatch --squad`)
 // belongs to the worker's run: its scaffold nests under that run folder, so the
-// seat, the seats after it and the final synthesis can read what it delivers
+// worker and whatever follows it in that run can read what it delivers
 // (run-workspace.ts nestedOutputsBase). From the operator this is null and the
 // outputs base is the project's (or the store's), as before.
 const NESTED_OUTPUTS_BASE = nestedOutputsBase(DECLARED_PROJECT_ROOT);
@@ -278,9 +374,12 @@ const runIdFlag = arg("--run-id");
 // empty one. The Run is a project-level record; the scaffold is a draft directory
 // (`nrv clean <pid>` deletes it), and a record does not belong inside a draft.
 const KERNEL_PATH = path.join(PROJECT_ROOT, ".nirvana", "run-kernel.sqlite");
-const runtime = arg("--runtime", "claude-code");
-// Was the --runtime flag GIVEN by the user? (arg() can't tell flag from default;
-// an explicit flag ALWAYS beats the USE_* rules — a rule only beats the default.)
+// No default here: which runtime runs the work is decided once, further down,
+// by the session-aware resolution. A literal fallback made `--runtime` with no
+// value mean one vendor.
+const runtime = arg("--runtime");
+// Was the --runtime flag GIVEN by the user? (an explicit flag ALWAYS beats the
+// USE_* rules — a rule only beats the default.)
 const runtimeFlagGiven = process.argv.some(a => a === "--runtime" || a.startsWith("--runtime="));
 const outputsRoot = arg("--outputs-root");
 const noColor = process.argv.includes("--no-color") || !process.stdout.isTTY;
@@ -290,7 +389,7 @@ function c(color: string, text: string): string {
 }
 
 // Inherited, not chosen: say so. The keyword router is not advertised to agents
-// any more — not in the help, not in the protocol, not in a seat's prompt. That
+// any more — not in the help, not in the protocol, not in a worker's prompt. That
 // makes silence dangerous in one direction: a machine carrying `routing.mode:
 // fast` in a config file would route by score forever while the agent driving
 // it has never heard the mode exists and cannot name what it is seeing. So the
@@ -319,6 +418,10 @@ function wantsExec(): boolean {
     || process.argv.includes("--run") || process.argv.includes("--claude-code");
 }
 const wantExec = wantsExec();
+// The one way to prepare a run without running it: folder and prompt, exit 3.
+// Without it and without --exec the command refuses before creating anything.
+const scaffoldOnly = process.argv.includes("--scaffold-only");
+const wantHelp = process.argv.slice(2).some(a => a === "--help" || a === "-h");
 const wantZip = process.argv.includes("--zip");
 const wantPdf = process.argv.includes("--pdf");
 // HTML report is the DEFAULT (skipped only in fast mode or with --no-html). --html
@@ -411,10 +514,240 @@ export function createDispatchAudit(opts: {
 // effects. Body intentionally kept at original indentation for a minimal diff.
 if (import.meta.main) {
 
+/** Usage, on stdout for --help and on stderr when the command cannot run. */
+function printUsage(write: (line: string) => void): void {
+  const runtimes = listRuntimes().map(r => r.name).join("|");
+  const sessionHost = detectSessionHost();
+  [
+    "Usage: nrv dispatch <business_slug> \"<brief>\" --exec [opts]",
+    "       nrv dispatch --squad=<slug>[:<capability>] | --agent-x | --auto  \"<brief>\" --exec [opts]",
+    "",
+    "  Target (name one, or use --auto; they are mutually exclusive):",
+    "    <business_slug>         the business, as the first positional",
+    "    --business=<slug>       the business, named by flag",
+    "    --squad=<slug>[:<capability>]  a squad, with the capability id `nrv find` printed when one fits; no router",
+    "    --agent-x               the generalist; no router",
+    "    --auto                  no target named: the router picks one for the brief (first positional = the brief)",
+    "    --judge-x               the engine's Gauntlet judge on an evaluation brief (the evaluator adapter's child)",
+    "",
+    "  Run:",
+    "    --exec[=<runtime>]      run it: execute, verify, gate, deliver. Without --exec the command refuses",
+    "    --scaffold-only         prepare the run folder and the prompt without running them (exit 3)",
+    `    --runtime=<name>        ${runtimes} (default: ${sessionHost ? `${sessionHost}, ` : ""}the runtime of this session)`,
+    "    --claude-code           shortcut for --exec=claude-code",
+    "    --brief-file=<path>     the brief in a file (alternative to an inline brief)",
+    "    --manifest=<path>       deliverables.json, the expected paths (business only)",
+    "    --project=<id>          project id, a plain name and never a path (default: generated)",
+    "    --outputs-root=<dir>    where the deliverables are written",
+    "    --mode=<mode>           how --auto routes: agentic|cards (default: routing.mode)",
+    "    --auto-brief            enrich a thin brief and decide for the human",
+    "    --review | --no-review  ask for the delivery review, or decline it (business only; review.policy decides otherwise)",
+    "    --zip | --pdf | --html  pack the deliverables / build final-report.pdf / final-report.html (business only)",
+    "    --execution-mode=<mode> standard|gauntlet|auto (default: standard)",
+    "    --gauntlet-intensity=<profile> light|balanced|exhaustive",
+    "    --run-id=<runId>        the Run's id in the project kernel: adopted when prepared (Glance), created otherwise (multi-target nodes); default run_<project>",
+    "    --max-budget=<usd>      cost ceiling for the run (claude --max-budget-usd)",
+    "    --timeout=<min>         wall-clock ceiling for the run (default 24h; a real hang is caught by ~5 min of inactivity)",
+    "    --max-revisions=<n>     automatic revisions after a failed gate (default: quality_gate.max_revisions)",
+    "    --safe                  opt in to restricted mode (limited tools + sandbox); default = full trust",
+    "    --no-judge              skip the LLM judge for this run; the offline heuristic gate still runs",
+    "    --strict-route          an ambiguous route FAILS instead of auto-picking the top candidate",
+    "    --force-deliver         deliver even when the gate fails (delivered gate:\"fail-forced\")",
+    "    -h, --help              this text",
+    "",
+    "  Exit codes:",
+    "    0  delivered, or delivered with reservations (<outputs>/_STATUS.json says which)",
+    "    1  run failed (routing, execution or verification)",
+    "    2  delivery WITHHELD: the gate failed after the revisions",
+    "    3  INDETERMINATE: nothing was judged (zero gateable artifacts, or --scaffold-only)",
+    "    4  invalid input, or refused before anything ran (no --exec, role, depth)",
+    "",
+    "Examples:",
+    "  nrv dispatch brand-creative-studio \"Brand manifesto for product X\" --exec",
+    "  nrv dispatch --squad=copy-squad --brief-file=brief.md --exec",
+    "  nrv run my-brand \"car accident case\" --auto-brief --zip",
+  ].forEach(write);
+}
+
+if (wantHelp) {
+  printUsage(line => console.log(line));
+  process.exit(0);
+}
+
 if (explicit.error) {
   console.error(`nrv dispatch: ${explicit.error}`);
   process.exit(4);
 }
+
+if (!slug && !autoMode && !explicitTarget) {
+  printUsage(line => console.error(line));
+  process.exit(4);
+}
+
+// ── input validation ───────────────────────────────────────────────────────
+// Everything a dispatch can be wrong about is checked here, before the first
+// side effect: an input that cannot run creates no folder, writes no audit
+// event, opens no ledger row and calls no runtime. Each refusal is exit 4.
+function refuse(message: string): never {
+  console.error(c("red", `✗ nrv dispatch: ${message}`));
+  process.exit(4);
+}
+const cliArgs = process.argv.slice(2);
+// Who may dispatch what (_shared/lib/dispatch-depth.ts), first: it is about the
+// caller, not the input. The driver refuses the spawn as well; refusing here
+// means a worker that tries gets the rule before a folder, a ledger row or a
+// router call exists.
+const targetRole: DispatchRole | null = explicitTarget?.kind === "squad" ? "squad"
+  : explicitTarget?.kind === "agent-x" ? "agent-x"
+  : explicitTarget?.kind === "judge-x" ? "planner"
+  : (!autoMode && slug) ? "solo" : null;
+if (!roleMayDispatch(targetRole)) refuse(roleRefusalMessage(targetRole));
+const maxDispatchDepth = (() => {
+  try { const v = Number(resolveSetting("execution.max_dispatch_depth").value); return Number.isFinite(v) ? v : DEFAULT_MAX_DEPTH; }
+  catch { return DEFAULT_MAX_DEPTH; }
+})();
+if (!mayDispatch(maxDispatchDepth)) refuse(refusalMessage(maxDispatchDepth));
+for (const warning of argvWarnings(cliArgs, (autoMode || explicitTarget) ? 1 : 2)) console.error(c("yellow", `⚠ ${warning}`));
+for (const [i, a] of cliArgs.entries()) {
+  const eq = a.indexOf("=");
+  if (eq > 0 && VALUE_FLAGS.has(a.slice(0, eq)) && eq === a.length - 1) refuse(`${a.slice(0, eq)} requires a value`);
+  if (VALUE_FLAGS.has(a) && a !== "--business" && a !== "--squad" && (cliArgs[i + 1] === undefined || cliArgs[i + 1].startsWith("--"))) {
+    refuse(`${a} requires a value`);
+  }
+}
+if (wantExec && scaffoldOnly) refuse("--exec and --scaffold-only are mutually exclusive: run it, or only prepare it");
+if (cliArgs.some(a => a === "--mode" || a.startsWith("--mode=")) && !["agentic", "cards", "fast"].includes((arg("--mode") ?? "").trim().toLowerCase())) {
+  // The keyword mode is accepted but not offered (fast-is-not-advertised.test.ts).
+  refuse(`--mode expects agentic or cards (got '${arg("--mode") ?? ""}')`);
+}
+for (const [flag, value, valid, expects] of [
+  ["--max-budget", maxBudget, (v: string) => v.trim() !== "" && Number.isFinite(Number(v)) && Number(v) >= 0, "an amount in USD, 0 or more"],
+  ["--timeout", timeoutMin, (v: string) => /^\d+$/.test(v) && Number(v) > 0, "whole minutes, 1 or more"],
+  ["--max-revisions", maxRevisionsFlag, (v: string) => /^\d+$/.test(v), "a whole number, 0 or more"],
+] as const) {
+  if (value !== undefined && !valid(value)) refuse(`${flag} expects ${expects} (got '${value}')`);
+}
+if (projectId !== undefined && !isSafeId(projectId)) {
+  refuse(`--project must be a plain id (letters, digits, '.', '_', '-'), never a path: '${projectId}'`);
+}
+if (manifest) {
+  let isFile = false;
+  try { isFile = fs.statSync(manifest).isFile(); } catch { isFile = false; }
+  if (!isFile) refuse(`--manifest is not a readable file: ${manifest}`);
+}
+
+let brief = inlineBrief;
+// The brief file's own text, when the run's brief is that file unchanged: the
+// worker then reads the file itself, so a decision appended to it mid-run
+// (`nrv brief decide`) still reaches it.
+let briefFileText: string | null = null;
+if (briefFile) {
+  const read = readBriefFile(briefFile);
+  if ("error" in read) refuse(read.error);
+  briefFileText = read.text;
+  if (brief) console.error(c("yellow", `⚠ both an inline brief and --brief-file were given: the inline brief is used, ${briefFile} is not`));
+  else brief = read.text;
+}
+if (!brief) refuse("pass an inline brief or --brief-file");
+if (briefFileText !== null && brief === briefFileText && explicitTarget?.kind !== "judge-x") {
+  const problems = briefProblems(parseWorkBrief(brief));
+  if (problems.length) console.error(c("yellow", `⚠ ${briefFile}: ${problems.join("; ")} (\`nrv brief template\` shows the six sections)`));
+}
+
+// Runtime names, wherever they come from: a name the roster does not know used
+// to reach the driver as the literal word the user typed.
+const knownRuntimes = listRuntimes().map(r => r.name);
+const defaultRuntimeSetting = resolveSetting("execution.default_runtime");
+const execEq = cliArgs.find(a => a.startsWith("--exec="))?.slice("--exec=".length).trim() ?? "";
+for (const [value, origin] of [
+  [runtimeFlagGiven ? (runtime ?? "") : "", "--runtime"],
+  [execEq, "--exec="],
+  [String(defaultRuntimeSetting.value ?? "").trim(), `execution.default_runtime, ${describeSettingSource(defaultRuntimeSetting)}`],
+  // hermes is a host that delegates but does not execute: a valid value here.
+  [/^hermes$/i.test((process.env.NIRVANA_HOST_RUNTIME ?? "").trim()) ? "" : (process.env.NIRVANA_HOST_RUNTIME ?? "").trim(), "NIRVANA_HOST_RUNTIME"],
+] as const) {
+  if (value && !knownRuntimes.includes(canonicalRuntimeName(value))) refuse(`unknown runtime '${value}' (${origin}). Valid: ${knownRuntimes.join(", ")}`);
+}
+
+// The named target exists. Resolved the way the prep scripts resolve it, so
+// this check and theirs cannot disagree; a missing target is an input error.
+const namedEntity = explicitTarget?.kind === "squad" ? { kind: "squads" as const, noun: "squad", slug: explicitTarget.slug }
+  : (!autoMode && slug) ? { kind: "businesses" as const, noun: "business", slug } : null;
+if (namedEntity) {
+  if (!isSafeId(namedEntity.slug)) refuse(`'${namedEntity.slug}' is not a ${namedEntity.noun} slug (letters, digits, '.', '_', '-')`);
+  const hit = enumerate(resolveScope(), namedEntity.kind).find(e => e.slug === namedEntity.slug && !e.overridden);
+  const dir = hit?.dir ?? path.join(namedEntity.kind === "squads" ? nirvanaPaths.SQUADS_DIR : nirvanaPaths.BUSINESSES_DIR, namedEntity.slug);
+  let installed = false;
+  try { installed = fs.statSync(dir).isDirectory(); } catch { installed = false; }
+  if (!installed) refuse(`${namedEntity.noun} '${namedEntity.slug}' is not installed (\`nrv list-${namedEntity.kind}\` lists them)`);
+}
+
+// Owner decision: a dispatch runs, or it does not start. Without --exec it used
+// to leave a prepared folder behind and exit 3, and an orchestrator that forgot
+// the flag believed it had dispatched. --scaffold-only is the one way to ask for
+// the folder and the prompt alone.
+if (!wantExec && !scaffoldOnly) {
+  console.error(c("red", "✗ nrv dispatch runs the work only with --exec. Nothing was started and nothing was created."));
+  console.error(c("cyan", "  Run it:"));
+  console.error("    " + c("yellow", rerunWithExec(cliArgs)));
+  console.error(c("dim", "  (--scaffold-only prepares the run folder and the prompt without running them.)"));
+  process.exit(4);
+}
+
+// ── User USE_* rules (natural-language per-runtime routing) ────────────────
+// Precedence: explicit flag (--exec=<rt> | --claude-code | --runtime given)
+// > brief mention > USE_* rule > default = the runtime the USER IS ALREADY
+// USING (session host). The LLM_CASCADE still owns resilience (quota).
+const runtimeRules = loadRuntimeRules(resolveCascadeRoot(process.cwd()));
+const explicitRuntime: Runtime | null = (() => {
+  if (execEq) return normRuntime(execEq);
+  if (process.argv.includes("--claude-code")) return "claude-code";
+  if (runtimeFlagGiven && runtime) return normRuntime(runtime);
+  return null;
+})();
+// An unidentified host is a STATE THE SYSTEM DECLARES, never a silent
+// synonym for one vendor: env markers first, then the process tree, since a
+// host that exports no marker is still this process's ancestor
+// (NRV_HOST_ANCESTRY=0 switches the walk off; the test preload does).
+const detectedHost = detectSessionHost();
+// The execution.default_runtime setting: NIRVANA_DEFAULT_RUNTIME, else the project or global config.
+const envDefault = String(defaultRuntimeSetting.value ?? "").trim();
+// Resolution order once detection fails: an explicit execution.default_runtime,
+// then whatever is actually installed — chosen from the roster, never
+// hardcoded to one vendor. The choice is announced and audited below.
+const firstAvailable = (): Runtime | null =>
+  (listRuntimes().map(r => r.name).find(n => runtimeAvailable(n)) ?? null);
+const hostDefault: Runtime = resolveDefaultRuntime({ detectedHost, envDefault, normalize: normRuntime, firstAvailable }).runtime;
+let runtimeDecision: RuntimeDecision = decideRuntime({
+  brief, explicitRuntime, defaultRuntime: hostDefault,
+  rules: runtimeRules, mode: routingMode as "agentic" | "fast",
+  available: runtimeAvailable,
+});
+const installedRuntimes = (): Runtime[] => listRuntimes().map((r) => r.name).filter(runtimeAvailable);
+// A runtime the caller NAMED (flag or brief) and this machine does not have:
+// refuse, and say what is installed. Serving the run from another vendor
+// behind their back is the defect the resolution order above exists to prevent.
+if (runtimeDecision.unavailable) {
+  console.error(c("red", "✗") + " " + unavailableRuntimeMessage({ runtime: runtimeDecision.runtime, installed: installedRuntimes() }));
+  process.exit(4);
+}
+// Whatever the source, the runtime that will run the work (or the --auto
+// router) has to be here. Checked once, before anything exists.
+if ((wantExec || (autoMode && routingMode !== "fast")) && !runtimeAvailable(runtimeDecision.runtime)) {
+  const installed = installedRuntimes();
+  refuse(`runtime '${runtimeDecision.runtime}' (${runtimeDecision.source === "default" ? (detectedHost ? "this session" : envDefault ? "execution.default_runtime" : "the default") : runtimeDecision.source}) is not installed on this machine. `
+    + `Installed: ${installed.length ? `${installed.join(", ")}. Install it, or pass --runtime with one of those` : "none. Install a supported runtime"} (\`nrv doctor\` shows which runtimes work).`);
+}
+
+/** A runtime the user chose (flag, or named in the brief) is pinned: its run
+ *  never hands off to another vendor, quota failure included. Read at call
+ *  time, since the --auto router may still replace a default with a rule. */
+const runtimePinned = (): boolean => runtimeDecision.source === "flag" || runtimeDecision.source === "brief";
+/** The cascade runner every dispatched worker goes through, with the pin applied.
+ *  Passed through the libraries' cascade seam until they take `pinned` themselves. */
+const pinnedCascade: typeof runWithCascade = (cascadeArgs) => runWithCascade({ ...cascadeArgs, pinned: cascadeArgs.pinned || runtimePinned() });
+
+// ── side effects start here ─────────────────────────────────────────────────
 
 // Say where the work will land before any of it does. Outside a project that
 // is the engine's store, and the line names the command that makes one.
@@ -431,67 +764,6 @@ if (executionOptions.requestedMode !== "standard") {
     requested_mode: executionOptions.requestedMode, resolved_mode: executionOptions.resolvedMode,
     intensity: executionOptions.intensity, reason: executionOptions.reason,
   });
-}
-
-if (!slug && !autoMode && !explicitTarget) {
-  console.error("Usage: nrv dispatch <business_slug> \"<brief>\" [opts]");
-  console.error("");
-  console.error("  Opts:");
-  console.error("    --brief-file=<path>     Brief in a file (alternative to inline)");
-  console.error("    --manifest=<path>       deliverables.json (expected paths)");
-  console.error("    --project=<id>          Custom project ID (default: auto)");
-  console.error("    --outputs-root=<dir>    Where final artifacts are written");
-  console.error("    --runtime=<name>        claude-code|codex|antigravity-cli|gemini-cli|kimi-cli|grok-cli|pi (default: claude-code)");
-  console.error("");
-  console.error("  Exec (autopilot):");
-  console.error("    --auto                  no business named: the router picks the best one for the brief");
-  console.error("    --business=<slug>       name the business explicitly (same as the positional slug)");
-  console.error("    --squad=<slug>          name the squad explicitly: squad-only route, no router");
-  console.error("    --agent-x               dispatch the generalist explicitly, no router");
-  console.error("    --judge-x               run the engine's Gauntlet judge on an evaluation brief (the evaluator adapter's child)");
-  console.error("                            (--business, --squad, --agent-x, --judge-x and --auto are mutually exclusive)");
-  console.error("    --exec[=runtime]        run the agent headless (without it, only scaffolds)");
-  console.error("    --claude-code           shortcut for --exec=claude-code");
-  console.error("    --auto-brief            enrich a thin brief and decide for the human");
-  console.error("    --zip                   pack the deliverables into ./<project>.zip");
-    console.error("    --pdf                   build final-report.pdf via report-publisher (if the business has one)");
-    console.error("    --html                  build final-report.html from every markdown in the project (marked)");
-  console.error("    --review | --no-review  ask for the delivery review, or decline it (review.policy decides otherwise)");
-  console.error("    --execution-mode=<mode> standard|gauntlet|auto (default: standard)");
-  console.error("    --gauntlet-intensity=<profile> light|balanced|exhaustive");
-  console.error("    --run-id=<runId>        the Run's id in the project kernel: adopted when prepared (Glance), created otherwise (multi-target nodes); default run_<project>");
-  console.error("    --max-budget=<usd>      cost ceiling for the run (claude --max-budget-usd)");
-  console.error("    --timeout=<min>         wall-clock ceiling for the run (default 24h; a real hang is caught by ~5 min of inactivity)");
-  console.error("    --safe                  opt in to restricted mode (limited tools + sandbox); default = full trust");
-  console.error("    --no-judge              skip the LLM judge for this run; the offline heuristic gate still runs");
-  console.error("    --strict-route          an ambiguous route FAILS instead of auto-picking the top candidate");
-  console.error("    --force-deliver         deliver even when the gate fails (delivered gate:\"fail-forced\")");
-  console.error("");
-  console.error("  Exit codes:");
-  console.error("    0  delivered (gate passed, or --force-deliver)");
-  console.error("    1  run failed (routing, execution or verification)");
-  console.error("    2  delivery WITHHELD — gate failed after the revisions");
-  console.error("    3  INDETERMINATE — nothing was judged: zero gateable artifacts,");
-  console.error("       or scaffold without --exec (nothing dispatched, nothing delivered)");
-  console.error("    4  invalid arguments");
-  console.error("");
-  console.error("Example:");
-  console.error("  nrv dispatch brand-creative-studio \"Brand manifesto for product X\"");
-  console.error("  nrv run my-brand \"car accident case\" --auto-brief --zip");
-  process.exit(4);
-}
-
-let brief = inlineBrief;
-if (!brief && briefFile) {
-  if (!fs.existsSync(briefFile)) {
-    console.error(c("red", `ERROR: --brief-file not found: ${briefFile}`));
-    process.exit(4);
-  }
-  brief = fs.readFileSync(briefFile, "utf8");
-}
-if (!brief) {
-  console.error(c("red", "ERROR: pass an inline brief or --brief-file"));
-  process.exit(4);
 }
 
 // Never route/dispatch against a stale corpus (routing-360 Phase 2.5);
@@ -552,7 +824,14 @@ let _runBudgetRoot: string | null = null;
 // any path computed. First and not last on purpose: the budget belongs to the
 // run, and a nested child — a Gauntlet candidate, an evaluation — must charge
 // the run that pays for it rather than opening an account of its own.
-function runBudgetKey(): string { return path.basename(outputsRoot ?? _runBudgetRoot ?? "run"); }
+// Keyed by the whole root, not its basename: every generated root ends in
+// `deliverables`, so the basename alone gave every run of a project one account.
+function runBudgetKey(): string {
+  const root = outputsRoot ?? _runBudgetRoot;
+  if (!root) return "run";
+  const abs = path.resolve(root);
+  return `${path.basename(abs)}-${createHash("sha1").update(abs).digest("hex").slice(0, 12)}`;
+}
 function setRunBudgetRoot(dir: string): void { if (_runBudgetRoot === null) _runBudgetRoot = dir; }
 
 /** The ceiling the OWNER named: the tighter of --max-budget and the business's
@@ -567,9 +846,9 @@ function ownerCeilingUsd(): number | undefined {
 /**
  * What the NEXT child may spend.
  *
- * The ceiling is for the run, not for each seat. Passing the full number to
- * every child gave a six-employee chain six ceilings: a run capped at $2 spent
- * $4.90 on a customer VPS. This reads what the run has already spent and offers
+ * The ceiling is for the run, not for each child. Passing the full number to
+ * every child gave each its own ceiling: a run capped at $2 spent $4.90 on a
+ * customer VPS. This reads what the run has already spent and offers
  * the remainder. With no ceiling it returns undefined, which is the normal case.
  */
 function effectiveBudgetUsd(): number | undefined {
@@ -594,58 +873,13 @@ function runBudgetExhausted(): boolean {
   return runBudget.exhausted(runBudget.open(PROJECT_ROOT, runBudgetKey(), ceiling));
 }
 
-// ── User USE_* rules (natural-language per-runtime routing) ────────────────
-// Precedence: explicit flag (--exec=<rt> | --claude-code | --runtime given)
-// > USE_* rule > default = the runtime the USER IS ALREADY USING (session
-// host) > claude-code. The LLM_CASCADE still owns resilience (quota).
-const runtimeRules = loadRuntimeRules(resolveCascadeRoot(process.cwd()));
-const explicitRuntime: Runtime | null = (() => {
-  const eq = process.argv.find(a => a.startsWith("--exec="));
-  if (eq) return normRuntime(eq.split("=")[1]);
-  if (process.argv.includes("--claude-code")) return "claude-code";
-  if (runtimeFlagGiven) return normRuntime(runtime);
-  return null;
-})();
-// An unidentified host is a STATE THE SYSTEM DECLARES, never a silent
-// synonym for one vendor. The old `?? "claude-code"` meant that whenever
-// detection failed — which is every runtime that exports no session marker —
-// the dispatch quietly walked away from the CLI the user was sitting in and
-// spent another vendor's quota. Precedence (flag > brief > rules > host) was
-// correct above this line and undone by one fallback.
-// A host that exports no session marker is still this process's ancestor.
-// NRV_HOST_ANCESTRY=0 switches the walk off (the test preload does, since a
-// test runs as a descendant of whatever CLI started the suite).
-const detectedHost = detectCurrentHost() ?? (process.env.NRV_HOST_ANCESTRY === "0" ? null : hostFromAncestors());
-// The execution.default_runtime setting: NIRVANA_DEFAULT_RUNTIME, else the project or global config.
-const defaultRuntimeSetting = resolveSetting("execution.default_runtime");
-const envDefault = defaultRuntimeSetting.value.trim();
-// Resolution order once detection fails: an explicit execution.default_runtime,
-// then whatever is actually installed — chosen from the roster, never
-// hardcoded to one vendor. The run always proceeds (a brief must not stall),
-// but the choice is announced and audited instead of assumed.
-const firstAvailable = (): Runtime | null =>
-  (listRuntimes().map(r => r.name).find(n => runtimeAvailable(n)) ?? null);
-const hostDefault: Runtime = resolveDefaultRuntime({ detectedHost, envDefault, normalize: normRuntime, firstAvailable }).runtime;
+// ── the runtime decided above, announced and audited ───────────────────────
+// The choice was made before any side effect; from here on it is said out loud.
 if (!detectedHost) {
   const how = envDefault ? `execution.default_runtime=${hostDefault} (${describeSettingSource(defaultRuntimeSetting)})` : `first available on PATH: ${hostDefault}`;
   console.error(c("yellow", "⚠") + ` host runtime not identified — using ${how}.`
     + " Pin it with NIRVANA_DEFAULT_RUNTIME in .env, nrv config set execution.default_runtime <runtime>, --runtime, or by naming it in the brief.");
   emit("x_host_runtime_undetected", { used: hostDefault, from: envDefault ? defaultRuntimeSetting.source : "path-scan", cwd: process.cwd() });
-}
-let runtimeDecision: RuntimeDecision = decideRuntime({
-  brief, explicitRuntime, defaultRuntime: hostDefault,
-  rules: runtimeRules, mode: routingMode as "agentic" | "fast",
-  available: runtimeAvailable,
-});
-// A runtime the caller NAMED and this machine does not have: refuse, and say
-// what is installed. Serving the run from another vendor behind their back is
-// the defect the whole resolution order above exists to prevent.
-if (runtimeDecision.unavailable) {
-  console.error(c("red", "✗") + " " + unavailableRuntimeMessage({
-    runtime: runtimeDecision.runtime,
-    installed: listRuntimes().map((r) => r.name).filter(runtimeAvailable),
-  }));
-  process.exit(4);
 }
 if (runtimeDecision.source === "brief") {
   console.log(c("lime", "▶") + c("bold", ` Runtime named in the brief: "${runtimeDecision.mention}"`) + c("dim", ` → ${runtimeDecision.runtime}`));
@@ -790,7 +1024,9 @@ if (briefTarget) {
   let routedDone: string[] = [];
   const routeOnce = async () => {
     let runtime = rt;
-    if (isInCooldown(routerRoot, runtime)) {
+    // A runtime the user chose is pinned: the router waits for it rather than
+    // spending another vendor's quota.
+    if (!runtimePinned() && isInCooldown(routerRoot, runtime)) {
       const alt = nextAfter(routerRoot, loadCascade(routerRoot), runtime)?.runtime;
       if (alt && alt !== runtime) {
         console.error(c("yellow", `  ⚠ ${runtime} unavailable (${getCooldown(routerRoot, runtime)?.reason || "cooldown"}) — routing via ${alt}`));
@@ -829,16 +1065,21 @@ if (briefTarget) {
   // The agentic router READ the user's USE_* rules; if it suggested a runtime
   // and there is no explicit flag NOR a direct mention in the brief (which is
   // stronger than the LLM's suggestion), the semantic suggestion overrides the
-  // BM25 match.
-  if (decision.runtime && !explicitRuntime && runtimeDecision.source !== "brief" && runtimeAvailable(decision.runtime)) {
-    const matched = runtimeRules.find(r => r.runtime === decision.runtime);
-    runtimeDecision = { runtime: decision.runtime, source: "rule", rule: matched, method: "agentic" };
-    console.log(c("lime", "  →") + c("bold", ` runtime from the user rule: ${decision.runtime}`) + c("dim", " (agentic)"));
+  // BM25 match — but only for a runtime a USE_* rule names and no matching
+  // NOT_USE_* vetoes. Without that rule the router's preference is a guess.
+  const routed = decision.runtime && decision.runtime !== runtimeDecision.runtime && !explicitRuntime && runtimeDecision.source !== "brief"
+    ? routerRuntimeAllowed(decision.runtime, brief, runtimeRules) : null;
+  if (routed?.allowed && decision.runtime && runtimeAvailable(decision.runtime)) {
+    runtimeDecision = { runtime: decision.runtime, source: "rule", rule: routed.rule, method: "agentic" };
+    console.log(c("lime", "  →") + c("bold", ` runtime from the user rule: ${decision.runtime}`) + c("dim", ` (agentic, ${routed.rule.envKey})`));
     emit("routing_rule_applied", {
       project_id: projectId || null,
-      rule_env_key: matched?.envKey ?? null, rule_text: matched?.rule ?? null,
+      rule_env_key: routed.rule.envKey, rule_text: routed.rule.rule,
       runtime: decision.runtime, method: "agentic", score: null,
     });
+  } else if (routed) {
+    const why = routed.allowed ? `${decision.runtime} is not installed` : routed.reason;
+    console.log(c("dim", `  router suggested ${decision.runtime}; staying on ${runtimeDecision.runtime} (${why})`));
   }
 
   // Dispatch cascade: decision → plan (retry → BM25 → agent-x on transport
@@ -1175,6 +1416,8 @@ interface DeliverOpts {
   acceptancePromisesPaths?: boolean;
   afterGate?: Parameters<typeof runDelivery>[0]["afterGate"];
   onSession?: (sid: string) => void;
+  /** Blocking criteria the solo review left unconfirmed: serious for the gate. */
+  reviewBlockingMissed?: string[];
 }
 
 function deliveryArgs(opts: DeliverOpts): DeliveryArgs {
@@ -1196,10 +1439,10 @@ function deliveryArgs(opts: DeliverOpts): DeliveryArgs {
     maxBudgetUsd: effectiveBudgetUsd(),
     timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
     yolo,
-    // A squad run carries the `squad` stamp (squad-exec) and agent-x its own
-    // (runAgentX), so their revisions do too.
-    ...(opts.targetKind === "squad" ? { producerRole: "squad" as const } : {}),
-    ...(opts.targetKind === "agent-x" ? { producerRole: "agent-x" as const } : {}),
+    // A revision continues the producing run, so it carries that run's stamp:
+    // `squad` (squad-exec), `agent-x` (runAgentX) or `solo`, the one agent that
+    // is the whole business (business-solo.ts).
+    producerRole: opts.targetKind === "business" ? "solo" as const : opts.targetKind,
     rulesDirective,
     forceDeliver,
     config: harnessConfig,
@@ -1207,6 +1450,7 @@ function deliveryArgs(opts: DeliverOpts): DeliveryArgs {
     audit: emit,
     afterGate: opts.afterGate,
     onSession: opts.onSession,
+    reviewBlockingMissed: opts.reviewBlockingMissed,
     verifyScript: verifyScriptPath,
     gateScript: gateScriptPath,
     log: (l) => console.log(c("dim", l)),
@@ -1220,9 +1464,32 @@ function deliver(opts: DeliverOpts): DeliveryResult {
 
 /** A dispatched run came back not-ok. If it left artifacts behind they are
  * judged through the same pipeline (the runtime error stays on the record);
- * with nothing on disk the caller's failure path stands. */
+ * with nothing on disk the caller's failure path stands. The completeness
+ * ceiling binds: the gate judges the quality of the files that exist, never
+ * whether a crashed run wrote all of them, so without a verified manifest the
+ * best outcome is withheld, not a full pass. */
 function deliverAfterError(opts: DeliverOpts, runtimeError: string, errorContext: Record<string, any>): RuntimeErrorOutcome {
-  return deliverAfterRuntimeError({ ...deliveryArgs(opts), runtimeError, errorContext });
+  return deliverAfterRuntimeError({ ...deliveryArgs(opts), runtimeError, errorContext,
+    completenessCeiling: { reason: `the runtime errored before the run finished (${runtimeError.slice(0, 200)})` } });
+}
+
+type DeliveryState = "delivered" | "delivered_with_reservations" | "withheld" | "indeterminate" | "failed";
+
+/** What the delivery pipeline decided, in its own words: `state` from the
+ *  result (and `_STATUS.json`, which carries the reasons), derived from the exit
+ *  code and the gate when an older pipeline did not say. */
+function deliveryStatus(res: DeliveryResult, oroot: string): { state: DeliveryState; serious: string[]; reservations: string | null } {
+  let status: { state?: DeliveryState; serious?: unknown; reservations?: unknown } = {};
+  try { status = JSON.parse(fs.readFileSync(path.join(oroot, "_STATUS.json"), "utf8")); } catch { status = {}; }
+  const reservationsFile = path.join(oroot, "_QA-RESERVATIONS.md");
+  const state: DeliveryState = (res as DeliveryResult & { state?: DeliveryState }).state ?? status.state
+    ?? (res.exitCode === 0 ? (res.gateOutcome === "fail-accepted" ? "delivered_with_reservations" : "delivered")
+      : res.exitCode === 2 ? "withheld" : res.exitCode === 3 ? "indeterminate" : "failed");
+  return {
+    state,
+    serious: Array.isArray(status.serious) ? status.serious.map(String) : [],
+    reservations: typeof status.reservations === "string" ? status.reservations : fs.existsSync(reservationsFile) ? reservationsFile : null,
+  };
 }
 
 function printDeliverySummary(res: DeliveryResult, pid: string, oroot: string, zipPath: string | null, runtimeErrored = false): void {
@@ -1230,29 +1497,71 @@ function printDeliverySummary(res: DeliveryResult, pid: string, oroot: string, z
   if (runtimeErrored) {
     console.log(c("yellow", "⚠ The runtime reported an error at the end of the run — the artifacts that already existed were verified and judged anyway."));
   }
-  if (res.exitCode === 0) {
-    console.log(c("green", "✓ Autopilot complete."));
-  } else if (res.exitCode === 2) {
-    console.log(c("yellow", "⚠ Delivery WITHHELD — the quality gate failed after the revisions (exit 2)."));
+  const status = deliveryStatus(res, oroot);
+  if (status.state === "delivered") {
+    console.log(c("green", "✓ Autopilot complete: delivered."));
+  } else if (status.state === "delivered_with_reservations") {
+    console.log(c("yellow", `⚠ Delivered with reservations: ${status.reservations ?? "see _SUMMARY.md"}`));
+  } else if (status.state === "withheld") {
+    console.log(c("yellow", `⚠ Withheld (exit ${res.exitCode}): ${status.serious.length ? status.serious.join("; ") : res.ceilingApplied ?? "the quality gate failed after the revisions"}.`));
     console.log(c("dim", "  The artifacts stay on disk; nothing was marked as delivered."));
-  } else if (res.exitCode === 3) {
-    console.log(c("yellow", "⚠ Delivery INDETERMINATE — no gateable artifact was produced (exit 3)."));
+  } else if (status.state === "indeterminate") {
+    console.log(c("yellow", `⚠ Indeterminate (exit ${res.exitCode}): nothing gateable was produced, so nothing was judged.`));
   } else {
-    console.log(c("red", "✗ Delivery failed."));
+    console.log(c("red", `✗ Delivery failed (exit ${res.exitCode}).`));
   }
   console.log(c("dim", `  Project ID:   ${pid}`));
   console.log(c("dim", `  Deliverables: ${oroot}`));
+  console.log(c("dim", `  Status:       ${path.join(oroot, "_STATUS.json")}`));
   if (zipPath) console.log(c("dim", `  Zip:          ${zipPath}`));
   console.log("");
   console.log(c("cyan", "  Ask for changes (keeps the session):"));
   console.log("    " + c("yellow", `nrv revise ${pid} "<change>"`));
-  if (res.exitCode === 2) {
+  if (status.state === "withheld" && !res.ceilingApplied) {
     console.log(c("cyan", "  Deliver anyway (eyes open):"));
     console.log("    " + c("yellow", "re-run with --force-deliver"));
   }
   console.log(c("cyan", "  Clear the whole scaffold:"));
   console.log("    " + c("yellow", `nrv clean ${pid}`));
   console.log("");
+}
+
+/** The run's project id. An explicit --project is reused on purpose (a Glance
+ *  chat, a multi-target node). A generated one is CLAIMED by creating its
+ *  folder: two dispatches of the same target started in the same second used
+ *  to share one folder, and now the second takes the next free suffix. */
+function claimProjectId(base: string, root: string = OUTPUTS_BASE): string {
+  fs.mkdirSync(root, { recursive: true });
+  for (let n = 1; ; n++) {
+    const id = n === 1 ? base : `${base}-${n}`;
+    try { fs.mkdirSync(path.join(root, id)); return id; }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
+  }
+}
+const runStamp = () => new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "");
+/** Where the prep scripts (brief-business, brief-squad) place a run: scope.ts
+ *  outputsDir, which also honours NIRVANA_OUTPUTS_DIR. Their id is claimed there. */
+const prepOutputsBase = (): string => NESTED_OUTPUTS_BASE ?? outputsDir(resolveScope());
+/** Removes a claimed run folder a failed prep step left empty (rmdir refuses a non-empty one). */
+function releaseProjectId(pid: string, root: string): void {
+  if (projectId) return;
+  try { fs.rmdirSync(path.join(root, pid)); } catch { /* not empty, or already gone */ }
+}
+
+/** Flags that only a business run reads, named when they reach a squad or the generalist. */
+function warnBusinessOnlyFlags(target: string): void {
+  const given = ["--html", "--pdf", "--zip", "--review", "--no-review", "--manifest"].filter((f) => cliArgs.some((a) => a === f || a.startsWith(`${f}=`)));
+  if (given.length) console.error(c("yellow", `⚠ ${given.join(" ")} only apply to a business run; ignored for ${target}.`));
+}
+
+/** The next step a --scaffold-only run prints: the same command, run. */
+function printScaffoldNextStep(pid: string, prepared: string): void {
+  console.log("");
+  console.log(c("cyan", `  Nothing ran. ${prepared} To run it, repeat the command with --exec:`));
+  console.log("    " + c("yellow", rerunWithExec(cliArgs)));
+  console.log("");
+  console.log(c("green", "✓ Scaffold ready. Project ID: " + pid));
+  console.log(c("dim", "  (exit 3: nothing dispatched, nothing judged; delivery only with --exec)"));
 }
 
 // ── SQUAD-ONLY ROUTE — dispatch the squad(s) for real (Phase 4.1) ─────────
@@ -1266,9 +1575,9 @@ function printDeliverySummary(res: DeliveryResult, pid: string, oroot: string, z
 if (pendingCascade?.kind === "squad-only") {
   const squads = pendingCascade.squads;
   const rt = runtimeDecision.runtime;
-  const ts = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "");
-  const pid = projectId || `proj-${ts}-${squads[0]}`;
-  const briefSquadScript = path.join(SKILLS, "squads/scripts/brief-squad.ts");
+  warnBusinessOnlyFlags(`squad ${squads.join(", ")}`);
+  const pid = projectId || claimProjectId(`proj-${runStamp()}-${squads[0]}`, prepOutputsBase());
+  const briefSquadScript = path.join(SKILLS, "squads", "scripts", "brief-squad.ts");
 
   console.log(c("lime", "▶") + c("bold", ` Squad-only — scaffold (${squads.length} squad(s))`));
   let projDir: string | null = null;
@@ -1277,9 +1586,10 @@ if (pendingCascade?.kind === "squad-only") {
     if (r.status !== 0) {
       console.error(c("red", `✗ brief-squad failed for '${sq}':`));
       console.error(r.stdout || r.stderr);
-      process.exit(1);
+      if (!projDir) releaseProjectId(pid, prepOutputsBase());
+      process.exit(r.status === 4 ? 4 : 1);
     }
-    const dir = r.stdout.match(/Project dir:\s+(\S+)/)?.[1];
+    const dir = r.stdout.match(/^\s*Project dir:\s+(.+?)\s*$/m)?.[1];
     if (!projDir && dir) projDir = dir;
     console.log(c("dim", `  ✓ ${sq} scaffolded`));
   }
@@ -1294,26 +1604,15 @@ if (pendingCascade?.kind === "squad-only") {
   const projectRoot = PROJECT_ROOT;
   dispatchAudit.bindProjectRoot(projectRoot);
 
-  if (!wantExec) {
-    console.log("");
-    console.log(c("cyan", "  Scaffold ready (no --exec). To run it:"));
-    console.log("    " + c("yellow", `nrv dispatch --auto "${brief.slice(0, 60)}…" --exec`));
-    console.log("    " + c("yellow", `# or manually: bun ${briefSquadScript} <squad> "<brief>"`));
-    console.log("");
-    console.log(c("green", "✓ Scaffold ready. Project ID: " + pid));
-    console.log(c("dim", "  (exit 3 — nothing dispatched, nothing judged; delivery only with --exec)"));
+  if (scaffoldOnly) {
+    printScaffoldNextStep(pid, `The brief is at ${path.join(scaffoldRoot, "brief.md")}.`);
     process.exit(3);
   }
 
-  if (!runtimeAvailable(rt)) {
-    console.error(c("red", `✗ runtime '${rt}' is not on the PATH. Install it or use --runtime=claude-code.`));
-    emit("agent_exec_failed", { trace_id: pid, project_id: pid, squad_slug: squads[0], runtime: rt, reason: "runtime not on PATH" });
-    process.exit(1);
-  }
   const oroot = outputsRoot || path.join(scaffoldRoot, "deliverables");
   setRunBudgetRoot(oroot);
   fs.mkdirSync(oroot, { recursive: true });
-  // The capability each squad of the chain actually runs (lib/capability-resolver.ts):
+  // The capability each squad of the route actually runs (lib/capability-resolver.ts):
   // the id the user named, the squad's only capability, the best one for this brief
   // inside the squad, or `squad.execute` for a v4 squad that declares none. Before
   // this the literal `squad.execute` was stamped on the Run, on every artifact ref
@@ -1346,7 +1645,7 @@ if (pendingCascade?.kind === "squad-only") {
       const candidate = runSquadHeadless({ squadSlug: squad, brief: candidateBrief, projectId: pid, projectDir: projDir, projectRoot,
         outputsDir: candidateRoot, runtime: rt, capabilityId,
         maxBudgetUsd: budget.candidateBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
-        rulesDirective, autonomousDirective: AUTONOMOUS_DIRECTIVE,
+        rulesDirective, autonomousDirective: AUTONOMOUS_DIRECTIVE, runWithCascadeImpl: pinnedCascade,
         ledger: { runId: canonicalRunId, watchDir: candidateRoot } });
       if (candidate.sessionId) runLedger.recordSession(legacy, canonicalRunId, candidate.sessionId);
       return { ok: candidate.ok, sessionId: candidate.sessionId, costUsd: candidate.costUsd, error: candidate.error };
@@ -1378,7 +1677,7 @@ if (pendingCascade?.kind === "squad-only") {
     }
   }
   // Standard mode publishes the same canonical Run the Gauntlet canary would (dual-write through
-  // lib/run-kernel/standard-publication.ts, fail-open); a chain of squads publishes under its first squad.
+  // lib/run-kernel/standard-publication.ts, fail-open); a route of several squads publishes under its first squad.
   const publication = openStandardPublication({ kernelPath: KERNEL_PATH, projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag),
     traceId: pid, target: { kind: "squad", slug: squads[0], capabilityId }, snapshot: frozenExecutionSnapshot(pid, rt, "squad"),
     audit: emit, warn: line => console.error(c("yellow", line)) });
@@ -1389,7 +1688,8 @@ if (pendingCascade?.kind === "squad-only") {
       traceId: pid, projectId: pid, targetSlug: squads.join(","), targetKind: "squad",
       runtime: rt,
       meta: { project_dir: projDir, project_root: projectRoot, scaffold_root: scaffoldRoot,
-        brief_path: path.join(scaffoldRoot, "brief.md"), outputs_root: oroot, mode: "squad-only" },
+        brief_path: path.join(scaffoldRoot, "brief.md"), outputs_root: oroot, mode: "squad-only",
+        runtime_source: runtimeDecision.source, dispatch_role: "squad" },
     });
     ledgerRunId = row.run_id;
   });
@@ -1413,12 +1713,12 @@ if (pendingCascade?.kind === "squad-only") {
       capabilityId: capabilityById.get(sq),
       maxBudgetUsd: effectiveBudgetUsd(),
       timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
-      rulesDirective, autonomousDirective: AUTONOMOUS_DIRECTIVE,
+      rulesDirective, autonomousDirective: AUTONOMOUS_DIRECTIVE, runWithCascadeImpl: pinnedCascade,
       ...(ledgerRunId ? { ledger: { runId: ledgerRunId, watchDir: outDir } } : {}),
     });
     lastSession = r.sessionId ?? lastSession;
     if (!r.ok) {
-      // Stop the chain, but do NOT abandon what is already on disk — the
+      // Stop the route, but do NOT abandon what is already on disk — the
       // delivery pipeline below decides (see deliverAfterRuntimeError).
       console.error(c("red", `✗ squad '${sq}' failed: ${r.error}`));
       emit("agent_exec_failed", { trace_id: pid, project_id: pid, squad_slug: sq, runtime: rt, error: r.error });
@@ -1461,15 +1761,14 @@ if (pendingCascade?.kind === "squad-only") {
 // scorecard; otherwise `withheld`, and a spent cap is named `budget_exhausted`.
 if (pendingCascade?.kind === "judge-x") {
   const rt = runtimeDecision.runtime;
-  const ts = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "");
-  const pid = projectId || `proj-${ts}-judge-x`;
+  const pid = projectId || claimProjectId(`proj-${runStamp()}-judge-x`);
   const scaffoldRoot = path.join(OUTPUTS_BASE, pid);
   const projDir = path.join(scaffoldRoot, "judge-x");
   fs.mkdirSync(projDir, { recursive: true });
   dispatchAudit.bindProjectRoot(PROJECT_ROOT);
   emit("brief_received", { trace_id: pid, project_id: pid, target: "judge-x", brief_excerpt: briefExcerpt(brief), brief_chars: brief.length });
 
-  if (!wantExec) {
+  if (scaffoldOnly) {
     console.log(c("cyan", "  judge-x runs only with --exec: nothing was judged."));
     console.log(c("green", "✓ Scaffold ready. Project ID: " + pid));
     console.log(c("dim", "  (exit 3 — nothing dispatched, nothing judged)"));
@@ -1502,7 +1801,8 @@ if (pendingCascade?.kind === "judge-x") {
   publication.start();
   const maxBudgetUsd = effectiveBudgetUsd();
   const r = runJudgeX({ brief, runtime: rt, projectId: pid, projectDir: projDir, projectRoot: PROJECT_ROOT, outputsRoot: oroot, scorecardPath,
-    candidateRoot: request.candidateRoot, maxBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined, yolo, audit: emit });
+    candidateRoot: request.candidateRoot, maxBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined, yolo, audit: emit,
+    runWithCascadeImpl: pinnedCascade });
   console.log(c("dim", `  session: ${r.sessionId || "(none)"} · ${r.durationMs}ms${r.costUsd != null ? ` · ${r.costUsd.toFixed(4)}` : ""} · prompt ${r.promptChars} chars`));
   chargeRunBudget(r.costUsd);
   publication.verify();
@@ -1527,8 +1827,8 @@ if (pendingCascade?.kind === "judge-x") {
 // gap named, and its output goes through the SAME delivery pipeline.
 if (pendingCascade?.kind === "agent-x") {
   const rt = runtimeDecision.runtime;
-  const ts = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "");
-  const pid = projectId || `proj-${ts}-agent-x`;
+  warnBusinessOnlyFlags("agent-x");
+  const pid = projectId || claimProjectId(`proj-${runStamp()}-agent-x`);
   const scaffoldRoot = path.join(OUTPUTS_BASE, pid);
   const projDir = path.join(scaffoldRoot, "agent-x");
   fs.mkdirSync(projDir, { recursive: true });
@@ -1537,23 +1837,11 @@ if (pendingCascade?.kind === "agent-x") {
   dispatchAudit.bindProjectRoot(PROJECT_ROOT);
   emit("brief_received", { trace_id: pid, project_id: pid, target: "agent-x", brief_excerpt: briefExcerpt(brief), brief_chars: brief.length });
 
-  if (!wantExec) {
-    console.log("");
-    console.log(c("cyan", "  agent-x scaffold ready (no --exec). Enriched brief at:"));
-    console.log("    " + c("yellow", briefPath));
-    console.log(c("cyan", "  To run it:"));
-    console.log("    " + c("yellow", `nrv dispatch --auto "<brief>" --exec`));
-    console.log("");
-    console.log(c("green", "✓ Scaffold ready. Project ID: " + pid));
-    console.log(c("dim", "  (exit 3 — nothing dispatched, nothing judged; delivery only with --exec)"));
+  if (scaffoldOnly) {
+    printScaffoldNextStep(pid, `The brief is at ${briefPath}.`);
     process.exit(3);
   }
 
-  if (!runtimeAvailable(rt)) {
-    console.error(c("red", `✗ runtime '${rt}' is not on the PATH. Install it or use --runtime=claude-code.`));
-    emit("agent_exec_failed", { trace_id: pid, project_id: pid, employee: "agent-x", runtime: rt, reason: "runtime not on PATH" });
-    process.exit(1);
-  }
   const oroot = outputsRoot || path.join(scaffoldRoot, "deliverables");
   setRunBudgetRoot(oroot);
   fs.mkdirSync(oroot, { recursive: true });
@@ -1574,7 +1862,7 @@ if (pendingCascade?.kind === "agent-x") {
       const candidate = runAgentX({ brief: candidateBrief, briefPath: candidateBriefPath, runtime: rt, projectId: pid, projectDir: projDir,
         projectRoot: PROJECT_ROOT, outputsRoot: candidateRoot, reason: pendingCascade.reason, appendSystemPrompt: AUTONOMOUS_DIRECTIVE + rulesDirective,
         maxBudgetUsd: budget.candidateBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
-        yolo, ledger: { runId: canonicalRunId, watchDir: candidateRoot }, audit: emit });
+        yolo, ledger: { runId: canonicalRunId, watchDir: candidateRoot }, audit: emit, runWithCascadeImpl: pinnedCascade });
       if (candidate.sessionId) runLedger.recordSession(legacy, canonicalRunId, candidate.sessionId);
       if (!candidate.ok) emit("agent_exec_failed", { trace_id: pid, project_id: pid, employee: "agent-x", runtime: rt,
         exit_code: candidate.exitCode, error: candidate.error || candidate.stderr });
@@ -1621,7 +1909,8 @@ if (pendingCascade?.kind === "agent-x") {
       traceId: pid, projectId: pid, targetSlug: "agent-x", targetKind: "agent-x",
       runtime: rt,
       meta: { project_dir: projDir, project_root: PROJECT_ROOT, scaffold_root: scaffoldRoot,
-        brief_path: briefPath, outputs_root: oroot, mode: "agent-x" },
+        brief_path: briefPath, outputs_root: oroot, mode: "agent-x",
+        runtime_source: runtimeDecision.source, dispatch_role: "agent-x" },
     });
     ledgerRunId = row.run_id;
   });
@@ -1643,7 +1932,7 @@ if (pendingCascade?.kind === "agent-x") {
     timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
     yolo,
     ...(ledgerRunId ? { ledger: { runId: ledgerRunId, watchDir: oroot } } : {}),
-    audit: emit,
+    audit: emit, runWithCascadeImpl: pinnedCascade,
   });
   if (ledgerRunId) ledgerTry(() => runLedger.recordSession(ledgerHandle!, ledgerRunId!, r.sessionId));
   const agentXDeliverOpts = {
@@ -1682,33 +1971,34 @@ if (!fs.existsSync(briefBiz)) {
 
 // Step 1 — brief-business
 console.log(c("lime", "▶") + c("bold", " Step 1/4 — brief-business.ts"));
-const args = [briefBiz, slug, brief];
-if (projectId) args.push("--project", projectId);
+const pid = projectId || claimProjectId(`proj-${runStamp()}-${slug}`, prepOutputsBase());
+const args = [briefBiz, slug, brief, "--project", pid];
 if (manifest) args.push("--manifest", manifest);
 const r1 = spawnSync("bun", args, { windowsHide: true, encoding: "utf8", env: prepScriptEnv });
 if (r1.status !== 0) {
   console.error(c("red", "✗ brief-business failed:"));
   console.error(r1.stdout || r1.stderr);
-  process.exit(1);
+  releaseProjectId(pid, prepOutputsBase());
+  process.exit(r1.status === 4 ? 4 : 1);
 }
 console.log(r1.stdout);
 
-// Parse the output to extract Project ID + Intake + Project Dir
-const stdout = r1.stdout;
-const pid = stdout.match(/Project ID:\s+(\S+)/)?.[1];
-const intake = stdout.match(/Intake:\s+(\S+)/)?.[1];
-const projDir = stdout.match(/Project dir:\s+(\S+)/)?.[1];
-if (!pid || !intake || !projDir) {
+// The run folder brief-business made. Read to the end of the line: a path with
+// a space in it (a Windows user folder) is still one path.
+const projDir = r1.stdout.match(/^\s*Project dir:\s+(.+?)\s*$/m)?.[1];
+if (!projDir) {
   console.error(c("red", "✗ Could not parse brief-business output"));
   process.exit(1);
 }
 
-// The business's own contract: the intake role's `acceptance[]` (Business Protocol 2.0 §11)
+// The business's own contract: its roles' `acceptance[]` (Business Protocol 2.0 §11)
 // becomes the judge's requirements, and the manifest's `produces[]` the rubric selector's
 // input. Both are gated — `gauntlet.requirements_source` and `delivery.produces_to_rubric`.
+// Every role counts: one agent plays them all (business-solo.ts), and verify-deliverable
+// reads the same set.
 const businessEntry = businessRecord(slug);
 const businessAcceptance = businessEntry.bizDir
-  ? readAcceptance(businessEntry.bizDir, [intake], { minimumScore: profileScore(executionOptions.intensity) })
+  ? readAcceptance(businessEntry.bizDir, null, { minimumScore: profileScore(executionOptions.intensity) })
   : { requirements: [], entries: [], paths: [] };
 const businessProduces = producesForDelivery(() => businessEntry.produces);
 
@@ -1718,7 +2008,7 @@ console.log(c("lime", "▶") + c("bold", ` Step 2/4 — prepare the run (${slug}
 // inside the business subdir. That root is the scaffold's, never the project's — see PROJECT_ROOT.
 const scaffoldRoot = path.resolve(projDir, "..", "..");
 const projectRoot = PROJECT_ROOT;
-// The run's own folder: where the intake starts, fenced off from the runs
+// The run's own folder: where the worker starts, fenced off from the runs
 // beside it (run-workspace.ts).
 const runWorkspace = runFolderOf(projDir, projectRoot) ?? undefined;
 // In exec mode the agent writes deliverables here (a clean subfolder export
@@ -1735,6 +2025,22 @@ if (!fs.existsSync(tmpBriefFile)) {
   console.error(c("red", `✗ brief.md not found at ${tmpBriefFile}`));
   process.exit(1);
 }
+// The brief FILE the worker reads (it reads the file, not the text handed to
+// it). The --brief-file itself while the run's brief is that file unchanged, so
+// a decision appended to it mid-run (`nrv brief decide`) reaches the worker.
+// When something enriched it (--auto-brief, the router's done states) the final
+// text is written into the run folder and the worker reads that copy, which
+// points back at the original for later decisions: the enrichment used to stay
+// in this process while the worker read the file without it. With an inline
+// brief, undefined: prepareBusinessSolo writes the run's brief.md itself.
+const workerBriefFile: string | undefined = (() => {
+  if (inlineBrief || !briefFile) return undefined;
+  if (brief === briefFileText) return path.resolve(briefFile);
+  const copy = path.join(projDir, "brief.md");
+  fs.writeFileSync(copy, `${brief.trimEnd()}\n\n> Source brief: ${path.resolve(briefFile)}. A decision the user makes while you work is appended there; read its Decisions section at every phase.\n`, "utf8");
+  console.log(c("dim", `  brief enriched for this run: ${copy}`));
+  return copy;
+})();
 const bizDir = businessEntry.bizDir ?? resolveEntityDir("businesses", slug, projDir);
 const briefSquads = (() => { try { return namedSquadsIn(brief, Object.keys(defaultRegistries().squads)); } catch { return []; } })();
 /** The solo worker's inputs for one outputs root; the run, the scaffold and the gauntlet producer share them. */
@@ -1746,8 +2052,8 @@ const soloArgs = (oroot: string, briefFileForRun?: string) => ({
 const outputPath = path.join(projDir, "agent-prompt.md");
 let promptSize = 0;
 // Scaffold-only hands the user the one prompt a run would execute: the solo worker's.
-if (!wantExec) {
-  const prep = prepareBusinessSolo(soloArgs(path.join(projDir, "deliverables"), briefFile ? path.resolve(briefFile) : undefined));
+if (scaffoldOnly) {
+  const prep = prepareBusinessSolo(soloArgs(path.join(projDir, "deliverables"), workerBriefFile));
   fs.writeFileSync(outputPath, prep.prompt);
   promptSize = prep.prompt.length;
   console.log(c("dim", `  Prompt: ${promptSize.toLocaleString()} chars · saved to ${outputPath}`));
@@ -1772,8 +2078,8 @@ if (wantExec && !businessCanaryDecision.enabled) {
       meta: {
         project_dir: projDir, project_root: projectRoot, scaffold_root: scaffoldRoot,
         outputs_root: execOutputsRoot ?? null,
-        prompt_path: path.join(projDir, "solo-prompt.md"), brief_path: briefFile ? path.resolve(briefFile) : tmpBriefFile,
-        mode: "solo",
+        prompt_path: path.join(projDir, "solo-prompt.md"), brief_path: workerBriefFile ?? path.join(projDir, "brief.md"),
+        mode: "solo", runtime_source: runtimeDecision.source, dispatch_role: "solo",
       },
     });
     ledgerRunId = row.run_id;
@@ -1807,18 +2113,14 @@ console.log(c("dim", `  ✓ dispatch_business written to ${path.join(harnessLogs
 
 // ── EXEC MODE — actually run the runtime headless, then verify+gate+deliver ─
 if (wantExec) {
-  // Final runtime: the flag > USE_* rule > current host decision (already computed).
+  // Final runtime: the flag > USE_* rule > current host decision (already
+  // computed, and checked installed before anything was created).
   const rt = runtimeDecision.runtime;
   const oroot = execOutputsRoot as string;
+  setRunBudgetRoot(oroot);
 
   console.log("");
   console.log(c("lime", "▶") + c("bold", ` Step 4/7 — exec business-solo (${rt})`));
-  if (!runtimeAvailable(rt)) {
-    console.error(c("red", `✗ runtime '${rt}' is not on the PATH. Install it or use --runtime=claude-code.`));
-    emit("agent_exec_failed", { trace_id: pid, project_id: pid, business_slug: slug, runtime: rt, reason: "runtime not on PATH" });
-    if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "failed", { error: "runtime not on PATH" }));
-    process.exit(1);
-  }
   if (businessCanaryDecision.enabled) {
     const canonicalRunId = canonicalRunIdFor(pid, runIdFlag);
       const requirements = gauntletRequirements(pid, { kind: "business", slug }, { requirements: businessAcceptance.requirements });
@@ -1835,11 +2137,13 @@ if (wantExec) {
     const produce = (candidateRoot: string, briefFile: string, candidateBrief: string) => {
       const prep = prepareBusinessSolo(soloArgs(candidateRoot, briefFile));
       attempt.markProductionStarted();
-      const candidate = runWithCascade({ dispatchRole: "solo", runtime: rt, prompt: prep.prompt, ...prep.launch,
+      const candidate = runWithCascade({ dispatchRole: "solo", runtime: rt, pinned: runtimePinned(), prompt: prep.prompt, ...prep.launch,
         maxBudgetUsd: budget.candidateBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
         yolo, brief: candidateBrief, projectRoot, outputsRoot: candidateRoot, taskHint: `business Gauntlet canary · ${slug}`,
         projectId: pid, ledger: { runId: canonicalRunId, watchDir: candidateRoot } });
       canarySessionId = candidate.sessionId;
+      // A candidate credits the seats and clones it declares, as a standard solo run does.
+      creditSoloRun({ emit, projectId: pid, projectDir: projDir, slug, runtime: candidate.finalRuntime, seats: prep.seats, voices: prep.voices });
       if (candidate.sessionId) runLedger.recordSession(canaryLedger, canonicalRunId, candidate.sessionId);
       return { ok: candidate.ok, sessionId: candidate.sessionId, costUsd: candidate.costUsd,
         error: candidate.error || candidate.stderr || undefined };
@@ -1853,7 +2157,7 @@ if (wantExec) {
           producerTarget: { kind: "business", slug }, projectId: pid, runId: canonicalRunId, traceId: pid,
           brief, projectRoot, workspaceRoot: scaffoldRoot, outputsRoot: oroot, expectedCostUsd: budget.roundBudgetUsd, intensity: executionOptions.intensity,
           requirements, executionSnapshot, audit: emit,
-          executeCandidate: candidateRoot => produce(candidateRoot, briefFile ? path.resolve(briefFile) : tmpBriefFile, brief),
+          executeCandidate: candidateRoot => produce(candidateRoot, workerBriefFile ?? tmpBriefFile, brief),
           reviseCandidate(request) {
             const revision = writeRevisionBrief(brief, request);
             return produce(request.candidateRoot, revision.file, revision.text);
@@ -1874,7 +2178,10 @@ if (wantExec) {
               log: message => console.log(c("lime", message)), warn: message => console.error(c("yellow", message)) });
             finalDelivery = runDelivery({ ...deliveryArgs({ pid, slugOrNull: slug, targetKind: "business", rt, oroot,
               projDir, projectRoot, sessionId, withManifest: true, afterGate, produces: businessProduces,
-              acceptancePromisesPaths: businessAcceptance.paths.length > 0 }), ledger: null, maxRevisions: 0 });
+              acceptancePromisesPaths: businessAcceptance.paths.length > 0 }), ledger: null, maxRevisions: 0,
+              // The Gauntlet's evaluator already scored the criteria on the candidate; the
+              // claims check only applies when the worker's _CLAIMS.json reached this root.
+              claimsCheck: fs.existsSync(path.join(oroot, "_CLAIMS.json")) });
             return { exitCode: finalDelivery.exitCode, gateOutcome: finalDelivery.gateOutcome };
           },
         });
@@ -1899,7 +2206,8 @@ if (wantExec) {
         ledgerHandle = runLedger.openLedger();
         const row = runLedger.openRun(ledgerHandle, { traceId: pid, projectId: pid, targetSlug: slug, targetKind: "business",
           runtime: rt, meta: { project_dir: projDir, project_root: projectRoot, scaffold_root: scaffoldRoot,
-            outputs_root: oroot, prompt_path: outputPath, brief_path: tmpBriefFile, mode: "single" } });
+            outputs_root: oroot, prompt_path: outputPath, brief_path: workerBriefFile ?? tmpBriefFile, mode: "single",
+            runtime_source: runtimeDecision.source, dispatch_role: "solo" } });
         ledgerRunId = row.run_id;
       });
     } catch (error) {
@@ -1937,13 +2245,18 @@ if (wantExec) {
 
   // ONE agent is the whole business (lib/business-solo.ts).
   const sr = runBusinessSolo({
-    ...soloArgs(oroot, briefFile ? path.resolve(briefFile) : undefined),
+    ...soloArgs(oroot, workerBriefFile),
     runtime: rt, maxBudgetUsd: effectiveBudgetUsd(),
     timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
-    yolo, ledgerRunId, emit,
+    yolo, ledgerRunId, emit, runWithCascadeImpl: pinnedCascade,
   });
   res = sr;
+  chargeRunBudget(sr.costUsd);
+  // The runtime that actually finished the work: after a quota handoff it is
+  // not `rt`, and revisions, the post-gate steps and `nrv revise` continue there.
+  const finalRt = sr.finalRuntime;
   console.log(c("dim", `  seats played: ${sr.seatsPlayed.length ? sr.seatsPlayed.join(", ") : "none declared"}`));
+  let reviewBlockingMissed: string[] = [];
   if (!sr.ok) {
     console.error(c("red", `✗ business failed (exit ${sr.exitCode}): ${sr.error || sr.stderr || "unknown"}`));
     emit("agent_exec_failed", { trace_id: pid, project_id: pid, business_slug: slug, runtime: rt, mode: "business-solo", exit_code: sr.exitCode, error: sr.error || sr.stderr });
@@ -1954,6 +2267,8 @@ if (wantExec) {
     // delivery, corrections in the worker's own session, then the normal
     // delivery pipeline below (verify → gate → deliver) as for any run.
     const review = runSoloReviewStage({
+      maxBudgetUsd: effectiveBudgetUsd(), rulesDirective,
+      ...(ledgerRunId ? { ledger: { runId: ledgerRunId, watchDir: oroot } } : {}),
       business: slug, bizDir, briefFile: sr.briefFile, outputsRoot: oroot, projectRoot,
       worker: { runtime: sr.finalRuntime, sessionId: sr.sessionId, launch: sr.launch },
       policy: resolveSetting("review.policy").value as ReviewPolicy,
@@ -1965,6 +2280,7 @@ if (wantExec) {
       log: message => console.log(c("dim", message)),
     });
     if (review.reservations) console.error(c("yellow", `  ⚠ review left reservations: ${review.reservations}`));
+    reviewBlockingMissed = review.blockingMissed ?? [];
   }
 
   // session.json — lets `nrv revise` resume the same conversation and `nrv clean` find everything.
@@ -1993,7 +2309,7 @@ if (wantExec) {
       const { updateHandoffPhase } = requireCjs(path.join(SKILLS, "_shared", "lib", "handoff.js"));
       updateHandoffPhase(projDir, "complete", {
         lastTaskCompleted: runtimeError ? "headless exec (runtime error; artifacts judged anyway)" : "headless exec",
-        decisions: [`autopilot run via ${rt}`],
+        decisions: [`autopilot run via ${finalRt}`],
       });
     } catch { /* non-fatal */ }
   };
@@ -2007,12 +2323,13 @@ if (wantExec) {
 
   const afterGate = (): { zipPath: string | null } => {
     const result = runBusinessPostGate({
-      projectId: pid, businessSlug: slug, runtime: rt, projectDir: projDir, projectRoot,
+      projectId: pid, businessSlug: slug, runtime: finalRt, projectDir: projDir, projectRoot,
       outputsRoot: oroot, skillsRoot: SKILLS,
       sessionFile, sessionData, rulesDirective, maxBudgetUsd: effectiveBudgetUsd(),
       timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
       yolo, wantPdf, skipHtml, offlineSnapshot: process.argv.includes("--offline-snapshot"),
       routingMode, wantZip, emit,
+      ...(ledgerRunId ? { ledger: { runId: ledgerRunId, watchDir: oroot } } : {}),
       log: message => console.log(c("lime", message)),
       warn: message => console.error(c("yellow", message)),
     });
@@ -2021,9 +2338,10 @@ if (wantExec) {
   };
 
   const bizDeliverOpts = {
-    pid, slugOrNull: slug, targetKind: "business" as const, rt, oroot,
+    pid, slugOrNull: slug, targetKind: "business" as const, rt: finalRt, oroot,
     projDir, projectRoot, sessionId: res.sessionId, withManifest: true,
     afterGate, produces: businessProduces, acceptancePromisesPaths: businessAcceptance.paths.length > 0,
+    reviewBlockingMissed,
     onSession: (sid: string) => {
       res.sessionId = sid;
       sessionData.session_id = sid;
@@ -2052,33 +2370,21 @@ if (wantExec) {
   process.exit(delivery.exitCode);
 }
 
-// Step 4 — actionable next step
+// Step 4 — actionable next step (--scaffold-only)
 console.log("");
 console.log(c("lime", "▶") + c("bold", " Step 4/4 — next steps"));
-console.log("");
-// An orchestrator that dispatched without --exec reads this block next. Its
-// next step is to run the business, never to paste the prompt into itself and
-// produce the work: the exec line comes first.
-const rerun = ["nrv", "dispatch", ...process.argv.slice(2), "--exec"]
-  .map((a) => (/[\s"'$]/.test(a) ? JSON.stringify(a) : a)).join(" ");
-console.log(c("cyan", "  Nothing ran. To run this business, repeat the command with --exec:"));
-console.log("    " + c("yellow", rerun));
+// An orchestrator that prepared a run reads this block next. Its next step is
+// to run the business, never to paste the prompt into itself and produce the
+// work: the exec line comes first.
+printScaffoldNextStep(pid, `The prompt is at ${outputPath}.`);
 console.log("");
 console.log(c("cyan", "  To run it by hand in a runtime instead, paste the whole prompt:"));
-console.log("");
-console.log("    " + c("yellow", `cat ${outputPath} | pbcopy        # macOS`));
-console.log("    " + c("yellow", `cat ${outputPath} | xclip         # Linux`));
-console.log("    " + c("yellow", `type ${outputPath} | clip         # Windows`));
-console.log("");
-console.log(c("cyan", "  Or open the cockpit:"));
-console.log("    " + c("yellow", `nrv glance --allow-actions`));
-console.log("");
-console.log(c("cyan", "  To validate when it is done:"));
-console.log("    " + c("yellow", `bun ~/.nirvana/skills/businesses/scripts/verify-deliverable.ts ${pid} ${slug}`));
-console.log("    " + c("yellow", `bun ~/.nirvana/skills/harness/scripts/validate-chain.ts ${pid} --strict`));
-console.log("");
-console.log(c("green", "✓ Scaffold ready. Project ID: " + pid));
-console.log(c("dim", "  (exit 3 — nothing dispatched, nothing judged; delivery only with --exec)"));
+console.log("    " + c("yellow", `cat ${quoteArg(outputPath)} | pbcopy        # macOS`));
+console.log("    " + c("yellow", `cat ${quoteArg(outputPath)} | xclip -selection clipboard   # Linux`));
+console.log("    " + c("yellow", `type ${quoteArg(outputPath)} | clip         # Windows (cmd)`));
+console.log("    " + c("yellow", `Get-Content ${quoteArg(outputPath)} | Set-Clipboard   # Windows (PowerShell)`));
+console.log(c("cyan", "  Then check what it wrote:"));
+console.log("    " + c("yellow", `bun ${quoteArg(path.join(SKILLS, "businesses", "scripts", "verify-deliverable.ts"))} ${pid} ${slug}`));
 
 // Scaffold-only: nothing executed, nothing judged, nothing delivered → 3.
 process.exit(3);

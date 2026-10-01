@@ -11,7 +11,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-  claudeAbsolutePattern, confineToWorkspace, contractPointer, fenceSettings, nestedOutputsBase, projectDenyRules, runFolderOf,
+  claudeAbsolutePattern, confineToWorkspace, contractPointer, fenceSettings, namedIn, nestedOutputsBase, projectDenyRules, runFolderOf,
   RUN_WORKSPACE_ENV, siblingRunFolders, workspaceDirective,
 } from "../lib/run-workspace.ts";
 import { outputsBaseDir } from "../lib/project-root.js";
@@ -110,6 +110,16 @@ describe("projectDenyRules", () => {
 
   test("a project with no settings file has nothing to carry", () => {
     expect(projectDenyRules(project("deny-none").root)).toEqual([]);
+  });
+});
+
+describe("namedIn", () => {
+  test("on Windows the match ignores case and the separator style; elsewhere it is exact", () => {
+    const run = "C:\\Proj\\.nirvana\\outputs\\run-2";
+    expect(namedIn("see c:/proj/.nirvana/outputs/run-2/_SUMMARY.md", run, "win32")).toBe(true);
+    expect(namedIn("see C:\\PROJ\\.NIRVANA\\OUTPUTS\\RUN-2\\x", run, "win32")).toBe(true);
+    expect(namedIn("see /p/outputs/RUN-2/x", "/p/outputs/run-2", "linux")).toBe(false);
+    expect(namedIn("outputs/run-2/x", "/p/outputs/run-2", "linux")).toBe(true);
   });
 });
 

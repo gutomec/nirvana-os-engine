@@ -51,6 +51,17 @@ describe("the presets", () => {
     for (const name of PROFILE_NAMES) expect(profileValue(name, "execution.model")).toBeUndefined();
   });
 
+  test("the reviewer runs on the session's runtime by default, in every profile and without one", () => {
+    for (const name of PROFILE_NAMES) expect(profileValue(name, "review.runtime"), name).toBe("same");
+    expect(getSettingSpec("review.runtime")!.default).toBe("same");
+  });
+
+  test("balanced turns the judge on for text deliverables; economy keeps it off; max is unchanged", () => {
+    expect(profileValue("balanced", "quality_gate.judge_enabled")).toBe("reports");
+    expect(profileValue("economy", "quality_gate.judge_enabled")).toBe("false");
+    expect(profileValue("max", "quality_gate.judge_enabled")).toBe("reports");
+  });
+
   test("the three profiles order from most to least context", () => {
     const ceiling = (name: string) => Number(profileValue(name, "execution.context_window"));
     expect(ceiling("max")).toBe(0);

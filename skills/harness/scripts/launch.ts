@@ -133,9 +133,8 @@ for (const p of pillars) {
     console.error(c("dim", "    " + (r.stderr || r.stdout || "").split("\n")[0]));
     continue;
   }
-  const intake = r.stdout.match(/Intake:\s+(\S+)/)?.[1] || "(?)";
-  console.log(c("dim", `    intake: ${intake} · project: ${projectId}`));
-  runPlan.push({ pillar: p.pillar, cmd: `nrv dispatch ${p.business} --brief-file=${briefFile} --manifest=${manifestFile} --project=${projectId}` });
+  console.log(c("dim", `    project: ${projectId}`));
+  runPlan.push({ pillar: p.pillar, cmd: `nrv dispatch ${p.business} --brief-file="${briefFile}" --manifest="${manifestFile}" --project=${projectId} --exec` });
 }
 
 // Print run plan

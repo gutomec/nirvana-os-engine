@@ -347,9 +347,9 @@ export const SETTINGS = {
 
   // Three values, and the old two keep their meaning: `true` judges every gateable
   // file, `false` keeps the offline heuristics only. `reports` (the default)
-  // judges the text deliverables (.md, .txt) — the reports and research whose
-  // content the heuristics cannot check against the brief — and leaves code,
-  // images and data files to their heuristic rubrics.
+  // judges the text deliverables (.md, .txt, .html), the reports and research
+  // whose content the heuristics cannot check against the brief, and leaves
+  // code, images and data files to their heuristic rubrics.
   "quality_gate.judge_enabled": {
     key: "quality_gate.judge_enabled", kind: "enum",
     // A YAML `true`/`false` written before this key had three values is still
@@ -358,7 +358,7 @@ export const SETTINGS = {
     type: z.union([z.boolean(), z.enum(["reports", "true", "false", "off"])])
       .transform((v) => (v === true ? "true" : v === false || v === "off" ? "false" : v)) as unknown as z.ZodType<"reports" | "true" | "false">,
     default: "reports", options: ["reports", "true", "false"], scopes: ["global", "project"],
-    description: "Quality gate LLM judge: reports (default) = judges text deliverables (.md, .txt) against the brief and leaves the rest to the heuristics; true = judges everything the gate covers; false = offline heuristics only.",
+    description: "Quality gate LLM judge, on the session's runtime: reports (default) = judges text deliverables (.md, .txt, .html) against the brief and leaves the rest to the heuristics; true = judges everything the gate covers; false = offline heuristics only. Secret-leak and file-validity checks run either way.",
     expects: "reports | true | false", env: "NIRVANA_JUDGE_ENABLED", secret: false,
     fromEnv: (raw) => {
       if (raw.trim().toLowerCase() === "reports") return "reports";
@@ -368,7 +368,7 @@ export const SETTINGS = {
     toEnv: (value) => value,
   } as SettingSpec<"reports" | "true" | "false">,
   "quality_gate.max_revisions": numberSetting("quality_gate.max_revisions",
-    "Automatic revisions before holding the delivery back.", { default: 2, type: nonNegativeInt, expects: "integer >= 0" }),
+    "Automatic corrections after a failed gate. A style finding left after them ships with _QA-RESERVATIONS.md; a serious one (secret leak, invalid file, material defect, unproven blocking criterion) gets up to 3 more rounds and is then withheld.", { default: 2, type: nonNegativeInt, expects: "integer >= 0" }),
   "quality_gate.escalate_after": numberSetting("quality_gate.escalate_after",
     "Revisions before escalating (reserved; today it follows max_revisions).", { default: 2, type: nonNegativeInt, expects: "integer >= 0" }),
   "quality_gate.rubric_fallback": stringSetting("quality_gate.rubric_fallback",
@@ -382,8 +382,8 @@ export const SETTINGS = {
     "When a solo-mode delivery goes through review: always = always; rule = when the user asks, when the business manifest marks the delivery as sensitive or when the deterministic gate fails; on-request = only when the user asks or the gate fails; never = never.",
     ["always", "rule", "on-request", "never"], { default: "rule", env: "NIRVANA_REVIEW_POLICY" }),
   "review.runtime": enumSetting("review.runtime",
-    "Reviewer runtime: other = a runtime different from the one that did the work, when another is available (cheap independence); same = the same runtime.",
-    ["other", "same"], { default: "other", env: "NIRVANA_REVIEW_RUNTIME" }),
+    "Reviewer runtime: same (default) = the runtime of the session; other = another installed runtime that no NOT_USE_* rule vetoes for this brief, falling back to the same one when there is none.",
+    ["other", "same"], { default: "same", env: "NIRVANA_REVIEW_RUNTIME" }),
   "review.max_rounds": numberSetting("review.max_rounds",
     "Fix rounds after a failed review; once exhausted, the delivery ships with _QA-RESERVATIONS.md.",
     { default: 1, type: nonNegativeInt, env: "NIRVANA_REVIEW_MAX_ROUNDS", expects: "integer >= 0" }),

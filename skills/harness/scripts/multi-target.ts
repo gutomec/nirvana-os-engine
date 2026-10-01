@@ -157,9 +157,10 @@ export function resolveProjectRoot(): string {
   return path.resolve(process.env.NIRVANA_PROJECT_ROOT || process.cwd());
 }
 
-/** --project, else the plan's projectId, else the plan file name (`.nirvana/plans/<trace_id>.json`). */
+/** --project, else the plan's projectId, else the plan file name (`.nirvana/plans/<trace_id>.json`),
+ *  reduced to the characters `nrv dispatch --project` accepts (a name with spaces would be refused). */
 export function resolveProjectId(file: string, plan: MultiTargetPlanFile | null, flagValue: string | undefined): string {
-  return flagValue || plan?.projectId || path.basename(file, path.extname(file));
+  return flagValue || plan?.projectId || path.basename(file, path.extname(file)).replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^[.-]+/, "") || "plan";
 }
 
 /** `run_mt_<projectId>` for the first attempt; `_r<attempt>` appended for every retry of the plan. */

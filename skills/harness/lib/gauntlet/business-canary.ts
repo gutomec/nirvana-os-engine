@@ -1,3 +1,9 @@
+// The canary's producer is the same solo worker as a plain run. Its prompt comes
+// from prepareBusinessSolo (business-solo.ts), which also clears the previous
+// participation.json, so a candidate never inherits another candidate's credit.
+// Crediting what the worker declares is creditSoloRun (business-solo.ts); the
+// producer in scripts/dispatch.ts calls it after each candidate.
+
 import { RunAlreadyTerminalError } from "../run-kernel/index.ts";
 
 export interface BusinessCanaryPolicyInput {

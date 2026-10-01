@@ -172,9 +172,17 @@ describe("dispatch.ts --judge-x", () => {
     expect(fs.existsSync(path.join(fx.capture, "judge-prompt.md"))).toBeFalse();
   }, spawnBudgetMs(1) + 30_000);
 
-  test("without --exec nothing is judged: exit 3", () => {
+  test("without --exec nothing is judged: the dispatch refuses with exit 4", () => {
     const fx = fixture();
     const result = fx.dispatch({}, []);
+    expect(result.status).toBe(4);
+    expect(result.stderr).toContain("runs the work only with --exec");
+    expect(fs.existsSync(path.join(fx.capture, "judge-prompt.md"))).toBeFalse();
+  }, spawnBudgetMs(1) + 30_000);
+
+  test("--scaffold-only judges nothing either: exit 3", () => {
+    const fx = fixture();
+    const result = fx.dispatch({}, ["--scaffold-only"]);
     expect(result.status).toBe(3);
     expect(result.stdout).toContain("judge-x runs only with --exec");
     expect(fs.existsSync(path.join(fx.capture, "judge-prompt.md"))).toBeFalse();

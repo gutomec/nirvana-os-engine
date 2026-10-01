@@ -69,7 +69,7 @@ builds on another's output). There is no director and no router agent: this
 decision is yours, and it is the only planning in the run. When no business
 covers the request but a squad does, dispatch the squad with the capability
 that fits (`--squad <slug>:<capability>`, an id `nrv find` printed);
-when nothing fits, `nrv dispatch --auto` falls through to the generalist.
+when nothing fits, `nrv dispatch --auto --exec` falls through to the generalist.
 
 ## 3. Write one brief per business
 
@@ -102,11 +102,11 @@ did not ask for. Check it with `nrv brief check .nirvana/briefs/<business>.md`.
 nrv dispatch <business> --brief-file .nirvana/briefs/<business>.md --exec [--runtime <rt>] [--review | --no-review]
 ```
 
-Dispatch once, with `--exec`: without it nothing runs, and the folder it
-prepares is left in `outputs/`. `--review` when the user asked for a review,
-`--no-review` when they said to skip it; otherwise `review.policy` decides, and
-at most one reviewer checks the whole delivery. Pass `--html` or `--pdf` only when the user asked for a report;
-none is built by default.
+Dispatch once, with `--exec`: without it the command refuses and nothing is
+created. `--review` when the user asked for a review, `--no-review` when they
+said to skip it; otherwise `review.policy` decides, and at most one reviewer
+checks the whole delivery.
+Pass `--html` or `--pdf` only when the user asked for a report; none is built by default.
 
 **Dispatch in the background.** Independent businesses go out at the same
 time as background processes of your runtime; a dependent one goes out after
@@ -132,14 +132,23 @@ nrv brief decide .nirvana/briefs/<business>.md "<the decision>"
 
 ## 6. When it returns
 
-Read `<outputs>/_SUMMARY.md`, and `<outputs>/_QA-RESERVATIONS.md` when it
-exists. That is all you read: the engine already decided and ran the review,
+Read `<outputs>/_STATUS.json` first (`state`, `gate`, `serious`,
+`reservations`), then `<outputs>/_SUMMARY.md`, and `_QA-RESERVATIONS.md` when
+it exists. That is all you read: the engine already decided and ran the review,
 the quality gate and the delivery. The summary is a report, not proof; the
 proof is what the engine checked on disk (`verify-deliverable`, the gate) and
 the audit. Tell the user what was delivered and where,
 what is open, and continue with the next business or the next request. A
 notification you noticed and did not act on is the same failure as a receipt
 you mistook for a result: the run is finished and nobody knows.
+
+| `nrv dispatch` exit | Meaning |
+|---|---|
+| 0 | delivered, or delivered with reservations |
+| 1 | the run failed |
+| 2 | withheld: a serious failure (a leaked secret, a broken file, a blocking criterion without evidence, an invented fact) survived the corrections |
+| 3 | indeterminate: nothing was judged (or `--scaffold-only`) |
+| 4 | invalid input or refused: nothing ran |
 
 An honest failure is the system working: a worker that reports it was blocked
 (a missing credential, a hard dependency) did its job by telling you. Surface

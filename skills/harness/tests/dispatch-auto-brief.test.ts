@@ -34,12 +34,23 @@ describe("the documented shell-only dispatch form is one that parses", () => {
     expect(src).toMatch(/const inlineBrief = \(autoMode \|\| explicitTarget\) \? positional\[0\] : positional\[1\];/);
   });
 
-  test("without --exec the command only scaffolds; the scripted form must carry it", () => {
+  test("without --exec the command refuses and prints the form that carries it", () => {
     // Measured 2026-09-16: `nrv dispatch --auto "<brief>" --runtime=grok-cli`
-    // exited 0 having written brief.md, agent-prompt.md and HANDOFF.json, and
+    // exited having written brief.md, agent-prompt.md and HANDOFF.json, and
     // its last line read "(exit 3 — nothing dispatched, nothing judged;
     // delivery only with --exec)". A shell-only runtime has nobody to paste
-    // the prompt into; --exec is the whole delivery.
+    // the prompt into; --exec is the whole delivery. Now the command refuses
+    // before it writes anything, and --scaffold-only is the explicit way to
+    // ask for the folder alone.
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-dispatch-"));
+    const r = spawnSync(process.execPath, [DISPATCH, "--auto", "write a one-page report"], {
+      env: fakeHomeEnv(home, { NIRVANA_SCOPE: "global", NRV_HOST_ANCESTRY: "0" }), encoding: "utf8", cwd: home, timeout: 30_000,
+    });
+    expect(r.status).toBe(4);
+    expect(r.stderr).toContain('nrv dispatch --auto "write a one-page report" --exec');
+    // Nothing of the engine's: no outputs, no store, no logs (a runtime cache such as ~/Library may appear).
+    expect(fs.readdirSync(home).filter((name) => name !== "Library" && name !== "AppData")).toEqual([]);
+    fs.rmSync(home, { recursive: true, force: true });
     const src = read("skills/harness/scripts/dispatch.ts");
     expect(src).toMatch(/function wantsExec\(\)/);
     expect(src).toMatch(/delivery only with --exec/);

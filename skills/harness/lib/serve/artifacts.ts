@@ -19,7 +19,7 @@ const TYPES: Record<string, string> = {
 // One list, shared with the verifier and the report builder. A private copy
 // here is what let the employee prompt, the mind-clone library and the firm's
 // permanent memory be downloaded straight through the API.
-import { isRunPlumbing, isRunPlumbingDir } from "../../../_shared/lib/run-plumbing.ts";
+import { isRunPlumbing, isRunPlumbingDir, isRunStateFile } from "../../../_shared/lib/run-plumbing.ts";
 
 export function listArtifacts(outputsRoot: string): { path: string; bytes: number; content_type: string }[] {
   const out: { path: string; bytes: number; content_type: string }[] = [];
@@ -34,8 +34,11 @@ export function listArtifacts(outputsRoot: string): { path: string; bytes: numbe
       // only the file half of it: `_internal/` and `_report/` were listed as
       // deliverables here while the verifier, the renderer and `nrv export`
       // all refused them. Half a shared list is a private list with extra steps.
-      if (e.isDirectory()) { if (!isRunPlumbingDir(e.name)) walk(abs, r); continue; }
-      if (isRunPlumbing(e.name)) continue;
+      // Run state (the worker's summary and claims, `_STATUS.json`, `_work/`,
+      // `_review/`) is the run describing itself: the envelope carries what a
+      // client needs of it, and the listing carries the work.
+      if (e.isDirectory()) { if (!isRunPlumbingDir(e.name) && !isRunStateFile(`${r}/`)) walk(abs, r); continue; }
+      if (isRunPlumbing(e.name) || isRunStateFile(r)) continue;
       let bytes = 0;
       try { bytes = fs.statSync(abs).size; } catch { continue; }
       out.push({ path: r, bytes, content_type: TYPES[path.extname(e.name).toLowerCase()] || "application/octet-stream" });
@@ -52,6 +55,10 @@ export function listArtifacts(outputsRoot: string): { path: string; bytes: numbe
  */
 export function resolveArtifact(outputsRoot: string, relPath: string): string | null {
   if (!relPath || relPath.includes("\0")) return null;
+  // What the listing hides, a direct path does not fetch either: the prompt,
+  // the session and the run's bookkeeping are not artifacts under any URL.
+  const segs = relPath.replace(/\\/g, "/").split("/").filter(Boolean);
+  if (isRunPlumbing(segs[segs.length - 1] ?? "") || isRunStateFile(relPath) || segs.slice(0, -1).some((d) => isRunPlumbingDir(d))) return null;
   let root: string;
   try { root = fs.realpathSync(outputsRoot); } catch { return null; }
   const abs = path.resolve(root, relPath);

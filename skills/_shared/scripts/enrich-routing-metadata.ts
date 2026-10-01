@@ -28,7 +28,7 @@
  *   --dry               select + plan only; no LLM, no writes
  *   --attempts=N        generation attempts per entity (default 2; each failed
  *                       gate reverts the write and feeds the misses back)
- *   --runtime=R         host runtime for generation (default claude-code)
+ *   --runtime=R         host runtime for generation (default: the session's own runtime)
  *   --model=M           model override for the generation runs
  *   --scratch=DIR       backups + batch report dir (default: os tmpdir)
  *   --timeout-min=N     per-generation wall clock (default 12)

@@ -18,7 +18,9 @@
 import { describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { isRunPlumbing, isRunPlumbingDir, RUN_PLUMBING } from "../lib/run-plumbing.ts";
+import * as os from "node:os";
+import { spawnSync } from "node:child_process";
+import { isRunPlumbing, isRunPlumbingDir, isRunStateFile, RUN_PLUMBING } from "../lib/run-plumbing.ts";
 
 const ROOT = path.join(import.meta.dir, "..", "..", "..");
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), "utf8");
@@ -52,17 +54,94 @@ describe("what counts as plumbing", () => {
   });
 });
 
+describe("what counts as run state (isRunStateFile)", () => {
+  test("the run's own bookkeeping, matched by name wherever it lands", () => {
+    for (const f of ["_SUMMARY.md", "_CLAIMS.json", "_QA-RESERVATIONS.md", "_STATUS.json", "solo-prompt.md", "agent-prompt.md",
+      "participation.json", "session.json", "HANDOFF.json", "audit.jsonl", "sub/dir/_STATUS.json"]) {
+      expect(isRunStateFile(f), f).toBe(true);
+    }
+  });
+
+  test("everything under _work/ and _review/, at any depth, and the squad cards at the top of a run", () => {
+    for (const f of ["_work/PROGRESS.md", "_review/answer-0.txt", "deliverables/_work/notes.md", "cards/copy.md", "businesses/acme/cards/copy.md"]) {
+      expect(isRunStateFile(f), f).toBe(true);
+    }
+    // A directory, spelled with a trailing separator, prunes the whole folder.
+    expect(isRunStateFile("_work/")).toBe(true);
+    expect(isRunStateFile("deliverables/")).toBe(false);
+  });
+
+  test("and real work is not, a deliverable folder called cards included", () => {
+    for (const f of ["relatorio.md", "final-report.html", "site/index.html", "carousel/cards/slide-1.png", "summary.md", "claims-analysis.json"]) {
+      expect(isRunStateFile(f), f).toBe(false);
+    }
+  });
+
+  test("a Windows path answers the same: either separator, and no case on win32", () => {
+    expect(isRunStateFile("_work\\PROGRESS.md")).toBe(true);
+    expect(isRunStateFile("deliverables\\_review\\prompt-0.md")).toBe(true);
+    expect(isRunStateFile("businesses\\acme\\cards\\copy.md")).toBe(true);
+    expect(isRunStateFile("site\\index.html")).toBe(false);
+    expect(isRunStateFile("_Summary.md", "win32")).toBe(true);
+    expect(isRunStateFile("_WORK\\notes.md", "win32")).toBe(true);
+    expect(isRunStateFile("Session.JSON", "win32")).toBe(true);
+    // POSIX file systems are case-sensitive: a different name is a different file.
+    expect(isRunStateFile("_Summary.md", "linux")).toBe(false);
+  });
+
+  test("an absolute path from this OS is read the same way", () => {
+    expect(isRunStateFile(path.join(os.tmpdir(), "out", "_CLAIMS.json"))).toBe(true);
+    expect(isRunStateFile(path.join(os.tmpdir(), "out", "report.md"))).toBe(false);
+  });
+});
+
 describe("one list, every consumer", () => {
   // A private copy is how the leak got in. These assert the copies are gone.
   test.each([
     ["skills/harness/lib/serve/artifacts.ts", "the API's artifact listing"],
     ["skills/harness/scripts/build-report-html.ts", "the client report renderer"],
+    ["skills/harness/scripts/build-report-pdf.ts", "the client PDF renderer"],
+    ["skills/harness/scripts/export.ts", "the zip a client keeps"],
+    ["skills/harness/lib/delivery-pipeline.ts", "the delivery count and the gate surface"],
     ["skills/businesses/scripts/verify-deliverable.ts", "the deliverable verifier"],
   ])("%s reads the shared list", (file) => {
     const src = read(file);
     expect(src).toContain("run-plumbing.ts");
+    expect(src).toContain("isRunStateFile");
     // No local re-declaration of the same idea.
     expect(src).not.toMatch(/const (SKIP|SKIP_FILES|RUN_PLUMBING)\s*=\s*new Set/);
+  });
+
+  test("the API lists the work and refuses run state even by direct path, Windows spelling included", () => {
+    const { listArtifacts, resolveArtifact } = require("../../harness/lib/serve/artifacts.ts");
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-artifacts-"));
+    try {
+      const put = (rel: string) => { fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true }); fs.writeFileSync(path.join(root, rel), "x"); };
+      for (const rel of ["relatorio.md", "site/index.html", "_SUMMARY.md", "_CLAIMS.json", "_STATUS.json", "_work/PROGRESS.md", "_review/answer-0.txt", "solo-prompt.md"]) put(rel);
+      expect(listArtifacts(root).map((a: { path: string }) => a.path)).toEqual(["relatorio.md", "site/index.html"]);
+      expect(resolveArtifact(root, "relatorio.md")).not.toBeNull();
+      for (const rel of ["_SUMMARY.md", "_STATUS.json", "_work/PROGRESS.md", "_work\\PROGRESS.md", "solo-prompt.md", "agent-prompt.md"]) {
+        expect(resolveArtifact(root, rel), rel).toBeNull();
+      }
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test("the HTML report embeds the work, never the run's own state", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-report-"));
+    try {
+      const put = (rel: string, body: string) => { fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true }); fs.writeFileSync(path.join(root, rel), body); };
+      put("relatorio.md", "# Relatório\n\nO TRABALHO REAL.\n");
+      put("_SUMMARY.md", "# Resumo\n\nRESUMO DO WORKER.\n");
+      put("_QA-RESERVATIONS.md", "# Ressalvas\n\nRESSALVA DO GATE.\n");
+      put("_work/PROGRESS.md", "# Progresso\n\nRASCUNHO DO WORKER.\n");
+      put("solo-prompt.md", "# Prompt\n\nPERSONA E MEMÓRIA.\n");
+      const out = path.join(root, "final-report.html");
+      const r = spawnSync(process.execPath, [path.join(ROOT, "skills", "harness", "scripts", "build-report-html.ts"), "--project", root, "--output", out], { encoding: "utf8" });
+      expect(r.status, r.stderr).toBe(0);
+      const html = fs.readFileSync(out, "utf8");
+      expect(html).toContain("O TRABALHO REAL.");
+      for (const leak of ["RESUMO DO WORKER", "RESSALVA DO GATE", "RASCUNHO DO WORKER", "PERSONA E MEMÓRIA"]) expect(html).not.toContain(leak);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
   });
 
   test("the API would have served the prompt before this, and does not now", () => {

@@ -97,12 +97,15 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { notifyDesktop } from "../lib/os-notify.ts";
 import { resolveRunRuntime } from "../lib/runtime-rules.ts";
+import { runFolderOf } from "../../_shared/lib/run-workspace.ts";
+import type { DispatchRole } from "../../_shared/lib/dispatch-depth.ts";
 
 /** The runtime to resume a run whose ledger row never recorded one (a legacy
  *  row, or a row written before the runtime was decided). It used to be the
  *  literal `"claude-code"`, which silently resumed a stranger's work on a
  *  vendor the owner may not even be signed into. The session's own runtime is
- *  the honest answer, and the resolver falls through to what is installed. */
+ *  the honest answer (resolveRunRuntime asks detectSessionHost, then falls
+ *  through to what is installed). */
 let _recoveryRuntime: ReturnType<typeof resolveRunRuntime>["runtime"] | null = null;
 function recoveryRuntime() {
   if (!_recoveryRuntime) _recoveryRuntime = resolveRunRuntime({}).runtime;
@@ -246,6 +249,17 @@ export interface SweepSummary {
 
 function defaultKill(pid: number): void {
   if (!Number.isFinite(pid) || pid <= 1) return; // never signal init/invalid
+  if (pid === process.pid || pid === process.ppid) return; // never the supervisor itself or its parent
+  if (process.platform === "win32") {
+    // Windows has no process groups: `process.kill` ends only that pid and
+    // leaves the CLI's own children running. taskkill /T takes the tree.
+    const r = spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { windowsHide: true, encoding: "utf8" });
+    if (r.status !== 0) { try { process.kill(pid, "SIGTERM"); } catch { /* already gone */ } }
+    return;
+  }
+  // POSIX: when the child leads its own group, signal the group so the agent's
+  // own subprocesses go with it; otherwise (ESRCH on the group) the pid alone.
+  try { process.kill(-pid, "SIGTERM"); return; } catch { /* not a group leader */ }
   try { process.kill(pid, "SIGTERM"); } catch { /* already gone */ }
 }
 
@@ -538,8 +552,14 @@ export function redispatchRun(h: LedgerHandle, row: RunRow, overrides: Redispatc
   }
   const runCascade = runCascadeImpl ?? lazyCascade().runWithCascade;
   const { AUTONOMOUS_DIRECTIVE } = lazyDriver();
+  const role = restoredDispatchRole(row);
   const res = runCascade({
     runtime: (row.runtime as any) || recoveryRuntime(),
+    // The original worker's restrictions, not the supervisor's own.
+    ...(role ? { dispatchRole: role } : {}),
+    label: restoredLabel(row),
+    workspace: runFolderOf(projectDir, projectRoot) ?? undefined,
+    pinned: restoredPinned(row),
     prompt,
     cwd: projectRoot,
     addDirs: [projectDir, outputsRoot],
@@ -577,6 +597,39 @@ export function redispatchRun(h: LedgerHandle, row: RunRow, overrides: Redispatc
 
 // ── the supervisor's two doors into the delivery pipeline ─────────────────
 
+const DISPATCH_ROLES: ReadonlySet<string> = new Set(["business", "employee", "squad", "agent-x", "planner", "exec", "solo"]);
+
+/** What the worker of this ledger row WAS, so a restarted worker is as
+ *  restricted as the original. Without it the redispatch carried no role and
+ *  inherited the supervisor's (the operator's: unrestricted, may open agents).
+ *  The row's own `meta.dispatch_role` wins; rows written before it existed are
+ *  read from what they recorded: a business run as one agent is `solo`, a
+ *  squad is `squad`, the generalist is `agent-x`. null when nothing says. */
+export function restoredDispatchRole(row: RunRow): DispatchRole | null {
+  const meta = row.meta || {};
+  const recorded = metaStr(meta, "dispatch_role");
+  if (recorded && DISPATCH_ROLES.has(recorded)) return recorded as DispatchRole;
+  if (row.target_kind === "squad") return "squad";
+  if (row.target_kind === "agent-x") return "agent-x";
+  if (row.target_kind === "business" && (meta.mode === "solo" || meta.mode === "single")) return "solo";
+  return null;
+}
+
+/** The tab label the host shows for this row's worker. */
+function restoredLabel(row: RunRow): string {
+  if (row.target_kind === "squad") return `squad ${row.target_slug ?? "?"}`;
+  if (row.target_kind === "business") return `business/${row.target_slug ?? "?"}`;
+  return "agent-x";
+}
+
+/** True when the owner chose this row's runtime (flag or brief mention), as
+ *  the dispatch recorded in `meta.runtime_source`: a restarted run is then
+ *  pinned to it and never hands off to another vendor. */
+function restoredPinned(row: RunRow): boolean {
+  const source = metaStr(row.meta || {}, "runtime_source");
+  return source === "flag" || source === "brief";
+}
+
 function metaStr(meta: Record<string, unknown>, key: string): string | null {
   const v = meta[key];
   return typeof v === "string" && v ? v : null;
@@ -597,6 +650,8 @@ function baseDeliveryArgs(h: LedgerHandle, row: RunRow, brief: string, outputsRo
     slug: kind === "business" ? row.target_slug : null,
     targetKind: kind,
     runtime: (row.runtime as DeliveryArgs["runtime"]) || recoveryRuntime(),
+    // The revision calls the pipeline makes run as the same kind of worker.
+    ...(restoredDispatchRole(row) ? { producerRole: restoredDispatchRole(row)! } : {}),
     projectDir: metaStr(meta, "project_dir") ?? outputsRoot,
     projectRoot: metaStr(meta, "project_root") ?? outputsRoot,
     workingDir: reviseCwdFor(meta),

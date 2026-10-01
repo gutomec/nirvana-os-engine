@@ -54,8 +54,8 @@ export type RunState =
   | "running"      // headless child executing
   | "verifying"    // deliverable verification in progress
   | "gated"        // quality gate completed
-  | "delivered"    // TERMINAL — artifacts delivered (gate pass or indeterminate)
-  | "withheld"     // TERMINAL — artifacts exist but gate failed; delivery withheld
+  | "delivered"    // TERMINAL — artifacts delivered (gate pass, with reservations, or forced)
+  | "withheld"     // TERMINAL — artifacts exist but were not delivered (serious finding, strict policy, completeness ceiling, or nothing gateable)
   | "stalled"      // recoverable — supervisor exhausted retries, human notified
   | "failed"       // recoverable — run errored; supervisor may resume/redispatch
   | "abandoned";   // TERMINAL — only via abandon(runId, reason)
@@ -66,15 +66,17 @@ export const ACTIVE_STATES: readonly RunState[] = ["dispatched", "running", "ver
 // Legal transitions. `abandoned` is intentionally absent from every list:
 // it is reachable ONLY through abandon(), which demands a reason.
 //
-// `failed → verifying` is the runtime-error salvage path (see
-// delivery-pipeline.ts deliverAfterRuntimeError): a runtime can return an
-// error verdict — a usage/turn limit hit at the very end, typically — AFTER
-// the deliverables were already written. The run is honestly marked `failed`
-// with the runtime's verdict, and then recovers straight into verification
-// instead of being re-dispatched: the work already exists on disk and MUST be
-// judged (artifacts are never delivered, nor abandoned, without the gate).
-// `failed` is documented as recoverable, so this widens an existing recovery
-// edge rather than piercing the machine.
+// `failed → verifying` is the recovery edge of a run whose work is already on
+// disk: a run another process marked `failed` (a runtime error, a supervisor
+// verdict) and that `nrv revise` or the salvage then judges instead of
+// re-dispatching — artifacts are never delivered, nor abandoned, without the
+// gate. The runtime-error salvage itself (delivery-pipeline.ts
+// deliverAfterRuntimeError) no longer passes through `failed` when artifacts
+// exist: it walks `running → verifying` with the runtime's verdict as
+// last_error, because a transient `failed` fires the run's done-signal and a
+// waiter reads it as final while the recovery is still judging. `failed` is
+// documented as recoverable, so this edge widens an existing recovery path
+// rather than piercing the machine.
 //
 // `stalled → verifying` is the SUPERVISOR SALVAGE path (see
 // scripts/supervisor.ts salvageStalledRun): when the supervisor exhausts its
@@ -906,6 +908,22 @@ export function recordChildPid(handle: LedgerHandle, runId: string, pid: number,
     [pid, JSON.stringify({ ...row.meta, child_pid_started_at: startedAt }), nowIso(), runId],
   );
   emitLedgerAudit("x_ledger_child_pid_recorded", { run_id: runId, child_pid: pid, started_at: startedAt }, row);
+}
+
+/** Forget the worker's pid once the worker has ended. The dispatcher goes on
+ *  verifying, gating and publishing after its child exits; a reader that finds
+ *  that pid dead (`nrv run-track status`) would otherwise report a live
+ *  delivery as killed. No state transition; a later worker (a correction run)
+ *  records its own pid through the heartbeat sidecar. */
+export function clearChildPid(handle: LedgerHandle, runId: string): void {
+  const row = getRun(handle, runId);
+  if (!row || row.child_pid == null) return;
+  const { child_pid_started_at: _startedAt, ...meta } = row.meta ?? {};
+  handle.db.run(
+    "UPDATE runs SET child_pid = NULL, meta = ?, updated_at = ? WHERE run_id = ?",
+    [JSON.stringify(meta), nowIso(), runId],
+  );
+  emitLedgerAudit("x_ledger_child_pid_cleared", { run_id: runId, child_pid: row.child_pid }, row);
 }
 
 /** Merge `patch` into the run's meta WITHOUT a state transition. The

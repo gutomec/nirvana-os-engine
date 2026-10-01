@@ -15,7 +15,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { writeFakeCli, readCapturedArgs } from "./helpers/fake-cli.ts";
 import {
-  ORCA_AGENT_ID, briefFileContent, forwardedEnv, interactiveArgv, preTrustWorkspace, runOrcaWorker, screenShowsTrustPrompt, workerCommand,
+  ORCA_AGENT_ID, briefFileContent, forwardedEnv, interactiveArgv, preTrustWorkspace, runOrcaWorker, screenShowsTrustPrompt, workerCommand, workerRoleEnv,
 } from "../../_shared/lib/orca-worker.ts";
 import type { OrcaCall } from "../../_shared/lib/orca.ts";
 
@@ -69,8 +69,8 @@ describe("the interactive command per runtime", () => {
   });
 
   test("autonomy flags match the headless runners, and --safe drops them", () => {
-    expect(interactiveArgv({ runtime: "claude-code", yolo: true, model: "opus", addDirs: ["/p"] })).toEqual(["claude", "--permission-mode", "auto", "--model", "opus", "--add-dir", "/p"]);
-    expect(interactiveArgv({ runtime: "claude-code", yolo: false, model: "opus" })).toEqual(["claude", "--permission-mode", "acceptEdits", "--model", "opus"]);
+    expect(interactiveArgv({ runtime: "claude-code", yolo: true, model: "opus", addDirs: ["/p"] })).toEqual(["claude", "--permission-mode", "auto", "--model", "opus", "--disallowedTools", "Task", "Agent", "--add-dir", "/p"]);
+    expect(interactiveArgv({ runtime: "claude-code", yolo: false, model: "opus" })).toEqual(["claude", "--permission-mode", "acceptEdits", "--model", "opus", "--disallowedTools", "Task", "Agent"]);
     expect(interactiveArgv({ runtime: "codex", yolo: true, model: "gpt-5" })).toEqual(["codex", "--dangerously-bypass-approvals-and-sandbox", "-m", "gpt-5"]);
     expect(interactiveArgv({ runtime: "gemini-cli", yolo: false, model: "g" })).toEqual(["gemini", "--approval-mode", "auto_edit", "-m", "g"]);
     expect(interactiveArgv({ runtime: "antigravity-cli", yolo: true, model: "a" })).toEqual(["agy", "--dangerously-skip-permissions", "--model", "a"]);
@@ -79,7 +79,22 @@ describe("the interactive command per runtime", () => {
 
   test("a confined claude worker carries its run's deny rules, as the headless runner does", () => {
     expect(interactiveArgv({ runtime: "claude-code", yolo: true, model: "opus", addDirs: ["/p"], claudeSettings: "/tmp/fence.json" }))
-      .toEqual(["claude", "--permission-mode", "auto", "--model", "opus", "--settings", "/tmp/fence.json", "--add-dir", "/p"]);
+      .toEqual(["claude", "--permission-mode", "auto", "--model", "opus", "--settings", "/tmp/fence.json", "--disallowedTools", "Task", "Agent", "--add-dir", "/p"]);
+  });
+
+  test("subagents are denied unless the caller is an orchestrator", () => {
+    expect(interactiveArgv({ runtime: "claude-code", yolo: true, allowSubagents: true })).toEqual(["claude", "--permission-mode", "auto"]);
+  });
+
+  test("the worker is stamped with its own depth and role, never the parent's", () => {
+    expect(workerRoleEnv({ dispatchRole: "squad" }, { NIRVANA_DISPATCH_DEPTH: "1", NIRVANA_DISPATCH_ROLE: "business" } as any))
+      .toEqual({ NIRVANA_DISPATCH_DEPTH: "2", NIRVANA_DISPATCH_ROLE: "squad" });
+    expect(workerRoleEnv({}, {} as any)).toEqual({ NIRVANA_DISPATCH_DEPTH: "1" });
+  });
+
+  test("variables that carry secrets are not put on the visible command line", () => {
+    const env = forwardedEnv({ NIRVANA_TRACE_ID: "t", NIRVANA_API_KEY: "k", NIRVANA_X_TOKEN: "x", NIRVANA_AUDIT_KEY: "/k/audit-key" } as any);
+    expect(env).toEqual({ NIRVANA_TRACE_ID: "t", NIRVANA_AUDIT_KEY: "/k/audit-key" });
   });
 
   test("the terminal command enters the run's directory and pins the engine's environment", () => {
@@ -108,6 +123,13 @@ describe("with canned Orca answers", () => {
   test("inactive host: null and not one call", () => {
     const c = canned(HAPPY, { active: false });
     expect(runOrcaWorker(base(), c.hooks)).toBeNull();
+    expect(c.calls).toEqual([]);
+  });
+
+  test("an answer-only or tool-restricted call keeps the headless child: a worker cannot honour it", () => {
+    const c = canned(HAPPY);
+    expect(runOrcaWorker(base({ noTools: true }), c.hooks)).toBeNull();
+    expect(runOrcaWorker(base({ allowedTools: ["Read"] }), c.hooks)).toBeNull();
     expect(c.calls).toEqual([]);
   });
 
@@ -215,6 +237,21 @@ describe("with canned Orca answers", () => {
     for (const call of c.calls.filter((a) => a[1] === "check")) {
       expect(Number(call[call.indexOf("--timeout-ms") + 1])).toBeLessThanOrEqual(150_000);
     }
+  });
+
+  test("a timed-out worker's terminal is closed, with its transcript archived first", () => {
+    let t = 1_000_000;
+    const c = canned({
+      ...HAPPY,
+      "orchestration check": () => { t += 60_000; return ok({ deliveryId: null, messages: [] }); },
+      "orchestration worker-show": ok({ dispatch: { status: "dispatched" }, terminal: { connected: true } }),
+    });
+    c.hooks.now = () => t;
+    const r = runOrcaWorker(base({ timeoutMs: 150_000 }), c.hooks)!;
+    expect(r.ok).toBe(false);
+    expect(c.fired.some((a) => a[0] === "terminal" && a[1] === "close")).toBe(true);
+    expect(r.warnings?.some((w) => w.includes("transcript at"))).toBe(true);
+    expect(r.warnings?.some((w) => w.includes("closed after the timeout"))).toBe(true);
   });
 
   test("a vanished worker terminal ends the wait", () => {

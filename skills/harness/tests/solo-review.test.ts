@@ -7,9 +7,11 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-  buildRevisionPrompt, buildSoloReviewPrompt, businessWantsReview, decideReview, deliverableFiles, pickReviewRuntime,
-  precheckSolo, runSoloReviewStage, scoreSoloReview, type ReviewSignals, type SoloReviewArgs,
+  buildRevisionPrompt, buildSoloReviewPrompt, businessWantsReview, claimProblems, criteriaFromBrief, decideReview, deliverableFiles,
+  evidenceFileUnder, pickReviewRuntime, precheckSolo, runSoloReviewStage, scoreSoloReview, SERIOUS_EXTRA_ROUNDS,
+  type ReviewSignals, type SoloReviewArgs,
 } from "../lib/solo-review.ts";
+import { soloDirective } from "../lib/business-solo.ts";
 import type { Criterion } from "../lib/work-brief.ts";
 
 let tmp: string;
@@ -64,11 +66,17 @@ describe("the signals", () => {
     expect(businessWantsReview(bizDir)).toBe(true);
   });
 
-  test("the reviewer runs on another available runtime, else on the worker's", () => {
+  test("with `other`, the reviewer runs on another available runtime, else on the worker's", () => {
     expect(pickReviewRuntime("other", "claude-code", (rt) => rt === "codex" || rt === "claude-code")).toBe("codex");
     expect(pickReviewRuntime("other", "codex", (rt) => rt === "codex" || rt === "claude-code")).toBe("claude-code");
     expect(pickReviewRuntime("other", "claude-code", (rt) => rt === "claude-code")).toBe("claude-code");
     expect(pickReviewRuntime("same", "claude-code", () => true)).toBe("claude-code");
+  });
+
+  test("with `other`, a runtime a NOT_USE_* rule vetoes is skipped", () => {
+    const available = (rt: string) => ["codex", "claude-code", "gemini-cli"].includes(rt);
+    expect(pickReviewRuntime("other", "claude-code", available, (rt) => rt === "codex")).toBe("gemini-cli");
+    expect(pickReviewRuntime("other", "claude-code", available, (rt) => rt !== "claude-code")).toBe("claude-code");
   });
 
   test("the precheck names what is missing, without a model", () => {
@@ -81,10 +89,56 @@ describe("the signals", () => {
     expect(precheckSolo(outputs, CRITERIA).ok).toBe(true);
   });
 
+  test("evidence must name a file that exists under the outputs root, not merely be long", () => {
+    deliver([{ id: "d1", evidence: "the tables section of the PRD, lines 10 to 40" }]);
+    expect(precheckSolo(outputs, CRITERIA).problems).toEqual(["the evidence for blocking criterion d1 names no file that exists under the outputs root"]);
+    deliver([{ id: "d1", evidence: "missing.md:10-40, the tables section" }]);
+    expect(precheckSolo(outputs, CRITERIA).ok).toBe(false);
+    // The worker's own summary is a claim, never its proof.
+    deliver([{ id: "d1", evidence: "_SUMMARY.md:1, says the tables are there" }]);
+    expect(precheckSolo(outputs, CRITERIA).ok).toBe(false);
+  });
+
+  test("evidence paths: either separator, relative or absolute, never outside the outputs root", () => {
+    write(path.join(outputs, "docs", "prd.md"), "tables");
+    write(path.join(tmp, "outside.md"), "x");
+    expect(evidenceFileUnder(outputs, "docs\\prd.md:10-40, the tables")).toBe(path.join(outputs, "docs", "prd.md"));
+    expect(evidenceFileUnder(outputs, "`docs/prd.md` (#L10-L40)")).toBe(path.join(outputs, "docs", "prd.md"));
+    expect(evidenceFileUnder(outputs, `${path.join(outputs, "docs", "prd.md")}:3`)).toBe(path.join(outputs, "docs", "prd.md"));
+    expect(evidenceFileUnder(outputs, `${path.join(tmp, "outside.md")}:1`)).toBeNull();
+    expect(evidenceFileUnder(outputs, "../outside.md:1")).toBeNull();
+    expect(evidenceFileUnder(outputs, "C:\\elsewhere\\prd.md:1")).toBeNull();
+    expect(claimProblems(outputs, CRITERIA).map((p) => p.id)).toEqual(["d1"]);
+  });
+
   test("the worker's own reports and working folder are not deliverables", () => {
     deliver();
     write(path.join(outputs, "_work", "PROGRESS.md"), "p");
+    write(path.join(outputs, "_STATUS.json"), "{}");
+    write(path.join(outputs, "_review", "answer-0.txt"), "{}");
     expect(deliverableFiles(outputs)).toEqual(["prd.md"]);
+  });
+});
+
+describe("the brief's criteria", () => {
+  const brief = (done: string) => `## Request (verbatim)\nx\n## Decisions\nNone.\n## Your part\ny\n## Inputs\nNone.\n## Done when\n${done}\n## Output\nout\n`;
+
+  test("only top-level bullets are criteria; a nested bullet details its parent", () => {
+    const c = criteriaFromBrief(brief("- The PRD lists every table (blocking)\n  - including the audit table\n- A cost estimate"));
+    expect(c.map((x) => [x.id, x.description, x.blocking])).toEqual([
+      ["d1", "The PRD lists every table", true], ["d2", "A cost estimate", false],
+    ]);
+  });
+
+  test("blocking in the user's language: (bloqueante), a leading deve or must, a bold marker", () => {
+    const c = criteriaFromBrief(brief("- O relatório cita as fontes (bloqueante)\n- Deve ter um resumo executivo\n- must open offline\n- Um gráfico **(blocking)**\n- Uma capa bonita"));
+    expect(c.map((x) => x.blocking)).toEqual([true, true, true, true, false]);
+    expect(c[0].description).toBe("O relatório cita as fontes");
+  });
+
+  test("no section, or a section with no bullet, gives nothing to check", () => {
+    expect(criteriaFromBrief("Faça um relatório.")).toEqual([]);
+    expect(criteriaFromBrief(brief("Quando estiver bom."))).toEqual([]);
   });
 });
 
@@ -97,6 +151,24 @@ describe("scoring", () => {
     expect(s.blockingMissed).toEqual(["d1"]);
   });
 
+  test("a brief with nothing to check is never approved (it used to score 1)", () => {
+    const s = scoreSoloReview({ confirmed: [], notes: "looks fine" }, []);
+    expect(s.approved).toBe(false);
+    expect(s.score).toBe(0);
+    expect(s.gaps.map((g) => g.id)).toEqual(["done-when"]);
+  });
+
+  test("a figure nobody can trace keeps the review from approving", () => {
+    const s = scoreSoloReview({
+      confirmed: [{ id: "d1", evidence: "prd.md:10, the tables" }, { id: "d2", evidence: "cost.md:3, monthly total" }],
+      untraceable: [{ where: "cost.md:3", what: "R$ 4.990/mês: not in the brief, no source cited" }],
+    }, CRITERIA);
+    expect(s.score).toBe(1);
+    expect(s.approved).toBe(false);
+    expect(s.untraceable).toHaveLength(1);
+    expect(buildRevisionPrompt(s.gaps, CRITERIA, s.untraceable)).toContain("cost.md:3: R$ 4.990/mês");
+  });
+
   test("everything confirmed with evidence approves", () => {
     const s = scoreSoloReview({ confirmed: [{ id: "d1", evidence: "prd.md:10, the tables" }, { id: "d2", evidence: "cost.md:3, monthly total" }] }, CRITERIA);
     expect(s.approved).toBe(true);
@@ -107,6 +179,8 @@ describe("scoring", () => {
     const p = buildSoloReviewPrompt({ business: "biz", briefFile, outputsRoot: outputs, criteria: CRITERIA, claims: [{ id: "d1", evidence: "prd.md:10" }] });
     expect(p).toContain("- `d1` **(blocking)**: The PRD lists every table");
     expect(p).toContain("- `d1`: prd.md:10");
+    expect(p).toContain("every figure, price, date, guarantee, promise or factual claim");
+    expect(p).toContain('"untraceable"');
     const r = buildRevisionPrompt([{ id: "d1", blocking: true, why: "no tables" }], CRITERIA);
     expect(r).toContain("- `d1` (blocking): The PRD lists every table. Reviewer: no tables");
   });
@@ -143,25 +217,130 @@ describe("runSoloReviewStage", () => {
     expect(out.reservations).toBeNull();
   });
 
-  test("rejected: one correction in the worker's own session, then reservations", () => {
+  test("a non-blocking gap: max_rounds corrections in the worker's own session, then reservations", () => {
     deliver();
     const calls: any[] = [];
     const out = runSoloReviewStage(args({
-      policy: "always",
-      runImpl: (o: any) => { calls.push(o); return ok(o.sessionId ? "" : "{}"); },
+      policy: "always", runtimePref: "other",
+      runImpl: (o: any) => { calls.push(o); return ok(o.sessionId ? "" : JSON.stringify({ confirmed: [{ id: "d1", evidence: "prd.md:10, the tables" }] })); },
     }));
     expect(calls.map((c) => [c.runtime, c.sessionId ?? null, c.dispatchRole])).toEqual([
       ["codex", null, "planner"], ["claude-code", "s-1", "solo"], ["codex", null, "planner"],
     ]);
     expect(out.rounds).toBe(1);
     expect(out.approved).toBe(false);
+    expect(out.blockingMissed).toEqual([]);
+    expect(fs.readFileSync(out.reservations!, "utf8")).toContain("A monthly cost estimate");
+  });
+
+  test("a blocking criterion still missed is corrected past max_rounds (rule A), then carried out as serious", () => {
+    deliver();
+    const calls: any[] = [];
+    const out = runSoloReviewStage(args({
+      policy: "always",
+      runImpl: (o: any) => { calls.push(o); return ok(o.sessionId ? "" : "{}"); },
+    }));
+    expect(out.rounds).toBe(1 + SERIOUS_EXTRA_ROUNDS);
+    expect(calls.filter((c) => c.dispatchRole === "solo")).toHaveLength(1 + SERIOUS_EXTRA_ROUNDS);
+    expect(out.approved).toBe(false);
+    expect(out.blockingMissed).toEqual(["d1"]);
     expect(fs.readFileSync(out.reservations!, "utf8")).toContain("**blocking** The PRD lists every table");
   });
 
+  test("the reviewer runs on the session's runtime by default", () => {
+    deliver();
+    const runtimes: string[] = [];
+    runSoloReviewStage(args({ policy: "always", maxRounds: 0, runtimePref: "same", runImpl: (o: any) => { runtimes.push(o.runtime); return ok("{}"); } }));
+    expect(runtimes).toEqual(["claude-code"]);
+  });
+
+  test("with `other`, a NOT_USE_* rule matching the brief keeps that runtime off the review", () => {
+    deliver();
+    const runtimes: string[] = [];
+    runSoloReviewStage(args({
+      policy: "always", maxRounds: 0, runtimePref: "other",
+      available: (rt) => ["codex", "claude-code", "gemini-cli"].includes(rt),
+      rules: [{ runtime: "codex", rule: "PRD tables monthly cost estimate", envKey: "NOT_USE_CODEX", sourceFile: null, negate: true }],
+      runImpl: (o: any) => { runtimes.push(o.runtime); return ok("{}"); },
+    }));
+    expect(runtimes).toEqual(["gemini-cli"]);
+  });
+
+  test("corrections run as the solo worker, with the solo directive, the budget and the ledger", () => {
+    deliver();
+    const calls: any[] = [];
+    runSoloReviewStage(args({
+      policy: "always", maxRounds: 1, maxBudgetUsd: 3, ledger: { runId: "run-x" }, rulesDirective: "\nRULES",
+      runImpl: (o: any) => { calls.push(o); return ok(o.sessionId ? "" : JSON.stringify({ confirmed: [{ id: "d1", evidence: "prd.md:10, the tables" }] })); },
+    }));
+    const [reviewer, fix] = calls;
+    expect(reviewer.maxBudgetUsd).toBe(3);
+    expect(reviewer.ledger).toEqual({ runId: "run-x", watchDir: outputs });
+    expect(fix.dispatchRole).toBe("solo");
+    expect(fix.appendSystemPrompt).toBe(soloDirective("\nRULES"));
+    expect(fix.maxBudgetUsd).toBe(3);
+    expect(fix.ledger).toEqual({ runId: "run-x", watchDir: outputs });
+  });
+
+  test("a launch that already carries the solo directive keeps it as it is", () => {
+    deliver();
+    const calls: any[] = [];
+    const launchDirective = soloDirective("\nPROJECT RULES");
+    runSoloReviewStage(args({
+      policy: "always", maxRounds: 1,
+      worker: { runtime: "claude-code", sessionId: "s-1", launch: { cwd: tmp, addDirs: [], appendSystemPrompt: launchDirective } },
+      runImpl: (o: any) => { calls.push(o); return ok(o.sessionId ? "" : JSON.stringify({ confirmed: [{ id: "d1", evidence: "prd.md:10, the tables" }] })); },
+    }));
+    expect(calls.find((c) => c.dispatchRole === "solo").appendSystemPrompt).toBe(launchDirective);
+  });
+
   test("a failed precheck triggers the review under the rule policy", () => {
+    deliver([]);
     let calls = 0;
     const out = runSoloReviewStage(args({ maxRounds: 0, runImpl: () => { calls++; return ok("{}"); } }));
     expect(out.decision.reason).toBe("the deterministic precheck failed");
     expect(calls).toBe(1);
+  });
+
+  test("no deliverable at all: no reviewer; the worker gets the precheck back directly", () => {
+    const calls: any[] = [];
+    const events: string[] = [];
+    const out = runSoloReviewStage(args({
+      maxRounds: 1, emit: (e) => events.push(e),
+      runImpl: (o: any) => { calls.push(o); return ok(""); },
+    }));
+    expect(calls).toHaveLength(1);
+    expect(calls[0].dispatchRole).toBe("solo");
+    expect(calls[0].prompt).toContain("no deliverable file under the outputs root");
+    expect(out.reviewer).toBeNull();
+    expect(out.skipped).toBe("no-deliverable");
+    expect(events).toContain("x_review_skipped");
+  });
+
+  test("a reviewer that dies is skipped with an event, never counted as a rejection", () => {
+    deliver();
+    const calls: any[] = [];
+    const events: Array<[string, any]> = [];
+    const out = runSoloReviewStage(args({
+      policy: "always", emit: (e, p) => events.push([e, p]),
+      runImpl: (o: any) => { calls.push(o); return { ok: false, runtime: o.runtime, sessionId: null, result: "", costUsd: null, durationMs: 1, error: "quota exhausted" } as any; },
+    }));
+    expect(calls).toHaveLength(1);
+    expect(out.approved).toBeNull();
+    expect(out.skipped).toBe("reviewer-failed");
+    expect(out.blockingMissed).toEqual([]);
+    expect(out.reservations).toBeNull();
+    expect(events.find(([e]) => e === "x_review_skipped")?.[1].error).toBe("quota exhausted");
+    expect(events.map(([e]) => e)).not.toContain("x_review_rejected");
+  });
+
+  test("a brief with no Done when is never approved, and the worker is not sent to fix what it cannot", () => {
+    deliver();
+    write(briefFile, "## Request (verbatim)\nx\n## Done when\nWhen it is good.\n");
+    const calls: any[] = [];
+    const out = runSoloReviewStage(args({ policy: "always", runImpl: (o: any) => { calls.push(o); return ok("{}"); } }));
+    expect(calls).toHaveLength(1);
+    expect(out.approved).toBe(false);
+    expect(fs.readFileSync(out.reservations!, "utf8")).toContain("no \"Done when\" items");
   });
 });

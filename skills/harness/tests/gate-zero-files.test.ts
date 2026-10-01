@@ -35,7 +35,7 @@ describe("dispatch quality gate — zero gated files", () => {
   });
 
   test("runGateOnce([]) is vacuously pass — the raw result the wrapper must correct", () => {
-    expect(runGateOnce([], "/nonexistent/quality-gate.ts")).toEqual({ pass: true, fails: [] });
+    expect(runGateOnce([], "/nonexistent/quality-gate.ts")).toEqual({ pass: true, fails: [], modes: {} });
   });
 
   test("decideGateOutcome on an empty list is indeterminate, not pass", () => {

@@ -54,7 +54,7 @@ Discovery (read-only, no degradation on any runtime):
 
 Orchestration:
 - **in-process** (Claude Code, Codex, Antigravity): the intelligence is the `harness` skill: **invoke it** (not `nrv dispatch`).
-- **sub-process** (Hermes, legacy Gemini): `nrv dispatch "<verbatim brief>"`.
+- **sub-process** (Hermes, legacy Gemini): `nrv dispatch --auto --exec "<verbatim brief>"`.
 
 Every dispatch emits an audit chain in `~/.harness-logs/<date>/audit.jsonl`.
 

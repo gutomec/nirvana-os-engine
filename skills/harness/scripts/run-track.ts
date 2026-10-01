@@ -123,17 +123,25 @@ function usage(code: number): never {
 /** How a caller OUTSIDE the ledger's own state machine reads a row: `failed`
  *  is recoverable INSIDE the ledger (the supervisor may resume the same
  *  run_id), but for one dispatch attempt it is exactly as final as
- *  delivered/withheld/abandoned — the process that held it already exited.
- *  A row still in a live state whose recorded pid is no longer alive is not
- *  "still running" either: it is `killed`, the fourth outcome the owner asked
- *  to distinguish from a live run. This is a READ — it never mutates the row;
- *  only the supervisor's own sweep gets to decide what happens to an
- *  abandoned run. Pid-less (agentic) rows are left as-is: their liveness is
- *  the supervisor's richer, multi-signal call (resolveAgenticLiveness), not
- *  this quick check. */
+ *  delivered/withheld/abandoned — the process that held it already exited. A
+ *  run whose worker died after writing never passes through `failed` (the
+ *  salvage walks it straight into `verifying`), so a `failed` read here is not
+ *  a recovery in progress.
+ *  A row whose WORKER is still supposed to be at work (dispatched, running)
+ *  and whose recorded pid is no longer alive is not "still running" either: it
+ *  is `killed`, the fourth outcome the owner asked to distinguish from a live
+ *  run. In `verifying` and `gated` the worker has ended by design and the
+ *  dispatcher itself is judging and publishing, so a dead worker pid there
+ *  says nothing (the pipeline also clears it). This is a READ — it never
+ *  mutates the row; only the supervisor's own sweep gets to decide what
+ *  happens to an abandoned run. Pid-less (agentic) rows are left as-is: their
+ *  liveness is the supervisor's richer, multi-signal call
+ *  (resolveAgenticLiveness), not this quick check. */
+const WORKER_STATES: ReadonlySet<string> = new Set(["dispatched", "running"]);
+
 function interpretState(row: RunRow): string {
   if (isTerminal(row.state) || row.state === "failed") return row.state;
-  if (row.child_pid && !pidAlive(row.child_pid)) return "killed";
+  if (WORKER_STATES.has(row.state) && row.child_pid && !pidAlive(row.child_pid)) return "killed";
   return row.state;
 }
 

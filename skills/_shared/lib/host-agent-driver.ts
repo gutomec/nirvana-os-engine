@@ -99,7 +99,7 @@ const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
  * (agy, kimi, opencode, pi) would hand Windows a command line between 32 KB and
  * 100 KB believing it safe, and the interpreter route would cut it at 8 KB.
  *
- * KNOWN TRADE-OFF, measured: AUTONOMOUS_DIRECTIVE is 2,873 bytes (5,942 until 0.13.9) and
+ * KNOWN TRADE-OFF, measured: AUTONOMOUS_DIRECTIVE is about 3 KB (5,942 bytes until 0.13.9) and
  * `withPreamble` merges it ahead of every prompt, so on Windows the argv branch
  * is effectively unreachable for those four adapters — every dispatch takes the
  * temp-file route. That is deliberate rather than accidental, because no number
@@ -793,7 +793,11 @@ export interface HostError {
  * (must still be installed). Caller may also pass `preferred` slug.
  */
 export function detectHost(opts: { preferred?: string } = {}): RuntimeAdapter | null {
-  const preferred = opts.preferred || process.env.NIRVANA_AGENT_RUNTIME;
+  // NIRVANA_HOST_RUNTIME (stamped on every child this driver spawns, or set by
+  // the user) names the session the work belongs to; without it the fallback is
+  // the first installed runtime in roster order, which is not a preference for
+  // any vendor, only the last resort.
+  const preferred = opts.preferred || process.env.NIRVANA_AGENT_RUNTIME || process.env.NIRVANA_HOST_RUNTIME;
   if (preferred) {
     const r = RUNTIMES.find(x => x.name === preferred);
     if (r && whichSync(r.cli)) return r;
@@ -1954,6 +1958,9 @@ function runGemini(opts: RunHeadlessOpts): RunHeadlessResult {
   };
 }
 
+/** Prefix of a session id the engine made up because agy returned none. */
+const SYNTHETIC_AGY_SID = "nrv-agy-";
+
 // Antigravity CLI (`agy`). Replaces gemini-cli for consumer tier after 2026-06-18.
 // Same Google backend (Gemini models), different binary + flag conventions.
 // Prompt delivery: `agy --help` (audited 2026-08-06) documents NO stdin
@@ -1964,7 +1971,14 @@ function runGemini(opts: RunHeadlessOpts): RunHeadlessResult {
 // without the skip flag halts anyway).
 function runAntigravity(opts: RunHeadlessOpts): RunHeadlessResult {
   const started = Date.now();
-  const sid = opts.sessionId || randomUUID();
+  // `agy` does not let us choose a conversation id up front, so when its
+  // envelope carries none the id below is OURS: a placeholder that names no
+  // conversation in agy. It is marked (SYNTHETIC_AGY_SID) so a resume knows the
+  // difference: a real id resumes THAT conversation (`--conversation <id>`,
+  // `agy --help` audited 2026-10-01), a placeholder can only fall back to
+  // `--continue` (the most recent conversation in this directory), which can
+  // resume the wrong one when two runs share a directory.
+  const sid = opts.sessionId || `${SYNTHETIC_AGY_SID}${randomUUID()}`;
   // agy headless: -p / --print / --prompt all accept the prompt as argv value.
   // Output formats: "json" (single object) or "stream-json" (NDJSON events).
   // We use single-object json for parity with runGemini/runClaudeCode.
@@ -1978,7 +1992,8 @@ function runAntigravity(opts: RunHeadlessOpts): RunHeadlessResult {
   // installed versions) — if the spawn fails with a flag error, retry without it.
   const delivery = argvOrPromptFile(withPreamble(opts), (p) => ["-p", p]);
   const args = [...delivery.args, "--output-format", "json"];
-  if (opts.sessionId) args.push("--continue");
+  const resumeById = !!opts.sessionId && !opts.sessionId.startsWith(SYNTHETIC_AGY_SID);
+  if (opts.sessionId) args.push(...(resumeById ? ["--conversation", opts.sessionId!] : ["--continue"]));
   const agyModel = opts.model ?? resolveSystemModel("antigravity-cli");
   if (agyModel) args.push("--model", agyModel);
   if (opts.yolo !== false) args.push("--dangerously-skip-permissions");
@@ -1993,6 +2008,13 @@ function runAntigravity(opts: RunHeadlessOpts): RunHeadlessResult {
   let r!: SpawnSyncReturns<string>;
   try {
     r = driverSpawnSync("agy", args, spawnOpts);
+    if ((r.status ?? 1) !== 0 && resumeById && /conversation/i.test(r.stderr || "")) {
+      // The id was not a conversation agy knows (its envelope field may not be
+      // the conversation id on every build): fall back to the old behaviour.
+      const i = args.indexOf("--conversation");
+      args.splice(i, 2, "--continue");
+      r = driverSpawnSync("agy", args, spawnOpts);
+    }
     if ((r.status ?? 1) !== 0 && /output[- ]format|unknown|unrecognized|invalid (option|flag|argument)/i.test(r.stderr || "")) {
       const i = args.indexOf("--output-format");
       r = driverSpawnSync("agy", [...args.slice(0, i), ...args.slice(i + 2)], spawnOpts);
@@ -2595,7 +2617,10 @@ const RUNTIME_BINS: Record<Runtime, string> = {
 /** True if the runtime's CLI binary is on PATH. Cross-platform: uses `where`
  * on Windows, `which` elsewhere. */
 export function runtimeAvailable(runtime: Runtime): boolean {
-  const bin = RUNTIME_BINS[runtime] ?? "gemini";
+  // An unknown name is NOT installed. The old `?? "gemini"` fallback made "foo"
+  // report whatever gemini reported, so a typo could pass every availability gate.
+  const bin = Object.prototype.hasOwnProperty.call(RUNTIME_BINS, runtime) ? RUNTIME_BINS[runtime] : undefined;
+  if (!bin) return false;
   const probe = process.platform === "win32" ? "where" : "which";
   // `env` is passed EXPLICITLY: under Bun a spawn without it uses the
   // environment captured at process start, not the current `process.env`. The

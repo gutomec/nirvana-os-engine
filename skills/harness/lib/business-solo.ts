@@ -1,10 +1,10 @@
 // business-solo.ts — how a business runs: ONE agent that is the whole business.
 //
-// Measured on a real run of the chain this replaced: 21 agents for one request
-// (9 seats, 11 reviews, 1 mapping), each born with ~47k tokens of base context
-// plus a ~10k seat prompt, each rebuilding its context by reading what the
-// others wrote; 76% of the plan went to re-reading context, and the run took
-// 7.5 hours of wall clock, mostly in series.
+// Measured on a real run of the multi-agent model this replaced: 21 agents for
+// one request (9 seats, 11 reviews, 1 mapping), each born with ~47k tokens of
+// base context plus a ~10k seat prompt, each rebuilding its context by reading
+// what the others wrote; 76% of the plan went to re-reading context, and the
+// run took 7.5 hours of wall clock, mostly in series.
 //
 // One agent is the whole business: it reads the brief the orchestrator wrote
 // for it, plays the seats itself (opening a seat's file when it works as that
@@ -13,8 +13,7 @@
 // subagent, no squad dispatch, no other business (the `solo` role has an empty
 // allowance). It works in phases with its state on disk, so a context ceiling
 // costs nothing it has not already written down, and it ends with a one-page
-// summary for the orchestrator and claims for the reviewer, if a review is
-// decided.
+// summary for the orchestrator and claims for the reviewer.
 //
 // Runtime-agnostic by construction: reading files, running commands and
 // writing files is all it needs, so it runs the same on every runtime.
@@ -22,18 +21,20 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
+import * as os from "node:os";
 import { AUTONOMOUS_DIRECTIVE, type Runtime } from "./host-agent-driver.ts";
 import { runWithCascade } from "./cascade-runner.ts";
 import { resolveEntityDir } from "../../_shared/lib/entity-resource-map.ts";
-import { entityMemoryDir } from "../../_shared/lib/entity-memory.ts";
+import { readEntityMemory } from "../../_shared/lib/entity-memory.ts";
 import { loadCloneRegistry, resolveClonePersona } from "../../_shared/lib/clone-resolver.ts";
 import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { runFolderOf } from "../../_shared/lib/run-workspace.ts";
 import { writeSquadCards } from "../../_shared/lib/work-cards.ts";
 import { findCloneForTask, type CloneHit } from "../../_shared/lib/clone-search.ts";
 import { parseWorkBrief } from "./work-brief.ts";
+import { missingVoiceNotice, selectVoices } from "./clone-voices.ts";
 
-export interface SeatVoice { slug: string; dir: string | null; files: string[] }
+export interface SeatVoice { slug: string; name?: string; dir: string | null; files: string[] }
 
 export interface Seat {
   slug: string;
@@ -156,7 +157,7 @@ export function defaultCloneLookup(cwd: string): CloneLookup {
 
 /** The business's seats, read from their own files. Tolerant: a seat whose
  *  frontmatter does not parse still appears, by its file name. */
-export function readSeats(bizDir: string, cloneLookup: CloneLookup): Seat[] {
+export function readSeats(bizDir: string, cloneLookup: CloneLookup, nameOf: (slug: string) => string | undefined = () => undefined): Seat[] {
   const dir = path.join(bizDir, "employees");
   let names: string[] = [];
   try { names = fs.readdirSync(dir).filter((f) => f.endsWith(".md")).sort(); } catch { return []; }
@@ -173,7 +174,7 @@ export function readSeats(bizDir: string, cloneLookup: CloneLookup): Seat[] {
     const refs = [...new Set([...listOf(fm.pinned_mind_clones), ...listOf(fm.assigned_mind_clones)].map((r) => r.slice(r.lastIndexOf("/") + 1)))];
     const voices = refs.map((s) => {
       const hit = cloneLookup(s);
-      return { slug: s, dir: hit?.dir ?? null, files: hit?.files ?? [] };
+      return { slug: s, name: nameOf(s), dir: hit?.dir ?? null, files: hit?.files ?? [] };
     });
     // Business Protocol v2 §6.10: an empty list is the same as none, and both mean every squad.
     const authorized = listOf(fm.squads_authorized);
@@ -181,14 +182,34 @@ export function readSeats(bizDir: string, cloneLookup: CloneLookup): Seat[] {
   });
 }
 
-/** The business's memory, as the directories it lives in. Pointed at, never pasted. */
+/** The business's memory: the directories that hold curated content, and the
+ *  shipped files that no longer match the home they were seeded into. */
+export interface BusinessMemory {
+  dirs: string[];
+  /** The business's own `memory/` folder when a file in it differs from the home; null otherwise. */
+  newer: { dir: string; files: string[] } | null;
+}
+
+/**
+ * The business's memory, pointed at and never pasted. Reading it seeds the
+ * home from the shipped `memory/` once (entity-memory.ts), so a business that
+ * ships a memory is not a business with none; a directory whose files are
+ * stubs is skipped. When the shipped copy has moved on since the seed, the
+ * business's own folder is named too: the home is what earlier runs honored,
+ * the folder is what the author wrote after.
+ */
+export function businessMemory(slug: string, bizDir: string, projectRoot: string): BusinessMemory {
+  try {
+    const mem = readEntityMemory("businesses", slug, { projectRoot, entityDir: bizDir });
+    return {
+      dirs: mem.scopes.map((s) => s.dir),
+      newer: mem.diverged.length ? { dir: path.join(bizDir, "memory"), files: mem.diverged } : null,
+    };
+  } catch { return { dirs: [], newer: null }; }
+}
+
 export function defaultMemoryDirs(slug: string, bizDir: string, projectRoot: string): string[] {
-  const dirs = [entityMemoryDir("businesses", slug, "global")];
-  try { dirs.push(entityMemoryDir("businesses", slug, "project", projectRoot)); } catch { /* no project */ }
-  const found = dirs.filter((d) => fs.existsSync(d));
-  if (found.length) return found;
-  const shipped = path.join(bizDir, "memory");
-  return fs.existsSync(shipped) ? [shipped] : [];
+  return businessMemory(slug, bizDir, projectRoot).dirs;
 }
 
 /** The squads a business prefers (`squads_preferred` in business.yaml); [] when absent or unreadable. */
@@ -198,59 +219,106 @@ export function preferredSquads(bizDir: string | null): string[] {
   catch { return []; }
 }
 
-/** The squads this run may read: the router's picks, the ones the request
- *  names, the business's preferred ones and the closed sets the seats declare.
- *  A seat open to any squad adds none: listing the whole library would be the
- *  cost this mode removes. */
-/** What a request is about: its own words and this business's part, without
- *  the decisions and criteria around them. */
-function voiceQuery(brief: string): string {
-  const s = parseWorkBrief(brief).sections;
-  return [s["Request (verbatim)"], s["Your part"]].filter(Boolean).join("\n") || brief;
-}
-
 /**
- * Clones that fit this request: the ones the brief asks for, else the library's
- * search above its coverage gate (the rule squads and the retired seat prompt
- * use). A business whose seats carry no voice still writes in one when the
- * library has a fit. At most `limit`; a clone a seat already carries is not
- * repeated, and an uninstalled one is skipped.
+ * Clones that fit this request, by the one rule squads share (clone-voices.ts):
+ * the ones the request asks for, else the library's search above its coverage
+ * gate, at most `limit`. A clone a seat already carries is not repeated. One
+ * that was asked for and is not installed comes back in `missing`, so the
+ * prompt says so instead of staying silent.
  */
 export function requestVoices(
   brief: string, seats: Seat[], cloneLookup: CloneLookup,
   names: Array<{ slug: string; name: string }>, search: (query: string) => CloneHit[], limit = 3,
-): RequestVoice[] {
-  const taken = new Set(seats.flatMap((s) => s.voices.map((v) => v.slug)));
-  const out: RequestVoice[] = [];
-  const add = (slug: string, name: string, why: string) => {
-    if (out.length >= limit || taken.has(slug)) return;
-    const hit = cloneLookup(slug);
-    if (!hit) return;
-    taken.add(slug);
-    out.push({ slug, name, why, dir: hit.dir, files: hit.files });
-  };
-  // Asked for, not merely mentioned: a clone in the user's own words, or one the
-  // orchestrator marks as `clone <slug>`. A brief that lists clones as facts
-  // about a product ("the pack ships Saul Bass and Paula Scher") asks for none.
-  const request = (parseWorkBrief(brief).sections["Request (verbatim)"] ?? brief).toLowerCase();
-  for (const c of names) {
-    const name = c.name.toLowerCase();
-    const slug = c.slug.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const inRequest = request.includes(c.slug) || request.includes(c.slug.replace(/-/g, " ")) || (name.length > 3 && request.includes(name));
-    const marked = new RegExp(`(^|[^a-z0-9_-])clones?[\\s:=]+\`?${slug}\`?($|[^a-z0-9_-])`, "i").test(brief);
-    if (inRequest || marked) add(c.slug, c.name, "asked for in the brief");
-  }
-  if (out.length) return out;
-  for (const h of search(voiceQuery(brief))) {
-    if (h.below_gate === false) add(h.slug, h.display_name, `matches ${h.coverage.matched}/${h.coverage.total} of the request's terms`);
+): { voices: RequestVoice[]; missing: string[] } {
+  const sel = selectVoices({
+    brief, names, search, limit,
+    installed: (slug) => cloneLookup(slug) !== null,
+    taken: seats.flatMap((s) => s.voices.map((v) => v.slug)),
+  });
+  const voices = sel.voices.map((v) => {
+    const hit = cloneLookup(v.slug)!;
+    return { ...v, dir: hit.dir, files: hit.files };
+  });
+  return { voices, missing: sel.missing };
+}
+
+/** The squads that get a card: the router's picks, the ones the request names
+ *  and the business's preferred ones. */
+export function soloSquads(args: Pick<BusinessSoloArgs, "mandatorySquads" | "optionalSquads" | "briefSquads">, preferred: string[] = []): string[] {
+  return [...new Set([...(args.mandatorySquads ?? []), ...(args.optionalSquads ?? []), ...(args.briefSquads ?? []), ...preferred])];
+}
+
+/** The squads the seats are authorized to use and that have no card: named, not carded.
+ *  A seat open to any squad adds none: listing the whole library would be the
+ *  cost this mode removes. */
+export function authorizedSquads(seats: Seat[], carded: Iterable<string>): string[] {
+  const has = new Set(carded);
+  return [...new Set(seats.flatMap((s) => s.squads ?? []))].filter((q) => !has.has(q));
+}
+
+/** Paths a path list holds once: case-insensitive on Windows, where `C:\Proj` and `c:\proj` are one folder. */
+export function uniquePaths(list: string[], platform: NodeJS.Platform = process.platform, api: typeof path = platform === "win32" ? path.win32 : path.posix): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const p of list) {
+    const r = api.resolve(p);
+    const key = platform === "win32" ? r.toLowerCase() : r;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(r);
   }
   return out;
 }
 
-export function soloSquads(args: Pick<BusinessSoloArgs, "mandatorySquads" | "optionalSquads" | "briefSquads">, seats: Seat[], preferred: string[] = []): string[] {
-  const out = [...(args.mandatorySquads ?? []), ...(args.optionalSquads ?? []), ...(args.briefSquads ?? []), ...preferred];
-  for (const s of seats) if (s.squads) out.push(...s.squads);
-  return [...new Set(out)];
+/** The folder to grant for an input: the input itself when it is one, else the folder holding it. */
+function inputFolder(p: string): string {
+  const isDir = (() => { try { return fs.statSync(p).isDirectory(); } catch { return false; } })();
+  return isDir ? p : path.dirname(p);
+}
+
+/**
+ * Files and folders the brief's "## Inputs" section names that exist on this
+ * machine: absolute (POSIX, drive letter or UNC), `~/...`, or relative to the
+ * project root. They are resolved here because the worker runs in its own run
+ * folder, where a relative path means something else.
+ */
+export function briefInputPaths(
+  brief: string, projectRoot: string,
+  o: { exists?: (p: string) => boolean; home?: string; api?: typeof path } = {},
+): string[] {
+  const api = o.api ?? path;
+  const exists = o.exists ?? fs.existsSync;
+  const home = o.home ?? os.homedir();
+  const body = parseWorkBrief(brief).sections["Inputs"] ?? "";
+  const pathLike = /^(?:~|\.{1,2})?[\\/]|^~$|^[A-Za-z]:[\\/]|[\\/]/;
+  const found: string[] = [];
+  for (const line of body.split("\n")) {
+    const bare = line.replace(/^\s*(?:[-*]|\d+[.)])\s+/, "");
+    const candidates = [
+      ...[...line.matchAll(/`([^`]+)`/g)].map((m) => m[1]),
+      bare.split(/\s+[\u2014\u2013-]\s+|\s+\(/)[0],
+      ...bare.split(/\s+/),
+    ];
+    for (const raw of candidates) {
+      const t = raw.trim().replace(/^["'(<]+|["')>,;.:]+$/g, "");
+      if (!t || !pathLike.test(t)) continue;
+      const resolved = /^~(?:[\\/]|$)/.test(t) ? api.join(home, t.slice(1)) : api.resolve(projectRoot, t);
+      if (exists(resolved)) found.push(resolved);
+    }
+  }
+  return uniquePaths(found, api === path.win32 ? "win32" : process.platform, api);
+}
+
+/** What the prompt carries beyond the seats, the squads and the memory it is handed. */
+export interface SoloExtras {
+  /** The business's own memory folder, when it is newer than the home the memory is read from. */
+  memoryNewer?: { dir: string; files: string[] } | null;
+  /** Inputs the brief names that exist on this machine, resolved. */
+  inputs?: string[];
+  /** Clones the request asked for that are not installed. */
+  missingVoices?: string[];
+  /** Squads the seats may use that have no card. */
+  authorizedSquads?: string[];
 }
 
 /** The prompt of the one agent that is the business: a map, never pasted content. */
@@ -260,6 +328,7 @@ export function buildSoloPrompt(
   memoryDirs: string[],
   squadCards: Record<string, string>,
   voices: RequestVoice[] = [],
+  extras: SoloExtras = {},
 ): string {
   const lines: string[] = [];
   const progress = path.join(workDir(args.outputsRoot), "PROGRESS.md");
@@ -267,28 +336,36 @@ export function buildSoloPrompt(
   lines.push("You are this business, the whole of it, for one request. You play its seats yourself in this one session. Everything below is a map: open a file when the work needs it.", "");
 
   lines.push("## Your brief", "");
-  lines.push(`\`${args.briefFile}\`. Read it first, and again at the start of every phase: the orchestrator appends decisions the user makes while you work.`, "");
+  lines.push(`\`${args.briefFile}\`. Read it first, and again at the start of every phase: the orchestrator appends decisions the user makes while you work.`);
+  if (extras.inputs?.length) lines.push(`Inputs it names, resolved: ${extras.inputs.map((p) => `\`${p}\``).join(", ")}.`);
+  lines.push("");
 
   lines.push("## The business", "");
   lines.push(`- Folder: \`${args.bizDir}\` (business.yaml, org-chart.yaml, employees/). Read what you need; do not change it.`);
   if (memoryDirs.length) lines.push(`- Memory from earlier runs: ${memoryDirs.map((d) => `\`${d}\``).join(", ")}. Honor what it records.`);
+  if (extras.memoryNewer) lines.push(`- The business's own \`${extras.memoryNewer.dir}\` is newer than, or different from, that memory (${extras.memoryNewer.files.join(", ")}): read it too, and where the two disagree say which you followed.`);
+  lines.push(`- To record a lesson for later runs: \`nrv memory add ${args.slug} "<fact>" --scope global|project\` (global: true of the business in any project; project: only this engagement).`);
   lines.push("");
 
-  lines.push("## Seats", "", "To work as a seat, open its file first. To write in a clone's voice, open that clone's persona files first; never claim a voice you did not load.", "");
+  lines.push("## Seats", "", "To work as a seat, open its file first.", "");
   for (const s of seats) {
-    const voices = s.voices.length
-      ? s.voices.map((v) => v.files.length ? `\`${v.slug}\` (${v.files.map((f) => `\`${f}\``).join(", ")})` : v.dir ? `\`${v.slug}\` (\`${v.dir}\`)` : `\`${v.slug}\` (not installed)`).join(", ")
-      : "none";
-    lines.push(`- \`${s.slug}\`${s.role ? ` (${s.role})` : ""}: \`${s.file}\` · voices: ${voices}`);
+    const own = s.voices.length ? s.voices.map((v) => `\`${v.slug}\``).join(", ") : "none";
+    lines.push(`- \`${s.slug}\`${s.role ? ` (${s.role})` : ""}: \`${s.file}\` · voices: ${own}`);
   }
   lines.push("");
 
-  if (voices.length) {
-    lines.push("## Voices for this request", "", "These clones fit this request. A seat whose work they serve writes in one after opening its persona files; name the ones you used in participation.json.", "");
-    for (const v of voices) {
-      const where = v.files.length ? v.files.map((f) => `\`${f}\``).join(", ") : `\`${v.dir}\``;
-      lines.push(`- \`${v.slug}\` (${v.name}): ${where} · ${v.why}`);
+  // Each clone once, wherever it comes from: a seat carries it or the request fits it.
+  const clones = new Map<string, { name?: string; dir: string | null; note: string }>();
+  for (const s of seats) for (const v of s.voices) if (!clones.has(v.slug)) clones.set(v.slug, { name: v.name, dir: v.dir, note: "seat voice" });
+  for (const v of voices) if (!clones.has(v.slug)) clones.set(v.slug, { name: v.name, dir: v.dir, note: `fits this request, ${v.why}` });
+  if (clones.size || extras.missingVoices?.length) {
+    lines.push("## Voices", "", "To write in a clone's voice, open its persona files first; never claim a voice you did not load. Name the ones you used in participation.json.", "");
+    for (const [slug, c] of clones) {
+      lines.push(c.dir
+        ? `- \`${slug}\`${c.name && c.name !== slug ? ` (${c.name})` : ""}: \`${c.dir}\`, AGENT.md and SOUL.md inside · ${c.note}`
+        : `- \`${slug}\`: not installed · ${c.note}`);
     }
+    if (extras.missingVoices?.length) lines.push(`- ${missingVoiceNotice(extras.missingVoices)}`);
     lines.push("");
   }
 
@@ -299,13 +376,14 @@ export function buildSoloPrompt(
     for (const [slug, file] of cards) lines.push(`- \`${slug}\`: card \`${file}\``);
     lines.push("");
   }
+  if (extras.authorizedSquads?.length) lines.push(`Also authorized for the seats, with no card written: ${extras.authorizedSquads.map((q) => `\`${q}\``).join(", ")}.`, "");
   lines.push(`${cards.length ? "For another squad" : "None was picked for this request. If a part needs one"}: \`nrv find "<the need>"\` ranks the installed squads and \`nrv cards squad <slug>\` prints a card. Do not browse squad folders.`, "");
 
   lines.push("## How you work", "");
   lines.push(
     `1. Work in phases. Keep \`${progress}\` current: decisions taken, what is done (with paths), what is next. Update it at every milestone. If your context is compacted, the brief and PROGRESS.md are how you carry on.`,
     "2. Read with purpose: locate with a search, then read the part you need. Put independent reads in the same turn. Do not print back a file you just wrote.",
-    `3. Deliverables go under \`${args.outputsRoot}\`, working files under \`${workDir(args.outputsRoot)}\`. Write nothing anywhere else, even where the brief names another folder.`,
+    `3. Deliverables go under \`${args.outputsRoot}\`, working files under \`${workDir(args.outputsRoot)}\`. Write nothing anywhere else, even where the brief names another folder; the one exception is participation.json, named at the end.`,
     "4. Deliverables follow the language of the request.",
     "5. Deliver the whole of your part and nothing beyond it. Anything beyond it goes in the summary as a note.",
     "",
@@ -315,26 +393,16 @@ export function buildSoloPrompt(
   lines.push(
     `- \`${summaryFileOf(args.outputsRoot)}\`: one page at most. What you delivered and where, the decisions you took, what is still open. The orchestrator reads only this.`,
     `- \`${claimsFileOf(args.outputsRoot)}\`: a JSON array with one entry per "Done when" item of the brief, in order: \`{"id": "d1", "evidence": "<file>:<lines>, <what it shows>"}\`.`,
-    `- \`${participationFile(args.projectDir)}\`: \`{"seats": [{"seat": "<slug>", "files": ["<path>"]}], "squads": ["<slug>"], "clones": ["<slug>"]}\`, naming only what you actually used.`,
+    `- \`${participationFile(args.projectDir)}\` (outside the deliverables on purpose): \`{"seats": [{"seat": "<slug>", "files": ["<path>"]}], "squads": ["<slug>"], "clones": ["<slug>"]}\`, naming only what you actually used.`,
   );
   return lines.join("\n");
 }
 
-/** The autonomous directive, reshaped for an agent that opens nothing. */
-export const SOLO_INTAKE_LINE = "- You ARE the business, already dispatched, and you play its seats yourself. Do not invoke the `harness` skill, do not run `nrv run` or `nrv dispatch`, and never start another runtime: the engine refuses every dispatch from this role. A squad is used by reading its card and working as its agents.";
-const PREMISE_SPECIALIST = /and the specialist whenever one exists[^;]*;[^.]*\./;
-export const SOLO_SPECIALIST_CLAUSE = "and the specialist whenever one exists: for you that is a squad whose card you work from, never a dispatch.";
-const SESSION_LIFETIME = /^- HEADLESS SESSION LIFETIME:/;
-export const SOLO_LIFETIME_LINE = "- HEADLESS SESSION LIFETIME: this session dies the instant your final turn ends. Never launch background work (`bash ... &`) and end your turn waiting for it. Your turn is over only when every phase's files are on disk.";
+/** What a business-solo worker adds to the base directive: only what is true of a business. */
+export const SOLO_ROLE_LINE = "- You are this business: you play its seats yourself (a seat's file, a clone's persona files) and use a squad by reading its card and working as its agents.";
 
 export function soloDirective(rulesDirective = ""): string {
-  const lines = AUTONOMOUS_DIRECTIVE.split("\n").map((l) => {
-    if (l.includes("You ARE the intake")) return SOLO_INTAKE_LINE;
-    if (l.startsWith("FUNDAMENTAL PREMISE")) return l.replace(PREMISE_SPECIALIST, SOLO_SPECIALIST_CLAUSE);
-    if (SESSION_LIFETIME.test(l)) return SOLO_LIFETIME_LINE;
-    return l;
-  });
-  return lines.join("\n") + rulesDirective;
+  return `${AUTONOMOUS_DIRECTIVE}\n${SOLO_ROLE_LINE}${rulesDirective}`;
 }
 
 /** Seats the worker declares it played, from participation.json; unknown names are dropped. */
@@ -356,43 +424,82 @@ export function clonesUsed(projectDir: string): string[] {
   } catch { return []; }
 }
 
+/**
+ * Credit what the worker declares in participation.json: the seats it played
+ * and the clones it wrote in, each with where it came from (a seat's own, one
+ * the engine offered for the request, or one the worker found). Shared by
+ * runBusinessSolo and the Gauntlet producer, which runs the same worker. Returns
+ * the seats credited.
+ */
+export function creditSoloRun(o: {
+  emit: (event: string, payload: Record<string, unknown>) => void;
+  projectId: string; projectDir: string; slug: string; runtime: Runtime;
+  seats: Seat[]; voices: RequestVoice[];
+}): string[] {
+  const base = { trace_id: o.projectId, project_id: o.projectId, business_slug: o.slug };
+  const played = seatsPlayed(o.projectDir, o.seats);
+  for (const seat of played) o.emit("x_seat_credited", { ...base, employee: seat, evidence: "declared", runtime: o.runtime });
+  const seatVoices = new Set(o.seats.flatMap((s) => s.voices.map((v) => v.slug)));
+  const offered = new Set(o.voices.map((v) => v.slug));
+  for (const clone of clonesUsed(o.projectDir)) {
+    const source = seatVoices.has(clone) ? "seat" : offered.has(clone) ? "request" : "own-choice";
+    o.emit("x_clone_credited", { ...base, clone, source, evidence: "declared", runtime: o.runtime });
+  }
+  return played;
+}
+
 /** Everything a run needs, written to the run folder: the brief, the squad
  *  cards and the prompt. Shared by the run, the scaffold-only path and the
- *  gauntlet producer, so the three hand the worker the same map. */
+ *  Gauntlet producer, so the three hand the worker the same map. It also
+ *  clears the previous participation.json, so a stale file never credits this run. */
 export function prepareBusinessSolo(args: BusinessSoloArgs): PreparedSolo {
   const cloneLookup = args.cloneLookup ?? defaultCloneLookup(args.projectDir);
   const squadDirOf = args.squadDirOf ?? ((q: string) => resolveEntityDir("squads", q, args.projectDir));
-  const seats = readSeats(args.bizDir, cloneLookup);
-  const memoryDirs = args.memoryDirs ?? defaultMemoryDirs(args.slug, args.bizDir, args.projectRoot);
+  let displayNames = new Map<string, string>();
+  const names = args.cloneNames ?? (() => Object.entries(loadCloneRegistry({ cwd: args.projectDir }) as Record<string, any>)
+    .map(([slug, c]) => ({ slug, name: String(c?.display_name ?? slug) })));
+  try { displayNames = new Map(names().map((c) => [c.slug, c.name])); } catch { /* names are a courtesy */ }
+  const seats = readSeats(args.bizDir, cloneLookup, (slug) => displayNames.get(slug));
+  const memory = args.memoryDirs ? { dirs: args.memoryDirs, newer: null } : businessMemory(args.slug, args.bizDir, args.projectRoot);
   fs.mkdirSync(workDir(args.outputsRoot), { recursive: true });
+  try { fs.rmSync(participationFile(args.projectDir), { force: true }); } catch { /* best effort */ }
   let briefFile = args.briefFile;
   if (!briefFile) {
     briefFile = path.join(args.projectDir, "brief.md");
     fs.writeFileSync(briefFile, args.brief.trim() + "\n");
   }
-  const squads = soloSquads(args, seats, preferredSquads(args.bizDir));
+  // Cards only for what this run is likely to use; the seats' closed sets are named.
+  const squads = soloSquads(args, preferredSquads(args.bizDir));
   const squadCards = writeSquadCards(path.join(args.projectDir, "cards"), squads, squadDirOf);
+  const authorized = authorizedSquads(seats, Object.keys(squadCards));
   const briefText = (() => { try { return fs.readFileSync(briefFile, "utf8"); } catch { return args.brief; } })();
   let voices: RequestVoice[] = [];
+  let missingVoices: string[] = [];
   try {
-    const names = args.cloneNames ?? (() => Object.entries(loadCloneRegistry({ cwd: args.projectDir }) as Record<string, any>)
-      .map(([slug, c]) => ({ slug, name: String(c?.display_name ?? slug) })));
     const search = args.voiceSearch ?? ((q: string) => findCloneForTask(q, { limit: 6, cwd: args.projectDir }));
-    voices = requestVoices(briefText, seats, cloneLookup, names(), search);
+    ({ voices, missing: missingVoices } = requestVoices(briefText, seats, cloneLookup, names(), search));
   } catch { voices = []; } // a library that cannot be read leaves the seats' own voices
-  const prompt = buildSoloPrompt({ ...args, briefFile }, seats, memoryDirs, squadCards, voices) + "\n\n" + scopeGuard();
+  const inputs = briefInputPaths(briefText, args.projectRoot);
+  const prompt = buildSoloPrompt({ ...args, briefFile }, seats, memory.dirs, squadCards, voices, {
+    memoryNewer: memory.newer, inputs, missingVoices, authorizedSquads: authorized,
+  }) + "\n\n" + scopeGuard();
   fs.writeFileSync(path.join(args.projectDir, "solo-prompt.md"), prompt);
   // What the worker may touch: the run, the business, its voices, the squads
-  // on its cards, its memory, and the folder of the brief.
-  const dirs = [args.projectDir, args.outputsRoot, args.bizDir, ...memoryDirs, path.dirname(briefFile)];
+  // on its cards and those its seats may use, its memory, the folder of the
+  // brief and the inputs the brief names.
+  const dirs = [args.projectDir, args.outputsRoot, args.bizDir, ...memory.dirs, path.dirname(briefFile)];
   for (const s of seats) for (const v of s.voices) if (v.dir) dirs.push(v.dir);
   for (const v of voices) dirs.push(v.dir);
-  for (const q of Object.keys(squadCards)) dirs.push(squadDirOf(q));
+  for (const q of [...Object.keys(squadCards), ...authorized]) {
+    const d = squadDirOf(q);
+    if (fs.existsSync(d)) dirs.push(d);
+  }
+  dirs.push(...inputs.map(inputFolder));
   const workspace = runFolderOf(args.projectDir, args.projectRoot) ?? undefined;
   return {
     prompt, briefFile, seats, voices, squadCards,
     launch: {
-      cwd: args.projectRoot, addDirs: [...new Set(dirs.map((d) => path.resolve(d)))],
+      cwd: args.projectRoot, addDirs: uniquePaths(dirs),
       appendSystemPrompt: soloDirective(args.rulesDirective), ...(workspace ? { workspace } : {}),
     },
   };
@@ -402,7 +509,6 @@ export function prepareBusinessSolo(args: BusinessSoloArgs): PreparedSolo {
 export function runBusinessSolo(args: BusinessSoloArgs): BusinessSoloResult {
   const emit = args.emit ?? (() => {});
   const prep = prepareBusinessSolo(args);
-  try { fs.rmSync(participationFile(args.projectDir), { force: true }); } catch { /* a stale file would credit this run */ }
 
   emit("x_business_solo_started", {
     trace_id: args.projectId, project_id: args.projectId, business_slug: args.slug, runtime: args.runtime,
@@ -426,18 +532,7 @@ export function runBusinessSolo(args: BusinessSoloArgs): BusinessSoloResult {
   });
 
   const finalRuntime = res.finalRuntime ?? args.runtime;
-  const played = seatsPlayed(args.projectDir, prep.seats);
-  for (const seat of played) {
-    emit("x_seat_credited", { trace_id: args.projectId, project_id: args.projectId, business_slug: args.slug, employee: seat, evidence: "declared", runtime: finalRuntime });
-  }
-  // Which voices the work was written in, and where each came from: a seat's
-  // own, one the engine offered for the request, or one the worker found.
-  const seatVoices = new Set(prep.seats.flatMap((s) => s.voices.map((v) => v.slug)));
-  const offered = new Set(prep.voices.map((v) => v.slug));
-  for (const clone of clonesUsed(args.projectDir)) {
-    const source = seatVoices.has(clone) ? "seat" : offered.has(clone) ? "request" : "own-choice";
-    emit("x_clone_credited", { trace_id: args.projectId, project_id: args.projectId, business_slug: args.slug, clone, source, evidence: "declared", runtime: finalRuntime });
-  }
+  const played = creditSoloRun({ emit, projectId: args.projectId, projectDir: args.projectDir, slug: args.slug, runtime: finalRuntime, seats: prep.seats, voices: prep.voices });
   if (res.ok) {
     emit("agent_executed", {
       trace_id: args.projectId, project_id: args.projectId, business_slug: args.slug, mode: "business-solo",

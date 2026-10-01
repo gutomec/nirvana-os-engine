@@ -91,6 +91,50 @@ export function rubricsForExt(ext: string): string[] {
   }
 }
 
+/** The rubrics that run on a file whichever mode judges it: a leaked secret
+ *  and a file that is not what its extension promises are facts, not opinions,
+ *  so the judge's verdict never replaces them. The delivery pipeline counts a
+ *  failure among them as serious (delivery-pipeline.ts SERIOUS_RUBRICS). */
+export const ALWAYS_RUBRICS: ReadonlySet<string> = new Set([
+  "secret-leak", "json-valid", "html-valid", "pdf-valid", "yaml-valid", "brief-fidelity",
+]);
+
+/** The heuristic rubrics of `ext` that run beside the judge. */
+export function alwaysRubricsForExt(ext: string): string[] {
+  return rubricsForExt(ext).filter((r) => ALWAYS_RUBRICS.has(r));
+}
+
+const TEXT_RUBRICS = ["prose_longform", "prose_shortform", "data_research", "juridical", "mind_clone_voice_fidelity", "video"];
+
+/** The judge rubrics a file of this extension may be graded by, and the one it
+ *  gets when no `produces` slug picks among them. The EXTENSION decides the
+ *  family first: a business that produces a landing page and a report used to
+ *  have its .md report judged by the design rubric, because that was the first
+ *  rubric its produces list matched. */
+export function judgeRubricFamily(ext: string): { allowed: ReadonlySet<string>; fallback: string } {
+  switch (ext.toLowerCase()) {
+    case ".ts": case ".js": case ".py": case ".css":
+      return { allowed: new Set(["code"]), fallback: "code" };
+    case ".png": case ".jpg": case ".jpeg": case ".webp":
+      return { allowed: new Set(["image"]), fallback: "image" };
+    case ".md":
+      return { allowed: new Set(TEXT_RUBRICS), fallback: "prose_longform" };
+    case ".html":
+      return { allowed: new Set([...TEXT_RUBRICS, "design"]), fallback: "prose_longform" };
+    case ".json": case ".yaml": case ".yml":
+      return { allowed: new Set([...TEXT_RUBRICS, "code"]), fallback: "prose_shortform" };
+    default:
+      return { allowed: new Set(TEXT_RUBRICS), fallback: "prose_shortform" };
+  }
+}
+
+/** The name of the judge rubric for `ext`: the first rubric the produces slugs
+ *  matched that belongs to the extension's family, else the family's fallback. */
+export function pickJudgeRubricName(ext: string, matched: readonly string[]): string {
+  const family = judgeRubricFamily(ext);
+  return matched.find((name) => family.allowed.has(name)) ?? family.fallback;
+}
+
 async function runRubric(name: string, artifact: string, content: string, opts: { offline: boolean }): Promise<RubricResult> {
   const rubricPath = path.join(RUBRICS_DIR, `${name}.ts`);
   if (!fs.existsSync(rubricPath)) {
@@ -150,26 +194,18 @@ async function runWithRevisions(artifact: string, content: string, args: string[
     return -1; // signal fallback
   }
 
-  // Pick the rubric. If --produces given, select by produces-slug mapping.
-  // Otherwise infer a rubric NAME from the file extension and fetch it directly.
+  // Pick the rubric: the file's extension names the family, and a produces
+  // slug chooses within it (pickJudgeRubricName).
   const ext = path.extname(artifact).toLowerCase();
-  let rubric: import("../lib/rubric-selector.ts").RubricMeta | null = null;
-  if (produces.length) {
-    // selectRubricsForProduces returns {rubrics, fallback_used, reason} — the
-    // old `[0]` indexing on the object was a latent defect that never fired
-    // because the judge path was unreachable (unconditional --offline).
+  const matched = produces.length ? (() => {
     const sel = selector.selectRubricsForProduces(produces);
-    rubric = (sel.fallback_used ? null : sel.rubrics[0]) || null;
-    if (!rubric) console.error(`No .md rubric matches produces=[${produces.join(",")}]; trying extension inference.`);
+    return sel.fallback_used ? [] : sel.rubrics.map((r) => r.name);
+  })() : [];
+  const rubricName = pickJudgeRubricName(ext, matched);
+  if (produces.length && !matched.includes(rubricName)) {
+    console.error(`No ${ext} rubric matches produces=[${produces.join(",")}]; using ${rubricName}, the one the extension implies.`);
   }
-  if (!rubric) {
-    // Rubric names in frontmatter use underscores (prose_longform, etc.)
-    const inferredName = ext === ".md" ? "prose_longform"
-      : [".ts", ".js", ".py"].includes(ext) ? "code"
-      : [".png", ".jpg", ".jpeg"].includes(ext) ? "image"
-      : "prose_shortform";
-    rubric = selector.getRubric(inferredName);
-  }
+  const rubric = selector.getRubric(rubricName);
   if (!rubric) {
     console.error(`No .md rubric resolvable; falling back to heuristics.`);
     return -1;
@@ -186,29 +222,38 @@ async function runWithRevisions(artifact: string, content: string, args: string[
   );
   // No verdict came back (no runtime, a failed call, an answer that is not the
   // schema). That says nothing about the artifact, so it is not a fail: the
-  // heuristic rubrics decide this file, as they do with the judge off.
+  // heuristic rubrics decide this file, as they do with the judge off, and the
+  // verdict says `mode: "heuristic"`.
   if (!result.schema_valid) {
     console.error(`[gate] judge gave no usable verdict (${(result.schema_errors ?? []).join(", ") || result.judge_runtime}); the heuristic rubrics decide ${path.basename(artifact)}.`);
     return -1;
   }
 
+  // The checks no judge verdict replaces: secret-leak and the validity rubric
+  // of the extension run on every file, and a failure among them fails the
+  // file whatever the judge said.
+  const always: RubricResult[] = [];
+  for (const name of alwaysRubricsForExt(ext)) always.push(await runRubric(name, artifact, content, { offline: true }));
+  const alwaysFailed = always.filter(r => !r.passed && !r.skipped);
+  const judgePassed = result.verdict === "pass";
+
   // Normalized verdict schema {status, mode, score, results[], critique?} —
   // same shape the heuristic path prints, so callers (delivery-pipeline's
   // runGateOnce) parse ONE contract. Judge-specific fields ride along.
   const out: GateVerdict = {
-    status: result.verdict === "pass" ? "PASS" : "FAIL",
+    status: judgePassed && alwaysFailed.length === 0 ? "PASS" : "FAIL",
     mode: "judge",
     score: result.total_score,
     results: [{
       name: rubric.name,
-      passed: result.verdict === "pass",
+      passed: judgePassed,
       score: result.total_score,
       reasoning: result.critique.map(c => `[${c.severity}] ${c.issue}`).join("; ") || "judge verdict",
       // What a revision is asked to fix: the material items first, then the
       // medium ones. Low items (style, polish) stay in `critique` as notes and
       // never become revision work, unless nothing else explains a low score.
-      fix_list: revisionFixes(result.critique),
-    }],
+      fix_list: judgePassed ? [] : revisionFixes(result.critique),
+    }, ...always],
     critique: result.critique,
     artifact,
     timestamp: new Date().toISOString(),
@@ -230,8 +275,9 @@ async function runWithRevisions(artifact: string, content: string, args: string[
     const _stamp = require(path.join(SKILLS_ROOT, "_shared/lib/audit-provenance.ts")).stamp;
     fs.appendFileSync(path.join(dir, "audit.jsonl"), JSON.stringify(_stamp({
       ts: out.timestamp,
-      event: result.verdict === "pass" ? "gate_passed" : "gate_failed",
+      event: out.status === "PASS" ? "gate_passed" : "gate_failed",
       mode: "with-revisions",
+      ...(alwaysFailed.length ? { failed_rubrics: alwaysFailed.map(r => r.name) } : {}),
       trace_id: process.env.NIRVANA_TRACE_ID || null,
       project_id: process.env.NIRVANA_PROJECT_ID || null,
       business_slug: process.env.NIRVANA_BUSINESS_SLUG || null,
@@ -245,7 +291,7 @@ async function runWithRevisions(artifact: string, content: string, args: string[
     })) + "\n");
   } catch { /* non-fatal */ }
 
-  return result.verdict === "pass" ? 0 : 1;
+  return out.status === "PASS" ? 0 : 1;
 }
 
 async function main() {

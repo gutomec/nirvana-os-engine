@@ -30,6 +30,8 @@ import { loadHarnessConfig, type HarnessConfig } from "../lib/harness-config.ts"
 // heuristic gate, whatever runtime the machine has on PATH.
 const judgeOff = (cfg: HarnessConfig): HarnessConfig => ({ ...cfg, quality_gate: { ...cfg.quality_gate, judge_enabled: false } });
 import * as runLedger from "../lib/run-ledger.ts";
+import { soloDirective } from "../lib/business-solo.ts";
+import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import { SCOPE_GUARD_EN } from "../../_shared/lib/scope-guard.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
@@ -37,14 +39,19 @@ const GATE = path.join(import.meta.dir, "..", "scripts", "quality-gate.ts");
 
 let tmp: string;
 const savedLogsDir = process.env.HARNESS_LOGS_DIR;
+const savedSkillsDir = process.env.NIRVANA_SKILLS_DIR;
 beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-delivery-"));
   // Isolate every audit side effect (pipeline + spawned gate children).
   process.env.HARNESS_LOGS_DIR = path.join(tmp, "logs");
+  // The gate loads its rubrics from this checkout, never from an install.
+  process.env.NIRVANA_SKILLS_DIR = path.join(import.meta.dir, "..", "..");
 });
 afterEach(() => {
   if (savedLogsDir === undefined) delete process.env.HARNESS_LOGS_DIR;
   else process.env.HARNESS_LOGS_DIR = savedLogsDir;
+  if (savedSkillsDir === undefined) delete process.env.NIRVANA_SKILLS_DIR;
+  else process.env.NIRVANA_SKILLS_DIR = savedSkillsDir;
   try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* best effort */ }
 });
 
@@ -150,6 +157,7 @@ describe("gateableFiles — the Phase 4 gate surface", () => {
     fs.mkdirSync(path.join(oroot, "_internal"), { recursive: true });
     fs.writeFileSync(path.join(oroot, "relatorio.md"), PASSING_MD);
     fs.writeFileSync(path.join(oroot, "_SUMMARY.md"), PASSING_MD);
+    fs.writeFileSync(path.join(oroot, "_CLAIMS.json"), JSON.stringify([{ id: "d1", evidence: "relatorio.md:1-9, the whole report" }]) + " ".repeat(300));
     fs.writeFileSync(path.join(oroot, ".squad-state", "state.md"), FAILING_MD);
     fs.writeFileSync(path.join(oroot, "projects", "old", "draft.md"), FAILING_MD);
     fs.writeFileSync(path.join(oroot, "_internal", "notes.md"), FAILING_MD);
@@ -160,9 +168,9 @@ describe("gateableFiles — the Phase 4 gate surface", () => {
     fs.writeFileSync(path.join(oroot, "memory", "projects", "old.md"), FAILING_MD);
 
     const gated = gateableFiles(oroot, new Set()).map(f => path.relative(oroot, f)).sort();
-    // `_SUMMARY.md` is a FILE the run authored — the reserved prefix marks
-    // directories, never the engine's own root-level handoff files.
-    expect(gated).toEqual(["_SUMMARY.md", path.join("memory", "permanent.md"), "relatorio.md"]);
+    // `_SUMMARY.md` and `_CLAIMS.json` are the worker talking about its work
+    // (run-plumbing.ts isRunStateFile): the gate judges the work itself.
+    expect(gated).toEqual([path.join("memory", "permanent.md"), "relatorio.md"]);
   });
 
   test("when the captured entity is ALL there is, it IS gated (never silence the only signal)", () => {
@@ -772,4 +780,337 @@ describe("producesForRubric — delivery.produces_to_rubric", () => {
     expect(producesForRubric([" landing-page ", "copy", "landing-page", "", "  "], true)).toEqual(["landing-page", "copy"]);
     expect(producesForRubric(null, true)).toEqual([]);
   });
+});
+
+// ── owner rule A: serious findings, reservations, _STATUS.json ───────────
+// A serious finding (a leaked secret, an invalid file, a material defect, an
+// unproven blocking criterion) keeps being corrected past the normal limit,
+// up to SERIOUS_EXTRA_ROUNDS more rounds, and is WITHHELD if it stays; any
+// other failure ships with reservations. Every outcome lands in _STATUS.json.
+
+// Unparseable: json-valid fails, which is serious.
+const INVALID_JSON = '{"items": [' + '"valor", '.repeat(40);
+const VALID_JSON = JSON.stringify({ items: Array.from({ length: 30 }, (_, i) => `item ${i}`) });
+
+function statusOf(oroot: string): Record<string, any> {
+  return JSON.parse(fs.readFileSync(path.join(oroot, "_STATUS.json"), "utf8"));
+}
+
+function auditLines(): any[] {
+  const day = new Date().toISOString().slice(0, 10);
+  const file = path.join(tmp, "logs", day, "audit.jsonl");
+  if (!fs.existsSync(file)) return [];
+  return fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map(l => { try { return parseAuditLine(l); } catch { return {}; } });
+}
+
+const WORK_BRIEF = [
+  "## Request (verbatim)", "Quero uma página de entrega.", "",
+  "## Decisions", "None.", "",
+  "## Your part", "A página.", "",
+  "## Inputs", "None.", "",
+  "## Done when",
+  "- A página existe e abre no navegador (bloqueante)",
+  "  - um detalhe aninhado que não é critério",
+  "- Tem um título claro",
+  "", "## Output", "page.html", "",
+].join("\n");
+
+describe("runDelivery — _STATUS.json and the state field", () => {
+  test("a pass: state delivered, gate pass, exit 0", () => {
+    const oroot = path.join(tmp, "st-pass");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "page.html"), PASSING_HTML);
+    const res = runDelivery(baseArgs(oroot).args);
+    expect(res.state).toBe("delivered");
+    expect(statusOf(oroot)).toEqual({ state: "delivered", gate: "pass", serious: [], reservations: null, exit_code: 0 });
+  }, spawnBudgetMs(2));
+
+  test("only run state under the outputs root is NOT a delivery: exit 1, state failed, gate skipped", () => {
+    const oroot = path.join(tmp, "st-only-state");
+    fs.mkdirSync(path.join(oroot, "_work"), { recursive: true });
+    fs.writeFileSync(path.join(oroot, "_SUMMARY.md"), PASSING_MD);
+    fs.writeFileSync(path.join(oroot, "_CLAIMS.json"), JSON.stringify([{ id: "d1", evidence: "x" }]) + " ".repeat(300));
+    fs.writeFileSync(path.join(oroot, "_work", "PROGRESS.md"), PASSING_MD);
+    const { args, calls } = baseArgs(oroot);
+    const res = runDelivery(args);
+    expect(res.exitCode).toBe(1);
+    expect(res.state).toBe("failed");
+    expect(res.produced).toEqual([]);
+    expect(calls.find(x => x.event === "verify_failed")?.payload.reason).toBe("only run state");
+    expect(statusOf(oroot)).toMatchObject({ state: "failed", gate: "skipped", exit_code: 1 });
+  }, spawnBudgetMs(1));
+
+  test("nothing gateable: state indeterminate, gate skipped, exit 3", () => {
+    const oroot = path.join(tmp, "st-ind");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "bundle.zip"), Buffer.alloc(2048));
+    const res = runDelivery(baseArgs(oroot).args);
+    expect(res.state).toBe("indeterminate");
+    expect(statusOf(oroot)).toMatchObject({ state: "indeterminate", gate: "skipped", exit_code: 3 });
+  }, spawnBudgetMs(1));
+
+  test("a style failure after the corrections: delivered WITH RESERVATIONS, exit 0, the note named in _STATUS.json", () => {
+    const oroot = path.join(tmp, "st-reservations");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "nota.md"), FAILING_MD);
+    const res = runDelivery(baseArgs(oroot).args);
+    expect(res.exitCode).toBe(0);
+    expect(res.state).toBe("delivered_with_reservations");
+    expect(res.serious).toEqual([]);
+    const status = statusOf(oroot);
+    expect(status.state).toBe("delivered_with_reservations");
+    expect(status.gate).toBe("fail");
+    expect(status.reservations).toBe(path.join(oroot, "_QA-RESERVATIONS.md"));
+    // No environment knob decides this any more: the rule is the owner's.
+    expect(fs.readFileSync(status.reservations, "utf8")).not.toContain("NIRVANA_GATE_EXHAUSTED");
+  }, spawnBudgetMs(2));
+});
+
+describe("runDelivery — a serious finding (rule A)", () => {
+  test("an invalid file keeps being corrected past max_revisions, 3 more rounds, then is WITHHELD", () => {
+    const oroot = path.join(tmp, "se-json");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "dados.json"), INVALID_JSON);
+    let runs = 0;
+    const { args, calls } = baseArgs(oroot, {
+      maxRevisions: 1,
+      runHeadlessImpl: ((opts: any) => { runs++; return { ok: true, runtime: opts.runtime, sessionId: null, result: "", costUsd: null, exitCode: 0, stderr: "", durationMs: 1 }; }) as any,
+    });
+    const res = runDelivery(args);
+    expect(runs).toBe(4);                      // 1 normal round + 3 for the serious finding
+    expect(res.revisionsUsed).toBe(4);
+    expect(res.exitCode).toBe(2);
+    expect(res.state).toBe("withheld");
+    expect(res.delivered).toBe(false);
+    expect(res.serious).toEqual(["dados.json: json-valid failed"]);
+    const events = calls.map(x => x.event);
+    expect(events).not.toContain("delivered");
+    expect(calls.find(x => x.event === "x_delivery_withheld")?.payload.serious).toEqual(["dados.json: json-valid failed"]);
+    expect(statusOf(oroot)).toEqual({ state: "withheld", gate: "fail", serious: ["dados.json: json-valid failed"], reservations: null, exit_code: 2 });
+  }, spawnBudgetMs(6));
+
+  test("a serious finding the correction fixes falls back to the normal outcome", () => {
+    const oroot = path.join(tmp, "se-fixed");
+    fs.mkdirSync(oroot);
+    const file = path.join(oroot, "dados.json");
+    fs.writeFileSync(file, INVALID_JSON);
+    const { args } = baseArgs(oroot, {
+      maxRevisions: 1,
+      runHeadlessImpl: ((opts: any) => { fs.writeFileSync(file, VALID_JSON); return { ok: true, runtime: opts.runtime, sessionId: null, result: "", costUsd: null, exitCode: 0, stderr: "", durationMs: 1 }; }) as any,
+    });
+    const res = runDelivery(args);
+    expect(res.revisionsUsed).toBe(1);
+    expect(res.state).toBe("delivered");
+  }, spawnBudgetMs(3));
+
+  test("--force-deliver overrides a quality verdict, never a serious finding", () => {
+    const oroot = path.join(tmp, "se-force");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "dados.json"), INVALID_JSON);
+    const { args, calls } = baseArgs(oroot, { forceDeliver: true });
+    const res = runDelivery(args);
+    expect(res.exitCode).toBe(2);
+    expect(calls.map(x => x.event)).not.toContain("delivered");
+  }, spawnBudgetMs(2));
+
+  test("maxRevisions 0 (an unattended caller) runs no correction at all, serious or not", () => {
+    const oroot = path.join(tmp, "se-zero");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "dados.json"), INVALID_JSON);
+    const res = runDelivery(baseArgs(oroot).args); // runHeadless throws if called
+    expect(res.revisionsUsed).toBe(0);
+    expect(res.state).toBe("withheld");
+  }, spawnBudgetMs(2));
+
+  test("a leaked secret is serious, and the run's own value is what the gate looks for", () => {
+    const oroot = path.join(tmp, "se-secret");
+    fs.mkdirSync(oroot);
+    const saved = process.env.NRV_TEST_PIPELINE_API_KEY;
+    process.env.NRV_TEST_PIPELINE_API_KEY = "nrv-fixture-9f3c2a7d1e";
+    try {
+      fs.writeFileSync(path.join(oroot, "nota.md"), PASSING_MD + "\nA chave usada foi nrv-fixture-9f3c2a7d1e.\n");
+      const res = runDelivery(baseArgs(oroot).args);
+      expect(res.state).toBe("withheld");
+      expect(res.serious).toEqual(["nota.md: secret-leak failed"]);
+    } finally {
+      if (saved === undefined) delete process.env.NRV_TEST_PIPELINE_API_KEY; else process.env.NRV_TEST_PIPELINE_API_KEY = saved;
+    }
+  }, spawnBudgetMs(2));
+
+  test("a blocking criterion the solo review left unconfirmed withholds even a passing gate", () => {
+    const oroot = path.join(tmp, "se-review");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "page.html"), PASSING_HTML);
+    const { args, calls } = baseArgs(oroot, { reviewBlockingMissed: ["d1"] });
+    const res = runDelivery(args);
+    expect(res.gateOutcome).toBe("pass");
+    expect(res.state).toBe("withheld");
+    expect(calls.map(x => x.event)).toContain("gate_passed");
+    expect(calls.map(x => x.event)).not.toContain("delivered");
+    expect(statusOf(oroot)).toMatchObject({ gate: "pass", serious: ["review: blocking criterion d1 was not confirmed"] });
+  }, spawnBudgetMs(2));
+});
+
+describe("runDelivery — the claims check of a business delivery", () => {
+  function claimsCase(name: string, claims: unknown | null, extra: Partial<DeliveryArgs> = {}) {
+    const oroot = path.join(tmp, name);
+    fs.mkdirSync(path.join(oroot, "site"), { recursive: true });
+    fs.writeFileSync(path.join(oroot, "site", "page.html"), PASSING_HTML);
+    if (claims !== null) fs.writeFileSync(path.join(oroot, "_CLAIMS.json"), JSON.stringify(claims));
+    const { args, calls } = baseArgs(oroot, { brief: WORK_BRIEF, ...extra });
+    return { oroot, res: runDelivery(args), calls };
+  }
+
+  test("no _CLAIMS.json: the blocking criterion is unproven, so the delivery is withheld", () => {
+    const { res } = claimsCase("cl-none", null);
+    expect(res.state).toBe("withheld");
+    expect(res.serious).toEqual(["blocking criterion d1 (A página existe e abre no navegador): _CLAIMS.json is missing or not a JSON array"]);
+  }, spawnBudgetMs(2));
+
+  test("evidence that names a file which does not exist is no proof", () => {
+    const { res } = claimsCase("cl-missing", [{ id: "d1", evidence: "site/inexistente.html:1-20, a página" }]);
+    expect(res.state).toBe("withheld");
+    expect(res.serious[0]).toContain("names no file that exists under the outputs root");
+  }, spawnBudgetMs(2));
+
+  test("evidence naming an existing file delivers; a Windows separator and a line range are fine", () => {
+    const { res } = claimsCase("cl-ok", [{ id: "d1", evidence: "site\\page.html:1-11, the page itself" }]);
+    expect(res.state).toBe("delivered");
+    expect(res.serious).toEqual([]);
+  }, spawnBudgetMs(2));
+
+  test("only BLOCKING criteria are checked, and only nested-free top-level bullets are criteria", () => {
+    // d2 ("Tem um título claro") is not blocking; the nested bullet is no criterion at all.
+    const { res } = claimsCase("cl-blocking-only", [{ id: "d1", evidence: "`site/page.html`, inteira" }]);
+    expect(res.state).toBe("delivered");
+  }, spawnBudgetMs(2));
+
+  test("the claims check is a business check: a squad run with the same brief is not held to it", () => {
+    const { res } = claimsCase("cl-squad", null, { targetKind: "squad", slug: null });
+    expect(res.state).toBe("delivered");
+  }, spawnBudgetMs(2));
+
+  test("a correction is told which criterion lacks proof, and the solo worker keeps its role and directive", () => {
+    const seen: any[] = [];
+    const { res } = claimsCase("cl-revise", null, {
+      maxRevisions: 1, producerRole: "solo", rulesDirective: "\nRULES",
+      runHeadlessImpl: ((opts: any) => {
+        seen.push(opts);
+        fs.writeFileSync(path.join(tmp, "cl-revise", "_CLAIMS.json"), JSON.stringify([{ id: "d1", evidence: "site/page.html:1, the page" }]));
+        return { ok: true, runtime: opts.runtime, sessionId: null, result: "", costUsd: null, exitCode: 0, stderr: "", durationMs: 1 };
+      }) as any,
+    });
+    expect(seen).toHaveLength(1);
+    expect(seen[0].dispatchRole).toBe("solo");
+    expect(seen[0].appendSystemPrompt).toBe(soloDirective("\nRULES"));
+    expect(seen[0].prompt).toContain("d1 (A página existe e abre no navegador)");
+    expect(seen[0].prompt).toContain("_SUMMARY.md and _CLAIMS.json");
+    expect(res.state).toBe("delivered");
+  }, spawnBudgetMs(3));
+});
+
+describe("runDelivery — what the gate reports about itself", () => {
+  test("the real mode per file: a judge that ran on some files is `mixed`, never stamped `judge`", () => {
+    const fakeGate = path.join(tmp, "fake-gate.ts");
+    fs.writeFileSync(fakeGate, `
+const file = Bun.argv[2];
+const mode = file.endsWith(".md") ? "judge" : "heuristic";
+console.log(JSON.stringify({ status: "PASS", mode, results: [] }));
+`, "utf8");
+    const oroot = path.join(tmp, "mode-mixed");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "nota.md"), PASSING_MD);
+    fs.writeFileSync(path.join(oroot, "page.html"), PASSING_HTML);
+    const { args, calls } = baseArgs(oroot, { gateScript: fakeGate });
+    runDelivery(args);
+    const passed = calls.find(x => x.event === "gate_passed")!;
+    expect(passed.payload.mode).toBe("mixed");
+    expect(passed.payload.judged_files).toBe(1);
+  }, spawnBudgetMs(2));
+
+  test("a judge that gave no verdict is reported as heuristic", () => {
+    const oroot = path.join(tmp, "mode-heuristic");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "page.html"), PASSING_HTML);
+    const { args, calls } = baseArgs(oroot);
+    runDelivery(args);
+    expect(calls.find(x => x.event === "gate_passed")!.payload.mode).toBe("heuristic");
+  }, spawnBudgetMs(2));
+});
+
+describe("runDelivery — the ledger while the run is judged", () => {
+  test("the worker's pid is cleared and the lease renewed by the pipeline", () => {
+    const oroot = path.join(tmp, "led-pid");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "page.html"), PASSING_HTML);
+    const led = openTestRun();
+    runLedger.recordChildPid(led.handle, led.runId, 999_999, null);
+    const res = runDelivery(baseArgs(oroot, { ledger: led }).args);
+    expect(res.state).toBe("delivered");
+    const row = runLedger.getRun(led.handle, led.runId)!;
+    expect(row.child_pid).toBeNull();
+    const renewals = auditLines().filter(l => l.event === "x_ledger_lease_renewed" && l.run_id === led.runId);
+    expect(renewals.length).toBeGreaterThan(0);
+    expect(renewals.every(l => l.source === "delivery-pipeline")).toBe(true);
+  }, spawnBudgetMs(2));
+
+  test("a publication that throws is reported, and the run still reaches delivered (never stuck at gated)", () => {
+    const oroot = path.join(tmp, "led-throw");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "page.html"), PASSING_HTML);
+    const led = openTestRun();
+    const { args, calls } = baseArgs(oroot, { ledger: led, afterGate: () => { throw new Error("pdf engine exploded"); } });
+    const res = runDelivery(args);
+    expect(res.state).toBe("delivered");
+    expect(calls.find(x => x.event === "x_after_gate_failed")?.payload.error).toBe("pdf engine exploded");
+    expect(runLedger.getRun(led.handle, led.runId)!.state).toBe("delivered");
+  }, spawnBudgetMs(2));
+});
+
+describe("deliverAfterRuntimeError — a worker that crashed is never a full pass", () => {
+  test("passing artifacts ship WITH RESERVATIONS naming the error, and the row never passes through failed", () => {
+    const oroot = path.join(tmp, "rt-reservations");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "guia.html"), PASSING_HTML);
+    const led = openTestRun();
+    const outcome = deliverAfterRuntimeError({ ...baseArgs(oroot, { ledger: led }).args, runtimeError: "timed out after 30 min" });
+    expect(outcome.exitCode).toBe(0);
+    expect(outcome.result!.state).toBe("delivered_with_reservations");
+    expect(outcome.result!.ceilingApplied).toContain("timed out after 30 min");
+    expect(fs.readFileSync(path.join(oroot, "_QA-RESERVATIONS.md"), "utf8")).toContain("timed out after 30 min");
+    const row = runLedger.getRun(led.handle, led.runId)!;
+    expect(row.state).toBe("delivered");
+    expect(row.last_error).toBe("timed out after 30 min");
+    const transitions = auditLines().filter(l => l.event === "x_ledger_state_changed" && l.run_id === led.runId).map(l => l.to);
+    expect(transitions).not.toContain("failed");
+    expect(transitions).toContain("verifying");
+  }, spawnBudgetMs(2));
+
+  test("a serious finding after a crash is withheld", () => {
+    const oroot = path.join(tmp, "rt-serious");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "dados.json"), INVALID_JSON);
+    const outcome = deliverAfterRuntimeError({ ...baseArgs(oroot).args, runtimeError: "killed" });
+    expect(outcome.result!.state).toBe("withheld");
+    expect(outcome.exitCode).toBe(2);
+  }, spawnBudgetMs(2));
+
+  test("a crash that left only run state is nothing to judge", () => {
+    const oroot = path.join(tmp, "rt-only-state");
+    fs.mkdirSync(path.join(oroot, "_work"), { recursive: true });
+    fs.writeFileSync(path.join(oroot, "_work", "PROGRESS.md"), PASSING_MD);
+    const outcome = deliverAfterRuntimeError({ ...baseArgs(oroot).args, runtimeError: "killed" });
+    expect(outcome.judged).toBe(false);
+    expect(outcome.exitCode).toBe(1);
+    expect(statusOf(oroot)).toMatchObject({ state: "failed", exit_code: 1 });
+  });
+
+  test("a caller's own ceiling still wins (the supervisor's salvage withholds)", () => {
+    const oroot = path.join(tmp, "rt-caller-ceiling");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "guia.html"), PASSING_HTML);
+    const outcome = deliverAfterRuntimeError({ ...baseArgs(oroot, { completenessCeiling: { reason: CEILING_REASON } }).args, runtimeError: "killed" });
+    expect(outcome.result!.state).toBe("withheld");
+    expect(outcome.result!.ceilingApplied).toBe(CEILING_REASON);
+  }, spawnBudgetMs(2));
 });

@@ -36,11 +36,15 @@ After the frontmatter, the Markdown body contains:
 
 `quality_gate.judge_enabled` has three values:
 
-- `reports` (default): the judge evaluates the text deliverables (`.md`, `.txt`) against the brief; code, images and data stay on the heuristic rubrics.
+- `reports` (default, and the `balanced` and `max` profiles): the judge evaluates the text deliverables (`.md`, `.txt`, `.html`) against the brief; code, images and data stay on the heuristic rubrics.
 - `true`: the judge evaluates every file the gate covers.
-- `false`: offline heuristics only.
+- `false` (the `economy` profile): offline heuristics only.
 
-With `delivery.produces_to_rubric` (on by default), the target's `produces[]` picks the domain rubric, such as `data_research` for a research piece; a produces with no rubric falls back to the rubric the extension indicates.
+The judge runs on the session's runtime, unless a `USE_*` / `NOT_USE_*` rule says otherwise for the brief.
+
+The file's extension picks the rubric family first (code, image, text, or text and design for `.html`). With `delivery.produces_to_rubric` (on by default), the target's `produces[]` then picks the domain rubric within that family, such as `data_research` for a research piece; a produces with no rubric in the family falls back to the rubric the extension indicates.
+
+`secret-leak` and the extension's validity rubric (`json-valid`, `html-valid`, `yaml-valid`, `pdf-valid`, `brief-fidelity` for images) run on every file whichever mode judges it: a judge verdict never replaces them. The delivery pipeline counts a failure among them, or a `high` critique item from the judge, as serious: it gets up to three correction rounds beyond `quality_gate.max_revisions` and is withheld if it stays. Any other failure ships with `_QA-RESERVATIONS.md` once the corrections are spent.
 
 1. To change the mode: `nrv config set quality_gate.judge_enabled <reports|true|false>`.
 2. The delivery pipeline (`lib/delivery-pipeline.ts`) calls the gate with the run's brief.

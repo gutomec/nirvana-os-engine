@@ -86,7 +86,7 @@ if (import.meta.main) {
   const [, , slug, ...rest] = process.argv;
   const brief = rest.filter(a => !a.startsWith("--")).join(" ");
   if (!slug || !brief) {
-    console.error('Usage: bun brief-proxy.ts <business_slug> "<brief>" [--runtime=claude-code]');
+    console.error('Usage: bun brief-proxy.ts <business_slug> "<brief>" [--runtime=<name>]');
     process.exit(2);
   }
   const rtArg = process.argv.find(a => a.startsWith("--runtime="))?.split("=")[1] as Runtime | undefined;

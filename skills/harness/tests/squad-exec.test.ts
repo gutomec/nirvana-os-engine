@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { runSquadHeadless, buildSquadPrompt, capabilityContext, promptPath, executorManifest } from "../lib/squad-exec.ts";
+import { runSquadHeadless, squadCloneInjection, buildSquadPrompt, capabilityContext, promptPath, executorManifest } from "../lib/squad-exec.ts";
 import { sessionKey, putSession } from "../lib/session-store.ts";
 import { SCOPE_GUARD_EN, scopeBoundary } from "../../_shared/lib/scope-guard.ts";
 import { LIMITS } from "../../_shared/validators/limits.ts";
@@ -65,6 +65,14 @@ describe("buildSquadPrompt — framing", () => {
     expect(p).not.toContain("synthesizer do business");
   });
 
+  test("the output ends with _SUMMARY.md, and the squad writes nowhere else", () => {
+    const squadDir = scaffoldSquad(path.join(tmp, "squads"), "brandcraft");
+    const p = buildSquadPrompt({ squadSlug: "brandcraft", squadDir, brief: "the brief", outDir: "/out/dir", cloneInjection: { block: "", decision: "DEFAULT" } });
+    expect(p.slice(p.indexOf("## OUTPUT"))).toContain(path.join("/out/dir", "_SUMMARY.md"));
+    expect(p.slice(p.indexOf("## OUTPUT"))).toContain("Do not print a summary to stdout");
+    expect(p).toContain("nothing anywhere else, even where the brief names another folder");
+  });
+
   test("the framing carries the scope guard, inside the sub-task block", () => {
     const squadDir = scaffoldSquad(path.join(tmp, "squads"), "brandcraft");
     const p = buildSquadPrompt({ squadSlug: "brandcraft", squadDir, brief: "the brief", outDir: "/out/dir", cloneInjection: { block: "", decision: "DEFAULT" } });
@@ -117,14 +125,14 @@ This directory is the source of the squad, shared by every project on this machi
 the brief
 
 ## YOUR SUB-TASK
-Run YOUR specialty applied to the brief above. Write files under \`/out/dir\`, in the format your specialty calls for; an image in them is a really generated image, never a placeholder or a generic SVG. Method and tools are yours. Deliverables follow the language of the request. Do not invoke the harness skill, and do not run \`nrv run\`/\`nrv dispatch\` for this same brief (anti-loop).
+Run YOUR specialty applied to the brief above. Write files under \`/out/dir\`, in the format your specialty calls for, and nothing anywhere else, even where the brief names another folder. If the deliverable includes images, they are really generated images, never a placeholder or a generic SVG. Method and tools are yours. Deliverables follow the language of the request. Do not invoke the harness skill, and do not run \`nrv run\`/\`nrv dispatch\` for this same brief (anti-loop).
 
 If the brief mentions you by name (e.g. "use the brandcraft squad"), prioritize doing EXACTLY what the user asked in that paragraph. The user decides.
 
 ${SCOPE_GUARD_EN} Scope is the brief above and the acceptance criteria of your sub-task. ${scopeBoundary()}
 
 ## OUTPUT
-Files in the directory above. Do not print a summary: deliver files. Finish when the work is ready to hand to the user.`;
+Files in the directory above, then \`${path.join("/out/dir", "_SUMMARY.md")}\`: one page at most with what you delivered and where, the decisions you took, what is still open and the out-of-scope notes. Do not print a summary to stdout: the deliverables and that file are the output. Finish when the work is ready to hand to the user.`;
     const args = { squadSlug: "brandcraft", squadDir, brief: "the brief", outDir: "/out/dir", cloneInjection: { block: "", decision: "DEFAULT" } };
     expect(buildSquadPrompt(args)).toBe(expected);
     // The three ways of saying "no capability" all land on the same bytes.
@@ -199,6 +207,27 @@ steps:
 `);
   return dir;
 }
+
+describe("squadCloneInjection, the rule the business path shares", () => {
+  test("a marked clone that is not installed is reported in the prompt block, not dropped", () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-squad-voices-"));
+    try {
+      const r = squadCloneInjection("## Request (verbatim)\nWrite it\n\n## Decisions\n- clone ghost-expert-xyz\n", cwd);
+      expect(r.decision).toBe("REQUESTED by the user");
+      expect(r.missingClones).toEqual(["ghost-expert-xyz"]);
+      expect(r.block).toContain("MIND-CLONE MISSING: ghost-expert-xyz");
+    } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
+  });
+
+  test("nothing asked for and nothing above the coverage gate: no clone", () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-squad-voices-"));
+    try {
+      const r = squadCloneInjection("zzqx wibble frobnicate the hydraulic pump", cwd);
+      expect(r.block).toBe("");
+      expect(r.missingClones).toEqual([]);
+    } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
+  });
+});
 
 describe("promptPath — the workflow reference reads the same on every platform", () => {
   // The Windows runner failed both capability cases of this file: `path.relative`

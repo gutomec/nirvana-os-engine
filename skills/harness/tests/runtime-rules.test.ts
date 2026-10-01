@@ -198,7 +198,7 @@ describe("menção de runtime no brief (detectRuntimeMention)", () => {
   test("variações PT/EN de cue", () => {
     expect(detectRuntimeMention("faça o site usando o codex")?.runtime).toBe("codex");
     expect(detectRuntimeMention("rode pelo gemini a análise")?.runtime).toBe("gemini-cli");
-    expect(detectRuntimeMention("build this with claude code")?.runtime).toBe("claude-code");
+    expect(detectRuntimeMention("build this using claude code")?.runtime).toBe("claude-code");
     expect(detectRuntimeMention("despache via antigravity cli")?.runtime).toBe("antigravity-cli");
     expect(detectRuntimeMention("rode via pi o refactor do módulo")?.runtime).toBe("pi");
   });
@@ -223,9 +223,21 @@ describe("menção de runtime no brief (detectRuntimeMention)", () => {
     const df = decideRuntime({ brief: "Use o agy para pesquisar na internet", explicitRuntime: "claude-code", defaultRuntime: "claude-code", rules: withVeto, mode: "fast", available: () => true });
     expect(df.source).toBe("flag");
   });
-  test("runtime citado indisponível → cai nas regras/default", () => {
+  test("runtime citado indisponível → decisão marcada unavailable, sem trocar de vendor", () => {
     const d = decideRuntime({ brief: "Use o agy para pesquisar na internet", explicitRuntime: null, defaultRuntime: "claude-code", rules: RULES, mode: "fast", available: (r) => r === "claude-code" });
-    expect(d.runtime).toBe("claude-code");
+    expect(d.runtime).toBe("antigravity-cli");
+    expect(d.source).toBe("brief");
+    expect(d.unavailable).toBe(true);
+  });
+  test("preposição solta e menção fora do pedido do usuário não disparam", () => {
+    expect(detectRuntimeMention("landing page com Claude Code como assunto")).toBeNull();
+    expect(detectRuntimeMention("using pi to 5 digits")).toBeNull();
+    expect(detectRuntimeMention("use o codex para revisar")?.runtime).toBe("codex");
+    expect(detectRuntimeMention("rode no agy")?.runtime).toBe("antigravity-cli");
+    expect(detectRuntimeMention("use `codex` como exemplo")).toBeNull();
+    const brief = "## Context\nuse o codex na etapa anterior\n\n## Request (verbatim)\nescreva o post\n\n## Done when\nuse o gemini\n";
+    expect(detectRuntimeMention(brief)).toBeNull();
+    expect(detectRuntimeMention("## Request (verbatim)\nrode no agy\n## Done when\nx\n")?.runtime).toBe("antigravity-cli");
   });
   test("hermes citado no brief → não vira exec (segue fluxo normal)", () => {
     const d = decideRuntime({ brief: "use o hermes para avisar o cliente", explicitRuntime: null, defaultRuntime: "claude-code", rules: [], mode: "fast", available: () => true });

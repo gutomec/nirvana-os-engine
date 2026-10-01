@@ -14,7 +14,7 @@
 //
 // Usage:
 //   bun verify-deliverable.ts <project_id> <business_slug>
-//   bun verify-deliverable.ts <project_id> <business_slug> [--outputs-root <dir>] [--min-bytes N] [--employee <slug>]
+//   bun verify-deliverable.ts <project_id> <business_slug> [--outputs-root <dir>] [--min-bytes N]
 //   bun verify-deliverable.ts <project_id> <business_slug> --min-bytes 200
 //
 // Exit codes:
@@ -30,28 +30,31 @@ import { resolveSetting } from "../../_shared/lib/settings.ts";
 
 // Run plumbing the harness writes next to the deliverables. Never a deliverable.
 // One list: the API and the report builder read the same one.
-import { RUN_PLUMBING } from "../../_shared/lib/run-plumbing.ts";
+import { RUN_PLUMBING, isRunStateFile } from "../../_shared/lib/run-plumbing.ts";
 
 /**
  * Outcome altitude: the brief names no paths on purpose (the executor decides
  * the artifact layout), so "no path declared" is not indeterminate — whatever
  * the run wrote under its outputs root is the deliverable set. Dotfiles,
- * `node_modules`, `scratch/` and the plumbing above are skipped.
+ * `node_modules`, `scratch/`, the plumbing above and the run's own state (the
+ * worker's summary and claims, `_STATUS.json`, `_work/`, `_review/`) are
+ * skipped: a run that left only those delivered nothing.
  */
 function scanOutputsForDeliverables(root: string, maxDepth = 6): string[] {
   const found: string[] = [];
-  const walk = (dir: string, depth: number) => {
+  const walk = (dir: string, rel: string, depth: number) => {
     if (depth > maxDepth) return;
     let entries: fs.Dirent[];
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
     for (const entry of entries) {
       if (entry.name.startsWith(".") || entry.name === "node_modules" || entry.name === "scratch") continue;
       const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) { walk(full, depth + 1); continue; }
-      if (entry.isFile() && !RUN_PLUMBING.has(entry.name)) found.push(full);
+      const r = rel ? `${rel}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) { if (!isRunStateFile(`${r}/`)) walk(full, r, depth + 1); continue; }
+      if (entry.isFile() && !RUN_PLUMBING.has(entry.name) && !isRunStateFile(r)) found.push(full);
     }
   };
-  walk(root, 0);
+  walk(root, "", 0);
   return found.sort();
 }
 
@@ -73,12 +76,10 @@ export type DeliverableReport = {
   empty_or_stub: string[];
   delta_pct: number;
   min_bytes_threshold: number;
-  /** The run directory the check resolved (nested `outputs/<project_id>/` or the
-   *  flat chain root). The CLI files the verdict beside the run; recomputing the
-   *  root there is how a verdict once went nowhere. Absent when indeterminate. */
+  /** The run directory the check resolved (nested `outputs/<project_id>/` or a
+   *  flat outputs root). The CLI files the verdict beside the run; recomputing
+   *  the root there is how a verdict once went nowhere. Absent when indeterminate. */
   project_dir?: string;
-  /** The seat the check was scoped to, when `--employee` narrowed it. */
-  employee?: string;
   /** A declared `min_bytes` per promised file (absolute path), whichever list
    *  named the file. The global `min_bytes_threshold` is the CLI default. */
   min_bytes_by_path?: Record<string, number>;
@@ -100,7 +101,7 @@ function canonical(p: string): string {
 export function verifyDeliverableOnDisk(
   projectId: string,
   businessSlug: string,
-  opts: { outputsRoot?: string; minBytes?: number; businessDir?: string | null; employee?: string | null } = {}
+  opts: { outputsRoot?: string; minBytes?: number; businessDir?: string | null } = {}
 ): DeliverableReport {
   const minBytes = opts.minBytes ?? 200;
   let resolvedProjectDir: string | undefined;
@@ -129,15 +130,12 @@ export function verifyDeliverableOnDisk(
     path.join(process.cwd(), ".nirvana/outputs"),   // compat: old runs
     path.join(os.homedir(), ".nirvana/outputs"),
   ];
-  // Two layouts, both legitimate. The scripted path nests a run under
-  // `outputs/<project_id>/`; `nrv team` writes a chain into a FLAT outputs root
-  // with `_team/<seat>/` beside the finals. This checker knew only the first, so
-  // it answered FAIL_INDETERMINATE for a chain run whose files were on disk —
-  // "project not found" for work that was right there. `projectDir` is whichever
-  // one actually holds the run.
+  // Two layouts. The scripted path nests a run under `outputs/<project_id>/`;
+  // a run written straight into a FLAT outputs root keeps its brief.md there.
+  // `projectDir` is whichever one actually holds the run.
   const projectsRoot = projectRootCandidates.find(p => fs.existsSync(path.join(p, projectId)));
   const flatRoot = !projectsRoot
-    ? projectRootCandidates.find(p => fs.existsSync(path.join(p, "brief.md")) || fs.existsSync(path.join(p, "_team")))
+    ? projectRootCandidates.find(p => fs.existsSync(path.join(p, "brief.md")))
     : null;
   if (!projectsRoot && !flatRoot) {
     return base("FAIL_INDETERMINATE", { reason: `project not found in ${projectRootCandidates.join(" or ")} (neither nested nor flat layout)` });
@@ -191,12 +189,11 @@ export function verifyDeliverableOnDisk(
   // The manifest is the run's own list and wins as the list of files; the
   // declared `min_bytes` applies whichever list named the file, because a
   // manifest used to switch the declared floor off and the report still
-  // printed the default as if it were in force. `--employee` narrows the
-  // promises to one seat: the whole business's promises charged every step of
-  // a chain, so a seat that delivered its own file failed for its colleagues'.
+  // printed the default as if it were in force. One worker delivers the whole
+  // business, so it answers for every seat's promise.
   const acceptanceMinBytes: Map<string, number> = new Map();
   const bizDir = opts.businessDir ?? businessDirFor(businessSlug);
-  const promised = bizDir ? readAcceptance(bizDir, opts.employee ? [opts.employee] : undefined).paths : [];
+  const promised = bizDir ? readAcceptance(bizDir).paths : [];
   const promiseRoot = outputsRoot ?? projectDir;
   const resolveEntry = (p: string) => canonical(path.isAbsolute(p) ? p : path.resolve(promiseRoot, p));
   if (expectedPathsRaw.length === 0 && promised.length > 0) {
@@ -266,18 +263,17 @@ export function verifyDeliverableOnDisk(
     delta_pct: deltaPct,
     min_bytes_threshold: minBytes,
     project_dir: projectDir,
-    ...(opts.employee ? { employee: opts.employee } : {}),
     ...(acceptanceMinBytes.size ? { min_bytes_by_path: Object.fromEntries(acceptanceMinBytes) } : {}),
   };
 }
 
 // ── CLI ──────────────────────────────────────────────────────────────────
 if (import.meta.main) {
-  const USAGE = "Usage: bun verify-deliverable.ts <project_id> <business_slug> [--outputs-root <dir>] [--min-bytes N] [--employee <slug>]";
+  const USAGE = "Usage: bun verify-deliverable.ts <project_id> <business_slug> [--outputs-root <dir>] [--min-bytes N]";
   // `--flag value` and `--flag=value` both count, and a flag this script does
   // not know is a usage error, not a silent drop: `--outputs-root=/x` used to
   // vanish without a word and the verdict came back FAIL over intact work.
-  const KNOWN = new Set(["--outputs-root", "--min-bytes", "--employee"]);
+  const KNOWN = new Set(["--outputs-root", "--min-bytes"]);
   const flags: Record<string, string> = {};
   const positional: string[] = [];
   const argv = process.argv.slice(2);
@@ -298,14 +294,13 @@ if (import.meta.main) {
   const businessSlug = positional[1];
   const outputsRoot = flags["--outputs-root"];
   const minBytes = parseInt(flags["--min-bytes"] ?? "200", 10);
-  const employee = flags["--employee"];
 
   if (!projectId || !businessSlug || !Number.isFinite(minBytes)) {
     console.error(USAGE);
     process.exit(2);
   }
 
-  const r = verifyDeliverableOnDisk(projectId, businessSlug, { outputsRoot, minBytes, employee });
+  const r = verifyDeliverableOnDisk(projectId, businessSlug, { outputsRoot, minBytes });
 
   if (r.status === "FAIL_INDETERMINATE") {
     console.error(`WARN: ${r.reason || "indeterminate"}`);
@@ -326,7 +321,6 @@ if (import.meta.main) {
     delta_pct: r.delta_pct,
     min_bytes_threshold: r.min_bytes_threshold,
     ...(r.min_bytes_by_path ? { min_bytes_by_path: r.min_bytes_by_path } : {}),
-    ...(r.employee ? { employee: r.employee } : {}),
     status: r.status,
     timestamp: new Date().toISOString(),
     ...(r.reason ? { reason: r.reason } : {}),

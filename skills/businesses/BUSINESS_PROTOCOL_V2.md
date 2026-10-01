@@ -563,9 +563,9 @@ acceptance:
 
 Unknown keys are an error.
 
-**How it reaches the judge.** Each entry maps one to one onto a `SuccessRequirement`, the type squad capabilities already use. The `acceptance[]` of the **intake seat** becomes the judge's requirements for the run, next to the brief-conformance requirement (at most 11 in total; ids are deduplicated, the first read wins). Entries with a `path` feed the completeness check of `verify-deliverable.ts`, which applies the declared `min_bytes` whichever list named the file. `--employee` narrows those promises to one seat.
+**How it reaches the judge.** Each entry maps one to one onto a `SuccessRequirement`, the type squad capabilities already use. The `acceptance[]` of **every seat** becomes the judge's requirements for the run, next to the brief-conformance requirement (at most 11 in total; ids are deduplicated, the first read wins). Entries with a `path` feed the completeness check of `verify-deliverable.ts`, which applies the declared `min_bytes` whichever list named the file.
 
-**Other seats.** A seat's own `acceptance[]` is the quality bar the agent holds itself to while playing that seat. The engine does not judge it separately: the contract that is judged is the intake seat's plus the brief's "Done when" items.
+**While playing a seat.** A seat's `acceptance[]` is also the quality bar the agent holds itself to while playing that seat. The judged contract is the seats' entries plus the brief's "Done when" items, which the gate also checks against `_CLAIMS.json`.
 
 **No `acceptance` declared** is not an error. The intake seat without one gets `acceptance_missing`, because it is the seat whose output reaches the user.
 
@@ -660,11 +660,18 @@ It states what and why, never how. `nrv brief template` prints the skeleton, `nr
 
 ### 14.2 What the worker does
 
-The engine hands the worker a prompt that is a map, never pasted content: the brief file, the business folder, the memory directories, the seat map with each seat's file and voices, the voices that fit this request, and the squad cards. The voices for the request are the clones the brief names or, when it names none, at most three the library's search ranks above its coverage gate (the same rule a squad dispatch uses); a clone a seat already carries is not repeated. The worker then:
+The engine hands the worker a prompt that is a map, never pasted content: the brief file, the business folder, the memory directories, the seat map with each seat's file, the voices (each clone listed once, with its folder and the persona files inside), and the squad cards.
+
+- **Voices.** A clone counts as asked for only when the brief's `Request (verbatim)` section names it, or a line marks it `clone <slug>`; a clone listed as a fact elsewhere in the brief asks for nothing. When the brief asks for none, the library is searched on the request and the business's part, and at most three clones above the coverage gate are offered; if none fits, none is. A clone a seat already carries is not repeated. A clone that was asked for and is not installed gets one line in the prompt, and the search does not stand in for it. A squad dispatch selects its clones by the same rule (`harness/lib/clone-voices.ts`).
+- **Squad cards.** Cards are written for the squads the router picked, the ones the brief names and the business's `squads_preferred`. The squads its seats are authorized for (`squads_authorized`) are listed by name only; `nrv cards squad <slug>` prints a card when the work needs one.
+- **Memory.** The first run seeds the machine memory home from the business's shipped `memory/` (`nrv memory` explains the two scopes). Directories whose files are stubs are not listed. When the shipped folder differs from the home, the prompt names it as newer. The prompt also gives the command to record a lesson: `nrv memory add <slug> "<fact>" --scope global|project`.
+- **Inputs.** Paths in `## Inputs` (absolute, `~`, or relative to the project root) that exist are resolved, listed in the prompt and granted to the run, so a worker whose folder is elsewhere still reads them.
+
+The worker then:
 
 1. Works in **phases** and keeps `_work/PROGRESS.md` current: decisions taken, what is done (with paths), what is next. If its context is compacted, the brief and `PROGRESS.md` are how it continues.
 2. **Reads with purpose**: it locates with a search, reads the part it needs, batches independent reads, and does not print back a file it just wrote.
-3. Writes **deliverables under the outputs root** and working files under `_work/`, and **nothing anywhere else**.
+3. Writes **deliverables under the outputs root** and working files under `_work/`, and **nothing anywhere else**, even where the brief names another folder. The one exception is `participation.json`, which sits in the run folder on purpose.
 4. Writes deliverables in the **language of the request**.
 5. Delivers the whole of its part and nothing beyond it. Anything beyond goes into the summary as a note.
 6. Plays seats by opening their files, writes in a clone's voice only after loading its persona, and uses squads through their cards (§13.3).

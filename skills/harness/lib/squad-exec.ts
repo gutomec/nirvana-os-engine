@@ -26,6 +26,8 @@ import { briefExcerpt } from "../../_shared/lib/brief-excerpt.ts";
 import { resolveClonePersona, loadCloneRegistry } from "../../_shared/lib/clone-resolver.ts";
 import { layersForPhase } from "../../_shared/lib/dna-layer-policy.ts";
 import { findCloneForTask } from "../../_shared/lib/clone-search.ts";
+import { selectVoices } from "./clone-voices.ts";
+import { summaryFileOf } from "./business-solo.ts";
 import { paths } from "../../_shared/lib/bun-helpers.ts";
 import { scopeBoundary, scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { renderResourceMap } from "../../_shared/lib/entity-resource-map.ts";
@@ -78,45 +80,35 @@ function appendAudit(payload: Record<string, any>, projectRoot?: string): void {
   } catch { /* non-fatal */ }
 }
 
-/** Resolve mind-clones for a squad sub-task by the canonical order:
- *  SOLICITADO (brief names a clone) → BUSCA (task→clone search) → PADRÃO (none).
- *  Squads have no assigned_mind_clones, so the order is request-or-search. Every
- *  clone is resolved from the single library (full embodiment) — closing the gap
- *  where squad agents got zero DNA. */
+/** Resolve mind-clones for a squad sub-task by the rule every worker shares
+ *  (clone-voices.ts): ASKED FOR in the request (or marked `clone <slug>`), else
+ *  the library's SEARCH above its coverage gate, else none; at most three. Every
+ *  clone is resolved from the single library (full embodiment). A squad keeps
+ *  its own presentation below (the execution.dna_injection mode); the selection
+ *  is the one the business path uses. */
 // `cwd` anchors the clone registry to the DISPATCH's project scope — without it
 // the registry resolves from process.cwd(), and the two halves of one dispatch
 // can read different scopes (the exact leak fixed in the business loader on
 // 2026-08-18: a test run from the engine repo picked up the repo's derived
 // registry and injected clones its fixture never wrote).
 export function squadCloneInjection(brief: string, cwd?: string): { block: string; decision: string; missingClones: string[]; mode?: "reference" | "full" | "fragments"; personaDirs?: string[] } {
-  const MAX = 2;
-  const picked: Array<{ slug: string; reason: string }> = [];
-  // 1. SOLICITADO — brief names a clone (slug or display name)
-  const reg = loadCloneRegistry();
-  const low = (brief || "").toLowerCase();
-  for (const [slug, c] of Object.entries(reg)) {
-    if (picked.length >= MAX) break;
-    const name = String((c as any).display_name || "").toLowerCase();
-    if (low.includes(slug) || low.includes(slug.replace(/-/g, " ")) || (name.length > 3 && low.includes(name))) {
-      picked.push({ slug, reason: "requested" });
-    }
-  }
-  let decision = picked.length ? "REQUESTED by the user" : "";
-  // 2. BUSCA — only if nothing requested
-  if (!picked.length) {
-    let hits: any[] = [];
-    try { hits = findCloneForTask(brief, { limit: MAX, cwd }); } catch { hits = []; }
-    for (const h of hits) {
-      if (picked.length >= MAX) break;
-      // Coverage gate (routing-360 Phase 3.3), not normalized>=0.5: normalized
-      // is max-normalized, so the top hit is 1.0 by construction even for an
-      // out-of-domain brief ("consertar a bomba hidráulica do trator") — a
-      // vacuous gate. `below_gate` mirrors the router's Stage 3 coverage bands.
-      if (h.below_gate === false) picked.push({ slug: h.slug, reason: `search coverage ${h.coverage?.matched}/${h.coverage?.total}` });
-    }
-    decision = picked.length ? "found by SEARCH" : "DEFAULT, no useful clone";
-  }
-  if (!picked.length) return { block: "", decision, missingClones: [] };
+  let names: Array<{ slug: string; name: string }> = [];
+  try {
+    names = Object.entries(loadCloneRegistry({ cwd }) as Record<string, any>).map(([slug, c]) => ({ slug, name: String(c?.display_name || slug) }));
+  } catch { names = []; }
+  const selection = selectVoices({
+    brief, names,
+    // Whether the files open is decided below, where the persona is read.
+    installed: () => true,
+    // Coverage gate (routing-360 Phase 3.3), not normalized>=0.5: normalized
+    // is max-normalized, so the top hit is 1.0 by construction even for an
+    // out-of-domain brief ("consertar a bomba hidráulica do trator") — a
+    // vacuous gate. `below_gate` mirrors the router's Stage 3 coverage bands.
+    search: (query) => { try { return findCloneForTask(query, { limit: 6, cwd }); } catch { return []; } },
+  });
+  const picked = selection.voices.map((v) => ({ slug: v.slug, reason: v.why }));
+  const decision = selection.how === "asked" ? "REQUESTED by the user" : selection.how === "search" ? "found by SEARCH" : "DEFAULT, no useful clone";
+  if (!picked.length && !selection.missing.length) return { block: "", decision, missingClones: [] };
   // The execution.dna_injection setting:
   // reference (the default) = a card naming the persona files, read on demand;
   // fragments = SOUL + phase layers (squads execute → execute layers) with a
@@ -124,7 +116,7 @@ export function squadCloneInjection(brief: string, cwd?: string): { block: strin
   const dnaMode: "reference" | "full" | "fragments" = resolveSetting("execution.dna_injection").value;
   const fragLayers = layersForPhase("execute");
   const parts: string[] = [];
-  const missingClones: string[] = [];
+  const missingClones: string[] = [...selection.missing];
   // A card names files the executor opens on demand, so each clone's folder is
   // granted to the run: a runtime that refuses an ungranted path would otherwise
   // hold a card it cannot read.
@@ -472,14 +464,14 @@ ${cloneInj.block || "(no clone for this task: operate with the squad's default s
 ${brief}
 
 ## YOUR SUB-TASK
-Run YOUR specialty applied to the brief above. Write files under \`${outDir}\`, in the format your specialty calls for; an image in them is a really generated image, never a placeholder or a generic SVG. Method and tools are yours. Deliverables follow the language of the request. Do not invoke the harness skill, and do not run \`nrv run\`/\`nrv dispatch\` for this same brief (anti-loop).
+Run YOUR specialty applied to the brief above. Write files under \`${outDir}\`, in the format your specialty calls for, and nothing anywhere else, even where the brief names another folder. If the deliverable includes images, they are really generated images, never a placeholder or a generic SVG. Method and tools are yours. Deliverables follow the language of the request. Do not invoke the harness skill, and do not run \`nrv run\`/\`nrv dispatch\` for this same brief (anti-loop).
 
 If the brief mentions you by name (e.g. "use the ${squadSlug} squad"), prioritize doing EXACTLY what the user asked in that paragraph. The user decides.
 
 ${scopeGuard()} Scope is the brief above and the acceptance criteria of your sub-task. ${scopeBoundary()}
 
 ## OUTPUT
-Files in the directory above. Do not print a summary: deliver files. ${doneLine}`;
+Files in the directory above, then \`${summaryFileOf(outDir)}\`: one page at most with what you delivered and where, the decisions you took, what is still open and the out-of-scope notes. Do not print a summary to stdout: the deliverables and that file are the output. ${doneLine}`;
 }
 
 /**

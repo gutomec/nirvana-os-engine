@@ -45,20 +45,21 @@ async function hostDriver() {
 }
 
 /** First runtime on the driver's roster that is actually installed here. */
-async function firstInstalledRuntime(): Promise<string | null> {
+async function firstInstalledRuntime(driverOverride?: unknown): Promise<string | null> {
   try {
-    const driver = await hostDriver();
-    if (!driver) return null;
+    const driver = (driverOverride as typeof import("../../_shared/lib/host-agent-driver.ts") | undefined) ?? await hostDriver();
+    if (!driver || typeof driver.listRuntimes !== "function") return null;
     return driver.listRuntimes().map((r) => r.name).find((n) => driver.runtimeAvailable(n)) ?? null;
   } catch { return null; }
 }
 
 /**
- * Judge runtime selection — consult the user's runtime rules (USE_* /
- * NOT_USE_* in .env, via runtime-rules.ts decideRuntime) instead of blindly
- * taking the first CLI on PATH. Returns the preferred runtime slug, or null
- * when there is no real signal (no rules AND no detectable session host) —
- * null keeps the driver's historical PATH-scan fallback.
+ * Judge runtime selection: the judge runs on the SESSION's runtime — the one
+ * the user is working in, found by `detectSessionHost` (env markers, then the
+ * process tree) — unless the user's runtime rules (USE_* / NOT_USE_* in .env,
+ * via runtime-rules.ts decideRuntime) say otherwise for this brief. Returns
+ * the preferred runtime slug, or null when there is no real signal (no rules
+ * AND no detectable session host): null keeps the driver's PATH scan.
  */
 async function resolveJudgePreferredRuntime(
   input: JudgeInput,
@@ -74,23 +75,24 @@ async function resolveJudgePreferredRuntime(
   try {
     const projectRoot = process.env.NIRVANA_PROJECT_ROOT || process.cwd();
     const rules = rules_mod.loadRuntimeRules(projectRoot);
-    const currentHost = rules_mod.detectCurrentHost?.() ?? null;
+    const detect = rules_mod.detectSessionHost ?? rules_mod.detectCurrentHost;
+    const currentHost = detect?.() ?? null;
     if ((!rules || rules.length === 0) && !currentHost) return null;
+    // Without a session host the default is the first INSTALLED runtime, never
+    // a vendor literal; with none installed there is nothing to prefer.
+    const defaultRuntime = currentHost ?? (await firstInstalledRuntime(opts.__testDriver));
+    if (!defaultRuntime) return null;
     const decision = rules_mod.decideRuntime({
       brief: input.brief ?? "",
       explicitRuntime: null,
-      // Placeholder only: with no detectable session host the decision below
-      // is discarded (see the `source === "default"` guard). It is the first
-      // INSTALLED runtime rather than a vendor literal, so the veto message a
-      // NOT_USE rule prints names a CLI that actually exists here.
-      defaultRuntime: currentHost ?? (await firstInstalledRuntime()) ?? "claude-code",
+      defaultRuntime,
       rules,
       mode: "fast",
       available,
     });
     if (!decision?.runtime) return null;
-    // A "default" decision built on the synthetic claude-code placeholder
-    // (no detectable session host) is not a real signal — PATH scan instead.
+    // A "default" decision with no session host is only the first installed
+    // runtime, not a signal: the driver's PATH scan decides instead.
     if (decision.source === "default" && !currentHost) return null;
     return decision.runtime;
   } catch (e) {
@@ -284,7 +286,8 @@ export interface JudgeOpts {
    * Must expose callHostAgentAsync (and optionally runtimeAvailable). */
   __testDriver?: unknown;
   /** TEST-ONLY: replaces the lazily imported runtime-rules module. Must
-   * expose loadRuntimeRules, detectCurrentHost, decideRuntime. */
+   * expose loadRuntimeRules, decideRuntime and detectSessionHost (or the
+   * older detectCurrentHost). */
   __testRuntimeRules?: unknown;
 }
 
@@ -342,9 +345,8 @@ export async function judge(input: JudgeInput, opts: JudgeOpts = {}): Promise<Ju
   const persona = buildPersona(input.rubric);
   const userMsg = buildUserMessage(input);
 
-  // Runtime-rules consultation (routing-360 Phase 4.4): USE_*/NOT_USE_* rules
-  // and the detected session host pick the judge runtime; without a signal the
-  // driver keeps its historical PATH-scan.
+  // The session's runtime judges, unless a USE_*/NOT_USE_* rule says otherwise
+  // for this brief; without a signal the driver keeps its PATH scan.
   const available = (r: string): boolean => {
     try { return typeof driver.runtimeAvailable === "function" ? driver.runtimeAvailable(r as never) : true; }
     catch { return true; }

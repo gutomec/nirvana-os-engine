@@ -16,7 +16,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { spawnSync } from "node:child_process";
-import { RUN_PLUMBING, RUN_PLUMBING_DIRS } from "../../_shared/lib/run-plumbing.ts";
+import { RUN_PLUMBING, RUN_PLUMBING_DIRS, isRunStateFile } from "../../_shared/lib/run-plumbing.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 
 const ANSI = { reset: "\x1b[0m", bold: "\x1b[1m", dim: "\x1b[2m",
@@ -63,15 +63,14 @@ if (!source) {
 }
 
 // --deliverables-only: archive just the deliverables/ folder, not the project
-// scaffold (brief.md, agent-prompt.md, session.json, handoffs, etc.). For a
+// scaffold (brief.md, the prompt, session.json, the squad cards). For a
 // single-business project there is one deliverables dir → a clean archive
-// rooted at deliverables/. Falls back to the full project if none or many.
+// rooted at deliverables/. With none or several, the run root ships, filtered.
 let archiveSource = source;
 if (deliverablesOnly) {
   // Look for the deliverables tree in (1) every business subdir and (2) the
-  // project root. dispatch.ts sets outputs_root = <projDir>/deliverables/,
-  // and the synthesizer may write either directly under that path or nest a
-  // further `deliverables/` inside (older convention) — accept both.
+  // project root. dispatch.ts sets outputs_root = <projDir>/deliverables/;
+  // older runs nested a further `deliverables/` at the root — accept both.
   const delivDirs: string[] = [];
   const bizRoot = path.join(source, "businesses");
   if (fs.existsSync(bizRoot)) {
@@ -110,56 +109,82 @@ console.log(c("dim", `  output: ${outputPath}`));
 console.log(c("dim", `  audit:  ${includeAudit ? "included" : "excluded"}`));
 console.log("");
 
-// What never ships to a client, whichever archive format is used. The list is
-// the engine's one list (run-plumbing.ts), not a fourth private copy — and a
-// fourth private copy is exactly what this was. It excluded `audit.jsonl` and
+// What never ships to a client, whichever archive format is used. The lists
+// are the engine's own (run-plumbing.ts), not a private copy — and a private
+// copy is exactly what this once was. It excluded `audit.jsonl` and
 // `HANDOFF.json` and let `agent-prompt.md` through, which is the employee's
 // system prompt, the mind-clone library and the firm's permanent memory, in the
-// zip the client is handed as "the complete final product".
-const plumbingFiles = [...RUN_PLUMBING].filter((f) => includeAudit ? !["audit.jsonl", "HANDOFF.json"].includes(f) : true);
-const plumbingDirs = [...RUN_PLUMBING_DIRS].concat(includeAudit ? ["_team"] : ["handoffs", "tickets", "employees", "_team"]);
-const excludes = plumbingFiles.map((f) => `--exclude=${f}`)
-  .concat(plumbingDirs.map((d) => `--exclude=${d}`))
-  .concat(["--exclude=.publisher-brief.md"]);
+// zip the client is handed as "the complete final product". Run state (the
+// worker's summary and claims, `_STATUS.json`, `_work/`, `_review/`, the squad
+// cards) is the run describing itself and stays out the same way.
+// `--include-audit` lets the trail through (audit.jsonl, HANDOFF.json).
+const AUDIT_TRAIL: ReadonlySet<string> = new Set(["audit.jsonl", "HANDOFF.json"]);
+const SCAFFOLD_DIRS: ReadonlySet<string> = new Set(includeAudit ? [] : ["employees"]);
+
+function shipped(rel: string, isDir: boolean): boolean {
+  const name = rel.split("/").pop() ?? rel;
+  if (isDir) return !RUN_PLUMBING_DIRS.has(name) && !SCAFFOLD_DIRS.has(name) && !isRunStateFile(`${rel}/`);
+  if (name === ".publisher-brief.md") return false;
+  if (includeAudit && AUDIT_TRAIL.has(name)) return true;
+  return !RUN_PLUMBING.has(name) && !isRunStateFile(rel);
+}
+
+/** Every file that ships, relative to `root`, with "/" separators. Decided
+ *  here, once, so the zip and the tarball can never disagree. */
+function collect(root: string): string[] {
+  const out: string[] = [];
+  const walk = (dir: string, rel: string) => {
+    let entries: fs.Dirent[] = [];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const r = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) { if (shipped(r, true)) walk(path.join(dir, e.name), r); }
+      else if (e.isFile() && shipped(r, false)) out.push(r);
+    }
+  };
+  walk(root, "");
+  return out.sort();
+}
 
 const parent = path.resolve(archiveSource, "..");
 const basename = path.basename(archiveSource);
+// Archive names are `<basename>/<rel>`, as the archive always rooted them.
+const members = collect(archiveSource).map((rel) => `${basename}/${rel}`);
 
-let r;
+let r: ReturnType<typeof spawnSync> | undefined;
 if (format === "tgz") {
-  // tar com cwd + paths relativos: um path absoluto do Windows (C:\...) tem ":"
-  // e o GNU tar do Git Bash o trata como host remoto. Relativo funciona em
-  // GNU tar e bsdtar, em qualquer OS. cwd = parent dispensa o -C.
+  // tar with cwd + relative paths: a Windows absolute path (C:\...) has ":",
+  // which GNU tar (Git Bash) reads as a remote host. Relative works with GNU
+  // tar and bsdtar on every OS; cwd = parent spares the -C. The member list
+  // goes through a file (-T), never the command line, so no length limit.
   const relOutRaw = path.relative(parent, outputPath);
   const relOut = (relOutRaw === "" || relOutRaw.includes(":") ? outputPath : relOutRaw).split(path.sep).join("/");
-  const tarArgs = ["-czf", relOut, ...excludes, basename];
-  r = spawnSync("tar", tarArgs, { windowsHide: true, encoding: "utf8", cwd: parent });
+  const listFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "nrv-export-")), "members.txt");
+  fs.writeFileSync(listFile, members.join("\n") + "\n", "utf8");
+  r = spawnSync("tar", ["-czf", relOut, "-T", listFile], { windowsHide: true, encoding: "utf8", cwd: parent });
+  try { fs.rmSync(path.dirname(listFile), { recursive: true, force: true }); } catch { /* temp dir */ }
 } else {
-  // zip — use python3 zipfile to avoid `zip` dep on minimal systems
-  const py = `
-import os, sys, zipfile, json
-src = sys.argv[1]
-dst = sys.argv[2]
-include_audit = sys.argv[3] == "true"
-exclude_basenames = set(json.loads(sys.argv[4]))
-exclude_dirs = set(json.loads(sys.argv[5]))
-with zipfile.ZipFile(dst, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as z:
-    for root, dirs, files in os.walk(src):
-        dirs[:] = [d for d in dirs if d not in exclude_dirs]
-        for f in files:
-            if f in exclude_basenames:
-                continue
-            p = os.path.join(root, f)
-            arc = os.path.relpath(p, os.path.dirname(src))
-            z.write(p, arcname=arc)
-`;
-  r = spawnSync("python3", ["-c", py, archiveSource, outputPath, includeAudit ? "true" : "false",
-    JSON.stringify(plumbingFiles.concat(".publisher-brief.md")), JSON.stringify(plumbingDirs)], { windowsHide: true, encoding: "utf8" });
+  // zip — python's zipfile avoids a `zip` dependency on minimal systems. The
+  // members arrive on stdin as UTF-8 JSON, so a long list or an accented name
+  // never meets the command line or the console code page.
+  const py = [
+    "import sys, zipfile, json",
+    "entries = json.loads(sys.stdin.buffer.read().decode('utf-8'))",
+    "with zipfile.ZipFile(sys.argv[1], 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as z:",
+    "    for src, arc in entries:",
+    "        z.write(src, arcname=arc)",
+  ].join("\n");
+  const input = JSON.stringify(members.map((m) => [path.join(parent, ...m.split("/")), m]));
+  // `python3` on macOS and Linux; on Windows the launcher is usually `python`.
+  for (const python of process.platform === "win32" ? ["python", "python3", "py"] : ["python3", "python"]) {
+    r = spawnSync(python, ["-c", py, outputPath], { windowsHide: true, encoding: "utf8", input });
+    if (!r.error && r.status !== 9009) break;
+  }
 }
 
-if (r.status !== 0) {
+if (!r || r.status !== 0) {
   console.error(c("red", "✗ archive failed:"));
-  console.error(r.stderr || r.stdout || "");
+  console.error(r?.error?.message || r?.stderr || r?.stdout || "");
   process.exit(1);
 }
 
