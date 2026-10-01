@@ -77,7 +77,7 @@ export function rubricsForExt(ext: string): string[] {
     case ".webp":
       return ["brief-fidelity"];
     case ".html":
-      return ["html-valid", "secret-leak"];
+      return ["html-valid", "html-layout", "secret-leak"];
     case ".css":
       return ["css-composite-alpha", "secret-leak"];
     case ".pdf":
@@ -91,12 +91,14 @@ export function rubricsForExt(ext: string): string[] {
   }
 }
 
-/** The rubrics that run on a file whichever mode judges it: a leaked secret
- *  and a file that is not what its extension promises are facts, not opinions,
- *  so the judge's verdict never replaces them. The delivery pipeline counts a
- *  failure among them as serious (delivery-pipeline.ts SERIOUS_RUBRICS). */
+/** The rubrics that run on a file whichever mode judges it: a leaked secret,
+ *  a file that is not what its extension promises and a page that does not fit
+ *  a phone are measured facts, not opinions, so the judge's verdict never
+ *  replaces them. The delivery pipeline counts a failure among the first two
+ *  kinds as serious (delivery-pipeline.ts SERIOUS_RUBRICS); a layout finding
+ *  goes back for correction and is not. */
 export const ALWAYS_RUBRICS: ReadonlySet<string> = new Set([
-  "secret-leak", "json-valid", "html-valid", "pdf-valid", "yaml-valid", "brief-fidelity",
+  "secret-leak", "json-valid", "html-valid", "html-layout", "pdf-valid", "yaml-valid", "brief-fidelity",
 ]);
 
 /** The heuristic rubrics of `ext` that run beside the judge. */
@@ -133,6 +135,14 @@ export function judgeRubricFamily(ext: string): { allowed: ReadonlySet<string>; 
 export function pickJudgeRubricName(ext: string, matched: readonly string[]): string {
   const family = judgeRubricFamily(ext);
   return matched.find((name) => family.allowed.has(name)) ?? family.fallback;
+}
+
+/** Every judge rubric a file is graded by. An HTML page is read twice: for what
+ *  it says (the rubric its family or produces picks) and for how it is built
+ *  (design), and it passes only when both pass. Other files get one rubric. */
+export function judgeRubricNames(ext: string, matched: readonly string[]): string[] {
+  const first = pickJudgeRubricName(ext, matched);
+  return ext.toLowerCase() === ".html" && first !== "design" ? [first, "design"] : [first];
 }
 
 async function runRubric(name: string, artifact: string, content: string, opts: { offline: boolean }): Promise<RubricResult> {
@@ -201,12 +211,12 @@ async function runWithRevisions(artifact: string, content: string, args: string[
     const sel = selector.selectRubricsForProduces(produces);
     return sel.fallback_used ? [] : sel.rubrics.map((r) => r.name);
   })() : [];
-  const rubricName = pickJudgeRubricName(ext, matched);
-  if (produces.length && !matched.includes(rubricName)) {
-    console.error(`No ${ext} rubric matches produces=[${produces.join(",")}]; using ${rubricName}, the one the extension implies.`);
+  const rubricNames = judgeRubricNames(ext, matched);
+  if (produces.length && !matched.includes(rubricNames[0])) {
+    console.error(`No ${ext} rubric matches produces=[${produces.join(",")}]; using ${rubricNames[0]}, the one the extension implies.`);
   }
-  const rubric = selector.getRubric(rubricName);
-  if (!rubric) {
+  const rubrics = rubricNames.map((name) => selector.getRubric(name)).filter((r): r is NonNullable<typeof r> => !!r);
+  if (!rubrics.length) {
     console.error(`No .md rubric resolvable; falling back to heuristics.`);
     return -1;
   }
@@ -216,18 +226,33 @@ async function runWithRevisions(artifact: string, content: string, args: string[
   // fails, surface the critique for the agent to act on. A maestro embedding
   // this can pass a real ReviseFn that re-dispatches.
   const judgeMod = await import("../lib/judge.ts");
-  const result = await judgeMod.judge(
-    { rubric, artifact: content, brief, trace_id: process.env.NIRVANA_TRACE_ID || undefined,
-      business_slug: process.env.NIRVANA_BUSINESS_SLUG || undefined },
-  );
+  type Verdict = Awaited<ReturnType<typeof judgeMod.judge>>;
+  const verdicts: Array<{ rubric: (typeof rubrics)[number]; result: Verdict }> = [];
+  for (const rubric of rubrics) {
+    const result = await judgeMod.judge(
+      { rubric, artifact: content, brief, trace_id: process.env.NIRVANA_TRACE_ID || undefined,
+        business_slug: process.env.NIRVANA_BUSINESS_SLUG || undefined },
+    );
+    if (result.schema_valid) verdicts.push({ rubric, result });
+    else console.error(`[gate] judge gave no usable ${rubric.name} verdict (${(result.schema_errors ?? []).join(", ") || result.judge_runtime}).`);
+  }
   // No verdict came back (no runtime, a failed call, an answer that is not the
   // schema). That says nothing about the artifact, so it is not a fail: the
   // heuristic rubrics decide this file, as they do with the judge off, and the
   // verdict says `mode: "heuristic"`.
-  if (!result.schema_valid) {
-    console.error(`[gate] judge gave no usable verdict (${(result.schema_errors ?? []).join(", ") || result.judge_runtime}); the heuristic rubrics decide ${path.basename(artifact)}.`);
+  if (!verdicts.length) {
+    console.error(`[gate] the heuristic rubrics decide ${path.basename(artifact)}.`);
     return -1;
   }
+  const rubric = { name: verdicts.map((v) => v.rubric.name).join("+") };
+  const critique = verdicts.flatMap((v) => v.result.critique);
+  const result = {
+    verdict: verdicts.every((v) => v.result.verdict === "pass") ? "pass" : "fail",
+    total_score: Math.min(...verdicts.map((v) => v.result.total_score)),
+    critique,
+    criteria_scores: Object.assign({}, ...verdicts.map((v) => v.result.criteria_scores)),
+    judge_runtime: verdicts[0].result.judge_runtime,
+  };
 
   // The checks no judge verdict replaces: secret-leak and the validity rubric
   // of the extension run on every file, and a failure among them fails the
@@ -244,16 +269,17 @@ async function runWithRevisions(artifact: string, content: string, args: string[
     status: judgePassed && alwaysFailed.length === 0 ? "PASS" : "FAIL",
     mode: "judge",
     score: result.total_score,
-    results: [{
-      name: rubric.name,
-      passed: judgePassed,
-      score: result.total_score,
-      reasoning: result.critique.map(c => `[${c.severity}] ${c.issue}`).join("; ") || "judge verdict",
-      // What a revision is asked to fix: the material items first, then the
-      // medium ones. Low items (style, polish) stay in `critique` as notes and
-      // never become revision work, unless nothing else explains a low score.
-      fix_list: judgePassed ? [] : revisionFixes(result.critique),
-    }, ...always],
+    // One result per judge rubric. What a revision is asked to fix: the material
+    // items first, then the medium ones. Low items (style, polish) stay in
+    // `critique` as notes and never become revision work, unless nothing else
+    // explains a low score.
+    results: [...verdicts.map((v) => ({
+      name: v.rubric.name,
+      passed: v.result.verdict === "pass",
+      score: v.result.total_score,
+      reasoning: v.result.critique.map(c => `[${c.severity}] ${c.issue}`).join("; ") || "judge verdict",
+      fix_list: v.result.verdict === "pass" ? [] : revisionFixes(v.result.critique),
+    })), ...always],
     critique: result.critique,
     artifact,
     timestamp: new Date().toISOString(),

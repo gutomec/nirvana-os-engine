@@ -156,8 +156,8 @@ describe("pickJudgeRubricName", () => {
     expect(pickJudgeRubricName(".txt", [])).toBe("prose_shortform");
   });
 
-  test("the checks that run beside the judge: secret-leak and the extension's validity rubric", () => {
-    expect(alwaysRubricsForExt(".html")).toEqual(["html-valid", "secret-leak"]);
+  test("the checks that run beside the judge: secret-leak, the extension's validity rubric and, for HTML, the layout", () => {
+    expect(alwaysRubricsForExt(".html")).toEqual(["html-valid", "html-layout", "secret-leak"]);
     expect(alwaysRubricsForExt(".json")).toEqual(["json-valid", "secret-leak"]);
     expect(alwaysRubricsForExt(".md")).toEqual(["secret-leak"]);
     expect(alwaysRubricsForExt(".png")).toEqual(["brief-fidelity"]);

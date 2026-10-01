@@ -46,6 +46,10 @@ if (!process.env.NIRVANA_RUN_LEDGER_DB) {
 // runs the heuristics. A test that exercises the judge sets its own value.
 if (process.env.NIRVANA_JUDGE_ENABLED === undefined) process.env.NIRVANA_JUDGE_ENABLED = "false";
 
+// The HTML layout check starts a real browser; a test that gates an HTML file
+// is not about layout. A test that exercises the check sets its own value.
+if (process.env.NIRVANA_HTML_LAYOUT === undefined) process.env.NIRVANA_HTML_LAYOUT = "0";
+
 // The performance profile the installer recorded in the user's global config
 // moves effort, the context ceiling and the review policy at once; under test
 // the engine defaults hold. A test that exercises a profile sets its own.

@@ -18,6 +18,7 @@
 //
 // Exit: 0 ok · 1 render failed · 2 bad args
 
+import { findChrome } from "../../_shared/lib/find-chrome.ts";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -202,31 +203,6 @@ ${body}
 const tmpHtml = path.join(os.tmpdir(), `medwork-report-${Date.now()}.html`);
 fs.writeFileSync(tmpHtml, html, "utf8");
 fs.mkdirSync(path.dirname(path.resolve(outputPdf)), { recursive: true });
-
-function findChrome(): string | null {
-  const env = process.env.PUPPETEER_EXECUTABLE_PATH;
-  if (env && fs.existsSync(env)) return env;
-  const byOs: Record<string, string[]> = {
-    darwin: [
-      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-      "/Applications/Chromium.app/Contents/MacOS/Chromium",
-      "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-    ],
-    win32: [
-      "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-      "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-      "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
-    ],
-    linux: [],
-  };
-  for (const p of byOs[process.platform] || []) if (fs.existsSync(p)) return p;
-  for (const bin of ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "msedge"]) {
-    const probe = process.platform === "win32" ? "where" : "which";
-    const r = spawnSync(probe, [bin], { windowsHide: true, encoding: "utf8" });
-    if (r.status === 0 && r.stdout.trim()) return r.stdout.trim().split("\n")[0];
-  }
-  return null;
-}
 
 function render(): { ok: boolean; engine: string; error?: string } {
   // weasyprint first: best paged-media support (page numbers, TOC page refs).
