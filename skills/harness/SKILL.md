@@ -45,6 +45,8 @@ and you do not plan how it is made.
 7. **Dependencies install to `~/.nirvana`.** Never `bun install`, `npm install`
    or `pip install` inside a project, squad or business: `nrv deps install <pkg>`
    or `nrv activate <squad>`.
+8. **The commands are the interface.** Do not read the engine's source or call a
+   runtime's CLI to test it; `nrv doctor` reports which runtimes work.
 
 ## 1. Understand the request
 
@@ -100,9 +102,10 @@ did not ask for. Check it with `nrv brief check .nirvana/briefs/<business>.md`.
 nrv dispatch <business> --brief-file .nirvana/briefs/<business>.md --exec [--runtime <rt>] [--review | --no-review]
 ```
 
-`--review` when the user asked for a review, `--no-review` when they said to
-skip it; otherwise `review.policy` decides, and at most one reviewer checks the
-whole delivery. Pass `--html` or `--pdf` only when the user asked for a report;
+Dispatch once, with `--exec`: without it nothing runs, and the folder it
+prepares is left in `outputs/`. `--review` when the user asked for a review,
+`--no-review` when they said to skip it; otherwise `review.policy` decides, and
+at most one reviewer checks the whole delivery. Pass `--html` or `--pdf` only when the user asked for a report;
 none is built by default.
 
 **Dispatch in the background.** Independent businesses go out at the same
