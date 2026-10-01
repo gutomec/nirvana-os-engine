@@ -34,7 +34,7 @@ For **execution requests** ("use as empresas", "rode pela empresa X", "produza u
 After delivery, confirm in `~/.harness-logs/$(date +%Y-%m-%d)/audit.jsonl`:
 - `event=brief_received` (from brief-business.ts)
 - `event=dispatch_business` (or `dispatch_squad` for fallback) with this trace_id
-- `event=x_business_solo_started`, then `x_seat_credited` for each seat the worker declares it played
+- `event=x_business_solo_started` (its `voices` are the clones offered), then `x_seat_credited` for each seat and `x_clone_credited` for each clone the worker declares it used
 - `event=handoff_phase_advanced` for `plan → execute` and `execute → complete`
 - `event=verify_passed` (from verify-deliverable.ts)
 - `event=gate_passed` (from quality-gate.ts) with the rubrics list

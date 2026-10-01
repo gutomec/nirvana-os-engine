@@ -32,7 +32,7 @@ The harness protocol is 8 KB instead of 57 KB: pick the businesses, write each a
 
 ### A clone listed as a product fact is not a requested voice; a scaffold says how to run
 
-Found on the next Antigravity run: the brief listed the pack's ten clones as facts about the product, and the worker was handed three motion designers as voices for sales copy. A clone now counts as asked for only in the user's own words (the brief's "Request (verbatim)") or when the orchestrator marks it `clone <slug>`; otherwise the library search decides, and nothing that fits means no voice. A dispatch without `--exec` now opens its next steps with "Nothing ran" and the exact command to repeat with `--exec`, before the instructions for pasting the prompt by hand.
+Found on the next Antigravity run: the brief listed the pack's ten clones as facts about the product, and the worker was handed three motion designers as voices for sales copy. A clone now counts as asked for only in the user's own words (the brief's "Request (verbatim)") or when the orchestrator marks it `clone <slug>`; otherwise the library search decides, and nothing that fits means no voice. Each clone the worker declares in `participation.json` is now an audit event too (`x_clone_credited`, with `source` `seat`, `request` or `own-choice`), beside the `voices` the engine offered on `x_business_solo_started`. A dispatch without `--exec` now opens its next steps with "Nothing ran" and the exact command to repeat with `--exec`, before the instructions for pasting the prompt by hand.
 
 ### A business worker gets the voices that fit the request
 

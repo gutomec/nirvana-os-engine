@@ -677,7 +677,7 @@ The engine hands the worker a prompt that is a map, never pasted content: the br
 | `_CLAIMS.json` | An array with one entry per "Done when" item, in order: `{"id": "d1", "evidence": "<file>:<lines>, <what it shows>"}` |
 | `participation.json` | `{"seats": [{"seat", "files"}], "squads": [...], "clones": [...]}`, naming only what it actually used |
 
-The engine credits the seats the worker declares in `participation.json` (event `x_seat_credited`, evidence `declared`); names that are not seats of the business are dropped. A session that ends before the files are on disk is not a finished run: a headless session dies when its final turn ends, so the worker never leaves background work behind.
+The engine credits the seats the worker declares in `participation.json` (event `x_seat_credited`, evidence `declared`); names that are not seats of the business are dropped. Each clone it declares under `clones` is credited the same way (event `x_clone_credited`, with `source`: `seat` for a seat's own voice, `request` for one the engine offered for the request, `own-choice` otherwise). The voices the engine offered are on `x_business_solo_started` (`voices`). A session that ends before the files are on disk is not a finished run: a headless session dies when its final turn ends, so the worker never leaves background work behind.
 
 ### 14.4 Review, decided by a rule
 

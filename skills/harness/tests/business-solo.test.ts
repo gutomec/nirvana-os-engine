@@ -185,6 +185,24 @@ describe("runBusinessSolo", () => {
     expect(res.launch.appendSystemPrompt).toContain(SOLO_INTAKE_LINE);
   });
 
+  test("each clone the worker declares is credited with where it came from", () => {
+    const events: any[] = [];
+    const hit = { slug: "bencivenga", display_name: "Gary Bencivenga", score: 1, normalized: 1, coverage: { matched: 9, total: 30 }, below_gate: false } as any;
+    runBusinessSolo(baseArgs({
+      emit: (event, payload) => events.push({ event, ...payload }),
+      voiceSearch: () => [hit],
+      cloneLookup: (slug) => slug === "bencivenga" ? { dir: path.join(TMP, "clones", slug), files: [] } : lookup(slug),
+      runWithCascadeImpl: ((_: any) => {
+        fs.writeFileSync(participationFile(PROJECT_DIR), JSON.stringify({ seats: [{ seat: "al-copy" }], clones: ["copy-legend", "bencivenga", "found-it-myself"] }));
+        return { ok: true, runtime: "claude-code", sessionId: null, result: "", costUsd: null, durationMs: 1, finalRuntime: "claude-code", handoffs: [] };
+      }) as any,
+    }));
+    expect(events.find((e) => e.event === "x_business_solo_started").voices).toEqual(["bencivenga"]);
+    expect(events.filter((e) => e.event === "x_clone_credited").map((e) => [e.clone, e.source])).toEqual([
+      ["copy-legend", "seat"], ["bencivenga", "request"], ["found-it-myself", "own-choice"],
+    ]);
+  });
+
   test("a brief file from the orchestrator is pointed at, not copied", () => {
     const briefFile = path.join(TMP, "orchestrator-brief.md");
     write(briefFile, "## Request (verbatim)\nx\n");

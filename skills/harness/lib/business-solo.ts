@@ -347,6 +347,15 @@ export function seatsPlayed(projectDir: string, seats: Seat[]): string[] {
   } catch { return []; }
 }
 
+/** Clones the worker declares it wrote in, from participation.json. */
+export function clonesUsed(projectDir: string): string[] {
+  try {
+    const d = JSON.parse(fs.readFileSync(participationFile(projectDir), "utf8"));
+    const listed = (Array.isArray(d?.clones) ? d.clones : []).map((c: any) => String(typeof c === "string" ? c : c?.clone ?? c?.slug ?? "").trim());
+    return [...new Set(listed.filter(Boolean))] as string[];
+  } catch { return []; }
+}
+
 /** Everything a run needs, written to the run folder: the brief, the squad
  *  cards and the prompt. Shared by the run, the scaffold-only path and the
  *  gauntlet producer, so the three hand the worker the same map. */
@@ -420,6 +429,14 @@ export function runBusinessSolo(args: BusinessSoloArgs): BusinessSoloResult {
   const played = seatsPlayed(args.projectDir, prep.seats);
   for (const seat of played) {
     emit("x_seat_credited", { trace_id: args.projectId, project_id: args.projectId, business_slug: args.slug, employee: seat, evidence: "declared", runtime: finalRuntime });
+  }
+  // Which voices the work was written in, and where each came from: a seat's
+  // own, one the engine offered for the request, or one the worker found.
+  const seatVoices = new Set(prep.seats.flatMap((s) => s.voices.map((v) => v.slug)));
+  const offered = new Set(prep.voices.map((v) => v.slug));
+  for (const clone of clonesUsed(args.projectDir)) {
+    const source = seatVoices.has(clone) ? "seat" : offered.has(clone) ? "request" : "own-choice";
+    emit("x_clone_credited", { trace_id: args.projectId, project_id: args.projectId, business_slug: args.slug, clone, source, evidence: "declared", runtime: finalRuntime });
   }
   if (res.ok) {
     emit("agent_executed", {

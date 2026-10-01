@@ -128,7 +128,7 @@ Then the engine decides on a review by rule (`review.policy`; `review: required`
 nrv audit-tail
 ```
 
-Look for `brief_received`, `dispatch_business`, `x_business_solo_started`, one `x_seat_credited` per seat the worker declared, `agent_executed`, then `gate_passed`. Without those events the run did not happen.
+Look for `brief_received`, `dispatch_business`, `x_business_solo_started`, one `x_seat_credited` per seat and one `x_clone_credited` per clone the worker declared, `agent_executed`, then `gate_passed`. Without those events the run did not happen.
 
 ---
 

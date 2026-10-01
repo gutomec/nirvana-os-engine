@@ -32,7 +32,7 @@ O protocolo do harness tem 8 KB em vez de 57 KB: escolher as empresas, escrever 
 
 ### Um clone listado como fato do produto não é voz pedida; um scaffold diz como rodar
 
-Achado na execução seguinte no Antigravity: o brief listava os dez clones do pack como fatos sobre o produto, e o worker recebeu três motion designers como vozes para escrever copy de venda. Um clone agora só conta como pedido nas palavras do próprio usuário (o "Request (verbatim)" do brief) ou quando o orquestrador o marca como `clone <slug>`; fora isso a busca na biblioteca decide, e se nada servir não há voz. Um dispatch sem `--exec` agora abre os próximos passos com "Nothing ran" e o comando exato para repetir com `--exec`, antes das instruções para colar o prompt à mão.
+Achado na execução seguinte no Antigravity: o brief listava os dez clones do pack como fatos sobre o produto, e o worker recebeu três motion designers como vozes para escrever copy de venda. Um clone agora só conta como pedido nas palavras do próprio usuário (o "Request (verbatim)" do brief) ou quando o orquestrador o marca como `clone <slug>`; fora isso a busca na biblioteca decide, e se nada servir não há voz. Cada clone que o worker declara no `participation.json` agora também vira evento de auditoria (`x_clone_credited`, com `source` `seat`, `request` ou `own-choice`), ao lado das `voices` que o engine ofereceu no `x_business_solo_started`. Um dispatch sem `--exec` agora abre os próximos passos com "Nothing ran" e o comando exato para repetir com `--exec`, antes das instruções para colar o prompt à mão.
 
 ### O worker de uma empresa recebe as vozes que servem ao pedido
 
