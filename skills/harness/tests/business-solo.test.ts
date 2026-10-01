@@ -62,10 +62,18 @@ describe("voices for the request", () => {
     expect(v[0].why).toBe("matches 9/30 of the request's terms");
   });
 
-  test("a clone the brief names wins over the search; a seat's own voice is not repeated", () => {
+  test("a clone the brief asks for wins over the search; a seat's own voice is not repeated", () => {
     const names = [{ slug: "gary-halbert", name: "Gary Halbert" }, { slug: "copy-legend", name: "Copy Legend" }];
     const v = requestVoices("Write it like Gary Halbert would, or copy-legend", seats as any, library, names, () => [hit("other", false)]);
-    expect(v.map((x) => [x.slug, x.why])).toEqual([["gary-halbert", "named in the brief"]]);
+    expect(v.map((x) => [x.slug, x.why])).toEqual([["gary-halbert", "asked for in the brief"]]);
+  });
+
+  test("clones listed as facts about a product are not a request; `clone <slug>` is", () => {
+    const names = [{ slug: "saul-bass", name: "Saul Bass" }, { slug: "paula-scher", name: "Paula Scher" }, { slug: "gary-halbert", name: "Gary Halbert" }];
+    const facts = "## Request (verbatim)\nWrite the sales page for the pack\n\n## Decisions\n- The pack ships 10 clones: Saul Bass, Paula Scher\n";
+    expect(requestVoices(facts, [], library, names, () => [hit("drew-whitman", false)]).map((x) => x.slug)).toEqual(["drew-whitman"]);
+    const marked = facts + "- clone gary-halbert\n";
+    expect(requestVoices(marked, [], library, names, () => []).map((x) => x.slug)).toEqual(["gary-halbert"]);
   });
 
   test("an uninstalled clone is skipped and at most three are offered", () => {

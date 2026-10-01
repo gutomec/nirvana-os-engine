@@ -2056,7 +2056,15 @@ if (wantExec) {
 console.log("");
 console.log(c("lime", "▶") + c("bold", " Step 4/4 — next steps"));
 console.log("");
-console.log(c("cyan", "  Copy the whole prompt and paste it into your runtime:"));
+// An orchestrator that dispatched without --exec reads this block next. Its
+// next step is to run the business, never to paste the prompt into itself and
+// produce the work: the exec line comes first.
+const rerun = ["nrv", "dispatch", ...process.argv.slice(2), "--exec"]
+  .map((a) => (/[\s"'$]/.test(a) ? JSON.stringify(a) : a)).join(" ");
+console.log(c("cyan", "  Nothing ran. To run this business, repeat the command with --exec:"));
+console.log("    " + c("yellow", rerun));
+console.log("");
+console.log(c("cyan", "  To run it by hand in a runtime instead, paste the whole prompt:"));
 console.log("");
 console.log("    " + c("yellow", `cat ${outputPath} | pbcopy        # macOS`));
 console.log("    " + c("yellow", `cat ${outputPath} | xclip         # Linux`));

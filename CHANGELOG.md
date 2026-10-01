@@ -30,6 +30,10 @@ The harness protocol is 8 KB instead of 57 KB: pick the businesses, write each a
 
 `scope.ts` and `paths.js` read the scope from the project manifest (environment, then manifest, then a legacy `.env`, then `global`). `nrv init` creates no `.env`; `--scope` writes the manifest, a `NIRVANA_SCOPE` line in an existing `.env` moves into it, and `--adopt` carries it without touching the `.env`. The Glance config panel reads and writes the manifest. Superseded protocols (Squad v2, v4, v5; Business v1; Harness v1) and stale notes move to `docs/legacy/`, which install never copies.
 
+### A clone listed as a product fact is not a requested voice; a scaffold says how to run
+
+Found on the next Antigravity run: the brief listed the pack's ten clones as facts about the product, and the worker was handed three motion designers as voices for sales copy. A clone now counts as asked for only in the user's own words (the brief's "Request (verbatim)") or when the orchestrator marks it `clone <slug>`; otherwise the library search decides, and nothing that fits means no voice. A dispatch without `--exec` now opens its next steps with "Nothing ran" and the exact command to repeat with `--exec`, before the instructions for pasting the prompt by hand.
+
 ### A business worker gets the voices that fit the request
 
 The retired seat prompt searched the clone library for every task; the solo worker only saw the voices its seats declared, so a business whose seats declare none (`launch-lab-br`) wrote sales copy without one while Gary Bencivenga, John Carlton and Ícaro de Carvalho sat above the search gate. The worker's prompt now has a "Voices for this request" section: the clones the brief names or, when it names none, up to three the library's search ranks above its coverage gate (the rule a squad dispatch already uses), each with its persona files and its folder granted to the run. Nothing is pasted, and a clone a seat already carries is not repeated.

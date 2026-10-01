@@ -210,7 +210,7 @@ function voiceQuery(brief: string): string {
 }
 
 /**
- * Clones that fit this request: the ones the brief names, else the library's
+ * Clones that fit this request: the ones the brief asks for, else the library's
  * search above its coverage gate (the rule squads and the retired seat prompt
  * use). A business whose seats carry no voice still writes in one when the
  * library has a fit. At most `limit`; a clone a seat already carries is not
@@ -229,10 +229,16 @@ export function requestVoices(
     taken.add(slug);
     out.push({ slug, name, why, dir: hit.dir, files: hit.files });
   };
-  const low = brief.toLowerCase();
+  // Asked for, not merely mentioned: a clone in the user's own words, or one the
+  // orchestrator marks as `clone <slug>`. A brief that lists clones as facts
+  // about a product ("the pack ships Saul Bass and Paula Scher") asks for none.
+  const request = (parseWorkBrief(brief).sections["Request (verbatim)"] ?? brief).toLowerCase();
   for (const c of names) {
     const name = c.name.toLowerCase();
-    if (low.includes(c.slug) || low.includes(c.slug.replace(/-/g, " ")) || (name.length > 3 && low.includes(name))) add(c.slug, c.name, "named in the brief");
+    const slug = c.slug.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const inRequest = request.includes(c.slug) || request.includes(c.slug.replace(/-/g, " ")) || (name.length > 3 && request.includes(name));
+    const marked = new RegExp(`(^|[^a-z0-9_-])clones?[\\s:=]+\`?${slug}\`?($|[^a-z0-9_-])`, "i").test(brief);
+    if (inRequest || marked) add(c.slug, c.name, "asked for in the brief");
   }
   if (out.length) return out;
   for (const h of search(voiceQuery(brief))) {

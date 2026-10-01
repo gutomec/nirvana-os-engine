@@ -81,7 +81,9 @@ user's language:
 - **Request (verbatim)**: the user's own words, pasted, unedited.
 - **Decisions**: what the user already decided in the conversation. When
   `nrv find` showed squads that fit the work, name each as `squad <slug>`:
-  the worker gets their cards instead of searching for them.
+  the worker gets their cards instead of searching for them. A voice the user
+  asked for goes in as `clone <slug>`; without one the engine searches the
+  library, and a name listed as a fact about the product is not a request.
 - **Your part**: what this business delivers, and what another one covers.
 - **Inputs**: paths the worker needs (attachments, another business's `_SUMMARY.md`).
 - **Done when**: observable criteria; mark with `(blocking)` the ones the

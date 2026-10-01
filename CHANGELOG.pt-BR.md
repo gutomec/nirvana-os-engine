@@ -30,6 +30,10 @@ O protocolo do harness tem 8 KB em vez de 57 KB: escolher as empresas, escrever 
 
 `scope.ts` e `paths.js` leem o escopo do manifesto do projeto (ambiente, depois manifesto, depois um `.env` legado, depois `global`). O `nrv init` não cria `.env`; `--scope` grava o manifesto, uma linha `NIRVANA_SCOPE` num `.env` existente migra para ele, e `--adopt` a leva sem tocar no `.env`. O painel de configuração do Glance lê e grava o manifesto. Protocolos superados (Squad v2, v4, v5; Business v1; Harness v1) e notas desatualizadas vão para `docs/legacy/`, que a instalação nunca copia.
 
+### Um clone listado como fato do produto não é voz pedida; um scaffold diz como rodar
+
+Achado na execução seguinte no Antigravity: o brief listava os dez clones do pack como fatos sobre o produto, e o worker recebeu três motion designers como vozes para escrever copy de venda. Um clone agora só conta como pedido nas palavras do próprio usuário (o "Request (verbatim)" do brief) ou quando o orquestrador o marca como `clone <slug>`; fora isso a busca na biblioteca decide, e se nada servir não há voz. Um dispatch sem `--exec` agora abre os próximos passos com "Nothing ran" e o comando exato para repetir com `--exec`, antes das instruções para colar o prompt à mão.
+
 ### O worker de uma empresa recebe as vozes que servem ao pedido
 
 O prompt de cargo aposentado buscava na biblioteca de clones a cada tarefa; o worker solo só via as vozes que seus cargos declaravam, então uma empresa cujos cargos não declaram nenhuma (`launch-lab-br`) escreveu copy de venda sem voz enquanto Gary Bencivenga, John Carlton e Ícaro de Carvalho passavam no gate da busca. O prompt do worker agora tem a seção "Voices for this request": os clones que o brief nomeia ou, quando não nomeia nenhum, até três que a busca da biblioteca ranqueia acima do gate de cobertura (a regra que um dispatch de squad já usa), cada um com seus arquivos de persona e a pasta liberada para a execução. Nada é colado, e um clone que um cargo já carrega não se repete.
