@@ -3,8 +3,8 @@
  * init-project.ts — Materialize a Nirvana project skeleton in <target_dir>.
  *
  * Creates:
- *   <target>/.env (global default unless --scope=...)
- *   <target>/.env.example (full reference)
+ *   <target>/.nirvana/project.yaml (identity, scope, orchestration mode)
+ *   <target>/.env.example (environment reference; no .env is created)
  *   <target>/.gitignore
  *   <target>/AGENTS.md, CLAUDE.md, GEMINI.md (universal agent contract)
  *   <target>/.agents/skills/        (canonical, source-of-truth)
@@ -26,7 +26,7 @@
  * Usage:
  *   bun init-project.ts <target_dir>
  *   bun init-project.ts <target_dir> --scope=project
- *   bun init-project.ts <target_dir> --link    (re-link symlinks only, do not overwrite .env)
+ *   bun init-project.ts <target_dir> --link    (re-link skill symlinks only)
  *   bun init-project.ts <target_dir> --copy    (copy files instead of symlink)
  */
 
@@ -145,6 +145,23 @@ function ensureClaudeDenyRules(target: string): boolean {
   return true;
 }
 
+const LEGACY_SCOPE_LINE = /^NIRVANA_SCOPE=\s*["']?(global|project|merge)["']?\s*$/m;
+
+/** The NIRVANA_SCOPE a project's .env declares (the pre-manifest home of the scope), or null. */
+function readLegacyEnvScope(target: string): "global" | "project" | "merge" | null {
+  try { return (LEGACY_SCOPE_LINE.exec(fs.readFileSync(path.join(target, ".env"), "utf8"))?.[1] ?? null) as "global" | "project" | "merge" | null; }
+  catch { return null; }
+}
+
+/** Like readLegacyEnvScope, and removes the line: the manifest holds the scope from now on. */
+function takeLegacyEnvScope(target: string): "global" | "project" | "merge" | null {
+  const value = readLegacyEnvScope(target);
+  if (!value) return null;
+  const envPath = path.join(target, ".env");
+  fs.writeFileSync(envPath, fs.readFileSync(envPath, "utf8").replace(/^NIRVANA_SCOPE=.*\n?/m, ""), "utf8");
+  return value;
+}
+
 function appendWithMarker(src: string, dst: string, marker: string, label = "snippet"): boolean {
   if (!fs.existsSync(src)) {
     log.warn(`snippet missing: ${src}`);
@@ -230,8 +247,8 @@ function printHelp() {
 
 USAGE
   bun init-project.ts <target_dir>                    create project at <target_dir>
-  bun init-project.ts <target_dir> --scope=project    set NIRVANA_SCOPE=project in .env
-  bun init-project.ts <target_dir> --scope=merge      set NIRVANA_SCOPE=merge in .env
+  bun init-project.ts <target_dir> --scope=project    scope in .nirvana/project.yaml: only the project's entities
+  bun init-project.ts <target_dir> --scope=merge      scope in .nirvana/project.yaml: project entities over the global ones
   bun init-project.ts <target_dir> --orchestrators=always     Nirvana is the default orchestrator
   bun init-project.ts <target_dir> --orchestrators=on-demand  Nirvana acts only when explicitly asked
                                    (no flag + existing AGENTS/CLAUDE/GEMINI.md + TTY → you are asked,
@@ -245,14 +262,14 @@ USAGE
   bun init-project.ts -h | --help                     this message
 
 CREATES (default — minimal)
-  <target>/.env                  active config (commit it)
-  <target>/.env.example          full reference of every NIRVANA_* var
+  <target>/.nirvana/project.yaml identity, scope (global | project | merge), orchestration mode
+  <target>/.env.example          environment reference: copy into .env only what you need
   <target>/.gitignore            sensible defaults
   <target>/README.md             quickstart pointer
   <target>/AGENTS.md             universal agent contract (canonical)
   <target>/CLAUDE.md             same content — Claude Code reads this
   <target>/GEMINI.md             same content — Gemini-CLI reads this
-  <target>/.nirvana/             squads/ businesses/ mind-clones/ outputs/
+  <target>/.nirvana/             squads/ businesses/ mind-clones/
 
   Note: by default the project does NOT create .agents/skills/ or per-agent
   symlinks. Every modern agent runtime (Gemini-CLI, Cursor, Codex, OpenCode,
@@ -272,9 +289,9 @@ ADDITIONALLY CREATED with --copy (portable, recipient-friendly)
 
 NEXT STEPS (after init)
   cd <target>
-  $EDITOR .env                                          # pick scope, configure
-  bun ~/.nirvana/skills/squads/scripts/index-squads.ts   # if scope=project, index local
-  bun ~/.nirvana/skills/harness/scripts/glance.ts        # see your project in cockpit
+  nrv config list                                       # settings and where they come from
+  nrv index                                             # if scope=project, index the local entities
+  nrv glance                                            # see your project in the cockpit
 
 WHEN TO USE EACH MODE
   default        → developing on your own machine; HOME has ~/.nirvana/skills
@@ -311,8 +328,11 @@ async function main() {
       process.exit(EXIT.INVALID_ARGS);
     }
     const projectService = new ProjectService();
-    const plan = projectService.planAdoption({ projectRoot: dir });
-    const project = projectService.adopt({ projectRoot: dir }, plan.plan_hash);
+    // The manifest outranks a legacy .env scope, so the one in force is carried
+    // into it; the .env itself stays untouched, as adoption promises.
+    const legacyScope = readLegacyEnvScope(dir);
+    const plan = projectService.planAdoption({ projectRoot: dir, ...(legacyScope ? { scope: legacyScope } : {}) });
+    const project = projectService.adopt({ projectRoot: dir, ...(legacyScope ? { scope: legacyScope } : {}) }, plan.plan_hash);
     log.ok(plan.creates.length
       ? `adopted: wrote ${plan.manifest_path} (${project.project_id}); nothing else was created or changed`
       : `already a Nirvana project: ${plan.manifest_path} (${project.project_id})`);
@@ -353,20 +373,6 @@ async function main() {
   ensureDir(target);
 
   if (!linkOnly) {
-    // The .env is a promised output — the final hint tells the user to edit it
-    // and --scope rewrites it. When the template is missing (one install
-    // shipped without it), the old flow warned, finished "[ok] done" and
-    // pointed the user at a file that did not exist; --scope crashed on the
-    // read. A generic fallback keeps the promise; the warn still names the
-    // missing template so the install can be repaired.
-    if (!copyFile(path.join(TEMPLATE_DIR, ".env"), path.join(target, ".env"), force)
-        && !fs.existsSync(path.join(target, ".env"))) {
-      fs.writeFileSync(path.join(target, ".env"),
-        "# Nirvana project config (generated fallback — template was missing).\n" +
-        "# Full reference: .env.example — scope: global | project | merge\n" +
-        "NIRVANA_SCOPE=global\n", "utf8");
-      log.ok(`wrote ${path.join(target, ".env")} (generated fallback)`);
-    }
     copyFile(path.join(TEMPLATE_DIR, ".env.example"), path.join(target, ".env.example"), true);
     copyFile(path.join(TEMPLATE_DIR, ".gitignore"), path.join(target, ".gitignore"), force);
     copyFile(path.join(TEMPLATE_DIR, "README.md"), path.join(target, "README.md"), force);
@@ -385,7 +391,7 @@ async function main() {
     const writingContractSnippet = path.join(SKILLS_ROOT, "_shared", "templates", "writing-contract-snippet.md");
     const onDemandSnippet = path.join(SKILLS_ROOT, "_shared", "templates", "on-demand-contract-snippet.md");
     const WRITING_CONTRACT_MARKER = "<!-- nirvana-os:writing-contract:v2 -->";
-    const INVOCATION_CONTRACT_MARKER = "<!-- nirvana-os:invocation-contract:v2 -->";
+    const INVOCATION_CONTRACT_MARKER = "<!-- nirvana-os:invocation-contract:v3 -->";
     // Markers of earlier contracts. A project initialised under one of them
     // kept the old text forever: the marker check made init skip the file, so
     // the fix that renamed the entry skill and added the discovery commands
@@ -429,7 +435,7 @@ async function main() {
       return true;
     };
     const refreshInvocationContract = (dst: string) =>
-      refreshManagedBlock(dst, "invocation contract", ["<!-- nirvana-os:invocation-contract:v1 -->"], INVOCATION_CONTRACT_MARKER, agentsTemplate);
+      refreshManagedBlock(dst, "invocation contract", ["<!-- nirvana-os:invocation-contract:v1 -->", "<!-- nirvana-os:invocation-contract:v2 -->"], INVOCATION_CONTRACT_MARKER, agentsTemplate);
     const refreshWritingContract = (dst: string) =>
       refreshManagedBlock(dst, "writing contract", ["<!-- nirvana-os:writing-contract:v1 -->"], WRITING_CONTRACT_MARKER, writingContractSnippet, "Gate flags = build fails. No auto-rewrite.");
     const ON_DEMAND_MARKER = "<!-- nirvana-os:on-demand-contract:v1 -->";
@@ -512,20 +518,6 @@ async function main() {
     // before the folder is trusted, to Read and to the shell alike. A layer,
     // not the guarantee: file ownership and the child-env allowlist are.
     ensureClaudeDenyRules(target);
-
-    if (scope && scope !== "global") {
-      const envPath = path.join(target, ".env");
-      if (!fs.existsSync(envPath)) {
-        // Unreachable while the fallback above holds, but --scope crashing
-        // with a raw ENOENT stack was how the missing template surfaced.
-        log.fail(`cannot set scope: ${envPath} does not exist`);
-        process.exit(EXIT.FAILURES);
-      }
-      let env = fs.readFileSync(envPath, "utf8");
-      env = env.replace(/^NIRVANA_SCOPE=.*$/m, `NIRVANA_SCOPE=${scope}`);
-      fs.writeFileSync(envPath, env);
-      log.ok(`set NIRVANA_SCOPE=${scope} in .env`);
-    }
   }
 
   // Canonical source-of-truth dir — OPT-IN ONLY.
@@ -633,12 +625,19 @@ async function main() {
   copyFile(path.join(TEMPLATE_DIR, ".nirvana", "README.md"), path.join(target, ".nirvana", "README.md"), force);
   if (!linkOnly) {
     const projectService = new ProjectService();
-    const project = projectService.create({
+    // A project created before the manifest kept its scope in .env. The value
+    // in force moves into the manifest (an explicit --scope wins) and the line
+    // leaves the .env, so the scope lives in one place.
+    const legacyScope = takeLegacyEnvScope(target);
+    const wanted = (scope || legacyScope) as "global" | "project" | "merge" | null;
+    let project = projectService.create({
       projectRoot: target,
-      scope: (scope as "global" | "project" | "merge" | null) || "global",
+      scope: wanted || "global",
       orchestrationMode: orchestrators as "always" | "on-demand",
     });
-    log.ok(`project manifest: ${path.join(target, ".nirvana", "project.yaml")} (${project.project_id})`);
+    if (wanted && project.scope !== wanted) project = projectService.setScope(target, wanted);
+    if (legacyScope) log.ok(`moved NIRVANA_SCOPE=${legacyScope} from .env into .nirvana/project.yaml`);
+    log.ok(`project manifest: ${path.join(target, ".nirvana", "project.yaml")} (${project.project_id}, scope ${project.scope})`);
   }
 
   // Per-agent symlinks (or copies) — only when withSkills is on.
@@ -668,7 +667,7 @@ async function main() {
     log.ok(`done. project relies on the user's $HOME skills (~/.nirvana/skills).`);
     log.info(`Pass --with-skills (or --copy) to embed a local copy when the project may be opened from another HOME (deliveries, CI, recipients without ~/.nirvana/skills).`);
   }
-  log.info(`Next: $EDITOR ${path.join(target, ".env")}  →  pick scope, then drop skills/squads in.`);
+  log.info(`Next: the scope lives in ${path.join(target, ".nirvana", "project.yaml")} (\`nrv init --scope=<global|project|merge>\`); settings: \`nrv config list\`.`);
   // Verify hooks are installed in the user's agent settings.
   try {
     const result = require("node:child_process").spawnSync("bun", [path.join(SKILLS_ROOT, "_shared", "scripts", "install.ts"), "--check"], { windowsHide: true, encoding: "utf8" });

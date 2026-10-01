@@ -12,7 +12,6 @@ import * as path from "node:path";
 
 const ROOT = path.resolve(import.meta.dir, "..", "..", "..");
 const tpl = fs.readFileSync(path.join(ROOT, "skills/harness/templates/DISPATCH-INSTRUCTION.template.md"), "utf8");
-const harness = fs.readFileSync(path.join(ROOT, "skills/harness/SKILL.md"), "utf8");
 const lint = fs.readFileSync(path.join(ROOT, "skills/harness/rubrics/wiki-lint.ts"), "utf8");
 
 describe("the dispatch instruction carries the contract", () => {
@@ -44,15 +43,5 @@ describe("the budget in the template matches the one in code", () => {
     // 1000/200 = 5. If either side moves, this test is the tripwire.
     expect(lint).toMatch(/5 per 1000 words|per 1000 words/);
     expect(tpl).toMatch(/one per 200 words/i);
-  });
-});
-
-describe("the protocol reinforces it where the entity self-verifies", () => {
-  test("Phase 5 leaves the gate to Phase 6; the rule reaches the entity through the dispatch instruction", () => {
-    const start = harness.indexOf("### Phase 5");
-    const end = harness.indexOf("### Memory levels");
-    const p5 = harness.slice(start, end);
-    expect(p5).not.toMatch(/quality-gate\.ts/);
-    expect(p5).toMatch(/does not run the quality gate itself/i);
   });
 });

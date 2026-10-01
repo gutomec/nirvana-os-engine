@@ -33,14 +33,14 @@ bun ~/.nirvana/skills/squads/scripts/list-squads.ts   # auto-bootstrap registry
 
 ---
 
-## Project scoping (NIRVANA_SCOPE)
+## Project scoping
 
-Squads can be **global** (visible to every project), **project-local** (visible only inside one project), or **merged** (project overrides global by slug). Set `NIRVANA_SCOPE` in `<project>/.env`:
+Squads can be **global** (visible to every project), **project-local** (visible only inside one project), or **merged** (project overrides global by slug). The mode is `scope` in `<project>/.nirvana/project.yaml`, set with `nrv init --scope=<mode>`:
 
-```bash
-NIRVANA_SCOPE=global   # ~/squads/* only — default, full backward compat
-NIRVANA_SCOPE=project  # <project>/.nirvana/squads/* only
-NIRVANA_SCOPE=merge    # both, project overrides global on slug clash
+```
+global   # ~/squads/* only (default)
+project  # <project>/.nirvana/squads/* only
+merge    # both, project overrides global on slug clash
 ```
 
 Project-local squads live at `<project>/.nirvana/squads/<slug>/` with the same v5 layout (`squad.yaml` + `agents/` + `tasks/` + `workflows/` + `dependencies.yaml`). The squad registry, activation state, and logs persist under `<project>/.nirvana/` (never `$HOME`) so two projects on the same machine never collide.

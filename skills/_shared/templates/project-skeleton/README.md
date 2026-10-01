@@ -1,67 +1,35 @@
-# Nirvana Project Skeleton
+# Nirvana project
 
-This is what every Nirvana-scoped project looks like.
+Created by `nrv init`. Any agent runtime that opens this folder reads
+`AGENTS.md` (or its copies `CLAUDE.md` and `GEMINI.md`) first.
 
-> 📖 **Quer entender como project se relaciona com global?** Veja **[../../STRUCTURE.md](../../STRUCTURE.md)** — diagrama lado-a-lado, tabela de paths e os 3 scope modes.
+## What is here
 
-## Layout
+| Path | What it is |
+|---|---|
+| `AGENTS.md`, `CLAUDE.md`, `GEMINI.md` | the contract every agent reads |
+| `.nirvana/project.yaml` | the project's identity and its scope |
+| `.env.example` | the environment variables a project may set; `nrv init` creates no `.env` |
+| `.nirvana/config.yaml` | engine settings for this project, written by `nrv config set` |
+| `.nirvana/briefs/` | the briefs the orchestrator writes, one per business |
+| `outputs/<run>/` | what each run delivered, with its audit trail |
 
-```
-<project>/
-├── .env                  # active config (this project's scope + paths)
-├── .env.example          # full reference of every configurable variable
-├── .gitignore
-├── .agents/skills/       # ← canonical source-of-truth for skill files
-├── .claude/skills        # → symlink to .agents/skills (claude-code reads here)
-├── .continue/skills      # → symlink to .agents/skills
-├── .windsurf/skills      # → symlink to .agents/skills
-├── .goose/skills         # → symlink to .agents/skills
-├── .kilocode/skills      # → symlink to .agents/skills
-├── .roo/skills           # → symlink to .agents/skills
-├── .openhands/skills     # → symlink to .agents/skills
-├── .qwen/skills          # → symlink to .agents/skills
-├── .aider-desk/skills    # → symlink to .agents/skills
-└── .nirvana/             # project-scoped data (not skills)
-    ├── squads/
-    ├── businesses/
-    └── mind-clones/
-```
+## Use it
 
-## Why this layout
-
-- **`.agents/skills/`** is the universal convention from `skills.sh` (`vercel-labs/skills`). 15+ agents read directly from there: Antigravity, Codex, Cursor, GitHub Copilot, OpenCode, Cline, Replit, Warp, Amp, Gemini CLI, Deep Agents, Firebender, Dexto, Kimi CLI, plus the `universal` profile.
-- **Per-agent directories** (`.claude/skills`, `.continue/skills`, etc.) are required by tools that don't use the universal location. They are **symlinks** to `.agents/skills/`, so a single edit propagates everywhere — exactly the same `--copy=false` pattern that `npx skills add` defaults to.
-- **`.nirvana/`** is a separate concept from skills. It holds squads/businesses/mind-clones — the **data** that the orchestration skills *operate on*. Setting `NIRVANA_SCOPE=project` in `.env` makes this project blind to anything outside `.nirvana/`.
-
-## Quick start
+Ask your agent for what you need; for a concrete deliverable it invokes the
+Nirvana harness, which picks the businesses and dispatches them.
 
 ```bash
-# 1. Edit .env to choose scope (default: global)
-$EDITOR .env
-
-# 2. Materialize symlinks for every agent (idempotent)
-bun ~/.nirvana/skills/_shared/scripts/init-project.ts --link
-
-# 3. Install or copy specific skills into .agents/skills/
-#    Either via skills.sh:
-npx skills add vercel-labs/agent-skills --skill frontend-design
-#    Or by copying from your global ~/.nirvana/skills/:
-cp -R ~/.nirvana/skills/businesses .agents/skills/
-
-# 4. (Optional) seed .nirvana/ with project-scoped squads
-mkdir -p .nirvana/squads/<slug>
-# ...author squad.yaml + agents/ etc.
-
-# 5. Verify
-bun ~/.nirvana/skills/_shared/lib/scope.ts --explain
+nrv config list                            # settings and where they come from
+nrv config set execution.profile economy   # max | balanced | economy
+nrv list-businesses                        # the library this project sees
+nrv audit-view <run>                       # what a run did
 ```
 
-## Three scope modes (set in `.env`)
+## Scope (`scope` in `.nirvana/project.yaml`, set with `nrv init --scope=<mode>`)
 
-| `NIRVANA_SCOPE` | Sees ~/squads | Sees `.nirvana/squads` | Override on slug clash |
-|---|---|---|---|
-| `global`  | ✅ | ❌ | n/a |
-| `project` | ❌ | ✅ | n/a |
-| `merge`   | ✅ | ✅ | project wins |
-
-See `.env.example` for the full configuration surface (paths, API keys, runtime flags, agent overrides, Stage 6.5 / DAG toggles).
+| Value | Sees `~/squads`, `~/businesses` | Sees `.nirvana/squads`, `.nirvana/businesses` |
+|---|---|---|
+| `global` (default) | yes | no |
+| `project` | no | yes |
+| `merge` | yes | yes, and they win on a slug clash |

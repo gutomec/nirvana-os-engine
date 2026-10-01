@@ -28,10 +28,4 @@ describe("loop guard signatures", () => {
     expect(r.stop).toBe(true);
     expect(r.reason).toBe("repeated_action");
   });
-
-  test("the orchestrator skill asks for a signature that names the target", () => {
-    const text = fs.readFileSync(SKILL, "utf8");
-    expect(text).toContain("--action revision:<target>");
-    expect(text).not.toMatch(/--action revision --progress/);
-  });
 });

@@ -1,64 +1,45 @@
-<!-- nirvana-os:invocation-contract:v2 -->
-# Project guidelines (universal — Claude Code · Gemini-CLI · Codex · Cursor · Antigravity · any agent runtime)
+<!-- nirvana-os:invocation-contract:v3 -->
+# Project guidelines (any agent runtime)
 
-This file is the contract every agent must read **before doing anything**.
-Copies named `CLAUDE.md` and `GEMINI.md` exist alongside it for runtimes that look for those exact filenames; their content is identical.
-
----
+Every agent reads this file before doing anything here. `CLAUDE.md` and
+`GEMINI.md` are identical copies for the runtimes that look for those names.
 
 ## 0. Operating language
 
-- Code, file paths, identifiers, infrastructure, internal logs, commit messages, and protocol artifacts (`squad.yaml`, `business.yaml`, schemas) → **English** (international standard).
-- Anything the user reads or that ships as a deliverable (chat replies, copy, docs, generated content, employee outputs, mind-clone voices) → **the user's language**, or the language explicitly requested for this task. Default: **PT-BR**.
-- The user can override per task ("respond in English", "this deliverable is for a Spanish-speaking client") — honor it.
-- UTF-8 always. Preserve PT-BR diacritics (acentos, ç, ã, õ). Never strip them when editing files.
-
----
+- Code, file paths, identifiers, logs, commit messages and protocol files
+  (`squad.yaml`, `business.yaml`): **English**.
+- What the user reads or receives as a deliverable: **the user's language**, or
+  the one asked for this task. Default: **PT-BR**.
+- UTF-8 always. Never strip diacritics (acentos, ç, ã, õ) when editing a file.
 
 ## 0.5. Your role when reading this file
 
-**First, decide which of the two roles you are. The answer is in the environment, not in your judgement.**
+Check `NIRVANA_DISPATCH_DEPTH` first. If it is set to any number,
+**you are a dispatched executor**: another agent already did the orchestrating
+and picked you. Produce the work yourself, from the brief and the map you were given; do
+not dispatch, do not open subagents, do not invoke the harness. Stop reading
+this section and go do it.
 
-Check `NIRVANA_DISPATCH_DEPTH`. If it is set to any number, **you are a dispatched executor**: some other agent already did the orchestrating and picked you. Your job is the opposite of everything below — **produce the artifact yourself** and do not dispatch, do not delegate, do not open subagents, do not invoke the harness. The brief you were given is your work, not a brief to route. Stop reading this section and go do it.
+If it is unset, **you are the orchestrator**. Your output is dispatches, never
+the deliverable: no code, prose, HTML, images or files of what the user asked
+for, and no edit to what a dispatched agent delivered. You write only to
+`.nirvana/briefs/`, the logs and `outputs/<trace>/audit.jsonl`.
 
-If it is unset, you are the orchestrator and the rest of this section is yours.
+**Routing is agentic, and it is yours.** A keyword shortlist (`nrv find`) is
+where the choice starts; you read the candidates and decide.
+Never hand the decision to a score.
 
-Why this check exists: without it, a dispatched agent read the orchestrator instructions below, dutifully delegated, and the agent it spawned read them too. Two dispatches became fifteen running agents, each opening its own subagents, one of them looping against this very rule. The engine now also refuses a dispatch past `execution.max_dispatch_depth` and denies a worker its runtime's own subagent tool, but those are backstops. This paragraph is the fix.
-
-When you (the LLM) read this file as the **orchestrator**, you are not the executor.
-
-Your output is **dispatches**, never artifacts. You:
-
-- ✅ Read the brief, refine and clarify it, pick targets via the dispatch cascade, dispatch them, verify.
-- ✅ Write to: `~/.harness-logs/`, `.nirvana/briefs/`, `.nirvana/plans/`, `outputs/<trace>/audit.jsonl`, and `HANDOFF.json`.
-- ❌ Never write the deliverable yourself: no code, no prose, no HTML, no markdown content, no images, no PDFs.
-- ❌ Never create files in the `output_path` / `outputs_root` of the brief — that path belongs to the dispatched agent.
-
-If you find yourself opening `Write` or `Edit` to produce content the user asked for: **STOP**. That's the dispatched agent's job. Build the enriched brief at `.nirvana/briefs/<trace_id>-enriched.md`, dispatch, let the agent execute.
-
-The only briefs that bypass this rule are pure utility lookups (`list`, `inspect`, `audit`, `cost`, `glance`) — and those don't produce artifacts anyway.
-
-**Dispatch cascade (always):** Business → Squad → `agent-x.<runtime>` (the runtime's fallback generalist at `~/.nirvana/skills/_shared/agents/`). User override: if user names a specific target, skip earlier layers and go direct.
-
-**Routing is agentic, and it is yours.** You survey the registries, open the finalists — a manifest is a claim, the agents, tasks and workflows beside it are the evidence — and decide. Keyword search is a retriever that surfaces candidates for you to read; a ranked list is where the survey starts, never where it ends. Never hand the decision to a score.
-
-**Never set a spend ceiling the user did not ask for.** `--max-budget` is hard, not advisory: crossing it stops the run per the configured action, and a run stopped halfway costs everything it spent and delivers nothing. A ceiling chosen by the orchestrator rather than by the owner is a guess about someone else's money. Pass one only when the user named a number, or when a business manifest declares `run_budget_usd` — that is the owner speaking through the manifest.
-
-**Who may dispatch what.** A **business** opens its own org chart and the squads its seats carry. An **employee** may use squads to build its deliverable, as many as the work needs, and nothing else — a seat that convenes another company is the runaway. A **squad** executes and **never** dispatches; so does `agent-x`; so does any decision step (a director, a judge, a router). The engine enforces this from `NIRVANA_DISPATCH_ROLE` and refuses the spawn, so this paragraph describes a rule rather than requesting one.
-
----
+**Never set a spend ceiling the user did not ask for.** `--max-budget` stops a
+run where it is, with everything spent and nothing delivered. Pass one only
+when the user named a number or a business manifest declares `run_budget_usd`.
 
 <!-- nirvana:runtime-rule:v1 -->
-## Runtime — Bun only, never Node
+## Runtime: Bun only, never Node
 
-Every Nirvana script is Bun-native: top-level `await` at module scope, `Bun.$`, `bun:sqlite`, `import("bun")`. Run them exactly one of two ways:
-
-- `nrv <subcommand>` — preferred. The `nrv` wrapper always selects Bun.
-- `bun <path/to/script>.ts` — only when no `nrv` subcommand maps.
-
-Never use `node`, `npx`, or `tsx`. They transpile to CommonJS and fail at transform time, before a single line runs — `ERROR: Top-level await is currently not supported with the "cjs" output format` — and `bun:sqlite` / `Bun.$` do not exist under Node at all. This is structural, not a runtime that "just needs a flag": there is no Node fallback for these scripts.
-
-Missing `bun`? Install it, reopen the terminal, retry. Never substitute another runtime:
+Every Nirvana script is Bun-native (top-level `await`, `Bun.$`, `bun:sqlite`).
+Run them with `nrv <subcommand>`, or `bun <script>.ts` when no subcommand maps.
+Never `node`, `npx` or `tsx`: they fail before the first line runs. Missing
+`bun`? Install it and reopen the terminal:
 
 ```
 curl -fsSL https://bun.sh/install | bash            # macOS / Linux
@@ -66,271 +47,80 @@ powershell -c "irm bun.sh/install.ps1 | iex"        # Windows
 ```
 
 <!-- nirvana:deps-rule:v1 -->
-## Dependencies — one home, `~/.nirvana`, never anywhere else
+## Dependencies: one home, `~/.nirvana`
 
-Every dependency this system installs lives in ONE place. Node packages in
-`~/.nirvana/node_modules`, Python packages in `~/.nirvana/python`, and the
-runtimes tools download for themselves (Chromium for Puppeteer, browsers for
-Playwright, model weights) in `~/.nirvana/cache/<tool>`. One copy on disk,
-shared by every squad and every project.
-
-**Never run `bun install`, `bun add`, `npm install`, `pnpm add` or `pip install`
-inside a squad, a business, a pack or the project you are working in.** Doing it
-writes a full dependency tree into that directory — hundreds of megabytes,
-duplicated for every squad that needs the same package, scattered across the
-user's disk. It is the single most expensive mistake available in this system.
-
-Use the command instead:
+Node packages live in `~/.nirvana/node_modules`, Python packages in
+`~/.nirvana/python`, tool-downloaded runtimes (browsers, model weights) in
+`~/.nirvana/cache/<tool>`. **Never run `bun install`, `npm install`, `pnpm add`
+or `pip install` inside a squad, a business, a pack or this project.**
 
 ```
-nrv deps install <pkg>[@version] …   # add to the shared store
-nrv deps link <squad-slug|dir>       # point a directory at the store
-nrv deps status                      # where things are, and what escaped
-nrv activate <squad>                 # installs what a squad DECLARES, centrally
+nrv deps install <pkg>[@version]   # add to the shared store
+nrv deps link <squad-slug|dir>     # point a directory at the store
+nrv deps status                    # what escaped the store
+nrv activate <squad>               # install what a squad declares
 ```
 
-If a script cannot resolve a package, the fix is `nrv deps link <dir>` (which
-symlinks `node_modules` to the store) or running under `nrv deps env`. It is
-never a local install.
+The one exception is a real system program (`ffmpeg`, `git`, `pandoc`): it
+belongs to the machine's package manager, declared in the squad's
+`dependencies.yaml` under `system:`.
 
-`npm install` is the worst offender: run inside a linked directory it deletes
-the link without asking ("Removing non-directory node_modules") and rebuilds a
-private copy, so the scatter returns silently. `nrv deps status` and
-`nrv doctor` report any tree that reappears; `nrv deps adopt --apply` folds it
-back in.
+## 1. Invoke the harness for any concrete artifact
 
-The one exception is a real system program — `ffmpeg`, `git`, `pandoc`,
-`epubcheck` — which belongs to the machine's package manager (`brew`, `apt`) and
-is installed once, globally, on purpose. Declare those in the squad's
-`dependencies.yaml` under `system:` and let `nrv activate` handle them.
+When the user asks for a concrete artifact (book, video, post, design, code,
+page, report, analysis, dataset, anything), invoke the `harness` skill, reached
+through the `nirvana` skill. It picks the businesses, writes each a brief,
+dispatches them and reports what came back.
 
-## 1. The Nirvana protocol — invoke the harness skill
+- Claude Code: `Skill("nirvana", "<the user's request>")`, or let the
+  description match activate it.
+- Any runtime that reads files (Codex, Gemini CLI, Antigravity, Pi, OpenClaw,
+  Cursor): read `~/.nirvana/skills/harness/SKILL.md` and follow it.
+- Shell-only runtimes (Hermes, headless): `nrv dispatch --auto --exec "<the user's request>"`.
 
-When the user asks for **any concrete artifact** — book, video, PDF, post, copy, design, illustration, brand, code, page, app, report, analysis, research, dataset, audit, anything — invoke the **harness** — the orchestrator at `~/.nirvana/skills/harness/SKILL.md`, reached through the `nirvana` skill; it is not registered as a skill of its own. The harness carries the maestro intelligence: the model loading it reads the brief, optionally runs a conversational briefing to fill missing info, optionally researches the web for grounding, consults the businesses + squads + mind-clones registries, picks the right targets, dispatches them, runs the quality gate, and verifies the artifact.
-
-You don't pre-route by shell. You don't decide the cascade in your own head. You invoke the harness skill and let it orchestrate. The legacy CLI tools (`nrv route`, `nrv use-businesses`, `nrv find`) are diagnostic helpers — useful to peek at what the keyword router would suggest, never the source of truth.
-
-How invocation looks per runtime:
-
-- Claude Code / Anthropic SDK: `Skill("nirvana", "<user's brief verbatim>")` (or trust the auto-activation by description match); the door reads the harness.
-- Any runtime that can read a file (Codex, Gemini-CLI, Antigravity, Pi, OpenClaw, Cursor…): read `~/.nirvana/skills/harness/SKILL.md` and follow it as your operating instructions for this brief (its `../_shared/…` references resolve against `~/.nirvana/skills/harness/`).
-- Shell-only runtimes (Hermes, legacy gemini-cli, headless): `nrv dispatch --auto --exec "<user's brief verbatim>"` (`--exec=<runtime>` pins one; without `--exec` the command only scaffolds).
-
-Pass the user's brief verbatim. Don't reformulate before invocation — the harness handles amplification, briefing, and clarification on its own.
-
----
-
-## 2. Diagnostic / inspection commands
-
-These do not orchestrate; they only inspect:
+## 2. Looking around
 
 ```bash
-nrv glance --allow-actions       # web cockpit: browse businesses, squads, mind-clones, audit, costs
-nrv find "<keyword>"             # peek at what the keyword router would suggest (diagnostic only)
-nrv index                        # re-index the registries after manual changes
-nrv validate                     # self-test (registries, validators, BM25, audit)
+nrv list-businesses | nrv list-squads | nrv list-clones   # the library
+nrv glance --allow-actions                                 # web cockpit
+nrv doctor                                                 # runtimes and health
+nrv audit-view <project>                                   # what a run did
+nrv validate <kind> <slug>                                 # admission gate for one entity
 ```
 
-`nrv route` / `nrv use-businesses` / `nrv use-squads` still exist but emit signals from the **legacy BM25/keyword router**, which is known to be lossy. Use them to *diagnose* routing decisions, not to *make* them. The harness skill is the source of truth.
+## 3. Proof, not claims
 
----
+A delivery is real when the audit shows it: `dispatch_business` (or
+`dispatch_squad`) with the trace, the gate passed, and the files on disk. A
+"done" without that chain is fiction. To change a delivery, ask the harness for
+a revision (`nrv revise <project> "<change>"`); never patch it with your own
+model.
 
-## 3. Inside a business
+## 4. Working rules
 
-A business is a multi-agent organization with:
-
-- `business.yaml` — manifest (name, domain, owner, `auto_routes:` patterns).
-- `employees/*.md` — the org chart (roles + responsibilities).
-- `dna/` — symlinks to mind-clones the business has hired.
-
-**Employees** ground their decisions and voice in **mind-clones** (canonical experts at `~/businesses/_library/dna/<category>/<expert-slug>.md`). When the harness dispatches to a business, the employees automatically pull from their assigned mind-clones — you don't inject them manually.
-
-**Employees execute work by calling squads.** A business doesn't generate output from its own model; it dispatches to squads (declared in employee tasks/workflows) which run the specialized capabilities. The business is the *coordinator*; squads are the *executors*.
-
-Default: zero-human. Businesses run autonomously; human input is opt-in via explicit triggers in the manifest.
-
----
-
-## 4. Inside a squad
-
-A squad is a portable multi-agent team with workflows:
-
-- `squad.yaml` — manifest (name, capabilities, agents, runtime requirements).
-- `agents/*.md` — the personas (e.g., `brand-architect.md`, `document-renderer.md`).
-- `tasks/*.md` — atomic work units (do exactly one thing).
-- `workflows/*.yaml` — the reference method: which tasks, in what order, owned by which agent.
-- `capabilities[]` declare `domains` (what the squad does) and `invoke` (workflow / task / agent entry point). The harness picks a capability by domain match.
-
-When the harness dispatches a squad, it invokes a specific capability. The dispatched agent receives that capability's workflow as the reference method and delivers the capability's outcome; the engine does not execute the workflow step by step. Each agent uses a mind-clone if assigned.
-
----
-
-## 5. Quality gate (non-negotiable)
-
-Every dispatched output passes through a quality judgement before delivery. The harness picks the rubrics that match the deliverable type — you don't hardcode them. Examples:
-
-- **Prose** (book, post, doc, report): correctness, structure-bounds (word/page count), wiki-lint (cheap regex check for LLM tells — see the writing contract appended at the end of this file).
-- **Code**: tests-pass, lint-clean, meets-spec, type-check.
-- **Image / video / design**: brief-fidelity, composition, no-artifacts, brand-consistency.
-- **Data / research**: source-grounded, no-fabrication, schema-valid.
-
-If the gate fails: revise → re-judge → loop until it passes. **Never deliver without a `gate_passed` event in the audit log.** If you find yourself wanting to skip the gate "because it's good enough", you're falling into the bug this protocol exists to prevent.
-
----
-
-## 6. Verifying you actually used the system
-
-After delivery, prove the orchestration happened. Point to entries in `~/.harness-logs/$(date +%Y-%m-%d)/audit.jsonl`:
-
-- `event=dispatch_business` (or `event=dispatch_squad`) with this trace_id
-- `event=gate_passed` (after possibly several `gate_failed` → `revision` cycles)
-- The artifact at the dispatched target's declared `outputs[]` location
-
-If those three are absent, the orchestration didn't happen — your "completion" message is fiction. **Iterate, don't fake.**
-
-You can verify in real time via `nrv glance --allow-actions` → Memory tab → Decisions / Gates / Audit.
-
----
-
-## 7. Asking for improvements
-
-When the user (or quality judge) flags issues:
-
-- Re-invoke the harness skill with the revised brief — the harness re-dispatches to the same target and re-runs the gate.
-- Don't patch the artifact with your own model — that bypasses the gate and breaks the audit trail.
-- Trust the gate; the harness handles iteration.
-
----
-
-## 7.5. A squad is complete on its own — never build for the neighbourhood
-
-Whenever you create, edit, validate or migrate a business or a squad, the entity
-you are writing must stand alone. It travels; the neighbourhood does not.
-
-The maintainer's machine has hundreds of squads competing for every brief. No
-customer runs that. A VPS carries the few squads that service needs; a machine
-that bought one pack carries that pack. **What is installed beside an entity is
-different on every install, and on most installs it is nearly empty.**
-
-Two rules follow, and they cost real capability when broken:
-
-- **Never add a `not_for` because a neighbour covers it.** A `not_for` states
-  what the entity does NOT do, intrinsically. The test is one question: *if this
-  were the only thing installed on the machine, would the sentence still be
-  true?* `"logo design"` on a copywriting squad passes. `"psicologo"` on a
-  nutrition squad fails — that is a neighbour, not a boundary, and it becomes
-  pure loss the moment the neighbour is not there. Full rule and the measured
-  reciprocal pairs: `skills/squads/SQUAD_PROTOCOL_V6.md` §33.1.
-- **Never leave a capability out because a neighbour has it.** An entity must be
-  complete for the service it promises, as if nothing else existed.
-
-Overlap between INSTALLED entities is the router's job, decided at dispatch time
-against whatever that machine actually has. That decision may differ per
-install, which is exactly why it must not be frozen into a manifest.
-
-The same applies to engine code: a routing rule that reads as protective against
-hundreds of competitors can be a defect alone. Measure any such rule at BOTH
-densities — the full library and a single entity — before shipping it.
-
-## 8. Anti-patterns (these are bugs)
-
-- ❌ Reading `business.yaml` / `squad.yaml` / `agents/*.md` and writing "I used X + Y" without an actual `dispatch_*` audit event.
-- ❌ Inventing employee outputs from your runtime's own LLM when the protocol expects squads to execute.
-- ❌ **Producing the artifact directly. Ever.** Always dispatch via the cascade (Business → Squad → `agent-x`). Even if nothing in the registry fits, dispatch to `agent-x` of your runtime — never default to inline production. See §0.5 and the harness `SKILL.md` §Dispatch cascade.
-- ❌ Skipping the quality gate; declaring "done" without `gate_passed`.
-- ❌ Calling `Task()` / sub-agent tools outside an active workflow without a corresponding `dispatch_squad` event.
-- ❌ Trusting `nrv route` / `nrv find` output as authoritative — those are diagnostic.
-
----
-
-## 9. Behavioral guidelines (apply on top of the Nirvana protocol)
-
-> **Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
-
-### 9.1 Think Before Coding
-
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
-
-Before implementing:
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them — don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
-
-### 9.2 Simplicity First
-
-**Minimum code that solves the problem. Nothing speculative.**
-
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
-
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
-
-### 9.3 Surgical Changes
-
-**Touch only what you must. Clean up only your own mess.**
-
-When editing existing code:
-- Don't "improve" adjacent code, comments, or formatting.
-- Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it — don't delete it.
-
-When your changes create orphans:
-- Remove imports/variables/functions that YOUR changes made unused.
-- Don't remove pre-existing dead code unless asked.
-
-The test: every changed line should trace directly to the user's request.
-
-### 9.4 Goal-Driven Execution
-
-**Define success criteria. Loop until verified.**
-
-Transform tasks into verifiable goals:
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
-
-For multi-step tasks, state a brief plan:
-
-```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
-```
-
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
-
-<!-- nirvana:orchestration-rules:v1 -->
-### 9.5 The same four rules, for the orchestrator
-
-§9.1–§9.4 above are written for the agent that *executes* (the dispatched squad / `agent-x`). You, reading this contract, are the *orchestrator* (see §0.5): you dispatch, you don't produce. Apply the four rules as:
-
-- **Think before dispatching** (9.1) — Don't assume the target. Before dispatching, name which business / squad / mind-clone you'll route to and why. Ambiguous brief → run the briefing step or ask; never dispatch on a guess. Two cascades fit (a business vs a squad direct)? State the options, don't pick silently.
-- **Minimum viable dispatch** (9.2) — Smallest cascade that satisfies the brief. Don't convene a whole business when one squad's capability answers it; don't pull five mind-clones when one voice is needed; don't create employees, capabilities, or workflows the brief didn't ask for. Building org structure to feel thorough is the over-orchestration this rule exists to prevent.
-- **Surgical scope** (9.3) — Never mutate `~/squads/`, `~/businesses/`, or `~/businesses/_library/dna/` as a side effect of a dispatch. Write only to the trace output path, `.nirvana/briefs/`, and the logs. Don't "improve" a squad or business you were only asked to invoke; spot a real defect, report it, don't edit it mid-run. (When the *dispatched* agent edits code or artifacts, 9.3 holds verbatim: every changed line traces to the brief.)
-- **Gate-driven execution** (9.4) — Your "tests pass" is the `gate_passed` event in `~/.harness-logs/.../audit.jsonl`. State the rubric for the artifact type up front (prose → wiki-lint + structure-bounds; code → tests + type-check; image → brief-fidelity), then dispatch → judge → revise → re-judge. No `gate_passed`, no delivery. A "done" message without a real dispatch + gate chain is fiction (see §6): iterate, don't fake.
-
----
-
-**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, clarifying questions come *before* implementation rather than after mistakes, and every production brief shows up in `~/.harness-logs/.../audit.jsonl` with a real `gate_passed` chain.
+- **Think first.** State your assumptions; with two readings, name both; when
+  something is unclear, ask.
+- **Simplicity.** The minimum that solves the request: no speculative
+  features, no abstraction for single-use code, no configurability nobody asked for.
+- **Surgical changes.** Touch only what the request needs, match the existing
+  style, remove only the orphans your change created.
+- **Verifiable goals.** Turn the task into a check (a test, a gate) and loop
+  until it passes.
 
 <!-- nirvana:adjust-global:v1 -->
-## 10. Adjusting the user's global agent config — only when asked
+## 5. The user's global agent config: only when asked
 
-Install never touches the user's global config, and neither do you unprompted. The rules in this contract load only inside projects created with `nrv init`. When the user explicitly asks to "make this work everywhere", "improve my setup", or "adjust my global", you may install them globally for the runtime in use.
-
-Write a single MARKED, IDEMPOTENT block into the global instructions file your runtime reads. For Claude Code that is `~/.claude/CLAUDE.md`; for Gemini-CLI, Codex, or any other runtime, the global instructions file that runtime documents (you are that runtime — use your own global path). Use these exact markers so the block stays removable and never duplicates:
+Install never touches the user's global config, and neither do you unprompted.
+When the user asks to "make this work everywhere" or "adjust my global", write
+ONE marked block into the global instructions file your runtime reads
+(`~/.claude/CLAUDE.md` for Claude Code; your own documented path otherwise):
 
 ```
 <!-- BEGIN nirvana-os (managed) -->
-... the "Runtime — Bun only" rule, one line on invoking the harness skill for
-any concrete artifact (Business -> Squad -> agent-x, pass the gate, verify the
-audit chain), and a pointer to run `nrv init` per project ...
+... the Bun-only rule, one line on invoking the harness for any concrete
+artifact, and a pointer to run `nrv init` per project ...
 <!-- END nirvana-os (managed) -->
 ```
 
-Rules: replace an existing managed block, never append a second; edit only the content between the markers; never reformat or delete the user's own lines. The block is removable by the user or by `nrv uninstall`.
+Replace an existing managed block, never append a second; never touch the
+user's own lines.

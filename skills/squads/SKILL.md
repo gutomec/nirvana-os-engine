@@ -69,19 +69,19 @@ Read sections on demand via TOC. NEVER load the full ~1600-line v4 protocol plus
 
 ## Squad Roots & Project Scoping
 
-Three scope modes resolved from `<project>/.env`:
+Three scope modes, `scope` in `<project>/.nirvana/project.yaml`, set with `nrv init --scope=<mode>`:
 
 ```
-NIRVANA_SCOPE=global   # ~/squads/* only (default — backward compat)
-NIRVANA_SCOPE=project  # <project>/.nirvana/squads/* only (full isolation)
-NIRVANA_SCOPE=merge    # both, project overrides global by slug (directory name)
+global   # ~/squads/* only (default)
+project  # <project>/.nirvana/squads/* only (full isolation)
+merge    # both, project overrides global by slug (directory name)
 ```
 
 In project mode, the squads registry, activation state, and logs persist under `<project>/.nirvana/` — never `$HOME`. Two scope=project projects on the same machine never collide. Full contract: `~/.nirvana/skills/_shared/SCOPE_CONTRACT.md`.
 
 Discovery via the scope-aware loaders:
 ```bash
-bun ~/.nirvana/skills/squads/scripts/list-squads.ts             # honors NIRVANA_SCOPE
+bun ~/.nirvana/skills/squads/scripts/list-squads.ts             # honors the project's scope
 bun ~/.nirvana/skills/_shared/lib/scope.ts --explain            # debug current scope
 bun ~/.nirvana/skills/_shared/scripts/init-project.ts <dir>     # bootstrap a new scoped project
 ```

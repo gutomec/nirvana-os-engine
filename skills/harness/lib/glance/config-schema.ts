@@ -59,7 +59,7 @@ export const CONFIG_SCHEMA: ConfigGroup[] = [
         key: "NIRVANA_SCOPE",
         type: "enum",
         label: "Scope mode",
-        description: "global → ~/squads + ~/businesses · project → only .nirvana/* · merge → both, project overrides",
+        description: "Stored in .nirvana/project.yaml. global → ~/squads + ~/businesses · project → only .nirvana/* · merge → both, project overrides",
         options: ["global", "project", "merge"],
         default: "global",
         recommendedScope: "project",

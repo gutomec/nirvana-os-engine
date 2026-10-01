@@ -101,14 +101,14 @@ When a positive cap is set, `lib/budget.js → check()` returns `ok=false` once 
 
 ---
 
-## Project scoping (NIRVANA_SCOPE)
+## Project scoping
 
-The harness is **scope-aware via `paths.js`**: it consumes whichever registries the current scope resolves to. From inside a project with `NIRVANA_SCOPE=project` in `.env`, routing only sees that project's squads/businesses, and logs land in `<project>/.nirvana/logs/harness/`. From global cwd it sees the home installation.
+The harness is **scope-aware via `paths.js`**: it consumes whichever registries the current scope resolves to. From inside a project whose scope is `project` (`.nirvana/project.yaml`), routing only sees that project's squads/businesses, and logs land in `<project>/.nirvana/logs/harness/`. From global cwd it sees the home installation.
 
 ```bash
 cd <project>                                            # scope=project → routes over project registries
 bun ~/.nirvana/skills/harness/scripts/find.ts "build me a sales funnel"
-bun ~/.nirvana/skills/harness/scripts/route.ts "..." --scope=merge   # force a scope without editing .env
+bun ~/.nirvana/skills/harness/scripts/route.ts "..." --scope=merge   # force a scope for one command
 ```
 
 Full contract: `~/.nirvana/skills/_shared/SCOPE_CONTRACT.md`. Bootstrap a scoped project: `bun ~/.nirvana/skills/_shared/scripts/init-project.ts <dir>`.

@@ -95,10 +95,9 @@ function detectScope(opts = {}) {
     }
     return null;
   })();
-  const envMode = (process.env.NIRVANA_SCOPE || dotenv.NIRVANA_SCOPE || '').toLowerCase();
   const mode = opts.mode
-    || cliMode
-    || (['project', 'merge', 'global'].includes(envMode) ? envMode : 'global');
+    || (['project', 'merge', 'global'].includes(cliMode) ? cliMode : null)
+    || projectRootLib.resolveScopeMode(projectRoot, process.env, dotenv);
   return { mode, projectRoot, dotenv };
 }
 

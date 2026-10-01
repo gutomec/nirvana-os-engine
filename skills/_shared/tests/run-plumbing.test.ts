@@ -109,8 +109,8 @@ describe("the report is asked for, never assumed", () => {
 
   test("the protocol says on request, not by default", () => {
     const skill = read("skills/harness/SKILL.md");
-    expect(skill).toContain("Phase 8 — HTML report (ON REQUEST ONLY)");
-    expect(skill).not.toContain("HTML report (DEFAULT");
+    expect(skill).toMatch(/only when the user asked for a report/);
+    expect(skill).toContain("none is built by default");
   });
 });
 

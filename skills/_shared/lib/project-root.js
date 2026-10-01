@@ -265,6 +265,36 @@ function outputsBaseDir(projectRoot, env) {
   return projectRoot ? path.join(projectRoot, 'outputs') : path.join(globalStoreDir(env), 'outputs');
 }
 
+const SCOPE_MODES = ['global', 'project', 'merge'];
+
+/** The scope a project declares in its manifest (`scope` in
+ *  .nirvana/project.yaml), or null when there is no manifest or no valid
+ *  value. The manifest is written as JSON (a YAML 1.2 subset); a hand-edited
+ *  YAML `scope:` line is read too. This is where a project's scope lives: the
+ *  `.env` held it before the manifest existed and is only a fallback now. */
+function manifestScope(projectRoot) {
+  if (!projectRoot) return null;
+  let text;
+  try { text = fs.readFileSync(path.join(projectRoot, '.nirvana', 'project.yaml'), 'utf8'); } catch { return null; }
+  let value = null;
+  try { value = JSON.parse(text).scope; }
+  catch { const m = /^\s*scope:\s*["']?([a-z]+)/m.exec(text); value = m ? m[1] : null; }
+  return SCOPE_MODES.includes(value) ? value : null;
+}
+
+/** The scope in force for a project, one precedence for every reader:
+ *  an explicit NIRVANA_SCOPE in the environment (a spawner pinning it, a CI
+ *  run) > the project's manifest > a legacy NIRVANA_SCOPE line in the
+ *  project's .env (projects created before the manifest) > global. */
+function resolveScopeMode(projectRoot, env, dotenv) {
+  const fromEnv = String((env || process.env).NIRVANA_SCOPE || '').toLowerCase();
+  if (SCOPE_MODES.includes(fromEnv)) return fromEnv;
+  const fromManifest = manifestScope(projectRoot);
+  if (fromManifest) return fromManifest;
+  const fromDotenv = String((dotenv || {}).NIRVANA_SCOPE || '').toLowerCase();
+  return SCOPE_MODES.includes(fromDotenv) ? fromDotenv : 'global';
+}
+
 module.exports = {
   PROJECT_MARKER,
   DEFAULT_MARKERS,
@@ -274,6 +304,8 @@ module.exports = {
   undeclaredProjectState,
   globalStoreDir,
   outputsBaseDir,
+  manifestScope,
+  resolveScopeMode,
   canonical,
   sameDir,
   isUnder,

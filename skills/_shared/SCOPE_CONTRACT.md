@@ -1,18 +1,23 @@
 # Nirvana Scope Contract
 
-> Canonical reference for `NIRVANA_SCOPE` — the mechanism that decides which squads, businesses, and mind-clones a project sees, and where its registries / state / logs land.
+> Canonical reference for a project's scope — the mechanism that decides which squads, businesses, and mind-clones a project sees, and where its registries / state / logs land.
 
 ## TL;DR
 
-Set in `<project>/.env`:
+The scope is the `scope` field of `<project>/.nirvana/project.yaml`, set with
+`nrv init --scope=<mode>` (or the Glance config panel):
 
-```bash
-NIRVANA_SCOPE=global   # only ~/squads/* and ~/businesses/*  (default)
-NIRVANA_SCOPE=project  # only <project>/.nirvana/*           (full isolation)
-NIRVANA_SCOPE=merge    # both, project overrides global by slug
+```
+global   # only ~/squads/* and ~/businesses/*  (default)
+project  # only <project>/.nirvana/*           (full isolation)
+merge    # both, project overrides global by slug
 ```
 
-When unset, behavior is identical to the pre-scope era: everything global, everything in `$HOME`. **Backward compat is total** — installations that never touch `.env` keep working.
+Resolution, highest first: `--scope=<mode>` > `NIRVANA_SCOPE` in the
+environment > the manifest > a `NIRVANA_SCOPE` line in a legacy project's
+`.env` (read only when the manifest has none; `nrv init` moves it into the
+manifest) > `global`. One resolver for every reader: `resolveScopeMode` in
+`lib/project-root.js`.
 
 ## What scope controls
 
@@ -70,8 +75,9 @@ Override with `NIRVANA_PROJECT_ROOT=/abs/path` (env or shell export).
 
 ## Backward compatibility guarantees
 
-- A repo without `.env` and without `.nirvana/` behaves exactly like before.
-- A `.env` without `NIRVANA_SCOPE` — same: assumes `global`.
+- A repo without `.nirvana/project.yaml` behaves exactly like before: `global`,
+  unless a legacy `.env` names another scope.
+- A manifest without a valid `scope` — same: assumes `global`.
 - A user in `~` (no project root) — same: `global`, registries in `~/`.
 - Existing tools (`paths.js`, `paths.sh`, `bun-helpers.ts.paths`) keep their public API. Only the resolution branches; the keys are unchanged.
 
@@ -80,8 +86,6 @@ Override with `NIRVANA_PROJECT_ROOT=/abs/path` (env or shell export).
 These intentionally remain global (project-isolation should not break framework integrity):
 
 - `~/.nirvana/skills/` — the framework code itself. A project does not get to fork the orchestration logic.
-- Stage 6.5 agentic auditor — separation-of-duties principle is system-wide.
-- DAG scheduler topology — algorithm is invariant.
 - Pydantic validators — schema is universal.
 
 ## CLI overrides
@@ -89,14 +93,14 @@ These intentionally remain global (project-isolation should not break framework 
 Highest priority wins:
 
 ```bash
-# CLI flag (overrides .env)
+# CLI flag (overrides everything)
 bun list-squads.ts --scope=project
 
-# Process env (overrides .env)
+# Process env (overrides the manifest)
 NIRVANA_SCOPE=project bun list-squads.ts
 
-# .env in project root
-echo "NIRVANA_SCOPE=project" > .env
+# The project's own setting
+nrv init . --scope=project
 ```
 
 ## Verification

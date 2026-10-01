@@ -28,7 +28,7 @@ bun glance.ts --idle-min 60      # 60min idle timeout (default 30)
 bun glance.ts --theme apple-dark # Apple Dark theme (default: apple)
 bun glance.ts --theme awwwards   # Awwwards-tier dark + lime + WebGL particle hero
 bun glance.ts --allow-actions    # ⚠ Phase 5 only: enables write endpoints (re-index/activate)
-bun glance.ts --scope=project    # force a specific scope (overrides .env)
+bun glance.ts --scope=project    # force a specific scope (overrides .nirvana/project.yaml)
 ```
 
 ## Themes
@@ -85,7 +85,7 @@ Toggle live with the `◐` button in the nav bar.
 
 ## Scope awareness
 
-Glance respects `NIRVANA_SCOPE`. Run from inside a `scope=project` tree → see only that project's squads/businesses, registries pulled from `<project>/.nirvana/`, logs from `<project>/.nirvana/logs/`. Run from anywhere else → see globals, registries from `$HOME`. The scope panel on the right always shows the active mode.
+Glance respects the project's scope (`.nirvana/project.yaml`). Run from inside a `scope=project` tree → see only that project's squads/businesses, registries pulled from `<project>/.nirvana/`, logs from `<project>/.nirvana/logs/`. Run from anywhere else → see globals, registries from `$HOME`. The scope panel on the right always shows the active mode.
 
 ## Project workspace control plane
 

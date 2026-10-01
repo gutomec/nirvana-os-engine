@@ -15,7 +15,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { findProjectRoot, isInvalidProjectRoot, isProjectRoot, outputsBaseDir, resolveProjectRoot, undeclaredProjectState } from "../lib/project-root.js";
+import { findProjectRoot, isInvalidProjectRoot, isProjectRoot, manifestScope, outputsBaseDir, resolveProjectRoot, resolveScopeMode, undeclaredProjectState } from "../lib/project-root.js";
 import { makeTempRoot } from "../../harness/tests/helpers/temp-dirs.ts";
 
 const roots: string[] = [];
@@ -188,5 +188,30 @@ describe("a project is declared, never inferred", () => {
     expect(found?.state).toEqual(expect.arrayContaining(["logs", "run-kernel.sqlite"]));
     declare(legacy);
     expect(undeclaredProjectState(path.join(legacy, "src"), { home })).toBeNull();
+  });
+});
+
+describe("the scope lives in the project manifest", () => {
+  const withManifest = (content: string | null) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-scope-manifest-"));
+    fs.mkdirSync(path.join(root, ".nirvana"), { recursive: true });
+    if (content !== null) fs.writeFileSync(path.join(root, ".nirvana", "project.yaml"), content);
+    return root;
+  };
+
+  test("read from the JSON manifest nrv init writes, and from a hand-edited YAML one", () => {
+    expect(manifestScope(withManifest('{"scope": "project"}'))).toBe("project");
+    expect(manifestScope(withManifest("schema_version: x\nscope: merge\n"))).toBe("merge");
+    expect(manifestScope(withManifest('{"scope": "nonsense"}'))).toBeNull();
+    expect(manifestScope(withManifest(null))).toBeNull();
+    expect(manifestScope(null)).toBeNull();
+  });
+
+  test("environment > manifest > legacy .env > global", () => {
+    const root = withManifest('{"scope": "project"}');
+    expect(resolveScopeMode(root, { NIRVANA_SCOPE: "merge" }, { NIRVANA_SCOPE: "global" })).toBe("merge");
+    expect(resolveScopeMode(root, {}, { NIRVANA_SCOPE: "merge" })).toBe("project");
+    expect(resolveScopeMode(withManifest(null), {}, { NIRVANA_SCOPE: "merge" })).toBe("merge");
+    expect(resolveScopeMode(withManifest(null), {}, {})).toBe("global");
   });
 });

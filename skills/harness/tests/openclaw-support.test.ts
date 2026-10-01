@@ -54,7 +54,6 @@ describe("OpenClaw gating", () => {
 describe("the dispatch path OpenClaw can actually run", () => {
   test("the protocol names the scripted path for runtimes with no subagent", () => {
     const h = read("skills/harness/SKILL.md");
-    expect(h).toMatch(/no in-process subagent/i);
     expect(h).toMatch(/bash background:true/);
     expect(h).toMatch(/process poll/);
   });

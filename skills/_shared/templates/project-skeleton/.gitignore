@@ -1,17 +1,14 @@
-# Nirvana project skeleton
+# Nirvana project
 
-# Logs and registries (per-machine)
+# Logs and registries (per machine)
 .harness-logs/
-.maestro-logs/
-.projects-outputs/
-
-# Run deliverables (visíveis em ./outputs/<run_id>/). Tipicamente não vão pro
-# git; remova esta linha se quiser versionar as entregas.
-outputs/
 .squads-registry.json
 .businesses-registry.json
 
-# Symlinked agent skill dirs (recreated by `bun init-project.ts --link`)
+# Run deliverables (./outputs/<run>/). Remove this line to version them.
+outputs/
+
+# Agent skill links, created only by `nrv init --with-skills`
 .claude/skills
 .continue/skills
 .windsurf/skills
@@ -21,11 +18,9 @@ outputs/
 .openhands/skills
 .qwen/skills
 .aider-desk/skills
-
-# Don't ignore the canonical .agents/skills (it's the source of truth)
 !.agents/skills
 
-# Local secrets — use .env.local for these, never commit
+# Local secrets: never commit
 .env.local
 .env.*.local
 
@@ -34,5 +29,4 @@ outputs/
 Thumbs.db
 
 # OpenClaw agent state, when this project is an agent's workspace
-# (`openclaw agents add <name> --workspace <this dir>`): daily memory logs.
 memory/

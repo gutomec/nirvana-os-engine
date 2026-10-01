@@ -2,7 +2,7 @@
 name: businesses
 description: "Business lifecycle skill (DOMAIN-AGNOSTIC). Creates, lists, inspects, validates, and migrates businesses — autonomous multi-agent organizations — following the Business Protocol v2 (v1 businesses still load unchanged). Works for ANY domain: marketing, healthcare, engineering, legal, real-estate, gaming, foodtech, trading, education, research, government, etc. Triggers: list businesses, inspect business, create business, validate business, migrate business, manage org chart, library/dna ops. For EXECUTION of production briefs ('use as empresas', 'produza X via empresa Y'), hand it to the harness (read `~/.nirvana/skills/harness/SKILL.md` and follow it) instead — it carries the maestro intelligence. Default: zero_human."
 compatibility: "Requires the Nirvana-OS engine: the `nrv` CLI and Bun on PATH. Install: npx @nirvana-os/cli. Runtime-agnostic — no dependency on any specific agent CLI. Creation flows need an interactive question primitive; without one, use the non-interactive list/inspect/validate paths."
-tools: [Read, Write, Edit, Glob, Grep, Bash, AgentTool, TaskCreate, AskUserQuestion]
+tools: [Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion]
 maxTurns: 100
 metadata:
   # Hidden from skills.sh discovery: this skill is not standalone (it needs the
@@ -27,14 +27,14 @@ Business lifecycle and structure following `BUSINESS_PROTOCOL_V2.md`. Runtime-ag
 
 This skill is for **business lifecycle operations**: list / inspect / create / validate / migrate businesses; manage the `~/businesses/_library/dna/` mind-clone library; bootstrap structure; consult registries.
 
-For **execution requests** ("use as empresas", "rode pela empresa X", "produza um livro/post/vídeo", any production brief), hand it to the **harness** (read `~/.nirvana/skills/harness/SKILL.md` and follow it) instead. The harness skill carries the maestro intelligence — it reads the brief, optionally researches, picks the right business, dispatches its org chart, and runs the quality gate. This skill is not the entry point for orchestration.
+For **execution requests** ("use as empresas", "rode pela empresa X", "produza um livro/post/vídeo", any production brief), hand it to the **harness** (read `~/.nirvana/skills/harness/SKILL.md` and follow it) instead. The harness picks the business, writes it a brief and dispatches it; the engine then runs it as one agent, gates it and delivers. This skill is not the entry point for orchestration.
 
 ### Verifying real dispatch (when execution does happen via harness)
 
 After delivery, confirm in `~/.harness-logs/$(date +%Y-%m-%d)/audit.jsonl`:
 - `event=brief_received` (from brief-business.ts)
 - `event=dispatch_business` (or `dispatch_squad` for fallback) with this trace_id
-- `event=mind_clone_injected` for each DNA file loaded (from buildEmployeePrompt)
+- `event=x_business_solo_started`, then `x_seat_credited` for each seat the worker declares it played
 - `event=handoff_phase_advanced` for `plan → execute` and `execute → complete`
 - `event=verify_passed` (from verify-deliverable.ts)
 - `event=gate_passed` (from quality-gate.ts) with the rubrics list
@@ -44,32 +44,25 @@ If absent, the orchestration didn't happen — claiming "I used business X + squ
 
 ---
 
-## Protocol Compliance for Employees (HARD RULES)
+## How a business runs
 
-When an employee is spawned via subagent (using `buildEmployeePrompt()` from `lib/employee-prompt.ts`), the prompt already includes a "PROTOCOL COMPLIANCE" section. Reinforced here for the runtime:
+A dispatched business runs as ONE agent (`harness/lib/business-solo.ts`). It
+reads the brief the orchestrator wrote for it and re-reads it at every phase,
+plays the seats from their files, writes in a clone's voice only after loading
+that clone's persona, and uses a squad by reading its card
+(`nrv cards squad <slug>`) and working as its agents. It never dispatches: not a
+squad, not a seat, not another business.
 
-1. **Read multi-target coordination artifacts in this order, every time:**
-   1. `<project_dir>/brief-enriched.md` — the full project context.
-   2. `<your_target_dir>/DISPATCH-INSTRUCTION.md` (if it exists) — your specific scope, upstream deps, downstream consumers.
-   3. `<each_upstream>/outputs/_SUMMARY.md` for every phase in your `depends_on` — 1 page each.
-   4. Specific files under `<upstream>/outputs/` only when your DISPATCH-INSTRUCTION calls them out by name.
-2. **Read `HANDOFF.json` on start.** Phase tells you where to resume after rate-limit / kill / restart.
-3. **Advance phases:** import `updateHandoffPhase` from `~/.nirvana/skills/_shared/lib/handoff.js`:
-   - Before first artifact write → `updateHandoffPhase(projectDir, "execute", {nextTaskId: "T-001"})`
-   - After last artifact written → `updateHandoffPhase(projectDir, "complete", {lastTaskCompleted: ...})`
-   - On interruption → leave `phase: "execute"` with `last_task_completed` set; next session resumes.
-4. **Prefer squads — discover, shortlist the TOP 5, then pick the best agentically (§13.4).** You are an orchestrator, not just a doer: before producing an atomic deliverable by hand, look for a squad that covers it. If the brief names a squad, use it. Otherwise:
-   a. **Discover candidates** by capability over the squad registry — match the brief against each squad's `capabilities[].domains` + `produces` + `example_briefs` + `keywords` (`agentic` mode, default; or seed the shortlist fast with `nrv find "<need>"` BM25).
-   b. **Shortlist the top 5** best-matching squads.
-   c. **Analyze those 5 deeply** — read each one's full capability block (`description`, `examples`, `produces`, `not_for`, `domains`, `fidelity`, `score_boost`), judge fit against the brief and your role, then **pick the single best**. Tiebreak: higher `produces`/capability coverage → `fidelity: validated` → `score_boost`. Record in the audit why it beat the other four.
-   d. Only if **none** of the 5 genuinely fit, produce it directly (and say so).
-   Businesses do not whitelist squads by default: `squads_authorized` empty **and** absent both mean **all squads are permitted** (v2 §6.10), so this **top-5 agentic choice is THE gate** that keeps routing sharp. A non-empty `squads_authorized` is a hard restriction, and a per-employee list narrows it further; `squads_preferred` only reorders — listed squads come first, nothing is excluded. Don't pass the raw brief down: build a **brief-context** shaped by your role and (if `type: mind_clone`) your incorporated persona, hand that to the squad, then integrate its output. Executing directly what a squad already covers breaks the audit chain.
-5. **Verify before declaring done.** Run `verify-deliverable.ts` and `quality-gate.ts` from the harness; **write `outputs/_SUMMARY.md`** (1 page max — your public API for downstream phases); only emit `delivered` audit event after gates PASS.
-6. **Scope isolation.** Write only under your own target directory. Coordination with siblings is audit-only (`plan_change_request`, `mention`, `notify_human`) — never modify other targets' outputs.
+It works in phases with its state in `_work/PROGRESS.md`, writes the
+deliverables under the outputs root and nothing elsewhere, and ends with
+`_SUMMARY.md` (one page, the orchestrator's only read), `_CLAIMS.json` (one
+pointer per "Done when" item) and `participation.json` (the seats, squads and
+clones it actually used). The engine then decides whether to review, runs the
+gate and delivers.
 
-These rules turn employees from "general-purpose subagents with persona text" into real Nirvana-OS citizens with auditable, resumable state.
-
-**Event vocabulary.** `buildEmployeePrompt()` already shows the working example (`nrv audit emit x_clone_choice --business=<slug> --trace=<trace> --json='{...}'`) at the point an employee records its mind-clone choice — measured at zero rogue event names across 61 businesses (event-contract cut, 2026-08-28), so no separate block was added here the way squads got one. Same rule as squads: an event outside the closed enum (`references/03-audit.md` in the harness skill) gets the explicit `x_` prefix at the call site, never a bare invented name.
+An event outside the closed enum (`references/03-audit.md` in the harness
+skill) gets the explicit `x_` prefix at the call site, never a bare invented
+name.
 
 ---
 
@@ -85,9 +78,9 @@ mkdir -p ~/.businesses-state ~/.businesses-logs/$(date +%Y-%m-%d)
 
 Report: number of businesses found, registry status, dependencies (Python 3.9+, Node 18+ — only for validators).
 
-## Project scoping (NIRVANA_SCOPE)
+## Project scoping
 
-When invoked from inside a project tree with `<project>/.env` containing `NIRVANA_SCOPE=project|merge`, all loaders (list/index/inspect/validate) honor that scope automatically. Project-local businesses live at `<project>/.nirvana/businesses/<slug>/` and the registry persists at `<project>/.nirvana/.businesses-registry.json`. From global cwd or with `NIRVANA_SCOPE=global` (default), behavior is identical to the home installation. Full contract: `~/.nirvana/skills/_shared/SCOPE_CONTRACT.md`.
+When invoked from inside a project whose scope (`scope` in `<project>/.nirvana/project.yaml`, set with `nrv init --scope=<mode>`) is `project` or `merge`, all loaders (list/index/inspect/validate) honor that scope automatically. Project-local businesses live at `<project>/.nirvana/businesses/<slug>/` and the registry persists at `<project>/.nirvana/.businesses-registry.json`. From global cwd or with `NIRVANA_SCOPE=global` (default), behavior is identical to the home installation. Full contract: `~/.nirvana/skills/_shared/SCOPE_CONTRACT.md`.
 
 ## Protocol source
 
@@ -172,7 +165,7 @@ Multi-intent: process in dependency order. Always lazy-load (never load the full
 > by walking up from the current directory; `cd`-ing into `~/.nirvana/skills/businesses`
 > moves your shell out of the project tree, so the loader silently resolves
 > `scope=global` and lists the home registry instead of your project's. From a
-> scoped project (`NIRVANA_SCOPE=project|merge`) that means you get the WRONG
+> scoped project (scope `project` or `merge`) that means you get the WRONG
 > answer. If a loader prints `scope=global` when you expected `project`, you
 > almost certainly `cd`-ed out. (Pin it cwd-independently with
 > `export NIRVANA_PROJECT_ROOT=<project>`.)
@@ -295,7 +288,7 @@ Three of the v1 five survive, and they are the three the engine implements:
 2. **Escalation** (upward): direct report → manager, along `reports_to` and `org-chart.yaml` `routing_rules.escalation_path`.
 3. **Auto-routing** (`routing.yaml` only): the first `auto_routes` pattern that fires on the brief selects the seat that receives it (v2 §13.2).
 
-Mentions and tickets are retired (v2 §22): no business ever had a `tickets/` directory and no code read a mention. Every handoff still produces a `handoff_artifact` (Squad v4 §9 + Business extensions), ≤ 800 tokens.
+Mentions and tickets are retired (v2 §22): no business ever had a `tickets/` directory and no code read a mention.
 
 ## Acceptance per seat (BP4, v2 §11)
 
@@ -327,7 +320,6 @@ Employees that produce only technical artifacts (JSON, schemas, code) ignore the
 ├── lib/
 │   ├── loader.ts                           # loads + validates an entire business
 │   ├── registry.ts                         # generates ~/.businesses-registry.json
-│   ├── employee-prompt.ts                  # builds the seat's prompt
 │   └── business-audit-criteria.js          # audit scoring
 ├── scripts/
 │   ├── init-business.ts                    # scaffold + wizard kickoff
@@ -340,28 +332,23 @@ Employees that produce only technical artifacts (JSON, schemas, code) ignore the
 └── tests/
     ├── smoke.test.ts                       # E2E: init → validate → index → list
     ├── registry-description.test.ts        # what the registry emits to the router
-    ├── protocol-v2-spec-parity.test.ts     # §16 table == gate catalog
-    └── employee-clone-choice.test.ts       # clone ladder in the seat prompt
+    └── protocol-v2-spec-parity.test.ts     # §16 table == gate catalog
 ```
 
-## Invocation pipeline (when intent = BRIEF)
+## Invocation (when intent = BRIEF)
 
-1. Load business via `lib/loader.ts` (manifest + employees + org-chart + routing).
-2. Run `validateBusinessIntegrity` (BP7 antagonist, exactly 1 brief_intake, no cycles, etc.).
-3. Resolve the `brief_intake` employee (typically the CEO).
-4. Create `${PROJECTS_OUTPUT_DIR}/<project-id>/businesses/<biz-slug>/` with `brief.md`, `audit.jsonl`, empty dirs.
-5. Spawn AgentTool with `subagent_type` = brief_intake employee. The prompt includes brief + culture + permanent memory (read-only) + isolation guard rules. This is **in-process** (the native Agent tool / runtime subagent), not a child `claude -p`; the `--exec` headless path (`runHeadless`) is reserved for the standalone dispatch script and sub-process-only runtimes (legacy gemini-cli, hermes).
-6. Wait for the handoff_artifact JSON. It does NOT come back as the spawn's tool result — that is a launch receipt. It arrives in the `<task-notification>` the runtime delivers when the employee finishes, inside `<result>`. Read it there: no handoff, nothing to judge against the seat's `acceptance[]` and no `business_extensions.type` to decide step 7 on. Waiting does not mean blocking; the session stays free while the employee works.
-7. If `business_extensions.type == "delegation"` or `"mention"`, spawn the next employee. Repeat until the CEO returns `next_action: deliver_to_user`.
-8. Emit `audit_event: invocation_end` with cost summary.
-9. Return the deliverable to the user.
-
-For each handoff: judge the seat's `acceptance[]`, log to audit, persist to `handoffs/<n>.json`.
+`nrv dispatch <slug> --brief-file <brief> --exec` scaffolds the run
+(`brief-business.ts`), runs the business as one agent and delivers. Started in
+the background, it returns a launch receipt, not the result: the result
+arrives in the `<task-notification>` the runtime delivers when the process
+ends, or through `nrv run-track status` on a runtime that does not notify.
+Waiting does not mean blocking; the session stays free while the business
+works.
 
 ## Anti-patterns (DO NOT)
 
 - DO NOT process briefs in `human_in_loop` mode without explicit config.
-- DO NOT ship a seat's deliverable without its declared `acceptance[]` being judged.
+- DO NOT ship a delivery that has not passed the gate (and the review, when the rule asks for one).
 - DO NOT allow filesystem access outside the project root + own business scope.
 - DO NOT use `mind_clone` without `disclosure_required: true`.
 - DO NOT create businesses with >5 employees without an antagonist (BP7).

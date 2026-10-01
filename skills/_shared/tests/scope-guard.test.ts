@@ -71,11 +71,11 @@ describe("the markdown surfaces carry the English sentence verbatim", () => {
     expect(rules).toContain(SCOPE_GUARD_EN);
   });
 
-  test("the maestro prose, inside the dispatch cascade phase", () => {
+  test("the maestro prose, inside its rules", () => {
     const skill = read("skills/harness/SKILL.md");
-    const phase4 = skill.slice(skill.indexOf("### Phase 4"), skill.indexOf("### Phase 5"));
-    expect(phase4).toContain(SCOPE_GUARD_EN);
-    expect(phase4).toContain("scope-guard.ts");
+    const rules = skill.slice(skill.indexOf("## Rules"), skill.indexOf("## 1."));
+    expect(rules).toContain(SCOPE_GUARD_EN);
+    expect(rules).toContain("scope-guard.ts");
   });
 
   test("the multi-target reference, where it lists what DISPATCH-INSTRUCTION.md carries", () => {

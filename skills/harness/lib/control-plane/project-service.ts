@@ -91,6 +91,18 @@ export class ProjectService {
     return { kind: "directory", plan: this.planAdoption({ projectRoot: root }) };
   }
 
+  /** Change the project's scope. The manifest is the one place a project's
+   *  scope is configured; scope.ts and paths.js read it from there. */
+  setScope(projectRoot: string, scope: ProjectScope): Project {
+    const root = canonicalRoot(projectRoot);
+    const file = manifestPath(root);
+    const next: Project = { ...this.read(root), scope };
+    const temporary = `${file}.${process.pid}.tmp`;
+    fs.writeFileSync(temporary, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+    fs.renameSync(temporary, file);
+    return next;
+  }
+
   read(projectRoot: string): Project {
     const root = canonicalRoot(projectRoot);
     const file = manifestPath(root);

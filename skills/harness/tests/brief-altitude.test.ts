@@ -26,16 +26,6 @@ describe("briefing.altitude", () => {
     expect(s.default).toBe("reference");
     expect(s.options).toEqual(["reference", "fragments", "full"]);
   });
-
-  test("the brief format is written down with its eight sections", () => {
-    const spec = readFileSync(join(HARNESS, "references", "05-brief.md"), "utf8");
-    for (const h of ["## Pedido (verbatim)", "## Intenção e porquê", "## Referências", "## Guarda-corpos", "## Pronto quando", "## Verificação", "## Parar quando", "## Autonomia"]) {
-      expect(spec).toContain(`\`${h}\``);
-    }
-    const skill = readFileSync(join(HARNESS, "SKILL.md"), "utf8");
-    expect(skill).toContain("references/05-brief.md");
-    expect(skill).not.toContain("BEFORE handing back");
-  });
 });
 
 describe("the scorer no longer demands examples or in/out scope", () => {

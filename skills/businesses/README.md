@@ -35,14 +35,14 @@ bun ~/.nirvana/skills/businesses/scripts/list-businesses.ts   # auto-bootstraps 
 
 ---
 
-## Project scoping (NIRVANA_SCOPE)
+## Project scoping
 
-Businesses can be **global** (visible to every project), **project-local** (visible only inside one project), or **merged** (project overrides global by slug). Set in `<project>/.env`:
+Businesses can be **global** (visible to every project), **project-local** (visible only inside one project), or **merged** (project overrides global by slug). The mode is `scope` in `<project>/.nirvana/project.yaml`, set with `nrv init --scope=<mode>`:
 
-```bash
-NIRVANA_SCOPE=global   # ~/businesses/* only — default, full backward compat
-NIRVANA_SCOPE=project  # <project>/.nirvana/businesses/* only
-NIRVANA_SCOPE=merge    # both, project overrides global on slug clash
+```
+global   # ~/businesses/* only (default)
+project  # <project>/.nirvana/businesses/* only
+merge    # both, project overrides global on slug clash
 ```
 
 Project-local businesses live at `<project>/.nirvana/businesses/<slug>/` with the same v1 layout (`business.yaml` + `employees/` + `org-chart.yaml` + `routing.yaml` + `memory/`). The business registry persists at `<project>/.nirvana/.businesses-registry.json` so two projects on the same machine never collide.

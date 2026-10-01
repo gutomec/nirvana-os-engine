@@ -113,7 +113,7 @@ describe("on-demand mode leaves the project's behavior alone", () => {
     expect(agents).toContain("MY LINE");
     expect(agents).toContain("nirvana-os:on-demand-contract:v1");
     expect(agents).toContain("ONLY when the user explicitly asks");
-    expect(agents).not.toContain("nirvana-os:invocation-contract:v2");
+    expect(agents).not.toContain("nirvana-os:invocation-contract:v3");
     expect(agents).not.toContain("nirvana-os:writing-contract:v2");
     expect(agents).not.toMatch(/invoke the .?harness.? skill for any concrete artifact/i);
   }, INIT_TIMEOUT_MS);
@@ -123,7 +123,7 @@ describe("on-demand mode leaves the project's behavior alone", () => {
     runInitWith(dir, "--orchestrators=on-demand");
     const claude = fs.readFileSync(path.join(dir, "CLAUDE.md"), "utf8");
     expect(claude).toContain("nirvana-os:on-demand-contract:v1");
-    expect(claude).not.toContain("nirvana-os:invocation-contract:v2");
+    expect(claude).not.toContain("nirvana-os:invocation-contract:v3");
   }, INIT_TIMEOUT_MS);
 
   test("on-demand is idempotent", () => {
@@ -146,28 +146,44 @@ describe("on-demand mode leaves the project's behavior alone", () => {
     // name so the compat promise is explicit rather than incidental.
     const dir = project("od-default", { "CLAUDE.md": "# Mine\n" });
     runInit(dir);
-    expect(fs.readFileSync(path.join(dir, "CLAUDE.md"), "utf8")).toContain("nirvana-os:invocation-contract:v2");
+    expect(fs.readFileSync(path.join(dir, "CLAUDE.md"), "utf8")).toContain("nirvana-os:invocation-contract:v3");
   }, INIT_TIMEOUT_MS);
 });
 
-describe("the promised .env exists even when the template does not", () => {
-  test("a skills tree without the template still yields a working .env, and --scope works on it", () => {
-    // One install shipped without project-skeleton/.env: init warned, finished
-    // "[ok] done", pointed the user at a file that did not exist — and --scope
-    // crashed on the read. The fallback keeps the promise the help makes.
-    const stripped = path.join(TMP, "stripped-skills");
-    fs.cpSync(path.join(ROOT, "skills", "_shared", "templates"), path.join(stripped, "_shared", "templates"), { recursive: true });
-    fs.cpSync(path.join(ROOT, "skills", "_shared", "lib"), path.join(stripped, "_shared", "lib"), { recursive: true });
-    fs.rmSync(path.join(stripped, "_shared", "templates", "project-skeleton", ".env"));
+describe("the scope lives in .nirvana/project.yaml", () => {
+  const manifest = (dir: string) => JSON.parse(fs.readFileSync(path.join(dir, ".nirvana", "project.yaml"), "utf8"));
 
-    const dir = project("env-fallback");
-    const r = spawnSync(process.execPath, [INIT, ".", "--scope=project"], {
-      cwd: dir, encoding: "utf8",
-      env: { ...process.env, NIRVANA_SKILLS_DIR: stripped },
-    });
-    expect(r.status).toBe(0);
+  test("init creates no .env, and --scope writes the manifest", () => {
+    const dir = project("scope-flag");
+    expect(runInitWith(dir, "--scope=project").status).toBe(0);
+    expect(fs.existsSync(path.join(dir, ".env"))).toBe(false);
+    expect(fs.existsSync(path.join(dir, ".env.example"))).toBe(true);
+    expect(manifest(dir).scope).toBe("project");
+  }, INIT_TIMEOUT_MS);
+
+  test("--scope on an existing project changes its manifest", () => {
+    const dir = project("scope-change");
+    runInit(dir);
+    expect(manifest(dir).scope).toBe("global");
+    runInitWith(dir, "--scope=merge");
+    expect(manifest(dir).scope).toBe("merge");
+  }, INIT_TIMEOUT_MS);
+
+  test("a legacy .env scope moves into the manifest and leaves the .env", () => {
+    const dir = project("scope-legacy", { ".env": "OPENAI_API_KEY=x\nNIRVANA_SCOPE=project\n" });
+    const r = runInit(dir);
+    expect(`${r.stdout}`).toContain("moved NIRVANA_SCOPE=project from .env into .nirvana/project.yaml");
+    expect(manifest(dir).scope).toBe("project");
     const env = fs.readFileSync(path.join(dir, ".env"), "utf8");
-    expect(env).toContain("NIRVANA_SCOPE=project");
+    expect(env).not.toContain("NIRVANA_SCOPE");
+    expect(env).toContain("OPENAI_API_KEY=x");
+  }, INIT_TIMEOUT_MS);
+
+  test("--adopt carries a legacy .env scope into the manifest and leaves the .env untouched", () => {
+    const dir = project("scope-adopt", { ".env": "NIRVANA_SCOPE=merge\n" });
+    expect(runInitWith(dir, "--adopt").status).toBe(0);
+    expect(manifest(dir).scope).toBe("merge");
+    expect(fs.readFileSync(path.join(dir, ".env"), "utf8")).toBe("NIRVANA_SCOPE=merge\n");
   }, INIT_TIMEOUT_MS);
 });
 
@@ -197,7 +213,7 @@ describe("a contract written by an earlier engine is refreshed in place", () => 
     ].join("\n");
     const dir = project("refresh-v1", { "AGENTS.md": v1, "CLAUDE.md": v1 });
     const r = runInit(dir);
-    expect(`${r.stdout}`).toContain("refreshed invocation contract (v1 → v2)");
+    expect(`${r.stdout}`).toContain("refreshed invocation contract (v1 → v3)");
     for (const f of ["AGENTS.md", "CLAUDE.md"]) {
       const c = fs.readFileSync(path.join(dir, f), "utf8");
       expect(c).toContain("KEEP-ME-ABOVE");
@@ -206,10 +222,10 @@ describe("a contract written by an earlier engine is refreshed in place", () => 
       expect(c).not.toContain("OLD-WRITING-LINE-MUST-GO");
       expect(c.indexOf("Gate flags = build fails")).toBeLessThan(c.indexOf("KEEP-ME-BELOW"));
       expect(c).not.toContain("nirvana-os:invocation-contract:v1");
-      expect(c).toContain("nirvana-os:invocation-contract:v2");
+      expect(c).toContain("nirvana-os:invocation-contract:v3");
       expect(c).toMatch(/Skill\("nirvana"/);
-      expect(c.indexOf("KEEP-ME-ABOVE")).toBeLessThan(c.indexOf("nirvana-os:invocation-contract:v2"));
-      expect(c.indexOf("nirvana-os:invocation-contract:v2")).toBeLessThan(c.indexOf("KEEP-ME-BELOW"));
+      expect(c.indexOf("KEEP-ME-ABOVE")).toBeLessThan(c.indexOf("nirvana-os:invocation-contract:v3"));
+      expect(c.indexOf("nirvana-os:invocation-contract:v3")).toBeLessThan(c.indexOf("KEEP-ME-BELOW"));
       expect(c.match(/nirvana-os:writing-contract:v2/g)!.length).toBe(1);
       expect(c).not.toContain("nirvana-os:writing-contract:v1");
       expect(c).toContain("is not a deliverable and is not judged by it");
@@ -221,10 +237,25 @@ describe("a contract written by an earlier engine is refreshed in place", () => 
   }, INIT_TIMEOUT_MS);
 });
 
+describe("a v2 contract is refreshed to the lean v3", () => {
+  test("the old orchestration text goes, the user's lines and the writing contract stay", () => {
+    const v2 = ["## Mine", "KEEP-ME-ABOVE", "", "<!-- nirvana-os:invocation-contract:v2 -->", "# old contract", "## 3. Inside a business", "Employees execute work by calling squads.", "",
+      "---", "", "<!-- nirvana-os:writing-contract:v2 -->", "## Writing contract (for any prose deliverable)", "Gate flags = build fails. No auto-rewrite.", ""].join("\n");
+    const dir = project("refresh-v2", { "AGENTS.md": v2 });
+    const r = runInit(dir);
+    expect(`${r.stdout}`).toContain("refreshed invocation contract (v2 → v3)");
+    const c = fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8");
+    expect(c).toContain("KEEP-ME-ABOVE");
+    expect(c).toContain("nirvana-os:invocation-contract:v3");
+    expect(c).not.toContain("Employees execute work by calling squads.");
+    expect(c.match(/nirvana-os:writing-contract:v2/g)!.length).toBe(1);
+  }, INIT_TIMEOUT_MS);
+});
+
 describe("a duplicated old block is collapsed by the refresh", () => {
   test("two v1 writing contracts become one v2, and the user's lines after them survive", () => {
     const block = ["<!-- nirvana-os:writing-contract:v1 -->", "## Writing contract (for any prose deliverable)", "OLD-W", "Gate flags = build fails. No auto-rewrite.", ""].join("\n");
-    const src = ["<!-- nirvana-os:invocation-contract:v2 -->", "# current contract", "", "---", "", block, "", "---", "", block, "## Mine", "KEEP-ME-LAST", ""].join("\n");
+    const src = ["<!-- nirvana-os:invocation-contract:v3 -->", "# current contract", "", "---", "", block, "", "---", "", block, "## Mine", "KEEP-ME-LAST", ""].join("\n");
     const dir = project("dup-writing", { "AGENTS.md": src });
     runInit(dir);
     const c = fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8");

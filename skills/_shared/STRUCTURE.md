@@ -1,6 +1,6 @@
 # Nirvana Structure — Global vs Project
 
-> **TL;DR.** Você tem **duas hierarquias paralelas**: a **global** (na sua HOME) que serve qualquer projeto e a **project** (dentro de cada projeto) que isola dados quando você quer. O `.env` de cada projeto + a env var `NIRVANA_SCOPE` decidem qual delas o sistema lê.
+> **TL;DR.** Você tem **duas hierarquias paralelas**: a **global** (na sua HOME) que serve qualquer projeto e a **project** (dentro de cada projeto) que isola dados quando você quer. O `scope` em `.nirvana/project.yaml` de cada projeto decide qual delas o sistema lê (a env var `NIRVANA_SCOPE` sobrescreve).
 
 Este documento é a referência visual. Para detalhes legais do contrato:
 - Modes (`global`/`project`/`merge`) e regra de override → [`SCOPE_CONTRACT.md`](./SCOPE_CONTRACT.md)
@@ -50,10 +50,10 @@ Este documento é a referência visual. Para detalhes legais do contrato:
 
 ┌──────────────────────── PROJECT  (qualquer projeto) ────────────────────────┐
 │  /Users/<você>/Projects/<nome-do-projeto>/                                  │
-│  ├── .env                          ← scope + overrides do PROJETO           │
-│  │     NIRVANA_SCOPE=project   →  isolado (só vê .nirvana/)                 │
-│  │     NIRVANA_SCOPE=merge     →  vê os dois (project sobrescreve)          │
-│  │     NIRVANA_SCOPE=global    →  só global (default; .nirvana/ ignorado)   │
+│  ├── .nirvana/project.yaml         ← identidade + scope do PROJETO          │
+│  │     scope: project   →  isolado (só vê .nirvana/)                        │
+│  │     scope: merge     →  vê os dois (project sobrescreve)                 │
+│  │     scope: global    →  só global (default; .nirvana/ ignorado)          │
 │  │                                                                           │
 │  ├── .agents/skills/               ← canonical "skills.sh" (15+ runtimes    │
 │  │                                   leem direto: Codex, Cursor, OpenCode,  │
@@ -200,7 +200,7 @@ cd ~/Projects/cliente-X
 Cada chamada passa por:
 
 1. **Detect project root** — walk-up procurando primeiro `.env` / `.nirvana/` / `.git/`. Se nada → modo `global` puro.
-2. **Read scope** — CLI flag `--scope` > `process.env.NIRVANA_SCOPE` > `<root>/.env` > default `global`.
+2. **Read scope** — CLI flag `--scope` > `process.env.NIRVANA_SCOPE` > `scope` em `<root>/.nirvana/project.yaml` > `NIRVANA_SCOPE` num `.env` legado > default `global`.
 3. **Build search paths** — em ordem de prioridade conforme o modo (project-only, global-only, ou merge).
 4. **Resolve slug** — primeiro hit ganha. Em `merge`, project vence global.
 
@@ -216,7 +216,7 @@ Detalhes completos em [`SCOPE_CONTRACT.md`](./SCOPE_CONTRACT.md).
 | Mind-clones não aparecem no Setup               | DNA library não montada / symlinks quebrados       | `GET /api/setup/status` → campo `mind_clones_diagnostic` |
 | Mind-clone copiado mas inválido                 | Faltam seções 1-10 ou frontmatter incompleto       | `GET /api/mind-clones/validate-all` no Glance    |
 | Save em Settings não aplica                     | Bun cacheou `.env` no boot                          | Live-reload já está implementado; se não, restart |
-| Scope errado mesmo após editar `.env`           | Process já rodando com env antigo                  | Restart o processo que está consumindo           |
+| Scope errado mesmo após editar o manifesto      | `NIRVANA_SCOPE` exportado no ambiente vence        | `unset NIRVANA_SCOPE` ou use `--scope`           |
 
 ---
 

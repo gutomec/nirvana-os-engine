@@ -45,6 +45,7 @@ import { readSubsystems } from "./subsystems.ts";
 import { paths, invalidatePathsCache, overridePath } from "../../../_shared/lib/bun-helpers.ts";
 import { readEnvFile, writeEnvFile, setVar, deleteVar, getVar, toMap } from "../../../_shared/lib/env-file.ts";
 import { CONFIG_SCHEMA, getField, isEditableKey, maskSecret } from "./config-schema.ts";
+import { manifestScope } from "../../../_shared/lib/project-root.js";
 import {
   SETTINGS_SCHEMA, SettingsError, engineConfigPath, globalConfigPath, projectConfigPath,
   requireSpec, resolveAllSettings, resolveSetting, setSetting, settingInfo, unsetSetting,
@@ -1256,12 +1257,15 @@ export async function startServer(opts: ServerOptions) {
         const globalEntries = readEnvFile(globalEnvPath);
         const projectMap = toMap(projectEntries);
         const globalMap = toMap(globalEntries);
+        // The scope lives in the project's manifest, not in any .env.
+        const manifestMode = manifestScope(projectDir);
 
         const groups = CONFIG_SCHEMA.map(g => ({
           ...g,
           fields: g.fields.map(f => {
-            const projectVal = projectMap[f.key];
-            const globalVal = globalMap[f.key];
+            const isScope = f.key === "NIRVANA_SCOPE";
+            const projectVal = isScope ? (manifestMode ?? projectMap[f.key]) : projectMap[f.key];
+            const globalVal = isScope ? undefined : globalMap[f.key];
             const effective = projectVal !== undefined ? projectVal : (globalVal !== undefined ? globalVal : f.default || "");
             const source: "project" | "global" | "default" =
               projectVal !== undefined ? "project" :
@@ -1294,8 +1298,8 @@ export async function startServer(opts: ServerOptions) {
         try {
           const body = await req.json() as any;
           const targetScope: "project" | "global" = body.scope === "global" ? "global" : "project";
-          const updates: Record<string, string> = body.updates || {};
-          const deletes: string[] = Array.isArray(body.deletes) ? body.deletes : [];
+          const updates: Record<string, string> = { ...(body.updates || {}) };
+          const deletes: string[] = Array.isArray(body.deletes) ? [...body.deletes] : [];
 
           const scope = getScope();
           const projectDir = scope.projectRoot || process.cwd();
@@ -1319,9 +1323,25 @@ export async function startServer(opts: ServerOptions) {
             }
           }
 
+          const applied: Array<{ key: string; from: string; to: string; action: string }> = [];
+
+          // The scope is per project and lives in .nirvana/project.yaml: written
+          // there, never to a .env and never to process.env (an environment
+          // value would outrank the manifest for the rest of this process).
+          const scopeUpdate = "NIRVANA_SCOPE" in updates ? updates.NIRVANA_SCOPE : deletes.includes("NIRVANA_SCOPE") ? "global" : null;
+          delete updates.NIRVANA_SCOPE;
+          const scopeDeleteAt = deletes.indexOf("NIRVANA_SCOPE");
+          if (scopeDeleteAt >= 0) deletes.splice(scopeDeleteAt, 1);
+          if (scopeUpdate !== null) {
+            if (targetScope === "global") return json({ error: "the scope is per project: it lives in the project's .nirvana/project.yaml" }, 400);
+            if (projectInspection().kind !== "project") return json({ error: "not a Nirvana project: run `nrv init` first" }, 400);
+            const from = manifestScope(projectDir) ?? "global";
+            projectService.setScope(projectDir, scopeUpdate as "global" | "project" | "merge");
+            applied.push({ key: "NIRVANA_SCOPE", from, to: scopeUpdate, action: "set" });
+          }
+
           let entries = readEnvFile(filePath);
           const before = toMap(entries);
-          const applied: Array<{ key: string; from: string; to: string; action: string }> = [];
 
           for (const [k, v] of Object.entries(updates)) {
             // For sensitive fields, empty string means "leave unchanged"
@@ -1339,7 +1359,7 @@ export async function startServer(opts: ServerOptions) {
             applied.push({ key: k, from: f?.sensitive ? maskSecret(from) : from, to: "", action: "delete" });
           }
 
-          writeEnvFile(filePath, entries, { backup: true });
+          if (Object.keys(updates).length || deletes.length) writeEnvFile(filePath, entries, { backup: true });
 
           // Live-reload: update process.env so resolveScope() and other readers
           // see new values immediately. Without this the running Glance process
