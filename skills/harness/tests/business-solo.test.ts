@@ -7,7 +7,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-  buildSoloPrompt, participationFile, preferredSquads, readSeats, runBusinessSolo, SOLO_INTAKE_LINE, SOLO_LIFETIME_LINE, SOLO_SPECIALIST_CLAUSE,
+  buildSoloPrompt, namedSquadsIn, participationFile, preferredSquads, readSeats, runBusinessSolo, SOLO_INTAKE_LINE, SOLO_LIFETIME_LINE, SOLO_SPECIALIST_CLAUSE,
   soloDirective, soloSquads, type BusinessSoloArgs,
 } from "../lib/business-solo.ts";
 import { AUTONOMOUS_DIRECTIVE } from "../lib/host-agent-driver.ts";
@@ -48,6 +48,22 @@ function baseArgs(extra: Partial<BusinessSoloArgs> = {}): BusinessSoloArgs {
     ...extra,
   };
 }
+
+describe("squads a request names", () => {
+  const SLUGS = ["testing", "design", "instagram-intelligence-nirvana"];
+  test.each([
+    ["A primary headline with 5 alternatives for testing", []],
+    ["Use the squad testing for the QA pass", ["testing"]],
+    ["the testing squad checks it", ["testing"]],
+    ["run `design` on the cover", ["design"]],
+    ["nrv dispatch --squad design", ["design"]],
+    ["o squad testing revisa", ["testing"]],
+    ["pull the data with instagram-intelligence-nirvana", ["instagram-intelligence-nirvana"]],
+    ["good design matters", []],
+  ])("%p → %p", (text, expected) => {
+    expect(namedSquadsIn(text as string, SLUGS)).toEqual(expected as string[]);
+  });
+});
 
 describe("the solo role", () => {
   test("may dispatch nothing", () => {

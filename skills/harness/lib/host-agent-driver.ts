@@ -46,7 +46,7 @@ export const AUTONOMOUS_DIRECTIVE = [
   "- Write EVERY final deliverable as a file under the outputs_root given in the prompt. The harness verifies, gates and exports AFTER you finish — do not duplicate it, and do not end by printing a summary of what you would write.",
   `- ${scopeGuard()} Scope is the deliverable and the acceptance criteria of the instruction you received. ${scopeBoundary()}`,
   "- HEADLESS SESSION LIFETIME: this session dies the instant your final turn ends. NEVER launch a background subagent (or `bash ... &`) and end your turn waiting for it — the child is orphaned. Delegate in the foreground (`nrv dispatch ... --exec`) or do the phase yourself. Your turn is over only when every phase's files are on disk.",
-  "- CONTINUOUS FLOW: phases (HANDOFF.json, a staged plan) advance in sequence until `complete` without pausing, confirming or reporting in between. Interrupt only on an unrecoverable error or an explicit `notify: human` trigger.",
+  "- CONTINUOUS FLOW: phases (your progress file, a staged plan) advance in sequence until `complete` without pausing, confirming or reporting in between. Interrupt only on an unrecoverable error or an explicit `notify: human` trigger.",
   "- MESSAGE INTERRUPTION: a question or status message that arrives mid-execution gets ONE line with the current state, then execution resumes in the same action. Never go idle waiting for a new order — the order to continue is this one.",
   "- Follow the writing contract in AGENTS.md / CLAUDE.md / GEMINI.md when the project has one.",
 ].join("\n");

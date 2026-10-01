@@ -95,7 +95,7 @@ export function briefTemplate(): string {
     "- <an observable criterion; end it with (blocking) when the delivery fails without it>",
     "",
     "## Output",
-    "<the folder where the deliverables go>",
+    "<what the deliverable is made of: files and formats; the engine sets the folder>",
     "",
   ].join("\n");
 }

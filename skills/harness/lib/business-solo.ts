@@ -113,12 +113,20 @@ function listOf(v: unknown): string[] {
   return (Array.isArray(v) ? v : [v]).map((x) => String(x ?? "").trim()).filter(Boolean);
 }
 
-/** Installed squads a text names by slug, as a whole token. */
+/**
+ * Installed squads a text names on purpose: the slug in backticks, next to the
+ * word "squad" ("squad testing", "testing squad", `--squad testing`), or a
+ * hyphenated slug on its own. A one-word slug alone is an ordinary word: "five
+ * headlines for testing" does not ask for the `testing` squad.
+ */
 export function namedSquadsIn(text: string, slugs: Iterable<string>): string[] {
   const out: string[] = [];
+  const before = "(^|[^A-Za-z0-9_-])", after = "($|[^A-Za-z0-9_-])";
   for (const slug of slugs) {
-    const escaped = slug.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    if (new RegExp(`(^|[^A-Za-z0-9_-])${escaped}($|[^A-Za-z0-9_-])`).test(text)) out.push(slug);
+    const s = slug.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const marked = new RegExp(`\`${s}\`|${before}(--)?squads?[\\s:=]+\`?${s}\`?${after}|${before}${s}\`?\\s+squad${after}`, "i");
+    const bare = slug.includes("-") && new RegExp(`${before}${s}${after}`).test(text);
+    if (bare || marked.test(text)) out.push(slug);
   }
   return out;
 }
@@ -222,19 +230,18 @@ export function buildSoloPrompt(
 
   lines.push("## Squads", "");
   const cards = Object.entries(squadCards);
+  lines.push("You use a squad by reading its card and working as its agents. You never dispatch it.", "");
   if (cards.length) {
-    lines.push("You use a squad by reading its card and working as its agents. You never dispatch it.", "");
     for (const [slug, file] of cards) lines.push(`- \`${slug}\`: card \`${file}\``);
     lines.push("");
-  } else {
-    lines.push("None was picked for this request. If a part needs one, `nrv cards squad <slug>` prints the card of an installed squad, and `nrv list-squads` lists them.", "");
   }
+  lines.push(`${cards.length ? "For another squad" : "None was picked for this request. If a part needs one"}: \`nrv find "<the need>"\` ranks the installed squads and \`nrv cards squad <slug>\` prints a card. Do not browse squad folders.`, "");
 
   lines.push("## How you work", "");
   lines.push(
     `1. Work in phases. Keep \`${progress}\` current: decisions taken, what is done (with paths), what is next. Update it at every milestone. If your context is compacted, the brief and PROGRESS.md are how you carry on.`,
     "2. Read with purpose: locate with a search, then read the part you need. Put independent reads in the same turn. Do not print back a file you just wrote.",
-    `3. Deliverables go under \`${args.outputsRoot}\`, working files under \`${workDir(args.outputsRoot)}\`. Write nothing anywhere else.`,
+    `3. Deliverables go under \`${args.outputsRoot}\`, working files under \`${workDir(args.outputsRoot)}\`. Write nothing anywhere else, even where the brief names another folder.`,
     "4. Deliverables follow the language of the request.",
     "5. Deliver the whole of your part and nothing beyond it. Anything beyond it goes in the summary as a note.",
     "",

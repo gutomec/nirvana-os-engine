@@ -217,7 +217,7 @@ try {
     decisions: [],
     open_questions: [],
     audit_log_path: "audit.jsonl",
-    resumption_prompt_hint: `Project just received initial brief. Start at the brief_intake employee for ${slug}.`,
+    resumption_prompt_hint: `The business runs as one agent. Read the brief, then deliverables/_work/PROGRESS.md for what is done and what is next.`,
   });
 } catch (e: any) {
   // Non-fatal: project still usable without HANDOFF.json

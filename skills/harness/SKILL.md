@@ -78,12 +78,15 @@ Six sections, headings exactly as the template has them, content in the
 user's language:
 
 - **Request (verbatim)**: the user's own words, pasted, unedited.
-- **Decisions**: what the user already decided in the conversation.
+- **Decisions**: what the user already decided in the conversation. When
+  `nrv find` showed squads that fit the work, name each as `squad <slug>`:
+  the worker gets their cards instead of searching for them.
 - **Your part**: what this business delivers, and what another one covers.
 - **Inputs**: paths the worker needs (attachments, another business's `_SUMMARY.md`).
 - **Done when**: observable criteria; mark with `(blocking)` the ones the
   delivery fails without. A review checks these.
-- **Output**: the folder for the deliverables.
+- **Output**: what the deliverable is made of (files, formats). The engine
+  gives each run its folder; do not name one.
 
 What and why, never how: no method, no steps, no seats, no file list the user
 did not ask for. Check it with `nrv brief check .nirvana/briefs/<business>.md`.
