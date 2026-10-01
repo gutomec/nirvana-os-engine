@@ -65,7 +65,8 @@ nrv list-businesses                        # the library, one line each
 Decide which run in parallel (independent parts) and which in sequence (one
 builds on another's output). There is no director and no router agent: this
 decision is yours, and it is the only planning in the run. When no business
-covers the request but a squad does, dispatch the squad (`--squad <slug>`);
+covers the request but a squad does, dispatch the squad with the capability
+that fits (`--squad <slug>:<capability>`, an id `nrv find` printed);
 when nothing fits, `nrv dispatch --auto` falls through to the generalist.
 
 ## 3. Write one brief per business

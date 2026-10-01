@@ -37,6 +37,11 @@ if (!process.env.NIRVANA_STATE_DB) {
 // runs the heuristics. A test that exercises the judge sets its own value.
 if (process.env.NIRVANA_JUDGE_ENABLED === undefined) process.env.NIRVANA_JUDGE_ENABLED = "false";
 
+// The performance profile the installer recorded in the user's global config
+// moves effort, the context ceiling and the review policy at once; under test
+// the engine defaults hold. A test that exercises a profile sets its own.
+if (process.env.NIRVANA_PROFILE === undefined) process.env.NIRVANA_PROFILE = "none";
+
 if (!process.env.NIRVANA_AUDIT_KEY) {
   process.env.NIRVANA_AUDIT_KEY = path.join(process.env.HARNESS_LOGS_DIR!, "audit-key");
 }

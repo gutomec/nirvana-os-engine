@@ -20,7 +20,8 @@ afterAll(() => {
   process.env = { ...saved };
 });
 beforeEach(() => {
-  for (const k of ["NIRVANA_CONTEXT_WINDOW", "NIRVANA_PROFILE", "CLAUDE_CODE_AUTO_COMPACT_WINDOW"]) delete process.env[k];
+  for (const k of ["NIRVANA_CONTEXT_WINDOW", "CLAUDE_CODE_AUTO_COMPACT_WINDOW"]) delete process.env[k];
+  process.env.NIRVANA_PROFILE = "none"; // the installed profile must not set a ceiling here
   _resetSettingsCache();
 });
 

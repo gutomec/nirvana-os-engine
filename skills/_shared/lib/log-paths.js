@@ -3,7 +3,7 @@
  * live". log-paths.ts re-exports this file, typed, so every ESM importer
  * keeps working unchanged (mirrors brief-excerpt.js/.ts).
  *
- * Moved here so a `.js` caller (context-budget.js) can `require()` it
+ * Moved here so a `.js` caller (audit.js, handoff.js) can `require()` it
  * directly instead of reaching for the `.ts` — the pattern this file itself
  * used to be an instance of, and that this cut removes as a class: a plain
  * `.js` `require()`d from another `.js` never crosses the CJS/ESM boundary

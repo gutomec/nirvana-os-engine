@@ -29,7 +29,6 @@ const bm25 = require('./bm25');
 const registryLoader = require('./registry-loader');
 const budget = require('./budget');
 const nrvPaths = require('../../_shared/lib/paths.js');
-const contextBudget = require('./context-budget');
 
 // Lazy-loaded host-agent-driver (used only by Stage -2 amplifier when WEAK).
 // host-agent-driver.js already delegates to the canonical .ts under Bun and
@@ -2300,7 +2299,6 @@ async function route(brief, ctx) {
           stage3: decision,
           stage4: await stage4BudgetCheck(targetMatch, context.budget),
           stage5: stage5Invoke(targetMatch, brief, context),
-          context_budget: contextBudget.estimateContextBudget(),
           warnings: registries.warnings || [],
         };
       }
@@ -2334,7 +2332,6 @@ async function route(brief, ctx) {
         stage3: decision,
         stage4: await stage4BudgetCheck(metaMatch, context.budget),
         stage5: stage5Invoke(metaMatch, brief, context),
-        context_budget: contextBudget.estimateContextBudget(),
         warnings: registries.warnings || [],
       };
     }
@@ -2530,7 +2527,6 @@ async function route(brief, ctx) {
     stage3: decision,
     stage4: budgetCheck,
     stage5: invocationPlan,
-    context_budget: contextBudget.estimateContextBudget(),
     warnings: registries.warnings || [],
   };
 }
@@ -2658,20 +2654,6 @@ if (require.main === module) {
           });
         }
       } catch {}
-      // Audit: context budget warning (only when crossing threshold)
-      try {
-        const cb = result.context_budget;
-        if (cb && (cb.warning || cb.critical)) {
-          audit.emit('context_budget_warning', {
-            threshold_pct: cb.threshold_pct,
-            estimated_tokens: cb.estimated_tokens,
-            window_tokens: cb.window_tokens,
-            warning: cb.warning,
-            critical: cb.critical,
-            recommendation: cb.recommendation,
-          });
-        }
-      } catch {}
       // Audit: routing decision
       try {
         const s3 = result.stage3 || {};
@@ -2697,13 +2679,6 @@ if (require.main === module) {
         process.stdout.write(`intent:   ${s1.intent || s1.kind || '?'} (${(s1.confidence ?? 0).toFixed?.(2) ?? '?'})\n`);
         process.stdout.write(`signal:   ${s3.signal || '?'}\n`);
         if (s3.route_tier) process.stdout.write(`tier:     ${s3.route_tier} (prefer=${s3.prefer || 'auto'})\n`);
-        const cb = result.context_budget;
-        if (cb) {
-          const pct = (cb.threshold_pct * 100).toFixed(1);
-          const flag = cb.critical ? ' ⚠ CRITICAL' : (cb.warning ? ' ⚠ WARNING' : '');
-          process.stdout.write(`context:  ${pct}% of ${cb.window_tokens} tokens (${cb.estimated_tokens} estimated, threshold=${(cb.threshold_warning_pct * 100).toFixed(0)}%)${flag}\n`);
-          if (cb.recommendation) process.stdout.write(`recommend: ${cb.recommendation}\n`);
-        }
         if (s3.target) {
           const tk = s3.target.meta?.type || s3.target.kind || 'target';
           const ts = s3.target.slug || s3.target.id || '?';
