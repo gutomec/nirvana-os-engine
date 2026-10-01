@@ -7,7 +7,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-  buildSoloPrompt, namedSquadsIn, participationFile, preferredSquads, readSeats, runBusinessSolo, SOLO_INTAKE_LINE, SOLO_LIFETIME_LINE, SOLO_SPECIALIST_CLAUSE,
+  buildSoloPrompt, namedSquadsIn, participationFile, prepareBusinessSolo, requestVoices, preferredSquads, readSeats, runBusinessSolo, SOLO_INTAKE_LINE, SOLO_LIFETIME_LINE, SOLO_SPECIALIST_CLAUSE,
   soloDirective, soloSquads, type BusinessSoloArgs,
 } from "../lib/business-solo.ts";
 import { AUTONOMOUS_DIRECTIVE } from "../lib/host-agent-driver.ts";
@@ -45,9 +45,44 @@ function baseArgs(extra: Partial<BusinessSoloArgs> = {}): BusinessSoloArgs {
     slug: "acme-launch", bizDir: BIZ, brief: "## Request (verbatim)\nLaunch a course.\n",
     projectId: "p-1", projectDir: PROJECT_DIR, projectRoot: PROJECT_ROOT, outputsRoot: OUTPUTS, runtime: "claude-code",
     cloneLookup: lookup, squadDirOf, memoryDirs: [],
+    cloneNames: () => [], voiceSearch: () => [],
     ...extra,
   };
 }
+
+describe("voices for the request", () => {
+  const hit = (slug: string, below_gate: boolean) =>
+    ({ slug, display_name: slug.toUpperCase(), score: 1, normalized: 1, coverage: { matched: 9, total: 30 }, below_gate }) as any;
+  const library = (slug: string) => ({ dir: path.join(TMP, "clones", slug), files: [] });
+  const seats = [{ slug: "al-copy", role: "", file: "x", voices: [{ slug: "copy-legend", dir: null, files: [] }], squads: null }];
+
+  test("the library's search fills a business whose seats carry no voice, above the gate only", () => {
+    const v = requestVoices("## Request (verbatim)\nWrite a sales page\n", [], library, [], () => [hit("halbert", false), hit("off-topic", true), hit("sugarman", false)]);
+    expect(v.map((x) => x.slug)).toEqual(["halbert", "sugarman"]);
+    expect(v[0].why).toBe("matches 9/30 of the request's terms");
+  });
+
+  test("a clone the brief names wins over the search; a seat's own voice is not repeated", () => {
+    const names = [{ slug: "gary-halbert", name: "Gary Halbert" }, { slug: "copy-legend", name: "Copy Legend" }];
+    const v = requestVoices("Write it like Gary Halbert would, or copy-legend", seats as any, library, names, () => [hit("other", false)]);
+    expect(v.map((x) => [x.slug, x.why])).toEqual([["gary-halbert", "named in the brief"]]);
+  });
+
+  test("an uninstalled clone is skipped and at most three are offered", () => {
+    const search = () => ["a", "b", "ghost", "c", "d"].map((s) => hit(s, false));
+    const v = requestVoices("x", [], (slug) => slug === "ghost" ? null : library(slug), [], search);
+    expect(v.map((x) => x.slug)).toEqual(["a", "b", "c"]);
+  });
+
+  test("the prompt lists them with their files and grants their folders", () => {
+    const prep = prepareBusinessSolo(baseArgs({ voiceSearch: () => [hit("bencivenga", false)], cloneLookup: (slug) => slug === "bencivenga" ? library(slug) : lookup(slug) }));
+    expect(prep.prompt).toContain("## Voices for this request");
+    expect(prep.prompt).toContain("- `bencivenga` (BENCIVENGA):");
+    expect(prep.launch.addDirs).toContain(path.join(TMP, "clones", "bencivenga"));
+    const none = prepareBusinessSolo(baseArgs());
+    expect(none.prompt).not.toContain("## Voices for this request");
+  });
+});
 
 describe("squads a request names", () => {
   const SLUGS = ["testing", "design", "instagram-intelligence-nirvana"];

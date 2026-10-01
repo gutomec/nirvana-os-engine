@@ -660,7 +660,7 @@ It states what and why, never how. `nrv brief template` prints the skeleton, `nr
 
 ### 14.2 What the worker does
 
-The engine hands the worker a prompt that is a map, never pasted content: the brief file, the business folder, the memory directories, the seat map with each seat's file and voices, and the squad cards. The worker then:
+The engine hands the worker a prompt that is a map, never pasted content: the brief file, the business folder, the memory directories, the seat map with each seat's file and voices, the voices that fit this request, and the squad cards. The voices for the request are the clones the brief names or, when it names none, at most three the library's search ranks above its coverage gate (the same rule a squad dispatch uses); a clone a seat already carries is not repeated. The worker then:
 
 1. Works in **phases** and keeps `_work/PROGRESS.md` current: decisions taken, what is done (with paths), what is next. If its context is compacted, the brief and `PROGRESS.md` are how it continues.
 2. **Reads with purpose**: it locates with a search, reads the part it needs, batches independent reads, and does not print back a file it just wrote.

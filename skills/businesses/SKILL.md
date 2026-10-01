@@ -49,7 +49,8 @@ If absent, the orchestration didn't happen — claiming "I used business X + squ
 A dispatched business runs as ONE agent (`harness/lib/business-solo.ts`). It
 reads the brief the orchestrator wrote for it and re-reads it at every phase,
 plays the seats from their files, writes in a clone's voice only after loading
-that clone's persona, and uses a squad by reading its card
+that clone's persona (its seats' own voices, plus up to three the engine
+finds for the request), and uses a squad by reading its card
 (`nrv cards squad <slug>`) and working as its agents. It never dispatches: not a
 squad, not a seat, not another business.
 

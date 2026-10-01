@@ -30,6 +30,8 @@ import { loadCloneRegistry, resolveClonePersona } from "../../_shared/lib/clone-
 import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { runFolderOf } from "../../_shared/lib/run-workspace.ts";
 import { writeSquadCards } from "../../_shared/lib/work-cards.ts";
+import { findCloneForTask, type CloneHit } from "../../_shared/lib/clone-search.ts";
+import { parseWorkBrief } from "./work-brief.ts";
 
 export interface SeatVoice { slug: string; dir: string | null; files: string[] }
 
@@ -72,14 +74,21 @@ export interface BusinessSoloArgs {
   cloneLookup?: CloneLookup;
   squadDirOf?: (slug: string) => string;
   memoryDirs?: string[];
+  /** The clone library: its entries (for names a brief mentions) and its search. */
+  cloneNames?: () => Array<{ slug: string; name: string }>;
+  voiceSearch?: (query: string) => CloneHit[];
 }
 
 export interface SoloLaunch { cwd: string; addDirs: string[]; appendSystemPrompt: string; workspace?: string }
+
+/** A clone offered for this request, beyond the voices the seats carry. */
+export interface RequestVoice { slug: string; name: string; why: string; dir: string; files: string[] }
 
 export interface PreparedSolo {
   prompt: string;
   briefFile: string;
   seats: Seat[];
+  voices: RequestVoice[];
   squadCards: Record<string, string>;
   launch: SoloLaunch;
 }
@@ -193,6 +202,45 @@ export function preferredSquads(bizDir: string | null): string[] {
  *  names, the business's preferred ones and the closed sets the seats declare.
  *  A seat open to any squad adds none: listing the whole library would be the
  *  cost this mode removes. */
+/** What a request is about: its own words and this business's part, without
+ *  the decisions and criteria around them. */
+function voiceQuery(brief: string): string {
+  const s = parseWorkBrief(brief).sections;
+  return [s["Request (verbatim)"], s["Your part"]].filter(Boolean).join("\n") || brief;
+}
+
+/**
+ * Clones that fit this request: the ones the brief names, else the library's
+ * search above its coverage gate (the rule squads and the retired seat prompt
+ * use). A business whose seats carry no voice still writes in one when the
+ * library has a fit. At most `limit`; a clone a seat already carries is not
+ * repeated, and an uninstalled one is skipped.
+ */
+export function requestVoices(
+  brief: string, seats: Seat[], cloneLookup: CloneLookup,
+  names: Array<{ slug: string; name: string }>, search: (query: string) => CloneHit[], limit = 3,
+): RequestVoice[] {
+  const taken = new Set(seats.flatMap((s) => s.voices.map((v) => v.slug)));
+  const out: RequestVoice[] = [];
+  const add = (slug: string, name: string, why: string) => {
+    if (out.length >= limit || taken.has(slug)) return;
+    const hit = cloneLookup(slug);
+    if (!hit) return;
+    taken.add(slug);
+    out.push({ slug, name, why, dir: hit.dir, files: hit.files });
+  };
+  const low = brief.toLowerCase();
+  for (const c of names) {
+    const name = c.name.toLowerCase();
+    if (low.includes(c.slug) || low.includes(c.slug.replace(/-/g, " ")) || (name.length > 3 && low.includes(name))) add(c.slug, c.name, "named in the brief");
+  }
+  if (out.length) return out;
+  for (const h of search(voiceQuery(brief))) {
+    if (h.below_gate === false) add(h.slug, h.display_name, `matches ${h.coverage.matched}/${h.coverage.total} of the request's terms`);
+  }
+  return out;
+}
+
 export function soloSquads(args: Pick<BusinessSoloArgs, "mandatorySquads" | "optionalSquads" | "briefSquads">, seats: Seat[], preferred: string[] = []): string[] {
   const out = [...(args.mandatorySquads ?? []), ...(args.optionalSquads ?? []), ...(args.briefSquads ?? []), ...preferred];
   for (const s of seats) if (s.squads) out.push(...s.squads);
@@ -205,6 +253,7 @@ export function buildSoloPrompt(
   seats: Seat[],
   memoryDirs: string[],
   squadCards: Record<string, string>,
+  voices: RequestVoice[] = [],
 ): string {
   const lines: string[] = [];
   const progress = path.join(workDir(args.outputsRoot), "PROGRESS.md");
@@ -227,6 +276,15 @@ export function buildSoloPrompt(
     lines.push(`- \`${s.slug}\`${s.role ? ` (${s.role})` : ""}: \`${s.file}\` · voices: ${voices}`);
   }
   lines.push("");
+
+  if (voices.length) {
+    lines.push("## Voices for this request", "", "These clones fit this request. A seat whose work they serve writes in one after opening its persona files; name the ones you used in participation.json.", "");
+    for (const v of voices) {
+      const where = v.files.length ? v.files.map((f) => `\`${f}\``).join(", ") : `\`${v.dir}\``;
+      lines.push(`- \`${v.slug}\` (${v.name}): ${where} · ${v.why}`);
+    }
+    lines.push("");
+  }
 
   lines.push("## Squads", "");
   const cards = Object.entries(squadCards);
@@ -299,16 +357,25 @@ export function prepareBusinessSolo(args: BusinessSoloArgs): PreparedSolo {
   }
   const squads = soloSquads(args, seats, preferredSquads(args.bizDir));
   const squadCards = writeSquadCards(path.join(args.projectDir, "cards"), squads, squadDirOf);
-  const prompt = buildSoloPrompt({ ...args, briefFile }, seats, memoryDirs, squadCards) + "\n\n" + scopeGuard();
+  const briefText = (() => { try { return fs.readFileSync(briefFile, "utf8"); } catch { return args.brief; } })();
+  let voices: RequestVoice[] = [];
+  try {
+    const names = args.cloneNames ?? (() => Object.entries(loadCloneRegistry({ cwd: args.projectDir }) as Record<string, any>)
+      .map(([slug, c]) => ({ slug, name: String(c?.display_name ?? slug) })));
+    const search = args.voiceSearch ?? ((q: string) => findCloneForTask(q, { limit: 6, cwd: args.projectDir }));
+    voices = requestVoices(briefText, seats, cloneLookup, names(), search);
+  } catch { voices = []; } // a library that cannot be read leaves the seats' own voices
+  const prompt = buildSoloPrompt({ ...args, briefFile }, seats, memoryDirs, squadCards, voices) + "\n\n" + scopeGuard();
   fs.writeFileSync(path.join(args.projectDir, "solo-prompt.md"), prompt);
   // What the worker may touch: the run, the business, its voices, the squads
   // on its cards, its memory, and the folder of the brief.
   const dirs = [args.projectDir, args.outputsRoot, args.bizDir, ...memoryDirs, path.dirname(briefFile)];
   for (const s of seats) for (const v of s.voices) if (v.dir) dirs.push(v.dir);
+  for (const v of voices) dirs.push(v.dir);
   for (const q of Object.keys(squadCards)) dirs.push(squadDirOf(q));
   const workspace = runFolderOf(args.projectDir, args.projectRoot) ?? undefined;
   return {
-    prompt, briefFile, seats, squadCards,
+    prompt, briefFile, seats, voices, squadCards,
     launch: {
       cwd: args.projectRoot, addDirs: [...new Set(dirs.map((d) => path.resolve(d)))],
       appendSystemPrompt: soloDirective(args.rulesDirective), ...(workspace ? { workspace } : {}),
@@ -324,7 +391,7 @@ export function runBusinessSolo(args: BusinessSoloArgs): BusinessSoloResult {
 
   emit("x_business_solo_started", {
     trace_id: args.projectId, project_id: args.projectId, business_slug: args.slug, runtime: args.runtime,
-    seats: prep.seats.length, prompt_chars: prep.prompt.length, squad_cards: Object.keys(prep.squadCards), brief_file: prep.briefFile,
+    seats: prep.seats.length, prompt_chars: prep.prompt.length, squad_cards: Object.keys(prep.squadCards), voices: prep.voices.map((v) => v.slug), brief_file: prep.briefFile,
   });
 
   const run = args.runWithCascadeImpl ?? runWithCascade;
