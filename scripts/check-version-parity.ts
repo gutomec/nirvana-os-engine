@@ -38,7 +38,7 @@ const read = (p: string) => readFileSync(join(REPO, p), "utf8");
 const pkg = JSON.parse(read("package.json")).version as string;
 const versionFile = read("skills/VERSION").trim();
 /** The first `## X.Y.Z` heading in the changelog is the release being shipped. */
-const changelog = read("CHANGELOG.md").match(/^## (\d+\.\d+\.\d+)/m)?.[1] ?? "(none)";
+const changelog = read("CHANGELOG.md").match(/^## (\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)/m)?.[1] ?? "(none)";
 
 /**
  * The status line every README closes with: "Status: beta (0.x, currently
@@ -55,7 +55,7 @@ const changelog = read("CHANGELOG.md").match(/^## (\d+\.\d+\.\d+)/m)?.[1] ?? "(n
  * declaring its version is exactly the drift this check exists to catch.
  */
 const READMES = ["README.md", "README.pt-BR.md", "README.es.md", "README.zh.md", "README.hi.md", "README.ar.md"];
-const STATUS_RE = /0\.x[^\n)）]{0,40}?(\d+\.\d+\.\d+)/;
+const STATUS_RE = /0\.x[^\n)）]{0,40}?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)/;
 const NO_STATUS_LINE = "(none)";
 
 const sources: Array<[string, string, string]> = [
