@@ -119,6 +119,12 @@ Use Nirvana-OS to produce a launch package: market research, landing-page copy,
 and a competitive teardown.
 ```
 
+**اضبطه بجملة واحدة.** التكلفة والجودة ومدى تدخّل Nirvana إعدادات يغيّرها وكيلك عندما تطلب ذلك. ملف أداء واحد (اقتصادي أو متوازن أو أقصى جودة) يضبط دفعة واحدة الجهد والسياق والمراجعة والمُحكِّم؛ اسأل وكيلك عمّا هو مضبوط وسيعرض لك كل الإعدادات.
+
+```text
+Put Nirvana in economy mode, and in this project use it only when I ask.
+```
+
 مزيد من التدفقات، ومنها "صمّم الوكالة، واستنسخ المتخصصين، وابنِها" في ثلاثة أسئلة، موجودة في [الصفحة الرئيسية للتوثيق](https://gutomec.github.io/nirvana-os-engine/)، التي تشغّل الجملة نفسها عبر بيئات التشغيل السبع المدعومة: Claude Code وCodex وGemini وAntigravity وGrok وKimi وHermes.
 
 ## لماذا لعبارة "العمل منجز" معنى هنا

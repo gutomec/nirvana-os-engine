@@ -119,6 +119,12 @@ Use Nirvana-OS to produce a launch package: market research, landing-page copy,
 and a competitive teardown.
 ```
 
+**एक वाक्य में बदलें।** लागत, गुणवत्ता और Nirvana काम में कितना दखल दे, ये सेटिंग्स हैं जिन्हें आपका एजेंट आपके कहने पर बदलता है। एक प्रोफ़ाइल (economy, balanced या max) प्रयास, संदर्भ, समीक्षा और जज को एक साथ बदल देती है; एजेंट से पूछें कि क्या सेट है, वह सारी सेटिंग्स दिखा देगा।
+
+```text
+Put Nirvana in economy mode, and in this project use it only when I ask.
+```
+
 और फ़्लो, जिनमें तीन सवालों में "एजेंसी डिज़ाइन करो, विशेषज्ञों को क्लोन करो, उसे बनाओ" शामिल है, [दस्तावेज़ीकरण होम](https://gutomec.github.io/nirvana-os-engine/) पर हैं, जो वही वाक्य सातों समर्थित रनटाइम में चलाता है: Claude Code, Codex, Gemini, Antigravity, Grok, Kimi और Hermes।
 
 ## यहाँ "काम हो गया" का मतलब कुछ क्यों है

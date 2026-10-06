@@ -6,6 +6,12 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Não lançado
+
+### O agente muda as configurações do Nirvana quando o usuário pede
+
+Os usuários mudam o Nirvana conversando com o agente, e a skill de entrada não tinha seção de configurações: um pedido como "deixe o Nirvana no modo economia" dependia de o agente achar o `nrv config` sozinho, e o `nrv config set` sem flag grava no projeto quando roda dentro de um. A skill `nirvana` agora tem uma seção de configurações que liga o que o usuário diz ao comando (perfil, listar, explicar, voltar ao padrão, modo de orquestração, escopo, teto de gasto), sempre passa `--global` ou `--project` e avisa que um novo modo de orquestração pede uma sessão nova; a descrição dela inclui configurações entre os gatilhos. Os seis READMEs mostram um exemplo de ajuste do Nirvana numa frase.
+
 ## 0.15.0-beta.1 — 2026-10-02
 
 ### Um pedido que aponta para uma empresa chega ao Nirvana, no Antigravity também

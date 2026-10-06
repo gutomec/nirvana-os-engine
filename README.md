@@ -119,6 +119,12 @@ Use Nirvana-OS to produce a launch package: market research, landing-page copy,
 and a competitive teardown.
 ```
 
+**Tune it in a sentence.** Cost, quality, and how far Nirvana steps in are settings your agent changes when you ask. A profile (economy, balanced, or max) moves effort, context, review, and the judge at once; ask your agent what is configured and it lists every setting.
+
+```text
+Put Nirvana in economy mode, and in this project use it only when I ask.
+```
+
 More flows, including "design the agency, clone the specialists, build it" in three questions, are in the [documentation home](https://gutomec.github.io/nirvana-os-engine/), which runs the same sentence across all seven supported runtimes: Claude Code, Codex, Gemini, Antigravity, Grok, Kimi, and Hermes.
 
 ## Why "the work is done" means something here

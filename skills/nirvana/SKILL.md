@@ -1,6 +1,6 @@
 ---
 name: nirvana
-description: "Nirvana-OS entry point: the user's own system of businesses (empresas), squads and mind-clones. Use it ONLY when the request calls for it: it names Nirvana or nirvana-os ('use o nirvana-os', 'via nirvana', 'pelo nirvana', 'manda o nirvana'); names or points to one of the user's businesses, squads or mind-clones, by name, by kind, by pack name or as the model to follow ('use minhas empresas/squads', 'o squad de copy', 'com a voz do Hormozi', 'como a empresa X e seus squads e clones'); asks for the work, or a part of it, to run on another agent runtime ('use o codex para revisar'); asks what they have ('quais são minhas empresas', 'quais squads eu tenho', 'o que o nirvana pode fazer'); or asks to create, validate or migrate a business or a squad. Otherwise do not use it: work as you normally would. Discovery runs the `nrv` CLI, production goes to the harness orchestrator, lifecycle to the protocols; a missing engine is installed first."
+description: "Nirvana-OS entry point: the user's own system of businesses (empresas), squads and mind-clones. Use it ONLY when the request calls for it: it names Nirvana or nirvana-os ('use o nirvana-os', 'via nirvana', 'pelo nirvana',); names or points to one of the user's businesses, squads or mind-clones, by name, by kind, by pack name or as the model to follow ('use minhas empresas/squads', 'o squad de copy', 'com a voz do Hormozi', 'como a empresa X e seus squads e clones'); asks for the work, or a part of it, to run on another agent runtime ('use o codex para revisar'); asks what they have ('quais são minhas empresas', 'quais squads eu tenho', 'o que o nirvana pode fazer'); asks to change its settings ('modo economia', 'máxima qualidade'); or asks to create, validate or migrate a business or a squad. Otherwise do not use it: work as you normally would. Discovery runs the `nrv` CLI, production goes to the harness orchestrator, lifecycle to the protocols; a missing engine is installed first."
 compatibility: "Needs Bun and the `nrv` CLI. If they are absent it installs them on first use with the user's go-ahead: Bun in user space, the engine into ~/.nirvana, `nrv` into ~/.local/bin. Runtime-agnostic, no dependency on any specific agent CLI. Network is required for that first install only; everything after it runs locally."
 tools: [Bash, Read]
 license: SUL-1.0
@@ -166,6 +166,36 @@ set with `nrv init --scope=<mode>`.
 | Update this skill | `npx skills update` |
 | Remove the engine, keep the content | `nrv uninstall --engine` |
 | Remove only this skill | `npx skills remove nirvana` |
+
+## 8. Settings: the user asks, you change them
+
+Users change how Nirvana works by talking to you, not by typing commands. Run
+the command, confirm with `nrv config get <key>`, and say what changed in the
+user's words.
+
+| The user says | Command |
+|---|---|
+| "deixe o Nirvana no modo economia" ("equilibrado", "máxima qualidade") | `nrv config set execution.profile economy --global` (`balanced`, `max`) |
+| "o que está configurado?" | `nrv config list` |
+| "o que faz essa configuração?" | `nrv config explain <key>` |
+| "volte ao padrão" | `nrv config unset <key> --global` |
+| "neste projeto, use o Nirvana só quando eu pedir" / "orquestre tudo neste projeto" | `nrv init . --orchestrators=on-demand` / `--orchestrators=always` |
+| "este projeto só com as empresas dele" / "as dele e as globais" / "a biblioteca toda" | `nrv init . --scope=project` / `merge` / `global` |
+| "limite cada execução a US$ 5" | `nrv config set budget.default_max_cost_usd 5 --global` |
+
+- **Where it applies.** Always pass `--global` or `--project` to `nrv config`:
+  without a flag it writes to the project when run inside one, which the user
+  rarely means. A request about "this project" is `--project`; anything else is
+  `--global`. `nrv init` runs in the project's root.
+- **A profile first, then exceptions.** A profile moves effort, the context
+  ceiling, review, the judge and routing together; a key the user sets
+  explicitly beats it. Change one key only when the user asked for that
+  behaviour ("sem revisão", "sem juiz de IA").
+- **When it takes effect.** A setting applies from the next dispatch. A new
+  orchestration mode rewrites `AGENTS.md`, `CLAUDE.md` and `GEMINI.md`: tell the
+  user to open a new session for it to take hold.
+- Never edit `config.yaml` or `project.yaml` by hand, and never change a
+  setting the user did not ask for.
 
 This skill is thin by design: discovery goes to `nrv`, production goes to
 `harness`, and the library lives on disk. It produces no artifacts itself.

@@ -119,6 +119,12 @@ Use Nirvana-OS to produce a launch package: market research, landing-page copy,
 and a competitive teardown.
 ```
 
+**Ajuste numa frase.** Custo, qualidade e o quanto o Nirvana entra no trabalho são configurações que o seu agente muda quando você pede. Um perfil (economia, equilibrado ou máximo) ajusta de uma vez o esforço, o contexto, a revisão e o juiz; pergunte ao agente o que está configurado e ele lista tudo.
+
+```text
+Put Nirvana in economy mode, and in this project use it only when I ask.
+```
+
 Mais fluxos, incluindo "desenhe a agência, clone os especialistas, construa" em três perguntas, estão na [home da documentação](https://gutomec.github.io/nirvana-os-engine/), que roda a mesma frase nos sete runtimes suportados: Claude Code, Codex, Gemini, Antigravity, Grok, Kimi e Hermes.
 
 ## Por que "o trabalho está feito" significa algo aqui

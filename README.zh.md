@@ -119,6 +119,12 @@ Use Nirvana-OS to produce a launch package: market research, landing-page copy,
 and a competitive teardown.
 ```
 
+**一句话调好。** 成本、质量以及 Nirvana 介入工作的程度，都是你开口后由你的代理修改的设置。一个性能档位（economy、balanced 或 max）会同时调整推理投入、上下文上限、评审和评判模型；问你的代理当前配置了什么，它会列出全部设置。
+
+```text
+Put Nirvana in economy mode, and in this project use it only when I ask.
+```
+
 更多流程，包括三个问题完成“设计机构、克隆专家、把它建起来”，都在[文档主页](https://gutomec.github.io/nirvana-os-engine/)，它在全部七个受支持的运行时中运行同一句话：Claude Code、Codex、Gemini、Antigravity、Grok、Kimi 和 Hermes。
 
 ## 为什么“工作已完成”在这里有分量

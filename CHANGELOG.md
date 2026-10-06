@@ -6,6 +6,12 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### The agent changes Nirvana's settings when the user asks
+
+Users change Nirvana by talking to their agent, and the entry skill had no settings section: a request like "put Nirvana in economy mode" depended on the agent finding `nrv config` by itself, and `nrv config set` without a flag writes to the project when run inside one. The `nirvana` skill now has a settings section that maps what the user says to the command (profile, list, explain, reset, orchestration mode, scope, spend ceiling), always passes `--global` or `--project`, and says a new orchestration mode needs a new session; its description lists settings among its triggers. The six READMEs show one example of tuning Nirvana in a sentence.
+
 ## 0.15.0-beta.1 — 2026-10-02
 
 ### A request that points to a business reaches Nirvana, in Antigravity too
