@@ -8,6 +8,10 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## Unreleased
 
+### Glance shows the services you declare beside the engine
+
+The cockpit's engine row could only show what `subsystems.ts` knew about; a service the operator runs next to the engine (a backup, a mirror, a watcher) had no way in short of editing the server. Now a `service.yaml` under `<project>/.nirvana/glance/services/<slug>/` (or `~/.nirvana/glance/services/` for every project) declares it, and the service writes its own status file. `GET /api/services` and a SERVICES row under the engine row show each one with the same three readings the engine row uses: `up` or `down` only when the service wrote a valid status within its `ttl_seconds`, and `—` for no status, a stale one or an invalid manifest, with the reason in the tooltip. Glance only reads: it creates nothing, fetches no URL, starts no process, loads no code from the service directory, and a manifest path cannot leave its own directory. `/api/subsystems` is unchanged. The contract is `nirvana.glance.service/v1`, documented in `GLANCE.md`.
+
 ### The loop guard counts repeats per target
 
 The orchestrator skill told every revision to tick `nrv guard tick --action revision`, one fixed signature for all of them. Three seats revised once each read as one action repeated three times, tripped `repeated_action` and blocked a run that was not looping. The skill now asks for a signature that names the target (`--action revision:<seat>`, `retry:<squad>`), so the guard stops only when the same target is revised three times; the 12-step ceiling is unchanged.

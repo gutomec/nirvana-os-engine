@@ -8,6 +8,10 @@ do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
 ## Não lançado
 
+### O Glance mostra os serviços que você declara ao lado do engine
+
+A linha do engine no cockpit só mostrava o que `subsystems.ts` conhecia; um serviço que o operador roda ao lado do engine (um backup, um espelho, um vigia) não tinha como entrar sem editar o servidor. Agora um `service.yaml` em `<projeto>/.nirvana/glance/services/<slug>/` (ou `~/.nirvana/glance/services/` para todos os projetos) o declara, e o próprio serviço escreve seu arquivo de status. `GET /api/services` e uma linha SERVICES abaixo da linha do engine mostram cada um com as mesmas três leituras da linha do engine: `up` ou `down` só quando o serviço escreveu um status válido dentro do seu `ttl_seconds`, e `—` para status ausente, vencido ou manifesto inválido, com o motivo no tooltip. O Glance só lê: não cria nada, não busca URL, não inicia processo, não carrega código do diretório do serviço, e um caminho do manifesto não pode sair do próprio diretório. `/api/subsystems` não muda. O contrato é `nirvana.glance.service/v1`, documentado em `GLANCE.md`.
+
 ### O disjuntor de laço conta repetições por alvo
 
 A skill do orquestrador mandava toda revisão registrar `nrv guard tick --action revision`, uma assinatura fixa para todas. Três cargos revisados uma vez cada viravam uma ação repetida três vezes, disparavam `repeated_action` e travavam uma execução que não estava em laço. A skill agora pede uma assinatura com o alvo (`--action revision:<cargo>`, `retry:<squad>`), então o disjuntor só para quando o mesmo alvo é revisado três vezes; o teto de 12 passos não muda.
