@@ -50,7 +50,7 @@ import { amplify } from "../lib/amplifier.ts";
 import { proxyEnrichBrief } from "../lib/brief-proxy.ts";
 import { resolveRoutingMode, routingModeOrigin } from "../../_shared/lib/routing-mode.ts";
 import { creditSoloRun, namedSquadsIn, prepareBusinessSolo, runBusinessSolo } from "../lib/business-solo.ts";
-import { runSoloReviewStage, type ReviewPolicy } from "../lib/solo-review.ts";
+import { runSoloReviewStage, SERIOUS_EXTRA_ROUNDS, type ReviewPolicy } from "../lib/solo-review.ts";
 import { resolveEntityDir } from "../../_shared/lib/entity-resource-map.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { globalStoreDir, outputsBaseDir } from "../../_shared/lib/project-root.js";
@@ -799,6 +799,17 @@ const pinnedCascade: typeof runWithCascade = (cascadeArgs) => runWithCascade({ .
 console.log(c("dim", DECLARED_PROJECT_ROOT
   ? `  project: ${DECLARED_PROJECT_ROOT} · outputs under ${OUTPUTS_BASE}`
   : `  no Nirvana project here (no .nirvana/project.yaml; \`nrv init\` makes one) · outputs under ${OUTPUTS_BASE}`));
+// And what the run will cost before it spends: the profile, the effort, how
+// many correction rounds the gate may run, and whether workers take
+// screenshots. A tester who believed they were on economy found out after a
+// run on balanced had spent five correction rounds.
+{
+  const profile = String(resolveSetting("execution.profile").value || "none");
+  const effort = String(resolveSetting("execution.effort").value || "the runtime's own");
+  const rounds = Number(resolveSetting("quality_gate.max_revisions").value);
+  const visual = resolveSetting("execution.visual_checks").value ? "on" : "off";
+  console.log(c("dim", `  profile: ${profile} · effort: ${effort} · gate corrections: ${rounds}${rounds > 0 ? ` (+${SERIOUS_EXTRA_ROUNDS} for serious findings)` : ""} · visual checks: ${visual}`));
+}
 
 // Named `emit` so check-audit-parity's literal emit-call scan sees every
 // dispatch-side emission.
@@ -1542,11 +1553,13 @@ function deliveryStatus(res: DeliveryResult, oroot: string): { state: DeliverySt
 
 function printDeliverySummary(res: DeliveryResult, pid: string, oroot: string, zipPath: string | null, runtimeErrored = false): void {
   console.log("");
-  if (runtimeErrored) {
+  if (runtimeErrored && !res.stopped) {
     console.log(c("yellow", "⚠ The runtime reported an error at the end of the run — the artifacts that already existed were verified and judged anyway."));
   }
   const status = deliveryStatus(res, oroot);
-  if (status.state === "delivered") {
+  if (res.stopped) {
+    console.log(c("yellow", `■ Stopped (${res.stopped}): nothing ran after the stop.`));
+  } else if (status.state === "delivered") {
     console.log(c("green", "✓ Autopilot complete: delivered."));
   } else if (status.state === "delivered_with_reservations") {
     console.log(c("yellow", `⚠ Delivered with reservations: ${status.reservations ?? "see _SUMMARY.md"}`));

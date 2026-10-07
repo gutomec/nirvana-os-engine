@@ -50,6 +50,30 @@ export function treeCpuMs(rows: ProcRow[], root: number, exclude?: number): numb
   return total;
 }
 
+/** Every process under `root` (children, grandchildren…), from one snapshot.
+ *  Taken BEFORE anything is signalled: once a parent dies its children are
+ *  re-parented to init and the link to the run is gone. Each pid once, so a
+ *  parent link that loops cannot spin. */
+export function descendants(rows: ProcRow[], root: number): number[] {
+  const children = new Map<number, number[]>();
+  for (const r of rows) {
+    if (r.pid === r.ppid) continue;
+    const list = children.get(r.ppid);
+    if (list) list.push(r.pid); else children.set(r.ppid, [r.pid]);
+  }
+  const out: number[] = [];
+  const seen = new Set<number>([root]);
+  const stack = [...(children.get(root) ?? [])];
+  while (stack.length) {
+    const pid = stack.pop()!;
+    if (seen.has(pid)) continue;
+    seen.add(pid);
+    out.push(pid);
+    stack.push(...(children.get(pid) ?? []));
+  }
+  return out;
+}
+
 /** Linux: /proc has utime + stime in clock ticks (100 per second on every
  *  mainstream kernel), 10ms resolution where procps `ps -o time=` has 1s. */
 function linuxTable(): ProcRow[] {

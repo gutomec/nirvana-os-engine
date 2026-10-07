@@ -11,8 +11,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-  claudeAbsolutePattern, confineToWorkspace, contractPointer, fenceSettings, namedIn, nestedOutputsBase, projectDenyRules, runFolderOf,
-  RUN_WORKSPACE_ENV, siblingRunFolders, workspaceDirective,
+  claudeAbsolutePattern, confineToWorkspace, contractPointer, fenceSettings, nestedOutputsBase, projectDenyRules, runFolderOf,
+  RUN_WORKSPACE_ENV, workspaceDirective,
 } from "../lib/run-workspace.ts";
 import { outputsBaseDir } from "../lib/project-root.js";
 
@@ -60,8 +60,6 @@ describe("nestedOutputsBase", () => {
     // The squad a seat dispatched is part of the seat's run, not a sibling.
     const squadDir = path.join(base!, "proj-nested", "squads", "tiny");
     expect(runFolderOf(squadDir, p.root)).toBe(p.mine);
-    fs.mkdirSync(squadDir, { recursive: true });
-    expect(siblingRunFolders(p.mine)).toEqual([p.other]);
   });
 
   test("from the operator, or with a variable that names no run folder, nothing nests", () => {
@@ -69,13 +67,6 @@ describe("nestedOutputsBase", () => {
     expect(nestedOutputsBase(p.root, {})).toBeNull();
     expect(nestedOutputsBase(p.root, { [RUN_WORKSPACE_ENV]: p.root })).toBeNull();
     expect(nestedOutputsBase(p.root, { [RUN_WORKSPACE_ENV]: path.join(p.root, "outputs", "missing") })).toBeNull();
-  });
-});
-
-describe("siblingRunFolders", () => {
-  test("lists the other run folders, never this one and never plain files", () => {
-    const p = project("sib");
-    expect(siblingRunFolders(p.mine)).toEqual([p.other]);
   });
 });
 
@@ -113,36 +104,21 @@ describe("projectDenyRules", () => {
   });
 });
 
-describe("namedIn", () => {
-  test("on Windows the match ignores case and the separator style; elsewhere it is exact", () => {
-    const run = "C:\\Proj\\.nirvana\\outputs\\run-2";
-    expect(namedIn("see c:/proj/.nirvana/outputs/run-2/_SUMMARY.md", run, "win32")).toBe(true);
-    expect(namedIn("see C:\\PROJ\\.NIRVANA\\OUTPUTS\\RUN-2\\x", run, "win32")).toBe(true);
-    expect(namedIn("see /p/outputs/RUN-2/x", "/p/outputs/run-2", "linux")).toBe(false);
-    expect(namedIn("outputs/run-2/x", "/p/outputs/run-2", "linux")).toBe(true);
-  });
-});
-
 describe("fenceSettings", () => {
-  test("every sibling run is denied to Read and Edit, the folder and what is under it", () => {
+  // A worker reaches any folder on the machine: a sibling run its brief points
+  // to, another project it reviews, a new one it creates. Only the project's
+  // own deny rules travel.
+  test("no run folder is ever denied, siblings included", () => {
     const p = project("fence");
-    const other = claudeAbsolutePattern(p.other)!;
-    expect(fenceSettings(p.mine, p.root)!.permissions.deny).toEqual([
-      `Read(${other})`, `Read(${other}/**)`, `Edit(${other})`, `Edit(${other}/**)`,
-    ]);
+    expect(fenceSettings(p.mine, p.root)).toBeNull();
   });
 
-  test("a sibling the instruction names by path stays readable; a bare id does not count", () => {
-    const p = project("fence-named");
-    expect(fenceSettings(p.mine, null, process.platform, `Build on the analysis in outputs/run-other/deliverables.`)).toBeNull();
-    expect(fenceSettings(p.mine, null, process.platform, `See ${p.other}/deliverables/report.md.`)).toBeNull();
-    expect(fenceSettings(p.mine, null, process.platform, "the run-other folder")!.permissions.deny.length).toBe(4);
-  });
-
-  test("a run alone in its base with no project rules has nothing to fence", () => {
-    const lone = path.join(TMP, "lone", "outputs", "only-run");
-    fs.mkdirSync(lone, { recursive: true });
-    expect(fenceSettings(lone, null)).toBeNull();
+  test("the project's own deny rules are the whole file", () => {
+    const p = project("fence-rules");
+    fs.mkdirSync(path.join(p.root, ".claude"), { recursive: true });
+    fs.writeFileSync(path.join(p.root, ".claude", "settings.json"), JSON.stringify({ permissions: { deny: ["Read(./.env)"] } }));
+    const root = claudeAbsolutePattern(p.root)!;
+    expect(fenceSettings(p.mine, p.root)!.permissions.deny).toEqual([`Read(${root}/.env)`]);
   });
 });
 
@@ -152,8 +128,10 @@ describe("confineToWorkspace", () => {
     expect(confineToWorkspace(opts).opts).toBe(opts);
   });
 
-  test("claude-code: cwd moves to the run, the project stays granted, the fence travels in --settings", () => {
+  test("claude-code: cwd moves to the run, the project stays granted, its deny rules travel in --settings", () => {
     const p = project("confine-claude");
+    fs.mkdirSync(path.join(p.root, ".claude"), { recursive: true });
+    fs.writeFileSync(path.join(p.root, ".claude", "settings.json"), JSON.stringify({ permissions: { deny: ["Read(./.env)"] } }));
     const { opts, cleanup } = confineToWorkspace({
       runtime: "claude-code", cwd: p.root, workspace: p.mine, addDirs: [path.join(p.mine, "agent-x")], appendSystemPrompt: "DIRECTIVE",
     });
@@ -163,7 +141,8 @@ describe("confineToWorkspace", () => {
       expect(opts.addDirs).toEqual([path.join(p.mine, "agent-x"), p.root]);
       expect(opts.appendSystemPrompt).toBe(`DIRECTIVE\n\n${workspaceDirective(p.mine)}`);
       const settings = JSON.parse(fs.readFileSync(opts.claudeSettings!, "utf8"));
-      expect(settings.permissions.deny).toContain(`Read(${claudeAbsolutePattern(p.other)}/**)`);
+      expect(settings.permissions.deny).toEqual([`Read(${claudeAbsolutePattern(p.root)}/.env)`]);
+      expect(JSON.stringify(settings)).not.toContain("run-other");
     } finally { cleanup(); }
     expect(fs.existsSync(opts.claudeSettings!)).toBe(false);
   });
@@ -193,7 +172,8 @@ describe("confineToWorkspace", () => {
     try {
       expect(opts.cwd).toBe(p.mine);
       expect(opts.appendSystemPrompt).toBeUndefined();
-      expect(opts.claudeSettings).toBeDefined();
+      // no project deny rules here, so no settings file either
+      expect(opts.claudeSettings).toBeUndefined();
     } finally { cleanup(); }
   });
 

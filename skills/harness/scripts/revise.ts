@@ -238,7 +238,10 @@ const ledgerRun: { handle: runLedger.LedgerHandle; runId: string } | null = (() 
     }
     const fresh = runLedger.openRun(handle, {
       traceId: projectId, projectId, projectRoot: row.project_root, targetSlug: row.target_slug ?? slug, targetKind: kind, runtime: rt,
-      sessionId, meta: { ...row.meta, revision_of: row.run_id, dispatch_role: role },
+      // This process is the revision's dispatcher: `nrv run-track stop` ends it
+      // with its worker, instead of the earlier run's pid the copied meta carries.
+      sessionId, meta: { ...row.meta, revision_of: row.run_id, dispatch_role: role,
+        dispatcher_pid: process.pid, dispatcher_started_at: runLedger.processStartedAt(process.pid) },
     });
     runLedger.markState(handle, fresh.run_id, "running");
     return { handle, runId: fresh.run_id };

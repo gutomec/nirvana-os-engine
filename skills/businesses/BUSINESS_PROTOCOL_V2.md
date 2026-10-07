@@ -671,7 +671,7 @@ The worker then:
 
 1. Works in **phases** and keeps `_work/PROGRESS.md` current: decisions taken, what is done (with paths), what is next. If its context is compacted, the brief and `PROGRESS.md` are how it continues.
 2. **Reads with purpose**: it locates with a search, reads the part it needs, batches independent reads, and does not print back a file it just wrote.
-3. Writes **deliverables under the outputs root** and working files under `_work/`, and **nothing anywhere else**, even where the brief names another folder. The one exception is `participation.json`, which sits in the run folder on purpose.
+3. Writes **deliverables under the outputs root** and working files under `_work/`. Work the brief places in another folder (a project to review or fix, a new project to create) is done there, and every path it created or changed is listed in the summary. `participation.json` sits in the run folder on purpose.
 4. Writes deliverables in the **language of the request**.
 5. Delivers the whole of its part and nothing beyond it. Anything beyond goes into the summary as a note.
 6. Plays seats by opening their files, writes in a clone's voice only after loading its persona, and uses squads through their cards (§13.3).

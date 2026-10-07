@@ -69,7 +69,7 @@ describe("the interactive command per runtime", () => {
   });
 
   test("autonomy flags match the headless runners, and --safe drops them", () => {
-    expect(interactiveArgv({ runtime: "claude-code", yolo: true, model: "opus", addDirs: ["/p"] })).toEqual(["claude", "--permission-mode", "auto", "--model", "opus", "--disallowedTools", "Task", "Agent", "--add-dir", "/p"]);
+    expect(interactiveArgv({ runtime: "claude-code", yolo: true, model: "opus", addDirs: ["/p"] })).toEqual(["claude", "--dangerously-skip-permissions", "--model", "opus", "--disallowedTools", "Task", "Agent", "--add-dir", "/p"]);
     expect(interactiveArgv({ runtime: "claude-code", yolo: false, model: "opus" })).toEqual(["claude", "--permission-mode", "acceptEdits", "--model", "opus", "--disallowedTools", "Task", "Agent"]);
     expect(interactiveArgv({ runtime: "codex", yolo: true, model: "gpt-5" })).toEqual(["codex", "--dangerously-bypass-approvals-and-sandbox", "-m", "gpt-5"]);
     expect(interactiveArgv({ runtime: "gemini-cli", yolo: false, model: "g" })).toEqual(["gemini", "--approval-mode", "auto_edit", "-m", "g"]);
@@ -79,11 +79,11 @@ describe("the interactive command per runtime", () => {
 
   test("a confined claude worker carries its run's deny rules, as the headless runner does", () => {
     expect(interactiveArgv({ runtime: "claude-code", yolo: true, model: "opus", addDirs: ["/p"], claudeSettings: "/tmp/fence.json" }))
-      .toEqual(["claude", "--permission-mode", "auto", "--model", "opus", "--settings", "/tmp/fence.json", "--disallowedTools", "Task", "Agent", "--add-dir", "/p"]);
+      .toEqual(["claude", "--dangerously-skip-permissions", "--model", "opus", "--settings", "/tmp/fence.json", "--disallowedTools", "Task", "Agent", "--add-dir", "/p"]);
   });
 
   test("subagents are denied unless the caller is an orchestrator", () => {
-    expect(interactiveArgv({ runtime: "claude-code", yolo: true, allowSubagents: true })).toEqual(["claude", "--permission-mode", "auto"]);
+    expect(interactiveArgv({ runtime: "claude-code", yolo: true, allowSubagents: true })).toEqual(["claude", "--dangerously-skip-permissions"]);
   });
 
   test("the worker is stamped with its own depth and role, never the parent's", () => {
@@ -170,7 +170,7 @@ describe("with canned Orca answers", () => {
     expect(taskCreate).toContain("--task-title");
     const termCreate = c.calls[2];
     expect(termCreate[termCreate.indexOf("--title") + 1]).toBe("brandcraft/writer · claude");
-    expect(termCreate[termCreate.indexOf("--command") + 1]).toContain("'--permission-mode' 'auto'");
+    expect(termCreate[termCreate.indexOf("--command") + 1]).toContain("'--dangerously-skip-permissions'");
     expect(c.calls[3]).toEqual(["terminal", "wait", "--terminal", "term_1", "--for", "tui-idle", "--timeout-ms", "120000"]);
     expect(c.calls[4]).toEqual(["terminal", "read", "--terminal", "term_1", "--limit", "80"]);
     expect(c.calls[5]).toEqual(["orchestration", "dispatch", "--run", "run_1", "--task", "task_1", "--to", "term_1", "--inject"]);
@@ -441,7 +441,9 @@ describe("through the driver, with real fakes on PATH", () => {
     // `cd '<run>' && …` on POSIX, `Set-Location -LiteralPath '<run>'; …` on Windows.
     expect(command.indexOf(run)).toBeGreaterThanOrEqual(0);
     expect(command.indexOf(run)).toBeLessThan(command.indexOf("claude"));
-    expect(command).toContain("--settings");
+    // The run beside it (run-0) is not fenced off: no folder is denied, and
+    // with no project deny rules there is no settings file at all.
+    expect(command).not.toContain("--settings");
     process.env.ORCA_WORKTREE_ID = "r::/w";
   });
 });

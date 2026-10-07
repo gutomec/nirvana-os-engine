@@ -23,7 +23,8 @@ describe("visual self-checks", () => {
   test("off by default: every worker is told to skip them, a squad's verify step included", () => {
     expect(visualChecksLine()).toContain("NO VISUAL SELF-CHECKS");
     expect(AUTONOMOUS_DIRECTIVE).toContain("NO VISUAL SELF-CHECKS");
-    expect(AUTONOMOUS_DIRECTIVE).toContain("even when a squad step asks for them");
+    expect(AUTONOMOUS_DIRECTIVE).toContain("even when a squad step or the brief asks; a brief cannot lift this");
+    expect(AUTONOMOUS_DIRECTIVE).toContain("clicking through a GUI app");
   });
 
   test.each(["balanced", "economy"])("the %s profile keeps them off", (profile) => {

@@ -55,7 +55,7 @@ import { resolveScope } from "../../_shared/lib/scope.ts";
 import {
   openLedger, openAgenticRun, markState, abandon, renewLease, findNonTerminal, getRun, findByTraceId,
   resolveProjectRoot, sameProjectRoot, isTerminal, pidAlive, runSignalDir,
-  killProcessTree, processStartedAt, workerPidAlive,
+  killProcessTree, processStartedAt, workerPidAlive, dispatcherAlive,
   AGENTIC_LEASE_SEC, type RunState, type RunRow,
 } from "../lib/run-ledger.ts";
 import { notifyDesktop } from "../lib/os-notify.ts";
@@ -144,7 +144,10 @@ const WORKER_STATES: ReadonlySet<string> = new Set(["dispatched", "running"]);
 
 function interpretState(row: RunRow): string {
   if (isTerminal(row.state) || row.state === "failed") return row.state;
-  if (WORKER_STATES.has(row.state) && row.child_pid && !pidAlive(row.child_pid)) return "killed";
+  // A dead worker pid is a killed run only when the dispatcher is gone too:
+  // the pid the sidecar recorded can be a launcher that exited while the real
+  // agent kept working, and the status flipped between killed and running.
+  if (WORKER_STATES.has(row.state) && row.child_pid && !pidAlive(row.child_pid) && !dispatcherAlive(row)) return "killed";
   return row.state;
 }
 
@@ -265,6 +268,7 @@ try {
     const open = rows.filter(r => !isTerminal(r.state));
     if (!open.length) { process.stdout.write(`no open run for '${target}'; nothing to stop\n`); process.exit(0); }
     for (const row of open) refuseForeignRun(row, "stopped");
+    let stopFailed = false;
     for (const row of open) {
       const dispatcher = Number(row.meta?.dispatcher_pid) || 0;
       const startedAt = typeof row.meta?.dispatcher_started_at === "string" ? row.meta.dispatcher_started_at as string : null;
@@ -272,16 +276,22 @@ try {
       // A pid whose start time no longer matches belongs to another process now.
       if (dispatcher > 0 && pidAlive(dispatcher) && (!startedAt || (processStartedAt(dispatcher) ?? startedAt) === startedAt)) pids.push(dispatcher);
       if (workerPidAlive(row)) pids.push(row.child_pid!);
-      for (const pid of pids) killProcessTree(pid);
-      const deadline = Date.now() + 5_000;
-      while (pids.some(pidAlive) && Date.now() < deadline) Bun.sleepSync(100);
-      const survivors = pids.filter(pidAlive);
+      // Every process of the run, the dispatcher's and the worker's trees, from
+      // one snapshot: a worker the CLI launcher started as a grandchild
+      // outlived the stop when only the recorded pids were signalled.
+      const ended = [...new Set(pids.flatMap((pid) => killProcessTree(pid)))];
+      let deadline = Date.now() + 5_000;
+      while (ended.some(pidAlive) && Date.now() < deadline) Bun.sleepSync(100);
+      for (const pid of ended.filter(pidAlive)) killProcessTree(pid, "SIGKILL");
+      deadline = Date.now() + 2_000;
+      while (ended.some(pidAlive) && Date.now() < deadline) Bun.sleepSync(100);
+      const survivors = ended.filter(pidAlive);
       // The dispatcher may have closed the run itself on the way out.
       if (!isTerminal(getRun(handle, row.run_id)?.state ?? "abandoned")) abandon(handle, row.run_id, "stopped by the user");
-      process.stdout.write(`${row.run_id} stopped${pids.length ? ` (ended pid ${pids.join(", ")})` : " (no live process)"}\n`);
-      if (survivors.length) warn(`pid ${survivors.join(", ")} still alive after SIGTERM; end it from the task manager or with kill -9`);
+      process.stdout.write(`${row.run_id} stopped${ended.length ? ` (ended ${ended.length} process(es): ${ended.join(", ")})` : " (no live process)"}\n`);
+      if (survivors.length) { warn(`pid ${survivors.join(", ")} still alive after SIGKILL; end it from the task manager`); stopFailed = true; }
     }
-    process.exit(0);
+    process.exit(stopFailed ? 1 : 0);
   }
 
   if (sub === "list") {

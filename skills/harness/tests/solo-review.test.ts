@@ -13,6 +13,7 @@ import {
 } from "../lib/solo-review.ts";
 import { soloDirective } from "../lib/business-solo.ts";
 import type { Criterion } from "../lib/work-brief.ts";
+import * as runLedger from "../lib/run-ledger.ts";
 
 let tmp: string;
 let outputs: string;
@@ -195,6 +196,36 @@ describe("runSoloReviewStage", () => {
     ...extra,
   });
   const ok = (result: string) => ({ ok: true, runtime: "codex", sessionId: null, result, costUsd: null, durationMs: 1 }) as any;
+
+  function stoppableRun(): { handle: runLedger.LedgerHandle; runId: string } {
+    const handle = runLedger.openLedger(path.join(tmp, "ledger.sqlite"));
+    const row = runLedger.openRun(handle, { traceId: "t", projectId: "p", targetSlug: "biz", targetKind: "business", runtime: "claude-code" });
+    runLedger.markState(handle, row.run_id, "running");
+    return { handle, runId: row.run_id };
+  }
+
+  test("a run stopped before the review: no reviewer, no correction", () => {
+    deliver();
+    const led = stoppableRun();
+    runLedger.abandon(led.handle, led.runId, "stopped by the user");
+    let calls = 0;
+    const out = runSoloReviewStage(args({ policy: "always", ledger: led, runImpl: () => { calls++; return ok("{}"); } }));
+    expect(calls).toBe(0);
+    expect(out.skipped).toBe("stopped");
+    expect(out.blockingMissed).toEqual([]);
+  });
+
+  test("a run stopped while the reviewer ran: the correction never starts", () => {
+    deliver();
+    const led = stoppableRun();
+    const calls: any[] = [];
+    const out = runSoloReviewStage(args({
+      policy: "always", ledger: led,
+      runImpl: (o: any) => { calls.push(o); runLedger.abandon(led.handle, led.runId, "stopped by the user"); return ok(JSON.stringify({ confirmed: [] })); },
+    }));
+    expect(calls).toHaveLength(1);
+    expect(out.skipped).toBe("stopped");
+  });
 
   test("no rule fires: no reviewer is run", () => {
     deliver();

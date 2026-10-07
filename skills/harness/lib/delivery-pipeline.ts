@@ -19,10 +19,22 @@
 //     limit and is DELIVERED WITH RESERVATIONS (exit 0, _QA-RESERVATIONS.md).
 //     A caller that runs unattended may ask for `gateExhaustedPolicy:
 //     "withhold"` instead.
+//   - The extra rounds are granted for progress: a correction that leaves the
+//     same serious findings (same rubric and file, same criterion) as the
+//     round before it ends the corrections, and the delivery is withheld.
+//
+// Every gate round is appended to <outputsRoot>/_GATE-FINDINGS.md (run state,
+// never a deliverable): each failed rubric of each file with its reasoning and
+// fixes, serious or not, so the run can be followed while it corrects.
+//
+// A run whose ledger row turns terminal under the pipeline (`nrv run-track
+// stop` marks it abandoned) stops before the next gate, judge call or
+// correction, spawns nothing more and keeps the row's own state.
 //
 // The LLM judge follows quality_gate.judge_enabled (reports | true | false);
 // the heuristics cover everything else, and secret-leak and the validity
-// rubrics run in both modes.
+// rubrics run in both modes. The text deliverables of a round share one judge
+// session (planJudgeBatches), each file keeping its own verdict.
 //
 // Exit-code contract (BREAKING vs pre-Phase-4 — see CHANGELOG):
 //   0 = delivered (gate pass), delivered with reservations, or fail-forced
@@ -68,6 +80,7 @@ import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { resolveSetting } from "../../_shared/lib/settings.ts";
 import { judgeScope, type HarnessConfig } from "./harness-config.ts";
 import * as runLedger from "./run-ledger.ts";
+import { JUDGE_BATCH_FILE_MAX_CHARS, JUDGE_BATCH_MAX_CHARS } from "./judge.ts";
 
 // ── deliverable surface (moved verbatim from scripts/dispatch.ts) ─────────
 
@@ -114,9 +127,10 @@ export function nonStubText(dir: string, named: Set<string>): string[] {
  *
  *  - `isRunStateFile` (skills/_shared/lib/run-plumbing.ts) — what the run
  *    writes about itself: the worker's `_SUMMARY.md` and `_CLAIMS.json`, the
- *    gate's `_QA-RESERVATIONS.md` and `_STATUS.json`, `_work/`, `_review/`,
- *    the prompt, the session. The one list every counter, gate, verifier,
- *    report and export asks, so a run that left only these is not a delivery.
+ *    gate's `_QA-RESERVATIONS.md`, `_STATUS.json` and `_GATE-FINDINGS.md`,
+ *    `_work/`, `_review/`, the prompt, the session. The one list every
+ *    counter, gate, verifier, report and export asks, so a run that left only
+ *    these is not a delivery.
  *  - `isRunStatePath` (skills/_shared/lib/run-state.ts) — the canonical list
  *    the installer, the uninstaller and the pack builder already read. An
  *    outputs root may belong to a squad or to a business, so every kind is
@@ -207,6 +221,11 @@ export interface GateRunOpts {
   /** Called before each file is judged (the pipeline renews the run's lease
    *  here: a judge on a long report can think for minutes per file). */
   beforeFile?: (file: string) => void;
+  /** Called before each batched judge session (planJudgeBatches), with its files. */
+  beforeBatch?: (files: string[]) => void;
+  /** Asked before every gate call, batched or not: true ends the gate run at
+   *  once, with nothing more spawned (the run was stopped under it). */
+  shouldStop?: () => boolean;
 }
 
 /**
@@ -243,6 +262,16 @@ export const SERIOUS_RUBRICS: ReadonlySet<string> = new Set([
   "secret-leak", "json-valid", "html-valid", "pdf-valid", "yaml-valid", "brief-fidelity",
 ]);
 
+/** One failed rubric on one file, in the words the gate gave. */
+export interface GateFinding {
+  rubric: string;
+  reasoning: string;
+  fixes: string[];
+  /** A secret, an invalid file or a material defect (SERIOUS_RUBRICS, or the
+   *  judge's own critique of that rubric holds a `high` item). */
+  serious: boolean;
+}
+
 export interface GateFail {
   file: string;
   fixes: string[];
@@ -250,6 +279,10 @@ export interface GateFail {
   failedRubrics: string[];
   /** The judge reported a material defect (a `high` critique item). */
   material: boolean;
+  /** Every failed rubric with its reasoning: what `_GATE-FINDINGS.md` records. */
+  findings?: GateFinding[];
+  /** The issues of the judge's `high` critique items. */
+  materialIssues?: string[];
 }
 
 export interface GateRun {
@@ -258,57 +291,156 @@ export interface GateRun {
   /** How each file was REALLY judged: "judge" only when the judge returned a
    *  verdict; a judge that gave none falls back to the heuristics, and says so. */
   modes: Record<string, "judge" | "heuristic">;
+  /** Set only when `shouldStop` ended the run before every file was judged. */
+  stopped?: true;
+}
+
+/**
+ * The judged files that share one judge session (quality-gate.ts --batch):
+ * files small enough to travel whole beside others (JUDGE_BATCH_FILE_MAX_CHARS),
+ * grouped up to JUDGE_BATCH_MAX_CHARS. A file left alone (too large, or the only
+ * one of its group) keeps its own call, so nothing is ever cut to fit. Sizes are
+ * bytes on disk, never fewer than the characters the judge reads.
+ */
+export function planJudgeBatches(files: string[]): string[][] {
+  const batches: string[][] = [];
+  let current: string[] = [];
+  let size = 0;
+  for (const f of files) {
+    let bytes: number;
+    try { bytes = fs.statSync(f).size; } catch { continue; }
+    if (bytes > JUDGE_BATCH_FILE_MAX_CHARS) continue;
+    if (current.length && size + bytes > JUDGE_BATCH_MAX_CHARS) { batches.push(current); current = []; size = 0; }
+    current.push(f);
+    size += bytes;
+  }
+  if (current.length) batches.push(current);
+  return batches.filter(b => b.length > 1);
+}
+
+/** A failed file's record, from the verdict the gate printed (null when it printed none). */
+function gateFailOf(file: string, v: any): GateFail {
+  const fixes: string[] = [];
+  const failedRubrics: string[] = [];
+  const findings: GateFinding[] = [];
+  for (const r of v?.results || []) {
+    if (r.passed || r.skipped) continue;
+    const ruleFixes: string[] = Array.isArray(r.fix_list) ? r.fix_list.map(String) : [];
+    fixes.push(...ruleFixes);
+    if (r.name) failedRubrics.push(String(r.name));
+    findings.push({
+      rubric: String(r.name ?? "unknown"), reasoning: String(r.reasoning ?? ""), fixes: ruleFixes,
+      serious: SERIOUS_RUBRICS.has(String(r.name)) || r.material === true,
+    });
+  }
+  if (!v) findings.push({ rubric: "gate", reasoning: "the gate printed no verdict for this file", fixes: [], serious: false });
+  const high = Array.isArray(v?.critique) ? v.critique.filter((c: any) => c?.severity === "high") : [];
+  return { file, fixes, failedRubrics, material: high.length > 0, findings, materialIssues: high.map((c: any) => String(c?.issue ?? "")).filter(Boolean) };
 }
 
 /** Run the quality gate over each artifact; collect fix lists for failures.
  * Accepts a bare script path (legacy signature, offline heuristics) or full
- * GateRunOpts. Parses the normalized verdict {status, mode, results[]}. */
+ * GateRunOpts. Parses the normalized verdict {status, mode, results[]}.
+ *
+ * The files the judge takes go first, batched (planJudgeBatches): ONE judge
+ * session per batch instead of one per file, each file still with its own
+ * verdict. A file the batch did not decide (its answer did not parse, or the
+ * batch child crashed) is judged by a call of its own, as every file was before. */
 export function runGateOnce(files: string[], gate: string | GateRunOpts): GateRun {
   const opts: GateRunOpts = typeof gate === "string" ? { gateScript: gate, offline: true } : gate;
   const fails: GateFail[] = [];
   const modes: GateRun["modes"] = {};
+  const judged = (f: string) => !opts.offline && (opts.judgeExts === undefined || opts.judgeExts.has(path.extname(f).toLowerCase()));
+  const judgeFlags = [
+    ...(opts.produces?.length ? [`--produces=${opts.produces.join(",")}`] : []),
+    ...(opts.briefFile ? [`--brief-file=${opts.briefFile}`] : []),
+  ];
+  const spawnGate = (argv: string[]) => spawnSync("bun", [opts.gateScript, ...argv], {
+    windowsHide: true,
+    encoding: "utf8",
+    env: { ...process.env, ...(opts.env ?? {}) },
+  });
+  const stopped = (): GateRun => ({ pass: false, fails, modes, stopped: true });
+
+  const decided = new Map<string, { v: any; failed: boolean }>();
+  for (const batch of planJudgeBatches(files.filter(judged))) {
+    if (opts.shouldStop?.()) return stopped();
+    opts.beforeBatch?.(batch);
+    const g = spawnGate(["--batch", "--auto", "--with-revisions", ...judgeFlags, ...batch]);
+    let out: any = null;
+    try { out = JSON.parse(g.stdout); } catch { out = null; }
+    if (g.status !== 0 || out?.mode !== "batch" || !out.verdicts || typeof out.verdicts !== "object") continue;
+    for (const f of batch) {
+      const v = out.verdicts[f];
+      if (v && typeof v === "object") decided.set(f, { v, failed: v.status !== "PASS" });
+    }
+  }
+
   for (const f of files) {
-    opts.beforeFile?.(f);
-    const argv = [opts.gateScript, f, "--auto"];
-    const offline = opts.offline || (opts.judgeExts !== undefined && !opts.judgeExts.has(path.extname(f).toLowerCase()));
-    if (offline) argv.push("--offline");
-    else {
-      argv.push("--with-revisions");
-      if (opts.produces?.length) argv.push(`--produces=${opts.produces.join(",")}`);
-      if (opts.briefFile) argv.push(`--brief-file=${opts.briefFile}`);
+    let d = decided.get(f);
+    if (!d) {
+      if (opts.shouldStop?.()) return stopped();
+      opts.beforeFile?.(f);
+      const g = spawnGate([f, "--auto", ...(judged(f) ? ["--with-revisions", ...judgeFlags] : ["--offline"])]);
+      let v: any = null;
+      try { v = JSON.parse(g.stdout); } catch { v = null; }
+      d = { v, failed: g.status !== 0 };
     }
-    const g = spawnSync("bun", argv, {
-      windowsHide: true,
-      encoding: "utf8",
-      env: { ...process.env, ...(opts.env ?? {}) },
-    });
-    let v: any = null;
-    try { v = JSON.parse(g.stdout); } catch { v = null; }
-    modes[f] = v?.mode === "judge" ? "judge" : "heuristic";
-    if (g.status !== 0) {
-      const fixes: string[] = [];
-      const failedRubrics: string[] = [];
-      for (const r of v?.results || []) {
-        if (r.passed || r.skipped) continue;
-        fixes.push(...(r.fix_list || []));
-        if (r.name) failedRubrics.push(String(r.name));
-      }
-      const material = Array.isArray(v?.critique) && v.critique.some((c: any) => c?.severity === "high");
-      fails.push({ file: f, fixes, failedRubrics, material });
-    }
+    modes[f] = d.v?.mode === "judge" ? "judge" : "heuristic";
+    if (d.failed) fails.push(gateFailOf(f, d.v));
   }
   return { pass: fails.length === 0, fails, modes };
 }
 
-/** The SERIOUS findings of one gate run, one line each, relative to the root. */
-export function seriousGateFindings(run: GateRun, outputsRoot: string): string[] {
-  const out: string[] = [];
+/** A serious finding with its identity. `key` names WHAT failed and WHERE
+ *  (rubric + file, or the criterion id), normalized for case, separators and
+ *  spacing: two rounds with the same keys made no progress, however the prose
+ *  of the finding changed between them. */
+export interface SeriousFinding {
+  key: string;
+  /** The one-line form `serious[]`, `_STATUS.json` and the audit carry. */
+  text: string;
+  /** The reasoning or the reason, for the operator's line and the findings file. */
+  detail: string;
+}
+
+export function findingKey(...parts: string[]): string {
+  return parts.map(p => p.replace(/\\/g, "/").replace(/\s+/g, " ").trim().toLowerCase()).join("|");
+}
+
+/** The SERIOUS findings of one gate run, with their identity, relative to the root. */
+export function seriousFindingsOf(run: GateRun, outputsRoot: string): SeriousFinding[] {
+  const out: SeriousFinding[] = [];
   for (const fl of run.fails) {
     const rel = path.relative(outputsRoot, fl.file) || path.basename(fl.file);
-    for (const r of fl.failedRubrics) if (SERIOUS_RUBRICS.has(r)) out.push(`${rel}: ${r} failed`);
-    if (fl.material) out.push(`${rel}: the judge reports a material defect`);
+    for (const r of fl.failedRubrics) {
+      if (!SERIOUS_RUBRICS.has(r)) continue;
+      const finding = fl.findings?.find(x => x.rubric === r);
+      out.push({ key: findingKey("rubric", r, rel), text: `${rel}: ${r} failed`, detail: finding?.reasoning || finding?.fixes[0] || "" });
+    }
+    if (fl.material) out.push({ key: findingKey("material", rel), text: `${rel}: the judge reports a material defect`, detail: (fl.materialIssues ?? []).join("; ") });
   }
   return out;
+}
+
+/** The SERIOUS findings of one gate run, one line each, relative to the root. */
+export function seriousGateFindings(run: GateRun, outputsRoot: string): string[] {
+  return seriousFindingsOf(run, outputsRoot).map(f => f.text);
+}
+
+/** True when two rounds carry the same serious findings (by key): the
+ *  correction between them made no progress on what withholds the delivery. */
+export function sameSeriousFindings(a: readonly SeriousFinding[], b: readonly SeriousFinding[]): boolean {
+  if (!a.length || !b.length) return false;
+  const ka = new Set(a.map(f => f.key));
+  const kb = new Set(b.map(f => f.key));
+  return ka.size === kb.size && [...ka].every(k => kb.has(k));
+}
+
+/** One line of a finding for the dispatch log: whitespace folded, cut at `max`. */
+export function shortLine(text: string, max = 160): string {
+  const one = text.replace(/\s+/g, " ").trim();
+  return one.length > max ? `${one.slice(0, max - 1)}…` : one;
 }
 
 /** "judge" when every judged file got a judge verdict, "heuristic" when none
@@ -350,6 +482,7 @@ export interface DeliveryLedger {
  *  file and every correction) and while the publication runs after the gate.
  *  Without it a run that was only being gated looked dead to the supervisor. */
 const GATE_LEASE_SEC = 900;
+const BATCH_LEASE_SEC = 1800;
 const PUBLISH_LEASE_SEC = 1800;
 
 export interface CompletenessCeiling {
@@ -475,6 +608,10 @@ export interface DeliveryResult {
   serious: string[];
   /** `_QA-RESERVATIONS.md` when one sits beside the deliverables, else null. */
   reservations: string | null;
+  /** Set when the run's ledger row was already terminal (`nrv run-track stop`
+   *  marks it abandoned) and the pipeline stopped without spawning anything
+   *  more: the row's state and reason, e.g. "abandoned: stopped by the user". */
+  stopped?: string;
 }
 
 /** What `<outputsRoot>/_STATUS.json` holds. */
@@ -484,9 +621,61 @@ export interface DeliveryStatus {
   serious: string[];
   reservations: string | null;
   exit_code: DeliveryExitCode;
+  /** Only on a run stopped under the pipeline (DeliveryResult.stopped). */
+  stopped?: string;
 }
 
 export const STATUS_FILE = "_STATUS.json";
+
+/** What the gate found, round by round, beside the deliverables: for whoever
+ *  follows the run while it corrects (the orchestrator, an operator). Run state
+ *  (run-plumbing.ts RUN_STATE_FILES), never a deliverable. */
+export const GATE_FINDINGS_FILE = "_GATE-FINDINGS.md";
+
+/** Cap on one finding's reasoning in `_GATE-FINDINGS.md`: a judge's critique
+ *  can run long, and the file is read between rounds, not archived. */
+const FINDING_TEXT_MAX = 2_000;
+
+/** Append to `_GATE-FINDINGS.md`, creating it with its header. */
+function appendGateFindings(outputsRoot: string, block: string): void {
+  const file = path.join(outputsRoot, GATE_FINDINGS_FILE);
+  try {
+    const header = fs.existsSync(file) ? "" : [
+      "# Gate findings",
+      "",
+      "What the quality gate found in each round of this run, written by the engine for whoever follows it. Run state, not a deliverable.",
+      "",
+    ].join("\n");
+    fs.appendFileSync(file, `${header}\n${block.trimEnd()}\n`, "utf8");
+  } catch { /* an unwritable outputs root: the dispatch log carries the serious lines */ }
+}
+
+/** One gate round as a `_GATE-FINDINGS.md` section: every failed rubric of
+ *  every file, serious first, then the blocking criteria without proof. */
+export function gateRoundBlock(o: {
+  round: number; pass: boolean; outputsRoot: string; run: GateRun;
+  claims: ClaimProblem[]; serious: number;
+}): string {
+  const clip = (t: string) => (t.length > FINDING_TEXT_MAX ? `${t.slice(0, FINDING_TEXT_MAX - 1)}…` : t);
+  const lines = [`### Round ${o.round}${o.round === 0 ? " (first gate)" : ` (after correction ${o.round})`} · ${o.pass ? "PASS" : "FAIL"} · ${new Date().toISOString()}`, ""];
+  if (o.pass) { lines.push("No findings."); return lines.join("\n"); }
+  lines.push(`${o.serious} serious finding(s).`, "");
+  const entries = o.run.fails.flatMap(fl => {
+    const rel = (path.relative(o.outputsRoot, fl.file) || path.basename(fl.file)).replace(/\\/g, "/");
+    const found = fl.findings ?? fl.failedRubrics.map(rubric => ({ rubric, reasoning: "", fixes: [], serious: SERIOUS_RUBRICS.has(rubric) }));
+    const rows = found.map(f => ({ serious: f.serious, text: [
+      `- ${f.serious ? "**SERIOUS** " : ""}\`${rel}\` · \`${f.rubric}\`${f.reasoning ? `: ${clip(f.reasoning.replace(/\s+/g, " ").trim())}` : ""}`,
+      ...f.fixes.map(x => `  - fix: ${clip(x.replace(/\s+/g, " ").trim())}`),
+    ] }));
+    if (fl.material && !found.some(f => f.serious && !SERIOUS_RUBRICS.has(f.rubric))) {
+      rows.push({ serious: true, text: [`- **SERIOUS** \`${rel}\` · judge: material defect${fl.materialIssues?.length ? `: ${clip(fl.materialIssues.join("; "))}` : ""}`] });
+    }
+    return rows;
+  });
+  for (const e of [...entries.filter(x => x.serious), ...entries.filter(x => !x.serious)]) lines.push(...e.text);
+  for (const c of o.claims) lines.push(`- **SERIOUS** blocking criterion \`${c.id}\` (${c.description}): ${clip(c.why)}`);
+  return lines.join("\n");
+}
 
 export function writeDeliveryStatus(outputsRoot: string, status: DeliveryStatus): void {
   try {
@@ -602,6 +791,42 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
     return res;
   };
 
+  // A run closed under the pipeline (`nrv run-track stop` marks its row
+  // abandoned, "stopped by the user") must not keep spending: the row is read
+  // before every expensive step (the gate, each judge call, each correction)
+  // and, once terminal, nothing more is spawned. Its state is the row's own:
+  // nothing here writes over it.
+  let stop: string | null = null;
+  const stopped = (): boolean => {
+    if (stop || !led) return stop !== null;
+    const row = ledgerTry(() => runLedger.getRun(led.handle, led.runId), warn);
+    if (row && runLedger.isTerminal(row.state)) stop = `${row.state}${row.last_error ? `: ${row.last_error}` : ""}`;
+    return stop !== null;
+  };
+  const finishStopped = (step: string): DeliveryResult => {
+    const state = stop!.split(":")[0];
+    warn(`  run ${led!.runId} was stopped (${stop}) before the ${step}: nothing more runs; the artifacts stay in ${args.outputsRoot}`);
+    emit("x_delivery_stopped", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, run_id: led!.runId, ledger_state: state, reason: stop, step, revisions: revUsed });
+    if (gateRan) appendGateFindings(args.outputsRoot, `Stopped before the ${step}: the run's ledger row is ${stop}.\n`);
+    // The run's existing semantics (run-track's exit by state): a delivered or
+    // withheld row keeps the _STATUS.json whoever closed it wrote.
+    const exitCode: DeliveryExitCode = state === "delivered" ? 0 : state === "withheld" ? 2 : 1;
+    const res: DeliveryResult = {
+      exitCode, delivered: state === "delivered",
+      state: state === "delivered" ? "delivered" : state === "withheld" ? "withheld" : "failed",
+      gateOutcome: "indeterminate", produced, gatedFiles, revisionsUsed: revUsed, sessionId,
+      zipPath: null, verifySource, ceilingApplied: null, serious: [], reservations: reservationsOnDisk(), stopped: stop!,
+    };
+    if (state === "abandoned") {
+      writeDeliveryStatus(args.outputsRoot, {
+        state: "failed", gate: gateRan ? "fail" : "skipped", serious: [], reservations: res.reservations, exit_code: exitCode, stopped: stop!,
+      });
+    }
+    return res;
+  };
+
+  if (stopped()) return finishStopped("verification");
+
   // ── Step: verify ───────────────────────────────────────────────────────
   mark("verifying");
   workerEnded();
@@ -672,6 +897,9 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
   const gateOpts: GateRunOpts = {
     gateScript, offline: !judgeMode, produces: args.produces, briefFile, env: gateEnv,
     beforeFile: () => renew(GATE_LEASE_SEC),
+    // One session judges the whole batch, so the lease covers the batch.
+    beforeBatch: () => renew(BATCH_LEASE_SEC),
+    shouldStop: stopped,
     ...(judgeMode && scope === "reports" ? { judgeExts: REPORT_EXTS } : {}),
   };
   if (!judgeMode) log(`  gate mode: offline heuristics${scope === "off" ? " (quality_gate.judge_enabled=false)" : ` (no ${args.runtime} runtime for the judge)`}`);
@@ -697,29 +925,58 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
   // when" criterion with a claim whose evidence names a file on disk. Cheap,
   // no model, and the one completeness signal a run with no manifest has.
   const criteria = (args.claimsCheck ?? args.targetKind === "business") ? criteriaFromBrief(args.brief) : [];
-  interface Evaluation { files: string[]; run: GateRun; claims: ClaimProblem[]; serious: string[]; pass: boolean }
+  interface Evaluation { files: string[]; run: GateRun; claims: ClaimProblem[]; serious: string[]; seriousFindings: SeriousFinding[]; pass: boolean }
   const evaluate = (): Evaluation => {
     const files = gateableFiles(args.outputsRoot, namedInBrief);
     const run = runGateOnce(files, gateOpts);
     const claims = criteria.length ? claimProblems(args.outputsRoot, criteria) : [];
-    const serious = [
-      ...seriousGateFindings(run, args.outputsRoot),
-      ...claims.map(c => `blocking criterion ${c.id} (${c.description}): ${c.why}`),
+    const seriousFindings = [
+      ...seriousFindingsOf(run, args.outputsRoot),
+      ...claims.map(c => ({ key: findingKey("criterion", c.id), text: `blocking criterion ${c.id} (${c.description}): ${c.why}`, detail: "" })),
     ];
-    return { files, run, claims, serious, pass: run.pass && claims.length === 0 };
+    return { files, run, claims, serious: seriousFindings.map(f => f.text), seriousFindings, pass: run.pass && claims.length === 0 };
   };
+  // Every round goes to _GATE-FINDINGS.md, for whoever follows the run.
+  const findingsFile = path.join(args.outputsRoot, GATE_FINDINGS_FILE);
+  const recordRound = (e: Evaluation) => appendGateFindings(args.outputsRoot, gateRoundBlock({
+    round: revUsed, pass: e.pass, outputsRoot: args.outputsRoot, run: e.run, claims: e.claims, serious: e.serious.length,
+  }));
 
+  if (stopped()) return finishStopped("quality gate");
   let ev = evaluate();
   gateRan = true;
+  if (ev.run.stopped) return finishStopped("quality gate");
+  appendGateFindings(args.outputsRoot, `## Gate run · ${args.pid} · ${new Date().toISOString()}\n`);
+  recordRound(ev);
   const solo = args.producerRole === "solo";
+  // The serious findings the round before the last correction carried.
+  let previousSerious: SeriousFinding[] | null = null;
+  let noProgress = false;
   while (!ev.pass) {
     // A serious finding keeps being corrected past the normal limit, up to
     // `seriousExtra` more rounds; the limit is read again every round, so a
     // round that clears the serious part falls back to the normal one.
     const limit = ev.serious.length ? maxRevisions + seriousExtra : maxRevisions;
     if (revUsed >= limit) break;
+    // The extra rounds are granted for progress: when the correction just made
+    // left the same serious findings (same rubric and file, same criterion) as
+    // the round before it, another one will not do better. The run ends now,
+    // withheld, with the findings on record. The normal rounds always run.
+    if (revUsed >= maxRevisions && previousSerious && sameSeriousFindings(previousSerious, ev.seriousFindings)) {
+      noProgress = true;
+      warn(`  gate: correction ${revUsed} left the same ${ev.serious.length} serious finding(s) as the round before it — no progress, stopping the corrections (${findingsFile})`);
+      appendGateFindings(args.outputsRoot, `No progress: round ${revUsed} carries the same serious findings as round ${revUsed - 1}, so no further correction runs and the delivery is withheld.\n`);
+      break;
+    }
+    if (stopped()) return finishStopped(`correction round ${revUsed + 1}`);
     revUsed++;
-    warn(`  gate FAIL — auto-revision ${revUsed}/${limit}${ev.serious.length ? ` (${ev.serious.length} serious finding(s))` : ""}`);
+    const limitSource = ev.serious.length && seriousExtra
+      ? `max_revisions ${maxRevisions} + ${seriousExtra} for serious findings`
+      : `max_revisions ${maxRevisions}`;
+    warn(`  gate FAIL — auto-revision ${revUsed}/${limit} (${limitSource}${ev.serious.length ? `; ${ev.serious.length} serious finding(s)` : ""})`);
+    for (const f of ev.seriousFindings) warn(`    ! ${shortLine(f.detail ? `${f.text} · ${f.detail}` : f.text)}`);
+    if (revUsed === 1) warn(`    findings: ${findingsFile}`);
+    previousSerious = ev.seriousFindings;
     // Full paths and the outputs root: a round that has to start cold (below)
     // has no conversation to recover them from.
     const fixLines = [
@@ -759,6 +1016,9 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
     });
     let rr = revise(sessionId || undefined, fixPrompt);
     let coldRetry = false;
+    // A stop kills the correction's worker, which reads like a session that
+    // did not resume: the cold retry below would start a new one.
+    if (!rr.ok && stopped()) return finishStopped(`cold retry of correction ${revUsed}`);
     if (!rr.ok && sessionId) {
       // The session could not be resumed (expired, pruned, another runtime).
       // Without a second try the gate re-ran on unchanged files and the round
@@ -774,7 +1034,10 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
       if (led) ledgerTry(() => runLedger.recordSession(led.handle, led.runId, rr.sessionId), warn);
     }
     workerEnded();
+    if (stopped()) return finishStopped(`gate after correction ${revUsed}`);
     ev = evaluate();
+    if (ev.run.stopped) return finishStopped(`gate after correction ${revUsed}`);
+    recordRound(ev);
   }
   gatedFiles = ev.files;
 
@@ -805,12 +1068,14 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
       outputs_root: args.outputsRoot, gate: verdict,
       ceiling: why.ceiling ? "completeness" : null, ceiling_reason: why.ceiling ?? null,
       ...(why.serious?.length ? { serious: why.serious } : {}),
+      ...(noProgress ? { no_progress: true } : {}),
     });
     mark("withheld", {
       metaPatch: {
         gate: verdict, files: produced.length, revisions: revUsed,
         ...(why.ceiling ? { ceiling: "completeness", ceiling_reason: why.ceiling } : {}),
         ...(why.serious?.length ? { serious: why.serious } : {}),
+        ...(noProgress ? { no_progress: true } : {}),
       },
     });
     return finish({ exitCode: 2, state: "withheld", gateOutcome: verdict, serious: why.serious, ceilingApplied: why.ceiling ?? null, reservations: reservationsOnDisk() });
@@ -869,7 +1134,7 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
 
   if (serious.length) {
     // Rule A: what is still serious after the extended corrections never ships.
-    warn(`  ${serious.length} SERIOUS finding(s) left after ${revUsed} correction round(s) — delivery WITHHELD (artifacts stay at ${args.outputsRoot}):`);
+    warn(`  ${serious.length} SERIOUS finding(s) left after ${revUsed} correction round(s)${noProgress ? " (the last one made no progress)" : ""} — delivery WITHHELD (artifacts stay at ${args.outputsRoot}; findings in ${findingsFile}):`);
     for (const s of serious) warn(`    - ${s}`);
     if (args.forceDeliver) warn("  --force-deliver overrides a quality verdict, never a serious finding.");
     return withhold(gateOutcome === "pass" ? "pass" : "fail", { serious });
@@ -924,7 +1189,8 @@ export interface RuntimeErrorArgs extends DeliveryArgs {
 }
 
 export interface RuntimeErrorOutcome {
-  /** true when artifacts existed and the delivery pipeline ran over them. */
+  /** true when artifacts existed and the delivery pipeline ran over them, or
+   *  when the run was already stopped (`result.stopped` says so). */
   judged: boolean;
   candidates: number;
   /** 1 when there was nothing to judge; otherwise the pipeline's own code
@@ -958,6 +1224,13 @@ export function deliverAfterRuntimeError(args: RuntimeErrorArgs): RuntimeErrorOu
   const warn = args.warn ?? ((l: string) => console.error(l));
   const led = args.ledger ?? null;
   const candidates = candidateArtifacts(args.outputsRoot, args.brief);
+  // A worker killed by `nrv run-track stop` comes back as a runtime error, and
+  // its row is already terminal: runDelivery says so and spawns nothing.
+  const closed = led ? ledgerTry(() => runLedger.getRun(led.handle, led.runId), warn) : null;
+  if (closed && runLedger.isTerminal(closed.state)) {
+    const result = runDelivery(args);
+    return { judged: true, candidates: candidates.length, exitCode: result.exitCode, result };
+  }
   if (led) {
     ledgerTry(() => {
       if (candidates.length === 0) {

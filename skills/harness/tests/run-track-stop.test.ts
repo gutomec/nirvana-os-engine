@@ -92,9 +92,57 @@ describe("nrv run-track stop", () => {
     expect(getRun(h, runId)!.state).toBe("abandoned");
   }, 30_000);
 
+  // The report that found it: `stop` said "ended pid 38702" and the claude
+  // worker, a grandchild of the dispatcher in a process group of its own,
+  // kept running and spending until it was killed by hand.
+  test.skipIf(process.platform === "win32")("a worker the dispatcher started as a grandchild in its own group is ended too", async () => {
+    const pidFile = path.join(TMP, `grandchild-${Date.now()}.pid`);
+    const grandchildScript = `const w = require("node:child_process").spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { detached: true, stdio: "ignore" }); require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(w.pid)); setTimeout(() => {}, 60000);`;
+    const r = spawnSync(process.execPath, ["-e",
+      `const c = require("node:child_process").spawn(process.execPath, ["-e", ${JSON.stringify(grandchildScript)}], { detached: true, stdio: "ignore" }); c.unref(); console.log(c.pid);`,
+    ], { encoding: "utf8" });
+    const dispatcher = Number(r.stdout.trim());
+    started.push(dispatcher);
+    const deadline = Date.now() + 5_000;
+    while (!fs.existsSync(pidFile) && Date.now() < deadline) await Bun.sleep(50);
+    const grandchild = Number(fs.readFileSync(pidFile, "utf8"));
+    started.push(grandchild);
+    const { h, runId } = openWith("landing-d", dispatcher, sleeper());
+    const out = stop(runId);
+    expect(out.status).toBe(0);
+    expect(await gone(dispatcher)).toBe(true);
+    expect(await gone(grandchild)).toBe(true);
+    expect(getRun(h, runId)!.state).toBe("abandoned");
+  }, 30_000);
+
   test("nothing open: says so and changes nothing", () => {
     const r = stop("no-such-project");
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("nothing to stop");
   });
+});
+
+describe("nrv run-track status", () => {
+  const status = (runId: string) => spawnSync(process.execPath, [RUN_TRACK, "status", runId, "--json"], {
+    cwd: PROJECT, encoding: "utf8",
+    env: { ...process.env, NIRVANA_RUN_LEDGER_DB: DB, NIRVANA_PROJECT_ROOT: PROJECT, NIRVANA_NO_DESKTOP_NOTIFY: "1" },
+  });
+  const deadPid = async () => { const pid = sleeper(); process.kill(pid, "SIGKILL"); await gone(pid); return pid; };
+
+  // The report: status said killed while the dispatcher and its claude worker
+  // kept working, because the recorded worker pid was a launcher that had exited.
+  test("a dead worker pid with the dispatcher alive is not killed", async () => {
+    const { runId } = openWith("status-a", sleeper(), sleeper());
+    const h = openLedger(DB);
+    recordChildPid(h, runId, await deadPid(), null);
+    const out = status(runId);
+    expect(JSON.parse(out.stdout).state).toBe("dispatched");  // the row's own state, never "killed"
+  }, 30_000);
+
+  test("with the dispatcher gone too, it is killed", async () => {
+    const { runId } = openWith("status-b", await deadPid(), sleeper());
+    const h = openLedger(DB);
+    recordChildPid(h, runId, await deadPid(), null);
+    expect(JSON.parse(status(runId).stdout).state).toBe("killed");
+  }, 30_000);
 });

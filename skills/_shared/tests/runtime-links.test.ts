@@ -476,6 +476,27 @@ test("the same skill installed by skills.sh is kept, not parked as a backup", ()
   expect(exists(path.join(home, ".claude", "skills", "harness"))).toBe(false);
 });
 
+test("a skills.sh copy of this engine's own skill is refreshed in place to the engine's version", () => {
+  const home = freshHome("home-coexist-ours", [".claude"]);
+  const canonical = path.join(home, ".agents", "skills", "nirvana");
+  fs.mkdirSync(canonical, { recursive: true });
+  fs.writeFileSync(path.join(canonical, "SKILL.md"), "---\nname: nirvana\n---\nan old version from main\n");
+  fs.writeFileSync(path.join(canonical, "STALE.txt"), "gone after the refresh");
+  fs.writeFileSync(path.join(home, ".agents", ".skill-lock.json"), JSON.stringify({ skills: { nirvana: { source: "gutomec/nirvana-os-engine" } } }));
+  const claudeLink = path.join(home, ".claude", "skills", "nirvana");
+  fs.mkdirSync(path.dirname(claudeLink), { recursive: true });
+  if (!IS_WINDOWS) fs.symlinkSync(path.join("..", "..", ".agents", "skills", "nirvana"), claudeLink);
+
+  const { code, out } = install(home);
+  expect(code).toBe(0);
+  expect(out).toContain("from skills.sh, refreshed to this engine's version");
+  const engineSkill = fs.readFileSync(path.join(home, ".nirvana", "skills", "nirvana", "SKILL.md"), "utf8");
+  expect(engineSkill).not.toContain("an old version from main");
+  expect(fs.readFileSync(path.join(canonical, "SKILL.md"), "utf8")).toBe(engineSkill);
+  expect(exists(path.join(canonical, "STALE.txt"))).toBe(false);
+  if (!IS_WINDOWS) expect(fs.readFileSync(path.join(claudeLink, "SKILL.md"), "utf8")).toBe(engineSkill);
+});
+
 test("a foreign dir named nirvana whose SKILL.md declares another name is still parked", () => {
   const home = freshHome("home-coexist-other", [".gemini"]);
   const foreign = path.join(home, ".gemini", "skills", "nirvana");

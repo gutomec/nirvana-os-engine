@@ -25,10 +25,17 @@ const FAKE_GATE = path.join(R, "fake-gate.ts");
 const REAL_PATH = process.env.PATH;
 
 // A gate that records how it was called and passes: the unit here is the choice
-// of judge or heuristics per file, not either rubric set.
+// of judge or heuristics per file, not either rubric set. A --batch call (the
+// judged files of one round, in one judge session) answers for every file.
 fs.writeFileSync(FAKE_GATE, `
 import * as fs from "node:fs";
 const argv = Bun.argv.slice(2);
+if (argv.includes("--batch")) {
+  const files = argv.filter((a) => !a.startsWith("--"));
+  for (const file of files) fs.appendFileSync(${JSON.stringify(GATE_LOG)}, JSON.stringify({ file, judged: argv.includes("--with-revisions"), batch: files.length }) + "\\n");
+  console.log(JSON.stringify({ mode: "batch", unjudged: [], verdicts: Object.fromEntries(files.map((f) => [f, { status: "PASS", mode: "fake", results: [] }])) }));
+  process.exit(0);
+}
 fs.appendFileSync(${JSON.stringify(GATE_LOG)}, JSON.stringify({ file: argv[0], judged: argv.includes("--with-revisions") }) + "\\n");
 console.log(JSON.stringify({ status: "PASS", mode: "fake", results: [] }));
 `, "utf8");
@@ -50,7 +57,7 @@ function outputs(name: string): string {
   return dir;
 }
 
-function judgedByFile(judgeEnabled: HarnessConfig["quality_gate"]["judge_enabled"], name: string): Record<string, boolean> {
+function gateCalls(judgeEnabled: HarnessConfig["quality_gate"]["judge_enabled"], name: string): Array<{ file: string; judged: boolean; batch?: number }> {
   const oroot = outputs(name);
   const base = loadHarnessConfig(path.join(R, "no-config.yaml"));
   const args: DeliveryArgs = {
@@ -61,8 +68,11 @@ function judgedByFile(judgeEnabled: HarnessConfig["quality_gate"]["judge_enabled
     runHeadlessImpl: (() => { throw new Error("no revision in this test"); }) as any,
   };
   runDelivery(args);
-  const calls = fs.readFileSync(GATE_LOG, "utf8").trim().split("\n").map((l) => JSON.parse(l));
-  return Object.fromEntries(calls.map((c) => [path.basename(c.file), c.judged]));
+  return fs.readFileSync(GATE_LOG, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+}
+
+function judgedByFile(judgeEnabled: HarnessConfig["quality_gate"]["judge_enabled"], name: string): Record<string, boolean> {
+  return Object.fromEntries(gateCalls(judgeEnabled, name).map((c) => [path.basename(c.file), c.judged]));
 }
 
 describe("quality_gate.judge_enabled decides which files the judge takes", () => {
@@ -78,6 +88,14 @@ describe("quality_gate.judge_enabled decides which files the judge takes", () =>
   test("false: heuristics only (the old `false`)", () => {
     expect(judgedByFile("false", "off")).toEqual({ "report.md": false, "notes.txt": false, "report.html": false, "app.ts": false, "cover.png": false });
   }, spawnBudgetMs(5));
+
+  test("the judged files of a round share ONE judge session; the rest keep a call each", () => {
+    const calls = gateCalls("reports", "batched");
+    const batched = calls.filter((c) => c.batch).map((c) => path.basename(c.file)).sort();
+    expect(batched).toEqual(["notes.txt", "report.html", "report.md"]);
+    expect(new Set(calls.filter((c) => c.batch).map((c) => c.batch))).toEqual(new Set([3]));
+    expect(calls.filter((c) => !c.batch).map((c) => path.basename(c.file)).sort()).toEqual(["app.ts", "cover.png"]);
+  }, spawnBudgetMs(3));
 });
 
 describe("a research report is judged by the research rubric", () => {

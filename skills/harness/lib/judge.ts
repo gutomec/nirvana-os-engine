@@ -155,6 +155,34 @@ export function ruleVerdict(out: Pick<JudgeOutput, "total_score" | "critique">, 
   return material || out.total_score < passThreshold ? "fail" : "pass";
 }
 
+/** How a critique item is graded: the same scale for one file or a batch. */
+const SEVERITY_LINES = [
+  `Severity of each critique item:`,
+  `- "high": a MATERIAL defect. A part the brief asked for is missing or unusable;`,
+  `  a fact, number, name or citation is wrong or invented; the deliverable`,
+  `  contradicts the brief, or contradicts itself in a way that would mislead the`,
+  `  person who uses it; it claims work that was not done; a criterion the rubric`,
+  `  marks as a hard gate is broken for the deliverable as a whole or on a claim it`,
+  `  depends on.`,
+  `- "medium": a real quality problem worth fixing that does not stop the`,
+  `  deliverable from doing its job.`,
+  `- "low": style, polish, wording, structure preferences, and anything a competent`,
+  `  editor would call a matter of taste.`,
+  `Not defects: professional defaults the executor declared as assumptions (for`,
+  `example under an "## Assumptions" heading, in any language), anything the brief`,
+  `did not ask for, and choices of method, format or length the brief left open.`,
+];
+
+function verdictLines(threshold: string): string[] {
+  return [
+    `Verdict: "fail" only when there is at least one "high" item or the total score`,
+    `is below the pass threshold (${threshold}); otherwise "pass". A score AT the`,
+    `threshold passes. Style, polish and nits never make the verdict fail on their`,
+    `own: list them as "low" items so they reach the author as notes.`,
+    `Score each criterion on what is there, and do not deduct twice for one problem.`,
+  ];
+}
+
 function buildPersona(rubric: RubricMeta): string {
   return [
     `You are the quality judge of an autonomous multi-agent system.`,
@@ -165,26 +193,9 @@ function buildPersona(rubric: RubricMeta): string {
     `You MUST return ONLY a single JSON object matching the schema declared at`,
     `the end of the rubric. No prose, no markdown fences, no preamble. JSON only.`,
     ``,
-    `Severity of each critique item:`,
-    `- "high": a MATERIAL defect. A part the brief asked for is missing or unusable;`,
-    `  a fact, number, name or citation is wrong or invented; the deliverable`,
-    `  contradicts the brief, or contradicts itself in a way that would mislead the`,
-    `  person who uses it; it claims work that was not done; a criterion the rubric`,
-    `  marks as a hard gate is broken for the deliverable as a whole or on a claim it`,
-    `  depends on.`,
-    `- "medium": a real quality problem worth fixing that does not stop the`,
-    `  deliverable from doing its job.`,
-    `- "low": style, polish, wording, structure preferences, and anything a competent`,
-    `  editor would call a matter of taste.`,
-    `Not defects: professional defaults the executor declared as assumptions (for`,
-    `example under an "## Assumptions" heading, in any language), anything the brief`,
-    `did not ask for, and choices of method, format or length the brief left open.`,
+    ...SEVERITY_LINES,
     ``,
-    `Verdict: "fail" only when there is at least one "high" item or the total score`,
-    `is below the pass threshold (${rubric.pass_threshold}); otherwise "pass". A score AT the`,
-    `threshold passes. Style, polish and nits never make the verdict fail on their`,
-    `own: list them as "low" items so they reach the author as notes.`,
-    `Score each criterion on what is there, and do not deduct twice for one problem.`,
+    ...verdictLines(String(rubric.pass_threshold)),
     ``,
     `========================`,
     `RUBRIC BODY:`,
@@ -423,4 +434,172 @@ export async function judge(input: JudgeInput, opts: JudgeOpts = {}): Promise<Ju
   return result;
 }
 
-export const __internal__ = { buildPersona, buildUserMessage, validateJudgeOutput, extractJsonFromText };
+// ── batched judging ─────────────────────────────────────────────────────────
+//
+// One judge session per text deliverable made a software delivery with ten
+// markdown documents cost ten full runtime sessions per gate round, and every
+// correction round paid it again. A batch hands the judge every small text
+// deliverable of the round in ONE session and takes back one verdict per
+// (file, rubric) pair, in the same JudgeOutput the single-file path returns, so
+// the gate's verdicts, fix lists and findings still name each file.
+//
+// Nothing is cut to fit: a file above JUDGE_BATCH_FILE_MAX_CHARS is judged on
+// its own (whole), and the files of one batch add up to at most
+// JUDGE_BATCH_MAX_CHARS, so a delivery larger than that takes more than one
+// batch rather than an excerpt of each file.
+
+/** Above this a file is judged on its own, never inside a batch. */
+export const JUDGE_BATCH_FILE_MAX_CHARS = JUDGE_LARGE_ARTIFACT_CHARS;
+/** What the files of one batched call add up to, at most. */
+export const JUDGE_BATCH_MAX_CHARS = 120_000;
+
+export interface JudgeBatchItem {
+  /** Short id the judge answers with ("F1"). */
+  id: string;
+  /** What the judge reads as the file's name (a path relative to the delivery). */
+  label: string;
+  artifact: string;
+  /** The rubrics this file is graded by (an HTML page: its content rubric and design). */
+  rubrics: RubricMeta[];
+}
+
+export interface JudgeBatchInput {
+  items: JudgeBatchItem[];
+  brief?: string;
+  trace_id?: string;
+  business_slug?: string;
+  squad_name?: string;
+}
+
+export type JudgeBatchResult =
+  | { ok: true; judge_runtime: string; verdicts: Map<string, Map<string, JudgeOutput>> }
+  /** `unparseable`: the answer held no usable verdict, so the caller judges the
+   *  files one by one. The other reasons say nothing would answer a second call. */
+  | { ok: false; reason: "no_runtime" | "call_failed" | "unparseable"; error: string };
+
+function buildBatchPersona(rubrics: RubricMeta[]): string {
+  return [
+    `You are the quality judge of an autonomous multi-agent system.`,
+    `You judge SEVERAL deliverables of one delivery in one pass. Each file names the`,
+    `rubric(s) it is graded by. Grade each file by its own rubric(s) alone, as if it`,
+    `were the only file: a defect of one file never lowers the score of another.`,
+    `You decide whether each deliverable does what the brief asked, and you name`,
+    `what would make it better.`,
+    ``,
+    `You MUST return ONLY a single JSON object {"verdicts": [ ... ]} with one entry`,
+    `per (file, rubric) pair listed under "Your task". Each entry is`,
+    `{"file": "<file id>", "rubric": "<rubric name>"} plus every field of the output`,
+    `schema declared at the end of that rubric. No prose, no markdown fences, no`,
+    `preamble. JSON only.`,
+    ``,
+    ...SEVERITY_LINES,
+    ``,
+    ...verdictLines("stated in the header of the rubric the entry applies"),
+    ...rubrics.flatMap((r) => [
+      ``,
+      `========================`,
+      `RUBRIC "${r.name}": ${r.display_name} (pass threshold ${r.pass_threshold})`,
+      `========================`,
+      r.body,
+    ]),
+  ].join("\n");
+}
+
+function buildBatchUserMessage(input: JudgeBatchInput): string {
+  return [
+    ...(input.brief ? [`## Brief`, input.brief, ``] : []),
+    `## Files to evaluate`,
+    `Each file is delivered WHOLE between its two markers.`,
+    ...input.items.flatMap((it) => [
+      ``,
+      `### File ${it.id}: ${it.label} (rubrics: ${it.rubrics.map((r) => r.name).join(", ")})`,
+      `<<<${it.id}`,
+      it.artifact,
+      `${it.id}>>>`,
+    ]),
+    ``,
+    `## Your task`,
+    `Return {"verdicts": [...]} with exactly these entries:`,
+    ...input.items.flatMap((it) => it.rubrics.map((r) => `- file "${it.id}", rubric "${r.name}"`)),
+    `No other text.`,
+  ].join("\n");
+}
+
+/** The verdicts of a batched answer, by file id then rubric name. An entry that
+ *  names no listed pair or fails the schema is dropped (its file is judged on
+ *  its own); null when the answer holds no usable entry at all. */
+function parseBatchAnswer(text: string, items: JudgeBatchItem[]): Map<string, Map<string, JudgeOutput>> | null {
+  const parsed = extractJsonFromText(text) as { verdicts?: unknown } | null;
+  const list = parsed && Array.isArray(parsed.verdicts) ? parsed.verdicts : null;
+  if (!list) return null;
+  const byId = new Map(items.map((it) => [it.id, it]));
+  const out = new Map<string, Map<string, JudgeOutput>>();
+  for (const entry of list as Record<string, unknown>[]) {
+    const item = byId.get(String(entry?.file ?? "").trim());
+    if (!item) continue;
+    const named = String(entry?.rubric ?? "").trim();
+    const rubric = item.rubrics.find((r) => r.name === named) ?? (item.rubrics.length === 1 && !named ? item.rubrics[0] : undefined);
+    if (!rubric) continue;
+    const v = validateJudgeOutput(entry, rubric);
+    if (!v.ok) continue;
+    const verdicts = out.get(item.id) ?? new Map<string, JudgeOutput>();
+    verdicts.set(rubric.name, { ...v.data, verdict: ruleVerdict(v.data, rubric.pass_threshold), raw_response_chars: text.length });
+    out.set(item.id, verdicts);
+  }
+  return out.size ? out : null;
+}
+
+/**
+ * Judge several artifacts in ONE runtime session. Each verdict is derived by
+ * `ruleVerdict` with its own rubric's threshold, exactly as `judge()` does, and
+ * the audit records one `judge_invoked` for the session and one
+ * `critique_generated` per verdict.
+ */
+export async function judgeBatch(input: JudgeBatchInput, opts: JudgeOpts = {}): Promise<JudgeBatchResult> {
+  const rubrics = [...new Map(input.items.flatMap((it) => it.rubrics).map((r) => [r.name, r])).values()];
+  const chars = input.items.reduce((n, it) => n + it.artifact.length, 0);
+  const ctx = { trace_id: input.trace_id, business_slug: input.business_slug, squad_name: input.squad_name };
+  audit().emit("judge_invoked", {
+    rubric_name: rubrics.map((r) => r.name).join("+"),
+    artifact_chars: chars,
+    artifact_large: false,
+    batch_files: input.items.length,
+  }, ctx);
+
+  if (opts.mock) {
+    const verdicts = new Map(input.items.map((it) => [it.id, new Map(it.rubrics.map((r) => [r.name, mockJudge({ rubric: r, artifact: it.artifact }, opts.mockOutput)]))]));
+    return { ok: true, judge_runtime: "mock", verdicts };
+  }
+
+  const driver = (opts.__testDriver as typeof import("../../_shared/lib/host-agent-driver.ts") | undefined) ?? await hostDriver();
+  if (!driver) return { ok: false, reason: "no_runtime", error: "host-agent-driver unavailable" };
+  const available = (r: string): boolean => {
+    try { return typeof driver.runtimeAvailable === "function" ? driver.runtimeAvailable(r as never) : true; }
+    catch { return true; }
+  };
+  const preferredHost = await resolveJudgePreferredRuntime({ rubric: rubrics[0], artifact: "", brief: input.brief }, opts, available);
+  const call = await driver.callHostAgentAsync(buildBatchPersona(rubrics), buildBatchUserMessage(input), {
+    ...(typeof opts.timeoutMs === "number" ? { timeoutMs: opts.timeoutMs } : {}),
+    ...(preferredHost ? { preferredHost } : {}),
+  });
+  if ("error" in call) return { ok: false, reason: "call_failed", error: call.error };
+
+  const verdicts = parseBatchAnswer(call.text, input.items);
+  if (!verdicts) {
+    audit().emit("critique_generated", { rubric_name: rubrics.map((r) => r.name).join("+"), schema_valid: false, schema_errors: ["batch_unparseable"], batch_files: input.items.length }, ctx);
+    return { ok: false, reason: "unparseable", error: "the batched answer held no usable verdict" };
+  }
+  for (const [id, byRubric] of verdicts) {
+    for (const v of byRubric.values()) {
+      v.judge_runtime = call.host;
+      audit().emit("critique_generated", {
+        rubric_name: v.rubric_name, verdict: v.verdict, total_score: v.total_score,
+        critique_count: v.critique.length, material_count: v.critique.filter((c) => c.severity === "high").length,
+        schema_valid: true, judge_runtime: call.host, batch_file: id,
+      }, ctx);
+    }
+  }
+  return { ok: true, judge_runtime: call.host, verdicts };
+}
+
+export const __internal__ = { buildPersona, buildUserMessage, validateJudgeOutput, extractJsonFromText, buildBatchPersona, buildBatchUserMessage, parseBatchAnswer };

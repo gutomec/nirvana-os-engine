@@ -179,9 +179,10 @@ describe("the prompt", () => {
     expect(prompt).not.toContain(SEAT_BODY);
   });
 
-  test("participation.json is the one named exception to the output folder, and a lesson has its command", () => {
+  test("work the brief places in another folder is done there, never refused, and a lesson has its command", () => {
     const prompt = buildSoloPrompt({ ...baseArgs(), briefFile: "/b/brief.md" }, seats(), [], {});
-    expect(prompt).toContain("Write nothing anywhere else, even where the brief names another folder; the one exception is participation.json");
+    expect(prompt).toContain("When the brief's work lives in another folder (a project to review or fix, a new project to create), do that work there");
+    expect(prompt).not.toContain("Write nothing anywhere else");
     expect(prompt).toContain(`nrv memory add acme-launch "<fact>" --scope global|project`);
   });
 

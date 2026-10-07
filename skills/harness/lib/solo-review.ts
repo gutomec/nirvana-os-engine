@@ -29,6 +29,7 @@ import { isRunStateFile } from "../../_shared/lib/run-plumbing.ts";
 import { doneWhenCriteria, type Criterion } from "./work-brief.ts";
 import { soloDirective } from "./business-solo.ts";
 import { loadRuntimeRules, matchedVetoes, type RuntimeRule } from "./runtime-rules.ts";
+import * as runLedger from "./run-ledger.ts";
 
 export type ReviewPolicy = "always" | "rule" | "on-request" | "never";
 
@@ -367,8 +368,11 @@ export interface SoloReviewArgs {
   /** The run's spend ceiling, passed to the reviewer and to every correction run. */
   maxBudgetUsd?: number;
   /** The run's ledger row: the reviewer and the corrections heartbeat it, so
-   *  the supervisor never takes a run under review for a dead one. */
-  ledger?: { runId: string; watchDir?: string };
+   *  the supervisor never takes a run under review for a dead one. The row is
+   *  also read before every reviewer and correction run: once it is terminal
+   *  (`nrv run-track stop` abandons it) nothing more is spawned. `handle`
+   *  defaults to this machine's ledger. */
+  ledger?: { runId: string; watchDir?: string; handle?: runLedger.LedgerHandle };
   /** The project's runtime rules, for a correction run's solo directive when the launch carries none. */
   rulesDirective?: string;
   emit?: (event: string, payload: Record<string, unknown>) => void;
@@ -392,7 +396,7 @@ export interface SoloReviewOutcome {
    *  counts each as SERIOUS (`reviewBlockingMissed`). */
   blockingMissed: string[];
   /** Why the review did not run although it was due. */
-  skipped: "no-deliverable" | "reviewer-failed" | null;
+  skipped: "no-deliverable" | "reviewer-failed" | "stopped" | null;
 }
 
 /** Decide, review, send back within the round limits, and leave reservations for what never held. */
@@ -419,6 +423,21 @@ export function runSoloReviewStage(a: SoloReviewArgs): SoloReviewOutcome {
   const launch = a.worker.launch;
   const directive = launch.appendSystemPrompt?.startsWith(soloDirective("")) ? launch.appendSystemPrompt : soloDirective(a.rulesDirective ?? "");
   const ledger = a.ledger ? { ledger: { runId: a.ledger.runId, watchDir: a.ledger.watchDir ?? a.outputsRoot } } : {};
+  // The row's terminal state, when the run was closed under the review.
+  const stoppedAs = (): string | null => {
+    if (!a.ledger) return null;
+    try {
+      const row = runLedger.getRun(a.ledger.handle ?? runLedger.openLedger(), a.ledger.runId);
+      return row && runLedger.isTerminal(row.state) ? `${row.state}${row.last_error ? `: ${row.last_error}` : ""}` : null;
+    } catch { return null; }
+  };
+  const stopOutcome = (rounds: number, reviewer: Runtime | null): SoloReviewOutcome | null => {
+    const why = stoppedAs();
+    if (!why) return null;
+    emit("x_review_skipped", { business_slug: a.business, reason: `the run was stopped (${why})`, rounds });
+    log(`  review stopped: the run is ${why}; nothing more runs`);
+    return outcome({ reviewer, rounds, skipped: "stopped" });
+  };
   const correct = (prompt: string) => run({
     runtime: a.worker.runtime, prompt, sessionId: a.worker.sessionId ?? undefined,
     cwd: launch.cwd, addDirs: launch.addDirs, appendSystemPrompt: directive,
@@ -430,6 +449,8 @@ export function runSoloReviewStage(a: SoloReviewArgs): SoloReviewOutcome {
   // Nothing on disk: a reviewer would open an empty folder and reject it. The
   // worker gets the precheck directly instead, within the same round limit.
   while (precheck.problems.includes(NO_DELIVERABLE) && rounds < a.maxRounds && a.worker.sessionId) {
+    const halt = stopOutcome(rounds, null);
+    if (halt) return halt;
     rounds++;
     const fix = correct(buildPrecheckRevisionPrompt(precheck.problems, a.outputsRoot));
     emit("x_solo_revision", { business_slug: a.business, round: rounds, ok: fix.ok, runtime: a.worker.runtime, reason: "no-deliverable" });
@@ -454,6 +475,8 @@ export function runSoloReviewStage(a: SoloReviewArgs): SoloReviewOutcome {
   let score: ReviewScore | null = null;
   let pass = 0;
   for (;;) {
+    const halt = stopOutcome(rounds, reviewer);
+    if (halt) return halt;
     const prompt = buildSoloReviewPrompt({
       business: a.business, briefFile: a.briefFile, outputsRoot: a.outputsRoot, criteria,
       claims: readClaims(path.join(a.outputsRoot, "_CLAIMS.json")),
@@ -487,6 +510,8 @@ export function runSoloReviewStage(a: SoloReviewArgs): SoloReviewOutcome {
     if (!criteria.length && !score.untraceable.length) break;
     const limit = a.maxRounds + (score.blockingMissed.length && a.maxRounds > 0 ? SERIOUS_EXTRA_ROUNDS : 0);
     if (rounds >= limit) break;
+    const halted = stopOutcome(rounds, reviewer);
+    if (halted) return halted;
     rounds++;
     const fix = correct(buildRevisionPrompt(score.gaps, criteria, score.untraceable));
     emit("x_solo_revision", { business_slug: a.business, round: rounds, ok: fix.ok, runtime: a.worker.runtime, ...(score.blockingMissed.length ? { serious: true } : {}) });

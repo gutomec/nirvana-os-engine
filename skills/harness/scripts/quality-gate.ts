@@ -11,6 +11,7 @@
 //   bun quality-gate.ts <artifact_path> --rubrics correctness,structure-bounds
 //   bun quality-gate.ts <artifact_path> --auto                   # explicit auto
 //   bun quality-gate.ts <artifact_path> --offline                # skip LLM rubrics
+//   bun quality-gate.ts --batch --with-revisions <artifact>...   # one judge session, many files
 //
 // Exit codes:
 //   0 = PASS (all selected rubrics passed)
@@ -28,6 +29,8 @@ export type RubricResult = {
   reasoning: string;
   fix_list: string[];
   skipped?: boolean;
+  /** Judge rubrics only: the rubric's critique holds a material (`high`) defect. */
+  material?: boolean;
 };
 
 const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR || (fs.existsSync(path.join(os.homedir(), ".nirvana", "skills")) ? path.join(os.homedir(), ".nirvana", "skills") : path.join(os.homedir(), ".claude", "skills"));
@@ -183,7 +186,23 @@ export function revisionFixes(critique: { severity: string; suggested_fix: strin
 // by --produces, calls the host LLM runtime (codex/claude/gemini via
 // host-agent-driver), and loops judge→critique→revise up to --max-revisions.
 // Falls back to heuristics with a warning if no runtime is available.
-async function runWithRevisions(artifact: string, content: string, args: string[]): Promise<number> {
+
+type SelectorMod = typeof import("../lib/rubric-selector.ts");
+type JudgeMod = typeof import("../lib/judge.ts");
+type Rubric = NonNullable<ReturnType<SelectorMod["getRubric"]>>;
+type JudgeVerdict = Awaited<ReturnType<JudgeMod["judge"]>>;
+
+/** What every judged file of one gate call shares: the produces slugs, the
+ *  brief and the judge modules. null when the judge cannot be loaded. */
+interface JudgeContext {
+  produces: string[];
+  maxRev: number;
+  brief?: string;
+  selector: SelectorMod;
+  judgeMod: JudgeMod;
+}
+
+async function judgeContext(args: string[]): Promise<JudgeContext | null> {
   const producesArg = args.find(a => a.startsWith("--produces="));
   const produces = producesArg ? producesArg.slice("--produces=".length).split(",").map(s => s.trim()) : [];
   const maxRev = parseInt(args.find(a => a.startsWith("--max-revisions="))?.split("=")[1] || "2", 10);
@@ -193,57 +212,36 @@ async function runWithRevisions(artifact: string, content: string, args: string[
   const briefFileArg = args.find(a => a.startsWith("--brief-file="))?.slice("--brief-file=".length);
   let brief: string | undefined;
   if (briefFileArg) { try { brief = fs.readFileSync(briefFileArg, "utf8").trim() || undefined; } catch { brief = undefined; } }
-
-  let selector: typeof import("../lib/rubric-selector.ts");
-  let revision: typeof import("../lib/revision-dispatch.ts");
   try {
-    selector = await import("../lib/rubric-selector.ts");
-    revision = await import("../lib/revision-dispatch.ts");
+    const selector = await import("../lib/rubric-selector.ts");
+    await import("../lib/revision-dispatch.ts");
+    const judgeMod = await import("../lib/judge.ts");
+    return { produces, maxRev, brief, selector, judgeMod };
   } catch (e: any) {
     console.error(`--with-revisions unavailable (${e.message}); falling back to heuristic rubrics.`);
-    return -1; // signal fallback
+    return null;
   }
+}
 
-  // Pick the rubric: the file's extension names the family, and a produces
-  // slug chooses within it (pickJudgeRubricName).
+/** The judge rubrics of one file: the file's extension names the family, and a
+ *  produces slug chooses within it (pickJudgeRubricName). Empty when none resolves. */
+function judgeRubricsFor(ctx: JudgeContext, artifact: string): Rubric[] {
   const ext = path.extname(artifact).toLowerCase();
-  const matched = produces.length ? (() => {
-    const sel = selector.selectRubricsForProduces(produces);
+  const matched = ctx.produces.length ? (() => {
+    const sel = ctx.selector.selectRubricsForProduces(ctx.produces);
     return sel.fallback_used ? [] : sel.rubrics.map((r) => r.name);
   })() : [];
   const rubricNames = judgeRubricNames(ext, matched);
-  if (produces.length && !matched.includes(rubricNames[0])) {
-    console.error(`No ${ext} rubric matches produces=[${produces.join(",")}]; using ${rubricNames[0]}, the one the extension implies.`);
+  if (ctx.produces.length && !matched.includes(rubricNames[0])) {
+    console.error(`No ${ext} rubric matches produces=[${ctx.produces.join(",")}]; using ${rubricNames[0]}, the one the extension implies.`);
   }
-  const rubrics = rubricNames.map((name) => selector.getRubric(name)).filter((r): r is NonNullable<typeof r> => !!r);
-  if (!rubrics.length) {
-    console.error(`No .md rubric resolvable; falling back to heuristics.`);
-    return -1;
-  }
+  return rubricNames.map((name) => ctx.selector.getRubric(name)).filter((r): r is Rubric => !!r);
+}
 
-  // The revise callback: for the CLI we don't auto-regenerate (that needs the
-  // dispatching agent's context). Instead we run a single judge pass and, if it
-  // fails, surface the critique for the agent to act on. A maestro embedding
-  // this can pass a real ReviseFn that re-dispatches.
-  const judgeMod = await import("../lib/judge.ts");
-  type Verdict = Awaited<ReturnType<typeof judgeMod.judge>>;
-  const verdicts: Array<{ rubric: (typeof rubrics)[number]; result: Verdict }> = [];
-  for (const rubric of rubrics) {
-    const result = await judgeMod.judge(
-      { rubric, artifact: content, brief, trace_id: process.env.NIRVANA_TRACE_ID || undefined,
-        business_slug: process.env.NIRVANA_BUSINESS_SLUG || undefined },
-    );
-    if (result.schema_valid) verdicts.push({ rubric, result });
-    else console.error(`[gate] judge gave no usable ${rubric.name} verdict (${(result.schema_errors ?? []).join(", ") || result.judge_runtime}).`);
-  }
-  // No verdict came back (no runtime, a failed call, an answer that is not the
-  // schema). That says nothing about the artifact, so it is not a fail: the
-  // heuristic rubrics decide this file, as they do with the judge off, and the
-  // verdict says `mode: "heuristic"`.
-  if (!verdicts.length) {
-    console.error(`[gate] the heuristic rubrics decide ${path.basename(artifact)}.`);
-    return -1;
-  }
+/** The gate verdict of a judged file, from its judge verdicts (one per judge
+ *  rubric) and the checks no judge verdict replaces. Writes the file's audit line. */
+async function judgedVerdict(artifact: string, content: string, verdicts: Array<{ rubric: Rubric; result: JudgeVerdict }>, maxRev: number): Promise<GateVerdict> {
+  const ext = path.extname(artifact).toLowerCase();
   const rubric = { name: verdicts.map((v) => v.rubric.name).join("+") };
   const critique = verdicts.flatMap((v) => v.result.critique);
   const result = {
@@ -272,13 +270,15 @@ async function runWithRevisions(artifact: string, content: string, args: string[
     // One result per judge rubric. What a revision is asked to fix: the material
     // items first, then the medium ones. Low items (style, polish) stay in
     // `critique` as notes and never become revision work, unless nothing else
-    // explains a low score.
+    // explains a low score. `material` says the rubric's own critique holds a
+    // material defect, which the delivery pipeline counts as serious.
     results: [...verdicts.map((v) => ({
       name: v.rubric.name,
       passed: v.result.verdict === "pass",
       score: v.result.total_score,
       reasoning: v.result.critique.map(c => `[${c.severity}] ${c.issue}`).join("; ") || "judge verdict",
       fix_list: v.result.verdict === "pass" ? [] : revisionFixes(v.result.critique),
+      material: v.result.critique.some(c => c.severity === "high"),
     })), ...always],
     critique: result.critique,
     artifact,
@@ -291,7 +291,6 @@ async function runWithRevisions(artifact: string, content: string, args: string[
     judge_runtime: result.judge_runtime,
     max_revisions: maxRev,
   };
-  console.log(JSON.stringify(out, null, 2));
 
   // Audit
   try {
@@ -317,51 +316,119 @@ async function runWithRevisions(artifact: string, content: string, args: string[
     })) + "\n");
   } catch { /* non-fatal */ }
 
+  return out;
+}
+
+const BINARY_EXTS = [".png", ".jpg", ".jpeg", ".webp", ".pdf"];
+
+function readArtifact(artifact: string): string {
+  return BINARY_EXTS.includes(path.extname(artifact).toLowerCase()) ? "" : fs.readFileSync(artifact, "utf8");
+}
+
+async function runWithRevisions(artifact: string, content: string, args: string[]): Promise<number> {
+  const ctx = await judgeContext(args);
+  if (!ctx) return -1; // signal fallback
+  const rubrics = judgeRubricsFor(ctx, artifact);
+  if (!rubrics.length) {
+    console.error(`No .md rubric resolvable; falling back to heuristics.`);
+    return -1;
+  }
+
+  // The revise callback: for the CLI we don't auto-regenerate (that needs the
+  // dispatching agent's context). Instead we run a single judge pass and, if it
+  // fails, surface the critique for the agent to act on. A maestro embedding
+  // this can pass a real ReviseFn that re-dispatches.
+  const verdicts: Array<{ rubric: Rubric; result: JudgeVerdict }> = [];
+  for (const rubric of rubrics) {
+    const result = await ctx.judgeMod.judge(
+      { rubric, artifact: content, brief: ctx.brief, trace_id: process.env.NIRVANA_TRACE_ID || undefined,
+        business_slug: process.env.NIRVANA_BUSINESS_SLUG || undefined },
+    );
+    if (result.schema_valid) verdicts.push({ rubric, result });
+    else console.error(`[gate] judge gave no usable ${rubric.name} verdict (${(result.schema_errors ?? []).join(", ") || result.judge_runtime}).`);
+  }
+  // No verdict came back (no runtime, a failed call, an answer that is not the
+  // schema). That says nothing about the artifact, so it is not a fail: the
+  // heuristic rubrics decide this file, as they do with the judge off, and the
+  // verdict says `mode: "heuristic"`.
+  if (!verdicts.length) {
+    console.error(`[gate] the heuristic rubrics decide ${path.basename(artifact)}.`);
+    return -1;
+  }
+  const out = await judgedVerdict(artifact, content, verdicts, ctx.maxRev);
+  console.log(JSON.stringify(out, null, 2));
   return out.status === "PASS" ? 0 : 1;
 }
 
-async function main() {
-  const args = process.argv.slice(2);
-  const artifact = args.find(a => !a.startsWith("--"));
-  if (!artifact || !fs.existsSync(artifact)) {
-    console.error("Usage: bun quality-gate.ts <artifact_path> [--rubrics list] [--auto] [--offline]");
-    console.error("       bun quality-gate.ts <artifact_path> --with-revisions [--produces=slug] [--max-revisions=N]");
-    if (artifact) console.error(`Artifact not found: ${artifact}`);
-    process.exit(2);
-  }
+/** What `--batch` prints: a verdict per file it could decide, and the files it
+ *  could not (the batched answer did not parse, or skipped them), which the
+ *  caller judges one by one. */
+export type GateBatchOutput = {
+  mode: "batch";
+  verdicts: Record<string, GateVerdict>;
+  unjudged: string[];
+};
 
-  const offline = args.includes("--offline");
+/**
+ * --batch: judge several files in ONE judge session (judge.ts judgeBatch).
+ * Every file gets the same verdict shape as a single-file call. A batched
+ * answer that does not parse leaves its files `unjudged`, for one call each; a
+ * judge that cannot be reached at all sends them to the heuristics, as the
+ * single-file path does, since a second call would fail the same way.
+ */
+async function runBatch(artifacts: string[], args: string[]): Promise<GateBatchOutput> {
+  const out: GateBatchOutput = { mode: "batch", verdicts: {}, unjudged: [] };
+  const ctx = await judgeContext(args);
+  const heuristic = async (a: string) => { out.verdicts[a] = await heuristicVerdict(a, defaultRubrics(a), false); };
+  if (!ctx) { for (const a of artifacts) await heuristic(a); return out; }
 
-  // --with-revisions path: LLM judge + revision loop (nirvana-evolution).
-  if (args.includes("--with-revisions") && !offline) {
-    const ext0 = path.extname(artifact).toLowerCase();
-    const isBin0 = [".png", ".jpg", ".jpeg", ".webp", ".pdf"].includes(ext0);
-    const content0 = isBin0 ? "" : fs.readFileSync(artifact, "utf8");
-    const code = await runWithRevisions(artifact, content0, args);
-    if (code >= 0) process.exit(code);
-    // code === -1 → fall through to heuristic path below
+  // Labels relative to the files' common folder: the judge needs names, not this machine's paths.
+  const dirs = artifacts.map(a => path.dirname(path.resolve(a)));
+  let common = dirs[0] ?? "";
+  while (common && !dirs.every(d => d === common || d.startsWith(common + path.sep))) {
+    const up = path.dirname(common);
+    if (up === common) break;
+    common = up;
   }
-  const rubricsArg = args.find(a => a.startsWith("--rubrics="));
-  let rubrics: string[];
-  if (rubricsArg) {
-    rubrics = rubricsArg.slice("--rubrics=".length).split(",").map(s => s.trim()).filter(Boolean);
-  } else {
-    rubrics = rubricsForExt(path.extname(artifact));
-    // The _SUMMARY handoff gets the WARNING-only context-budget check.
-    if (path.basename(artifact) === "_SUMMARY.md" && !rubrics.includes("summary-bounds")) {
-      rubrics.push("summary-bounds");
+  const items: Array<{ id: string; label: string; artifact: string; rubrics: Rubric[]; file: string }> = [];
+  for (const a of artifacts) {
+    const rubrics = judgeRubricsFor(ctx, a);
+    if (!rubrics.length) { await heuristic(a); continue; }
+    items.push({ id: `F${items.length + 1}`, label: path.relative(common, path.resolve(a)).replace(/\\/g, "/"), artifact: readArtifact(a), rubrics, file: a });
+  }
+  if (!items.length) return out;
+
+  const res = await ctx.judgeMod.judgeBatch({
+    items, brief: ctx.brief,
+    trace_id: process.env.NIRVANA_TRACE_ID || undefined, business_slug: process.env.NIRVANA_BUSINESS_SLUG || undefined,
+  });
+  if (!res.ok) console.error(`[gate] the batched judge gave no verdict (${res.reason}: ${res.error}).`);
+  for (const it of items) {
+    if (!res.ok) {
+      if (res.reason === "unparseable") out.unjudged.push(it.file);
+      else await heuristic(it.file);
+      continue;
     }
+    const got = res.verdicts.get(it.id);
+    const verdicts = it.rubrics.flatMap(rubric => { const result = got?.get(rubric.name); return result ? [{ rubric, result }] : []; });
+    if (verdicts.length !== it.rubrics.length) { out.unjudged.push(it.file); continue; }
+    out.verdicts[it.file] = await judgedVerdict(it.file, it.artifact, verdicts, ctx.maxRev);
   }
+  return out;
+}
 
-  if (rubrics.length === 0) {
-    console.error("No rubrics applicable. Use --rubrics= explicitly.");
-    process.exit(2);
-  }
+/** The heuristic rubrics of a file when none are named on the command line. */
+function defaultRubrics(artifact: string): string[] {
+  const rubrics = rubricsForExt(path.extname(artifact));
+  // The _SUMMARY handoff gets the WARNING-only context-budget check.
+  if (path.basename(artifact) === "_SUMMARY.md" && !rubrics.includes("summary-bounds")) rubrics.push("summary-bounds");
+  return rubrics;
+}
 
+/** The heuristic verdict of one file over `rubrics`. Writes the file's audit line. */
+async function heuristicVerdict(artifact: string, rubrics: string[], offline: boolean): Promise<GateVerdict> {
   // Read content. For binary (images), we still load — rubrics may stat instead.
-  const ext = path.extname(artifact).toLowerCase();
-  const isBinary = [".png", ".jpg", ".jpeg", ".webp", ".pdf"].includes(ext);
-  const content = isBinary ? "" : fs.readFileSync(artifact, "utf8");
+  const content = readArtifact(artifact);
 
   const results: RubricResult[] = [];
   for (const r of rubrics) {
@@ -384,8 +451,6 @@ async function main() {
     score_avg: Math.round(avg * 100) / 100,
     timestamp: new Date().toISOString(),
   };
-
-  console.log(JSON.stringify(verdict, null, 2));
 
   // Audit emit
   try {
@@ -416,8 +481,53 @@ async function main() {
   } catch {
     // non-fatal
   }
+  return verdict;
+}
 
-  process.exit(allPass ? 0 : 1);
+async function main() {
+  const args = process.argv.slice(2);
+  // --batch <file>...: one judge session for every file (the delivery
+  // pipeline's batched judging); prints a GateBatchOutput and exits 0.
+  if (args.includes("--batch")) {
+    const files = args.filter(a => !a.startsWith("--"));
+    const missing = files.filter(f => !fs.existsSync(f));
+    if (!files.length || missing.length) {
+      console.error("Usage: bun quality-gate.ts --batch --with-revisions [--produces=slug] [--brief-file=path] <artifact>...");
+      if (missing.length) console.error(`Artifact not found: ${missing.join(", ")}`);
+      process.exit(2);
+    }
+    console.log(JSON.stringify(await runBatch(files, args), null, 2));
+    process.exit(0);
+  }
+  const artifact = args.find(a => !a.startsWith("--"));
+  if (!artifact || !fs.existsSync(artifact)) {
+    console.error("Usage: bun quality-gate.ts <artifact_path> [--rubrics list] [--auto] [--offline]");
+    console.error("       bun quality-gate.ts <artifact_path> --with-revisions [--produces=slug] [--max-revisions=N]");
+    if (artifact) console.error(`Artifact not found: ${artifact}`);
+    process.exit(2);
+  }
+
+  const offline = args.includes("--offline");
+
+  // --with-revisions path: LLM judge + revision loop (nirvana-evolution).
+  if (args.includes("--with-revisions") && !offline) {
+    const code = await runWithRevisions(artifact, readArtifact(artifact), args);
+    if (code >= 0) process.exit(code);
+    // code === -1 → fall through to heuristic path below
+  }
+  const rubricsArg = args.find(a => a.startsWith("--rubrics="));
+  const rubrics = rubricsArg
+    ? rubricsArg.slice("--rubrics=".length).split(",").map(s => s.trim()).filter(Boolean)
+    : defaultRubrics(artifact);
+
+  if (rubrics.length === 0) {
+    console.error("No rubrics applicable. Use --rubrics= explicitly.");
+    process.exit(2);
+  }
+
+  const verdict = await heuristicVerdict(artifact, rubrics, offline);
+  console.log(JSON.stringify(verdict, null, 2));
+  process.exit(verdict.status === "PASS" ? 0 : 1);
 }
 
 // Guarded so lib consumers (delivery-pipeline imports rubricsForExt /

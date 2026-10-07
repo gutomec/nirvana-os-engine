@@ -56,7 +56,7 @@ if (prompt.includes("# JUDGE-X DISPATCH")) {
   process.exit(0);
 }
 const outputsRoot = /^- output_path: (.+)$/m.exec(prompt)?.[1]?.trim()
-  ?? /Write files under \x60([^\x60]+)\x60/.exec(prompt)?.[1]?.trim()
+  ?? /Write (?:files|your deliverables) under \x60([^\x60]+)\x60/.exec(prompt)?.[1]?.trim()
   ?? process.env.FAKE_CLAUDE_OUTPUTS_ROOT;
 fs.mkdirSync(outputsRoot, { recursive: true });
 fs.writeFileSync(path.join(outputsRoot, "report.html"), ${JSON.stringify(PASSING_HTML)}, "utf8");

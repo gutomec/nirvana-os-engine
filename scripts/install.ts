@@ -29,7 +29,7 @@ import { createRequire } from "node:module";
 // Resolves both from the repo and from an extracted release tarball: the
 // tarball ships scripts/install.ts next to the full skills/ tree.
 import { RUNTIME_TARGETS, SKILLS, RETIRED_SKILLS, RUNTIME_ENTRIES, ENGINE_INTERNAL_SKILLS, LEGACY_RUNTIME_SKILL_DIRS, COPY_MARKER } from "../skills/_shared/lib/runtime-dirs.ts";
-import { classifyRuntimeEntry, depsLinkFor, ensureDepsLink, findParkedBackup, foreignProvider, materializeRuntimeSkillCopy, parkedBackupPath, pruneDepsLinkInside } from "../skills/_shared/lib/runtime-install.ts";
+import { classifyRuntimeEntry, depsLinkFor, ensureDepsLink, findParkedBackup, foreignProvider, materializeRuntimeSkillCopy, parkedBackupPath, pruneDepsLinkInside, skillsShCopyOfOurs } from "../skills/_shared/lib/runtime-install.ts";
 import { RUN_STATE_EXCLUDES } from "../skills/_shared/lib/run-state.ts";
 import { patchHermesAllowlist, patchHermesAuditHooks, patchHermesExternalDirs, publishHermesJson, publishHermesYaml, readHermesYaml } from "../skills/_shared/lib/hermes-config.ts";
 
@@ -413,7 +413,18 @@ function linkRuntimes(): void {
       // .bak that `nrv doctor` then advises deleting (skills-litter.ts). Same
       // skill, same name: leave it, and say who provides it.
       if (foreignProvider(linkPath, s, NIRVANA_SKILLS)) {
-        console.log(`  ⓘ ${linkPath}: '${s}' provided by another installer (skills.sh), kept`);
+        // When it is this engine's own skill, the directory stays (the links
+        // point at it) and its files are brought to this engine's version.
+        const ours = skillsShCopyOfOurs(linkPath, s);
+        if (ours) {
+          try {
+            for (const f of readdirSync(ours)) rmSync(join(ours, f), { recursive: true, force: true });
+            cpSync(target, ours, { recursive: true, dereference: true, filter: (p) => !p.split(/[\\/]/).includes("node_modules") });
+            console.log(`  ✓ ${linkPath}: '${s}' from skills.sh, refreshed to this engine's version`);
+          } catch (e) { console.log(`  ! could not refresh ${linkPath}: ${(e as Error).message}`); }
+        } else {
+          console.log(`  ⓘ ${linkPath}: '${s}' provided by another installer (skills.sh), kept`);
+        }
         continue;
       }
       try {

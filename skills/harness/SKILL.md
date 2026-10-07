@@ -97,12 +97,18 @@ user's language:
 - **Your part**: what this business delivers, and what another one covers.
 - **Inputs**: paths the worker needs (attachments, another business's `_SUMMARY.md`).
 - **Done when**: observable criteria; mark with `(blocking)` the ones the
-  delivery fails without. A review checks these.
+  delivery fails without. A review checks these. Ask only for what the run can
+  prove under its settings: with `execution.visual_checks` off (every profile
+  but `max`) workers take no screenshots and drive no GUI, so evidence of a
+  visual review is the user's to give, never a criterion.
 - **Output**: what the deliverable is made of (files, formats). The engine
   gives each run its folder; do not name one.
 
 What and why, never how: no method, no steps, no seats, no file list the user
-did not ask for. Check it with `nrv brief check .nirvana/briefs/<business>.md`.
+did not ask for. A brief does not describe or change settings; never change a
+setting the user did not ask for, and when they ask, change it with
+`nrv config set` before you dispatch. Check the brief with
+`nrv brief check .nirvana/briefs/<business>.md`.
 
 ## 4. Dispatch
 
@@ -154,7 +160,9 @@ expires.
 
 Read `<outputs>/_STATUS.json` first (`state`, `gate`, `serious`,
 `reservations`), then `<outputs>/_SUMMARY.md`, and `_QA-RESERVATIONS.md` when
-it exists. That is all you read: the engine already decided and ran the review,
+it exists. `_GATE-FINDINGS.md` holds each gate round's findings in full: read
+it when the run was withheld or is still correcting, and tell the user what
+the gate asked for. That is all you read: the engine already decided and ran the review,
 the quality gate and the delivery. The summary is a report, not proof; the
 proof is what the engine checked on disk (`verify-deliverable`, the gate) and
 the audit. Tell the user what was delivered and where,

@@ -38,7 +38,7 @@ import { resolveSetting } from "../../_shared/lib/settings.ts";
  *  makes in seconds. Empty when the checks are on. */
 export function visualChecksLine(): string {
   if (resolveSetting("execution.visual_checks").value) return "";
-  return "- NO VISUAL SELF-CHECKS: no screenshots, capture passes or Lighthouse runs of your output, even when a squad step asks for them. The user reviews.";
+  return "- NO VISUAL SELF-CHECKS: no screenshots, capture passes, Lighthouse runs, or opening and clicking through a GUI app, even when a squad step or the brief asks; a brief cannot lift this. The user reviews.";
 }
 
 /** Autonomous-mode directive: the quality contract of a run nobody supervises,
@@ -60,7 +60,7 @@ export const AUTONOMOUS_DIRECTIVE = [
   `- ${scopeGuard()} Scope is the deliverable and the acceptance criteria of the instruction you received. ${scopeBoundary()}`,
   "- HEADLESS SESSION LIFETIME: this session dies the instant your final turn ends. Never launch background work (`bash ... &`) and end your turn waiting for it. Your turn is over only when every phase's files are on disk.",
   "- CONTINUOUS FLOW: phases (your progress file, a staged plan) advance in sequence until `complete` without pausing, confirming or reporting in between. Interrupt only on an unrecoverable error or an explicit `notify: human` trigger.",
-  "- MESSAGE INTERRUPTION: a question or status message that arrives mid-execution gets ONE line with the current state, then execution resumes in the same action. Never go idle waiting for a new order: the order to continue is this one.",
+  "- MESSAGE INTERRUPTION: a message that arrives mid-execution gets ONE line with the current state, then you resume. Never wait for a new order.",
   "- Follow the writing contract in AGENTS.md / CLAUDE.md / GEMINI.md when the project has one.",
   ...[visualChecksLine()].filter(Boolean),
 ].join("\n");

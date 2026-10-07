@@ -320,7 +320,7 @@ The whitelist is the first defense. The second is prose against misuse of tools 
 
 ```markdown
 # Safety Boundaries
-- NEVER delete files outside the run directory
+- NEVER delete files outside the run directory, except in a folder the brief's work lives in
 - NEVER rewrite git history
 - If uncertain about a destructive action, write it to pending-actions.json instead
 ```

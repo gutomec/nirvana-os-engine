@@ -220,12 +220,15 @@ describe("nrv revise — the outcome goes through the delivery pipeline", () => 
     expect(JSON.parse(fs.readFileSync(path.join(c.oroot, "_STATUS.json"), "utf8")).state).toBe("delivered_with_reservations");
   }, 60_000);
 
-  test("a SERIOUS failure gets 3 more corrections and is then WITHHELD — it never emits delivered", () => {
+  test("a SERIOUS failure no correction improves is WITHHELD after the normal rounds — it never emits delivered", () => {
+    // The fake runtime changes nothing, so the extra rounds a serious finding
+    // may get never start: they are granted for progress (delivery-pipeline.ts).
     const c = runRevise({ "dados.json": '{"itens": [' + '"valor", '.repeat(40) });
     expect(c.status).toBe(2);
     expect(events(c)).toContain("x_delivery_withheld");
     expect(events(c)).not.toContain("delivered");
-    expect(c.runtimeCalls).toBe(1 + 2 + 3);
+    expect(c.audit.find(l => l.event === "x_delivery_withheld")?.no_progress).toBe(true);
+    expect(c.runtimeCalls).toBe(1 + 2);
   }, 90_000);
 
   test("passing artifacts → exit 0, delivered, marked as a revision", () => {
@@ -383,6 +386,9 @@ describe("nrv revise continues a squad or agent-x worker like a business one", (
     expect(fresh.run_id).not.toBe(runId);
     expect(fresh).toMatchObject({ target_kind: "squad", target_slug: "copy", state: "delivered" });
     expect(fresh.meta).toMatchObject({ revision_of: runId, dispatch_role: "squad" });
+    // The revision's own dispatcher, not the earlier run's: `stop` ends this one.
+    expect(typeof fresh.meta?.dispatcher_pid).toBe("number");
+    expect(fresh.meta?.dispatcher_pid).not.toBe(runLedger.getRun(h, runId)!.meta?.dispatcher_pid);
   }, 30_000);
 
   test("an agent-x revision resumes the generalist's session as `agent-x`", () => {

@@ -1,5 +1,4 @@
-// run-workspace.ts — a dispatched worker starts in its own run folder and
-// cannot reach the run folders beside it.
+// run-workspace.ts — a dispatched worker starts in its own run folder.
 //
 // Every run lives in `<outputs base>/<run id>/` (project-root.js
 // outputsBaseDir): the run's HANDOFF, its deliverables and whatever its squads
@@ -14,18 +13,15 @@
 //   · its cwd in the run folder, never HOME or the bare project root;
 //   · the project it serves as an additional directory, so a brief about the
 //     user's own files still reads them;
-//   · on claude-code, `Read` and `Edit` deny rules for every other run folder
-//     under the same outputs base, in a per-run `--settings` file. Claude Code
-//     applies them to its file tools, to the file commands it recognizes in
-//     Bash (cat, cp, sed, redirects) and to Glob/Grep roots
-//     (code.claude.com/docs/en/permissions). Deny beats allow and an allow rule
-//     cannot carve an exception out of a deny, which is why the siblings are
-//     listed one by one instead of denying the base and re-allowing this run.
-//     A sibling the worker's instruction names by path is left out: a brief
-//     that builds on an earlier run on purpose is the user's call;
 //   · on every runtime, one line appended to the worker's directive naming the
-//     run folder and saying the folders beside it are not its input. For the
-//     runtimes with no path rules that line is the whole fence;
+//     run folder and saying the earlier runs beside it are not its input
+//     unless its instruction points to them. It is a direction, never a lock:
+//     no folder is denied. Sibling runs used to be denied by Read/Edit rules on
+//     claude-code, and a brief that told the worker to build on an earlier run
+//     (named in the brief file, which the rule never saw) had that folder
+//     refused; the worker redid 62 screenshots it was told to reuse. A worker
+//     must be able to reach any folder on the machine: a review of another
+//     project, or a new project created elsewhere, is ordinary work;
 //   · the run folder in its environment (RUN_WORKSPACE_ENV), so a dispatch
 //     started from inside this run (only an orchestrator may start one) nests
 //     inside it (nestedOutputsBase) instead of becoming a sibling.
@@ -89,18 +85,6 @@ export function nestedOutputsBase(projectRoot: string | null, env: Record<string
   return path.join(workspace, "dispatches");
 }
 
-/** The other run folders under the same outputs base as `workspace`. */
-export function siblingRunFolders(workspace: string): string[] {
-  const base = path.dirname(workspace);
-  const own = path.basename(workspace);
-  let entries: fs.Dirent[];
-  try { entries = fs.readdirSync(base, { withFileTypes: true }); } catch { return []; }
-  return entries
-    .filter((e) => e.name !== own && (e.isDirectory() || e.isSymbolicLink()))
-    .map((e) => path.join(base, e.name))
-    .sort();
-}
-
 /**
  * An absolute path as a Claude Code permission pattern: `//` anchors at the
  * filesystem root, and on Windows the path is matched in POSIX form
@@ -118,14 +102,6 @@ export function claudeAbsolutePattern(absPath: string, platform: NodeJS.Platform
   if (!p.startsWith("/")) return null;
   const escaped = p.replace(/\/+$/, "").replace(/([[\]*?\\])/g, "\\$1");
   return `/${escaped}`;
-}
-
-/** Read/Edit deny rules for one folder: the folder itself (Glob and Grep roots)
- *  and everything under it. */
-function denyFolder(dir: string, platform: NodeJS.Platform): string[] {
-  const pattern = claudeAbsolutePattern(dir, platform);
-  if (!pattern) return [];
-  return [`Read(${pattern})`, `Read(${pattern}/**)`, `Edit(${pattern})`, `Edit(${pattern}/**)`];
 }
 
 /**
@@ -159,35 +135,17 @@ export function projectDenyRules(projectRoot: string, platform: NodeJS.Platform 
   return out;
 }
 
-/** Is this run folder named in the instruction? A brief may point at an earlier
- *  run on purpose ("build on the analysis in outputs/<id>"); the user is in
- *  command there, and only incidental reach is fenced. Matched by absolute path
- *  or by `outputs/<id>`, never by a bare id that could be an ordinary word.
- *  On Windows the match ignores case and treats `/` and `\\` alike, as the file
- *  system does. */
-export function namedIn(text: string, runFolder: string, platform: NodeJS.Platform = process.platform): boolean {
-  if (!text) return false;
-  const fold = (v: string) => (platform === "win32" ? v.replace(/\\/g, "/").toLowerCase() : v);
-  const hay = fold(text);
-  const name = path.basename(runFolder);
-  const base = path.basename(path.dirname(runFolder));
-  return hay.includes(fold(runFolder)) || hay.includes(fold(`${base}/${name}`)) || text.includes(`${base}\\${name}`);
-}
-
-/** The settings a confined claude-code worker runs with, or null when there is
- *  nothing to fence. `instruction` is what the worker was told; a run folder it
- *  names stays readable. */
-export function fenceSettings(workspace: string, projectRoot: string | null, platform: NodeJS.Platform = process.platform, instruction = ""): { permissions: { deny: string[] } } | null {
-  const deny = [
-    ...siblingRunFolders(workspace).filter((dir) => !namedIn(instruction, dir, platform)).flatMap((dir) => denyFolder(dir, platform)),
-    ...(projectRoot ? projectDenyRules(projectRoot, platform) : []),
-  ];
+/** The settings a claude-code worker runs with, or null when there are none:
+ *  only the project's own deny rules (the `.env` rules `nrv init` writes),
+ *  re-anchored at the project root. No folder is denied. */
+export function fenceSettings(workspace: string, projectRoot: string | null, platform: NodeJS.Platform = process.platform): { permissions: { deny: string[] } } | null {
+  const deny = projectRoot ? projectDenyRules(projectRoot, platform) : [];
   return deny.length ? { permissions: { deny } } : null;
 }
 
 /** The line every confined worker reads, on every runtime. */
 export function workspaceDirective(workspace: string): string {
-  return `YOUR RUN FOLDER is ${workspace}. Everything you write belongs under the output folder your prompt names. The folders beside it, in ${path.dirname(workspace)}, are other runs' work and not your input: do not list, read, copy or edit them, unless your instruction names one by its path.`;
+  return `YOUR RUN FOLDER is ${workspace}. Everything you write for this run belongs under the output folder your prompt names. The earlier runs beside it, in ${path.dirname(workspace)}, are not your input unless your instruction points to them; any other folder your work needs is yours to read and write.`;
 }
 
 /**
@@ -245,7 +203,7 @@ export function confineToWorkspace<T extends Confinable>(opts: T): { opts: T; cl
   };
   let file: string | null = null;
   if (opts.runtime === "claude-code" && !opts.claudeSettings) {
-    const settings = fenceSettings(workspace, projectRoot, process.platform, opts.prompt ?? "");
+    const settings = fenceSettings(workspace, projectRoot, process.platform);
     if (settings) {
       const written: string = path.join(os.tmpdir(), `${FENCE_FILE_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
       fs.writeFileSync(written, JSON.stringify(settings, null, 2), "utf8");

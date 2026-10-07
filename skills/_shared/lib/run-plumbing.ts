@@ -51,10 +51,11 @@ export function isRunPlumbingDir(name: string): boolean {
 }
 
 /** What a run writes about itself beside the work: the worker's summary and
- *  claims, the gate's reservations and status, the prompt it was handed, its
- *  session and its trail. Matched by basename, wherever it lands. */
+ *  claims, the gate's reservations, status and round-by-round findings, the
+ *  prompt it was handed, its session and its trail. Matched by basename,
+ *  wherever it lands. */
 export const RUN_STATE_FILES: ReadonlySet<string> = new Set([
-  "_SUMMARY.md", "_CLAIMS.json", "_QA-RESERVATIONS.md", "_STATUS.json",
+  "_SUMMARY.md", "_CLAIMS.json", "_QA-RESERVATIONS.md", "_STATUS.json", "_GATE-FINDINGS.md",
   "solo-prompt.md", "agent-prompt.md", "participation.json", "session.json",
   "HANDOFF.json", "audit.jsonl",
 ]);

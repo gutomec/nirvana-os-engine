@@ -65,12 +65,13 @@ describe("buildSquadPrompt — framing", () => {
     expect(p).not.toContain("synthesizer do business");
   });
 
-  test("the output ends with _SUMMARY.md, and the squad writes nowhere else", () => {
+  test("the output ends with _SUMMARY.md, and work the brief places elsewhere is done there", () => {
     const squadDir = scaffoldSquad(path.join(tmp, "squads"), "brandcraft");
     const p = buildSquadPrompt({ squadSlug: "brandcraft", squadDir, brief: "the brief", outDir: "/out/dir", cloneInjection: { block: "", decision: "DEFAULT" } });
     expect(p.slice(p.indexOf("## OUTPUT"))).toContain(path.join("/out/dir", "_SUMMARY.md"));
     expect(p.slice(p.indexOf("## OUTPUT"))).toContain("Do not print a summary to stdout");
-    expect(p).toContain("nothing anywhere else, even where the brief names another folder");
+    expect(p).toContain("When the brief's work lives in another folder (a project to review or fix, a new project to create), do that work there");
+    expect(p).not.toContain("nothing anywhere else");
   });
 
   test("the framing carries the scope guard, inside the sub-task block", () => {
@@ -125,7 +126,7 @@ This directory is the source of the squad, shared by every project on this machi
 the brief
 
 ## YOUR SUB-TASK
-Run YOUR specialty applied to the brief above. Write files under \`/out/dir\`, in the format your specialty calls for, and nothing anywhere else, even where the brief names another folder. If the deliverable includes images, they are really generated images, never a placeholder or a generic SVG. Method and tools are yours. Deliverables follow the language of the request. Do not invoke the harness skill, and do not run \`nrv run\`/\`nrv dispatch\` for this same brief (anti-loop).
+Run YOUR specialty applied to the brief above. Write your deliverables under \`/out/dir\`, in the format your specialty calls for. When the brief's work lives in another folder (a project to review or fix, a new project to create), do that work there and list every path you created or changed. If the deliverable includes images, they are really generated images, never a placeholder or a generic SVG. Method and tools are yours. Deliverables follow the language of the request. Do not invoke the harness skill, and do not run \`nrv run\`/\`nrv dispatch\` for this same brief (anti-loop).
 
 If the brief mentions you by name (e.g. "use the brandcraft squad"), prioritize doing EXACTLY what the user asked in that paragraph. The user decides.
 

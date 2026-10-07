@@ -140,9 +140,8 @@ export interface OrcaWorkerHooks {
 
 /**
  * The interactive command for a runtime, as argv. Autonomy flags match the
- * headless runners': claude runs in auto mode (`--permission-mode auto`,
- * `claude --help` audited 2026-09-29), and the others keep the flags audited
- * against the installed CLIs on 2026-09-09 (`codex
+ * headless runners' (audited against the installed CLIs on 2026-09-09:
+ * `claude --dangerously-skip-permissions`, `codex
  * --dangerously-bypass-approvals-and-sandbox`, `gemini --approval-mode yolo`,
  * `agy --dangerously-skip-permissions`, `grok --always-approve`); `--safe`
  * (yolo false) drops them, and claude takes `--permission-mode acceptEdits`
@@ -168,7 +167,7 @@ export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" |
   const dirs = opts.addDirs ?? [];
   switch (opts.runtime) {
     case "claude-code": {
-      const a = ["claude", "--permission-mode", yolo ? "auto" : "acceptEdits"];
+      const a = ["claude", ...(yolo ? ["--dangerously-skip-permissions"] : ["--permission-mode", "acceptEdits"])];
       if (model) a.push("--model", model);
       if (effort) a.push("--effort", effort);
       // The run's deny rules (run-workspace.ts): the same fence as headless.

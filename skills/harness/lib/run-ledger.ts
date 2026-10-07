@@ -46,7 +46,7 @@ import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
 import { ensureDir } from "../../_shared/lib/ensure-dir.ts";
-import { CPU_ACTIVITY_MIN_MS, processTreeCpuMs } from "./process-cpu.ts";
+import { CPU_ACTIVITY_MIN_MS, descendants, processTable, processTreeCpuMs } from "./process-cpu.ts";
 
 // ── states ──────────────────────────────────────────────────────────────
 
@@ -553,16 +553,23 @@ export function findChildPid(parentPid: number, excludePid?: number, timeoutMs?:
  *  ends only that pid and leaves the CLI's own children running, so taskkill /T
  *  takes the tree. POSIX: when the pid leads its own group, the group goes with
  *  it, else the pid alone. Never pid 1, this process or its parent. */
-export function killProcessTree(pid: number): void {
-  if (!Number.isFinite(pid) || pid <= 1) return;
-  if (pid === process.pid || pid === process.ppid) return;
+export function killProcessTree(pid: number, signal: NodeJS.Signals = "SIGTERM"): number[] {
+  if (!Number.isFinite(pid) || pid <= 1) return [];
+  if (pid === process.pid || pid === process.ppid) return [];
   if (process.platform === "win32") {
     const r = spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { windowsHide: true, encoding: "utf8" });
-    if (r.status !== 0) { try { process.kill(pid, "SIGTERM"); } catch { /* already gone */ } }
-    return;
+    if (r.status !== 0) { try { process.kill(pid, signal); } catch { /* already gone */ } }
+    return [pid];
   }
-  try { process.kill(-pid, "SIGTERM"); return; } catch { /* not a group leader */ }
-  try { process.kill(pid, "SIGTERM"); } catch { /* already gone */ }
+  // The group alone missed workers: a CLI launcher can start the real agent in
+  // a group of its own, and it then outlived a stop (seen with claude, a
+  // grandchild of the dispatcher). So every descendant is signalled by pid,
+  // from a snapshot taken before the first signal.
+  const rows = processTable();
+  const tree = [pid, ...(rows ? descendants(rows, pid) : [])].filter((p) => p !== process.pid && p !== process.ppid);
+  try { process.kill(-pid, signal); } catch { /* not a group leader */ }
+  for (const p of tree) { try { process.kill(p, signal); } catch { /* already gone */ } }
+  return tree;
 }
 
 /** One file the sweep found newer than the mark it was given. */
@@ -1034,6 +1041,21 @@ export function workerPidAlive(row: RunRow): boolean {
   return current === null || current === recorded;
 }
 
+/** The dispatcher that runs this row is alive and is still that dispatcher
+ *  (the start time recorded beside its pid matches, or cannot be read). The
+ *  recorded worker pid is only the sidecar's best guess at the CLI child, and a
+ *  CLI launcher can leave it pointing at a short-lived process while the real
+ *  agent, its grandchild, works on: with the dispatcher alive the run is not
+ *  over, whatever the worker pid says. */
+export function dispatcherAlive(row: RunRow): boolean {
+  const pid = Number(row.meta?.dispatcher_pid) || 0;
+  if (pid <= 0 || !pidAlive(pid)) return false;
+  const recorded = typeof row.meta?.dispatcher_started_at === "string" ? row.meta.dispatcher_started_at as string : null;
+  if (!recorded) return true;
+  const current = processStartedAt(pid);
+  return current === null || current === recorded;
+}
+
 /** Whether something may still be writing in this row's folder: its worker
  *  pid is alive, or, with no live pid, it sits in a working state under a
  *  lease that has not expired (the dispatcher between its worker and the gate,
@@ -1043,7 +1065,7 @@ export function workerPidAlive(row: RunRow): boolean {
  *  touches that folder. */
 export function stillWorking(row: RunRow, now: number = Date.now()): boolean {
   if (isTerminal(row.state)) return false;
-  if (workerPidAlive(row)) return true;
+  if (workerPidAlive(row) || dispatcherAlive(row)) return true;
   if (!WORKING_STATES.has(row.state)) return false;
   const lease = Date.parse(row.lease_expires_at ?? "");
   return Number.isFinite(lease) && lease > now;
@@ -1433,8 +1455,10 @@ export function heartbeatMain(): void {
     if (wrote) cpuBaseline = null;
     else if (parentPid > 0 && now - cpuSampledAt >= CPU_SAMPLE_MS) {
       cpuSampledAt = now;
-      // The discovered worker, or the dispatcher's tree without this sidecar.
-      const root = workerPid || parentPid;
+      // The discovered worker, or the dispatcher's tree without this sidecar:
+      // also when the discovered pid has exited, since it can be a CLI
+      // launcher whose agent keeps working as the dispatcher's grandchild.
+      const root = workerPid && pidAlive(workerPid) ? workerPid : parentPid;
       const cpu = processTreeCpuMs(root, process.pid);
       if (cpu !== null) {
         thinking = cpuBaseline?.root === root && cpu - cpuBaseline.ms >= CPU_ACTIVITY_MIN_MS;

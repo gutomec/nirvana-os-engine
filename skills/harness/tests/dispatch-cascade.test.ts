@@ -326,9 +326,10 @@ describe("runAgentX — the cascade bottom (injected runWithCascade seam)", () =
       // The brief file differs from the text here, so the text rides along; the next test covers the file alone.
       expect(seen[0].prompt).toContain("Deliver the impossible artifact.");
       expect(seen[0].prompt).toContain(oroot);
-      // The generalist ends with the same one-page summary, and writes nowhere else.
+      // The generalist ends with the same one-page summary; work the brief places elsewhere is done there.
       expect(seen[0].prompt).toContain(path.join(oroot, "_SUMMARY.md"));
-      expect(seen[0].prompt).toContain("Write nothing anywhere else, even where the brief names another folder.");
+      expect(seen[0].prompt).toContain("When the brief's work lives in another folder");
+      expect(seen[0].prompt).not.toContain("Write nothing anywhere else");
       expect(seen[0].prompt).toContain("router no_match: nothing fits");
       // The persona fixture carries no guard of its own: this line is runAgentX's.
       expect(seen[0].prompt).toContain(SCOPE_GUARD_EN);
