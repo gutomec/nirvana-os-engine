@@ -34,7 +34,10 @@ if (prompt.startsWith("# Review of the")) {
     result: JSON.stringify({ confirmed: [{ id: "d1", evidence: "report.html:1, the final delivery heading" }] }) }));
   process.exit(0);
 }
-const out = process.env.FAKE_CLAUDE_OUTPUTS_ROOT;
+// FAKE_OUT_FROM_PROMPT: write where the prompt says, from this process's own
+// folder, the way a real agent reads a path it is given.
+const named = /Deliverables go under \x60([^\x60]+)\x60/.exec(prompt)?.[1];
+const out = process.env.FAKE_OUT_FROM_PROMPT && named ? path.resolve(named) : process.env.FAKE_CLAUDE_OUTPUTS_ROOT;
 fs.mkdirSync(out, { recursive: true });
 fs.writeFileSync(path.join(out, "report.html"), "<!doctype html><html><head><title>Delivery</title></head><body><main><h1>Final delivery</h1><p>This local fixture contains enough structured content for deterministic validation of the gate.</p><p>The manifest, quality gate and publication stages all run without network access or an external runtime.</p></main></body></html>", "utf8");
 fs.writeFileSync(path.join(out, "_SUMMARY.md"), "Delivered report.html.", "utf8");
@@ -54,12 +57,12 @@ const BRIEF = [
 const roots: string[] = [];
 afterEach(() => { while (roots.length) removeDir(roots.pop()!); });
 
-function fixture(extraEnv: Record<string, string>, extraArgs: string[] = []) {
+function fixture(extraEnv: Record<string, string>, extraArgs: string[] = [], opts: { relativeOutputs?: string } = {}) {
   const root = makeTempRoot("nrv-dispatch-solo-"); roots.push(root);
   const home = path.join(root, "home");
   const projectRoot = path.join(root, "project");
   const bin = path.join(root, "bin");
-  const out = path.join(root, "deliverables");
+  const out = opts.relativeOutputs ? path.join(root, "project", opts.relativeOutputs) : path.join(root, "deliverables");
   const capture = path.join(root, "capture");
   fs.mkdirSync(path.join(projectRoot, ".nirvana"), { recursive: true });
   fs.mkdirSync(capture, { recursive: true });
@@ -91,7 +94,7 @@ function fixture(extraEnv: Record<string, string>, extraArgs: string[] = []) {
   // --no-judge: these cases count the worker and reviewer calls; the gate's LLM
   // judge (it reads .html reports by default) is the delivery pipeline's own test.
   const result = spawnSync(process.execPath, [DISPATCH, "fixture-biz", "--brief-file", brief, "--exec",
-    "--project", "proj-solo", "--outputs-root", out, "--max-revisions", "0", "--no-judge", ...extraArgs], { cwd: projectRoot, encoding: "utf8", env });
+    "--project", "proj-solo", "--outputs-root", opts.relativeOutputs ?? out, "--max-revisions", "0", "--no-judge", ...extraArgs], { cwd: projectRoot, encoding: "utf8", env });
   const calls = () => {
     const f = path.join(capture, "calls.jsonl");
     return fs.existsSync(f) ? fs.readFileSync(f, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
@@ -127,6 +130,19 @@ describe("a business dispatch", () => {
     expect(calls.map((c: any) => [c.role, c.review])).toEqual([["solo", false], ["planner", true]]);
     expect(fx.audit().some((e) => e.event === "x_review_approved")).toBe(true);
     expect(fs.existsSync(path.join(fx.out, "_QA-RESERVATIONS.md"))).toBe(false);
+  }, 120000);
+
+  // A Codex user passed a relative --outputs-root: the worker wrote under its
+  // own run folder, the precheck found no _SUMMARY.md nor _CLAIMS.json, and the
+  // reviewer was sent to a folder that did not exist.
+  test("a relative --outputs-root names one folder for the worker, the precheck and the reviewer", () => {
+    const rel = path.join("outputs", "proj-solo", "deliverables");
+    const fx = fixture({ NIRVANA_PROFILE: "economy", FAKE_OUT_FROM_PROMPT: "1" }, ["--review"], { relativeOutputs: rel });
+    expect(fx.result.status, fx.result.stdout + fx.result.stderr).toBe(0);
+    expect(fs.existsSync(path.join(fx.out, "_SUMMARY.md"))).toBe(true);
+    expect(fs.existsSync(path.join(fx.out, "_CLAIMS.json"))).toBe(true);
+    expect(fx.result.stdout).not.toContain("_SUMMARY.md is missing");
+    expect(fx.audit().some((e) => e.event === "x_review_approved")).toBe(true);
   }, 120000);
 
   test("without a profile a business still runs as one agent, with no ceiling", () => {

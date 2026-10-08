@@ -6,6 +6,12 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Não lançado
+
+### Um --outputs-root relativo aponta a mesma pasta para todos
+
+O `--outputs-root` vira um caminho absoluto quando o dispatch começa. O worker começa na pasta da execução, o precheck roda no dispatcher e o revisor na outputs root, então um caminho relativo apontava três pastas diferentes: numa execução no Codex o worker escreveu `_SUMMARY.md` e `_CLAIMS.json` na própria pasta, o precheck acusou a ausência dos dois, e o revisor, mandado para uma pasta que não existia, morreu com "No such file or directory (os error 2)".
+
 ## 0.15.0-beta.3 — 2026-10-08
 
 ### No Codex, o parecer do revisor é lido, não perdido no fluxo de eventos

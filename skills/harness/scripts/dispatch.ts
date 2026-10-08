@@ -377,7 +377,12 @@ const runtime = arg("--runtime");
 // Was the --runtime flag GIVEN by the user? (an explicit flag ALWAYS beats the
 // USE_* rules — a rule only beats the default.)
 const runtimeFlagGiven = process.argv.some(a => a === "--runtime" || a.startsWith("--runtime="));
-const outputsRoot = arg("--outputs-root");
+// Absolute from here on: the worker starts in its run folder, the precheck runs
+// here and the reviewer in the outputs root, so a relative path named three
+// different folders. Seen on a Codex run: the worker wrote _SUMMARY.md and
+// _CLAIMS.json under its own folder, the precheck found neither, and the
+// reviewer, sent to a folder that did not exist, died with "os error 2".
+const outputsRoot = arg("--outputs-root") ? path.resolve(arg("--outputs-root")!) : undefined;
 const noColor = process.argv.includes("--no-color") || !process.stdout.isTTY;
 
 function c(color: string, text: string): string {

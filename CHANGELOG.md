@@ -6,6 +6,12 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### A relative --outputs-root names one folder for everyone
+
+`--outputs-root` is resolved to an absolute path when the dispatch starts. The worker starts in its run folder, the precheck runs in the dispatcher and the reviewer in the outputs root, so a relative path named three different folders: on a Codex run the worker wrote `_SUMMARY.md` and `_CLAIMS.json` under its own folder, the precheck reported both missing, and the reviewer, sent to a folder that did not exist, died with "No such file or directory (os error 2)".
+
 ## 0.15.0-beta.3 — 2026-10-08
 
 ### On Codex, the reviewer's verdict is read, not lost to the event stream
