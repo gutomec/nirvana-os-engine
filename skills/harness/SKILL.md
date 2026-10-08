@@ -156,6 +156,12 @@ it ends the dispatcher and the worker and closes the run. Never `kill` its
 processes: the run stays open, and the supervisor resumes it once its lease
 expires.
 
+A run that stopped reporting (its lease expired, no `_STATUS.json`) is read
+with `nrv run-track status <run-id>`; nothing recovers it until a sweep runs.
+`nrv supervisor sweep` resumes it, or judges and delivers what it left on
+disk: it spends, so ask the user first. Its history and audit stay as they
+are; there is no reset.
+
 ## 6. When it returns
 
 Read `<outputs>/_STATUS.json` first (`state`, `gate`, `serious`,

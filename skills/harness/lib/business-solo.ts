@@ -383,7 +383,7 @@ export function buildSoloPrompt(
   lines.push(
     `1. Work in phases. Keep \`${progress}\` current: decisions taken, what is done (with paths), what is next. Update it at every milestone. If your context is compacted, the brief and PROGRESS.md are how you carry on.`,
     "2. Read with purpose: locate with a search, then read the part you need. Put independent reads in the same turn. Do not print back a file you just wrote.",
-    `3. Deliverables go under \`${args.outputsRoot}\`, working files under \`${workDir(args.outputsRoot)}\`. When the brief's work lives in another folder (a project to review or fix, a new project to create), do that work there and list every path you created or changed in the summary. participation.json goes where the end of this prompt names it.`,
+    `3. Deliverables go under \`${args.outputsRoot}\`, working files under \`${workDir(args.outputsRoot)}\`; a copy of the brief or of an input is a working file, never a deliverable (the gate judges every file beside the deliverables as one). When the brief's work lives in another folder (a project to review or fix, a new project to create), do that work there and list every path you created or changed in the summary. participation.json goes where the end of this prompt names it.`,
     "4. Deliverables follow the language of the request.",
     "5. Deliver the whole of your part and nothing beyond it. Anything beyond it goes in the summary as a note.",
     "",

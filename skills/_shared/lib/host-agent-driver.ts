@@ -1342,6 +1342,10 @@ export interface RunHeadlessResult {
   runtime: Runtime;
   sessionId: string | null;
   result: string;
+  /** The agent's final message alone, when the runtime reports more than it
+   *  (codex: `result` is the final message followed by the whole event
+   *  stream). A caller that parses the answer reads this first. */
+  answer?: string;
   /** Native USD figure reported by the CLI itself. null = not reported. */
   costUsd: number | null;
   /** The CLI's own result subtype when its output format carries one (claude-code:
@@ -1893,7 +1897,7 @@ function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
 
   const ok = exitCode === 0 && streamError === null;
   return {
-    ok, runtime: "codex", sessionId, result,
+    ok, runtime: "codex", sessionId, result, ...(lastMsgContent.trim() ? { answer: lastMsgContent.trim() } : {}),
     costUsd: null, costUnavailable: true, exitCode, stderr, durationMs,
     ...(usage ? { usage } : {}),
     ...(warnings.length ? { warnings } : {}),

@@ -597,7 +597,9 @@ function generateJson(prompt: string, opts: GenOptions): { ok: boolean; json: an
     maxBudgetUsd: opts.budgetUsd,
     timeoutMs: opts.timeoutMs,
   });
-  const json = res.ok ? extractJson(res.result) : null;
+  // The final message alone: codex reports its event stream after it, and a
+    // first-to-last-brace span over both never parses.
+    const json = res.ok ? extractJson(res.answer ?? res.result) : null;
   return {
     ok: !!json,
     json,

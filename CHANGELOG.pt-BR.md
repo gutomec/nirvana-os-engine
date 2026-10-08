@@ -6,6 +6,16 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
+## Não lançado
+
+### No Codex, o parecer do revisor é lido, não perdido no fluxo de eventos
+
+Três execuções de um cliente no Codex registraram toda revisão como `confirmed=[]`, com cada critério "not mentioned by the reviewer", enquanto as respostas do revisor confirmavam a maioria e davam motivos concretos para o resto. O Codex devolve a mensagem final seguida de todo o fluxo de eventos, e a revisão tomava o último objeto JSON desse texto, um evento de telemetria, como o parecer: o worker era mandado corrigir o que já estava certo, nunca via os achados reais, e as rodadas acabavam. O `runHeadless` agora devolve só a mensagem final como `answer` (codex), a revisão lê o último objeto que traz uma chave de parecer (`confirmed`, `unconfirmed`, `untraceable`) da resposta, depois da saída inteira, depois de texto embrulhado dentro dos eventos do próprio runtime, e uma resposta sem parecer é pulada como ilegível em vez de pontuada como silêncio. O `_review/answer-N.txt` guarda a resposta do revisor, e a correção aponta o worker para ela. As rodadas extras da revisão por critérios bloqueantes param quando uma correção deixa os mesmos pendentes (`x_review_no_progress`). As ferramentas de enriquecimento (`enrich-routing-metadata`, `enrich-business-admission`, `enrich-employee-method`) também leem a mensagem final.
+
+### O loop guard pode ser lido sem um tick, e uma execução que parou de reportar tem um caminho documentado
+
+`nrv guard status --project <dir>` mostra o estado do loop guard e se ele está num teto, sem registrar nada: um cliente manteve um STOP 3/3 por semanas sem como vê-lo sem gastar outro tick. Esse STOP veio do protocolo da 0.14, que dava tick com `--action revision` a cada revisão, então todas as revisões de um projeto dividiam uma assinatura (`revision::bf21a9e8fbc5`, o hash de uma lista de argumentos vazia); o protocolo da beta não dá tick no guard e não lê esse estado. O protocolo do orquestrador agora diz como ler e recuperar uma execução cuja lease expirou sem `_STATUS.json` (`nrv run-track status`, depois `nrv supervisor sweep` com o aval do usuário), e o worker da empresa é avisado de que uma cópia do brief ou de uma entrada é arquivo de trabalho em `_work/`, nunca uma entrega que o gate julga como relatório.
+
 ## 0.15.0-beta.2 — 2026-10-07
 
 ### O gate mostra o que achou, para quando uma correção não avança e faz uma chamada de juiz por rodada

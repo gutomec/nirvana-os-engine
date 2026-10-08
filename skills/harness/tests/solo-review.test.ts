@@ -8,7 +8,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import {
   buildRevisionPrompt, buildSoloReviewPrompt, businessWantsReview, claimProblems, criteriaFromBrief, decideReview, deliverableFiles,
-  evidenceFileUnder, pickReviewRuntime, precheckSolo, runSoloReviewStage, scoreSoloReview, SERIOUS_EXTRA_ROUNDS,
+  evidenceFileUnder, pickReviewRuntime, precheckSolo, readReviewAnswer, runSoloReviewStage, scoreSoloReview, SERIOUS_EXTRA_ROUNDS,
   type ReviewSignals, type SoloReviewArgs,
 } from "../lib/solo-review.ts";
 import { soloDirective } from "../lib/business-solo.ts";
@@ -264,18 +264,103 @@ describe("runSoloReviewStage", () => {
     expect(fs.readFileSync(out.reservations!, "utf8")).toContain("A monthly cost estimate");
   });
 
-  test("a blocking criterion still missed is corrected past max_rounds (rule A), then carried out as serious", () => {
+  test("a blocking criterion a correction does not move gets no extra round, and is carried out as serious", () => {
     deliver();
     const calls: any[] = [];
+    const events: string[] = [];
+    const missed = JSON.stringify({ confirmed: [], unconfirmed: [{ id: "d1", why: "the PRD has no table section" }] });
     const out = runSoloReviewStage(args({
-      policy: "always",
-      runImpl: (o: any) => { calls.push(o); return ok(o.sessionId ? "" : "{}"); },
+      policy: "always", emit: (e) => events.push(e),
+      runImpl: (o: any) => { calls.push(o); return ok(o.sessionId ? "" : missed); },
     }));
-    expect(out.rounds).toBe(1 + SERIOUS_EXTRA_ROUNDS);
-    expect(calls.filter((c) => c.dispatchRole === "solo")).toHaveLength(1 + SERIOUS_EXTRA_ROUNDS);
+    expect(out.rounds).toBe(1);
+    expect(calls.filter((c) => c.dispatchRole === "solo")).toHaveLength(1);
+    expect(events).toContain("x_review_no_progress");
     expect(out.approved).toBe(false);
     expect(out.blockingMissed).toEqual(["d1"]);
     expect(fs.readFileSync(out.reservations!, "utf8")).toContain("**blocking** The PRD lists every table");
+  });
+
+  test("a correction that moves the blocking criteria earns the extra rounds", () => {
+    deliver();
+    write(briefFile, "## Request (verbatim)\nx\n## Decisions\nNone.\n## Your part\ny\n## Inputs\nNone.\n## Done when\n- The PRD lists every table (blocking)\n- A monthly cost estimate (blocking)\n## Output\nout\n");
+    const answers = [
+      { confirmed: [], unconfirmed: [{ id: "d1", why: "no tables" }, { id: "d2", why: "no estimate" }] },
+      { confirmed: [{ id: "d2", evidence: "cost.md:1-20, the monthly table" }], unconfirmed: [{ id: "d1", why: "still no tables" }] },
+      { confirmed: [{ id: "d2", evidence: "cost.md:1-20, the monthly table" }], unconfirmed: [{ id: "d1", why: "still no tables" }] },
+    ];
+    let review = 0;
+    const out = runSoloReviewStage(args({
+      policy: "always",
+      runImpl: (o: any) => ok(o.sessionId ? "" : JSON.stringify(answers[Math.min(review++, answers.length - 1)])),
+    }));
+    // round 1 is the normal one, round 2 is extra (d2 moved), then no progress
+    expect(out.rounds).toBe(2);
+    expect(out.blockingMissed).toEqual(["d1"]);
+  });
+
+  // A client's three cases on Codex: the reviewer confirmed d2-d4 and gave
+  // concrete reasons for d1, d5 and d6, and every event said confirmed=[] and
+  // "not mentioned by the reviewer". The result was the verdict followed by
+  // the whole event stream, and the parser took the last telemetry object.
+  describe("the reviewer's answer as Codex reports it", () => {
+    const verdict = { confirmed: [{ id: "d2", evidence: "cost.md:1-20, the monthly table" }], unconfirmed: [{ id: "d1", why: "the PRD has no table section" }], untraceable: [] };
+    const stream = [
+      JSON.stringify({ type: "thread.started", thread_id: "t1" }),
+      JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: JSON.stringify(verdict) } }),
+      JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1200, output_tokens: 90 } }),
+    ].join("\n");
+
+    test("verdict then event stream: the verdict is read, with the reviewer's own reasons", () => {
+      const raw = readReviewAnswer({ result: `${JSON.stringify(verdict)}\n\n--- codex event stream ---\n${stream}` });
+      expect(raw.confirmed[0].id).toBe("d2");
+      const s = scoreSoloReview(raw, CRITERIA);
+      expect(s.confirmed).toEqual(["d2"]);
+      expect(s.gaps.find((g) => g.id === "d1")!.why).toBe("the PRD has no table section");
+    });
+
+    test("the final message alone (answer) wins over the stream", () => {
+      expect(readReviewAnswer({ answer: JSON.stringify(verdict), result: "garbage" }).confirmed[0].id).toBe("d2");
+    });
+
+    test("with only the event stream, the verdict inside the agent message is found", () => {
+      expect(readReviewAnswer({ result: stream }).unconfirmed[0].why).toBe("the PRD has no table section");
+    });
+
+    test("no verdict anywhere is unreadable, not silence", () => {
+      expect(readReviewAnswer({ result: JSON.stringify({ type: "turn.completed", usage: {} }) })).toBeNull();
+      expect(readReviewAnswer({ result: "{}" })).toBeNull();
+    });
+
+    test("through the stage: the event keeps what was confirmed, and the correction points to the full answer", () => {
+      deliver();
+      const events: Array<[string, any]> = [];
+      const calls: any[] = [];
+      runSoloReviewStage(args({
+        policy: "always", maxRounds: 1, emit: (e, p) => events.push([e, p]),
+        runImpl: (o: any) => { calls.push(o); return o.sessionId ? ok("") : { ...ok(`${JSON.stringify(verdict)}\n\n--- codex event stream ---\n${stream}`), answer: JSON.stringify(verdict) }; },
+      }));
+      const rejected = events.find(([e]) => e === "x_review_rejected")![1];
+      expect(rejected.confirmed).toEqual(["d2"]);
+      expect(rejected.gaps[0].why).toBe("the PRD has no table section");
+      const correction = calls.find((c) => c.dispatchRole === "solo")!;
+      expect(correction.prompt).toContain("_review/answer-0.txt");
+      expect(correction.prompt).toContain("Reviewer: the PRD has no table section");
+    });
+
+    test("an unreadable answer is skipped, never spends a correction round", () => {
+      deliver();
+      const calls: any[] = [];
+      const events: string[] = [];
+      const out = runSoloReviewStage(args({
+        policy: "always", emit: (e) => events.push(e),
+        runImpl: (o: any) => { calls.push(o); return ok(JSON.stringify({ type: "turn.completed", usage: {} })); },
+      }));
+      expect(out.skipped).toBe("reviewer-unreadable");
+      expect(calls.filter((c) => c.dispatchRole === "solo")).toHaveLength(0);
+      expect(events).toContain("x_review_skipped");
+      expect(events).not.toContain("x_review_rejected");
+    });
   });
 
   test("the reviewer runs on the session's runtime by default", () => {
@@ -369,7 +454,7 @@ describe("runSoloReviewStage", () => {
     deliver();
     write(briefFile, "## Request (verbatim)\nx\n## Done when\nWhen it is good.\n");
     const calls: any[] = [];
-    const out = runSoloReviewStage(args({ policy: "always", runImpl: (o: any) => { calls.push(o); return ok("{}"); } }));
+    const out = runSoloReviewStage(args({ policy: "always", runImpl: (o: any) => { calls.push(o); return ok(JSON.stringify({ confirmed: [], notes: "nothing to check against" })); } }));
     expect(calls).toHaveLength(1);
     expect(out.approved).toBe(false);
     expect(fs.readFileSync(out.reservations!, "utf8")).toContain("no \"Done when\" items");

@@ -24,7 +24,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { runHeadless, runtimeAvailable, type Runtime, type RunHeadlessResult } from "./host-agent-driver.ts";
-import { extractJsonObject } from "../../_shared/lib/model-json.ts";
+import { extractJsonObject, jsonObjectsIn } from "../../_shared/lib/model-json.ts";
 import { isRunStateFile } from "../../_shared/lib/run-plumbing.ts";
 import { doneWhenCriteria, type Criterion } from "./work-brief.ts";
 import { soloDirective } from "./business-solo.ts";
@@ -266,6 +266,47 @@ export function buildSoloReviewPrompt(o: { business: string; briefFile: string; 
 
 export const REVIEW_SCORE_FLOOR = 0.9;
 
+const VERDICT_KEYS = ["confirmed", "unconfirmed", "untraceable"];
+const isVerdict = (v: any): boolean => !!v && typeof v === "object" && !Array.isArray(v) && VERDICT_KEYS.some((k) => Array.isArray(v[k]));
+
+/** The strings inside a parsed value, depth-first, so a verdict a runtime
+ *  wrapped as text inside its own event object is still found. */
+function stringsIn(v: any, depth = 0, out: string[] = []): string[] {
+  if (depth > 5 || v == null) return out;
+  if (typeof v === "string") { if (v.includes("{")) out.push(v); return out; }
+  if (Array.isArray(v)) { for (const x of v) stringsIn(x, depth + 1, out); return out; }
+  if (typeof v === "object") for (const x of Object.values(v)) stringsIn(x, depth + 1, out);
+  return out;
+}
+
+/**
+ * The reviewer's verdict: the last JSON object that carries a verdict key,
+ * from the final message first, then from the whole output, then from text a
+ * runtime wrapped inside its own event objects. Null when there is none: the
+ * answer could not be read, which is not the reviewer saying nothing.
+ *
+ * Found on Codex runs (a client's three cases): the result is the final
+ * message followed by the whole event stream, and an unfiltered "last object
+ * wins" took a telemetry event for the verdict. Every criterion the reviewer
+ * had confirmed was recorded as "not mentioned by the reviewer", the worker
+ * was told to fix what was already right, and the rounds ran out.
+ */
+export function readReviewAnswer(r: { answer?: string; result?: string }): any | null {
+  for (const text of [r.answer, r.result]) {
+    if (!text) continue;
+    const direct = extractJsonObject(text, isVerdict);
+    if (direct) return direct;
+  }
+  const objects = jsonObjectsIn(r.result ?? "");
+  for (let i = objects.length - 1; i >= 0; i--) {
+    for (const s of stringsIn(objects[i]).reverse()) {
+      const nested = extractJsonObject(s, isVerdict);
+      if (nested) return nested;
+    }
+  }
+  return null;
+}
+
 export interface Untraceable { where: string; what: string }
 
 export interface ReviewScore {
@@ -310,11 +351,12 @@ export function scoreSoloReview(raw: any, criteria: Criterion[], floor = REVIEW_
   };
 }
 
-export function buildRevisionPrompt(gaps: ReviewScore["gaps"], criteria: Criterion[], untraceable: Untraceable[] = []): string {
+export function buildRevisionPrompt(gaps: ReviewScore["gaps"], criteria: Criterion[], untraceable: Untraceable[] = [], answerFile?: string): string {
   const byId = new Map(criteria.map((c) => [c.id, c]));
   const known = gaps.filter((g) => byId.has(g.id));
   return [
     "The review did not confirm your delivery. Fix it, then update _CLAIMS.json and _SUMMARY.md, and end your turn.",
+    ...(answerFile ? [`The reviewer's full answer, with what it confirmed and what it did not, is \`${answerFile}\`: read it before you correct, and keep what it already confirmed.`] : []),
     ...(known.length ? ["", "Criteria of your brief the review could not confirm:",
       ...known.map((g) => `- \`${g.id}\`${g.blocking ? " (blocking)" : ""}: ${byId.get(g.id)?.description ?? ""}. Reviewer: ${g.why}`)] : []),
     ...(untraceable.length ? ["", "Statements the review could not trace to the brief or to a source: remove each one, or cite where it comes from in the delivery.",
@@ -396,7 +438,7 @@ export interface SoloReviewOutcome {
    *  counts each as SERIOUS (`reviewBlockingMissed`). */
   blockingMissed: string[];
   /** Why the review did not run although it was due. */
-  skipped: "no-deliverable" | "reviewer-failed" | "stopped" | null;
+  skipped: "no-deliverable" | "reviewer-failed" | "reviewer-unreadable" | "stopped" | null;
 }
 
 /** Decide, review, send back within the round limits, and leave reservations for what never held. */
@@ -474,6 +516,7 @@ export function runSoloReviewStage(a: SoloReviewArgs): SoloReviewOutcome {
   fs.mkdirSync(reviewDir, { recursive: true });
   let score: ReviewScore | null = null;
   let pass = 0;
+  let lastMissed: string | null = null;
   for (;;) {
     const halt = stopOutcome(rounds, reviewer);
     if (halt) return halt;
@@ -487,7 +530,9 @@ export function runSoloReviewStage(a: SoloReviewArgs): SoloReviewOutcome {
       allowedTools: ["Read", "Grep", "Glob"], dispatchRole: "planner", yolo: a.yolo ?? true, timeoutMs: a.timeoutMs,
       maxBudgetUsd: a.maxBudgetUsd, ...ledger,
     } as Parameters<typeof runHeadless>[0]);
-    fs.writeFileSync(path.join(reviewDir, `answer-${pass}.txt`), r.result ?? "", "utf8");
+    // The reviewer's own answer; a runtime that also reports its event stream
+    // (codex) keeps it out of the file the worker is pointed to.
+    fs.writeFileSync(path.join(reviewDir, `answer-${pass}.txt`), (r as { answer?: string }).answer ?? r.result ?? "", "utf8");
     if (!r.ok) {
       // A reviewer that died said nothing about the work. Counting it as a
       // rejection sent sound deliveries back for correction; the claims check
@@ -496,9 +541,17 @@ export function runSoloReviewStage(a: SoloReviewArgs): SoloReviewOutcome {
       log(`  review skipped: the reviewer on ${reviewer} failed (${r.error ?? "unknown"})`);
       return outcome({ reviewer, rounds, skipped: "reviewer-failed" });
     }
-    let raw: any = null;
-    try { raw = extractJsonObject(r.result ?? "") ?? JSON.parse(r.result ?? ""); } catch { raw = null; }
-    score = scoreSoloReview(raw ?? {}, criteria);
+    const answerFile = path.join(reviewDir, `answer-${pass}.txt`);
+    const raw = readReviewAnswer(r as { answer?: string; result?: string });
+    if (!raw) {
+      // An answer the engine cannot read says nothing about the work. Scored as
+      // silence it rejected every criterion and spent a correction round on
+      // what the reviewer may well have confirmed.
+      emit("x_review_skipped", { business_slug: a.business, reason: "the reviewer's answer could not be read", reviewer_runtime: reviewer, round: pass, answer_file: answerFile });
+      log(`  review skipped: the reviewer's answer on ${reviewer} could not be read (${answerFile})`);
+      return outcome({ reviewer, rounds, skipped: "reviewer-unreadable" });
+    }
+    score = scoreSoloReview(raw, criteria);
     emit(score.approved ? "x_review_approved" : "x_review_rejected", {
       business_slug: a.business, reviewer_runtime: reviewer, round: pass, score: Number(score.score.toFixed(3)),
       confirmed: score.confirmed, ...(score.gaps.length ? { gaps: score.gaps } : {}), ...(score.invented.length ? { invented_ids: score.invented } : {}),
@@ -510,10 +563,20 @@ export function runSoloReviewStage(a: SoloReviewArgs): SoloReviewOutcome {
     if (!criteria.length && !score.untraceable.length) break;
     const limit = a.maxRounds + (score.blockingMissed.length && a.maxRounds > 0 ? SERIOUS_EXTRA_ROUNDS : 0);
     if (rounds >= limit) break;
+    // The extra rounds are for a correction that is getting somewhere: the
+    // same blocking criteria still missed after one is no progress, and a
+    // further round only spends.
+    const missed = [...score.blockingMissed].sort().join(",");
+    if (rounds >= a.maxRounds && missed === lastMissed) {
+      emit("x_review_no_progress", { business_slug: a.business, round: pass, blocking_missed: score.blockingMissed });
+      log(`  review: no progress on ${missed} after a correction; no further round`);
+      break;
+    }
+    lastMissed = missed;
     const halted = stopOutcome(rounds, reviewer);
     if (halted) return halted;
     rounds++;
-    const fix = correct(buildRevisionPrompt(score.gaps, criteria, score.untraceable));
+    const fix = correct(buildRevisionPrompt(score.gaps, criteria, score.untraceable, answerFile));
     emit("x_solo_revision", { business_slug: a.business, round: rounds, ok: fix.ok, runtime: a.worker.runtime, ...(score.blockingMissed.length ? { serious: true } : {}) });
     if (!fix.ok) { log(`  revision round ${rounds} failed: ${fix.error ?? "unknown"}`); break; }
     precheck = precheckSolo(a.outputsRoot, criteria);

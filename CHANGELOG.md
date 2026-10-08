@@ -6,6 +6,16 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### On Codex, the reviewer's verdict is read, not lost to the event stream
+
+A client's three runs on Codex recorded every review as `confirmed=[]` with each criterion "not mentioned by the reviewer", while the reviewer's answers confirmed most of them and gave concrete reasons for the rest. Codex reports the final message followed by its whole event stream, and the review took the last JSON object in that text, a telemetry event, for the verdict: the worker was told to fix what was already right, never saw the real findings, and the rounds ran out. `runHeadless` now returns the final message alone as `answer` (codex), the review reads the last object that carries a verdict key (`confirmed`, `unconfirmed`, `untraceable`) from the answer, then the whole output, then text wrapped inside the runtime's own events, and an answer with no verdict is skipped as unreadable instead of scored as silence. `_review/answer-N.txt` holds the reviewer's answer, and the correction points the worker to it. The review's extra rounds for blocking criteria stop when a correction leaves the same ones missed (`x_review_no_progress`). The enrichment tools (`enrich-routing-metadata`, `enrich-business-admission`, `enrich-employee-method`) read the final message too.
+
+### The loop guard can be read without a tick, and a run that stopped reporting has a documented path
+
+`nrv guard status --project <dir>` prints the loop guard's state and whether it stands at a ceiling, and records nothing: a client kept a 3/3 STOP for weeks with no way to see it without spending another tick. That STOP came from the 0.14 protocol, which ticked `--action revision` for every revision, so all of a project's revisions shared one signature (`revision::bf21a9e8fbc5`, the hash of an empty argument list); the beta protocol does not tick the guard and does not read that state. The orchestrator protocol now says how a run whose lease expired with no `_STATUS.json` is read and recovered (`nrv run-track status`, then `nrv supervisor sweep` with the user's go-ahead), and the business worker is told that a copy of the brief or of an input is a working file under `_work/`, never a deliverable the gate judges as a report.
+
 ## 0.15.0-beta.2 — 2026-10-07
 
 ### The gate shows what it found, stops when a correction makes no progress, and runs one judge call per round
