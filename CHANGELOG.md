@@ -6,7 +6,15 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
-## Unreleased
+## 0.14.10 — 2026-10-08
+
+### On Codex, the reviewer's verdict is read, not lost to the event stream
+
+A client's Codex runs recorded every review as `confirmed=[]` with each criterion "not mentioned by the reviewer", while the reviewer's answers confirmed most of them and gave concrete reasons for the rest. A Codex answer saved whole is the final message followed by the event stream, and `nrv team verdict` took the last JSON object in it, a telemetry event, for the verdict. It now reads the last object that carries a verdict key (`confirmed`, `unconfirmed`, `untraceable`), then text a runtime wrapped inside its own event objects, and refuses a file with no verdict as unreadable instead of scoring it as silence. `runHeadless` returns the codex final message alone as `answer`, and the enrichment tools (`enrich-routing-metadata`, `enrich-business-admission`, `enrich-employee-method`) parse it instead of the message plus the stream, which never parsed.
+
+### The loop guard can be read without a tick
+
+`nrv guard status --project <dir>` prints the loop guard's state, each signature with its count, and whether the next tick would stop, and records nothing: a client kept a 3/3 STOP for weeks with no way to look at it without spending another tick. The STOP came from ticks with `--action revision`, before signatures named the target, so all of a project's revisions shared `revision::bf21a9e8fbc5`; ticks with `revision:<target>` are separate signatures.
 
 ### The loop guard counts repeats per target
 

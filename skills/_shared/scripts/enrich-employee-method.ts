@@ -456,7 +456,9 @@ if (import.meta.main) {
       permissionMode: "default", model,
       maxBudgetUsd: budgetUsd, timeoutMs,
     });
-    const json = res.ok ? extractJson(res.result) : null;
+    // The final message alone: codex reports its event stream after it, and a
+    // first-to-last-brace span over both never parses.
+    const json = res.ok ? extractJson(res.answer ?? res.result) : null;
     return { ok: !!json, json, costUsd: res.costUsd, error: res.ok ? (json ? undefined : "no JSON object in the model output") : (res.error || "generation run failed") };
   };
 

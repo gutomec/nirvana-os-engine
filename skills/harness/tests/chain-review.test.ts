@@ -185,6 +185,36 @@ describe("nrv team verdict — silence rejects", () => {
   }, spawnBudgetMs(2));
 });
 
+// A client's Codex runs: the saved answer was the final message followed by
+// the whole event stream, the last object was a telemetry event, and every
+// confirmed criterion was recorded as "not mentioned by the reviewer".
+describe("nrv team verdict — a Codex answer with its event stream", () => {
+  const body = { confirmed: [{ id: "names_a_source", evidence: "01-worker.md:3 — sources cited inline" }], unconfirmed: [{ id: "has_three_items", why: "only two items on lines 3-4" }] };
+  const stream = [
+    JSON.stringify({ type: "thread.started", thread_id: "t1" }),
+    JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: JSON.stringify(body) } }),
+    JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1200, output_tokens: 90 } }),
+  ].join("\n");
+
+  test("verdict then stream: what was confirmed stays confirmed, with the reviewer's own reasons", () => {
+    const r = verdict(plan(), 0, `${JSON.stringify(body)}\n\n--- codex event stream ---\n${stream}`);
+    const out = JSON.parse(r.out);
+    expect(out.confirmed).toEqual(["names_a_source"]);
+    expect(out.gaps.find((g: any) => g.id === "has_three_items").why).toBe("only two items on lines 3-4");
+  }, spawnBudgetMs(2));
+
+  test("only the stream: the verdict inside the agent message is found", () => {
+    expect(JSON.parse(verdict(plan(), 0, stream).out).confirmed).toEqual(["names_a_source"]);
+  }, spawnBudgetMs(2));
+
+  test("no verdict anywhere is refused as unreadable, never scored as silence", () => {
+    const r = verdict(plan(), 0, JSON.stringify({ type: "turn.completed", usage: {} }));
+    expect(r.code).not.toBe(0);
+    expect(r.code).not.toBe(3);
+    expect(r.err).toContain("could not be read");
+  }, spawnBudgetMs(2));
+});
+
 describe("the audit can answer who reviewed what, and why it failed", () => {
   test("every verdict carries the trace, the pair, the score and the gaps", () => {
     const p = plan();
