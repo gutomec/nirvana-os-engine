@@ -8,6 +8,10 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 
 ## 0.14.10 — 2026-10-08
 
+### A relative --outputs-root names one folder for everyone
+
+`--outputs-root` is resolved to an absolute path when the dispatch starts. The worker starts in its run folder while the checks and the reviewer run elsewhere, so a relative path named different folders: on a Codex run the worker wrote `_SUMMARY.md` and `_CLAIMS.json` under its own folder, the review found neither, and the reviewer, sent to a folder that did not exist, died with "No such file or directory (os error 2)".
+
 ### On Codex, the reviewer's verdict is read, not lost to the event stream
 
 A client's Codex runs recorded every review as `confirmed=[]` with each criterion "not mentioned by the reviewer", while the reviewer's answers confirmed most of them and gave concrete reasons for the rest. A Codex answer saved whole is the final message followed by the event stream, and `nrv team verdict` took the last JSON object in it, a telemetry event, for the verdict. It now reads the last object that carries a verdict key (`confirmed`, `unconfirmed`, `untraceable`), then text a runtime wrapped inside its own event objects, and refuses a file with no verdict as unreadable instead of scoring it as silence. `runHeadless` returns the codex final message alone as `answer`, and the enrichment tools (`enrich-routing-metadata`, `enrich-business-admission`, `enrich-employee-method`) parse it instead of the message plus the stream, which never parsed.
