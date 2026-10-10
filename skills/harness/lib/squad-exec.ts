@@ -37,6 +37,7 @@ import { scopeBoundary, scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { renderResourceMap } from "../../_shared/lib/entity-resource-map.ts";
 import { resolveSetting } from "../../_shared/lib/settings.ts";
 import { preflightWarnings, squadPreflight } from "../../_shared/lib/squad-preflight.ts";
+import { prepareSquadEnvs, squadEnvLines, squadRunEnv } from "../../_shared/lib/squad-env.ts";
 
 /** Why a squad is running.
  *
@@ -72,6 +73,9 @@ export interface SquadExecArgs {
   autonomousDirective: string;
   /** Ledger heartbeat for supervised squad-only runs. */
   ledger?: { runId: string; watchDir?: string };
+  /** Failures of the squad's environment (squad-env.ts) the worker is told
+   *  about, when the caller already prepared it. Absent: this run prepares it. */
+  envProblems?: string[];
   /** Squads root override (tests). */
   squadsRoot?: string;
   /** Test seam: canned cascade runner (zero-token tests). */
@@ -421,6 +425,10 @@ export function buildSquadPrompt(args: {
   /** The run's trace_id, shown in the event-contract block's example command.
    *  Absent falls back to a `<trace_id>` placeholder — never omits the block. */
   traceId?: string;
+  /** The squad's environment lines (squad-env.ts squadEnvLines): its Python,
+   *  its Node packages and any install failure. Empty or absent leaves the
+   *  prompt unchanged. */
+  envLines?: string[];
 }): string {
   const { squadSlug, squadDir, brief, outDir, mode, cloneInjection: cloneInj } = args;
   const readIfExists = (p: string) => fs.existsSync(p) ? fs.readFileSync(p, "utf8") : "";
@@ -497,7 +505,7 @@ ${brief}
 
 ## SUA SUB-TAREFA
 Execute a SUA especialidade aplicada ao brief acima. Escreva arquivos sob \`${outDir}\`, no formato que a sua especialidade pede; imagem neles é imagem gerada de verdade, nunca placeholder nem SVG genérico. Método e ferramentas são seus. Não invoque a skill harness, não rode \`nrv run\`/\`nrv dispatch\` para este mesmo brief (anti-loop).
-
+${args.envLines?.length ? `\n${args.envLines.join("\n")}\n` : ""}
 Se o brief mencionar você por nome (ex.: "use o squad ${squadSlug}"), priorize fazer EXATAMENTE o que o usuário pediu nesse parágrafo. O usuário manda.
 
 ${scopeGuard("pt-BR")} Escopo é o brief acima e os critérios de aceitação da sua sub-tarefa. ${scopeBoundary("pt-BR")}
@@ -554,6 +562,12 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
     }
   }
 
+  // The squad runs in its own environment (squad-env.ts), prepared here, on
+  // demand: milliseconds when nothing changed, an install when its declared
+  // packages did. A failure is printed and told to the worker; the run goes on.
+  const envProblems = args.envProblems
+    ?? prepareSquadEnvs([{ slug: args.squadSlug, dir: squadDir }]).get(args.squadSlug) ?? [];
+
   const cloneInj = squadCloneInjection(args.brief, args.projectDir);
   for (const slug of cloneInj.missingClones) {
     appendAudit({
@@ -565,7 +579,7 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
   const prompt = buildSquadPrompt({
     squadSlug: args.squadSlug, squadDir, brief: args.brief, outDir,
     mode: args.mode, cloneInjection: cloneInj, capabilityId: args.capabilityId,
-    traceId: args.projectId,
+    traceId: args.projectId, envLines: squadEnvLines(args.squadSlug, envProblems),
   });
 
   appendAudit({
@@ -628,6 +642,9 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
     label: `squad ${args.squadSlug}`,
     projectId: args.projectId,
     ...(args.ledger ? { ledger: { runId: args.ledger.runId, watchDir: args.ledger.watchDir ?? outDir } } : {}),
+    // The squad's packages and Python, through variables on this run only
+    // (squad-env.ts): nothing depends on a node_modules in the squad folder.
+    env: squadRunEnv([args.squadSlug]),
   };
 
   // Session reuse with the one-cold-retry fallback.

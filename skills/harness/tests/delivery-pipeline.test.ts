@@ -278,7 +278,7 @@ describe("runDelivery — outcomes", () => {
     expect(gp?.payload.revisions).toBe(1);
   }, spawnBudgetMs(2));
 
-  test("a session that does not resume is retried cold, once, with the brief, full paths and the producer's role", () => {
+  test("a session that does not resume is retried cold, once, with the brief, full paths, the producer's role and its squad env", () => {
     const oroot = path.join(tmp, "out-cold");
     fs.mkdirSync(oroot);
     const artifact = path.join(oroot, "nota.md");
@@ -289,6 +289,7 @@ describe("runDelivery — outcomes", () => {
       sessionId: "sess-expired",
       targetKind: "squad",
       producerRole: "squad",
+      env: { NODE_PATH: "/env/brandcraft/node_modules" },
       runHeadlessImpl: ((opts: any) => {
         seen.push(opts);
         if (opts.sessionId) {
@@ -309,6 +310,7 @@ describe("runDelivery — outcomes", () => {
       expect(call.prompt).toContain(path.resolve(artifact));
       expect(call.prompt).toContain(path.resolve(oroot));
       expect(call.dispatchRole).toBe("squad");
+      expect(call.env).toEqual({ NODE_PATH: "/env/brandcraft/node_modules" });
     }
     expect(res.exitCode).toBe(0);
     expect(res.sessionId).toBe("sess-cold-1");
@@ -332,6 +334,7 @@ describe("runDelivery — outcomes", () => {
     runDelivery(args);
     expect(seen).toHaveLength(1);
     expect("dispatchRole" in seen[0]).toBe(false);
+    expect("env" in seen[0]).toBe(false);
   }, spawnBudgetMs(2));
 
   test("afterGate hook runs ONLY on deliverable outcomes and its zip lands in delivered", () => {

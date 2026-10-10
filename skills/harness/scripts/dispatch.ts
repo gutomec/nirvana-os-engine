@@ -59,6 +59,7 @@ import { loadHarnessConfig } from "../lib/harness-config.ts";
 import { describeSettingSource, resolveSetting, settingsEnvForChild } from "../../_shared/lib/settings.ts";
 import { planRouteWithFallback, resolveDispatchPlan, runAgentX, type DispatchPlan } from "../lib/dispatch-cascade.ts";
 import { runSquadHeadless } from "../lib/squad-exec.ts";
+import { squadRunEnv } from "../../_shared/lib/squad-env.ts";
 import { parseSquadTarget, resolveSquadCapability } from "../lib/capability-resolver.ts";
 import { parseMessageTargetSpec } from "../lib/control-plane/agent-x-canary-queue.ts";
 import { runDelivery, deliverAfterRuntimeError, gateableFiles, producesForRubric, runGateOnce, type DeliveryArgs, type DeliveryResult, type RuntimeErrorOutcome } from "../lib/delivery-pipeline.ts";
@@ -1206,6 +1207,8 @@ interface DeliverOpts {
   acceptancePromisesPaths?: boolean;
   afterGate?: Parameters<typeof runDelivery>[0]["afterGate"];
   onSession?: (sid: string) => void;
+  /** The squads' environment (squad-env.ts squadRunEnv) for revision rounds. */
+  env?: Record<string, string>;
 }
 
 function deliveryArgs(opts: DeliverOpts): DeliveryArgs {
@@ -1231,6 +1234,7 @@ function deliveryArgs(opts: DeliverOpts): DeliveryArgs {
     // (runAgentX), so their revisions do too.
     ...(opts.targetKind === "squad" ? { producerRole: "squad" as const } : {}),
     ...(opts.targetKind === "agent-x" ? { producerRole: "agent-x" as const } : {}),
+    ...(opts.env ? { env: opts.env } : {}),
     rulesDirective,
     forceDeliver,
     config: harnessConfig,
@@ -1474,6 +1478,9 @@ if (pendingCascade?.kind === "squad-only") {
   const squadDeliverOpts = {
     pid, slugOrNull: null, targetKind: "squad" as const, rt, oroot,
     projDir, projectRoot, sessionId: lastSession, withManifest: false, produces: squadProduces,
+    // A revision round resumes the last squad's worker: its packages and Python
+    // come first (squadRunEnv resolves a name to the first squad that has it).
+    env: squadRunEnv([...squads].reverse()),
   };
   publication.verify();
   if (squadError) {

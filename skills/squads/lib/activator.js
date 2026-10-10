@@ -46,6 +46,22 @@ const DEPS = (() => {
   }
   throw new Error(`deps-home not found (looked in: ${candidates.join(', ')})`);
 })();
+// Each squad's own environment (~/.nirvana/envs/<slug>): where its Node and
+// Python packages install now. Loaded on first use, never at require time,
+// because squad-env.ts loads THIS file for the parsing below — a load-time
+// require in both directions would be a cycle.
+let SQUAD_ENV_MEMO = null;
+function squadEnv() {
+  if (SQUAD_ENV_MEMO) return SQUAD_ENV_MEMO;
+  const candidates = [
+    path.join(SKILLS_ROOT, '_shared', 'lib', 'squad-env.ts'),
+    path.resolve(__dirname, '..', '..', '_shared', 'lib', 'squad-env.ts'),
+  ];
+  for (const c of candidates) {
+    try { if (fs.existsSync(c)) { SQUAD_ENV_MEMO = require(c); return SQUAD_ENV_MEMO; } } catch { /* next */ }
+  }
+  throw new Error(`squad-env not found (looked in: ${candidates.join(', ')})`);
+}
 const SQUADS_DIR = process.env.SQUADS_DIR || PATHS.SQUADS_DIR;
 const STATE_DIR = process.env.NIRVANA_STATE_DIR || PATHS.SQUADS_STATE_DIR;
 // When the caller (activate-squad.ts) resolved a project-scoped squad,
@@ -477,7 +493,7 @@ function installSystem(dep, dryRun, confirmHeavy) {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Python: which interpreter, where packages go, how presence is proven.
+// Python: which interpreter, where packages go, when they install.
 //
 // The premise is a machine we know nothing about: bun is there, "probably" a
 // node and a python, and no idea which. Everything below follows from that.
@@ -492,23 +508,19 @@ function installSystem(dep, dryRun, confirmHeavy) {
 // 0-byte reparse point that opens the Store and exits non-zero — so it is
 // tried LAST there, after the `py` launcher python.org installs and `python`.
 //
-// WHERE PACKAGES GO. A venv under ~/.nirvana/python, not `pip install --user`.
-// PEP 668 (Debian 12, Ubuntu 23.04+, Fedora 38+, Arch, Homebrew) refuses
-// `--user` into a distro Python with `externally-managed-environment`, so the
-// old install path failed outright on a large share of modern machines. And a
-// venv means check and install share ONE interpreter by construction, where the
-// old code probed `pip --version` and installed into whatever Python that pip
-// belonged to, never having asked.
+// WHERE PACKAGES GO. A venv per squad, `~/.nirvana/envs/<slug>/.venv`
+// (squad-env.ts), never `pip install --user`. PEP 668 (Debian 12, Ubuntu
+// 23.04+, Fedora 38+, Arch, Homebrew) refuses `--user` into a distro Python
+// with `externally-managed-environment`, and a venv means install and run
+// share ONE interpreter by construction. One venv PER SQUAD, because the
+// shared one this replaced held one version of each package: the last squad
+// activated won, upgrading or downgrading in place what the others pinned.
 //
-// HOW PRESENCE IS PROVEN. `<venv python> -m pip install --dry-run --no-index
-// --report - <tokens>`: pip's own resolver answering "would anything be
-// installed?", version specifiers honoured (PEP 440, `pillow >= 10.0` is a
-// real constraint), no network, no import names (pyyaml → yaml, pillow → PIL,
-// scikit-learn → sklearn, all sidestepped because pip speaks distribution
-// names). Measured: satisfied → exit 0 and an empty `install` in 1.1 s;
-// missing or too low → exit 1 in 0.25 s. Needs pip >= 22.2; an older pip
-// rejects the flag, and that answer is "not proven", which means install. The
-// only answer that skips the installer is a proof.
+// WHEN TO INSTALL. squad-env.ts hashes the declared specs and installs only
+// when that hash changed or the last attempt failed. The pip `--dry-run`
+// presence proof that used to gate the shared venv is gone with it: a squad's
+// own venv holds exactly what that squad declared, so there is nothing else to
+// prove against.
 //
 // uv, WHEN PRESENT. uv is what the ecosystem converged on for exactly this: it
 // discovers interpreters by querying them, creates the venv, downloads a Python
@@ -560,7 +572,7 @@ function venvReady(venvDir) {
 
 /**
  * The venv at `venvDir`, created if absent. uv creates it when present
- * (`--seed` puts pip inside, so the dry-run proof works the same way in both
+ * (`--seed` puts pip inside, so `<venv python> -m pip` works the same way in both
  * kinds of venv; `--no-project` keeps a stray .python-version in cwd out of
  * the decision); otherwise the discovered interpreter's `-m venv`. Returns
  * {ok, venv, python, created} or {ok:false, error, hint, unavailable?}.
@@ -583,79 +595,71 @@ function ensureVenv(venvDir, dryRun) {
   return { ok: true, venv: venvDir, python, created: true, via };
 }
 
-/** pip's own answer to "is every token already satisfied here?". Only exit 0
- *  with an empty `install` list is a proof; every other outcome — a missing
- *  package, a version below its specifier, a pip too old for `--dry-run`, an
- *  unreadable report — is "not proven", and not proven means install. */
-function pythonPresent(pythonExe, tokens) {
-  const r = runArgv([pythonExe, '-m', 'pip', 'install', '--dry-run', '--no-index', '--quiet', '--report', '-', ...tokens], { timeoutMs: 120000 });
-  if (!r.ok) return { present: false, reason: r.code == null ? 'pip did not run' : 'not satisfied, or pip predates --dry-run (22.2)' };
-  try {
-    const report = JSON.parse(String(r.output));
-    const n = Array.isArray(report.install) ? report.install.length : -1;
-    if (n === 0) return { present: true };
-    return { present: false, reason: n > 0 ? `${n} package(s) would be installed` : 'unreadable report' };
-  } catch {
-    return { present: false, reason: 'unreadable report' };
-  }
-}
-
-function installPython(spec, dryRun, squadDir) {
-  const norm = normalizeDepSpec(spec, 'pip');
-  if (!norm) return { status: 'no_python_deps' };
-  const tokens = norm.raw.map(x => depToToken(x, 'pip')).filter(Boolean);
-  if (tokens.length === 0) return { status: 'no_python_deps' };
-  // The author's explicit `check:` on every entry still wins, unchanged.
-  if (allChecksPass(norm)) return { status: 'already_present', kind: 'python', packages: tokens, via: 'check' };
-
-  // `use_squad_venv` is the author's deliberate isolation choice and is
-  // honoured: the venv lives inside the squad. Everything else shares one.
-  const isolated = !Array.isArray(spec) && !!spec.use_squad_venv;
-  const venvDir = isolated ? path.join(squadDir || process.cwd(), '.venv') : DEPS.pythonVenv();
-
-  const env = ensureVenv(venvDir, dryRun);
-  if (!env.ok) {
-    if (env.unavailable) return { status: 'python_unavailable', kind: 'python', packages: tokens, error: env.error, hint: env.hint };
-    return { status: 'install_failed', kind: 'python', packages: tokens, venv: venvDir, error: env.error, hint: env.hint };
-  }
-
-  // A venv that exists may already hold everything. One we just created, or
-  // would create, cannot, so the proof is skipped rather than run against
-  // nothing.
-  let notProven = null;
-  if (!env.created && !env.would_create) {
-    const proof = pythonPresent(env.python, tokens);
-    if (proof.present) return { status: 'already_present', kind: 'python', packages: tokens, venv: env.venv, via: 'pip-dry-run' };
-    notProven = proof.reason;
-  }
-
+/**
+ * The venv of ONE squad's environment (squad-env.ts): created if absent, then
+ * the tokens installed into it, with uv when it is on PATH and the venv's own
+ * pip otherwise. No presence proof here: the caller hashes what the squad
+ * declares and only calls this when that hash changed, so every call is a
+ * real install. Returns {ok, python, manager} or {ok:false, error, hint, unavailable?}.
+ */
+function installPythonEnv(venvDir, tokens) {
+  const env = ensureVenv(venvDir, false);
+  if (!env.ok) return { ok: false, unavailable: !!env.unavailable, error: env.error, hint: env.hint || null };
+  if (!tokens.length) return { ok: true, python: env.python, manager: null };
   const manager = uvAvailable() ? 'uv' : 'pip';
   const argv = manager === 'uv'
     ? ['uv', 'pip', 'install', '--python', env.python, ...tokens]
     : [env.python, '-m', 'pip', 'install', ...tokens];
-  if (dryRun) {
-    return { status: 'would_install', kind: 'python', manager, venv: env.venv, home: env.venv, python: env.python,
-             would_create_venv: env.would_create || null, not_proven: notProven, cmd: displayCmd(argv), argv, packages: tokens };
-  }
   const r = runArgv(argv);
+  const detail = r.ok ? null : `${r.error}${r.stderr ? `: ${String(r.stderr).trim().split(/\r?\n/).slice(-1)[0].slice(0, 300)}` : ''}`;
+  return { ok: r.ok, python: env.python, manager, error: detail };
+}
+
+// The squad's Python packages go to its OWN venv, <env>/.venv
+// (squad-env.ts), never to a venv another squad shares: two squads that pin
+// different versions of one package each keep theirs. That also retires
+// `use_squad_venv` (every squad is isolated now) and the per-entry `check:`
+// shortcut, which proved presence on whatever interpreter answered on PATH
+// rather than in the venv the squad runs with.
+function installPython(spec, dryRun, squadDir, slug, ensureEnv) {
+  const norm = normalizeDepSpec(spec, 'pip');
+  if (!norm) return { status: 'no_python_deps' };
+  const tokens = norm.raw.map(x => depToToken(x, 'pip')).filter(Boolean);
+  if (tokens.length === 0) return { status: 'no_python_deps' };
+  const SE = squadEnv();
+  const venv = SE.squadVenvDir(slug);
+  if (dryRun) {
+    const plan = ensureVenv(venv, true);
+    if (!plan.ok) return { status: 'python_unavailable', kind: 'python', packages: tokens, error: plan.error, hint: plan.hint };
+    const manager = uvAvailable() ? 'uv' : 'pip';
+    const argv = manager === 'uv'
+      ? ['uv', 'pip', 'install', '--python', plan.python, ...tokens]
+      : [plan.python, '-m', 'pip', 'install', ...tokens];
+    return { status: 'would_install', kind: 'python', manager, env: SE.squadEnvDir(slug), venv, python: plan.python,
+             would_create_venv: plan.would_create || null, cmd: displayCmd(argv), argv, packages: tokens };
+  }
+  const res = ensureEnv();
+  const py = res.python;
+  if (!py) return { status: 'install_failed', kind: 'python', packages: tokens, venv, error: res.problems.join('; ') || 'environment not prepared' };
+  if (py.unavailable) return { status: 'python_unavailable', kind: 'python', packages: tokens, error: py.error, hint: HINT_NO_PYTHON };
   return {
-    status: r.ok ? 'installed' : 'install_failed',
+    status: py.error ? 'install_failed' : (py.installed ? 'installed' : 'already_present'),
     kind: 'python',
-    manager,
-    venv: env.venv,
-    python: env.python,
+    env: res.dir,
+    venv,
+    python: py.bin,
     packages: tokens,
-    error: r.ok ? null : r.error,
+    error: py.error || null,
   };
 }
 
-function installNode(spec, dryRun, squadDir) {
+function installNode(spec, dryRun, squadDir, slug, ensureEnv) {
   const norm = normalizeDepSpec(spec, 'npm');
   if (!norm) return { status: 'no_node_deps' };
   const tokens = norm.raw.map(x => depToToken(x, 'npm')).filter(Boolean);
   if (tokens.length === 0) return { status: 'no_node_deps' };
-  if (allChecksPass(norm)) return { status: 'already_present', kind: 'node', manager: norm.manager, global: norm.global, packages: tokens };
   const g = norm.global;
+  if (g && allChecksPass(norm)) return { status: 'already_present', kind: 'node', manager: norm.manager, global: true, packages: tokens };
 
   // GLOBAL installs are the carve-out and stay as they are: `npm i -g wrangler`
   // asks for a command on the machine's PATH, which is the same class as
@@ -671,88 +675,80 @@ function installNode(spec, dryRun, squadDir) {
     return { status: r.ok ? 'installed' : 'install_failed', kind: 'node', manager, global: true, packages: tokens, error: r.ok ? null : r.error };
   }
 
-  // LOCAL installs go to the shared store at ~/.nirvana/node_modules, never to
-  // the squad. This used to run the package manager inside the squad dir on the
-  // reasoning that it kept the ~/squads ROOT clean — which it did, by writing
-  // one full tree per squad instead. brandcraft alone cost 276 MB there, and
-  // its byte-identical twin in the pack source cost another 276 MB.
+  // LOCAL installs go to the squad's OWN environment, ~/.nirvana/envs/<slug>
+  // (squad-env.ts): a package.json holding exactly what the squad declares,
+  // versions as written, one `bun install` there. The worker reaches the
+  // packages through NODE_PATH (squadRunEnv); the only thing put in the squad
+  // folder is a best-effort node_modules link to the env, which nothing
+  // depends on (squad-env.ts reinforceLink). The shared store this used to fill held
+  // one version per package for every squad, so a squad declaring zod@^3
+  // silently ran on the zod 4 another squad had installed. Bun clones from its
+  // global cache, so five copies of a 55 MB tree measured 1.5 MB of real disk.
   //
-  // `spec.cwd` is now advisory: a squad that declares
-  // `cwd: "${SQUADS_DIR}/<slug>"` (the shape the old template taught) gets the
-  // store anyway, and the ignored value is reported so the author can drop it.
+  // `spec.cwd` stays advisory: the environment is the only destination, and
+  // the ignored value is reported so the author can drop it.
   const declaredCwd = expandPath(!Array.isArray(spec) ? spec.cwd : null);
+  const SE = squadEnv();
   if (dryRun) {
-    const plan = DEPS.install(tokens, { dryRun: true });
-    return { status: 'would_install', kind: 'node', manager: 'bun', global: false, store: DEPS.depsStore(), cmd: plan.cmd, argv: plan.argv, packages: tokens, ignored_cwd: declaredCwd || null };
+    const bun = process.env.NIRVANA_BUN || 'bun';
+    const argv = [bun, 'install'];
+    return { status: 'would_install', kind: 'node', manager: 'bun', global: false, env: SE.squadEnvDir(slug), cmd: `${displayCmd(argv)} (in ${SE.squadEnvDir(slug)})`, argv, packages: tokens, ignored_cwd: declaredCwd || null };
   }
-  const res = DEPS.install(tokens);
-  // The squad still has to RESOLVE what was installed. One symlink does that
-  // for every runtime and loader, and keeps a single physical copy on disk.
-  const linked = squadDir ? DEPS.link(squadDir) : { status: 'skipped' };
+  const res = ensureEnv();
+  const node = res.node;
   return {
-    status: res.status === 'failed' ? 'install_failed' : (res.status === 'already_present' ? 'already_present' : 'installed'),
+    status: !node ? 'install_failed' : (node.error ? 'install_failed' : (node.installed ? 'installed' : 'already_present')),
     kind: 'node',
     manager: 'bun',
     global: false,
-    store: DEPS.depsStore(),
+    env: res.dir,
     packages: tokens,
-    linked: linked.status,
     ignored_cwd: declaredCwd || null,
-    error: res.error || null,
+    error: !node ? (res.problems.join('; ') || 'environment not prepared') : (node.error || null),
   };
 }
 
-// Sub-app installer: some squads ship self-contained sub-projects with their
-// OWN package.json (e.g. dashboard/, scripts/). The root install can't reach
-// them, so a squad would look "activated" while its dashboard/renderer can't
-// run. This installs each sub-app IN ITS OWN dir (so a squad is fully runnable
-// after `nrv activate`, not just its root deps). Skips non-app dirs and any
-// sub-app that already has node_modules.
+// Sub-apps: some squads ship self-contained sub-projects with their OWN
+// package.json (e.g. dashboard/, scripts/). The root install can't reach them,
+// so a squad would look "activated" while its dashboard/renderer can't run.
+// Each one gets its own folder inside the squad's environment,
+// `<env>/subapps/<dir>` (squad-env.ts), with the same rule as the root:
+// nothing in the sub-app but a best-effort node_modules link to that folder.
+// They used to install into the shared store and link to it.
 const SUBAPP_SKIP = new Set(['node_modules', 'templates', 'examples', 'example', 'fixtures', 'references', 'schemas', 'docs', 'test', 'tests', '__tests__', 'data', 'assets', '.git']);
-function installSubApps(squadDir, dryRun) {
-  const out = [];
+/** The top-level folders of a squad that carry a package.json of their own,
+ *  with what each declares ({name: version}, or null when unreadable). */
+function subAppManifests(squadDir) {
   let entries;
-  try { entries = fs.readdirSync(squadDir, { withFileTypes: true }); } catch { return out; }
+  try { entries = fs.readdirSync(squadDir, { withFileTypes: true }); } catch { return []; }
+  const out = [];
   for (const e of entries) {
     if (!e.isDirectory() || e.name.startsWith('.') || SUBAPP_SKIP.has(e.name)) continue;
-    const sub = path.join(squadDir, e.name);
-    const pkgPath = path.join(sub, 'package.json');
+    const pkgPath = path.join(squadDir, e.name, 'package.json');
     if (!fs.existsSync(pkgPath)) continue;
-
-    // A pre-existing REAL node_modules is somebody's installed tree; leave it
-    // and let `nrv deps adopt` fold it into the store. A symlink means this
-    // sub-app is already pointed at the store.
-    let existing = null;
-    try { existing = fs.lstatSync(path.join(sub, 'node_modules')); } catch { /* absent */ }
-    if (existing && !existing.isSymbolicLink()) { out.push({ dir: e.name, status: 'stray_tree', kind: 'subapp', hint: 'nrv deps adopt' }); continue; }
-
-    let tokens = [];
     try {
       const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-      const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
-      tokens = Object.entries(deps).map(([n, v]) => `${n}@${v}`);
-    } catch { out.push({ dir: e.name, status: 'unreadable_manifest', kind: 'subapp' }); continue; }
-    if (tokens.length === 0) { out.push({ dir: e.name, status: 'no_deps', kind: 'subapp' }); continue; }
-
-    // Same rule as the squad root: install ONCE into the shared store, then
-    // link. Previously this ran a package manager inside every sub-app dir, so
-    // one squad could produce three separate node_modules trees
-    // (instagram-intelligence-nirvana: dashboard/ + scripts/).
-    if (dryRun) {
-      const plan = DEPS.install(tokens, { dryRun: true });
-      out.push({ dir: e.name, status: 'would_install', kind: 'subapp', cmd: plan.cmd, packages: tokens });
-      continue;
-    }
-    const res = DEPS.install(tokens);
-    const linked = DEPS.link(sub);
-    out.push({
-      dir: e.name,
-      status: res.status === 'failed' ? 'install_failed' : (res.status === 'already_present' ? 'already_present' : 'installed'),
-      kind: 'subapp', manager: 'bun', store: DEPS.depsStore(), linked: linked.status,
-      error: res.error || null,
-    });
+      out.push({ name: e.name, deps: { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) } });
+    } catch { out.push({ name: e.name, deps: null }); }
   }
   return out;
+}
+
+function installSubApps(squadDir, dryRun, slug, ensureEnv) {
+  const subs = subAppManifests(squadDir);
+  if (subs.length === 0) return [];
+  const planned = (s) => s.deps === null ? 'unreadable_manifest' : (Object.keys(s.deps).length === 0 ? 'no_deps' : null);
+  if (dryRun) {
+    const env = squadEnv().squadEnvDir(slug);
+    return subs.map(s => ({ dir: s.name, kind: 'subapp', status: planned(s) || 'would_install',
+      env: path.join(env, 'subapps', s.name), packages: s.deps ? Object.entries(s.deps).map(([n, v]) => `${n}@${v}`) : [] }));
+  }
+  const res = ensureEnv();
+  return subs.map(s => {
+    const got = (res.subapps || []).find(x => x.name === s.name);
+    const status = planned(s) || (!got ? 'install_failed' : got.error ? 'install_failed' : (got.installed ? 'installed' : 'already_present'));
+    return { dir: s.name, kind: 'subapp', status, manager: 'bun', env: path.join(res.dir, 'subapps', s.name), error: got && got.error ? got.error : null };
+  });
 }
 
 function installService(svc, dryRun) {
@@ -922,7 +918,7 @@ function runPostInstall(commands, dryRun) {
 // Public API
 // ─────────────────────────────────────────────────────────────────────
 
-function _synthesizeFromManifests(squadDir, slug) {
+function _synthesizeFromManifests(squadDir, slug, { cache = true } = {}) {
   // Look for standard-format manifests in the squad dir; if any are present,
   // synthesize a dependencies.yaml-equivalent object so activation can still
   // run. Cached at ~/.nirvana/squads-state/<slug>/synth-deps.yaml for the
@@ -1003,6 +999,7 @@ function _synthesizeFromManifests(squadDir, slug) {
   }
 
   if (synth._sources.length === 0) return null;
+  if (!cache) return synth;
 
   // Cache for user inspection
   const stateDir = path.join(STATE_DIR, slug);
@@ -1013,6 +1010,16 @@ function _synthesizeFromManifests(squadDir, slug) {
   }
   synth._cached_at = cachePath;
   return synth;
+}
+
+/**
+ * What a squad declares: its dependencies.yaml, or the equivalent synthesized
+ * from package.json / pyproject.toml / requirements.txt. Pure: nothing is
+ * cached, nothing installed. squad-env.ts reads a squad's packages through it,
+ * so the dispatch path and `nrv activate` parse one format one way.
+ */
+function declaredDeps(squadDir) {
+  return readYaml(path.join(squadDir, 'dependencies.yaml')) || _synthesizeFromManifests(squadDir, null, { cache: false });
 }
 
 function activate(slug, opts = {}) {
@@ -1067,19 +1074,24 @@ function activate(slug, opts = {}) {
     log.steps.system = deps.system.map(d => installSystem(d, dryRun, opts.confirmHeavyDownloads));
   }
 
+  // Python and local Node deps share ONE pass over the squad's environment,
+  // made on first need and reused by the other section.
+  let envResult = null;
+  const ensureEnv = () => envResult || (envResult = squadEnv().ensureSquadEnv(slug, squadDir));
+
   // Python deps
   if (deps.python) {
-    log.steps.python = installPython(deps.python, dryRun, squadDir);
+    log.steps.python = installPython(deps.python, dryRun, squadDir, slug, ensureEnv);
   }
 
   // Node deps
   if (deps.node) {
-    log.steps.node = installNode(deps.node, dryRun, squadDir);
+    log.steps.node = installNode(deps.node, dryRun, squadDir, slug, ensureEnv);
   }
 
   // Sub-app deps (dashboard/, scripts/, … with their own package.json) — a squad
   // is only "ready" if its sub-projects can run too, not just the root.
-  const subapps = installSubApps(squadDir, dryRun);
+  const subapps = installSubApps(squadDir, dryRun, slug, ensureEnv);
   if (subapps.length) log.steps.subapps = subapps;
 
   // Services (Pixelle, ComfyUI, Ollama, etc.)
@@ -1178,7 +1190,9 @@ function deactivate(slug) {
 
 // windowsCmdMetachar is exported for its own test: it is the whole Windows
 // decision, and the spawn it guards cannot be exercised from a POSIX runner.
-module.exports = { activate, status, deactivate, _windowsShellPlan: windowsShellPlan, _fetchAndExecute: fetchAndExecute, _posixShell: posixShell, _pythonCandidates: pythonCandidates };
+// declaredDeps, normalizeDepSpec, depToToken, subAppManifests and
+// installPythonEnv are what squad-env.ts builds a squad's environment from.
+module.exports = { activate, status, deactivate, declaredDeps, normalizeDepSpec, depToToken, subAppManifests, installPythonEnv, _windowsShellPlan: windowsShellPlan, _fetchAndExecute: fetchAndExecute, _posixShell: posixShell, _pythonCandidates: pythonCandidates };
 
 // CLI — exit codes follow the contract documented in scripts/activate-squad.sh:
 //   0 = ok / activated

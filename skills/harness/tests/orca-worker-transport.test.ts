@@ -158,6 +158,14 @@ describe("with canned Orca answers", () => {
     expect(c.fired).toContainEqual(["terminal", "close", "--terminal", "term_1"]);
   });
 
+  test("the run's own variables (a squad's environment) reach the worker terminal", () => {
+    const c = canned(HAPPY);
+    runOrcaWorker(base({ env: { NODE_PATH: "/env/brandcraft/node_modules" } }), c.hooks);
+    const termCreate = c.calls.find((a) => a[0] === "terminal" && a[1] === "create")!;
+    // POSIX `NODE_PATH='…'`, PowerShell `$env:NODE_PATH='…'`: the pin is there either way.
+    expect(termCreate[termCreate.indexOf("--command") + 1]).toContain("NODE_PATH='/env/brandcraft/node_modules'");
+  });
+
   test("a question on the way is answered with the defaults policy, then the worker finishes", () => {
     let checks = 0;
     const c = canned({

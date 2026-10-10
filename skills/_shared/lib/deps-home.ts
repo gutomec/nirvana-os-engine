@@ -107,10 +107,10 @@ export function pythonVenv(): string {
 }
 
 /** The interpreter inside a venv, where each platform puts it. */
-export function venvPython(venvDir: string): string {
-  return process.platform === "win32"
-    ? path.join(venvDir, "Scripts", "python.exe")
-    : path.join(venvDir, "bin", "python");
+export function venvPython(venvDir: string, platform: NodeJS.Platform = process.platform): string {
+  return platform === "win32"
+    ? path.win32.join(venvDir, "Scripts", "python.exe")
+    : path.posix.join(venvDir, "bin", "python");
 }
 
 /** `~/.nirvana/cache/<tool>` — one pinned cache per tool that downloads runtimes. */
@@ -190,12 +190,21 @@ export function link(dir: string): LinkResult {
   } catch { /* nothing there — the normal path */ }
   try {
     ensure(store);
-    fs.symlinkSync(store, target, process.platform === "win32" ? "junction" : "dir");
+    dirLink(store, target);
     ignoreNodeModules(dir);
     return { status: "linked", target };
   } catch (e) {
     return { status: "failed", target, error: (e as Error).message };
   }
+}
+
+/**
+ * A directory link at `linkPath` pointing at `target`: a symlink on POSIX, a
+ * junction on Windows, which needs no admin rights and takes an absolute
+ * target. Throws what the filesystem throws; callers decide what is fatal.
+ */
+export function dirLink(target: string, linkPath: string): void {
+  fs.symlinkSync(path.resolve(target), linkPath, process.platform === "win32" ? "junction" : "dir");
 }
 
 /**

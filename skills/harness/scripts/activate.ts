@@ -53,7 +53,8 @@ if (flags.includes("--help") || flags.includes("-h") || (!all && positional.leng
   nrv activate status <slug>
 
 Installs what a squad's dependencies.yaml declares: system tools, Python and
-Node packages, sub-app node_modules, model downloads (heavy ones need
+Node packages (into the squad's own environment, ~/.nirvana/envs/<slug>,
+which a dispatch also prepares on demand), sub-app node_modules, model downloads (heavy ones need
 --confirm-heavy) — then verifies each check. Idempotent: an already-active
 squad is re-verified, not reinstalled.
 
