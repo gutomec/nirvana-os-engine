@@ -33,6 +33,7 @@ import { scopeBoundary, scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { renderResourceMap } from "../../_shared/lib/entity-resource-map.ts";
 import { resolveSetting } from "../../_shared/lib/settings.ts";
 import { preflightWarnings, squadPreflight } from "../../_shared/lib/squad-preflight.ts";
+import { squadEnvLines, squadRunEnv } from "../../_shared/lib/squad-env.ts";
 
 export interface SquadExecArgs {
   squadSlug: string;
@@ -55,6 +56,8 @@ export interface SquadExecArgs {
   autonomousDirective: string;
   /** Ledger heartbeat for supervised squad-only runs. */
   ledger?: { runId: string; watchDir?: string };
+  /** Failures of the squad's environment (squad-env.ts) the worker is told about. */
+  envProblems?: string[];
   /** Squads root override (tests). */
   squadsRoot?: string;
   /** Test seam: canned cascade runner (zero-token tests). */
@@ -395,6 +398,9 @@ export function buildSquadPrompt(args: {
   /** The run's trace_id, shown in the event-contract block's example command.
    *  Absent falls back to a `<trace_id>` placeholder — never omits the block. */
   traceId?: string;
+  /** The squad's environment lines (squad-env.ts squadEnvLines): its Python,
+   *  and any install failure. Empty or absent leaves the prompt unchanged. */
+  envLines?: string[];
 }): string {
   const { squadSlug, squadDir, brief, outDir, cloneInjection: cloneInj } = args;
   const readIfExists = (p: string) => fs.existsSync(p) ? fs.readFileSync(p, "utf8") : "";
@@ -467,7 +473,7 @@ ${brief}
 
 ## YOUR SUB-TASK
 Run YOUR specialty applied to the brief above. Write your deliverables under \`${outDir}\`, in the format your specialty calls for. When the brief's work lives in another folder (a project to review or fix, a new project to create), do that work there and list every path you created or changed. If the deliverable includes images, they are really generated images, never a placeholder or a generic SVG. Method and tools are yours. Deliverables follow the language of the request. Do not invoke the harness skill, and do not run \`nrv run\`/\`nrv dispatch\` for this same brief (anti-loop).
-
+${args.envLines?.length ? `\n${args.envLines.join("\n")}\n` : ""}
 If the brief mentions you by name (e.g. "use the ${squadSlug} squad"), prioritize doing EXACTLY what the user asked in that paragraph. The user decides.
 
 ${scopeGuard()} Scope is the brief above and the acceptance criteria of your sub-task. ${scopeBoundary()}
@@ -534,7 +540,7 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
   const prompt = buildSquadPrompt({
     squadSlug: args.squadSlug, squadDir, brief: args.brief, outDir,
     cloneInjection: cloneInj, capabilityId: args.capabilityId,
-    traceId: args.projectId,
+    traceId: args.projectId, envLines: squadEnvLines(args.squadSlug, args.envProblems),
   });
 
   appendAudit({
@@ -597,6 +603,9 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
     label: `squad ${args.squadSlug}`,
     projectId: args.projectId,
     ...(args.ledger ? { ledger: { runId: args.ledger.runId, watchDir: args.ledger.watchDir ?? outDir } } : {}),
+    // The squad's packages and Python, through variables on this run only
+    // (squad-env.ts): nothing depends on a node_modules in the squad folder.
+    env: squadRunEnv([args.squadSlug]),
   };
 
   // Session reuse with the one-cold-retry fallback.

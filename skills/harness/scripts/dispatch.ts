@@ -49,7 +49,7 @@ import { listRuntimes } from "../../_shared/lib/host-agent-driver.ts";
 import { amplify } from "../lib/amplifier.ts";
 import { proxyEnrichBrief } from "../lib/brief-proxy.ts";
 import { resolveRoutingMode, routingModeOrigin } from "../../_shared/lib/routing-mode.ts";
-import { creditSoloRun, namedSquadsIn, prepareBusinessSolo, runBusinessSolo } from "../lib/business-solo.ts";
+import { cardedSquads, creditSoloRun, namedSquadsIn, prepareBusinessSolo, runBusinessSolo } from "../lib/business-solo.ts";
 import { runSoloReviewStage, SERIOUS_EXTRA_ROUNDS, type ReviewPolicy } from "../lib/solo-review.ts";
 import { resolveEntityDir } from "../../_shared/lib/entity-resource-map.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
@@ -74,6 +74,7 @@ import { loadHarnessConfig } from "../lib/harness-config.ts";
 import { describeSettingSource, resolveSetting, settingsEnvForChild } from "../../_shared/lib/settings.ts";
 import { planRouteWithFallback, resolveDispatchPlan, runAgentX, type DispatchPlan } from "../lib/dispatch-cascade.ts";
 import { runSquadHeadless } from "../lib/squad-exec.ts";
+import { prepareSquadEnvs } from "../../_shared/lib/squad-env.ts";
 import { writeWorkerSession } from "../lib/run-session.ts";
 import { parseSquadTarget, resolveSquadCapability } from "../lib/capability-resolver.ts";
 import { parseMessageTargetSpec } from "../lib/control-plane/agent-x-canary-queue.ts";
@@ -1688,6 +1689,11 @@ if (pendingCascade?.kind === "squad-only") {
     audit: emit, auditContext: { trace_id: pid, project_id: pid },
   }).capabilityId;
   const capabilityById = new Map(squads.map(sq => [sq, capabilityFor(sq)]));
+  // Each squad of the route runs in its own environment (squad-env.ts),
+  // prepared here, on demand: milliseconds when nothing changed, an install
+  // when its declared packages did. A failure is printed and handed to that
+  // squad's worker; the dispatch goes on.
+  const squadEnvProblems = prepareSquadEnvs(squads.map(sq => ({ slug: sq, dir: path.join(nirvanaPaths.SQUADS_DIR, sq) })));
   const capabilityId = capabilityById.get(squads[0])!;
   // The capability the resolver chose is what declares the acceptance contract the judge
   // reads and the `produces` slugs its rubric selector matches on.
@@ -1711,7 +1717,7 @@ if (pendingCascade?.kind === "squad-only") {
     const produce = (candidateRoot: string, candidateBrief: string) => {
       supersedePriorRuns(canonicalRunId);
       const candidate = runSquadHeadless({ squadSlug: squad, brief: candidateBrief, projectId: pid, projectDir: projDir, projectRoot,
-        outputsDir: candidateRoot, runtime: rt, capabilityId,
+        outputsDir: candidateRoot, runtime: rt, capabilityId, envProblems: squadEnvProblems.get(squad),
         maxBudgetUsd: budget.candidateBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
         rulesDirective, autonomousDirective: AUTONOMOUS_DIRECTIVE, runWithCascadeImpl: pinnedCascade,
         ledger: { runId: canonicalRunId, watchDir: candidateRoot } });
@@ -1786,7 +1792,7 @@ if (pendingCascade?.kind === "squad-only") {
     const r = runSquadHeadless({
       squadSlug: sq, brief, projectId: pid, projectDir: projDir, projectRoot,
       outputsDir: outDir, runtime: rt,
-      capabilityId: capabilityById.get(sq),
+      capabilityId: capabilityById.get(sq), envProblems: squadEnvProblems.get(sq),
       maxBudgetUsd: effectiveBudgetUsd(),
       timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
       rulesDirective, autonomousDirective: AUTONOMOUS_DIRECTIVE, runWithCascadeImpl: pinnedCascade,
@@ -2145,11 +2151,13 @@ const workerBriefFile: string | undefined = (() => {
 })();
 const bizDir = businessEntry.bizDir ?? resolveEntityDir("businesses", slug, projDir);
 const briefSquads = (() => { try { return namedSquadsIn(brief, Object.keys(defaultRegistries().squads)); } catch { return []; } })();
+/** Failures of the carded squads' environments, filled before the worker runs (exec only). */
+let squadEnvProblems: Record<string, string[]> = {};
 /** The solo worker's inputs for one outputs root; the run, the scaffold and the gauntlet producer share them. */
 const soloArgs = (oroot: string, briefFileForRun?: string) => ({
   slug, bizDir, brief, ...(briefFileForRun ? { briefFile: briefFileForRun } : {}),
   projectId: pid, projectDir: projDir, projectRoot, outputsRoot: oroot, runtime: runtimeDecision.runtime,
-  mandatorySquads: autoMandatorySquads, optionalSquads: autoOptionalSquads, briefSquads, rulesDirective,
+  mandatorySquads: autoMandatorySquads, optionalSquads: autoOptionalSquads, briefSquads, rulesDirective, squadEnvProblems,
 });
 const outputPath = path.join(projDir, "agent-prompt.md");
 let promptSize = 0;
@@ -2224,6 +2232,11 @@ if (wantExec) {
 
   console.log("");
   console.log(c("lime", "▶") + c("bold", ` Step 4/7 — exec business-solo (${rt})`));
+  // The squads whose cards the worker receives run in their own environments
+  // (squad-env.ts): prepared now, before the cards are written, so each card
+  // names its squad's Python. A failure is printed and goes on the card.
+  const cardSquads = cardedSquads({ bizDir, mandatorySquads: autoMandatorySquads, optionalSquads: autoOptionalSquads, briefSquads });
+  squadEnvProblems = Object.fromEntries(prepareSquadEnvs(cardSquads.map(q => ({ slug: q, dir: resolveEntityDir("squads", q, projDir) }))));
   if (businessCanaryDecision.enabled) {
     const canonicalRunId = canonicalRunIdFor(pid, runIdFlag);
       const requirements = gauntletRequirements(pid, { kind: "business", slug }, { requirements: businessAcceptance.requirements });

@@ -84,6 +84,8 @@ A project is where a run's audit, briefs and deliverables live, for every runtim
 | `nrv uninstall <name>` | Remove an installed asset. |
 | `nrv pack create <dir>` / `inspect` / `publish` | Bundle and share assets (`.tgz` + sha256). |
 | `nrv index` | Re-index squads + businesses after manual edits. |
+| `nrv activate <slug>\|--all [--dry-run] [--confirm-heavy] [--only-declared]` | Install what a squad's `dependencies.yaml` declares. Node and Python packages go into the squad's own environment, `~/.nirvana/envs/<slug>/` (sub-apps under `subapps/<dir>/`, Python in `.venv`), with versions as declared. The squad folder only gets a best-effort `node_modules` link to the environment (never over a real folder, excluded through `.git/info/exclude`, not `.gitignore`); workers resolve packages through `NODE_PATH`, a Node ESM hook and an `npx` shim on `PATH`. Installs only when the declared specs changed, so an active squad costs milliseconds. A dispatch prepares the same environment on demand, so activation is optional for packages. `--all` walks the library one squad at a time. |
+| `nrv deps [status] [--json]` | The squad environments (count and apparent size), the legacy shared store `~/.nirvana/node_modules` and venv when present (squads no longer install there), the pinned tool caches, and any dependency tree found outside them. `nrv deps install <pkg>` / `link <dir>` keep working on the shared store for engine and manual use. |
 
 ## Health & self-improvement
 

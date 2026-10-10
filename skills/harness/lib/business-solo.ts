@@ -30,6 +30,7 @@ import { loadCloneRegistry, resolveClonePersona } from "../../_shared/lib/clone-
 import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { runFolderOf } from "../../_shared/lib/run-workspace.ts";
 import { writeSquadCards } from "../../_shared/lib/work-cards.ts";
+import { squadRunEnv } from "../../_shared/lib/squad-env.ts";
 import { findCloneForTask, type CloneHit } from "../../_shared/lib/clone-search.ts";
 import { parseWorkBrief } from "./work-brief.ts";
 import { missingVoiceNotice, selectVoices } from "./clone-voices.ts";
@@ -64,6 +65,8 @@ export interface BusinessSoloArgs {
   mandatorySquads?: string[];
   optionalSquads?: string[];
   briefSquads?: string[];
+  /** Failures of a carded squad's environment (squad-env.ts), by slug: its card tells the worker. */
+  squadEnvProblems?: Record<string, string[]>;
   rulesDirective?: string;
   maxBudgetUsd?: number;
   timeoutMs?: number;
@@ -80,7 +83,8 @@ export interface BusinessSoloArgs {
   voiceSearch?: (query: string) => CloneHit[];
 }
 
-export interface SoloLaunch { cwd: string; addDirs: string[]; appendSystemPrompt: string; workspace?: string }
+/** `env`: the carded squads' environments (squad-env.ts squadRunEnv), for this run's child only. */
+export interface SoloLaunch { cwd: string; addDirs: string[]; appendSystemPrompt: string; workspace?: string; env?: Record<string, string> }
 
 /** A clone offered for this request, beyond the voices the seats carry. */
 export interface RequestVoice { slug: string; name: string; why: string; dir: string; files: string[] }
@@ -246,6 +250,11 @@ export function requestVoices(
  *  and the business's preferred ones. */
 export function soloSquads(args: Pick<BusinessSoloArgs, "mandatorySquads" | "optionalSquads" | "briefSquads">, preferred: string[] = []): string[] {
   return [...new Set([...(args.mandatorySquads ?? []), ...(args.optionalSquads ?? []), ...(args.briefSquads ?? []), ...preferred])];
+}
+
+/** The squads whose cards a solo run writes: the dispatch prepares their environments first. */
+export function cardedSquads(args: Pick<BusinessSoloArgs, "bizDir" | "mandatorySquads" | "optionalSquads" | "briefSquads">): string[] {
+  return soloSquads(args, preferredSquads(args.bizDir));
 }
 
 /** The squads the seats are authorized to use and that have no card: named, not carded.
@@ -469,8 +478,8 @@ export function prepareBusinessSolo(args: BusinessSoloArgs): PreparedSolo {
     fs.writeFileSync(briefFile, args.brief.trim() + "\n");
   }
   // Cards only for what this run is likely to use; the seats' closed sets are named.
-  const squads = soloSquads(args, preferredSquads(args.bizDir));
-  const squadCards = writeSquadCards(path.join(args.projectDir, "cards"), squads, squadDirOf);
+  const squads = cardedSquads(args);
+  const squadCards = writeSquadCards(path.join(args.projectDir, "cards"), squads, squadDirOf, args.squadEnvProblems);
   const authorized = authorizedSquads(seats, Object.keys(squadCards));
   const briefText = (() => { try { return fs.readFileSync(briefFile, "utf8"); } catch { return args.brief; } })();
   let voices: RequestVoice[] = [];
@@ -496,11 +505,15 @@ export function prepareBusinessSolo(args: BusinessSoloArgs): PreparedSolo {
   }
   dirs.push(...inputs.map(inputFolder));
   const workspace = runFolderOf(args.projectDir, args.projectRoot) ?? undefined;
+  // The packages and Python of the carded squads, reached through variables on
+  // the worker's run (squad-env.ts squadRunEnv).
+  const env = squadRunEnv(Object.keys(squadCards));
   return {
     prompt, briefFile, seats, voices, squadCards,
     launch: {
       cwd: args.projectRoot, addDirs: uniquePaths(dirs),
       appendSystemPrompt: soloDirective(args.rulesDirective), ...(workspace ? { workspace } : {}),
+      ...(Object.keys(env).length ? { env } : {}),
     },
   };
 }

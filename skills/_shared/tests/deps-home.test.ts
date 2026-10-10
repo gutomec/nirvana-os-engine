@@ -165,15 +165,18 @@ describe("the activator installs centrally — the source says so", () => {
   test("the local node path no longer points a package manager at the squad dir", () => {
     // The exact line that caused the incident. Its return would reintroduce it.
     expect(src()).not.toContain("cwd: g ? undefined : (expandPath(!Array.isArray(spec) ? spec.cwd : null) || squadDir)");
-    expect(src()).toContain("DEPS.install(tokens)");
-    expect(src()).toContain("DEPS.link(squadDir)");
+    // It goes to the squad's own environment now (squad-env.ts), which links
+    // `<squad>/node_modules` to it; squad-env.test.ts covers the behaviour.
+    expect(src()).toContain("squadEnv().ensureSquadEnv(slug, squadDir)");
   });
 
   test("sub-apps are centralized too, instead of one install per sub-directory", () => {
     // `runCmd(cmd, { cwd: sub })` is what gave instagram-intelligence-nirvana
-    // a node_modules in dashboard/ AND scripts/.
+    // a node_modules in dashboard/ AND scripts/. Sub-apps now install inside
+    // the squad's environment, and nothing is linked into the sub-app.
     expect(src()).not.toContain("const r = runCmd(cmd, { cwd: sub });");
-    expect(src()).toContain("DEPS.link(sub)");
+    expect(src()).not.toContain("DEPS.link(sub)");
+    expect(src()).toContain("installSubApps(squadDir, dryRun, slug, ensureEnv)");
   });
 
   test("a synthesized manifest carries no squad-local destination", () => {

@@ -362,7 +362,7 @@ export function runOrcaWorker(opts: RunHeadlessOpts, hooks: OrcaWorkerHooks = {}
   const trusted = preTrustWorkspace(opts.runtime, cwd);
   // A confined worker carries its run folder, as the headless child does
   // (driverSpawnSync), so what it dispatches nests inside its run.
-  const workerEnv = { ...forwardedEnv(process.env, opts.runtime), ...workerRoleEnv(opts) };
+  const workerEnv = { ...forwardedEnv(process.env, opts.runtime), ...workerRoleEnv(opts), ...(opts.env ?? {}) };
   if (opts.runtime === "claude-code") {
     // Same environment the headless claude child gets: no background tasks that
     // die with the session, and the configured context ceiling. A value the

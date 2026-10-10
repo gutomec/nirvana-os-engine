@@ -74,6 +74,16 @@ describe("buildSquadPrompt — framing", () => {
     expect(p).not.toContain("nothing anywhere else");
   });
 
+  test("the squad's Python reaches the sub-task only when the squad has an environment", () => {
+    const squadDir = scaffoldSquad(path.join(tmp, "squads"), "brandcraft");
+    const base = { squadSlug: "brandcraft", squadDir, brief: "the brief", outDir: "/out/dir", cloneInjection: { block: "", decision: "DEFAULT" } };
+    const line = "This squad's Python: `/e/.venv/bin/python`; run its Python scripts and `-m pip` with it, never `pip install` into another interpreter.";
+    expect(buildSquadPrompt(base)).toBe(buildSquadPrompt({ ...base, envLines: [] }));
+    expect(buildSquadPrompt(base)).not.toContain("This squad's Python");
+    const p = buildSquadPrompt({ ...base, envLines: [line] });
+    expect(p.slice(p.indexOf("## YOUR SUB-TASK"), p.indexOf("## OUTPUT"))).toContain(`anti-loop).\n\n${line}\n\nIf the brief`);
+  });
+
   test("the framing carries the scope guard, inside the sub-task block", () => {
     const squadDir = scaffoldSquad(path.join(tmp, "squads"), "brandcraft");
     const p = buildSquadPrompt({ squadSlug: "brandcraft", squadDir, brief: "the brief", outDir: "/out/dir", cloneInjection: { block: "", decision: "DEFAULT" } });

@@ -43,6 +43,7 @@ import { resolveCascadeRoot } from "../lib/cascade.ts";
 import { formatRulesForDirective, loadRuntimeRules } from "../lib/runtime-rules.ts";
 import { paths } from "../../_shared/lib/bun-helpers.ts";
 import { runWithCascade } from "../lib/cascade-runner.ts";
+import { squadRunEnv } from "../../_shared/lib/squad-env.ts";
 import { soloDirective } from "../lib/business-solo.ts";
 import { runDelivery, deliverAfterRuntimeError, type DeliveryArgs, type DeliveryResult } from "../lib/delivery-pipeline.ts";
 import * as runLedger from "../lib/run-ledger.ts";
@@ -209,6 +210,16 @@ function squadDirs(): string[] {
   return fs.existsSync(dir) ? [dir] : [];
 }
 
+/** The squads whose environments (squad-env.ts) the run worked with: the
+ *  squad itself, or those a business run had cards for. */
+function envSquads(): string[] {
+  if (kind === "squad") return [slug];
+  if (kind !== "business") return [];
+  try {
+    return fs.readdirSync(path.join(projDir, "cards")).map((f) => /^squad-(.+)\.md$/.exec(f)?.[1]).filter((x): x is string => !!x);
+  } catch { return []; }
+}
+
 if (!sessionId) {
   console.error(c("red", `✗ '${projectId}': the ${kind} run's runtime${rt ? ` (${rt})` : ""} returned no session id, so there is no conversation to continue.`));
   console.error("  Its deliverables stay where they are; a change to them is a new dispatch (nrv dispatch).");
@@ -280,6 +291,8 @@ const res = runWithCascade({
   // The folder the session was started in (absent on runs from before runs
   // had one): claude and gemini resume a session only from its own folder.
   workspace: session.workspace || undefined,
+  // The same squad packages and Python the run had, on the revision's child only.
+  env: squadRunEnv(envSquads()),
   sessionId,
   appendSystemPrompt: solo ? soloDirective(rulesDirective) : AUTONOMOUS_DIRECTIVE + rulesDirective,
   dispatchRole: role,

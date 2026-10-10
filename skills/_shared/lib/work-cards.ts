@@ -13,6 +13,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
+import { squadEnvLines } from "./squad-env.ts";
 
 const flat = (value: unknown): string => String(value ?? "").replace(/\s+/g, " ").trim();
 
@@ -80,8 +81,11 @@ function stepsLine(doc: Record<string, any>): string {
  * The squad as a map: capabilities first (what it can deliver and how each is
  * run), then its agents, tasks and workflows, one line each, every line ending
  * in the file to open. Returns null when the folder has no squad.yaml.
+ * `envProblems` are failures of the squad's environment the worker should know
+ * about; the Python and Node lines come on their own when the squad's
+ * environment has them (squad-env.ts squadEnvLines).
  */
-export function squadWorkCard(slug: string, dir: string): string | null {
+export function squadWorkCard(slug: string, dir: string, envProblems: string[] = []): string | null {
   const manifest = readYaml(path.join(dir, "squad.yaml"));
   if (!manifest) return null;
   const lines: string[] = [];
@@ -89,6 +93,8 @@ export function squadWorkCard(slug: string, dir: string): string | null {
   lines.push(`# Squad card: ${slug}${version}`, "");
   if (manifest.description) lines.push(clip(flat(manifest.description), 300), "");
   lines.push(`Folder: \`${dir}\``, "");
+  const env = squadEnvLines(slug, envProblems);
+  if (env.length) lines.push(...env, "");
 
   const capabilities = Array.isArray(manifest.capabilities) ? manifest.capabilities : [];
   if (capabilities.length) {
@@ -153,10 +159,11 @@ export function squadWorkCard(slug: string, dir: string): string | null {
  * Write the cards of `squads` under `cardsDir`, one file each, and return the
  * written paths by slug. A squad whose folder has no manifest gets no card.
  */
-export function writeSquadCards(cardsDir: string, squads: string[], dirOf: (slug: string) => string): Record<string, string> {
+export function writeSquadCards(cardsDir: string, squads: string[], dirOf: (slug: string) => string,
+  envProblems: Record<string, string[]> = {}): Record<string, string> {
   const out: Record<string, string> = {};
   for (const slug of [...new Set(squads)]) {
-    const card = squadWorkCard(slug, dirOf(slug));
+    const card = squadWorkCard(slug, dirOf(slug), envProblems[slug]);
     if (!card) continue;
     fs.mkdirSync(cardsDir, { recursive: true });
     const file = path.join(cardsDir, `squad-${slug}.md`);

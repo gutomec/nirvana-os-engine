@@ -7,7 +7,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-  authorizedSquads, briefInputPaths, buildSoloPrompt, businessMemory, creditSoloRun, namedSquadsIn, participationFile, prepareBusinessSolo,
+  authorizedSquads, briefInputPaths, buildSoloPrompt, cardedSquads, businessMemory, creditSoloRun, namedSquadsIn, participationFile, prepareBusinessSolo,
   requestVoices, preferredSquads, readSeats, runBusinessSolo, SOLO_ROLE_LINE, soloDirective, soloSquads, uniquePaths, type BusinessSoloArgs,
 } from "../lib/business-solo.ts";
 import { AUTONOMOUS_DIRECTIVE } from "../lib/host-agent-driver.ts";
@@ -147,6 +147,14 @@ describe("the prompt", () => {
     expect(soloSquads({ mandatorySquads: ["a"], optionalSquads: ["b", "a"], briefSquads: ["c"] }, ["d", "a"])).toEqual(["a", "b", "c", "d"]);
     expect(authorizedSquads(seats(), ["a"])).toEqual(["email-squad"]);
     expect(authorizedSquads(seats(), ["email-squad"])).toEqual([]);
+  });
+
+  test("the dispatch prepares environments for exactly the carded squads, and a failure lands on that card", () => {
+    const args = baseArgs({ mandatorySquads: ["email-squad"], squadEnvProblems: { "email-squad": ["bun install failed: offline"] } });
+    expect(cardedSquads(args)).toEqual(["email-squad"]);
+    const prep = prepareBusinessSolo(args);
+    expect(Object.keys(prep.squadCards)).toEqual(cardedSquads(args));
+    expect(fs.readFileSync(prep.squadCards["email-squad"], "utf8")).toContain("Environment problem: bun install failed: offline");
   });
 
   test("a business with many authorized squads gets cards for none of them, and their names in the prompt", () => {

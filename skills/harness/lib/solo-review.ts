@@ -399,7 +399,7 @@ export interface SoloReviewArgs {
   briefFile: string;
   outputsRoot: string;
   projectRoot: string;
-  worker: { runtime: Runtime; sessionId: string | null; launch: { cwd: string; addDirs: string[]; appendSystemPrompt: string; workspace?: string } };
+  worker: { runtime: Runtime; sessionId: string | null; launch: { cwd: string; addDirs: string[]; appendSystemPrompt: string; workspace?: string; env?: Record<string, string> } };
   policy: ReviewPolicy;
   runtimePref: "other" | "same";
   maxRounds: number;
@@ -484,6 +484,7 @@ export function runSoloReviewStage(a: SoloReviewArgs): SoloReviewOutcome {
     runtime: a.worker.runtime, prompt, sessionId: a.worker.sessionId ?? undefined,
     cwd: launch.cwd, addDirs: launch.addDirs, appendSystemPrompt: directive,
     ...(launch.workspace ? { workspace: launch.workspace } : {}),
+    ...(launch.env ? { env: launch.env } : {}),
     dispatchRole: "solo", yolo: a.yolo ?? true, timeoutMs: a.timeoutMs, maxBudgetUsd: a.maxBudgetUsd, ...ledger,
   } as Parameters<typeof runHeadless>[0]);
 
