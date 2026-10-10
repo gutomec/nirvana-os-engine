@@ -31,6 +31,7 @@ import { loadHarnessConfig } from "../lib/harness-config.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { stamp } from "../../_shared/lib/audit-provenance.ts";
+import { squadRunEnv } from "../../_shared/lib/squad-env.ts";
 
 const ANSI = { reset: "\x1b[0m", bold: "\x1b[1m", dim: "\x1b[2m", green: "\x1b[32m", red: "\x1b[31m", yellow: "\x1b[33m", cyan: "\x1b[36m", lime: "\x1b[38;5;154m" };
 const noColor = process.argv.includes("--no-color") || !process.stdout.isTTY;
@@ -121,6 +122,15 @@ if (!sessionId) {
   process.exit(1);
 }
 
+/** The squads whose environments (squad-env.ts) the run worked with: the
+ *  mandatory squads it ran, each under `<outputs_root>/_squads/<slug>`. */
+function envSquads(): string[] {
+  try {
+    return fs.readdirSync(path.join(oroot, "_squads"), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
+  } catch { return []; }
+}
+const reviseEnv = squadRunEnv(envSquads());
+
 console.log("");
 console.log(c("lime", "▶") + c("bold", ` nrv revise — ${projectId} (${rt})`));
 console.log(c("dim", `  resume session: ${sessionId}`));
@@ -150,6 +160,8 @@ const res = runHeadless({
   // The folder the session was started in (absent on runs from before runs
   // had one): claude and gemini resume a session only from its own folder.
   workspace: session.workspace || undefined,
+  // The same squad packages and Python the run had, on the revision's child only.
+  env: reviseEnv,
   sessionId,
   appendSystemPrompt: AUTONOMOUS_DIRECTIVE,
   maxBudgetUsd: maxBudget ? parseFloat(maxBudget) : undefined,
@@ -231,6 +243,7 @@ const deliveryArgs = {
   yolo,
   config,
   ledger: null,                         // revise works off session.json, not the run ledger
+  env: reviseEnv,                       // its gate revision rounds continue the same work
   audit: (event, payload) => appendAudit({ event, ...payload, revision: true }, projectRoot),
   afterGate: () => ({ zipPath: rezip() }),
   onSession: (sid) => {

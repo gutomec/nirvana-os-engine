@@ -333,6 +333,7 @@ export function runOrcaWorker(opts: RunHeadlessOpts, hooks: OrcaWorkerHooks = {}
   // (driverSpawnSync), so what it dispatches nests inside its run.
   const workerEnv = forwardedEnv(process.env, opts.runtime);
   if (opts.workspace) workerEnv[RUN_WORKSPACE_ENV] = cwd;
+  Object.assign(workerEnv, opts.env ?? {});
   const command = workerCommand(argv, cwd, workerEnv);
   // The terminal starts in the run folder (cwd); the worktree Orca files it
   // under is the project's, which is the caller's own cwd when the driver

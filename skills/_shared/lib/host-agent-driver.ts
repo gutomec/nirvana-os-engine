@@ -1243,6 +1243,10 @@ export interface RunHeadlessOpts {
    *  workspace: a host that addresses the project (Orca's worktree selector)
    *  still needs it. */
   hostCwd?: string;
+  /** Variables set on THIS run's child only, over everything else: a squad's
+   *  environment (squad-env.ts squadRunEnv) puts its PATH, NODE_PATH and
+   *  NODE_OPTIONS here. Applied after the declared-mode filter, so it survives it. */
+  env?: Record<string, string>;
 }
 
 export interface LedgerHeartbeatOpts {
@@ -1444,6 +1448,9 @@ let spawnAsRole: string | null = null;
  *  its environment so a dispatch it starts nests inside the same run. Same
  *  save-and-restore idiom as the two above. */
 let spawnInWorkspace: string | null = null;
+/** The run's own variables (RunHeadlessOpts.env), laid over the child's
+ *  environment last. Same save-and-restore idiom as the three above. */
+let spawnExtraEnv: Record<string, string> | null = null;
 
 /** All runners spawn their child through this. Pass-through to spawnSync when
  * unledgered (zero behavior change); with an active ledger context, stdout/
@@ -1477,6 +1484,7 @@ function driverSpawnSync(cmd: string, args: string[], options: SpawnSyncOptions 
   if (spawnAsRole) baseEnv[ROLE_ENV] = spawnAsRole;
   // And WHERE it runs, so what it dispatches belongs to its run.
   if (spawnInWorkspace) baseEnv[RUN_WORKSPACE_ENV] = spawnInWorkspace;
+  if (spawnExtraEnv) Object.assign(baseEnv, spawnExtraEnv);
   if (isClaude) headlessClaudeEnv(baseEnv);
   options = {
     // Windows: a process without its own console makes Windows allocate a VISIBLE
@@ -2495,13 +2503,16 @@ function dispatchToRunner(opts: RunHeadlessOpts): RunHeadlessResult {
   warnEffortUnsupported(opts, opts.runtime);
   const previousSpawnAs = spawnAsRuntime;
   const previousSpawnRole = spawnAsRole;
+  const previousExtraEnv = spawnExtraEnv;
   spawnAsRuntime = opts.runtime;
   spawnAsRole = opts.dispatchRole ?? null;
+  spawnExtraEnv = opts.env && Object.keys(opts.env).length ? opts.env : null;
   try {
     return dispatchToRunnerInner(opts);
   } finally {
     spawnAsRuntime = previousSpawnAs;
     spawnAsRole = previousSpawnRole;
+    spawnExtraEnv = previousExtraEnv;
   }
 }
 

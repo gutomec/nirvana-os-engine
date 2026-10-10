@@ -8,8 +8,13 @@
  * an agent asked to run a squad script had no command to reach for — so it did
  * the obvious thing and ran `bun install` wherever it happened to be standing.
  *
+ * Squads no longer install here: each one has its own environment under
+ * `~/.nirvana/envs/<slug>` (squad-env.ts), and `status` lists them. The shared
+ * store stays for the engine and for manual `install` / `link`, and is shown as
+ * the legacy store while squads still link to it.
+ *
  * Usage:
- *   nrv deps                       # status: the store, the caches, what is scattered
+ *   nrv deps                       # status: the envs, the store, the caches, what is scattered
  *   nrv deps scan                  # every dependency tree that is NOT the store
  *   nrv deps adopt [--apply]       # fold scattered trees into the store, then link
  *   nrv deps link <slug|dir>       # point one directory at the store
@@ -30,6 +35,7 @@ import {
   ensureDepsHome, install, link, findStrays, defaultScanRoots, dirSize, human,
   type Stray,
 } from "../lib/deps-home.ts";
+import { envsRoot } from "../lib/squad-env.ts";
 
 const ANSI = { reset: "\x1b[0m", bold: "\x1b[1m", dim: "\x1b[2m", green: "\x1b[32m", red: "\x1b[31m", yellow: "\x1b[33m", cyan: "\x1b[36m" };
 const argv = process.argv.slice(2);
@@ -63,6 +69,25 @@ function storeFacts() {
     } catch { /* unreadable */ }
   }
   return { store, exists, packages, bytes: exists ? dirSize(store) : 0 };
+}
+
+/** One row per squad environment, with the real-ish size a du would print. */
+function envFacts() {
+  const root = envsRoot();
+  let names: string[] = [];
+  try { names = fs.readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort(); } catch { /* none yet */ }
+  const envs = names.map((slug) => {
+    const dir = path.join(root, slug);
+    let ok: boolean | null = null;
+    try { ok = !!JSON.parse(fs.readFileSync(path.join(dir, ".env-state.json"), "utf8")).ok; } catch { /* never prepared */ }
+    return {
+      slug, dir, ok,
+      node: fs.existsSync(path.join(dir, "node_modules")),
+      python: fs.existsSync(path.join(dir, ".venv", "pyvenv.cfg")),
+      bytes: dirSize(dir),
+    };
+  });
+  return { root, count: envs.length, bytes: envs.reduce((a, e) => a + e.bytes, 0), envs };
 }
 
 function cacheFacts() {
@@ -104,12 +129,14 @@ function declaredIn(dir: string): string[] {
 // ─── status ──────────────────────────────────────────────────────────
 if (cmd === "status") {
   const s = storeFacts();
+  const envs = envFacts();
   const caches = cacheFacts();
   const strays = findStrays(defaultScanRoots());
   const py = pythonHome();
   const payload = {
     home: nirvanaHome(),
-    store: s,
+    envs,
+    store: { ...s, legacy: true },
     manifest: depsManifest(),
     python: { dir: py, exists: fs.existsSync(py), bytes: fs.existsSync(py) ? dirSize(py) : 0 },
     caches,
@@ -117,11 +144,16 @@ if (cmd === "status") {
   };
   out(payload, () => {
     console.log(c("bold", "\nDependency home") + c("dim", `  ${nirvanaHome()}`));
-    console.log(`  ${s.exists ? c("green", "✓") : c("red", "✗")} store      ${s.store}`);
-    console.log(`    ${c("dim", `${s.packages} package(s) · ${human(s.bytes)}`)}`);
+    console.log(`  ${envs.count ? c("green", "✓") : c("dim", "·")} envs       ${envs.root}`);
+    console.log(`    ${c("dim", envs.count ? `${envs.count} squad environment(s) · ${human(envs.bytes)} apparent (Bun and uv link from their caches, so real disk is far less)` : "(each squad gets one on its first dispatch or activation)")}`);
+    for (const e of envs.envs.filter((x) => x.ok === false)) console.log(`      ${c("yellow", "⚠")} ${e.slug} ${c("dim", "last install failed: nrv activate " + e.slug)}`);
+    if (s.exists) {
+      console.log(`  ${c("dim", "·")} store      ${s.store} ${c("dim", "(legacy shared store)")}`);
+      console.log(`    ${c("dim", `${s.packages} package(s) · ${human(s.bytes)} · engine and manual installs; squads no longer install here`)}`);
+    }
     console.log(`  ${fs.existsSync(py) ? c("green", "✓") : c("dim", "·")} python     ${py} ${c("dim", fs.existsSync(py) ? human(dirSize(py)) : "(empty)")}`);
     const venv = path.join(py, "venv");
-    console.log(`  ${fs.existsSync(path.join(venv, "pyvenv.cfg")) ? c("green", "✓") : c("dim", "·")} python/venv ${c("dim", fs.existsSync(path.join(venv, "pyvenv.cfg")) ? "where squad packages install" : "(created on the first activation that needs it)")}`);
+    if (fs.existsSync(path.join(venv, "pyvenv.cfg"))) console.log(`  ${c("dim", "·")} python/venv ${c("dim", "(legacy shared venv; squads now have their own)")}`);
     for (const ch of caches) {
       console.log(`  ${ch.exists ? c("green", "✓") : c("dim", "·")} cache/${ch.tool.padEnd(11)} ${c("dim", ch.exists ? human(ch.bytes) : "(empty)")}`);
     }
@@ -242,7 +274,7 @@ if (cmd === "env") {
 console.error(`unknown sub-command: ${cmd}
 
 usage:
-  nrv deps [status]              the store, the caches, what is scattered
+  nrv deps [status]              the squad envs, the store, the caches, what is scattered
   nrv deps scan [root…]          every dependency tree that is NOT the store
   nrv deps adopt [--apply]       fold scattered trees into the store, then link
   nrv deps link <slug|dir>…      point a directory at the store
