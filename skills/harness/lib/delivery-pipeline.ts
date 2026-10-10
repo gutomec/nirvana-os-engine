@@ -549,6 +549,10 @@ export interface DeliveryArgs {
    *  so it carries the same stamp, and a `solo` producer (a business) gets the
    *  solo directive too. Absent when the producer ran without one. */
   producerRole?: DispatchRole;
+  /** The producer's squad environment (squad-env.ts squadRunEnv): a revision
+   *  round continues that worker, so it runs with the same variables, the
+   *  squad's NODE_PATH, ESM hook, PATH and venv. Absent when it had none. */
+  env?: Record<string, string>;
   rulesDirective?: string;
   /** --force-deliver: deliver despite a failed gate (gate:"fail-forced").
    *  Never over a serious finding or the completeness ceiling. */
@@ -1008,6 +1012,7 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
       appendSystemPrompt: directive,
       maxBudgetUsd: args.maxBudgetUsd, timeoutMs: args.timeoutMs, yolo: args.yolo,
       ...(args.producerRole ? { dispatchRole: args.producerRole } : {}),
+      ...(args.env && Object.keys(args.env).length ? { env: args.env } : {}),
       label: `revision ${revUsed}`,
       // The producer's run folder, which is also where its session lives: a
       // runtime that keys sessions by directory resumes only from there.

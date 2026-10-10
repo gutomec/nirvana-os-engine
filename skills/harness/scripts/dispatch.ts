@@ -74,7 +74,7 @@ import { loadHarnessConfig } from "../lib/harness-config.ts";
 import { describeSettingSource, resolveSetting, settingsEnvForChild } from "../../_shared/lib/settings.ts";
 import { planRouteWithFallback, resolveDispatchPlan, runAgentX, type DispatchPlan } from "../lib/dispatch-cascade.ts";
 import { runSquadHeadless } from "../lib/squad-exec.ts";
-import { prepareSquadEnvs } from "../../_shared/lib/squad-env.ts";
+import { prepareSquadEnvs, squadRunEnv } from "../../_shared/lib/squad-env.ts";
 import { writeWorkerSession } from "../lib/run-session.ts";
 import { parseSquadTarget, resolveSquadCapability } from "../lib/capability-resolver.ts";
 import { parseMessageTargetSpec } from "../lib/control-plane/agent-x-canary-queue.ts";
@@ -1483,6 +1483,9 @@ interface DeliverOpts {
   onSession?: (sid: string) => void;
   /** Blocking criteria the solo review left unconfirmed: serious for the gate. */
   reviewBlockingMissed?: string[];
+  /** The squad environment the producer ran with (squad-env.ts squadRunEnv):
+   *  every revision round resumes that worker with the same variables. */
+  env?: Record<string, string>;
 }
 
 function deliveryArgs(opts: DeliverOpts): DeliveryArgs {
@@ -1516,6 +1519,7 @@ function deliveryArgs(opts: DeliverOpts): DeliveryArgs {
     afterGate: opts.afterGate,
     onSession: opts.onSession,
     reviewBlockingMissed: opts.reviewBlockingMissed,
+    ...(opts.env ? { env: opts.env } : {}),
     verifyScript: verifyScriptPath,
     gateScript: gateScriptPath,
     log: (l) => console.log(c("dim", l)),
@@ -1694,6 +1698,9 @@ if (pendingCascade?.kind === "squad-only") {
   // when its declared packages did. A failure is printed and handed to that
   // squad's worker; the dispatch goes on.
   const squadEnvProblems = prepareSquadEnvs(squads.map(sq => ({ slug: sq, dir: path.join(nirvanaPaths.SQUADS_DIR, sq) })));
+  // What a revision round resumes is the LAST squad's worker: its packages and
+  // Python come first (squadRunEnv resolves a name to the first squad that has it).
+  const squadRunVars = squadRunEnv([...squads].reverse());
   const capabilityId = capabilityById.get(squads[0])!;
   // The capability the resolver chose is what declares the acceptance contract the judge
   // reads and the `produces` slugs its rubric selector matches on.
@@ -1739,7 +1746,7 @@ if (pendingCascade?.kind === "squad-only") {
           writeWorkerSession({ projectId: pid, kind: "squad", slug: squad, runtime: (sessionId && sessionRuntimes.get(sessionId)) || rt,
             sessionId, projectDir: projDir, projectRoot, outputsRoot: oroot, workspace: runFolderOf(projDir, projectRoot) });
           finalDelivery = runDelivery({ ...deliveryArgs({ pid, slugOrNull: null, targetKind: "squad", rt, oroot,
-            projDir, projectRoot, sessionId, withManifest: false, produces: squadProduces }), ledger: null, maxRevisions: 0 });
+            projDir, projectRoot, sessionId, withManifest: false, produces: squadProduces, env: squadRunVars }), ledger: null, maxRevisions: 0 });
           return { exitCode: finalDelivery.exitCode, gateOutcome: finalDelivery.gateOutcome };
         },
       });
@@ -1820,7 +1827,7 @@ if (pendingCascade?.kind === "squad-only") {
 
   const squadDeliverOpts = {
     pid, slugOrNull: null, targetKind: "squad" as const, rt: lastRuntime, oroot,
-    projDir, projectRoot, sessionId: lastSession, withManifest: false, produces: squadProduces,
+    projDir, projectRoot, sessionId: lastSession, withManifest: false, produces: squadProduces, env: squadRunVars,
     onSession: (sid: string) => {
       if (!lastSquadSession) return;
       lastSquadSession.data.session_id = sid;
@@ -2237,6 +2244,9 @@ if (wantExec) {
   // names its squad's Python. A failure is printed and goes on the card.
   const cardSquads = cardedSquads({ bizDir, mandatorySquads: autoMandatorySquads, optionalSquads: autoOptionalSquads, briefSquads });
   squadEnvProblems = Object.fromEntries(prepareSquadEnvs(cardSquads.map(q => ({ slug: q, dir: resolveEntityDir("squads", q, projDir) }))));
+  // The carded squads' variables, as the solo worker had them: its revision
+  // rounds resume it with the same ones (prepareBusinessSolo puts them on launch).
+  const soloRunVars = squadRunEnv(cardSquads);
   if (businessCanaryDecision.enabled) {
     const canonicalRunId = canonicalRunIdFor(pid, runIdFlag);
       const requirements = gauntletRequirements(pid, { kind: "business", slug }, { requirements: businessAcceptance.requirements });
@@ -2295,7 +2305,7 @@ if (wantExec) {
               log: message => console.log(c("lime", message)), warn: message => console.error(c("yellow", message)) });
             finalDelivery = runDelivery({ ...deliveryArgs({ pid, slugOrNull: slug, targetKind: "business", rt, oroot,
               projDir, projectRoot, sessionId, withManifest: true, afterGate, produces: businessProduces,
-              acceptancePromisesPaths: businessAcceptance.paths.length > 0 }), ledger: null, maxRevisions: 0,
+              acceptancePromisesPaths: businessAcceptance.paths.length > 0, env: soloRunVars }), ledger: null, maxRevisions: 0,
               // The Gauntlet's evaluator already scored the criteria on the candidate; the
               // claims check only applies when the worker's _CLAIMS.json reached this root.
               claimsCheck: fs.existsSync(path.join(oroot, "_CLAIMS.json")) });
@@ -2459,7 +2469,7 @@ if (wantExec) {
     pid, slugOrNull: slug, targetKind: "business" as const, rt: finalRt, oroot,
     projDir, projectRoot, sessionId: res.sessionId, withManifest: true,
     afterGate, produces: businessProduces, acceptancePromisesPaths: businessAcceptance.paths.length > 0,
-    reviewBlockingMissed,
+    reviewBlockingMissed, env: soloRunVars,
     onSession: (sid: string) => {
       res.sessionId = sid;
       sessionData.session_id = sid;

@@ -294,7 +294,7 @@ describe("runDelivery — outcomes", () => {
     expect(gp?.payload.revisions).toBe(1);
   }, spawnBudgetMs(2));
 
-  test("a session that does not resume is retried cold, once, with the brief, full paths and the producer's role", () => {
+  test("a session that does not resume is retried cold, once, with the brief, full paths, the producer's role and its squad env", () => {
     const oroot = path.join(tmp, "out-cold");
     fs.mkdirSync(oroot);
     const artifact = path.join(oroot, "nota.md");
@@ -305,6 +305,7 @@ describe("runDelivery — outcomes", () => {
       sessionId: "sess-expired",
       targetKind: "squad",
       producerRole: "squad",
+      env: { NODE_PATH: "/env/brandcraft/node_modules" },
       runHeadlessImpl: ((opts: any) => {
         seen.push(opts);
         if (opts.sessionId) {
@@ -325,6 +326,8 @@ describe("runDelivery — outcomes", () => {
       expect(call.prompt).toContain(path.resolve(artifact));
       expect(call.prompt).toContain(path.resolve(oroot));
       expect(call.dispatchRole).toBe("squad");
+      // Both the resumed round and the cold retry run with the squad's environment.
+      expect(call.env).toEqual({ NODE_PATH: "/env/brandcraft/node_modules" });
     }
     expect(res.exitCode).toBe(0);
     expect(res.sessionId).toBe("sess-cold-1");
@@ -348,6 +351,7 @@ describe("runDelivery — outcomes", () => {
     runDelivery(args);
     expect(seen).toHaveLength(1);
     expect("dispatchRole" in seen[0]).toBe(false);
+    expect("env" in seen[0]).toBe(false);
   }, spawnBudgetMs(2));
 
   test("afterGate hook runs ONLY on deliverable outcomes and its zip lands in delivered", () => {
@@ -1073,7 +1077,7 @@ describe("runDelivery — the claims check of a business delivery", () => {
   test("a correction is told which criterion lacks proof, and the solo worker keeps its role and directive", () => {
     const seen: any[] = [];
     const { res } = claimsCase("cl-revise", null, {
-      maxRevisions: 1, producerRole: "solo", rulesDirective: "\nRULES",
+      maxRevisions: 1, producerRole: "solo", rulesDirective: "\nRULES", env: { NODE_PATH: "/env/carded/node_modules" },
       runHeadlessImpl: ((opts: any) => {
         seen.push(opts);
         fs.writeFileSync(path.join(tmp, "cl-revise", "_CLAIMS.json"), JSON.stringify([{ id: "d1", evidence: "site/page.html:1, the page" }]));
@@ -1082,6 +1086,7 @@ describe("runDelivery — the claims check of a business delivery", () => {
     });
     expect(seen).toHaveLength(1);
     expect(seen[0].dispatchRole).toBe("solo");
+    expect(seen[0].env).toEqual({ NODE_PATH: "/env/carded/node_modules" });
     expect(seen[0].appendSystemPrompt).toBe(soloDirective("\nRULES"));
     expect(seen[0].prompt).toContain("d1 (A página existe e abre no navegador)");
     expect(seen[0].prompt).toContain("_SUMMARY.md and _CLAIMS.json");
