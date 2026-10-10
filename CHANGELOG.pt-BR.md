@@ -6,7 +6,19 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
 
-## Não lançado
+## 0.14.10 — 2026-10-08
+
+### Um --outputs-root relativo aponta a mesma pasta para todos
+
+O `--outputs-root` vira um caminho absoluto quando o dispatch começa. O worker começa na pasta da execução enquanto as verificações e o revisor rodam em outro lugar, então um caminho relativo apontava pastas diferentes: numa execução no Codex o worker escreveu `_SUMMARY.md` e `_CLAIMS.json` na própria pasta, a revisão não achou nenhum dos dois, e o revisor, mandado para uma pasta que não existia, morreu com "No such file or directory (os error 2)".
+
+### No Codex, o parecer do revisor é lido, não perdido no fluxo de eventos
+
+Execuções de um cliente no Codex registraram toda revisão como `confirmed=[]`, com cada critério "not mentioned by the reviewer", enquanto as respostas do revisor confirmavam a maioria e davam motivos concretos para o resto. Uma resposta do Codex salva inteira é a mensagem final seguida do fluxo de eventos, e o `nrv team verdict` tomava o último objeto JSON dela, um evento de telemetria, como o parecer. Agora ele lê o último objeto que traz uma chave de parecer (`confirmed`, `unconfirmed`, `untraceable`), depois texto que um runtime embrulhou dentro dos próprios eventos, e recusa um arquivo sem parecer como ilegível em vez de pontuá-lo como silêncio. O `runHeadless` devolve só a mensagem final do codex como `answer`, e as ferramentas de enriquecimento (`enrich-routing-metadata`, `enrich-business-admission`, `enrich-employee-method`) a interpretam em vez da mensagem mais o fluxo, que nunca era interpretável.
+
+### O loop guard pode ser lido sem um tick
+
+`nrv guard status --project <dir>` mostra o estado do loop guard, cada assinatura com sua contagem e se o próximo tick pararia, sem registrar nada: um cliente manteve um STOP 3/3 por semanas sem como vê-lo sem gastar outro tick. O STOP veio de ticks com `--action revision`, antes de as assinaturas nomearem o alvo, então todas as revisões de um projeto dividiam `revision::bf21a9e8fbc5`; ticks com `revision:<alvo>` são assinaturas separadas.
 
 ### O disjuntor de laço conta repetições por alvo
 

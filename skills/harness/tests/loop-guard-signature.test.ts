@@ -35,3 +35,23 @@ describe("loop guard signatures", () => {
     expect(text).not.toMatch(/--action revision --progress/);
   });
 });
+
+// A client kept a 3/3 STOP for weeks and needed to see it without spending
+// another tick: `status` reads the state and records nothing.
+describe("nrv guard status", () => {
+  test("reports the state and a standing ceiling, and records nothing", async () => {
+    const { spawnSync } = await import("node:child_process");
+    const os = await import("node:os");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-guard-status-"));
+    const GUARD = path.join(import.meta.dir, "..", "scripts", "guard.ts");
+    const run = (...a: string[]) => spawnSync(process.execPath, [GUARD, ...a, "--project", dir], { encoding: "utf8" });
+    for (let i = 0; i < 3; i++) run("tick", "--action", "revision", "--progress", String(i));
+    const handoff = fs.readFileSync(path.join(dir, "HANDOFF.json"), "utf8");
+    const out = run("status");
+    expect(out.status).toBe(0);
+    expect(out.stdout).toContain("revision::bf21a9e8fbc5: 3");
+    expect(out.stdout).toContain("stands at a ceiling: repeated_action");
+    expect(fs.readFileSync(path.join(dir, "HANDOFF.json"), "utf8")).toBe(handoff);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});

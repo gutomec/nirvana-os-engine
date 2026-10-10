@@ -61,7 +61,7 @@ import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { stamp, provenanceOf } from "../../_shared/lib/audit-provenance.ts";
 import type { Runtime } from "../lib/host-agent-driver.ts";
 import { resolveRunRuntime, unavailableRuntimeMessage } from "../lib/runtime-rules.ts";
-import { extractJsonObject } from "../../_shared/lib/model-json.ts";
+import { extractJsonObject, jsonObjectsIn } from "../../_shared/lib/model-json.ts";
 import * as YAML from "yaml";
 import { readAcceptance } from "../../businesses/lib/acceptance.ts";
 
@@ -442,6 +442,42 @@ function buildReviewBrief(plan: ChainPlan, idx: number, criteria: ReviewCriterio
   ].join("\n");
 }
 
+const VERDICT_KEYS = ["confirmed", "unconfirmed", "untraceable"];
+const isVerdict = (v: any): boolean => !!v && typeof v === "object" && !Array.isArray(v) && VERDICT_KEYS.some((k) => Array.isArray(v[k]));
+
+/** The strings inside a parsed value, depth-first, so a verdict a runtime
+ *  wrapped as text inside its own event object is still found. */
+function stringsIn(v: any, depth = 0, out: string[] = []): string[] {
+  if (depth > 5 || v == null) return out;
+  if (typeof v === "string") { if (v.includes("{")) out.push(v); return out; }
+  if (Array.isArray(v)) { for (const x of v) stringsIn(x, depth + 1, out); return out; }
+  if (typeof v === "object") for (const x of Object.values(v)) stringsIn(x, depth + 1, out);
+  return out;
+}
+
+/**
+ * The reviewer's verdict: the last JSON object that carries a verdict key,
+ * else one a runtime wrapped as text inside its own event objects. Null when
+ * there is none.
+ *
+ * Found on Codex runs (a client's three cases): a saved Codex answer is the
+ * final message followed by the whole event stream, and an unfiltered "last
+ * object wins" took a telemetry event for the verdict. Every criterion the
+ * reviewer had confirmed was recorded as "not mentioned by the reviewer".
+ */
+export function readVerdict(text: string): any | null {
+  const direct = extractJsonObject(text, isVerdict);
+  if (direct) return direct;
+  const objects = jsonObjectsIn(text);
+  for (let i = objects.length - 1; i >= 0; i--) {
+    for (const s of stringsIn(objects[i]).reverse()) {
+      const nested = extractJsonObject(s, isVerdict);
+      if (nested) return nested;
+    }
+  }
+  return null;
+}
+
 function cmdReview(argv: string[]): void {
   const planFile = arg(argv, "--plan");
   const indexRaw = arg(argv, "--index");
@@ -524,8 +560,9 @@ function cmdVerdict(argv: string[]): void {
     // BALANCED objects (not the first `{` to the last `}`) is what keeps a
     // reviewer running on a runtime that prints an event stream from reading as
     // malformed — the same defect that killed the director on Codex.
-    raw = extractJsonObject(text) ?? JSON.parse(text);
+    raw = readVerdict(text);
   } catch (e: any) { die(`the verdict is not JSON: ${e.message}`); }
+  if (!raw) die("the verdict carries no confirmed, unconfirmed or untraceable list: it could not be read, and an unread verdict is not a rejection. Save the reviewer's final JSON answer alone and run verdict again.");
 
   const bizDir = plan.businesses_root
     ? path.join(plan.businesses_root, plan.business)

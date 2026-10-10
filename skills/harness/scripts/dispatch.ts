@@ -282,7 +282,12 @@ const runtime = arg("--runtime", "claude-code");
 // Was the --runtime flag GIVEN by the user? (arg() can't tell flag from default;
 // an explicit flag ALWAYS beats the USE_* rules — a rule only beats the default.)
 const runtimeFlagGiven = process.argv.some(a => a === "--runtime" || a.startsWith("--runtime="));
-const outputsRoot = arg("--outputs-root");
+// Absolute from here on: a worker starts in its run folder while the checks
+// run here, so a relative path named different folders. Seen on a Codex run:
+// the worker wrote _SUMMARY.md and _CLAIMS.json under its own folder, the
+// review found neither, and the reviewer, sent to a folder that did not
+// exist, died with "os error 2".
+const outputsRoot = arg("--outputs-root") ? path.resolve(arg("--outputs-root")!) : undefined;
 const noColor = process.argv.includes("--no-color") || !process.stdout.isTTY;
 
 function c(color: string, text: string): string {

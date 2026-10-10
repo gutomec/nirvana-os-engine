@@ -156,3 +156,16 @@ describe("the contract against the installed Codex", () => {
     }
   });
 });
+
+// The reviewer's verdict on Codex was lost to the event stream the result
+// carries after the final message; `answer` is the final message alone.
+describe("the final message travels apart from the event stream", () => {
+  test("answer is what codex wrote to -o; result still carries both", () => {
+    const r = runHeadless({ runtime: "codex", prompt: "do the task", cwd: TMP, timeoutMs: 30_000 } as Parameters<typeof runHeadless>[0]);
+    expect(r.ok, r.error ?? r.stderr).toBe(true);
+    expect(r.answer).toBe("ok");
+    expect(r.result.startsWith("ok")).toBe(true);
+    expect(r.result).toContain("--- codex event stream ---");
+    expect(r.result).toContain("turn.completed");
+  });
+});

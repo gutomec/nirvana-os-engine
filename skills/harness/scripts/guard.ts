@@ -18,6 +18,7 @@
 //
 // Usage:
 //   nrv guard tick    --project <dir> --action <sig> [--progress <marker>]
+//   nrv guard status  --project <dir>              read-only: the state and what tick would decide
 //   nrv guard context --project <dir> --used <tokens> [--window <tokens>]
 // Exit: 0 continue · 7 STOP (loop ceiling) · 8 ROLL (context budget) · 2 invalid args
 
@@ -35,8 +36,9 @@ function arg(name: string, fallback?: string): string | undefined {
 }
 
 const sub = process.argv[2];
-if (sub !== "tick" && sub !== "context") {
+if (sub !== "tick" && sub !== "status" && sub !== "context") {
   console.error("usage: nrv guard tick    --project <dir> --action <sig> [--progress <marker>]");
+  console.error("       nrv guard status  --project <dir>");
   console.error("       nrv guard context --project <dir> --used <tokens> [--window <tokens>]");
   process.exit(2);
 }
@@ -105,6 +107,19 @@ if (snap) {
   g.state.last_progress_step = snap.last_progress_step || 0;
   g.state.progress_marker = snap.progress_marker ?? null;
   g.state.seen_signatures = new Map(Object.entries(snap.seen_signatures || {}));
+}
+
+// A diagnosis that records nothing: the state the HANDOFF holds, and whether
+// it already stands at a ceiling. Asked for by a client who had to decide on
+// a STOP without consuming another attempt to see it.
+if (sub === "status") {
+  const st = g.snapshot();
+  const verdict = g.check();
+  console.log(`loop guard — ${projectDir}`);
+  console.log(`  steps: ${st.step_count}/${st.cfg.max_steps} · last progress at step ${st.last_progress_step} (max ${st.cfg.max_flat_steps} flat) · repeats allowed: ${st.cfg.max_repeat}`);
+  for (const [sig, count] of Object.entries(st.seen_signatures || {})) console.log(`  ${sig}: ${count}`);
+  console.log(verdict.stop ? `  stands at a ceiling: ${verdict.reason}; the next tick stops (exit 7)` : "  clear: the next tick continues unless it reaches a ceiling");
+  process.exit(0);
 }
 
 g.record(action, {}, progress);
