@@ -80,12 +80,65 @@ Toggle live with the `◐` button in the nav bar.
 | `GET /api/mind-clones` | DNA library list, scope-aware |
 | `GET /api/mind-clones/:cat/:slug` | full markdown content |
 | `GET /api/search?q=…` | fuzzy search across squads + businesses + mind-clones |
+| `GET /api/subsystems` | which engine subsystems are standing: `up`, `down` or `null` (not measured) |
+| `GET /api/services` | the services the operator declared (see "Declared services"), same three readings |
 
 `POST` / `PUT` / `DELETE` always return `405 Method Not Allowed` until you opt in with `--allow-actions` (Phase 5, not yet wired).
 
 ## Scope awareness
 
 Glance respects `NIRVANA_SCOPE`. Run from inside a `scope=project` tree → see only that project's squads/businesses, registries pulled from `<project>/.nirvana/`, logs from `<project>/.nirvana/logs/`. Run from anywhere else → see globals, registries from `$HOME`. The scope panel on the right always shows the active mode.
+
+## Declared services
+
+A service you run beside the engine (a backup, a mirror, a watcher) gets a cell
+on the cockpit without touching Glance's code. Declare it once, then have the
+service write its own status. Contract `nirvana.glance.service/v1`.
+
+```
+<projectRoot>/.nirvana/glance/services/<slug>/service.yaml   ← project scope
+~/.nirvana/glance/services/<slug>/service.yaml               ← global scope
+```
+
+```yaml
+schema: nirvana.glance.service/v1
+slug: backup-vault            # must equal the directory name
+label: BACKUP VAULT           # what the cell shows (24 chars)
+description: Mirrors the vault to the VPS every hour.   # tooltip (200)
+owner: ops@example.com
+status:
+  file: status.json           # relative, inside this directory
+  ttl_seconds: 3600           # 10..86400, default 300
+url: https://example.com/backup   # http(s) only: the label becomes a link
+docs: README.md               # relative path, shown in the tooltip
+```
+
+The service writes the status file (atomically: write a temp file, rename):
+
+```json
+{ "schema": "nirvana.glance.service-status/v1", "status": "up",
+  "detail": "last mirror 03:00", "updated_at": "2026-10-05T06:00:12-03:00" }
+```
+
+What `GET /api/services` answers, in the order Glance decides:
+
+| Situation | `status` | `detail` |
+|---|---|---|
+| services directory absent | empty list | the row is hidden |
+| manifest invalid | `null` | `invalid manifest: <reason>` |
+| same slug in both scopes | project only | `… · overrides global` |
+| status file absent | `null` | `no status written yet` |
+| status invalid | `null` | `invalid status: <reason>` |
+| status older than `ttl_seconds` | `null` | `stale: last update <n> min ago` |
+| status valid and recent | as written | as written |
+
+Rules: Glance only reads. It creates nothing, fetches no URL, starts no process
+and loads no code from the service directory. A manifest path may not leave its
+own directory (`..`, absolute paths and symlinks out are refused). Manifests
+over 64 KiB and status files over 16 KiB are not read; at most 50 services per
+scope. Everything shown is plain text, truncated to its bound. Unknown manifest
+fields are ignored so the contract can grow; anything beyond a status cell
+(actions, proxying the URL, lifecycle) is a `v2`, not an extension of `v1`.
 
 ## Project workspace control plane
 

@@ -176,6 +176,30 @@
     </button>
   </div>
 
+  <!-- ─── Services — what the operator declared beside the engine ───
+       One cell per `.nirvana/glance/services/<slug>/service.yaml`. The service
+       writes its own status; a missing or stale one shows — like any
+       subsystem nobody measured. The row is absent when nothing is declared. -->
+  <div class="subsystem-row gl" role="status" aria-label="Serviços declarados" :inert="activityOverlayOpen" x-show="servicesRow.cells.length" x-cloak>
+    <span class="subsystem-row-title">SERVICES</span>
+    <template x-for="cell in servicesRow.cells" :key="cell.key">
+      <span class="subsystem-cell" :title="cell.title">
+        <span class="subsystem-dot" :class="cell.statusClass" x-text="cell.glyph" aria-hidden="true"></span>
+        <template x-if="cell.url">
+          <a class="subsystem-label subsystem-link" :href="cell.url" target="_blank" rel="noopener noreferrer" x-text="cell.label"></a>
+        </template>
+        <template x-if="!cell.url">
+          <span class="subsystem-label" x-text="cell.label"></span>
+        </template>
+        <span class="sr-only" x-text="cell.word"></span>
+      </span>
+    </template>
+    <span class="subsystem-row-summary" x-text="servicesSummary"></span>
+    <button class="subsystem-row-refresh" @click="fetchServices()" title="Reler os serviços" aria-label="Reler os serviços">
+      <i data-lucide="rotate-cw"></i>
+    </button>
+  </div>
+
   <!-- ─── Main columns ─── -->
   <div class="flex-1 flex min-h-0" :inert="activityOverlayOpen">
 

@@ -1528,6 +1528,9 @@
 .subsystem-dot-up { color: var(--status-success-solid); }
 .subsystem-dot-down { color: var(--status-danger-solid); }
 .subsystem-dot-unknown { color: var(--status-neutral-fg); }
+/* A declared service with a url: the label is the link, nothing else changes. */
+.subsystem-link { color: inherit; text-decoration: underline dotted; text-underline-offset: 2px; }
+.subsystem-link:hover { color: var(--text-primary); }
 .subsystem-row-summary {
   margin-left: auto;
   color: var(--text-tertiary);
