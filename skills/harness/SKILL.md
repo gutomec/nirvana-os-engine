@@ -46,7 +46,10 @@ and you do not plan how it is made.
    (`CLAUDE.md`, `GEMINI.md`) when the project has one.
 7. **Dependencies install to `~/.nirvana`.** Never `bun install`, `npm install`
    or `pip install` inside a project, squad or business: `nrv deps install <pkg>`
-   or `nrv activate <squad>`.
+   or `nrv activate <squad>`. When activation fails it prints a block between
+   `=== nrv activate: issues for the agent ===` markers (`--json` for data):
+   run each `fix`, asking the user first where it says `permission`, then its
+   `then` line. Never edit the squad folder to make it pass.
 8. **The commands are the interface.** Do not read the engine's source or call a
    runtime's CLI to test it; `nrv doctor` reports which runtimes work.
 

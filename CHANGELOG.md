@@ -6,6 +6,12 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that
 `npx @nirvana-os/cli` and pack installs consume.
 
+## Unreleased
+
+### `nrv activate` tells whoever ran it what to do about a failure
+
+The install pass is unchanged; what comes after a failure now depends on who is running the command. An agent session (the session markers routing already reads: `CLAUDECODE`, `CODEX_THREAD_ID`, `GEMINI_CLI`, `NIRVANA_HOST_RUNTIME`…) or a script gets a block between `=== nrv activate: issues for the agent ===` and its end marker. Each entry names the squad, the dependency's kind and name, the useful lines of the error, the command that fixes it when one is known (`brew install ffmpeg`, `winget install …`, `uv pip install --python <venv python> <spec>`, `bun install --cwd <env>`), `nrv activate <slug>` to check again, and a note when the fix needs the user: sudo, a package manager, a secret or an environment variable only they can supply. `--json` prints the same data on stdout, with the activator's own output moved to stderr. Neither prompts, and the exit code keeps its contract. A person at a terminal (stdin and stdout both on a TTY, no agent marker, no `CI`) gets a plain summary and `Want an agent to try to fix these? Found: Claude Code, Codex. [1/2/n]`, listing only runtimes on PATH. The chosen one runs headless through `runHeadless` with the worker permission bypass and the `exec` role, in a scratch folder, with a prompt limited to the listed failures that forbids touching any squad folder and asks for a line per item; its answer is shown, then those squads are activated again and the report says what is fixed and what still fails. `--fix-with-agent[=<runtime>]` does the same without asking, in any context: with no value, the session's runtime, else the first installed. When detection is unsure the command never prompts. A system install that fails now carries its command in the activator's result, so the block can offer it as the retry.
+
 ## 0.15.0-beta.5 — 2026-10-10
 
 ### Each squad installs into its own environment, prepared when it runs

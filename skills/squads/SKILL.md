@@ -208,6 +208,9 @@ that pipe a remote script into a shell). Activation is
 advisory — nothing blocks a dispatch — but a squad whose task shells out to
 ffmpeg or epubcheck fails MID-RUN when the tool is absent, after the dispatch
 is already paid for. `nrv doctor` warns when a declared tool is missing.
+When activation fails, an agent reads the issues block it prints (or
+`--json`): each entry has the fix, the `nrv activate <slug>` to check again,
+and whether the user must approve the fix first.
 
 3. Persona runs `bun scripts/activate-squad.ts status <slug>` first; if already active, asks reverify vs reactivate.
 4. Persona runs `bun scripts/activate-squad.ts activate <slug> --dry-run` to compute scope, then translates the JSON into a human summary listing CLIs, services to clone, custom nodes, model downloads (with sizes), env vars to check.
