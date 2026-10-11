@@ -3,8 +3,8 @@
 **Read this in your language:** [English](./CHANGELOG.md) · [Português](./CHANGELOG.pt-BR.md)
 
 All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
-(`nirvana-os-engine`); each release ships the full engine tarball that
-`npx @nirvana-os/cli` and pack installs consume.
+(`nirvana-os-engine`); each release ships the full engine tarball that the
+one-line installers and pack setups consume.
 
 ## 0.14.11 — 2026-10-10
 
@@ -39,6 +39,10 @@ Every Claude Code child the engine starts (the headless runner, the light layer,
 ### A worker reaches any folder on the machine
 
 Claude Code workers got Read and Edit deny rules for every sibling run folder. A brief told a worker to reuse an earlier run's screenshots, the rule refused that folder (its exception for a folder "named in the instruction" never saw the brief, which lives in a file), and the worker redid 62 of them. The agent-x prompts and the business session also said to write nothing outside the run folder, which forbade reviewing or fixing another project or creating one elsewhere. No folder is denied any more: the per-run settings file carries only the project's own deny rules (the `.env` ones `nrv init` writes), and the prompts say the run's deliverables go in the run folder while work the brief places in another folder is done there, with every path it created or changed listed. Earlier runs are not a worker's input unless its brief points to them. Brought from 0.15.0-beta.2.
+
+### The documentation matches the engine
+
+The READMEs in six languages, `INSTALL.md`, `AGENT-QUICKSTART.md`, `docs/` (the Pages site included), the project contracts, the skill files, the dependency template and the installer's factual strings were rewritten to match this line's code: install with the one-line `install.sh` / `install.ps1`, talk to the agent first, per-squad environments, the release channel, betas, and the pack flow.
 
 ## 0.14.10 — 2026-10-08
 

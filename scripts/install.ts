@@ -1121,7 +1121,7 @@ function summary(): void {
   console.log();
   console.log("Verify this install:");
   console.log("  nrv install --check       # hooks wired");
-  console.log("  nrv validate              # registries smoke-test");
+  console.log("  nrv doctor                # full health check (exit 1 = warnings only)");
 }
 
 async function main(): Promise<void> {

@@ -123,4 +123,5 @@ if (existsSync(join(HOME, ".hermes", "config.yaml"))) {
 }
 
 console.log(`\n${DRY ? "Dry run complete — nothing changed." : "Done. Engine removed; your content was kept."}`);
-console.log("Reinstall anytime:  npx @nirvana-os/cli");
+console.log("Reinstall anytime:  curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash");
+console.log("  (Windows PowerShell: irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex)");

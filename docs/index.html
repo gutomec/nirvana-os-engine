@@ -84,6 +84,7 @@ strong{font-weight:600}
 .cmd .p{color:var(--accent)}
 .cmd button{background:none; border:0; color:var(--faint); cursor:pointer; font-family:var(--mono); font-size:12px}
 .cmd button:hover{color:var(--text)}
+.cmd{max-width:100%} .cmd > span:not(.p){overflow-wrap:anywhere; min-width:0}
 .ghost{border:1px solid var(--border); border-radius:11px; padding:11px 16px; font-size:14.5px; color:var(--muted)}
 .ghost:hover{color:var(--text); border-color:var(--faint)}
 .sub{font-size:14px; color:var(--faint)}
@@ -208,16 +209,16 @@ footer .links{display:flex; gap:18px; flex-wrap:wrap; margin-bottom:14px}
     <h1>Você fala.<br>Uma <em>organização inteira</em> trabalha.</h1>
     <p class="lede">Você já tem um agente de terminal. Ele é afiado, e está sozinho. O Nirvana-OS o promove a maestro: você descreve o resultado em prosa e o sistema levanta as empresas, as equipes e os especialistas que entregam, vários ao mesmo tempo, com recibo de cada passo.</p>
     <div class="cta">
-      <span class="cmd"><span class="p">$</span><span id="cmd">npx @nirvana-os/cli</span><button id="cp" type="button">copiar</button></span>
+      <span class="cmd"><span class="p">$</span><span id="cmd">curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash</span><button id="cp" type="button">copiar</button></span>
       <a class="ghost" href="#runtimes">Ver funcionando</a>
     </div>
-    <p class="sub">Um comando. Instala o motor, se conecta a todos os runtimes que encontrar, e pode rodar de novo quando quiser.</p>
+    <p class="sub">macOS e Linux. No Windows, no PowerShell: <code>irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex</code>. Um comando instala o Bun se faltar, instala o motor, se conecta aos runtimes que encontrar e pode rodar de novo quando quiser.</p>
   </section>
 
   <section class="blk" id="runtimes">
     <div class="kicker">A mesma frase, qualquer agente</div>
     <h2 class="big">Você não aprende uma interface nova</h2>
-    <p class="intro">O Nirvana-OS não tem tela própria e não pede que você troque de ferramenta. Ele vive dentro do agente que você já abre todo dia. A frase abaixo é <strong>exatamente a mesma</strong> nos sete runtimes. Escolha o seu e veja acontecer.</p>
+    <p class="intro">O Nirvana-OS não tem tela própria e não pede que você troque de ferramenta. Ele vive dentro do agente que você já abre todo dia: você conversa com o agente, e o agente usa o Nirvana. A frase abaixo é <strong>exatamente a mesma</strong> nos sete runtimes. Escolha o seu e veja acontecer.</p>
 
     <div class="rt-tabs" role="tablist" aria-label="Escolha o runtime"></div>
     <div class="app" id="stage">
@@ -229,7 +230,7 @@ footer .links{display:flex; gap:18px; flex-wrap:wrap; margin-bottom:14px}
       </div>
       <div class="app-body" id="screen"></div>
     </div>
-    <p class="rt-note"><span class="i">i</span><span>O motor é o mesmo em todos. Muda só o chrome do runtime — o Nirvana-OS se instala em cada um que encontra na sua máquina e responde ao ser chamado pelo nome.</span></p>
+    <p class="rt-note"><span class="i">i</span><span>O motor é o mesmo em todos. Muda só a aparência do runtime: o Nirvana-OS se liga a cada um que encontra na sua máquina e responde ao ser chamado pelo nome.</span></p>
   </section>
 
   <section class="blk" id="fluxo">
@@ -259,7 +260,7 @@ footer .links{display:flex; gap:18px; flex-wrap:wrap; margin-bottom:14px}
       <div class="mat">
         <div class="sym">◈</div>
         <h3>Squads</h3>
-        <p>Equipes portáteis de agentes que rodam workflows reais, com DAG, portões e escalação, e entregam artefato pronto. Validados contra o Squad Protocol v5.</p>
+        <p>Equipes portáteis de agentes, com tarefas e workflows que o agente despachado segue como método, e entregam artefato pronto. Validados contra o Squad Protocol v6.</p>
         <div class="path">~/squads/</div>
       </div>
       <div class="mat">
@@ -288,19 +289,20 @@ footer .links{display:flex; gap:18px; flex-wrap:wrap; margin-bottom:14px}
     <h2 class="big">Instale em um comando</h2>
     <p class="intro">O motor é grátis e público. Ele não embarca conteúdo: cria as bibliotecas vazias e você preenche, conversando. Se quiser conteúdo curado e pronto, os pacotes são o atalho.</p>
     <div class="cta">
-      <span class="cmd"><span class="p">$</span><span>npx @nirvana-os/cli</span></span>
+      <span class="cmd"><span class="p">$</span><span>curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash</span></span>
       <a class="ghost" href="./install.html">Guia ilustrado, passo a passo</a>
     </div>
+    <p class="sub">Windows (PowerShell): <code>irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex</code></p>
     <table class="tbl">
-      <thead><tr><th>Você digita</th><th>Para quê</th></tr></thead>
+      <thead><tr><th>Você diz ao agente</th><th>Ele roda</th></tr></thead>
       <tbody>
-        <tr><td><code>npx @nirvana-os/cli</code></td><td>Instala ou atualiza o motor. Seguro rodar de novo.</td></tr>
-        <tr><td><code>nrv doctor</code></td><td>Diagnóstico do sistema: o que está ligado, o que falta.</td></tr>
-        <tr><td><code>nrv glance</code></td><td>Abre o cockpit e acompanha as execuções ao vivo.</td></tr>
-        <tr><td><code>nrv init &lt;dir&gt;</code></td><td>Prepara um projeto novo com escopo próprio.</td></tr>
+        <tr><td>"Confira se o Nirvana-OS está instalado corretamente."</td><td><code>nrv doctor</code></td></tr>
+        <tr><td>"Prepare esta pasta como um projeto do Nirvana-OS."</td><td><code>nrv init .</code></td></tr>
+        <tr><td>"Quais empresas e squads eu tenho?"</td><td><code>nrv list-businesses</code>, <code>nrv list-squads</code></td></tr>
+        <tr><td>"Atualize o Nirvana-OS."</td><td><code>nrv update</code></td></tr>
       </tbody>
     </table>
-    <p class="sub" style="margin-top:16px">O resto seu agente roda por você. Essa é a regra que a página inteira prova: <strong>você fala, o agente executa</strong>.</p>
+    <p class="sub" style="margin-top:16px">Os comandos são do seu agente. Essa é a regra que a página inteira prova: <strong>você fala, o agente executa</strong>. Para instalar um beta ou voltar à versão estável, veja o <a href="./install.html#betas">guia de instalação</a>.</p>
   </section>
 
 </div>

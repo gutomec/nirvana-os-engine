@@ -4,7 +4,7 @@
 
 Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
-do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
+do engine que os instaladores de uma linha e os setups de pack consomem.
 
 ## 0.14.11 — 2026-10-10
 
@@ -39,6 +39,10 @@ Todo filho do Claude Code que o engine inicia (o runner headless, a camada leve,
 ### Um worker alcança qualquer pasta da máquina
 
 Workers do Claude Code recebiam regras de negação de Read e Edit para cada pasta de run irmã. Um brief mandou um worker reaproveitar as capturas de tela de uma run anterior, a regra recusou aquela pasta (a exceção dela para uma pasta "citada na instrução" nunca via o brief, que mora num arquivo), e o worker refez 62 delas. Os prompts do agent-x e a sessão da empresa também mandavam não escrever nada fora da pasta da run, o que proibia revisar ou corrigir outro projeto, ou criar um em outro lugar. Nenhuma pasta é negada agora: o arquivo de settings da run leva só as regras de negação do próprio projeto (as do `.env` que o `nrv init` grava), e os prompts dizem que as entregas da run vão na pasta da run, enquanto o trabalho que o brief coloca em outra pasta é feito lá, com cada caminho criado ou alterado listado. Runs anteriores não são entrada de um worker a menos que o brief aponte para elas. Trazido da 0.15.0-beta.2.
+
+### A documentação bate com o engine
+
+Os READMEs nos seis idiomas, o `INSTALL.md`, o `AGENT-QUICKSTART.md`, o `docs/` (incluindo o site do Pages), os contratos de projeto, os arquivos de skill, o template de dependências e as mensagens factuais do instalador foram reescritos para bater com o código desta linha: instalação pelo `install.sh` / `install.ps1` de uma linha, conversa com o agente primeiro, ambientes por squad, canal de release, betas e o fluxo dos packs.
 
 ## 0.14.10 — 2026-10-08
 

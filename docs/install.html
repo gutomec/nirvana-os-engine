@@ -206,7 +206,7 @@
   <section class="hero">
     <p class="eyebrow">Guia de instalação</p>
     <h1>Do zero ao sistema completo, dentro do seu agente.</h1>
-    <p class="lede">O Nirvana-OS não roda na web: ele vive dentro do Claude Code, Codex ou Antigravity. Você instala o engine, solta um pacote de conteúdo, cria um projeto e pede ao agente para ativar. Depois disso, <strong>você fala e o sistema despacha empresas, squads e mind-clones</strong>. Cada passo abaixo mostra o comando e a saída real do terminal.</p>
+    <p class="lede">O Nirvana-OS não roda na web: ele vive dentro do agente que você já usa (Claude Code, Codex, Gemini CLI, Antigravity, Pi e outros). Você instala o engine, instala um pacote de conteúdo se quiser, cria um projeto e conversa com o agente. Depois disso, <strong>você fala e o agente usa o Nirvana para despachar empresas, squads e mind-clones</strong>. Cada passo abaixo mostra o comando e a saída do terminal.</p>
     <div class="flow">
       <span class="n"><b>engine</b></span><span class="arw">→</span>
       <span class="n"><b>pacote</b></span><span class="arw">→</span>
@@ -220,11 +220,22 @@
   <!-- 1 -->
   <section class="step">
     <div class="step-head"><span class="step-num">1</span><h2>Instale o engine</h2></div>
-    <p>Um comando. Ele instala o <strong>Bun</strong> se faltar, baixa o engine mais recente do GitHub, coloca a árvore de skills em <code>~/.nirvana/skills</code>, liga nos runtimes que achar (<code>~/.claude</code>, <code>~/.codex</code>, <code>~/.gemini</code>, <code>~/.antigravity</code>) e põe o <code>nrv</code> no seu PATH. É idempotente: rodar de novo sempre puxa a última versão.</p>
+    <p>Um comando. Ele instala o <strong>Bun</strong> se faltar, baixa a última versão estável do engine no GitHub, coloca o engine em <code>~/.nirvana/skills</code>, liga a skill <code>nirvana</code> nos runtimes que achar (<code>~/.claude/skills</code>, <code>~/.codex/skills</code>, <code>~/.gemini/skills</code>, <code>~/.gemini/config/skills</code> do Antigravity, <code>~/.pi/agent/skills</code>, <code>~/.agents/skills</code>), instala os hooks de auditoria e põe o <code>nrv</code> no seu PATH. Rodar de novo é seguro. Depois, abra um terminal novo e peça ao agente: <em>"confira se o Nirvana-OS está instalado corretamente"</em>.</p>
     <div class="term" data-term="engine"></div>
     <p class="win-alt">No <strong>Windows</strong>, em PowerShell:</p>
     <div class="term" data-term="engineWin"></div>
-    <div class="note"><span class="ico">i</span><span><b>Bun é a única dependência</b>, e o instalador cuida dela: se não estiver na máquina, ele a baixa em user-space (<code>~/.bun</code>, sem sudo) e continua na mesma execução. Sem Node.js, sem Python, sem Docker.</span></div>
+    <div class="note"><span class="ico">i</span><span><b>Bun é a única dependência</b>, e o instalador cuida dela: se não estiver na máquina, ele a baixa em user-space (<code>~/.bun</code>, sem sudo) e continua na mesma execução. Sem Node.js e sem Docker. Python só entra se um squad declarar pacotes Python.</span></div>
+  </section>
+
+  <!-- Betas -->
+  <section class="step" id="betas">
+    <div class="step-head"><span class="step-num sym">β</span><h2>Betas e volta à versão estável</h2></div>
+    <p>O comando acima instala sempre a última versão estável. Um beta é uma prerelease no GitHub e se instala fixando o tarball dele. Troque <code>&lt;versão&gt;</code> pela release, por exemplo <code>0.15.0-beta.5</code>; a tag começa com <code>v</code>, e sem ele o download devolve 404.</p>
+    <div class="diagram"><div class="dh">macOS e Linux</div><pre>curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v&lt;versão&gt;/nirvana-os-engine.tar.gz bash</pre></div>
+    <div class="diagram"><div class="dh">Windows (PowerShell)</div><pre>$env:NIRVANA_ENGINE_URL = "https://github.com/gutomec/nirvana-os-engine/releases/download/v&lt;versão&gt;/nirvana-os-engine.tar.gz"
+irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
+Remove-Item Env:NIRVANA_ENGINE_URL</pre></div>
+    <div class="note"><span class="ico">i</span><span>Uma atualização nunca leva o engine para uma versão mais antiga. Num beta, o <code>nrv update</code> e o setup de qualquer pacote mantêm você no canal beta, até a versão estável que vem depois dele. Para voltar à estável agora, rode o comando simples do passo 1: ele instala a última estável por cima do beta, e o seu conteúdo e as suas configurações ficam. No PowerShell a variável vale para a janela inteira; por isso a última linha a remove.</span></div>
   </section>
 
   <!-- Criar do zero (só engine) -->
@@ -238,9 +249,9 @@
   <!-- 2 -->
   <section class="step">
     <div class="step-head"><span class="step-num">2</span><h2>Ou instale um pacote pronto</h2></div>
-    <p>Se você prefere conteúdo curado em vez de criar do zero, instale um <strong>pacote</strong>. As <strong>empresas, squads e mind-clones</strong> prontos chegam em pacotes que você baixa no <strong>squads.sh</strong>. Compre ou resgate o pacote, baixe o zip pelo seu painel e descompacte-o <strong>inteiro</strong> numa pasta e rode <code>bun setup.ts</code> lá dentro — isso instala o conteúdo por cima do engine. O exemplo abaixo é o <strong>Genesis Circle</strong>: 42 squads, 11 empresas e 159 mind-clones.</p>
+    <p>Se você prefere conteúdo curado em vez de criar do zero, instale um <strong>pacote</strong>. As <strong>empresas, squads e mind-clones</strong> prontos chegam em pacotes que você compra no <strong>squads.sh</strong>. Baixe o zip pelo seu painel, descompacte-o <strong>inteiro</strong> numa pasta e rode o setup lá dentro: <code>bash setup.sh</code> no macOS e no Linux, <code>powershell -ExecutionPolicy Bypass -File setup.ps1</code> no Windows. O exemplo abaixo é o <strong>Genesis Circle</strong>.</p>
     <div class="term" data-term="pack"></div>
-    <div class="note"><span class="ico">i</span><span>Engine e pacote são <b>desacoplados</b>: o engine é grátis e público; o pacote é o conteúdo. Se o engine ainda não estiver instalado, o próprio <code>setup.ts</code> o baixa antes. Ainda sem o Bun? <code>bash setup.sh</code> instala o Bun e chama o mesmo setup.</span></div>
+    <div class="note"><span class="ico">i</span><span>Engine e pacote são <b>desacoplados</b>: o engine é grátis e público; o pacote é o conteúdo. O setup instala o Bun se faltar, instala o engine se ele não existir (ou o atualiza no mesmo canal de release), copia o conteúdo, reconstrói os índices e guarda a licença do pacote em <code>~/.nirvana-license/packs/&lt;pacote&gt;/</code>. Para atualizar depois, peça ao agente ou rode <code>nrv update &lt;pacote&gt;</code>; se der erro de licença, baixe o pacote de novo e rode o setup outra vez.</span></div>
   </section>
 
   <!-- 3 -->
@@ -253,14 +264,14 @@
   <!-- 4 -->
   <section class="step">
     <div class="step-head"><span class="step-num">4</span><h2>Crie um projeto</h2></div>
-    <p>Todo trabalho acontece dentro de um <strong>projeto</strong>: é onde ficam as regras de escopo e para onde vai tudo o que o sistema gera. Crie um com <code>nrv init</code> e entre nele.</p>
+    <p>Todo trabalho acontece dentro de um <strong>projeto</strong>: é onde fica o escopo de biblioteca e para onde vai tudo o que o sistema gera. Peça ao agente <em>"prepare esta pasta como um projeto do Nirvana-OS"</em>, ou rode <code>nrv init</code> e entre na pasta. O projeto recebe o contrato em <code>AGENTS.md</code>, <code>CLAUDE.md</code> e <code>GEMINI.md</code>, que faz do Nirvana o orquestrador de todo entregável concreto, e um <code>.env</code> com o escopo de biblioteca. Para que o Nirvana só entre quando você pedir pelo nome, crie o projeto com <code>--orchestrators=on-demand</code>.</p>
     <div class="term" data-term="init"></div>
   </section>
 
   <!-- 5 -->
   <section class="step">
     <div class="step-head"><span class="step-num">5</span><h2>Ative dentro do projeto</h2></div>
-    <p>Abra o projeto no seu agente (Claude Code, Codex ou Antigravity) e peça, em linguagem natural, para <strong>ativar o Nirvana-OS, instalar as dependências de todos os squads e registrar todas as empresas, squads e mind-clones</strong>. Feito isso, o sistema está completamente instalado.</p>
+    <p>Abra o projeto no seu agente e peça, em linguagem natural, para <strong>ativar o Nirvana-OS, instalar as dependências de todos os squads e registrar todas as empresas, squads e mind-clones</strong>. O agente roda <code>nrv activate --all</code>, que prepara o ambiente de cada squad em <code>~/.nirvana/envs/&lt;squad&gt;</code>, e <code>nrv index</code>. O passo é opcional: sem ele, cada squad prepara o próprio ambiente na primeira vez que roda.</p>
     <div class="prompt-card">
       <div class="lbl">No seu agente, dentro do projeto, diga</div>
       <div class="say"><span class="q">"Ative o Nirvana-OS neste projeto: instale as dependências de todos os squads e registre todas as empresas, squads e mind-clones."</span></div>
@@ -271,13 +282,13 @@
   <!-- Árvore de processamento -->
   <section class="step">
     <div class="step-head"><span class="step-num sym">⌥</span><h2>Como o Nirvana-OS processa dentro do projeto</h2></div>
-    <p>Quando você fala, quem recebe é o <strong>orquestrador</strong> (a skill <code>harness</code>). Ele nunca produz o artefato: raciocina sobre as três registries, escolhe o time, escreve um brief enriquecido e <strong>despacha</strong>. Cada entidade despachada se auto-administra até terminar, verifica o próprio trabalho e devolve. Cada passo vira um evento de auditoria.</p>
+    <p>Quando você fala, quem recebe é o <strong>orquestrador</strong>: o seu agente, que a skill <code>nirvana</code> leva ao protocolo do harness. Ele nunca produz o artefato: raciocina sobre as três registries, escolhe o time, escreve um brief enriquecido e <strong>despacha</strong>. Cada entidade despachada se auto-administra até terminar, verifica o próprio trabalho e devolve. Cada passo vira um evento de auditoria.</p>
     <div class="diagram">
       <div class="dh">Árvore de despacho</div>
       <pre><span class="ac">você</span>  <span class="m">(linguagem natural, dentro do projeto)</span>
   │
   ▼
-<span class="k">orquestrador</span> · <span class="m">Skill(harness)</span>          <span class="m">← nunca produz artefato; roteia + audita</span>
+<span class="k">orquestrador</span> · <span class="m">Skill(nirvana) → harness</span> <span class="m">← nunca produz artefato; roteia + audita</span>
   │  <span class="m">brief_received → target_plan_committed → brief-enriched.md</span>
   ▼
 ├─ <span class="k">empresa</span>       <span class="m">ex: juridical-singularity</span>   <span class="m">hierarquia de funcionários</span>
@@ -418,7 +429,7 @@
       out: [
         "Bun não encontrado — instalando (user-space, em ~/.bun, sem sudo)…",
         "@g;Bun: 1.3.14 (~/.bun/bin/bun)",
-        "Baixando o engine mais recente: github.com/gutomec/nirvana-os-engine",
+        "Baixando o engine: https://github.com/gutomec/nirvana-os-engine/releases/latest/download/nirvana-os-engine.tar.gz",
         "",
         "@bold;Nirvana OS installer",
         "@dim;  skills target: ~/.nirvana/skills",
@@ -432,14 +443,14 @@
         "@a;[3/4]@c; Copying CLI dispatchers...",
         "@g;  ✓ nrv, nrv-gemini, nrv-hermes",
         "@a;[4/4]@c; Linking runtimes → shared skills tree ...",
-        "@g;  ✓ ~/.claude (linked)   ✓ ~/.codex (linked)",
+        "@g;  ✓ ~/.claude/skills/nirvana (linked)   ✓ ~/.codex/skills/nirvana (copied)",
         "@g;  ✓ audit hooks wired",
         "",
         "@bold;Done.",
         "",
-        "Next steps:",
-        "@dim;  nrv doctor              # confirme que a instalação está saudável",
-        "@dim;  nrv glance              # abra o cockpit"
+        "@bold;Start a project with nrv init.",
+        "@dim;  nrv init ~/my-project     # creates the dir + a short note for your AI CLI",
+        "@dim;  cd ~/my-project           # then just talk to your AI CLI"
       ]
     },
     engineWin: {
@@ -448,7 +459,7 @@
       out: [
         "Bun nao encontrado - instalando (user-space, sem admin)...",
         "@g;Bun: 1.3.14 (C:\\Users\\voce\\.bun\\bin\\bun.exe)",
-        "Baixando o engine mais recente: github.com/gutomec/nirvana-os-engine",
+        "Baixando o engine: https://github.com/gutomec/nirvana-os-engine/releases/latest/download/nirvana-os-engine.tar.gz",
         "",
         "@bold;Done.",
         "@dim;  nrv doctor              # confirme que a instalação está saudável"
@@ -456,21 +467,21 @@
     },
     pack: {
       title: "zsh — genesis-circle",
-      command: "unzip -d genesis-circle nirvana-os-genesis-circle-pack.zip && cd genesis-circle && bun setup.ts",
+      command: "unzip -d genesis-circle nirvana-os-genesis-circle-v0.1.95.zip && cd genesis-circle && bash setup.sh",
       out: [
         "@bold;Nirvana-OS — pack 'genesis-circle'",
         "",
-        "@a;[1/4]@c; Atualizando o engine (atual: 0.1.73)...",
+        "@a;[1/4]@c; Engine not found — installing from GitHub...",
         "@dim;  │ ✓ harness   ✓ squads   ✓ businesses",
-        "@a;[2/4]@c; Instalando o conteúdo do pack 'genesis-circle'...",
-        "@dim;      squads:      @g;42 new@dim; · 0 updated · 0 unchanged · 0 removed",
-        "@dim;      businesses:  @g;11 new@dim; · 0 updated · 0 unchanged · 0 removed",
-        "@dim;      mind-clones: @g;159 new@dim; · 0 updated · 0 unchanged · 0 removed",
-        "@a;[3/4]@c; Construindo os índices de roteamento...",
+        "@a;[2/4]@c; Installing pack 'genesis-circle' content (businesses, squads and mind-clones)...",
+        "@dim;      squads:      @g;51 new@dim; · 0 updated · 0 unchanged · 0 removed",
+        "@dim;      businesses:  @g;12 new@dim; · 0 updated · 0 unchanged · 0 removed",
+        "@dim;      mind-clones: @g;171 new@dim; · 0 updated · 0 unchanged · 0 removed",
+        "@a;[3/4]@c; Building the routing indexes...",
         "@dim;  │ [index] 3/3 ok · 1719ms total",
-        "@a;[4/4]@c; Verificando a licença (soft)...",
+        "@a;[4/4]@c; Installing and checking the license (soft)...",
         "",
-        "@g; ✓ Pack 'genesis-circle' instalado."
+        "@g; ✓ Pack 'genesis-circle' installed."
       ]
     },
     index: {
@@ -485,14 +496,14 @@
     },
     init: {
       title: "zsh — nrv init",
-      command: "nrv init ~/escritorio-trabalhista && cd ~/escritorio-trabalhista",
+      command: "nrv init ~/escritorio-trabalhista --scope=project && cd ~/escritorio-trabalhista",
       out: [
-        "@dim;Initializing Nirvana project at: ~/escritorio-trabalhista",
-        "@g;  ✓ wrote .env   ✓ .gitignore   ✓ README.md",
-        "@g;  ✓ AGENTS.md, CLAUDE.md, GEMINI.md @dim;(contrato + writing contract)",
-        "@g;  ✓ set NIRVANA_SCOPE=project in .env",
-        "@g;  ✓ skills symlink: .agents/skills → ~/.nirvana/skills",
-        "@dim;  Next: abra o projeto no seu agente e ative o Nirvana-OS."
+        "@dim;[info] Initializing Nirvana project at: ~/escritorio-trabalhista",
+        "@g;[ok]   wrote .env · .env.example · .gitignore · README.md",
+        "@g;[ok]   wrote AGENTS.md, CLAUDE.md, GEMINI.md @dim;(contrato + writing contract)",
+        "@g;[ok]   set NIRVANA_SCOPE=project in .env",
+        "@g;[ok]   project manifest: .nirvana/project.yaml",
+        "@dim;[info] Next: abra o projeto no seu agente e ative o Nirvana-OS."
       ]
     },
     activate: {
@@ -503,13 +514,13 @@
         "@a;> @c;ative o Nirvana-OS: instale as dependências de todos os squads e",
         "@a;  @c;registre todas as empresas, squads e mind-clones",
         "",
-        "@rd;● @c;Skill(harness) @dim;· ativando no projeto",
-        "@dim;  instalando dependências dos squads (bun install)...",
-        "@g;  ✓ deps ok",
+        "@rd;● @c;Skill(nirvana) @dim;· nrv activate --all",
+        "@dim;  preparando o ambiente de cada squad em ~/.nirvana/envs/...",
+        "@g;  ✓ squads prontos",
         "@dim;  reconstruindo registries (nrv index)...",
-        "@g;  ✓ squads         41 registrados",
-        "@g;  ✓ businesses      11 registradas",
-        "@g;  ✓ mind-clones    160 registrados",
+        "@g;  ✓ squads         51 registrados",
+        "@g;  ✓ businesses      12 registradas",
+        "@g;  ✓ mind-clones    171 registrados",
         "",
         "@g;✓ Nirvana-OS ativo neste projeto. Pronto para despachar."
       ]
@@ -521,14 +532,14 @@
         "@dim;✻ Claude Code · ~/escritorio-trabalhista",
         "@a;> @c;quais empresas, squads e mind-clones estão disponíveis?",
         "",
-        "@a;  EMPRESAS @dim;(11)",
+        "@a;  EMPRESAS @dim;(12)",
         "@c;  juridical-singularity · software-forge · strategic-council ·",
         "@c;  research-intelligence · investigation-bureau · fintech-forge · @dim;…",
-        "@a;  SQUADS @dim;(41)",
+        "@a;  SQUADS @dim;(51)",
         "@c;  nirvana-juridico-total · nirvana-backend · brandcraft ·",
         "@c;  design-system-nirvana · agentic-whatsapp-nirvana ·",
         "@c;  omnidoc-vision-nirvana · cinematic-web-studio · @dim;…",
-        "@a;  MIND-CLONES @dim;(160)",
+        "@a;  MIND-CLONES @dim;(171)",
         "@c;  david-ogilvy · gary-halbert · martin-fowler · dhh ·",
         "@c;  daniel-kahneman · seth-godin · dan-abramov · @dim;…"
       ]
@@ -541,7 +552,7 @@
         "@a;> @c;use suas melhores empresas, squads e mind-clones para um sistema",
         "@a;  @c;completo de um escritório de advocacia trabalhista",
         "",
-        "@rd;● @c;Orquestrando com o Nirvana-OS @dim;· Skill(harness)",
+        "@rd;● @c;Orquestrando com o Nirvana-OS @dim;· Skill(nirvana) → harness",
         "@a;  plano @dim;· target_plan_committed",
         "@bold;  Branding         @c;brandcraft               @dim;← david-ogilvy, seth-godin",
         "@bold;  Jurídico         @c;nirvana-juridico-total   @dim;← juridical-singularity",

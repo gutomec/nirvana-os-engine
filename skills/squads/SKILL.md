@@ -1,7 +1,7 @@
 ---
 name: squads
 description: "Squad lifecycle skill. Use when asked to create, validate, inspect, list, or migrate squads — portable AI agent teams with workflows. Triggers on: create squad, list squads, inspect squad, validate squad, migrate squad, adapters. For EXECUTION of production briefs ('use the squad X', 'orquestre via squad', 'rode via squad'), hand it to the harness (read `~/.nirvana/skills/harness/SKILL.md` and follow it) instead — it carries the maestro intelligence and dispatches the right squad capability."
-compatibility: "Requires the Nirvana-OS engine: the `nrv` CLI and Bun on PATH. Install: npx @nirvana-os/cli. Runtime-agnostic — no dependency on any specific agent CLI. Squad activation may install large dependencies and needs an interactive consent primitive."
+compatibility: "Requires the Nirvana-OS engine: the `nrv` CLI and Bun on PATH. Install: curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash (Windows: irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex). Runtime-agnostic — no dependency on any specific agent CLI. Squad activation may install large dependencies and needs an interactive consent primitive."
 tools: [Read, Write, Edit, Glob, Grep, Bash]
 maxTurns: 50
 metadata:
@@ -199,7 +199,7 @@ Activation is end-to-end: validate, install everything declared in `<squad>/depe
 - `*squad activate {name}` — full activation (delegates to `agents/squad-activator.md` persona)
 - `*squad activate {name} --dry-run` — preview only, no installs run
 - `*squad activate {name} --confirm-heavy` — auto-accept downloads >1 GB, sudo installs, and installers that fetch a remote script and execute it
-- `*squad status {name}` — show activation state from `~/.claude/squads-state/<name>/activated.json`
+- `*squad status {name}` — show activation state from `~/.nirvana/squads-state/<name>/activated.json`
 - `*squad deactivate {name}` — clear state file (does NOT uninstall packages)
 
 **How it works.** When the user says "ative o squad X":
@@ -239,9 +239,9 @@ and whether the user must approve the fix first.
 | `env_vars` | Checked only (never written) — surfaced as set / missing_required / missing_optional |
 | `post_install` | Hooks run after everything else (e.g. re-index, ping health check) |
 
-Template: `templates/dependencies.template.yaml`. Reference impl: `lib/activator.js`. State per squad: `~/.claude/squads-state/<slug>/activated.json`.
+Template: `templates/dependencies.template.yaml`. Reference impl: `lib/activator.js`. State per squad: `~/.nirvana/squads-state/<slug>/activated.json`.
 
-**Synthesis fallback.** If a squad has no `dependencies.yaml` but contains `package.json`, `pyproject.toml`, or `requirements.txt`, the activator auto-synthesizes a manifest and caches it at `~/.claude/squads-state/<slug>/synth-deps.yaml`. The persona surfaces this and offers to promote it to a real sidecar.
+**Synthesis fallback.** If a squad has no `dependencies.yaml` but contains `package.json`, `pyproject.toml`, or `requirements.txt`, the activator auto-synthesizes a manifest and caches it at `~/.nirvana/squads-state/<slug>/synth-deps.yaml`. The persona surfaces this and offers to promote it to a real sidecar.
 
 **Idempotent.** Re-activation is fast — every check passes, nothing reinstalls.
 

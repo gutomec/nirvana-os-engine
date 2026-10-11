@@ -355,7 +355,7 @@ if (!enginePresent) {
     // abortaria de qualquer jeito. Falhar aqui, com o motivo certo, é melhor
     // que falhar depois com um erro que parece ser do conteúdo.
     console.error(`    ✗ Falha ao atualizar o engine, e o atual (${installedVer ?? "desconhecido"}) é mais antigo que o exigido por este pack (>=${requiresEngine}).`);
-    console.error(`      Atualize manualmente e rode de novo:  npx @nirvana-os/cli`);
+    console.error(`      Atualize manualmente e rode de novo:  curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash   (Windows: irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex)`);
     process.exit(1);
   } else {
     // Engine já satisfaz o pack: a falha de rede não impede a instalação.

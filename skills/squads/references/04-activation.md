@@ -28,7 +28,7 @@ Template: `~/.nirvana/skills/squads/templates/dependencies.template.yaml`. Refer
 
 ### Synthesis fallback
 
-If a squad has no `dependencies.yaml` but contains `package.json`, `pyproject.toml`, or `requirements.txt`, the activator auto-synthesizes one. Cached at `~/.claude/squads-state/<slug>/synth-deps.yaml` for the user to review and optionally promote to a proper sidecar.
+If a squad has no `dependencies.yaml` but contains `package.json`, `pyproject.toml`, or `requirements.txt`, the activator auto-synthesizes one. Cached at `~/.nirvana/squads-state/<slug>/synth-deps.yaml` for the user to review and optionally promote to a proper sidecar.
 
 ## Activation Flow (`*squad activate {name}`)
 

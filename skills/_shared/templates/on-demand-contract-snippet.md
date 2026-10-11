@@ -8,7 +8,11 @@ it, and do not treat its protocols as this project's defaults.
 
 Invoke it ONLY when the user explicitly asks — "use o Nirvana para X", "use
 Nirvana to X", "dispatch this to a squad/business". On that request, invoke the
-`harness` skill with the user's brief verbatim and let it orchestrate
-(businesses → squads → quality gate → audit). Utility lookups on request:
-`nrv list-squads`, `nrv list-businesses`, `nrv find-clone "<need>"`,
-`nrv glance`.
+`nirvana` skill with the user's brief verbatim (a runtime without skills reads
+`~/.nirvana/skills/harness/SKILL.md` and follows it) and let it orchestrate
+(businesses → squads → quality gate → audit). Do not build the deliverable
+yourself. Utility lookups on request: `nrv list-squads`, `nrv list-businesses`,
+`nrv find-clone "<need>"`, `nrv glance`.
+
+If `NIRVANA_DISPATCH_DEPTH` is set, Nirvana dispatched you: do the work in your
+brief yourself and never invoke Nirvana again.

@@ -53,7 +53,7 @@ export const COMMANDS: Command[] = [
   { name: "setup", target: "_shared/scripts/install.ts", category: "install", summary: "Install or repair audit hooks across supported agents", visibility: "user" },
   { name: "uninstall", custom: true, category: "install", args: "<name> | --engine | --hooks", summary: "Remove an asset, the engine (keeps content), or just the hooks", visibility: "user" },
   { name: "installed", aliases: ["list-installed"], target: "_shared/scripts/list-installed.ts", category: "install", summary: "List active installations", visibility: "user" },
-  { name: "update", aliases: ["self-update", "upgrade"], target: "harness/scripts/update.ts", category: "install", args: "[<pack-slug>] [--check]", summary: "Update the engine: git pull (dev) or re-fetch the latest release (npx)", visibility: "user" },
+  { name: "update", aliases: ["self-update", "upgrade"], target: "harness/scripts/update.ts", category: "install", args: "[<pack-slug>] [--check]", summary: "Update the engine on its release channel (a git checkout at ~/nirvana-os pulls instead), or a pack", visibility: "user" },
   { name: "update-check", target: "harness/scripts/update-check.ts", category: "install", args: "[--status|--refresh|--print]", summary: "Whether a newer engine release exists (cached; NIRVANA_NO_UPDATE_CHECK=1 disables)", visibility: "user" },
 
   // core
@@ -65,7 +65,7 @@ export const COMMANDS: Command[] = [
   { name: "validate", aliases: ["verify"], target: "_shared/scripts/verify.ts", category: "core", args: "<squad|business|mind-clone> <slug|path> [--fix] [--strict] [--json] | <kind> --all [--record] | --pack <dir>", summary: "Admission gate: verify an entity, --fix it, record debt (exit 0/1/2/64; bare = deprecated doctor alias)", visibility: "user" },
   { name: "index", target: "harness/scripts/index.ts", category: "core", summary: "Re-index squads + businesses", visibility: "user" },
   { name: "config", target: "harness/scripts/config.ts", category: "core", args: "list|get|set|unset|explain [<key> [<value>]] [--global|--project]", summary: "Operational settings: effective value + origin per key; set/unset write the project or the global config.yaml", visibility: "user" },
-  { name: "deps", target: "_shared/scripts/deps.ts", category: "core", args: "[status|scan|adopt|link|install|env] [--apply] [--json]", summary: "The one dependency home (~/.nirvana): where packages live, what escaped it, and how to fold it back in", visibility: "user" },
+  { name: "deps", target: "_shared/scripts/deps.ts", category: "core", args: "[status|scan|adopt|link|install|env] [--apply] [--json]", summary: "Dependencies under ~/.nirvana: the per-squad environments, the shared store, the tool caches, and what escaped them", visibility: "user" },
 
   // dispatch & execute
   { name: "dispatch", target: "harness/scripts/dispatch.ts", category: "dispatch", args: '<business> "<brief>"', summary: "Scaffold a run (brief + DNA injection + audit; no exec)", visibility: "user" },

@@ -196,7 +196,11 @@ describe("the contract tells agents the rule", () => {
   test("the project template forbids installing where you are standing", () => {
     const tpl = readFileSync(join(REPO, "skills", "_shared", "templates", "AGENTS.md"), "utf8");
     expect(tpl).toContain("nirvana:deps-rule:v1");
-    expect(tpl).toContain("~/.nirvana/node_modules");
+    // Squads install into their own environments now (squad-env.ts); the
+    // contract names that home, the command that prepares it, and the shared
+    // store only for packages outside any squad.
+    expect(tpl).toContain("~/.nirvana/envs/<squad>");
+    expect(tpl).toContain("nrv activate <squad>");
     expect(tpl).toContain("nrv deps install");
     // The carve-out has to survive too, or squads lose ffmpeg.
     expect(tpl.toLowerCase()).toContain("ffmpeg");
@@ -205,6 +209,10 @@ describe("the contract tells agents the rule", () => {
   test("the squad dependency template no longer teaches a squad-local cwd", () => {
     const tpl = readFileSync(join(REPO, "skills", "squads", "templates", "dependencies.template.yaml"), "utf8");
     expect(tpl).not.toContain('cwd: "${SQUADS_DIR}');
-    expect(tpl).toContain("~/.nirvana/node_modules");
+    expect(tpl).toContain("~/.nirvana/envs/<slug>");
+    // The shared store and venv are legacy; the template must not send a
+    // squad's packages there.
+    expect(tpl).not.toContain("SHARED store");
+    expect(tpl).not.toContain("SHARED venv");
   });
 });

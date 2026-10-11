@@ -63,7 +63,7 @@ activation_artifact:
     - item: <name>
       size_gb: <float>
       reason: <why it needs consent>
-  state_file: ~/.claude/squads-state/<slug>/activated.json
+  state_file: ~/.nirvana/squads-state/<slug>/activated.json
   start_commands:
     - <commands the user must run manually for long-lived services like ComfyUI>
   next_steps:
@@ -158,13 +158,13 @@ After the activator returns, render the result:
 >
 > Once it is running, I can dispatch to the squad. Confirm when you are ready.
 
-State persisted at `~/.claude/squads-state/<slug>/activated.json`.
+State persisted at `~/.nirvana/squads-state/<slug>/activated.json`.
 
 ### Step 6 — Synthesis fallback flow
 
 If `dependencies.yaml` is absent but the activator synthesized one from `package.json` / `pyproject.toml` / `requirements.txt`, surface that explicitly:
 
-> ⚠️ This squad did not have a formal `dependencies.yaml`. I synthesized one from the `package.json` I found. I saved the draft at `~/.claude/squads-state/<slug>/synth-deps.yaml` — I recommend you review it and promote it to `<squad>/dependencies.yaml` if it looks correct.
+> ⚠️ This squad did not have a formal `dependencies.yaml`. I synthesized one from the `package.json` I found. I saved the draft at `~/.nirvana/squads-state/<slug>/synth-deps.yaml` — I recommend you review it and promote it to `<squad>/dependencies.yaml` if it looks correct.
 >
 > Packages I will install:
 > - yaml@^2.5.0

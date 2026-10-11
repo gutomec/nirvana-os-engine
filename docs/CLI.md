@@ -1,6 +1,6 @@
 # `nrv` — CLI reference
 
-The day-to-day way to drive Nirvana-OS is to **talk to it in plain language** from any AI CLI you already use. This page is for power users who want the direct `nrv` commands underneath.
+Nobody needs to type these day to day. You talk to the agent you already use (Claude Code, Codex, Gemini CLI, Antigravity, Pi…) in plain language, and the agent runs `nrv`: *"what squads do I have?"*, *"use Nirvana to write the launch copy"*, *"update Nirvana"*. This page is the reference underneath, for agents and for anyone who wants the direct commands.
 
 Run `nrv help` for the live reference, and `nrv <subcommand> --help` for any command's full options.
 
@@ -14,10 +14,10 @@ nrv <subcommand> [args]
 
 | Command | What it does |
 |---|---|
-| `nrv install --bootstrap` | Wire audit hooks into Claude Code, Gemini-CLI, and Antigravity (run once after installing; idempotent). |
-| `nrv install --check` | Report status; exit 0 if ready, 1 if it needs setup. |
+| `nrv install --bootstrap` | Wire the audit hooks into Claude Code, Gemini CLI, Antigravity and Codex (the installer already does it; idempotent). `nrv setup` is the same repair. |
+| `nrv install --check` | Report the hook and PATH wiring; exit 0 if ready, 1 if it needs setup. |
 | `nrv install --repair-path` | Windows: list temporary `nrv-*` entries left on the user PATH (nothing written); `--apply` removes exactly those. |
-| `nrv doctor` | Full system diagnostic (binaries, skills, hooks, patches, and the `config` section: every operational setting with its effective value and origin). |
+| `nrv doctor` | Full system diagnostic: binaries and runtimes, skills links, hooks, dependencies, registries, pack licenses, and the `config` section with every setting's effective value and origin. Exit 0 healthy, 1 warnings only, 2 a `FAIL` line. |
 
 ## Configure
 
@@ -42,7 +42,7 @@ Precedence, always: environment variable > `<project>/.nirvana/config.yaml` > `~
 | `nrv ask <clone> "<question>"` | Talk directly to a single specialist (mind-clone), DNA injected. |
 | `nrv multi-target plan\|run\|status <plan.json>` | Multi-target engine by plan file (alias `nrv mt`): `plan` compiles the waves, `run` executes them over the Run Kernel (`nrv config set multi_target.enabled false` or `NIRVANA_MULTI_TARGET_KILL_SWITCH=1` turns it off), `status` reads the projection. |
 
-Useful flags on `run` / `auto`: `--single` / `--team` (how many seats of the business run the brief — by default a director reads the brief against the org chart and decides, answering "one seat" when one is enough; `--single` skips that call, `--team` asks for a chain of 3 to 6), `--zip` / `--pdf` (bundle deliverables), `--runtime=claude-code|codex|gemini-cli|antigravity-cli`, `--max-budget=<usd>`, `--timeout=<min>`, `--mode=agentic|fast` (routing mode), `--execution-mode=standard|gauntlet|auto` (default `standard`), `--gauntlet-intensity=light|balanced|exhaustive` (a Business target needs `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST=<slug>`), `--run-id=<runId>` (adopt a Run already prepared in the project's kernel, the way Glance does).
+Useful flags on `run` / `auto`: `--single` / `--team` (how many seats of the business run the brief — by default a director reads the brief against the org chart and decides, answering "one seat" when one is enough; `--single` skips that call, `--team` asks for a chain of 3 to 6), `--zip` / `--pdf` (bundle deliverables), `--runtime=claude-code|codex|antigravity-cli|gemini-cli|kimi-cli|grok-cli|pi`, `--max-budget=<usd>`, `--timeout=<min>`, `--mode=agentic|cards` (routing mode), `--execution-mode=standard|gauntlet|auto` (default `standard`), `--gauntlet-intensity=light|balanced|exhaustive` (a Business target needs `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST=<slug>`), `--run-id=<runId>` (adopt a Run already prepared in the project's kernel, the way Glance does).
 
 ## See it happen
 
@@ -67,7 +67,7 @@ Useful flags on `run` / `auto`: `--single` / `--team` (how many seats of the bus
 
 | Command | What it does |
 |---|---|
-| `nrv init <dir>` | Create a new Nirvana project. `--copy` (portable delivery), `--scope=project` (isolated). |
+| `nrv init <dir>` | Create a new Nirvana project: `.nirvana/project.yaml`, a `.env` with the library scope, and the contract in `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`. `--orchestrators=always` (the default when run by an agent or a script) makes Nirvana the orchestrator of every concrete deliverable; `--orchestrators=on-demand` writes a short note and Nirvana acts only when asked by name. `--copy` (portable delivery), `--scope=project\|merge`. |
 | `nrv resume <project>` | Resume an incomplete project from its audit log. |
 | `nrv export <project> [--format=zip\|tgz]` | Bundle a project's outputs to share. |
 | `nrv clean <project> [--hard]` | Remove a project scaffold (trash by default). |
@@ -78,9 +78,9 @@ A project is where a run's audit, briefs and deliverables live, for every runtim
 
 | Command | What it does |
 |---|---|
-| `nrv install <source> [--dry-run\|--force\|--scope=project]` | Install a business / squad / mind-clone / pack from a dir, tarball, http or git URL (auto-detects type). |
+| `nrv install <source> [--dry-run\|--force\|--scope=project]` | Install a business / squad / mind-clone from a dir, tarball, http or git URL (auto-detects type). A paid pack installs with its own `setup.sh` / `setup.ps1`. |
 | `nrv installed [--all] [--kind=...]` | List active installations. |
-| `nrv uninstall <name>` | Remove an installed asset. |
+| `nrv uninstall <name>` / `--engine` / `--hooks` | Remove an installed asset; the engine (keeps `~/squads`, `~/businesses`, licenses and logs); or only the audit hooks. |
 | `nrv pack create <dir>` / `inspect` / `publish` | Bundle and share assets (`.tgz` + sha256). |
 | `nrv index` | Re-index squads + businesses after manual edits. |
 | `nrv activate <slug>\|--all [--dry-run] [--confirm-heavy] [--only-declared] [--json] [--fix-with-agent[=<runtime>]]` | Install what a squad's `dependencies.yaml` declares. Node and Python packages go into the squad's own environment, `~/.nirvana/envs/<slug>/` (sub-apps under `subapps/<dir>/`, Python in `.venv`), with versions as declared. The squad folder only gets a best-effort `node_modules` link to the environment (never over a real folder, excluded through `.git/info/exclude`, not `.gitignore`); workers resolve packages through `NODE_PATH`, a Node ESM hook and an `npx` shim on `PATH`. Installs only when the declared specs changed, so an active squad costs milliseconds. A dispatch prepares the same environment on demand, so activation is optional for packages. `--all` walks the library one squad at a time. After a failure the output depends on who runs it: an agent session (detected by the same session markers routing uses) or a script gets a block between `=== nrv activate: issues for the agent ===` and its end marker, one entry per issue with the squad, the dependency, the useful error lines, the fix command, the `nrv activate <slug>` re-check and whether the fix needs the user's permission; `--json` prints the same data on stdout. Neither prompts, and the exit code is non-zero when something failed. A person at a terminal (stdin and stdout on a TTY, no agent marker) gets a summary and the offer to let an installed runtime fix the failures headless, scoped to them, after which those squads are checked again. `--fix-with-agent[=<runtime>]` runs that fix without asking, in any context (no value: the session's runtime, else the first installed). |
@@ -98,8 +98,9 @@ A project is where a run's audit, briefs and deliverables live, for every runtim
 | `nrv migrate <slug\|path> --rollback <ts>` | Undo a conversion from its backup, while the squad has not changed since. |
 | `nrv baseline [--days=N] [--save]` | Snapshot system KPIs from the audit log. |
 | `nrv improver run [--days=N]` | Meta-Nirvana: mine the audit log and propose improvements. |
-| `nrv update [--check\|--force]` | Self-update: pull + re-run installer + re-index. Before installation, backs up the deployed skills under `~/.nirvana/skills-backup-<stamp>/`. On Windows, directory links are preserved as junctions; linked dependency stores are not copied into the backup. |
-| `nrv update <pack> [--keep-clones\|--keep-squads\|--keep-businesses] [--check]` | Update an installed pack. A component you changed since the pack installed it is backed up under `~/.nirvana/backups/packs/<pack>/<stamp>/` before the overlay replaces it; `--keep-<kind>` leaves what is on disk as it is (new components still arrive). |
+| `nrv update [--check]` | Update the engine. A release install moves along its channel and never to an older or equal version: a stable engine to the newest greater stable, a prerelease to the newest greater release, prerelease or stable. `--check` names the release it would install. `NIRVANA_ENGINE_URL` / `NIRVANA_ENGINE_TARBALL` pin the source. A git checkout at `~/nirvana-os` is pulled instead (`--branch=`, `--force`, `--skip-pull`). Before installing, backs up the deployed skills under `~/.nirvana/skills-backup-<stamp>/`; on Windows, directory links are preserved as junctions, and linked dependency stores are not copied into the backup. Afterwards it checks every installed pack that has a license. |
+| `nrv update <pack> [--keep-clones\|--keep-squads\|--keep-businesses] [--check]` | Update an installed pack with its own license (`~/.nirvana-license/packs/<pack>/`, then the single `~/.nirvana-license/PROVENANCE.json`). A component you changed since the pack installed it is backed up under `~/.nirvana/backups/packs/<pack>/<stamp>/` before the overlay replaces it; `--keep-<kind>` leaves what is on disk as it is (new components still arrive). On a license error, download the pack again and run its setup. |
+| `nrv license [status\|check\|install [<path>]\|activate] [--pack <slug>]` | Show a pack's provenance, install a `PROVENANCE.json`, activate a machine. |
 
 > `nrv validate` exits `0` admitted · `1` an error the debt baseline does not cover · `2` only warnings, under `--strict` · `64` usage error or unknown entity. The system doctor moved to `nrv doctor`; `nrv validate` with no arguments still runs it, with a deprecation notice, for one release. Kind aliases: `biz`, `clone`, `mc`. Full contract: [docs/architecture/validate-gate.md](architecture/validate-gate.md).
 >

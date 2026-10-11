@@ -152,10 +152,17 @@ sees the global library, its own `.nirvana/` one, or both.
 
 | Goal | Command |
 |---|---|
-| Update the engine | `nrv update` |
-| Update this skill | `npx skills update` |
+| Update the engine (and the `nirvana` skill it links) | `nrv update`; `nrv update --check` names the release first |
+| Update an installed pack | `nrv update <pack>` |
+| Update this skill when skills.sh installed it | `npx skills update` |
 | Remove the engine, keep the content | `nrv uninstall --engine` |
-| Remove only this skill | `npx skills remove nirvana` |
+| Remove only this skill, when skills.sh installed it | `npx skills remove nirvana` |
+
+An engine update never installs an older or equal release: a stable engine
+moves to the newest greater stable, a beta to the newest greater release, beta
+or stable. When `nrv update <pack>` fails with a license error, tell the user to
+download the pack again from squads.sh and run its setup (`bash setup.sh`, or
+`powershell -ExecutionPolicy Bypass -File setup.ps1` on Windows).
 
 This skill is thin by design: discovery goes to `nrv`, production goes to
 `harness`, and the library lives on disk. It produces no artifacts itself.
