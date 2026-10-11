@@ -1,5 +1,5 @@
 
-<!-- nirvana-os:on-demand-contract:v1 -->
+<!-- nirvana-os:on-demand-contract:v2 -->
 ## Nirvana-OS — available on demand
 
 Nirvana-OS is installed in this environment, in **on-demand mode**: it is NOT

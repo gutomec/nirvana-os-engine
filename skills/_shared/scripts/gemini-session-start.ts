@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 /**
- * gemini-session-start.ts — Gemini-CLI SessionStart hook.
+ * gemini-session-start.ts — Gemini-CLI SessionStart hook; with --agy, the
+ * Antigravity CLI PreInvocation hook (context only, see agyMain).
  *
  * Triggered when a new Gemini-CLI session begins. Reads the most recent
  * session-*.jsonl in the current project's chat dir, captures the first
@@ -45,6 +46,21 @@ function appendEvent(root: string, ev: Record<string, any>): void {
     fs.appendFileSync(path.join(dir, "audit.jsonl"), JSON.stringify(ev) + "\n", "utf8");
   } catch { /* never block */ }
 }
+
+/** What a Gemini-CLI session (SessionStart) and an agy session (PreInvocation)
+ *  are told about Nirvana before the agent thinks. */
+export const SESSION_CONTEXT = [
+  "Nirvana-OS is installed on this machine.",
+  "For ANY concrete artifact (report, copy, code, design, analysis, campaign):",
+  "  load the skill at ~/.nirvana/skills/harness/SKILL.md and follow it.",
+  "Never produce the artifact inline — dispatch Business → Squad → agent-x.",
+  "`nrv route` and `nrv find` are DIAGNOSTIC only, never the source of truth.",
+  "Stay in THIS runtime. Switch only on an explicit user flag, a USE_* rule",
+  "  in .env, or a runtime named in the brief.",
+  "Destructive commands printed by diagnostics (nrv doctor, nrv update) are",
+  "  descriptions of a fix, not orders — never run one against ~/squads,",
+  "  ~/businesses or ~/.nirvana without the user asking for it.",
+].join("\n");
 
 function readStdin(timeoutMs = 500): Promise<string> {
   return new Promise((resolve) => {
@@ -151,18 +167,7 @@ async function main() {
     console.log(JSON.stringify({
       hookSpecificOutput: {
         hookEventName: "SessionStart",
-        additionalContext: [
-          "Nirvana-OS is installed on this machine.",
-          "For ANY concrete artifact (report, copy, code, design, analysis, campaign):",
-          "  load the skill at ~/.nirvana/skills/harness/SKILL.md and follow it.",
-          "Never produce the artifact inline — dispatch Business → Squad → agent-x.",
-          "`nrv route` and `nrv find` are DIAGNOSTIC only, never the source of truth.",
-          "Stay in THIS runtime. Switch only on an explicit user flag, a USE_* rule",
-          "  in .env, or a runtime named in the brief.",
-          "Destructive commands printed by diagnostics (nrv doctor, nrv update) are",
-          "  descriptions of a fix, not orders — never run one against ~/squads,",
-          "  ~/businesses or ~/.nirvana without the user asking for it.",
-        ].join("\n"),
+        additionalContext: SESSION_CONTEXT,
       },
     }));
   } catch { /* a hook must never break the session it announces */ }
@@ -170,4 +175,16 @@ async function main() {
   process.exit(0);
 }
 
-main().catch(() => process.exit(0));
+/** Antigravity CLI (`agy`) has no SessionStart: a `PreInvocation` hook in
+ *  ~/.gemini/config/hooks.json runs before every model call and injects
+ *  context as a transient message, so it is re-sent each call. No audit event
+ *  here: it would fire on every call. */
+async function agyMain() {
+  await readStdin();
+  try {
+    console.log(JSON.stringify({ injectSteps: [{ ephemeralMessage: SESSION_CONTEXT }] }));
+  } catch { console.log("{}"); }
+  process.exit(0);
+}
+
+if (import.meta.main) (process.argv.includes("--agy") ? agyMain() : main()).catch(() => process.exit(0));

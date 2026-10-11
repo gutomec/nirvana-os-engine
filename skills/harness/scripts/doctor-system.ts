@@ -238,6 +238,36 @@ if (which("codex")) {
   else add("codex: audit hooks", "PASS", `${entries.length} hook(s) wired and trusted (PreToolUse/PostToolUse: Bash|apply_patch)`);
 }
 
+// SECTION 1a-quinquies: ANTIGRAVITY CONTEXT HOOK — agy reads named hooks from
+// ~/.gemini/config/hooks.json, and `nrv setup` puts Nirvana's PreInvocation
+// there as `nirvana-os`. ~/.antigravity/settings.json, where the hooks used to
+// be written, is not read by agy: entries of ours left there are named so
+// `nrv setup` can take them out.
+{
+  const agyHome = path.join(HOME, ".gemini", "config");
+  const hooksFile = path.join(agyHome, "hooks.json");
+  const oldFile = path.join(HOME, ".antigravity", "settings.json");
+  if (which("agy") || fs.existsSync(agyHome)) {
+    let ours: any = null;
+    let error = "";
+    try { if (fs.existsSync(hooksFile)) ours = JSON.parse(fs.readFileSync(hooksFile, "utf8"))?.["nirvana-os"] ?? null; }
+    catch (e: any) { error = e.message; }
+    const wired = Array.isArray(ours?.PreInvocation)
+      && ours.PreInvocation.some((h: any) => typeof h?.command === "string" && h.command.includes("gemini-session-start.ts") && h.command.includes("--agy"));
+    if (error) add("antigravity: context hook", "WARN", `${hooksFile.replace(HOME, "~")} is not valid JSON (${error}); nrv setup leaves it alone`);
+    else if (wired) add("antigravity: context hook", "PASS", `named hook nirvana-os (PreInvocation) in ${hooksFile.replace(HOME, "~")}`);
+    else add("antigravity: context hook", "WARN", `not wired in ${hooksFile.replace(HOME, "~")}, so an agy session is not told Nirvana is here — run: nrv setup`);
+  }
+  try {
+    if (fs.existsSync(oldFile)) {
+      const hooks = JSON.stringify(JSON.parse(fs.readFileSync(oldFile, "utf8"))?.hooks ?? {});
+      if (hooks.includes("audit-emit-from-hook.ts") || hooks.includes("gemini-session-start.ts")) {
+        add("antigravity: old hook location", "WARN", `Nirvana hooks left in ${oldFile.replace(HOME, "~")}, which agy does not read — run: nrv setup (it removes them)`);
+      }
+    }
+  } catch { /* the user's file; not ours to judge */ }
+}
+
 // SECTION 1a-bis-judge: GAUNTLET EVALUATOR — which evaluator a Gauntlet started
 // today would get, by the same selection the three canaries use
 // (lib/gauntlet/evaluator-selection.ts), without running anything. The

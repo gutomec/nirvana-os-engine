@@ -44,6 +44,14 @@ Workers do Claude Code recebiam regras de negação de Read e Edit para cada pas
 
 Os READMEs nos seis idiomas, o `INSTALL.md`, o `AGENT-QUICKSTART.md`, o `docs/` (incluindo o site do Pages), os contratos de projeto, os arquivos de skill, o template de dependências e as mensagens factuais do instalador foram reescritos para bater com o código desta linha: instalação pelo `install.sh` / `install.ps1` de uma linha, conversa com o agente primeiro, ambientes por squad, canal de release, betas e o fluxo dos packs.
 
+### Projetos recebem o contrato reescrito na próxima vez que `nrv init` roda neles
+
+O contrato de projeto e a nota on-demand foram reescritos nesta versão (ambientes por squad em `~/.nirvana/envs` no lugar do store compartilhado; a nota cita a skill `nirvana`), e os marcadores mudam: `invocation-contract:v2` vira `v3`, `on-demand-contract:v1` vira `v2`. O `nrv init` reescreve um bloco gerenciado só quando o marcador é mais antigo, e a nota on-demand nem tinha atualização, então um projeto iniciado antes ficava com o texto antigo. Rodar `nrv init .` de novo troca o bloco antigo em `AGENTS.md`, `CLAUDE.md` e `GEMINI.md`, e as linhas do usuário acima e abaixo dele ficam. Um projeto on-demand precisa de `--orchestrators=on-demand` (ou da resposta à pergunta interativa), porque uma execução sem flag e sem terminal aplica o contrato completo. Instalação e atualização nunca mexem em projeto.
+
+### Os hooks do Antigravity vão para onde o `agy` os lê
+
+Trazido da 0.15. O instalador gravava os hooks do Antigravity em `~/.antigravity/settings.json`, que o `agy` não lê, então uma sessão do `agy` nunca recebia o contexto do Nirvana. O `nrv setup` agora grava um hook nomeado `nirvana-os` em `~/.gemini/config/hooks.json`: um `PreInvocation` que roda `gemini-session-start.ts --agy` e, antes de cada chamada ao modelo, injeta como mensagem transitória o mesmo contexto que o Gemini CLI recebe no SessionStart. Os outros hooks nomeados do arquivo ficam. Instalar e desinstalar tiram as nossas entradas de `~/.antigravity/settings.json` e deixam as do usuário. O `agy` não recebe hooks de auditoria: o PostToolUse dele não traz o nome da ferramenta e o PreToolUse precisa responder com uma decisão de permissão. O `nrv install --check` mostra o caminho do arquivo novo e falha enquanto houver entradas nossas no antigo, e o `nrv doctor` informa o hook em `hooks.json` e qualquer entrada que tenha ficado no arquivo antigo. Sem `~/.gemini/config`, nada é criado.
+
 ## 0.14.10 — 2026-10-08
 
 ### Um --outputs-root relativo aponta a mesma pasta para todos

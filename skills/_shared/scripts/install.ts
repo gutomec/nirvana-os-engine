@@ -9,7 +9,7 @@
  * Currently configures:
  *   - Claude Code   → ~/.claude/settings.json      (PreToolUse + PostToolUse)
  *   - Gemini-CLI    → ~/.gemini/settings.json       (BeforeTool + AfterTool + SessionStart)
- *   - Antigravity   → ~/.antigravity/settings.json  (BeforeTool + AfterTool + SessionStart)
+ *   - Antigravity   → ~/.gemini/config/hooks.json   (named hook "nirvana-os": PreInvocation context)
  *
  *   - Codex         → ~/.codex/hooks.json           (PreToolUse + PostToolUse, matcher Bash|apply_patch)
  *                     plus the trust record in ~/.codex/config.toml that lets a
@@ -53,6 +53,12 @@ const SKILLS_DIR = process.env.NIRVANA_SKILLS_DIR
 const HOOK_SCRIPT = path.join(SKILLS_DIR, "_shared", "scripts", "audit-emit-from-hook.ts");
 const SESSION_START_SCRIPT = path.join(SKILLS_DIR, "_shared", "scripts", "gemini-session-start.ts");
 
+// Where Antigravity's `agy` reads hooks, and the name ours goes under. The old
+// location is only cleaned: our entries are taken out of it on install.
+const ANTIGRAVITY_HOOKS_PATH = path.join(os.homedir(), ".gemini", "config", "hooks.json");
+const ANTIGRAVITY_HOOK_NAME = "nirvana-os";
+const ANTIGRAVITY_OLD_SETTINGS_PATH = path.join(os.homedir(), ".antigravity", "settings.json");
+
 interface HookSpec {
   matcher?: string;
   hooks: Array<{ name?: string; type: "command"; command: string; timeout?: number; async?: boolean }>;
@@ -62,6 +68,10 @@ interface AgentInstallSpec {
   name: string;                   // human label
   settingsPath: string;           // absolute path
   groups: Record<string, HookSpec[]>;  // hooks block keyed by event name
+  /** "named-hooks": the file's root maps a hook name to its events (agy's
+   *  hooks.json), and ours is the one entry under `hookName`. */
+  format?: "settings" | "named-hooks";
+  hookName?: string;
 }
 
 const AGENTS_TO_INSTALL: AgentInstallSpec[] = [
@@ -144,38 +154,20 @@ const AGENTS_TO_INSTALL: AgentInstallSpec[] = [
     },
   },
   {
-    // Antigravity 2.0 — the gemini-cli successor (same Google backend), so it
-    // carries the same settings.json hook schema. If a future version diverges,
-    // these extra keys are simply ignored — they never break the config.
+    // Antigravity's `agy` CLI reads named hooks from ~/.gemini/config/hooks.json
+    // (its own docs: builtin/skills/agy-customizations/docs/hooks.md).
+    // ~/.antigravity/settings.json, where these hooks used to be written, is
+    // not read by it, so a session there never got Nirvana's context. It has no
+    // SessionStart: the context goes in through PreInvocation as a transient
+    // message, re-sent before each model call. Its PostToolUse carries no tool
+    // name and its PreToolUse must answer with a permission decision, so the
+    // audit hooks are not wired here.
     name: "Antigravity",
-    settingsPath: path.join(os.homedir(), ".antigravity", "settings.json"),
+    settingsPath: ANTIGRAVITY_HOOKS_PATH,
+    format: "named-hooks",
+    hookName: ANTIGRAVITY_HOOK_NAME,
     groups: {
-      BeforeTool: [{
-        matcher: "write_file|replace|run_shell_command",
-        hooks: [{
-          name: "nirvana-audit-pre",
-          type: "command",
-          command: `bun "${HOOK_SCRIPT}" pre antigravity-cli`,
-          timeout: 5000,
-        }],
-      }],
-      AfterTool: [{
-        matcher: "write_file|replace|run_shell_command",
-        hooks: [{
-          name: "nirvana-audit-post",
-          type: "command",
-          command: `bun "${HOOK_SCRIPT}" post antigravity-cli`,
-          timeout: 5000,
-        }],
-      }],
-      SessionStart: [{
-        hooks: [{
-          name: "nirvana-session-start",
-          type: "command",
-          command: `bun "${SESSION_START_SCRIPT}"`,
-          timeout: 5000,
-        }],
-      }],
+      PreInvocation: [{ type: "command", command: `bun "${SESSION_START_SCRIPT}" --agy`, timeout: 10 } as any],
     },
   },
 ];
@@ -196,6 +188,11 @@ function patchSettings(spec: AgentInstallSpec, mode: "install" | "uninstall"): {
   }
   if (!current || typeof current !== "object" || Array.isArray(current)) return { changed: false, before: current, after: current, raw, existed, error: "settings root must be a JSON object" };
   const before = JSON.parse(JSON.stringify(current || {}));
+  if (spec.format === "named-hooks") {
+    if (mode === "install") current[spec.hookName!] = spec.groups;
+    else delete current[spec.hookName!];
+    return { changed: JSON.stringify(before) !== JSON.stringify(current), before, after: current, raw, existed };
+  }
   if (current.hooks === undefined) current.hooks = {};
   if (!current.hooks || typeof current.hooks !== "object" || Array.isArray(current.hooks)) return { changed: false, before, after: before, raw, existed, error: "hooks must be a JSON object when present" };
 
@@ -733,6 +730,25 @@ inline, with no dispatch, no quality gate and no audit trail.
 
   // Per-agent
   console.log("\nAgents");
+  // Antigravity's hooks used to go to ~/.antigravity/settings.json, which the
+  // agy CLI does not read: take ours out of it. --check names what is left.
+  const oldAntigravity: AgentInstallSpec = {
+    name: "Antigravity (old location)", settingsPath: ANTIGRAVITY_OLD_SETTINGS_PATH,
+    groups: { BeforeTool: [], AfterTool: [], SessionStart: [] },
+  };
+  let staleAntigravity = false;
+  if (fs.existsSync(oldAntigravity.settingsPath)) {
+    const old = patchSettings(oldAntigravity, "uninstall");
+    if (!old.error && old.changed) {
+      if (check || dryRun) {
+        console.log(`  ⚠ Antigravity — Nirvana hooks left in ${oldAntigravity.settingsPath}, which agy does not read; ${check ? "nrv setup removes them" : "would remove them"}`);
+        staleAntigravity = true;
+      } else {
+        publishSettings(oldAntigravity.settingsPath, old.existed, old.raw, old.after);
+        console.log(`  ✓ removed Nirvana hooks from ${oldAntigravity.settingsPath} (Antigravity does not read it)`);
+      }
+    }
+  }
   let anyChange = false;
   let failures = false;
   let installedCount = 0;
@@ -762,6 +778,8 @@ inline, with no dispatch, no quality gate and no audit trail.
       }
       continue;
     }
+    // agy's hooks file is shared with other tools' named hooks: say which file.
+    const where = spec.format === "named-hooks" ? ` (${spec.settingsPath})` : "";
     const result = patchSettings(spec, mode);
     if (result.error) {
       console.log(`  ⚠ ${spec.name} — ${result.error}; left untouched`);
@@ -770,7 +788,7 @@ inline, with no dispatch, no quality gate and no audit trail.
       continue;
     }
     if (!result.changed) {
-      console.log(`  ✓ ${spec.name} — already ${mode === "install" ? "installed" : "uninstalled"}`);
+      console.log(`  ✓ ${spec.name} — already ${mode === "install" ? "installed" : "uninstalled"}${where}`);
       // The hooks were there; the trust record may not be (an install older
       // than this step, or a config.toml the user rewrote). Same idempotence:
       // record what is missing, say nothing when nothing is.
@@ -784,17 +802,17 @@ inline, with no dispatch, no quality gate and no audit trail.
       continue;
     }
     if (check) {
-      console.log(`  ⚠ ${spec.name} — needs ${mode}`);
+      console.log(`  ⚠ ${spec.name} — needs ${mode}${where}`);
       anyChange = true;
       continue;
     }
     if (dryRun) {
-      console.log(`  ⚠ ${spec.name} — would ${mode}`);
+      console.log(`  ⚠ ${spec.name} — would ${mode}${where}`);
       anyChange = true;
       continue;
     }
     const bak = publishSettings(spec.settingsPath, result.existed, result.raw, result.after);
-    console.log(`  ✓ ${spec.name} — ${mode}ed${bak ? ` (backup: ${path.basename(bak)})` : ""}`);
+    console.log(`  ✓ ${spec.name} — ${mode}ed${where}${bak ? ` (backup: ${path.basename(bak)})` : ""}`);
     if (spec.name === "Codex") {
       const notes = codexTrust(mode);
       for (const n of notes) console.log(`     ${n}`);
@@ -824,7 +842,7 @@ inline, with no dispatch, no quality gate and no audit trail.
   // Summary
   console.log("");
   if (check) {
-    process.exit(anyChange || failures ? EXIT.FAILURES : EXIT.OK);
+    process.exit(anyChange || failures || staleAntigravity ? EXIT.FAILURES : EXIT.OK);
   }
   if (dryRun) {
     console.log("(dry run — no files modified)");

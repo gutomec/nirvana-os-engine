@@ -44,6 +44,14 @@ Claude Code workers got Read and Edit deny rules for every sibling run folder. A
 
 The READMEs in six languages, `INSTALL.md`, `AGENT-QUICKSTART.md`, `docs/` (the Pages site included), the project contracts, the skill files, the dependency template and the installer's factual strings were rewritten to match this line's code: install with the one-line `install.sh` / `install.ps1`, talk to the agent first, per-squad environments, the release channel, betas, and the pack flow.
 
+### Projects get the rewritten contract the next time `nrv init` runs there
+
+The project contract and the on-demand note were rewritten for this release (per-squad environments under `~/.nirvana/envs` instead of the shared store; the note names the `nirvana` skill), and their markers move: `invocation-contract:v2` to `v3`, `on-demand-contract:v1` to `v2`. `nrv init` rewrites a managed block only when its marker is older, and the on-demand note had no refresh at all, so a project initialised earlier kept the old text. Running `nrv init .` again replaces the old block in `AGENTS.md`, `CLAUDE.md` and `GEMINI.md`, and the user's lines above and below it stay. An on-demand project needs `--orchestrators=on-demand` (or the answer to the interactive question), since a run with no flag and no terminal applies the full contract. Install and update never touch a project.
+
+### Antigravity's hooks go where `agy` reads them
+
+Backported from 0.15. The installer wrote Antigravity's hooks to `~/.antigravity/settings.json`, which `agy` does not read, so an `agy` session never received Nirvana's context. `nrv setup` now writes a named `nirvana-os` hook to `~/.gemini/config/hooks.json`: a `PreInvocation` that runs `gemini-session-start.ts --agy` and, before each model call, injects as a transient message the same context Gemini CLI gets at SessionStart. Other named hooks in that file are kept. Install and uninstall take our entries out of `~/.antigravity/settings.json` and leave the user's own. `agy` gets no audit hooks: its PostToolUse carries no tool name and its PreToolUse must answer with a permission decision. `nrv install --check` prints the new file's path and fails while entries of ours remain in the old one, and `nrv doctor` reports the hook in `hooks.json` and any entry left in the old file. Without `~/.gemini/config`, nothing is created.
+
 ## 0.14.10 — 2026-10-08
 
 ### A relative --outputs-root names one folder for everyone

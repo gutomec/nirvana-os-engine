@@ -38,7 +38,7 @@ Node is not needed.
 3. Wires audit hooks into the runtimes it finds:
    - Claude Code: `~/.claude/settings.json` (PreToolUse, PostToolUse);
    - Gemini CLI: `~/.gemini/settings.json` (BeforeTool, AfterTool, SessionStart);
-   - Antigravity: `~/.antigravity/settings.json` (BeforeTool, AfterTool, SessionStart);
+   - Antigravity: `~/.gemini/config/hooks.json` (a named `nirvana-os` PreInvocation hook that gives each session Nirvana's context; entries an earlier install left in `~/.antigravity/settings.json` are removed);
    - Codex: `~/.codex/hooks.json`, plus a trust record in `~/.codex/config.toml`.
 4. Links the `nirvana` skill into every runtime whose folder or binary it finds: `~/.claude/skills`, `~/.codex/skills` (always a copy), `~/.gemini/skills`, `~/.gemini/config/skills` (Antigravity), `~/.pi/agent/skills` and `~/.agents/skills` (OpenClaw). On Windows, or with `--copy-skills`, the entries are copies. A folder of yours with the same name is moved to `~/.nirvana/backups/runtime-skills/`, never deleted.
 5. Creates the empty content folders `~/squads`, `~/businesses` and `~/businesses/_library/dna`. It never deletes content.
