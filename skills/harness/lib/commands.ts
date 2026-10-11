@@ -107,7 +107,7 @@ export const COMMANDS: Command[] = [
   { name: "find-clone", aliases: ["clone-find", "find-mind-clone"], target: "_shared/scripts/find-clone.ts", category: "libraries", args: '"<query>"', summary: "Find a mind-clone by query", visibility: "user" },
 
   // license
-  { name: "license", aliases: ["verify-license", "whoami"], target: "_shared/scripts/license.ts", category: "license", args: "[status|check|install [<path>]|activate]", summary: "Show your copy's provenance, install a PROVENANCE.json, activate (offline-safe)", visibility: "user" },
+  { name: "license", aliases: ["verify-license", "whoami"], target: "_shared/scripts/license.ts", category: "license", args: "[status|check|install [<path>]|activate] [--pack <slug>]", summary: "Show your copy's provenance, install a PROVENANCE.json, activate (offline-safe)", visibility: "user" },
 
   // advanced / dev
   { name: "install-content", target: "_shared/scripts/install-content.ts", category: "dev", args: "<dir> --slug <slug>", summary: "Overlay a content pack onto the engine (used by a pack's setup.ts)", visibility: "dev" },

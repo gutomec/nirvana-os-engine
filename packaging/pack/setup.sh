@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # setup.sh — one-command bootstrap, no prerequisite beyond bash + curl.
 #
-#   bash setup.sh
+#   bash setup.sh [args passed on to setup.ts, e.g. --profile=economy]
 #
 # Installs Bun (user space, in ~/.bun, WITHOUT sudo) if missing, puts the binary on
 # THIS session's PATH (avoids the "open a new terminal" gotcha) and runs the pack's
@@ -32,4 +32,4 @@ if [ -z "${BUN:-}" ]; then
 fi
 
 export PATH="$(dirname "$BUN"):$PATH"
-exec "$BUN" "$HERE/setup.ts"
+exec "$BUN" "$HERE/setup.ts" "$@"

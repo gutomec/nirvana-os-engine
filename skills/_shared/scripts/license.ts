@@ -13,11 +13,15 @@
  *   nrv license verify     → same (exit 3 only if the signature is tampered)
  *   nrv license check      → status + online heartbeat (warning-only, never blocks)
  *   nrv license activate [--label "<name>"]  → binds this machine (online)
+ *
+ * `--pack <slug>` reads that pack's own license (~/.nirvana-license/packs/<slug>/)
+ * before the single legacy file (license-store.ts).
  */
 import { createPublicKey, createHash, verify as edVerify } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, readdirSync, statSync, realpathSync } from "node:fs";
 import { homedir, hostname, platform, arch } from "node:os";
 import { join, dirname, resolve } from "node:path";
+import { findProvenance as findStoredProvenance, isPackSlug, packLicenseDir } from "../lib/license-store.ts";
 
 // Nirvana's PUBLIC key (Ed25519 pair; the PRIVATE one lives only on the production VPS).
 // Safe to embed: it only serves to VERIFY signatures, never to sign.
@@ -45,14 +49,15 @@ const PROV_FIELDS = [
   "watermark_id", "buyer_email", "buyer_name", "issued_at",
 ];
 
+// `--pack <slug>`: that pack's own license comes before the legacy file.
+const PACK = (() => {
+  const i = process.argv.indexOf("--pack");
+  const v = i >= 0 ? process.argv[i + 1] : undefined;
+  return isPackSlug(v) ? v : null;
+})();
+
 function findProvenance(): string | null {
-  const candidates = [
-    process.env.NIRVANA_PROVENANCE,
-    STORE_PROV,
-    join(process.cwd(), "PROVENANCE.json"),
-  ].filter(Boolean) as string[];
-  for (const p of candidates) if (existsSync(p)) return p;
-  return null;
+  return findStoredProvenance(PACK);
 }
 
 type VStatus = "valid" | "invalid" | "unsigned" | "absent";
@@ -264,22 +269,38 @@ async function install(explicit?: string): Promise<number> {
   //    so a second run finds the original again. Re-copying it is harmless, but
   //    reporting "installed" for a no-op tells the buyer something happened
   //    when nothing did.
-  const same = (() => {
-    try {
-      if (realpathSync(src) === realpathSync(STORE_PROV)) return true;
-      return existsSync(STORE_PROV) && readFileSync(src, "utf8") === readFileSync(STORE_PROV, "utf8");
-    } catch { return false; }
+  //
+  // The same file is also kept as the pack's own license, under the edition it
+  // names (license-store.ts), so a second pack's install does not take it away.
+  const packDir = (() => {
+    try { return packLicenseDir(String(JSON.parse(readFileSync(src, "utf8")).edition ?? ""), homedir()); }
+    catch { return null; }
   })();
+  const samePath = (a: string, b: string) => {
+    try { return realpathSync(a) === realpathSync(b); } catch { return resolve(a) === resolve(b); }
+  };
+  const sameAs = (store: string) => {
+    try {
+      if (realpathSync(src) === realpathSync(store)) return true;
+      return existsSync(store) && readFileSync(src, "utf8") === readFileSync(store, "utf8");
+    } catch { return false; }
+  };
+  const ownStore = packDir ? join(packDir, "PROVENANCE.json") : null;
+  const same = sameAs(STORE_PROV) && (!ownStore || sameAs(ownStore));
   if (same) {
     console.log(`${DIM}Already installed at ${STORE_PROV}.${RST}`);
     return 0;
   }
 
   try {
-    mkdirSync(LICENSE_DIR, { recursive: true });
-    copyFileSync(src, STORE_PROV);
     const notice = join(dirname(src), "LICENSE.txt");
-    if (existsSync(notice)) copyFileSync(notice, join(LICENSE_DIR, "LICENSE.txt"));
+    for (const dir of [packDir, LICENSE_DIR]) {
+      if (!dir) continue;
+      const dest = join(dir, "PROVENANCE.json");
+      mkdirSync(dir, { recursive: true });
+      if (!sameAs(dest)) copyFileSync(src, dest);
+      if (existsSync(notice) && !samePath(notice, join(dir, "LICENSE.txt"))) copyFileSync(notice, join(dir, "LICENSE.txt"));
+    }
   } catch (e: any) {
     console.error(`\n${RED}Could not write to ${STORE_PROV}: ${e?.message ?? e}${RST}`);
     console.error(`${DIM}Run as the same user who will use the system (an elevated terminal has a different profile).${RST}\n`);
@@ -293,7 +314,7 @@ async function install(explicit?: string): Promise<number> {
   return 0;
 }
 
-const sub = process.argv[2] || "status";
+const sub = process.argv[2] && process.argv[2] !== "--pack" ? process.argv[2] : "status";
 if (sub === "install") {
   const arg = process.argv[3];
   process.exit(await install(arg && !arg.startsWith("-") ? arg : undefined));
@@ -308,6 +329,6 @@ if (sub === "install") {
   printStatus(v);
   process.exit(v.status === "invalid" ? 3 : 0);
 } else {
-  console.log('usage: nrv license [status|verify|check|install [<path>]|activate [--label "<name>"]]');
+  console.log('usage: nrv license [status|verify|check|install [<path>]|activate [--label "<name>"]] [--pack <slug>]');
   process.exit(2);
 }

@@ -38,6 +38,7 @@ import { detectOrca, orcaHooksStatus, orcaHostActive, orcaStatus, resolveOrcaExe
 import { codexConfigPath, codexHookTrustEntries, codexHooksPath } from "../../_shared/lib/codex-hooks.ts";
 import { expandEnv, findTempNrvEntries, readUserPath, tempRoots } from "../../_shared/lib/windows-user-path.ts";
 import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
+import { legacyProvenancePath, packProvenancePath } from "../../_shared/lib/license-store.ts";
 import { resolveProjectRoot, undeclaredProjectState } from "../../_shared/lib/project-root.js";
 import {
   describeSettingSource, discoverProjectRoot, engineConfigPath, globalConfigPath, projectConfigPath, resolveAllSettings, resolveSetting,
@@ -1008,7 +1009,7 @@ if (fs.existsSync(dnaLib)) {
 // last line read "All systems nominal" — while `nrv update <slug>` was already
 // broken and would stay broken until the buyer wrote to support days later.
 // These are the things a buyer would notice were missing, if anything told them.
-const licStore = path.join(HOME, ".nirvana-license", "PROVENANCE.json");
+const licStore = legacyProvenancePath(HOME);
 const packsDir = path.join(HOME, ".nirvana", "packs");
 const installedPacks = fs.existsSync(packsDir)
   ? fs.readdirSync(packsDir).filter((f) => f.endsWith(".json"))
@@ -1020,22 +1021,32 @@ if (installedPacks.length === 0) {
   const names = installedPacks.map((f) => f.replace(/\.json$/, ""));
   add("paid: pack", "PASS", `${names.join(", ")}`);
 
-  if (!fs.existsSync(licStore)) {
-    add("paid: license", "FAIL",
-      `pack installed but no license at ${licStore.replace(HOME, "~")} — ` +
-      `"nrv update ${names[0]}" cannot work. Fix: nrv license install`);
-  } else {
+  // Each pack is updated with its own license (~/.nirvana-license/packs/<slug>/),
+  // or the single legacy file when it has none (an install from before the
+  // per-pack copies, or a Genesis Circle key that unlocks every pack).
+  for (const slug of names) {
+    const own = packProvenancePath(slug, HOME);
+    const file = own && fs.existsSync(own) ? own : licStore;
+    const label = names.length > 1 ? `paid: license ${slug}` : "paid: license";
+    if (!fs.existsSync(file)) {
+      add(label, "FAIL",
+        `pack installed but no license at ${licStore.replace(HOME, "~")} — ` +
+        `"nrv update ${slug}" cannot work. Fix: nrv license install`);
+      continue;
+    }
     try {
-      const prov = JSON.parse(fs.readFileSync(licStore, "utf8"));
+      const prov = JSON.parse(fs.readFileSync(file, "utf8"));
       if (!prov.license_key) {
-        add("paid: license", "FAIL", "PROVENANCE.json has no license_key — that copy has no provenance");
+        add(label, "FAIL", "PROVENANCE.json has no license_key — that copy has no provenance");
+      } else if (file === licStore && prov.edition && prov.edition !== slug && prov.edition !== "genesis-circle") {
+        add(label, "WARN", `the only license here is for '${prov.edition}', so "nrv update ${slug}" will be refused. Fix: nrv license install <the ${slug} pack folder>`);
       } else if (!prov.signature) {
-        add("paid: license", "WARN", `${prov.license_key} — unsigned (offline use is fine; support cannot verify it)`);
+        add(label, "WARN", `${prov.license_key} — unsigned (offline use is fine; support cannot verify it)`);
       } else {
-        add("paid: license", "PASS", `${prov.license_key}${prov.edition ? ` (${prov.edition})` : ""}`);
+        add(label, "PASS", `${prov.license_key}${prov.edition ? ` (${prov.edition})` : ""}`);
       }
     } catch (e) {
-      add("paid: license", "FAIL", `cannot read ${licStore.replace(HOME, "~")}: ${(e as Error).message}`);
+      add(label, "FAIL", `cannot read ${file.replace(HOME, "~")}: ${(e as Error).message}`);
     }
   }
 

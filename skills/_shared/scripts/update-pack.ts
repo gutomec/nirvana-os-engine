@@ -22,13 +22,12 @@ import { homedir, hostname, platform, arch, tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { createHash } from "node:crypto";
 import { decideLicenseRefresh } from "../lib/license-refresh.ts";
+import { findProvenance, legacyProvenancePath, packLicenseDir, provenanceCandidates } from "../lib/license-store.ts";
 
 const HOME = homedir();
 const SKILLS = process.env.NIRVANA_SKILLS_DIR
   || (existsSync(join(HOME, ".nirvana", "skills")) ? join(HOME, ".nirvana", "skills") : join(HOME, ".claude", "skills"));
 const PACKS_DIR = join(HOME, ".nirvana", "packs");
-const PROV = process.env.NIRVANA_PROVENANCE
-  || [join(HOME, ".nirvana-license", "PROVENANCE.json"), join(process.cwd(), "PROVENANCE.json")].find((p) => existsSync(p));
 const VALIDATE_URL = process.env.NIRVANA_VALIDATE_URL || "https://squads.sh/api/nirvana/validate";
 const PACK_UPDATE_URL = process.env.NIRVANA_PACK_UPDATE_URL || "https://squads.sh/api/nirvana/pack-update";
 
@@ -37,6 +36,9 @@ const RED = "\x1b[1;38;2;230;57;53m", DIM = "\x1b[2m", GRN = "\x1b[32m", YEL = "
 const args = process.argv.slice(2);
 const checkOnly = args.includes("--check");
 const slugArg = args.find((a) => !a.startsWith("-")) || null;
+// The pack's own license first (~/.nirvana-license/packs/<slug>/), then the
+// single legacy file, then the current folder (license-store.ts).
+const PROV = process.env.NIRVANA_PROVENANCE || findProvenance(slugArg, { home: HOME, env: {} });
 
 function machineId(): string {
   return createHash("sha256").update(`${hostname()}|${platform()}|${arch()}|${HOME}`).digest("hex").slice(0, 32);
@@ -103,8 +105,7 @@ async function main(): Promise<number> {
     const found = PROV && existsSync(PROV);
     console.log(`\n${YEL}No PROVENANCE with a license_key — nothing to update.${RST}`);
     console.log(`${DIM}Searched in:${RST}`);
-    console.log(`${DIM}  ${join(HOME, ".nirvana-license", "PROVENANCE.json")}${RST}`);
-    console.log(`${DIM}  ${join(process.cwd(), "PROVENANCE.json")}${RST}`);
+    for (const p of provenanceCandidates(slugArg, { home: HOME, env: {} })) console.log(`${DIM}  ${p}${RST}`);
     if (found) {
       console.log(`\n${YEL}Found ${PROV}, but with no license_key field.${RST}`);
       console.log(`${DIM}That file came from an unprovenanced copy. Use the zip you received with your purchase.${RST}\n`);
@@ -217,27 +218,39 @@ async function main(): Promise<number> {
   // silence; it is reported, with the command that switches deliberately.
   //
   // Best-effort: the content is already installed and correct by this point.
+  //
+  // The pack's own copy (~/.nirvana-license/packs/<slug>/) follows the same
+  // rule against its own file, so updating one pack never touches another
+  // pack's license; the legacy single file keeps the rule above for the
+  // engines that read only it.
   const freshProv = [join(content, "PROVENANCE.json"), join(dirname(content), "PROVENANCE.json")]
     .find((p) => existsSync(p));
   if (freshProv) {
-    const licDir = join(HOME, ".nirvana-license");
-    const licPath = join(licDir, "PROVENANCE.json");
+    const notice = join(dirname(freshProv), "LICENSE.txt");
+    const targets = [packLicenseDir(slug, HOME), dirname(legacyProvenancePath(HOME))].filter((d): d is string => Boolean(d));
     try {
-      mkdirSync(licDir, { recursive: true });
       const incoming = JSON.parse(readFileSync(freshProv, "utf8")) as Record<string, unknown>;
-      const decision = decideLicenseRefresh(licPath, incoming);
-      if (decision.refresh) {
-        copyFileSync(freshProv, licPath);
-        const notice = join(dirname(freshProv), "LICENSE.txt");
-        if (existsSync(notice)) copyFileSync(notice, join(licDir, "LICENSE.txt"));
-        console.log(`  ${DIM}license refreshed: ${decision.reason}${RST}`);
-      } else {
-        console.log(`  ${DIM}license kept: ${decision.reason}${RST}`);
-        console.log(`  ${DIM}This pack updated fine; the license on this machine was not touched.${RST}`);
+      for (const licDir of targets) {
+        const licPath = join(licDir, "PROVENANCE.json");
+        const own = licDir !== dirname(legacyProvenancePath(HOME));
+        try {
+          mkdirSync(licDir, { recursive: true });
+          const decision = decideLicenseRefresh(licPath, incoming);
+          if (decision.refresh) {
+            copyFileSync(freshProv, licPath);
+            if (existsSync(notice)) copyFileSync(notice, join(licDir, "LICENSE.txt"));
+            console.log(`  ${DIM}license${own ? ` of '${slug}'` : ""} refreshed: ${decision.reason}${RST}`);
+          } else {
+            console.log(`  ${DIM}license${own ? ` of '${slug}'` : ""} kept: ${decision.reason}${RST}`);
+            if (!own) console.log(`  ${DIM}This pack updated fine; the license on this machine was not touched.${RST}`);
+          }
+        } catch (e) {
+          console.log(`  ${YEL}could not refresh the license at ${licDir}: ${(e as Error).message}${RST}`);
+          console.log(`  ${DIM}The content updated fine. Run 'nrv license install' when the permission is sorted.${RST}`);
+        }
       }
     } catch (e) {
-      console.log(`  ${YEL}could not refresh the license at ${licDir}: ${(e as Error).message}${RST}`);
-      console.log(`  ${DIM}The content updated fine. Run 'nrv license install' when the permission is sorted.${RST}`);
+      console.log(`  ${YEL}could not read the downloaded license ${freshProv}: ${(e as Error).message}${RST}`);
     }
   }
 
